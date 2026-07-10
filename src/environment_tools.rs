@@ -38,8 +38,8 @@ fn component_def_schema() -> Value {
             "id": { "type": "string", "description": "Unique component id (kebab-case)" },
             "type": {
                 "type": "string",
-                "enum": ["presentation", "chrome_action", "artifact", "medousa_view", "builtin_panel", "media_embed"],
-                "description": "presentation = HTML artifact; media_embed = native Spotify/Apple iframe"
+                "enum": ["presentation", "chrome_action", "artifact", "medousa_view", "builtin_panel", "media_embed", "scene"],
+                "description": "presentation = HTML artifact; scene = native Liquid scene (config.scene:{ops:[…]}, preferred for interactive widgets); media_embed = native Spotify/Apple iframe"
             },
             "surfaceId": {
                 "type": "string",
@@ -53,7 +53,7 @@ fn component_def_schema() -> Value {
             "label": { "type": "string" },
             "config": {
                 "type": "object",
-                "description": "Type-specific config — presentation uses { artifactId: string } where artifactId is the art:… id returned by cognition_ui_present (not the component id)"
+                "description": "Type-specific config — presentation uses { artifactId: string } (art:… id from cognition_ui_present, not the component id); scene uses { scene: { ops: [...] } } (same op JSON as cognition_ui_scene, stored opaquely)"
             },
             "presentation": {
                 "type": "string",
@@ -771,6 +771,22 @@ pub fn make_presentation_component(
     }
 }
 
+/// Build a durable Liquid scene component. `scene` is the opaque payload
+/// (e.g. `{ "ops": [...] }`) the daemon stores verbatim and the client renders.
+pub fn make_scene_component(id: &str, surface_id: &str, scene: Value, label: &str) -> ComponentDef {
+    ComponentDef {
+        id: id.to_string(),
+        component_type: ComponentType::Scene,
+        surface_id: surface_id.to_string(),
+        slot: "main".to_string(),
+        label: Some(label.to_string()),
+        config: json!({ "scene": scene }),
+        presentation: None,
+        feeds: vec![],
+        updated_at: Some(Utc::now()),
+    }
+}
+
 pub fn make_chrome_action_component(
     id: &str,
     surface_id: &str,
@@ -820,5 +836,21 @@ mod demo_tests {
         let err = validate_presentation_component_artifact(Some("sess-1"), &component)
             .expect("missing artifactId");
         assert!(err.contains("artifactId"));
+    }
+
+    #[test]
+    fn scene_component_bypasses_artifact_check_and_validates_on_custom_surface() {
+        let scene = json!({ "ops": [{ "op": "plan_layout" }] });
+        let component = make_scene_component("trip-scene", "japan-trip", scene, "Itinerary");
+        assert_eq!(component.component_type, ComponentType::Scene);
+        // Scene never triggers the presentation artifact-existence gate.
+        assert!(validate_presentation_component_artifact(Some("sess-1"), &component).is_none());
+
+        // On a custom surface the opaque scene config validates.
+        let mut spec = writing_studio_demo_spec("personal");
+        let mut scene_component = component.clone();
+        scene_component.surface_id = "writing-studio".to_string();
+        spec.components.push(scene_component);
+        assert!(is_valid_environment_spec(&spec));
     }
 }

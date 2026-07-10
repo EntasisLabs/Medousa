@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -17,6 +17,7 @@ use medousa::daemon::ingest::{
 use medousa::daemon::router::{
     build_daemon_router, parse_dashboard_action_auth,
 };
+use medousa::daemon::bounded_set::BoundedDedupSet;
 use medousa::daemon::state::AppState;
 use medousa::daemon_api::DEFAULT_DAEMON_BIND;
 use medousa::session_mapping;
@@ -29,8 +30,69 @@ use async_trait::async_trait;
 use tokio::sync::{RwLock, watch};
 
 
+/// How often the bounded in-memory state caps are swept. Independent of the
+/// (env-gated, 6h) durable retention pass so memory stays bounded on every
+/// deployment even when durable retention is disabled.
+const MEM_PRUNE_INTERVAL: Duration = Duration::from_secs(5 * 60);
+
+/// Drop terminal `agent_turn_jobs` records (which hold full response text) once
+/// they are older than this. Comfortably outlives normal result polling.
+const AGENT_TURN_JOB_TTL: chrono::Duration = chrono::Duration::hours(1);
+
+/// Hard cap on retained `agent_turn_jobs` records as a backstop against bursts
+/// within the TTL window. Oldest terminal records are evicted first.
+const AGENT_TURN_JOB_MAX_ENTRIES: usize = 512;
+
+/// FIFO capacity for the outbox idempotency dedup set.
+const OUTBOX_DEDUP_CAPACITY: usize = 10_000;
+
+/// FIFO capacity for cancellation tombstone sets (interactive turns + ingest
+/// streams). Bounds growth even if a finalize path misses its cleanup.
+const CANCELLED_MARKER_CAPACITY: usize = 4_096;
+
 struct DaemonSchedulerSideEffects {
     state: AppState,
+}
+
+impl DaemonSchedulerSideEffects {
+    /// Sweep bounded in-memory state on a fixed cadence. Runs regardless of the
+    /// durable retention config so long-lived daemons do not accumulate
+    /// completed job results, idempotency keys, or cancellation tombstones.
+    async fn prune_in_memory_state_if_due(&self, now_utc: DateTime<Utc>) {
+        let should_run = {
+            let last = *self.state.last_mem_prune_at.read().await;
+            last.is_none_or(|at| {
+                now_utc
+                    .signed_duration_since(at)
+                    .to_std()
+                    .unwrap_or(MEM_PRUNE_INTERVAL)
+                    >= MEM_PRUNE_INTERVAL
+            })
+        };
+        if !should_run {
+            return;
+        }
+        *self.state.last_mem_prune_at.write().await = Some(now_utc);
+
+        let jobs_pruned = self
+            .state
+            .prune_agent_turn_jobs(AGENT_TURN_JOB_TTL, AGENT_TURN_JOB_MAX_ENTRIES)
+            .await;
+
+        let agent_turn_jobs = self.state.agent_turn_jobs.read().await.len();
+        let delivered_outbox = self.state.delivered_outbox_events.read().await.len();
+        let cancelled_turns = self.state.cancelled_interactive_turns.read().await.len();
+        let cancelled_streams = self.state.cancelled_ingest_streams.read().await.len();
+
+        tracing::debug!(
+            jobs_pruned,
+            agent_turn_jobs,
+            delivered_outbox,
+            cancelled_turns,
+            cancelled_streams,
+            "in-memory state prune completed"
+        );
+    }
 }
 
 #[async_trait]
@@ -48,6 +110,10 @@ impl SchedulerTickSideEffects for DaemonSchedulerSideEffects {
     }
 
     async fn run_retention_if_due(&self, now_utc: DateTime<Utc>) {
+        // Bound in-memory state on every deployment, independent of the
+        // (env-gated) durable retention config below.
+        self.prune_in_memory_state_if_due(now_utc).await;
+
         if !self.state.retention_config.enabled() {
             return;
         }
@@ -263,7 +329,9 @@ async fn main() -> Result<()> {
         active_ingest_jobs: Arc::new(RwLock::new(HashMap::new())),
         channel_deliveries: Arc::new(RwLock::new(HashMap::new())),
         job_delivery_records: Arc::new(RwLock::new(HashMap::new())),
-        delivered_outbox_events: Arc::new(RwLock::new(HashSet::new())),
+        delivered_outbox_events: Arc::new(RwLock::new(BoundedDedupSet::new(
+            OUTBOX_DEDUP_CAPACITY,
+        ))),
         channel_dispatch_client: reqwest::Client::builder()
             .timeout(Duration::from_secs(15))
             .build()
@@ -277,8 +345,12 @@ async fn main() -> Result<()> {
         agent_tool_registry_count,
         agent_turn_jobs: Arc::new(RwLock::new(HashMap::new())),
         default_runtime_config,
-        cancelled_ingest_streams: Arc::new(RwLock::new(HashSet::new())),
-        cancelled_interactive_turns: Arc::new(RwLock::new(HashSet::new())),
+        cancelled_ingest_streams: Arc::new(RwLock::new(BoundedDedupSet::new(
+            CANCELLED_MARKER_CAPACITY,
+        ))),
+        cancelled_interactive_turns: Arc::new(RwLock::new(BoundedDedupSet::new(
+            CANCELLED_MARKER_CAPACITY,
+        ))),
         turn_tickets: medousa::turn_ticket::new_registry(),
         session_runtime_configs: Arc::new(RwLock::new(HashMap::new())),
         backend: backend_name,
@@ -294,6 +366,7 @@ async fn main() -> Result<()> {
         webhook_client,
         retention_config,
         last_retention_at: Arc::new(RwLock::new(None)),
+        last_mem_prune_at: Arc::new(RwLock::new(None)),
         last_context_usage_by_session: Arc::new(RwLock::new(HashMap::new())),
         client_registry: medousa::browser_handlers::ClientRegistry::new(),
     };

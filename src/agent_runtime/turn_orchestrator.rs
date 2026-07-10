@@ -887,6 +887,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
         messages.push(ChatMessage::system(system_prompt_for_host_profile(
             DEFAULT_SYSTEM_PROMPT,
             host_bus,
+            params.supports_ui_artifacts,
             suggested_intent,
         )));
         messages.extend(prior_messages);
@@ -952,6 +953,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
         system_prompt: Some(system_prompt_for_host_profile(
             DEFAULT_SYSTEM_PROMPT,
             host_bus,
+            params.supports_ui_artifacts,
             suggested_intent,
         )),
         context: prompt_ctx.clone(),

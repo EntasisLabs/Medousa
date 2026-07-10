@@ -11,7 +11,7 @@ const HORIZONTAL_LOCK_PX = 12;
 
 function shouldIgnoreSwipeTarget(target: EventTarget | null): boolean {
   if (!(target instanceof Element)) return true;
-  return Boolean(
+  if (
     target.closest(
       [
         "[data-no-tab-swipe]",
@@ -19,13 +19,32 @@ function shouldIgnoreSwipeTarget(target: EventTarget | null): boolean {
         ".mobile-swipe-row",
         ".mobile-sheet-backdrop",
         ".mobile-story-overlay",
+        ".liquid-carousel",
+        ".liquid-chip-group",
         "input",
         "textarea",
         "select",
         "[contenteditable='true']",
       ].join(", "),
-    ),
-  );
+    )
+  ) {
+    return true;
+  }
+  // Native horizontal scrollers (day tabs, carousels, wide tables) must keep their gesture.
+  let el: Element | null = target;
+  while (el && el !== document.documentElement) {
+    if (el instanceof HTMLElement) {
+      const { overflowX } = getComputedStyle(el);
+      if (
+        (overflowX === "auto" || overflowX === "scroll" || overflowX === "overlay") &&
+        el.scrollWidth > el.clientWidth + 1
+      ) {
+        return true;
+      }
+    }
+    el = el.parentElement;
+  }
+  return false;
 }
 
 /** Horizontal swipe between bottom tabs; swipe right also walks nested back stacks. */

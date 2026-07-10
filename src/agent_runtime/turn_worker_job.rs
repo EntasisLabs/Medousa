@@ -305,6 +305,40 @@ impl crate::agent_runtime::stream_sink::AgentStreamSink for DurableWorkerStreamS
 
     async fn tool_invoked(&self, _tool_name: String, _input_summary: String) {}
 
+    async fn tool_run_finished(
+        &self,
+        _tool_run_id: String,
+        tool_name: String,
+        _status: String,
+        _input_summary: String,
+        _output_summary: Option<String>,
+        tool_input: serde_json::Value,
+        tool_output: serde_json::Value,
+        input_receipt: Option<crate::payload_receipt::ArtifactReceiptMeta>,
+        output_receipt: Option<crate::payload_receipt::ArtifactReceiptMeta>,
+        _tool_round: usize,
+    ) {
+        // Default trait path only calls tool_payload (a no-op here). Forward UI
+        // side-effects onto the parent interactive turn so Home can paint scenes
+        // and artifacts authored in the Workshop.
+        if let Some(record) = turn_worker_store().get(&self.work_id) {
+            crate::turn_worker_notify::publish_worker_ui_side_effects_to_parent_turn(
+                &record,
+                &tool_name,
+                &tool_output,
+            )
+            .await;
+        }
+        self.tool_payload(
+            tool_name,
+            tool_input,
+            tool_output,
+            input_receipt,
+            output_receipt,
+        )
+        .await;
+    }
+
     async fn tool_payload(
         &self,
         _tool_name: String,

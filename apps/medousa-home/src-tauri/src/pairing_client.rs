@@ -223,7 +223,7 @@ pub async fn pair_complete_from_qr(
         iroh_ticket.as_deref(),
     )?;
 
-    crate::workshop_transport::invalidate_workshop_route_cache();
+    crate::workshop_transport::invalidate_all_route_caches();
 
     Ok(PairCompleteFromQrResult {
         pairing_id,

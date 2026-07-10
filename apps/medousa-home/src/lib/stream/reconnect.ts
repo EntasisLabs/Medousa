@@ -14,8 +14,18 @@ export interface BackoffPolicy {
 }
 
 export interface CircuitBreakerConfig {
+  /** Consecutive failures that trip the breaker Closed -> Open. */
   failureThreshold: number;
+  /** How long the breaker stays Open before allowing a half-open probe. */
+  cooldownMs?: number;
+  /** Consecutive half-open successes required to fully close again. */
+  successThreshold?: number;
 }
+
+/** Default cooldown before a tripped breaker allows a half-open probe. */
+export const DEFAULT_BREAKER_COOLDOWN_MS = 15_000;
+
+export type CircuitState = "closed" | "open" | "half_open";
 
 export const DEFAULT_INTERACTIVE_BACKOFF: BackoffPolicy = {
   baseMs: 500,
@@ -85,26 +95,102 @@ export class OverlapGuard {
   }
 }
 
+/**
+ * Time-based circuit breaker mirroring the Rust `comms/backoff.rs` state
+ * machine (Closed / Open / HalfOpen). A tripped breaker stays Open for
+ * `cooldownMs`, then `allow(now)` promotes it to HalfOpen and lets a single
+ * probe through — so an open breaker can heal itself instead of starving its
+ * own reset (the previous boolean-`open` version could never recover without
+ * an app restart, since `allow()` blocked the very attempt that would call
+ * `onSuccess()`).
+ */
 export class CircuitBreaker {
-  consecutiveFailures = 0;
-  open = false;
+  private state: CircuitState = "closed";
+  private consecutiveFailures = 0;
+  private consecutiveSuccesses = 0;
+  private openedAt: number | null = null;
+  private readonly failureThreshold: number;
+  private readonly cooldownMs: number;
+  private readonly successThreshold: number;
 
-  constructor(private readonly config: CircuitBreakerConfig) {}
+  constructor(config: CircuitBreakerConfig) {
+    this.failureThreshold = config.failureThreshold;
+    this.cooldownMs = config.cooldownMs ?? DEFAULT_BREAKER_COOLDOWN_MS;
+    this.successThreshold = config.successThreshold ?? 1;
+  }
 
-  allow(): boolean {
-    return !this.open;
+  get currentState(): CircuitState {
+    return this.state;
+  }
+
+  /** Back-compat accessor: true when the breaker is fully tripped. */
+  get open(): boolean {
+    return this.state === "open";
+  }
+
+  /**
+   * Whether a request/attempt is permitted at `now`, transitioning
+   * Open -> HalfOpen once the cooldown has elapsed.
+   */
+  allow(now: number = Date.now()): boolean {
+    if (this.state === "open") {
+      const elapsed = this.openedAt == null ? this.cooldownMs : now - this.openedAt;
+      if (elapsed >= this.cooldownMs) {
+        this.state = "half_open";
+        this.consecutiveSuccesses = 0;
+        return true;
+      }
+      return false;
+    }
+    return true;
   }
 
   onSuccess(): void {
     this.consecutiveFailures = 0;
-    this.open = false;
+    if (this.state === "half_open") {
+      this.consecutiveSuccesses += 1;
+      if (this.consecutiveSuccesses >= this.successThreshold) {
+        this.state = "closed";
+        this.consecutiveSuccesses = 0;
+        this.openedAt = null;
+      }
+    } else if (this.state === "open") {
+      this.state = "closed";
+      this.openedAt = null;
+    }
   }
 
-  onFailure(): void {
-    this.consecutiveFailures += 1;
-    if (this.consecutiveFailures >= this.config.failureThreshold) {
-      this.open = true;
+  onFailure(now: number = Date.now()): void {
+    this.consecutiveSuccesses = 0;
+    if (this.state === "half_open") {
+      this.trip(now);
+    } else if (this.state === "closed") {
+      this.consecutiveFailures += 1;
+      if (this.consecutiveFailures >= this.failureThreshold) {
+        this.trip(now);
+      }
     }
+  }
+
+  /** Milliseconds until an Open breaker will permit a half-open probe. */
+  remainingCooldownMs(now: number = Date.now()): number {
+    if (this.state !== "open" || this.openedAt == null) return 0;
+    return Math.max(0, this.cooldownMs - (now - this.openedAt));
+  }
+
+  /** Force back to a clean Closed state (deliberate reconnect / resume). */
+  reset(): void {
+    this.state = "closed";
+    this.consecutiveFailures = 0;
+    this.consecutiveSuccesses = 0;
+    this.openedAt = null;
+  }
+
+  private trip(now: number): void {
+    this.state = "open";
+    this.openedAt = now;
+    this.consecutiveFailures = 0;
+    this.consecutiveSuccesses = 0;
   }
 }
 
@@ -146,6 +232,9 @@ export class ReconnectScheduler {
     }
     this.attempt = 0;
     this.overlap.release();
+    // A deliberate cancel (foreground resume, explicit reconnect, teardown) is a
+    // clean slate — clear any tripped breaker so recovery isn't locked out.
+    this.breaker.reset();
   }
 
   teardown(): void {
@@ -162,7 +251,22 @@ export class ReconnectScheduler {
   /** Schedule `task` unless a timer is already pending or overlap rejects. */
   schedule(task: () => void | Promise<void>): void {
     if (this.tornDown || this.timer) return;
-    if (!this.breaker.allow()) return;
+
+    const now = Date.now();
+    const wasOpen = this.breaker.currentState === "open";
+    if (!this.breaker.allow(now)) {
+      // Breaker is Open and cooldown hasn't elapsed. Rather than dropping the
+      // reconnect loop entirely (the old behavior — which meant a tripped
+      // breaker never recovered without an app restart), arm a wake-up timer
+      // for the remaining cooldown so a half-open probe fires automatically.
+      this.armBreakerWakeup(task, now);
+      return;
+    }
+    if (wasOpen) {
+      // Just transitioned Open -> HalfOpen: this probe is a fresh chance, so
+      // restart backoff (and re-arm the interactive attempt budget).
+      this.attempt = 0;
+    }
     if (!mayRetry(this.policy, this.attempt)) {
       this.onExhausted?.();
       return;
@@ -182,5 +286,13 @@ export class ReconnectScheduler {
           this.overlap.release();
         });
     }, delayMs);
+  }
+
+  private armBreakerWakeup(task: () => void | Promise<void>, now: number): void {
+    const wait = Math.max(250, this.breaker.remainingCooldownMs(now));
+    this.timer = setTimeout(() => {
+      this.timer = null;
+      this.schedule(task);
+    }, wait);
   }
 }

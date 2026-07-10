@@ -71,6 +71,8 @@ pub const HOST_BOOTSTRAP_TOOLS: &[&str] = &[
     "cognition_turn_finish",
     "cognition_turn_worker_status",
     "cognition_ui_present",
+    "cognition_ui_build",
+    "cognition_ui_scene",
 ];
 
 /// Always-visible worker workshop tools.
@@ -85,6 +87,9 @@ pub const WORKER_BOOTSTRAP_TOOLS: &[&str] = &[
     "cognition_grapheme_template_run",
     "cognition_memory_context",
     "cognition_memory_store",
+    "cognition_ui_build",
+    "cognition_ui_scene",
+    "cognition_ui_present",
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -206,8 +211,10 @@ pub fn host_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
             },
             ToolDomainCatalogEntry {
                 domain: "presentation",
-                summary: "Rich HTML artifacts — present (cognition_ui_present) and revise (cognition_artifact_write)",
+                summary: "Liquid chat embeds (markdown) first; cognition_ui_build for streaming scenes; legacy ui_scene + HTML artifacts",
                 tools: &[
+                    "cognition_ui_build",
+                    "cognition_ui_scene",
                     "cognition_ui_present",
                     "cognition_artifact_list",
                     "cognition_artifact_read",
@@ -259,8 +266,10 @@ pub fn host_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
             },
             ToolDomainCatalogEntry {
                 domain: "presentation",
-                summary: "HTML artifacts — ui_present publish and artifact_write revise",
+                summary: "Liquid chat embeds (markdown) first; ui_build for streaming scenes; legacy ui_scene + HTML artifacts",
                 tools: &[
+                    "cognition_ui_build",
+                    "cognition_ui_scene",
                     "cognition_ui_present",
                     "cognition_artifact_list",
                     "cognition_artifact_read",
@@ -397,6 +406,8 @@ pub fn tool_one_liner(name: &str) -> &'static str {
         "cognition_turn_update_user" => "Short status to the principal mid-turn (retries, course-corrections) — call with your next tool",
         "cognition_turn_checkpoint" => "Mid-task update; hand turn to principal",
         "cognition_turn_finish" => "Commit principal-ready answer (required after tool work)",
+        "cognition_ui_build" => "Streaming interactive Liquid scenes (begin → set_prose/add_section/add_card/add_actions → done) when markdown embeds aren't enough; prefer over cognition_ui_scene",
+        "cognition_ui_scene" => "Legacy freeform scene ops (plan_layout/fill_slot) — prefer markdown embeds or cognition_ui_build for chat",
         "cognition_ui_present" => "Publish a new HTML artifact in chat (inline, panel, or fullscreen)",
         "cognition_artifact_list" => "List HTML presentation artifacts in this session",
         "cognition_artifact_read" => "Read HTML artifact source (line range or budget)",

@@ -103,6 +103,9 @@
     class:environment-renderer-body-custom={isCustom}
     class:environment-renderer-body-dashboard={isCustom && isDashboard && !isMobile}
     class:environment-renderer-body-mobile-stack={isCustom && isMobile}
+    class:environment-renderer-body-mobile-fill={isCustom &&
+      isMobile &&
+      mobileStackComponents.length === 1}
   >
     {#if isCustom}
       <LayoutEditOverlay
@@ -263,6 +266,17 @@
     overflow: auto;
     -webkit-overflow-scrolling: touch;
     gap: 0;
+  }
+
+  /* Single-widget custom home: fill the shell above the tab bar (true fullscreen). */
+  .environment-renderer-body-mobile-fill {
+    padding: 0;
+    overflow: hidden;
+    gap: 0;
+  }
+
+  .environment-renderer-body-mobile-fill .environment-renderer-canvas-bar {
+    padding: 0.45rem 0.85rem 0.35rem;
   }
 
   .environment-renderer-main-item-fill {

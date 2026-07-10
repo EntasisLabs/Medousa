@@ -290,20 +290,47 @@ impl MedousaToolLoopPipeline {
                 let chat_request = ChatRequest::new(messages).with_tools(tools.clone());
                 let mut response = match chunk_tx {
                     Some(tx) => {
-                        self.prompt_pipeline
-                            .complete_chat_stream(
-                                chat_request.clone(),
-                                shared_inputs.context_clone(),
-                                Some(tx),
-                            )
-                            .await?
-                            .response
+                        match complete_chat_stream_with_serde_retry(
+                            &self.prompt_pipeline,
+                            chat_request.clone(),
+                            shared_inputs.context_clone(),
+                            Some(tx),
+                            completion_gate.as_deref(),
+                        )
+                        .await?
+                        {
+                            ChatCompletionOutcome::Ok(response) => response,
+                            ChatCompletionOutcome::MalformedToolJson => {
+                                inject_malformed_tool_json_guidance(
+                                    &mut turn_ctx.tool_lane.messages,
+                                    completion_gate.as_deref(),
+                                )
+                                .await;
+                                discipline.on_tool_round();
+                                continue;
+                            }
+                        }
                     }
                     None => {
-                        self.prompt_pipeline
-                            .complete_chat(chat_request.clone(), shared_inputs.context_clone())
-                            .await?
-                            .response
+                        match complete_chat_with_serde_retry(
+                            &self.prompt_pipeline,
+                            chat_request.clone(),
+                            shared_inputs.context_clone(),
+                            completion_gate.as_deref(),
+                        )
+                        .await?
+                        {
+                            ChatCompletionOutcome::Ok(response) => response,
+                            ChatCompletionOutcome::MalformedToolJson => {
+                                inject_malformed_tool_json_guidance(
+                                    &mut turn_ctx.tool_lane.messages,
+                                    completion_gate.as_deref(),
+                                )
+                                .await;
+                                discipline.on_tool_round();
+                                continue;
+                            }
+                        }
                     }
                 };
                 let mut maybe_text = response
@@ -1410,11 +1437,136 @@ fn build_fallback_synthesis_prompt(
     prompt
 }
 
+fn is_serde_json_completion_error(err: &StasisError) -> bool {
+    err.to_string().contains("Serde JSON error")
+}
+
+/// Outcome of a chat completion that may have hit malformed provider tool-call JSON.
+enum ChatCompletionOutcome {
+    Ok(genai::chat::ChatResponse),
+    /// Provider returned unparseable tool-call arguments after one silent retry.
+    /// Caller must inject guidance and continue the tool loop — never fail the turn.
+    MalformedToolJson,
+}
+
+const MALFORMED_TOOL_JSON_GUIDANCE: &str = "\
+Your previous tool call could not be parsed (malformed JSON in the tool arguments). \
+Do NOT apologize to the principal and do NOT ask them to retry or simplify. \
+Self-correct: re-emit the tool call with valid JSON. Prefer small atomic calls \
+(e.g. cognition_ui_build: verb=begin, then set_prose/add_section/add_card one at a time; \
+each response returns handles + next[]). Fix brackets/commas and continue.";
+
+async fn inject_malformed_tool_json_guidance(
+    messages: &mut Vec<ChatMessage>,
+    gate: Option<&ToolLoopCompletionGate<'_>>,
+) {
+    if let Some(gate) = gate {
+        if let Some(sink) = gate.sink.as_ref() {
+            sink.notice(
+                "◈ model_tool_json_guidance malformed tool-call JSON — coaching model to self-correct"
+                    .to_string(),
+            )
+            .await;
+        }
+    }
+    push_turn_control_message(messages, MALFORMED_TOOL_JSON_GUIDANCE);
+}
+
+/// Complete chat; on Serde JSON tool-arg parse failure, retry once silently.
+/// If the retry also fails with the same class of error, return
+/// [`ChatCompletionOutcome::MalformedToolJson`] so the loop can coach the model
+/// instead of failing the turn to the principal.
+async fn complete_chat_with_serde_retry(
+    pipeline: &PromptExecutionPipeline,
+    request: ChatRequest,
+    context: PromptExecutionContext,
+    gate: Option<&ToolLoopCompletionGate<'_>>,
+) -> Result<ChatCompletionOutcome> {
+    match pipeline.complete_chat(request.clone(), context.clone()).await {
+        Ok(completion) => Ok(ChatCompletionOutcome::Ok(completion.response)),
+        Err(err) if is_serde_json_completion_error(&err) => {
+            if let Some(gate) = gate {
+                if let Some(sink) = gate.sink.as_ref() {
+                    sink.notice(
+                        "◈ model_tool_json_retry malformed tool-call JSON — silent retry once"
+                            .to_string(),
+                    )
+                    .await;
+                }
+            }
+            match pipeline.complete_chat(request, context).await {
+                Ok(completion) => Ok(ChatCompletionOutcome::Ok(completion.response)),
+                Err(retry_err) if is_serde_json_completion_error(&retry_err) => {
+                    Ok(ChatCompletionOutcome::MalformedToolJson)
+                }
+                Err(retry_err) => Err(retry_err),
+            }
+        }
+        Err(err) => Err(err),
+    }
+}
+
+async fn complete_chat_stream_with_serde_retry(
+    pipeline: &PromptExecutionPipeline,
+    request: ChatRequest,
+    context: PromptExecutionContext,
+    chunk_tx: Option<&mpsc::UnboundedSender<StreamDelta>>,
+    gate: Option<&ToolLoopCompletionGate<'_>>,
+) -> Result<ChatCompletionOutcome> {
+    match pipeline
+        .complete_chat_stream(request.clone(), context.clone(), chunk_tx)
+        .await
+    {
+        Ok(completion) => Ok(ChatCompletionOutcome::Ok(completion.response)),
+        Err(err) if is_serde_json_completion_error(&err) => {
+            if let Some(gate) = gate {
+                if let Some(sink) = gate.sink.as_ref() {
+                    sink.notice(
+                        "◈ model_tool_json_retry malformed streamed tool-call JSON — silent non-stream retry"
+                            .to_string(),
+                    )
+                    .await;
+                }
+            }
+            // Fall back to non-stream completion (same strategy as empty tool_calls).
+            match pipeline.complete_chat(request, context).await {
+                Ok(completion) => Ok(ChatCompletionOutcome::Ok(completion.response)),
+                Err(retry_err) if is_serde_json_completion_error(&retry_err) => {
+                    Ok(ChatCompletionOutcome::MalformedToolJson)
+                }
+                Err(retry_err) => Err(retry_err),
+            }
+        }
+        Err(err) => Err(err),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::turn_control_tools::finish_turn_from_invocations;
-    use super::{recoverable_tool_error_value, tool_output_from_invoke};
+    use super::{
+        is_serde_json_completion_error, recoverable_tool_error_value, tool_output_from_invoke,
+        MALFORMED_TOOL_JSON_GUIDANCE,
+    };
     use stasis::domain::errors::StasisError;
+
+    #[test]
+    fn detects_serde_json_completion_errors() {
+        let err = StasisError::PortFailure(
+            "genai chat completion failed for model 'openai::gpt-4o': Serde JSON error: expected ',' or ']' at line 1 column 4816".to_string(),
+        );
+        assert!(is_serde_json_completion_error(&err));
+        let other = StasisError::PortFailure("timeout".to_string());
+        assert!(!is_serde_json_completion_error(&other));
+    }
+
+    #[test]
+    fn malformed_tool_json_guidance_coaches_self_correct() {
+        assert!(MALFORMED_TOOL_JSON_GUIDANCE.contains("Do NOT apologize"));
+        assert!(MALFORMED_TOOL_JSON_GUIDANCE.contains("Self-correct"));
+        assert!(MALFORMED_TOOL_JSON_GUIDANCE.contains("cognition_ui_build"));
+        assert!(MALFORMED_TOOL_JSON_GUIDANCE.contains("do NOT ask them to retry"));
+    }
 
     #[test]
     fn tool_invoke_failure_becomes_recoverable_receipt() {

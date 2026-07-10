@@ -1,8 +1,10 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Instant;
 
 use async_trait::async_trait;
+
+use crate::daemon::bounded_set::BoundedDedupSet;
 use chrono::{DateTime, Utc};
 use serde_json::Value;
 use crate::daemon::turn_event_channel::TurnEventChannel;
@@ -67,7 +69,7 @@ impl InteractiveTurnDeliveryContext {
 /// Optional session registry + cancel hooks for daemon interactive turns.
 #[derive(Clone, Default)]
 pub struct InteractiveTurnSessionHooks {
-    pub cancelled_turns: Option<Arc<RwLock<HashSet<String>>>>,
+    pub cancelled_turns: Option<Arc<RwLock<BoundedDedupSet>>>,
     pub turn_ticket_registry: Option<TurnTicketRegistry>,
     /// When set, mirror terminal/interim outcomes into ask job store + workspace cards.
     pub ask_job_id: Option<String>,
@@ -766,6 +768,15 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
                 .await;
             }
         }
+        if crate::ui_build_tools::is_ui_scene_stream_tool(&tool_name) {
+            if let Some(scene) = super::tool_stream::scene_ops_from_tool_output(&tool_output) {
+                self.publish_tracked(interactive_turn_runtime::scene_ops_stream_event(
+                    &self.turn_id,
+                    scene,
+                ))
+                .await;
+            }
+        }
         if tool_name == crate::artifact_tools::COGNITION_ARTIFACT_WRITE {
             if let Some(ui_artifact) = super::tool_stream::ui_artifact_from_tool_output(&tool_output) {
                 if let Some(previous) = tool_output
@@ -1238,6 +1249,7 @@ async fn run_agent_turn_inner(
     let system_prompt = super::turn_worker::system_prompt_for_host_profile(
         super::DEFAULT_SYSTEM_PROMPT,
         true,
+        crate::ui_present_tools::surface_supports_ui_artifacts(request.surface.as_ref()),
         None,
     );
     let (tool_count, tool_schema_chars) =

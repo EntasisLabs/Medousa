@@ -2,6 +2,7 @@
   import PresentationFrame from "$lib/components/environment/PresentationFrame.svelte";
   import ChromeActionRenderer from "$lib/components/environment/ChromeActionRenderer.svelte";
   import EnvironmentMedousaView from "$lib/components/environment/EnvironmentMedousaView.svelte";
+  import EnvironmentSceneView from "$lib/components/environment/EnvironmentSceneView.svelte";
   import MediaEmbedFrame from "$lib/components/environment/MediaEmbedFrame.svelte";
   import type { ComponentDef } from "$lib/types/environment";
   import { GripVertical, X } from "@lucide/svelte";
@@ -102,6 +103,13 @@
       {#if notePath}
         <EnvironmentMedousaView {notePath} fill={true} />
       {/if}
+    {:else if component.type === "scene"}
+      <EnvironmentSceneView
+        config={component.config}
+        componentId={component.id}
+        {sessionId}
+        label={component.label}
+      />
     {:else if component.type === "media_embed"}
       <MediaEmbedFrame config={component.config} label={component.label} fill={true} />
     {:else if component.type === "chrome_action"}

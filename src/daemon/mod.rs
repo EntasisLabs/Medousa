@@ -1,3 +1,4 @@
+pub mod bounded_set;
 pub mod continuations;
 pub mod core;
 pub mod heartbeat;

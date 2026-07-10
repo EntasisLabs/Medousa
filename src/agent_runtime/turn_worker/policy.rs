@@ -135,7 +135,14 @@ pub fn allowed_tool_names_for_intent(intent: TurnWorkerIntent) -> HashSet<String
                     "cognition_grapheme_script_load",
                 ],
             );
-            push(&mut names, &["cognition_ui_present"]);
+            push(
+                &mut names,
+                &[
+                    "cognition_ui_build",
+                    "cognition_ui_scene",
+                    "cognition_ui_present",
+                ],
+            );
             push(&mut names, crate::artifact_tools::ARTIFACT_COGNITION_TOOLS);
             push(&mut names, crate::tool_bootstrap::ENVIRONMENT_DOMAIN_TOOLS);
         }
@@ -169,6 +176,8 @@ pub fn allowed_tool_names_for_intent(intent: TurnWorkerIntent) -> HashSet<String
                     "cognition_vault_read",
                     "cognition_vault_search",
                     "cognition_vault_write",
+                    "cognition_ui_build",
+                    "cognition_ui_scene",
                     "cognition_ui_present",
                 ],
             );
@@ -346,6 +355,8 @@ mod tests {
         assert!(names.contains("cognition_grapheme_run"));
         assert!(names.contains("cognition_grapheme_template_run"));
         assert!(names.contains("cognition_capability_invoke"));
+        assert!(names.contains("cognition_ui_build"));
+        assert!(names.contains("cognition_ui_scene"));
         assert!(names.contains("cognition_ui_present"));
         assert!(names.contains("cognition_artifact_write"));
         assert!(names.contains("cognition_environment_get"));

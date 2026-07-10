@@ -228,6 +228,22 @@ fn validate_component(
     if matches!(component.component_type, ComponentType::MediaEmbed) {
         validate_media_embed_component(component, errors);
     }
+    if matches!(component.component_type, ComponentType::Scene) {
+        // Presence-only: config.scene is an opaque payload the daemon never
+        // interprets. Require a non-empty object so the client has something to
+        // decode; do NOT validate the scene op shape here.
+        let scene_ok = component
+            .config
+            .get("scene")
+            .and_then(|v| v.as_object())
+            .is_some_and(|obj| !obj.is_empty());
+        if !scene_ok {
+            errors.push(format!(
+                "scene component '{}' requires a non-empty config.scene object (opaque scene payload, e.g. {{ ops: [...] }})",
+                component.id
+            ));
+        }
+    }
     for feed_id in &component.feeds {
         if !crate::feed::is_valid_feed_id(feed_id) {
             errors.push(format!(
@@ -256,6 +272,7 @@ fn validate_component_surface_kind(
             ComponentType::Presentation
                 | ComponentType::MedousaView
                 | ComponentType::MediaEmbed
+                | ComponentType::Scene
                 | ComponentType::Artifact
                 | ComponentType::BuiltinPanel
         )
@@ -415,6 +432,76 @@ mod tests {
         let errors = validate_environment_spec(&spec);
         assert!(errors.iter().any(|e| e.contains("custom surface")));
         assert!(errors.iter().any(|e| e.contains("home")));
+    }
+
+    fn push_custom_studio(spec: &mut crate::environment::EnvironmentSpec) {
+        spec.surfaces.push(SurfaceDef {
+            id: "studio".to_string(),
+            label: "Studio".to_string(),
+            icon: "pen-line".to_string(),
+            kind: SurfaceKind::Custom,
+            builtin_id: None,
+            layout: crate::environment::SurfaceLayout::Dashboard,
+            slots: vec![],
+            mobile_tab: None,
+            layout_root: None,
+        });
+    }
+
+    #[test]
+    fn accepts_scene_component_with_opaque_config() {
+        let mut spec = default_environment_spec("personal");
+        push_custom_studio(&mut spec);
+        spec.components.push(ComponentDef {
+            id: "trip-scene".to_string(),
+            component_type: ComponentType::Scene,
+            surface_id: "studio".to_string(),
+            slot: "main".to_string(),
+            label: Some("Trip".to_string()),
+            // Opaque payload — daemon never inspects the op shape.
+            config: serde_json::json!({ "scene": { "rev": 1, "ops": [{ "op": "plan_layout" }] } }),
+            presentation: None,
+            feeds: vec![],
+            updated_at: None,
+        });
+        assert!(is_valid_environment_spec(&spec));
+    }
+
+    #[test]
+    fn rejects_scene_component_without_scene_config() {
+        let mut spec = default_environment_spec("personal");
+        push_custom_studio(&mut spec);
+        spec.components.push(ComponentDef {
+            id: "empty-scene".to_string(),
+            component_type: ComponentType::Scene,
+            surface_id: "studio".to_string(),
+            slot: "main".to_string(),
+            label: None,
+            config: serde_json::json!({}),
+            presentation: None,
+            feeds: vec![],
+            updated_at: None,
+        });
+        let errors = validate_environment_spec(&spec);
+        assert!(errors.iter().any(|e| e.contains("config.scene")));
+    }
+
+    #[test]
+    fn rejects_scene_component_on_builtin_surface() {
+        let mut spec = default_environment_spec("personal");
+        spec.components.push(ComponentDef {
+            id: "home-scene".to_string(),
+            component_type: ComponentType::Scene,
+            surface_id: "home".to_string(),
+            slot: "main".to_string(),
+            label: None,
+            config: serde_json::json!({ "scene": { "ops": [{ "op": "plan_layout" }] } }),
+            presentation: None,
+            feeds: vec![],
+            updated_at: None,
+        });
+        let errors = validate_environment_spec(&spec);
+        assert!(errors.iter().any(|e| e.contains("custom surface")));
     }
 
     #[test]

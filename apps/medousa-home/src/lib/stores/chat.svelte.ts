@@ -29,6 +29,8 @@ import type { WorkCard } from "$lib/types/workspace";
 import { isAskJobId, askJobIdFromSession, askSessionId } from "$lib/types/askJob";
 import { reasoningFromParts, progressFromParts, toolRunsFromParts, userMediaFromParts, uiArtifactsFromParts } from "$lib/types/turnParts";
 import { mapStreamUiArtifact, replaceUiArtifactEntry } from "$lib/types/artifact";
+import { chatScenes } from "$lib/liquid/surfaces/chat/chatScenes.svelte";
+import { chatInteractions } from "$lib/liquid/surfaces/chat/chatInteractions";
 import type { MediaRef } from "$lib/types/media";
 import { chatMediaAttachmentsFromRefs } from "$lib/utils/chatMediaUpload";
 import { formatSessionLabel } from "$lib/utils/formatSession";
@@ -517,6 +519,8 @@ export class ChatStore {
     this.sessionId = id;
     this.draft = loadDraftForSession(id);
     this.messages = [];
+    chatScenes.reset();
+    chatInteractions.reset();
     this.streamError = null;
     this.historyNotice = null;
     this.backgroundActivity = 0;
@@ -643,6 +647,8 @@ export class ChatStore {
     this.streamError = null;
     this.historyNotice = null;
     this.messages = [];
+    chatScenes.reset();
+    chatInteractions.reset();
     this.backgroundActivity = 0;
     this.activeTurnId = null;
     this.turns = new Map();
@@ -1843,6 +1849,18 @@ export class ChatStore {
           event.previous_artifact_id,
           event.root_artifact_id ?? null,
           event.ui_artifact,
+        );
+      }
+      return;
+    }
+
+    if (event.event_type === "ui_scene") {
+      const messageId = this.messageIdForTurn(event.turn_id);
+      if (messageId && event.ui_scene) {
+        chatScenes.applyWire(
+          messageId,
+          event.ui_scene.surface_id?.trim() || `chat:${event.turn_id}`,
+          event.ui_scene.ops ?? [],
         );
       }
       return;

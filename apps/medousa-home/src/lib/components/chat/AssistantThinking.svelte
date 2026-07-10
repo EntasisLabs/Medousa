@@ -30,52 +30,68 @@
 
 {#if trimmed}
   <details
-    class="thinking-trace group/thinking mb-2 overflow-hidden rounded-lg border transition-[border-color,background,box-shadow] duration-200 {done
-      ? 'border-surface-700/25 bg-surface-900/15'
-      : 'border-primary-500/25 bg-gradient-to-r from-primary-500/[0.06] to-surface-900/25 shadow-[inset_0_1px_0_rgba(167,139,250,0.08)]'}"
+    class="thinking-trace group/thinking overflow-hidden transition-[color,opacity] duration-200"
+    class:thinking-live={!done}
+    class:thinking-done={done}
     open={streaming}
   >
     <summary
-      class="flex cursor-pointer list-none items-center gap-2 px-2 py-1 marker:content-none {done
-        ? 'py-1'
-        : 'px-2.5 py-1.5'}"
+      class="flex cursor-pointer list-none items-center gap-1.5 marker:content-none {done
+        ? 'py-0.5'
+        : 'px-0 py-1'}"
     >
       <Sparkles
         class="h-3 w-3 shrink-0 {done
-          ? 'text-surface-600'
-          : 'text-primary-400/85 animate-pulse'}"
+          ? 'text-surface-700'
+          : 'text-primary-400/55 animate-pulse'}"
         strokeWidth={2}
         aria-hidden="true"
       />
       <span
-        class="min-w-0 flex-1 truncate text-[11px] {done
-          ? 'text-surface-500'
-          : 'text-primary-200/90'}"
+        class="min-w-0 flex-1 truncate text-[10px] {done
+          ? 'font-normal text-surface-600'
+          : 'text-surface-400'}"
       >
         Thinking
         {#if streaming && liveHook}
           <span class="text-surface-600"> · </span>
-          <span class="text-surface-400">{liveHook}</span>
+          <span class="text-surface-500">{liveHook}</span>
         {/if}
       </span>
       <ChevronDown
-        class="h-3 w-3 shrink-0 text-surface-600 transition-transform duration-200 group-open/thinking:rotate-180"
+        class="h-3 w-3 shrink-0 text-surface-700 transition-transform duration-200 group-open/thinking:rotate-180"
         strokeWidth={2}
         aria-hidden="true"
       />
     </summary>
-    <div
-      class="border-t px-2.5 pb-2 pt-2 {done
-        ? 'border-surface-700/20'
-        : 'border-primary-500/10'}"
-    >
+    <div class="pt-1 {done ? 'pl-4' : 'pl-0.5'}">
       <p
-        class="whitespace-pre-wrap leading-relaxed text-surface-400 {compact
-          ? 'text-xs'
-          : 'text-[13px]'} {done ? 'text-surface-500' : 'text-surface-300'}"
+        class="whitespace-pre-wrap leading-relaxed {compact
+          ? 'text-[11px]'
+          : 'text-[11px]'} {done ? 'text-surface-600' : 'text-surface-500'}"
       >
         {trimmed}
       </p>
     </div>
   </details>
 {/if}
+
+<style>
+  /* Live: soft tint, no heavy card chrome — feels alive without a box. */
+  .thinking-live {
+    margin-bottom: 0.65rem;
+    border-radius: 0.5rem;
+    padding-inline: 0.15rem;
+  }
+
+  /* Done: footnote energy — quiet, more air before the answer body. */
+  .thinking-done {
+    margin-bottom: 0.85rem;
+    opacity: 0.55;
+  }
+
+  .thinking-done:hover,
+  .thinking-done[open] {
+    opacity: 0.85;
+  }
+</style>

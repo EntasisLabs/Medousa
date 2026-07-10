@@ -39,6 +39,10 @@ pub enum ComponentType {
     Presentation,
     MediaEmbed,
     ChromeAction,
+    /// Native Liquid scene pinned to a custom surface. `config.scene` holds an
+    /// opaque scene payload (`{ ops: [...] }`) the daemon never interprets — the
+    /// client decodes + renders it via the Liquid SceneRenderer.
+    Scene,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

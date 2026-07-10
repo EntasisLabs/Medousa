@@ -754,6 +754,7 @@ pub async fn run_worker_turn(
                 .handoff_capsule
                 .as_ref()
                 .and_then(|capsule| capsule.manuscript.as_ref()),
+            record.supports_ui_artifacts,
         )),
         context: PromptExecutionContext::default(),
         tool_name: String::new(),
@@ -1182,7 +1183,7 @@ pub fn pipeline_for_turn_profile(
 }
 
 pub fn system_prompt_for_host_bus(base: &str, host_bus: bool) -> String {
-    super::prompts::system_prompt_for_host_profile(base, host_bus, None)
+    super::prompts::system_prompt_for_host_profile(base, host_bus, false, None)
 }
 
 #[cfg(test)]

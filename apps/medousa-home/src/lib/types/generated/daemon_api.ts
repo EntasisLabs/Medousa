@@ -6,6 +6,7 @@ export interface InteractiveTurnStreamEvent {
   browser_session_id?: unknown;
   budget_request_id?: unknown;
   content_delta?: unknown;
+  context_usage?: ContextUsageReport | unknown;
   debug_message?: unknown;
   emitted_at_utc: string;
   event_type: string;
@@ -29,6 +30,7 @@ export interface InteractiveTurnStreamEvent {
   tool_status?: unknown;
   turn_id: string;
   ui_artifact?: StreamUiArtifact | unknown;
+  ui_scene?: StreamUiScene | unknown;
   work_id?: unknown;
 }
 

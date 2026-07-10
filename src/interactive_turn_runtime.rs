@@ -493,6 +493,25 @@ pub fn artifact_presented_stream_event(
     Ok(event)
 }
 
+pub fn scene_ops_stream_event(
+    turn_id: &str,
+    scene: crate::daemon_api::StreamUiScene,
+) -> Result<InteractiveTurnStreamEvent> {
+    let mut event = build_event_messages(
+        turn_id,
+        "ui_scene",
+        "tool_loop",
+        StreamMessages {
+            operator_message: Some("Updated the view".to_string()),
+            debug_message: None,
+        },
+    )?;
+    let mut scene = scene;
+    scene.turn_id = Some(turn_id.to_string());
+    event.ui_scene = Some(scene);
+    Ok(event)
+}
+
 pub fn artifact_updated_stream_event(
     turn_id: &str,
     previous_artifact_id: &str,
@@ -633,6 +652,7 @@ fn build_event_messages(
         ui_artifact: None,
         previous_artifact_id: None,
         root_artifact_id: None,
+        ui_scene: None,
         browser_session_id: None,
         browser_challenge_url: None,
         context_usage: None,
@@ -661,6 +681,31 @@ mod tests {
         let json = serde_json::to_string(&event).expect("json");
         let parsed: InteractiveTurnStreamEvent = serde_json::from_str(&json).expect("parse");
         assert_eq!(parsed.ui_artifact.as_ref().map(|a| a.label.as_str()), Some("Chart"));
+    }
+
+    #[test]
+    fn scene_ops_stream_event_roundtrips() {
+        let event = scene_ops_stream_event(
+            "turn-scene",
+            crate::daemon_api::StreamUiScene {
+                turn_id: None,
+                surface_id: Some("chat:turn-scene".to_string()),
+                rev: Some(1),
+                ops: vec![serde_json::json!({
+                    "op": "plan_layout",
+                    "surfaceId": "chat:turn-scene",
+                    "rev": 1,
+                    "root": { "id": "doc", "type": "document" }
+                })],
+            },
+        )
+        .expect("event");
+        assert_eq!(event.event_type, "ui_scene");
+        let json = serde_json::to_string(&event).expect("json");
+        let parsed: InteractiveTurnStreamEvent = serde_json::from_str(&json).expect("parse");
+        let scene = parsed.ui_scene.as_ref().expect("ui_scene");
+        assert_eq!(scene.turn_id.as_deref(), Some("turn-scene"));
+        assert_eq!(scene.ops.len(), 1);
     }
 
     #[test]

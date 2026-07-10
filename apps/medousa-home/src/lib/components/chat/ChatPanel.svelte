@@ -28,6 +28,11 @@
   import { groupAskThreads, isChatLaneMessage } from "$lib/utils/askThreads";
   import { groupWorkerThreads } from "$lib/utils/workerThreads";
   import {
+    saveChatTurnToVault,
+    showChatTurnSaveFeedback,
+  } from "$lib/utils/saveChatTurnToVault";
+  import type { ChatMessage } from "$lib/types/chat";
+  import {
     parseChatSlashInput,
     runSlashCommand,
   } from "$lib/utils/runSlashCommand";
@@ -83,6 +88,15 @@
     automationsNav.openSection("flows");
     layout.navigateDesktop("automations", { bump: true });
     if (mobile) layout.openMore("automations");
+  }
+
+  async function handleSaveToVault(assistant: ChatMessage, user?: ChatMessage | null) {
+    const result = await saveChatTurnToVault({
+      assistant,
+      user: user ?? null,
+      sessionId: chat.sessionId,
+    });
+    showChatTurnSaveFeedback(result);
   }
   const sessionLabel = $derived.by(() => {
     const session = chat.sessions.find((entry) => entry.session_id === chat.sessionId);
@@ -331,6 +345,13 @@
       chat.setError(err instanceof Error ? err.message : String(err));
     }
   }
+
+  /** A Liquid scene interaction (action_row / button) starting a new turn. */
+  function submitChatIntent(text: string) {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    void sendStarterPrompt(trimmed);
+  }
 </script>
 
 <section
@@ -555,7 +576,10 @@
                   sessionId={chat.sessionId}
                   {mobile}
                   compact={true}
+                  scrollRoot={scrollEl}
                   onPromoteToFlow={handlePromoteToFlow}
+                  onSubmitIntent={submitChatIntent}
+                  onSaveToVault={handleSaveToVault}
                 />
               </div>
             </article>
@@ -609,7 +633,11 @@
                   sessionId={chat.sessionId}
                   {mobile}
                   compact={true}
+                  workerThread={true}
+                  scrollRoot={scrollEl}
                   onPromoteToFlow={handlePromoteToFlow}
+                  onSubmitIntent={submitChatIntent}
+                  onSaveToVault={handleSaveToVault}
                 />
               </div>
             </article>
@@ -623,7 +651,10 @@
           messages={chatMessages}
           sessionId={chat.sessionId}
           {mobile}
+          scrollRoot={scrollEl}
           onPromoteToFlow={handlePromoteToFlow}
+          onSubmitIntent={submitChatIntent}
+          onSaveToVault={handleSaveToVault}
         />
       {:else if showChatEmptyState}
       <div

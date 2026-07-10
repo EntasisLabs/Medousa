@@ -28,6 +28,7 @@ import { haptic } from "$lib/haptics";
 import {
   checkDaemonHealth,
   getDaemonUrl,
+  invalidateRouteCaches,
   onEnvironmentError,
   onEnvironmentEvent,
   onInteractiveEvent,
@@ -294,6 +295,8 @@ export async function resumeWorkshopObserver(
   resumeWorkshopInFlight = true;
   lastResumeWorkshopAt = now;
 
+  await invalidateRouteCaches().catch(() => {});
+
   let health: DaemonHealth;
   try {
     health = await checkDaemonHealth();
@@ -339,6 +342,11 @@ export async function resumeWorkshop(
   if (isTauriMobilePlatform()) {
     void sendPairingHeartbeat().catch(() => {});
   }
+
+  // A network handoff (WiFi↔LTE, Mac sleep/DHCP) may have happened while we were
+  // backgrounded. Flush both route caches so the health probe below re-picks
+  // LAN vs Iroh instead of riding a stale cached route for the rest of its TTL.
+  await invalidateRouteCaches().catch(() => {});
 
   let health: DaemonHealth;
   try {
@@ -424,6 +432,7 @@ export async function reconnectWorkshop(
 ): Promise<DaemonHealth> {
   cancelScheduledStreamRecovery();
   await ensureMobileDaemonUrl();
+  await invalidateRouteCaches().catch(() => {});
   const health = await checkDaemonHealth();
   connection.setHealth(health);
   onHealthChange(health);

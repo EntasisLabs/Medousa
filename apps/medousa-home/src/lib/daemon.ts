@@ -121,6 +121,14 @@ export async function setDaemonUrl(url: string): Promise<void> {
   return invoke("set_daemon_url", { url });
 }
 
+/**
+ * Flush both transport route caches (JSON/health + SSE/multipart) so a network
+ * handoff that happened while backgrounded forces a fresh LAN-vs-Iroh probe.
+ */
+export async function invalidateRouteCaches(): Promise<void> {
+  return invoke("invalidate_route_caches");
+}
+
 export interface ListSessionsOptions {
   limit?: number;
   /** Home omits TUI verification trust fields for smaller payloads. Default false. */

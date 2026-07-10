@@ -1019,15 +1019,30 @@
   }
 
   .chat-turn-break {
-    @apply mt-10;
+    @apply mt-7;
+  }
+
+  .chat-turn-beat {
+    @apply w-full min-w-0;
   }
 
   .chat-voice {
     @apply max-w-[min(100%,44rem)] text-[15px] leading-[1.65] text-surface-100;
   }
 
+  .chat-voice-full {
+    @apply max-w-full w-full;
+  }
+
   .chat-voice .markdown-content {
     @apply text-[15px] leading-[1.65];
+  }
+
+  /* Timeline shell: prose keeps a soft measure; embeds use the full column */
+  .chat-voice-full .markdown-content > p,
+  .chat-voice-full .markdown-content > ul,
+  .chat-voice-full .markdown-content > ol {
+    max-width: min(100%, 44rem);
   }
 
   .chat-user-bubble {
@@ -1040,6 +1055,24 @@
 
   .chat-voice-compact {
     @apply max-w-[min(100%,36rem)] text-sm leading-relaxed;
+  }
+
+  .chat-voice-full.chat-voice-compact {
+    @apply max-w-full;
+  }
+
+  /* Quiet promote — visible on hover/focus within the assistant beat */
+  .chat-save-to-library {
+    @apply absolute right-0 top-0 z-[1] text-[10px] opacity-0 transition-opacity duration-200;
+  }
+
+  .group:hover .chat-save-to-library,
+  .group:focus-within .chat-save-to-library {
+    @apply opacity-100;
+  }
+
+  .chat-save-to-library:focus-visible {
+    @apply opacity-100 outline-none;
   }
 
   .chat-ask-rail {
@@ -1723,7 +1756,7 @@
   .markdown-content h4,
   .markdown-content h5,
   .markdown-content h6 {
-    @apply mt-4 mb-2 font-semibold text-surface-50 first:mt-0;
+    @apply mt-5 mb-2 font-semibold text-surface-50 first:mt-0 tracking-tight;
   }
 
   .markdown-content h1 {
@@ -1735,11 +1768,26 @@
   }
 
   .markdown-content h3 {
-    @apply text-base;
+    @apply text-[0.95rem];
+  }
+
+  /* Chat voice: section titles read like presentation labels */
+  .chat-voice .markdown-content h2 {
+    @apply mt-7 mb-3 text-[0.8rem] font-semibold uppercase tracking-[0.06em] text-surface-400;
+  }
+
+  .chat-voice .markdown-content h3 {
+    @apply mt-5 mb-2 text-[0.95rem] font-medium normal-case tracking-tight text-surface-200;
+  }
+
+  .chat-voice .markdown-content h2 + .liquid-md-embed,
+  .chat-voice .markdown-content h3 + .liquid-md-embed,
+  .chat-voice .markdown-content p + .liquid-md-embed {
+    margin-top: 0.35rem;
   }
 
   .markdown-content p {
-    @apply my-2 first:mt-0 last:mb-0;
+    @apply my-2 first:mt-0 last:mb-0 text-surface-200;
   }
 
   .markdown-content ul,
@@ -1756,7 +1804,7 @@
   }
 
   .markdown-content li {
-    @apply my-0.5;
+    @apply my-0.5 text-surface-200;
   }
 
   .markdown-content li > ul,
@@ -1772,21 +1820,67 @@
     @apply my-4 border-surface-500/40;
   }
 
+  /* Presentation-feel tables: soft card, not raw GFM grid */
   .markdown-content table {
     @apply my-3 w-full border-collapse text-left text-xs;
+    display: block;
+    overflow-x: auto;
+    border-radius: 0.75rem;
+    border: 1px solid color-mix(in srgb, var(--color-surface-500) 35%, transparent);
+    background: color-mix(in srgb, var(--color-surface-900) 55%, transparent);
+    box-shadow: 0 1px 0 color-mix(in srgb, var(--color-surface-50) 4%, transparent);
+  }
+
+  .markdown-content thead,
+  .markdown-content tbody,
+  .markdown-content tr {
+    display: table;
+    width: 100%;
+    table-layout: auto;
   }
 
   .markdown-content th,
   .markdown-content td {
-    @apply border border-surface-500/40 px-2.5 py-1.5 align-top;
+    @apply px-3.5 py-2.5 align-top;
+    border: none;
+    border-bottom: 1px solid color-mix(in srgb, var(--color-surface-500) 28%, transparent);
+  }
+
+  .markdown-content tr:last-child td {
+    border-bottom: none;
   }
 
   .markdown-content th {
-    @apply bg-surface-800/80 font-semibold text-surface-100;
+    @apply font-semibold text-surface-400;
+    background: color-mix(in srgb, var(--color-surface-800) 70%, transparent);
+    font-size: 0.65rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  .markdown-content td {
+    @apply text-surface-100;
+  }
+
+  .markdown-content td:first-child {
+    @apply text-surface-400 font-medium;
+    width: 28%;
   }
 
   .markdown-content tr:nth-child(even) td {
-    @apply bg-surface-800/35;
+    background: transparent;
+  }
+
+  .chat-voice .markdown-content table {
+    margin-block: 1.1rem;
+  }
+
+  .markdown-content .liquid-md-embed {
+    margin: 1.15rem 0;
+  }
+
+  .markdown-content .liquid-md-icon {
+    display: inline-flex;
   }
 
   .markdown-content del {
@@ -2365,7 +2459,7 @@
   }
 
   .markdown-content pre.mermaid {
-    @apply my-3 overflow-x-auto rounded-md border border-surface-500/40 bg-surface-900 p-3;
+    @apply my-4 overflow-x-auto rounded-lg border border-surface-500/30 bg-surface-900/80 p-4 text-sm leading-relaxed;
   }
 
   .markdown-mermaid-error {
@@ -3607,8 +3701,15 @@
     @apply mr-0 min-w-0 max-w-full overflow-hidden border-l-2 border-primary-500/25 py-0.5 pl-3;
   }
 
+  /* Timeline shell: full-width assistant, no left stripe */
+  .mobile-chat-voice-full {
+    @apply mr-0 min-w-0 max-w-full overflow-hidden border-0 py-0.5 pl-0;
+  }
+
   .mobile-chat-bubble-assistant .chat-voice,
-  .mobile-chat-bubble-assistant .markdown-content {
+  .mobile-chat-bubble-assistant .markdown-content,
+  .mobile-chat-voice-full .chat-voice,
+  .mobile-chat-voice-full .markdown-content {
     @apply min-w-0 max-w-full overflow-x-hidden;
     overflow-wrap: anywhere;
     word-break: break-word;

@@ -187,8 +187,17 @@ pub fn apply_daemon_url(state: &DaemonState, url: &str) -> Result<(), String> {
     }
     *state.daemon_url.lock().expect("daemon url lock") = trimmed.clone();
     persist_daemon_url(&trimmed)?;
-    workshop_transport::invalidate_workshop_route_cache();
+    workshop_transport::invalidate_all_route_caches();
     Ok(())
+}
+
+/// Flush both transport route caches. Called by the webview on foreground resume
+/// so a network handoff (WiFi↔LTE, Mac sleep/DHCP) that happened while the app
+/// was backgrounded forces a fresh LAN-vs-Iroh probe instead of riding a stale
+/// cached route for the remainder of its TTL.
+#[tauri::command]
+pub fn invalidate_route_caches() {
+    workshop_transport::invalidate_all_route_caches();
 }
 
 #[tauri::command]
