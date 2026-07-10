@@ -167,6 +167,7 @@ impl SessionBootstrapToolRegistry {
         if !self.supports_ui_artifacts {
             allowed.remove(crate::ui_present_tools::COGNITION_UI_PRESENT);
             allowed.remove(crate::ui_scene_tools::COGNITION_UI_SCENE);
+            allowed.remove(crate::ui_build_tools::COGNITION_UI_BUILD);
             for name in crate::artifact_tools::ARTIFACT_COGNITION_TOOLS {
                 allowed.remove(*name);
             }

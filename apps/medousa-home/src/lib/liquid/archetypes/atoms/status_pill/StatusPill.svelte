@@ -11,9 +11,10 @@
   const state = $derived<PillState>(
     STATES.includes(node.props.state as PillState) ? (node.props.state as PillState) : "loading",
   );
+  const quiet = $derived(node.props.quiet === true);
 </script>
 
-<span class="liquid-status-pill" data-state={state}>
+<span class="liquid-status-pill" data-state={state} data-quiet={quiet ? "true" : "false"}>
   {#if state === "loading"}
     <span class="liquid-status-dot" aria-hidden="true"></span>
   {/if}
@@ -33,7 +34,30 @@
     border: 1px solid transparent;
   }
 
-  .liquid-status-pill[data-state="loading"] {
+  /* Chat live pulse — inline whisper, not a chrome pill. */
+  .liquid-status-pill[data-quiet="true"] {
+    padding: 0.1rem 0;
+    border-radius: 0;
+    border: none;
+    background: transparent;
+    font-size: 0.6875rem;
+    font-weight: 400;
+  }
+
+  .liquid-status-pill[data-quiet="true"][data-state="loading"] {
+    color: rgb(var(--color-surface-500));
+  }
+
+  .liquid-status-pill[data-quiet="true"][data-state="warn"] {
+    color: color-mix(in srgb, var(--color-warning-300) 90%, transparent);
+  }
+
+  .liquid-status-pill[data-quiet="true"] .liquid-status-dot {
+    width: 0.35rem;
+    height: 0.35rem;
+  }
+
+  .liquid-status-pill[data-state="loading"]:not([data-quiet="true"]) {
     color: rgb(var(--color-surface-200));
     background: color-mix(in srgb, var(--color-surface-700) 60%, transparent);
     border-color: color-mix(in srgb, var(--color-surface-500) 45%, transparent);
@@ -45,7 +69,7 @@
     border-color: color-mix(in srgb, var(--color-success-500) 40%, transparent);
   }
 
-  .liquid-status-pill[data-state="warn"] {
+  .liquid-status-pill[data-state="warn"]:not([data-quiet="true"]) {
     color: rgb(var(--color-warning-200));
     background: color-mix(in srgb, var(--color-warning-500) 16%, transparent);
     border-color: color-mix(in srgb, var(--color-warning-500) 40%, transparent);

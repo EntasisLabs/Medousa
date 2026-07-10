@@ -277,47 +277,46 @@ const TOPICS: &[WikiTopic] = &[
     },
     WikiTopic {
         id: "ui_scene",
-        title: "ui_scene — native liquid UI",
-        summary: "Author a native, streamable scene (structure-then-fill). Preferred over ui_present for interactive chat UI.",
-        policy: r#"    role(.99): "cognition_ui_scene — native structured scene on supports_ui_artifacts clients (Home yes). Always-visible bootstrap tool — call it directly.",
-    not_discoverable(.99): "NOT a capability or MCP tool — do NOT cognition_tools_discover / cognition_capability_search for it. It is already in your tool list when the client supports UI artifacts.",
-    prefer_over_html(.98): "Use ui_scene (typed nodes) for interactive/streamable UI; reserve cognition_ui_present for opaque HTML blobs.",
-    input(.99): {
-        ops(.99): "REQUIRED array; each item is an object with a string `op` field",
-        op_kinds(.98): "plan_layout | fill_slot | patch_props | set_binding | set_fill_state | precompute | remove",
-        surface_id(.95): "optional — defaults to the chat turn surface",
-        rev(.94): "optional integer — owning plan_layout revision for ordering"
+        title: "ui_build — Liquid API builder",
+        summary: "Build native Liquid UI with atomic verbs that chain. Preferred over freeform ui_scene ops and HTML for interactive chat.",
+        policy: r#"    role(.99): "cognition_ui_build — atomic builder on supports_ui_artifacts clients (Home yes). Always-visible bootstrap tool — call it directly.",
+    not_discoverable(.99): "NOT a capability or MCP tool — do NOT cognition_tools_discover for it. It is already in your tool list when the client supports UI artifacts.",
+    prefer_over_html(.98): "Use ui_build for interactive/structured answers; reserve cognition_ui_present for opaque HTML blobs.",
+    chain(.99): "begin → set_prose | add_section | add_card | add_actions → done. Each response returns handles + next[] — piggyback the next call on those handles.",
+    verbs(.99): {
+        begin(.99): "opens a body stack; returns sceneId + bodyId",
+        set_prose(.98): "markdown into parent (default bodyId)",
+        add_section(.98): "titled section under parent; returns sectionId",
+        add_card(.98): "card under body or section; returns cardId",
+        add_actions(.97): "action_row intents [{label, intent?}]",
+        done(.99): "seals the body"
     },
-    node_shape(.98): "nodes carry id (stable reconciliation key), type (archetype), props",
-    bones_first(.97): "send plan_layout with skeleton slots first, THEN call again with fill_slot batches in the same turn so structure paints before content streams",
+    governor(.99): "You never invent plan_layout trees, CSS, or container/children graphs — the runtime expands verbs into scene ops.",
+    legacy(.90): "cognition_ui_scene (freeform ops) is legacy — prefer ui_build for chat.",
     requirements(.98): "supports_ui_artifacts must be true — otherwise the tool returns unsupported_surface; answer in markdown instead",
-    persist(.98): {
-        durable(.98): "cognition_ui_scene is ephemeral (chat turn only). To pin a scene to a custom surface, create a scene component: cognition_component_create type:scene, config.scene:{ops:[…]} — same op JSON.",
-        route(.97): "durable scene = Workshop canvas work (environment domain); see scene_vs_html and component_schema topics"
-    },
-    anti_pattern(.99): "inventing a discover/unlock flow, or emitting ops without a string `op` field, or an empty ops array"#,
+    anti_pattern(.99): "emitting freeform layout JSON, inventing parent ids, or skipping begin"#,
         related: &["scene_vs_html", "ui_present", "component_schema"],
-        call_next: &["cognition_ui_scene"],
+        call_next: &["cognition_ui_build"],
     },
     WikiTopic {
         id: "scene_vs_html",
         title: "Scene vs HTML — how to present",
-        summary: "Decision boundary: native Liquid scene (preferred) vs cognition_ui_present HTML artifact.",
+        summary: "Decision boundary: native Liquid builder (preferred) vs cognition_ui_present HTML artifact.",
         policy: r#"    role(.99): "Two presentation paths on supports_ui_artifacts clients — pick per intent; do NOT default to a single big HTML blob.",
     prefer_scene(.99): {
-        when(.99): "interactive, streamable, data-narrated, or bidirectional content — the common case for answers and dashboards",
-        why(.98): "typed nodes reconcile + stream bones-first; small composable archetypes, not one opaque page; user events flow back to the model",
-        ephemeral(.98): "cognition_ui_scene (chat turn)",
-        durable(.98): "scene component — cognition_component_create type:scene, config.scene:{ops:[…]}"
+        when(.99): "interactive, structured, or data-narrated answers — the common case",
+        why(.98): "runtime-governed bones + atomic fills; small composable archetypes, not one opaque page",
+        ephemeral(.98): "cognition_ui_build (chat turn) — chain begin → add_* → done",
+        durable(.98): "Workshop scene component or ui_present presentation on a custom surface"
     },
     prefer_html(.97): {
         when(.97): "pixel-exact, self-contained one-off layouts, or content needing the artifact runtime (MedousaStore persistence, feed_client polling, custom CSS/animation)",
         tool(.97): "cognition_ui_present (+ persist for a presentation component)"
     },
-    anti_pattern(.99): "dumping one large HTML document when a streamed scene of typed nodes fits — that feels like GenUI, not an assistant. Reach for scene first.",
+    anti_pattern(.99): "inventing freeform layout trees or dumping one large HTML document when ui_build fits — reach for the builder first.",
     both_gated(.98): "both paths require supports_ui_artifacts; on non-UI channels answer in markdown"#,
         related: &["ui_scene", "ui_present", "component_schema", "recipe"],
-        call_next: &["cognition_ui_scene", "cognition_component_create"],
+        call_next: &["cognition_ui_build", "cognition_component_create"],
     },
     WikiTopic {
         id: "presets",
@@ -616,7 +615,7 @@ const TOPICS: &[WikiTopic] = &[
         switch_nav(.96): "cognition_environment_activate_preset",
         list_components(.98): "cognition_component_list",
         add_component(.97): "cognition_component_create",
-        render_native_scene(.98): "cognition_ui_scene — ephemeral streamable scene inline in chat (preferred for interactive answers)",
+        render_native_scene(.98): "cognition_ui_build — atomic Liquid builder in chat (preferred for interactive answers)",
         persist_scene(.98): "cognition_component_create type:scene, config.scene:{ops:[…]} — durable Liquid scene pinned to a custom surface",
         publish_html(.98): "cognition_ui_present",
         edit_html(.97): "cognition_artifact_write",

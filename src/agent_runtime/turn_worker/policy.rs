@@ -138,6 +138,7 @@ pub fn allowed_tool_names_for_intent(intent: TurnWorkerIntent) -> HashSet<String
             push(
                 &mut names,
                 &[
+                    "cognition_ui_build",
                     "cognition_ui_scene",
                     "cognition_ui_present",
                 ],
@@ -175,6 +176,7 @@ pub fn allowed_tool_names_for_intent(intent: TurnWorkerIntent) -> HashSet<String
                     "cognition_vault_read",
                     "cognition_vault_search",
                     "cognition_vault_write",
+                    "cognition_ui_build",
                     "cognition_ui_scene",
                     "cognition_ui_present",
                 ],
@@ -353,6 +355,7 @@ mod tests {
         assert!(names.contains("cognition_grapheme_run"));
         assert!(names.contains("cognition_grapheme_template_run"));
         assert!(names.contains("cognition_capability_invoke"));
+        assert!(names.contains("cognition_ui_build"));
         assert!(names.contains("cognition_ui_scene"));
         assert!(names.contains("cognition_ui_present"));
         assert!(names.contains("cognition_artifact_write"));

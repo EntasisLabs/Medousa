@@ -149,7 +149,7 @@ pub async fn publish_worker_ui_side_effects_to_parent_turn(
         return;
     };
 
-    if tool_name == crate::ui_scene_tools::COGNITION_UI_SCENE {
+    if crate::ui_build_tools::is_ui_scene_stream_tool(tool_name) {
         if let Some(mut scene) =
             crate::agent_runtime::tool_stream::scene_ops_from_tool_output(tool_output)
         {

@@ -1452,9 +1452,9 @@ enum ChatCompletionOutcome {
 const MALFORMED_TOOL_JSON_GUIDANCE: &str = "\
 Your previous tool call could not be parsed (malformed JSON in the tool arguments). \
 Do NOT apologize to the principal and do NOT ask them to retry or simplify. \
-Self-correct: re-emit the tool call with valid JSON. Prefer smaller batches \
-(e.g. cognition_ui_scene: plan_layout first with a few skeleton nodes, then fill_slot \
-in a follow-up call; keep each ops array under 12 items). Fix brackets/commas and continue.";
+Self-correct: re-emit the tool call with valid JSON. Prefer small atomic calls \
+(e.g. cognition_ui_build: verb=begin, then set_prose/add_section/add_card one at a time; \
+each response returns handles + next[]). Fix brackets/commas and continue.";
 
 async fn inject_malformed_tool_json_guidance(
     messages: &mut Vec<ChatMessage>,
@@ -1564,7 +1564,7 @@ mod tests {
     fn malformed_tool_json_guidance_coaches_self_correct() {
         assert!(MALFORMED_TOOL_JSON_GUIDANCE.contains("Do NOT apologize"));
         assert!(MALFORMED_TOOL_JSON_GUIDANCE.contains("Self-correct"));
-        assert!(MALFORMED_TOOL_JSON_GUIDANCE.contains("cognition_ui_scene"));
+        assert!(MALFORMED_TOOL_JSON_GUIDANCE.contains("cognition_ui_build"));
         assert!(MALFORMED_TOOL_JSON_GUIDANCE.contains("do NOT ask them to retry"));
     }
 

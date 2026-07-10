@@ -768,7 +768,7 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
                 .await;
             }
         }
-        if tool_name == crate::ui_scene_tools::COGNITION_UI_SCENE {
+        if crate::ui_build_tools::is_ui_scene_stream_tool(&tool_name) {
             if let Some(scene) = super::tool_stream::scene_ops_from_tool_output(&tool_output) {
                 self.publish_tracked(interactive_turn_runtime::scene_ops_stream_event(
                     &self.turn_id,

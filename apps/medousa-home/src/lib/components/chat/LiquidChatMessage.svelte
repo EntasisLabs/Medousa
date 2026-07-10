@@ -1,13 +1,12 @@
 <script lang="ts">
   /**
-   * Renders one chat message through the Liquid scene renderer (PR3, no daemon).
-   * The message is adapted to a `document` scene; interaction flows back through
-   * an event sink. Gated by the `liquidChat` flag in `ChatMessageList`.
+   * Renders one chat message through the Liquid scene renderer.
+   * Runtime turn template is the governor; daemon `ui_scene` roots still win when present.
    */
   import "$lib/liquid/archetypes";
   import { SceneRenderer } from "$lib/liquid/render";
   import type { LiquidRenderContext } from "$lib/liquid/render";
-  import { chatMessageToScene } from "$lib/liquid/surfaces/chat/messageToScene";
+  import { resolveChatScene } from "$lib/liquid/surfaces/chat/mergeBuilderBody";
   import { chatScenes } from "$lib/liquid/surfaces/chat/chatScenes.svelte";
   import { createChatEventSink } from "$lib/liquid/surfaces/chat/chatEventSink";
   import { chatInteractions } from "$lib/liquid/surfaces/chat/chatInteractions";
@@ -45,13 +44,12 @@
   );
 
   /**
-   * A daemon-authored scene (streamed `ui_scene` ops) wins over the client-side
-   * adapter — this is how a model-authored structured turn takes over rendering.
-   * Turns without a scene fall back to the deterministic `messageToScene` adapter.
+   * Builder body scenes merge into the runtime ceremony template.
+   * Legacy freeform daemon roots still take over the whole turn.
    */
   const daemonScene = $derived(chatScenes.get(message.id));
   const scene = $derived(
-    daemonScene?.root ?? chatMessageToScene(message, { statusLine, statusWarn }),
+    resolveChatScene(message, { statusLine, statusWarn }, daemonScene?.root ?? null),
   );
 
   const sink = $derived(

@@ -20,6 +20,7 @@ export { chipGroup } from "./molecules/chip_group/chipGroup";
 export { card } from "./molecules/card/card";
 export { carousel } from "./molecules/carousel/carousel";
 export { actionRow } from "./molecules/action_row/actionRow";
+export { observability } from "./molecules/observability/observability";
 
 // layout
 export { stack } from "./layout/stack/stack";

@@ -67,6 +67,14 @@ pub fn summarize_tool_input(tool_name: &str, tool_input: &serde_json::Value) -> 
             .unwrap_or(0);
         return format!("Scene · {count} ops");
     }
+    if crate::ui_build_tools::is_ui_build_cognition_tool(tool_name) {
+        let verb = tool_input
+            .get("verb")
+            .or_else(|| tool_input.get("op"))
+            .and_then(|value| value.as_str())
+            .unwrap_or("build");
+        return format!("Liquid · {verb}");
+    }
 
     for key in [
         "query",
@@ -121,6 +129,23 @@ pub fn summarize_tool_output(tool_name: &str, tool_output: &serde_json::Value) -
                 .map(|value| truncate_text_for_budget(value, SUMMARY_MAX_CHARS));
         }
         return Some("Scene updated".to_string());
+    }
+    if crate::ui_build_tools::is_ui_build_cognition_tool(tool_name) {
+        if matches!(tool_output.get("ok").and_then(|value| value.as_bool()), Some(false)) {
+            return tool_output
+                .get("error")
+                .and_then(|value| value.as_str())
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(|value| truncate_text_for_budget(value, SUMMARY_MAX_CHARS));
+        }
+        return tool_output
+            .get("preview")
+            .and_then(|value| value.as_str())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(|value| truncate_text_for_budget(value, SUMMARY_MAX_CHARS))
+            .or_else(|| Some("Liquid updated".to_string()));
     }
     if crate::ui_present_tools::is_ui_present_cognition_tool(tool_name)
         || tool_name == crate::artifact_tools::COGNITION_ARTIFACT_WRITE

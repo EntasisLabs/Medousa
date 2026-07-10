@@ -19,6 +19,7 @@ const ALL_IDS = [
   "card",
   "carousel",
   "action_row",
+  "observability",
   "stack",
   "document",
   "thinking",

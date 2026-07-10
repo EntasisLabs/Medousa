@@ -617,6 +617,7 @@
                   sessionId={chat.sessionId}
                   {mobile}
                   compact={true}
+                  workerThread={true}
                   onPromoteToFlow={handlePromoteToFlow}
                   onSubmitIntent={submitChatIntent}
                 />

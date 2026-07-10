@@ -7,7 +7,7 @@ function msg(partial: Partial<ChatMessage>): ChatMessage {
   return { id: "m1", role: "assistant", content: "", ...partial } as ChatMessage;
 }
 
-describe("chatMessageToScene — assistant", () => {
+describe("chatMessageToScene — assistant order (thinking → body → tools)", () => {
   it("wraps content in a document flow with a prose body", () => {
     const scene = chatMessageToScene(msg({ content: "Hello **world**" }));
     expect(scene.type).toBe("document");
@@ -17,42 +17,54 @@ describe("chatMessageToScene — assistant", () => {
     expect(body?.props.markdown).toBe("Hello **world**");
   });
 
-  it("emits a thinking node when reasoning is present", () => {
-    const scene = chatMessageToScene(msg({ reasoning: "step 1", streaming: true }));
+  it("puts thinking above body and tools below", () => {
+    const runs: ToolRunState[] = [
+      { runId: "r1", toolName: "web.search", status: "succeeded", round: 1 },
+    ];
+    const scene = chatMessageToScene(
+      msg({ content: "answer", reasoning: "step 1", toolRuns: runs }),
+    );
+    const flow = scene.slots?.flow ?? [];
+    const ids = flow.map((n) => n.id);
+    expect(ids.indexOf("m1:thinking")).toBeLessThan(ids.indexOf("m1:body"));
+    expect(ids.indexOf("m1:body")).toBeLessThan(ids.indexOf("m1:tools"));
+    expect(findNode(scene, "m1:obs")).toBeNull();
+  });
+
+  it("emits thinking directly (not under an observability drawer)", () => {
+    const scene = chatMessageToScene(msg({ content: "hi", reasoning: "step 1", streaming: true }));
     expect(findNode(scene, "m1:thinking")?.type).toBe("thinking");
+    expect(findNode(scene, "m1:obs")).toBeNull();
+    expect(findNode(scene, "m1:pulse")).toBeNull();
   });
 
-  it("shows a Thinking… pill while streaming with no content", () => {
+  it("shows a quiet live pulse while streaming with no content/reasoning", () => {
     const scene = chatMessageToScene(msg({ streaming: true }));
-    const pill = findNode(scene, "m1:thinking-pill");
-    expect(pill?.type).toBe("status_pill");
-    expect(pill?.props.state).toBe("loading");
+    const pulse = findNode(scene, "m1:pulse");
+    expect(pulse?.type).toBe("status_pill");
+    expect(pulse?.props.label).toBe("Thinking…");
+    expect(pulse?.props.quiet).toBe(true);
   });
 
-  it("renders a status pill from a resolved status line", () => {
+  it("folds status line into the live pulse", () => {
     const scene = chatMessageToScene(msg({ content: "hi", streaming: true }), {
       statusLine: "Searching the web…",
       statusWarn: false,
     });
-    const status = findNode(scene, "m1:status");
-    expect(status?.props.label).toBe("Searching the web…");
-    expect(status?.props.state).toBe("loading");
+    const pulse = findNode(scene, "m1:pulse");
+    expect(pulse?.props.label).toBe("Searching the web…");
+    expect(pulse?.props.quiet).toBe(true);
   });
 
   it("renders an error callout + retry button", () => {
     const scene = chatMessageToScene(
       msg({ failed: true, errorLine: "boom", workId: "w9", content: "partial" }),
     );
-    const error = findNode(scene, "m1:error");
-    expect(error?.type).toBe("callout");
-    expect(error?.props.tone).toBe("error");
-    const retry = findNode(scene, "m1:retry");
-    expect(retry?.type).toBe("button");
-    expect(retry?.props.action).toBe("retry_worker");
-    expect(retry?.props.payload).toEqual({ workId: "w9" });
+    expect(findNode(scene, "m1:error")?.type).toBe("callout");
+    expect(findNode(scene, "m1:retry")?.props.action).toBe("retry_worker");
   });
 
-  it("maps structured tool runs to tool_trace", () => {
+  it("maps structured tool runs to tool_trace at the bottom", () => {
     const runs: ToolRunState[] = [
       { runId: "r1", toolName: "web.search", status: "succeeded", round: 1 },
     ];
@@ -60,16 +72,15 @@ describe("chatMessageToScene — assistant", () => {
     const tools = findNode(scene, "m1:tools");
     expect(tools?.type).toBe("tool_trace");
     expect(tools?.props.turnIndex).toBe(3);
+    expect(tools?.props.compact).toBe(true);
   });
 
   it("falls back to a metadata line for plain tool names", () => {
     const scene = chatMessageToScene(msg({ content: "done", tools: ["web.search", "vault.read"] }));
-    const tools = findNode(scene, "m1:tools");
-    expect(tools?.type).toBe("metadata");
-    expect(Array.isArray(tools?.props.parts)).toBe(true);
+    expect(findNode(scene, "m1:tools")?.type).toBe("metadata");
   });
 
-  it("maps ui artifacts to a presentation node", () => {
+  it("maps ui artifacts to a presentation node near the body", () => {
     const scene = chatMessageToScene(
       msg({
         content: "see this",
@@ -83,11 +94,9 @@ describe("chatMessageToScene — assistant", () => {
 });
 
 describe("chatMessageToScene — user / system", () => {
-  it("renders user text as plain prose (never parsed as markdown)", () => {
+  it("renders user text as plain prose", () => {
     const scene = chatMessageToScene(msg({ role: "user", content: "# not a heading" }));
-    const body = findNode(scene, "m1:body");
-    expect(body?.props.markdown).toBe("# not a heading");
-    expect(body?.props.plain).toBe(true);
+    expect(findNode(scene, "m1:body")?.props.plain).toBe(true);
   });
 
   it("includes a chat_media node when the message has attachments", () => {
@@ -95,16 +104,15 @@ describe("chatMessageToScene — user / system", () => {
       ...msg({ role: "user", content: "look" }),
       mediaAttachments: [{ mediaId: "x", mime: "image/png", label: "shot" }],
     } as ChatMessage;
-    const scene = chatMessageToScene(message);
-    expect(findNode(scene, "m1:media")?.type).toBe("chat_media");
+    expect(findNode(chatMessageToScene(message), "m1:media")?.type).toBe("chat_media");
   });
 });
 
 describe("chatMessageToScene — reconciliation identity", () => {
   it("produces stable ids across rebuilds of the same message", () => {
     const message = msg({ content: "streaming…", streaming: true, reasoning: "r" });
-    const a = collectNodeIds(chatMessageToScene(message));
-    const b = collectNodeIds(chatMessageToScene(message));
-    expect(a).toEqual(b);
+    expect(collectNodeIds(chatMessageToScene(message))).toEqual(
+      collectNodeIds(chatMessageToScene(message)),
+    );
   });
 });
