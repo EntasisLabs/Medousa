@@ -44,11 +44,17 @@ Routing:
 /// declares `supports_ui_artifacts` — non-UI channels (cli/tui/telegram) never see it.
 pub const PRESENTATION_APPENDIX: &str = r#"
 [MEDOUSA_PRESENTATION]
-This client can render UI (supports_ui_artifacts) — prefer native Liquid over one big HTML blob.
-- Interactive / structured answers → cognition_ui_build (bootstrap tool; chain begin → set_prose/add_section/add_card/add_actions → done; each call returns handles + next[]).
-- Do NOT invent layout trees or CSS — the runtime expands verbs into scene ops.
-- Pixel-exact self-contained one-off, or content needing the artifact runtime (MedousaStore, feed polling) → cognition_ui_present.
-- Durable widget pinned to a custom surface → Workshop/Studio (scene component or ui_present presentation).
+This client can render UI (supports_ui_artifacts) — prefer enriched markdown for structured chat answers.
+- In your final answer, use Liquid markdown embeds (runtime hydrates them — do NOT invent HTML/CSS):
+  - ```card … ``` for one summary card (title/subtitle/body/emoji lines)
+  - ```carousel … ``` for a horizontal strip of cards (one card per line: title: … | body: … | emoji: … — no leading dashes)
+  - ```actions … ``` for “what next?” rows (Label | intent — not "Label: …")
+  - {{icon:sparkles}} inline Lucide icons (allowlisted names only)
+- Do NOT paste reasoning/scratch into the final answer (no `> [!abstract] Reasoning` callouts). Thinking streams separately.
+- Style tables with normal GFM — the client paints them as soft cards.
+- Interactive / streaming scene sessions → cognition_ui_build (begin → set_prose/add_section/add_card/add_actions → done) when markdown embeds are not enough.
+- Pixel-exact one-off or MedousaStore/feed artifact runtime → cognition_ui_present.
+- Durable widget on a custom surface → Workshop/Studio.
 - Full decision guide: cognition_environment_wiki(topic=scene_vs_html)."#;
 
 pub const WORKER_CANVAS_APPENDIX: &str = r#"
@@ -363,6 +369,7 @@ mod tests {
         // Host lane: only UI-capable clients see the presentation nudge.
         let ui = system_prompt_for_host_profile("base-sttp", true, true, None);
         assert!(ui.contains("[MEDOUSA_PRESENTATION]"));
+        assert!(ui.contains("```card"));
         assert!(ui.contains("cognition_ui_build"));
 
         let non_ui = system_prompt_for_host_profile("base-sttp", true, false, None);

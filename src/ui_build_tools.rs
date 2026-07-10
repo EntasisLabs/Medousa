@@ -495,8 +495,10 @@ impl StasisTool for CognitionUiBuildTool {
 
     fn description(&self) -> Option<&'static str> {
         Some(
-            "Build a native Liquid UI body with atomic verbs that chain (API-builder style). \
-             Preferred over cognition_ui_scene for chat — you never invent layout trees. \
+            "Build a streaming interactive Liquid UI body with atomic verbs that chain. \
+             Prefer markdown embeds (```card``` / ```carousel``` / ```actions``` / {{icon:}}) for \
+             ordinary structured chat answers; use this tool when you need a multi-step scene session. \
+             Preferred over cognition_ui_scene — you never invent layout trees. \
              Call verb=begin first; each response returns handles + next[] for the following call. \
              Verbs: begin, set_prose, add_section, add_card, add_actions, done. \
              Pass parent= from a prior handles.* id. Runtime expands verbs into scene ops.",

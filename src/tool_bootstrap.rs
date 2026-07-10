@@ -211,7 +211,7 @@ pub fn host_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
             },
             ToolDomainCatalogEntry {
                 domain: "presentation",
-                summary: "Native Liquid builder (cognition_ui_build, preferred) plus legacy ui_scene ops and HTML artifacts",
+                summary: "Liquid chat embeds (markdown) first; cognition_ui_build for streaming scenes; legacy ui_scene + HTML artifacts",
                 tools: &[
                     "cognition_ui_build",
                     "cognition_ui_scene",
@@ -266,7 +266,7 @@ pub fn host_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
             },
             ToolDomainCatalogEntry {
                 domain: "presentation",
-                summary: "Native Liquid builder (ui_build, preferred) plus legacy ui_scene and HTML artifacts",
+                summary: "Liquid chat embeds (markdown) first; ui_build for streaming scenes; legacy ui_scene + HTML artifacts",
                 tools: &[
                     "cognition_ui_build",
                     "cognition_ui_scene",
@@ -406,8 +406,8 @@ pub fn tool_one_liner(name: &str) -> &'static str {
         "cognition_turn_update_user" => "Short status to the principal mid-turn (retries, course-corrections) — call with your next tool",
         "cognition_turn_checkpoint" => "Mid-task update; hand turn to principal",
         "cognition_turn_finish" => "Commit principal-ready answer (required after tool work)",
-        "cognition_ui_build" => "Build Liquid UI with atomic verbs (begin → set_prose/add_section/add_card/add_actions → done); preferred over cognition_ui_scene",
-        "cognition_ui_scene" => "Legacy freeform scene ops (plan_layout/fill_slot) — prefer cognition_ui_build for chat",
+        "cognition_ui_build" => "Streaming interactive Liquid scenes (begin → set_prose/add_section/add_card/add_actions → done) when markdown embeds aren't enough; prefer over cognition_ui_scene",
+        "cognition_ui_scene" => "Legacy freeform scene ops (plan_layout/fill_slot) — prefer markdown embeds or cognition_ui_build for chat",
         "cognition_ui_present" => "Publish a new HTML artifact in chat (inline, panel, or fullscreen)",
         "cognition_artifact_list" => "List HTML presentation artifacts in this session",
         "cognition_artifact_read" => "Read HTML artifact source (line range or budget)",

@@ -1723,7 +1723,7 @@
   .markdown-content h4,
   .markdown-content h5,
   .markdown-content h6 {
-    @apply mt-4 mb-2 font-semibold text-surface-50 first:mt-0;
+    @apply mt-5 mb-2 font-semibold text-surface-50 first:mt-0 tracking-tight;
   }
 
   .markdown-content h1 {
@@ -1735,11 +1735,20 @@
   }
 
   .markdown-content h3 {
-    @apply text-base;
+    @apply text-[0.95rem];
+  }
+
+  /* Chat voice: section titles read like presentation labels */
+  .chat-voice .markdown-content h2 {
+    @apply mt-6 mb-2 text-[0.8rem] font-semibold uppercase tracking-[0.06em] text-surface-400;
+  }
+
+  .chat-voice .markdown-content h3 {
+    @apply mt-4 mb-1.5 text-[0.95rem] font-medium normal-case tracking-tight text-surface-200;
   }
 
   .markdown-content p {
-    @apply my-2 first:mt-0 last:mb-0;
+    @apply my-2 first:mt-0 last:mb-0 text-surface-200;
   }
 
   .markdown-content ul,
@@ -1756,7 +1765,7 @@
   }
 
   .markdown-content li {
-    @apply my-0.5;
+    @apply my-0.5 text-surface-200;
   }
 
   .markdown-content li > ul,
@@ -1772,21 +1781,62 @@
     @apply my-4 border-surface-500/40;
   }
 
+  /* Presentation-feel tables: soft card, not raw GFM grid */
   .markdown-content table {
     @apply my-3 w-full border-collapse text-left text-xs;
+    display: block;
+    overflow-x: auto;
+    border-radius: 0.75rem;
+    border: 1px solid color-mix(in srgb, var(--color-surface-500) 35%, transparent);
+    background: color-mix(in srgb, var(--color-surface-900) 55%, transparent);
+    box-shadow: 0 1px 0 color-mix(in srgb, var(--color-surface-50) 4%, transparent);
+  }
+
+  .markdown-content thead,
+  .markdown-content tbody,
+  .markdown-content tr {
+    display: table;
+    width: 100%;
+    table-layout: auto;
   }
 
   .markdown-content th,
   .markdown-content td {
-    @apply border border-surface-500/40 px-2.5 py-1.5 align-top;
+    @apply px-3 py-2 align-top;
+    border: none;
+    border-bottom: 1px solid color-mix(in srgb, var(--color-surface-500) 28%, transparent);
+  }
+
+  .markdown-content tr:last-child td {
+    border-bottom: none;
   }
 
   .markdown-content th {
-    @apply bg-surface-800/80 font-semibold text-surface-100;
+    @apply font-semibold text-surface-300;
+    background: color-mix(in srgb, var(--color-surface-800) 70%, transparent);
+    font-size: 0.65rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  .markdown-content td {
+    @apply text-surface-200;
   }
 
   .markdown-content tr:nth-child(even) td {
-    @apply bg-surface-800/35;
+    background: transparent;
+  }
+
+  .chat-voice .markdown-content table {
+    margin-block: 0.85rem;
+  }
+
+  .markdown-content .liquid-md-embed {
+    margin: 0.85rem 0;
+  }
+
+  .markdown-content .liquid-md-icon {
+    display: inline-flex;
   }
 
   .markdown-content del {

@@ -139,6 +139,7 @@ export function preprocessColorSpans(source: string): string {
 }
 
 import { preprocessTableOfContents } from "./toc";
+import { preprocessLiquidEmbeds } from "./liquidEmbeds";
 
 export function preprocessMarkdown(
   source: string,
@@ -149,5 +150,6 @@ export function preprocessMarkdown(
   const withColors = preprocessColorSpans(withHighlights);
   const withWikilinks = preprocessWikilinks(withColors, titleByPath);
   const withCallouts = preprocessCallouts(withWikilinks);
-  return preprocessTableOfContents(withCallouts);
+  const withToc = preprocessTableOfContents(withCallouts);
+  return preprocessLiquidEmbeds(withToc);
 }

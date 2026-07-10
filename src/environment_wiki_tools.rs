@@ -277,44 +277,45 @@ const TOPICS: &[WikiTopic] = &[
     },
     WikiTopic {
         id: "ui_scene",
-        title: "ui_build — Liquid API builder",
-        summary: "Build native Liquid UI with atomic verbs that chain. Preferred over freeform ui_scene ops and HTML for interactive chat.",
-        policy: r#"    role(.99): "cognition_ui_build — atomic builder on supports_ui_artifacts clients (Home yes). Always-visible bootstrap tool — call it directly.",
-    not_discoverable(.99): "NOT a capability or MCP tool — do NOT cognition_tools_discover for it. It is already in your tool list when the client supports UI artifacts.",
-    prefer_over_html(.98): "Use ui_build for interactive/structured answers; reserve cognition_ui_present for opaque HTML blobs.",
-    chain(.99): "begin → set_prose | add_section | add_card | add_actions → done. Each response returns handles + next[] — piggyback the next call on those handles.",
-    verbs(.99): {
-        begin(.99): "opens a body stack; returns sceneId + bodyId",
-        set_prose(.98): "markdown into parent (default bodyId)",
-        add_section(.98): "titled section under parent; returns sectionId",
-        add_card(.98): "card under body or section; returns cardId",
-        add_actions(.97): "action_row intents [{label, intent?}]",
-        done(.99): "seals the body"
+        title: "Liquid in chat — markdown embeds + ui_build",
+        summary: "Prefer enriched markdown embeds for structured chat answers; use cognition_ui_build for streaming interactive scenes.",
+        policy: r#"    role(.99): "Chat Liquid is primarily enriched markdown on supports_ui_artifacts clients (Home yes).",
+    markdown_first(.99): {
+        card(.99): "```card\\ntitle: Sol\\nsubtitle: Flagship\\nbody: …\\nemoji: 🧠\\n```",
+        carousel(.99): "```carousel\\ntitle: Sol | body: Flagship | emoji: 🧠\\n``` (no leading dashes)",
+        actions(.99): "```actions\\nWhich is best for coding? | coding\\n``` (Label | intent, not Label:)",
+        icon(.98): "{{icon:sparkles}} — allowlisted Lucide names only"
     },
-    governor(.99): "You never invent plan_layout trees, CSS, or container/children graphs — the runtime expands verbs into scene ops.",
-    legacy(.90): "cognition_ui_scene (freeform ops) is legacy — prefer ui_build for chat.",
-    requirements(.98): "supports_ui_artifacts must be true — otherwise the tool returns unsupported_surface; answer in markdown instead",
-    anti_pattern(.99): "emitting freeform layout JSON, inventing parent ids, or skipping begin"#,
+    governor(.99): "Runtime hydrates embeds into Liquid molecules — never invent HTML/CSS or plan_layout trees in chat.",
+    no_reasoning_in_body(.98): "Do not paste > [!abstract] Reasoning into the final answer — thinking streams separately",
+    ui_build(.97): "cognition_ui_build (begin → add_* → done) when you need a streaming interactive scene session beyond markdown embeds",
+    legacy(.90): "cognition_ui_scene freeform ops are legacy — prefer markdown embeds or ui_build",
+    prefer_over_html(.98): "Use markdown embeds / ui_build for interactive answers; reserve cognition_ui_present for opaque HTML blobs",
+    requirements(.98): "supports_ui_artifacts must be true for UI tools; markdown embeds still render in Home chat",
+    anti_pattern(.99): "freeform HTML layouts, inventing CSS, or skipping markdown embeds for a simple card strip"#,
         related: &["scene_vs_html", "ui_present", "component_schema"],
         call_next: &["cognition_ui_build"],
     },
     WikiTopic {
         id: "scene_vs_html",
         title: "Scene vs HTML — how to present",
-        summary: "Decision boundary: native Liquid builder (preferred) vs cognition_ui_present HTML artifact.",
-        policy: r#"    role(.99): "Two presentation paths on supports_ui_artifacts clients — pick per intent; do NOT default to a single big HTML blob.",
-    prefer_scene(.99): {
-        when(.99): "interactive, structured, or data-narrated answers — the common case",
-        why(.98): "runtime-governed bones + atomic fills; small composable archetypes, not one opaque page",
-        ephemeral(.98): "cognition_ui_build (chat turn) — chain begin → add_* → done",
-        durable(.98): "Workshop scene component or ui_present presentation on a custom surface"
+        summary: "Decision boundary: enriched markdown / Liquid builder (preferred) vs cognition_ui_present HTML artifact.",
+        policy: r#"    role(.99): "Presentation paths on supports_ui_artifacts clients — pick per intent; do NOT default to a single big HTML blob.",
+    prefer_markdown(.99): {
+        when(.99): "structured chat answers — cards, carousels, action rows, tables, icons — the common case",
+        why(.98): "model writes familiar markdown; runtime hydrates Liquid molecules; no layout dialect",
+        how(.99): "```card``` / ```carousel``` / ```actions``` / {{icon:name}} in the final answer"
     },
-    prefer_html(.97): {
-        when(.97): "pixel-exact, self-contained one-off layouts, or content needing the artifact runtime (MedousaStore persistence, feed_client polling, custom CSS/animation)",
-        tool(.97): "cognition_ui_present (+ persist for a presentation component)"
+    prefer_ui_build(.97): {
+        when(.97): "streaming interactive scene session that must fill slots over multiple tool calls",
+        tool(.97): "cognition_ui_build (begin → add_* → done)"
     },
-    anti_pattern(.99): "inventing freeform layout trees or dumping one large HTML document when ui_build fits — reach for the builder first.",
-    both_gated(.98): "both paths require supports_ui_artifacts; on non-UI channels answer in markdown"#,
+    prefer_html(.96): {
+        when(.96): "pixel-exact one-off, MedousaStore/feed polling artifact runtime, or content that cannot map to archetypes",
+        tool(.96): "cognition_ui_present (+ persist for a presentation component)"
+    },
+    anti_pattern(.99): "inventing freeform layout trees or dumping one large HTML document when markdown embeds fit — reach for fences first.",
+    both_gated(.98): "UI tools require supports_ui_artifacts; on non-UI channels answer in markdown"#,
         related: &["ui_scene", "ui_present", "component_schema", "recipe"],
         call_next: &["cognition_ui_build", "cognition_component_create"],
     },
@@ -615,7 +616,7 @@ const TOPICS: &[WikiTopic] = &[
         switch_nav(.96): "cognition_environment_activate_preset",
         list_components(.98): "cognition_component_list",
         add_component(.97): "cognition_component_create",
-        render_native_scene(.98): "cognition_ui_build — atomic Liquid builder in chat (preferred for interactive answers)",
+        render_native_scene(.98): "enriched markdown embeds (```card``` / ```carousel``` / ```actions```) for chat; cognition_ui_build for streaming scenes",
         persist_scene(.98): "cognition_component_create type:scene, config.scene:{ops:[…]} — durable Liquid scene pinned to a custom surface",
         publish_html(.98): "cognition_ui_present",
         edit_html(.97): "cognition_artifact_write",
@@ -841,6 +842,10 @@ mod tests {
             assert_eq!(out["topic"], topic_id);
             let raw = serde_json::to_string(&out).expect("serialize wiki output");
             serde_json::from_str::<serde_json::Value>(&raw).expect("parse wiki output");
+            assert!(
+                raw.contains("markdown") || raw.contains("card") || raw.contains("ui_build"),
+                "topic {topic_id} should mention markdown embeds / cards / ui_build"
+            );
         }
     }
 

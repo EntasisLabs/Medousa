@@ -9,6 +9,7 @@
 import { createNode, type SceneNode } from "$lib/liquid/core";
 import type { ChatMessage } from "$lib/types/chat";
 import { formatToolName } from "$lib/utils/formatTurn";
+import { stripChatBodyChrome } from "./stripChatBodyChrome";
 
 export interface ChatSceneOptions {
   /** Visible status line, already resolved against the engine-details setting. */
@@ -29,12 +30,13 @@ function child(
 function livePulseLabel(
   message: ChatMessage,
   opts: ChatSceneOptions,
+  hasReasoning: boolean,
 ): string | null {
   if (!message.streaming) return null;
   if (opts.statusLine?.trim()) return opts.statusLine.trim();
   if (message.stageWhisper?.trim()) return message.stageWhisper.trim();
   // Reasoning already paints as the thinking shell — don't double-label.
-  if (message.reasoning?.trim()) return null;
+  if (hasReasoning) return null;
   const hasContent = Boolean(message.content?.trim());
   const hasTools = Boolean(message.toolRuns?.length);
   if (!hasContent && !hasTools) return "Thinking…";
@@ -45,8 +47,14 @@ function assistantFlow(message: ChatMessage, opts: ChatSceneOptions): SceneNode[
   const flow: SceneNode[] = [];
   const id = message.id;
   const streaming = Boolean(message.streaming);
-  const hasContent = Boolean(message.content?.trim());
-  const hasReasoning = Boolean(message.reasoning?.trim());
+  const stripped = stripChatBodyChrome(message.content ?? "");
+  const bodyMarkdown = stripped.markdown;
+  const hasContent = Boolean(bodyMarkdown.trim());
+  const reasoningText =
+    [message.reasoning?.trim(), stripped.recoveredReasoning?.trim()]
+      .filter(Boolean)
+      .join("\n\n") || null;
+  const hasReasoning = Boolean(reasoningText);
   const toolRuns = message.toolRuns;
   const hasToolRuns = Boolean(toolRuns && toolRuns.length > 0);
   const hasToolNames = Boolean(message.tools && message.tools.length > 0);
@@ -55,14 +63,14 @@ function assistantFlow(message: ChatMessage, opts: ChatSceneOptions): SceneNode[
   if (hasReasoning) {
     flow.push(
       child(`${id}:thinking`, "thinking", {
-        reasoning: message.reasoning,
+        reasoning: reasoningText,
         streaming,
       }),
     );
   }
 
   // 2. Live pulse — quiet status while streaming (never duplicates thinking)
-  const pulse = livePulseLabel(message, opts);
+  const pulse = livePulseLabel(message, opts, hasReasoning);
   if (pulse) {
     flow.push(
       child(`${id}:pulse`, "status_pill", {
@@ -87,9 +95,9 @@ function assistantFlow(message: ChatMessage, opts: ChatSceneOptions): SceneNode[
     }
   }
 
-  // 4. Body (substance)
+  // 4. Body (substance) — never paint leaked reasoning callouts in prose
   if (hasContent) {
-    flow.push(child(`${id}:body`, "prose", { markdown: message.content }));
+    flow.push(child(`${id}:body`, "prose", { markdown: bodyMarkdown }));
   } else if (streaming && !hasToolRuns && !hasReasoning) {
     flow.push(child(`${id}:body`, "prose", { markdown: "…" }));
   }
