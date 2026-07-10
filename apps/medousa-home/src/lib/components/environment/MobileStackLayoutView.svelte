@@ -15,9 +15,16 @@
     profileId = null,
     feedStateForComponent,
   }: Props = $props();
+
+  /** One widget → edge-to-edge fill above the tab bar (not a short rounded card). */
+  const fill = $derived(components.length === 1);
 </script>
 
-<div class="mobile-stack-layout" role="list">
+<div
+  class="mobile-stack-layout"
+  class:mobile-stack-layout-fill={fill}
+  role="list"
+>
   {#each components as component (component.id)}
     <article class="mobile-stack-card" role="listitem">
       <LayoutWidgetTile
@@ -41,6 +48,13 @@
     min-height: 0;
   }
 
+  .mobile-stack-layout-fill {
+    flex: 1 1 auto;
+    height: 100%;
+    gap: 0;
+    padding: 0;
+  }
+
   .mobile-stack-card {
     display: flex;
     flex-direction: column;
@@ -53,6 +67,16 @@
     box-shadow: 0 8px 24px color-mix(in srgb, var(--color-surface-950) 45%, transparent);
   }
 
+  .mobile-stack-layout-fill .mobile-stack-card {
+    flex: 1 1 auto;
+    min-height: 0;
+    border-radius: 0;
+    border: 0;
+    box-shadow: none;
+    background: transparent;
+    overflow: hidden;
+  }
+
   .mobile-stack-card :global(.layout-widget-tile) {
     flex: 1 1 auto;
     min-height: min(52vh, 28rem);
@@ -61,11 +85,16 @@
     box-shadow: none;
   }
 
-  .mobile-stack-card :global(.presentation-frame),
+  .mobile-stack-layout-fill .mobile-stack-card :global(.layout-widget-tile) {
+    min-height: 0;
+    height: 100%;
+    background: transparent;
+  }
+
+  /* Let inner carousels/chips own horizontal scroll — don't create a competing scroller. */
   .mobile-stack-card :global(.layout-widget-tile-body),
   .mobile-stack-card :global(.layout-widget-body) {
     min-width: 0;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
+    min-height: 0;
   }
 </style>

@@ -174,9 +174,45 @@ describe("preprocessLiquidEmbeds", () => {
     expect(props?.alt).toBe("Diagram");
   });
 
-  it("rejects callout without body and media without src", () => {
+  it("turns a cite fence into quote/title/url/source payload", () => {
+    const src = [
+      "```cite",
+      "title: Example Paper",
+      "url: https://example.com/paper",
+      "quote: A short excerpt from the source.",
+      "source: web search",
+      "```",
+    ].join("\n");
+    const out = preprocessLiquidEmbeds(src);
+    expect(out).toContain('data-liquid-embed="cite"');
+    const match = out.match(/data-liquid-props="([^"]+)"/);
+    const props = decodeLiquidProps<{
+      quote?: string;
+      title?: string;
+      url?: string;
+      source?: string;
+    }>(match![1]);
+    expect(props?.title).toBe("Example Paper");
+    expect(props?.url).toBe("https://example.com/paper");
+    expect(props?.quote).toBe("A short excerpt from the source.");
+    expect(props?.source).toBe("web search");
+  });
+
+  it("accepts cite with body: as quote alias and title-only", () => {
+    const withBody = preprocessLiquidEmbeds("```cite\nbody: Alias quote\nurl: https://x.test\n```");
+    expect(withBody).toContain('data-liquid-embed="cite"');
+    const bodyMatch = withBody.match(/data-liquid-props="([^"]+)"/);
+    const bodyProps = decodeLiquidProps<{ quote?: string }>(bodyMatch![1]);
+    expect(bodyProps?.quote).toBe("Alias quote");
+
+    const titleOnly = preprocessLiquidEmbeds("```cite\ntitle: Just a title\n```");
+    expect(titleOnly).toContain('data-liquid-embed="cite"');
+  });
+
+  it("rejects callout without body, media without src, and empty cite", () => {
     expect(preprocessLiquidEmbeds("```callout\ntitle: Only\n```")).toContain("```callout");
     expect(preprocessLiquidEmbeds("```media\nalt: No src\n```")).toContain("```media");
+    expect(preprocessLiquidEmbeds("```cite\nsource: alone\n```")).toContain("```cite");
   });
 });
 

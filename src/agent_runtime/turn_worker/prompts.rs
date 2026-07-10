@@ -53,7 +53,13 @@ This client can render UI (supports_ui_artifacts) — prefer enriched markdown f
   - ```section … ``` for a titled block (title/subtitle; optional body after ---)
   - ```chips … ``` for filter/tag rows (Label | tone: accent | value: x)
   - ```media … ``` for a figure (src required; alt/caption/ratio optional)
+  - ```cite … ``` for a curated quote/link from tool results (title/url/quote/source)
   - {{icon:sparkles}} inline Lucide icons (allowlisted names only)
+- After tools: CURATE into the answer — do not dump raw tool JSON. Tool lineage already paints as a quiet footnote.
+  - Web search → ```cite``` (title + url + short quote) or a markdown link
+  - SQL / tabular → normal GFM tables (client paints soft cards)
+  - Images → ```media``` with https src
+  - Diagrams / flows → ```mermaid``` fences (already hydrate)
 - Do NOT paste reasoning/scratch into the final answer (no `> [!abstract] Reasoning` callouts). Thinking streams separately.
 - Style tables with normal GFM — the client paints them as soft cards.
 - Interactive / streaming scene sessions → cognition_ui_build (begin → set_prose/add_section/add_card/add_actions → done) when markdown embeds are not enough.
@@ -375,6 +381,9 @@ mod tests {
         assert!(ui.contains("[MEDOUSA_PRESENTATION]"));
         assert!(ui.contains("```card"));
         assert!(ui.contains("```callout"));
+        assert!(ui.contains("```cite"));
+        assert!(ui.contains("```mermaid"));
+        assert!(ui.contains("CURATE"));
         assert!(ui.contains("cognition_ui_build"));
 
         let non_ui = system_prompt_for_host_profile("base-sttp", true, false, None);

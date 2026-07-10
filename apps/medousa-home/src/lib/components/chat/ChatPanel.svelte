@@ -28,6 +28,11 @@
   import { groupAskThreads, isChatLaneMessage } from "$lib/utils/askThreads";
   import { groupWorkerThreads } from "$lib/utils/workerThreads";
   import {
+    saveChatTurnToVault,
+    showChatTurnSaveFeedback,
+  } from "$lib/utils/saveChatTurnToVault";
+  import type { ChatMessage } from "$lib/types/chat";
+  import {
     parseChatSlashInput,
     runSlashCommand,
   } from "$lib/utils/runSlashCommand";
@@ -83,6 +88,15 @@
     automationsNav.openSection("flows");
     layout.navigateDesktop("automations", { bump: true });
     if (mobile) layout.openMore("automations");
+  }
+
+  async function handleSaveToVault(assistant: ChatMessage, user?: ChatMessage | null) {
+    const result = await saveChatTurnToVault({
+      assistant,
+      user: user ?? null,
+      sessionId: chat.sessionId,
+    });
+    showChatTurnSaveFeedback(result);
   }
   const sessionLabel = $derived.by(() => {
     const session = chat.sessions.find((entry) => entry.session_id === chat.sessionId);
@@ -565,6 +579,7 @@
                   scrollRoot={scrollEl}
                   onPromoteToFlow={handlePromoteToFlow}
                   onSubmitIntent={submitChatIntent}
+                  onSaveToVault={handleSaveToVault}
                 />
               </div>
             </article>
@@ -622,6 +637,7 @@
                   scrollRoot={scrollEl}
                   onPromoteToFlow={handlePromoteToFlow}
                   onSubmitIntent={submitChatIntent}
+                  onSaveToVault={handleSaveToVault}
                 />
               </div>
             </article>
@@ -638,6 +654,7 @@
           scrollRoot={scrollEl}
           onPromoteToFlow={handlePromoteToFlow}
           onSubmitIntent={submitChatIntent}
+          onSaveToVault={handleSaveToVault}
         />
       {:else if showChatEmptyState}
       <div

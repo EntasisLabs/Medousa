@@ -13,6 +13,7 @@
   import Carousel from "$lib/liquid/archetypes/molecules/carousel/Carousel.svelte";
   import ActionRow from "$lib/liquid/archetypes/molecules/action_row/ActionRow.svelte";
   import Callout from "$lib/liquid/archetypes/molecules/callout/Callout.svelte";
+  import Cite from "$lib/liquid/archetypes/molecules/cite/Cite.svelte";
   import Section from "$lib/liquid/archetypes/molecules/section/Section.svelte";
   import ChipGroup from "$lib/liquid/archetypes/molecules/chip_group/ChipGroup.svelte";
   import Media from "$lib/liquid/archetypes/atoms/media/Media.svelte";
@@ -21,6 +22,7 @@
     LiquidCalloutProps,
     LiquidCardProps,
     LiquidChipProps,
+    LiquidCiteProps,
     LiquidEmbedKind,
     LiquidMediaProps,
     LiquidSectionProps,
@@ -239,6 +241,23 @@
     });
   });
 
+  const cite = $derived.by(() => {
+    if (kind !== "cite") return null;
+    const props = payload as LiquidCiteProps;
+    if (!props?.quote && !props?.title && !props?.url) return null;
+    return createNode({
+      id: "md-cite",
+      type: "cite",
+      props: {
+        ...(props.quote ? { quote: props.quote } : {}),
+        ...(props.title ? { title: props.title } : {}),
+        ...(props.url ? { url: props.url } : {}),
+        ...(props.source ? { source: props.source } : {}),
+      },
+      fillState: "ready",
+    });
+  });
+
   const IconComp = $derived.by(() => {
     if (kind !== "icon") return null;
     const id = typeof payload === "string" ? payload : "";
@@ -276,6 +295,10 @@
 {:else if kind === "media" && media}
   <div class="liquid-md-host liquid-md-host-media liquid-md-enter">
     <Media node={media} />
+  </div>
+{:else if kind === "cite" && cite}
+  <div class="liquid-md-host liquid-md-host-cite liquid-md-enter">
+    <Cite node={cite} />
   </div>
 {:else if kind === "icon" && IconComp}
   <span class="liquid-md-host-icon">

@@ -192,4 +192,35 @@ describe("hydrateLiquidEmbeds", () => {
     destroyLiquidEmbeds(root);
     expect(unmountMock).toHaveBeenCalledTimes(4);
   });
+
+  it("mounts cite host from fixture markdown", async () => {
+    const md = [
+      "```cite",
+      "title: Source",
+      "url: https://example.com",
+      "quote: Excerpt",
+      "source: web search",
+      "```",
+    ].join("\n");
+
+    const html = preprocessLiquidEmbeds(md);
+    expect(html).toContain('data-liquid-embed="cite"');
+    const root = treeFromPlaceholders(html) as unknown as HTMLElement;
+    const { hydrateLiquidEmbeds, destroyLiquidEmbeds } = await import("./hydrateLiquidEmbeds");
+    hydrateLiquidEmbeds(root, {});
+
+    const kinds = mountMock.mock.calls.map(
+      (call) => (call[1] as { props: { kind: string } }).props.kind,
+    );
+    expect(kinds).toEqual(["cite"]);
+    const citeCall = mountMock.mock.calls.find(
+      (call) => (call[1] as { props: { kind: string } }).props.kind === "cite",
+    );
+    const citePayload = (citeCall![1] as { props: { payload: { quote?: string; title?: string } } })
+      .props.payload;
+    expect(citePayload.quote).toBe("Excerpt");
+    expect(citePayload.title).toBe("Source");
+    destroyLiquidEmbeds(root);
+    expect(unmountMock).toHaveBeenCalledTimes(1);
+  });
 });

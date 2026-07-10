@@ -14,6 +14,7 @@ const ALL_IDS = [
   "button",
   "chip",
   "callout",
+  "cite",
   "section",
   "chip_group",
   "card",

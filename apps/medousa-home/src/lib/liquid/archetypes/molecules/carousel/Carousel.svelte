@@ -24,7 +24,7 @@
 </script>
 
 {#if items.length}
-  <div class="liquid-carousel" onscroll={onScroll}>
+  <div class="liquid-carousel" data-no-tab-swipe onscroll={onScroll}>
     {#each items as item (item.id)}
       <div class="liquid-carousel-item">
         <Slot nodes={[item]} />
@@ -41,6 +41,8 @@
     padding: 0.15rem 0.1rem 0.45rem;
     scroll-snap-type: x proximity;
     -webkit-overflow-scrolling: touch;
+    touch-action: pan-x pinch-zoom;
+    overscroll-behavior-x: contain;
     mask-image: linear-gradient(
       to right,
       transparent 0,

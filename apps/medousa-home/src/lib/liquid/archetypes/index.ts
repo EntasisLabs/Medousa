@@ -15,6 +15,7 @@ export { chip } from "./atoms/chip/chip";
 
 // molecules
 export { callout } from "./molecules/callout/callout";
+export { cite } from "./molecules/cite/cite";
 export { section } from "./molecules/section/section";
 export { chipGroup } from "./molecules/chip_group/chipGroup";
 export { card } from "./molecules/card/card";

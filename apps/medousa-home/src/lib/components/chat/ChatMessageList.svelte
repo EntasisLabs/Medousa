@@ -11,6 +11,7 @@
     groupChatTurnBeats,
     shouldForceExpandUserWhisper,
   } from "$lib/utils/chatTurnBeats";
+  import { canSaveAssistantTurn } from "$lib/utils/saveChatTurnToVault";
   import {
     presentChatMessages,
     presentWorkerThreadMessages,
@@ -30,6 +31,8 @@
     ) => void | Promise<void>;
     /** Spawn a new interactive turn from a scene interaction (action_row / button). */
     onSubmitIntent?: (text: string) => void;
+    /** Promote settled assistant markdown to a Library inbox note. */
+    onSaveToVault?: (assistant: ChatMessage, user?: ChatMessage | null) => void | Promise<void>;
   }
 
   let {
@@ -41,6 +44,7 @@
     scrollRoot = null,
     onPromoteToFlow,
     onSubmitIntent,
+    onSaveToVault,
   }: Props = $props();
 
   const painted = $derived(
@@ -60,6 +64,11 @@
     const voice = compact ? "chat-voice chat-voice-full chat-voice-compact" : "chat-voice chat-voice-full";
     if (mobile) return `mobile-chat-voice-full ${voice}`;
     return voice;
+  }
+
+  function saveAssistant(assistant: ChatMessage, user: ChatMessage | null = null) {
+    if (!onSaveToVault || !canSaveAssistantTurn(assistant)) return;
+    void onSaveToVault(assistant, user);
   }
 </script>
 
@@ -81,7 +90,16 @@
         forceExpand={shouldForceExpandUserWhisper(painted, beat.user.id)}
         {onSubmitIntent}
       />
-      <article class={assistantClass(beat.assistant)}>
+      <article class="group relative {assistantClass(beat.assistant)}">
+        {#if onSaveToVault && canSaveAssistantTurn(beat.assistant)}
+          <button
+            type="button"
+            class="chat-save-to-library workshop-text-action"
+            onclick={() => saveAssistant(beat.assistant, beat.user)}
+          >
+            Save to Library
+          </button>
+        {/if}
         <LiquidChatMessage
           message={beat.assistant}
           {sessionId}
@@ -106,7 +124,16 @@
       />
     </div>
   {:else}
-    <article class="{turnBreak ? 'chat-turn-break' : ''} {assistantClass(beat.message)}">
+    <article class="group relative {turnBreak ? 'chat-turn-break' : ''} {assistantClass(beat.message)}">
+      {#if beat.message.role === "assistant" && onSaveToVault && canSaveAssistantTurn(beat.message)}
+        <button
+          type="button"
+          class="chat-save-to-library workshop-text-action"
+          onclick={() => saveAssistant(beat.message, null)}
+        >
+          Save to Library
+        </button>
+      {/if}
       <LiquidChatMessage
         message={beat.message}
         {sessionId}

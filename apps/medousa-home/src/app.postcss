@@ -1061,6 +1061,20 @@
     @apply max-w-full;
   }
 
+  /* Quiet promote — visible on hover/focus within the assistant beat */
+  .chat-save-to-library {
+    @apply absolute right-0 top-0 z-[1] text-[10px] opacity-0 transition-opacity duration-200;
+  }
+
+  .group:hover .chat-save-to-library,
+  .group:focus-within .chat-save-to-library {
+    @apply opacity-100;
+  }
+
+  .chat-save-to-library:focus-visible {
+    @apply opacity-100 outline-none;
+  }
+
   .chat-ask-rail {
     @apply mb-8 border-b pb-8;
     border-color: rgb(var(--color-surface-700) / 0.4);
@@ -2445,7 +2459,7 @@
   }
 
   .markdown-content pre.mermaid {
-    @apply my-3 overflow-x-auto rounded-md border border-surface-500/40 bg-surface-900 p-3;
+    @apply my-4 overflow-x-auto rounded-lg border border-surface-500/30 bg-surface-900/80 p-4 text-sm leading-relaxed;
   }
 
   .markdown-mermaid-error {

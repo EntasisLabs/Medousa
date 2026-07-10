@@ -18,6 +18,7 @@ export const LIQUID_FENCE_LANGS = new Set([
   "chips",
   "chip_group",
   "media",
+  "cite",
 ]);
 
 const CALLOUT_TONES = new Set(["note", "warn", "error", "success"]);
@@ -65,7 +66,8 @@ export type LiquidEmbedKind =
   | "callout"
   | "section"
   | "chips"
-  | "media";
+  | "media"
+  | "cite";
 
 export interface LiquidCardProps {
   title: string;
@@ -85,6 +87,14 @@ export interface LiquidCalloutProps {
   body: string;
   tone?: string;
   title?: string;
+}
+
+export interface LiquidCiteProps {
+  /** At least one of quote / title / url required (enforced by parser). */
+  quote?: string;
+  title?: string;
+  url?: string;
+  source?: string;
 }
 
 export interface LiquidSectionProps {
@@ -320,6 +330,19 @@ function parseMediaBody(body: string): LiquidMediaProps | null {
   return media;
 }
 
+function parseCiteBody(body: string): LiquidCiteProps | null {
+  const fields = parseKvBlock(body);
+  const cite: LiquidCiteProps = {};
+  if (fields.quote) cite.quote = fields.quote;
+  if (fields.title) cite.title = fields.title;
+  if (fields.url) cite.url = fields.url;
+  if (fields.source) cite.source = fields.source;
+  // Also accept body: as quote alias
+  if (!cite.quote && fields.body) cite.quote = fields.body;
+  if (!cite.quote && !cite.title && !cite.url) return null;
+  return cite;
+}
+
 function normalizeIconId(raw: string): string | null {
   const id = raw.trim().toLowerCase().replace(/_/g, "-");
   if (!id || !LIQUID_ICON_ALLOWLIST.has(id)) return null;
@@ -381,6 +404,12 @@ export function preprocessLiquidEmbeds(source: string): string {
       const media = parseMediaBody(body);
       if (!media) return match;
       return `\n${placeholder("media", media)}\n`;
+    }
+
+    if (lang === "cite") {
+      const cite = parseCiteBody(body);
+      if (!cite) return match;
+      return `\n${placeholder("cite", cite)}\n`;
     }
 
     return match;
