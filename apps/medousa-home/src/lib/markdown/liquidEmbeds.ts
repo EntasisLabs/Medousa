@@ -13,7 +13,15 @@ export const LIQUID_FENCE_LANGS = new Set([
   "carousel",
   "actions",
   "action_row",
+  "callout",
+  "section",
+  "chips",
+  "chip_group",
+  "media",
 ]);
+
+const CALLOUT_TONES = new Set(["note", "warn", "error", "success"]);
+const CHIP_TONES = new Set(["default", "accent", "success", "warn"]);
 
 /** Lucide icon ids allowed in `{{icon:name}}` (kebab or camel). */
 export const LIQUID_ICON_ALLOWLIST = new Set([
@@ -50,7 +58,14 @@ export const LIQUID_ICON_ALLOWLIST = new Set([
   "compass",
 ]);
 
-export type LiquidEmbedKind = "card" | "carousel" | "actions";
+export type LiquidEmbedKind =
+  | "card"
+  | "carousel"
+  | "actions"
+  | "callout"
+  | "section"
+  | "chips"
+  | "media";
 
 export interface LiquidCardProps {
   title: string;
@@ -64,6 +79,31 @@ export interface LiquidActionProps {
   label: string;
   intent?: string;
   emoji?: string;
+}
+
+export interface LiquidCalloutProps {
+  body: string;
+  tone?: string;
+  title?: string;
+}
+
+export interface LiquidSectionProps {
+  title: string;
+  subtitle?: string;
+  body?: string;
+}
+
+export interface LiquidChipProps {
+  label: string;
+  tone?: string;
+  value?: string;
+}
+
+export interface LiquidMediaProps {
+  src: string;
+  alt?: string;
+  caption?: string;
+  ratio?: string;
 }
 
 function encodeProps(value: unknown): string {
@@ -191,6 +231,95 @@ function parseActionsBody(body: string): LiquidActionProps[] {
   return actions;
 }
 
+/** Collect multi-line KV fields (title: / body: …) until a blank or separator. */
+function parseKvBlock(body: string): Record<string, string> {
+  const fields: Record<string, string> = {};
+  for (const raw of body.split("\n")) {
+    const line = stripFenceLineChrome(raw);
+    if (!line || line.startsWith("#") || line === "---") continue;
+    const colon = line.indexOf(":");
+    if (colon > 0 && !line.includes("|")) {
+      const key = line.slice(0, colon).trim().toLowerCase();
+      const value = line.slice(colon + 1).trim();
+      if (key && value) fields[key] = value;
+      continue;
+    }
+    Object.assign(fields, parseKvLine(line));
+  }
+  return fields;
+}
+
+function parseCalloutBody(body: string): LiquidCalloutProps | null {
+  const fields = parseKvBlock(body);
+  const text = fields.body?.trim();
+  if (!text) return null;
+  const callout: LiquidCalloutProps = { body: text };
+  const tone = fields.tone?.trim().toLowerCase();
+  if (tone && CALLOUT_TONES.has(tone)) callout.tone = tone;
+  if (fields.title) callout.title = fields.title;
+  return callout;
+}
+
+function parseSectionBody(body: string): LiquidSectionProps | null {
+  const normalized = body.replace(/\r\n/g, "\n");
+  const sep = normalized.search(/^---[ \t]*$/m);
+  let header = normalized;
+  let proseBody: string | undefined;
+  if (sep >= 0) {
+    header = normalized.slice(0, sep);
+    proseBody = normalized.slice(sep).replace(/^---[ \t]*\n?/, "").trim() || undefined;
+  }
+  const fields = parseKvBlock(header);
+  const title = fields.title?.trim();
+  if (!title) return null;
+  const section: LiquidSectionProps = { title };
+  if (fields.subtitle) section.subtitle = fields.subtitle;
+  // Prefer explicit body: field; otherwise use --- prose block
+  if (fields.body) section.body = fields.body;
+  else if (proseBody) section.body = proseBody;
+  return section;
+}
+
+function parseChipsBody(body: string): LiquidChipProps[] {
+  const chips: LiquidChipProps[] = [];
+  for (const raw of body.split("\n")) {
+    let line = stripFenceLineChrome(raw);
+    if (!line || line.startsWith("#")) continue;
+    line = line.replace(/^label\s*:\s*/i, "");
+    const pipe = line.indexOf("|");
+    const labelPart = pipe >= 0 ? line.slice(0, pipe).trim() : line;
+    const rest = pipe >= 0 ? line.slice(pipe + 1).trim() : "";
+    if (!labelPart || /^(tone|value)\s*:/i.test(labelPart)) continue;
+    const meta: Record<string, string> = {};
+    if (rest) {
+      for (const part of rest.split("|").map((p) => p.trim()).filter(Boolean)) {
+        const colon = part.indexOf(":");
+        if (colon <= 0) continue;
+        const key = part.slice(0, colon).trim().toLowerCase();
+        const value = part.slice(colon + 1).trim();
+        if (key && value) meta[key] = value;
+      }
+    }
+    const chip: LiquidChipProps = { label: labelPart };
+    const tone = meta.tone?.trim().toLowerCase();
+    if (tone && CHIP_TONES.has(tone)) chip.tone = tone;
+    if (meta.value) chip.value = meta.value;
+    chips.push(chip);
+  }
+  return chips;
+}
+
+function parseMediaBody(body: string): LiquidMediaProps | null {
+  const fields = parseKvBlock(body);
+  const src = fields.src?.trim();
+  if (!src) return null;
+  const media: LiquidMediaProps = { src };
+  if (fields.alt) media.alt = fields.alt;
+  if (fields.caption) media.caption = fields.caption;
+  if (fields.ratio) media.ratio = fields.ratio;
+  return media;
+}
+
 function normalizeIconId(raw: string): string | null {
   const id = raw.trim().toLowerCase().replace(/_/g, "-");
   if (!id || !LIQUID_ICON_ALLOWLIST.has(id)) return null;
@@ -228,6 +357,30 @@ export function preprocessLiquidEmbeds(source: string): string {
       const actions = parseActionsBody(body);
       if (actions.length === 0) return match;
       return `\n${placeholder("actions", { actions })}\n`;
+    }
+
+    if (lang === "callout") {
+      const callout = parseCalloutBody(body);
+      if (!callout) return match;
+      return `\n${placeholder("callout", callout)}\n`;
+    }
+
+    if (lang === "section") {
+      const section = parseSectionBody(body);
+      if (!section) return match;
+      return `\n${placeholder("section", section)}\n`;
+    }
+
+    if (lang === "chips" || lang === "chip_group") {
+      const chips = parseChipsBody(body);
+      if (chips.length === 0) return match;
+      return `\n${placeholder("chips", { chips })}\n`;
+    }
+
+    if (lang === "media") {
+      const media = parseMediaBody(body);
+      if (!media) return match;
+      return `\n${placeholder("media", media)}\n`;
     }
 
     return match;

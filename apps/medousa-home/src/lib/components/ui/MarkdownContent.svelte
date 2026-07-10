@@ -70,7 +70,7 @@
 
 <div
   bind:this={container}
-  class="markdown-content min-w-0 max-w-full text-sm leading-relaxed"
+  class="markdown-content min-w-0 max-w-full"
   onclick={handleLinkClick}
 >
   {@html html}

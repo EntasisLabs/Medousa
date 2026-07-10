@@ -33,20 +33,29 @@
   .liquid-action-row {
     display: flex;
     align-items: center;
-    gap: 0.55rem;
+    gap: 0.6rem;
     width: 100%;
-    padding: 0.6rem 0.75rem;
+    padding: 0.7rem 0.85rem;
     text-align: left;
     cursor: pointer;
-    border-radius: 0.6rem;
-    border: 1px solid color-mix(in srgb, var(--color-surface-500) 30%, transparent);
-    background: color-mix(in srgb, var(--color-surface-800) 45%, transparent);
+    border-radius: 0.7rem;
+    border: 1px solid color-mix(in srgb, var(--color-surface-500) 22%, transparent);
+    background: color-mix(in srgb, var(--color-surface-800) 38%, transparent);
+    box-shadow: inset 0 1px 0 color-mix(in srgb, var(--color-surface-50) 4%, transparent);
     color: rgb(var(--color-surface-100));
-    transition: background 0.15s ease;
+    transition:
+      background 0.15s ease,
+      border-color 0.15s ease;
   }
 
   .liquid-action-row:hover {
-    background: color-mix(in srgb, var(--color-surface-700) 55%, transparent);
+    background: color-mix(in srgb, var(--color-surface-700) 42%, transparent);
+    border-color: color-mix(in srgb, var(--color-surface-500) 32%, transparent);
+  }
+
+  .liquid-action-row:hover :global(.liquid-action-chevron) {
+    transform: translateX(0.15rem);
+    color: rgb(var(--color-surface-300));
   }
 
   .liquid-action-emoji {
@@ -58,11 +67,14 @@
   .liquid-action-label {
     flex: 1 1 auto;
     min-width: 0;
-    font-size: 0.8rem;
+    font-size: 0.82rem;
   }
 
   .liquid-action-row :global(.liquid-action-chevron) {
     flex-shrink: 0;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--color-surface-500));
+    transition:
+      transform 0.15s ease,
+      color 0.15s ease;
   }
 </style>

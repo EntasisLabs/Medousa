@@ -1,6 +1,6 @@
 <script lang="ts">
   /**
-   * Host for markdown-hydrated Liquid embeds (card / carousel / actions / icon).
+   * Host for markdown-hydrated Liquid embeds.
    * Mounted into placeholder divs by hydrateLiquidEmbeds.
    */
   import "$lib/liquid/archetypes";
@@ -12,10 +12,18 @@
   import Card from "$lib/liquid/archetypes/molecules/card/Card.svelte";
   import Carousel from "$lib/liquid/archetypes/molecules/carousel/Carousel.svelte";
   import ActionRow from "$lib/liquid/archetypes/molecules/action_row/ActionRow.svelte";
+  import Callout from "$lib/liquid/archetypes/molecules/callout/Callout.svelte";
+  import Section from "$lib/liquid/archetypes/molecules/section/Section.svelte";
+  import ChipGroup from "$lib/liquid/archetypes/molecules/chip_group/ChipGroup.svelte";
+  import Media from "$lib/liquid/archetypes/atoms/media/Media.svelte";
   import type {
     LiquidActionProps,
+    LiquidCalloutProps,
     LiquidCardProps,
+    LiquidChipProps,
     LiquidEmbedKind,
+    LiquidMediaProps,
+    LiquidSectionProps,
   } from "$lib/markdown/liquidEmbeds";
   import {
     AlertTriangle,
@@ -145,6 +153,92 @@
     );
   });
 
+  const callout = $derived.by(() => {
+    if (kind !== "callout") return null;
+    const props = payload as LiquidCalloutProps;
+    if (!props?.body) return null;
+    return createNode({
+      id: "md-callout",
+      type: "callout",
+      props: {
+        body: props.body,
+        ...(props.tone ? { tone: props.tone } : {}),
+        ...(props.title ? { title: props.title } : {}),
+      },
+      fillState: "ready",
+    });
+  });
+
+  const section = $derived.by(() => {
+    if (kind !== "section") return null;
+    const props = payload as LiquidSectionProps;
+    if (!props?.title) return null;
+    const slots: Record<string, ReturnType<typeof createNode>[]> = {};
+    if (props.body?.trim()) {
+      slots.content = [
+        createNode({
+          id: "md-section-body",
+          type: "prose",
+          props: { markdown: props.body },
+          fillState: "ready",
+        }),
+      ];
+    }
+    return createNode({
+      id: "md-section",
+      type: "section",
+      props: {
+        title: props.title,
+        ...(props.subtitle ? { subtitle: props.subtitle } : {}),
+      },
+      slots,
+      fillState: "ready",
+    });
+  });
+
+  const chips = $derived.by(() => {
+    if (kind !== "chips") return null;
+    const list = (payload as { chips?: LiquidChipProps[] })?.chips ?? [];
+    if (list.length === 0) return null;
+    return createNode({
+      id: "md-chips",
+      type: "chip_group",
+      props: {},
+      slots: {
+        chips: list.map((item, i) =>
+          createNode({
+            id: `md-chip-${i}`,
+            type: "chip",
+            props: {
+              label: item.label,
+              ...(item.tone ? { tone: item.tone } : {}),
+              ...(item.value ? { value: item.value } : { value: item.label }),
+            },
+            fillState: "ready",
+          }),
+        ),
+      },
+      fillState: "ready",
+    });
+  });
+
+  const media = $derived.by(() => {
+    if (kind !== "media") return null;
+    const props = payload as LiquidMediaProps;
+    if (!props?.src) return null;
+    return createNode({
+      id: "md-media",
+      type: "media",
+      props: {
+        src: props.src,
+        ...(props.alt ? { alt: props.alt } : {}),
+        ...(props.caption ? { caption: props.caption } : {}),
+        ...(props.ratio ? { ratio: props.ratio } : {}),
+      },
+      fillState: "ready",
+    });
+  });
+
   const IconComp = $derived.by(() => {
     if (kind !== "icon") return null;
     const id = typeof payload === "string" ? payload : "";
@@ -153,18 +247,35 @@
 </script>
 
 {#if kind === "card" && card}
-  <div class="liquid-md-host liquid-md-host-card">
+  <div class="liquid-md-host liquid-md-host-card liquid-md-enter">
     <Card node={card} />
   </div>
 {:else if kind === "carousel" && carousel}
-  <div class="liquid-md-host liquid-md-host-carousel">
+  <div class="liquid-md-host liquid-md-host-carousel liquid-md-enter">
     <Carousel node={carousel} />
   </div>
 {:else if kind === "actions" && actions.length}
-  <div class="liquid-md-host liquid-md-host-actions">
+  <div class="liquid-md-host liquid-md-host-actions liquid-md-enter">
+    <p class="liquid-md-actions-whisper">Suggested</p>
     {#each actions as action (action.id)}
       <ActionRow node={action} />
     {/each}
+  </div>
+{:else if kind === "callout" && callout}
+  <div class="liquid-md-host liquid-md-host-callout liquid-md-enter">
+    <Callout node={callout} />
+  </div>
+{:else if kind === "section" && section}
+  <div class="liquid-md-host liquid-md-host-section liquid-md-enter">
+    <Section node={section} />
+  </div>
+{:else if kind === "chips" && chips}
+  <div class="liquid-md-host liquid-md-host-chips liquid-md-enter">
+    <ChipGroup node={chips} />
+  </div>
+{:else if kind === "media" && media}
+  <div class="liquid-md-host liquid-md-host-media liquid-md-enter">
+    <Media node={media} />
   </div>
 {:else if kind === "icon" && IconComp}
   <span class="liquid-md-host-icon">
@@ -174,14 +285,23 @@
 
 <style>
   .liquid-md-host {
-    margin: 0.75rem 0;
+    margin: 1.15rem 0;
     min-width: 0;
   }
 
   .liquid-md-host-actions {
     display: flex;
     flex-direction: column;
-    gap: 0.4rem;
+    gap: 0.6rem;
+  }
+
+  .liquid-md-actions-whisper {
+    margin: 0 0 0.15rem;
+    font-size: 0.65rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: rgb(var(--color-surface-500));
   }
 
   .liquid-md-host-icon {
@@ -189,5 +309,26 @@
     vertical-align: -0.15em;
     margin-right: 0.2rem;
     color: rgb(var(--color-surface-400));
+  }
+
+  .liquid-md-enter {
+    animation: liquid-md-enter 0.32s ease-out both;
+  }
+
+  @keyframes liquid-md-enter {
+    from {
+      opacity: 0;
+      transform: translateY(0.35rem);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .liquid-md-enter {
+      animation: none;
+    }
   }
 </style>

@@ -1740,11 +1740,17 @@
 
   /* Chat voice: section titles read like presentation labels */
   .chat-voice .markdown-content h2 {
-    @apply mt-6 mb-2 text-[0.8rem] font-semibold uppercase tracking-[0.06em] text-surface-400;
+    @apply mt-7 mb-3 text-[0.8rem] font-semibold uppercase tracking-[0.06em] text-surface-400;
   }
 
   .chat-voice .markdown-content h3 {
-    @apply mt-4 mb-1.5 text-[0.95rem] font-medium normal-case tracking-tight text-surface-200;
+    @apply mt-5 mb-2 text-[0.95rem] font-medium normal-case tracking-tight text-surface-200;
+  }
+
+  .chat-voice .markdown-content h2 + .liquid-md-embed,
+  .chat-voice .markdown-content h3 + .liquid-md-embed,
+  .chat-voice .markdown-content p + .liquid-md-embed {
+    margin-top: 0.35rem;
   }
 
   .markdown-content p {
@@ -1802,7 +1808,7 @@
 
   .markdown-content th,
   .markdown-content td {
-    @apply px-3 py-2 align-top;
+    @apply px-3.5 py-2.5 align-top;
     border: none;
     border-bottom: 1px solid color-mix(in srgb, var(--color-surface-500) 28%, transparent);
   }
@@ -1812,7 +1818,7 @@
   }
 
   .markdown-content th {
-    @apply font-semibold text-surface-300;
+    @apply font-semibold text-surface-400;
     background: color-mix(in srgb, var(--color-surface-800) 70%, transparent);
     font-size: 0.65rem;
     letter-spacing: 0.04em;
@@ -1820,7 +1826,12 @@
   }
 
   .markdown-content td {
-    @apply text-surface-200;
+    @apply text-surface-100;
+  }
+
+  .markdown-content td:first-child {
+    @apply text-surface-400 font-medium;
+    width: 28%;
   }
 
   .markdown-content tr:nth-child(even) td {
@@ -1828,11 +1839,11 @@
   }
 
   .chat-voice .markdown-content table {
-    margin-block: 0.85rem;
+    margin-block: 1.1rem;
   }
 
   .markdown-content .liquid-md-embed {
-    margin: 0.85rem 0;
+    margin: 1.15rem 0;
   }
 
   .markdown-content .liquid-md-icon {

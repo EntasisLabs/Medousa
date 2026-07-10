@@ -104,6 +104,80 @@ describe("preprocessLiquidEmbeds", () => {
     const src = "```\n{{icon:sparkles}}\n```";
     expect(preprocessLiquidEmbeds(src)).toContain("{{icon:sparkles}}");
   });
+
+  it("turns a callout fence into a placeholder", () => {
+    const src = ["```callout", "tone: warn", "title: Heads up", "body: Deprecated path", "```"].join(
+      "\n",
+    );
+    const out = preprocessLiquidEmbeds(src);
+    expect(out).toContain('data-liquid-embed="callout"');
+    const match = out.match(/data-liquid-props="([^"]+)"/);
+    const props = decodeLiquidProps<{ body: string; tone?: string; title?: string }>(match![1]);
+    expect(props?.body).toBe("Deprecated path");
+    expect(props?.tone).toBe("warn");
+    expect(props?.title).toBe("Heads up");
+  });
+
+  it("turns a section fence with --- body into title + prose", () => {
+    const src = [
+      "```section",
+      "title: Model family",
+      "subtitle: Availability",
+      "---",
+      "Sol is the flagship.",
+      "```",
+    ].join("\n");
+    const out = preprocessLiquidEmbeds(src);
+    expect(out).toContain('data-liquid-embed="section"');
+    const match = out.match(/data-liquid-props="([^"]+)"/);
+    const props = decodeLiquidProps<{ title: string; subtitle?: string; body?: string }>(
+      match![1],
+    );
+    expect(props?.title).toBe("Model family");
+    expect(props?.subtitle).toBe("Availability");
+    expect(props?.body).toBe("Sol is the flagship.");
+  });
+
+  it("turns chips fence into chip payloads", () => {
+    const src = [
+      "```chips",
+      "- Ultra | tone: accent | value: ultra",
+      "Fast | tone: default",
+      "```",
+    ].join("\n");
+    const out = preprocessLiquidEmbeds(src);
+    expect(out).toContain('data-liquid-embed="chips"');
+    const match = out.match(/data-liquid-props="([^"]+)"/);
+    const props = decodeLiquidProps<{ chips: { label: string; tone?: string; value?: string }[] }>(
+      match![1],
+    );
+    expect(props?.chips).toHaveLength(2);
+    expect(props?.chips[0].label).toBe("Ultra");
+    expect(props?.chips[0].tone).toBe("accent");
+    expect(props?.chips[0].value).toBe("ultra");
+  });
+
+  it("turns a media fence into src payload", () => {
+    const src = [
+      "```media",
+      "src: https://example.com/a.png",
+      "alt: Diagram",
+      "caption: Source",
+      "ratio: 16/9",
+      "```",
+    ].join("\n");
+    const out = preprocessLiquidEmbeds(src);
+    expect(out).toContain('data-liquid-embed="media"');
+    const match = out.match(/data-liquid-props="([^"]+)"/);
+    const props = decodeLiquidProps<{ src: string; alt?: string; caption?: string }>(match![1]);
+    expect(props?.src).toBe("https://example.com/a.png");
+    expect(props?.alt).toBe("Diagram");
+  });
+
+  it("rejects callout without body and media without src", () => {
+    expect(preprocessLiquidEmbeds("```callout\ntitle: Only\n```")).toContain("```callout");
+    expect(preprocessLiquidEmbeds("```media\nalt: No src\n```")).toContain("```media");
+  });
 });
 
 describe("renderMarkdown + liquid embeds", () => {

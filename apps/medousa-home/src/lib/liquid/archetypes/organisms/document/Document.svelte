@@ -15,7 +15,7 @@
   .liquid-document {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: 1.1rem;
     min-width: 0;
   }
 </style>

@@ -155,4 +155,41 @@ describe("hydrateLiquidEmbeds", () => {
     destroyLiquidEmbeds(root);
     expect(unmountMock).toHaveBeenCalledTimes(4);
   });
+
+  it("mounts wave-1 embeds from fixture markdown", async () => {
+    const md = [
+      "```callout",
+      "tone: note",
+      "body: Aside text",
+      "```",
+      "",
+      "```section",
+      "title: Family",
+      "---",
+      "Prose inside",
+      "```",
+      "",
+      "```chips",
+      "Ultra | tone: accent",
+      "Fast",
+      "```",
+      "",
+      "```media",
+      "src: https://example.com/x.png",
+      "alt: X",
+      "```",
+    ].join("\n");
+
+    const html = preprocessLiquidEmbeds(md);
+    const root = treeFromPlaceholders(html) as unknown as HTMLElement;
+    const { hydrateLiquidEmbeds, destroyLiquidEmbeds } = await import("./hydrateLiquidEmbeds");
+    hydrateLiquidEmbeds(root, {});
+
+    const kinds = mountMock.mock.calls.map(
+      (call) => (call[1] as { props: { kind: string } }).props.kind,
+    );
+    expect(kinds).toEqual(["callout", "section", "chips", "media"]);
+    destroyLiquidEmbeds(root);
+    expect(unmountMock).toHaveBeenCalledTimes(4);
+  });
 });

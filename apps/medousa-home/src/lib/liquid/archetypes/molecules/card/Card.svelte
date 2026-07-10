@@ -75,18 +75,21 @@
 
 <style>
   .liquid-card {
-    border-radius: 0.75rem;
-    border: 1px solid color-mix(in srgb, var(--color-surface-500) 30%, transparent);
-    background: color-mix(in srgb, var(--color-surface-900) 45%, transparent);
+    border-radius: 0.85rem;
+    border: 1px solid color-mix(in srgb, var(--color-surface-500) 28%, transparent);
+    background: color-mix(in srgb, var(--color-surface-900) 50%, transparent);
+    box-shadow:
+      inset 0 1px 0 color-mix(in srgb, var(--color-surface-50) 5%, transparent),
+      0 1px 0 color-mix(in srgb, var(--color-surface-50) 3%, transparent);
     overflow: hidden;
   }
 
   .liquid-card-main {
     display: flex;
     align-items: flex-start;
-    gap: 0.65rem;
+    gap: 0.75rem;
     width: 100%;
-    padding: 0.7rem 0.8rem;
+    padding: 0.85rem 0.95rem;
     text-align: left;
     cursor: pointer;
     background: transparent;
@@ -95,7 +98,7 @@
   }
 
   .liquid-card-main:hover {
-    background: color-mix(in srgb, var(--color-surface-700) 30%, transparent);
+    background: color-mix(in srgb, var(--color-surface-700) 28%, transparent);
   }
 
   .liquid-card-thumb {
@@ -121,19 +124,20 @@
   }
 
   .liquid-card-title {
-    font-size: 0.85rem;
+    font-size: 0.9rem;
     font-weight: 600;
+    letter-spacing: -0.01em;
     color: rgb(var(--color-surface-50));
   }
 
   .liquid-card-subtitle {
-    font-size: 0.75rem;
+    font-size: 0.78rem;
     color: rgb(var(--color-surface-300));
   }
 
   .liquid-card-body {
-    font-size: 0.75rem;
-    line-height: 1.45;
+    font-size: 0.78rem;
+    line-height: 1.5;
     color: rgb(var(--color-surface-200));
   }
 

@@ -49,6 +49,10 @@ This client can render UI (supports_ui_artifacts) — prefer enriched markdown f
   - ```card … ``` for one summary card (title/subtitle/body/emoji lines)
   - ```carousel … ``` for a horizontal strip of cards (one card per line: title: … | body: … | emoji: … — no leading dashes)
   - ```actions … ``` for “what next?” rows (Label | intent — not "Label: …")
+  - ```callout … ``` for asides (tone: note|warn|error|success, title, body)
+  - ```section … ``` for a titled block (title/subtitle; optional body after ---)
+  - ```chips … ``` for filter/tag rows (Label | tone: accent | value: x)
+  - ```media … ``` for a figure (src required; alt/caption/ratio optional)
   - {{icon:sparkles}} inline Lucide icons (allowlisted names only)
 - Do NOT paste reasoning/scratch into the final answer (no `> [!abstract] Reasoning` callouts). Thinking streams separately.
 - Style tables with normal GFM — the client paints them as soft cards.
@@ -370,6 +374,7 @@ mod tests {
         let ui = system_prompt_for_host_profile("base-sttp", true, true, None);
         assert!(ui.contains("[MEDOUSA_PRESENTATION]"));
         assert!(ui.contains("```card"));
+        assert!(ui.contains("```callout"));
         assert!(ui.contains("cognition_ui_build"));
 
         let non_ui = system_prompt_for_host_profile("base-sttp", true, false, None);

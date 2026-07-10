@@ -36,16 +36,23 @@
 <style>
   .liquid-carousel {
     display: flex;
-    gap: 0.6rem;
+    gap: 0.75rem;
     overflow-x: auto;
-    padding-bottom: 0.35rem;
+    padding: 0.15rem 0.1rem 0.45rem;
     scroll-snap-type: x proximity;
     -webkit-overflow-scrolling: touch;
+    mask-image: linear-gradient(
+      to right,
+      transparent 0,
+      #000 0.6rem,
+      #000 calc(100% - 1.4rem),
+      transparent 100%
+    );
   }
 
   .liquid-carousel-item {
     flex: 0 0 auto;
-    width: min(15rem, 78%);
+    width: min(16.5rem, 82%);
     scroll-snap-align: start;
   }
 </style>

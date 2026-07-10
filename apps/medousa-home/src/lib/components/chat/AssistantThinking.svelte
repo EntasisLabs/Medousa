@@ -30,7 +30,7 @@
 
 {#if trimmed}
   <details
-    class="thinking-trace group/thinking mb-1.5 overflow-hidden transition-[color,opacity] duration-200"
+    class="thinking-trace group/thinking overflow-hidden transition-[color,opacity] duration-200"
     class:thinking-live={!done}
     class:thinking-done={done}
     open={streaming}
@@ -42,24 +42,24 @@
     >
       <Sparkles
         class="h-3 w-3 shrink-0 {done
-          ? 'text-surface-600'
-          : 'text-primary-400/80 animate-pulse'}"
+          ? 'text-surface-700'
+          : 'text-primary-400/55 animate-pulse'}"
         strokeWidth={2}
         aria-hidden="true"
       />
       <span
-        class="min-w-0 flex-1 truncate text-[11px] {done
+        class="min-w-0 flex-1 truncate text-[10px] {done
           ? 'font-normal text-surface-600'
-          : 'text-primary-200/85'}"
+          : 'text-surface-400'}"
       >
         Thinking
         {#if streaming && liveHook}
           <span class="text-surface-600"> · </span>
-          <span class="text-surface-400">{liveHook}</span>
+          <span class="text-surface-500">{liveHook}</span>
         {/if}
       </span>
       <ChevronDown
-        class="h-3 w-3 shrink-0 text-surface-600 transition-transform duration-200 group-open/thinking:rotate-180"
+        class="h-3 w-3 shrink-0 text-surface-700 transition-transform duration-200 group-open/thinking:rotate-180"
         strokeWidth={2}
         aria-hidden="true"
       />
@@ -67,8 +67,8 @@
     <div class="pt-1 {done ? 'pl-4' : 'pl-0.5'}">
       <p
         class="whitespace-pre-wrap leading-relaxed {compact
-          ? 'text-xs'
-          : 'text-[12px]'} {done ? 'text-surface-500' : 'text-surface-400'}"
+          ? 'text-[11px]'
+          : 'text-[11px]'} {done ? 'text-surface-600' : 'text-surface-500'}"
       >
         {trimmed}
       </p>
@@ -79,17 +79,19 @@
 <style>
   /* Live: soft tint, no heavy card chrome — feels alive without a box. */
   .thinking-live {
+    margin-bottom: 0.65rem;
     border-radius: 0.5rem;
     padding-inline: 0.15rem;
   }
 
-  /* Done: footnote energy — no border, no fill, just a quiet expand. */
+  /* Done: footnote energy — quiet, more air before the answer body. */
   .thinking-done {
-    opacity: 0.85;
+    margin-bottom: 0.85rem;
+    opacity: 0.55;
   }
 
   .thinking-done:hover,
   .thinking-done[open] {
-    opacity: 1;
+    opacity: 0.85;
   }
 </style>

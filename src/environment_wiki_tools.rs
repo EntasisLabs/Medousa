@@ -284,6 +284,10 @@ const TOPICS: &[WikiTopic] = &[
         card(.99): "```card\\ntitle: Sol\\nsubtitle: Flagship\\nbody: …\\nemoji: 🧠\\n```",
         carousel(.99): "```carousel\\ntitle: Sol | body: Flagship | emoji: 🧠\\n``` (no leading dashes)",
         actions(.99): "```actions\\nWhich is best for coding? | coding\\n``` (Label | intent, not Label:)",
+        callout(.98): "```callout\\ntone: note\\ntitle: Aside\\nbody: …\\n```",
+        section(.98): "```section\\ntitle: Model family\\nsubtitle: …\\n---\\nOptional prose body\\n```",
+        chips(.98): "```chips\\nUltra | tone: accent\\nFast | tone: default\\n```",
+        media(.97): "```media\\nsrc: https://…\\nalt: Diagram\\ncaption: …\\n```",
         icon(.98): "{{icon:sparkles}} — allowlisted Lucide names only"
     },
     governor(.99): "Runtime hydrates embeds into Liquid molecules — never invent HTML/CSS or plan_layout trees in chat.",
@@ -304,7 +308,7 @@ const TOPICS: &[WikiTopic] = &[
     prefer_markdown(.99): {
         when(.99): "structured chat answers — cards, carousels, action rows, tables, icons — the common case",
         why(.98): "model writes familiar markdown; runtime hydrates Liquid molecules; no layout dialect",
-        how(.99): "```card``` / ```carousel``` / ```actions``` / {{icon:name}} in the final answer"
+        how(.99): "```card``` / ```carousel``` / ```actions``` / ```callout``` / ```section``` / ```chips``` / ```media``` / {{icon:name}} in the final answer"
     },
     prefer_ui_build(.97): {
         when(.97): "streaming interactive scene session that must fill slots over multiple tool calls",
@@ -616,7 +620,7 @@ const TOPICS: &[WikiTopic] = &[
         switch_nav(.96): "cognition_environment_activate_preset",
         list_components(.98): "cognition_component_list",
         add_component(.97): "cognition_component_create",
-        render_native_scene(.98): "enriched markdown embeds (```card``` / ```carousel``` / ```actions```) for chat; cognition_ui_build for streaming scenes",
+        render_native_scene(.98): "enriched markdown embeds (```card``` / ```carousel``` / ```actions``` / ```callout``` / ```section``` / ```chips``` / ```media```) for chat; cognition_ui_build for streaming scenes",
         persist_scene(.98): "cognition_component_create type:scene, config.scene:{ops:[…]} — durable Liquid scene pinned to a custom surface",
         publish_html(.98): "cognition_ui_present",
         edit_html(.97): "cognition_artifact_write",
