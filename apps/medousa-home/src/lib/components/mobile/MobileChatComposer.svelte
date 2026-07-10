@@ -11,6 +11,7 @@
   import { chat } from "$lib/stores/chat.svelte";
   import { connection } from "$lib/stores/connection.svelte";
   import { runtime } from "$lib/stores/runtime.svelte";
+  import { settings } from "$lib/stores/settings.svelte";
   import { voicePresets } from "$lib/stores/voicePresets.svelte";
   import { switchMobileTab } from "$lib/mobileNavigation";
   import { workspace } from "$lib/stores/workspace.svelte";
@@ -149,7 +150,9 @@
   <div class="mobile-composer-pills">
     <WorkshopSwitcherCompact />
     <ProfileSwitcherCompact />
-    <MobileComposerTurnSettings disabled={controlsDisabled} />
+    {#if settings.showChatModelPicker}
+      <MobileComposerTurnSettings disabled={controlsDisabled} />
+    {/if}
   </div>
   {#if chat.vaultNoteContext}
     <VaultChatContextChip compact class="mb-2" />

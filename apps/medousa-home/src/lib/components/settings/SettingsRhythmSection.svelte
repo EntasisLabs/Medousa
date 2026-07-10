@@ -197,6 +197,38 @@
           settings.setLiquidChat((event.currentTarget as HTMLInputElement).checked)}
       />
     </label>
+
+    <label class="settings-toggle-row">
+      <span class="min-w-0 flex-1">
+        <span class="block text-sm font-medium text-surface-100">Model picker in chat</span>
+        <span class="workshop-faint mt-0.5 block text-xs">
+          Show the model / depth / reasoning control in the composer (off by default — change models in Settings anytime)
+        </span>
+      </span>
+      <input
+        type="checkbox"
+        class="checkbox shrink-0"
+        checked={settings.showChatModelPicker}
+        onchange={(event) =>
+          settings.setShowChatModelPicker((event.currentTarget as HTMLInputElement).checked)}
+      />
+    </label>
+
+    <label class="settings-toggle-row">
+      <span class="min-w-0 flex-1">
+        <span class="block text-sm font-medium text-surface-100">Attachment tip in chat</span>
+        <span class="workshop-faint mt-0.5 block text-xs">
+          Show the “Up to N files…” hint above the composer (off by default)
+        </span>
+      </span>
+      <input
+        type="checkbox"
+        class="checkbox shrink-0"
+        checked={settings.showChatAttachmentHint}
+        onchange={(event) =>
+          settings.setShowChatAttachmentHint((event.currentTarget as HTMLInputElement).checked)}
+      />
+    </label>
   </div>
 
   <div class="mt-8 border-t border-surface-800/80 pt-6">

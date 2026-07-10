@@ -7,6 +7,7 @@
   import ChatVoiceRecorder from "$lib/components/chat/ChatVoiceRecorder.svelte";
   import ContextUsageIndicator from "$lib/components/chat/ContextUsageIndicator.svelte";
   import { chat } from "$lib/stores/chat.svelte";
+  import { settings } from "$lib/stores/settings.svelte";
   import {
     MAX_MEDIA_REFS_PER_TURN,
     MAX_MEDIA_UPLOAD_MB,
@@ -205,7 +206,7 @@
 </script>
 
 <ChatAttachmentChips {disabled} />
-{#if chat.pendingMediaRefs.length === 0 && !voiceActive}
+{#if settings.showChatAttachmentHint && chat.pendingMediaRefs.length === 0 && !voiceActive}
   <p class="composer-attachment-hint text-[11px] text-surface-500">
     Up to {MAX_MEDIA_REFS_PER_TURN} files, {MAX_MEDIA_UPLOAD_MB} MB each — PDF, images, spreadsheets, text
   </p>
@@ -326,7 +327,9 @@
       {/if}
     </button>
 
-    <ChatModelPicker {disabled} />
+    {#if settings.showChatModelPicker}
+      <ChatModelPicker {disabled} />
+    {/if}
 
     <GrowingTextarea
       bind:value={chat.draft}

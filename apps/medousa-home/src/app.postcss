@@ -1019,15 +1019,30 @@
   }
 
   .chat-turn-break {
-    @apply mt-10;
+    @apply mt-7;
+  }
+
+  .chat-turn-beat {
+    @apply w-full min-w-0;
   }
 
   .chat-voice {
     @apply max-w-[min(100%,44rem)] text-[15px] leading-[1.65] text-surface-100;
   }
 
+  .chat-voice-full {
+    @apply max-w-full w-full;
+  }
+
   .chat-voice .markdown-content {
     @apply text-[15px] leading-[1.65];
+  }
+
+  /* Timeline shell: prose keeps a soft measure; embeds use the full column */
+  .chat-voice-full .markdown-content > p,
+  .chat-voice-full .markdown-content > ul,
+  .chat-voice-full .markdown-content > ol {
+    max-width: min(100%, 44rem);
   }
 
   .chat-user-bubble {
@@ -1040,6 +1055,10 @@
 
   .chat-voice-compact {
     @apply max-w-[min(100%,36rem)] text-sm leading-relaxed;
+  }
+
+  .chat-voice-full.chat-voice-compact {
+    @apply max-w-full;
   }
 
   .chat-ask-rail {
@@ -3668,8 +3687,15 @@
     @apply mr-0 min-w-0 max-w-full overflow-hidden border-l-2 border-primary-500/25 py-0.5 pl-3;
   }
 
+  /* Timeline shell: full-width assistant, no left stripe */
+  .mobile-chat-voice-full {
+    @apply mr-0 min-w-0 max-w-full overflow-hidden border-0 py-0.5 pl-0;
+  }
+
   .mobile-chat-bubble-assistant .chat-voice,
-  .mobile-chat-bubble-assistant .markdown-content {
+  .mobile-chat-bubble-assistant .markdown-content,
+  .mobile-chat-voice-full .chat-voice,
+  .mobile-chat-voice-full .markdown-content {
     @apply min-w-0 max-w-full overflow-x-hidden;
     overflow-wrap: anywhere;
     word-break: break-word;

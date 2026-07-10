@@ -562,6 +562,7 @@
                   sessionId={chat.sessionId}
                   {mobile}
                   compact={true}
+                  scrollRoot={scrollEl}
                   onPromoteToFlow={handlePromoteToFlow}
                   onSubmitIntent={submitChatIntent}
                 />
@@ -618,6 +619,7 @@
                   {mobile}
                   compact={true}
                   workerThread={true}
+                  scrollRoot={scrollEl}
                   onPromoteToFlow={handlePromoteToFlow}
                   onSubmitIntent={submitChatIntent}
                 />
@@ -633,6 +635,7 @@
           messages={chatMessages}
           sessionId={chat.sessionId}
           {mobile}
+          scrollRoot={scrollEl}
           onPromoteToFlow={handlePromoteToFlow}
           onSubmitIntent={submitChatIntent}
         />

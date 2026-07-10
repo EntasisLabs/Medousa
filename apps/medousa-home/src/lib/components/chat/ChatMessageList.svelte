@@ -1,11 +1,16 @@
 <script lang="ts">
   /**
    * Chat message list — runtime-governed Liquid is the sole paint path.
-   * Empty worker/workshop handoff shells are filtered so one turn = one surface.
+   * User→assistant pairs render as timeline beats (whisper + full-width voice).
    */
+  import ChatUserWhisper from "$lib/components/chat/ChatUserWhisper.svelte";
   import LiquidChatMessage from "$lib/components/chat/LiquidChatMessage.svelte";
   import { chat } from "$lib/stores/chat.svelte";
   import type { ChatMessage } from "$lib/types/chat";
+  import {
+    groupChatTurnBeats,
+    shouldForceExpandUserWhisper,
+  } from "$lib/utils/chatTurnBeats";
   import {
     presentChatMessages,
     presentWorkerThreadMessages,
@@ -18,6 +23,8 @@
     compact?: boolean;
     /** When true, collapse worker handoff+synthesis into one visual turn. */
     workerThread?: boolean;
+    /** Scroll container for user-whisper IntersectionObserver. */
+    scrollRoot?: HTMLElement | null;
     onPromoteToFlow?: (
       ref: import("$lib/types/toolHistory").ToolHistorySliceRef,
     ) => void | Promise<void>;
@@ -31,6 +38,7 @@
     mobile = false,
     compact = false,
     workerThread = false,
+    scrollRoot = null,
     onPromoteToFlow,
     onSubmitIntent,
   }: Props = $props();
@@ -38,41 +46,69 @@
   const painted = $derived(
     workerThread ? presentWorkerThreadMessages(messages) : presentChatMessages(messages),
   );
+  const beats = $derived(groupChatTurnBeats(painted));
 
   function retryWorkerSynthesis(workId: string | null | undefined) {
     const trimmed = workId?.trim();
     if (!trimmed) return;
     void chat.retryWorkerSynthesis(trimmed);
   }
+
+  function assistantClass(message: ChatMessage): string {
+    if (message.role === "system") return "workshop-faint px-1";
+    if (message.role === "user") return "";
+    const voice = compact ? "chat-voice chat-voice-full chat-voice-compact" : "chat-voice chat-voice-full";
+    if (mobile) return `mobile-chat-voice-full ${voice}`;
+    return voice;
+  }
 </script>
 
-{#each painted as message, index (message.id)}
-  {@const previous = index > 0 ? painted[index - 1] : null}
-  {@const turnBreak = message.role === "user" && previous?.role === "assistant"}
-  {#if mobile && message.role === "user"}
-    <div class="{turnBreak ? 'chat-turn-break' : ''} mobile-chat-user-row">
-      <article class="mobile-chat-bubble-user">
-        <LiquidChatMessage {message} {sessionId} {mobile} compact {onSubmitIntent} />
+{#each beats as beat, beatIndex (beat.kind === "pair" ? `${beat.user.id}:${beat.assistant.id}` : beat.message.id)}
+  {@const previousBeat = beatIndex > 0 ? beats[beatIndex - 1] : null}
+  {@const turnBreak =
+    previousBeat != null &&
+    (previousBeat.kind === "pair" || previousBeat.message.role === "assistant") &&
+    (beat.kind === "pair" || beat.message.role === "user")}
+
+  {#if beat.kind === "pair"}
+    <section class="chat-turn-beat {turnBreak ? 'chat-turn-break' : ''}">
+      <ChatUserWhisper
+        message={beat.user}
+        {sessionId}
+        {mobile}
+        {compact}
+        {scrollRoot}
+        forceExpand={shouldForceExpandUserWhisper(painted, beat.user.id)}
+        {onSubmitIntent}
+      />
+      <article class={assistantClass(beat.assistant)}>
+        <LiquidChatMessage
+          message={beat.assistant}
+          {sessionId}
+          {mobile}
+          {compact}
+          {onPromoteToFlow}
+          {onSubmitIntent}
+          onRetryWorker={retryWorkerSynthesis}
+        />
       </article>
+    </section>
+  {:else if beat.message.role === "user"}
+    <div class="{turnBreak ? 'chat-turn-break' : ''} chat-turn-beat">
+      <ChatUserWhisper
+        message={beat.message}
+        {sessionId}
+        {mobile}
+        {compact}
+        {scrollRoot}
+        forceExpand={shouldForceExpandUserWhisper(painted, beat.message.id)}
+        {onSubmitIntent}
+      />
     </div>
   {:else}
-    <article
-      class="{turnBreak ? 'chat-turn-break' : ''} {mobile && message.role === 'assistant'
-        ? 'mobile-chat-bubble-assistant'
-        : ''} {message.role === 'user'
-        ? compact
-          ? 'chat-user-bubble chat-user-bubble-compact'
-          : 'chat-user-bubble'
-        : message.role === 'system'
-          ? 'workshop-faint px-1'
-          : mobile
-            ? ''
-            : compact
-              ? 'chat-voice chat-voice-compact'
-              : 'chat-voice'}"
-    >
+    <article class="{turnBreak ? 'chat-turn-break' : ''} {assistantClass(beat.message)}">
       <LiquidChatMessage
-        {message}
+        message={beat.message}
         {sessionId}
         {mobile}
         {compact}
