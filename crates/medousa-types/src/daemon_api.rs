@@ -1392,6 +1392,10 @@ pub struct InteractiveTurnStreamEvent {
     /// Root artifact lineage id for revision chains.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub root_artifact_id: Option<String>,
+    /// Liquid UI scene operations (cognition_ui_scene) — model-authored
+    /// structure-then-fill turns. Ops are opaque JSON validated client-side.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ui_scene: Option<StreamUiScene>,
     /// Human-facing status whisper for rich surfaces (Home default).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub operator_message: Option<String>,
@@ -1447,6 +1451,26 @@ pub struct StreamToolArtifactRef {
     pub artifact_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
+}
+
+/// Liquid UI scene channel payload — a batch of model-authored scene ops for
+/// one turn. `ops` are forwarded verbatim as opaque JSON (the client decodes and
+/// validates them into typed `SceneOp`s); the daemon never inspects their shape.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct StreamUiScene {
+    /// Owning turn id (stamped by the stream event builder).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub turn_id: Option<String>,
+    /// Scene surface id; the client defaults to `chat:{turn_id}` when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub surface_id: Option<String>,
+    /// Owning `plan_layout` revision for ordering (informational).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rev: Option<i64>,
+    /// Ordered scene operations, opaque JSON validated client-side.
+    #[cfg_attr(feature = "json-schema", schemars(with = "Vec<serde_json::Value>"))]
+    pub ops: Vec<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

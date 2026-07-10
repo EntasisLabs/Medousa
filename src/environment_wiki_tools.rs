@@ -264,6 +264,26 @@ const TOPICS: &[WikiTopic] = &[
         call_next: &["cognition_ui_present"],
     },
     WikiTopic {
+        id: "ui_scene",
+        title: "ui_scene — native liquid UI",
+        summary: "Author a native, streamable scene (structure-then-fill). Preferred over ui_present for interactive chat UI.",
+        policy: r#"    role(.99): "cognition_ui_scene — native structured scene on supports_ui_artifacts clients (Home yes). Always-visible bootstrap tool — call it directly.",
+    not_discoverable(.99): "NOT a capability or MCP tool — do NOT cognition_tools_discover / cognition_capability_search for it. It is already in your tool list when the client supports UI artifacts.",
+    prefer_over_html(.98): "Use ui_scene (typed nodes) for interactive/streamable UI; reserve cognition_ui_present for opaque HTML blobs.",
+    input(.99): {
+        ops(.99): "REQUIRED array; each item is an object with a string `op` field",
+        op_kinds(.98): "plan_layout | fill_slot | patch_props | set_binding | set_fill_state | precompute | remove",
+        surface_id(.95): "optional — defaults to the chat turn surface",
+        rev(.94): "optional integer — owning plan_layout revision for ordering"
+    },
+    node_shape(.98): "nodes carry id (stable reconciliation key), type (archetype), props",
+    bones_first(.97): "send plan_layout with skeleton slots first, THEN call again with fill_slot batches in the same turn so structure paints before content streams",
+    requirements(.98): "supports_ui_artifacts must be true — otherwise the tool returns unsupported_surface; answer in markdown instead",
+    anti_pattern(.99): "inventing a discover/unlock flow, or emitting ops without a string `op` field, or an empty ops array"#,
+        related: &["ui_present", "component_schema"],
+        call_next: &["cognition_ui_scene"],
+    },
+    WikiTopic {
         id: "presets",
         title: "Layout presets",
         summary: "default vs focus — preset membership required for nav visibility.",

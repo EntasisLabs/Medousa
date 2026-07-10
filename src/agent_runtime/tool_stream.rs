@@ -59,6 +59,14 @@ pub fn summarize_tool_input(tool_name: &str, tool_input: &serde_json::Value) -> 
             .map(|value| truncate_text_for_budget(value, SUMMARY_MAX_CHARS))
             .unwrap_or_else(|| "HTML artifact".to_string());
     }
+    if crate::ui_scene_tools::is_ui_scene_cognition_tool(tool_name) {
+        let count = tool_input
+            .get("ops")
+            .and_then(|value| value.as_array())
+            .map(|ops| ops.len())
+            .unwrap_or(0);
+        return format!("Scene · {count} ops");
+    }
 
     for key in [
         "query",
@@ -102,6 +110,17 @@ pub fn summarize_tool_output(tool_name: &str, tool_output: &serde_json::Value) -
     }
     if crate::turn_control_tools::is_update_user_tool_name(tool_name) {
         return Some("Update sent".to_string());
+    }
+    if crate::ui_scene_tools::is_ui_scene_cognition_tool(tool_name) {
+        if matches!(tool_output.get("ok").and_then(|value| value.as_bool()), Some(false)) {
+            return tool_output
+                .get("error")
+                .and_then(|value| value.as_str())
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(|value| truncate_text_for_budget(value, SUMMARY_MAX_CHARS));
+        }
+        return Some("Scene updated".to_string());
     }
     if crate::ui_present_tools::is_ui_present_cognition_tool(tool_name)
         || tool_name == crate::artifact_tools::COGNITION_ARTIFACT_WRITE
@@ -292,6 +311,34 @@ pub fn ui_artifact_from_tool_output(
     })
 }
 
+/// Extract a Liquid UI scene batch from a `cognition_ui_scene` tool result.
+/// Requires `ok == true` and a non-empty `ops` array; ops are forwarded verbatim.
+pub fn scene_ops_from_tool_output(
+    tool_output: &serde_json::Value,
+) -> Option<crate::daemon_api::StreamUiScene> {
+    if tool_output.get("ok").and_then(|value| value.as_bool()) != Some(true) {
+        return None;
+    }
+    let ops: Vec<serde_json::Value> = tool_output
+        .get("ops")
+        .and_then(|value| value.as_array())
+        .filter(|ops| !ops.is_empty())?
+        .clone();
+    let surface_id = tool_output
+        .get("surface_id")
+        .and_then(|value| value.as_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+    let rev = tool_output.get("rev").and_then(|value| value.as_i64());
+    Some(crate::daemon_api::StreamUiScene {
+        turn_id: None,
+        surface_id,
+        rev,
+        ops,
+    })
+}
+
 pub async fn emit_tool_run_started(
     sink: &SharedAgentStreamSink,
     tool_run_id: &str,
@@ -365,6 +412,33 @@ mod tests {
             &json!({"ok": true, "label": "Session Recap"}),
         );
         assert_eq!(summary.as_deref(), Some("Presented Session Recap"));
+    }
+
+    #[test]
+    fn scene_ops_from_tool_output_reads_ops_and_meta() {
+        let scene = scene_ops_from_tool_output(&json!({
+            "ok": true,
+            "ops": [{ "op": "plan_layout" }, { "op": "fill_slot" }],
+            "surface_id": "chat:turn-1",
+            "rev": 2
+        }))
+        .expect("scene");
+        assert_eq!(scene.ops.len(), 2);
+        assert_eq!(scene.surface_id.as_deref(), Some("chat:turn-1"));
+        assert_eq!(scene.rev, Some(2));
+    }
+
+    #[test]
+    fn scene_ops_from_tool_output_rejects_not_ok_or_empty() {
+        assert!(scene_ops_from_tool_output(&json!({ "ok": false, "ops": [{ "op": "x" }] })).is_none());
+        assert!(scene_ops_from_tool_output(&json!({ "ok": true, "ops": [] })).is_none());
+        assert!(scene_ops_from_tool_output(&json!({ "ok": true })).is_none());
+    }
+
+    #[test]
+    fn summarize_ui_scene_output() {
+        let summary = summarize_tool_output("cognition_ui_scene", &json!({"ok": true}));
+        assert_eq!(summary.as_deref(), Some("Scene updated"));
     }
 
     #[test]

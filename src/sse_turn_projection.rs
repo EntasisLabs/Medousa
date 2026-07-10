@@ -382,6 +382,7 @@ fn empty_stream_event(turn_id: &str) -> InteractiveTurnStreamEvent {
         ui_artifact: None,
         previous_artifact_id: None,
         root_artifact_id: None,
+        ui_scene: None,
         operator_message: None,
         debug_message: None,
         browser_session_id: None,
@@ -402,9 +403,10 @@ pub fn journal_turn_event_for_stream(
         || event.previous_artifact_id.is_some()
         || event.tool_artifact_refs.is_some()
         || event.context_usage.is_some()
+        || event.ui_scene.is_some()
         || matches!(
             event.event_type.as_str(),
-            "artifact_presented" | "artifact_updated"
+            "artifact_presented" | "artifact_updated" | "ui_scene"
         )
     {
         return stream_mirror_from_event(event);

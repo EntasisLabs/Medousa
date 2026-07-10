@@ -7823,6 +7823,17 @@
           }
         ]
       },
+      "ui_scene": {
+        "description": "Liquid UI scene operations (cognition_ui_scene) — model-authored structure-then-fill turns. Ops are opaque JSON validated client-side.",
+        "anyOf": [
+          {
+            "$ref": "#/definitions/StreamUiScene"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
       "work_id": {
         "description": "Turn worker handoff — workspace card id (`work-…`).",
         "type": [
@@ -7982,6 +7993,42 @@
           },
           "presentation": {
             "type": "string"
+          }
+        }
+      },
+      "StreamUiScene": {
+        "description": "Liquid UI scene channel payload — a batch of model-authored scene ops for one turn. `ops` are forwarded verbatim as opaque JSON (the client decodes and validates them into typed `SceneOp`s); the daemon never inspects their shape.",
+        "type": "object",
+        "required": [
+          "ops"
+        ],
+        "properties": {
+          "ops": {
+            "description": "Ordered scene operations, opaque JSON validated client-side.",
+            "type": "array",
+            "items": true
+          },
+          "rev": {
+            "description": "Owning `plan_layout` revision for ordering (informational).",
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "surface_id": {
+            "description": "Scene surface id; the client defaults to `chat:{turn_id}` when absent.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "turn_id": {
+            "description": "Owning turn id (stamped by the stream event builder).",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       }

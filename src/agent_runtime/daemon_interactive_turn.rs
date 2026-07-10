@@ -768,6 +768,15 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
                 .await;
             }
         }
+        if tool_name == crate::ui_scene_tools::COGNITION_UI_SCENE {
+            if let Some(scene) = super::tool_stream::scene_ops_from_tool_output(&tool_output) {
+                self.publish_tracked(interactive_turn_runtime::scene_ops_stream_event(
+                    &self.turn_id,
+                    scene,
+                ))
+                .await;
+            }
+        }
         if tool_name == crate::artifact_tools::COGNITION_ARTIFACT_WRITE {
             if let Some(ui_artifact) = super::tool_stream::ui_artifact_from_tool_output(&tool_output) {
                 if let Some(previous) = tool_output

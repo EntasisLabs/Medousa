@@ -71,6 +71,7 @@ pub const HOST_BOOTSTRAP_TOOLS: &[&str] = &[
     "cognition_turn_finish",
     "cognition_turn_worker_status",
     "cognition_ui_present",
+    "cognition_ui_scene",
 ];
 
 /// Always-visible worker workshop tools.
@@ -206,8 +207,9 @@ pub fn host_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
             },
             ToolDomainCatalogEntry {
                 domain: "presentation",
-                summary: "Rich HTML artifacts — present (cognition_ui_present) and revise (cognition_artifact_write)",
+                summary: "Native scenes (cognition_ui_scene, preferred) and rich HTML artifacts — present (cognition_ui_present) and revise (cognition_artifact_write)",
                 tools: &[
+                    "cognition_ui_scene",
                     "cognition_ui_present",
                     "cognition_artifact_list",
                     "cognition_artifact_read",
@@ -259,8 +261,9 @@ pub fn host_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
             },
             ToolDomainCatalogEntry {
                 domain: "presentation",
-                summary: "HTML artifacts — ui_present publish and artifact_write revise",
+                summary: "Native scenes (ui_scene, preferred) and HTML artifacts — ui_present publish and artifact_write revise",
                 tools: &[
+                    "cognition_ui_scene",
                     "cognition_ui_present",
                     "cognition_artifact_list",
                     "cognition_artifact_read",
@@ -397,6 +400,7 @@ pub fn tool_one_liner(name: &str) -> &'static str {
         "cognition_turn_update_user" => "Short status to the principal mid-turn (retries, course-corrections) — call with your next tool",
         "cognition_turn_checkpoint" => "Mid-task update; hand turn to principal",
         "cognition_turn_finish" => "Commit principal-ready answer (required after tool work)",
+        "cognition_ui_scene" => "Author a native, streamable scene (structure-then-fill) — preferred over cognition_ui_present for interactive UI",
         "cognition_ui_present" => "Publish a new HTML artifact in chat (inline, panel, or fullscreen)",
         "cognition_artifact_list" => "List HTML presentation artifacts in this session",
         "cognition_artifact_read" => "Read HTML artifact source (line range or budget)",
