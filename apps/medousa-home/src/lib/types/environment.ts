@@ -4,7 +4,8 @@ export type ComponentType =
   | "builtin_panel"
   | "presentation"
   | "media_embed"
-  | "chrome_action";
+  | "chrome_action"
+  | "scene";
 
 export type SurfaceKind = "builtin" | "custom";
 

@@ -5,6 +5,7 @@
   import AssistantThinking from "$lib/components/chat/AssistantThinking.svelte";
   import ChatMediaParts from "$lib/components/chat/ChatMediaParts.svelte";
   import LiquidChatMessage from "$lib/components/chat/LiquidChatMessage.svelte";
+  import { chatScenes } from "$lib/liquid/surfaces/chat/chatScenes.svelte";
   import { settings } from "$lib/stores/settings.svelte";
   import { chat } from "$lib/stores/chat.svelte";
   import type { ChatMessage } from "$lib/types/chat";
@@ -41,6 +42,11 @@
     if (!trimmed) return;
     void chat.retryWorkerSynthesis(trimmed);
   }
+
+  /** Daemon-authored scenes always paint; the liquidChat flag only gates the adapter path. */
+  function useLiquid(messageId: string): boolean {
+    return settings.liquidChat || chatScenes.has(messageId);
+  }
 </script>
 
 {#each messages as message, index (message.id)}
@@ -49,7 +55,7 @@
   {#if mobile && message.role === "user"}
     <div class="{turnBreak ? 'chat-turn-break' : ''} mobile-chat-user-row">
       <article class="mobile-chat-bubble-user">
-        {#if settings.liquidChat}
+        {#if useLiquid(message.id)}
           <LiquidChatMessage {message} {sessionId} {mobile} compact {onSubmitIntent} />
         {:else}
           {#if message.content?.trim()}
@@ -77,7 +83,7 @@
             ? 'chat-voice chat-voice-compact'
             : 'chat-voice'}"
   >
-    {#if settings.liquidChat}
+    {#if useLiquid(message.id)}
       <LiquidChatMessage
         {message}
         {sessionId}

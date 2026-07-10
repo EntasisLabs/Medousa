@@ -40,7 +40,7 @@ const TOPICS: &[WikiTopic] = &[
         summary: "STTP topic catalog — read before guessing propose/apply JSON.",
         policy: "",
         related: &[],
-        call_next: &["mental_model", "recipe"],
+        call_next: &["scene_vs_html", "mental_model", "recipe"],
     },
     WikiTopic {
         id: "mental_model",
@@ -60,7 +60,8 @@ const TOPICS: &[WikiTopic] = &[
     },
     publish_paths(.98): {
         spec_path(.98): "environment_get → merge full spec → propose → operator Settings→Canvas approve → apply → optional component_create",
-        fast_path(.97): "ui_present(html) then persist=true + surface_id(custom) + component_id + slot"
+        fast_path(.97): "ui_present(html) then persist=true + surface_id(custom) + component_id + slot",
+        scene_path(.98): "native Liquid scene — cognition_component_create type:scene, config.scene:{ops:[…]} (same ops as cognition_ui_scene); daemon stores opaque, Home renders via SceneRenderer — prefer for interactive/streamable widgets over one HTML blob"
     },
     phase1_types(.99): {
         allowed(.99): "presentation, media_embed, chrome_action, medousa_view",
@@ -88,6 +89,8 @@ const TOPICS: &[WikiTopic] = &[
         step_5_approval(.98): "when ok:true and pending_operator_approval:true tell principal Settings→Canvas→Apply layout",
         step_6_apply(.99): "cognition_environment_apply with SAME full spec after approval",
         step_7_publish(.98): {
+            decision(.98): "interactive/streamable/typed content → scene component (see scene_vs_html); pixel-exact self-contained one-off → ui_present HTML",
+            scene(.98): "cognition_component_create type:scene, config.scene:{ops:[…]} — native Liquid, no artifact needed",
             ui_present(.98): "title, html, presentation; canvas pin: persist=true, surface_id=custom, component_id, slot=main",
             component_create(.97): "type:presentation, config.artifactId from ui_present artifact_id"
         },
@@ -104,7 +107,7 @@ const TOPICS: &[WikiTopic] = &[
         errors_array(.97): "component_schema or surface_schema topic",
         zero_components(.96): "builtin target or approval never landed"
     }"#,
-        related: &["merge_spec", "ui_present", "propose_apply"],
+        related: &["scene_vs_html", "merge_spec", "ui_present", "propose_apply"],
         call_next: &["cognition_environment_get", "cognition_environment_wiki"],
     },
     WikiTopic {
@@ -170,8 +173,16 @@ const TOPICS: &[WikiTopic] = &[
     WikiTopic {
         id: "component_schema",
         title: "ComponentDef Phase 1",
-        summary: "presentation, media_embed, chrome_action, and medousa_view on Home.",
+        summary: "scene (preferred), presentation, media_embed, chrome_action, and medousa_view on Home.",
         policy: r#"    role(.99): "ComponentDef pins content on custom surfaces — camelCase surfaceId not surface_id.",
+    scene(.99): {
+        type(.99): "scene",
+        surfaceId(.99): "must reference kind:custom surface",
+        slot(.98): "main usual",
+        config(.99): "{ scene: { ops: [...] } } — ops are the same JSON as cognition_ui_scene (plan_layout, fill_slot, …); stored opaque, no artifact needed",
+        why(.98): "native Liquid scene — prefer over presentation for interactive/streamable widgets (see scene_vs_html)",
+        feeds(.95): "[]"
+    },
     presentation(.99): {
         type(.99): "presentation",
         surfaceId(.99): "must reference kind:custom surface",
@@ -197,8 +208,9 @@ const TOPICS: &[WikiTopic] = &[
         builtin_panel(.99): "validation error"
     },
     create_wrapper(.98): "cognition_component_create input: { component: { … } } camelCase keys",
+    json_scene_example(.98): "{ id:trip-scene, type:scene, surfaceId:japan-trip, slot:main, label:Itinerary, config:{scene:{ops:[{op:plan_layout, …}]}}, feeds:[] }",
     json_presentation_example(.97): "{ id:writing-manuscript, type:presentation, surfaceId:writing-studio, slot:main, label:Manuscript, config:{artifactId:art-…}, presentation:inline, feeds:[] }"#,
-        related: &["ui_present", "common_errors"],
+        related: &["scene_vs_html", "ui_present", "common_errors"],
         call_next: &["cognition_component_list"],
     },
     WikiTopic {
@@ -279,9 +291,33 @@ const TOPICS: &[WikiTopic] = &[
     node_shape(.98): "nodes carry id (stable reconciliation key), type (archetype), props",
     bones_first(.97): "send plan_layout with skeleton slots first, THEN call again with fill_slot batches in the same turn so structure paints before content streams",
     requirements(.98): "supports_ui_artifacts must be true — otherwise the tool returns unsupported_surface; answer in markdown instead",
+    persist(.98): {
+        durable(.98): "cognition_ui_scene is ephemeral (chat turn only). To pin a scene to a custom surface, create a scene component: cognition_component_create type:scene, config.scene:{ops:[…]} — same op JSON.",
+        route(.97): "durable scene = Workshop canvas work (environment domain); see scene_vs_html and component_schema topics"
+    },
     anti_pattern(.99): "inventing a discover/unlock flow, or emitting ops without a string `op` field, or an empty ops array"#,
-        related: &["ui_present", "component_schema"],
+        related: &["scene_vs_html", "ui_present", "component_schema"],
         call_next: &["cognition_ui_scene"],
+    },
+    WikiTopic {
+        id: "scene_vs_html",
+        title: "Scene vs HTML — how to present",
+        summary: "Decision boundary: native Liquid scene (preferred) vs cognition_ui_present HTML artifact.",
+        policy: r#"    role(.99): "Two presentation paths on supports_ui_artifacts clients — pick per intent; do NOT default to a single big HTML blob.",
+    prefer_scene(.99): {
+        when(.99): "interactive, streamable, data-narrated, or bidirectional content — the common case for answers and dashboards",
+        why(.98): "typed nodes reconcile + stream bones-first; small composable archetypes, not one opaque page; user events flow back to the model",
+        ephemeral(.98): "cognition_ui_scene (chat turn)",
+        durable(.98): "scene component — cognition_component_create type:scene, config.scene:{ops:[…]}"
+    },
+    prefer_html(.97): {
+        when(.97): "pixel-exact, self-contained one-off layouts, or content needing the artifact runtime (MedousaStore persistence, feed_client polling, custom CSS/animation)",
+        tool(.97): "cognition_ui_present (+ persist for a presentation component)"
+    },
+    anti_pattern(.99): "dumping one large HTML document when a streamed scene of typed nodes fits — that feels like GenUI, not an assistant. Reach for scene first.",
+    both_gated(.98): "both paths require supports_ui_artifacts; on non-UI channels answer in markdown"#,
+        related: &["ui_scene", "ui_present", "component_schema", "recipe"],
+        call_next: &["cognition_ui_scene", "cognition_component_create"],
     },
     WikiTopic {
         id: "presets",
@@ -580,6 +616,8 @@ const TOPICS: &[WikiTopic] = &[
         switch_nav(.96): "cognition_environment_activate_preset",
         list_components(.98): "cognition_component_list",
         add_component(.97): "cognition_component_create",
+        render_native_scene(.98): "cognition_ui_scene — ephemeral streamable scene inline in chat (preferred for interactive answers)",
+        persist_scene(.98): "cognition_component_create type:scene, config.scene:{ops:[…]} — durable Liquid scene pinned to a custom surface",
         publish_html(.98): "cognition_ui_present",
         edit_html(.97): "cognition_artifact_write",
         stack_layout(.98): "cognition_layout_get / cognition_layout_apply / cognition_layout_reset",
@@ -683,10 +721,10 @@ impl StasisTool for CognitionEnvironmentWikiTool {
 
     fn description(&self) -> Option<&'static str> {
         Some(
-            "Environment/canvas SDK as STTP temporal nodes — schemas, merge rules, propose/apply, ui_present. \
+            "Environment/canvas SDK as STTP temporal nodes — schemas, merge rules, propose/apply, ui_present, ui_scene. \
              Returns response_format=sttp (same family as system prompt). \
              Call topic=recipe or merge_spec BEFORE hand-building environment spec JSON. \
-             Topics: mental_model, recipe, merge_spec, surface_schema, component_schema, propose_apply, ui_present, presets, layout_schema, layout_zones, media_embed, feed_client, example_trip_poll, common_errors, example_writing_studio, tool_map.",
+             Topics: scene_vs_html, mental_model, recipe, merge_spec, surface_schema, component_schema, propose_apply, ui_present, ui_scene, presets, layout_schema, layout_zones, media_embed, feed_client, example_trip_poll, common_errors, example_writing_studio, tool_map.",
         )
     }
 
@@ -699,6 +737,7 @@ impl StasisTool for CognitionEnvironmentWikiTool {
                     "description": "STTP wiki topic id. Omit for index node.",
                     "enum": [
                         "index",
+                        "scene_vs_html",
                         "mental_model",
                         "recipe",
                         "merge_spec",
@@ -706,6 +745,7 @@ impl StasisTool for CognitionEnvironmentWikiTool {
                         "component_schema",
                         "propose_apply",
                         "ui_present",
+                        "ui_scene",
                         "presets",
                         "layout_schema",
                         "layout_zones",
@@ -788,6 +828,21 @@ mod tests {
         let sttp = out["sttp_node"].as_str().expect("sttp_node");
         assert!(sttp.contains("◈⟨"));
         assert!(sttp.contains("cognition_environment_get"));
+    }
+
+    #[tokio::test]
+    async fn wiki_scene_topics_roundtrip_json() {
+        let tool = CognitionEnvironmentWikiTool;
+        for topic_id in ["ui_scene", "scene_vs_html"] {
+            let out = tool
+                .invoke(json!({ "topic": topic_id }))
+                .await
+                .expect("invoke");
+            assert_eq!(out["ok"], true);
+            assert_eq!(out["topic"], topic_id);
+            let raw = serde_json::to_string(&out).expect("serialize wiki output");
+            serde_json::from_str::<serde_json::Value>(&raw).expect("parse wiki output");
+        }
     }
 
     #[tokio::test]

@@ -40,6 +40,16 @@ Routing:
 - Never target builtin surfaces (home, chat, settings, runtime) for agent-owned components — only kind=custom surfaces.
 - Operator approves agent proposals in Settings → Canvas."#;
 
+/// Capability-gated presentation nudge. Appended ONLY when the connected client
+/// declares `supports_ui_artifacts` — non-UI channels (cli/tui/telegram) never see it.
+pub const PRESENTATION_APPENDIX: &str = r#"
+[MEDOUSA_PRESENTATION]
+This client can render UI (supports_ui_artifacts) — prefer native Liquid scenes over one big HTML blob.
+- Interactive / streamable / data-narrated content → cognition_ui_scene (bootstrap tool, call it directly, do NOT discover; typed nodes, bones-first: plan_layout then fill_slot batches).
+- Pixel-exact self-contained one-off, or content needing the artifact runtime (MedousaStore, feed polling) → cognition_ui_present.
+- Durable widget pinned to a custom surface → scene component (cognition_component_create type:scene, config.scene:{ops:[…]}) or a ui_present presentation — canvas work runs in the Workshop.
+- Full decision guide: cognition_environment_wiki(topic=scene_vs_html)."#;
+
 pub const WORKER_CANVAS_APPENDIX: &str = r#"
 [MEDOUSA_WORKER_CANVAS]
 Bound Workshop / Studio lane — publish HTML and wire custom surfaces here (Chat host cannot).
@@ -173,15 +183,22 @@ pub fn worker_system_prompt(
     session_id: &str,
     intent: TurnWorkerIntent,
     manuscript: Option<&crate::identity_manuscript::WorkerManuscriptHandoff>,
+    supports_ui_artifacts: bool,
 ) -> String {
     let manuscript_block = manuscript
         .map(crate::identity_manuscript::format_worker_manuscript_block)
         .map(|block| format!("\n{block}\n"))
         .unwrap_or_default();
+    // Capability-gated: only UI-capable workshops get presentation guidance.
+    let presentation_block = if supports_ui_artifacts {
+        format!("\n\n{PRESENTATION_APPENDIX}")
+    } else {
+        String::new()
+    };
     format!(
         "{WORKER_STTP_POLICY}{manuscript_block}\n\n\
          [MEDOUSA_COLLABORATOR_VOICE]\n{MEDOUSA_COLLABORATOR_VOICE}\n\n\
-         {WORKER_SYSTEM_APPENDIX}\n\n{WORKER_DISCIPLINE_APPENDIX}\n\n{}\n\n{TURN_RUNTIME_BOUNDARY_APPENDIX}\n\n[MEDOUSA_WORKER_CONTEXT]\n\
+         {WORKER_SYSTEM_APPENDIX}\n\n{WORKER_DISCIPLINE_APPENDIX}\n\n{}{presentation_block}\n\n{TURN_RUNTIME_BOUNDARY_APPENDIX}\n\n[MEDOUSA_WORKER_CONTEXT]\n\
          session_id={session_id}\n\
          worker_intent={}\n\
          Read [MEDOUSA_CONTINUATION] and [HOST_CONTINUITY] in the user prompt when present.\n\
@@ -208,13 +225,23 @@ pub fn worker_failure_user_prompt(
     )
 }
 
-pub fn system_prompt_for_host_profile(base: &str, host_bus_active: bool, worker_intent: Option<&str>) -> String {
+pub fn system_prompt_for_host_profile(
+    base: &str,
+    host_bus_active: bool,
+    supports_ui_artifacts: bool,
+    worker_intent: Option<&str>,
+) -> String {
     if !host_bus_active {
         return base.to_string();
     }
     let mut out = format!(
         "{base}\n\n[MEDOUSA_COLLABORATOR_VOICE]\n{MEDOUSA_COLLABORATOR_VOICE}\n\n{HOST_BUS_TURN_APPENDIX}\n\n{HOST_CANVAS_APPENDIX}\n\n{TURN_RUNTIME_BOUNDARY_APPENDIX}\n\n{TURN_SCRATCH_APPENDIX}"
     );
+    // Capability-gated: only UI-capable clients (Home) get presentation guidance.
+    if supports_ui_artifacts {
+        out.push_str("\n\n");
+        out.push_str(PRESENTATION_APPENDIX);
+    }
     if let Some(intent) = worker_intent {
         out.push('\n');
         out.push_str(&host_route_appendix(Some(intent)));
@@ -301,7 +328,7 @@ mod tests {
 
     #[test]
     fn research_worker_prompt_includes_grapheme_discovery() {
-        let prompt = worker_system_prompt("sess-1", TurnWorkerIntent::Research, None);
+        let prompt = worker_system_prompt("sess-1", TurnWorkerIntent::Research, None, false);
         assert!(prompt.contains("MEDOUSA_WORKER_DISCIPLINE"));
         assert!(prompt.contains("HOST_TOOL_DIGESTS"));
         assert!(prompt.contains("cognition_grapheme_modules"));
@@ -311,21 +338,43 @@ mod tests {
 
     #[test]
     fn memory_worker_prompt_includes_calibrate_ritual() {
-        let prompt = worker_system_prompt("sess-1", TurnWorkerIntent::MemoryAvecCalibrate, None);
+        let prompt =
+            worker_system_prompt("sess-1", TurnWorkerIntent::MemoryAvecCalibrate, None, false);
         assert!(prompt.contains("cognition_memory_calibrate"));
         assert!(!prompt.contains("[MEDOUSA_WORKER_GRAPHEME]"));
     }
 
     #[test]
     fn host_and_worker_prompts_share_collaborator_voice() {
-        let worker = worker_system_prompt("sess-1", TurnWorkerIntent::General, None);
+        let worker = worker_system_prompt("sess-1", TurnWorkerIntent::General, None, false);
         assert!(worker.contains("[MEDOUSA_COLLABORATOR_VOICE]"));
         assert!(worker.contains("cognition_turn_finish"));
         assert!(!worker.contains("background specialist"));
 
-        let host = system_prompt_for_host_profile("base-sttp", true, None);
+        let host = system_prompt_for_host_profile("base-sttp", true, false, None);
         assert!(host.contains("[MEDOUSA_COLLABORATOR_VOICE]"));
         assert!(host.contains("[MEDOUSA_HOST_BUS]"));
         assert!(host.contains("Chat (host)"));
+    }
+
+    #[test]
+    fn presentation_appendix_is_capability_gated() {
+        // Host lane: only UI-capable clients see the presentation nudge.
+        let ui = system_prompt_for_host_profile("base-sttp", true, true, None);
+        assert!(ui.contains("[MEDOUSA_PRESENTATION]"));
+        assert!(ui.contains("cognition_ui_scene"));
+
+        let non_ui = system_prompt_for_host_profile("base-sttp", true, false, None);
+        assert!(!non_ui.contains("[MEDOUSA_PRESENTATION]"));
+
+        // host_bus_active=false returns the bare base regardless of capability.
+        let bare = system_prompt_for_host_profile("base-sttp", false, true, None);
+        assert_eq!(bare, "base-sttp");
+
+        // Worker lane mirrors the gate.
+        let worker_ui = worker_system_prompt("sess-1", TurnWorkerIntent::General, None, true);
+        assert!(worker_ui.contains("[MEDOUSA_PRESENTATION]"));
+        let worker_non_ui = worker_system_prompt("sess-1", TurnWorkerIntent::General, None, false);
+        assert!(!worker_non_ui.contains("[MEDOUSA_PRESENTATION]"));
     }
 }

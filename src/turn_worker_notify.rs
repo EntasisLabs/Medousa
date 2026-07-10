@@ -128,6 +128,84 @@ pub async fn publish_worker_synthesis_to_parent_turn(
     }
 }
 
+/// Forward Workshop UI side-effects (native scenes + HTML artifacts) onto the parent
+/// interactive turn SSE. Without this, `cognition_ui_scene` / `cognition_ui_present`
+/// succeed in the worker but never paint in Home — DurableWorkerStreamSink is otherwise
+/// a no-op for tool finishes.
+pub async fn publish_worker_ui_side_effects_to_parent_turn(
+    record: &TurnWorkRecord,
+    tool_name: &str,
+    tool_output: &serde_json::Value,
+) {
+    let Some(parent_turn_id) = record
+        .parent_turn_correlation_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    else {
+        return;
+    };
+    let Some(entry) = parent_turn_stream_entry(parent_turn_id).await else {
+        return;
+    };
+
+    if tool_name == crate::ui_scene_tools::COGNITION_UI_SCENE {
+        if let Some(mut scene) =
+            crate::agent_runtime::tool_stream::scene_ops_from_tool_output(tool_output)
+        {
+            scene.turn_id = Some(parent_turn_id.to_string());
+            if let Ok(event) =
+                crate::interactive_turn_runtime::scene_ops_stream_event(parent_turn_id, scene)
+            {
+                publish_interactive_turn_event(&entry, Ok(event));
+            }
+        }
+        return;
+    }
+
+    if tool_name == crate::ui_present_tools::COGNITION_UI_PRESENT
+        || tool_name == crate::artifact_tools::COGNITION_ARTIFACT_WRITE
+    {
+        if let Some(ui_artifact) =
+            crate::agent_runtime::tool_stream::ui_artifact_from_tool_output(tool_output)
+        {
+            if tool_name == crate::artifact_tools::COGNITION_ARTIFACT_WRITE {
+                if let Some(previous) = tool_output
+                    .get("previous_artifact_id")
+                    .and_then(|value| value.as_str())
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                {
+                    let root = tool_output
+                        .get("root_artifact_id")
+                        .and_then(|value| value.as_str())
+                        .map(str::trim)
+                        .filter(|value| !value.is_empty());
+                    if let Ok(event) =
+                        crate::interactive_turn_runtime::artifact_updated_stream_event(
+                            parent_turn_id,
+                            previous,
+                            ui_artifact,
+                            root,
+                        )
+                    {
+                        publish_interactive_turn_event(&entry, Ok(event));
+                    }
+                    return;
+                }
+            }
+            if let Ok(event) =
+                crate::interactive_turn_runtime::artifact_presented_stream_event(
+                    parent_turn_id,
+                    ui_artifact,
+                )
+            {
+                publish_interactive_turn_event(&entry, Ok(event));
+            }
+        }
+    }
+}
+
 fn ingest_channel_delivery_bridge() -> Option<IngestChannelDeliveryBridge> {
     INGEST_CHANNEL_DELIVERY_BRIDGE
         .lock()

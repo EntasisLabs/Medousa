@@ -64,8 +64,9 @@ impl StasisTool for CognitionUiSceneTool {
              Preferred over cognition_ui_present for interactive UI — the model composes typed nodes, not HTML. \
              Emit ops in the scene-op JSON shape; go bones-first: send a plan_layout with skeleton slots, then follow up \
              with fill_slot batches (call again in the same turn) so structure paints before content streams in. \
+             Keep each call small (plan_layout first, then 1–3 fill_slot ops per follow-up) — ops must be valid JSON. \
              Ops: plan_layout, fill_slot, patch_props, set_binding, set_fill_state, precompute, remove. \
-             Each op is an object with a string `op` field; nodes carry `id` (stable reconciliation key), `type` (archetype), and `props`.",
+             Each op is an object with a string op field; nodes carry id (stable reconciliation key), type (archetype), and props.",
         )
     }
 
@@ -76,7 +77,9 @@ impl StasisTool for CognitionUiSceneTool {
             "properties": {
                 "ops": {
                     "type": "array",
-                    "description": "Ordered scene operations. Each item is an object with a string `op` field (plan_layout, fill_slot, patch_props, set_binding, set_fill_state, precompute, remove).",
+                    "description": "Ordered scene operations. Each item is an object with a string op field (plan_layout, fill_slot, patch_props, set_binding, set_fill_state, precompute, remove). Keep batches small — plan_layout first, then fill_slot in follow-up calls.",
+                    "minItems": 1,
+                    "maxItems": 12,
                     "items": { "type": "object" }
                 },
                 "surface_id": {
@@ -106,6 +109,12 @@ impl StasisTool for CognitionUiSceneTool {
             .ok_or_else(|| StasisError::PortFailure("ops must be an array".to_string()))?;
         if ops.is_empty() {
             return Err(StasisError::PortFailure("ops must not be empty".to_string()));
+        }
+        if ops.len() > 12 {
+            return Err(StasisError::PortFailure(
+                "ops batch too large (max 12) — send plan_layout first, then fill_slot in follow-up calls"
+                    .to_string(),
+            ));
         }
         for (index, op) in ops.iter().enumerate() {
             let has_op = op
@@ -199,5 +208,18 @@ mod tests {
             .await
             .expect_err("should reject");
         assert!(err.to_string().contains("op"));
+    }
+
+    #[tokio::test]
+    async fn rejects_oversized_ops_batch() {
+        let tool = CognitionUiSceneTool::new(scope(true));
+        let ops: Vec<Value> = (0..13)
+            .map(|i| json!({ "op": "patch_props", "nodeId": format!("n{i}") }))
+            .collect();
+        let err = tool
+            .invoke(json!({ "ops": ops }))
+            .await
+            .expect_err("should reject");
+        assert!(err.to_string().contains("max 12"));
     }
 }

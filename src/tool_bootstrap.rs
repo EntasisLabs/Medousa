@@ -86,6 +86,8 @@ pub const WORKER_BOOTSTRAP_TOOLS: &[&str] = &[
     "cognition_grapheme_template_run",
     "cognition_memory_context",
     "cognition_memory_store",
+    "cognition_ui_scene",
+    "cognition_ui_present",
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

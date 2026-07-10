@@ -1581,14 +1581,25 @@
         }
       },
       "ComponentType": {
-        "type": "string",
-        "enum": [
-          "artifact",
-          "medousa_view",
-          "builtin_panel",
-          "presentation",
-          "media_embed",
-          "chrome_action"
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "artifact",
+              "medousa_view",
+              "builtin_panel",
+              "presentation",
+              "media_embed",
+              "chrome_action"
+            ]
+          },
+          {
+            "description": "Native Liquid scene pinned to a custom surface. `config.scene` holds an opaque scene payload (`{ ops: [...] }`) the daemon never interprets — the client decodes + renders it via the Liquid SceneRenderer.",
+            "type": "string",
+            "enum": [
+              "scene"
+            ]
+          }
         ]
       },
       "DesktopNavStyle": {
@@ -2257,14 +2268,25 @@
         }
       },
       "ComponentType": {
-        "type": "string",
-        "enum": [
-          "artifact",
-          "medousa_view",
-          "builtin_panel",
-          "presentation",
-          "media_embed",
-          "chrome_action"
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "artifact",
+              "medousa_view",
+              "builtin_panel",
+              "presentation",
+              "media_embed",
+              "chrome_action"
+            ]
+          },
+          {
+            "description": "Native Liquid scene pinned to a custom surface. `config.scene` holds an opaque scene payload (`{ ops: [...] }`) the daemon never interprets — the client decodes + renders it via the Liquid SceneRenderer.",
+            "type": "string",
+            "enum": [
+              "scene"
+            ]
+          }
         ]
       },
       "DesktopNavStyle": {
@@ -2951,14 +2973,25 @@
         }
       },
       "ComponentType": {
-        "type": "string",
-        "enum": [
-          "artifact",
-          "medousa_view",
-          "builtin_panel",
-          "presentation",
-          "media_embed",
-          "chrome_action"
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "artifact",
+              "medousa_view",
+              "builtin_panel",
+              "presentation",
+              "media_embed",
+              "chrome_action"
+            ]
+          },
+          {
+            "description": "Native Liquid scene pinned to a custom surface. `config.scene` holds an opaque scene payload (`{ ops: [...] }`) the daemon never interprets — the client decodes + renders it via the Liquid SceneRenderer.",
+            "type": "string",
+            "enum": [
+              "scene"
+            ]
+          }
         ]
       },
       "DesktopNavStyle": {
@@ -3506,14 +3539,25 @@
         }
       },
       "ComponentType": {
-        "type": "string",
-        "enum": [
-          "artifact",
-          "medousa_view",
-          "builtin_panel",
-          "presentation",
-          "media_embed",
-          "chrome_action"
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "artifact",
+              "medousa_view",
+              "builtin_panel",
+              "presentation",
+              "media_embed",
+              "chrome_action"
+            ]
+          },
+          {
+            "description": "Native Liquid scene pinned to a custom surface. `config.scene` holds an opaque scene payload (`{ ops: [...] }`) the daemon never interprets — the client decodes + renders it via the Liquid SceneRenderer.",
+            "type": "string",
+            "enum": [
+              "scene"
+            ]
+          }
         ]
       },
       "DesktopNavStyle": {
@@ -4142,14 +4186,25 @@
         }
       },
       "ComponentType": {
-        "type": "string",
-        "enum": [
-          "artifact",
-          "medousa_view",
-          "builtin_panel",
-          "presentation",
-          "media_embed",
-          "chrome_action"
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "artifact",
+              "medousa_view",
+              "builtin_panel",
+              "presentation",
+              "media_embed",
+              "chrome_action"
+            ]
+          },
+          {
+            "description": "Native Liquid scene pinned to a custom surface. `config.scene` holds an opaque scene payload (`{ ops: [...] }`) the daemon never interprets — the client decodes + renders it via the Liquid SceneRenderer.",
+            "type": "string",
+            "enum": [
+              "scene"
+            ]
+          }
         ]
       },
       "DesktopNavStyle": {
@@ -5584,14 +5639,25 @@
         }
       },
       "ComponentType": {
-        "type": "string",
-        "enum": [
-          "artifact",
-          "medousa_view",
-          "builtin_panel",
-          "presentation",
-          "media_embed",
-          "chrome_action"
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "artifact",
+              "medousa_view",
+              "builtin_panel",
+              "presentation",
+              "media_embed",
+              "chrome_action"
+            ]
+          },
+          {
+            "description": "Native Liquid scene pinned to a custom surface. `config.scene` holds an opaque scene payload (`{ ops: [...] }`) the daemon never interprets — the client decodes + renders it via the Liquid SceneRenderer.",
+            "type": "string",
+            "enum": [
+              "scene"
+            ]
+          }
         ]
       },
       "DesktopNavStyle": {
@@ -6286,14 +6352,25 @@
         }
       },
       "ComponentType": {
-        "type": "string",
-        "enum": [
-          "artifact",
-          "medousa_view",
-          "builtin_panel",
-          "presentation",
-          "media_embed",
-          "chrome_action"
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "artifact",
+              "medousa_view",
+              "builtin_panel",
+              "presentation",
+              "media_embed",
+              "chrome_action"
+            ]
+          },
+          {
+            "description": "Native Liquid scene pinned to a custom surface. `config.scene` holds an opaque scene payload (`{ ops: [...] }`) the daemon never interprets — the client decodes + renders it via the Liquid SceneRenderer.",
+            "type": "string",
+            "enum": [
+              "scene"
+            ]
+          }
         ]
       },
       "DesktopNavStyle": {

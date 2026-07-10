@@ -1249,6 +1249,7 @@ async fn run_agent_turn_inner(
     let system_prompt = super::turn_worker::system_prompt_for_host_profile(
         super::DEFAULT_SYSTEM_PROMPT,
         true,
+        crate::ui_present_tools::surface_supports_ui_artifacts(request.surface.as_ref()),
         None,
     );
     let (tool_count, tool_schema_chars) =
