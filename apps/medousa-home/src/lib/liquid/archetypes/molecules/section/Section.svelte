@@ -2,6 +2,7 @@
   /** `section` molecule — the narrative connector: heading + optional sub + content. */
   import Slot from "$lib/liquid/render/Slot.svelte";
   import type { ArchetypeProps } from "$lib/liquid/render/types";
+  import { renderInlineMarkdown } from "$lib/markdown";
 
   let { node }: ArchetypeProps = $props();
 
@@ -12,10 +13,10 @@
 
 <section class="liquid-section">
   {#if title}
-    <h3 class="liquid-section-title">{title}</h3>
+    <h3 class="liquid-section-title">{@html renderInlineMarkdown(title)}</h3>
   {/if}
   {#if subtitle}
-    <p class="liquid-section-sub">{subtitle}</p>
+    <p class="liquid-section-sub">{@html renderInlineMarkdown(subtitle)}</p>
   {/if}
   {#if content.length}
     <div class="liquid-section-content">

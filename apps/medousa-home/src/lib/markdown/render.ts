@@ -185,6 +185,17 @@ function normalizeRenderOptions(
   return {};
 }
 
+/**
+ * Inline-only markdown for titles / headings (`**bold**`, *italics*, `code`,
+ * links). Does not produce block wrappers — safe inside `<h*>` / spans.
+ */
+export function renderInlineMarkdown(source: string): string {
+  if (!source.trim()) return "";
+  configureMarked();
+  const raw = marked.parseInline(source, { async: false }) as string;
+  return sanitizeHtml(raw);
+}
+
 /** Shared Obsidian-flavored markdown renderer for chat, vault, and journal preview. */
 export function renderMarkdown(
   source: string,
@@ -202,7 +213,15 @@ export function renderMarkdown(
     activeRenderOptions.titleByPath,
   );
   const raw = marked.parse(preprocessed, { async: false }) as string;
-  return sanitizeHtml(raw);
+  return sanitizeHtml(wrapMarkdownTables(raw));
+}
+
+/** Scroll shell around tables so overflow never forces `display:block` on `<table>`. */
+function wrapMarkdownTables(html: string): string {
+  return html.replace(
+    /<table\b[^>]*>[\s\S]*?<\/table>/gi,
+    (table) => `<div class="markdown-table-scroll">${table}</div>`,
+  );
 }
 
 /** Back-compat alias used by vault editor and legacy imports. */

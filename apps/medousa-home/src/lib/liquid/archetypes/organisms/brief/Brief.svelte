@@ -6,6 +6,7 @@
    * pipeline so nested ```cite / emphasis / lists hydrate correctly.
    */
   import MarkdownContent from "$lib/components/ui/MarkdownContent.svelte";
+  import { renderInlineMarkdown } from "$lib/markdown";
   import { getLiquidContext } from "$lib/liquid/render/context";
   import { createSceneEvent } from "$lib/liquid/core";
   import type { ArchetypeProps } from "$lib/liquid/render/types";
@@ -87,10 +88,10 @@
     {#if title || subtitle || tone}
       <header class="liquid-brief-header">
         {#if title}
-          <h3 class="liquid-brief-title">{title}</h3>
+          <h3 class="liquid-brief-title">{@html renderInlineMarkdown(title)}</h3>
         {/if}
         {#if subtitle}
-          <p class="liquid-brief-subtitle">{subtitle}</p>
+          <p class="liquid-brief-subtitle">{@html renderInlineMarkdown(subtitle)}</p>
         {/if}
         {#if tone === "research" || tone === "brief" || tone === "memo"}
           <p class="liquid-brief-tone">{tone}</p>
@@ -101,7 +102,7 @@
     <div class="liquid-brief-sections">
       {#each sections as section (section.id)}
         <section class="liquid-brief-section">
-          <h4 class="liquid-brief-heading">{section.heading}</h4>
+          <h4 class="liquid-brief-heading">{@html renderInlineMarkdown(section.heading)}</h4>
           <div class="liquid-brief-body">
             <MarkdownContent
               content={section.body}
@@ -204,6 +205,17 @@
     font-weight: 650;
     letter-spacing: -0.01em;
     color: rgb(var(--color-surface-100));
+  }
+
+  .liquid-brief-heading :global(strong) {
+    font-weight: 750;
+    color: inherit;
+  }
+
+  .liquid-brief-title :global(strong),
+  .liquid-brief-subtitle :global(strong) {
+    font-weight: 750;
+    color: inherit;
   }
 
   .liquid-brief-body {

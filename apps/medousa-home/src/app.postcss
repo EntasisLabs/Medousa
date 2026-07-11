@@ -1820,23 +1820,25 @@
     @apply my-4 border-surface-500/40;
   }
 
-  /* Presentation-feel tables: soft card, not raw GFM grid */
-  .markdown-content table {
-    @apply my-3 w-full border-collapse text-left text-xs;
-    display: block;
+  /* Presentation-feel tables: soft card + one shared column grid.
+     (Old display:block-on-table / display:table-per-row broke multi-col alignment.) */
+  .markdown-content .markdown-table-scroll {
+    @apply my-3 w-full max-w-full;
     overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
     border-radius: 0.75rem;
     border: 1px solid color-mix(in srgb, var(--color-surface-500) 35%, transparent);
     background: color-mix(in srgb, var(--color-surface-900) 55%, transparent);
     box-shadow: 0 1px 0 color-mix(in srgb, var(--color-surface-50) 4%, transparent);
   }
 
-  .markdown-content thead,
-  .markdown-content tbody,
-  .markdown-content tr {
-    display: table;
+  .markdown-content table {
+    @apply w-full border-collapse text-left text-xs;
+    margin: 0;
     width: 100%;
     table-layout: auto;
+    border: none;
+    background: transparent;
   }
 
   .markdown-content th,
@@ -1844,6 +1846,8 @@
     @apply px-3.5 py-2.5 align-top;
     border: none;
     border-bottom: 1px solid color-mix(in srgb, var(--color-surface-500) 28%, transparent);
+    overflow-wrap: anywhere;
+    word-break: break-word;
   }
 
   .markdown-content tr:last-child td {
@@ -1864,14 +1868,26 @@
 
   .markdown-content td:first-child {
     @apply text-surface-400 font-medium;
+  }
+
+  /* 2-col key/value: tidy label column. 3+ cols stay content-shared. */
+  .markdown-content table:has(tr > :nth-child(2):last-child) :is(th, td):first-child {
     width: 28%;
+    max-width: 12rem;
+    white-space: nowrap;
+    overflow-wrap: normal;
+    word-break: normal;
+  }
+
+  .markdown-content table:not(:has(tr > :nth-child(2):last-child)) td:first-child {
+    max-width: 11rem;
   }
 
   .markdown-content tr:nth-child(even) td {
     background: transparent;
   }
 
-  .chat-voice .markdown-content table {
+  .chat-voice .markdown-content .markdown-table-scroll {
     margin-block: 1.1rem;
   }
 

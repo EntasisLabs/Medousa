@@ -844,6 +844,72 @@ describe("preprocessLiquidEmbeds", () => {
     expect(preprocessLiquidEmbeds(src)).toContain("```python");
   });
 
+  it("resolves nested cite inside brief without eating the cite closer (Mon Laferte shape)", () => {
+    const src = [
+      "# Why Mon Laferte Hits the Soul So Hard",
+      "",
+      "```brief",
+      "title: Why Mon Laferte Resonates So Deeply",
+      "subtitle: An analysis",
+      "tone: warm, analytical, reverent",
+      "",
+      "---",
+      "",
+      "## The Wound",
+      "",
+      "She *wears* her pain — **never flinches**.",
+      "",
+      "## The Verdict",
+      "",
+      "She's singing *from* it.",
+      "",
+      "```cite",
+      "title: Mon Laferte — Biography | AllMusic",
+      "url: https://www.allmusic.com/artist/mon-laferte-mn0003223857",
+      'quote: "Award-winning Chilean singer."',
+      "```",
+      "",
+      "```cite",
+      "title: Mon Laferte — Wikipedia",
+      "url: https://en.wikipedia.org/wiki/Mon_Laferte",
+      'quote: "Chilean and Mexican singer-songwriter."',
+      "```",
+      "```",
+      "",
+      "That's the full analysis. She hits the soul hard because she **never flinches**.",
+      "",
+    ].join("\n");
+
+    const out = preprocessLiquidEmbeds(src);
+    expect(out).toContain('data-liquid-embed="brief"');
+    // Innermost-first: cites become placeholders *inside* brief section bodies
+    // (Brief re-enters MarkdownContent → hydrate), not sibling top-level embeds.
+    expect(out).not.toContain("```brief");
+    expect(out).not.toContain("```cite");
+    // Trailing bare fence must not swallow the finale into a code block
+    expect(out).toContain("That's the full analysis");
+    expect(out).toContain("**never flinches**");
+    expect(out.trimEnd()).not.toMatch(/```\s*$/);
+
+    const briefMatch = out.match(
+      /data-liquid-embed="brief"[^>]*data-liquid-props="([^"]+)"/,
+    );
+    const brief = decodeLiquidProps<{
+      title?: string;
+      sections: { heading: string; body: string }[];
+    }>(briefMatch![1]);
+    expect(brief?.title).toBe("Why Mon Laferte Resonates So Deeply");
+    expect(brief?.sections.some((s) => s.heading === "The Wound")).toBe(true);
+    expect(brief?.sections.some((s) => s.body.includes("never flinches"))).toBe(
+      true,
+    );
+    const nestedCiteCount = brief!.sections.reduce(
+      (n, s) => n + (s.body.match(/data-liquid-embed="cite"/g)?.length ?? 0),
+      0,
+    );
+    expect(nestedCiteCount).toBe(2);
+  });
+
   it("turns a dashboard fence into title + tiles", () => {
     const src = [
       "```dashboard",

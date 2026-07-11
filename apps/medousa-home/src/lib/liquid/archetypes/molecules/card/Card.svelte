@@ -9,6 +9,7 @@
   import { getLiquidContext } from "$lib/liquid/render/context";
   import { createSceneEvent } from "$lib/liquid/core";
   import type { ArchetypeProps } from "$lib/liquid/render/types";
+  import { renderInlineMarkdown } from "$lib/markdown";
   import {
     cardHasDetail,
     type CardDetailPayload,
@@ -105,8 +106,8 @@
       <span class="liquid-card-emoji" aria-hidden="true">{emoji}</span>
     {/if}
     <span class="liquid-card-text">
-      <span class="liquid-card-title">{title}</span>
-      {#if subtitle}<span class="liquid-card-subtitle">{subtitle}</span>{/if}
+      <span class="liquid-card-title">{@html renderInlineMarkdown(title)}</span>
+      {#if subtitle}<span class="liquid-card-subtitle">{@html renderInlineMarkdown(subtitle)}</span>{/if}
       {#if body}<span class="liquid-card-body">{body}</span>{/if}
       {#if badges.length}
         <span class="liquid-card-badges">

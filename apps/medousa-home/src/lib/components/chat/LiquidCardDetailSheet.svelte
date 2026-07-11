@@ -7,6 +7,7 @@
   import BodyPortal from "$lib/components/ui/BodyPortal.svelte";
   import { haptic } from "$lib/haptics";
   import { registerMobileBackHandler } from "$lib/mobileNavigation";
+  import { renderInlineMarkdown } from "$lib/markdown";
   import type { CardDetailPayload } from "$lib/markdown/liquidEmbeds";
 
   interface Props {
@@ -84,16 +85,16 @@
             <span class="liquid-card-detail-hero-emoji" aria-hidden="true">{detail.emoji}</span>
           {/if}
 
-          <h2 class="liquid-card-detail-title">{detail.title}</h2>
+          <h2 class="liquid-card-detail-title">{@html renderInlineMarkdown(detail.title)}</h2>
 
           {#if detail.meta}
-            <p class="liquid-card-detail-meta">{detail.meta}</p>
+            <p class="liquid-card-detail-meta">{@html renderInlineMarkdown(detail.meta)}</p>
           {:else if detail.subtitle}
-            <p class="liquid-card-detail-meta">{detail.subtitle}</p>
+            <p class="liquid-card-detail-meta">{@html renderInlineMarkdown(detail.subtitle)}</p>
           {/if}
 
           {#if detail.summary}
-            <p class="liquid-card-detail-summary">{detail.summary}</p>
+            <p class="liquid-card-detail-summary">{@html renderInlineMarkdown(detail.summary)}</p>
           {/if}
 
           {#if detail.chips?.length}

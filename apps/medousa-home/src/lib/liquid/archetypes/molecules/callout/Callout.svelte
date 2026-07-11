@@ -1,6 +1,7 @@
 <script lang="ts">
   /** `callout` molecule — toned aside (note / warn / error / success). */
   import type { ArchetypeProps } from "$lib/liquid/render/types";
+  import { renderInlineMarkdown } from "$lib/markdown";
 
   type Tone = "note" | "warn" | "error" | "success";
   const TONES: Tone[] = ["note", "warn", "error", "success"];
@@ -17,8 +18,8 @@
   data-tone={tone}
   role={tone === "error" || tone === "warn" ? "alert" : undefined}
 >
-  {#if title}<p class="liquid-callout-title">{title}</p>{/if}
-  {#if body}<p class="liquid-callout-body">{body}</p>{/if}
+  {#if title}<p class="liquid-callout-title">{@html renderInlineMarkdown(title)}</p>{/if}
+  {#if body}<p class="liquid-callout-body">{@html renderInlineMarkdown(body)}</p>{/if}
 </div>
 
 <style>
