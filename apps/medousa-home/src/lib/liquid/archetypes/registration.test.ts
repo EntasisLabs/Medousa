@@ -23,6 +23,8 @@ const ALL_IDS = [
   "observability",
   "stack",
   "document",
+  "compare",
+  "plan",
   "thinking",
   "tool_trace",
   "presentation",
