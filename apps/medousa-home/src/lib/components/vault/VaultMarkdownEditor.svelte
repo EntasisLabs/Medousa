@@ -19,7 +19,7 @@
     shouldOpenSlashMenu,
     slashMenuFilter,
     type MarkdownFormatAction,
-    type MarkdownColorId,
+    type MarkdownColorToken,
     type SlashBlockId,
   } from "$lib/utils/vaultMarkdownEdit";
   import { vaultDisplayTitle } from "$lib/utils/formatVault";
@@ -150,7 +150,7 @@
     void applyEdit(result);
   }
 
-  function handleColor(color: MarkdownColorId) {
+  function handleColor(color: MarkdownColorToken) {
     if (!textareaEl) return;
     captureSelection();
     const result = applyMarkdownColor(draft, selectionStart, selectionEnd, color);
