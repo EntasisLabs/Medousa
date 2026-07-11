@@ -10,9 +10,14 @@
   import {
     deleteVaultUserTemplate,
     listVaultUserTemplates,
-    saveVaultUserTemplate,
     type VaultUserTemplate,
   } from "$lib/utils/vaultUserTemplates";
+  import { tick } from "svelte";
+  import { X } from "@lucide/svelte";
+
+  type Picker = null | "space" | "template";
+
+  const SPACE_PREVIEW = 4;
 
   let spaceId = $state("journal");
   let templateId = $state<VaultTemplateId>("daily");
@@ -20,12 +25,42 @@
   let title = $state("");
   let wasOpen = $state(false);
   let userTemplates = $state<VaultUserTemplate[]>([]);
-  let saveTemplateName = $state("");
-  let templateMessage = $state<string | null>(null);
+  let manageTemplates = $state(false);
+  let picker = $state<Picker>(null);
+  let showAllSpaces = $state(false);
 
   const templateOptions = $derived(templatesForSpace(spaceId));
   const creatableSpaces = $derived(creatableVaultSpaces());
   const usingUserTemplate = $derived(Boolean(userTemplateId));
+  const spaceLabel = $derived(
+    creatableSpaces.find((space) => space.id === spaceId)?.label ?? "Space",
+  );
+  const templateLabel = $derived.by(() => {
+    if (userTemplateId) {
+      return (
+        userTemplates.find((row) => row.id === userTemplateId)?.name ?? "Template"
+      );
+    }
+    return (
+      templateOptions.find((option) => option.id === templateId)?.label ??
+      "Template"
+    );
+  });
+  const titleRequired = $derived(
+    !usingUserTemplate && templateId !== "daily" && templateId !== "weekly",
+  );
+  const visibleSpaces = $derived.by(() => {
+    if (showAllSpaces || creatableSpaces.length <= SPACE_PREVIEW) {
+      return creatableSpaces;
+    }
+    const selected = creatableSpaces.find((space) => space.id === spaceId);
+    const rest = creatableSpaces.filter((space) => space.id !== spaceId);
+    const head = selected ? [selected, ...rest] : rest;
+    return head.slice(0, SPACE_PREVIEW);
+  });
+  const hiddenSpaceCount = $derived(
+    Math.max(0, creatableSpaces.length - visibleSpaces.length),
+  );
 
   $effect(() => {
     const open = vault.newNoteDialogOpen;
@@ -35,30 +70,58 @@
       userTemplateId = "";
       title = vault.newNotePrefillTitle.trim();
       userTemplates = listVaultUserTemplates();
-      saveTemplateName = "";
-      templateMessage = null;
+      manageTemplates = false;
+      picker = null;
+      showAllSpaces = false;
+      void tick().then(() => {
+        const el = document.querySelector(
+          "[data-new-note-title]",
+        ) as HTMLInputElement | null;
+        el?.focus();
+        if (title) el?.select();
+      });
     }
     wasOpen = open;
   });
 
-  function handleSpaceChange() {
+  function togglePicker(next: Picker) {
+    picker = picker === next ? null : next;
+    if (picker !== "space") showAllSpaces = false;
+    if (picker !== "template") manageTemplates = false;
+  }
+
+  function selectSpace(id: string) {
+    spaceId = id;
     templateId = defaultTemplateForSpace(spaceId);
     userTemplateId = "";
+    picker = null;
+    showAllSpaces = false;
   }
 
-  function handleBuiltInTemplateChange() {
+  function selectBuiltInTemplate(id: VaultTemplateId) {
+    templateId = id;
     userTemplateId = "";
+    picker = null;
   }
 
-  function handleUserTemplateChange() {
-    if (!userTemplateId) return;
-    const selected = userTemplates.find((row) => row.id === userTemplateId);
+  function selectUserTemplate(id: string) {
+    userTemplateId = id;
+    const selected = userTemplates.find((row) => row.id === id);
     if (selected?.spaceId) {
       spaceId = selected.spaceId;
     }
+    picker = null;
   }
 
-  async function handleCreateCustom(event: Event) {
+  function handleDeleteUserTemplate(id: string) {
+    deleteVaultUserTemplate(id);
+    userTemplates = listVaultUserTemplates();
+    if (userTemplateId === id) {
+      userTemplateId = "";
+    }
+  }
+
+  async function handleCreate(event: Event) {
     event.preventDefault();
     if (userTemplateId) {
       const selected = userTemplates.find((row) => row.id === userTemplateId);
@@ -84,162 +147,171 @@
     vault.closeNewNoteDialog();
   }
 
-  function handleSaveCurrentTemplate() {
-    templateMessage = null;
-    if (!vault.selectedPath || !vault.content.trim()) {
-      templateMessage = "Open a note first.";
-      return;
-    }
-    const name = saveTemplateName.trim() || vault.title.trim() || "Saved template";
-    const saved = saveVaultUserTemplate({
-      name,
-      content: vault.content,
-      spaceId: vault.activeSpace?.id,
-    });
-    if (!saved) {
-      templateMessage = "Could not save template.";
-      return;
-    }
-    userTemplates = listVaultUserTemplates();
-    userTemplateId = saved.id;
-    saveTemplateName = "";
-    templateMessage = `Saved “${saved.name}”.`;
-  }
-
-  function handleDeleteUserTemplate(id: string) {
-    deleteVaultUserTemplate(id);
-    userTemplates = listVaultUserTemplates();
-    if (userTemplateId === id) {
-      userTemplateId = "";
+  function onSheetKeydown(event: KeyboardEvent) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      if (picker) {
+        picker = null;
+        return;
+      }
+      vault.closeNewNoteDialog();
     }
   }
 </script>
 
 {#if vault.newNoteDialogOpen}
+  <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
   <div
-    class="fixed inset-0 z-50 flex items-center justify-center bg-surface-950/80 p-4"
+    class="vault-interact-backdrop"
     role="dialog"
     aria-modal="true"
     aria-labelledby="new-note-title"
+    onkeydown={onSheetKeydown}
+    onclick={(event) => {
+      if (event.target === event.currentTarget) vault.closeNewNoteDialog();
+    }}
   >
     <form
-      class="card w-full max-w-md space-y-4 p-5 shadow-xl"
-      onsubmit={handleCreateCustom}
+      class="vault-interact-sheet vault-compose-sheet"
+      onsubmit={handleCreate}
     >
-      <h3 id="new-note-title" class="text-base font-semibold">
-        {vault.newNotePrefillTitle ? "Create linked note" : "New note"}
-      </h3>
+      <header class="vault-interact-header vault-compose-header">
+        <h3 id="new-note-title" class="sr-only">
+          {vault.newNotePrefillTitle ? "Create linked note" : "New note"}
+        </h3>
+        <button
+          type="button"
+          class="vault-interact-dismiss ml-auto"
+          aria-label="Close"
+          onclick={() => vault.closeNewNoteDialog()}
+        >
+          <X size={14} strokeWidth={2} />
+        </button>
+      </header>
+
       {#if vault.newNotePrefillPath}
-        <p class="text-xs text-surface-400">
-          For wikilink
+        <p class="vault-interact-note">
+          For
           <span class="font-mono text-surface-300">{vault.newNotePrefillPath}</span>
         </p>
       {/if}
 
-      <label class="block space-y-1 text-left text-sm">
-        <span class="text-surface-400">Space</span>
-        <select
-          class="select w-full"
-          bind:value={spaceId}
-          onchange={handleSpaceChange}
-        >
-          {#each creatableSpaces as space (space.id)}
-            <option value={space.id}>{space.label}</option>
-          {/each}
-        </select>
-      </label>
+      <input
+        class="vault-compose-title"
+        type="text"
+        placeholder="What are you writing?"
+        bind:value={title}
+        data-new-note-title
+        required={titleRequired}
+      />
 
-      <label class="block space-y-1 text-left text-sm">
-        <span class="text-surface-400">Template</span>
-        {#key spaceId}
-          <select
-            class="select w-full"
-            bind:value={templateId}
-            disabled={usingUserTemplate}
-            onchange={handleBuiltInTemplateChange}
-          >
-            {#each templateOptions as option (option.id)}
-              <option value={option.id}>{option.label}</option>
-            {/each}
-          </select>
-        {/key}
-      </label>
-
-      {#if userTemplates.length > 0}
-        <label class="block space-y-1 text-left text-sm">
-          <span class="text-surface-400">Your templates</span>
-          <select
-            class="select w-full"
-            bind:value={userTemplateId}
-            onchange={handleUserTemplateChange}
-          >
-            <option value="">None</option>
-            {#each userTemplates as template (template.id)}
-              <option value={template.id}>{template.name}</option>
-            {/each}
-          </select>
-        </label>
-        <ul class="space-y-1 rounded-container-token border border-surface-500/35 p-2">
-          {#each userTemplates as template (template.id)}
-            <li class="flex items-center justify-between gap-2 text-xs">
-              <span class="truncate text-surface-200">{template.name}</span>
-              <button
-                type="button"
-                class="workshop-text-action shrink-0"
-                onclick={() => handleDeleteUserTemplate(template.id)}
-              >
-                Delete
-              </button>
-            </li>
-          {/each}
-        </ul>
-      {/if}
-
-      <label class="block space-y-1 text-left text-sm">
-        <span class="text-surface-400">Title</span>
-        <input
-          class="input w-full"
-          type="text"
-          placeholder="Weekly review, project plan…"
-          bind:value={title}
-          required={!usingUserTemplate && templateId !== "daily" && templateId !== "weekly"}
-        />
-      </label>
-
-      <div class="rounded-container-token border border-surface-500/35 p-3">
-        <p class="text-xs font-medium text-surface-300">Save current note as template</p>
-        <div class="mt-2 flex gap-2">
-          <input
-            class="input min-w-0 flex-1 text-sm"
-            type="text"
-            placeholder={vault.title || "Template name"}
-            bind:value={saveTemplateName}
-          />
+      <div class="vault-compose-meta">
+        <p class="vault-compose-sentence">
+          in
           <button
             type="button"
-            class="btn btn-sm variant-soft-primary shrink-0"
-            disabled={!vault.selectedPath}
-            onclick={handleSaveCurrentTemplate}
+            class="vault-compose-em-btn"
+            class:vault-compose-em-btn--open={picker === "space"}
+            aria-expanded={picker === "space"}
+            onclick={() => togglePicker("space")}
           >
-            Save
+            {spaceLabel}
           </button>
-        </div>
-        {#if templateMessage}
-          <p class="workshop-faint mt-2 text-xs">{templateMessage}</p>
+          · starting from
+          <button
+            type="button"
+            class="vault-compose-em-btn"
+            class:vault-compose-em-btn--open={picker === "template"}
+            aria-expanded={picker === "template"}
+            onclick={() => togglePicker("template")}
+          >
+            {templateLabel}
+          </button>
+        </p>
+
+        {#if picker === "space"}
+          <div class="vault-chip-row" role="listbox" aria-label="Space">
+            {#each visibleSpaces as space (space.id)}
+              <button
+                type="button"
+                class="vault-chip"
+                class:vault-chip--active={spaceId === space.id}
+                role="option"
+                aria-selected={spaceId === space.id}
+                onclick={() => selectSpace(space.id)}
+              >
+                {space.label}
+              </button>
+            {/each}
+            {#if hiddenSpaceCount > 0}
+              <button
+                type="button"
+                class="vault-chip vault-chip--more"
+                onclick={() => (showAllSpaces = true)}
+              >
+                More…
+              </button>
+            {/if}
+          </div>
+        {:else if picker === "template"}
+          <div class="vault-chip-row" role="listbox" aria-label="Template">
+            {#each templateOptions as option (option.id)}
+              <button
+                type="button"
+                class="vault-chip"
+                class:vault-chip--active={!usingUserTemplate && templateId === option.id}
+                role="option"
+                aria-selected={!usingUserTemplate && templateId === option.id}
+                onclick={() => selectBuiltInTemplate(option.id)}
+              >
+                {option.label}
+              </button>
+            {/each}
+            {#each userTemplates as template (template.id)}
+              <button
+                type="button"
+                class="vault-chip vault-chip--yours"
+                class:vault-chip--active={userTemplateId === template.id}
+                role="option"
+                aria-selected={userTemplateId === template.id}
+                onclick={() => selectUserTemplate(template.id)}
+              >
+                {template.name}
+              </button>
+            {/each}
+          </div>
+          {#if userTemplates.length > 0}
+            <button
+              type="button"
+              class="vault-compose-manage"
+              onclick={() => (manageTemplates = !manageTemplates)}
+            >
+              {manageTemplates ? "Hide templates" : "Manage your templates"}
+            </button>
+            {#if manageTemplates}
+              <ul class="vault-compose-manage-list">
+                {#each userTemplates as template (template.id)}
+                  <li>
+                    <span class="truncate">{template.name}</span>
+                    <button
+                      type="button"
+                      class="workshop-text-action shrink-0"
+                      onclick={() => handleDeleteUserTemplate(template.id)}
+                    >
+                      Delete
+                    </button>
+                  </li>
+                {/each}
+              </ul>
+            {/if}
+          {/if}
         {/if}
       </div>
 
-      <div class="flex justify-end gap-2">
-        <button
-          type="button"
-          class="btn variant-ghost-surface"
-          onclick={() => vault.closeNewNoteDialog()}
-        >
-          Cancel
-        </button>
+      <div class="vault-compose-footer">
         <button
           type="submit"
-          class="btn variant-filled-primary"
+          class="vault-interact-commit"
           disabled={vault.saving}
         >
           Create
