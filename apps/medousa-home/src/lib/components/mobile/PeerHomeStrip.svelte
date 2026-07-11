@@ -4,6 +4,7 @@
   import { setPendingPeerNavigation } from "$lib/peerNavigation";
   import {
     formatPeerRelativeTime,
+    peerMonogram,
     peerThreadPreviewLine,
     type PeerThreadPreview,
   } from "$lib/utils/peerHomePreview";
@@ -13,13 +14,6 @@
   }
 
   let { threads }: Props = $props();
-
-  function monogram(label: string): string {
-    const parts = label.trim().split(/\s+/).filter(Boolean);
-    if (parts.length === 0) return "?";
-    if (parts.length === 1) return parts[0]!.slice(0, 1).toUpperCase();
-    return `${parts[0]!.slice(0, 1)}${parts[1]!.slice(0, 1)}`.toUpperCase();
-  }
 
   function openPeers() {
     haptic("light");
@@ -50,7 +44,7 @@
             onclick={() => openThread(thread.workshopId)}
           >
             <span class="mobile-home-peer-avatar" aria-hidden="true">
-              {monogram(thread.label)}
+              {peerMonogram(thread.label)}
             </span>
             <span class="mobile-home-peer-copy">
               <span class="mobile-home-peer-top">

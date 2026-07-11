@@ -23,6 +23,11 @@ export interface PeerThreadPreview {
   } | null;
 }
 
+export interface PeerConversationRow extends PeerThreadPreview {
+  peer: TrustedWorkshopSummary;
+  nearby: boolean;
+}
+
 export interface PeerHomePreview {
   unreadTotal: number;
   peerCount: number;
@@ -39,7 +44,7 @@ const EMPTY_PREVIEW: PeerHomePreview = {
   latestThread: null,
 };
 
-function deviceIdsMatch(left: string, right: string): boolean {
+export function deviceIdsMatch(left: string, right: string): boolean {
   if (!left || !right) return left === right;
   return (
     left === right ||
@@ -48,7 +53,7 @@ function deviceIdsMatch(left: string, right: string): boolean {
   );
 }
 
-function matchesPeer(message: PeerMessage, deviceId: string): boolean {
+export function matchesPeer(message: PeerMessage, deviceId: string): boolean {
   if (deviceIdsMatch(message.fromDeviceId, deviceId)) return true;
   if (message.toDeviceId && deviceIdsMatch(message.toDeviceId, deviceId)) return true;
   return false;
@@ -69,7 +74,7 @@ function sentAtMs(sentAt: string): number {
   return Number.isFinite(ms) ? ms : 0;
 }
 
-function buildThreadPreview(
+export function buildThreadPreview(
   peer: TrustedWorkshopSummary,
   messages: PeerMessage[],
 ): PeerThreadPreview {
@@ -111,6 +116,29 @@ function isRecentThread(thread: PeerThreadPreview, nowMs: number): boolean {
   return nowMs - sentAtMs(thread.lastMessage.sentAt) <= RECENT_MS;
 }
 
+/** Sort: unread first, then most recent activity. */
+export function sortPeerConversations(
+  peers: TrustedWorkshopSummary[],
+  messages: PeerMessage[],
+  nearbyDeviceIds: Iterable<string> = [],
+): PeerConversationRow[] {
+  const nearbyIds = [...nearbyDeviceIds];
+  const rows = peers.map((peer) => {
+    const preview = buildThreadPreview(peer, messages);
+    const nearby = nearbyIds.some((id) => deviceIdsMatch(id, peer.workshopDeviceId));
+    return { ...preview, peer, nearby };
+  });
+  return rows.sort((left, right) => {
+    if (left.unreadCount !== right.unreadCount) {
+      return right.unreadCount - left.unreadCount;
+    }
+    const leftMs = left.lastMessage ? sentAtMs(left.lastMessage.sentAt) : 0;
+    const rightMs = right.lastMessage ? sentAtMs(right.lastMessage.sentAt) : 0;
+    if (leftMs !== rightMs) return rightMs - leftMs;
+    return left.label.localeCompare(right.label);
+  });
+}
+
 export function formatPeerRelativeTime(sentAt: string): string {
   try {
     const date = new Date(sentAt);
@@ -144,6 +172,54 @@ export function peerHomeCardHint(preview: PeerHomePreview): string {
     return preview.peerCount === 1 ? "1 connection" : `${preview.peerCount} connections`;
   }
   return "Connect on LAN";
+}
+
+export function peerMonogram(label: string): string {
+  const parts = label.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  if (parts.length === 1) return parts[0]!.slice(0, 1).toUpperCase();
+  return `${parts[0]!.slice(0, 1)}${parts[1]!.slice(0, 1)}`.toUpperCase();
+}
+
+export function formatPeerMessageTime(iso: string): string {
+  try {
+    const date = new Date(iso);
+    const now = new Date();
+    const sameDay = date.toDateString() === now.toDateString();
+    return sameDay
+      ? date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
+      : date.toLocaleString([], {
+          month: "short",
+          day: "numeric",
+          hour: "numeric",
+          minute: "2-digit",
+        });
+  } catch {
+    return iso;
+  }
+}
+
+export function peerMessageDateKey(iso: string): string {
+  try {
+    return new Date(iso).toDateString();
+  } catch {
+    return iso;
+  }
+}
+
+export function formatPeerDateSeparator(iso: string): string {
+  try {
+    const date = new Date(iso);
+    const now = new Date();
+    const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const startMsg = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    const dayDiff = Math.round((startToday.getTime() - startMsg.getTime()) / 86_400_000);
+    if (dayDiff === 0) return "Today";
+    if (dayDiff === 1) return "Yesterday";
+    return date.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
+  } catch {
+    return "";
+  }
 }
 
 export async function fetchPeerHomePreview(): Promise<PeerHomePreview> {
