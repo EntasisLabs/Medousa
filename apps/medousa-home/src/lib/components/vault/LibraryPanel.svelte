@@ -5,6 +5,7 @@
   import { vault } from "$lib/stores/vault.svelte";
   import { externalDesk } from "$lib/stores/externalDesk.svelte";
   import VaultTree from "./VaultTree.svelte";
+  import VaultLibraryBrowseLists from "./VaultLibraryBrowseLists.svelte";
   import VaultEditor from "./VaultEditor.svelte";
   import VaultNewNoteDialog from "./VaultNewNoteDialog.svelte";
   import ExternalFilesBrowser from "./ExternalFilesBrowser.svelte";
@@ -155,16 +156,20 @@
           </p>
         {/if}
 
-        <VaultTree
-          tree={vault.tree}
-          selectedPath={vault.selectedPath}
-          labelByPath={vault.labelByPathMap}
-          activeSpaceFilter={vault.activeSpaceFilter}
-          onSelect={(path) => vault.openNote(path)}
-          onMoveNote={(sourcePath, targetPrefix) => {
-            void vault.moveNoteToFolder(sourcePath, targetPrefix);
-          }}
-        />
+        {#if vault.libraryBrowseMode === "folders"}
+          <VaultTree
+            tree={vault.tree}
+            selectedPath={vault.selectedPath}
+            labelByPath={vault.labelByPathMap}
+            activeSpaceFilter={vault.activeSpaceFilter}
+            onSelect={(path) => vault.openNote(path)}
+            onMoveNote={(sourcePath, targetPrefix) => {
+              void vault.moveNoteToFolder(sourcePath, targetPrefix);
+            }}
+          />
+        {:else}
+          <VaultLibraryBrowseLists onSelect={(path) => void vault.openNote(path)} />
+        {/if}
       </aside>
     </SplitPane>
     <VaultEditor

@@ -18,6 +18,7 @@
   import { externalDesk } from "$lib/stores/externalDesk.svelte";
   import { iconForSpace } from "$lib/utils/vaultSpaceIcons";
   import VaultRootPicker from "./VaultRootPicker.svelte";
+  import VaultLibraryBrowseModeBar from "./VaultLibraryBrowseModeBar.svelte";
   import { vaultFolderIcons } from "$lib/stores/vaultFolderIcons.svelte";
 
   interface Props {
@@ -289,6 +290,7 @@
         </div>
       </div>
     </div>
+    <VaultLibraryBrowseModeBar />
   {:else}
     <div class="px-3 py-2">
       <label class="vault-search-trigger cursor-text">

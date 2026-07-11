@@ -77,3 +77,22 @@ export function recentPathsForFolder(
   }
   return result;
 }
+
+/** Short relative time for library browse rows. */
+export function formatVaultRelativeTime(iso: string, now = Date.now()): string {
+  try {
+    const date = new Date(iso);
+    if (Number.isNaN(date.getTime())) return "";
+    const diffMs = now - date.getTime();
+    const mins = Math.floor(diffMs / 60_000);
+    if (mins < 1) return "Just now";
+    if (mins < 60) return `${mins}m ago`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `${hours}h ago`;
+    const days = Math.floor(hours / 24);
+    if (days < 14) return `${days}d ago`;
+    return date.toLocaleDateString([], { month: "short", day: "numeric" });
+  } catch {
+    return "";
+  }
+}
