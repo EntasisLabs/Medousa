@@ -38,6 +38,9 @@
     splitMax?: number;
     onSplitResize?: (width: number) => void;
     preview?: Snippet;
+    formatCompact?: boolean;
+    showFloat?: boolean;
+    onFloat?: () => void;
   }
 
   let {
@@ -53,6 +56,9 @@
     splitMax = 720,
     onSplitResize,
     preview,
+    formatCompact = false,
+    showFloat = false,
+    onFloat,
   }: Props = $props();
 
   let textareaEl = $state<HTMLTextAreaElement | null>(null);
@@ -271,7 +277,14 @@
 <div
   class="vault-markdown-editor vault-markdown-editor--{surface} relative flex min-h-0 flex-1 flex-col {className}"
 >
-  <VaultFormatBar {disabled} onFormat={handleFormat} onColor={handleColor} />
+  <VaultFormatBar
+    {disabled}
+    compact={formatCompact}
+    {showFloat}
+    {onFloat}
+    onFormat={handleFormat}
+    onColor={handleColor}
+  />
   <VaultSlashMenu
     bind:this={slashMenuEl}
     open={slashOpen}

@@ -21,6 +21,17 @@
         "resizable": true
       },
       {
+        "label": "vault-sticky",
+        "title": "Medousa Note",
+        "url": "/popout/vault",
+        "width": 380,
+        "height": 480,
+        "minWidth": 300,
+        "minHeight": 360,
+        "visible": false,
+        "resizable": true
+      },
+      {
         "label": "browser",
         "title": "Medousa Web",
         "url": "about:blank",

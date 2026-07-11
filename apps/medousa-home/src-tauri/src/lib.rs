@@ -154,6 +154,11 @@ pub fn run() {
                         api.prevent_close();
                         let _ = window.hide();
                     }
+                    "vault-sticky" => {
+                        api.prevent_close();
+                        let _ = window.set_always_on_top(false);
+                        let _ = window.hide();
+                    }
                     _ => {}
                 }
             }
@@ -560,6 +565,12 @@ pub fn run() {
             window::window_show_chat_popout,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             window::window_hide_chat_popout,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            window::window_show_vault_sticky,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            window::window_hide_vault_sticky,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            window::window_set_vault_sticky_always_on_top,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             window::window_show_browser,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
