@@ -7,8 +7,7 @@
  */
 
 import { createNode, type SceneNode } from "$lib/liquid/core";
-import type { ChatMessage } from "$lib/types/chat";
-import { formatToolName } from "$lib/utils/formatTurn";
+import type { ChatMessage, ToolRunState } from "$lib/types/chat";
 import { stripChatBodyChrome } from "./stripChatBodyChrome";
 
 export interface ChatSceneOptions {
@@ -38,7 +37,7 @@ function livePulseLabel(
   // Reasoning already paints as the thinking shell — don't double-label.
   if (hasReasoning) return null;
   const hasContent = Boolean(message.content?.trim());
-  const hasTools = Boolean(message.toolRuns?.length);
+  const hasTools = Boolean(message.toolRuns?.length || message.tools?.length);
   if (!hasContent && !hasTools) return "Thinking…";
   return null;
 }
@@ -55,9 +54,11 @@ function assistantFlow(message: ChatMessage, opts: ChatSceneOptions): SceneNode[
       .filter(Boolean)
       .join("\n\n") || null;
   const hasReasoning = Boolean(reasoningText);
-  const toolRuns = message.toolRuns;
-  const hasToolRuns = Boolean(toolRuns && toolRuns.length > 0);
-  const hasToolNames = Boolean(message.tools && message.tools.length > 0);
+  const toolRuns =
+    message.toolRuns && message.toolRuns.length > 0
+      ? message.toolRuns
+      : toolRunsFromNames(message.tools);
+  const hasToolRuns = toolRuns.length > 0;
 
   // 1. Thinking on top (collapsed when done — soft chrome, not a drawer)
   if (hasReasoning) {
@@ -106,8 +107,8 @@ function assistantFlow(message: ChatMessage, opts: ChatSceneOptions): SceneNode[
     flow.push(child(`${id}:artifacts`, "presentation", { artifacts: message.uiArtifacts }));
   }
 
-  // 5. Tool receipts at the bottom — compact host-lane footnote when settled
-  if (hasToolRuns && toolRuns) {
+  // 5. Tool receipts at the bottom — host-lane ToolRunChips (footnote when settled)
+  if (hasToolRuns) {
     flow.push(
       child(`${id}:tools`, "tool_trace", {
         runs: toolRuns,
@@ -116,15 +117,20 @@ function assistantFlow(message: ChatMessage, opts: ChatSceneOptions): SceneNode[
         compact: true,
       }),
     );
-  } else if (hasToolNames && message.tools) {
-    flow.push(
-      child(`${id}:tools`, "metadata", {
-        parts: message.tools.map(formatToolName),
-      }),
-    );
   }
 
   return flow;
+}
+
+/** Workshop/worker turns often only ship tool names — promote to host lineage UI. */
+function toolRunsFromNames(tools: string[] | undefined): ToolRunState[] {
+  if (!tools?.length) return [];
+  return tools.map((toolName, index) => ({
+    runId: `named:${index}:${toolName}`,
+    toolName,
+    status: "succeeded" as const,
+    round: index + 1,
+  }));
 }
 
 function plainFlow(message: ChatMessage): SceneNode[] {

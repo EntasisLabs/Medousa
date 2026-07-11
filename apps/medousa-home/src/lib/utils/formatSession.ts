@@ -18,6 +18,23 @@ export function formatSessionLabel(session: SessionSummary): string {
   return session.session_id;
 }
 
+/** Compact relative timestamp for session list rows. */
+export function formatSessionWhen(iso?: string | null): string {
+  if (!iso) return "";
+  try {
+    const date = new Date(iso);
+    const diffMs = Date.now() - date.getTime();
+    const mins = Math.floor(diffMs / 60_000);
+    if (mins < 1) return "now";
+    if (mins < 60) return `${mins}m`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 48) return `${hours}h`;
+    return date.toLocaleDateString([], { month: "short", day: "numeric" });
+  } catch {
+    return "";
+  }
+}
+
 function looksLikeId(value: string): boolean {
   return UUID_LIKE.test(value) || /^sess[_-]/i.test(value);
 }

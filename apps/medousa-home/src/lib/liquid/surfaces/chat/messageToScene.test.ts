@@ -75,11 +75,29 @@ describe("chatMessageToScene — assistant order (thinking → body → tools)",
     expect(tools?.props.compact).toBe(true);
   });
 
-  it("falls back to a metadata line for plain tool names", () => {
+  it("maps plain tool names to host-style tool_trace lineage", () => {
     const scene = chatMessageToScene(msg({ content: "done", tools: ["web.search", "vault.read"] }));
-    expect(findNode(scene, "m1:tools")?.type).toBe("metadata");
+    const tools = findNode(scene, "m1:tools");
+    expect(tools?.type).toBe("tool_trace");
+    expect(tools?.props.compact).toBe(true);
+    const runs = tools?.props.runs as ToolRunState[];
+    expect(runs).toHaveLength(2);
+    expect(runs[0]?.toolName).toBe("web.search");
+    expect(runs[0]?.status).toBe("succeeded");
+    expect(runs[1]?.toolName).toBe("vault.read");
   });
 
+  it("prefers structured toolRuns over plain tool name fallback", () => {
+    const runs: ToolRunState[] = [
+      { runId: "r1", toolName: "web.search", status: "succeeded", round: 1 },
+    ];
+    const scene = chatMessageToScene(
+      msg({ content: "done", tools: ["ignored.name"], toolRuns: runs }),
+    );
+    const tools = findNode(scene, "m1:tools");
+    expect(tools?.type).toBe("tool_trace");
+    expect(tools?.props.runs).toEqual(runs);
+  });
   it("maps ui artifacts to a presentation node near the body", () => {
     const scene = chatMessageToScene(
       msg({

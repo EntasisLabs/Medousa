@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { Pencil, Trash2, X } from "@lucide/svelte";
+  import { Plus, Search, X } from "@lucide/svelte";
+  import SessionRow from "$lib/components/chat/SessionRow.svelte";
   import { haptic } from "$lib/haptics";
   import { registerMobileBackHandler } from "$lib/mobileNavigation";
   import { chat } from "$lib/stores/chat.svelte";
@@ -28,6 +29,8 @@
   let deleteSaving = $state(false);
   let sheetEl = $state<HTMLDivElement | null>(null);
   let headerEl = $state<HTMLElement | null>(null);
+
+  const touchActions = $derived(variant === "sheet");
 
   $effect(() => {
     if (open) {
@@ -91,24 +94,12 @@
   );
 
   const recent = $derived(
-    chat.sessions.filter((session) => !chat.isPinned(session.session_id)),
+    chat.sessions.filter(
+      (session) => !chat.isPinned(session.session_id) && matchesQuery(session),
+    ),
   );
 
-  function formatWhen(iso?: string | null): string {
-    if (!iso) return "";
-    try {
-      const date = new Date(iso);
-      const diffMs = Date.now() - date.getTime();
-      const mins = Math.floor(diffMs / 60_000);
-      if (mins < 1) return "now";
-      if (mins < 60) return `${mins}m`;
-      const hours = Math.floor(mins / 60);
-      if (hours < 48) return `${hours}h`;
-      return date.toLocaleDateString([], { month: "short", day: "numeric" });
-    } catch {
-      return "";
-    }
-  }
+  const listEmpty = $derived(pinned.length === 0 && recent.length === 0);
 
   async function selectSession(sessionId: string) {
     await chat.switchSession(sessionId);
@@ -232,16 +223,16 @@
         : 'workshop-drawer relative w-56 shrink-0 border-r-2'} relative flex h-full flex-col"
       aria-label="Chat sessions"
     >
-      <div class="workshop-header px-3 py-3">
+      <div class="session-sidebar-header">
         <p class="text-sm font-semibold text-surface-100">Sessions</p>
         {#if onClose}
           <button
             type="button"
-            class="btn btn-sm variant-ghost-surface"
+            class="session-sidebar-icon-btn"
             aria-label="Close sessions"
             onclick={onClose}
           >
-            <X size={16} strokeWidth={1.75} />
+            <X size={15} strokeWidth={1.75} />
           </button>
         {/if}
       </div>
@@ -252,22 +243,26 @@
 
 {#snippet sessionPanelBody()}
   <div class="flex min-h-0 flex-1 flex-col">
-    <div class="{variant === 'sheet'
-      ? 'mobile-chat-history-search'
-      : 'border-b border-surface-500/45 p-3'}">
+    <div class="session-sidebar-toolbar {variant === 'sheet' ? 'session-sidebar-toolbar--sheet' : ''}">
+      <label class="session-sidebar-search">
+        <Search size={14} strokeWidth={1.75} class="session-sidebar-search-icon" aria-hidden="true" />
+        <input
+          class="session-sidebar-search-input"
+          type="search"
+          placeholder="Search sessions…"
+          bind:value={query}
+        />
+      </label>
       <button
         type="button"
-        class="{variant === 'sheet' ? 'mobile-chat-history-new-btn' : 'btn variant-filled-primary w-full text-sm'}"
+        class="session-sidebar-new"
+        title="New chat"
+        aria-label="New chat"
         onclick={createSession}
       >
-        New chat
+        <Plus size={15} strokeWidth={2} />
+        <span class="session-sidebar-new-label">New</span>
       </button>
-      <input
-        class="input mt-2 w-full text-sm"
-        type="search"
-        placeholder="Search sessions…"
-        bind:value={query}
-      />
     </div>
 
     {#if chat.sessionsError}
@@ -276,39 +271,61 @@
       <p class="workshop-faint px-3 py-1 text-[11px]">Updating sessions…</p>
     {/if}
 
-    <ol class="{variant === 'sheet' ? 'mobile-chat-history-list' : 'flex-1 space-y-3 overflow-y-auto p-2'}">
+    <ol class="session-sidebar-list {variant === 'sheet' ? 'mobile-chat-history-list' : ''}">
       {#if pinned.length > 0}
-        <li>
-          <p class="workshop-section-title px-2">Pinned</p>
-          <ul class="mt-1 space-y-1">
+        <li class="session-sidebar-section">
+          <p class="session-sidebar-section-title">Pinned</p>
+          <ul class="session-sidebar-section-list">
             {#each pinned as session (session.session_id)}
               <li>
-                {@render sessionButton(session)}
+                <SessionRow
+                  {session}
+                  selected={chat.sessionId === session.session_id}
+                  pinned
+                  alwaysShowActions={touchActions}
+                  onSelect={() => void selectSession(session.session_id)}
+                  onRename={() => openRename(session)}
+                  onDelete={() => openDelete(session)}
+                  onTogglePin={() => chat.togglePin(session.session_id)}
+                />
               </li>
             {/each}
           </ul>
         </li>
       {/if}
 
-      <li>
-        <p class="workshop-section-title px-2">Recent</p>
-        <ul class="mt-1 space-y-1">
-          {#each recent as session (session.session_id)}
-            <li>
-              {@render sessionButton(session)}
-            </li>
-          {:else}
-            {#if pinned.length === 0}
-              <li class="workshop-muted px-3 py-6 text-center text-xs leading-relaxed">
-                No chats for {userProfiles.activeDisplayName} yet.
-                <span class="mt-2 block workshop-faint">
-                  Work and home stay separate — switch profile anytime in Settings → Memory.
-                </span>
+      {#if recent.length > 0}
+        <li class="session-sidebar-section">
+          <p class="session-sidebar-section-title">Recent</p>
+          <ul class="session-sidebar-section-list">
+            {#each recent as session (session.session_id)}
+              <li>
+                <SessionRow
+                  {session}
+                  selected={chat.sessionId === session.session_id}
+                  pinned={false}
+                  alwaysShowActions={touchActions}
+                  onSelect={() => void selectSession(session.session_id)}
+                  onRename={() => openRename(session)}
+                  onDelete={() => openDelete(session)}
+                  onTogglePin={() => chat.togglePin(session.session_id)}
+                />
               </li>
-            {/if}
-          {/each}
-        </ul>
-      </li>
+            {/each}
+          </ul>
+        </li>
+      {:else if listEmpty}
+        <li class="session-sidebar-empty">
+          {#if query.trim()}
+            No sessions match “{query.trim()}”.
+          {:else}
+            No chats for {userProfiles.activeDisplayName} yet.
+            <span class="mt-2 block workshop-faint">
+              Work and home stay separate — switch profile anytime in Settings → Memory.
+            </span>
+          {/if}
+        </li>
+      {/if}
     </ol>
   </div>
 
@@ -421,57 +438,4 @@
       </div>
     </div>
   {/if}
-{/snippet}
-
-{#snippet sessionButton(session: SessionSummary)}
-  <div
-    class="group flex items-stretch rounded-container-token transition {chat.sessionId ===
-    session.session_id
-      ? 'bg-surface-700 ring-1 ring-primary-500/50'
-      : 'hover:bg-surface-700/80'}"
-  >
-    <button
-      type="button"
-      class="min-w-0 flex-1 px-3 py-2 text-left"
-      onclick={() => selectSession(session.session_id)}
-    >
-      <div class="flex items-center justify-between gap-2">
-        <span class="truncate text-sm font-medium text-surface-100">
-          {formatSessionLabel(session)}
-        </span>
-        <span class="workshop-faint shrink-0">
-          {formatWhen(session.last_timestamp)}
-        </span>
-      </div>
-      <p class="workshop-faint mt-0.5 truncate">
-        {session.turns} turn{session.turns === 1 ? "" : "s"}
-      </p>
-    </button>
-    <button
-      type="button"
-      class="px-2 text-xs text-surface-500 opacity-60 transition hover:text-primary-300 group-hover:opacity-100"
-      title="Rename session"
-      aria-label="Rename session"
-      onclick={() => openRename(session)}
-    >
-      <Pencil size={14} strokeWidth={1.75} />
-    </button>
-    <button
-      type="button"
-      class="px-2 text-xs text-surface-500 opacity-60 transition hover:text-error-300 group-hover:opacity-100"
-      title="Delete session"
-      aria-label="Delete session"
-      onclick={() => openDelete(session)}
-    >
-      <Trash2 size={14} strokeWidth={1.75} />
-    </button>
-    <button
-      type="button"
-      class="px-2 text-xs text-surface-500 opacity-60 transition hover:text-warning-300 group-hover:opacity-100"
-      title={chat.isPinned(session.session_id) ? "Unpin session" : "Pin session"}
-      onclick={() => chat.togglePin(session.session_id)}
-    >
-      {chat.isPinned(session.session_id) ? "★" : "☆"}
-    </button>
-  </div>
 {/snippet}
