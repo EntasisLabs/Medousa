@@ -2,8 +2,10 @@
   /**
    * `brief` organism — structured written answer WITH sources.
    * Anti-Wikipedia: judgment + citations, not a wall of anonymous prose.
-   * Paste-first from ```brief markdown.
+   * Paste-first from ```brief markdown. Section bodies re-enter the markdown
+   * pipeline so nested ```cite / emphasis / lists hydrate correctly.
    */
+  import MarkdownContent from "$lib/components/ui/MarkdownContent.svelte";
   import { getLiquidContext } from "$lib/liquid/render/context";
   import { createSceneEvent } from "$lib/liquid/core";
   import type { ArchetypeProps } from "$lib/liquid/render/types";
@@ -100,7 +102,13 @@
       {#each sections as section (section.id)}
         <section class="liquid-brief-section">
           <h4 class="liquid-brief-heading">{section.heading}</h4>
-          <p class="liquid-brief-body">{section.body}</p>
+          <div class="liquid-brief-body">
+            <MarkdownContent
+              content={section.body}
+              titleByPath={ctx.titleByPath}
+              openLinksInWeb={ctx.openLinksInWeb ?? false}
+            />
+          </div>
         </section>
       {/each}
     </div>
@@ -203,7 +211,25 @@
     font-size: 0.82rem;
     line-height: 1.55;
     color: rgb(var(--color-surface-200));
-    white-space: pre-wrap;
+    min-width: 0;
+  }
+
+  .liquid-brief-body :global(.markdown-content) {
+    font-size: inherit;
+    line-height: inherit;
+    color: inherit;
+  }
+
+  .liquid-brief-body :global(.markdown-content > :first-child) {
+    margin-top: 0;
+  }
+
+  .liquid-brief-body :global(.markdown-content > :last-child) {
+    margin-bottom: 0;
+  }
+
+  .liquid-brief-body :global(.liquid-md-host) {
+    margin: 0.75rem 0;
   }
 
   .liquid-brief-sources {

@@ -124,6 +124,11 @@
         ...(card.body ? { body: card.body } : {}),
         ...(card.emoji ? { emoji: card.emoji } : {}),
         ...(card.image ? { image: card.image } : {}),
+        ...(card.meta ? { meta: card.meta } : {}),
+        ...(card.summary ? { summary: card.summary } : {}),
+        ...(card.chips?.length ? { chips: card.chips } : {}),
+        ...(card.points?.length ? { points: card.points } : {}),
+        ...(card.badges?.length ? { badges: card.badges } : {}),
       },
       fillState: "ready",
     });

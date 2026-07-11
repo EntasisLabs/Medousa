@@ -46,8 +46,8 @@ pub const PRESENTATION_APPENDIX: &str = r#"
 [MEDOUSA_PRESENTATION]
 This client can render UI (supports_ui_artifacts) — prefer enriched markdown for structured chat answers.
 - In your final answer, use Liquid markdown embeds (runtime hydrates them — do NOT invent HTML/CSS):
-  - ```card … ``` for one summary card (title/subtitle/body/emoji lines)
-  - ```carousel … ``` for a horizontal strip of cards (one card per line: title: … | body: … | emoji: … — no leading dashes)
+  - ```card … ``` for one summary card (title/subtitle/body/emoji; optional expandable detail: meta: / summary: / chips: + point: label | body | emoji — tap opens a detail sheet)
+  - ```carousel … ``` for a horizontal strip of cards (legacy one line: title: … | body: … | emoji: …; or --- item blocks with the same expandable detail fields for “where it stands” facets)
   - ```actions … ``` for “what next?” rows (Label | intent — not "Label: …")
   - ```callout … ``` for asides (tone: note|warn|error|success, title, body)
   - ```section … ``` for a titled block (title/subtitle; optional body after ---)
@@ -60,7 +60,7 @@ This client can render UI (supports_ui_artifacts) — prefer enriched markdown f
   - ```shortlist … ``` for find-me / options / ranked picks (optional title/subtitle/criteria/density; items separated by --- with label/summary/score/meta/emoji)
   - ```decision … ``` for choose / tradeoffs (optional title/subtitle/factors/recommendation; options separated by --- with label/pros/cons/score — pros/cons pipe-separated)
   - ```brief … ``` for research / explain with sources (optional title/subtitle/tone; sections separated by --- with heading/body; sources after === as title/url/quote blocks)
-  - ```dashboard … ``` for monitor / at-a-glance / how-is-X-doing (optional title/subtitle/columns; tiles separated by --- with label/value required; delta/tone/emoji/hint/unit optional — live feed bindings deferred)
+  - ```dashboard … ``` for monitor / at-a-glance / how-is-X-doing (optional title/subtitle/columns; tiles separated by --- with label/value required; delta/tone/emoji/hint/unit optional; per-tile feed: id + optional field: summary|payload.path for live tail-from-chat — no canvas subscribe required)
   - {{icon:sparkles}} inline Lucide icons (allowlisted names only)
 - After tools: CURATE into the answer — do not dump raw tool JSON. Tool lineage already paints as a quiet footnote.
   - Web search → ```cite``` (title + url + short quote) or a markdown link
@@ -72,6 +72,7 @@ This client can render UI (supports_ui_artifacts) — prefer enriched markdown f
   - Pick with tradeoffs → ```decision``` (not a plain pros/cons dump)
   - Research / explain with sources → ```brief``` (not a Wikipedia wall)
   - Monitor / pulse / at-a-glance → ```dashboard``` (not a shortlist or compare matrix)
+  - Where it stands / facets as tappable cards → ```carousel``` with --- items + summary/chips/point: (not a flat bullet list)
   - Images → ```media``` with https src
   - Diagrams / flows → ```mermaid``` fences (already hydrate)
 - Do NOT paste reasoning/scratch into the final answer (no `> [!abstract] Reasoning` callouts). Thinking streams separately.
@@ -394,6 +395,8 @@ mod tests {
         let ui = system_prompt_for_host_profile("base-sttp", true, true, None);
         assert!(ui.contains("[MEDOUSA_PRESENTATION]"));
         assert!(ui.contains("```card"));
+        assert!(ui.contains("point:"));
+        assert!(ui.contains("summary:"));
         assert!(ui.contains("```callout"));
         assert!(ui.contains("```cite"));
         assert!(ui.contains("```compare"));
@@ -403,6 +406,7 @@ mod tests {
         assert!(ui.contains("```decision"));
         assert!(ui.contains("```brief"));
         assert!(ui.contains("```dashboard"));
+        assert!(ui.contains("feed:"));
         assert!(ui.contains("```mermaid"));
         assert!(ui.contains("CURATE"));
         assert!(ui.contains("cognition_ui_build"));

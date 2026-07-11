@@ -13,7 +13,7 @@ export const dashboard = defineArchetype({
     columns: { type: "string" },
     tiles: { type: "array", required: true },
   },
-  acceptsBindings: ["inline"],
+  acceptsBindings: ["inline", "feed:id"],
   writeCapable: false,
   slots: [],
   emits: ["select"],

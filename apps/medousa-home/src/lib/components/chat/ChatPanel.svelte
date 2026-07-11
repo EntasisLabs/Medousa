@@ -39,6 +39,7 @@
   import { SLASH_COMMAND_HINTS } from "$lib/utils/slashCommands";
   import { isTauri, showChatPopout } from "$lib/window";
   import OfflineChatGate from "$lib/components/chat/OfflineChatGate.svelte";
+  import LiquidCardDetailSheet from "$lib/components/chat/LiquidCardDetailSheet.svelte";
   import { pendingMediaLabels } from "$lib/utils/chatMediaUpload";
   import { hasVisionMediaRefs } from "$lib/types/media";
   import { visionProfileReady } from "$lib/types/inferenceProfiles";
@@ -47,6 +48,7 @@
   import { automationsNav } from "$lib/stores/automationsNav.svelte";
   import { flowDraft } from "$lib/stores/flowDraft.svelte";
   import type { ToolHistorySliceRef } from "$lib/types/toolHistory";
+  import type { CardDetailPayload } from "$lib/markdown/liquidEmbeds";
 
   interface Props {
     visible: boolean;
@@ -72,6 +74,25 @@
 
   let scrollEl: HTMLDivElement | undefined = $state();
   let atBottom = $state(true);
+  let cardDetailOpen = $state(false);
+  let cardDetail = $state<CardDetailPayload | null>(null);
+
+  function openCardDetail(detail: CardDetailPayload) {
+    cardDetail = detail;
+    cardDetailOpen = true;
+  }
+
+  function closeCardDetail() {
+    cardDetailOpen = false;
+    cardDetail = null;
+  }
+
+  function prefillComposerFromChip(label: string) {
+    const trimmed = label.trim();
+    if (!trimmed) return;
+    chat.draft = trimmed;
+    window.dispatchEvent(new CustomEvent("medousa-chat-composer-focus"));
+  }
 
   const scrollPinThresholdPx = $derived(mobile ? 24 : 96);
 
@@ -580,6 +601,7 @@
                   onPromoteToFlow={handlePromoteToFlow}
                   onSubmitIntent={submitChatIntent}
                   onSaveToVault={handleSaveToVault}
+                  onOpenCardDetail={openCardDetail}
                 />
               </div>
             </article>
@@ -638,6 +660,7 @@
                   onPromoteToFlow={handlePromoteToFlow}
                   onSubmitIntent={submitChatIntent}
                   onSaveToVault={handleSaveToVault}
+                  onOpenCardDetail={openCardDetail}
                 />
               </div>
             </article>
@@ -655,6 +678,7 @@
           onPromoteToFlow={handlePromoteToFlow}
           onSubmitIntent={submitChatIntent}
           onSaveToVault={handleSaveToVault}
+          onOpenCardDetail={openCardDetail}
         />
       {:else if showChatEmptyState}
       <div
@@ -777,6 +801,13 @@
   {#if visible && connection.offline}
     <OfflineChatGate {mobile} {onOpenConnection} />
   {/if}
+
+  <LiquidCardDetailSheet
+    open={cardDetailOpen}
+    detail={cardDetail}
+    onClose={closeCardDetail}
+    onChipSelect={prefillComposerFromChip}
+  />
 
   {#if showScrollFab && visible}
     <button
