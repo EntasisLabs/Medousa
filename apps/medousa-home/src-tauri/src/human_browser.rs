@@ -219,8 +219,8 @@ const NAV_RAIL_WIDTH: f64 = 52.0;
 const ACTIVITY_STRIP_WIDTH: f64 = 28.0;
 /// Status footer — must match `.workshop-status` `h-8`.
 const STATUS_BAR_HEIGHT: f64 = 32.0;
-/// Work rail — must match `WorkRail.svelte` `h-24`.
-const WORK_RAIL_HEIGHT: f64 = 96.0;
+/// Work rail — retired from layout (in-motion lives in StatusBar peek). Kept at 0.
+const WORK_RAIL_HEIGHT: f64 = 0.0;
 
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(rename_all = "camelCase")]
