@@ -5436,6 +5436,74 @@
     @apply flex cursor-pointer items-center gap-4 px-4 py-3.5;
   }
 
+  .settings-metric-row {
+    cursor: default;
+  }
+
+  .settings-metric-value {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    flex-shrink: 0;
+  }
+
+  .settings-metric-input {
+    width: 3.25rem;
+    height: 1.85rem;
+    border-radius: 0.45rem;
+    border: 1px solid rgb(var(--shell-border, var(--color-surface-500)) / 0.45);
+    background: rgb(var(--shell-pane-bg, var(--color-surface-900)) / 0.55);
+    padding: 0 0.4rem;
+    text-align: center;
+    font-size: 0.8125rem;
+    font-variant-numeric: tabular-nums;
+    color: rgb(var(--shell-label, var(--color-surface-100)));
+    appearance: textfield;
+    -moz-appearance: textfield;
+  }
+
+  .settings-metric-input-wide {
+    width: 4.5rem;
+  }
+
+  .settings-metric-input:focus {
+    outline: none;
+    border-color: rgb(var(--color-primary-500) / 0.55);
+    box-shadow: 0 0 0 2px rgb(var(--color-primary-500) / 0.18);
+  }
+
+  .settings-metric-input:disabled,
+  .settings-metric-input:read-only {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+
+  .settings-metric-input::-webkit-outer-spin-button,
+  .settings-metric-input::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+
+  .settings-metric-unit {
+    font-size: 0.75rem;
+    color: rgb(var(--shell-muted, var(--color-surface-400)));
+    min-width: 2.5rem;
+  }
+
+  .settings-subsection-heading {
+    margin: 0 0 0.35rem;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: rgb(var(--shell-label, var(--color-surface-100)));
+  }
+
+  .settings-subsection-lead {
+    margin: 0 0 0.65rem;
+    font-size: 0.75rem;
+    line-height: 1.45;
+    color: rgb(var(--shell-muted, var(--color-surface-400)));
+  }
+
   .settings-charter-line {
     @apply max-w-2xl leading-relaxed;
   }

@@ -78,100 +78,140 @@
   }
 </script>
 
-<section class="settings-subsection mt-8 border-t border-surface-500/35 pt-6">
-  <header class="settings-section-header">
-    <h3 class="text-sm font-semibold text-surface-50">Presentation cleanup</h3>
-    <p class="workshop-faint mt-1 text-sm">
-      Background job prunes stale HTML presentations and old revisions. Runs weekly via the
-      runtime scheduler.
-    </p>
-  </header>
+<section class="settings-subsection mt-8">
+  <h3 class="settings-subsection-heading">Presentations</h3>
+  <p class="settings-subsection-lead">
+    Old HTML decks and revisions clear on a weekly schedule.
+  </p>
 
   {#if !isTauri()}
-    <p class="workshop-faint mt-4 text-sm">Connect to the local engine to configure retention.</p>
+    <p class="workshop-faint text-sm">Connect to the local engine to configure cleanup.</p>
   {:else if loading && !status}
-    <p class="workshop-faint mt-4 text-sm">Loading retention settings…</p>
+    <p class="workshop-faint text-sm">Loading cleanup settings…</p>
   {:else}
-    <div class="mt-4 space-y-4">
-      <label class="flex items-start gap-3">
+    <div class="settings-toggle-list">
+      <label class="settings-toggle-row">
+        <span class="min-w-0 flex-1">
+          <span class="block text-sm font-medium text-surface-100">Automatic cleanup</span>
+          <span class="workshop-faint mt-0.5 block text-xs">
+            Weekly background pass for stale presentations
+          </span>
+        </span>
         <input
           type="checkbox"
-          class="mt-1"
+          class="checkbox shrink-0"
           bind:checked={enabled}
           disabled={saving}
         />
-        <span>
-          <span class="block text-sm font-medium text-surface-100">Automatic cleanup</span>
-          <span class="workshop-faint block text-xs leading-relaxed">
-            When enabled, a recurring Stasis job runs maintenance on a weekly schedule.
+      </label>
+
+      <label class="settings-toggle-row settings-metric-row">
+        <span class="min-w-0 flex-1">
+          <span class="block text-sm font-medium text-surface-100">Keep for</span>
+          <span class="workshop-faint mt-0.5 block text-xs">
+            Drop presentations older than this
           </span>
         </span>
-      </label>
-
-      <label class="block">
-        <span class="block text-sm font-medium text-surface-100">Max age (days)</span>
-        <span class="workshop-faint mt-0.5 block text-xs leading-relaxed">
-          Remove artifact index rows older than this. Default 90 days.
+        <span class="settings-metric-value">
+          <input
+            type="number"
+            class="settings-metric-input"
+            min="1"
+            max="3650"
+            inputmode="numeric"
+            bind:value={maxAgeDays}
+            disabled={saving || !enabled}
+            aria-label="Keep presentations for days"
+          />
+          <span class="settings-metric-unit" aria-hidden="true">days</span>
         </span>
-        <input
-          type="number"
-          class="input mt-2 w-full max-w-xs"
-          min="1"
-          max="3650"
-          bind:value={maxAgeDays}
-          disabled={saving}
-        />
       </label>
 
-      <label class="block">
-        <span class="block text-sm font-medium text-surface-100">Max per chat session</span>
-        <span class="workshop-faint mt-0.5 block text-xs leading-relaxed">
-          Keep only the newest N artifact records per session; older ones are pruned.
+      <label class="settings-toggle-row settings-metric-row">
+        <span class="min-w-0 flex-1">
+          <span class="block text-sm font-medium text-surface-100">Per chat</span>
+          <span class="workshop-faint mt-0.5 block text-xs">
+            Newest kept; older ones in that session are pruned
+          </span>
         </span>
-        <input
-          type="number"
-          class="input mt-2 w-full max-w-xs"
-          min="1"
-          max="10000"
-          bind:value={maxPerSession}
-          disabled={saving}
-        />
+        <span class="settings-metric-value">
+          <input
+            type="number"
+            class="settings-metric-input settings-metric-input-wide"
+            min="1"
+            max="10000"
+            inputmode="numeric"
+            bind:value={maxPerSession}
+            disabled={saving || !enabled}
+            aria-label="Max presentations per chat session"
+          />
+          <span class="settings-metric-unit" aria-hidden="true">max</span>
+        </span>
       </label>
+    </div>
 
-      {#if status}
-        <dl class="workshop-faint grid gap-1 text-xs">
-          <div class="flex gap-2">
-            <dt class="text-surface-500">Next run</dt>
-            <dd class="text-surface-300">{formatWhen(status.next_run_at_utc)}</dd>
+    {#if status}
+      <dl class="presentation-cleanup-meta">
+        <div class="presentation-cleanup-meta-row">
+          <dt>Next run</dt>
+          <dd>{formatWhen(status.next_run_at_utc)}</dd>
+        </div>
+        <div class="presentation-cleanup-meta-row">
+          <dt>Last run</dt>
+          <dd>{formatWhen(status.last_run_at_utc)}</dd>
+        </div>
+        {#if status.last_run_summary}
+          <div class="presentation-cleanup-meta-row">
+            <dt>Result</dt>
+            <dd class="truncate">{status.last_run_summary}</dd>
           </div>
-          <div class="flex gap-2">
-            <dt class="text-surface-500">Last run</dt>
-            <dd class="text-surface-300">{formatWhen(status.last_run_at_utc)}</dd>
-          </div>
-          {#if status.last_run_summary}
-            <div class="flex gap-2">
-              <dt class="shrink-0 text-surface-500">Result</dt>
-              <dd class="truncate text-surface-400">{status.last_run_summary}</dd>
-            </div>
-          {/if}
-        </dl>
-      {/if}
+        {/if}
+      </dl>
+    {/if}
 
-      {#if error}
-        <p class="text-sm text-red-400">{error}</p>
-      {/if}
-      {#if saved}
-        <p class="text-sm text-emerald-400/90">Retention settings saved.</p>
-      {/if}
+    {#if error}
+      <p class="mt-3 text-sm text-red-400">{error}</p>
+    {/if}
+    {#if saved}
+      <p class="mt-3 text-sm text-emerald-400/90">Cleanup settings saved.</p>
+    {/if}
 
+    <div class="mt-4">
       <button
         type="button"
-        class="btn-primary mt-2"
-        disabled={saving || !enabled && maxAgeDays < 1}
+        class="btn btn-sm variant-filled-primary"
+        disabled={saving || (!enabled && maxAgeDays < 1)}
         onclick={() => void save()}
       >
-        {saving ? "Saving…" : "Save presentation cleanup"}
+        {saving ? "Saving…" : "Save cleanup"}
       </button>
     </div>
   {/if}
 </section>
+
+<style>
+  .presentation-cleanup-meta {
+    display: grid;
+    gap: 0.25rem;
+    margin: 0.75rem 0 0;
+    font-size: 0.75rem;
+    color: rgb(var(--shell-muted, var(--color-surface-400)));
+  }
+
+  .presentation-cleanup-meta-row {
+    display: flex;
+    gap: 0.5rem;
+    min-width: 0;
+  }
+
+  .presentation-cleanup-meta-row dt {
+    color: rgb(var(--shell-muted, var(--color-surface-500)));
+    flex-shrink: 0;
+  }
+
+  .presentation-cleanup-meta-row dd {
+    margin: 0;
+    color: rgb(var(--shell-label, var(--color-surface-300)));
+    min-width: 0;
+  }
+</style>

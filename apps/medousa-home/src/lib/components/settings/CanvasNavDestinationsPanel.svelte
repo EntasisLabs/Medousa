@@ -19,7 +19,6 @@
   let error = $state<string | null>(null);
 
   const liveSpec = $derived(ensurePeersSurfaceInSpec(spec));
-  const customSurfaces = $derived(liveSpec.surfaces.filter((surface) => surface.kind === "custom"));
   const surfaceById = $derived(new Map(liveSpec.surfaces.map((surface) => [surface.id, surface])));
 
   function resolveSurfaces(ids: string[]): SurfaceDef[] {
@@ -87,35 +86,6 @@
       </div>
     {/if}
   {/each}
-
-  {#if customSurfaces.length > 0}
-    <div class="canvas-nav-destinations-group">
-      <p class="canvas-nav-destinations-group-label">Your views</p>
-      <div class="settings-toggle-list">
-        {#each customSurfaces as surface (surface.id)}
-          {@const Icon = environmentIcon(surface.icon)}
-          <label class="settings-toggle-row canvas-nav-destinations-row">
-            <span class="canvas-nav-destinations-copy">
-              <span class="canvas-nav-destinations-icon" aria-hidden="true">
-                <Icon size={15} strokeWidth={1.75} />
-              </span>
-              <span class="min-w-0 flex-1">
-                <span class="block text-sm font-medium text-surface-100">{surface.label}</span>
-              </span>
-            </span>
-            <input
-              type="checkbox"
-              class="checkbox shrink-0"
-              checked={isVisible(surface.id)}
-              disabled={busySurfaceId === surface.id}
-              onchange={(event) =>
-                void setVisible(surface.id, (event.currentTarget as HTMLInputElement).checked)}
-            />
-          </label>
-        {/each}
-      </div>
-    </div>
-  {/if}
 
   <p class="canvas-nav-destinations-note workshop-faint">
     Settings and Runtime always stay reachable. Changes apply to the active layout preset ({liveSpec.layoutPresets?.find((preset) => preset.active)?.label ?? "current"}).
