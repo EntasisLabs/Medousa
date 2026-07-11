@@ -105,6 +105,55 @@ export function parseViewBlockBody(body: string): MedousaViewQuery | null {
   return { from, table, wheres, sort, columns };
 }
 
+/** Serialize a view query to fence body lines (no fences). */
+export function serializeMedousaViewQuery(query: MedousaViewQuery): string {
+  const lines: string[] = [`from: ${query.from.trim()}`, `table: ${query.table}`];
+  for (const where of query.wheres) {
+    const needsQuotes = /\s/.test(where.value) || /["']/.test(where.value);
+    const value = needsQuotes
+      ? `"${where.value.replace(/"/g, '\\"')}"`
+      : where.value;
+    lines.push(`where: ${where.column} ${where.op} ${value}`);
+  }
+  if (query.sort?.column) {
+    lines.push(
+      `sort: ${query.sort.descending ? "-" : ""}${query.sort.column}`,
+    );
+  }
+  if (query.columns?.length) {
+    lines.push(`columns: ${query.columns.join(", ")}`);
+  }
+  return lines.join("\n");
+}
+
+/** Full fenced block ready to insert into a note. */
+export function serializeMedousaViewFence(query: MedousaViewQuery): string {
+  return `\`\`\`medousa-view\n${serializeMedousaViewQuery(query)}\n\`\`\`\n\n`;
+}
+
+/** Replace the Nth `medousa-view` fence (0-based) with an updated query. */
+export function replaceMedousaViewFenceAt(
+  source: string,
+  index: number,
+  query: MedousaViewQuery,
+): string | null {
+  const re = /```medousa-view\s*\n([\s\S]*?)```/gi;
+  let current = 0;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(source)) !== null) {
+    if (current === index) {
+      const replacement = `\`\`\`medousa-view\n${serializeMedousaViewQuery(query)}\n\`\`\``;
+      return (
+        source.slice(0, match.index) +
+        replacement +
+        source.slice(match.index + match[0].length)
+      );
+    }
+    current += 1;
+  }
+  return null;
+}
+
 export function extractMedousaViewBlocks(
   source: string,
 ): Array<{ fullMatch: string; body: string; query: MedousaViewQuery | null }> {
@@ -202,8 +251,14 @@ export function applyMedousaViewQuery(
   return projectColumns(table.headers, rows, query.columns);
 }
 
-export function renderMedousaViewError(message: string): string {
-  return `<div class="medousa-view medousa-view-error" role="note"><p class="medousa-view-error-text">${escapeHtml(message)}</p></div>`;
+export function renderMedousaViewError(message: string, viewIndex?: number): string {
+  const editAttr =
+    viewIndex != null ? ` data-edit-view-index="${escapeAttr(String(viewIndex))}"` : "";
+  const configure =
+    viewIndex != null
+      ? `<button type="button" class="medousa-view-configure" data-edit-view-index="${escapeAttr(String(viewIndex))}">Configure</button>`
+      : "";
+  return `<div class="medousa-view medousa-view-error" role="note"${editAttr}><p class="medousa-view-error-text">${escapeHtml(message)}</p>${configure}</div>`;
 }
 
 function csvEscape(value: string): string {
@@ -221,7 +276,10 @@ function rowsToCsv(headers: string[], rows: string[][]): string {
   return lines.join("\n");
 }
 
-export function renderMedousaViewTable(resolved: ResolvedViewTable): string {
+export function renderMedousaViewTable(
+  resolved: ResolvedViewTable,
+  viewIndex?: number,
+): string {
   const { headers, rows, sourcePath, sourceLabel } = resolved;
   const headerCells = headers
     .map((header) => `<th scope="col">${escapeHtml(header)}</th>`)
@@ -236,12 +294,21 @@ export function renderMedousaViewTable(resolved: ResolvedViewTable): string {
           .join("")
       : `<tr><td colspan="${Math.max(headers.length, 1)}" class="medousa-view-empty">No matching rows</td></tr>`;
   const csvPayload = encodeURIComponent(rowsToCsv(headers, rows));
+  const editIndexAttr =
+    viewIndex != null
+      ? ` data-edit-view-index="${escapeAttr(String(viewIndex))}"`
+      : "";
+  const configureBtn =
+    viewIndex != null
+      ? `<button type="button" class="medousa-view-configure" data-edit-view-index="${escapeAttr(String(viewIndex))}">Configure</button>`
+      : "";
 
-  return `<div class="medousa-view" data-view-source="${escapeAttr(sourcePath)}">
+  return `<div class="medousa-view" data-view-source="${escapeAttr(sourcePath)}"${editIndexAttr}>
   <div class="medousa-view-header">
     <span class="medousa-view-label">Query view</span>
     <div class="medousa-view-actions">
-      <button type="button" class="medousa-view-copy-csv" data-copy-view-csv="${escapeAttr(csvPayload)}">Copy CSV</button>
+      <button type="button" class="medousa-view-copy-csv" data-copy-view-csv="${escapeAttr(csvPayload)}" data-view-csv="${escapeAttr(csvPayload)}">Copy CSV</button>
+      ${configureBtn}
       <button type="button" class="medousa-view-edit-source" data-open-vault-note="${escapeAttr(sourcePath)}">Edit source</button>
     </div>
   </div>

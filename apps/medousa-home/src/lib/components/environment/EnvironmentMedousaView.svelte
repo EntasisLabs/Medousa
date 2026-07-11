@@ -74,6 +74,7 @@
         {content}
         {labelByPath}
         compact={!fill}
+        configureViews={false}
         onWikilink={(target) => void followWikilink(target)}
       />
     </div>

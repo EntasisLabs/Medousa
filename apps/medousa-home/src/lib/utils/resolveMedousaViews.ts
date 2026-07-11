@@ -55,9 +55,13 @@ async function resolveViewBlock(
     selectedContent: string;
     labelByPath: Map<string, string>;
   },
+  viewIndex: number,
 ): Promise<string> {
   if (!block.query) {
-    return renderMedousaViewError("Invalid medousa-view block — check from, where, sort, and columns.");
+    return renderMedousaViewError(
+      "Invalid medousa-view block — check from, where, sort, and columns.",
+      viewIndex,
+    );
   }
 
   const sourcePath = resolveViewSourcePath(
@@ -66,7 +70,10 @@ async function resolveViewBlock(
     context.notes,
   );
   if (!sourcePath) {
-    return renderMedousaViewError(`Could not resolve source note: ${block.query.from}`);
+    return renderMedousaViewError(
+      `Could not resolve source note: ${block.query.from}`,
+      viewIndex,
+    );
   }
 
   const content = await loadNoteContent(
@@ -75,7 +82,10 @@ async function resolveViewBlock(
     context.selectedContent,
   );
   if (content == null) {
-    return renderMedousaViewError(`Source note not found: ${block.query.from}`);
+    return renderMedousaViewError(
+      `Source note not found: ${block.query.from}`,
+      viewIndex,
+    );
   }
 
   const table = findTableForView(content, block.query.table);
@@ -84,6 +94,7 @@ async function resolveViewBlock(
       block.query.table === "ledger"
         ? `No ledger table in ${block.query.from}`
         : `No table in ${block.query.from}`,
+      viewIndex,
     );
   }
 
@@ -97,7 +108,7 @@ async function resolveViewBlock(
       vaultDisplayTitle(sourcePath.split("/").pop()?.replace(/\.md$/i, "") ?? sourcePath, sourcePath),
     query: block.query,
   };
-  return renderMedousaViewTable(resolved);
+  return renderMedousaViewTable(resolved, viewIndex);
 }
 
 /** Replace `medousa-view` fences with live query result HTML. */
@@ -115,8 +126,9 @@ export async function resolveMedousaViews(
 
   const blocks = extractMedousaViewBlocks(source);
   let resolved = source;
-  for (const block of blocks) {
-    const html = await resolveViewBlock(block, context);
+  for (let index = 0; index < blocks.length; index += 1) {
+    const block = blocks[index]!;
+    const html = await resolveViewBlock(block, context, index);
     resolved = resolved.replace(block.fullMatch, html);
   }
   return resolved;

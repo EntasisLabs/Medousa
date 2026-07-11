@@ -7,6 +7,7 @@
     Copy,
     Filter,
     Plus,
+    SlidersHorizontal,
     X,
   } from "@lucide/svelte";
   import {
@@ -23,6 +24,8 @@
     resolveColumnType,
     serializeLedgerColumns,
     type LedgerColumn,
+    type LedgerColumnAlign,
+    type LedgerColumnType,
   } from "$lib/utils/ledgerSheet";
   import {
     applyMedousaSheetView,
@@ -32,7 +35,11 @@
     upsertLedgerSheetFence,
     type MedousaSheetConfig,
   } from "$lib/utils/medousaSheet";
-  import { MARKDOWN_COLOR_HEX } from "$lib/utils/vaultMarkdownColors";
+  import {
+    MARKDOWN_COLOR_OPTIONS,
+    MARKDOWN_COLOR_HEX,
+    type MarkdownColorId,
+  } from "$lib/utils/vaultMarkdownColors";
 
   interface Props {
     content: string;
@@ -59,6 +66,7 @@
   let filterValue = $state("");
   let filterOpen = $state(false);
   let renamingCol = $state<number | null>(null);
+  let metaCol = $state<number | null>(null);
   let headerSortTimer: ReturnType<typeof setTimeout> | null = null;
 
   const protectedColumns = $derived(
@@ -176,6 +184,24 @@
       index === colIndex ? { ...column, label: value } : column,
     );
     emitSheet(nextColumns, rows);
+  }
+
+  function updateColumnMeta(
+    colIndex: number,
+    patch: {
+      type?: LedgerColumnType | "";
+      align?: LedgerColumnAlign | "";
+      color?: MarkdownColorId | "";
+    },
+  ) {
+    const nextColumns = columns.map((column, index) =>
+      index === colIndex ? mergeColumnMeta(column, patch) : column,
+    );
+    emitSheet(nextColumns, rows);
+  }
+
+  function toggleMetaPanel(colIndex: number) {
+    metaCol = metaCol === colIndex ? null : colIndex;
   }
 
   function addRow(afterIndex?: number) {
@@ -742,6 +768,22 @@
                     {/if}
                   </button>
                 {/if}
+                {#if !disabled}
+                  <button
+                    type="button"
+                    class="ledger-col-meta-btn"
+                    class:ledger-col-meta-btn--open={metaCol === colIndex}
+                    title="Column format"
+                    aria-label="Format column {column.label}"
+                    aria-expanded={metaCol === colIndex}
+                    onclick={(event) => {
+                      event.stopPropagation();
+                      toggleMetaPanel(colIndex);
+                    }}
+                  >
+                    <SlidersHorizontal size={11} strokeWidth={2} />
+                  </button>
+                {/if}
                 {#if !disabled && !protectedColumns.has(colIndex)}
                   <button
                     type="button"
@@ -752,6 +794,81 @@
                   >
                     <X size={11} strokeWidth={2} />
                   </button>
+                {/if}
+                {#if metaCol === colIndex}
+                  <div
+                    class="ledger-col-meta-panel"
+                    role="dialog"
+                    aria-label="Column format"
+                  >
+                    <p class="ledger-col-meta-label">Type</p>
+                    <div class="ledger-col-meta-row">
+                      {#each ["text", "date", "currency", "number"] as type (type)}
+                        <button
+                          type="button"
+                          class="vault-chip"
+                          class:vault-chip--active={(column.meta.type ??
+                            resolveColumnType(column, colIndex)) === type}
+                          onclick={() =>
+                            updateColumnMeta(colIndex, {
+                              type: type as LedgerColumnType,
+                            })}
+                        >
+                          {type}
+                        </button>
+                      {/each}
+                    </div>
+                    <p class="ledger-col-meta-label">Align</p>
+                    <div class="ledger-col-meta-row">
+                      {#each ["left", "center", "right"] as align (align)}
+                        <button
+                          type="button"
+                          class="vault-chip"
+                          class:vault-chip--active={resolveColumnAlign(
+                            column,
+                            colIndex,
+                          ) === align}
+                          onclick={() =>
+                            updateColumnMeta(colIndex, {
+                              align: align as LedgerColumnAlign,
+                            })}
+                        >
+                          {align}
+                        </button>
+                      {/each}
+                    </div>
+                    <p class="ledger-col-meta-label">Color</p>
+                    <div class="ledger-col-meta-row">
+                      <button
+                        type="button"
+                        class="vault-chip"
+                        class:vault-chip--active={!column.meta.color}
+                        onclick={() => updateColumnMeta(colIndex, { color: "" })}
+                      >
+                        None
+                      </button>
+                      {#each MARKDOWN_COLOR_OPTIONS as color (color.id)}
+                        <button
+                          type="button"
+                          class="ledger-col-swatch"
+                          class:ledger-col-swatch--active={column.meta.color ===
+                            color.id}
+                          style="--swatch:{color.swatch}"
+                          title={color.label}
+                          aria-label={color.label}
+                          onclick={() =>
+                            updateColumnMeta(colIndex, { color: color.id })}
+                        ></button>
+                      {/each}
+                    </div>
+                    <button
+                      type="button"
+                      class="ledger-filter-clear"
+                      onclick={() => (metaCol = null)}
+                    >
+                      Done
+                    </button>
+                  </div>
                 {/if}
               </div>
               {#if !disabled}
