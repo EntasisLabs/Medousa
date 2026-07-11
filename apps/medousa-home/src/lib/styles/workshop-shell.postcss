@@ -744,6 +744,65 @@
     background-color: rgb(var(--color-primary-500) / 0.28);
   }
 
+  html:not(.dark) .btn.variant-soft-primary {
+    background-color: rgb(var(--color-primary-500) / 0.16);
+    color: rgb(var(--color-primary-700, var(--shell-label)));
+    box-shadow: inset 0 0 0 1px rgb(var(--color-primary-500) / 0.32);
+  }
+
+  html:not(.dark) .btn.variant-soft-primary:hover {
+    background-color: rgb(var(--color-primary-500) / 0.24);
+    color: rgb(var(--color-primary-800, var(--shell-whisper)));
+  }
+
+  /* Soft/surface buttons — Skeleton defaults wash out in light mode */
+  .btn.variant-soft-surface,
+  .btn.variant-soft {
+    background-color: rgb(var(--shell-pane-muted-bg) / 0.95);
+    color: rgb(var(--shell-label));
+    box-shadow: inset 0 0 0 1px rgb(var(--shell-border) / 0.4);
+  }
+
+  .btn.variant-soft-surface:hover,
+  .btn.variant-soft:hover {
+    background-color: rgb(var(--shell-pane-muted-bg));
+    color: rgb(var(--shell-whisper));
+  }
+
+  .btn.variant-ghost-surface {
+    color: rgb(var(--shell-label));
+  }
+
+  .btn.variant-ghost-surface:hover {
+    color: rgb(var(--shell-whisper));
+    background-color: rgb(var(--shell-pane-muted-bg) / 0.65);
+  }
+
+  html:not(.dark) .btn.variant-soft-surface,
+  html:not(.dark) .btn.variant-soft {
+    background-color: rgb(var(--shell-pane-muted-bg));
+    color: rgb(var(--shell-whisper));
+    box-shadow: inset 0 0 0 1px rgb(var(--shell-border) / 0.35);
+  }
+
+  html:not(.dark) .btn.variant-soft-surface:hover,
+  html:not(.dark) .btn.variant-soft:hover {
+    color: rgb(var(--shell-label));
+    background-color: color-mix(in srgb, rgb(var(--shell-pane-muted-bg)) 80%, rgb(var(--shell-label)) 8%);
+  }
+
+  html:not(.dark) .btn.variant-ghost-surface {
+    color: rgb(var(--shell-whisper));
+  }
+
+  html:not(.dark) .workshop-text-action {
+    color: rgb(var(--shell-whisper));
+  }
+
+  html:not(.dark) .workshop-text-action:hover {
+    color: rgb(var(--color-primary-600));
+  }
+
   .composer-bar:focus-within {
     border-color: rgb(var(--color-primary-500) / 0.42);
     box-shadow:

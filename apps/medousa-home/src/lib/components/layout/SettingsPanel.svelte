@@ -138,7 +138,7 @@
       {:else if activeSection === "phone"}
         <SettingsPhoneSection {mobile} />
       {:else if activeSection === "nearby"}
-        <SettingsLanShareSection />
+        <SettingsLanShareSection {mobile} />
       {:else}
         <SettingsBasementSection {revision} {health} {onDaemonHealth} {mobile} />
       {/if}

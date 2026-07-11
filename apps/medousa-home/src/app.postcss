@@ -6068,7 +6068,11 @@
   }
 
   .settings-connection-card {
-    @apply max-w-xl rounded-container-token border border-surface-500/40 bg-surface-900/40 p-4;
+    max-width: 36rem;
+    border-radius: var(--theme-rounded-container, 0.75rem);
+    border: 1px solid rgb(var(--shell-border, var(--color-surface-500)) / 0.4);
+    background: rgb(var(--shell-pane-bg, var(--color-surface-900)) / 0.55);
+    padding: 1rem;
   }
 
   .settings-connection-icon {
@@ -6081,7 +6085,35 @@
   }
 
   .settings-connection-icon-off {
-    @apply bg-surface-800 text-surface-400;
+    background: rgb(var(--shell-pane-muted-bg, var(--color-surface-800)));
+    color: rgb(var(--shell-muted, var(--color-surface-400)));
+  }
+
+  .settings-connection-meta {
+    margin: 0;
+    display: grid;
+    gap: 0.45rem;
+  }
+
+  .settings-connection-meta-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+    font-size: 0.75rem;
+  }
+
+  .settings-connection-meta-row dt {
+    color: rgb(var(--shell-muted, var(--color-surface-500)));
+    flex-shrink: 0;
+  }
+
+  .settings-connection-meta-row dd {
+    margin: 0;
+    color: rgb(var(--shell-label, var(--color-surface-300)));
+    text-align: right;
+    min-width: 0;
+    overflow-wrap: anywhere;
   }
 
   .settings-hub-list {
