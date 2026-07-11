@@ -15,8 +15,11 @@
   } from "$lib/utils/browserCompositor";
   import {
     BROWSER_FOCUS_URL_EVENT,
-    dispatchBrowserOpenBookmarks,
   } from "$lib/utils/browserChromeEvents";
+  import {
+    type BrowserHotkeyAction,
+    runBrowserHotkeyAction,
+  } from "$lib/utils/browserHotkeys";
   import { humanBrowser } from "$lib/stores/humanBrowser.svelte";
   import { layout } from "$lib/stores/layout.svelte";
   import { isTauri, shouldUseMobileShell } from "$lib/platform";
@@ -40,6 +43,14 @@
 
   function focusUrlBar() {
     urlBarFocusNonce += 1;
+  }
+
+  function handleShellHotkey(action: BrowserHotkeyAction) {
+    if (action === "focusUrl") {
+      focusUrlBar();
+      return;
+    }
+    runBrowserHotkeyAction(action, humanBrowser);
   }
 
   onMount(() => {
@@ -82,46 +93,44 @@
       // Core browser hotkeys — work even while the URL bar / find field is focused.
       if (key === "l") {
         event.preventDefault();
-        focusUrlBar();
+        handleShellHotkey("focusUrl");
         return;
       }
       if (key === "f") {
         event.preventDefault();
-        humanBrowser.openFindBar();
+        handleShellHotkey("find");
         return;
       }
       if (key === "b" && event.shiftKey) {
         event.preventDefault();
-        dispatchBrowserOpenBookmarks();
+        handleShellHotkey("bookmarks");
         return;
       }
       if (key === "t" && event.shiftKey) {
         event.preventDefault();
-        void humanBrowser.reopenClosedTab();
+        handleShellHotkey("reopenTab");
         return;
       }
       if (key === "t") {
         event.preventDefault();
-        void humanBrowser.openTab();
+        handleShellHotkey("newTab");
         return;
       }
       if (event.key === "[" || event.key === "]") {
         event.preventDefault();
-        if (event.key === "[") void humanBrowser.goBack();
-        else void humanBrowser.goForward();
+        handleShellHotkey(event.key === "[" ? "goBack" : "goForward");
         return;
       }
       if (typing && key !== "r") return;
 
       if (key === "w") {
         event.preventDefault();
-        const active = humanBrowser.activeTab;
-        if (active) void humanBrowser.closeTab(active.id);
+        handleShellHotkey("closeTab");
         return;
       }
       if (key === "r") {
         event.preventDefault();
-        void humanBrowser.reload();
+        handleShellHotkey("reload");
       }
     };
     window.addEventListener("keydown", onKeydown);
