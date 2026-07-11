@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { ChevronDown } from "@lucide/svelte";
+  import { ChevronDown, ExternalLink } from "@lucide/svelte";
   import { layout } from "$lib/stores/layout.svelte";
   import {
     Bold,
@@ -23,17 +23,29 @@
 
   interface Props {
     disabled?: boolean;
+    /** Force compact Format menu (narrow sticky pop-out). */
+    compact?: boolean;
+    /** Subtle float-note control at the trailing end of the bar. */
+    showFloat?: boolean;
+    onFloat?: () => void;
     onFormat: (action: MarkdownFormatAction) => void;
     onColor: (color: MarkdownColorToken) => void;
   }
 
-  let { disabled = false, onFormat, onColor }: Props = $props();
+  let {
+    disabled = false,
+    compact: compactProp,
+    showFloat = false,
+    onFloat,
+    onFormat,
+    onColor,
+  }: Props = $props();
 
   let expanded = $state(false);
   let customHex = $state("#F87171");
   let hexDraft = $state("#F87171");
   let hexPickerOpen = $state(false);
-  const compact = $derived(layout.isMobile);
+  const compact = $derived(compactProp ?? layout.isMobile);
 
   function openHexPicker() {
     hexDraft = customHex;
@@ -206,9 +218,34 @@
       </div>
 
       {#if !compact}
-        <p class="ml-auto hidden text-[11px] text-surface-500 sm:block">
-          Select text to format · type <kbd class="vault-kbd">/</kbd> for blocks
-        </p>
+        <div class="ml-auto flex items-center gap-2">
+          <p class="hidden text-[11px] text-surface-500 sm:block">
+            Select text to format · type <kbd class="vault-kbd">/</kbd> for blocks
+          </p>
+          {#if showFloat && onFloat}
+            <button
+              type="button"
+              class="vault-format-btn vault-format-btn--float"
+              title="Float note (always on top)"
+              aria-label="Float note"
+              {disabled}
+              onclick={() => onFloat()}
+            >
+              <ExternalLink size={14} strokeWidth={1.75} />
+            </button>
+          {/if}
+        </div>
+      {:else if showFloat && onFloat}
+        <button
+          type="button"
+          class="vault-format-btn vault-format-btn--float ml-auto"
+          title="Float note (always on top)"
+          aria-label="Float note"
+          {disabled}
+          onclick={() => onFloat()}
+        >
+          <ExternalLink size={14} strokeWidth={1.75} />
+        </button>
       {/if}
     </div>
   {/if}

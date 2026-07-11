@@ -819,6 +819,30 @@
     @apply bg-surface-700/60 text-surface-100;
   }
 
+  .vault-sticky-shell {
+    @apply overflow-hidden;
+  }
+
+  .vault-sticky-chrome {
+    @apply flex shrink-0 items-center gap-2 border-b border-surface-500/30 bg-surface-900/70 px-2.5 py-1.5;
+  }
+
+  .vault-sticky-action {
+    @apply rounded-md px-2 py-1 text-[11px] font-medium text-surface-400 transition hover:bg-surface-800/80 hover:text-surface-100;
+  }
+
+  .vault-sticky-icon {
+    @apply inline-flex h-7 w-7 items-center justify-center rounded-md text-surface-400 transition hover:bg-surface-800/80 hover:text-surface-100;
+  }
+
+  .vault-sticky-action-active {
+    @apply bg-primary-500/10 text-primary-200;
+  }
+
+  .vault-format-btn--float {
+    @apply text-surface-500 opacity-70 hover:opacity-100;
+  }
+
   .vault-toolbar-btn {
     @apply inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-surface-500/35 bg-surface-900/50 text-surface-400 transition hover:border-surface-500/55 hover:bg-surface-800/80 hover:text-surface-100 disabled:opacity-40;
   }
@@ -7506,6 +7530,48 @@
     height: min(560px, calc(100vh - 3rem));
   }
 
+  .vault-note-workshop-sheet {
+    @apply fixed inset-x-0 bottom-0 z-[85] flex flex-col overflow-hidden border-t border-surface-500/30 backdrop-blur-md;
+    background-color: rgb(var(--color-surface-950) / 0.95);
+    border-top-left-radius: 14px;
+    border-top-right-radius: 14px;
+    box-shadow: 0 -12px 40px rgb(0 0 0 / 0.35);
+    animation: vault-sticky-sheet-in 180ms ease-out;
+  }
+
+  .vault-note-workshop-sheet--resizing {
+    animation: none;
+    user-select: none;
+  }
+
+  .vault-note-workshop-sheet-resize {
+    @apply flex h-3 shrink-0 cursor-ns-resize items-center justify-center touch-none;
+  }
+
+  .vault-note-workshop-sheet-grip {
+    @apply h-1 w-9 rounded-full bg-surface-500/50;
+  }
+
+  .vault-note-workshop-sheet-resize:hover .vault-note-workshop-sheet-grip,
+  .vault-note-workshop-sheet-resize:focus-visible .vault-note-workshop-sheet-grip {
+    @apply bg-surface-400/70;
+  }
+
+  @keyframes vault-sticky-sheet-in {
+    from {
+      transform: translateY(12px);
+      opacity: 0.7;
+    }
+    to {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+
+  .vault-note-workshop-sheet-header {
+    @apply flex shrink-0 items-center gap-2 px-2.5 pb-1.5 pt-0;
+  }
+
   .vault-note-workshop-header {
     @apply flex cursor-grab items-center gap-2 border-b border-surface-500/40 bg-surface-900/95 px-3 py-2 active:cursor-grabbing;
     user-select: none;
@@ -7524,9 +7590,17 @@
     @apply fixed bottom-4 right-4 z-[85] flex max-w-[16rem] items-center gap-2 rounded-full border border-primary-500/35 bg-surface-900/95 px-4 py-2 text-sm text-primary-100 shadow-xl backdrop-blur-sm transition hover:border-primary-400/50 hover:bg-surface-800;
   }
 
+  .vault-note-workshop-dock--sticky {
+    @apply bottom-3 left-1/2 right-auto max-w-[14rem] -translate-x-1/2 border-surface-500/40 bg-surface-900/90 px-3 py-1.5 text-xs text-surface-200 shadow-lg;
+  }
+
   .vault-workshop-chat-panel {
     @apply min-h-0;
     background-color: rgb(var(--color-surface-950));
+  }
+
+  .vault-workshop-chat-panel--sticky {
+    background-color: transparent;
   }
 
   .vault-workshop-chat-body {
@@ -7537,14 +7611,27 @@
     @apply h-full overflow-y-auto px-3 py-3;
   }
 
+  .vault-workshop-chat-panel--sticky .vault-workshop-chat-scroll {
+    @apply px-2.5 py-1.5;
+  }
+
   .vault-workshop-chat-composer {
     @apply shrink-0 border-t border-surface-500/35 px-3 pb-2 pt-2;
     background-color: rgb(var(--color-surface-900) / 0.8);
   }
 
+  .vault-workshop-chat-composer--sticky {
+    @apply border-surface-500/20 px-2 pb-1.5 pt-1.5;
+    background-color: transparent;
+  }
+
   .vault-workshop-chat-composer .composer-voice-status,
   .vault-workshop-chat-composer .composer-attachment-chips {
     @apply mb-1;
+  }
+
+  .vault-chat-context-chip--whisper {
+    @apply border-0 bg-transparent px-1 py-0.5;
   }
 
   .vault-note-chat-fab-root {

@@ -21,6 +21,38 @@ pub fn window_hide_chat_popout(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
+pub fn window_show_vault_sticky(app: AppHandle) -> Result<(), String> {
+    let window = vault_sticky_window(&app)?;
+    window
+        .set_always_on_top(true)
+        .map_err(|err| err.to_string())?;
+    window.show().map_err(|err| err.to_string())?;
+    window.set_focus().map_err(|err| err.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn window_hide_vault_sticky(app: AppHandle) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window("vault-sticky") {
+        let _ = window.set_always_on_top(false);
+        window.hide().map_err(|err| err.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn window_set_vault_sticky_always_on_top(
+    app: AppHandle,
+    always_on_top: bool,
+) -> Result<(), String> {
+    let window = vault_sticky_window(&app)?;
+    window
+        .set_always_on_top(always_on_top)
+        .map_err(|err| err.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
 pub fn window_show_browser(app: AppHandle) -> Result<(), String> {
     let window = browser_webview_window(&app)?;
     position_browser_beside_main(&app, &window)?;
@@ -90,6 +122,11 @@ pub fn browser_window_present(app: AppHandle, options: BrowserPresentOptions) ->
 fn chat_popout_window(app: &AppHandle) -> Result<WebviewWindow, String> {
     app.get_webview_window("chat-popout")
         .ok_or_else(|| "chat popout window is not configured".to_string())
+}
+
+fn vault_sticky_window(app: &AppHandle) -> Result<WebviewWindow, String> {
+    app.get_webview_window("vault-sticky")
+        .ok_or_else(|| "vault sticky window is not configured".to_string())
 }
 
 fn browser_webview_window(app: &AppHandle) -> Result<WebviewWindow, String> {
