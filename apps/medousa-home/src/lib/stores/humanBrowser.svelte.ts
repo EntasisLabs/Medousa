@@ -3,6 +3,7 @@
 import {
   humanBrowserActivateTab,
   humanBrowserCloseTab,
+  humanBrowserEmbedHide,
   humanBrowserFindInPage,
   humanBrowserGoBack,
   humanBrowserGoForward,
@@ -129,6 +130,9 @@ export class HumanBrowserStore {
   findOpen = $state(false);
   closedTabs = $state<HumanBrowserTab[]>([]);
 
+  private loadingClearTimer: ReturnType<typeof setTimeout> | null = null;
+  private static readonly LOADING_FALLBACK_MS = 4500;
+
   activeTab = $derived(this.tabs.find((tab) => tab.active) ?? this.tabs[0] ?? null);
   activeUrl = $derived(this.activeTab?.url ?? "about:blank");
   showStartPage = $derived(this.activeUrl === "about:blank");
@@ -158,6 +162,31 @@ export class HumanBrowserStore {
 
   setLoading(loading: boolean) {
     this.loading = loading;
+    if (this.loadingClearTimer) {
+      clearTimeout(this.loadingClearTimer);
+      this.loadingClearTimer = null;
+    }
+    if (loading) {
+      this.loadingClearTimer = setTimeout(() => {
+        this.loadingClearTimer = null;
+        this.loading = false;
+      }, HumanBrowserStore.LOADING_FALLBACK_MS);
+    }
+  }
+
+  /** Ensure native embed/popout webview matches the active tab (cold-open recovery). */
+  async syncActiveTabToNative() {
+    const active = this.activeTab;
+    if (!active) return;
+    try {
+      await humanBrowserActivateTab(active.id, active.url);
+      if (active.url === "about:blank") {
+        await humanBrowserEmbedHide().catch(() => {});
+      }
+    } catch {
+      /* webview may still be mounting */
+    }
+    void this.refreshNativeNavState();
   }
 
   setNativeNavState(canGoBack: boolean, canGoForward: boolean) {
@@ -309,12 +338,17 @@ export class HumanBrowserStore {
     }
 
     this.urlDraft = normalized;
-    this.loading = true;
+    this.setLoading(true);
     try {
+      const active = this.activeTab;
+      // Ensure native embed exists before navigate (cold-open); same-URL is a no-op.
+      if (active) {
+        await humanBrowserActivateTab(active.id, active.url).catch(() => {});
+      }
       await humanBrowserNavigate(normalized);
       this.setActiveTabLocal(normalized);
     } catch {
-      this.loading = false;
+      this.setLoading(false);
     }
   }
 
@@ -326,9 +360,13 @@ export class HumanBrowserStore {
     this.tabs = next;
     this.urlDraft = url === "about:blank" ? "" : url;
     this.persist();
-    this.loading = url !== "about:blank";
+    this.setLoading(url !== "about:blank");
     await humanBrowserActivateTab(tab.id, url);
-    if (url === "about:blank") this.loading = false;
+    if (url === "about:blank") {
+      this.setLoading(false);
+      // Belt-and-suspenders: compositor hide is rAF-deferred; blank must not flash.
+      await humanBrowserEmbedHide().catch(() => {});
+    }
   }
 
   async activateTab(tabId: string) {
@@ -338,6 +376,9 @@ export class HumanBrowserStore {
     this.urlDraft = target.url === "about:blank" ? "" : target.url;
     this.persist();
     await humanBrowserActivateTab(tabId, target.url);
+    if (target.url === "about:blank") {
+      await humanBrowserEmbedHide().catch(() => {});
+    }
     void this.refreshNativeNavState();
   }
 
@@ -386,17 +427,24 @@ export class HumanBrowserStore {
   }
 
   async reload() {
-    this.loading = true;
+    this.setLoading(true);
     try {
+      const active = this.activeTab;
+      if (active) {
+        await humanBrowserActivateTab(active.id, active.url).catch(() => {});
+      }
       await humanBrowserReload();
     } catch {
-      this.loading = false;
+      this.setLoading(false);
     }
   }
 
   async stop() {
-    await humanBrowserStop();
-    this.loading = false;
+    try {
+      await humanBrowserStop();
+    } finally {
+      this.setLoading(false);
+    }
   }
 
   async goBack() {
@@ -414,7 +462,7 @@ export class HumanBrowserStore {
       await this.navigate(previous, { skipHistory: true });
       return;
     }
-    this.loading = true;
+    this.setLoading(true);
     await humanBrowserGoBack();
     void this.refreshNativeNavState();
   }
@@ -434,7 +482,7 @@ export class HumanBrowserStore {
       await this.navigate(next, { skipHistory: true });
       return;
     }
-    this.loading = true;
+    this.setLoading(true);
     await humanBrowserGoForward();
     void this.refreshNativeNavState();
   }

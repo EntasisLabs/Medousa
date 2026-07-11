@@ -15,19 +15,34 @@ function scheduleCompositorLayout() {
   debounceTimer = setTimeout(() => {
     debounceTimer = null;
     getBrowserCompositor()?.scheduleLayout();
-  }, 32);
+  }, 16);
+}
+
+async function flushCompositorLayout() {
+  if (debounceTimer != null) {
+    clearTimeout(debounceTimer);
+    debounceTimer = null;
+  }
+  const compositor = getBrowserCompositor();
+  if (!compositor) return;
+  await compositor.flushLayout();
 }
 
 export async function pushBrowserPopoverOverlay() {
   if (!isTauri()) return;
   overlayDepth += 1;
-  scheduleCompositorLayout();
+  // Hide the native embed immediately — z-index cannot lift DOM above WKWebView.
+  await flushCompositorLayout();
 }
 
 export async function popBrowserPopoverOverlay() {
   if (!isTauri()) return;
   overlayDepth = Math.max(0, overlayDepth - 1);
-  scheduleCompositorLayout();
+  if (overlayDepth === 0) {
+    scheduleCompositorLayout();
+  } else {
+    await flushCompositorLayout();
+  }
 }
 
 export type PopoverPlacement = "above" | "below" | "panel";

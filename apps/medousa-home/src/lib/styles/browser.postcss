@@ -1,0 +1,760 @@
+/**
+ * Human browser chrome — tabs, toolbar, URL, actions, popovers.
+ * Kept out of app.postcss; imported once from there.
+ */
+
+@layer components {
+  .human-browser-panel {
+    background: rgb(var(--shell-canvas-bg, var(--color-surface-950)));
+    color: rgb(var(--color-surface-50));
+  }
+
+  .human-browser-chrome {
+    position: relative;
+    z-index: 50;
+    isolation: isolate;
+    background: rgb(var(--shell-pane-bg, var(--color-surface-900)));
+    border-bottom: 1px solid rgb(var(--shell-border, var(--color-surface-500)) / 0.28);
+  }
+
+  .human-browser-embed {
+    background: rgb(var(--shell-canvas-bg, var(--color-surface-950)));
+  }
+
+  .browser-toolbar {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.4rem 0.55rem 0.5rem;
+  }
+
+  .browser-nav-cluster {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 0.1rem;
+    padding: 0.1rem;
+    border-radius: 0.65rem;
+    background: rgb(var(--shell-pane-muted-bg, var(--color-surface-800)) / 0.45);
+  }
+
+  .browser-nav-btn,
+  .browser-chrome-btn {
+    display: inline-flex;
+    height: 1.85rem;
+    width: 1.85rem;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    border-radius: 0.5rem;
+    color: rgb(var(--shell-muted, var(--color-surface-400)));
+    background: transparent;
+    cursor: pointer;
+    transition:
+      background 120ms ease,
+      color 120ms ease;
+  }
+
+  .browser-nav-btn:hover:not(:disabled),
+  .browser-chrome-btn:hover:not(:disabled) {
+    color: rgb(var(--color-surface-100));
+    background: rgb(var(--color-surface-700) / 0.55);
+  }
+
+  .browser-nav-btn:disabled,
+  .browser-chrome-btn:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+  }
+
+  .browser-nav-btn--stop {
+    color: rgb(var(--color-surface-100));
+  }
+
+  .browser-chrome-btn--starred {
+    color: rgb(var(--color-warning-300, 251 191 36));
+  }
+
+  .browser-chrome-actions {
+    position: relative;
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 0.2rem;
+  }
+
+  .browser-save-btn {
+    display: inline-flex;
+    height: 1.85rem;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 0.3rem;
+    border: 1px solid rgb(var(--shell-border, var(--color-surface-500)) / 0.35);
+    border-radius: 0.5rem;
+    padding: 0 0.55rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: rgb(var(--shell-label, var(--color-surface-200)));
+    background: rgb(var(--shell-pane-muted-bg, var(--color-surface-800)) / 0.65);
+    cursor: pointer;
+    transition:
+      background 120ms ease,
+      border-color 120ms ease,
+      color 120ms ease;
+  }
+
+  .browser-save-btn:hover:not(:disabled) {
+    border-color: rgb(var(--shell-border, var(--color-surface-500)) / 0.5);
+    background: rgb(var(--color-surface-700) / 0.7);
+    color: rgb(var(--color-surface-50));
+  }
+
+  .browser-save-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  .browser-loading-bar {
+    pointer-events: none;
+    position: absolute;
+    inset-inline: 0;
+    bottom: 0;
+    z-index: 10;
+    height: 2px;
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      rgb(var(--color-primary-400)) 35%,
+      rgb(var(--color-primary-500)) 65%,
+      transparent 100%
+    );
+    background-size: 200% 100%;
+    animation: browser-loading-pulse 1.1s ease-in-out infinite;
+  }
+
+  @keyframes browser-loading-pulse {
+    0% {
+      background-position: 100% 0;
+      opacity: 0.55;
+    }
+    50% {
+      opacity: 1;
+    }
+    100% {
+      background-position: -100% 0;
+      opacity: 0.55;
+    }
+  }
+
+  .browser-find-bar {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 0.25rem;
+    border-bottom: 1px solid rgb(var(--shell-border, var(--color-surface-500)) / 0.28);
+    padding: 0.25rem 0.5rem;
+    background: rgb(var(--shell-pane-bg, var(--color-surface-900)) / 0.98);
+  }
+
+  .browser-find-input {
+    min-width: 0;
+    flex: 1;
+    border: 0;
+    background: transparent;
+    font-size: 0.875rem;
+    color: rgb(var(--color-surface-100));
+    outline: none;
+  }
+
+  .browser-find-status {
+    flex-shrink: 0;
+    font-size: 0.75rem;
+    color: rgb(var(--shell-muted, var(--color-surface-400)));
+  }
+
+  .browser-start-page-host {
+    position: absolute;
+    inset: 0;
+    z-index: 10;
+    overflow: hidden;
+    background: rgb(var(--shell-canvas-bg, var(--color-surface-900)));
+  }
+
+  .browser-start-page {
+    display: flex;
+    height: 100%;
+    min-height: 0;
+    align-items: center;
+    justify-content: center;
+    overflow-y: auto;
+    background: rgb(var(--shell-canvas-bg, var(--color-surface-900)));
+    padding: 2.5rem 1.5rem;
+  }
+
+  .browser-start-page-inner {
+    width: 100%;
+    max-width: 480px;
+  }
+
+  .browser-start-section {
+    margin-bottom: 2rem;
+  }
+
+  .browser-start-section:last-child {
+    margin-bottom: 0;
+  }
+
+  .browser-start-section-label {
+    margin-bottom: 0.75rem;
+    font-size: 0.75rem;
+    font-weight: 550;
+    color: rgb(var(--shell-muted, var(--color-surface-400)));
+  }
+
+  .browser-start-recents {
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+  }
+
+  .browser-start-recent-row {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    gap: 0.75rem;
+    border-radius: 0.5rem;
+    padding: 0.625rem 0.5rem;
+    text-align: left;
+    transition: background 120ms ease;
+  }
+
+  .browser-start-recent-row:hover {
+    background: rgb(var(--color-surface-800) / 0.6);
+  }
+
+  .browser-start-favicon {
+    height: 1.75rem;
+    width: 1.75rem;
+    flex-shrink: 0;
+    border-radius: 0.375rem;
+    background: rgb(var(--color-surface-800));
+    object-fit: cover;
+  }
+
+  .browser-start-recent-title {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.875rem;
+    font-weight: 550;
+    color: rgb(var(--color-surface-100));
+  }
+
+  .browser-start-recent-host {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.75rem;
+    color: rgb(var(--shell-muted, var(--color-surface-500)));
+  }
+
+  .browser-start-saved-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.75rem;
+  }
+
+  .browser-start-saved-tile {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.375rem;
+    border-radius: 0.75rem;
+    padding: 0.5rem;
+    transition: background 120ms ease;
+  }
+
+  .browser-start-saved-tile:hover {
+    background: rgb(var(--color-surface-800) / 0.6);
+  }
+
+  .browser-start-saved-icon {
+    height: 2rem;
+    width: 2rem;
+    border-radius: 0.5rem;
+    background: rgb(var(--color-surface-800));
+    object-fit: cover;
+  }
+
+  .browser-start-saved-label {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.6875rem;
+    color: rgb(var(--shell-muted, var(--color-surface-400)));
+  }
+
+  .browser-agent-banner {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    border-bottom: 1px solid rgb(var(--shell-border, var(--color-surface-500)) / 0.28);
+    background: rgb(var(--shell-pane-muted-bg, var(--color-surface-800)) / 0.55);
+    padding: 0.35rem 0.75rem;
+  }
+
+  .browser-agent-banner-label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.75rem;
+    color: rgb(var(--color-surface-200));
+  }
+
+  .browser-agent-banner-dot {
+    display: inline-block;
+    height: 0.5rem;
+    width: 0.5rem;
+    flex-shrink: 0;
+    border-radius: 999px;
+    background: rgb(var(--color-primary-400));
+  }
+
+  .browser-url-bar {
+    position: relative;
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+
+  .browser-url-bar-input {
+    width: 100%;
+    border: 1px solid rgb(var(--shell-border, var(--color-surface-500)) / 0.32);
+    border-radius: 999px;
+    background: rgb(var(--shell-canvas-bg, var(--color-surface-950)) / 0.55);
+    padding: 0.4rem 0.85rem;
+    font-size: 0.8125rem;
+    color: rgb(var(--color-surface-100));
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.02);
+    transition:
+      border-color 120ms ease,
+      background 120ms ease,
+      box-shadow 120ms ease;
+  }
+
+  .browser-url-bar-input:focus {
+    border-color: color-mix(in srgb, rgb(var(--color-primary-400)) 42%, transparent);
+    background: rgb(var(--color-surface-900));
+    outline: none;
+    box-shadow: 0 0 0 3px color-mix(in srgb, rgb(var(--color-primary-500)) 14%, transparent);
+  }
+
+  .browser-url-suggestions {
+    position: absolute;
+    top: calc(100% + 0.35rem);
+    left: 0;
+    right: 0;
+    z-index: 60;
+    margin: 0;
+    list-style: none;
+    overflow: hidden;
+    border-radius: 0.75rem;
+    border: 1px solid rgb(var(--shell-border, var(--color-surface-500)) / 0.35);
+    background: rgb(var(--shell-pane-bg, var(--color-surface-900)) / 0.98);
+    padding: 0.3rem;
+    box-shadow: 0 12px 32px rgb(0 0 0 / 0.28);
+  }
+
+  .browser-url-suggestion {
+    display: flex;
+    width: 100%;
+    flex-direction: column;
+    gap: 0.1rem;
+    border: 0;
+    border-radius: 0.5rem;
+    background: transparent;
+    padding: 0.45rem 0.6rem;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .browser-url-suggestion:hover,
+  .browser-url-suggestion:focus-visible {
+    background: rgb(var(--color-surface-800) / 0.7);
+  }
+
+  .browser-url-suggestion-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.8125rem;
+    font-weight: 550;
+    color: rgb(var(--color-surface-50));
+  }
+
+  .browser-url-suggestion-host {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.6875rem;
+    color: rgb(var(--shell-muted, var(--color-surface-400)));
+  }
+
+  .browser-tab-bar {
+    display: flex;
+    min-width: 0;
+    flex-shrink: 0;
+    align-items: end;
+    gap: 0.2rem;
+    overflow-x: auto;
+    border-bottom: 1px solid rgb(var(--shell-border, var(--color-surface-500)) / 0.22);
+    background: rgb(var(--shell-chrome-bg, var(--color-surface-950)) / 0.55);
+    padding: 0.35rem 0.45rem 0;
+  }
+
+  .browser-tab {
+    display: flex;
+    max-width: 14rem;
+    min-width: 7.5rem;
+    align-items: center;
+    gap: 0.2rem;
+    border-radius: 0.55rem 0.55rem 0 0;
+    border-bottom: 2px solid transparent;
+    background: transparent;
+    padding: 0.3rem 0.35rem 0.35rem 0.45rem;
+    font-size: 0.75rem;
+    color: rgb(var(--shell-muted, var(--color-surface-400)));
+    transition: background 120ms ease, color 120ms ease;
+  }
+
+  .browser-tab:hover {
+    background: rgb(var(--color-surface-800) / 0.45);
+    color: rgb(var(--color-surface-200));
+  }
+
+  .browser-tab-active {
+    border-bottom-color: rgb(var(--color-primary-500));
+    background: rgb(var(--shell-pane-bg, var(--color-surface-900)));
+    color: rgb(var(--color-surface-50));
+  }
+
+  .browser-tab-main {
+    display: flex;
+    min-width: 0;
+    flex: 1 1 auto;
+    align-items: center;
+    gap: 0.4rem;
+    overflow: hidden;
+    border: 0;
+    background: transparent;
+    padding: 0;
+    text-align: left;
+    color: inherit;
+    cursor: pointer;
+  }
+
+  .browser-tab-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .browser-tab-favicon {
+    height: 1rem;
+    width: 1rem;
+    flex-shrink: 0;
+    border-radius: 0.2rem;
+    object-fit: cover;
+  }
+
+  .browser-tab-favicon-fallback {
+    display: flex;
+    height: 1rem;
+    width: 1rem;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    border-radius: 0.2rem;
+    background: rgb(var(--color-surface-700));
+    font-size: 0.5625rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: rgb(var(--color-surface-200));
+  }
+
+  .browser-tab-close {
+    display: inline-flex;
+    height: 1.15rem;
+    width: 1.15rem;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    border-radius: 0.3rem;
+    color: rgb(var(--shell-muted, var(--color-surface-500)));
+    background: transparent;
+    opacity: 0;
+    cursor: pointer;
+    transition: opacity 120ms ease, background 120ms ease, color 120ms ease;
+  }
+
+  .browser-tab:hover .browser-tab-close,
+  .browser-tab-close--visible,
+  .browser-tab-close:focus-visible {
+    opacity: 1;
+  }
+
+  .browser-tab-close:hover {
+    color: rgb(var(--color-surface-100));
+    background: rgb(var(--color-surface-700) / 0.8);
+  }
+
+  .browser-tab-new {
+    margin-bottom: 0.2rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    border-radius: 0.45rem;
+    padding: 0.35rem;
+    color: rgb(var(--shell-muted, var(--color-surface-400)));
+    background: transparent;
+    cursor: pointer;
+  }
+
+  .browser-tab-new:hover {
+    color: rgb(var(--color-surface-100));
+    background: rgb(var(--color-surface-800) / 0.7);
+  }
+
+  .browser-popover-backdrop {
+    background: rgb(var(--color-surface-950) / 0.35);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+  }
+
+  .browser-popover {
+    pointer-events: auto;
+    border: 1px solid rgb(var(--color-surface-600) / 0.45);
+    background: rgb(var(--color-surface-900) / 0.97);
+    backdrop-filter: blur(20px) saturate(1.15);
+    -webkit-backdrop-filter: blur(20px) saturate(1.15);
+    box-shadow:
+      0 16px 40px rgb(0 0 0 / 0.35),
+      0 0 0 1px rgb(var(--color-surface-700) / 0.2);
+    animation: browser-popover-in 160ms ease-out;
+  }
+
+  .browser-popover-anchor {
+    border-radius: 1rem;
+  }
+
+  .browser-popover-panel {
+    border-radius: 1.125rem;
+    animation-name: browser-popover-panel-in;
+  }
+
+  .browser-popover-header {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    border-bottom: 1px solid rgb(var(--color-surface-700) / 0.5);
+    padding: 0.625rem 0.75rem;
+  }
+
+  .browser-popover-body {
+    padding-block: 0.25rem;
+  }
+
+  .browser-popover-section-label {
+    padding: 0.5rem 0.75rem 0.25rem;
+    font-size: 0.6875rem;
+    font-weight: 650;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: rgb(var(--color-surface-500));
+  }
+
+  .browser-popover-row {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.625rem 0.75rem;
+    text-align: left;
+    transition: background 120ms ease;
+  }
+
+  .browser-popover-row > span:nth-child(2) {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .browser-popover-kbd {
+    margin-left: auto;
+    font-size: 0.6875rem;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.02em;
+    color: rgb(var(--shell-muted, var(--color-surface-500)));
+  }
+
+  .browser-popover-row:hover {
+    background: rgb(var(--color-surface-800) / 0.7);
+  }
+
+  .browser-popover-row-group {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding-inline: 0.25rem;
+  }
+
+  .browser-popover-row-group:hover {
+    background: rgb(var(--color-surface-800) / 0.7);
+  }
+
+  @keyframes browser-popover-in {
+    from {
+      opacity: 0;
+      transform: translateY(6px) scale(0.98);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+
+  @keyframes browser-popover-panel-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  .browser-saved-menu {
+    pointer-events: auto;
+  }
+
+  /* Light mode — shell paper tokens */
+  html:not(.dark) .human-browser-panel,
+  html:not(.dark) .human-browser-embed,
+  html:not(.dark) .browser-start-page-host,
+  html:not(.dark) .browser-start-page {
+    background: rgb(var(--shell-canvas-bg));
+    color: rgb(var(--shell-label));
+  }
+
+  html:not(.dark) .human-browser-chrome {
+    background: rgb(var(--shell-pane-bg));
+    border-bottom-color: rgb(var(--shell-border) / 0.28);
+  }
+
+  html:not(.dark) .browser-tab-bar {
+    background: rgb(var(--shell-chrome-bg) / 0.65);
+    border-bottom-color: rgb(var(--shell-border) / 0.22);
+  }
+
+  html:not(.dark) .browser-tab {
+    color: rgb(var(--shell-muted));
+  }
+
+  html:not(.dark) .browser-tab:hover {
+    background: rgb(var(--shell-pane-muted-bg) / 0.7);
+    color: rgb(var(--shell-label));
+  }
+
+  html:not(.dark) .browser-tab-active {
+    background: rgb(var(--shell-pane-bg));
+    color: rgb(var(--shell-label));
+  }
+
+  html:not(.dark) .browser-nav-cluster {
+    background: rgb(var(--shell-pane-muted-bg) / 0.7);
+  }
+
+  html:not(.dark) .browser-nav-btn,
+  html:not(.dark) .browser-chrome-btn,
+  html:not(.dark) .browser-tab-new {
+    color: rgb(var(--shell-muted));
+  }
+
+  html:not(.dark) .browser-nav-btn:hover:not(:disabled),
+  html:not(.dark) .browser-chrome-btn:hover:not(:disabled),
+  html:not(.dark) .browser-tab-new:hover {
+    color: rgb(var(--shell-label));
+    background: rgb(var(--shell-pane-muted-bg));
+  }
+
+  html:not(.dark) .browser-save-btn {
+    color: rgb(var(--shell-label));
+    background: rgb(var(--shell-pane-muted-bg));
+    border-color: rgb(var(--shell-border) / 0.35);
+  }
+
+  html:not(.dark) .browser-save-btn:hover:not(:disabled) {
+    color: rgb(var(--shell-whisper));
+    background: color-mix(in srgb, rgb(var(--shell-pane-muted-bg)) 70%, rgb(var(--shell-border)));
+  }
+
+  html:not(.dark) .browser-url-bar-input {
+    color: rgb(var(--shell-label));
+    background: rgb(var(--shell-canvas-bg));
+    border-color: rgb(var(--shell-border) / 0.35);
+  }
+
+  html:not(.dark) .browser-url-bar-input:focus {
+    background: rgb(var(--shell-pane-bg));
+  }
+
+  html:not(.dark) .browser-url-suggestions {
+    background: rgb(var(--shell-pane-bg));
+    border-color: rgb(var(--shell-border) / 0.3);
+    box-shadow: 0 12px 28px rgb(0 0 0 / 0.12);
+  }
+
+  html:not(.dark) .browser-url-suggestion:hover,
+  html:not(.dark) .browser-url-suggestion:focus-visible {
+    background: rgb(var(--shell-pane-muted-bg));
+  }
+
+  html:not(.dark) .browser-url-suggestion-title {
+    color: rgb(var(--shell-label));
+  }
+
+  html:not(.dark) .browser-url-suggestion-host {
+    color: rgb(var(--shell-muted));
+  }
+
+  html:not(.dark) .browser-popover-kbd {
+    color: rgb(var(--shell-muted));
+  }
+
+  html:not(.dark) .browser-chrome-btn--starred {
+    color: rgb(217 119 6);
+  }
+
+  html:not(.dark) .browser-start-recent-title {
+    color: rgb(var(--shell-label));
+  }
+
+  html:not(.dark) .browser-start-recent-host,
+  html:not(.dark) .browser-start-section-label,
+  html:not(.dark) .browser-start-saved-label {
+    color: rgb(var(--shell-muted));
+  }
+
+  html:not(.dark) .browser-start-recent-row:hover,
+  html:not(.dark) .browser-start-saved-tile:hover {
+    background: rgb(var(--shell-pane-muted-bg) / 0.8);
+  }
+}

@@ -11,6 +11,10 @@ import {
 import { homeChannelSurface } from "$lib/platform";
 import { humanBrowser } from "$lib/stores/humanBrowser.svelte";
 import { copyBrowserUrl, openUrlInDefaultBrowser } from "$lib/utils/browserActions";
+import {
+  dispatchBrowserFocusUrl,
+  dispatchBrowserOpenBookmarks,
+} from "$lib/utils/browserChromeEvents";
 import { reconnectWorkshop } from "$lib/workshopConnection";
 import { buildInteractiveTurnOptions } from "$lib/interactiveTurnOptions";
 import { createTurnTicket } from "$lib/daemon";
@@ -51,10 +55,46 @@ export function buildGoCommands(): WorkshopCommand[] {
 export function buildBrowserCommands(): WorkshopCommand[] {
   return [
     {
+      id: "browser-focus-url",
+      section: "open",
+      label: "Focus address bar",
+      subtitle: "⌘L — select the URL / search field",
+      keywords: "browser url address bar omnibox focus swap search web",
+      run: (ctx) => {
+        ctx.navigate("web");
+        dispatchBrowserFocusUrl();
+        ctx.callbacks.close();
+      },
+    },
+    {
+      id: "browser-new-tab",
+      section: "open",
+      label: "New browser tab",
+      subtitle: "⌘T — open a blank tab",
+      keywords: "browser new tab blank web",
+      run: async (ctx) => {
+        ctx.navigate("web");
+        await humanBrowser.openTab();
+        ctx.callbacks.close();
+      },
+    },
+    {
+      id: "browser-bookmarks",
+      section: "open",
+      label: "Open bookmarks",
+      subtitle: "⌘⇧B — history, bookmarks, and library saves",
+      keywords: "browser bookmarks saved favorites history web",
+      run: (ctx) => {
+        ctx.navigate("web");
+        dispatchBrowserOpenBookmarks();
+        ctx.callbacks.close();
+      },
+    },
+    {
       id: "browser-find-in-page",
       section: "open",
       label: "Find in page",
-      subtitle: "Search text on the current page",
+      subtitle: "⌘F — search text on the current page",
       keywords: "browser find search page web",
       run: (ctx) => {
         ctx.navigate("web");

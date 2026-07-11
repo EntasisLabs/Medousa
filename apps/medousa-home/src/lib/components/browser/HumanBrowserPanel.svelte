@@ -10,8 +10,13 @@
   import BrowserStartPage from "$lib/components/browser/BrowserStartPage.svelte";
   import {
     createBrowserCompositor,
+    registerBrowserCompositor,
     type BrowserCompositor,
   } from "$lib/utils/browserCompositor";
+  import {
+    BROWSER_FOCUS_URL_EVENT,
+    dispatchBrowserOpenBookmarks,
+  } from "$lib/utils/browserChromeEvents";
   import { humanBrowser } from "$lib/stores/humanBrowser.svelte";
   import { layout } from "$lib/stores/layout.svelte";
   import { isTauri, shouldUseMobileShell } from "$lib/platform";
@@ -33,6 +38,10 @@
     isTauri() && !layout.isMobile && !shouldUseMobileShell(),
   );
 
+  function focusUrlBar() {
+    urlBarFocusNonce += 1;
+  }
+
   onMount(() => {
     if (isTauri() && !shouldUseMobileShell()) {
       compositor = createBrowserCompositor({
@@ -42,7 +51,14 @@
         getActiveUrl: () => humanBrowser.activeUrl,
         getActiveTabId: () => humanBrowser.activeTab?.id ?? null,
       });
+      registerBrowserCompositor(compositor);
     }
+
+    if (visible) {
+      void humanBrowser.syncActiveTabToNative();
+    }
+
+    const onFocusUrl = () => focusUrlBar();
 
     const onKeydown = (event: KeyboardEvent) => {
       if (layout.desktopSurface !== "web" && !humanBrowser.findOpen) return;
@@ -63,9 +79,10 @@
           target.tagName === "TEXTAREA" ||
           target.isContentEditable);
 
+      // Core browser hotkeys — work even while the URL bar / find field is focused.
       if (key === "l") {
         event.preventDefault();
-        urlBarFocusNonce += 1;
+        focusUrlBar();
         return;
       }
       if (key === "f") {
@@ -73,9 +90,19 @@
         humanBrowser.openFindBar();
         return;
       }
-      if (mod && event.shiftKey && key === "t") {
+      if (key === "b" && event.shiftKey) {
+        event.preventDefault();
+        dispatchBrowserOpenBookmarks();
+        return;
+      }
+      if (key === "t" && event.shiftKey) {
         event.preventDefault();
         void humanBrowser.reopenClosedTab();
+        return;
+      }
+      if (key === "t") {
+        event.preventDefault();
+        void humanBrowser.openTab();
         return;
       }
       if (event.key === "[" || event.key === "]") {
@@ -86,11 +113,6 @@
       }
       if (typing && key !== "r") return;
 
-      if (key === "t") {
-        event.preventDefault();
-        void humanBrowser.openTab();
-        return;
-      }
       if (key === "w") {
         event.preventDefault();
         const active = humanBrowser.activeTab;
@@ -103,12 +125,20 @@
       }
     };
     window.addEventListener("keydown", onKeydown);
+    window.addEventListener(BROWSER_FOCUS_URL_EVENT, onFocusUrl);
 
     return () => {
       window.removeEventListener("keydown", onKeydown);
+      window.removeEventListener(BROWSER_FOCUS_URL_EVENT, onFocusUrl);
       compositor?.detach();
+      registerBrowserCompositor(null);
       compositor = null;
     };
+  });
+
+  $effect(() => {
+    if (!visible) return;
+    void humanBrowser.syncActiveTabToNative();
   });
 
   $effect(() => {
@@ -130,7 +160,7 @@
 
 <div
   bind:this={panelEl}
-  class="flex h-full min-h-0 flex-col bg-surface-950 text-surface-50"
+  class="human-browser-panel flex h-full min-h-0 flex-col"
   data-browser-panel
   data-debug-label="browser-panel"
 >
@@ -146,46 +176,43 @@
       <BrowserControlHandoff />
     </div>
 
-    <div
-      class="flex shrink-0 items-center gap-2 border-b border-surface-800 px-2 py-1.5"
-      data-debug-label="browser-url-row"
-    >
-      <div class="flex shrink-0 items-center gap-1">
+    <div class="browser-toolbar" data-debug-label="browser-url-row">
+      <div class="browser-nav-cluster">
         <button
           type="button"
-          class="btn btn-icon btn-sm"
+          class="browser-nav-btn"
           aria-label="Back"
           disabled={!humanBrowser.canGoBack}
           onclick={() => void humanBrowser.goBack()}
         >
-          <ArrowLeft size={16} />
+          <ArrowLeft size={16} strokeWidth={1.75} />
         </button>
         <button
           type="button"
-          class="btn btn-icon btn-sm"
+          class="browser-nav-btn"
           aria-label="Forward"
           disabled={!humanBrowser.canGoForward}
           onclick={() => void humanBrowser.goForward()}
         >
-          <ArrowRight size={16} />
+          <ArrowRight size={16} strokeWidth={1.75} />
         </button>
         {#if humanBrowser.loading}
           <button
             type="button"
-            class="btn btn-icon btn-sm"
+            class="browser-nav-btn browser-nav-btn--stop"
             aria-label="Stop loading"
             onclick={() => void humanBrowser.stop()}
           >
-            <Square size={14} fill="currentColor" />
+            <Square size={12} strokeWidth={2.25} />
           </button>
         {:else}
           <button
             type="button"
-            class="btn btn-icon btn-sm"
+            class="browser-nav-btn"
             aria-label="Reload"
             onclick={() => void humanBrowser.reload()}
           >
-            <RefreshCw size={16} />
+            <RefreshCw size={15} strokeWidth={1.75} />
           </button>
         {/if}
       </div>
@@ -203,7 +230,7 @@
 
   <div
     bind:this={embedHostEl}
-    class="relative min-h-0 flex-1 overflow-hidden bg-surface-900"
+    class="human-browser-embed relative min-h-0 flex-1 overflow-hidden"
     data-browser-embed-host
     data-debug-label="browser-embed-host"
   >
