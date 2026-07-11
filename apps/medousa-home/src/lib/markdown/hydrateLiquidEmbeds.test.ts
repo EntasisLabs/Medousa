@@ -309,4 +309,139 @@ describe("hydrateLiquidEmbeds", () => {
     destroyLiquidEmbeds(root);
     expect(unmountMock).toHaveBeenCalledTimes(1);
   });
+
+  it("mounts timeline host from fixture markdown", async () => {
+    const md = [
+      "```timeline",
+      "title: Ship log",
+      "",
+      "---",
+      "ts: Day 1",
+      "label: Arrive",
+      "---",
+      "ts: Day 2",
+      "label: Explore",
+      "```",
+    ].join("\n");
+
+    const html = preprocessLiquidEmbeds(md);
+    expect(html).toContain('data-liquid-embed="timeline"');
+    const root = treeFromPlaceholders(html) as unknown as HTMLElement;
+    const { hydrateLiquidEmbeds, destroyLiquidEmbeds } = await import("./hydrateLiquidEmbeds");
+    hydrateLiquidEmbeds(root, {});
+
+    const kinds = mountMock.mock.calls.map(
+      (call) => (call[1] as { props: { kind: string } }).props.kind,
+    );
+    expect(kinds).toEqual(["timeline"]);
+    const timelineCall = mountMock.mock.calls.find(
+      (call) => (call[1] as { props: { kind: string } }).props.kind === "timeline",
+    );
+    const timelinePayload = (
+      timelineCall![1] as {
+        props: {
+          payload: {
+            title?: string;
+            events: { label: string; ts?: string }[];
+          };
+        };
+      }
+    ).props.payload;
+    expect(timelinePayload.title).toBe("Ship log");
+    expect(timelinePayload.events.map((e) => e.label)).toEqual(["Arrive", "Explore"]);
+    destroyLiquidEmbeds(root);
+    expect(unmountMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("mounts shortlist host from fixture markdown", async () => {
+    const md = [
+      "```shortlist",
+      "title: Picks",
+      "",
+      "---",
+      "label: Shinjuku",
+      "score: 9.2",
+      "---",
+      "label: Asakusa",
+      "score: 8.4",
+      "```",
+    ].join("\n");
+
+    const html = preprocessLiquidEmbeds(md);
+    expect(html).toContain('data-liquid-embed="shortlist"');
+    const root = treeFromPlaceholders(html) as unknown as HTMLElement;
+    const { hydrateLiquidEmbeds, destroyLiquidEmbeds } = await import("./hydrateLiquidEmbeds");
+    hydrateLiquidEmbeds(root, {});
+
+    const kinds = mountMock.mock.calls.map(
+      (call) => (call[1] as { props: { kind: string } }).props.kind,
+    );
+    expect(kinds).toEqual(["shortlist"]);
+    const shortlistCall = mountMock.mock.calls.find(
+      (call) => (call[1] as { props: { kind: string } }).props.kind === "shortlist",
+    );
+    const shortlistPayload = (
+      shortlistCall![1] as {
+        props: {
+          payload: {
+            title?: string;
+            items: { label: string; score?: string }[];
+          };
+        };
+      }
+    ).props.payload;
+    expect(shortlistPayload.title).toBe("Picks");
+    expect(shortlistPayload.items.map((i) => i.label)).toEqual(["Shinjuku", "Asakusa"]);
+    destroyLiquidEmbeds(root);
+    expect(unmountMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("mounts decision host from fixture markdown", async () => {
+    const md = [
+      "```decision",
+      "title: Pick",
+      "recommendation: Sol",
+      "",
+      "---",
+      "label: Sol",
+      "pros: Fast | Smart",
+      "cons: Price",
+      "---",
+      "label: Terra",
+      "pros: Cheap",
+      "cons: Slow",
+      "```",
+    ].join("\n");
+
+    const html = preprocessLiquidEmbeds(md);
+    expect(html).toContain('data-liquid-embed="decision"');
+    const root = treeFromPlaceholders(html) as unknown as HTMLElement;
+    const { hydrateLiquidEmbeds, destroyLiquidEmbeds } = await import("./hydrateLiquidEmbeds");
+    hydrateLiquidEmbeds(root, {});
+
+    const kinds = mountMock.mock.calls.map(
+      (call) => (call[1] as { props: { kind: string } }).props.kind,
+    );
+    expect(kinds).toEqual(["decision"]);
+    const decisionCall = mountMock.mock.calls.find(
+      (call) => (call[1] as { props: { kind: string } }).props.kind === "decision",
+    );
+    const decisionPayload = (
+      decisionCall![1] as {
+        props: {
+          payload: {
+            title?: string;
+            recommendation?: string;
+            options: { label: string; pros: string[] }[];
+          };
+        };
+      }
+    ).props.payload;
+    expect(decisionPayload.title).toBe("Pick");
+    expect(decisionPayload.recommendation).toBe("Sol");
+    expect(decisionPayload.options.map((o) => o.label)).toEqual(["Sol", "Terra"]);
+    expect(decisionPayload.options[0].pros).toEqual(["Fast", "Smart"]);
+    destroyLiquidEmbeds(root);
+    expect(unmountMock).toHaveBeenCalledTimes(1);
+  });
 });

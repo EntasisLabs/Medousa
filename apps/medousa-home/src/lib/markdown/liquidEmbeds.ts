@@ -21,6 +21,9 @@ export const LIQUID_FENCE_LANGS = new Set([
   "cite",
   "compare",
   "plan",
+  "timeline",
+  "shortlist",
+  "decision",
 ]);
 
 const CALLOUT_TONES = new Set(["note", "warn", "error", "success"]);
@@ -71,7 +74,10 @@ export type LiquidEmbedKind =
   | "media"
   | "cite"
   | "compare"
-  | "plan";
+  | "plan"
+  | "timeline"
+  | "shortlist"
+  | "decision";
 
 export interface LiquidCardProps {
   title: string;
@@ -136,6 +142,57 @@ export interface LiquidPlanProps {
   subtitle?: string;
   grouping?: string;
   segments: LiquidPlanSegment[];
+}
+
+export interface LiquidTimelineEvent {
+  id: string;
+  label: string;
+  ts?: string;
+  detail?: string;
+  lane?: string;
+  emoji?: string;
+}
+
+export interface LiquidTimelineProps {
+  title?: string;
+  subtitle?: string;
+  granularity?: string;
+  events: LiquidTimelineEvent[];
+}
+
+export interface LiquidShortlistItem {
+  id: string;
+  label: string;
+  summary?: string;
+  score?: string;
+  meta?: string;
+  emoji?: string;
+  image?: string;
+}
+
+export interface LiquidShortlistProps {
+  title?: string;
+  subtitle?: string;
+  criteria?: string;
+  density?: string;
+  items: LiquidShortlistItem[];
+}
+
+export interface LiquidDecisionOption {
+  id: string;
+  label: string;
+  pros: string[];
+  cons: string[];
+  score?: string;
+  summary?: string;
+}
+
+export interface LiquidDecisionProps {
+  title?: string;
+  subtitle?: string;
+  factors?: string;
+  recommendation?: string;
+  options: LiquidDecisionOption[];
 }
 
 export interface LiquidSectionProps {
@@ -515,6 +572,156 @@ function parsePlanBody(body: string): LiquidPlanProps | null {
   return plan;
 }
 
+const TIMELINE_GRANULARITIES = new Set(["day", "hour", "event"]);
+
+function parseTimelineBody(body: string): LiquidTimelineProps | null {
+  const normalized = body.replace(/\r\n/g, "\n").trim();
+  if (!normalized) return null;
+
+  const parts = normalized.split(/^---[ \t]*$/m);
+  const preamble = parts[0] ?? "";
+  const eventBlocks = parts.slice(1);
+
+  const fields = parseKvBlock(preamble);
+  const events: LiquidTimelineEvent[] = [];
+
+  for (const block of eventBlocks) {
+    const evFields = parseKvBlock(block);
+    const label = (evFields.label ?? evFields.title)?.trim();
+    if (!label) continue;
+    const ev: LiquidTimelineEvent = {
+      id: slugCompareId(label, "event", events.length),
+      label,
+    };
+    if (evFields.ts) ev.ts = evFields.ts;
+    else if (evFields.time) ev.ts = evFields.time;
+    if (evFields.detail) ev.detail = evFields.detail;
+    else if (evFields.body) ev.detail = evFields.body;
+    if (evFields.lane) ev.lane = evFields.lane;
+    if (evFields.emoji) ev.emoji = evFields.emoji;
+    events.push(ev);
+  }
+
+  if (events.length < 2) return null;
+
+  const timeline: LiquidTimelineProps = { events };
+  if (fields.title) timeline.title = fields.title;
+  if (fields.subtitle) timeline.subtitle = fields.subtitle;
+  const granularity = fields.granularity?.trim().toLowerCase();
+  if (granularity && TIMELINE_GRANULARITIES.has(granularity)) timeline.granularity = granularity;
+  return timeline;
+}
+
+const SHORTLIST_DENSITIES = new Set(["comfortable", "compact"]);
+
+function parseShortlistBody(body: string): LiquidShortlistProps | null {
+  const normalized = body.replace(/\r\n/g, "\n").trim();
+  if (!normalized) return null;
+
+  const parts = normalized.split(/^---[ \t]*$/m);
+  const preamble = parts[0] ?? "";
+  const itemBlocks = parts.slice(1);
+
+  const fields = parseKvBlock(preamble);
+  const items: LiquidShortlistItem[] = [];
+
+  for (const block of itemBlocks) {
+    const itemFields = parseKvBlock(block);
+    const label = (itemFields.label ?? itemFields.title)?.trim();
+    if (!label) continue;
+    const item: LiquidShortlistItem = {
+      id: slugCompareId(label, "item", items.length),
+      label,
+    };
+    if (itemFields.summary) item.summary = itemFields.summary;
+    else if (itemFields.body) item.summary = itemFields.body;
+    if (itemFields.score) item.score = itemFields.score;
+    if (itemFields.meta) item.meta = itemFields.meta;
+    if (itemFields.emoji) item.emoji = itemFields.emoji;
+    if (itemFields.image) item.image = itemFields.image;
+    items.push(item);
+  }
+
+  if (items.length < 2) return null;
+
+  const shortlist: LiquidShortlistProps = { items };
+  if (fields.title) shortlist.title = fields.title;
+  if (fields.subtitle) shortlist.subtitle = fields.subtitle;
+  if (fields.criteria) shortlist.criteria = fields.criteria;
+  const density = fields.density?.trim().toLowerCase();
+  if (density && SHORTLIST_DENSITIES.has(density)) shortlist.density = density;
+  return shortlist;
+}
+
+function splitTradeoffList(raw: string | undefined): string[] {
+  if (!raw?.trim()) return [];
+  return raw
+    .split(/[|\n;]/)
+    .map((s) => stripFenceLineChrome(s))
+    .map((s) => s.replace(/^(pros?|cons?)\s*:\s*/i, "").trim())
+    .filter(Boolean);
+}
+
+/** Line kv that keeps pipe characters in values (pros/cons lists). */
+function parseDecisionOptionFields(block: string): Record<string, string> {
+  const fields: Record<string, string> = {};
+  for (const raw of block.split("\n")) {
+    const line = stripFenceLineChrome(raw);
+    if (!line || line.startsWith("#") || line === "---") continue;
+    const colon = line.indexOf(":");
+    if (colon <= 0) continue;
+    const key = line.slice(0, colon).trim().toLowerCase();
+    const value = line.slice(colon + 1).trim();
+    if (!key || !value) continue;
+    if (key === "pros" || key === "pro" || key === "cons" || key === "con") {
+      fields[key] = fields[key] ? `${fields[key]} | ${value}` : value;
+      continue;
+    }
+    fields[key] = value;
+  }
+  return fields;
+}
+
+function parseDecisionBody(body: string): LiquidDecisionProps | null {
+  const normalized = body.replace(/\r\n/g, "\n").trim();
+  if (!normalized) return null;
+
+  const parts = normalized.split(/^---[ \t]*$/m);
+  const preamble = parts[0] ?? "";
+  const optionBlocks = parts.slice(1);
+
+  const fields = parseKvBlock(preamble);
+  const options: LiquidDecisionOption[] = [];
+
+  for (const block of optionBlocks) {
+    const optFields = parseDecisionOptionFields(block);
+    const label = (optFields.label ?? optFields.title)?.trim();
+    if (!label) continue;
+    const pros = splitTradeoffList(optFields.pros ?? optFields.pro);
+    const cons = splitTradeoffList(optFields.cons ?? optFields.con);
+    const opt: LiquidDecisionOption = {
+      id: slugCompareId(label, "option", options.length),
+      label,
+      pros,
+      cons,
+    };
+    if (optFields.score) opt.score = optFields.score;
+    if (optFields.summary) opt.summary = optFields.summary;
+    else if (optFields.body) opt.summary = optFields.body;
+    options.push(opt);
+  }
+
+  if (options.length < 2) return null;
+
+  const decision: LiquidDecisionProps = { options };
+  if (fields.title) decision.title = fields.title;
+  if (fields.subtitle) decision.subtitle = fields.subtitle;
+  if (fields.factors) decision.factors = fields.factors;
+  const rec = (fields.recommendation ?? fields.highlight)?.trim();
+  if (rec) decision.recommendation = rec;
+  return decision;
+}
+
 function normalizeIconId(raw: string): string | null {
   const id = raw.trim().toLowerCase().replace(/_/g, "-");
   if (!id || !LIQUID_ICON_ALLOWLIST.has(id)) return null;
@@ -594,6 +801,24 @@ export function preprocessLiquidEmbeds(source: string): string {
       const plan = parsePlanBody(body);
       if (!plan) return match;
       return `\n${placeholder("plan", plan)}\n`;
+    }
+
+    if (lang === "timeline") {
+      const timeline = parseTimelineBody(body);
+      if (!timeline) return match;
+      return `\n${placeholder("timeline", timeline)}\n`;
+    }
+
+    if (lang === "shortlist") {
+      const shortlist = parseShortlistBody(body);
+      if (!shortlist) return match;
+      return `\n${placeholder("shortlist", shortlist)}\n`;
+    }
+
+    if (lang === "decision") {
+      const decision = parseDecisionBody(body);
+      if (!decision) return match;
+      return `\n${placeholder("decision", decision)}\n`;
     }
 
     return match;

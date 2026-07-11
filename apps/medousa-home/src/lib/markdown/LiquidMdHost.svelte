@@ -16,6 +16,9 @@
   import Cite from "$lib/liquid/archetypes/molecules/cite/Cite.svelte";
   import Compare from "$lib/liquid/archetypes/organisms/compare/Compare.svelte";
   import Plan from "$lib/liquid/archetypes/organisms/plan/Plan.svelte";
+  import Timeline from "$lib/liquid/archetypes/organisms/timeline/Timeline.svelte";
+  import Shortlist from "$lib/liquid/archetypes/organisms/shortlist/Shortlist.svelte";
+  import Decision from "$lib/liquid/archetypes/organisms/decision/Decision.svelte";
   import Section from "$lib/liquid/archetypes/molecules/section/Section.svelte";
   import ChipGroup from "$lib/liquid/archetypes/molecules/chip_group/ChipGroup.svelte";
   import Media from "$lib/liquid/archetypes/atoms/media/Media.svelte";
@@ -26,10 +29,13 @@
     LiquidChipProps,
     LiquidCiteProps,
     LiquidCompareProps,
+    LiquidDecisionProps,
     LiquidEmbedKind,
     LiquidMediaProps,
     LiquidPlanProps,
     LiquidSectionProps,
+    LiquidShortlistProps,
+    LiquidTimelineProps,
   } from "$lib/markdown/liquidEmbeds";
   import {
     AlertTriangle,
@@ -297,6 +303,59 @@
     });
   });
 
+  const timeline = $derived.by(() => {
+    if (kind !== "timeline") return null;
+    const props = payload as LiquidTimelineProps;
+    if (!props?.events || props.events.length < 2) return null;
+    return createNode({
+      id: "md-timeline",
+      type: "timeline",
+      props: {
+        ...(props.title ? { title: props.title } : {}),
+        ...(props.subtitle ? { subtitle: props.subtitle } : {}),
+        ...(props.granularity ? { granularity: props.granularity } : {}),
+        events: props.events,
+      },
+      fillState: "ready",
+    });
+  });
+
+  const shortlist = $derived.by(() => {
+    if (kind !== "shortlist") return null;
+    const props = payload as LiquidShortlistProps;
+    if (!props?.items || props.items.length < 2) return null;
+    return createNode({
+      id: "md-shortlist",
+      type: "shortlist",
+      props: {
+        ...(props.title ? { title: props.title } : {}),
+        ...(props.subtitle ? { subtitle: props.subtitle } : {}),
+        ...(props.criteria ? { criteria: props.criteria } : {}),
+        ...(props.density ? { density: props.density } : {}),
+        items: props.items,
+      },
+      fillState: "ready",
+    });
+  });
+
+  const decision = $derived.by(() => {
+    if (kind !== "decision") return null;
+    const props = payload as LiquidDecisionProps;
+    if (!props?.options || props.options.length < 2) return null;
+    return createNode({
+      id: "md-decision",
+      type: "decision",
+      props: {
+        ...(props.title ? { title: props.title } : {}),
+        ...(props.subtitle ? { subtitle: props.subtitle } : {}),
+        ...(props.factors ? { factors: props.factors } : {}),
+        ...(props.recommendation ? { recommendation: props.recommendation } : {}),
+        options: props.options,
+      },
+      fillState: "ready",
+    });
+  });
+
   const IconComp = $derived.by(() => {
     if (kind !== "icon") return null;
     const id = typeof payload === "string" ? payload : "";
@@ -346,6 +405,18 @@
 {:else if kind === "plan" && plan}
   <div class="liquid-md-host liquid-md-host-plan liquid-md-enter">
     <Plan node={plan} />
+  </div>
+{:else if kind === "timeline" && timeline}
+  <div class="liquid-md-host liquid-md-host-timeline liquid-md-enter">
+    <Timeline node={timeline} />
+  </div>
+{:else if kind === "shortlist" && shortlist}
+  <div class="liquid-md-host liquid-md-host-shortlist liquid-md-enter">
+    <Shortlist node={shortlist} />
+  </div>
+{:else if kind === "decision" && decision}
+  <div class="liquid-md-host liquid-md-host-decision liquid-md-enter">
+    <Decision node={decision} />
   </div>
 {:else if kind === "icon" && IconComp}
   <span class="liquid-md-host-icon">
