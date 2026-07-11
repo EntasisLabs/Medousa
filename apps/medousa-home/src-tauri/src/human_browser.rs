@@ -348,17 +348,52 @@ pub struct SnapshotMarkdownDto {
 pub fn init_app_handle(app: AppHandle) {
     let _ = APP_HANDLE.set(app.clone());
     #[cfg(target_os = "macos")]
-    install_embed_hotkey_monitor(app);
+    install_macos_embed_hotkey_monitor(app);
 }
 
 pub fn app_handle() -> Option<AppHandle> {
     APP_HANDLE.get().cloned()
 }
 
+/// Map a chrome shortcut to a shell action. Caller already required Ctrl/Cmd.
+fn map_chrome_hotkey_action(key: &str, shift: bool, alt: bool) -> Option<&'static str> {
+    match (key, shift, alt) {
+        ("l", false, false) => Some("focusUrl"),
+        ("f", false, false) => Some("find"),
+        ("b", true, false) => Some("bookmarks"),
+        ("t", true, false) => Some("reopenTab"),
+        ("t", false, false) => Some("newTab"),
+        ("w", false, false) => Some("closeTab"),
+        ("r", false, false) => Some("reload"),
+        ("[", _, false) => Some("goBack"),
+        ("]", _, false) => Some("goForward"),
+        _ => None,
+    }
+}
+
+fn dispatch_embed_hotkey(app: &AppHandle, action: &str, surface: &str) {
+    if hotkey_needs_shell_focus(action) {
+        if surface == "popout" {
+            if let Some(chrome) = app.get_webview(BROWSER_CHROME_LABEL) {
+                let _ = chrome.set_focus();
+            }
+        } else {
+            focus_shell_webview(app);
+        }
+    }
+    let _ = app.emit(
+        "human-browser-hotkey",
+        HumanBrowserHotkeyPayload {
+            action: action.to_string(),
+            surface: surface.to_string(),
+        },
+    );
+}
+
 /// Native macOS key monitor — page JS never sees chrome shortcuts while the embed
 /// webview is visible (focus lives in WKWebView, outside the shell).
 #[cfg(target_os = "macos")]
-fn install_embed_hotkey_monitor(app: AppHandle) {
+fn install_macos_embed_hotkey_monitor(app: AppHandle) {
     use std::sync::atomic::AtomicBool;
     static INSTALLED: AtomicBool = AtomicBool::new(false);
     if INSTALLED.swap(true, Ordering::SeqCst) {
@@ -400,24 +435,11 @@ fn install_embed_hotkey_monitor(app: AppHandle) {
                 .map(|s: Retained<NSString>| s.to_string().to_lowercase())
                 .unwrap_or_default();
 
-            let action = match (key.as_str(), shift, option) {
-                ("l", false, false) => Some("focusUrl"),
-                ("f", false, false) => Some("find"),
-                ("b", true, false) => Some("bookmarks"),
-                ("t", true, false) => Some("reopenTab"),
-                ("t", false, false) => Some("newTab"),
-                ("w", false, false) => Some("closeTab"),
-                ("r", false, false) => Some("reload"),
-                ("[", _, false) => Some("goBack"),
-                ("]", _, false) => Some("goForward"),
-                _ => None,
-            };
-
-            let Some(action) = action else {
+            let Some(action) = map_chrome_hotkey_action(key.as_str(), shift, option) else {
                 return event_ptr.as_ptr();
             };
 
-            dispatch_embed_hotkey(&app_handle, action);
+            dispatch_embed_hotkey(&app_handle, action, "embed");
             // Swallow so the page (and shell, if focused) don't also handle it.
             std::ptr::null_mut()
         });
@@ -431,18 +453,167 @@ fn install_embed_hotkey_monitor(app: AppHandle) {
     });
 }
 
-#[cfg(target_os = "macos")]
-fn dispatch_embed_hotkey(app: &AppHandle, action: &str) {
-    if hotkey_needs_shell_focus(action) {
-        focus_shell_webview(app);
+/// WebView2 only raises this while the page webview has focus — ideal for Windows.
+#[cfg(windows)]
+fn attach_windows_webview_hotkeys(
+    webview: &tauri::Webview,
+    surface: &'static str,
+    require_embed_visible: bool,
+) {
+    let _ = webview.with_webview(move |platform| {
+        use webview2_com::Microsoft::Web::WebView2::Win32::{
+            ICoreWebView2AcceleratorKeyPressedEventArgs, ICoreWebView2Controller,
+            COREWEBVIEW2_KEY_EVENT_KIND_KEY_DOWN, COREWEBVIEW2_KEY_EVENT_KIND_SYSTEM_KEY_DOWN,
+            COREWEBVIEW2_PHYSICAL_KEY_STATUS,
+        };
+        use webview2_com::AcceleratorKeyPressedEventHandler;
+        use windows::Win32::UI::Input::KeyboardAndMouse::{
+            GetKeyState, VK_CONTROL, VK_MENU, VK_OEM_4, VK_OEM_6, VK_SHIFT,
+        };
+
+        let controller: ICoreWebView2Controller = platform.controller();
+        let mut token = 0i64;
+        let handler = AcceleratorKeyPressedEventHandler::create(Box::new(move |_sender, args| {
+            if require_embed_visible && !EMBED_VISIBLE.load(Ordering::SeqCst) {
+                return Ok(());
+            }
+            let Some(args) = args else {
+                return Ok(());
+            };
+            let args: ICoreWebView2AcceleratorKeyPressedEventArgs = args;
+
+            let mut kind = Default::default();
+            unsafe { args.KeyEventKind(&mut kind)? };
+            if kind != COREWEBVIEW2_KEY_EVENT_KIND_KEY_DOWN
+                && kind != COREWEBVIEW2_KEY_EVENT_KIND_SYSTEM_KEY_DOWN
+            {
+                return Ok(());
+            }
+
+            let mut status = COREWEBVIEW2_PHYSICAL_KEY_STATUS::default();
+            unsafe { args.PhysicalKeyStatus(&mut status)? };
+            if status.WasKeyDown.as_bool() {
+                return Ok(());
+            }
+
+            let ctrl = unsafe { GetKeyState(VK_CONTROL.0 as i32) < 0 };
+            if !ctrl {
+                return Ok(());
+            }
+            let shift = unsafe { GetKeyState(VK_SHIFT.0 as i32) < 0 };
+            let alt = unsafe { GetKeyState(VK_MENU.0 as i32) < 0 };
+
+            let mut vk = 0u32;
+            unsafe { args.VirtualKey(&mut vk)? };
+
+            let key = if (0x41..=0x5A).contains(&vk) {
+                ((vk as u8) as char).to_ascii_lowercase().to_string()
+            } else if vk == VK_OEM_4.0 as u32 {
+                "[".to_string()
+            } else if vk == VK_OEM_6.0 as u32 {
+                "]".to_string()
+            } else {
+                return Ok(());
+            };
+
+            let Some(action) = map_chrome_hotkey_action(key.as_str(), shift, alt) else {
+                return Ok(());
+            };
+            unsafe { args.SetHandled(true)? };
+            if let Some(handle) = app_handle() {
+                dispatch_embed_hotkey(&handle, action, surface);
+            }
+            Ok(())
+        }));
+
+        let _ = unsafe { controller.add_AcceleratorKeyPressed(&handler, &mut token) };
+        std::mem::forget(handler);
+    });
+}
+
+/// GTK key-press on the page webview — fires only while that widget has focus.
+#[cfg(any(
+    target_os = "linux",
+    target_os = "dragonfly",
+    target_os = "freebsd",
+    target_os = "netbsd",
+    target_os = "openbsd"
+))]
+fn attach_linux_webview_hotkeys(
+    webview: &tauri::Webview,
+    app: AppHandle,
+    surface: &'static str,
+    require_embed_visible: bool,
+) {
+    let _ = webview.with_webview(move |platform| {
+        use gdk::ModifierType;
+        use gtk::prelude::*;
+
+        let wv = platform.inner();
+        let app_handle = app.clone();
+        wv.connect_key_press_event(move |_w, event| {
+            if require_embed_visible && !EMBED_VISIBLE.load(Ordering::SeqCst) {
+                return gtk::Inhibit(false);
+            }
+            let state = event.state();
+            let ctrl = state.contains(ModifierType::CONTROL_MASK);
+            let meta = state.contains(ModifierType::META_MASK);
+            if !ctrl && !meta {
+                return gtk::Inhibit(false);
+            }
+            if event.is_modifier() {
+                return gtk::Inhibit(false);
+            }
+            let shift = state.contains(ModifierType::SHIFT_MASK);
+            let alt = state.contains(ModifierType::MOD1_MASK);
+            let key = event
+                .keyval()
+                .to_unicode()
+                .map(|c| c.to_lowercase().next().unwrap_or(c))
+                .map(|c| c.to_string())
+                .unwrap_or_default();
+
+            let Some(action) = map_chrome_hotkey_action(key.as_str(), shift, alt) else {
+                return gtk::Inhibit(false);
+            };
+            dispatch_embed_hotkey(&app_handle, action, surface);
+            gtk::Inhibit(true)
+        });
+    });
+}
+
+fn attach_webview_chrome_hotkeys(
+    webview: &tauri::Webview,
+    app: &AppHandle,
+    surface: BrowserSurface,
+) {
+    let require_embed_visible = matches!(surface, BrowserSurface::Embed);
+    let surface_static: &'static str = match surface {
+        BrowserSurface::Embed => "embed",
+        BrowserSurface::Popout => "popout",
+    };
+    #[cfg(windows)]
+    {
+        let _ = app;
+        attach_windows_webview_hotkeys(webview, surface_static, require_embed_visible);
     }
-    let _ = app.emit(
-        "human-browser-hotkey",
-        HumanBrowserHotkeyPayload {
-            action: action.to_string(),
-            surface: "embed".to_string(),
-        },
-    );
+    #[cfg(any(
+        target_os = "linux",
+        target_os = "dragonfly",
+        target_os = "freebsd",
+        target_os = "netbsd",
+        target_os = "openbsd"
+    ))]
+    {
+        attach_linux_webview_hotkeys(
+            webview,
+            app.clone(),
+            surface_static,
+            require_embed_visible,
+        );
+    }
+    #[cfg(target_os = "macos")]
+    let _ = (webview, app, surface_static, require_embed_visible);
 }
 
 
@@ -1558,6 +1729,9 @@ fn create_tab_webview(
         .map_err(|err| err.to_string())?;
     register_tab_id(BrowserSurface::Embed, tab_id);
     EMBED_READY.store(true, Ordering::SeqCst);
+    if let Some(created) = tab_webview(app, BrowserSurface::Embed, tab_id) {
+        attach_webview_chrome_hotkeys(&created, app, BrowserSurface::Embed);
+    }
     Ok(())
 }
 
@@ -2083,6 +2257,9 @@ pub fn ensure_popout_shell(app: &AppHandle) -> Result<(), String> {
                 LogicalSize::new(width, content_height),
             )
             .map_err(|err| err.to_string())?;
+        if let Some(content) = popout_content_webview(app) {
+            attach_webview_chrome_hotkeys(&content, app, BrowserSurface::Popout);
+        }
     }
 
     if popout_chrome_webview(app).is_none() {
