@@ -7,12 +7,15 @@
   import VaultFormatBar from "./VaultFormatBar.svelte";
   import VaultSlashMenu from "./VaultSlashMenu.svelte";
   import VaultNotePicker from "./VaultNotePicker.svelte";
+  import VaultCalloutBuilderSheet from "./VaultCalloutBuilderSheet.svelte";
   import {
     applyMarkdownFormat,
     applyMarkdownColor,
     insertSlashBlock,
     insertTextAtCursor,
     insertVaultWikilink,
+    replaceSlashWith,
+    serializeTransclusion,
     shouldOpenSlashMenu,
     slashMenuFilter,
     type MarkdownFormatAction,
@@ -61,6 +64,9 @@
   let selectionEnd = $state(0);
   let slashOpen = $state(false);
   let notePickerOpen = $state(false);
+  let notePickerMode = $state<"wikilink" | "embed">("wikilink");
+  let calloutBuilderOpen = $state(false);
+  let bridgeInsertAt = $state(0);
 
   const slashFilter = $derived(
     textareaEl ? slashMenuFilter(textareaEl.value, textareaEl.selectionStart) : "",
@@ -159,11 +165,42 @@
     syncSlashMenu();
   }
 
+  async function clearSlashAndRememberInsert(): Promise<number> {
+    captureSelection();
+    const cleared = replaceSlashWith(draft, selectionStart, "");
+    await applyEdit(cleared);
+    bridgeInsertAt = cleared.selectionStart;
+    return cleared.selectionStart;
+  }
+
   function handleSlashSelect(block: SlashBlockId) {
     if (!textareaEl) return;
     if (block === "wikilink") {
       slashOpen = false;
+      notePickerMode = "wikilink";
       notePickerOpen = true;
+      return;
+    }
+    if (block === "embed") {
+      slashOpen = false;
+      void clearSlashAndRememberInsert().then(() => {
+        notePickerMode = "embed";
+        notePickerOpen = true;
+      });
+      return;
+    }
+    if (block === "view") {
+      slashOpen = false;
+      void clearSlashAndRememberInsert().then((insertAt) => {
+        vault.openViewBridgeInsert(insertAt);
+      });
+      return;
+    }
+    if (block === "callout") {
+      slashOpen = false;
+      void clearSlashAndRememberInsert().then(() => {
+        calloutBuilderOpen = true;
+      });
       return;
     }
     captureSelection();
@@ -174,12 +211,27 @@
 
   function handleNotePick(path: string) {
     if (!textareaEl) return;
+    if (notePickerMode === "embed") {
+      const result = insertTextAtCursor(
+        draft,
+        bridgeInsertAt,
+        serializeTransclusion(path),
+      );
+      notePickerOpen = false;
+      void applyEdit(result);
+      return;
+    }
     captureSelection();
     const label =
       vault.labelByPath().get(path) ??
       vaultDisplayTitle(path.split("/").pop()?.replace(/\.md$/i, "") ?? path, path);
     const result = insertVaultWikilink(draft, selectionStart, path, label);
     notePickerOpen = false;
+    void applyEdit(result);
+  }
+
+  function handleBridgeInsert(markdown: string) {
+    const result = insertTextAtCursor(draft, bridgeInsertAt, markdown);
     void applyEdit(result);
   }
 
@@ -231,6 +283,11 @@
     open={notePickerOpen}
     onSelect={handleNotePick}
     onClose={() => (notePickerOpen = false)}
+  />
+  <VaultCalloutBuilderSheet
+    open={calloutBuilderOpen}
+    onInsert={handleBridgeInsert}
+    onClose={() => (calloutBuilderOpen = false)}
   />
 
   <div class="flex min-h-0 flex-1">

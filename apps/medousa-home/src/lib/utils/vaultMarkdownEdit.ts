@@ -2,7 +2,6 @@ import {
   SLASH_BOARD_TEMPLATE,
   SLASH_TABLE_TEMPLATE,
   SLASH_TOC_TEMPLATE,
-  SLASH_VIEW_TEMPLATE,
 } from "$lib/utils/vaultTemplates";
 import {
   MARKDOWN_COLOR_IDS,
@@ -36,6 +35,8 @@ export type SlashBlockId =
   | "wikilink"
   | "divider"
   | "quote"
+  | "callout"
+  | "embed"
   | "view"
   | "board"
   | "table"
@@ -300,14 +301,7 @@ export function insertSlashBlock(
   cursorIndex: number,
   block: SlashBlockId,
 ): EditResult {
-  const lineStart = lineStartIndex(content, cursorIndex);
-  const line = content.slice(lineStart, cursorIndex);
-  const slashMatch = line.match(/^(\s*)(\/[\w-]*)$/);
-  const replaceStart = slashMatch
-    ? lineStart + (slashMatch[1]?.length ?? 0)
-    : cursorIndex;
-
-  const templates: Record<SlashBlockId, string> = {
+  const templates: Partial<Record<SlashBlockId, string>> = {
     h1: "# ",
     h2: "## ",
     h3: "### ",
@@ -318,16 +312,36 @@ export function insertSlashBlock(
     wikilink: "",
     divider: "---\n",
     quote: "> ",
-    view: SLASH_VIEW_TEMPLATE,
+    callout: "",
+    embed: "",
+    view: "",
     board: SLASH_BOARD_TEMPLATE,
     table: SLASH_TABLE_TEMPLATE,
     toc: SLASH_TOC_TEMPLATE,
   };
 
-  const insert = templates[block];
+  const insert = templates[block] ?? "";
+  return replaceSlashWith(content, cursorIndex, insert, block === "board");
+}
+
+/** Replace an open `/token` (or insert at cursor) with markdown. */
+export function replaceSlashWith(
+  content: string,
+  cursorIndex: number,
+  insert: string,
+  ensureBoardFrontmatter = false,
+): EditResult {
+  const lineStart = lineStartIndex(content, cursorIndex);
+  const line = content.slice(lineStart, cursorIndex);
+  const slashMatch = line.match(/^(\s*)(\/[\w-]*)$/);
+  const replaceStart = slashMatch
+    ? lineStart + (slashMatch[1]?.length ?? 0)
+    : cursorIndex;
+
   const nextRaw = `${content.slice(0, replaceStart)}${insert}${content.slice(cursorIndex)}`;
-  const next =
-    block === "board" ? ensureKanbanBoardFrontmatter(nextRaw) : nextRaw;
+  const next = ensureBoardFrontmatter
+    ? ensureKanbanBoardFrontmatter(nextRaw)
+    : nextRaw;
   const shift = next.length - nextRaw.length;
   const cursor = replaceStart + insert.length + shift;
   return {
@@ -335,6 +349,30 @@ export function insertSlashBlock(
     selectionStart: cursor,
     selectionEnd: cursor,
   };
+}
+
+export function serializeCalloutBlock(
+  kind: string,
+  title: string,
+  body: string,
+): string {
+  const safeKind = kind.trim().toLowerCase() || "note";
+  const heading = title.trim() || safeKind;
+  const lines = [`> [!${safeKind}] ${heading}`];
+  const bodyLines = body.replace(/\r\n/g, "\n").split("\n");
+  if (bodyLines.every((line) => !line.trim())) {
+    lines.push("> ");
+  } else {
+    for (const line of bodyLines) {
+      lines.push(`> ${line}`);
+    }
+  }
+  return `${lines.join("\n")}\n\n`;
+}
+
+export function serializeTransclusion(path: string): string {
+  const token = path.replace(/\.md$/i, "");
+  return `![[${token}]]\n\n`;
 }
 
 export function insertVaultWikilink(

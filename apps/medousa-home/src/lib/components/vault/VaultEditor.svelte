@@ -25,6 +25,7 @@
   import VaultProposalBar from "./VaultProposalBar.svelte";
   import VaultMarkdownEditor from "./VaultMarkdownEditor.svelte";
   import VaultNoteActionsMenu from "./VaultNoteActionsMenu.svelte";
+  import VaultViewBuilderSheet from "./VaultViewBuilderSheet.svelte";
   import VaultEditorOverflowMenu from "./VaultEditorOverflowMenu.svelte";
   import VaultLinkedFilesMenu from "./VaultLinkedFilesMenu.svelte";
   import {
@@ -647,3 +648,10 @@
 </section>
 
 <VaultNoteActionsMenu />
+<VaultViewBuilderSheet
+  open={vault.viewBridgeOpen}
+  mode={vault.viewBridgeMode}
+  initialQuery={vault.viewBridgeQuery}
+  onSave={(query) => vault.commitViewBridge(query)}
+  onClose={() => vault.closeViewBridge()}
+/>

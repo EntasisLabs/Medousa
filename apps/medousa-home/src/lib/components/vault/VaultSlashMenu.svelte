@@ -27,9 +27,11 @@
     { id: "checkbox", label: "To-do", hint: "- [ ] item", keywords: "todo task checkbox check" },
     { id: "link", label: "Web link", hint: "[text](url)", keywords: "link url href" },
     { id: "quote", label: "Quote", hint: "> quote", keywords: "quote blockquote" },
+    { id: "callout", label: "Callout", hint: "> [!note]", keywords: "callout aside warning tip note" },
+    { id: "embed", label: "Embed note", hint: "![[note]]", keywords: "embed transclude include" },
     { id: "divider", label: "Divider", hint: "---", keywords: "divider hr rule" },
     { id: "toc", label: "Table of contents", hint: "medousa-toc", keywords: "toc contents table" },
-    { id: "view", label: "Query view", hint: "medousa-view", keywords: "view query table dashboard" },
+    { id: "view", label: "Query view", hint: "from a table", keywords: "view query table dashboard" },
     { id: "board", label: "Kanban board", hint: "## columns", keywords: "board kanban columns" },
     { id: "table", label: "Data table", hint: "| col |", keywords: "table database rows" },
   ];

@@ -1089,6 +1089,93 @@
     align-self: auto;
   }
 
+  .vault-bridge-sheet {
+    max-width: 28rem;
+  }
+
+  .vault-bridge-section {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+
+  .vault-bridge-body {
+    min-height: 4.5rem;
+    resize: vertical;
+    line-height: 1.45;
+  }
+
+  .ledger-col-meta-btn {
+    display: inline-flex;
+    width: 1.15rem;
+    height: 1.15rem;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    border-radius: 0.3rem;
+    background: transparent;
+    color: rgb(var(--color-surface-500));
+    opacity: 0;
+    transition: opacity 120ms ease, background-color 120ms ease, color 120ms ease;
+  }
+
+  .ledger-header-edit:hover .ledger-col-meta-btn,
+  .ledger-header-edit:focus-within .ledger-col-meta-btn,
+  .ledger-col-meta-btn--open {
+    opacity: 1;
+  }
+
+  .ledger-col-meta-btn:hover,
+  .ledger-col-meta-btn--open {
+    background: rgb(var(--color-surface-700) / 0.85);
+    color: rgb(var(--color-surface-100));
+  }
+
+  .ledger-col-meta-panel {
+    position: absolute;
+    top: calc(100% + 0.25rem);
+    left: 0;
+    z-index: 8;
+    display: flex;
+    min-width: 14rem;
+    max-width: min(18rem, 70vw);
+    flex-direction: column;
+    gap: 0.4rem;
+    border: 1px solid rgb(var(--color-surface-500) / 0.4);
+    border-radius: 0.65rem;
+    background: rgb(var(--color-surface-900) / 0.98);
+    padding: 0.55rem 0.6rem;
+    box-shadow: 0 10px 28px rgb(0 0 0 / 0.3);
+  }
+
+  .ledger-col-meta-label {
+    margin: 0;
+    color: rgb(var(--color-surface-500));
+    font-size: 0.62rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  .ledger-col-meta-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+  }
+
+  .ledger-col-swatch {
+    width: 1.05rem;
+    height: 1.05rem;
+    border: 1px solid rgb(var(--color-surface-500) / 0.35);
+    border-radius: 999px;
+    background: var(--swatch);
+  }
+
+  .ledger-col-swatch--active {
+    box-shadow: 0 0 0 2px rgb(var(--color-surface-900)), 0 0 0 3px var(--swatch);
+  }
+
   .vault-attachment-link {
     @apply inline-flex items-center gap-1.5 text-surface-400 transition hover:text-primary-200 disabled:opacity-40;
   }
@@ -2806,7 +2893,8 @@
   }
 
   .medousa-view-copy-csv,
-  .medousa-view-edit-source {
+  .medousa-view-edit-source,
+  .medousa-view-configure {
     @apply text-xs text-primary-200 underline decoration-primary-500/40 underline-offset-2 hover:text-primary-100;
   }
 

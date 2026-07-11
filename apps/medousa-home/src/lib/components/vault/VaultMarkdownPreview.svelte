@@ -25,10 +25,18 @@
     content: string;
     labelByPath: Map<string, string>;
     compact?: boolean;
+    /** Allow Configure on medousa-view blocks (current note only). */
+    configureViews?: boolean;
     onWikilink?: (target: string) => void;
   }
 
-  let { content, labelByPath, compact = false, onWikilink }: Props = $props();
+  let {
+    content,
+    labelByPath,
+    compact = false,
+    configureViews = true,
+    onWikilink,
+  }: Props = $props();
 
   const body = $derived(stripFrontmatter(content).content);
   const hasViewBlocks = $derived(hasMedousaViewBlocks(body));
@@ -154,6 +162,20 @@
   }
 
   function handleClick(event: MouseEvent) {
+    const configureView = (event.target as HTMLElement).closest(
+      "[data-edit-view-index]",
+    );
+    if (configureView) {
+      event.preventDefault();
+      if (!configureViews || content !== vault.content) return;
+      const raw = configureView.getAttribute("data-edit-view-index");
+      const index = raw == null ? NaN : Number(raw);
+      if (Number.isFinite(index)) {
+        vault.openViewBridgeEdit(index);
+      }
+      return;
+    }
+
     const openSource = (event.target as HTMLElement).closest("[data-open-vault-note]");
     if (openSource) {
       event.preventDefault();
@@ -165,7 +187,9 @@
     const copyCsv = (event.target as HTMLElement).closest("[data-copy-view-csv]");
     if (copyCsv) {
       event.preventDefault();
-      const payload = copyCsv.getAttribute("data-view-csv");
+      const payload =
+        copyCsv.getAttribute("data-view-csv") ??
+        copyCsv.getAttribute("data-copy-view-csv");
       if (payload) {
         try {
           void copyTextToClipboard(decodeURIComponent(payload));
@@ -218,6 +242,19 @@
       return;
     }
     if (event.key !== "Enter" && event.key !== " ") return;
+    const configureView = (event.target as HTMLElement).closest(
+      "[data-edit-view-index]",
+    );
+    if (configureView) {
+      event.preventDefault();
+      if (!configureViews || content !== vault.content) return;
+      const raw = configureView.getAttribute("data-edit-view-index");
+      const index = raw == null ? NaN : Number(raw);
+      if (Number.isFinite(index)) {
+        vault.openViewBridgeEdit(index);
+      }
+      return;
+    }
     const openSource = (event.target as HTMLElement).closest("[data-open-vault-note]");
     if (openSource) {
       event.preventDefault();

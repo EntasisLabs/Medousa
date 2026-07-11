@@ -93,6 +93,13 @@ import {
   formatImageEmbedMarkdown,
 } from "$lib/utils/vaultLocalImages";
 import { invalidateMedousaViewCache } from "$lib/utils/resolveMedousaViews";
+import {
+  extractMedousaViewBlocks,
+  replaceMedousaViewFenceAt,
+  serializeMedousaViewFence,
+  type MedousaViewQuery,
+} from "$lib/utils/markdownView";
+import { insertTextAtCursor } from "$lib/utils/vaultMarkdownEdit";
 import { invalidateTransclusionCache } from "$lib/utils/resolveTransclusion";
 import { invalidateVaultRootCache } from "$lib/utils/vaultFilesystem";
 import { loadVaultRecent, rememberVaultRecent } from "$lib/utils/vaultRecent";
@@ -166,6 +173,12 @@ export class VaultStore {
   newNotePrefillPath = $state<string | null>(null);
   pendingEditorInsert = $state<string | null>(null);
   editorInsertRequest = $state(0);
+  /** Slash insert or preview configure for medousa-view. */
+  viewBridgeOpen = $state(false);
+  viewBridgeMode = $state<"insert" | "edit">("insert");
+  viewBridgeInsertAt = $state(0);
+  viewBridgeEditIndex = $state<number | null>(null);
+  viewBridgeQuery = $state<MedousaViewQuery | null>(null);
 
   private autosaveTimer: ReturnType<typeof setTimeout> | null = null;
   private savedWhisperTimer: ReturnType<typeof setTimeout> | null = null;
@@ -506,6 +519,53 @@ export class VaultStore {
     const text = this.pendingEditorInsert;
     this.pendingEditorInsert = null;
     return text;
+  }
+
+  openViewBridgeInsert(insertAt: number) {
+    this.viewBridgeMode = "insert";
+    this.viewBridgeInsertAt = insertAt;
+    this.viewBridgeEditIndex = null;
+    this.viewBridgeQuery = null;
+    this.viewBridgeOpen = true;
+  }
+
+  openViewBridgeEdit(index: number) {
+    const blocks = extractMedousaViewBlocks(this.content);
+    const block = blocks[index];
+    if (!block) return;
+    this.viewBridgeMode = "edit";
+    this.viewBridgeEditIndex = index;
+    this.viewBridgeQuery = block.query;
+    this.viewBridgeOpen = true;
+  }
+
+  closeViewBridge() {
+    this.viewBridgeOpen = false;
+    this.viewBridgeQuery = null;
+    this.viewBridgeEditIndex = null;
+  }
+
+  commitViewBridge(query: MedousaViewQuery) {
+    if (this.viewBridgeMode === "edit" && this.viewBridgeEditIndex != null) {
+      const next = replaceMedousaViewFenceAt(
+        this.content,
+        this.viewBridgeEditIndex,
+        query,
+      );
+      if (next) {
+        this.markDirty(next);
+        invalidateMedousaViewCache();
+      }
+    } else {
+      const fence = serializeMedousaViewFence(query);
+      const result = insertTextAtCursor(
+        this.content,
+        this.viewBridgeInsertAt,
+        fence,
+      );
+      this.markDirty(result.content);
+    }
+    this.closeViewBridge();
   }
 
   async insertImageEmbed(imagePath: string) {
