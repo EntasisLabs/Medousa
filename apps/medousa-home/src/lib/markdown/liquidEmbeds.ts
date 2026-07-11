@@ -1204,125 +1204,171 @@ export function looksLikeProseNotCode(body: string): boolean {
 }
 
 /**
+ * Strip a trailing unclosed ``` / ```code opener when the remainder is prose
+ * (models often leave a bare fence before the final statement).
+ */
+function repairTrailingUnclosedProseFence(source: string): string {
+  const lines = source.split("\n");
+  let lastFence = -1;
+  let fenceCount = 0;
+  for (let i = 0; i < lines.length; i++) {
+    if (/^```[a-zA-Z0-9_-]*[ \t]*$/.test(lines[i])) {
+      lastFence = i;
+      fenceCount++;
+    }
+  }
+  // Even count ⇒ every opener already has a closer (incl. a trailing ```).
+  if (lastFence < 0 || fenceCount % 2 === 0) return source;
+  const after = lines.slice(lastFence + 1).join("\n");
+  if (/^```/m.test(after)) return source;
+  const lang = lines[lastFence].slice(3).trim().toLowerCase();
+  if (lang && LIQUID_FENCE_LANGS.has(lang)) return source;
+  if (!after.trim()) {
+    return lines.slice(0, lastFence).join("\n");
+  }
+  if (
+    lang === "" ||
+    PROSE_MISTAKEN_FENCE_LANGS.has(lang) ||
+    looksLikeProseNotCode(after)
+  ) {
+    return [...lines.slice(0, lastFence), ...lines.slice(lastFence + 1)].join("\n");
+  }
+  return source;
+}
+
+function replaceLiquidFenceMatch(match: string, langRaw: string, body: string): string {
+  const lang = langRaw.trim().toLowerCase();
+
+  // Models wrap final statements in ```code / bare ``` — unwrap when clearly prose
+  if (
+    (lang === "" || PROSE_MISTAKEN_FENCE_LANGS.has(lang)) &&
+    looksLikeProseNotCode(body)
+  ) {
+    return `\n${body.trim()}\n`;
+  }
+
+  if (!lang || !LIQUID_FENCE_LANGS.has(lang)) return match;
+
+  if (lang === "card") {
+    const card = parseCardBody(body);
+    if (!card) return match;
+    return `\n${placeholder("card", card)}\n`;
+  }
+
+  if (lang === "carousel") {
+    const cards = parseCarouselBody(body);
+    if (cards.length === 0) return match;
+    return `\n${placeholder("carousel", { items: cards })}\n`;
+  }
+
+  if (lang === "actions" || lang === "action_row") {
+    const actions = parseActionsBody(body);
+    if (actions.length === 0) return match;
+    return `\n${placeholder("actions", { actions })}\n`;
+  }
+
+  if (lang === "callout") {
+    const callout = parseCalloutBody(body);
+    if (!callout) return match;
+    return `\n${placeholder("callout", callout)}\n`;
+  }
+
+  if (lang === "section") {
+    const section = parseSectionBody(body);
+    if (!section) return match;
+    return `\n${placeholder("section", section)}\n`;
+  }
+
+  if (lang === "chips" || lang === "chip_group") {
+    const chips = parseChipsBody(body);
+    if (chips.length === 0) return match;
+    return `\n${placeholder("chips", { chips })}\n`;
+  }
+
+  if (lang === "media") {
+    const media = parseMediaBody(body);
+    if (!media) return match;
+    return `\n${placeholder("media", media)}\n`;
+  }
+
+  if (lang === "cite") {
+    const cite = parseCiteBody(body);
+    if (!cite) return match;
+    return `\n${placeholder("cite", cite)}\n`;
+  }
+
+  if (lang === "compare") {
+    const compare = parseCompareBody(body);
+    if (!compare) return match;
+    return `\n${placeholder("compare", compare)}\n`;
+  }
+
+  if (lang === "plan") {
+    const plan = parsePlanBody(body);
+    if (!plan) return match;
+    return `\n${placeholder("plan", plan)}\n`;
+  }
+
+  if (lang === "timeline") {
+    const timeline = parseTimelineBody(body);
+    if (!timeline) return match;
+    return `\n${placeholder("timeline", timeline)}\n`;
+  }
+
+  if (lang === "shortlist") {
+    const shortlist = parseShortlistBody(body);
+    if (!shortlist) return match;
+    return `\n${placeholder("shortlist", shortlist)}\n`;
+  }
+
+  if (lang === "decision") {
+    const decision = parseDecisionBody(body);
+    if (!decision) return match;
+    return `\n${placeholder("decision", decision)}\n`;
+  }
+
+  if (lang === "brief") {
+    const brief = parseBriefBody(body);
+    if (!brief) return match;
+    return `\n${placeholder("brief", brief)}\n`;
+  }
+
+  if (lang === "dashboard") {
+    const dashboard = parseDashboardBody(body);
+    if (!dashboard) return match;
+    return `\n${placeholder("dashboard", dashboard)}\n`;
+  }
+
+  return match;
+}
+
+/**
  * Replace Liquid fences + `{{icon:name}}` with sanitize-safe placeholders.
- * Unknown fence langs are left untouched — except mistaken prose fences
- * (`code` / `text` / `markdown` …) which models often wrap around conclusions.
+ *
+ * Nested liquid fences (```cite inside ```brief) are resolved innermost-first
+ * so an outer fence does not close on an inner fence's backticks.
+ * Mistaken prose ```code / bare ``` fences unwrap; trailing unclosed prose
+ * openers are stripped.
  */
 export function preprocessLiquidEmbeds(source: string): string {
   const normalized = source.replace(/\r\n/g, "\n");
   // Soft-convert invented "| Source: … |" lines into italic whispers
-  const withSources = normalized.replace(
+  let out = normalized.replace(
     /^\|\s*Source:\s*(.+?)\s*\|\s*$/gim,
     (_m, src: string) => `*Source: ${String(src).trim()}*`,
   );
-  // Lang optional — bare ``` … ``` often wraps final statements
-  const fenceRe = /^```([a-zA-Z0-9_-]*)[ \t]*\n([\s\S]*?)^```[ \t]*$/gm;
 
-  let out = withSources.replace(fenceRe, (match, langRaw: string, body: string) => {
-    const lang = langRaw.trim().toLowerCase();
+  // Body must not contain a nested fence line — forces innermost-first matching.
+  // Lang optional — bare ``` … ``` often wraps final statements.
+  const fenceRe = /^```([a-zA-Z0-9_-]*)[ \t]*\n((?:(?!^```)[\s\S])*?)^```[ \t]*$/gm;
 
-    // Models wrap final statements in ```code / bare ``` — unwrap when clearly prose
-    if (
-      (lang === "" || PROSE_MISTAKEN_FENCE_LANGS.has(lang)) &&
-      looksLikeProseNotCode(body)
-    ) {
-      return `\n${body.trim()}\n`;
-    }
+  for (let pass = 0; pass < 12; pass++) {
+    const next = out.replace(fenceRe, replaceLiquidFenceMatch);
+    if (next === out) break;
+    out = next;
+  }
 
-    if (!lang || !LIQUID_FENCE_LANGS.has(lang)) return match;
-
-    if (lang === "card") {
-      const card = parseCardBody(body);
-      if (!card) return match;
-      return `\n${placeholder("card", card)}\n`;
-    }
-
-    if (lang === "carousel") {
-      const cards = parseCarouselBody(body);
-      if (cards.length === 0) return match;
-      return `\n${placeholder("carousel", { items: cards })}\n`;
-    }
-
-    if (lang === "actions" || lang === "action_row") {
-      const actions = parseActionsBody(body);
-      if (actions.length === 0) return match;
-      return `\n${placeholder("actions", { actions })}\n`;
-    }
-
-    if (lang === "callout") {
-      const callout = parseCalloutBody(body);
-      if (!callout) return match;
-      return `\n${placeholder("callout", callout)}\n`;
-    }
-
-    if (lang === "section") {
-      const section = parseSectionBody(body);
-      if (!section) return match;
-      return `\n${placeholder("section", section)}\n`;
-    }
-
-    if (lang === "chips" || lang === "chip_group") {
-      const chips = parseChipsBody(body);
-      if (chips.length === 0) return match;
-      return `\n${placeholder("chips", { chips })}\n`;
-    }
-
-    if (lang === "media") {
-      const media = parseMediaBody(body);
-      if (!media) return match;
-      return `\n${placeholder("media", media)}\n`;
-    }
-
-    if (lang === "cite") {
-      const cite = parseCiteBody(body);
-      if (!cite) return match;
-      return `\n${placeholder("cite", cite)}\n`;
-    }
-
-    if (lang === "compare") {
-      const compare = parseCompareBody(body);
-      if (!compare) return match;
-      return `\n${placeholder("compare", compare)}\n`;
-    }
-
-    if (lang === "plan") {
-      const plan = parsePlanBody(body);
-      if (!plan) return match;
-      return `\n${placeholder("plan", plan)}\n`;
-    }
-
-    if (lang === "timeline") {
-      const timeline = parseTimelineBody(body);
-      if (!timeline) return match;
-      return `\n${placeholder("timeline", timeline)}\n`;
-    }
-
-    if (lang === "shortlist") {
-      const shortlist = parseShortlistBody(body);
-      if (!shortlist) return match;
-      return `\n${placeholder("shortlist", shortlist)}\n`;
-    }
-
-    if (lang === "decision") {
-      const decision = parseDecisionBody(body);
-      if (!decision) return match;
-      return `\n${placeholder("decision", decision)}\n`;
-    }
-
-    if (lang === "brief") {
-      const brief = parseBriefBody(body);
-      if (!brief) return match;
-      return `\n${placeholder("brief", brief)}\n`;
-    }
-
-    if (lang === "dashboard") {
-      const dashboard = parseDashboardBody(body);
-      if (!dashboard) return match;
-      return `\n${placeholder("dashboard", dashboard)}\n`;
-    }
-
-    return match;
-  });
+  out = repairTrailingUnclosedProseFence(out);
 
   // Inline icons — skip inside remaining fences
   const lines = out.split("\n");
