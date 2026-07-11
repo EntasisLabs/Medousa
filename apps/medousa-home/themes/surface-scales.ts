@@ -15,17 +15,19 @@ export const darkSurfacesObsidian = {
 } as const;
 
 export const lightSurfacesObsidian = {
-  "--color-surface-50": "24 24 32",
-  "--color-surface-100": "44 44 54",
-  "--color-surface-200": "72 72 84",
-  "--color-surface-300": "102 102 118",
-  "--color-surface-400": "128 128 142",
+  "--color-surface-50": "22 22 30",
+  "--color-surface-100": "40 40 50",
+  "--color-surface-200": "68 68 80",
+  "--color-surface-300": "98 98 112",
+  "--color-surface-400": "122 122 136",
   "--color-surface-500": "148 148 162",
-  "--color-surface-600": "174 174 186",
-  "--color-surface-700": "205 205 216",
-  "--color-surface-800": "232 232 240",
-  "--color-surface-900": "248 248 252",
-  "--color-surface-950": "242 242 248",
+  "--color-surface-600": "176 176 188",
+  /* Chrome band — cooler, denser than paper */
+  "--color-surface-700": "198 198 210",
+  "--color-surface-800": "220 220 230",
+  /* Paper / panes */
+  "--color-surface-900": "255 255 255",
+  "--color-surface-950": "244 244 248",
 } as const;
 
 export const darkSurfacesApple = {
@@ -50,10 +52,12 @@ export const lightSurfacesApple = {
   "--color-surface-400": "128 128 132",
   "--color-surface-500": "142 142 147",
   "--color-surface-600": "174 174 178",
+  /* Chrome band */
   "--color-surface-700": "199 199 204",
   "--color-surface-800": "229 229 234",
+  /* Paper */
   "--color-surface-900": "255 255 255",
-  "--color-surface-950": "245 245 247",
+  "--color-surface-950": "242 242 247",
 } as const;
 
 export const darkSurfacesMidnight = {
@@ -78,9 +82,11 @@ export const lightSurfacesMidnight = {
   "--color-surface-400": "118 128 158",
   "--color-surface-500": "142 152 178",
   "--color-surface-600": "174 182 204",
-  "--color-surface-700": "205 210 228",
-  "--color-surface-800": "232 235 245",
-  "--color-surface-900": "248 249 252",
+  /* Chrome band */
+  "--color-surface-700": "200 206 224",
+  "--color-surface-800": "220 224 238",
+  /* Paper */
+  "--color-surface-900": "255 255 255",
   "--color-surface-950": "240 242 250",
 } as const;
 
@@ -99,17 +105,19 @@ export const darkSurfacesBlackLily = {
 } as const;
 
 export const lightSurfacesBlackLily = {
-  "--color-surface-50": "38 28 44",
-  "--color-surface-100": "58 44 68",
-  "--color-surface-200": "88 72 98",
-  "--color-surface-300": "118 98 128",
-  "--color-surface-400": "148 128 158",
+  "--color-surface-50": "36 26 42",
+  "--color-surface-100": "56 42 66",
+  "--color-surface-200": "86 70 96",
+  "--color-surface-300": "116 96 126",
+  "--color-surface-400": "146 126 156",
   "--color-surface-500": "168 148 178",
-  "--color-surface-600": "195 180 205",
-  "--color-surface-700": "218 205 225",
-  "--color-surface-800": "238 228 242",
-  "--color-surface-900": "252 248 252",
-  "--color-surface-950": "248 242 248",
+  "--color-surface-600": "192 176 202",
+  /* Chrome band — cooler blush gray */
+  "--color-surface-700": "214 200 220",
+  "--color-surface-800": "232 222 236",
+  /* Paper */
+  "--color-surface-900": "255 252 255",
+  "--color-surface-950": "246 240 248",
 } as const;
 
 /** One Dark Pro #282c34 family */
@@ -135,9 +143,9 @@ export const lightSurfacesOneDark = {
   "--color-surface-400": "168 171 178",
   "--color-surface-500": "188 190 198",
   "--color-surface-600": "210 212 218",
-  "--color-surface-700": "228 229 234",
-  "--color-surface-800": "242 243 246",
-  "--color-surface-900": "250 250 252",
+  "--color-surface-700": "222 224 230",
+  "--color-surface-800": "234 235 240",
+  "--color-surface-900": "255 255 255",
   "--color-surface-950": "245 246 248",
 } as const;
 
@@ -163,10 +171,10 @@ export const lightSurfacesCatppuccin = {
   "--color-surface-300": "156 160 176",
   "--color-surface-400": "180 183 198",
   "--color-surface-500": "198 201 213",
-  "--color-surface-600": "220 224 232",
-  "--color-surface-700": "230 233 239",
-  "--color-surface-800": "239 241 245",
-  "--color-surface-900": "250 250 252",
+  "--color-surface-600": "214 218 228",
+  "--color-surface-700": "226 230 238",
+  "--color-surface-800": "236 238 244",
+  "--color-surface-900": "255 255 255",
   "--color-surface-950": "239 241 245",
 } as const;
 
@@ -193,9 +201,9 @@ export const lightSurfacesTokyoDay = {
   "--color-surface-400": "162 168 186",
   "--color-surface-500": "184 188 204",
   "--color-surface-600": "208 212 224",
-  "--color-surface-700": "226 230 238",
-  "--color-surface-800": "240 242 248",
-  "--color-surface-900": "252 252 254",
+  "--color-surface-700": "222 226 236",
+  "--color-surface-800": "234 236 244",
+  "--color-surface-900": "255 255 255",
   "--color-surface-950": "246 248 252",
 } as const;
 
@@ -222,8 +230,8 @@ export const lightSurfacesGithub = {
   "--color-surface-400": "148 156 164",
   "--color-surface-500": "175 181 188",
   "--color-surface-600": "201 205 211",
-  "--color-surface-700": "225 228 232",
-  "--color-surface-800": "240 242 245",
+  "--color-surface-700": "220 224 228",
+  "--color-surface-800": "234 236 240",
   "--color-surface-900": "255 255 255",
   "--color-surface-950": "246 248 250",
 } as const;

@@ -140,7 +140,7 @@
 
 <div
   bind:this={shellRootEl}
-  class="flex h-screen w-screen flex-col bg-surface-950 text-surface-50"
+  class="flex h-screen w-screen flex-col text-surface-50 workshop-app-root"
   data-debug-label="app-root"
 >
   <div class="flex min-h-0 flex-1" data-debug-label="app-row">

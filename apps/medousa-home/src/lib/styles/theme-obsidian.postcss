@@ -1,0 +1,19 @@
+/**
+ * Obsidian (medousa) theme overlays — extracted from app.postcss.
+ */
+@layer base {
+  html.dark[data-theme="medousa"] body {
+    background-color: rgb(var(--color-surface-950));
+    background-image:
+      radial-gradient(
+        ellipse 55% 42% at 88% 6%,
+        rgb(var(--color-primary-500) / 0.09) 0%,
+        transparent 58%
+      ),
+      radial-gradient(
+        ellipse 48% 38% at 10% 94%,
+        rgb(var(--color-secondary-500) / 0.07) 0%,
+        transparent 54%
+      );
+  }
+}
