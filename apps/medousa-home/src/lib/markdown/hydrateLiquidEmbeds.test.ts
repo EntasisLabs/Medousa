@@ -223,4 +223,90 @@ describe("hydrateLiquidEmbeds", () => {
     destroyLiquidEmbeds(root);
     expect(unmountMock).toHaveBeenCalledTimes(1);
   });
+
+  it("mounts compare host from fixture markdown", async () => {
+    const md = [
+      "```compare",
+      "title: Laptops",
+      "recommendation: Sol",
+      "",
+      "| | Sol | Terra |",
+      "| --- | --- | --- |",
+      "| Speed | Fast | Faster |",
+      "```",
+    ].join("\n");
+
+    const html = preprocessLiquidEmbeds(md);
+    expect(html).toContain('data-liquid-embed="compare"');
+    const root = treeFromPlaceholders(html) as unknown as HTMLElement;
+    const { hydrateLiquidEmbeds, destroyLiquidEmbeds } = await import("./hydrateLiquidEmbeds");
+    hydrateLiquidEmbeds(root, {});
+
+    const kinds = mountMock.mock.calls.map(
+      (call) => (call[1] as { props: { kind: string } }).props.kind,
+    );
+    expect(kinds).toEqual(["compare"]);
+    const compareCall = mountMock.mock.calls.find(
+      (call) => (call[1] as { props: { kind: string } }).props.kind === "compare",
+    );
+    const comparePayload = (
+      compareCall![1] as {
+        props: {
+          payload: {
+            title?: string;
+            entities: { label: string }[];
+            axes: { label: string }[];
+          };
+        };
+      }
+    ).props.payload;
+    expect(comparePayload.title).toBe("Laptops");
+    expect(comparePayload.entities.map((e) => e.label)).toEqual(["Sol", "Terra"]);
+    expect(comparePayload.axes.map((a) => a.label)).toEqual(["Speed"]);
+    destroyLiquidEmbeds(root);
+    expect(unmountMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("mounts plan host from fixture markdown", async () => {
+    const md = [
+      "```plan",
+      "title: Trip flow",
+      "",
+      "---",
+      "label: Arrive",
+      "time: Day 1",
+      "---",
+      "label: Explore",
+      "time: Days 2–4",
+      "```",
+    ].join("\n");
+
+    const html = preprocessLiquidEmbeds(md);
+    expect(html).toContain('data-liquid-embed="plan"');
+    const root = treeFromPlaceholders(html) as unknown as HTMLElement;
+    const { hydrateLiquidEmbeds, destroyLiquidEmbeds } = await import("./hydrateLiquidEmbeds");
+    hydrateLiquidEmbeds(root, {});
+
+    const kinds = mountMock.mock.calls.map(
+      (call) => (call[1] as { props: { kind: string } }).props.kind,
+    );
+    expect(kinds).toEqual(["plan"]);
+    const planCall = mountMock.mock.calls.find(
+      (call) => (call[1] as { props: { kind: string } }).props.kind === "plan",
+    );
+    const planPayload = (
+      planCall![1] as {
+        props: {
+          payload: {
+            title?: string;
+            segments: { label: string; time?: string }[];
+          };
+        };
+      }
+    ).props.payload;
+    expect(planPayload.title).toBe("Trip flow");
+    expect(planPayload.segments.map((s) => s.label)).toEqual(["Arrive", "Explore"]);
+    destroyLiquidEmbeds(root);
+    expect(unmountMock).toHaveBeenCalledTimes(1);
+  });
 });

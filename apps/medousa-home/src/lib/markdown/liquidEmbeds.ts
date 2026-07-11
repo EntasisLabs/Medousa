@@ -19,6 +19,8 @@ export const LIQUID_FENCE_LANGS = new Set([
   "chip_group",
   "media",
   "cite",
+  "compare",
+  "plan",
 ]);
 
 const CALLOUT_TONES = new Set(["note", "warn", "error", "success"]);
@@ -67,7 +69,9 @@ export type LiquidEmbedKind =
   | "section"
   | "chips"
   | "media"
-  | "cite";
+  | "cite"
+  | "compare"
+  | "plan";
 
 export interface LiquidCardProps {
   title: string;
@@ -95,6 +99,43 @@ export interface LiquidCiteProps {
   title?: string;
   url?: string;
   source?: string;
+}
+
+export interface LiquidCompareAxis {
+  id: string;
+  label: string;
+}
+
+export interface LiquidCompareEntity {
+  id: string;
+  label: string;
+  values: Record<string, string>;
+}
+
+export interface LiquidCompareProps {
+  title?: string;
+  subtitle?: string;
+  recommendation?: string;
+  axes: LiquidCompareAxis[];
+  entities: LiquidCompareEntity[];
+}
+
+export interface LiquidPlanSegment {
+  id: string;
+  label: string;
+  time?: string;
+  emoji?: string;
+  image?: string;
+  subtitle?: string;
+  body?: string;
+  badge?: string;
+}
+
+export interface LiquidPlanProps {
+  title?: string;
+  subtitle?: string;
+  grouping?: string;
+  segments: LiquidPlanSegment[];
 }
 
 export interface LiquidSectionProps {
@@ -343,6 +384,137 @@ function parseCiteBody(body: string): LiquidCiteProps | null {
   return cite;
 }
 
+function slugCompareId(label: string, prefix: string, index: number): string {
+  const base = label
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return base ? `${prefix}-${base}` : `${prefix}-${index}`;
+}
+
+function splitPipeCells(line: string): string[] {
+  let s = stripFenceLineChrome(line);
+  if (!s.startsWith("|")) return [];
+  if (s.endsWith("|")) s = s.slice(0, -1);
+  s = s.slice(1);
+  return s.split("|").map((c) => c.trim());
+}
+
+function isGfmSeparatorRow(cells: string[]): boolean {
+  if (cells.length === 0) return false;
+  return cells.every((cell) => {
+    const t = cell.replace(/\s/g, "");
+    return t === "" || /^:?-+:?$/.test(t);
+  });
+}
+
+function parseCompareBody(body: string): LiquidCompareProps | null {
+  const normalized = body.replace(/\r\n/g, "\n");
+  const lines = normalized.split("\n");
+  const preamble: string[] = [];
+  const tableLines: string[] = [];
+  let inTable = false;
+
+  for (const raw of lines) {
+    const stripped = stripFenceLineChrome(raw);
+    if (!inTable && stripped.startsWith("|")) {
+      inTable = true;
+    }
+    if (inTable) {
+      if (!stripped) continue;
+      tableLines.push(raw);
+    } else {
+      preamble.push(raw);
+    }
+  }
+
+  if (tableLines.length < 2) return null;
+
+  const rows = tableLines
+    .map((raw) => splitPipeCells(raw))
+    .filter((cells) => cells.length > 0)
+    .filter((cells) => !isGfmSeparatorRow(cells));
+
+  if (rows.length < 2) return null;
+
+  const header = rows[0];
+  if (header.length < 3) return null; // corner + ≥2 entities
+
+  const entityLabels = header.slice(1).map((label) => label.trim()).filter(Boolean);
+  if (entityLabels.length < 2) return null;
+
+  const entities: LiquidCompareEntity[] = entityLabels.map((label, i) => ({
+    id: slugCompareId(label, "entity", i),
+    label,
+    values: {},
+  }));
+
+  const axes: LiquidCompareAxis[] = [];
+  for (let r = 1; r < rows.length; r++) {
+    const cells = rows[r];
+    const axisLabel = (cells[0] ?? "").trim();
+    if (!axisLabel) continue;
+    const axisId = slugCompareId(axisLabel, "axis", axes.length);
+    axes.push({ id: axisId, label: axisLabel });
+    for (let e = 0; e < entities.length; e++) {
+      const value = (cells[e + 1] ?? "").trim();
+      if (value) entities[e].values[axisId] = value;
+    }
+  }
+
+  if (axes.length < 1) return null;
+
+  const fields = parseKvBlock(preamble.join("\n"));
+  const compare: LiquidCompareProps = { axes, entities };
+  if (fields.title) compare.title = fields.title;
+  if (fields.subtitle) compare.subtitle = fields.subtitle;
+  const rec = (fields.recommendation ?? fields.highlight)?.trim();
+  if (rec) compare.recommendation = rec;
+  return compare;
+}
+
+const PLAN_GROUPINGS = new Set(["day", "phase", "milestone"]);
+
+function parsePlanBody(body: string): LiquidPlanProps | null {
+  const normalized = body.replace(/\r\n/g, "\n").trim();
+  if (!normalized) return null;
+
+  const parts = normalized.split(/^---[ \t]*$/m);
+  const preamble = parts[0] ?? "";
+  const segmentBlocks = parts.slice(1);
+
+  // Allow segments without a leading --- if the whole body is one block with label:
+  // Prefer ---separated; if no separators, try treating full body as failed.
+  const fields = parseKvBlock(preamble);
+  const segments: LiquidPlanSegment[] = [];
+
+  for (const block of segmentBlocks) {
+    const segFields = parseKvBlock(block);
+    const label = (segFields.label ?? segFields.title)?.trim();
+    if (!label) continue;
+    const seg: LiquidPlanSegment = {
+      id: slugCompareId(label, "segment", segments.length),
+      label,
+    };
+    if (segFields.time) seg.time = segFields.time;
+    if (segFields.emoji) seg.emoji = segFields.emoji;
+    if (segFields.image) seg.image = segFields.image;
+    if (segFields.subtitle) seg.subtitle = segFields.subtitle;
+    if (segFields.body) seg.body = segFields.body;
+    if (segFields.badge) seg.badge = segFields.badge;
+    segments.push(seg);
+  }
+
+  if (segments.length < 2) return null;
+
+  const plan: LiquidPlanProps = { segments };
+  if (fields.title) plan.title = fields.title;
+  if (fields.subtitle) plan.subtitle = fields.subtitle;
+  const grouping = fields.grouping?.trim().toLowerCase();
+  if (grouping && PLAN_GROUPINGS.has(grouping)) plan.grouping = grouping;
+  return plan;
+}
+
 function normalizeIconId(raw: string): string | null {
   const id = raw.trim().toLowerCase().replace(/_/g, "-");
   if (!id || !LIQUID_ICON_ALLOWLIST.has(id)) return null;
@@ -410,6 +582,18 @@ export function preprocessLiquidEmbeds(source: string): string {
       const cite = parseCiteBody(body);
       if (!cite) return match;
       return `\n${placeholder("cite", cite)}\n`;
+    }
+
+    if (lang === "compare") {
+      const compare = parseCompareBody(body);
+      if (!compare) return match;
+      return `\n${placeholder("compare", compare)}\n`;
+    }
+
+    if (lang === "plan") {
+      const plan = parsePlanBody(body);
+      if (!plan) return match;
+      return `\n${placeholder("plan", plan)}\n`;
     }
 
     return match;

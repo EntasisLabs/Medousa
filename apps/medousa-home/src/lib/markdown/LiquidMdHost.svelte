@@ -14,6 +14,8 @@
   import ActionRow from "$lib/liquid/archetypes/molecules/action_row/ActionRow.svelte";
   import Callout from "$lib/liquid/archetypes/molecules/callout/Callout.svelte";
   import Cite from "$lib/liquid/archetypes/molecules/cite/Cite.svelte";
+  import Compare from "$lib/liquid/archetypes/organisms/compare/Compare.svelte";
+  import Plan from "$lib/liquid/archetypes/organisms/plan/Plan.svelte";
   import Section from "$lib/liquid/archetypes/molecules/section/Section.svelte";
   import ChipGroup from "$lib/liquid/archetypes/molecules/chip_group/ChipGroup.svelte";
   import Media from "$lib/liquid/archetypes/atoms/media/Media.svelte";
@@ -23,8 +25,10 @@
     LiquidCardProps,
     LiquidChipProps,
     LiquidCiteProps,
+    LiquidCompareProps,
     LiquidEmbedKind,
     LiquidMediaProps,
+    LiquidPlanProps,
     LiquidSectionProps,
   } from "$lib/markdown/liquidEmbeds";
   import {
@@ -258,6 +262,41 @@
     });
   });
 
+  const compare = $derived.by(() => {
+    if (kind !== "compare") return null;
+    const props = payload as LiquidCompareProps;
+    if (!props?.axes?.length || !props?.entities || props.entities.length < 2) return null;
+    return createNode({
+      id: "md-compare",
+      type: "compare",
+      props: {
+        ...(props.title ? { title: props.title } : {}),
+        ...(props.subtitle ? { subtitle: props.subtitle } : {}),
+        ...(props.recommendation ? { recommendation: props.recommendation } : {}),
+        axes: props.axes,
+        entities: props.entities,
+      },
+      fillState: "ready",
+    });
+  });
+
+  const plan = $derived.by(() => {
+    if (kind !== "plan") return null;
+    const props = payload as LiquidPlanProps;
+    if (!props?.segments || props.segments.length < 2) return null;
+    return createNode({
+      id: "md-plan",
+      type: "plan",
+      props: {
+        ...(props.title ? { title: props.title } : {}),
+        ...(props.subtitle ? { subtitle: props.subtitle } : {}),
+        ...(props.grouping ? { grouping: props.grouping } : {}),
+        segments: props.segments,
+      },
+      fillState: "ready",
+    });
+  });
+
   const IconComp = $derived.by(() => {
     if (kind !== "icon") return null;
     const id = typeof payload === "string" ? payload : "";
@@ -299,6 +338,14 @@
 {:else if kind === "cite" && cite}
   <div class="liquid-md-host liquid-md-host-cite liquid-md-enter">
     <Cite node={cite} />
+  </div>
+{:else if kind === "compare" && compare}
+  <div class="liquid-md-host liquid-md-host-compare liquid-md-enter">
+    <Compare node={compare} />
+  </div>
+{:else if kind === "plan" && plan}
+  <div class="liquid-md-host liquid-md-host-plan liquid-md-enter">
+    <Plan node={plan} />
   </div>
 {:else if kind === "icon" && IconComp}
   <span class="liquid-md-host-icon">

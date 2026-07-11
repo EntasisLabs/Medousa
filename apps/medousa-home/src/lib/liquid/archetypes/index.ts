@@ -28,6 +28,8 @@ export { stack } from "./layout/stack/stack";
 
 // organisms
 export { document } from "./organisms/document/document";
+export { compare } from "./organisms/compare/compare";
+export { plan } from "./organisms/plan/plan";
 
 // shell (reuse of native chat molecules)
 export { thinking } from "./shell/thinking/thinking";

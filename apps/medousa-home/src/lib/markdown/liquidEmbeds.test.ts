@@ -214,6 +214,153 @@ describe("preprocessLiquidEmbeds", () => {
     expect(preprocessLiquidEmbeds("```media\nalt: No src\n```")).toContain("```media");
     expect(preprocessLiquidEmbeds("```cite\nsource: alone\n```")).toContain("```cite");
   });
+
+  it("turns a compare fence into axes/entities payload", () => {
+    const src = [
+      "```compare",
+      "title: Laptops for video",
+      "subtitle: 2 picks",
+      "recommendation: MacBook Pro 14",
+      "",
+      "| | MacBook Pro 14 | XPS 15 |",
+      "| --- | --- | --- |",
+      "| Display | Excellent | Good |",
+      "| Battery | 18h | 12h |",
+      "```",
+    ].join("\n");
+    const out = preprocessLiquidEmbeds(src);
+    expect(out).toContain('data-liquid-embed="compare"');
+    const match = out.match(/data-liquid-props="([^"]+)"/);
+    const props = decodeLiquidProps<{
+      title?: string;
+      subtitle?: string;
+      recommendation?: string;
+      axes: { id: string; label: string }[];
+      entities: { id: string; label: string; values: Record<string, string> }[];
+    }>(match![1]);
+    expect(props?.title).toBe("Laptops for video");
+    expect(props?.subtitle).toBe("2 picks");
+    expect(props?.recommendation).toBe("MacBook Pro 14");
+    expect(props?.axes.map((a) => a.label)).toEqual(["Display", "Battery"]);
+    expect(props?.entities.map((e) => e.label)).toEqual(["MacBook Pro 14", "XPS 15"]);
+    const displayId = props!.axes[0].id;
+    expect(props?.entities[0].values[displayId]).toBe("Excellent");
+    expect(props?.entities[1].values[displayId]).toBe("Good");
+  });
+
+  it("accepts compare with highlight alias and list-marker title", () => {
+    const src = [
+      "```compare",
+      "- title: Cameras",
+      "highlight: A7IV",
+      "",
+      "| Axis | A7IV | R5 |",
+      "| --- | --- | --- |",
+      "| AF | Great | Great |",
+      "```",
+    ].join("\n");
+    const out = preprocessLiquidEmbeds(src);
+    expect(out).toContain('data-liquid-embed="compare"');
+    const match = out.match(/data-liquid-props="([^"]+)"/);
+    const props = decodeLiquidProps<{ recommendation?: string; title?: string }>(match![1]);
+    expect(props?.title).toBe("Cameras");
+    expect(props?.recommendation).toBe("A7IV");
+  });
+
+  it("rejects compare with fewer than two entities", () => {
+    const src = [
+      "```compare",
+      "title: Alone",
+      "",
+      "| | Solo |",
+      "| --- | --- |",
+      "| Speed | Fast |",
+      "```",
+    ].join("\n");
+    expect(preprocessLiquidEmbeds(src)).toContain("```compare");
+  });
+
+  it("turns a plan fence into segments payload", () => {
+    const src = [
+      "```plan",
+      "title: Trip flow",
+      "subtitle: Simple pacing",
+      "grouping: day",
+      "",
+      "---",
+      "label: Arrive in Tokyo",
+      "time: Day 1",
+      "emoji: ✈️",
+      "image: https://example.com/nex.jpg",
+      "subtitle: Arrival · Tokyo",
+      "body: Check in and ease in",
+      "badge: Start here",
+      "---",
+      "label: Explore Tokyo",
+      "time: Days 2–4",
+      "emoji: 🏙️",
+      "body: Mix sights and food",
+      "```",
+    ].join("\n");
+    const out = preprocessLiquidEmbeds(src);
+    expect(out).toContain('data-liquid-embed="plan"');
+    const match = out.match(/data-liquid-props="([^"]+)"/);
+    const props = decodeLiquidProps<{
+      title?: string;
+      subtitle?: string;
+      grouping?: string;
+      segments: {
+        label: string;
+        time?: string;
+        emoji?: string;
+        image?: string;
+        badge?: string;
+        body?: string;
+      }[];
+    }>(match![1]);
+    expect(props?.title).toBe("Trip flow");
+    expect(props?.subtitle).toBe("Simple pacing");
+    expect(props?.grouping).toBe("day");
+    expect(props?.segments).toHaveLength(2);
+    expect(props?.segments[0].label).toBe("Arrive in Tokyo");
+    expect(props?.segments[0].time).toBe("Day 1");
+    expect(props?.segments[0].image).toBe("https://example.com/nex.jpg");
+    expect(props?.segments[0].badge).toBe("Start here");
+    expect(props?.segments[1].label).toBe("Explore Tokyo");
+  });
+
+  it("accepts plan with title alias for label and list-marker chrome", () => {
+    const src = [
+      "```plan",
+      "- title: Best first route",
+      "",
+      "---",
+      "title: Tokyo",
+      "time: Days 1–4",
+      "---",
+      "label: Kyoto",
+      "time: Days 5–7",
+      "```",
+    ].join("\n");
+    const out = preprocessLiquidEmbeds(src);
+    expect(out).toContain('data-liquid-embed="plan"');
+    const match = out.match(/data-liquid-props="([^"]+)"/);
+    const props = decodeLiquidProps<{ title?: string; segments: { label: string }[] }>(match![1]);
+    expect(props?.title).toBe("Best first route");
+    expect(props?.segments.map((s) => s.label)).toEqual(["Tokyo", "Kyoto"]);
+  });
+
+  it("rejects plan with fewer than two segments", () => {
+    const src = [
+      "```plan",
+      "title: Alone",
+      "",
+      "---",
+      "label: Only one",
+      "```",
+    ].join("\n");
+    expect(preprocessLiquidEmbeds(src)).toContain("```plan");
+  });
 });
 
 describe("renderMarkdown + liquid embeds", () => {
