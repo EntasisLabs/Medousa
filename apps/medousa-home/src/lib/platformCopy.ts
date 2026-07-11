@@ -65,11 +65,11 @@ export function workshopPairingManagedHint(): string {
 }
 
 export function workshopRetentionReadHint(): string {
-  return "Read from the workshop daemon after connect. Edit on the host in Settings → Rhythm or in tui_defaults.json.";
+  return "Managed on the workshop host — open Settings → Rhythm there to change.";
 }
 
 export function workshopRetentionLocalHint(): string {
-  return "on the host.";
+  return "Saved with workshop defaults on the host.";
 }
 
 export function workshopRuntimeReadHint(): string {

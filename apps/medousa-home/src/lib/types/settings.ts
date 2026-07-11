@@ -75,13 +75,3 @@ export const HOST_BUS_CHARTER_OPTIONS = [
     hint: "Orchestrator only — no specialist bus",
   },
 ] as const;
-
-export const STAGE_ROLE_LABELS: Record<string, string> = {
-  orchestrator: "Lead",
-  chunker: "Reader",
-  extractor: "Extractor",
-  summarizer: "Summarizer",
-  verifier: "Verifier",
-  packer: "Packer",
-  final_response: "Final voice",
-};
