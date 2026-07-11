@@ -24,6 +24,8 @@ export const LIQUID_FENCE_LANGS = new Set([
   "timeline",
   "shortlist",
   "decision",
+  "brief",
+  "dashboard",
 ]);
 
 const CALLOUT_TONES = new Set(["note", "warn", "error", "success"]);
@@ -77,7 +79,9 @@ export type LiquidEmbedKind =
   | "plan"
   | "timeline"
   | "shortlist"
-  | "decision";
+  | "decision"
+  | "brief"
+  | "dashboard";
 
 export interface LiquidCardProps {
   title: string;
@@ -193,6 +197,45 @@ export interface LiquidDecisionProps {
   factors?: string;
   recommendation?: string;
   options: LiquidDecisionOption[];
+}
+
+export interface LiquidBriefSection {
+  id: string;
+  heading: string;
+  body: string;
+}
+
+export interface LiquidBriefSource {
+  id: string;
+  title: string;
+  url?: string;
+  quote?: string;
+}
+
+export interface LiquidBriefProps {
+  title?: string;
+  subtitle?: string;
+  tone?: string;
+  sections: LiquidBriefSection[];
+  sources?: LiquidBriefSource[];
+}
+
+export interface LiquidDashboardTile {
+  id: string;
+  label: string;
+  value: string;
+  delta?: string;
+  tone?: string;
+  emoji?: string;
+  hint?: string;
+  unit?: string;
+}
+
+export interface LiquidDashboardProps {
+  title?: string;
+  subtitle?: string;
+  columns?: string;
+  tiles: LiquidDashboardTile[];
 }
 
 export interface LiquidSectionProps {
@@ -722,6 +765,158 @@ function parseDecisionBody(body: string): LiquidDecisionProps | null {
   return decision;
 }
 
+const BRIEF_TONES = new Set(["research", "brief", "memo"]);
+
+function parseBriefSectionBlock(
+  block: string,
+  index: number,
+): LiquidBriefSection | null {
+  const normalized = block.replace(/\r\n/g, "\n");
+  const sep = normalized.search(/^---[ \t]*$/m);
+  let header = normalized;
+  let proseBody: string | undefined;
+  if (sep >= 0) {
+    header = normalized.slice(0, sep);
+    proseBody = normalized.slice(sep).replace(/^---[ \t]*\n?/, "").trim() || undefined;
+  }
+  const fields = parseDecisionOptionFields(header);
+  const heading = (fields.heading ?? fields.title)?.trim();
+  if (!heading) return null;
+  const body = (fields.body ?? proseBody)?.trim();
+  if (!body) return null;
+  return {
+    id: slugCompareId(heading, "section", index),
+    heading,
+    body,
+  };
+}
+
+function parseBriefSourceBlock(
+  block: string,
+  index: number,
+): LiquidBriefSource | null {
+  const fields = parseDecisionOptionFields(block);
+  const title = (fields.title ?? fields.label)?.trim();
+  if (!title) return null;
+  const src: LiquidBriefSource = {
+    id: slugCompareId(title, "source", index),
+    title,
+  };
+  if (fields.url) src.url = fields.url;
+  if (fields.quote) src.quote = fields.quote;
+  else if (fields.body) src.quote = fields.body;
+  return src;
+}
+
+function parseBriefBody(body: string): LiquidBriefProps | null {
+  const normalized = body.replace(/\r\n/g, "\n").trim();
+  if (!normalized) return null;
+
+  const eqSplit = normalized.split(/^===[ \t]*$/m);
+  const mainPart = (eqSplit[0] ?? "").trim();
+  const sourcesPart = eqSplit.length > 1 ? (eqSplit.slice(1).join("\n===\n") ?? "").trim() : "";
+
+  const parts = mainPart.split(/^---[ \t]*$/m);
+  const preamble = parts[0] ?? "";
+  const sectionBlocks = parts.slice(1);
+
+  const fields = parseKvBlock(preamble);
+  const sections: LiquidBriefSection[] = [];
+  let pendingHeading: string | null = null;
+
+  for (const block of sectionBlocks) {
+    const section = parseBriefSectionBlock(block, sections.length);
+    if (section) {
+      sections.push(section);
+      pendingHeading = null;
+      continue;
+    }
+
+    const blockFields = parseDecisionOptionFields(block);
+    const headingOnly = (blockFields.heading ?? blockFields.title)?.trim();
+    if (headingOnly && !blockFields.body) {
+      pendingHeading = headingOnly;
+      continue;
+    }
+
+    if (pendingHeading) {
+      const prose = block.replace(/\r\n/g, "\n").trim();
+      if (prose) {
+        sections.push({
+          id: slugCompareId(pendingHeading, "section", sections.length),
+          heading: pendingHeading,
+          body: prose,
+        });
+        pendingHeading = null;
+      }
+    }
+  }
+
+  if (sections.length < 1) return null;
+
+  const sources: LiquidBriefSource[] = [];
+  if (sourcesPart) {
+    const sourceBlocks = sourcesPart.split(/^---[ \t]*$/m).filter((b) => b.trim());
+    for (const block of sourceBlocks) {
+      const src = parseBriefSourceBlock(block, sources.length);
+      if (src) sources.push(src);
+    }
+  }
+
+  const brief: LiquidBriefProps = { sections };
+  if (fields.title) brief.title = fields.title;
+  if (fields.subtitle) brief.subtitle = fields.subtitle;
+  const tone = fields.tone?.trim().toLowerCase();
+  if (tone && BRIEF_TONES.has(tone)) brief.tone = tone;
+  if (sources.length) brief.sources = sources;
+  return brief;
+}
+
+const DASHBOARD_TONES = new Set(["default", "accent", "success", "warn", "error"]);
+const DASHBOARD_COLUMNS = new Set(["2", "3", "4"]);
+
+function parseDashboardBody(body: string): LiquidDashboardProps | null {
+  const normalized = body.replace(/\r\n/g, "\n").trim();
+  if (!normalized) return null;
+
+  const parts = normalized.split(/^---[ \t]*$/m);
+  const preamble = parts[0] ?? "";
+  const tileBlocks = parts.slice(1);
+
+  const fields = parseKvBlock(preamble);
+  const tiles: LiquidDashboardTile[] = [];
+
+  for (const block of tileBlocks) {
+    const tileFields = parseKvBlock(block);
+    const label = (tileFields.label ?? tileFields.title)?.trim();
+    const value = tileFields.value?.trim();
+    if (!label || !value) continue;
+    // Ignore deferred live bindings if present (feed:/binding: not hydrated in v1)
+    const tile: LiquidDashboardTile = {
+      id: slugCompareId(label, "tile", tiles.length),
+      label,
+      value,
+    };
+    if (tileFields.delta) tile.delta = tileFields.delta;
+    if (tileFields.emoji) tile.emoji = tileFields.emoji;
+    if (tileFields.hint) tile.hint = tileFields.hint;
+    else if (tileFields.body) tile.hint = tileFields.body;
+    if (tileFields.unit) tile.unit = tileFields.unit;
+    const tone = tileFields.tone?.trim().toLowerCase();
+    if (tone && DASHBOARD_TONES.has(tone)) tile.tone = tone;
+    tiles.push(tile);
+  }
+
+  if (tiles.length < 2) return null;
+
+  const dashboard: LiquidDashboardProps = { tiles };
+  if (fields.title) dashboard.title = fields.title;
+  if (fields.subtitle) dashboard.subtitle = fields.subtitle;
+  const columns = fields.columns?.trim();
+  if (columns && DASHBOARD_COLUMNS.has(columns)) dashboard.columns = columns;
+  return dashboard;
+}
+
 function normalizeIconId(raw: string): string | null {
   const id = raw.trim().toLowerCase().replace(/_/g, "-");
   if (!id || !LIQUID_ICON_ALLOWLIST.has(id)) return null;
@@ -819,6 +1014,18 @@ export function preprocessLiquidEmbeds(source: string): string {
       const decision = parseDecisionBody(body);
       if (!decision) return match;
       return `\n${placeholder("decision", decision)}\n`;
+    }
+
+    if (lang === "brief") {
+      const brief = parseBriefBody(body);
+      if (!brief) return match;
+      return `\n${placeholder("brief", brief)}\n`;
+    }
+
+    if (lang === "dashboard") {
+      const dashboard = parseDashboardBody(body);
+      if (!dashboard) return match;
+      return `\n${placeholder("dashboard", dashboard)}\n`;
     }
 
     return match;

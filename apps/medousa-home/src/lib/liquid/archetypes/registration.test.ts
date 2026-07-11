@@ -28,6 +28,8 @@ const ALL_IDS = [
   "timeline",
   "shortlist",
   "decision",
+  "brief",
+  "dashboard",
   "thinking",
   "tool_trace",
   "presentation",

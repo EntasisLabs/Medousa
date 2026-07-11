@@ -614,6 +614,166 @@ describe("preprocessLiquidEmbeds", () => {
     ].join("\n");
     expect(preprocessLiquidEmbeds(src)).toContain("```decision");
   });
+
+  it("turns a brief fence into sections and sources", () => {
+    const src = [
+      "```brief",
+      "title: Why Tokyo first",
+      "subtitle: For two",
+      "tone: research",
+      "",
+      "---",
+      "heading: Easy logistics",
+      "body: One simple route, minimal backtracking.",
+      "---",
+      "heading: Food mix",
+      "body: Street food, markets, sushi.",
+      "",
+      "===",
+      "---",
+      "title: JNTO Tokyo guide",
+      "url: https://example.com/tokyo",
+      "quote: Start in the capital for energy.",
+      "---",
+      "title: JR East",
+      "url: https://example.com/jr",
+      "```",
+    ].join("\n");
+    const out = preprocessLiquidEmbeds(src);
+    expect(out).toContain('data-liquid-embed="brief"');
+    const match = out.match(/data-liquid-props="([^"]+)"/);
+    const props = decodeLiquidProps<{
+      title?: string;
+      tone?: string;
+      sections: { heading: string; body: string }[];
+      sources?: { title: string; url?: string; quote?: string }[];
+    }>(match![1]);
+    expect(props?.title).toBe("Why Tokyo first");
+    expect(props?.tone).toBe("research");
+    expect(props?.sections).toHaveLength(2);
+    expect(props?.sections[0].heading).toBe("Easy logistics");
+    expect(props?.sources).toHaveLength(2);
+    expect(props?.sources?.[0].title).toBe("JNTO Tokyo guide");
+    expect(props?.sources?.[0].url).toBe("https://example.com/tokyo");
+  });
+
+  it("accepts brief with nested --- body and title alias", () => {
+    const src = [
+      "```brief",
+      "- title: Memo",
+      "",
+      "---",
+      "title: Point one",
+      "---",
+      "Prose body after nested separator.",
+      "```",
+    ].join("\n");
+    const out = preprocessLiquidEmbeds(src);
+    expect(out).toContain('data-liquid-embed="brief"');
+    const match = out.match(/data-liquid-props="([^"]+)"/);
+    const props = decodeLiquidProps<{
+      title?: string;
+      sections: { heading: string; body: string }[];
+    }>(match![1]);
+    expect(props?.title).toBe("Memo");
+    expect(props?.sections[0].heading).toBe("Point one");
+    expect(props?.sections[0].body).toBe("Prose body after nested separator.");
+  });
+
+  it("rejects brief with no sections", () => {
+    const src = ["```brief", "title: Empty", "```"].join("\n");
+    expect(preprocessLiquidEmbeds(src)).toContain("```brief");
+  });
+
+  it("turns a dashboard fence into title + tiles", () => {
+    const src = [
+      "```dashboard",
+      "title: Trip pulse",
+      "subtitle: Japan · mid-range for two",
+      "columns: 2",
+      "",
+      "---",
+      "label: Days locked",
+      "value: 7",
+      "delta: +2 vs draft",
+      "tone: success",
+      "emoji: 📅",
+      "---",
+      "label: Budget used",
+      "value: 42%",
+      "delta: on track",
+      "tone: accent",
+      "```",
+    ].join("\n");
+    const out = preprocessLiquidEmbeds(src);
+    expect(out).toContain('data-liquid-embed="dashboard"');
+    const match = out.match(/data-liquid-props="([^"]+)"/);
+    const props = decodeLiquidProps<{
+      title?: string;
+      subtitle?: string;
+      columns?: string;
+      tiles: {
+        label: string;
+        value: string;
+        delta?: string;
+        tone?: string;
+        emoji?: string;
+      }[];
+    }>(match![1]);
+    expect(props?.title).toBe("Trip pulse");
+    expect(props?.subtitle).toBe("Japan · mid-range for two");
+    expect(props?.columns).toBe("2");
+    expect(props?.tiles).toHaveLength(2);
+    expect(props?.tiles[0].label).toBe("Days locked");
+    expect(props?.tiles[0].value).toBe("7");
+    expect(props?.tiles[0].delta).toBe("+2 vs draft");
+    expect(props?.tiles[0].tone).toBe("success");
+    expect(props?.tiles[0].emoji).toBe("📅");
+    expect(props?.tiles[1].tone).toBe("accent");
+  });
+
+  it("accepts dashboard list-marker title and ignores feed: lines", () => {
+    const src = [
+      "```dashboard",
+      "- title: Pulse",
+      "",
+      "---",
+      "title: Open questions",
+      "value: 3",
+      "body: hotels · JR pass",
+      "tone: warn",
+      "feed: trip.pulse",
+      "---",
+      "label: Next milestone",
+      "value: Book N’EX",
+      "```",
+    ].join("\n");
+    const out = preprocessLiquidEmbeds(src);
+    expect(out).toContain('data-liquid-embed="dashboard"');
+    const match = out.match(/data-liquid-props="([^"]+)"/);
+    const props = decodeLiquidProps<{
+      title?: string;
+      tiles: { label: string; value: string; hint?: string; tone?: string }[];
+    }>(match![1]);
+    expect(props?.title).toBe("Pulse");
+    expect(props?.tiles[0].label).toBe("Open questions");
+    expect(props?.tiles[0].hint).toBe("hotels · JR pass");
+    expect(props?.tiles[0].tone).toBe("warn");
+    expect(JSON.stringify(props)).not.toContain("trip.pulse");
+  });
+
+  it("rejects dashboard with fewer than two tiles", () => {
+    const src = [
+      "```dashboard",
+      "title: Alone",
+      "",
+      "---",
+      "label: Only one",
+      "value: 1",
+      "```",
+    ].join("\n");
+    expect(preprocessLiquidEmbeds(src)).toContain("```dashboard");
+  });
 });
 
 describe("renderMarkdown + liquid embeds", () => {

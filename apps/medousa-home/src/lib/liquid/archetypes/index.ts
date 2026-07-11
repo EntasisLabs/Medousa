@@ -33,6 +33,8 @@ export { plan } from "./organisms/plan/plan";
 export { timeline } from "./organisms/timeline/timeline";
 export { shortlist } from "./organisms/shortlist/shortlist";
 export { decision } from "./organisms/decision/decision";
+export { brief } from "./organisms/brief/brief";
+export { dashboard } from "./organisms/dashboard/dashboard";
 
 // shell (reuse of native chat molecules)
 export { thinking } from "./shell/thinking/thinking";
