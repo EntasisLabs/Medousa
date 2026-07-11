@@ -344,12 +344,13 @@ export class VaultStore {
   }
 
   private shouldIgnoreSaveEcho(event: WorkspaceEvent, path: string): boolean {
+    // Own autosave/manual save often lands while the next keystroke already marked
+    // dirty (kanban debounce). Still ignore the echo — it is not an external edit.
     return (
       event.actor === "operator" &&
       path === this.saveEchoPath &&
       Date.now() < this.saveEchoUntil &&
-      path === this.selectedPath &&
-      !this.dirty
+      path === this.selectedPath
     );
   }
 
@@ -427,7 +428,7 @@ export class VaultStore {
       const serverContent = response.content;
       const isAgent = event.actor === "agent";
 
-      if (serverContent === this.content && !this.dirty) {
+      if (serverContent === this.content) {
         this.syncNoteMetadata(response);
         return;
       }
@@ -838,19 +839,36 @@ export class VaultStore {
     this.saveStatus = "saving";
     this.error = null;
 
+    const pathSnapshot = this.selectedPath;
+    const contentSnapshot = this.content;
+
     try {
-      const response = await saveVaultNote(this.selectedPath, this.content, {
+      const response = await saveVaultNote(pathSnapshot, contentSnapshot, {
         contentHash: options?.force ? undefined : (this.contentHash ?? undefined),
-        sessionId: workshopSessionIdForVaultSave(this.selectedPath),
+        sessionId: workshopSessionIdForVaultSave(pathSnapshot),
       });
+      if (this.selectedPath !== pathSnapshot) return true;
+
+      // Typed during in-flight save — keep newer buffer dirty against the snapshot we wrote.
+      if (this.content !== contentSnapshot) {
+        this.contentHash = response.note.content_hash;
+        this.baselineContent = contentSnapshot;
+        this.dirty = true;
+        this.saveStatus = "unsaved";
+        this.markSaveEcho(pathSnapshot);
+        this.scheduleNotesRefresh();
+        this.scheduleAutosave();
+        return true;
+      }
+
       this.applySaveResponse(response.note);
-      invalidateMedousaViewCache(this.selectedPath);
-      invalidateTransclusionCache(this.selectedPath);
+      invalidateMedousaViewCache(pathSnapshot);
+      invalidateTransclusionCache(pathSnapshot);
       this.clearProposal();
-      this.markSaveEcho(this.selectedPath);
+      this.markSaveEcho(pathSnapshot);
       this.flashSavedWhisper();
       this.scheduleNotesRefresh();
-      void this.refreshBacklinks(this.selectedPath);
+      void this.refreshBacklinks(pathSnapshot);
       return true;
     } catch (err) {
       if (isVaultConflictError(err)) {
@@ -1246,6 +1264,10 @@ export class VaultStore {
 
   toggleBoardEditMode() {
     this.boardEditMode = this.boardEditMode === "board" ? "raw" : "board";
+  }
+
+  setBoardEditMode(mode: "board" | "raw") {
+    this.boardEditMode = mode;
   }
 
   async linkAttachmentFiles() {

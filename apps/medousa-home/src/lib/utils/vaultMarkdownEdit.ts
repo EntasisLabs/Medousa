@@ -8,6 +8,7 @@ import {
   MARKDOWN_COLOR_IDS,
   type MarkdownColorId,
 } from "$lib/utils/vaultMarkdownColors";
+import { ensureKanbanBoardFrontmatter } from "$lib/utils/markdownKanban";
 
 export type MarkdownFormatAction =
   | "bold"
@@ -324,8 +325,11 @@ export function insertSlashBlock(
   };
 
   const insert = templates[block];
-  const next = `${content.slice(0, replaceStart)}${insert}${content.slice(cursorIndex)}`;
-  const cursor = replaceStart + insert.length;
+  const nextRaw = `${content.slice(0, replaceStart)}${insert}${content.slice(cursorIndex)}`;
+  const next =
+    block === "board" ? ensureKanbanBoardFrontmatter(nextRaw) : nextRaw;
+  const shift = next.length - nextRaw.length;
+  const cursor = replaceStart + insert.length + shift;
   return {
     content: next,
     selectionStart: cursor,

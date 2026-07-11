@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { onDestroy } from "svelte";
-  import { GripVertical } from "@lucide/svelte";
+  import { onDestroy, tick } from "svelte";
+  import { GripVertical, Plus, X } from "@lucide/svelte";
   import {
     kanbanColumnsFromContent,
     replaceKanbanBoard,
@@ -9,9 +9,13 @@
   import {
     cancelKanbanPointerDrag,
     currentKanbanDragSource,
+    resolveDropInsertIndex,
     startKanbanPointerDrag,
     type KanbanDropTarget,
   } from "$lib/utils/vaultKanbanDrag";
+  import VaultKanbanCardFace from "./VaultKanbanCardFace.svelte";
+  import VaultKanbanNotePeek from "./VaultKanbanNotePeek.svelte";
+  import { vault } from "$lib/stores/vault.svelte";
 
   interface Props {
     content: string;
@@ -25,6 +29,18 @@
   let columns = $state<KanbanColumn[]>([]);
   let syncedContent = $state("");
   let dropHighlight = $state<KanbanDropTarget | null>(null);
+  let editingCard = $state<{ column: number; card: number } | null>(null);
+  let focusRequest = $state<{ column: number; card: number } | null>(null);
+  let surfaceFocusRequest = $state<{
+    column: number;
+    card: number;
+  } | null>(null);
+  let columnTitleFocus = $state<number | null>(null);
+  let peek = $state<{
+    target: string;
+    anchor: { top: number; left: number; bottom: number; width: number };
+  } | null>(null);
+  let emitTimer: ReturnType<typeof setTimeout> | null = null;
 
   function columnsEqual(left: KanbanColumn[], right: KanbanColumn[]): boolean {
     if (left.length !== right.length) return false;
@@ -54,20 +70,83 @@
     syncedContent = content;
   });
 
+  $effect(() => {
+    const request = focusRequest;
+    if (!request) return;
+    void tick().then(() => {
+      const el = document.querySelector(
+        `[data-kanban-card-input="${request.column}-${request.card}"]`,
+      ) as HTMLTextAreaElement | null;
+      el?.focus();
+      el?.select();
+      focusRequest = null;
+    });
+  });
+
+  $effect(() => {
+    const request = surfaceFocusRequest;
+    if (!request) return;
+    void tick().then(() => {
+      const el = document.querySelector(
+        `[data-kanban-card-surface="${request.column}-${request.card}"]`,
+      ) as HTMLElement | null;
+      el?.focus();
+      surfaceFocusRequest = null;
+    });
+  });
+
+  $effect(() => {
+    const index = columnTitleFocus;
+    if (index == null) return;
+    void tick().then(() => {
+      const el = document.querySelector(
+        `[data-kanban-column-title="${index}"]`,
+      ) as HTMLInputElement | null;
+      el?.focus();
+      el?.select();
+      columnTitleFocus = null;
+    });
+  });
+
   onDestroy(() => {
+    if (emitTimer) clearTimeout(emitTimer);
+    vault.setCompositionHold(false);
     cancelKanbanPointerDrag(() => {
       dropHighlight = null;
     });
   });
 
-  function emitColumns(nextColumns: KanbanColumn[]) {
-    columns = nextColumns;
+  function flushColumns(nextColumns: KanbanColumn[]) {
     const base = syncedContent || content;
     const updated = replaceKanbanBoard(base, nextColumns);
     if (updated) {
       syncedContent = updated;
+      vault.setCompositionHold(false);
       onchange(updated);
+    } else {
+      vault.setCompositionHold(false);
     }
+  }
+
+  function emitColumns(
+    nextColumns: KanbanColumn[],
+    options?: { immediate?: boolean },
+  ) {
+    columns = nextColumns;
+    if (emitTimer) {
+      clearTimeout(emitTimer);
+      emitTimer = null;
+    }
+    if (options?.immediate) {
+      flushColumns(nextColumns);
+      return;
+    }
+    // Hold autosave until the debounce settles — avoids save-echo proposal flicker.
+    vault.setCompositionHold(true);
+    emitTimer = setTimeout(() => {
+      emitTimer = null;
+      flushColumns(columns);
+    }, 220);
   }
 
   function cloneColumns(): KanbanColumn[] {
@@ -83,6 +162,39 @@
     emitColumns(next);
   }
 
+  function addColumn() {
+    if (disabled) return;
+    const next = cloneColumns();
+    next.push({ title: "New column", cards: [] });
+    emitColumns(next, { immediate: true });
+    columnTitleFocus = next.length - 1;
+  }
+
+  function removeColumn(columnIndex: number) {
+    if (disabled) return;
+    if (columns.length <= 1) return;
+    const column = columns[columnIndex];
+    if (!column) return;
+    if (
+      column.cards.length > 0 &&
+      !window.confirm(
+        `Remove “${column.title}” and its ${column.cards.length} card${column.cards.length === 1 ? "" : "s"}?`,
+      )
+    ) {
+      return;
+    }
+    const next = cloneColumns().filter((_, index) => index !== columnIndex);
+    if (editingCard?.column === columnIndex) {
+      editingCard = null;
+    } else if (editingCard && editingCard.column > columnIndex) {
+      editingCard = {
+        column: editingCard.column - 1,
+        card: editingCard.card,
+      };
+    }
+    emitColumns(next, { immediate: true });
+  }
+
   function updateCardText(columnIndex: number, cardIndex: number, text: string) {
     const next = cloneColumns();
     next[columnIndex].cards[cardIndex].text = text;
@@ -93,13 +205,25 @@
     const next = cloneColumns();
     next[columnIndex].cards[cardIndex].checked =
       !next[columnIndex].cards[cardIndex].checked;
-    emitColumns(next);
+    emitColumns(next, { immediate: true });
   }
 
-  function addCard(columnIndex: number) {
+  function addCard(columnIndex: number, afterIndex?: number) {
     const next = cloneColumns();
-    next[columnIndex].cards.push({ text: "", checked: false });
-    emitColumns(next);
+    const card = { text: "", checked: false };
+    if (afterIndex == null) {
+      next[columnIndex].cards.push(card);
+      emitColumns(next, { immediate: true });
+      focusRequest = {
+        column: columnIndex,
+        card: next[columnIndex].cards.length - 1,
+      };
+    } else {
+      next[columnIndex].cards.splice(afterIndex + 1, 0, card);
+      emitColumns(next, { immediate: true });
+      focusRequest = { column: columnIndex, card: afterIndex + 1 };
+    }
+    editingCard = focusRequest;
   }
 
   function removeCard(columnIndex: number, cardIndex: number) {
@@ -107,7 +231,13 @@
     next[columnIndex].cards = next[columnIndex].cards.filter(
       (_, index) => index !== cardIndex,
     );
-    emitColumns(next);
+    if (
+      editingCard?.column === columnIndex &&
+      editingCard.card === cardIndex
+    ) {
+      editingCard = null;
+    }
+    emitColumns(next, { immediate: true });
   }
 
   function moveCard(
@@ -125,14 +255,43 @@
       let insertAt = toCard ?? cards.length;
       if (insertAt > fromCard) insertAt -= 1;
       cards.splice(insertAt, 0, card);
-      emitColumns(next);
+      emitColumns(next, { immediate: true });
       return;
     }
     const [card] = next[fromColumn].cards.splice(fromCard, 1);
     if (!card) return;
     const insertAt = toCard ?? next[toColumn].cards.length;
     next[toColumn].cards.splice(insertAt, 0, card);
-    emitColumns(next);
+    emitColumns(next, { immediate: true });
+  }
+
+  function reorderCardInColumn(
+    columnIndex: number,
+    cardIndex: number,
+    delta: -1 | 1,
+  ) {
+    const target = cardIndex + delta;
+    const cards = columns[columnIndex]?.cards;
+    if (!cards || target < 0 || target >= cards.length) return;
+    const next = cloneColumns();
+    const lane = next[columnIndex].cards;
+    const [card] = lane.splice(cardIndex, 1);
+    if (!card) return;
+    lane.splice(target, 0, card);
+    emitColumns(next, { immediate: true });
+    surfaceFocusRequest = { column: columnIndex, card: target };
+  }
+
+  function moveCardAcrossColumns(
+    columnIndex: number,
+    cardIndex: number,
+    delta: -1 | 1,
+  ) {
+    const toColumn = columnIndex + delta;
+    if (toColumn < 0 || toColumn >= columns.length) return;
+    const insertAt = Math.min(cardIndex, columns[toColumn].cards.length);
+    moveCard(columnIndex, cardIndex, toColumn, insertAt);
+    surfaceFocusRequest = { column: toColumn, card: insertAt };
   }
 
   function handleGripPointerDown(
@@ -143,13 +302,19 @@
     if (disabled) return;
     event.preventDefault();
     event.stopPropagation();
+    editingCard = null;
     startKanbanPointerDrag(
       { columnIndex, cardIndex },
       (target) => {
         dropHighlight = target;
       },
       (from, to) => {
-        moveCard(from.columnIndex, from.cardIndex, to.columnIndex, to.cardIndex);
+        moveCard(
+          from.columnIndex,
+          from.cardIndex,
+          to.columnIndex,
+          resolveDropInsertIndex(to),
+        );
       },
       event,
     );
@@ -157,14 +322,24 @@
 
   function columnDropActive(columnIndex: number): boolean {
     return (
-      dropHighlight?.columnIndex === columnIndex && dropHighlight.cardIndex === undefined
+      dropHighlight?.columnIndex === columnIndex &&
+      dropHighlight.cardIndex === undefined
     );
   }
 
-  function cardDropActive(columnIndex: number, cardIndex: number): boolean {
+  function cardDropBefore(columnIndex: number, cardIndex: number): boolean {
     return (
       dropHighlight?.columnIndex === columnIndex &&
-      dropHighlight.cardIndex === cardIndex
+      dropHighlight.cardIndex === cardIndex &&
+      dropHighlight.insertBefore !== false
+    );
+  }
+
+  function cardDropAfter(columnIndex: number, cardIndex: number): boolean {
+    return (
+      dropHighlight?.columnIndex === columnIndex &&
+      dropHighlight.cardIndex === cardIndex &&
+      dropHighlight.insertBefore === false
     );
   }
 
@@ -175,169 +350,323 @@
     );
   }
 
-  function cardTextParts(text: string): Array<{ kind: "text" | "wikilink"; value: string }> {
-    const parts: Array<{ kind: "text" | "wikilink"; value: string }> = [];
-    const re = /\[\[([^\]]+)\]\]/g;
-    let lastIndex = 0;
-    let match: RegExpExecArray | null;
-    while ((match = re.exec(text)) !== null) {
-      if (match.index > lastIndex) {
-        parts.push({ kind: "text", value: text.slice(lastIndex, match.index) });
-      }
-      parts.push({ kind: "wikilink", value: match[1] });
-      lastIndex = match.index + match[0].length;
-    }
-    if (lastIndex < text.length) {
-      parts.push({ kind: "text", value: text.slice(lastIndex) });
-    }
-    return parts.length > 0 ? parts : [{ kind: "text", value: text }];
+  function isEditing(columnIndex: number, cardIndex: number): boolean {
+    return (
+      editingCard?.column === columnIndex && editingCard.card === cardIndex
+    );
   }
 
-  function handleWikilinkClick(event: MouseEvent, target: string) {
+  function beginEdit(columnIndex: number, cardIndex: number) {
+    if (disabled) return;
+    editingCard = { column: columnIndex, card: cardIndex };
+    focusRequest = { column: columnIndex, card: cardIndex };
+  }
+
+  function handleCardBlur(columnIndex: number, cardIndex: number) {
+    if (
+      editingCard?.column !== columnIndex ||
+      editingCard.card !== cardIndex
+    ) {
+      return;
+    }
+    editingCard = null;
+    const card = columns[columnIndex]?.cards[cardIndex];
+    if (card && !card.text.trim()) {
+      removeCard(columnIndex, cardIndex);
+    }
+  }
+
+  function handleCardKeydown(
+    event: KeyboardEvent,
+    columnIndex: number,
+    cardIndex: number,
+  ) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      (event.currentTarget as HTMLTextAreaElement).blur();
+      return;
+    }
+    if (event.key !== "Enter" || event.shiftKey) return;
     event.preventDefault();
-    event.stopPropagation();
+    const text = columns[columnIndex]?.cards[cardIndex]?.text ?? "";
+    if (!text.trim()) return;
+    addCard(columnIndex, cardIndex);
+  }
+
+  function handleCardSurfaceKeydown(
+    event: KeyboardEvent,
+    columnIndex: number,
+    cardIndex: number,
+  ) {
+    if (disabled || isEditing(columnIndex, cardIndex)) return;
+    if (event.key === "Enter" || event.key === " ") {
+      // Don't steal Space/Enter from checkbox or text controls.
+      const target = event.target as HTMLElement | null;
+      if (
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLButtonElement
+      ) {
+        return;
+      }
+      event.preventDefault();
+      beginEdit(columnIndex, cardIndex);
+      return;
+    }
+    if (!(event.altKey || event.metaKey)) return;
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      reorderCardInColumn(columnIndex, cardIndex, -1);
+      return;
+    }
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      reorderCardInColumn(columnIndex, cardIndex, 1);
+      return;
+    }
+    if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      moveCardAcrossColumns(columnIndex, cardIndex, -1);
+      return;
+    }
+    if (event.key === "ArrowRight") {
+      event.preventDefault();
+      moveCardAcrossColumns(columnIndex, cardIndex, 1);
+    }
+  }
+
+  function handleColumnKeydown(event: KeyboardEvent) {
+    if (disabled) return;
+    if (!(event.altKey || event.metaKey)) return;
+    if (
+      event.key !== "ArrowUp" &&
+      event.key !== "ArrowDown" &&
+      event.key !== "ArrowLeft" &&
+      event.key !== "ArrowRight"
+    ) {
+      return;
+    }
+    const surface = (event.target as HTMLElement | null)?.closest(
+      "[data-kanban-card-surface]",
+    );
+    if (!(surface instanceof HTMLElement)) return;
+    const columnIndex = Number(surface.dataset.columnIndex);
+    const cardIndex = Number(surface.dataset.cardIndex);
+    if (Number.isNaN(columnIndex) || Number.isNaN(cardIndex)) return;
+    handleCardSurfaceKeydown(event, columnIndex, cardIndex);
+  }
+
+  function handleWikilinkClick(target: string) {
     onWikilink?.(target);
+  }
+
+  function handlePeek(target: string, rect: DOMRect) {
+    peek = {
+      target,
+      anchor: {
+        top: rect.top,
+        left: rect.left,
+        bottom: rect.bottom,
+        width: rect.width,
+      },
+    };
+  }
+
+  function isQuietColumn(title: string): boolean {
+    return /^(done|complete|completed|shipped|finished)$/i.test(title.trim());
   }
 </script>
 
-<div class="flex min-h-0 flex-1 flex-col overflow-hidden">
-  <div class="flex shrink-0 items-center justify-between gap-2 border-b border-surface-500/40 px-4 py-2">
-    <p class="text-xs text-surface-400">
-      Board view · drag cards by the grip handle
-    </p>
-  </div>
+{#if peek}
+  <VaultKanbanNotePeek
+    target={peek.target}
+    anchor={peek.anchor}
+    onClose={() => {
+      peek = null;
+    }}
+    onOpen={handleWikilinkClick}
+  />
+{/if}
 
-  <div class="min-h-0 flex-1 overflow-x-auto overflow-y-hidden p-3">
-    <div class="flex h-full min-h-[240px] gap-2">
+<div class="vault-kanban-board flex min-h-0 flex-1 flex-col overflow-hidden">
+  <div class="vault-kanban-board-scroll min-h-0 flex-1 overflow-x-auto overflow-y-hidden p-3">
+    <div class="vault-kanban-board-row">
       {#each columns as column, columnIndex (column.title + columnIndex)}
+        {@const quiet = isQuietColumn(column.title)}
+        {@const empty = column.cards.length === 0}
         <section
-          class="flex min-h-0 w-[min(17rem,78vw)] shrink-0 flex-col rounded-md border border-surface-500/40 bg-surface-900/35 {columnDropActive(
-            columnIndex,
-          )
+          class="vault-kanban-column {columnDropActive(columnIndex)
             ? 'vault-kanban-column--drop-active'
+            : ''} {quiet ? 'vault-kanban-column--quiet' : ''} {quiet && empty
+            ? 'vault-kanban-column--collapsed'
             : ''}"
-          role="region"
           aria-label="{column.title} column"
           data-kanban-drop-column={columnIndex}
         >
-          <header class="border-b border-surface-500/40 px-2.5 py-2">
-            <input
-              class="input w-full border-0 bg-transparent px-1 py-0.5 text-xs font-medium text-surface-100"
-              type="text"
-              value={column.title}
-              {disabled}
-              aria-label="Column title"
-              oninput={(event) =>
-                updateColumnTitle(
-                  columnIndex,
-                  (event.currentTarget as HTMLInputElement).value,
-                )}
-            />
-            <p class="mt-1 px-1 text-[10px] tabular-nums text-surface-500">
+          <header class="vault-kanban-column-header">
+            <div class="vault-kanban-column-header-row">
+              <input
+                class="vault-kanban-column-title"
+                type="text"
+                value={column.title}
+                {disabled}
+                aria-label="Column title"
+                data-kanban-column-title={columnIndex}
+                oninput={(event) =>
+                  updateColumnTitle(
+                    columnIndex,
+                    (event.currentTarget as HTMLInputElement).value,
+                  )}
+              />
+              {#if !disabled && columns.length > 1}
+                <button
+                  type="button"
+                  class="vault-kanban-column-remove"
+                  aria-label="Remove column"
+                  title="Remove column"
+                  onclick={() => removeColumn(columnIndex)}
+                >
+                  <X size={12} strokeWidth={2} />
+                </button>
+              {/if}
+            </div>
+            <p class="vault-kanban-column-count">
               {column.cards.length} card{column.cards.length === 1 ? "" : "s"}
             </p>
           </header>
 
-          <div
-            class="min-h-0 flex-1 space-y-1.5 overflow-y-auto p-1.5"
-            role="list"
-            aria-label="{column.title} cards"
-          >
-            {#each column.cards as card, cardIndex (columnIndex + "-" + cardIndex)}
-              <article
-                class="workshop-kanban-card group relative rounded-md border border-surface-500/35 bg-surface-950/50 p-2 {cardDragging(
-                  columnIndex,
-                  cardIndex,
-                )
-                  ? 'vault-kanban-card--dragging'
-                  : ''} {cardDropActive(columnIndex, cardIndex)
-                  ? 'vault-kanban-card--drop-active'
-                  : ''}"
-                role="listitem"
-                data-kanban-drop-card
-                data-column-index={columnIndex}
-                data-card-index={cardIndex}
-              >
-                <div class="flex items-start gap-2">
-                  <button
-                    type="button"
-                    class="mt-0.5 shrink-0 cursor-grab border-0 bg-transparent p-0 text-surface-600 active:cursor-grabbing"
-                    aria-label="Drag card"
-                    title="Drag to move"
-                    {disabled}
-                    onpointerdown={(event) =>
-                      handleGripPointerDown(event, columnIndex, cardIndex)}
-                  >
-                    <GripVertical size={14} strokeWidth={1.75} />
-                  </button>
-                  <input
-                    type="checkbox"
-                    class="checkbox mt-0.5 shrink-0"
-                    checked={card.checked}
-                    {disabled}
-                    aria-label="Mark card done"
-                    onchange={() => toggleCard(columnIndex, cardIndex)}
-                  />
-                  <div class="min-w-0 flex-1">
-                    <input
-                      class="input w-full border-0 bg-transparent px-0 py-0 text-sm text-surface-100"
-                      type="text"
-                      value={card.text}
-                      placeholder="Card text or [[wikilink]]"
+          <div class="vault-kanban-column-body" onkeydown={handleColumnKeydown}>
+            <div
+              class="vault-kanban-card-stack"
+              role="list"
+              aria-label="{column.title} cards"
+            >
+              {#each column.cards as card, cardIndex (columnIndex + "-" + cardIndex)}
+                <article
+                  class="vault-kanban-card workshop-kanban-card group relative {cardDragging(
+                    columnIndex,
+                    cardIndex,
+                  )
+                    ? 'vault-kanban-card--dragging'
+                    : ''} {cardDropBefore(columnIndex, cardIndex)
+                    ? 'vault-kanban-card--drop-before'
+                    : ''} {cardDropAfter(columnIndex, cardIndex)
+                    ? 'vault-kanban-card--drop-after'
+                    : ''} {card.checked ? 'vault-kanban-card--done' : ''} {isEditing(
+                    columnIndex,
+                    cardIndex,
+                  )
+                    ? 'vault-kanban-card--editing'
+                    : ''}"
+                  role="listitem"
+                  tabindex={disabled || isEditing(columnIndex, cardIndex)
+                    ? -1
+                    : 0}
+                  data-kanban-drop-card
+                  data-kanban-card-surface="{columnIndex}-{cardIndex}"
+                  data-column-index={columnIndex}
+                  data-card-index={cardIndex}
+                  aria-label={card.text.trim() || "Empty card"}
+                  onkeydown={(event) =>
+                    handleCardSurfaceKeydown(event, columnIndex, cardIndex)}
+                >
+                  <div class="vault-kanban-card-row">
+                    <button
+                      type="button"
+                      class="vault-kanban-grip"
+                      aria-label="Drag card"
+                      title="Drag · Alt+↑↓ reorder · Alt+←→ column"
                       {disabled}
-                      oninput={(event) =>
-                        updateCardText(
-                          columnIndex,
-                          cardIndex,
-                          (event.currentTarget as HTMLInputElement).value,
-                        )}
-                    />
-                    {#if card.text.includes("[[") && onWikilink}
-                      <p class="mt-1 flex flex-wrap gap-1 text-[11px]">
-                        {#each cardTextParts(card.text) as part, partIndex (partIndex)}
-                          {#if part.kind === "wikilink"}
-                            <button
-                              type="button"
-                              class="rounded bg-primary-500/15 px-1.5 py-0.5 text-primary-200 hover:bg-primary-500/25"
-                              onclick={(event) => handleWikilinkClick(event, part.value)}
-                            >
-                              [[{part.value}]]
-                            </button>
-                          {/if}
-                        {/each}
-                      </p>
+                      onpointerdown={(event) =>
+                        handleGripPointerDown(event, columnIndex, cardIndex)}
+                    >
+                      <GripVertical size={14} strokeWidth={1.75} />
+                    </button>
+                    <label class="vault-kanban-check-wrap">
+                      <input
+                        type="checkbox"
+                        class="vault-kanban-check"
+                        checked={card.checked}
+                        {disabled}
+                        aria-label="Mark card done"
+                        onchange={() => toggleCard(columnIndex, cardIndex)}
+                      />
+                      <span class="vault-kanban-check-face" aria-hidden="true"></span>
+                    </label>
+                    <div class="min-w-0 flex-1">
+                      {#if isEditing(columnIndex, cardIndex) && !disabled}
+                        <textarea
+                          class="vault-kanban-card-input"
+                          value={card.text}
+                          placeholder="Write the card…"
+                          rows={Math.min(6, Math.max(1, card.text.split("\n").length))}
+                          data-kanban-card-input="{columnIndex}-{cardIndex}"
+                          oninput={(event) =>
+                            updateCardText(
+                              columnIndex,
+                              cardIndex,
+                              (event.currentTarget as HTMLTextAreaElement).value,
+                            )}
+                          onblur={() => handleCardBlur(columnIndex, cardIndex)}
+                          onkeydown={(event) =>
+                            handleCardKeydown(event, columnIndex, cardIndex)}
+                        ></textarea>
+                      {:else}
+                        <VaultKanbanCardFace
+                          text={card.text}
+                          checked={card.checked}
+                          {disabled}
+                          onEdit={() => beginEdit(columnIndex, cardIndex)}
+                          onWikilink={onWikilink ? handleWikilinkClick : undefined}
+                          onPeek={handlePeek}
+                        />
+                      {/if}
+                    </div>
+                    {#if !disabled}
+                      <button
+                        type="button"
+                        class="vault-kanban-card-remove"
+                        aria-label="Remove card"
+                        onclick={() => removeCard(columnIndex, cardIndex)}
+                      >
+                        <X size={12} strokeWidth={2} />
+                      </button>
                     {/if}
                   </div>
-                  <button
-                    type="button"
-                    class="btn btn-sm variant-ghost-surface shrink-0 px-1 opacity-0 transition group-hover:opacity-100"
-                    {disabled}
-                    aria-label="Remove card"
-                    onclick={() => removeCard(columnIndex, cardIndex)}
-                  >
-                    ×
-                  </button>
+                </article>
+              {:else}
+                <div class="vault-kanban-empty" aria-hidden="true">
+                  <p>{quiet ? "Clear" : "Quiet lane"}</p>
+                  <span>{quiet ? "Finished work lands here" : "Add a card to begin"}</span>
                 </div>
-              </article>
-            {:else}
-              <p class="px-2 py-4 text-center text-xs text-surface-500">
-                Drop cards here
-              </p>
-            {/each}
-          </div>
+              {/each}
+            </div>
 
-          <footer class="border-t border-surface-500/30 p-1.5">
             <button
               type="button"
-              class="btn btn-sm variant-ghost-surface w-full"
+              class="vault-kanban-add"
               {disabled}
               onclick={() => addCard(columnIndex)}
             >
+              <Plus size={13} strokeWidth={2.25} />
               Add card
             </button>
-          </footer>
+          </div>
         </section>
       {/each}
+
+      {#if !disabled}
+        <button
+          type="button"
+          class="vault-kanban-add-column"
+          aria-label="Add column"
+          title="Add column"
+          onclick={addColumn}
+        >
+          <Plus size={16} strokeWidth={2} />
+          <span>Column</span>
+        </button>
+      {/if}
     </div>
   </div>
 </div>
