@@ -19,16 +19,20 @@
   import Timeline from "$lib/liquid/archetypes/organisms/timeline/Timeline.svelte";
   import Shortlist from "$lib/liquid/archetypes/organisms/shortlist/Shortlist.svelte";
   import Decision from "$lib/liquid/archetypes/organisms/decision/Decision.svelte";
+  import Brief from "$lib/liquid/archetypes/organisms/brief/Brief.svelte";
+  import Dashboard from "$lib/liquid/archetypes/organisms/dashboard/Dashboard.svelte";
   import Section from "$lib/liquid/archetypes/molecules/section/Section.svelte";
   import ChipGroup from "$lib/liquid/archetypes/molecules/chip_group/ChipGroup.svelte";
   import Media from "$lib/liquid/archetypes/atoms/media/Media.svelte";
   import type {
     LiquidActionProps,
+    LiquidBriefProps,
     LiquidCalloutProps,
     LiquidCardProps,
     LiquidChipProps,
     LiquidCiteProps,
     LiquidCompareProps,
+    LiquidDashboardProps,
     LiquidDecisionProps,
     LiquidEmbedKind,
     LiquidMediaProps,
@@ -356,6 +360,41 @@
     });
   });
 
+  const brief = $derived.by(() => {
+    if (kind !== "brief") return null;
+    const props = payload as LiquidBriefProps;
+    if (!props?.sections || props.sections.length < 1) return null;
+    return createNode({
+      id: "md-brief",
+      type: "brief",
+      props: {
+        ...(props.title ? { title: props.title } : {}),
+        ...(props.subtitle ? { subtitle: props.subtitle } : {}),
+        ...(props.tone ? { tone: props.tone } : {}),
+        sections: props.sections,
+        ...(props.sources?.length ? { sources: props.sources } : {}),
+      },
+      fillState: "ready",
+    });
+  });
+
+  const dashboard = $derived.by(() => {
+    if (kind !== "dashboard") return null;
+    const props = payload as LiquidDashboardProps;
+    if (!props?.tiles || props.tiles.length < 2) return null;
+    return createNode({
+      id: "md-dashboard",
+      type: "dashboard",
+      props: {
+        ...(props.title ? { title: props.title } : {}),
+        ...(props.subtitle ? { subtitle: props.subtitle } : {}),
+        ...(props.columns ? { columns: props.columns } : {}),
+        tiles: props.tiles,
+      },
+      fillState: "ready",
+    });
+  });
+
   const IconComp = $derived.by(() => {
     if (kind !== "icon") return null;
     const id = typeof payload === "string" ? payload : "";
@@ -417,6 +456,14 @@
 {:else if kind === "decision" && decision}
   <div class="liquid-md-host liquid-md-host-decision liquid-md-enter">
     <Decision node={decision} />
+  </div>
+{:else if kind === "brief" && brief}
+  <div class="liquid-md-host liquid-md-host-brief liquid-md-enter">
+    <Brief node={brief} />
+  </div>
+{:else if kind === "dashboard" && dashboard}
+  <div class="liquid-md-host liquid-md-host-dashboard liquid-md-enter">
+    <Dashboard node={dashboard} />
   </div>
 {:else if kind === "icon" && IconComp}
   <span class="liquid-md-host-icon">

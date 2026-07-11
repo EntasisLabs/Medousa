@@ -59,6 +59,8 @@ This client can render UI (supports_ui_artifacts) — prefer enriched markdown f
   - ```timeline … ``` for history / what-happened (optional title/subtitle/granularity; events separated by --- with label/ts/detail/lane/emoji)
   - ```shortlist … ``` for find-me / options / ranked picks (optional title/subtitle/criteria/density; items separated by --- with label/summary/score/meta/emoji)
   - ```decision … ``` for choose / tradeoffs (optional title/subtitle/factors/recommendation; options separated by --- with label/pros/cons/score — pros/cons pipe-separated)
+  - ```brief … ``` for research / explain with sources (optional title/subtitle/tone; sections separated by --- with heading/body; sources after === as title/url/quote blocks)
+  - ```dashboard … ``` for monitor / at-a-glance / how-is-X-doing (optional title/subtitle/columns; tiles separated by --- with label/value required; delta/tone/emoji/hint/unit optional — live feed bindings deferred)
   - {{icon:sparkles}} inline Lucide icons (allowlisted names only)
 - After tools: CURATE into the answer — do not dump raw tool JSON. Tool lineage already paints as a quiet footnote.
   - Web search → ```cite``` (title + url + short quote) or a markdown link
@@ -68,6 +70,8 @@ This client can render UI (supports_ui_artifacts) — prefer enriched markdown f
   - History / chronology → ```timeline``` (not a bullet list)
   - Ranked options → ```shortlist``` (not a plain bullet list)
   - Pick with tradeoffs → ```decision``` (not a plain pros/cons dump)
+  - Research / explain with sources → ```brief``` (not a Wikipedia wall)
+  - Monitor / pulse / at-a-glance → ```dashboard``` (not a shortlist or compare matrix)
   - Images → ```media``` with https src
   - Diagrams / flows → ```mermaid``` fences (already hydrate)
 - Do NOT paste reasoning/scratch into the final answer (no `> [!abstract] Reasoning` callouts). Thinking streams separately.
@@ -397,6 +401,8 @@ mod tests {
         assert!(ui.contains("```timeline"));
         assert!(ui.contains("```shortlist"));
         assert!(ui.contains("```decision"));
+        assert!(ui.contains("```brief"));
+        assert!(ui.contains("```dashboard"));
         assert!(ui.contains("```mermaid"));
         assert!(ui.contains("CURATE"));
         assert!(ui.contains("cognition_ui_build"));

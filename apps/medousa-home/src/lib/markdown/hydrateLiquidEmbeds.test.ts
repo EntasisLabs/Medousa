@@ -444,4 +444,95 @@ describe("hydrateLiquidEmbeds", () => {
     destroyLiquidEmbeds(root);
     expect(unmountMock).toHaveBeenCalledTimes(1);
   });
+
+  it("mounts brief host from fixture markdown", async () => {
+    const md = [
+      "```brief",
+      "title: Why Tokyo first",
+      "",
+      "---",
+      "heading: Easy logistics",
+      "body: One simple route",
+      "",
+      "===",
+      "---",
+      "title: JNTO",
+      "url: https://example.com",
+      "```",
+    ].join("\n");
+
+    const html = preprocessLiquidEmbeds(md);
+    expect(html).toContain('data-liquid-embed="brief"');
+    const root = treeFromPlaceholders(html) as unknown as HTMLElement;
+    const { hydrateLiquidEmbeds, destroyLiquidEmbeds } = await import("./hydrateLiquidEmbeds");
+    hydrateLiquidEmbeds(root, {});
+
+    const kinds = mountMock.mock.calls.map(
+      (call) => (call[1] as { props: { kind: string } }).props.kind,
+    );
+    expect(kinds).toEqual(["brief"]);
+    const briefCall = mountMock.mock.calls.find(
+      (call) => (call[1] as { props: { kind: string } }).props.kind === "brief",
+    );
+    const briefPayload = (
+      briefCall![1] as {
+        props: {
+          payload: {
+            title?: string;
+            sections: { heading: string }[];
+            sources?: { title: string }[];
+          };
+        };
+      }
+    ).props.payload;
+    expect(briefPayload.title).toBe("Why Tokyo first");
+    expect(briefPayload.sections.map((s) => s.heading)).toEqual(["Easy logistics"]);
+    expect(briefPayload.sources?.map((s) => s.title)).toEqual(["JNTO"]);
+    destroyLiquidEmbeds(root);
+    expect(unmountMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("hydrates a dashboard embed", async () => {
+    const md = [
+      "```dashboard",
+      "title: Trip pulse",
+      "",
+      "---",
+      "label: Days locked",
+      "value: 7",
+      "tone: success",
+      "---",
+      "label: Budget used",
+      "value: 42%",
+      "```",
+    ].join("\n");
+
+    const html = preprocessLiquidEmbeds(md);
+    expect(html).toContain('data-liquid-embed="dashboard"');
+    const root = treeFromPlaceholders(html) as unknown as HTMLElement;
+    const { hydrateLiquidEmbeds, destroyLiquidEmbeds } = await import("./hydrateLiquidEmbeds");
+    hydrateLiquidEmbeds(root, {});
+
+    const kinds = mountMock.mock.calls.map(
+      (call) => (call[1] as { props: { kind: string } }).props.kind,
+    );
+    expect(kinds).toEqual(["dashboard"]);
+    const dashCall = mountMock.mock.calls.find(
+      (call) => (call[1] as { props: { kind: string } }).props.kind === "dashboard",
+    );
+    const dashPayload = (
+      dashCall![1] as {
+        props: {
+          payload: {
+            title?: string;
+            tiles: { label: string; value: string }[];
+          };
+        };
+      }
+    ).props.payload;
+    expect(dashPayload.title).toBe("Trip pulse");
+    expect(dashPayload.tiles.map((t) => t.label)).toEqual(["Days locked", "Budget used"]);
+    destroyLiquidEmbeds(root);
+    expect(unmountMock).toHaveBeenCalledTimes(1);
+  });
 });
