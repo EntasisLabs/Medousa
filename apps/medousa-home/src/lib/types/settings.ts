@@ -26,7 +26,7 @@ export const SETTINGS_SECTIONS: {
   { id: "engine", label: "Engine", hint: "Budgets, quality & diagnostics" },
   { id: "phone", label: "Phone", hint: "Pair your pocket portal" },
   { id: "nearby", label: "Nearby", hint: "Peers rail, bundles & trust" },
-  { id: "basement", label: "Connection", hint: "Medousa on this device & advanced tools" },
+  { id: "basement", label: "Connection", hint: "This device, engine & advanced files" },
 ];
 
 export const DEPTH_CHARTER_OPTIONS = [

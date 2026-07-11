@@ -20,9 +20,11 @@
 
   interface Props {
     onDaemonHealth?: () => void | Promise<void>;
+    /** When true, this is the lead story on Connection — no top rule. */
+    lead?: boolean;
   }
 
-  let { onDaemonHealth }: Props = $props();
+  let { onDaemonHealth, lead = false }: Props = $props();
 
   let renamingId = $state<string | null>(null);
   let renameDraft = $state("");
@@ -156,11 +158,15 @@
 </script>
 
 {#if isTauri()}
-  <div class="mt-8 border-t border-surface-500/35 pt-8">
+  <div class={lead ? "mt-5" : "mt-8 border-t border-surface-500/35 pt-8"}>
     <header>
-      <h3 class="text-sm font-semibold text-surface-50">Workshops</h3>
-      <p class="workshop-faint mt-1 text-sm">
-        Personal engine on this Mac plus paired team workshops — one active connection at a time.
+      <h3 class="settings-subsection-heading">{lead ? "Your workshops" : "Workshops"}</h3>
+      <p class="settings-subsection-lead">
+        {#if lead}
+          One active connection at a time — switch here, or add another engine / paired workshop.
+        {:else}
+          Personal engine on this Mac plus paired team workshops — one active connection at a time.
+        {/if}
       </p>
     </header>
 
