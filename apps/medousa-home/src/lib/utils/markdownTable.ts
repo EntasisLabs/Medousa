@@ -1,6 +1,7 @@
 /** M7c.2 — parse and serialize markdown pipe tables (ledger view). */
 
-import { stripFrontmatter } from "$lib/utils/vaultFrontmatter";
+import { normalizeKind, stripFrontmatter } from "$lib/utils/vaultFrontmatter";
+import { columnDisplayLabel } from "$lib/utils/ledgerSheet";
 
 export interface MarkdownTable {
   headers: string[];
@@ -10,7 +11,7 @@ export interface MarkdownTable {
   endLine: number;
 }
 
-const LEDGER_HEADERS = ["date", "payee", "amount", "category"];
+export const LEDGER_CORE_HEADERS = ["date", "payee", "amount", "category"] as const;
 
 function splitPipeRow(line: string): string[] | null {
   const trimmed = line.trim();
@@ -26,12 +27,23 @@ function isSeparatorRow(cells: string[]): boolean {
 }
 
 function normalizeHeader(value: string): string {
-  return value.trim().toLowerCase();
+  return columnDisplayLabel(value).trim().toLowerCase();
 }
 
 export function isLedgerHeaders(headers: string[]): boolean {
   const norm = headers.map(normalizeHeader);
-  return LEDGER_HEADERS.every((header) => norm.includes(header));
+  return LEDGER_CORE_HEADERS.every((header) => norm.includes(header));
+}
+
+function frontmatterKindIsLedger(markdown: string): boolean {
+  const { frontmatter } = stripFrontmatter(markdown);
+  if (!frontmatter) return false;
+  for (const line of frontmatter.split("\n")) {
+    if (!line.trimStart().startsWith("kind:")) continue;
+    const value = line.slice(line.indexOf(":") + 1);
+    return normalizeKind(value) === "ledger";
+  }
+  return false;
 }
 
 export function parsePipeTableAt(lines: string[], start: number): MarkdownTable | null {
@@ -69,9 +81,18 @@ export function findFirstPipeTable(markdown: string): MarkdownTable | null {
 
 export function findLedgerTable(markdown: string): MarkdownTable | null {
   const lines = markdown.split("\n");
+  let firstTable: MarkdownTable | null = null;
+
   for (let i = 0; i < lines.length - 1; i++) {
     const table = parsePipeTableAt(lines, i);
-    if (table && isLedgerHeaders(table.headers)) return table;
+    if (!table) continue;
+    if (!firstTable) firstTable = table;
+    if (isLedgerHeaders(table.headers)) return table;
+  }
+
+  // Ledger notes may rename/extend columns; still treat the first pipe table as the sheet.
+  if (firstTable && frontmatterKindIsLedger(markdown)) {
+    return firstTable;
   }
   return null;
 }
@@ -99,10 +120,19 @@ export function replaceTableBlock(
   return [...before, ...replacement.split("\n"), ...after].join("\n");
 }
 
-export function replaceLedgerTable(markdown: string, rows: string[][]): string | null {
+export function replaceLedgerTable(
+  markdown: string,
+  rows: string[][],
+  headers?: string[],
+): string | null {
   const table = findLedgerTable(markdown);
   if (!table) return null;
-  return replaceTableBlock(markdown, table, table.headers, rows);
+  return replaceTableBlock(markdown, table, headers ?? table.headers, rows);
+}
+
+export function ledgerHeadersFromContent(markdown: string): string[] {
+  const table = findLedgerTable(markdown);
+  return table?.headers ?? ["Date", "Payee", "Amount", "Category"];
 }
 
 export function ledgerRowsFromContent(markdown: string): string[][] {
@@ -116,6 +146,27 @@ export function ledgerRowsFromContent(markdown: string): string[][] {
   return table.rows.map((row) =>
     table.headers.map((_, index) => row[index] ?? ""),
   );
+}
+
+/** True when this column is one of the four ledger core fields (by display label). */
+export function isLedgerCoreHeader(header: string): boolean {
+  return (LEDGER_CORE_HEADERS as readonly string[]).includes(normalizeHeader(header));
+}
+
+/**
+ * Columns that must stay: named core headers when present, otherwise the first four.
+ * Used to block deleting essential ledger structure.
+ */
+export function ledgerProtectedColumnIndexes(headers: string[]): Set<number> {
+  const protectedIndexes = new Set<number>();
+  headers.forEach((header, index) => {
+    if (isLedgerCoreHeader(header)) protectedIndexes.add(index);
+  });
+  if (protectedIndexes.size >= 4) return protectedIndexes;
+  for (let i = 0; i < Math.min(4, headers.length); i += 1) {
+    protectedIndexes.add(i);
+  }
+  return protectedIndexes;
 }
 
 export function tableToCsv(table: MarkdownTable): string {

@@ -24,6 +24,17 @@ export function openVaultNoteContextMenu(
   vaultContextMenu.showNote(path, clientX, clientY);
 }
 
+export function openVaultFolderContextMenu(
+  iconKey: string,
+  label: string,
+  clientX: number,
+  clientY: number,
+  spaceId?: string | null,
+) {
+  markContextMenuOpened();
+  vaultContextMenu.showFolder(iconKey, label, clientX, clientY, spaceId);
+}
+
 export function openVaultAttachmentContextMenu(
   attachmentPath: string,
   notePath: string,
@@ -41,6 +52,17 @@ export function handleVaultNoteContextMenuEvent(
   event.preventDefault();
   event.stopPropagation();
   openVaultNoteContextMenu(path, event.clientX, event.clientY);
+}
+
+export function handleVaultFolderContextMenuEvent(
+  iconKey: string,
+  label: string,
+  event: MouseEvent,
+  spaceId?: string | null,
+) {
+  event.preventDefault();
+  event.stopPropagation();
+  openVaultFolderContextMenu(iconKey, label, event.clientX, event.clientY, spaceId);
 }
 
 function bindVaultContextTargetLongPress(

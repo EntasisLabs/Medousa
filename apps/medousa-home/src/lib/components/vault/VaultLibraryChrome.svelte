@@ -18,6 +18,7 @@
   import { externalDesk } from "$lib/stores/externalDesk.svelte";
   import { iconForSpace } from "$lib/utils/vaultSpaceIcons";
   import VaultRootPicker from "./VaultRootPicker.svelte";
+  import { vaultFolderIcons } from "$lib/stores/vaultFolderIcons.svelte";
 
   interface Props {
     showVaultChrome: boolean;
@@ -28,6 +29,9 @@
 
   let createOpen = $state(false);
   let filtersOpen = $state(false);
+
+  // Keep filter icons reactive to custom folder icon picks.
+  const folderIconMap = $derived(vaultFolderIcons.icons);
 
   const visibleSpaces = $derived(allFilterSpaces(vault.showSystemNotes));
   const spaceCounts = $derived(vault.spaceCountsMap);
@@ -47,6 +51,7 @@
 
   function selectSpace(spaceId: string | null) {
     vault.setActiveSpaceFilter(spaceId);
+    filtersOpen = false;
   }
 </script>
 
@@ -146,6 +151,7 @@
                 {/if}
               </button>
               {#each visibleSpaces as space (space.id)}
+                {@const _ = folderIconMap}
                 {@const Icon = iconForSpace(space.id)}
                 {@const count = spaceCounts.get(space.id) ?? 0}
                 <button
