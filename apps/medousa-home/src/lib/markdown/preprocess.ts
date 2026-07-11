@@ -2,6 +2,8 @@ import { wikilinkLabel } from "$lib/utils/formatVault";
 import {
   colorSpanHtml,
   isMarkdownColorId,
+  isMarkdownHexColor,
+  normalizeMarkdownHexColor,
 } from "$lib/utils/vaultMarkdownColors";
 
 import { escapeAttr, escapeHtml } from "./escape";
@@ -97,14 +99,21 @@ export function preprocessHighlights(source: string): string {
 }
 
 const COLOR_TAG =
-  /\{\{(red|orange|yellow|green|blue|purple|pink)\|([\s\S]*?)\}\}/gi;
+  /\{\{(#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})|red|orange|yellow|green|blue|purple|pink)\|([\s\S]*?)\}\}/gi;
 const LEGACY_COLOR_SPAN =
   /<span class="markdown-color markdown-color-(red|orange|yellow|green|blue|purple|pink)">([\s\S]*?)<\/span>/gi;
 
 function replaceColorMarkup(line: string): string {
   let next = line.replace(COLOR_TAG, (_match, color: string, text: string) => {
-    const id = color.toLowerCase();
-    return isMarkdownColorId(id) ? colorSpanHtml(id, text) : _match;
+    const token = color.trim();
+    if (isMarkdownColorId(token)) {
+      return colorSpanHtml(token.toLowerCase(), escapeHtml(text));
+    }
+    if (isMarkdownHexColor(token)) {
+      const hex = normalizeMarkdownHexColor(token);
+      return hex ? colorSpanHtml(hex, escapeHtml(text)) : _match;
+    }
+    return _match;
   });
   next = next.replace(LEGACY_COLOR_SPAN, (_match, color: string, text: string) => {
     const id = color.toLowerCase();

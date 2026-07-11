@@ -3502,7 +3502,78 @@
   }
 
   .vault-color-swatch {
-    @apply h-5 w-5 rounded-full border border-surface-600/80 transition hover:scale-110 hover:ring-2 hover:ring-primary-400/50 disabled:opacity-40;
+    @apply relative h-5 w-5 rounded-full border border-surface-600/80 transition hover:scale-110 hover:ring-2 hover:ring-primary-400/50 disabled:opacity-40;
+  }
+
+  .vault-color-swatch--custom {
+    @apply cursor-pointer overflow-hidden bg-[conic-gradient(from_0deg,#f87171,#facc15,#4ade80,#60a5fa,#c084fc,#f87171)];
+  }
+
+  .vault-color-hex {
+    position: relative;
+    z-index: 41;
+  }
+
+  .vault-color-hex-scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 39;
+  }
+
+  .vault-color-hex-popover {
+    position: absolute;
+    top: calc(100% + 0.4rem);
+    right: 0;
+    z-index: 40;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    border: 1px solid rgb(var(--color-surface-500) / 0.4);
+    border-radius: 0.65rem;
+    background: rgb(var(--color-surface-900) / 0.98);
+    padding: 0.45rem 0.5rem;
+    box-shadow: 0 10px 28px rgb(0 0 0 / 0.3);
+  }
+
+  .vault-color-hex-wheel {
+    width: 1.75rem;
+    height: 1.75rem;
+    flex-shrink: 0;
+    cursor: pointer;
+    border: 1px solid rgb(var(--color-surface-500) / 0.45);
+    border-radius: 0.35rem;
+    background: transparent;
+    padding: 0;
+  }
+
+  .vault-color-hex-field {
+    width: 5.5rem;
+    border: 1px solid rgb(var(--color-surface-500) / 0.35);
+    border-radius: 0.4rem;
+    background: rgb(var(--color-surface-950) / 0.45);
+    padding: 0.28rem 0.4rem;
+    color: rgb(var(--color-surface-100));
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.7rem;
+    outline: none;
+  }
+
+  .vault-color-hex-field:focus {
+    border-color: rgb(var(--color-primary-400) / 0.45);
+  }
+
+  .vault-color-hex-apply {
+    border: 0;
+    border-radius: 0.4rem;
+    background: rgb(var(--color-primary-500) / 0.88);
+    padding: 0.28rem 0.55rem;
+    color: rgb(var(--color-surface-950));
+    font-size: 0.68rem;
+    font-weight: 650;
+  }
+
+  .vault-color-hex-apply:hover:not(:disabled) {
+    background: rgb(var(--color-primary-400));
   }
 
   .vault-pdf-export-root {

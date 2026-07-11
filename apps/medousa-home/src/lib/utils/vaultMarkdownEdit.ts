@@ -5,7 +5,12 @@ import {
 } from "$lib/utils/vaultTemplates";
 import {
   MARKDOWN_COLOR_IDS,
+  colorMarkupToken,
+  isMarkdownColorId,
+  isMarkdownHexColor,
+  normalizeMarkdownHexColor,
   type MarkdownColorId,
+  type MarkdownColorToken,
 } from "$lib/utils/vaultMarkdownColors";
 import { ensureKanbanBoardFrontmatter } from "$lib/utils/markdownKanban";
 
@@ -22,7 +27,7 @@ export type MarkdownFormatAction =
   | "checkbox"
   | "highlight";
 
-export type { MarkdownColorId };
+export type { MarkdownColorId, MarkdownColorToken };
 
 export type SlashBlockId =
   | "h1"
@@ -48,7 +53,8 @@ export interface EditResult {
   selectionEnd: number;
 }
 
-const COLOR_SYNTAX = /^\{\{(red|orange|yellow|green|blue|purple|pink)\|([\s\S]*)\}\}$/i;
+const COLOR_SYNTAX =
+  /^\{\{(#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})|red|orange|yellow|green|blue|purple|pink)\|([\s\S]*)\}\}$/i;
 const LEGACY_COLOR_SPAN =
   /^<span class="markdown-color markdown-color-(red|orange|yellow|green|blue|purple|pink)">([\s\S]*)<\/span>$/i;
 
@@ -108,12 +114,16 @@ function stripInlineMarkup(text: string): string {
   return current;
 }
 
-function unwrapColorMarkup(text: string): { color: MarkdownColorId; inner: string } | null {
+function unwrapColorMarkup(text: string): { color: MarkdownColorToken; inner: string } | null {
   const syntax = text.match(COLOR_SYNTAX);
   if (syntax) {
-    const color = syntax[1]!.toLowerCase();
-    if (MARKDOWN_COLOR_IDS.includes(color as MarkdownColorId)) {
-      return { color: color as MarkdownColorId, inner: syntax[2]! };
+    const token = syntax[1]!;
+    if (isMarkdownColorId(token)) {
+      return { color: token.toLowerCase() as MarkdownColorId, inner: syntax[2]! };
+    }
+    if (isMarkdownHexColor(token)) {
+      const hex = normalizeMarkdownHexColor(token);
+      if (hex) return { color: hex, inner: syntax[2]! };
     }
   }
   const legacy = text.match(LEGACY_COLOR_SPAN);
@@ -126,8 +136,14 @@ function unwrapColorMarkup(text: string): { color: MarkdownColorId; inner: strin
   return null;
 }
 
-function colorMarkup(color: MarkdownColorId, inner: string): string {
-  return `{{${color}|${inner}}}`;
+function colorsMatch(a: MarkdownColorToken, b: MarkdownColorToken): boolean {
+  if (isMarkdownColorId(a) && isMarkdownColorId(b)) {
+    return a.toLowerCase() === b.toLowerCase();
+  }
+  const left = isMarkdownHexColor(a) ? normalizeMarkdownHexColor(a) : null;
+  const right = isMarkdownHexColor(b) ? normalizeMarkdownHexColor(b) : null;
+  if (left && right) return left === right;
+  return false;
 }
 
 function toggleWrapSelection(
@@ -272,8 +288,15 @@ export function applyMarkdownColor(
   content: string,
   selectionStart: number,
   selectionEnd: number,
-  color: MarkdownColorId,
+  color: MarkdownColorToken,
 ): EditResult {
+  const token = isMarkdownColorId(color)
+    ? (color.toLowerCase() as MarkdownColorId)
+    : normalizeMarkdownHexColor(color);
+  if (!token) {
+    return { content, selectionStart, selectionEnd };
+  }
+
   const hasSelection = selectionStart !== selectionEnd;
   const selected = hasSelection
     ? content.slice(selectionStart, selectionEnd)
@@ -281,19 +304,24 @@ export function applyMarkdownColor(
 
   const wrapped = unwrapColorMarkup(selected);
   if (wrapped) {
-    if (wrapped.color === color) {
+    if (colorsMatch(wrapped.color, token)) {
       return replaceRange(content, selectionStart, selectionEnd, wrapped.inner);
     }
     return replaceRange(
       content,
       selectionStart,
       selectionEnd,
-      colorMarkup(color, stripInlineMarkup(wrapped.inner)),
+      colorMarkupToken(token, stripInlineMarkup(wrapped.inner)),
     );
   }
 
   const inner = stripInlineMarkup(selected);
-  return replaceRange(content, selectionStart, selectionEnd, colorMarkup(color, inner));
+  return replaceRange(
+    content,
+    selectionStart,
+    selectionEnd,
+    colorMarkupToken(token, inner),
+  );
 }
 
 export function insertSlashBlock(
