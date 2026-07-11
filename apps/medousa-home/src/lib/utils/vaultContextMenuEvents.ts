@@ -2,6 +2,7 @@ import {
   vaultContextMenu,
   type VaultContextTarget,
 } from "$lib/stores/vaultContextMenu.svelte";
+import { shouldUseMobileShell } from "$lib/platform";
 
 const LONG_PRESS_MS = 520;
 let suppressContextMenuClickUntil = 0;
@@ -69,6 +70,9 @@ function bindVaultContextTargetLongPress(
   }
 
   function onPointerDown(event: PointerEvent) {
+    // Desktop uses right-click; long-press is a mobile affordance only.
+    // Holding while scrolling on desktop must not open the context menu.
+    if (!shouldUseMobileShell()) return;
     if (event.button !== 0) return;
     if (!getTarget()) return;
     pointerId = event.pointerId;

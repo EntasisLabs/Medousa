@@ -35,7 +35,7 @@
   }
 
   function handlePreview(attachment: VaultAttachment) {
-    vault.previewAttachment(attachment.path);
+    vault.previewAttachment(attachment.path, "panel");
     closeMenu();
   }
 

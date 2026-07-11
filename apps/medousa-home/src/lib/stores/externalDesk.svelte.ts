@@ -65,6 +65,7 @@ export class ExternalDeskStore {
   }
 
   setSidebarMode(mode: LibrarySidebarMode) {
+    const previous = this.sidebarMode;
     this.sidebarMode = mode;
     localStorage.setItem(SIDEBAR_MODE_KEY, mode);
     if (mode === "files" && this.pinnedRoots.length > 0) {
@@ -72,6 +73,13 @@ export class ExternalDeskStore {
     }
     if (mode === "presentations") {
       void import("$lib/stores/artifacts.svelte").then(({ artifacts }) => artifacts.refresh());
+    }
+    if (previous === "files" && mode !== "files") {
+      void import("$lib/stores/vault.svelte").then(({ vault }) => {
+        if (vault.previewPresentation === "pane") {
+          vault.closeAttachmentPreview();
+        }
+      });
     }
   }
 

@@ -11,6 +11,7 @@
     buildWorkAskFromNote,
     prepareTalkAboutNote,
   } from "$lib/utils/vaultNoteBridge";
+  import { launchVaultNoteWorkshop } from "$lib/utils/vaultNoteWorkshop";
   import { iconForSpace } from "$lib/utils/vaultSpaceIcons";
   import { findLedgerTable } from "$lib/utils/markdownTable";
   import { findKanbanBoard, noteHasKanbanBoard } from "$lib/utils/markdownKanban";
@@ -30,7 +31,6 @@
     supportsLinksPanel,
     supportsPreviewSplit,
   } from "$lib/utils/vaultNoteKind";
-  import VaultAttachmentPreview from "./VaultAttachmentPreview.svelte";
   import VaultNoteChatFab from "./VaultNoteChatFab.svelte";
   import VaultFindBar from "./VaultFindBar.svelte";
   import VaultNoteStatusBar from "./VaultNoteStatusBar.svelte";
@@ -197,17 +197,38 @@
   });
 
   async function handleAskInChatTab() {
-    if (!vault.selectedPath || !onOpenChat) return;
-    if (vault.dirty) await vault.flushSave();
-    const { scope, draft } = prepareTalkAboutNote(
-      vault.selectedPath,
-      vault.title,
-      vault.content,
-      vault.wikilinksOut,
-      vault.backlinks,
-    );
-    chat.prefillFromVaultNote(scope, draft, { pin: true });
-    onOpenChat();
+    if (!vault.selectedPath) return;
+
+    // Mobile: no floating workshop yet — jump to the chat tab with note context.
+    if (mobile) {
+      if (!onOpenChat) return;
+      if (vault.dirty) await vault.flushSave();
+      const { scope, draft } = prepareTalkAboutNote(
+        vault.selectedPath,
+        vault.title,
+        vault.content,
+        vault.wikilinksOut,
+        vault.backlinks,
+      );
+      chat.prefillFromVaultNote(scope, draft, { pin: true });
+      onOpenChat();
+      return;
+    }
+
+    // Desktop: stay in the note with the floating IM-style workshop.
+    await launchVaultNoteWorkshop({
+      path: vault.selectedPath,
+      title: vault.title,
+      content: vault.content,
+      wikilinksOut: vault.wikilinksOut,
+      backlinks: vault.backlinks,
+      session: "fresh",
+      flushSave: vault.dirty
+        ? async () => {
+            await vault.flushSave();
+          }
+        : undefined,
+    });
   }
 
   async function handleSendToWork() {
@@ -515,8 +536,6 @@
       </button>
     </div>
   {/if}
-
-  <VaultAttachmentPreview />
 
   {#if !vault.selectedPath}
     <VaultEmptyState />

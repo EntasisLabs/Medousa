@@ -7,6 +7,7 @@
   import VaultGarageImportWizard from "$lib/components/vault/VaultGarageImportWizard.svelte";
   import VaultContextMenu from "$lib/components/vault/VaultContextMenu.svelte";
   import VaultNoteWorkshop from "$lib/components/vault/VaultNoteWorkshop.svelte";
+  import VaultAttachmentPanel from "$lib/components/vault/VaultAttachmentPanel.svelte";
   import MobileBrowserWorkshop from "$lib/components/mobile/MobileBrowserWorkshop.svelte";
   import ToastHost from "$lib/components/layout/ToastHost.svelte";
   import { commandSpotlight } from "$lib/stores/commandSpotlight.svelte";
@@ -160,6 +161,7 @@
 
 <VaultGarageImportWizard />
 <VaultContextMenu />
+<VaultAttachmentPanel />
 {#if !layout.isMobile}
   <VaultNoteWorkshop
     onOpenFullChat={() => {

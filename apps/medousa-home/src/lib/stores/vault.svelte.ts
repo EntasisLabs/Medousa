@@ -144,6 +144,8 @@ export class VaultStore {
   showAgentReviewFilter = $state(false);
   agentWrittenAt = $state<Record<string, string>>({});
   previewingAttachmentPath = $state<string | null>(null);
+  /** pane = Your files library column; panel = floating popup over a note. */
+  previewPresentation = $state<"pane" | "panel">("pane");
   garageWizardOpen = $state(false);
   newGroupDialogOpen = $state(false);
   noteActionsOpen = $state(false);
@@ -668,7 +670,7 @@ export class VaultStore {
     }
     if (this.selectedPath !== path) {
       this.clearProposal();
-      this.previewingAttachmentPath = null;
+      this.closeAttachmentPreview();
     }
     this.noteLoading = true;
     this.loading = true;
@@ -802,7 +804,10 @@ export class VaultStore {
         (row) => row.path === this.previewingAttachmentPath,
       )
     ) {
-      this.previewingAttachmentPath = null;
+      // Keep pane previews from Your files (path may not be in note attachments).
+      if (this.previewPresentation === "panel") {
+        this.closeAttachmentPreview();
+      }
     }
     if (this.saveStatus === "conflict") {
       return;
@@ -1276,17 +1281,19 @@ export class VaultStore {
     if (!this.selectedPath) return;
     this.markDirty(dropAttachment(this.content, path));
     if (this.previewingAttachmentPath === path) {
-      this.previewingAttachmentPath = null;
+      this.closeAttachmentPreview();
     }
   }
 
-  previewAttachment(path: string) {
+  previewAttachment(path: string, presentation: "pane" | "panel" = "pane") {
     if (!path.trim()) return;
     this.previewingAttachmentPath = path;
+    this.previewPresentation = presentation;
   }
 
   closeAttachmentPreview() {
     this.previewingAttachmentPath = null;
+    this.previewPresentation = "pane";
   }
 
   openGarageWizard() {
