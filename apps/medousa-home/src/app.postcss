@@ -803,6 +803,22 @@
     @apply min-w-[13rem] max-w-[min(16rem,calc(100vw-2rem))];
   }
 
+  .vault-browse-mode-bar {
+    @apply flex items-center gap-0.5 px-3 pb-2 pt-0;
+  }
+
+  .vault-browse-mode-bar--flush {
+    @apply px-0 pb-0;
+  }
+
+  .vault-browse-mode-btn {
+    @apply rounded-md px-2 py-0.5 text-[11px] font-medium tracking-wide text-surface-500 transition hover:bg-surface-700/50 hover:text-surface-200;
+  }
+
+  .vault-browse-mode-btn-active {
+    @apply bg-surface-700/60 text-surface-100;
+  }
+
   .vault-toolbar-btn {
     @apply inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-surface-500/35 bg-surface-900/50 text-surface-400 transition hover:border-surface-500/55 hover:bg-surface-800/80 hover:text-surface-100 disabled:opacity-40;
   }
@@ -3646,7 +3662,7 @@
   }
 
   .vault-color-swatch {
-    @apply relative h-5 w-5 rounded-full border border-surface-600/80 transition hover:scale-110 hover:ring-2 hover:ring-primary-400/50 disabled:opacity-40;
+    @apply relative h-5 w-5 shrink-0 rounded-full border border-surface-600/80 transition hover:scale-110 hover:ring-2 hover:ring-primary-400/50 disabled:opacity-40;
   }
 
   .vault-color-swatch--custom {
@@ -3656,6 +3672,17 @@
   .vault-color-hex {
     position: relative;
     z-index: 41;
+    display: inline-flex;
+    width: 1.25rem;
+    height: 1.25rem;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    vertical-align: middle;
+  }
+
+  .vault-color-hex .vault-color-swatch {
+    margin: 0;
   }
 
   .vault-color-hex-scrim {

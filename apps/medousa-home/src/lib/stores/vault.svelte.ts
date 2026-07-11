@@ -6,6 +6,7 @@ import {
   getVaultNote,
   listVaultNotes,
   listVaultRoots,
+  listVaultTags,
   saveVaultNote,
   searchVaultNotes,
   setActiveVaultRoot,
@@ -54,6 +55,7 @@ import {
   insertTextAtSection,
   resolveKind,
   setFrontmatterKind,
+  sortVaultTagsForDisplay,
   type VaultNoteKind,
 } from "$lib/utils/vaultFrontmatter";
 import { workshopSessionIdForVaultSave } from "$lib/utils/vaultNoteWorkshop";
@@ -110,8 +112,22 @@ import {
 } from "$lib/utils/vaultDiff";
 
 const LAST_NOTE_KEY = "medousa-home-last-note";
+const LIBRARY_BROWSE_MODE_KEY = "medousa-home-vault-browse-mode";
+const RECENT_BROWSE_LIMIT = 40;
+const KIND_BROWSE_ORDER: VaultNoteKind[] = [
+  "daily",
+  "project",
+  "ledger",
+  "board",
+  "inbox",
+  "bug",
+  "note",
+];
 
 export type VaultProposalSource = "agent" | "operator";
+export type LibraryBrowseMode = "folders" | "tags" | "recent" | "kind";
+
+export type VaultTagCount = { tag: string; count: number };
 
 export class VaultStore {
   notes = $state<VaultNote[]>([]);
@@ -164,6 +180,8 @@ export class VaultStore {
   vaultRootsUnavailable = $state(false);
   addVaultRootOpen = $state(false);
   recentPaths = $state<string[]>(loadVaultRecent());
+  libraryBrowseMode = $state<LibraryBrowseMode>(loadLibraryBrowseMode());
+  vaultTags = $state<VaultTagCount[]>([]);
   /** Bumps when note content is replaced externally (open note, reload) — not on typing. */
   contentRevision = $state(0);
   /** Heading fragment from `[[note#Section]]` waiting for preview scroll. */
@@ -393,6 +411,112 @@ export class VaultStore {
       agentReviewOnly: this.showAgentReviewFilter,
       agentWrittenAt: this.agentWrittenAt,
     });
+    this.rebuildVaultTagsFromNotes();
+  }
+
+  setLibraryBrowseMode(mode: LibraryBrowseMode) {
+    this.libraryBrowseMode = mode;
+    saveLibraryBrowseMode(mode);
+    if (mode === "tags") {
+      void this.refreshVaultTags();
+    }
+  }
+
+  /** Notes visible under current space / system / agent-review filters. */
+  scopedLibraryNotes(): VaultNote[] {
+    const agentMap = this.agentWrittenAt;
+    const agentOnly = this.showAgentReviewFilter;
+    const showSystem = this.showSystemNotes;
+    const spaceFilter = this.activeSpaceFilter;
+    return this.notes.filter((note) => {
+      if (agentOnly && !isRecentAgentWrite(note.path, agentMap)) return false;
+      if (!showSystem && shouldHideGarageNote(note.path, note.title, showSystem)) {
+        return false;
+      }
+      if (spaceFilter) {
+        return resolveSpaceForPath(note.path, note.title).id === spaceFilter;
+      }
+      return true;
+    });
+  }
+
+  notesForTag(tag: string): VaultNote[] {
+    const needle = tag.trim().toLowerCase();
+    if (!needle) return [];
+    return this.scopedLibraryNotes()
+      .filter((note) =>
+        (note.tags ?? []).some((entry) => entry.trim().toLowerCase() === needle),
+      )
+      .sort((a, b) => a.title.localeCompare(b.title));
+  }
+
+  notesByKind(): { kind: VaultNoteKind; notes: VaultNote[] }[] {
+    const buckets = new Map<VaultNoteKind, VaultNote[]>();
+    for (const kind of KIND_BROWSE_ORDER) {
+      buckets.set(kind, []);
+    }
+    for (const note of this.scopedLibraryNotes()) {
+      const kind = resolveKind(note.path, note.kind);
+      const bucket = buckets.get(kind) ?? buckets.get("note")!;
+      bucket.push(note);
+    }
+    return KIND_BROWSE_ORDER.map((kind) => ({
+      kind,
+      notes: (buckets.get(kind) ?? []).sort((a, b) => a.title.localeCompare(b.title)),
+    })).filter((group) => group.notes.length > 0);
+  }
+
+  recentNotesList(limit = RECENT_BROWSE_LIMIT): VaultNote[] {
+    const scoped = this.scopedLibraryNotes();
+    const byPath = new Map(scoped.map((note) => [note.path, note]));
+    const result: VaultNote[] = [];
+    const seen = new Set<string>();
+    for (const path of this.recentPaths) {
+      const note = byPath.get(path);
+      if (!note) continue;
+      result.push(note);
+      seen.add(path);
+      if (result.length >= limit) return result;
+    }
+    const rest = [...scoped]
+      .filter((note) => !seen.has(note.path))
+      .sort(
+        (a, b) =>
+          Date.parse(b.modified_at_utc || "0") - Date.parse(a.modified_at_utc || "0"),
+      );
+    for (const note of rest) {
+      result.push(note);
+      if (result.length >= limit) break;
+    }
+    return result;
+  }
+
+  private rebuildVaultTagsFromNotes(extraTags: string[] = []) {
+    const counts = new Map<string, number>();
+    for (const note of this.scopedLibraryNotes()) {
+      for (const tag of note.tags ?? []) {
+        const trimmed = tag.trim();
+        if (!trimmed) continue;
+        counts.set(trimmed, (counts.get(trimmed) ?? 0) + 1);
+      }
+    }
+    for (const tag of extraTags) {
+      const trimmed = tag.trim();
+      if (!trimmed || counts.has(trimmed)) continue;
+      counts.set(trimmed, 0);
+    }
+    this.vaultTags = sortVaultTagsForDisplay([...counts.keys()])
+      .map((tag) => ({ tag, count: counts.get(tag) ?? 0 }))
+      .filter((row) => row.count > 0);
+  }
+
+  async refreshVaultTags() {
+    try {
+      const response = await listVaultTags({ limit: 500 });
+      this.rebuildVaultTagsFromNotes(response.tags ?? []);
+    } catch {
+      this.rebuildVaultTagsFromNotes();
+    }
   }
 
   setShowAgentReviewFilter(value: boolean) {
@@ -719,6 +843,9 @@ export class VaultStore {
       const response = await listVaultNotes({ limit: 500 });
       this.notes = response.notes;
       this.rebuildTree();
+      if (this.libraryBrowseMode === "tags") {
+        void this.refreshVaultTags();
+      }
     } catch (err) {
       this.error = err instanceof Error ? err.message : String(err);
     }
@@ -1419,6 +1546,46 @@ export class VaultStore {
 function loadLastNote(): string | null {
   if (typeof localStorage === "undefined") return null;
   return localStorage.getItem(LAST_NOTE_KEY);
+}
+
+const LIBRARY_BROWSE_MODES = new Set<LibraryBrowseMode>([
+  "folders",
+  "tags",
+  "recent",
+  "kind",
+]);
+
+function loadLibraryBrowseMode(): LibraryBrowseMode {
+  if (typeof localStorage === "undefined") return "folders";
+  try {
+    const raw = localStorage.getItem(LIBRARY_BROWSE_MODE_KEY);
+    if (raw && LIBRARY_BROWSE_MODES.has(raw as LibraryBrowseMode)) {
+      return raw as LibraryBrowseMode;
+    }
+  } catch {
+    /* ignore */
+  }
+  return "folders";
+}
+
+function saveLibraryBrowseMode(mode: LibraryBrowseMode) {
+  if (typeof localStorage === "undefined") return;
+  try {
+    localStorage.setItem(LIBRARY_BROWSE_MODE_KEY, mode);
+  } catch {
+    /* ignore */
+  }
+}
+
+const AGENT_WRITE_TTL_MS = 24 * 60 * 60 * 1000;
+
+function isRecentAgentWrite(
+  path: string,
+  agentWrittenAt: Record<string, string>,
+): boolean {
+  const writtenAt = agentWrittenAt[path];
+  if (!writtenAt) return false;
+  return Date.now() - Date.parse(writtenAt) < AGENT_WRITE_TTL_MS;
 }
 
 export const vault = new VaultStore();
