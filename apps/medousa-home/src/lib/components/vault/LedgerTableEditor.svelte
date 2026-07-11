@@ -1,6 +1,14 @@
 <script lang="ts">
   import { onDestroy, tick } from "svelte";
-  import { Check, Copy, Plus, X } from "@lucide/svelte";
+  import {
+    ArrowDown,
+    ArrowUp,
+    Check,
+    Copy,
+    Filter,
+    Plus,
+    X,
+  } from "@lucide/svelte";
   import {
     ledgerCsvFromContent,
     ledgerHeadersFromContent,
@@ -16,6 +24,14 @@
     serializeLedgerColumns,
     type LedgerColumn,
   } from "$lib/utils/ledgerSheet";
+  import {
+    applyMedousaSheetView,
+    emptyMedousaSheetConfig,
+    isMedousaSheetConfigEmpty,
+    ledgerSheetConfigFromContent,
+    upsertLedgerSheetFence,
+    type MedousaSheetConfig,
+  } from "$lib/utils/medousaSheet";
   import { MARKDOWN_COLOR_HEX } from "$lib/utils/vaultMarkdownColors";
 
   interface Props {
@@ -28,6 +44,7 @@
 
   let columns = $state<LedgerColumn[]>([]);
   let rows = $state<string[][]>([]);
+  let sheet = $state<MedousaSheetConfig>(emptyMedousaSheetConfig());
   let syncedContent = $state("");
   let copied = $state(false);
   let copyTimer: ReturnType<typeof setTimeout> | null = null;
@@ -37,10 +54,26 @@
   let headerFocusRequest = $state<number | null>(null);
   let resizeDraftWidth = $state<string | null>(null);
   let resizingCol = $state<number | null>(null);
+  let filterColumn = $state("");
+  let filterOp = $state<"=" | "!=">("!=");
+  let filterValue = $state("");
+  let filterOpen = $state(false);
+  let renamingCol = $state<number | null>(null);
+  let headerSortTimer: ReturnType<typeof setTimeout> | null = null;
 
   const protectedColumns = $derived(
     ledgerProtectedColumnIndexes(columns.map((column) => column.label)),
   );
+
+  const viewRows = $derived(applyMedousaSheetView(columns, rows, sheet));
+
+  const sheetActive = $derived(!isMedousaSheetConfigEmpty(sheet));
+
+  const viewBadgeCount = $derived(
+    sheet.filters.length + (sheet.sort ? 1 : 0),
+  );
+
+  const canAddFilter = $derived(filterValue.trim().length > 0);
 
   const selectedRowIndexes = $derived.by(() => {
     if (selectionAnchor == null || selectionFocus == null) return new Set<number>();
@@ -55,6 +88,8 @@
     if (content === syncedContent) return;
     columns = parseLedgerColumns(ledgerHeadersFromContent(content));
     rows = ledgerRowsFromContent(content);
+    sheet = ledgerSheetConfigFromContent(content);
+    filterColumn = columns[0]?.label ?? "";
     syncedContent = content;
     selectionAnchor = null;
     selectionFocus = null;
@@ -78,6 +113,7 @@
   $effect(() => {
     const col = headerFocusRequest;
     if (col == null) return;
+    renamingCol = col;
     void tick().then(() => {
       const el = document.querySelector(
         `[data-ledger-header="${col}"]`,
@@ -90,22 +126,36 @@
 
   onDestroy(() => {
     if (copyTimer) clearTimeout(copyTimer);
+    if (headerSortTimer) clearTimeout(headerSortTimer);
     detachResizeListeners();
   });
 
-  function emitSheet(nextColumns: LedgerColumn[], nextRows: string[][]) {
+  function persistMarkdown(
+    nextColumns: LedgerColumn[],
+    nextRows: string[][],
+    nextSheet: MedousaSheetConfig,
+  ) {
     columns = nextColumns;
     rows = nextRows;
+    sheet = nextSheet;
     const base = syncedContent || content;
-    const updated = replaceLedgerTable(
+    let updated = replaceLedgerTable(
       base,
       nextRows,
       serializeLedgerColumns(nextColumns),
     );
-    if (updated) {
-      syncedContent = updated;
-      onchange(updated);
-    }
+    if (!updated) return;
+    updated = upsertLedgerSheetFence(updated, nextSheet);
+    syncedContent = updated;
+    onchange(updated);
+  }
+
+  function emitSheet(nextColumns: LedgerColumn[], nextRows: string[][]) {
+    persistMarkdown(nextColumns, nextRows, sheet);
+  }
+
+  function emitSheetConfig(nextSheet: MedousaSheetConfig) {
+    persistMarkdown(columns, rows, nextSheet);
   }
 
   function emptyRow(columnCount = columns.length): string[] {
@@ -185,6 +235,88 @@
   function clearSelection() {
     selectionAnchor = null;
     selectionFocus = null;
+  }
+
+  function toggleFilterOpen() {
+    filterOpen = !filterOpen;
+    if (filterOpen) {
+      if (!filterColumn) filterColumn = columns[0]?.label ?? "";
+      void tick().then(() => {
+        const el = document.querySelector(
+          "[data-ledger-filter-value]",
+        ) as HTMLInputElement | null;
+        el?.focus();
+      });
+    }
+  }
+
+  function addFilter() {
+    const column = filterColumn.trim() || columns[0]?.label;
+    const value = filterValue.trim();
+    if (!column || !value) return;
+    emitSheetConfig({
+      ...sheet,
+      filters: [...sheet.filters, { column, op: filterOp, value }],
+    });
+    filterValue = "";
+    filterOpen = true;
+  }
+
+  function removeFilter(index: number) {
+    emitSheetConfig({
+      ...sheet,
+      filters: sheet.filters.filter((_, i) => i !== index),
+    });
+  }
+
+  function setSort(column: string) {
+    if (sheet.sort?.column === column) {
+      if (sheet.sort.descending) {
+        emitSheetConfig({
+          ...sheet,
+          sort: { column, descending: false },
+        });
+        return;
+      }
+      emitSheetConfig({
+        ...sheet,
+        sort: undefined,
+      });
+      return;
+    }
+    emitSheetConfig({
+      ...sheet,
+      sort: { column, descending: true },
+    });
+  }
+
+  function beginRename(colIndex: number) {
+    if (disabled) return;
+    if (headerSortTimer) {
+      clearTimeout(headerSortTimer);
+      headerSortTimer = null;
+    }
+    renamingCol = colIndex;
+    headerFocusRequest = colIndex;
+  }
+
+  function finishRename() {
+    renamingCol = null;
+  }
+
+  function onHeaderSortClick(column: string) {
+    if (disabled) return;
+    if (headerSortTimer) clearTimeout(headerSortTimer);
+    headerSortTimer = setTimeout(() => {
+      headerSortTimer = null;
+      setSort(column);
+    }, 220);
+  }
+
+  function clearSheetView() {
+    filterValue = "";
+    filterOpen = false;
+    emitSheetConfig(emptyMedousaSheetConfig());
   }
 
   function columnWidth(column: LedgerColumn, colIndex: number): string | undefined {
@@ -354,7 +486,8 @@
     const target = event.target as HTMLElement | null;
     if (
       target instanceof HTMLInputElement ||
-      target instanceof HTMLTextAreaElement
+      target instanceof HTMLTextAreaElement ||
+      target instanceof HTMLSelectElement
     ) {
       return;
     }
@@ -386,24 +519,155 @@
   class:ledger-sheet--resizing={resizingCol != null}
   onkeydown={handleSheetKeydown}
 >
-  <div class="ledger-toolbar flex shrink-0 items-center justify-end gap-2 border-b border-surface-500/40 px-4 py-2">
+  <div class="ledger-toolbar flex shrink-0 flex-wrap items-center gap-2 border-b border-surface-500/40 px-4 py-2">
+    <div class="ledger-sheet-controls min-w-0 flex-1">
+      <div class="ledger-filter-row">
+        <button
+          type="button"
+          class="ledger-filter-toggle"
+          class:ledger-filter-toggle--open={filterOpen}
+          class:ledger-filter-toggle--active={sheet.filters.length > 0}
+          {disabled}
+          aria-expanded={filterOpen}
+          aria-label="Filter"
+          title="Filter"
+          onclick={toggleFilterOpen}
+        >
+          <Filter size={13} strokeWidth={2} />
+          <span>Filter</span>
+          {#if viewBadgeCount > 0}
+            <span class="ledger-filter-badge">{viewBadgeCount}</span>
+          {/if}
+        </button>
+
+        {#if filterOpen}
+          <div class="ledger-filter-composer">
+            <select
+              class="ledger-filter-select"
+              {disabled}
+              bind:value={filterColumn}
+              aria-label="Filter column"
+            >
+              {#each columns as column (column.label)}
+                <option value={column.label}>{column.label}</option>
+              {/each}
+            </select>
+            <select
+              class="ledger-filter-select ledger-filter-op"
+              {disabled}
+              bind:value={filterOp}
+              aria-label="Filter operator"
+            >
+              <option value="!=">≠</option>
+              <option value="=">=</option>
+            </select>
+            <input
+              class="ledger-filter-input"
+              type="text"
+              placeholder="Value"
+              {disabled}
+              data-ledger-filter-value
+              bind:value={filterValue}
+              onkeydown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  addFilter();
+                }
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  filterOpen = false;
+                }
+              }}
+            />
+            <button
+              type="button"
+              class="ledger-filter-commit"
+              disabled={disabled || !canAddFilter}
+              title="Add filter"
+              aria-label="Add filter"
+              onclick={addFilter}
+            >
+              <Plus size={14} strokeWidth={2} />
+            </button>
+          </div>
+        {/if}
+      </div>
+
+      {#if sheet.filters.length > 0 || sheet.sort}
+        <div class="ledger-filter-chips">
+          {#each sheet.filters as filter, index (filter.column + filter.op + filter.value + index)}
+            <button
+              type="button"
+              class="ledger-filter-chip"
+              {disabled}
+              title="Remove filter"
+              onclick={() => removeFilter(index)}
+            >
+              {filter.column} {filter.op} {filter.value}
+              <X size={11} strokeWidth={2} />
+            </button>
+          {/each}
+          {#if sheet.sort}
+            <button
+              type="button"
+              class="ledger-filter-chip ledger-filter-chip--sort"
+              {disabled}
+              title="Clear sort"
+              onclick={() =>
+                emitSheetConfig({
+                  ...sheet,
+                  sort: undefined,
+                })}
+            >
+              {#if sheet.sort.descending}
+                <ArrowDown size={11} strokeWidth={2} />
+              {:else}
+                <ArrowUp size={11} strokeWidth={2} />
+              {/if}
+              {sheet.sort.column}
+              <X size={11} strokeWidth={2} />
+            </button>
+          {/if}
+          {#if sheetActive}
+            <button
+              type="button"
+              class="ledger-filter-clear"
+              {disabled}
+              onclick={clearSheetView}
+            >
+              Clear view
+            </button>
+          {/if}
+        </div>
+      {/if}
+    </div>
+
     <button
       type="button"
-      class="btn btn-sm variant-ghost-surface gap-1.5"
+      class="ledger-copy-csv"
       {disabled}
       onclick={copyCsv}
     >
       {#if copied}
-        <Check size={14} strokeWidth={2} />
+        <Check size={13} strokeWidth={2} />
         Copied
       {:else}
-        <Copy size={14} strokeWidth={2} />
+        <Copy size={13} strokeWidth={2} />
         Copy CSV
       {/if}
     </button>
   </div>
 
-  <div class="min-h-0 flex-1 overflow-auto p-4">
+  {#if sheetActive}
+    <p class="ledger-view-status">
+      Showing {viewRows.length} of {rows.length}
+      {#if sheet.title}
+        · {sheet.title}
+      {/if}
+    </p>
+  {/if}
+
+  <div class="min-h-0 flex-1 overflow-auto p-4 pt-2">
     <table class="ledger-table w-full min-w-[560px] border-collapse text-sm">
       <colgroup>
         <col class="ledger-col-gutter" />
@@ -427,23 +691,57 @@
               )
                 ? 'ledger-header-date'
                 : ''}"
+              class:ledger-header-cell--sorted={sheet.sort?.column === column.label}
               scope="col"
               style={columnStyle(column, colIndex)}
             >
               <div class="ledger-header-edit">
-                <input
-                  class="ledger-header-input {alignClass(column, colIndex)}"
-                  type="text"
-                  value={column.label}
-                  {disabled}
-                  aria-label="Column {colIndex + 1} name"
-                  data-ledger-header={colIndex}
-                  oninput={(event) =>
-                    updateHeaderLabel(
-                      colIndex,
-                      (event.currentTarget as HTMLInputElement).value,
-                    )}
-                />
+                {#if renamingCol === colIndex}
+                  <input
+                    class="ledger-header-input {alignClass(column, colIndex)}"
+                    type="text"
+                    value={column.label}
+                    {disabled}
+                    aria-label="Column {colIndex + 1} name"
+                    data-ledger-header={colIndex}
+                    oninput={(event) =>
+                      updateHeaderLabel(
+                        colIndex,
+                        (event.currentTarget as HTMLInputElement).value,
+                      )}
+                    onblur={finishRename}
+                    onkeydown={(event) => {
+                      if (event.key === "Enter" || event.key === "Escape") {
+                        event.preventDefault();
+                        (event.currentTarget as HTMLInputElement).blur();
+                      }
+                    }}
+                  />
+                {:else}
+                  <button
+                    type="button"
+                    class="ledger-header-sort {alignClass(column, colIndex)}"
+                    class:ledger-header-sort--active={sheet.sort?.column ===
+                      column.label}
+                    {disabled}
+                    title="Sort by {column.label} · Double-click to rename"
+                    aria-label="Sort by {column.label}"
+                    onclick={() => onHeaderSortClick(column.label)}
+                    ondblclick={(event) => {
+                      event.preventDefault();
+                      beginRename(colIndex);
+                    }}
+                  >
+                    <span class="ledger-header-sort-label">{column.label}</span>
+                    {#if sheet.sort?.column === column.label}
+                      {#if sheet.sort.descending}
+                        <ArrowDown size={11} strokeWidth={2} />
+                      {:else}
+                        <ArrowUp size={11} strokeWidth={2} />
+                      {/if}
+                    {/if}
+                  </button>
+                {/if}
                 {#if !disabled && !protectedColumns.has(colIndex)}
                   <button
                     type="button"
@@ -485,7 +783,9 @@
         </tr>
       </thead>
       <tbody>
-        {#each rows as row, rowIndex (rowIndex)}
+        {#each viewRows as viewRow, viewIndex (viewRow.sourceIndex)}
+          {@const row = viewRow.cells}
+          {@const rowIndex = viewRow.sourceIndex}
           <tr
             class="ledger-row border-b border-surface-500/20"
             class:ledger-row--selected={selectedRowIndexes.has(rowIndex)}
@@ -495,11 +795,11 @@
                 type="button"
                 class="ledger-gutter-btn"
                 {disabled}
-                aria-label="Select row {rowIndex + 1}"
+                aria-label="Select row {viewIndex + 1}"
                 aria-pressed={selectedRowIndexes.has(rowIndex)}
                 onclick={(event) => selectRow(rowIndex, event)}
               >
-                {rowIndex + 1}
+                {viewIndex + 1}
               </button>
             </td>
             {#each columns as column, colIndex (colIndex)}
@@ -543,12 +843,21 @@
                   type="button"
                   class="ledger-row-remove"
                   title="Remove row"
-                  aria-label="Remove row {rowIndex + 1}"
+                  aria-label="Remove row {viewIndex + 1}"
                   onclick={() => removeRow(rowIndex)}
                 >
                   <X size={12} strokeWidth={2} />
                 </button>
               {/if}
+            </td>
+          </tr>
+        {:else}
+          <tr>
+            <td
+              class="ledger-empty-view"
+              colspan={columns.length + 3}
+            >
+              No rows match this view
             </td>
           </tr>
         {/each}
