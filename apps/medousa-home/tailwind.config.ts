@@ -10,6 +10,14 @@ import {
   midnightDarkTheme,
   midnightLightTheme,
 } from "./themes/apple-themes";
+import {
+  caduceusDarkTheme,
+  caduceusLightTheme,
+  emberDarkTheme,
+  emberLightTheme,
+  hearthDarkTheme,
+  hearthLightTheme,
+} from "./themes/agent-themes";
 import { blackLilyTheme } from "./black-lily-theme";
 import { blackLilyLightTheme, medousaLightTheme } from "./themes/light-themes";
 import { medousaTheme } from "./medousa-theme";
@@ -51,6 +59,12 @@ export default {
           medousaLightTheme,
           blackLilyTheme,
           blackLilyLightTheme,
+          caduceusDarkTheme,
+          caduceusLightTheme,
+          emberDarkTheme,
+          emberLightTheme,
+          hearthDarkTheme,
+          hearthLightTheme,
           cupertinoLightTheme,
           cupertinoDarkTheme,
           graphiteLightTheme,
