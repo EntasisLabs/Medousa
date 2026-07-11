@@ -21,6 +21,12 @@
     modelsWorkshopStatus,
   } from "$lib/utils/modelsWorkshopStatus";
   import { messagingSecretStatus } from "$lib/messaging";
+  import {
+    REASONING_EFFORT_OPTIONS,
+    normalizeReasoningEffort,
+    type ReasoningEffortMode,
+  } from "$lib/types/reasoningEffort";
+  import { runtime } from "$lib/stores/runtime.svelte";
 
   interface Props {
     catalog: ProvidersListResult | null;
@@ -45,6 +51,11 @@
   const statusChips = $derived(
     modelsWorkshopStatus(workshopDefaults.draft, catalog, keyStatus, sttReady),
   );
+  const activeReasoning = $derived(
+    normalizeReasoningEffort(
+      workshopDefaults.draft.reasoningEffort ?? runtime.reasoningEffort,
+    ),
+  );
 
   onMount(() => {
     void refreshKeyStatus();
@@ -64,6 +75,17 @@
     );
     keyStatus = next;
     onKeyStatusChange?.();
+  }
+
+  async function setReasoningEffort(mode: ReasoningEffortMode) {
+    if (disabled || workshopDefaults.saving) return;
+    if (activeReasoning === mode) return;
+    workshopDefaults.draft = {
+      ...workshopDefaults.draft,
+      reasoningEffort: mode,
+    };
+    runtime.reasoningEffort = mode;
+    await workshopDefaults.saveInferenceProfiles();
   }
 
   function openPicker(target: ModelPickerTarget) {
@@ -167,6 +189,30 @@
             onclick={() => openPicker(target)}
           />
         {/if}
+      {/each}
+    </div>
+  </section>
+
+  <section>
+    <h3 class="settings-native-heading">Reasoning effort</h3>
+    <p class="workshop-faint mb-2 text-xs leading-relaxed">
+      Provider-native reasoning depth — separate from answer depth in Voice.
+    </p>
+    <div class="grid gap-2 sm:grid-cols-2">
+      {#each REASONING_EFFORT_OPTIONS as option (option.id)}
+        <button
+          type="button"
+          class="settings-depth-card {activeReasoning === option.id
+            ? 'settings-depth-card-active'
+            : ''}"
+          disabled={disabled || workshopDefaults.saving}
+          aria-pressed={activeReasoning === option.id}
+          title={option.hint}
+          onclick={() => void setReasoningEffort(option.id)}
+        >
+          <span class="block text-sm font-medium text-surface-100">{option.label}</span>
+          <span class="workshop-faint mt-1 block text-xs leading-snug">{option.hint}</span>
+        </button>
       {/each}
     </div>
   </section>

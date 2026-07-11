@@ -17,9 +17,9 @@ import {
   normalizeWorkshopDefaults,
   parseAllowedModulesText,
   type TuiDefaults,
-  type WorkshopDefaultsTab,
 } from "$lib/types/workshopDefaults";
 import { syncFlatFieldsFromProfiles } from "$lib/types/inferenceProfiles";
+import { normalizeReasoningEffort } from "$lib/types/reasoningEffort";
 import { isTauriMobilePlatform } from "$lib/platform";
 import { workshopCharterOnHostHint } from "$lib/platformCopy";
 import { isTauri } from "$lib/window";
@@ -30,7 +30,6 @@ import {
 } from "$lib/utils/modelCatalog";
 
 export class WorkshopDefaultsStore {
-  activeTab = $state<WorkshopDefaultsTab>("setup");
   draft = $state<TuiDefaults>(defaultWorkshopDefaults());
   allowedModulesText = $state("");
   apiKeySet = $state(false);
@@ -182,6 +181,9 @@ export class WorkshopDefaultsStore {
       ) {
         runtime.depthMode = payload.responseDepthMode;
       }
+      if (payload.reasoningEffort) {
+        runtime.reasoningEffort = normalizeReasoningEffort(payload.reasoningEffort);
+      }
       if (payload.stageRouting) {
         runtime.stageRouting = payload.stageRouting;
       }
@@ -264,6 +266,9 @@ export class WorkshopDefaultsStore {
         payload.responseDepthMode === "deep"
       ) {
         runtime.depthMode = payload.responseDepthMode;
+      }
+      if (payload.reasoningEffort) {
+        runtime.reasoningEffort = normalizeReasoningEffort(payload.reasoningEffort);
       }
       if (payload.stageRouting) {
         runtime.stageRouting = payload.stageRouting;

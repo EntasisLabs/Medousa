@@ -6,7 +6,6 @@ import {
   getSessionHistory,
   listManuscripts,
   listTurnBudgetRequests,
-  sendStageRouteCommand,
 } from "$lib/daemon";
 import { homeChannelSurface } from "$lib/platform";
 import { humanBrowser } from "$lib/stores/humanBrowser.svelte";
@@ -290,24 +289,24 @@ export function buildTuneCommands(): WorkshopCommand[] {
 
   return [
     {
-      id: "tune-engine-controls",
+      id: "tune-models-settings",
       section: "tune",
-      label: "Open engine controls",
-      subtitle: "Model, depth, and routing",
-      keywords: "runtime controls model depth routing",
+      label: "Change model",
+      subtitle: "Models, stages & reasoning effort",
+      keywords: "model provider settings reasoning effort stages",
       run: (ctx) => {
-        ctx.openRuntimeTab("controls");
+        ctx.openSettingsSection("models");
         ctx.callbacks.close();
       },
     },
     {
-      id: "tune-models-settings",
+      id: "tune-engine-settings",
       section: "tune",
-      label: "Change model",
-      subtitle: "Open Models in Settings",
-      keywords: "model provider settings",
+      label: "Engine settings",
+      subtitle: "Tool budgets, quality & diagnostics",
+      keywords: "engine budgets quality diagnostics verifier",
       run: (ctx) => {
-        ctx.openSettingsSection("models");
+        ctx.openSettingsSection("engine");
         ctx.callbacks.close();
       },
     },
@@ -429,25 +428,12 @@ export function buildAdvancedCommands(): WorkshopCommand[] {
     {
       id: "advanced-stage-routes",
       section: "advanced",
-      label: "Show stage routes",
-      subtitle: "Read-only routing matrix summary",
-      keywords: "stage routes routing matrix",
+      label: "Edit stage routes",
+      subtitle: "Stage models in Settings → Models",
+      keywords: "stage routes routing matrix specialists models",
       advanced: true,
-      run: async (ctx) => {
-        const response = await sendStageRouteCommand({
-          stage_routing: ctx.runtime.stageRouting,
-          provider: ctx.runtime.provider,
-          model: ctx.runtime.model,
-          command: { command: "routes", role: null },
-        });
-        const routes = [
-          response.stage_routing.orchestrator,
-          response.stage_routing.final_response,
-        ]
-          .map((route) => `${route.role}: ${route.provider}:${route.model}`)
-          .join(" · ");
-        ctx.openRuntimeTab("routing");
-        ctx.notice(routes || "Stage routes loaded.");
+      run: (ctx) => {
+        ctx.openSettingsSection("models");
         ctx.callbacks.close();
       },
     },

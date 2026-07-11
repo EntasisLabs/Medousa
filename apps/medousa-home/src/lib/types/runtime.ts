@@ -87,8 +87,5 @@ export interface StageRouteCommandResponse {
 export type RuntimeTab =
   | "now"
   | "jobs"
-  | "schedule"
   | "delivery"
-  | "controls"
-  | "workshop"
   | "routing";

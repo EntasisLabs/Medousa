@@ -182,7 +182,7 @@
       </label>
     </div>
     <p class="settings-subsection-lead mt-3 mb-0">
-      Stage models live in Runtime → Workshop → Specialists.
+      Stage models live in Settings → Models → Stages.
     </p>
   </div>
 

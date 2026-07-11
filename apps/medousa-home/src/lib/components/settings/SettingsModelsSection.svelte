@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import ModelsSettingsTab from "$lib/components/settings/ModelsSettingsTab.svelte";
+  import ModelsStagesTab from "$lib/components/settings/ModelsStagesTab.svelte";
   import ProvidersSettingsTab from "$lib/components/settings/ProvidersSettingsTab.svelte";
   import { listProviders, type ProvidersListResult } from "$lib/utils/providersApi";
   import { workshopDefaults } from "$lib/stores/workshopDefaults.svelte";
@@ -13,7 +14,7 @@
 
   let { mobile = false }: Props = $props();
 
-  type ModelsSectionTab = "models" | "providers";
+  type ModelsSectionTab = "models" | "stages" | "providers";
 
   let sectionTab = $state<ModelsSectionTab>("models");
   let catalog = $state<ProvidersListResult | null>(null);
@@ -50,7 +51,7 @@
 <section class="settings-section settings-section-models">
   <header class="settings-section-header">
     <h2 class="text-base font-semibold text-surface-50">Models</h2>
-    <p class="workshop-faint mt-1 text-sm">Who answers, sees, and listens.</p>
+    <p class="workshop-faint mt-1 text-sm">Who answers, sees, listens — and which model owns each stage.</p>
   </header>
 
   <div class="settings-segmented mt-4" role="tablist" aria-label="Models settings">
@@ -62,6 +63,15 @@
       onclick={() => (sectionTab = "models")}
     >
       Models
+    </button>
+    <button
+      type="button"
+      role="tab"
+      aria-selected={sectionTab === "stages"}
+      class="settings-segmented-btn {sectionTab === 'stages' ? 'settings-segmented-btn-active' : ''}"
+      onclick={() => (sectionTab = "stages")}
+    >
+      Stages
     </button>
     <button
       type="button"
@@ -83,6 +93,8 @@
         disabled={readOnly || workshopDefaults.saving}
         onKeyStatusChange={() => void refreshSttAndKeys()}
       />
+    {:else if sectionTab === "stages"}
+      <ModelsStagesTab disabled={readOnly || workshopDefaults.saving} {mobile} />
     {:else}
       <ProvidersSettingsTab
         {catalog}

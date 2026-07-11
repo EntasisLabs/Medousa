@@ -88,10 +88,6 @@ export function workshopBasementRestartHint(): string {
   return "Restarts Medousa on your network so QR pairing and companion apps can reach this machine";
 }
 
-export function workshopDefaultsMirrorHint(): string {
-  return "Read-only snapshot from the host — day-to-day charter is in Settings → Memory & Voice.";
-}
-
 export function localBrainOnDeviceHint(): string {
   return isCompanionShell()
     ? "Optional local Gemma engine on the host — separate from cloud chat models."

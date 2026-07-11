@@ -6,6 +6,7 @@ export type SettingsSectionId =
   | "models"
   | "voice"
   | "reach"
+  | "engine"
   | "phone"
   | "nearby"
   | "basement";
@@ -22,6 +23,7 @@ export const SETTINGS_SECTIONS: {
   { id: "models", label: "Models", hint: "Chat & dictation" },
   { id: "voice", label: "Voice", hint: "Stance & answer depth" },
   { id: "reach", label: "Reach", hint: "What she may touch" },
+  { id: "engine", label: "Engine", hint: "Budgets, quality & diagnostics" },
   { id: "phone", label: "Phone", hint: "Pair your pocket portal" },
   { id: "nearby", label: "Nearby", hint: "Peers rail, bundles & trust" },
   { id: "basement", label: "Connection", hint: "Medousa on this device & advanced tools" },
