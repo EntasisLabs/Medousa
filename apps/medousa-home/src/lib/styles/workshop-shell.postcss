@@ -75,6 +75,45 @@
     --shell-muted: 168 148 192;
   }
 
+  /* Caduceus dark — serpentine ink, soft jade */
+  html.dark[data-theme="caduceus-dark"] {
+    --shell-chrome-bg: 24 32 28;
+    --shell-header-bg: 34 44 38;
+    --shell-canvas-bg: 10 14 12;
+    --shell-pane-bg: 16 22 18;
+    --shell-pane-muted-bg: 24 32 28;
+    --shell-border-strong: 0.58;
+    --shell-whisper: 168 186 172;
+    --shell-label: 186 202 188;
+    --shell-muted: 132 152 138;
+  }
+
+  /* Ember dark — cool ash, rose-copper glow */
+  html.dark[data-theme="ember-dark"] {
+    --shell-chrome-bg: 30 24 24;
+    --shell-header-bg: 42 34 32;
+    --shell-canvas-bg: 12 10 10;
+    --shell-pane-bg: 20 16 16;
+    --shell-pane-muted-bg: 30 24 24;
+    --shell-border-strong: 0.58;
+    --shell-whisper: 190 164 152;
+    --shell-label: 210 186 174;
+    --shell-muted: 156 128 118;
+  }
+
+  /* Hearth dark — evening cocoa */
+  html.dark[data-theme="hearth-dark"] {
+    --shell-chrome-bg: 32 26 22;
+    --shell-header-bg: 44 36 30;
+    --shell-canvas-bg: 14 12 10;
+    --shell-pane-bg: 22 18 16;
+    --shell-pane-muted-bg: 32 26 22;
+    --shell-border-strong: 0.58;
+    --shell-whisper: 190 172 156;
+    --shell-label: 210 192 176;
+    --shell-muted: 156 136 118;
+  }
+
   /* Graphite dark */
   html.dark[data-theme="graphite-dark"] {
     --shell-chrome-bg: 36 36 38;
@@ -187,6 +226,241 @@
     --shell-whisper: 86 70 96;
     --shell-label: 72 56 86;
     --shell-muted: 116 96 126;
+  }
+
+  /* Caduceus light — soft mint paper, botanical chrome */
+  html:not(.dark)[data-theme="caduceus-light"] {
+    --shell-chrome-bg: 210 222 210;
+    --shell-header-bg: 220 230 220;
+    --shell-canvas-bg: 242 248 242;
+    --shell-pane-bg: 255 255 255;
+    --shell-pane-muted-bg: 228 236 228;
+    --shell-border: 118 140 122;
+    --shell-border-strong: 0.5;
+    --shell-icon-active: var(--color-primary-600);
+    --shell-whisper: 58 74 62;
+    --shell-label: 36 48 40;
+    --shell-muted: 88 108 92;
+  }
+
+  /* Ember light — cool ash paper, soft copper */
+  html:not(.dark)[data-theme="ember-light"] {
+    --shell-chrome-bg: 230 216 208;
+    --shell-header-bg: 238 226 218;
+    --shell-canvas-bg: 248 242 238;
+    --shell-pane-bg: 255 252 250;
+    --shell-pane-muted-bg: 242 232 226;
+    --shell-border: 176 150 138;
+    --shell-border-strong: 0.48;
+    --shell-icon-active: var(--color-primary-600);
+    --shell-whisper: 78 58 52;
+    --shell-label: 48 36 32;
+    --shell-muted: 112 86 76;
+  }
+
+  /* Hearth light — soft cocoa chrome, parchment paper */
+  html:not(.dark)[data-theme="hearth-light"] {
+    --shell-chrome-bg: 228 220 210;
+    --shell-header-bg: 236 228 218;
+    --shell-canvas-bg: 246 242 236;
+    --shell-pane-bg: 255 252 248;
+    --shell-pane-muted-bg: 240 234 226;
+    --shell-border: 176 160 144;
+    --shell-border-strong: 0.5;
+    --shell-icon-active: var(--color-primary-600);
+    --shell-whisper: 82 68 58;
+    --shell-label: 52 42 36;
+    --shell-muted: 114 96 82;
+  }
+
+  /* —— Familiar family: same elevation recipe, palette-true hues —— */
+
+  /* One Dark */
+  html.dark[data-theme="one-dark"] {
+    --shell-chrome-bg: 33 37 43;
+    --shell-header-bg: 40 44 52;
+    --shell-canvas-bg: 22 25 30;
+    --shell-pane-bg: 33 37 43;
+    --shell-pane-muted-bg: 40 44 52;
+    --shell-border-strong: 0.55;
+    --shell-whisper: 171 178 191;
+    --shell-label: 186 192 204;
+    --shell-muted: 130 137 151;
+  }
+
+  html:not(.dark)[data-theme="one-dark-light"] {
+    --shell-chrome-bg: 228 229 234;
+    --shell-header-bg: 234 235 240;
+    --shell-canvas-bg: 245 246 248;
+    --shell-pane-bg: 255 255 255;
+    --shell-pane-muted-bg: 234 235 240;
+    --shell-border-strong: 0.5;
+    --shell-whisper: 76 79 88;
+    --shell-label: 56 58 66;
+    --shell-muted: 108 111 120;
+    --shell-icon-active: var(--color-primary-600);
+  }
+
+  /* Catppuccin Mocha / Latte */
+  html.dark[data-theme="catppuccin-mocha"] {
+    --shell-chrome-bg: 24 24 37;
+    --shell-header-bg: 30 30 46;
+    --shell-canvas-bg: 14 14 22;
+    --shell-pane-bg: 24 24 37;
+    --shell-pane-muted-bg: 30 30 46;
+    --shell-border-strong: 0.55;
+    --shell-whisper: 186 194 222;
+    --shell-label: 198 205 230;
+    --shell-muted: 147 153 178;
+  }
+
+  html:not(.dark)[data-theme="catppuccin-latte"] {
+    --shell-chrome-bg: 230 233 239;
+    --shell-header-bg: 236 238 244;
+    --shell-canvas-bg: 239 241 245;
+    --shell-pane-bg: 255 255 255;
+    --shell-pane-muted-bg: 236 238 244;
+    --shell-border: 156 160 176;
+    --shell-border-strong: 0.5;
+    --shell-whisper: 92 95 119;
+    --shell-label: 76 79 105;
+    --shell-muted: 124 127 147;
+    --shell-icon-active: var(--color-primary-600);
+  }
+
+  /* Tokyo Night / Day */
+  html.dark[data-theme="tokyo-night"] {
+    --shell-chrome-bg: 22 24 38;
+    --shell-header-bg: 29 32 48;
+    --shell-canvas-bg: 12 13 20;
+    --shell-pane-bg: 22 24 38;
+    --shell-pane-muted-bg: 29 32 48;
+    --shell-border-strong: 0.55;
+    --shell-whisper: 154 162 198;
+    --shell-label: 169 177 214;
+    --shell-muted: 122 128 164;
+  }
+
+  html:not(.dark)[data-theme="tokyo-day"] {
+    --shell-chrome-bg: 226 230 238;
+    --shell-header-bg: 234 236 244;
+    --shell-canvas-bg: 246 248 252;
+    --shell-pane-bg: 255 255 255;
+    --shell-pane-muted-bg: 234 236 244;
+    --shell-border-strong: 0.5;
+    --shell-whisper: 72 78 102;
+    --shell-label: 52 58 82;
+    --shell-muted: 104 110 132;
+    --shell-icon-active: var(--color-primary-600);
+  }
+
+  /* GitHub Dark / Light */
+  html.dark[data-theme="github-dark"] {
+    --shell-chrome-bg: 22 27 34;
+    --shell-header-bg: 33 38 45;
+    --shell-canvas-bg: 9 12 16;
+    --shell-pane-bg: 13 17 23;
+    --shell-pane-muted-bg: 22 27 34;
+    --shell-border: 48 54 61;
+    --shell-border-strong: 0.62;
+    --shell-whisper: 201 209 217;
+    --shell-label: 210 216 222;
+    --shell-muted: 139 148 158;
+  }
+
+  html:not(.dark)[data-theme="github-light"] {
+    --shell-chrome-bg: 225 228 232;
+    --shell-header-bg: 234 236 240;
+    --shell-canvas-bg: 246 248 250;
+    --shell-pane-bg: 255 255 255;
+    --shell-pane-muted-bg: 234 236 240;
+    --shell-border: 175 181 188;
+    --shell-border-strong: 0.52;
+    --shell-whisper: 55 62 70;
+    --shell-label: 36 41 47;
+    --shell-muted: 87 96 106;
+    --shell-icon-active: var(--color-primary-600);
+  }
+
+  /* Dracula */
+  html.dark[data-theme="dracula"] {
+    --shell-chrome-bg: 40 42 54;
+    --shell-header-bg: 52 55 70;
+    --shell-canvas-bg: 26 27 36;
+    --shell-pane-bg: 40 42 54;
+    --shell-pane-muted-bg: 52 55 70;
+    --shell-border-strong: 0.55;
+    --shell-whisper: 220 220 214;
+    --shell-label: 232 232 226;
+    --shell-muted: 180 180 174;
+  }
+
+  html:not(.dark)[data-theme="dracula-light"] {
+    --shell-chrome-bg: 234 235 240;
+    --shell-header-bg: 240 241 246;
+    --shell-canvas-bg: 248 248 250;
+    --shell-pane-bg: 255 255 255;
+    --shell-pane-muted-bg: 240 241 246;
+    --shell-border-strong: 0.5;
+    --shell-whisper: 88 91 110;
+    --shell-label: 68 71 90;
+    --shell-muted: 118 121 140;
+    --shell-icon-active: var(--color-primary-600);
+  }
+
+  /* Nord */
+  html.dark[data-theme="nord"] {
+    --shell-chrome-bg: 46 52 64;
+    --shell-header-bg: 59 66 82;
+    --shell-canvas-bg: 32 36 46;
+    --shell-pane-bg: 46 52 64;
+    --shell-pane-muted-bg: 59 66 82;
+    --shell-border-strong: 0.55;
+    --shell-whisper: 196 204 216;
+    --shell-label: 216 222 233;
+    --shell-muted: 163 176 194;
+  }
+
+  html:not(.dark)[data-theme="nord-light"] {
+    --shell-chrome-bg: 226 228 232;
+    --shell-header-bg: 236 239 244;
+    --shell-canvas-bg: 236 239 244;
+    --shell-pane-bg: 255 255 255;
+    --shell-pane-muted-bg: 240 242 245;
+    --shell-border: 178 183 190;
+    --shell-border-strong: 0.5;
+    --shell-whisper: 62 68 80;
+    --shell-label: 46 52 64;
+    --shell-muted: 94 100 112;
+    --shell-icon-active: var(--color-primary-600);
+  }
+
+  /* Solarized Dark / Light */
+  html.dark[data-theme="solarized-dark"] {
+    --shell-chrome-bg: 7 54 66;
+    --shell-header-bg: 0 54 66;
+    --shell-canvas-bg: 0 43 54;
+    --shell-pane-bg: 7 54 66;
+    --shell-pane-muted-bg: 0 54 66;
+    --shell-border: 88 110 117;
+    --shell-border-strong: 0.5;
+    --shell-whisper: 147 161 161;
+    --shell-label: 160 174 174;
+    --shell-muted: 131 148 150;
+  }
+
+  html:not(.dark)[data-theme="solarized-light"] {
+    --shell-chrome-bg: 238 232 213;
+    --shell-header-bg: 245 238 220;
+    --shell-canvas-bg: 245 238 220;
+    --shell-pane-bg: 253 246 227;
+    --shell-pane-muted-bg: 238 232 213;
+    --shell-border: 147 161 161;
+    --shell-border-strong: 0.48;
+    --shell-whisper: 88 110 117;
+    --shell-label: 7 54 66;
+    --shell-muted: 101 123 131;
+    --shell-icon-active: var(--color-primary-700);
   }
 }
 
