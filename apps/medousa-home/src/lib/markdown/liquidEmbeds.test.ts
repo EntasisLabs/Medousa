@@ -39,6 +39,83 @@ describe("preprocessLiquidEmbeds", () => {
     expect(props?.items[0].title).toBe("Sol");
   });
 
+  it("parses carousel --- blocks with expandable detail fields", () => {
+    const src = [
+      "```carousel",
+      "title: Where it stands",
+      "",
+      "---",
+      "title: Tradeoff",
+      "subtitle: Less proven independently",
+      "emoji: 📋",
+      "body: Less proven independently",
+      "meta: Caveat · AI model · Early read",
+      "summary: Treat benchmarks as provisional.",
+      "chips: Benchmarks | Claims | Validation",
+      "point: Launch framing | Most early coverage echoes company claims. | 📰",
+      "point: Independent testing | Third-party evals usually lag launches.",
+      "---",
+      "title: Strengths",
+      "subtitle: Coding and agent work",
+      "summary: Strong early signal on agentic coding.",
+      "chips: Coding | Agents",
+      "```",
+    ].join("\n");
+    const out = preprocessLiquidEmbeds(src);
+    expect(out).toContain('data-liquid-embed="carousel"');
+    const match = out.match(/data-liquid-props="([^"]+)"/);
+    const props = decodeLiquidProps<{
+      items: {
+        title: string;
+        meta?: string;
+        summary?: string;
+        chips?: string[];
+        points?: { label: string; body: string; emoji?: string }[];
+      }[];
+    }>(match![1]);
+    expect(props?.items).toHaveLength(2);
+    expect(props?.items[0].title).toBe("Tradeoff");
+    expect(props?.items[0].meta).toBe("Caveat · AI model · Early read");
+    expect(props?.items[0].summary).toBe("Treat benchmarks as provisional.");
+    expect(props?.items[0].chips).toEqual(["Benchmarks", "Claims", "Validation"]);
+    expect(props?.items[0].points).toHaveLength(2);
+    expect(props?.items[0].points?.[0]).toEqual({
+      label: "Launch framing",
+      body: "Most early coverage echoes company claims.",
+      emoji: "📰",
+    });
+    expect(props?.items[1].title).toBe("Strengths");
+    expect(props?.items[1].chips).toEqual(["Coding", "Agents"]);
+  });
+
+  it("parses a single card with points and --- summary alias", () => {
+    const src = [
+      "```card",
+      "title: Tradeoff",
+      "emoji: 📋",
+      "meta: Caveat · Early read",
+      "chips: Benchmarks | Claims",
+      "point: Launch framing | Echoes company claims.",
+      "---",
+      "The biggest caveat is independent validation.",
+      "```",
+    ].join("\n");
+    const out = preprocessLiquidEmbeds(src);
+    const match = out.match(/data-liquid-props="([^"]+)"/);
+    const props = decodeLiquidProps<{
+      title: string;
+      meta?: string;
+      summary?: string;
+      chips?: string[];
+      points?: { label: string; body: string }[];
+    }>(match![1]);
+    expect(props?.title).toBe("Tradeoff");
+    expect(props?.meta).toBe("Caveat · Early read");
+    expect(props?.chips).toEqual(["Benchmarks", "Claims"]);
+    expect(props?.points?.[0].label).toBe("Launch framing");
+    expect(props?.summary).toBe("The biggest caveat is independent validation.");
+  });
+
   it("accepts list-marker carousel lines models often emit", () => {
     const src = [
       "```carousel",
@@ -685,6 +762,88 @@ describe("preprocessLiquidEmbeds", () => {
     expect(preprocessLiquidEmbeds(src)).toContain("```brief");
   });
 
+  it("hydrates Mon Laferte-style brief with ## sections and freeform tone", () => {
+    const src = [
+      "```brief",
+      "title: Why Mon Laferte Resonates So Deeply",
+      "subtitle: An analysis of the artist behind the ache",
+      "tone: warm, analytical, reverent",
+      "---",
+      "## The Wound That Became Her Voice",
+      "She *wears* her pain — never flinches.",
+      "",
+      "## The Music: An Alto Built for Brokenness",
+      "- **Bolero**",
+      "- **Cumbia / Salsa**",
+      "```",
+    ].join("\n");
+    const out = preprocessLiquidEmbeds(src);
+    expect(out).toContain('data-liquid-embed="brief"');
+    expect(out).not.toContain("```brief");
+    const match = out.match(/data-liquid-props="([^"]+)"/);
+    const props = decodeLiquidProps<{
+      title?: string;
+      tone?: string;
+      sections: { heading: string; body: string }[];
+    }>(match![1]);
+    expect(props?.title).toBe("Why Mon Laferte Resonates So Deeply");
+    expect(props?.tone).toBe("research");
+    expect(props?.sections).toHaveLength(2);
+    expect(props?.sections[0].heading).toBe("The Wound That Became Her Voice");
+    expect(props?.sections[0].body).toContain("wears");
+    expect(props?.sections[1].heading).toBe("The Music: An Alto Built for Brokenness");
+  });
+
+  it("keeps pipe characters inside cite titles", () => {
+    const src = [
+      "```cite",
+      "title: Mon Laferte - Biography, Discography, Albums | AllMusic",
+      "url: https://www.allmusic.com/artist/mon-laferte",
+      "quote: Chilean and Mexican singer-songwriter.",
+      "```",
+    ].join("\n");
+    const out = preprocessLiquidEmbeds(src);
+    expect(out).toContain('data-liquid-embed="cite"');
+    const match = out.match(/data-liquid-props="([^"]+)"/);
+    const props = decodeLiquidProps<{ title?: string; url?: string }>(match![1]);
+    expect(props?.title).toBe("Mon Laferte - Biography, Discography, Albums | AllMusic");
+    expect(props?.url).toContain("allmusic.com");
+  });
+
+  it("unwraps mistaken prose ```code fences into plain markdown", () => {
+    const src = [
+      "Intro.",
+      "",
+      "```code",
+      "That's the full analysis. She hits the soul hard because she **never flinches**.",
+      "```",
+      "",
+    ].join("\n");
+    const out = preprocessLiquidEmbeds(src);
+    expect(out).not.toContain("```code");
+    expect(out).toContain("**never flinches**");
+    expect(out).toContain("That's the full analysis");
+  });
+
+  it("unwraps bare ``` prose fences and soft-converts | Source: | lines", () => {
+    const src = [
+      "| Source: AllMusic, Wikipedia |",
+      "",
+      "```",
+      "Mon Laferte is a rare artist who navigated pop to auteur.",
+      "```",
+    ].join("\n");
+    const out = preprocessLiquidEmbeds(src);
+    expect(out).toContain("*Source: AllMusic, Wikipedia*");
+    expect(out).not.toMatch(/^```/m);
+    expect(out).toContain("rare artist");
+  });
+
+  it("leaves real code fences alone", () => {
+    const src = ["```python", "def hello():", "    return 1", "```"].join("\n");
+    expect(preprocessLiquidEmbeds(src)).toContain("```python");
+  });
+
   it("turns a dashboard fence into title + tiles", () => {
     const src = [
       "```dashboard",
@@ -732,7 +891,7 @@ describe("preprocessLiquidEmbeds", () => {
     expect(props?.tiles[1].tone).toBe("accent");
   });
 
-  it("accepts dashboard list-marker title and ignores feed: lines", () => {
+  it("accepts dashboard list-marker title and parses feed:/field:", () => {
     const src = [
       "```dashboard",
       "- title: Pulse",
@@ -743,9 +902,11 @@ describe("preprocessLiquidEmbeds", () => {
       "body: hotels · JR pass",
       "tone: warn",
       "feed: trip.pulse",
+      "field: summary",
       "---",
       "label: Next milestone",
       "value: Book N’EX",
+      "binding: work:board",
       "```",
     ].join("\n");
     const out = preprocessLiquidEmbeds(src);
@@ -753,13 +914,22 @@ describe("preprocessLiquidEmbeds", () => {
     const match = out.match(/data-liquid-props="([^"]+)"/);
     const props = decodeLiquidProps<{
       title?: string;
-      tiles: { label: string; value: string; hint?: string; tone?: string }[];
+      tiles: {
+        label: string;
+        value: string;
+        hint?: string;
+        tone?: string;
+        feed?: string;
+        field?: string;
+      }[];
     }>(match![1]);
     expect(props?.title).toBe("Pulse");
     expect(props?.tiles[0].label).toBe("Open questions");
     expect(props?.tiles[0].hint).toBe("hotels · JR pass");
     expect(props?.tiles[0].tone).toBe("warn");
-    expect(JSON.stringify(props)).not.toContain("trip.pulse");
+    expect(props?.tiles[0].feed).toBe("trip.pulse");
+    expect(props?.tiles[0].field).toBe("summary");
+    expect(JSON.stringify(props)).not.toContain("work:board");
   });
 
   it("rejects dashboard with fewer than two tiles", () => {

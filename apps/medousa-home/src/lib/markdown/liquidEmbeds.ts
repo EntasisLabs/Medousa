@@ -83,12 +83,48 @@ export type LiquidEmbedKind =
   | "brief"
   | "dashboard";
 
+export interface LiquidCardPoint {
+  label: string;
+  body: string;
+  emoji?: string;
+}
+
 export interface LiquidCardProps {
   title: string;
   subtitle?: string;
   body?: string;
   emoji?: string;
   image?: string;
+  meta?: string;
+  summary?: string;
+  chips?: string[];
+  points?: LiquidCardPoint[];
+  badges?: string[];
+}
+
+/** Payload for chat card-detail sheet (structured expand). */
+export interface CardDetailPayload {
+  id: string;
+  title: string;
+  subtitle?: string;
+  emoji?: string;
+  image?: string;
+  meta?: string;
+  summary?: string;
+  chips?: string[];
+  points?: LiquidCardPoint[];
+  badges?: string[];
+}
+
+export function cardHasDetail(
+  card: Pick<LiquidCardProps, "meta" | "summary" | "chips" | "points">,
+): boolean {
+  return Boolean(
+    (typeof card.meta === "string" && card.meta.trim()) ||
+      (typeof card.summary === "string" && card.summary.trim()) ||
+      (Array.isArray(card.chips) && card.chips.length > 0) ||
+      (Array.isArray(card.points) && card.points.length > 0),
+  );
 }
 
 export interface LiquidActionProps {
@@ -229,6 +265,8 @@ export interface LiquidDashboardTile {
   emoji?: string;
   hint?: string;
   unit?: string;
+  feed?: string;
+  field?: string;
 }
 
 export interface LiquidDashboardProps {
@@ -308,21 +346,53 @@ function parseKvLine(line: string): Record<string, string> {
   return out;
 }
 
-function parseCardBody(body: string): LiquidCardProps | null {
+function parsePipeLabels(raw: string | undefined): string[] {
+  if (!raw?.trim()) return [];
+  return raw
+    .split("|")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+function parsePointValue(raw: string): LiquidCardPoint | null {
+  const parts = raw
+    .split("|")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (parts.length < 2) return null;
+  const [label, body, emoji] = parts;
+  if (!label || !body) return null;
+  const point: LiquidCardPoint = { label, body };
+  if (emoji) point.emoji = emoji;
+  return point;
+}
+
+/** Build a card from a KV/point block (carousel item or single card fence). */
+function parseCardBlock(block: string): LiquidCardProps | null {
   const fields: Record<string, string> = {};
-  for (const raw of body.split("\n")) {
+  const points: LiquidCardPoint[] = [];
+
+  for (const raw of block.split("\n")) {
     const line = stripFenceLineChrome(raw);
-    if (!line || line.startsWith("#")) continue;
-    // Multi-line kv: "title: Sol"
+    if (!line || line.startsWith("#") || line === "---") continue;
     const colon = line.indexOf(":");
-    if (colon > 0 && !line.includes("|")) {
-      const key = line.slice(0, colon).trim().toLowerCase();
-      const value = line.slice(colon + 1).trim();
-      if (key && value) fields[key] = value;
+    if (colon <= 0) continue;
+    const key = line.slice(0, colon).trim().toLowerCase();
+    const value = line.slice(colon + 1).trim();
+    if (!key || !value) continue;
+    if (key === "point" || key === "points") {
+      const point = parsePointValue(value);
+      if (point) points.push(point);
       continue;
     }
-    Object.assign(fields, parseKvLine(line));
+    // chips/badges keep pipes; other keys take first assignment
+    if (key === "chips" || key === "badges") {
+      fields[key] = fields[key] ? `${fields[key]} | ${value}` : value;
+      continue;
+    }
+    if (!(key in fields)) fields[key] = value;
   }
+
   const title = fields.title?.trim();
   if (!title) return null;
   const card: LiquidCardProps = { title };
@@ -330,12 +400,55 @@ function parseCardBody(body: string): LiquidCardProps | null {
   if (fields.body) card.body = fields.body;
   if (fields.emoji) card.emoji = fields.emoji;
   if (fields.image) card.image = fields.image;
+  if (fields.meta) card.meta = fields.meta;
+  if (fields.summary) card.summary = fields.summary;
+  const chips = parsePipeLabels(fields.chips);
+  if (chips.length) card.chips = chips;
+  const badges = parsePipeLabels(fields.badges);
+  if (badges.length) card.badges = badges;
+  if (points.length) card.points = points;
+  return card;
+}
+
+function parseCardBody(body: string): LiquidCardProps | null {
+  const normalized = body.replace(/\r\n/g, "\n").trim();
+  if (!normalized) return null;
+
+  const parts = normalized.split(/^---[ \t]*$/m);
+  const head = parts[0] ?? "";
+  const card = parseCardBlock(head);
+  if (!card) return null;
+
+  // Optional --- prose block aliases summary when summary KV absent
+  if (!card.summary && parts.length > 1) {
+    const prose = parts
+      .slice(1)
+      .map((p) => p.trim())
+      .filter(Boolean)
+      .join("\n\n");
+    if (prose) card.summary = prose;
+  }
   return card;
 }
 
 function parseCarouselBody(body: string): LiquidCardProps[] {
+  const normalized = body.replace(/\r\n/g, "\n").trim();
+  if (!normalized) return [];
+
+  // Structured --- item blocks (Monogram expand path)
+  if (/^---[ \t]*$/m.test(normalized)) {
+    const parts = normalized.split(/^---[ \t]*$/m);
+    const cards: LiquidCardProps[] = [];
+    for (const block of parts.slice(1)) {
+      const card = parseCardBlock(block);
+      if (card) cards.push(card);
+    }
+    return cards;
+  }
+
+  // Legacy one-line-per-card
   const cards: LiquidCardProps[] = [];
-  for (const raw of body.split("\n")) {
+  for (const raw of normalized.split("\n")) {
     const line = stripFenceLineChrome(raw);
     if (!line || line.startsWith("#")) continue;
     const fields = parseKvLine(line);
@@ -346,6 +459,8 @@ function parseCarouselBody(body: string): LiquidCardProps[] {
     if (fields.body) card.body = fields.body;
     if (fields.emoji) card.emoji = fields.emoji;
     if (fields.image) card.image = fields.image;
+    const badges = parsePipeLabels(fields.badges);
+    if (badges.length) card.badges = badges;
     cards.push(card);
   }
   return cards;
@@ -389,13 +504,17 @@ function parseKvBlock(body: string): Record<string, string> {
     const line = stripFenceLineChrome(raw);
     if (!line || line.startsWith("#") || line === "---") continue;
     const colon = line.indexOf(":");
-    if (colon > 0 && !line.includes("|")) {
-      const key = line.slice(0, colon).trim().toLowerCase();
-      const value = line.slice(colon + 1).trim();
-      if (key && value) fields[key] = value;
+    if (colon <= 0) continue;
+    const key = line.slice(0, colon).trim().toLowerCase();
+    const value = line.slice(colon + 1).trim();
+    if (!key || !value) continue;
+    // Pipe-separated multi-kv: "title: Sol | body: Flagship"
+    // vs value that merely contains a pipe: "title: Albums | AllMusic"
+    if (line.includes("|") && /\|\s*[a-zA-Z][a-zA-Z0-9_-]*\s*:/.test(line)) {
+      Object.assign(fields, parseKvLine(line));
       continue;
     }
-    Object.assign(fields, parseKvLine(line));
+    fields[key] = value;
   }
   return fields;
 }
@@ -767,11 +886,67 @@ function parseDecisionBody(body: string): LiquidDecisionProps | null {
 
 const BRIEF_TONES = new Set(["research", "brief", "memo"]);
 
+function stripAtxHeading(line: string): string | null {
+  const m = line.trim().match(/^#{1,6}\s+(.+?)(?:\s+#*)?$/);
+  if (!m) return null;
+  return m[1].replace(/\s+#*$/, "").trim() || null;
+}
+
+/** Split a markdown blob on ATX headings into brief sections. */
+function parseAtxBriefSections(block: string, startIndex: number): LiquidBriefSection[] {
+  const lines = block.replace(/\r\n/g, "\n").split("\n");
+  const sections: LiquidBriefSection[] = [];
+  let heading: string | null = null;
+  let bodyLines: string[] = [];
+  let leadLines: string[] = [];
+
+  const flush = () => {
+    const body = bodyLines.join("\n").trim();
+    if (!heading || !body) {
+      bodyLines = [];
+      return;
+    }
+    sections.push({
+      id: slugCompareId(heading, "section", startIndex + sections.length),
+      heading,
+      body,
+    });
+    bodyLines = [];
+  };
+
+  for (const line of lines) {
+    const atx = stripAtxHeading(line);
+    if (atx) {
+      flush();
+      heading = atx;
+      continue;
+    }
+    if (heading) bodyLines.push(line);
+    else if (line.trim()) leadLines.push(line);
+  }
+  flush();
+
+  // Leading prose before the first ## merges into the first ATX section only.
+  // Do not invent an "Overview" here — callers handle KV/pending-heading flows.
+  const lead = leadLines.join("\n").trim();
+  if (lead && sections.length > 0) {
+    sections[0] = {
+      ...sections[0],
+      body: `${lead}\n\n${sections[0].body}`.trim(),
+    };
+  }
+
+  return sections;
+}
+
 function parseBriefSectionBlock(
   block: string,
   index: number,
 ): LiquidBriefSection | null {
-  const normalized = block.replace(/\r\n/g, "\n");
+  const normalized = block.replace(/\r\n/g, "\n").trim();
+  if (!normalized) return null;
+
+  // Prefer explicit heading:/title: + body: (or nested --- prose)
   const sep = normalized.search(/^---[ \t]*$/m);
   let header = normalized;
   let proseBody: string | undefined;
@@ -781,14 +956,24 @@ function parseBriefSectionBlock(
   }
   const fields = parseDecisionOptionFields(header);
   const heading = (fields.heading ?? fields.title)?.trim();
-  if (!heading) return null;
-  const body = (fields.body ?? proseBody)?.trim();
-  if (!body) return null;
-  return {
-    id: slugCompareId(heading, "section", index),
-    heading,
-    body,
-  };
+  if (heading) {
+    const body = (fields.body ?? proseBody)?.trim();
+    if (body) {
+      return {
+        id: slugCompareId(heading, "section", index),
+        heading,
+        body,
+      };
+    }
+  }
+
+  // Model-common: ## Heading\nprose… (optionally several ## in one --- block)
+  const atxSections = parseAtxBriefSections(normalized, index);
+  if (atxSections.length === 1) return atxSections[0];
+  // Multiple ATX in one block — caller should use parseAtxBriefSections directly
+  if (atxSections.length > 1) return atxSections[0];
+
+  return null;
 }
 
 function parseBriefSourceBlock(
@@ -825,6 +1010,16 @@ function parseBriefBody(body: string): LiquidBriefProps | null {
   let pendingHeading: string | null = null;
 
   for (const block of sectionBlocks) {
+    // Multi-heading markdown blob in one --- slice (## A … ## B …)
+    if (/^#{1,6}\s+\S/m.test(block)) {
+      const atxMany = parseAtxBriefSections(block, sections.length);
+      if (atxMany.length >= 1) {
+        sections.push(...atxMany);
+        pendingHeading = null;
+        continue;
+      }
+    }
+
     const section = parseBriefSectionBlock(block, sections.length);
     if (section) {
       sections.push(section);
@@ -852,6 +1047,41 @@ function parseBriefBody(body: string): LiquidBriefProps | null {
     }
   }
 
+  // No --- sections: whole body may be ATX markdown (with optional title chrome in preamble)
+  if (sections.length < 1) {
+    if (sectionBlocks.length === 0 && /^#{1,6}\s+\S/m.test(mainPart)) {
+      // Strip KV chrome lines from the top before ATX split when preamble has title:
+      const atxSource =
+        fields.title || fields.subtitle || fields.tone
+          ? mainPart
+              .split("\n")
+              .filter((line) => {
+                const t = stripFenceLineChrome(line);
+                if (!t) return true;
+                return !/^(title|subtitle|tone)\s*:/i.test(t);
+              })
+              .join("\n")
+          : mainPart;
+      sections.push(...parseAtxBriefSections(atxSource, 0));
+    } else if (sectionBlocks.length > 0) {
+      // Had --- but KV/ATX per-block failed: try ATX on joined remainder, else one Overview
+      const rest = sectionBlocks.map((b) => b.trim()).filter(Boolean).join("\n\n");
+      if (rest) {
+        const atx = /^#{1,6}\s+\S/m.test(rest) ? parseAtxBriefSections(rest, 0) : [];
+        if (atx.length) {
+          sections.push(...atx);
+        } else {
+          const heading = fields.title?.trim() || "Overview";
+          sections.push({
+            id: slugCompareId(heading, "section", 0),
+            heading,
+            body: rest,
+          });
+        }
+      }
+    }
+  }
+
   if (sections.length < 1) return null;
 
   const sources: LiquidBriefSource[] = [];
@@ -867,7 +1097,13 @@ function parseBriefBody(body: string): LiquidBriefProps | null {
   if (fields.title) brief.title = fields.title;
   if (fields.subtitle) brief.subtitle = fields.subtitle;
   const tone = fields.tone?.trim().toLowerCase();
-  if (tone && BRIEF_TONES.has(tone)) brief.tone = tone;
+  if (tone) {
+    // Allowlisted tones preferred; freeform tones (e.g. "warm, analytical") still pass through
+    const primary = tone.split(/[,/|]/)[0]?.trim() ?? tone;
+    if (BRIEF_TONES.has(primary)) brief.tone = primary;
+    else if (BRIEF_TONES.has(tone)) brief.tone = tone;
+    else brief.tone = "research";
+  }
   if (sources.length) brief.sources = sources;
   return brief;
 }
@@ -891,7 +1127,7 @@ function parseDashboardBody(body: string): LiquidDashboardProps | null {
     const label = (tileFields.label ?? tileFields.title)?.trim();
     const value = tileFields.value?.trim();
     if (!label || !value) continue;
-    // Ignore deferred live bindings if present (feed:/binding: not hydrated in v1)
+    // binding: ignored (wave C+); feed:/field: hydrate for tail-from-chat
     const tile: LiquidDashboardTile = {
       id: slugCompareId(label, "tile", tiles.length),
       label,
@@ -904,6 +1140,10 @@ function parseDashboardBody(body: string): LiquidDashboardProps | null {
     if (tileFields.unit) tile.unit = tileFields.unit;
     const tone = tileFields.tone?.trim().toLowerCase();
     if (tone && DASHBOARD_TONES.has(tone)) tile.tone = tone;
+    const feed = tileFields.feed?.trim();
+    if (feed) tile.feed = feed;
+    const field = tileFields.field?.trim();
+    if (field) tile.field = field;
     tiles.push(tile);
   }
 
@@ -926,17 +1166,70 @@ function normalizeIconId(raw: string): string | null {
     .replace(/alerttriangle/, "alert-triangle");
 }
 
+const PROSE_MISTAKEN_FENCE_LANGS = new Set([
+  "code",
+  "text",
+  "plaintext",
+  "plain",
+  "markdown",
+  "md",
+  "output",
+  "response",
+  "answer",
+  "txt",
+]);
+
+/** True when a fenced body looks like narrative prose, not source code. */
+export function looksLikeProseNotCode(body: string): boolean {
+  const t = body.replace(/\r\n/g, "\n").trim();
+  if (t.length < 20) return false;
+  if (/```/.test(t)) return false;
+  if (
+    /^(import |export |from ['"]|const |let |var |function |class |def |package |using |#include|<\?php|#!\/)/m.test(
+      t,
+    )
+  ) {
+    return false;
+  }
+  const lines = t.split("\n");
+  const codey = lines.filter((l) =>
+    /^\s*[{}\]);]|^\s*\/\/|^\s*\/\*|=>|:=|;\s*$/.test(l),
+  ).length;
+  if (codey >= 3) return false;
+  if (/\*\*[^*]+\*\*|(^|[^*])\*[^*\n]+\*([^*]|$)|_[^_\n]+_/.test(t)) return true;
+  // Narrative sentence(s) without code punctuation density
+  if (/[.!?]["'”’)]?\s*$/.test(t) && t.length >= 40) return true;
+  if ((t.match(/[.!?][\s"'”’]/g) ?? []).length >= 1 && t.length > 48) return true;
+  return false;
+}
+
 /**
  * Replace Liquid fences + `{{icon:name}}` with sanitize-safe placeholders.
- * Unknown fence langs are left untouched.
+ * Unknown fence langs are left untouched — except mistaken prose fences
+ * (`code` / `text` / `markdown` …) which models often wrap around conclusions.
  */
 export function preprocessLiquidEmbeds(source: string): string {
   const normalized = source.replace(/\r\n/g, "\n");
-  const fenceRe = /^```([a-zA-Z0-9_-]+)[ \t]*\n([\s\S]*?)^```[ \t]*$/gm;
+  // Soft-convert invented "| Source: … |" lines into italic whispers
+  const withSources = normalized.replace(
+    /^\|\s*Source:\s*(.+?)\s*\|\s*$/gim,
+    (_m, src: string) => `*Source: ${String(src).trim()}*`,
+  );
+  // Lang optional — bare ``` … ``` often wraps final statements
+  const fenceRe = /^```([a-zA-Z0-9_-]*)[ \t]*\n([\s\S]*?)^```[ \t]*$/gm;
 
-  let out = normalized.replace(fenceRe, (match, langRaw: string, body: string) => {
+  let out = withSources.replace(fenceRe, (match, langRaw: string, body: string) => {
     const lang = langRaw.trim().toLowerCase();
-    if (!LIQUID_FENCE_LANGS.has(lang)) return match;
+
+    // Models wrap final statements in ```code / bare ``` — unwrap when clearly prose
+    if (
+      (lang === "" || PROSE_MISTAKEN_FENCE_LANGS.has(lang)) &&
+      looksLikeProseNotCode(body)
+    ) {
+      return `\n${body.trim()}\n`;
+    }
+
+    if (!lang || !LIQUID_FENCE_LANGS.has(lang)) return match;
 
     if (lang === "card") {
       const card = parseCardBody(body);

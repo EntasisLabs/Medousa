@@ -1,13 +1,20 @@
 <script lang="ts">
   /**
-   * `dashboard` organism — paste-first metric/status tile grid.
-   * Live feed/work bindings deferred. From ```dashboard markdown.
+   * `dashboard` organism — metric/status tile grid.
+   * Static paste-first tiles + optional per-tile feed: via chat feed_tail poll.
    */
+  import { onDestroy } from "svelte";
   import { getLiquidContext } from "$lib/liquid/render/context";
   import { createSceneEvent } from "$lib/liquid/core";
   import type { ArchetypeProps } from "$lib/liquid/render/types";
+  import {
+    mapFeedEventToTile,
+    subscribeFeedTail,
+    type LiveTileOverrides,
+  } from "$lib/liquid/feeds/feedTail";
 
   type TileTone = "default" | "accent" | "success" | "warn" | "error";
+  type TileLiveStatus = "static" | "loading" | "ready" | "stale" | "error";
   const TONES: TileTone[] = ["default", "accent", "success", "warn", "error"];
 
   interface DashboardTile {
@@ -19,6 +26,12 @@
     emoji?: string;
     hint?: string;
     unit?: string;
+    feed?: string;
+    field?: string;
+  }
+
+  interface DisplayTile extends DashboardTile {
+    liveStatus: TileLiveStatus;
   }
 
   let { node }: ArchetypeProps = $props();
@@ -32,7 +45,7 @@
     return "2";
   });
 
-  const tiles = $derived.by((): DashboardTile[] => {
+  const baseTiles = $derived.by((): DashboardTile[] => {
     const raw = node.props.tiles;
     if (!Array.isArray(raw)) return [];
     return raw
@@ -50,19 +63,93 @@
         if (typeof row.emoji === "string" && row.emoji.trim()) tile.emoji = row.emoji.trim();
         if (typeof row.hint === "string" && row.hint.trim()) tile.hint = row.hint.trim();
         if (typeof row.unit === "string" && row.unit.trim()) tile.unit = row.unit.trim();
+        if (typeof row.feed === "string" && row.feed.trim()) tile.feed = row.feed.trim();
+        if (typeof row.field === "string" && row.field.trim()) tile.field = row.field.trim();
         return tile;
       })
       .filter((t): t is DashboardTile => t !== null);
   });
 
-  function selectTile(tile: DashboardTile) {
+  /** Live overrides keyed by tile id. */
+  let liveById = $state<Record<string, LiveTileOverrides & { status: TileLiveStatus }>>({});
+  let unsubscribers: Array<() => void> = [];
+
+  function clearSubs() {
+    for (const off of unsubscribers) off();
+    unsubscribers = [];
+  }
+
+  $effect(() => {
+    const tiles = baseTiles;
+    clearSubs();
+    const next: Record<string, LiveTileOverrides & { status: TileLiveStatus }> = {};
+
+    for (const tile of tiles) {
+      if (!tile.feed) continue;
+      next[tile.id] = { status: "loading" };
+    }
+    liveById = next;
+
+    for (const tile of tiles) {
+      if (!tile.feed) continue;
+      const off = subscribeFeedTail(tile.feed, (event) => {
+        if (!event) {
+          const prev = liveById[tile.id];
+          liveById = {
+            ...liveById,
+            [tile.id]: {
+              ...prev,
+              status: prev?.value ? "stale" : "error",
+            },
+          };
+          return;
+        }
+        const overrides = mapFeedEventToTile(event, tile.field, {
+          keepHint: Boolean(tile.hint),
+        });
+        liveById = {
+          ...liveById,
+          [tile.id]: { ...overrides, status: "ready" },
+        };
+      });
+      unsubscribers.push(off);
+    }
+
+    return () => clearSubs();
+  });
+
+  onDestroy(() => clearSubs());
+
+  const displayTiles = $derived.by((): DisplayTile[] => {
+    return baseTiles.map((tile) => {
+      if (!tile.feed) return { ...tile, liveStatus: "static" as const };
+      const live = liveById[tile.id];
+      const status = live?.status ?? "loading";
+      const toneRaw = live?.tone ?? tile.tone;
+      const tone: TileTone = TONES.includes(toneRaw as TileTone) ? (toneRaw as TileTone) : tile.tone;
+      return {
+        ...tile,
+        value: live?.value ?? tile.value,
+        delta: live?.delta ?? tile.delta,
+        tone,
+        hint: tile.hint ?? live?.hint,
+        liveStatus: status,
+      };
+    });
+  });
+
+  function selectTile(tile: DisplayTile) {
     ctx.sink?.emit(
-      createSceneEvent(node.id, "select", { tileId: tile.id, label: tile.label }),
+      createSceneEvent(node.id, "select", {
+        tileId: tile.id,
+        label: tile.label,
+        ...(tile.feed ? { feedId: tile.feed } : {}),
+      }),
     );
   }
 </script>
 
-{#if tiles.length >= 2}
+{#if displayTiles.length >= 2}
   <div
     class="liquid-dashboard"
     role="list"
@@ -81,12 +168,13 @@
     {/if}
 
     <div class="liquid-dashboard-grid">
-      {#each tiles as tile (tile.id)}
+      {#each displayTiles as tile (tile.id)}
         <div class="liquid-dashboard-tile-wrap" role="listitem">
           <button
             type="button"
             class="liquid-dashboard-tile"
             data-tone={tile.tone}
+            data-live={tile.liveStatus}
             onclick={() => selectTile(tile)}
           >
             <span class="liquid-dashboard-tile-top">
@@ -96,15 +184,20 @@
               <span class="liquid-dashboard-label">{tile.label}</span>
             </span>
             <span class="liquid-dashboard-value-row">
-              <span class="liquid-dashboard-value">{tile.value}</span>
-              {#if tile.unit}
-                <span class="liquid-dashboard-unit">{tile.unit}</span>
+              {#if tile.liveStatus === "loading"}
+                <span class="liquid-dashboard-value-skeleton" aria-hidden="true"></span>
+                <span class="sr-only">Loading</span>
+              {:else}
+                <span class="liquid-dashboard-value">{tile.value}</span>
+                {#if tile.unit}
+                  <span class="liquid-dashboard-unit">{tile.unit}</span>
+                {/if}
               {/if}
             </span>
-            {#if tile.delta}
+            {#if tile.delta && tile.liveStatus !== "loading"}
               <span class="liquid-dashboard-delta">{tile.delta}</span>
             {/if}
-            {#if tile.hint}
+            {#if tile.hint && tile.liveStatus !== "loading"}
               <span class="liquid-dashboard-hint">{tile.hint}</span>
             {/if}
           </button>
@@ -203,6 +296,11 @@
     border-color: color-mix(in srgb, var(--color-error-500) 40%, transparent);
   }
 
+  .liquid-dashboard-tile[data-live="stale"],
+  .liquid-dashboard-tile[data-live="error"] {
+    opacity: 0.78;
+  }
+
   .liquid-dashboard-tile-top {
     display: flex;
     align-items: center;
@@ -231,6 +329,7 @@
     align-items: baseline;
     gap: 0.25rem;
     min-width: 0;
+    min-height: 1.55rem;
   }
 
   .liquid-dashboard-value {
@@ -240,6 +339,30 @@
     line-height: 1.15;
     color: rgb(var(--color-surface-50));
     font-variant-numeric: tabular-nums;
+  }
+
+  .liquid-dashboard-value-skeleton {
+    display: block;
+    width: 3.2rem;
+    height: 1.15rem;
+    border-radius: 0.35rem;
+    background: linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--color-surface-500) 28%, transparent) 0%,
+      color-mix(in srgb, var(--color-surface-50) 12%, transparent) 50%,
+      color-mix(in srgb, var(--color-surface-500) 28%, transparent) 100%
+    );
+    background-size: 200% 100%;
+    animation: liquid-dash-shimmer 1.2s ease-in-out infinite;
+  }
+
+  @keyframes liquid-dash-shimmer {
+    0% {
+      background-position: 100% 0;
+    }
+    100% {
+      background-position: -100% 0;
+    }
   }
 
   .liquid-dashboard-tile[data-tone="accent"] .liquid-dashboard-value {
@@ -291,5 +414,17 @@
     font-size: 0.65rem;
     line-height: 1.35;
     color: rgb(var(--color-surface-500));
+  }
+
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
   }
 </style>
