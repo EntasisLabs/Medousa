@@ -291,6 +291,8 @@ pub fn run() {
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             human_browser::human_browser_report_new_window,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            human_browser::human_browser_report_hotkey,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
             human_browser::human_browser_reload,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             human_browser::human_browser_popout_reload,

@@ -346,12 +346,105 @@ pub struct SnapshotMarkdownDto {
 }
 
 pub fn init_app_handle(app: AppHandle) {
-    let _ = APP_HANDLE.set(app);
+    let _ = APP_HANDLE.set(app.clone());
+    #[cfg(target_os = "macos")]
+    install_embed_hotkey_monitor(app);
 }
 
 pub fn app_handle() -> Option<AppHandle> {
     APP_HANDLE.get().cloned()
 }
+
+/// Native macOS key monitor — page JS never sees chrome shortcuts while the embed
+/// webview is visible (focus lives in WKWebView, outside the shell).
+#[cfg(target_os = "macos")]
+fn install_embed_hotkey_monitor(app: AppHandle) {
+    use std::sync::atomic::AtomicBool;
+    static INSTALLED: AtomicBool = AtomicBool::new(false);
+    if INSTALLED.swap(true, Ordering::SeqCst) {
+        return;
+    }
+
+    let app_for_block = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        use std::ptr::NonNull;
+
+        use block2::RcBlock;
+        use objc2::rc::Retained;
+        use objc2_app_kit::{NSEvent, NSEventMask, NSEventModifierFlags};
+        use objc2_foundation::NSString;
+
+        let app_handle = app_for_block.clone();
+        let block = RcBlock::new(move |event_ptr: NonNull<NSEvent>| -> *mut NSEvent {
+            let event = unsafe { event_ptr.as_ref() };
+            if event.isARepeat() {
+                return event_ptr.as_ptr();
+            }
+
+            let flags = event.modifierFlags();
+            let command = flags.contains(NSEventModifierFlags::Command);
+            let control = flags.contains(NSEventModifierFlags::Control);
+            if !command && !control {
+                return event_ptr.as_ptr();
+            }
+            // Only steal chrome shortcuts while a page embed is on screen.
+            // Start page / popovers hide the embed, so shell keydown owns those.
+            if !EMBED_VISIBLE.load(Ordering::SeqCst) {
+                return event_ptr.as_ptr();
+            }
+
+            let shift = flags.contains(NSEventModifierFlags::Shift);
+            let option = flags.contains(NSEventModifierFlags::Option);
+            let key = event
+                .charactersIgnoringModifiers()
+                .map(|s: Retained<NSString>| s.to_string().to_lowercase())
+                .unwrap_or_default();
+
+            let action = match (key.as_str(), shift, option) {
+                ("l", false, false) => Some("focusUrl"),
+                ("f", false, false) => Some("find"),
+                ("b", true, false) => Some("bookmarks"),
+                ("t", true, false) => Some("reopenTab"),
+                ("t", false, false) => Some("newTab"),
+                ("w", false, false) => Some("closeTab"),
+                ("r", false, false) => Some("reload"),
+                ("[", _, false) => Some("goBack"),
+                ("]", _, false) => Some("goForward"),
+                _ => None,
+            };
+
+            let Some(action) = action else {
+                return event_ptr.as_ptr();
+            };
+
+            dispatch_embed_hotkey(&app_handle, action);
+            // Swallow so the page (and shell, if focused) don't also handle it.
+            std::ptr::null_mut()
+        });
+
+        let monitor = unsafe {
+            NSEvent::addLocalMonitorForEventsMatchingMask_handler(NSEventMask::KeyDown, &block)
+        };
+        // Keep the monitor (and its block) alive for the process lifetime.
+        std::mem::forget(monitor);
+        std::mem::forget(block);
+    });
+}
+
+#[cfg(target_os = "macos")]
+fn dispatch_embed_hotkey(app: &AppHandle, action: &str) {
+    if hotkey_needs_shell_focus(action) {
+        focus_shell_webview(app);
+    }
+    let _ = app.emit(
+        "human-browser-hotkey",
+        HumanBrowserHotkeyPayload {
+            action: action.to_string(),
+            surface: "embed".to_string(),
+        },
+    );
+}
+
 
 pub fn human_browser_active_url() -> String {
     surface_url_lock(BrowserSurface::Embed)
@@ -543,6 +636,14 @@ fn desktop_new_window_install_js(surface: BrowserSurface) -> String {
     )
 }
 
+/// Forward chrome hotkeys from the focused page webview to the shell (Cmd/Ctrl shortcuts).
+fn desktop_hotkey_install_js(surface: BrowserSurface) -> String {
+    let surface = surface.as_str();
+    format!(
+        r#"(function(){{if(window.__medousaHotkeysInstalled)return;window.__medousaHotkeysInstalled=true;function report(a){{var i=window.__TAURI_INTERNALS__||window.__TAURI__;if(!i||!i.invoke)return;i.invoke('human_browser_report_hotkey',{{action:a,surface:'{surface}'}});}}document.addEventListener('keydown',function(e){{var mod=e.metaKey||e.ctrlKey;if(!mod)return;var key=(e.key||'').toLowerCase();var action=null;if(key==='l'&&!e.shiftKey&&!e.altKey)action='focusUrl';else if(key==='f'&&!e.shiftKey&&!e.altKey)action='find';else if(key==='b'&&e.shiftKey&&!e.altKey)action='bookmarks';else if(key==='t'&&e.shiftKey&&!e.altKey)action='reopenTab';else if(key==='t'&&!e.shiftKey&&!e.altKey)action='newTab';else if(key==='w'&&!e.shiftKey&&!e.altKey)action='closeTab';else if(key==='r'&&!e.shiftKey&&!e.altKey)action='reload';else if(e.key==='['||e.key===']')action=e.key==='['?'goBack':'goForward';if(!action)return;e.preventDefault();e.stopPropagation();report(action);}},true);}})();"#
+    )
+}
+
 fn content_builder(
     app: &AppHandle,
     label: String,
@@ -558,7 +659,9 @@ fn content_builder(
     let surface_new_window = surface;
     let tab_id_load = tab_id;
     let new_window_js = desktop_new_window_install_js(surface);
+    let hotkey_js = desktop_hotkey_install_js(surface);
     let mut builder = WebviewBuilder::new(label, WebviewUrl::External("about:blank".parse().unwrap()))
+        .initialization_script(hotkey_js.clone())
         .on_new_window(move |url, _features| {
             let href = url.as_str();
             if !(href.starts_with("http://") || href.starts_with("https://")) {
@@ -596,9 +699,11 @@ fn content_builder(
                     if mobile_ua {
                         let _ = webview.eval(MOBILE_EMBED_FIX_JS);
                         let _ = webview.eval(&new_window_js);
+                        let _ = webview.eval(&hotkey_js);
                     } else {
                         let _ = webview.eval(DESKTOP_EMBED_FILL_JS);
                         let _ = webview.eval(&new_window_js);
+                        let _ = webview.eval(&hotkey_js);
                     }
                 }
             }
@@ -2042,6 +2147,39 @@ pub struct HumanBrowserNewWindowReport {
     pub surface: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HumanBrowserHotkeyPayload {
+    pub action: String,
+    #[serde(default = "default_embed_surface")]
+    pub surface: String,
+}
+
+fn focus_shell_webview(app: &AppHandle) {
+    if let Some(shell) = app.get_webview(MAIN_WINDOW_LABEL) {
+        let _ = shell.set_focus();
+    }
+}
+
+fn hotkey_needs_shell_focus(action: &str) -> bool {
+    matches!(action, "focusUrl" | "find" | "bookmarks")
+}
+
+fn is_known_browser_hotkey(action: &str) -> bool {
+    matches!(
+        action,
+        "focusUrl"
+            | "find"
+            | "bookmarks"
+            | "newTab"
+            | "reopenTab"
+            | "closeTab"
+            | "reload"
+            | "goBack"
+            | "goForward"
+    )
+}
+
 #[tauri::command]
 pub fn human_browser_report_new_window(
     app: AppHandle,
@@ -2051,6 +2189,28 @@ pub fn human_browser_report_new_window(
         &app,
         parse_surface(Some(payload.surface.as_str())),
         payload.url.trim(),
+    );
+    Ok(())
+}
+
+#[tauri::command]
+pub fn human_browser_report_hotkey(
+    app: AppHandle,
+    payload: HumanBrowserHotkeyPayload,
+) -> Result<(), String> {
+    let action = payload.action.trim();
+    if !is_known_browser_hotkey(action) {
+        return Ok(());
+    }
+    if hotkey_needs_shell_focus(action) {
+        focus_shell_webview(&app);
+    }
+    let _ = app.emit(
+        "human-browser-hotkey",
+        HumanBrowserHotkeyPayload {
+            action: action.to_string(),
+            surface: payload.surface,
+        },
     );
     Ok(())
 }

@@ -9,9 +9,18 @@ import type {
 } from "$lib/humanBrowser";
 import type { HumanBrowserStore } from "$lib/stores/humanBrowser.svelte";
 import type { HumanBrowserSurface } from "$lib/stores/humanBrowserSurface";
+import {
+  isBrowserHotkeyAction,
+  runBrowserHotkeyAction,
+} from "$lib/utils/browserHotkeys";
 
 export interface HumanBrowserNewWindowPayload {
   url: string;
+  surface?: HumanBrowserSurface;
+}
+
+export interface HumanBrowserHotkeyPayload {
+  action: string;
   surface?: HumanBrowserSurface;
 }
 
@@ -84,10 +93,21 @@ export function attachHumanBrowserSurface(
     },
   );
 
+  const unlistenHotkey = listen<HumanBrowserHotkeyPayload>(
+    "human-browser-hotkey",
+    (event) => {
+      if (!matchesSurface(event.payload.surface, surface)) return;
+      const action = event.payload.action?.trim() ?? "";
+      if (!isBrowserHotkeyAction(action)) return;
+      runBrowserHotkeyAction(action, store);
+    },
+  );
+
   return () => {
     void unlistenNav.then((fn) => fn());
     void unlistenLoading.then((fn) => fn());
     void unlistenNavState.then((fn) => fn());
     void unlistenNewWindow.then((fn) => fn());
+    void unlistenHotkey.then((fn) => fn());
   };
 }
