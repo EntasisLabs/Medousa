@@ -59,7 +59,7 @@
     externalDesk.selectExternalPath(entry.path);
     const attachment = externalDesk.attachmentForPath(entry.path);
     if (canPreviewAttachment(attachment)) {
-      vault.previewAttachment(entry.path);
+      vault.previewAttachment(entry.path, "pane");
       return;
     }
     await openAttachmentPath(entry.path);

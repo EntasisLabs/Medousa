@@ -4904,6 +4904,15 @@
     user-select: none;
   }
 
+  body.vault-workshop-dragging {
+    cursor: grabbing;
+    user-select: none;
+  }
+
+  body.vault-workshop-dragging * {
+    user-select: none !important;
+  }
+
   body.vault-kanban-dragging [data-kanban-drop-column] {
     cursor: grabbing;
   }
@@ -5169,6 +5178,8 @@
 
   .vault-note-workshop-header {
     @apply flex cursor-grab items-center gap-2 border-b border-surface-500/40 bg-surface-900/95 px-3 py-2 active:cursor-grabbing;
+    user-select: none;
+    touch-action: none;
   }
 
   .vault-note-workshop-icon-btn {

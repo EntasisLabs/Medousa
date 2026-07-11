@@ -75,10 +75,10 @@
 
     const rows: MenuItem[] = [];
 
-    if (onOpenChat && onAskInChat) {
+    if (onAskInChat) {
       rows.push({
         id: "send-chat",
-        label: "Send to chat",
+        label: "Talk about this note",
         disabled: noteLoading,
         onClick: async () => {
           open = false;

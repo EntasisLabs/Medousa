@@ -35,6 +35,12 @@
     browserWorkshop.scopeLabel = humanBrowser.scopeLabel;
   });
 
+  $effect(() => {
+    if (browserWorkshop.open && !browserWorkshop.minimized) return;
+    dragging = false;
+    document.body.classList.remove("vault-workshop-dragging");
+  });
+
   onMount(() => {
     void chat.ensureSessionHydrated();
 
@@ -65,7 +71,10 @@
 
   function handleDragStart(event: PointerEvent) {
     if ((event.target as HTMLElement).closest("button")) return;
+    event.preventDefault();
     dragging = true;
+    document.body.classList.add("vault-workshop-dragging");
+    window.getSelection()?.removeAllRanges();
     dragOffsetX = event.clientX - browserWorkshop.x;
     dragOffsetY = event.clientY - browserWorkshop.y;
     (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
@@ -79,6 +88,7 @@
   function handleDragEnd(event: PointerEvent) {
     if (!dragging) return;
     dragging = false;
+    document.body.classList.remove("vault-workshop-dragging");
     try {
       (event.currentTarget as HTMLElement).releasePointerCapture(event.pointerId);
     } catch {
