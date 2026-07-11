@@ -2002,6 +2002,128 @@
     @apply text-xs;
   }
 
+  .session-sidebar-header {
+    @apply flex items-center justify-between gap-2 border-b border-surface-500/40 px-3 py-2.5;
+  }
+
+  .session-sidebar-icon-btn {
+    @apply inline-flex h-7 w-7 items-center justify-center rounded-md text-surface-400 transition hover:bg-surface-700/70 hover:text-surface-100;
+  }
+
+  .session-sidebar-toolbar {
+    @apply flex items-center gap-1.5 border-b border-surface-500/35 px-2.5 py-2;
+  }
+
+  .session-sidebar-toolbar--sheet {
+    @apply px-3;
+  }
+
+  .session-sidebar-search {
+    @apply flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 transition;
+    background-color: rgb(var(--color-surface-900) / 0.45);
+  }
+
+  .session-sidebar-search:focus-within {
+    background-color: rgb(var(--color-surface-800) / 0.65);
+  }
+
+  .session-sidebar-search-icon {
+    @apply shrink-0 text-surface-500;
+  }
+
+  .session-sidebar-search-input {
+    @apply min-w-0 flex-1 border-0 bg-transparent p-0 text-[13px] text-surface-100 placeholder:text-surface-500 focus:outline-none focus:ring-0;
+  }
+
+  .session-sidebar-search-input::-webkit-search-cancel-button,
+  .session-sidebar-search-input::-webkit-search-decoration {
+    -webkit-appearance: none;
+  }
+
+  .session-sidebar-new {
+    @apply inline-flex h-8 shrink-0 items-center gap-1 rounded-md px-2 text-xs font-medium text-surface-400 transition hover:bg-surface-700/60 hover:text-surface-100;
+  }
+
+  .session-sidebar-new-label {
+    @apply hidden sm:inline;
+  }
+
+  .session-sidebar-list {
+    @apply flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-2;
+  }
+
+  .session-sidebar-section-title {
+    @apply px-2 pb-1 text-[10px] font-semibold uppercase tracking-wide text-surface-500;
+  }
+
+  .session-sidebar-section-list {
+    @apply space-y-0.5;
+  }
+
+  .session-sidebar-empty {
+    @apply px-3 py-8 text-center text-xs leading-relaxed text-surface-400;
+  }
+
+  .session-row {
+    @apply flex items-stretch rounded-md transition;
+  }
+
+  .session-row:hover,
+  .session-row:focus-within {
+    @apply bg-surface-700/50;
+  }
+
+  .session-row-active {
+    @apply bg-surface-700/70;
+  }
+
+  .session-row-active:hover,
+  .session-row-active:focus-within {
+    @apply bg-surface-700/80;
+  }
+
+  .session-row-main {
+    @apply min-w-0 flex-1 px-2.5 py-1.5 text-left;
+  }
+
+  .session-row-title {
+    @apply text-[13px] font-medium text-surface-100;
+  }
+
+  .session-row-when {
+    @apply text-[10px] tabular-nums text-surface-500;
+  }
+
+  .session-row-meta {
+    @apply mt-0.5 text-[10px] text-surface-500;
+  }
+
+  .session-row-actions {
+    @apply flex shrink-0 items-center gap-0 opacity-0 transition-opacity;
+  }
+
+  .session-row:hover .session-row-actions,
+  .session-row:focus-within .session-row-actions,
+  .session-row--touch .session-row-actions {
+    @apply opacity-100;
+  }
+
+  .session-row-action {
+    @apply inline-flex h-7 w-7 items-center justify-center rounded-md text-surface-500 transition hover:bg-surface-800 hover:text-surface-200;
+  }
+
+  .session-row-action--danger:hover {
+    @apply text-error-300;
+  }
+
+  .session-row-action--pinned {
+    @apply text-amber-400;
+  }
+
+  .session-row-action--pinned:hover {
+    @apply text-amber-300;
+  }
+
   /* Side drawers (sessions, identity) */
   .workshop-drawer {
     @apply border-surface-500/50 bg-surface-800 shadow-xl;
