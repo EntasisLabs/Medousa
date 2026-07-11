@@ -135,9 +135,13 @@ export function resolveViewSourcePath(
   return resolved ?? normalizeVaultNotePath(trimmed);
 }
 
+import { columnDisplayLabel } from "$lib/utils/ledgerSheet";
+
 function columnIndex(headers: string[], name: string): number {
   const norm = name.trim().toLowerCase();
-  return headers.findIndex((header) => header.trim().toLowerCase() === norm);
+  return headers.findIndex(
+    (header) => columnDisplayLabel(header).trim().toLowerCase() === norm,
+  );
 }
 
 export function findTableForView(markdown: string, mode: "first" | "ledger"): MarkdownTable | null {
@@ -175,13 +179,14 @@ function projectColumns(
   rows: string[][],
   columns?: string[],
 ): { headers: string[]; rows: string[][] } {
-  if (!columns?.length) return { headers, rows };
+  const displayHeaders = headers.map((header) => columnDisplayLabel(header));
+  if (!columns?.length) return { headers: displayHeaders, rows };
   const indices = columns
     .map((name) => ({ name, index: columnIndex(headers, name) }))
     .filter((entry) => entry.index >= 0);
-  if (indices.length === 0) return { headers, rows };
+  if (indices.length === 0) return { headers: displayHeaders, rows };
   return {
-    headers: indices.map((entry) => headers[entry.index]),
+    headers: indices.map((entry) => displayHeaders[entry.index]),
     rows: rows.map((row) => indices.map((entry) => row[entry.index] ?? "")),
   };
 }

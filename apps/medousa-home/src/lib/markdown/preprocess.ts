@@ -138,8 +138,55 @@ export function preprocessColorSpans(source: string): string {
   return out.join("\n");
 }
 
+/** Strip `{{Label key:value}}` table headers down to labels for preview HTML. */
+export function preprocessLedgerColumnHeaders(source: string): string {
+  const lines = source.replace(/\r\n/g, "\n").split("\n");
+  const out: string[] = [];
+  let inFence = false;
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    const trimmed = line.trimStart();
+    if (trimmed.startsWith("```")) {
+      inFence = !inFence;
+      out.push(line);
+      continue;
+    }
+    if (inFence) {
+      out.push(line);
+      continue;
+    }
+
+    const headerCells = splitPipeRowForPreview(line);
+    const separatorCells = splitPipeRowForPreview(lines[i + 1] ?? "");
+    if (
+      headerCells &&
+      separatorCells &&
+      separatorCells.every((cell) => /^:?-+:?$/.test(cell.replace(/\s/g, "")))
+    ) {
+      out.push(
+        `| ${headerCells.map((cell) => columnDisplayLabel(cell)).join(" | ")} |`,
+      );
+      continue;
+    }
+    out.push(line);
+  }
+
+  return out.join("\n");
+}
+
+function splitPipeRowForPreview(line: string): string[] | null {
+  const trimmed = line.trim();
+  if (!trimmed.startsWith("|") || !trimmed.endsWith("|")) return null;
+  return trimmed
+    .slice(1, -1)
+    .split("|")
+    .map((cell) => cell.trim());
+}
+
 import { preprocessTableOfContents } from "./toc";
 import { preprocessLiquidEmbeds } from "./liquidEmbeds";
+import { columnDisplayLabel } from "$lib/utils/ledgerSheet";
 
 export function preprocessMarkdown(
   source: string,
@@ -148,7 +195,8 @@ export function preprocessMarkdown(
   const normalized = source.replace(/\r\n/g, "\n");
   const withHighlights = preprocessHighlights(normalized);
   const withColors = preprocessColorSpans(withHighlights);
-  const withWikilinks = preprocessWikilinks(withColors, titleByPath);
+  const withLedgerHeaders = preprocessLedgerColumnHeaders(withColors);
+  const withWikilinks = preprocessWikilinks(withLedgerHeaders, titleByPath);
   const withCallouts = preprocessCallouts(withWikilinks);
   const withToc = preprocessTableOfContents(withCallouts);
   return preprocessLiquidEmbeds(withToc);

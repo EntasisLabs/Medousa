@@ -6,10 +6,22 @@ import {
   Layers,
   Settings,
   Wallet,
+  type Icon,
 } from "@lucide/svelte";
 import type { Component } from "svelte";
+import {
+  VAULT_OTHER_SPACE,
+  VAULT_SPACES,
+  VAULT_SYSTEM_BUCKET,
+} from "$lib/config/vaultSpaces";
+import {
+  folderIconStorageKey,
+  vaultFolderIcons,
+} from "$lib/stores/vaultFolderIcons.svelte";
+import { loadCustomVaultSpaces } from "$lib/utils/vaultCustomSpaces";
+import { environmentIcon } from "$lib/utils/environmentIcons";
 
-export function iconForSpace(spaceId: string | null | undefined): Component {
+function defaultIconForSpace(spaceId: string | null | undefined): Component {
   switch (spaceId) {
     case "journal":
       return BookOpen;
@@ -29,4 +41,24 @@ export function iconForSpace(spaceId: string | null | undefined): Component {
       if (spaceId?.startsWith("custom_")) return Folder;
       return Layers;
   }
+}
+
+function prefixForSpaceId(spaceId: string | null | undefined): string | null {
+  if (!spaceId) return null;
+  const builtIn = [...VAULT_SPACES, VAULT_OTHER_SPACE, VAULT_SYSTEM_BUCKET].find(
+    (space) => space.id === spaceId,
+  );
+  if (builtIn) return builtIn.prefix || null;
+  const custom = loadCustomVaultSpaces().find((space) => space.id === spaceId);
+  return custom?.prefix ?? null;
+}
+
+export function iconForSpace(spaceId: string | null | undefined): Component {
+  const key = folderIconStorageKey({
+    dropPrefix: prefixForSpaceId(spaceId),
+    spaceId,
+  });
+  const custom = key ? vaultFolderIcons.get(key) : null;
+  if (custom) return environmentIcon(custom) as typeof Icon;
+  return defaultIconForSpace(spaceId);
 }
