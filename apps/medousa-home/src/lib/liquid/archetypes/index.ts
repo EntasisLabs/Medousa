@@ -30,6 +30,9 @@ export { stack } from "./layout/stack/stack";
 export { document } from "./organisms/document/document";
 export { compare } from "./organisms/compare/compare";
 export { plan } from "./organisms/plan/plan";
+export { timeline } from "./organisms/timeline/timeline";
+export { shortlist } from "./organisms/shortlist/shortlist";
+export { decision } from "./organisms/decision/decision";
 
 // shell (reuse of native chat molecules)
 export { thinking } from "./shell/thinking/thinking";

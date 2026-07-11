@@ -361,6 +361,259 @@ describe("preprocessLiquidEmbeds", () => {
     ].join("\n");
     expect(preprocessLiquidEmbeds(src)).toContain("```plan");
   });
+
+  it("turns a timeline fence into events payload", () => {
+    const src = [
+      "```timeline",
+      "title: Japan trip so far",
+      "subtitle: What we locked in",
+      "granularity: day",
+      "",
+      "---",
+      "ts: Day 1 · Jul 12",
+      "label: Arrive Narita → Shinjuku",
+      "detail: N’EX in, hotel near the station.",
+      "lane: travel",
+      "emoji: ✈️",
+      "---",
+      "ts: Days 2–4",
+      "label: Tokyo base",
+      "detail: Markets and neon nights.",
+      "lane: stay",
+      "```",
+    ].join("\n");
+    const out = preprocessLiquidEmbeds(src);
+    expect(out).toContain('data-liquid-embed="timeline"');
+    const match = out.match(/data-liquid-props="([^"]+)"/);
+    const props = decodeLiquidProps<{
+      title?: string;
+      subtitle?: string;
+      granularity?: string;
+      events: {
+        label: string;
+        ts?: string;
+        detail?: string;
+        lane?: string;
+        emoji?: string;
+      }[];
+    }>(match![1]);
+    expect(props?.title).toBe("Japan trip so far");
+    expect(props?.subtitle).toBe("What we locked in");
+    expect(props?.granularity).toBe("day");
+    expect(props?.events).toHaveLength(2);
+    expect(props?.events[0].label).toBe("Arrive Narita → Shinjuku");
+    expect(props?.events[0].ts).toBe("Day 1 · Jul 12");
+    expect(props?.events[0].lane).toBe("travel");
+    expect(props?.events[1].label).toBe("Tokyo base");
+  });
+
+  it("accepts timeline with time/body aliases and missing ts", () => {
+    const src = [
+      "```timeline",
+      "- title: Ship log",
+      "",
+      "---",
+      "title: Compare landed",
+      "body: First sacred-seven organism",
+      "---",
+      "label: Plan landed",
+      "time: later",
+      "```",
+    ].join("\n");
+    const out = preprocessLiquidEmbeds(src);
+    expect(out).toContain('data-liquid-embed="timeline"');
+    const match = out.match(/data-liquid-props="([^"]+)"/);
+    const props = decodeLiquidProps<{
+      title?: string;
+      events: { label: string; ts?: string; detail?: string }[];
+    }>(match![1]);
+    expect(props?.title).toBe("Ship log");
+    expect(props?.events[0].label).toBe("Compare landed");
+    expect(props?.events[0].detail).toBe("First sacred-seven organism");
+    expect(props?.events[0].ts).toBeUndefined();
+    expect(props?.events[1].ts).toBe("later");
+  });
+
+  it("rejects timeline with fewer than two events", () => {
+    const src = [
+      "```timeline",
+      "title: Alone",
+      "",
+      "---",
+      "label: Only one",
+      "```",
+    ].join("\n");
+    expect(preprocessLiquidEmbeds(src)).toContain("```timeline");
+  });
+
+  it("turns a shortlist fence into items payload", () => {
+    const src = [
+      "```shortlist",
+      "title: Great neighborhoods",
+      "subtitle: Mid-range stays",
+      "criteria: energy · food · transit",
+      "density: comfortable",
+      "",
+      "---",
+      "label: Shinjuku",
+      "summary: Best for energy and late nights",
+      "score: 9.2",
+      "meta: Big energy",
+      "emoji: 🌃",
+      "---",
+      "label: Asakusa",
+      "summary: Traditional feel near Senso-ji",
+      "score: 8.4",
+      "```",
+    ].join("\n");
+    const out = preprocessLiquidEmbeds(src);
+    expect(out).toContain('data-liquid-embed="shortlist"');
+    const match = out.match(/data-liquid-props="([^"]+)"/);
+    const props = decodeLiquidProps<{
+      title?: string;
+      subtitle?: string;
+      criteria?: string;
+      density?: string;
+      items: {
+        label: string;
+        summary?: string;
+        score?: string;
+        meta?: string;
+        emoji?: string;
+      }[];
+    }>(match![1]);
+    expect(props?.title).toBe("Great neighborhoods");
+    expect(props?.criteria).toBe("energy · food · transit");
+    expect(props?.density).toBe("comfortable");
+    expect(props?.items).toHaveLength(2);
+    expect(props?.items[0].label).toBe("Shinjuku");
+    expect(props?.items[0].score).toBe("9.2");
+    expect(props?.items[1].label).toBe("Asakusa");
+  });
+
+  it("accepts shortlist with title/body aliases and list-marker chrome", () => {
+    const src = [
+      "```shortlist",
+      "- title: Picks",
+      "density: compact",
+      "",
+      "---",
+      "title: Option A",
+      "body: Solid all-rounder",
+      "---",
+      "label: Option B",
+      "summary: Budget pick",
+      "```",
+    ].join("\n");
+    const out = preprocessLiquidEmbeds(src);
+    expect(out).toContain('data-liquid-embed="shortlist"');
+    const match = out.match(/data-liquid-props="([^"]+)"/);
+    const props = decodeLiquidProps<{
+      title?: string;
+      density?: string;
+      items: { label: string; summary?: string }[];
+    }>(match![1]);
+    expect(props?.title).toBe("Picks");
+    expect(props?.density).toBe("compact");
+    expect(props?.items.map((i) => i.label)).toEqual(["Option A", "Option B"]);
+    expect(props?.items[0].summary).toBe("Solid all-rounder");
+  });
+
+  it("rejects shortlist with fewer than two items", () => {
+    const src = [
+      "```shortlist",
+      "title: Alone",
+      "",
+      "---",
+      "label: Only one",
+      "```",
+    ].join("\n");
+    expect(preprocessLiquidEmbeds(src)).toContain("```shortlist");
+  });
+
+  it("turns a decision fence into options with pros/cons", () => {
+    const src = [
+      "```decision",
+      "title: Which laptop?",
+      "subtitle: For video",
+      "factors: display · battery · price",
+      "recommendation: MacBook Pro 14",
+      "",
+      "---",
+      "label: MacBook Pro 14",
+      "score: 9.1",
+      "pros: Best display | Long battery | Quiet fans",
+      "cons: Expensive | Ports need dongle",
+      "---",
+      "label: XPS 15",
+      "score: 7.8",
+      "pros: Great screen | More ports",
+      "cons: Thermals",
+      "```",
+    ].join("\n");
+    const out = preprocessLiquidEmbeds(src);
+    expect(out).toContain('data-liquid-embed="decision"');
+    const match = out.match(/data-liquid-props="([^"]+)"/);
+    const props = decodeLiquidProps<{
+      title?: string;
+      recommendation?: string;
+      factors?: string;
+      options: {
+        label: string;
+        pros: string[];
+        cons: string[];
+        score?: string;
+      }[];
+    }>(match![1]);
+    expect(props?.title).toBe("Which laptop?");
+    expect(props?.recommendation).toBe("MacBook Pro 14");
+    expect(props?.options).toHaveLength(2);
+    expect(props?.options[0].pros).toEqual(["Best display", "Long battery", "Quiet fans"]);
+    expect(props?.options[0].cons).toEqual(["Expensive", "Ports need dongle"]);
+    expect(props?.options[1].label).toBe("XPS 15");
+  });
+
+  it("accepts decision with highlight alias and pro/con singular keys", () => {
+    const src = [
+      "```decision",
+      "- title: Pick one",
+      "highlight: Alpha",
+      "",
+      "---",
+      "title: Alpha",
+      "pro: Fast",
+      "con: Pricey",
+      "---",
+      "label: Beta",
+      "pros: Cheap",
+      "cons: Slow",
+      "```",
+    ].join("\n");
+    const out = preprocessLiquidEmbeds(src);
+    expect(out).toContain('data-liquid-embed="decision"');
+    const match = out.match(/data-liquid-props="([^"]+)"/);
+    const props = decodeLiquidProps<{
+      recommendation?: string;
+      options: { label: string; pros: string[]; cons: string[] }[];
+    }>(match![1]);
+    expect(props?.recommendation).toBe("Alpha");
+    expect(props?.options[0].label).toBe("Alpha");
+    expect(props?.options[0].pros).toEqual(["Fast"]);
+    expect(props?.options[0].cons).toEqual(["Pricey"]);
+  });
+
+  it("rejects decision with fewer than two options", () => {
+    const src = [
+      "```decision",
+      "title: Alone",
+      "",
+      "---",
+      "label: Only one",
+      "pros: Yes",
+      "```",
+    ].join("\n");
+    expect(preprocessLiquidEmbeds(src)).toContain("```decision");
+  });
 });
 
 describe("renderMarkdown + liquid embeds", () => {
