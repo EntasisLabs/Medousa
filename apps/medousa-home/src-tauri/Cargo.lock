@@ -3465,6 +3465,8 @@ dependencies = [
  "dirs 6.0.0",
  "ed25519-dalek 2.2.0",
  "futures-util",
+ "gdk",
+ "gtk",
  "keyring",
  "libc",
  "medousa-browser-bridge",
@@ -3499,6 +3501,9 @@ dependencies = [
  "url",
  "urlencoding",
  "uuid",
+ "webkit2gtk",
+ "webview2-com",
+ "windows 0.61.3",
 ]
 
 [[package]]
