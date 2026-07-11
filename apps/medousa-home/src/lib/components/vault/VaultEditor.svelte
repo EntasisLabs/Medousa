@@ -91,10 +91,10 @@
   );
 
   const showKanbanBoard = $derived(
-    vault.editorMode === "edit" &&
-      hasKanbanBoard &&
-      vault.boardEditMode === "board" &&
-      kanbanBoard !== null,
+    hasKanbanBoard &&
+      kanbanBoard !== null &&
+      (vault.editorMode === "preview" ||
+        (vault.editorMode === "edit" && vault.boardEditMode === "board")),
   );
 
   const showMarkdownEditor = $derived(
@@ -108,8 +108,7 @@
   const editorSurface = $derived<"source">("source");
 
   const showPreviewOnly = $derived(
-    vault.editorMode === "preview" ||
-      (!showMarkdownEditor && !showLedgerTable),
+    vault.editorMode === "preview" && !showKanbanBoard && !showLedgerTable,
   );
 
   const noteKind = $derived(vault.selectedKind);
@@ -131,6 +130,12 @@
       vault.selectedKind === "ledger" &&
       vault.editorMode === "edit" &&
       hasLedgerTable,
+  );
+
+  const showBoardViewToggle = $derived(
+    Boolean(vault.selectedPath) &&
+      hasKanbanBoard &&
+      vault.editorMode === "edit",
   );
 
   const previewFirstKind = $derived(
@@ -464,6 +469,29 @@
           </div>
         {/if}
 
+        {#if showBoardViewToggle}
+          <div class="ledger-mode-toggle" role="group" aria-label="Board view">
+            <button
+              type="button"
+              class="ledger-mode-btn {vault.boardEditMode === 'board'
+                ? 'ledger-mode-btn-active'
+                : ''}"
+              onclick={() => vault.setBoardEditMode("board")}
+            >
+              Board
+            </button>
+            <button
+              type="button"
+              class="ledger-mode-btn {vault.boardEditMode === 'raw'
+                ? 'ledger-mode-btn-active'
+                : ''}"
+              onclick={() => vault.setBoardEditMode("raw")}
+            >
+              Raw
+            </button>
+          </div>
+        {/if}
+
         {#if vault.selectedPath}
           <VaultLinkedFilesMenu disabled={vault.noteLoading || vault.saving} />
         {/if}
@@ -556,7 +584,7 @@
         {:else if showKanbanBoard}
           <KanbanBoardEditor
             content={vault.content}
-            disabled={vault.saving}
+            disabled={vault.saving || vault.editorMode === "preview"}
             onchange={(next) => vault.markDirty(next)}
             onWikilink={handleWikilink}
           />
