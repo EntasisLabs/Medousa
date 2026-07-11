@@ -32,6 +32,16 @@
       wide: false,
     },
     {
+      key: "activationDirectAnswerMaxPromptChars" as const,
+      label: "Direct-answer budget",
+      hint: "Character room when she answers without a long dig",
+      unit: "chars",
+      min: 200,
+      max: 20000,
+      step: 20,
+      wide: true,
+    },
+    {
       key: "activationLongSessionTurnThreshold" as const,
       label: "Long chat after",
       hint: "Past this many turns, context rules tighten",

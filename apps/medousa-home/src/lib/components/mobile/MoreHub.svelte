@@ -223,7 +223,6 @@
           embedded={true}
           mobile={true}
           inMotionCount={workspace.inMotionCount()}
-          onOpenCron={() => layout.openMore("automations")}
         />
       {/if}
     </div>

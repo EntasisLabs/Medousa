@@ -228,7 +228,6 @@
             <RuntimePanel
               visible={true}
               inMotionCount={workspace.inMotionCount()}
-              onOpenCron={() => navigateToSurface("automations")}
             />
           {:else if activeSurface === "settings"}
             <SettingsPanel

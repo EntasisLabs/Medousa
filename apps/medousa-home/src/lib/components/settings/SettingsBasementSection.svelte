@@ -581,7 +581,7 @@
         {/each}
       </ul>
       <p class="workshop-faint mt-2 text-xs">
-        Terminal view of all defaults: Runtime → Workshop tab.
+        Advanced charter knobs: Settings → Engine.
       </p>
     </div>
   {/if}
