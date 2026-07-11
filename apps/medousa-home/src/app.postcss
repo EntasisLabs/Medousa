@@ -756,6 +756,205 @@
     @apply bg-primary-500/15 text-primary-200;
   }
 
+  .ledger-toolbar-label {
+    color: rgb(var(--color-surface-500));
+    font-size: 0.65rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  .ledger-sheet-controls {
+    display: flex;
+    min-width: 12rem;
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+
+  .ledger-filter-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.45rem;
+  }
+
+  .ledger-filter-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    border: 1px solid transparent;
+    border-radius: 0.45rem;
+    background: transparent;
+    padding: 0.28rem 0.55rem;
+    color: rgb(var(--color-surface-400));
+    font-size: 0.72rem;
+    font-weight: 550;
+  }
+
+  .ledger-filter-toggle:hover:not(:disabled) {
+    background: rgb(var(--color-surface-800) / 0.55);
+    color: rgb(var(--color-surface-100));
+  }
+
+  .ledger-filter-toggle--open,
+  .ledger-filter-toggle--active {
+    border-color: rgb(var(--color-primary-500) / 0.35);
+    background: rgb(var(--color-primary-500) / 0.12);
+    color: rgb(var(--color-primary-200));
+  }
+
+  .ledger-filter-badge {
+    display: inline-flex;
+    min-width: 1.1rem;
+    height: 1.1rem;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    background: rgb(var(--color-primary-500) / 0.35);
+    padding: 0 0.28rem;
+    color: rgb(var(--color-primary-100));
+    font-size: 0.62rem;
+    font-weight: 650;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .ledger-filter-composer {
+    display: inline-flex;
+    max-width: 100%;
+    align-items: stretch;
+    overflow: hidden;
+    border: 1px solid rgb(var(--color-surface-500) / 0.4);
+    border-radius: 0.5rem;
+    background: rgb(var(--color-surface-900) / 0.7);
+  }
+
+  .ledger-filter-composer .ledger-filter-select,
+  .ledger-filter-composer .ledger-filter-input {
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .ledger-filter-composer .ledger-filter-select {
+    border-right: 1px solid rgb(var(--color-surface-500) / 0.28);
+    padding: 0.32rem 0.5rem;
+    color: rgb(var(--color-surface-100));
+    font-size: 0.72rem;
+  }
+
+  .ledger-filter-composer .ledger-filter-op {
+    width: 2.75rem;
+    flex-shrink: 0;
+    text-align: center;
+  }
+
+  .ledger-filter-composer .ledger-filter-input {
+    min-width: 5.5rem;
+    width: 7.5rem;
+    padding: 0.32rem 0.55rem;
+    color: rgb(var(--color-surface-100));
+    font-size: 0.72rem;
+  }
+
+  .ledger-filter-composer .ledger-filter-input::placeholder {
+    color: rgb(var(--color-surface-500));
+  }
+
+  .ledger-filter-commit {
+    display: inline-flex;
+    width: 1.85rem;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    border-left: 1px solid rgb(var(--color-surface-500) / 0.28);
+    background: rgb(var(--color-surface-800) / 0.45);
+    color: rgb(var(--color-surface-200));
+  }
+
+  .ledger-filter-commit:hover:not(:disabled) {
+    background: rgb(var(--color-primary-500) / 0.22);
+    color: rgb(var(--color-primary-100));
+  }
+
+  .ledger-filter-commit:disabled {
+    opacity: 0.35;
+  }
+
+  .ledger-filter-clear {
+    border: 0;
+    border-radius: 0.4rem;
+    background: transparent;
+    padding: 0.28rem 0.45rem;
+    color: rgb(var(--color-surface-400));
+    font-size: 0.7rem;
+    font-weight: 500;
+  }
+
+  .ledger-filter-clear:hover:not(:disabled) {
+    background: rgb(var(--color-surface-800) / 0.55);
+    color: rgb(var(--color-surface-100));
+  }
+
+  .ledger-filter-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+  }
+
+  .ledger-filter-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    border: 0;
+    border-radius: 999px;
+    background: rgb(var(--color-primary-500) / 0.14);
+    padding: 0.18rem 0.45rem;
+    color: rgb(var(--color-primary-200));
+    font-size: 0.65rem;
+    font-weight: 500;
+  }
+
+  .ledger-filter-chip--sort {
+    background: rgb(var(--color-surface-700) / 0.55);
+    color: rgb(var(--color-surface-200));
+  }
+
+  .ledger-copy-csv {
+    display: inline-flex;
+    margin-left: auto;
+    align-items: center;
+    gap: 0.35rem;
+    border: 0;
+    border-radius: 0.4rem;
+    background: transparent;
+    padding: 0.28rem 0.5rem;
+    color: rgb(var(--color-surface-500));
+    font-size: 0.68rem;
+    font-weight: 500;
+  }
+
+  .ledger-copy-csv:hover:not(:disabled) {
+    background: rgb(var(--color-surface-800) / 0.45);
+    color: rgb(var(--color-surface-200));
+  }
+
+  .ledger-view-status {
+    margin: 0;
+    border-bottom: 1px solid rgb(var(--color-surface-500) / 0.25);
+    padding: 0.35rem 1rem;
+    color: rgb(var(--color-surface-500));
+    font-size: 0.68rem;
+  }
+
+  .ledger-empty-view {
+    padding: 1.25rem 0.75rem;
+    color: rgb(var(--color-surface-500));
+    font-size: 0.78rem;
+    text-align: center;
+  }
+
   .ledger-table {
     --ledger-gutter-width: 2.15rem;
   }
@@ -815,6 +1014,52 @@
     position: relative;
     padding: 0.15rem 0.15rem 0.35rem;
     vertical-align: bottom;
+  }
+
+  .ledger-header-cell--sorted {
+    color: rgb(var(--color-primary-200));
+  }
+
+  .ledger-header-sort {
+    display: inline-flex;
+    width: 100%;
+    min-width: 4.5rem;
+    align-items: center;
+    gap: 0.25rem;
+    border: 0;
+    border-radius: 0.3rem;
+    background: transparent;
+    padding: 0.25rem 0.45rem;
+    color: inherit;
+    font-size: 0.65rem;
+    font-weight: 650;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    text-align: inherit;
+  }
+
+  .ledger-header-sort:hover:not(:disabled) {
+    background: rgb(var(--color-surface-800) / 0.4);
+    color: rgb(var(--color-surface-100));
+  }
+
+  .ledger-header-sort--active {
+    color: rgb(var(--color-primary-200));
+  }
+
+  .ledger-header-sort-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .ledger-header-sort.text-right {
+    justify-content: flex-end;
+  }
+
+  .ledger-header-sort.text-center {
+    justify-content: center;
   }
 
   .ledger-col-resize {
