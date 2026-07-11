@@ -262,7 +262,7 @@
             aria-label="Stop loading"
             onclick={() => void humanBrowser.stop()}
           >
-            <Square size={14} fill="currentColor" />
+            <Square size={12} strokeWidth={2.25} />
           </button>
         {:else}
           <button

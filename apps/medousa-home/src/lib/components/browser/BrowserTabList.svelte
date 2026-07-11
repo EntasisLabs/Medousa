@@ -34,16 +34,14 @@
 </script>
 
 {#if variant === "bar"}
-  <div class="browser-tab-bar flex min-w-0 items-end gap-1 overflow-x-auto border-b border-surface-800 bg-surface-950 px-2 pt-1.5">
+  <div class="browser-tab-bar">
     {#each humanBrowser.tabs as tab (tab.id)}
       <div
-        class="browser-tab group flex max-w-[220px] min-w-[120px] items-center gap-1 px-2 py-1.5 text-xs {tab.active
-          ? 'browser-tab-active text-surface-50'
-          : 'text-surface-300 hover:bg-surface-900/70'}"
+        class="browser-tab group {tab.active ? 'browser-tab-active' : ''}"
       >
         <button
           type="button"
-          class="flex min-w-0 flex-1 items-center gap-1.5 truncate text-left"
+          class="browser-tab-main"
           onclick={() => handleActivate(tab.id)}
           title={tab.url}
         >
@@ -52,28 +50,28 @@
           {:else}
             <span class="browser-tab-favicon-fallback" aria-hidden="true">+</span>
           {/if}
-          <span class="truncate">{tabDisplayLabel(tab.title, tab.url)}</span>
+          <span class="browser-tab-label">{tabDisplayLabel(tab.title, tab.url)}</span>
         </button>
         {#if humanBrowser.tabs.length > 1}
           <button
             type="button"
-            class="ml-auto shrink-0 rounded p-0.5 text-surface-500 opacity-0 group-hover:opacity-100 hover:bg-surface-800 hover:text-surface-100"
+            class="browser-tab-close {tab.active ? 'browser-tab-close--visible' : ''}"
             aria-label="Close tab"
             onclick={(event) => handleClose(tab.id, event)}
           >
-            <X size={12} />
+            <X size={12} strokeWidth={2} />
           </button>
         {/if}
       </div>
     {/each}
     <button
       type="button"
-      class="mb-1 rounded-md p-1.5 text-surface-400 hover:bg-surface-800 hover:text-surface-100"
+      class="browser-tab-new"
       aria-label="New tab"
-      title="New tab"
+      title="New tab (⌘T)"
       onclick={handleNewTab}
     >
-      <Plus size={14} />
+      <Plus size={14} strokeWidth={2} />
     </button>
   </div>
 {:else}

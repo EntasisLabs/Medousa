@@ -36,6 +36,9 @@ static EMBED_MOBILE_UA: AtomicBool = AtomicBool::new(false);
 /// Set by the frontend when the mobile shell owns embed layout (blocks workshop resize reapply).
 static MOBILE_SHELL_ACTIVE: AtomicBool = AtomicBool::new(false);
 static LAST_EMBED_PLACEMENT: Mutex<Option<EmbedPlacement>> = Mutex::new(None);
+/// Last successful macOS title-bar inset. `with_webview` can miss on first create;
+/// falling back to (0,0) shifts child embeds up under the OS title bar.
+static LAST_VIEWPORT_INSET: Mutex<Option<(f64, f64)>> = Mutex::new(None);
 /// URL queued when navigate runs before the compositor has created/sized the embed.
 static LAST_EMBED_ACTIVE_URL: std::sync::OnceLock<Mutex<String>> = std::sync::OnceLock::new();
 static LAST_POPOUT_ACTIVE_URL: std::sync::OnceLock<Mutex<String>> = std::sync::OnceLock::new();
@@ -737,13 +740,23 @@ fn window_child_bounds_to_dom_bounds(app: &AppHandle, window_bounds: EmbedBounds
     }
 }
 
+fn remember_viewport_inset(inset: (f64, f64)) {
+    if let Ok(mut last) = LAST_VIEWPORT_INSET.lock() {
+        *last = Some(inset);
+    }
+}
+
+fn last_viewport_inset() -> Option<(f64, f64)> {
+    LAST_VIEWPORT_INSET.lock().ok().and_then(|guard| *guard)
+}
+
 /// Where the shell JS layout viewport origin sits inside the window contentView (top-left).
 /// On macOS this is the title-bar / toolbar inset (`contentLayoutRect.origin` in top-left terms).
 #[cfg(target_os = "macos")]
 fn macos_shell_viewport_origin_in_window(app: &AppHandle) -> Option<(f64, f64)> {
     use std::sync::{Arc, Mutex};
     let shell = app.get_webview(MAIN_WINDOW_LABEL)?;
-    let out = Arc::new(Mutex::new(None));
+    let out = Arc::new(Mutex::new(None::<(f64, f64)>));
     let capture = Arc::clone(&out);
     let _ = shell.with_webview(move |w| unsafe {
         use objc2_app_kit::{NSView, NSWindow};
@@ -761,7 +774,13 @@ fn macos_shell_viewport_origin_in_window(app: &AppHandle) -> Option<(f64, f64)> 
             *slot = Some((x_inset.max(0.0), y_inset.max(0.0)));
         }
     });
-    Arc::try_unwrap(out).ok()?.into_inner().ok().flatten()
+    // Prefer reading the mutex over `try_unwrap` — with_webview may still hold the Arc briefly.
+    let measured = out.lock().ok().and_then(|guard| *guard);
+    if let Some(inset) = measured {
+        remember_viewport_inset(inset);
+        return Some(inset);
+    }
+    last_viewport_inset()
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -1498,6 +1517,28 @@ fn navigate_tab_webview(
     Ok(())
 }
 
+fn is_blank_browser_url(url: &str) -> bool {
+    let trimmed = url.trim();
+    trimmed.is_empty() || trimmed == "about:blank"
+}
+
+fn hide_embed_surface(app: &AppHandle) {
+    EMBED_VISIBLE.store(false, Ordering::SeqCst);
+    let ids = tab_ids_lock(BrowserSurface::Embed)
+        .lock()
+        .ok()
+        .map(|guard| guard.clone())
+        .unwrap_or_default();
+    for id in ids {
+        if let Some(content) = tab_webview(app, BrowserSurface::Embed, &id) {
+            let _ = content.hide();
+        }
+    }
+    if let Some(content) = app.get_webview(EMBED_CONTENT_LABEL) {
+        let _ = content.hide();
+    }
+}
+
 fn activate_embed_tab(
     app: &AppHandle,
     tab_id: &str,
@@ -1514,6 +1555,7 @@ fn activate_embed_tab(
     register_tab_id(BrowserSurface::Embed, tab_id);
     hide_tab_webviews(app, BrowserSurface::Embed, Some(tab_id));
 
+    let blank = is_blank_browser_url(initial_url);
     let exists = tab_webview(app, BrowserSurface::Embed, tab_id).is_some();
     if !exists {
         let (x, y, w, h) = if let Some(dom) = embed_freeform_dom_bounds(app) {
@@ -1528,7 +1570,17 @@ fn activate_embed_tab(
             (0.0, 0.0, 8.0, 8.0)
         };
         create_tab_webview(app, tab_id, x, y, w, h)?;
+        if blank {
+            // Hide before navigate — add_child can show immediately while
+            // EMBED_VISIBLE is still true from the previous page tab.
+            hide_embed_surface(app);
+        }
         navigate_tab_webview(app, BrowserSurface::Embed, initial_url, true)?;
+        if blank {
+            // Start page owns the UI — keep the blank native webview hidden.
+            hide_embed_surface(app);
+            return Ok(());
+        }
         if let Some(dom) = embed_freeform_dom_bounds(app) {
             let target = dom_bounds_to_window_child_bounds(app, dom)?;
             apply_embedded_bounds(app, target)?;
@@ -1537,6 +1589,10 @@ fn activate_embed_tab(
     } else {
         navigate_tab_webview(app, BrowserSurface::Embed, initial_url, false)?;
         emit_loading(app, BrowserSurface::Embed, false);
+        if blank {
+            hide_embed_surface(app);
+            return Ok(());
+        }
         // Existing tab — only swap visibility; re-layout corrupts bounds via gap correction.
         show_active_embed_tab(app)?;
     }
@@ -1841,20 +1897,7 @@ pub fn human_browser_embed_read_bounds(app: AppHandle) -> Result<EmbedBoundsRead
 
 #[tauri::command]
 pub fn human_browser_embed_hide(app: AppHandle) -> Result<(), String> {
-    EMBED_VISIBLE.store(false, Ordering::SeqCst);
-    let ids = tab_ids_lock(BrowserSurface::Embed)
-        .lock()
-        .ok()
-        .map(|guard| guard.clone())
-        .unwrap_or_default();
-    for id in ids {
-        if let Some(content) = tab_webview(&app, BrowserSurface::Embed, &id) {
-            let _ = content.hide();
-        }
-    }
-    if let Some(content) = app.get_webview(EMBED_CONTENT_LABEL) {
-        let _ = content.hide();
-    }
+    hide_embed_surface(&app);
     Ok(())
 }
 
@@ -2023,9 +2066,8 @@ pub async fn human_browser_navigate(app: AppHandle, url: String) -> Result<(), S
     }
 
     if embedded_content_webview(&app).is_none() {
-        if !trimmed.is_empty() && trimmed != "about:blank" {
-            emit_loading(&app, BrowserSurface::Embed, true);
-        }
+        // No webview yet — do not emit loading=true (nothing will emit Finished).
+        // Frontend syncActiveTabToNative / activate creates the embed.
         return Ok(());
     }
 
@@ -2042,9 +2084,6 @@ pub async fn human_browser_reload(app: AppHandle) -> Result<(), String> {
     let url = human_browser_active_url();
     let trimmed = url.trim();
     if embedded_content_webview(&app).is_none() {
-        if !trimmed.is_empty() && trimmed != "about:blank" {
-            emit_loading(&app, BrowserSurface::Embed, true);
-        }
         return Ok(());
     }
     if trimmed.is_empty() || trimmed == "about:blank" {

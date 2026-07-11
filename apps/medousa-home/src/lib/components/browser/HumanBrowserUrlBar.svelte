@@ -1,10 +1,11 @@
 <script lang="ts">
   import { untrack } from "svelte";
   import { humanBrowserForWindow } from "$lib/stores/humanBrowserSurface";
+  import { browserHistory } from "$lib/stores/browserHistory.svelte";
+  import { hostnameFromUrl, tabDisplayLabel } from "$lib/utils/browserFavicon";
+  import { setMobileBrowserUrlFocus } from "$lib/utils/mobileKeyboardViewport";
 
   const humanBrowser = $derived(humanBrowserForWindow());
-  import { browserHistory } from "$lib/stores/browserHistory.svelte";
-  import { setMobileBrowserUrlFocus } from "$lib/utils/mobileKeyboardViewport";
 
   interface Props {
     urlBarFocusNonce?: number;
@@ -17,18 +18,20 @@
   let inputEl = $state<HTMLInputElement | null>(null);
   let blurTimer: ReturnType<typeof setTimeout> | undefined;
   let hasMounted = false;
+  let suggestionsOpen = $state(false);
+  let suppressSuggestions = $state(false);
 
-  const suggestions = $derived(browserHistory.search(humanBrowser.urlDraft, 6));
-  const listId = "browser-url-suggestions";
+  const suggestions = $derived(
+    suppressSuggestions ? [] : browserHistory.search(humanBrowser.urlDraft, 6),
+  );
+  const showSuggestions = $derived(
+    !mobile && suggestionsOpen && suggestions.length > 0 && !suppressSuggestions,
+  );
 
   $effect(() => {
-    // Track explicit focus requests (desktop bumps the nonce).
     urlBarFocusNonce;
     if (!hasMounted) {
       hasMounted = true;
-      // On mobile, entering the Web tab must NOT pop the keyboard. Only
-      // auto-focus when there is no page yet (about:blank); otherwise wait
-      // for the user to tap the bar.
       if (mobile) {
         const isBlank = untrack(() => humanBrowser.activeUrl) === "about:blank";
         if (!isBlank) return;
@@ -41,16 +44,33 @@
     inputEl?.select();
   });
 
+  function dismissSuggestions() {
+    suggestionsOpen = false;
+    suppressSuggestions = true;
+  }
+
   function handleSubmit(event: Event) {
     event.preventDefault();
     const url = humanBrowser.urlDraft.trim();
     if (!url) return;
-    void humanBrowser.navigate(url);
+    dismissSuggestions();
     inputEl?.blur();
+    void humanBrowser.navigate(url);
+  }
+
+  function pickSuggestion(url: string) {
+    humanBrowser.urlDraft = url;
+    dismissSuggestions();
+    inputEl?.blur();
+    void humanBrowser.navigate(url);
   }
 
   function handleFocus() {
-    if (!mobile) return;
+    if (!mobile) {
+      suppressSuggestions = false;
+      suggestionsOpen = true;
+      return;
+    }
     if (blurTimer) {
       clearTimeout(blurTimer);
       blurTimer = undefined;
@@ -60,42 +80,82 @@
   }
 
   function handleBlur() {
-    if (!mobile) return;
+    if (!mobile) {
+      // Delay so suggestion mousedown can fire first.
+      blurTimer = setTimeout(() => {
+        suggestionsOpen = false;
+        blurTimer = undefined;
+      }, 150);
+      return;
+    }
     blurTimer = setTimeout(() => {
       setMobileBrowserUrlFocus(false);
       blurTimer = undefined;
       window.dispatchEvent(new CustomEvent("medousa-browser-url-blur"));
     }, 150);
   }
+
+  function handleInput() {
+    suppressSuggestions = false;
+    suggestionsOpen = true;
+  }
+
+  function handleKeydown(event: KeyboardEvent) {
+    if (event.key === "Escape") {
+      dismissSuggestions();
+      inputEl?.blur();
+    }
+  }
 </script>
 
 <form
   class="{mobile
     ? 'mobile-browser-url-dock'
-    : 'browser-url-bar flex min-w-0 flex-1 items-center'}"
+    : 'browser-url-bar flex min-w-0 flex-1 items-center'} relative"
   onsubmit={handleSubmit}
 >
   <input
     bind:this={inputEl}
     type="text"
     enterkeyhint="go"
-    class="input min-w-0 flex-1 text-sm {mobile
+    class="min-w-0 flex-1 text-sm {mobile
       ? 'mobile-browser-url-pill rounded-full text-left'
-      : 'browser-url-bar-input rounded-full'}"
+      : 'browser-url-bar-input'}"
     placeholder="Search or enter URL"
     bind:value={humanBrowser.urlDraft}
     spellcheck="false"
     autocomplete="off"
+    autocorrect="off"
+    autocapitalize="off"
     aria-label="Address bar"
-    list={suggestions.length > 0 ? listId : undefined}
+    aria-autocomplete="list"
+    aria-expanded={showSuggestions}
+    title="Search or enter URL (⌘L)"
     onfocus={handleFocus}
     onblur={handleBlur}
+    oninput={handleInput}
+    onkeydown={handleKeydown}
   />
-  {#if suggestions.length > 0}
-    <datalist id={listId}>
+  {#if showSuggestions}
+    <ul class="browser-url-suggestions" role="listbox">
       {#each suggestions as entry (entry.url + entry.visitedAt)}
-        <option value={entry.url}>{entry.title}</option>
+        <li>
+          <button
+            type="button"
+            class="browser-url-suggestion"
+            role="option"
+            onmousedown={(event) => {
+              event.preventDefault();
+              pickSuggestion(entry.url);
+            }}
+          >
+            <span class="browser-url-suggestion-title">
+              {tabDisplayLabel(entry.title, entry.url)}
+            </span>
+            <span class="browser-url-suggestion-host">{hostnameFromUrl(entry.url)}</span>
+          </button>
+        </li>
       {/each}
-    </datalist>
+    </ul>
   {/if}
 </form>
