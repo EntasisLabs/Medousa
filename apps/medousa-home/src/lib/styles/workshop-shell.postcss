@@ -1,0 +1,486 @@
+/**
+ * Workshop app shell — chrome vs canvas elevation.
+ *
+ * Extracted from app.postcss so shell polish lives here instead of the god file.
+ * Tokens are RGB triples (no `rgb()` wrapper) matching Skeleton surface vars.
+ */
+
+@layer base {
+  /* Dark defaults: ink canvas, slightly raised chrome frame */
+  html.dark {
+    --shell-chrome-bg: var(--color-surface-900);
+    --shell-header-bg: var(--color-surface-800);
+    --shell-canvas-bg: var(--color-surface-950);
+    --shell-pane-bg: var(--color-surface-900);
+    --shell-pane-muted-bg: var(--color-surface-800);
+    --shell-border: var(--color-surface-500);
+    --shell-border-strong: 0.58;
+    --shell-border-soft: 0.4;
+    --shell-icon: var(--color-surface-400);
+    --shell-icon-hover: var(--color-surface-200);
+    --shell-icon-active: var(--color-primary-300);
+    --shell-status-fg: var(--color-surface-300);
+    /* Voice — secondary text hierarchy (Wave 2) */
+    --shell-whisper: var(--color-surface-300);
+    --shell-label: var(--color-surface-300);
+    --shell-muted: var(--color-surface-400);
+    --shell-chrome-shadow: 2px 0 18px rgb(0 0 0 / 0.32);
+    --shell-rail-shadow: -6px 0 20px rgb(0 0 0 / 0.24);
+  }
+
+  /* Light defaults: denser cool chrome over brighter paper */
+  html:not(.dark) {
+    --shell-chrome-bg: var(--color-surface-800);
+    --shell-header-bg: var(--color-surface-800);
+    --shell-canvas-bg: var(--color-surface-950);
+    --shell-pane-bg: var(--color-surface-900);
+    --shell-pane-muted-bg: var(--color-surface-800);
+    --shell-border: var(--color-surface-500);
+    --shell-border-strong: 0.55;
+    --shell-border-soft: 0.38;
+    --shell-icon: var(--color-surface-300);
+    --shell-icon-hover: var(--color-surface-100);
+    --shell-icon-active: var(--color-primary-600);
+    --shell-status-fg: var(--color-surface-200);
+    --shell-whisper: var(--color-surface-200);
+    --shell-label: var(--color-surface-200);
+    --shell-muted: var(--color-surface-300);
+    --shell-chrome-shadow: 2px 0 14px rgb(0 0 0 / 0.06);
+    --shell-rail-shadow: -4px 0 14px rgb(0 0 0 / 0.05);
+  }
+
+  /* Obsidian dark — deepen the void under the frame */
+  html.dark[data-theme="medousa"] {
+    --shell-chrome-bg: 28 28 40;
+    --shell-header-bg: 36 36 50;
+    --shell-canvas-bg: 14 14 22;
+    --shell-pane-bg: 24 24 34;
+    --shell-pane-muted-bg: 32 32 44;
+    --shell-border-strong: 0.62;
+    --shell-whisper: 175 175 198;
+    --shell-label: 188 188 210;
+    --shell-muted: 148 148 172;
+  }
+
+  /* Black Lily dark — plum frame, deeper void canvas */
+  html.dark[data-theme="black-lily"] {
+    --shell-chrome-bg: 24 16 30;
+    --shell-header-bg: 34 22 44;
+    --shell-canvas-bg: 10 8 14;
+    --shell-pane-bg: 18 12 24;
+    --shell-pane-muted-bg: 28 18 36;
+    --shell-border-strong: 0.65;
+    --shell-whisper: 200 185 218;
+    --shell-label: 210 195 226;
+    --shell-muted: 168 148 192;
+  }
+
+  /* Graphite dark */
+  html.dark[data-theme="graphite-dark"] {
+    --shell-chrome-bg: 36 36 38;
+    --shell-header-bg: 44 44 46;
+    --shell-canvas-bg: 0 0 0;
+    --shell-pane-bg: 28 28 30;
+    --shell-pane-muted-bg: 44 44 46;
+    --shell-border: 110 110 115;
+    --shell-border-strong: 0.55;
+    --shell-whisper: 174 174 178;
+    --shell-label: 199 199 204;
+    --shell-muted: 142 142 147;
+    --shell-icon-active: var(--color-surface-100);
+  }
+
+  /* Cupertino dark — navy-cool chrome over black canvas */
+  html.dark[data-theme="cupertino-dark"] {
+    --shell-chrome-bg: 36 36 38;
+    --shell-header-bg: 44 44 46;
+    --shell-canvas-bg: 0 0 0;
+    --shell-pane-bg: 28 28 30;
+    --shell-pane-muted-bg: 44 44 46;
+    --shell-border-strong: 0.55;
+    --shell-whisper: 174 174 178;
+    --shell-label: 199 199 204;
+    --shell-muted: 142 142 147;
+  }
+
+  /* Midnight dark — deep navy frame */
+  html.dark[data-theme="midnight-dark"] {
+    --shell-chrome-bg: 18 24 42;
+    --shell-header-bg: 26 34 56;
+    --shell-canvas-bg: 6 10 18;
+    --shell-pane-bg: 15 20 35;
+    --shell-pane-muted-bg: 22 28 48;
+    --shell-border-strong: 0.58;
+    --shell-whisper: 160 172 205;
+    --shell-label: 178 188 220;
+    --shell-muted: 120 132 168;
+  }
+
+  /* Graphite light — honest mono elevation (quality bar for light) */
+  html:not(.dark)[data-theme="graphite-light"] {
+    --shell-chrome-bg: 226 226 230;
+    --shell-header-bg: 232 232 236;
+    --shell-canvas-bg: 242 242 247;
+    --shell-pane-bg: 255 255 255;
+    --shell-pane-muted-bg: 236 236 240;
+    --shell-border: 142 142 147;
+    --shell-border-strong: 0.5;
+    --shell-icon-active: var(--color-surface-100);
+    --shell-whisper: 72 72 74;
+    --shell-label: 58 58 60;
+    --shell-muted: 99 99 102;
+  }
+
+  /* Cupertino light */
+  html:not(.dark)[data-theme="cupertino-light"] {
+    --shell-chrome-bg: 226 226 230;
+    --shell-header-bg: 232 232 236;
+    --shell-canvas-bg: 242 242 247;
+    --shell-pane-bg: 255 255 255;
+    --shell-pane-muted-bg: 236 236 240;
+    --shell-border: 142 142 147;
+    --shell-border-strong: 0.5;
+    --shell-whisper: 72 72 74;
+    --shell-label: 58 58 60;
+    --shell-muted: 99 99 102;
+    --shell-icon-active: var(--color-primary-600);
+  }
+
+  /* Midnight light */
+  html:not(.dark)[data-theme="midnight-light"] {
+    --shell-chrome-bg: 220 224 238;
+    --shell-header-bg: 228 232 244;
+    --shell-canvas-bg: 240 242 250;
+    --shell-pane-bg: 255 255 255;
+    --shell-pane-muted-bg: 232 235 245;
+    --shell-border: 142 152 178;
+    --shell-border-strong: 0.5;
+    --shell-whisper: 58 68 96;
+    --shell-label: 48 58 86;
+    --shell-muted: 88 98 128;
+    --shell-icon-active: var(--color-primary-600);
+  }
+
+  /* Obsidian light — cool chrome, clean paper */
+  html:not(.dark)[data-theme="medousa-light"] {
+    --shell-chrome-bg: 218 218 228;
+    --shell-header-bg: 226 226 234;
+    --shell-canvas-bg: 244 244 248;
+    --shell-pane-bg: 255 255 255;
+    --shell-pane-muted-bg: 232 232 240;
+    --shell-border-strong: 0.52;
+    --shell-icon-active: var(--color-primary-600);
+    --shell-whisper: 68 68 84;
+    --shell-label: 56 56 72;
+    --shell-muted: 98 98 118;
+  }
+
+  /* Black Lily light — blush chrome, bright paper */
+  html:not(.dark)[data-theme="black-lily-light"] {
+    --shell-chrome-bg: 228 216 232;
+    --shell-header-bg: 236 226 240;
+    --shell-canvas-bg: 246 240 248;
+    --shell-pane-bg: 255 252 255;
+    --shell-pane-muted-bg: 238 228 242;
+    --shell-border-strong: 0.5;
+    --shell-icon-active: var(--color-primary-600);
+    --shell-whisper: 86 70 96;
+    --shell-label: 72 56 86;
+    --shell-muted: 116 96 126;
+  }
+}
+
+@layer components {
+  .workshop-app-root {
+    background-color: rgb(var(--shell-canvas-bg));
+  }
+
+  /* Primary shell regions */
+  .workshop-nav {
+    border-right: 1px solid rgb(var(--shell-border) / var(--shell-border-strong));
+    background-color: rgb(var(--shell-chrome-bg));
+    box-shadow: var(--shell-chrome-shadow);
+  }
+
+  .workshop-main {
+    background-color: rgb(var(--shell-canvas-bg));
+  }
+
+  .workshop-rail {
+    border-left: 2px solid rgb(var(--shell-border) / var(--shell-border-strong));
+    background-color: rgb(var(--shell-chrome-bg));
+    box-shadow: var(--shell-rail-shadow);
+  }
+
+  .workshop-status {
+    border-top: 1px solid rgb(var(--shell-border) / var(--shell-border-strong));
+    background-color: rgb(var(--shell-chrome-bg) / 0.96);
+    color: rgb(var(--shell-whisper));
+  }
+
+  .workshop-header {
+    border-bottom: 1px solid rgb(var(--shell-border) / var(--shell-border-soft));
+    background-color: rgb(var(--shell-header-bg) / 0.88);
+    @apply px-4 py-2.5;
+  }
+
+  .workshop-header-line {
+    @apply text-xs;
+    color: rgb(var(--shell-whisper));
+  }
+
+  .workshop-list-pane {
+    background-color: rgb(var(--shell-pane-bg) / 0.78);
+  }
+
+  .workshop-detail-pane {
+    background-color: rgb(var(--shell-pane-muted-bg) / 0.42);
+  }
+
+  .workshop-icon-rail {
+    @apply flex w-[52px] shrink-0 flex-col items-center py-2;
+    border-right: 1px solid rgb(var(--shell-border) / var(--shell-border-strong));
+    background-color: rgb(var(--shell-chrome-bg));
+  }
+
+  .workshop-rail-btn {
+    @apply flex h-9 w-9 items-center justify-center rounded-md transition;
+    color: rgb(var(--shell-icon));
+  }
+
+  .workshop-rail-btn:hover {
+    background-color: rgb(var(--shell-pane-muted-bg) / 0.85);
+    color: rgb(var(--shell-icon-hover));
+  }
+
+  .workshop-rail-workshop-btn {
+    @apply text-[10px] font-semibold text-surface-50 ring-1 ring-inset ring-primary-500/40;
+    background-color: rgb(var(--color-primary-500) / 0.22);
+  }
+
+  .workshop-rail-workshop-btn:hover {
+    @apply text-surface-50;
+    background-color: rgb(var(--color-primary-500) / 0.32);
+  }
+
+  .workshop-rail-workshop-btn[style*="--workshop-brand"] {
+    background-color: color-mix(in srgb, var(--workshop-brand) 24%, transparent);
+    --tw-ring-color: color-mix(in srgb, var(--workshop-brand) 42%, transparent);
+  }
+
+  .workshop-rail-workshop-btn[style*="--workshop-brand"]:hover {
+    background-color: color-mix(in srgb, var(--workshop-brand) 34%, transparent);
+  }
+
+  .workshop-rail-workshop-monogram {
+    @apply block max-w-[2ch] truncate text-center tracking-tight;
+  }
+
+  .workshop-rail-btn-active {
+    background-color: rgb(var(--color-primary-500) / 0.22);
+    color: rgb(var(--shell-icon-active));
+    box-shadow: inset 0 0 0 1px rgb(var(--color-primary-500) / 0.45);
+  }
+
+  .workshop-rail-tier-divider {
+    @apply my-1.5 h-px w-6 shrink-0;
+    background-color: rgb(var(--shell-border) / 0.45);
+  }
+
+  .workshop-rail-btn-tier-life {
+    color: rgb(var(--shell-icon-hover) / 0.9);
+  }
+
+  .workshop-rail-btn-tier-utility {
+    @apply h-8 w-8;
+    color: rgb(var(--color-primary-400) / 0.48);
+  }
+
+  .workshop-rail-btn-tier-utility:hover {
+    color: rgb(var(--color-primary-300) / 0.92);
+  }
+
+  .workshop-rail-badge {
+    @apply pointer-events-none absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-primary-400;
+    box-shadow: 0 0 0 2px rgb(var(--shell-chrome-bg));
+  }
+
+  .workshop-rail-count-badge {
+    @apply pointer-events-none absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary-500 px-1 text-[9px] font-bold leading-none text-primary-50;
+    box-shadow: 0 0 0 2px rgb(var(--shell-chrome-bg));
+  }
+
+  .workshop-rail-feed-badge {
+    @apply pointer-events-none absolute -bottom-0.5 -right-0.5 h-1.5 w-1.5 rounded-full;
+    box-shadow: 0 0 0 2px rgb(var(--shell-chrome-bg));
+  }
+
+  .workshop-rail-feed-badge-live {
+    @apply bg-success-400;
+  }
+
+  .workshop-rail-feed-badge-stale {
+    @apply bg-warning-400;
+  }
+
+  /* Vault paper sits on canvas */
+  .vault-editor-textarea {
+    background-color: rgb(var(--shell-canvas-bg)) !important;
+  }
+
+  .vault-markdown-preview {
+    background-color: rgb(var(--shell-pane-bg) / 0.55);
+  }
+
+  .vault-editor-header {
+    border-bottom-color: rgb(var(--shell-border) / var(--shell-border-soft));
+    background-color: rgb(var(--shell-header-bg) / 0.55);
+  }
+
+  /* Light shell — forms / cards follow pane paper, not washed chrome */
+  html:not(.dark) .workshop-inset {
+    border-color: rgb(var(--shell-border) / var(--shell-border-soft));
+    background-color: rgb(var(--shell-pane-bg));
+  }
+
+  html:not(.dark) .workshop-tabs {
+    border-color: rgb(var(--shell-border) / var(--shell-border-soft));
+  }
+
+  html:not(.dark) .workshop-kanban-card {
+    border-color: rgb(var(--shell-border) / var(--shell-border-soft));
+    background-color: rgb(var(--shell-pane-bg));
+  }
+
+  html:not(.dark) .workshop-kanban-card:hover {
+    background-color: rgb(var(--shell-pane-muted-bg) / 0.85);
+  }
+
+  html:not(.dark) .card {
+    border-color: rgb(var(--shell-border) / var(--shell-border-soft));
+    background-color: rgb(var(--shell-pane-bg));
+  }
+
+  html:not(.dark) :is(.input, .textarea, .select) {
+    border-color: rgb(var(--shell-border) / var(--shell-border-strong));
+    background-color: rgb(var(--shell-pane-bg));
+    color: rgb(var(--color-surface-50));
+  }
+
+  html:not(.dark) :is(.input, .textarea, .select)::placeholder {
+    color: rgb(var(--color-surface-400));
+  }
+
+  html:not(.dark) .composer-bar {
+    border-color: rgb(var(--shell-border) / var(--shell-border-strong));
+    background-color: rgb(var(--shell-pane-bg));
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.85),
+      0 1px 2px rgb(0 0 0 / 0.04);
+  }
+
+  html:not(.dark) .composer-bar-mobile {
+    border-color: rgb(var(--shell-border) / var(--shell-border-strong));
+    background-color: rgb(var(--shell-pane-bg));
+  }
+
+  html:not(.dark) .theme-option {
+    border-color: rgb(var(--shell-border) / var(--shell-border-soft));
+    background-color: rgb(var(--shell-pane-bg));
+  }
+
+  html:not(.dark) .theme-option:hover {
+    border-color: rgb(var(--shell-border) / var(--shell-border-strong));
+    background-color: rgb(var(--shell-pane-muted-bg) / 0.75);
+  }
+
+  html:not(.dark) .mobile-shell {
+    background-color: rgb(var(--shell-canvas-bg));
+    color: rgb(var(--color-surface-50));
+  }
+
+  html:not(.dark) .mobile-top-bar {
+    border-color: rgb(var(--shell-border) / var(--shell-border-soft));
+    background-color: rgb(var(--shell-chrome-bg) / 0.96);
+  }
+
+  html:not(.dark) .mobile-bottom-chrome {
+    background-color: rgb(var(--shell-chrome-bg) / 0.97);
+    border-top-color: rgb(var(--shell-border) / var(--shell-border-soft));
+  }
+
+  /* Voice hierarchy — breadcrumbs, labels, muted copy */
+  .workshop-faint {
+    @apply text-xs;
+    color: rgb(var(--shell-whisper));
+  }
+
+  .workshop-section-title {
+    @apply text-xs font-semibold uppercase tracking-wide;
+    color: rgb(var(--shell-label));
+  }
+
+  .workshop-label {
+    @apply text-xs;
+    color: rgb(var(--shell-label));
+  }
+
+  .workshop-muted {
+    @apply text-sm;
+    color: rgb(var(--shell-muted));
+  }
+
+  .workshop-text-action {
+    @apply text-xs transition;
+    color: rgb(var(--shell-muted));
+  }
+
+  .workshop-text-action:hover {
+    color: rgb(var(--color-primary-300));
+  }
+
+  .workshop-tabs {
+    border-bottom-color: rgb(var(--shell-border) / var(--shell-border-soft));
+  }
+
+  .workshop-tab {
+    color: rgb(var(--shell-muted));
+  }
+
+  .workshop-tab:hover {
+    color: rgb(var(--shell-whisper));
+  }
+
+  .workshop-tab-active {
+    border-bottom-color: rgb(var(--color-primary-400));
+    color: rgb(var(--shell-icon-active));
+    font-weight: 600;
+  }
+
+  /* Split / soft-primary toggles — intentional, not pastel ghosts */
+  .btn.variant-soft-primary {
+    background-color: rgb(var(--color-primary-500) / 0.2);
+    color: rgb(var(--shell-icon-active));
+    box-shadow: inset 0 0 0 1px rgb(var(--color-primary-500) / 0.42);
+  }
+
+  .btn.variant-soft-primary:hover {
+    background-color: rgb(var(--color-primary-500) / 0.28);
+  }
+
+  .composer-bar:focus-within {
+    border-color: rgb(var(--color-primary-500) / 0.42);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.07),
+      0 0 0 3px rgb(var(--color-primary-500) / 0.14),
+      0 2px 10px rgb(0 0 0 / 0.18);
+  }
+
+  .markdown-content th {
+    color: rgb(var(--shell-label));
+  }
+
+  .markdown-content td:first-child {
+    color: rgb(var(--shell-muted));
+  }
+}

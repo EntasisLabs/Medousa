@@ -1,5 +1,8 @@
 @import "./lib/styles/chat-mobile-tokens.postcss";
 @import "./lib/styles/markdown-tokens.postcss";
+@import "./lib/styles/workshop-shell.postcss";
+@import "./lib/styles/theme-obsidian.postcss";
+@import "./lib/styles/theme-black-lily.postcss";
 
 @tailwind base;
 @tailwind components;
@@ -36,74 +39,9 @@
     color: rgb(var(--color-surface-50));
     background-color: rgb(var(--color-surface-950));
   }
-
-  html.dark[data-theme="black-lily"] body {
-    background-color: rgb(var(--color-surface-950));
-    background-image:
-      radial-gradient(
-        ellipse 60% 40% at 80% 10%,
-        rgba(155, 93, 229, 0.12) 0%,
-        transparent 60%
-      ),
-      radial-gradient(
-        ellipse 50% 35% at 15% 80%,
-        rgba(232, 85, 154, 0.1) 0%,
-        transparent 55%
-      );
-  }
-
-  html.dark[data-theme="medousa"] body {
-    background-color: rgb(var(--color-surface-950));
-    background-image:
-      radial-gradient(
-        ellipse 55% 42% at 88% 6%,
-        rgb(var(--color-primary-500) / 0.09) 0%,
-        transparent 58%
-      ),
-      radial-gradient(
-        ellipse 48% 38% at 10% 94%,
-        rgb(var(--color-secondary-500) / 0.07) 0%,
-        transparent 54%
-      );
-  }
 }
 
 @layer components {
-  /* Primary shell regions */
-  .workshop-nav {
-    @apply border-r border-surface-500/50 bg-surface-900 shadow-[2px_0_16px_rgba(0,0,0,0.28)];
-  }
-
-  .workshop-main {
-    @apply bg-surface-900;
-  }
-
-  .workshop-rail {
-    @apply border-l-2 border-surface-500/45 bg-surface-800 shadow-[-6px_0_20px_rgba(0,0,0,0.22)];
-  }
-
-  .workshop-status {
-    @apply border-t border-surface-500/50 bg-surface-800/95 text-surface-300;
-  }
-
-  /* Repeated panel header pattern */
-  .workshop-header {
-    @apply border-b border-surface-500/45 bg-surface-800/50 px-4 py-2.5;
-  }
-
-  .workshop-header-line {
-    @apply text-xs;
-    color: rgb(var(--color-surface-300) / 0.88);
-  }
-
-  .workshop-list-pane {
-    background-color: rgb(var(--color-surface-900) / 0.72);
-  }
-
-  .workshop-detail-pane {
-    background-color: rgb(var(--color-surface-800) / 0.38);
-  }
-
   .workshop-list-row-active {
     background-color: rgb(var(--color-primary-500) / 0.1);
     box-shadow: inset 0 0 0 1px rgb(var(--color-primary-500) / 0.25);
@@ -844,22 +782,22 @@
     @apply text-4xl font-semibold tabular-nums tracking-tight text-surface-50;
   }
 
-  /* Quiet text actions — no pill buttons */
+  /* Quiet text actions — color from workshop-shell (--shell-muted) */
   .workshop-text-action {
-    @apply text-xs text-surface-400 transition hover:text-primary-300;
+    @apply text-xs transition;
   }
 
-  /* Native-style underline tabs */
+  /* Native-style underline tabs — colors from workshop-shell */
   .workshop-tabs {
     @apply flex gap-0 border-b border-surface-500/40;
   }
 
   .workshop-tab {
-    @apply -mb-px border-b-2 border-transparent px-2.5 py-1.5 text-xs text-surface-400 transition hover:text-surface-200;
+    @apply -mb-px border-b-2 border-transparent px-2.5 py-1.5 text-xs transition;
   }
 
   .workshop-tab-active {
-    @apply border-primary-400 text-surface-100;
+    @apply border-primary-400;
   }
 
   /* Instrument readout row */
@@ -895,22 +833,21 @@
     @apply border-surface-500/55;
   }
 
-  /* Text hierarchy */
+  /* Text hierarchy — colors from workshop-shell.postcss (--shell-whisper/label/muted) */
   .workshop-section-title {
-    @apply text-xs font-semibold uppercase tracking-wide text-surface-300;
+    @apply text-xs font-semibold uppercase tracking-wide;
   }
 
   .workshop-label {
-    @apply text-xs text-surface-300;
+    @apply text-xs;
   }
 
   .workshop-muted {
-    @apply text-sm text-surface-300;
+    @apply text-sm;
   }
 
   .workshop-faint {
     @apply text-xs;
-    color: rgb(var(--color-surface-300) / 0.78);
   }
 
   /* Side drawers (sessions, identity) */
@@ -921,75 +858,6 @@
   .workshop-composer {
     @apply shrink-0 border-t border-surface-500/25 px-4 py-3 backdrop-blur-md;
     background-color: rgb(var(--color-surface-950) / 0.5);
-  }
-
-  .workshop-icon-rail {
-    @apply flex w-[52px] shrink-0 flex-col items-center border-r border-surface-500/50 bg-surface-900 py-2;
-  }
-
-  .workshop-rail-btn {
-    @apply flex h-9 w-9 items-center justify-center rounded-md text-surface-400 transition hover:bg-surface-800 hover:text-surface-200;
-  }
-
-  .workshop-rail-workshop-btn {
-    @apply text-[10px] font-semibold text-surface-50;
-    background-color: rgb(var(--color-primary-500) / 0.2);
-    @apply ring-1 ring-inset ring-primary-500/35 hover:bg-primary-500/30 hover:text-surface-50;
-  }
-
-  .workshop-rail-workshop-btn[style*="--workshop-brand"] {
-    background-color: color-mix(in srgb, var(--workshop-brand) 24%, transparent);
-    --tw-ring-color: color-mix(in srgb, var(--workshop-brand) 42%, transparent);
-  }
-
-  .workshop-rail-workshop-btn[style*="--workshop-brand"]:hover {
-    background-color: color-mix(in srgb, var(--workshop-brand) 34%, transparent);
-  }
-
-  .workshop-rail-workshop-monogram {
-    @apply block max-w-[2ch] truncate text-center tracking-tight;
-  }
-
-  .workshop-rail-btn-active {
-    background-color: rgb(var(--color-primary-500) / 0.1);
-    @apply text-primary-300 ring-1 ring-inset ring-primary-500/25;
-  }
-
-  .workshop-rail-tier-divider {
-    @apply my-1.5 h-px w-6 shrink-0 bg-surface-700/60;
-  }
-
-  .workshop-rail-btn-tier-life {
-    @apply text-surface-300;
-  }
-
-  .workshop-rail-btn-tier-utility {
-    @apply h-8 w-8 hover:text-surface-300;
-    color: rgb(var(--color-primary-400) / 0.42);
-  }
-
-  .workshop-rail-btn-tier-utility:hover {
-    color: rgb(var(--color-primary-300) / 0.88);
-  }
-
-  .workshop-rail-badge {
-    @apply pointer-events-none absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-primary-400 ring-2 ring-surface-900;
-  }
-
-  .workshop-rail-count-badge {
-    @apply pointer-events-none absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary-500 px-1 text-[9px] font-bold leading-none text-primary-50 ring-2 ring-surface-900;
-  }
-
-  .workshop-rail-feed-badge {
-    @apply pointer-events-none absolute -bottom-0.5 -right-0.5 h-1.5 w-1.5 rounded-full ring-2 ring-surface-900;
-  }
-
-  .workshop-rail-feed-badge-live {
-    @apply bg-success-400;
-  }
-
-  .workshop-rail-feed-badge-stale {
-    @apply bg-warning-400;
   }
 
   .duet-stage-whisper {
@@ -1855,11 +1723,12 @@
   }
 
   .markdown-content th {
-    @apply font-semibold text-surface-400;
+    @apply font-semibold;
     background: color-mix(in srgb, var(--color-surface-800) 70%, transparent);
     font-size: 0.65rem;
     letter-spacing: 0.04em;
     text-transform: uppercase;
+    /* color from workshop-shell --shell-label */
   }
 
   .markdown-content td {
@@ -1867,7 +1736,8 @@
   }
 
   .markdown-content td:first-child {
-    @apply text-surface-400 font-medium;
+    @apply font-medium;
+    /* color from workshop-shell --shell-muted */
   }
 
   /* 2-col key/value: tidy label column. 3+ cols stay content-shared. */
@@ -2017,16 +1887,8 @@
     @apply text-primary-200 underline decoration-primary-500/40 underline-offset-2;
   }
 
-  .vault-editor-header {
-    @apply border-b border-surface-500/35 bg-surface-900/30;
-  }
-
   .vault-editor-textarea {
     @apply focus:ring-0;
-  }
-
-  .vault-markdown-preview {
-    background-color: rgb(var(--color-surface-950) / 0.5);
   }
 
   .vault-kbd {
@@ -3742,11 +3604,11 @@
   }
 
   .composer-bar:focus-within {
-    border-color: rgb(var(--color-surface-500) / 0.55);
+    border-color: rgb(var(--color-primary-500) / 0.42);
     background-color: rgb(var(--color-surface-800) / 0.82);
     box-shadow:
       inset 0 1px 0 rgb(255 255 255 / 0.07),
-      0 0 0 3px rgb(var(--color-primary-500) / 0.1),
+      0 0 0 3px rgb(var(--color-primary-500) / 0.14),
       0 2px 10px rgb(0 0 0 / 0.2);
   }
 
@@ -4947,293 +4809,9 @@
     @apply flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-surface-800 text-surface-300;
   }
 
-  html[data-theme="black-lily"] .workshop-rail-btn-active {
-    @apply bg-surface-700 text-primary-300 ring-1 ring-inset ring-primary-400/55;
-    box-shadow: 0 0 14px rgb(var(--color-primary-500) / 0.18);
-  }
+  /* Black Lily / Obsidian theme overlays live in theme-*.postcss */
 
-  html[data-theme="black-lily"] .workshop-tab-active {
-    @apply border-primary-400 text-primary-300;
-  }
-
-  html[data-theme="black-lily"] .workshop-text-action:hover {
-    @apply text-primary-400;
-    text-shadow: 0 0 10px rgb(var(--color-primary-500) / 0.35);
-  }
-
-  html[data-theme="black-lily"] .workshop-section-title {
-    @apply text-secondary-400;
-  }
-
-  html[data-theme="black-lily"] :is(
-      .workshop-nav,
-      .workshop-rail,
-      .workshop-status,
-      .workshop-header,
-      .workshop-inset,
-      .workshop-tabs,
-      .workshop-telemetry,
-      .workshop-composer,
-      .workshop-icon-rail,
-      .workshop-drawer,
-      .card,
-      .input,
-      .textarea,
-      .select,
-      .checkbox,
-      .theme-option,
-      .theme-option-swatches
-    ) {
-    @apply border-surface-600/70;
-  }
-
-  html[data-theme="black-lily"] :is(.input, .textarea:not(.composer-bar-input), .select):focus {
-    @apply border-primary-500/70 ring-2 ring-primary-500/25;
-    box-shadow: 0 0 0 3px rgb(var(--color-primary-500) / 0.14);
-  }
-
-  html[data-theme="black-lily"] .checkbox:checked {
-    @apply border-primary-500 bg-primary-500;
-    box-shadow: 0 0 10px rgb(var(--color-primary-500) / 0.35);
-  }
-
-  html[data-theme="black-lily"] .variant-filled-primary {
-    border: 1px solid rgb(var(--color-primary-500) / 0.45);
-    background-image: linear-gradient(
-      135deg,
-      rgb(var(--color-primary-500)),
-      rgb(var(--color-secondary-700))
-    );
-    box-shadow: 0 0 16px rgb(var(--color-primary-500) / 0.22);
-  }
-
-  html[data-theme="black-lily"] .variant-filled-primary:hover:not(:disabled) {
-    filter: brightness(1.12);
-    box-shadow: 0 0 20px rgb(var(--color-primary-500) / 0.42);
-  }
-
-  html[data-theme="black-lily"] .theme-option-active {
-    @apply border-primary-400/55 ring-1 ring-inset ring-primary-400/35;
-    background-color: rgb(var(--color-primary-500) / 0.14);
-    box-shadow: 0 0 18px rgb(var(--color-primary-500) / 0.12);
-  }
-
-  html[data-theme="black-lily"] .mobile-channel-chip-active,
-  html[data-theme="black-lily"] .mobile-tab-btn-active {
-    @apply text-primary-200;
-    background-color: rgb(var(--color-primary-500) / 0.14);
-    box-shadow: inset 0 0 10px rgb(var(--color-primary-500) / 0.06);
-  }
-
-  html[data-theme="black-lily"] .markdown-content a {
-    @apply text-primary-400;
-    text-shadow: 0 0 8px rgb(var(--color-primary-500) / 0.25);
-  }
-
-  html.dark[data-theme="black-lily"] .markdown-content code:not(pre code) {
-    @apply text-primary-300;
-    background-color: rgb(var(--color-primary-500) / 0.16);
-    border: 1px solid rgb(var(--color-primary-500) / 0.28);
-    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.04);
-  }
-
-  html[data-theme="black-lily"] .chat-composer-bar:focus-within {
-    border-color: rgb(var(--color-primary-500) / 0.28);
-    box-shadow:
-      inset 0 1px 0 rgb(255 255 255 / 0.04),
-      0 0 0 3px rgb(var(--color-primary-500) / 0.12);
-  }
-
-  html[data-theme="black-lily"] .composer-bar:focus-within {
-    border-color: rgb(var(--color-primary-500) / 0.42);
-    box-shadow:
-      inset 0 1px 0 rgb(255 255 255 / 0.08),
-      0 0 0 3px rgb(var(--color-primary-500) / 0.12),
-      0 0 18px rgb(var(--color-primary-500) / 0.08);
-  }
-
-  html[data-theme="black-lily"] .composer-bar-mobile:focus-within {
-    border-color: rgb(var(--color-primary-400) / 0.45);
-    box-shadow:
-      inset 0 1px 0 rgb(255 255 255 / 0.1),
-      0 0 0 3px rgb(var(--color-primary-500) / 0.16),
-      0 4px 20px rgb(var(--color-primary-500) / 0.1);
-  }
-
-  html[data-theme="black-lily"] .mobile-composer-dock:focus-within {
-    border-color: rgb(var(--color-primary-400) / 0.45);
-    box-shadow:
-      inset 0 1px 0 rgb(255 255 255 / 0.1),
-      0 0 0 3px rgb(var(--color-primary-500) / 0.16),
-      0 4px 20px rgb(var(--color-primary-500) / 0.1);
-  }
-
-  html[data-theme="black-lily"] .mobile-bottom-chrome {
-    border-top-color: rgb(var(--color-surface-600) / 0.5);
-  }
-
-  html[data-theme="black-lily"] .mobile-chat-composer {
-    border-bottom-color: rgb(var(--color-surface-600) / 0.4);
-  }
-
-  html[data-theme="black-lily"] .composer-bar-send:not(:disabled) {
-    border: 1px solid rgb(var(--color-primary-500) / 0.4);
-    background-image: linear-gradient(
-      135deg,
-      rgb(var(--color-primary-500)),
-      rgb(var(--color-secondary-700))
-    );
-    box-shadow: 0 0 14px rgb(var(--color-primary-500) / 0.28);
-  }
-
-  html[data-theme="black-lily"] .composer-voice-done:not(:disabled) {
-    border: 1px solid rgb(var(--color-primary-500) / 0.4);
-    background-image: linear-gradient(
-      135deg,
-      rgb(var(--color-primary-500)),
-      rgb(var(--color-secondary-700))
-    );
-    box-shadow: 0 0 14px rgb(var(--color-primary-500) / 0.28);
-  }
-
-  html[data-theme="black-lily"] .composer-bar-voice-mode {
-    border-color: rgb(var(--color-error-500) / 0.32);
-    box-shadow:
-      inset 0 1px 0 rgb(255 255 255 / 0.06),
-      0 0 0 1px rgb(var(--color-error-500) / 0.12),
-      0 0 24px rgb(var(--color-error-500) / 0.1);
-  }
-
-  html[data-theme="black-lily"] .composer-bar-voice-mode.composer-bar-voice-transcribing {
-    border-color: rgb(var(--color-primary-500) / 0.38);
-    box-shadow:
-      inset 0 1px 0 rgb(255 255 255 / 0.06),
-      0 0 0 1px rgb(var(--color-primary-500) / 0.14),
-      0 0 26px rgb(var(--color-primary-500) / 0.14);
-  }
-
-  html[data-theme="black-lily"] .composer-model-trigger-badge {
-    background-image: linear-gradient(
-      145deg,
-      rgb(var(--color-primary-500) / 0.55),
-      rgb(var(--color-secondary-700) / 0.45)
-    );
-  }
-
-  html[data-theme="black-lily"] .composer-model-panel {
-    border-color: rgb(var(--color-primary-500) / 0.18);
-    box-shadow:
-      inset 0 1px 0 rgb(255 255 255 / 0.07),
-      0 18px 44px rgb(0 0 0 / 0.45),
-      0 0 28px rgb(var(--color-primary-500) / 0.08);
-  }
-
-  html[data-theme="black-lily"] .composer-model-depth-segment-btn-active {
-    background-image: linear-gradient(
-      180deg,
-      rgb(var(--color-primary-500) / 0.22),
-      rgb(var(--color-surface-800) / 0.95)
-    );
-  }
-
-  /* Light mode — softer elevation, Apple-style separators */
-  html:not(.dark) .workshop-nav {
-    border-color: rgb(var(--color-surface-700) / 0.8);
-    background-color: rgb(var(--color-surface-900));
-    box-shadow: 2px 0 16px rgb(0 0 0 / 0.04);
-  }
-
-  html:not(.dark) .workshop-main {
-    background-color: rgb(var(--color-surface-950));
-  }
-
-  html:not(.dark) .workshop-rail {
-    border-color: rgb(var(--color-surface-700) / 0.8);
-    background-color: rgb(var(--color-surface-900));
-    box-shadow: -4px 0 16px rgb(0 0 0 / 0.04);
-  }
-
-  html:not(.dark) .workshop-status {
-    border-color: rgb(var(--color-surface-700) / 0.8);
-    background-color: rgb(var(--color-surface-900) / 0.95);
-    color: rgb(var(--color-surface-200));
-  }
-
-  html:not(.dark) .workshop-header {
-    border-color: rgb(var(--color-surface-700) / 0.7);
-    background-color: rgb(var(--color-surface-900) / 0.8);
-  }
-
-  html:not(.dark) .workshop-inset {
-    border-color: rgb(var(--color-surface-700) / 0.75);
-    background-color: rgb(var(--color-surface-900));
-  }
-
-  html:not(.dark) .workshop-tabs {
-    border-color: rgb(var(--color-surface-700) / 0.7);
-  }
-
-  html:not(.dark) .workshop-kanban-card {
-    border-color: rgb(var(--color-surface-700) / 0.6);
-    background-color: rgb(var(--color-surface-900));
-  }
-
-  html:not(.dark) .workshop-kanban-card:hover {
-    background-color: rgb(var(--color-surface-800) / 0.8);
-  }
-
-  html:not(.dark) .card {
-    border-color: rgb(var(--color-surface-700) / 0.7);
-    background-color: rgb(var(--color-surface-900));
-  }
-
-  html:not(.dark) :is(.input, .textarea, .select) {
-    border-color: rgb(var(--color-surface-700) / 0.8);
-    background-color: rgb(var(--color-surface-900));
-    color: rgb(var(--color-surface-50));
-  }
-
-  html:not(.dark) :is(.input, .textarea, .select)::placeholder {
-    color: rgb(var(--color-surface-400));
-  }
-
-  html:not(.dark) .mobile-shell {
-    background-color: rgb(var(--color-surface-950));
-    color: rgb(var(--color-surface-50));
-  }
-
-  html:not(.dark) .mobile-top-bar {
-    border-color: rgb(var(--color-surface-700) / 0.7);
-    background-color: rgb(var(--color-surface-900) / 0.95);
-  }
-
-  html:not(.dark) .mobile-bottom-chrome {
-    background-color: rgb(var(--color-surface-900) / 0.96);
-    border-top-color: rgb(var(--color-surface-700) / 0.65);
-  }
-
-  html:not(.dark) .composer-bar {
-    border-color: rgb(var(--color-surface-700) / 0.75);
-    background-color: rgb(var(--color-surface-900));
-    box-shadow:
-      inset 0 1px 0 rgb(255 255 255 / 0.85),
-      0 1px 2px rgb(0 0 0 / 0.04);
-  }
-
-  html:not(.dark) .composer-bar-mobile {
-    border-color: rgb(var(--color-surface-700) / 0.8);
-    background-color: rgb(var(--color-surface-900));
-  }
-
-  html:not(.dark) .theme-option {
-    border-color: rgb(var(--color-surface-700) / 0.75);
-    background-color: rgb(var(--color-surface-900));
-  }
-
-  html:not(.dark) .theme-option:hover {
-    border-color: rgb(var(--color-surface-600) / 0.8);
-    background-color: rgb(var(--color-surface-800) / 0.6);
-  }
+  /* Light mode shell regions live in workshop-shell.postcss (--shell-* tokens). */
 
   /* Temporary layout debug — enabled via data-layout-debug on Tauri iOS */
   html[data-layout-debug] body {
