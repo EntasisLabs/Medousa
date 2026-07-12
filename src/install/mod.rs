@@ -6,8 +6,8 @@ pub use medousa_install_support::release_config;
 
 pub use manifest::{
     mark_package_installed, package_installed, read_install_manifest, read_release_manifest,
-    shared_bin_dir, unmark_package_installed, user_packages_dir, write_install_manifest,
-    InstallManifest, PackageInstallRecord, ReleaseManifest, ReleasePackage,
+    resolve_release_package, shared_bin_dir, unmark_package_installed, user_packages_dir,
+    write_install_manifest, InstallManifest, PackageInstallRecord, ReleaseManifest, ReleasePackage,
 };
 pub use packages::{
     catalog_entry, default_install_profiles, expand_home_package_dependencies,
@@ -23,5 +23,4 @@ pub use release_config::{
 };
 pub use medousa_install_support::tarball_install::{
     fetch_release_manifest, install_tarball_package, remove_tarball_package,
-    resolve_release_package,
 };

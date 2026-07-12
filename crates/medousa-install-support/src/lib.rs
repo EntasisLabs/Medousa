@@ -33,5 +33,5 @@ pub use release_config::{
 };
 pub use tarball_install::{
     download_url, fetch_release_manifest, install_tarball_package, remove_tarball_package,
-    resolve_release_package, verify_sha256,
+    verify_sha256,
 };
