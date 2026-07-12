@@ -30,6 +30,10 @@ pub struct TurnPartsAccumulator {
 }
 
 impl TurnPartsAccumulator {
+    pub fn live_progress_notes(&self) -> &[String] {
+        &self.progress_notes
+    }
+
     pub fn push_content_delta(&mut self, _delta: &str) {
         // Final answer text is taken from the terminal sink payload; deltas are
         // mirrored in SSE only.

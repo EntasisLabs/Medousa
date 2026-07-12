@@ -134,3 +134,26 @@ pub fn render_handoff_line(turn: &ConversationTurn) -> Option<Line<'static>> {
         Span::styled(format!("  {text}"), Style::default().fg(Color::Gray)),
     ]))
 }
+
+/// Settled interim whispers archived from scratch_reset / turn_progress (Home stageWhisper).
+pub fn progress_notes(turn: &ConversationTurn) -> Vec<String> {
+    turn.parts
+        .as_ref()
+        .map(|parts| {
+            parts
+                .iter()
+                .filter_map(|part| match part {
+                    TurnPart::Progress { markdown } => {
+                        let trimmed = markdown.trim();
+                        if trimmed.is_empty() {
+                            None
+                        } else {
+                            Some(trimmed.to_string())
+                        }
+                    }
+                    _ => None,
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}

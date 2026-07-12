@@ -65,12 +65,23 @@ pub(crate) async fn handle_tui_event(event: TuiEvent, state: &mut TuiState) {
                 return;
             }
             if let Some(idx) = state.active_agent_stream_turn {
+                let answer_state = state
+                    .conversation
+                    .get(idx)
+                    .and_then(|turn| turn.answer_state.as_deref());
+                // Home skips scratch_reset while PackHold holds the visible draft.
+                if answer_state == Some("pack_hold") {
+                    state.pending_agent_chunk_delta.clear();
+                    state.pending_agent_chunk_count = 0;
+                    return;
+                }
                 let draft = state
                     .conversation
                     .get(idx)
                     .map(|turn| turn.content.trim().to_string())
                     .unwrap_or_default();
                 if !draft.is_empty() {
+                    state.turn_parts.archive_progress_note(&draft);
                     super::push_obs(state, format!("◈ {draft}"));
                 }
                 if let Some(turn) = state.conversation.get_mut(idx) {
@@ -82,8 +93,40 @@ pub(crate) async fn handle_tui_event(event: TuiEvent, state: &mut TuiState) {
             state.pending_agent_chunk_count = 0;
             super::invalidate_markdown_cache(state);
         }
+        TuiEvent::AgentPackHold {
+            turn_id,
+            held,
+            tool_names,
+        } => {
+            if !is_active_stream_turn(state, turn_id) {
+                return;
+            }
+            if let Some(idx) = state.active_agent_stream_turn {
+                if let Some(turn) = state.conversation.get_mut(idx) {
+                    let body = held.trim();
+                    if !body.is_empty() {
+                        turn.content = body.to_string();
+                    }
+                    if !tool_names.is_empty() {
+                        turn.tool_names = tool_names;
+                    }
+                    turn.answer_state = Some("pack_hold".to_string());
+                    turn.timestamp = Utc::now();
+                }
+            }
+            state.pending_agent_chunk_delta.clear();
+            state.pending_agent_chunk_count = 0;
+            if state.auto_scroll {
+                state.conv_scroll = state.conv_max_scroll;
+            }
+            super::invalidate_markdown_cache(state);
+        }
         TuiEvent::AgentChunk { turn_id, delta } => {
             if !is_active_stream_turn(state, turn_id) {
+                return;
+            }
+            // After tool receipts, interim streamed prose belongs in progress/status only.
+            if should_suppress_stream_content_delta(state) {
                 return;
             }
             if !delta.is_empty() {
@@ -111,14 +154,13 @@ pub(crate) async fn handle_tui_event(event: TuiEvent, state: &mut TuiState) {
             if !is_active_stream_turn(state, turn_id) {
                 return;
             }
+            // Progress whispers stay out of the answer body (Home shouldMirrorStatusIntoContent=false).
+            state.turn_parts.archive_progress_note(&text);
             super::push_obs(state, format!("◈ {text}"));
             if let Some(idx) = state.active_agent_stream_turn {
                 if let Some(turn) = state.conversation.get_mut(idx) {
-                    if turn.content.trim().is_empty() {
-                        turn.content = text.clone();
-                    }
                     turn.tool_names = tool_names;
-                    turn.answer_state = Some("tool_loop".to_string());
+                    turn.answer_state = Some("final_pending".to_string());
                     turn.timestamp = Utc::now();
                 }
             }
@@ -135,12 +177,12 @@ pub(crate) async fn handle_tui_event(event: TuiEvent, state: &mut TuiState) {
             if !is_active_stream_turn(state, turn_id) {
                 return;
             }
+            // Never mirror status into the answer bubble — that re-injected archived
+            // interim after scratch_reset and duplicated final text.
+            state.turn_parts.archive_progress_note(&message);
             super::push_obs(state, format!("◈ {message}"));
             if let Some(idx) = state.active_agent_stream_turn {
                 if let Some(turn) = state.conversation.get_mut(idx) {
-                    if turn.content.trim().is_empty() {
-                        turn.content = message.clone();
-                    }
                     turn.tool_names = tool_names;
                     turn.answer_state = Some("tool_loop".to_string());
                     turn.timestamp = Utc::now();
@@ -174,10 +216,18 @@ pub(crate) async fn handle_tui_event(event: TuiEvent, state: &mut TuiState) {
 
             let final_text = visible_text;
             let finalized = if let Some(idx) = state.active_agent_stream_turn {
+                let after_tool_loop = turn_has_tool_loop(state, idx);
                 let content = state
                     .conversation
                     .get(idx)
-                    .map(|turn| resolve_agent_turn_content(&turn.content, &final_text, true))
+                    .map(|turn| {
+                        resolve_agent_turn_content(
+                            &turn.content,
+                            &final_text,
+                            true,
+                            after_tool_loop,
+                        )
+                    })
                     .unwrap_or_else(|| final_text.clone());
                 let turn = state.turn_parts.finalize_assistant_turn(
                     content,
@@ -254,19 +304,35 @@ pub(crate) async fn handle_tui_event(event: TuiEvent, state: &mut TuiState) {
             let is_worker_handoff = !terminal && work_id.is_some();
 
             let persisted = if is_worker_handoff {
-                let turn = state.turn_parts.finalize_worker_ack_turn(
+                // Home updates the same bubble (whisper/handoff), never pushes a second turn.
+                let mut turn = state.turn_parts.finalize_worker_ack_turn(
                     final_text.clone(),
                     tool_names.clone(),
                     work_id.clone(),
                 );
-                state.conversation.push(turn.clone());
+                turn.content.clear();
+                if let Some(idx) = state.active_agent_stream_turn {
+                    if let Some(existing) = state.conversation.get_mut(idx) {
+                        *existing = turn.clone();
+                    }
+                } else {
+                    state.conversation.push(turn.clone());
+                }
                 state.active_agent_stream_turn = None;
                 turn
             } else if let Some(idx) = state.active_agent_stream_turn {
+                let after_tool_loop = turn_has_tool_loop(state, idx);
                 let content = state
                     .conversation
                     .get(idx)
-                    .map(|turn| resolve_agent_turn_content(&turn.content, &final_text, terminal))
+                    .map(|turn| {
+                        resolve_agent_turn_content(
+                            &turn.content,
+                            &final_text,
+                            terminal,
+                            after_tool_loop,
+                        )
+                    })
                     .unwrap_or_else(|| final_text.clone());
                 let turn = state.turn_parts.finalize_assistant_turn(
                     content,
@@ -554,21 +620,54 @@ fn trim_hash(hash: &str) -> &str {
     &hash[..MAX]
 }
 
-/// Mid-turn `AgentResponse` (e.g. worker ack) replaces the draft; terminal keeps streamed body (Phase 7A).
-fn resolve_agent_turn_content(streamed_body: &str, final_body: &str, terminal: bool) -> String {
+/// Mid-turn `AgentResponse` (e.g. worker ack) replaces the draft; terminal keeps streamed body
+/// unless tools already ran — then prefer server `final_text` (Home `afterToolLoop`).
+fn resolve_agent_turn_content(
+    streamed_body: &str,
+    final_body: &str,
+    terminal: bool,
+    after_tool_loop: bool,
+) -> String {
     if !terminal {
         return final_body.to_string();
     }
 
-    if !streamed_body.trim().is_empty() {
+    let final_trimmed = final_body.trim();
+    let streamed_trimmed = streamed_body.trim();
+
+    if after_tool_loop && !final_trimmed.is_empty() {
+        return final_body.to_string();
+    }
+
+    if !streamed_trimmed.is_empty() {
         return streamed_body.to_string();
     }
 
-    if !final_body.trim().is_empty() {
+    if !final_trimmed.is_empty() {
         return final_body.to_string();
     }
 
     streamed_body.to_string()
+}
+
+fn turn_has_tool_loop(state: &TuiState, idx: usize) -> bool {
+    if state.turn_parts.has_pending_tool_runs() {
+        return true;
+    }
+    state
+        .conversation
+        .get(idx)
+        .is_some_and(|turn| !turn.tool_names.is_empty())
+}
+
+fn should_suppress_stream_content_delta(state: &TuiState) -> bool {
+    if state.turn_parts.has_pending_tool_runs() {
+        return true;
+    }
+    state
+        .active_agent_stream_turn
+        .and_then(|idx| state.conversation.get(idx))
+        .is_some_and(|turn| !turn.tool_names.is_empty())
 }
 
 #[cfg(test)]
@@ -579,7 +678,7 @@ mod resolve_content_tests {
     fn terminal_keeps_substantive_stream_over_divergent_final() {
         let streamed = "Here is what I found about locus: STTP nodes under session medousa-ux.";
         let final_answer = "Different rewrite from a synthesis pass that the user never saw stream.";
-        let merged = resolve_agent_turn_content(streamed, final_answer, true);
+        let merged = resolve_agent_turn_content(streamed, final_answer, true, false);
         assert_eq!(merged, streamed);
     }
 
@@ -587,15 +686,23 @@ mod resolve_content_tests {
     fn terminal_keeps_stream_even_when_final_differs() {
         let streamed = "Let me dig into memory for you.";
         let final_answer = "Here is what I found about locus: the project uses STTP nodes stored under session medousa-ux with several architecture notes from May.";
-        let merged = resolve_agent_turn_content(streamed, final_answer, true);
+        let merged = resolve_agent_turn_content(streamed, final_answer, true, false);
         assert_eq!(merged, streamed);
+    }
+
+    #[test]
+    fn terminal_after_tool_loop_prefers_final() {
+        let streamed = "Let me dig into memory for you.";
+        let final_answer = "Here is what I found about locus.";
+        let merged = resolve_agent_turn_content(streamed, final_answer, true, true);
+        assert_eq!(merged, final_answer);
     }
 
     #[test]
     fn non_terminal_replaces_draft() {
         let streamed = "Let me check that for you.";
         let ack = "Delegated to background worker — I'll synthesize when done.";
-        let out = resolve_agent_turn_content(streamed, ack, false);
+        let out = resolve_agent_turn_content(streamed, ack, false, false);
         assert_eq!(out, ack);
     }
 }

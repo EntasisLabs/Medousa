@@ -42,6 +42,21 @@ function livePulseLabel(
   return null;
 }
 
+/** Settled interim under the final answer (live finish whisper or history Progress). */
+function settledInterimLabel(
+  message: ChatMessage,
+  opts: ChatSceneOptions,
+  bodyMarkdown: string,
+): string | null {
+  if (message.streaming) return null;
+  const whisper =
+    message.stageWhisper?.trim() || opts.statusLine?.trim() || null;
+  if (!whisper) return null;
+  const body = bodyMarkdown.trim();
+  if (body && whisper === body) return null;
+  return whisper;
+}
+
 function assistantFlow(message: ChatMessage, opts: ChatSceneOptions): SceneNode[] {
   const flow: SceneNode[] = [];
   const id = message.id;
@@ -101,6 +116,12 @@ function assistantFlow(message: ChatMessage, opts: ChatSceneOptions): SceneNode[
     flow.push(child(`${id}:body`, "prose", { markdown: bodyMarkdown }));
   } else if (streaming && !hasToolRuns && !hasReasoning) {
     flow.push(child(`${id}:body`, "prose", { markdown: "…" }));
+  }
+
+  // 4b. Settled interim whisper under the final answer (tool-turn progress)
+  const settled = settledInterimLabel(message, opts, bodyMarkdown);
+  if (settled) {
+    flow.push(child(`${id}:whisper`, "whisper", { text: settled }));
   }
 
   if (message.uiArtifacts && message.uiArtifacts.length > 0) {

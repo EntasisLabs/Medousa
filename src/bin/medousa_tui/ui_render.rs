@@ -837,6 +837,7 @@ fn build_conversation_text(
                     "needs_input" => ("asking", Color::Cyan),
                     "final_pending" => ("wrapping up", Color::Magenta),
                     "tool_loop" => ("running tools", Color::Cyan),
+                    "pack_hold" => ("held", Color::DarkGray),
                     _ => (answer_state, Color::Gray),
                 };
                 lines.push(Line::from(vec![
@@ -850,6 +851,27 @@ fn build_conversation_text(
             lines.extend(render_markdown_lines_cached(state, content_body, width));
             if let Some(handoff) = super::tui_presentation::render_handoff_line(turn) {
                 lines.push(handoff);
+            }
+            for note in super::tui_presentation::progress_notes(turn) {
+                lines.push(Line::from(Span::styled(
+                    format!("  · {note}"),
+                    Style::default().fg(Color::DarkGray),
+                )));
+            }
+            if state
+                .active_agent_stream_turn
+                .is_some_and(|active| active == index)
+            {
+                for note in state.turn_parts.live_progress_notes() {
+                    let trimmed = note.trim();
+                    if trimmed.is_empty() {
+                        continue;
+                    }
+                    lines.push(Line::from(Span::styled(
+                        format!("  · {trimmed}"),
+                        Style::default().fg(Color::DarkGray),
+                    )));
+                }
             }
         }
 
