@@ -61,7 +61,7 @@ pub async fn get_job_result(
         return Ok(Json(job_result_from_agent_turn(&job_id, record)));
     }
 
-    let attempts = match get_job_attempts_graceful(&state.composition(), &job_id).await {
+    let attempts = match get_job_attempts_graceful(state.composition(), &job_id).await {
         Ok(attempts) => attempts,
         Err(err) => return Err(err),
     };
@@ -112,7 +112,7 @@ pub async fn get_job_report(
         }));
     }
 
-    let attempts = match get_job_attempts_graceful(&state.composition(), &job_id).await {
+    let attempts = match get_job_attempts_graceful(state.composition(), &job_id).await {
         Ok(attempts) => attempts,
         Err(err) => return Err(err),
     };

@@ -75,11 +75,10 @@ impl WorkspaceStore {
     fn reload_from_disk(&self) {
         let _ = std::fs::create_dir_all(Self::workspace_dir());
 
-        if let Ok(raw) = std::fs::read_to_string(Self::path(REVISION_FILE)) {
-            if let Ok(value) = raw.trim().parse::<u64>() {
+        if let Ok(raw) = std::fs::read_to_string(Self::path(REVISION_FILE))
+            && let Ok(value) = raw.trim().parse::<u64>() {
                 *self.revision.lock().expect("revision") = value;
             }
-        }
 
         let mut events = Vec::new();
         if let Ok(file) = File::open(Self::path(FEED_FILE)) {
@@ -95,14 +94,13 @@ impl WorkspaceStore {
         }
         *self.feed.lock().expect("feed") = events;
 
-        if let Ok(raw) = std::fs::read_to_string(Self::path(CARD_STATE_FILE)) {
-            if let Ok(snapshot) = serde_json::from_str::<CardStateSnapshot>(&raw) {
+        if let Ok(raw) = std::fs::read_to_string(Self::path(CARD_STATE_FILE))
+            && let Ok(snapshot) = serde_json::from_str::<CardStateSnapshot>(&raw) {
                 *self.card_states.write().expect("card states") = snapshot;
             }
-        }
 
-        if let Ok(raw) = std::fs::read_to_string(Self::path(ASSOC_FILE)) {
-            if let Ok(rows) = serde_json::from_str::<Vec<AssociationRecord>>(&raw) {
+        if let Ok(raw) = std::fs::read_to_string(Self::path(ASSOC_FILE))
+            && let Ok(rows) = serde_json::from_str::<Vec<AssociationRecord>>(&raw) {
                 let mut map = HashMap::new();
                 for row in rows {
                     map.insert(
@@ -116,7 +114,6 @@ impl WorkspaceStore {
                 }
                 *self.associations.write().expect("associations") = map;
             }
-        }
     }
 
     pub fn revision(&self) -> u64 {

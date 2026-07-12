@@ -12,11 +12,10 @@ use std::process::Command;
 use std::time::Duration;
 
 pub fn is_bind_reachable(bind: &str) -> bool {
-    if let Ok(mut addrs) = bind.to_socket_addrs() {
-        if let Some(addr) = addrs.next() {
+    if let Ok(mut addrs) = bind.to_socket_addrs()
+        && let Some(addr) = addrs.next() {
             return TcpStream::connect_timeout(&addr, Duration::from_millis(250)).is_ok();
         }
-    }
     false
 }
 

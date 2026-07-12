@@ -315,16 +315,15 @@ fn handle_digest(args: &Value) -> Result<Value, HostCallError> {
         }
     }
 
-    if let Some(identity_text) = compile_identity_digest_block(query.as_deref(), manuscript_id.as_deref()) {
-        if !identity_text.trim().is_empty() {
+    if let Some(identity_text) = compile_identity_digest_block(query.as_deref(), manuscript_id.as_deref())
+        && !identity_text.trim().is_empty() {
             sections.push("identity".to_string());
             body.push_str(&identity_text);
             body.push('\n');
         }
-    }
 
-    if let Some(pack_selector) = pack_ref.as_deref() {
-        if let Some(pack) = crate::context_pack::find_context_pack(&session_id, Some(pack_selector)) {
+    if let Some(pack_selector) = pack_ref.as_deref()
+        && let Some(pack) = crate::context_pack::find_context_pack(&session_id, Some(pack_selector)) {
             sections.push("context_pack".to_string());
             body.push_str(&format!(
                 "[MEDOUSA_CONTEXT_PACK]\npack_id={}\nartifact_id={}\nclaims={}\nchunks={}\ntokens={}\n",
@@ -340,10 +339,9 @@ fn handle_digest(args: &Value) -> Result<Value, HostCallError> {
                 body.push('\n');
             }
         }
-    }
 
-    if let Some(artifact_selector) = artifact_ref.as_deref() {
-        if let Some(artifact) = crate::artifact_store::find_artifact(&session_id, Some(artifact_selector)) {
+    if let Some(artifact_selector) = artifact_ref.as_deref()
+        && let Some(artifact) = crate::artifact_store::find_artifact(&session_id, Some(artifact_selector)) {
             sections.push("artifact".to_string());
             body.push_str(&format!(
                 "[MEDOUSA_ARTIFACT]\nid={}\ntool={}\nbytes={}\n",
@@ -356,7 +354,6 @@ fn handle_digest(args: &Value) -> Result<Value, HostCallError> {
                 body.push('\n');
             }
         }
-    }
 
     if let Some(input) = inline_input {
         sections.push("input".to_string());
@@ -411,11 +408,10 @@ fn compile_identity_digest_block(
     if let Some(query) = query.filter(|value| !value.trim().is_empty()) {
         options.query_hints = Some(query.trim().to_string());
     }
-    if let Some(manuscript_id) = manuscript_id.filter(|value| !value.trim().is_empty()) {
-        if let Ok(manuscript) = build_manuscript_context(manuscript_id) {
+    if let Some(manuscript_id) = manuscript_id.filter(|value| !value.trim().is_empty())
+        && let Ok(manuscript) = build_manuscript_context(manuscript_id) {
             options = digest_options_for_manuscript(options, &manuscript);
         }
-    }
     let ranked = compile_relational_memory_digest_with_options(&snapshot, options);
     if ranked.text.trim().is_empty() {
         None
@@ -713,11 +709,10 @@ fn artifact_preview(payload: &Value) -> Option<String> {
 
 fn arg_input_text(args: &Value, keys: &[&str]) -> Option<String> {
     for key in keys {
-        if let Some(value) = args.get(*key) {
-            if let Some(text) = value_to_digest_text(value) {
+        if let Some(value) = args.get(*key)
+            && let Some(text) = value_to_digest_text(value) {
                 return Some(text);
             }
-        }
     }
     args.get("__input").and_then(value_to_digest_text)
 }
@@ -760,11 +755,10 @@ fn arg_usize(args: &Value, keys: &[&str]) -> Option<usize> {
             if let Some(number) = value.as_u64() {
                 return Some(number as usize);
             }
-            if let Some(text) = value.as_str() {
-                if let Ok(number) = text.trim().parse::<usize>() {
+            if let Some(text) = value.as_str()
+                && let Ok(number) = text.trim().parse::<usize>() {
                     return Some(number);
                 }
-            }
         }
     }
     None

@@ -39,7 +39,7 @@ pub fn parse_allowed_modules(raw: &str) -> Vec<String> {
     let mut modules = Vec::new();
 
     for token in raw
-        .split(|c: char| c == ',' || c == '\n' || c == '\t' || c == ' ')
+        .split([',', '\n', '\t', ' '])
         .map(str::trim)
         .filter(|v| !v.is_empty())
     {

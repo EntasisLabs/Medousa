@@ -118,7 +118,7 @@ mod tests {
         .expect_err("step should time out");
 
         unsafe {
-            let _ = std::env::remove_var("MEDOUSA_SURREAL_STEP_TIMEOUT_SECS");
+            std::env::remove_var("MEDOUSA_SURREAL_STEP_TIMEOUT_SECS");
         }
         let message = format!("{err:#}");
         assert!(message.contains("slow write"));

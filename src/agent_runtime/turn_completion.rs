@@ -198,8 +198,8 @@ pub fn missing_ritual_tools_for_avec(user_prompt: &str, invocations: &[ToolInvoc
     let lower = user_prompt.to_ascii_lowercase();
     let mut missing = Vec::new();
 
-    if lower.contains("pull") || lower.contains("preset") {
-        if !tool_was_invoked(
+    if (lower.contains("pull") || lower.contains("preset"))
+        && !tool_was_invoked(
             invocations,
             &[
                 "cognition_memory_moods",
@@ -210,7 +210,6 @@ pub fn missing_ritual_tools_for_avec(user_prompt: &str, invocations: &[ToolInvoc
         ) {
             missing.push("cognition_memory_moods".to_string());
         }
-    }
 
     if !tool_was_invoked(
         invocations,
@@ -480,14 +479,13 @@ pub async fn resolve_turn_completion(
     };
 
     if can_call_model {
-        if let Some(verdict) = classify_turn_completion_with_gatekeeper(pipeline, docket).await {
-            if verdict.confidence >= GATEKEEPER_CONFIDENCE_MIN
-                || verdict.decision == TurnCompletionDecision::Continue
+        if let Some(verdict) = classify_turn_completion_with_gatekeeper(pipeline, docket).await
+            && (verdict.confidence >= GATEKEEPER_CONFIDENCE_MIN
+                || verdict.decision == TurnCompletionDecision::Continue)
             {
                 emit_gatekeeper_notice(sink, &verdict).await;
                 return verdict;
             }
-        }
         if let Some(sink) = sink {
             sink.notice(
                 "◈ completion gatekeeper skipped: low confidence; using heuristic".to_string(),

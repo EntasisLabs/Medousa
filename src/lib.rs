@@ -652,15 +652,14 @@ pub fn surrealkv_lock_path(backend: &RuntimeBackend) -> Option<PathBuf> {
 pub fn remove_surrealkv_lock(backend: &RuntimeBackend) {
     if let RuntimeBackend::SurrealKv { path, .. } = backend {
         let lock_path = PathBuf::from(path).join("LOCK");
-        if lock_path.exists() {
-            if let Err(err) = std::fs::remove_file(&lock_path) {
+        if lock_path.exists()
+            && let Err(err) = std::fs::remove_file(&lock_path) {
                 tracing::warn!(
                     path = %lock_path.display(),
                     error = %err,
                     "failed to remove SurrealKV lock file during shutdown"
                 );
             }
-        }
     }
 }
 

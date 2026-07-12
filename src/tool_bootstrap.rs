@@ -529,12 +529,11 @@ pub fn ensure_bound_workshop_session_tool_defaults(session_id: &str) {
 
 pub fn load_session_tool_surface(session_id: &str) -> SessionToolSurface {
     let path = session_surface_path(session_id);
-    if let Ok(raw) = fs::read_to_string(&path) {
-        if let Ok(mut surface) = serde_json::from_str::<SessionToolSurface>(&raw) {
+    if let Ok(raw) = fs::read_to_string(&path)
+        && let Ok(mut surface) = serde_json::from_str::<SessionToolSurface>(&raw) {
             surface.session_id = session_id.to_string();
             return surface;
         }
-    }
     SessionToolSurface {
         session_id: session_id.to_string(),
         unlocked_domains: Vec::new(),
@@ -694,14 +693,14 @@ pub fn build_tool_hints_block(
         for domain_name in &surface.unlocked_domains {
             if let Some(domain) = host_tool_domain_catalog()
                 .iter()
-                .find(|entry| &entry.domain == domain_name)
+                .find(|entry| entry.domain == domain_name)
             {
                 let preview: Vec<String> = domain
                     .tools
                     .iter()
                     .take(4)
                     .filter(|name| tool_allowed(name, &full_allow))
-                    .map(|name| format!("{name}"))
+                    .map(|name| name.to_string())
                     .collect();
                 if !preview.is_empty() {
                     unlocked_lines.push(format!(

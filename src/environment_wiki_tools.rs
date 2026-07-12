@@ -652,8 +652,7 @@ const TOPICS: &[WikiTopic] = &[
 fn normalize_topic(raw: &str) -> String {
     raw.trim()
         .to_ascii_lowercase()
-        .replace('_', "-")
-        .replace(' ', "-")
+        .replace(['_', ' '], "-")
 }
 
 fn resolve_topic(requested: Option<&str>) -> Option<&'static WikiTopic> {

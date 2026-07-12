@@ -43,7 +43,7 @@ pub fn raise_nofile_limit(target: u64) -> std::io::Result<NofileLimits> {
 
         if limit.rlim_cur >= desired {
             return Ok(NofileLimits {
-                soft: limit.rlim_cur as u64,
+                soft: limit.rlim_cur,
                 hard: rlim_to_u64(hard),
             });
         }
@@ -61,7 +61,7 @@ pub fn raise_nofile_limit(target: u64) -> std::io::Result<NofileLimits> {
             return Err(std::io::Error::last_os_error());
         }
         Ok(NofileLimits {
-            soft: applied.rlim_cur as u64,
+            soft: applied.rlim_cur,
             hard: rlim_to_u64(applied.rlim_max),
         })
     }
@@ -72,7 +72,7 @@ fn rlim_to_u64(value: libc::rlim_t) -> u64 {
     if value == libc::RLIM_INFINITY {
         u64::MAX
     } else {
-        value as u64
+        value
     }
 }
 

@@ -328,7 +328,7 @@ async fn main() -> Result<()> {
 
     let state = AppState {
         platform: platform.clone(),
-        daemon_base_url: medousa::daemon_api::resolve_daemon_public_base_url(&bind),
+        daemon_base_url: medousa::daemon_api::resolve_daemon_public_base_url(bind),
         interactive_turn_streams: medousa::daemon::turn_stream_registry::new_turn_stream_registry(),
         active_ingest_jobs: Arc::new(RwLock::new(HashMap::new())),
         channel_deliveries: Arc::new(RwLock::new(HashMap::new())),
@@ -448,12 +448,12 @@ async fn main() -> Result<()> {
             };
         let pairing_service = Arc::new(medousa::pairing::PairingService::new(
             identity,
-            medousa::pairing::resolve_advertise_address(&bind),
+            medousa::pairing::resolve_advertise_address(bind),
             medousa::pairing::resolve_peer_name(),
             model.map(|value| value.to_string()),
             iroh_info,
         ));
-        if medousa::pairing::mdns_should_advertise(&bind) {
+        if medousa::pairing::mdns_should_advertise(bind) {
             let mut txt = std::collections::HashMap::new();
             txt.insert("dv".to_string(), pairing_service.device_id().to_string());
             txt.insert("pn".to_string(), pairing_service.peer_name().to_string());

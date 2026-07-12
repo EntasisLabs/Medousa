@@ -90,9 +90,9 @@ impl TurnEventLog {
             envelope: self.envelope.at_seq(seq),
             event,
         };
-        if let Some(journal) = inner.journal.as_mut() {
-            if let Ok(line) = serde_json::to_string(&sequenced) {
-                if writeln!(journal, "{line}").and_then(|_| journal.flush()).is_err() {
+        if let Some(journal) = inner.journal.as_mut()
+            && let Ok(line) = serde_json::to_string(&sequenced)
+                && writeln!(journal, "{line}").and_then(|_| journal.flush()).is_err() {
                     tracing::warn!(
                         turn_id = %self.envelope.turn_id,
                         correlation_id = %self.envelope.correlation_id,
@@ -100,8 +100,6 @@ impl TurnEventLog {
                         "turn_event_log journal append failed"
                     );
                 }
-            }
-        }
         inner.events.push(sequenced.clone());
         sequenced
     }

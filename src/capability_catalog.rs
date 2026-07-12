@@ -110,6 +110,7 @@ pub struct DisabledBindingRef {
 
 /// Manifest entry: definition fields + declared bindings (TOML-friendly layout).
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct CapabilityManifestEntry {
     pub id: CapabilityId,
     pub title: String,
@@ -150,23 +151,6 @@ impl CapabilityManifestEntry {
     }
 }
 
-impl Default for CapabilityManifestEntry {
-    fn default() -> Self {
-        Self {
-            id: String::new(),
-            title: String::new(),
-            description: None,
-            aliases: Vec::new(),
-            keywords: Vec::new(),
-            intents: Vec::new(),
-            publish_feeds: Vec::new(),
-            can_feed_component: None,
-            available_jobs: Vec::new(),
-            component_template: None,
-            bindings: CapabilityManifestBindings::default(),
-        }
-    }
-}
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct CapabilityManifestBindings {
@@ -595,17 +579,16 @@ impl CapabilityRegistry {
 
         for def in self.definitions.values() {
             let mut matched_on = None;
-            if let Some(intent_value) = normalized_intent {
-                if def
+            if let Some(intent_value) = normalized_intent
+                && def
                     .intents
                     .iter()
                     .any(|entry| entry.eq_ignore_ascii_case(intent_value))
                 {
                     matched_on = Some("intent".to_string());
                 }
-            }
-            if matched_on.is_none() {
-                if let Some(query_value) = normalized_query {
+            if matched_on.is_none()
+                && let Some(query_value) = normalized_query {
                     let (score, matched) =
                         score_capability_match(&def.id, def, &normalize_tokens(query_value));
                     if score > 0 {
@@ -618,7 +601,6 @@ impl CapabilityRegistry {
                         matched_on = Some("intent_keyword".to_string());
                     }
                 }
-            }
             if matched_on.is_some() {
                 matches.push(medousa_types::feed::IntentResolveMatch {
                     capability_id: def.id.clone(),

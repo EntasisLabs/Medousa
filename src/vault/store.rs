@@ -92,11 +92,10 @@ impl VaultStore {
         let mut drafts = Vec::new();
 
         self.scan_root(&user_vault_root(), VaultNoteSource::User, &mut drafts)?;
-        if let Some(overlay) = project_vault_overlay_root() {
-            if overlay.is_dir() {
+        if let Some(overlay) = project_vault_overlay_root()
+            && overlay.is_dir() {
                 self.scan_root(&overlay, VaultNoteSource::ProjectOverlay, &mut drafts)?;
             }
-        }
 
         let mut by_path: HashMap<String, ScanDraft> = HashMap::new();
         for draft in drafts {
@@ -254,7 +253,7 @@ impl VaultStore {
         if let Some(prefix) = prefix.map(str::trim).filter(|value| !value.is_empty()) {
             entries.retain(|entry| entry.path.starts_with(prefix));
         }
-        entries.sort_by(|left, right| right.modified_at_utc.cmp(&left.modified_at_utc));
+        entries.sort_by_key(|right| std::cmp::Reverse(right.modified_at_utc));
         entries.truncate(limit);
         entries
     }
@@ -265,12 +264,11 @@ impl VaultStore {
     }
 
     pub fn read_content(&self, path: &str) -> Result<String> {
-        if let Ok(user_path) = resolve_user_note_path(path) {
-            if user_path.is_file() {
+        if let Ok(user_path) = resolve_user_note_path(path)
+            && user_path.is_file() {
                 return fs::read_to_string(&user_path)
                     .with_context(|| format!("read {}", user_path.display()));
             }
-        }
         if let Ok(Some(overlay_path)) = resolve_overlay_note_path(path) {
             return fs::read_to_string(&overlay_path)
                 .with_context(|| format!("read {}", overlay_path.display()));

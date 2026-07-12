@@ -419,7 +419,7 @@ pub async fn list_workflow_runs(
         }
     }
 
-    runs.sort_by(|left, right| right.scheduled_at_utc.cmp(&left.scheduled_at_utc));
+    runs.sort_by_key(|right| std::cmp::Reverse(right.scheduled_at_utc));
     runs.truncate(limit);
     let count = runs.len();
     Ok(Json(WorkflowRunsResponse {

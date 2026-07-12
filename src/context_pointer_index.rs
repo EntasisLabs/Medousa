@@ -62,7 +62,7 @@ pub fn collect_work_card_hints(active_session_id: &str) -> Vec<WorkCardHint> {
         });
     }
 
-    hints.sort_by(|a, b| b.last_active_at.cmp(&a.last_active_at));
+    hints.sort_by_key(|b| std::cmp::Reverse(b.last_active_at));
     hints
 }
 
@@ -323,11 +323,10 @@ fn topic_from_preview(preview: &str) -> Option<String> {
 
 fn parse_turn_scope(scope: &str) -> Option<usize> {
     let scope = scope.trim().to_ascii_lowercase();
-    if let Some(rest) = scope.strip_prefix("last_") {
-        if let Some(num) = rest.strip_suffix("_turns") {
+    if let Some(rest) = scope.strip_prefix("last_")
+        && let Some(num) = rest.strip_suffix("_turns") {
             return num.parse().ok();
         }
-    }
     None
 }
 

@@ -34,7 +34,7 @@ pub fn prompt_execution_context(model: &str, reasoning_effort: Option<&str>) -> 
     let model_hint = model.trim();
     PromptExecutionContext {
         model_hint: (!model_hint.is_empty()).then(|| model_hint.to_string()),
-        reasoning_effort: reasoning_effort.and_then(|value| normalize_reasoning_effort(value)),
+        reasoning_effort: reasoning_effort.and_then(normalize_reasoning_effort),
         ..Default::default()
     }
 }

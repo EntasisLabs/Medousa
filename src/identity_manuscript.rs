@@ -582,33 +582,30 @@ pub fn validate_manuscript(file: &IdentityManuscriptFile, path: &Path) -> Result
         bail!("metadata.name is required");
     }
 
-    if let Some(stem) = path.file_stem().and_then(|value| value.to_str()) {
-        if stem != file.metadata.id {
+    if let Some(stem) = path.file_stem().and_then(|value| value.to_str())
+        && stem != file.metadata.id {
             bail!(
                 "metadata.id '{}' must match filename stem '{}'",
                 file.metadata.id,
                 stem
             );
         }
-    }
 
-    if let Some(intent) = file.spec.worker.intent.as_deref() {
-        if TurnWorkerIntent::parse(intent).is_none() {
+    if let Some(intent) = file.spec.worker.intent.as_deref()
+        && TurnWorkerIntent::parse(intent).is_none() {
             bail!(
                 "spec.worker.intent '{intent}' is invalid (expected research|general|memory.context|memory.avec_calibrate)"
             );
         }
-    }
 
     if let Some(role) = file.spec.worker.stage_role.as_deref() {
         validate_worker_stage_role(role)?;
     }
 
-    if let Some(hint) = file.spec.worker.model_hint.as_deref() {
-        if hint.trim().is_empty() {
+    if let Some(hint) = file.spec.worker.model_hint.as_deref()
+        && hint.trim().is_empty() {
             bail!("spec.worker.model_hint must not be blank when set");
         }
-    }
 
     if let Some(mode) = file.spec.delivery.mode.as_deref() {
         match mode.trim().to_ascii_lowercase().as_str() {
@@ -635,9 +632,7 @@ pub fn validate_manuscript(file: &IdentityManuscriptFile, path: &Path) -> Result
 /// Validates `spec.worker.stage_role` against [`StageRoutingMatrix`] role names.
 pub fn validate_worker_stage_role(role: &str) -> Result<()> {
     let normalized = normalize_role(role);
-    if StageRoutingMatrix::roles()
-        .iter()
-        .any(|known| *known == normalized.as_str())
+    if StageRoutingMatrix::roles().contains(&normalized.as_str())
     {
         return Ok(());
     }
@@ -1181,8 +1176,8 @@ fn resolve_prompt_field(base_dir: &Path, raw: &str) -> Result<String> {
 
     let candidate = base_dir.join(trimmed);
     if candidate.is_file() {
-        return Ok(std::fs::read_to_string(&candidate)
-            .with_context(|| format!("read manuscript prompt file {}", candidate.display()))?);
+        return std::fs::read_to_string(&candidate)
+            .with_context(|| format!("read manuscript prompt file {}", candidate.display()));
     }
 
     Ok(trimmed.to_string())

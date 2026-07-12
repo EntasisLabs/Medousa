@@ -12,7 +12,7 @@ use medousa_types::feed::{
 use serde_json::{json, Value};
 use tokio::sync::broadcast;
 
-use crate::environment_store::{environment_hub, resolve_profile_id, EnvironmentHub};
+use crate::environment_store::{environment_hub, resolve_profile_id};
 use crate::feed_store::{feed_store, new_feed_event_id};
 
 #[derive(Debug, Clone)]

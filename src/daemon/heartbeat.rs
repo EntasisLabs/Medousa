@@ -47,19 +47,12 @@ pub struct HeartbeatNotifyConfig {
 }
 
 #[derive(Clone, Copy, Debug)]
+#[derive(Default)]
 pub struct HeartbeatDeliveryPolicy {
     pub min_notify_interval_secs: u64,
     pub quiet_hours: Option<QuietHoursWindow>,
 }
 
-impl Default for HeartbeatDeliveryPolicy {
-    fn default() -> Self {
-        Self {
-            min_notify_interval_secs: 0,
-            quiet_hours: None,
-        }
-    }
-}
 
 #[derive(Clone, Copy, Debug)]
 pub struct QuietHoursWindow {
@@ -175,8 +168,7 @@ pub async fn run_scheduler_loop(
 
                 if let Ok(cap_report) =
                     crate::observability::enforce_dead_letter_cap(ctx.platform.composition()).await
-                {
-                    if cap_report.pruned > 0 {
+                    && cap_report.pruned > 0 {
                         tracing::warn!(
                             dead_letter_before = cap_report.before,
                             dead_letter_after = cap_report.after,
@@ -185,7 +177,6 @@ pub async fn run_scheduler_loop(
                             "dead-letter cap enforced"
                         );
                     }
-                }
 
                 if report.materialized > 0
                     || report.processed_job.is_some()
@@ -453,15 +444,14 @@ pub fn decide_heartbeat_dispatch(
     metrics.last_notify_decision_at_utc = Some(now_utc);
     metrics.last_dead_letter_jobs = report.dead_letter_jobs;
 
-    if let Some(window) = delivery_policy.quiet_hours {
-        if window.contains_utc_hour(now_utc.hour() as u8) {
+    if let Some(window) = delivery_policy.quiet_hours
+        && window.contains_utc_hour(now_utc.hour() as u8) {
             metrics.suppressed_quiet_hours = metrics.suppressed_quiet_hours.saturating_add(1);
             return HeartbeatDispatchDecision::SuppressedQuietHours;
         }
-    }
 
-    if delivery_policy.min_notify_interval_secs > 0 {
-        if let Some(last_dispatched) = metrics.last_dispatched_at_utc {
+    if delivery_policy.min_notify_interval_secs > 0
+        && let Some(last_dispatched) = metrics.last_dispatched_at_utc {
             let elapsed_seconds = now_utc.signed_duration_since(last_dispatched).num_seconds();
             if elapsed_seconds >= 0
                 && (elapsed_seconds as u64) < delivery_policy.min_notify_interval_secs
@@ -470,7 +460,6 @@ pub fn decide_heartbeat_dispatch(
                 return HeartbeatDispatchDecision::SuppressedMinInterval;
             }
         }
-    }
 
     metrics.dispatched_notifications = metrics.dispatched_notifications.saturating_add(1);
     metrics.last_dispatched_at_utc = Some(now_utc);
@@ -698,8 +687,8 @@ async fn compose_heartbeat_summary(
     report: &TickReport,
     agent: Option<&HeartbeatAgentDispatchContext>,
 ) -> String {
-    if let Some(ctx) = agent {
-        if crate::agent_runtime::heartbeat_agent_turn_enabled() {
+    if let Some(ctx) = agent
+        && crate::agent_runtime::heartbeat_agent_turn_enabled() {
             let snapshot = heartbeat_snapshot_from_report(report);
             if let Some(text) = crate::agent_runtime::run_heartbeat_agent_turn(
                 &snapshot,
@@ -714,7 +703,6 @@ async fn compose_heartbeat_summary(
                 return text;
             }
         }
-    }
 
     format!(
         "heartbeat action={} significance={:.2} reason={}\nfailed={} dead_letter={} outbox_pending={}",
@@ -761,21 +749,19 @@ pub async fn dispatch_heartbeat_notifications(
         pending_outbox_events: report.pending_outbox_events,
     };
 
-    if let Some(path) = notify.jsonl_path.as_deref() {
-        if let Err(err) = append_heartbeat_jsonl(path, &notification).await {
+    if let Some(path) = notify.jsonl_path.as_deref()
+        && let Err(err) = append_heartbeat_jsonl(path, &notification).await {
             tracing::warn!(
                 path = %path.display(),
                 error = %err,
                 "heartbeat jsonl sink error"
             );
         }
-    }
 
-    if let (Some(url), Some(client)) = (notify.webhook_url.as_deref(), webhook_client) {
-        if let Err(err) = post_heartbeat_webhook(client, url, &notification).await {
+    if let (Some(url), Some(client)) = (notify.webhook_url.as_deref(), webhook_client)
+        && let Err(err) = post_heartbeat_webhook(client, url, &notification).await {
             tracing::warn!(url = %url, error = %err, "heartbeat webhook sink error");
         }
-    }
 
     let summary = compose_heartbeat_summary(report, agent).await;
     let product_config = crate::load_product_config();

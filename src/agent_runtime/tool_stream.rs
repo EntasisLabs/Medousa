@@ -257,8 +257,8 @@ pub fn persist_and_enrich_artifact_refs(
     output_receipt: Option<&ArtifactReceiptMeta>,
     mut refs: Vec<StreamToolArtifactRef>,
 ) -> Vec<StreamToolArtifactRef> {
-    if let Some(receipt) = input_receipt {
-        if let Ok(record) = crate::artifact_store::persist_tool_artifact(
+    if let Some(receipt) = input_receipt
+        && let Ok(record) = crate::artifact_store::persist_tool_artifact(
             session_id,
             tool_name,
             "input",
@@ -271,9 +271,8 @@ pub fn persist_and_enrich_artifact_refs(
                 item.label = Some(format!("{tool_name} input"));
             }
         }
-    }
-    if let Some(receipt) = output_receipt {
-        if let Ok(record) = crate::artifact_store::persist_tool_artifact(
+    if let Some(receipt) = output_receipt
+        && let Ok(record) = crate::artifact_store::persist_tool_artifact(
             session_id,
             tool_name,
             "output",
@@ -286,7 +285,6 @@ pub fn persist_and_enrich_artifact_refs(
                 item.label = Some(format!("{tool_name} output"));
             }
         }
-    }
     refs
 }
 

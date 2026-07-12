@@ -340,8 +340,8 @@ impl ComponentRuntimeHub {
             let tail = self
                 .surreal_tail(db, profile_id, component_id, MAX_RUNTIME_EVENTS_PER_COMPONENT + 1)
                 .await?;
-            if tail.len() > MAX_RUNTIME_EVENTS_PER_COMPONENT {
-                if let Some(oldest) = tail.first() {
+            if tail.len() > MAX_RUNTIME_EVENTS_PER_COMPONENT
+                && let Some(oldest) = tail.first() {
                     db.query(
                         "DELETE FROM type::table($table) \
                          WHERE profile_id = $profile_id AND component_id = $component_id AND emitted_at <= $cutoff",
@@ -353,7 +353,6 @@ impl ComponentRuntimeHub {
                     .await
                     .map_err(|err| err.to_string())?;
                 }
-            }
         } else {
             let mut doc = self.read_file_doc(profile_id, component_id).await?;
             doc.events.retain(|event| event.emitted_at_utc >= cutoff);

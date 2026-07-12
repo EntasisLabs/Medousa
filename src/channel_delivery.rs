@@ -700,11 +700,10 @@ fn find_output_text(payload: &Value) -> Option<String> {
                 .get("role")
                 .and_then(|value| value.as_str())
                 .map(|value| value.to_ascii_lowercase());
-            if role.as_deref() == Some("assistant") || role.is_none() {
-                if let Some(text) = read_non_empty_text(message.get("content")) {
+            if (role.as_deref() == Some("assistant") || role.is_none())
+                && let Some(text) = read_non_empty_text(message.get("content")) {
                     return Some(text);
                 }
-            }
         }
     }
 

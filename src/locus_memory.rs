@@ -357,8 +357,8 @@ pub fn enrich_sttp_node_with_vibe_signature(raw_node: &str, vibe_signature: &str
         .map(|ch| if ch == '"' { '\'' } else { ch })
         .collect();
 
-    if let Some(marker) = raw_node.find("◈⟨") {
-        if let Some(open) = raw_node[marker..].find('{') {
+    if let Some(marker) = raw_node.find("◈⟨")
+        && let Some(open) = raw_node[marker..].find('{') {
             let insert_at = marker + open + 1;
             let mut out = String::with_capacity(raw_node.len() + escaped.len() + 32);
             out.push_str(&raw_node[..insert_at]);
@@ -366,7 +366,6 @@ pub fn enrich_sttp_node_with_vibe_signature(raw_node: &str, vibe_signature: &str
             out.push_str(&raw_node[insert_at..]);
             return out;
         }
-    }
 
     raw_node.to_string()
 }

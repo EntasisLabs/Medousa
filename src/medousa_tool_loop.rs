@@ -185,11 +185,10 @@ impl MedousaToolLoopPipeline {
         let user_message = current_turn_user_message
             .unwrap_or_else(|| ChatMessage::user(shared_inputs.user_prompt.to_string()));
         let mut turn_ctx = HostTurnContext::new_with_user_message(prior_messages, user_message);
-        if let Some(gate) = completion_gate.as_ref() {
-            if let Some(seed) = gate.initial_worker_scratch.as_ref() {
+        if let Some(gate) = completion_gate.as_ref()
+            && let Some(seed) = gate.initial_worker_scratch.as_ref() {
                 turn_ctx.scratchpad = seed.clone();
             }
-        }
 
         let mut tools = self.tool_registry.list_tools().await?;
         if has_selected_tool {
@@ -238,8 +237,8 @@ impl MedousaToolLoopPipeline {
             while rounds_executed < effective_max_tool_rounds {
                 rounds_executed += 1;
                 if let Some(gate) = completion_gate.as_ref() {
-                    if let Some(work_id) = gate.cancel_poll_work_id.as_deref() {
-                        if crate::agent_runtime::turn_worker::turn_worker_store()
+                    if let Some(work_id) = gate.cancel_poll_work_id.as_deref()
+                        && crate::agent_runtime::turn_worker::turn_worker_store()
                             .is_work_cancelled(work_id)
                         {
                             return Ok(ToolLoopExecutionResponse {
@@ -252,7 +251,6 @@ impl MedousaToolLoopPipeline {
                                 termination_reason: "workshop_cancelled".to_string(),
                             });
                         }
-                    }
                     if let Some(work_id) = gate.steer_poll_work_id.as_deref() {
                         let steers = crate::agent_runtime::turn_worker::turn_worker_store()
                             .drain_steer_messages(work_id);
@@ -267,11 +265,10 @@ impl MedousaToolLoopPipeline {
                         }
                     }
                 }
-                if rounds_executed > 1 && pack_hold.is_none() {
-                    if let Some(gate) = completion_gate.as_ref() {
+                if rounds_executed > 1 && pack_hold.is_none()
+                    && let Some(gate) = completion_gate.as_ref() {
                         gate.reset_scratch(streaming_enabled).await;
                     }
-                }
                 let tool_rounds_remaining =
                     effective_max_tool_rounds.saturating_sub(rounds_executed);
                 turn_ctx.scratchpad.on_tool_round_start(rounds_executed);
@@ -376,8 +373,8 @@ impl MedousaToolLoopPipeline {
                     if !invocations.is_empty() || maybe_text.is_some() {
                         let text = maybe_text.unwrap_or_default();
 
-                        if host_scheduler_lane {
-                            if let Some(pack) = pack_hold.as_ref() {
+                        if host_scheduler_lane
+                            && let Some(pack) = pack_hold.as_ref() {
                                 let merged =
                                     merge_assistant_pack_fragments(&pack.fragments, &text);
                                 let tools = collect_tool_names(&invocations);
@@ -408,7 +405,6 @@ impl MedousaToolLoopPipeline {
                                     termination_reason: "host_pack_merged".to_string(),
                                 });
                             }
-                        }
 
                         let workshop_lane = completion_gate
                             .as_ref()
@@ -581,8 +577,8 @@ impl MedousaToolLoopPipeline {
                     let mut join_set = tokio::task::JoinSet::new();
                     for call in tool_calls.clone() {
                         let run_id = crate::agent_runtime::tool_stream::new_tool_run_id();
-                        if let Some(gate) = completion_gate.as_ref() {
-                            if let Some(sink) = gate.sink.as_ref() {
+                        if let Some(gate) = completion_gate.as_ref()
+                            && let Some(sink) = gate.sink.as_ref() {
                                 crate::agent_runtime::tool_stream::emit_tool_run_started(
                                     sink,
                                     &run_id,
@@ -592,7 +588,6 @@ impl MedousaToolLoopPipeline {
                                 )
                                 .await;
                             }
-                        }
                         let registry = self.tool_registry.clone();
                         let run_id_spawn = run_id.clone();
                         join_set.spawn(async move {
@@ -607,14 +602,13 @@ impl MedousaToolLoopPipeline {
                         let (call, output, run_id) = match joined {
                             Ok(pair) => pair,
                             Err(error) => {
-                                if let Some(gate) = completion_gate.as_ref() {
-                                    if let Some(sink) = gate.sink.as_ref() {
+                                if let Some(gate) = completion_gate.as_ref()
+                                    && let Some(sink) = gate.sink.as_ref() {
                                         sink.notice(format!(
                                             "◈ parallel_tool_join_failed: {error}"
                                         ))
                                         .await;
                                     }
-                                }
                                 continue;
                             }
                         };
@@ -632,8 +626,8 @@ impl MedousaToolLoopPipeline {
                             tool_input: call.fn_arguments.clone(),
                             tool_output: tool_output.clone(),
                         });
-                        if let Some(gate) = completion_gate.as_ref() {
-                            if let Some(sink) = gate.sink.as_ref() {
+                        if let Some(gate) = completion_gate.as_ref()
+                            && let Some(sink) = gate.sink.as_ref() {
                                 let safe_input = crate::settings_guard::redact_json_value(
                                     &call.fn_arguments,
                                 );
@@ -655,13 +649,12 @@ impl MedousaToolLoopPipeline {
                                 )
                                 .await;
                             }
-                        }
                     }
                 } else {
                     for call in tool_calls {
                         let run_id = crate::agent_runtime::tool_stream::new_tool_run_id();
-                        if let Some(gate) = completion_gate.as_ref() {
-                            if let Some(sink) = gate.sink.as_ref() {
+                        if let Some(gate) = completion_gate.as_ref()
+                            && let Some(sink) = gate.sink.as_ref() {
                                 crate::agent_runtime::tool_stream::emit_tool_run_started(
                                     sink,
                                     &run_id,
@@ -671,7 +664,6 @@ impl MedousaToolLoopPipeline {
                                 )
                                 .await;
                             }
-                        }
                         let tool_output = tool_output_from_invoke(
                             self.tool_registry
                                 .invoke_tool(&call.fn_name, call.fn_arguments.clone())
@@ -692,8 +684,8 @@ impl MedousaToolLoopPipeline {
                             tool_input: call.fn_arguments.clone(),
                             tool_output: tool_output.clone(),
                         });
-                        if let Some(gate) = completion_gate.as_ref() {
-                            if let Some(sink) = gate.sink.as_ref() {
+                        if let Some(gate) = completion_gate.as_ref()
+                            && let Some(sink) = gate.sink.as_ref() {
                                 let safe_input = crate::settings_guard::redact_json_value(
                                     &call.fn_arguments,
                                 );
@@ -715,7 +707,6 @@ impl MedousaToolLoopPipeline {
                                 )
                                 .await;
                             }
-                        }
                     }
                 }
 
@@ -745,9 +736,8 @@ impl MedousaToolLoopPipeline {
 
                 if let Some(progress_message) =
                     turn_progress_message_from_invocations(round_invocations)
-                {
-                    if let Some(gate) = completion_gate.as_ref() {
-                        if let Some(sink) = gate.sink.as_ref() {
+                    && let Some(gate) = completion_gate.as_ref()
+                        && let Some(sink) = gate.sink.as_ref() {
                             sink.agent_turn_progress(
                                 gate.stream_turn_id,
                                 progress_message,
@@ -755,8 +745,6 @@ impl MedousaToolLoopPipeline {
                             )
                             .await;
                         }
-                    }
-                }
                 if let Some(note) = begin_work_note_from_invocations(round_invocations) {
                     turn_ctx.scratchpad.push_working_note(note);
                 }
@@ -770,8 +758,8 @@ impl MedousaToolLoopPipeline {
                         pending_final_answer = true;
                         turn_ctx.scratchpad.phase =
                             crate::agent_runtime::turn_context::TurnScratchPhase::Finalize;
-                    } else if let Some(gate) = completion_gate.as_ref() {
-                        if let Some(sink) = gate.sink.as_ref() {
+                    } else if let Some(gate) = completion_gate.as_ref()
+                        && let Some(sink) = gate.sink.as_ref() {
                             sink.agent_turn_progress(
                                 gate.stream_turn_id,
                                 "Wrapping up your answer…".to_string(),
@@ -779,7 +767,6 @@ impl MedousaToolLoopPipeline {
                             )
                             .await;
                         }
-                    }
                 }
 
                 discipline.on_tool_round();
@@ -796,8 +783,8 @@ impl MedousaToolLoopPipeline {
                 }
 
                 if let Some(payload) = request_more_rounds_from_invocations(&invocations) {
-                    if let Some(gate) = completion_gate.as_ref() {
-                        if !gate.require_operator_budget_gate {
+                    if let Some(gate) = completion_gate.as_ref()
+                        && !gate.require_operator_budget_gate {
                             let headroom = gate
                                 .tool_round_budget_ceiling
                                 .saturating_sub(effective_max_tool_rounds);
@@ -818,7 +805,6 @@ impl MedousaToolLoopPipeline {
                                 continue;
                             }
                         }
-                    }
                     if let Some(gate) = completion_gate.as_ref() {
                         let create_result = turn_budget_request_store()
                             .create_and_register_wait(CreateTurnBudgetRequest {
@@ -1184,8 +1170,8 @@ async fn apply_pack_hold_continue(
             .tool_lane
             .messages
             .push(ChatMessage::assistant(text.trim().to_string()));
-        if let Some(gate) = completion_gate.as_ref() {
-            if let Some(sink) = gate.sink.as_ref() {
+        if let Some(gate) = completion_gate.as_ref()
+            && let Some(sink) = gate.sink.as_ref() {
                 sink.agent_pack_hold(
                     gate.stream_turn_id,
                     vec![text.trim().to_string()],
@@ -1193,7 +1179,6 @@ async fn apply_pack_hold_continue(
                 )
                 .await;
             }
-        }
     }
     push_pack_hold_message(&mut turn_ctx.tool_lane.messages);
     push_turn_control_message(
@@ -1282,8 +1267,8 @@ async fn apply_fsm_continue_loop(
         )
         && !text.trim().is_empty();
     if preserve_prose_in_tool_lane {
-        if let Some(gate) = completion_gate.as_ref() {
-            if let Some(sink) = gate.sink.as_ref() {
+        if let Some(gate) = completion_gate.as_ref()
+            && let Some(sink) = gate.sink.as_ref() {
                 sink.agent_turn_progress(
                     gate.stream_turn_id,
                     text.trim().to_string(),
@@ -1291,7 +1276,6 @@ async fn apply_fsm_continue_loop(
                 )
                 .await;
             }
-        }
         turn_ctx
             .tool_lane
             .messages
@@ -1399,11 +1383,10 @@ fn sync_scratch_snapshot(
     gate: Option<&mut ToolLoopCompletionGate<'_>>,
     scratch: &TurnScratchpad,
 ) {
-    if let Some(gate) = gate {
-        if let Some(slot) = gate.scratch_out.as_mut() {
+    if let Some(gate) = gate
+        && let Some(slot) = gate.scratch_out.as_mut() {
             **slot = Some(scratch.clone());
         }
-    }
 }
 
 fn recoverable_tool_error_value(message: &str) -> Value {
@@ -1460,15 +1443,14 @@ async fn inject_malformed_tool_json_guidance(
     messages: &mut Vec<ChatMessage>,
     gate: Option<&ToolLoopCompletionGate<'_>>,
 ) {
-    if let Some(gate) = gate {
-        if let Some(sink) = gate.sink.as_ref() {
+    if let Some(gate) = gate
+        && let Some(sink) = gate.sink.as_ref() {
             sink.notice(
                 "◈ model_tool_json_guidance malformed tool-call JSON — coaching model to self-correct"
                     .to_string(),
             )
             .await;
         }
-    }
     push_turn_control_message(messages, MALFORMED_TOOL_JSON_GUIDANCE);
 }
 
@@ -1485,15 +1467,14 @@ async fn complete_chat_with_serde_retry(
     match pipeline.complete_chat(request.clone(), context.clone()).await {
         Ok(completion) => Ok(ChatCompletionOutcome::Ok(completion.response)),
         Err(err) if is_serde_json_completion_error(&err) => {
-            if let Some(gate) = gate {
-                if let Some(sink) = gate.sink.as_ref() {
+            if let Some(gate) = gate
+                && let Some(sink) = gate.sink.as_ref() {
                     sink.notice(
                         "◈ model_tool_json_retry malformed tool-call JSON — silent retry once"
                             .to_string(),
                     )
                     .await;
                 }
-            }
             match pipeline.complete_chat(request, context).await {
                 Ok(completion) => Ok(ChatCompletionOutcome::Ok(completion.response)),
                 Err(retry_err) if is_serde_json_completion_error(&retry_err) => {
@@ -1519,15 +1500,14 @@ async fn complete_chat_stream_with_serde_retry(
     {
         Ok(completion) => Ok(ChatCompletionOutcome::Ok(completion.response)),
         Err(err) if is_serde_json_completion_error(&err) => {
-            if let Some(gate) = gate {
-                if let Some(sink) = gate.sink.as_ref() {
+            if let Some(gate) = gate
+                && let Some(sink) = gate.sink.as_ref() {
                     sink.notice(
                         "◈ model_tool_json_retry malformed streamed tool-call JSON — silent non-stream retry"
                             .to_string(),
                     )
                     .await;
                 }
-            }
             // Fall back to non-stream completion (same strategy as empty tool_calls).
             match pipeline.complete_chat(request, context).await {
                 Ok(completion) => Ok(ChatCompletionOutcome::Ok(completion.response)),
@@ -1538,6 +1518,24 @@ async fn complete_chat_stream_with_serde_retry(
             }
         }
         Err(err) => Err(err),
+    }
+}
+
+fn sanitize_tool_name_for_model(name: &str) -> String {
+    let mut out = String::with_capacity(name.len());
+    for ch in name.chars() {
+        if ch.is_ascii_alphanumeric() || ch == '_' || ch == '-' {
+            out.push(ch);
+        } else {
+            out.push('_');
+        }
+    }
+
+    let trimmed = out.trim_matches('_');
+    if trimmed.is_empty() {
+        "tool".to_string()
+    } else {
+        trimmed.to_string()
     }
 }
 
@@ -1696,23 +1694,5 @@ mod tests {
                 termination_reason: "max_rounds_fuse"
             }
         ));
-    }
-}
-
-fn sanitize_tool_name_for_model(name: &str) -> String {
-    let mut out = String::with_capacity(name.len());
-    for ch in name.chars() {
-        if ch.is_ascii_alphanumeric() || ch == '_' || ch == '-' {
-            out.push(ch);
-        } else {
-            out.push('_');
-        }
-    }
-
-    let trimmed = out.trim_matches('_');
-    if trimmed.is_empty() {
-        "tool".to_string()
-    } else {
-        trimmed.to_string()
     }
 }

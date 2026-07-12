@@ -318,7 +318,7 @@ pub fn expand_package_dependencies(selected: &[&str]) -> Vec<String> {
         .collect();
     let mut resolved = Vec::new();
     let mut seen = HashSet::new();
-    let mut stack: Vec<&str> = selected.iter().copied().collect();
+    let mut stack: Vec<&str> = selected.to_vec();
 
     while let Some(id) = stack.pop() {
         if !seen.insert(id.to_string()) {

@@ -163,14 +163,13 @@ pub async fn publish_worker_ui_side_effects_to_parent_turn(
         return;
     }
 
-    if tool_name == crate::ui_present_tools::COGNITION_UI_PRESENT
-        || tool_name == crate::artifact_tools::COGNITION_ARTIFACT_WRITE
-    {
-        if let Some(ui_artifact) =
+    if (tool_name == crate::ui_present_tools::COGNITION_UI_PRESENT
+        || tool_name == crate::artifact_tools::COGNITION_ARTIFACT_WRITE)
+        && let Some(ui_artifact) =
             crate::agent_runtime::tool_stream::ui_artifact_from_tool_output(tool_output)
         {
-            if tool_name == crate::artifact_tools::COGNITION_ARTIFACT_WRITE {
-                if let Some(previous) = tool_output
+            if tool_name == crate::artifact_tools::COGNITION_ARTIFACT_WRITE
+                && let Some(previous) = tool_output
                     .get("previous_artifact_id")
                     .and_then(|value| value.as_str())
                     .map(str::trim)
@@ -193,7 +192,6 @@ pub async fn publish_worker_ui_side_effects_to_parent_turn(
                     }
                     return;
                 }
-            }
             if let Ok(event) =
                 crate::interactive_turn_runtime::artifact_presented_stream_event(
                     parent_turn_id,
@@ -203,7 +201,6 @@ pub async fn publish_worker_ui_side_effects_to_parent_turn(
                 publish_interactive_turn_event(&entry, Ok(event));
             }
         }
-    }
 }
 
 fn ingest_channel_delivery_bridge() -> Option<IngestChannelDeliveryBridge> {

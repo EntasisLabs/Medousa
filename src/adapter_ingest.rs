@@ -33,11 +33,10 @@ pub async fn wait_for_ask_delivery(
         .as_deref()
         .ok_or_else(|| anyhow!("missing job_id on stream_ready ingest response"))?;
 
-    if let Some(stream_url) = response.stream_url.as_deref() {
-        if let Some(error) = consume_ingest_stream_errors_only(client, stream_url).await? {
+    if let Some(stream_url) = response.stream_url.as_deref()
+        && let Some(error) = consume_ingest_stream_errors_only(client, stream_url).await? {
             return Ok(AdapterDeliveryOutcome::StreamError { message: error });
         }
-    }
 
     let deadline = tokio::time::Instant::now() + timeout;
     loop {

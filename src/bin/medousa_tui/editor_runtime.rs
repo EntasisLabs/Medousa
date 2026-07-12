@@ -13,11 +13,10 @@ use stasis::prelude::{BackoffPolicy, NewJob, RuntimeComposition};
 use super::TuiState;
 
 pub(crate) fn save_editor_buffer(state: &mut TuiState, path_override: Option<&str>) {
-    if let Some(path_raw) = path_override {
-        if !path_raw.trim().is_empty() {
+    if let Some(path_raw) = path_override
+        && !path_raw.trim().is_empty() {
             state.editor_file_path = Some(PathBuf::from(path_raw.trim()));
         }
-    }
 
     let Some(path) = state.editor_file_path.clone() else {
         state.editor_status = "Save failed: no path. Use /save <path>".to_string();

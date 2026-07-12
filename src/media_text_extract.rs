@@ -138,11 +138,10 @@ fn extract_spreadsheet(bytes: &[u8], label: Option<&str>) -> Option<MediaTextExt
 }
 
 fn extract_pdf(bytes: &[u8], label: Option<&str>) -> Option<MediaTextExtract> {
-    if let Some(extract) = extract_pdf_rust(bytes) {
-        if !extract.text.trim().is_empty() {
+    if let Some(extract) = extract_pdf_rust(bytes)
+        && !extract.text.trim().is_empty() {
             return Some(extract);
         }
-    }
     extract_pdf_pdftotext(bytes, label)
 }
 

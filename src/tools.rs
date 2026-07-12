@@ -218,8 +218,8 @@ async fn emit_compaction_observability(
         .unwrap_or_default()
         != "sttp_compaction"
     {
-        if inline_notice_enabled {
-            if let Some(size) = raw_output_bytes {
+        if inline_notice_enabled
+            && let Some(size) = raw_output_bytes {
                 let _ = event_tx
                     .send(TuiEvent::UiNotice(format!(
                         "◈ sttp_compaction tool={} status=inline bytes={} trigger_bytes={}",
@@ -227,7 +227,6 @@ async fn emit_compaction_observability(
                     )))
                     .await;
             }
-        }
         return;
     }
 
@@ -418,8 +417,8 @@ impl StasisTool for CognitionJobEnqueueTool {
             "status": "enqueued",
             "note": input.get("note").and_then(|v| v.as_str()).unwrap_or("")
         });
-        if let Some(scope) = self.turn_scope.read().await.clone() {
-            if let Some(obj) = response.as_object_mut() {
+        if let Some(scope) = self.turn_scope.read().await.clone()
+            && let Some(obj) = response.as_object_mut() {
                 obj.insert(
                     "continuation".to_string(),
                     continuation_tool_metadata(
@@ -429,7 +428,6 @@ impl StasisTool for CognitionJobEnqueueTool {
                     ),
                 );
             }
-        }
 
         Ok(response)
     }
@@ -658,11 +656,10 @@ impl StasisTool for CognitionGraphemeRunTool {
                 })
             }
         };
-        if let Some(meta) = continuation_meta {
-            if let Some(obj) = raw_output.as_object_mut() {
+        if let Some(meta) = continuation_meta
+            && let Some(obj) = raw_output.as_object_mut() {
                 obj.insert("continuation".to_string(), meta);
             }
-        }
         let session_id = crate::runtime_session::resolve_active_chat_session_id_async(
             &self.turn_scope,
             &self.session_id,
@@ -1176,8 +1173,8 @@ impl StasisTool for CognitionGraphemePromoteToJobTool {
             "status": "enqueued",
             "validation": validation
         });
-        if let Some(scope) = self.turn_scope.read().await.clone() {
-            if let Some(obj) = response.as_object_mut() {
+        if let Some(scope) = self.turn_scope.read().await.clone()
+            && let Some(obj) = response.as_object_mut() {
                 obj.insert(
                     "continuation".to_string(),
                     continuation_tool_metadata(
@@ -1187,7 +1184,6 @@ impl StasisTool for CognitionGraphemePromoteToJobTool {
                     ),
                 );
             }
-        }
 
         Ok(response)
     }
@@ -1978,11 +1974,11 @@ impl StasisTool for CognitionCapabilityResolveTool {
                         "cognition.capability.resolve: unknown capability '{capability_id}'"
                     ))
                 })?;
-            return Ok(serde_json::to_value(response).map_err(|error| {
+            return serde_json::to_value(response).map_err(|error| {
                 StasisError::PortFailure(format!(
                     "cognition.capability.resolve: failed to encode response: {error}"
                 ))
-            })?);
+            });
         }
 
         let search = registry.search(query.as_deref().unwrap_or_default(), 1);
@@ -2332,9 +2328,9 @@ impl StasisTool for CognitionMcpInvokeTool {
             .await
             .map_err(|error| StasisError::PortFailure(format!("cognition.mcp.invoke: {error}")))?;
 
-        if !response.ok {
-            if let Some(error) = response.error.as_ref() {
-                if error.code == "approval_required" {
+        if !response.ok
+            && let Some(error) = response.error.as_ref()
+                && error.code == "approval_required" {
                     let _ = self
                         .event_tx
                         .send(TuiEvent::ApprovalRequired {
@@ -2344,8 +2340,6 @@ impl StasisTool for CognitionMcpInvokeTool {
                         })
                         .await;
                 }
-            }
-        }
 
         Ok(serde_json::to_value(response).map_err(|error| {
             StasisError::PortFailure(format!(
@@ -2435,13 +2429,12 @@ impl PolicyAwareToolRegistry {
         tool_name: &str,
         input: &Value,
     ) -> stasis::prelude::Result<()> {
-        if let Some(action) = lane_safety_action_for_tool_call(tool_name, input) {
-            if let Err(reason) = validate_lane_action(self.lane, action) {
+        if let Some(action) = lane_safety_action_for_tool_call(tool_name, input)
+            && let Err(reason) = validate_lane_action(self.lane, action) {
                 return Err(StasisError::PortFailure(format!(
                     "lane safety violation: {reason}"
                 )));
             }
-        }
 
         let policy_profile = tool_policy_profile_for_tool_call(input);
         if let Err(reason) = validate_lane_policy_profile(self.lane, policy_profile) {

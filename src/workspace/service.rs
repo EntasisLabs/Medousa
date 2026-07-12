@@ -198,11 +198,10 @@ fn apply_card_filters(
         });
     }
 
-    if let Some(column_raw) = query.column.as_deref() {
-        if let Some(column) = parse_column_filter(column_raw) {
+    if let Some(column_raw) = query.column.as_deref()
+        && let Some(column) = parse_column_filter(column_raw) {
             filtered.retain(|item| item.card.column == column);
         }
-    }
 
     filtered
 }

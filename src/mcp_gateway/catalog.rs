@@ -100,11 +100,9 @@ pub fn discover_from_entries(
         .collect::<Vec<_>>();
 
     let mut scored = catalog
-        .iter()
-        .cloned()
-        .filter(|tool| {
+        .iter().filter(|&tool| {
             server_id.is_none_or(|expected| tool.server_id.eq_ignore_ascii_case(expected))
-        })
+        }).cloned()
         .filter_map(|tool| {
             let score = score_tool_match(&tool, &normalized, &tokens);
             if score == 0 {
@@ -115,7 +113,7 @@ pub fn discover_from_entries(
         })
         .collect::<Vec<_>>();
 
-    scored.sort_by(|left, right| right.0.cmp(&left.0));
+    scored.sort_by_key(|right| std::cmp::Reverse(right.0));
     scored
         .into_iter()
         .take(limit)

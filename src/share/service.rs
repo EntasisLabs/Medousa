@@ -1,7 +1,7 @@
 use anyhow::{Context, Result, bail};
 use base64::Engine;
 use chrono::Utc;
-use medousa_types::environment::{ComponentDef, EnvironmentSpec, SurfaceDef, SurfaceKind, SurfaceLayout};
+use medousa_types::environment::{ComponentDef, EnvironmentSpec, SurfaceDef, SurfaceKind};
 
 use crate::artifact_store::{fetch_artifact_at_id, list_ui_artifacts, persist_ui_artifact, FetchedArtifact};
 use crate::environment_store::{EnvironmentHub, resolve_profile_id};
@@ -41,7 +41,7 @@ fn artifact_entry_from_fetched(fetched: FetchedArtifact) -> ShareArtifactEntry {
         mime: fetched.mime.clone(),
         content_base64: base64::engine::general_purpose::STANDARD.encode(fetched.body.as_bytes()),
         presentation: fetched.record.presentation.clone(),
-        height_px: fetched.record.height_px.map(|value| value as u32),
+        height_px: fetched.record.height_px,
     }
 }
 

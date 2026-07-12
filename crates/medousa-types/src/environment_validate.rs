@@ -98,17 +98,14 @@ pub fn validate_environment_spec(spec: &EnvironmentSpec) -> Vec<String> {
         }
     }
 
-    if let Some(chrome) = &spec.shell_chrome {
-        if let Some(mobile) = &chrome.mobile {
-            if let Some(home) = &mobile.default_home {
-                if !surface_ids.contains(&home.as_str()) {
+    if let Some(chrome) = &spec.shell_chrome
+        && let Some(mobile) = &chrome.mobile
+            && let Some(home) = &mobile.default_home
+                && !surface_ids.contains(&home.as_str()) {
                     errors.push(format!(
                         "shellChrome.mobile.defaultHome references unknown surface '{home}'"
                     ));
                 }
-            }
-        }
-    }
 
     if let Some(theme) = &spec.theme {
         validate_environment_theme(theme, &mut errors);
@@ -118,20 +115,18 @@ pub fn validate_environment_spec(spec: &EnvironmentSpec) -> Vec<String> {
 }
 
 fn validate_environment_theme(theme: &EnvironmentTheme, errors: &mut Vec<String>) {
-    if let Some(id) = &theme.color_theme_id {
-        if !is_valid_color_theme_id(id) {
+    if let Some(id) = &theme.color_theme_id
+        && !is_valid_color_theme_id(id) {
             errors.push(format!(
                 "theme.colorThemeId '{id}' is invalid — use a known Room palette id"
             ));
         }
-    }
-    if let Some(brand) = &theme.brand_color {
-        if !is_valid_brand_color(brand) {
+    if let Some(brand) = &theme.brand_color
+        && !is_valid_brand_color(brand) {
             errors.push(
                 "theme.brandColor must be a hex color (#RGB or #RRGGBB)".to_string(),
             );
         }
-    }
 }
 
 fn validate_surface(surface: &SurfaceDef, errors: &mut Vec<String>) {
@@ -147,14 +142,13 @@ fn validate_surface(surface: &SurfaceDef, errors: &mut Vec<String>) {
             surface.id
         ));
     }
-    if let Some(mobile_tab) = &surface.mobile_tab {
-        if !ALLOWED_MOBILE_TAB_SLUGS.contains(&mobile_tab.as_str()) {
+    if let Some(mobile_tab) = &surface.mobile_tab
+        && !ALLOWED_MOBILE_TAB_SLUGS.contains(&mobile_tab.as_str()) {
             errors.push(format!(
                 "surface '{}' mobileTab '{}' is invalid — use home|chat|notes|web",
                 surface.id, mobile_tab
             ));
         }
-    }
     if !is_valid_surface_icon(&surface.icon) {
         errors.push(format!(
             "surface '{}' icon '{}' is not in the allowed icon catalog",
@@ -339,14 +333,13 @@ fn validate_media_embed_component(component: &ComponentDef, errors: &mut Vec<Str
                 ));
             }
         }
-        "apple_music" => {
-            if !url.contains("embed.music.apple.com/") && !url.contains("music.apple.com/") {
+        "apple_music"
+            if !url.contains("embed.music.apple.com/") && !url.contains("music.apple.com/") => {
                 errors.push(format!(
                     "media_embed component '{}' apple_music url must be embed.music.apple.com or music.apple.com link",
                     component.id
                 ));
             }
-        }
         _ => {}
     }
 }

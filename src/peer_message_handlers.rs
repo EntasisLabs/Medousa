@@ -11,7 +11,7 @@ use axum::{Json, Router};
 use crate::environment_store::environment_hub;
 use crate::pairing::{PairedDeviceRecord, PairingRole, PairingService};
 use crate::peer_messages::{
-    append_message, build_message, get_message, involves_device, list_messages,
+    append_message, build_message, get_message, involves_device,
     list_messages_filtered, list_messages_for_peer_device, mark_read, unread_count,
     unread_count_for_device, PeerMessage, PeerMessageAttachmentSummary, PeerMessagePostRequest,
     PeerMessagesListResponse, PeerUnreadCountResponse,

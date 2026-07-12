@@ -113,7 +113,7 @@ impl StasisTool for CognitionShellRunTool {
 
     async fn invoke(&self, input: Value) -> StasisResult<Value> {
         let source = synthesize_shell_run_source(&input)
-            .map_err(|err| StasisError::PortFailure(err))?;
+            .map_err(StasisError::PortFailure)?;
         let result = run_grapheme_via_runtime(&self.runtime, &source, COGNITION_SHELL_RUN).await?;
 
         // Surface shell.run fields when the grapheme diagnostics carry final_state.

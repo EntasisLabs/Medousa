@@ -238,11 +238,10 @@ pub async fn ingest_handler(
         .get_session_id(&mapping_key)
         .await;
 
-    if request.text.trim().eq_ignore_ascii_case("/new") {
-        if let Some(old_session_id) = existing_session_id.clone() {
+    if request.text.trim().eq_ignore_ascii_case("/new")
+        && let Some(old_session_id) = existing_session_id.clone() {
             push_channel_session_history(&mapping_key, old_session_id).await;
         }
-    }
 
     let outcome =
         session_mapping::process_ingest(&request, &mapping_key, existing_session_id.clone());
@@ -662,8 +661,8 @@ pub async fn deliver_outbox_webhook(
                 (StatusCode::BAD_GATEWAY, err.to_string())
             })?;
 
-            if let Some(stream_id) = target.stream_id.as_deref() {
-                if let Some(entry) = state
+            if let Some(stream_id) = target.stream_id.as_deref()
+                && let Some(entry) = state
                     .interactive_turn_streams
                     .read()
                     .await
@@ -678,7 +677,6 @@ pub async fn deliver_outbox_webhook(
                         ),
                     );
                 }
-            }
 
             record_job_delivery_success(
                 &state,

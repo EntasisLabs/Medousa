@@ -44,11 +44,10 @@ pub fn mark_recovery_ledger(session_id: &str, turn_id: &str) {
     let entry = map
         .entry(session_id.to_string())
         .or_insert_with(|| serde_json::Value::Array(Vec::new()));
-    if let Some(arr) = entry.as_array_mut() {
-        if !arr.iter().any(|id| id.as_str() == Some(turn_id)) {
+    if let Some(arr) = entry.as_array_mut()
+        && !arr.iter().any(|id| id.as_str() == Some(turn_id)) {
             arr.push(serde_json::Value::String(turn_id.to_string()));
         }
-    }
     save_recovery_ledger(&map);
 }
 
@@ -105,11 +104,10 @@ pub async fn run_startup_turn_recovery() {
             }
         }
 
-        if committed_any || recovery_ledger_contains(&session_id, &turn_id) {
-            if let Ok(log) = TurnEventLog::open_in(&root, item.envelope) {
+        if (committed_any || recovery_ledger_contains(&session_id, &turn_id))
+            && let Ok(log) = TurnEventLog::open_in(&root, item.envelope) {
                 log.mark_committed();
             }
-        }
     }
 }
 

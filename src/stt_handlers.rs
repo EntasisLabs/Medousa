@@ -28,16 +28,13 @@ async fn stt_transcribe(
         .await
         .map_err(|err| (StatusCode::BAD_REQUEST, err.to_string()))?
     {
-        match field.name().unwrap_or_default() {
-            "file" => {
-                mime = field.content_type().map(str::to_string);
-                let bytes = field
-                    .bytes()
-                    .await
-                    .map_err(|err| (StatusCode::BAD_REQUEST, err.to_string()))?;
-                file_bytes = Some(bytes.to_vec());
-            }
-            _ => {}
+        if field.name().unwrap_or_default() == "file" {
+            mime = field.content_type().map(str::to_string);
+            let bytes = field
+                .bytes()
+                .await
+                .map_err(|err| (StatusCode::BAD_REQUEST, err.to_string()))?;
+            file_bytes = Some(bytes.to_vec());
         }
     }
 

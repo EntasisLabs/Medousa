@@ -71,7 +71,7 @@ impl HomeLiveActivityService {
         }
 
         {
-            let mut guard = self
+            let guard = self
                 .last_state_key
                 .lock()
                 .expect("home live activity state lock");

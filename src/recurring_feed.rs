@@ -39,35 +39,29 @@ pub fn set_recurring_feed_store(store: Arc<dyn RecurringFeedStore>) {
 }
 
 pub async fn init_recurring_feed_store_with_runtime(runtime: &RuntimeComposition) {
-    match runtime {
-        RuntimeComposition::Surreal(rt) => {
-            let store = SurrealRecurringFeedStore::new(rt.job_store.db());
-            if let Err(err) = store.ensure_schema().await {
-                eprintln!(
-                    "Surreal recurring feed store schema init error: {err}; keeping in-memory store"
-                );
-                return;
-            }
-            set_recurring_feed_store(Arc::new(store));
-            eprintln!("Surreal runtime detected; recurring feed store switched to SurrealDB backend");
+    if let RuntimeComposition::Surreal(rt) = runtime {
+        let store = SurrealRecurringFeedStore::new(rt.job_store.db());
+        if let Err(err) = store.ensure_schema().await {
+            eprintln!(
+                "Surreal recurring feed store schema init error: {err}; keeping in-memory store"
+            );
+            return;
         }
-        _ => {}
+        set_recurring_feed_store(Arc::new(store));
+        eprintln!("Surreal runtime detected; recurring feed store switched to SurrealDB backend");
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum FeedPayloadMode {
     Summary,
+    #[default]
     ParsedPoll,
     RawExcerpt,
 }
 
-impl Default for FeedPayloadMode {
-    fn default() -> Self {
-        Self::ParsedPoll
-    }
-}
 
 impl FeedPayloadMode {
     pub fn parse(raw: Option<&str>) -> Self {

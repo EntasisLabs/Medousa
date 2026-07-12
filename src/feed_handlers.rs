@@ -1,6 +1,6 @@
 //! HTTP handlers for `/v1/feeds/*`.
 
-use axum::extract::{Path, Query, State};
+use axum::extract::{Path, Query};
 use axum::http::StatusCode;
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::routing::{get, post};

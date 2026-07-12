@@ -92,7 +92,7 @@ impl GraphemeScriptStore {
             .values()
             .cloned()
             .collect::<Vec<_>>();
-        entries.sort_by(|a, b| b.updated_at_utc.cmp(&a.updated_at_utc));
+        entries.sort_by_key(|b| std::cmp::Reverse(b.updated_at_utc));
         entries
     }
 

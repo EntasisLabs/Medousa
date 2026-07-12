@@ -121,11 +121,10 @@ fn path_list_from_args(args: &Value, keys: &[&str]) -> Vec<PathBuf> {
                 .filter_map(|v| v.as_str().map(PathBuf::from))
                 .collect();
         }
-        if let Some(s) = args.get(*key).and_then(Value::as_str) {
-            if !s.trim().is_empty() {
+        if let Some(s) = args.get(*key).and_then(Value::as_str)
+            && !s.trim().is_empty() {
                 return vec![PathBuf::from(s.trim())];
             }
-        }
     }
     Vec::new()
 }
@@ -483,7 +482,7 @@ fn run_with_systemd_run(request: &ShellRunRequest, cwd: &Path) -> Result<ShellRu
 #[cfg(target_os = "macos")]
 fn run_with_seatbelt(request: &ShellRunRequest, cwd: &Path) -> Result<ShellRunResult, String> {
     let profile = build_seatbelt_profile(&request.profile, cwd)?;
-    let mut profile_file = tempfile_seatbelt(&profile)?;
+    let profile_file = tempfile_seatbelt(&profile)?;
     let profile_path = profile_file.path().to_path_buf();
 
     let mut args = vec![

@@ -243,10 +243,10 @@ impl JobHandler for RecurringAgentTurnJobHandler {
             "recurring agent turn completed without assistant text".to_string()
         });
 
-        if let Some(manuscript_id) = manuscript_id.as_deref() {
-            if let Ok(manuscript) = build_manuscript_context(manuscript_id) {
-                if manuscript_wants_locus_store_on_complete(&manuscript) {
-                    if let Err(err) =
+        if let Some(manuscript_id) = manuscript_id.as_deref()
+            && let Ok(manuscript) = build_manuscript_context(manuscript_id)
+                && manuscript_wants_locus_store_on_complete(&manuscript)
+                    && let Err(err) =
                         store_manuscript_brief_to_locus(self.agent.as_ref(), &manuscript, &text)
                             .await
                     {
@@ -254,9 +254,6 @@ impl JobHandler for RecurringAgentTurnJobHandler {
                             "medousa recurring_locus_store manuscript={manuscript_id} error={err}"
                         );
                     }
-                }
-            }
-        }
 
         let diagnostics = json!({
             "provider": "medousa-agent-runtime",

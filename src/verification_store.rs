@@ -35,21 +35,18 @@ static VERIFICATION_INDEX_STORE: Lazy<RwLock<Arc<dyn VerificationIndexStore>>> =
     Lazy::new(|| RwLock::new(Arc::new(FileVerificationIndexStore)));
 
 pub async fn init_verification_store_with_runtime(runtime: &RuntimeComposition) {
-    match runtime {
-        RuntimeComposition::Surreal(rt) => {
-            let store = SurrealVerificationIndexStore::new(rt.job_store.db());
-            if let Err(err) = store.ensure_schema().await {
-                eprintln!(
-                    "Surreal verification index schema init error: {err}; keeping file-backed index"
-                );
-                return;
-            }
-            set_verification_index_store(Arc::new(store));
+    if let RuntimeComposition::Surreal(rt) = runtime {
+        let store = SurrealVerificationIndexStore::new(rt.job_store.db());
+        if let Err(err) = store.ensure_schema().await {
             eprintln!(
-                "Surreal runtime detected; verification index switched to SurrealDB backend"
+                "Surreal verification index schema init error: {err}; keeping file-backed index"
             );
+            return;
         }
-        _ => {}
+        set_verification_index_store(Arc::new(store));
+        eprintln!(
+            "Surreal runtime detected; verification index switched to SurrealDB backend"
+        );
     }
 }
 
@@ -148,7 +145,7 @@ pub fn list_verifications(session_id: &str, limit: usize) -> Vec<VerificationRun
         .into_iter()
         .filter(|record| record.session_id == session_id)
         .collect();
-    records.sort_by(|a, b| b.created_at_utc.cmp(&a.created_at_utc));
+    records.sort_by_key(|b| std::cmp::Reverse(b.created_at_utc));
     records.into_iter().take(limit.max(1)).collect()
 }
 
@@ -166,7 +163,7 @@ pub fn find_verification(session_id: &str, query: Option<&str>) -> Option<Verifi
         return None;
     }
 
-    records.sort_by(|a, b| b.created_at_utc.cmp(&a.created_at_utc));
+    records.sort_by_key(|b| std::cmp::Reverse(b.created_at_utc));
     let query = query.map(str::trim).unwrap_or("");
     let record = if query.is_empty() || query.eq_ignore_ascii_case("last") {
         records.into_iter().next()
@@ -317,7 +314,7 @@ fn file_read_index_records() -> Vec<VerificationRunRecord> {
 
     std::io::BufReader::new(file)
         .lines()
-        .filter_map(|line| line.ok())
+        .map_while(Result::ok)
         .filter(|line| !line.trim().is_empty())
         .filter_map(|line| serde_json::from_str::<VerificationRunRecord>(&line).ok())
         .collect()

@@ -66,8 +66,7 @@ pub fn build_skill_run_ingest_prompt(args: &SkillRunArgs) -> Result<String> {
         format!(" Extra operator note: {}", args.extra.trim())
     };
 
-    let lines = vec![
-        format!(
+    let lines = [format!(
             "Run imported skill specialty '{}' the way Medousa would — delegate to a research worker, never execute scripts on the host.",
             args.manuscript_id
         ),
@@ -83,8 +82,7 @@ pub fn build_skill_run_ingest_prompt(args: &SkillRunArgs) -> Result<String> {
             "   user_ack: \"Running skill {} in sealed OpenShell sandbox…\"",
             args.manuscript_id
         ),
-        "2. After the worker completes, synthesize a concise operator summary.".to_string(),
-    ];
+        "2. After the worker completes, synthesize a concise operator summary.".to_string()];
     Ok(lines.join("\n"))
 }
 

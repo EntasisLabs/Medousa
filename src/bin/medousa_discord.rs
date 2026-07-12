@@ -220,16 +220,16 @@ fn normalize_for_ingester(input: &str, command_prefix: &str) -> String {
         .map(|(cmd, tail)| (cmd, tail.trim()))
         .unwrap_or((rest, ""));
 
-    let normalized = match command.to_ascii_lowercase().as_str() {
+    
+
+    match command.to_ascii_lowercase().as_str() {
         "start" | "help" => "/help".to_string(),
         "new" => "/new".to_string(),
         "ask" if !args.is_empty() => format!("/ask {args}"),
         "ask" => "/help".to_string(),
         other if args.is_empty() => format!("/{other}"),
         other => format!("/{other} {args}"),
-    };
-
-    normalized
+    }
 }
 
 fn explain_commands(prefix: &str) -> String {

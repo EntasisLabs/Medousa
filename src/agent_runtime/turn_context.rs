@@ -504,7 +504,7 @@ fn push_scratch_body(messages: &mut Vec<ChatMessage>, body: &str) {
 }
 
 pub fn tool_output_ok(output: &Value) -> bool {
-    matches!(output.get("ok").and_then(|v| v.as_bool()), Some(false)) == false
+    !matches!(output.get("ok").and_then(|v| v.as_bool()), Some(false))
 }
 
 /// Snapshot host scratch for the next `cognition_spawn_turn_worker` (updated each tool round).

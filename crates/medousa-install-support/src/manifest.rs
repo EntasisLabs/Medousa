@@ -148,7 +148,7 @@ pub fn desktop_artifact_url_matches_host(url: &str) -> bool {
     }
     #[cfg(target_os = "macos")]
     {
-        return url_lower.ends_with(".dmg");
+        url_lower.ends_with(".dmg")
     }
     #[cfg(target_os = "linux")]
     {
@@ -186,11 +186,10 @@ pub fn resolve_release_package<'a>(
         package_id.to_string(),
     ];
     for key in &keys {
-        if let Some(pkg) = manifest.packages.get(key) {
-            if release_package_usable_on_host(pkg) {
+        if let Some(pkg) = manifest.packages.get(key)
+            && release_package_usable_on_host(pkg) {
                 return Ok(pkg);
             }
-        }
     }
     manifest
         .packages

@@ -43,21 +43,18 @@ static ARTIFACT_INDEX_STORE: Lazy<RwLock<Arc<dyn ArtifactIndexStore>>> =
 static ARTIFACT_INDEX_USES_SURREAL: AtomicBool = AtomicBool::new(false);
 
 pub async fn init_artifact_store_with_runtime(runtime: &RuntimeComposition) {
-    match runtime {
-        RuntimeComposition::Surreal(rt) => {
-            let store = SurrealArtifactIndexStore::new(rt.job_store.db());
-            if let Err(err) = store.ensure_schema().await {
-                eprintln!(
-                    "Surreal artifact index schema init error: {err}; keeping file-backed index"
-                );
-                return;
-            }
-            ARTIFACT_INDEX_USES_SURREAL.store(true, Ordering::Release);
-            set_artifact_index_store(Arc::new(store));
-            eprintln!("Surreal runtime detected; artifact index switched to SurrealDB backend");
-            repair_ui_artifact_index_from_disk();
+    if let RuntimeComposition::Surreal(rt) = runtime {
+        let store = SurrealArtifactIndexStore::new(rt.job_store.db());
+        if let Err(err) = store.ensure_schema().await {
+            eprintln!(
+                "Surreal artifact index schema init error: {err}; keeping file-backed index"
+            );
+            return;
         }
-        _ => {}
+        ARTIFACT_INDEX_USES_SURREAL.store(true, Ordering::Release);
+        set_artifact_index_store(Arc::new(store));
+        eprintln!("Surreal runtime detected; artifact index switched to SurrealDB backend");
+        repair_ui_artifact_index_from_disk();
     }
 }
 
@@ -402,7 +399,7 @@ pub fn list_ui_artifacts(
 
     let mut records: Vec<ArtifactRecord> = read_index_records()
         .into_iter()
-        .filter(|record| is_ui_html_record(record))
+        .filter(is_ui_html_record)
         .filter(|record| {
             session_id.is_none_or(|sid| record.session_id == sid)
         })
@@ -419,7 +416,7 @@ pub fn list_ui_artifacts(
         })
         .collect();
 
-    records.sort_by(|a, b| b.stored_at_utc.cmp(&a.stored_at_utc));
+    records.sort_by_key(|b| std::cmp::Reverse(b.stored_at_utc));
     dedupe_ui_artifacts_to_latest(records)
         .into_iter()
         .take(limit)
@@ -427,7 +424,7 @@ pub fn list_ui_artifacts(
 }
 
 fn dedupe_ui_artifacts_to_latest(mut records: Vec<ArtifactRecord>) -> Vec<ArtifactRecord> {
-    records.sort_by(|a, b| b.stored_at_utc.cmp(&a.stored_at_utc));
+    records.sort_by_key(|b| std::cmp::Reverse(b.stored_at_utc));
     let mut seen_roots = HashSet::new();
     let mut kept = Vec::new();
     for record in records {
@@ -439,7 +436,7 @@ fn dedupe_ui_artifacts_to_latest(mut records: Vec<ArtifactRecord>) -> Vec<Artifa
             kept.push(record);
         }
     }
-    kept.sort_by(|a, b| b.stored_at_utc.cmp(&a.stored_at_utc));
+    kept.sort_by_key(|b| std::cmp::Reverse(b.stored_at_utc));
     kept
 }
 
@@ -841,7 +838,7 @@ pub fn find_artifact(session_id: &str, query: Option<&str>) -> Option<StoredArti
         return None;
     }
 
-    candidates.sort_by(|a, b| b.stored_at_utc.cmp(&a.stored_at_utc));
+    candidates.sort_by_key(|b| std::cmp::Reverse(b.stored_at_utc));
 
     let record = if query.is_empty() || query.eq_ignore_ascii_case("last") {
         candidates.into_iter().next()
@@ -865,7 +862,7 @@ pub fn list_artifact_records(session_id: &str, limit: usize) -> Vec<ArtifactReco
         .into_iter()
         .filter(|record| record.session_id == session_id)
         .collect();
-    records.sort_by(|a, b| b.stored_at_utc.cmp(&a.stored_at_utc));
+    records.sort_by_key(|b| std::cmp::Reverse(b.stored_at_utc));
     records.into_iter().take(limit.max(1)).collect()
 }
 
@@ -932,7 +929,7 @@ pub fn run_artifact_maintenance(
     let mut kept_records = Vec::new();
     let mut pruned_records = Vec::new();
     for (_session_id, mut group) in by_session {
-        group.sort_by(|a, b| b.stored_at_utc.cmp(&a.stored_at_utc));
+        group.sort_by_key(|b| std::cmp::Reverse(b.stored_at_utc));
         for (idx, record) in group.into_iter().enumerate() {
             let too_old = record.stored_at_utc < age_cutoff;
             let over_limit = idx >= max_per_session;
@@ -960,7 +957,7 @@ pub fn run_artifact_maintenance(
     }
     report.payload_files_deleted = payload_files_deleted;
 
-    kept_records.sort_by(|a, b| a.stored_at_utc.cmp(&b.stored_at_utc));
+    kept_records.sort_by_key(|a| a.stored_at_utc);
     overwrite_index_records(&kept_records)?;
 
     report.records_after = kept_records.len();
@@ -999,7 +996,7 @@ fn merge_artifact_records(
         by_id.insert(record.artifact_id.clone(), record);
     }
     let mut merged: Vec<ArtifactRecord> = by_id.into_values().collect();
-    merged.sort_by(|left, right| left.stored_at_utc.cmp(&right.stored_at_utc));
+    merged.sort_by_key(|left| left.stored_at_utc);
     merged
 }
 
@@ -1137,7 +1134,7 @@ fn file_read_index_records() -> Vec<ArtifactRecord> {
 
     std::io::BufReader::new(file)
         .lines()
-        .filter_map(|line| line.ok())
+        .map_while(Result::ok)
         .filter(|line| !line.trim().is_empty())
         .filter_map(|line| serde_json::from_str::<ArtifactRecord>(&line).ok())
         .collect()

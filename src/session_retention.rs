@@ -56,8 +56,8 @@ pub async fn run_retention_pass(
         return report;
     }
 
-    if config.locus_raw_max_age_days > 0 {
-        if let Some(ops) = memory_operations {
+    if config.locus_raw_max_age_days > 0
+        && let Some(ops) = memory_operations {
             let cutoff = Utc::now() - ChronoDuration::days(i64::from(config.locus_raw_max_age_days));
             if let Ok(response) = ops
                 .evict(&MemoryEvictRequest {
@@ -78,7 +78,6 @@ pub async fn run_retention_pass(
                 report.locus_raw_deleted = response.deleted;
             }
         }
-    }
 
     if config.runtime_terminal_max_age_days > 0 {
         let cutoff = Utc::now() - ChronoDuration::days(i64::from(config.runtime_terminal_max_age_days));

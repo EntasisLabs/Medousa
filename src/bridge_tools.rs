@@ -419,11 +419,11 @@ async fn invoke_mcp_binding(
     let response = gateway_client.invoke(&request).await.map_err(|error| {
         StasisError::PortFailure(format!("cognition_capability_invoke: {error}"))
     })?;
-    Ok(serde_json::to_value(response).map_err(|error| {
+    serde_json::to_value(response).map_err(|error| {
         StasisError::PortFailure(format!(
             "cognition_capability_invoke: failed to encode MCP response: {error}"
         ))
-    })?)
+    })
 }
 
 async fn invoke_grapheme_binding(

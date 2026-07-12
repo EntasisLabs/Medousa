@@ -57,7 +57,7 @@ impl MdnsAdvertiser {
 
 impl Drop for MdnsAdvertiser {
     fn drop(&mut self) {
-        let _ = self._daemon.unregister(&self._service.get_fullname());
+        let _ = self._daemon.unregister(self._service.get_fullname());
     }
 }
 

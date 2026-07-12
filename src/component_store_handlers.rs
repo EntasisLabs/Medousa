@@ -2,7 +2,7 @@
 
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
-use axum::routing::{delete, get, put};
+use axum::routing::get;
 use axum::{Json, Router};
 use medousa_types::component_store::{
     ComponentStoreDeleteResponse, ComponentStoreGetResponse, ComponentStoreListResponse,

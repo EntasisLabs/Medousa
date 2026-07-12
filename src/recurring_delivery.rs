@@ -51,21 +51,18 @@ pub fn set_recurring_delivery_store(store: Arc<dyn RecurringDeliveryStore>) {
 }
 
 pub async fn init_recurring_delivery_store_with_runtime(runtime: &RuntimeComposition) {
-    match runtime {
-        RuntimeComposition::Surreal(rt) => {
-            let store = SurrealRecurringDeliveryStore::new(rt.job_store.db());
-            if let Err(err) = store.ensure_schema().await {
-                eprintln!(
-                    "Surreal recurring delivery store schema init error: {err}; keeping in-memory store"
-                );
-                return;
-            }
-            set_recurring_delivery_store(Arc::new(store));
+    if let RuntimeComposition::Surreal(rt) = runtime {
+        let store = SurrealRecurringDeliveryStore::new(rt.job_store.db());
+        if let Err(err) = store.ensure_schema().await {
             eprintln!(
-                "Surreal runtime detected; recurring delivery store switched to SurrealDB backend"
+                "Surreal recurring delivery store schema init error: {err}; keeping in-memory store"
             );
+            return;
         }
-        _ => {}
+        set_recurring_delivery_store(Arc::new(store));
+        eprintln!(
+            "Surreal runtime detected; recurring delivery store switched to SurrealDB backend"
+        );
     }
 }
 
@@ -412,13 +409,11 @@ fn enforce_delivery_policy(target: &ChannelDeliveryTarget, config: &ProductConfi
 
     if !product_config::ingest_sender_allowed(&target.channel, &target.user_id, config) {
         // For telegram with only chat id, also allow heartbeat-configured chats.
-        if target.channel == "telegram" {
-            if let Some(chat_id) = parse_telegram_chat_numeric(&target.channel_id) {
-                if config.telegram.heartbeat_chat_ids.contains(&chat_id) {
+        if target.channel == "telegram"
+            && let Some(chat_id) = parse_telegram_chat_numeric(&target.channel_id)
+                && config.telegram.heartbeat_chat_ids.contains(&chat_id) {
                     return Ok(());
                 }
-            }
-        }
 
         if heartbeat_channel_allowed(target, config) {
             return Ok(());

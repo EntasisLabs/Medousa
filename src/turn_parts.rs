@@ -93,8 +93,8 @@ impl TurnPartsAccumulator {
         height_px: Option<u32>,
     ) {
         for part in &mut self.attachment_parts {
-            if let TurnPart::AttachmentRef { artifact_id: existing, .. } = part {
-                if existing == previous_artifact_id {
+            if let TurnPart::AttachmentRef { artifact_id: existing, .. } = part
+                && existing == previous_artifact_id {
                     *part = TurnPart::AttachmentRef {
                         artifact_id: artifact_id.to_string(),
                         mime: mime.to_string(),
@@ -105,7 +105,6 @@ impl TurnPartsAccumulator {
                     };
                     return;
                 }
-            }
         }
         self.push_attachment_ref(
             artifact_id,

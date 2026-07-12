@@ -246,7 +246,7 @@ fn run_onboard(args: &[String]) -> Result<()> {
             surreal_password: defaults
                 .surreal_password
                 .clone()
-                .or_else(|| load_surreal_password())
+                .or_else(load_surreal_password)
                 .unwrap_or_default(),
             surreal_namespace: defaults
                 .surreal_namespace
@@ -282,7 +282,7 @@ fn run_onboard(args: &[String]) -> Result<()> {
             .surreal_password
             .clone()
             .or_else(|| product_config.surreal.password.clone())
-            .or_else(|| load_surreal_password())
+            .or_else(load_surreal_password)
             .unwrap_or_default();
         let initial_surreal_namespace = defaults
             .surreal_namespace
@@ -1234,11 +1234,10 @@ fn run_doctor(args: &[String]) -> Result<()> {
     if let Some(endpoint) = product_config.surreal.endpoint.as_deref() {
         println!("surreal_endpoint_product_config={endpoint}");
     }
-    if profile.daemon_backend.as_deref() != Some(launch_backend.as_str()) {
-        if let Some(stale) = profile.daemon_backend.as_deref() {
+    if profile.daemon_backend.as_deref() != Some(launch_backend.as_str())
+        && let Some(stale) = profile.daemon_backend.as_deref() {
             println!("surreal_endpoint_onboard_profile_stale={stale}");
         }
-    }
     for (label, key) in [
         ("env", "MEDOUSA_SURREAL_ENDPOINT"),
         ("env", "STASIS_SURREAL_ENDPOINT"),
@@ -1479,14 +1478,13 @@ fn run_doctor(args: &[String]) -> Result<()> {
                 );
             }
         }
-        if daemon_http.healthy {
-            if let Ok(capabilities) = fetch_capabilities(&daemon_url) {
+        if daemon_http.healthy
+            && let Ok(capabilities) = fetch_capabilities(&daemon_url) {
                 println!(
                     "capability_catalog_count={}",
                     capabilities.capabilities.len()
                 );
             }
-        }
     } else if medousa::gateway_auth_configured() && !policy_token_configured {
         println!(
             "{}",
@@ -2035,8 +2033,8 @@ fn run_openshell_probe(args: &[String]) -> Result<()> {
     if !skip_grapheme {
         println!("openshell-probe h6 grapheme --version (sandbox_from={sandbox_from})");
         let receipt = medousa::openshell_sandbox_run::probe_grapheme_in_sandbox(
-            &sandbox_from,
-            policy.as_deref(),
+            sandbox_from,
+            policy,
         )
         .map_err(anyhow::Error::msg)?;
         println!("h6_ok sandbox={} exit={:?}", receipt.sandbox_name, receipt.exit_code);
@@ -2062,8 +2060,8 @@ fn run_openshell_probe(args: &[String]) -> Result<()> {
         let receipt = medousa::openshell_sandbox_run::probe_skill_script_in_sandbox(
             manuscript_id,
             script,
-            &sandbox_from,
-            policy.as_deref(),
+            sandbox_from,
+            policy,
         )
         .map_err(anyhow::Error::msg)?;
         println!("h7_ok sandbox={} exit={:?}", receipt.sandbox_name, receipt.exit_code);
@@ -2633,11 +2631,10 @@ fn ensure_daemon_running(backend: &str, plan: &DaemonLaunchPlan) -> Result<()> {
     }
 
     if is_medousa_daemon_process_running() {
-        if wait_for_bind_reachable(&plan.bind, Duration::from_secs(15)) {
-            if daemon_http_healthy(&plan.health_url) {
+        if wait_for_bind_reachable(&plan.bind, Duration::from_secs(15))
+            && daemon_http_healthy(&plan.health_url) {
                 return Ok(());
             }
-        }
         return Err(anyhow!(
             "medousa_daemon is running but not healthy at {} — check {}",
             plan.health_url,
@@ -2694,9 +2691,7 @@ fn start_daemon_background(backend: &str, plan: &DaemonLaunchPlan) -> Result<()>
     if plan.private_brain {
         println!(
             "{}",
-            format!(
-                "[info] Starting Medousa Engine with your private brain (Gemma loads in the background — first time can take several minutes)"
-            )
+            "[info] Starting Medousa Engine with your private brain (Gemma loads in the background — first time can take several minutes)".to_string()
             .blue()
         );
     }

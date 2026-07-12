@@ -77,7 +77,7 @@ pub fn list_pending_proposals(limit: usize) -> Result<Vec<ManuscriptOverlayPropo
             proposals.push(proposal);
         }
     }
-    proposals.sort_by(|a, b| b.proposed_at_utc.cmp(&a.proposed_at_utc));
+    proposals.sort_by_key(|b| std::cmp::Reverse(b.proposed_at_utc));
     proposals.truncate(limit.clamp(1, 100));
     Ok(proposals)
 }

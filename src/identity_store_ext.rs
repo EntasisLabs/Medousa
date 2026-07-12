@@ -1272,13 +1272,11 @@ impl IdentityMemoryStore for MedousaIdentityMemoryStore {
     ) -> StasisResult<CommitEntityUpdateResponse> {
         // Persona/user/contact commits are Medousa-owned on Surreal. Stasis may mark proposals
         // committed without applying these patches — always route through our overlay.
-        if matches!(&self.backing, Backing::Surreal { .. }) {
-            if let Some(proposal) = self.proposal_for_commit(request).await? {
-                if is_medousa_overlay_entity(&proposal.entity_type) {
+        if matches!(&self.backing, Backing::Surreal { .. })
+            && let Some(proposal) = self.proposal_for_commit(request).await?
+                && is_medousa_overlay_entity(&proposal.entity_type) {
                     return self.commit_overlay_entity(request, proposal).await;
                 }
-            }
-        }
 
         let inner = match &self.backing {
             Backing::InMemory { store, .. } => store.commit_entity_update(request).await?,

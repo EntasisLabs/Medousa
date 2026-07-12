@@ -160,16 +160,14 @@ fn card_map_from_snapshot(
 ) -> HashMap<String, WorkCard> {
     let mut map = HashMap::new();
     for item in snapshot.items.values() {
-        if let Some(session_id) = session_id.map(str::trim).filter(|value| !value.is_empty()) {
-            if !item
+        if let Some(session_id) = session_id.map(str::trim).filter(|value| !value.is_empty())
+            && item
                 .detail
                 .session_id
-                .as_deref()
-                .is_some_and(|id| id == session_id)
+                .as_deref().is_none_or(|id| id != session_id)
             {
                 continue;
             }
-        }
         map.insert(item.card.id.0.clone(), item.card.clone());
     }
     map

@@ -121,8 +121,8 @@ pub async fn spawn_turn_ticket(
         return Err((StatusCode::CONFLICT, conflict.message));
     }
 
-    if mode == crate::turn_ticket::TurnTicketMode::Background {
-        if let Some(job_id) = workspace_card_id.as_deref() {
+    if mode == crate::turn_ticket::TurnTicketMode::Background
+        && let Some(job_id) = workspace_card_id.as_deref() {
             crate::workspace::ask_job_store::ask_job_store().register_pending(
                 crate::workspace::ask_job_store::AskJobRecord {
                     job_id: job_id.to_string(),
@@ -148,7 +148,6 @@ pub async fn spawn_turn_ticket(
             );
             crate::workspace::ask_job_store::ask_job_store().mark_running(job_id);
         }
-    }
 
     let delivery_target =
         channel_delivery::delivery_target_from_interactive_turn(&interactive_request, &turn_id);
@@ -322,12 +321,11 @@ pub async fn create_turn_ticket(
         }
     };
 
-    if request.mode == crate::turn_ticket::TurnTicketMode::Background {
-        if let Some(job_id) = workspace_card_id.as_deref() {
+    if request.mode == crate::turn_ticket::TurnTicketMode::Background
+        && let Some(job_id) = workspace_card_id.as_deref() {
             interactive_request.session_id =
                 crate::workspace::ask_job_store::ask_job_session_id(job_id);
         }
-    }
 
     spawn_turn_ticket(
         &state,

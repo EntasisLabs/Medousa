@@ -101,7 +101,7 @@ impl ApnsClient {
         let mut payload = builder.build(token, options);
         for (key, value) in custom {
             payload
-                .add_custom_data(*key, value)
+                .add_custom_data(key, value)
                 .with_context(|| format!("add custom data key {key}"))?;
         }
 
@@ -201,7 +201,7 @@ impl ApnsClient {
             bail!("empty APNs device token");
         }
 
-        let mut builder = DefaultNotificationBuilder::new().set_content_available();
+        let builder = DefaultNotificationBuilder::new().set_content_available();
         let options = NotificationOptions {
             apns_id: None,
             apns_expiration: None,

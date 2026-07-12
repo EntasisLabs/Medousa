@@ -167,11 +167,10 @@ fn parse_ddg_results(html: &str, max_results: usize) -> Vec<SearchHit> {
 }
 
 fn decode_ddg_redirect(href: &str) -> String {
-    if let Some(rest) = href.strip_prefix("//duckduckgo.com/l/?uddg=") {
-        if let Ok(decoded) = urlencoding_decode(rest.split('&').next().unwrap_or(rest)) {
+    if let Some(rest) = href.strip_prefix("//duckduckgo.com/l/?uddg=")
+        && let Ok(decoded) = urlencoding_decode(rest.split('&').next().unwrap_or(rest)) {
             return decoded;
         }
-    }
     href.trim().to_string()
 }
 

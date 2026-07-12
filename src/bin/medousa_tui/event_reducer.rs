@@ -101,8 +101,8 @@ pub(crate) async fn handle_tui_event(event: TuiEvent, state: &mut TuiState) {
             if !is_active_stream_turn(state, turn_id) {
                 return;
             }
-            if let Some(idx) = state.active_agent_stream_turn {
-                if let Some(turn) = state.conversation.get_mut(idx) {
+            if let Some(idx) = state.active_agent_stream_turn
+                && let Some(turn) = state.conversation.get_mut(idx) {
                     let body = held.trim();
                     if !body.is_empty() {
                         turn.content = body.to_string();
@@ -113,7 +113,6 @@ pub(crate) async fn handle_tui_event(event: TuiEvent, state: &mut TuiState) {
                     turn.answer_state = Some("pack_hold".to_string());
                     turn.timestamp = Utc::now();
                 }
-            }
             state.pending_agent_chunk_delta.clear();
             state.pending_agent_chunk_count = 0;
             if state.auto_scroll {
@@ -157,13 +156,12 @@ pub(crate) async fn handle_tui_event(event: TuiEvent, state: &mut TuiState) {
             // Progress whispers stay out of the answer body (Home shouldMirrorStatusIntoContent=false).
             state.turn_parts.archive_progress_note(&text);
             super::push_obs(state, format!("◈ {text}"));
-            if let Some(idx) = state.active_agent_stream_turn {
-                if let Some(turn) = state.conversation.get_mut(idx) {
+            if let Some(idx) = state.active_agent_stream_turn
+                && let Some(turn) = state.conversation.get_mut(idx) {
                     turn.tool_names = tool_names;
                     turn.answer_state = Some("final_pending".to_string());
                     turn.timestamp = Utc::now();
                 }
-            }
             if state.auto_scroll {
                 state.conv_scroll = state.conv_max_scroll;
             }
@@ -181,13 +179,12 @@ pub(crate) async fn handle_tui_event(event: TuiEvent, state: &mut TuiState) {
             // interim after scratch_reset and duplicated final text.
             state.turn_parts.archive_progress_note(&message);
             super::push_obs(state, format!("◈ {message}"));
-            if let Some(idx) = state.active_agent_stream_turn {
-                if let Some(turn) = state.conversation.get_mut(idx) {
+            if let Some(idx) = state.active_agent_stream_turn
+                && let Some(turn) = state.conversation.get_mut(idx) {
                     turn.tool_names = tool_names;
                     turn.answer_state = Some("tool_loop".to_string());
                     turn.timestamp = Utc::now();
                 }
-            }
             if state.auto_scroll {
                 state.conv_scroll = state.conv_max_scroll;
             }
@@ -284,11 +281,10 @@ pub(crate) async fn handle_tui_event(event: TuiEvent, state: &mut TuiState) {
                     super::push_thinking(state, tail);
                 } else {
                     let tail = std::mem::take(&mut state.stream_tag_tail);
-                    if let Some(idx) = state.active_agent_stream_turn {
-                        if let Some(turn) = state.conversation.get_mut(idx) {
+                    if let Some(idx) = state.active_agent_stream_turn
+                        && let Some(turn) = state.conversation.get_mut(idx) {
                             turn.content.push_str(&tail);
                         }
-                    }
                 }
             }
             state.in_thinking_tag = false;
@@ -670,43 +666,6 @@ fn should_suppress_stream_content_delta(state: &TuiState) -> bool {
         .is_some_and(|turn| !turn.tool_names.is_empty())
 }
 
-#[cfg(test)]
-mod resolve_content_tests {
-    use super::resolve_agent_turn_content;
-
-    #[test]
-    fn terminal_keeps_substantive_stream_over_divergent_final() {
-        let streamed = "Here is what I found about locus: STTP nodes under session medousa-ux.";
-        let final_answer = "Different rewrite from a synthesis pass that the user never saw stream.";
-        let merged = resolve_agent_turn_content(streamed, final_answer, true, false);
-        assert_eq!(merged, streamed);
-    }
-
-    #[test]
-    fn terminal_keeps_stream_even_when_final_differs() {
-        let streamed = "Let me dig into memory for you.";
-        let final_answer = "Here is what I found about locus: the project uses STTP nodes stored under session medousa-ux with several architecture notes from May.";
-        let merged = resolve_agent_turn_content(streamed, final_answer, true, false);
-        assert_eq!(merged, streamed);
-    }
-
-    #[test]
-    fn terminal_after_tool_loop_prefers_final() {
-        let streamed = "Let me dig into memory for you.";
-        let final_answer = "Here is what I found about locus.";
-        let merged = resolve_agent_turn_content(streamed, final_answer, true, true);
-        assert_eq!(merged, final_answer);
-    }
-
-    #[test]
-    fn non_terminal_replaces_draft() {
-        let streamed = "Let me check that for you.";
-        let ack = "Delegated to background worker — I'll synthesize when done.";
-        let out = resolve_agent_turn_content(streamed, ack, false, false);
-        assert_eq!(out, ack);
-    }
-}
-
 fn apply_agent_chunk_delta(delta: &str, state: &mut TuiState) {
     if delta.is_empty() {
         return;
@@ -893,4 +852,41 @@ fn trailing_prefix_len(s: &str, markers: &[&str]) -> usize {
         }
     }
     0
+}
+
+#[cfg(test)]
+mod resolve_content_tests {
+    use super::resolve_agent_turn_content;
+
+    #[test]
+    fn terminal_keeps_substantive_stream_over_divergent_final() {
+        let streamed = "Here is what I found about locus: STTP nodes under session medousa-ux.";
+        let final_answer = "Different rewrite from a synthesis pass that the user never saw stream.";
+        let merged = resolve_agent_turn_content(streamed, final_answer, true, false);
+        assert_eq!(merged, streamed);
+    }
+
+    #[test]
+    fn terminal_keeps_stream_even_when_final_differs() {
+        let streamed = "Let me dig into memory for you.";
+        let final_answer = "Here is what I found about locus: the project uses STTP nodes stored under session medousa-ux with several architecture notes from May.";
+        let merged = resolve_agent_turn_content(streamed, final_answer, true, false);
+        assert_eq!(merged, streamed);
+    }
+
+    #[test]
+    fn terminal_after_tool_loop_prefers_final() {
+        let streamed = "Let me dig into memory for you.";
+        let final_answer = "Here is what I found about locus.";
+        let merged = resolve_agent_turn_content(streamed, final_answer, true, true);
+        assert_eq!(merged, final_answer);
+    }
+
+    #[test]
+    fn non_terminal_replaces_draft() {
+        let streamed = "Let me check that for you.";
+        let ack = "Delegated to background worker — I'll synthesize when done.";
+        let out = resolve_agent_turn_content(streamed, ack, false, false);
+        assert_eq!(out, ack);
+    }
 }

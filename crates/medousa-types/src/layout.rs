@@ -232,14 +232,13 @@ fn validate_layout_node(
                 ));
                 return;
             }
-            if let Some(flex) = flex {
-                if *flex > MAX_COMPONENT_FLEX {
+            if let Some(flex) = flex
+                && *flex > MAX_COMPONENT_FLEX {
                     errors.push(format!(
                         "surface '{}' component '{id}' flex must be 0..={MAX_COMPONENT_FLEX}",
                         surface.id
                     ));
                 }
-            }
             if !seen.insert(id.clone()) {
                 errors.push(format!(
                     "surface '{}' layout references component '{id}' more than once",
@@ -274,14 +273,13 @@ fn validate_layout_node(
                 ));
                 return;
             }
-            if let Some(flex) = flex {
-                if *flex > MAX_COMPONENT_FLEX {
+            if let Some(flex) = flex
+                && *flex > MAX_COMPONENT_FLEX {
                     errors.push(format!(
                         "surface '{}' slot '{id}' flex must be 0..={MAX_COMPONENT_FLEX}",
                         surface.id
                     ));
                 }
-            }
             if !seen.insert(format!("slot:{id}")) {
                 errors.push(format!(
                     "surface '{}' layout references slot '{id}' more than once",

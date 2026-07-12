@@ -27,7 +27,7 @@ impl InferenceDevice {
 
 /// Feature flags compiled into this `medousa_daemon` binary.
 pub fn compiled_backends() -> Vec<&'static str> {
-    let mut backends = vec!["cpu"];
+    let backends = vec!["cpu"];
     #[cfg(feature = "embedded-inference-metal")]
     {
         backends.push("metal");
@@ -95,7 +95,7 @@ fn detect_non_metal_gpu_backend() -> GpuBackend {
     GpuBackend::None
 }
 
-pub fn resolve_inference_device(probe: &HardwareProbe) -> InferenceDevice {
+pub fn resolve_inference_device(_probe: &HardwareProbe) -> InferenceDevice {
     if force_cpu_from_env() {
         return InferenceDevice::Cpu;
     }

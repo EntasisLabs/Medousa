@@ -85,6 +85,12 @@ fn retrieve_result_to_json(result: locus_core_rs::RetrieveResult) -> Value {
 
 pub struct CognitionMemorySchemaTool;
 
+impl Default for CognitionMemorySchemaTool {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CognitionMemorySchemaTool {
     pub fn new() -> Self {
         Self
@@ -492,7 +498,7 @@ impl StasisTool for CognitionMemoryContextTool {
             .map(|n| n as usize)
             .unwrap_or(5);
         let limit = validate_limit(limit, "limit")
-            .map_err(|e| StasisError::PortFailure(e))?;
+            .map_err(StasisError::PortFailure)?;
 
         let global = input.get("session_id").map(|v| v.is_null()).unwrap_or(false);
         let session_scope = if global {

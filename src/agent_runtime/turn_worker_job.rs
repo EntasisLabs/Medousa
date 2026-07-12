@@ -276,8 +276,8 @@ impl crate::agent_runtime::stream_sink::AgentStreamSink for DurableWorkerStreamS
         );
         append_turn(&self.session_id, &turn);
 
-        if let Some(record) = turn_worker_store().get(&self.work_id) {
-            if let Err(err) = crate::turn_worker_notify::deliver_worker_result_to_ingest_channel(
+        if let Some(record) = turn_worker_store().get(&self.work_id)
+            && let Err(err) = crate::turn_worker_notify::deliver_worker_result_to_ingest_channel(
                 &record,
                 &text,
                 &tool_names,
@@ -289,7 +289,6 @@ impl crate::agent_runtime::stream_sink::AgentStreamSink for DurableWorkerStreamS
                     self.work_id
                 );
             }
-        }
     }
 
     async fn agent_error(&self, _turn_id: u64, message: String) {

@@ -30,16 +30,13 @@ pub struct TurnTicketConflict {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum TurnTicketMode {
+    #[default]
     Interactive,
     Background,
 }
 
-impl Default for TurnTicketMode {
-    fn default() -> Self {
-        Self::Interactive
-    }
-}
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]

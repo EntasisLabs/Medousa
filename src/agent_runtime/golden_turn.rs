@@ -43,8 +43,7 @@ use crate::agent_runtime::turn_completion::ToolLoopCompletionGate;
 use crate::medousa_tool_loop::MedousaToolLoopPipeline;
 use crate::payload_receipt::ArtifactReceiptMeta;
 use crate::turn_control_tools::{
-    CognitionTurnBeginWorkTool, CognitionTurnCheckpointTool, CognitionTurnFinishTool,
-    CognitionTurnUpdateUserTool,
+    CognitionTurnCheckpointTool, CognitionTurnFinishTool,
 };
 
 // ── Scripted model provider ──────────────────────────────────────────────────
