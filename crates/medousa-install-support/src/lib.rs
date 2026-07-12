@@ -6,6 +6,7 @@ pub mod model_download;
 pub mod packages;
 pub mod paths;
 pub mod release_config;
+pub mod tarball_install;
 
 pub use manifest::{
     desktop_artifact_url_matches_host, mark_package_installed, package_installed,
@@ -19,12 +20,18 @@ pub use model_download::{
     ModelDownloadProgress, ModelStore, MODEL_STORE,
 };
 pub use packages::{
-    catalog_entry, default_install_profiles, expand_package_dependencies, is_desktop_package,
-    is_model_pack, is_tarball_package, package_catalog, package_disk_estimate_bytes, phase_label,
-    sort_for_install, visible_catalog, PackageCatalogEntry, PackageCategory, PackageProfile,
+    catalog_entry, default_install_profiles, expand_home_package_dependencies,
+    expand_package_dependencies, home_packages_catalog, is_desktop_package,
+    is_home_packages_package, is_model_pack, is_tarball_package, package_catalog,
+    package_disk_estimate_bytes, package_short_hint, phase_label, sort_for_install,
+    visible_catalog, PackageCatalogEntry, PackageCategory, PackageProfile,
 };
 pub use release_config::{
     host_platform_key, host_target, installer_bootstrap_url, release_base_url, release_channel,
     release_manifest_url, set_embedded_release_defaults, InstallerBootstrap,
     InstallerBootstrapPlatform,
+};
+pub use tarball_install::{
+    download_url, fetch_release_manifest, install_tarball_package, remove_tarball_package,
+    resolve_release_package, verify_sha256,
 };

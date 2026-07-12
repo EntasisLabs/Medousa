@@ -45,6 +45,7 @@ medousa-sdk = { path = "../../../crates/medousa-sdk", default-features = false, 
 medousa-sdk-iroh = { path = "../../../crates/medousa-sdk-iroh", default-features = false, features = ["async", "sse"] }
 medousa-iroh-http = { path = "../../../crates/medousa-iroh-http" }
 medousa-browser-lite = { path = "../../../crates/medousa-browser-lite" }
+medousa-install-support = { path = "../../../crates/medousa-install-support" }
 
 [target.'cfg(not(any(target_os = "ios", target_os = "android")))'.dependencies]
 medousa-host = { path = "../../../crates/medousa-host" }

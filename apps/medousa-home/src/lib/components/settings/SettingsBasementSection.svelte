@@ -21,9 +21,10 @@
   import { resetGarageOnboarding } from "$lib/utils/garageOnboarding";
   import { wizard } from "$lib/stores/wizard.svelte";
   import SettingsLocalBrainPanel from "$lib/components/settings/SettingsLocalBrainPanel.svelte";
-  import { openPackageInstaller, fetchPackageStatus, type PackageStatusSummary } from "$lib/utils/packagesApi";
+  import { fetchPackageStatus, type PackageStatusSummary } from "$lib/utils/packagesApi";
   import SettingsWorkshopsSection from "$lib/components/settings/SettingsWorkshopsSection.svelte";
   import { isTauri } from "$lib/window";
+  import { settingsNav } from "$lib/stores/settingsNav.svelte";
   import {
     workshopBasementConnectionLabel,
     workshopBasementRestartHint,
@@ -471,18 +472,18 @@
         <button
           type="button"
           class="settings-toggle-row w-full text-left"
-          onclick={() => void openPackageInstaller()}
+          onclick={() => settingsNav.openSection("packages")}
         >
           <span class="min-w-0 flex-1">
             <span class="block text-sm font-medium text-surface-100">Packages</span>
             <span class="workshop-faint mt-0.5 block text-xs">
-              Offline brain, adapters, model packs
+              Offline brain, adapters, CLI & MCP
               {#if packageStatus && !packageStatus.localBrainInstalled}
                 · brain not installed
               {/if}
             </span>
           </span>
-          <span class="workshop-text-action shrink-0 text-xs">Manage…</span>
+          <span class="workshop-text-action shrink-0 text-xs">Open…</span>
         </button>
         <button
           type="button"

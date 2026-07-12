@@ -20,11 +20,6 @@
   } from "$lib/utils/providersApi";
   import { ensureSkipReadyModel } from "$lib/utils/wizardModelReady";
   import {
-    fetchPackageStatus,
-    openPackageInstaller,
-    type PackageStatusSummary,
-  } from "$lib/utils/packagesApi";
-  import {
     ensureLocalModelReady,
     fetchLocalCatalog,
     fetchLocalHardware,
@@ -35,6 +30,8 @@
     type LocalHardwareResponse,
     type ModelDownloadProgress,
   } from "$lib/utils/localInferenceApi";
+  import { layout } from "$lib/stores/layout.svelte";
+  import { settingsNav } from "$lib/stores/settingsNav.svelte";
 
   type WizardPath = "byok" | "offline";
 
@@ -55,7 +52,6 @@
   let offlineModelId = $state<string | null>(null);
   let localLoading = $state(false);
   let downloadProgress = $state<ModelDownloadProgress | null>(null);
-  let packageStatus = $state<PackageStatusSummary | null>(null);
 
   const ollamaReady = $derived(probe?.ollamaDetected ?? false);
   const recommendedOfflineModel = $derived.by(() => {
@@ -72,9 +68,6 @@
   onMount(() => {
     void refreshProbe();
     void refreshLocalInference();
-    void fetchPackageStatus().then((status) => {
-      packageStatus = status;
-    });
   });
 
   async function refreshProbe() {
@@ -341,7 +334,7 @@
             (~{formatBytes(recommendedOfflineModel.sizeBytes)} download). Nothing leaves this
             device unless you choose cloud later.
           {:else if localHardware && !localHardware.engineAvailable}
-            Offline brain is not installed — use Medousa Installer to add it, or pick Advanced below.
+            Offline brain is not installed — add it from Settings → Packages, or pick Advanced below.
           {:else}
             Download a local model once — chat without sending data to the cloud.
           {/if}
@@ -355,12 +348,11 @@
               disabled={wizard.busy || validating}
               onclick={(event) => {
                 event.stopPropagation();
-                void openPackageInstaller();
+                settingsNav.openSection("packages");
+                layout.navigateDesktop("settings", { bump: true });
               }}
             >
-              {packageStatus?.installerAvailable
-                ? "Open Medousa Installer"
-                : "Download Medousa Installer"}
+              Open Settings → Packages
             </button>
           </div>
         {:else if selectedPath === "offline" && localCatalog}
