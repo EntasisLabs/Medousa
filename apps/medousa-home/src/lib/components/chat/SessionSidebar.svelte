@@ -27,6 +27,7 @@
   let deletingSession = $state<SessionSummary | null>(null);
   let deleteError = $state<string | null>(null);
   let deleteSaving = $state(false);
+  let renameInputEl = $state<HTMLInputElement | null>(null);
   let sheetEl = $state<HTMLDivElement | null>(null);
   let headerEl = $state<HTMLElement | null>(null);
 
@@ -73,6 +74,12 @@
   $effect(() => {
     if (!open || variant !== "sheet" || !sheetEl) return;
     return attachMobileSheetGestures(sheetEl, headerEl, { onDismiss: dismissSheet });
+  });
+
+  $effect(() => {
+    if (renamingSession) {
+      renameInputEl?.focus();
+    }
   });
 
   function matchesQuery(session: SessionSummary): boolean {
@@ -359,11 +366,11 @@
           </button>
         </div>
         <input
+          bind:this={renameInputEl}
           class="input w-full text-sm"
           type="text"
           maxlength="80"
           bind:value={renameDraft}
-          autofocus
         />
         {#if renameError}
           <p class="text-xs text-error-400">{renameError}</p>

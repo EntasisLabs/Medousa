@@ -95,7 +95,7 @@
     truncated = $bindable(false),
   }: Props = $props();
 
-  let activeArtifactId = $state(artifactId);
+  let activeArtifactId = $state("");
   let sourceOpen = $state(false);
   let editOpen = $state(false);
   let editBusy = $state(false);

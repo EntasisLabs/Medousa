@@ -543,6 +543,8 @@
 <div
   class="ledger-sheet flex min-h-0 flex-1 flex-col overflow-hidden"
   class:ledger-sheet--resizing={resizingCol != null}
+  role="application"
+  aria-label="Ledger table"
   onkeydown={handleSheetKeydown}
 >
   <div class="ledger-toolbar flex shrink-0 flex-wrap items-center gap-2 border-b border-surface-500/40 px-4 py-2">

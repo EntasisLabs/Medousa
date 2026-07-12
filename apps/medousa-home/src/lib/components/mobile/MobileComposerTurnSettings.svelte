@@ -201,6 +201,12 @@
     if (mode === runtime.reasoningEffort || runtime.savingControls) return;
     await runtime.setReasoningEffort(mode);
   }
+  function handleSheetKeydown(event: KeyboardEvent) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeSheet();
+    }
+  }
 </script>
 
 <div class="mobile-composer-turn">
@@ -237,9 +243,11 @@
         class="mobile-sheet mobile-turn-sheet"
         role="dialog"
         aria-label={sheetTitle}
+        tabindex="-1"
         in:fly={sheetTransition.in}
         out:fly={sheetTransition.out}
         onclick={(event) => event.stopPropagation()}
+        onkeydown={handleSheetKeydown}
       >
         <div class="mobile-turn-sheet-grabber" aria-hidden="true"></div>
 

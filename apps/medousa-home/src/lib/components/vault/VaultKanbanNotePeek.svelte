@@ -111,6 +111,12 @@
     class="vault-kanban-peek-backdrop"
     role="presentation"
     onclick={onClose}
+    onkeydown={(event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        onClose();
+      }
+    }}
   ></div>
   <div
     bind:this={panelEl}
@@ -123,6 +129,7 @@
     aria-label="Linked note peek"
     tabindex="-1"
     onclick={(event) => event.stopPropagation()}
+    onkeydown={handleKeydown}
   >
     <header class="vault-kanban-peek-header">
       <div class="min-w-0 flex-1">

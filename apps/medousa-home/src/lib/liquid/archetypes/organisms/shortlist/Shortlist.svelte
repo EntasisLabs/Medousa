@@ -272,12 +272,14 @@
     color: rgb(var(--color-surface-300));
     display: -webkit-box;
     -webkit-line-clamp: 3;
+    line-clamp: 3;
     -webkit-box-orient: vertical;
     overflow: hidden;
   }
 
   .liquid-shortlist-compact .liquid-shortlist-summary {
     -webkit-line-clamp: 2;
+    line-clamp: 2;
   }
 
   .liquid-shortlist-meta {

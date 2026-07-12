@@ -427,7 +427,7 @@
   ontouchend={onTouchEnd}
   ontouchcancel={onTouchEnd}
 >
-  <div class="context-map-controls" onpointerdown={(event) => event.stopPropagation()}>
+  <div class="context-map-controls" role="toolbar" tabindex="-1" onpointerdown={(event) => event.stopPropagation()}>
     {#if selectionActive}
       <button
         type="button"
@@ -452,6 +452,7 @@
   {#if hoverPreview}
     <div
       class="context-map-hover-card"
+      role="region"
       aria-live="polite"
       onpointerdown={(event) => event.stopPropagation()}
     >
@@ -465,6 +466,7 @@
   {:else if selectionActive && selectedPreview}
     <div
       class="context-map-hover-card context-map-hover-card-pinned"
+      role="region"
       aria-live="polite"
       onpointerdown={(event) => event.stopPropagation()}
     >
@@ -478,6 +480,7 @@
 
   <div
     class="context-map-legend"
+    role="region"
     aria-label="Map legend"
     onpointerdown={(event) => event.stopPropagation()}
   >

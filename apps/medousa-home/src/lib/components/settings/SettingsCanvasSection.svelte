@@ -484,7 +484,7 @@
     display: none;
   }
 
-  .canvas-advanced-chevron {
+  :global(.canvas-advanced-chevron) {
     transition: transform 160ms ease;
   }
 

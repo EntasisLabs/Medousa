@@ -85,6 +85,7 @@
   let renameDraft = $state("");
   let addPeerOpen = $state(false);
   let fallbackOpen = $state(false);
+  let fallbackUrlInputEl = $state<HTMLInputElement | null>(null);
   let fallbackDaemonUrl = $state("");
   let fallbackQrUrl = $state("");
   let fallbackName = $state("");
@@ -558,6 +559,12 @@
       return false;
     });
   });
+
+  $effect(() => {
+    if (fallbackOpen) {
+      fallbackUrlInputEl?.focus();
+    }
+  });
 </script>
 
 <section
@@ -880,11 +887,11 @@
       <label class="peers-field">
         <span>Workshop URL</span>
         <input
+          bind:this={fallbackUrlInputEl}
           type="text"
           bind:value={fallbackDaemonUrl}
           placeholder="http://10.12.0.13:7419"
           disabled={busy}
-          autofocus
         />
       </label>
       <label class="peers-field">

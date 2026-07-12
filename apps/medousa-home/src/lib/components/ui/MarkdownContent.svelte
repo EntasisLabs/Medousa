@@ -54,6 +54,11 @@
     void openInBrowser(href, { openedBy: "user" });
   }
 
+  function handleLinkKeydown(event: KeyboardEvent) {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    handleLinkClick(event as unknown as MouseEvent);
+  }
+
   $effect(() => {
     html;
     if (!container) return;
@@ -68,10 +73,14 @@
   });
 </script>
 
+<!-- Link clicks delegate to Web surface; keyboard activation uses the same path. -->
+<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <div
   bind:this={container}
   class="markdown-content min-w-0 max-w-full"
+  role="document"
   onclick={handleLinkClick}
+  onkeydown={handleLinkKeydown}
 >
   {@html html}
 </div>

@@ -53,7 +53,7 @@
   }
 </script>
 
-<article
+<div
   role="button"
   tabindex="0"
   class="work-hub-card {selected ? 'work-hub-card-selected' : ''} {compact
@@ -83,4 +83,4 @@
       </button>
     {/each}
   </div>
-</article>
+</div>

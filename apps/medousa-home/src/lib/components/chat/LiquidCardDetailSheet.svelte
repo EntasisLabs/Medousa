@@ -62,9 +62,11 @@
       role="dialog"
       aria-modal="true"
       aria-label={detail.title}
+      tabindex="-1"
       onclick={(event) => {
         if (event.target === event.currentTarget) handleClose();
       }}
+      onkeydown={handleKeydown}
     >
       <div class="liquid-card-detail-sheet">
         <header class="liquid-card-detail-chrome">

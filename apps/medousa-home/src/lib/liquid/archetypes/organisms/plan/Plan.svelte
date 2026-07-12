@@ -368,6 +368,7 @@
     color: rgb(var(--color-surface-300));
     display: -webkit-box;
     -webkit-line-clamp: 3;
+    line-clamp: 3;
     -webkit-box-orient: vertical;
     overflow: hidden;
   }

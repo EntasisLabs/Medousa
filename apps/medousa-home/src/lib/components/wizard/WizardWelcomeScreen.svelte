@@ -313,88 +313,90 @@
     </div>
   {/if}
 
-  <button
-    type="button"
-    class="wizard-path-card mt-6 text-left {selectedPath === 'offline'
+  <div
+    class="wizard-path-card mt-6 {selectedPath === 'offline'
       ? 'wizard-path-card-active'
       : ''}"
-    disabled={wizard.busy}
-    onclick={() => selectPath("offline")}
+    role="group"
+    aria-label="Recommended — private on this computer"
   >
-    <div class="flex items-start gap-3">
-      <Sparkles class="mt-0.5 h-5 w-5 shrink-0 text-primary-300" aria-hidden="true" />
-      <div class="min-w-0 flex-1">
-        <p class="font-semibold text-surface-50">Recommended — private on this computer</p>
-        <p class="mt-1 text-sm text-surface-300">
-          {#if localLoading}
-            Finding the right local model for your hardware…
-          {:else if localHardware && recommendedOfflineModel}
-            We'll use
-            <strong class="text-surface-100">{recommendedOfflineModel.displayName}</strong>
-            (~{formatBytes(recommendedOfflineModel.sizeBytes)} download). Nothing leaves this
-            device unless you choose cloud later.
-          {:else if localHardware && !localHardware.engineAvailable}
-            Offline brain is not installed — add it from Settings → Packages, or pick Advanced below.
-          {:else}
-            Download a local model once — chat without sending data to the cloud.
-          {/if}
-        </p>
-
-        {#if selectedPath === "offline" && localHardware && !localHardware.engineAvailable}
-          <div class="mt-4 border-t border-surface-500/30 pt-4">
-            <button
-              type="button"
-              class="btn preset-filled-primary-500 w-full"
-              disabled={wizard.busy || validating}
-              onclick={(event) => {
-                event.stopPropagation();
-                settingsNav.openSection("packages");
-                layout.navigateDesktop("settings", { bump: true });
-              }}
-            >
-              Open Settings → Packages
-            </button>
-          </div>
-        {:else if selectedPath === "offline" && localCatalog}
-          <div class="mt-4 space-y-2 border-t border-surface-500/30 pt-4">
-            {#each localCatalog.models as entry (entry.id)}
-              <button
-                type="button"
-                class="settings-depth-card w-full text-left {(offlineModelId ?? localCatalog.recommendedModelId) === entry.id
-                  ? 'settings-depth-card-active'
-                  : ''}"
-                disabled={wizard.busy || validating}
-                onclick={(event) => {
-                  event.stopPropagation();
-                  selectOfflineModel(entry);
-                }}
-              >
-                <span class="block text-sm font-medium text-surface-100">{entry.displayName}</span>
-                <span class="workshop-faint mt-1 block text-xs">
-                  ~{formatBytes(entry.sizeBytes)}
-                  {#if entry.tierRecommended}
-                    · recommended
-                  {/if}
-                </span>
-              </button>
-            {/each}
-          </div>
-        {/if}
-
-        {#if downloadProgress && selectedPath === "offline"}
-          <div class="mt-3">
-            <div class="h-2 overflow-hidden rounded-full bg-surface-800">
-              <div
-                class="h-full rounded-full bg-primary-500 transition-all duration-300"
-                style:width="{Math.max(4, Math.round(downloadProgress.percent))}%"
-              ></div>
-            </div>
-            <p class="workshop-faint mt-2 text-xs">{downloadProgress.message}</p>
-          </div>
-        {/if}
+    <button
+      type="button"
+      class="wizard-path-card-select w-full text-left"
+      disabled={wizard.busy}
+      onclick={() => selectPath("offline")}
+    >
+      <div class="flex items-start gap-3">
+        <Sparkles class="mt-0.5 h-5 w-5 shrink-0 text-primary-300" aria-hidden="true" />
+        <div class="min-w-0 flex-1">
+          <p class="font-semibold text-surface-50">Recommended — private on this computer</p>
+          <p class="mt-1 text-sm text-surface-300">
+            {#if localLoading}
+              Finding the right local model for your hardware…
+            {:else if localHardware && recommendedOfflineModel}
+              We'll use
+              <strong class="text-surface-100">{recommendedOfflineModel.displayName}</strong>
+              (~{formatBytes(recommendedOfflineModel.sizeBytes)} download). Nothing leaves this
+              device unless you choose cloud later.
+            {:else if localHardware && !localHardware.engineAvailable}
+              Offline brain is not installed — add it from Settings → Packages, or pick Advanced below.
+            {:else}
+              Download a local model once — chat without sending data to the cloud.
+            {/if}
+          </p>
+        </div>
       </div>
-    </div>
-  </button>
+    </button>
+
+    {#if selectedPath === "offline" && localHardware && !localHardware.engineAvailable}
+      <div class="mt-4 border-t border-surface-500/30 px-4 pb-4 pt-4">
+        <button
+          type="button"
+          class="btn preset-filled-primary-500 w-full"
+          disabled={wizard.busy || validating}
+          onclick={() => {
+            settingsNav.openSection("packages");
+            layout.navigateDesktop("settings", { bump: true });
+          }}
+        >
+          Open Settings → Packages
+        </button>
+      </div>
+    {:else if selectedPath === "offline" && localCatalog}
+      <div class="space-y-2 border-t border-surface-500/30 px-4 pb-4 pt-4">
+        {#each localCatalog.models as entry (entry.id)}
+          <button
+            type="button"
+            class="settings-depth-card w-full text-left {(offlineModelId ?? localCatalog.recommendedModelId) === entry.id
+              ? 'settings-depth-card-active'
+              : ''}"
+            disabled={wizard.busy || validating}
+            onclick={() => selectOfflineModel(entry)}
+          >
+            <span class="block text-sm font-medium text-surface-100">{entry.displayName}</span>
+            <span class="workshop-faint mt-1 block text-xs">
+              ~{formatBytes(entry.sizeBytes)}
+              {#if entry.tierRecommended}
+                · recommended
+              {/if}
+            </span>
+          </button>
+        {/each}
+      </div>
+    {/if}
+
+    {#if downloadProgress && selectedPath === "offline"}
+      <div class="px-4 pb-4">
+        <div class="h-2 overflow-hidden rounded-full bg-surface-800">
+          <div
+            class="h-full rounded-full bg-primary-500 transition-all duration-300"
+            style:width="{Math.max(4, Math.round(downloadProgress.percent))}%"
+          ></div>
+        </div>
+        <p class="workshop-faint mt-2 text-xs">{downloadProgress.message}</p>
+      </div>
+    {/if}
+  </div>
 
   <button
     type="button"
@@ -527,5 +529,18 @@
   .wizard-path-card-active {
     border-color: rgb(var(--color-primary-500) / 0.55);
     background: rgb(var(--color-primary-500) / 0.08);
+  }
+
+  .wizard-path-card-select {
+    border: 0;
+    background: transparent;
+    padding: 0;
+    color: inherit;
+    cursor: pointer;
+  }
+
+  .wizard-path-card-select:disabled {
+    cursor: not-allowed;
+    opacity: 0.7;
   }
 </style>

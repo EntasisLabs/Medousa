@@ -14,7 +14,7 @@
 
   let { compact = false }: Props = $props();
 
-  const RECENT_PEEK = compact ? 6 : 10;
+  const RECENT_PEEK = $derived(compact ? 6 : 10);
 
   let expandedPins = $state<Record<string, boolean>>({});
   let showAllByRoot = $state<Record<string, boolean>>({});

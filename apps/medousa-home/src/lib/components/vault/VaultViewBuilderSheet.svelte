@@ -171,6 +171,7 @@
     role="dialog"
     aria-modal="true"
     aria-labelledby="view-builder-title"
+    tabindex="-1"
     onkeydown={onSheetKeydown}
     onclick={(event) => {
       if (event.target === event.currentTarget) onClose();

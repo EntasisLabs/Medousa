@@ -220,11 +220,12 @@
       role="dialog"
       aria-modal="false"
       aria-label="Note chat"
+      tabindex="-1"
       style:height="{sheetHeight}px"
     >
       <div
         class="vault-note-workshop-sheet-resize"
-        role="separator"
+        role="slider"
         aria-orientation="horizontal"
         aria-label="Resize chat height"
         aria-valuenow={sheetHeight}

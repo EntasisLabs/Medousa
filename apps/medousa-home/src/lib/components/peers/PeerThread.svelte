@@ -45,6 +45,7 @@
   }: Props = $props();
 
   let threadEl = $state<HTMLDivElement | null>(null);
+  let renameInputEl = $state<HTMLInputElement | null>(null);
 
   const ordered = $derived(
     [...messages].sort(
@@ -82,6 +83,19 @@
       threadEl.scrollTop = threadEl.scrollHeight;
     });
   });
+
+  $effect(() => {
+    if (renaming) {
+      renameInputEl?.focus();
+    }
+  });
+
+  function handleMenuKeydown(event: KeyboardEvent) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      if (menuOpen) onToggleMenu();
+    }
+  }
 </script>
 
 <header class="peers-thread-head">
@@ -94,12 +108,12 @@
     <div>
       {#if renaming}
         <input
+          bind:this={renameInputEl}
           class="peers-rename-input"
           type="text"
           value={renameDraft}
           disabled={busy}
           aria-label="Peer display name"
-          autofocus
           oninput={(event) => onRenameDraftChange((event.currentTarget as HTMLInputElement).value)}
           onkeydown={(event) => {
             if (event.key === "Enter") {
@@ -140,7 +154,7 @@
       <MoreHorizontal size={18} />
     </button>
     {#if menuOpen}
-      <div class="peers-menu" role="menu">
+      <div class="peers-menu" role="menu" tabindex="-1" onkeydown={handleMenuKeydown}>
         <button type="button" role="menuitem" class="peers-menu-item" disabled={busy} onclick={onMarkRead}>
           Mark read
         </button>

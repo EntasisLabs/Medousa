@@ -129,6 +129,7 @@
     role="dialog"
     aria-modal="true"
     aria-labelledby="note-actions-title"
+    tabindex="-1"
     onkeydown={onSheetKeydown}
     onclick={(event) => {
       if (event.target === event.currentTarget) vault.closeNoteActions();

@@ -62,6 +62,9 @@
   {#if draggable}
     <div
       class="layout-widget-tile-handle"
+      role="toolbar"
+      tabindex="-1"
+      aria-label="Widget controls"
       onpointerdown={handleHandlePointerDown}
     >
       <GripVertical size={14} strokeWidth={2} aria-hidden="true" />
