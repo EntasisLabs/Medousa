@@ -7,10 +7,19 @@ import { vaultDisplayTitle } from "$lib/utils/formatVault";
 
 const DAILY_PATH = /^journal\/\d{4}-\d{2}-\d{2}\.md$/;
 
+export interface VaultNoteSelection {
+  text: string;
+  /** Source offsets when known (edit mode). */
+  start?: number;
+  end?: number;
+}
+
 export interface VaultNoteContextScope {
   path: string;
   title: string;
   linkCount: number;
+  /** Highlighted passage for collab (Add to chat). */
+  selection?: VaultNoteSelection;
 }
 
 export function buildVaultNoteContextScope(
@@ -18,19 +27,42 @@ export function buildVaultNoteContextScope(
   title: string,
   wikilinksOut: string[],
   backlinks: string[],
+  selection?: VaultNoteSelection | null,
 ): VaultNoteContextScope {
+  const trimmed = selection?.text.trim();
   return {
     path,
     title: vaultDisplayTitle(title, path),
     linkCount: wikilinksOut.length + backlinks.length,
+    selection: trimmed
+      ? {
+          text: trimmed,
+          start: selection?.start,
+          end: selection?.end,
+        }
+      : undefined,
   };
+}
+
+export function vaultContextHasSelection(
+  scope: VaultNoteContextScope | null | undefined,
+): boolean {
+  return Boolean(scope?.selection?.text.trim());
 }
 
 /** UI hint for scoped chat context (D3). */
 export function vaultContextScopeHint(scope: VaultNoteContextScope): string {
+  if (vaultContextHasSelection(scope)) {
+    const preview = scope.selection!.text.replace(/\s+/g, " ").trim();
+    return preview.length > 52 ? `${preview.slice(0, 51)}…` : preview;
+  }
   if (scope.linkCount === 0) return "This page";
   const n = scope.linkCount;
   return `This page + ${n} linked note${n === 1 ? "" : "s"}`;
+}
+
+export function vaultContextScopeLabel(scope: VaultNoteContextScope): string {
+  return vaultContextHasSelection(scope) ? "Passage" : "Note";
 }
 
 export function prepareTalkAboutNote(
@@ -44,6 +76,26 @@ export function prepareTalkAboutNote(
   return {
     scope,
     draft: buildAskAboutNoteDraft(path, title, content, scope.linkCount),
+  };
+}
+
+export function prepareAddSelectionToChat(
+  path: string,
+  title: string,
+  selection: VaultNoteSelection,
+  wikilinksOut: string[],
+  backlinks: string[],
+): { scope: VaultNoteContextScope; draft: string } {
+  const scope = buildVaultNoteContextScope(
+    path,
+    title,
+    wikilinksOut,
+    backlinks,
+    selection,
+  );
+  return {
+    scope,
+    draft: buildAskAboutSelectionDraft(path, title, scope.selection!.text),
   };
 }
 
@@ -66,6 +118,31 @@ export function buildAskAboutNoteDraft(
       ? `\n\nAlso consider the ${linkCount} linked note${linkCount === 1 ? "" : "s"} from this page.`
       : "";
   return `I'm reading my vault note "${label}" (\`${path}\`).\n\n${excerpt}${linkHint}\n\nHelp me think through this note.`;
+}
+
+export function buildAskAboutSelectionDraft(
+  path: string,
+  title: string,
+  selectedText: string,
+): string {
+  const label = vaultDisplayTitle(title, path);
+  const excerpt = noteExcerpt(selectedText, 2000);
+  return `Looking at this passage in "${label}" (\`${path}\`):\n\n${excerpt}\n\nHelp me with this — edit, clarify, or suggest next.`;
+}
+
+/** Keep the passage visible to Medousa even if the composer draft drifted. */
+export function ensureVaultSelectionInPrompt(
+  prompt: string,
+  scope: VaultNoteContextScope | null | undefined,
+): string {
+  if (!vaultContextHasSelection(scope)) return prompt;
+  const text = scope!.selection!.text.trim();
+  if (!text) return prompt;
+  if (prompt.includes(text)) return prompt;
+  const block = buildAskAboutSelectionDraft(scope!.path, scope!.title, text);
+  const trimmed = prompt.trim();
+  if (!trimmed) return block;
+  return `${block}\n\n---\n\n${trimmed}`;
 }
 
 export function buildWorkAskFromNote(

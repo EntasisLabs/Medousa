@@ -19,9 +19,10 @@ export function openVaultNoteContextMenu(
   path: string,
   clientX: number,
   clientY: number,
+  selection?: { text: string; start?: number; end?: number } | null,
 ) {
   markContextMenuOpened();
-  vaultContextMenu.showNote(path, clientX, clientY);
+  vaultContextMenu.showNote(path, clientX, clientY, selection);
 }
 
 export function openVaultFolderContextMenu(
@@ -48,10 +49,11 @@ export function openVaultAttachmentContextMenu(
 export function handleVaultNoteContextMenuEvent(
   path: string,
   event: MouseEvent,
+  selection?: { text: string; start?: number; end?: number } | null,
 ) {
   event.preventDefault();
   event.stopPropagation();
-  openVaultNoteContextMenu(path, event.clientX, event.clientY);
+  openVaultNoteContextMenu(path, event.clientX, event.clientY, selection);
 }
 
 export function handleVaultFolderContextMenuEvent(

@@ -1,7 +1,15 @@
 import type { AllowedSurfaceIcon } from "$lib/utils/environmentIconCatalog";
 
 export type VaultContextTarget =
-  | { kind: "note"; path: string }
+  | {
+      kind: "note";
+      path: string;
+      selection?: {
+        text: string;
+        start?: number;
+        end?: number;
+      };
+    }
   | { kind: "attachment"; path: string; notePath: string }
   | {
       kind: "folder";
@@ -28,8 +36,20 @@ export class VaultContextMenuStore {
     this.open = true;
   }
 
-  showNote(path: string, clientX: number, clientY: number) {
-    this.showAt(clientX, clientY, { kind: "note", path });
+  showNote(
+    path: string,
+    clientX: number,
+    clientY: number,
+    selection?: { text: string; start?: number; end?: number } | null,
+  ) {
+    const trimmed = selection?.text.trim();
+    this.showAt(clientX, clientY, {
+      kind: "note",
+      path,
+      selection: trimmed
+        ? { text: trimmed, start: selection?.start, end: selection?.end }
+        : undefined,
+    });
   }
 
   showAttachment(path: string, notePath: string, clientX: number, clientY: number) {

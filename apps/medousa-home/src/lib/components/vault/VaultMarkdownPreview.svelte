@@ -228,7 +228,19 @@
   function handleContextMenu(event: MouseEvent) {
     const path = vault.selectedPath;
     if (!path) return;
-    handleVaultNoteContextMenuEvent(path, event);
+    const sel = typeof window !== "undefined" ? window.getSelection() : null;
+    let selection: { text: string } | null = null;
+    if (
+      sel &&
+      !sel.isCollapsed &&
+      sel.rangeCount > 0 &&
+      container &&
+      (container.contains(sel.anchorNode) || container.contains(sel.focusNode))
+    ) {
+      const text = sel.toString();
+      if (text.trim()) selection = { text };
+    }
+    handleVaultNoteContextMenuEvent(path, event, selection);
   }
 
   function handleKeydown(event: KeyboardEvent) {

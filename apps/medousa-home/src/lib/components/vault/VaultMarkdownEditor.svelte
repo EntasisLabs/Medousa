@@ -23,6 +23,7 @@
     type SlashBlockId,
   } from "$lib/utils/vaultMarkdownEdit";
   import { vaultDisplayTitle } from "$lib/utils/formatVault";
+  import { handleVaultNoteContextMenuEvent } from "$lib/utils/vaultContextMenuEvents";
 
   interface Props {
     content: string;
@@ -123,6 +124,20 @@
     if (!textareaEl) return;
     selectionStart = textareaEl.selectionStart;
     selectionEnd = textareaEl.selectionEnd;
+  }
+
+  function handleContextMenu(event: MouseEvent) {
+    const path = vault.selectedPath;
+    if (!path || !textareaEl) return;
+    captureSelection();
+    const start = Math.min(selectionStart, selectionEnd);
+    const end = Math.max(selectionStart, selectionEnd);
+    const text = draft.slice(start, end);
+    handleVaultNoteContextMenuEvent(
+      path,
+      event,
+      text.trim() ? { text, start, end } : null,
+    );
   }
 
   function syncSlashMenu() {
@@ -327,6 +342,7 @@
             oninput={handleInput}
             onkeydown={handleKeydown}
             onscroll={syncFindScroll}
+            oncontextmenu={handleContextMenu}
             onselect={() => {
               captureSelection();
               syncSlashMenu();
@@ -360,6 +376,7 @@
           oninput={handleInput}
           onkeydown={handleKeydown}
           onscroll={syncFindScroll}
+          oncontextmenu={handleContextMenu}
           onselect={() => {
             captureSelection();
             syncSlashMenu();

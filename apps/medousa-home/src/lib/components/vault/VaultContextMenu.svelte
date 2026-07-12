@@ -21,6 +21,7 @@
     SURFACE_ICON_GROUPS,
     type AllowedSurfaceIcon,
   } from "$lib/utils/environmentIconCatalog";
+  import { addVaultSelectionToChat } from "$lib/utils/vaultNoteWorkshop";
 
   interface MenuItem {
     id: string;
@@ -89,7 +90,41 @@
 
     if (target.kind === "note") {
       const path = target.path;
+      const selection = target.selection;
       return [
+        {
+          id: "add-to-chat",
+          label: "Add to chat",
+          hidden: !selection?.text.trim(),
+          onClick: async () => {
+            if (!selection?.text.trim()) return;
+            await addVaultSelectionToChat({
+              path,
+              title:
+                vault.selectedPath === path
+                  ? vault.title
+                  : (vault.labelByPath().get(path) ?? path),
+              content: vault.selectedPath === path ? vault.content : undefined,
+              wikilinksOut: vault.selectedPath === path ? vault.wikilinksOut : [],
+              backlinks: vault.selectedPath === path ? vault.backlinks : [],
+              selection,
+              flushSave:
+                vault.selectedPath === path && vault.dirty
+                  ? async () => {
+                      await vault.flushSave();
+                    }
+                  : undefined,
+            });
+          },
+        },
+        {
+          id: "copy-selection",
+          label: "Copy selection",
+          hidden: !selection?.text.trim(),
+          onClick: async () => {
+            if (selection?.text) await copyTextToClipboard(selection.text);
+          },
+        },
         {
           id: "copy-path",
           label: "Copy path",
