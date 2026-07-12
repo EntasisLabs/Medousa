@@ -5,8 +5,8 @@ use std::path::PathBuf;
 use std::process::Command;
 
 use medousa_install_support::manifest::{
-    package_installed, read_install_manifest, write_install_manifest, InstallManifest,
-    PackageInstallRecord,
+    package_installed, read_install_manifest, resolve_release_package, write_install_manifest,
+    InstallManifest, PackageInstallRecord,
 };
 use medousa_install_support::packages::{
     catalog_entry, expand_home_package_dependencies, home_packages_catalog,
@@ -14,7 +14,6 @@ use medousa_install_support::packages::{
 };
 use medousa_install_support::tarball_install::{
     fetch_release_manifest, install_tarball_package, remove_tarball_package,
-    resolve_release_package,
 };
 use medousa_install_support::{host_target, release_base_url};
 use tauri::{AppHandle, Emitter};

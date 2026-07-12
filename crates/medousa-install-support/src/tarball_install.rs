@@ -10,11 +10,11 @@ use sha2::{Digest, Sha256};
 use tar::Archive;
 
 use crate::manifest::{
-    mark_package_installed, shared_bin_dir, unmark_package_installed, ReleaseManifest,
-    ReleasePackage,
+    mark_package_installed, shared_bin_dir, unmark_package_installed, resolve_release_package,
+    ReleaseManifest, ReleasePackage,
 };
 use crate::packages::{catalog_entry, is_tarball_package};
-use crate::release_config::{host_platform_key, host_target, release_manifest_url};
+use crate::release_config::release_manifest_url;
 
 pub async fn fetch_release_manifest() -> Result<ReleaseManifest, String> {
     let url = release_manifest_url();
@@ -34,29 +34,6 @@ pub async fn fetch_release_manifest() -> Result<ReleaseManifest, String> {
     }
     let bytes = response.bytes().await.map_err(|err| err.to_string())?;
     serde_json::from_slice(&bytes).map_err(|err| err.to_string())
-}
-
-pub fn resolve_release_package<'a>(
-    manifest: &'a ReleaseManifest,
-    package_id: &str,
-) -> Result<&'a ReleasePackage, String> {
-    let target = std::env::var("MEDOUSA_INSTALL_TARGET").unwrap_or_else(|_| host_target());
-    let platform = host_platform_key();
-    let keys = [
-        format!("{package_id}-{target}"),
-        format!("{package_id}-{platform}"),
-        package_id.to_string(),
-    ];
-    for key in &keys {
-        if let Some(pkg) = manifest.packages.get(key) {
-            return Ok(pkg);
-        }
-    }
-    manifest
-        .packages
-        .values()
-        .find(|entry| entry.id == package_id)
-        .ok_or_else(|| format!("release package not found for {package_id} ({target})"))
 }
 
 /// Install a tarball package into `{data_dir}/packages/{id}` and `{data_dir}/bin`.
