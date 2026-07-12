@@ -50,9 +50,51 @@ function isSlugLikeTitle(title: string): boolean {
   );
 }
 
-function humanizeVaultPath(path: string): string {
-  const name = path.split("/").pop() ?? path;
-  return name.replace(/\.md$/i, "").replaceAll("-", " ");
+function looksLikePath(value: string): boolean {
+  return value.includes("/") || /\.md$/i.test(value);
+}
+
+function looksLikeOpaquePathStem(stem: string): boolean {
+  const trimmed = stem.trim();
+  if (!trimmed) return true;
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(trimmed)) {
+    return true;
+  }
+  if (/^daily-[0-9a-f]{8,}/i.test(trimmed)) return true;
+  if (trimmed.length >= 20 && /^[0-9a-f-]+$/i.test(trimmed)) return true;
+  return false;
+}
+
+/** Soft path whisper for activity — never dump UUID filenames. */
+export function calmVaultPathHint(path: string, summaryOrTitle = ""): string {
+  const parts = path.replaceAll("\\", "/").split("/").filter(Boolean);
+  const file = parts.pop() ?? path;
+  const stem = file.replace(/\.md$/i, "");
+  const folder = parts[parts.length - 1] ?? "";
+  const title = summaryOrTitle.trim().toLowerCase();
+
+  if (looksLikeOpaquePathStem(stem)) {
+    if (!folder || /^(journal|daily|notes|vault)$/i.test(folder)) return "";
+    if (title.includes(folder.toLowerCase())) return "";
+    return folder;
+  }
+
+  const human = stem.replaceAll("-", " ").replaceAll("_", " ").trim();
+  if (human && title.includes(human.toLowerCase())) {
+    if (
+      folder &&
+      !title.includes(folder.toLowerCase()) &&
+      !/^(journal|daily|notes|vault)$/i.test(folder)
+    ) {
+      return folder;
+    }
+    return "";
+  }
+
+  if (folder && !/^(journal|daily|notes|vault)$/i.test(folder)) {
+    return `${folder} · ${human}`;
+  }
+  return human;
 }
 
 export function formatWorkerIntent(raw?: string | null): string {
@@ -148,7 +190,25 @@ export function buildActivityContext(
   event: WorkspaceEvent,
   enrichment: ActivityEnrichment,
 ): string {
-  if (event.context_line?.trim()) return event.context_line.trim();
+  const titleHint = event.detail_line?.trim() ?? "";
+  const vaultPath = vaultRefPath(event);
+  const isVaultKind =
+    event.kind === "vault_note_updated" || event.kind === "vault_note_created";
+
+  if (isVaultKind || vaultPath) {
+    const path =
+      vaultPath ??
+      (event.context_line?.trim() && looksLikePath(event.context_line)
+        ? event.context_line.trim()
+        : null);
+    return path ? calmVaultPathHint(path, titleHint) : "";
+  }
+
+  if (event.context_line?.trim()) {
+    const line = event.context_line.trim();
+    if (looksLikePath(line)) return calmVaultPathHint(line, titleHint);
+    return line;
+  }
 
   const { detail } = enrichment;
   const parts: string[] = [];
@@ -175,11 +235,6 @@ export function buildActivityContext(
     parts.push(
       detail.wrapping_up_reasons.map(humanizeWrappingReason).join(", "),
     );
-  }
-
-  if (event.kind === "vault_note_updated") {
-    const vaultPath = vaultRefPath(event);
-    if (vaultPath) parts.push(humanizeVaultPath(vaultPath));
   }
 
   return parts.join(" · ");

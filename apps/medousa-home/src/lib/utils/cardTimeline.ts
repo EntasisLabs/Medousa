@@ -12,7 +12,8 @@ const EVENT_LABELS: Record<string, string> = {
   turn_accepted: "Turn accepted",
   identity_remembered: "Identity",
   agent_replied: "Reply",
-  vault_note_updated: "Vault linked",
+  vault_note_created: "Vault",
+  vault_note_updated: "Vault",
 };
 
 export function formatWorkspaceEventKind(kind: string): string {
