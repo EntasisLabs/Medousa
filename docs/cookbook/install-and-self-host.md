@@ -1,6 +1,8 @@
 # Install & self-host
 
-For **downloading the Medousa app**, see the [product README](../README.md).
+For **downloading the Medousa app**, see the [product README](../../README.md) and
+**[Getting started](../guides/getting-started.md)**. Optional binaries from the app:
+**[Packages](../guides/packages.md)**.
 
 This guide is for running **Medousa Engine** and CLI tools on a machine you control.
 
@@ -8,23 +10,25 @@ This guide is for running **Medousa Engine** and CLI tools on a machine you cont
 
 ## Install binaries
 
-### Medousa app (recommended)
+### Medousa app (recommended for people)
 
-Download from your release endpoint:
+Download from the release CDN:
 
-```
-{MEDOUSA_RELEASE_BASE_URL}/stable/installer-bootstrap.json
-```
+**[https://releases.entasislabs.com/medousa/stable/installer-bootstrap.json](https://releases.entasislabs.com/medousa/stable/installer-bootstrap.json)**
 
-The bootstrap picks the right artifact per OS:
+That picks the right desktop build for your platform. Open **Medousa** — the
+engine starts with you. Add offline brain / adapters later from
+**Settings → Packages**.
 
-| Platform | Default download | Notes |
-|----------|------------------|-------|
-| **Windows** | Signed `Medousa_*_x64-setup.exe` (desktop) | One install — daemon sidecar bundled. `installerUrl` in bootstrap links to Medousa Installer for add-ons. |
-| **macOS** | Medousa Installer `.dmg` | Component picker on first install. |
-| **Linux** | Medousa Installer AppImage or `.deb` | Same as macOS. |
+Release layout / R2: [release-to-r2.md](release-to-r2.md).
 
-**Self-hosted / R2:** see [release-to-r2.md](release-to-r2.md) for Cloudflare R2 upload, signing, and landing-page wiring.
+### Medousa Installer (optional / advanced)
+
+Full workloads, repair, or modify installs use the same CDN bootstrap above.
+Most Home users never need a separate “installer-only” path after the app is on
+disk — day-to-day extras are **Settings → Packages**.
+
+**Self-hosted / R2 ops:** see [release-to-r2.md](release-to-r2.md) for Cloudflare R2 upload, signing, and landing-page wiring.
 
 ### CLI / headless install
 

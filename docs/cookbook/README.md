@@ -2,7 +2,9 @@
 
 Hands-on guides for **Medousa Engine**, CLI, and self-hosting.
 
-Product users: [README](../README.md) → download **Medousa**.
+**App users:** start with [Using Medousa](../guides/README.md) (getting started, packages, phone, peers).
+
+Product overview: [README](../../README.md) → download **Medousa**.
 
 | Guide | Topic |
 |-------|--------|
@@ -14,6 +16,7 @@ Product users: [README](../README.md) → download **Medousa**.
 | [Build from source](build-from-source.md) | Cargo, Tauri, iPhone dev |
 | [Integrate without the app](integrate-without-the-app.md) | HTTP, MCP, corp patterns |
 | [Mobile & LAN](mobile-and-lan.md) | Pairing, iOS dev, workshop transport |
+| [Peers, portals, and LAN sharing](lan-discovery-and-sharing.md) | Portal vs peer, Iroh, Nearby |
 | [Custom chat UI](custom-chat-ui.md) | Streaming client, artifacts |
 | [Artifacts & presentations](artifacts-and-presentations.md) | HTML artifacts, Library |
 | [Custom views & canvas](custom-views-and-canvas.md) | Pinned dashboards, Settings → Canvas, My views |

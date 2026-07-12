@@ -18,6 +18,8 @@ Talk from the app, Discord, Telegram, Slack, or WhatsApp. Send the big job to th
 
 <p align="center">
   <a href="https://releases.entasislabs.com/medousa/stable/installer-bootstrap.json"><strong>Download Medousa</strong></a>
+  ·
+  <a href="docs/guides/getting-started.md"><strong>Get started</strong></a>
   · Mac · Windows · Linux · iOS &amp; Android companion
 </p>
 
@@ -43,7 +45,7 @@ Talk from the app, Discord, Telegram, Slack, or WhatsApp. Send the big job to th
 | Pin your own pages | Ask Medousa to build **custom views** — braindumps, studios, live dashboards — in the sidebar (**Settings → Canvas**). |
 | Get checked in on | Turn on proactive nudges. Medousa reaches out on a rhythm you choose — with reasoning, not noise. |
 | Run it fully offline | **Private brain** on your device — Gemma, local. Your hardware. Your rules. (Cloud models are optional — bring your own keys.) |
-| Start fresh on a new device | Run **Medousa Installer** or open the app, welcome flow, land in chat. About ninety seconds. No terminal. |
+| Start fresh on a new device | Download **Medousa**, open the welcome flow, land in chat. About a minute. No terminal. Add more later from **Settings → Packages**. |
 
 ### Chat — thinking trace, memory, identity
 <img width="1440" height="900" alt="Chat with thinking trace expanded" src="assets/screenshots/chat-thinking.png" />
@@ -147,18 +149,28 @@ The app is a client. The engine is the product underneath — durable jobs, HTTP
 
 ## Get Medousa
 
-**[Download →](https://releases.entasislabs.com/medousa/stable/installer-bootstrap.json)** (picks the right build for your platform — Windows gets the desktop setup directly)
+1. **[Download Medousa](https://releases.entasislabs.com/medousa/stable/installer-bootstrap.json)** — picks the right build for your platform from our release CDN (`releases.entasislabs.com`).
+2. Open the app → welcome flow → chat. About a minute. Guide: **[Getting started](docs/guides/getting-started.md)**.
+3. Need offline brain, adapters, CLI, or MCP? **Settings → Packages** — **[Packages guide](docs/guides/packages.md)**.
 
-Or browse [GitHub Releases](https://github.com/EntasisLabs/Medousa/releases) · [install & self-host](docs/cookbook/install-and-self-host.md)
+**Using Medousa:** [guides index](docs/guides/README.md) — phone, peers, memory, channels, workshop & automations.
 
-**Medousa** — Mac, Windows, Linux desktop app (Windows: one signed setup). **Medousa Installer** — optional add-ons and component picker (Mac/Linux default download; also linked from the Windows bootstrap as `installerUrl`). **iOS / Android** — companion; pairs to a desktop engine via QR.
+**Medousa Installer** remains available for full workloads / repair when you need it; most day-to-day extras land in **Settings → Packages** after the app is installed.
 
-Open it. Pick your model path in the welcome flow. If you chose private mode, the model downloads to your device. Land in chat. About ninety seconds.
+**iOS / Android** — companion apps pair to a desktop engine via QR ([phone pairing](docs/guides/phone-pairing.md)).
+
+Engine / CLI self-host: [install & self-host](docs/cookbook/install-and-self-host.md) · [Developer docs](docs/README.md) · release CDN notes: [release-to-r2](docs/cookbook/release-to-r2.md)
+
+---
+
+## License
+
+Dual-licensed under **MIT OR Apache-2.0**. See [LICENSE](LICENSE), [LICENSE-MIT](LICENSE-MIT), and [LICENSE-APACHE](LICENSE-APACHE).
+
+Security reports: [SECURITY.md](SECURITY.md) · Contributing: [CONTRIBUTING.md](CONTRIBUTING.md)
 
 ---
 
 ## Built on Stasis, Locus, and Resonantia
 
 Medousa is not a chat wrapper pretending to be durable. **[Stasis](https://github.com/EntasisLabs/stasis)** makes work finish and survive restarts. **[Locus](https://github.com/EntasisLabs/locus)** makes memory structured and retrievable. **[Resonantia](https://resonantia.me)** is the sibling surface — same foundation, memory made visible as terrain.
-
----

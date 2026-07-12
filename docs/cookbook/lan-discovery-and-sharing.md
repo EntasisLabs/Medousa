@@ -1,5 +1,9 @@
 # Peers, portals, and LAN sharing
 
+**Audience:** app users and operators who care about pairing scope.
+
+> App-user short path: **[Peers & Nearby](../guides/peers-and-nearby.md)**.
+
 Medousa treats the **daemon as the app**. Phones, desktops, and Peers are **surfaces** that connect with credentials. There are two different relationships:
 
 | Role | Meaning | Where it appears | Access |
