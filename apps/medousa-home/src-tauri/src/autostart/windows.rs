@@ -72,7 +72,7 @@ fn render_start_script(spec: &AutostartSpec, log_path: &PathBuf) -> String {
     let mut script = format!(
         "@echo off\r\n\
          cd /d {}\r\n\
-         start \"\" /B {} {} >> {} 2>&1\r\n",
+         start \"Medousa Engine\" /B {} {} >> {} 2>&1\r\n",
         batch_quote(&work_dir),
         batch_quote(&spec.program),
         args,
@@ -88,7 +88,7 @@ fn render_start_script(spec: &AutostartSpec, log_path: &PathBuf) -> String {
             .join(" ");
         let local_log = super::spec::local_brain_log_path();
         script.push_str(&format!(
-            "start \"\" /B {} {} >> {} 2>&1\r\n",
+            "start \"Medousa Brain\" /B {} {} >> {} 2>&1\r\n",
             batch_quote(&local.program),
             local_args,
             batch_quote(&local_log.display().to_string()),

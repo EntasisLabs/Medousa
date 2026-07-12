@@ -583,7 +583,14 @@ fn detach_new_session(command: &mut Command) {
     }
 }
 
-#[cfg(not(unix))]
+#[cfg(windows)]
+fn detach_new_session(command: &mut Command) {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    command.creation_flags(CREATE_NO_WINDOW);
+}
+
+#[cfg(not(any(unix, windows)))]
 fn detach_new_session(_command: &mut Command) {}
 
 fn spawn_gateway_background(bind: &str) -> Result<(u32, PathBuf), String> {
