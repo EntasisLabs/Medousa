@@ -10,6 +10,7 @@ use crate::agent_runtime::turn_worker::TurnWorkerIntent;
 use crate::cognitive_identity::DigestCompileOptions;
 use crate::openshell_sandbox_run::resolve_policy_template_path;
 use crate::openshell_tools::is_openshell_cognition_tool;
+use crate::shell_tools::is_shell_cognition_tool;
 use crate::skill_tools::is_skill_cognition_tool;
 use crate::stage_routing::{StageRoutingMatrix, normalize_role};
 
@@ -194,6 +195,8 @@ pub fn scheduled_lane_tool_universe() -> HashSet<String> {
     universe.extend(allowed_tool_names_for_intent(TurnWorkerIntent::MemoryContext));
     universe.remove("cognition_identity_remember");
     universe.remove("cognition_spawn_turn_worker");
+    // OS-native shell stays interactive-only for now (no scheduled allow flag yet).
+    universe.retain(|tool| !is_shell_cognition_tool(tool));
     universe
 }
 
@@ -203,6 +206,9 @@ pub fn scheduled_tool_allowlist_for_manuscript(manuscript: &ManuscriptContext) -
     let universe = scheduled_lane_tool_universe();
     let mut allow = HashSet::new();
     for tool in &manuscript.tools_allow {
+        if is_shell_cognition_tool(tool) {
+            continue;
+        }
         if (is_openshell_cognition_tool(tool) || is_skill_cognition_tool(tool))
             && !manuscript.openshell_allow_scheduled
         {
@@ -230,6 +236,13 @@ pub fn validate_manuscript_for_scheduled_lane(manuscript: &ManuscriptContext) ->
         .any(|tool| tool.contains("identity_remember"))
     {
         bail!("cognition_identity_remember is not allowed on scheduled manuscript lane");
+    }
+    if manuscript
+        .tools_allow
+        .iter()
+        .any(|tool| is_shell_cognition_tool(tool))
+    {
+        bail!("cognition_shell_* tools are denied on scheduled lane");
     }
     if manuscript
         .tools_allow
@@ -880,6 +893,12 @@ pub fn scheduled_tool_preview(
                     tool: tool.clone(),
                     allowed_on_schedule: false,
                     reason: Some("Not permitted on scheduled lane".to_string()),
+                }
+            } else if is_shell_cognition_tool(tool) {
+                ManuscriptScheduledToolEntry {
+                    tool: tool.clone(),
+                    allowed_on_schedule: false,
+                    reason: Some("Medousa shell tools are interactive-only".to_string()),
                 }
             } else if (is_openshell_cognition_tool(tool) || is_skill_cognition_tool(tool))
                 && !manuscript.openshell_allow_scheduled

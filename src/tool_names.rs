@@ -67,6 +67,8 @@ pub const REGISTERED_COGNITION_TOOLS: &[&str] = &[
     "cognition_grapheme_template_run",
     "cognition_openshell_status",
     "cognition_openshell_sandbox_run",
+    "cognition_shell_status",
+    "cognition_shell_run",
     "cognition_skill_discover",
     "cognition_skill_propose",
     "cognition_skill_probe",

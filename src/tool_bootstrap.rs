@@ -296,6 +296,8 @@ pub fn worker_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
                     "cognition_grapheme_cli_run",
                     "cognition_mcp_invoke",
                     "cognition_grapheme_template_run",
+                    "cognition_shell_status",
+                    "cognition_shell_run",
                 ],
             },
             ToolDomainCatalogEntry {

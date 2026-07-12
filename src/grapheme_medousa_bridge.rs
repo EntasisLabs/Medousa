@@ -71,9 +71,22 @@ fn bridge_deps() -> Option<Arc<MedousaBridgeDeps>> {
 
 pub fn configure_grapheme_engine_builder(builder: GraphemeEngineBuilder) -> GraphemeEngineBuilder {
     builder
-        .configure_module_registry(register_medousa_host_module)
+        .configure_module_registry(|registry| {
+            register_medousa_host_module(registry);
+            crate::shell_grapheme::register_shell_host_module(registry);
+        })
         .with_default_hotload_store()
-        .with_capability_interceptor(medousa_capability_interceptor())
+        .with_capability_interceptor(medousa_and_shell_capability_interceptor())
+}
+
+fn medousa_and_shell_capability_interceptor(
+) -> impl Fn(&CapabilityCall) -> Option<Result<Value, HostCallError>> + Send + Sync + 'static {
+    move |call: &CapabilityCall| {
+        if let Some(result) = try_medousa_call(call) {
+            return Some(result);
+        }
+        crate::shell_grapheme::intercept_shell_call(call)
+    }
 }
 
 fn register_medousa_host_module(registry: &mut grapheme_runtime::ModuleRegistry) {
@@ -256,22 +269,19 @@ impl WorkflowEngine for MedousaWorkflowEngine {
     }
 }
 
-fn medousa_capability_interceptor(
-) -> impl Fn(&CapabilityCall) -> Option<Result<Value, HostCallError>> + Send + Sync + 'static {
-    move |call: &CapabilityCall| {
-        if !is_medousa_call(call) {
-            return None;
-        }
-        let op = resolve_medousa_op(call);
-        match op.as_str() {
-            "digest" => Some(handle_digest(&call.args)),
-            "synthesize" => Some(handle_synthesize(&call.args)),
-            "deliver" => Some(handle_deliver(&call.args)),
-            other => Some(Err(HostCallError::Fatal(format!(
-                "unsupported medousa op '{other}' (expected digest, synthesize, or deliver)"
-            )))),
-        }
+fn try_medousa_call(call: &CapabilityCall) -> Option<Result<Value, HostCallError>> {
+    if !is_medousa_call(call) {
+        return None;
     }
+    let op = resolve_medousa_op(call);
+    Some(match op.as_str() {
+        "digest" => handle_digest(&call.args),
+        "synthesize" => handle_synthesize(&call.args),
+        "deliver" => handle_deliver(&call.args),
+        other => Err(HostCallError::Fatal(format!(
+            "unsupported medousa op '{other}' (expected digest, synthesize, or deliver)"
+        ))),
+    })
 }
 
 fn is_medousa_call(call: &CapabilityCall) -> bool {
