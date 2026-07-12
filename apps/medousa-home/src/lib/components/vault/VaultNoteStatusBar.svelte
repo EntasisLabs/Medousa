@@ -12,41 +12,32 @@
 
   const stats = $derived(vaultNoteStats(content));
   const summary = $derived(formatVaultNoteStats(stats));
-  const displayTags = $derived(sortVaultTagsForDisplay(tags).slice(0, 6));
+  const displayTags = $derived(sortVaultTagsForDisplay(tags).slice(0, 4));
   const extraTagCount = $derived(Math.max(0, tags.length - displayTags.length));
+  const tagLine = $derived.by(() => {
+    if (displayTags.length === 0) return "";
+    const base = displayTags.join(" · ");
+    return extraTagCount > 0 ? `${base} · +${extraTagCount}` : base;
+  });
 </script>
 
-<footer class="vault-note-status workshop-status" aria-label="Note statistics">
-  <span class="workshop-status-whisper text-surface-400">
-    <span class="workshop-status-dot workshop-status-dot-muted" aria-hidden="true"></span>
-    <span class="text-surface-300">{summary}</span>
-  </span>
-
-  <div class="flex min-w-0 flex-1 items-center gap-2 overflow-hidden px-3">
-    {#if displayTags.length > 0}
-      <ul class="flex min-w-0 flex-wrap items-center gap-1" aria-label="Semantic tags">
-        {#each displayTags as tag (tag)}
-          <li>
-            <span class="badge preset-tonal-surface text-[10px] font-medium">{tag}</span>
-          </li>
-        {/each}
-        {#if extraTagCount > 0}
-          <li class="text-[10px] text-surface-500">+{extraTagCount}</li>
-        {/if}
-      </ul>
+<footer class="vault-note-status" aria-label="Note statistics">
+  <p class="vault-note-status-line">
+    <span>{summary}</span>
+    {#if tagLine}
+      <span class="vault-note-status-sep" aria-hidden="true">·</span>
+      <span class="vault-note-status-tags truncate">{tagLine}</span>
     {/if}
-  </div>
-
-  <div class="flex shrink-0 items-center gap-3 text-surface-500">
-    <span>{stats.characters.toLocaleString()} characters</span>
+    <span class="vault-note-status-sep" aria-hidden="true">·</span>
+    <span class="tabular-nums">{stats.characters.toLocaleString()} chars</span>
+  </p>
+  <p class="vault-note-status-hints">
     {#if editorMode === "preview"}
-      <span class="hidden sm:inline">
-        <kbd class="vault-kbd">⌘F</kbd> find
-      </span>
+      <kbd class="vault-kbd">⌘F</kbd> find
     {:else}
-      <span class="hidden sm:inline">
-        <kbd class="vault-kbd">⌘F</kbd> find · <kbd class="vault-kbd">⌘S</kbd> save
-      </span>
+      <kbd class="vault-kbd">⌘F</kbd> find
+      <span class="vault-note-status-sep" aria-hidden="true">·</span>
+      <kbd class="vault-kbd">⌘S</kbd> save
     {/if}
-  </div>
+  </p>
 </footer>

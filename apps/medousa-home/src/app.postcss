@@ -7747,12 +7747,96 @@
     @apply border-0 bg-transparent px-1 py-0.5;
   }
 
+  .vault-note-status {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-shrink: 0;
+    min-height: 1.5rem;
+    padding: 0.2rem 1rem 0.35rem;
+    border-top: 1px solid rgb(var(--shell-border, var(--color-surface-500)) / 0.18);
+    background: transparent;
+    color: rgb(var(--shell-muted, var(--color-surface-500)));
+    font-size: 0.625rem;
+    letter-spacing: 0.01em;
+  }
+
+  .vault-note-status-line {
+    margin: 0;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    overflow: hidden;
+    white-space: nowrap;
+    opacity: 0.72;
+  }
+
+  .vault-note-status-sep {
+    opacity: 0.45;
+  }
+
+  .vault-note-status-tags {
+    min-width: 0;
+  }
+
+  .vault-note-status-hints {
+    margin: 0;
+    flex-shrink: 0;
+    display: none;
+    align-items: center;
+    gap: 0.35rem;
+    opacity: 0;
+    transition: opacity 140ms ease;
+  }
+
+  @media (min-width: 640px) {
+    .vault-note-status-hints {
+      display: inline-flex;
+    }
+
+    .vault-note-status:hover .vault-note-status-hints,
+    .vault-note-status:focus-within .vault-note-status-hints {
+      opacity: 0.7;
+    }
+  }
+
   .vault-note-chat-fab-root {
-    @apply pointer-events-none absolute bottom-5 right-5 z-20;
+    pointer-events: none;
+    position: absolute;
+    right: 1rem;
+    bottom: 2.75rem;
+    z-index: 20;
   }
 
   .vault-note-chat-fab {
-    @apply pointer-events-auto flex h-14 w-14 items-center justify-center rounded-full border border-primary-400/30 bg-primary-600 text-surface-50 shadow-lg transition hover:scale-[1.03] hover:bg-primary-500 active:scale-95 disabled:opacity-50;
+    pointer-events: auto;
+    display: flex;
+    height: 2.5rem;
+    width: 2.5rem;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    border: 1px solid rgb(var(--color-primary-500) / 0.25);
+    background: rgb(var(--color-primary-600) / 0.88);
+    color: rgb(var(--color-surface-50));
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
+    transition:
+      background 140ms ease,
+      transform 140ms ease;
+  }
+
+  .vault-note-chat-fab:hover {
+    background: rgb(var(--color-primary-500));
+  }
+
+  .vault-note-chat-fab:active {
+    transform: scale(0.96);
+  }
+
+  .vault-note-chat-fab:disabled {
+    opacity: 0.5;
   }
 
   .vault-note-chat-session-backdrop {
@@ -8126,10 +8210,6 @@
   .vault-find-editor-input--active::selection {
     background-color: rgb(var(--color-warning-300) / 0.55);
     color: transparent;
-  }
-
-  .vault-note-status {
-    @apply h-7 shrink-0 justify-between px-4 text-[11px];
   }
 
   .vault-find-mark {
