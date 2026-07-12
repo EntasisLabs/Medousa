@@ -160,7 +160,7 @@
         <div class="min-w-0">
           <h1 class="text-base font-semibold text-surface-50">Messaging</h1>
           <p class="workshop-header-line mt-1">
-            Channels — who can reach the workshop and where she replies
+            Doors into the workshop — open one, then tell her who may walk through.
           </p>
         </div>
         <button
@@ -173,12 +173,12 @@
       </div>
 
       {#if !mobile || !mobileDetailOpen}
-        <label class="mt-3 block">
+        <label class="mt-3 block max-w-md">
           <span class="sr-only">Search messaging</span>
           <input
-            class="input w-full max-w-lg text-sm"
+            class="input w-full text-sm"
             type="search"
-            placeholder="Search messaging…"
+            placeholder="Search channels…"
             bind:value={search}
           />
         </label>
