@@ -3,7 +3,7 @@
 //! Default backends (no Docker / OpenShell):
 //! - Linux: bubblewrap when available, else systemd-run hardening
 //! - macOS: Seatbelt via `sandbox-exec`
-//! - Windows: process spawn with job-style limits (soft FS isolation for now)
+//! - Windows: Job Object (kill-on-close, memory/UI limits, CREATE_NO_WINDOW)
 
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -12,6 +12,10 @@ use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+
+#[cfg(windows)]
+#[path = "shell_sandbox_windows.rs"]
+mod windows_job;
 
 const DEFAULT_TIMEOUT_MS: u64 = 30_000;
 const DEFAULT_MAX_OUTPUT_BYTES: usize = 256 * 1024;
@@ -260,13 +264,13 @@ pub fn probe_shell_sandbox() -> ShellSandboxStatus {
     }
     #[cfg(target_os = "windows")]
     {
+        let (backend, sandboxed, detail) = windows_job::probe_backend();
         ShellSandboxStatus {
             os: "windows".to_string(),
-            backend: "process".to_string(),
+            backend: backend.to_string(),
             ready: true,
-            sandboxed: false,
-            detail: "Windows process spawn with timeout (AppContainer FS jail planned)"
-                .to_string(),
+            sandboxed,
+            detail,
         }
     }
     #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
@@ -314,12 +318,17 @@ pub fn run_sandboxed(request: &ShellRunRequest) -> Result<ShellRunResult, String
     }
     #[cfg(target_os = "windows")]
     {
-        run_unsandboxed(
-            request,
-            &cwd,
-            "process",
-            Some("Windows AppContainer jail not yet enabled; timeout-only".to_string()),
-        )
+        match windows_job::run_with_job(request, &cwd) {
+            Ok(result) => Ok(result),
+            Err(err) => run_unsandboxed(
+                request,
+                &cwd,
+                "process",
+                Some(format!(
+                    "Windows Job Object unavailable ({err}); ran with timeout only"
+                )),
+            ),
+        }
     }
     #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
     {
@@ -578,7 +587,7 @@ fn canonicalize_or_clone(path: &Path) -> PathBuf {
     path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
 }
 
-fn default_path() -> String {
+pub(super) fn default_path() -> String {
     #[cfg(windows)]
     {
         r"C:\Windows\System32;C:\Windows".to_string()
@@ -661,7 +670,7 @@ fn wait_command(
     })
 }
 
-fn read_limited(mut pipe: impl Read, max_bytes: usize) -> String {
+pub(super) fn read_limited(mut pipe: impl Read, max_bytes: usize) -> String {
     let mut buf = Vec::new();
     let mut chunk = [0u8; 8192];
     loop {

@@ -7232,6 +7232,7 @@ dependencies = [
  "tracing-subscriber",
  "urlencoding",
  "uuid 1.23.1",
+ "windows 0.61.3",
 ]
 
 [[package]]
