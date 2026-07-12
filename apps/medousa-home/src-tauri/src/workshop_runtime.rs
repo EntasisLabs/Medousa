@@ -230,7 +230,9 @@ fn detach_new_session(command: &mut Command) {
 }
 
 #[cfg(not(unix))]
-fn detach_new_session(_command: &mut Command) {}
+fn detach_new_session(command: &mut Command) {
+    medousa_host::detach_new_session(command);
+}
 
 pub fn engine_runtime_dir(workshop_id: &str) -> PathBuf {
     crate::paths::medousa_data_dir()
