@@ -29,7 +29,7 @@
     <p class="context-witness-kicker">{kicker}</p>
   {:else if showChip}
     <div class="flex flex-wrap items-center gap-2">
-      <WorkshopLivelinessChip variant={chipVariant} label={chipLabel} />
+      <WorkshopLivelinessChip variant={chipVariant} label={chipLabel ?? undefined} />
     </div>
   {/if}
   <h2 class="context-witness-title {kicker || showChip ? 'mt-3' : ''}">{title}</h2>

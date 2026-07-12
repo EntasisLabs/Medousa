@@ -14,7 +14,7 @@
     groupChatModelOptions,
     type ChatModelPickOption,
   } from "$lib/utils/chatModelPicker";
-  import { resolveModelDisplayLabel } from "$lib/utils/modelCatalog";
+  import { normalizeFavoriteModels, resolveModelDisplayLabel } from "$lib/utils/modelCatalog";
   import { listProviders, probeProviders } from "$lib/utils/providersApi";
   import { mobileComposerRoutingHint } from "$lib/platformCopy";
   import { attachMobileSheetGestures } from "$lib/utils/mobileSheetGestures";

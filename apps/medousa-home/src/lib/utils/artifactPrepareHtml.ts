@@ -20,7 +20,11 @@ import {
 import type { HostThemeTokens } from "$lib/utils/environmentTheme";
 import { legacyHostThemeTokens } from "$lib/utils/environmentTheme";
 
+/** Embed chrome for sandboxed HTML artifacts (inline / panel / fullscreen). */
+export type ArtifactEmbedMode = "inline" | "panel" | "fullscreen";
+
 const THEME_STYLE_ID = "medousa-artifact-theme";
+
 const MODE_STYLE_ID = "medousa-artifact-mode";
 const FEED_CLIENT_STYLE_ID = "medousa-feed-client-style";
 const ARTIFACT_METRICS_SCRIPT_ID = "medousa-artifact-metrics-script";

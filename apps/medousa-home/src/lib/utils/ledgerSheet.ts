@@ -134,12 +134,21 @@ export function columnDisplayLabel(rawHeader: string): string {
 
 export function mergeColumnMeta(
   column: LedgerColumn,
-  patch: Partial<LedgerColumnMeta>,
+  patch: Partial<{
+    width: string;
+    type: LedgerColumnType | "";
+    align: LedgerColumnAlign | "";
+    color: MarkdownColorId | "";
+  }>,
 ): LedgerColumn {
-  const nextMeta: LedgerColumnMeta = { ...column.meta, ...patch };
-  for (const key of Object.keys(patch) as (keyof LedgerColumnMeta)[]) {
-    if (patch[key] === undefined || patch[key] === "") {
+  const nextMeta: LedgerColumnMeta = { ...column.meta };
+  for (const key of ["width", "type", "align", "color"] as const) {
+    if (!(key in patch)) continue;
+    const value = patch[key];
+    if (value === undefined || value === "") {
       delete nextMeta[key];
+    } else {
+      nextMeta[key] = value as never;
     }
   }
   return { label: column.label, meta: nextMeta };

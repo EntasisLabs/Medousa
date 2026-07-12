@@ -1,21 +1,40 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { preprocessLiquidEmbeds } from "./liquidEmbeds";
 
-const mountMock = vi.fn(() => ({}));
-const unmountMock = vi.fn(async () => {});
+type MountHostProps = {
+  kind: string;
+  payload: unknown;
+  context?: unknown;
+};
+
+type MountOptions = {
+  target?: unknown;
+  props: MountHostProps;
+};
+
+const mountMock = vi.fn((_component: unknown, _options: MountOptions) => ({}));
+const unmountMock = vi.fn(async (_instance: unknown) => {});
 
 vi.mock("svelte", async () => {
   const actual = await vi.importActual<typeof import("svelte")>("svelte");
   return {
     ...actual,
-    mount: (...args: unknown[]) => mountMock(...args),
-    unmount: (...args: unknown[]) => unmountMock(...args),
+    mount: mountMock as unknown as typeof actual.mount,
+    unmount: unmountMock as unknown as typeof actual.unmount,
   };
 });
 
 vi.mock("./LiquidMdHost.svelte", () => ({
   default: { name: "LiquidMdHost" },
 }));
+
+function hostProps(call: (typeof mountMock.mock.calls)[number]): MountHostProps {
+  return call[1].props;
+}
+
+function findHostCall(kind: string) {
+  return mountMock.mock.calls.find((call) => hostProps(call).kind === kind);
+}
 
 type FakeEl = {
   dataset: Record<string, string | undefined>;
@@ -124,32 +143,20 @@ describe("hydrateLiquidEmbeds", () => {
 
     expect(mountMock).toHaveBeenCalledTimes(4);
 
-    const kinds = mountMock.mock.calls.map((call) => {
-      const props = (call[1] as { props: { kind: string; payload: unknown } }).props;
-      return props.kind;
-    });
+    const kinds = mountMock.mock.calls.map((call) => hostProps(call).kind);
     expect(kinds).toEqual(["card", "carousel", "actions", "icon"]);
 
-    const cardCall = mountMock.mock.calls.find(
-      (call) => (call[1] as { props: { kind: string } }).props.kind === "card",
-    );
-    expect((cardCall![1] as { props: { payload: { title: string } } }).props.payload.title).toBe(
-      "Sol",
-    );
+    const cardCall = findHostCall("card");
+    expect((hostProps(cardCall!).payload as { title: string }).title).toBe("Sol");
 
-    const carouselCall = mountMock.mock.calls.find(
-      (call) => (call[1] as { props: { kind: string } }).props.kind === "carousel",
-    );
-    const carouselPayload = (carouselCall![1] as { props: { payload: { items: unknown[] } } })
-      .props.payload;
+    const carouselCall = findHostCall("carousel");
+    const carouselPayload = hostProps(carouselCall!).payload as { items: unknown[] };
     expect(carouselPayload.items).toHaveLength(2);
 
-    const actionsCall = mountMock.mock.calls.find(
-      (call) => (call[1] as { props: { kind: string } }).props.kind === "actions",
-    );
-    const actionsPayload = (
-      actionsCall![1] as { props: { payload: { actions: { intent?: string }[] } } }
-    ).props.payload;
+    const actionsCall = findHostCall("actions");
+    const actionsPayload = hostProps(actionsCall!).payload as {
+      actions: { intent?: string }[];
+    };
     expect(actionsPayload.actions[0].intent).toBe("coding");
 
     destroyLiquidEmbeds(root);
@@ -185,9 +192,7 @@ describe("hydrateLiquidEmbeds", () => {
     const { hydrateLiquidEmbeds, destroyLiquidEmbeds } = await import("./hydrateLiquidEmbeds");
     hydrateLiquidEmbeds(root, {});
 
-    const kinds = mountMock.mock.calls.map(
-      (call) => (call[1] as { props: { kind: string } }).props.kind,
-    );
+    const kinds = mountMock.mock.calls.map((call) => hostProps(call).kind);
     expect(kinds).toEqual(["callout", "section", "chips", "media"]);
     destroyLiquidEmbeds(root);
     expect(unmountMock).toHaveBeenCalledTimes(4);
@@ -209,15 +214,12 @@ describe("hydrateLiquidEmbeds", () => {
     const { hydrateLiquidEmbeds, destroyLiquidEmbeds } = await import("./hydrateLiquidEmbeds");
     hydrateLiquidEmbeds(root, {});
 
-    const kinds = mountMock.mock.calls.map(
-      (call) => (call[1] as { props: { kind: string } }).props.kind,
-    );
+    const kinds = mountMock.mock.calls.map((call) => hostProps(call).kind);
     expect(kinds).toEqual(["cite"]);
-    const citeCall = mountMock.mock.calls.find(
-      (call) => (call[1] as { props: { kind: string } }).props.kind === "cite",
-    );
-    const citePayload = (citeCall![1] as { props: { payload: { quote?: string; title?: string } } })
-      .props.payload;
+    const citePayload = hostProps(findHostCall("cite")!).payload as {
+      quote?: string;
+      title?: string;
+    };
     expect(citePayload.quote).toBe("Excerpt");
     expect(citePayload.title).toBe("Source");
     destroyLiquidEmbeds(root);
@@ -242,24 +244,13 @@ describe("hydrateLiquidEmbeds", () => {
     const { hydrateLiquidEmbeds, destroyLiquidEmbeds } = await import("./hydrateLiquidEmbeds");
     hydrateLiquidEmbeds(root, {});
 
-    const kinds = mountMock.mock.calls.map(
-      (call) => (call[1] as { props: { kind: string } }).props.kind,
-    );
+    const kinds = mountMock.mock.calls.map((call) => hostProps(call).kind);
     expect(kinds).toEqual(["compare"]);
-    const compareCall = mountMock.mock.calls.find(
-      (call) => (call[1] as { props: { kind: string } }).props.kind === "compare",
-    );
-    const comparePayload = (
-      compareCall![1] as {
-        props: {
-          payload: {
-            title?: string;
-            entities: { label: string }[];
-            axes: { label: string }[];
-          };
-        };
-      }
-    ).props.payload;
+    const comparePayload = hostProps(findHostCall("compare")!).payload as {
+      title?: string;
+      entities: { label: string }[];
+      axes: { label: string }[];
+    };
     expect(comparePayload.title).toBe("Laptops");
     expect(comparePayload.entities.map((e) => e.label)).toEqual(["Sol", "Terra"]);
     expect(comparePayload.axes.map((a) => a.label)).toEqual(["Speed"]);
@@ -287,23 +278,12 @@ describe("hydrateLiquidEmbeds", () => {
     const { hydrateLiquidEmbeds, destroyLiquidEmbeds } = await import("./hydrateLiquidEmbeds");
     hydrateLiquidEmbeds(root, {});
 
-    const kinds = mountMock.mock.calls.map(
-      (call) => (call[1] as { props: { kind: string } }).props.kind,
-    );
+    const kinds = mountMock.mock.calls.map((call) => hostProps(call).kind);
     expect(kinds).toEqual(["plan"]);
-    const planCall = mountMock.mock.calls.find(
-      (call) => (call[1] as { props: { kind: string } }).props.kind === "plan",
-    );
-    const planPayload = (
-      planCall![1] as {
-        props: {
-          payload: {
-            title?: string;
-            segments: { label: string; time?: string }[];
-          };
-        };
-      }
-    ).props.payload;
+    const planPayload = hostProps(findHostCall("plan")!).payload as {
+      title?: string;
+      segments: { label: string; time?: string }[];
+    };
     expect(planPayload.title).toBe("Trip flow");
     expect(planPayload.segments.map((s) => s.label)).toEqual(["Arrive", "Explore"]);
     destroyLiquidEmbeds(root);
@@ -330,23 +310,12 @@ describe("hydrateLiquidEmbeds", () => {
     const { hydrateLiquidEmbeds, destroyLiquidEmbeds } = await import("./hydrateLiquidEmbeds");
     hydrateLiquidEmbeds(root, {});
 
-    const kinds = mountMock.mock.calls.map(
-      (call) => (call[1] as { props: { kind: string } }).props.kind,
-    );
+    const kinds = mountMock.mock.calls.map((call) => hostProps(call).kind);
     expect(kinds).toEqual(["timeline"]);
-    const timelineCall = mountMock.mock.calls.find(
-      (call) => (call[1] as { props: { kind: string } }).props.kind === "timeline",
-    );
-    const timelinePayload = (
-      timelineCall![1] as {
-        props: {
-          payload: {
-            title?: string;
-            events: { label: string; ts?: string }[];
-          };
-        };
-      }
-    ).props.payload;
+    const timelinePayload = hostProps(findHostCall("timeline")!).payload as {
+      title?: string;
+      events: { label: string; ts?: string }[];
+    };
     expect(timelinePayload.title).toBe("Ship log");
     expect(timelinePayload.events.map((e) => e.label)).toEqual(["Arrive", "Explore"]);
     destroyLiquidEmbeds(root);
@@ -373,23 +342,12 @@ describe("hydrateLiquidEmbeds", () => {
     const { hydrateLiquidEmbeds, destroyLiquidEmbeds } = await import("./hydrateLiquidEmbeds");
     hydrateLiquidEmbeds(root, {});
 
-    const kinds = mountMock.mock.calls.map(
-      (call) => (call[1] as { props: { kind: string } }).props.kind,
-    );
+    const kinds = mountMock.mock.calls.map((call) => hostProps(call).kind);
     expect(kinds).toEqual(["shortlist"]);
-    const shortlistCall = mountMock.mock.calls.find(
-      (call) => (call[1] as { props: { kind: string } }).props.kind === "shortlist",
-    );
-    const shortlistPayload = (
-      shortlistCall![1] as {
-        props: {
-          payload: {
-            title?: string;
-            items: { label: string; score?: string }[];
-          };
-        };
-      }
-    ).props.payload;
+    const shortlistPayload = hostProps(findHostCall("shortlist")!).payload as {
+      title?: string;
+      items: { label: string; score?: string }[];
+    };
     expect(shortlistPayload.title).toBe("Picks");
     expect(shortlistPayload.items.map((i) => i.label)).toEqual(["Shinjuku", "Asakusa"]);
     destroyLiquidEmbeds(root);
@@ -419,24 +377,13 @@ describe("hydrateLiquidEmbeds", () => {
     const { hydrateLiquidEmbeds, destroyLiquidEmbeds } = await import("./hydrateLiquidEmbeds");
     hydrateLiquidEmbeds(root, {});
 
-    const kinds = mountMock.mock.calls.map(
-      (call) => (call[1] as { props: { kind: string } }).props.kind,
-    );
+    const kinds = mountMock.mock.calls.map((call) => hostProps(call).kind);
     expect(kinds).toEqual(["decision"]);
-    const decisionCall = mountMock.mock.calls.find(
-      (call) => (call[1] as { props: { kind: string } }).props.kind === "decision",
-    );
-    const decisionPayload = (
-      decisionCall![1] as {
-        props: {
-          payload: {
-            title?: string;
-            recommendation?: string;
-            options: { label: string; pros: string[] }[];
-          };
-        };
-      }
-    ).props.payload;
+    const decisionPayload = hostProps(findHostCall("decision")!).payload as {
+      title?: string;
+      recommendation?: string;
+      options: { label: string; pros: string[] }[];
+    };
     expect(decisionPayload.title).toBe("Pick");
     expect(decisionPayload.recommendation).toBe("Sol");
     expect(decisionPayload.options.map((o) => o.label)).toEqual(["Sol", "Terra"]);
@@ -467,24 +414,13 @@ describe("hydrateLiquidEmbeds", () => {
     const { hydrateLiquidEmbeds, destroyLiquidEmbeds } = await import("./hydrateLiquidEmbeds");
     hydrateLiquidEmbeds(root, {});
 
-    const kinds = mountMock.mock.calls.map(
-      (call) => (call[1] as { props: { kind: string } }).props.kind,
-    );
+    const kinds = mountMock.mock.calls.map((call) => hostProps(call).kind);
     expect(kinds).toEqual(["brief"]);
-    const briefCall = mountMock.mock.calls.find(
-      (call) => (call[1] as { props: { kind: string } }).props.kind === "brief",
-    );
-    const briefPayload = (
-      briefCall![1] as {
-        props: {
-          payload: {
-            title?: string;
-            sections: { heading: string }[];
-            sources?: { title: string }[];
-          };
-        };
-      }
-    ).props.payload;
+    const briefPayload = hostProps(findHostCall("brief")!).payload as {
+      title?: string;
+      sections: { heading: string }[];
+      sources?: { title: string }[];
+    };
     expect(briefPayload.title).toBe("Why Tokyo first");
     expect(briefPayload.sections.map((s) => s.heading)).toEqual(["Easy logistics"]);
     expect(briefPayload.sources?.map((s) => s.title)).toEqual(["JNTO"]);
@@ -513,23 +449,12 @@ describe("hydrateLiquidEmbeds", () => {
     const { hydrateLiquidEmbeds, destroyLiquidEmbeds } = await import("./hydrateLiquidEmbeds");
     hydrateLiquidEmbeds(root, {});
 
-    const kinds = mountMock.mock.calls.map(
-      (call) => (call[1] as { props: { kind: string } }).props.kind,
-    );
+    const kinds = mountMock.mock.calls.map((call) => hostProps(call).kind);
     expect(kinds).toEqual(["dashboard"]);
-    const dashCall = mountMock.mock.calls.find(
-      (call) => (call[1] as { props: { kind: string } }).props.kind === "dashboard",
-    );
-    const dashPayload = (
-      dashCall![1] as {
-        props: {
-          payload: {
-            title?: string;
-            tiles: { label: string; value: string }[];
-          };
-        };
-      }
-    ).props.payload;
+    const dashPayload = hostProps(findHostCall("dashboard")!).payload as {
+      title?: string;
+      tiles: { label: string; value: string }[];
+    };
     expect(dashPayload.title).toBe("Trip pulse");
     expect(dashPayload.tiles.map((t) => t.label)).toEqual(["Days locked", "Budget used"]);
     destroyLiquidEmbeds(root);

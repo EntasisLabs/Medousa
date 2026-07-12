@@ -28,7 +28,9 @@
   const summary = $derived(typeof node.props.summary === "string" ? node.props.summary : "");
   const chips = $derived(
     Array.isArray(node.props.chips)
-      ? (node.props.chips as unknown[]).filter((c): c is string => typeof c === "string" && c.trim())
+      ? (node.props.chips as unknown[]).filter(
+          (c): c is string => typeof c === "string" && c.trim().length > 0,
+        )
       : [],
   );
   const points = $derived.by((): LiquidCardPoint[] => {

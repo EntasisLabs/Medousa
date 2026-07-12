@@ -106,7 +106,7 @@
       updateStep(stepIndex, {
         source: detail.body_preview,
         script_id: scriptId,
-        script_name: entry?.name ?? detail.name,
+        script_name: entry?.name ?? detail.script.name,
       });
       expandedStepIds = { ...expandedStepIds, [step.id]: true };
     } finally {
@@ -317,7 +317,7 @@
                   </label>
                 {/if}
               {/if}
-            {:else}
+            {:else if step.kind === "mcp"}
               <details class="workshop-advanced mt-3">
                 <summary class="workshop-text-action cursor-pointer text-[11px]">
                   Configure external tool

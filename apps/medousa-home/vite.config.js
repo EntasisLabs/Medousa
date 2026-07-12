@@ -9,6 +9,7 @@ function themeBootPlugin() {
   const bootScript = buildThemeBootScript();
   return {
     name: "medousa-theme-boot",
+    /** @param {string} html */
     transformIndexHtml(html) {
       return html.replace(
         "<!-- MEDOUSA_THEME_BOOT -->",

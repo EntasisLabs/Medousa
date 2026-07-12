@@ -199,8 +199,8 @@ export function normalizeWorkshopDefaults(raw: TuiDefaults): TuiDefaults {
     workCardWipeAfterDays: raw.workCardWipeAfterDays ?? 7,
   };
   normalized.inferenceProfiles = normalizeInferenceProfiles(raw.inferenceProfiles, {
-    provider: normalized.provider ?? defaults.provider,
-    model: normalized.model ?? defaults.model,
+    provider: normalized.provider || defaults.provider || "ollama",
+    model: normalized.model || defaults.model || "qwen2.5:7b",
     baseUrl: normalized.baseUrl,
     sttProvider: normalized.sttProvider ?? "openai",
     sttModel: normalized.sttModel ?? defaultSttModel(normalized.sttProvider ?? "openai"),

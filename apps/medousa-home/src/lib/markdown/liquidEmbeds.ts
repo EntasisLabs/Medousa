@@ -300,7 +300,14 @@ function encodeProps(value: unknown): string {
   if (typeof btoa === "function") {
     return btoa(unescape(encodeURIComponent(json)));
   }
-  return Buffer.from(json, "utf8").toString("base64");
+  // Node / non-DOM fallback without relying on Buffer typings.
+  const bytes = new TextEncoder().encode(json);
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  if (typeof globalThis.btoa === "function") {
+    return globalThis.btoa(binary);
+  }
+  throw new Error("Base64 encoding is unavailable in this environment");
 }
 
 export function decodeLiquidProps<T = unknown>(encoded: string): T | null {
@@ -308,8 +315,10 @@ export function decodeLiquidProps<T = unknown>(encoded: string): T | null {
     let json: string;
     if (typeof atob === "function") {
       json = decodeURIComponent(escape(atob(encoded)));
+    } else if (typeof globalThis.atob === "function") {
+      json = decodeURIComponent(escape(globalThis.atob(encoded)));
     } else {
-      json = Buffer.from(encoded, "base64").toString("utf8");
+      throw new Error("Base64 decoding is unavailable in this environment");
     }
     return JSON.parse(json) as T;
   } catch {

@@ -90,6 +90,10 @@ function bindVaultContextTargetLongPress(
       openVaultNoteContextMenu(target.path, clientX, clientY);
       return;
     }
+    if (target.kind === "folder") {
+      openVaultFolderContextMenu(target.iconKey, target.label, clientX, clientY, target.spaceId);
+      return;
+    }
     openVaultAttachmentContextMenu(target.path, target.notePath, clientX, clientY);
   }
 
