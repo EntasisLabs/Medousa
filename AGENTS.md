@@ -43,6 +43,18 @@ Medousa monorepo. Humans: see [CONTRIBUTING.md](CONTRIBUTING.md).
 - Optional binaries: install to `{dataDir}/bin`; resolve after sibling of
   `current_exe` (daemon stays bundled sidecar-first).
 
+## CI parity (run before PR)
+
+From repo root:
+
+```bash
+cargo clippy --workspace --all-targets --exclude medousa-sdk-iroh -- -D warnings
+cargo test -p medousa --lib
+cd apps/medousa-home && npm ci && npm run check   # 0 errors, 0 warnings required
+```
+
+`medousa-sdk-iroh` is excluded from clippy until its feature matrix is reconciled with the main workspace.
+
 ## Useful entry points
 
 - Packages UI: `apps/medousa-home/src/lib/components/settings/SettingsPackagesSection.svelte`
