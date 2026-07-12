@@ -3,7 +3,7 @@
 //! Default backends (no Docker / OpenShell):
 //! - Linux: bubblewrap when available, else systemd-run hardening
 //! - macOS: Seatbelt via `sandbox-exec`
-//! - Windows: Job Object (kill-on-close, memory/UI limits, CREATE_NO_WINDOW)
+//! - Windows: AppContainer (preferred) or Job Object fallback
 
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
