@@ -36,6 +36,7 @@ pub mod tool_history_handlers;
 pub mod grapheme_script;
 pub mod grapheme_script_tools;
 pub mod grapheme_handlers;
+pub mod grapheme_host_catalog;
 pub mod grapheme_lsp_bridge;
 pub mod grapheme_medousa_bridge;
 pub mod grapheme_workshop;

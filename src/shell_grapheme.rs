@@ -8,8 +8,8 @@ use crate::shell_sandbox::{ShellRunRequest, probe_shell_sandbox, run_sandboxed};
 
 pub const SHELL_MODULE: &str = "shell";
 
-pub fn register_shell_host_module(registry: &mut grapheme_runtime::ModuleRegistry) {
-    registry.register_host_module(ModuleManifest {
+pub fn shell_host_module_manifest() -> ModuleManifest {
+    ModuleManifest {
         module_id: SHELL_MODULE.to_string(),
         version: "0.1.0".to_string(),
         abi: ModuleAbi::MirV1,
@@ -36,7 +36,11 @@ pub fn register_shell_host_module(registry: &mut grapheme_runtime::ModuleRegistr
             max_io_bytes: 32 * 1024 * 1024,
             max_network_calls: 0,
         },
-    });
+    }
+}
+
+pub fn register_shell_host_module(registry: &mut grapheme_runtime::ModuleRegistry) {
+    registry.register_host_module(shell_host_module_manifest());
 }
 
 /// Capability interceptor fragment for `shell.*` host calls.

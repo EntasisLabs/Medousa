@@ -90,41 +90,7 @@ fn medousa_and_shell_capability_interceptor(
 }
 
 fn register_medousa_host_module(registry: &mut grapheme_runtime::ModuleRegistry) {
-    use grapheme_runtime::{EffectKind, ExportedOp, ModuleAbi, ModuleManifest, ResourceLimits};
-
-    registry.register_host_module(ModuleManifest {
-        module_id: MEDOUSA_MODULE.to_string(),
-        version: "0.1.0".to_string(),
-        abi: ModuleAbi::MirV1,
-        entrypoint: "medousa.host".to_string(),
-        exported_ops: vec![
-            ExportedOp {
-                op: "digest".to_string(),
-                input_schema_ref: None,
-                output_schema_ref: None,
-                effect: EffectKind::Pure,
-            },
-            ExportedOp {
-                op: "synthesize".to_string(),
-                input_schema_ref: None,
-                output_schema_ref: None,
-                effect: EffectKind::Control,
-            },
-            ExportedOp {
-                op: "deliver".to_string(),
-                input_schema_ref: None,
-                output_schema_ref: None,
-                effect: EffectKind::Control,
-            },
-        ],
-        required_capabilities: vec![],
-        limits: ResourceLimits {
-            max_cpu_ms: 30_000,
-            max_memory_mb: 256,
-            max_io_bytes: 16 * 1024 * 1024,
-            max_network_calls: 8,
-        },
-    });
+    registry.register_host_module(crate::grapheme_host_catalog::medousa_host_module_manifest());
 }
 
 pub fn medousa_workflow_engine() -> Arc<dyn WorkflowEngine> {

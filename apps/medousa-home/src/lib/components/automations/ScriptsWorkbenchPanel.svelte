@@ -15,7 +15,7 @@
   import GraphemeRunResultCard from "$lib/components/grapheme/GraphemeRunResultCard.svelte";
   import GraphemeScriptEditorPanel from "$lib/components/grapheme/GraphemeScriptEditorPanel.svelte";
   import { applyRecipeToEditor, GRAPHEME_STARTER_RECIPES, type GraphemeRecipe } from "$lib/grapheme/graphemeRecipes";
-  import { prepareModuleInsert } from "$lib/grapheme/graphemeModuleSnippet";
+  import { prepareModuleInsert, qualifyModuleOp } from "$lib/grapheme/graphemeModuleSnippet";
   import {
     effectBadgeClass,
     moduleBlurb,
@@ -170,7 +170,8 @@
     graphemeScriptEditor.ensureInitialTab();
     const examples = workshop.moduleDetail?.examples ?? [];
     const body = graphemeScriptEditor.activeTab?.body ?? "";
-    graphemeScriptEditor.queueInsert(prepareModuleInsert(body, op, examples));
+    const qualified = qualifyModuleOp(selectedModuleId, op);
+    graphemeScriptEditor.queueInsert(prepareModuleInsert(body, qualified, examples));
   }
 
   function applyTemplate(recipe: GraphemeRecipe) {

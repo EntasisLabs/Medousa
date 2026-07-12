@@ -9,6 +9,7 @@
     graphemeEditorTheme,
     graphemeLanguageSupport,
   } from "$lib/grapheme/graphemeEditorTheme";
+  import { graphemeHostCompletions } from "$lib/grapheme/graphemeHostCompletions";
 
   interface Props {
     value: string;
@@ -35,6 +36,7 @@
       basicSetup,
       graphemeEditorTheme,
       graphemeLanguageSupport,
+      graphemeHostCompletions(),
       keymap.of([indentWithTab]),
       EditorView.lineWrapping,
       EditorState.readOnly.of(readOnly),

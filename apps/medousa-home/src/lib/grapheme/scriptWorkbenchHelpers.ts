@@ -10,6 +10,8 @@ export function moduleBlurb(entry: GraphemeModuleSummary): string {
     yaml: "Config and structured text",
     docs: "Documents and text files",
     io: "Files in and out",
+    shell: "OS-native sandboxed commands (shell.run / shell.status)",
+    medousa: "Digest, synthesize, and deliver automation results",
   };
   return blurbs[entry.module_id] ?? `${entry.op_count} ready-made actions you can insert`;
 }

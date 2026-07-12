@@ -43,6 +43,21 @@ export const GRAPHEME_STARTER_RECIPES: GraphemeRecipe[] = [
 }`,
     flowName: "Pipeline demo",
   },
+  {
+    id: "shell-echo",
+    title: "Run a sandboxed command",
+    subtitle: "Medousa OS shell — no Docker required",
+    scriptName: "Shell echo",
+    intent: "Run echo via shell.run",
+    body: `query ShellEcho {
+  shell.run(
+    command: "echo hello from medousa",
+    network: false,
+    timeout_ms: 5000
+  ) { exit_code stdout stderr backend sandboxed }
+}`,
+    flowName: "Shell echo",
+  },
 ];
 
 export function recipeById(id: string): GraphemeRecipe | undefined {
