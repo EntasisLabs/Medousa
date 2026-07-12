@@ -12,6 +12,7 @@
   import SettingsLanShareSection from "$lib/components/settings/SettingsLanShareSection.svelte";
   import SettingsBasementSection from "$lib/components/settings/SettingsBasementSection.svelte";
   import SettingsCanvasSection from "$lib/components/settings/SettingsCanvasSection.svelte";
+  import SettingsPackagesSection from "$lib/components/settings/SettingsPackagesSection.svelte";
   import type { DaemonHealth } from "$lib/daemon";
   import { workshopDefaults } from "$lib/stores/workshopDefaults.svelte";
   import { settingsNav } from "$lib/stores/settingsNav.svelte";
@@ -139,6 +140,8 @@
         <SettingsPhoneSection {mobile} />
       {:else if activeSection === "nearby"}
         <SettingsLanShareSection {mobile} />
+      {:else if activeSection === "packages"}
+        <SettingsPackagesSection {mobile} />
       {:else}
         <SettingsBasementSection {revision} {health} {onDaemonHealth} {mobile} />
       {/if}

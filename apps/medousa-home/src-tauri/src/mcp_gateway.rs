@@ -559,6 +559,12 @@ fn resolve_gateway_binary() -> Result<crate::workshop_runtime::ComponentCommand,
             });
         }
     }
+    if let Some(shared) = crate::workshop_runtime::shared_bin_binary("medousa_mcp_gateway") {
+        return Ok(crate::workshop_runtime::ComponentCommand {
+            program: shared.to_string_lossy().to_string(),
+            pre_args: Vec::new(),
+        });
+    }
     if crate::workshop_runtime::find_command_in_path("medousa_mcp_gateway").is_some() {
         return Ok(crate::workshop_runtime::ComponentCommand {
             program: crate::workshop_runtime::platform_binary_name("medousa_mcp_gateway"),

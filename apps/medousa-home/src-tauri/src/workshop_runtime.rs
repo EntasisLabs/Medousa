@@ -76,6 +76,14 @@ pub(crate) fn find_command_in_path(command: &str) -> Option<PathBuf> {
     })
 }
 
+/// Optional binaries installed via Settings → Packages / Installer land here.
+pub(crate) fn shared_bin_binary(name: &str) -> Option<PathBuf> {
+    let candidate = crate::paths::medousa_data_dir()
+        .join("bin")
+        .join(platform_binary_name(name));
+    candidate.is_file().then_some(candidate)
+}
+
 pub(crate) fn resolve_daemon_binary() -> Result<ComponentCommand, String> {
     if let Ok(explicit) = std::env::var("MEDOUSA_MEDOUSA_DAEMON_BIN") {
         let path = PathBuf::from(explicit.trim());
@@ -128,6 +136,13 @@ pub(crate) fn resolve_local_binary() -> Result<ComponentCommand, String> {
                 pre_args: Vec::new(),
             });
         }
+    }
+
+    if let Some(shared) = shared_bin_binary("medousa_local") {
+        return Ok(ComponentCommand {
+            program: shared.to_string_lossy().to_string(),
+            pre_args: Vec::new(),
+        });
     }
 
     if find_command_in_path("medousa_local").is_some() {

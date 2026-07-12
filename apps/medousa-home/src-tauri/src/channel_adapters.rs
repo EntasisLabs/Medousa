@@ -74,6 +74,13 @@ fn resolve_component_command(binary_name: &str) -> Result<ComponentCommand, Stri
         }
     }
 
+    if let Some(shared) = crate::workshop_runtime::shared_bin_binary(binary_name) {
+        return Ok(ComponentCommand {
+            program: shared.to_string_lossy().to_string(),
+            pre_args: Vec::new(),
+        });
+    }
+
     if find_command_in_path(binary_name).is_some() {
         return Ok(ComponentCommand {
             program: platform_binary_name(binary_name),

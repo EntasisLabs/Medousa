@@ -9,6 +9,7 @@ export type SettingsSectionId =
   | "engine"
   | "phone"
   | "nearby"
+  | "packages"
   | "basement";
 
 export const SETTINGS_SECTIONS: {
@@ -26,6 +27,7 @@ export const SETTINGS_SECTIONS: {
   { id: "engine", label: "Engine", hint: "Budgets, quality & diagnostics" },
   { id: "phone", label: "Phone", hint: "Pair your pocket portal" },
   { id: "nearby", label: "Nearby", hint: "Peers rail, bundles & trust" },
+  { id: "packages", label: "Packages", hint: "Offline brain, adapters & tools" },
   { id: "basement", label: "Connection", hint: "This device, engine & advanced files" },
 ];
 
