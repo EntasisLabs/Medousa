@@ -8,8 +8,6 @@
     formatContextWhen,
     postureHumanFeel,
   } from "$lib/utils/contextHuman";
-  import { postureWhisper } from "$lib/utils/contextPosture";
-  import { avecWhisper } from "$lib/utils/contextThreads";
 
   interface Props {
     entry: ContextPostureEntry | null;
@@ -27,14 +25,16 @@
     onOpenLatestThread,
   }: Props = $props();
 
-  let captureOpen = $state(false);
   let rawOpen = $state(false);
 
   $effect(() => {
     entry;
-    captureOpen = false;
     rawOpen = false;
   });
+
+  const herFeel = $derived(
+    entry?.modelAvec ? postureHumanFeel(entry.modelAvec) : null,
+  );
 </script>
 
 {#if !entry}
@@ -49,75 +49,54 @@
       title={entry.title}
       meta={`${entry.threadCount} moment${entry.threadCount === 1 ? "" : "s"} · ${formatContextWhen(entry.latestTimestamp)}`}
       lead={postureHumanFeel(entry.userAvec)}
-      chipLabel="Session mood"
-      chipVariant="live"
+      kicker="Session mood"
     />
 
     <ContextCrossLinks
       links={[
-        ...(onOpenThreads ? [{ label: "Session moments", onClick: onOpenThreads }] : []),
+        ...(onOpenThreads ? [{ label: "Moments", onClick: onOpenThreads }] : []),
         ...(onOpenLatestThread
-          ? [{ label: "Latest moment", onClick: onOpenLatestThread }]
+          ? [{ label: "Latest", onClick: onOpenLatestThread }]
           : []),
         ...(chatSessionAvailable && onOpenChat
-          ? [{ label: "Open in Chat", onClick: onOpenChat }]
+          ? [{ label: "Chat", onClick: onOpenChat }]
           : []),
       ]}
     />
 
-    <section class="mt-6">
-      <ContextPostureFingerprint avec={entry.userAvec} label="At a glance" />
-      <p class="workshop-faint mt-3 text-[11px]">{postureWhisper(entry.userAvec)}</p>
+    {#if entry.latestSummary.trim()}
+      <section class="context-story-chapter">
+        <p class="context-story-label">Latest capture</p>
+        <p class="context-story-copy">{entry.latestSummary}</p>
+      </section>
+    {/if}
+
+    <section class="mt-6 max-w-xl">
+      <ContextPostureFingerprint avec={entry.userAvec} label="Your footing" />
+      {#if herFeel}
+        <p class="workshop-faint mt-3 text-xs leading-relaxed">
+          Her side — {herFeel.replace(/\.$/, "").toLowerCase()}.
+        </p>
+      {/if}
     </section>
 
-    {#if entry.modelAvec}
-      <section class="mt-5">
-        <ContextPostureFingerprint
-          avec={entry.modelAvec}
-          label="Her side of the room"
-          compact={true}
-        />
-      </section>
-    {/if}
-
-    {#if entry.latestSummary.trim()}
-      <section class="mt-6">
-        <p class="workshop-label">Latest capture</p>
-        <p class="mt-2 text-sm leading-relaxed text-surface-200">{entry.latestSummary}</p>
-      </section>
-    {/if}
-
-    <ContextPlumbingSection>
-      <button
-        type="button"
-        class="context-layer-toggle"
-        aria-expanded={captureOpen}
-        onclick={() => {
-          captureOpen = !captureOpen;
-        }}
-      >
-        <span>Capture details</span>
-        <span class="workshop-faint text-[11px]">sync · metrics</span>
-      </button>
-      {#if captureOpen}
-        <dl class="context-layer-body text-xs">
-          <div>
-            <dt class="workshop-label">Latest sync_key</dt>
-            <dd class="mt-0.5 break-all font-mono text-surface-300">{entry.latestSyncKey}</dd>
+    <ContextPlumbingSection resetKey={entry.id}>
+      <dl class="context-plumbing-meta">
+        <div class="context-plumbing-meta-row">
+          <dt>Latest sync</dt>
+          <dd class="font-mono text-[11px]">{entry.latestSyncKey}</dd>
+        </div>
+        <div class="context-plumbing-meta-row">
+          <dt>Captured</dt>
+          <dd class="font-mono text-[11px]">{entry.latestTimestamp}</dd>
+        </div>
+        {#if entry.modelAvec}
+          <div class="context-plumbing-meta-row">
+            <dt>Her ψ</dt>
+            <dd class="font-mono text-[11px]">{entry.modelAvec.psi.toFixed(2)}</dd>
           </div>
-          <div>
-            <dt class="workshop-label">Captured</dt>
-            <dd class="mt-0.5 font-mono text-surface-300">{entry.latestTimestamp}</dd>
-          </div>
-          <div>
-            <dt class="workshop-label">Metrics</dt>
-            <dd class="mt-0.5 font-mono text-surface-300">
-              {avecWhisper(entry.userAvec)}
-            </dd>
-          </div>
-        </dl>
-      {/if}
-
+        {/if}
+      </dl>
       <button
         type="button"
         class="context-layer-toggle"
@@ -127,7 +106,7 @@
         }}
       >
         <span>Raw JSON</span>
-        <span class="workshop-faint text-[11px]">advanced</span>
+        <span class="workshop-faint text-[11px]">session entry</span>
       </button>
       {#if rawOpen}
         <pre class="context-layer-raw">{JSON.stringify(entry, null, 2)}</pre>

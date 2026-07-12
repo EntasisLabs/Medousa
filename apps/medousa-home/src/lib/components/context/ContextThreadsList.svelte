@@ -38,15 +38,12 @@
     <p class="context-list-whisper">
       {retrieved} moment{retrieved === 1 ? "" : "s"} · newest first
     </p>
-    <ul class="divide-y divide-surface-500/35 border-y border-surface-500/35">
+    <ul class="msg-rail-list">
       {#each entries as entry (entry.id)}
         <li>
           <button
             type="button"
-            class="flex w-full items-start gap-3 px-2 py-2.5 text-left transition hover:bg-surface-800/70 {selectedId ===
-            entry.id
-              ? 'workshop-list-row-active'
-              : ''}"
+            class="msg-rail-row {selectedId === entry.id ? 'msg-rail-row-active' : ''}"
             onclick={() => onSelect(entry.id)}
           >
             <span class="min-w-0 flex-1">
@@ -55,10 +52,8 @@
               </span>
               <span class="context-related-memory-meta mt-1 block truncate">
                 {entry.subtitle}
+                <span class="text-surface-600"> · {tierHumanLabel(entry.tier)}</span>
               </span>
-            </span>
-            <span class="workshop-faint mt-0.5 shrink-0 text-[10px] uppercase tracking-wide">
-              {tierHumanLabel(entry.tier)}
             </span>
           </button>
         </li>
@@ -66,3 +61,34 @@
     </ul>
   {/if}
 </div>
+
+<style>
+  .msg-rail-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .msg-rail-row {
+    display: flex;
+    width: 100%;
+    align-items: flex-start;
+    gap: 0.75rem;
+    margin: 0;
+    padding: 0.7rem 0.55rem;
+    border: none;
+    border-radius: 0.65rem;
+    background: transparent;
+    text-align: left;
+    cursor: pointer;
+    transition: background 120ms ease;
+  }
+
+  .msg-rail-row:hover {
+    background: rgb(var(--shell-pane-muted-bg, var(--color-surface-800)) / 0.45);
+  }
+
+  .msg-rail-row-active {
+    background: rgb(var(--color-primary-500) / 0.09);
+  }
+</style>
