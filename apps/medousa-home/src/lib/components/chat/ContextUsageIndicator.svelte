@@ -21,9 +21,14 @@
   const fillPct = $derived(report ? usageFillPercent(report) : null);
   const segments = $derived(report ? contextUsageSegments(report) : []);
   const summary = $derived(report ? usageSummaryLine(report) : "");
-  const ringCircumference = 2 * Math.PI * 15.5;
+  /** Match composer icon optical size (~16px). */
+  const ringRadius = 7.25;
+  const ringCircumference = 2 * Math.PI * ringRadius;
   const ringOffset = $derived(
     fillPct != null ? ringCircumference * (1 - fillPct / 100) : ringCircumference,
+  );
+  const pressure = $derived(
+    fillPct == null ? "calm" : fillPct >= 90 ? "hot" : fillPct >= 75 ? "warm" : "calm",
   );
 
   function toggle() {
@@ -67,12 +72,18 @@
 </script>
 
 {#if visible && report}
-  <div class="context-usage-root" class:context-usage-root-compact={compact} bind:this={rootEl}>
+  <div
+    class="context-usage-root"
+    class:context-usage-root-compact={compact}
+    class:context-usage-root-open={open}
+    data-pressure={pressure}
+    bind:this={rootEl}
+  >
     {#if open}
       <div class="context-usage-panel" role="dialog" aria-label="Context usage">
         <header class="context-usage-panel-header">
-          <div>
-            <p class="context-usage-panel-title">Context usage</p>
+          <div class="min-w-0">
+            <p class="context-usage-panel-title">Context</p>
             <p class="context-usage-panel-summary">{summary}</p>
           </div>
           <button type="button" class="context-usage-panel-close" aria-label="Close" onclick={close}>
@@ -120,22 +131,25 @@
     <button
       type="button"
       class="context-usage-trigger"
-      aria-label="Context usage"
+      aria-label={fillPct != null ? `Context usage ${fillPct}%` : "Context usage"}
+      title={summary || "Context usage"}
       aria-expanded={open}
       onclick={toggle}
     >
-      <svg class="context-usage-ring" viewBox="0 0 36 36" aria-hidden="true">
-        <circle class="context-usage-ring-track" cx="18" cy="18" r="15.5" />
+      <svg class="context-usage-ring" viewBox="0 0 20 20" aria-hidden="true">
+        <circle class="context-usage-ring-track" cx="10" cy="10" r={ringRadius} />
         <circle
           class="context-usage-ring-fill"
-          cx="18"
-          cy="18"
-          r="15.5"
+          cx="10"
+          cy="10"
+          r={ringRadius}
           stroke-dasharray={ringCircumference}
           stroke-dashoffset={ringOffset}
         />
       </svg>
-      <span class="context-usage-trigger-label">{fillPct != null ? `${fillPct}%` : "ctx"}</span>
+      <span class="context-usage-trigger-label">
+        {fillPct != null ? `${fillPct}%` : "—"}
+      </span>
     </button>
   </div>
 {/if}
@@ -152,51 +166,62 @@
     right: 0;
     bottom: calc(100% + 10px);
     z-index: 40;
-    width: min(320px, calc(100vw - 24px));
-    border-radius: 12px;
-    border: 1px solid rgb(100 116 139 / 0.35);
-    background: rgb(15 23 42 / 0.98);
-    box-shadow: 0 16px 40px rgb(0 0 0 / 0.45);
-    padding: 12px 14px;
+    width: min(300px, calc(100vw - 24px));
+    border-radius: 0.75rem;
+    border: 1px solid rgb(var(--shell-border, var(--color-surface-500)) / 0.35);
+    background: rgb(var(--shell-pane-bg, var(--color-surface-900)) / 0.98);
+    box-shadow: 0 14px 36px rgb(0 0 0 / 0.35);
+    padding: 0.75rem 0.85rem;
+    backdrop-filter: blur(12px);
   }
 
   .context-usage-panel-header {
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
-    gap: 8px;
-    margin-bottom: 10px;
+    gap: 0.5rem;
+    margin-bottom: 0.65rem;
   }
 
   .context-usage-panel-title {
-    font-size: 13px;
+    margin: 0;
+    font-size: 0.75rem;
     font-weight: 600;
-    color: rgb(248 250 252);
+    letter-spacing: -0.01em;
+    color: rgb(var(--shell-label, var(--color-surface-50)));
   }
 
   .context-usage-panel-summary {
-    margin-top: 2px;
-    font-size: 11px;
-    color: rgb(148 163 184);
+    margin: 0.15rem 0 0;
+    font-size: 0.6875rem;
+    line-height: 1.35;
+    color: rgb(var(--shell-muted, var(--color-surface-500)));
   }
 
   .context-usage-panel-close {
     border: none;
     background: transparent;
-    color: rgb(148 163 184);
-    font-size: 18px;
+    color: rgb(var(--shell-muted, var(--color-surface-500)));
+    font-size: 1.05rem;
     line-height: 1;
-    padding: 0 2px;
+    padding: 0 0.1rem;
     cursor: pointer;
+    opacity: 0.7;
+    transition: opacity 120ms ease, color 120ms ease;
+  }
+
+  .context-usage-panel-close:hover {
+    opacity: 1;
+    color: rgb(var(--shell-label, var(--color-surface-100)));
   }
 
   .context-usage-bar {
     display: flex;
-    height: 6px;
+    height: 5px;
     overflow: hidden;
     border-radius: 999px;
-    background: rgb(51 65 85 / 0.8);
-    margin-bottom: 10px;
+    background: rgb(var(--shell-pane-muted-bg, var(--color-surface-800)) / 0.85);
+    margin-bottom: 0.65rem;
   }
 
   .context-usage-bar-segment {
@@ -206,85 +231,130 @@
   }
 
   .context-usage-layers {
+    margin: 0;
+    padding: 0;
+    list-style: none;
     display: flex;
     flex-direction: column;
-    gap: 6px;
-    max-height: 220px;
+    gap: 0.4rem;
+    max-height: 13rem;
     overflow: auto;
   }
 
   .context-usage-layer-row {
     display: grid;
-    grid-template-columns: 10px 1fr auto;
-    gap: 8px;
+    grid-template-columns: 8px 1fr auto;
+    gap: 0.5rem;
     align-items: center;
-    font-size: 12px;
+    font-size: 0.71875rem;
   }
 
   .context-usage-layer-swatch {
-    width: 8px;
-    height: 8px;
+    width: 7px;
+    height: 7px;
     border-radius: 2px;
   }
 
   .context-usage-layer-label {
-    color: rgb(226 232 240);
+    color: rgb(var(--shell-whisper, var(--color-surface-200)));
   }
 
   .context-usage-layer-value {
-    color: rgb(148 163 184);
+    color: rgb(var(--shell-muted, var(--color-surface-500)));
     font-variant-numeric: tabular-nums;
   }
 
   .context-usage-footnote {
-    margin-top: 10px;
-    font-size: 10px;
-    color: rgb(100 116 139);
+    margin: 0.65rem 0 0;
+    font-size: 0.625rem;
+    color: rgb(var(--shell-muted, var(--color-surface-500)) / 0.9);
   }
 
+  /* Industry pattern: thin ring + percent beside it — sized to composer icons */
   .context-usage-trigger {
-    position: relative;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 34px;
-    height: 34px;
+    gap: 0.4rem;
+    height: 2rem; /* match .composer-bar-icon-btn h-8 */
+    padding: 0 0.35rem;
     border: none;
     border-radius: 999px;
-    background: rgb(30 41 59 / 0.9);
-    color: rgb(203 213 225);
+    background: transparent;
+    color: rgb(var(--shell-muted, var(--color-surface-400)));
     cursor: pointer;
+    transition:
+      color 140ms ease,
+      background 140ms ease;
+  }
+
+  .context-usage-trigger:hover,
+  .context-usage-root-open .context-usage-trigger {
+    color: rgb(var(--shell-icon-hover, var(--color-surface-200)));
+    background: rgb(var(--shell-pane-muted-bg, var(--color-surface-800)) / 0.5);
   }
 
   .context-usage-root-compact .context-usage-trigger {
-    width: 30px;
-    height: 30px;
+    height: 2rem;
+    gap: 0.35rem;
+    padding: 0 0.3rem;
   }
 
   .context-usage-ring {
-    position: absolute;
-    inset: 2px;
+    display: block;
+    width: 1rem;
+    height: 1rem;
+    flex-shrink: 0;
     transform: rotate(-90deg);
+  }
+
+  .context-usage-root-compact .context-usage-ring {
+    width: 0.9375rem;
+    height: 0.9375rem;
   }
 
   .context-usage-ring-track {
     fill: none;
-    stroke: rgb(51 65 85);
-    stroke-width: 3;
+    stroke: rgb(var(--shell-border, var(--color-surface-500)) / 0.6);
+    stroke-width: 2;
   }
 
   .context-usage-ring-fill {
     fill: none;
-    stroke: rgb(96 165 250);
-    stroke-width: 3;
+    stroke: rgb(var(--shell-icon-hover, var(--color-surface-200)));
+    stroke-width: 2;
     stroke-linecap: round;
+    transition: stroke-dashoffset 220ms ease, stroke 160ms ease;
+  }
+
+  .context-usage-root[data-pressure="warm"] .context-usage-ring-fill {
+    stroke: rgb(var(--color-warning-400));
+  }
+
+  .context-usage-root[data-pressure="hot"] .context-usage-ring-fill {
+    stroke: rgb(var(--color-error-400));
   }
 
   .context-usage-trigger-label {
-    position: relative;
-    z-index: 1;
-    font-size: 9px;
-    font-weight: 600;
+    display: block;
+    font-size: 0.75rem;
+    font-weight: 500;
+    letter-spacing: -0.015em;
     font-variant-numeric: tabular-nums;
+    line-height: 1;
+    /* Optical center with the ring (caps sit slightly low in most UIs). */
+    transform: translateY(-0.5px);
+  }
+
+  .context-usage-root-compact .context-usage-trigger-label {
+    font-size: 0.71875rem;
+  }
+
+  .context-usage-root[data-pressure="warm"] .context-usage-trigger-label {
+    color: rgb(var(--color-warning-300));
+  }
+
+  .context-usage-root[data-pressure="hot"] .context-usage-trigger-label {
+    color: rgb(var(--color-error-300));
   }
 </style>
