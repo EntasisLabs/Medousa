@@ -103,21 +103,21 @@
             <h1 class="text-base font-semibold text-surface-50">Capabilities</h1>
             <p class="workshop-header-line mt-1">
               {#if activeTab === "specialists"}
-                Specialists · runtime tool policy · {filteredSkills.length} configured
+                Packaged skills she can run — import, tune tools, schedule.
               {:else}
-                MCP servers and capability connections
+                External tools through MCP — what’s connected right now.
               {/if}
             </p>
           </div>
           <div class="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              class="btn btn-sm variant-ghost-surface"
-              onclick={() => catalog.refresh()}
-            >
-              Refresh
-            </button>
             {#if activeTab === "specialists"}
+              <button
+                type="button"
+                class="btn btn-sm variant-ghost-surface"
+                onclick={() => catalog.refresh()}
+              >
+                Refresh
+              </button>
               <button
                 type="button"
                 class="btn btn-sm variant-filled-primary"
@@ -137,15 +137,15 @@
               Connections
             {/if}
           </p>
-          <div class="flex items-center gap-2">
-            <button
-              type="button"
-              class="btn btn-sm variant-ghost-surface"
-              onclick={() => catalog.refresh()}
-            >
-              Refresh
-            </button>
-            {#if activeTab === "specialists"}
+          {#if activeTab === "specialists"}
+            <div class="flex items-center gap-2">
+              <button
+                type="button"
+                class="btn btn-sm variant-ghost-surface"
+                onclick={() => catalog.refresh()}
+              >
+                Refresh
+              </button>
               <button
                 type="button"
                 class="btn btn-sm variant-ghost-surface"
@@ -153,8 +153,8 @@
               >
                 Import
               </button>
-            {/if}
-          </div>
+            </div>
+          {/if}
         </div>
       {/if}
 
@@ -175,16 +175,16 @@
       </button>
     </div>
 
-    {#if activeTab === "specialists"}
-    <label class="mt-3 block">
-      <span class="sr-only">Search specialists</span>
-      <input
-        class="input w-full max-w-md text-sm"
-        type="search"
-        placeholder="Search specialists…"
-        bind:value={search}
-      />
-    </label>
+    {#if activeTab === "specialists" && (catalog.manuscripts.length > 0 || search.trim() || skillFilter !== "all")}
+      <label class="mt-3 block">
+        <span class="sr-only">Search specialists</span>
+        <input
+          class="input w-full max-w-md text-sm"
+          type="search"
+          placeholder="Search specialists…"
+          bind:value={search}
+        />
+      </label>
       <div class="mt-2 flex flex-wrap gap-1.5">
         {#each SKILL_FILTER_CHIPS as chip (chip.id)}
           <button
@@ -204,10 +204,7 @@
 
   <div class="flex min-h-0 flex-1 overflow-hidden">
     {#if activeTab === "connections"}
-      <div class="mobile-you-scroll min-w-0 flex-1 overflow-y-auto px-4 py-3">
-        <p class="workshop-faint mb-3 text-xs">
-          MCP servers and external tools available to Medousa at runtime.
-        </p>
+      <div class="mobile-you-scroll min-w-0 flex-1 overflow-y-auto px-4 py-4">
         <McpServersPanel />
       </div>
     {:else}
@@ -222,83 +219,94 @@
         <p class="text-sm text-error-400">{catalog.error}</p>
       {:else if activeTab === "specialists"}
         {#if filteredSkills.length === 0}
-          <p class="workshop-muted">
-            {search.trim() || skillFilter !== "all"
-              ? "No specialists match your filters."
-              : "No specialists yet. Use Import to bring SKILL.md folders from Cursor, Hermes, or OpenClaw."}
-          </p>
+          {#if search.trim() || skillFilter !== "all"}
+            <p class="workshop-muted py-6 text-sm">No specialists match your filters.</p>
+          {:else}
+            <div class="mx-auto flex max-w-md flex-col items-start py-10">
+              <h2 class="text-sm font-semibold text-surface-50">No specialists yet</h2>
+              <p class="workshop-faint mt-2 text-sm leading-relaxed">
+                Import a SKILL.md folder from Cursor, Hermes, or OpenClaw. Then open one to set tool
+                policy, schedule it, or run it in chat.
+              </p>
+              <button
+                type="button"
+                class="btn btn-sm variant-filled-primary mt-5"
+                onclick={() => (importWizardOpen = true)}
+              >
+                Import specialists…
+              </button>
+            </div>
+          {/if}
         {:else}
           {#each skillGroups as group (group.label)}
             <section class="mb-4">
-              <h2 class="workshop-section-title sticky top-0 bg-surface-900/95 py-1 backdrop-blur-sm">
-                {group.label} · {group.entries.length}
+              <h2 class="settings-subsection-heading sticky top-0 z-[1] bg-surface-900/95 py-1 backdrop-blur-sm">
+                {group.label}
+                <span class="workshop-faint font-normal"> · {group.entries.length}</span>
               </h2>
-              <ul class="mt-1 divide-y divide-surface-500/35 border-y border-surface-500/35">
+              <div class="settings-toggle-list mt-2">
                 {#each group.entries as entry (entry.id)}
-                  <li>
-                    <div
-                      class="flex items-center gap-3 px-2 py-2 transition hover:bg-surface-800/70 {selectedSkillId ===
-                      entry.id
-                        ? 'workshop-list-row-active'
-                        : ''}"
+                  <div
+                    class="settings-toggle-row settings-metric-row {selectedSkillId === entry.id
+                      ? 'workshop-list-row-active'
+                      : ''}"
+                  >
+                    <button
+                      type="button"
+                      class="min-w-0 flex-1 text-left"
+                      onclick={() => selectSkill(entry)}
                     >
-                      <button
-                        type="button"
-                        class="min-w-0 flex-1 text-left"
-                        onclick={() => selectSkill(entry)}
-                      >
-                        <div class="flex flex-wrap items-center gap-2">
-                          <p class="truncate font-medium text-surface-100">
-                            {entry.name}
-                          </p>
-                          {#if entry.openshell_enabled}
-                            <span class="text-[10px] uppercase tracking-wide text-surface-500">
-                              sandbox
-                            </span>
-                          {/if}
-                          {#if entry.has_scripts}
-                            <span class="text-[10px] uppercase tracking-wide text-surface-500">
-                              scripts
-                            </span>
-                          {/if}
-                        </div>
-                        {#if entry.description}
-                          <p class="workshop-faint mt-0.5 truncate text-[11px]">
-                            {entry.description}
-                          </p>
+                      <span class="flex flex-wrap items-center gap-2">
+                        <span class="truncate text-sm font-medium text-surface-100">
+                          {entry.name}
+                        </span>
+                        {#if entry.openshell_enabled}
+                          <span class="text-[10px] uppercase tracking-wide text-surface-500">
+                            sandbox
+                          </span>
                         {/if}
-                      </button>
-                      {#if !mobile}
-                        <div class="flex shrink-0 items-center gap-2">
-                          {#if entry.has_scripts}
-                            <button
-                              type="button"
-                              class="workshop-text-action"
-                              onclick={() => runSkill(entry.id)}
-                            >
-                              Run
-                            </button>
-                          {/if}
-                          <button
-                            type="button"
-                            class="workshop-text-action"
-                            onclick={() => onScheduleSkill(entry)}
-                          >
-                            Schedule…
-                          </button>
-                          <button
-                            type="button"
-                            class="workshop-text-action"
-                            onclick={() => void openConfigPath(entry.path)}
-                          >
-                            Open
-                          </button>
-                        </div>
+                        {#if entry.has_scripts}
+                          <span class="text-[10px] uppercase tracking-wide text-surface-500">
+                            scripts
+                          </span>
+                        {/if}
+                      </span>
+                      {#if entry.description}
+                        <span class="workshop-faint mt-0.5 block truncate text-xs">
+                          {entry.description}
+                        </span>
                       {/if}
-                    </div>
-                  </li>
+                    </button>
+                    {#if !mobile}
+                      <div class="flex shrink-0 items-center gap-2">
+                        {#if entry.has_scripts}
+                          <button
+                            type="button"
+                            class="workshop-text-action text-xs"
+                            onclick={() => runSkill(entry.id)}
+                          >
+                            Run
+                          </button>
+                        {/if}
+                        <button
+                          type="button"
+                          class="workshop-text-action text-xs"
+                          onclick={() => onScheduleSkill(entry)}
+                        >
+                          Schedule…
+                        </button>
+                        <button
+                          type="button"
+                          class="workshop-text-action text-xs"
+                          onclick={() => void openConfigPath(entry.path)}
+                        >
+                          Open
+                        </button>
+                      </div>
+                    {/if}
+                  </div>
                 {/each}
-              </ul>
+              </div>
             </section>
           {/each}
         {/if}
@@ -329,10 +337,20 @@
           onScheduleSkill={onScheduleSkill}
           onOpenFile={(path) => void openConfigPath(path)}
         />
+      {:else if catalog.manuscripts.length === 0}
+        <div class="py-2">
+          <p class="settings-subsection-heading">Details</p>
+          <p class="settings-subsection-lead mb-0">
+            After you import, pick a specialist here to tune tools and schedule.
+          </p>
+        </div>
       {:else}
-        <p class="workshop-muted text-sm">
-          Select a specialist to inspect tool policy, schedule, or run in chat.
-        </p>
+        <div class="py-2">
+          <p class="settings-subsection-heading">Details</p>
+          <p class="settings-subsection-lead mb-0">
+            Open a specialist to set tool policy, schedule it, or run it in chat.
+          </p>
+        </div>
       {/if}
     </aside>
     {/if}
