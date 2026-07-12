@@ -1,24 +1,24 @@
 # Desktop distribution plan
 
-> **Status:** In progress — desktop matrix in `.github/workflows/release.yml` (2026-06)  
-> **Scope:** Mac / Windows / Linux installable bundles via GitHub Releases — **not** iOS/Android (App Store / TestFlight track)
+> **Status:** Living — desktop + installer + CLI release paths exist; keep README
+> Home-first (app download), Installer secondary.  
+> **Scope:** Mac / Windows / Linux installable bundles — **not** iOS/Android (App Store / TestFlight track)  
+> **See also:** [release-ci-setup.md](../docs/cookbook/release-ci-setup.md), [release-to-r2.md](../docs/cookbook/release-to-r2.md)
 
 ## Current state
 
 | Track | Status | Artifact |
 |-------|--------|----------|
-| **CLI / Engine** | Shipped | `medousa-vX.Y.Z-<triple>.tar.gz` on tag push (`.github/workflows/release.yml`) |
-| **Desktop app (Tauri)** | Local build only | `.dmg` / `.app` on Mac via `npm run build:desktop` |
+| **CLI / Engine** | Shipped | Versioned tarballs via release CI / R2 |
+| **Desktop app (Tauri)** | Shipping via release matrix / R2 when tagged | `.dmg` / `.msi` / AppImage / etc. |
+| **Medousa Installer** | Optional advanced path | Bootstrap JSON + installer binaries |
 | **Mobile** | Separate | TestFlight / stores — see `apps/medousa-home/MOBILE-DEV.md` |
 
-The product README links to [GitHub Releases](https://github.com/EntasisLabs/Medousa/releases), but releases today contain **CLI tarballs only**, not the Medousa.app installers most users expect.
+Product docs should send **normies to the Medousa app** first; Installer is repair /
+full workloads. In-app **Settings → Packages** covers optional sidecars after install.
 
-### What already works (Mac, manual)
-
-- `prepare-engine-sidecar.sh` bundles slim `medousa_daemon` + `medousa_local` (`embedded-inference-metal` on Apple Silicon)
-- Welcome wizard, auto-start engine, offline Gemma path
-- `npm run build:desktop` → `src-tauri/target/release/bundle/`
-
+> Older drafts of this plan claimed “CLI tarballs only” on GitHub Releases — that
+> is **outdated**. Prefer the cookbooks above for the live pipeline.
 ## Target: downloadable desktop bundles (all platforms)
 
 ```

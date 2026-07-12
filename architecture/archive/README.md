@@ -1,6 +1,12 @@
 # Archived architecture plans
 
-Shipped milestone and sprint plans. **Do not treat these as current roadmap** — use [../ROADMAP.md](../ROADMAP.md) and [../README.md](../README.md).
+> **Historical** — These documents describe shipped or superseded milestones.
+> For current integrator docs see [docs/README.md](../../docs/README.md).
+> Active roadmap: [../ROADMAP.md](../ROADMAP.md). End-user guides:
+> [docs/guides/](../../docs/guides/).
+
+Shipped milestone and sprint plans. **Do not treat these as current product
+guidance.**
 
 Living component docs remain at `architecture/` root. Decisions: [../../docs/architecture/decisions/README.md](../../docs/architecture/decisions/README.md).
 

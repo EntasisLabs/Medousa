@@ -4,6 +4,10 @@
 **Supersedes:** nothing (extends single-URL assumptions documented in [themes-and-multi-daemon-plan.md](../../../architecture/themes-and-multi-daemon-plan.md))  
 **Related:** [ADR-002 user profiles](./adr-002-user-profiles.md), [iroh-p2p-pairing-plan.md](../../../architecture/iroh-p2p-pairing-plan.md), [archive/first-run-and-lan-pairing-plan.md](../../../architecture/archive/first-run-and-lan-pairing-plan.md)
 
+> **UI note (2026-07):** Settings section id may still be `basement` in code; the
+> user-facing label is **Connection**. Prefer “Connection” / “Workshop” in product
+> copy — not “Basement”.
+
 ## Context
 
 Medousa Home today connects to **exactly one** Medousa Engine at a time:

@@ -1,6 +1,7 @@
 # Medousa — developer & integrator docs
 
 The **[product README](../README.md)** is for humans downloading **Medousa** the app.
+**[Using Medousa](guides/README.md)** is the end-user guide spine (getting started, packages, phone, peers, …).
 
 This folder is for **engineers, operators, and teams** who want the same runtime without the UI — or who want to embed **Medousa Engine** next to existing workflows.
 
@@ -17,7 +18,22 @@ Doc conventions: [CONTRIBUTING-DOCS.md](CONTRIBUTING-DOCS.md)
 
 ---
 
-## Start here
+## Using Medousa (app users)
+
+| Guide | You want to… |
+|-------|----------------|
+| [Getting started](guides/getting-started.md) | Download → welcome → first chat |
+| [Packages](guides/packages.md) | Offline brain, adapters, CLI, MCP from Settings |
+| [Workshop & Automations](guides/workshop-and-automations.md) | Flows, schedules, specialists |
+| [Phone pairing](guides/phone-pairing.md) | iOS / Android portal |
+| [Peers & Nearby](guides/peers-and-nearby.md) | LAN / tunnel workshops |
+| [Memory & identity](guides/memory-and-identity.md) | Teach who you are |
+| [Channels](guides/channels.md) | Telegram, Discord, Slack, WhatsApp |
+| Full index | [guides/README.md](guides/README.md) |
+
+---
+
+## Start here (operators & integrators)
 
 ### Cookbook — run it yourself
 
@@ -31,6 +47,7 @@ Doc conventions: [CONTRIBUTING-DOCS.md](CONTRIBUTING-DOCS.md)
 | [Build from source](cookbook/build-from-source.md) | Cargo, Tauri dev, release builds, iPhone dev |
 | [Integrate without the app](cookbook/integrate-without-the-app.md) | HTTP-only, jobs, ingest, MCP, corp patterns |
 | [Mobile & LAN](cookbook/mobile-and-lan.md) | Phone pairing, iOS dev, workshop transport |
+| [Peers, portals, and LAN sharing](cookbook/lan-discovery-and-sharing.md) | Portal vs peer, Iroh, Nearby toggle |
 | [Custom chat UI](cookbook/custom-chat-ui.md) | Sessions, streaming, artifacts |
 | [Artifacts & presentations](cookbook/artifacts-and-presentations.md) | HTML artifacts, Library tab, list-ui API |
 | [Custom views & canvas](cookbook/custom-views-and-canvas.md) | Pinned dashboards Medousa builds for you |
