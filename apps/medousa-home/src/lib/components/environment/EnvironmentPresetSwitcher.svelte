@@ -56,7 +56,7 @@
   {#if variant === "rail"}
     <button
       type="button"
-      class="workshop-rail-btn workshop-rail-btn-tier-life relative mb-1 {open
+      class="workshop-rail-btn workshop-rail-btn-tier-utility relative mt-2 {open
         ? 'workshop-rail-workshop-btn-open'
         : ''} {activePreset?.id === 'focus' ? 'workshop-rail-btn-active' : ''}"
       title="Canvas layout — {activeLabel}"
@@ -66,7 +66,7 @@
       disabled={busy}
       onclick={() => (open = !open)}
     >
-      <PanelsTopLeft size={18} strokeWidth={1.75} aria-hidden="true" />
+      <PanelsTopLeft size={16} strokeWidth={1.5} aria-hidden="true" />
     </button>
 
     {#if open}

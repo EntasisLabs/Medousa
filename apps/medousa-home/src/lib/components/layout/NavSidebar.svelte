@@ -48,7 +48,7 @@
   const utility = $derived(surfaces.filter((surface) => navTier(surface) === "utility"));
 
   const iconProps = { size: 18, strokeWidth: 1.75 };
-  const utilityIconProps = { size: 16, strokeWidth: 1.75 };
+  const utilityIconProps = { size: 16, strokeWidth: 1.5 };
 
   function navTitle(surface: SurfaceDef): string {
     if (surface.id === "context") return "Threads & memory";
@@ -86,9 +86,8 @@
 
 <nav class="workshop-icon-rail" aria-label="Primary navigation" data-debug-label="nav-rail">
   <WorkshopSwitcherCompact variant="rail" />
-  <EnvironmentPresetSwitcher variant="rail" />
 
-  <div class="flex flex-1 flex-col gap-0.5">
+  <div class="flex flex-1 flex-col gap-1">
     {#each lifeOrbit as surface (surface.id)}
       {@const Icon = environmentIcon(surface.icon)}
       {@const badge = activityFor(surface.id)}
@@ -164,6 +163,8 @@
   >
     <UserRound {...utilityIconProps} />
   </button>
+
+  <EnvironmentPresetSwitcher variant="rail" />
 
   <button
     type="button"

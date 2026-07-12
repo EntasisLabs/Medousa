@@ -20,8 +20,11 @@
 
 @layer components {
   html[data-theme="black-lily"] .workshop-rail-btn-active {
-    @apply bg-surface-700 text-primary-300 ring-1 ring-inset ring-primary-400/55;
-    box-shadow: 0 0 14px rgb(var(--color-primary-500) / 0.18);
+    background-color: rgb(var(--color-primary-500) / 0.3);
+    color: rgb(var(--color-primary-300));
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.08),
+      inset 0 -1px 0 rgb(0 0 0 / 0.22);
   }
 
   html[data-theme="black-lily"] .workshop-tab-active {
