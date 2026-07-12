@@ -16,7 +16,7 @@
     --shell-border: var(--color-surface-500);
     --shell-border-strong: 0.58;
     --shell-border-soft: 0.4;
-    --shell-rail-edge: 0.16;
+    --shell-rail-edge: 0.24;
     --shell-icon: var(--color-surface-400);
     --shell-icon-hover: var(--color-surface-200);
     --shell-icon-active: var(--color-primary-300);
@@ -27,6 +27,8 @@
     --shell-muted: var(--color-surface-400);
     --shell-chrome-shadow: 2px 0 18px rgb(0 0 0 / 0.32);
     --shell-rail-shadow: -6px 0 20px rgb(0 0 0 / 0.24);
+    --shell-nav-shadow: 3px 0 16px rgb(0 0 0 / 0.22);
+    --shell-nav-inset: inset 1px 0 0 rgb(255 255 255 / 0.045);
   }
 
   /* Light defaults: denser cool chrome over brighter paper */
@@ -39,7 +41,7 @@
     --shell-border: var(--color-surface-500);
     --shell-border-strong: 0.55;
     --shell-border-soft: 0.38;
-    --shell-rail-edge: 0.16;
+    --shell-rail-edge: 0.26;
     --shell-icon: var(--color-surface-300);
     --shell-icon-hover: var(--color-surface-100);
     --shell-icon-active: var(--color-primary-600);
@@ -49,6 +51,8 @@
     --shell-muted: var(--color-surface-300);
     --shell-chrome-shadow: 2px 0 14px rgb(0 0 0 / 0.06);
     --shell-rail-shadow: -4px 0 14px rgb(0 0 0 / 0.05);
+    --shell-nav-shadow: 2px 0 12px rgb(0 0 0 / 0.06);
+    --shell-nav-inset: inset 1px 0 0 rgb(255 255 255 / 0.12);
   }
 
   /* Obsidian dark — deepen the void under the frame */
@@ -514,9 +518,10 @@
   }
 
   .workshop-icon-rail {
-    @apply flex w-[52px] shrink-0 flex-col items-center py-2;
+    @apply flex w-[52px] shrink-0 flex-col items-center py-2.5;
     border-right: 1px solid rgb(var(--shell-border) / var(--shell-rail-edge));
     background-color: rgb(var(--shell-chrome-bg));
+    box-shadow: var(--shell-nav-inset), var(--shell-nav-shadow);
   }
 
   .workshop-rail-btn {
@@ -525,8 +530,13 @@
   }
 
   .workshop-rail-btn:hover {
-    background-color: rgb(var(--shell-pane-muted-bg) / 0.85);
+    background-color: rgb(var(--shell-pane-muted-bg) / 0.5);
     color: rgb(var(--shell-icon-hover));
+  }
+
+  .workshop-rail-btn:focus-visible {
+    outline: none;
+    box-shadow: inset 0 0 0 1px rgb(var(--color-primary-500) / 0.35);
   }
 
   .workshop-rail-workshop-btn {
@@ -553,14 +563,28 @@
   }
 
   .workshop-rail-btn-active {
-    background-color: rgb(var(--color-primary-500) / 0.22);
+    background-color: rgb(var(--color-primary-500) / 0.28);
     color: rgb(var(--shell-icon-active));
-    box-shadow: inset 0 0 0 1px rgb(var(--color-primary-500) / 0.45);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.1),
+      inset 0 -1px 0 rgb(0 0 0 / 0.18);
+  }
+
+  .workshop-rail-btn-active:hover {
+    background-color: rgb(var(--color-primary-500) / 0.34);
+    color: rgb(var(--shell-icon-active));
+  }
+
+  .workshop-rail-btn-active:focus-visible {
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.1),
+      inset 0 -1px 0 rgb(0 0 0 / 0.18),
+      inset 0 0 0 1px rgb(var(--color-primary-500) / 0.35);
   }
 
   .workshop-rail-tier-divider {
-    @apply my-1.5 h-px w-6 shrink-0;
-    background-color: rgb(var(--shell-border) / 0.45);
+    @apply my-2.5 h-px w-7 shrink-0;
+    background-color: rgb(var(--shell-border) / 0.32);
   }
 
   .workshop-rail-btn-tier-life {
@@ -569,11 +593,11 @@
 
   .workshop-rail-btn-tier-utility {
     @apply h-8 w-8;
-    color: rgb(var(--color-primary-400) / 0.48);
+    color: rgb(var(--shell-icon) / 0.78);
   }
 
   .workshop-rail-btn-tier-utility:hover {
-    color: rgb(var(--color-primary-300) / 0.92);
+    color: rgb(var(--shell-icon-hover) / 0.95);
   }
 
   .workshop-rail-badge {

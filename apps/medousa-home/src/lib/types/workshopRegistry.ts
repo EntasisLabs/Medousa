@@ -275,7 +275,7 @@ export function workshopRemoteAccessNote(
   isMobile: boolean,
 ): string | null {
   if (isMobile || !isPortalWorkshop(workshop) || workshop.kind === "local") return null;
-  return "LAN only on desktop — use the mobile app for LTE";
+  return "On this network";
 }
 
 export function workshopHostLabel(url: string, kind: WorkshopKind): string {

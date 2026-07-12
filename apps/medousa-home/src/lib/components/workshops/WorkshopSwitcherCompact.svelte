@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Check, Plus, Settings2 } from "@lucide/svelte";
+  import { Check, Plus } from "@lucide/svelte";
   import WorkshopJoinSheet from "$lib/components/workshops/WorkshopJoinSheet.svelte";
   import { workshops } from "$lib/stores/workshops.svelte";
   import { connection } from "$lib/stores/connection.svelte";
@@ -71,16 +71,14 @@
     if (workshop.id === workshops.activeWorkshopId) {
       if (connection.checking) return "Connecting…";
       if (connection.online) {
-        return remoteNote ? `${remoteNote} · ${host}` : `Connected · ${host}`;
+        return `Connected · ${remoteNote ?? host}`;
       }
       if (connection.offline) {
-        return remoteNote
-          ? `Offline · ${remoteNote}`
-          : `Offline · ${host} — try medousa doctor`;
+        return `Offline · ${remoteNote ?? host}`;
       }
     }
     if (workshop.kind === "local") return host;
-    return remoteNote ? `${remoteNote}` : `Team · ${host}`;
+    return remoteNote ?? host;
   }
 
   function avatarStyle(workshop: WorkshopServer): string | undefined {
@@ -91,7 +89,7 @@
 {#if showRail}
   <button
     type="button"
-    class="workshop-rail-btn workshop-rail-workshop-btn mb-3 font-semibold leading-none {sheetOpen
+    class="workshop-rail-btn workshop-rail-workshop-btn mb-9 font-semibold leading-none {sheetOpen
       ? 'workshop-rail-workshop-btn-open'
       : ''}"
     style={activeBrandStyle}
@@ -244,9 +242,9 @@
           <h2 class="{isRailMenu ? 'workshop-switcher-title' : 'text-sm font-semibold text-surface-50'}">
             Workshops
           </h2>
-          <p class="{isRailMenu ? 'workshop-switcher-subtitle' : 'workshop-faint mt-0.5 text-xs'}">
-            {isRailMenu ? "Pick where Medousa connects" : "Switch between your workshops"}
-          </p>
+          {#if !isRailMenu}
+            <p class="workshop-faint mt-0.5 text-xs">Switch between your workshops</p>
+          {/if}
         </div>
         {#if !isRailMenu}
           <button
@@ -311,9 +309,6 @@
 
       {#if !workshops.loading && !workshops.error}
         <div class="{isRailMenu ? 'workshop-switcher-footer' : 'px-4 pb-4'}">
-          {#if isRailMenu}
-            <div class="workshop-switcher-divider" aria-hidden="true"></div>
-          {/if}
           <button
             type="button"
             role="menuitem"
@@ -336,15 +331,10 @@
             type="button"
             role="menuitem"
             class="{isRailMenu
-              ? 'workshop-switcher-action mt-0.5'
+              ? 'workshop-switcher-manage'
               : 'workshop-text-action mt-3 text-sm'}"
             onclick={openConnectionSettings}
           >
-            {#if isRailMenu}
-              <span class="workshop-switcher-action-icon" aria-hidden="true">
-                <Settings2 size={14} strokeWidth={2} />
-              </span>
-            {/if}
             Manage in Settings
           </button>
         </div>
