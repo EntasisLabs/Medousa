@@ -476,6 +476,7 @@ pub fn run() {
             daemon::vault::vault_set_active_root,
             daemon::vault::vault_add_root,
             daemon::vault::vault_get_note,
+            daemon::vault::vault_get_file,
             daemon::vault::vault_save_note,
             daemon::vault::vault_create_note,
             daemon::vault::vault_delete_note,

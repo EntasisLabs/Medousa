@@ -3,14 +3,17 @@
 use anyhow::Result;
 
 use crate::daemon_api::{
-    VaultBacklinksResponse, VaultDeleteResponse, VaultNoteContentResponse,
+    VaultBacklinksResponse, VaultDeleteResponse, VaultFileContentResponse, VaultNoteContentResponse,
     VaultNotesListResponse, VaultTagsListResponse, VaultWriteRequest, VaultWriteResponse,
     WorkspaceEventActor,
 };
+use crate::vault::path::resolve_user_note_path;
 use crate::vault::search::search_vault;
 use crate::vault::semantic_tags::{apply_semantic_tags_on_write, collect_distinct_tags, entry_has_all_tags, parse_tags_query};
 use crate::vault::store::vault_store;
 use crate::workspace::store::workspace_store;
+use base64::Engine;
+use std::fs;
 
 pub struct VaultService;
 
@@ -60,6 +63,28 @@ impl VaultService {
         Ok(VaultNoteContentResponse {
             note: entry.to_vault_note(backlinks),
             content,
+        })
+    }
+
+    /// Read a vault-relative file (images, attachments) for remote Home preview.
+    pub fn read_file(path: &str) -> Result<VaultFileContentResponse> {
+        const MAX_PREVIEW_BYTES: u64 = 8 * 1024 * 1024;
+        let absolute = resolve_user_note_path(path)?;
+        if !absolute.is_file() {
+            anyhow::bail!("vault file not found: {path}");
+        }
+        let meta = fs::metadata(&absolute)?;
+        let size = meta.len();
+        if size > MAX_PREVIEW_BYTES {
+            anyhow::bail!("vault file too large for preview (max 8MB)");
+        }
+        let bytes = fs::read(&absolute)?;
+        let content_type = mime_guess_from_path(&absolute);
+        Ok(VaultFileContentResponse {
+            path: path.trim().trim_start_matches('/').to_string(),
+            content_type,
+            base64: base64::engine::general_purpose::STANDARD.encode(bytes),
+            size,
         })
     }
 
@@ -276,6 +301,31 @@ mod tests {
         let deleted = VaultService::delete_note(&path).expect("delete");
         assert!(deleted.deleted);
     }
+}
+
+fn mime_guess_from_path(path: &std::path::Path) -> String {
+    let ext = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    match ext.as_str() {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "svg" => "image/svg+xml",
+        "bmp" => "image/bmp",
+        "ico" => "image/x-icon",
+        "pdf" => "application/pdf",
+        "csv" => "text/csv",
+        "tsv" => "text/tab-separated-values",
+        "json" => "application/json",
+        "md" | "markdown" => "text/markdown",
+        "txt" => "text/plain",
+        _ => "application/octet-stream",
+    }
+    .to_string()
 }
 
 fn append_vault_feed_event(

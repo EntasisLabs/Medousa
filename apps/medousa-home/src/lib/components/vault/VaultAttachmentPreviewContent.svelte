@@ -11,6 +11,7 @@
   } from "$lib/utils/vaultAttachments";
   import { loadSpreadsheetPreview } from "$lib/utils/spreadsheetPreviewLoader";
   import type { SpreadsheetPreviewData } from "$lib/utils/spreadsheetPreview";
+  import { isCoLocatedWorkshop } from "$lib/utils/workshopLocality";
   import VaultSpreadsheetPreview from "./VaultSpreadsheetPreview.svelte";
 
   interface Props {
@@ -47,7 +48,9 @@
       try {
         previewUrl = await attachmentPreviewUrl(current.path);
         if (!previewUrl) {
-          previewError = "Preview needs the Medousa desktop app and a local file path.";
+          previewError = isCoLocatedWorkshop()
+            ? "Preview needs a readable file path on this Mac."
+            : "Preview for linked files is available on the workshop Mac.";
         }
       } catch (err) {
         previewError = err instanceof Error ? err.message : String(err);

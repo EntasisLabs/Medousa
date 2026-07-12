@@ -1,9 +1,10 @@
 #[cfg(feature = "async")]
 use medousa_types::{
     VaultAddRootRequest, VaultBacklinksQuery, VaultBacklinksResponse, VaultDeleteResponse,
-    VaultNoteContentResponse, VaultNotesListResponse, VaultNotesQuery, VaultPutQuery,
-    VaultRootsResponse, VaultSearchQuery, VaultSearchResponse, VaultSetActiveRootRequest,
-    VaultTagsListResponse, VaultTagsQuery, VaultWriteRequest, VaultWriteResponse,
+    VaultFileContentResponse, VaultNoteContentResponse, VaultNotesListResponse, VaultNotesQuery,
+    VaultPutQuery, VaultRootsResponse, VaultSearchQuery, VaultSearchResponse,
+    VaultSetActiveRootRequest, VaultTagsListResponse, VaultTagsQuery, VaultWriteRequest,
+    VaultWriteResponse,
 };
 
 #[cfg(feature = "async")]
@@ -117,6 +118,19 @@ impl VaultApi<'_> {
         note_path: &str,
     ) -> Result<VaultNoteContentResponse, crate::SdkError> {
         let path = format!("/v1/vault/notes/{}", note_path.trim_start_matches('/'));
+        let value = self
+            .client
+            .transport()
+            .get_json(self.client.base_url(), &path)
+            .await?;
+        decode(value).await
+    }
+
+    pub async fn get_file(
+        &self,
+        file_path: &str,
+    ) -> Result<VaultFileContentResponse, crate::SdkError> {
+        let path = format!("/v1/vault/files/{}", file_path.trim_start_matches('/'));
         let value = self
             .client
             .transport()

@@ -5,6 +5,10 @@ import {
   scanExternalRoot,
 } from "$lib/utils/externalDeskApi";
 import { guessMimeFromPath } from "$lib/utils/vaultAttachments";
+import {
+  isCoLocatedWorkshop,
+  vaultPinFolderRemoteHint,
+} from "$lib/utils/workshopLocality";
 
 const PINNED_ROOTS_KEY = "medousa-home-pinned-roots";
 const SIDEBAR_MODE_KEY = "medousa-home-library-sidebar-mode";
@@ -89,6 +93,10 @@ export class ExternalDeskStore {
 
   async pinFolder() {
     this.error = null;
+    if (!isCoLocatedWorkshop()) {
+      this.error = vaultPinFolderRemoteHint();
+      return false;
+    }
     const path = await pickExternalFolder();
     if (!path) return false;
     if (this.pinnedRoots.some((root) => root.path === path)) {

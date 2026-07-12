@@ -22,6 +22,8 @@
     type AllowedSurfaceIcon,
   } from "$lib/utils/environmentIconCatalog";
   import { addVaultSelectionToChat } from "$lib/utils/vaultNoteWorkshop";
+  import { canUseLocalVaultFilesystem } from "$lib/utils/vaultFilesystem";
+  import { vaultHostSideHint } from "$lib/utils/workshopLocality";
 
   interface MenuItem {
     id: string;
@@ -35,6 +37,7 @@
 
   const target = $derived(vaultContextMenu.target);
   const desktopTauri = $derived(isTauri());
+  const localFs = $derived(canUseLocalVaultFilesystem());
   const pickingIcon = $derived(vaultContextMenu.iconPickerKey != null);
   const activeIcon = $derived(
     vaultContextMenu.iconPickerKey
@@ -164,7 +167,7 @@
         {
           id: "reveal",
           label: "Reveal in Finder",
-          hidden: !desktopTauri,
+          hidden: !localFs,
           onClick: async () => {
             await revealVaultNoteInFinder(path);
           },
@@ -172,10 +175,17 @@
         {
           id: "open-default",
           label: "Open with default app",
-          hidden: !desktopTauri,
+          hidden: !localFs,
           onClick: async () => {
             await openVaultNoteWithDefaultApp(path);
           },
+        },
+        {
+          id: "host-hint",
+          label: vaultHostSideHint(),
+          hidden: localFs || !desktopTauri,
+          disabled: true,
+          onClick: () => {},
         },
         {
           id: "export-pdf",
@@ -218,7 +228,7 @@
       {
         id: "insert-embed",
         label: "Insert embed",
-        hidden: !canEmbedImage,
+        hidden: !canEmbedImage || !localFs,
         onClick: async () => {
           await vault.insertImageEmbed(path);
         },
@@ -226,6 +236,7 @@
       {
         id: "open",
         label: "Open file",
+        hidden: !localFs && !path.startsWith("http://") && !path.startsWith("https://"),
         onClick: async () => {
           await openFileWithDefaultApp(path);
         },
@@ -233,10 +244,17 @@
       {
         id: "reveal",
         label: "Reveal in Finder",
-        hidden: !desktopTauri,
+        hidden: !localFs,
         onClick: async () => {
           await revealFileInFinder(path);
         },
+      },
+      {
+        id: "host-hint",
+        label: vaultHostSideHint(),
+        hidden: localFs || !desktopTauri,
+        disabled: true,
+        onClick: () => {},
       },
     ];
   });
@@ -348,15 +366,20 @@
       </div>
     {:else}
       {#each visibleItems as item (item.id)}
-        <button
-          type="button"
-          class="vault-context-menu-item"
-          role="menuitem"
-          disabled={item.disabled}
-          onclick={() => void runItem(item)}
-        >
-          {item.label}
-        </button>
+        {#if item.disabled}
+          <p class="vault-context-menu-hint px-3 py-2 text-[11px] leading-snug text-surface-500">
+            {item.label}
+          </p>
+        {:else}
+          <button
+            type="button"
+            class="vault-context-menu-item"
+            role="menuitem"
+            onclick={() => void runItem(item)}
+          >
+            {item.label}
+          </button>
+        {/if}
       {/each}
     {/if}
   </div>
