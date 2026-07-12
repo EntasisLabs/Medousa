@@ -14,7 +14,10 @@
   import { layout } from "$lib/stores/layout.svelte";
   import { noteWorkshop } from "$lib/stores/noteWorkshop.svelte";
   import { vault } from "$lib/stores/vault.svelte";
-  import { vaultContextScopeHint } from "$lib/utils/vaultNoteBridge";
+  import {
+    vaultContextHasSelection,
+    vaultContextScopeHint,
+  } from "$lib/utils/vaultNoteBridge";
   import { launchVaultNoteWorkshop } from "$lib/utils/vaultNoteWorkshop";
 
   interface Props {
@@ -95,6 +98,9 @@
 
   const scopeHint = $derived(
     chat.vaultNoteContext ? vaultContextScopeHint(chat.vaultNoteContext) : null,
+  );
+  const talkingAboutPassage = $derived(
+    vaultContextHasSelection(chat.vaultNoteContext),
   );
 
   const title = $derived(
@@ -244,7 +250,9 @@
         <span class="vault-note-workshop-sheet-grip" aria-hidden="true"></span>
       </div>
       <header class="vault-note-workshop-sheet-header" aria-label="Note chat controls">
-        <p class="min-w-0 flex-1 truncate text-[11px] text-surface-400">Talk about this note</p>
+        <p class="min-w-0 flex-1 truncate text-[11px] text-surface-400">
+          {talkingAboutPassage ? "Working on this passage" : "Talk about this note"}
+        </p>
         <div class="flex shrink-0 items-center gap-0.5">
           <div class="relative">
             <button

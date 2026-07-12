@@ -24,6 +24,10 @@
   import { formatSessionLabel } from "$lib/utils/formatSession";
   import { visibleChatStatusLine } from "$lib/utils/chatStreamDisplay";
   import { STARTER_PROMPTS } from "$lib/utils/starterPrompts";
+  import {
+    ensureVaultSelectionInPrompt,
+    vaultContextHasSelection,
+  } from "$lib/utils/vaultNoteBridge";
   import { formatToolName, formatTurnPhase } from "$lib/utils/formatTurn";
   import { groupAskThreads, isChatLaneMessage } from "$lib/utils/askThreads";
   import { groupWorkerThreads } from "$lib/utils/workerThreads";
@@ -278,7 +282,8 @@
   async function submit(event: Event) {
     event.preventDefault();
     if (connection.offline) return;
-    const prompt = chat.draft.trim();
+    const scopeForSend = chat.vaultNoteContext;
+    const prompt = ensureVaultSelectionInPrompt(chat.draft.trim(), scopeForSend);
     const hasAttachments = chat.pendingMediaRefs.length > 0;
     if (!prompt && !hasAttachments) return;
     if (hasVisionMediaRefs(chat.pendingMediaRefs)) {
@@ -364,7 +369,8 @@
     if (mobile) haptic("light");
     try {
       const mode = chat.hasLiveInteractiveTurn() ? "background" : "interactive";
-      await submitTurn(prompt, prompt, mode);
+      const fullPrompt = ensureVaultSelectionInPrompt(prompt, chat.vaultNoteContext);
+      await submitTurn(fullPrompt, fullPrompt, mode);
     } catch (err) {
       chat.setError(err instanceof Error ? err.message : String(err));
     }
@@ -704,12 +710,20 @@
         {:else if workshop && chat.vaultNoteContext}
           {#if workshopSticky}
             <p class="px-1 text-[12px] leading-relaxed text-surface-500">
-              Ask about this note…
+              {vaultContextHasSelection(chat.vaultNoteContext)
+                ? "Ask about this passage…"
+                : "Ask about this note…"}
             </p>
           {:else}
-            <p class="text-sm text-surface-400">Ask about this note — links, edits, or next steps.</p>
+            <p class="text-sm text-surface-400">
+              {vaultContextHasSelection(chat.vaultNoteContext)
+                ? "Work this passage with Medousa — edit, clarify, or next steps."
+                : "Ask about this note — links, edits, or next steps."}
+            </p>
             <div class="mt-3 flex flex-wrap gap-2">
-              {#each ["What links here?", "Summarize this note", "Suggest edits"] as prompt (prompt)}
+              {#each vaultContextHasSelection(chat.vaultNoteContext)
+                ? ["Suggest an edit", "Clarify this", "Expand this"]
+                : ["What links here?", "Summarize this note", "Suggest edits"] as prompt (prompt)}
                 <button
                   type="button"
                   class="rounded-full border border-surface-500/40 bg-surface-950/50 px-3 py-1.5 text-xs text-surface-200 transition hover:border-primary-400/50 hover:text-surface-50"
