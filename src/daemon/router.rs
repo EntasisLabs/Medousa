@@ -148,6 +148,10 @@ pub fn build_feature_routers(
             axum::routing::get(crate::vault_handlers::get_vault_backlinks),
         )
         .route(
+            "/v1/vault/files/{*file_path}",
+            axum::routing::get(crate::vault_handlers::get_vault_file),
+        )
+        .route(
             "/v1/vault/notes/{*note_path}",
             axum::routing::get(crate::vault_handlers::get_vault_note)
                 .put(crate::vault_handlers::put_vault_note)

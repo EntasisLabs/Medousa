@@ -281,18 +281,25 @@ const TOPICS: &[WikiTopic] = &[
         summary: "Prefer enriched markdown embeds for structured chat answers; use cognition_ui_build for streaming interactive scenes.",
         policy: r#"    role(.99): "Chat Liquid is primarily enriched markdown on supports_ui_artifacts clients (Home yes).",
     markdown_first(.99): {
-        card(.99): "```card\\ntitle: Sol\\nsubtitle: Flagship\\nbody: …\\nemoji: 🧠\\n```",
-        carousel(.99): "```carousel\\ntitle: Sol | body: Flagship | emoji: 🧠\\n``` (no leading dashes)",
+        card(.99): "```card\\ntitle: Tradeoff\\nsubtitle: Less proven independently\\nemoji: 📋\\nmeta: Caveat · AI model · Early read\\nsummary: Headline claims need independent validation.\\nchips: Benchmarks | Claims\\npoint: Launch framing | Most early coverage echoes company claims.\\n``` (tap opens detail sheet)",
+        carousel(.99): "```carousel\\n---\\ntitle: Strengths\\nsubtitle: Coding\\nemoji: 🎮\\nsummary: Strong agent signal\\nchips: Coding | Agents\\n---\\ntitle: Tradeoff\\nsubtitle: Less proven\\nsummary: Treat benchmarks as provisional\\npoint: Independent testing | Third-party evals lag launches.\\n``` (or legacy one-line rows)",
         actions(.99): "```actions\\nWhich is best for coding? | coding\\n``` (Label | intent, not Label:)",
         callout(.98): "```callout\\ntone: note\\ntitle: Aside\\nbody: …\\n```",
         section(.98): "```section\\ntitle: Model family\\nsubtitle: …\\n---\\nOptional prose body\\n```",
         chips(.98): "```chips\\nUltra | tone: accent\\nFast | tone: default\\n```",
         media(.97): "```media\\nsrc: https://…\\nalt: Diagram\\ncaption: …\\n```",
         cite(.98): "```cite\\ntitle: Source title\\nurl: https://…\\nquote: Short excerpt\\nsource: web search\\n```",
+        compare(.99): "```compare\\ntitle: Laptops for video\\nrecommendation: MacBook Pro 14\\n\\n| | MacBook Pro 14 | XPS 15 |\\n| --- | --- | --- |\\n| Display | Excellent | Good |\\n```",
+        plan(.99): "```plan\\ntitle: Trip flow\\nsubtitle: Simple pacing\\n\\n---\\nlabel: Arrive in Tokyo\\ntime: Day 1\\nemoji: ✈️\\nbody: Check in and ease in\\n---\\nlabel: Explore Tokyo\\ntime: Days 2–4\\nemoji: 🏙️\\nbody: Sights and food\\n```",
+        timeline(.99): "```timeline\\ntitle: Japan trip so far\\ngranularity: day\\n\\n---\\nts: Day 1\\nlabel: Arrive Narita\\ndetail: N’EX in\\nlane: travel\\n---\\nts: Days 2–4\\nlabel: Tokyo base\\ndetail: Markets and neon\\n```",
+        shortlist(.99): "```shortlist\\ntitle: Great neighborhoods\\ncriteria: energy · food · transit\\n\\n---\\nlabel: Shinjuku\\nsummary: Best for energy\\nscore: 9.2\\n---\\nlabel: Asakusa\\nsummary: Traditional feel\\nscore: 8.4\\n```",
+        decision(.99): "```decision\\ntitle: Which laptop?\\nrecommendation: MacBook Pro 14\\n\\n---\\nlabel: MacBook Pro 14\\npros: Display | Battery\\ncons: Price\\n---\\nlabel: XPS 15\\npros: Ports\\ncons: Thermals\\n```",
+        brief(.99): "```brief\\ntitle: Why Tokyo first\\ntone: research\\n\\n---\\nheading: Easy logistics\\nbody: One simple route\\n\\n===\\n---\\ntitle: JNTO guide\\nurl: https://example.com\\n```",
+        dashboard(.99): "```dashboard\\ntitle: Trip pulse\\ncolumns: 2\\n\\n---\\nlabel: Days locked\\nvalue: 7\\ntone: success\\n---\\nlabel: Trains\\nvalue: …\\nfeed: trip.london.trains\\nfield: summary\\ntone: accent\\n``` (chat tiles poll feed_tail — no cognition_feed_subscribe required; canvas HTML widgets still use subscribe)",
         mermaid(.97): "```mermaid\\nflowchart LR\\n  A --> B\\n```",
         icon(.98): "{{icon:sparkles}} — allowlisted Lucide names only"
     },
-    curate_tools(.99): "After tools, curate into the answer (cite / GFM table / media / mermaid) — do not dump raw tool JSON; tool_trace is the audit footnote",
+    curate_tools(.99): "After tools, curate into the answer (cite / compare / plan / timeline / shortlist / decision / brief / dashboard / GFM table / media / mermaid) — do not dump raw tool JSON; tool_trace is the audit footnote",
     governor(.99): "Runtime hydrates embeds into Liquid molecules — never invent HTML/CSS or plan_layout trees in chat.",
     no_reasoning_in_body(.98): "Do not paste > [!abstract] Reasoning into the final answer — thinking streams separately",
     ui_build(.97): "cognition_ui_build (begin → add_* → done) when you need a streaming interactive scene session beyond markdown embeds",
@@ -311,7 +318,7 @@ const TOPICS: &[WikiTopic] = &[
     prefer_markdown(.99): {
         when(.99): "structured chat answers — cards, carousels, action rows, tables, icons — the common case",
         why(.98): "model writes familiar markdown; runtime hydrates Liquid molecules; no layout dialect",
-        how(.99): "```card``` / ```carousel``` / ```actions``` / ```callout``` / ```section``` / ```chips``` / ```media``` / ```cite``` / ```mermaid``` / {{icon:name}} — curate tool outputs into these; tool_trace stays the audit footnote"
+        how(.99): "```card``` / ```carousel``` / ```actions``` / ```callout``` / ```section``` / ```chips``` / ```media``` / ```cite``` / ```compare``` / ```plan``` / ```timeline``` / ```shortlist``` / ```decision``` / ```brief``` / ```dashboard``` / ```mermaid``` / {{icon:name}} — curate tool outputs into these; tool_trace stays the audit footnote"
     },
     prefer_ui_build(.97): {
         when(.97): "streaming interactive scene session that must fill slots over multiple tool calls",
@@ -623,7 +630,7 @@ const TOPICS: &[WikiTopic] = &[
         switch_nav(.96): "cognition_environment_activate_preset",
         list_components(.98): "cognition_component_list",
         add_component(.97): "cognition_component_create",
-        render_native_scene(.98): "enriched markdown embeds (```card``` / ```carousel``` / ```actions``` / ```callout``` / ```section``` / ```chips``` / ```media``` / ```cite``` / ```mermaid```) for chat; cognition_ui_build for streaming scenes",
+        render_native_scene(.98): "enriched markdown embeds (```card``` / ```carousel``` / ```actions``` / ```callout``` / ```section``` / ```chips``` / ```media``` / ```cite``` / ```compare``` / ```plan``` / ```timeline``` / ```shortlist``` / ```decision``` / ```brief``` / ```dashboard``` / ```mermaid```) for chat; cognition_ui_build for streaming scenes",
         persist_scene(.98): "cognition_component_create type:scene, config.scene:{ops:[…]} — durable Liquid scene pinned to a custom surface",
         publish_html(.98): "cognition_ui_present",
         edit_html(.97): "cognition_artifact_write",

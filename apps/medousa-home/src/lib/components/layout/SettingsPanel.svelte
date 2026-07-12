@@ -7,10 +7,12 @@
   import SettingsModelsSection from "$lib/components/settings/SettingsModelsSection.svelte";
   import SettingsVoiceSection from "$lib/components/settings/SettingsVoiceSection.svelte";
   import SettingsReachSection from "$lib/components/settings/SettingsReachSection.svelte";
+  import SettingsEngineSection from "$lib/components/settings/SettingsEngineSection.svelte";
   import SettingsPhoneSection from "$lib/components/settings/SettingsPhoneSection.svelte";
   import SettingsLanShareSection from "$lib/components/settings/SettingsLanShareSection.svelte";
   import SettingsBasementSection from "$lib/components/settings/SettingsBasementSection.svelte";
   import SettingsCanvasSection from "$lib/components/settings/SettingsCanvasSection.svelte";
+  import SettingsPackagesSection from "$lib/components/settings/SettingsPackagesSection.svelte";
   import type { DaemonHealth } from "$lib/daemon";
   import { workshopDefaults } from "$lib/stores/workshopDefaults.svelte";
   import { settingsNav } from "$lib/stores/settingsNav.svelte";
@@ -132,10 +134,14 @@
         <SettingsVoiceSection {mobile} />
       {:else if activeSection === "reach"}
         <SettingsReachSection {mobile} />
+      {:else if activeSection === "engine"}
+        <SettingsEngineSection {mobile} />
       {:else if activeSection === "phone"}
         <SettingsPhoneSection {mobile} />
       {:else if activeSection === "nearby"}
-        <SettingsLanShareSection />
+        <SettingsLanShareSection {mobile} />
+      {:else if activeSection === "packages"}
+        <SettingsPackagesSection {mobile} />
       {:else}
         <SettingsBasementSection {revision} {health} {onDaemonHealth} {mobile} />
       {/if}

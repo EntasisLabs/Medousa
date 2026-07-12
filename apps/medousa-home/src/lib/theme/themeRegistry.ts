@@ -5,6 +5,9 @@ export type ColorThemeGroup = "workshop" | "apple" | "familiar";
 export type ColorThemeId =
   | "medousa"
   | "black-lily"
+  | "caduceus"
+  | "ember"
+  | "hearth"
   | "cupertino"
   | "graphite"
   | "midnight"
@@ -31,6 +34,9 @@ export const SKELETON_THEME_NAMES: Record<
 > = {
   medousa: { dark: "medousa", light: "medousa-light" },
   "black-lily": { dark: "black-lily", light: "black-lily-light" },
+  caduceus: { dark: "caduceus-dark", light: "caduceus-light" },
+  ember: { dark: "ember-dark", light: "ember-light" },
+  hearth: { dark: "hearth-dark", light: "hearth-light" },
   cupertino: { dark: "cupertino-dark", light: "cupertino-light" },
   graphite: { dark: "graphite-dark", light: "graphite-light" },
   midnight: { dark: "midnight-dark", light: "midnight-light" },
@@ -58,6 +64,27 @@ export const COLOR_THEME_OPTIONS: ColorThemeOption[] = [
     label: "Black Lily",
     tagline: "Void black, lily pink & hex purple — calm goth accent",
     swatches: ["#0D0A0F", "#E8559A", "#1E1427"],
+    group: "workshop",
+  },
+  {
+    id: "caduceus",
+    label: "Caduceus",
+    tagline: "Serpentine ink, soft jade — quiet apothecary desk",
+    swatches: ["#0A0E0C", "#7EB494", "#8CA8B0"],
+    group: "workshop",
+  },
+  {
+    id: "ember",
+    label: "Ember",
+    tagline: "Cool ash canvas, rose-copper glow — banked coals",
+    swatches: ["#0C0A0A", "#CC7662", "#A09490"],
+    group: "workshop",
+  },
+  {
+    id: "hearth",
+    label: "Hearth",
+    tagline: "Evening cocoa, dusty rose — soft reading nook",
+    swatches: ["#0E0C0A", "#BA7A6C", "#F6F2EC"],
     group: "workshop",
   },
   {

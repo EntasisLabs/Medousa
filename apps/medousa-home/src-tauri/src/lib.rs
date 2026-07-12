@@ -154,6 +154,11 @@ pub fn run() {
                         api.prevent_close();
                         let _ = window.hide();
                     }
+                    "vault-sticky" => {
+                        api.prevent_close();
+                        let _ = window.set_always_on_top(false);
+                        let _ = window.hide();
+                    }
                     _ => {}
                 }
             }
@@ -285,6 +290,8 @@ pub fn run() {
             human_browser::human_browser_popout_close_tab,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             human_browser::human_browser_report_new_window,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            human_browser::human_browser_report_hotkey,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             human_browser::human_browser_reload,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
@@ -469,6 +476,7 @@ pub fn run() {
             daemon::vault::vault_set_active_root,
             daemon::vault::vault_add_root,
             daemon::vault::vault_get_note,
+            daemon::vault::vault_get_file,
             daemon::vault::vault_save_note,
             daemon::vault::vault_create_note,
             daemon::vault::vault_delete_note,
@@ -561,6 +569,12 @@ pub fn run() {
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             window::window_hide_chat_popout,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            window::window_show_vault_sticky,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            window::window_hide_vault_sticky,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            window::window_set_vault_sticky_always_on_top,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
             window::window_show_browser,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             window::window_hide_browser,
@@ -602,6 +616,9 @@ pub fn run() {
             wizard::wizard_apply_screen1,
             wizard::wizard_complete,
             packages::packages_status,
+            packages::packages_catalog,
+            packages::packages_install,
+            packages::packages_remove,
             packages::packages_open_installer,
             daemon::local_inference::local_inference_hardware,
             daemon::local_inference::local_inference_catalog,

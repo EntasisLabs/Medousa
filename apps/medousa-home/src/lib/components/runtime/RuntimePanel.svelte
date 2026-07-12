@@ -1,50 +1,33 @@
 <script lang="ts">
-  import WorkshopDefaultsPanel from "$lib/components/settings/WorkshopDefaultsPanel.svelte";
-  import DaemonPortalChip from "$lib/components/chat/DaemonPortalChip.svelte";
   import { untrack } from "svelte";
   import { chat } from "$lib/stores/chat.svelte";
-  import { recurring } from "$lib/stores/recurring.svelte";
   import { runtime } from "$lib/stores/runtime.svelte";
   import { settings } from "$lib/stores/settings.svelte";
   import { formatToolName, formatTurnPhase } from "$lib/utils/formatTurn";
   import { visibleChatStatusLine } from "$lib/utils/chatStreamDisplay";
-  import type { DepthMode, ReasoningEffortMode, RuntimeTab } from "$lib/types/runtime";
-  import { REASONING_EFFORT_OPTIONS } from "$lib/types/reasoningEffort";
-  import {
-    workshopRuntimeReadHint,
-    workshopRuntimeRoutingHint,
-  } from "$lib/platformCopy";
+  import type { RuntimeTab } from "$lib/types/runtime";
 
   interface Props {
     visible: boolean;
     inMotionCount: number;
-    onOpenCron?: () => void;
     mobile?: boolean;
     embedded?: boolean;
   }
 
-  let { visible, inMotionCount, onOpenCron, mobile = false, embedded = false }: Props =
-    $props();
+  let { visible, inMotionCount, mobile = false, embedded = false }: Props = $props();
 
-  let draftProvider = $state(runtime.provider);
-  let draftModel = $state(runtime.model);
   let didInitialLoad = $state(false);
 
   const allTabs: { id: RuntimeTab; label: string }[] = [
     { id: "now", label: "Now" },
     { id: "jobs", label: "Jobs" },
-    { id: "schedule", label: "Schedule" },
     { id: "delivery", label: "Delivery" },
-    { id: "controls", label: "Controls" },
-    { id: "workshop", label: "Workshop" },
     { id: "routing", label: "Routing" },
   ];
 
   const tabs = $derived(
     mobile
-      ? allTabs.filter((tab) =>
-          ["now", "jobs", "delivery", "controls", "workshop"].includes(tab.id),
-        )
+      ? allTabs.filter((tab) => ["now", "jobs", "delivery"].includes(tab.id))
       : allTabs,
   );
 
@@ -59,7 +42,7 @@
   );
 
   $effect(() => {
-    if (mobile && !tabs.some((tab) => tab.id === runtime.activeTab)) {
+    if (!tabs.some((tab) => tab.id === runtime.activeTab)) {
       runtime.activeTab = "now";
     }
   });
@@ -70,15 +53,11 @@
       return;
     }
 
-    draftProvider = runtime.provider;
-    draftModel = runtime.model;
-
     if (!didInitialLoad) {
       didInitialLoad = true;
       untrack(() => {
         void runtime.refresh();
         void runtime.refreshStageRoutes();
-        void recurring.refresh();
       });
     }
   });
@@ -212,24 +191,6 @@
       {:else}
         <p class="workshop-muted">No stats yet — refresh to poll the daemon.</p>
       {/if}
-    {:else if runtime.activeTab === "schedule"}
-      <div class="space-y-3">
-        <p class="workshop-muted text-sm">
-          Cron jobs live in Automations — search, pause, and create from one list.
-        </p>
-        <p class="workshop-faint">
-          {recurring.activeCount().enabled}/{recurring.activeCount().total} active
-        </p>
-        {#if onOpenCron}
-          <button
-            type="button"
-            class="btn btn-sm variant-soft-primary"
-            onclick={onOpenCron}
-          >
-            Open Automations
-          </button>
-        {/if}
-      </div>
     {:else if runtime.activeTab === "delivery"}
       <div class="space-y-4">
         {#if runtime.delivery}
@@ -305,132 +266,10 @@
           </section>
         {/if}
       </div>
-    {:else if runtime.activeTab === "controls"}
-      <section class="max-w-xl space-y-4">
-        {#if mobile}
-          <div class="workshop-inset space-y-3 p-4">
-            <DaemonPortalChip />
-            <p class="workshop-faint text-xs">
-              {workshopRuntimeRoutingHint()}
-            </p>
-          </div>
-        {:else}
-          <p class="workshop-faint">
-            Session override only — tweaks the next turns without rewriting your charter. Voice lives
-            in Settings → Voice; tools and delegation in Settings → Reach.
-          </p>
-        {/if}
-
-        {#if !mobile}
-        <div class="workshop-inset p-4">
-          <h2 class="text-sm font-semibold text-surface-100">Model</h2>
-          <div class="mt-4 grid gap-3 sm:grid-cols-2">
-            <label class="workshop-label block" for="runtime-provider">
-              Provider
-            </label>
-            <label class="workshop-label block" for="runtime-model">
-              Model
-            </label>
-            <input
-              id="runtime-provider"
-              class="input"
-              bind:value={draftProvider}
-              placeholder="ollama"
-            />
-            <input
-              id="runtime-model"
-              class="input"
-              bind:value={draftModel}
-              placeholder="qwen2.5:7b"
-            />
-          </div>
-          <button
-            type="button"
-            class="btn variant-filled-primary mt-4"
-            disabled={runtime.savingControls || !draftProvider.trim() || !draftModel.trim()}
-            onclick={() => runtime.applyModel(draftProvider, draftModel)}
-          >
-            {runtime.savingControls ? "Applying…" : "Apply model"}
-          </button>
-        </div>
-        {/if}
-
-        {#if mobile}
-        <div class="workshop-inset p-4">
-          <h2 class="text-sm font-semibold text-surface-100">Active model</h2>
-          <p class="mt-2 font-mono text-sm text-surface-200">{runtime.modelLabel()}</p>
-          <p class="workshop-faint mt-1 text-xs">{workshopRuntimeReadHint()}</p>
-        </div>
-        {/if}
-
-        <div class="workshop-inset p-4">
-          <h2 class="text-sm font-semibold text-surface-100">Response depth</h2>
-          <div class="mt-4 flex flex-wrap gap-2">
-            {#each ["concise", "standard", "deep"] as mode (mode)}
-              <button
-                type="button"
-                class="rounded-container-token px-3 py-2 text-sm transition {runtime.depthMode ===
-                mode
-                  ? 'bg-primary-500/20 font-medium text-primary-200'
-                  : 'bg-surface-800 text-surface-300 hover:text-surface-100'}"
-                disabled={runtime.savingControls}
-                onclick={() => runtime.setDepthMode(mode as DepthMode)}
-              >
-                {mode}
-              </button>
-            {/each}
-          </div>
-          <p class="workshop-faint mt-3">{runtime.depthHint()}</p>
-        </div>
-
-        <div class="workshop-inset p-4">
-          <h2 class="text-sm font-semibold text-surface-100">Reasoning effort</h2>
-          <p class="workshop-faint mt-1 text-xs">
-            Provider-native reasoning depth — separate from answer stance above.
-          </p>
-          <div class="mt-4 flex flex-wrap gap-2">
-            {#each REASONING_EFFORT_OPTIONS as option (option.id)}
-              <button
-                type="button"
-                class="rounded-container-token px-3 py-2 text-sm transition {runtime.reasoningEffort ===
-                option.id
-                  ? 'bg-primary-500/20 font-medium text-primary-200'
-                  : 'bg-surface-800 text-surface-300 hover:text-surface-100'}"
-                disabled={runtime.savingControls}
-                title={option.hint}
-                onclick={() => runtime.setReasoningEffort(option.id as ReasoningEffortMode)}
-              >
-                {option.label}
-              </button>
-            {/each}
-          </div>
-        </div>
-
-        {#if runtime.controlsMessage}
-          <p
-            class="text-xs {runtime.controlsMessage.startsWith('✓') ||
-            runtime.controlsMessage.includes('set')
-              ? 'text-success-400'
-              : 'text-warning-400'}"
-          >
-            {runtime.controlsMessage}
-          </p>
-        {/if}
-      </section>
-    {:else if runtime.activeTab === "workshop"}
-      <div class="mb-3 rounded-container-token border border-surface-500/35 bg-surface-900/30 px-3 py-2">
-        <p class="text-xs text-surface-300">
-          <span class="font-medium text-surface-200">Terminal mirror.</span>
-          Day-to-day charter is in Settings (Memory, Voice, Reach). Edit everything here when you
-          need the full matrix — verifier thresholds, secrets, all tool round limits.
-        </p>
-      </div>
-      <WorkshopDefaultsPanel visible={visible} {mobile} embedded />
-    {:else}
+    {:else if runtime.activeTab === "routing"}
       <section>
         <p class="workshop-faint">
-          Live view of configured stage routing — edit posture in Settings → Reach; change
-          individual specialists in Workshop → Specialists.
+          Live view of configured stage routing — edit stage models in Settings → Models → Stages.
         </p>
         <div class="mt-4 overflow-x-auto">
           <table class="w-full min-w-[32rem] text-left text-xs">

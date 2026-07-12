@@ -16,8 +16,7 @@ export function threadSubtitle(
 ): string {
   const session = sessionDisplayName(node.session_id, sessionLabels);
   const when = formatContextWhen(node.timestamp);
-  const tier = tierHumanLabel(node.tier);
-  return `${session} · ${when} · ${tier}`;
+  return `${when} · ${session}`;
 }
 
 export function formatThreadTime(timestamp: string): string {

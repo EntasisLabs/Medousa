@@ -5,7 +5,6 @@
   import ActivityCollapsedStrip from "$lib/components/layout/ActivityCollapsedStrip.svelte";
   import EnvironmentRenderer from "$lib/components/environment/EnvironmentRenderer.svelte";
   import { environment } from "$lib/stores/environment.svelte";
-  import WorkRail from "$lib/components/layout/WorkRail.svelte";
   import ActivityPanel from "$lib/components/layout/ActivityPanel.svelte";
   import SettingsPanel from "$lib/components/layout/SettingsPanel.svelte";
   import RuntimePanel from "$lib/components/runtime/RuntimePanel.svelte";
@@ -140,7 +139,7 @@
 
 <div
   bind:this={shellRootEl}
-  class="flex h-screen w-screen flex-col bg-surface-950 text-surface-50"
+  class="flex h-screen w-screen flex-col text-surface-50 workshop-app-root"
   data-debug-label="app-root"
 >
   <div class="flex min-h-0 flex-1" data-debug-label="app-row">
@@ -229,7 +228,6 @@
             <RuntimePanel
               visible={true}
               inMotionCount={workspace.inMotionCount()}
-              onOpenCron={() => navigateToSurface("automations")}
             />
           {:else if activeSurface === "settings"}
             <SettingsPanel
@@ -252,7 +250,7 @@
         >
           <HumanBrowserPanel
             visible={activeSurface === "web"}
-            workRailVisible={workspace.inMotionCount() > 0}
+            workRailVisible={false}
           />
         </div>
         </div>
@@ -325,18 +323,13 @@
         cronTotalCount={automations.activeCount().total}
         pendingDeliveries={runtime.delivery?.pending_job_deliveries ?? null}
         lastTickAt={runtime.stats?.last_tick_at_utc ?? null}
+        motionCards={workspace.railCards()}
+        selectedMotionId={workspace.selectedCardId}
+        onSelectMotion={handleCardSelect}
         onOpenRuntime={() => navigateToSurface("runtime")}
         onOpenCron={() => navigateToSurface("automations")}
         onOpenSpotlight={onOpenSpotlight}
       />
-
-      {#if workspace.inMotionCount() > 0 && activeSurface !== "work"}
-        <WorkRail
-          cards={workspace.railCards()}
-          selectedId={workspace.selectedCardId}
-          onSelect={handleCardSelect}
-        />
-      {/if}
     </div>
   </div>
 

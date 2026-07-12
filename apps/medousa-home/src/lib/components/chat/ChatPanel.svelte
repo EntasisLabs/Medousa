@@ -24,6 +24,10 @@
   import { formatSessionLabel } from "$lib/utils/formatSession";
   import { visibleChatStatusLine } from "$lib/utils/chatStreamDisplay";
   import { STARTER_PROMPTS } from "$lib/utils/starterPrompts";
+  import {
+    ensureVaultSelectionInPrompt,
+    vaultContextHasSelection,
+  } from "$lib/utils/vaultNoteBridge";
   import { formatToolName, formatTurnPhase } from "$lib/utils/formatTurn";
   import { groupAskThreads, isChatLaneMessage } from "$lib/utils/askThreads";
   import { groupWorkerThreads } from "$lib/utils/workerThreads";
@@ -39,6 +43,7 @@
   import { SLASH_COMMAND_HINTS } from "$lib/utils/slashCommands";
   import { isTauri, showChatPopout } from "$lib/window";
   import OfflineChatGate from "$lib/components/chat/OfflineChatGate.svelte";
+  import LiquidCardDetailSheet from "$lib/components/chat/LiquidCardDetailSheet.svelte";
   import { pendingMediaLabels } from "$lib/utils/chatMediaUpload";
   import { hasVisionMediaRefs } from "$lib/types/media";
   import { visionProfileReady } from "$lib/types/inferenceProfiles";
@@ -47,6 +52,7 @@
   import { automationsNav } from "$lib/stores/automationsNav.svelte";
   import { flowDraft } from "$lib/stores/flowDraft.svelte";
   import type { ToolHistorySliceRef } from "$lib/types/toolHistory";
+  import type { CardDetailPayload } from "$lib/markdown/liquidEmbeds";
 
   interface Props {
     visible: boolean;
@@ -54,6 +60,8 @@
     mobile?: boolean;
     embedded?: boolean;
     workshop?: boolean;
+    /** Soft sticky-note bottom sheet — quieter empty/composer chrome. */
+    workshopSticky?: boolean;
     scriptWorkbench?: boolean;
     onOpenContext?: () => void;
     onOpenConnection?: () => void;
@@ -65,6 +73,7 @@
     mobile = false,
     embedded = false,
     workshop = false,
+    workshopSticky = false,
     scriptWorkbench = false,
     onOpenContext,
     onOpenConnection,
@@ -72,6 +81,25 @@
 
   let scrollEl: HTMLDivElement | undefined = $state();
   let atBottom = $state(true);
+  let cardDetailOpen = $state(false);
+  let cardDetail = $state<CardDetailPayload | null>(null);
+
+  function openCardDetail(detail: CardDetailPayload) {
+    cardDetail = detail;
+    cardDetailOpen = true;
+  }
+
+  function closeCardDetail() {
+    cardDetailOpen = false;
+    cardDetail = null;
+  }
+
+  function prefillComposerFromChip(label: string) {
+    const trimmed = label.trim();
+    if (!trimmed) return;
+    chat.draft = trimmed;
+    window.dispatchEvent(new CustomEvent("medousa-chat-composer-focus"));
+  }
 
   const scrollPinThresholdPx = $derived(mobile ? 24 : 96);
 
@@ -254,7 +282,8 @@
   async function submit(event: Event) {
     event.preventDefault();
     if (connection.offline) return;
-    const prompt = chat.draft.trim();
+    const scopeForSend = chat.vaultNoteContext;
+    const prompt = ensureVaultSelectionInPrompt(chat.draft.trim(), scopeForSend);
     const hasAttachments = chat.pendingMediaRefs.length > 0;
     if (!prompt && !hasAttachments) return;
     if (hasVisionMediaRefs(chat.pendingMediaRefs)) {
@@ -340,7 +369,8 @@
     if (mobile) haptic("light");
     try {
       const mode = chat.hasLiveInteractiveTurn() ? "background" : "interactive";
-      await submitTurn(prompt, prompt, mode);
+      const fullPrompt = ensureVaultSelectionInPrompt(prompt, chat.vaultNoteContext);
+      await submitTurn(fullPrompt, fullPrompt, mode);
     } catch (err) {
       chat.setError(err instanceof Error ? err.message : String(err));
     }
@@ -360,7 +390,7 @@
     : 'hidden'} {embedded && useMobileChatLayout
     ? 'script-workbench-chat-mobile-root'
     : embedded
-      ? 'vault-workshop-chat-panel'
+      ? `vault-workshop-chat-panel${workshopSticky ? ' vault-workshop-chat-panel--sticky' : ''}`
       : useMobileChatLayout
         ? 'mobile-chat-panel'
         : 'chat-pane'}"
@@ -580,6 +610,7 @@
                   onPromoteToFlow={handlePromoteToFlow}
                   onSubmitIntent={submitChatIntent}
                   onSaveToVault={handleSaveToVault}
+                  onOpenCardDetail={openCardDetail}
                 />
               </div>
             </article>
@@ -638,6 +669,7 @@
                   onPromoteToFlow={handlePromoteToFlow}
                   onSubmitIntent={submitChatIntent}
                   onSaveToVault={handleSaveToVault}
+                  onOpenCardDetail={openCardDetail}
                 />
               </div>
             </article>
@@ -655,6 +687,7 @@
           onPromoteToFlow={handlePromoteToFlow}
           onSubmitIntent={submitChatIntent}
           onSaveToVault={handleSaveToVault}
+          onOpenCardDetail={openCardDetail}
         />
       {:else if showChatEmptyState}
       <div
@@ -675,19 +708,33 @@
             {/each}
           </div>
         {:else if workshop && chat.vaultNoteContext}
-          <p class="text-sm text-surface-400">Ask about this note — links, edits, or next steps.</p>
-          <div class="mt-3 flex flex-wrap gap-2">
-            {#each ["What links here?", "Summarize this note", "Suggest edits"] as prompt (prompt)}
-              <button
-                type="button"
-                class="rounded-full border border-surface-500/40 bg-surface-950/50 px-3 py-1.5 text-xs text-surface-200 transition hover:border-primary-400/50 hover:text-surface-50"
-                disabled={connection.offline || chat.composerBlocked}
-                onclick={() => void sendStarterPrompt(prompt)}
-              >
-                {prompt}
-              </button>
-            {/each}
-          </div>
+          {#if workshopSticky}
+            <p class="px-1 text-[12px] leading-relaxed text-surface-500">
+              {vaultContextHasSelection(chat.vaultNoteContext)
+                ? "Ask about this passage…"
+                : "Ask about this note…"}
+            </p>
+          {:else}
+            <p class="text-sm text-surface-400">
+              {vaultContextHasSelection(chat.vaultNoteContext)
+                ? "Work this passage with Medousa — edit, clarify, or next steps."
+                : "Ask about this note — links, edits, or next steps."}
+            </p>
+            <div class="mt-3 flex flex-wrap gap-2">
+              {#each vaultContextHasSelection(chat.vaultNoteContext)
+                ? ["Suggest an edit", "Clarify this", "Expand this"]
+                : ["What links here?", "Summarize this note", "Suggest edits"] as prompt (prompt)}
+                <button
+                  type="button"
+                  class="rounded-full border border-surface-500/40 bg-surface-950/50 px-3 py-1.5 text-xs text-surface-200 transition hover:border-primary-400/50 hover:text-surface-50"
+                  disabled={connection.offline || chat.composerBlocked}
+                  onclick={() => void sendStarterPrompt(prompt)}
+                >
+                  {prompt}
+                </button>
+              {/each}
+            </div>
+          {/if}
         {:else}
         <p class="text-sm text-surface-400 {mobile ? '' : 'mt-8'}">What are you working on?</p>
         <div class="mt-4 flex flex-wrap gap-2">
@@ -717,7 +764,7 @@
               </li>
             {/each}
           </ul>
-        {:else}
+        {:else if !workshopSticky}
           <p class="mt-3 text-sm text-surface-400">No prior sessions</p>
         {/if}
       </div>
@@ -747,14 +794,20 @@
       class="{embedded
         ? useMobileChatLayout
           ? 'mobile-chat-composer script-workbench-chat-composer'
-          : 'vault-workshop-chat-composer'
+          : workshopSticky
+            ? 'vault-workshop-chat-composer vault-workshop-chat-composer--sticky'
+            : 'vault-workshop-chat-composer'
         : 'chat-composer'}"
       onsubmit={submit}
     >
       {#if chat.scriptWorkbenchContext}
         <ScriptChatContextChip compact={workshop || scriptWorkbench} class={embedded ? "mb-2" : "mx-4 mb-2"} />
       {:else if chat.vaultNoteContext}
-        <VaultChatContextChip compact={workshop} class={workshop ? "mb-2" : "mx-4 mb-2"} />
+        <VaultChatContextChip
+          compact={workshop}
+          whisper={workshopSticky}
+          class={workshop ? "mb-1.5" : "mx-4 mb-2"}
+        />
       {/if}
       {#if slashHint?.length}
         <ul
@@ -777,6 +830,13 @@
   {#if visible && connection.offline}
     <OfflineChatGate {mobile} {onOpenConnection} />
   {/if}
+
+  <LiquidCardDetailSheet
+    open={cardDetailOpen}
+    detail={cardDetail}
+    onClose={closeCardDetail}
+    onChipSelect={prefillComposerFromChip}
+  />
 
   {#if showScrollFab && visible}
     <button

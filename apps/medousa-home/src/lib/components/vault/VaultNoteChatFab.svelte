@@ -39,6 +39,6 @@
     disabled={vault.noteLoading}
     onclick={() => (menuOpen = !menuOpen)}
   >
-    <MessageCircle size={22} strokeWidth={1.75} />
+    <MessageCircle size={18} strokeWidth={1.75} />
   </button>
 </div>

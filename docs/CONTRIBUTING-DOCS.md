@@ -15,12 +15,13 @@ Audience tags used throughout `docs/`:
 | HTTP routes, request types | [`docs/engine/http-api.md`](engine/http-api.md) | Source of truth: [`src/daemon/router.rs`](../src/daemon/router.rs) |
 | Subsystem behavior (artifacts, vault, streaming) | [`docs/engine/*.md`](engine/) | Link to `architecture/` for FSM internals |
 | SDK methods and examples | [`docs/sdk/`](sdk/) | [`sdk-contract/manifest.yaml`](../sdk-contract/manifest.yaml); Rust [`crates/medousa-sdk/`](../crates/medousa-sdk/); Python [`python/medousa-sdk/`](../python/medousa-sdk/); Home stream types [`scripts/gen-ts-types.py`](../scripts/gen-ts-types.py) |
-| Task-oriented how-tos | [`docs/cookbook/`](cookbook/) | Install, channels, mobile, custom UI |
+| End-user how-tos (app) | [`docs/guides/`](guides/) | Getting started, packages, phone, peers, memory, channels, workshop |
+| Task-oriented how-tos (ops/integrators) | [`docs/cookbook/`](cookbook/) | Install, channels, mobile, custom UI |
 | Env vars and ops | [`configuration-reference.md`](configuration-reference.md), [`docs/runbooks/`](runbooks/) | |
 | Turn FSM, component design, epics | [`architecture/`](../architecture/) | Living plans; **not** duplicated in `docs/engine/` |
 | Engine crate (`medousa-engine`) | [`architecture/component-engine.md`](../architecture/component-engine.md) | Spine, ports, `run_turn` — contributor-only |
 | Comms / observability (daemon) | [`architecture/component-daemon.md`](../architecture/component-daemon.md), [`daemon-modules.md`](architecture/daemon-modules.md) | Operator env vars in configuration-reference |
-| Shipped milestone history | [`architecture/archive/`](../architecture/archive/) | Historical only |
+| Shipped milestone history | [`architecture/archive/`](../architecture/archive/) | Historical only — add staleness banner |
 | ADRs | [`docs/architecture/decisions/`](architecture/decisions/) | Durable decisions |
 
 **Rule:** Code is source of truth. When docs and code disagree, fix the docs (or file a bug if code is wrong).
@@ -66,5 +67,9 @@ When shipping a user-facing or integrator-facing feature:
 | Observability / daemon limits | partial | — | — | configuration-reference | documented |
 | Grapheme, Locus, workflows, media, STT | yes | [extensions.md](engine/extensions.md) | via `http()` | configuration-reference | documented |
 | medousa-home app | — | — | [transports.md](sdk/transports.md) | [apps/medousa-home.md](apps/medousa-home.md) | documented |
+| Packages (in-app) | — | — | — | [guides/packages.md](guides/packages.md) | documented |
+| Getting started / Home-first | — | — | — | [guides/getting-started.md](guides/getting-started.md) | documented |
+| Peers / LAN | partial | — | transports | [guides/peers-and-nearby.md](guides/peers-and-nearby.md), [lan-discovery-and-sharing.md](cookbook/lan-discovery-and-sharing.md) | documented |
+| Workshop / Automations (users) | — | — | — | [guides/workshop-and-automations.md](guides/workshop-and-automations.md) | documented |
 
 Update this table when adding or changing coverage.

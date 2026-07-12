@@ -1,0 +1,845 @@
+/**
+ * Workshop app shell — chrome vs canvas elevation.
+ *
+ * Extracted from app.postcss so shell polish lives here instead of the god file.
+ * Tokens are RGB triples (no `rgb()` wrapper) matching Skeleton surface vars.
+ */
+
+@layer base {
+  /* Dark defaults: ink canvas, slightly raised chrome frame */
+  html.dark {
+    --shell-chrome-bg: var(--color-surface-900);
+    --shell-header-bg: var(--color-surface-800);
+    --shell-canvas-bg: var(--color-surface-950);
+    --shell-pane-bg: var(--color-surface-900);
+    --shell-pane-muted-bg: var(--color-surface-800);
+    --shell-border: var(--color-surface-500);
+    --shell-border-strong: 0.58;
+    --shell-border-soft: 0.4;
+    --shell-rail-edge: 0.24;
+    --shell-icon: var(--color-surface-400);
+    --shell-icon-hover: var(--color-surface-200);
+    --shell-icon-active: var(--color-primary-300);
+    --shell-status-fg: var(--color-surface-300);
+    /* Voice — secondary text hierarchy (Wave 2) */
+    --shell-whisper: var(--color-surface-300);
+    --shell-label: var(--color-surface-300);
+    --shell-muted: var(--color-surface-400);
+    --shell-chrome-shadow: 2px 0 18px rgb(0 0 0 / 0.32);
+    --shell-rail-shadow: -6px 0 20px rgb(0 0 0 / 0.24);
+    --shell-nav-shadow: 3px 0 16px rgb(0 0 0 / 0.22);
+    --shell-nav-inset: inset 1px 0 0 rgb(255 255 255 / 0.045);
+  }
+
+  /* Light defaults: denser cool chrome over brighter paper */
+  html:not(.dark) {
+    --shell-chrome-bg: var(--color-surface-800);
+    --shell-header-bg: var(--color-surface-800);
+    --shell-canvas-bg: var(--color-surface-950);
+    --shell-pane-bg: var(--color-surface-900);
+    --shell-pane-muted-bg: var(--color-surface-800);
+    --shell-border: var(--color-surface-500);
+    --shell-border-strong: 0.55;
+    --shell-border-soft: 0.38;
+    --shell-rail-edge: 0.26;
+    --shell-icon: var(--color-surface-300);
+    --shell-icon-hover: var(--color-surface-100);
+    --shell-icon-active: var(--color-primary-600);
+    --shell-status-fg: var(--color-surface-200);
+    --shell-whisper: var(--color-surface-200);
+    --shell-label: var(--color-surface-200);
+    --shell-muted: var(--color-surface-300);
+    --shell-chrome-shadow: 2px 0 14px rgb(0 0 0 / 0.06);
+    --shell-rail-shadow: -4px 0 14px rgb(0 0 0 / 0.05);
+    --shell-nav-shadow: 2px 0 12px rgb(0 0 0 / 0.06);
+    --shell-nav-inset: inset 1px 0 0 rgb(255 255 255 / 0.12);
+  }
+
+  /* Obsidian dark — deepen the void under the frame */
+  html.dark[data-theme="medousa"] {
+    --shell-chrome-bg: 28 28 40;
+    --shell-header-bg: 36 36 50;
+    --shell-canvas-bg: 14 14 22;
+    --shell-pane-bg: 24 24 34;
+    --shell-pane-muted-bg: 32 32 44;
+    --shell-border-strong: 0.62;
+    --shell-whisper: 175 175 198;
+    --shell-label: 188 188 210;
+    --shell-muted: 148 148 172;
+  }
+
+  /* Black Lily dark — plum frame, deeper void canvas */
+  html.dark[data-theme="black-lily"] {
+    --shell-chrome-bg: 24 16 30;
+    --shell-header-bg: 34 22 44;
+    --shell-canvas-bg: 10 8 14;
+    --shell-pane-bg: 18 12 24;
+    --shell-pane-muted-bg: 28 18 36;
+    --shell-border-strong: 0.65;
+    --shell-whisper: 200 185 218;
+    --shell-label: 210 195 226;
+    --shell-muted: 168 148 192;
+  }
+
+  /* Caduceus dark — serpentine ink, soft jade */
+  html.dark[data-theme="caduceus-dark"] {
+    --shell-chrome-bg: 24 32 28;
+    --shell-header-bg: 34 44 38;
+    --shell-canvas-bg: 10 14 12;
+    --shell-pane-bg: 16 22 18;
+    --shell-pane-muted-bg: 24 32 28;
+    --shell-border-strong: 0.58;
+    --shell-whisper: 168 186 172;
+    --shell-label: 186 202 188;
+    --shell-muted: 132 152 138;
+  }
+
+  /* Ember dark — cool ash, rose-copper glow */
+  html.dark[data-theme="ember-dark"] {
+    --shell-chrome-bg: 30 24 24;
+    --shell-header-bg: 42 34 32;
+    --shell-canvas-bg: 12 10 10;
+    --shell-pane-bg: 20 16 16;
+    --shell-pane-muted-bg: 30 24 24;
+    --shell-border-strong: 0.58;
+    --shell-whisper: 190 164 152;
+    --shell-label: 210 186 174;
+    --shell-muted: 156 128 118;
+  }
+
+  /* Hearth dark — evening cocoa */
+  html.dark[data-theme="hearth-dark"] {
+    --shell-chrome-bg: 32 26 22;
+    --shell-header-bg: 44 36 30;
+    --shell-canvas-bg: 14 12 10;
+    --shell-pane-bg: 22 18 16;
+    --shell-pane-muted-bg: 32 26 22;
+    --shell-border-strong: 0.58;
+    --shell-whisper: 190 172 156;
+    --shell-label: 210 192 176;
+    --shell-muted: 156 136 118;
+  }
+
+  /* Graphite dark */
+  html.dark[data-theme="graphite-dark"] {
+    --shell-chrome-bg: 36 36 38;
+    --shell-header-bg: 44 44 46;
+    --shell-canvas-bg: 0 0 0;
+    --shell-pane-bg: 28 28 30;
+    --shell-pane-muted-bg: 44 44 46;
+    --shell-border: 110 110 115;
+    --shell-border-strong: 0.55;
+    --shell-whisper: 174 174 178;
+    --shell-label: 199 199 204;
+    --shell-muted: 142 142 147;
+    --shell-icon-active: var(--color-surface-100);
+  }
+
+  /* Cupertino dark — navy-cool chrome over black canvas */
+  html.dark[data-theme="cupertino-dark"] {
+    --shell-chrome-bg: 36 36 38;
+    --shell-header-bg: 44 44 46;
+    --shell-canvas-bg: 0 0 0;
+    --shell-pane-bg: 28 28 30;
+    --shell-pane-muted-bg: 44 44 46;
+    --shell-border-strong: 0.55;
+    --shell-whisper: 174 174 178;
+    --shell-label: 199 199 204;
+    --shell-muted: 142 142 147;
+  }
+
+  /* Midnight dark — deep navy frame */
+  html.dark[data-theme="midnight-dark"] {
+    --shell-chrome-bg: 18 24 42;
+    --shell-header-bg: 26 34 56;
+    --shell-canvas-bg: 6 10 18;
+    --shell-pane-bg: 15 20 35;
+    --shell-pane-muted-bg: 22 28 48;
+    --shell-border-strong: 0.58;
+    --shell-whisper: 160 172 205;
+    --shell-label: 178 188 220;
+    --shell-muted: 120 132 168;
+  }
+
+  /* Graphite light — honest mono elevation (quality bar for light) */
+  html:not(.dark)[data-theme="graphite-light"] {
+    --shell-chrome-bg: 226 226 230;
+    --shell-header-bg: 232 232 236;
+    --shell-canvas-bg: 242 242 247;
+    --shell-pane-bg: 255 255 255;
+    --shell-pane-muted-bg: 236 236 240;
+    --shell-border: 142 142 147;
+    --shell-border-strong: 0.5;
+    --shell-icon-active: var(--color-surface-100);
+    --shell-whisper: 72 72 74;
+    --shell-label: 58 58 60;
+    --shell-muted: 99 99 102;
+  }
+
+  /* Cupertino light */
+  html:not(.dark)[data-theme="cupertino-light"] {
+    --shell-chrome-bg: 226 226 230;
+    --shell-header-bg: 232 232 236;
+    --shell-canvas-bg: 242 242 247;
+    --shell-pane-bg: 255 255 255;
+    --shell-pane-muted-bg: 236 236 240;
+    --shell-border: 142 142 147;
+    --shell-border-strong: 0.5;
+    --shell-whisper: 72 72 74;
+    --shell-label: 58 58 60;
+    --shell-muted: 99 99 102;
+    --shell-icon-active: var(--color-primary-600);
+  }
+
+  /* Midnight light */
+  html:not(.dark)[data-theme="midnight-light"] {
+    --shell-chrome-bg: 220 224 238;
+    --shell-header-bg: 228 232 244;
+    --shell-canvas-bg: 240 242 250;
+    --shell-pane-bg: 255 255 255;
+    --shell-pane-muted-bg: 232 235 245;
+    --shell-border: 142 152 178;
+    --shell-border-strong: 0.5;
+    --shell-whisper: 58 68 96;
+    --shell-label: 48 58 86;
+    --shell-muted: 88 98 128;
+    --shell-icon-active: var(--color-primary-600);
+  }
+
+  /* Obsidian light — cool chrome, clean paper */
+  html:not(.dark)[data-theme="medousa-light"] {
+    --shell-chrome-bg: 218 218 228;
+    --shell-header-bg: 226 226 234;
+    --shell-canvas-bg: 244 244 248;
+    --shell-pane-bg: 255 255 255;
+    --shell-pane-muted-bg: 232 232 240;
+    --shell-border-strong: 0.52;
+    --shell-icon-active: var(--color-primary-600);
+    --shell-whisper: 68 68 84;
+    --shell-label: 56 56 72;
+    --shell-muted: 98 98 118;
+  }
+
+  /* Black Lily light — blush chrome, bright paper */
+  html:not(.dark)[data-theme="black-lily-light"] {
+    --shell-chrome-bg: 228 216 232;
+    --shell-header-bg: 236 226 240;
+    --shell-canvas-bg: 246 240 248;
+    --shell-pane-bg: 255 252 255;
+    --shell-pane-muted-bg: 238 228 242;
+    --shell-border-strong: 0.5;
+    --shell-icon-active: var(--color-primary-600);
+    --shell-whisper: 86 70 96;
+    --shell-label: 72 56 86;
+    --shell-muted: 116 96 126;
+  }
+
+  /* Caduceus light — soft mint paper, botanical chrome */
+  html:not(.dark)[data-theme="caduceus-light"] {
+    --shell-chrome-bg: 210 222 210;
+    --shell-header-bg: 220 230 220;
+    --shell-canvas-bg: 242 248 242;
+    --shell-pane-bg: 255 255 255;
+    --shell-pane-muted-bg: 228 236 228;
+    --shell-border: 118 140 122;
+    --shell-border-strong: 0.5;
+    --shell-icon-active: var(--color-primary-600);
+    --shell-whisper: 58 74 62;
+    --shell-label: 36 48 40;
+    --shell-muted: 88 108 92;
+  }
+
+  /* Ember light — cool ash paper, soft copper */
+  html:not(.dark)[data-theme="ember-light"] {
+    --shell-chrome-bg: 230 216 208;
+    --shell-header-bg: 238 226 218;
+    --shell-canvas-bg: 248 242 238;
+    --shell-pane-bg: 255 252 250;
+    --shell-pane-muted-bg: 242 232 226;
+    --shell-border: 176 150 138;
+    --shell-border-strong: 0.48;
+    --shell-icon-active: var(--color-primary-600);
+    --shell-whisper: 78 58 52;
+    --shell-label: 48 36 32;
+    --shell-muted: 112 86 76;
+  }
+
+  /* Hearth light — soft cocoa chrome, parchment paper */
+  html:not(.dark)[data-theme="hearth-light"] {
+    --shell-chrome-bg: 228 220 210;
+    --shell-header-bg: 236 228 218;
+    --shell-canvas-bg: 246 242 236;
+    --shell-pane-bg: 255 252 248;
+    --shell-pane-muted-bg: 240 234 226;
+    --shell-border: 176 160 144;
+    --shell-border-strong: 0.5;
+    --shell-icon-active: var(--color-primary-600);
+    --shell-whisper: 82 68 58;
+    --shell-label: 52 42 36;
+    --shell-muted: 114 96 82;
+  }
+
+  /* —— Familiar family: same elevation recipe, palette-true hues —— */
+
+  /* One Dark */
+  html.dark[data-theme="one-dark"] {
+    --shell-chrome-bg: 33 37 43;
+    --shell-header-bg: 40 44 52;
+    --shell-canvas-bg: 22 25 30;
+    --shell-pane-bg: 33 37 43;
+    --shell-pane-muted-bg: 40 44 52;
+    --shell-border-strong: 0.55;
+    --shell-whisper: 171 178 191;
+    --shell-label: 186 192 204;
+    --shell-muted: 130 137 151;
+  }
+
+  html:not(.dark)[data-theme="one-dark-light"] {
+    --shell-chrome-bg: 228 229 234;
+    --shell-header-bg: 234 235 240;
+    --shell-canvas-bg: 245 246 248;
+    --shell-pane-bg: 255 255 255;
+    --shell-pane-muted-bg: 234 235 240;
+    --shell-border-strong: 0.5;
+    --shell-whisper: 76 79 88;
+    --shell-label: 56 58 66;
+    --shell-muted: 108 111 120;
+    --shell-icon-active: var(--color-primary-600);
+  }
+
+  /* Catppuccin Mocha / Latte */
+  html.dark[data-theme="catppuccin-mocha"] {
+    --shell-chrome-bg: 24 24 37;
+    --shell-header-bg: 30 30 46;
+    --shell-canvas-bg: 14 14 22;
+    --shell-pane-bg: 24 24 37;
+    --shell-pane-muted-bg: 30 30 46;
+    --shell-border-strong: 0.55;
+    --shell-whisper: 186 194 222;
+    --shell-label: 198 205 230;
+    --shell-muted: 147 153 178;
+  }
+
+  html:not(.dark)[data-theme="catppuccin-latte"] {
+    --shell-chrome-bg: 230 233 239;
+    --shell-header-bg: 236 238 244;
+    --shell-canvas-bg: 239 241 245;
+    --shell-pane-bg: 255 255 255;
+    --shell-pane-muted-bg: 236 238 244;
+    --shell-border: 156 160 176;
+    --shell-border-strong: 0.5;
+    --shell-whisper: 92 95 119;
+    --shell-label: 76 79 105;
+    --shell-muted: 124 127 147;
+    --shell-icon-active: var(--color-primary-600);
+  }
+
+  /* Tokyo Night / Day */
+  html.dark[data-theme="tokyo-night"] {
+    --shell-chrome-bg: 22 24 38;
+    --shell-header-bg: 29 32 48;
+    --shell-canvas-bg: 12 13 20;
+    --shell-pane-bg: 22 24 38;
+    --shell-pane-muted-bg: 29 32 48;
+    --shell-border-strong: 0.55;
+    --shell-whisper: 154 162 198;
+    --shell-label: 169 177 214;
+    --shell-muted: 122 128 164;
+  }
+
+  html:not(.dark)[data-theme="tokyo-day"] {
+    --shell-chrome-bg: 226 230 238;
+    --shell-header-bg: 234 236 244;
+    --shell-canvas-bg: 246 248 252;
+    --shell-pane-bg: 255 255 255;
+    --shell-pane-muted-bg: 234 236 244;
+    --shell-border-strong: 0.5;
+    --shell-whisper: 72 78 102;
+    --shell-label: 52 58 82;
+    --shell-muted: 104 110 132;
+    --shell-icon-active: var(--color-primary-600);
+  }
+
+  /* GitHub Dark / Light */
+  html.dark[data-theme="github-dark"] {
+    --shell-chrome-bg: 22 27 34;
+    --shell-header-bg: 33 38 45;
+    --shell-canvas-bg: 9 12 16;
+    --shell-pane-bg: 13 17 23;
+    --shell-pane-muted-bg: 22 27 34;
+    --shell-border: 48 54 61;
+    --shell-border-strong: 0.62;
+    --shell-whisper: 201 209 217;
+    --shell-label: 210 216 222;
+    --shell-muted: 139 148 158;
+  }
+
+  html:not(.dark)[data-theme="github-light"] {
+    --shell-chrome-bg: 225 228 232;
+    --shell-header-bg: 234 236 240;
+    --shell-canvas-bg: 246 248 250;
+    --shell-pane-bg: 255 255 255;
+    --shell-pane-muted-bg: 234 236 240;
+    --shell-border: 175 181 188;
+    --shell-border-strong: 0.52;
+    --shell-whisper: 55 62 70;
+    --shell-label: 36 41 47;
+    --shell-muted: 87 96 106;
+    --shell-icon-active: var(--color-primary-600);
+  }
+
+  /* Dracula */
+  html.dark[data-theme="dracula"] {
+    --shell-chrome-bg: 40 42 54;
+    --shell-header-bg: 52 55 70;
+    --shell-canvas-bg: 26 27 36;
+    --shell-pane-bg: 40 42 54;
+    --shell-pane-muted-bg: 52 55 70;
+    --shell-border-strong: 0.55;
+    --shell-whisper: 220 220 214;
+    --shell-label: 232 232 226;
+    --shell-muted: 180 180 174;
+  }
+
+  html:not(.dark)[data-theme="dracula-light"] {
+    --shell-chrome-bg: 234 235 240;
+    --shell-header-bg: 240 241 246;
+    --shell-canvas-bg: 248 248 250;
+    --shell-pane-bg: 255 255 255;
+    --shell-pane-muted-bg: 240 241 246;
+    --shell-border-strong: 0.5;
+    --shell-whisper: 88 91 110;
+    --shell-label: 68 71 90;
+    --shell-muted: 118 121 140;
+    --shell-icon-active: var(--color-primary-600);
+  }
+
+  /* Nord */
+  html.dark[data-theme="nord"] {
+    --shell-chrome-bg: 46 52 64;
+    --shell-header-bg: 59 66 82;
+    --shell-canvas-bg: 32 36 46;
+    --shell-pane-bg: 46 52 64;
+    --shell-pane-muted-bg: 59 66 82;
+    --shell-border-strong: 0.55;
+    --shell-whisper: 196 204 216;
+    --shell-label: 216 222 233;
+    --shell-muted: 163 176 194;
+  }
+
+  html:not(.dark)[data-theme="nord-light"] {
+    --shell-chrome-bg: 226 228 232;
+    --shell-header-bg: 236 239 244;
+    --shell-canvas-bg: 236 239 244;
+    --shell-pane-bg: 255 255 255;
+    --shell-pane-muted-bg: 240 242 245;
+    --shell-border: 178 183 190;
+    --shell-border-strong: 0.5;
+    --shell-whisper: 62 68 80;
+    --shell-label: 46 52 64;
+    --shell-muted: 94 100 112;
+    --shell-icon-active: var(--color-primary-600);
+  }
+
+  /* Solarized Dark / Light */
+  html.dark[data-theme="solarized-dark"] {
+    --shell-chrome-bg: 7 54 66;
+    --shell-header-bg: 0 54 66;
+    --shell-canvas-bg: 0 43 54;
+    --shell-pane-bg: 7 54 66;
+    --shell-pane-muted-bg: 0 54 66;
+    --shell-border: 88 110 117;
+    --shell-border-strong: 0.5;
+    --shell-whisper: 147 161 161;
+    --shell-label: 160 174 174;
+    --shell-muted: 131 148 150;
+  }
+
+  html:not(.dark)[data-theme="solarized-light"] {
+    --shell-chrome-bg: 238 232 213;
+    --shell-header-bg: 245 238 220;
+    --shell-canvas-bg: 245 238 220;
+    --shell-pane-bg: 253 246 227;
+    --shell-pane-muted-bg: 238 232 213;
+    --shell-border: 147 161 161;
+    --shell-border-strong: 0.48;
+    --shell-whisper: 88 110 117;
+    --shell-label: 7 54 66;
+    --shell-muted: 101 123 131;
+    --shell-icon-active: var(--color-primary-700);
+  }
+}
+
+@layer components {
+  .workshop-app-root {
+    background-color: rgb(var(--shell-canvas-bg));
+  }
+
+  /* Primary shell regions */
+  .workshop-nav {
+    border-right: 1px solid rgb(var(--shell-border) / var(--shell-border-strong));
+    background-color: rgb(var(--shell-chrome-bg));
+    box-shadow: var(--shell-chrome-shadow);
+  }
+
+  .workshop-main {
+    background-color: rgb(var(--shell-canvas-bg));
+  }
+
+  .workshop-rail {
+    border-left: 2px solid rgb(var(--shell-border) / var(--shell-border-strong));
+    background-color: rgb(var(--shell-chrome-bg));
+    box-shadow: var(--shell-rail-shadow);
+  }
+
+  .workshop-status {
+    border-top: 1px solid rgb(var(--shell-border) / var(--shell-rail-edge));
+    background-color: rgb(var(--shell-chrome-bg) / 0.96);
+    color: rgb(var(--shell-whisper));
+  }
+
+  .workshop-header {
+    border-bottom: 1px solid rgb(var(--shell-border) / var(--shell-border-soft));
+    background-color: rgb(var(--shell-header-bg) / 0.88);
+    @apply px-4 py-2.5;
+  }
+
+  .workshop-header-line {
+    @apply text-xs;
+    color: rgb(var(--shell-whisper));
+  }
+
+  .workshop-list-pane {
+    background-color: rgb(var(--shell-pane-bg) / 0.78);
+  }
+
+  .workshop-detail-pane {
+    background-color: rgb(var(--shell-pane-muted-bg) / 0.42);
+  }
+
+  .workshop-icon-rail {
+    @apply flex w-[52px] shrink-0 flex-col items-center py-2.5;
+    border-right: 1px solid rgb(var(--shell-border) / var(--shell-rail-edge));
+    background-color: rgb(var(--shell-chrome-bg));
+    box-shadow: var(--shell-nav-inset), var(--shell-nav-shadow);
+  }
+
+  .workshop-rail-btn {
+    @apply flex h-9 w-9 items-center justify-center rounded-md transition;
+    color: rgb(var(--shell-icon));
+  }
+
+  .workshop-rail-btn:hover {
+    background-color: rgb(var(--shell-pane-muted-bg) / 0.5);
+    color: rgb(var(--shell-icon-hover));
+  }
+
+  .workshop-rail-btn:focus-visible {
+    outline: none;
+    box-shadow: inset 0 0 0 1px rgb(var(--color-primary-500) / 0.35);
+  }
+
+  .workshop-rail-workshop-btn {
+    @apply text-[10px] font-semibold text-surface-50 ring-1 ring-inset ring-primary-500/40;
+    background-color: rgb(var(--color-primary-500) / 0.22);
+  }
+
+  .workshop-rail-workshop-btn:hover {
+    @apply text-surface-50;
+    background-color: rgb(var(--color-primary-500) / 0.32);
+  }
+
+  .workshop-rail-workshop-btn[style*="--workshop-brand"] {
+    background-color: color-mix(in srgb, var(--workshop-brand) 24%, transparent);
+    --tw-ring-color: color-mix(in srgb, var(--workshop-brand) 42%, transparent);
+  }
+
+  .workshop-rail-workshop-btn[style*="--workshop-brand"]:hover {
+    background-color: color-mix(in srgb, var(--workshop-brand) 34%, transparent);
+  }
+
+  .workshop-rail-workshop-monogram {
+    @apply block max-w-[2ch] truncate text-center tracking-tight;
+  }
+
+  .workshop-rail-btn-active {
+    background-color: rgb(var(--color-primary-500) / 0.28);
+    color: rgb(var(--shell-icon-active));
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.1),
+      inset 0 -1px 0 rgb(0 0 0 / 0.18);
+  }
+
+  .workshop-rail-btn-active:hover {
+    background-color: rgb(var(--color-primary-500) / 0.34);
+    color: rgb(var(--shell-icon-active));
+  }
+
+  .workshop-rail-btn-active:focus-visible {
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.1),
+      inset 0 -1px 0 rgb(0 0 0 / 0.18),
+      inset 0 0 0 1px rgb(var(--color-primary-500) / 0.35);
+  }
+
+  .workshop-rail-tier-divider {
+    @apply my-2.5 h-px w-7 shrink-0;
+    background-color: rgb(var(--shell-border) / 0.32);
+  }
+
+  .workshop-rail-btn-tier-life {
+    color: rgb(var(--shell-icon-hover) / 0.9);
+  }
+
+  .workshop-rail-btn-tier-utility {
+    @apply h-8 w-8;
+    color: rgb(var(--shell-icon) / 0.78);
+  }
+
+  .workshop-rail-btn-tier-utility:hover {
+    color: rgb(var(--shell-icon-hover) / 0.95);
+  }
+
+  .workshop-rail-badge {
+    @apply pointer-events-none absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-primary-400;
+    box-shadow: 0 0 0 2px rgb(var(--shell-chrome-bg));
+  }
+
+  .workshop-rail-count-badge {
+    @apply pointer-events-none absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary-500 px-1 text-[9px] font-bold leading-none text-primary-50;
+    box-shadow: 0 0 0 2px rgb(var(--shell-chrome-bg));
+  }
+
+  .workshop-rail-feed-badge {
+    @apply pointer-events-none absolute -bottom-0.5 -right-0.5 h-1.5 w-1.5 rounded-full;
+    box-shadow: 0 0 0 2px rgb(var(--shell-chrome-bg));
+  }
+
+  .workshop-rail-feed-badge-live {
+    @apply bg-success-400;
+  }
+
+  .workshop-rail-feed-badge-stale {
+    @apply bg-warning-400;
+  }
+
+  /* Vault paper sits on canvas */
+  .vault-editor-textarea {
+    background-color: rgb(var(--shell-canvas-bg)) !important;
+  }
+
+  .vault-markdown-preview {
+    background-color: rgb(var(--shell-pane-bg) / 0.55);
+  }
+
+  .vault-editor-header {
+    border-bottom-color: rgb(var(--shell-border) / var(--shell-border-soft));
+    background-color: rgb(var(--shell-header-bg) / 0.55);
+  }
+
+  /* Light shell — forms / cards follow pane paper, not washed chrome */
+  html:not(.dark) .workshop-inset {
+    border-color: rgb(var(--shell-border) / var(--shell-border-soft));
+    background-color: rgb(var(--shell-pane-bg));
+  }
+
+  html:not(.dark) .workshop-tabs {
+    border-color: rgb(var(--shell-border) / var(--shell-border-soft));
+  }
+
+  html:not(.dark) .workshop-kanban-card {
+    border-color: rgb(var(--shell-border) / var(--shell-border-soft));
+    background-color: rgb(var(--shell-pane-bg));
+  }
+
+  html:not(.dark) .workshop-kanban-card:hover {
+    background-color: rgb(var(--shell-pane-muted-bg) / 0.85);
+  }
+
+  html:not(.dark) .card {
+    border-color: rgb(var(--shell-border) / var(--shell-border-soft));
+    background-color: rgb(var(--shell-pane-bg));
+  }
+
+  html:not(.dark) :is(.input, .textarea, .select) {
+    border-color: rgb(var(--shell-border) / var(--shell-border-strong));
+    background-color: rgb(var(--shell-pane-bg));
+    color: rgb(var(--color-surface-50));
+  }
+
+  html:not(.dark) :is(.input, .textarea, .select)::placeholder {
+    color: rgb(var(--color-surface-400));
+  }
+
+  html:not(.dark) .composer-bar {
+    border-color: rgb(var(--shell-border) / var(--shell-border-strong));
+    background-color: rgb(var(--shell-pane-bg));
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.85),
+      0 1px 2px rgb(0 0 0 / 0.04);
+  }
+
+  html:not(.dark) .composer-bar-mobile {
+    border-color: rgb(var(--shell-border) / var(--shell-border-strong));
+    background-color: rgb(var(--shell-pane-bg));
+  }
+
+  html:not(.dark) .theme-option {
+    border-color: rgb(var(--shell-border) / var(--shell-border-soft));
+    background-color: rgb(var(--shell-pane-bg));
+  }
+
+  html:not(.dark) .theme-option:hover {
+    border-color: rgb(var(--shell-border) / var(--shell-border-strong));
+    background-color: rgb(var(--shell-pane-muted-bg) / 0.75);
+  }
+
+  html:not(.dark) .mobile-shell {
+    background-color: rgb(var(--shell-canvas-bg));
+    color: rgb(var(--color-surface-50));
+  }
+
+  html:not(.dark) .mobile-top-bar {
+    border-color: rgb(var(--shell-border) / var(--shell-border-soft));
+    background-color: rgb(var(--shell-chrome-bg) / 0.96);
+  }
+
+  html:not(.dark) .mobile-bottom-chrome {
+    background-color: rgb(var(--shell-chrome-bg) / 0.97);
+    border-top-color: rgb(var(--shell-border) / var(--shell-border-soft));
+  }
+
+  /* Voice hierarchy — breadcrumbs, labels, muted copy */
+  .workshop-faint {
+    @apply text-xs;
+    color: rgb(var(--shell-whisper));
+  }
+
+  .workshop-section-title {
+    @apply text-xs font-semibold uppercase tracking-wide;
+    color: rgb(var(--shell-label));
+  }
+
+  .workshop-label {
+    @apply text-xs;
+    color: rgb(var(--shell-label));
+  }
+
+  .workshop-muted {
+    @apply text-sm;
+    color: rgb(var(--shell-muted));
+  }
+
+  .workshop-text-action {
+    @apply text-xs transition;
+    color: rgb(var(--shell-muted));
+  }
+
+  .workshop-text-action:hover {
+    color: rgb(var(--color-primary-300));
+  }
+
+  .workshop-tabs {
+    border-bottom-color: rgb(var(--shell-border) / var(--shell-border-soft));
+  }
+
+  .workshop-tab {
+    color: rgb(var(--shell-muted));
+  }
+
+  .workshop-tab:hover {
+    color: rgb(var(--shell-whisper));
+  }
+
+  .workshop-tab-active {
+    border-bottom-color: rgb(var(--color-primary-400));
+    color: rgb(var(--shell-icon-active));
+    font-weight: 600;
+  }
+
+  /* Split / soft-primary toggles — intentional, not pastel ghosts */
+  .btn.variant-soft-primary {
+    background-color: rgb(var(--color-primary-500) / 0.2);
+    color: rgb(var(--shell-icon-active));
+    box-shadow: inset 0 0 0 1px rgb(var(--color-primary-500) / 0.42);
+  }
+
+  .btn.variant-soft-primary:hover {
+    background-color: rgb(var(--color-primary-500) / 0.28);
+  }
+
+  html:not(.dark) .btn.variant-soft-primary {
+    background-color: rgb(var(--color-primary-500) / 0.16);
+    color: rgb(var(--color-primary-700, var(--shell-label)));
+    box-shadow: inset 0 0 0 1px rgb(var(--color-primary-500) / 0.32);
+  }
+
+  html:not(.dark) .btn.variant-soft-primary:hover {
+    background-color: rgb(var(--color-primary-500) / 0.24);
+    color: rgb(var(--color-primary-800, var(--shell-whisper)));
+  }
+
+  /* Soft/surface buttons — Skeleton defaults wash out in light mode */
+  .btn.variant-soft-surface,
+  .btn.variant-soft {
+    background-color: rgb(var(--shell-pane-muted-bg) / 0.95);
+    color: rgb(var(--shell-label));
+    box-shadow: inset 0 0 0 1px rgb(var(--shell-border) / 0.4);
+  }
+
+  .btn.variant-soft-surface:hover,
+  .btn.variant-soft:hover {
+    background-color: rgb(var(--shell-pane-muted-bg));
+    color: rgb(var(--shell-whisper));
+  }
+
+  .btn.variant-ghost-surface {
+    color: rgb(var(--shell-label));
+  }
+
+  .btn.variant-ghost-surface:hover {
+    color: rgb(var(--shell-whisper));
+    background-color: rgb(var(--shell-pane-muted-bg) / 0.65);
+  }
+
+  html:not(.dark) .btn.variant-soft-surface,
+  html:not(.dark) .btn.variant-soft {
+    background-color: rgb(var(--shell-pane-muted-bg));
+    color: rgb(var(--shell-whisper));
+    box-shadow: inset 0 0 0 1px rgb(var(--shell-border) / 0.35);
+  }
+
+  html:not(.dark) .btn.variant-soft-surface:hover,
+  html:not(.dark) .btn.variant-soft:hover {
+    color: rgb(var(--shell-label));
+    background-color: color-mix(in srgb, rgb(var(--shell-pane-muted-bg)) 80%, rgb(var(--shell-label)) 8%);
+  }
+
+  html:not(.dark) .btn.variant-ghost-surface {
+    color: rgb(var(--shell-whisper));
+  }
+
+  html:not(.dark) .workshop-text-action {
+    color: rgb(var(--shell-whisper));
+  }
+
+  html:not(.dark) .workshop-text-action:hover {
+    color: rgb(var(--color-primary-600));
+  }
+
+  .composer-bar:focus-within {
+    border-color: rgb(var(--color-primary-500) / 0.42);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.07),
+      0 0 0 3px rgb(var(--color-primary-500) / 0.14),
+      0 2px 10px rgb(0 0 0 / 0.18);
+  }
+
+  .markdown-content th {
+    color: rgb(var(--shell-label));
+  }
+
+  .markdown-content td:first-child {
+    color: rgb(var(--shell-muted));
+  }
+}

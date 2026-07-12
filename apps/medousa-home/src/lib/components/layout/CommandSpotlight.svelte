@@ -8,6 +8,10 @@
   import { vault } from "$lib/stores/vault.svelte";
   import { workspace } from "$lib/stores/workspace.svelte";
   import type { GroupedCommands, WorkshopCommand } from "$lib/commands/types";
+  import {
+    popBrowserPopoverOverlay,
+    pushBrowserPopoverOverlay,
+  } from "$lib/utils/browserPopoverOverlay";
 
   interface Props {
     onFocusChat?: () => void;
@@ -39,6 +43,15 @@
       ? "Search notes…"
       : "Go somewhere, open a note, or run an action…",
   );
+
+  /** Native browser embed draws over the DOM — hide it while spotlight is open. */
+  $effect(() => {
+    if (!commandSpotlight.open) return;
+    void pushBrowserPopoverOverlay();
+    return () => {
+      void popBrowserPopoverOverlay();
+    };
+  });
 
   /** Side effects + command collection belong in $effect, never $derived. */
   $effect(() => {

@@ -8,6 +8,7 @@
 
 import { getContext, setContext } from "svelte";
 import type { EventSink } from "$lib/liquid/ports";
+import type { CardDetailPayload } from "$lib/markdown/liquidEmbeds";
 
 export interface LiquidRenderContext {
   /** Where node events (select/edit/run/…) are emitted. */
@@ -26,6 +27,8 @@ export interface LiquidRenderContext {
   onPromoteToFlow?: (
     ref: import("$lib/types/toolHistory").ToolHistorySliceRef,
   ) => void | Promise<void>;
+  /** Chat-only: open structured card detail sheet (Monogram expand). */
+  onOpenCardDetail?: (detail: CardDetailPayload) => void;
 }
 
 const KEY = Symbol("liquid.render.context");

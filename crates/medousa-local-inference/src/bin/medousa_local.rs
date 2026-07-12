@@ -3,6 +3,10 @@
 //! OpenAI-compatible loopback server on `:7421`. Model download/catalog is
 //! handled via the daemon's `/v1/local/*` APIs; this binary only runs mistralrs.
 
+// Same as medousa_daemon — no console on Windows release when Home / Task Scheduler
+// launches the offline brain as a background process.
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 #[cfg(feature = "embedded-inference")]
 use std::env;
 #[cfg(feature = "embedded-inference")]

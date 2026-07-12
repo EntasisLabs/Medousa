@@ -14,6 +14,7 @@
   import { visibleChatStatusLine } from "$lib/utils/chatStreamDisplay";
   import type { ChatMessage } from "$lib/types/chat";
   import type { ToolHistorySliceRef } from "$lib/types/toolHistory";
+  import type { CardDetailPayload } from "$lib/markdown/liquidEmbeds";
 
   interface Props {
     message: ChatMessage;
@@ -24,6 +25,8 @@
     onRetryWorker?: (workId: string) => void;
     /** Spawn a new interactive turn (action_row / button submit). */
     onSubmitIntent?: (text: string) => void;
+    /** Open structured card detail sheet. */
+    onOpenCardDetail?: (detail: CardDetailPayload) => void;
   }
 
   let {
@@ -34,6 +37,7 @@
     onPromoteToFlow,
     onRetryWorker,
     onSubmitIntent,
+    onOpenCardDetail,
   }: Props = $props();
 
   const statusLine = $derived(
@@ -69,6 +73,7 @@
     compact,
     openLinksInWeb: true,
     onPromoteToFlow,
+    onOpenCardDetail,
   });
 </script>
 

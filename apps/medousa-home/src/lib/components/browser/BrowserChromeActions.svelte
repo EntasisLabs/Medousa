@@ -28,6 +28,8 @@
     showSaveFeedback,
     togglePageBookmark,
   } from "$lib/utils/saveBrowserPage";
+  import { BROWSER_OPEN_BOOKMARKS_EVENT } from "$lib/utils/browserChromeEvents";
+  import { onMount } from "svelte";
 
   interface Props {
     mobile?: boolean;
@@ -59,6 +61,19 @@
   const showHandBack = $derived(
     browser.control === "user" && Boolean(browser.scopedSessionId),
   );
+
+  onMount(() => {
+    const openBookmarks = () => {
+      menuOpen = false;
+      savedAnchorRect =
+        savedAnchorEl?.getBoundingClientRect() ??
+        menuAnchorEl?.getBoundingClientRect() ??
+        null;
+      savedOpen = true;
+    };
+    window.addEventListener(BROWSER_OPEN_BOOKMARKS_EVENT, openBookmarks);
+    return () => window.removeEventListener(BROWSER_OPEN_BOOKMARKS_EVENT, openBookmarks);
+  });
 
   function refreshMenuAnchor() {
     menuAnchorRect = menuAnchorEl?.getBoundingClientRect() ?? null;
@@ -227,10 +242,12 @@
     <button type="button" class="browser-popover-row" onclick={handleFindInPage}>
       <Search size={16} class="shrink-0 text-surface-400" />
       <span class="text-sm text-surface-50">Find in page</span>
+      <span class="browser-popover-kbd">⌘F</span>
     </button>
     <button type="button" class="browser-popover-row" onclick={() => void handleReopenTab()}>
       <RotateCcw size={16} class="shrink-0 text-surface-400" />
       <span class="text-sm text-surface-50">Reopen closed tab</span>
+      <span class="browser-popover-kbd">⌘⇧T</span>
     </button>
     {#if showHandBack}
       <button type="button" class="browser-popover-row" onclick={handleHandBack}>
@@ -285,38 +302,38 @@
     placement="above"
   />
 {:else}
-  <div class="relative flex shrink-0 items-center gap-1">
+  <div class="browser-chrome-actions">
     <button
       type="button"
-      class="btn btn-icon btn-sm {starred ? 'text-amber-400' : ''}"
+      class="browser-chrome-btn {starred ? 'browser-chrome-btn--starred' : ''}"
       aria-label={starred ? "Remove bookmark" : "Bookmark page"}
       title={starred ? "Remove bookmark" : "Bookmark page"}
       disabled={!canAct}
       onclick={(event) => void handleToggleStar(event)}
     >
-      <Star size={16} fill={starred ? "currentColor" : "none"} />
+      <Star size={15} strokeWidth={1.75} fill={starred ? "currentColor" : "none"} />
     </button>
 
     <button
       type="button"
-      class="btn btn-sm variant-soft-surface shrink-0"
+      class="browser-save-btn"
       disabled={!canAct || saving}
       onclick={(event) => void handleSaveToLibrary(event)}
       title="Save page to Library"
     >
-      <BookmarkPlus size={14} class="mr-1 inline" />
+      <BookmarkPlus size={14} strokeWidth={1.75} />
       Save
     </button>
 
     <button
       bind:this={menuAnchorEl}
       type="button"
-      class="btn btn-icon btn-sm"
+      class="browser-chrome-btn"
       aria-label="More actions"
       title="More actions"
       onclick={toggleMenu}
     >
-      <Ellipsis size={16} />
+      <Ellipsis size={16} strokeWidth={1.75} />
     </button>
 
     <BrowserPopover
@@ -352,10 +369,12 @@
       <button type="button" class="browser-popover-row" onclick={handleFindInPage}>
         <Search size={16} class="shrink-0 text-surface-400" />
         <span class="text-sm text-surface-50">Find in page</span>
+        <span class="browser-popover-kbd">⌘F</span>
       </button>
       <button type="button" class="browser-popover-row" onclick={() => void handleReopenTab()}>
         <RotateCcw size={16} class="shrink-0 text-surface-400" />
         <span class="text-sm text-surface-50">Reopen closed tab</span>
+        <span class="browser-popover-kbd">⌘⇧T</span>
       </button>
       {#if showHandBack}
         <button type="button" class="browser-popover-row" onclick={handleHandBack}>
@@ -368,15 +387,15 @@
     <button
       bind:this={savedAnchorEl}
       type="button"
-      class="btn btn-icon btn-sm"
+      class="browser-chrome-btn"
       aria-label="Bookmarks"
-      title="Bookmarks"
+      title="Bookmarks (⌘⇧B)"
       data-browser-popover-trigger
       data-browser-saved-trigger
       aria-expanded={savedOpen}
       onclick={handleSavedToggle}
     >
-      <ChevronDown size={16} />
+      <ChevronDown size={16} strokeWidth={1.75} />
     </button>
 
     <BrowserSavedSheet

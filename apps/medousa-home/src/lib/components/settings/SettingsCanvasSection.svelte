@@ -97,6 +97,9 @@
 
   <div class="canvas-settings-block">
     <h3 class="canvas-settings-heading">Your views</h3>
+    <p class="canvas-settings-lead">
+      Rooms you created — open to add widgets, toggle the rail, or edit and remove.
+    </p>
     <CanvasViewsPanel
       surfaces={customSurfaces}
       {navVisibleFor}
@@ -119,9 +122,8 @@
         confirmDeleteSurfaceId = null;
       }}
     />
+    <CanvasAddViewForm />
   </div>
-
-  <CanvasAddViewForm />
 
   <div class="canvas-settings-block">
     <h3 class="canvas-settings-heading">Layout preset</h3>
@@ -141,7 +143,8 @@
     <div class="canvas-settings-block">
       <h3 class="canvas-settings-heading">Nav destinations</h3>
       <p class="canvas-settings-lead">
-        Show or hide built-in views in the rail. Switch presets above for quick profiles like Focus.
+        Show or hide built-in views in the rail. Custom rooms are managed above — switch presets for
+        quick profiles like Focus.
       </p>
       <CanvasNavDestinationsPanel {spec} />
     </div>

@@ -33,6 +33,8 @@
     onSubmitIntent?: (text: string) => void;
     /** Promote settled assistant markdown to a Library inbox note. */
     onSaveToVault?: (assistant: ChatMessage, user?: ChatMessage | null) => void | Promise<void>;
+    /** Open structured card detail sheet (Monogram expand). */
+    onOpenCardDetail?: (detail: import("$lib/markdown/liquidEmbeds").CardDetailPayload) => void;
   }
 
   let {
@@ -45,6 +47,7 @@
     onPromoteToFlow,
     onSubmitIntent,
     onSaveToVault,
+    onOpenCardDetail,
   }: Props = $props();
 
   const painted = $derived(
@@ -107,6 +110,7 @@
           {compact}
           {onPromoteToFlow}
           {onSubmitIntent}
+          {onOpenCardDetail}
           onRetryWorker={retryWorkerSynthesis}
         />
       </article>
@@ -141,6 +145,7 @@
         {compact}
         {onPromoteToFlow}
         {onSubmitIntent}
+        {onOpenCardDetail}
         onRetryWorker={retryWorkerSynthesis}
       />
     </article>

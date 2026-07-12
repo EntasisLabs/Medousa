@@ -361,6 +361,48 @@ pub fn is_tarball_package(package_id: &str) -> bool {
     !is_model_pack(package_id) && package_id != "desktop" && package_id != "installer"
 }
 
+/// Optional binaries Home can install from Settings → Packages (not desktop/engine/models).
+pub fn is_home_packages_package(package_id: &str) -> bool {
+    matches!(
+        package_id,
+        "local-brain"
+            | "cli"
+            | "mcp-gateway"
+            | "adapter-telegram"
+            | "adapter-discord"
+            | "adapter-slack"
+            | "adapter-whatsapp"
+    )
+}
+
+pub fn home_packages_catalog() -> Vec<PackageCatalogEntry> {
+    package_catalog()
+        .into_iter()
+        .filter(|entry| is_home_packages_package(entry.id))
+        .collect()
+}
+
+/// Expand deps for Home Packages — drops desktop/engine/model packs (engine ships with Home).
+pub fn expand_home_package_dependencies(selected: &[&str]) -> Vec<String> {
+    expand_package_dependencies(selected)
+        .into_iter()
+        .filter(|id| is_home_packages_package(id))
+        .collect()
+}
+
+pub fn package_short_hint(package_id: &str) -> &'static str {
+    match package_id {
+        "local-brain" => "On-device inference binary for offline Gemma.",
+        "cli" => "Command-line tools and terminal UI.",
+        "mcp-gateway" => "Connect MCP servers to Medousa.",
+        "adapter-telegram" => "Telegram channel adapter.",
+        "adapter-discord" => "Discord channel adapter.",
+        "adapter-slack" => "Slack channel adapter.",
+        "adapter-whatsapp" => "WhatsApp channel adapter.",
+        _ => "Optional Medousa component.",
+    }
+}
+
 pub fn install_order_key(package_id: &str) -> u8 {
     match package_id {
         "desktop" => 0,

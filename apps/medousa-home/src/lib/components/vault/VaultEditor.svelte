@@ -11,6 +11,7 @@
     buildWorkAskFromNote,
     prepareTalkAboutNote,
   } from "$lib/utils/vaultNoteBridge";
+  import { launchVaultNoteWorkshop } from "$lib/utils/vaultNoteWorkshop";
   import { iconForSpace } from "$lib/utils/vaultSpaceIcons";
   import { findLedgerTable } from "$lib/utils/markdownTable";
   import { findKanbanBoard, noteHasKanbanBoard } from "$lib/utils/markdownKanban";
@@ -24,13 +25,13 @@
   import VaultProposalBar from "./VaultProposalBar.svelte";
   import VaultMarkdownEditor from "./VaultMarkdownEditor.svelte";
   import VaultNoteActionsMenu from "./VaultNoteActionsMenu.svelte";
+  import VaultViewBuilderSheet from "./VaultViewBuilderSheet.svelte";
   import VaultEditorOverflowMenu from "./VaultEditorOverflowMenu.svelte";
   import VaultLinkedFilesMenu from "./VaultLinkedFilesMenu.svelte";
   import {
     supportsLinksPanel,
     supportsPreviewSplit,
   } from "$lib/utils/vaultNoteKind";
-  import VaultAttachmentPreview from "./VaultAttachmentPreview.svelte";
   import VaultNoteChatFab from "./VaultNoteChatFab.svelte";
   import VaultFindBar from "./VaultFindBar.svelte";
   import VaultNoteStatusBar from "./VaultNoteStatusBar.svelte";
@@ -38,17 +39,28 @@
   import { vaultQuickSwitcher } from "$lib/stores/vaultQuickSwitcher.svelte";
   import { stripFrontmatter } from "$lib/utils/vaultFrontmatter";
   import { exportVaultNotePdf } from "$lib/utils/vaultPdfExport";
+  import { writeVaultStickyPath } from "$lib/utils/vaultSticky";
+  import { isTauri, showVaultSticky } from "$lib/window";
 
   interface Props {
     visible: boolean;
     /** Mobile reader: preview-only, no edit chrome. */
     mobile?: boolean;
+    /** Sticky pop-out: slim companion chrome, keep note IM chat. */
+    stickyNote?: boolean;
     onOpenChat?: () => void;
     onOpenWork?: () => void;
     onSelectCard?: (id: string) => void | Promise<void>;
   }
 
-  let { visible, mobile = false, onOpenChat, onOpenWork, onSelectCard }: Props = $props();
+  let {
+    visible,
+    mobile = false,
+    stickyNote = false,
+    onOpenChat,
+    onOpenWork,
+    onSelectCard,
+  }: Props = $props();
 
   let exportingPdf = $state(false);
   let lastFindNotePath = $state<string | null>(null);
@@ -91,10 +103,10 @@
   );
 
   const showKanbanBoard = $derived(
-    vault.editorMode === "edit" &&
-      hasKanbanBoard &&
-      vault.boardEditMode === "board" &&
-      kanbanBoard !== null,
+    hasKanbanBoard &&
+      kanbanBoard !== null &&
+      (vault.editorMode === "preview" ||
+        (vault.editorMode === "edit" && vault.boardEditMode === "board")),
   );
 
   const showMarkdownEditor = $derived(
@@ -102,35 +114,43 @@
   );
 
   const showSplitEditor = $derived(
-    !mobile && showMarkdownEditor && layout.vaultSplitEnabled,
+    !mobile && !stickyNote && showMarkdownEditor && layout.vaultSplitEnabled,
   );
 
   const editorSurface = $derived<"source">("source");
 
   const showPreviewOnly = $derived(
-    vault.editorMode === "preview" ||
-      (!showMarkdownEditor && !showLedgerTable),
+    vault.editorMode === "preview" && !showKanbanBoard && !showLedgerTable,
   );
 
   const noteKind = $derived(vault.selectedKind);
   const linkCount = $derived(vault.wikilinksOut.length + vault.backlinks.length);
   const showLinksToggle = $derived(
-    Boolean(vault.selectedPath) && supportsLinksPanel(noteKind) && linkCount > 0,
+    !stickyNote &&
+      Boolean(vault.selectedPath) &&
+      supportsLinksPanel(noteKind) &&
+      linkCount > 0,
   );
   const showLinksPanel = $derived(
-    !mobile && layout.vaultLinksPanelOpen && showLinksToggle,
+    !mobile && !stickyNote && layout.vaultLinksPanelOpen && showLinksToggle,
   );
   const showPreviewButton = $derived(
     Boolean(vault.selectedPath) && supportsPreviewSplit(noteKind),
   );
   const showSplitButton = $derived(
-    showMarkdownEditor && supportsPreviewSplit(noteKind),
+    !stickyNote && showMarkdownEditor && supportsPreviewSplit(noteKind),
   );
   const showLedgerViewToggle = $derived(
     Boolean(vault.selectedPath) &&
       vault.selectedKind === "ledger" &&
       vault.editorMode === "edit" &&
       hasLedgerTable,
+  );
+
+  const showBoardViewToggle = $derived(
+    Boolean(vault.selectedPath) &&
+      hasKanbanBoard &&
+      vault.editorMode === "edit",
   );
 
   const previewFirstKind = $derived(
@@ -197,17 +217,38 @@
   });
 
   async function handleAskInChatTab() {
-    if (!vault.selectedPath || !onOpenChat) return;
-    if (vault.dirty) await vault.flushSave();
-    const { scope, draft } = prepareTalkAboutNote(
-      vault.selectedPath,
-      vault.title,
-      vault.content,
-      vault.wikilinksOut,
-      vault.backlinks,
-    );
-    chat.prefillFromVaultNote(scope, draft, { pin: true });
-    onOpenChat();
+    if (!vault.selectedPath) return;
+
+    // Mobile: no floating workshop yet — jump to the chat tab with note context.
+    if (mobile) {
+      if (!onOpenChat) return;
+      if (vault.dirty) await vault.flushSave();
+      const { scope, draft } = prepareTalkAboutNote(
+        vault.selectedPath,
+        vault.title,
+        vault.content,
+        vault.wikilinksOut,
+        vault.backlinks,
+      );
+      chat.prefillFromVaultNote(scope, draft, { pin: true });
+      onOpenChat();
+      return;
+    }
+
+    // Desktop: stay in the note with the floating IM-style workshop.
+    await launchVaultNoteWorkshop({
+      path: vault.selectedPath,
+      title: vault.title,
+      content: vault.content,
+      wikilinksOut: vault.wikilinksOut,
+      backlinks: vault.backlinks,
+      session: "fresh",
+      flushSave: vault.dirty
+        ? async () => {
+            await vault.flushSave();
+          }
+        : undefined,
+    });
   }
 
   async function handleSendToWork() {
@@ -230,6 +271,13 @@
   async function handleSave(event?: Event) {
     event?.preventDefault();
     await vault.flushSave();
+  }
+
+  async function handleFloatSticky() {
+    if (!vault.selectedPath || !isTauri() || stickyNote) return;
+    if (vault.dirty) await vault.flushSave();
+    writeVaultStickyPath(vault.selectedPath);
+    await showVaultSticky();
   }
 
   const saveWhisper = $derived(vault.saveWhisper());
@@ -319,7 +367,7 @@
 <section
   class="vault-editor relative flex h-full min-h-0 min-w-0 flex-1 flex-col {visible ? '' : 'hidden'}"
 >
-  {#if !mobile}
+  {#if !mobile && !stickyNote}
     <header class="vault-editor-header workshop-header flex items-center justify-between gap-3 py-3">
       <div class="min-w-0" title={vault.selectedPath ?? undefined}>
         {#if activeSpace && SpaceIcon}
@@ -443,6 +491,29 @@
           </div>
         {/if}
 
+        {#if showBoardViewToggle}
+          <div class="ledger-mode-toggle" role="group" aria-label="Board view">
+            <button
+              type="button"
+              class="ledger-mode-btn {vault.boardEditMode === 'board'
+                ? 'ledger-mode-btn-active'
+                : ''}"
+              onclick={() => vault.setBoardEditMode("board")}
+            >
+              Board
+            </button>
+            <button
+              type="button"
+              class="ledger-mode-btn {vault.boardEditMode === 'raw'
+                ? 'ledger-mode-btn-active'
+                : ''}"
+              onclick={() => vault.setBoardEditMode("raw")}
+            >
+              Raw
+            </button>
+          </div>
+        {/if}
+
         {#if vault.selectedPath}
           <VaultLinkedFilesMenu disabled={vault.noteLoading || vault.saving} />
         {/if}
@@ -479,13 +550,17 @@
           onSave={handleSave}
           onOpenNoteActions={() => vault.openNoteActions()}
           onInsertWeeklyReview={() => vault.insertWeeklyReviewLink()}
-          onPromoteJournal={() => vault.promoteNote("journal")}
-          onPromoteProject={() => vault.promoteNote("projects")}
+          onPromoteJournal={async () => {
+            await vault.promoteNote("journal");
+          }}
+          onPromoteProject={async () => {
+            await vault.promoteNote("projects");
+          }}
           onToggleBoard={() => vault.toggleBoardEditMode()}
         />
       </div>
     </header>
-  {:else}
+  {:else if mobile}
     <div class="shrink-0 border-b border-surface-500/40 px-4 py-2">
       {#if breadcrumb}
         <p class="workshop-faint truncate text-xs">{breadcrumb}</p>
@@ -516,8 +591,6 @@
     </div>
   {/if}
 
-  <VaultAttachmentPreview />
-
   {#if !vault.selectedPath}
     <VaultEmptyState />
   {:else if vault.noteLoading}
@@ -537,7 +610,7 @@
         {:else if showKanbanBoard}
           <KanbanBoardEditor
             content={vault.content}
-            disabled={vault.saving}
+            disabled={vault.saving || vault.editorMode === "preview"}
             onchange={(next) => vault.markDirty(next)}
             onWikilink={handleWikilink}
           />
@@ -552,6 +625,8 @@
             splitWidth={layout.vaultEditorPaneWidth}
             onSplitResize={(width) => layout.setVaultEditorPaneWidth(width)}
             onchange={(next) => vault.markDirty(next)}
+            showFloat={!stickyNote && isTauri() && Boolean(vault.selectedPath)}
+            onFloat={() => void handleFloatSticky()}
           >
             {#snippet preview()}
               <VaultMarkdownPreview
@@ -600,3 +675,10 @@
 </section>
 
 <VaultNoteActionsMenu />
+<VaultViewBuilderSheet
+  open={vault.viewBridgeOpen}
+  mode={vault.viewBridgeMode}
+  initialQuery={vault.viewBridgeQuery}
+  onSave={(query) => vault.commitViewBridge(query)}
+  onClose={() => vault.closeViewBridge()}
+/>

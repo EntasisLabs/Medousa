@@ -15,17 +15,19 @@ export const darkSurfacesObsidian = {
 } as const;
 
 export const lightSurfacesObsidian = {
-  "--color-surface-50": "24 24 32",
-  "--color-surface-100": "44 44 54",
-  "--color-surface-200": "72 72 84",
-  "--color-surface-300": "102 102 118",
-  "--color-surface-400": "128 128 142",
+  "--color-surface-50": "22 22 30",
+  "--color-surface-100": "40 40 50",
+  "--color-surface-200": "68 68 80",
+  "--color-surface-300": "98 98 112",
+  "--color-surface-400": "122 122 136",
   "--color-surface-500": "148 148 162",
-  "--color-surface-600": "174 174 186",
-  "--color-surface-700": "205 205 216",
-  "--color-surface-800": "232 232 240",
-  "--color-surface-900": "248 248 252",
-  "--color-surface-950": "242 242 248",
+  "--color-surface-600": "176 176 188",
+  /* Chrome band — cooler, denser than paper */
+  "--color-surface-700": "198 198 210",
+  "--color-surface-800": "220 220 230",
+  /* Paper / panes */
+  "--color-surface-900": "255 255 255",
+  "--color-surface-950": "244 244 248",
 } as const;
 
 export const darkSurfacesApple = {
@@ -50,10 +52,12 @@ export const lightSurfacesApple = {
   "--color-surface-400": "128 128 132",
   "--color-surface-500": "142 142 147",
   "--color-surface-600": "174 174 178",
+  /* Chrome band */
   "--color-surface-700": "199 199 204",
   "--color-surface-800": "229 229 234",
+  /* Paper */
   "--color-surface-900": "255 255 255",
-  "--color-surface-950": "245 245 247",
+  "--color-surface-950": "242 242 247",
 } as const;
 
 export const darkSurfacesMidnight = {
@@ -78,9 +82,11 @@ export const lightSurfacesMidnight = {
   "--color-surface-400": "118 128 158",
   "--color-surface-500": "142 152 178",
   "--color-surface-600": "174 182 204",
-  "--color-surface-700": "205 210 228",
-  "--color-surface-800": "232 235 245",
-  "--color-surface-900": "248 249 252",
+  /* Chrome band */
+  "--color-surface-700": "200 206 224",
+  "--color-surface-800": "220 224 238",
+  /* Paper */
+  "--color-surface-900": "255 255 255",
   "--color-surface-950": "240 242 250",
 } as const;
 
@@ -99,17 +105,19 @@ export const darkSurfacesBlackLily = {
 } as const;
 
 export const lightSurfacesBlackLily = {
-  "--color-surface-50": "38 28 44",
-  "--color-surface-100": "58 44 68",
-  "--color-surface-200": "88 72 98",
-  "--color-surface-300": "118 98 128",
-  "--color-surface-400": "148 128 158",
+  "--color-surface-50": "36 26 42",
+  "--color-surface-100": "56 42 66",
+  "--color-surface-200": "86 70 96",
+  "--color-surface-300": "116 96 126",
+  "--color-surface-400": "146 126 156",
   "--color-surface-500": "168 148 178",
-  "--color-surface-600": "195 180 205",
-  "--color-surface-700": "218 205 225",
-  "--color-surface-800": "238 228 242",
-  "--color-surface-900": "252 248 252",
-  "--color-surface-950": "248 242 248",
+  "--color-surface-600": "192 176 202",
+  /* Chrome band — cooler blush gray */
+  "--color-surface-700": "214 200 220",
+  "--color-surface-800": "232 222 236",
+  /* Paper */
+  "--color-surface-900": "255 252 255",
+  "--color-surface-950": "246 240 248",
 } as const;
 
 /** One Dark Pro #282c34 family */
@@ -135,9 +143,9 @@ export const lightSurfacesOneDark = {
   "--color-surface-400": "168 171 178",
   "--color-surface-500": "188 190 198",
   "--color-surface-600": "210 212 218",
-  "--color-surface-700": "228 229 234",
-  "--color-surface-800": "242 243 246",
-  "--color-surface-900": "250 250 252",
+  "--color-surface-700": "222 224 230",
+  "--color-surface-800": "234 235 240",
+  "--color-surface-900": "255 255 255",
   "--color-surface-950": "245 246 248",
 } as const;
 
@@ -163,10 +171,10 @@ export const lightSurfacesCatppuccin = {
   "--color-surface-300": "156 160 176",
   "--color-surface-400": "180 183 198",
   "--color-surface-500": "198 201 213",
-  "--color-surface-600": "220 224 232",
-  "--color-surface-700": "230 233 239",
-  "--color-surface-800": "239 241 245",
-  "--color-surface-900": "250 250 252",
+  "--color-surface-600": "214 218 228",
+  "--color-surface-700": "226 230 238",
+  "--color-surface-800": "236 238 244",
+  "--color-surface-900": "255 255 255",
   "--color-surface-950": "239 241 245",
 } as const;
 
@@ -193,9 +201,9 @@ export const lightSurfacesTokyoDay = {
   "--color-surface-400": "162 168 186",
   "--color-surface-500": "184 188 204",
   "--color-surface-600": "208 212 224",
-  "--color-surface-700": "226 230 238",
-  "--color-surface-800": "240 242 248",
-  "--color-surface-900": "252 252 254",
+  "--color-surface-700": "222 226 236",
+  "--color-surface-800": "234 236 244",
+  "--color-surface-900": "255 255 255",
   "--color-surface-950": "246 248 252",
 } as const;
 
@@ -222,8 +230,8 @@ export const lightSurfacesGithub = {
   "--color-surface-400": "148 156 164",
   "--color-surface-500": "175 181 188",
   "--color-surface-600": "201 205 211",
-  "--color-surface-700": "225 228 232",
-  "--color-surface-800": "240 242 245",
+  "--color-surface-700": "220 224 228",
+  "--color-surface-800": "234 236 240",
   "--color-surface-900": "255 255 255",
   "--color-surface-950": "246 248 250",
 } as const;
@@ -251,9 +259,9 @@ export const lightSurfacesDracula = {
   "--color-surface-400": "174 177 192",
   "--color-surface-500": "198 200 212",
   "--color-surface-600": "218 220 228",
-  "--color-surface-700": "234 235 240",
-  "--color-surface-800": "244 245 248",
-  "--color-surface-900": "252 252 254",
+  "--color-surface-700": "230 232 238",
+  "--color-surface-800": "240 241 246",
+  "--color-surface-900": "255 255 255",
   "--color-surface-950": "248 248 250",
 } as const;
 
@@ -280,9 +288,9 @@ export const lightSurfacesNord = {
   "--color-surface-400": "154 160 168",
   "--color-surface-500": "178 183 190",
   "--color-surface-600": "204 208 214",
-  "--color-surface-700": "226 228 232",
-  "--color-surface-800": "240 242 245",
-  "--color-surface-900": "252 252 254",
+  "--color-surface-700": "220 224 228",
+  "--color-surface-800": "236 239 244",
+  "--color-surface-900": "255 255 255",
   "--color-surface-950": "236 239 244",
 } as const;
 
@@ -307,10 +315,97 @@ export const lightSurfacesSolarized = {
   "--color-surface-200": "72 98 106",
   "--color-surface-300": "106 124 130",
   "--color-surface-400": "136 152 156",
-  "--color-surface-500": "162 174 176",
-  "--color-surface-600": "192 200 200",
-  "--color-surface-700": "220 224 222",
-  "--color-surface-800": "238 240 236",
+  "--color-surface-500": "147 161 161",
+  "--color-surface-600": "181 191 186",
+  "--color-surface-700": "214 220 210",
+  "--color-surface-800": "238 232 213",
   "--color-surface-900": "253 246 227",
   "--color-surface-950": "245 238 220",
+} as const;
+
+/** Caduceus — serpentine ink, soft jade (apothecary desk) */
+export const darkSurfacesCaduceus = {
+  "--color-surface-50": "232 240 234",
+  "--color-surface-100": "206 218 208",
+  "--color-surface-200": "168 186 172",
+  "--color-surface-300": "132 152 138",
+  "--color-surface-400": "100 120 106",
+  "--color-surface-500": "72 90 78",
+  "--color-surface-600": "48 62 54",
+  "--color-surface-700": "34 44 38",
+  "--color-surface-800": "24 32 28",
+  "--color-surface-900": "16 22 18",
+  "--color-surface-950": "10 14 12",
+} as const;
+
+export const lightSurfacesCaduceus = {
+  "--color-surface-50": "18 28 22",
+  "--color-surface-100": "36 48 40",
+  "--color-surface-200": "58 74 62",
+  "--color-surface-300": "88 108 92",
+  "--color-surface-400": "118 140 122",
+  "--color-surface-500": "148 168 150",
+  "--color-surface-600": "180 196 180",
+  "--color-surface-700": "210 222 210",
+  "--color-surface-800": "228 236 228",
+  "--color-surface-900": "255 255 255",
+  "--color-surface-950": "242 248 242",
+} as const;
+
+/** Ember — banked coals: cool ash + soft rose-copper glow */
+export const darkSurfacesEmber = {
+  "--color-surface-50": "244 234 228",
+  "--color-surface-100": "222 204 194",
+  "--color-surface-200": "190 164 152",
+  "--color-surface-300": "156 128 118",
+  "--color-surface-400": "120 96 88",
+  "--color-surface-500": "88 70 64",
+  "--color-surface-600": "58 46 42",
+  "--color-surface-700": "42 34 32",
+  "--color-surface-800": "30 24 24",
+  "--color-surface-900": "20 16 16",
+  "--color-surface-950": "12 10 10",
+} as const;
+
+export const lightSurfacesEmber = {
+  "--color-surface-50": "28 20 18",
+  "--color-surface-100": "48 36 32",
+  "--color-surface-200": "78 58 52",
+  "--color-surface-300": "112 86 76",
+  "--color-surface-400": "146 118 106",
+  "--color-surface-500": "176 150 138",
+  "--color-surface-600": "208 188 178",
+  "--color-surface-700": "230 216 208",
+  "--color-surface-800": "242 232 226",
+  "--color-surface-900": "255 252 250",
+  "--color-surface-950": "248 242 238",
+} as const;
+
+/** Hearth — evening cocoa, dusty rose (reading nook) */
+export const darkSurfacesHearth = {
+  "--color-surface-50": "242 236 228",
+  "--color-surface-100": "222 210 198",
+  "--color-surface-200": "190 172 156",
+  "--color-surface-300": "156 136 118",
+  "--color-surface-400": "122 102 88",
+  "--color-surface-500": "90 74 62",
+  "--color-surface-600": "62 50 42",
+  "--color-surface-700": "44 36 30",
+  "--color-surface-800": "32 26 22",
+  "--color-surface-900": "22 18 16",
+  "--color-surface-950": "14 12 10",
+} as const;
+
+export const lightSurfacesHearth = {
+  "--color-surface-50": "32 26 22",
+  "--color-surface-100": "52 42 36",
+  "--color-surface-200": "82 68 58",
+  "--color-surface-300": "114 96 82",
+  "--color-surface-400": "146 128 112",
+  "--color-surface-500": "176 160 144",
+  "--color-surface-600": "208 196 182",
+  "--color-surface-700": "228 220 210",
+  "--color-surface-800": "240 234 226",
+  "--color-surface-900": "255 252 248",
+  "--color-surface-950": "246 242 236",
 } as const;

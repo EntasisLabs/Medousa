@@ -6,11 +6,14 @@ import {
   getSessionHistory,
   listManuscripts,
   listTurnBudgetRequests,
-  sendStageRouteCommand,
 } from "$lib/daemon";
 import { homeChannelSurface } from "$lib/platform";
 import { humanBrowser } from "$lib/stores/humanBrowser.svelte";
 import { copyBrowserUrl, openUrlInDefaultBrowser } from "$lib/utils/browserActions";
+import {
+  dispatchBrowserFocusUrl,
+  dispatchBrowserOpenBookmarks,
+} from "$lib/utils/browserChromeEvents";
 import { reconnectWorkshop } from "$lib/workshopConnection";
 import { buildInteractiveTurnOptions } from "$lib/interactiveTurnOptions";
 import { createTurnTicket } from "$lib/daemon";
@@ -51,10 +54,46 @@ export function buildGoCommands(): WorkshopCommand[] {
 export function buildBrowserCommands(): WorkshopCommand[] {
   return [
     {
+      id: "browser-focus-url",
+      section: "open",
+      label: "Focus address bar",
+      subtitle: "⌘L — select the URL / search field",
+      keywords: "browser url address bar omnibox focus swap search web",
+      run: (ctx) => {
+        ctx.navigate("web");
+        dispatchBrowserFocusUrl();
+        ctx.callbacks.close();
+      },
+    },
+    {
+      id: "browser-new-tab",
+      section: "open",
+      label: "New browser tab",
+      subtitle: "⌘T — open a blank tab",
+      keywords: "browser new tab blank web",
+      run: async (ctx) => {
+        ctx.navigate("web");
+        await humanBrowser.openTab();
+        ctx.callbacks.close();
+      },
+    },
+    {
+      id: "browser-bookmarks",
+      section: "open",
+      label: "Open bookmarks",
+      subtitle: "⌘⇧B — history, bookmarks, and library saves",
+      keywords: "browser bookmarks saved favorites history web",
+      run: (ctx) => {
+        ctx.navigate("web");
+        dispatchBrowserOpenBookmarks();
+        ctx.callbacks.close();
+      },
+    },
+    {
       id: "browser-find-in-page",
       section: "open",
       label: "Find in page",
-      subtitle: "Search text on the current page",
+      subtitle: "⌘F — search text on the current page",
       keywords: "browser find search page web",
       run: (ctx) => {
         ctx.navigate("web");
@@ -250,24 +289,24 @@ export function buildTuneCommands(): WorkshopCommand[] {
 
   return [
     {
-      id: "tune-engine-controls",
+      id: "tune-models-settings",
       section: "tune",
-      label: "Open engine controls",
-      subtitle: "Model, depth, and routing",
-      keywords: "runtime controls model depth routing",
+      label: "Change model",
+      subtitle: "Models, stages & reasoning effort",
+      keywords: "model provider settings reasoning effort stages",
       run: (ctx) => {
-        ctx.openRuntimeTab("controls");
+        ctx.openSettingsSection("models");
         ctx.callbacks.close();
       },
     },
     {
-      id: "tune-models-settings",
+      id: "tune-engine-settings",
       section: "tune",
-      label: "Change model",
-      subtitle: "Open Models in Settings",
-      keywords: "model provider settings",
+      label: "Engine settings",
+      subtitle: "Tool budgets, quality & diagnostics",
+      keywords: "engine budgets quality diagnostics verifier",
       run: (ctx) => {
-        ctx.openSettingsSection("models");
+        ctx.openSettingsSection("engine");
         ctx.callbacks.close();
       },
     },
@@ -389,25 +428,12 @@ export function buildAdvancedCommands(): WorkshopCommand[] {
     {
       id: "advanced-stage-routes",
       section: "advanced",
-      label: "Show stage routes",
-      subtitle: "Read-only routing matrix summary",
-      keywords: "stage routes routing matrix",
+      label: "Edit stage routes",
+      subtitle: "Stage models in Settings → Models",
+      keywords: "stage routes routing matrix specialists models",
       advanced: true,
-      run: async (ctx) => {
-        const response = await sendStageRouteCommand({
-          stage_routing: ctx.runtime.stageRouting,
-          provider: ctx.runtime.provider,
-          model: ctx.runtime.model,
-          command: { command: "routes", role: null },
-        });
-        const routes = [
-          response.stage_routing.orchestrator,
-          response.stage_routing.final_response,
-        ]
-          .map((route) => `${route.role}: ${route.provider}:${route.model}`)
-          .join(" · ");
-        ctx.openRuntimeTab("routing");
-        ctx.notice(routes || "Stage routes loaded.");
+      run: (ctx) => {
+        ctx.openSettingsSection("models");
         ctx.callbacks.close();
       },
     },

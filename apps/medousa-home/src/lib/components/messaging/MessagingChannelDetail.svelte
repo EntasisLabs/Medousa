@@ -1,17 +1,11 @@
 <script lang="ts">
   import {
-    channelCredentialsInsetClass,
     channelIconClasses,
     channelMeta,
     type ChannelId,
     type ProductConfigSummary,
   } from "$lib/types/messaging";
-  import {
-    channelStatus,
-    statusChipVariant,
-    statusLabel,
-  } from "$lib/utils/channelStatus";
-  import WorkshopLivelinessChip from "$lib/components/ui/WorkshopLivelinessChip.svelte";
+  import { channelStatus, statusLabel } from "$lib/utils/channelStatus";
   import { Hash, Layers, Phone, Send } from "@lucide/svelte";
   import type { Component } from "svelte";
 
@@ -93,138 +87,121 @@
 
   const Icon = $derived(channelIcons[channelId]);
 
-  const advancedCount = $derived(
-    channelId === "discord" || channelId === "telegram" || channelId === "slack"
-      ? 2
-      : channelId === "whatsapp"
-        ? 2
-        : 0,
-  );
+  $effect(() => {
+    channelId;
+    advancedOpen = false;
+  });
+
+  function secretHint(configured: boolean | undefined): string {
+    return configured ? "Kept on this Mac — paste again only to replace" : "Waiting for a token";
+  }
 </script>
 
-<article class="max-w-xl">
-  <header class="flex items-start gap-3">
+<article class="msg-story">
+  <header class="msg-story-hero">
     <span class={channelIconClasses(channelId, true)} aria-hidden="true">
       <Icon size={20} strokeWidth={1.85} />
     </span>
     <div class="min-w-0 flex-1">
-      <h2 class="text-base font-semibold tracking-tight text-surface-50">{meta.name}</h2>
-      <p class="workshop-faint mt-1 text-sm leading-relaxed">{meta.tagline}</p>
-      <div class="mt-3 flex flex-wrap gap-2">
-        <WorkshopLivelinessChip variant={statusChipVariant(status)} label={statusLabel(status)} />
+      <p class="msg-story-kicker">
+        {statusLabel(status)}
         {#if !daemonOk}
-          <WorkshopLivelinessChip variant="muted" label="Medousa offline" />
+          · engine offline
         {/if}
-      </div>
+      </p>
+      <h2 class="msg-story-title">{meta.name}</h2>
+      <p class="msg-story-lead">{meta.tagline}</p>
     </div>
   </header>
 
-  <section class="{channelCredentialsInsetClass(channelId)} mt-6">
-    <h3 class="workshop-label">{meta.credentialsTitle}</h3>
-    <p class="workshop-faint mt-2 text-sm leading-relaxed">{meta.credentialsBlurb}</p>
-    {#if meta.setupGuideUrl}
-      <a
-        class="messaging-guide-link"
-        href={meta.setupGuideUrl}
-        target="_blank"
-        rel="noopener noreferrer"
-      >
-        {meta.setupGuideLabel ?? "Open setup guide"} ↗
-      </a>
-    {/if}
-  </section>
+  <section class="msg-story-chapter">
+    <p class="msg-story-step">01</p>
+    <div class="msg-story-chapter-body">
+      <h3 class="msg-story-chapter-title">Connect</h3>
+      <p class="msg-story-chapter-copy">
+        {meta.credentialsBlurb}
+        {#if meta.setupGuideUrl}
+          <a
+            class="msg-story-link"
+            href={meta.setupGuideUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            {meta.setupGuideLabel ?? "Setup guide"} ↗
+          </a>
+        {/if}
+      </p>
 
-  <section class="mt-6">
-    <h3 class="workshop-label">Required</h3>
-    <div class="mt-3 space-y-4">
       {#if channelId === "telegram"}
-        <label class="block">
-          <span class="workshop-label">Bot token</span>
-          {#if summary?.telegram.credentialsSet}
-            <span class="mt-1 block text-xs text-primary-300">Stored securely</span>
-          {:else}
-            <span class="workshop-faint mt-1 block text-xs">Not configured</span>
-          {/if}
+        <label class="msg-field">
+          <span class="msg-field-label">Bot token</span>
+          <span class="msg-field-hint">{secretHint(summary?.telegram.credentialsSet)}</span>
           <input
-            class="input mt-2 w-full font-mono text-xs"
+            class="msg-field-input msg-field-mono"
             type="password"
             placeholder="123456:ABC-DEF…"
             bind:value={telegramToken}
           />
-          <label class="mt-2 flex cursor-pointer items-center gap-2 text-sm text-surface-300">
+          <label class="msg-field-check">
             <input type="checkbox" class="checkbox" bind:checked={telegramClearToken} />
             Clear saved token on save
           </label>
         </label>
       {:else if channelId === "discord"}
-        <label class="block">
-          <span class="workshop-label">Bot token</span>
-          {#if summary?.discord.credentialsSet}
-            <span class="mt-1 block text-xs text-primary-300">Stored securely</span>
-          {:else}
-            <span class="workshop-faint mt-1 block text-xs">Not configured</span>
-          {/if}
+        <label class="msg-field">
+          <span class="msg-field-label">Bot token</span>
+          <span class="msg-field-hint">{secretHint(summary?.discord.credentialsSet)}</span>
           <input
-            class="input mt-2 w-full font-mono text-xs"
+            class="msg-field-input msg-field-mono"
             type="password"
-            placeholder="Paste bot token"
+            placeholder="Paste the bot token"
             bind:value={discordToken}
           />
-          <label class="mt-2 flex cursor-pointer items-center gap-2 text-sm text-surface-300">
+          <label class="msg-field-check">
             <input type="checkbox" class="checkbox" bind:checked={discordClearToken} />
             Clear saved token on save
           </label>
         </label>
       {:else if channelId === "slack"}
-        <label class="block">
-          <span class="workshop-label">Bot token (xoxb)</span>
-          {#if summary?.slack.botTokenSet}
-            <span class="mt-1 block text-xs text-primary-300">Stored securely</span>
-          {:else}
-            <span class="workshop-faint mt-1 block text-xs">Not configured</span>
-          {/if}
+        <label class="msg-field">
+          <span class="msg-field-label">Bot token</span>
+          <span class="msg-field-hint">xoxb · {secretHint(summary?.slack.botTokenSet).toLowerCase()}</span>
           <input
-            class="input mt-2 w-full font-mono text-xs"
+            class="msg-field-input msg-field-mono"
             type="password"
             placeholder="xoxb-…"
             bind:value={slackBotToken}
           />
-          <label class="mt-2 flex cursor-pointer items-center gap-2 text-sm text-surface-300">
+          <label class="msg-field-check">
             <input type="checkbox" class="checkbox" bind:checked={slackClearBotToken} />
-            Clear bot token on save
+            Clear on save
           </label>
         </label>
-        <label class="block">
-          <span class="workshop-label">App token (xapp)</span>
-          {#if summary?.slack.appTokenSet}
-            <span class="mt-1 block text-xs text-primary-300">Stored securely</span>
-          {:else}
-            <span class="workshop-faint mt-1 block text-xs">Not configured</span>
-          {/if}
+        <label class="msg-field">
+          <span class="msg-field-label">App token</span>
+          <span class="msg-field-hint">xapp · {secretHint(summary?.slack.appTokenSet).toLowerCase()}</span>
           <input
-            class="input mt-2 w-full font-mono text-xs"
+            class="msg-field-input msg-field-mono"
             type="password"
             placeholder="xapp-…"
             bind:value={slackAppToken}
           />
-          <label class="mt-2 flex cursor-pointer items-center gap-2 text-sm text-surface-300">
+          <label class="msg-field-check">
             <input type="checkbox" class="checkbox" bind:checked={slackClearAppToken} />
-            Clear app token on save
+            Clear on save
           </label>
         </label>
       {:else}
-        <label class="block">
-          <span class="workshop-label">Deliver bind</span>
-          <span class="workshop-faint mt-0.5 block text-xs">Address the bridge listens on</span>
-          <input class="input mt-2 w-full font-mono text-xs" bind:value={whatsappDeliverBind} />
+        <label class="msg-field">
+          <span class="msg-field-label">Deliver bind</span>
+          <span class="msg-field-hint">Where the bridge listens</span>
+          <input class="msg-field-input msg-field-mono" bind:value={whatsappDeliverBind} />
         </label>
-        <label class="block">
-          <span class="workshop-label">Allowed user JIDs</span>
-          <span class="workshop-faint mt-0.5 block text-xs">
-            Comma-separated — who may message Medousa
-          </span>
+        <label class="msg-field">
+          <span class="msg-field-label">Allowed JIDs</span>
+          <span class="msg-field-hint">Who may message her — comma-separated</span>
           <input
-            class="input mt-2 w-full font-mono text-xs"
+            class="msg-field-input msg-field-mono"
             placeholder="user@s.whatsapp.net"
             bind:value={whatsappAllowedUsers}
           />
@@ -233,142 +210,357 @@
     </div>
   </section>
 
-  <section class="mt-6">
-    <h3 class="workshop-label">Recommended</h3>
-    <div class="mt-3 space-y-4">
+  <section class="msg-story-chapter">
+    <p class="msg-story-step">02</p>
+    <div class="msg-story-chapter-body">
+      <h3 class="msg-story-chapter-title">
+        {#if channelId === "discord"}
+          How she’s called
+        {:else if channelId === "whatsapp"}
+          Bridge extras
+        {:else}
+          Who may reach her
+        {/if}
+      </h3>
+      <p class="msg-story-chapter-copy">
+        {#if channelId === "telegram"}
+          After the token is live, message the bot
+          <span class="msg-story-mono">/whoami</span>
+          and paste your numeric ID — only you get in.
+        {:else if channelId === "discord"}
+          The character before commands in your servers.
+        {:else if channelId === "slack"}
+          Socket Mode only listens to the Slack users you list here.
+        {:else}
+          Optional overrides — most bridges never need these.
+        {/if}
+      </p>
+
       {#if channelId === "telegram"}
-        <div class="rounded-xl border border-primary-500/30 bg-primary-500/10 px-4 py-3 text-sm leading-relaxed text-surface-300">
-          <p class="font-medium text-surface-50">Lock to just you</p>
-          <p class="mt-2">
-            After you save your bot token, message your bot
-            <span class="font-mono text-surface-100">/whoami</span>
-            on Telegram. It replies with your numeric user ID — paste that below.
-          </p>
-        </div>
-        <label class="block">
-          <span class="workshop-label">Your Telegram user ID</span>
-          <span class="workshop-faint mt-0.5 block text-xs">
-            Only this account can talk to Medousa — get it from /whoami
-          </span>
+        <label class="msg-field">
+          <span class="msg-field-label">Your Telegram user ID</span>
+          <span class="msg-field-hint">From /whoami</span>
           <input
-            class="input mt-2 w-full font-mono text-xs"
+            class="msg-field-input msg-field-mono"
             placeholder="123456789"
             bind:value={telegramAllowedUsers}
           />
         </label>
       {:else if channelId === "discord"}
-        <label class="block">
-          <span class="workshop-label">Command prefix</span>
-          <span class="workshop-faint mt-0.5 block text-xs">Character before commands in Discord</span>
-          <input class="input mt-2 w-24 font-mono text-sm" bind:value={discordPrefix} />
+        <label class="msg-field msg-field-narrow">
+          <span class="msg-field-label">Command prefix</span>
+          <input class="msg-field-input msg-field-mono" bind:value={discordPrefix} />
         </label>
       {:else if channelId === "slack"}
-        <label class="block">
-          <span class="workshop-label">Allowed Slack user IDs</span>
-          <span class="workshop-faint mt-0.5 block text-xs">Comma-separated — required for ingest</span>
-          <input class="input mt-2 w-full font-mono text-xs" bind:value={slackAllowedUsers} />
+        <label class="msg-field">
+          <span class="msg-field-label">Allowed Slack user IDs</span>
+          <span class="msg-field-hint">Comma-separated</span>
+          <input class="msg-field-input msg-field-mono" bind:value={slackAllowedUsers} />
         </label>
       {:else}
-        <label class="block">
-          <span class="workshop-label">Deliver URL</span>
-          <span class="workshop-faint mt-0.5 block text-xs">Optional override for bridge delivery</span>
-          <input class="input mt-2 w-full font-mono text-xs" bind:value={whatsappDeliverUrl} />
+        <label class="msg-field">
+          <span class="msg-field-label">Deliver URL</span>
+          <span class="msg-field-hint">Optional</span>
+          <input class="msg-field-input msg-field-mono" bind:value={whatsappDeliverUrl} />
         </label>
-        <label class="block">
-          <span class="workshop-label">Session DB path</span>
-          <span class="workshop-faint mt-0.5 block text-xs">Optional path to bridge session database</span>
-          <input class="input mt-2 w-full font-mono text-xs" bind:value={whatsappSessionDb} />
+        <label class="msg-field">
+          <span class="msg-field-label">Session DB path</span>
+          <span class="msg-field-hint">Optional</span>
+          <input class="msg-field-input msg-field-mono" bind:value={whatsappSessionDb} />
         </label>
       {/if}
     </div>
   </section>
 
-  <section class="mt-6 border-t border-surface-500/30 pt-4">
-    <button
-      type="button"
-      class="flex w-full items-center justify-between text-left text-sm font-medium text-surface-100"
-      onclick={() => (advancedOpen = !advancedOpen)}
-    >
-      <span class="workshop-label">Advanced{#if advancedCount > 0}&nbsp;({advancedCount}){/if}</span>
-      <span class="workshop-faint">{advancedOpen ? "▾" : "▸"}</span>
-    </button>
+  <section class="msg-story-chapter msg-story-chapter-quiet">
+    <p class="msg-story-step">03</p>
+    <div class="msg-story-chapter-body">
+      <button
+        type="button"
+        class="msg-story-advanced"
+        onclick={() => (advancedOpen = !advancedOpen)}
+        aria-expanded={advancedOpen}
+      >
+        <span>
+          <span class="msg-story-chapter-title">Advanced</span>
+          <span class="msg-story-chapter-copy msg-story-chapter-copy-inline">
+            Heartbeat nudges and delivery targets
+          </span>
+        </span>
+        <span class="msg-story-chevron">{advancedOpen ? "▾" : "▸"}</span>
+      </button>
 
-    {#if advancedOpen}
-      <div class="mt-4 space-y-4">
+      {#if advancedOpen}
         {#if channelId === "telegram"}
-          <label class="flex cursor-pointer items-center gap-2 text-sm text-surface-300">
+          <label class="msg-field-check msg-field-check-block">
             <input type="checkbox" class="checkbox" bind:checked={telegramHeartbeat} />
-            Heartbeat nudges enabled
+            Heartbeat nudges on configured chats
           </label>
-          <label class="block">
-            <span class="workshop-label">Heartbeat chat IDs</span>
+          <label class="msg-field">
+            <span class="msg-field-label">Heartbeat chat IDs</span>
             <input
-              class="input mt-2 w-full font-mono text-xs"
+              class="msg-field-input msg-field-mono"
               placeholder="-1001234567890"
               bind:value={telegramHeartbeatChats}
             />
           </label>
         {:else if channelId === "discord"}
-          <label class="flex cursor-pointer items-center gap-2 text-sm text-surface-300">
+          <label class="msg-field-check msg-field-check-block">
             <input type="checkbox" class="checkbox" bind:checked={discordHeartbeat} />
-            Heartbeat nudges enabled
+            Heartbeat nudges on configured channels
           </label>
-          <label class="block">
-            <span class="workshop-label">Heartbeat channel IDs</span>
-            <input
-              class="input mt-2 w-full font-mono text-xs"
-              bind:value={discordHeartbeatChannels}
-            />
+          <label class="msg-field">
+            <span class="msg-field-label">Heartbeat channel IDs</span>
+            <input class="msg-field-input msg-field-mono" bind:value={discordHeartbeatChannels} />
           </label>
         {:else if channelId === "slack"}
-          <label class="flex cursor-pointer items-center gap-2 text-sm text-surface-300">
+          <label class="msg-field-check msg-field-check-block">
             <input type="checkbox" class="checkbox" bind:checked={slackHeartbeat} />
-            Heartbeat nudges enabled
+            Heartbeat nudges on configured channels
           </label>
-          <label class="block">
-            <span class="workshop-label">Heartbeat channel IDs</span>
-            <input
-              class="input mt-2 w-full font-mono text-xs"
-              bind:value={slackHeartbeatChannels}
-            />
+          <label class="msg-field">
+            <span class="msg-field-label">Heartbeat channel IDs</span>
+            <input class="msg-field-input msg-field-mono" bind:value={slackHeartbeatChannels} />
           </label>
         {:else}
-          <label class="flex cursor-pointer items-center gap-2 text-sm text-surface-300">
+          <label class="msg-field-check msg-field-check-block">
             <input type="checkbox" class="checkbox" bind:checked={whatsappHeartbeat} />
-            Heartbeat nudges enabled
+            Heartbeat nudges on configured chats
           </label>
-          <label class="block">
-            <span class="workshop-label">Heartbeat chat JIDs</span>
-            <input
-              class="input mt-2 w-full font-mono text-xs"
-              bind:value={whatsappHeartbeatJids}
-            />
+          <label class="msg-field">
+            <span class="msg-field-label">Heartbeat chat JIDs</span>
+            <input class="msg-field-input msg-field-mono" bind:value={whatsappHeartbeatJids} />
           </label>
         {/if}
-      </div>
-    {/if}
+      {/if}
+    </div>
   </section>
 
-  <footer class="mt-8 flex flex-col gap-3 border-t border-surface-500/30 pt-6">
+  <footer class="msg-story-footer">
     <button
       type="button"
-      class="btn variant-filled-primary w-fit"
+      class="btn btn-sm variant-filled-primary"
       disabled={saving}
       onclick={() => void onSave()}
     >
       {saving ? "Saving…" : "Save & connect"}
     </button>
     {#if saveMessage}
-      <p class="text-xs {saveMessage === 'Saved' ? 'text-primary-300' : 'text-warning-400'}">
+      <p class="msg-story-footer-note {saveMessage === 'Saved' ? 'is-ok' : 'is-warn'}">
         {saveMessage === "Saved"
-          ? "Saved — Medousa starts this channel for you. No terminal needed."
+          ? "Saved — Medousa starts this channel for you."
           : saveMessage}
       </p>
-    {/if}
-    {#if !daemonOk}
-      <p class="workshop-faint text-xs">
-        Medousa isn't running — settings are saved; the channel connects when the engine is online.
+    {:else if !daemonOk}
+      <p class="msg-story-footer-note">
+        Engine offline — settings save; she connects when she’s back.
       </p>
     {/if}
   </footer>
 </article>
+
+<style>
+  .msg-story {
+    max-width: 32rem;
+  }
+
+  .msg-story-hero {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.9rem;
+    padding-bottom: 0.25rem;
+  }
+
+  .msg-story-kicker {
+    margin: 0;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: rgb(var(--shell-muted, var(--color-surface-500)));
+  }
+
+  .msg-story-title {
+    margin: 0.3rem 0 0;
+    font-size: 1.35rem;
+    font-weight: 600;
+    letter-spacing: -0.03em;
+    color: rgb(var(--shell-label, var(--color-surface-50)));
+  }
+
+  .msg-story-lead {
+    margin: 0.45rem 0 0;
+    max-width: 28rem;
+    font-size: 0.875rem;
+    line-height: 1.5;
+    color: rgb(var(--shell-muted, var(--color-surface-400)));
+  }
+
+  .msg-story-chapter {
+    display: grid;
+    grid-template-columns: 1.75rem minmax(0, 1fr);
+    gap: 0.85rem 1rem;
+    margin-top: 2rem;
+  }
+
+  .msg-story-chapter-quiet {
+    margin-top: 1.65rem;
+  }
+
+  .msg-story-step {
+    margin: 0.2rem 0 0;
+    font-size: 0.6875rem;
+    font-weight: 650;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.08em;
+    color: rgb(var(--shell-muted, var(--color-surface-500)));
+  }
+
+  .msg-story-chapter-title {
+    margin: 0;
+    display: block;
+    font-size: 0.9375rem;
+    font-weight: 600;
+    letter-spacing: -0.015em;
+    color: rgb(var(--shell-label, var(--color-surface-50)));
+  }
+
+  .msg-story-chapter-copy {
+    margin: 0.4rem 0 0;
+    font-size: 0.8125rem;
+    line-height: 1.55;
+    color: rgb(var(--shell-muted, var(--color-surface-400)));
+  }
+
+  .msg-story-chapter-copy-inline {
+    display: block;
+  }
+
+  .msg-story-mono {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.78em;
+    color: rgb(var(--shell-label, var(--color-surface-200)));
+  }
+
+  .msg-story-link {
+    margin-left: 0.2rem;
+    color: rgb(var(--color-primary-300));
+    text-decoration: none;
+    white-space: nowrap;
+  }
+
+  .msg-story-link:hover {
+    text-decoration: underline;
+  }
+
+  .msg-field {
+    display: block;
+    margin-top: 1.15rem;
+  }
+
+  .msg-field-narrow {
+    max-width: 6rem;
+  }
+
+  .msg-field-label {
+    display: block;
+    font-size: 0.75rem;
+    font-weight: 550;
+    color: rgb(var(--shell-label, var(--color-surface-200)));
+  }
+
+  .msg-field-hint {
+    display: block;
+    margin-top: 0.2rem;
+    font-size: 0.71875rem;
+    color: rgb(var(--shell-muted, var(--color-surface-500)));
+  }
+
+  .msg-field-input {
+    display: block;
+    width: 100%;
+    margin-top: 0.55rem;
+    border: none;
+    border-bottom: 1px solid rgb(var(--shell-border, var(--color-surface-500)) / 0.45);
+    border-radius: 0;
+    background: transparent;
+    padding: 0.35rem 0 0.55rem;
+    font-size: 0.875rem;
+    color: rgb(var(--shell-label, var(--color-surface-50)));
+    transition: border-color 140ms ease;
+  }
+
+  .msg-field-input::placeholder {
+    color: rgb(var(--shell-muted, var(--color-surface-500)));
+  }
+
+  .msg-field-input:focus {
+    outline: none;
+    border-bottom-color: rgb(var(--color-primary-500) / 0.7);
+  }
+
+  .msg-field-mono {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.8125rem;
+    letter-spacing: 0.01em;
+  }
+
+  .msg-field-check {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.7rem;
+    font-size: 0.75rem;
+    color: rgb(var(--shell-muted, var(--color-surface-400)));
+    cursor: pointer;
+  }
+
+  .msg-field-check-block {
+    display: flex;
+    margin-top: 1rem;
+  }
+
+  .msg-story-advanced {
+    display: flex;
+    width: 100%;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    margin: 0;
+    padding: 0;
+    border: none;
+    background: transparent;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .msg-story-chevron {
+    flex-shrink: 0;
+    margin-top: 0.15rem;
+    color: rgb(var(--shell-muted, var(--color-surface-500)));
+  }
+
+  .msg-story-footer {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem 1rem;
+    margin-top: 2.25rem;
+    padding-top: 1.15rem;
+    border-top: 1px solid rgb(var(--shell-border, var(--color-surface-500)) / 0.28);
+  }
+
+  .msg-story-footer-note {
+    margin: 0;
+    font-size: 0.75rem;
+    color: rgb(var(--shell-muted, var(--color-surface-400)));
+  }
+
+  .msg-story-footer-note.is-ok {
+    color: rgb(var(--color-primary-300));
+  }
+
+  .msg-story-footer-note.is-warn {
+    color: rgb(var(--color-warning-400));
+  }
+</style>

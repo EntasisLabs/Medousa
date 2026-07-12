@@ -1,16 +1,27 @@
 <script lang="ts">
-  import { GripVertical } from "@lucide/svelte";
+  import { Folder, FolderOpen, GripVertical } from "@lucide/svelte";
+  import type { Component } from "svelte";
   import type { VaultTreeNode } from "$lib/types/vault";
   import { vaultDisplayTitle } from "$lib/utils/formatVault";
   import { iconForSpace } from "$lib/utils/vaultSpaceIcons";
+  import { environmentIcon } from "$lib/utils/environmentIcons";
   import {
     bindVaultLongPress,
+    handleVaultFolderContextMenuEvent,
     handleVaultNoteContextMenuEvent,
     shouldSuppressVaultContextMenuClick,
   } from "$lib/utils/vaultContextMenuEvents";
-  import { isVaultPointerDragging, shouldSuppressVaultTreeClick, startVaultPointerDrag } from "$lib/utils/vaultTreeDrag";
+  import {
+    isVaultPointerDragging,
+    shouldSuppressVaultTreeClick,
+    startVaultPointerDrag,
+  } from "$lib/utils/vaultTreeDrag";
   import { recentPathsForFolder, recentPathsForSpace } from "$lib/utils/vaultRecent";
   import { vault } from "$lib/stores/vault.svelte";
+  import {
+    folderIconStorageKey,
+    vaultFolderIcons,
+  } from "$lib/stores/vaultFolderIcons.svelte";
   import VaultTreeNodeView from "./VaultTreeNode.svelte";
   import VaultTreeRecentRows from "./VaultTreeRecentRows.svelte";
   import VaultKindBadge from "./VaultKindBadge.svelte";
@@ -77,15 +88,8 @@
       : "",
   );
 
-  const SpaceIcon = $derived(
-    node.spaceId ? iconForSpace(node.spaceId) : null,
-  );
-
-  const spaceActive = $derived(
-    node.spaceId != null && activeSpaceFilter === node.spaceId,
-  );
-
   const isNoteLeaf = $derived(Boolean(node.path && !node.isFolder));
+  const isPathFolder = $derived(Boolean(node.isFolder && !node.spaceId));
 
   const dropPrefix = $derived.by(() => {
     if (node.dropPrefix) return node.dropPrefix;
@@ -97,6 +101,32 @@
     }
     return null;
   });
+
+  const iconKey = $derived(
+    node.isFolder
+      ? folderIconStorageKey({
+          dropPrefix,
+          spaceId: node.spaceId,
+        })
+      : null,
+  );
+
+  const customIconName = $derived.by(() => {
+    // Touch the map so icon changes re-render this row.
+    const icons = vaultFolderIcons.icons;
+    if (!iconKey) return null;
+    return icons[iconKey] ?? null;
+  });
+
+  const FolderIcon = $derived.by((): Component => {
+    if (customIconName) return environmentIcon(customIconName);
+    if (node.spaceId) return iconForSpace(node.spaceId);
+    return expanded ? FolderOpen : Folder;
+  });
+
+  const spaceActive = $derived(
+    node.spaceId != null && activeSpaceFilter === node.spaceId,
+  );
 
   const isDropTarget = $derived(Boolean(onMoveNote && dropPrefix));
 
@@ -126,6 +156,8 @@
     return [];
   });
 
+  const nestInset = $derived(8 + depth * 12 + 8);
+
   function handleClick() {
     if (shouldSuppressVaultTreeClick() || shouldSuppressVaultContextMenuClick()) return;
     if (node.path && !node.isFolder) {
@@ -136,8 +168,13 @@
   }
 
   function handleContextMenu(event: MouseEvent) {
-    if (!isNoteLeaf || !node.path) return;
-    handleVaultNoteContextMenuEvent(node.path, event);
+    if (isNoteLeaf && node.path) {
+      handleVaultNoteContextMenuEvent(node.path, event);
+      return;
+    }
+    if (node.isFolder && iconKey) {
+      handleVaultFolderContextMenuEvent(iconKey, label, event, node.spaceId);
+    }
   }
 
   function handleKeydown(event: KeyboardEvent) {
@@ -163,10 +200,17 @@
   }
 </script>
 
-<div>
+<div
+  class="vault-tree-node"
+  class:vault-tree-node--folder={node.isFolder}
+  class:vault-tree-node--path-folder={isPathFolder}
+  class:vault-tree-node--open={expanded && node.isFolder}
+  class:vault-tree-node--space={Boolean(node.spaceId)}
+>
   <div
     role="treeitem"
     aria-selected={node.path === selectedPath}
+    aria-expanded={node.isFolder ? expanded : undefined}
     tabindex="0"
     class="vault-tree-row flex w-full items-center gap-1.5 rounded-container-token px-2 py-1 text-left text-sm outline-none hover:bg-surface-700/80 focus-visible:ring-1 focus-visible:ring-primary-400/50 {node.path ===
     selectedPath
@@ -175,7 +219,11 @@
         ? 'bg-primary-500/10 font-medium text-primary-200'
         : node.spaceId
           ? 'font-medium text-surface-100'
-          : 'text-surface-200'} {isDropTarget ? 'vault-tree-drop-target' : ''} cursor-pointer"
+          : isPathFolder
+            ? 'vault-tree-row--folder text-surface-100'
+            : 'vault-tree-row--note text-surface-300'} {expanded && isPathFolder
+      ? 'vault-tree-row--folder-open'
+      : ''} {isDropTarget ? 'vault-tree-drop-target' : ''} cursor-pointer"
     style="padding-left: {8 + depth * 12}px"
     data-vault-drop-prefix={isDropTarget ? dropPrefix : undefined}
     onclick={handleClick}
@@ -195,40 +243,45 @@
         <GripVertical size={12} strokeWidth={2} />
       </button>
     {:else}
-      <span class="workshop-faint flex w-4 shrink-0 items-center justify-center">
-        {#if node.isFolder && SpaceIcon && node.spaceId}
-          <SpaceIcon size={14} strokeWidth={1.75} />
-        {:else if node.isFolder}
-          {expanded ? "▾" : "▸"}
-        {:else}
-          ·
-        {/if}
+      <span class="vault-tree-folder-icon flex w-4 shrink-0 items-center justify-center">
+        <FolderIcon size={14} strokeWidth={1.85} />
       </span>
     {/if}
     <span class="min-w-0 flex-1 truncate">{label}{countHint}</span>
     {#if node.path && !node.isFolder}
       <VaultKindBadge kind={node.kind} path={node.path} compact />
+    {:else if isPathFolder && node.children.length > 0}
+      <span class="vault-tree-folder-count">{node.children.length}</span>
     {/if}
   </div>
 
   {#if expanded}
-    <VaultTreeRecentRows
-      paths={recentRows}
-      depth={depth}
-      {selectedPath}
-      {labelByPath}
-      {onSelect}
-    />
-    {#each node.children as child (child.name + (child.path ?? "folder"))}
-      <VaultTreeNodeView
-        node={child}
+    <div
+      class="vault-tree-nest"
+      class:vault-tree-nest--path={isPathFolder}
+      class:vault-tree-nest--space={Boolean(node.spaceId)}
+      style:--vault-tree-nest-inset="{nestInset}px"
+      role="group"
+      aria-label="{label} contents"
+    >
+      <VaultTreeRecentRows
+        paths={recentRows}
+        depth={depth}
         {selectedPath}
         {labelByPath}
-        {activeSpaceFilter}
-        depth={depth + 1}
         {onSelect}
-        {onMoveNote}
       />
-    {/each}
+      {#each node.children as child (child.name + (child.path ?? "folder"))}
+        <VaultTreeNodeView
+          node={child}
+          {selectedPath}
+          {labelByPath}
+          {activeSpaceFilter}
+          depth={depth + 1}
+          {onSelect}
+          {onMoveNote}
+        />
+      {/each}
+    </div>
   {/if}
 </div>

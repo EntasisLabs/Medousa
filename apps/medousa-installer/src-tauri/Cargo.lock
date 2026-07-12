@@ -1984,12 +1984,14 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "dirs",
+ "flate2",
  "futures-util",
  "once_cell",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
  "sha2",
+ "tar",
  "tokio",
  "uuid",
 ]

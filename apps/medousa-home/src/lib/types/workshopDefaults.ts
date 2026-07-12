@@ -1,19 +1,10 @@
-import type { DepthMode, StageRoutingMatrix } from "$lib/types/runtime";
+import type { StageRoutingMatrix } from "$lib/types/runtime";
 import type { InferenceProfiles } from "$lib/types/inferenceProfiles";
 import type { FavoriteModel } from "$lib/utils/modelCatalog";
 import type { VoicePreset } from "$lib/types/voicePresets";
 import { normalizeFavoriteModels } from "$lib/utils/modelCatalog";
 import { normalizeInferenceProfiles, syncFlatFieldsFromProfiles } from "$lib/types/inferenceProfiles";
 import { DEFAULT_VOICE_ID, normalizeCustomVoicePresets } from "$lib/types/voicePresets";
-
-export type WorkshopDefaultsTab =
-  | "setup"
-  | "tools"
-  | "memory"
-  | "diagnostics"
-  | "quality"
-  | "secrets"
-  | "specialists";
 
 export interface TuiDefaults {
   backend?: string | null;
@@ -67,23 +58,7 @@ export interface TuiDefaults {
   workCardWipeAfterDays?: number | null;
 }
 
-export const WORKSHOP_DEFAULTS_TABS: {
-  id: WorkshopDefaultsTab;
-  label: string;
-}[] = [
-  { id: "setup", label: "Setup" },
-  { id: "tools", label: "Tools" },
-  { id: "memory", label: "Memory" },
-  { id: "diagnostics", label: "Diagnostics" },
-  { id: "quality", label: "Quality" },
-  { id: "secrets", label: "Secrets" },
-  { id: "specialists", label: "Specialists" },
-];
-
 export const BACKEND_OPTIONS = ["surreal-mem", "in-memory", "surreal-kv"] as const;
-export const TOOL_CALL_MODE_OPTIONS = ["auto", "strict"] as const;
-export const HOST_TURN_BUS_OPTIONS = ["auto", "force", "off"] as const;
-export const DEPTH_OPTIONS: DepthMode[] = ["concise", "standard", "deep"];
 
 export const WEB_SEARCH_PROVIDER_OPTIONS = [
   { value: "", label: "Auto (capability order)" },

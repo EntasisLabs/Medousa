@@ -191,3 +191,33 @@ export function wrapWithKanbanFrontmatter(body: string): string {
   const trimmed = body.replace(/^\n+/, "");
   return `---\nkind: board\nmedousa-board: basic\n---\n\n${trimmed}`;
 }
+
+/** Ensure board frontmatter so slash `/board` activates board mode. */
+export function ensureKanbanBoardFrontmatter(markdown: string): string {
+  if (noteHasKanbanBoard(markdown)) {
+    if (readMedousaBoardKind(markdown)) return markdown;
+    const { content, frontmatter } = stripFrontmatter(markdown);
+    if (frontmatter == null) return wrapWithKanbanFrontmatter(content);
+    const lines = frontmatter.split("\n");
+    if (!lines.some((line) => line.trimStart().toLowerCase().startsWith("medousa-board:"))) {
+      lines.push("medousa-board: basic");
+    }
+    return `---\n${lines.join("\n")}\n---\n\n${content}`;
+  }
+  const { content, frontmatter } = stripFrontmatter(markdown);
+  if (frontmatter == null) return wrapWithKanbanFrontmatter(content);
+  const lines = frontmatter.split("\n");
+  let kindReplaced = false;
+  const nextLines = lines.map((line) => {
+    if (line.trimStart().startsWith("kind:")) {
+      kindReplaced = true;
+      return "kind: board";
+    }
+    return line;
+  });
+  if (!kindReplaced) nextLines.unshift("kind: board");
+  if (!nextLines.some((line) => line.trimStart().toLowerCase().startsWith("medousa-board:"))) {
+    nextLines.push("medousa-board: basic");
+  }
+  return `---\n${nextLines.join("\n")}\n---\n\n${content}`;
+}

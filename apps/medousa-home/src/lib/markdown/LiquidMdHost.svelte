@@ -14,18 +14,32 @@
   import ActionRow from "$lib/liquid/archetypes/molecules/action_row/ActionRow.svelte";
   import Callout from "$lib/liquid/archetypes/molecules/callout/Callout.svelte";
   import Cite from "$lib/liquid/archetypes/molecules/cite/Cite.svelte";
+  import Compare from "$lib/liquid/archetypes/organisms/compare/Compare.svelte";
+  import Plan from "$lib/liquid/archetypes/organisms/plan/Plan.svelte";
+  import Timeline from "$lib/liquid/archetypes/organisms/timeline/Timeline.svelte";
+  import Shortlist from "$lib/liquid/archetypes/organisms/shortlist/Shortlist.svelte";
+  import Decision from "$lib/liquid/archetypes/organisms/decision/Decision.svelte";
+  import Brief from "$lib/liquid/archetypes/organisms/brief/Brief.svelte";
+  import Dashboard from "$lib/liquid/archetypes/organisms/dashboard/Dashboard.svelte";
   import Section from "$lib/liquid/archetypes/molecules/section/Section.svelte";
   import ChipGroup from "$lib/liquid/archetypes/molecules/chip_group/ChipGroup.svelte";
   import Media from "$lib/liquid/archetypes/atoms/media/Media.svelte";
   import type {
     LiquidActionProps,
+    LiquidBriefProps,
     LiquidCalloutProps,
     LiquidCardProps,
     LiquidChipProps,
     LiquidCiteProps,
+    LiquidCompareProps,
+    LiquidDashboardProps,
+    LiquidDecisionProps,
     LiquidEmbedKind,
     LiquidMediaProps,
+    LiquidPlanProps,
     LiquidSectionProps,
+    LiquidShortlistProps,
+    LiquidTimelineProps,
   } from "$lib/markdown/liquidEmbeds";
   import {
     AlertTriangle,
@@ -110,6 +124,11 @@
         ...(card.body ? { body: card.body } : {}),
         ...(card.emoji ? { emoji: card.emoji } : {}),
         ...(card.image ? { image: card.image } : {}),
+        ...(card.meta ? { meta: card.meta } : {}),
+        ...(card.summary ? { summary: card.summary } : {}),
+        ...(card.chips?.length ? { chips: card.chips } : {}),
+        ...(card.points?.length ? { points: card.points } : {}),
+        ...(card.badges?.length ? { badges: card.badges } : {}),
       },
       fillState: "ready",
     });
@@ -258,6 +277,129 @@
     });
   });
 
+  const compare = $derived.by(() => {
+    if (kind !== "compare") return null;
+    const props = payload as LiquidCompareProps;
+    if (!props?.axes?.length || !props?.entities || props.entities.length < 2) return null;
+    return createNode({
+      id: "md-compare",
+      type: "compare",
+      props: {
+        ...(props.title ? { title: props.title } : {}),
+        ...(props.subtitle ? { subtitle: props.subtitle } : {}),
+        ...(props.recommendation ? { recommendation: props.recommendation } : {}),
+        axes: props.axes,
+        entities: props.entities,
+      },
+      fillState: "ready",
+    });
+  });
+
+  const plan = $derived.by(() => {
+    if (kind !== "plan") return null;
+    const props = payload as LiquidPlanProps;
+    if (!props?.segments || props.segments.length < 2) return null;
+    return createNode({
+      id: "md-plan",
+      type: "plan",
+      props: {
+        ...(props.title ? { title: props.title } : {}),
+        ...(props.subtitle ? { subtitle: props.subtitle } : {}),
+        ...(props.grouping ? { grouping: props.grouping } : {}),
+        segments: props.segments,
+      },
+      fillState: "ready",
+    });
+  });
+
+  const timeline = $derived.by(() => {
+    if (kind !== "timeline") return null;
+    const props = payload as LiquidTimelineProps;
+    if (!props?.events || props.events.length < 2) return null;
+    return createNode({
+      id: "md-timeline",
+      type: "timeline",
+      props: {
+        ...(props.title ? { title: props.title } : {}),
+        ...(props.subtitle ? { subtitle: props.subtitle } : {}),
+        ...(props.granularity ? { granularity: props.granularity } : {}),
+        events: props.events,
+      },
+      fillState: "ready",
+    });
+  });
+
+  const shortlist = $derived.by(() => {
+    if (kind !== "shortlist") return null;
+    const props = payload as LiquidShortlistProps;
+    if (!props?.items || props.items.length < 2) return null;
+    return createNode({
+      id: "md-shortlist",
+      type: "shortlist",
+      props: {
+        ...(props.title ? { title: props.title } : {}),
+        ...(props.subtitle ? { subtitle: props.subtitle } : {}),
+        ...(props.criteria ? { criteria: props.criteria } : {}),
+        ...(props.density ? { density: props.density } : {}),
+        items: props.items,
+      },
+      fillState: "ready",
+    });
+  });
+
+  const decision = $derived.by(() => {
+    if (kind !== "decision") return null;
+    const props = payload as LiquidDecisionProps;
+    if (!props?.options || props.options.length < 2) return null;
+    return createNode({
+      id: "md-decision",
+      type: "decision",
+      props: {
+        ...(props.title ? { title: props.title } : {}),
+        ...(props.subtitle ? { subtitle: props.subtitle } : {}),
+        ...(props.factors ? { factors: props.factors } : {}),
+        ...(props.recommendation ? { recommendation: props.recommendation } : {}),
+        options: props.options,
+      },
+      fillState: "ready",
+    });
+  });
+
+  const brief = $derived.by(() => {
+    if (kind !== "brief") return null;
+    const props = payload as LiquidBriefProps;
+    if (!props?.sections || props.sections.length < 1) return null;
+    return createNode({
+      id: "md-brief",
+      type: "brief",
+      props: {
+        ...(props.title ? { title: props.title } : {}),
+        ...(props.subtitle ? { subtitle: props.subtitle } : {}),
+        ...(props.tone ? { tone: props.tone } : {}),
+        sections: props.sections,
+        ...(props.sources?.length ? { sources: props.sources } : {}),
+      },
+      fillState: "ready",
+    });
+  });
+
+  const dashboard = $derived.by(() => {
+    if (kind !== "dashboard") return null;
+    const props = payload as LiquidDashboardProps;
+    if (!props?.tiles || props.tiles.length < 2) return null;
+    return createNode({
+      id: "md-dashboard",
+      type: "dashboard",
+      props: {
+        ...(props.title ? { title: props.title } : {}),
+        ...(props.subtitle ? { subtitle: props.subtitle } : {}),
+        ...(props.columns ? { columns: props.columns } : {}),
+        tiles: props.tiles,
+      },
+      fillState: "ready",
+    });
+  });
+
   const IconComp = $derived.by(() => {
     if (kind !== "icon") return null;
     const id = typeof payload === "string" ? payload : "";
@@ -299,6 +441,34 @@
 {:else if kind === "cite" && cite}
   <div class="liquid-md-host liquid-md-host-cite liquid-md-enter">
     <Cite node={cite} />
+  </div>
+{:else if kind === "compare" && compare}
+  <div class="liquid-md-host liquid-md-host-compare liquid-md-enter">
+    <Compare node={compare} />
+  </div>
+{:else if kind === "plan" && plan}
+  <div class="liquid-md-host liquid-md-host-plan liquid-md-enter">
+    <Plan node={plan} />
+  </div>
+{:else if kind === "timeline" && timeline}
+  <div class="liquid-md-host liquid-md-host-timeline liquid-md-enter">
+    <Timeline node={timeline} />
+  </div>
+{:else if kind === "shortlist" && shortlist}
+  <div class="liquid-md-host liquid-md-host-shortlist liquid-md-enter">
+    <Shortlist node={shortlist} />
+  </div>
+{:else if kind === "decision" && decision}
+  <div class="liquid-md-host liquid-md-host-decision liquid-md-enter">
+    <Decision node={decision} />
+  </div>
+{:else if kind === "brief" && brief}
+  <div class="liquid-md-host liquid-md-host-brief liquid-md-enter">
+    <Brief node={brief} />
+  </div>
+{:else if kind === "dashboard" && dashboard}
+  <div class="liquid-md-host liquid-md-host-dashboard liquid-md-enter">
+    <Dashboard node={dashboard} />
   </div>
 {:else if kind === "icon" && IconComp}
   <span class="liquid-md-host-icon">

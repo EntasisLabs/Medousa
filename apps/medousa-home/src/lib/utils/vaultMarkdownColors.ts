@@ -9,6 +9,9 @@ export type MarkdownColorId =
   | "purple"
   | "pink";
 
+/** Named swatch or validated `#RGB` / `#RRGGBB` / `#RRGGBBAA`. */
+export type MarkdownColorToken = MarkdownColorId | string;
+
 export interface MarkdownColorOption {
   id: MarkdownColorId;
   label: string;
@@ -47,22 +50,75 @@ export const MARKDOWN_COLOR_OPTIONS: MarkdownColorOption[] = [
 
 export const MARKDOWN_COLOR_IDS = MARKDOWN_COLOR_OPTIONS.map((option) => option.id);
 
+const HEX_COLOR_RE = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
+
+export function isMarkdownColorId(value: string): value is MarkdownColorId {
+  return (MARKDOWN_COLOR_IDS as string[]).includes(value.toLowerCase());
+}
+
+/** Accepts `#RGB`, `#RRGGBB`, `#RRGGBBAA` (with leading #). */
+export function isMarkdownHexColor(value: string): boolean {
+  return HEX_COLOR_RE.test(value.trim());
+}
+
+/** Normalize a hex token for storage (`#RRGGBB` uppercase). Returns null if invalid. */
+export function normalizeMarkdownHexColor(value: string): string | null {
+  const trimmed = value.trim();
+  if (!isMarkdownHexColor(trimmed)) return null;
+  const raw = trimmed.slice(1);
+  if (raw.length === 3) {
+    const expanded = raw
+      .split("")
+      .map((ch) => `${ch}${ch}`)
+      .join("");
+    return `#${expanded.toUpperCase()}`;
+  }
+  return `#${raw.toUpperCase()}`;
+}
+
+export function isMarkdownColorToken(value: string): boolean {
+  return isMarkdownColorId(value) || isMarkdownHexColor(value);
+}
+
+/** Resolve any accepted token to a CSS color, or null. */
+export function resolveMarkdownColorCss(token: string): string | null {
+  const trimmed = token.trim();
+  if (isMarkdownColorId(trimmed)) {
+    return MARKDOWN_COLOR_HEX[trimmed.toLowerCase() as MarkdownColorId];
+  }
+  return normalizeMarkdownHexColor(trimmed);
+}
+
 export function markdownColorClass(color: MarkdownColorId): string {
   return `markdown-color markdown-color-${color}`;
 }
 
-/** Toolbar insert: `{{red|text}}` — preprocessed to colored span at render time. */
-export function markdownColorOpenTag(color: MarkdownColorId): string {
-  return `{{${color}|`;
+/** Toolbar insert: `{{red|text}}` or `{{#FF5500|text}}`. */
+export function markdownColorOpenTag(color: MarkdownColorToken): string {
+  if (isMarkdownColorId(color)) return `{{${color.toLowerCase()}|`;
+  const hex = normalizeMarkdownHexColor(color);
+  return hex ? `{{${hex}|` : `{{`;
 }
 
 export const MARKDOWN_COLOR_CLOSE_TAG = "}}";
 
-export function colorSpanHtml(color: MarkdownColorId, text: string): string {
-  const hex = MARKDOWN_COLOR_HEX[color];
-  return `<span class="${markdownColorClass(color)}" style="color: ${hex}">${text}</span>`;
+export function colorSpanHtml(color: MarkdownColorToken, text: string): string {
+  if (isMarkdownColorId(color)) {
+    const id = color.toLowerCase() as MarkdownColorId;
+    const hex = MARKDOWN_COLOR_HEX[id];
+    return `<span class="${markdownColorClass(id)}" style="color: ${hex}">${text}</span>`;
+  }
+  const hex = normalizeMarkdownHexColor(color);
+  if (!hex) return text;
+  return `<span class="markdown-color markdown-color-hex" style="color: ${hex}">${text}</span>`;
 }
 
-export function isMarkdownColorId(value: string): value is MarkdownColorId {
-  return (MARKDOWN_COLOR_IDS as string[]).includes(value);
+/** Serialize color markup for the note source. */
+export function colorMarkupToken(color: MarkdownColorToken, inner: string): string {
+  if (isMarkdownColorId(color)) {
+    return `{{${color.toLowerCase()}|${inner}}}`;
+  }
+  const hex = normalizeMarkdownHexColor(color);
+  if (!hex) return inner;
+  return `{{${hex}|${inner}}}`;
 }

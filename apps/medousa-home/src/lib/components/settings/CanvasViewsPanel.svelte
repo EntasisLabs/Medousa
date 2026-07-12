@@ -4,7 +4,7 @@
   import CanvasEditViewForm from "$lib/components/settings/CanvasEditViewForm.svelte";
   import { environmentIcon } from "$lib/utils/environmentIcons";
   import type { SurfaceDef } from "$lib/types/environment";
-  import { ChevronRight } from "@lucide/svelte";
+  import { Pencil, Trash2 } from "@lucide/svelte";
 
   interface Props {
     surfaces: SurfaceDef[];
@@ -32,6 +32,9 @@
     onCancelDelete,
   }: Props = $props();
 
+  let navBusySurfaceId = $state<string | null>(null);
+  let navError = $state<string | null>(null);
+
   function componentCount(surfaceId: string): number {
     return environment.mainComponentsForSurface(surfaceId).length;
   }
@@ -43,50 +46,112 @@
     }
     layout.navigateDesktop(surfaceId, { bump: true });
   }
+
+  async function setNavVisible(surfaceId: string, visible: boolean) {
+    if (navBusySurfaceId || deleteBusy) return;
+    navBusySurfaceId = surfaceId;
+    navError = null;
+    try {
+      await environment.setSurfaceNavVisible(surfaceId, visible);
+      if (!visible && !layout.isMobile && layout.desktopSurface === surfaceId) {
+        const fallback =
+          environment.navSurfaces().find((surface) => surface.id !== surfaceId)?.id ?? "chat";
+        layout.navigateDesktop(fallback, { bump: true });
+      }
+    } catch (err) {
+      navError = err instanceof Error ? err.message : String(err);
+    } finally {
+      navBusySurfaceId = null;
+    }
+  }
 </script>
 
 {#if surfaces.length === 0}
   <p class="canvas-views-empty">
-    No custom views yet. Create one below, then open it and use <strong>Edit layout</strong> to add widgets.
+    No custom views yet. Create one below, then open it and use <strong>Edit layout</strong> to add
+    widgets.
   </p>
 {:else}
-  <ul class="canvas-view-list">
+  <div class="settings-toggle-list canvas-views-list">
     {#each surfaces as surface (surface.id)}
       {@const Icon = environmentIcon(surface.icon)}
       {@const inNav = navVisibleFor(surface.id)}
       {@const widgets = componentCount(surface.id)}
-      <li class="canvas-view-card">
-        <button
-          type="button"
-          class="canvas-view-card-open"
-          onclick={() => openView(surface.id)}
-        >
-          <span class="canvas-view-card-icon" aria-hidden="true">
-            <Icon size={18} strokeWidth={1.75} />
-          </span>
-          <span class="canvas-view-card-copy">
-            <span class="canvas-view-card-title">{surface.label}</span>
-            <span class="canvas-view-card-meta">
-              {widgets === 0 ? "Empty room" : `${widgets} widget${widgets === 1 ? "" : "s"}`}
-              · {inNav ? "In nav" : "Hidden from nav"}
+      {@const expanded =
+        editingSurfaceId === surface.id || confirmDeleteSurfaceId === surface.id}
+      <div class="canvas-views-item" class:canvas-views-item-expanded={expanded}>
+        <div class="settings-toggle-row canvas-views-row">
+          <button
+            type="button"
+            class="canvas-views-open"
+            onclick={() => openView(surface.id)}
+          >
+            <span class="canvas-views-icon" aria-hidden="true">
+              <Icon size={15} strokeWidth={1.75} />
             </span>
-          </span>
-          <ChevronRight size={16} strokeWidth={2} class="canvas-view-card-chevron" aria-hidden="true" />
-        </button>
+            <span class="canvas-views-copy">
+              <span class="canvas-views-title">{surface.label}</span>
+              <span class="canvas-views-meta">
+                {widgets === 0
+                  ? "Empty room"
+                  : `${widgets} widget${widgets === 1 ? "" : "s"}`}
+              </span>
+            </span>
+          </button>
+
+          <div class="canvas-views-trail">
+            <label class="canvas-views-nav" title={inNav ? "Shown in nav" : "Hidden from nav"}>
+              <span class="sr-only">Show {surface.label} in nav</span>
+              <input
+                type="checkbox"
+                class="checkbox shrink-0"
+                checked={inNav}
+                disabled={navBusySurfaceId === surface.id || deleteBusy}
+                onchange={(event) =>
+                  void setNavVisible(
+                    surface.id,
+                    (event.currentTarget as HTMLInputElement).checked,
+                  )}
+              />
+            </label>
+            <button
+              type="button"
+              class="canvas-views-icon-btn"
+              title="Edit view"
+              aria-label="Edit {surface.label}"
+              disabled={deleteBusy}
+              onclick={() => onRequestEdit?.(surface.id)}
+            >
+              <Pencil size={14} strokeWidth={2} />
+            </button>
+            <button
+              type="button"
+              class="canvas-views-icon-btn canvas-views-icon-btn-danger"
+              title="Remove view"
+              aria-label="Remove {surface.label}"
+              disabled={deleteBusy}
+              onclick={() => onRequestDelete?.(surface.id)}
+            >
+              <Trash2 size={14} strokeWidth={2} />
+            </button>
+          </div>
+        </div>
 
         {#if editingSurfaceId === surface.id}
-          <CanvasEditViewForm
-            {surface}
-            onSaved={() => onCancelEdit?.()}
-            onCancel={() => onCancelEdit?.()}
-          />
+          <div class="canvas-views-expand">
+            <CanvasEditViewForm
+              {surface}
+              onSaved={() => onCancelEdit?.()}
+              onCancel={() => onCancelEdit?.()}
+            />
+          </div>
         {:else if confirmDeleteSurfaceId === surface.id}
-          <div class="canvas-view-card-delete">
-            <p class="canvas-view-card-delete-copy">Remove “{surface.label}” from your canvas?</p>
-            <div class="canvas-view-card-delete-actions">
+          <div class="canvas-views-expand canvas-views-delete">
+            <p class="canvas-views-delete-copy">Remove “{surface.label}” from your canvas?</p>
+            <div class="canvas-views-delete-actions">
               <button
                 type="button"
-                class="canvas-view-card-delete-btn"
+                class="btn btn-sm variant-filled-error"
                 disabled={deleteBusy}
                 onclick={() => onConfirmDelete?.(surface.id, surface.label)}
               >
@@ -94,7 +159,7 @@
               </button>
               <button
                 type="button"
-                class="canvas-view-card-delete-cancel"
+                class="btn btn-sm btn-ghost"
                 disabled={deleteBusy}
                 onclick={() => onCancelDelete?.()}
               >
@@ -102,29 +167,14 @@
               </button>
             </div>
           </div>
-        {:else}
-          <div class="canvas-view-card-actions">
-            <button
-              type="button"
-              class="canvas-view-card-action"
-              disabled={deleteBusy}
-              onclick={() => onRequestEdit?.(surface.id)}
-            >
-              Edit
-            </button>
-            <button
-              type="button"
-              class="canvas-view-card-action canvas-view-card-action-danger"
-              disabled={deleteBusy}
-              onclick={() => onRequestDelete?.(surface.id)}
-            >
-              Remove
-            </button>
-          </div>
         {/if}
-      </li>
+      </div>
     {/each}
-  </ul>
+  </div>
+{/if}
+
+{#if navError}
+  <p class="canvas-views-error">{navError}</p>
 {/if}
 
 <style>
@@ -132,159 +182,154 @@
     margin: 0;
     font-size: 0.8125rem;
     line-height: 1.5;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--shell-muted, var(--color-surface-400)));
   }
 
   .canvas-views-empty strong {
     font-weight: 600;
-    color: rgb(var(--color-surface-300));
+    color: rgb(var(--shell-label, var(--color-surface-300)));
   }
 
-  .canvas-view-list {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: grid;
-    gap: 0.45rem;
-  }
-
-  .canvas-view-card {
-    border-radius: 0.65rem;
-    border: 1px solid color-mix(in srgb, var(--color-surface-700) 50%, transparent);
-    background: color-mix(in srgb, var(--color-surface-900) 40%, transparent);
+  .canvas-views-list {
     overflow: hidden;
   }
 
-  .canvas-view-card-open {
-    display: flex;
-    align-items: center;
+  .canvas-views-item + .canvas-views-item {
+    border-top: 1px solid rgb(var(--shell-border, var(--color-surface-500)) / 0.35);
+  }
+
+  .canvas-views-row {
     gap: 0.65rem;
-    width: 100%;
+  }
+
+  .canvas-views-open {
+    display: flex;
+    min-width: 0;
+    flex: 1 1 auto;
+    align-items: center;
+    gap: 0.55rem;
     border: 0;
-    padding: 0.65rem 0.7rem;
+    padding: 0;
     text-align: left;
     background: transparent;
     cursor: pointer;
-    transition: background 140ms ease;
   }
 
-  .canvas-view-card-open:hover {
-    background: color-mix(in srgb, var(--color-surface-800) 55%, transparent);
-  }
-
-  .canvas-view-card-icon {
+  .canvas-views-icon {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 2.1rem;
-    height: 2.1rem;
+    width: 1.65rem;
+    height: 1.65rem;
     flex-shrink: 0;
-    border-radius: 0.5rem;
-    color: rgb(var(--color-primary-200));
-    background: color-mix(in srgb, var(--color-primary-500) 12%, transparent);
+    border-radius: 0.4rem;
+    color: rgb(var(--shell-label, var(--color-surface-300)));
+    background: rgb(var(--shell-pane-muted-bg, var(--color-surface-800)) / 0.7);
   }
 
-  .canvas-view-card-copy {
-    flex: 1 1 auto;
+  .canvas-views-copy {
+    display: flex;
     min-width: 0;
-    display: flex;
+    flex: 1 1 auto;
     flex-direction: column;
-    gap: 0.15rem;
+    gap: 0.1rem;
   }
 
-  .canvas-view-card-title {
+  .canvas-views-title {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 0.8125rem;
-    font-weight: 600;
-    color: rgb(var(--color-surface-100));
+    font-size: 0.875rem;
+    font-weight: 550;
+    color: rgb(var(--shell-label, var(--color-surface-100)));
   }
 
-  .canvas-view-card-meta {
+  .canvas-views-meta {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
     font-size: 0.6875rem;
-    color: rgb(var(--color-surface-500));
+    color: rgb(var(--shell-muted, var(--color-surface-500)));
   }
 
-  .canvas-view-card-open :global(.canvas-view-card-chevron) {
+  .canvas-views-trail {
+    display: inline-flex;
     flex-shrink: 0;
-    color: rgb(var(--color-surface-500));
+    align-items: center;
+    gap: 0.2rem;
   }
 
-  .canvas-view-card-actions {
-    display: flex;
-    border-top: 1px solid color-mix(in srgb, var(--color-surface-700) 45%, transparent);
+  .canvas-views-nav {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.15rem;
+    cursor: pointer;
   }
 
-  .canvas-view-card-action {
-    flex: 1 1 50%;
+  .canvas-views-icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     border: 0;
-    padding: 0.35rem 0.7rem;
-    font-size: 0.6875rem;
-    font-weight: 500;
-    color: rgb(var(--color-surface-400));
+    border-radius: 0.35rem;
+    padding: 0.3rem;
+    color: rgb(var(--shell-muted, var(--color-surface-400)));
     background: transparent;
     cursor: pointer;
     transition:
-      color 140ms ease,
-      background 140ms ease;
+      color 120ms ease,
+      background 120ms ease;
   }
 
-  .canvas-view-card-action:first-child {
-    border-right: 1px solid color-mix(in srgb, var(--color-surface-700) 45%, transparent);
+  .canvas-views-icon-btn:hover:not(:disabled) {
+    color: rgb(var(--shell-label, var(--color-surface-100)));
+    background: rgb(var(--shell-pane-muted-bg, var(--color-surface-800)) / 0.65);
   }
 
-  .canvas-view-card-action:hover:not(:disabled) {
-    color: rgb(var(--color-surface-100));
-    background: color-mix(in srgb, var(--color-surface-800) 55%, transparent);
-  }
-
-  .canvas-view-card-action-danger:hover:not(:disabled) {
+  .canvas-views-icon-btn-danger:hover:not(:disabled) {
     color: rgb(var(--color-error-300));
-    background: color-mix(in srgb, var(--color-error-600) 10%, transparent);
+    background: color-mix(in srgb, rgb(var(--color-error-600)) 12%, transparent);
   }
 
-  .canvas-view-card-action:disabled {
+  .canvas-views-icon-btn:disabled {
     opacity: 0.45;
     cursor: not-allowed;
   }
 
-  .canvas-view-card-delete {
-    border-top: 1px solid color-mix(in srgb, var(--color-surface-700) 45%, transparent);
-    padding: 0.55rem 0.7rem 0.65rem;
+  .canvas-views-expand {
+    border-top: 1px solid rgb(var(--shell-border, var(--color-surface-500)) / 0.28);
+    padding: 0.75rem 1rem 0.9rem;
+    background: rgb(var(--shell-pane-muted-bg, var(--color-surface-900)) / 0.28);
   }
 
-  .canvas-view-card-delete-copy {
-    margin: 0 0 0.45rem;
-    font-size: 0.6875rem;
-    color: rgb(var(--color-surface-400));
+  .canvas-views-delete-copy {
+    margin: 0 0 0.55rem;
+    font-size: 0.75rem;
+    line-height: 1.45;
+    color: rgb(var(--shell-muted, var(--color-surface-400)));
   }
 
-  .canvas-view-card-delete-actions {
+  .canvas-views-delete-actions {
     display: flex;
+    flex-wrap: wrap;
     gap: 0.45rem;
   }
 
-  .canvas-view-card-delete-btn {
-    border: 0;
-    border-radius: 999px;
-    padding: 0.28rem 0.65rem;
-    font-size: 0.6875rem;
-    font-weight: 600;
-    color: rgb(var(--color-error-100));
-    background: color-mix(in srgb, var(--color-error-600) 28%, transparent);
-    cursor: pointer;
+  .canvas-views-error {
+    margin: 0.5rem 0 0;
+    font-size: 0.75rem;
+    color: rgb(var(--color-error-300));
   }
 
-  .canvas-view-card-delete-cancel {
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
     border: 0;
-    background: transparent;
-    padding: 0.28rem 0.35rem;
-    font-size: 0.6875rem;
-    color: rgb(var(--color-surface-400));
-    cursor: pointer;
   }
 </style>

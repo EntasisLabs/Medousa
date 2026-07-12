@@ -115,5 +115,15 @@ pub fn detach_new_session(command: &mut Command) {
     }
 }
 
-#[cfg(not(unix))]
+/// Hide the console window when spawning console-subsystem children on Windows.
+/// Without this, Home's daemon/brain/gateway spawns flash a cmd window that
+/// kills the process if the user closes it.
+#[cfg(windows)]
+pub fn detach_new_session(command: &mut Command) {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    command.creation_flags(CREATE_NO_WINDOW);
+}
+
+#[cfg(not(any(unix, windows)))]
 pub fn detach_new_session(_command: &mut Command) {}

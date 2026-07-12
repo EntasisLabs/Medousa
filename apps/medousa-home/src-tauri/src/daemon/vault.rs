@@ -1,6 +1,7 @@
 use crate::daemon::types::{
-    VaultBacklinksResponse, VaultNoteContentResponse, VaultNotesListResponse, VaultRootsResponse,
-    VaultSearchResponse, VaultTagsListResponse, VaultWriteResponse,
+    VaultBacklinksResponse, VaultFileContentResponse, VaultNoteContentResponse,
+    VaultNotesListResponse, VaultRootsResponse, VaultSearchResponse, VaultTagsListResponse,
+    VaultWriteResponse,
 };
 use medousa_types::{
     VaultAddRootRequest, VaultBacklinksQuery, VaultNotesQuery, VaultPutQuery, VaultSearchQuery,
@@ -66,6 +67,19 @@ pub async fn vault_get_note(
     client(&state)
         .vault()
         .get_note(&encoded)
+        .await
+        .map_err(sdk_error)
+}
+
+#[tauri::command]
+pub async fn vault_get_file(
+    state: State<'_, DaemonState>,
+    path: String,
+) -> Result<VaultFileContentResponse, String> {
+    let encoded = encode_note_path(path.trim());
+    client(&state)
+        .vault()
+        .get_file(&encoded)
         .await
         .map_err(sdk_error)
 }

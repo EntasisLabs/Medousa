@@ -74,6 +74,13 @@ fn resolve_component_command(binary_name: &str) -> Result<ComponentCommand, Stri
         }
     }
 
+    if let Some(shared) = crate::workshop_runtime::shared_bin_binary(binary_name) {
+        return Ok(ComponentCommand {
+            program: shared.to_string_lossy().to_string(),
+            pre_args: Vec::new(),
+        });
+    }
+
     if find_command_in_path(binary_name).is_some() {
         return Ok(ComponentCommand {
             program: platform_binary_name(binary_name),
@@ -99,7 +106,14 @@ fn detach_new_session(command: &mut Command) {
     }
 }
 
-#[cfg(not(unix))]
+#[cfg(windows)]
+fn detach_new_session(command: &mut Command) {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    command.creation_flags(CREATE_NO_WINDOW);
+}
+
+#[cfg(not(any(unix, windows)))]
 fn detach_new_session(_command: &mut Command) {}
 
 fn is_process_alive(pid: u32) -> bool {

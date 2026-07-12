@@ -29,6 +29,16 @@
   onMount(() => {
     void refreshLiveActivityStatus();
   });
+
+  function commitHideHours(raw: string) {
+    settings.setWorkCardHideAfterHours(Number(raw));
+    void settings.persistWorkRetention();
+  }
+
+  function commitWipeDays(raw: string) {
+    settings.setWorkCardWipeAfterDays(Number(raw));
+    void settings.persistWorkRetention();
+  }
 </script>
 
 <section class="settings-section">
@@ -39,7 +49,67 @@
     </p>
   </header>
 
-  <div class="settings-toggle-list mt-5">
+  <div class="mt-5">
+    <h3 class="settings-subsection-heading">Work cards</h3>
+    <p class="settings-subsection-lead">
+      {#if retentionReadOnly}
+        {workshopRetentionReadHint()}
+      {:else}
+        Finished cards leave the board first, then archives clear for good.
+        <span class="block mt-0.5 opacity-80">{workshopRetentionLocalHint()}</span>
+      {/if}
+    </p>
+
+    <div class="settings-toggle-list">
+      <label class="settings-toggle-row settings-metric-row">
+        <span class="min-w-0 flex-1">
+          <span class="block text-sm font-medium text-surface-100">Hide from board</span>
+          <span class="workshop-faint mt-0.5 block text-xs">
+            After a card is done, how long it stays visible
+          </span>
+        </span>
+        <span class="settings-metric-value">
+          <input
+            type="number"
+            min="1"
+            max="168"
+            inputmode="numeric"
+            class="settings-metric-input"
+            value={settings.workCardHideAfterHours}
+            disabled={retentionReadOnly}
+            aria-label="Hide from board after hours"
+            onchange={(event) => commitHideHours((event.currentTarget as HTMLInputElement).value)}
+          />
+          <span class="settings-metric-unit" aria-hidden="true">hours</span>
+        </span>
+      </label>
+
+      <label class="settings-toggle-row settings-metric-row">
+        <span class="min-w-0 flex-1">
+          <span class="block text-sm font-medium text-surface-100">Clear archives</span>
+          <span class="workshop-faint mt-0.5 block text-xs">
+            How long hidden cards are kept before permanent wipe
+          </span>
+        </span>
+        <span class="settings-metric-value">
+          <input
+            type="number"
+            min="1"
+            max="90"
+            inputmode="numeric"
+            class="settings-metric-input"
+            value={settings.workCardWipeAfterDays}
+            disabled={retentionReadOnly}
+            aria-label="Clear archives after days"
+            onchange={(event) => commitWipeDays((event.currentTarget as HTMLInputElement).value)}
+          />
+          <span class="settings-metric-unit" aria-hidden="true">days</span>
+        </span>
+      </label>
+    </div>
+  </div>
+
+  <div class="settings-toggle-list mt-6">
     <label class="settings-toggle-row">
       <span class="min-w-0 flex-1">
         <span class="block text-sm font-medium text-surface-100">Work done notifications</span>
@@ -229,55 +299,5 @@
           settings.setShowChatAttachmentHint((event.currentTarget as HTMLInputElement).checked)}
       />
     </label>
-  </div>
-
-  <div class="mt-8 border-t border-surface-800/80 pt-6">
-    <h3 class="text-sm font-semibold text-surface-100">Work card retention</h3>
-    <p class="workshop-faint mt-1 text-xs">
-      {#if retentionReadOnly}
-        {workshopRetentionReadHint()}
-      {:else}
-        Saved to
-        <span class="font-mono text-surface-400">tui_defaults.json</span>
-        {workshopRetentionLocalHint()} Hide removes terminal cards from the board; wipe purges
-        archived records.
-      {/if}
-    </p>
-    <div class="mt-4 grid gap-4 sm:grid-cols-2">
-      <label class="block">
-        <span class="text-xs font-medium text-surface-200">Hide from board after (hours)</span>
-        <input
-          type="number"
-          min="1"
-          max="168"
-          class="input mt-1 w-full"
-          value={settings.workCardHideAfterHours}
-          disabled={retentionReadOnly}
-          onchange={(event) => {
-            settings.setWorkCardHideAfterHours(
-              Number((event.currentTarget as HTMLInputElement).value),
-            );
-            void settings.persistWorkRetention();
-          }}
-        />
-      </label>
-      <label class="block">
-        <span class="text-xs font-medium text-surface-200">Wipe archived after (days)</span>
-        <input
-          type="number"
-          min="1"
-          max="90"
-          class="input mt-1 w-full"
-          value={settings.workCardWipeAfterDays}
-          disabled={retentionReadOnly}
-          onchange={(event) => {
-            settings.setWorkCardWipeAfterDays(
-              Number((event.currentTarget as HTMLInputElement).value),
-            );
-            void settings.persistWorkRetention();
-          }}
-        />
-      </label>
-    </div>
   </div>
 </section>

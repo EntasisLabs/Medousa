@@ -3,14 +3,17 @@
   import { layout } from "$lib/stores/layout.svelte";
   import { vaultDisplayTitle } from "$lib/utils/formatVault";
   import { fuzzyMatchVaultNotes } from "$lib/utils/vaultFuzzyMatch";
+  import { writeVaultStickyPath } from "$lib/utils/vaultSticky";
   import VaultKindBadge from "./VaultKindBadge.svelte";
 
   interface Props {
     open: boolean;
     onClose: () => void;
+    /** Sticky pop-out: open in-place, skip main-app library navigation. */
+    stickyHost?: boolean;
   }
 
-  let { open, onClose }: Props = $props();
+  let { open, onClose, stickyHost = false }: Props = $props();
 
   let query = $state("");
   let highlightIndex = $state(0);
@@ -40,6 +43,13 @@
   });
 
   async function openNote(path: string) {
+    if (stickyHost) {
+      if (vault.dirty) await vault.flushSave();
+      await vault.openNote(path);
+      writeVaultStickyPath(path);
+      onClose();
+      return;
+    }
     if (layout.isMobile) {
       layout.openNotes({ view: "reader" });
     } else {

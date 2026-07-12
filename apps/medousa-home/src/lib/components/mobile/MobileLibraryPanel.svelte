@@ -4,6 +4,8 @@
   import ArtifactFullscreen from "$lib/components/chat/ArtifactFullscreen.svelte";
   import ArtifactLibraryList from "$lib/components/artifacts/ArtifactLibraryList.svelte";
   import VaultTree from "$lib/components/vault/VaultTree.svelte";
+  import VaultLibraryBrowseModeBar from "$lib/components/vault/VaultLibraryBrowseModeBar.svelte";
+  import VaultLibraryBrowseLists from "$lib/components/vault/VaultLibraryBrowseLists.svelte";
   import VaultEditor from "$lib/components/vault/VaultEditor.svelte";
   import VaultSpaceChips from "$lib/components/vault/VaultSpaceChips.svelte";
   import VaultKindBadge from "$lib/components/vault/VaultKindBadge.svelte";
@@ -260,6 +262,7 @@
           </button>
         </div>
         <VaultSpaceChips compact />
+        <VaultLibraryBrowseModeBar flush />
       </div>
 
       {#if vault.searchHits.length > 0}
@@ -285,13 +288,17 @@
         </ul>
       {/if}
 
-      <VaultTree
-        tree={vault.tree}
-        selectedPath={vault.selectedPath}
-        labelByPath={vault.labelByPath()}
-        activeSpaceFilter={vault.activeSpaceFilter}
-        onSelect={openNote}
-      />
+      {#if vault.libraryBrowseMode === "folders"}
+        <VaultTree
+          tree={vault.tree}
+          selectedPath={vault.selectedPath}
+          labelByPath={vault.labelByPath()}
+          activeSpaceFilter={vault.activeSpaceFilter}
+          onSelect={openNote}
+        />
+      {:else}
+        <VaultLibraryBrowseLists onSelect={openNote} />
+      {/if}
     </div>
     {:else}
       <div class="flex min-h-0 flex-1 flex-col">

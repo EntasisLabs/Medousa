@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { listen } from "@tauri-apps/api/event";
-  import { ArrowLeft, ArrowRight, RefreshCw, X } from "@lucide/svelte";
+  import { ArrowLeft, ArrowRight, RefreshCw, Square, X } from "@lucide/svelte";
   import HumanBrowserTabBar from "$lib/components/browser/HumanBrowserTabBar.svelte";
   import HumanBrowserUrlBar from "$lib/components/browser/HumanBrowserUrlBar.svelte";
   import BrowserChromeActions from "$lib/components/browser/BrowserChromeActions.svelte";
@@ -22,6 +22,7 @@
     const active = humanBrowserPopout.activeTab;
     if (!active) return;
     void humanBrowserActivateTab(active.id, active.url);
+    void humanBrowserPopout.refreshNativeNavState();
   }
 
   onMount(() => {
@@ -88,54 +89,65 @@
 </script>
 
 <!-- Fixed-height chrome strip — height must stay in sync with CHROME_HEIGHT_LOGICAL in human_browser.rs -->
-<div class="human-browser-chrome relative z-50 flex h-[132px] w-full flex-col overflow-hidden bg-surface-950 text-surface-50">
+<div class="human-browser-chrome relative z-50 flex h-[132px] w-full flex-col overflow-hidden">
   <HumanBrowserTabBar />
 
-  <div class="flex shrink-0 items-center gap-2 border-b border-surface-800 px-2 py-1.5">
-    <div class="flex shrink-0 items-center gap-1">
+  <div class="browser-toolbar">
+    <div class="browser-nav-cluster">
       <button
         type="button"
-        class="btn btn-icon btn-sm"
+        class="browser-nav-btn"
         aria-label="Back"
         disabled={!humanBrowserPopout.canGoBack}
         onclick={() => void humanBrowserPopout.goBack()}
       >
-        <ArrowLeft size={16} />
+        <ArrowLeft size={16} strokeWidth={1.75} />
       </button>
       <button
         type="button"
-        class="btn btn-icon btn-sm"
+        class="browser-nav-btn"
         aria-label="Forward"
         disabled={!humanBrowserPopout.canGoForward}
         onclick={() => void humanBrowserPopout.goForward()}
       >
-        <ArrowRight size={16} />
+        <ArrowRight size={16} strokeWidth={1.75} />
       </button>
-      <button
-        type="button"
-        class="btn btn-icon btn-sm"
-        aria-label="Reload"
-        onclick={() => void humanBrowserPopout.reload()}
-      >
-        <RefreshCw size={16} />
-      </button>
+      {#if humanBrowserPopout.loading}
+        <button
+          type="button"
+          class="browser-nav-btn browser-nav-btn--stop"
+          aria-label="Stop loading"
+          onclick={() => void humanBrowserPopout.stop()}
+        >
+          <Square size={12} strokeWidth={2.25} />
+        </button>
+      {:else}
+        <button
+          type="button"
+          class="browser-nav-btn"
+          aria-label="Reload"
+          onclick={() => void humanBrowserPopout.reload()}
+        >
+          <RefreshCw size={15} strokeWidth={1.75} />
+        </button>
+      {/if}
     </div>
     <HumanBrowserUrlBar {urlBarFocusNonce} />
     <BrowserChromeActions />
     {#if isTauri()}
       <button
         type="button"
-        class="btn btn-icon btn-sm shrink-0"
+        class="browser-chrome-btn shrink-0"
         aria-label="Close browser"
         title="Close"
         onclick={handleClose}
       >
-        <X size={16} />
+        <X size={16} strokeWidth={1.75} />
       </button>
     {/if}
   </div>
 
   {#if humanBrowserPopout.loading}
-    <div class="h-0.5 shrink-0 bg-primary-500/80"></div>
+    <div class="browser-loading-bar"></div>
   {/if}
 </div>

@@ -1,3 +1,7 @@
+// Background daemon — no console window on Windows release builds. Home also
+// passes CREATE_NO_WINDOW at spawn; this covers Task Scheduler / double-click.
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;

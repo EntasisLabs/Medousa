@@ -2,6 +2,7 @@ import {
   vaultContextMenu,
   type VaultContextTarget,
 } from "$lib/stores/vaultContextMenu.svelte";
+import { shouldUseMobileShell } from "$lib/platform";
 
 const LONG_PRESS_MS = 520;
 let suppressContextMenuClickUntil = 0;
@@ -18,9 +19,21 @@ export function openVaultNoteContextMenu(
   path: string,
   clientX: number,
   clientY: number,
+  selection?: { text: string; start?: number; end?: number } | null,
 ) {
   markContextMenuOpened();
-  vaultContextMenu.showNote(path, clientX, clientY);
+  vaultContextMenu.showNote(path, clientX, clientY, selection);
+}
+
+export function openVaultFolderContextMenu(
+  iconKey: string,
+  label: string,
+  clientX: number,
+  clientY: number,
+  spaceId?: string | null,
+) {
+  markContextMenuOpened();
+  vaultContextMenu.showFolder(iconKey, label, clientX, clientY, spaceId);
 }
 
 export function openVaultAttachmentContextMenu(
@@ -36,10 +49,22 @@ export function openVaultAttachmentContextMenu(
 export function handleVaultNoteContextMenuEvent(
   path: string,
   event: MouseEvent,
+  selection?: { text: string; start?: number; end?: number } | null,
 ) {
   event.preventDefault();
   event.stopPropagation();
-  openVaultNoteContextMenu(path, event.clientX, event.clientY);
+  openVaultNoteContextMenu(path, event.clientX, event.clientY, selection);
+}
+
+export function handleVaultFolderContextMenuEvent(
+  iconKey: string,
+  label: string,
+  event: MouseEvent,
+  spaceId?: string | null,
+) {
+  event.preventDefault();
+  event.stopPropagation();
+  openVaultFolderContextMenu(iconKey, label, event.clientX, event.clientY, spaceId);
 }
 
 function bindVaultContextTargetLongPress(
@@ -69,6 +94,9 @@ function bindVaultContextTargetLongPress(
   }
 
   function onPointerDown(event: PointerEvent) {
+    // Desktop uses right-click; long-press is a mobile affordance only.
+    // Holding while scrolling on desktop must not open the context menu.
+    if (!shouldUseMobileShell()) return;
     if (event.button !== 0) return;
     if (!getTarget()) return;
     pointerId = event.pointerId;

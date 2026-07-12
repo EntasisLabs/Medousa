@@ -63,10 +63,10 @@ export class NoteWorkshopStore {
     this.minimized = !this.minimized;
   }
 
-  setPosition(x: number, y: number) {
+  setPosition(x: number, y: number, options?: { persist?: boolean }) {
     const margin = 8;
-    const width = 420;
-    const height = this.minimized ? 48 : 560;
+    const width = Math.min(420, typeof window !== "undefined" ? window.innerWidth - margin * 2 : 420);
+    const height = this.minimized ? 48 : Math.min(560, typeof window !== "undefined" ? window.innerHeight - margin * 2 : 560);
     const maxX =
       typeof window !== "undefined"
         ? Math.max(margin, window.innerWidth - width - margin)
@@ -77,7 +77,15 @@ export class NoteWorkshopStore {
         : y;
     this.x = Math.min(Math.max(margin, x), maxX);
     this.y = Math.min(Math.max(margin, y), maxY);
-    savePosition(this.x, this.y);
+    if (options?.persist !== false) {
+      savePosition(this.x, this.y);
+    }
+  }
+
+  /** Fit the floating panel into the current viewport (sticky pop-out). */
+  fitToViewport(options?: { persist?: boolean }) {
+    const margin = 8;
+    this.setPosition(margin, margin, options);
   }
 
   resetPosition() {

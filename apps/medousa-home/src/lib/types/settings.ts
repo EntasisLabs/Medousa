@@ -6,8 +6,10 @@ export type SettingsSectionId =
   | "models"
   | "voice"
   | "reach"
+  | "engine"
   | "phone"
   | "nearby"
+  | "packages"
   | "basement";
 
 export const SETTINGS_SECTIONS: {
@@ -22,9 +24,11 @@ export const SETTINGS_SECTIONS: {
   { id: "models", label: "Models", hint: "Chat & dictation" },
   { id: "voice", label: "Voice", hint: "Stance & answer depth" },
   { id: "reach", label: "Reach", hint: "What she may touch" },
+  { id: "engine", label: "Engine", hint: "Budgets, quality & diagnostics" },
   { id: "phone", label: "Phone", hint: "Pair your pocket portal" },
   { id: "nearby", label: "Nearby", hint: "Peers rail, bundles & trust" },
-  { id: "basement", label: "Connection", hint: "Medousa on this device & advanced tools" },
+  { id: "packages", label: "Packages", hint: "Offline brain, adapters & tools" },
+  { id: "basement", label: "Connection", hint: "This device, engine & advanced files" },
 ];
 
 export const DEPTH_CHARTER_OPTIONS = [
@@ -75,13 +79,3 @@ export const HOST_BUS_CHARTER_OPTIONS = [
     hint: "Orchestrator only — no specialist bus",
   },
 ] as const;
-
-export const STAGE_ROLE_LABELS: Record<string, string> = {
-  orchestrator: "Lead",
-  chunker: "Reader",
-  extractor: "Extractor",
-  summarizer: "Summarizer",
-  verifier: "Verifier",
-  packer: "Packer",
-  final_response: "Final voice",
-};

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import PeerAvatar from "$lib/components/peers/PeerAvatar.svelte";
   import { environment } from "$lib/stores/environment.svelte";
   import { layout } from "$lib/stores/layout.svelte";
   import { workshops } from "$lib/stores/workshops.svelte";
@@ -20,6 +21,12 @@
   import { isTauri } from "$lib/window";
   import { Share2, Upload, Users } from "@lucide/svelte";
 
+  interface Props {
+    mobile?: boolean;
+  }
+
+  let { mobile = false }: Props = $props();
+
   let trusted = $state<TrustedWorkshopSummary[]>([]);
   let lanPairing = $state<LanPairingStatus | null>(null);
   let lanBusy = $state(false);
@@ -29,10 +36,23 @@
   let includeEnvironment = $state(true);
   let conflictStrategy = $state<ShareConflictStrategy>("rename");
   let lastBundle = $state<Record<string, unknown> | null>(null);
-  let pushWorkshopId = $state("");
   let importInput: HTMLInputElement | undefined = $state();
 
+  const CONFLICT_OPTIONS: {
+    id: ShareConflictStrategy;
+    label: string;
+    hint: string;
+  }[] = [
+    { id: "rename", label: "Rename", hint: "Keep both — duplicates get a new name" },
+    { id: "skip", label: "Skip", hint: "Leave existing views alone" },
+    { id: "overwrite", label: "Overwrite", hint: "Replace matching views" },
+  ];
+
   function openPeers() {
+    if (mobile || layout.isMobile) {
+      layout.openMore("peers");
+      return;
+    }
     layout.navigateDesktop("peers", { bump: true });
   }
 
@@ -40,9 +60,6 @@
     if (!isTauri()) return;
     try {
       trusted = await listTrustedWorkshops();
-      if (!pushWorkshopId && trusted.length > 0) {
-        pushWorkshopId = trusted[0]!.workshopId;
-      }
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
     }
@@ -91,7 +108,7 @@
       });
       lastBundle = bundle;
       downloadShareBundle(bundle);
-      success = "Share bundle exported.";
+      success = "Bundle ready — downloaded, and ready to send to a peer.";
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
     } finally {
@@ -121,13 +138,9 @@
     }
   }
 
-  async function handlePush() {
+  async function handlePush(workshopId: string) {
     if (!lastBundle) {
-      error = "Export a bundle first, then push it.";
-      return;
-    }
-    if (!pushWorkshopId) {
-      error = "Choose a trusted workshop.";
+      error = "Export a bundle first, then send it.";
       return;
     }
     busy = true;
@@ -135,11 +148,11 @@
     success = null;
     try {
       const result = await pushShareBundleToWorkshop({
-        workshopId: pushWorkshopId,
+        workshopId,
         bundle: lastBundle,
         conflictStrategy,
       });
-      success = `Pushed to peer — ${formatImportResult(result)}`;
+      success = `Sent to peer — ${formatImportResult(result)}`;
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
     } finally {
@@ -165,101 +178,166 @@
   function formatImportResult(result: ShareImportResult): string {
     return `Imported ${result.surfacesImported} views, ${result.componentsImported} widgets, ${result.vaultNotesImported} notes, ${result.artifactsImported} artifacts.`;
   }
+
+  function peerStatus(workshop: TrustedWorkshopSummary): "ready" | "reconnect" {
+    return workshop.hasSessionToken ? "ready" : "reconnect";
+  }
+
+  function peerMeta(workshop: TrustedWorkshopSummary): string {
+    if (!workshop.hasSessionToken) return "Needs reconnect";
+    if (workshop.inbound) return "Connected to you";
+    return "Trusted peer";
+  }
 </script>
 
 <section class="settings-section">
   <header class="settings-section-header">
-    <h2 class="text-base font-semibold text-surface-50">Nearby &amp; sharing</h2>
+    <h2 class="text-base font-semibold text-surface-50">Nearby</h2>
     <p class="workshop-faint mt-1 text-sm">
-      Peers are inbox-only connections (not full workshop memberships). Use the Peers rail to connect
-      and message; use this page for canvas bundles and revoke.
+      Peers rail for inbox and connect — this page for pairing, trust, and canvas backups.
     </p>
   </header>
 
-  <div class="lan-share-cta">
-    <div>
-      <p class="lan-share-cta-title">Peers</p>
-      <p class="lan-share-cta-body">
+  <div class="nearby-callout mt-5">
+    <span class="nearby-callout-icon" aria-hidden="true">
+      <Users size={16} strokeWidth={1.75} />
+    </span>
+    <div class="min-w-0 flex-1">
+      <p class="nearby-callout-title">Peers</p>
+      <p class="nearby-callout-body">
         Inbox and share only — peers never appear in the workshop switcher.
       </p>
     </div>
-    <button type="button" class="btn btn-sm btn-primary" onclick={openPeers}>
-      <Users size={14} />
+    <button type="button" class="btn btn-sm variant-filled-primary shrink-0" onclick={openPeers}>
       Open Peers
     </button>
   </div>
 
-  <div class="lan-share-block">
-    <h3 class="lan-share-heading">LAN pairing window</h3>
-    <p class="lan-share-lead">
-      Turn on briefly to pair phones and peers on your Wi‑Fi, then turn off. The engine goes back to
-      loopback-only; already-paired clients keep working over the private tunnel.
+  <div class="mt-6">
+    <h3 class="settings-subsection-heading">Pairing window</h3>
+    <p class="settings-subsection-lead">
+      Open briefly on Wi‑Fi to pair phones and peers. The engine restarts, then returns to
+      loopback-only — already-paired clients keep working.
     </p>
-    <label class="lan-share-checkbox">
-      <input
-        type="checkbox"
-        checked={lanPairing?.enabled ?? false}
-        disabled={lanBusy || !isTauri()}
-        onchange={(event) =>
-          void toggleLanPairing((event.currentTarget as HTMLInputElement).checked)}
-      />
-      Allow LAN pairing (restarts engine)
-    </label>
-    {#if lanPairing}
-      <p class="lan-share-empty">{lanPairing.message}</p>
-      <p class="lan-share-empty">Bind: {lanPairing.bind}</p>
+    <div class="settings-toggle-list">
+      <label class="settings-toggle-row">
+        <span class="min-w-0 flex-1">
+          <span class="block text-sm font-medium text-surface-100">Allow LAN pairing</span>
+          <span class="workshop-faint mt-0.5 block text-xs">
+            {#if !isTauri()}
+              Connect to the workshop host to change pairing.
+            {:else if lanPairing?.enabled}
+              On — engine is listening on the network
+            {:else}
+              Off — engine is loopback-only
+            {/if}
+          </span>
+        </span>
+        <input
+          type="checkbox"
+          class="checkbox shrink-0"
+          checked={lanPairing?.enabled ?? false}
+          disabled={lanBusy || !isTauri()}
+          onchange={(event) =>
+            void toggleLanPairing((event.currentTarget as HTMLInputElement).checked)}
+        />
+      </label>
+    </div>
+    {#if lanPairing?.bind}
+      <p class="nearby-footnote">
+        {lanPairing.message}
+        <span class="nearby-footnote-mono">{lanPairing.bind}</span>
+      </p>
     {/if}
   </div>
 
-  <div class="lan-share-block">
-    <h3 class="lan-share-heading">Peer connections</h3>
+  <div class="mt-6">
+    <h3 class="settings-subsection-heading">Trusted peers</h3>
+    <p class="settings-subsection-lead">
+      Revoke removes trust. Reconnect from Peers if a session goes stale.
+    </p>
     {#if trusted.length === 0}
-      <p class="lan-share-empty">No peers yet — connect from Peers.</p>
+      <p class="workshop-faint text-sm">No peers yet — open Peers to connect.</p>
     {:else}
-      <ul class="lan-share-list">
+      <div class="settings-toggle-list">
         {#each trusted as workshop (workshop.workshopId)}
-          <li class="lan-share-row">
-            <div class="lan-share-row-copy">
-              <p class="lan-share-row-title">{workshop.label}</p>
-              <p class="lan-share-row-meta">{workshop.daemonUrl}</p>
-            </div>
+          <div class="settings-toggle-row settings-metric-row nearby-peer-row">
+            <PeerAvatar label={workshop.label} status={peerStatus(workshop)} />
+            <span class="min-w-0 flex-1">
+              <span class="block text-sm font-medium text-surface-100">{workshop.label}</span>
+              <span class="workshop-faint mt-0.5 block text-xs">{peerMeta(workshop)}</span>
+            </span>
             <button
               type="button"
-              class="btn btn-sm btn-ghost"
+              class="btn btn-sm btn-ghost shrink-0 text-error-400"
               disabled={busy}
               onclick={() => void revokeTrust(workshop.workshopId)}
             >
               Revoke
             </button>
-          </li>
+          </div>
         {/each}
-      </ul>
+      </div>
     {/if}
   </div>
 
-  <div class="lan-share-block">
-    <h3 class="lan-share-heading">Share bundle</h3>
-    <p class="lan-share-lead">
-      Export custom canvas views as a file, or push a full bundle to a trusted peer.
+  <div class="mt-6">
+    <h3 class="settings-subsection-heading">Canvas backup</h3>
+    <p class="settings-subsection-lead">
+      Export custom views as a file, import one, or send the last export to a trusted peer.
     </p>
-    <label class="lan-share-checkbox">
-      <input type="checkbox" bind:checked={includeEnvironment} disabled={busy} />
-      Include custom canvas views and widgets
-    </label>
-    <label class="lan-share-field">
-      <span>Import conflicts</span>
-      <select bind:value={conflictStrategy} disabled={busy}>
-        <option value="rename">Rename duplicates</option>
-        <option value="skip">Skip duplicates</option>
-        <option value="overwrite">Overwrite duplicates</option>
-      </select>
-    </label>
-    <div class="lan-share-actions">
-      <button type="button" class="btn btn-sm btn-primary" disabled={busy} onclick={() => void handleExport()}>
+
+    <div class="settings-toggle-list">
+      <label class="settings-toggle-row">
+        <span class="min-w-0 flex-1">
+          <span class="block text-sm font-medium text-surface-100">Include views</span>
+          <span class="workshop-faint mt-0.5 block text-xs">
+            Custom canvas rooms and widgets in the bundle
+          </span>
+        </span>
+        <input
+          type="checkbox"
+          class="checkbox shrink-0"
+          bind:checked={includeEnvironment}
+          disabled={busy}
+        />
+      </label>
+    </div>
+
+    <p class="settings-subsection-lead mt-4 mb-2">If names collide</p>
+    <div class="grid gap-2 sm:grid-cols-3">
+      {#each CONFLICT_OPTIONS as option (option.id)}
+        <button
+          type="button"
+          class="settings-depth-card {conflictStrategy === option.id
+            ? 'settings-depth-card-active'
+            : ''}"
+          disabled={busy}
+          aria-pressed={conflictStrategy === option.id}
+          onclick={() => (conflictStrategy = option.id)}
+        >
+          <span class="block text-sm font-medium text-surface-100">{option.label}</span>
+          <span class="workshop-faint mt-1 block text-xs leading-snug">{option.hint}</span>
+        </button>
+      {/each}
+    </div>
+
+    <div class="nearby-actions mt-4">
+      <button
+        type="button"
+        class="btn btn-sm variant-filled-primary"
+        disabled={busy}
+        onclick={() => void handleExport()}
+      >
         <Share2 size={14} />
-        Export bundle
+        Export
       </button>
-      <button type="button" class="btn btn-sm btn-ghost" disabled={busy} onclick={() => importInput?.click()}>
+      <button
+        type="button"
+        class="btn btn-sm variant-soft"
+        disabled={busy}
+        onclick={() => importInput?.click()}
+      >
         <Upload size={14} />
         Import file
       </button>
@@ -270,158 +348,140 @@
         class="hidden"
         onchange={handleImportFile}
       />
+      {#if lastBundle}
+        <span class="nearby-ready-pill">Ready to send</span>
+      {/if}
     </div>
-    {#if trusted.length > 0}
-      <div class="lan-share-push">
-        <label class="lan-share-field">
-          <span>Push to trusted workshop</span>
-          <select bind:value={pushWorkshopId} disabled={busy}>
-            {#each trusted as workshop (workshop.workshopId)}
-              <option value={workshop.workshopId}>{workshop.label}</option>
-            {/each}
-          </select>
-        </label>
-        <button
-          type="button"
-          class="btn btn-sm btn-primary"
-          disabled={busy || !lastBundle}
-          onclick={() => void handlePush()}
-        >
-          Push bundle
-        </button>
-      </div>
-    {/if}
   </div>
 
+  {#if trusted.length > 0}
+    <div class="mt-6">
+      <h3 class="settings-subsection-heading">Send to peer</h3>
+      <p class="settings-subsection-lead">
+        {#if lastBundle}
+          Sends the last exported or imported bundle.
+        {:else}
+          Export a bundle first, then pick a peer below.
+        {/if}
+      </p>
+      <div class="settings-toggle-list">
+        {#each trusted as workshop (workshop.workshopId)}
+          <div class="settings-toggle-row settings-metric-row nearby-peer-row">
+            <PeerAvatar label={workshop.label} status={peerStatus(workshop)} />
+            <span class="min-w-0 flex-1">
+              <span class="block text-sm font-medium text-surface-100">{workshop.label}</span>
+              <span class="workshop-faint mt-0.5 block text-xs">
+                {#if !workshop.hasSessionToken}
+                  Needs reconnect before send
+                {:else}
+                  {peerMeta(workshop)}
+                {/if}
+              </span>
+            </span>
+            <button
+              type="button"
+              class="btn btn-sm variant-filled-primary shrink-0"
+              disabled={busy || !lastBundle || !workshop.hasSessionToken}
+              onclick={() => void handlePush(workshop.workshopId)}
+            >
+              Send
+            </button>
+          </div>
+        {/each}
+      </div>
+    </div>
+  {/if}
+
   {#if error}
-    <p class="lan-share-error">{error}</p>
+    <p class="nearby-feedback nearby-feedback-error">{error}</p>
   {/if}
   {#if success}
-    <p class="lan-share-success">{success}</p>
+    <p class="nearby-feedback nearby-feedback-ok">{success}</p>
   {/if}
 </section>
 
 <style>
-  .lan-share-cta {
+  .nearby-callout {
     display: flex;
     align-items: center;
-    justify-content: space-between;
     gap: 0.75rem;
-    margin-top: 1rem;
     padding: 0.85rem 0.9rem;
-    border-radius: 0.75rem;
-    border: 1px solid color-mix(in srgb, var(--color-primary-500) 30%, transparent);
-    background: color-mix(in srgb, var(--color-primary-500) 10%, transparent);
+    border-radius: 0.65rem;
+    border: 1px solid rgb(var(--shell-border, var(--color-surface-500)) / 0.4);
+    background: rgb(var(--shell-pane-bg, var(--color-surface-900)) / 0.35);
   }
 
-  .lan-share-cta-title {
+  .nearby-callout-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.25rem;
+    height: 2.25rem;
+    flex-shrink: 0;
+    border-radius: 0.5rem;
+    color: rgb(var(--color-primary-200));
+    background: rgb(var(--color-primary-500) / 0.12);
+  }
+
+  .nearby-callout-title {
     margin: 0;
     font-size: 0.8125rem;
     font-weight: 600;
-    color: rgb(var(--color-surface-100));
+    color: rgb(var(--shell-label, var(--color-surface-100)));
   }
 
-  .lan-share-cta-body,
-  .lan-share-lead,
-  .lan-share-empty {
-    margin: 0.25rem 0 0;
+  .nearby-callout-body {
+    margin: 0.2rem 0 0;
     font-size: 0.75rem;
     line-height: 1.45;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--shell-muted, var(--color-surface-400)));
   }
 
-  .lan-share-block {
-    margin-top: 1.25rem;
+  .nearby-footnote {
+    margin: 0.55rem 0 0;
+    font-size: 0.75rem;
+    line-height: 1.45;
+    color: rgb(var(--shell-muted, var(--color-surface-400)));
   }
 
-  .lan-share-heading {
-    margin: 0 0 0.45rem;
-    font-size: 0.8125rem;
-    font-weight: 600;
-    color: rgb(var(--color-surface-100));
-  }
-
-  .lan-share-list {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: grid;
-    gap: 0.4rem;
-  }
-
-  .lan-share-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.5rem;
-    padding: 0.55rem 0.65rem;
-    border-radius: 0.55rem;
-    border: 1px solid color-mix(in srgb, var(--color-surface-700) 45%, transparent);
-  }
-
-  .lan-share-row-title {
-    margin: 0;
-    font-size: 0.8125rem;
-    font-weight: 600;
-    color: rgb(var(--color-surface-100));
-  }
-
-  .lan-share-row-meta {
-    margin: 0.1rem 0 0;
+  .nearby-footnote-mono {
+    display: block;
+    margin-top: 0.15rem;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     font-size: 0.6875rem;
-    color: rgb(var(--color-surface-500));
-    overflow-wrap: anywhere;
+    color: rgb(var(--shell-muted, var(--color-surface-500)));
   }
 
-  .lan-share-checkbox {
-    display: flex;
-    align-items: center;
-    gap: 0.45rem;
-    margin-bottom: 0.65rem;
-    font-size: 0.75rem;
-    color: rgb(var(--color-surface-300));
+  .nearby-peer-row {
+    cursor: default;
   }
 
-  .lan-share-field {
-    display: grid;
-    gap: 0.25rem;
-    margin-bottom: 0.65rem;
-    font-size: 0.75rem;
-  }
-
-  .lan-share-field span {
-    color: rgb(var(--color-surface-400));
-  }
-
-  .lan-share-field select {
-    border-radius: 0.45rem;
-    border: 1px solid color-mix(in srgb, var(--color-surface-600) 55%, transparent);
-    background: color-mix(in srgb, var(--color-surface-900) 60%, transparent);
-    padding: 0.35rem 0.5rem;
-    color: rgb(var(--color-surface-100));
-  }
-
-  .lan-share-actions,
-  .lan-share-push {
+  .nearby-actions {
     display: flex;
     flex-wrap: wrap;
-    align-items: end;
-    gap: 0.45rem;
+    align-items: center;
+    gap: 0.5rem;
   }
 
-  .lan-share-push {
-    margin-top: 0.75rem;
+  .nearby-ready-pill {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    color: rgb(var(--color-success-300));
+    padding: 0.2rem 0.5rem;
+    border-radius: 999px;
+    background: rgb(var(--color-success-500) / 0.12);
   }
 
-  .lan-share-error {
-    margin: 0.75rem 0 0;
+  .nearby-feedback {
+    margin: 0.85rem 0 0;
     font-size: 0.75rem;
+  }
+
+  .nearby-feedback-error {
     color: rgb(var(--color-error-300));
   }
 
-  .lan-share-success {
-    margin: 0.75rem 0 0;
-    font-size: 0.75rem;
+  .nearby-feedback-ok {
     color: rgb(var(--color-success-300));
   }
 </style>

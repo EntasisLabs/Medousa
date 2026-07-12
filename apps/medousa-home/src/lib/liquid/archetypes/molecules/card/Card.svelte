@@ -1,14 +1,20 @@
 <script lang="ts">
   /**
-   * `card` molecule — a single-entity summary. If it carries a `detail` slot,
-   * tapping exposes the detail in place (lazy: rendered only once expanded —
-   * generate-more-than-show, client edition). Emits `select` / `expand`.
+   * `card` molecule — single-entity summary.
+   * Structured detail (meta/summary/chips/points) opens a chat sheet when
+   * `onOpenCardDetail` is provided; otherwise `slots.detail` expands in place.
    */
   import { ChevronDown } from "@lucide/svelte";
   import Slot from "$lib/liquid/render/Slot.svelte";
   import { getLiquidContext } from "$lib/liquid/render/context";
   import { createSceneEvent } from "$lib/liquid/core";
   import type { ArchetypeProps } from "$lib/liquid/render/types";
+  import { renderInlineMarkdown } from "$lib/markdown";
+  import {
+    cardHasDetail,
+    type CardDetailPayload,
+    type LiquidCardPoint,
+  } from "$lib/markdown/liquidEmbeds";
 
   let { node }: ArchetypeProps = $props();
   const ctx = getLiquidContext();
@@ -18,19 +24,68 @@
   const body = $derived(typeof node.props.body === "string" ? node.props.body : "");
   const emoji = $derived(typeof node.props.emoji === "string" ? node.props.emoji : "");
   const image = $derived(typeof node.props.image === "string" ? node.props.image : "");
+  const meta = $derived(typeof node.props.meta === "string" ? node.props.meta : "");
+  const summary = $derived(typeof node.props.summary === "string" ? node.props.summary : "");
+  const chips = $derived(
+    Array.isArray(node.props.chips)
+      ? (node.props.chips as unknown[]).filter((c): c is string => typeof c === "string" && c.trim())
+      : [],
+  );
+  const points = $derived.by((): LiquidCardPoint[] => {
+    if (!Array.isArray(node.props.points)) return [];
+    return node.props.points
+      .map((item) => {
+        if (!item || typeof item !== "object") return null;
+        const row = item as Record<string, unknown>;
+        const label = typeof row.label === "string" ? row.label.trim() : "";
+        const pointBody = typeof row.body === "string" ? row.body.trim() : "";
+        if (!label || !pointBody) return null;
+        const point: LiquidCardPoint = { label, body: pointBody };
+        if (typeof row.emoji === "string" && row.emoji.trim()) point.emoji = row.emoji.trim();
+        return point;
+      })
+      .filter((p): p is LiquidCardPoint => p !== null);
+  });
   const badges = $derived(
     Array.isArray(node.props.badges)
       ? (node.props.badges as unknown[]).filter((b): b is string => typeof b === "string")
       : [],
   );
-  const detail = $derived(node.slots?.detail ?? []);
-  const hasDetail = $derived(detail.length > 0);
+  const slotDetail = $derived(node.slots?.detail ?? []);
+  const hasStructuredDetail = $derived(
+    cardHasDetail({ meta, summary, chips, points }),
+  );
+  const hasSlotDetail = $derived(slotDetail.length > 0);
+  const sheetHosted = $derived(Boolean(ctx.onOpenCardDetail) && hasStructuredDetail);
+  const accordionDetail = $derived(!sheetHosted && hasSlotDetail);
 
   let expanded = $state(false);
 
+  function buildPayload(): CardDetailPayload {
+    const payload: CardDetailPayload = { id: node.id, title };
+    if (subtitle) payload.subtitle = subtitle;
+    if (emoji) payload.emoji = emoji;
+    if (image) payload.image = image;
+    if (meta) payload.meta = meta;
+    if (summary) payload.summary = summary;
+    else if (body) payload.summary = body;
+    if (chips.length) payload.chips = chips;
+    if (points.length) payload.points = points;
+    if (badges.length) payload.badges = badges;
+    return payload;
+  }
+
   function activate() {
     ctx.sink?.emit(createSceneEvent(node.id, "select", { id: node.id }));
-    if (hasDetail) {
+
+    if (sheetHosted) {
+      const payload = buildPayload();
+      ctx.sink?.emit(createSceneEvent(node.id, "expand", payload));
+      ctx.onOpenCardDetail?.(payload);
+      return;
+    }
+
+    if (accordionDetail) {
       expanded = !expanded;
       ctx.sink?.emit(createSceneEvent(node.id, expanded ? "expand" : "collapse", { id: node.id }));
     }
@@ -42,7 +97,8 @@
     type="button"
     class="liquid-card-main"
     onclick={activate}
-    aria-expanded={hasDetail ? expanded : undefined}
+    aria-expanded={accordionDetail ? expanded : sheetHosted ? false : undefined}
+    aria-haspopup={sheetHosted ? "dialog" : undefined}
   >
     {#if image}
       <img class="liquid-card-thumb" src={image} alt="" loading="lazy" />
@@ -50,8 +106,8 @@
       <span class="liquid-card-emoji" aria-hidden="true">{emoji}</span>
     {/if}
     <span class="liquid-card-text">
-      <span class="liquid-card-title">{title}</span>
-      {#if subtitle}<span class="liquid-card-subtitle">{subtitle}</span>{/if}
+      <span class="liquid-card-title">{@html renderInlineMarkdown(title)}</span>
+      {#if subtitle}<span class="liquid-card-subtitle">{@html renderInlineMarkdown(subtitle)}</span>{/if}
       {#if body}<span class="liquid-card-body">{body}</span>{/if}
       {#if badges.length}
         <span class="liquid-card-badges">
@@ -61,14 +117,14 @@
         </span>
       {/if}
     </span>
-    {#if hasDetail}
+    {#if accordionDetail}
       <ChevronDown class="liquid-card-chevron" size={16} aria-hidden="true" />
     {/if}
   </button>
 
-  {#if hasDetail && expanded}
+  {#if accordionDetail && expanded}
     <div class="liquid-card-detail">
-      <Slot nodes={detail} />
+      <Slot nodes={slotDetail} />
     </div>
   {/if}
 </div>

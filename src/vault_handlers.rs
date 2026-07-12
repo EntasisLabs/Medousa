@@ -7,9 +7,10 @@ use axum::Json;
 
 use crate::daemon_api::{
     VaultBacklinksQuery, VaultBacklinksResponse, VaultAddRootRequest, VaultDeleteResponse,
-    VaultNoteContentResponse, VaultNotesListResponse, VaultNotesQuery, VaultPutQuery,
-    VaultRootsResponse, VaultSearchQuery, VaultSearchResponse, VaultSetActiveRootRequest,
-    VaultTagsListResponse, VaultTagsQuery, VaultWriteRequest, VaultWriteResponse,
+    VaultFileContentResponse, VaultNoteContentResponse, VaultNotesListResponse, VaultNotesQuery,
+    VaultPutQuery, VaultRootsResponse, VaultSearchQuery, VaultSearchResponse,
+    VaultSetActiveRootRequest, VaultTagsListResponse, VaultTagsQuery, VaultWriteRequest,
+    VaultWriteResponse,
 };
 use crate::vault::VaultService;
 use crate::vault::roots::{add_vault_root, list_vault_root_views, set_active_vault_root};
@@ -50,6 +51,14 @@ pub async fn get_vault_note(
     Path(note_path): Path<String>,
 ) -> Result<Json<VaultNoteContentResponse>, (StatusCode, String)> {
     VaultService::get_note(&note_path)
+        .map(Json)
+        .map_err(map_vault_error)
+}
+
+pub async fn get_vault_file(
+    Path(file_path): Path<String>,
+) -> Result<Json<VaultFileContentResponse>, (StatusCode, String)> {
+    VaultService::read_file(&file_path)
         .map(Json)
         .map_err(map_vault_error)
 }

@@ -6,6 +6,7 @@ import {
   getVaultNote,
   listVaultNotes,
   listVaultRoots,
+  listVaultTags,
   saveVaultNote,
   searchVaultNotes,
   setActiveVaultRoot,
@@ -54,6 +55,7 @@ import {
   insertTextAtSection,
   resolveKind,
   setFrontmatterKind,
+  sortVaultTagsForDisplay,
   type VaultNoteKind,
 } from "$lib/utils/vaultFrontmatter";
 import { workshopSessionIdForVaultSave } from "$lib/utils/vaultNoteWorkshop";
@@ -93,6 +95,13 @@ import {
   formatImageEmbedMarkdown,
 } from "$lib/utils/vaultLocalImages";
 import { invalidateMedousaViewCache } from "$lib/utils/resolveMedousaViews";
+import {
+  extractMedousaViewBlocks,
+  replaceMedousaViewFenceAt,
+  serializeMedousaViewFence,
+  type MedousaViewQuery,
+} from "$lib/utils/markdownView";
+import { insertTextAtCursor } from "$lib/utils/vaultMarkdownEdit";
 import { invalidateTransclusionCache } from "$lib/utils/resolveTransclusion";
 import { invalidateVaultRootCache } from "$lib/utils/vaultFilesystem";
 import { loadVaultRecent, rememberVaultRecent } from "$lib/utils/vaultRecent";
@@ -103,8 +112,22 @@ import {
 } from "$lib/utils/vaultDiff";
 
 const LAST_NOTE_KEY = "medousa-home-last-note";
+const LIBRARY_BROWSE_MODE_KEY = "medousa-home-vault-browse-mode";
+const RECENT_BROWSE_LIMIT = 40;
+const KIND_BROWSE_ORDER: VaultNoteKind[] = [
+  "daily",
+  "project",
+  "ledger",
+  "board",
+  "inbox",
+  "bug",
+  "note",
+];
 
 export type VaultProposalSource = "agent" | "operator";
+export type LibraryBrowseMode = "folders" | "tags" | "recent" | "kind";
+
+export type VaultTagCount = { tag: string; count: number };
 
 export class VaultStore {
   notes = $state<VaultNote[]>([]);
@@ -144,6 +167,8 @@ export class VaultStore {
   showAgentReviewFilter = $state(false);
   agentWrittenAt = $state<Record<string, string>>({});
   previewingAttachmentPath = $state<string | null>(null);
+  /** pane = Your files library column; panel = floating popup over a note. */
+  previewPresentation = $state<"pane" | "panel">("pane");
   garageWizardOpen = $state(false);
   newGroupDialogOpen = $state(false);
   noteActionsOpen = $state(false);
@@ -155,6 +180,8 @@ export class VaultStore {
   vaultRootsUnavailable = $state(false);
   addVaultRootOpen = $state(false);
   recentPaths = $state<string[]>(loadVaultRecent());
+  libraryBrowseMode = $state<LibraryBrowseMode>(loadLibraryBrowseMode());
+  vaultTags = $state<VaultTagCount[]>([]);
   /** Bumps when note content is replaced externally (open note, reload) — not on typing. */
   contentRevision = $state(0);
   /** Heading fragment from `[[note#Section]]` waiting for preview scroll. */
@@ -164,6 +191,12 @@ export class VaultStore {
   newNotePrefillPath = $state<string | null>(null);
   pendingEditorInsert = $state<string | null>(null);
   editorInsertRequest = $state(0);
+  /** Slash insert or preview configure for medousa-view. */
+  viewBridgeOpen = $state(false);
+  viewBridgeMode = $state<"insert" | "edit">("insert");
+  viewBridgeInsertAt = $state(0);
+  viewBridgeEditIndex = $state<number | null>(null);
+  viewBridgeQuery = $state<MedousaViewQuery | null>(null);
 
   private autosaveTimer: ReturnType<typeof setTimeout> | null = null;
   private savedWhisperTimer: ReturnType<typeof setTimeout> | null = null;
@@ -342,12 +375,13 @@ export class VaultStore {
   }
 
   private shouldIgnoreSaveEcho(event: WorkspaceEvent, path: string): boolean {
+    // Own autosave/manual save often lands while the next keystroke already marked
+    // dirty (kanban debounce). Still ignore the echo — it is not an external edit.
     return (
       event.actor === "operator" &&
       path === this.saveEchoPath &&
       Date.now() < this.saveEchoUntil &&
-      path === this.selectedPath &&
-      !this.dirty
+      path === this.selectedPath
     );
   }
 
@@ -377,6 +411,112 @@ export class VaultStore {
       agentReviewOnly: this.showAgentReviewFilter,
       agentWrittenAt: this.agentWrittenAt,
     });
+    this.rebuildVaultTagsFromNotes();
+  }
+
+  setLibraryBrowseMode(mode: LibraryBrowseMode) {
+    this.libraryBrowseMode = mode;
+    saveLibraryBrowseMode(mode);
+    if (mode === "tags") {
+      void this.refreshVaultTags();
+    }
+  }
+
+  /** Notes visible under current space / system / agent-review filters. */
+  scopedLibraryNotes(): VaultNote[] {
+    const agentMap = this.agentWrittenAt;
+    const agentOnly = this.showAgentReviewFilter;
+    const showSystem = this.showSystemNotes;
+    const spaceFilter = this.activeSpaceFilter;
+    return this.notes.filter((note) => {
+      if (agentOnly && !isRecentAgentWrite(note.path, agentMap)) return false;
+      if (!showSystem && shouldHideGarageNote(note.path, note.title, showSystem)) {
+        return false;
+      }
+      if (spaceFilter) {
+        return resolveSpaceForPath(note.path, note.title).id === spaceFilter;
+      }
+      return true;
+    });
+  }
+
+  notesForTag(tag: string): VaultNote[] {
+    const needle = tag.trim().toLowerCase();
+    if (!needle) return [];
+    return this.scopedLibraryNotes()
+      .filter((note) =>
+        (note.tags ?? []).some((entry) => entry.trim().toLowerCase() === needle),
+      )
+      .sort((a, b) => a.title.localeCompare(b.title));
+  }
+
+  notesByKind(): { kind: VaultNoteKind; notes: VaultNote[] }[] {
+    const buckets = new Map<VaultNoteKind, VaultNote[]>();
+    for (const kind of KIND_BROWSE_ORDER) {
+      buckets.set(kind, []);
+    }
+    for (const note of this.scopedLibraryNotes()) {
+      const kind = resolveKind(note.path, note.kind);
+      const bucket = buckets.get(kind) ?? buckets.get("note")!;
+      bucket.push(note);
+    }
+    return KIND_BROWSE_ORDER.map((kind) => ({
+      kind,
+      notes: (buckets.get(kind) ?? []).sort((a, b) => a.title.localeCompare(b.title)),
+    })).filter((group) => group.notes.length > 0);
+  }
+
+  recentNotesList(limit = RECENT_BROWSE_LIMIT): VaultNote[] {
+    const scoped = this.scopedLibraryNotes();
+    const byPath = new Map(scoped.map((note) => [note.path, note]));
+    const result: VaultNote[] = [];
+    const seen = new Set<string>();
+    for (const path of this.recentPaths) {
+      const note = byPath.get(path);
+      if (!note) continue;
+      result.push(note);
+      seen.add(path);
+      if (result.length >= limit) return result;
+    }
+    const rest = [...scoped]
+      .filter((note) => !seen.has(note.path))
+      .sort(
+        (a, b) =>
+          Date.parse(b.modified_at_utc || "0") - Date.parse(a.modified_at_utc || "0"),
+      );
+    for (const note of rest) {
+      result.push(note);
+      if (result.length >= limit) break;
+    }
+    return result;
+  }
+
+  private rebuildVaultTagsFromNotes(extraTags: string[] = []) {
+    const counts = new Map<string, number>();
+    for (const note of this.scopedLibraryNotes()) {
+      for (const tag of note.tags ?? []) {
+        const trimmed = tag.trim();
+        if (!trimmed) continue;
+        counts.set(trimmed, (counts.get(trimmed) ?? 0) + 1);
+      }
+    }
+    for (const tag of extraTags) {
+      const trimmed = tag.trim();
+      if (!trimmed || counts.has(trimmed)) continue;
+      counts.set(trimmed, 0);
+    }
+    this.vaultTags = sortVaultTagsForDisplay([...counts.keys()])
+      .map((tag) => ({ tag, count: counts.get(tag) ?? 0 }))
+      .filter((row) => row.count > 0);
+  }
+
+  async refreshVaultTags() {
+    try {
+      const response = await listVaultTags({ limit: 500 });
+      this.rebuildVaultTagsFromNotes(response.tags ?? []);
+    } catch {
+      this.rebuildVaultTagsFromNotes();
+    }
   }
 
   setShowAgentReviewFilter(value: boolean) {
@@ -425,7 +565,7 @@ export class VaultStore {
       const serverContent = response.content;
       const isAgent = event.actor === "agent";
 
-      if (serverContent === this.content && !this.dirty) {
+      if (serverContent === this.content) {
         this.syncNoteMetadata(response);
         return;
       }
@@ -505,6 +645,53 @@ export class VaultStore {
     return text;
   }
 
+  openViewBridgeInsert(insertAt: number) {
+    this.viewBridgeMode = "insert";
+    this.viewBridgeInsertAt = insertAt;
+    this.viewBridgeEditIndex = null;
+    this.viewBridgeQuery = null;
+    this.viewBridgeOpen = true;
+  }
+
+  openViewBridgeEdit(index: number) {
+    const blocks = extractMedousaViewBlocks(this.content);
+    const block = blocks[index];
+    if (!block) return;
+    this.viewBridgeMode = "edit";
+    this.viewBridgeEditIndex = index;
+    this.viewBridgeQuery = block.query;
+    this.viewBridgeOpen = true;
+  }
+
+  closeViewBridge() {
+    this.viewBridgeOpen = false;
+    this.viewBridgeQuery = null;
+    this.viewBridgeEditIndex = null;
+  }
+
+  commitViewBridge(query: MedousaViewQuery) {
+    if (this.viewBridgeMode === "edit" && this.viewBridgeEditIndex != null) {
+      const next = replaceMedousaViewFenceAt(
+        this.content,
+        this.viewBridgeEditIndex,
+        query,
+      );
+      if (next) {
+        this.markDirty(next);
+        invalidateMedousaViewCache();
+      }
+    } else {
+      const fence = serializeMedousaViewFence(query);
+      const result = insertTextAtCursor(
+        this.content,
+        this.viewBridgeInsertAt,
+        fence,
+      );
+      this.markDirty(result.content);
+    }
+    this.closeViewBridge();
+  }
+
   async insertImageEmbed(imagePath: string) {
     if (!this.selectedPath || !imagePath.trim()) return;
     this.enterEditMode();
@@ -570,6 +757,9 @@ export class VaultStore {
     this.activeVaultRootId = null;
     this.vaultRootsUnavailable = false;
     invalidateVaultRootCache();
+    void import("$lib/utils/vaultLocalImages").then(({ clearDaemonImagePreviewCache }) => {
+      clearDaemonImagePreviewCache();
+    });
     void this.refreshVaultRoots();
     void this.refreshNotes();
   }
@@ -636,6 +826,12 @@ export class VaultStore {
   }
 
   async registerVaultRoot(label: string, path: string) {
+    const { isCoLocatedWorkshop, vaultAddRootRemoteHint } = await import(
+      "$lib/utils/workshopLocality"
+    );
+    if (!isCoLocatedWorkshop()) {
+      throw new Error(vaultAddRootRemoteHint());
+    }
     const response = await addVaultRoot(label, path);
     this.vaultRoots = response.roots;
     this.activeVaultRootId = response.activeRootId;
@@ -643,7 +839,11 @@ export class VaultStore {
   }
 
   openAddVaultRootDialog() {
-    this.addVaultRootOpen = true;
+    // Folder pick posts a Home path — only valid when co-located with the daemon.
+    void import("$lib/utils/workshopLocality").then(({ isCoLocatedWorkshop }) => {
+      if (!isCoLocatedWorkshop()) return;
+      this.addVaultRootOpen = true;
+    });
   }
 
   closeAddVaultRootDialog() {
@@ -656,6 +856,9 @@ export class VaultStore {
       const response = await listVaultNotes({ limit: 500 });
       this.notes = response.notes;
       this.rebuildTree();
+      if (this.libraryBrowseMode === "tags") {
+        void this.refreshVaultTags();
+      }
     } catch (err) {
       this.error = err instanceof Error ? err.message : String(err);
     }
@@ -668,7 +871,7 @@ export class VaultStore {
     }
     if (this.selectedPath !== path) {
       this.clearProposal();
-      this.previewingAttachmentPath = null;
+      this.closeAttachmentPreview();
     }
     this.noteLoading = true;
     this.loading = true;
@@ -802,7 +1005,10 @@ export class VaultStore {
         (row) => row.path === this.previewingAttachmentPath,
       )
     ) {
-      this.previewingAttachmentPath = null;
+      // Keep pane previews from Your files (path may not be in note attachments).
+      if (this.previewPresentation === "panel") {
+        this.closeAttachmentPreview();
+      }
     }
     if (this.saveStatus === "conflict") {
       return;
@@ -833,19 +1039,36 @@ export class VaultStore {
     this.saveStatus = "saving";
     this.error = null;
 
+    const pathSnapshot = this.selectedPath;
+    const contentSnapshot = this.content;
+
     try {
-      const response = await saveVaultNote(this.selectedPath, this.content, {
+      const response = await saveVaultNote(pathSnapshot, contentSnapshot, {
         contentHash: options?.force ? undefined : (this.contentHash ?? undefined),
-        sessionId: workshopSessionIdForVaultSave(this.selectedPath),
+        sessionId: workshopSessionIdForVaultSave(pathSnapshot),
       });
+      if (this.selectedPath !== pathSnapshot) return true;
+
+      // Typed during in-flight save — keep newer buffer dirty against the snapshot we wrote.
+      if (this.content !== contentSnapshot) {
+        this.contentHash = response.note.content_hash;
+        this.baselineContent = contentSnapshot;
+        this.dirty = true;
+        this.saveStatus = "unsaved";
+        this.markSaveEcho(pathSnapshot);
+        this.scheduleNotesRefresh();
+        this.scheduleAutosave();
+        return true;
+      }
+
       this.applySaveResponse(response.note);
-      invalidateMedousaViewCache(this.selectedPath);
-      invalidateTransclusionCache(this.selectedPath);
+      invalidateMedousaViewCache(pathSnapshot);
+      invalidateTransclusionCache(pathSnapshot);
       this.clearProposal();
-      this.markSaveEcho(this.selectedPath);
+      this.markSaveEcho(pathSnapshot);
       this.flashSavedWhisper();
       this.scheduleNotesRefresh();
-      void this.refreshBacklinks(this.selectedPath);
+      void this.refreshBacklinks(pathSnapshot);
       return true;
     } catch (err) {
       if (isVaultConflictError(err)) {
@@ -1243,6 +1466,10 @@ export class VaultStore {
     this.boardEditMode = this.boardEditMode === "board" ? "raw" : "board";
   }
 
+  setBoardEditMode(mode: "board" | "raw") {
+    this.boardEditMode = mode;
+  }
+
   async linkAttachmentFiles() {
     if (!this.selectedPath) return;
     const picked = await pickAttachmentFiles();
@@ -1276,17 +1503,19 @@ export class VaultStore {
     if (!this.selectedPath) return;
     this.markDirty(dropAttachment(this.content, path));
     if (this.previewingAttachmentPath === path) {
-      this.previewingAttachmentPath = null;
+      this.closeAttachmentPreview();
     }
   }
 
-  previewAttachment(path: string) {
+  previewAttachment(path: string, presentation: "pane" | "panel" = "pane") {
     if (!path.trim()) return;
     this.previewingAttachmentPath = path;
+    this.previewPresentation = presentation;
   }
 
   closeAttachmentPreview() {
     this.previewingAttachmentPath = null;
+    this.previewPresentation = "pane";
   }
 
   openGarageWizard() {
@@ -1330,6 +1559,46 @@ export class VaultStore {
 function loadLastNote(): string | null {
   if (typeof localStorage === "undefined") return null;
   return localStorage.getItem(LAST_NOTE_KEY);
+}
+
+const LIBRARY_BROWSE_MODES = new Set<LibraryBrowseMode>([
+  "folders",
+  "tags",
+  "recent",
+  "kind",
+]);
+
+function loadLibraryBrowseMode(): LibraryBrowseMode {
+  if (typeof localStorage === "undefined") return "folders";
+  try {
+    const raw = localStorage.getItem(LIBRARY_BROWSE_MODE_KEY);
+    if (raw && LIBRARY_BROWSE_MODES.has(raw as LibraryBrowseMode)) {
+      return raw as LibraryBrowseMode;
+    }
+  } catch {
+    /* ignore */
+  }
+  return "folders";
+}
+
+function saveLibraryBrowseMode(mode: LibraryBrowseMode) {
+  if (typeof localStorage === "undefined") return;
+  try {
+    localStorage.setItem(LIBRARY_BROWSE_MODE_KEY, mode);
+  } catch {
+    /* ignore */
+  }
+}
+
+const AGENT_WRITE_TTL_MS = 24 * 60 * 60 * 1000;
+
+function isRecentAgentWrite(
+  path: string,
+  agentWrittenAt: Record<string, string>,
+): boolean {
+  const writtenAt = agentWrittenAt[path];
+  if (!writtenAt) return false;
+  return Date.now() - Date.parse(writtenAt) < AGENT_WRITE_TTL_MS;
 }
 
 export const vault = new VaultStore();

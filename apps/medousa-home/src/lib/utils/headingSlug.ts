@@ -29,6 +29,41 @@ export function headingSlugCandidates(rawHeading: string): string[] {
   return [...new Set(candidates)];
 }
 
+/** Nearest ancestor that actually scrolls (overflow auto/scroll with overflow). */
+export function nearestScrollContainer(from: HTMLElement): HTMLElement {
+  let node: HTMLElement | null = from;
+  while (node) {
+    const style = window.getComputedStyle(node);
+    const overflowY = style.overflowY;
+    if (
+      (overflowY === "auto" || overflowY === "scroll" || overflowY === "overlay") &&
+      node.scrollHeight > node.clientHeight + 1
+    ) {
+      return node;
+    }
+    node = node.parentElement;
+  }
+  return from;
+}
+
+/** Scroll a heading into view without dragging ancestor chrome (status bars, rails). */
+export function scrollElementWithinContainer(
+  container: HTMLElement,
+  target: HTMLElement,
+): void {
+  const scroller = nearestScrollContainer(container);
+  const scrollerRect = scroller.getBoundingClientRect();
+  const targetRect = target.getBoundingClientRect();
+  const nextTop =
+    scroller.scrollTop + (targetRect.top - scrollerRect.top) - 12;
+  scroller.scrollTo({
+    top: Math.max(0, nextTop),
+    behavior: "smooth",
+  });
+  target.classList.add("markdown-heading-flash");
+  window.setTimeout(() => target.classList.remove("markdown-heading-flash"), 1200);
+}
+
 export function scrollToHeadingInContainer(
   container: HTMLElement,
   rawHeading: string,
@@ -36,18 +71,14 @@ export function scrollToHeadingInContainer(
   for (const slug of headingSlugCandidates(rawHeading)) {
     const byId = container.querySelector<HTMLElement>(`#${cssEscape(slug)}`);
     if (byId) {
-      byId.scrollIntoView({ behavior: "smooth", block: "start" });
-      byId.classList.add("markdown-heading-flash");
-      window.setTimeout(() => byId.classList.remove("markdown-heading-flash"), 1200);
+      scrollElementWithinContainer(container, byId);
       return true;
     }
     const byData = container.querySelector<HTMLElement>(
       `[data-heading-slug="${cssEscapeAttr(slug)}"]`,
     );
     if (byData) {
-      byData.scrollIntoView({ behavior: "smooth", block: "start" });
-      byData.classList.add("markdown-heading-flash");
-      window.setTimeout(() => byData.classList.remove("markdown-heading-flash"), 1200);
+      scrollElementWithinContainer(container, byData);
       return true;
     }
   }
@@ -60,9 +91,7 @@ export function scrollToHeadingInContainer(
       heading.id ??
       slugifyHeading(heading.textContent ?? "");
     if (slug === targetSlug) {
-      heading.scrollIntoView({ behavior: "smooth", block: "start" });
-      heading.classList.add("markdown-heading-flash");
-      window.setTimeout(() => heading.classList.remove("markdown-heading-flash"), 1200);
+      scrollElementWithinContainer(container, heading);
       return true;
     }
   }

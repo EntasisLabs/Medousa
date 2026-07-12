@@ -15,32 +15,50 @@
   const fields = [
     {
       key: "sliceHotWindowTurns" as const,
-      label: "Recent turns kept vivid",
-      hint: "How many recent turns stay in hot memory — the conversation she holds closest.",
+      label: "Hot memory",
+      hint: "Recent turns she holds closest",
+      unit: "turns",
       min: 2,
       max: 32,
+      wide: false,
     },
     {
       key: "sliceColdWindowTurns" as const,
-      label: "How far back she can recall",
-      hint: "In a long thread, how many older turns can still surface from cold storage.",
+      label: "Cold recall",
+      hint: "Older turns that can still surface in a long thread",
+      unit: "turns",
       min: 4,
       max: 64,
+      wide: false,
+    },
+    {
+      key: "activationDirectAnswerMaxPromptChars" as const,
+      label: "Direct-answer budget",
+      hint: "Character room when she answers without a long dig",
+      unit: "chars",
+      min: 200,
+      max: 20000,
+      step: 20,
+      wide: true,
     },
     {
       key: "activationLongSessionTurnThreshold" as const,
-      label: "When a chat becomes long",
-      hint: "After this many turns, Medousa treats the session differently — tighter context rules.",
+      label: "Long chat after",
+      hint: "Past this many turns, context rules tighten",
+      unit: "turns",
       min: 8,
       max: 80,
+      wide: false,
     },
     {
       key: "activationLongSessionMaxPromptChars" as const,
-      label: "Extra context for long chats",
-      hint: "Character budget when a session crosses the long-chat threshold.",
+      label: "Long-chat budget",
+      hint: "Extra character room once a thread goes long",
+      unit: "chars",
       min: 200,
-      max: 2000,
+      max: 20000,
       step: 20,
+      wide: true,
     },
   ];
 
@@ -57,7 +75,7 @@
   <header class="settings-section-header">
     <h2 class="text-base font-semibold text-surface-50">Memory</h2>
     <p class="workshop-faint mt-1 text-sm">
-      How long she keeps the conversation close — and when a long thread starts to fade.
+      How much conversation stays close — and when a long thread starts to fade.
     </p>
     <p class="workshop-faint mt-2 text-xs">
       To teach who you are or switch work/home profiles, open
@@ -65,27 +83,34 @@
     </p>
   </header>
 
-  <div class="mt-5 space-y-5">
+  <div class="settings-toggle-list mt-5">
     {#each fields as field (field.key)}
-      <label class="block">
-        <span class="block text-sm font-medium text-surface-100">{field.label}</span>
-        <span class="workshop-faint mt-0.5 block text-xs leading-relaxed">{field.hint}</span>
-        <input
-          type="number"
-          class="input mt-2 w-full max-w-xs"
-          min={field.min}
-          max={field.max}
-          step={field.step ?? 1}
-          value={workshopDefaults.draft[field.key] ?? ""}
-          readonly={readOnly}
-          disabled={readOnly}
-          oninput={(event) => numField(field.key, event)}
-        />
+      <label class="settings-toggle-row settings-metric-row">
+        <span class="min-w-0 flex-1">
+          <span class="block text-sm font-medium text-surface-100">{field.label}</span>
+          <span class="workshop-faint mt-0.5 block text-xs">{field.hint}</span>
+        </span>
+        <span class="settings-metric-value">
+          <input
+            type="number"
+            class="settings-metric-input {field.wide ? 'settings-metric-input-wide' : ''}"
+            min={field.min}
+            max={field.max}
+            step={field.step ?? 1}
+            inputmode="numeric"
+            value={workshopDefaults.draft[field.key] ?? ""}
+            readonly={readOnly}
+            disabled={readOnly}
+            aria-label="{field.label} in {field.unit}"
+            oninput={(event) => numField(field.key, event)}
+          />
+          <span class="settings-metric-unit" aria-hidden="true">{field.unit}</span>
+        </span>
       </label>
     {/each}
   </div>
 
-  <div class="mt-6 border-t border-surface-500/35 pt-5">
+  <div class="mt-5">
     <SettingsCharterSaveBar {mobile} />
   </div>
 

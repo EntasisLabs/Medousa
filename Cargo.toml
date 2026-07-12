@@ -2,6 +2,10 @@
 name = "medousa"
 version = "0.1.0"
 edition = "2024"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/EntasisLabs/Medousa"
+homepage = "https://github.com/EntasisLabs/Medousa"
+description = "Permanent AI workspace — Medousa Engine and related crates"
 
 [workspace]
 members = [

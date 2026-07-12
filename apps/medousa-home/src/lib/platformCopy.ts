@@ -65,11 +65,11 @@ export function workshopPairingManagedHint(): string {
 }
 
 export function workshopRetentionReadHint(): string {
-  return "Read from the workshop daemon after connect. Edit on the host in Settings → Rhythm or in tui_defaults.json.";
+  return "Managed on the workshop host — open Settings → Rhythm there to change.";
 }
 
 export function workshopRetentionLocalHint(): string {
-  return "on the host.";
+  return "Saved with workshop defaults on the host.";
 }
 
 export function workshopRuntimeReadHint(): string {
@@ -88,10 +88,6 @@ export function workshopBasementRestartHint(): string {
   return "Restarts Medousa on your network so QR pairing and companion apps can reach this machine";
 }
 
-export function workshopDefaultsMirrorHint(): string {
-  return "Read-only snapshot from the host — day-to-day charter is in Settings → Memory & Voice.";
-}
-
 export function localBrainOnDeviceHint(): string {
   return isCompanionShell()
     ? "Optional local Gemma engine on the host — separate from cloud chat models."
@@ -102,4 +98,8 @@ export function vaultPinFolderHint(): string {
   return isCompanionShell()
     ? "Your real files live outside the vault too. Pin a folder from the host — Documents, Desktop, or a project root."
     : "Your real files live outside the vault too. Pin a folder — Documents, Desktop, or a project root.";
+}
+
+export function vaultRemoteFilesystemHint(): string {
+  return "This workshop’s files live on the host Mac. Pin folders and reveal in Finder there.";
 }

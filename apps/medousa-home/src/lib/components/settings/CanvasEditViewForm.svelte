@@ -84,8 +84,7 @@
   .canvas-edit-view-form {
     display: grid;
     gap: 0.65rem;
-    border-top: 1px solid color-mix(in srgb, var(--color-surface-700) 45%, transparent);
-    padding: 0.65rem 0.7rem 0.75rem;
+    padding: 0;
   }
 
   .canvas-field {
@@ -95,16 +94,16 @@
   }
 
   .canvas-field span {
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--shell-muted, var(--color-surface-400)));
   }
 
   .canvas-field input {
     border-radius: 0.45rem;
-    border: 1px solid color-mix(in srgb, var(--color-surface-600) 55%, transparent);
-    background: color-mix(in srgb, var(--color-surface-900) 60%, transparent);
+    border: 1px solid rgb(var(--shell-border, var(--color-surface-600)) / 0.55);
+    background: rgb(var(--shell-pane-bg, var(--color-surface-900)) / 0.6);
     padding: 0.35rem 0.5rem;
     font-size: 0.8125rem;
-    color: rgb(var(--color-surface-100));
+    color: rgb(var(--shell-label, var(--color-surface-100)));
   }
 
   .canvas-form-error {

@@ -154,17 +154,29 @@
 
 <style>
   .canvas-add-view {
-    margin-top: 1rem;
+    margin-top: 0.75rem;
   }
 
   .canvas-add-view-toggle {
-    border: 1px solid color-mix(in srgb, var(--color-primary-500) 40%, transparent);
-    border-radius: 0.5rem;
-    padding: 0.4rem 0.65rem;
-    font-size: 0.75rem;
-    color: rgb(var(--color-primary-100));
-    background: color-mix(in srgb, var(--color-primary-500) 10%, transparent);
+    border: 0;
+    padding: 0.15rem 0;
+    font-size: 0.8125rem;
+    font-weight: 550;
+    color: rgb(var(--color-primary-400));
+    background: transparent;
     cursor: pointer;
+  }
+
+  .canvas-add-view-toggle:hover {
+    color: rgb(var(--color-primary-300));
+  }
+
+  html:not(.dark) .canvas-add-view-toggle {
+    color: rgb(var(--color-primary-600));
+  }
+
+  html:not(.dark) .canvas-add-view-toggle:hover {
+    color: rgb(var(--color-primary-700));
   }
 
   .canvas-add-view-form {
@@ -173,8 +185,8 @@
     margin-top: 0.75rem;
     padding: 0.85rem;
     border-radius: 0.75rem;
-    border: 1px solid color-mix(in srgb, var(--color-surface-600) 45%, transparent);
-    background: color-mix(in srgb, var(--color-surface-900) 35%, transparent);
+    border: 1px solid rgb(var(--shell-border, var(--color-surface-600)) / 0.45);
+    background: rgb(var(--shell-pane-muted-bg, var(--color-surface-900)) / 0.35);
   }
 
   .canvas-field {
@@ -184,17 +196,17 @@
   }
 
   .canvas-field span {
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--shell-muted, var(--color-surface-400)));
   }
 
   .canvas-field input,
   .canvas-field select {
     border-radius: 0.45rem;
-    border: 1px solid color-mix(in srgb, var(--color-surface-600) 55%, transparent);
-    background: color-mix(in srgb, var(--color-surface-900) 60%, transparent);
+    border: 1px solid rgb(var(--shell-border, var(--color-surface-600)) / 0.55);
+    background: rgb(var(--shell-pane-bg, var(--color-surface-900)) / 0.6);
     padding: 0.35rem 0.5rem;
     font-size: 0.8125rem;
-    color: rgb(var(--color-surface-100));
+    color: rgb(var(--shell-label, var(--color-surface-100)));
   }
 
   .canvas-form-error {

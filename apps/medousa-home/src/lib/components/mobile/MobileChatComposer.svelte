@@ -24,6 +24,7 @@
     runSlashCommand,
   } from "$lib/utils/runSlashCommand";
   import { setMobileComposerFocus } from "$lib/utils/mobileKeyboardViewport";
+  import { ensureVaultSelectionInPrompt } from "$lib/utils/vaultNoteBridge";
 
   let composerBlurTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -75,7 +76,10 @@
   async function submit(event: Event) {
     event.preventDefault();
     if (connection.offline) return;
-    const prompt = chat.draft.trim();
+    const prompt = ensureVaultSelectionInPrompt(
+      chat.draft.trim(),
+      chat.vaultNoteContext,
+    );
     const hasAttachments = chat.pendingMediaRefs.length > 0;
     if (!prompt && !hasAttachments) return;
     if (

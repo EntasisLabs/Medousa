@@ -7,19 +7,23 @@
   import VaultFormatBar from "./VaultFormatBar.svelte";
   import VaultSlashMenu from "./VaultSlashMenu.svelte";
   import VaultNotePicker from "./VaultNotePicker.svelte";
+  import VaultCalloutBuilderSheet from "./VaultCalloutBuilderSheet.svelte";
   import {
     applyMarkdownFormat,
     applyMarkdownColor,
     insertSlashBlock,
     insertTextAtCursor,
     insertVaultWikilink,
+    replaceSlashWith,
+    serializeTransclusion,
     shouldOpenSlashMenu,
     slashMenuFilter,
     type MarkdownFormatAction,
-    type MarkdownColorId,
+    type MarkdownColorToken,
     type SlashBlockId,
   } from "$lib/utils/vaultMarkdownEdit";
   import { vaultDisplayTitle } from "$lib/utils/formatVault";
+  import { handleVaultNoteContextMenuEvent } from "$lib/utils/vaultContextMenuEvents";
 
   interface Props {
     content: string;
@@ -35,6 +39,9 @@
     splitMax?: number;
     onSplitResize?: (width: number) => void;
     preview?: Snippet;
+    formatCompact?: boolean;
+    showFloat?: boolean;
+    onFloat?: () => void;
   }
 
   let {
@@ -50,6 +57,9 @@
     splitMax = 720,
     onSplitResize,
     preview,
+    formatCompact = false,
+    showFloat = false,
+    onFloat,
   }: Props = $props();
 
   let textareaEl = $state<HTMLTextAreaElement | null>(null);
@@ -61,6 +71,9 @@
   let selectionEnd = $state(0);
   let slashOpen = $state(false);
   let notePickerOpen = $state(false);
+  let notePickerMode = $state<"wikilink" | "embed">("wikilink");
+  let calloutBuilderOpen = $state(false);
+  let bridgeInsertAt = $state(0);
 
   const slashFilter = $derived(
     textareaEl ? slashMenuFilter(textareaEl.value, textareaEl.selectionStart) : "",
@@ -113,6 +126,20 @@
     selectionEnd = textareaEl.selectionEnd;
   }
 
+  function handleContextMenu(event: MouseEvent) {
+    const path = vault.selectedPath;
+    if (!path || !textareaEl) return;
+    captureSelection();
+    const start = Math.min(selectionStart, selectionEnd);
+    const end = Math.max(selectionStart, selectionEnd);
+    const text = draft.slice(start, end);
+    handleVaultNoteContextMenuEvent(
+      path,
+      event,
+      text.trim() ? { text, start, end } : null,
+    );
+  }
+
   function syncSlashMenu() {
     if (!textareaEl) {
       slashOpen = false;
@@ -144,7 +171,7 @@
     void applyEdit(result);
   }
 
-  function handleColor(color: MarkdownColorId) {
+  function handleColor(color: MarkdownColorToken) {
     if (!textareaEl) return;
     captureSelection();
     const result = applyMarkdownColor(draft, selectionStart, selectionEnd, color);
@@ -159,11 +186,42 @@
     syncSlashMenu();
   }
 
+  async function clearSlashAndRememberInsert(): Promise<number> {
+    captureSelection();
+    const cleared = replaceSlashWith(draft, selectionStart, "");
+    await applyEdit(cleared);
+    bridgeInsertAt = cleared.selectionStart;
+    return cleared.selectionStart;
+  }
+
   function handleSlashSelect(block: SlashBlockId) {
     if (!textareaEl) return;
     if (block === "wikilink") {
       slashOpen = false;
+      notePickerMode = "wikilink";
       notePickerOpen = true;
+      return;
+    }
+    if (block === "embed") {
+      slashOpen = false;
+      void clearSlashAndRememberInsert().then(() => {
+        notePickerMode = "embed";
+        notePickerOpen = true;
+      });
+      return;
+    }
+    if (block === "view") {
+      slashOpen = false;
+      void clearSlashAndRememberInsert().then((insertAt) => {
+        vault.openViewBridgeInsert(insertAt);
+      });
+      return;
+    }
+    if (block === "callout") {
+      slashOpen = false;
+      void clearSlashAndRememberInsert().then(() => {
+        calloutBuilderOpen = true;
+      });
       return;
     }
     captureSelection();
@@ -174,12 +232,27 @@
 
   function handleNotePick(path: string) {
     if (!textareaEl) return;
+    if (notePickerMode === "embed") {
+      const result = insertTextAtCursor(
+        draft,
+        bridgeInsertAt,
+        serializeTransclusion(path),
+      );
+      notePickerOpen = false;
+      void applyEdit(result);
+      return;
+    }
     captureSelection();
     const label =
       vault.labelByPath().get(path) ??
       vaultDisplayTitle(path.split("/").pop()?.replace(/\.md$/i, "") ?? path, path);
     const result = insertVaultWikilink(draft, selectionStart, path, label);
     notePickerOpen = false;
+    void applyEdit(result);
+  }
+
+  function handleBridgeInsert(markdown: string) {
+    const result = insertTextAtCursor(draft, bridgeInsertAt, markdown);
     void applyEdit(result);
   }
 
@@ -219,7 +292,14 @@
 <div
   class="vault-markdown-editor vault-markdown-editor--{surface} relative flex min-h-0 flex-1 flex-col {className}"
 >
-  <VaultFormatBar {disabled} onFormat={handleFormat} onColor={handleColor} />
+  <VaultFormatBar
+    {disabled}
+    compact={formatCompact}
+    {showFloat}
+    {onFloat}
+    onFormat={handleFormat}
+    onColor={handleColor}
+  />
   <VaultSlashMenu
     bind:this={slashMenuEl}
     open={slashOpen}
@@ -231,6 +311,11 @@
     open={notePickerOpen}
     onSelect={handleNotePick}
     onClose={() => (notePickerOpen = false)}
+  />
+  <VaultCalloutBuilderSheet
+    open={calloutBuilderOpen}
+    onInsert={handleBridgeInsert}
+    onClose={() => (calloutBuilderOpen = false)}
   />
 
   <div class="flex min-h-0 flex-1">
@@ -257,6 +342,7 @@
             oninput={handleInput}
             onkeydown={handleKeydown}
             onscroll={syncFindScroll}
+            oncontextmenu={handleContextMenu}
             onselect={() => {
               captureSelection();
               syncSlashMenu();
@@ -290,6 +376,7 @@
           oninput={handleInput}
           onkeydown={handleKeydown}
           onscroll={syncFindScroll}
+          oncontextmenu={handleContextMenu}
           onselect={() => {
             captureSelection();
             syncSlashMenu();

@@ -1,6 +1,7 @@
-/** Resolve vault note paths on disk (desktop Tauri). */
+/** Resolve vault note paths on disk (desktop Tauri) — only when co-located. */
 
 import { listVaultRoots } from "$lib/daemon";
+import { isCoLocatedWorkshop } from "$lib/utils/workshopLocality";
 import { isTauri } from "$lib/window";
 
 let cachedVaultRoot: { path: string; fetchedAt: number } | null = null;
@@ -9,6 +10,7 @@ const CACHE_MS = 5_000;
 export async function resolveVaultNoteAbsolutePath(
   vaultRelativePath: string,
 ): Promise<string | null> {
+  if (!isCoLocatedWorkshop()) return null;
   const relative = vaultRelativePath.trim().replace(/^\/+/, "");
   if (!relative) return null;
   try {
@@ -21,7 +23,7 @@ export async function resolveVaultNoteAbsolutePath(
 }
 
 export async function getVaultRootAbsolutePath(): Promise<string | null> {
-  if (!isTauri()) return null;
+  if (!isTauri() || !isCoLocatedWorkshop()) return null;
   const now = Date.now();
   if (cachedVaultRoot && now - cachedVaultRoot.fetchedAt < CACHE_MS) {
     return cachedVaultRoot.path;
@@ -47,7 +49,7 @@ export function invalidateVaultRootCache() {
 }
 
 export async function localFilePreviewUrl(absolutePath: string): Promise<string | null> {
-  if (!isTauri() || !absolutePath.trim()) return null;
+  if (!isTauri() || !isCoLocatedWorkshop() || !absolutePath.trim()) return null;
   try {
     const { convertFileSrc } = await import("@tauri-apps/api/core");
     return convertFileSrc(absolutePath.replace(/\\/g, "/"));
@@ -57,7 +59,7 @@ export async function localFilePreviewUrl(absolutePath: string): Promise<string 
 }
 
 export async function revealVaultNoteInFinder(vaultRelativePath: string): Promise<void> {
-  if (!isTauri()) return;
+  if (!isTauri() || !isCoLocatedWorkshop()) return;
   const absolute = await resolveVaultNoteAbsolutePath(vaultRelativePath);
   if (!absolute) return;
   const { revealItemInDir } = await import("@tauri-apps/plugin-opener");
@@ -67,7 +69,7 @@ export async function revealVaultNoteInFinder(vaultRelativePath: string): Promis
 export async function openVaultNoteWithDefaultApp(
   vaultRelativePath: string,
 ): Promise<void> {
-  if (!isTauri()) return;
+  if (!isTauri() || !isCoLocatedWorkshop()) return;
   const absolute = await resolveVaultNoteAbsolutePath(vaultRelativePath);
   if (!absolute) return;
   const { openPath } = await import("@tauri-apps/plugin-opener");
@@ -75,7 +77,7 @@ export async function openVaultNoteWithDefaultApp(
 }
 
 export async function revealFileInFinder(absolutePath: string): Promise<void> {
-  if (!isTauri() || !absolutePath.trim()) return;
+  if (!isTauri() || !isCoLocatedWorkshop() || !absolutePath.trim()) return;
   const { revealItemInDir } = await import("@tauri-apps/plugin-opener");
   await revealItemInDir(absolutePath);
 }
@@ -86,7 +88,12 @@ export async function openFileWithDefaultApp(absolutePath: string): Promise<void
     window.open(absolutePath, "_blank", "noopener,noreferrer");
     return;
   }
-  if (!isTauri()) return;
+  if (!isTauri() || !isCoLocatedWorkshop()) return;
   const { openPath } = await import("@tauri-apps/plugin-opener");
   await openPath(absolutePath);
+}
+
+/** Whether Finder / open-with-default are available for vault notes on this connection. */
+export function canUseLocalVaultFilesystem(): boolean {
+  return isTauri() && isCoLocatedWorkshop();
 }

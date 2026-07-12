@@ -1,5 +1,9 @@
 # Peers, portals, and LAN sharing
 
+**Audience:** app users and operators who care about pairing scope.
+
+> App-user short path: **[Peers & Nearby](../guides/peers-and-nearby.md)**.
+
 Medousa treats the **daemon as the app**. Phones, desktops, and Peers are **surfaces** that connect with credentials. There are two different relationships:
 
 | Role | Meaning | Where it appears | Access |
@@ -35,14 +39,11 @@ Large **compact** QR (`medousa://pair/1.0?…`, camera-friendly), short code, **
 
 ### Mobile
 
-**More → Peers** — two sections when portal-paired to the **active workshop**:
+**More → Peers** — same unified people list as desktop. When portal-paired to the **active workshop**, inbound people (connected to that workshop) appear alongside your outbound connections, with *Connected to you* chips.
 
-- **Workshop inbox** — same sudo view as desktop host (everyone who connected to your workshop)
-- **My peer connections** — outbound peer connects from this phone
+If the phone only has peer connections (no active portal workshop), you only see people you connected to.
 
-If the phone only has peer connections (no active portal workshop), you see **My peer connections** only.
-
-Portal phone pairing (QR / Iroh) is for chat, vault, canvas **and** workshop inbox when that workshop is active in the switcher.
+Portal phone pairing (QR / Iroh) is for chat, vault, canvas **and** the workshop’s people list when that workshop is active in the switcher.
 
 **Mobile Home button** — Settings → Canvas → Mobile Home button (Native Home or a custom view). Opening a custom view from More is temporary; tap Home again to leave it.
 
@@ -58,26 +59,28 @@ If mDNS misses them, use **Connect by address** and enter their workshop URL (`h
 
 Peer tokens on the host are scoped: they may only call `/v1/peer/*`, `/v1/share/*`, and pairing heartbeat/status. Escalation to vault/chat is rejected with 403.
 
-### Inbox
+### People & conversations
 
-Peers splits into two sections when you have **Workshop inbox** access (host desktop or **portal** on the active workshop):
+Peers shows a **single people list** sorted by unread, then recent activity. Each row shows last-message preview, relative time, and a quiet relationship chip when useful (`Connected to you` / `Needs reconnect`).
 
-| Section | Who sees it | Scope |
-|---------|-------------|--------|
-| **Workshop inbox** | Host engine or portal on active workshop | Everyone who connected **to you** as a peer — reply **as the workshop** |
-| **My peer connections** | Any surface | Workshops **you** connected to — one thread each, send **as you** |
+Under the hood, two trust directions still matter:
+
+| Relationship | Who | Reply identity |
+|--------------|-----|----------------|
+| **Connected to you** (inbound) | Host engine or portal on the active workshop | Reply **as the workshop** |
+| **You connected** (outbound) | Any surface | Send **as you** |
 
 **Peer** role (Connect / `medousa peer connect`): single thread with that host only.
 
-**Portal** role (phone pairing / workshop switcher): sudo on that workshop — full inbox on the active workshop, same as desktop host.
+**Portal** role (phone pairing / workshop switcher): sudo on that workshop — full people list on the active workshop, same as desktop host.
 
-Select a person to message (optional note/artifact attachment). Unread badges the Peers rail icon. Opening a thread marks it read; use ⋯ → **Mark read** to clear manually.
+Select a person to message (optional note/artifact attachment). Unread badges the Peers rail icon. Opening a thread marks it read; use ⋯ → **Mark read** to clear manually. If an outbound peer shows **Needs reconnect**, use **Reconnect** (nearby match when possible, otherwise connect by address).
 
 Local notifications fire when new inbound peer messages arrive (poll-based; respects Settings notification preference).
 
 Threads show **both sides**: messages they sent you and messages you sent them (outbound copies stay on your workshop).
 
-**People who connected to you** (CLI / another Home) appear as *Connected to you*. You can reply immediately — your reply is stored on this host and they pick it up with `medousa peer inbox` (or their Peers surface).
+**People who connected to you** (CLI / another Home) appear with a *Connected to you* chip. You can reply immediately — your reply is stored on this host and they pick it up with `medousa peer inbox` (or their Peers surface).
 
 **People you Connected to** get live delivery when online, and Home also pulls their replies from their host over LAN/Iroh so one-way Connect is enough for a full thread.
 
