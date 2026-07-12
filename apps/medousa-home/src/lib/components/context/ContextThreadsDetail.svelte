@@ -5,12 +5,12 @@
   import type { LocusNodeDetailResponse } from "$lib/types/locus";
   import {
     extractThreadMemory,
+    formatContextWhen,
     humanMomentTitle,
+    postureHumanFeel,
     sessionDisplayName,
-    threadMetaLine,
     tierHumanLabel,
   } from "$lib/utils/contextHuman";
-  import { avecWhisper } from "$lib/utils/contextThreads";
 
   interface Props {
     detail: LocusNodeDetailResponse | null;
@@ -34,38 +34,25 @@
     onOpenPosture,
   }: Props = $props();
 
-  let whenWhereOpen = $state(false);
-  let originOpen = $state(false);
-  let storedOpen = $state(false);
-  let signalOpen = $state(false);
   let rawOpen = $state(false);
 
   $effect(() => {
     detail;
-    whenWhereOpen = false;
-    originOpen = false;
-    storedOpen = false;
-    signalOpen = false;
     rawOpen = false;
   });
 
-  const memoryLead = $derived(
-    detail
-      ? extractThreadMemory(detail.raw, detail.node.context_summary)
-      : null,
+  const title = $derived(detail ? humanMomentTitle(detail.node) : "");
+  const memory = $derived(
+    detail ? extractThreadMemory(detail.raw, detail.node.context_summary) : null,
   );
-  const heroMeta = $derived(
-    detail
-      ? threadMetaLine(
-          detail.node.session_id,
-          detail.node.timestamp,
-          detail.node.tier,
-          sessionLabels,
-        )
-      : null,
+  const showMemoryBody = $derived(
+    Boolean(memory?.trim()) && memory!.trim() !== title.trim(),
   );
-  const postureWhisper = $derived(
-    detail ? avecWhisper(detail.node.user_avec) : null,
+  const atmosphere = $derived(
+    detail?.node.user_avec ? postureHumanFeel(detail.node.user_avec) : null,
+  );
+  const tags = $derived(
+    (detail?.node.semantic_tags ?? []).map((tag) => tag.trim()).filter(Boolean),
   );
 </script>
 
@@ -82,11 +69,10 @@
 {:else}
   <article>
     <ContextWitnessHero
-      title={humanMomentTitle(detail.node)}
-      meta={heroMeta}
-      lead={memoryLead}
-      chipLabel={tierHumanLabel(detail.node.tier)}
-      chipVariant="live"
+      title={title}
+      meta={formatContextWhen(detail.node.timestamp)}
+      lead={atmosphere}
+      kicker={tierHumanLabel(detail.node.tier)}
     />
 
     <ContextCrossLinks
@@ -100,122 +86,43 @@
       ]}
     />
 
-    <ContextPlumbingSection label="If you need the machinery">
-      <button
-        type="button"
-        class="context-layer-toggle"
-        aria-expanded={whenWhereOpen}
-        onclick={() => {
-          whenWhereOpen = !whenWhereOpen;
-        }}
-      >
-        <span>When & where</span>
-        <span class="workshop-faint text-[11px]">session · time</span>
-      </button>
-      {#if whenWhereOpen}
-        <dl class="context-layer-body text-xs">
-          <div>
-            <dt class="workshop-label">Session</dt>
-            <dd class="mt-0.5 text-surface-200">
-              {sessionDisplayName(detail.node.session_id, sessionLabels)}
-            </dd>
-          </div>
-          {#if sessionLabels[detail.node.session_id]?.trim() && sessionLabels[detail.node.session_id] !== detail.node.session_id}
-            <div>
-              <dt class="workshop-label">Session id</dt>
-              <dd class="mt-0.5 font-mono text-surface-300">{detail.node.session_id}</dd>
-            </div>
-          {/if}
-          <div>
-            <dt class="workshop-label">Captured</dt>
-            <dd class="mt-0.5 text-surface-200">{heroMeta}</dd>
-          </div>
-          <div>
-            <dt class="workshop-label">sync_key</dt>
-            <dd class="mt-0.5 break-all font-mono text-surface-300">{detail.node.sync_key}</dd>
-          </div>
-        </dl>
-      {/if}
+    {#if showMemoryBody}
+      <section class="context-story-chapter">
+        <p class="context-story-label">What she kept</p>
+        <p class="context-story-copy">{memory}</p>
+      </section>
+    {/if}
 
-      <button
-        type="button"
-        class="context-layer-toggle"
-        aria-expanded={originOpen}
-        onclick={() => {
-          originOpen = !originOpen;
-        }}
-      >
-        <span>Origin</span>
-        <span class="workshop-faint text-[11px]">summary · model signal</span>
-      </button>
-      {#if originOpen}
-        <dl class="context-layer-body text-xs">
-          <div>
-            <dt class="workshop-label">Context summary</dt>
-            <dd class="mt-0.5 leading-relaxed text-surface-200">
-              {detail.node.context_summary || "—"}
-            </dd>
-          </div>
-          {#if detail.node.model_avec}
-            <div>
-              <dt class="workshop-label">Model posture</dt>
-              <dd class="mt-0.5 font-mono text-surface-300">
-                {avecWhisper(detail.node.model_avec)}
-              </dd>
-            </div>
-          {/if}
-          {#if postureWhisper}
-            <div>
-              <dt class="workshop-label">Your posture at capture</dt>
-              <dd class="mt-0.5 font-mono text-surface-300">{postureWhisper}</dd>
-            </div>
-          {/if}
-        </dl>
-      {/if}
+    {#if tags.length > 0}
+      <div class="context-story-tags max-w-xl">
+        {#each tags as tag (tag)}
+          <span class="context-story-tag">{tag}</span>
+        {/each}
+      </div>
+    {/if}
 
-      <button
-        type="button"
-        class="context-layer-toggle"
-        aria-expanded={storedOpen}
-        onclick={() => {
-          storedOpen = !storedOpen;
-        }}
-      >
-        <span>What she stored</span>
-        <span class="workshop-faint text-[11px]">STTP body</span>
-      </button>
-      {#if storedOpen}
-        <pre class="context-layer-raw max-h-80 whitespace-pre-wrap">{detail.raw}</pre>
-      {/if}
-
-      <button
-        type="button"
-        class="context-layer-toggle"
-        aria-expanded={signalOpen}
-        onclick={() => {
-          signalOpen = !signalOpen;
-        }}
-      >
-        <span>Signal</span>
-        <span class="workshop-faint text-[11px]">ρ · κ · ψ</span>
-      </button>
-      {#if signalOpen}
-        <dl class="context-layer-body text-xs">
-          <div>
-            <dt class="workshop-label">ρ signal</dt>
-            <dd class="mt-0.5 text-surface-200">{detail.node.rho.toFixed(3)}</dd>
-          </div>
-          <div>
-            <dt class="workshop-label">κ coherence</dt>
-            <dd class="mt-0.5 text-surface-200">{detail.node.kappa.toFixed(3)}</dd>
-          </div>
-          <div>
-            <dt class="workshop-label">ψ</dt>
-            <dd class="mt-0.5 text-surface-200">{detail.node.psi.toFixed(3)}</dd>
-          </div>
-        </dl>
-      {/if}
-
+    <ContextPlumbingSection resetKey={detail.node.sync_key}>
+      <dl class="context-plumbing-meta">
+        <div class="context-plumbing-meta-row">
+          <dt>Session</dt>
+          <dd>{sessionDisplayName(detail.node.session_id, sessionLabels)}</dd>
+        </div>
+        <div class="context-plumbing-meta-row">
+          <dt>Tier</dt>
+          <dd>{tierHumanLabel(detail.node.tier)}</dd>
+        </div>
+        <div class="context-plumbing-meta-row">
+          <dt>sync_key</dt>
+          <dd class="font-mono text-[11px]">{detail.node.sync_key}</dd>
+        </div>
+        <div class="context-plumbing-meta-row">
+          <dt>Signal</dt>
+          <dd class="font-mono text-[11px]">
+            ρ {detail.node.rho.toFixed(2)} · κ {detail.node.kappa.toFixed(2)} · ψ
+            {detail.node.psi.toFixed(2)}
+          </dd>
+        </div>
+      </dl>
       <button
         type="button"
         class="context-layer-toggle"
@@ -224,11 +131,12 @@
           rawOpen = !rawOpen;
         }}
       >
-        <span>Raw JSON</span>
-        <span class="workshop-faint text-[11px]">advanced</span>
+        <span>Raw capture</span>
+        <span class="workshop-faint text-[11px]">STTP · JSON</span>
       </button>
       {#if rawOpen}
-        <pre class="context-layer-raw">{JSON.stringify(detail, null, 2)}</pre>
+        <pre class="context-layer-raw max-h-80 whitespace-pre-wrap">{detail.raw}</pre>
+        <pre class="context-layer-raw">{JSON.stringify(detail.node, null, 2)}</pre>
       {/if}
     </ContextPlumbingSection>
   </article>

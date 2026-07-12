@@ -65,6 +65,15 @@
     @apply max-w-xl;
   }
 
+  .context-witness-kicker {
+    margin: 0;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: rgb(var(--shell-muted, var(--color-surface-500)));
+  }
+
   .context-witness-title {
     @apply text-lg font-semibold leading-snug tracking-tight text-surface-50;
   }
@@ -77,12 +86,114 @@
     @apply mt-4 text-[15px] leading-relaxed text-surface-200;
   }
 
-  .context-plumbing {
-    @apply mt-8 border-t border-surface-500/30 pt-5;
+  .context-story-chapter {
+    @apply mt-6 max-w-xl;
   }
 
-  .context-plumbing-label {
-    @apply text-[11px] uppercase tracking-[0.14em] text-surface-500;
+  .context-story-label {
+    margin: 0;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: rgb(var(--shell-muted, var(--color-surface-500)));
+  }
+
+  .context-story-copy {
+    margin: 0.45rem 0 0;
+    font-size: 0.9375rem;
+    line-height: 1.55;
+    color: rgb(var(--shell-label, var(--color-surface-200)));
+  }
+
+  .context-story-tags {
+    @apply mt-3 flex flex-wrap gap-1.5;
+  }
+
+  .context-story-tag {
+    @apply rounded-md px-2 py-0.5 text-[10px] font-medium tracking-wide text-surface-400;
+    background: rgb(var(--shell-pane-muted-bg, var(--color-surface-800)) / 0.55);
+  }
+
+  .context-pref-line {
+    margin: 0;
+    font-size: 0.875rem;
+    line-height: 1.5;
+    color: rgb(var(--shell-label, var(--color-surface-200)));
+  }
+
+  .context-pref-line + .context-pref-line {
+    margin-top: 0.55rem;
+  }
+
+  .context-plumbing {
+    @apply mt-8 max-w-xl border-t border-surface-500/30 pt-4;
+  }
+
+  .context-plumbing-toggle {
+    display: flex;
+    width: 100%;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    margin: 0;
+    padding: 0;
+    border: none;
+    background: transparent;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .context-plumbing-title {
+    display: block;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: rgb(var(--shell-label, var(--color-surface-100)));
+  }
+
+  .context-plumbing-lead {
+    display: block;
+    margin-top: 0.25rem;
+    font-size: 0.75rem;
+    line-height: 1.4;
+    color: rgb(var(--shell-muted, var(--color-surface-500)));
+  }
+
+  .context-plumbing-chevron {
+    flex-shrink: 0;
+    margin-top: 0.1rem;
+    color: rgb(var(--shell-muted, var(--color-surface-500)));
+  }
+
+  .context-plumbing-body {
+    @apply mt-3 space-y-3;
+  }
+
+  .context-plumbing-meta {
+    margin: 0;
+    display: grid;
+    gap: 0.45rem;
+  }
+
+  .context-plumbing-meta-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+    font-size: 0.75rem;
+  }
+
+  .context-plumbing-meta-row dt {
+    flex-shrink: 0;
+    color: rgb(var(--shell-muted, var(--color-surface-500)));
+  }
+
+  .context-plumbing-meta-row dd {
+    margin: 0;
+    min-width: 0;
+    text-align: right;
+    overflow-wrap: anywhere;
+    color: rgb(var(--shell-label, var(--color-surface-300)));
   }
 
   .context-cross-links {

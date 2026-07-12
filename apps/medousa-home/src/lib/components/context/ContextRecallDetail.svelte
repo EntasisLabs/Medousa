@@ -13,6 +13,7 @@
     tierHumanLabel,
   } from "$lib/utils/contextHuman";
   import { threadTitle } from "$lib/utils/contextThreads";
+  import { preferenceDisplayValue } from "$lib/utils/identityTeach";
 
   interface Props {
     entry: ContextRecallEntry | null;
@@ -32,14 +33,10 @@
     onSearchThreads,
   }: Props = $props();
 
-  let idsOpen = $state(false);
-  let sourceOpen = $state(false);
   let rawOpen = $state(false);
 
   $effect(() => {
     entry;
-    idsOpen = false;
-    sourceOpen = false;
     rawOpen = false;
   });
 
@@ -52,15 +49,34 @@
 
   const heroMeta = $derived.by(() => {
     if (!entry) return null;
-    const parts = [entry.subtitle];
-    if (entry.confidence !== undefined) {
-      parts.push(`${(entry.confidence * 100).toFixed(0)}% sure`);
+    if (entry.kind === "claim" && entry.confidence !== undefined) {
+      return `${(entry.confidence * 100).toFixed(0)}% sure`;
     }
-    if (entry.trustLevel !== undefined) {
-      parts.push(`${(entry.trustLevel * 100).toFixed(0)}% trust`);
+    if (entry.kind === "relationship") {
+      const parts: string[] = [];
+      if (entry.trustLevel !== undefined) {
+        parts.push(`${(entry.trustLevel * 100).toFixed(0)}% trust`);
+      }
+      if (entry.meta?.policy_tags) parts.push(entry.meta.policy_tags);
+      return parts.join(" · ") || entry.subtitle;
     }
-    return parts.join(" · ");
+    if (entry.kind === "persona") {
+      return entry.meta?.status ? `${entry.meta.status} · workshop persona` : entry.subtitle;
+    }
+    if (entry.kind === "user") {
+      return entry.meta?.timezone ?? entry.subtitle;
+    }
+    return entry.subtitle !== entry.title ? entry.subtitle : null;
   });
+
+  function humanizePrefKey(key: string): string {
+    if (key.startsWith("note_")) return "Remembers";
+    return key
+      .split(/[_-]+/)
+      .filter(Boolean)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(" ");
+  }
 </script>
 
 {#if !entry}
@@ -75,19 +91,21 @@
     <ContextWitnessHero
       title={entry.title}
       meta={heroMeta}
-      lead={entry.kind === "claim"
-        ? null
-        : entry.subtitle !== entry.title
-          ? entry.subtitle
-          : null}
-      chipLabel={recallKindHumanLabel(entry.kind)}
-      chipVariant="ready"
+      lead={null}
+      kicker={recallKindHumanLabel(entry.kind)}
     />
 
+    {#if entry.kind === "relationship" && entry.meta?.transition_reason}
+      <section class="context-story-chapter">
+        <p class="context-story-label">How this shifted</p>
+        <p class="context-story-copy">{entry.meta.transition_reason}</p>
+      </section>
+    {/if}
+
     {#if entry.kind === "claim" && relatedThreads.length > 0 && onOpenThread}
-      <section class="mt-6">
-        <p class="workshop-label">Echoes in your sessions</p>
-        <ul class="mt-2 space-y-2">
+      <section class="context-story-chapter">
+        <p class="context-story-label">Echoes in your sessions</p>
+        <ul class="mt-3 space-y-2">
           {#each relatedThreads as thread (thread.sync_key)}
             <li>
               <button
@@ -99,7 +117,9 @@
                   {threadTitle(thread)}
                 </p>
                 <p class="context-related-memory-meta">
-                  {sessionDisplayName(thread.session_id, sessionLabels)} · {formatContextWhen(thread.timestamp)} · {tierHumanLabel(thread.tier)}
+                  {sessionDisplayName(thread.session_id, sessionLabels)} · {formatContextWhen(
+                    thread.timestamp,
+                  )} · {tierHumanLabel(thread.tier)}
                 </p>
               </button>
             </li>
@@ -131,95 +151,62 @@
     />
 
     {#if entry.kind === "user" && preferences.length > 0}
-      <section class="mt-6">
-        <p class="workshop-label">Preferences she knows</p>
-        <dl class="mt-2 space-y-2 text-sm">
+      <section class="context-story-chapter">
+        <p class="context-story-label">What she knows about you</p>
+        <div class="mt-3">
           {#each preferences as [key, value] (key)}
-            <div class="workshop-inset px-3 py-2">
-              <dt class="workshop-faint text-[11px] uppercase tracking-wide">{key}</dt>
-              <dd class="mt-1 text-sm text-surface-200">
-                {typeof value === "string" ? value : JSON.stringify(value)}
-              </dd>
-            </div>
+            <p class="context-pref-line">
+              <span class="text-surface-400">{humanizePrefKey(key)}</span>
+              — {preferenceDisplayValue(value)}
+            </p>
           {/each}
-        </dl>
+        </div>
       </section>
     {/if}
 
     {#if context && context.policy_profiles && context.policy_profiles.length > 0 && entry.kind === "persona"}
-      <section class="mt-6">
-        <p class="workshop-label">Policy profiles</p>
-        <ul class="mt-2 space-y-1 text-sm text-surface-300">
+      <section class="context-story-chapter">
+        <p class="context-story-label">Policy profiles</p>
+        <div class="mt-3">
           {#each context.policy_profiles as profile (profile.policy_profile_id)}
-            <li class="workshop-faint text-[11px]">
-              {profile.policy_profile_id} · depth {profile.graph_max_depth}
-            </li>
+            <p class="context-pref-line">
+              {profile.policy_profile_id}
+              <span class="text-surface-500"> · depth {profile.graph_max_depth}</span>
+            </p>
           {/each}
-        </ul>
+        </div>
       </section>
     {/if}
 
-    <ContextPlumbingSection>
-      <button
-        type="button"
-        class="context-layer-toggle"
-        aria-expanded={idsOpen}
-        onclick={() => {
-          idsOpen = !idsOpen;
-        }}
-      >
-        <span>Identifiers</span>
-        <span class="workshop-faint text-[11px]">ids · channel</span>
-      </button>
-      {#if idsOpen}
-        <dl class="context-layer-body text-xs">
-          {#each Object.entries(entry.meta ?? {}) as [key, value] (key)}
-            <div>
-              <dt class="workshop-label">{key}</dt>
-              <dd class="mt-0.5 font-mono text-surface-300">{value}</dd>
-            </div>
-          {/each}
-          {#if context?.channel}
-            <div>
-              <dt class="workshop-label">channel</dt>
-              <dd class="mt-0.5 font-mono text-surface-300">
-                {context.channel.channel_id} · {context.channel.channel_type}
-              </dd>
+    <ContextPlumbingSection resetKey={entry.id}>
+      <dl class="context-plumbing-meta">
+        {#each Object.entries(entry.meta ?? {}) as [key, value] (key)}
+          {#if key !== "transition_reason" && key !== "policy_tags"}
+            <div class="context-plumbing-meta-row">
+              <dt>{key}</dt>
+              <dd class="font-mono text-[11px]">{value}</dd>
             </div>
           {/if}
-        </dl>
-      {/if}
-
-      <button
-        type="button"
-        class="context-layer-toggle"
-        aria-expanded={sourceOpen}
-        onclick={() => {
-          sourceOpen = !sourceOpen;
-        }}
-      >
-        <span>Source</span>
-        <span class="workshop-faint text-[11px]">graph · kind</span>
-      </button>
-      {#if sourceOpen}
-        <dl class="context-layer-body text-xs">
-          <div>
-            <dt class="workshop-label">kind</dt>
-            <dd class="mt-0.5 text-surface-200">{entry.kind}</dd>
+        {/each}
+        {#if context?.channel}
+          <div class="context-plumbing-meta-row">
+            <dt>channel</dt>
+            <dd class="font-mono text-[11px]">
+              {context.channel.channel_id} · {context.channel.channel_type}
+            </dd>
           </div>
-          {#if context}
-            <div>
-              <dt class="workshop-label">graph_depth_used</dt>
-              <dd class="mt-0.5 text-surface-200">{context.graph_depth_used}</dd>
-            </div>
-          {/if}
-          <div>
-            <dt class="workshop-label">entry_id</dt>
-            <dd class="mt-0.5 break-all font-mono text-surface-300">{entry.id}</dd>
+        {/if}
+        {#if context}
+          <div class="context-plumbing-meta-row">
+            <dt>graph depth</dt>
+            <dd>{context.graph_depth_used}</dd>
           </div>
-        </dl>
-      {/if}
-
+        {/if}
+        <div class="context-plumbing-meta-row">
+          <dt>entry</dt>
+          <dd class="font-mono text-[11px]">{entry.id}</dd>
+        </div>
+      </dl>
       <button
         type="button"
         class="context-layer-toggle"
@@ -229,7 +216,7 @@
         }}
       >
         <span>Raw JSON</span>
-        <span class="workshop-faint text-[11px]">advanced</span>
+        <span class="workshop-faint text-[11px]">entry</span>
       </button>
       {#if rawOpen}
         <pre class="context-layer-raw">{JSON.stringify(entry, null, 2)}</pre>
