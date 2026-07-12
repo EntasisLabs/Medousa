@@ -547,22 +547,23 @@ fn attach_linux_webview_hotkeys(
 ) {
     let _ = webview.with_webview(move |platform| {
         use gdk::ModifierType;
+        use gtk::glib::Propagation;
         use gtk::prelude::*;
 
         let wv = platform.inner();
         let app_handle = app.clone();
         wv.connect_key_press_event(move |_w, event| {
             if require_embed_visible && !EMBED_VISIBLE.load(Ordering::SeqCst) {
-                return gtk::Inhibit(false);
+                return Propagation::Proceed;
             }
             let state = event.state();
             let ctrl = state.contains(ModifierType::CONTROL_MASK);
             let meta = state.contains(ModifierType::META_MASK);
             if !ctrl && !meta {
-                return gtk::Inhibit(false);
+                return Propagation::Proceed;
             }
             if event.is_modifier() {
-                return gtk::Inhibit(false);
+                return Propagation::Proceed;
             }
             let shift = state.contains(ModifierType::SHIFT_MASK);
             let alt = state.contains(ModifierType::MOD1_MASK);
@@ -574,10 +575,10 @@ fn attach_linux_webview_hotkeys(
                 .unwrap_or_default();
 
             let Some(action) = map_chrome_hotkey_action(key.as_str(), shift, alt) else {
-                return gtk::Inhibit(false);
+                return Propagation::Proceed;
             };
             dispatch_embed_hotkey(&app_handle, action, surface);
-            gtk::Inhibit(true)
+            Propagation::Stop
         });
     });
 }
