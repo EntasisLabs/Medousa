@@ -99,3 +99,7 @@ export function vaultPinFolderHint(): string {
     ? "Your real files live outside the vault too. Pin a folder from the host — Documents, Desktop, or a project root."
     : "Your real files live outside the vault too. Pin a folder — Documents, Desktop, or a project root.";
 }
+
+export function vaultRemoteFilesystemHint(): string {
+  return "This workshop’s files live on the host Mac. Pin folders and reveal in Finder there.";
+}

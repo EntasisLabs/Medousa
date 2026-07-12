@@ -2226,6 +2226,17 @@ pub struct VaultBacklinksResponse {
     pub backlinks: Vec<String>,
 }
 
+/// Binary vault asset for remote preview (base64 over JSON transport).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct VaultFileContentResponse {
+    pub path: String,
+    pub content_type: String,
+    pub base64: String,
+    pub size: u64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct WorkspaceCardActionResponse {

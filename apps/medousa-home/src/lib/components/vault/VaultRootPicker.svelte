@@ -2,6 +2,10 @@
   import { Check, ChevronDown, FolderOpen, Plus } from "@lucide/svelte";
   import { vault } from "$lib/stores/vault.svelte";
   import { pickExternalFolder } from "$lib/utils/externalDeskApi";
+  import {
+    isCoLocatedWorkshop,
+    vaultAddRootRemoteHint,
+  } from "$lib/utils/workshopLocality";
   import { isTauri } from "$lib/window";
 
   interface Props {
@@ -17,7 +21,10 @@
   let pathDraft = $state("");
 
   const activeRoot = $derived(vault.activeVaultRootView);
-  const canAddRoot = $derived(isTauri() && !vault.vaultRootsUnavailable);
+  const coLocated = $derived(isCoLocatedWorkshop());
+  const canAddRoot = $derived(
+    isTauri() && coLocated && !vault.vaultRootsUnavailable,
+  );
   const showPicker = $derived(!vault.vaultRootsUnavailable && vault.vaultRoots.length > 0);
 
   async function pickFolder() {
@@ -133,6 +140,10 @@
             <Plus size={14} strokeWidth={2} />
             Add vault folder…
           </button>
+        {:else if isTauri() && !coLocated && !vault.vaultRootsUnavailable}
+          <p class="workshop-faint border-t border-surface-500/40 px-3 py-2 text-[11px] leading-snug">
+            {vaultAddRootRemoteHint()}
+          </p>
         {/if}
       </div>
     {/if}
@@ -207,7 +218,7 @@
       <header>
         <h3 class="text-base font-semibold text-surface-50">Add vault folder</h3>
         <p class="workshop-faint mt-1 text-sm">
-          Point this engine at another markdown folder. Switch vaults anytime from the library sidebar.
+          Point this engine at another markdown folder on this Mac. Switch vaults anytime from the library sidebar.
         </p>
       </header>
       <label class="block space-y-1 text-sm">

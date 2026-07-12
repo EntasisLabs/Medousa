@@ -49,6 +49,7 @@ import type {
 import type { TuiDefaults } from "$lib/types/workshopDefaults";
 import type {
   VaultBacklinksResponse,
+  VaultFileContentResponse,
   VaultNoteContentResponse,
   VaultNotesListResponse,
   VaultRootsResponse,
@@ -710,6 +711,12 @@ export async function getVaultNote(
   path: string,
 ): Promise<VaultNoteContentResponse> {
   return invoke<VaultNoteContentResponse>("vault_get_note", { path });
+}
+
+export async function getVaultFile(
+  path: string,
+): Promise<VaultFileContentResponse> {
+  return invoke<VaultFileContentResponse>("vault_get_file", { path });
 }
 
 export async function saveVaultNote(

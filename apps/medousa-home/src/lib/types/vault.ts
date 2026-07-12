@@ -27,6 +27,13 @@ export interface VaultNoteContentResponse {
   content: string;
 }
 
+export interface VaultFileContentResponse {
+  path: string;
+  contentType: string;
+  base64: string;
+  size: number;
+}
+
 export interface VaultWriteResponse {
   note: VaultNote;
   created: boolean;

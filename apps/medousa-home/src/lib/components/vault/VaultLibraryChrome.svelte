@@ -20,6 +20,7 @@
   import VaultRootPicker from "./VaultRootPicker.svelte";
   import VaultLibraryBrowseModeBar from "./VaultLibraryBrowseModeBar.svelte";
   import { vaultFolderIcons } from "$lib/stores/vaultFolderIcons.svelte";
+  import { isCoLocatedWorkshop, vaultPinFolderRemoteHint } from "$lib/utils/workshopLocality";
 
   interface Props {
     showVaultChrome: boolean;
@@ -33,6 +34,7 @@
 
   // Keep filter icons reactive to custom folder icon picks.
   const folderIconMap = $derived(vaultFolderIcons.icons);
+  const coLocated = $derived(isCoLocatedWorkshop());
 
   const visibleSpaces = $derived(allFilterSpaces(vault.showSystemNotes));
   const spaceCounts = $derived(vault.spaceCountsMap);
@@ -305,25 +307,31 @@
       </label>
     </div>
     <div class="vault-library-toolbar border-t border-surface-500/35">
-      <button
-        type="button"
-        class="vault-toolbar-new variant-soft-primary"
-        onclick={() => void externalDesk.pinFolder()}
-      >
-        <Pin size={14} strokeWidth={2} />
-        Pin folder
-      </button>
-      {#if externalDesk.pinnedRoots.length > 0}
+      {#if coLocated}
         <button
           type="button"
-          class="vault-toolbar-btn ml-auto"
-          title="Refresh all pinned folders"
-          aria-label="Refresh all pinned folders"
-          disabled={Boolean(externalDesk.loadingRoot)}
-          onclick={() => void externalDesk.refreshAllRoots()}
+          class="vault-toolbar-new variant-soft-primary"
+          onclick={() => void externalDesk.pinFolder()}
         >
-          <RefreshCw size={14} strokeWidth={2} />
+          <Pin size={14} strokeWidth={2} />
+          Pin folder
         </button>
+        {#if externalDesk.pinnedRoots.length > 0}
+          <button
+            type="button"
+            class="vault-toolbar-btn ml-auto"
+            title="Refresh all pinned folders"
+            aria-label="Refresh all pinned folders"
+            disabled={Boolean(externalDesk.loadingRoot)}
+            onclick={() => void externalDesk.refreshAllRoots()}
+          >
+            <RefreshCw size={14} strokeWidth={2} />
+          </button>
+        {/if}
+      {:else}
+        <p class="workshop-faint px-1 py-1 text-[11px] leading-snug">
+          {vaultPinFolderRemoteHint()}
+        </p>
       {/if}
     </div>
   {/if}

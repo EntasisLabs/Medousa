@@ -6,6 +6,7 @@
   import { canPreviewAttachment } from "$lib/utils/vaultAttachments";
   import type { ExternalFileEntry, PinnedRoot } from "$lib/types/externalDesk";
   import ExternalFileRow from "./ExternalFileRow.svelte";
+  import { isCoLocatedWorkshop, vaultPinFolderRemoteHint } from "$lib/utils/workshopLocality";
 
   interface Props {
     compact?: boolean;
@@ -19,6 +20,7 @@
   let showAllByRoot = $state<Record<string, boolean>>({});
 
   const canLink = $derived(Boolean(vault.selectedPath));
+  const coLocated = $derived(isCoLocatedWorkshop());
 
   function visibleFiles(rootPath: string): ExternalFileEntry[] {
     return (externalDesk.entriesByRoot[rootPath] ?? []).filter((entry) => !entry.is_dir);
@@ -83,7 +85,17 @@
     </p>
   {/if}
 
-  {#if externalDesk.pinnedRoots.length === 0}
+  {#if !coLocated}
+    <div class="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
+      <FolderOpen size={28} strokeWidth={1.5} class="text-surface-500" />
+      <div class="max-w-xs space-y-1">
+        <p class="text-sm font-medium text-surface-100">Your files stay on this Mac</p>
+        <p class="text-xs leading-relaxed text-surface-500">
+          {vaultPinFolderRemoteHint()}
+        </p>
+      </div>
+    </div>
+  {:else if externalDesk.pinnedRoots.length === 0}
     <div class="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
       <FolderOpen size={28} strokeWidth={1.5} class="text-surface-500" />
       <div class="max-w-xs space-y-1">

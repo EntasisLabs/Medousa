@@ -757,6 +757,9 @@ export class VaultStore {
     this.activeVaultRootId = null;
     this.vaultRootsUnavailable = false;
     invalidateVaultRootCache();
+    void import("$lib/utils/vaultLocalImages").then(({ clearDaemonImagePreviewCache }) => {
+      clearDaemonImagePreviewCache();
+    });
     void this.refreshVaultRoots();
     void this.refreshNotes();
   }
@@ -823,6 +826,12 @@ export class VaultStore {
   }
 
   async registerVaultRoot(label: string, path: string) {
+    const { isCoLocatedWorkshop, vaultAddRootRemoteHint } = await import(
+      "$lib/utils/workshopLocality"
+    );
+    if (!isCoLocatedWorkshop()) {
+      throw new Error(vaultAddRootRemoteHint());
+    }
     const response = await addVaultRoot(label, path);
     this.vaultRoots = response.roots;
     this.activeVaultRootId = response.activeRootId;
@@ -830,7 +839,11 @@ export class VaultStore {
   }
 
   openAddVaultRootDialog() {
-    this.addVaultRootOpen = true;
+    // Folder pick posts a Home path — only valid when co-located with the daemon.
+    void import("$lib/utils/workshopLocality").then(({ isCoLocatedWorkshop }) => {
+      if (!isCoLocatedWorkshop()) return;
+      this.addVaultRootOpen = true;
+    });
   }
 
   closeAddVaultRootDialog() {

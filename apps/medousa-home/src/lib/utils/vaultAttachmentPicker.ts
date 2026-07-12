@@ -9,55 +9,57 @@ function fileNameFromPath(path: string): string {
 }
 
 export async function pickAttachmentFiles(): Promise<VaultAttachment[]> {
-  if (isTauri()) {
-    try {
-      const { open } = await import("@tauri-apps/plugin-dialog");
-      const selected = await open({
-        multiple: true,
-        title: "Link file to note",
-      });
-      if (!selected) return [];
-      const paths = Array.isArray(selected) ? selected : [selected];
-      return paths.map((path) => ({
-        path,
-        label: fileNameFromPath(path),
-        mime: guessMimeFromPath(path),
-      }));
-    } catch {
-      return [];
-    }
+  if (!isTauri()) {
+    return pickAttachmentFilesWeb();
   }
-
-  return pickAttachmentFilesWeb();
+  const { isCoLocatedWorkshop } = await import("$lib/utils/workshopLocality");
+  if (!isCoLocatedWorkshop()) return [];
+  try {
+    const { open } = await import("@tauri-apps/plugin-dialog");
+    const selected = await open({
+      multiple: true,
+      title: "Link file to note",
+    });
+    if (!selected) return [];
+    const paths = Array.isArray(selected) ? selected : [selected];
+    return paths.map((path) => ({
+      path,
+      label: fileNameFromPath(path),
+      mime: guessMimeFromPath(path),
+    }));
+  } catch {
+    return [];
+  }
 }
 
 export async function pickSpreadsheetFiles(): Promise<VaultAttachment[]> {
-  if (isTauri()) {
-    try {
-      const { open } = await import("@tauri-apps/plugin-dialog");
-      const selected = await open({
-        multiple: true,
-        title: "Link spreadsheet to note",
-        filters: [
-          {
-            name: "Spreadsheets",
-            extensions: ["csv", "tsv", "xlsx", "xls", "xlsm"],
-          },
-        ],
-      });
-      if (!selected) return [];
-      const paths = Array.isArray(selected) ? selected : [selected];
-      return paths.map((path) => ({
-        path,
-        label: fileNameFromPath(path),
-        mime: guessMimeFromPath(path),
-      }));
-    } catch {
-      return [];
-    }
+  if (!isTauri()) {
+    return pickAttachmentFilesWeb([".csv", ".tsv", ".xlsx", ".xls", ".xlsm"]);
   }
-
-  return pickAttachmentFilesWeb([".csv", ".tsv", ".xlsx", ".xls", ".xlsm"]);
+  const { isCoLocatedWorkshop } = await import("$lib/utils/workshopLocality");
+  if (!isCoLocatedWorkshop()) return [];
+  try {
+    const { open } = await import("@tauri-apps/plugin-dialog");
+    const selected = await open({
+      multiple: true,
+      title: "Link spreadsheet to note",
+      filters: [
+        {
+          name: "Spreadsheets",
+          extensions: ["csv", "tsv", "xlsx", "xls", "xlsm"],
+        },
+      ],
+    });
+    if (!selected) return [];
+    const paths = Array.isArray(selected) ? selected : [selected];
+    return paths.map((path) => ({
+      path,
+      label: fileNameFromPath(path),
+      mime: guessMimeFromPath(path),
+    }));
+  } catch {
+    return [];
+  }
 }
 
 function pickAttachmentFilesWeb(accept?: string[]): Promise<VaultAttachment[]> {
@@ -91,14 +93,15 @@ function pickAttachmentFilesWeb(accept?: string[]): Promise<VaultAttachment[]> {
 
 export async function openAttachmentPath(path: string): Promise<void> {
   if (!path.trim()) return;
-  if (isTauri()) {
-    const { openPath } = await import("@tauri-apps/plugin-opener");
-    await openPath(path);
-    return;
-  }
   if (path.startsWith("http://") || path.startsWith("https://")) {
     window.open(path, "_blank", "noopener,noreferrer");
+    return;
   }
+  if (!isTauri()) return;
+  const { isCoLocatedWorkshop } = await import("$lib/utils/workshopLocality");
+  if (!isCoLocatedWorkshop()) return;
+  const { openPath } = await import("@tauri-apps/plugin-opener");
+  await openPath(path);
 }
 
 export async function attachmentPreviewUrl(path: string): Promise<string | null> {
