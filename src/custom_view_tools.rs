@@ -505,6 +505,7 @@ impl StasisTool for CognitionCustomViewComposeTool {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn merge_compose_status(
     mut base: Value,
     pending_operator_approval: bool,

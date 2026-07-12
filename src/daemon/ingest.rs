@@ -66,7 +66,8 @@ pub async fn ingest_stream(
 /// State carried through the SSE unfold: live fan-out channel, durable replay log,
 /// broadcast receiver, pending replay queue, and dedupe cursor.
 struct SseUnfoldState {
-    channel: Arc<TurnEventChannel>,
+    /// Kept alive so the broadcast channel is not dropped while streaming.
+    _channel: Arc<TurnEventChannel>,
     log: Arc<TurnEventLog>,
     receiver: broadcast::Receiver<InteractiveTurnStreamEvent>,
     pending: std::collections::VecDeque<InteractiveTurnStreamEvent>,
@@ -118,7 +119,7 @@ pub async fn stream_events_from_registry(
     let pending = replay_from_log(&log, since);
 
     let initial = SseUnfoldState {
-        channel,
+        _channel: channel,
         log,
         receiver,
         pending,
@@ -1092,6 +1093,7 @@ async fn spawn_continuation_agent_turn(
     .await;
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn spawn_daemon_api_agent_turn(
     state: &AppState,
     job_id: String,
@@ -1134,6 +1136,7 @@ pub async fn spawn_daemon_api_agent_turn(
     .await;
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn spawn_daemon_api_agent_turn_with_scope(
     state: &AppState,
     job_id: String,

@@ -296,7 +296,7 @@ impl MedousaToolLoopPipeline {
                         )
                         .await?
                         {
-                            ChatCompletionOutcome::Ok(response) => response,
+                            ChatCompletionOutcome::Ok(response) => *response,
                             ChatCompletionOutcome::MalformedToolJson => {
                                 inject_malformed_tool_json_guidance(
                                     &mut turn_ctx.tool_lane.messages,
@@ -317,7 +317,7 @@ impl MedousaToolLoopPipeline {
                         )
                         .await?
                         {
-                            ChatCompletionOutcome::Ok(response) => response,
+                            ChatCompletionOutcome::Ok(response) => *response,
                             ChatCompletionOutcome::MalformedToolJson => {
                                 inject_malformed_tool_json_guidance(
                                     &mut turn_ctx.tool_lane.messages,
@@ -394,7 +394,6 @@ impl MedousaToolLoopPipeline {
                                     tool_input: (*shared_inputs.tool_input).clone(),
                                     tool_output: Value::Null,
                                 });
-                                pack_hold = None;
                                 return Ok(ToolLoopExecutionResponse {
                                     text: merged,
                                     metadata: shared_inputs.context_clone(),
@@ -1130,6 +1129,7 @@ impl MedousaToolLoopPipeline {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn apply_pack_hold_continue(
     text: &str,
     invocations: &[ToolInvocation],
@@ -1216,6 +1216,7 @@ async fn apply_pack_hold_continue(
     Ok(None)
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn apply_fsm_continue_loop(
     text: &str,
     continue_reason: ContinueReason,
@@ -1426,7 +1427,7 @@ fn is_serde_json_completion_error(err: &StasisError) -> bool {
 
 /// Outcome of a chat completion that may have hit malformed provider tool-call JSON.
 enum ChatCompletionOutcome {
-    Ok(genai::chat::ChatResponse),
+    Ok(Box<genai::chat::ChatResponse>),
     /// Provider returned unparseable tool-call arguments after one silent retry.
     /// Caller must inject guidance and continue the tool loop — never fail the turn.
     MalformedToolJson,
@@ -1465,7 +1466,7 @@ async fn complete_chat_with_serde_retry(
     gate: Option<&ToolLoopCompletionGate<'_>>,
 ) -> Result<ChatCompletionOutcome> {
     match pipeline.complete_chat(request.clone(), context.clone()).await {
-        Ok(completion) => Ok(ChatCompletionOutcome::Ok(completion.response)),
+        Ok(completion) => Ok(ChatCompletionOutcome::Ok(Box::new(completion.response))),
         Err(err) if is_serde_json_completion_error(&err) => {
             if let Some(gate) = gate
                 && let Some(sink) = gate.sink.as_ref() {
@@ -1476,7 +1477,7 @@ async fn complete_chat_with_serde_retry(
                     .await;
                 }
             match pipeline.complete_chat(request, context).await {
-                Ok(completion) => Ok(ChatCompletionOutcome::Ok(completion.response)),
+                Ok(completion) => Ok(ChatCompletionOutcome::Ok(Box::new(completion.response))),
                 Err(retry_err) if is_serde_json_completion_error(&retry_err) => {
                     Ok(ChatCompletionOutcome::MalformedToolJson)
                 }
@@ -1498,7 +1499,7 @@ async fn complete_chat_stream_with_serde_retry(
         .complete_chat_stream(request.clone(), context.clone(), chunk_tx)
         .await
     {
-        Ok(completion) => Ok(ChatCompletionOutcome::Ok(completion.response)),
+        Ok(completion) => Ok(ChatCompletionOutcome::Ok(Box::new(completion.response))),
         Err(err) if is_serde_json_completion_error(&err) => {
             if let Some(gate) = gate
                 && let Some(sink) = gate.sink.as_ref() {
@@ -1510,7 +1511,7 @@ async fn complete_chat_stream_with_serde_retry(
                 }
             // Fall back to non-stream completion (same strategy as empty tool_calls).
             match pipeline.complete_chat(request, context).await {
-                Ok(completion) => Ok(ChatCompletionOutcome::Ok(completion.response)),
+                Ok(completion) => Ok(ChatCompletionOutcome::Ok(Box::new(completion.response))),
                 Err(retry_err) if is_serde_json_completion_error(&retry_err) => {
                     Ok(ChatCompletionOutcome::MalformedToolJson)
                 }

@@ -105,6 +105,7 @@ impl GraphemeScriptStore {
         fs::read_to_string(&path).with_context(|| format!("read script body {}", path.display()))
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn save_script(
         &self,
         id: Option<&str>,

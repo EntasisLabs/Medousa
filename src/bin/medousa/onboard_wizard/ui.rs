@@ -293,12 +293,10 @@ fn body_text(state: &WizardState) -> Text<'static> {
                 lines.push(option_line(
                     focused,
                     &label,
-                    if state.bootstrap.existing_discord_token
-                        && *option == ChannelOption::Discord
-                    {
-                        "stored token available"
-                    } else if state.bootstrap.existing_telegram_token
-                        && *option == ChannelOption::Telegram
+                    if (state.bootstrap.existing_discord_token
+                        && *option == ChannelOption::Discord)
+                        || (state.bootstrap.existing_telegram_token
+                            && *option == ChannelOption::Telegram)
                     {
                         "stored token available"
                     } else if state.bootstrap.existing_slack_bot_token

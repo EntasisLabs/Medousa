@@ -535,8 +535,10 @@ impl TurnContinuationStore for InMemoryTurnContinuationStore {
 
     async fn snapshot(&self) -> TurnContinuationSnapshot {
         let guard = self.records.read().await;
-        let mut snapshot = TurnContinuationSnapshot::default();
-        snapshot.total_count = guard.len();
+        let mut snapshot = TurnContinuationSnapshot {
+            total_count: guard.len(),
+            ..Default::default()
+        };
         for record in guard.values() {
             match record.status {
                 TurnContinuationStatus::Pending => {

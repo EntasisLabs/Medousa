@@ -66,6 +66,7 @@ pub fn manuscript_id_from_recurring_payload(
         .filter(|value| !value.trim().is_empty())
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn build_recurring_agent_turn_payload(
     prompt: &str,
     session_id: &str,

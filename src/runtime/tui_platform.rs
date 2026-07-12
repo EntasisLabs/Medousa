@@ -39,6 +39,7 @@ pub struct TuiPlatformBuildConfig {
 }
 
 impl TuiPlatformBuildConfig {
+    #[allow(clippy::too_many_arguments)]
     pub fn from_names(
         backend_name: &str,
         provider: Option<&str>,

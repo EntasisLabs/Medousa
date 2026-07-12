@@ -114,11 +114,13 @@ async fn find_nodes_by_tags(
         return Ok(Vec::new());
     }
 
-    let mut find = MemoryFindRequest::default();
-    find.limit = limit;
-    find.sort_field = MemorySortField::Timestamp;
-    find.sort_direction = MemorySortDirection::Desc;
-    find.filter = filter;
+    let mut find = MemoryFindRequest {
+        limit,
+        sort_field: MemorySortField::Timestamp,
+        sort_direction: MemorySortDirection::Desc,
+        filter,
+        ..Default::default()
+    };
     if let Some(session_id) = session_id {
         find.scope.session_ids = Some(vec![session_id.to_string()]);
         let tenant = crate::locus_memory::derive_locus_tenant_id(session_id);

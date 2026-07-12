@@ -1040,7 +1040,6 @@ pub fn embedded_capability_manifest() -> CapabilityManifest {
                     ),
                 }),
                 bindings: CapabilityManifestBindings::default(),
-                ..Default::default()
             },
             CapabilityManifestEntry {
                 id: "http_fetch".to_string(),

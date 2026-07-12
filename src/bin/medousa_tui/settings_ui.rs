@@ -532,8 +532,9 @@ pub(crate) fn render_settings_overlay(frame: &mut ratatui::Frame, state: &mut Tu
     )));
 
     let mut selected_line: Option<usize> = None;
-    for idx in start..=end {
-        if idx > start {
+    for (offset, row) in rows[start..=end].iter().enumerate() {
+        let idx = start + offset;
+        if offset > 0 {
             lines.push(Line::from(Span::styled(
                 " ............................................................ ",
                 Style::default().fg(Color::DarkGray),
@@ -542,7 +543,6 @@ pub(crate) fn render_settings_overlay(frame: &mut ratatui::Frame, state: &mut Tu
         if idx == state.settings_selected {
             selected_line = Some(lines.len());
         }
-        let row = &rows[idx];
         let marker = if idx == state.settings_selected {
             ">"
         } else {

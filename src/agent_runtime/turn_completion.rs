@@ -252,6 +252,7 @@ pub fn drafts_look_similar(previous: &str, current: &str) -> bool {
     shared * 100 / min_len.max(1) >= 72
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn build_turn_completion_docket(
     user_prompt: &str,
     draft_text: &str,

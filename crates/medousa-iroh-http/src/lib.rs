@@ -155,10 +155,12 @@ fn find_header_end(raw: &[u8]) -> Option<usize> {
     raw.windows(4).position(|window| window == b"\r\n\r\n")
 }
 
+type ParsedResponseHeaders = (u16, Vec<(String, String)>, usize, Vec<u8>);
+
 fn parse_response_headers(
     raw: &[u8],
     header_end: usize,
-) -> Result<(u16, Vec<(String, String)>, usize, Vec<u8>)> {
+) -> Result<ParsedResponseHeaders> {
     let mut headers = [EMPTY_HEADER; 32];
     let mut response = Response::new(&mut headers);
     let status = response

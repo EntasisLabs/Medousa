@@ -18,11 +18,21 @@ struct Window {
     suppressed: u32,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 struct RateLimiter {
     windows: HashMap<String, Window>,
     interval: Duration,
     burst: u32,
+}
+
+impl Default for RateLimiter {
+    fn default() -> Self {
+        Self {
+            windows: HashMap::new(),
+            interval: DEFAULT_INTERVAL,
+            burst: DEFAULT_BURST,
+        }
+    }
 }
 
 /// Emit a `warn!` at most `burst` times per minute per key.

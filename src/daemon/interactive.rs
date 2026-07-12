@@ -350,19 +350,18 @@ pub async fn get_turn_ticket(
 
 #[derive(Debug, Deserialize)]
 pub struct ListSessionTurnsQuery {
+    /// Accepted for API compatibility; listing currently always returns active turns.
+    #[allow(dead_code)]
     active: Option<bool>,
 }
 
 pub async fn list_session_turns(
     State(state): State<AppState>,
     AxumPath(session_id): AxumPath<String>,
-    Query(query): Query<ListSessionTurnsQuery>,
+    Query(_query): Query<ListSessionTurnsQuery>,
 ) -> Json<SessionActiveTurnsResponse> {
-    let turns = if query.active.unwrap_or(false) {
-        crate::turn_ticket::list_active_for_session(&state.turn_tickets, &session_id).await
-    } else {
-        crate::turn_ticket::list_active_for_session(&state.turn_tickets, &session_id).await
-    };
+    let turns =
+        crate::turn_ticket::list_active_for_session(&state.turn_tickets, &session_id).await;
 
     Json(SessionActiveTurnsResponse {
         session_id,

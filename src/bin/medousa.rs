@@ -3322,7 +3322,7 @@ fn run_workspace(args: &[String]) -> Result<()> {
         "stream" => {
             return run_workspace_stream(&daemon_url, args);
         }
-        "snapshot" | _ => {
+        _ => {
             let mut query = Vec::new();
             if let Some(limit) = find_arg_value(args, "--feed-tail") {
                 query.push(format!("feed_tail_limit={limit}"));

@@ -1082,7 +1082,6 @@ fn build_job_evidence_report(job_id: &str, payload: &Value) -> Option<JobEvidenc
 
 /// Fetches job attempts, gracefully handling the case where the backend table
 /// does not exist yet (fresh database without auto-migration).
-
 pub fn derive_job_result_status(latest_outcome: Option<&str>, attempt_count: usize) -> (String, bool) {
     if attempt_count == 0 {
         return ("queued".to_string(), false);

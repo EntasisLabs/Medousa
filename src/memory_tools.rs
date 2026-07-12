@@ -749,11 +749,13 @@ impl StasisTool for CognitionMemoryListTool {
         }
 
         let query_limit = limit.saturating_mul(5).clamp(1, 200);
-        let mut find = MemoryFindRequest::default();
-        find.limit = query_limit;
-        find.sort_field = MemorySortField::Timestamp;
-        find.sort_direction = MemorySortDirection::Desc;
-        find.filter = tag_filter;
+        let mut find = MemoryFindRequest {
+            limit: query_limit,
+            sort_field: MemorySortField::Timestamp,
+            sort_direction: MemorySortDirection::Desc,
+            filter: tag_filter,
+            ..Default::default()
+        };
         if !keywords.is_empty() {
             find.filter.text_contains = Some(keywords.join(" "));
         }

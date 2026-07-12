@@ -53,6 +53,7 @@ pub struct PackageProfile {
     pub packages: &'static [&'static str],
 }
 
+#[allow(clippy::too_many_arguments)]
 fn entry(
     id: &'static str,
     display_name: &'static str,

@@ -178,6 +178,7 @@ impl TurnWorkerScheduler {
         self.store.clone()
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn spawn_worker(
         &self,
         intent: TurnWorkerIntent,
@@ -1145,6 +1146,7 @@ pub fn host_bus_mode_enabled() -> bool {
     super::routing::host_bus_force_enabled()
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn pipeline_for_turn_profile(
     tool_registry: Arc<dyn ToolRegistry>,
     provider: &str,

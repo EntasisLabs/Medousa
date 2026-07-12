@@ -115,8 +115,10 @@ mod tests {
     #[test]
     fn defaults_opt_in_is_off() {
         assert!(!stasis_otel_enabled_from_defaults(&TuiDefaults::default()));
-        let mut defaults = TuiDefaults::default();
-        defaults.stasis_otel_enabled = Some(true);
+        let defaults = TuiDefaults {
+            stasis_otel_enabled: Some(true),
+            ..Default::default()
+        };
         assert!(stasis_otel_enabled_from_defaults(&defaults));
     }
 }

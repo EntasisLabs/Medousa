@@ -309,6 +309,7 @@ pub fn build_prior_messages(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn decide_turn_activation(
     prompt: &str,
     configured_mode: ToolCallMode,

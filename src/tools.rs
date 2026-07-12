@@ -2679,6 +2679,7 @@ impl TuiRuntime {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn build_tui_runtime(
     backend: RuntimeBackend,
     provider: Option<&str>,

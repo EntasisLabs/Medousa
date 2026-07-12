@@ -814,8 +814,7 @@ fn rejected_verify(reason: &str) -> PairVerifyResponse {
 
 fn encode_short_code(digest: &[u8]) -> String {
     let mut out = String::with_capacity(6);
-    for index in 0..6 {
-        let byte = digest[index];
+    for &byte in digest.iter().take(6) {
         let slot = (byte as usize) % SHORT_CODE_ALPHABET.len();
         out.push(SHORT_CODE_ALPHABET[slot] as char);
     }

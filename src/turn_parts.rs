@@ -82,6 +82,7 @@ impl TurnPartsAccumulator {
         });
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn replace_attachment_ref(
         &mut self,
         previous_artifact_id: &str,

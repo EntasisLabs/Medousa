@@ -78,7 +78,7 @@ pub struct InteractiveTurnSessionHooks {
         Option<Arc<RwLock<HashMap<String, crate::daemon_api::ContextUsageReport>>>>,
 }
 
-pub(crate) struct InteractiveTurnStreamSink {
+pub struct InteractiveTurnStreamSink {
     turn_id: String,
     session_id: String,
     stream_tx: Arc<TurnEventChannel>,
@@ -838,6 +838,7 @@ fn publish_to_stream(
     crate::daemon::ingest::publish_interactive_turn_event(stream, event);
 }
 
+#[allow(clippy::too_many_arguments)]
 /// Run a full agent turn for `POST /v1/interactive/turn`, streaming via SSE.
 pub async fn run_daemon_interactive_turn(
     turn_id: &str,

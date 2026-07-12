@@ -120,7 +120,7 @@ fn run_loop(
                 match state.handle_key(key_event) {
                     WizardTransition::Continue => {}
                     WizardTransition::Cancelled => return Ok(None),
-                    WizardTransition::Finished(output) => return Ok(Some(output)),
+                    WizardTransition::Finished(output) => return Ok(Some(*output)),
                 }
             }
             Event::Resize(_, _) => {

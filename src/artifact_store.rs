@@ -815,7 +815,7 @@ fn wrap_html_document(html: &str) -> String {
 fn normalize_presentation(presentation: &str) -> std::result::Result<String, String> {
     match presentation.trim().to_ascii_lowercase().as_str() {
         "inline" | "panel" | "fullscreen" => Ok(presentation.trim().to_ascii_lowercase()),
-        other if other.is_empty() => Ok("inline".to_string()),
+        "" => Ok("inline".to_string()),
         other => Err(format!(
             "presentation must be inline, panel, or fullscreen (got {other})"
         )),

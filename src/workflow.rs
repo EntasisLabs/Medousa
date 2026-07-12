@@ -593,6 +593,7 @@ impl WorkflowExecutor {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn execute_workflow_step(
     step: &WorkflowStepSpec,
     prior_outputs: &HashMap<String, Value>,
@@ -682,6 +683,7 @@ async fn execute_workflow_step(
     .await
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn execute_native_workflow_step(
     step: &WorkflowStepSpec,
     prior_outputs: &HashMap<String, Value>,

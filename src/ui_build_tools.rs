@@ -41,7 +41,7 @@ struct NodeSnap {
 }
 
 #[derive(Debug, Clone)]
-struct BuildSession {
+pub(crate) struct BuildSession {
     surface_id: String,
     rev: i64,
     scene_id: String,

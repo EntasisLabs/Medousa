@@ -245,6 +245,7 @@ pub struct WorkerHandoffCapsule {
 }
 
 impl WorkerHandoffCapsule {
+    #[allow(clippy::too_many_arguments)]
     pub fn from_host_context(
         session_id: &str,
         parent_stream_turn_id: u64,
@@ -507,6 +508,7 @@ pub fn tool_output_ok(output: &Value) -> bool {
     !matches!(output.get("ok").and_then(|v| v.as_bool()), Some(false))
 }
 
+#[allow(clippy::too_many_arguments)]
 /// Snapshot host scratch for the next `cognition_spawn_turn_worker` (updated each tool round).
 pub async fn publish_host_handoff_snapshot(
     session_id: Option<&str>,
