@@ -372,12 +372,13 @@ function buildPdfExportDom(title: string, html: string): {
 } {
   const shell = document.createElement("div");
   shell.className = "vault-pdf-export-shell";
+  // Off-screen — do not flash a full-screen white "preview" during capture
   shell.style.cssText =
-    "position:fixed;inset:0;z-index:2147483646;background:#ffffff;overflow:auto;pointer-events:none;";
+    "position:fixed;left:-10000px;top:0;width:780px;height:auto;overflow:visible;pointer-events:none;visibility:hidden;z-index:-1;";
 
   const mount = document.createElement("div");
   mount.className = "vault-pdf-export-mount";
-  mount.style.cssText = "width:720px;max-width:720px;margin:0 auto;padding:48px 40px 64px;";
+  mount.style.cssText = "width:720px;max-width:720px;margin:0;padding:48px 40px 64px;background:#ffffff;";
 
   const styleEl = document.createElement("style");
   styleEl.textContent = PDF_EXPORT_CSS;
@@ -395,18 +396,23 @@ function buildPdfExportDom(title: string, html: string): {
   return { shell, mount, bodyEl };
 }
 
-export async function exportVaultNotePdf(options: {
+export function vaultPdfFilename(title: string): string {
+  return `${slugifyFilename(title)}.pdf`;
+}
+
+/** Hydrate note markdown → PDF blob (same bytes Save would write). */
+export async function renderVaultNotePdfBlob(options: {
   title: string;
   content: string;
   labelByPath: Map<string, string>;
-}): Promise<void> {
+}): Promise<Blob> {
   const body = stripFrontmatter(options.content).content;
   const html = renderMarkdownPreview(body, options.labelByPath);
   if (!html.trim()) {
     throw new Error("Nothing to export — note preview is empty.");
   }
 
-  const filename = `${slugifyFilename(options.title)}.pdf`;
+  const filename = vaultPdfFilename(options.title);
   const { shell, mount, bodyEl } = buildPdfExportDom(options.title, html);
   document.body.appendChild(shell);
 
@@ -422,51 +428,72 @@ export async function exportVaultNotePdf(options: {
       animate: false,
     });
     await waitForLiquidLayout();
-    // Bake resolved colors on the live mount (heatmap cells, SVG strokes, …)
     sanitizeUnsupportedCssColors(mount);
 
     const html2pdf = (await import("html2pdf.js")).default;
-    const worker = html2pdf().set({
-      margin: [0.55, 0.6, 0.55, 0.6],
-      filename,
-      image: { type: "jpeg", quality: 0.96 },
-      html2canvas: {
-        scale: 2,
-        useCORS: true,
-        backgroundColor: "#ffffff",
-        scrollX: 0,
-        scrollY: -window.scrollY,
-        windowWidth: mount.scrollWidth,
-        logging: false,
-        onclone: (clonedDoc: Document) => {
-          scrubUnsupportedColorFunctionsInClone(clonedDoc);
-          const clonedMount = clonedDoc.querySelector<HTMLElement>(".vault-pdf-export-mount");
-          if (clonedMount) sanitizeUnsupportedCssColors(clonedMount);
+    const worker = html2pdf()
+      .set({
+        margin: [0.55, 0.6, 0.55, 0.6],
+        filename,
+        image: { type: "jpeg", quality: 0.96 },
+        html2canvas: {
+          scale: 2,
+          useCORS: true,
+          backgroundColor: "#ffffff",
+          scrollX: 0,
+          scrollY: 0,
+          windowWidth: mount.scrollWidth,
+          logging: false,
+          onclone: (clonedDoc: Document) => {
+            scrubUnsupportedColorFunctionsInClone(clonedDoc);
+            const clonedMount = clonedDoc.querySelector<HTMLElement>(".vault-pdf-export-mount");
+            if (clonedMount) sanitizeUnsupportedCssColors(clonedMount);
+          },
         },
-      },
-      jsPDF: { unit: "in", format: "letter", orientation: "portrait" },
-      pagebreak: { mode: ["css", "legacy"] },
-    }).from(mount);
+        jsPDF: { unit: "in", format: "letter", orientation: "portrait" },
+        pagebreak: { mode: ["css", "legacy"] },
+      })
+      .from(mount);
 
-    if (isTauri()) {
-      const blob = (await worker.outputPdf("blob")) as Blob;
-      const { save } = await import("@tauri-apps/plugin-dialog");
-      const path = await save({
-        defaultPath: filename,
-        filters: [{ name: "PDF", extensions: ["pdf"] }],
-        title: "Export note as PDF",
-      });
-      if (!path) return;
-      const bytes = new Uint8Array(await blob.arrayBuffer());
-      await invoke("write_file_bytes", { path, bytes: Array.from(bytes) });
-      return;
-    }
-
-    await worker.save();
+    return (await worker.outputPdf("blob")) as Blob;
   } finally {
     destroyLiquidEmbeds(bodyEl);
     shell.remove();
   }
+}
+
+/** Persist a rendered PDF blob (Tauri save dialog or browser download). Returns false if cancelled. */
+export async function saveVaultNotePdfBlob(blob: Blob, filename: string): Promise<boolean> {
+  if (isTauri()) {
+    const { save } = await import("@tauri-apps/plugin-dialog");
+    const path = await save({
+      defaultPath: filename,
+      filters: [{ name: "PDF", extensions: ["pdf"] }],
+      title: "Export note as PDF",
+    });
+    if (!path) return false;
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    await invoke("write_file_bytes", { path, bytes: Array.from(bytes) });
+    return true;
+  }
+
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(url);
+  return true;
+}
+
+/** One-shot render + save (no preview). Prefer the preview modal in UI. */
+export async function exportVaultNotePdf(options: {
+  title: string;
+  content: string;
+  labelByPath: Map<string, string>;
+}): Promise<void> {
+  const blob = await renderVaultNotePdfBlob(options);
+  await saveVaultNotePdfBlob(blob, vaultPdfFilename(options.title));
 }
 
 export async function downloadVaultNotePdf(options: {

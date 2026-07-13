@@ -102,7 +102,7 @@
     if (onExportPdf) {
       rows.push({
         id: "export-pdf",
-        label: exportingPdf ? "Exporting PDF…" : "Export PDF…",
+        label: exportingPdf ? "Preparing PDF…" : "Export PDF…",
         disabled: exportingPdf || noteLoading,
         onClick: async () => {
           open = false;

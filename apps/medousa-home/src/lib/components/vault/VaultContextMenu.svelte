@@ -11,7 +11,6 @@
     revealFileInFinder,
     revealVaultNoteInFinder,
   } from "$lib/utils/vaultFilesystem";
-  import { exportVaultNotePdf } from "$lib/utils/vaultPdfExport";
   import { isTauri } from "$lib/window";
   import { getVaultNote } from "$lib/daemon";
   import { guessMimeFromPath, isImageAttachment } from "$lib/utils/vaultAttachments";
@@ -24,6 +23,7 @@
   import { addVaultSelectionToChat } from "$lib/utils/vaultNoteWorkshop";
   import { canUseLocalVaultFilesystem } from "$lib/utils/vaultFilesystem";
   import { vaultHostSideHint } from "$lib/utils/workshopLocality";
+  import VaultPdfPreviewModal from "./VaultPdfPreviewModal.svelte";
 
   interface MenuItem {
     id: string;
@@ -34,6 +34,10 @@
   }
 
   let menuEl = $state<HTMLDivElement | null>(null);
+  let pdfPreviewOpen = $state(false);
+  let pdfPreviewTitle = $state("");
+  let pdfPreviewContent = $state("");
+  let pdfPreviewLabels = $state<Map<string, string>>(new Map());
 
   const target = $derived(vaultContextMenu.target);
   const desktopTauri = $derived(isTauri());
@@ -191,15 +195,18 @@
           id: "export-pdf",
           label: "Export PDF…",
           onClick: async () => {
-            const response = await getVaultNote(path);
-            const title =
-              vault.labelByPath().get(path) ??
-              vaultDisplayTitle(response.note.title, path);
-            await exportVaultNotePdf({
-              title,
-              content: response.content,
-              labelByPath: vault.labelByPath(),
-            });
+            try {
+              const response = await getVaultNote(path);
+              const title =
+                vault.labelByPath().get(path) ??
+                vaultDisplayTitle(response.note.title, path);
+              pdfPreviewTitle = title;
+              pdfPreviewContent = response.content;
+              pdfPreviewLabels = vault.labelByPath();
+              pdfPreviewOpen = true;
+            } catch (err) {
+              vault.error = err instanceof Error ? err.message : String(err);
+            }
           },
         },
       ];
@@ -384,3 +391,13 @@
     {/if}
   </div>
 {/if}
+
+<VaultPdfPreviewModal
+  open={pdfPreviewOpen}
+  title={pdfPreviewTitle}
+  content={pdfPreviewContent}
+  labelByPath={pdfPreviewLabels}
+  onClose={() => {
+    pdfPreviewOpen = false;
+  }}
+/>

@@ -8189,14 +8189,25 @@
     @apply inline-flex h-6 w-6 items-center justify-center rounded text-surface-400 transition hover:bg-surface-800/80 hover:text-surface-100 disabled:opacity-30;
   }
 
+  /* Find-in-note: translucent highlighter wash (not opaque bars) */
   ::highlight(medousa-vault-find) {
-    background-color: rgb(var(--color-warning-400) / 0.42);
+    background-color: rgb(250 204 21 / 0.38);
     color: inherit;
   }
 
   ::highlight(medousa-vault-find-active) {
-    background-color: rgb(var(--color-warning-300) / 0.92);
-    color: rgb(var(--color-surface-950));
+    background-color: rgb(250 204 21 / 0.62);
+    color: inherit;
+  }
+
+  html:not(.dark) ::highlight(medousa-vault-find) {
+    background-color: rgb(254 240 138 / 0.72);
+    color: rgb(66 32 6);
+  }
+
+  html:not(.dark) ::highlight(medousa-vault-find-active) {
+    background-color: rgb(253 224 71 / 0.92);
+    color: rgb(66 32 6);
   }
 
   .vault-find-editor-shell {
@@ -8209,14 +8220,25 @@
 
   .vault-find-editor-backdrop mark.vault-find-mark {
     @apply rounded-[2px];
-    color: rgb(var(--color-surface-100));
-    background-color: rgb(var(--color-warning-400) / 0.42);
+    color: inherit;
+    background-color: rgb(250 204 21 / 0.38);
   }
 
   .vault-find-editor-backdrop mark.vault-find-mark-active {
-    color: rgb(var(--color-surface-950));
-    background-color: rgb(var(--color-warning-300) / 0.92);
-    box-shadow: 0 0 0 1px rgb(var(--color-warning-200) / 0.55);
+    color: inherit;
+    background-color: rgb(250 204 21 / 0.62);
+    box-shadow: inset 0 -1.5px 0 0 rgb(234 179 8 / 0.85);
+  }
+
+  html:not(.dark) .vault-find-editor-backdrop mark.vault-find-mark {
+    color: rgb(66 32 6);
+    background-color: rgb(254 240 138 / 0.72);
+  }
+
+  html:not(.dark) .vault-find-editor-backdrop mark.vault-find-mark-active {
+    color: rgb(66 32 6);
+    background-color: rgb(253 224 71 / 0.92);
+    box-shadow: inset 0 -1.5px 0 0 rgb(202 138 4 / 0.7);
   }
 
   .vault-find-editor-input--active {
@@ -8226,16 +8248,35 @@
   }
 
   .vault-find-editor-input--active::selection {
-    background-color: rgb(var(--color-warning-300) / 0.55);
+    background-color: rgb(250 204 21 / 0.45);
     color: transparent;
   }
 
+  html:not(.dark) .vault-find-editor-input--active::selection {
+    background-color: rgb(253 224 71 / 0.55);
+  }
+
   .vault-find-mark {
-    @apply rounded-sm bg-warning-500/35 text-inherit;
+    @apply rounded-sm;
+    color: inherit;
+    background-color: rgb(250 204 21 / 0.38);
   }
 
   .vault-find-mark-active {
-    @apply bg-warning-400/55 ring-1 ring-warning-300/40;
+    color: inherit;
+    background-color: rgb(250 204 21 / 0.62);
+    box-shadow: inset 0 -1.5px 0 0 rgb(234 179 8 / 0.85);
+  }
+
+  html:not(.dark) .vault-find-mark {
+    color: rgb(66 32 6);
+    background-color: rgb(254 240 138 / 0.72);
+  }
+
+  html:not(.dark) .vault-find-mark-active {
+    color: rgb(66 32 6);
+    background-color: rgb(253 224 71 / 0.92);
+    box-shadow: inset 0 -1.5px 0 0 rgb(202 138 4 / 0.7);
   }
 
   .profiles-panel {
