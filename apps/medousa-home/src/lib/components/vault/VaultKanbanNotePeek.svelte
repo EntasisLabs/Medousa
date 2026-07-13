@@ -1,8 +1,11 @@
 <script lang="ts">
+  import { onDestroy } from "svelte";
   import { ExternalLink, X } from "@lucide/svelte";
   import BodyPortal from "$lib/components/ui/BodyPortal.svelte";
   import { getVaultNote } from "$lib/daemon";
   import { renderMarkdownPreview } from "$lib/markdown/render";
+  import { hydrateMarkdownContainer } from "$lib/markdown/hydrateMarkdownContainer";
+  import { destroyLiquidEmbeds } from "$lib/markdown/hydrateLiquidEmbeds";
   import { vault } from "$lib/stores/vault.svelte";
   import { stripFrontmatter } from "$lib/utils/vaultFrontmatter";
 
@@ -21,6 +24,7 @@
   let path = $state<string | null>(null);
   let html = $state("");
   let panelEl = $state<HTMLDivElement | null>(null);
+  let markdownEl = $state<HTMLDivElement | null>(null);
 
   const position = $derived.by(() => {
     const width = 320;
@@ -71,7 +75,7 @@
           sourcePath: resolved,
           knownPaths: new Set(vault.notes.map((note) => note.path)),
           interactiveTasks: false,
-          resolveLocalImages: false,
+          resolveLocalImages: true,
         });
       } catch {
         if (!cancelled) missing = true;
@@ -89,6 +93,29 @@
     const el = panelEl;
     if (!el) return;
     el.focus();
+  });
+
+  $effect(() => {
+    html;
+    const root = markdownEl;
+    const notePath = path;
+    if (!root) return;
+    void hydrateMarkdownContainer(root, {
+      liquidContext: {
+        titleByPath: new Map(vault.notes.map((note) => [note.path, note.title] as const)),
+        openLinksInWeb: false,
+      },
+      localImagePath: notePath,
+      code: true,
+      mermaid: true,
+      liquid: true,
+      localImages: true,
+    });
+    return () => destroyLiquidEmbeds(root);
+  });
+
+  onDestroy(() => {
+    if (markdownEl) destroyLiquidEmbeds(markdownEl);
   });
 
   function handleKeydown(event: KeyboardEvent) {
@@ -156,7 +183,10 @@
           Note not found. Open to create it.
         </p>
       {:else}
-        <div class="markdown-content vault-markdown-preview text-sm leading-relaxed">
+        <div
+          bind:this={markdownEl}
+          class="markdown-content vault-markdown-preview text-sm leading-relaxed"
+        >
           {@html html}
         </div>
       {/if}

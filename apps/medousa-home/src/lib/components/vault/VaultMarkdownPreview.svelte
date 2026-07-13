@@ -1,9 +1,8 @@
 <script lang="ts">
-  import { tick } from "svelte";
+  import { onDestroy, tick, untrack } from "svelte";
   import { renderMarkdownPreview, type MarkdownRenderOptions } from "$lib/markdown/render";
-  import { hydrateCodeBlocks } from "$lib/markdown/codeBlocks";
-  import { hydrateLocalImages } from "$lib/markdown/hydrateLocalImages";
-  import { hydrateMermaid } from "$lib/markdown/mermaid";
+  import { hydrateMarkdownContainer } from "$lib/markdown/hydrateMarkdownContainer";
+  import { destroyLiquidEmbeds } from "$lib/markdown/hydrateLiquidEmbeds";
   import { vault } from "$lib/stores/vault.svelte";
   import { vaultFind } from "$lib/stores/vaultFind.svelte";
   import {
@@ -106,11 +105,24 @@
 
   $effect(() => {
     previewHtml;
-    vault.selectedPath;
     if (!container) return;
-    void hydrateCodeBlocks(container);
-    void hydrateMermaid(container);
-    void hydrateLocalImages(container, vault.selectedPath);
+    const titles = untrack(() => labelByPath);
+    const imagePath = untrack(() => vault.selectedPath);
+    void hydrateMarkdownContainer(container, {
+      liquidContext: {
+        titleByPath: titles,
+        openLinksInWeb: false,
+      },
+      localImagePath: imagePath,
+      code: true,
+      mermaid: true,
+      liquid: true,
+      localImages: true,
+    });
+  });
+
+  onDestroy(() => {
+    if (container) destroyLiquidEmbeds(container);
   });
 
   $effect(() => {
@@ -162,6 +174,21 @@
   }
 
   function handleClick(event: MouseEvent) {
+    const configureChart = (event.target as HTMLElement).closest(
+      ".liquid-chart-configure",
+    );
+    if (configureChart) {
+      const shell = configureChart.closest("[data-edit-chart-index]");
+      event.preventDefault();
+      if (!configureViews || content !== vault.content || !shell) return;
+      const raw = shell.getAttribute("data-edit-chart-index");
+      const index = raw == null ? NaN : Number(raw);
+      if (Number.isFinite(index)) {
+        vault.openChartBridgeEdit(index);
+      }
+      return;
+    }
+
     const configureView = (event.target as HTMLElement).closest(
       "[data-edit-view-index]",
     );
@@ -254,6 +281,20 @@
       return;
     }
     if (event.key !== "Enter" && event.key !== " ") return;
+    const configureChart = (event.target as HTMLElement).closest(
+      ".liquid-chart-configure",
+    );
+    if (configureChart) {
+      const shell = configureChart.closest("[data-edit-chart-index]");
+      event.preventDefault();
+      if (!configureViews || content !== vault.content || !shell) return;
+      const raw = shell.getAttribute("data-edit-chart-index");
+      const index = raw == null ? NaN : Number(raw);
+      if (Number.isFinite(index)) {
+        vault.openChartBridgeEdit(index);
+      }
+      return;
+    }
     const configureView = (event.target as HTMLElement).closest(
       "[data-edit-view-index]",
     );
@@ -286,7 +327,7 @@
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <article
   bind:this={container}
-  class="markdown-content vault-markdown-preview min-w-0 max-w-full flex-1 overflow-x-hidden overflow-y-auto text-sm {compact
+  class="markdown-content vault-markdown-preview min-w-0 max-w-full flex-1 overflow-x-auto overflow-y-auto text-sm {compact
     ? 'px-4 py-3'
     : 'px-5 py-4'}"
   onclick={handleClick}

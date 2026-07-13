@@ -12,6 +12,7 @@
   import { decodeSceneOps } from "$lib/liquid/surfaces/chat/sceneStream";
   import { createChatEventSink } from "$lib/liquid/surfaces/chat/chatEventSink";
   import { chatInteractions } from "$lib/liquid/surfaces/chat/chatInteractions";
+  import MarkdownContent from "$lib/components/ui/MarkdownContent.svelte";
 
   const DEMO_IMAGE =
     "data:image/svg+xml;utf8," +
@@ -221,6 +222,274 @@
 
   const monogramContext: LiquidRenderContext = { sink, openLinksInWeb: false };
 
+  // ---- Charts gallery ------------------------------------------------------
+
+  const chartBar = createNode({
+    id: "chart:bar",
+    type: "chart",
+    fillState: "ready",
+    props: {
+      type: "bar",
+      title: "Visitors",
+      description: "January - June 2024",
+      stacked: true,
+      legend: "bottom",
+      tooltip: true,
+      trend: "Trending up by 5.2% this month",
+      trendDirection: "up",
+      caption: "Showing total visitors for the last 6 months",
+      categories: ["Jan", "Feb", "Mar", "Apr", "May", "Jun"],
+      series: [
+        { key: "desktop", label: "Desktop", values: [186, 305, 237, 73, 209, 214] },
+        { key: "mobile", label: "Mobile", values: [80, 200, 120, 190, 130, 140] },
+      ],
+    },
+  });
+
+  const chartLine = createNode({
+    id: "chart:line",
+    type: "chart",
+    fillState: "ready",
+    props: {
+      type: "area",
+      title: "Area — Desktop vs Mobile",
+      description: "Smooth fill with hover dots",
+      curve: "smooth",
+      legend: "bottom",
+      categories: ["Jan", "Feb", "Mar", "Apr", "May", "Jun"],
+      series: [
+        { key: "desktop", label: "Desktop", values: [186, 305, 237, 73, 209, 214] },
+        { key: "mobile", label: "Mobile", values: [80, 200, 120, 190, 130, 140] },
+      ],
+    },
+  });
+
+  const chartDonut = createNode({
+    id: "chart:donut",
+    type: "chart",
+    fillState: "ready",
+    props: {
+      type: "donut",
+      title: "Traffic by browser",
+      description: "January - June 2024",
+      centerValue: "1,125",
+      centerLabel: "Visitors",
+      labels: "value",
+      separator: true,
+      legend: "bottom",
+      categories: ["Chrome", "Safari", "Firefox", "Edge", "Other"],
+      series: [{ key: "visitors", label: "Visitors", values: [275, 200, 187, 173, 90] }],
+    },
+  });
+
+  const chartAnnotatedBar = createNode({
+    id: "chart:annotated-bar",
+    type: "chart",
+    fillState: "ready",
+    props: {
+      type: "bar",
+      title: "Annotated bar",
+      description: "Value labels + Desktop activeKey",
+      labels: "value",
+      activeKey: "Desktop",
+      legend: "bottom",
+      categories: ["Jan", "Feb", "Mar", "Apr"],
+      series: [
+        { key: "desktop", label: "Desktop", values: [186, 305, 237, 73] },
+        { key: "mobile", label: "Mobile", values: [80, 200, 120, 190] },
+      ],
+    },
+  });
+
+  const chartPieOutside = createNode({
+    id: "chart:pie-outside",
+    type: "chart",
+    fillState: "ready",
+    props: {
+      type: "pie",
+      title: "Pie — outside labels",
+      description: "Leader lines + Safari highlight",
+      labels: "both",
+      labelPosition: "outside",
+      activeKey: "Safari",
+      legend: "bottom",
+      categories: ["Chrome", "Safari", "Firefox", "Edge"],
+      series: [{ key: "share", label: "Share", values: [275, 200, 187, 173] }],
+    },
+  });
+
+  const chartRadar = createNode({
+    id: "chart:radar",
+    type: "chart",
+    fillState: "ready",
+    props: {
+      type: "radar",
+      title: "Team coverage",
+      description: "Radar — two series",
+      legend: "bottom",
+      labels: "value",
+      categories: ["Speed", "Reliability", "Comfort", "Safety", "Efficiency"],
+      series: [
+        { key: "a", label: "Alpha", values: [80, 70, 60, 90, 75] },
+        { key: "b", label: "Beta", values: [55, 85, 70, 65, 90] },
+      ],
+    },
+  });
+
+  const chartRadialMulti = createNode({
+    id: "chart:radial-multi",
+    type: "chart",
+    fillState: "ready",
+    props: {
+      type: "radial",
+      title: "Radial — multi-arc",
+      description: "Concentric rings by category",
+      legend: "bottom",
+      labels: "category",
+      categories: ["Desktop", "Mobile", "Tablet"],
+      series: [{ key: "users", label: "Users", values: [186, 80, 120] }],
+    },
+  });
+
+  const chartRadialSingle = createNode({
+    id: "chart:radial-single",
+    type: "chart",
+    fillState: "ready",
+    props: {
+      type: "radial",
+      title: "Radial — progress",
+      description: "Single arc with center chrome",
+      centerValue: "75%",
+      centerLabel: "Goal",
+      categories: ["Progress"],
+      series: [{ key: "progress", label: "Progress", values: [75, 100] }],
+    },
+  });
+
+  const chartScatter = createNode({
+    id: "chart:scatter",
+    type: "chart",
+    fillState: "ready",
+    props: {
+      type: "scatter",
+      title: "Spend vs conversion",
+      legend: "bottom",
+      colors: ["blue", "purple"],
+      categories: ["Alpha", "Beta"],
+      series: [
+        { key: "alpha", label: "Alpha", values: [40, 55] },
+        { key: "beta", label: "Beta", values: [22, 48] },
+      ],
+      points: [
+        { x: 12, y: 40, group: "Alpha" },
+        { x: 18, y: 55, group: "Alpha" },
+        { x: 9, y: 22, group: "Beta" },
+        { x: 15, y: 48, group: "Beta" },
+      ],
+    },
+  });
+
+  const chartCombo = createNode({
+    id: "chart:combo",
+    type: "chart",
+    fillState: "ready",
+    props: {
+      type: "combo",
+      title: "Revenue and growth",
+      legend: "bottom",
+      seriesMarks: ["bar", "line"],
+      categories: ["Jan", "Feb", "Mar"],
+      series: [
+        { key: "revenue", label: "Revenue", values: [120, 148, 132] },
+        { key: "growth", label: "Growth %", values: [4, 7, 5] },
+      ],
+    },
+  });
+
+  const chartHeatmap = createNode({
+    id: "chart:heatmap",
+    type: "chart",
+    fillState: "ready",
+    props: {
+      type: "heatmap",
+      title: "Activity by hour",
+      colors: ["blue"],
+      categories: ["Mon", "Tue", "Wed"],
+      series: [
+        { key: "morning", label: "Morning", values: [2, 5, 3] },
+        { key: "afternoon", label: "Afternoon", values: [8, 6, 9] },
+      ],
+      matrix: {
+        rows: ["Morning", "Afternoon"],
+        cols: ["Mon", "Tue", "Wed"],
+        values: [
+          [2, 5, 3],
+          [8, 6, 9],
+        ],
+      },
+    },
+  });
+
+  const chartMarkdown = [
+    "```chart",
+    "type: line",
+    "title: Line from markdown fence",
+    "description: Hydrated via LiquidMdHost",
+    "curve: smooth",
+    "legend: bottom",
+    "",
+    "| Month | Desktop | Mobile |",
+    "| ----- | ------- | ------ |",
+    "| Jan   | 186     | 80     |",
+    "| Feb   | 305     | 200    |",
+    "| Mar   | 237     | 120    |",
+    "| Apr   | 73      | 190    |",
+    "| May   | 209     | 130    |",
+    "| Jun   | 214     | 140    |",
+    "```",
+  ].join("\n");
+
+  const reportMarkdown = [
+    "```report",
+    "title: Q2 growth review",
+    "subtitle: Dev gallery · report fence",
+    "columns: 2",
+    "",
+    "Prose stays full-bleed; charts below sit in a two-column figure grid.",
+    "",
+    "```chart",
+    "type: combo",
+    "title: Revenue vs growth",
+    "legend: bottom",
+    "seriesMarks: bar, line",
+    "",
+    "| Month | Revenue | Growth % |",
+    "| ----- | ------- | -------- |",
+    "| Jan   | 120     | 4        |",
+    "| Feb   | 148     | 7        |",
+    "| Mar   | 132     | 5        |",
+    "```",
+    "",
+    "```chart",
+    "type: scatter",
+    "title: Spend vs conversion",
+    "legend: bottom",
+    "colors: blue, purple",
+    "",
+    "| X | Y | Cohort |",
+    "| - | - | ------ |",
+    "| 12 | 40 | Alpha |",
+    "| 18 | 55 | Alpha |",
+    "| 9 | 22 | Beta |",
+    "| 15 | 48 | Beta |",
+    "```",
+    "",
+    "## Deep dive",
+    "",
+    "More narrative after the figures.",
+    "```",
+  ].join("\n");
+
   // ---- Stage 3: streamed structured turn (daemon wire contract) ------------
   // Each batch is the *opaque JSON* a `ui_scene` stream event would carry. We
   // run it through the real decoder + reducer — the exact client pipeline — so
@@ -367,6 +636,27 @@
     <SceneRenderer node={monogram} context={monogramContext} />
   </section>
 
+  <h2 class="harness-subhead">Charts</h2>
+  <p class="harness-note">
+    bar · area · donut · annotated · pie leaders · radar · radial · scatter · combo · heatmap, plus
+    <code>```chart</code> / <code>```report</code> fences.
+  </p>
+  <section class="harness-stage harness-charts">
+    <SceneRenderer node={chartBar} context={monogramContext} />
+    <SceneRenderer node={chartLine} context={monogramContext} />
+    <SceneRenderer node={chartDonut} context={monogramContext} />
+    <SceneRenderer node={chartAnnotatedBar} context={monogramContext} />
+    <SceneRenderer node={chartPieOutside} context={monogramContext} />
+    <SceneRenderer node={chartRadar} context={monogramContext} />
+    <SceneRenderer node={chartRadialMulti} context={monogramContext} />
+    <SceneRenderer node={chartRadialSingle} context={monogramContext} />
+    <SceneRenderer node={chartScatter} context={monogramContext} />
+    <SceneRenderer node={chartCombo} context={monogramContext} />
+    <SceneRenderer node={chartHeatmap} context={monogramContext} />
+    <MarkdownContent content={chartMarkdown} />
+    <MarkdownContent content={reportMarkdown} />
+  </section>
+
   <h2 class="harness-subhead">Streamed structured turn (daemon wire)</h2>
   <p class="harness-note">
     each step is the opaque JSON a <code>ui_scene</code> event carries — decoded and reduced
@@ -483,6 +773,12 @@
     border-radius: 1rem;
     border: 1px solid color-mix(in srgb, var(--color-surface-500) 30%, transparent);
     background: color-mix(in srgb, var(--color-surface-900) 45%, transparent);
+  }
+
+  .harness-charts {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
   }
 
   .harness-log {

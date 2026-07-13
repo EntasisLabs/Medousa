@@ -61,10 +61,12 @@ This client can render UI (supports_ui_artifacts) — prefer enriched markdown f
   - ```decision … ``` for choose / tradeoffs (optional title/subtitle/factors/recommendation; options separated by --- with label/pros/cons/score — pros/cons pipe-separated)
   - ```brief … ``` for research / explain with sources (optional title/subtitle/tone; sections separated by --- with heading/body; sources after === as title/url/quote blocks)
   - ```dashboard … ``` for monitor / at-a-glance / how-is-X-doing (optional title/subtitle/columns; tiles separated by --- with label/value required; delta/tone/emoji/hint/unit optional; per-tile feed: id + optional field: summary|payload.path for live tail-from-chat — no canvas subscribe required)
+  - ```chart … ``` for plots (type: bar|line|area|pie|donut|radar|radial|scatter|combo|heatmap; optional title/description/legend/labels/labelPosition/activeKey/curve/layout/stacked/centerValue/centerLabel/seriesMarks/width/height/surface; then a GFM table — category series, or scatter X|Y|group, or heatmap corner+cols / row labels + cells; need ≥2 data rows, radar ≥3 axes, scatter ≥2 points; combo: seriesMarks bar|line → dual Y left bars / right lines)
+  - ```report … ``` for narrative + nested chart figures (optional title/subtitle/columns 1|2|3; body is markdown with nested ```chart fences — prose full-bleed, charts in a figure grid; prefer over dashboard when the answer is a written review with plots)
   - {{icon:sparkles}} inline Lucide icons (allowlisted names only)
 - After tools: CURATE into the answer — do not dump raw tool JSON. Tool lineage already paints as a quiet footnote.
   - Web search → ```cite``` (title + url + short quote) or a markdown link
-  - SQL / tabular dumps → normal GFM tables (client paints soft cards)
+  - SQL / tabular dumps → ```chart``` when a plot communicates better; otherwise normal GFM tables (client paints soft cards)
   - Side-by-side judgment → ```compare``` (not a plain table)
   - Trip / phased narrative → ```plan``` (not a dense bullet schedule)
   - History / chronology → ```timeline``` (not a bullet list)
@@ -72,6 +74,7 @@ This client can render UI (supports_ui_artifacts) — prefer enriched markdown f
   - Pick with tradeoffs → ```decision``` (not a plain pros/cons dump)
   - Research / explain with sources → ```brief``` (not a Wikipedia wall)
   - Monitor / pulse / at-a-glance → ```dashboard``` (not a shortlist or compare matrix)
+  - Narrative review with figures → ```report``` (not a dashboard of KPI tiles; not bare charts without framing prose)
   - Where it stands / facets as tappable cards → ```carousel``` with --- items + summary/chips/point: (not a flat bullet list)
   - Images → ```media``` with https src
   - Diagrams / flows → ```mermaid``` fences (already hydrate)
@@ -407,6 +410,10 @@ mod tests {
         assert!(ui.contains("```brief"));
         assert!(ui.contains("```dashboard"));
         assert!(ui.contains("feed:"));
+        assert!(ui.contains("```chart"));
+        assert!(ui.contains("```report"));
+        assert!(ui.contains("scatter"));
+        assert!(ui.contains("dual Y"));
         assert!(ui.contains("```mermaid"));
         assert!(ui.contains("CURATE"));
         assert!(ui.contains("cognition_ui_build"));

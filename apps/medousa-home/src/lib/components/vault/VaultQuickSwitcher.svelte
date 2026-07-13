@@ -116,7 +116,7 @@
             <button
               type="button"
               class="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm {index === highlightIndex
-                ? 'bg-primary-500/15 text-primary-100'
+                ? 'bg-primary-500/15 text-surface-50'
                 : 'text-surface-100 hover:bg-surface-800/80'}"
               onclick={() => void openNote(note.path)}
             >

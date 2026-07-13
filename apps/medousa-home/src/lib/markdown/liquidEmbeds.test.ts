@@ -24,6 +24,49 @@ describe("preprocessLiquidEmbeds", () => {
     expect(props?.subtitle).toBe("Flagship");
   });
 
+  it("parses YAML block-scalar card bodies (clarification style)", () => {
+    const src = [
+      "```card",
+      "title: 🤖 /dev?",
+      "body: |-",
+      "Is that a developer workspace you're reaching for — or did something slip off the keyboard?",
+      "I can open a dev surface, pull up canvas debug, or we can keep sitting in the shadow trio. Your call.",
+      "emoji: 🧰",
+      "```",
+    ].join("\n");
+    const out = preprocessLiquidEmbeds(src);
+    expect(out).toContain('data-liquid-embed="card"');
+    expect(out).not.toContain("|-");
+    const match = out.match(/data-liquid-props="([^"]+)"/);
+    const props = decodeLiquidProps<{
+      title: string;
+      body?: string;
+      emoji?: string;
+    }>(match![1]);
+    expect(props?.title).toBe("🤖 /dev?");
+    expect(props?.emoji).toBe("🧰");
+    expect(props?.body).toContain("developer workspace");
+    expect(props?.body).toContain("shadow trio");
+    expect(props?.body).not.toContain("|-");
+  });
+
+  it("parses callout body block scalars the same way", () => {
+    const src = [
+      "```callout",
+      "tone: note",
+      "title: Check",
+      "body: |",
+      "Line one of the note.",
+      "Line two of the note.",
+      "```",
+    ].join("\n");
+    const out = preprocessLiquidEmbeds(src);
+    const match = out.match(/data-liquid-props="([^"]+)"/);
+    const props = decodeLiquidProps<{ body: string; title?: string }>(match![1]);
+    expect(props?.title).toBe("Check");
+    expect(props?.body).toBe("Line one of the note.\nLine two of the note.");
+  });
+
   it("turns a carousel fence into items payload", () => {
     const src = [
       "```carousel",
@@ -1009,6 +1052,371 @@ describe("preprocessLiquidEmbeds", () => {
       "```",
     ].join("\n");
     expect(preprocessLiquidEmbeds(src)).toContain("```dashboard");
+  });
+
+  it("turns a chart fence into typed series payload", () => {
+    const src = [
+      "```chart",
+      "type: bar",
+      "title: Visitors",
+      "description: January - June 2024",
+      "stacked: true",
+      "legend: bottom",
+      "tooltip: true",
+      "labels: none",
+      "trend: Trending up by 5.2% this month",
+      "trendDirection: up",
+      "caption: Showing total visitors for the last 6 months",
+      "",
+      "| Month | Desktop | Mobile |",
+      "| ----- | ------- | ------ |",
+      "| Jan   | 186     | 80     |",
+      "| Feb   | 305     | 200    |",
+      "| Mar   | 237     | 120    |",
+      "```",
+    ].join("\n");
+    const out = preprocessLiquidEmbeds(src);
+    expect(out).toContain('data-liquid-embed="chart"');
+    const match = out.match(/data-liquid-props="([^"]+)"/);
+    const props = decodeLiquidProps<{
+      type: string;
+      title?: string;
+      description?: string;
+      stacked?: boolean;
+      legend?: string | boolean;
+      tooltip?: boolean;
+      labels?: string;
+      trend?: string;
+      trendDirection?: string;
+      caption?: string;
+      categories: string[];
+      series: { key: string; label: string; values: number[] }[];
+    }>(match![1]);
+    expect(props?.type).toBe("bar");
+    expect(props?.title).toBe("Visitors");
+    expect(props?.description).toBe("January - June 2024");
+    expect(props?.stacked).toBe(true);
+    expect(props?.legend).toBe("bottom");
+    expect(props?.tooltip).toBe(true);
+    expect(props?.labels).toBe("none");
+    expect(props?.trendDirection).toBe("up");
+    expect(props?.categories).toEqual(["Jan", "Feb", "Mar"]);
+    expect(props?.series).toHaveLength(2);
+    expect(props?.series[0].label).toBe("Desktop");
+    expect(props?.series[0].values).toEqual([186, 305, 237]);
+    expect(props?.series[1].label).toBe("Mobile");
+    expect(props?.series[1].values).toEqual([80, 200, 120]);
+  });
+
+  it("parses donut charts with center chrome", () => {
+    const src = [
+      "```chart",
+      "type: donut",
+      "title: Traffic by browser",
+      "centerValue: 1,125",
+      "centerLabel: Visitors",
+      "labels: value",
+      "separator: true",
+      "",
+      "| Browser | Visitors |",
+      "| ------- | -------- |",
+      "| Chrome  | 275      |",
+      "| Safari  | 200      |",
+      "| Firefox | 187      |",
+      "```",
+    ].join("\n");
+    const out = preprocessLiquidEmbeds(src);
+    expect(out).toContain('data-liquid-embed="chart"');
+    const match = out.match(/data-liquid-props="([^"]+)"/);
+    const props = decodeLiquidProps<{
+      type: string;
+      centerValue?: string;
+      centerLabel?: string;
+      labels?: string;
+      separator?: boolean;
+      categories: string[];
+      series: { values: number[] }[];
+    }>(match![1]);
+    expect(props?.type).toBe("donut");
+    expect(props?.centerValue).toBe("1,125");
+    expect(props?.centerLabel).toBe("Visitors");
+    expect(props?.labels).toBe("value");
+    expect(props?.separator).toBe(true);
+    expect(props?.categories).toEqual(["Chrome", "Safari", "Firefox"]);
+    expect(props?.series[0].values).toEqual([275, 200, 187]);
+  });
+
+  it("parses chart width and surface wash", () => {
+    const src = [
+      "```chart",
+      "type: radar",
+      "title: Coverage",
+      "width: sm",
+      "surface: muted",
+      "height: lg",
+      "",
+      "| Axis | Alpha |",
+      "| ---- | ----- |",
+      "| A    | 80    |",
+      "| B    | 70    |",
+      "| C    | 60    |",
+      "```",
+    ].join("\n");
+    const out = preprocessLiquidEmbeds(src);
+    const match = out.match(/data-liquid-props="([^"]+)"/);
+    const props = decodeLiquidProps<{
+      type: string;
+      width?: string;
+      height?: string;
+      surface?: string;
+    }>(match![1]);
+    expect(props?.type).toBe("radar");
+    expect(props?.width).toBe("sm");
+    expect(props?.height).toBe("lg");
+    expect(props?.surface).toBe("muted");
+  });
+
+  it("accepts reserved radar type without failing parse", () => {
+    const src = [
+      "```chart",
+      "type: radar",
+      "title: Coverage",
+      "",
+      "| Axis | Score |",
+      "| ---- | ----- |",
+      "| A    | 80    |",
+      "| B    | 60    |",
+      "| C    | 70    |",
+      "```",
+    ].join("\n");
+    const out = preprocessLiquidEmbeds(src);
+    expect(out).toContain('data-liquid-embed="chart"');
+    const match = out.match(/data-liquid-props="([^"]+)"/);
+    const props = decodeLiquidProps<{ type: string }>(match![1]);
+    expect(props?.type).toBe("radar");
+  });
+
+  it("accepts radial type with hydrate props", () => {
+    const src = [
+      "```chart",
+      "type: radial",
+      "title: Progress",
+      "centerValue: 75%",
+      "centerLabel: Goal",
+      "",
+      "| Metric | Value |",
+      "| ------ | ----- |",
+      "| Done   | 75    |",
+      "| Target | 100   |",
+      "```",
+    ].join("\n");
+    const out = preprocessLiquidEmbeds(src);
+    expect(out).toContain('data-liquid-embed="chart"');
+    const match = out.match(/data-liquid-props="([^"]+)"/);
+    const props = decodeLiquidProps<{
+      type: string;
+      centerValue?: string;
+      centerLabel?: string;
+      categories: string[];
+    }>(match![1]);
+    expect(props?.type).toBe("radial");
+    expect(props?.centerValue).toBe("75%");
+    expect(props?.centerLabel).toBe("Goal");
+    expect(props?.categories).toEqual(["Done", "Target"]);
+  });
+
+  it("rejects chart with unknown type", () => {
+    const src = [
+      "```chart",
+      "type: waterfall",
+      "",
+      "| Month | Value |",
+      "| ----- | ----- |",
+      "| Jan   | 10    |",
+      "| Feb   | 20    |",
+      "```",
+    ].join("\n");
+    expect(preprocessLiquidEmbeds(src)).toContain("```chart");
+  });
+
+  it("rejects chart with fewer than two data rows", () => {
+    const src = [
+      "```chart",
+      "type: line",
+      "",
+      "| Month | Value |",
+      "| ----- | ----- |",
+      "| Jan   | 10    |",
+      "```",
+    ].join("\n");
+    expect(preprocessLiquidEmbeds(src)).toContain("```chart");
+  });
+
+  it("parses scatter charts with optional group column", () => {
+    const src = [
+      "```chart",
+      "type: scatter",
+      "title: Spend vs conversion",
+      "legend: bottom",
+      "colors: blue, purple",
+      "",
+      "| X | Y | Cohort |",
+      "| - | - | ------ |",
+      "| 12 | 40 | Alpha |",
+      "| 18 | 55 | Alpha |",
+      "| 9 | 22 | Beta |",
+      "```",
+    ].join("\n");
+    const out = preprocessLiquidEmbeds(src);
+    expect(out).toContain('data-liquid-embed="chart"');
+    const match = out.match(/data-liquid-props="([^"]+)"/);
+    const props = decodeLiquidProps<{
+      type: string;
+      points?: { x: number; y: number; group?: string }[];
+      series: { label: string }[];
+    }>(match![1]);
+    expect(props?.type).toBe("scatter");
+    expect(props?.points).toHaveLength(3);
+    expect(props?.points?.[0]).toEqual({ x: 12, y: 40, group: "Alpha" });
+    expect(props?.series.map((s) => s.label)).toEqual(["Alpha", "Beta"]);
+  });
+
+  it("rejects scatter with fewer than two points", () => {
+    const src = [
+      "```chart",
+      "type: scatter",
+      "",
+      "| X | Y |",
+      "| - | - |",
+      "| 12 | 40 |",
+      "```",
+    ].join("\n");
+    expect(preprocessLiquidEmbeds(src)).toContain("```chart");
+  });
+
+  it("parses combo charts with seriesMarks", () => {
+    const src = [
+      "```chart",
+      "type: combo",
+      "title: Revenue and growth",
+      "seriesMarks: bar, line",
+      "",
+      "| Month | Revenue | Growth % |",
+      "| ----- | ------- | -------- |",
+      "| Jan   | 120     | 4        |",
+      "| Feb   | 148     | 7        |",
+      "```",
+    ].join("\n");
+    const out = preprocessLiquidEmbeds(src);
+    const match = out.match(/data-liquid-props="([^"]+)"/);
+    const props = decodeLiquidProps<{
+      type: string;
+      seriesMarks?: string[];
+      categories: string[];
+      series: { label: string; values: number[] }[];
+    }>(match![1]);
+    expect(props?.type).toBe("combo");
+    expect(props?.seriesMarks).toEqual(["bar", "line"]);
+    expect(props?.categories).toEqual(["Jan", "Feb"]);
+    expect(props?.series[0].values).toEqual([120, 148]);
+  });
+
+  it("parses heatmap matrix tables", () => {
+    const src = [
+      "```chart",
+      "type: heatmap",
+      "title: Activity by hour",
+      "colors: blue",
+      "",
+      "|           | Mon | Tue | Wed |",
+      "| --------- | --- | --- | --- |",
+      "| Morning   | 2   | 5   | 3   |",
+      "| Afternoon | 8   | 6   | 9   |",
+      "```",
+    ].join("\n");
+    const out = preprocessLiquidEmbeds(src);
+    const match = out.match(/data-liquid-props="([^"]+)"/);
+    const props = decodeLiquidProps<{
+      type: string;
+      matrix?: { rows: string[]; cols: string[]; values: number[][] };
+    }>(match![1]);
+    expect(props?.type).toBe("heatmap");
+    expect(props?.matrix?.rows).toEqual(["Morning", "Afternoon"]);
+    expect(props?.matrix?.cols).toEqual(["Mon", "Tue", "Wed"]);
+    expect(props?.matrix?.values).toEqual([
+      [2, 5, 3],
+      [8, 6, 9],
+    ]);
+  });
+
+  it("rejects heatmap with non-numeric cells", () => {
+    const src = [
+      "```chart",
+      "type: heatmap",
+      "",
+      "|     | Mon |",
+      "| --- | --- |",
+      "| A   | x   |",
+      "```",
+    ].join("\n");
+    expect(preprocessLiquidEmbeds(src)).toContain("```chart");
+  });
+
+  it("parses report with nested chart placeholders", () => {
+    const src = [
+      "```report",
+      "title: Q2 growth review",
+      "subtitle: North America",
+      "columns: 2",
+      "",
+      "Opening prose.",
+      "",
+      "```chart",
+      "type: bar",
+      "title: Visitors",
+      "",
+      "| Month | Desktop |",
+      "| ----- | ------- |",
+      "| Jan   | 186     |",
+      "| Feb   | 305     |",
+      "```",
+      "",
+      "## Deep dive",
+      "",
+      "More prose.",
+      "```",
+    ].join("\n");
+    const out = preprocessLiquidEmbeds(src);
+    expect(out).toContain('data-liquid-embed="report"');
+    expect(out).not.toContain("```report");
+    expect(out).not.toContain("```chart");
+    const match = out.match(/data-liquid-embed="report"[^>]*data-liquid-props="([^"]+)"/);
+    const props = decodeLiquidProps<{
+      title?: string;
+      subtitle?: string;
+      columns?: string;
+      body: string;
+    }>(match![1]);
+    expect(props?.title).toBe("Q2 growth review");
+    expect(props?.subtitle).toBe("North America");
+    expect(props?.columns).toBe("2");
+    expect(props?.body).toContain("Opening prose.");
+    expect(props?.body).toContain('data-liquid-embed="chart"');
+    expect(props?.body).toContain("## Deep dive");
+  });
+
+  it("defaults report columns to 2", () => {
+    const src = [
+      "```report",
+      "title: Solo",
+      "",
+      "Just prose.",
+      "```",
+    ].join("\n");
+    const out = preprocessLiquidEmbeds(src);
+    const match = out.match(/data-liquid-props="([^"]+)"/);
+    const props = decodeLiquidProps<{ columns?: string }>(match![1]);
+    expect(props?.columns).toBe("2");
   });
 });
 

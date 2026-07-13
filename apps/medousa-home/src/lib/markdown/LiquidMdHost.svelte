@@ -21,6 +21,8 @@
   import Decision from "$lib/liquid/archetypes/organisms/decision/Decision.svelte";
   import Brief from "$lib/liquid/archetypes/organisms/brief/Brief.svelte";
   import Dashboard from "$lib/liquid/archetypes/organisms/dashboard/Dashboard.svelte";
+  import Chart from "$lib/liquid/archetypes/organisms/chart/Chart.svelte";
+  import Report from "$lib/liquid/archetypes/organisms/report/Report.svelte";
   import Section from "$lib/liquid/archetypes/molecules/section/Section.svelte";
   import ChipGroup from "$lib/liquid/archetypes/molecules/chip_group/ChipGroup.svelte";
   import Media from "$lib/liquid/archetypes/atoms/media/Media.svelte";
@@ -33,6 +35,8 @@
     LiquidCiteProps,
     LiquidCompareProps,
     LiquidDashboardProps,
+    LiquidChartProps,
+    LiquidReportProps,
     LiquidDecisionProps,
     LiquidEmbedKind,
     LiquidMediaProps,
@@ -77,9 +81,15 @@
     kind: LiquidEmbedKind | "icon";
     payload: unknown;
     context?: LiquidRenderContext;
+    /** Enter animation (default true). Skip on remounts with unchanged placeholders. */
+    animate?: boolean;
   }
 
-  let { kind, payload, context = {} }: Props = $props();
+  let { kind, payload, context = {}, animate = true }: Props = $props();
+
+  const hostClass = $derived(
+    animate ? "liquid-md-host liquid-md-enter" : "liquid-md-host",
+  );
 
   $effect(() => {
     setLiquidContext(context);
@@ -402,6 +412,66 @@
     });
   });
 
+  const report = $derived.by(() => {
+    if (kind !== "report") return null;
+    const props = payload as LiquidReportProps;
+    if (!props?.body && !props?.title) return null;
+    return createNode({
+      id: "md-report",
+      type: "report",
+      props: {
+        ...(props.title ? { title: props.title } : {}),
+        ...(props.subtitle ? { subtitle: props.subtitle } : {}),
+        ...(props.columns ? { columns: props.columns } : {}),
+        body: props.body ?? "",
+      },
+      fillState: "ready",
+    });
+  });
+
+  const chart = $derived.by(() => {
+    if (kind !== "chart") return null;
+    const props = payload as LiquidChartProps;
+    const hasCategorySeries = Boolean(props?.categories?.length && props?.series?.length);
+    const hasPoints = Boolean(props?.points?.length);
+    const hasMatrix = Boolean(props?.matrix?.rows?.length && props?.matrix?.cols?.length);
+    if (!hasCategorySeries && !hasPoints && !hasMatrix) return null;
+    return createNode({
+      id: "md-chart",
+      type: "chart",
+      props: {
+        type: props.type,
+        categories: props.categories ?? [],
+        series: props.series ?? [],
+        ...(props.points?.length ? { points: props.points } : {}),
+        ...(props.matrix ? { matrix: props.matrix } : {}),
+        ...(props.seriesMarks?.length ? { seriesMarks: props.seriesMarks } : {}),
+        ...(props.title ? { title: props.title } : {}),
+        ...(props.description ? { description: props.description } : {}),
+        ...(props.layout ? { layout: props.layout } : {}),
+        ...(props.stacked != null ? { stacked: props.stacked } : {}),
+        ...(props.curve ? { curve: props.curve } : {}),
+        ...(props.separator != null ? { separator: props.separator } : {}),
+        ...(props.centerLabel ? { centerLabel: props.centerLabel } : {}),
+        ...(props.centerValue ? { centerValue: props.centerValue } : {}),
+        ...(props.trend ? { trend: props.trend } : {}),
+        ...(props.trendDirection ? { trendDirection: props.trendDirection } : {}),
+        ...(props.caption ? { caption: props.caption } : {}),
+        ...(props.labels ? { labels: props.labels } : {}),
+        ...(props.labelPosition ? { labelPosition: props.labelPosition } : {}),
+        ...(props.tooltip != null ? { tooltip: props.tooltip } : {}),
+        ...(props.legend != null ? { legend: props.legend } : {}),
+        ...(props.interactive != null ? { interactive: props.interactive } : {}),
+        ...(props.activeKey ? { activeKey: props.activeKey } : {}),
+        ...(props.colors?.length ? { colors: props.colors } : {}),
+        ...(props.width ? { width: props.width } : {}),
+        ...(props.height ? { height: props.height } : {}),
+        ...(props.surface ? { surface: props.surface } : {}),
+      },
+      fillState: "ready",
+    });
+  });
+
   const IconComp = $derived.by(() => {
     if (kind !== "icon") return null;
     const id = typeof payload === "string" ? payload : "";
@@ -410,67 +480,75 @@
 </script>
 
 {#if kind === "card" && card}
-  <div class="liquid-md-host liquid-md-host-card liquid-md-enter">
+  <div class="{hostClass} liquid-md-host-card">
     <Card node={card} />
   </div>
 {:else if kind === "carousel" && carousel}
-  <div class="liquid-md-host liquid-md-host-carousel liquid-md-enter">
+  <div class="{hostClass} liquid-md-host-carousel">
     <Carousel node={carousel} />
   </div>
 {:else if kind === "actions" && actions.length}
-  <div class="liquid-md-host liquid-md-host-actions liquid-md-enter">
+  <div class="{hostClass} liquid-md-host-actions">
     <p class="liquid-md-actions-whisper">Suggested</p>
     {#each actions as action (action.id)}
       <ActionRow node={action} />
     {/each}
   </div>
 {:else if kind === "callout" && callout}
-  <div class="liquid-md-host liquid-md-host-callout liquid-md-enter">
+  <div class="{hostClass} liquid-md-host-callout">
     <Callout node={callout} />
   </div>
 {:else if kind === "section" && section}
-  <div class="liquid-md-host liquid-md-host-section liquid-md-enter">
+  <div class="{hostClass} liquid-md-host-section">
     <Section node={section} />
   </div>
 {:else if kind === "chips" && chips}
-  <div class="liquid-md-host liquid-md-host-chips liquid-md-enter">
+  <div class="{hostClass} liquid-md-host-chips">
     <ChipGroup node={chips} />
   </div>
 {:else if kind === "media" && media}
-  <div class="liquid-md-host liquid-md-host-media liquid-md-enter">
+  <div class="{hostClass} liquid-md-host-media">
     <Media node={media} />
   </div>
 {:else if kind === "cite" && cite}
-  <div class="liquid-md-host liquid-md-host-cite liquid-md-enter">
+  <div class="{hostClass} liquid-md-host-cite">
     <Cite node={cite} />
   </div>
 {:else if kind === "compare" && compare}
-  <div class="liquid-md-host liquid-md-host-compare liquid-md-enter">
+  <div class="{hostClass} liquid-md-host-compare">
     <Compare node={compare} />
   </div>
 {:else if kind === "plan" && plan}
-  <div class="liquid-md-host liquid-md-host-plan liquid-md-enter">
+  <div class="{hostClass} liquid-md-host-plan">
     <Plan node={plan} />
   </div>
 {:else if kind === "timeline" && timeline}
-  <div class="liquid-md-host liquid-md-host-timeline liquid-md-enter">
+  <div class="{hostClass} liquid-md-host-timeline">
     <Timeline node={timeline} />
   </div>
 {:else if kind === "shortlist" && shortlist}
-  <div class="liquid-md-host liquid-md-host-shortlist liquid-md-enter">
+  <div class="{hostClass} liquid-md-host-shortlist">
     <Shortlist node={shortlist} />
   </div>
 {:else if kind === "decision" && decision}
-  <div class="liquid-md-host liquid-md-host-decision liquid-md-enter">
+  <div class="{hostClass} liquid-md-host-decision">
     <Decision node={decision} />
   </div>
 {:else if kind === "brief" && brief}
-  <div class="liquid-md-host liquid-md-host-brief liquid-md-enter">
+  <div class="{hostClass} liquid-md-host-brief">
     <Brief node={brief} />
   </div>
 {:else if kind === "dashboard" && dashboard}
-  <div class="liquid-md-host liquid-md-host-dashboard liquid-md-enter">
+  <div class="{hostClass} liquid-md-host-dashboard">
     <Dashboard node={dashboard} />
+  </div>
+{:else if kind === "report" && report}
+  <div class="{hostClass} liquid-md-host-report">
+    <Report node={report} />
+  </div>
+{:else if kind === "chart" && chart}
+  <div class="{hostClass} liquid-md-host-chart">
+    <Chart node={chart} />
   </div>
 {:else if kind === "icon" && IconComp}
   <span class="liquid-md-host-icon">
@@ -480,7 +558,6 @@
 
 <style>
   .liquid-md-host {
-    margin: 1.15rem 0;
     min-width: 0;
   }
 

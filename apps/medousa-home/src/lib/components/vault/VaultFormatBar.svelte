@@ -28,6 +28,8 @@
     /** Subtle float-note control at the trailing end of the bar. */
     showFloat?: boolean;
     onFloat?: () => void;
+    surface?: "write" | "source";
+    onToggleSurface?: () => void;
     onFormat: (action: MarkdownFormatAction) => void;
     onColor: (color: MarkdownColorToken) => void;
   }
@@ -37,6 +39,8 @@
     compact: compactProp,
     showFloat = false,
     onFloat,
+    surface = "write",
+    onToggleSurface,
     onFormat,
     onColor,
   }: Props = $props();
@@ -219,6 +223,20 @@
 
       {#if !compact}
         <div class="ml-auto flex items-center gap-2">
+          {#if onToggleSurface}
+            <button
+              type="button"
+              class="vault-format-btn vault-format-btn--surface text-[11px] font-medium tracking-wide"
+              class:vault-format-btn--active={surface === "source"}
+              title={surface === "write" ? "Switch to source (mono)" : "Switch to write (prose)"}
+              aria-label={surface === "write" ? "Switch to source" : "Switch to write"}
+              aria-pressed={surface === "source"}
+              {disabled}
+              onclick={() => onToggleSurface()}
+            >
+              {surface === "write" ? "Source" : "Write"}
+            </button>
+          {/if}
           <p class="hidden text-[11px] text-surface-500 sm:block">
             Select text to format · type <kbd class="vault-kbd">/</kbd> for blocks
           </p>
@@ -235,7 +253,22 @@
             </button>
           {/if}
         </div>
-      {:else if showFloat && onFloat}
+      {:else}
+        {#if onToggleSurface}
+          <button
+            type="button"
+            class="vault-format-btn vault-format-btn--surface text-[11px] font-medium tracking-wide"
+            class:vault-format-btn--active={surface === "source"}
+            title={surface === "write" ? "Switch to source (mono)" : "Switch to write (prose)"}
+            aria-label={surface === "write" ? "Switch to source" : "Switch to write"}
+            aria-pressed={surface === "source"}
+            {disabled}
+            onclick={() => onToggleSurface()}
+          >
+            {surface === "write" ? "Source" : "Write"}
+          </button>
+        {/if}
+        {#if showFloat && onFloat}
         <button
           type="button"
           class="vault-format-btn vault-format-btn--float ml-auto"
@@ -246,6 +279,7 @@
         >
           <ExternalLink size={14} strokeWidth={1.75} />
         </button>
+        {/if}
       {/if}
     </div>
   {/if}

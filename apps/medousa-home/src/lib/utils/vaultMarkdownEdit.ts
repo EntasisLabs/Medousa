@@ -4,6 +4,13 @@ import {
   SLASH_TOC_TEMPLATE,
 } from "$lib/utils/vaultTemplates";
 import {
+  LIQUID_CALLOUT_TEMPLATE,
+  LIQUID_CARD_TEMPLATE,
+  LIQUID_CHART_TEMPLATE,
+  LIQUID_DASHBOARD_TEMPLATE,
+  LIQUID_REPORT_TEMPLATE,
+} from "$lib/utils/liquidFenceTemplates";
+import {
   MARKDOWN_COLOR_IDS,
   colorMarkupToken,
   isMarkdownColorId,
@@ -41,6 +48,11 @@ export type SlashBlockId =
   | "divider"
   | "quote"
   | "callout"
+  | "liquid_callout"
+  | "liquid_card"
+  | "liquid_chart"
+  | "liquid_dashboard"
+  | "liquid_report"
   | "embed"
   | "view"
   | "board"
@@ -341,6 +353,11 @@ export function insertSlashBlock(
     divider: "---\n",
     quote: "> ",
     callout: "",
+    liquid_callout: LIQUID_CALLOUT_TEMPLATE,
+    liquid_card: LIQUID_CARD_TEMPLATE,
+    liquid_chart: LIQUID_CHART_TEMPLATE,
+    liquid_dashboard: LIQUID_DASHBOARD_TEMPLATE,
+    liquid_report: LIQUID_REPORT_TEMPLATE,
     embed: "",
     view: "",
     board: SLASH_BOARD_TEMPLATE,

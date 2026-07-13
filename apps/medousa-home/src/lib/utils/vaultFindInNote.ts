@@ -179,7 +179,12 @@ function collectTextSegments(root: HTMLElement): TextSegment[] {
     acceptNode(node) {
       const parent = node.parentElement;
       if (!parent) return NodeFilter.FILTER_REJECT;
-      if (parent.closest("code, pre, script, style, textarea")) {
+      // Skip liquid mounts / chart SVG so find indices stay aligned with editor source.
+      if (
+        parent.closest(
+          "code, pre, script, style, textarea, .liquid-md-host, [data-liquid-embed], .liquid-chart svg",
+        )
+      ) {
         return NodeFilter.FILTER_REJECT;
       }
       return node.textContent?.length ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP;

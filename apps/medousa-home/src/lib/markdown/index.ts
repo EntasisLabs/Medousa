@@ -14,3 +14,9 @@ export {
   LIQUID_ICON_ALLOWLIST,
 } from "./liquidEmbeds";
 export { hydrateLiquidEmbeds, destroyLiquidEmbeds } from "./hydrateLiquidEmbeds";
+export {
+  hydrateMarkdownContainer,
+  liquidPlaceholderFingerprint,
+} from "./hydrateMarkdownContainer";
+export type { HydrateMarkdownContainerOptions } from "./hydrateMarkdownContainer";
+export type { HydrateLiquidOptions } from "./hydrateLiquidEmbeds";

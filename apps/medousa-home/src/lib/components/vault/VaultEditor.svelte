@@ -38,9 +38,10 @@
   import { vaultFind } from "$lib/stores/vaultFind.svelte";
   import { vaultQuickSwitcher } from "$lib/stores/vaultQuickSwitcher.svelte";
   import { stripFrontmatter } from "$lib/utils/vaultFrontmatter";
-  import { exportVaultNotePdf } from "$lib/utils/vaultPdfExport";
   import { writeVaultStickyPath } from "$lib/utils/vaultSticky";
   import { isTauri, showVaultSticky } from "$lib/window";
+  import VaultPdfPreviewModal from "./VaultPdfPreviewModal.svelte";
+  import VaultChartBuilderSheet from "./VaultChartBuilderSheet.svelte";
 
   interface Props {
     visible: boolean;
@@ -63,6 +64,10 @@
   }: Props = $props();
 
   let exportingPdf = $state(false);
+  let pdfPreviewOpen = $state(false);
+  let pdfPreviewTitle = $state("");
+  let pdfPreviewContent = $state("");
+  let pdfPreviewLabels = $state<Map<string, string>>(new Map());
   let lastFindNotePath = $state<string | null>(null);
 
   const displayTitle = $derived(
@@ -117,7 +122,7 @@
     !mobile && !stickyNote && showMarkdownEditor && layout.vaultSplitEnabled,
   );
 
-  const editorSurface = $derived<"source">("source");
+  const editorSurface = $derived<"write" | "source">(vault.editorSurface);
 
   const showPreviewOnly = $derived(
     vault.editorMode === "preview" && !showKanbanBoard && !showLedgerTable,
@@ -288,21 +293,18 @@
   }
 
   async function handleExportPdf() {
-    if (!vault.selectedPath || exportingPdf) return;
+    if (!vault.selectedPath || pdfPreviewOpen) return;
     if (vault.dirty) await vault.flushSave();
-    exportingPdf = true;
     vault.error = null;
-    try {
-      await exportVaultNotePdf({
-        title: displayTitle,
-        content: vault.content,
-        labelByPath: vault.labelByPathMap,
-      });
-    } catch (err) {
-      vault.error = err instanceof Error ? err.message : String(err);
-    } finally {
-      exportingPdf = false;
-    }
+    pdfPreviewTitle = displayTitle;
+    pdfPreviewContent = vault.content;
+    pdfPreviewLabels = vault.labelByPathMap;
+    pdfPreviewOpen = true;
+  }
+
+  function handlePdfPreviewClose() {
+    pdfPreviewOpen = false;
+    exportingPdf = false;
   }
 
   function handleFindShortcut(event: KeyboardEvent) {
@@ -681,4 +683,20 @@
   initialQuery={vault.viewBridgeQuery}
   onSave={(query) => vault.commitViewBridge(query)}
   onClose={() => vault.closeViewBridge()}
+/>
+<VaultChartBuilderSheet
+  open={vault.chartBridgeOpen}
+  initialKv={vault.chartBridgeKv}
+  onSave={(kv) => vault.commitChartBridge(kv)}
+  onClose={() => vault.closeChartBridge()}
+/>
+<VaultPdfPreviewModal
+  open={pdfPreviewOpen}
+  title={pdfPreviewTitle}
+  content={pdfPreviewContent}
+  labelByPath={pdfPreviewLabels}
+  onClose={handlePdfPreviewClose}
+  onPreparingChange={(preparing) => {
+    exportingPdf = preparing;
+  }}
 />

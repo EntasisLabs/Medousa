@@ -197,6 +197,7 @@
     font-size: 0.78rem;
     line-height: 1.5;
     color: rgb(var(--color-surface-200));
+    white-space: pre-wrap;
   }
 
   .liquid-card-badges {
