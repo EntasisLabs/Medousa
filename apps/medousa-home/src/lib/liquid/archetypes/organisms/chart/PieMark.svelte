@@ -23,8 +23,9 @@
   let tipY = $state(0);
   let tipTitle = $state("");
   let tipLines = $state<{ label: string; value: string; color?: string }[]>([]);
+  let hoverCategory = $state<string | null>(null);
 
-  const EXPLODE = 6;
+  const EXPLODE = 7;
 
   const slices = $derived.by(() => {
     const values = model.series[0]?.values ?? [];
@@ -52,6 +53,7 @@
   );
 
   const highlight = $derived(hasActiveHighlight(model.activeKey));
+  const interactive = $derived(model.interactive !== false);
 
   const size = 260;
   const cx = size / 2;
@@ -64,7 +66,7 @@
     d3Arc<(typeof slices)[number]>()
       .innerRadius(inner)
       .outerRadius(outer)
-      .padAngle(model.separator === false ? 0 : 0.02)
+      .padAngle(model.separator === false ? 0 : 0.025)
       .cornerRadius(2),
   );
 
@@ -72,18 +74,24 @@
     return (slice.startAngle + slice.endAngle) / 2;
   }
 
+  function shouldExplode(slice: (typeof slices)[number]): boolean {
+    const cat = slice.data.category;
+    if (interactive && hoverCategory === cat) return true;
+    if (highlight && isActiveKey(model.activeKey, { category: cat })) return true;
+    return false;
+  }
+
   function explodeOffset(slice: (typeof slices)[number]): { x: number; y: number } {
-    if (!highlight) return { x: 0, y: 0 };
-    if (!isActiveKey(model.activeKey, { category: slice.data.category })) {
-      return { x: 0, y: 0 };
-    }
+    if (!shouldExplode(slice)) return { x: 0, y: 0 };
     const a = midAngle(slice) - Math.PI / 2;
     return { x: Math.cos(a) * EXPLODE, y: Math.sin(a) * EXPLODE };
   }
 
-  function isSliceActive(slice: (typeof slices)[number]): boolean {
-    if (!highlight) return true;
-    return isActiveKey(model.activeKey, { category: slice.data.category });
+  function isDimmed(slice: (typeof slices)[number]): boolean {
+    const cat = slice.data.category;
+    if (interactive && hoverCategory) return hoverCategory !== cat;
+    if (highlight) return !isActiveKey(model.activeKey, { category: cat });
+    return false;
   }
 
   function polar(r: number, angle: number): [number, number] {
@@ -107,6 +115,7 @@
   }
 
   function onEnter(event: MouseEvent, category: string, value: number, color: string) {
+    if (interactive) hoverCategory = category;
     if (!model.tooltip) return;
     const host = (event.currentTarget as SVGPathElement).ownerSVGElement?.parentElement;
     if (!host) return;
@@ -123,31 +132,39 @@
       },
     ];
   }
+
+  function onLeave() {
+    hoverCategory = null;
+    tipVisible = false;
+  }
 </script>
 
-<div class="liquid-chart-pie-wrap">
+<div class="liquid-chart-pie-wrap liquid-chart-mount">
   <svg class="liquid-chart-pie" viewBox={`0 0 ${size} ${size}`} role="presentation">
     <g transform={`translate(${cx}, ${cy})`}>
       {#each slices as slice, i (slice.data.category + i)}
         {@const off = explodeOffset(slice)}
-        {@const active = isSliceActive(slice)}
-        <g transform={`translate(${off.x}, ${off.y})`}>
+        {@const dimmed = isDimmed(slice)}
+        <g
+          class="liquid-chart-slice-g"
+          style:transform={`translate(${off.x}px, ${off.y}px)`}
+        >
           <path
             class="liquid-chart-slice"
-            class:liquid-chart-dim={!active}
+            class:liquid-chart-dim={dimmed}
             role="img"
             aria-label={`${slice.data.category}: ${slice.data.value}`}
             d={arcGen(slice) ?? ""}
             fill={slice.data.color}
             onmouseenter={(event) =>
               onEnter(event, slice.data.category, slice.data.value, slice.data.color)}
-            onmouseleave={() => (tipVisible = false)}
+            onmouseleave={onLeave}
           />
           {#if labelPos === "inside"}
             {@const [lx, ly] = arcGen.centroid(slice)}
             <text
               class="liquid-chart-pie-label liquid-chart-pie-label-inside"
-              class:liquid-chart-dim={!active}
+              class:liquid-chart-dim={dimmed}
               x={lx}
               y={ly}
               text-anchor="middle"
@@ -159,13 +176,13 @@
             {#if lbl.text}
               <path
                 class="liquid-chart-leader"
-                class:liquid-chart-dim={!active}
+                class:liquid-chart-dim={dimmed}
                 d={lbl.path}
                 fill="none"
               />
               <text
                 class="liquid-chart-pie-label liquid-chart-pie-label-outside"
-                class:liquid-chart-dim={!active}
+                class:liquid-chart-dim={dimmed}
                 x={lbl.x}
                 y={lbl.y}
                 text-anchor={lbl.anchor}
@@ -205,31 +222,33 @@
   .liquid-chart-pie {
     width: min(100%, 17rem);
     height: auto;
+    overflow: visible;
+  }
+
+  .liquid-chart-slice-g {
+    transition: transform 180ms ease;
   }
 
   .liquid-chart-slice {
-    transition: opacity 120ms ease;
-  }
-
-  .liquid-chart-slice:hover {
-    opacity: 0.92;
+    transition: opacity 160ms ease;
+    cursor: default;
   }
 
   .liquid-chart-dim {
-    opacity: 0.35;
+    opacity: 0.38;
   }
 
   .liquid-chart-leader {
     stroke: color-mix(in srgb, var(--color-surface-400) 70%, transparent);
     stroke-width: 1;
-    transition: opacity 120ms ease;
+    transition: opacity 160ms ease;
   }
 
   .liquid-chart-pie-label {
     font-size: 0.58rem;
     font-weight: 600;
     pointer-events: none;
-    transition: opacity 120ms ease;
+    transition: opacity 160ms ease;
   }
 
   .liquid-chart-pie-label-inside {
@@ -237,27 +256,53 @@
   }
 
   .liquid-chart-pie-label-outside {
-    fill: rgb(var(--color-surface-200));
+    fill: rgb(var(--color-surface-500));
     font-variant-numeric: tabular-nums;
   }
 
+  :global(html.dark) .liquid-chart-pie-label-outside {
+    fill: rgb(var(--color-surface-300));
+  }
+
   .liquid-chart-center-value {
-    fill: rgb(var(--color-surface-50));
+    fill: rgb(var(--color-surface-900));
     font-size: 1.15rem;
     font-weight: 700;
     font-variant-numeric: tabular-nums;
   }
 
+  :global(html.dark) .liquid-chart-center-value {
+    fill: rgb(var(--color-surface-50));
+  }
+
   .liquid-chart-center-label {
-    fill: rgb(var(--color-surface-400));
+    fill: rgb(var(--color-surface-500));
     font-size: 0.68rem;
   }
 
+  .liquid-chart-mount {
+    animation: liquid-chart-mount 260ms ease-out both;
+  }
+
+  @keyframes liquid-chart-mount {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
   @media (prefers-reduced-motion: reduce) {
+    .liquid-chart-slice-g,
     .liquid-chart-slice,
     .liquid-chart-leader,
     .liquid-chart-pie-label {
       transition: none;
+    }
+
+    .liquid-chart-mount {
+      animation: none;
     }
   }
 </style>

@@ -1,10 +1,19 @@
-/* Chart series tokens — map onto Skeleton palette so theme switches work. */
+/* Chart series tokens — paper-friendly mono ramp (explicit RGB triplets).
+ * Do not map to theme *-400 ramps: light themes omit secondary/success/warning-400. */
 @layer base {
   html {
-    --chart-1: var(--color-primary-400);
-    --chart-2: var(--color-tertiary-400);
-    --chart-3: var(--color-secondary-400);
-    --chart-4: var(--color-success-400);
-    --chart-5: var(--color-warning-400);
+    --chart-1: 28 28 30;
+    --chart-2: 72 72 76;
+    --chart-3: 120 120 126;
+    --chart-4: 168 168 174;
+    --chart-5: 200 200 206;
+  }
+
+  html.dark {
+    --chart-1: 245 245 247;
+    --chart-2: 196 196 202;
+    --chart-3: 148 148 156;
+    --chart-4: 108 108 116;
+    --chart-5: 78 78 86;
   }
 }

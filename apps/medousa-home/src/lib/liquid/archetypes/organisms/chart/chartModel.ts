@@ -159,7 +159,7 @@ export function chartViewModel(props: Record<string, unknown> | LiquidChartProps
     labelPosition,
     tooltip: asBool((props as LiquidChartProps).tooltip, true),
     legend,
-    interactive: asBool((props as LiquidChartProps).interactive, false),
+    interactive: asBool((props as LiquidChartProps).interactive, true),
     activeKey: asString((props as LiquidChartProps).activeKey),
     colors,
   };

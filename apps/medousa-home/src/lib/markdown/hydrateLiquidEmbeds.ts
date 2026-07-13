@@ -18,6 +18,12 @@ type MountHandle = { destroy: () => void };
 
 const mounts = new WeakMap<HTMLElement, MountHandle[]>();
 
+export interface HydrateLiquidOptions {
+  context?: LiquidRenderContext;
+  /** Enter animation on host (default true). */
+  animate?: boolean;
+}
+
 function clearMounts(root: HTMLElement): void {
   const existing = mounts.get(root);
   if (!existing) return;
@@ -36,11 +42,12 @@ function mountHost(
   kind: LiquidEmbedKind | "icon",
   payload: unknown,
   context: LiquidRenderContext,
+  animate: boolean,
 ): MountHandle {
   target.replaceChildren();
   const instance = mount(LiquidMdHost as unknown as Component, {
     target,
-    props: { kind, payload, context },
+    props: { kind, payload, context, animate },
   });
   return {
     destroy: () => {
@@ -49,12 +56,28 @@ function mountHost(
   };
 }
 
+function resolveOptions(
+  contextOrOptions?: LiquidRenderContext | HydrateLiquidOptions,
+): HydrateLiquidOptions {
+  if (!contextOrOptions) return { context: {}, animate: true };
+  if ("context" in contextOrOptions || "animate" in contextOrOptions) {
+    return {
+      context: contextOrOptions.context ?? {},
+      animate: contextOrOptions.animate ?? true,
+    };
+  }
+  // Back-compat: second arg was LiquidRenderContext
+  return { context: contextOrOptions as LiquidRenderContext, animate: true };
+}
+
 /** Mount Liquid embeds inside a markdown container. Idempotent per content pass. */
 export function hydrateLiquidEmbeds(
   root: HTMLElement,
-  context: LiquidRenderContext = {},
+  contextOrOptions: LiquidRenderContext | HydrateLiquidOptions = {},
 ): void {
   if (typeof window === "undefined") return;
+
+  const { context = {}, animate = true } = resolveOptions(contextOrOptions);
 
   clearMounts(root);
   const handles: MountHandle[] = [];
@@ -68,7 +91,7 @@ export function hydrateLiquidEmbeds(
     const payload = decodeLiquidProps(encoded);
     if (payload == null) continue;
     el.dataset.liquidHydrated = "1";
-    handles.push(mountHost(el, kind, payload, context));
+    handles.push(mountHost(el, kind, payload, context, animate));
   }
 
   const icons = root.querySelectorAll<HTMLElement>("[data-liquid-icon]");
@@ -77,7 +100,7 @@ export function hydrateLiquidEmbeds(
     const id = el.dataset.liquidIcon?.trim();
     if (!id) continue;
     el.dataset.liquidHydrated = "1";
-    handles.push(mountHost(el, "icon", id, context));
+    handles.push(mountHost(el, "icon", id, context, animate));
   }
 
   if (handles.length > 0) {

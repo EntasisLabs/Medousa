@@ -21,6 +21,7 @@
   let tipY = $state(0);
   let tipTitle = $state("");
   let tipLines = $state<{ label: string; value: string; color?: string }[]>([]);
+  let hoverKey = $state<string | null>(null);
 
   const size = 240;
   const cx = size / 2;
@@ -110,7 +111,8 @@
     });
   });
 
-  function onEnter(event: MouseEvent, title: string, value: number, color: string) {
+  function onEnter(event: MouseEvent, title: string, value: number, color: string, key: string) {
+    if (model.interactive !== false) hoverKey = key;
     if (!model.tooltip) return;
     const host = (event.currentTarget as SVGPathElement).ownerSVGElement?.parentElement;
     if (!host) return;
@@ -127,23 +129,35 @@
       },
     ];
   }
+
+  function onLeave() {
+    hoverKey = null;
+    tipVisible = false;
+  }
+
+  function arcDimmed(active: boolean, key: string): boolean {
+    if (model.interactive !== false && hoverKey) return key !== hoverKey;
+    return !active;
+  }
 </script>
 
-<div class="liquid-chart-radial-wrap">
+<div class="liquid-chart-radial-wrap liquid-chart-mount">
   <svg class="liquid-chart-radial" viewBox={`0 0 ${size} ${size}`} role="presentation">
     <g transform={`translate(${cx}, ${cy})`}>
       {#if multiArc}
         {#each arcs as arc (arc.key)}
+          {@const dimmed = arcDimmed(arc.active, arc.key)}
           <path class="liquid-chart-radial-track" d={arc.track} />
           <path
             class="liquid-chart-radial-progress"
-            class:liquid-chart-dim={!arc.active}
+            class:liquid-chart-dim={dimmed}
+            class:liquid-chart-radial-hot={hoverKey === arc.key}
             role="img"
             aria-label={`${arc.category}: ${arc.value}`}
             d={arc.progress}
             fill={arc.color}
-            onmouseenter={(event) => onEnter(event, arc.category, arc.value, arc.color)}
-            onmouseleave={() => (tipVisible = false)}
+            onmouseenter={(event) => onEnter(event, arc.category, arc.value, arc.color, arc.key)}
+            onmouseleave={onLeave}
           />
         {/each}
         {#if model.labels !== "none"}
@@ -151,7 +165,7 @@
             {#if arc.label}
               <text
                 class="liquid-chart-radial-ring-label"
-                class:liquid-chart-dim={!arc.active}
+                class:liquid-chart-dim={arcDimmed(arc.active, arc.key)}
                 x="0"
                 y={arc.labelY}
                 text-anchor="middle"
@@ -174,13 +188,14 @@
         <path class="liquid-chart-radial-track" d={single.track} />
         <path
           class="liquid-chart-radial-progress"
+          class:liquid-chart-radial-hot={hoverKey === "single"}
           role="img"
           aria-label={`${series?.label ?? "Value"}: ${single.value}`}
           d={single.progress}
           fill={single.color}
           onmouseenter={(event) =>
-            onEnter(event, series?.label ?? "Value", single.value, single.color)}
-          onmouseleave={() => (tipVisible = false)}
+            onEnter(event, series?.label ?? "Value", single.value, single.color, "single")}
+          onmouseleave={onLeave}
         />
         <text class="liquid-chart-center-value" text-anchor="middle" y="-2">{single.centerValue}</text>
         {#if single.centerLabel}
@@ -207,39 +222,68 @@
   }
 
   .liquid-chart-radial-track {
-    fill: color-mix(in srgb, var(--color-surface-500) 22%, transparent);
+    fill: color-mix(in srgb, var(--color-surface-500) 18%, transparent);
   }
 
   .liquid-chart-radial-progress {
-    transition: opacity 120ms ease;
+    transition: opacity 160ms ease;
+  }
+
+  .liquid-chart-radial-hot {
+    filter: brightness(1.06);
   }
 
   .liquid-chart-dim {
-    opacity: 0.35;
+    opacity: 0.38;
   }
 
   .liquid-chart-radial-ring-label {
-    fill: rgb(var(--color-surface-200));
+    fill: rgb(var(--color-surface-600));
     font-size: 0.52rem;
     font-weight: 600;
     pointer-events: none;
   }
 
+  :global(html.dark) .liquid-chart-radial-ring-label {
+    fill: rgb(var(--color-surface-200));
+  }
+
   .liquid-chart-center-value {
-    fill: rgb(var(--color-surface-50));
+    fill: rgb(var(--color-surface-900));
     font-size: 1.15rem;
     font-weight: 700;
     font-variant-numeric: tabular-nums;
   }
 
+  :global(html.dark) .liquid-chart-center-value {
+    fill: rgb(var(--color-surface-50));
+  }
+
   .liquid-chart-center-label {
-    fill: rgb(var(--color-surface-400));
+    fill: rgb(var(--color-surface-500));
     font-size: 0.68rem;
+  }
+
+  .liquid-chart-mount {
+    animation: liquid-chart-mount 260ms ease-out both;
+  }
+
+  @keyframes liquid-chart-mount {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
   }
 
   @media (prefers-reduced-motion: reduce) {
     .liquid-chart-radial-progress {
       transition: none;
+    }
+
+    .liquid-chart-mount {
+      animation: none;
     }
   }
 </style>

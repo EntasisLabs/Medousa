@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
-import { hydrateCodeBlocks } from "$lib/markdown/codeBlocks";
+import { hydrateMarkdownContainer } from "$lib/markdown/hydrateMarkdownContainer";
+import { destroyLiquidEmbeds } from "$lib/markdown/hydrateLiquidEmbeds";
 import { renderMarkdownPreview } from "$lib/markdown";
 import { stripFrontmatter } from "$lib/utils/vaultFrontmatter";
 import { isTauri } from "$lib/window";
@@ -118,6 +119,46 @@ const PDF_EXPORT_CSS = `
     background: #f9fafb !important;
     color: #111827 !important;
   }
+
+  .vault-pdf-export-mount .liquid-md-embed {
+    margin: 1rem 0 !important;
+    break-inside: avoid;
+  }
+
+  .vault-pdf-export-mount .liquid-chart {
+    border: 1px solid #d1d5db !important;
+    background: #f9fafb !important;
+    color: #111827 !important;
+    border-radius: 8px !important;
+    padding: 12px !important;
+    box-shadow: none !important;
+  }
+
+  .vault-pdf-export-mount .liquid-chart-tooltip {
+    display: none !important;
+  }
+
+  .vault-pdf-export-mount .liquid-chart-title,
+  .vault-pdf-export-mount .liquid-chart-center-value,
+  .vault-pdf-export-mount .liquid-chart-value-label,
+  .vault-pdf-export-mount .liquid-chart-pie-label,
+  .vault-pdf-export-mount .liquid-chart-axis,
+  .vault-pdf-export-mount .liquid-chart-radar-label,
+  .vault-pdf-export-mount .liquid-chart-legend-label {
+    color: #111827 !important;
+    fill: #111827 !important;
+  }
+
+  .vault-pdf-export-mount .liquid-chart-description,
+  .vault-pdf-export-mount .liquid-chart-caption,
+  .vault-pdf-export-mount .liquid-chart-center-label {
+    color: #4b5563 !important;
+    fill: #4b5563 !important;
+  }
+
+  .vault-pdf-export-mount .liquid-chart-mount {
+    animation: none !important;
+  }
 `;
 
 function slugifyFilename(title: string): string {
@@ -132,6 +173,14 @@ function slugifyFilename(title: string): string {
 async function waitForPaint(): Promise<void> {
   await new Promise<void>((resolve) => {
     requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+  });
+}
+
+/** Extra settle time for LayerCake / chart layout before capture. */
+async function waitForLiquidLayout(): Promise<void> {
+  await waitForPaint();
+  await new Promise<void>((resolve) => {
+    setTimeout(resolve, 80);
   });
 }
 
@@ -181,8 +230,17 @@ export async function exportVaultNotePdf(options: {
   document.body.appendChild(shell);
 
   try {
-    await hydrateCodeBlocks(bodyEl);
-    await waitForPaint();
+    await hydrateMarkdownContainer(bodyEl, {
+      liquidContext: {
+        titleByPath: options.labelByPath,
+        openLinksInWeb: false,
+      },
+      code: true,
+      mermaid: true,
+      liquid: true,
+      animate: false,
+    });
+    await waitForLiquidLayout();
 
     const html2pdf = (await import("html2pdf.js")).default;
     const worker = html2pdf().set({
@@ -218,6 +276,7 @@ export async function exportVaultNotePdf(options: {
 
     await worker.save();
   } finally {
+    destroyLiquidEmbeds(bodyEl);
     shell.remove();
   }
 }

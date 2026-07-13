@@ -20,6 +20,8 @@
   let tipY = $state(0);
   let tipTitle = $state("");
   let tipLines = $state<{ label: string; value: string; color?: string }[]>([]);
+  let hoverSeriesKey = $state<string | null>(null);
+  let hoverCategory = $state<string | null>(null);
 
   const size = 280;
   const cx = size / 2;
@@ -94,7 +96,16 @@
     });
   }
 
-  function onVertex(event: MouseEvent, category: string) {
+  function seriesDimmed(active: boolean, key: string): boolean {
+    if (model.interactive !== false && hoverSeriesKey) return key !== hoverSeriesKey;
+    return !active;
+  }
+
+  function onVertex(event: MouseEvent, category: string, seriesKey: string) {
+    if (model.interactive !== false) {
+      hoverSeriesKey = seriesKey;
+      hoverCategory = category;
+    }
     if (!model.tooltip) return;
     const host = (event.currentTarget as SVGCircleElement).ownerSVGElement?.parentElement;
     if (!host) return;
@@ -105,12 +116,18 @@
     tipTitle = category;
     tipLines = tipForVertex(category);
   }
+
+  function onVertexLeave() {
+    hoverSeriesKey = null;
+    hoverCategory = null;
+    tipVisible = false;
+  }
 </script>
 
 {#if n < 3}
   <p class="liquid-chart-stub">Radar needs at least 3 axes (categories).</p>
 {:else}
-  <div class="liquid-chart-radar-wrap">
+  <div class="liquid-chart-radar-wrap liquid-chart-mount">
     <svg class="liquid-chart-radar" viewBox={`0 0 ${size} ${size}`} role="presentation">
       {#each gridPolygons as poly, i (i)}
         <polygon class="liquid-chart-radar-grid" points={poly} />
@@ -135,9 +152,10 @@
       {/each}
 
       {#each polygons as series (series.key)}
+        {@const dimmed = seriesDimmed(series.active, series.key)}
         <polygon
           class="liquid-chart-radar-fill"
-          class:liquid-chart-dim={!series.active}
+          class:liquid-chart-dim={dimmed}
           points={series.points}
           fill={series.color}
           stroke={series.color}
@@ -146,15 +164,20 @@
           <circle
             class="liquid-chart-radar-dot"
             class:liquid-chart-dot-soft={!showDots}
-            class:liquid-chart-dim={!series.active}
+            class:liquid-chart-dim={dimmed}
+            class:liquid-chart-dot-hot={hoverSeriesKey === series.key && hoverCategory === v.category}
             role="img"
             aria-label={`${v.category}: ${series.label} ${v.value}`}
             cx={v.x}
             cy={v.y}
-            r={showDots ? 3.25 : 2.5}
+            r={hoverSeriesKey === series.key && hoverCategory === v.category
+              ? 5
+              : showDots
+                ? 3.25
+                : 2.5}
             fill={series.color}
-            onmouseenter={(event) => onVertex(event, v.category)}
-            onmouseleave={() => (tipVisible = false)}
+            onmouseenter={(event) => onVertex(event, v.category, series.key)}
+            onmouseleave={onVertexLeave}
           />
         {/each}
       {/each}
@@ -169,7 +192,7 @@
     padding: 2rem 0.75rem;
     text-align: center;
     font-size: 0.8rem;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--color-surface-500));
   }
 
   .liquid-chart-radar-wrap {
@@ -183,6 +206,7 @@
   .liquid-chart-radar {
     width: min(100%, 18rem);
     height: auto;
+    overflow: visible;
   }
 
   .liquid-chart-radar-grid {
@@ -197,7 +221,7 @@
   }
 
   .liquid-chart-radar-label {
-    fill: rgb(var(--color-surface-400));
+    fill: rgb(var(--color-surface-500));
     font-size: 0.62rem;
   }
 
@@ -205,13 +229,15 @@
     fill-opacity: 0.18;
     stroke-width: 2;
     stroke-linejoin: round;
-    transition: opacity 120ms ease;
+    transition: opacity 160ms ease;
   }
 
   .liquid-chart-radar-dot {
-    stroke: color-mix(in srgb, var(--color-surface-950) 55%, transparent);
+    stroke: color-mix(in srgb, var(--color-surface-50) 70%, transparent);
     stroke-width: 1;
-    transition: opacity 120ms ease;
+    transition:
+      opacity 160ms ease,
+      r 160ms ease;
   }
 
   .liquid-chart-dot-soft {
@@ -219,13 +245,30 @@
   }
 
   .liquid-chart-dim {
-    opacity: 0.35;
+    opacity: 0.38;
+  }
+
+  .liquid-chart-mount {
+    animation: liquid-chart-mount 260ms ease-out both;
+  }
+
+  @keyframes liquid-chart-mount {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
   }
 
   @media (prefers-reduced-motion: reduce) {
     .liquid-chart-radar-fill,
     .liquid-chart-radar-dot {
       transition: none;
+    }
+
+    .liquid-chart-mount {
+      animation: none;
     }
   }
 </style>

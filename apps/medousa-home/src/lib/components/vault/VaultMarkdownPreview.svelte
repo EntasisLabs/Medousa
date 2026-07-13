@@ -1,13 +1,8 @@
 <script lang="ts">
-  import { onDestroy, tick } from "svelte";
+  import { onDestroy, tick, untrack } from "svelte";
   import { renderMarkdownPreview, type MarkdownRenderOptions } from "$lib/markdown/render";
-  import { hydrateCodeBlocks } from "$lib/markdown/codeBlocks";
-  import { hydrateLocalImages } from "$lib/markdown/hydrateLocalImages";
-  import {
-    destroyLiquidEmbeds,
-    hydrateLiquidEmbeds,
-  } from "$lib/markdown/hydrateLiquidEmbeds";
-  import { hydrateMermaid } from "$lib/markdown/mermaid";
+  import { hydrateMarkdownContainer } from "$lib/markdown/hydrateMarkdownContainer";
+  import { destroyLiquidEmbeds } from "$lib/markdown/hydrateLiquidEmbeds";
   import { vault } from "$lib/stores/vault.svelte";
   import { vaultFind } from "$lib/stores/vaultFind.svelte";
   import {
@@ -110,17 +105,19 @@
 
   $effect(() => {
     previewHtml;
-    vault.selectedPath;
-    labelByPath;
     if (!container) return;
-    destroyLiquidEmbeds(container);
-    void hydrateCodeBlocks(container);
-    void hydrateMermaid(container);
-    void hydrateLocalImages(container, vault.selectedPath);
-    // Same Liquid pipeline as chat MarkdownContent — chart/card/etc. placeholders mount here.
-    hydrateLiquidEmbeds(container, {
-      titleByPath: labelByPath,
-      openLinksInWeb: false,
+    const titles = untrack(() => labelByPath);
+    const imagePath = untrack(() => vault.selectedPath);
+    void hydrateMarkdownContainer(container, {
+      liquidContext: {
+        titleByPath: titles,
+        openLinksInWeb: false,
+      },
+      localImagePath: imagePath,
+      code: true,
+      mermaid: true,
+      liquid: true,
+      localImages: true,
     });
   });
 
@@ -301,7 +298,7 @@
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <article
   bind:this={container}
-  class="markdown-content vault-markdown-preview min-w-0 max-w-full flex-1 overflow-x-hidden overflow-y-auto text-sm {compact
+  class="markdown-content vault-markdown-preview min-w-0 max-w-full flex-1 overflow-x-auto overflow-y-auto text-sm {compact
     ? 'px-4 py-3'
     : 'px-5 py-4'}"
   onclick={handleClick}

@@ -79,9 +79,15 @@
     kind: LiquidEmbedKind | "icon";
     payload: unknown;
     context?: LiquidRenderContext;
+    /** Enter animation (default true). Skip on remounts with unchanged placeholders. */
+    animate?: boolean;
   }
 
-  let { kind, payload, context = {} }: Props = $props();
+  let { kind, payload, context = {}, animate = true }: Props = $props();
+
+  const hostClass = $derived(
+    animate ? "liquid-md-host liquid-md-enter" : "liquid-md-host",
+  );
 
   $effect(() => {
     setLiquidContext(context);
@@ -446,70 +452,70 @@
 </script>
 
 {#if kind === "card" && card}
-  <div class="liquid-md-host liquid-md-host-card liquid-md-enter">
+  <div class="{hostClass} liquid-md-host-card">
     <Card node={card} />
   </div>
 {:else if kind === "carousel" && carousel}
-  <div class="liquid-md-host liquid-md-host-carousel liquid-md-enter">
+  <div class="{hostClass} liquid-md-host-carousel">
     <Carousel node={carousel} />
   </div>
 {:else if kind === "actions" && actions.length}
-  <div class="liquid-md-host liquid-md-host-actions liquid-md-enter">
+  <div class="{hostClass} liquid-md-host-actions">
     <p class="liquid-md-actions-whisper">Suggested</p>
     {#each actions as action (action.id)}
       <ActionRow node={action} />
     {/each}
   </div>
 {:else if kind === "callout" && callout}
-  <div class="liquid-md-host liquid-md-host-callout liquid-md-enter">
+  <div class="{hostClass} liquid-md-host-callout">
     <Callout node={callout} />
   </div>
 {:else if kind === "section" && section}
-  <div class="liquid-md-host liquid-md-host-section liquid-md-enter">
+  <div class="{hostClass} liquid-md-host-section">
     <Section node={section} />
   </div>
 {:else if kind === "chips" && chips}
-  <div class="liquid-md-host liquid-md-host-chips liquid-md-enter">
+  <div class="{hostClass} liquid-md-host-chips">
     <ChipGroup node={chips} />
   </div>
 {:else if kind === "media" && media}
-  <div class="liquid-md-host liquid-md-host-media liquid-md-enter">
+  <div class="{hostClass} liquid-md-host-media">
     <Media node={media} />
   </div>
 {:else if kind === "cite" && cite}
-  <div class="liquid-md-host liquid-md-host-cite liquid-md-enter">
+  <div class="{hostClass} liquid-md-host-cite">
     <Cite node={cite} />
   </div>
 {:else if kind === "compare" && compare}
-  <div class="liquid-md-host liquid-md-host-compare liquid-md-enter">
+  <div class="{hostClass} liquid-md-host-compare">
     <Compare node={compare} />
   </div>
 {:else if kind === "plan" && plan}
-  <div class="liquid-md-host liquid-md-host-plan liquid-md-enter">
+  <div class="{hostClass} liquid-md-host-plan">
     <Plan node={plan} />
   </div>
 {:else if kind === "timeline" && timeline}
-  <div class="liquid-md-host liquid-md-host-timeline liquid-md-enter">
+  <div class="{hostClass} liquid-md-host-timeline">
     <Timeline node={timeline} />
   </div>
 {:else if kind === "shortlist" && shortlist}
-  <div class="liquid-md-host liquid-md-host-shortlist liquid-md-enter">
+  <div class="{hostClass} liquid-md-host-shortlist">
     <Shortlist node={shortlist} />
   </div>
 {:else if kind === "decision" && decision}
-  <div class="liquid-md-host liquid-md-host-decision liquid-md-enter">
+  <div class="{hostClass} liquid-md-host-decision">
     <Decision node={decision} />
   </div>
 {:else if kind === "brief" && brief}
-  <div class="liquid-md-host liquid-md-host-brief liquid-md-enter">
+  <div class="{hostClass} liquid-md-host-brief">
     <Brief node={brief} />
   </div>
 {:else if kind === "dashboard" && dashboard}
-  <div class="liquid-md-host liquid-md-host-dashboard liquid-md-enter">
+  <div class="{hostClass} liquid-md-host-dashboard">
     <Dashboard node={dashboard} />
   </div>
 {:else if kind === "chart" && chart}
-  <div class="liquid-md-host liquid-md-host-chart liquid-md-enter">
+  <div class="{hostClass} liquid-md-host-chart">
     <Chart node={chart} />
   </div>
 {:else if kind === "icon" && IconComp}
@@ -520,7 +526,6 @@
 
 <style>
   .liquid-md-host {
-    margin: 1.15rem 0;
     min-width: 0;
   }
 

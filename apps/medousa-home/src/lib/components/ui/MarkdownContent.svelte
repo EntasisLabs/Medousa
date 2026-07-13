@@ -1,11 +1,7 @@
 <script lang="ts">
   import { renderMarkdown } from "$lib/markdown";
-  import { hydrateCodeBlocks } from "$lib/markdown/codeBlocks";
-  import { hydrateMermaid } from "$lib/markdown/mermaid";
-  import {
-    destroyLiquidEmbeds,
-    hydrateLiquidEmbeds,
-  } from "$lib/markdown/hydrateLiquidEmbeds";
+  import { hydrateMarkdownContainer } from "$lib/markdown/hydrateMarkdownContainer";
+  import { destroyLiquidEmbeds } from "$lib/markdown/hydrateLiquidEmbeds";
   import {
     getLiquidContext,
     type LiquidRenderContext,
@@ -62,10 +58,12 @@
   $effect(() => {
     html;
     if (!container) return;
-    destroyLiquidEmbeds(container);
-    void hydrateCodeBlocks(container);
-    void hydrateMermaid(container);
-    hydrateLiquidEmbeds(container, resolveContext());
+    void hydrateMarkdownContainer(container, {
+      liquidContext: resolveContext(),
+      code: true,
+      mermaid: true,
+      liquid: true,
+    });
   });
 
   onDestroy(() => {

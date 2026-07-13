@@ -1,7 +1,6 @@
 <script lang="ts">
   /**
-   * Minimal chart tooltip shell — values only in v1.
-   * Shape accepts richer content later (multi-series rows, icons, etc.).
+   * Glass chart tooltip — paper-readable on light vault, dark glass in chat.
    */
   interface Props {
     visible: boolean;
@@ -45,30 +44,51 @@
     position: absolute;
     z-index: 4;
     pointer-events: none;
-    transform: translate(-50%, calc(-100% - 0.45rem));
-    min-width: 6.5rem;
+    min-width: 6.75rem;
     max-width: 14rem;
-    padding: 0.4rem 0.55rem;
-    border-radius: 0.45rem;
-    border: 1px solid color-mix(in srgb, var(--color-surface-500) 40%, transparent);
-    background: color-mix(in srgb, var(--color-surface-900) 92%, transparent);
-    box-shadow: 0 8px 24px rgb(0 0 0 / 0.28);
-    backdrop-filter: blur(8px);
+    padding: 0.45rem 0.6rem;
+    border-radius: 0.55rem;
+    border: 1px solid color-mix(in srgb, var(--color-surface-500) 28%, transparent);
+    background: color-mix(in srgb, var(--color-surface-50) 72%, transparent);
+    box-shadow:
+      0 10px 28px rgb(0 0 0 / 0.12),
+      0 1px 0 color-mix(in srgb, var(--color-surface-50) 55%, transparent) inset;
+    backdrop-filter: blur(14px) saturate(1.15);
+    -webkit-backdrop-filter: blur(14px) saturate(1.15);
+    transform: translate(-50%, calc(-100% - 0.45rem));
+    animation: liquid-chart-tip-in 120ms ease-out both;
+    color: rgb(var(--color-surface-900));
+  }
+
+  :global(html.dark) .liquid-chart-tooltip {
+    background: color-mix(in srgb, var(--color-surface-900) 78%, transparent);
+    border-color: color-mix(in srgb, var(--color-surface-500) 42%, transparent);
+    box-shadow: 0 10px 28px rgb(0 0 0 / 0.4);
+    color: rgb(var(--color-surface-50));
   }
 
   .liquid-chart-tooltip-title {
-    margin: 0 0 0.2rem;
-    font-size: 0.7rem;
-    font-weight: 600;
-    color: rgb(var(--color-surface-100));
+    margin: 0 0 0.22rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    color: rgb(var(--color-surface-900));
+  }
+
+  :global(html.dark) .liquid-chart-tooltip-title {
+    color: rgb(var(--color-surface-50));
   }
 
   .liquid-chart-tooltip-line {
     display: flex;
     align-items: center;
-    gap: 0.3rem;
-    margin: 0.12rem 0 0;
+    gap: 0.35rem;
+    margin: 0.14rem 0 0;
     font-size: 0.68rem;
+    color: rgb(var(--color-surface-600));
+  }
+
+  :global(html.dark) .liquid-chart-tooltip-line {
     color: rgb(var(--color-surface-300));
   }
 
@@ -89,7 +109,28 @@
 
   .liquid-chart-tooltip-value {
     font-variant-numeric: tabular-nums;
-    color: rgb(var(--color-surface-100));
-    font-weight: 600;
+    color: rgb(var(--color-surface-900));
+    font-weight: 700;
+  }
+
+  :global(html.dark) .liquid-chart-tooltip-value {
+    color: rgb(var(--color-surface-50));
+  }
+
+  @keyframes liquid-chart-tip-in {
+    from {
+      opacity: 0;
+      transform: translate(-50%, calc(-100% - 0.2rem));
+    }
+    to {
+      opacity: 1;
+      transform: translate(-50%, calc(-100% - 0.45rem));
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .liquid-chart-tooltip {
+      animation: none;
+    }
   }
 </style>

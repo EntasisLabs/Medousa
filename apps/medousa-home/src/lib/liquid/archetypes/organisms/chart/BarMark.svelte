@@ -27,6 +27,7 @@
     labels: LiquidChartLabels;
     labelPosition: LiquidChartLabelPosition;
     activeKey: string;
+    interactive: boolean;
     chartType: string;
     showTooltip: (
       x: number,
@@ -75,6 +76,8 @@
     width: number;
     height: number;
   }
+
+  let hoverCategory = $state<string | null>(null);
 
   const bars = $derived.by((): BarRect[] => {
     const rows = $data ?? [];
@@ -343,9 +346,17 @@
     }));
   }
 
+  function barDimmed(bar: BarRect): boolean {
+    const cfg = $custom;
+    const interactive = cfg?.interactive !== false;
+    if (interactive && hoverCategory) return bar.category !== hoverCategory;
+    return !bar.active;
+  }
+
   function onBandEnter(band: HitBand, event: MouseEvent) {
     const cfg = $custom;
     if (!cfg) return;
+    if (cfg.interactive !== false) hoverCategory = band.category;
     const target = event.currentTarget as SVGRectElement;
     const box = target.getBoundingClientRect();
     const parent = target.ownerSVGElement?.parentElement?.getBoundingClientRect();
@@ -357,10 +368,15 @@
       tipLinesForCategory(band.category),
     );
   }
+
+  function onBandLeave() {
+    hoverCategory = null;
+    $custom?.hideTooltip();
+  }
 </script>
 
 {#if axis.w > 0 && axis.h > 0}
-  <g class="liquid-chart-bars">
+  <g class="liquid-chart-bars liquid-chart-mount">
     {#if $custom?.horizontal}
       {#each axis.grid as g, i (i)}
         <line class="liquid-chart-grid" x1={g.x ?? 0} x2={g.x ?? 0} y1="0" y2={axis.h} />
@@ -390,14 +406,15 @@
         width={band.width}
         height={band.height}
         onmouseenter={(event) => onBandEnter(band, event)}
-        onmouseleave={() => $custom?.hideTooltip()}
+        onmouseleave={onBandLeave}
       />
     {/each}
 
     {#each bars as bar (bar.key)}
       <rect
         class="liquid-chart-bar"
-        class:liquid-chart-dim={!bar.active}
+        class:liquid-chart-dim={barDimmed(bar)}
+        class:liquid-chart-bar-hot={hoverCategory === bar.category && !barDimmed(bar)}
         role="img"
         aria-label={`${bar.category}: ${bar.label} ${bar.value}`}
         x={bar.x}
@@ -431,7 +448,7 @@
   }
 
   .liquid-chart-axis {
-    fill: rgb(var(--color-surface-400));
+    fill: rgb(var(--color-surface-500));
     font-size: 0.62rem;
   }
 
@@ -441,24 +458,57 @@
   }
 
   .liquid-chart-bar {
-    transition: opacity 120ms ease;
+    transition:
+      opacity 160ms ease,
+      transform 160ms ease;
+    transform-box: fill-box;
+    transform-origin: center bottom;
+  }
+
+  .liquid-chart-bar-hot {
+    transform: translateY(-1px);
   }
 
   .liquid-chart-dim {
-    opacity: 0.35;
+    opacity: 0.38;
   }
 
   .liquid-chart-value-label {
-    fill: rgb(var(--color-surface-200));
+    fill: rgb(var(--color-surface-600));
     font-size: 0.58rem;
     font-weight: 600;
     font-variant-numeric: tabular-nums;
     pointer-events: none;
   }
 
+  :global(html.dark) .liquid-chart-value-label {
+    fill: rgb(var(--color-surface-200));
+  }
+
+  .liquid-chart-mount {
+    animation: liquid-chart-mount 260ms ease-out both;
+  }
+
+  @keyframes liquid-chart-mount {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .liquid-chart-bar {
       transition: none;
+    }
+
+    .liquid-chart-bar-hot {
+      transform: none;
+    }
+
+    .liquid-chart-mount {
+      animation: none;
     }
   }
 </style>

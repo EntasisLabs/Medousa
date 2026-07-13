@@ -59,7 +59,11 @@
 
   .liquid-chart-legend-label {
     font-size: 0.72rem;
-    color: rgb(var(--color-surface-300));
+    color: rgb(var(--color-surface-600));
     white-space: nowrap;
+  }
+
+  :global(html.dark) .liquid-chart-legend-label {
+    color: rgb(var(--color-surface-300));
   }
 </style>

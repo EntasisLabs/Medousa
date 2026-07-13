@@ -114,9 +114,17 @@
   .liquid-chart {
     margin: 0;
     padding: 0.85rem 0.9rem 0.95rem;
-    border-radius: 0.85rem;
-    border: 1px solid color-mix(in srgb, var(--color-surface-500) 28%, transparent);
+    border-radius: 0.9rem;
+    border: 1px solid color-mix(in srgb, var(--color-surface-500) 22%, transparent);
+    background: color-mix(in srgb, var(--color-surface-50) 55%, transparent);
+    box-shadow:
+      0 1px 0 color-mix(in srgb, var(--color-surface-50) 70%, transparent) inset,
+      0 8px 24px rgb(0 0 0 / 0.04);
+  }
+
+  :global(html.dark) .liquid-chart {
     background: color-mix(in srgb, var(--color-surface-900) 48%, transparent);
+    border-color: color-mix(in srgb, var(--color-surface-500) 28%, transparent);
     box-shadow: inset 0 1px 0 color-mix(in srgb, var(--color-surface-50) 4%, transparent);
   }
 
@@ -128,14 +136,18 @@
     margin: 0;
     font-size: 1.05rem;
     font-weight: 700;
-    color: rgb(var(--color-surface-50));
+    color: rgb(var(--color-surface-900));
     letter-spacing: -0.01em;
+  }
+
+  :global(html.dark) .liquid-chart-title {
+    color: rgb(var(--color-surface-50));
   }
 
   .liquid-chart-description {
     margin: 0.2rem 0 0;
     font-size: 0.78rem;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--color-surface-500));
   }
 
   .liquid-chart-body {
@@ -155,12 +167,22 @@
     margin: 0;
     font-size: 0.78rem;
     font-weight: 600;
+    color: rgb(var(--color-surface-800));
+  }
+
+  :global(html.dark) .liquid-chart-trend {
     color: rgb(var(--color-surface-100));
   }
 
   .liquid-chart-caption {
     margin: 0.25rem 0 0;
     font-size: 0.7rem;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--color-surface-500));
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .liquid-chart :global(.liquid-chart-mount) {
+      animation: none !important;
+    }
   }
 </style>

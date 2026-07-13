@@ -49,6 +49,7 @@
     labels: model.labels,
     labelPosition: model.labelPosition,
     activeKey: model.activeKey,
+    interactive: model.interactive,
     separator: model.separator,
     horizontal,
     chartType: model.type,

@@ -296,10 +296,11 @@ const TOPICS: &[WikiTopic] = &[
         decision(.99): "```decision\\ntitle: Which laptop?\\nrecommendation: MacBook Pro 14\\n\\n---\\nlabel: MacBook Pro 14\\npros: Display | Battery\\ncons: Price\\n---\\nlabel: XPS 15\\npros: Ports\\ncons: Thermals\\n```",
         brief(.99): "```brief\\ntitle: Why Tokyo first\\ntone: research\\n\\n---\\nheading: Easy logistics\\nbody: One simple route\\n\\n===\\n---\\ntitle: JNTO guide\\nurl: https://example.com\\n```",
         dashboard(.99): "```dashboard\\ntitle: Trip pulse\\ncolumns: 2\\n\\n---\\nlabel: Days locked\\nvalue: 7\\ntone: success\\n---\\nlabel: Trains\\nvalue: …\\nfeed: trip.london.trains\\nfield: summary\\ntone: accent\\n``` (chat tiles poll feed_tail — no cognition_feed_subscribe required; canvas HTML widgets still use subscribe)",
+        chart(.99): "```chart\\ntype: bar\\ntitle: Visitors\\nlegend: bottom\\n\\n| Month | Desktop | Mobile |\\n| ----- | ------- | ------ |\\n| Jan   | 186     | 80     |\\n| Feb   | 305     | 200    |\\n``` (types: bar|line|area|pie|donut|radar|radial; first col categories, other cols numeric series)",
         mermaid(.97): "```mermaid\\nflowchart LR\\n  A --> B\\n```",
         icon(.98): "{{icon:sparkles}} — allowlisted Lucide names only"
     },
-    curate_tools(.99): "After tools, curate into the answer (cite / compare / plan / timeline / shortlist / decision / brief / dashboard / GFM table / media / mermaid) — do not dump raw tool JSON; tool_trace is the audit footnote",
+    curate_tools(.99): "After tools, curate into the answer (cite / compare / plan / timeline / shortlist / decision / brief / dashboard / chart / GFM table / media / mermaid) — do not dump raw tool JSON; tool_trace is the audit footnote",
     governor(.99): "Runtime hydrates embeds into Liquid molecules — never invent HTML/CSS or plan_layout trees in chat.",
     no_reasoning_in_body(.98): "Do not paste > [!abstract] Reasoning into the final answer — thinking streams separately",
     ui_build(.97): "cognition_ui_build (begin → add_* → done) when you need a streaming interactive scene session beyond markdown embeds",
@@ -318,7 +319,7 @@ const TOPICS: &[WikiTopic] = &[
     prefer_markdown(.99): {
         when(.99): "structured chat answers — cards, carousels, action rows, tables, icons — the common case",
         why(.98): "model writes familiar markdown; runtime hydrates Liquid molecules; no layout dialect",
-        how(.99): "```card``` / ```carousel``` / ```actions``` / ```callout``` / ```section``` / ```chips``` / ```media``` / ```cite``` / ```compare``` / ```plan``` / ```timeline``` / ```shortlist``` / ```decision``` / ```brief``` / ```dashboard``` / ```mermaid``` / {{icon:name}} — curate tool outputs into these; tool_trace stays the audit footnote"
+        how(.99): "```card``` / ```carousel``` / ```actions``` / ```callout``` / ```section``` / ```chips``` / ```media``` / ```cite``` / ```compare``` / ```plan``` / ```timeline``` / ```shortlist``` / ```decision``` / ```brief``` / ```dashboard``` / ```chart``` / ```mermaid``` / {{icon:name}} — curate tool outputs into these; tool_trace stays the audit footnote"
     },
     prefer_ui_build(.97): {
         when(.97): "streaming interactive scene session that must fill slots over multiple tool calls",
@@ -630,7 +631,7 @@ const TOPICS: &[WikiTopic] = &[
         switch_nav(.96): "cognition_environment_activate_preset",
         list_components(.98): "cognition_component_list",
         add_component(.97): "cognition_component_create",
-        render_native_scene(.98): "enriched markdown embeds (```card``` / ```carousel``` / ```actions``` / ```callout``` / ```section``` / ```chips``` / ```media``` / ```cite``` / ```compare``` / ```plan``` / ```timeline``` / ```shortlist``` / ```decision``` / ```brief``` / ```dashboard``` / ```mermaid```) for chat; cognition_ui_build for streaming scenes",
+        render_native_scene(.98): "enriched markdown embeds (```card``` / ```carousel``` / ```actions``` / ```callout``` / ```section``` / ```chips``` / ```media``` / ```cite``` / ```compare``` / ```plan``` / ```timeline``` / ```shortlist``` / ```decision``` / ```brief``` / ```dashboard``` / ```chart``` / ```mermaid```) for chat; cognition_ui_build for streaming scenes",
         persist_scene(.98): "cognition_component_create type:scene, config.scene:{ops:[…]} — durable Liquid scene pinned to a custom surface",
         publish_html(.98): "cognition_ui_present",
         edit_html(.97): "cognition_artifact_write",
@@ -859,6 +860,12 @@ mod tests {
                 raw.contains("markdown") || raw.contains("card") || raw.contains("ui_build"),
                 "topic {topic_id} should mention markdown embeds / cards / ui_build"
             );
+            if topic_id == "ui_scene" || topic_id == "scene_vs_html" {
+                assert!(
+                    raw.contains("chart"),
+                    "topic {topic_id} should mention ```chart"
+                );
+            }
         }
     }
 

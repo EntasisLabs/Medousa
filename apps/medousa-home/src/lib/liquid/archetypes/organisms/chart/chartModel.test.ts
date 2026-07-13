@@ -118,4 +118,23 @@ describe("chartViewModel radar/radial", () => {
     expect(model?.type).toBe("radial");
     expect(model?.centerValue).toBe("75%");
   });
+
+  it("defaults interactive to true for hover polish", () => {
+    const model = chartViewModel({
+      type: "bar",
+      categories: ["A", "B"],
+      series: [{ key: "s", label: "S", values: [1, 2] }],
+    });
+    expect(model?.interactive).toBe(true);
+  });
+
+  it("honors interactive: false", () => {
+    const model = chartViewModel({
+      type: "pie",
+      categories: ["A", "B"],
+      series: [{ key: "s", label: "S", values: [1, 2] }],
+      interactive: false,
+    });
+    expect(model?.interactive).toBe(false);
+  });
 });

@@ -37,6 +37,7 @@
     labels: LiquidChartLabels;
     labelPosition: LiquidChartLabelPosition;
     activeKey: string;
+    interactive: boolean;
     showTooltip: (
       x: number,
       y: number,
@@ -54,6 +55,9 @@
     height: import("svelte/store").Readable<number>;
     custom: import("svelte/store").Readable<CakeCustom>;
   }>("LayerCake");
+
+  let hoverSeriesKey = $state<string | null>(null);
+  let hoverCategory = $state<string | null>(null);
 
   function curveFactory(curve: LiquidChartCurve) {
     if (curve === "linear") return curveLinear;
@@ -177,9 +181,20 @@
     }));
   }
 
-  function onPoint(event: MouseEvent, category: string) {
+  function seriesDimmed(active: boolean, key: string): boolean {
+    const cfg = $custom;
+    const interactive = cfg?.interactive !== false;
+    if (interactive && hoverSeriesKey) return key !== hoverSeriesKey;
+    return !active;
+  }
+
+  function onPoint(event: MouseEvent, category: string, seriesKey: string) {
     const cfg = $custom;
     if (!cfg) return;
+    if (cfg.interactive !== false) {
+      hoverSeriesKey = seriesKey;
+      hoverCategory = category;
+    }
     const target = event.currentTarget as SVGCircleElement;
     const box = target.getBoundingClientRect();
     const parent = target.ownerSVGElement?.parentElement?.getBoundingClientRect();
@@ -191,10 +206,16 @@
       tipLinesForCategory(category),
     );
   }
+
+  function onPointLeave() {
+    hoverSeriesKey = null;
+    hoverCategory = null;
+    $custom?.hideTooltip();
+  }
 </script>
 
 {#if axis.w > 0 && axis.h > 0}
-  <g class="liquid-chart-line">
+  <g class="liquid-chart-line liquid-chart-mount">
     {#each axis.grid as y, i (i)}
       <line class="liquid-chart-grid" x1="0" x2={axis.w} y1={y} y2={y} />
     {/each}
@@ -208,17 +229,18 @@
     {/each}
 
     {#each paths as series (series.key)}
+      {@const dimmed = seriesDimmed(series.active, series.key)}
       {#if mode === "area"}
         <path
           class="liquid-chart-area"
-          class:liquid-chart-dim={!series.active}
+          class:liquid-chart-dim={dimmed}
           d={series.area}
           fill={series.color}
         />
       {/if}
       <path
         class="liquid-chart-stroke"
-        class:liquid-chart-dim={!series.active}
+        class:liquid-chart-dim={dimmed}
         d={series.line}
         stroke={series.color}
         fill="none"
@@ -226,15 +248,16 @@
       {#each series.points as pt, pi (series.key + pi)}
         <circle
           class="liquid-chart-dot"
-          class:liquid-chart-dim={!series.active}
+          class:liquid-chart-dim={dimmed}
+          class:liquid-chart-dot-hot={hoverSeriesKey === series.key && hoverCategory === pt.category}
           role="img"
           aria-label={`${pt.category}: ${series.label} ${pt.value}`}
           cx={pt.x}
           cy={pt.y}
-          r="3.25"
+          r={hoverSeriesKey === series.key && hoverCategory === pt.category ? 5 : 3.25}
           fill={series.color}
-          onmouseenter={(event) => onPoint(event, pt.category)}
-          onmouseleave={() => $custom?.hideTooltip()}
+          onmouseenter={(event) => onPoint(event, pt.category, series.key)}
+          onmouseleave={onPointLeave}
         />
       {/each}
     {/each}
@@ -254,7 +277,7 @@
   }
 
   .liquid-chart-axis {
-    fill: rgb(var(--color-surface-400));
+    fill: rgb(var(--color-surface-500));
     font-size: 0.62rem;
   }
 
@@ -262,22 +285,28 @@
     stroke-width: 2;
     stroke-linejoin: round;
     stroke-linecap: round;
-    transition: opacity 120ms ease;
+    transition: opacity 160ms ease;
   }
 
   .liquid-chart-area {
     opacity: 0.22;
-    transition: opacity 120ms ease;
+    transition: opacity 160ms ease;
   }
 
   .liquid-chart-dot {
-    stroke: color-mix(in srgb, var(--color-surface-950) 55%, transparent);
+    stroke: color-mix(in srgb, var(--color-surface-50) 70%, transparent);
     stroke-width: 1;
-    transition: opacity 120ms ease;
+    transition:
+      opacity 160ms ease,
+      r 160ms ease;
+  }
+
+  .liquid-chart-dot-hot {
+    stroke-width: 1.5;
   }
 
   .liquid-chart-dim {
-    opacity: 0.35;
+    opacity: 0.38;
   }
 
   .liquid-chart-area.liquid-chart-dim {
@@ -285,11 +314,28 @@
   }
 
   .liquid-chart-value-label {
-    fill: rgb(var(--color-surface-200));
+    fill: rgb(var(--color-surface-600));
     font-size: 0.58rem;
     font-weight: 600;
     font-variant-numeric: tabular-nums;
     pointer-events: none;
+  }
+
+  :global(html.dark) .liquid-chart-value-label {
+    fill: rgb(var(--color-surface-200));
+  }
+
+  .liquid-chart-mount {
+    animation: liquid-chart-mount 260ms ease-out both;
+  }
+
+  @keyframes liquid-chart-mount {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -297,6 +343,10 @@
     .liquid-chart-area,
     .liquid-chart-dot {
       transition: none;
+    }
+
+    .liquid-chart-mount {
+      animation: none;
     }
   }
 </style>
