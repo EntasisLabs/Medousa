@@ -52,6 +52,13 @@
     filtersOpen = false;
   }
 
+  function handleMenuKeydown(event: KeyboardEvent) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeMenus();
+    }
+  }
+
   function selectSpace(spaceId: string | null) {
     vault.setActiveSpaceFilter(spaceId);
     filtersOpen = false;
@@ -134,7 +141,9 @@
             <div
               class="vault-library-filter-menu absolute right-0 top-full z-30 mt-1 rounded-lg border border-surface-500/50 bg-surface-900 py-1 shadow-xl"
               role="menu"
+              tabindex="-1"
               onclick={(event) => event.stopPropagation()}
+              onkeydown={handleMenuKeydown}
             >
               <p class="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wide text-surface-500">
                 Group
@@ -235,7 +244,9 @@
             <div
               class="absolute right-0 top-full z-30 mt-1 min-w-[11rem] rounded-lg border border-surface-500/50 bg-surface-900 py-1 shadow-xl"
               role="menu"
+              tabindex="-1"
               onclick={(event) => event.stopPropagation()}
+              onkeydown={handleMenuKeydown}
             >
               <button
                 type="button"

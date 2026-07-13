@@ -27,6 +27,12 @@ pub struct EnvironmentHub {
     tx: broadcast::Sender<EnvironmentStreamEvent>,
 }
 
+impl Default for EnvironmentHub {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl EnvironmentHub {
     pub fn new() -> Self {
         let (tx, _) = broadcast::channel(64);

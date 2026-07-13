@@ -294,7 +294,7 @@ pub(crate) fn render_settings_overlay(frame: &mut ratatui::Frame, state: &mut Tu
         medousa::agent_runtime::ROUND_LIMIT_MIN,
         medousa::agent_runtime::ROUND_LIMIT_MAX,
     );
-    let policy_mode = policy_mode_label(
+    let _policy_mode = policy_mode_label(
         direct_chars,
         long_turns,
         long_chars,
@@ -303,7 +303,7 @@ pub(crate) fn render_settings_overlay(frame: &mut ratatui::Frame, state: &mut Tu
         retry_max,
         retry_rounds,
     );
-    let pressure = context_pressure_label(hot_turns, cold_turns, retry_max, retry_rounds);
+    let _pressure = context_pressure_label(hot_turns, cold_turns, retry_max, retry_rounds);
     lines.push(Line::from(""));
 
     let selected_role = routing_editor_role(state);
@@ -532,8 +532,9 @@ pub(crate) fn render_settings_overlay(frame: &mut ratatui::Frame, state: &mut Tu
     )));
 
     let mut selected_line: Option<usize> = None;
-    for idx in start..=end {
-        if idx > start {
+    for (offset, row) in rows[start..=end].iter().enumerate() {
+        let idx = start + offset;
+        if offset > 0 {
             lines.push(Line::from(Span::styled(
                 " ............................................................ ",
                 Style::default().fg(Color::DarkGray),
@@ -542,7 +543,6 @@ pub(crate) fn render_settings_overlay(frame: &mut ratatui::Frame, state: &mut Tu
         if idx == state.settings_selected {
             selected_line = Some(lines.len());
         }
-        let row = &rows[idx];
         let marker = if idx == state.settings_selected {
             ">"
         } else {
@@ -603,29 +603,6 @@ pub(crate) fn render_settings_overlay(frame: &mut ratatui::Frame, state: &mut Tu
     frame.render_widget(panel, left_area);
 
     let mut rail: Vec<Line> = Vec::new();
-    rail.push(Line::from(Span::styled(
-        " At a glance ",
-        Style::default()
-            .fg(ui_accent_primary())
-            .add_modifier(Modifier::BOLD),
-    )));
-    rail.push(Line::from(""));
-    rail.push(Line::from(vec![
-        Span::styled("Working style: ", Style::default().fg(Color::DarkGray)),
-        Span::styled(policy_mode.0, Style::default().fg(policy_mode.1)),
-    ]));
-    rail.push(Line::from(vec![
-        Span::styled("Memory load: ", Style::default().fg(Color::DarkGray)),
-        Span::styled(pressure.0, Style::default().fg(pressure.1)),
-    ]));
-    rail.push(Line::from(vec![
-        Span::styled("Theme: ", Style::default().fg(Color::DarkGray)),
-        Span::styled(
-            ui_theme_display_name(&state.settings.theme_id),
-            Style::default().fg(Color::Cyan),
-        ),
-    ]));
-    rail.push(Line::from(""));
 
     match active_section {
         0 => {
@@ -859,21 +836,6 @@ pub(crate) fn render_runtime_env_overlay(frame: &mut ratatui::Frame, state: &Tui
     frame.render_widget(Clear, popup);
 
     let mut lines: Vec<Line> = Vec::new();
-    lines.push(Line::from(Span::styled(
-        " Environment Variables ",
-        Style::default()
-            .fg(Color::Yellow)
-            .add_modifier(Modifier::BOLD),
-    )));
-    lines.push(Line::from(Span::styled(
-        " Format: KEY=VALUE. One per line. Empty lines and # comments are ignored. ",
-        Style::default().fg(Color::DarkGray),
-    )));
-    lines.push(Line::from(Span::styled(
-        " Esc: back  Enter: new line  Tab: insert '=' ",
-        Style::default().fg(Color::DarkGray),
-    )));
-    lines.push(Line::from(""));
 
     let env_errors = env_overrides_validation_errors(&state.settings_draft.env_overrides);
     if env_errors.is_empty() {

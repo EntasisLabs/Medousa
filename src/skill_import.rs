@@ -180,11 +180,10 @@ pub fn sanitize_skill_id(raw: &str, fallback_dir: &Path) -> String {
         let lower = ch.to_ascii_lowercase();
         if lower.is_ascii_alphanumeric() {
             slug.push(lower);
-        } else if matches!(lower, '-' | '_' | ' ') {
-            if !slug.ends_with('-') {
+        } else if matches!(lower, '-' | '_' | ' ')
+            && !slug.ends_with('-') {
                 slug.push('-');
             }
-        }
     }
     while slug.ends_with('-') {
         slug.pop();

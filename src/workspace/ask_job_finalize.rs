@@ -101,11 +101,10 @@ pub fn compose_ask_journal_body(record: &AskJobRecord, output: &str) -> String {
     let result = output.trim();
 
     let mut sections = Vec::new();
-    if let Some(follow_up) = interim {
-        if !texts_equivalent(follow_up, result) {
+    if let Some(follow_up) = interim
+        && !texts_equivalent(follow_up, result) {
             sections.push(format!("**Follow-up:**\n{follow_up}\n"));
         }
-    }
     if result.is_empty() {
         sections.push("**Result:**\n(no output captured)\n".to_string());
     } else if sections.is_empty() {
@@ -124,14 +123,13 @@ fn compose_notify_text(record: &AskJobRecord, output: &str) -> String {
         .map(str::trim)
         .filter(|value| !value.is_empty());
     let mut body = String::new();
-    if let Some(follow_up) = interim {
-        if !texts_equivalent(follow_up, output) {
+    if let Some(follow_up) = interim
+        && !texts_equivalent(follow_up, output) {
             body.push_str(&format!(
                 "Follow-up:\n{}\n\n",
                 truncate(follow_up, 600)
             ));
         }
-    }
     body.push_str(&truncate(output, 1200));
     format!(
         "✓ Ask completed · {}\n\n{}\n\n— {}",

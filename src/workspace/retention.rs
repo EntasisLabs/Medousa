@@ -42,11 +42,10 @@ impl WorkspaceRetentionConfig {
 }
 
 pub fn resolve_hide_after_hours(defaults: &TuiDefaults) -> u32 {
-    if let Ok(raw) = std::env::var(HIDE_AFTER_HOURS_ENV) {
-        if let Ok(value) = raw.trim().parse::<u32>() {
+    if let Ok(raw) = std::env::var(HIDE_AFTER_HOURS_ENV)
+        && let Ok(value) = raw.trim().parse::<u32>() {
             return clamp_hide_after_hours(value);
         }
-    }
     defaults
         .work_card_hide_after_hours
         .map(clamp_hide_after_hours)
@@ -54,11 +53,10 @@ pub fn resolve_hide_after_hours(defaults: &TuiDefaults) -> u32 {
 }
 
 pub fn resolve_wipe_after_days(defaults: &TuiDefaults) -> u32 {
-    if let Ok(raw) = std::env::var(WIPE_AFTER_DAYS_ENV) {
-        if let Ok(value) = raw.trim().parse::<u32>() {
+    if let Ok(raw) = std::env::var(WIPE_AFTER_DAYS_ENV)
+        && let Ok(value) = raw.trim().parse::<u32>() {
             return clamp_wipe_after_days(value);
         }
-    }
     defaults
         .work_card_wipe_after_days
         .map(clamp_wipe_after_days)

@@ -713,8 +713,8 @@ impl StasisTool for CognitionIdentityCommitTool {
             input.get("entity_type").and_then(Value::as_str),
             input.get("entity_id").and_then(Value::as_str),
             input.get("patch"),
-        ) {
-            if patch.is_object() {
+        )
+            && patch.is_object() {
                 let entity_type =
                     parse_identity_entity_type(entity_type_raw).map_err(StasisError::PortFailure)?;
                 let source = parse_update_source(input.get("source").and_then(Value::as_str))
@@ -759,7 +759,6 @@ impl StasisTool for CognitionIdentityCommitTool {
                     }));
                 }
             }
-        }
 
         let response = self
             .service

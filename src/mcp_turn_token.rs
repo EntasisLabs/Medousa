@@ -128,7 +128,13 @@ mod tests {
     #[test]
     fn open_when_secret_unset() {
         let context = sample_context();
-        assert!(resolve_mcp_turn_token_secret().is_none() || true);
-        verify_mcp_turn_token("anything", &context).expect("open verify when secret unset");
+        let previous = std::env::var("MEDOUSA_MCP_TURN_TOKEN_SECRET").ok();
+        unsafe { std::env::remove_var("MEDOUSA_MCP_TURN_TOKEN_SECRET") };
+        let result = verify_mcp_turn_token("anything", &context);
+        match previous {
+            Some(value) => unsafe { std::env::set_var("MEDOUSA_MCP_TURN_TOKEN_SECRET", value) },
+            None => unsafe { std::env::remove_var("MEDOUSA_MCP_TURN_TOKEN_SECRET") },
+        }
+        result.expect("open verify when secret unset");
     }
 }

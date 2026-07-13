@@ -517,6 +517,7 @@ fn resolve_brief_ingest_prompt(args: &str) -> String {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 /// Build an interactive turn request for centralized ingest (agent runtime path).
 pub fn build_interactive_turn_request_for_ingest(
     session_id: &str,

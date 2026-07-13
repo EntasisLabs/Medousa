@@ -102,11 +102,6 @@ fn init_with_otel(env_filter: EnvFilter) -> String {
     format!("tracing=fmt+otlp service={service_name} endpoint={endpoint}")
 }
 
-#[cfg(not(feature = "otel-export"))]
-fn medousa_otel_enabled() -> bool {
-    false
-}
-
 #[cfg(feature = "otel-export")]
 fn medousa_otel_enabled() -> bool {
     matches!(

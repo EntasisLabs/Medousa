@@ -42,19 +42,16 @@ pub fn set_channel_session_store(store: Arc<dyn ChannelSessionStore>) {
 }
 
 pub async fn init_channel_session_store_with_runtime(runtime: &RuntimeComposition) {
-    match runtime {
-        RuntimeComposition::Surreal(rt) => {
-            let store = SurrealChannelSessionStore::new(rt.job_store.db());
-            if let Err(err) = store.ensure_schema().await {
-                eprintln!(
-                    "Surreal channel session store schema init error: {err}; keeping in-memory store"
-                );
-                return;
-            }
-            set_channel_session_store(Arc::new(store));
-            eprintln!("Surreal runtime detected; channel session store switched to SurrealDB backend");
+    if let RuntimeComposition::Surreal(rt) = runtime {
+        let store = SurrealChannelSessionStore::new(rt.job_store.db());
+        if let Err(err) = store.ensure_schema().await {
+            eprintln!(
+                "Surreal channel session store schema init error: {err}; keeping in-memory store"
+            );
+            return;
         }
-        _ => {}
+        set_channel_session_store(Arc::new(store));
+        eprintln!("Surreal runtime detected; channel session store switched to SurrealDB backend");
     }
 }
 

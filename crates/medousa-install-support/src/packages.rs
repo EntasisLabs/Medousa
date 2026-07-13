@@ -53,6 +53,7 @@ pub struct PackageProfile {
     pub packages: &'static [&'static str],
 }
 
+#[allow(clippy::too_many_arguments)]
 fn entry(
     id: &'static str,
     display_name: &'static str,
@@ -318,7 +319,7 @@ pub fn expand_package_dependencies(selected: &[&str]) -> Vec<String> {
         .collect();
     let mut resolved = Vec::new();
     let mut seen = HashSet::new();
-    let mut stack: Vec<&str> = selected.iter().copied().collect();
+    let mut stack: Vec<&str> = selected.to_vec();
 
     while let Some(id) = stack.pop() {
         if !seen.insert(id.to_string()) {

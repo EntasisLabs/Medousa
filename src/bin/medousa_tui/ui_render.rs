@@ -141,21 +141,6 @@ fn render_startup_overlay(frame: &mut ratatui::Frame, state: &TuiState) {
     frame.render_widget(Clear, popup);
 
     let mut lines: Vec<Line> = Vec::new();
-    lines.push(Line::from(Span::styled(
-        " Welcome to Medousa ",
-        Style::default()
-            .fg(ui_accent_primary())
-            .add_modifier(Modifier::BOLD),
-    )));
-    lines.push(Line::from(Span::styled(
-        "Choose your model, then start.",
-        Style::default().fg(Color::Gray),
-    )));
-    lines.push(Line::from(Span::styled(
-        "Up/Down: select  Left/Right: cycle provider  Type/Backspace: edit model  Enter: continue",
-        Style::default().fg(Color::DarkGray),
-    )));
-    lines.push(Line::from(""));
 
     let rows = [
         format!("Provider: {}", state.settings_draft.provider),
@@ -374,7 +359,7 @@ fn build_job_history_text(state: &TuiState, width: u16) -> Text<'static> {
             "failed" => "✗",
             _ => "·",
         };
-        let type_label = j.job_type.split('.').last().unwrap_or(&j.job_type);
+        let type_label = j.job_type.split('.').next_back().unwrap_or(&j.job_type);
         let id_short: String = j.job_id.chars().take(12).collect();
         let summary = format!("{symbol} {type_label}  {id_short}  [{}]", j.status);
         lines.extend(render_markdown_lines_cached(state, &summary, width));
@@ -599,8 +584,8 @@ fn render_history_overlay(frame: &mut ratatui::Frame, state: &mut TuiState) {
             lines.push(Line::from(Span::styled(line, style)));
         }
 
-        if state.history_show_verification_detail {
-            if let Some(selected) = state.history_items.get(state.history_selected) {
+        if state.history_show_verification_detail
+            && let Some(selected) = state.history_items.get(state.history_selected) {
                 lines.push(Line::from(""));
                 lines.push(Line::from(Span::styled(
                     " Verification Signals ",
@@ -647,7 +632,6 @@ fn render_history_overlay(frame: &mut ratatui::Frame, state: &mut TuiState) {
                     }
                 }
             }
-        }
     }
 
     let text = Text::from(lines);
@@ -837,6 +821,7 @@ fn build_conversation_text(
                     "needs_input" => ("asking", Color::Cyan),
                     "final_pending" => ("wrapping up", Color::Magenta),
                     "tool_loop" => ("running tools", Color::Cyan),
+                    "pack_hold" => ("held", Color::DarkGray),
                     _ => (answer_state, Color::Gray),
                 };
                 lines.push(Line::from(vec![
@@ -850,6 +835,27 @@ fn build_conversation_text(
             lines.extend(render_markdown_lines_cached(state, content_body, width));
             if let Some(handoff) = super::tui_presentation::render_handoff_line(turn) {
                 lines.push(handoff);
+            }
+            for note in super::tui_presentation::progress_notes(turn) {
+                lines.push(Line::from(Span::styled(
+                    format!("  · {note}"),
+                    Style::default().fg(Color::DarkGray),
+                )));
+            }
+            if state
+                .active_agent_stream_turn
+                .is_some_and(|active| active == index)
+            {
+                for note in state.turn_parts.live_progress_notes() {
+                    let trimmed = note.trim();
+                    if trimmed.is_empty() {
+                        continue;
+                    }
+                    lines.push(Line::from(Span::styled(
+                        format!("  · {trimmed}"),
+                        Style::default().fg(Color::DarkGray),
+                    )));
+                }
             }
         }
 

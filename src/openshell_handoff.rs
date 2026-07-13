@@ -85,15 +85,10 @@ fn read_active_gateway_endpoint() -> Option<String> {
 
 pub fn resolve_openshell_local_bin(name: &str) -> Option<PathBuf> {
     let home = dirs::home_dir()?;
-    for candidate in [
+    [
         home.join(".local").join("openshell").join("bin").join(name),
         home.join(".local").join("bin").join(name),
-    ] {
-        if candidate.is_file() {
-            return Some(candidate);
-        }
-    }
-    None
+    ].into_iter().find(|candidate| candidate.is_file())
 }
 
 pub fn podman_user_socket_path() -> PathBuf {

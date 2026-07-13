@@ -336,10 +336,12 @@
                     <p class="workshop-faint mt-1 whitespace-pre-wrap">{step.user_prompt}</p>
                   {:else if step.kind === "grapheme"}
                     <pre class="workshop-faint mt-1 overflow-x-auto font-mono text-[10px]">{step.source}</pre>
-                  {:else}
+                  {:else if step.kind === "mcp"}
                     <p class="workshop-faint mt-1 font-mono">
                       {step.server_id}.{step.tool_name}
                     </p>
+                  {:else if step.kind === "tool_replay"}
+                    <p class="workshop-faint mt-1 font-mono">{step.tool_name}</p>
                   {/if}
                   {#if selectedDetail.step_results.length > 0}
                     {@const result = selectedDetail.step_results.find((row) => row.id === step.id)}

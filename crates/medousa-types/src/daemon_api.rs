@@ -19,7 +19,7 @@ pub fn parse_daemon_bind_port(bind: &str) -> u16 {
 /// Best-effort LAN IPv4 for advertising a daemon bound to `0.0.0.0`.
 pub fn detect_lan_ipv4() -> Option<String> {
     use std::net::{IpAddr, UdpSocket};
-    let socket = UdpSocket::bind(format!("0.0.0.0:0")).ok()?;
+    let socket = UdpSocket::bind("0.0.0.0:0".to_string()).ok()?;
     socket.connect("8.8.8.8:80").ok()?;
     match socket.local_addr().ok()?.ip() {
         IpAddr::V4(addr) if !addr.is_loopback() && !addr.is_unspecified() => Some(addr.to_string()),

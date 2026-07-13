@@ -360,7 +360,7 @@ pub(crate) async fn handle_slash_command(
                 Ok(prompt) => {
                     push_obs(
                         state,
-                        format!("◈ skill run queued via research worker"),
+                        "◈ skill run queued via research worker".to_string(),
                     );
                     start_prompt_run(state, tui_rt, event_tx, prompt, true).await;
                 }

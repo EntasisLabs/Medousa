@@ -12,19 +12,12 @@ use crate::transport::path_with_query;
 
 /// Policy for reconnecting an interactive turn SSE stream after a drop.
 #[derive(Debug, Clone)]
+#[derive(Default)]
 pub struct ReconnectPolicy {
     pub backoff: BackoffPolicy,
     pub breaker: CircuitBreakerConfig,
 }
 
-impl Default for ReconnectPolicy {
-    fn default() -> Self {
-        Self {
-            backoff: BackoffPolicy::default(),
-            breaker: CircuitBreakerConfig::default(),
-        }
-    }
-}
 
 /// Exponential backoff with cap and deterministic pseudo-jitter (no `rand` dep).
 #[derive(Debug, Clone)]

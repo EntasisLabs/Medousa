@@ -30,6 +30,10 @@ pub struct TurnPartsAccumulator {
 }
 
 impl TurnPartsAccumulator {
+    pub fn live_progress_notes(&self) -> &[String] {
+        &self.progress_notes
+    }
+
     pub fn push_content_delta(&mut self, _delta: &str) {
         // Final answer text is taken from the terminal sink payload; deltas are
         // mirrored in SSE only.
@@ -78,6 +82,7 @@ impl TurnPartsAccumulator {
         });
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn replace_attachment_ref(
         &mut self,
         previous_artifact_id: &str,
@@ -89,8 +94,8 @@ impl TurnPartsAccumulator {
         height_px: Option<u32>,
     ) {
         for part in &mut self.attachment_parts {
-            if let TurnPart::AttachmentRef { artifact_id: existing, .. } = part {
-                if existing == previous_artifact_id {
+            if let TurnPart::AttachmentRef { artifact_id: existing, .. } = part
+                && existing == previous_artifact_id {
                     *part = TurnPart::AttachmentRef {
                         artifact_id: artifact_id.to_string(),
                         mime: mime.to_string(),
@@ -101,7 +106,6 @@ impl TurnPartsAccumulator {
                     };
                     return;
                 }
-            }
         }
         self.push_attachment_ref(
             artifact_id,

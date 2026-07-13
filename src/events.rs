@@ -68,6 +68,12 @@ pub enum TuiEvent {
     },
     /// Partial assistant output chunk streamed from the model.
     AgentChunk { turn_id: u64, delta: String },
+    /// Host PackHold: held assistant draft is still visible; await tools / finish / short ack.
+    AgentPackHold {
+        turn_id: u64,
+        held: String,
+        tool_names: Vec<String>,
+    },
     /// Replace in-flight assistant scratch text (new model round / gatekeeper continue).
     AgentScratchReset { turn_id: u64 },
     /// Partial model reasoning chunk streamed from the model.

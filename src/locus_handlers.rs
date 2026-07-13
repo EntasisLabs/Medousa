@@ -89,14 +89,13 @@ async fn list_nodes(
 
 fn tag_filter_from_query(query: &LocusNodesQuery) -> stasis::ports::outbound::memory::memory_models::MemoryFilter {
     let mut input = serde_json::Map::new();
-    if let Some(tags) = query.tags.as_ref() {
-        if let Some(parsed) = parse_semantic_tags_from_value(Some(&Value::String(tags.clone()))) {
+    if let Some(tags) = query.tags.as_ref()
+        && let Some(parsed) = parse_semantic_tags_from_value(Some(&Value::String(tags.clone()))) {
             input.insert(
                 "semantic_tags".to_string(),
                 Value::Array(parsed.into_iter().map(Value::String).collect()),
             );
         }
-    }
     if let Some(prefix) = query.tag_prefix.as_ref().filter(|v| !v.trim().is_empty()) {
         input.insert("tag_prefix".to_string(), Value::String(prefix.trim().to_string()));
     }
@@ -115,11 +114,13 @@ async fn find_nodes_by_tags(
         return Ok(Vec::new());
     }
 
-    let mut find = MemoryFindRequest::default();
-    find.limit = limit;
-    find.sort_field = MemorySortField::Timestamp;
-    find.sort_direction = MemorySortDirection::Desc;
-    find.filter = filter;
+    let mut find = MemoryFindRequest {
+        limit,
+        sort_field: MemorySortField::Timestamp,
+        sort_direction: MemorySortDirection::Desc,
+        filter,
+        ..Default::default()
+    };
     if let Some(session_id) = session_id {
         find.scope.session_ids = Some(vec![session_id.to_string()]);
         let tenant = crate::locus_memory::derive_locus_tenant_id(session_id);

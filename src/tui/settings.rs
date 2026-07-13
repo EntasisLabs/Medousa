@@ -185,13 +185,12 @@ pub fn settings_validation_errors(settings: &RuntimeSettings) -> Vec<String> {
         .trim()
         .parse::<usize>()
         .ok();
-    if let (Some(hot), Some(cold)) = (hot, cold) {
-        if cold < hot {
+    if let (Some(hot), Some(cold)) = (hot, cold)
+        && cold < hot {
             errors.push(
                 "summarized history must be at least as long as recent history".to_string(),
             );
         }
-    }
 
     errors
 }

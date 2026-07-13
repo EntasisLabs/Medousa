@@ -33,6 +33,7 @@ enum PersistOp {
     Flush(oneshot::Sender<()>),
 }
 
+#[derive(Default)]
 struct PendingSnapshots {
     card_states: Option<String>,
     associations: Option<String>,
@@ -53,16 +54,6 @@ impl PendingSnapshots {
     }
 }
 
-impl Default for PendingSnapshots {
-    fn default() -> Self {
-        Self {
-            card_states: None,
-            associations: None,
-            ask_jobs: None,
-            turn_workers: None,
-        }
-    }
-}
 
 fn workspace_dir() -> PathBuf {
     session::medousa_data_dir().join("workspace")
@@ -189,26 +180,22 @@ async fn run_persist_writer(mut rx: mpsc::Receiver<PersistOp>) {
 
 async fn flush_pending_snapshots(pending: &mut PendingSnapshots) {
     let batch = pending.take_all();
-    if let Some(body) = batch.card_states {
-        if let Err(err) = write_file(CARD_STATE_FILE, &body).await {
+    if let Some(body) = batch.card_states
+        && let Err(err) = write_file(CARD_STATE_FILE, &body).await {
             eprintln!("workspace persist: card_states write failed: {err}");
         }
-    }
-    if let Some(body) = batch.associations {
-        if let Err(err) = write_file(ASSOC_FILE, &body).await {
+    if let Some(body) = batch.associations
+        && let Err(err) = write_file(ASSOC_FILE, &body).await {
             eprintln!("workspace persist: associations write failed: {err}");
         }
-    }
-    if let Some(body) = batch.ask_jobs {
-        if let Err(err) = write_file(ASK_JOBS_FILE, &body).await {
+    if let Some(body) = batch.ask_jobs
+        && let Err(err) = write_file(ASK_JOBS_FILE, &body).await {
             eprintln!("workspace persist: ask_jobs write failed: {err}");
         }
-    }
-    if let Some(body) = batch.turn_workers {
-        if let Err(err) = write_file(TURN_WORKERS_FILE, &body).await {
+    if let Some(body) = batch.turn_workers
+        && let Err(err) = write_file(TURN_WORKERS_FILE, &body).await {
             eprintln!("workspace persist: turn_workers write failed: {err}");
         }
-    }
 }
 
 async fn append_feed_line(line: &str) -> std::io::Result<()> {

@@ -223,20 +223,18 @@ impl TurnBudgetRequestStore {
 
     fn signal_waiter(&self, request_id: &str, resolution: BudgetResolution) {
         if let Ok(mut guard) = self.waiters.try_lock() {
-            if let Some(waiter) = guard.remove(request_id) {
-                if let Some(tx) = waiter.tx {
+            if let Some(waiter) = guard.remove(request_id)
+                && let Some(tx) = waiter.tx {
                     let _ = tx.send(resolution);
                 }
-            }
         } else {
             let store = Arc::clone(&self.waiters);
             let request_id = request_id.to_string();
             tokio::spawn(async move {
-                if let Some(waiter) = store.lock().await.remove(&request_id) {
-                    if let Some(tx) = waiter.tx {
+                if let Some(waiter) = store.lock().await.remove(&request_id)
+                    && let Some(tx) = waiter.tx {
                         let _ = tx.send(resolution);
                     }
-                }
             });
         }
     }
@@ -259,7 +257,7 @@ impl TurnBudgetRequestStore {
             .filter(|record| record.status == TurnBudgetRequestStatus::Pending)
             .cloned()
             .collect();
-        rows.sort_by(|left, right| right.updated_at_utc.cmp(&left.updated_at_utc));
+        rows.sort_by_key(|right| std::cmp::Reverse(right.updated_at_utc));
         rows.truncate(limit);
         rows
     }

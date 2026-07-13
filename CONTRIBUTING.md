@@ -30,6 +30,23 @@ npm run tauri:dev
 More: [docs/cookbook/build-from-source.md](docs/cookbook/build-from-source.md) ·
 [apps/medousa-home/README.md](apps/medousa-home/README.md)
 
+## Lint (matches CI)
+
+Run these from the repo root (`Medousa/`) before opening a PR:
+
+```bash
+# Rust — workspace clippy, warnings denied (medousa-sdk-iroh excluded until its SSE feature wiring is stable)
+cargo clippy --workspace --all-targets --exclude medousa-sdk-iroh -- -D warnings
+
+# Rust tests (same as CI rust job)
+cargo test -p medousa --lib
+
+# Desktop app — TypeScript + Svelte (must be 0 errors and 0 warnings)
+cd apps/medousa-home && npm ci && npm run check
+```
+
+Optional: `bash scripts/ci/validate-workflows.sh` after editing `.github/workflows/`.
+
 ## What to work on
 
 | Area | Good first contributions |
@@ -49,6 +66,8 @@ asks for it — those surfaces are sensitive.
 3. Update docs when behavior changes (see the
    [docs release checklist](docs/CONTRIBUTING-DOCS.md#per-release-checklist)).
 4. Run what you can locally:
+   - `cargo clippy --workspace --all-targets --exclude medousa-sdk-iroh -- -D warnings` for Rust
+   - `cd apps/medousa-home && npm run check` for the desktop app (0 errors, 0 warnings)
    - `cargo test` / targeted package tests for Rust changes
    - `scripts/verify-docs.sh` when you edit `docs/`
    - App smoke for UI: open Settings → Packages, chat, vault as relevant

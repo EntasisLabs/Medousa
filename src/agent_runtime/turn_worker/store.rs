@@ -258,7 +258,7 @@ impl TurnWorkerStore {
             .filter(|record| !record.archived)
             .cloned()
             .collect::<Vec<_>>();
-        records.sort_by(|left, right| right.updated_at.cmp(&left.updated_at));
+        records.sort_by_key(|right| std::cmp::Reverse(right.updated_at));
         records.truncate(limit);
         records
     }

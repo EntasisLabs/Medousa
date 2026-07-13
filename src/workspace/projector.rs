@@ -360,7 +360,7 @@ fn publish_snapshot(
     map: HashMap<String, ProjectedWorkItem>,
 ) {
     let mut cards: Vec<WorkCard> = map.values().map(|item| item.card.clone()).collect();
-    cards.sort_by(|left, right| right.updated_at_utc.cmp(&left.updated_at_utc));
+    cards.sort_by_key(|right| std::cmp::Reverse(right.updated_at_utc));
 
     let snapshot = Arc::new(WorkspaceReadSnapshot {
         revision: workspace_store().revision(),

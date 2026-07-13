@@ -2,13 +2,13 @@ import { defineConfig } from "vite";
 import { sveltekit } from "@sveltejs/kit/vite";
 import { buildThemeBootScript } from "./src/lib/theme/themeRegistry";
 
-// @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
 
 function themeBootPlugin() {
   const bootScript = buildThemeBootScript();
   return {
     name: "medousa-theme-boot",
+    /** @param {string} html */
     transformIndexHtml(html) {
       return html.replace(
         "<!-- MEDOUSA_THEME_BOOT -->",

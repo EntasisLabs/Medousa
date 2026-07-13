@@ -440,6 +440,7 @@ pub fn tool_started_stream_event(
     Ok(event)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn tool_finished_stream_event(
     turn_id: &str,
     tool_run_id: &str,

@@ -56,6 +56,14 @@ export interface TuiDefaults {
   inferenceProfiles?: InferenceProfiles | null;
   workCardHideAfterHours?: number | null;
   workCardWipeAfterDays?: number | null;
+  /** Master switch for cognition_shell_* (default off). */
+  shellAgentToolsEnabled?: boolean | null;
+  /** Charter ceiling for shell network (default off). */
+  shellNetworkDefault?: boolean | null;
+  shellTimeoutMs?: number | null;
+  shellMaxOutputBytes?: number | null;
+  shellAllowedBinaries?: string[] | null;
+  shellWritableRoots?: string[] | null;
 }
 
 export const BACKEND_OPTIONS = ["surreal-mem", "in-memory", "surreal-kv"] as const;
@@ -197,10 +205,16 @@ export function normalizeWorkshopDefaults(raw: TuiDefaults): TuiDefaults {
     customVoicePresets: normalizeCustomVoicePresets(raw.customVoicePresets),
     workCardHideAfterHours: raw.workCardHideAfterHours ?? 24,
     workCardWipeAfterDays: raw.workCardWipeAfterDays ?? 7,
+    shellAgentToolsEnabled: raw.shellAgentToolsEnabled ?? false,
+    shellNetworkDefault: raw.shellNetworkDefault ?? false,
+    shellTimeoutMs: raw.shellTimeoutMs ?? 30_000,
+    shellMaxOutputBytes: raw.shellMaxOutputBytes ?? 262_144,
+    shellAllowedBinaries: raw.shellAllowedBinaries ?? [],
+    shellWritableRoots: raw.shellWritableRoots ?? [],
   };
   normalized.inferenceProfiles = normalizeInferenceProfiles(raw.inferenceProfiles, {
-    provider: normalized.provider ?? defaults.provider,
-    model: normalized.model ?? defaults.model,
+    provider: normalized.provider || defaults.provider || "ollama",
+    model: normalized.model || defaults.model || "qwen2.5:7b",
     baseUrl: normalized.baseUrl,
     sttProvider: normalized.sttProvider ?? "openai",
     sttModel: normalized.sttModel ?? defaultSttModel(normalized.sttProvider ?? "openai"),
@@ -214,6 +228,17 @@ export function allowedModulesToText(modules: string[] | null | undefined): stri
 }
 
 export function parseAllowedModulesText(value: string): string[] {
+  return value
+    .split(/[,\n]/)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
+export function listToMultilineText(entries: string[] | null | undefined): string {
+  return (entries ?? []).join("\n");
+}
+
+export function parseMultilineList(value: string): string[] {
   return value
     .split(/[,\n]/)
     .map((entry) => entry.trim())

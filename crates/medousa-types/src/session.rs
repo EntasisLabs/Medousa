@@ -78,6 +78,20 @@ pub struct TuiDefaults {
     pub stt_model: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stt_base_url: Option<String>,
+    /// Master switch for `cognition_shell_*` agent tools (default off — sensitive).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shell_agent_tools_enabled: Option<bool>,
+    /// Charter ceiling for shell network access (default off).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shell_network_default: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shell_timeout_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shell_max_output_bytes: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shell_allowed_binaries: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shell_writable_roots: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

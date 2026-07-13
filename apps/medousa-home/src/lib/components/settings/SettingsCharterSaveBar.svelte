@@ -5,10 +5,12 @@
 
   interface Props {
     mobile?: boolean;
+    /** Runs immediately before `workshopDefaults.save()` (e.g. flush textarea → draft). */
+    beforeSave?: () => void | Promise<void>;
     onSaved?: () => void | Promise<void>;
   }
 
-  let { mobile = false, onSaved }: Props = $props();
+  let { mobile = false, beforeSave, onSaved }: Props = $props();
 
   const mobileReadOnly = $derived(mobile && isTauriMobilePlatform());
 </script>
@@ -27,6 +29,7 @@
       class="btn btn-sm variant-filled-primary"
       disabled={workshopDefaults.saving || workshopDefaults.loading}
       onclick={async () => {
+        await beforeSave?.();
         await workshopDefaults.save();
         if (workshopDefaults.message?.toLowerCase().includes("saved")) {
           await onSaved?.();

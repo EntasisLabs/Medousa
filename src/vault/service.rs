@@ -230,6 +230,68 @@ pub(crate) fn vault_integration_test_lock() -> std::sync::MutexGuard<'static, ()
         .expect("vault test lock")
 }
 
+fn mime_guess_from_path(path: &std::path::Path) -> String {
+    let ext = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    match ext.as_str() {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "svg" => "image/svg+xml",
+        "bmp" => "image/bmp",
+        "ico" => "image/x-icon",
+        "pdf" => "application/pdf",
+        "csv" => "text/csv",
+        "tsv" => "text/tab-separated-values",
+        "json" => "application/json",
+        "md" | "markdown" => "text/markdown",
+        "txt" => "text/plain",
+        _ => "application/octet-stream",
+    }
+    .to_string()
+}
+
+fn append_vault_feed_event(
+    path: &str,
+    title: &str,
+    created: bool,
+    actor: WorkspaceEventActor,
+    tool_name: Option<&str>,
+) {
+    let refs = vec![crate::daemon_api::WorkspaceEventRef {
+        ref_type: "vault_path".to_string(),
+        ref_id: path.to_string(),
+    }];
+    let detail_line = title.trim().to_string();
+    let kind = if created {
+        crate::daemon_api::WorkspaceEventKind::VaultNoteCreated
+    } else {
+        crate::daemon_api::WorkspaceEventKind::VaultNoteUpdated
+    };
+    let summary = match actor {
+        WorkspaceEventActor::Agent => format!("Agent updated vault — {detail_line}"),
+        _ => format!("Vault updated — {detail_line}"),
+    };
+    let tool_names = tool_name.map(|name| vec![name.to_string()]).unwrap_or_default();
+    let event = crate::daemon_api::WorkspaceEvent {
+        id: crate::workspace::event::new_event_id(),
+        timestamp_utc: chrono::Utc::now(),
+        kind,
+        actor,
+        summary,
+        refs,
+        detail_line: Some(detail_line),
+        context_line: Some(path.to_string()),
+        intent: None,
+        tool_names,
+    };
+    workspace_store().append_event(event);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -301,67 +363,4 @@ mod tests {
         let deleted = VaultService::delete_note(&path).expect("delete");
         assert!(deleted.deleted);
     }
-}
-
-fn mime_guess_from_path(path: &std::path::Path) -> String {
-    let ext = path
-        .extension()
-        .and_then(|value| value.to_str())
-        .unwrap_or("")
-        .to_ascii_lowercase();
-    match ext.as_str() {
-        "png" => "image/png",
-        "jpg" | "jpeg" => "image/jpeg",
-        "gif" => "image/gif",
-        "webp" => "image/webp",
-        "svg" => "image/svg+xml",
-        "bmp" => "image/bmp",
-        "ico" => "image/x-icon",
-        "pdf" => "application/pdf",
-        "csv" => "text/csv",
-        "tsv" => "text/tab-separated-values",
-        "json" => "application/json",
-        "md" | "markdown" => "text/markdown",
-        "txt" => "text/plain",
-        _ => "application/octet-stream",
-    }
-    .to_string()
-}
-
-fn append_vault_feed_event(
-    path: &str,
-    title: &str,
-    created: bool,
-    actor: WorkspaceEventActor,
-    tool_name: Option<&str>,
-) {
-    let mut refs = Vec::new();
-    refs.push(crate::daemon_api::WorkspaceEventRef {
-        ref_type: "vault_path".to_string(),
-        ref_id: path.to_string(),
-    });
-    let detail_line = title.trim().to_string();
-    let kind = if created {
-        crate::daemon_api::WorkspaceEventKind::VaultNoteCreated
-    } else {
-        crate::daemon_api::WorkspaceEventKind::VaultNoteUpdated
-    };
-    let summary = match actor {
-        WorkspaceEventActor::Agent => format!("Agent updated vault — {detail_line}"),
-        _ => format!("Vault updated — {detail_line}"),
-    };
-    let tool_names = tool_name.map(|name| vec![name.to_string()]).unwrap_or_default();
-    let event = crate::daemon_api::WorkspaceEvent {
-        id: crate::workspace::event::new_event_id(),
-        timestamp_utc: chrono::Utc::now(),
-        kind,
-        actor,
-        summary,
-        refs,
-        detail_line: Some(detail_line),
-        context_line: Some(path.to_string()),
-        intent: None,
-        tool_names,
-    };
-    workspace_store().append_event(event);
 }

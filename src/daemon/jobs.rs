@@ -61,7 +61,7 @@ pub async fn get_job_result(
         return Ok(Json(job_result_from_agent_turn(&job_id, record)));
     }
 
-    let attempts = match get_job_attempts_graceful(&state.composition(), &job_id).await {
+    let attempts = match get_job_attempts_graceful(state.composition(), &job_id).await {
         Ok(attempts) => attempts,
         Err(err) => return Err(err),
     };
@@ -112,7 +112,7 @@ pub async fn get_job_report(
         }));
     }
 
-    let attempts = match get_job_attempts_graceful(&state.composition(), &job_id).await {
+    let attempts = match get_job_attempts_graceful(state.composition(), &job_id).await {
         Ok(attempts) => attempts,
         Err(err) => return Err(err),
     };
@@ -1082,7 +1082,6 @@ fn build_job_evidence_report(job_id: &str, payload: &Value) -> Option<JobEvidenc
 
 /// Fetches job attempts, gracefully handling the case where the backend table
 /// does not exist yet (fresh database without auto-migration).
-
 pub fn derive_job_result_status(latest_outcome: Option<&str>, attempt_count: usize) -> (String, bool) {
     if attempt_count == 0 {
         return ("queued".to_string(), false);

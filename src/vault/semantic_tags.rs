@@ -13,11 +13,10 @@ pub fn default_vault_semantic_tags(chat_session_id: Option<&str>) -> Vec<String>
         tags.extend(crate::locus_semantic_tags::default_workshop_semantic_tags(session_id));
     } else {
         let profile_id = crate::user_profiles::resolve_workshop_identity_user_id();
-        if let Some(slug) = crate::user_profiles::profile_slug_from_id(&profile_id) {
-            if slug != crate::locus_memory::LOCUS_DEFAULT_TENANT {
+        if let Some(slug) = crate::user_profiles::profile_slug_from_id(&profile_id)
+            && slug != crate::locus_memory::LOCUS_DEFAULT_TENANT {
                 tags.push(format!("profile:{slug}"));
             }
-        }
     }
     normalize_semantic_tags(tags.iter().map(String::as_str))
 }
@@ -61,11 +60,10 @@ pub fn collect_distinct_tags(entries: &[crate::vault::note::VaultIndexEntry], pr
         for tag in &entry.tags {
             let normalized = normalize_semantic_tags([tag.as_str()]);
             for tag in normalized {
-                if let Some(prefix) = prefix.as_deref() {
-                    if !tag.starts_with(prefix) {
+                if let Some(prefix) = prefix.as_deref()
+                    && !tag.starts_with(prefix) {
                         continue;
                     }
-                }
                 tags.insert(tag);
             }
         }

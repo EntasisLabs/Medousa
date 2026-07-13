@@ -208,7 +208,7 @@ pub fn list_tool_history_runs(query: &ToolHistoryListQuery) -> ToolHistoryListRe
         }
     }
 
-    runs.sort_by(|left, right| right.timestamp.cmp(&left.timestamp));
+    runs.sort_by_key(|right| std::cmp::Reverse(right.timestamp));
 
     if let Some(tool) = tool_filter.as_ref() {
         runs.retain(|entry| entry.tool_name.to_ascii_lowercase().contains(tool.as_str()));
@@ -283,7 +283,7 @@ pub fn promote_run_to_step(entry: &ToolHistoryRunEntry, step_id: &str) -> (Workf
             .unwrap_or(entry.input_summary.as_str())
             .trim()
             .to_string();
-        if source.len() < entry.input_summary.len() && !input.get("source").is_some() {
+        if source.len() < entry.input_summary.len() && input.get("source").is_none() {
             notes.push(format!(
                 "Grapheme source for {} may be truncated — review before scheduling.",
                 entry.tool_name

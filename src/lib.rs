@@ -36,6 +36,7 @@ pub mod tool_history_handlers;
 pub mod grapheme_script;
 pub mod grapheme_script_tools;
 pub mod grapheme_handlers;
+pub mod grapheme_host_catalog;
 pub mod grapheme_lsp_bridge;
 pub mod grapheme_medousa_bridge;
 pub mod grapheme_workshop;
@@ -55,6 +56,9 @@ pub mod mcp_gateway;
 pub mod openshell_handoff;
 pub mod openshell_sandbox_run;
 pub mod openshell_tools;
+pub mod shell_sandbox;
+pub mod shell_grapheme;
+pub mod shell_tools;
 pub mod observability;
 pub mod ui_present_tools;
 pub mod ui_scene_tools;
@@ -648,15 +652,14 @@ pub fn surrealkv_lock_path(backend: &RuntimeBackend) -> Option<PathBuf> {
 pub fn remove_surrealkv_lock(backend: &RuntimeBackend) {
     if let RuntimeBackend::SurrealKv { path, .. } = backend {
         let lock_path = PathBuf::from(path).join("LOCK");
-        if lock_path.exists() {
-            if let Err(err) = std::fs::remove_file(&lock_path) {
+        if lock_path.exists()
+            && let Err(err) = std::fs::remove_file(&lock_path) {
                 tracing::warn!(
                     path = %lock_path.display(),
                     error = %err,
                     "failed to remove SurrealKV lock file during shutdown"
                 );
             }
-        }
     }
 }
 

@@ -13,10 +13,8 @@
 
   let { surface, onSaved, onCancel }: Props = $props();
 
-  let label = $state(surface.label);
-  let icon = $state<AllowedSurfaceIcon>(
-    isAllowedSurfaceIcon(surface.icon) ? surface.icon : "sparkles",
-  );
+  let label = $state("");
+  let icon = $state<AllowedSurfaceIcon>("sparkles");
   let busy = $state(false);
   let error = $state<string | null>(null);
 

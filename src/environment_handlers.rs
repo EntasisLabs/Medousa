@@ -3,7 +3,7 @@
 use axum::extract::{Query, State};
 use axum::http::StatusCode;
 use axum::response::sse::{Event, KeepAlive, Sse};
-use axum::routing::{delete, get, post, put};
+use axum::routing::{get, post};
 use axum::{Json, Router};
 use chrono::Utc;
 use futures_util::stream::{self, Stream};
@@ -77,7 +77,7 @@ async fn get_status(
         .map(str::trim)
         .filter(|value| !value.is_empty());
     let runtime = state.runtime.as_deref();
-    let diagnostics = query.include_runtime.unwrap_or(false).then(|| {
+    let diagnostics = query.include_runtime.unwrap_or(false).then_some({
         crate::custom_view_status::DoctorDiagnosticOptions {
             component_id_filter: None,
             include_runtime: true,
@@ -221,7 +221,7 @@ async fn stream_spec(
 
     let rx = state.hub.subscribe();
     let since_revision = since;
-    let stream = stream::unfold((rx, Some(initial)), move |mut state| async move {
+    let stream = stream::unfold((rx, Some(initial)), move |state| async move {
         let (mut rx, pending) = state;
         if let Some(event) = pending {
             let payload = serde_json::to_string(&event).unwrap_or_else(|_| "{}".to_string());

@@ -4,7 +4,6 @@ use std::sync::Arc;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::Json;
-use grapheme_sdk::{curated_examples_for_module, discover_module_manifests, modules_info_contract, modules_ops_contract};
 use serde::Deserialize;
 use stasis::prelude::RuntimeComposition;
 
@@ -12,6 +11,9 @@ use crate::daemon_api::{
     GraphemeModuleDetailResponse, GraphemeModuleSummary, GraphemeModulesListResponse,
     GraphemeModuleOpsResponse, GraphemeRunRequest, GraphemeRunResponse, GraphemeScriptDetailResponse,
     GraphemeScriptEntryDto, GraphemeScriptsListQuery, GraphemeScriptsListResponse,
+};
+use crate::grapheme_host_catalog::{
+    discover_modules_with_host, examples_for_module, modules_info_with_host, modules_ops_with_host,
 };
 use crate::grapheme_lsp_bridge::{get_lsp_workspace, grapheme_lsp_ws};
 use crate::grapheme_script::service::GraphemeScriptService;
@@ -36,7 +38,7 @@ pub struct GraphemeModuleOpsQuery {
 }
 
 pub async fn list_grapheme_modules() -> Json<GraphemeModulesListResponse> {
-    let modules = discover_module_manifests()
+    let modules = discover_modules_with_host()
         .into_iter()
         .map(|manifest| {
             let effects = manifest
@@ -77,17 +79,14 @@ pub async fn get_grapheme_module(
         return Err((StatusCode::BAD_REQUEST, "module_id is required".to_string()));
     }
 
-    let info = modules_info_contract(module_id).ok_or_else(|| {
+    let info = modules_info_with_host(module_id).ok_or_else(|| {
         (
             StatusCode::NOT_FOUND,
             format!("unknown grapheme module '{module_id}'"),
         )
     })?;
 
-    let examples = curated_examples_for_module(module_id)
-        .iter()
-        .map(|path| (*path).to_string())
-        .collect();
+    let examples = examples_for_module(module_id);
 
     Ok(Json(GraphemeModuleDetailResponse {
         info: serde_json::to_value(info).unwrap_or(serde_json::Value::Null),
@@ -106,7 +105,7 @@ pub async fn get_grapheme_module_ops(
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .unwrap_or(module_id);
-    let payload = modules_ops_contract(search);
+    let payload = modules_ops_with_host(search);
     Json(GraphemeModuleOpsResponse {
         module_id: module_id.to_string(),
         query: payload.query,

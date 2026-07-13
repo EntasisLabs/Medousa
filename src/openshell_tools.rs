@@ -350,8 +350,8 @@ impl StasisTool for CognitionOpenshellSandboxRunTool {
             "policy_template": payload.policy_template,
             "skill_script": payload.skill_script,
         });
-        if let Some(scope) = self.turn_scope.read().await.clone() {
-            if let Some(obj) = response.as_object_mut() {
+        if let Some(scope) = self.turn_scope.read().await.clone()
+            && let Some(obj) = response.as_object_mut() {
                 obj.insert(
                     "continuation".to_string(),
                     continuation_tool_metadata(
@@ -361,7 +361,6 @@ impl StasisTool for CognitionOpenshellSandboxRunTool {
                     ),
                 );
             }
-        }
         Ok(response)
     }
 }

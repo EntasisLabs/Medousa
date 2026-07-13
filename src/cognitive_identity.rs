@@ -290,8 +290,8 @@ pub fn recall_identity_facts(
     let query_tokens = tokenize_query(Some(query));
     let mut hits = Vec::new();
 
-    if normalized_kind.as_deref().is_none_or(|kind| kind == "preference" || kind == "note") {
-        if let Some(user) = snapshot.user.as_ref() {
+    if normalized_kind.as_deref().is_none_or(|kind| kind == "preference" || kind == "note")
+        && let Some(user) = snapshot.user.as_ref() {
             for (key, value) in &user.preferences {
                 let is_note = key.starts_with("note_");
                 if normalized_kind.as_deref() == Some("preference") && is_note {
@@ -318,7 +318,6 @@ pub fn recall_identity_facts(
                 });
             }
         }
-    }
 
     if normalized_kind.as_deref().is_none_or(|kind| kind == "person") {
         let contact_names = snapshot

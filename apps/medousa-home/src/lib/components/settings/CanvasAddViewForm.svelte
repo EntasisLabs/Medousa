@@ -171,11 +171,11 @@
     color: rgb(var(--color-primary-300));
   }
 
-  html:not(.dark) .canvas-add-view-toggle {
+  :global(html:not(.dark)) .canvas-add-view-toggle {
     color: rgb(var(--color-primary-600));
   }
 
-  html:not(.dark) .canvas-add-view-toggle:hover {
+  :global(html:not(.dark)) .canvas-add-view-toggle:hover {
     color: rgb(var(--color-primary-700));
   }
 

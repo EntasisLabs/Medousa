@@ -54,7 +54,7 @@ export async function startComposerAudioCapture(handlers?: {
   let recorder: MediaRecorder | null = null;
   let audioContext: AudioContext | null = null;
   let analyser: AnalyserNode | null = null;
-  let levelData: Uint8Array<ArrayBuffer> | null = null;
+  let levelData: Uint8Array | null = null;
   let closed = false;
   const chunks: Blob[] = [];
 

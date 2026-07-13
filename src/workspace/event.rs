@@ -202,11 +202,9 @@ pub fn resolve_detail_line(detail: &WorkCardDetail) -> String {
             .as_deref()
             .map(str::trim)
             .filter(|value| !value.is_empty())
-        {
-            if is_slug_like_title(title) || is_generic_workflow_title(title) {
+            && (is_slug_like_title(title) || is_generic_workflow_title(title)) {
                 return truncate_line(task, 88);
             }
-        }
         if !title.is_empty() && !is_slug_like_title(title) && !is_generic_workflow_title(title) {
             return title.to_string();
         }

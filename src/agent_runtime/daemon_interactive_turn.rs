@@ -78,7 +78,7 @@ pub struct InteractiveTurnSessionHooks {
         Option<Arc<RwLock<HashMap<String, crate::daemon_api::ContextUsageReport>>>>,
 }
 
-pub(crate) struct InteractiveTurnStreamSink {
+pub struct InteractiveTurnStreamSink {
     turn_id: String,
     session_id: String,
     stream_tx: Arc<TurnEventChannel>,
@@ -537,11 +537,10 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
     }
 
     async fn stage_persist_scratch(&self, scratch: serde_json::Value) {
-        if let Ok(scratch) = serde_json::from_value::<TurnScratchpad>(scratch) {
-            if let Ok(mut slot) = self.pending_slice_scratch.lock() {
+        if let Ok(scratch) = serde_json::from_value::<TurnScratchpad>(scratch)
+            && let Ok(mut slot) = self.pending_slice_scratch.lock() {
                 *slot = Some(scratch);
             }
-        }
     }
 
     async fn notice(&self, message: String) {
@@ -723,10 +722,9 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
                 output_summary.clone(),
                 artifact_refs_from_stream(&artifact_refs),
             );
-            if tool_name == crate::ui_present_tools::COGNITION_UI_PRESENT
-                || tool_name == crate::artifact_tools::COGNITION_ARTIFACT_WRITE
-            {
-                if let Some(ui_artifact) = super::tool_stream::ui_artifact_from_tool_output(&tool_output) {
+            if (tool_name == crate::ui_present_tools::COGNITION_UI_PRESENT
+                || tool_name == crate::artifact_tools::COGNITION_ARTIFACT_WRITE)
+                && let Some(ui_artifact) = super::tool_stream::ui_artifact_from_tool_output(&tool_output) {
                     if tool_name == crate::artifact_tools::COGNITION_ARTIFACT_WRITE
                         && tool_output
                             .get("previous_artifact_id")
@@ -757,28 +755,25 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
                         );
                     }
                 }
-            }
         }
-        if tool_name == crate::ui_present_tools::COGNITION_UI_PRESENT {
-            if let Some(ui_artifact) = super::tool_stream::ui_artifact_from_tool_output(&tool_output) {
+        if tool_name == crate::ui_present_tools::COGNITION_UI_PRESENT
+            && let Some(ui_artifact) = super::tool_stream::ui_artifact_from_tool_output(&tool_output) {
                 self.publish_tracked(interactive_turn_runtime::artifact_presented_stream_event(
                     &self.turn_id,
                     ui_artifact,
                 ))
                 .await;
             }
-        }
-        if crate::ui_build_tools::is_ui_scene_stream_tool(&tool_name) {
-            if let Some(scene) = super::tool_stream::scene_ops_from_tool_output(&tool_output) {
+        if crate::ui_build_tools::is_ui_scene_stream_tool(&tool_name)
+            && let Some(scene) = super::tool_stream::scene_ops_from_tool_output(&tool_output) {
                 self.publish_tracked(interactive_turn_runtime::scene_ops_stream_event(
                     &self.turn_id,
                     scene,
                 ))
                 .await;
             }
-        }
-        if tool_name == crate::artifact_tools::COGNITION_ARTIFACT_WRITE {
-            if let Some(ui_artifact) = super::tool_stream::ui_artifact_from_tool_output(&tool_output) {
+        if tool_name == crate::artifact_tools::COGNITION_ARTIFACT_WRITE
+            && let Some(ui_artifact) = super::tool_stream::ui_artifact_from_tool_output(&tool_output) {
                 if let Some(previous) = tool_output
                     .get("previous_artifact_id")
                     .and_then(|value| value.as_str())
@@ -805,7 +800,6 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
                     .await;
                 }
             }
-        }
         self.publish_tracked(interactive_turn_runtime::tool_finished_stream_event(
             &self.turn_id,
             &tool_run_id,
@@ -844,6 +838,7 @@ fn publish_to_stream(
     crate::daemon::ingest::publish_interactive_turn_event(stream, event);
 }
 
+#[allow(clippy::too_many_arguments)]
 /// Run a full agent turn for `POST /v1/interactive/turn`, streaming via SSE.
 pub async fn run_daemon_interactive_turn(
     turn_id: &str,
@@ -1001,12 +996,11 @@ async fn run_agent_turn_inner(
         return;
     }
 
-    if has_media {
-        if let Err(err) = validate_media_refs(&session_id, &request.media_refs) {
+    if has_media
+        && let Err(err) = validate_media_refs(&session_id, &request.media_refs) {
             sink.agent_error(1, err).await;
             return;
         }
-    }
 
     let saved_defaults = crate::session::load_tui_defaults();
     let settings = runtime_settings_for_interactive_turn(backend, &request);
@@ -1051,13 +1045,12 @@ async fn run_agent_turn_inner(
         &vision_plan.merge_options,
     );
 
-    if has_vision_media {
-        if let Some(notice) =
+    if has_vision_media
+        && let Some(notice) =
             vision_plan.stream_notice(&vision_target.provider, &vision_target.model)
         {
             sink.notice(notice).await;
         }
-    }
 
     let stage_routing = stage_routing_for_interactive_turn(&request);
     let final_route = stage_routing.get("final_response").cloned();
@@ -1288,8 +1281,8 @@ async fn run_agent_turn_inner(
         turn_id,
         &context_report,
         &context_summary,
-    ) {
-        if let Some(stream_sink) = context_telemetry {
+    )
+        && let Some(stream_sink) = context_telemetry {
             if let Some(cache) = &stream_sink.session_hooks.context_usage_by_session {
                 let session_id = stream_sink.session_id.clone();
                 cache
@@ -1299,7 +1292,6 @@ async fn run_agent_turn_inner(
             }
             stream_sink.publish_tracked(Ok(event)).await;
         }
-    }
 
     turn_orchestrator::execute_local_turn(sink, assembled.execution).await;
 }

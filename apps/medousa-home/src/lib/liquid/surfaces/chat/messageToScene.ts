@@ -1,7 +1,7 @@
 /**
  * Chat surface adapter — maps a `ChatMessage` to a runtime-governed `document`.
  *
- * Order (alive, not buried): thinking → live pulse → body → tools.
+ * Order (alive, not buried): thinking → live pulse → settled whisper → body → tools.
  * Intensity is dialed down in the shell components; we do not hide receipts
  * behind an observability drawer.
  */
@@ -40,6 +40,21 @@ function livePulseLabel(
   const hasTools = Boolean(message.toolRuns?.length || message.tools?.length);
   if (!hasContent && !hasTools) return "Thinking…";
   return null;
+}
+
+/** Settled interim above the final answer (live finish whisper or history Progress). */
+function settledInterimLabel(
+  message: ChatMessage,
+  opts: ChatSceneOptions,
+  bodyMarkdown: string,
+): string | null {
+  if (message.streaming) return null;
+  const whisper =
+    message.stageWhisper?.trim() || opts.statusLine?.trim() || null;
+  if (!whisper) return null;
+  const body = bodyMarkdown.trim();
+  if (body && whisper === body) return null;
+  return whisper;
 }
 
 function assistantFlow(message: ChatMessage, opts: ChatSceneOptions): SceneNode[] {
@@ -96,7 +111,13 @@ function assistantFlow(message: ChatMessage, opts: ChatSceneOptions): SceneNode[
     }
   }
 
-  // 4. Body (substance) — never paint leaked reasoning callouts in prose
+  // 4. Settled interim whisper above the final answer (tool-turn progress breadcrumb)
+  const settled = settledInterimLabel(message, opts, bodyMarkdown);
+  if (settled) {
+    flow.push(child(`${id}:whisper`, "whisper", { text: settled }));
+  }
+
+  // 5. Body (substance) — never paint leaked reasoning callouts in prose
   if (hasContent) {
     flow.push(child(`${id}:body`, "prose", { markdown: bodyMarkdown }));
   } else if (streaming && !hasToolRuns && !hasReasoning) {
@@ -107,7 +128,7 @@ function assistantFlow(message: ChatMessage, opts: ChatSceneOptions): SceneNode[
     flow.push(child(`${id}:artifacts`, "presentation", { artifacts: message.uiArtifacts }));
   }
 
-  // 5. Tool receipts at the bottom — host-lane ToolRunChips (footnote when settled)
+  // 6. Tool receipts at the bottom — host-lane ToolRunChips (footnote when settled)
   if (hasToolRuns) {
     flow.push(
       child(`${id}:tools`, "tool_trace", {

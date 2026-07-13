@@ -7,6 +7,7 @@
   import SettingsModelsSection from "$lib/components/settings/SettingsModelsSection.svelte";
   import SettingsVoiceSection from "$lib/components/settings/SettingsVoiceSection.svelte";
   import SettingsReachSection from "$lib/components/settings/SettingsReachSection.svelte";
+  import SettingsShellSection from "$lib/components/settings/SettingsShellSection.svelte";
   import SettingsEngineSection from "$lib/components/settings/SettingsEngineSection.svelte";
   import SettingsPhoneSection from "$lib/components/settings/SettingsPhoneSection.svelte";
   import SettingsLanShareSection from "$lib/components/settings/SettingsLanShareSection.svelte";
@@ -108,7 +109,7 @@
   {/if}
 
   <div class="settings-shell min-h-0 flex-1 {mobile ? 'flex flex-col' : 'flex'}">
-    <aside class="settings-shell-nav shrink-0 {mobile ? 'px-4 pt-3' : 'border-r border-surface-500/35 p-3'}">
+    <aside class="settings-shell-nav mobile-you-scroll min-h-0 shrink-0 overflow-y-auto {mobile ? 'px-4 pt-3' : 'border-r border-surface-500/35 p-3'}">
       <SettingsNav
         active={activeSection}
         {mobile}
@@ -134,6 +135,8 @@
         <SettingsVoiceSection {mobile} />
       {:else if activeSection === "reach"}
         <SettingsReachSection {mobile} />
+      {:else if activeSection === "shell"}
+        <SettingsShellSection {mobile} />
       {:else if activeSection === "engine"}
         <SettingsEngineSection {mobile} />
       {:else if activeSection === "phone"}

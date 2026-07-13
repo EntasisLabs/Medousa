@@ -99,7 +99,7 @@ async fn authorize_remote_share(
             "LAN pairing is not enabled on this workshop".to_string(),
         ));
     };
-    let Some(token) = bearer_token(&headers) else {
+    let Some(token) = bearer_token(headers) else {
         return Err((
             StatusCode::UNAUTHORIZED,
             "Bearer session token required for remote share import".to_string(),

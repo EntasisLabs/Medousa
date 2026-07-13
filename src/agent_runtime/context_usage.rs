@@ -140,7 +140,7 @@ pub async fn estimate_tool_schema_chars(
     let count = tools.len();
     let chars: usize = tools
         .iter()
-        .map(|tool| estimate_single_tool_chars(tool))
+        .map(estimate_single_tool_chars)
         .sum();
     (count, chars)
 }

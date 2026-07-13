@@ -81,7 +81,9 @@
 
   let { kind, payload, context = {} }: Props = $props();
 
-  setLiquidContext(context);
+  $effect(() => {
+    setLiquidContext(context);
+  });
 
   const ICON_MAP: Record<string, typeof LucideIcon> = {
     sparkles: Sparkles,

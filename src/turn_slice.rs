@@ -83,11 +83,10 @@ fn merge_scratch_into_summary(summary: &mut TurnSliceSummary, scratch: &TurnScra
 }
 
 fn infer_goal(turn: &ConversationTurn, scratch: Option<&TurnScratchpad>) -> String {
-    if let Some(scratch) = scratch {
-        if !scratch.goal.trim().is_empty() {
+    if let Some(scratch) = scratch
+        && !scratch.goal.trim().is_empty() {
             return truncate_text_for_budget(scratch.goal.trim(), 160);
         }
-    }
     if !turn.content.trim().is_empty() {
         return truncate_text_for_budget(turn.content.trim(), 160);
     }
@@ -399,8 +398,8 @@ pub fn tool_history_summary_rows(
         .filter_map(|turn| {
             let turn_index = session_turn_index(turns, turn)?;
             let summary = resolve_slice_summary(turn);
-            if let Some(ref tool) = tool_filter {
-                if !summary.tools.iter().any(|name| name.to_ascii_lowercase().contains(tool))
+            if let Some(ref tool) = tool_filter
+                && !summary.tools.iter().any(|name| name.to_ascii_lowercase().contains(tool))
                     && !turn
                         .tool_names
                         .iter()
@@ -408,7 +407,6 @@ pub fn tool_history_summary_rows(
                 {
                     return None;
                 }
-            }
             let line = format_slice_line(turn_index, turn, &summary, DEFAULT_SLICE_HOT_LINE_CHARS);
             if let Some(ref kw) = keyword {
                 let haystack = format!(

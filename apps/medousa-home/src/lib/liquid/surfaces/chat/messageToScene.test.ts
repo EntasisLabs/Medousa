@@ -56,6 +56,30 @@ describe("chatMessageToScene — assistant order (thinking → body → tools)",
     expect(pulse?.props.quiet).toBe(true);
   });
 
+  it("shows settled stageWhisper above the final answer", () => {
+    const scene = chatMessageToScene(
+      msg({
+        content: "Here is the answer.",
+        streaming: false,
+        stageWhisper: "Let me check the vault…",
+      }),
+    );
+    const whisper = findNode(scene, "m1:whisper");
+    expect(whisper?.type).toBe("whisper");
+    expect(whisper?.props.text).toBe("Let me check the vault…");
+    const flow = scene.slots?.flow ?? [];
+    expect(flow.map((n) => n.id).indexOf("m1:whisper")).toBeLessThan(
+      flow.map((n) => n.id).indexOf("m1:body"),
+    );
+  });
+
+  it("shows history Progress statusLine as settled whisper", () => {
+    const scene = chatMessageToScene(msg({ content: "Done.", streaming: false }), {
+      statusLine: "Pulling schemas…",
+    });
+    expect(findNode(scene, "m1:whisper")?.props.text).toBe("Pulling schemas…");
+  });
+
   it("renders an error callout + retry button", () => {
     const scene = chatMessageToScene(
       msg({ failed: true, errorLine: "boom", workId: "w9", content: "partial" }),

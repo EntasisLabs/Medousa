@@ -18,11 +18,10 @@ pub fn set_embedded_release_defaults(base_url: String, channel: String) {
 /// Priority: `MEDOUSA_RELEASE_MANIFEST_URL` > `MEDOUSA_RELEASE_BASE_URL` + channel + path >
 /// embedded defaults (installer build) > legacy GitHub Releases fallback (dev/reference only).
 pub fn release_manifest_url() -> String {
-    if let Ok(url) = std::env::var("MEDOUSA_RELEASE_MANIFEST_URL") {
-        if !url.trim().is_empty() {
+    if let Ok(url) = std::env::var("MEDOUSA_RELEASE_MANIFEST_URL")
+        && !url.trim().is_empty() {
             return url;
         }
-    }
 
     if let Some(base) = release_base_url() {
         return compose_manifest_url(&base, &release_channel(), pinned_release_version());
@@ -48,11 +47,10 @@ fn pinned_release_version() -> Option<String> {
 }
 
 pub fn installer_bootstrap_url() -> String {
-    if let Ok(url) = std::env::var("MEDOUSA_INSTALLER_BOOTSTRAP_URL") {
-        if !url.trim().is_empty() {
+    if let Ok(url) = std::env::var("MEDOUSA_INSTALLER_BOOTSTRAP_URL")
+        && !url.trim().is_empty() {
             return url;
         }
-    }
     if let Some(base) = release_base_url() {
         let channel = release_channel();
         return format!("{base}/{channel}/installer-bootstrap.json");

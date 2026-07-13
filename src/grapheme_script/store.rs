@@ -92,7 +92,7 @@ impl GraphemeScriptStore {
             .values()
             .cloned()
             .collect::<Vec<_>>();
-        entries.sort_by(|a, b| b.updated_at_utc.cmp(&a.updated_at_utc));
+        entries.sort_by_key(|b| std::cmp::Reverse(b.updated_at_utc));
         entries
     }
 
@@ -105,6 +105,7 @@ impl GraphemeScriptStore {
         fs::read_to_string(&path).with_context(|| format!("read script body {}", path.display()))
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn save_script(
         &self,
         id: Option<&str>,

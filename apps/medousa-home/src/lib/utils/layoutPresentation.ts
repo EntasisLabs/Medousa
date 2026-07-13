@@ -102,7 +102,6 @@ export function shouldFillMainComponent(ctx: LayoutFillContext): boolean {
   if (ctx.flex != null && ctx.flex >= 1) return true;
   if (ctx.distribution === "fill_equally") return true;
   if (ctx.parentType === "vstack" && ctx.siblingCount === 1) return true;
-  if (ctx.parentType === "hstack" && ctx.distribution === "fill_equally") return true;
   return false;
 }
 

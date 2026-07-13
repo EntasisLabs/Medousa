@@ -154,11 +154,10 @@ pub async fn mark_cancelled(registry: &TurnTicketRegistry, turn_id: &str) {
 
 pub async fn clear_turn(registry: &TurnTicketRegistry, turn_id: &str) {
     let mut guard = registry.write().await;
-    if let Some(ticket) = guard.by_id.remove(turn_id) {
-        if ticket.mode == TurnTicketMode::Interactive {
+    if let Some(ticket) = guard.by_id.remove(turn_id)
+        && ticket.mode == TurnTicketMode::Interactive {
             guard.interactive_by_session.remove(&ticket.session_id);
         }
-    }
 }
 
 /// Drop the turn ticket after the orchestrator returns unless handoff is still active.

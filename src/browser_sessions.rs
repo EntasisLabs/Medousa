@@ -67,11 +67,7 @@ static SESSIONS: Lazy<Mutex<HashMap<String, SessionRecord>>> =
 pub fn create_browser_session(request: BrowserSessionCreateRequest) -> BrowserSession {
     purge_expired();
     let session_id = format!("bs-{}", Uuid::new_v4());
-    let status = if request.client_executed {
-        BrowserSessionStatus::PendingClient
-    } else {
-        BrowserSessionStatus::PendingClient
-    };
+    let status = BrowserSessionStatus::PendingClient;
     let session = BrowserSession {
         session_id: session_id.clone(),
         turn_id: request.turn_id,

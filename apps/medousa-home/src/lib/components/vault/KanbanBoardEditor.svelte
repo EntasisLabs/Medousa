@@ -535,14 +535,18 @@
             </p>
           </header>
 
-          <div class="vault-kanban-column-body" onkeydown={handleColumnKeydown}>
+          <div class="vault-kanban-column-body">
+            <!-- Alt+arrow reordering delegates from nested card controls (checkbox, grip). -->
+            <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
             <div
               class="vault-kanban-card-stack"
-              role="list"
+              role="application"
+              tabindex="-1"
               aria-label="{column.title} cards"
+              onkeydown={handleColumnKeydown}
             >
               {#each column.cards as card, cardIndex (columnIndex + "-" + cardIndex)}
-                <article
+                <div
                   class="vault-kanban-card workshop-kanban-card group relative {cardDragging(
                     columnIndex,
                     cardIndex,
@@ -559,18 +563,21 @@
                     ? 'vault-kanban-card--editing'
                     : ''}"
                   role="listitem"
-                  tabindex={disabled || isEditing(columnIndex, cardIndex)
-                    ? -1
-                    : 0}
                   data-kanban-drop-card
                   data-kanban-card-surface="{columnIndex}-{cardIndex}"
                   data-column-index={columnIndex}
                   data-card-index={cardIndex}
-                  aria-label={card.text.trim() || "Empty card"}
-                  onkeydown={(event) =>
-                    handleCardSurfaceKeydown(event, columnIndex, cardIndex)}
                 >
-                  <div class="vault-kanban-card-row">
+                  <div
+                    class="vault-kanban-card-row"
+                    role="button"
+                    tabindex={disabled || isEditing(columnIndex, cardIndex)
+                      ? -1
+                      : 0}
+                    aria-label={card.text.trim() || "Empty card"}
+                    onkeydown={(event) =>
+                      handleCardSurfaceKeydown(event, columnIndex, cardIndex)}
+                  >
                     <button
                       type="button"
                       class="vault-kanban-grip"
@@ -633,7 +640,7 @@
                       </button>
                     {/if}
                   </div>
-                </article>
+                </div>
               {:else}
                 <div class="vault-kanban-empty" aria-hidden="true">
                   <p>{quiet ? "Clear" : "Quiet lane"}</p>

@@ -98,6 +98,7 @@ impl CognitiveIdentityWriter {
         .await
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn remember_contact(
         &self,
         user_id: &str,
@@ -231,6 +232,7 @@ impl CognitiveIdentityWriter {
         })
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn propose_and_maybe_commit(
         &self,
         user_id: &str,

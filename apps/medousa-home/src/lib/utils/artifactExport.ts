@@ -93,7 +93,7 @@ async function buildExportIframe(
 
   const iframe = document.createElement("iframe");
   iframe.title = "Artifact export";
-  iframe.sandbox = "allow-scripts allow-same-origin";
+  iframe.setAttribute("sandbox", "allow-scripts allow-same-origin");
   iframe.srcdoc = html;
   iframe.style.width = `${EXPORT_IFRAME_WIDTH_PX}px`;
   iframe.style.height = "2400px";

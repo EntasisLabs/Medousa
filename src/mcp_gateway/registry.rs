@@ -54,7 +54,8 @@ impl ServerRegistry {
             config.daemon_policy_url.clone(),
             config.policy_token.clone(),
         );
-        let registry = Self {
+        
+        Self {
             config,
             policy_client,
             snapshot: Arc::new(RwLock::new(CatalogSnapshot {
@@ -62,8 +63,7 @@ impl ServerRegistry {
                 servers: Vec::new(),
                 updated_at: Utc::now(),
             })),
-        };
-        registry
+        }
     }
 
     pub async fn bootstrap(&self) {

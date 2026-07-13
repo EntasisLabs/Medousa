@@ -7,6 +7,7 @@ const DEFAULT_DISCORD_PREFIX: &str = "!";
 const DEFAULT_WHATSAPP_DELIVER_BIND: &str = "127.0.0.1:7422";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Default)]
 pub struct ProductConfig {
     #[serde(default)]
     pub daemon: DaemonProductConfig,
@@ -102,6 +103,7 @@ pub struct WhatsAppProductConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Default)]
 pub struct RuntimeProductConfig {
     #[serde(default)]
     pub workflow: RuntimeWorkflowConfig,
@@ -121,13 +123,6 @@ pub struct RuntimeWorkflowConfig {
     pub allow_mutating_parallel: bool,
 }
 
-impl Default for RuntimeProductConfig {
-    fn default() -> Self {
-        Self {
-            workflow: RuntimeWorkflowConfig::default(),
-        }
-    }
-}
 
 impl Default for RuntimeWorkflowConfig {
     fn default() -> Self {
@@ -266,22 +261,6 @@ pub struct TuiProductConfig {
     pub response_depth_mode: String,
 }
 
-impl Default for ProductConfig {
-    fn default() -> Self {
-        Self {
-            daemon: DaemonProductConfig::default(),
-            telegram: TelegramProductConfig::default(),
-            discord: DiscordProductConfig::default(),
-            slack: SlackProductConfig::default(),
-            whatsapp: WhatsAppProductConfig::default(),
-            tui: TuiProductConfig::default(),
-            runtime: RuntimeProductConfig::default(),
-            identity: IdentityProductConfig::default(),
-            vault: VaultProductConfig::default(),
-            surreal: SurrealProductConfig::default(),
-        }
-    }
-}
 
 impl Default for DaemonProductConfig {
     fn default() -> Self {

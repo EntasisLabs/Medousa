@@ -151,8 +151,7 @@ pub fn delivery_label_for_target(target: Option<&StoredDeliveryTarget>) -> Strin
         "discord" => format!("Discord · {short_id}"),
         "slack" => format!("Slack · {short_id}"),
         "whatsapp" => format!("WhatsApp · {short_id}"),
-        "cli" => "In Medousa".to_string(),
-        other if other.is_empty() => "In Medousa".to_string(),
+        "cli" | "" => "In Medousa".to_string(),
         other => format!("{other} · {short_id}"),
     }
 }

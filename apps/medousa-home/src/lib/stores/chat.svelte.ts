@@ -35,6 +35,10 @@ import type { MediaRef } from "$lib/types/media";
 import { chatMediaAttachmentsFromRefs } from "$lib/utils/chatMediaUpload";
 import { formatSessionLabel } from "$lib/utils/formatSession";
 import {
+  stageWhisperAfterFinish,
+  statusLineAfterScratchReset,
+} from "$lib/utils/turnInterimDisplay";
+import {
   isEngineTelemetryText,
   operatorStreamErrorLine,
   operatorStreamStatusLine,
@@ -1025,7 +1029,17 @@ export class ChatStore {
 
     this.messages = this.messages.map((message) =>
       message.askJobId === trimmed && message.streaming
-        ? { ...message, streaming: false, phase: null, statusLine: null }
+        ? {
+            ...message,
+            streaming: false,
+            phase: null,
+            statusLine: null,
+            stageWhisper: stageWhisperAfterFinish(
+              message.statusLine,
+              message.content,
+              message.stageWhisper,
+            ),
+          }
         : message,
     );
     if (!settledTurn) {
@@ -2193,7 +2207,7 @@ export class ChatStore {
         ...current,
         content: "",
         phase: "tool_loop",
-        statusLine: current.statusLine,
+        statusLine: statusLineAfterScratchReset(current.content, current.statusLine),
       };
       this.messages = [
         ...this.messages.slice(0, idx),
@@ -2247,6 +2261,11 @@ export class ChatStore {
           content: "",
           phase: null,
           statusLine: null,
+          stageWhisper: stageWhisperAfterFinish(
+            current.statusLine,
+            content,
+            current.stageWhisper,
+          ),
           tools: tools.length > 0 ? tools : current.tools,
           reasoning: reasoning || current.reasoning,
           streaming: false,
@@ -2339,7 +2358,17 @@ export class ChatStore {
       message.turnId === turnId &&
       message.lane === "ask" &&
       message.streaming
-        ? { ...message, streaming: false, phase: null, statusLine: null }
+        ? {
+            ...message,
+            streaming: false,
+            phase: null,
+            statusLine: null,
+            stageWhisper: stageWhisperAfterFinish(
+              message.statusLine,
+              message.content,
+              message.stageWhisper,
+            ),
+          }
         : message,
     );
   }
@@ -2519,11 +2548,17 @@ export class ChatStore {
     this.cancelContentReveal(messageId);
     const idx = this.messages.findIndex((m) => m.id === messageId);
     if (idx >= 0) {
+      const current = this.messages[idx];
       const next = {
-        ...this.messages[idx],
+        ...current,
         streaming: false,
         phase: null,
         statusLine: null,
+        stageWhisper: stageWhisperAfterFinish(
+          current.statusLine,
+          current.content,
+          current.stageWhisper,
+        ),
       };
       this.messages = [
         ...this.messages.slice(0, idx),

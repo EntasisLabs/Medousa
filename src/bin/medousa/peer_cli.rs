@@ -399,11 +399,10 @@ fn run_read(args: &[String]) -> Result<()> {
         let text = body.get("body").and_then(Value::as_str).unwrap_or("");
         println!("From: {from}");
         println!("{text}");
-        if let Some(result) = body.get("attachmentResult") {
-            if let Some(summary) = result.get("summary").and_then(Value::as_str) {
+        if let Some(result) = body.get("attachmentResult")
+            && let Some(summary) = result.get("summary").and_then(Value::as_str) {
                 println!("Attachment: {summary}");
             }
-        }
         return Ok(());
     }
     bail!("message not found: {id}");
@@ -742,8 +741,7 @@ fn sender_identity() -> Result<SenderIdentity> {
         && let Ok(response) = client.get(format!("{daemon_url}/pair/status")).send()
         && response.status().is_success()
         && let Ok(body) = response.json::<Value>()
-    {
-        if let Some(device_id) = body.get("deviceId").and_then(Value::as_str) {
+        && let Some(device_id) = body.get("deviceId").and_then(Value::as_str) {
             let peer_name = body
                 .get("peerName")
                 .and_then(Value::as_str)
@@ -754,7 +752,6 @@ fn sender_identity() -> Result<SenderIdentity> {
                 peer_name,
             });
         }
-    }
     let identity = load_or_create_identity()?;
     Ok(SenderIdentity {
         device_id: identity.phone_id,

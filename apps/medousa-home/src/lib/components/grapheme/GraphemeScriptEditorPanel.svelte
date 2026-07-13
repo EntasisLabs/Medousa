@@ -7,7 +7,7 @@
   import WorkshopJourneyBanner from "$lib/components/workshop/WorkshopJourneyBanner.svelte";
   import { connectGraphemeLspClient } from "$lib/grapheme/lspClient";
   import { promoteScriptToFlow } from "$lib/grapheme/graphemeFlowBridge";
-  import { prepareModuleInsert } from "$lib/grapheme/graphemeModuleSnippet";
+  import { prepareModuleInsert, qualifyModuleOp } from "$lib/grapheme/graphemeModuleSnippet";
   import {
     applyRecipeToEditor,
     type GraphemeRecipe,
@@ -101,8 +101,9 @@
 
   function insertModuleOp(op: string) {
     const body = graphemeScriptEditor.activeTab?.body ?? "";
+    const qualified = qualifyModuleOp(modulePickerId, op);
     graphemeScriptEditor.queueInsert(
-      prepareModuleInsert(body, op, moduleExamples),
+      prepareModuleInsert(body, qualified, moduleExamples),
     );
   }
 

@@ -66,7 +66,8 @@ pub async fn ingest_stream(
 /// State carried through the SSE unfold: live fan-out channel, durable replay log,
 /// broadcast receiver, pending replay queue, and dedupe cursor.
 struct SseUnfoldState {
-    channel: Arc<TurnEventChannel>,
+    /// Kept alive so the broadcast channel is not dropped while streaming.
+    _channel: Arc<TurnEventChannel>,
     log: Arc<TurnEventLog>,
     receiver: broadcast::Receiver<InteractiveTurnStreamEvent>,
     pending: std::collections::VecDeque<InteractiveTurnStreamEvent>,
@@ -118,7 +119,7 @@ pub async fn stream_events_from_registry(
     let pending = replay_from_log(&log, since);
 
     let initial = SseUnfoldState {
-        channel,
+        _channel: channel,
         log,
         receiver,
         pending,
@@ -238,11 +239,10 @@ pub async fn ingest_handler(
         .get_session_id(&mapping_key)
         .await;
 
-    if request.text.trim().eq_ignore_ascii_case("/new") {
-        if let Some(old_session_id) = existing_session_id.clone() {
+    if request.text.trim().eq_ignore_ascii_case("/new")
+        && let Some(old_session_id) = existing_session_id.clone() {
             push_channel_session_history(&mapping_key, old_session_id).await;
         }
-    }
 
     let outcome =
         session_mapping::process_ingest(&request, &mapping_key, existing_session_id.clone());
@@ -662,8 +662,8 @@ pub async fn deliver_outbox_webhook(
                 (StatusCode::BAD_GATEWAY, err.to_string())
             })?;
 
-            if let Some(stream_id) = target.stream_id.as_deref() {
-                if let Some(entry) = state
+            if let Some(stream_id) = target.stream_id.as_deref()
+                && let Some(entry) = state
                     .interactive_turn_streams
                     .read()
                     .await
@@ -678,7 +678,6 @@ pub async fn deliver_outbox_webhook(
                         ),
                     );
                 }
-            }
 
             record_job_delivery_success(
                 &state,
@@ -1094,6 +1093,7 @@ async fn spawn_continuation_agent_turn(
     .await;
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn spawn_daemon_api_agent_turn(
     state: &AppState,
     job_id: String,
@@ -1136,6 +1136,7 @@ pub async fn spawn_daemon_api_agent_turn(
     .await;
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn spawn_daemon_api_agent_turn_with_scope(
     state: &AppState,
     job_id: String,

@@ -121,7 +121,7 @@ impl PairingStore {
                 }
             }
         }
-        out.sort_by(|left, right| right.last_seen.cmp(&left.last_seen));
+        out.sort_by_key(|right| std::cmp::Reverse(right.last_seen));
         Ok(out)
     }
 
@@ -176,13 +176,11 @@ impl PairingStore {
 
     fn read_record(&self, path: &Path) -> Result<PairedDeviceRecord> {
         let raw = fs::read(path).with_context(|| format!("read {}", path.display()))?;
-        if let Ok(envelope) = serde_json::from_slice::<EncryptedEnvelope>(&raw) {
-            if let Ok(plaintext) = self.decrypt(&envelope) {
-                if let Ok(record) = serde_json::from_slice::<PairedDeviceRecord>(&plaintext) {
+        if let Ok(envelope) = serde_json::from_slice::<EncryptedEnvelope>(&raw)
+            && let Ok(plaintext) = self.decrypt(&envelope)
+                && let Ok(record) = serde_json::from_slice::<PairedDeviceRecord>(&plaintext) {
                     return Ok(record);
                 }
-            }
-        }
         serde_json::from_slice(&raw).context("parse plaintext pairing record")
     }
 

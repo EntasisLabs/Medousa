@@ -54,9 +54,11 @@
       role="dialog"
       aria-modal="true"
       aria-label={artifact.label}
+      tabindex="-1"
       onclick={(event) => {
         if (event.target === event.currentTarget) handleClose();
       }}
+      onkeydown={handleKeydown}
     >
       <div class="artifact-chrome-stage artifact-fullscreen-stage">
         <ArtifactPresentationChrome

@@ -173,11 +173,10 @@ pub fn resolve_wikilinks_for_body(
 ) -> Vec<String> {
     let mut resolved = Vec::new();
     for raw in parse_raw_wikilinks(body) {
-        if let Some(target) = resolve_wikilink_target(&raw, path, known_paths, entries) {
-            if !resolved.iter().any(|existing| existing == &target) {
+        if let Some(target) = resolve_wikilink_target(&raw, path, known_paths, entries)
+            && !resolved.iter().any(|existing| existing == &target) {
                 resolved.push(target);
             }
-        }
     }
     resolved
 }

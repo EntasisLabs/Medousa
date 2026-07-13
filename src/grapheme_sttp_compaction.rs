@@ -114,9 +114,7 @@ impl CompactionConfig {
             .max(1024),
             target_chunk_chars,
             overlap_chars,
-            max_chunks: env_usize("MEDOUSA_GRAPHEME_COMPACTION_MAX_CHUNKS", DEFAULT_MAX_CHUNKS)
-                .max(1)
-                .min(128),
+            max_chunks: env_usize("MEDOUSA_GRAPHEME_COMPACTION_MAX_CHUNKS", DEFAULT_MAX_CHUNKS).clamp(1, 128),
             max_summary_chars: env_usize(
                 "MEDOUSA_GRAPHEME_COMPACTION_MAX_SUMMARY_CHARS",
                 DEFAULT_MAX_SUMMARY_CHARS,
@@ -400,18 +398,17 @@ fn preferred_chunk_end(chars: &[char], start: usize, ideal_end: usize, target: u
 
     let min_chunk_chars = (target / 2).max(256).min(target);
     let min_end = (start + min_chunk_chars).min(ideal_end);
-    let search_window = (target / 4).max(120).min(600);
+    let search_window = (target / 4).clamp(120, 600);
 
     let backward_start = ideal_end.saturating_sub(search_window).max(min_end);
     let mut backward_whitespace = None;
     for idx in (backward_start + 1..=ideal_end).rev() {
         match boundary_score(chars, idx) {
             3 | 2 => return idx,
-            1 => {
-                if backward_whitespace.is_none() {
+            1
+                if backward_whitespace.is_none() => {
                     backward_whitespace = Some(idx);
                 }
-            }
             _ => {}
         }
     }
@@ -424,11 +421,10 @@ fn preferred_chunk_end(chars: &[char], start: usize, ideal_end: usize, target: u
     for idx in ideal_end + 1..=forward_end {
         match boundary_score(chars, idx) {
             3 | 2 => return idx,
-            1 => {
-                if forward_whitespace.is_none() {
+            1
+                if forward_whitespace.is_none() => {
                     forward_whitespace = Some(idx);
                 }
-            }
             _ => {}
         }
     }

@@ -547,11 +547,10 @@ pub fn activate_layout_preset(spec: &mut EnvironmentSpec, preset_id: &str) -> Re
     }
     for preset in presets.iter_mut() {
         preset.active = preset.id == preset_id;
-        if preset.active {
-            if let Some(chrome) = preset.shell_chrome.clone() {
+        if preset.active
+            && let Some(chrome) = preset.shell_chrome.clone() {
                 spec.shell_chrome = Some(chrome);
             }
-        }
     }
     spec.active_preset_id = Some(preset_id.to_string());
     Ok(())

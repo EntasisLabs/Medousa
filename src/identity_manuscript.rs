@@ -10,6 +10,7 @@ use crate::agent_runtime::turn_worker::TurnWorkerIntent;
 use crate::cognitive_identity::DigestCompileOptions;
 use crate::openshell_sandbox_run::resolve_policy_template_path;
 use crate::openshell_tools::is_openshell_cognition_tool;
+use crate::shell_tools::is_shell_cognition_tool;
 use crate::skill_tools::is_skill_cognition_tool;
 use crate::stage_routing::{StageRoutingMatrix, normalize_role};
 
@@ -194,6 +195,8 @@ pub fn scheduled_lane_tool_universe() -> HashSet<String> {
     universe.extend(allowed_tool_names_for_intent(TurnWorkerIntent::MemoryContext));
     universe.remove("cognition_identity_remember");
     universe.remove("cognition_spawn_turn_worker");
+    // OS-native shell stays interactive-only for now (no scheduled allow flag yet).
+    universe.retain(|tool| !is_shell_cognition_tool(tool));
     universe
 }
 
@@ -203,6 +206,9 @@ pub fn scheduled_tool_allowlist_for_manuscript(manuscript: &ManuscriptContext) -
     let universe = scheduled_lane_tool_universe();
     let mut allow = HashSet::new();
     for tool in &manuscript.tools_allow {
+        if is_shell_cognition_tool(tool) {
+            continue;
+        }
         if (is_openshell_cognition_tool(tool) || is_skill_cognition_tool(tool))
             && !manuscript.openshell_allow_scheduled
         {
@@ -230,6 +236,13 @@ pub fn validate_manuscript_for_scheduled_lane(manuscript: &ManuscriptContext) ->
         .any(|tool| tool.contains("identity_remember"))
     {
         bail!("cognition_identity_remember is not allowed on scheduled manuscript lane");
+    }
+    if manuscript
+        .tools_allow
+        .iter()
+        .any(|tool| is_shell_cognition_tool(tool))
+    {
+        bail!("cognition_shell_* tools are denied on scheduled lane");
     }
     if manuscript
         .tools_allow
@@ -569,33 +582,30 @@ pub fn validate_manuscript(file: &IdentityManuscriptFile, path: &Path) -> Result
         bail!("metadata.name is required");
     }
 
-    if let Some(stem) = path.file_stem().and_then(|value| value.to_str()) {
-        if stem != file.metadata.id {
+    if let Some(stem) = path.file_stem().and_then(|value| value.to_str())
+        && stem != file.metadata.id {
             bail!(
                 "metadata.id '{}' must match filename stem '{}'",
                 file.metadata.id,
                 stem
             );
         }
-    }
 
-    if let Some(intent) = file.spec.worker.intent.as_deref() {
-        if TurnWorkerIntent::parse(intent).is_none() {
+    if let Some(intent) = file.spec.worker.intent.as_deref()
+        && TurnWorkerIntent::parse(intent).is_none() {
             bail!(
                 "spec.worker.intent '{intent}' is invalid (expected research|general|memory.context|memory.avec_calibrate)"
             );
         }
-    }
 
     if let Some(role) = file.spec.worker.stage_role.as_deref() {
         validate_worker_stage_role(role)?;
     }
 
-    if let Some(hint) = file.spec.worker.model_hint.as_deref() {
-        if hint.trim().is_empty() {
+    if let Some(hint) = file.spec.worker.model_hint.as_deref()
+        && hint.trim().is_empty() {
             bail!("spec.worker.model_hint must not be blank when set");
         }
-    }
 
     if let Some(mode) = file.spec.delivery.mode.as_deref() {
         match mode.trim().to_ascii_lowercase().as_str() {
@@ -622,9 +632,7 @@ pub fn validate_manuscript(file: &IdentityManuscriptFile, path: &Path) -> Result
 /// Validates `spec.worker.stage_role` against [`StageRoutingMatrix`] role names.
 pub fn validate_worker_stage_role(role: &str) -> Result<()> {
     let normalized = normalize_role(role);
-    if StageRoutingMatrix::roles()
-        .iter()
-        .any(|known| *known == normalized.as_str())
+    if StageRoutingMatrix::roles().contains(&normalized.as_str())
     {
         return Ok(());
     }
@@ -881,6 +889,12 @@ pub fn scheduled_tool_preview(
                     allowed_on_schedule: false,
                     reason: Some("Not permitted on scheduled lane".to_string()),
                 }
+            } else if is_shell_cognition_tool(tool) {
+                ManuscriptScheduledToolEntry {
+                    tool: tool.clone(),
+                    allowed_on_schedule: false,
+                    reason: Some("Medousa shell tools are interactive-only".to_string()),
+                }
             } else if (is_openshell_cognition_tool(tool) || is_skill_cognition_tool(tool))
                 && !manuscript.openshell_allow_scheduled
             {
@@ -904,8 +918,16 @@ pub fn scheduled_tool_preview(
 }
 
 pub fn palette_tools_for_editor() -> Vec<String> {
+    use crate::shell_tools::SHELL_COGNITION_TOOLS;
+
     let mut tools = scheduled_lane_tool_universe().into_iter().collect::<Vec<_>>();
+    // Shell stays interactive-only on scheduled lane, but specialists may grant
+    // cognition_shell_* for interactive/worker turns via the editor palette.
+    for tool in SHELL_COGNITION_TOOLS {
+        tools.push((*tool).to_string());
+    }
     tools.sort();
+    tools.dedup();
     tools
 }
 
@@ -1162,8 +1184,8 @@ fn resolve_prompt_field(base_dir: &Path, raw: &str) -> Result<String> {
 
     let candidate = base_dir.join(trimmed);
     if candidate.is_file() {
-        return Ok(std::fs::read_to_string(&candidate)
-            .with_context(|| format!("read manuscript prompt file {}", candidate.display()))?);
+        return std::fs::read_to_string(&candidate)
+            .with_context(|| format!("read manuscript prompt file {}", candidate.display()));
     }
 
     Ok(trimmed.to_string())
@@ -1535,5 +1557,15 @@ spec:
             Some("anthropic:claude-sonnet-4")
         );
         assert_eq!(merged.max_tool_rounds, Some(6));
+    }
+
+    #[test]
+    fn editor_palette_includes_shell_tools_scheduled_lane_excludes() {
+        let palette = palette_tools_for_editor();
+        assert!(palette.iter().any(|t| t == "cognition_shell_status"));
+        assert!(palette.iter().any(|t| t == "cognition_shell_run"));
+        let scheduled = scheduled_lane_tool_universe();
+        assert!(!scheduled.contains("cognition_shell_status"));
+        assert!(!scheduled.contains("cognition_shell_run"));
     }
 }

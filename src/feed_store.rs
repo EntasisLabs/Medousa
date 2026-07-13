@@ -5,7 +5,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
-use chrono::Utc;
 use medousa_types::feed::FeedEvent;
 use tokio::sync::RwLock as AsyncRwLock;
 
@@ -22,6 +21,12 @@ struct FeedChannelState {
 #[derive(Clone)]
 pub struct FeedStore {
     inner: Arc<AsyncRwLock<HashMap<String, HashMap<String, FeedChannelState>>>>,
+}
+
+impl Default for FeedStore {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl FeedStore {
@@ -128,8 +133,8 @@ impl FeedStore {
     pub async fn list_feed_ids(&self, profile_id: &str) -> Vec<String> {
         let mut ids = Vec::new();
         let root = Self::store_root().join(profile_id);
-        if root.exists() {
-            if let Ok(mut entries) = tokio::fs::read_dir(&root).await {
+        if root.exists()
+            && let Ok(mut entries) = tokio::fs::read_dir(&root).await {
                 while let Ok(Some(entry)) = entries.next_entry().await {
                     let name = entry.file_name().to_string_lossy().to_string();
                     if let Some(feed_id) = name.strip_suffix(".jsonl") {
@@ -137,7 +142,6 @@ impl FeedStore {
                     }
                 }
             }
-        }
         let guard = self.inner.read().await;
         if let Some(profile) = guard.get(profile_id) {
             for feed_id in profile.keys() {

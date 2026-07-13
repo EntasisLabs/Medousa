@@ -290,15 +290,14 @@ pub fn evaluate_skill_adoption(
             granted = SkillSecurityLevel::Deny;
             approval_reasons.push("requested script not found in skill assets".to_string());
         }
-        if let Some(manuscript) = manuscript {
-            if !manuscript.openshell_enabled {
+        if let Some(manuscript) = manuscript
+            && !manuscript.openshell_enabled {
                 granted = SkillSecurityLevel::Propose;
                 approval_reasons.push(
                     "manuscript spec.openshell.enabled is false — propose import/enabled first"
                         .to_string(),
                 );
             }
-        }
     }
 
     if requested == SkillSecurityLevel::Deny {
@@ -431,10 +430,10 @@ fn script_path_executable(path: &Path) -> bool {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        return path
+        path
             .metadata()
             .map(|meta| meta.permissions().mode() & 0o111 != 0)
-            .unwrap_or(false);
+            .unwrap_or(false)
     }
     #[cfg(not(unix))]
     {

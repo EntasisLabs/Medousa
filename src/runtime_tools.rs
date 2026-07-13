@@ -247,7 +247,7 @@ impl StasisTool for CognitionRuntimeJobsListTool {
             jobs.retain(|job| job.correlation_id == correlation_id);
         }
 
-        jobs.sort_by(|a, b| b.scheduled_at.cmp(&a.scheduled_at));
+        jobs.sort_by_key(|b| std::cmp::Reverse(b.scheduled_at));
         jobs.truncate(limit);
 
         Ok(json!({
@@ -1547,18 +1547,16 @@ impl StasisTool for CognitionRuntimeWorkflowCancelTool {
             if let Some(mut definition) = definitions
                 .into_iter()
                 .find(|definition| definition.id == recurring_id)
-            {
-                if definition.enabled {
+                && definition.enabled {
                     definition.enabled = false;
                     save_recurring_definition(self.runtime.as_ref(), definition).await?;
                     recurring_disabled = true;
                 }
-            }
         }
 
         let mut job_status = json!(null);
-        if !record.root_job_id.is_empty() {
-            if let Some(mut job) = get_job(self.runtime.as_ref(), &record.root_job_id).await? {
+        if !record.root_job_id.is_empty()
+            && let Some(mut job) = get_job(self.runtime.as_ref(), &record.root_job_id).await? {
                 let previous_state = job_state_label(&job.state).to_string();
                 if matches!(job.state, JobState::Enqueued | JobState::Leased) {
                     job.state = JobState::Canceled;
@@ -1577,7 +1575,6 @@ impl StasisTool for CognitionRuntimeWorkflowCancelTool {
                     });
                 }
             }
-        }
 
         self.registry.mark_canceled(workflow_id).await;
 

@@ -218,8 +218,8 @@ pub fn build_recurring_tick_slice(ctx: &RecurringTickContext) -> Value {
         payload["excerpt"] = Value::String(excerpt);
     }
 
-    if ctx.payload_mode == FeedPayloadMode::ParsedPoll {
-        if let Some(parsed) = &ctx.parsed_poll {
+    if ctx.payload_mode == FeedPayloadMode::ParsedPoll
+        && let Some(parsed) = &ctx.parsed_poll {
             if let Some(headers) = parsed.get("headerCount") {
                 payload["headerCount"] = headers.clone();
             }
@@ -227,7 +227,6 @@ pub fn build_recurring_tick_slice(ctx: &RecurringTickContext) -> Value {
                 payload["bodyLength"] = body_len.clone();
             }
         }
-    }
 
     payload
 }

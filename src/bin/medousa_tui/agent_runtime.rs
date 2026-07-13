@@ -826,6 +826,27 @@ async fn dispatch_daemon_stream_event(
                 .await
                 .map_err(|err| err.to_string())?;
         }
+        "assistant_pack_hold" => {
+            let held = payload
+                .final_text
+                .or_else(|| {
+                    let trimmed = payload.message.trim();
+                    if trimmed.is_empty() {
+                        None
+                    } else {
+                        Some(trimmed.to_string())
+                    }
+                })
+                .unwrap_or_default();
+            event_tx
+                .send(TuiEvent::AgentPackHold {
+                    turn_id,
+                    held,
+                    tool_names: payload.tool_names.unwrap_or_default(),
+                })
+                .await
+                .map_err(|err| err.to_string())?;
+        }
         "content_delta" => {
             if let Some(delta) = payload.content_delta {
                 event_tx
@@ -929,6 +950,50 @@ async fn dispatch_daemon_stream_event(
                 .await
                 .map_err(|err| err.to_string())?;
         }
+        "worker_ack" | "workshop_ack" => {
+            let text = payload
+                .final_text
+                .or_else(|| {
+                    if payload.message.trim().is_empty() {
+                        None
+                    } else {
+                        Some(payload.message.clone())
+                    }
+                })
+                .unwrap_or_else(|| "(worker handoff)".to_string());
+            event_tx
+                .send(TuiEvent::AgentResponse {
+                    turn_id,
+                    text,
+                    tool_names: payload.tool_names.unwrap_or_default(),
+                    terminal: false,
+                    work_id: payload.work_id,
+                })
+                .await
+                .map_err(|err| err.to_string())?;
+        }
+        "worker_synthesis" => {
+            let text = payload
+                .final_text
+                .or_else(|| {
+                    if payload.message.trim().is_empty() {
+                        None
+                    } else {
+                        Some(payload.message.clone())
+                    }
+                })
+                .unwrap_or_else(|| "(empty worker synthesis)".to_string());
+            event_tx
+                .send(TuiEvent::AgentResponse {
+                    turn_id,
+                    text,
+                    tool_names: payload.tool_names.unwrap_or_default(),
+                    terminal: true,
+                    work_id: payload.work_id,
+                })
+                .await
+                .map_err(|err| err.to_string())?;
+        }
         "final" => {
             let text = payload
                 .final_text
@@ -941,13 +1006,15 @@ async fn dispatch_daemon_stream_event(
                 })
                 .unwrap_or_else(|| "(empty daemon final response)".to_string());
             let tool_names = payload.tool_names.unwrap_or_default();
+            let handoff_phase = payload.phase == "worker_ack"
+                || payload.phase == "workshop_ack";
             event_tx
                 .send(TuiEvent::AgentResponse {
                     turn_id,
                     text,
                     tool_names,
                     terminal: payload.terminal,
-                    work_id: if payload.phase == "worker_ack" {
+                    work_id: if handoff_phase {
                         payload.work_id
                     } else {
                         None

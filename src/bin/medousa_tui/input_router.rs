@@ -451,8 +451,8 @@ async fn handle_startup_key_event(
                 state.settings_draft.model.push(c);
             }
         }
-        KeyCode::Enter => {
-            if state.startup_selected == 2 {
+        KeyCode::Enter
+            if state.startup_selected == 2 => {
                 let provider = state.settings_draft.provider.trim().to_string();
                 let model = state.settings_draft.model.trim().to_string();
                 if provider.is_empty() || model.is_empty() {
@@ -473,7 +473,6 @@ async fn handle_startup_key_event(
                 state.mode = UiMode::Chat;
                 return EventOutcome::Continue;
             }
-        }
         _ => {}
     }
 
@@ -680,13 +679,12 @@ fn handle_editor_key_event(key: KeyEvent, state: &mut TuiState) -> EventOutcome 
             state.editor_preferred_col = None;
             edited = true;
         }
-        KeyCode::Char(c) => {
-            if key.modifiers.is_empty() || key.modifiers == KeyModifiers::SHIFT {
+        KeyCode::Char(c)
+            if (key.modifiers.is_empty() || key.modifiers == KeyModifiers::SHIFT) => {
                 state.editor_buffer.insert_char(c);
                 state.editor_preferred_col = None;
                 edited = true;
             }
-        }
         _ => {}
     }
 

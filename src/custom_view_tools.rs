@@ -307,15 +307,14 @@ impl StasisTool for CognitionCustomViewComposeTool {
             });
         }
 
-        if let Some(rewrite) = input.get("preset_rewrite") {
-            if let Some(surfaces) = rewrite.get("surfaces").and_then(Value::as_array) {
+        if let Some(rewrite) = input.get("preset_rewrite")
+            && let Some(surfaces) = rewrite.get("surfaces").and_then(Value::as_array) {
                 let surfaces: Vec<String> = surfaces
                     .iter()
                     .filter_map(|value| value.as_str().map(str::to_string))
                     .collect();
                 patch_ops.push(EnvironmentPatchOp::RewriteActivePresetSurfaces { surfaces });
             }
-        }
 
         if !patch_ops.is_empty() {
             let patch_result = execute_environment_patch(
@@ -362,7 +361,7 @@ impl StasisTool for CognitionCustomViewComposeTool {
                 .and_then(Value::as_bool)
                 .is_some_and(|ok| !ok)
             {
-                return Ok(merge_compose_status(
+                return merge_compose_status(
                     ui_result,
                     pending_operator_approval,
                     &surface_id,
@@ -372,7 +371,7 @@ impl StasisTool for CognitionCustomViewComposeTool {
                     next_run_at_utc.as_deref(),
                     self.runtime.as_ref(),
                 )
-                .await?);
+                .await;
             }
         } else if let Some(artifact_id) = artifact_id {
             let label = input
@@ -431,17 +430,16 @@ impl StasisTool for CognitionCustomViewComposeTool {
             apply_layout_root(&profile_id, &surface_id, layout_root).await?;
         }
 
-        if let Some(recurring) = input.get("recurring") {
-            if !feed_ids.is_empty() {
+        if let Some(recurring) = input.get("recurring")
+            && !feed_ids.is_empty() {
                 let mut recurring_input = recurring.clone();
-                if recurring_input.get("source").is_none() {
-                    if let Some(poll_url) = recurring.get("poll_url").and_then(Value::as_str) {
+                if recurring_input.get("source").is_none()
+                    && let Some(poll_url) = recurring.get("poll_url").and_then(Value::as_str) {
                         recurring_input["source"] = json!(format!(
                             "http_poll url=\"{}\"",
                             poll_url.replace('"', "\\\"")
                         ));
                     }
-                }
                 if recurring_input.get("feeds").is_none() {
                     recurring_input["feeds"] = json!({ "feed_ids": feed_ids });
                 }
@@ -475,7 +473,6 @@ impl StasisTool for CognitionCustomViewComposeTool {
                     .and_then(Value::as_str)
                     .map(str::to_string);
             }
-        }
 
         let nav_visible = environment_hub()
             .get(&profile_id)
@@ -508,6 +505,7 @@ impl StasisTool for CognitionCustomViewComposeTool {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn merge_compose_status(
     mut base: Value,
     pending_operator_approval: bool,

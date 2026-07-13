@@ -122,6 +122,12 @@ pub struct TuiDefaultsDto {
     pub active_voice_id: Option<String>,
     pub custom_voice_presets: Option<Vec<VoicePresetDto>>,
     pub inference_profiles: Option<InferenceProfilesDto>,
+    pub shell_agent_tools_enabled: Option<bool>,
+    pub shell_network_default: Option<bool>,
+    pub shell_timeout_ms: Option<u64>,
+    pub shell_max_output_bytes: Option<u64>,
+    pub shell_allowed_binaries: Option<Vec<String>>,
+    pub shell_writable_roots: Option<Vec<String>>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Default)]
@@ -215,6 +221,18 @@ struct TuiDefaultsFile {
     #[serde(default)]
     inference_profiles: Option<InferenceProfilesDto>,
     #[serde(default)]
+    shell_agent_tools_enabled: Option<bool>,
+    #[serde(default)]
+    shell_network_default: Option<bool>,
+    #[serde(default)]
+    shell_timeout_ms: Option<u64>,
+    #[serde(default)]
+    shell_max_output_bytes: Option<u64>,
+    #[serde(default)]
+    shell_allowed_binaries: Option<Vec<String>>,
+    #[serde(default)]
+    shell_writable_roots: Option<Vec<String>>,
+    #[serde(default)]
     command_usage_counts: Option<serde_json::Value>,
     #[serde(default)]
     surreal_endpoint: Option<String>,
@@ -304,6 +322,12 @@ fn file_to_dto(file: &TuiDefaultsFile) -> TuiDefaultsDto {
         active_voice_id: file.active_voice_id.clone(),
         custom_voice_presets: file.custom_voice_presets.clone(),
         inference_profiles: file.inference_profiles.clone(),
+        shell_agent_tools_enabled: file.shell_agent_tools_enabled,
+        shell_network_default: file.shell_network_default,
+        shell_timeout_ms: file.shell_timeout_ms,
+        shell_max_output_bytes: file.shell_max_output_bytes,
+        shell_allowed_binaries: file.shell_allowed_binaries.clone(),
+        shell_writable_roots: file.shell_writable_roots.clone(),
     }
 }
 
@@ -390,6 +414,23 @@ fn apply_dto_to_file(file: &mut TuiDefaultsFile, dto: &TuiDefaultsDto) {
         .map(str::to_string);
     file.custom_voice_presets = normalize_voice_presets(dto.custom_voice_presets.clone());
     file.inference_profiles = dto.inference_profiles.clone();
+    file.shell_agent_tools_enabled = dto.shell_agent_tools_enabled;
+    file.shell_network_default = dto.shell_network_default;
+    file.shell_timeout_ms = dto.shell_timeout_ms;
+    file.shell_max_output_bytes = dto.shell_max_output_bytes;
+    file.shell_allowed_binaries = dto.shell_allowed_binaries.clone().map(|bins| {
+        bins.into_iter()
+            .map(|bin| bin.trim().to_string())
+            .filter(|bin| !bin.is_empty())
+            .collect()
+    });
+    file.shell_writable_roots = dto.shell_writable_roots.clone().map(|roots| {
+        roots
+            .into_iter()
+            .map(|root| root.trim().to_string())
+            .filter(|root| !root.is_empty())
+            .collect()
+    });
     if dto.stage_routing.is_some() {
         file.stage_routing = dto.stage_routing.clone();
     }

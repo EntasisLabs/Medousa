@@ -90,11 +90,11 @@ pub async fn get_media(
         )
     })?;
 
-    Ok(Response::builder()
+    Response::builder()
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, record.mime.as_str())
         .header(header::CACHE_CONTROL, "private, max-age=3600")
         .header(header::CONTENT_LENGTH, bytes.len())
         .body(Body::from(bytes))
-        .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?)
+        .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))
 }

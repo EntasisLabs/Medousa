@@ -168,7 +168,7 @@ impl WorkflowRegistry {
     pub async fn list(&self, limit: usize) -> Vec<WorkflowRecord> {
         let guard = self.inner.read().await;
         let mut records: Vec<_> = guard.values().cloned().collect();
-        records.sort_by(|left, right| right.created_at.cmp(&left.created_at));
+        records.sort_by_key(|right| std::cmp::Reverse(right.created_at));
         records.truncate(limit.clamp(1, 500));
         records
     }
@@ -593,6 +593,7 @@ impl WorkflowExecutor {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn execute_workflow_step(
     step: &WorkflowStepSpec,
     prior_outputs: &HashMap<String, Value>,
@@ -682,6 +683,7 @@ async fn execute_workflow_step(
     .await
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn execute_native_workflow_step(
     step: &WorkflowStepSpec,
     prior_outputs: &HashMap<String, Value>,

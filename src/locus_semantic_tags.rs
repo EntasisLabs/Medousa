@@ -91,8 +91,8 @@ pub fn inject_semantic_tags(raw_node: &str, tags: &[String]) -> String {
         .collect::<Vec<_>>()
         .join(", ");
 
-    if let Some(prime_idx) = raw_node.find("prime:") {
-        if let Some(open) = raw_node[prime_idx..].find('{') {
+    if let Some(prime_idx) = raw_node.find("prime:")
+        && let Some(open) = raw_node[prime_idx..].find('{') {
             let insert_at = prime_idx + open + 1;
             let injection = format!(" semantic_tags: [{tags_json}],");
             let mut out = String::with_capacity(raw_node.len() + injection.len());
@@ -101,7 +101,6 @@ pub fn inject_semantic_tags(raw_node: &str, tags: &[String]) -> String {
             out.push_str(&raw_node[insert_at..]);
             return out;
         }
-    }
 
     raw_node.to_string()
 }
@@ -110,11 +109,10 @@ pub fn inject_semantic_tags(raw_node: &str, tags: &[String]) -> String {
 pub fn default_workshop_semantic_tags(chat_session_id: &str) -> Vec<String> {
     let mut tags = vec!["medousa".to_string(), "session".to_string()];
     let profile_id = crate::user_profiles::resolve_workshop_identity_user_id();
-    if let Some(slug) = crate::user_profiles::profile_slug_from_id(&profile_id) {
-        if slug != crate::locus_memory::LOCUS_DEFAULT_TENANT {
+    if let Some(slug) = crate::user_profiles::profile_slug_from_id(&profile_id)
+        && slug != crate::locus_memory::LOCUS_DEFAULT_TENANT {
             tags.push(format!("profile:{slug}"));
         }
-    }
     let short = chat_session_id.chars().take(8).collect::<String>();
     if !short.is_empty() {
         tags.push(format!("chat:{short}"));

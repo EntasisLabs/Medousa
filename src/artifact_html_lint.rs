@@ -179,14 +179,13 @@ pub fn json_value_type(value: &serde_json::Value) -> String {
 pub fn lint_store_value(key: &str, value: &serde_json::Value) -> Vec<String> {
     let mut issues = Vec::new();
     let key_lower = key.to_lowercase();
-    if key_lower.contains("thought") || key_lower.ends_with("items") || key_lower.ends_with("list") {
-        if !value.is_array() {
+    if (key_lower.contains("thought") || key_lower.ends_with("items") || key_lower.ends_with("list"))
+        && !value.is_array() {
             issues.push(format!(
                 "expected_array_got_{}",
                 json_value_type(value)
             ));
         }
-    }
     issues
 }
 

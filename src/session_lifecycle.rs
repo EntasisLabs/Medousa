@@ -43,8 +43,8 @@ pub async fn delete_session(
 
     let mut locus_nodes_deleted = 0;
     let mut locus_purged = false;
-    if purge_locus {
-        if let Some(ops) = memory_operations {
+    if purge_locus
+        && let Some(ops) = memory_operations {
             let locus_session = resolve_workshop_locus_session(session_id);
             let tenant = derive_locus_tenant_id(&locus_session);
             let mut scope = MemoryScope {
@@ -71,7 +71,6 @@ pub async fn delete_session(
             locus_nodes_deleted = response.deleted;
             locus_purged = true;
         }
-    }
 
     crate::session_store::delete_session_transcript(session_id);
     crate::session_catalog::delete_catalog_row(session_id);

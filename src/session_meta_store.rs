@@ -30,19 +30,16 @@ static SESSION_META_STORE: Lazy<RwLock<Arc<dyn SessionMetaStore>>> =
     Lazy::new(|| RwLock::new(Arc::new(FileSessionMetaStore)));
 
 pub async fn init_session_meta_store_with_runtime(runtime: &RuntimeComposition) {
-    match runtime {
-        RuntimeComposition::Surreal(rt) => {
-            let store = SurrealSessionMetaStore::new(rt.job_store.db());
-            if let Err(err) = store.ensure_schema().await {
-                eprintln!(
-                    "Surreal session meta schema init error: {err}; keeping file-backed session names"
-                );
-                return;
-            }
-            set_session_meta_store(Arc::new(store));
-            eprintln!("Surreal runtime detected; session display names switched to SurrealDB backend");
+    if let RuntimeComposition::Surreal(rt) = runtime {
+        let store = SurrealSessionMetaStore::new(rt.job_store.db());
+        if let Err(err) = store.ensure_schema().await {
+            eprintln!(
+                "Surreal session meta schema init error: {err}; keeping file-backed session names"
+            );
+            return;
         }
-        _ => {}
+        set_session_meta_store(Arc::new(store));
+        eprintln!("Surreal runtime detected; session display names switched to SurrealDB backend");
     }
 }
 
@@ -375,7 +372,7 @@ impl SessionMetaStore for FileSessionMetaStore {
             .into_iter()
             .map(|(session_id, entry)| (session_id, entry.display_name, entry.updated_at))
             .collect();
-        entries.sort_by(|a, b| b.2.cmp(&a.2));
+        entries.sort_by_key(|b| std::cmp::Reverse(b.2));
         entries
             .into_iter()
             .take(limit.max(1))
@@ -404,9 +401,7 @@ pub fn load_session_display_names(session_ids: &[String]) -> HashMap<String, Str
 }
 
 pub fn find_session_id_by_display_name(display_name: &str) -> Option<String> {
-    let Some(normalized) = normalize_session_display_name(display_name) else {
-        return None;
-    };
+    let normalized = normalize_session_display_name(display_name)?;
     session_meta_store().find_session_id_by_display_name(&normalized)
 }
 

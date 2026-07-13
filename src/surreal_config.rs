@@ -53,7 +53,7 @@ pub fn resolve_surreal_connection_settings(
             "MEDOUSA_SURREAL_PASSWORD",
             "STASIS_SURREAL_PASSWORD",
         )
-        .or_else(|| crate::session::load_surreal_password()),
+        .or_else(crate::session::load_surreal_password),
         namespace: resolve_optional_string(
             product.surreal.namespace.as_deref(),
             defaults.surreal_namespace.as_deref(),

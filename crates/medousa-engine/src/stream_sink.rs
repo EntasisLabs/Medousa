@@ -5,6 +5,7 @@ use serde_json::Value;
 
 use crate::receipt::ArtifactReceiptMeta;
 
+#[allow(clippy::too_many_arguments)]
 #[async_trait]
 pub trait AgentStreamSink: Send + Sync {
     async fn content_chunk(&self, turn_id: u64, delta: String);

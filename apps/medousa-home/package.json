@@ -40,7 +40,6 @@
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-dialog": "^2",
     "@tauri-apps/plugin-notification": "^2.3.3",
-    "tauri-plugin-mobile-push-api": "^0.1.4",
     "@tauri-apps/plugin-opener": "^2",
     "codemirror": "^6.0.2",
     "dompurify": "^3.4.8",
@@ -48,6 +47,7 @@
     "html2pdf.js": "^0.10.2",
     "marked": "^18.0.5",
     "mermaid": "^11.15.0",
+    "tauri-plugin-mobile-push-api": "^0.1.4",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
@@ -59,6 +59,7 @@
     "@tailwindcss/forms": "^0.5.10",
     "@tauri-apps/cli": "^2",
     "@types/dompurify": "^3.0.5",
+    "@types/node": "^26.1.1",
     "autoprefixer": "^10.4.21",
     "postcss": "^8.5.3",
     "svelte": "^5.0.0",

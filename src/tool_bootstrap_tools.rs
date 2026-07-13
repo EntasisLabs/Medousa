@@ -217,10 +217,9 @@ fn resolve_lane(
             _ => {}
         }
     }
-    if let Ok(scope) = turn_scope.try_read() {
-        if scope.is_none() {
+    if let Ok(scope) = turn_scope.try_read()
+        && scope.is_none() {
             // Worker loops may run without host scope — caller should pass lane=worker.
         }
-    }
     ToolSurfaceLane::Host
 }

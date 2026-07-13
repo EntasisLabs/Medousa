@@ -655,11 +655,10 @@ async fn stage_scratch_for_persist(
     sink: &SharedAgentStreamSink,
     scratch: &Option<TurnScratchpad>,
 ) {
-    if let Some(scratch) = scratch.clone() {
-        if let Ok(value) = serde_json::to_value(scratch) {
+    if let Some(scratch) = scratch.clone()
+        && let Ok(value) = serde_json::to_value(scratch) {
             sink.stage_persist_scratch(value).await;
         }
-    }
 }
 
 fn host_tool_round_budget_ceiling(settings: &TurnLoopSettings, loop_max_rounds: usize) -> usize {
@@ -1180,8 +1179,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                 && !crate::channel_delivery::is_principal_interactive_channel(
                     origin_channel.as_deref().unwrap_or(channel_delivery::CHANNEL_INTERACTIVE),
                 )
-            {
-                if let Some(continuation_prompt) = build_continuation_prompt(
+                && let Some(continuation_prompt) = build_continuation_prompt(
                     &original_prompt,
                     &final_text,
                     &combined_invocations,
@@ -1297,7 +1295,6 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                         .await;
                     }
                 }
-            }
 
             let profile = super::presentation::presentation_profile_for_channel(
                 origin_channel.as_deref().unwrap_or(channel_delivery::CHANNEL_INTERACTIVE),

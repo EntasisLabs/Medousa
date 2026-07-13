@@ -221,7 +221,7 @@ fn resolve_slack_bot_token(explicit: Option<&str>) -> Result<String> {
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(ToString::to_string)
-        .or_else(|| medousa::session::load_slack_bot_token())
+        .or_else(medousa::session::load_slack_bot_token)
         .or_else(|| non_empty_env("MEDOUSA_SLACK_BOT_TOKEN"))
         .or_else(|| non_empty_env("SLACK_BOT_TOKEN"))
         .ok_or_else(|| {
@@ -236,7 +236,7 @@ fn resolve_slack_app_token(explicit: Option<&str>) -> Result<String> {
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(ToString::to_string)
-        .or_else(|| medousa::session::load_slack_app_token())
+        .or_else(medousa::session::load_slack_app_token)
         .or_else(|| non_empty_env("MEDOUSA_SLACK_APP_TOKEN"))
         .or_else(|| non_empty_env("SLACK_APP_TOKEN"))
         .ok_or_else(|| {

@@ -348,11 +348,10 @@ impl SessionCatalogStore for CachingSessionCatalogStore {
     }
 
     fn get_row(&self, session_id: &str) -> Option<SessionCatalogRow> {
-        if let Ok(cache) = self.cache.read() {
-            if let Some(row) = cache.get(session_id) {
+        if let Ok(cache) = self.cache.read()
+            && let Some(row) = cache.get(session_id) {
                 return Some(row.clone());
             }
-        }
         let row = self.inner.get_row(session_id)?;
         if let Ok(mut cache) = self.cache.write() {
             cache.insert(session_id.to_string(), row.clone());
@@ -777,19 +776,16 @@ impl SessionCatalogStore for SurrealSessionCatalogStore {
 }
 
 pub async fn init_session_catalog_with_runtime(runtime: &RuntimeComposition) {
-    match runtime {
-        RuntimeComposition::Surreal(rt) => {
-            if let Err(err) = init_surreal_catalog_for_db(rt.job_store.db()).await {
-                eprintln!(
-                    "Surreal session catalog schema init error: {err}; keeping file-backed catalog"
-                );
-            } else {
-                eprintln!(
-                    "Surreal runtime detected; session catalog switched to SurrealDB backend"
-                );
-            }
+    if let RuntimeComposition::Surreal(rt) = runtime {
+        if let Err(err) = init_surreal_catalog_for_db(rt.job_store.db()).await {
+            eprintln!(
+                "Surreal session catalog schema init error: {err}; keeping file-backed catalog"
+            );
+        } else {
+            eprintln!(
+                "Surreal runtime detected; session catalog switched to SurrealDB backend"
+            );
         }
-        _ => {}
     }
 
     backfill_if_needed();
@@ -820,12 +816,11 @@ pub fn record_turn_appended(session_id: &str, turn: &ConversationTurn) {
         row.preview = "(empty session)".to_string();
     }
 
-    if row.display_name.is_none() {
-        if let Some(title) = auto_title_from_turn(turn) {
+    if row.display_name.is_none()
+        && let Some(title) = auto_title_from_turn(turn) {
             row.display_name = Some(title.clone());
             let _ = crate::session_meta_store::set_session_display_name(session_id, &title);
         }
-    }
 
     stamp_profile_id(&mut row);
     catalog_store().upsert_row(&row);
@@ -1116,7 +1111,7 @@ fn group_latest_verifications(
     let mut counts = HashMap::new();
     for (session_id, mut records) in grouped {
         counts.insert(session_id.clone(), records.len());
-        records.sort_by(|a, b| b.created_at_utc.cmp(&a.created_at_utc));
+        records.sort_by_key(|b| std::cmp::Reverse(b.created_at_utc));
         let Some(record) = records.into_iter().next() else {
             continue;
         };

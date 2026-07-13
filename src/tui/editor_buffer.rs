@@ -180,12 +180,10 @@ fn offset_for_visual_col(
         return line_start;
     }
 
-    let mut char_count = 1usize;
-    for (idx, c) in line.char_indices() {
-        if char_count == target_col {
+    for (char_count, (idx, c)) in line.char_indices().enumerate() {
+        if char_count + 1 == target_col {
             return line_start + idx;
         }
-        char_count += 1;
         if idx + c.len_utf8() == line.len() {
             break;
         }

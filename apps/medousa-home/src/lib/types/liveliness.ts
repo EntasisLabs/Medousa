@@ -5,4 +5,6 @@ export type LivelinessVariant =
   | "muted"
   | "scheduled"
   | "paused"
+  | "running"
   | "warning";
+

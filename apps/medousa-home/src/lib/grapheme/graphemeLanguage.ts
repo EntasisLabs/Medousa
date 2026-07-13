@@ -34,9 +34,18 @@ export const graphemeLanguage = StreamLanguage.define({
     }
 
     if (stream.eat('"')) {
+      let escaped = false;
       while (!stream.eol()) {
         const ch = stream.next();
-        if (ch === '"' && stream.peek(-2) !== "\\") break;
+        if (escaped) {
+          escaped = false;
+          continue;
+        }
+        if (ch === "\\") {
+          escaped = true;
+          continue;
+        }
+        if (ch === '"') break;
       }
       return "string";
     }

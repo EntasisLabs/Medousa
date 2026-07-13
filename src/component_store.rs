@@ -125,10 +125,7 @@ impl ComponentStoreService {
         };
 
         if let Some(key) = key {
-            entries = entries
-                .into_iter()
-                .filter(|(entry_key, _)| entry_key == key)
-                .collect();
+            entries.retain(|entry_key, _| entry_key == key);
         }
 
         Ok(ComponentStoreGetResponse {

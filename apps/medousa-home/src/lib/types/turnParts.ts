@@ -6,7 +6,10 @@ export interface TurnArtifactRef {
   content_type: string;
   byte_size: number;
   hash64: string;
+  artifact_id?: string | null;
+  label?: string | null;
 }
+
 
 export type TurnPart =
   | { kind: "text"; markdown: string }

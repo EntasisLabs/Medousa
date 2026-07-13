@@ -784,7 +784,7 @@ pub async fn seed_workshop_profile_user(
 }
 
 fn stable_id_segment(raw: &str) -> String {
-    raw.replace(':', "_").replace('/', "_")
+    raw.replace([':', '/'], "_")
 }
 
 fn resolve_identity_timezone() -> String {
@@ -959,7 +959,6 @@ pub async fn get_medousa_cognitive_identity_context_in_memory(
 mod tests {
     use super::{
         build_seeded_identity_memory_store, full_identity_context_request,
-        ensure_surreal_identity_user_preferences_flexible,
         is_identity_user_preferences_decode_error, resolve_identity_channel_id,
         resolve_identity_persona_id, resolve_identity_user_id, resolve_tool_identity_user_id,
         DEFAULT_USER_ID,

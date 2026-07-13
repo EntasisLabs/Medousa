@@ -85,6 +85,12 @@ fn retrieve_result_to_json(result: locus_core_rs::RetrieveResult) -> Value {
 
 pub struct CognitionMemorySchemaTool;
 
+impl Default for CognitionMemorySchemaTool {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CognitionMemorySchemaTool {
     pub fn new() -> Self {
         Self
@@ -492,7 +498,7 @@ impl StasisTool for CognitionMemoryContextTool {
             .map(|n| n as usize)
             .unwrap_or(5);
         let limit = validate_limit(limit, "limit")
-            .map_err(|e| StasisError::PortFailure(e))?;
+            .map_err(StasisError::PortFailure)?;
 
         let global = input.get("session_id").map(|v| v.is_null()).unwrap_or(false);
         let session_scope = if global {
@@ -743,11 +749,13 @@ impl StasisTool for CognitionMemoryListTool {
         }
 
         let query_limit = limit.saturating_mul(5).clamp(1, 200);
-        let mut find = MemoryFindRequest::default();
-        find.limit = query_limit;
-        find.sort_field = MemorySortField::Timestamp;
-        find.sort_direction = MemorySortDirection::Desc;
-        find.filter = tag_filter;
+        let mut find = MemoryFindRequest {
+            limit: query_limit,
+            sort_field: MemorySortField::Timestamp,
+            sort_direction: MemorySortDirection::Desc,
+            filter: tag_filter,
+            ..Default::default()
+        };
         if !keywords.is_empty() {
             find.filter.text_contains = Some(keywords.join(" "));
         }

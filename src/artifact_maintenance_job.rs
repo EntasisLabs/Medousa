@@ -82,7 +82,7 @@ impl JobHandler for ArtifactMaintenanceJobHandler {
         })
         .await
         .map_err(|err| StasisError::PortFailure(format!("artifact maintenance join error: {err}")))?
-        .map_err(|err| StasisError::PortFailure(err))?;
+        .map_err(StasisError::PortFailure)?;
 
         let diagnostics = json!({
             "records_before": report.records_before,

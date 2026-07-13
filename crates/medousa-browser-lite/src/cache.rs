@@ -55,15 +55,14 @@ impl SearchCache {
     pub fn put(&self, query: &str, max_results: usize, response: SearchResponse) {
         let key = Self::key(query, max_results);
         let mut guard = self.inner.lock();
-        if guard.len() >= self.max_entries {
-            if let Some(oldest_key) = guard
+        if guard.len() >= self.max_entries
+            && let Some(oldest_key) = guard
                 .iter()
                 .min_by_key(|(_, v)| v.inserted)
                 .map(|(k, _)| k.clone())
             {
                 guard.remove(&oldest_key);
             }
-        }
         guard.insert(
             key,
             CacheEntry {

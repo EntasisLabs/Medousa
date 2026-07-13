@@ -34,6 +34,13 @@
     open = false;
   }
 
+  function handleMenuKeydown(event: KeyboardEvent) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeMenu();
+    }
+  }
+
   function handlePreview(attachment: VaultAttachment) {
     vault.previewAttachment(attachment.path, "panel");
     closeMenu();
@@ -89,7 +96,9 @@
     <div
       class="vault-linked-files-menu absolute right-0 top-full z-30 mt-1 rounded-lg border border-surface-500/50 bg-surface-900 py-1 shadow-xl"
       role="menu"
+      tabindex="-1"
       onclick={(event) => event.stopPropagation()}
+      onkeydown={handleMenuKeydown}
     >
       {#if count === 0}
         <p class="px-3 py-2 text-xs leading-relaxed text-surface-500">

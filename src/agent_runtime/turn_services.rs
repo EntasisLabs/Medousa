@@ -117,7 +117,7 @@ pub fn select_pipeline_for_turn_with_allowlist(
     let pipeline = build_tool_loop_pipeline_for_target(
         &settings.provider,
         &settings.model,
-        (!settings.base_url.trim().is_empty()).then(|| settings.base_url.as_str()),
+        (!settings.base_url.trim().is_empty()).then_some(settings.base_url.as_str()),
         registry,
     );
     SelectedTurnPipeline {
@@ -148,13 +148,11 @@ pub fn build_prior_messages(
         .filter(|turn| !crate::turn_failure::is_error_turn_excluded_from_model_context(turn))
         .collect();
 
-    if current_user_persisted {
-        if let Some(last) = selected.last() {
-            if last.role == "user" && last.content.trim() == current_prompt.trim() {
+    if current_user_persisted
+        && let Some(last) = selected.last()
+            && last.role == "user" && last.content.trim() == current_prompt.trim() {
                 selected.pop();
             }
-        }
-    }
 
     let mut accepted: Vec<ChatMessage> = Vec::new();
     let mut total_chars = 0usize;
@@ -311,6 +309,7 @@ pub fn build_prior_messages(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn decide_turn_activation(
     prompt: &str,
     configured_mode: ToolCallMode,
@@ -438,13 +437,11 @@ pub fn build_intent_classifier_recent_context(
         .filter(|turn| !crate::turn_failure::is_error_turn_excluded_from_model_context(turn))
         .collect();
 
-    if current_user_persisted {
-        if let Some(last) = selected.last() {
-            if last.role == "user" && last.content.trim() == current_prompt.trim() {
+    if current_user_persisted
+        && let Some(last) = selected.last()
+            && last.role == "user" && last.content.trim() == current_prompt.trim() {
                 selected.pop();
             }
-        }
-    }
 
     let mut lines = Vec::new();
     let mut total_chars = 0usize;

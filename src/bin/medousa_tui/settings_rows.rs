@@ -178,10 +178,10 @@ pub(crate) fn is_routing_edit_row(id: SettingsRowId) -> bool {
     )
 }
 
-pub(crate) fn selected_settings_field_mut<'a>(
-    state: &'a mut TuiState,
+pub(crate) fn selected_settings_field_mut(
+    state: &mut TuiState,
     id: SettingsRowId,
-) -> Option<&'a mut String> {
+) -> Option<&mut String> {
     let draft = &mut state.settings_draft;
     Some(match id {
         SettingsRowId::Backend => &mut draft.backend,
@@ -482,11 +482,9 @@ pub(crate) fn quick_adjust_setting(state: &mut TuiState, id: SettingsRowId, forw
         SettingsRowId::RouteFallbackChain => {
             let role = routing_editor_role(state).to_string();
             if let Some(route) = state.stage_routing_draft.get_mut(&role) {
-                let options = vec![
-                    vec![role.clone(), "safe-default".to_string()],
+                let options = [vec![role.clone(), "safe-default".to_string()],
                     vec!["safe-default".to_string()],
-                    vec![role, "balanced".to_string(), "safe-default".to_string()],
-                ];
+                    vec![role, "balanced".to_string(), "safe-default".to_string()]];
                 let idx = options
                     .iter()
                     .position(|v| *v == route.fallback_chain)

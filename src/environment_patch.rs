@@ -3,13 +3,12 @@
 use chrono::Utc;
 use medousa_types::environment::{
     EnvironmentPatchOp, EnvironmentPatchResponse, EnvironmentPendingProposal, EnvironmentSpec,
-    EnvironmentTheme, SurfaceKind, SurfaceLayout,
+    EnvironmentTheme, SurfaceKind,
 };
 use medousa_types::environment_validate::validate_environment_spec;
 use medousa_types::environment_icons::is_valid_surface_icon;
 use medousa_types::environment_themes::{is_valid_brand_color, is_valid_color_theme_id};
 use medousa_types::feed::is_valid_feed_id;
-use serde_json::json;
 
 use async_trait::async_trait;
 use medousa_types::environment::EnvironmentPatchRequest;
@@ -401,17 +400,14 @@ impl StasisTool for CognitionEnvironmentPatchTool {
                 Some(surface_id.clone())
             }
             _ => None,
-        }) {
-            if let Ok(record) = environment_hub().get(&profile_id).await {
-                if let Some(obj) = value.as_object_mut() {
-                    if let Some(extra) = patch_response_extras(&record.spec, &first_surface).as_object() {
+        })
+            && let Ok(record) = environment_hub().get(&profile_id).await
+                && let Some(obj) = value.as_object_mut()
+                    && let Some(extra) = patch_response_extras(&record.spec, &first_surface).as_object() {
                         for (key, val) in extra {
                             obj.insert(key.clone(), val.clone());
                         }
                     }
-                }
-            }
-        }
         Ok(value)
     }
 }
@@ -419,6 +415,7 @@ impl StasisTool for CognitionEnvironmentPatchTool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use medousa_types::environment::SurfaceLayout;
     use medousa_types::environment_default::default_environment_spec;
 
     #[test]

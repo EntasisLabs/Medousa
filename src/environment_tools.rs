@@ -273,7 +273,7 @@ impl StasisTool for CognitionEnvironmentActivatePresetTool {
             .await
             .map_err(|err| StasisError::PortFailure(err.to_string()))?;
         activate_layout_preset(&mut record.spec, preset_id)
-            .map_err(|err| StasisError::PortFailure(err))?;
+            .map_err(StasisError::PortFailure)?;
         let updated = environment_hub()
             .put(record.spec, "agent")
             .await

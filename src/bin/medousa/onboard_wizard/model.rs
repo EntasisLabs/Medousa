@@ -218,7 +218,7 @@ pub(crate) struct WizardOutput {
 
 pub(crate) enum WizardTransition {
     Continue,
-    Finished(WizardOutput),
+    Finished(Box<WizardOutput>),
     Cancelled,
 }
 
@@ -993,7 +993,7 @@ impl WizardState {
             },
             WizardStep::Confirm => {
                 if matches!(key.code, KeyCode::Enter | KeyCode::Right) {
-                    return WizardTransition::Finished(self.build_output());
+                    return WizardTransition::Finished(Box::new(self.build_output()));
                 }
             }
         }

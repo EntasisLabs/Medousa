@@ -114,6 +114,13 @@
     : 'browser-url-bar flex min-w-0 flex-1 items-center'} relative"
   onsubmit={handleSubmit}
 >
+  <div
+    class="flex min-w-0 flex-1 items-center"
+    role="combobox"
+    aria-expanded={showSuggestions}
+    aria-haspopup="listbox"
+    aria-controls="browser-url-suggestions"
+  >
   <input
     bind:this={inputEl}
     type="text"
@@ -129,7 +136,6 @@
     autocapitalize="off"
     aria-label="Address bar"
     aria-autocomplete="list"
-    aria-expanded={showSuggestions}
     title="Search or enter URL (⌘L)"
     onfocus={handleFocus}
     onblur={handleBlur}
@@ -137,13 +143,14 @@
     onkeydown={handleKeydown}
   />
   {#if showSuggestions}
-    <ul class="browser-url-suggestions" role="listbox">
+    <ul id="browser-url-suggestions" class="browser-url-suggestions" role="listbox">
       {#each suggestions as entry (entry.url + entry.visitedAt)}
         <li>
           <button
             type="button"
             class="browser-url-suggestion"
             role="option"
+            aria-selected={false}
             onmousedown={(event) => {
               event.preventDefault();
               pickSuggestion(entry.url);
@@ -158,4 +165,5 @@
       {/each}
     </ul>
   {/if}
+  </div>
 </form>

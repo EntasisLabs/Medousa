@@ -28,11 +28,10 @@ pub fn active_preset_surface_ids(spec: &EnvironmentSpec) -> Vec<String> {
         if let Some(active) = presets.iter().find(|preset| preset.active) {
             return active.surfaces.clone();
         }
-        if let Some(id) = spec.active_preset_id.as_deref() {
-            if let Some(preset) = presets.iter().find(|preset| preset.id == id) {
+        if let Some(id) = spec.active_preset_id.as_deref()
+            && let Some(preset) = presets.iter().find(|preset| preset.id == id) {
                 return preset.surfaces.clone();
             }
-        }
     }
     spec.surfaces.iter().map(|surface| surface.id.clone()).collect()
 }
@@ -156,11 +155,10 @@ pub async fn build_environment_status(
         .iter()
         .filter(|surface| surface.kind == SurfaceKind::Custom)
     {
-        if let Some(filter) = surface_filter {
-            if surface.id != filter {
+        if let Some(filter) = surface_filter
+            && surface.id != filter {
                 continue;
             }
-        }
 
         let nav_visible = surface_nav_visible(spec, &surface.id);
         if !nav_visible {
@@ -173,11 +171,10 @@ pub async fn build_environment_status(
             .iter()
             .filter(|component| component.surface_id == surface.id)
         {
-            if let Some(filter) = diagnostics.and_then(|opts| opts.component_id_filter.as_deref()) {
-                if component.id != filter {
+            if let Some(filter) = diagnostics.and_then(|opts| opts.component_id_filter.as_deref())
+                && component.id != filter {
                     continue;
                 }
-            }
             let mut runtime_diag = None;
             if let Some(opts) = diagnostics {
                 let wants_runtime = opts.include_runtime || opts.include_static_lint || opts.probe;

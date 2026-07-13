@@ -293,18 +293,17 @@ fn normalize_mime(mime: &str) -> String {
 }
 
 fn infer_mime(bytes: &[u8], mime: &str, label: Option<&str>) -> String {
-    let mut mime = normalize_mime(mime);
+    let mime = normalize_mime(mime);
     if mime != "application/octet-stream" {
         return mime;
     }
     if bytes.starts_with(b"%PDF") {
         return "application/pdf".to_string();
     }
-    if let Some(label) = label {
-        if let Some(from_name) = mime_from_filename(label) {
+    if let Some(label) = label
+        && let Some(from_name) = mime_from_filename(label) {
             return from_name;
         }
-    }
     mime
 }
 
@@ -348,16 +347,14 @@ fn infer_mime_for_record(record: &MediaRecord) -> String {
     if mime != "application/octet-stream" {
         return mime;
     }
-    if let Ok(bytes) = open_media_payload(record) {
-        if bytes.starts_with(b"%PDF") {
+    if let Ok(bytes) = open_media_payload(record)
+        && bytes.starts_with(b"%PDF") {
             return "application/pdf".to_string();
         }
-    }
-    if let Some(label) = record.label.as_deref() {
-        if let Some(from_name) = mime_from_filename(label) {
+    if let Some(label) = record.label.as_deref()
+        && let Some(from_name) = mime_from_filename(label) {
             return from_name;
         }
-    }
     mime
 }
 

@@ -230,14 +230,13 @@ fn file_surreal_password() -> Option<String> {
 }
 
 pub fn load_surreal_password() -> Option<String> {
-    if let Ok(entry) = surreal_password_keyring_entry() {
-        if let Ok(value) = entry.get_password() {
+    if let Ok(entry) = surreal_password_keyring_entry()
+        && let Ok(value) = entry.get_password() {
             let trimmed = value.trim();
             if !trimmed.is_empty() {
                 return Some(trimmed.to_string());
             }
         }
-    }
     file_surreal_password()
 }
 
@@ -309,14 +308,13 @@ pub fn save_tui_defaults_merged(incoming: serde_json::Value) -> Result<TuiDefaul
 }
 
 pub fn load_tui_api_key() -> Option<String> {
-    if let Ok(entry) = api_key_keyring_entry() {
-        if let Ok(value) = entry.get_password() {
+    if let Ok(entry) = api_key_keyring_entry()
+        && let Ok(value) = entry.get_password() {
             let trimmed = value.trim();
             if !trimmed.is_empty() {
                 return Some(trimmed.to_string());
             }
         }
-    }
 
     file_api_key()
 }
@@ -331,14 +329,13 @@ pub fn load_provider_api_key(provider: &str) -> Option<String> {
         return None;
     }
 
-    if let Ok(entry) = provider_api_key_keyring_entry(&provider) {
-        if let Ok(value) = entry.get_password() {
+    if let Ok(entry) = provider_api_key_keyring_entry(&provider)
+        && let Ok(value) = entry.get_password() {
             let trimmed = value.trim();
             if !trimmed.is_empty() {
                 return Some(trimmed.to_string());
             }
         }
-    }
     if let Some(value) = file_provider_api_key(&provider) {
         return Some(value);
     }
@@ -445,14 +442,13 @@ pub fn save_tui_api_key(api_key: Option<&str>) {
 }
 
 pub fn load_discord_bot_token() -> Option<String> {
-    if let Ok(entry) = discord_bot_token_keyring_entry() {
-        if let Ok(value) = entry.get_password() {
+    if let Ok(entry) = discord_bot_token_keyring_entry()
+        && let Ok(value) = entry.get_password() {
             let trimmed = value.trim();
             if !trimmed.is_empty() {
                 return Some(trimmed.to_string());
             }
         }
-    }
 
     file_discord_bot_token()
 }
@@ -496,14 +492,13 @@ pub fn load_telegram_bot_token() -> Option<String> {
         }
     }
 
-    if let Ok(entry) = telegram_bot_token_keyring_entry() {
-        if let Ok(value) = entry.get_password() {
+    if let Ok(entry) = telegram_bot_token_keyring_entry()
+        && let Ok(value) = entry.get_password() {
             let trimmed = value.trim();
             if !trimmed.is_empty() {
                 return Some(trimmed.to_string());
             }
         }
-    }
 
     file_telegram_bot_token()
 }
@@ -534,14 +529,13 @@ pub fn save_telegram_bot_token(token: Option<&str>) {
 }
 
 pub fn load_slack_bot_token() -> Option<String> {
-    if let Ok(entry) = slack_bot_token_keyring_entry() {
-        if let Ok(value) = entry.get_password() {
+    if let Ok(entry) = slack_bot_token_keyring_entry()
+        && let Ok(value) = entry.get_password() {
             let trimmed = value.trim();
             if !trimmed.is_empty() {
                 return Some(trimmed.to_string());
             }
         }
-    }
 
     file_slack_bot_token()
 }
@@ -572,14 +566,13 @@ pub fn save_slack_bot_token(token: Option<&str>) {
 }
 
 pub fn load_slack_app_token() -> Option<String> {
-    if let Ok(entry) = slack_app_token_keyring_entry() {
-        if let Ok(value) = entry.get_password() {
+    if let Ok(entry) = slack_app_token_keyring_entry()
+        && let Ok(value) = entry.get_password() {
             let trimmed = value.trim();
             if !trimmed.is_empty() {
                 return Some(trimmed.to_string());
             }
         }
-    }
 
     file_slack_app_token()
 }
@@ -616,7 +609,7 @@ pub(crate) fn file_load_history(session_id: &str) -> Vec<ConversationTurn> {
     };
     std::io::BufReader::new(file)
         .lines()
-        .filter_map(|line| line.ok())
+        .map_while(Result::ok)
         .filter(|line| !line.trim().is_empty())
         .filter_map(|line| serde_json::from_str(&line).ok())
         .collect()
@@ -662,7 +655,7 @@ pub(crate) fn file_build_history_summaries_from_files(limit: usize) -> Vec<Sessi
         })
         .collect::<Vec<_>>();
 
-    sessions.sort_by(|a, b| b.1.cmp(&a.1));
+    sessions.sort_by_key(|b| std::cmp::Reverse(b.1));
 
     sessions
         .into_iter()
@@ -787,7 +780,7 @@ pub fn list_history_sessions_page(
     }
 
     enrich_session_summaries(&mut page.sessions);
-    page.sessions.sort_by(|a, b| b.last_timestamp.cmp(&a.last_timestamp));
+    page.sessions.sort_by_key(|b| std::cmp::Reverse(b.last_timestamp));
     page.sessions.truncate(limit);
     page
 }

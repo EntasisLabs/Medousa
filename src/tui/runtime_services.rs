@@ -81,6 +81,7 @@ pub(crate) fn build_tool_loop_pipeline_for_target(
     MedousaToolLoopPipeline::new(prompt_pipeline, tool_registry)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn build_tui_runtime_services(
     backend: RuntimeBackend,
     provider: Option<&str>,
@@ -124,6 +125,7 @@ pub(crate) async fn build_tui_runtime_services(
     .await
 }
 
+#[allow(clippy::too_many_arguments)]
 /// Assemble agent/TUI tooling on top of an existing runtime composition (no new DB connection).
 pub(crate) async fn assemble_tui_runtime(
     runtime: Arc<stasis::prelude::RuntimeComposition>,
@@ -217,6 +219,7 @@ pub(crate) async fn assemble_tui_runtime(
         event_tx.clone(),
         turn_scope.clone(),
     )?;
+    crate::shell_tools::register_shell_tools(&mut tool_registry, runtime.clone())?;
     crate::ui_present_tools::register_ui_present_tools(
         &mut tool_registry,
         turn_scope.clone(),

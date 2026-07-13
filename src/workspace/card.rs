@@ -112,7 +112,7 @@ pub async fn project_workspace_items(
         }
     }
 
-    items.sort_by(|left, right| right.card.updated_at_utc.cmp(&left.card.updated_at_utc));
+    items.sort_by_key(|right| std::cmp::Reverse(right.card.updated_at_utc));
     Ok(items)
 }
 
@@ -590,11 +590,10 @@ pub fn title_for_job(job: &Job, payload: &Value) -> String {
         }
     }
 
-    if let Some(manuscript) = payload.get("manuscript_id").and_then(|v| v.as_str()) {
-        if manuscript.contains("brief") {
+    if let Some(manuscript) = payload.get("manuscript_id").and_then(|v| v.as_str())
+        && manuscript.contains("brief") {
             return "Scheduled: morning brief".to_string();
         }
-    }
 
     if job.job_type.contains("workflow") {
         return format!(
@@ -612,7 +611,7 @@ pub fn title_for_job(job: &Job, payload: &Value) -> String {
 
     job.job_type
         .split('.')
-        .last()
+        .next_back()
         .unwrap_or(&job.job_type)
         .to_string()
 }

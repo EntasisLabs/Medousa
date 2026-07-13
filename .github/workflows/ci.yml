@@ -27,8 +27,8 @@ jobs:
             . -> .cache/cargo-target
           cache-workspace-crates: true
           cache-on-failure: true
-      - name: cargo check
-        run: cargo check -p medousa --all-targets
+      - name: cargo clippy
+        run: cargo clippy --workspace --all-targets --exclude medousa-sdk-iroh -- -D warnings
       - name: cargo test (lib)
         run: cargo test -p medousa --lib
 

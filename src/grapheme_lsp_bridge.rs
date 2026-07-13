@@ -68,11 +68,10 @@ async fn handle_lsp_socket(socket: WebSocket) {
                 }
             }
             Message::Binary(bytes) => {
-                if let Ok(text) = std::str::from_utf8(&bytes) {
-                    if write_lsp_message(&mut lsp_stdin_writer, text).await.is_err() {
+                if let Ok(text) = std::str::from_utf8(&bytes)
+                    && write_lsp_message(&mut lsp_stdin_writer, text).await.is_err() {
                         break;
                     }
-                }
             }
             Message::Close(_) => break,
             _ => {}

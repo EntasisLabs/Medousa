@@ -29,9 +29,9 @@
     label = "When",
   }: Props = $props();
 
-  let schedule = $state<FriendlyScheduleState>(cronToFriendly(cronExpr));
-  let timeValue = $state(formatTime24(schedule.hour, schedule.minute));
-  let showAdvanced = $state(schedule.frequency === "custom");
+  let schedule = $state<FriendlyScheduleState>(cronToFriendly(""));
+  let timeValue = $state("");
+  let showAdvanced = $state(false);
 
   const barClass = $derived(mobile ? "composer-bar composer-bar-mobile" : "composer-bar");
 
@@ -42,6 +42,13 @@
   );
 
   const summary = $derived(describeFriendlySchedule(schedule, timezone));
+
+  $effect(() => {
+    const next = cronToFriendly(cronExpr);
+    schedule = next;
+    timeValue = formatTime24(next.hour, next.minute);
+    showAdvanced = next.frequency === "custom";
+  });
 
   $effect(() => {
     if (!timezone.trim()) {

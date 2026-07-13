@@ -259,19 +259,17 @@ impl ModelCapabilityRegistry {
         }
 
         let snapshots = self.snapshots.read().expect("catalog snapshots lock");
-        if let Some(snapshot) = snapshots.get(&provider) {
-            if let Some(record) = find_model_record(&snapshot.models, model) {
+        if let Some(snapshot) = snapshots.get(&provider)
+            && let Some(record) = find_model_record(&snapshot.models, model) {
                 return Some(record);
             }
-        }
 
         if provider != "openrouter" {
             let slug = openrouter_slug_for(&provider, model);
-            if let Some(snapshot) = snapshots.get("openrouter") {
-                if let Some(record) = find_model_record(&snapshot.models, &slug) {
+            if let Some(snapshot) = snapshots.get("openrouter")
+                && let Some(record) = find_model_record(&snapshot.models, &slug) {
                     return Some(enrich_record_provider(record, &provider, model));
                 }
-            }
         }
 
         None
@@ -371,8 +369,7 @@ fn provider_base_url(provider: &str) -> Option<String> {
         .provider
         .as_deref()
         .is_some_and(|saved| saved.trim().eq_ignore_ascii_case(&provider))
-    {
-        if let Some(url) = defaults
+        && let Some(url) = defaults
             .base_url
             .as_deref()
             .map(str::trim)
@@ -380,7 +377,6 @@ fn provider_base_url(provider: &str) -> Option<String> {
         {
             return Some(url.to_string());
         }
-    }
 
     let normalized = provider.to_ascii_uppercase().replace('-', "_");
     for key in [

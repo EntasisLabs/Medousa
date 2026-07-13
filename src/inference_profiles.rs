@@ -62,11 +62,10 @@ pub fn normalize_tui_defaults(defaults: &mut TuiDefaults) {
         });
     }
 
-    if let Some(main) = profiles.main.as_mut() {
-        if let Some(trimmed) = main.trimmed() {
+    if let Some(main) = profiles.main.as_mut()
+        && let Some(trimmed) = main.trimmed() {
             *main = trimmed;
         }
-    }
     if let Some(vision) = profiles.vision.as_mut() {
         if let Some(trimmed) = vision.trimmed() {
             *vision = trimmed;
@@ -74,11 +73,10 @@ pub fn normalize_tui_defaults(defaults: &mut TuiDefaults) {
             profiles.vision = None;
         }
     }
-    if let Some(stt) = profiles.stt.as_mut() {
-        if let Some(trimmed) = stt.trimmed() {
+    if let Some(stt) = profiles.stt.as_mut()
+        && let Some(trimmed) = stt.trimmed() {
             *stt = trimmed;
         }
-    }
 
     sync_flat_fields_from_profiles(defaults);
 }

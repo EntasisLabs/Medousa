@@ -71,47 +71,26 @@ fn bridge_deps() -> Option<Arc<MedousaBridgeDeps>> {
 
 pub fn configure_grapheme_engine_builder(builder: GraphemeEngineBuilder) -> GraphemeEngineBuilder {
     builder
-        .configure_module_registry(register_medousa_host_module)
+        .configure_module_registry(|registry| {
+            register_medousa_host_module(registry);
+            crate::shell_grapheme::register_shell_host_module(registry);
+        })
         .with_default_hotload_store()
-        .with_capability_interceptor(medousa_capability_interceptor())
+        .with_capability_interceptor(medousa_and_shell_capability_interceptor())
+}
+
+fn medousa_and_shell_capability_interceptor(
+) -> impl Fn(&CapabilityCall) -> Option<Result<Value, HostCallError>> + Send + Sync + 'static {
+    move |call: &CapabilityCall| {
+        if let Some(result) = try_medousa_call(call) {
+            return Some(result);
+        }
+        crate::shell_grapheme::intercept_shell_call(call)
+    }
 }
 
 fn register_medousa_host_module(registry: &mut grapheme_runtime::ModuleRegistry) {
-    use grapheme_runtime::{EffectKind, ExportedOp, ModuleAbi, ModuleManifest, ResourceLimits};
-
-    registry.register_host_module(ModuleManifest {
-        module_id: MEDOUSA_MODULE.to_string(),
-        version: "0.1.0".to_string(),
-        abi: ModuleAbi::MirV1,
-        entrypoint: "medousa.host".to_string(),
-        exported_ops: vec![
-            ExportedOp {
-                op: "digest".to_string(),
-                input_schema_ref: None,
-                output_schema_ref: None,
-                effect: EffectKind::Pure,
-            },
-            ExportedOp {
-                op: "synthesize".to_string(),
-                input_schema_ref: None,
-                output_schema_ref: None,
-                effect: EffectKind::Control,
-            },
-            ExportedOp {
-                op: "deliver".to_string(),
-                input_schema_ref: None,
-                output_schema_ref: None,
-                effect: EffectKind::Control,
-            },
-        ],
-        required_capabilities: vec![],
-        limits: ResourceLimits {
-            max_cpu_ms: 30_000,
-            max_memory_mb: 256,
-            max_io_bytes: 16 * 1024 * 1024,
-            max_network_calls: 8,
-        },
-    });
+    registry.register_host_module(crate::grapheme_host_catalog::medousa_host_module_manifest());
 }
 
 pub fn medousa_workflow_engine() -> Arc<dyn WorkflowEngine> {
@@ -256,22 +235,19 @@ impl WorkflowEngine for MedousaWorkflowEngine {
     }
 }
 
-fn medousa_capability_interceptor(
-) -> impl Fn(&CapabilityCall) -> Option<Result<Value, HostCallError>> + Send + Sync + 'static {
-    move |call: &CapabilityCall| {
-        if !is_medousa_call(call) {
-            return None;
-        }
-        let op = resolve_medousa_op(call);
-        match op.as_str() {
-            "digest" => Some(handle_digest(&call.args)),
-            "synthesize" => Some(handle_synthesize(&call.args)),
-            "deliver" => Some(handle_deliver(&call.args)),
-            other => Some(Err(HostCallError::Fatal(format!(
-                "unsupported medousa op '{other}' (expected digest, synthesize, or deliver)"
-            )))),
-        }
+fn try_medousa_call(call: &CapabilityCall) -> Option<Result<Value, HostCallError>> {
+    if !is_medousa_call(call) {
+        return None;
     }
+    let op = resolve_medousa_op(call);
+    Some(match op.as_str() {
+        "digest" => handle_digest(&call.args),
+        "synthesize" => handle_synthesize(&call.args),
+        "deliver" => handle_deliver(&call.args),
+        other => Err(HostCallError::Fatal(format!(
+            "unsupported medousa op '{other}' (expected digest, synthesize, or deliver)"
+        ))),
+    })
 }
 
 fn is_medousa_call(call: &CapabilityCall) -> bool {
@@ -339,16 +315,15 @@ fn handle_digest(args: &Value) -> Result<Value, HostCallError> {
         }
     }
 
-    if let Some(identity_text) = compile_identity_digest_block(query.as_deref(), manuscript_id.as_deref()) {
-        if !identity_text.trim().is_empty() {
+    if let Some(identity_text) = compile_identity_digest_block(query.as_deref(), manuscript_id.as_deref())
+        && !identity_text.trim().is_empty() {
             sections.push("identity".to_string());
             body.push_str(&identity_text);
             body.push('\n');
         }
-    }
 
-    if let Some(pack_selector) = pack_ref.as_deref() {
-        if let Some(pack) = crate::context_pack::find_context_pack(&session_id, Some(pack_selector)) {
+    if let Some(pack_selector) = pack_ref.as_deref()
+        && let Some(pack) = crate::context_pack::find_context_pack(&session_id, Some(pack_selector)) {
             sections.push("context_pack".to_string());
             body.push_str(&format!(
                 "[MEDOUSA_CONTEXT_PACK]\npack_id={}\nartifact_id={}\nclaims={}\nchunks={}\ntokens={}\n",
@@ -364,10 +339,9 @@ fn handle_digest(args: &Value) -> Result<Value, HostCallError> {
                 body.push('\n');
             }
         }
-    }
 
-    if let Some(artifact_selector) = artifact_ref.as_deref() {
-        if let Some(artifact) = crate::artifact_store::find_artifact(&session_id, Some(artifact_selector)) {
+    if let Some(artifact_selector) = artifact_ref.as_deref()
+        && let Some(artifact) = crate::artifact_store::find_artifact(&session_id, Some(artifact_selector)) {
             sections.push("artifact".to_string());
             body.push_str(&format!(
                 "[MEDOUSA_ARTIFACT]\nid={}\ntool={}\nbytes={}\n",
@@ -380,7 +354,6 @@ fn handle_digest(args: &Value) -> Result<Value, HostCallError> {
                 body.push('\n');
             }
         }
-    }
 
     if let Some(input) = inline_input {
         sections.push("input".to_string());
@@ -435,11 +408,10 @@ fn compile_identity_digest_block(
     if let Some(query) = query.filter(|value| !value.trim().is_empty()) {
         options.query_hints = Some(query.trim().to_string());
     }
-    if let Some(manuscript_id) = manuscript_id.filter(|value| !value.trim().is_empty()) {
-        if let Ok(manuscript) = build_manuscript_context(manuscript_id) {
+    if let Some(manuscript_id) = manuscript_id.filter(|value| !value.trim().is_empty())
+        && let Ok(manuscript) = build_manuscript_context(manuscript_id) {
             options = digest_options_for_manuscript(options, &manuscript);
         }
-    }
     let ranked = compile_relational_memory_digest_with_options(&snapshot, options);
     if ranked.text.trim().is_empty() {
         None
@@ -737,11 +709,10 @@ fn artifact_preview(payload: &Value) -> Option<String> {
 
 fn arg_input_text(args: &Value, keys: &[&str]) -> Option<String> {
     for key in keys {
-        if let Some(value) = args.get(*key) {
-            if let Some(text) = value_to_digest_text(value) {
+        if let Some(value) = args.get(*key)
+            && let Some(text) = value_to_digest_text(value) {
                 return Some(text);
             }
-        }
     }
     args.get("__input").and_then(value_to_digest_text)
 }
@@ -784,11 +755,10 @@ fn arg_usize(args: &Value, keys: &[&str]) -> Option<usize> {
             if let Some(number) = value.as_u64() {
                 return Some(number as usize);
             }
-            if let Some(text) = value.as_str() {
-                if let Ok(number) = text.trim().parse::<usize>() {
+            if let Some(text) = value.as_str()
+                && let Ok(number) = text.trim().parse::<usize>() {
                     return Some(number);
                 }
-            }
         }
     }
     None

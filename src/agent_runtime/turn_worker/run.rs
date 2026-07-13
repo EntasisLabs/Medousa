@@ -178,6 +178,7 @@ impl TurnWorkerScheduler {
         self.store.clone()
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn spawn_worker(
         &self,
         intent: TurnWorkerIntent,
@@ -235,8 +236,8 @@ impl TurnWorkerScheduler {
         }
         if let Some(ref manuscript_ctx) = manuscript {
             handoff.manuscript = Some(manuscript_ctx.into());
-            if let Some(bundle) = handoff.host_continuity.as_mut() {
-                if let Some(store) = runtime_ctx.identity_memory_store.as_ref() {
+            if let Some(bundle) = handoff.host_continuity.as_mut()
+                && let Some(store) = runtime_ctx.identity_memory_store.as_ref() {
                     bundle.identity_summary = Some(
                         crate::identity_manuscript::compile_manuscript_identity_summary(
                             store,
@@ -246,7 +247,6 @@ impl TurnWorkerScheduler {
                         .await,
                     );
                 }
-            }
         }
         handoff.apply_spawn(intent.as_str(), task, &work_id);
         crate::turn_slice::enrich_handoff_tool_history(
@@ -439,7 +439,7 @@ impl TurnWorkerScheduler {
             }));
         }
 
-        let runtime_ctx = self.runtime_ctx.read().await.clone().ok_or_else(|| {
+        let _runtime_ctx = self.runtime_ctx.read().await.clone().ok_or_else(|| {
             stasis::domain::errors::StasisError::PortFailure(
                 "cognition_turn_begin_work: agent runtime context not ready (start a turn first)"
                     .to_string(),
@@ -658,11 +658,10 @@ pub async fn run_worker_turn(
         .await;
 
     let is_bound_workshop = record.disposition == TurnWorkDisposition::Bound;
-    if is_bound_workshop {
-        if let Some(started) = store.get(&work_id) {
+    if is_bound_workshop
+        && let Some(started) = store.get(&work_id) {
             crate::feed_adapters::publish_workshop_started(&started).await;
         }
-    }
 
     let intent = TurnWorkerIntent::parse(&record.intent).unwrap_or(TurnWorkerIntent::General);
     let manuscript_tools = record
@@ -858,8 +857,8 @@ pub async fn run_worker_turn(
             );
             sink.notice(format!("◈ work_completed work_id={work_id}"))
                 .await;
-            if is_bound_workshop {
-                if let Some(updated) = store.get(&work_id) {
+            if is_bound_workshop
+                && let Some(updated) = store.get(&work_id) {
                     crate::feed_adapters::publish_workshop_working(
                         &updated,
                         updated.tool_names.len() as u32,
@@ -867,7 +866,6 @@ pub async fn run_worker_turn(
                     )
                     .await;
                 }
-            }
             if let Some(updated) = store.get(&work_id) {
                 run_synthesis_turn(&ctx, updated, sink, stream_turn_id).await;
             }
@@ -887,8 +885,8 @@ pub async fn run_worker_turn(
             );
             sink.notice(format!("◈ work_failed work_id={work_id} error={message}"))
                 .await;
-            if is_bound_workshop {
-                if let Some(failed) = store.get(&work_id) {
+            if is_bound_workshop
+                && let Some(failed) = store.get(&work_id) {
                     crate::feed_adapters::publish_workshop_terminal(
                         &failed,
                         "failed",
@@ -896,7 +894,6 @@ pub async fn run_worker_turn(
                     )
                     .await;
                 }
-            }
             if let Some(failed) = store.get(&work_id) {
                 run_worker_failure_notify(&ctx, failed, sink, stream_turn_id).await;
             }
@@ -1149,6 +1146,7 @@ pub fn host_bus_mode_enabled() -> bool {
     super::routing::host_bus_force_enabled()
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn pipeline_for_turn_profile(
     tool_registry: Arc<dyn ToolRegistry>,
     provider: &str,

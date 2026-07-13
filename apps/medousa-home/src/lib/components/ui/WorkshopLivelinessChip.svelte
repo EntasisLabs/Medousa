@@ -15,8 +15,10 @@
     muted: "Offline",
     scheduled: "Scheduled",
     paused: "Paused",
+    running: "Running",
     warning: "Attention",
   };
+
 
   const text = $derived(label ?? defaultLabels[variant]);
 </script>

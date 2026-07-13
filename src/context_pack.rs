@@ -100,7 +100,7 @@ pub fn list_context_packs(session_id: &str, limit: usize) -> Vec<ContextPackInde
         .into_iter()
         .filter(|record| record.session_id == session_id)
         .collect();
-    records.sort_by(|a, b| b.created_at_utc.cmp(&a.created_at_utc));
+    records.sort_by_key(|b| std::cmp::Reverse(b.created_at_utc));
     records.into_iter().take(limit.max(1)).collect()
 }
 
@@ -112,7 +112,7 @@ pub fn find_context_pack(session_id: &str, query: Option<&str>) -> Option<Contex
     if records.is_empty() {
         return None;
     }
-    records.sort_by(|a, b| b.created_at_utc.cmp(&a.created_at_utc));
+    records.sort_by_key(|b| std::cmp::Reverse(b.created_at_utc));
     let query = query.map(str::trim).unwrap_or("");
     let record = if query.is_empty() || query.eq_ignore_ascii_case("last") {
         records.into_iter().next()
@@ -160,7 +160,7 @@ fn read_index_records() -> Vec<ContextPackIndexRecord> {
 
     std::io::BufReader::new(file)
         .lines()
-        .filter_map(|line| line.ok())
+        .map_while(Result::ok)
         .filter(|line| !line.trim().is_empty())
         .filter_map(|line| serde_json::from_str::<ContextPackIndexRecord>(&line).ok())
         .collect()

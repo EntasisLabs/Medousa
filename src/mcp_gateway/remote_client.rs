@@ -237,11 +237,10 @@ impl RemoteMcpSession {
         .await
         .context("MCP request timed out")?
         .context("MCP POST failed")?;
-        if let Some(session_id) = response.headers().get("mcp-session-id") {
-            if let Ok(value) = session_id.to_str() {
+        if let Some(session_id) = response.headers().get("mcp-session-id")
+            && let Ok(value) = session_id.to_str() {
                 self.session_id = Some(value.to_string());
             }
-        }
         Ok(response)
     }
 
@@ -279,16 +278,14 @@ impl RemoteMcpSession {
         if include_json_content_type {
             headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
         }
-        if let Some(token) = self.bearer_token.as_deref() {
-            if let Ok(value) = HeaderValue::from_str(&format!("Bearer {token}")) {
+        if let Some(token) = self.bearer_token.as_deref()
+            && let Ok(value) = HeaderValue::from_str(&format!("Bearer {token}")) {
                 headers.insert(AUTHORIZATION, value);
             }
-        }
-        if let Some(session_id) = self.session_id.as_deref() {
-            if let Ok(value) = HeaderValue::from_str(session_id) {
+        if let Some(session_id) = self.session_id.as_deref()
+            && let Ok(value) = HeaderValue::from_str(session_id) {
                 headers.insert("mcp-session-id", value);
             }
-        }
         headers
     }
 
@@ -308,12 +305,11 @@ impl RemoteMcpSession {
                     if message.get("method").is_some() && message.get("id").is_none() {
                         continue;
                     }
-                    if let Some(id) = expected_id {
-                        if message.get("id").and_then(Value::as_u64) == Some(id) {
+                    if let Some(id) = expected_id
+                        && message.get("id").and_then(Value::as_u64) == Some(id) {
                             let _ = self.inbound_tx.send(message);
                             return Ok(());
                         }
-                    }
                     let _ = self.inbound_tx.send(message);
                 }
             }
@@ -331,11 +327,10 @@ async fn discover_sse_post_url(
 ) -> Result<Url> {
     let mut headers = HeaderMap::new();
     headers.insert(ACCEPT, HeaderValue::from_static("text/event-stream"));
-    if let Some(token) = bearer_token {
-        if let Ok(value) = HeaderValue::from_str(&format!("Bearer {token}")) {
+    if let Some(token) = bearer_token
+        && let Ok(value) = HeaderValue::from_str(&format!("Bearer {token}")) {
             headers.insert(AUTHORIZATION, value);
         }
-    }
 
     let response = timeout(
         request_timeout,
@@ -382,11 +377,10 @@ async fn pump_legacy_sse(
 ) -> Result<()> {
     let mut headers = HeaderMap::new();
     headers.insert(ACCEPT, HeaderValue::from_static("text/event-stream"));
-    if let Some(token) = bearer_token.as_deref() {
-        if let Ok(value) = HeaderValue::from_str(&format!("Bearer {token}")) {
+    if let Some(token) = bearer_token.as_deref()
+        && let Ok(value) = HeaderValue::from_str(&format!("Bearer {token}")) {
             headers.insert(AUTHORIZATION, value);
         }
-    }
 
     let response = client
         .get(sse_url)

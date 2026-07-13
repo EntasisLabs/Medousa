@@ -124,7 +124,7 @@ pub fn find_extraction(session_id: &str, query: Option<&str>) -> Option<Extracti
         return None;
     }
 
-    records.sort_by(|a, b| b.created_at_utc.cmp(&a.created_at_utc));
+    records.sort_by_key(|b| std::cmp::Reverse(b.created_at_utc));
     let query = query.map(str::trim).unwrap_or("");
     let record = if query.is_empty() || query.eq_ignore_ascii_case("last") {
         records.into_iter().next()
@@ -146,7 +146,7 @@ pub fn list_extraction_runs(session_id: &str, limit: usize) -> Vec<ExtractionRun
         .into_iter()
         .filter(|record| record.session_id == session_id)
         .collect();
-    records.sort_by(|a, b| b.created_at_utc.cmp(&a.created_at_utc));
+    records.sort_by_key(|b| std::cmp::Reverse(b.created_at_utc));
     records.into_iter().take(limit.max(1)).collect()
 }
 
@@ -173,7 +173,7 @@ fn read_index_records() -> Vec<ExtractionRunRecord> {
 
     std::io::BufReader::new(file)
         .lines()
-        .filter_map(|line| line.ok())
+        .map_while(Result::ok)
         .filter(|line| !line.trim().is_empty())
         .filter_map(|line| serde_json::from_str::<ExtractionRunRecord>(&line).ok())
         .collect()

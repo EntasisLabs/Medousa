@@ -279,14 +279,6 @@
     padding: 0.45rem 0.85rem 0.35rem;
   }
 
-  .environment-renderer-main-item-fill {
-    display: flex;
-    flex: 1 1 auto;
-    flex-direction: column;
-    min-height: 0;
-    width: 100%;
-  }
-
   .environment-renderer-body-dashboard :global(.presentation-frame) {
     flex: 1 1 auto;
     min-height: 0;
@@ -338,13 +330,6 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-  }
-
-  .environment-renderer-edit-entry {
-    display: flex;
-    justify-content: flex-end;
-    gap: 0.35rem;
-    padding: 0.35rem 0.5rem 0;
   }
 
   .environment-renderer-edit-btn {
@@ -425,27 +410,10 @@
     background: rgb(var(--color-primary-300));
   }
 
-  .environment-renderer-empty {
-    margin: 0;
-    padding: 2rem 1rem;
-    text-align: center;
-    font-size: 0.8125rem;
-    color: rgb(var(--color-surface-400));
-  }
-
   .environment-renderer-sidebar {
     width: min(22rem, 100%);
     border-left: 1px solid color-mix(in srgb, var(--color-surface-700) 50%, transparent);
     padding: 0.75rem;
     overflow: auto;
-  }
-
-  .environment-renderer-unsupported {
-    margin: 0;
-    padding: 0.75rem 1rem;
-    border-radius: 0.5rem;
-    border: 1px dashed color-mix(in srgb, var(--color-surface-600) 70%, transparent);
-    font-size: 0.75rem;
-    color: rgb(var(--color-surface-400));
   }
 </style>

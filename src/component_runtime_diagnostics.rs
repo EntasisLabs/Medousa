@@ -41,9 +41,9 @@ pub async fn build_component_runtime_diagnostic(
         store_key_count: 0,
     };
 
-    if options.include_static_lint {
-        if let Some(artifact_id) = artifact_id.as_deref() {
-            if let Ok(body) = fetch_artifact_html(options.session_id.as_deref(), artifact_id) {
+    if options.include_static_lint
+        && let Some(artifact_id) = artifact_id.as_deref()
+            && let Ok(body) = fetch_artifact_html(options.session_id.as_deref(), artifact_id) {
                 diagnostic.static_lint = lint_artifact_html(&body);
                 diagnostic.embed = Some(ComponentRuntimeEmbedStatus {
                     store_bootstrap_injected: true,
@@ -55,8 +55,6 @@ pub async fn build_component_runtime_diagnostic(
                     push_issue_from_lint(&mut diagnostic.issues, finding);
                 }
             }
-        }
-    }
 
     if options.include_runtime {
         if let Ok(store) = component_store_service()
@@ -174,11 +172,10 @@ fn presentation_artifact_id(config: &Value) -> Option<String> {
 }
 
 fn fetch_artifact_html(session_id: Option<&str>, artifact_id: &str) -> Result<String, String> {
-    if let Some(session_id) = session_id {
-        if let Some(fetched) = crate::artifact_store::fetch_artifact(session_id, artifact_id) {
+    if let Some(session_id) = session_id
+        && let Some(fetched) = crate::artifact_store::fetch_artifact(session_id, artifact_id) {
             return Ok(fetched.body);
         }
-    }
     let records = crate::artifact_store::list_ui_artifacts(None, 100, Some(artifact_id));
     for record in records {
         if let Some(fetched) =

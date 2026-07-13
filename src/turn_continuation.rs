@@ -54,21 +54,18 @@ pub fn set_turn_continuation_store(store: Arc<dyn TurnContinuationStore>) {
 }
 
 pub async fn init_turn_continuation_store_with_runtime(runtime: &RuntimeComposition) {
-    match runtime {
-        RuntimeComposition::Surreal(rt) => {
-            let store = SurrealTurnContinuationStore::new(rt.job_store.db());
-            if let Err(err) = store.ensure_schema().await {
-                eprintln!(
-                    "Surreal turn continuation store schema init error: {err}; keeping in-memory store"
-                );
-                return;
-            }
-            set_turn_continuation_store(Arc::new(store));
+    if let RuntimeComposition::Surreal(rt) = runtime {
+        let store = SurrealTurnContinuationStore::new(rt.job_store.db());
+        if let Err(err) = store.ensure_schema().await {
             eprintln!(
-                "Surreal runtime detected; turn continuation store switched to SurrealDB backend"
+                "Surreal turn continuation store schema init error: {err}; keeping in-memory store"
             );
+            return;
         }
-        _ => {}
+        set_turn_continuation_store(Arc::new(store));
+        eprintln!(
+            "Surreal runtime detected; turn continuation store switched to SurrealDB backend"
+        );
     }
 }
 
@@ -538,8 +535,10 @@ impl TurnContinuationStore for InMemoryTurnContinuationStore {
 
     async fn snapshot(&self) -> TurnContinuationSnapshot {
         let guard = self.records.read().await;
-        let mut snapshot = TurnContinuationSnapshot::default();
-        snapshot.total_count = guard.len();
+        let mut snapshot = TurnContinuationSnapshot {
+            total_count: guard.len(),
+            ..Default::default()
+        };
         for record in guard.values() {
             match record.status {
                 TurnContinuationStatus::Pending => {
@@ -569,7 +568,7 @@ impl TurnContinuationStore for InMemoryTurnContinuationStore {
             .filter(|record| record.turn_correlation_id == turn_correlation_id)
             .cloned()
             .collect();
-        records.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+        records.sort_by_key(|b| std::cmp::Reverse(b.created_at));
         records.truncate(limit.max(1));
         records
     }
