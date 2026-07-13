@@ -44,9 +44,12 @@
   }
 
   const gridPolygons = $derived(
-    rings.map((t) => {
+    rings.map((t, ri) => {
       const pts = model.categories.map((_, i) => point(i, radius * t));
-      return pts.map(([x, y]) => `${x},${y}`).join(" ");
+      return {
+        points: pts.map(([x, y]) => `${x},${y}`).join(" "),
+        opacity: 0.06 + ri * 0.05,
+      };
     }),
   );
 
@@ -130,7 +133,14 @@
   <div class="liquid-chart-radar-wrap liquid-chart-mount">
     <svg class="liquid-chart-radar" viewBox={`0 0 ${size} ${size}`} role="presentation">
       {#each gridPolygons as poly, i (i)}
-        <polygon class="liquid-chart-radar-grid" points={poly} />
+        <polygon
+          class="liquid-chart-radar-grid-fill"
+          points={poly.points}
+          style:fill-opacity={poly.opacity}
+        />
+      {/each}
+      {#each [...gridPolygons].reverse() as poly, i (i)}
+        <polygon class="liquid-chart-radar-grid" points={poly.points} />
       {/each}
       {#each axisLines as axis (axis.label)}
         <line
@@ -209,9 +219,14 @@
     overflow: visible;
   }
 
+  .liquid-chart-radar-grid-fill {
+    fill: rgb(var(--color-surface-500));
+    stroke: none;
+  }
+
   .liquid-chart-radar-grid {
     fill: none;
-    stroke: color-mix(in srgb, var(--color-surface-500) 32%, transparent);
+    stroke: color-mix(in srgb, var(--color-surface-500) 36%, transparent);
     stroke-width: 1;
   }
 
@@ -221,12 +236,16 @@
   }
 
   .liquid-chart-radar-label {
-    fill: rgb(var(--color-surface-500));
+    fill: rgb(var(--color-surface-600));
     font-size: 0.62rem;
   }
 
+  :global(html.dark) .liquid-chart-radar-label {
+    fill: rgb(var(--color-surface-400));
+  }
+
   .liquid-chart-radar-fill {
-    fill-opacity: 0.18;
+    fill-opacity: 0.22;
     stroke-width: 2;
     stroke-linejoin: round;
     transition: opacity 160ms ease;

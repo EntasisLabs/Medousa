@@ -37,7 +37,23 @@ legend: bottom
 - **type:** `bar` | `line` | `area` | `pie` | `donut` | `radar` | `radial`
 - **Table:** first column = categories (radar axes); other columns = numeric series
 - **Minimum rows:** ≥2 categories (≥3 for radar)
-- **Optional KV:** `description`, `labels` (`none`|`value`|`category`|`both`), `labelPosition` (`auto`|`inside`|`outside`), `activeKey`, `curve`, `layout`, `stacked`, `centerValue`, `centerLabel`, `tooltip`, `legend`, `separator`, `trend`, `caption`
+- **Optional KV:** `description`, `labels` (`none`|`value`|`category`|`both`), `labelPosition` (`auto`|`inside`|`outside`), `activeKey`, `curve`, `layout`, `stacked`, `centerValue`, `centerLabel`, `tooltip`, `legend`, `separator`, `trend`, `caption`, `colors`
+- **Colors:** defaults follow the active theme (`primary` / `secondary` / `tertiary` / `success` / `warning`). Override with markdown color names or hex:
+
+````md
+```chart
+type: bar
+colors: blue, purple, green
+legend: bottom
+
+| Month | Desktop | Mobile | Tablet |
+| ----- | ------- | ------ | ------ |
+| Jan   | 186     | 80     | 120    |
+| Feb   | 305     | 200    | 90     |
+```
+````
+
+Named colors match `{{blue|text}}`: `red`, `orange`, `yellow`, `green`, `blue`, `purple`, `pink`. Hex works too (`#2563eb`).
 
 Prefer ` ```chart ` when a plot communicates better than a raw GFM table; keep plain tables for dumps.
 

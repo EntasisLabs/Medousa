@@ -42,18 +42,18 @@
     const datum = { startAngle: 0, endAngle: Math.PI * 2 };
     const track =
       d3Arc<typeof datum>()
-        .innerRadius(54)
-        .outerRadius(72)
+        .innerRadius(50)
+        .outerRadius(74)
         .startAngle(0)
         .endAngle(Math.PI * 2)
-        .cornerRadius(6)(datum) ?? "";
+        .cornerRadius(10)(datum) ?? "";
     const progress =
       d3Arc<typeof datum>()
-        .innerRadius(54)
-        .outerRadius(72)
+        .innerRadius(50)
+        .outerRadius(74)
         .startAngle(-Math.PI / 2)
         .endAngle(end)
-        .cornerRadius(6)(datum) ?? "";
+        .cornerRadius(10)(datum) ?? "";
     return {
       track,
       progress,
@@ -71,9 +71,9 @@
     const values = series.values;
     const max = Math.max(...values, 1);
     const n = model.categories.length;
-    const outerMax = 88;
-    const thickness = 10;
-    const gap = 5;
+    const outerMax = 92;
+    const thickness = 13;
+    const gap = 4;
     return model.categories.map((category, i) => {
       const value = values[i] ?? 0;
       const ratio = Math.min(Math.max(value / max, 0), 1);
@@ -87,14 +87,14 @@
           .outerRadius(outer)
           .startAngle(0)
           .endAngle(Math.PI * 2)
-          .cornerRadius(4)(datum) ?? "";
+          .cornerRadius(8)(datum) ?? "";
       const progress =
         d3Arc<typeof datum>()
           .innerRadius(inner)
           .outerRadius(outer)
           .startAngle(-Math.PI / 2)
           .endAngle(end)
-          .cornerRadius(4)(datum) ?? "";
+          .cornerRadius(8)(datum) ?? "";
       const active =
         !highlight || isActiveKey(model.activeKey, { category, key: series.key, label: series.label });
       return {

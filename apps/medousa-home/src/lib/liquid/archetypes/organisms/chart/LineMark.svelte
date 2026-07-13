@@ -28,6 +28,8 @@
 
   let { mode = "line" }: Props = $props();
 
+  const mountId = Math.random().toString(36).slice(2, 9);
+
   type Scale = ((v: unknown) => number) & { bandwidth?: () => number; domain?: () => unknown[] };
 
   interface CakeCustom {
@@ -216,6 +218,20 @@
 
 {#if axis.w > 0 && axis.h > 0}
   <g class="liquid-chart-line liquid-chart-mount">
+    <defs>
+      {#each paths as series (series.key + "-grad")}
+        <linearGradient
+          id={`liquid-chart-area-${mountId}-${series.key}`}
+          x1="0"
+          y1="0"
+          x2="0"
+          y2="1"
+        >
+          <stop offset="0%" stop-color={series.color} stop-opacity="0.42" />
+          <stop offset="100%" stop-color={series.color} stop-opacity="0.02" />
+        </linearGradient>
+      {/each}
+    </defs>
     {#each axis.grid as y, i (i)}
       <line class="liquid-chart-grid" x1="0" x2={axis.w} y1={y} y2={y} />
     {/each}
@@ -235,7 +251,7 @@
           class="liquid-chart-area"
           class:liquid-chart-dim={dimmed}
           d={series.area}
-          fill={series.color}
+          fill={`url(#liquid-chart-area-${mountId}-${series.key})`}
         />
       {/if}
       <path
@@ -277,19 +293,22 @@
   }
 
   .liquid-chart-axis {
-    fill: rgb(var(--color-surface-500));
+    fill: rgb(var(--color-surface-600));
     font-size: 0.62rem;
   }
 
+  :global(html.dark) .liquid-chart-axis {
+    fill: rgb(var(--color-surface-400));
+  }
+
   .liquid-chart-stroke {
-    stroke-width: 2;
+    stroke-width: 2.25;
     stroke-linejoin: round;
     stroke-linecap: round;
     transition: opacity 160ms ease;
   }
 
   .liquid-chart-area {
-    opacity: 0.22;
     transition: opacity 160ms ease;
   }
 
@@ -310,7 +329,7 @@
   }
 
   .liquid-chart-area.liquid-chart-dim {
-    opacity: 0.08;
+    opacity: 0.28;
   }
 
   .liquid-chart-value-label {

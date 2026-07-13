@@ -138,3 +138,27 @@ describe("chartViewModel radar/radial", () => {
     expect(model?.interactive).toBe(false);
   });
 });
+
+describe("resolveChartColor", () => {
+  it("maps markdown color ids to CSS vars", async () => {
+    const { resolveChartColor } = await import("./chartModel");
+    expect(resolveChartColor("blue")).toBe("rgb(var(--markdown-chart-blue))");
+    expect(resolveChartColor("Purple")).toBe("rgb(var(--markdown-chart-purple))");
+  });
+
+  it("passes hex through", async () => {
+    const { resolveChartColor } = await import("./chartModel");
+    expect(resolveChartColor("#2563eb")).toBe("#2563EB");
+  });
+
+  it("uses theme chart tokens by index when override missing", async () => {
+    const { chartSeriesColor } = await import("./chartModel");
+    expect(chartSeriesColor(0)).toBe("rgb(var(--chart-1))");
+    expect(chartSeriesColor(0, ["green", "orange"])).toBe(
+      "rgb(var(--markdown-chart-green))",
+    );
+    expect(chartSeriesColor(1, ["green", "orange"])).toBe(
+      "rgb(var(--markdown-chart-orange))",
+    );
+  });
+});

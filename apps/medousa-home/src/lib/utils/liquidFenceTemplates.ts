@@ -71,7 +71,7 @@ export const LIQUID_CHART_BAR_TEMPLATE = serializeChartFence({
     { category: "Feb", values: [305, 200] },
     { category: "Mar", values: [237, 120] },
   ],
-  extraKv: { legend: "bottom" },
+  extraKv: { legend: "bottom", colors: "blue, purple" },
 });
 
 export const LIQUID_CHART_LINE_TEMPLATE = serializeChartFence({

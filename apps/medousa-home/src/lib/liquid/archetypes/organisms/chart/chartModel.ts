@@ -9,6 +9,11 @@ import type {
   LiquidChartTrendDirection,
   LiquidChartType,
 } from "$lib/markdown/liquidEmbeds";
+import {
+  isMarkdownColorId,
+  isMarkdownHexColor,
+  normalizeMarkdownHexColor,
+} from "$lib/utils/vaultMarkdownColors";
 
 const CHART_TYPES = new Set<LiquidChartType>([
   "bar",
@@ -44,8 +49,28 @@ export interface ChartViewModel {
   colors: string[];
 }
 
+export function resolveChartColor(raw: string, fallbackIndex = 0): string {
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    const n = (fallbackIndex % 5) + 1;
+    return `rgb(var(--chart-${n}))`;
+  }
+  if (isMarkdownColorId(trimmed)) {
+    return `rgb(var(--markdown-chart-${trimmed.toLowerCase()}))`;
+  }
+  const hex = normalizeMarkdownHexColor(trimmed);
+  if (hex) return hex;
+  if (isMarkdownHexColor(trimmed)) return trimmed;
+  // Pass through rgb()/hsl()/named CSS colors from fence overrides
+  if (/^(rgb|hsl)a?\(/i.test(trimmed) || /^[a-z]+$/i.test(trimmed)) {
+    return trimmed;
+  }
+  const n = (fallbackIndex % 5) + 1;
+  return `rgb(var(--chart-${n}))`;
+}
+
 export function chartSeriesColor(index: number, override?: string[]): string {
-  if (override?.[index]) return override[index];
+  if (override?.[index]) return resolveChartColor(override[index], index);
   const n = (index % 5) + 1;
   return `rgb(var(--chart-${n}))`;
 }

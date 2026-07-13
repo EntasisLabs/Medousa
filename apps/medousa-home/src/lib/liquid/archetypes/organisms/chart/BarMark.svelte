@@ -415,6 +415,7 @@
         class="liquid-chart-bar"
         class:liquid-chart-dim={barDimmed(bar)}
         class:liquid-chart-bar-hot={hoverCategory === bar.category && !barDimmed(bar)}
+        class:liquid-chart-bar-active={bar.active && hasActiveHighlight($custom?.activeKey ?? "")}
         role="img"
         aria-label={`${bar.category}: ${bar.label} ${bar.value}`}
         x={bar.x}
@@ -422,8 +423,8 @@
         width={bar.width}
         height={bar.height}
         fill={bar.color}
-        rx="3"
-        ry="3"
+        rx="5"
+        ry="5"
         pointer-events="none"
       />
     {/each}
@@ -448,8 +449,12 @@
   }
 
   .liquid-chart-axis {
-    fill: rgb(var(--color-surface-500));
+    fill: rgb(var(--color-surface-600));
     font-size: 0.62rem;
+  }
+
+  :global(html.dark) .liquid-chart-axis {
+    fill: rgb(var(--color-surface-400));
   }
 
   .liquid-chart-hit {
@@ -467,6 +472,12 @@
 
   .liquid-chart-bar-hot {
     transform: translateY(-1px);
+  }
+
+  .liquid-chart-bar-active {
+    stroke: color-mix(in srgb, var(--color-surface-50) 85%, transparent);
+    stroke-width: 1.5;
+    stroke-dasharray: 3 2;
   }
 
   .liquid-chart-dim {

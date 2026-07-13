@@ -1,19 +1,30 @@
-/* Chart series tokens — paper-friendly mono ramp (explicit RGB triplets).
- * Do not map to theme *-400 ramps: light themes omit secondary/success/warning-400. */
+/* Chart series tokens — theme accents (not locked blue / not mono).
+ * *-500 exists on every theme including hand-crafted lights. */
 @layer base {
   html {
-    --chart-1: 28 28 30;
-    --chart-2: 72 72 76;
-    --chart-3: 120 120 126;
-    --chart-4: 168 168 174;
-    --chart-5: 200 200 206;
+    --chart-1: var(--color-primary-500);
+    --chart-2: var(--color-secondary-500);
+    --chart-3: var(--color-tertiary-500);
+    --chart-4: var(--color-success-500);
+    --chart-5: var(--color-warning-500);
+
+    /* Markdown named colors (light) — same hues as {{blue|text}} */
+    --markdown-chart-red: 220 38 38;
+    --markdown-chart-orange: 234 88 12;
+    --markdown-chart-yellow: 202 138 4;
+    --markdown-chart-green: 22 163 74;
+    --markdown-chart-blue: 37 99 235;
+    --markdown-chart-purple: 147 51 234;
+    --markdown-chart-pink: 219 39 119;
   }
 
   html.dark {
-    --chart-1: 245 245 247;
-    --chart-2: 196 196 202;
-    --chart-3: 148 148 156;
-    --chart-4: 108 108 116;
-    --chart-5: 78 78 86;
+    --markdown-chart-red: 248 113 113;
+    --markdown-chart-orange: 251 146 60;
+    --markdown-chart-yellow: 250 204 21;
+    --markdown-chart-green: 74 222 128;
+    --markdown-chart-blue: 96 165 250;
+    --markdown-chart-purple: 192 132 252;
+    --markdown-chart-pink: 244 114 182;
   }
 }
