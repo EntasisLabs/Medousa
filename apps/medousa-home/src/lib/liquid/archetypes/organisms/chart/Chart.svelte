@@ -1,7 +1,7 @@
 <script lang="ts">
   /**
    * `chart` organism — paste-first plots from ```chart markdown.
-   * Marks: bar / line / area / pie / donut / radar / radial.
+   * Marks: bar / line / area / pie / donut / radar / radial / scatter / combo / heatmap.
    */
   import { getLiquidContext } from "$lib/liquid/render/context";
   import type { ArchetypeProps } from "$lib/liquid/render/types";
@@ -13,6 +13,8 @@
   import PieMark from "./PieMark.svelte";
   import RadarMark from "./RadarMark.svelte";
   import RadialMark from "./RadialMark.svelte";
+  import ScatterMark from "./ScatterMark.svelte";
+  import HeatmapMark from "./HeatmapMark.svelte";
   import { TrendingUp, TrendingDown, Minus } from "@lucide/svelte";
 
   let { node }: ArchetypeProps = $props();
@@ -33,7 +35,9 @@
             key: `cat-${i}`,
             label,
           }))
-        : model.series.map((s) => ({ key: s.key, label: s.label })),
+        : model.type === "heatmap"
+          ? []
+          : model.series.map((s) => ({ key: s.key, label: s.label })),
   );
 
   const aria = $derived(
@@ -81,6 +85,11 @@
         <ChartFrame {model}>
           <LineMark mode="area" />
         </ChartFrame>
+      {:else if model.type === "combo"}
+        <ChartFrame {model}>
+          <BarMark />
+          <LineMark mode="line" />
+        </ChartFrame>
       {:else if model.type === "pie"}
         <PieMark {model} />
       {:else if model.type === "donut"}
@@ -89,6 +98,10 @@
         <RadarMark {model} />
       {:else if model.type === "radial"}
         <RadialMark {model} />
+      {:else if model.type === "scatter"}
+        <ScatterMark {model} />
+      {:else if model.type === "heatmap"}
+        <HeatmapMark {model} />
       {/if}
     </div>
 

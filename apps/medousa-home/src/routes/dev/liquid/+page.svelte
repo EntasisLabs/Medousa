@@ -366,6 +366,70 @@
     },
   });
 
+  const chartScatter = createNode({
+    id: "chart:scatter",
+    type: "chart",
+    fillState: "ready",
+    props: {
+      type: "scatter",
+      title: "Spend vs conversion",
+      legend: "bottom",
+      colors: ["blue", "purple"],
+      categories: ["Alpha", "Beta"],
+      series: [
+        { key: "alpha", label: "Alpha", values: [40, 55] },
+        { key: "beta", label: "Beta", values: [22, 48] },
+      ],
+      points: [
+        { x: 12, y: 40, group: "Alpha" },
+        { x: 18, y: 55, group: "Alpha" },
+        { x: 9, y: 22, group: "Beta" },
+        { x: 15, y: 48, group: "Beta" },
+      ],
+    },
+  });
+
+  const chartCombo = createNode({
+    id: "chart:combo",
+    type: "chart",
+    fillState: "ready",
+    props: {
+      type: "combo",
+      title: "Revenue and growth",
+      legend: "bottom",
+      seriesMarks: ["bar", "line"],
+      categories: ["Jan", "Feb", "Mar"],
+      series: [
+        { key: "revenue", label: "Revenue", values: [120, 148, 132] },
+        { key: "growth", label: "Growth %", values: [4, 7, 5] },
+      ],
+    },
+  });
+
+  const chartHeatmap = createNode({
+    id: "chart:heatmap",
+    type: "chart",
+    fillState: "ready",
+    props: {
+      type: "heatmap",
+      title: "Activity by hour",
+      colors: ["blue"],
+      categories: ["Mon", "Tue", "Wed"],
+      series: [
+        { key: "morning", label: "Morning", values: [2, 5, 3] },
+        { key: "afternoon", label: "Afternoon", values: [8, 6, 9] },
+      ],
+      matrix: {
+        rows: ["Morning", "Afternoon"],
+        cols: ["Mon", "Tue", "Wed"],
+        values: [
+          [2, 5, 3],
+          [8, 6, 9],
+        ],
+      },
+    },
+  });
+
   const chartMarkdown = [
     "```chart",
     "type: line",
@@ -382,6 +446,47 @@
     "| Apr   | 73      | 190    |",
     "| May   | 209     | 130    |",
     "| Jun   | 214     | 140    |",
+    "```",
+  ].join("\n");
+
+  const reportMarkdown = [
+    "```report",
+    "title: Q2 growth review",
+    "subtitle: Dev gallery · report fence",
+    "columns: 2",
+    "",
+    "Prose stays full-bleed; charts below sit in a two-column figure grid.",
+    "",
+    "```chart",
+    "type: combo",
+    "title: Revenue vs growth",
+    "legend: bottom",
+    "seriesMarks: bar, line",
+    "",
+    "| Month | Revenue | Growth % |",
+    "| ----- | ------- | -------- |",
+    "| Jan   | 120     | 4        |",
+    "| Feb   | 148     | 7        |",
+    "| Mar   | 132     | 5        |",
+    "```",
+    "",
+    "```chart",
+    "type: scatter",
+    "title: Spend vs conversion",
+    "legend: bottom",
+    "colors: blue, purple",
+    "",
+    "| X | Y | Cohort |",
+    "| - | - | ------ |",
+    "| 12 | 40 | Alpha |",
+    "| 18 | 55 | Alpha |",
+    "| 9 | 22 | Beta |",
+    "| 15 | 48 | Beta |",
+    "```",
+    "",
+    "## Deep dive",
+    "",
+    "More narrative after the figures.",
     "```",
   ].join("\n");
 
@@ -533,7 +638,8 @@
 
   <h2 class="harness-subhead">Charts</h2>
   <p class="harness-note">
-    bar · area · donut · annotated · pie leaders · radar · radial, plus a <code>```chart</code> fence.
+    bar · area · donut · annotated · pie leaders · radar · radial · scatter · combo · heatmap, plus
+    <code>```chart</code> / <code>```report</code> fences.
   </p>
   <section class="harness-stage harness-charts">
     <SceneRenderer node={chartBar} context={monogramContext} />
@@ -544,7 +650,11 @@
     <SceneRenderer node={chartRadar} context={monogramContext} />
     <SceneRenderer node={chartRadialMulti} context={monogramContext} />
     <SceneRenderer node={chartRadialSingle} context={monogramContext} />
+    <SceneRenderer node={chartScatter} context={monogramContext} />
+    <SceneRenderer node={chartCombo} context={monogramContext} />
+    <SceneRenderer node={chartHeatmap} context={monogramContext} />
     <MarkdownContent content={chartMarkdown} />
+    <MarkdownContent content={reportMarkdown} />
   </section>
 
   <h2 class="harness-subhead">Streamed structured turn (daemon wire)</h2>

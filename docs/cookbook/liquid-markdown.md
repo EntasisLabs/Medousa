@@ -8,14 +8,14 @@ Paste-first UI blocks for **chat** and **vault** notes. The client turns fenced 
 |---------|----------|
 | Chat | Hydrated via `MarkdownContent` |
 | Vault preview | Same hydrate pipeline (charts, cards, Mermaid, code) |
-| Vault slash (`/`) | Insert starters: Chart, Card, Liquid callout, Dashboard |
+| Vault slash (`/`) | Insert starters: Chart, Card, Liquid callout, Dashboard, Report |
 | PDF export | Hydrates then captures (charts render as painted DOM) |
 
 Live gallery (dev): `/dev/liquid` in medousa-home.
 
 ## Fence catalog
 
-Supported langs: `card`, `carousel`, `actions`, `callout`, `section`, `chips`, `media`, `cite`, `compare`, `plan`, `timeline`, `shortlist`, `decision`, `brief`, `dashboard`, `chart`, plus `mermaid` and `{{icon:name}}`.
+Supported langs: `card`, `carousel`, `actions`, `callout`, `section`, `chips`, `media`, `cite`, `compare`, `plan`, `timeline`, `shortlist`, `decision`, `brief`, `dashboard`, `chart`, `report`, plus `mermaid` and `{{icon:name}}`.
 
 Agents on UI-capable clients get recipes from `[MEDOUSA_PRESENTATION]` and `cognition_environment_wiki(topic=ui_scene|scene_vs_html)`.
 
@@ -34,10 +34,13 @@ legend: bottom
 ```
 ````
 
-- **type:** `bar` | `line` | `area` | `pie` | `donut` | `radar` | `radial`
-- **Table:** first column = categories (radar axes); other columns = numeric series
-- **Minimum rows:** ≥2 categories (≥3 for radar)
-- **Optional KV:** `description`, `labels` (`none`|`value`|`category`|`both`), `labelPosition` (`auto`|`inside`|`outside`), `activeKey`, `curve`, `layout`, `stacked`, `centerValue`, `centerLabel`, `tooltip`, `legend`, `separator`, `trend`, `caption`, `colors`, `width` (`sm`|`md`|`lg`|`full`|CSS length), `height` (`sm`|`md`|`lg`|CSS length, bar/line/area), `surface` (drawing wash — see below)
+- **type:** `bar` | `line` | `area` | `pie` | `donut` | `radar` | `radial` | `scatter` | `combo` | `heatmap`
+- **Category table** (`bar` / `line` / `area` / `pie` / `donut` / `radar` / `radial` / `combo`): first column = categories (radar axes); other columns = numeric series
+- **Scatter table:** Col1 = X, Col2 = Y, optional Col3 = group/series key
+- **Heatmap table:** header row = column labels (first cell empty/corner); first column = row labels; cells = numbers
+- **Minimum rows:** ≥2 categories (≥3 for radar); scatter ≥2 points; heatmap ≥1 data row
+- **Optional KV:** `description`, `labels` (`none`|`value`|`category`|`both`), `labelPosition` (`auto`|`inside`|`outside`), `activeKey`, `curve`, `layout`, `stacked`, `centerValue`, `centerLabel`, `tooltip`, `legend`, `separator`, `trend`, `caption`, `colors`, `width` (`sm`|`md`|`lg`|`full`|CSS length), `height` (`sm`|`md`|`lg`|CSS length, bar/line/area/combo/scatter), `surface` (drawing wash — see below), `seriesMarks` (`bar, line` — combo only; default first series bar, rest line)
+- **Combo note:** bar + line share one Y domain this wave — keep series comparable or pre-normalize
 - **Colors:** defaults are readable blues/purples/greens (not ink-black). Override with markdown color names or hex:
 
 ````md
@@ -94,6 +97,50 @@ Value labels are opt-in (`labels: value` / `both`). Titles, axes, and legends us
 
 Prefer ` ```chart ` when a plot communicates better than a raw GFM table; keep plain tables for dumps.
 
+## Report schema
+
+Narrative + figures — not a KPI dashboard. Use ` ```report ` when prose and charts belong together; use ` ```dashboard ` for at-a-glance tiles; use bare ` ```chart ` for a single plot.
+
+````md
+```report
+title: Q2 growth review
+subtitle: North America · weekly pulse
+columns: 2
+
+Opening prose stays full-bleed.
+
+```chart
+type: combo
+title: Revenue vs growth
+legend: bottom
+seriesMarks: bar, line
+
+| Month | Revenue | Growth % |
+| ----- | ------- | -------- |
+| Jan   | 120     | 4        |
+| Feb   | 148     | 7        |
+```
+
+```chart
+type: heatmap
+title: Engagement matrix
+colors: blue
+
+|           | Mon | Tue | Wed |
+| --------- | --- | --- | --- |
+| Morning   | 2   | 5   | 3   |
+| Afternoon | 8   | 6   | 9   |
+```
+
+## Deep dive
+
+More prose after the figures.
+```
+````
+
+- **KV:** `title`, `subtitle`, `columns` (`1`|`2`|`3`, default `2`)
+- **Body:** markdown after the preamble — nested ` ```chart ` fences hydrate innermost-first; prose spans full width, consecutive chart embeds sit in the column grid
+
 ## Vault insert
 
-In the vault editor, type `/` and pick **Chart**, **Card**, **Liquid callout**, or **Dashboard** for a paste-ready fence (edit the numbers in place).
+In the vault editor, type `/` and pick **Chart**, **Card**, **Liquid callout**, **Dashboard**, or **Report** for a paste-ready fence (edit the numbers in place).

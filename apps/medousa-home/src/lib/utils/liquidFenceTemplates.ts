@@ -10,7 +10,10 @@ export type ChartFenceType =
   | "pie"
   | "donut"
   | "radar"
-  | "radial";
+  | "radial"
+  | "scatter"
+  | "combo"
+  | "heatmap";
 
 export interface ChartFenceRow {
   category: string;
@@ -126,6 +129,89 @@ export const LIQUID_CHART_RADIAL_TEMPLATE = serializeChartFence({
 
 /** Default slash chart insert (bar). */
 export const LIQUID_CHART_TEMPLATE = LIQUID_CHART_BAR_TEMPLATE;
+
+export const LIQUID_CHART_SCATTER_TEMPLATE = [
+  "```chart",
+  "type: scatter",
+  "title: Spend vs conversion",
+  "legend: bottom",
+  "colors: blue, purple",
+  "",
+  "| X | Y | Cohort |",
+  "| - | - | ------ |",
+  "| 12 | 40 | Alpha |",
+  "| 18 | 55 | Alpha |",
+  "| 9 | 22 | Beta |",
+  "| 15 | 48 | Beta |",
+  "```",
+  "",
+].join("\n");
+
+export const LIQUID_CHART_COMBO_TEMPLATE = serializeChartFence({
+  type: "combo",
+  title: "Revenue and growth",
+  seriesLabels: ["Revenue", "Growth %"],
+  rows: [
+    { category: "Jan", values: [120, 4] },
+    { category: "Feb", values: [148, 7] },
+    { category: "Mar", values: [132, 5] },
+  ],
+  extraKv: { legend: "bottom", seriesMarks: "bar, line" },
+});
+
+export const LIQUID_CHART_HEATMAP_TEMPLATE = [
+  "```chart",
+  "type: heatmap",
+  "title: Activity by hour",
+  "colors: blue",
+  "",
+  "|           | Mon | Tue | Wed |",
+  "| --------- | --- | --- | --- |",
+  "| Morning   | 2   | 5   | 3   |",
+  "| Afternoon | 8   | 6   | 9   |",
+  "| Evening   | 4   | 7   | 5   |",
+  "```",
+  "",
+].join("\n");
+
+export const LIQUID_REPORT_TEMPLATE = [
+  "```report",
+  "title: Q2 growth review",
+  "subtitle: North America · weekly pulse",
+  "columns: 2",
+  "",
+  "Opening prose stays full-bleed across the report.",
+  "",
+  "```chart",
+  "type: combo",
+  "title: Revenue vs growth",
+  "legend: bottom",
+  "seriesMarks: bar, line",
+  "",
+  "| Month | Revenue | Growth % |",
+  "| ----- | ------- | -------- |",
+  "| Jan   | 120     | 4        |",
+  "| Feb   | 148     | 7        |",
+  "| Mar   | 132     | 5        |",
+  "```",
+  "",
+  "```chart",
+  "type: heatmap",
+  "title: Engagement matrix",
+  "colors: blue",
+  "",
+  "|           | Mon | Tue | Wed |",
+  "| --------- | --- | --- | --- |",
+  "| Morning   | 2   | 5   | 3   |",
+  "| Afternoon | 8   | 6   | 9   |",
+  "```",
+  "",
+  "## Deep dive",
+  "",
+  "More prose after the figures, then another chart if needed.",
+  "```",
+  "",
+].join("\n");
 
 export const LIQUID_CARD_TEMPLATE = [
   "```card",

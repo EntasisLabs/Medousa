@@ -4,6 +4,7 @@
     LiquidChartLabelPosition,
     LiquidChartLabels,
     LiquidChartSeries,
+    LiquidChartSeriesMark,
   } from "$lib/markdown/liquidEmbeds";
   import {
     chartSeriesColor,
@@ -21,6 +22,7 @@
 
   interface CakeCustom {
     series: LiquidChartSeries[];
+    seriesMarks?: LiquidChartSeriesMark[];
     colors: string[];
     stacked: boolean;
     horizontal: boolean;
@@ -37,6 +39,22 @@
     ) => void;
     hideTooltip: () => void;
   }
+
+  function markSeries(
+    series: LiquidChartSeries[],
+    marks: LiquidChartSeriesMark[] | undefined,
+    chartType: string,
+    want: LiquidChartSeriesMark,
+  ): { series: LiquidChartSeries; index: number }[] {
+    return series
+      .map((s, index) => ({ series: s, index }))
+      .filter(({ index }) => {
+        if (chartType !== "combo") return true;
+        const mark = marks?.[index] ?? (index === 0 ? "bar" : "line");
+        return mark === want;
+      });
+  }
+
 
   const { data, xScale, yScale, width, height, custom } = getContext<{
     data: import("svelte/store").Readable<Record<string, string | number>[]>;
@@ -112,8 +130,9 @@
     const h = $height;
     if (!cfg || !rows.length || !xS || !yS) return [];
     const out: BarRect[] = [];
-    const series = cfg.series;
-    const n = Math.max(series.length, 1);
+    const marked = markSeries(cfg.series, cfg.seriesMarks, cfg.chartType, "bar");
+    if (!marked.length) return [];
+    const n = Math.max(marked.length, 1);
     const highlight = hasActiveHighlight(cfg.activeKey);
 
     for (const row of rows) {
@@ -123,8 +142,8 @@
         const band = yS.bandwidth?.() ?? 12;
         if (cfg.stacked) {
           let cursor = 0;
-          const last = series.length - 1;
-          series.forEach((s, si) => {
+          const last = marked.length - 1;
+          marked.forEach(({ series: s, index: si }, localI) => {
             const value = Number(row[s.key] ?? 0);
             const x0 = xS(cursor) ?? 0;
             const x1 = xS(cursor + value) ?? 0;
@@ -142,13 +161,13 @@
               label: s.label,
               value,
               active: !highlight || isActiveKey(cfg.activeKey, { key: s.key, label: s.label, category }),
-              round: si === last ? "end" : "none",
+              round: localI === last ? "end" : "none",
             });
             cursor += value;
           });
         } else {
           const slot = band / n;
-          series.forEach((s, si) => {
+          marked.forEach(({ series: s, index: si }, localI) => {
             const value = Number(row[s.key] ?? 0);
             const x0 = xS(0) ?? 0;
             const x1 = xS(value) ?? 0;
@@ -157,7 +176,7 @@
               key: `${category}-${s.key}`,
               seriesKey: s.key,
               x: Math.min(x0, x1),
-              y: y + si * slot + (slot - barH) / 2,
+              y: y + localI * slot + (slot - barH) / 2,
               width: Math.abs(x1 - x0),
               height: barH,
               color: chartSeriesColor(si, cfg.colors),
@@ -174,8 +193,8 @@
         const band = xS.bandwidth?.() ?? 12;
         if (cfg.stacked) {
           let cursor = 0;
-          const last = series.length - 1;
-          series.forEach((s, si) => {
+          const last = marked.length - 1;
+          marked.forEach(({ series: s, index: si }, localI) => {
             const value = Number(row[s.key] ?? 0);
             const y0 = yS(cursor) ?? 0;
             const y1 = yS(cursor + value) ?? 0;
@@ -193,13 +212,13 @@
               label: s.label,
               value,
               active: !highlight || isActiveKey(cfg.activeKey, { key: s.key, label: s.label, category }),
-              round: si === last ? "top" : "none",
+              round: localI === last ? "top" : "none",
             });
             cursor += value;
           });
         } else {
           const slot = band / n;
-          series.forEach((s, si) => {
+          marked.forEach(({ series: s, index: si }, localI) => {
             const value = Number(row[s.key] ?? 0);
             const y0 = yS(0) ?? h;
             const y1 = yS(value) ?? 0;
@@ -207,7 +226,7 @@
             out.push({
               key: `${category}-${s.key}`,
               seriesKey: s.key,
-              x: x + si * slot + (slot - barW) / 2,
+              x: x + localI * slot + (slot - barW) / 2,
               y: Math.min(y0, y1),
               width: barW,
               height: Math.abs(y1 - y0),

@@ -36,6 +36,7 @@ export { decision } from "./organisms/decision/decision";
 export { brief } from "./organisms/brief/brief";
 export { dashboard } from "./organisms/dashboard/dashboard";
 export { chart } from "./organisms/chart/chart";
+export { report } from "./organisms/report/report";
 
 // shell (reuse of native chat molecules)
 export { thinking } from "./shell/thinking/thinking";

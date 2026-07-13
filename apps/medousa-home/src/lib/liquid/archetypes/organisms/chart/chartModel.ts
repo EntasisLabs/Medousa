@@ -4,8 +4,11 @@ import type {
   LiquidChartLabels,
   LiquidChartLayout,
   LiquidChartLegend,
+  LiquidChartMatrix,
+  LiquidChartPoint,
   LiquidChartProps,
   LiquidChartSeries,
+  LiquidChartSeriesMark,
   LiquidChartTrendDirection,
   LiquidChartType,
 } from "$lib/markdown/liquidEmbeds";
@@ -23,6 +26,9 @@ const CHART_TYPES = new Set<LiquidChartType>([
   "donut",
   "radar",
   "radial",
+  "scatter",
+  "combo",
+  "heatmap",
 ]);
 
 export interface ChartViewModel {
@@ -31,6 +37,9 @@ export interface ChartViewModel {
   description: string;
   categories: string[];
   series: LiquidChartSeries[];
+  points: LiquidChartPoint[];
+  matrix: LiquidChartMatrix | null;
+  seriesMarks: LiquidChartSeriesMark[];
   layout: LiquidChartLayout;
   stacked: boolean;
   curve: LiquidChartCurve;
@@ -216,6 +225,55 @@ function asSeries(raw: unknown): LiquidChartSeries[] {
     .filter((s): s is LiquidChartSeries => s !== null);
 }
 
+function asPoints(raw: unknown): LiquidChartPoint[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((item) => {
+      if (!item || typeof item !== "object") return null;
+      const row = item as Record<string, unknown>;
+      const x = typeof row.x === "number" ? row.x : Number(row.x);
+      const y = typeof row.y === "number" ? row.y : Number(row.y);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+      const point: LiquidChartPoint = { x, y };
+      const group = asString(row.group);
+      if (group) point.group = group;
+      return point;
+    })
+    .filter((p): p is LiquidChartPoint => p !== null);
+}
+
+function asMatrix(raw: unknown): LiquidChartMatrix | null {
+  if (!raw || typeof raw !== "object") return null;
+  const row = raw as Record<string, unknown>;
+  const rows = Array.isArray(row.rows)
+    ? row.rows.filter((r): r is string => typeof r === "string" && r.trim().length > 0)
+    : [];
+  const cols = Array.isArray(row.cols)
+    ? row.cols.filter((c): c is string => typeof c === "string" && c.trim().length > 0)
+    : [];
+  const values = Array.isArray(row.values) ? row.values : [];
+  if (!rows.length || !cols.length || values.length !== rows.length) return null;
+  const nums: number[][] = [];
+  for (const line of values) {
+    if (!Array.isArray(line) || line.length !== cols.length) return null;
+    const cells = line.map((v) => (typeof v === "number" ? v : Number(v)));
+    if (cells.some((n) => !Number.isFinite(n))) return null;
+    nums.push(cells);
+  }
+  return { rows, cols, values: nums };
+}
+
+function defaultSeriesMarks(seriesCount: number, raw: unknown): LiquidChartSeriesMark[] {
+  const fromProps = Array.isArray(raw)
+    ? raw.filter((m): m is LiquidChartSeriesMark => m === "bar" || m === "line")
+    : [];
+  const out: LiquidChartSeriesMark[] = [];
+  for (let i = 0; i < seriesCount; i++) {
+    out.push(fromProps[i] ?? (i === 0 ? "bar" : "line"));
+  }
+  return out;
+}
+
 /** Normalize archetype / embed props into a render model. */
 export function chartViewModel(props: Record<string, unknown> | LiquidChartProps): ChartViewModel | null {
   const typeRaw = asString((props as LiquidChartProps).type).toLowerCase();
@@ -229,9 +287,17 @@ export function chartViewModel(props: Record<string, unknown> | LiquidChartProps
         .filter(Boolean)
     : [];
   const series = asSeries((props as LiquidChartProps).series);
-  // Radar needs ≥3 axes; radial may be single-arc with 1 category; core types need ≥2.
-  const minCats = type === "radar" ? 3 : type === "radial" ? 1 : 2;
-  if (categories.length < minCats || series.length < 1) return null;
+  const points = asPoints((props as LiquidChartProps).points);
+  const matrix = asMatrix((props as LiquidChartProps).matrix);
+
+  if (type === "scatter") {
+    if (points.length < 2) return null;
+  } else if (type === "heatmap") {
+    if (!matrix || matrix.rows.length < 1 || matrix.cols.length < 1) return null;
+  } else {
+    const minCats = type === "radar" ? 3 : type === "radial" ? 1 : 2;
+    if (categories.length < minCats || series.length < 1) return null;
+  }
 
   const layoutRaw = asString((props as LiquidChartProps).layout).toLowerCase();
   const layout: LiquidChartLayout =
@@ -251,8 +317,10 @@ export function chartViewModel(props: Record<string, unknown> | LiquidChartProps
   const labelPosition: LiquidChartLabelPosition =
     labelPosRaw === "inside" || labelPosRaw === "outside" ? labelPosRaw : "auto";
 
+  const legendSeriesCount =
+    type === "heatmap" ? 0 : type === "scatter" ? Math.max(series.length, 1) : series.length;
   const legendRaw = (props as LiquidChartProps).legend;
-  let legend: LiquidChartLegend = series.length > 1 ? "bottom" : "none";
+  let legend: LiquidChartLegend = legendSeriesCount > 1 ? "bottom" : "none";
   if (typeof legendRaw === "boolean") legend = legendRaw;
   else if (typeof legendRaw === "string") {
     const v = legendRaw.trim().toLowerCase();
@@ -274,6 +342,7 @@ export function chartViewModel(props: Record<string, unknown> | LiquidChartProps
   const width = resolveChartWidth(asString((props as LiquidChartProps).width));
   const height = resolveChartHeight(asString((props as LiquidChartProps).height));
   const surface = resolveChartSurface(asString((props as LiquidChartProps).surface));
+  const seriesMarks = defaultSeriesMarks(series.length, (props as LiquidChartProps).seriesMarks);
 
   return {
     type,
@@ -281,6 +350,9 @@ export function chartViewModel(props: Record<string, unknown> | LiquidChartProps
     description: asString((props as LiquidChartProps).description),
     categories,
     series,
+    points,
+    matrix,
+    seriesMarks,
     layout,
     stacked: asBool((props as LiquidChartProps).stacked, false),
     curve,

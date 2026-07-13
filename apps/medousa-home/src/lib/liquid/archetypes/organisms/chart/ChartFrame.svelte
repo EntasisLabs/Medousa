@@ -43,6 +43,7 @@
 
   const cakeCustom = $derived({
     series: model.series,
+    seriesMarks: model.seriesMarks,
     colors: model.colors,
     stacked: model.stacked,
     curve: model.curve,

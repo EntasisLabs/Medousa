@@ -231,3 +231,80 @@ describe("resolveChartWidth/height/surface", () => {
     expect(model?.surface).toBe("");
   });
 });
+
+describe("chartViewModel scatter/combo/heatmap", () => {
+  it("accepts scatter with ≥2 points", () => {
+    const model = chartViewModel({
+      type: "scatter",
+      categories: ["Points"],
+      series: [{ key: "points", label: "Y", values: [1, 2] }],
+      points: [
+        { x: 1, y: 2 },
+        { x: 3, y: 4 },
+      ],
+    });
+    expect(model?.type).toBe("scatter");
+    expect(model?.points).toHaveLength(2);
+  });
+
+  it("rejects scatter with fewer than 2 points", () => {
+    expect(
+      chartViewModel({
+        type: "scatter",
+        categories: ["Points"],
+        series: [{ key: "points", label: "Y", values: [1] }],
+        points: [{ x: 1, y: 2 }],
+      }),
+    ).toBeNull();
+  });
+
+  it("defaults combo seriesMarks to bar then line", () => {
+    const model = chartViewModel({
+      type: "combo",
+      categories: ["A", "B"],
+      series: [
+        { key: "r", label: "Revenue", values: [1, 2] },
+        { key: "g", label: "Growth", values: [3, 4] },
+      ],
+    });
+    expect(model?.seriesMarks).toEqual(["bar", "line"]);
+  });
+
+  it("honors explicit combo seriesMarks", () => {
+    const model = chartViewModel({
+      type: "combo",
+      categories: ["A", "B"],
+      series: [
+        { key: "r", label: "Revenue", values: [1, 2] },
+        { key: "g", label: "Growth", values: [3, 4] },
+      ],
+      seriesMarks: ["line", "bar"],
+    });
+    expect(model?.seriesMarks).toEqual(["line", "bar"]);
+  });
+
+  it("accepts heatmap matrix", () => {
+    const model = chartViewModel({
+      type: "heatmap",
+      categories: ["Mon", "Tue"],
+      series: [{ key: "morning", label: "Morning", values: [1, 2] }],
+      matrix: {
+        rows: ["Morning"],
+        cols: ["Mon", "Tue"],
+        values: [[1, 2]],
+      },
+    });
+    expect(model?.type).toBe("heatmap");
+    expect(model?.matrix?.values).toEqual([[1, 2]]);
+  });
+
+  it("rejects heatmap without matrix", () => {
+    expect(
+      chartViewModel({
+        type: "heatmap",
+        categories: ["Mon"],
+        series: [{ key: "r", label: "R", values: [1] }],
+      }),
+    ).toBeNull();
+  });
+});

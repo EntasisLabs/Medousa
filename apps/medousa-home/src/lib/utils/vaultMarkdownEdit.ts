@@ -8,6 +8,7 @@ import {
   LIQUID_CARD_TEMPLATE,
   LIQUID_CHART_TEMPLATE,
   LIQUID_DASHBOARD_TEMPLATE,
+  LIQUID_REPORT_TEMPLATE,
 } from "$lib/utils/liquidFenceTemplates";
 import {
   MARKDOWN_COLOR_IDS,
@@ -51,6 +52,7 @@ export type SlashBlockId =
   | "liquid_card"
   | "liquid_chart"
   | "liquid_dashboard"
+  | "liquid_report"
   | "embed"
   | "view"
   | "board"
@@ -355,6 +357,7 @@ export function insertSlashBlock(
     liquid_card: LIQUID_CARD_TEMPLATE,
     liquid_chart: LIQUID_CHART_TEMPLATE,
     liquid_dashboard: LIQUID_DASHBOARD_TEMPLATE,
+    liquid_report: LIQUID_REPORT_TEMPLATE,
     embed: "",
     view: "",
     board: SLASH_BOARD_TEMPLATE,

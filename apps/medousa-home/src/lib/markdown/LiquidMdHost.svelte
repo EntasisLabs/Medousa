@@ -22,6 +22,7 @@
   import Brief from "$lib/liquid/archetypes/organisms/brief/Brief.svelte";
   import Dashboard from "$lib/liquid/archetypes/organisms/dashboard/Dashboard.svelte";
   import Chart from "$lib/liquid/archetypes/organisms/chart/Chart.svelte";
+  import Report from "$lib/liquid/archetypes/organisms/report/Report.svelte";
   import Section from "$lib/liquid/archetypes/molecules/section/Section.svelte";
   import ChipGroup from "$lib/liquid/archetypes/molecules/chip_group/ChipGroup.svelte";
   import Media from "$lib/liquid/archetypes/atoms/media/Media.svelte";
@@ -35,6 +36,7 @@
     LiquidCompareProps,
     LiquidDashboardProps,
     LiquidChartProps,
+    LiquidReportProps,
     LiquidDecisionProps,
     LiquidEmbedKind,
     LiquidMediaProps,
@@ -410,17 +412,40 @@
     });
   });
 
+  const report = $derived.by(() => {
+    if (kind !== "report") return null;
+    const props = payload as LiquidReportProps;
+    if (!props?.body && !props?.title) return null;
+    return createNode({
+      id: "md-report",
+      type: "report",
+      props: {
+        ...(props.title ? { title: props.title } : {}),
+        ...(props.subtitle ? { subtitle: props.subtitle } : {}),
+        ...(props.columns ? { columns: props.columns } : {}),
+        body: props.body ?? "",
+      },
+      fillState: "ready",
+    });
+  });
+
   const chart = $derived.by(() => {
     if (kind !== "chart") return null;
     const props = payload as LiquidChartProps;
-    if (!props?.categories?.length || !props?.series?.length) return null;
+    const hasCategorySeries = Boolean(props?.categories?.length && props?.series?.length);
+    const hasPoints = Boolean(props?.points?.length);
+    const hasMatrix = Boolean(props?.matrix?.rows?.length && props?.matrix?.cols?.length);
+    if (!hasCategorySeries && !hasPoints && !hasMatrix) return null;
     return createNode({
       id: "md-chart",
       type: "chart",
       props: {
         type: props.type,
-        categories: props.categories,
-        series: props.series,
+        categories: props.categories ?? [],
+        series: props.series ?? [],
+        ...(props.points?.length ? { points: props.points } : {}),
+        ...(props.matrix ? { matrix: props.matrix } : {}),
+        ...(props.seriesMarks?.length ? { seriesMarks: props.seriesMarks } : {}),
         ...(props.title ? { title: props.title } : {}),
         ...(props.description ? { description: props.description } : {}),
         ...(props.layout ? { layout: props.layout } : {}),
@@ -516,6 +541,10 @@
 {:else if kind === "dashboard" && dashboard}
   <div class="{hostClass} liquid-md-host-dashboard">
     <Dashboard node={dashboard} />
+  </div>
+{:else if kind === "report" && report}
+  <div class="{hostClass} liquid-md-host-report">
+    <Report node={report} />
   </div>
 {:else if kind === "chart" && chart}
   <div class="{hostClass} liquid-md-host-chart">

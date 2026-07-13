@@ -27,6 +27,7 @@ export const LIQUID_FENCE_LANGS = new Set([
   "brief",
   "dashboard",
   "chart",
+  "report",
 ]);
 
 const CALLOUT_TONES = new Set(["note", "warn", "error", "success"]);
@@ -83,7 +84,8 @@ export type LiquidEmbedKind =
   | "decision"
   | "brief"
   | "dashboard"
-  | "chart";
+  | "chart"
+  | "report";
 
 export interface LiquidCardPoint {
   label: string;
@@ -278,10 +280,20 @@ export interface LiquidDashboardProps {
   tiles: LiquidDashboardTile[];
 }
 
+/** Report organism — narrative + nested chart figures in a column grid. */
+export interface LiquidReportProps {
+  title?: string;
+  subtitle?: string;
+  /** 1 | 2 | 3 — chart figure columns (prose stays full-bleed). */
+  columns?: string;
+  /** Markdown body (may include hydrated chart placeholders). */
+  body: string;
+}
+
 /**
  * Liquid chart organism — paste-first plots from ```chart fences.
  *
- * V1+ renders: bar | line | area | pie | donut | radar | radial.
+ * Renders: bar | line | area | pie | donut | radar | radial | scatter | combo | heatmap.
  * Optional fields (labels, tooltip, legend, interactive, activeKey, curve, layout, …)
  * are accepted so later UI can light up without breaking fences.
  */
@@ -292,7 +304,10 @@ export type LiquidChartType =
   | "pie"
   | "donut"
   | "radar"
-  | "radial";
+  | "radial"
+  | "scatter"
+  | "combo"
+  | "heatmap";
 
 export type LiquidChartLabels = "none" | "value" | "category" | "both";
 export type LiquidChartLegend = boolean | "none" | "top" | "bottom";
@@ -300,11 +315,26 @@ export type LiquidChartCurve = "smooth" | "linear" | "step";
 export type LiquidChartLayout = "vertical" | "horizontal";
 export type LiquidChartTrendDirection = "up" | "down" | "flat";
 export type LiquidChartLabelPosition = "inside" | "outside" | "auto";
+export type LiquidChartSeriesMark = "bar" | "line";
 
 export interface LiquidChartSeries {
   key: string;
   label: string;
   values: number[];
+}
+
+/** Scatter point — optional group becomes a legend series. */
+export interface LiquidChartPoint {
+  x: number;
+  y: number;
+  group?: string;
+}
+
+/** Heatmap matrix — row/col labels + numeric cells. */
+export interface LiquidChartMatrix {
+  rows: string[];
+  cols: string[];
+  values: number[][];
 }
 
 export interface LiquidChartProps {
@@ -313,6 +343,13 @@ export interface LiquidChartProps {
   description?: string;
   categories: string[];
   series: LiquidChartSeries[];
+
+  /** Scatter points (type: scatter). */
+  points?: LiquidChartPoint[];
+  /** Heatmap matrix (type: heatmap). */
+  matrix?: LiquidChartMatrix;
+  /** Per-series mark for combo charts (bar | line). */
+  seriesMarks?: LiquidChartSeriesMark[];
 
   layout?: LiquidChartLayout;
   stacked?: boolean;
@@ -1316,6 +1353,47 @@ function parseDashboardBody(body: string): LiquidDashboardProps | null {
   return dashboard;
 }
 
+const REPORT_COLUMNS = new Set(["1", "2", "3"]);
+
+function parseReportBody(body: string): LiquidReportProps | null {
+  const normalized = body.replace(/\r\n/g, "\n");
+  const lines = normalized.split("\n");
+  const preamble: string[] = [];
+  let bodyStart = 0;
+
+  for (let i = 0; i < lines.length; i++) {
+    const stripped = stripFenceLineChrome(lines[i] ?? "");
+    if (!stripped) {
+      // blank line after KV ends preamble
+      if (preamble.length > 0) {
+        bodyStart = i + 1;
+        break;
+      }
+      continue;
+    }
+    // KV line (title: …) stays in preamble; first non-KV starts body
+    if (/^[a-zA-Z][a-zA-Z0-9_-]*\s*:/.test(stripped) && !stripped.startsWith("|")) {
+      preamble.push(lines[i] ?? "");
+      bodyStart = i + 1;
+      continue;
+    }
+    bodyStart = i;
+    break;
+  }
+
+  const fields = parseKvBlock(preamble.join("\n"));
+  const markdownBody = lines.slice(bodyStart).join("\n").trim();
+  if (!markdownBody && !fields.title) return null;
+
+  const report: LiquidReportProps = { body: markdownBody || "" };
+  if (fields.title) report.title = fields.title;
+  if (fields.subtitle) report.subtitle = fields.subtitle;
+  const columns = fields.columns?.trim();
+  if (columns && REPORT_COLUMNS.has(columns)) report.columns = columns;
+  else report.columns = "2";
+  return report;
+}
+
 const CHART_TYPES = new Set<LiquidChartType>([
   "bar",
   "line",
@@ -1324,6 +1402,9 @@ const CHART_TYPES = new Set<LiquidChartType>([
   "donut",
   "radar",
   "radial",
+  "scatter",
+  "combo",
+  "heatmap",
 ]);
 const CHART_LABELS = new Set(["none", "value", "category", "both"]);
 const CHART_LEGEND = new Set(["none", "top", "bottom", "true", "false", "yes", "no", "1", "0"]);
@@ -1331,6 +1412,7 @@ const CHART_CURVE = new Set(["smooth", "linear", "step"]);
 const CHART_LAYOUT = new Set(["vertical", "horizontal"]);
 const CHART_TREND_DIR = new Set(["up", "down", "flat"]);
 const CHART_LABEL_POS = new Set(["inside", "outside", "auto"]);
+const CHART_SERIES_MARK = new Set(["bar", "line"]);
 
 function parseChartNumber(raw: string): number | null {
   const cleaned = raw.replace(/,/g, "").replace(/%$/, "").trim();
@@ -1385,6 +1467,29 @@ function parseChartBody(body: string): LiquidChartProps | null {
 
   if (rows.length < 2) return null;
 
+  const fields = parseKvBlock(preamble.join("\n"));
+  const typeRaw = (fields.type ?? fields.chart ?? "bar").trim().toLowerCase();
+  if (!CHART_TYPES.has(typeRaw as LiquidChartType)) return null;
+  const type = typeRaw as LiquidChartType;
+
+  let chart: LiquidChartProps | null = null;
+  if (type === "scatter") {
+    chart = parseScatterTable(rows, type);
+  } else if (type === "heatmap") {
+    chart = parseHeatmapTable(rows, type);
+  } else {
+    chart = parseCategorySeriesTable(rows, type);
+  }
+  if (!chart) return null;
+
+  applyChartKvFields(chart, fields);
+  return chart;
+}
+
+function parseCategorySeriesTable(
+  rows: string[][],
+  type: LiquidChartType,
+): LiquidChartProps | null {
   const header = rows[0].map((cell) => cell.trim());
   if (header.length < 2) return null;
 
@@ -1415,12 +1520,8 @@ function parseChartBody(body: string): LiquidChartProps | null {
     }
   }
 
-  if (categories.length < 2) return null;
-
-  const fields = parseKvBlock(preamble.join("\n"));
-  const typeRaw = (fields.type ?? fields.chart ?? "bar").trim().toLowerCase();
-  if (!CHART_TYPES.has(typeRaw as LiquidChartType)) return null;
-  const type = typeRaw as LiquidChartType;
+  const minCats = type === "radar" ? 3 : type === "radial" ? 1 : 2;
+  if (categories.length < minCats) return null;
 
   const series: LiquidChartSeries[] = seriesHeaders.map((label, i) => ({
     key: slugCompareId(label, "series", i),
@@ -1428,8 +1529,95 @@ function parseChartBody(body: string): LiquidChartProps | null {
     values: seriesValues[i],
   }));
 
-  const chart: LiquidChartProps = { type, categories, series };
+  return { type, categories, series };
+}
 
+function parseScatterTable(rows: string[][], type: LiquidChartType): LiquidChartProps | null {
+  const header = rows[0].map((cell) => cell.trim());
+  if (header.length < 2) return null;
+  const hasGroup = header.length >= 3;
+
+  const points: LiquidChartPoint[] = [];
+  for (let r = 1; r < rows.length; r++) {
+    const cells = rows[r];
+    const x = parseChartNumber(cells[0] ?? "");
+    const y = parseChartNumber(cells[1] ?? "");
+    if (x === null || y === null) continue;
+    const point: LiquidChartPoint = { x, y };
+    if (hasGroup) {
+      const group = (cells[2] ?? "").trim();
+      if (group) point.group = group;
+    }
+    points.push(point);
+  }
+  if (points.length < 2) return null;
+
+  const groupNames = [
+    ...new Set(points.map((p) => p.group).filter((g): g is string => Boolean(g))),
+  ];
+  const series: LiquidChartSeries[] =
+    groupNames.length > 0
+      ? groupNames.map((label, i) => ({
+          key: slugCompareId(label, "series", i),
+          label,
+          values: points.filter((p) => p.group === label).map((p) => p.y),
+        }))
+      : [{ key: "points", label: header[1] || "Y", values: points.map((p) => p.y) }];
+
+  return {
+    type,
+    categories: groupNames.length ? groupNames : ["Points"],
+    series,
+    points,
+  };
+}
+
+function parseHeatmapTable(rows: string[][], type: LiquidChartType): LiquidChartProps | null {
+  const header = rows[0].map((cell) => cell.trim());
+  if (header.length < 2) return null;
+  const cols = header.slice(1).map((c) => c.trim()).filter(Boolean);
+  if (cols.length < 1) return null;
+
+  const rowLabels: string[] = [];
+  const values: number[][] = [];
+
+  for (let r = 1; r < rows.length; r++) {
+    const cells = rows[r];
+    const rowLabel = (cells[0] ?? "").trim();
+    if (!rowLabel) continue;
+    const nums: number[] = [];
+    let ok = true;
+    for (let c = 0; c < cols.length; c++) {
+      const n = parseChartNumber(cells[c + 1] ?? "");
+      if (n === null) {
+        ok = false;
+        break;
+      }
+      nums.push(n);
+    }
+    if (!ok) continue;
+    rowLabels.push(rowLabel);
+    values.push(nums);
+  }
+
+  if (rowLabels.length < 1 || values.length < 1) return null;
+
+  return {
+    type,
+    categories: cols,
+    series: rowLabels.map((label, i) => ({
+      key: slugCompareId(label, "row", i),
+      label,
+      values: values[i],
+    })),
+    matrix: { rows: rowLabels, cols, values },
+  };
+}
+
+function applyChartKvFields(
+  chart: LiquidChartProps,
+  fields: Record<string, string>,
+): void {
   if (fields.title) chart.title = fields.title;
   const description = (fields.description ?? fields.subtitle)?.trim();
   if (description) chart.description = description;
@@ -1502,7 +1690,14 @@ function parseChartBody(body: string): LiquidChartProps | null {
   const surface = (fields.surface ?? fields.plot)?.trim();
   if (surface) chart.surface = surface;
 
-  return chart;
+  const marksRaw = (fields.seriesmarks ?? fields["series_marks"])?.trim();
+  if (marksRaw && chart.type === "combo") {
+    const marks = marksRaw
+      .split(/[,|]/)
+      .map((m) => m.trim().toLowerCase())
+      .filter((m): m is LiquidChartSeriesMark => CHART_SERIES_MARK.has(m));
+    if (marks.length) chart.seriesMarks = marks;
+  }
 }
 
 function normalizeIconId(raw: string): string | null {
@@ -1685,6 +1880,12 @@ function replaceLiquidFenceMatch(match: string, langRaw: string, body: string): 
     const dashboard = parseDashboardBody(body);
     if (!dashboard) return match;
     return `\n${placeholder("dashboard", dashboard)}\n`;
+  }
+
+  if (lang === "report") {
+    const report = parseReportBody(body);
+    if (!report) return match;
+    return `\n${placeholder("report", report)}\n`;
   }
 
   if (lang === "chart") {

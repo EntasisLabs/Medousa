@@ -12,6 +12,7 @@
     LiquidChartLabelPosition,
     LiquidChartLabels,
     LiquidChartSeries,
+    LiquidChartSeriesMark,
   } from "$lib/markdown/liquidEmbeds";
   import {
     chartSeriesColor,
@@ -34,12 +35,14 @@
 
   interface CakeCustom {
     series: LiquidChartSeries[];
+    seriesMarks?: LiquidChartSeriesMark[];
     colors: string[];
     curve: LiquidChartCurve;
     labels: LiquidChartLabels;
     labelPosition: LiquidChartLabelPosition;
     activeKey: string;
     interactive: boolean;
+    chartType?: string;
     showTooltip: (
       x: number,
       y: number,
@@ -67,6 +70,20 @@
     return curveMonotoneX;
   }
 
+  function lineSeries(
+    series: LiquidChartSeries[],
+    marks: LiquidChartSeriesMark[] | undefined,
+    chartType: string | undefined,
+  ): { series: LiquidChartSeries; index: number }[] {
+    return series
+      .map((s, index) => ({ series: s, index }))
+      .filter(({ index }) => {
+        if (chartType !== "combo") return true;
+        const mark = marks?.[index] ?? (index === 0 ? "bar" : "line");
+        return mark === "line";
+      });
+  }
+
   const paths = $derived.by(() => {
     const rows = $data ?? [];
     const xS = $xScale;
@@ -76,7 +93,8 @@
 
     const curve = curveFactory(cfg.curve ?? "smooth");
     const highlight = hasActiveHighlight(cfg.activeKey);
-    return cfg.series.map((s, si) => {
+    const marked = lineSeries(cfg.series, cfg.seriesMarks, cfg.chartType);
+    return marked.map(({ series: s, index: si }) => {
       const points = rows.map((row) => {
         const category = String(row.category ?? "");
         const x = (xS(category) ?? 0) + ((xS.bandwidth?.() ?? 0) / 2);
