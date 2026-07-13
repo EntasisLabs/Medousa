@@ -1,16 +1,20 @@
 <script lang="ts">
   import { ChevronLeft, ChevronRight, Download, Plus, Upload } from "@lucide/svelte";
   import EventEditor from "$lib/components/calendar/EventEditor.svelte";
+  import { registerMobileBackHandler } from "$lib/mobileNavigation";
   import { calendar, calendarDateUtils } from "$lib/stores/calendar.svelte";
   import type { CalendarEvent } from "$lib/types/calendar";
   import { onMount } from "svelte";
 
   interface Props {
     visible: boolean;
+    mobile?: boolean;
+    embedded?: boolean;
   }
 
-  let { visible }: Props = $props();
+  let { visible, mobile = false, embedded = false }: Props = $props();
   let importInput: HTMLInputElement | undefined = $state();
+  let mobileDefaulted = $state(false);
 
   const { addDays, startOfWeek, startOfMonth, isoDay } = calendarDateUtils;
 
@@ -22,7 +26,29 @@
     if (visible) void calendar.refresh();
   });
 
-  const weekdayLabels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  // Phones default to Day — month grid is too cramped for event titles.
+  $effect(() => {
+    if (!mobile || !visible || mobileDefaulted) return;
+    mobileDefaulted = true;
+    if (calendar.viewMode === "month") {
+      calendar.setViewMode("day");
+    }
+  });
+
+  $effect(() => {
+    if (!mobile || !visible) return;
+    return registerMobileBackHandler(() => {
+      if (!calendar.editorOpen) return false;
+      calendar.closeEditor();
+      return true;
+    });
+  });
+
+  const weekdayLabels = $derived(
+    mobile
+      ? ["M", "T", "W", "T", "F", "S", "S"]
+      : ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+  );
 
   const monthCells = $derived.by(() => {
     const monthStart = startOfMonth(calendar.anchor);
@@ -104,7 +130,11 @@
   }
 </script>
 
-<div class="calendar-surface relative flex h-full min-h-0 flex-col {visible ? '' : 'hidden'}">
+<div
+  class="calendar-surface relative flex h-full min-h-0 flex-col {visible ? '' : 'hidden'}"
+  class:calendar-surface-mobile={mobile}
+  class:calendar-surface-embedded={embedded}
+>
   <header class="calendar-chrome">
     <div class="calendar-chrome-left">
       <h1 class="calendar-month-title">{rangeTitle}</h1>
@@ -216,8 +246,14 @@
               class:calendar-cell-selected={selected}
               role="button"
               tabindex="0"
-              onclick={() => calendar.selectDay(day)}
-              ondblclick={() => calendar.openCreate(day)}
+              onclick={() => {
+                const already = isSameDay(day, calendar.selectedDay);
+                calendar.selectDay(day);
+                if (mobile && already) calendar.openCreate(day);
+              }}
+              ondblclick={() => {
+                if (!mobile) calendar.openCreate(day);
+              }}
               onkeydown={(e) => {
                 if (e.key === "Enter" || e.key === " ") {
                   e.preventDefault();
@@ -228,57 +264,81 @@
               <span class="calendar-cell-num" class:calendar-cell-num-today={today}>
                 {day.getDate()}
               </span>
-              <div class="calendar-cell-events">
-                {#each events.slice(0, 3) as event (eventKey(event))}
-                  <button
-                    type="button"
-                    class="calendar-dot-event"
-                    class:calendar-pill-event={event.all_day}
-                    title={`${formatTime(event)} · ${event.summary}`}
-                    onclick={(e) => {
-                      e.stopPropagation();
-                      calendar.openEdit(event);
-                    }}
-                  >
-                    {#if !event.all_day}
-                      <i class="calendar-dot-bar" aria-hidden="true"></i>
-                    {/if}
-                    <span class="calendar-dot-label">{event.summary}</span>
-                  </button>
-                {/each}
-                {#if events.length > 3}
-                  <span class="calendar-cell-more">{events.length - 3} more</span>
-                {/if}
-              </div>
+              {#if mobile}
+                <div class="calendar-cell-dots" aria-hidden="true">
+                  {#each events.slice(0, 3) as event (eventKey(event))}
+                    <i class="calendar-cell-dot" class:calendar-cell-dot-allday={event.all_day}></i>
+                  {/each}
+                </div>
+              {:else}
+                <div class="calendar-cell-events">
+                  {#each events.slice(0, 3) as event (eventKey(event))}
+                    <button
+                      type="button"
+                      class="calendar-dot-event"
+                      class:calendar-pill-event={event.all_day}
+                      title={`${formatTime(event)} · ${event.summary}`}
+                      onclick={(e) => {
+                        e.stopPropagation();
+                        calendar.openEdit(event);
+                      }}
+                    >
+                      {#if !event.all_day}
+                        <i class="calendar-dot-bar" aria-hidden="true"></i>
+                      {/if}
+                      <span class="calendar-dot-label">{event.summary}</span>
+                    </button>
+                  {/each}
+                  {#if events.length > 3}
+                    <span class="calendar-cell-more">{events.length - 3} more</span>
+                  {/if}
+                </div>
+              {/if}
             </div>
           {/each}
         </div>
       </div>
 
-      {#if dayEvents.length > 0}
+      {#if mobile || dayEvents.length > 0}
         <section class="calendar-day-strip">
-          <h2 class="calendar-day-strip-title">
-            {calendar.selectedDay.toLocaleDateString(undefined, {
-              weekday: "long",
-              month: "short",
-              day: "numeric",
-            })}
-          </h2>
-          <ul class="calendar-agenda">
-            {#each dayEvents as event (eventKey(event))}
-              <li>
-                <button
-                  type="button"
-                  class="calendar-agenda-row"
-                  onclick={() => calendar.openEdit(event)}
-                >
-                  <span class="calendar-agenda-time">{formatTime(event)}</span>
-                  <i class="calendar-agenda-bar" aria-hidden="true"></i>
-                  <span class="calendar-agenda-title">{event.summary}</span>
-                </button>
-              </li>
-            {/each}
-          </ul>
+          <div class="calendar-day-strip-head">
+            <h2 class="calendar-day-strip-title">
+              {calendar.selectedDay.toLocaleDateString(undefined, {
+                weekday: "long",
+                month: "short",
+                day: "numeric",
+              })}
+            </h2>
+            {#if mobile}
+              <button
+                type="button"
+                class="calendar-day-strip-add"
+                onclick={() => calendar.openCreate(calendar.selectedDay)}
+              >
+                <Plus size={14} strokeWidth={2} />
+                Add
+              </button>
+            {/if}
+          </div>
+          {#if dayEvents.length === 0}
+            <p class="calendar-day-strip-empty">Nothing scheduled</p>
+          {:else}
+            <ul class="calendar-agenda">
+              {#each dayEvents as event (eventKey(event))}
+                <li>
+                  <button
+                    type="button"
+                    class="calendar-agenda-row"
+                    onclick={() => calendar.openEdit(event)}
+                  >
+                    <span class="calendar-agenda-time">{formatTime(event)}</span>
+                    <i class="calendar-agenda-bar" aria-hidden="true"></i>
+                    <span class="calendar-agenda-title">{event.summary}</span>
+                  </button>
+                </li>
+              {/each}
+            </ul>
+          {/if}
         </section>
       {/if}
     {:else if calendar.viewMode === "week"}
@@ -294,8 +354,14 @@
             <button
               type="button"
               class="calendar-week-head"
-              onclick={() => calendar.selectDay(day)}
-              ondblclick={() => calendar.openCreate(day)}
+              onclick={() => {
+                const already = isSameDay(day, calendar.selectedDay);
+                calendar.selectDay(day);
+                if (mobile && already) calendar.openCreate(day);
+              }}
+              ondblclick={() => {
+                if (!mobile) calendar.openCreate(day);
+              }}
             >
               <span class="calendar-week-dow"
                 >{day.toLocaleDateString(undefined, { weekday: "short" })}</span
@@ -368,6 +434,7 @@
     <EventEditor
       event={calendar.editing}
       defaultDay={calendar.selectedDay}
+      {mobile}
       onClose={() => calendar.closeEditor()}
       onSave={async (payload) => {
         await calendar.saveEvent({
@@ -678,12 +745,60 @@
     padding: 0.15rem 0.15rem 0;
   }
 
+  .calendar-day-strip-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-bottom: 0.45rem;
+  }
+
   .calendar-day-strip-title {
-    margin: 0 0 0.45rem;
+    margin: 0;
     font-size: 0.8125rem;
     font-weight: 600;
     letter-spacing: -0.01em;
     color: rgb(var(--color-surface-200));
+  }
+
+  .calendar-day-strip-add {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    min-height: 1.65rem;
+    border-radius: 0.45rem;
+    padding: 0 0.55rem;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    color: rgb(var(--color-primary-200));
+    background: rgb(var(--color-primary-500) / 0.12);
+  }
+
+  .calendar-day-strip-empty {
+    margin: 0;
+    padding: 0.35rem 0.15rem 0.55rem;
+    font-size: 0.75rem;
+    color: rgb(var(--shell-muted));
+  }
+
+  .calendar-cell-dots {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.18rem;
+    margin-top: auto;
+    padding-bottom: 0.1rem;
+  }
+
+  .calendar-cell-dot {
+    width: 0.28rem;
+    height: 0.28rem;
+    border-radius: 9999px;
+    background: rgb(var(--color-primary-400));
+  }
+
+  .calendar-cell-dot-allday {
+    background: rgb(var(--color-primary-300) / 0.75);
   }
 
   .calendar-agenda {
@@ -846,7 +961,7 @@
     }
 
     .calendar-month-title {
-      font-size: 1.3rem;
+      font-size: 1.2rem;
     }
 
     .calendar-week {
@@ -856,5 +971,44 @@
     .calendar-cell {
       min-height: 4rem;
     }
+  }
+
+  .calendar-surface-mobile .calendar-chrome {
+    gap: 0.55rem 0.65rem;
+    padding: 0.65rem 0.75rem 0.55rem;
+  }
+
+  .calendar-surface-mobile .calendar-month-title {
+    font-size: 1.05rem;
+  }
+
+  .calendar-surface-mobile .calendar-body {
+    padding: 0.25rem 0.65rem 0.85rem;
+    overflow: auto;
+  }
+
+  .calendar-surface-mobile .calendar-cell {
+    min-height: 2.65rem;
+    align-items: center;
+    padding: 0.25rem 0.1rem 0.3rem;
+  }
+
+  .calendar-surface-mobile .calendar-cell-num {
+    align-self: center;
+  }
+
+  .calendar-surface-mobile .calendar-weekday {
+    padding: 0.3rem 0 0.2rem;
+    font-size: 0.625rem;
+  }
+
+  .calendar-surface-mobile .calendar-day-strip {
+    margin-top: 0.65rem;
+    border-top: 1px solid rgb(var(--shell-border) / 0.55);
+    padding-top: 0.65rem;
+  }
+
+  .calendar-surface-mobile .calendar-week-col {
+    min-height: auto;
   }
 </style>

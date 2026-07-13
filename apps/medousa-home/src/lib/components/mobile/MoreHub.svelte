@@ -208,7 +208,7 @@
       {:else if layout.moreDestination === "automations"}
         <AutomationsPanel visible={true} embedded={true} mobile={true} />
       {:else if layout.moreDestination === "calendar"}
-        <CalendarPanel visible={true} />
+        <CalendarPanel visible={true} embedded={true} mobile={true} />
       {:else if layout.moreDestination === "messaging"}
         <MessagingPanel visible={true} {health} embedded={true} mobile={true} />
       {:else if layout.moreDestination === "peers"}

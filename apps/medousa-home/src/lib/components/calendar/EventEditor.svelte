@@ -1,11 +1,13 @@
 <script lang="ts">
   import { MapPin, X } from "@lucide/svelte";
   import type { CalendarEvent } from "$lib/types/calendar";
+  import { registerMobileBackHandler } from "$lib/mobileNavigation";
   import { calendarDateUtils } from "$lib/stores/calendar.svelte";
 
   interface Props {
     event: CalendarEvent | null;
     defaultDay: Date;
+    mobile?: boolean;
     onClose: () => void;
     onSave: (payload: {
       summary: string;
@@ -18,7 +20,7 @@
     onDelete?: () => Promise<void>;
   }
 
-  let { event, defaultDay, onClose, onSave, onDelete }: Props = $props();
+  let { event, defaultDay, mobile = false, onClose, onSave, onDelete }: Props = $props();
 
   const { isoDay, allDayKey, nextAllDayKey, allDayBoundIso } = calendarDateUtils;
 
@@ -135,11 +137,20 @@
       void submit();
     }
   }
+
+  $effect(() => {
+    if (!mobile) return;
+    return registerMobileBackHandler(() => {
+      onClose();
+      return true;
+    });
+  });
 </script>
 
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <div
   class="cal-pop-backdrop"
+  class:cal-pop-backdrop-mobile={mobile}
   role="presentation"
   onclick={onClose}
   onkeydown={onKeydown}
@@ -147,6 +158,7 @@
   <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
   <div
     class="cal-pop"
+    class:cal-pop-mobile={mobile}
     role="dialog"
     aria-modal="true"
     aria-label={event ? "Edit event" : "New event"}
@@ -260,6 +272,14 @@
     backdrop-filter: blur(10px) saturate(1.15);
   }
 
+  .cal-pop-backdrop-mobile {
+    position: fixed;
+    align-items: flex-end;
+    justify-content: stretch;
+    padding: 0;
+    background: rgb(var(--color-surface-950) / 0.45);
+  }
+
   .cal-pop {
     width: min(22.5rem, 100%);
     border-radius: 0.95rem;
@@ -274,6 +294,15 @@
     animation: cal-pop-in 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
   }
 
+  .cal-pop-mobile {
+    width: 100%;
+    max-height: min(92dvh, 40rem);
+    overflow: auto;
+    border-radius: 1rem 1rem 0 0;
+    padding-bottom: calc(0.85rem + env(safe-area-inset-bottom, 0px));
+    animation: cal-pop-sheet-in 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+
   @keyframes cal-pop-in {
     from {
       opacity: 0;
@@ -282,6 +311,17 @@
     to {
       opacity: 1;
       transform: translateY(0) scale(1);
+    }
+  }
+
+  @keyframes cal-pop-sheet-in {
+    from {
+      opacity: 0.6;
+      transform: translateY(100%);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
     }
   }
 
