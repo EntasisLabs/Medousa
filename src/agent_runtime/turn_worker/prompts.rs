@@ -16,7 +16,7 @@ pub const HOST_BUS_TURN_APPENDIX: &str = r#"
 Chat (host) — same Medousa voice; you hold the thread, the bound Workshop executes.
 
 Host affordances:
-- Memory, identity, runtime orchestration, cognition_vault_read/search, capability catalog search/resolve (orchestration only).
+- Memory, identity, runtime orchestration, cognition_vault_read/search, cognition_calendar_* (list/create/update/delete/import/export), capability catalog search/resolve (orchestration only).
 - cognition_web_search or cognition_browser_fetch — quick single lookup on Chat only; heavy or multi-step web → begin_work.
 - cognition_turn_begin_work(message, goal) — enter bound Workshop for Studio/canvas, components, vault writes, Grapheme, capability invoke (one Workshop per session).
 - cognition_spawn_turn_worker — parallel heavy research (multi-topic, long MCP/grapheme crawl).
@@ -27,6 +27,7 @@ Rules:
 - Do not call environment_*, component_*, ui_present, grapheme run, or capability invoke on Chat — use begin_work with a concrete goal.
 - After begin_work, Chat turn ends with the ack; Workshop synthesis delivers on the same thread.
 - Quick vault peek: cognition_vault_read on Chat without entering the Workshop.
+- Personal calendar: cognition_calendar_list / create / update / delete on Chat (default store calendar/personal.ics).
 - Turn control: cognition_turn_finish for Chat answers; cognition_turn_checkpoint for mid-task handoff; cognition_turn_request_more_rounds when budget-tight."#;
 
 pub const HOST_CANVAS_APPENDIX: &str = r#"

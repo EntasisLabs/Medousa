@@ -18,7 +18,16 @@ pub const COGNITION_TOOLS_DISCOVER: &str = "cognition_tools_discover";
 pub const DEFAULT_TOOL_HINTS_BLOCK_CHARS: usize = 700;
 
 /// Host console domains unlocked at session start (no `cognition_tools_discover` step).
-pub const DEFAULT_HOST_AUTO_UNLOCK_DOMAINS: &[&str] = &["memory", "vault"];
+pub const DEFAULT_HOST_AUTO_UNLOCK_DOMAINS: &[&str] = &["memory", "vault", "calendar"];
+
+pub const CALENDAR_DOMAIN_TOOLS: &[&str] = &[
+    "cognition_calendar_list",
+    "cognition_calendar_create",
+    "cognition_calendar_update",
+    "cognition_calendar_delete",
+    "cognition_calendar_import",
+    "cognition_calendar_export",
+];
 
 pub const BROWSER_HOST_AUTO_UNLOCK_DOMAIN: &str = "browser";
 
@@ -62,6 +71,7 @@ pub const HOST_BOOTSTRAP_TOOLS: &[&str] = &[
     "cognition_web_search",
     "cognition_vault_search",
     "cognition_vault_grep",
+    "cognition_calendar_list",
     "cognition_artifact_list",
     "cognition_artifact_read",
     "cognition_artifact_grep",
@@ -189,6 +199,11 @@ pub fn host_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
                     "cognition_vault_move",
                     "cognition_vault_tags",
                 ],
+            },
+            ToolDomainCatalogEntry {
+                domain: "calendar",
+                summary: "Personal calendar (.ics) — list, create, update, delete, import, export",
+                tools: CALENDAR_DOMAIN_TOOLS,
             },
             ToolDomainCatalogEntry {
                 domain: "documents",
@@ -342,6 +357,11 @@ pub fn worker_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
                 ],
             },
             ToolDomainCatalogEntry {
+                domain: "calendar",
+                summary: "Personal calendar (.ics) for workshop scheduling",
+                tools: CALENDAR_DOMAIN_TOOLS,
+            },
+            ToolDomainCatalogEntry {
                 domain: "openshell",
                 summary: "Sandbox skill probe and run",
                 tools: &[
@@ -383,6 +403,7 @@ pub const BOUND_WORKSHOP_AUTO_UNLOCK_DOMAINS: &[&str] = &[
     "execute",
     "discover",
     "vault",
+    "calendar",
     "memory",
 ];
 
@@ -401,6 +422,12 @@ pub fn tool_one_liner(name: &str) -> &'static str {
         "cognition_vault_search" => "Search vault notes",
         "cognition_vault_grep" => "Grep inside a vault note by line",
         "cognition_vault_tags" => "List semantic tags across vault notes (shared with Locus)",
+        "cognition_calendar_list" => "List personal calendar events in a time range",
+        "cognition_calendar_create" => "Create a calendar event in vault .ics",
+        "cognition_calendar_update" => "Update a calendar event by uid",
+        "cognition_calendar_delete" => "Delete a calendar event by uid",
+        "cognition_calendar_import" => "Import VEVENTs from raw ICS text",
+        "cognition_calendar_export" => "Export the vault calendar as ICS",
         "cognition_web_search" => "Search the public web (provider fallback from config)",
         "cognition_browser_fetch" => "Fetch a URL via Agent Browser and return markdown excerpt",
         "cognition_browser_snapshot" => "Snapshot a URL via Agent Browser for synthesis",
@@ -460,7 +487,7 @@ pub fn bootstrap_tools(lane: ToolSurfaceLane) -> &'static [&'static str] {
     }
 }
 
-/// Unlock memory + vault on host console turns so ritual/write tools are callable without discover.
+/// Unlock memory + vault + calendar on host console turns so ritual/write tools are callable without discover.
 pub fn ensure_host_session_tool_defaults(session_id: &str) {
     let _ = unlock_session_domains(session_id, ToolSurfaceLane::Host, DEFAULT_HOST_AUTO_UNLOCK_DOMAINS);
 }
@@ -750,6 +777,12 @@ fn rank_hint_domains(prompt: &str, turns: &[ConversationTurn]) -> Vec<String> {
     if contains_any(&prompt_lower, &["vault", "note", "journal", "learning"]) {
         bump(&mut scores, "vault", 3);
     }
+    if contains_any(
+        &prompt_lower,
+        &["calendar", "meeting", "event", "appointment", "ics", "schedule"],
+    ) {
+        bump(&mut scores, "calendar", 3);
+    }
     if contains_any(&prompt_lower, &["identity", "contact", "preference", "remember"]) {
         bump(&mut scores, "identity", 2);
     }
@@ -857,10 +890,11 @@ mod tests {
     #[test]
     fn bootstrap_host_tools_are_small() {
         assert!(HOST_BOOTSTRAP_TOOLS.len() >= 8);
-        assert!(HOST_BOOTSTRAP_TOOLS.len() <= 20);
+        assert!(HOST_BOOTSTRAP_TOOLS.len() <= 24);
         assert!(HOST_BOOTSTRAP_TOOLS.contains(&COGNITION_TOOLS_DISCOVER));
         assert!(HOST_BOOTSTRAP_TOOLS.contains(&"cognition_identity_remember"));
         assert!(HOST_BOOTSTRAP_TOOLS.contains(&"cognition_identity_recall"));
+        assert!(HOST_BOOTSTRAP_TOOLS.contains(&"cognition_calendar_list"));
     }
 
     #[test]
