@@ -130,6 +130,30 @@ export const LIQUID_CHART_RADIAL_TEMPLATE = serializeChartFence({
 /** Default slash chart insert (bar). */
 export const LIQUID_CHART_TEMPLATE = LIQUID_CHART_BAR_TEMPLATE;
 
+export const LIQUID_CHART_AREA_TEMPLATE = serializeChartFence({
+  type: "area",
+  title: "Trend",
+  seriesLabels: ["Desktop", "Mobile"],
+  rows: [
+    { category: "Jan", values: [186, 80] },
+    { category: "Feb", values: [305, 200] },
+    { category: "Mar", values: [237, 120] },
+  ],
+  extraKv: { curve: "smooth", legend: "bottom", colors: "blue, purple" },
+});
+
+export const LIQUID_CHART_DONUT_TEMPLATE = serializeChartFence({
+  type: "donut",
+  title: "Share",
+  seriesLabels: ["Share"],
+  rows: [
+    { category: "Chrome", values: [275] },
+    { category: "Safari", values: [200] },
+    { category: "Firefox", values: [187] },
+  ],
+  extraKv: { legend: "bottom", centerLabel: "Total" },
+});
+
 export const LIQUID_CHART_SCATTER_TEMPLATE = [
   "```chart",
   "type: scatter",
@@ -173,6 +197,36 @@ export const LIQUID_CHART_HEATMAP_TEMPLATE = [
   "```",
   "",
 ].join("\n");
+
+export const LIQUID_CHART_BY_TYPE: Record<ChartFenceType, string> = {
+  bar: LIQUID_CHART_BAR_TEMPLATE,
+  line: LIQUID_CHART_LINE_TEMPLATE,
+  area: LIQUID_CHART_AREA_TEMPLATE,
+  pie: LIQUID_CHART_PIE_TEMPLATE,
+  donut: LIQUID_CHART_DONUT_TEMPLATE,
+  radar: LIQUID_CHART_RADAR_TEMPLATE,
+  radial: LIQUID_CHART_RADIAL_TEMPLATE,
+  scatter: LIQUID_CHART_SCATTER_TEMPLATE,
+  combo: LIQUID_CHART_COMBO_TEMPLATE,
+  heatmap: LIQUID_CHART_HEATMAP_TEMPLATE,
+};
+
+export function chartFenceTemplateForType(type: ChartFenceType): string {
+  return LIQUID_CHART_BY_TYPE[type] ?? LIQUID_CHART_TEMPLATE;
+}
+
+export const CHART_FENCE_TYPE_OPTIONS: Array<{ id: ChartFenceType; label: string }> = [
+  { id: "bar", label: "Bar" },
+  { id: "line", label: "Line" },
+  { id: "area", label: "Area" },
+  { id: "pie", label: "Pie" },
+  { id: "donut", label: "Donut" },
+  { id: "radar", label: "Radar" },
+  { id: "radial", label: "Radial" },
+  { id: "scatter", label: "Scatter" },
+  { id: "combo", label: "Combo" },
+  { id: "heatmap", label: "Heatmap" },
+];
 
 export const LIQUID_REPORT_TEMPLATE = [
   "```report",

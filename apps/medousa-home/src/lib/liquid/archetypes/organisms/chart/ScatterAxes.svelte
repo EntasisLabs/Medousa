@@ -73,7 +73,7 @@
 
 <style>
   .liquid-chart-grid {
-    stroke: color-mix(in srgb, var(--color-surface-500) 22%, transparent);
+    stroke: var(--chart-grid, color-mix(in srgb, var(--color-surface-500) 22%, transparent));
     stroke-width: 1;
   }
 

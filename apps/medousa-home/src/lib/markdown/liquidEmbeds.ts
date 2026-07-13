@@ -428,8 +428,18 @@ export function decodeLiquidProps<T = unknown>(encoded: string): T | null {
   }
 }
 
-function placeholder(kind: LiquidEmbedKind, props: unknown): string {
-  return `<div class="liquid-md-embed" data-liquid-embed="${escapeAttr(kind)}" data-liquid-props="${escapeAttr(encodeProps(props))}"></div>`;
+function placeholder(kind: LiquidEmbedKind, props: unknown, chartIndex?: number): string {
+  const embed = `<div class="liquid-md-embed" data-liquid-embed="${escapeAttr(kind)}" data-liquid-props="${escapeAttr(encodeProps(props))}"></div>`;
+  if (kind !== "chart" || chartIndex == null) return embed;
+  return `<div class="liquid-chart-shell" data-edit-chart-index="${escapeAttr(String(chartIndex))}"><div class="liquid-chart-toolbar"><button type="button" class="liquid-chart-configure">Configure</button></div>${embed}</div>`;
+}
+
+/** Document-order chart index while preprocessing (shells + remaining fences). */
+function chartEditIndexAt(source: string, matchIndex: number): number {
+  const before = source.slice(0, matchIndex);
+  const shells = before.match(/class="liquid-chart-shell"/g)?.length ?? 0;
+  const fences = before.match(/^```chart\b/gm)?.length ?? 0;
+  return shells + fences;
 }
 
 /** Models often emit `- title: …` / `* Label: …` inside fences — strip that chrome. */
@@ -1779,7 +1789,13 @@ function repairTrailingUnclosedProseFence(source: string): string {
   return source;
 }
 
-function replaceLiquidFenceMatch(match: string, langRaw: string, body: string): string {
+function replaceLiquidFenceMatch(
+  match: string,
+  langRaw: string,
+  body: string,
+  fullSource: string,
+  matchIndex: number,
+): string {
   const lang = langRaw.trim().toLowerCase();
 
   // Models wrap final statements in ```code / bare ``` — unwrap when clearly prose
@@ -1891,7 +1907,8 @@ function replaceLiquidFenceMatch(match: string, langRaw: string, body: string): 
   if (lang === "chart") {
     const chart = parseChartBody(body);
     if (!chart) return match;
-    return `\n${placeholder("chart", chart)}\n`;
+    const chartIndex = chartEditIndexAt(fullSource, matchIndex);
+    return `\n${placeholder("chart", chart, chartIndex)}\n`;
   }
 
   return match;
@@ -1918,7 +1935,9 @@ export function preprocessLiquidEmbeds(source: string): string {
   const fenceRe = /^```([a-zA-Z0-9_-]*)[ \t]*\n((?:(?!^```)[\s\S])*?)^```[ \t]*$/gm;
 
   for (let pass = 0; pass < 12; pass++) {
-    const next = out.replace(fenceRe, replaceLiquidFenceMatch);
+    const next = out.replace(fenceRe, (match, langRaw: string, body: string, offset: number) =>
+      replaceLiquidFenceMatch(match, langRaw, body, out, offset),
+    );
     if (next === out) break;
     out = next;
   }

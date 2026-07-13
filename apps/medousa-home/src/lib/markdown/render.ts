@@ -165,6 +165,7 @@ function sanitizeHtml(html: string): string {
       "data-view-csv",
       "data-copy-view-csv",
       "data-edit-view-index",
+      "data-edit-chart-index",
       "data-liquid-embed",
       "data-liquid-props",
       "data-liquid-icon",

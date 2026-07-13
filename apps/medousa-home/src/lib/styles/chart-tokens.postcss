@@ -1,5 +1,7 @@
-/* Chart series tokens — readable defaults on cream + dark.
- * Series palette uses markdown chart hues (theme primary is often near-ink on parchment). */
+/* Chart series + typography tokens.
+ * Use literal RGB triplets (not surface-scale refs) so SVG `fill: rgb(var(--chart-*))`
+ * stays valid — nested `var(--color-surface-*)` can fall back to black SVG fill and
+ * wash out on dark canvases. */
 @layer base {
   html {
     --chart-1: var(--markdown-chart-blue);
@@ -8,18 +10,17 @@
     --chart-4: var(--markdown-chart-orange);
     --chart-5: var(--markdown-chart-pink);
 
-    /* Typography — shadcn-clear hierarchy on cream + dark */
-    --chart-fg: var(--color-surface-900);
-    --chart-fg-secondary: var(--color-surface-700);
-    --chart-fg-muted: var(--color-surface-600);
-    --chart-fg-subtle: var(--color-surface-500);
+    /* Ink on cream / paper */
+    --chart-fg: 24 24 32;
+    --chart-fg-secondary: 71 85 105;
+    --chart-fg-muted: 100 116 139;
+    --chart-fg-subtle: 148 163 184;
 
-    /* Drawing-surface wash — soft plates/tracks (rgb alpha, not opaque blotches) */
-    --chart-plot-ink: var(--color-surface-800);
-    --chart-plot: color-mix(in srgb, rgb(var(--color-surface-800)) 5%, transparent);
-    --chart-plot-muted: color-mix(in srgb, rgb(var(--color-surface-800)) 10%, transparent);
+    --chart-plot-ink: 30 41 59;
+    --chart-plot: color-mix(in srgb, rgb(30 41 59) 5%, transparent);
+    --chart-plot-muted: color-mix(in srgb, rgb(30 41 59) 10%, transparent);
+    --chart-grid: color-mix(in srgb, rgb(100 116 139) 32%, transparent);
 
-    /* Markdown named colors (light) — same hues as {{blue|text}} */
     --markdown-chart-red: 220 38 38;
     --markdown-chart-orange: 234 88 12;
     --markdown-chart-yellow: 202 138 4;
@@ -27,19 +28,20 @@
     --markdown-chart-blue: 37 99 235;
     --markdown-chart-purple: 147 51 234;
     --markdown-chart-pink: 219 39 119;
-    /* Surface-only neutral (literal triplet — nested surface vars break rgb(…/alpha) in SVG) */
     --markdown-chart-gray: 100 116 139;
   }
 
   html.dark {
-    --chart-fg: var(--color-surface-50);
-    --chart-fg-secondary: var(--color-surface-200);
-    --chart-fg-muted: var(--color-surface-300);
-    --chart-fg-subtle: var(--color-surface-400);
+    /* Ink on near-black — keep secondary brighter than before so axes read */
+    --chart-fg: 248 250 252;
+    --chart-fg-secondary: 203 213 225;
+    --chart-fg-muted: 148 163 184;
+    --chart-fg-subtle: 100 116 139;
 
-    --chart-plot-ink: var(--color-surface-50);
-    --chart-plot: color-mix(in srgb, rgb(var(--color-surface-50)) 6%, transparent);
-    --chart-plot-muted: color-mix(in srgb, rgb(var(--color-surface-50)) 12%, transparent);
+    --chart-plot-ink: 248 250 252;
+    --chart-plot: color-mix(in srgb, rgb(248 250 252) 7%, transparent);
+    --chart-plot-muted: color-mix(in srgb, rgb(248 250 252) 14%, transparent);
+    --chart-grid: color-mix(in srgb, rgb(148 163 184) 28%, transparent);
 
     --markdown-chart-red: 248 113 113;
     --markdown-chart-orange: 251 146 60;

@@ -41,6 +41,7 @@
   import { writeVaultStickyPath } from "$lib/utils/vaultSticky";
   import { isTauri, showVaultSticky } from "$lib/window";
   import VaultPdfPreviewModal from "./VaultPdfPreviewModal.svelte";
+  import VaultChartBuilderSheet from "./VaultChartBuilderSheet.svelte";
 
   interface Props {
     visible: boolean;
@@ -121,7 +122,7 @@
     !mobile && !stickyNote && showMarkdownEditor && layout.vaultSplitEnabled,
   );
 
-  const editorSurface = $derived<"source">("source");
+  const editorSurface = $derived<"write" | "source">(vault.editorSurface);
 
   const showPreviewOnly = $derived(
     vault.editorMode === "preview" && !showKanbanBoard && !showLedgerTable,
@@ -682,6 +683,12 @@
   initialQuery={vault.viewBridgeQuery}
   onSave={(query) => vault.commitViewBridge(query)}
   onClose={() => vault.closeViewBridge()}
+/>
+<VaultChartBuilderSheet
+  open={vault.chartBridgeOpen}
+  initialKv={vault.chartBridgeKv}
+  onSave={(kv) => vault.commitChartBridge(kv)}
+  onClose={() => vault.closeChartBridge()}
 />
 <VaultPdfPreviewModal
   open={pdfPreviewOpen}

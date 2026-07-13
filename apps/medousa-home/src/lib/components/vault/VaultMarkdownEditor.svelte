@@ -8,6 +8,7 @@
   import VaultSlashMenu from "./VaultSlashMenu.svelte";
   import VaultNotePicker from "./VaultNotePicker.svelte";
   import VaultCalloutBuilderSheet from "./VaultCalloutBuilderSheet.svelte";
+  import VaultChartTypePicker from "./VaultChartTypePicker.svelte";
   import {
     applyMarkdownFormat,
     applyMarkdownColor,
@@ -50,7 +51,7 @@
     disabled = false,
     class: className = "",
     onchange,
-    surface = "source",
+    surface = "write",
     split = false,
     splitWidth = 420,
     splitMin = 280,
@@ -73,6 +74,7 @@
   let notePickerOpen = $state(false);
   let notePickerMode = $state<"wikilink" | "embed">("wikilink");
   let calloutBuilderOpen = $state(false);
+  let chartTypePickerOpen = $state(false);
   let bridgeInsertAt = $state(0);
 
   const slashFilter = $derived(
@@ -224,6 +226,13 @@
       });
       return;
     }
+    if (block === "liquid_chart") {
+      slashOpen = false;
+      void clearSlashAndRememberInsert().then(() => {
+        chartTypePickerOpen = true;
+      });
+      return;
+    }
     captureSelection();
     const result = insertSlashBlock(draft, selectionStart, block);
     slashOpen = false;
@@ -297,6 +306,8 @@
     compact={formatCompact}
     {showFloat}
     {onFloat}
+    {surface}
+    onToggleSurface={() => vault.toggleEditorSurface()}
     onFormat={handleFormat}
     onColor={handleColor}
   />
@@ -316,6 +327,11 @@
     open={calloutBuilderOpen}
     onInsert={handleBridgeInsert}
     onClose={() => (calloutBuilderOpen = false)}
+  />
+  <VaultChartTypePicker
+    open={chartTypePickerOpen}
+    onInsert={handleBridgeInsert}
+    onClose={() => (chartTypePickerOpen = false)}
   />
 
   <div class="flex min-h-0 flex-1">

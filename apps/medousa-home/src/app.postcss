@@ -881,6 +881,10 @@
     @apply inline-flex h-8 w-8 items-center justify-center rounded-md text-surface-300 transition hover:bg-surface-700/80 hover:text-surface-50 disabled:opacity-40;
   }
 
+  .vault-format-btn--active {
+    @apply bg-primary-500/15 text-primary-200;
+  }
+
   .vault-markdown-editor--write .vault-editor-textarea {
     @apply mx-auto max-w-3xl px-6 py-5 font-sans text-base leading-relaxed;
   }
@@ -3316,6 +3320,177 @@
   .medousa-view-edit-source,
   .medousa-view-configure {
     @apply text-xs text-primary-200 underline decoration-primary-500/40 underline-offset-2 hover:text-primary-100;
+  }
+
+  .liquid-chart-shell {
+    position: relative;
+    margin: 0.75rem 0;
+  }
+
+  .liquid-chart-toolbar {
+    display: none;
+    justify-content: flex-end;
+    margin-bottom: 0.35rem;
+  }
+
+  .vault-markdown-preview .liquid-chart-toolbar {
+    display: flex;
+  }
+
+  .liquid-chart-configure {
+    appearance: none;
+    border: 1px solid rgb(var(--color-surface-500) / 0.35);
+    border-radius: 999px;
+    background: rgb(var(--color-surface-800) / 0.55);
+    padding: 0.15rem 0.55rem;
+    color: rgb(var(--color-surface-200));
+    font-size: 0.65rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    line-height: 1.4;
+    text-decoration: none;
+    cursor: pointer;
+    transition:
+      color 120ms ease,
+      border-color 120ms ease,
+      background-color 120ms ease;
+  }
+
+  .liquid-chart-configure:hover {
+    border-color: rgb(var(--color-primary-500) / 0.45);
+    background: rgb(var(--color-primary-500) / 0.12);
+    color: rgb(var(--color-primary-200));
+  }
+
+  html:not(.dark) .liquid-chart-configure {
+    background: rgb(var(--color-surface-900) / 0.72);
+    border-color: rgb(var(--color-surface-500) / 0.4);
+    color: rgb(var(--color-surface-200));
+  }
+
+  .vault-format-btn--surface {
+    @apply h-8 w-auto min-w-0 px-2;
+  }
+
+  .vault-chart-builder-sheet {
+    width: min(26rem, calc(100vw - 2rem));
+    max-width: min(26rem, calc(100vw - 2rem));
+    max-height: calc(100vh - 2rem);
+    overflow: auto;
+    padding: 0.95rem 1rem 0.85rem;
+  }
+
+  .vault-chart-builder-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-bottom: 0.85rem;
+  }
+
+  .vault-chart-builder-heading {
+    margin: 0.1rem 0 0;
+    color: rgb(var(--color-surface-50));
+    font-size: 1rem;
+    font-weight: 650;
+    letter-spacing: -0.02em;
+    line-height: 1.25;
+  }
+
+  .vault-chart-builder-section {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    margin-bottom: 0.85rem;
+  }
+
+  .vault-chart-builder-label {
+    margin: 0;
+    color: rgb(var(--color-surface-400));
+    font-size: 0.65rem;
+    font-weight: 650;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  .vault-chart-builder-input {
+    width: 100%;
+    border: 1px solid rgb(var(--color-surface-500) / 0.35);
+    border-radius: 0.65rem;
+    background: rgb(var(--color-surface-950) / 0.45);
+    padding: 0.55rem 0.7rem;
+    color: rgb(var(--color-surface-50));
+    font-size: 0.875rem;
+    line-height: 1.35;
+  }
+
+  .vault-chart-builder-input::placeholder {
+    color: rgb(var(--color-surface-500));
+  }
+
+  .vault-chart-builder-input:focus {
+    outline: none;
+    border-color: rgb(var(--color-primary-500) / 0.55);
+    box-shadow: 0 0 0 3px rgb(var(--color-primary-500) / 0.12);
+  }
+
+  .vault-chart-builder-input--quiet {
+    margin-top: 0.15rem;
+    border-color: transparent;
+    background: transparent;
+    padding-left: 0.15rem;
+    padding-right: 0.15rem;
+    color: rgb(var(--color-surface-300));
+    font-size: 0.8125rem;
+  }
+
+  .vault-chart-builder-input--quiet:focus {
+    border-color: rgb(var(--color-surface-500) / 0.35);
+    background: rgb(var(--color-surface-950) / 0.35);
+    box-shadow: none;
+    padding-left: 0.7rem;
+    padding-right: 0.7rem;
+  }
+
+  .vault-chart-builder-swatches {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem;
+  }
+
+  .vault-chart-builder-swatch--on {
+    box-shadow:
+      0 0 0 2px rgb(var(--color-surface-950)),
+      0 0 0 4px rgb(var(--color-primary-400) / 0.85);
+  }
+
+  .vault-chart-builder-hint {
+    margin: 0 0 0.85rem;
+    color: rgb(var(--color-surface-500));
+    font-size: 0.7rem;
+    line-height: 1.45;
+  }
+
+  .vault-chart-builder-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.45rem;
+  }
+
+  .vault-chart-builder-cancel {
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    padding: 0.45rem 0.85rem;
+    color: rgb(var(--color-surface-300));
+    font-size: 0.8rem;
+    font-weight: 550;
+  }
+
+  .vault-chart-builder-cancel:hover {
+    color: rgb(var(--color-surface-100));
+    background: rgb(var(--color-surface-800) / 0.55);
   }
 
   .medousa-view-label {

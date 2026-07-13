@@ -101,6 +101,12 @@ import {
   serializeMedousaViewFence,
   type MedousaViewQuery,
 } from "$lib/utils/markdownView";
+import {
+  extractChartFences,
+  parseChartFenceParts,
+  replaceChartFencePropsAt,
+  type ChartFenceKv,
+} from "$lib/utils/vaultChartFence";
 import { insertTextAtCursor } from "$lib/utils/vaultMarkdownEdit";
 import { invalidateTransclusionCache } from "$lib/utils/resolveTransclusion";
 import { invalidateVaultRootCache } from "$lib/utils/vaultFilesystem";
@@ -113,6 +119,7 @@ import {
 
 const LAST_NOTE_KEY = "medousa-home-last-note";
 const LIBRARY_BROWSE_MODE_KEY = "medousa-home-vault-browse-mode";
+const EDITOR_SURFACE_KEY = "medousa-home-vault-editor-surface";
 const RECENT_BROWSE_LIMIT = 40;
 const KIND_BROWSE_ORDER: VaultNoteKind[] = [
   "daily",
@@ -152,6 +159,8 @@ export class VaultStore {
   searchQuery = $state("");
   searchHits = $state<VaultSearchHit[]>([]);
   editorMode = $state<"edit" | "preview">("edit");
+  /** Write = prose typography; source = mono fence surgery. */
+  editorSurface = $state<"write" | "source">(loadEditorSurface());
   /** Ledger notes: table-first editing (M7c.2). */
   ledgerEditMode = $state<"table" | "raw">("table");
   /** Board notes: kanban-first editing (Phase E). */
@@ -197,6 +206,9 @@ export class VaultStore {
   viewBridgeInsertAt = $state(0);
   viewBridgeEditIndex = $state<number | null>(null);
   viewBridgeQuery = $state<MedousaViewQuery | null>(null);
+  chartBridgeOpen = $state(false);
+  chartBridgeEditIndex = $state<number | null>(null);
+  chartBridgeKv = $state<ChartFenceKv | null>(null);
 
   private autosaveTimer: ReturnType<typeof setTimeout> | null = null;
   private savedWhisperTimer: ReturnType<typeof setTimeout> | null = null;
@@ -692,6 +704,35 @@ export class VaultStore {
     this.closeViewBridge();
   }
 
+  openChartBridgeEdit(index: number) {
+    const blocks = extractChartFences(this.content);
+    const block = blocks[index];
+    if (!block) return;
+    this.chartBridgeEditIndex = index;
+    this.chartBridgeKv = parseChartFenceParts(block.body).kv;
+    this.chartBridgeOpen = true;
+  }
+
+  closeChartBridge() {
+    this.chartBridgeOpen = false;
+    this.chartBridgeKv = null;
+    this.chartBridgeEditIndex = null;
+  }
+
+  commitChartBridge(kv: ChartFenceKv) {
+    if (this.chartBridgeEditIndex == null) {
+      this.closeChartBridge();
+      return;
+    }
+    const next = replaceChartFencePropsAt(
+      this.content,
+      this.chartBridgeEditIndex,
+      kv,
+    );
+    if (next) this.markDirty(next);
+    this.closeChartBridge();
+  }
+
   async insertImageEmbed(imagePath: string) {
     if (!this.selectedPath || !imagePath.trim()) return;
     this.enterEditMode();
@@ -940,6 +981,15 @@ export class VaultStore {
 
   setEditorMode(mode: "edit" | "preview") {
     this.editorMode = mode;
+  }
+
+  setEditorSurface(surface: "write" | "source") {
+    this.editorSurface = surface;
+    saveEditorSurface(surface);
+  }
+
+  toggleEditorSurface() {
+    this.setEditorSurface(this.editorSurface === "write" ? "source" : "write");
   }
 
   enterEditMode() {
@@ -1559,6 +1609,26 @@ export class VaultStore {
 function loadLastNote(): string | null {
   if (typeof localStorage === "undefined") return null;
   return localStorage.getItem(LAST_NOTE_KEY);
+}
+
+function loadEditorSurface(): "write" | "source" {
+  if (typeof localStorage === "undefined") return "write";
+  try {
+    const raw = localStorage.getItem(EDITOR_SURFACE_KEY);
+    if (raw === "source" || raw === "write") return raw;
+  } catch {
+    /* ignore */
+  }
+  return "write";
+}
+
+function saveEditorSurface(surface: "write" | "source") {
+  if (typeof localStorage === "undefined") return;
+  try {
+    localStorage.setItem(EDITOR_SURFACE_KEY, surface);
+  } catch {
+    /* ignore */
+  }
 }
 
 const LIBRARY_BROWSE_MODES = new Set<LibraryBrowseMode>([

@@ -174,6 +174,21 @@
   }
 
   function handleClick(event: MouseEvent) {
+    const configureChart = (event.target as HTMLElement).closest(
+      ".liquid-chart-configure",
+    );
+    if (configureChart) {
+      const shell = configureChart.closest("[data-edit-chart-index]");
+      event.preventDefault();
+      if (!configureViews || content !== vault.content || !shell) return;
+      const raw = shell.getAttribute("data-edit-chart-index");
+      const index = raw == null ? NaN : Number(raw);
+      if (Number.isFinite(index)) {
+        vault.openChartBridgeEdit(index);
+      }
+      return;
+    }
+
     const configureView = (event.target as HTMLElement).closest(
       "[data-edit-view-index]",
     );
@@ -266,6 +281,20 @@
       return;
     }
     if (event.key !== "Enter" && event.key !== " ") return;
+    const configureChart = (event.target as HTMLElement).closest(
+      ".liquid-chart-configure",
+    );
+    if (configureChart) {
+      const shell = configureChart.closest("[data-edit-chart-index]");
+      event.preventDefault();
+      if (!configureViews || content !== vault.content || !shell) return;
+      const raw = shell.getAttribute("data-edit-chart-index");
+      const index = raw == null ? NaN : Number(raw);
+      if (Number.isFinite(index)) {
+        vault.openChartBridgeEdit(index);
+      }
+      return;
+    }
     const configureView = (event.target as HTMLElement).closest(
       "[data-edit-view-index]",
     );
