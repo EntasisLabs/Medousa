@@ -2,6 +2,7 @@
   import {
     Activity,
     Calendar,
+    CalendarDays,
     ChevronLeft,
     ChevronRight,
     Orbit,
@@ -14,6 +15,7 @@
   import ContextPanel from "$lib/components/context/ContextPanel.svelte";
   import ProfilesPanel from "$lib/components/profiles/ProfilesPanel.svelte";
   import AutomationsPanel from "$lib/components/automations/AutomationsPanel.svelte";
+  import CalendarPanel from "$lib/components/calendar/CalendarPanel.svelte";
   import MessagingPanel from "$lib/components/messaging/MessagingPanel.svelte";
   import PeersPanel from "$lib/components/peers/PeersPanel.svelte";
   import RuntimePanel from "$lib/components/runtime/RuntimePanel.svelte";
@@ -49,6 +51,7 @@
     context: Orbit,
     workshop: Sparkles,
     automations: Calendar,
+    calendar: CalendarDays,
     messaging: Radio,
     peers: Users,
     settings: Settings,
@@ -204,6 +207,8 @@
         />
       {:else if layout.moreDestination === "automations"}
         <AutomationsPanel visible={true} embedded={true} mobile={true} />
+      {:else if layout.moreDestination === "calendar"}
+        <CalendarPanel visible={true} />
       {:else if layout.moreDestination === "messaging"}
         <MessagingPanel visible={true} {health} embedded={true} mobile={true} />
       {:else if layout.moreDestination === "peers"}

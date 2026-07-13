@@ -3,6 +3,7 @@ export type BuiltinSurface =
   | "chat"
   | "work"
   | "library"
+  | "calendar"
   | "web"
   | "context"
   | "profiles"

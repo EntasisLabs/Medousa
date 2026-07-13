@@ -120,6 +120,26 @@ pub fn build_feature_routers(
             identity_service: state.identity_service.clone(),
         });
 
+    let calendar_router = Router::new()
+        .route(
+            "/v1/calendar/events",
+            axum::routing::get(crate::calendar_handlers::list_calendar_events)
+                .post(crate::calendar_handlers::create_calendar_event),
+        )
+        .route(
+            "/v1/calendar/events/{uid}",
+            axum::routing::put(crate::calendar_handlers::update_calendar_event)
+                .delete(crate::calendar_handlers::delete_calendar_event),
+        )
+        .route(
+            "/v1/calendar/import",
+            axum::routing::post(crate::calendar_handlers::import_calendar),
+        )
+        .route(
+            "/v1/calendar/export",
+            axum::routing::get(crate::calendar_handlers::export_calendar),
+        );
+
     let vault_router = Router::new()
         .route(
             "/v1/vault/roots",
@@ -239,6 +259,7 @@ pub fn build_feature_routers(
         .merge(workflow_router)
         .merge(tool_history_router)
         .merge(policy_router)
+        .merge(calendar_router)
         .merge(vault_router)
         .merge(crate::locus_handlers::locus_router(
             state.platform.agent_handle().locus_store.clone(),

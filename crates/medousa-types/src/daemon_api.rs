@@ -2471,3 +2471,111 @@ pub struct LocusNodeDetailResponse {
     pub node: LocusNodeSummary,
     pub raw: String,
 }
+
+/// Personal calendar event (RFC 5545 VEVENT projection).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct CalendarEvent {
+    pub uid: String,
+    pub summary: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub location: Option<String>,
+    pub dtstart: DateTime<Utc>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dtend: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub all_day: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rrule: Option<String>,
+    pub calendar_path: String,
+    /// For expanded recurrence instances: original master UID (same as uid when not expanded).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recurrence_id: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct CalendarListQuery {
+    /// Inclusive range start (RFC3339).
+    pub from: Option<DateTime<Utc>>,
+    /// Exclusive range end (RFC3339).
+    pub to: Option<DateTime<Utc>>,
+    /// Vault-relative `.ics` path (default: `calendar/personal.ics`).
+    pub path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct CalendarListResponse {
+    pub calendar_path: String,
+    pub events: Vec<CalendarEvent>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct CalendarWriteRequest {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub uid: Option<String>,
+    pub summary: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub location: Option<String>,
+    pub dtstart: DateTime<Utc>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dtend: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub all_day: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rrule: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub calendar_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct CalendarWriteResponse {
+    pub event: CalendarEvent,
+    pub created: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct CalendarDeleteResponse {
+    pub uid: String,
+    pub deleted: bool,
+    pub calendar_path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct CalendarImportRequest {
+    /// Raw RFC 5545 text.
+    pub ics: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub calendar_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct CalendarImportResponse {
+    pub calendar_path: String,
+    pub imported: usize,
+    pub updated: usize,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct CalendarExportQuery {
+    pub path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct CalendarExportResponse {
+    pub calendar_path: String,
+    pub content_type: String,
+    pub ics: String,
+}

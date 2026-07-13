@@ -29,7 +29,7 @@
     activeProfileLabel = "Personal",
   }: Props = $props();
 
-  const LIFE_IDS = new Set(["chat", "work", "library", "web", "context", "peers"]);
+  const LIFE_IDS = new Set(["chat", "work", "library", "calendar", "web", "context", "peers"]);
   const WORKSHOP_IDS = new Set(["workshop", "automations"]);
   const UTILITY_IDS = new Set(["messaging", SAFETY_SURFACE_RUNTIME]);
 

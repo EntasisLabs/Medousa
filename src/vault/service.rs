@@ -250,6 +250,7 @@ fn mime_guess_from_path(path: &std::path::Path) -> String {
         "json" => "application/json",
         "md" | "markdown" => "text/markdown",
         "txt" => "text/plain",
+        "ics" => "text/calendar",
         _ => "application/octet-stream",
     }
     .to_string()

@@ -105,6 +105,16 @@ fn main() {
     export_type!(schemas, VaultSearchResponse, "VaultSearchResponse");
     export_type!(schemas, VaultBacklinksResponse, "VaultBacklinksResponse");
 
+    // Calendar
+    export_type!(schemas, CalendarEvent, "CalendarEvent");
+    export_type!(schemas, CalendarListResponse, "CalendarListResponse");
+    export_type!(schemas, CalendarWriteRequest, "CalendarWriteRequest");
+    export_type!(schemas, CalendarWriteResponse, "CalendarWriteResponse");
+    export_type!(schemas, CalendarDeleteResponse, "CalendarDeleteResponse");
+    export_type!(schemas, CalendarImportRequest, "CalendarImportRequest");
+    export_type!(schemas, CalendarImportResponse, "CalendarImportResponse");
+    export_type!(schemas, CalendarExportResponse, "CalendarExportResponse");
+
     // Workspace
     export_type!(schemas, WorkspaceCardActionResponse, "WorkspaceCardActionResponse");
     export_type!(schemas, WorkspaceLinkVaultRequest, "WorkspaceLinkVaultRequest");

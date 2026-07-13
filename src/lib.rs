@@ -73,6 +73,8 @@ pub mod daemon_handlers;
 pub mod vault;
 pub mod vault_handlers;
 pub mod vault_tools;
+pub mod calendar;
+pub mod calendar_handlers;
 pub mod workspace;
 pub mod workspace_handlers;
 pub mod feed_adapters;

@@ -21,6 +21,7 @@ if TYPE_CHECKING:
     from medousa.runtime import RuntimeApi
     from medousa.sessions import SessionsApi
     from medousa.vault import VaultApi
+    from medousa.calendar import CalendarApi
     from medousa.workspace import WorkspaceApi
 
 
@@ -100,6 +101,11 @@ class MedousaClient:
         from medousa.vault import VaultApi
 
         return VaultApi(self)
+
+    def calendar(self) -> CalendarApi:
+        from medousa.calendar import CalendarApi
+
+        return CalendarApi(self)
 
     def environment(self) -> EnvironmentApi:
         from medousa.environment import EnvironmentApi

@@ -1,4 +1,5 @@
 pub mod artifact;
+pub mod calendar;
 pub mod catalog;
 pub mod grapheme;
 pub mod identity;

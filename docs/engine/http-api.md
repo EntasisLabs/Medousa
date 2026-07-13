@@ -173,6 +173,18 @@ See [vault.md](vault.md).
 
 ---
 
+## Calendar
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/v1/calendar/events` | List events in range (RRULE expanded) |
+| POST | `/v1/calendar/events` | Create event |
+| PUT/DELETE | `/v1/calendar/events/{uid}` | Update / delete event |
+| POST | `/v1/calendar/import` | Merge ICS into vault calendar |
+| GET | `/v1/calendar/export` | Export raw ICS |
+
+---
+
 ## Workspace
 
 | Method | Path | Purpose |

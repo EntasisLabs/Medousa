@@ -713,6 +713,381 @@
       }
     }
   },
+  "CalendarDeleteResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "CalendarDeleteResponse",
+    "type": "object",
+    "required": [
+      "calendar_path",
+      "deleted",
+      "uid"
+    ],
+    "properties": {
+      "calendar_path": {
+        "type": "string"
+      },
+      "deleted": {
+        "type": "boolean"
+      },
+      "uid": {
+        "type": "string"
+      }
+    }
+  },
+  "CalendarEvent": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "CalendarEvent",
+    "description": "Personal calendar event (RFC 5545 VEVENT projection).",
+    "type": "object",
+    "required": [
+      "calendar_path",
+      "dtstart",
+      "summary",
+      "uid"
+    ],
+    "properties": {
+      "all_day": {
+        "default": false,
+        "type": "boolean"
+      },
+      "calendar_path": {
+        "type": "string"
+      },
+      "description": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "dtend": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "format": "date-time"
+      },
+      "dtstart": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "location": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "recurrence_id": {
+        "description": "For expanded recurrence instances: original master UID (same as uid when not expanded).",
+        "type": [
+          "string",
+          "null"
+        ],
+        "format": "date-time"
+      },
+      "rrule": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "summary": {
+        "type": "string"
+      },
+      "uid": {
+        "type": "string"
+      }
+    }
+  },
+  "CalendarExportResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "CalendarExportResponse",
+    "type": "object",
+    "required": [
+      "calendar_path",
+      "content_type",
+      "ics"
+    ],
+    "properties": {
+      "calendar_path": {
+        "type": "string"
+      },
+      "content_type": {
+        "type": "string"
+      },
+      "ics": {
+        "type": "string"
+      }
+    }
+  },
+  "CalendarImportRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "CalendarImportRequest",
+    "type": "object",
+    "required": [
+      "ics"
+    ],
+    "properties": {
+      "calendar_path": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "ics": {
+        "description": "Raw RFC 5545 text.",
+        "type": "string"
+      }
+    }
+  },
+  "CalendarImportResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "CalendarImportResponse",
+    "type": "object",
+    "required": [
+      "calendar_path",
+      "imported",
+      "updated"
+    ],
+    "properties": {
+      "calendar_path": {
+        "type": "string"
+      },
+      "imported": {
+        "type": "integer",
+        "format": "uint",
+        "minimum": 0.0
+      },
+      "updated": {
+        "type": "integer",
+        "format": "uint",
+        "minimum": 0.0
+      }
+    }
+  },
+  "CalendarListResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "CalendarListResponse",
+    "type": "object",
+    "required": [
+      "calendar_path",
+      "events"
+    ],
+    "properties": {
+      "calendar_path": {
+        "type": "string"
+      },
+      "events": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/CalendarEvent"
+        }
+      }
+    },
+    "definitions": {
+      "CalendarEvent": {
+        "description": "Personal calendar event (RFC 5545 VEVENT projection).",
+        "type": "object",
+        "required": [
+          "calendar_path",
+          "dtstart",
+          "summary",
+          "uid"
+        ],
+        "properties": {
+          "all_day": {
+            "default": false,
+            "type": "boolean"
+          },
+          "calendar_path": {
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "dtend": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "dtstart": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "location": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "recurrence_id": {
+            "description": "For expanded recurrence instances: original master UID (same as uid when not expanded).",
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "rrule": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "summary": {
+            "type": "string"
+          },
+          "uid": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "CalendarWriteRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "CalendarWriteRequest",
+    "type": "object",
+    "required": [
+      "dtstart",
+      "summary"
+    ],
+    "properties": {
+      "all_day": {
+        "default": false,
+        "type": "boolean"
+      },
+      "calendar_path": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "description": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "dtend": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "format": "date-time"
+      },
+      "dtstart": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "location": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "rrule": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "summary": {
+        "type": "string"
+      },
+      "uid": {
+        "type": [
+          "string",
+          "null"
+        ]
+      }
+    }
+  },
+  "CalendarWriteResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "CalendarWriteResponse",
+    "type": "object",
+    "required": [
+      "created",
+      "event"
+    ],
+    "properties": {
+      "created": {
+        "type": "boolean"
+      },
+      "event": {
+        "$ref": "#/definitions/CalendarEvent"
+      }
+    },
+    "definitions": {
+      "CalendarEvent": {
+        "description": "Personal calendar event (RFC 5545 VEVENT projection).",
+        "type": "object",
+        "required": [
+          "calendar_path",
+          "dtstart",
+          "summary",
+          "uid"
+        ],
+        "properties": {
+          "all_day": {
+            "default": false,
+            "type": "boolean"
+          },
+          "calendar_path": {
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "dtend": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "dtstart": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "location": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "recurrence_id": {
+            "description": "For expanded recurrence instances: original master UID (same as uid when not expanded).",
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "rrule": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "summary": {
+            "type": "string"
+          },
+          "uid": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
   "CapabilityListResponse": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "CapabilityListResponse",
