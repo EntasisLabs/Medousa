@@ -12,6 +12,7 @@
   import { decodeSceneOps } from "$lib/liquid/surfaces/chat/sceneStream";
   import { createChatEventSink } from "$lib/liquid/surfaces/chat/chatEventSink";
   import { chatInteractions } from "$lib/liquid/surfaces/chat/chatInteractions";
+  import MarkdownContent from "$lib/components/ui/MarkdownContent.svelte";
 
   const DEMO_IMAGE =
     "data:image/svg+xml;utf8," +
@@ -221,6 +222,85 @@
 
   const monogramContext: LiquidRenderContext = { sink, openLinksInWeb: false };
 
+  // ---- Charts gallery ------------------------------------------------------
+
+  const chartBar = createNode({
+    id: "chart:bar",
+    type: "chart",
+    fillState: "ready",
+    props: {
+      type: "bar",
+      title: "Visitors",
+      description: "January - June 2024",
+      stacked: true,
+      legend: "bottom",
+      tooltip: true,
+      trend: "Trending up by 5.2% this month",
+      trendDirection: "up",
+      caption: "Showing total visitors for the last 6 months",
+      categories: ["Jan", "Feb", "Mar", "Apr", "May", "Jun"],
+      series: [
+        { key: "desktop", label: "Desktop", values: [186, 305, 237, 73, 209, 214] },
+        { key: "mobile", label: "Mobile", values: [80, 200, 120, 190, 130, 140] },
+      ],
+    },
+  });
+
+  const chartLine = createNode({
+    id: "chart:line",
+    type: "chart",
+    fillState: "ready",
+    props: {
+      type: "area",
+      title: "Area — Desktop vs Mobile",
+      description: "Smooth fill with hover dots",
+      curve: "smooth",
+      legend: "bottom",
+      categories: ["Jan", "Feb", "Mar", "Apr", "May", "Jun"],
+      series: [
+        { key: "desktop", label: "Desktop", values: [186, 305, 237, 73, 209, 214] },
+        { key: "mobile", label: "Mobile", values: [80, 200, 120, 190, 130, 140] },
+      ],
+    },
+  });
+
+  const chartDonut = createNode({
+    id: "chart:donut",
+    type: "chart",
+    fillState: "ready",
+    props: {
+      type: "donut",
+      title: "Traffic by browser",
+      description: "January - June 2024",
+      centerValue: "1,125",
+      centerLabel: "Visitors",
+      labels: "value",
+      separator: true,
+      legend: "bottom",
+      categories: ["Chrome", "Safari", "Firefox", "Edge", "Other"],
+      series: [{ key: "visitors", label: "Visitors", values: [275, 200, 187, 173, 90] }],
+    },
+  });
+
+  const chartMarkdown = [
+    "```chart",
+    "type: line",
+    "title: Line from markdown fence",
+    "description: Hydrated via LiquidMdHost",
+    "curve: smooth",
+    "legend: bottom",
+    "",
+    "| Month | Desktop | Mobile |",
+    "| ----- | ------- | ------ |",
+    "| Jan   | 186     | 80     |",
+    "| Feb   | 305     | 200    |",
+    "| Mar   | 237     | 120    |",
+    "| Apr   | 73      | 190    |",
+    "| May   | 209     | 130    |",
+    "| Jun   | 214     | 140    |",
+    "```",
+  ].join("\n");
+
   // ---- Stage 3: streamed structured turn (daemon wire contract) ------------
   // Each batch is the *opaque JSON* a `ui_scene` stream event would carry. We
   // run it through the real decoder + reducer — the exact client pipeline — so
@@ -367,6 +447,17 @@
     <SceneRenderer node={monogram} context={monogramContext} />
   </section>
 
+  <h2 class="harness-subhead">Charts</h2>
+  <p class="harness-note">
+    bar · area · donut scene nodes, plus a <code>```chart</code> fence hydrated through markdown.
+  </p>
+  <section class="harness-stage harness-charts">
+    <SceneRenderer node={chartBar} context={monogramContext} />
+    <SceneRenderer node={chartLine} context={monogramContext} />
+    <SceneRenderer node={chartDonut} context={monogramContext} />
+    <MarkdownContent content={chartMarkdown} />
+  </section>
+
   <h2 class="harness-subhead">Streamed structured turn (daemon wire)</h2>
   <p class="harness-note">
     each step is the opaque JSON a <code>ui_scene</code> event carries — decoded and reduced
@@ -483,6 +574,12 @@
     border-radius: 1rem;
     border: 1px solid color-mix(in srgb, var(--color-surface-500) 30%, transparent);
     background: color-mix(in srgb, var(--color-surface-900) 45%, transparent);
+  }
+
+  .harness-charts {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
   }
 
   .harness-log {

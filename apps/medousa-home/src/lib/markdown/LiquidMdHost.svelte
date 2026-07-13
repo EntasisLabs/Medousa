@@ -21,6 +21,7 @@
   import Decision from "$lib/liquid/archetypes/organisms/decision/Decision.svelte";
   import Brief from "$lib/liquid/archetypes/organisms/brief/Brief.svelte";
   import Dashboard from "$lib/liquid/archetypes/organisms/dashboard/Dashboard.svelte";
+  import Chart from "$lib/liquid/archetypes/organisms/chart/Chart.svelte";
   import Section from "$lib/liquid/archetypes/molecules/section/Section.svelte";
   import ChipGroup from "$lib/liquid/archetypes/molecules/chip_group/ChipGroup.svelte";
   import Media from "$lib/liquid/archetypes/atoms/media/Media.svelte";
@@ -33,6 +34,7 @@
     LiquidCiteProps,
     LiquidCompareProps,
     LiquidDashboardProps,
+    LiquidChartProps,
     LiquidDecisionProps,
     LiquidEmbedKind,
     LiquidMediaProps,
@@ -402,6 +404,40 @@
     });
   });
 
+  const chart = $derived.by(() => {
+    if (kind !== "chart") return null;
+    const props = payload as LiquidChartProps;
+    if (!props?.categories?.length || !props?.series?.length) return null;
+    return createNode({
+      id: "md-chart",
+      type: "chart",
+      props: {
+        type: props.type,
+        categories: props.categories,
+        series: props.series,
+        ...(props.title ? { title: props.title } : {}),
+        ...(props.description ? { description: props.description } : {}),
+        ...(props.layout ? { layout: props.layout } : {}),
+        ...(props.stacked != null ? { stacked: props.stacked } : {}),
+        ...(props.curve ? { curve: props.curve } : {}),
+        ...(props.separator != null ? { separator: props.separator } : {}),
+        ...(props.centerLabel ? { centerLabel: props.centerLabel } : {}),
+        ...(props.centerValue ? { centerValue: props.centerValue } : {}),
+        ...(props.trend ? { trend: props.trend } : {}),
+        ...(props.trendDirection ? { trendDirection: props.trendDirection } : {}),
+        ...(props.caption ? { caption: props.caption } : {}),
+        ...(props.labels ? { labels: props.labels } : {}),
+        ...(props.labelPosition ? { labelPosition: props.labelPosition } : {}),
+        ...(props.tooltip != null ? { tooltip: props.tooltip } : {}),
+        ...(props.legend != null ? { legend: props.legend } : {}),
+        ...(props.interactive != null ? { interactive: props.interactive } : {}),
+        ...(props.activeKey ? { activeKey: props.activeKey } : {}),
+        ...(props.colors?.length ? { colors: props.colors } : {}),
+      },
+      fillState: "ready",
+    });
+  });
+
   const IconComp = $derived.by(() => {
     if (kind !== "icon") return null;
     const id = typeof payload === "string" ? payload : "";
@@ -471,6 +507,10 @@
 {:else if kind === "dashboard" && dashboard}
   <div class="liquid-md-host liquid-md-host-dashboard liquid-md-enter">
     <Dashboard node={dashboard} />
+  </div>
+{:else if kind === "chart" && chart}
+  <div class="liquid-md-host liquid-md-host-chart liquid-md-enter">
+    <Chart node={chart} />
   </div>
 {:else if kind === "icon" && IconComp}
   <span class="liquid-md-host-icon">

@@ -460,4 +460,39 @@ describe("hydrateLiquidEmbeds", () => {
     destroyLiquidEmbeds(root);
     expect(unmountMock).toHaveBeenCalledTimes(1);
   });
+
+  it("hydrates a chart embed", async () => {
+    const md = [
+      "```chart",
+      "type: bar",
+      "title: Visitors",
+      "",
+      "| Month | Desktop | Mobile |",
+      "| ----- | ------- | ------ |",
+      "| Jan   | 186     | 80     |",
+      "| Feb   | 305     | 200    |",
+      "```",
+    ].join("\n");
+
+    const html = preprocessLiquidEmbeds(md);
+    expect(html).toContain('data-liquid-embed="chart"');
+    const root = treeFromPlaceholders(html) as unknown as HTMLElement;
+    const { hydrateLiquidEmbeds, destroyLiquidEmbeds } = await import("./hydrateLiquidEmbeds");
+    hydrateLiquidEmbeds(root, {});
+
+    const kinds = mountMock.mock.calls.map((call) => hostProps(call).kind);
+    expect(kinds).toEqual(["chart"]);
+    const chartPayload = hostProps(findHostCall("chart")!).payload as {
+      type: string;
+      title?: string;
+      categories: string[];
+      series: { label: string; values: number[] }[];
+    };
+    expect(chartPayload.type).toBe("bar");
+    expect(chartPayload.title).toBe("Visitors");
+    expect(chartPayload.categories).toEqual(["Jan", "Feb"]);
+    expect(chartPayload.series.map((s) => s.label)).toEqual(["Desktop", "Mobile"]);
+    destroyLiquidEmbeds(root);
+    expect(unmountMock).toHaveBeenCalledTimes(1);
+  });
 });

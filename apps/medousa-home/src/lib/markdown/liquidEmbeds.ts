@@ -26,6 +26,7 @@ export const LIQUID_FENCE_LANGS = new Set([
   "decision",
   "brief",
   "dashboard",
+  "chart",
 ]);
 
 const CALLOUT_TONES = new Set(["note", "warn", "error", "success"]);
@@ -81,7 +82,8 @@ export type LiquidEmbedKind =
   | "shortlist"
   | "decision"
   | "brief"
-  | "dashboard";
+  | "dashboard"
+  | "chart";
 
 export interface LiquidCardPoint {
   label: string;
@@ -276,6 +278,64 @@ export interface LiquidDashboardProps {
   tiles: LiquidDashboardTile[];
 }
 
+/**
+ * Liquid chart organism — paste-first plots from ```chart fences.
+ *
+ * V1 renders: bar | line | area | pie | donut.
+ * Reserved type strings radar | radial parse cleanly but render as a stub until marks land.
+ * Optional fields (labels, tooltip, legend, interactive, activeKey, curve, layout, …)
+ * are accepted now so later UI can light up without breaking fences.
+ */
+export type LiquidChartType =
+  | "bar"
+  | "line"
+  | "area"
+  | "pie"
+  | "donut"
+  | "radar"
+  | "radial";
+
+export type LiquidChartLabels = "none" | "value" | "category" | "both";
+export type LiquidChartLegend = boolean | "none" | "top" | "bottom";
+export type LiquidChartCurve = "smooth" | "linear" | "step";
+export type LiquidChartLayout = "vertical" | "horizontal";
+export type LiquidChartTrendDirection = "up" | "down" | "flat";
+export type LiquidChartLabelPosition = "inside" | "outside" | "auto";
+
+export interface LiquidChartSeries {
+  key: string;
+  label: string;
+  values: number[];
+}
+
+export interface LiquidChartProps {
+  type: LiquidChartType;
+  title?: string;
+  description?: string;
+  categories: string[];
+  series: LiquidChartSeries[];
+
+  layout?: LiquidChartLayout;
+  stacked?: boolean;
+  curve?: LiquidChartCurve;
+  separator?: boolean;
+  centerLabel?: string;
+  centerValue?: string;
+
+  trend?: string;
+  trendDirection?: LiquidChartTrendDirection;
+  caption?: string;
+
+  labels?: LiquidChartLabels;
+  labelPosition?: LiquidChartLabelPosition;
+  tooltip?: boolean;
+  legend?: LiquidChartLegend;
+  interactive?: boolean;
+  activeKey?: string;
+
+  colors?: string[];
+}
+
 export interface LiquidSectionProps {
   title: string;
   subtitle?: string;
@@ -376,25 +436,132 @@ function parsePointValue(raw: string): LiquidCardPoint | null {
   return point;
 }
 
-/** Build a card from a KV/point block (carousel item or single card fence). */
-function parseCardBlock(block: string): LiquidCardProps | null {
-  const fields: Record<string, string> = {};
-  const points: LiquidCardPoint[] = [];
+/** YAML-ish block scalar markers models emit for multiline card/callout bodies. */
+const YAML_BLOCK_SCALAR = /^[|>][+-]?$/;
 
-  for (const raw of block.split("\n")) {
-    const line = stripFenceLineChrome(raw);
+/**
+ * True when a line starts a new `key: value` field (not prose / URLs inside a block).
+ * Models often emit unindented `body: |-` blocks; we stop at the next field key.
+ */
+function isNewKvFieldLine(line: string): boolean {
+  const m = line.match(/^([a-zA-Z][a-zA-Z0-9_-]*)\s*:(.*)$/);
+  if (!m) return false;
+  const key = m[1].toLowerCase();
+  // Avoid treating `http://…` / `https://…` as a new field mid-body.
+  if (key === "http" || key === "https") return false;
+  return true;
+}
+
+/**
+ * Collect KV fields from a fence body. Supports single-line values and YAML block
+ * scalars (`body: |-` / `body: |` / `summary: >-`) so multiline clarification cards
+ * don't leak the `|-` marker into the UI.
+ */
+function parseKvBlock(body: string): Record<string, string> {
+  const fields: Record<string, string> = {};
+  const lines = body.replace(/\r\n/g, "\n").split("\n");
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = stripFenceLineChrome(lines[i] ?? "");
+    i += 1;
     if (!line || line.startsWith("#") || line === "---") continue;
+
+    // Pipe-separated multi-kv: "title: Sol | body: Flagship"
+    if (line.includes("|") && /\|\s*[a-zA-Z][a-zA-Z0-9_-]*\s*:/.test(line)) {
+      Object.assign(fields, parseKvLine(line));
+      continue;
+    }
+
     const colon = line.indexOf(":");
     if (colon <= 0) continue;
     const key = line.slice(0, colon).trim().toLowerCase();
     const value = line.slice(colon + 1).trim();
-    if (!key || !value) continue;
+    if (!key) continue;
+
+    if (YAML_BLOCK_SCALAR.test(value)) {
+      const blockLines: string[] = [];
+      while (i < lines.length) {
+        const next = stripFenceLineChrome(lines[i] ?? "");
+        if (next && isNewKvFieldLine(next)) break;
+        i += 1;
+        if (!next && blockLines.length === 0) continue;
+        blockLines.push(next);
+      }
+      while (blockLines.length && !blockLines[blockLines.length - 1]) {
+        blockLines.pop();
+      }
+      const joined = blockLines.join("\n").trim();
+      if (joined) fields[key] = joined;
+      continue;
+    }
+
+    if (!value) continue;
+    fields[key] = value;
+  }
+
+  return fields;
+}
+
+/** Build a card from a KV/point block (carousel item or single card fence). */
+function parseCardBlock(block: string): LiquidCardProps | null {
+  const fields: Record<string, string> = {};
+  const points: LiquidCardPoint[] = [];
+  const lines = block.replace(/\r\n/g, "\n").split("\n");
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = stripFenceLineChrome(lines[i] ?? "");
+    i += 1;
+    if (!line || line.startsWith("#") || line === "---") continue;
+
+    if (line.includes("|") && /\|\s*[a-zA-Z][a-zA-Z0-9_-]*\s*:/.test(line)) {
+      const multi = parseKvLine(line);
+      for (const [key, value] of Object.entries(multi)) {
+        if (key === "point" || key === "points") {
+          const point = parsePointValue(value);
+          if (point) points.push(point);
+          continue;
+        }
+        if (key === "chips" || key === "badges") {
+          fields[key] = fields[key] ? `${fields[key]} | ${value}` : value;
+          continue;
+        }
+        if (!(key in fields)) fields[key] = value;
+      }
+      continue;
+    }
+
+    const colon = line.indexOf(":");
+    if (colon <= 0) continue;
+    const key = line.slice(0, colon).trim().toLowerCase();
+    const value = line.slice(colon + 1).trim();
+    if (!key) continue;
+
+    if (YAML_BLOCK_SCALAR.test(value)) {
+      const blockLines: string[] = [];
+      while (i < lines.length) {
+        const next = stripFenceLineChrome(lines[i] ?? "");
+        if (next && isNewKvFieldLine(next)) break;
+        i += 1;
+        if (!next && blockLines.length === 0) continue;
+        blockLines.push(next);
+      }
+      while (blockLines.length && !blockLines[blockLines.length - 1]) {
+        blockLines.pop();
+      }
+      const joined = blockLines.join("\n").trim();
+      if (joined && !(key in fields)) fields[key] = joined;
+      continue;
+    }
+
+    if (!value) continue;
+
     if (key === "point" || key === "points") {
       const point = parsePointValue(value);
       if (point) points.push(point);
       continue;
     }
-    // chips/badges keep pipes; other keys take first assignment
     if (key === "chips" || key === "badges") {
       fields[key] = fields[key] ? `${fields[key]} | ${value}` : value;
       continue;
@@ -504,28 +671,6 @@ function parseActionsBody(body: string): LiquidActionProps[] {
     actions.push(action);
   }
   return actions;
-}
-
-/** Collect multi-line KV fields (title: / body: …) until a blank or separator. */
-function parseKvBlock(body: string): Record<string, string> {
-  const fields: Record<string, string> = {};
-  for (const raw of body.split("\n")) {
-    const line = stripFenceLineChrome(raw);
-    if (!line || line.startsWith("#") || line === "---") continue;
-    const colon = line.indexOf(":");
-    if (colon <= 0) continue;
-    const key = line.slice(0, colon).trim().toLowerCase();
-    const value = line.slice(colon + 1).trim();
-    if (!key || !value) continue;
-    // Pipe-separated multi-kv: "title: Sol | body: Flagship"
-    // vs value that merely contains a pipe: "title: Albums | AllMusic"
-    if (line.includes("|") && /\|\s*[a-zA-Z][a-zA-Z0-9_-]*\s*:/.test(line)) {
-      Object.assign(fields, parseKvLine(line));
-      continue;
-    }
-    fields[key] = value;
-  }
-  return fields;
 }
 
 function parseCalloutBody(body: string): LiquidCalloutProps | null {
@@ -1166,6 +1311,190 @@ function parseDashboardBody(body: string): LiquidDashboardProps | null {
   return dashboard;
 }
 
+const CHART_TYPES = new Set<LiquidChartType>([
+  "bar",
+  "line",
+  "area",
+  "pie",
+  "donut",
+  "radar",
+  "radial",
+]);
+const CHART_LABELS = new Set(["none", "value", "category", "both"]);
+const CHART_LEGEND = new Set(["none", "top", "bottom", "true", "false", "yes", "no", "1", "0"]);
+const CHART_CURVE = new Set(["smooth", "linear", "step"]);
+const CHART_LAYOUT = new Set(["vertical", "horizontal"]);
+const CHART_TREND_DIR = new Set(["up", "down", "flat"]);
+const CHART_LABEL_POS = new Set(["inside", "outside", "auto"]);
+
+function parseChartNumber(raw: string): number | null {
+  const cleaned = raw.replace(/,/g, "").replace(/%$/, "").trim();
+  if (!cleaned) return null;
+  const n = Number(cleaned);
+  return Number.isFinite(n) ? n : null;
+}
+
+function parseChartBool(raw: string | undefined): boolean | undefined {
+  if (!raw) return undefined;
+  const v = raw.trim().toLowerCase();
+  if (["true", "yes", "1", "on"].includes(v)) return true;
+  if (["false", "no", "0", "off"].includes(v)) return false;
+  return undefined;
+}
+
+function parseChartLegend(raw: string | undefined): LiquidChartLegend | undefined {
+  if (!raw) return undefined;
+  const v = raw.trim().toLowerCase();
+  if (v === "none" || v === "top" || v === "bottom") return v;
+  const asBool = parseChartBool(v);
+  if (asBool !== undefined) return asBool;
+  return undefined;
+}
+
+function parseChartBody(body: string): LiquidChartProps | null {
+  const normalized = body.replace(/\r\n/g, "\n");
+  const lines = normalized.split("\n");
+  const preamble: string[] = [];
+  const tableLines: string[] = [];
+  let inTable = false;
+
+  for (const raw of lines) {
+    const stripped = stripFenceLineChrome(raw);
+    if (!inTable && stripped.startsWith("|")) {
+      inTable = true;
+    }
+    if (inTable) {
+      if (!stripped) continue;
+      tableLines.push(raw);
+    } else {
+      preamble.push(raw);
+    }
+  }
+
+  if (tableLines.length < 2) return null;
+
+  const rows = tableLines
+    .map((raw) => splitPipeCells(raw))
+    .filter((cells) => cells.length > 0)
+    .filter((cells) => !isGfmSeparatorRow(cells));
+
+  if (rows.length < 2) return null;
+
+  const header = rows[0].map((cell) => cell.trim());
+  if (header.length < 2) return null;
+
+  const seriesHeaders = header.slice(1).map((label) => label.trim()).filter(Boolean);
+  if (seriesHeaders.length < 1) return null;
+
+  const categories: string[] = [];
+  const seriesValues: number[][] = seriesHeaders.map(() => []);
+
+  for (let r = 1; r < rows.length; r++) {
+    const cells = rows[r];
+    const category = (cells[0] ?? "").trim();
+    if (!category) continue;
+    const nums: number[] = [];
+    let ok = true;
+    for (let s = 0; s < seriesHeaders.length; s++) {
+      const n = parseChartNumber(cells[s + 1] ?? "");
+      if (n === null) {
+        ok = false;
+        break;
+      }
+      nums.push(n);
+    }
+    if (!ok) continue;
+    categories.push(category);
+    for (let s = 0; s < seriesHeaders.length; s++) {
+      seriesValues[s].push(nums[s]);
+    }
+  }
+
+  if (categories.length < 2) return null;
+
+  const fields = parseKvBlock(preamble.join("\n"));
+  const typeRaw = (fields.type ?? fields.chart ?? "bar").trim().toLowerCase();
+  if (!CHART_TYPES.has(typeRaw as LiquidChartType)) return null;
+  const type = typeRaw as LiquidChartType;
+
+  const series: LiquidChartSeries[] = seriesHeaders.map((label, i) => ({
+    key: slugCompareId(label, "series", i),
+    label,
+    values: seriesValues[i],
+  }));
+
+  const chart: LiquidChartProps = { type, categories, series };
+
+  if (fields.title) chart.title = fields.title;
+  const description = (fields.description ?? fields.subtitle)?.trim();
+  if (description) chart.description = description;
+
+  const layout = fields.layout?.trim().toLowerCase();
+  if (layout && CHART_LAYOUT.has(layout)) {
+    chart.layout = layout as LiquidChartLayout;
+  }
+
+  const stacked = parseChartBool(fields.stacked);
+  if (stacked !== undefined) chart.stacked = stacked;
+
+  const curve = fields.curve?.trim().toLowerCase();
+  if (curve && CHART_CURVE.has(curve)) {
+    chart.curve = curve as LiquidChartCurve;
+  }
+
+  const separator = parseChartBool(fields.separator);
+  if (separator !== undefined) chart.separator = separator;
+
+  if (fields.centerlabel) chart.centerLabel = fields.centerlabel;
+  else if (fields["center_label"]) chart.centerLabel = fields["center_label"];
+  if (fields.centervalue) chart.centerValue = fields.centervalue;
+  else if (fields["center_value"]) chart.centerValue = fields["center_value"];
+
+  if (fields.trend) chart.trend = fields.trend;
+  const trendDirection = (fields.trenddirection ?? fields["trend_direction"])
+    ?.trim()
+    .toLowerCase();
+  if (trendDirection && CHART_TREND_DIR.has(trendDirection)) {
+    chart.trendDirection = trendDirection as LiquidChartTrendDirection;
+  }
+  if (fields.caption) chart.caption = fields.caption;
+
+  const labels = fields.labels?.trim().toLowerCase();
+  if (labels && CHART_LABELS.has(labels)) {
+    chart.labels = labels as LiquidChartLabels;
+  }
+  const labelPosition = (fields.labelposition ?? fields["label_position"])
+    ?.trim()
+    .toLowerCase();
+  if (labelPosition && CHART_LABEL_POS.has(labelPosition)) {
+    chart.labelPosition = labelPosition as LiquidChartLabelPosition;
+  }
+
+  const tooltip = parseChartBool(fields.tooltip);
+  if (tooltip !== undefined) chart.tooltip = tooltip;
+
+  if (fields.legend && CHART_LEGEND.has(fields.legend.trim().toLowerCase())) {
+    chart.legend = parseChartLegend(fields.legend);
+  }
+
+  const interactive = parseChartBool(fields.interactive);
+  if (interactive !== undefined) chart.interactive = interactive;
+
+  const activeKey = (fields.activekey ?? fields["active_key"])?.trim();
+  if (activeKey) chart.activeKey = activeKey;
+
+  const colorsRaw = fields.colors?.trim();
+  if (colorsRaw) {
+    const colors = colorsRaw
+      .split(/[,|]/)
+      .map((c) => c.trim())
+      .filter(Boolean);
+    if (colors.length) chart.colors = colors;
+  }
+
+  return chart;
+}
+
 function normalizeIconId(raw: string): string | null {
   const id = raw.trim().toLowerCase().replace(/_/g, "-");
   if (!id || !LIQUID_ICON_ALLOWLIST.has(id)) return null;
@@ -1346,6 +1675,12 @@ function replaceLiquidFenceMatch(match: string, langRaw: string, body: string): 
     const dashboard = parseDashboardBody(body);
     if (!dashboard) return match;
     return `\n${placeholder("dashboard", dashboard)}\n`;
+  }
+
+  if (lang === "chart") {
+    const chart = parseChartBody(body);
+    if (!chart) return match;
+    return `\n${placeholder("chart", chart)}\n`;
   }
 
   return match;
