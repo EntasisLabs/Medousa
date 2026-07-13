@@ -1,8 +1,12 @@
 <script lang="ts">
-  import { tick } from "svelte";
+  import { onDestroy, tick } from "svelte";
   import { renderMarkdownPreview, type MarkdownRenderOptions } from "$lib/markdown/render";
   import { hydrateCodeBlocks } from "$lib/markdown/codeBlocks";
   import { hydrateLocalImages } from "$lib/markdown/hydrateLocalImages";
+  import {
+    destroyLiquidEmbeds,
+    hydrateLiquidEmbeds,
+  } from "$lib/markdown/hydrateLiquidEmbeds";
   import { hydrateMermaid } from "$lib/markdown/mermaid";
   import { vault } from "$lib/stores/vault.svelte";
   import { vaultFind } from "$lib/stores/vaultFind.svelte";
@@ -107,10 +111,21 @@
   $effect(() => {
     previewHtml;
     vault.selectedPath;
+    labelByPath;
     if (!container) return;
+    destroyLiquidEmbeds(container);
     void hydrateCodeBlocks(container);
     void hydrateMermaid(container);
     void hydrateLocalImages(container, vault.selectedPath);
+    // Same Liquid pipeline as chat MarkdownContent — chart/card/etc. placeholders mount here.
+    hydrateLiquidEmbeds(container, {
+      titleByPath: labelByPath,
+      openLinksInWeb: false,
+    });
+  });
+
+  onDestroy(() => {
+    if (container) destroyLiquidEmbeds(container);
   });
 
   $effect(() => {

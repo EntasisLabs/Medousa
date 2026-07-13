@@ -281,10 +281,9 @@ export interface LiquidDashboardProps {
 /**
  * Liquid chart organism — paste-first plots from ```chart fences.
  *
- * V1 renders: bar | line | area | pie | donut.
- * Reserved type strings radar | radial parse cleanly but render as a stub until marks land.
+ * V1+ renders: bar | line | area | pie | donut | radar | radial.
  * Optional fields (labels, tooltip, legend, interactive, activeKey, curve, layout, …)
- * are accepted now so later UI can light up without breaking fences.
+ * are accepted so later UI can light up without breaking fences.
  */
 export type LiquidChartType =
   | "bar"

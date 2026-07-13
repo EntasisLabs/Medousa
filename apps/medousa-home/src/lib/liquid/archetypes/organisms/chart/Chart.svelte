@@ -1,7 +1,7 @@
 <script lang="ts">
   /**
    * `chart` organism — paste-first plots from ```chart markdown.
-   * Core marks: bar / line / area / pie / donut. Reserved radar/radial stub.
+   * Marks: bar / line / area / pie / donut / radar / radial.
    */
   import { getLiquidContext } from "$lib/liquid/render/context";
   import type { ArchetypeProps } from "$lib/liquid/render/types";
@@ -11,6 +11,8 @@
   import BarMark from "./BarMark.svelte";
   import LineMark from "./LineMark.svelte";
   import PieMark from "./PieMark.svelte";
+  import RadarMark from "./RadarMark.svelte";
+  import RadialMark from "./RadialMark.svelte";
   import { TrendingUp, TrendingDown, Minus } from "@lucide/svelte";
 
   let { node }: ArchetypeProps = $props();
@@ -22,12 +24,16 @@
     model ? resolveLegend(model.legend, model.series.length) : "none",
   );
   const legendItems = $derived(
-    model?.type === "pie" || model?.type === "donut"
-      ? (model?.categories.map((label, i) => ({
-          key: `cat-${i}`,
-          label,
-        })) ?? [])
-      : (model?.series.map((s) => ({ key: s.key, label: s.label })) ?? []),
+    !model
+      ? []
+      : model.type === "pie" ||
+          model.type === "donut" ||
+          (model.type === "radial" && model.categories.length >= 3)
+        ? model.categories.map((label, i) => ({
+            key: `cat-${i}`,
+            label,
+          }))
+        : model.series.map((s) => ({ key: s.key, label: s.label })),
   );
 
   const aria = $derived(
@@ -71,10 +77,10 @@
         <PieMark {model} />
       {:else if model.type === "donut"}
         <PieMark {model} donut />
-      {:else}
-        <p class="liquid-chart-stub">
-          <span class="font-mono">{model.type}</span> charts are reserved — data parsed, mark coming soon.
-        </p>
+      {:else if model.type === "radar"}
+        <RadarMark {model} />
+      {:else if model.type === "radial"}
+        <RadialMark {model} />
       {/if}
     </div>
 
@@ -134,14 +140,6 @@
 
   .liquid-chart-body {
     min-width: 0;
-  }
-
-  .liquid-chart-stub {
-    margin: 0;
-    padding: 2rem 0.75rem;
-    text-align: center;
-    font-size: 0.8rem;
-    color: rgb(var(--color-surface-400));
   }
 
   .liquid-chart-footer {

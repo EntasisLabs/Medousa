@@ -47,8 +47,11 @@
     stacked: model.stacked,
     curve: model.curve,
     labels: model.labels,
+    labelPosition: model.labelPosition,
+    activeKey: model.activeKey,
     separator: model.separator,
     horizontal,
+    chartType: model.type,
     showTooltip,
     hideTooltip,
   });

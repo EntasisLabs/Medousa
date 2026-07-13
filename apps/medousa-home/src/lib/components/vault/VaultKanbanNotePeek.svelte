@@ -1,8 +1,13 @@
 <script lang="ts">
+  import { onDestroy } from "svelte";
   import { ExternalLink, X } from "@lucide/svelte";
   import BodyPortal from "$lib/components/ui/BodyPortal.svelte";
   import { getVaultNote } from "$lib/daemon";
   import { renderMarkdownPreview } from "$lib/markdown/render";
+  import {
+    destroyLiquidEmbeds,
+    hydrateLiquidEmbeds,
+  } from "$lib/markdown/hydrateLiquidEmbeds";
   import { vault } from "$lib/stores/vault.svelte";
   import { stripFrontmatter } from "$lib/utils/vaultFrontmatter";
 
@@ -21,6 +26,7 @@
   let path = $state<string | null>(null);
   let html = $state("");
   let panelEl = $state<HTMLDivElement | null>(null);
+  let markdownEl = $state<HTMLDivElement | null>(null);
 
   const position = $derived.by(() => {
     const width = 320;
@@ -91,6 +97,22 @@
     el.focus();
   });
 
+  $effect(() => {
+    html;
+    const root = markdownEl;
+    if (!root) return;
+    destroyLiquidEmbeds(root);
+    hydrateLiquidEmbeds(root, {
+      titleByPath: new Map(vault.notes.map((note) => [note.path, note.title] as const)),
+      openLinksInWeb: false,
+    });
+    return () => destroyLiquidEmbeds(root);
+  });
+
+  onDestroy(() => {
+    if (markdownEl) destroyLiquidEmbeds(markdownEl);
+  });
+
   function handleKeydown(event: KeyboardEvent) {
     if (event.key === "Escape") {
       event.preventDefault();
@@ -156,7 +178,10 @@
           Note not found. Open to create it.
         </p>
       {:else}
-        <div class="markdown-content vault-markdown-preview text-sm leading-relaxed">
+        <div
+          bind:this={markdownEl}
+          class="markdown-content vault-markdown-preview text-sm leading-relaxed"
+        >
           {@html html}
         </div>
       {/if}

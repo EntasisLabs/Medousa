@@ -1165,6 +1165,35 @@ describe("preprocessLiquidEmbeds", () => {
     expect(props?.type).toBe("radar");
   });
 
+  it("accepts radial type with hydrate props", () => {
+    const src = [
+      "```chart",
+      "type: radial",
+      "title: Progress",
+      "centerValue: 75%",
+      "centerLabel: Goal",
+      "",
+      "| Metric | Value |",
+      "| ------ | ----- |",
+      "| Done   | 75    |",
+      "| Target | 100   |",
+      "```",
+    ].join("\n");
+    const out = preprocessLiquidEmbeds(src);
+    expect(out).toContain('data-liquid-embed="chart"');
+    const match = out.match(/data-liquid-props="([^"]+)"/);
+    const props = decodeLiquidProps<{
+      type: string;
+      centerValue?: string;
+      centerLabel?: string;
+      categories: string[];
+    }>(match![1]);
+    expect(props?.type).toBe("radial");
+    expect(props?.centerValue).toBe("75%");
+    expect(props?.centerLabel).toBe("Goal");
+    expect(props?.categories).toEqual(["Done", "Target"]);
+  });
+
   it("rejects chart with unknown type", () => {
     const src = [
       "```chart",

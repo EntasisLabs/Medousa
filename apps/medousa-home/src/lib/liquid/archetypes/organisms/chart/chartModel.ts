@@ -98,7 +98,9 @@ export function chartViewModel(props: Record<string, unknown> | LiquidChartProps
         .filter(Boolean)
     : [];
   const series = asSeries((props as LiquidChartProps).series);
-  if (categories.length < 2 || series.length < 1) return null;
+  // Radar needs ≥3 axes; radial may be single-arc with 1 category; core types need ≥2.
+  const minCats = type === "radar" ? 3 : type === "radial" ? 1 : 2;
+  if (categories.length < minCats || series.length < 1) return null;
 
   const layoutRaw = asString((props as LiquidChartProps).layout).toLowerCase();
   const layout: LiquidChartLayout =
@@ -190,4 +192,58 @@ export function yMax(model: ChartViewModel): number {
     for (const v of s.values) if (v > max) max = v;
   }
   return max || 1;
+}
+
+const numberFmt = new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 });
+
+export function formatChartNumber(value: number): string {
+  if (!Number.isFinite(value)) return "";
+  return numberFmt.format(value);
+}
+
+/** Resolve `auto` label placement to a concrete inside/outside for a chart type. */
+export function resolveLabelPosition(
+  model: Pick<ChartViewModel, "type" | "labels" | "labelPosition" | "centerLabel" | "centerValue">,
+): "inside" | "outside" | "none" {
+  if (model.labels === "none") return "none";
+  if (model.labelPosition === "inside" || model.labelPosition === "outside") {
+    return model.labelPosition;
+  }
+  // auto
+  if (model.type === "pie") return "outside";
+  if (model.type === "donut") {
+    // Prefer outside when center chrome is present to avoid collisions.
+    if (model.centerLabel || model.centerValue) return "outside";
+    return "inside";
+  }
+  // bar / line / area — end-of-mark labels (treated as "outside" semantically)
+  return "outside";
+}
+
+export function formatChartLabel(
+  labels: LiquidChartLabels,
+  category: string,
+  value: number,
+): string {
+  if (labels === "none") return "";
+  if (labels === "category") return category;
+  if (labels === "both") return `${category} ${formatChartNumber(value)}`;
+  return formatChartNumber(value);
+}
+
+/** Match activeKey against series key/label or category (case-insensitive). */
+export function isActiveKey(
+  activeKey: string,
+  candidate: { key?: string; label?: string; category?: string },
+): boolean {
+  const needle = activeKey.trim().toLowerCase();
+  if (!needle) return true; // no highlight → everything active
+  if (candidate.key?.trim().toLowerCase() === needle) return true;
+  if (candidate.label?.trim().toLowerCase() === needle) return true;
+  if (candidate.category?.trim().toLowerCase() === needle) return true;
+  return false;
+}
+
+export function hasActiveHighlight(activeKey: string): boolean {
+  return activeKey.trim().length > 0;
 }

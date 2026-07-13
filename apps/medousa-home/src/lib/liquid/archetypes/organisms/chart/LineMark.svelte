@@ -1,8 +1,26 @@
 <script lang="ts">
   import { getContext } from "svelte";
-  import { line as d3Line, area as d3Area, curveMonotoneX, curveLinear, curveStepAfter } from "d3-shape";
-  import type { LiquidChartCurve, LiquidChartSeries } from "$lib/markdown/liquidEmbeds";
-  import { chartSeriesColor } from "./chartModel";
+  import {
+    line as d3Line,
+    area as d3Area,
+    curveMonotoneX,
+    curveLinear,
+    curveStepAfter,
+  } from "d3-shape";
+  import type {
+    LiquidChartCurve,
+    LiquidChartLabelPosition,
+    LiquidChartLabels,
+    LiquidChartSeries,
+  } from "$lib/markdown/liquidEmbeds";
+  import {
+    chartSeriesColor,
+    formatChartLabel,
+    formatChartNumber,
+    hasActiveHighlight,
+    isActiveKey,
+    resolveLabelPosition,
+  } from "./chartModel";
 
   interface Props {
     mode?: "line" | "area";
@@ -16,6 +34,9 @@
     series: LiquidChartSeries[];
     colors: string[];
     curve: LiquidChartCurve;
+    labels: LiquidChartLabels;
+    labelPosition: LiquidChartLabelPosition;
+    activeKey: string;
     showTooltip: (
       x: number,
       y: number,
@@ -48,6 +69,7 @@
     if (!cfg || !rows.length || !xS || !yS) return [];
 
     const curve = curveFactory(cfg.curve ?? "smooth");
+    const highlight = hasActiveHighlight(cfg.activeKey);
     return cfg.series.map((s, si) => {
       const points = rows.map((row) => {
         const category = String(row.category ?? "");
@@ -74,8 +96,37 @@
         line: lineGen(points) ?? "",
         area: areaGen(points) ?? "",
         points,
+        active:
+          !highlight || isActiveKey(cfg.activeKey, { key: s.key, label: s.label }),
       };
     });
+  });
+
+  const valueLabels = $derived.by(() => {
+    const cfg = $custom;
+    if (!cfg) return [] as { key: string; x: number; y: number; text: string }[];
+    const pos = resolveLabelPosition({
+      type: "line",
+      labels: cfg.labels,
+      labelPosition: cfg.labelPosition,
+      centerLabel: "",
+      centerValue: "",
+    });
+    if (pos === "none") return [];
+    const out: { key: string; x: number; y: number; text: string }[] = [];
+    for (const series of paths) {
+      for (const pt of series.points) {
+        const text = formatChartLabel(cfg.labels, pt.category, pt.value);
+        if (!text) continue;
+        out.push({
+          key: `${series.key}-${pt.category}`,
+          x: pt.x,
+          y: pt.y - 8,
+          text,
+        });
+      }
+    }
+    return out;
   });
 
   const axis = $derived.by(() => {
@@ -84,7 +135,15 @@
     const yS = $yScale;
     const w = $width;
     const h = $height;
-    if (!xS || !yS) return { w: 0, h: 0, grid: [] as number[], xLabels: [] as { label: string; x: number }[], yLabels: [] as { label: string; y: number }[] };
+    if (!xS || !yS) {
+      return {
+        w: 0,
+        h: 0,
+        grid: [] as number[],
+        xLabels: [] as { label: string; x: number }[],
+        yLabels: [] as { label: string; y: number }[],
+      };
+    }
     const domain = (yS.domain?.() as number[]) ?? [0, 1];
     const max = Number(domain[1] ?? 1);
     return {
@@ -105,18 +164,32 @@
     };
   });
 
-  function onPoint(
-    event: MouseEvent,
-    category: string,
-    lines: { label: string; value: string; color?: string }[],
-  ) {
+  function tipLinesForCategory(category: string) {
+    const cfg = $custom;
+    const rows = $data ?? [];
+    if (!cfg) return [];
+    const row = rows.find((r) => String(r.category ?? "") === category);
+    if (!row) return [];
+    return cfg.series.map((s, si) => ({
+      label: s.label,
+      value: formatChartNumber(Number(row[s.key] ?? 0)),
+      color: chartSeriesColor(si, cfg.colors),
+    }));
+  }
+
+  function onPoint(event: MouseEvent, category: string) {
     const cfg = $custom;
     if (!cfg) return;
     const target = event.currentTarget as SVGCircleElement;
     const box = target.getBoundingClientRect();
     const parent = target.ownerSVGElement?.parentElement?.getBoundingClientRect();
     if (!parent) return;
-    cfg.showTooltip(box.left - parent.left, box.top - parent.top, category, lines);
+    cfg.showTooltip(
+      box.left - parent.left,
+      box.top - parent.top,
+      category,
+      tipLinesForCategory(category),
+    );
   }
 </script>
 
@@ -136,25 +209,40 @@
 
     {#each paths as series (series.key)}
       {#if mode === "area"}
-        <path class="liquid-chart-area" d={series.area} fill={series.color} />
+        <path
+          class="liquid-chart-area"
+          class:liquid-chart-dim={!series.active}
+          d={series.area}
+          fill={series.color}
+        />
       {/if}
-      <path class="liquid-chart-stroke" d={series.line} stroke={series.color} fill="none" />
+      <path
+        class="liquid-chart-stroke"
+        class:liquid-chart-dim={!series.active}
+        d={series.line}
+        stroke={series.color}
+        fill="none"
+      />
       {#each series.points as pt, pi (series.key + pi)}
         <circle
           class="liquid-chart-dot"
+          class:liquid-chart-dim={!series.active}
           role="img"
           aria-label={`${pt.category}: ${series.label} ${pt.value}`}
           cx={pt.x}
           cy={pt.y}
           r="3.25"
           fill={series.color}
-          onmouseenter={(event) =>
-            onPoint(event, pt.category, [
-              { label: series.label, value: String(pt.value), color: series.color },
-            ])}
+          onmouseenter={(event) => onPoint(event, pt.category)}
           onmouseleave={() => $custom?.hideTooltip()}
         />
       {/each}
+    {/each}
+
+    {#each valueLabels as lbl (lbl.key)}
+      <text class="liquid-chart-value-label" x={lbl.x} y={lbl.y} text-anchor="middle"
+        >{lbl.text}</text
+      >
     {/each}
   </g>
 {/if}
@@ -174,14 +262,41 @@
     stroke-width: 2;
     stroke-linejoin: round;
     stroke-linecap: round;
+    transition: opacity 120ms ease;
   }
 
   .liquid-chart-area {
     opacity: 0.22;
+    transition: opacity 120ms ease;
   }
 
   .liquid-chart-dot {
     stroke: color-mix(in srgb, var(--color-surface-950) 55%, transparent);
     stroke-width: 1;
+    transition: opacity 120ms ease;
+  }
+
+  .liquid-chart-dim {
+    opacity: 0.35;
+  }
+
+  .liquid-chart-area.liquid-chart-dim {
+    opacity: 0.08;
+  }
+
+  .liquid-chart-value-label {
+    fill: rgb(var(--color-surface-200));
+    font-size: 0.58rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    pointer-events: none;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .liquid-chart-stroke,
+    .liquid-chart-area,
+    .liquid-chart-dot {
+      transition: none;
+    }
   }
 </style>

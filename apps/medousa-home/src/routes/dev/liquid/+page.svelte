@@ -282,6 +282,90 @@
     },
   });
 
+  const chartAnnotatedBar = createNode({
+    id: "chart:annotated-bar",
+    type: "chart",
+    fillState: "ready",
+    props: {
+      type: "bar",
+      title: "Annotated bar",
+      description: "Value labels + Desktop activeKey",
+      labels: "value",
+      activeKey: "Desktop",
+      legend: "bottom",
+      categories: ["Jan", "Feb", "Mar", "Apr"],
+      series: [
+        { key: "desktop", label: "Desktop", values: [186, 305, 237, 73] },
+        { key: "mobile", label: "Mobile", values: [80, 200, 120, 190] },
+      ],
+    },
+  });
+
+  const chartPieOutside = createNode({
+    id: "chart:pie-outside",
+    type: "chart",
+    fillState: "ready",
+    props: {
+      type: "pie",
+      title: "Pie — outside labels",
+      description: "Leader lines + Safari highlight",
+      labels: "both",
+      labelPosition: "outside",
+      activeKey: "Safari",
+      legend: "bottom",
+      categories: ["Chrome", "Safari", "Firefox", "Edge"],
+      series: [{ key: "share", label: "Share", values: [275, 200, 187, 173] }],
+    },
+  });
+
+  const chartRadar = createNode({
+    id: "chart:radar",
+    type: "chart",
+    fillState: "ready",
+    props: {
+      type: "radar",
+      title: "Team coverage",
+      description: "Radar — two series",
+      legend: "bottom",
+      labels: "value",
+      categories: ["Speed", "Reliability", "Comfort", "Safety", "Efficiency"],
+      series: [
+        { key: "a", label: "Alpha", values: [80, 70, 60, 90, 75] },
+        { key: "b", label: "Beta", values: [55, 85, 70, 65, 90] },
+      ],
+    },
+  });
+
+  const chartRadialMulti = createNode({
+    id: "chart:radial-multi",
+    type: "chart",
+    fillState: "ready",
+    props: {
+      type: "radial",
+      title: "Radial — multi-arc",
+      description: "Concentric rings by category",
+      legend: "bottom",
+      labels: "category",
+      categories: ["Desktop", "Mobile", "Tablet"],
+      series: [{ key: "users", label: "Users", values: [186, 80, 120] }],
+    },
+  });
+
+  const chartRadialSingle = createNode({
+    id: "chart:radial-single",
+    type: "chart",
+    fillState: "ready",
+    props: {
+      type: "radial",
+      title: "Radial — progress",
+      description: "Single arc with center chrome",
+      centerValue: "75%",
+      centerLabel: "Goal",
+      categories: ["Progress"],
+      series: [{ key: "progress", label: "Progress", values: [75, 100] }],
+    },
+  });
+
   const chartMarkdown = [
     "```chart",
     "type: line",
@@ -449,12 +533,17 @@
 
   <h2 class="harness-subhead">Charts</h2>
   <p class="harness-note">
-    bar · area · donut scene nodes, plus a <code>```chart</code> fence hydrated through markdown.
+    bar · area · donut · annotated · pie leaders · radar · radial, plus a <code>```chart</code> fence.
   </p>
   <section class="harness-stage harness-charts">
     <SceneRenderer node={chartBar} context={monogramContext} />
     <SceneRenderer node={chartLine} context={monogramContext} />
     <SceneRenderer node={chartDonut} context={monogramContext} />
+    <SceneRenderer node={chartAnnotatedBar} context={monogramContext} />
+    <SceneRenderer node={chartPieOutside} context={monogramContext} />
+    <SceneRenderer node={chartRadar} context={monogramContext} />
+    <SceneRenderer node={chartRadialMulti} context={monogramContext} />
+    <SceneRenderer node={chartRadialSingle} context={monogramContext} />
     <MarkdownContent content={chartMarkdown} />
   </section>
 
