@@ -40,7 +40,7 @@ legend: bottom
 - **Heatmap table:** header row = column labels (first cell empty/corner); first column = row labels; cells = numbers
 - **Minimum rows:** ≥2 categories (≥3 for radar); scatter ≥2 points; heatmap ≥1 data row
 - **Optional KV:** `description`, `labels` (`none`|`value`|`category`|`both`), `labelPosition` (`auto`|`inside`|`outside`), `activeKey`, `curve`, `layout`, `stacked`, `centerValue`, `centerLabel`, `tooltip`, `legend`, `separator`, `trend`, `caption`, `colors`, `width` (`sm`|`md`|`lg`|`full`|CSS length), `height` (`sm`|`md`|`lg`|CSS length, bar/line/area/combo/scatter), `surface` (drawing wash — see below), `seriesMarks` (`bar, line` — combo only; default first series bar, rest line)
-- **Combo note:** bar + line share one Y domain this wave — keep series comparable or pre-normalize
+- **Combo note:** `seriesMarks` assign each series to bar (left Y) or line (right Y). Mixed units (revenue + growth %) render correctly without pre-normalizing.
 - **Colors:** defaults are readable blues/purples/greens (not ink-black). Override with markdown color names or hex:
 
 ````md

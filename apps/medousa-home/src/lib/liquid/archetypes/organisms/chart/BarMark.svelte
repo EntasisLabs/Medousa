@@ -359,7 +359,7 @@
         h,
         grid: [0.25, 0.5, 0.75, 1].map((t) => ({ x: xS(max * t) ?? 0 })),
         xLabels: [0, 0.5, 1].map((t) => ({
-          label: String(Math.round(max * t)),
+          label: formatChartNumber(max * t),
           x: xS(max * t) ?? 0,
         })),
         yLabels: rows.map((row) => {
@@ -385,7 +385,7 @@
         };
       }),
       yLabels: [0, 0.5, 1].map((t) => ({
-        label: String(Math.round(max * t)),
+        label: formatChartNumber(max * t),
         y: yS(max * t) ?? 0,
       })),
     };

@@ -159,7 +159,188 @@ const PDF_EXPORT_CSS = `
   .vault-pdf-export-mount .liquid-chart-mount {
     animation: none !important;
   }
+
+  /* Report organism — hex only (html2canvas rejects color-mix) */
+  .vault-pdf-export-mount .liquid-report {
+    border: 1px solid #d1d5db !important;
+    background: #f9fafb !important;
+    box-shadow: none !important;
+    color: #111827 !important;
+    border-radius: 8px !important;
+    padding: 14px 16px 16px !important;
+  }
+
+  .vault-pdf-export-mount .liquid-report-header {
+    border-bottom: 1px solid #e5e7eb !important;
+  }
+
+  .vault-pdf-export-mount .liquid-report-title {
+    color: #111827 !important;
+  }
+
+  .vault-pdf-export-mount .liquid-report-subtitle,
+  .vault-pdf-export-mount .liquid-report-body,
+  .vault-pdf-export-mount .liquid-report-body .markdown-content,
+  .vault-pdf-export-mount .liquid-report-body .markdown-content p {
+    color: #374151 !important;
+  }
+
+  .vault-pdf-export-mount .liquid-report-body .markdown-content h1,
+  .vault-pdf-export-mount .liquid-report-body .markdown-content h2,
+  .vault-pdf-export-mount .liquid-report-body .markdown-content h3,
+  .vault-pdf-export-mount .liquid-report-body .markdown-content h4 {
+    color: #111827 !important;
+  }
+
+  /* Heatmap / scatter / combo extras */
+  .vault-pdf-export-mount .liquid-chart-heatmap-wrap {
+    background: transparent !important;
+  }
+
+  .vault-pdf-export-mount .liquid-chart-heatmap-col-label,
+  .vault-pdf-export-mount .liquid-chart-heatmap-row-label {
+    color: #4b5563 !important;
+  }
+
+  .vault-pdf-export-mount .liquid-chart-heatmap-cell {
+    border: none !important;
+    box-shadow: none !important;
+  }
+
+  .vault-pdf-export-mount .liquid-chart-grid {
+    stroke: #e5e7eb !important;
+  }
+
+  .vault-pdf-export-mount .liquid-chart-axis-right {
+    fill: #7c3aed !important;
+    color: #7c3aed !important;
+  }
 `;
+
+const COLOR_STYLE_PROPS = [
+  "color",
+  "background-color",
+  "border-top-color",
+  "border-right-color",
+  "border-bottom-color",
+  "border-left-color",
+  "outline-color",
+  "fill",
+  "stroke",
+  "stop-color",
+] as const;
+
+/**
+ * html2canvas cannot parse `color-mix()` / `color()` — bake resolved rgb/hex
+ * onto liquid embeds before capture (browser getComputedStyle already resolves them).
+ */
+function sanitizeUnsupportedCssColors(root: HTMLElement): void {
+  const scope = root.querySelectorAll<Element>(
+    ".liquid-report, .liquid-report *, .liquid-chart, .liquid-chart *, .liquid-md-embed, .liquid-md-embed *",
+  );
+  const nodes: Element[] = [root, ...scope];
+
+  for (const el of nodes) {
+    if (!(el instanceof HTMLElement) && !(el instanceof SVGElement)) continue;
+    const computed = getComputedStyle(el);
+
+    for (const prop of COLOR_STYLE_PROPS) {
+      const value = computed.getPropertyValue(prop).trim();
+      if (!value || value === "none") continue;
+      try {
+        el.style.setProperty(prop, value, "important");
+      } catch {
+        /* some SVG props reject setProperty in older engines */
+      }
+    }
+
+    // SVG presentation attributes with literal color-mix / color()
+    if (el instanceof SVGElement) {
+      for (const attr of ["fill", "stroke", "stop-color"] as const) {
+        const raw = el.getAttribute(attr);
+        if (!raw || raw === "none" || raw === "currentColor") continue;
+        if (!/color-mix\s*\(|(^|\s)color\s*\(/.test(raw)) continue;
+        const resolved = computed.getPropertyValue(attr).trim();
+        if (resolved && resolved !== "none") {
+          el.setAttribute(attr, resolved);
+        }
+      }
+    }
+
+    // Kill shadows that often embed color-mix in component CSS
+    if (el instanceof HTMLElement) {
+      const shadow = computed.boxShadow;
+      if (shadow && shadow !== "none") {
+        el.style.setProperty("box-shadow", "none", "important");
+      }
+    }
+  }
+}
+
+/** Replace `fnName(...)` with balanced parentheses (handles nested rgb()/var()). */
+function replaceBalancedCssFn(input: string, fnName: string, replacement: string): string {
+  const openRe = new RegExp(`${fnName}\\s*\\(`, "gi");
+  let out = "";
+  let last = 0;
+  let match: RegExpExecArray | null;
+  openRe.lastIndex = 0;
+  while ((match = openRe.exec(input))) {
+    const start = match.index;
+    // Don't treat `color-mix` as `color(`
+    if (fnName.toLowerCase() === "color") {
+      const prev = input.slice(Math.max(0, start - 4), start);
+      if (/mix$/i.test(prev)) continue;
+      if (start > 0 && /[a-z-]/i.test(input[start - 1] ?? "")) continue;
+    }
+    let i = start + match[0].length;
+    let depth = 1;
+    while (i < input.length && depth > 0) {
+      const ch = input[i++];
+      if (ch === "(") depth++;
+      else if (ch === ")") depth--;
+    }
+    out += input.slice(last, start) + replacement;
+    last = i;
+    openRe.lastIndex = i;
+  }
+  return out + input.slice(last);
+}
+
+function stripUnsupportedColorFns(css: string): string {
+  let out = replaceBalancedCssFn(css, "color-mix", "transparent");
+  out = replaceBalancedCssFn(out, "color", "#111827");
+  return out;
+}
+
+/** Strip color-mix / color() from cloned stylesheets so html2canvas's parser never sees them. */
+function scrubUnsupportedColorFunctionsInClone(doc: Document): void {
+  for (const sheet of Array.from(doc.styleSheets)) {
+    const owner = sheet.ownerNode;
+    if (!(owner instanceof HTMLStyleElement)) continue;
+    try {
+      const text = owner.textContent ?? "";
+      if (/color-mix\s*\(|(^|[^a-z-])color\s*\(/.test(text)) {
+        owner.textContent = stripUnsupportedColorFns(text);
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
+  for (const el of doc.querySelectorAll<HTMLElement | SVGElement>("[style]")) {
+    const raw = el.getAttribute("style");
+    if (!raw || !/color-mix\s*\(|(^|[^a-z-])color\s*\(/.test(raw)) continue;
+    el.setAttribute("style", stripUnsupportedColorFns(raw));
+  }
+
+  for (const el of doc.querySelectorAll("svg [fill], svg [stroke], svg [stop-color]")) {
+    for (const attr of ["fill", "stroke", "stop-color"]) {
+      const raw = el.getAttribute(attr);
+      if (!raw || !/color-mix\s*\(|(^|[^a-z-])color\s*\(/.test(raw)) continue;
+      el.setAttribute(attr, "#64748b");
+    }
+  }
+}
 
 function slugifyFilename(title: string): string {
   const slug = title
@@ -241,6 +422,8 @@ export async function exportVaultNotePdf(options: {
       animate: false,
     });
     await waitForLiquidLayout();
+    // Bake resolved colors on the live mount (heatmap cells, SVG strokes, …)
+    sanitizeUnsupportedCssColors(mount);
 
     const html2pdf = (await import("html2pdf.js")).default;
     const worker = html2pdf().set({
@@ -255,6 +438,11 @@ export async function exportVaultNotePdf(options: {
         scrollY: -window.scrollY,
         windowWidth: mount.scrollWidth,
         logging: false,
+        onclone: (clonedDoc: Document) => {
+          scrubUnsupportedColorFunctionsInClone(clonedDoc);
+          const clonedMount = clonedDoc.querySelector<HTMLElement>(".vault-pdf-export-mount");
+          if (clonedMount) sanitizeUnsupportedCssColors(clonedMount);
+        },
       },
       jsPDF: { unit: "in", format: "letter", orientation: "portrait" },
       pagebreak: { mode: ["css", "legacy"] },

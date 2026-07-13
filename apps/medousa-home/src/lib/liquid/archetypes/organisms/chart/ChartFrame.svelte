@@ -3,7 +3,7 @@
   import { scaleBand, scaleLinear } from "d3-scale";
   import type { Snippet } from "svelte";
   import type { ChartViewModel } from "./chartModel";
-  import { toCartesianRows, yMax } from "./chartModel";
+  import { toCartesianRows, yMax, yMaxForMarks } from "./chartModel";
   import ChartTooltip from "./ChartTooltip.svelte";
 
   interface Props {
@@ -14,7 +14,17 @@
   let { model, children }: Props = $props();
 
   const rows = $derived(toCartesianRows(model));
-  const maxY = $derived(yMax(model));
+  const combo = $derived(model.type === "combo");
+  const maxYLeft = $derived.by(() => {
+    if (!combo) return yMax(model);
+    const barMax = yMaxForMarks(model, "bar");
+    // Fallback to all / line if author marked everything as line
+    return barMax > 0 ? barMax : yMax(model);
+  });
+  const maxYRight = $derived.by(() => {
+    if (!combo) return 0;
+    return yMaxForMarks(model, "line");
+  });
   const horizontal = $derived(model.layout === "horizontal" && model.type === "bar");
 
   let tipVisible = $state(false);
@@ -54,9 +64,17 @@
     separator: model.separator,
     horizontal,
     chartType: model.type,
+    /** Combo dual-Y: line series map against this domain (right axis). */
+    yDomainRight: combo && maxYRight > 0 ? ([0, maxYRight * 1.08] as [number, number]) : null,
     showTooltip,
     hideTooltip,
   });
+
+  const framePadding = $derived(
+    combo && maxYRight > 0
+      ? { top: 10, right: 44, bottom: 28, left: 36 }
+      : { top: 10, right: 12, bottom: 28, left: 36 },
+  );
 </script>
 
 <div class="liquid-chart-frame">
@@ -66,7 +84,7 @@
       xScale={scaleLinear()}
       y="category"
       yScale={scaleBand().paddingInner(0.4).paddingOuter(0.18)}
-      xDomain={[0, maxY * 1.08]}
+      xDomain={[0, maxYLeft * 1.08]}
       yDomain={model.categories}
       padding={{ top: 8, right: 16, bottom: 24, left: 56 }}
       custom={cakeCustom}
@@ -91,8 +109,8 @@
       xScale={scaleBand().paddingInner(0.4).paddingOuter(0.18)}
       yScale={scaleLinear()}
       xDomain={model.categories}
-      yDomain={[0, maxY * 1.08]}
-      padding={{ top: 10, right: 12, bottom: 28, left: 36 }}
+      yDomain={[0, maxYLeft * 1.08]}
+      padding={framePadding}
       custom={cakeCustom}
     >
       <Svg>{@render children()}</Svg>

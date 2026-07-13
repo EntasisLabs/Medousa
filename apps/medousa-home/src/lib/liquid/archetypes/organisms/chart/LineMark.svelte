@@ -22,6 +22,7 @@
     isActiveKey,
     resolveLabelPosition,
   } from "./chartModel";
+  import { scaleLinear } from "d3-scale";
 
   interface Props {
     mode?: "line" | "area";
@@ -31,7 +32,11 @@
 
   const mountId = Math.random().toString(36).slice(2, 9);
 
-  type Scale = ((v: unknown) => number) & { bandwidth?: () => number; domain?: () => unknown[] };
+  type Scale = ((v: unknown) => number) & {
+    bandwidth?: () => number;
+    domain?: () => unknown[];
+    range?: () => number[];
+  };
 
   interface CakeCustom {
     series: LiquidChartSeries[];
@@ -43,6 +48,7 @@
     activeKey: string;
     interactive: boolean;
     chartType?: string;
+    yDomainRight?: [number, number] | null;
     showTooltip: (
       x: number,
       y: number,
@@ -84,13 +90,23 @@
       });
   }
 
+  /** Primary yScale, or combo right-axis scale sharing the same pixel range. */
+  function resolveYScale(cfg: CakeCustom, yS: Scale): Scale {
+    if (cfg.chartType === "combo" && cfg.yDomainRight) {
+      const range = yS.range?.() ?? [0, $height];
+      return scaleLinear().domain(cfg.yDomainRight).range(range) as Scale;
+    }
+    return yS;
+  }
+
   const paths = $derived.by(() => {
     const rows = $data ?? [];
     const xS = $xScale;
-    const yS = $yScale;
+    const yPrimary = $yScale;
     const cfg = $custom;
-    if (!cfg || !rows.length || !xS || !yS) return [];
+    if (!cfg || !rows.length || !xS || !yPrimary) return [];
 
+    const yS = resolveYScale(cfg, yPrimary);
     const curve = curveFactory(cfg.curve ?? "smooth");
     const highlight = hasActiveHighlight(cfg.activeKey);
     const marked = lineSeries(cfg.series, cfg.seriesMarks, cfg.chartType);
@@ -157,23 +173,64 @@
   const axis = $derived.by(() => {
     const rows = $data ?? [];
     const xS = $xScale;
-    const yS = $yScale;
+    const yPrimary = $yScale;
+    const cfg = $custom;
     const w = $width;
     const h = $height;
-    if (!xS || !yS) {
+    if (!cfg || !xS || !yPrimary) {
       return {
         w: 0,
         h: 0,
+        combo: false,
         grid: [] as number[],
         xLabels: [] as { label: string; x: number }[],
         yLabels: [] as { label: string; y: number }[],
+        rightColor: "",
       };
     }
+
+    const comboMode = cfg.chartType === "combo";
+    const marked = lineSeries(cfg.series, cfg.seriesMarks, cfg.chartType);
+    const rightColor = marked.length
+      ? chartSeriesColor(marked[0].index, cfg.colors)
+      : "";
+
+    if (comboMode) {
+      if (!cfg.yDomainRight || !marked.length) {
+        return {
+          w,
+          h,
+          combo: true,
+          grid: [] as number[],
+          xLabels: [] as { label: string; x: number }[],
+          yLabels: [] as { label: string; y: number }[],
+          rightColor: "",
+        };
+      }
+      const yS = resolveYScale(cfg, yPrimary);
+      const domain = (yS.domain?.() as number[]) ?? [0, 1];
+      const max = Number(domain[1] ?? 1);
+      return {
+        w,
+        h,
+        combo: true,
+        grid: [] as number[],
+        xLabels: [] as { label: string; x: number }[],
+        yLabels: [0, 0.5, 1].map((t) => ({
+          label: formatChartNumber(max * t),
+          y: yS(max * t) ?? 0,
+        })),
+        rightColor,
+      };
+    }
+
+    const yS = yPrimary;
     const domain = (yS.domain?.() as number[]) ?? [0, 1];
     const max = Number(domain[1] ?? 1);
     return {
       w,
       h,
+      combo: false,
       grid: [0.25, 0.5, 0.75, 1].map((t) => yS(max * t) ?? 0),
       xLabels: rows.map((row) => {
         const category = String(row.category ?? "");
@@ -183,9 +240,10 @@
         };
       }),
       yLabels: [0, 0.5, 1].map((t) => ({
-        label: String(Math.round(max * t)),
+        label: formatChartNumber(max * t),
         y: yS(max * t) ?? 0,
       })),
+      rightColor: "",
     };
   });
 
@@ -251,17 +309,30 @@
         </linearGradient>
       {/each}
     </defs>
-    {#each axis.grid as y, i (i)}
-      <line class="liquid-chart-grid" x1="0" x2={axis.w} y1={y} y2={y} />
-    {/each}
-    {#each axis.yLabels as tick (tick.label + tick.y)}
-      <text class="liquid-chart-axis" x={-6} y={tick.y} text-anchor="end" dominant-baseline="middle"
-        >{tick.label}</text
-      >
-    {/each}
-    {#each axis.xLabels as tick (tick.label + tick.x)}
-      <text class="liquid-chart-axis" x={tick.x} y={axis.h + 14} text-anchor="middle">{tick.label}</text>
-    {/each}
+    {#if !axis.combo}
+      {#each axis.grid as y, i (i)}
+        <line class="liquid-chart-grid" x1="0" x2={axis.w} y1={y} y2={y} />
+      {/each}
+      {#each axis.yLabels as tick (tick.label + tick.y)}
+        <text class="liquid-chart-axis" x={-6} y={tick.y} text-anchor="end" dominant-baseline="middle"
+          >{tick.label}</text
+        >
+      {/each}
+      {#each axis.xLabels as tick (tick.label + tick.x)}
+        <text class="liquid-chart-axis" x={tick.x} y={axis.h + 14} text-anchor="middle">{tick.label}</text>
+      {/each}
+    {:else}
+      {#each axis.yLabels as tick (tick.label + tick.y)}
+        <text
+          class="liquid-chart-axis liquid-chart-axis-right"
+          style:fill={axis.rightColor || undefined}
+          x={axis.w + 6}
+          y={tick.y}
+          text-anchor="start"
+          dominant-baseline="middle">{tick.label}</text
+        >
+      {/each}
+    {/if}
 
     {#each paths as series (series.key)}
       {@const dimmed = seriesDimmed(series.active, series.key)}
@@ -319,6 +390,11 @@
     fill: rgb(var(--chart-fg-secondary));
     font-size: 0.7rem;
     font-weight: 550;
+  }
+
+  .liquid-chart-axis-right {
+    font-weight: 600;
+    opacity: 0.92;
   }
 
   .liquid-chart-stroke {

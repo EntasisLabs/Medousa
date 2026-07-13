@@ -78,17 +78,14 @@
     border-bottom: 1px solid color-mix(in srgb, var(--color-surface-500) 20%, transparent);
   }
 
+  /* Match chart title tokens — readable on vault cream and dark chat */
   .liquid-report-title {
     margin: 0;
     font-size: 1.2rem;
     font-weight: 700;
     letter-spacing: -0.02em;
     line-height: 1.25;
-    color: rgb(var(--color-surface-50));
-  }
-
-  :global(html:not(.dark)) .liquid-report-title {
-    color: rgb(var(--color-surface-900));
+    color: rgb(var(--chart-fg));
   }
 
   .liquid-report-subtitle {
@@ -96,7 +93,20 @@
     font-size: 0.8125rem;
     line-height: 1.45;
     font-weight: 450;
-    color: rgb(var(--color-surface-400));
+    color: rgb(var(--chart-fg-muted));
+  }
+
+  /* Beat vault `.markdown-content h3` wash when the report host sits in preview */
+  :global(.markdown-content) .liquid-report-title {
+    margin: 0;
+    color: rgb(var(--chart-fg));
+    font-size: 1.2rem;
+    font-weight: 700;
+  }
+
+  :global(.markdown-content) .liquid-report-subtitle {
+    margin: 0.35rem 0 0;
+    color: rgb(var(--chart-fg-muted));
   }
 
   .liquid-report-title :global(strong),
@@ -112,14 +122,11 @@
   .liquid-report-body :global(.markdown-content) {
     display: grid;
     grid-template-columns: repeat(var(--report-cols, 2), minmax(0, 1fr));
-    gap: 0.85rem 1rem;
+    column-gap: 0.95rem;
+    row-gap: 1.15rem;
     font-size: 0.875rem;
     line-height: 1.55;
-    color: rgb(var(--color-surface-200));
-  }
-
-  :global(html:not(.dark)) .liquid-report-body :global(.markdown-content) {
-    color: rgb(var(--color-surface-700));
+    color: rgb(var(--chart-fg-secondary));
   }
 
   /* Prose / headings full-bleed; chart embeds sit in the figure grid */
@@ -135,19 +142,37 @@
 
   .liquid-report-body :global(.markdown-content > p) {
     margin: 0;
+    color: rgb(var(--chart-fg-secondary));
   }
 
   .liquid-report-body :global(.markdown-content > h1),
   .liquid-report-body :global(.markdown-content > h2),
   .liquid-report-body :global(.markdown-content > h3),
   .liquid-report-body :global(.markdown-content > h4) {
-    margin: 0.35rem 0 0;
-    color: inherit;
+    margin: 0.55rem 0 0;
+    color: rgb(var(--chart-fg));
+  }
+
+  /* Nested chart chrome — same ink as standalone charts in vault */
+  .liquid-report-body :global(.liquid-chart-title) {
+    color: rgb(var(--chart-fg));
+  }
+
+  .liquid-report-body :global(.liquid-chart-description),
+  .liquid-report-body :global(.liquid-chart-caption),
+  .liquid-report-body :global(.liquid-chart-heatmap-col-label),
+  .liquid-report-body :global(.liquid-chart-heatmap-row-label) {
+    color: rgb(var(--chart-fg-muted));
   }
 
   .liquid-report-body :global(.liquid-chart) {
     margin: 0;
     height: 100%;
+  }
+
+  .liquid-report-body :global(.liquid-md-embed[data-liquid-embed="chart"]),
+  .liquid-report-body :global(.liquid-md-host-chart) {
+    min-width: 0;
   }
 
   @media (max-width: 640px) {

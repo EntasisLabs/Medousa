@@ -404,6 +404,39 @@ export function yMax(model: ChartViewModel): number {
   return max || 1;
 }
 
+/** Max over series whose combo `seriesMarks[i]` matches `want` (non-combo → all series). */
+export function yMaxForMarks(
+  model: Pick<ChartViewModel, "series" | "seriesMarks" | "type" | "stacked" | "categories">,
+  want: LiquidChartSeriesMark,
+): number {
+  if (model.type !== "combo") return yMax(model as ChartViewModel);
+
+  const marked = model.series
+    .map((s, i) => ({ s, i }))
+    .filter(({ i }) => {
+      const mark = model.seriesMarks[i] ?? (i === 0 ? "bar" : "line");
+      return mark === want;
+    });
+
+  if (!marked.length) return 0;
+
+  if (model.stacked && want === "bar") {
+    let max = 0;
+    for (let ci = 0; ci < model.categories.length; ci++) {
+      let sum = 0;
+      for (const { s } of marked) sum += s.values[ci] ?? 0;
+      if (sum > max) max = sum;
+    }
+    return max || 1;
+  }
+
+  let max = 0;
+  for (const { s } of marked) {
+    for (const v of s.values) if (v > max) max = v;
+  }
+  return max || 1;
+}
+
 const numberFmt = new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 });
 
 export function formatChartNumber(value: number): string {

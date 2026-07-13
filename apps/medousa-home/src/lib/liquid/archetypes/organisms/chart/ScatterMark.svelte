@@ -4,6 +4,7 @@
   import type { ChartViewModel } from "./chartModel";
   import ChartTooltip from "./ChartTooltip.svelte";
   import ScatterDots from "./ScatterDots.svelte";
+  import ScatterAxes from "./ScatterAxes.svelte";
 
   interface Props {
     model: ChartViewModel;
@@ -86,10 +87,11 @@
     yScale={scaleLinear()}
     xDomain={domain.x}
     yDomain={domain.y}
-    padding={{ top: 12, right: 14, bottom: 28, left: 36 }}
+    padding={{ top: 12, right: 16, bottom: 32, left: 40 }}
     custom={cakeCustom}
   >
     <Svg>
+      <ScatterAxes />
       <ScatterDots />
     </Svg>
     {#if model.tooltip}

@@ -283,6 +283,22 @@ describe("chartViewModel scatter/combo/heatmap", () => {
     expect(model?.seriesMarks).toEqual(["line", "bar"]);
   });
 
+  it("splits combo yMax by seriesMarks for dual-Y", async () => {
+    const { yMaxForMarks } = await import("./chartModel");
+    const model = chartViewModel({
+      type: "combo",
+      categories: ["Jan", "Feb"],
+      series: [
+        { key: "r", label: "Revenue", values: [120, 148] },
+        { key: "g", label: "Growth %", values: [4, 7] },
+      ],
+      seriesMarks: ["bar", "line"],
+    });
+    expect(model).not.toBeNull();
+    expect(yMaxForMarks(model!, "bar")).toBe(148);
+    expect(yMaxForMarks(model!, "line")).toBe(7);
+  });
+
   it("accepts heatmap matrix", () => {
     const model = chartViewModel({
       type: "heatmap",

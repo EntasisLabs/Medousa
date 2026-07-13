@@ -45,7 +45,7 @@
     z-index: 4;
     pointer-events: none;
     min-width: 6.75rem;
-    max-width: 14rem;
+    max-width: min(14rem, calc(100% - 0.75rem));
     padding: 0.45rem 0.6rem;
     border-radius: 0.55rem;
     border: 1px solid color-mix(in srgb, var(--color-surface-500) 28%, transparent);

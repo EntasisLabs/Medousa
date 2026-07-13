@@ -145,41 +145,48 @@
 
   .liquid-chart-heatmap-grid {
     display: grid;
-    grid-template-columns: minmax(3.5rem, max-content) repeat(var(--heatmap-cols, 1), minmax(0, 1fr));
-    gap: 0.28rem;
+    grid-template-columns: minmax(4.5rem, max-content) repeat(var(--heatmap-cols, 1), minmax(0, 1fr));
+    gap: 0.38rem 0.4rem;
     align-items: stretch;
   }
 
   .liquid-chart-heatmap-corner {
-    min-height: 1rem;
+    min-height: 1.15rem;
   }
 
   .liquid-chart-heatmap-col-label,
   .liquid-chart-heatmap-row-label {
     font-size: 0.6875rem;
     font-weight: 600;
-    line-height: 1.2;
+    line-height: 1.25;
+    letter-spacing: -0.01em;
     color: rgb(var(--chart-fg-muted));
   }
 
   .liquid-chart-heatmap-col-label {
     text-align: center;
-    padding: 0 0.15rem 0.2rem;
+    padding: 0 0.2rem 0.35rem;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
   }
 
   .liquid-chart-heatmap-row-label {
     display: flex;
     align-items: center;
     justify-content: flex-end;
-    padding-right: 0.35rem;
+    padding-right: 0.45rem;
     text-align: right;
+    max-width: 7rem;
   }
 
   .liquid-chart-heatmap-cell {
     appearance: none;
     border: none;
     margin: 0;
-    min-height: 1.85rem;
+    min-height: 2.05rem;
     border-radius: 0.45rem;
     background: color-mix(
       in srgb,
