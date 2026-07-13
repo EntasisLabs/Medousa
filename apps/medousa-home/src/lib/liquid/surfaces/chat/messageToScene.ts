@@ -1,7 +1,7 @@
 /**
  * Chat surface adapter — maps a `ChatMessage` to a runtime-governed `document`.
  *
- * Order (alive, not buried): thinking → live pulse → body → tools.
+ * Order (alive, not buried): thinking → live pulse → settled whisper → body → tools.
  * Intensity is dialed down in the shell components; we do not hide receipts
  * behind an observability drawer.
  */
@@ -42,7 +42,7 @@ function livePulseLabel(
   return null;
 }
 
-/** Settled interim under the final answer (live finish whisper or history Progress). */
+/** Settled interim above the final answer (live finish whisper or history Progress). */
 function settledInterimLabel(
   message: ChatMessage,
   opts: ChatSceneOptions,
@@ -111,24 +111,24 @@ function assistantFlow(message: ChatMessage, opts: ChatSceneOptions): SceneNode[
     }
   }
 
-  // 4. Body (substance) — never paint leaked reasoning callouts in prose
+  // 4. Settled interim whisper above the final answer (tool-turn progress breadcrumb)
+  const settled = settledInterimLabel(message, opts, bodyMarkdown);
+  if (settled) {
+    flow.push(child(`${id}:whisper`, "whisper", { text: settled }));
+  }
+
+  // 5. Body (substance) — never paint leaked reasoning callouts in prose
   if (hasContent) {
     flow.push(child(`${id}:body`, "prose", { markdown: bodyMarkdown }));
   } else if (streaming && !hasToolRuns && !hasReasoning) {
     flow.push(child(`${id}:body`, "prose", { markdown: "…" }));
   }
 
-  // 4b. Settled interim whisper under the final answer (tool-turn progress)
-  const settled = settledInterimLabel(message, opts, bodyMarkdown);
-  if (settled) {
-    flow.push(child(`${id}:whisper`, "whisper", { text: settled }));
-  }
-
   if (message.uiArtifacts && message.uiArtifacts.length > 0) {
     flow.push(child(`${id}:artifacts`, "presentation", { artifacts: message.uiArtifacts }));
   }
 
-  // 5. Tool receipts at the bottom — host-lane ToolRunChips (footnote when settled)
+  // 6. Tool receipts at the bottom — host-lane ToolRunChips (footnote when settled)
   if (hasToolRuns) {
     flow.push(
       child(`${id}:tools`, "tool_trace", {

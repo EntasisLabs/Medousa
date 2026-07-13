@@ -56,7 +56,7 @@ describe("chatMessageToScene — assistant order (thinking → body → tools)",
     expect(pulse?.props.quiet).toBe(true);
   });
 
-  it("shows settled stageWhisper under the final answer", () => {
+  it("shows settled stageWhisper above the final answer", () => {
     const scene = chatMessageToScene(
       msg({
         content: "Here is the answer.",
@@ -68,8 +68,8 @@ describe("chatMessageToScene — assistant order (thinking → body → tools)",
     expect(whisper?.type).toBe("whisper");
     expect(whisper?.props.text).toBe("Let me check the vault…");
     const flow = scene.slots?.flow ?? [];
-    expect(flow.map((n) => n.id).indexOf("m1:body")).toBeLessThan(
-      flow.map((n) => n.id).indexOf("m1:whisper"),
+    expect(flow.map((n) => n.id).indexOf("m1:whisper")).toBeLessThan(
+      flow.map((n) => n.id).indexOf("m1:body"),
     );
   });
 

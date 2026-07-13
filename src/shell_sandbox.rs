@@ -67,7 +67,23 @@ impl Default for ShellPermissionProfile {
 
 impl ShellPermissionProfile {
     pub fn from_args(args: &Value) -> Result<Self, String> {
-        let mut profile = Self::default();
+        Self::from_args_with_charter(args, &ShellCharterDefaults::from_tui_defaults())
+    }
+
+    pub fn from_args_with_charter(
+        args: &Value,
+        charter: &ShellCharterDefaults,
+    ) -> Result<Self, String> {
+        let mut profile = Self {
+            cwd: None,
+            writable_roots: charter.writable_roots.clone(),
+            readonly_roots: Vec::new(),
+            network: charter.network,
+            timeout_ms: charter.timeout_ms,
+            max_output_bytes: charter.max_output_bytes,
+            allowed_binaries: charter.allowed_binaries.clone(),
+        };
+
         if let Some(cwd) = args
             .get("cwd")
             .and_then(Value::as_str)
@@ -76,32 +92,82 @@ impl ShellPermissionProfile {
         {
             profile.cwd = Some(PathBuf::from(cwd));
         }
+
+        // Network: call may only tighten (AND with charter).
         if let Some(network) = args.get("network").and_then(Value::as_bool) {
-            profile.network = network;
+            profile.network = charter.network && network;
         }
+
         if let Some(timeout_ms) = args
             .get("timeout_ms")
             .and_then(Value::as_u64)
             .or_else(|| args.get("timeout").and_then(Value::as_u64))
         {
-            profile.timeout_ms = timeout_ms.max(100);
+            profile.timeout_ms = timeout_ms.max(100).min(charter.timeout_ms);
         }
+
         if let Some(max_output) = args.get("max_output_bytes").and_then(Value::as_u64) {
-            profile.max_output_bytes = (max_output as usize).max(1024);
+            profile.max_output_bytes = (max_output as usize)
+                .max(1024)
+                .min(charter.max_output_bytes);
         }
-        profile.writable_roots = path_list_from_args(args, &["writable_roots", "writable"]);
+
+        let call_writable = path_list_from_args(args, &["writable_roots", "writable"]);
+        if !call_writable.is_empty() {
+            if charter.writable_roots.is_empty() {
+                profile.writable_roots = call_writable;
+            } else {
+                profile.writable_roots = call_writable
+                    .into_iter()
+                    .filter(|path| {
+                        charter.writable_roots.iter().any(|root| {
+                            path.starts_with(root) || root.starts_with(path)
+                        })
+                    })
+                    .collect();
+                if profile.writable_roots.is_empty() {
+                    return Err(
+                        "writable_roots must stay within Settings → Shell charter roots".to_string(),
+                    );
+                }
+            }
+        }
+
         profile.readonly_roots = path_list_from_args(args, &["readonly_roots", "readonly"]);
+
         if let Some(arr) = args
             .get("allowed_binaries")
             .or_else(|| args.get("binaries"))
             .and_then(Value::as_array)
         {
-            profile.allowed_binaries = arr
+            let call_bins: Vec<String> = arr
                 .iter()
                 .filter_map(|v| v.as_str().map(|s| s.trim().to_string()))
                 .filter(|s| !s.is_empty())
                 .collect();
+            if charter.allowed_binaries.is_empty() {
+                profile.allowed_binaries = call_bins;
+            } else if call_bins.is_empty() {
+                profile.allowed_binaries = charter.allowed_binaries.clone();
+            } else {
+                let charter_set: std::collections::HashSet<_> = charter
+                    .allowed_binaries
+                    .iter()
+                    .map(|s| s.to_ascii_lowercase())
+                    .collect();
+                profile.allowed_binaries = call_bins
+                    .into_iter()
+                    .filter(|bin| charter_set.contains(&bin.to_ascii_lowercase()))
+                    .collect();
+                if profile.allowed_binaries.is_empty() {
+                    return Err(
+                        "allowed_binaries must intersect Settings → Shell charter allowlist"
+                            .to_string(),
+                    );
+                }
+            }
         }
+
         Ok(profile)
     }
 
@@ -111,6 +177,68 @@ impl ShellPermissionProfile {
             .or_else(|| std::env::current_dir().ok())
             .unwrap_or_else(|| PathBuf::from("."))
     }
+}
+
+/// Charter ceilings from Settings → Shell (`tui_defaults.json`).
+#[derive(Debug, Clone)]
+pub struct ShellCharterDefaults {
+    pub network: bool,
+    pub timeout_ms: u64,
+    pub max_output_bytes: usize,
+    pub allowed_binaries: Vec<String>,
+    pub writable_roots: Vec<PathBuf>,
+}
+
+impl ShellCharterDefaults {
+    pub fn sensitive() -> Self {
+        Self {
+            network: false,
+            timeout_ms: DEFAULT_TIMEOUT_MS,
+            max_output_bytes: DEFAULT_MAX_OUTPUT_BYTES,
+            allowed_binaries: Vec::new(),
+            writable_roots: Vec::new(),
+        }
+    }
+
+    pub fn from_tui_defaults() -> Self {
+        Self::from_defaults(&crate::session::load_tui_defaults())
+    }
+
+    pub fn from_defaults(defaults: &crate::session::TuiDefaults) -> Self {
+        let mut charter = Self::sensitive();
+        if let Some(network) = defaults.shell_network_default {
+            charter.network = network;
+        }
+        if let Some(timeout_ms) = defaults.shell_timeout_ms {
+            charter.timeout_ms = timeout_ms.max(100);
+        }
+        if let Some(max_output) = defaults.shell_max_output_bytes {
+            charter.max_output_bytes = (max_output as usize).max(1024);
+        }
+        if let Some(bins) = &defaults.shell_allowed_binaries {
+            charter.allowed_binaries = bins
+                .iter()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect();
+        }
+        if let Some(roots) = &defaults.shell_writable_roots {
+            charter.writable_roots = roots
+                .iter()
+                .map(|s| s.trim())
+                .filter(|s| !s.is_empty())
+                .map(PathBuf::from)
+                .collect();
+        }
+        charter
+    }
+}
+
+/// Whether Settings → Shell has opted into agent shell tools (default off).
+pub fn shell_agent_tools_enabled() -> bool {
+    crate::session::load_tui_defaults()
+        .shell_agent_tools_enabled
+        .unwrap_or(false)
 }
 
 fn path_list_from_args(args: &Value, keys: &[&str]) -> Vec<PathBuf> {
@@ -702,6 +830,74 @@ mod tests {
         assert!(req.argv.len() >= 2);
         assert!(req.argv.last().is_some_and(|s| s == "echo hi"));
         assert!(!req.profile.network);
+    }
+
+    #[test]
+    fn charter_blocks_network_enable() {
+        let charter = ShellCharterDefaults {
+            network: false,
+            ..ShellCharterDefaults::sensitive()
+        };
+        let profile = ShellPermissionProfile::from_args_with_charter(
+            &json!({
+                "command": "echo hi",
+                "network": true,
+            }),
+            &charter,
+        )
+        .expect("parse");
+        assert!(!profile.network);
+    }
+
+    #[test]
+    fn charter_intersects_binaries() {
+        let charter = ShellCharterDefaults {
+            allowed_binaries: vec!["git".to_string(), "ls".to_string()],
+            ..ShellCharterDefaults::sensitive()
+        };
+        let profile = ShellPermissionProfile::from_args_with_charter(
+            &json!({
+                "argv": ["git", "status"],
+                "allowed_binaries": ["git", "rm"],
+            }),
+            &charter,
+        )
+        .expect("parse");
+        assert_eq!(profile.allowed_binaries, vec!["git".to_string()]);
+    }
+
+    #[test]
+    fn charter_caps_timeout() {
+        let charter = ShellCharterDefaults {
+            timeout_ms: 5_000,
+            ..ShellCharterDefaults::sensitive()
+        };
+        let profile = ShellPermissionProfile::from_args_with_charter(
+            &json!({
+                "command": "echo hi",
+                "timeout_ms": 60_000,
+            }),
+            &charter,
+        )
+        .expect("parse");
+        assert_eq!(profile.timeout_ms, 5_000);
+    }
+
+    #[test]
+    fn charter_rejects_writable_outside_roots() {
+        let charter = ShellCharterDefaults {
+            writable_roots: vec![PathBuf::from("/tmp/allowed")],
+            ..ShellCharterDefaults::sensitive()
+        };
+        let err = ShellPermissionProfile::from_args_with_charter(
+            &json!({
+                "command": "echo hi",
+                "writable_roots": ["/tmp/elsewhere"],
+            }),
+            &charter,
+        )
+        .expect_err("outside charter");
+        assert!(err.contains("writable_roots"));
     }
 
     #[test]

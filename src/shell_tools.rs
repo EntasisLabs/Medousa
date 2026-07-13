@@ -8,7 +8,7 @@ use stasis::application::orchestration::tool_registry::StasisTool;
 use stasis::prelude::{Result as StasisResult, RuntimeComposition, StasisError};
 
 use crate::shell_grapheme::synthesize_shell_run_source;
-use crate::shell_sandbox::probe_shell_sandbox;
+use crate::shell_sandbox::{probe_shell_sandbox, shell_agent_tools_enabled};
 use crate::tools::run_grapheme_via_runtime;
 
 pub const COGNITION_SHELL_STATUS: &str = "cognition_shell_status";
@@ -18,6 +18,20 @@ pub const SHELL_COGNITION_TOOLS: &[&str] = &[COGNITION_SHELL_STATUS, COGNITION_S
 
 pub fn is_shell_cognition_tool(name: &str) -> bool {
     name.starts_with("cognition_shell_")
+}
+
+fn ensure_shell_agent_tools_enabled() -> StasisResult<()> {
+    ensure_shell_agent_tools_enabled_flag(shell_agent_tools_enabled())
+}
+
+fn ensure_shell_agent_tools_enabled_flag(enabled: bool) -> StasisResult<()> {
+    if enabled {
+        return Ok(());
+    }
+    Err(StasisError::PortFailure(
+        "Shell agent tools are disabled. Enable them in Settings → Shell before calling cognition_shell_*."
+            .to_string(),
+    ))
 }
 
 pub fn register_shell_tools(
@@ -49,6 +63,7 @@ impl StasisTool for CognitionShellStatusTool {
     }
 
     async fn invoke(&self, _input: Value) -> StasisResult<Value> {
+        ensure_shell_agent_tools_enabled()?;
         let status = tokio::task::spawn_blocking(probe_shell_sandbox)
             .await
             .map_err(|err| StasisError::PortFailure(format!("shell status join error: {err}")))?;
@@ -112,6 +127,7 @@ impl StasisTool for CognitionShellRunTool {
     }
 
     async fn invoke(&self, input: Value) -> StasisResult<Value> {
+        ensure_shell_agent_tools_enabled()?;
         let source = synthesize_shell_run_source(&input)
             .map_err(StasisError::PortFailure)?;
         let result = run_grapheme_via_runtime(&self.runtime, &source, COGNITION_SHELL_RUN).await?;
@@ -136,4 +152,24 @@ fn extract_shell_result(runtime_result: &Value) -> Value {
         return execution.clone();
     }
     diagnostics
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn agent_tools_gate_rejects_when_disabled() {
+        let err = ensure_shell_agent_tools_enabled_flag(false).expect_err("denied");
+        let message = err.to_string();
+        assert!(
+            message.contains("Settings → Shell"),
+            "unexpected message: {message}"
+        );
+    }
+
+    #[test]
+    fn agent_tools_gate_allows_when_enabled() {
+        ensure_shell_agent_tools_enabled_flag(true).expect("allowed");
+    }
 }

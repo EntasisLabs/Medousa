@@ -918,8 +918,16 @@ pub fn scheduled_tool_preview(
 }
 
 pub fn palette_tools_for_editor() -> Vec<String> {
+    use crate::shell_tools::SHELL_COGNITION_TOOLS;
+
     let mut tools = scheduled_lane_tool_universe().into_iter().collect::<Vec<_>>();
+    // Shell stays interactive-only on scheduled lane, but specialists may grant
+    // cognition_shell_* for interactive/worker turns via the editor palette.
+    for tool in SHELL_COGNITION_TOOLS {
+        tools.push((*tool).to_string());
+    }
     tools.sort();
+    tools.dedup();
     tools
 }
 
@@ -1549,5 +1557,15 @@ spec:
             Some("anthropic:claude-sonnet-4")
         );
         assert_eq!(merged.max_tool_rounds, Some(6));
+    }
+
+    #[test]
+    fn editor_palette_includes_shell_tools_scheduled_lane_excludes() {
+        let palette = palette_tools_for_editor();
+        assert!(palette.iter().any(|t| t == "cognition_shell_status"));
+        assert!(palette.iter().any(|t| t == "cognition_shell_run"));
+        let scheduled = scheduled_lane_tool_universe();
+        assert!(!scheduled.contains("cognition_shell_status"));
+        assert!(!scheduled.contains("cognition_shell_run"));
     }
 }

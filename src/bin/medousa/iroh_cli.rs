@@ -1,6 +1,9 @@
 use anyhow::{Result, bail};
 
 #[cfg(feature = "iroh-transport")]
+use anyhow::Context;
+
+#[cfg(feature = "iroh-transport")]
 use medousa::iroh_transport::{fetch_http_path, spawn_workshop_gateway};
 
 pub fn run_iroh(args: &[String]) -> Result<()> {

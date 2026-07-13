@@ -414,6 +414,12 @@ pub async fn wizard_apply_screen1(
                 active_voice_id: existing.active_voice_id,
                 custom_voice_presets: existing.custom_voice_presets,
                 inference_profiles: existing.inference_profiles,
+                shell_agent_tools_enabled: existing.shell_agent_tools_enabled,
+                shell_network_default: existing.shell_network_default,
+                shell_timeout_ms: existing.shell_timeout_ms,
+                shell_max_output_bytes: existing.shell_max_output_bytes,
+                shell_allowed_binaries: existing.shell_allowed_binaries,
+                shell_writable_roots: existing.shell_writable_roots,
             };
         }
     }
