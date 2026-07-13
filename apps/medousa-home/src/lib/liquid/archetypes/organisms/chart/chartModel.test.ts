@@ -162,3 +162,53 @@ describe("resolveChartColor", () => {
     );
   });
 });
+
+describe("resolveChartWidth/height/surface", () => {
+  it("maps width presets and lengths", async () => {
+    const { resolveChartWidth } = await import("./chartModel");
+    expect(resolveChartWidth("sm")).toBe("16rem");
+    expect(resolveChartWidth("md")).toBe("22rem");
+    expect(resolveChartWidth("lg")).toBe("28rem");
+    expect(resolveChartWidth("full")).toBe("");
+    expect(resolveChartWidth("70%")).toBe("70%");
+    expect(resolveChartWidth("320")).toBe("320px");
+  });
+
+  it("maps height presets", async () => {
+    const { resolveChartHeight } = await import("./chartModel");
+    expect(resolveChartHeight("sm")).toBe("11rem");
+    expect(resolveChartHeight("lg")).toBe("18rem");
+    expect(resolveChartHeight("md")).toBe("");
+    expect(resolveChartHeight("12rem")).toBe("12rem");
+  });
+
+  it("maps surface presets and tinted colors", async () => {
+    const { resolveChartSurface } = await import("./chartModel");
+    expect(resolveChartSurface("soft")).toBe("");
+    expect(resolveChartSurface("none")).toBe("transparent");
+    expect(resolveChartSurface("muted")).toBe("var(--chart-plot-muted)");
+    expect(resolveChartSurface("blue")).toBe("rgb(var(--markdown-chart-blue) / 0.16)");
+    expect(resolveChartSurface("gray")).toBe("rgb(var(--markdown-chart-gray) / 0.18)");
+    expect(resolveChartSurface("gray/25")).toBe("rgb(var(--markdown-chart-gray) / 0.25)");
+    expect(resolveChartSurface("grey/40")).toBe("rgb(var(--markdown-chart-gray) / 0.4)");
+    expect(resolveChartSurface("soft/30")).toBe(
+      "color-mix(in srgb, rgb(var(--chart-plot-ink)) 30%, transparent)",
+    );
+    expect(resolveChartSurface("blue/40")).toBe("rgb(var(--markdown-chart-blue) / 0.4)");
+    expect(resolveChartSurface("blue @ 0.2")).toBe("rgb(var(--markdown-chart-blue) / 0.2)");
+  });
+
+  it("wires width/height/surface onto the view model", () => {
+    const model = chartViewModel({
+      type: "radar",
+      categories: ["A", "B", "C"],
+      series: [{ key: "s", label: "Score", values: [1, 2, 3] }],
+      width: "sm",
+      height: "lg",
+      surface: "muted",
+    });
+    expect(model?.width).toBe("16rem");
+    expect(model?.height).toBe("18rem");
+    expect(model?.surface).toBe("var(--chart-plot-muted)");
+  });
+});

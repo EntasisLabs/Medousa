@@ -44,13 +44,16 @@
   }
 
   const gridPolygons = $derived(
-    rings.map((t, ri) => {
+    rings.map((t) => {
       const pts = model.categories.map((_, i) => point(i, radius * t));
       return {
         points: pts.map(([x, y]) => `${x},${y}`).join(" "),
-        opacity: 0.06 + ri * 0.05,
       };
     }),
+  );
+
+  const platePoints = $derived(
+    model.categories.map((_, i) => point(i, radius)).map(([x, y]) => `${x},${y}`).join(" "),
   );
 
   const axisLines = $derived(
@@ -132,13 +135,7 @@
 {:else}
   <div class="liquid-chart-radar-wrap liquid-chart-mount">
     <svg class="liquid-chart-radar" viewBox={`0 0 ${size} ${size}`} role="presentation">
-      {#each gridPolygons as poly, i (i)}
-        <polygon
-          class="liquid-chart-radar-grid-fill"
-          points={poly.points}
-          style:fill-opacity={poly.opacity}
-        />
-      {/each}
+      <polygon class="liquid-chart-radar-plate" points={platePoints} />
       {#each [...gridPolygons].reverse() as poly, i (i)}
         <polygon class="liquid-chart-radar-grid" points={poly.points} />
       {/each}
@@ -181,10 +178,10 @@
             cx={v.x}
             cy={v.y}
             r={hoverSeriesKey === series.key && hoverCategory === v.category
-              ? 5
+              ? 4.25
               : showDots
-                ? 3.25
-                : 2.5}
+                ? 2.75
+                : 2}
             fill={series.color}
             onmouseenter={(event) => onVertex(event, v.category, series.key)}
             onmouseleave={onVertexLeave}
@@ -219,48 +216,45 @@
     overflow: visible;
   }
 
-  .liquid-chart-radar-grid-fill {
-    fill: rgb(var(--color-surface-500));
+  .liquid-chart-radar-plate {
+    fill: var(--chart-plot);
     stroke: none;
   }
 
   .liquid-chart-radar-grid {
     fill: none;
-    stroke: color-mix(in srgb, var(--color-surface-500) 36%, transparent);
+    stroke: color-mix(in srgb, var(--color-surface-500) 22%, transparent);
     stroke-width: 1;
   }
 
   .liquid-chart-radar-axis {
-    stroke: color-mix(in srgb, var(--color-surface-500) 28%, transparent);
+    stroke: color-mix(in srgb, var(--color-surface-500) 18%, transparent);
     stroke-width: 1;
   }
 
   .liquid-chart-radar-label {
-    fill: rgb(var(--color-surface-600));
-    font-size: 0.62rem;
-  }
-
-  :global(html.dark) .liquid-chart-radar-label {
-    fill: rgb(var(--color-surface-400));
+    fill: rgb(var(--chart-fg-secondary));
+    font-size: 0.7rem;
+    font-weight: 600;
   }
 
   .liquid-chart-radar-fill {
-    fill-opacity: 0.22;
+    fill-opacity: 0.2;
     stroke-width: 2;
     stroke-linejoin: round;
     transition: opacity 160ms ease;
   }
 
   .liquid-chart-radar-dot {
-    stroke: color-mix(in srgb, var(--color-surface-50) 70%, transparent);
-    stroke-width: 1;
+    stroke: color-mix(in srgb, var(--color-surface-50) 40%, transparent);
+    stroke-width: 0.75;
     transition:
       opacity 160ms ease,
       r 160ms ease;
   }
 
   .liquid-chart-dot-soft {
-    opacity: 0.85;
+    opacity: 0.72;
   }
 
   .liquid-chart-dim {

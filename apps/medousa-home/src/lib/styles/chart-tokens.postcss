@@ -1,12 +1,23 @@
-/* Chart series tokens — theme accents (not locked blue / not mono).
- * *-500 exists on every theme including hand-crafted lights. */
+/* Chart series tokens — readable defaults on cream + dark.
+ * Series palette uses markdown chart hues (theme primary is often near-ink on parchment). */
 @layer base {
   html {
-    --chart-1: var(--color-primary-500);
-    --chart-2: var(--color-secondary-500);
-    --chart-3: var(--color-tertiary-500);
-    --chart-4: var(--color-success-500);
-    --chart-5: var(--color-warning-500);
+    --chart-1: var(--markdown-chart-blue);
+    --chart-2: var(--markdown-chart-purple);
+    --chart-3: var(--markdown-chart-green);
+    --chart-4: var(--markdown-chart-orange);
+    --chart-5: var(--markdown-chart-pink);
+
+    /* Typography — shadcn-clear hierarchy on cream + dark */
+    --chart-fg: var(--color-surface-900);
+    --chart-fg-secondary: var(--color-surface-700);
+    --chart-fg-muted: var(--color-surface-600);
+    --chart-fg-subtle: var(--color-surface-500);
+
+    /* Drawing-surface wash — soft plates/tracks (rgb alpha, not opaque blotches) */
+    --chart-plot-ink: var(--color-surface-800);
+    --chart-plot: color-mix(in srgb, rgb(var(--color-surface-800)) 6%, transparent);
+    --chart-plot-muted: color-mix(in srgb, rgb(var(--color-surface-800)) 12%, transparent);
 
     /* Markdown named colors (light) — same hues as {{blue|text}} */
     --markdown-chart-red: 220 38 38;
@@ -16,9 +27,20 @@
     --markdown-chart-blue: 37 99 235;
     --markdown-chart-purple: 147 51 234;
     --markdown-chart-pink: 219 39 119;
+    /* Surface-only neutral (literal triplet — nested surface vars break rgb(…/alpha) in SVG) */
+    --markdown-chart-gray: 100 116 139;
   }
 
   html.dark {
+    --chart-fg: var(--color-surface-50);
+    --chart-fg-secondary: var(--color-surface-200);
+    --chart-fg-muted: var(--color-surface-300);
+    --chart-fg-subtle: var(--color-surface-400);
+
+    --chart-plot-ink: var(--color-surface-50);
+    --chart-plot: color-mix(in srgb, rgb(var(--color-surface-50)) 7%, transparent);
+    --chart-plot-muted: color-mix(in srgb, rgb(var(--color-surface-50)) 14%, transparent);
+
     --markdown-chart-red: 248 113 113;
     --markdown-chart-orange: 251 146 60;
     --markdown-chart-yellow: 250 204 21;
@@ -26,5 +48,6 @@
     --markdown-chart-blue: 96 165 250;
     --markdown-chart-purple: 192 132 252;
     --markdown-chart-pink: 244 114 182;
+    --markdown-chart-gray: 148 163 184;
   }
 }

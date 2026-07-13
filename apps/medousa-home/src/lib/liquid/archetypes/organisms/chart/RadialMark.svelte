@@ -46,14 +46,14 @@
         .outerRadius(74)
         .startAngle(0)
         .endAngle(Math.PI * 2)
-        .cornerRadius(10)(datum) ?? "";
+        .cornerRadius(12)(datum) ?? "";
     const progress =
       d3Arc<typeof datum>()
         .innerRadius(50)
         .outerRadius(74)
         .startAngle(-Math.PI / 2)
         .endAngle(end)
-        .cornerRadius(10)(datum) ?? "";
+        .cornerRadius(12)(datum) ?? "";
     return {
       track,
       progress,
@@ -72,13 +72,14 @@
     const max = Math.max(...values, 1);
     const n = model.categories.length;
     const outerMax = 92;
-    const thickness = 13;
-    const gap = 4;
+    const thickness = 14;
+    const gap = 5;
     return model.categories.map((category, i) => {
       const value = values[i] ?? 0;
       const ratio = Math.min(Math.max(value / max, 0), 1);
       const outer = outerMax - i * (thickness + gap);
       const inner = outer - thickness;
+      const cap = thickness / 2;
       const end = -Math.PI / 2 + ratio * Math.PI * 2;
       const datum = { startAngle: 0, endAngle: Math.PI * 2 };
       const track =
@@ -87,14 +88,14 @@
           .outerRadius(outer)
           .startAngle(0)
           .endAngle(Math.PI * 2)
-          .cornerRadius(8)(datum) ?? "";
+          .cornerRadius(cap)(datum) ?? "";
       const progress =
         d3Arc<typeof datum>()
           .innerRadius(inner)
           .outerRadius(outer)
           .startAngle(-Math.PI / 2)
           .endAngle(end)
-          .cornerRadius(8)(datum) ?? "";
+          .cornerRadius(cap)(datum) ?? "";
       const active =
         !highlight || isActiveKey(model.activeKey, { category, key: series.key, label: series.label });
       return {
@@ -144,10 +145,15 @@
 <div class="liquid-chart-radial-wrap liquid-chart-mount">
   <svg class="liquid-chart-radial" viewBox={`0 0 ${size} ${size}`} role="presentation">
     <g transform={`translate(${cx}, ${cy})`}>
+      <circle class="liquid-chart-plot-plate" r="98" />
       {#if multiArc}
         {#each arcs as arc (arc.key)}
           {@const dimmed = arcDimmed(arc.active, arc.key)}
-          <path class="liquid-chart-radial-track" d={arc.track} />
+          <path
+            class="liquid-chart-radial-track"
+            d={arc.track}
+            fill={`color-mix(in srgb, ${arc.color} 16%, transparent)`}
+          />
           <path
             class="liquid-chart-radial-progress"
             class:liquid-chart-dim={dimmed}
@@ -185,7 +191,11 @@
           {/if}
         {/if}
       {:else}
-        <path class="liquid-chart-radial-track" d={single.track} />
+        <path
+          class="liquid-chart-radial-track"
+          d={single.track}
+          fill={`color-mix(in srgb, ${single.color} 16%, transparent)`}
+        />
         <path
           class="liquid-chart-radial-progress"
           class:liquid-chart-radial-hot={hoverKey === "single"}
@@ -221,16 +231,24 @@
     height: auto;
   }
 
+  .liquid-chart-plot-plate {
+    fill: var(--chart-plot);
+    stroke: none;
+  }
+
   .liquid-chart-radial-track {
-    fill: color-mix(in srgb, var(--color-surface-500) 18%, transparent);
+    /* series tint set inline; fallback if missing */
+    fill: var(--chart-plot);
   }
 
   .liquid-chart-radial-progress {
-    transition: opacity 160ms ease;
+    transition:
+      opacity 160ms ease,
+      filter 160ms ease;
   }
 
   .liquid-chart-radial-hot {
-    filter: brightness(1.06);
+    filter: brightness(1.08);
   }
 
   .liquid-chart-dim {
@@ -238,30 +256,24 @@
   }
 
   .liquid-chart-radial-ring-label {
-    fill: rgb(var(--color-surface-600));
-    font-size: 0.52rem;
+    fill: rgb(var(--chart-fg-muted));
+    font-size: 0.58rem;
     font-weight: 600;
     pointer-events: none;
-  }
-
-  :global(html.dark) .liquid-chart-radial-ring-label {
-    fill: rgb(var(--color-surface-200));
+    opacity: 0.9;
   }
 
   .liquid-chart-center-value {
-    fill: rgb(var(--color-surface-900));
-    font-size: 1.15rem;
+    fill: rgb(var(--chart-fg));
+    font-size: 1.35rem;
     font-weight: 700;
     font-variant-numeric: tabular-nums;
   }
 
-  :global(html.dark) .liquid-chart-center-value {
-    fill: rgb(var(--color-surface-50));
-  }
-
   .liquid-chart-center-label {
-    fill: rgb(var(--color-surface-500));
-    font-size: 0.68rem;
+    fill: rgb(var(--chart-fg-muted));
+    font-size: 0.72rem;
+    font-weight: 500;
   }
 
   .liquid-chart-mount {

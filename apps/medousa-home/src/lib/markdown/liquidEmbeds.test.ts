@@ -1146,6 +1146,36 @@ describe("preprocessLiquidEmbeds", () => {
     expect(props?.series[0].values).toEqual([275, 200, 187]);
   });
 
+  it("parses chart width and surface wash", () => {
+    const src = [
+      "```chart",
+      "type: radar",
+      "title: Coverage",
+      "width: sm",
+      "surface: muted",
+      "height: lg",
+      "",
+      "| Axis | Alpha |",
+      "| ---- | ----- |",
+      "| A    | 80    |",
+      "| B    | 70    |",
+      "| C    | 60    |",
+      "```",
+    ].join("\n");
+    const out = preprocessLiquidEmbeds(src);
+    const match = out.match(/data-liquid-props="([^"]+)"/);
+    const props = decodeLiquidProps<{
+      type: string;
+      width?: string;
+      height?: string;
+      surface?: string;
+    }>(match![1]);
+    expect(props?.type).toBe("radar");
+    expect(props?.width).toBe("sm");
+    expect(props?.height).toBe("lg");
+    expect(props?.surface).toBe("muted");
+  });
+
   it("accepts reserved radar type without failing parse", () => {
     const src = [
       "```chart",

@@ -47,6 +47,8 @@
     custom: import("svelte/store").Readable<CakeCustom>;
   }>("LayerCake");
 
+  type BarRound = "none" | "top" | "end" | "all";
+
   interface BarRect {
     key: string;
     seriesKey: string;
@@ -59,14 +61,37 @@
     label: string;
     value: number;
     active: boolean;
+    round: BarRound;
   }
 
   interface ValueLabel {
     key: string;
+    category: string;
     x: number;
     y: number;
     text: string;
     anchor: "start" | "middle" | "end";
+  }
+
+  /** Leading-edge rounded bar (pillier tops / capsule ends). */
+  function barPath(x: number, y: number, w: number, h: number, round: BarRound): string {
+    if (w <= 0 || h <= 0) return "";
+    const rMax = Math.min(w / 2, h / 2);
+    if (round === "none" || rMax < 0.5) {
+      return `M${x},${y}h${w}v${h}h${-w}Z`;
+    }
+    const r =
+      round === "all"
+        ? rMax
+        : Math.min(rMax, Math.max(w, h) * 0.45, 14);
+    if (round === "top") {
+      return `M${x},${y + h}L${x},${y + r}Q${x},${y} ${x + r},${y}L${x + w - r},${y}Q${x + w},${y} ${x + w},${y + r}L${x + w},${y + h}Z`;
+    }
+    if (round === "end") {
+      return `M${x},${y}L${x + w - r},${y}Q${x + w},${y} ${x + w},${y + r}L${x + w},${y + h - r}Q${x + w},${y + h} ${x + w - r},${y + h}L${x},${y + h}Z`;
+    }
+    const rr = rMax;
+    return `M${x + rr},${y}L${x + w - rr},${y}Q${x + w},${y} ${x + w},${y + rr}L${x + w},${y + h - rr}Q${x + w},${y + h} ${x + w - rr},${y + h}L${x + rr},${y + h}Q${x},${y + h} ${x},${y + h - rr}L${x},${y + rr}Q${x},${y} ${x + rr},${y}Z`;
   }
 
   interface HitBand {
@@ -98,22 +123,26 @@
         const band = yS.bandwidth?.() ?? 12;
         if (cfg.stacked) {
           let cursor = 0;
+          const last = series.length - 1;
           series.forEach((s, si) => {
             const value = Number(row[s.key] ?? 0);
             const x0 = xS(cursor) ?? 0;
             const x1 = xS(cursor + value) ?? 0;
+            const barH = Math.max(band * 0.72, 2);
+            const yOff = (band - barH) / 2;
             out.push({
               key: `${category}-${s.key}`,
               seriesKey: s.key,
               x: Math.min(x0, x1),
-              y,
+              y: y + yOff,
               width: Math.abs(x1 - x0),
-              height: band,
+              height: barH,
               color: chartSeriesColor(si, cfg.colors),
               category,
               label: s.label,
               value,
               active: !highlight || isActiveKey(cfg.activeKey, { key: s.key, label: s.label, category }),
+              round: si === last ? "end" : "none",
             });
             cursor += value;
           });
@@ -123,18 +152,20 @@
             const value = Number(row[s.key] ?? 0);
             const x0 = xS(0) ?? 0;
             const x1 = xS(value) ?? 0;
+            const barH = Math.max(slot * 0.68, 2);
             out.push({
               key: `${category}-${s.key}`,
               seriesKey: s.key,
               x: Math.min(x0, x1),
-              y: y + si * slot,
+              y: y + si * slot + (slot - barH) / 2,
               width: Math.abs(x1 - x0),
-              height: Math.max(slot * 0.9, 2),
+              height: barH,
               color: chartSeriesColor(si, cfg.colors),
               category,
               label: s.label,
               value,
               active: !highlight || isActiveKey(cfg.activeKey, { key: s.key, label: s.label, category }),
+              round: "end",
             });
           });
         }
@@ -143,22 +174,26 @@
         const band = xS.bandwidth?.() ?? 12;
         if (cfg.stacked) {
           let cursor = 0;
+          const last = series.length - 1;
           series.forEach((s, si) => {
             const value = Number(row[s.key] ?? 0);
             const y0 = yS(cursor) ?? 0;
             const y1 = yS(cursor + value) ?? 0;
+            const barW = Math.max(band * 0.72, 2);
+            const xOff = (band - barW) / 2;
             out.push({
               key: `${category}-${s.key}`,
               seriesKey: s.key,
-              x,
+              x: x + xOff,
               y: Math.min(y0, y1),
-              width: band,
+              width: barW,
               height: Math.abs(y1 - y0),
               color: chartSeriesColor(si, cfg.colors),
               category,
               label: s.label,
               value,
               active: !highlight || isActiveKey(cfg.activeKey, { key: s.key, label: s.label, category }),
+              round: si === last ? "top" : "none",
             });
             cursor += value;
           });
@@ -168,18 +203,20 @@
             const value = Number(row[s.key] ?? 0);
             const y0 = yS(0) ?? h;
             const y1 = yS(value) ?? 0;
+            const barW = Math.max(slot * 0.68, 2);
             out.push({
               key: `${category}-${s.key}`,
               seriesKey: s.key,
-              x: x + si * slot,
+              x: x + si * slot + (slot - barW) / 2,
               y: Math.min(y0, y1),
-              width: Math.max(slot * 0.9, 2),
+              width: barW,
               height: Math.abs(y1 - y0),
               color: chartSeriesColor(si, cfg.colors),
               category,
               label: s.label,
               value,
               active: !highlight || isActiveKey(cfg.activeKey, { key: s.key, label: s.label, category }),
+              round: "top",
             });
           });
         }
@@ -214,11 +251,11 @@
         if (cfg.horizontal) {
           const y = (yS(category) ?? 0) + ((yS.bandwidth?.() ?? 0) / 2);
           const x = xS(total) ?? 0;
-          out.push({ key: `lbl-${category}`, x: x + 4, y, text, anchor: "start" });
+          out.push({ key: `lbl-${category}`, category, x: x + 4, y, text, anchor: "start" });
         } else {
           const x = (xS(category) ?? 0) + ((xS.bandwidth?.() ?? 0) / 2);
           const y = (yS(total) ?? 0) - 4;
-          out.push({ key: `lbl-${category}`, x, y, text, anchor: "middle" });
+          out.push({ key: `lbl-${category}`, category, x, y, text, anchor: "middle" });
         }
       }
       return out;
@@ -230,6 +267,7 @@
       if (cfg.horizontal) {
         out.push({
           key: `lbl-${bar.key}`,
+          category: bar.category,
           x: bar.x + bar.width + 4,
           y: bar.y + bar.height / 2,
           text,
@@ -238,6 +276,7 @@
       } else {
         out.push({
           key: `lbl-${bar.key}`,
+          category: bar.category,
           x: bar.x + bar.width / 2,
           y: bar.y - 4,
           text,
@@ -411,20 +450,16 @@
     {/each}
 
     {#each bars as bar (bar.key)}
-      <rect
+      <path
         class="liquid-chart-bar"
         class:liquid-chart-dim={barDimmed(bar)}
         class:liquid-chart-bar-hot={hoverCategory === bar.category && !barDimmed(bar)}
+        class:liquid-chart-bar-hot-h={hoverCategory === bar.category && !barDimmed(bar) && ($custom?.horizontal ?? false)}
         class:liquid-chart-bar-active={bar.active && hasActiveHighlight($custom?.activeKey ?? "")}
         role="img"
         aria-label={`${bar.category}: ${bar.label} ${bar.value}`}
-        x={bar.x}
-        y={bar.y}
-        width={bar.width}
-        height={bar.height}
+        d={barPath(bar.x, bar.y, bar.width, bar.height, bar.round)}
         fill={bar.color}
-        rx="5"
-        ry="5"
         pointer-events="none"
       />
     {/each}
@@ -432,6 +467,7 @@
     {#each valueLabels as lbl (lbl.key)}
       <text
         class="liquid-chart-value-label"
+        class:liquid-chart-value-label-hot={hoverCategory === lbl.category}
         x={lbl.x}
         y={lbl.y}
         text-anchor={lbl.anchor}
@@ -449,12 +485,9 @@
   }
 
   .liquid-chart-axis {
-    fill: rgb(var(--color-surface-600));
-    font-size: 0.62rem;
-  }
-
-  :global(html.dark) .liquid-chart-axis {
-    fill: rgb(var(--color-surface-400));
+    fill: rgb(var(--chart-fg-secondary));
+    font-size: 0.7rem;
+    font-weight: 550;
   }
 
   .liquid-chart-hit {
@@ -464,14 +497,19 @@
 
   .liquid-chart-bar {
     transition:
-      opacity 160ms ease,
-      transform 160ms ease;
+      opacity 180ms ease,
+      transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
     transform-box: fill-box;
     transform-origin: center bottom;
   }
 
   .liquid-chart-bar-hot {
-    transform: translateY(-1px);
+    transform: translateY(-2px) scale(1.03, 1.02);
+  }
+
+  .liquid-chart-bar-hot-h {
+    transform-origin: left center;
+    transform: translateX(2px) scale(1.02, 1.04);
   }
 
   .liquid-chart-bar-active {
@@ -485,27 +523,32 @@
   }
 
   .liquid-chart-value-label {
-    fill: rgb(var(--color-surface-600));
-    font-size: 0.58rem;
+    fill: rgb(var(--chart-fg-secondary));
+    font-size: 0.65rem;
     font-weight: 600;
     font-variant-numeric: tabular-nums;
     pointer-events: none;
+    opacity: 0.92;
+    transition: opacity 160ms ease;
   }
 
-  :global(html.dark) .liquid-chart-value-label {
-    fill: rgb(var(--color-surface-200));
+  .liquid-chart-value-label-hot {
+    opacity: 1;
+    fill: rgb(var(--chart-fg));
   }
 
   .liquid-chart-mount {
-    animation: liquid-chart-mount 260ms ease-out both;
+    animation: liquid-chart-mount 280ms ease-out both;
   }
 
   @keyframes liquid-chart-mount {
     from {
       opacity: 0;
+      transform: translateY(4px);
     }
     to {
       opacity: 1;
+      transform: translateY(0);
     }
   }
 
@@ -514,7 +557,8 @@
       transition: none;
     }
 
-    .liquid-chart-bar-hot {
+    .liquid-chart-bar-hot,
+    .liquid-chart-bar-hot-h {
       transform: none;
     }
 

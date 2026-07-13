@@ -64,7 +64,7 @@
       data={rows}
       xScale={scaleLinear()}
       y="category"
-      yScale={scaleBand().paddingInner(0.28).paddingOuter(0.12)}
+      yScale={scaleBand().paddingInner(0.4).paddingOuter(0.18)}
       xDomain={[0, maxY * 1.08]}
       yDomain={model.categories}
       padding={{ top: 8, right: 16, bottom: 24, left: 56 }}
@@ -87,7 +87,7 @@
     <LayerCake
       data={rows}
       x="category"
-      xScale={scaleBand().paddingInner(0.28).paddingOuter(0.12)}
+      xScale={scaleBand().paddingInner(0.4).paddingOuter(0.18)}
       yScale={scaleLinear()}
       xDomain={model.categories}
       yDomain={[0, maxY * 1.08]}
@@ -114,8 +114,8 @@
   .liquid-chart-frame {
     position: relative;
     width: 100%;
-    height: 14.5rem;
-    min-height: 12rem;
+    height: var(--liquid-chart-height, 14.5rem);
+    min-height: 10rem;
   }
 
   .liquid-chart-frame :global(.layercake-container) {

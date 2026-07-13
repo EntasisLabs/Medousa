@@ -57,26 +57,21 @@
     -webkit-backdrop-filter: blur(14px) saturate(1.15);
     transform: translate(-50%, calc(-100% - 0.45rem));
     animation: liquid-chart-tip-in 120ms ease-out both;
-    color: rgb(var(--color-surface-900));
+    color: rgb(var(--chart-fg));
   }
 
   :global(html.dark) .liquid-chart-tooltip {
     background: color-mix(in srgb, var(--color-surface-900) 78%, transparent);
     border-color: color-mix(in srgb, var(--color-surface-500) 42%, transparent);
     box-shadow: 0 10px 28px rgb(0 0 0 / 0.4);
-    color: rgb(var(--color-surface-50));
   }
 
   .liquid-chart-tooltip-title {
     margin: 0 0 0.22rem;
-    font-size: 0.72rem;
+    font-size: 0.75rem;
     font-weight: 700;
     letter-spacing: -0.01em;
-    color: rgb(var(--color-surface-900));
-  }
-
-  :global(html.dark) .liquid-chart-tooltip-title {
-    color: rgb(var(--color-surface-50));
+    color: rgb(var(--chart-fg));
   }
 
   .liquid-chart-tooltip-line {
@@ -84,12 +79,8 @@
     align-items: center;
     gap: 0.35rem;
     margin: 0.14rem 0 0;
-    font-size: 0.68rem;
-    color: rgb(var(--color-surface-600));
-  }
-
-  :global(html.dark) .liquid-chart-tooltip-line {
-    color: rgb(var(--color-surface-300));
+    font-size: 0.72rem;
+    color: rgb(var(--chart-fg-muted));
   }
 
   .liquid-chart-tooltip-swatch {
@@ -109,12 +100,8 @@
 
   .liquid-chart-tooltip-value {
     font-variant-numeric: tabular-nums;
-    color: rgb(var(--color-surface-900));
+    color: rgb(var(--chart-fg));
     font-weight: 700;
-  }
-
-  :global(html.dark) .liquid-chart-tooltip-value {
-    color: rgb(var(--color-surface-50));
   }
 
   @keyframes liquid-chart-tip-in {

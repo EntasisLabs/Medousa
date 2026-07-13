@@ -142,6 +142,7 @@
 <div class="liquid-chart-pie-wrap liquid-chart-mount">
   <svg class="liquid-chart-pie" viewBox={`0 0 ${size} ${size}`} role="presentation">
     <g transform={`translate(${cx}, ${cy})`}>
+      <circle class="liquid-chart-plot-plate" r={outer + 10} />
       {#each slices as slice, i (slice.data.category + i)}
         {@const off = explodeOffset(slice)}
         {@const dimmed = isDimmed(slice)}
@@ -225,6 +226,11 @@
     overflow: visible;
   }
 
+  .liquid-chart-plot-plate {
+    fill: var(--chart-plot);
+    stroke: none;
+  }
+
   .liquid-chart-slice-g {
     transition: transform 180ms ease;
   }
@@ -245,8 +251,8 @@
   }
 
   .liquid-chart-pie-label {
-    font-size: 0.58rem;
-    font-weight: 600;
+    font-size: 0.68rem;
+    font-weight: 650;
     pointer-events: none;
     transition: opacity 160ms ease;
   }
@@ -256,28 +262,21 @@
   }
 
   .liquid-chart-pie-label-outside {
-    fill: rgb(var(--color-surface-500));
+    fill: rgb(var(--chart-fg-secondary));
     font-variant-numeric: tabular-nums;
   }
 
-  :global(html.dark) .liquid-chart-pie-label-outside {
-    fill: rgb(var(--color-surface-300));
-  }
-
   .liquid-chart-center-value {
-    fill: rgb(var(--color-surface-900));
-    font-size: 1.15rem;
+    fill: rgb(var(--chart-fg));
+    font-size: 1.35rem;
     font-weight: 700;
     font-variant-numeric: tabular-nums;
   }
 
-  :global(html.dark) .liquid-chart-center-value {
-    fill: rgb(var(--color-surface-50));
-  }
-
   .liquid-chart-center-label {
-    fill: rgb(var(--color-surface-500));
-    font-size: 0.68rem;
+    fill: rgb(var(--chart-fg-muted));
+    font-size: 0.72rem;
+    font-weight: 500;
   }
 
   .liquid-chart-mount {

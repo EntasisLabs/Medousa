@@ -110,7 +110,7 @@
 
   const valueLabels = $derived.by(() => {
     const cfg = $custom;
-    if (!cfg) return [] as { key: string; x: number; y: number; text: string }[];
+    if (!cfg) return [] as { key: string; category: string; x: number; y: number; text: string }[];
     const pos = resolveLabelPosition({
       type: "line",
       labels: cfg.labels,
@@ -119,13 +119,14 @@
       centerValue: "",
     });
     if (pos === "none") return [];
-    const out: { key: string; x: number; y: number; text: string }[] = [];
+    const out: { key: string; category: string; x: number; y: number; text: string }[] = [];
     for (const series of paths) {
       for (const pt of series.points) {
         const text = formatChartLabel(cfg.labels, pt.category, pt.value);
         if (!text) continue;
         out.push({
           key: `${series.key}-${pt.category}`,
+          category: pt.category,
           x: pt.x,
           y: pt.y - 8,
           text,
@@ -227,7 +228,7 @@
           x2="0"
           y2="1"
         >
-          <stop offset="0%" stop-color={series.color} stop-opacity="0.42" />
+          <stop offset="0%" stop-color={series.color} stop-opacity="0.48" />
           <stop offset="100%" stop-color={series.color} stop-opacity="0.02" />
         </linearGradient>
       {/each}
@@ -246,14 +247,13 @@
 
     {#each paths as series (series.key)}
       {@const dimmed = seriesDimmed(series.active, series.key)}
-      {#if mode === "area"}
-        <path
-          class="liquid-chart-area"
-          class:liquid-chart-dim={dimmed}
-          d={series.area}
-          fill={`url(#liquid-chart-area-${mountId}-${series.key})`}
-        />
-      {/if}
+      <path
+        class="liquid-chart-area"
+        class:liquid-chart-area-wash={mode === "line"}
+        class:liquid-chart-dim={dimmed}
+        d={series.area}
+        fill={`url(#liquid-chart-area-${mountId}-${series.key})`}
+      />
       <path
         class="liquid-chart-stroke"
         class:liquid-chart-dim={dimmed}
@@ -279,7 +279,12 @@
     {/each}
 
     {#each valueLabels as lbl (lbl.key)}
-      <text class="liquid-chart-value-label" x={lbl.x} y={lbl.y} text-anchor="middle"
+      <text
+        class="liquid-chart-value-label"
+        class:liquid-chart-value-label-hot={hoverCategory === lbl.category}
+        x={lbl.x}
+        y={lbl.y}
+        text-anchor="middle"
         >{lbl.text}</text
       >
     {/each}
@@ -293,16 +298,13 @@
   }
 
   .liquid-chart-axis {
-    fill: rgb(var(--color-surface-600));
-    font-size: 0.62rem;
-  }
-
-  :global(html.dark) .liquid-chart-axis {
-    fill: rgb(var(--color-surface-400));
+    fill: rgb(var(--chart-fg-secondary));
+    font-size: 0.7rem;
+    font-weight: 550;
   }
 
   .liquid-chart-stroke {
-    stroke-width: 2.25;
+    stroke-width: 2.35;
     stroke-linejoin: round;
     stroke-linecap: round;
     transition: opacity 160ms ease;
@@ -310,6 +312,10 @@
 
   .liquid-chart-area {
     transition: opacity 160ms ease;
+  }
+
+  .liquid-chart-area-wash {
+    opacity: 0.55;
   }
 
   .liquid-chart-dot {
@@ -333,15 +339,18 @@
   }
 
   .liquid-chart-value-label {
-    fill: rgb(var(--color-surface-600));
-    font-size: 0.58rem;
+    fill: rgb(var(--chart-fg-secondary));
+    font-size: 0.65rem;
     font-weight: 600;
     font-variant-numeric: tabular-nums;
     pointer-events: none;
+    opacity: 0.92;
+    transition: opacity 160ms ease;
   }
 
-  :global(html.dark) .liquid-chart-value-label {
-    fill: rgb(var(--color-surface-200));
+  .liquid-chart-value-label-hot {
+    opacity: 1;
+    fill: rgb(var(--chart-fg));
   }
 
   .liquid-chart-mount {

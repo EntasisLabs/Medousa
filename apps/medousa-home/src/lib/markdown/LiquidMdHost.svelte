@@ -439,6 +439,9 @@
         ...(props.interactive != null ? { interactive: props.interactive } : {}),
         ...(props.activeKey ? { activeKey: props.activeKey } : {}),
         ...(props.colors?.length ? { colors: props.colors } : {}),
+        ...(props.width ? { width: props.width } : {}),
+        ...(props.height ? { height: props.height } : {}),
+        ...(props.surface ? { surface: props.surface } : {}),
       },
       fillState: "ready",
     });

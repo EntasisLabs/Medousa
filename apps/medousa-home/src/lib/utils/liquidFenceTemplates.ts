@@ -95,7 +95,7 @@ export const LIQUID_CHART_PIE_TEMPLATE = serializeChartFence({
     { category: "Safari", values: [200] },
     { category: "Firefox", values: [187] },
   ],
-  extraKv: { labels: "both", labelPosition: "outside", legend: "bottom" },
+  extraKv: { legend: "bottom" },
 });
 
 export const LIQUID_CHART_RADAR_TEMPLATE = serializeChartFence({
@@ -109,7 +109,7 @@ export const LIQUID_CHART_RADAR_TEMPLATE = serializeChartFence({
     { category: "Safety", values: [90, 65] },
     { category: "Efficiency", values: [75, 90] },
   ],
-  extraKv: { legend: "bottom" },
+  extraKv: { legend: "bottom", surface: "gray/16", width: "md" },
 });
 
 export const LIQUID_CHART_RADIAL_TEMPLATE = serializeChartFence({
@@ -121,7 +121,7 @@ export const LIQUID_CHART_RADIAL_TEMPLATE = serializeChartFence({
     { category: "Mobile", values: [80] },
     { category: "Tablet", values: [120] },
   ],
-  extraKv: { legend: "bottom", labels: "category" },
+  extraKv: { legend: "bottom" },
 });
 
 /** Default slash chart insert (bar). */

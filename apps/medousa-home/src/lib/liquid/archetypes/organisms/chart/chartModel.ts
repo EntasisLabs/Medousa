@@ -47,6 +47,12 @@ export interface ChartViewModel {
   interactive: boolean;
   activeKey: string;
   colors: string[];
+  /** Resolved CSS width, or "" for full bleed. */
+  width: string;
+  /** Resolved CSS height for cartesian frames, or "" for default. */
+  height: string;
+  /** Resolved CSS fill for plot wash, or "" to use theme --chart-plot. */
+  surface: string;
 }
 
 export function resolveChartColor(raw: string, fallbackIndex = 0): string {
@@ -73,6 +79,106 @@ export function chartSeriesColor(index: number, override?: string[]): string {
   if (override?.[index]) return resolveChartColor(override[index], index);
   const n = (index % 5) + 1;
   return `rgb(var(--chart-${n}))`;
+}
+
+/** Card width → CSS length. Empty / full → "". */
+export function resolveChartWidth(raw: string): string {
+  const v = raw.trim().toLowerCase();
+  if (!v || v === "full" || v === "100%" || v === "auto") return "";
+  if (v === "sm") return "16rem";
+  if (v === "md") return "22rem";
+  if (v === "lg") return "28rem";
+  if (/^\d+(\.\d+)?(%|px|rem|em|ch|vw|cqw)$/.test(v)) return v;
+  if (/^\d+(\.\d+)?$/.test(v)) return `${v}px`;
+  return "";
+}
+
+/** Cartesian plot height → CSS length. Empty → "". */
+export function resolveChartHeight(raw: string): string {
+  const v = raw.trim().toLowerCase();
+  if (!v || v === "auto" || v === "md") return "";
+  if (v === "sm") return "11rem";
+  if (v === "lg") return "18rem";
+  if (v === "xl") return "22rem";
+  if (/^\d+(\.\d+)?(%|px|rem|em|ch|vh|cqh)$/.test(v)) return v;
+  if (/^\d+(\.\d+)?$/.test(v)) return `${v}px`;
+  return "";
+}
+
+/**
+ * Drawing-surface wash for radar plates / polar tracks.
+ * Supports: soft | muted | none | gray | blue | blue/25 | #888/40 | gray @ 0.2
+ * Slash/at alpha: 0–1 or 0–100 (values > 1 treated as percent).
+ */
+export function resolveChartSurface(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed) return "";
+
+  let colorPart = trimmed;
+  let alpha: number | null = null;
+
+  const slash = trimmed.match(/^(.+?)\/(\d{1,3}(?:\.\d+)?)\s*$/);
+  const at = trimmed.match(/^(.+?)\s*@\s*(\d{1,3}(?:\.\d+)?)\s*$/);
+  if (slash) {
+    colorPart = slash[1].trim();
+    alpha = normalizeSurfaceAlpha(Number(slash[2]));
+  } else if (at) {
+    colorPart = at[1].trim();
+    alpha = normalizeSurfaceAlpha(Number(at[2]));
+  }
+
+  const v = colorPart.toLowerCase();
+  if (v === "soft" || v === "default") {
+    if (alpha == null) return "";
+    return surfaceWashFromInk(alpha);
+  }
+  if (v === "none" || v === "transparent" || v === "off") return "transparent";
+  if (v === "muted" || v === "strong") {
+    if (alpha == null) return "var(--chart-plot-muted)";
+    return surfaceWashFromInk(alpha);
+  }
+  // gray/grey/neutral/ink — same path as blue (literal RGB triplet token)
+  if (v === "gray" || v === "grey" || v === "neutral" || v === "ink") {
+    const a = alpha ?? 0.18;
+    return `rgb(var(--markdown-chart-gray) / ${a})`;
+  }
+  if (isMarkdownColorId(v)) {
+    const a = alpha ?? 0.16;
+    return `rgb(var(--markdown-chart-${v}) / ${a})`;
+  }
+  const hex = normalizeMarkdownHexColor(colorPart);
+  if (hex) {
+    const a = alpha ?? 0.16;
+    return hexToRgba(hex, a);
+  }
+  // Avoid opaque CSS named colors (black, silver, …) — wash them.
+  if (/^[a-z]+$/i.test(colorPart)) {
+    const a = alpha ?? 0.14;
+    return `color-mix(in srgb, ${colorPart.toLowerCase()} ${Math.round(a * 100)}%, transparent)`;
+  }
+  return resolveChartColor(colorPart);
+}
+
+/** soft/muted with custom alpha — color-mix avoids nested-var rgb()/alpha SVG bugs. */
+function surfaceWashFromInk(alpha: number): string {
+  const pct = Math.round(Math.min(1, Math.max(0, alpha)) * 100);
+  return `color-mix(in srgb, rgb(var(--chart-plot-ink)) ${pct}%, transparent)`;
+}
+
+function normalizeSurfaceAlpha(n: number): number {
+  if (!Number.isFinite(n) || n < 0) return 0;
+  const a = n > 1 ? n / 100 : n;
+  return Math.min(1, Math.max(0, a));
+}
+
+/** #RRGGBB → rgba() for SVG fills with alpha. */
+function hexToRgba(hex: string, alpha: number): string {
+  const h = hex.replace("#", "");
+  if (h.length !== 6) return `color-mix(in srgb, ${hex} ${Math.round(alpha * 100)}%, transparent)`;
+  const r = Number.parseInt(h.slice(0, 2), 16);
+  const g = Number.parseInt(h.slice(2, 4), 16);
+  const b = Number.parseInt(h.slice(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
 export function resolveLegend(
@@ -165,6 +271,10 @@ export function chartViewModel(props: Record<string, unknown> | LiquidChartProps
       )
     : [];
 
+  const width = resolveChartWidth(asString((props as LiquidChartProps).width));
+  const height = resolveChartHeight(asString((props as LiquidChartProps).height));
+  const surface = resolveChartSurface(asString((props as LiquidChartProps).surface));
+
   return {
     type,
     title: asString((props as LiquidChartProps).title),
@@ -187,6 +297,9 @@ export function chartViewModel(props: Record<string, unknown> | LiquidChartProps
     interactive: asBool((props as LiquidChartProps).interactive, true),
     activeKey: asString((props as LiquidChartProps).activeKey),
     colors,
+    width,
+    height,
+    surface,
   };
 }
 

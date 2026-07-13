@@ -58,12 +58,9 @@
   }
 
   .liquid-chart-legend-label {
-    font-size: 0.72rem;
-    color: rgb(var(--color-surface-600));
+    font-size: 0.78rem;
+    font-weight: 500;
+    color: rgb(var(--chart-fg-secondary));
     white-space: nowrap;
-  }
-
-  :global(html.dark) .liquid-chart-legend-label {
-    color: rgb(var(--color-surface-300));
   }
 </style>

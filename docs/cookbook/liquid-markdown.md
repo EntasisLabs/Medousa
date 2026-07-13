@@ -37,14 +37,15 @@ legend: bottom
 - **type:** `bar` | `line` | `area` | `pie` | `donut` | `radar` | `radial`
 - **Table:** first column = categories (radar axes); other columns = numeric series
 - **Minimum rows:** ≥2 categories (≥3 for radar)
-- **Optional KV:** `description`, `labels` (`none`|`value`|`category`|`both`), `labelPosition` (`auto`|`inside`|`outside`), `activeKey`, `curve`, `layout`, `stacked`, `centerValue`, `centerLabel`, `tooltip`, `legend`, `separator`, `trend`, `caption`, `colors`
-- **Colors:** defaults follow the active theme (`primary` / `secondary` / `tertiary` / `success` / `warning`). Override with markdown color names or hex:
+- **Optional KV:** `description`, `labels` (`none`|`value`|`category`|`both`), `labelPosition` (`auto`|`inside`|`outside`), `activeKey`, `curve`, `layout`, `stacked`, `centerValue`, `centerLabel`, `tooltip`, `legend`, `separator`, `trend`, `caption`, `colors`, `width` (`sm`|`md`|`lg`|`full`|CSS length), `height` (`sm`|`md`|`lg`|CSS length, bar/line/area), `surface` (drawing wash — see below)
+- **Colors:** defaults are readable blues/purples/greens (not ink-black). Override with markdown color names or hex:
 
 ````md
 ```chart
 type: bar
 colors: blue, purple, green
 legend: bottom
+width: md
 
 | Month | Desktop | Mobile | Tablet |
 | ----- | ------- | ------ | ------ |
@@ -53,7 +54,39 @@ legend: bottom
 ```
 ````
 
+**Surface** (radar / donut / pie / radial plot wash — not the card chrome):
+
+| Value | Effect |
+| --- | --- |
+| `soft` (default) | Very light theme wash |
+| `muted` | A bit more contrast |
+| `none` | No plate |
+| `gray` / `grey` | Neutral slate wash (~18%) |
+| `blue`, `pink`, … | Tinted wash (~16%) |
+| `blue/25` or `gray/40` | Hue + opacity (0–1 or 0–100%) |
+| `#94a3b8/30` | Hex wash + opacity |
+
+````md
+```chart
+type: radar
+title: Team coverage
+surface: gray/18
+colors: blue, green
+legend: bottom
+
+| Axis        | Alpha | Beta |
+| ----------- | ----- | ---- |
+| Speed       | 80    | 55   |
+| Reliability | 70    | 85   |
+| Comfort     | 60    | 70   |
+| Safety      | 90    | 65   |
+| Efficiency  | 75    | 90   |
+```
+````
+
 Named colors match `{{blue|text}}`: `red`, `orange`, `yellow`, `green`, `blue`, `purple`, `pink`. Hex works too (`#2563eb`).
+
+Value labels are opt-in (`labels: value` / `both`). Titles, axes, and legends use high-contrast chart type tokens so they stay readable on cream and dark. Bars use pill leading edges; lines include a soft wash under the stroke.
 
 Prefer ` ```chart ` when a plot communicates better than a raw GFM table; keep plain tables for dumps.
 

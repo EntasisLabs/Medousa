@@ -333,6 +333,12 @@ export interface LiquidChartProps {
   activeKey?: string;
 
   colors?: string[];
+  /** Card width: sm | md | lg | full | CSS length (e.g. 18rem, 70%). */
+  width?: string;
+  /** Plot height for bar/line/area: sm | md | lg | CSS length. */
+  height?: string;
+  /** Drawing-surface wash (radar plate, polar tracks): soft | muted | none | color. */
+  surface?: string;
 }
 
 export interface LiquidSectionProps {
@@ -1490,6 +1496,11 @@ function parseChartBody(body: string): LiquidChartProps | null {
       .filter(Boolean);
     if (colors.length) chart.colors = colors;
   }
+
+  if (fields.width?.trim()) chart.width = fields.width.trim();
+  if (fields.height?.trim()) chart.height = fields.height.trim();
+  const surface = (fields.surface ?? fields.plot)?.trim();
+  if (surface) chart.surface = surface;
 
   return chart;
 }
