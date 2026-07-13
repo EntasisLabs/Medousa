@@ -139,7 +139,7 @@ export function resolveChartSurface(raw: string): string {
   }
   // gray/grey/neutral/ink — same path as blue (literal RGB triplet token)
   if (v === "gray" || v === "grey" || v === "neutral" || v === "ink") {
-    const a = alpha ?? 0.18;
+    const a = alpha ?? 0.12;
     return `rgb(var(--markdown-chart-gray) / ${a})`;
   }
   if (isMarkdownColorId(v)) {

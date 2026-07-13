@@ -33,14 +33,14 @@
   .liquid-chart-legend {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.55rem 0.9rem;
-    margin: 0.55rem 0 0;
+    gap: 0.45rem 0.85rem;
+    margin: 0.4rem 0 0;
     padding: 0;
     list-style: none;
   }
 
   .liquid-chart-legend-top {
-    margin: 0 0 0.55rem;
+    margin: 0 0 0.4rem;
   }
 
   .liquid-chart-legend-item {

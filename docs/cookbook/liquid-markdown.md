@@ -56,21 +56,25 @@ width: md
 
 **Surface** (radar / donut / pie / radial plot wash — not the card chrome):
 
+Zero-config is finished: omit `surface` on radial/pie (no plate — marks float on the card). Radar keeps a whisper-soft default plate; use `surface: none` to drop it.
+
 | Value | Effect |
 | --- | --- |
-| `soft` (default) | Very light theme wash |
+| _(omit)_ / `soft` | Radial/pie: no plate. Radar: very light theme wash |
 | `muted` | A bit more contrast |
 | `none` | No plate |
-| `gray` / `grey` | Neutral slate wash (~18%) |
+| `gray` / `grey` | Soft neutral wash (~12%) |
 | `blue`, `pink`, … | Tinted wash (~16%) |
 | `blue/25` or `gray/40` | Hue + opacity (0–1 or 0–100%) |
 | `#94a3b8/30` | Hex wash + opacity |
+
+Prefer `gray/10`–`/20` or `blue/15` when you want a visible plate without a heavy disk.
 
 ````md
 ```chart
 type: radar
 title: Team coverage
-surface: gray/18
+surface: gray/12
 colors: blue, green
 legend: bottom
 

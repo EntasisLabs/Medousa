@@ -142,7 +142,9 @@
 <div class="liquid-chart-pie-wrap liquid-chart-mount">
   <svg class="liquid-chart-pie" viewBox={`0 0 ${size} ${size}`} role="presentation">
     <g transform={`translate(${cx}, ${cy})`}>
-      <circle class="liquid-chart-plot-plate" r={outer + 10} />
+      {#if model.surface && model.surface !== "transparent"}
+        <circle class="liquid-chart-plot-plate" r={outer + 10} />
+      {/if}
       {#each slices as slice, i (slice.data.category + i)}
         {@const off = explodeOffset(slice)}
         {@const dimmed = isDimmed(slice)}

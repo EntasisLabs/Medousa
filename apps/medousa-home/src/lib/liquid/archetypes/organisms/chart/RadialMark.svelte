@@ -145,7 +145,9 @@
 <div class="liquid-chart-radial-wrap liquid-chart-mount">
   <svg class="liquid-chart-radial" viewBox={`0 0 ${size} ${size}`} role="presentation">
     <g transform={`translate(${cx}, ${cy})`}>
-      <circle class="liquid-chart-plot-plate" r="98" />
+      {#if model.surface && model.surface !== "transparent"}
+        <circle class="liquid-chart-plot-plate" r="98" />
+      {/if}
       {#if multiArc}
         {#each arcs as arc (arc.key)}
           {@const dimmed = arcDimmed(arc.active, arc.key)}

@@ -23,7 +23,7 @@
   let hoverSeriesKey = $state<string | null>(null);
   let hoverCategory = $state<string | null>(null);
 
-  const size = 280;
+  const size = 300;
   const cx = size / 2;
   const cy = size / 2;
   const radius = 92;
@@ -65,7 +65,7 @@
 
   const axisLabels = $derived(
     model.categories.map((label, i) => {
-      const [x, y] = point(i, radius + 18);
+      const [x, y] = point(i, radius + 26);
       return { label, x, y };
     }),
   );
@@ -135,7 +135,9 @@
 {:else}
   <div class="liquid-chart-radar-wrap liquid-chart-mount">
     <svg class="liquid-chart-radar" viewBox={`0 0 ${size} ${size}`} role="presentation">
-      <polygon class="liquid-chart-radar-plate" points={platePoints} />
+      {#if model.surface !== "transparent"}
+        <polygon class="liquid-chart-radar-plate" points={platePoints} />
+      {/if}
       {#each [...gridPolygons].reverse() as poly, i (i)}
         <polygon class="liquid-chart-radar-grid" points={poly.points} />
       {/each}
@@ -211,7 +213,7 @@
   }
 
   .liquid-chart-radar {
-    width: min(100%, 18rem);
+    width: min(100%, 19rem);
     height: auto;
     overflow: visible;
   }
@@ -223,12 +225,12 @@
 
   .liquid-chart-radar-grid {
     fill: none;
-    stroke: color-mix(in srgb, var(--color-surface-500) 22%, transparent);
+    stroke: color-mix(in srgb, var(--color-surface-500) 16%, transparent);
     stroke-width: 1;
   }
 
   .liquid-chart-radar-axis {
-    stroke: color-mix(in srgb, var(--color-surface-500) 18%, transparent);
+    stroke: color-mix(in srgb, var(--color-surface-500) 14%, transparent);
     stroke-width: 1;
   }
 

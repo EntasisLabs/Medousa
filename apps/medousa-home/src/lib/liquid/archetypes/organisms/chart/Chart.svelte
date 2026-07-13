@@ -121,7 +121,7 @@
 <style>
   .liquid-chart {
     margin: 0;
-    padding: 0.85rem 0.9rem 0.95rem;
+    padding: 0.75rem 0.85rem 0.8rem;
     border-radius: 0.9rem;
     border: 1px solid color-mix(in srgb, var(--color-surface-500) 22%, transparent);
     background: color-mix(in srgb, var(--color-surface-50) 55%, transparent);
@@ -144,7 +144,7 @@
   }
 
   .liquid-chart-header {
-    margin-bottom: 0.6rem;
+    margin-bottom: 0.45rem;
   }
 
   .liquid-chart-title {
@@ -165,7 +165,7 @@
   }
 
   :global(.markdown-content) .liquid-chart-description {
-    margin: 0.25rem 0 0;
+    margin: 0.2rem 0 0;
     color: rgb(var(--chart-fg-muted));
   }
 
@@ -175,12 +175,12 @@
   }
 
   :global(.markdown-content) .liquid-chart-caption {
-    margin: 0.3rem 0 0;
+    margin: 0.25rem 0 0;
     color: rgb(var(--chart-fg-muted));
   }
 
   .liquid-chart-description {
-    margin: 0.25rem 0 0;
+    margin: 0.2rem 0 0;
     font-size: 0.8125rem;
     line-height: 1.35;
     font-weight: 450;
@@ -192,8 +192,8 @@
   }
 
   .liquid-chart-footer {
-    margin-top: 0.75rem;
-    padding-top: 0.6rem;
+    margin-top: 0.55rem;
+    padding-top: 0.5rem;
     border-top: 1px solid color-mix(in srgb, var(--color-surface-500) 22%, transparent);
   }
 
@@ -209,7 +209,7 @@
   }
 
   .liquid-chart-caption {
-    margin: 0.3rem 0 0;
+    margin: 0.25rem 0 0;
     font-size: 0.75rem;
     line-height: 1.35;
     font-weight: 450;

@@ -188,7 +188,7 @@ describe("resolveChartWidth/height/surface", () => {
     expect(resolveChartSurface("none")).toBe("transparent");
     expect(resolveChartSurface("muted")).toBe("var(--chart-plot-muted)");
     expect(resolveChartSurface("blue")).toBe("rgb(var(--markdown-chart-blue) / 0.16)");
-    expect(resolveChartSurface("gray")).toBe("rgb(var(--markdown-chart-gray) / 0.18)");
+    expect(resolveChartSurface("gray")).toBe("rgb(var(--markdown-chart-gray) / 0.12)");
     expect(resolveChartSurface("gray/25")).toBe("rgb(var(--markdown-chart-gray) / 0.25)");
     expect(resolveChartSurface("grey/40")).toBe("rgb(var(--markdown-chart-gray) / 0.4)");
     expect(resolveChartSurface("soft/30")).toBe(
@@ -210,5 +210,24 @@ describe("resolveChartWidth/height/surface", () => {
     expect(model?.width).toBe("16rem");
     expect(model?.height).toBe("18rem");
     expect(model?.surface).toBe("var(--chart-plot-muted)");
+  });
+
+  it("maps surface none to transparent for plate gating", () => {
+    const model = chartViewModel({
+      type: "radial",
+      categories: ["Desktop", "Mobile", "Tablet"],
+      series: [{ key: "u", label: "Users", values: [186, 80, 120] }],
+      surface: "none",
+    });
+    expect(model?.surface).toBe("transparent");
+  });
+
+  it("leaves surface empty when omitted so polar plates stay off", () => {
+    const model = chartViewModel({
+      type: "pie",
+      categories: ["A", "B"],
+      series: [{ key: "s", label: "S", values: [1, 2] }],
+    });
+    expect(model?.surface).toBe("");
   });
 });

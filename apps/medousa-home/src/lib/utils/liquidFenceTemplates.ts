@@ -109,7 +109,7 @@ export const LIQUID_CHART_RADAR_TEMPLATE = serializeChartFence({
     { category: "Safety", values: [90, 65] },
     { category: "Efficiency", values: [75, 90] },
   ],
-  extraKv: { legend: "bottom", surface: "gray/16", width: "md" },
+  extraKv: { legend: "bottom", surface: "gray/12", width: "md" },
 });
 
 export const LIQUID_CHART_RADIAL_TEMPLATE = serializeChartFence({
