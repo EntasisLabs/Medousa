@@ -27,16 +27,16 @@ impl InferenceDevice {
 
 /// Feature flags compiled into this `medousa_daemon` binary.
 pub fn compiled_backends() -> Vec<&'static str> {
-    let backends = vec!["cpu"];
-    #[cfg(feature = "embedded-inference-metal")]
-    {
-        backends.push("metal");
-    }
-    #[cfg(feature = "embedded-inference-cuda")]
-    {
-        backends.push("cuda");
-    }
-    backends
+    [
+        Some("cpu"),
+        #[cfg(feature = "embedded-inference-metal")]
+        Some("metal"),
+        #[cfg(feature = "embedded-inference-cuda")]
+        Some("cuda"),
+    ]
+    .into_iter()
+    .flatten()
+    .collect()
 }
 
 fn force_cpu_from_env() -> bool {
@@ -95,22 +95,18 @@ fn detect_non_metal_gpu_backend() -> GpuBackend {
     GpuBackend::None
 }
 
-pub fn resolve_inference_device(_probe: &HardwareProbe) -> InferenceDevice {
+pub fn resolve_inference_device(probe: &HardwareProbe) -> InferenceDevice {
     if force_cpu_from_env() {
         return InferenceDevice::Cpu;
     }
 
-    #[cfg(feature = "embedded-inference-metal")]
-    if matches!(probe.gpu_backend, GpuBackend::Metal) {
-        return InferenceDevice::Metal;
+    match probe.gpu_backend {
+        #[cfg(feature = "embedded-inference-metal")]
+        GpuBackend::Metal => InferenceDevice::Metal,
+        #[cfg(feature = "embedded-inference-cuda")]
+        GpuBackend::Cuda => InferenceDevice::Cuda,
+        _ => InferenceDevice::Cpu,
     }
-
-    #[cfg(feature = "embedded-inference-cuda")]
-    if matches!(probe.gpu_backend, GpuBackend::Cuda) {
-        return InferenceDevice::Cuda;
-    }
-
-    InferenceDevice::Cpu
 }
 
 pub fn resolve_cpu_only(probe: &HardwareProbe) -> bool {
