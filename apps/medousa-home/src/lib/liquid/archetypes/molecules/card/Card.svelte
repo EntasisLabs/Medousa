@@ -58,7 +58,10 @@
     cardHasDetail({ meta, summary, chips, points }),
   );
   const hasSlotDetail = $derived(slotDetail.length > 0);
-  const sheetHosted = $derived(Boolean(ctx.onOpenCardDetail) && hasStructuredDetail);
+  const sheetHosted = $derived(
+    Boolean(ctx.onOpenCardDetail) &&
+      (hasStructuredDetail || Boolean(body.trim())),
+  );
   const accordionDetail = $derived(!sheetHosted && hasSlotDetail);
 
   let expanded = $state(false);
@@ -89,7 +92,9 @@
 
     if (accordionDetail) {
       expanded = !expanded;
-      ctx.sink?.emit(createSceneEvent(node.id, expanded ? "expand" : "collapse", { id: node.id }));
+      ctx.sink?.emit(
+        createSceneEvent(node.id, expanded ? "expand" : "collapse", { id: node.id }),
+      );
     }
   }
 </script>
@@ -119,7 +124,7 @@
         </span>
       {/if}
     </span>
-    {#if accordionDetail}
+    {#if accordionDetail || sheetHosted}
       <ChevronDown class="liquid-card-chevron" size={16} aria-hidden="true" />
     {/if}
   </button>

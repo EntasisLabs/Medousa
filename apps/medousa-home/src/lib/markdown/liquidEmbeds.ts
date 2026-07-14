@@ -559,13 +559,20 @@ function parseKvBlock(body: string): Record<string, string> {
 function parseCardBlock(block: string): LiquidCardProps | null {
   const fields: Record<string, string> = {};
   const points: LiquidCardPoint[] = [];
+  // Models often dump multi-line post text after a one-line `body:` (or under
+  // `title:`) without `|-` / `---`. Those lines used to be dropped.
+  const freeform: string[] = [];
   const lines = block.replace(/\r\n/g, "\n").split("\n");
   let i = 0;
 
   while (i < lines.length) {
     const line = stripFenceLineChrome(lines[i] ?? "");
     i += 1;
-    if (!line || line.startsWith("#") || line === "---") continue;
+    if (!line || line.startsWith("#") || line === "---") {
+      // Keep paragraph breaks inside trailing freeform prose.
+      if (!line && freeform.length > 0) freeform.push("");
+      continue;
+    }
 
     if (line.includes("|") && /\|\s*[a-zA-Z][a-zA-Z0-9_-]*\s*:/.test(line)) {
       const multi = parseKvLine(line);
@@ -584,8 +591,12 @@ function parseCardBlock(block: string): LiquidCardProps | null {
       continue;
     }
 
+    if (!isNewKvFieldLine(line)) {
+      freeform.push(line);
+      continue;
+    }
+
     const colon = line.indexOf(":");
-    if (colon <= 0) continue;
     const key = line.slice(0, colon).trim().toLowerCase();
     const value = line.slice(colon + 1).trim();
     if (!key) continue;
@@ -619,6 +630,18 @@ function parseCardBlock(block: string): LiquidCardProps | null {
       continue;
     }
     if (!(key in fields)) fields[key] = value;
+  }
+
+  const prose = freeform.join("\n").trim();
+  if (prose) {
+    if (fields.summary) {
+      fields.summary = `${fields.summary.trim()}\n\n${prose}`;
+    } else if (fields.body) {
+      // Keep short `body:` as the face teaser; sheet gets teaser + continuation.
+      fields.summary = `${fields.body.trim()}\n\n${prose}`;
+    } else {
+      fields.summary = prose;
+    }
   }
 
   const title = fields.title?.trim();

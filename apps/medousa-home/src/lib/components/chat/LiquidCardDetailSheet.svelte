@@ -7,7 +7,7 @@
   import BodyPortal from "$lib/components/ui/BodyPortal.svelte";
   import { haptic } from "$lib/haptics";
   import { registerMobileBackHandler } from "$lib/mobileNavigation";
-  import { renderInlineMarkdown } from "$lib/markdown";
+  import { renderInlineMarkdown, renderMarkdown } from "$lib/markdown";
   import type { CardDetailPayload } from "$lib/markdown/liquidEmbeds";
 
   interface Props {
@@ -96,7 +96,9 @@
           {/if}
 
           {#if detail.summary}
-            <p class="liquid-card-detail-summary">{@html renderInlineMarkdown(detail.summary)}</p>
+            <div class="liquid-card-detail-summary markdown-body">
+              {@html renderMarkdown(detail.summary)}
+            </div>
           {/if}
 
           {#if detail.chips?.length}
@@ -142,14 +144,14 @@
     inset: 0;
     z-index: 120;
     display: flex;
-    align-items: stretch;
+    align-items: center;
     justify-content: center;
     background: color-mix(in srgb, var(--color-surface-950) 72%, transparent);
     padding: max(0.5rem, env(safe-area-inset-top, 0px))
       max(0.5rem, env(safe-area-inset-right, 0px))
       max(0.5rem, env(safe-area-inset-bottom, 0px))
       max(0.5rem, env(safe-area-inset-left, 0px));
-    animation: liquid-card-detail-in 180ms ease-out;
+    animation: liquid-card-detail-backdrop-in 220ms ease-out;
   }
 
   .liquid-card-detail-sheet {
@@ -157,12 +159,15 @@
     flex-direction: column;
     width: min(32rem, 100%);
     max-height: 100%;
+    height: fit-content;
     margin: 0 auto;
     border-radius: 1.25rem;
     background: rgb(var(--color-surface-50));
     color: rgb(var(--color-surface-900));
     overflow: hidden;
     box-shadow: 0 18px 48px color-mix(in srgb, var(--color-surface-950) 35%, transparent);
+    animation: liquid-card-detail-sheet-in 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    will-change: transform, opacity;
   }
 
   :global(.dark) .liquid-card-detail-sheet,
@@ -197,7 +202,8 @@
   }
 
   .liquid-card-detail-body {
-    flex: 1 1 auto;
+    flex: 0 1 auto;
+    min-height: 0;
     overflow: auto;
     padding: 0.5rem 1.35rem 1.75rem;
     display: flex;
@@ -237,10 +243,26 @@
 
   .liquid-card-detail-summary {
     margin: 0.35rem 0 0;
+    width: 100%;
     max-width: 28rem;
     font-size: 0.95rem;
     line-height: 1.55;
-    color: color-mix(in srgb, currentColor 78%, transparent);
+    text-align: left;
+    color: color-mix(in srgb, currentColor 82%, transparent);
+  }
+
+  .liquid-card-detail-summary :global(p) {
+    margin: 0 0 0.75em;
+  }
+
+  .liquid-card-detail-summary :global(p:last-child) {
+    margin-bottom: 0;
+  }
+
+  .liquid-card-detail-summary :global(ul),
+  .liquid-card-detail-summary :global(ol) {
+    margin: 0 0 0.75em;
+    padding-left: 1.25em;
   }
 
   .liquid-card-detail-chips {
@@ -311,12 +333,30 @@
     color: color-mix(in srgb, currentColor 58%, transparent);
   }
 
-  @keyframes liquid-card-detail-in {
+  @keyframes liquid-card-detail-backdrop-in {
     from {
       opacity: 0;
     }
     to {
       opacity: 1;
+    }
+  }
+
+  @keyframes liquid-card-detail-sheet-in {
+    from {
+      opacity: 0;
+      transform: translateY(16px) scale(0.97);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .liquid-card-detail-backdrop,
+    .liquid-card-detail-sheet {
+      animation: none;
     }
   }
 </style>

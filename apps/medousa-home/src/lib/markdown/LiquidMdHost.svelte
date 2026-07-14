@@ -4,6 +4,7 @@
    * Mounted into placeholder divs by hydrateLiquidEmbeds.
    */
   import "$lib/liquid/archetypes";
+  import { untrack } from "svelte";
   import { createNode } from "$lib/liquid/core";
   import {
     setLiquidContext,
@@ -91,9 +92,10 @@
     animate ? "liquid-md-host liquid-md-enter" : "liquid-md-host",
   );
 
-  $effect(() => {
-    setLiquidContext(context);
-  });
+  // Seed before child Card mounts — same pattern as SceneRenderer.
+  // `$effect` runs too late; Card captures context at init for sheet expand.
+  const rootContext = untrack(() => context);
+  setLiquidContext(rootContext);
 
   const ICON_MAP: Record<string, typeof LucideIcon> = {
     sparkles: Sparkles,
