@@ -31,7 +31,9 @@ use medousa_types::{
     EnvironmentPendingResponse, EnvironmentProposeResponse, EnvironmentSpecPutRequest,
     EnvironmentSpecResponse, EnvironmentStatusResponse, EnvironmentValidateRequest,
     EnvironmentValidateResponse, FeedListResponse, FeedReadRequest, FeedTailQuery,
-    FeedTailResponse,
+    FeedTailResponse, CalendarDeleteResponse, CalendarExportQuery, CalendarExportResponse,
+    CalendarImportRequest, CalendarImportResponse, CalendarListQuery, CalendarListResponse,
+    CalendarWriteRequest, CalendarWriteResponse,
 };
 
 #[cfg(feature = "blocking")]
@@ -167,6 +169,8 @@ blocking_api!(BlockingBudgetApi);
 #[cfg(feature = "blocking")]
 blocking_api!(BlockingVaultApi);
 #[cfg(feature = "blocking")]
+blocking_api!(BlockingCalendarApi);
+#[cfg(feature = "blocking")]
 blocking_api!(BlockingEnvironmentApi);
 #[cfg(feature = "blocking")]
 blocking_api!(BlockingComponentsApi);
@@ -238,6 +242,10 @@ impl BlockingMedousaClient {
 
     pub fn vault(&self) -> BlockingVaultApi<'_> {
         BlockingVaultApi { http: &self.http }
+    }
+
+    pub fn calendar(&self) -> BlockingCalendarApi<'_> {
+        BlockingCalendarApi { http: &self.http }
     }
 
     pub fn environment(&self) -> BlockingEnvironmentApi<'_> {
@@ -691,6 +699,71 @@ impl BlockingVaultApi<'_> {
             params.push(("path", path.clone()));
         }
         self.http.get(&path_with_query("/v1/vault/backlinks", &params))
+    }
+}
+
+#[cfg(feature = "blocking")]
+impl BlockingCalendarApi<'_> {
+    pub fn list_events(&self, query: &CalendarListQuery) -> Result<CalendarListResponse, SdkError> {
+        let mut params = Vec::new();
+        if let Some(from) = query.from {
+            params.push(("from", from.to_rfc3339()));
+        }
+        if let Some(to) = query.to {
+            params.push(("to", to.to_rfc3339()));
+        }
+        if let Some(path) = &query.path {
+            params.push(("path", path.clone()));
+        }
+        self.http
+            .get(&path_with_query("/v1/calendar/events", &params))
+    }
+
+    pub fn create_event(
+        &self,
+        request: &CalendarWriteRequest,
+    ) -> Result<CalendarWriteResponse, SdkError> {
+        self.http.post("/v1/calendar/events", request)
+    }
+
+    pub fn update_event(
+        &self,
+        uid: &str,
+        request: &CalendarWriteRequest,
+    ) -> Result<CalendarWriteResponse, SdkError> {
+        self.http
+            .put(&format!("/v1/calendar/events/{}", uid.trim()), request)
+    }
+
+    pub fn delete_event(
+        &self,
+        uid: &str,
+        query: &CalendarExportQuery,
+    ) -> Result<CalendarDeleteResponse, SdkError> {
+        let mut params = Vec::new();
+        if let Some(path) = &query.path {
+            params.push(("path", path.clone()));
+        }
+        self.http.delete(&path_with_query(
+            &format!("/v1/calendar/events/{}", uid.trim()),
+            &params,
+        ))
+    }
+
+    pub fn import_ics(
+        &self,
+        request: &CalendarImportRequest,
+    ) -> Result<CalendarImportResponse, SdkError> {
+        self.http.post("/v1/calendar/import", request)
+    }
+
+    pub fn export(&self, query: &CalendarExportQuery) -> Result<CalendarExportResponse, SdkError> {
+        let mut params = Vec::new();
+        if let Some(path) = &query.path {
+            params.push(("path", path.clone()));
+        }
+        self.http
+            .get(&path_with_query("/v1/calendar/export", &params))
     }
 }
 

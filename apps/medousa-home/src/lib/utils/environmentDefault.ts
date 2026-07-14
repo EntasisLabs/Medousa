@@ -31,6 +31,7 @@ function defaultSurfaces() {
     { id: "peers", label: "Peers", icon: "users", builtinId: "peers" },
     { id: "work", label: "Work", icon: "layout-grid", builtinId: "work" },
     { id: "library", label: "Library", icon: "book-open", builtinId: "library", mobileTab: "notes" },
+    { id: "calendar", label: "Calendar", icon: "calendar-days", builtinId: "calendar" },
     { id: "web", label: "Web", icon: "globe", builtinId: "web", mobileTab: "web" },
     { id: "context", label: "Context", icon: "orbit", builtinId: "context" },
     { id: "workshop", label: "Capabilities", icon: "zap", builtinId: "workshop" },
@@ -115,6 +116,75 @@ export function ensurePeersSurfaceInSpec(spec: EnvironmentSpec): EnvironmentSpec
   const layoutPresets = (spec.layoutPresets ?? []).map((preset) => ({
     ...preset,
     surfaces: placePeersAfterChat(preset.surfaces),
+  }));
+
+  const surfacesChanged =
+    surfaces.length !== spec.surfaces.length ||
+    surfaces.some((surface, index) => surface.id !== spec.surfaces[index]?.id);
+  const presetsChanged = (spec.layoutPresets ?? []).some((preset, index) => {
+    const next = layoutPresets[index];
+    if (!next) return true;
+    if (preset.surfaces.length !== next.surfaces.length) return true;
+    return preset.surfaces.some((id, i) => id !== next.surfaces[i]);
+  });
+
+  if (!surfacesChanged && !presetsChanged) {
+    return spec;
+  }
+
+  return {
+    ...spec,
+    surfaces,
+    layoutPresets: layoutPresets.length > 0 ? layoutPresets : spec.layoutPresets,
+  };
+}
+
+function calendarSurfaceDef(): SurfaceDef {
+  return (
+    defaultSurfaces().find((surface) => surface.id === "calendar") ?? {
+      id: "calendar",
+      label: "Calendar",
+      icon: "calendar-days",
+      kind: "builtin",
+      builtinId: "calendar",
+      layout: "single",
+      slots: [],
+      mobileTab: null,
+    }
+  );
+}
+
+function placeCalendarAfterLibrary(surfaceIds: string[]): string[] {
+  if (surfaceIds.includes("calendar")) return surfaceIds;
+  const next = [...surfaceIds];
+  const libraryAt = next.indexOf("library");
+  if (libraryAt >= 0) {
+    next.splice(libraryAt + 1, 0, "calendar");
+    return next;
+  }
+  const webAt = next.indexOf("web");
+  if (webAt >= 0) {
+    next.splice(webAt, 0, "calendar");
+    return next;
+  }
+  next.push("calendar");
+  return next;
+}
+
+/** Ensure Calendar exists after Library in the rail. */
+export function ensureCalendarSurfaceInSpec(spec: EnvironmentSpec): EnvironmentSpec {
+  const hasCalendar = spec.surfaces.some((surface) => surface.id === "calendar");
+  let surfaces = [...spec.surfaces];
+
+  if (!hasCalendar) {
+    const libraryIndex = surfaces.findIndex((surface) => surface.id === "library");
+    const insertAt = libraryIndex >= 0 ? libraryIndex + 1 : surfaces.length;
+    surfaces.splice(insertAt, 0, calendarSurfaceDef());
+  }
+
+  const layoutPresets = (spec.layoutPresets ?? []).map((preset) => ({
+    ...preset,
+    surfaces: placeCalendarAfterLibrary(preset.surfaces),
   }));
 
   const surfacesChanged =

@@ -68,6 +68,7 @@ medousa-local-inference = { path = "crates/medousa-local-inference" }
 anyhow = "1"
 chrono = { version = "0.4", features = ["serde"] }
 chrono-tz = "0.10"
+icalendar = { version = "0.17", default-features = true, features = ["chrono-tz"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "signal", "sync", "fs", "io-util"] }
 async-trait = "0.1"
 serde = { version = "1", features = ["derive"] }

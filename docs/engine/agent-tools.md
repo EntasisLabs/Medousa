@@ -26,6 +26,7 @@ See [agent-browser-host.md](../../architecture/agent-browser-host.md) for search
 `cognition_tools_discover` returns grouped tool catalogs. Domains include:
 
 - **documents** — vault + artifact list/read/grep/write
+- **calendar** — personal `.ics` list/create/update/delete/import/export
 - **presentation** — artifact presentation tools
 - **environment** — environment spec + component canvas ([environment-canvas.md](./environment-canvas.md))
 - **browser** — `cognition_browser_fetch` (auto-unlocked on browser-capable clients)
@@ -40,6 +41,7 @@ Source: `src/tool_bootstrap.rs`
 | Family | Examples |
 |--------|----------|
 | Vault | `cognition_vault_*` — [vault.md](vault.md) |
+| Calendar | `cognition_calendar_*` — [calendar.md](calendar.md) |
 | Artifacts | `cognition_artifact_*` — [artifacts.md](artifacts.md) |
 | MCP | `cognition.mcp.*` — [mcp-gateway-setup.md](../mcp-gateway-setup.md) |
 | UI present | `cognition_ui_present` — emits `ui_artifact` on stream |

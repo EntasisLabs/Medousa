@@ -6,6 +6,7 @@ export type MoreDestination =
   | "context"
   | "workshop"
   | "automations"
+  | "calendar"
   | "messaging"
   | "peers"
   | "settings"
@@ -27,6 +28,7 @@ export const MORE_DESTINATIONS: {
   { id: "profiles", label: "Profiles", hint: "Who you are — teach her facts" },
   { id: "context", label: "Context", hint: "What she remembers about you" },
   { id: "workshop", label: "Capabilities", hint: "Specialists & connections" },
+  { id: "calendar", label: "Calendar", hint: "Meetings, reminders & .ics" },
   { id: "messaging", label: "Channels", hint: "Telegram, Discord, Slack & more" },
   { id: "peers", label: "Peers", hint: "Nearby workshops & inbox" },
   { id: "settings", label: "Preferences", hint: "Models, voice, rhythm & reach" },
@@ -42,7 +44,7 @@ export const MORE_HUB_SECTIONS: {
   {
     title: "Stay in touch",
     subtitle: "Memory, skills, and channels",
-    destinations: ["profiles", "context", "workshop", "messaging", "peers"],
+    destinations: ["profiles", "context", "workshop", "calendar", "messaging", "peers"],
   },
   {
     title: "Capabilities",

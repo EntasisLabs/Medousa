@@ -178,6 +178,19 @@ Both Rust (`sse` feature) and Python ship built-in SSE clients — [interactive-
 
 ---
 
+## `calendar()`
+
+| Method | HTTP | Types |
+|--------|------|-------|
+| `list_events(query)` | `GET /v1/calendar/events` | `CalendarListResponse` |
+| `create_event(request)` | `POST /v1/calendar/events` | `CalendarWriteRequest` → `CalendarWriteResponse` |
+| `update_event(uid, request)` | `PUT /v1/calendar/events/{uid}` | `CalendarWriteRequest` → `CalendarWriteResponse` |
+| `delete_event(uid, query?)` | `DELETE /v1/calendar/events/{uid}` | `CalendarDeleteResponse` |
+| `import_ics(request)` | `POST /v1/calendar/import` | `CalendarImportRequest` → `CalendarImportResponse` |
+| `export(query?)` | `GET /v1/calendar/export` | `CalendarExportResponse` |
+
+---
+
 ## `environment()`
 
 | Method | HTTP | Types |

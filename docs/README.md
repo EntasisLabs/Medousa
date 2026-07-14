@@ -65,6 +65,7 @@ Doc conventions: [CONTRIBUTING-DOCS.md](CONTRIBUTING-DOCS.md)
 | [Interactive streaming](engine/interactive-streaming.md) | Two-step turn + SSE events |
 | [Artifacts](engine/artifacts.md) | Agent tools + HTTP commands |
 | [Vault](engine/vault.md) | Notes API + cognition vault tools |
+| [Calendar](engine/calendar.md) | Personal `.ics` API + cognition calendar tools |
 | [Workspace](engine/workspace.md) | Work board, feed, SSE |
 | [Agent tools](engine/agent-tools.md) | Host/worker lanes, discover domains |
 | [Runtime config](engine/runtime-config.md) | Inference profiles, stage routing |

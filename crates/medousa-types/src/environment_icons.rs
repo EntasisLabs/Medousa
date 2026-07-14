@@ -10,6 +10,7 @@ pub const ALLOWED_SURFACE_ICONS: &[&str] = &[
     "bot",
     "brain",
     "calendar",
+    "calendar-days",
     "camera",
     "car",
     "checklist",

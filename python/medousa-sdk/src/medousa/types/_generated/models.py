@@ -49,6 +49,30 @@ class AskJobCompleteActionsRequest(MedousaModel):
 class AskJobCompleteActionsResponse(MedousaModel):
     model_config = ConfigDict(extra='allow', populate_by_name=True)
 
+class CalendarDeleteResponse(MedousaModel):
+    model_config = ConfigDict(extra='allow', populate_by_name=True)
+
+class CalendarEvent(MedousaModel):
+    model_config = ConfigDict(extra='allow', populate_by_name=True)
+
+class CalendarExportResponse(MedousaModel):
+    model_config = ConfigDict(extra='allow', populate_by_name=True)
+
+class CalendarImportRequest(MedousaModel):
+    model_config = ConfigDict(extra='allow', populate_by_name=True)
+
+class CalendarImportResponse(MedousaModel):
+    model_config = ConfigDict(extra='allow', populate_by_name=True)
+
+class CalendarListResponse(MedousaModel):
+    model_config = ConfigDict(extra='allow', populate_by_name=True)
+
+class CalendarWriteRequest(MedousaModel):
+    model_config = ConfigDict(extra='allow', populate_by_name=True)
+
+class CalendarWriteResponse(MedousaModel):
+    model_config = ConfigDict(extra='allow', populate_by_name=True)
+
 class CapabilityListResponse(MedousaModel):
     model_config = ConfigDict(extra='allow', populate_by_name=True)
 

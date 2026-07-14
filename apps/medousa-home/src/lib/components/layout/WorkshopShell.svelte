@@ -28,6 +28,7 @@
   import { catalog } from "$lib/stores/catalog.svelte";
   import { automationDraftForSpecialist } from "$lib/utils/specialistAutomation";
   import LibraryPanel from "$lib/components/vault/LibraryPanel.svelte";
+  import CalendarPanel from "$lib/components/calendar/CalendarPanel.svelte";
   import WorkPanel from "$lib/components/work/WorkPanel.svelte";
   import { workspace } from "$lib/stores/workspace.svelte";
   import { browserContext } from "$lib/stores/browserContext.svelte";
@@ -184,6 +185,8 @@
               onOpenWork={() => goToSurface("work")}
               onSelectCard={handleCardSelect}
             />
+          {:else if activeSurface === "calendar"}
+            <CalendarPanel visible={true} />
           {:else if activeSurface === "context"}
             <ContextPanel
               visible={true}

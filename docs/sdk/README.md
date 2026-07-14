@@ -46,6 +46,7 @@ let sessions = client.sessions().list(20).await?;
 | `mcp_gateway()` | Gateway status |
 | `budget()` | Turn budget approve/deny |
 | `vault()` | Multi-root notes library |
+| `calendar()` | Personal calendar (vault `.ics`) |
 | `workspace()` | Work board cards & feed |
 
 Full method table: [api-reference.md](api-reference.md) · contract: [`../../sdk-contract/manifest.yaml`](../../sdk-contract/manifest.yaml)

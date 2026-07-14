@@ -275,6 +275,7 @@ function loadMoreDestination(): MoreDestination {
     "context",
     "workshop",
     "automations",
+    "calendar",
     "messaging",
     "peers",
     "settings",

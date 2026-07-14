@@ -9,7 +9,7 @@ Types: [`medousa-types`](../../crates/medousa-types/) (`daemon_api`, `session`, 
 SDK: [`docs/sdk/api-reference.md`](../sdk/api-reference.md).  
 Component notes: [component-daemon.md](../../architecture/component-daemon.md).
 
-Subsystem guides: [interactive-streaming](interactive-streaming.md) · [artifacts](artifacts.md) · [vault](vault.md) · [workspace](workspace.md) · [agent-tools](agent-tools.md) · [runtime-config](runtime-config.md) · [extensions](extensions.md)
+Subsystem guides: [interactive-streaming](interactive-streaming.md) · [artifacts](artifacts.md) · [vault](vault.md) · [calendar](calendar.md) · [workspace](workspace.md) · [agent-tools](agent-tools.md) · [runtime-config](runtime-config.md) · [extensions](extensions.md)
 
 ---
 
@@ -170,6 +170,18 @@ Patch ops (`remove_custom_surface`, `remove_component`, etc.) are **agent-tool o
 | GET | `/v1/vault/backlinks` | Backlinks for path |
 
 See [vault.md](vault.md).
+
+---
+
+## Calendar
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/v1/calendar/events` | List events in range (RRULE expanded) |
+| POST | `/v1/calendar/events` | Create event |
+| PUT/DELETE | `/v1/calendar/events/{uid}` | Update / delete event |
+| POST | `/v1/calendar/import` | Merge ICS into vault calendar |
+| GET | `/v1/calendar/export` | Export raw ICS |
 
 ---
 

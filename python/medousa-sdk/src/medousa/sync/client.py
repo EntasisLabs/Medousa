@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from medousa.sync.runtime import RuntimeApiSync
     from medousa.sync.sessions import SessionsApiSync
     from medousa.sync.vault import VaultApiSync
+    from medousa.sync.calendar import CalendarApiSync
     from medousa.sync.workspace import WorkspaceApiSync
 
 
@@ -98,6 +99,11 @@ class MedousaClientSync:
         from medousa.sync.vault import VaultApiSync
 
         return VaultApiSync(self)
+
+    def calendar(self) -> CalendarApiSync:
+        from medousa.sync.calendar import CalendarApiSync
+
+        return CalendarApiSync(self)
 
     def environment(self) -> EnvironmentApiSync:
         from medousa.sync.environment import EnvironmentApiSync

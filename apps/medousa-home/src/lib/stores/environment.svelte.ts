@@ -25,10 +25,15 @@ import {
 } from "$lib/types/environment";
 import {
   defaultEnvironmentSpec,
+  ensureCalendarSurfaceInSpec,
   ensurePeersSurfaceInSpec,
 } from "$lib/utils/environmentDefault";
 import { mainComponentsForSurface, resolveLayoutRoot } from "$lib/utils/layoutPresentation";
 import type { LayoutNode } from "$lib/types/environment";
+
+function migrateBuiltinNavSurfaces(spec: EnvironmentSpec): EnvironmentSpec {
+  return ensureCalendarSurfaceInSpec(ensurePeersSurfaceInSpec(spec));
+}
 
 function peersNavMigrationNeeded(
   original: EnvironmentSpec,
@@ -79,7 +84,7 @@ export class EnvironmentStore {
   }
 
   navSurfaces(): SurfaceDef[] {
-    const spec = ensurePeersSurfaceInSpec(this.spec ?? defaultEnvironmentSpec());
+    const spec = migrateBuiltinNavSurfaces(this.spec ?? defaultEnvironmentSpec());
     const preset =
       spec.layoutPresets?.find((entry) => entry.active) ??
       spec.layoutPresets?.find((entry) => entry.id === spec.activePresetId);
@@ -154,7 +159,7 @@ export class EnvironmentStore {
       await this.refreshPending(profileId);
       this.streamError = null;
     } catch (err) {
-      this.spec = ensurePeersSurfaceInSpec(defaultEnvironmentSpec(profileId));
+      this.spec = migrateBuiltinNavSurfaces(defaultEnvironmentSpec(profileId));
       this.revision = 0;
       this.streamError =
         err instanceof Error ? err.message : "Could not load environment spec";
@@ -195,7 +200,7 @@ export class EnvironmentStore {
   }
 
   applySpec(spec: EnvironmentSpec, revision: number) {
-    this.spec = ensurePeersSurfaceInSpec(spec);
+    this.spec = migrateBuiltinNavSurfaces(spec);
     this.revision = revision;
   }
 

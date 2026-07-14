@@ -473,6 +473,53 @@ methods:
     streaming: false
     sync: true
 
+  # calendar
+  - accessor: calendar
+    method: list_events
+    http: GET
+    path: /v1/calendar/events
+    response_type: CalendarListResponse
+    streaming: false
+    sync: true
+  - accessor: calendar
+    method: create_event
+    http: POST
+    path: /v1/calendar/events
+    request_type: CalendarWriteRequest
+    response_type: CalendarWriteResponse
+    streaming: false
+    sync: true
+  - accessor: calendar
+    method: update_event
+    http: PUT
+    path: /v1/calendar/events/{uid}
+    request_type: CalendarWriteRequest
+    response_type: CalendarWriteResponse
+    streaming: false
+    sync: true
+  - accessor: calendar
+    method: delete_event
+    http: DELETE
+    path: /v1/calendar/events/{uid}
+    response_type: CalendarDeleteResponse
+    streaming: false
+    sync: true
+  - accessor: calendar
+    method: import_ics
+    http: POST
+    path: /v1/calendar/import
+    request_type: CalendarImportRequest
+    response_type: CalendarImportResponse
+    streaming: false
+    sync: true
+  - accessor: calendar
+    method: export
+    http: GET
+    path: /v1/calendar/export
+    response_type: CalendarExportResponse
+    streaming: false
+    sync: true
+
   # environment (canvas)
   - accessor: environment
     method: get_spec

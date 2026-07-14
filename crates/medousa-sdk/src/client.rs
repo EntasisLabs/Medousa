@@ -4,6 +4,8 @@ use crate::local::LocalModelsApi;
 #[cfg(feature = "async")]
 use crate::budget::BudgetApi;
 #[cfg(feature = "async")]
+use crate::calendar::CalendarApi;
+#[cfg(feature = "async")]
 use crate::capabilities::CapabilitiesApi;
 #[cfg(feature = "async")]
 use crate::components::ComponentsApi;
@@ -120,6 +122,11 @@ impl MedousaClient {
     #[cfg(feature = "async")]
     pub fn vault(&self) -> VaultApi<'_> {
         VaultApi { client: self }
+    }
+
+    #[cfg(feature = "async")]
+    pub fn calendar(&self) -> CalendarApi<'_> {
+        CalendarApi { client: self }
     }
 
     #[cfg(feature = "async")]
