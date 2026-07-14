@@ -1,6 +1,0 @@
-import web from "grapheme/web"
-
-query wf_default on Any {
-  set { query: "What are good activities near phoenix arizona?" }
-    |> web.duckduckgo(query: $current.query)
-}

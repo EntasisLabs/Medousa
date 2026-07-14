@@ -2,8 +2,8 @@
 
 **Generated:** 2026-06-27  
 **Scope:** Investigation only — no runtime behavior changes  
-**Evidence source:** Live daemon at `~/Library/Application Support/medousa`  
-**Corpus artifact:** [`daemon-corpus.json`](daemon-corpus.json) (mined by [`scripts/mine-turn-ledger.py`](../../../scripts/mine-turn-ledger.py))
+**Evidence source:** Live daemon data dir (operator machine; path redacted)  
+**Corpus artifact:** local `daemon-corpus.json` only (gitignored — mined by [`scripts/mine-turn-ledger.py`](../../../scripts/mine-turn-ledger.py); do not commit)
 
 ---
 
@@ -34,7 +34,7 @@ Secondary friction is **prompt calibration**, not missing tools: vault/memory/id
 4. **Phase 3:** Spot-checked guidance conflicts triggered by daemon traces.
 5. **Phase 4:** Synthesized scored friction matrix and tiered roadmap.
 
-**Grapheme ground truth:** `grapheme` CLI not on PATH during investigation. Installed ops inferred from ledger failure messages and live overlay at `~/Library/Application Support/medousa/capabilities.toml`. Recommended: run `grapheme modules ops web --yaml` on operator machine to validate.
+**Grapheme ground truth:** `grapheme` CLI not on PATH during investigation. Installed ops inferred from ledger failure messages and live overlay at the operator `capabilities.toml`. Recommended: run `grapheme modules ops web --yaml` on operator machine to validate.
 
 ---
 
@@ -68,7 +68,7 @@ Secondary friction is **prompt calibration**, not missing tools: vault/memory/id
 
 ### Root cause: binding priority vs installed Grapheme ops
 
-Live overlay (`~/Library/Application Support/medousa/capabilities.toml`):
+Live overlay (operator `capabilities.toml`):
 
 ```toml
 [[capabilities.bindings.grapheme]]

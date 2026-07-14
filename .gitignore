@@ -38,3 +38,15 @@ __pycache__/
 .ruff_cache/
 scripts/release/azure-signing-metadata.json
 scripts/release/release.env
+
+# Local operator / investigation dumps — never ship
+history.txt
+~/
+architecture/investigations/**/daemon-corpus.json
+architecture/investigations/**/*-corpus.json
+*.p8
+*.p12
+*.pem
+.env
+.env.*
+!.env.example
