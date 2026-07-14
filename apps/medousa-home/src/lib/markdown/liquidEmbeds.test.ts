@@ -159,6 +159,48 @@ describe("preprocessLiquidEmbeds", () => {
     expect(props?.summary).toBe("The biggest caveat is independent validation.");
   });
 
+  it("captures freeform lines after a one-line body as summary", () => {
+    const src = [
+      "```card",
+      "title: 🚀 Medousa — soft launch",
+      "emoji: 🚀",
+      "body: Dropping Medousa into the wild with my AI buddies 🧠",
+      "",
+      "We've been building a permanent AI workspace — chat, vault, calendar,",
+      "and agents that actually stick around.",
+      "",
+      "Soft launch with the crew. Feedback welcome.",
+      "```",
+    ].join("\n");
+    const out = preprocessLiquidEmbeds(src);
+    const match = out.match(/data-liquid-props="([^"]+)"/);
+    const props = decodeLiquidProps<{
+      title: string;
+      body?: string;
+      summary?: string;
+    }>(match![1]);
+    expect(props?.body).toBe("Dropping Medousa into the wild with my AI buddies 🧠");
+    expect(props?.summary).toContain("Dropping Medousa into the wild with my AI buddies 🧠");
+    expect(props?.summary).toContain("permanent AI workspace");
+    expect(props?.summary).toContain("Feedback welcome.");
+  });
+
+  it("treats title-only freeform prose as summary", () => {
+    const src = [
+      "```card",
+      "title: Soft launch",
+      "Hey #projects — Medousa is out in the wild.",
+      "Come break it with me.",
+      "```",
+    ].join("\n");
+    const out = preprocessLiquidEmbeds(src);
+    const match = out.match(/data-liquid-props="([^"]+)"/);
+    const props = decodeLiquidProps<{ title: string; summary?: string; body?: string }>(match![1]);
+    expect(props?.title).toBe("Soft launch");
+    expect(props?.body).toBeUndefined();
+    expect(props?.summary).toBe("Hey #projects — Medousa is out in the wild.\nCome break it with me.");
+  });
+
   it("accepts list-marker carousel lines models often emit", () => {
     const src = [
       "```carousel",

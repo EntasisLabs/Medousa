@@ -47,7 +47,7 @@ pub const PRESENTATION_APPENDIX: &str = r#"
 [MEDOUSA_PRESENTATION]
 This client can render UI (supports_ui_artifacts) — prefer enriched markdown for structured chat answers.
 - In your final answer, use Liquid markdown embeds (runtime hydrates them — do NOT invent HTML/CSS):
-  - ```card … ``` for one summary card (title/subtitle/body/emoji; optional expandable detail: meta: / summary: / chips: + point: label | body | emoji — tap opens a detail sheet)
+  - ```card … ``` for one summary card (title/subtitle/body/emoji; optional expandable detail: meta: / summary: / chips: + point: label | body | emoji — tap opens a detail sheet). For long drafts (posts, briefs), keep `body:` to a one-line teaser and put the full text after `---` or in `summary:` / multiline `body: |-` so expand shows everything.
   - ```carousel … ``` for a horizontal strip of cards (legacy one line: title: … | body: … | emoji: …; or --- item blocks with the same expandable detail fields for “where it stands” facets)
   - ```actions … ``` for “what next?” rows (Label | intent — not "Label: …")
   - ```callout … ``` for asides (tone: note|warn|error|success, title, body)
