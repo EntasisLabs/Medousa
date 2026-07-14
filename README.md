@@ -179,3 +179,18 @@ Security reports: [SECURITY.md](SECURITY.md) · Contributing: [CONTRIBUTING.md](
 ## Built on Stasis, Locus, and Resonantia
 
 Medousa is not a chat wrapper pretending to be durable. **[Stasis](https://github.com/EntasisLabs/stasis)** makes work finish and survive restarts. **[Locus](https://github.com/EntasisLabs/locus)** makes memory structured and retrievable. **[Resonantia](https://resonantia.me)** is the sibling surface — same foundation, memory made visible as terrain.
+
+
+## Built with
+
+Medousa and its stack stand on a few heavyweight open-source crates and apps:
+
+| Stack | Role in Medousa |
+|-------|-----------------|
+| **[Tauri](https://tauri.app)** | Desktop + mobile shell — Home and Installer |
+| **[Iroh](https://www.iroh.computer)** | Encrypted P2P transport for phone pairing and peer workshops |
+| **[genai](https://github.com/jeremychone/rust-genai)** | Multi-provider model client (cloud + local backends) |
+| **[SurrealDB](https://surrealdb.com)** | Embedded store for durable runtime state |
+| **[Axum](https://github.com/tokio-rs/axum)** + **[Tokio](https://tokio.rs)** | Local HTTP engine and async runtime |
+
+Grateful to the maintainers — Medousa wouldn’t ship without them.
