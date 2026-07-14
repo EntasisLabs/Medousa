@@ -10,7 +10,13 @@ useful surfaces.
 
 ## 1. Download the app
 
-1. Get **Medousa** for your desktop (Mac, Windows, or Linux) from
+1. Get **Medousa** for your desktop (Mac, Windows, or Linux):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/EntasisLabs/Medousa/main/scripts/install-app.sh | bash
+```
+
+   Or open
    **[releases.entasislabs.com](https://releases.entasislabs.com/medousa/stable/installer-bootstrap.json)**
    — the bootstrap picks the right build for your platform.
 2. Install and open **Medousa**.

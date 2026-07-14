@@ -12,7 +12,14 @@ This guide is for running **Medousa Engine** and CLI tools on a machine you cont
 
 ### Medousa app (recommended for people)
 
-Download from the release CDN:
+One command (Mac / Linux / Git Bash on Windows) — picks the right build from the
+release CDN and opens the installer:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/EntasisLabs/Medousa/main/scripts/install-app.sh | bash
+```
+
+Or open the bootstrap JSON in a browser (landing pages use the same file):
 
 **[https://releases.entasislabs.com/medousa/stable/installer-bootstrap.json](https://releases.entasislabs.com/medousa/stable/installer-bootstrap.json)**
 

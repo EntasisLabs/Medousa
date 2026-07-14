@@ -149,7 +149,12 @@ The app is a client. The engine is the product underneath — durable jobs, HTTP
 
 ## Get Medousa
 
-1. **[Download Medousa](https://releases.entasislabs.com/medousa/stable/installer-bootstrap.json)** — picks the right build for your platform from our release CDN (`releases.entasislabs.com`).
+```bash
+curl -fsSL https://raw.githubusercontent.com/EntasisLabs/Medousa/main/scripts/install-app.sh | bash
+```
+
+1. That script reads our release CDN bootstrap and opens the right installer for your OS.
+   Or **[download via bootstrap JSON](https://releases.entasislabs.com/medousa/stable/installer-bootstrap.json)**.
 2. Open the app → welcome flow → chat. About a minute. Guide: **[Getting started](docs/guides/getting-started.md)**.
 3. Need offline brain, adapters, CLI, or MCP? **Settings → Packages** — **[Packages guide](docs/guides/packages.md)**.
 
