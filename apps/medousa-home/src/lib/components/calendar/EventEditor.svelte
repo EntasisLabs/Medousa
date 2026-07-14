@@ -176,60 +176,62 @@
       </button>
     </header>
 
-    <div class="cal-pop-card cal-pop-card-title">
-      <input
-        bind:this={titleEl}
-        class="cal-pop-title"
-        bind:value={summary}
-        placeholder="New Event"
-        maxlength={200}
-      />
-      <button
-        type="button"
-        class="cal-pop-switch"
-        class:cal-pop-switch-on={allDay}
-        aria-pressed={allDay}
-        title="All day"
-        onclick={() => (allDay = !allDay)}
-      >
-        <span class="cal-pop-switch-knob"></span>
-      </button>
-    </div>
-
-    <div class="cal-pop-card">
-      <div class="cal-pop-when-summary">{whenSummary}</div>
-      <div class="cal-pop-when-edit">
-        <input class="cal-pop-field" type="date" bind:value={date} aria-label="Date" />
-        {#if !allDay}
-          <input class="cal-pop-field" type="time" bind:value={startTime} aria-label="Starts" />
-          <span class="cal-pop-dash">–</span>
-          <input class="cal-pop-field" type="time" bind:value={endTime} aria-label="Ends" />
-        {/if}
+    <div class="cal-pop-scroll">
+      <div class="cal-pop-card cal-pop-card-title">
+        <input
+          bind:this={titleEl}
+          class="cal-pop-title"
+          bind:value={summary}
+          placeholder="New Event"
+          maxlength={200}
+        />
+        <button
+          type="button"
+          class="cal-pop-switch"
+          class:cal-pop-switch-on={allDay}
+          aria-pressed={allDay}
+          title="All day"
+          onclick={() => (allDay = !allDay)}
+        >
+          <span class="cal-pop-switch-knob"></span>
+        </button>
       </div>
-      <p class="cal-pop-hint">{allDay ? "All-day event" : "Toggle the switch for all day"}</p>
-    </div>
 
-    <div class="cal-pop-card cal-pop-row">
-      <MapPin size={14} strokeWidth={1.75} class="cal-pop-row-icon" />
-      <input
-        class="cal-pop-inline"
-        bind:value={location}
-        placeholder="Add Location"
-      />
-    </div>
+      <div class="cal-pop-card">
+        <div class="cal-pop-when-summary">{whenSummary}</div>
+        <div class="cal-pop-when-edit">
+          <input class="cal-pop-field" type="date" bind:value={date} aria-label="Date" />
+          {#if !allDay}
+            <input class="cal-pop-field" type="time" bind:value={startTime} aria-label="Starts" />
+            <span class="cal-pop-dash">–</span>
+            <input class="cal-pop-field" type="time" bind:value={endTime} aria-label="Ends" />
+          {/if}
+        </div>
+        <p class="cal-pop-hint">{allDay ? "All-day event" : "Toggle the switch for all day"}</p>
+      </div>
 
-    <div class="cal-pop-card">
-      <textarea
-        class="cal-pop-notes"
-        rows="3"
-        bind:value={description}
-        placeholder="Add Notes"
-      ></textarea>
-    </div>
+      <div class="cal-pop-card cal-pop-row">
+        <MapPin size={14} strokeWidth={1.75} class="cal-pop-row-icon" />
+        <input
+          class="cal-pop-inline"
+          bind:value={location}
+          placeholder="Add Location"
+        />
+      </div>
 
-    {#if error}
-      <p class="cal-pop-error">{error}</p>
-    {/if}
+      <div class="cal-pop-card">
+        <textarea
+          class="cal-pop-notes"
+          rows="3"
+          bind:value={description}
+          placeholder="Add Notes"
+        ></textarea>
+      </div>
+
+      {#if error}
+        <p class="cal-pop-error">{error}</p>
+      {/if}
+    </div>
 
     <footer class="cal-pop-foot">
       {#if event && onDelete}
@@ -273,10 +275,13 @@
   }
 
   .cal-pop-backdrop-mobile {
+    /* Above .mobile-bottom-chrome (z-40) — same stack as .mobile-sheet-backdrop */
     position: fixed;
+    z-index: 50;
     align-items: flex-end;
     justify-content: stretch;
     padding: 0;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
     background: rgb(var(--color-surface-950) / 0.45);
   }
 
@@ -294,13 +299,36 @@
     animation: cal-pop-in 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
   }
 
+  .cal-pop-scroll {
+    display: contents;
+  }
+
   .cal-pop-mobile {
+    display: flex;
+    flex-direction: column;
     width: 100%;
     max-height: min(92dvh, 40rem);
-    overflow: auto;
+    overflow: hidden;
     border-radius: 1rem 1rem 0 0;
-    padding-bottom: calc(0.85rem + env(safe-area-inset-bottom, 0px));
+    padding: 0.55rem 0.7rem 0;
     animation: cal-pop-sheet-in 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+
+  .cal-pop-mobile .cal-pop-scroll {
+    display: block;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding-bottom: 0.35rem;
+  }
+
+  .cal-pop-mobile .cal-pop-foot {
+    flex-shrink: 0;
+    margin: 0 -0.7rem;
+    padding: 0.55rem 0.85rem 0.75rem;
+    border-top: 1px solid rgb(var(--shell-border) / 0.55);
+    background: color-mix(in srgb, rgb(var(--shell-pane-bg)) 92%, transparent);
   }
 
   @keyframes cal-pop-in {
