@@ -106,6 +106,10 @@ Full index: [runbooks/README.md](runbooks/README.md)
 ## Quick paths (power users & operators)
 
 ```bash
+# Desktop app (Home) — download + open installer for this OS
+curl -fsSL https://raw.githubusercontent.com/EntasisLabs/Medousa/main/scripts/install-app.sh | bash
+
+# Engine / CLI components → ~/.local/bin
 curl -fsSL https://raw.githubusercontent.com/EntasisLabs/Medousa/main/scripts/install.sh | bash
 medousa start daemon --inference
 medousa doctor
