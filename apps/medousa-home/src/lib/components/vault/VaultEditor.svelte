@@ -344,8 +344,13 @@
 
     if (mobile) return;
 
-    const tag = (event.target as HTMLElement).tagName;
-    const typing = tag === "TEXTAREA" || tag === "INPUT";
+    const target = event.target as HTMLElement | null;
+    const tag = target?.tagName ?? "";
+    const typing =
+      tag === "TEXTAREA" ||
+      tag === "INPUT" ||
+      Boolean(target?.isContentEditable) ||
+      Boolean(target?.closest?.(".cm-editor"));
 
     if (typing && (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
       event.preventDefault();

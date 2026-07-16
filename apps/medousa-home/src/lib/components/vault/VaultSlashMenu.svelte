@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { onMount } from "svelte";
   import {
     SLASH_BLOCK_IDS,
     SLASH_WRITING_IDS,
@@ -71,9 +70,14 @@
 
   let highlightIndex = $state(0);
   let menuEl = $state<HTMLElement | null>(null);
+  let listEl = $state<HTMLElement | null>(null);
+  let wasOpen = false;
 
   $effect(() => {
-    if (open) highlightIndex = 0;
+    if (open && !wasOpen) {
+      highlightIndex = 0;
+    }
+    wasOpen = open;
   });
 
   $effect(() => {
@@ -83,9 +87,26 @@
     }
   });
 
-  onMount(() => {
+  $effect(() => {
+    if (!open || !listEl) return;
+    const index = highlightIndex;
+    const active = listEl.querySelector<HTMLElement>(
+      `[data-slash-index="${index}"]`,
+    );
+    if (!active) return;
+    const listRect = listEl.getBoundingClientRect();
+    const rowRect = active.getBoundingClientRect();
+    if (rowRect.top < listRect.top) {
+      listEl.scrollTop -= listRect.top - rowRect.top + 4;
+    } else if (rowRect.bottom > listRect.bottom) {
+      listEl.scrollTop += rowRect.bottom - listRect.bottom + 4;
+    }
+  });
+
+  // Click-outside only — keyboard nav is owned by CodeMirror Prec.highest keymap.
+  $effect(() => {
+    if (!open) return;
     const onPointerDown = (event: PointerEvent) => {
-      if (!open) return;
       const target = event.target as Node | null;
       if (menuEl && target && menuEl.contains(target)) return;
       onClose();
@@ -94,34 +115,30 @@
     return () => document.removeEventListener("pointerdown", onPointerDown, true);
   });
 
-  export function handleMenuKeydown(event: KeyboardEvent): boolean {
+  /** Called from the editor keymap (single owner of ↑↓/Enter/Esc). */
+  export function handleMenuKey(key: string): boolean {
     if (!open) return false;
     const visible = filteredItems.flat;
     if (visible.length === 0) {
-      if (event.key === "Escape") {
-        event.preventDefault();
+      if (key === "Escape") {
         onClose();
         return true;
       }
       return false;
     }
-    if (event.key === "Escape") {
-      event.preventDefault();
+    if (key === "Escape") {
       onClose();
       return true;
     }
-    if (event.key === "ArrowDown") {
-      event.preventDefault();
+    if (key === "ArrowDown") {
       highlightIndex = (highlightIndex + 1) % visible.length;
       return true;
     }
-    if (event.key === "ArrowUp") {
-      event.preventDefault();
+    if (key === "ArrowUp") {
       highlightIndex = (highlightIndex - 1 + visible.length) % visible.length;
       return true;
     }
-    if (event.key === "Enter") {
-      event.preventDefault();
+    if (key === "Enter") {
       onSelect(visible[highlightIndex]!.id);
       return true;
     }
@@ -130,6 +147,11 @@
 
   function flatIndexOf(id: SlashBlockId): number {
     return filteredItems.flat.findIndex((item) => item.id === id);
+  }
+
+  function selectItem(id: SlashBlockId, event: Event) {
+    event.preventDefault();
+    onSelect(id);
   }
 </script>
 
@@ -147,23 +169,23 @@
       <p class="vault-slash-menu-title">Insert</p>
       <p class="vault-slash-menu-hint">↑↓ · Enter · Esc</p>
     </div>
-    <ul class="vault-slash-menu-list">
+    <ul bind:this={listEl} class="vault-slash-menu-list">
       {#if filteredItems.writing.length > 0}
         <li class="vault-slash-menu-section" role="presentation">Writing</li>
         {#each filteredItems.writing as item (item.id)}
           {@const index = flatIndexOf(item.id)}
-          <li>
-            <button
-              type="button"
+          <li role="presentation">
+            <div
               role="option"
+              data-slash-index={index}
               aria-selected={index === highlightIndex}
               class="vault-slash-menu-item"
               class:vault-slash-menu-item--active={index === highlightIndex}
-              onclick={() => onSelect(item.id)}
+              onpointerdown={(event) => selectItem(item.id, event)}
             >
               <span>{item.label}</span>
               <span class="vault-slash-menu-item-hint">{item.hint}</span>
-            </button>
+            </div>
           </li>
         {/each}
       {/if}
@@ -171,18 +193,18 @@
         <li class="vault-slash-menu-section" role="presentation">Blocks</li>
         {#each filteredItems.blocks as item (item.id)}
           {@const index = flatIndexOf(item.id)}
-          <li>
-            <button
-              type="button"
+          <li role="presentation">
+            <div
               role="option"
+              data-slash-index={index}
               aria-selected={index === highlightIndex}
               class="vault-slash-menu-item"
               class:vault-slash-menu-item--active={index === highlightIndex}
-              onclick={() => onSelect(item.id)}
+              onpointerdown={(event) => selectItem(item.id, event)}
             >
               <span>{item.label}</span>
               <span class="vault-slash-menu-item-hint">{item.hint}</span>
-            </button>
+            </div>
           </li>
         {/each}
       {/if}

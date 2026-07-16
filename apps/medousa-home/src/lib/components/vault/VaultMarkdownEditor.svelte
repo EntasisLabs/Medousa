@@ -70,8 +70,9 @@
   let editorShellEl = $state<HTMLElement | null>(null);
   const scrollSync = createVaultScrollSync();
   let slashMenuEl = $state<ReturnType<typeof VaultSlashMenu> | null>(null);
-  let draft = $state("");
-  let syncedKey = $state("");
+  // Seed from content so CM doesn't mount on an empty draft during hydrate.
+  let draft = $state(content);
+  let syncedKey = $state(contentSyncKey);
   let selectionStart = $state(0);
   let selectionEnd = $state(0);
   let slashOpen = $state(false);
@@ -308,25 +309,19 @@
     slashAnchor = null;
   }
 
+  function handleSlashKey(key: string): boolean {
+    return slashMenuEl?.handleMenuKey(key) ?? false;
+  }
+
   export function scrollToHeadingSource(headingText: string) {
     cmEl?.scrollToHeadingSource(headingText);
   }
 
-  function handleShellKeydown(event: KeyboardEvent) {
-    if (slashMenuEl?.handleMenuKeydown(event)) {
-      return;
-    }
-    if (event.key === "Escape" && slashOpen) {
-      event.preventDefault();
-      closeSlashMenu();
-    }
-  }
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
   class="vault-markdown-editor vault-markdown-editor--{surface} relative flex min-h-0 flex-1 flex-col {className}"
-  onkeydown={handleShellKeydown}
   oncontextmenu={handleContextMenu}
 >
   <VaultFormatBar
@@ -383,9 +378,11 @@
             {contentSyncKey}
             {disabled}
             {surface}
+            {slashOpen}
             onchange={handleContentChange}
             onSelectionChange={handleSelectionChange}
             onSlashCheck={syncSlashMenu}
+            onSlashKey={handleSlashKey}
           />
         </div>
       </SplitPane>
@@ -409,9 +406,11 @@
           {contentSyncKey}
           {disabled}
           {surface}
+          {slashOpen}
           onchange={handleContentChange}
           onSelectionChange={handleSelectionChange}
           onSlashCheck={syncSlashMenu}
+          onSlashKey={handleSlashKey}
         />
       </div>
     {/if}

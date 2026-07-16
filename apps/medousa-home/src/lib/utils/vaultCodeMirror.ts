@@ -1,5 +1,7 @@
 /** CodeMirror helpers for vault markdown editing. */
 
+import { tags as t } from "@lezer/highlight";
+import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { EditorSelection, type Extension } from "@codemirror/state";
 import {
   Decoration,
@@ -113,34 +115,84 @@ export function getCodeMirrorCaretAnchor(
   };
 }
 
-export const vaultEditorBaseTheme = EditorView.theme({
-  "&": {
-    height: "100%",
-    fontSize: "inherit",
+/** Dark-mode vault editor chrome (matches Grapheme / app surfaces). */
+export const vaultEditorBaseTheme = EditorView.theme(
+  {
+    "&": {
+      height: "100%",
+      fontSize: "inherit",
+      color: "rgb(var(--color-surface-100))",
+      backgroundColor: "transparent",
+    },
+    ".cm-scroller": {
+      overflow: "auto",
+      fontFamily: "inherit",
+      lineHeight: "inherit",
+    },
+    ".cm-content": {
+      padding: "0",
+      caretColor: "rgb(var(--color-primary-200))",
+      color: "rgb(var(--color-surface-100))",
+    },
+    ".cm-cursor, .cm-dropCursor": {
+      borderLeftColor: "rgb(var(--color-primary-200))",
+      borderLeftWidth: "2px",
+    },
+    "&.cm-focused .cm-cursor": {
+      borderLeftColor: "rgb(var(--color-primary-100))",
+    },
+    ".cm-selectionBackground, &.cm-focused .cm-selectionBackground": {
+      backgroundColor: "rgb(var(--color-primary-500) / 0.28) !important",
+    },
+    ".cm-gutters": {
+      display: "none",
+    },
+    ".cm-activeLine": {
+      backgroundColor: "rgb(var(--color-surface-900) / 0.45)",
+    },
+    "&.cm-focused": {
+      outline: "none",
+    },
+    ".cm-placeholder": {
+      color: "rgb(var(--color-surface-500))",
+    },
+    ".cm-vault-find-mark": {
+      backgroundColor: "rgb(250 204 21 / 0.38)",
+    },
+    ".cm-vault-find-mark-active": {
+      backgroundColor: "rgb(250 204 21 / 0.62)",
+      boxShadow: "inset 0 -1.5px 0 0 rgb(234 179 8 / 0.85)",
+    },
   },
-  ".cm-scroller": {
-    overflow: "auto",
-    fontFamily: "inherit",
-    lineHeight: "inherit",
-  },
-  ".cm-content": {
-    padding: "0",
-    caretColor: "rgb(var(--color-primary-200))",
-  },
-  ".cm-gutters": {
-    display: "none",
-  },
-  ".cm-activeLine": {
-    backgroundColor: "transparent",
-  },
-  "&.cm-focused": {
-    outline: "none",
-  },
-  ".cm-vault-find-mark": {
-    backgroundColor: "rgb(250 204 21 / 0.38)",
-  },
-  ".cm-vault-find-mark-active": {
-    backgroundColor: "rgb(250 204 21 / 0.62)",
-    boxShadow: "inset 0 -1.5px 0 0 rgb(234 179 8 / 0.85)",
-  },
+  { dark: true },
+);
+
+/** Markdown highlighting tuned for dark surfaces (overrides basicSetup light defaults). */
+export const vaultMarkdownHighlightStyle = HighlightStyle.define([
+  { tag: t.heading1, color: "rgb(var(--color-primary-200))", fontWeight: "700" },
+  { tag: t.heading2, color: "rgb(var(--color-primary-200))", fontWeight: "650" },
+  { tag: t.heading3, color: "rgb(var(--color-primary-300))", fontWeight: "600" },
+  { tag: t.heading4, color: "rgb(var(--color-primary-300))", fontWeight: "600" },
+  { tag: t.heading5, color: "rgb(var(--color-surface-100))", fontWeight: "600" },
+  { tag: t.heading6, color: "rgb(var(--color-surface-100))", fontWeight: "600" },
+  { tag: t.strong, color: "rgb(var(--color-surface-50))", fontWeight: "700" },
+  { tag: t.emphasis, color: "rgb(var(--color-surface-100))", fontStyle: "italic" },
+  { tag: t.strikethrough, color: "rgb(var(--color-surface-400))", textDecoration: "line-through" },
+  { tag: t.link, color: "rgb(var(--color-primary-300))" },
+  { tag: t.url, color: "rgb(var(--color-secondary-300))" },
+  { tag: t.monospace, color: "rgb(var(--color-warning-200))" },
+  { tag: t.quote, color: "rgb(var(--color-surface-300))", fontStyle: "italic" },
+  { tag: t.list, color: "rgb(var(--color-surface-200))" },
+  { tag: t.meta, color: "rgb(var(--color-surface-400))" },
+  { tag: t.processingInstruction, color: "rgb(var(--color-surface-400))" },
+  { tag: t.contentSeparator, color: "rgb(var(--color-surface-500))" },
+  { tag: t.comment, color: "rgb(var(--color-surface-500))", fontStyle: "italic" },
+  { tag: t.atom, color: "rgb(var(--color-warning-200))" },
+  { tag: t.bool, color: "rgb(var(--color-warning-200))" },
+  { tag: t.literal, color: "rgb(var(--color-success-300))" },
+  { tag: t.string, color: "rgb(var(--color-success-300))" },
+]);
+
+export const vaultMarkdownSyntax = syntaxHighlighting(vaultMarkdownHighlightStyle, {
+  fallback: true,
 });

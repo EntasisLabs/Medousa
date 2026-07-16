@@ -3,7 +3,7 @@
   import { basicSetup } from "codemirror";
   import { EditorState, Compartment, Prec } from "@codemirror/state";
   import { EditorView, keymap, placeholder } from "@codemirror/view";
-  import { defaultKeymap, historyKeymap } from "@codemirror/commands";
+  import { historyKeymap } from "@codemirror/commands";
   import { markdown } from "@codemirror/lang-markdown";
   import {
     activeMarkdownFormats,
@@ -24,6 +24,7 @@
     revealFindMatchInView,
     vaultEditorBaseTheme,
     vaultFindHighlightExtension,
+    vaultMarkdownSyntax,
   } from "$lib/utils/vaultCodeMirror";
   import { vaultFind } from "$lib/stores/vaultFind.svelte";
   import type { FindMatch } from "$lib/utils/vaultFindInNote";
@@ -34,9 +35,13 @@
     disabled?: boolean;
     surface?: "write" | "source";
     class?: string;
+    /** When true, ↑↓/Enter/Esc are claimed for the slash menu (incl. Shift). */
+    slashOpen?: boolean;
     onchange?: (value: string) => void;
     onSelectionChange?: (start: number, end: number) => void;
     onSlashCheck?: () => void;
+    /** Return true when the slash menu consumed the key. */
+    onSlashKey?: (key: string) => boolean;
   }
 
   let {
@@ -45,19 +50,66 @@
     disabled = false,
     surface = "write",
     class: className = "",
+    slashOpen = false,
     onchange,
     onSelectionChange,
     onSlashCheck,
+    onSlashKey,
   }: Props = $props();
 
   let host: HTMLDivElement | undefined = $state();
   let view: EditorView | undefined = $state();
   let syncedKey = $state("");
   const readOnlyCompartment = new Compartment();
+  const slashKeymapCompartment = new Compartment();
   let findDecorationsEpoch = $state(0);
 
   let findMatches = $state<FindMatch[]>([]);
   let findActiveIndex = $state(0);
+
+  // Mount-stable refs for keymap run functions.
+  let slashOpenRef = false;
+  let slashKeyHandler: ((key: string) => boolean) | null = null;
+  $effect(() => {
+    slashOpenRef = slashOpen;
+    slashKeyHandler = onSlashKey ?? null;
+  });
+
+  function slashKeymapExt(active: boolean) {
+    if (!active) return [];
+    // While the menu is open, always claim these keys (return true) so
+    // defaultKeymap cursor/select line bindings never run — including Shift.
+    const claim = (key: string) => () => {
+      slashKeyHandler?.(key);
+      return true;
+    };
+    return Prec.highest(
+      keymap.of([
+        {
+          key: "ArrowDown",
+          run: claim("ArrowDown"),
+          shift: claim("ArrowDown"),
+          preventDefault: true,
+        },
+        {
+          key: "ArrowUp",
+          run: claim("ArrowUp"),
+          shift: claim("ArrowUp"),
+          preventDefault: true,
+        },
+        {
+          key: "Enter",
+          run: claim("Enter"),
+          preventDefault: true,
+        },
+        {
+          key: "Escape",
+          run: claim("Escape"),
+          preventDefault: true,
+        },
+      ]),
+    );
+  }
 
   function emitSelection() {
     if (!view) return;
@@ -152,6 +204,20 @@
     return Prec.highest(
       keymap.of([
         {
+          key: "Enter",
+          run: () => {
+            // Slash Enter is handled in domEventHandlers (single path).
+            if (!view) return false;
+            const sel = view.state.selection.main;
+            if (sel.from !== sel.to) return false;
+            const content = view.state.doc.toString();
+            const result = continueListOnEnter(content, sel.from);
+            if (!result) return false;
+            applyExternalEdit(result);
+            return true;
+          },
+        },
+        {
           key: "Mod-b",
           run: () => {
             format("bold");
@@ -223,19 +289,6 @@
           },
         },
         {
-          key: "Enter",
-          run: () => {
-            if (!view) return false;
-            const sel = view.state.selection.main;
-            if (sel.from !== sel.to) return false;
-            const content = view.state.doc.toString();
-            const result = continueListOnEnter(content, sel.from);
-            if (!result) return false;
-            applyExternalEdit(result);
-            return true;
-          },
-        },
-        {
           key: "Backspace",
           run: () => {
             if (!view) return false;
@@ -261,12 +314,15 @@
         extensions: [
           basicSetup,
           markdown(),
+          vaultMarkdownSyntax,
           EditorView.lineWrapping,
           vaultEditorBaseTheme,
           placeholder("Write…"),
           readOnlyCompartment.of(EditorState.readOnly.of(disabled)),
+          slashKeymapCompartment.of(slashKeymapExt(slashOpen)),
           buildKeymap(),
-          keymap.of([...defaultKeymap, ...historyKeymap]),
+          // historyKeymap only — defaultKeymap already comes from basicSetup
+          keymap.of(historyKeymap),
           vaultFindHighlightExtension(() => ({
             matches: findMatches,
             activeIndex: findActiveIndex,
@@ -291,6 +347,12 @@
     });
     syncedKey = contentSyncKey;
     vaultFind.registerCodeMirror(view);
+    // Parent draft often fills after mount — pull current value immediately.
+    if (value && view.state.doc.toString() !== value) {
+      view.dispatch({
+        changes: { from: 0, to: view.state.doc.length, insert: value },
+      });
+    }
   });
 
   onDestroy(() => {
@@ -308,19 +370,32 @@
 
   $effect(() => {
     if (!view) return;
-    if (contentSyncKey === syncedKey) return;
-    const next = value;
-    syncedKey = contentSyncKey;
-    if (view.state.doc.toString() === next) return;
     view.dispatch({
-      changes: { from: 0, to: view.state.doc.length, insert: next },
+      effects: slashKeymapCompartment.reconfigure(slashKeymapExt(slashOpen)),
     });
   });
 
-  // Keep class in sync for write/source typography variants
+  /**
+   * Keep CM doc aligned with the parent `value`.
+   * Handles the common race where we mount with "" before draft hydrates
+   * (same contentSyncKey, so a key-only gate would skip forever).
+   */
   $effect(() => {
-    surface;
-    className;
+    if (!view) return;
+    const next = value;
+    const key = contentSyncKey;
+    const current = view.state.doc.toString();
+    if (current === next) {
+      syncedKey = key;
+      return;
+    }
+    // External note switch, or mount-before-hydrate catch-up.
+    if (key !== syncedKey || (current.length === 0 && next.length > 0)) {
+      syncedKey = key;
+      view.dispatch({
+        changes: { from: 0, to: view.state.doc.length, insert: next },
+      });
+    }
   });
 </script>
 
