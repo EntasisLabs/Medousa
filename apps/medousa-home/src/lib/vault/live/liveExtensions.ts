@@ -5,24 +5,40 @@ import TaskItem from "@tiptap/extension-task-item";
 import { Markdown } from "@tiptap/markdown";
 import type { AnyExtension } from "@tiptap/core";
 import { FenceBlock, type FenceBlockOptions } from "./fenceBlockExtension";
+import { EmbedBlock, type EmbedBlockOptions } from "./embedBlockExtension";
 import { HeadingMarks } from "./headingMarksExtension";
+import { LiveHorizontalRule } from "./liveHorizontalRule";
+
+export type LiveExtensionOptions = {
+  fence?: FenceBlockOptions;
+  embed?: EmbedBlockOptions;
+};
 
 export function createLiveExtensions(
-  fenceOptions?: FenceBlockOptions,
+  options: LiveExtensionOptions = {},
 ): AnyExtension[] {
   return [
     StarterKit.configure({
-      // All fences are atomic cards; no editable code blocks in Live.
+      // Fences are organism hosts; no editable code blocks in Live.
       codeBlock: false,
-      // Use standalone Link below (StarterKit's link conflicts if both are enabled).
       link: false,
-      // Horizontal rule from StarterKit; keep heading levels 1–3 for slash.
+      // Custom Live HR: click unrenders to editable ---.
+      horizontalRule: false,
       heading: { levels: [1, 2, 3] },
     }),
+    LiveHorizontalRule,
     Link.configure({
       openOnClick: false,
       autolink: true,
       linkOnPaste: true,
+      protocols: ["http", "https", "mailto", "wikilink"],
+      isAllowedUri: (url, ctx) => {
+        if (url.startsWith("wikilink:")) return true;
+        return ctx.defaultValidate(url);
+      },
+      HTMLAttributes: {
+        class: "vault-live-link",
+      },
     }),
     TaskList,
     TaskItem.configure({ nested: true }),
@@ -30,6 +46,7 @@ export function createLiveExtensions(
       indentation: { style: "space", size: 2 },
     }),
     HeadingMarks,
-    FenceBlock.configure(fenceOptions ?? {}),
+    FenceBlock.configure(options.fence ?? {}),
+    EmbedBlock.configure(options.embed ?? {}),
   ];
 }

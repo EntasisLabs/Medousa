@@ -1,9 +1,28 @@
 import { Node, mergeAttributes } from "@tiptap/core";
+import type { LiquidRenderContext } from "$lib/liquid/render/context";
 import {
   detectFenceTitle,
   fencePreviewLine,
   parseFenceInfo,
 } from "./fenceCard";
+import {
+  isLiquidFenceLang,
+  mountLiquidFence,
+  mountPlainFence,
+  unmountLiquidFence,
+} from "./liveOrganismHost";
+import {
+  mountCalloutSurface,
+  parseCalloutRaw,
+  serializeCalloutRaw,
+  type CalloutSurfaceHandles,
+} from "./liveCalloutSurface";
+import {
+  mountReportSurface,
+  type ReportSurfaceHandles,
+} from "./liveReportSurface";
+import { resolveMedousaViews } from "$lib/utils/resolveMedousaViews";
+import type { VaultNote } from "$lib/types/vault";
 
 export type FenceBlockAttrs = {
   raw: string;
@@ -12,8 +31,17 @@ export type FenceBlockAttrs = {
   preview: string;
 };
 
+export type LiveFenceResolveContext = {
+  sourcePath: string | null;
+  notes: VaultNote[];
+  selectedPath: string | null;
+  selectedContent: string;
+  labelByPath: Map<string, string>;
+};
+
 export type FenceBlockOptions = {
-  onEditInBuild?: (attrs: FenceBlockAttrs) => void;
+  getLiquidContext?: () => LiquidRenderContext;
+  getResolveContext?: () => LiveFenceResolveContext;
 };
 
 declare module "@tiptap/core" {
@@ -41,6 +69,15 @@ function attrsFromRaw(raw: string): FenceBlockAttrs {
   };
 }
 
+function fenceBody(raw: string): string {
+  const open = /^```([^\r\n`]*)\r?\n/.exec(raw);
+  const closeIdx = raw.lastIndexOf("\n```");
+  if (open && closeIdx > open[0].length) {
+    return raw.slice(open[0].length, closeIdx);
+  }
+  return raw.replace(/^```[^\n]*\n?/, "").replace(/\n?```\s*$/, "");
+}
+
 export const FenceBlock = Node.create<FenceBlockOptions>({
   name: "fenceBlock",
   group: "block",
@@ -50,7 +87,8 @@ export const FenceBlock = Node.create<FenceBlockOptions>({
 
   addOptions() {
     return {
-      onEditInBuild: undefined,
+      getLiquidContext: undefined,
+      getResolveContext: undefined,
     };
   },
 
@@ -64,7 +102,7 @@ export const FenceBlock = Node.create<FenceBlockOptions>({
   },
 
   parseHTML() {
-    return [{ tag: 'div[data-fence-block]' }];
+    return [{ tag: "div[data-fence-block]" }];
   },
 
   renderHTML({ HTMLAttributes }) {
@@ -77,7 +115,6 @@ export const FenceBlock = Node.create<FenceBlockOptions>({
         (raw: string) =>
         ({ commands }) => {
           const attrs = attrsFromRaw(raw.trimEnd() + (raw.endsWith("\n") ? "" : "\n"));
-          // Ensure trailing newline outside atom via paragraph after insert
           return commands.insertContent([
             { type: this.name, attrs },
             { type: "paragraph" },
@@ -87,62 +124,109 @@ export const FenceBlock = Node.create<FenceBlockOptions>({
   },
 
   addNodeView() {
-    return ({ node }) => {
+    return ({ node, editor, getPos }) => {
       let attrs = node.attrs as FenceBlockAttrs;
       const dom = document.createElement("div");
-      dom.className = "vault-live-fence-card";
+      dom.className = "vault-live-organism-host";
       dom.setAttribute("data-fence-block", "");
       dom.setAttribute("data-lang", attrs.lang || "code");
+      dom.dataset.liveFenceRaw = attrs.raw;
       dom.contentEditable = "false";
 
-      const head = document.createElement("div");
-      head.className = "vault-live-fence-card__head";
+      let callout: CalloutSurfaceHandles | null = null;
+      let report: ReportSurfaceHandles | null = null;
+      let mountGen = 0;
 
-      const label = document.createElement("span");
-      label.className = "vault-live-fence-card__lang";
-      label.textContent = attrs.lang || "code";
+      const applyRawUpdate = (raw: string) => {
+        const pos = typeof getPos === "function" ? getPos() : null;
+        if (typeof pos !== "number") return;
+        const next = attrsFromRaw(raw);
+        const tr = editor.state.tr.setNodeMarkup(pos, undefined, next);
+        editor.view.dispatch(tr);
+      };
 
-      const title = document.createElement("span");
-      title.className = "vault-live-fence-card__title";
-      title.textContent = attrs.title ?? "";
+      const remount = (nextAttrs: FenceBlockAttrs) => {
+        const gen = ++mountGen;
+        callout?.destroy();
+        callout = null;
+        report?.destroy();
+        report = null;
+        unmountLiquidFence(dom);
+        dom.replaceChildren();
+        dom.setAttribute("data-lang", nextAttrs.lang || "code");
+        dom.dataset.liveFenceRaw = nextAttrs.raw;
 
-      head.append(label, title);
-
-      const preview = document.createElement("p");
-      preview.className = "vault-live-fence-card__preview";
-      preview.textContent = attrs.preview || "Fenced block";
-
-      const actions = document.createElement("div");
-      actions.className = "vault-live-fence-card__actions";
-
-      const editBtn = document.createElement("button");
-      editBtn.type = "button";
-      editBtn.className = "vault-live-fence-card__edit";
-      editBtn.textContent = "Edit in Build";
-      editBtn.addEventListener("mousedown", (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-      });
-      editBtn.addEventListener("click", (e) => {
-        e.preventDefault();
-        e.stopPropagation();
+        const lang = (nextAttrs.lang || "").toLowerCase();
         const opts = this.options as FenceBlockOptions;
-        opts.onEditInBuild?.(attrs);
-      });
 
-      actions.append(editBtn);
-      dom.append(head, preview, actions);
+        if (lang === "callout") {
+          const model = parseCalloutRaw(nextAttrs.raw);
+          callout = mountCalloutSurface(dom, model, (updated) => {
+            applyRawUpdate(serializeCalloutRaw(updated));
+          });
+          return;
+        }
+
+        if (lang === "report") {
+          report = mountReportSurface(
+            dom,
+            nextAttrs.raw,
+            opts.getLiquidContext?.() ?? {},
+            (updatedRaw) => applyRawUpdate(updatedRaw),
+          );
+          return;
+        }
+
+        if (lang === "medousa-view") {
+          const placeholder = document.createElement("div");
+          placeholder.className = "vault-live-organism vault-live-view-pending markdown-content";
+          placeholder.textContent = "Loading view…";
+          dom.append(placeholder);
+          const ctx = opts.getResolveContext?.();
+          if (!ctx) {
+            placeholder.textContent = "View unavailable";
+            return;
+          }
+          void resolveMedousaViews(nextAttrs.raw, ctx).then((html) => {
+            if (gen !== mountGen) return;
+            placeholder.innerHTML = html;
+            placeholder.classList.remove("vault-live-view-pending");
+          });
+          return;
+        }
+
+        if (isLiquidFenceLang(lang)) {
+          const ctx = opts.getLiquidContext?.() ?? {};
+          mountLiquidFence(dom, nextAttrs.raw, ctx);
+          return;
+        }
+
+        mountPlainFence(dom, lang, fenceBody(nextAttrs.raw));
+      };
+
+      remount(attrs);
 
       return {
         dom,
+        ignoreMutation: () => true,
         update: (updated) => {
           if (updated.type.name !== this.name) return false;
-          attrs = updated.attrs as FenceBlockAttrs;
-          label.textContent = attrs.lang || "code";
-          title.textContent = attrs.title ?? "";
-          preview.textContent = attrs.preview || "Fenced block";
-          dom.setAttribute("data-lang", attrs.lang || "code");
+          const next = updated.attrs as FenceBlockAttrs;
+          if (next.raw === attrs.raw && next.lang === attrs.lang) {
+            attrs = next;
+            return true;
+          }
+          attrs = next;
+          remount(attrs);
           return true;
+        },
+        destroy: () => {
+          mountGen += 1;
+          callout?.destroy();
+          callout = null;
+          report?.destroy();
+          report = null;
+          unmountLiquidFence(dom);
         },
       };
     };

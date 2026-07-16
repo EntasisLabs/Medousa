@@ -111,7 +111,8 @@ describe("liveDoc markdown round-trip", () => {
     const out = liveDocToMarkdown(doc);
     expect(out).toContain(reportRaw!);
     expect(out).toContain(chartRaw!);
-    expect(out).toContain("[[projects/apollo|Apollo]]");
+    // Alias may collapse when it matches the default display label.
+    expect(out).toMatch(/\[\[projects\/apollo(?:\|Apollo)?\]\]/);
     expect(out).toContain("Ship the hybrid editor");
     expect(out).toContain("Depth stays behind the scenes");
     expect(out).toContain("trailing thoughts");
@@ -128,7 +129,7 @@ describe("liveDoc markdown round-trip", () => {
     expect(out).toContain("tags:");
     expect(out).toContain("```report");
     expect(out).toContain("```chart");
-    expect(out).toContain("[[projects/apollo|Apollo]]");
+    expect(out).toMatch(/\[\[projects\/apollo(?:\|Apollo)?\]\]/);
     expect(out).toContain("Ship the hybrid editor");
     // Fence bodies must not be eaten
     expect(out).toContain("Weekly pulse");
@@ -140,6 +141,32 @@ describe("liveDoc markdown round-trip", () => {
     const text = JSON.stringify(parsed.doc);
     expect(text).not.toContain("kind: daily");
     expect(text).not.toContain('"tags"');
+  });
+
+  it("renders wikilinks as links and embeds as atoms, round-trips source", () => {
+    const body = [
+      "# Daily",
+      "",
+      "See [[weekly-review|Weekly review]].",
+      "",
+      "![[projects/crypto-trading-bot/research-overview.md]]",
+      "",
+      "More prose.",
+      "",
+    ].join("\n");
+    const doc = markdownToLiveDoc(body);
+    const embeds = (doc.content ?? []).filter((n) => n.type === "embedBlock");
+    expect(embeds).toHaveLength(1);
+    expect(embeds[0]?.attrs?.path).toContain("research-overview");
+
+    const json = JSON.stringify(doc);
+    expect(json).toContain("wikilink:");
+    expect(json).not.toContain("[[weekly-review");
+
+    const out = liveDocToMarkdown(doc);
+    expect(out).toContain("[[weekly-review|Weekly review]]");
+    expect(out).toContain("![[projects/crypto-trading-bot/research-overview.md]]");
+    expect(out).toContain("More prose");
   });
 
   it("round-trips nested report as a single fence atom", () => {

@@ -26,8 +26,6 @@
   import { vaultDisplayTitle } from "$lib/utils/formatVault";
   import { handleVaultNoteContextMenuEvent } from "$lib/utils/vaultContextMenuEvents";
   import { createVaultScrollSync } from "$lib/utils/vaultScrollSync";
-  import { findFenceOffset } from "$lib/vault/live/fenceCard";
-  import { stripFrontmatter } from "$lib/utils/vaultFrontmatter";
 
   interface Props {
     content: string;
@@ -90,7 +88,6 @@
   let chartTypePickerOpen = $state(false);
   let bridgeInsertAt = $state(0);
   let activeActions = $state<MarkdownFormatAction[]>([]);
-  let pendingFenceFocusRaw = $state<string | null>(null);
   let lastPlane = $state<"live" | "build" | null>(null);
   let liveSlashFilter = $state("");
 
@@ -181,25 +178,6 @@
     if (!vaultFind.open || vault.editorMode !== "edit") return;
     draft;
     vaultFind.setSourceText(draft);
-  });
-
-  /** After Live → Build with fence jump, focus CM once mounted. */
-  $effect(() => {
-    if (isLivePlane || !pendingFenceFocusRaw || !cmEl) return;
-    const raw = pendingFenceFocusRaw;
-    pendingFenceFocusRaw = null;
-    const { content: body } = stripFrontmatter(draft);
-    const bodyOffset = findFenceOffset(body, raw);
-    if (bodyOffset < 0) {
-      cmEl.focusEditor();
-      return;
-    }
-    const prefixLen = draft.length - body.length;
-    // When frontmatter exists, body starts after --- block; stripFrontmatter
-    // returns content without leading FM — locate raw in full draft instead.
-    const fullOffset = draft.indexOf(raw);
-    const offset = fullOffset >= 0 ? fullOffset : prefixLen + bodyOffset;
-    queueMicrotask(() => cmEl?.focusOffset(offset, offset + raw.length));
   });
 
   function handleCmScroll() {
@@ -440,7 +418,8 @@
     if (isLivePlane) {
       if (!liveEl) return;
       if (notePickerMode === "embed") {
-        liveEl.insertText(serializeTransclusion(path));
+        liveEl.clearSlash();
+        liveEl.insertEmbed(path);
         notePickerOpen = false;
         return;
       }
@@ -448,8 +427,7 @@
       const label =
         vault.labelByPath().get(path) ??
         vaultDisplayTitle(path.split("/").pop()?.replace(/\.md$/i, "") ?? path, path);
-      const token = path.replace(/\.md$/i, "");
-      liveEl.insertText(`[[${token}|${label.trim() || token}]]`);
+      liveEl.insertWikilink(path, label.trim() || path);
       notePickerOpen = false;
       return;
     }
@@ -491,14 +469,6 @@
 
   function handleSlashKey(key: string): boolean {
     return slashMenuEl?.handleMenuKey(key) ?? false;
-  }
-
-  function handleEditFenceInBuild(raw: string) {
-    const flushed = liveEl?.flush() ?? draft;
-    draft = flushed;
-    onchange(flushed);
-    pendingFenceFocusRaw = raw;
-    vault.setNotePlane("build");
   }
 
   export function scrollToHeadingSource(headingText: string) {
@@ -611,7 +581,6 @@
               onchange={handleLiveChange}
               onSlashCheck={syncSlashMenu}
               onSlashKey={handleSlashKey}
-              onEditFenceInBuild={handleEditFenceInBuild}
             />
           {:else}
             <VaultMarkdownCodeMirror
