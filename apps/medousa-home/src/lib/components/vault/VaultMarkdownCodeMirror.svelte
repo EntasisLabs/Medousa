@@ -189,6 +189,19 @@
     view.focus();
   }
 
+  /** Focus Build at a character offset (e.g. Live fence → source). */
+  export function focusOffset(offset: number, end?: number) {
+    if (!view) return;
+    const doc = view.state.doc;
+    const from = Math.max(0, Math.min(offset, doc.length));
+    const to = Math.max(from, Math.min(end ?? from, doc.length));
+    view.dispatch({
+      selection: { anchor: from, head: to },
+      effects: EditorView.scrollIntoView(from, { y: "center", yMargin: 48 }),
+    });
+    view.focus();
+  }
+
   export function refreshFindHighlights(matches: FindMatch[], activeIndex: number) {
     findMatches = matches;
     findActiveIndex = activeIndex;

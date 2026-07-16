@@ -127,11 +127,22 @@
     vault.editorMode === "edit" && !showLedgerTable && !showKanbanBoard,
   );
 
+  const notePlane = $derived(vault.notePlane);
+  const isLivePlane = $derived(notePlane === "live");
+  const isBuildPlane = $derived(notePlane === "build");
+
   const showSplitEditor = $derived(
-    !mobile && !stickyNote && showMarkdownEditor && layout.vaultSplitEnabled,
+    !mobile &&
+      !stickyNote &&
+      showMarkdownEditor &&
+      isBuildPlane &&
+      layout.vaultSplitEnabled,
   );
 
-  const editorSurface = $derived<"write" | "source">(vault.editorSurface);
+  /** Live always uses write typography; Build respects source/write choice. */
+  const editorSurface = $derived<"write" | "source">(
+    isLivePlane ? "write" : vault.editorSurface,
+  );
 
   const showPreviewOnly = $derived(
     vault.editorMode === "preview" && !showKanbanBoard && !showLedgerTable,
@@ -140,21 +151,45 @@
   const noteKind = $derived(vault.selectedKind);
   const linkCount = $derived(vault.wikilinksOut.length + vault.backlinks.length);
   const showLinksToggle = $derived(
-    !stickyNote &&
+    isBuildPlane &&
+      !stickyNote &&
       !vault.isLooseFile &&
       Boolean(vault.selectedPath) &&
       supportsLinksPanel(noteKind) &&
       linkCount > 0,
   );
   const showLinksPanel = $derived(
-    !mobile && !stickyNote && layout.vaultLinksPanelOpen && showLinksToggle,
+    !mobile &&
+      !stickyNote &&
+      isBuildPlane &&
+      layout.vaultLinksPanelOpen &&
+      showLinksToggle,
   );
   const showPreviewButton = $derived(
     Boolean(vault.selectedPath) && supportsPreviewSplit(noteKind),
   );
   const showSplitButton = $derived(
-    !stickyNote && showMarkdownEditor && supportsPreviewSplit(noteKind),
+    isBuildPlane &&
+      !stickyNote &&
+      showMarkdownEditor &&
+      supportsPreviewSplit(noteKind),
   );
+  /** Live | Build pill for markdown note editing (not ledger/board surfaces). */
+  const showNotePlaneToggle = $derived(
+    !mobile &&
+      !stickyNote &&
+      Boolean(vault.selectedPath) &&
+      supportsPreviewSplit(noteKind) &&
+      !showLedgerTable &&
+      !showKanbanBoard,
+  );
+
+  $effect(() => {
+    if (isLivePlane && layout.vaultLinksPanelOpen) {
+      layout.setVaultLinksPanelOpen(false);
+    }
+  });
+
   const showLedgerViewToggle = $derived(
     Boolean(vault.selectedPath) &&
       vault.selectedKind === "ledger" &&
@@ -448,6 +483,31 @@
           </span>
         {/if}
 
+        {#if showNotePlaneToggle}
+          <div class="vault-note-plane-pill" role="group" aria-label="Note plane">
+            <button
+              type="button"
+              class="vault-note-plane-pill-btn"
+              class:vault-note-plane-pill-btn--active={isLivePlane}
+              aria-pressed={isLivePlane}
+              title="Live — calm writing plane"
+              onclick={() => vault.setNotePlane("live")}
+            >
+              Live
+            </button>
+            <button
+              type="button"
+              class="vault-note-plane-pill-btn"
+              class:vault-note-plane-pill-btn--active={isBuildPlane}
+              aria-pressed={isBuildPlane}
+              title="Build — format, split, source, links"
+              onclick={() => vault.setNotePlane("build")}
+            >
+              Build
+            </button>
+          </div>
+        {/if}
+
         {#if showPreviewButton}
           <button
             type="button"
@@ -633,12 +693,15 @@
 
   {#if !vault.selectedPath}
     <VaultEmptyState />
-  {:else if vault.noteLoading}
-    <div class="flex flex-1 items-center justify-center text-sm text-surface-400">
-      Loading note…
-    </div>
   {:else}
-    <div class="flex min-h-0 flex-1">
+    <div class="relative flex min-h-0 flex-1">
+      {#if vault.noteLoading}
+        <div
+          class="absolute inset-0 z-10 flex items-center justify-center bg-surface-950/50 text-sm text-surface-400"
+        >
+          Loading note…
+        </div>
+      {/if}
       <div class="relative flex min-h-0 min-w-0 flex-1 flex-col">
         <div class="flex min-h-0 min-w-0 flex-1 flex-col">
         {#if showLedgerTable}
@@ -662,6 +725,7 @@
             disabled={vault.noteLoading}
             class="flex-1"
             surface={editorSurface}
+            showFormatChrome={isBuildPlane}
             split={showSplitEditor}
             splitWidth={layout.vaultEditorPaneWidth}
             onSplitResize={(width) => layout.setVaultEditorPaneWidth(width)}
@@ -710,6 +774,7 @@
       content={vault.content}
       tags={vault.noteTags}
       editorMode={vault.editorMode}
+      dense={isLivePlane}
     />
   {/if}
 

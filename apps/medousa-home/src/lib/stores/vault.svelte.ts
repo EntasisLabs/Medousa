@@ -126,6 +126,10 @@ import {
 const LAST_NOTE_KEY = "medousa-home-last-note";
 const LIBRARY_BROWSE_MODE_KEY = "medousa-home-vault-browse-mode";
 const EDITOR_SURFACE_KEY = "medousa-home-vault-editor-surface";
+/** LME writing plane: Live = calm page; Build = full chrome. */
+const NOTE_PLANE_KEY = "medousa-home-vault-note-plane";
+
+export type VaultNotePlane = "live" | "build";
 const RECENT_BROWSE_LIMIT = 40;
 const KIND_BROWSE_ORDER: VaultNoteKind[] = [
   "daily",
@@ -169,6 +173,8 @@ export class VaultStore {
   editorMode = $state<"edit" | "preview">("edit");
   /** Write = prose typography; source = mono fence surgery. */
   editorSurface = $state<"write" | "source">(loadEditorSurface());
+  /** Live = calm LME page; Build = format bar / split / source depth. */
+  notePlane = $state<VaultNotePlane>(loadNotePlane());
   /** Ledger notes: table-first editing (M7c.2). */
   ledgerEditMode = $state<"table" | "raw">("table");
   /** Board notes: kanban-first editing (Phase E). */
@@ -1063,6 +1069,18 @@ export class VaultStore {
     this.setEditorSurface(this.editorSurface === "write" ? "source" : "write");
   }
 
+  setNotePlane(plane: VaultNotePlane) {
+    this.notePlane = plane;
+    saveNotePlane(plane);
+    if (plane === "live") {
+      this.setEditorSurface("write");
+    }
+  }
+
+  toggleNotePlane() {
+    this.setNotePlane(this.notePlane === "live" ? "build" : "live");
+  }
+
   enterEditMode() {
     // Prefer split for markdown notes that support preview (layout.vaultSplitEnabled
     // defaults true). Never force split off when returning to edit.
@@ -1742,6 +1760,26 @@ function saveEditorSurface(surface: "write" | "source") {
   if (typeof localStorage === "undefined") return;
   try {
     localStorage.setItem(EDITOR_SURFACE_KEY, surface);
+  } catch {
+    /* ignore */
+  }
+}
+
+function loadNotePlane(): VaultNotePlane {
+  if (typeof localStorage === "undefined") return "live";
+  try {
+    const raw = localStorage.getItem(NOTE_PLANE_KEY);
+    if (raw === "live" || raw === "build") return raw;
+  } catch {
+    /* ignore */
+  }
+  return "live";
+}
+
+function saveNotePlane(plane: VaultNotePlane) {
+  if (typeof localStorage === "undefined") return;
+  try {
+    localStorage.setItem(NOTE_PLANE_KEY, plane);
   } catch {
     /* ignore */
   }

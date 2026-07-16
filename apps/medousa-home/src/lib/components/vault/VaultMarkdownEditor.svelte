@@ -9,6 +9,7 @@
   import VaultCalloutBuilderSheet from "./VaultCalloutBuilderSheet.svelte";
   import VaultChartTypePicker from "./VaultChartTypePicker.svelte";
   import VaultMarkdownCodeMirror from "./VaultMarkdownCodeMirror.svelte";
+  import VaultLiveEditor from "./VaultLiveEditor.svelte";
   import {
     insertSlashBlock,
     insertTextAtCursor,
@@ -25,6 +26,8 @@
   import { vaultDisplayTitle } from "$lib/utils/formatVault";
   import { handleVaultNoteContextMenuEvent } from "$lib/utils/vaultContextMenuEvents";
   import { createVaultScrollSync } from "$lib/utils/vaultScrollSync";
+  import { findFenceOffset } from "$lib/vault/live/fenceCard";
+  import { stripFrontmatter } from "$lib/utils/vaultFrontmatter";
 
   interface Props {
     content: string;
@@ -43,6 +46,8 @@
     previewScrollEl?: HTMLElement | null;
     preview?: Snippet;
     formatCompact?: boolean;
+    /** Build plane shows the format bar; Live hides it (slash/shortcuts remain). */
+    showFormatChrome?: boolean;
     showFloat?: boolean;
     onFloat?: () => void;
   }
@@ -62,11 +67,13 @@
     previewScrollEl = null,
     preview,
     formatCompact = false,
+    showFormatChrome = true,
     showFloat = false,
     onFloat,
   }: Props = $props();
 
   let cmEl = $state<ReturnType<typeof VaultMarkdownCodeMirror> | null>(null);
+  let liveEl = $state<ReturnType<typeof VaultLiveEditor> | null>(null);
   let editorShellEl = $state<HTMLElement | null>(null);
   const scrollSync = createVaultScrollSync();
   let slashMenuEl = $state<ReturnType<typeof VaultSlashMenu> | null>(null);
@@ -83,14 +90,43 @@
   let chartTypePickerOpen = $state(false);
   let bridgeInsertAt = $state(0);
   let activeActions = $state<MarkdownFormatAction[]>([]);
+  let pendingFenceFocusRaw = $state<string | null>(null);
+  let lastPlane = $state<"live" | "build" | null>(null);
+  let liveSlashFilter = $state("");
 
-  const slashFilter = $derived(slashMenuFilter(draft, selectionStart));
+  const isLivePlane = $derived(vault.notePlane === "live");
+  const slashFilter = $derived(
+    isLivePlane ? liveSlashFilter : slashMenuFilter(draft, selectionStart),
+  );
 
   $effect(() => {
     if (contentSyncKey !== syncedKey) {
       draft = content;
       syncedKey = contentSyncKey;
     }
+  });
+
+  /**
+   * Plane switch: draft is kept current via onchange + Live onDestroy flush.
+   * Bump contentSyncKey path by rewriting draft so the entering plane remounts cleanly.
+   */
+  $effect(() => {
+    const plane = vault.notePlane;
+    if (lastPlane === null) {
+      lastPlane = plane;
+      return;
+    }
+    if (lastPlane === plane) return;
+
+    if (lastPlane === "build" && plane === "live") {
+      draft = cmEl?.getContent() ?? draft;
+      onchange(draft);
+    }
+    // live → build: VaultLiveEditor onDestroy already flushed into draft/onchange
+    slashOpen = false;
+    slashAnchor = null;
+    liveSlashFilter = "";
+    lastPlane = plane;
   });
 
   $effect(() => {
@@ -100,16 +136,24 @@
   $effect(() => {
     vault.editorInsertRequest;
     const insert = vault.takeEditorInsert();
-    if (!insert || !cmEl) return;
+    if (!insert) return;
+    if (isLivePlane) {
+      if (!liveEl) return;
+      liveEl.insertText(insert);
+      return;
+    }
+    if (!cmEl) return;
     const { start } = cmEl.getSelection();
     void applyEdit(insertTextAtCursor(draft, start, insert));
   });
 
   $effect(() => {
     vaultFind.registerReplaceHandler((result) => {
+      if (isLivePlane) return;
       void applyEdit(result);
     });
     vaultFind.registerHighlightHandler((matches, activeIndex) => {
+      if (isLivePlane) return;
       cmEl?.refreshFindHighlights(matches, activeIndex);
     });
     return () => {
@@ -122,6 +166,25 @@
     if (!vaultFind.open || vault.editorMode !== "edit") return;
     draft;
     vaultFind.setSourceText(draft);
+  });
+
+  /** After Live → Build with fence jump, focus CM once mounted. */
+  $effect(() => {
+    if (isLivePlane || !pendingFenceFocusRaw || !cmEl) return;
+    const raw = pendingFenceFocusRaw;
+    pendingFenceFocusRaw = null;
+    const { content: body } = stripFrontmatter(draft);
+    const bodyOffset = findFenceOffset(body, raw);
+    if (bodyOffset < 0) {
+      cmEl.focusEditor();
+      return;
+    }
+    const prefixLen = draft.length - body.length;
+    // When frontmatter exists, body starts after --- block; stripFrontmatter
+    // returns content without leading FM — locate raw in full draft instead.
+    const fullOffset = draft.indexOf(raw);
+    const offset = fullOffset >= 0 ? fullOffset : prefixLen + bodyOffset;
+    queueMicrotask(() => cmEl?.focusOffset(offset, offset + raw.length));
   });
 
   function handleCmScroll() {
@@ -152,7 +215,15 @@
   });
 
   function updateSlashAnchor() {
-    if (!cmEl || !slashOpen) {
+    if (!slashOpen) {
+      slashAnchor = null;
+      return;
+    }
+    if (isLivePlane) {
+      slashAnchor = liveEl?.getSlashAnchor(editorShellEl) ?? null;
+      return;
+    }
+    if (!cmEl) {
       slashAnchor = null;
       return;
     }
@@ -160,6 +231,13 @@
   }
 
   function syncSlashMenu() {
+    if (isLivePlane) {
+      slashOpen = liveEl?.isSlashOpen() ?? false;
+      liveSlashFilter = liveEl?.slashFilter() ?? "";
+      if (slashOpen) updateSlashAnchor();
+      else slashAnchor = null;
+      return;
+    }
     if (!cmEl) {
       slashOpen = false;
       slashAnchor = null;
@@ -212,6 +290,18 @@
     syncSlashMenu();
   }
 
+  function handleLiveChange(next: string) {
+    // Refuse empty Live emits that would wipe the open note (mount/unmount races).
+    const nextBody = next.replace(/^---[\s\S]*?\n---\s*/, "").trim();
+    const draftBody = draft.replace(/^---[\s\S]*?\n---\s*/, "").trim();
+    if (!nextBody && draftBody) {
+      return;
+    }
+    draft = next;
+    onchange(next);
+    syncSlashMenu();
+  }
+
   function handleSelectionChange(start: number, end: number) {
     selectionStart = start;
     selectionEnd = end;
@@ -221,7 +311,12 @@
 
   function handleContextMenu(event: MouseEvent) {
     const path = vault.selectedPath;
-    if (!path || !cmEl) return;
+    if (!path) return;
+    if (isLivePlane) {
+      handleVaultNoteContextMenuEvent(path, event, null);
+      return;
+    }
+    if (!cmEl) return;
     const { start, end } = cmEl.getSelection();
     const text = draft.slice(Math.min(start, end), Math.max(start, end));
     handleVaultNoteContextMenuEvent(
@@ -232,6 +327,11 @@
   }
 
   async function clearSlashAndRememberInsert(): Promise<number> {
+    if (isLivePlane) {
+      liveEl?.clearSlash();
+      bridgeInsertAt = 0;
+      return 0;
+    }
     const cleared = replaceSlashWith(draft, selectionStart, "");
     applyEdit(cleared);
     bridgeInsertAt = cleared.selectionStart;
@@ -239,6 +339,53 @@
   }
 
   function handleSlashSelect(block: SlashBlockId) {
+    if (isLivePlane) {
+      if (!liveEl) return;
+      if (block === "wikilink") {
+        slashOpen = false;
+        notePickerMode = "wikilink";
+        notePickerOpen = true;
+        return;
+      }
+      if (block === "embed") {
+        slashOpen = false;
+        void clearSlashAndRememberInsert().then(() => {
+          notePickerMode = "embed";
+          notePickerOpen = true;
+        });
+        return;
+      }
+      if (block === "view") {
+        slashOpen = false;
+        void clearSlashAndRememberInsert().then(() => {
+          const el = liveEl;
+          if (!el) return;
+          const flushed = el.flush();
+          draft = flushed;
+          onchange(flushed);
+          vault.openViewBridgeInsert(flushed.length);
+        });
+        return;
+      }
+      if (block === "callout") {
+        slashOpen = false;
+        void clearSlashAndRememberInsert().then(() => {
+          calloutBuilderOpen = true;
+        });
+        return;
+      }
+      if (block === "liquid_chart") {
+        slashOpen = false;
+        void clearSlashAndRememberInsert().then(() => {
+          chartTypePickerOpen = true;
+        });
+        return;
+      }
+      liveEl.applySlash(block);
+      slashOpen = false;
+      return;
+    }
+
     if (!cmEl) return;
     if (block === "wikilink") {
       slashOpen = false;
@@ -281,6 +428,22 @@
   }
 
   function handleNotePick(path: string) {
+    if (isLivePlane) {
+      if (!liveEl) return;
+      if (notePickerMode === "embed") {
+        liveEl.insertText(serializeTransclusion(path));
+        notePickerOpen = false;
+        return;
+      }
+      liveEl.clearSlash();
+      const label =
+        vault.labelByPath().get(path) ??
+        vaultDisplayTitle(path.split("/").pop()?.replace(/\.md$/i, "") ?? path, path);
+      const token = path.replace(/\.md$/i, "");
+      liveEl.insertText(`[[${token}|${label.trim() || token}]]`);
+      notePickerOpen = false;
+      return;
+    }
     if (!cmEl) return;
     if (notePickerMode === "embed") {
       const result = insertTextAtCursor(
@@ -301,6 +464,14 @@
   }
 
   function handleBridgeInsert(markdown: string) {
+    if (isLivePlane) {
+      if (markdown.trimStart().startsWith("```")) {
+        liveEl?.insertFence(markdown);
+      } else {
+        liveEl?.insertText(markdown);
+      }
+      return;
+    }
     applyEdit(insertTextAtCursor(draft, bridgeInsertAt, markdown));
   }
 
@@ -313,28 +484,46 @@
     return slashMenuEl?.handleMenuKey(key) ?? false;
   }
 
+  function handleEditFenceInBuild(raw: string) {
+    const flushed = liveEl?.flush() ?? draft;
+    draft = flushed;
+    onchange(flushed);
+    pendingFenceFocusRaw = raw;
+    vault.setNotePlane("build");
+  }
+
   export function scrollToHeadingSource(headingText: string) {
+    if (isLivePlane) return;
     cmEl?.scrollToHeadingSource(headingText);
   }
 
+  export function flushLive(): string {
+    if (!isLivePlane) return draft;
+    const flushed = liveEl?.flush() ?? draft;
+    draft = flushed;
+    return flushed;
+  }
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
   class="vault-markdown-editor vault-markdown-editor--{surface} relative flex min-h-0 flex-1 flex-col {className}"
+  class:vault-markdown-editor--live={isLivePlane || !showFormatChrome}
   oncontextmenu={handleContextMenu}
 >
-  <VaultFormatBar
-    {disabled}
-    compact={formatCompact}
-    {showFloat}
-    {onFloat}
-    {surface}
-    {activeActions}
-    onToggleSurface={() => vault.toggleEditorSurface()}
-    onFormat={handleFormat}
-    onColor={handleColor}
-  />
+  {#if showFormatChrome && !isLivePlane}
+    <VaultFormatBar
+      {disabled}
+      compact={formatCompact}
+      {showFloat}
+      {onFloat}
+      {surface}
+      {activeActions}
+      onToggleSurface={() => vault.toggleEditorSurface()}
+      onFormat={handleFormat}
+      onColor={handleColor}
+    />
+  {/if}
   <VaultNotePicker
     open={notePickerOpen}
     onSelect={handleNotePick}
@@ -352,7 +541,7 @@
   />
 
   <div class="flex min-h-0 flex-1">
-    {#if split && preview && onSplitResize}
+    {#if split && preview && onSplitResize && !isLivePlane}
       <SplitPane
         width={splitWidth}
         side="left"
@@ -400,18 +589,32 @@
           onSelect={handleSlashSelect}
           onClose={closeSlashMenu}
         />
-        <VaultMarkdownCodeMirror
-          bind:this={cmEl}
-          value={draft}
-          {contentSyncKey}
-          {disabled}
-          {surface}
-          {slashOpen}
-          onchange={handleContentChange}
-          onSelectionChange={handleSelectionChange}
-          onSlashCheck={syncSlashMenu}
-          onSlashKey={handleSlashKey}
-        />
+        {#if isLivePlane}
+          <VaultLiveEditor
+            bind:this={liveEl}
+            value={draft}
+            {contentSyncKey}
+            {disabled}
+            {slashOpen}
+            onchange={handleLiveChange}
+            onSlashCheck={syncSlashMenu}
+            onSlashKey={handleSlashKey}
+            onEditFenceInBuild={handleEditFenceInBuild}
+          />
+        {:else}
+          <VaultMarkdownCodeMirror
+            bind:this={cmEl}
+            value={draft}
+            {contentSyncKey}
+            {disabled}
+            {surface}
+            {slashOpen}
+            onchange={handleContentChange}
+            onSelectionChange={handleSelectionChange}
+            onSlashCheck={syncSlashMenu}
+            onSlashKey={handleSlashKey}
+          />
+        {/if}
       </div>
     {/if}
   </div>

@@ -8022,6 +8022,185 @@
     @apply border-0 bg-transparent px-1 py-0.5;
   }
 
+  /* LME Live | Build plane switch — quiet mode pill, not another header btn */
+  .vault-note-plane-pill {
+    @apply inline-flex items-center rounded-full border border-surface-500/35 p-0.5;
+    background-color: rgb(var(--color-surface-900) / 0.55);
+  }
+
+  .vault-note-plane-pill-btn {
+    @apply rounded-full px-2.5 py-1 text-[11px] font-medium tracking-wide text-surface-400 transition-colors;
+  }
+
+  .vault-note-plane-pill-btn:hover {
+    @apply text-surface-200;
+  }
+
+  .vault-note-plane-pill-btn--active {
+    @apply bg-surface-800/90 text-surface-50 shadow-sm;
+  }
+
+  .vault-markdown-editor--live .vault-codemirror-host--write .cm-content {
+    @apply px-8 py-7;
+  }
+
+  .vault-live-editor {
+    @apply px-8 py-7;
+  }
+
+  .vault-live-tag-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    margin: 0 0 1rem;
+    padding: 0;
+  }
+
+  .vault-live-tag-chip {
+    font-size: 0.6875rem;
+    letter-spacing: 0.02em;
+    color: rgb(var(--shell-muted, var(--color-surface-400)));
+    background: rgb(var(--color-surface-800) / 0.55);
+    border: 1px solid rgb(var(--shell-border, var(--color-surface-500)) / 0.22);
+    border-radius: 0.25rem;
+    padding: 0.15rem 0.45rem;
+  }
+
+  .vault-live-editor__host {
+    min-height: 12rem;
+  }
+
+  .vault-live-editor .ProseMirror,
+  .vault-live-editor .vault-live-prose {
+    outline: none;
+    min-height: 12rem;
+    color: rgb(var(--color-surface-50));
+    font-size: 0.9375rem;
+    line-height: 1.7;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+  }
+
+  .vault-live-editor .ProseMirror p.is-editor-empty:first-child::before,
+  .vault-live-editor .ProseMirror .is-empty::before {
+    content: attr(data-placeholder);
+    float: left;
+    height: 0;
+    pointer-events: none;
+    color: rgb(var(--shell-muted, var(--color-surface-500)) / 0.65);
+  }
+
+  .vault-live-prose h1 {
+    @apply text-2xl font-semibold tracking-tight mb-3 mt-1;
+  }
+
+  .vault-live-prose h2 {
+    @apply text-xl font-semibold tracking-tight mb-2 mt-6;
+  }
+
+  .vault-live-prose h3 {
+    @apply text-lg font-medium mb-2 mt-5;
+  }
+
+  .vault-live-prose p {
+    @apply mb-3;
+  }
+
+  .vault-live-prose ul {
+    @apply list-disc pl-5 mb-3;
+  }
+
+  .vault-live-prose ol {
+    @apply list-decimal pl-5 mb-3;
+  }
+
+  .vault-live-prose ul[data-type="taskList"] {
+    @apply list-none pl-0;
+  }
+
+  .vault-live-prose ul[data-type="taskList"] li {
+    @apply flex items-start gap-2;
+  }
+
+  .vault-live-prose ul[data-type="taskList"] li > label {
+    @apply mt-1;
+  }
+
+  .vault-live-prose blockquote {
+    @apply border-l-2 border-surface-600 pl-3 my-3 text-surface-300;
+  }
+
+  .vault-live-prose hr {
+    @apply my-6 border-surface-700/80;
+  }
+
+  .vault-live-prose code {
+    @apply text-[0.85em] px-1 py-0.5 rounded bg-surface-800/80 text-surface-200;
+  }
+
+  .vault-live-prose a {
+    @apply text-primary-300 underline decoration-primary-500/40 underline-offset-2;
+  }
+
+  .vault-live-fence-card {
+    margin: 0.85rem 0 1.1rem;
+    padding: 0.7rem 0.85rem 0.75rem;
+    border: 1px solid rgb(var(--shell-border, var(--color-surface-500)) / 0.28);
+    border-radius: 0.35rem;
+    background: rgb(var(--color-surface-900) / 0.55);
+  }
+
+  .vault-live-fence-card__head {
+    display: flex;
+    align-items: baseline;
+    gap: 0.6rem;
+    margin-bottom: 0.35rem;
+  }
+
+  .vault-live-fence-card__lang {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.6875rem;
+    letter-spacing: 0.04em;
+    text-transform: lowercase;
+    color: rgb(var(--shell-muted, var(--color-surface-400)));
+  }
+
+  .vault-live-fence-card__title {
+    font-size: 0.8125rem;
+    color: rgb(var(--shell-fg, var(--color-surface-100)));
+    opacity: 0.9;
+  }
+
+  .vault-live-fence-card__preview {
+    margin: 0 0 0.55rem;
+    font-size: 0.75rem;
+    line-height: 1.4;
+    color: rgb(var(--shell-muted, var(--color-surface-400)));
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .vault-live-fence-card__actions {
+    display: flex;
+  }
+
+  .vault-live-fence-card__edit {
+    font-size: 0.6875rem;
+    letter-spacing: 0.01em;
+    color: rgb(var(--shell-muted, var(--color-surface-300)));
+    background: transparent;
+    border: 1px solid rgb(var(--shell-border, var(--color-surface-500)) / 0.35);
+    border-radius: 0.25rem;
+    padding: 0.2rem 0.5rem;
+    cursor: pointer;
+  }
+
+  .vault-live-fence-card__edit:hover {
+    color: rgb(var(--shell-fg, var(--color-surface-50)));
+    border-color: rgb(var(--shell-border, var(--color-surface-400)) / 0.55);
+  }
+
   .vault-note-status {
     display: flex;
     align-items: center;
