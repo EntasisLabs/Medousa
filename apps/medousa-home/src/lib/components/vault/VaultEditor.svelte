@@ -71,6 +71,7 @@
   let pdfPreviewLabels = $state<Map<string, string>>(new Map());
   let lastFindNotePath = $state<string | null>(null);
   let previewScrollEl = $state<HTMLElement | null>(null);
+  let markdownEditorEl = $state<ReturnType<typeof VaultMarkdownEditor> | null>(null);
 
   const displayTitle = $derived(
     vault.isLooseFile && vault.looseFilePath
@@ -226,6 +227,7 @@
     vaultFind.revealEpoch;
     vaultFind.matchIndex;
     vaultFind.sourceText;
+    vaultFind.matchCase;
     findMode;
     void tick().then(() => syncFind());
   });
@@ -649,6 +651,7 @@
           />
         {:else if showMarkdownEditor}
           <VaultMarkdownEditor
+            bind:this={markdownEditorEl}
             content={vault.content}
             contentSyncKey={vault.contentSyncKey}
             disabled={vault.noteLoading}
@@ -669,6 +672,7 @@
                 compact
                 bind:scrollEl={previewScrollEl}
                 onWikilink={vault.isLooseFile ? undefined : handleWikilink}
+                onHeadingClick={(heading) => markdownEditorEl?.scrollToHeadingSource(heading)}
               />
             {/snippet}
           </VaultMarkdownEditor>

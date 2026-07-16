@@ -890,7 +890,89 @@
   }
 
   .vault-markdown-editor--source .vault-editor-textarea {
-    @apply font-mono text-sm leading-relaxed;
+    @apply px-5 py-4 font-mono text-sm leading-7;
+    tab-size: 2;
+    -moz-tab-size: 2;
+  }
+
+  .vault-markdown-editor--write .vault-format-bar {
+    @apply mx-auto w-full max-w-3xl border-b-0 bg-transparent px-6;
+  }
+
+  .vault-codemirror-host {
+    @apply min-h-0 flex-1 overflow-hidden;
+    background-color: rgb(var(--color-surface-950));
+  }
+
+  .vault-codemirror-host .cm-editor {
+    @apply h-full outline-none;
+  }
+
+  .vault-codemirror-host--write .cm-scroller {
+    @apply font-sans text-base leading-relaxed;
+  }
+
+  .vault-codemirror-host--write .cm-content {
+    @apply mx-auto max-w-3xl px-6 py-5;
+  }
+
+  .vault-codemirror-host--source .cm-scroller {
+    @apply font-mono text-sm leading-7;
+    tab-size: 2;
+    -moz-tab-size: 2;
+  }
+
+  .vault-codemirror-host--source .cm-content {
+    @apply px-5 py-4;
+  }
+
+  .vault-slash-menu {
+    @apply z-[80] w-[min(100%-1rem,22rem)] overflow-hidden rounded-lg border border-primary-500/30 shadow-xl;
+    background-color: rgb(var(--color-surface-900) / 0.97);
+  }
+
+  .vault-slash-menu--anchored {
+    @apply absolute;
+  }
+
+  .vault-slash-menu:not(.vault-slash-menu--anchored) {
+    @apply shrink-0 border-b border-primary-500/30 shadow-lg;
+  }
+
+  .vault-slash-menu-chrome {
+    @apply flex items-center justify-between gap-2 px-3 py-1.5;
+  }
+
+  .vault-slash-menu-title {
+    @apply text-[10px] font-medium uppercase tracking-wide text-primary-300;
+  }
+
+  .vault-slash-menu-hint {
+    @apply text-[10px] text-surface-500;
+  }
+
+  .vault-slash-menu-list {
+    @apply max-h-64 space-y-0.5 overflow-y-auto px-1.5 pb-2;
+  }
+
+  .vault-slash-menu-section {
+    @apply px-2.5 pb-0.5 pt-2 text-[10px] font-medium uppercase tracking-wide text-surface-500;
+  }
+
+  .vault-slash-menu-item {
+    @apply flex w-full items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-left text-sm text-surface-200 transition-colors hover:bg-surface-800;
+  }
+
+  .vault-slash-menu-item--active {
+    @apply bg-primary-500/20 text-primary-100;
+  }
+
+  .vault-slash-menu-item-hint {
+    @apply font-mono text-[10px] text-surface-500;
+  }
+
+  .vault-slash-menu-empty {
+    @apply px-2.5 py-3 text-sm text-surface-500;
   }
 
   .vault-editor-textarea {
@@ -8337,9 +8419,21 @@
   }
 
   .vault-find-bar {
-    @apply pointer-events-auto absolute right-3 top-2.5 z-[90] flex max-w-[min(100%-1.5rem,20rem)] items-center rounded-md border border-surface-500/35 py-0.5 pl-2 pr-0.5 shadow-lg;
+    @apply pointer-events-auto absolute right-3 top-2.5 z-[90] flex max-w-[min(100%-1.5rem,24rem)] flex-col gap-1 rounded-md border border-surface-500/35 py-0.5 pl-2 pr-0.5 shadow-lg;
     background-color: rgb(var(--color-surface-900) / 0.94);
     backdrop-filter: blur(8px);
+  }
+
+  .vault-find-bar--replace {
+    @apply max-w-[min(100%-1.5rem,26rem)];
+  }
+
+  .vault-find-bar-row {
+    @apply flex items-center;
+  }
+
+  .vault-find-bar-row--replace {
+    @apply border-t border-surface-500/25 pt-0.5;
   }
 
   .vault-find-input {
@@ -8362,6 +8456,14 @@
 
   .vault-find-btn {
     @apply inline-flex h-6 w-6 items-center justify-center rounded text-surface-400 transition hover:bg-surface-800/80 hover:text-surface-100 disabled:opacity-30;
+  }
+
+  .vault-find-btn--active {
+    @apply bg-primary-500/20 text-primary-100;
+  }
+
+  .vault-find-text-btn {
+    @apply shrink-0 rounded px-1.5 py-0.5 text-[11px] font-medium text-surface-300 transition hover:bg-surface-800/80 hover:text-surface-50 disabled:opacity-30;
   }
 
   /* Find-in-note: translucent highlighter wash (not opaque bars) */

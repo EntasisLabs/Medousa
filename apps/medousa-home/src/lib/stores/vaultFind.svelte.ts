@@ -1,15 +1,20 @@
 /** Find-in-note state shared across editor and preview. */
 
+import type { EditorView } from "@codemirror/view";
 import {
   clearPreviewFindHighlights,
   clearTextareaFindBackdrop,
   findMatches,
+  replaceAllFindMatches,
+  replaceFindMatch,
   revealTextareaMatch,
   scrollPreviewToFindMatch,
   syncTextareaFindScroll,
   updateTextareaFindBackdrop,
   type FindMatch,
 } from "$lib/utils/vaultFindInNote";
+import { revealFindMatchInView } from "$lib/utils/vaultCodeMirror";
+import type { EditResult } from "$lib/utils/vaultMarkdownEdit";
 
 function matchesEqual(left: FindMatch[], right: FindMatch[]): boolean {
   if (left.length !== right.length) return false;
@@ -19,15 +24,27 @@ function matchesEqual(left: FindMatch[], right: FindMatch[]): boolean {
   );
 }
 
+export type VaultFindReplaceHandler = (result: EditResult) => void;
+export type VaultFindHighlightHandler = (
+  matches: FindMatch[],
+  activeIndex: number,
+) => void;
+
 export class VaultFindStore {
   open = $state(false);
   query = $state("");
+  replaceQuery = $state("");
+  matchCase = $state(false);
+  replaceMode = $state(false);
   matchIndex = $state(0);
   matches = $state<FindMatch[]>([]);
   /** Plain text used for match indexing (editor draft or rendered preview). */
   sourceText = $state("");
   /** Bumped when the active match should scroll into view. */
   revealEpoch = $state(0);
+
+  replaceHandler: VaultFindReplaceHandler | null = null;
+  highlightHandler: VaultFindHighlightHandler | null = null;
 
   matchCount = $derived(this.matches.length);
   currentMatch = $derived(this.matches[this.matchIndex] ?? null);
@@ -45,20 +62,31 @@ export class VaultFindStore {
     this.revealEpoch += 1;
   }
 
+  openReplace(initialQuery = "") {
+    this.replaceMode = true;
+    this.openFind(initialQuery);
+  }
+
   close() {
     this.open = false;
+    this.replaceMode = false;
     clearPreviewFindHighlights();
     clearTextareaFindBackdrop(this.textareaEl, this.textareaBackdropEl);
+    this.highlightHandler?.([], 0);
   }
 
   reset() {
     this.query = "";
+    this.replaceQuery = "";
+    this.matchCase = false;
+    this.replaceMode = false;
     this.matches = [];
     this.matchIndex = 0;
     this.sourceText = "";
     this.open = false;
     clearPreviewFindHighlights();
     clearTextareaFindBackdrop(this.textareaEl, this.textareaBackdropEl);
+    this.highlightHandler?.([], 0);
   }
 
   setQuery(query: string) {
@@ -66,6 +94,22 @@ export class VaultFindStore {
     if (this.matchIndex !== 0) {
       this.matchIndex = 0;
     }
+  }
+
+  setReplaceQuery(query: string) {
+    this.replaceQuery = query;
+  }
+
+  setMatchCase(next: boolean) {
+    this.matchCase = next;
+    if (this.matchIndex !== 0) {
+      this.matchIndex = 0;
+    }
+    this.revealEpoch += 1;
+  }
+
+  toggleMatchCase() {
+    this.setMatchCase(!this.matchCase);
   }
 
   /** Replace matches only when the result set actually changed. */
@@ -87,12 +131,48 @@ export class VaultFindStore {
   }
 
   refreshMatches(sourceText: string) {
-    this.setMatches(findMatches(sourceText, this.query));
+    this.setMatches(
+      findMatches(sourceText, this.query, { caseSensitive: this.matchCase }),
+    );
+  }
+
+  registerReplaceHandler(handler: VaultFindReplaceHandler | null) {
+    this.replaceHandler = handler;
+  }
+
+  registerHighlightHandler(handler: VaultFindHighlightHandler | null) {
+    this.highlightHandler = handler;
+  }
+
+  replaceOne(): boolean {
+    const match = this.currentMatch;
+    if (!match || !this.replaceHandler || !this.query.trim()) return false;
+    const result = replaceFindMatch(this.sourceText, match, this.replaceQuery);
+    this.replaceHandler(result);
+    return true;
+  }
+
+  replaceAll(): boolean {
+    if (!this.replaceHandler || !this.query.trim()) return false;
+    const result = replaceAllFindMatches(
+      this.sourceText,
+      this.query,
+      this.replaceQuery,
+      { caseSensitive: this.matchCase },
+    );
+    if (result.count === 0) return false;
+    this.replaceHandler({
+      content: result.content,
+      selectionStart: result.selectionStart,
+      selectionEnd: result.selectionEnd,
+    });
+    return true;
   }
 
   textareaEl: HTMLTextAreaElement | null = null;
   textareaBackdropEl: HTMLElement | null = null;
   previewEl: HTMLElement | null = null;
+  codeMirrorView: EditorView | null = null;
 
   registerTextarea(el: HTMLTextAreaElement | null) {
     this.textareaEl = el;
@@ -106,15 +186,26 @@ export class VaultFindStore {
     this.previewEl = el;
   }
 
+  registerCodeMirror(view: EditorView | null) {
+    this.codeMirrorView = view;
+  }
+
   syncAndReveal(mode: "edit" | "preview") {
     if (!this.open) return;
-    const next = findMatches(this.sourceText, this.query);
+    const next = findMatches(this.sourceText, this.query, {
+      caseSensitive: this.matchCase,
+    });
     this.setMatches(next);
     const index =
       next.length === 0
         ? 0
         : ((this.matchIndex % next.length) + next.length) % next.length;
     const match = next[index] ?? null;
+    if (mode === "edit" && this.codeMirrorView) {
+      this.highlightHandler?.(next, index);
+      revealFindMatchInView(this.codeMirrorView, match);
+      return;
+    }
     if (mode === "edit" && this.textareaEl) {
       updateTextareaFindBackdrop(
         this.textareaEl,
@@ -131,7 +222,9 @@ export class VaultFindStore {
       return;
     }
     if (mode === "preview" && this.previewEl) {
-      scrollPreviewToFindMatch(this.previewEl, this.query, index, next);
+      scrollPreviewToFindMatch(this.previewEl, this.query, index, next, {
+        caseSensitive: this.matchCase,
+      });
     }
   }
 

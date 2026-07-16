@@ -27,6 +27,8 @@
     /** Allow Configure on medousa-view blocks (current note only). */
     configureViews?: boolean;
     onWikilink?: (target: string) => void;
+    /** Split edit: jump source toward the clicked heading. */
+    onHeadingClick?: (headingText: string) => void;
     /** Scroll container (the article) for split-pane sync. */
     scrollEl?: HTMLElement | null;
   }
@@ -37,6 +39,7 @@
     compact = false,
     configureViews = true,
     onWikilink,
+    onHeadingClick,
     scrollEl = $bindable<HTMLElement | null>(null),
   }: Props = $props();
 
@@ -234,6 +237,17 @@
       const raw = wikilink.getAttribute("data-wikilink");
       if (raw) onWikilink(raw);
       return;
+    }
+
+    if (onHeadingClick) {
+      const heading = (event.target as HTMLElement).closest("h1, h2, h3, h4, h5, h6");
+      if (heading && scrollEl?.contains(heading)) {
+        const text = (heading.textContent ?? "").trim();
+        if (text) {
+          onHeadingClick(text);
+          return;
+        }
+      }
     }
 
     const tocLink = (event.target as HTMLElement).closest("[data-heading-link]");

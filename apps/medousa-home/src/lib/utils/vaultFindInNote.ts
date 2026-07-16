@@ -11,23 +11,73 @@ export const FIND_HIGHLIGHT_ACTIVE = "medousa-vault-find-active";
 
 export const VAULT_FIND_INPUT_ID = "vault-find-input";
 
-export function findMatches(text: string, query: string): FindMatch[] {
+export interface FindMatchOptions {
+  caseSensitive?: boolean;
+}
+
+export function findMatches(
+  text: string,
+  query: string,
+  options: FindMatchOptions = {},
+): FindMatch[] {
   const needle = query.trim();
   if (!needle) return [];
 
-  const haystack = text.toLowerCase();
-  const lowerNeedle = needle.toLowerCase();
+  const caseSensitive = Boolean(options.caseSensitive);
+  const haystack = caseSensitive ? text : text.toLowerCase();
+  const searchNeedle = caseSensitive ? needle : needle.toLowerCase();
   const matches: FindMatch[] = [];
   let index = 0;
 
   while (index < haystack.length) {
-    const found = haystack.indexOf(lowerNeedle, index);
+    const found = haystack.indexOf(searchNeedle, index);
     if (found === -1) break;
     matches.push({ start: found, end: found + needle.length });
-    index = found + Math.max(lowerNeedle.length, 1);
+    index = found + Math.max(searchNeedle.length, 1);
   }
 
   return matches;
+}
+
+export function replaceFindMatch(
+  content: string,
+  match: FindMatch,
+  replacement: string,
+): { content: string; selectionStart: number; selectionEnd: number } {
+  const next = `${content.slice(0, match.start)}${replacement}${content.slice(match.end)}`;
+  const end = match.start + replacement.length;
+  return { content: next, selectionStart: match.start, selectionEnd: end };
+}
+
+export function replaceAllFindMatches(
+  content: string,
+  query: string,
+  replacement: string,
+  options: FindMatchOptions = {},
+): { content: string; selectionStart: number; selectionEnd: number; count: number } {
+  const matches = findMatches(content, query, options);
+  if (matches.length === 0) {
+    return {
+      content,
+      selectionStart: 0,
+      selectionEnd: 0,
+      count: 0,
+    };
+  }
+  let next = content;
+  for (let index = matches.length - 1; index >= 0; index -= 1) {
+    const match = matches[index]!;
+    next = `${next.slice(0, match.start)}${replacement}${next.slice(match.end)}`;
+  }
+  const last = matches[matches.length - 1]!;
+  const delta = (replacement.length - (last.end - last.start)) * (matches.length - 1);
+  const end = last.start + delta + replacement.length;
+  return {
+    content: next,
+    selectionStart: Math.max(0, end - replacement.length),
+    selectionEnd: end,
+    count: matches.length,
+  };
 }
 
 export function findInputHasFocus(): boolean {
@@ -290,12 +340,13 @@ export function scrollPreviewToFindMatch(
   query: string,
   activeIndex: number,
   matchesInput?: FindMatch[],
+  options: FindMatchOptions = {},
 ): number {
   clearFindHighlights(root);
   if (!query.trim()) return 0;
 
   const plainText = renderedPlainText(root);
-  const matches = matchesInput ?? findMatches(plainText, query);
+  const matches = matchesInput ?? findMatches(plainText, query, options);
   if (matches.length === 0) return 0;
 
   paintPreviewHighlights(root, matches, activeIndex);

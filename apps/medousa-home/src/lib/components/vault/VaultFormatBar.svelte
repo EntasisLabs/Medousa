@@ -30,6 +30,8 @@
     onFloat?: () => void;
     surface?: "write" | "source";
     onToggleSurface?: () => void;
+    /** Format actions that already wrap the current selection. */
+    activeActions?: MarkdownFormatAction[];
     onFormat: (action: MarkdownFormatAction) => void;
     onColor: (color: MarkdownColorToken) => void;
   }
@@ -41,9 +43,12 @@
     onFloat,
     surface = "write",
     onToggleSurface,
+    activeActions = [],
     onFormat,
     onColor,
   }: Props = $props();
+
+  const activeSet = $derived(new Set(activeActions));
 
   let expanded = $state(false);
   let customHex = $state("#F87171");
@@ -139,8 +144,10 @@
           <button
             type="button"
             class="vault-format-btn"
+            class:vault-format-btn--active={activeSet.has(item.action)}
             title={item.title}
             aria-label={item.title}
+            aria-pressed={activeSet.has(item.action)}
             {disabled}
             onclick={() => onFormat(item.action)}
           >
