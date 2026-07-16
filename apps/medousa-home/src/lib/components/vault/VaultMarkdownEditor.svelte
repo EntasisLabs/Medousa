@@ -99,18 +99,25 @@
     isLivePlane ? liveSlashFilter : slashMenuFilter(draft, selectionStart),
   );
 
-  $effect(() => {
+  /**
+   * Document identity changed → adopt vault.content before {#key} remounts.
+   * Must be `pre` so Live/Build never mount on the previous note's draft.
+   */
+  $effect.pre(() => {
     if (contentSyncKey !== syncedKey) {
       draft = content;
       syncedKey = contentSyncKey;
+      slashOpen = false;
+      slashAnchor = null;
+      liveSlashFilter = "";
     }
   });
 
   /**
-   * Plane switch: draft is kept current via onchange + Live onDestroy flush.
-   * Bump contentSyncKey path by rewriting draft so the entering plane remounts cleanly.
+   * Flush the leaving plane into draft/vault BEFORE the editor unmounts.
+   * Live must never flush in onDestroy (that races note switches).
    */
-  $effect(() => {
+  $effect.pre(() => {
     const plane = vault.notePlane;
     if (lastPlane === null) {
       lastPlane = plane;
@@ -118,11 +125,19 @@
     }
     if (lastPlane === plane) return;
 
-    if (lastPlane === "build" && plane === "live") {
-      draft = cmEl?.getContent() ?? draft;
-      onchange(draft);
+    if (lastPlane === "live" && plane === "build") {
+      const flushed = liveEl?.flush();
+      if (flushed != null) {
+        draft = flushed;
+        onchange(flushed);
+      }
+    } else if (lastPlane === "build" && plane === "live") {
+      const fromCm = cmEl?.getContent();
+      if (fromCm != null) {
+        draft = fromCm;
+        onchange(fromCm);
+      }
     }
-    // live → build: VaultLiveEditor onDestroy already flushed into draft/onchange
     slashOpen = false;
     slashAnchor = null;
     liveSlashFilter = "";
@@ -291,12 +306,6 @@
   }
 
   function handleLiveChange(next: string) {
-    // Refuse empty Live emits that would wipe the open note (mount/unmount races).
-    const nextBody = next.replace(/^---[\s\S]*?\n---\s*/, "").trim();
-    const draftBody = draft.replace(/^---[\s\S]*?\n---\s*/, "").trim();
-    if (!nextBody && draftBody) {
-      return;
-    }
     draft = next;
     onchange(next);
     syncSlashMenu();
@@ -561,18 +570,20 @@
             onSelect={handleSlashSelect}
             onClose={closeSlashMenu}
           />
-          <VaultMarkdownCodeMirror
-            bind:this={cmEl}
-            value={draft}
-            {contentSyncKey}
-            {disabled}
-            {surface}
-            {slashOpen}
-            onchange={handleContentChange}
-            onSelectionChange={handleSelectionChange}
-            onSlashCheck={syncSlashMenu}
-            onSlashKey={handleSlashKey}
-          />
+          {#key contentSyncKey}
+            <VaultMarkdownCodeMirror
+              bind:this={cmEl}
+              value={draft}
+              {contentSyncKey}
+              {disabled}
+              {surface}
+              {slashOpen}
+              onchange={handleContentChange}
+              onSelectionChange={handleSelectionChange}
+              onSlashCheck={syncSlashMenu}
+              onSlashKey={handleSlashKey}
+            />
+          {/key}
         </div>
       </SplitPane>
       {@render preview()}
@@ -589,32 +600,34 @@
           onSelect={handleSlashSelect}
           onClose={closeSlashMenu}
         />
-        {#if isLivePlane}
-          <VaultLiveEditor
-            bind:this={liveEl}
-            value={draft}
-            {contentSyncKey}
-            {disabled}
-            {slashOpen}
-            onchange={handleLiveChange}
-            onSlashCheck={syncSlashMenu}
-            onSlashKey={handleSlashKey}
-            onEditFenceInBuild={handleEditFenceInBuild}
-          />
-        {:else}
-          <VaultMarkdownCodeMirror
-            bind:this={cmEl}
-            value={draft}
-            {contentSyncKey}
-            {disabled}
-            {surface}
-            {slashOpen}
-            onchange={handleContentChange}
-            onSelectionChange={handleSelectionChange}
-            onSlashCheck={syncSlashMenu}
-            onSlashKey={handleSlashKey}
-          />
-        {/if}
+        {#key contentSyncKey}
+          {#if isLivePlane}
+            <VaultLiveEditor
+              bind:this={liveEl}
+              value={draft}
+              {contentSyncKey}
+              {disabled}
+              {slashOpen}
+              onchange={handleLiveChange}
+              onSlashCheck={syncSlashMenu}
+              onSlashKey={handleSlashKey}
+              onEditFenceInBuild={handleEditFenceInBuild}
+            />
+          {:else}
+            <VaultMarkdownCodeMirror
+              bind:this={cmEl}
+              value={draft}
+              {contentSyncKey}
+              {disabled}
+              {surface}
+              {slashOpen}
+              onchange={handleContentChange}
+              onSelectionChange={handleSelectionChange}
+              onSlashCheck={syncSlashMenu}
+              onSlashKey={handleSlashKey}
+            />
+          {/if}
+        {/key}
       </div>
     {/if}
   </div>

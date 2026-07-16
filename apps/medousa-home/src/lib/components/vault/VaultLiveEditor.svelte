@@ -14,10 +14,14 @@
     liveSlashOpen,
     liveSlashPrefix,
   } from "$lib/vault/live/liveSlashCommands";
+  import { handleLiveHeadingKey } from "$lib/vault/live/headingKeymap";
+  import { handleLiveNavKey } from "$lib/vault/live/liveNavKeymap";
   import type { SlashBlockId } from "$lib/utils/vaultMarkdownEdit";
 
   interface Props {
+    /** Full note markdown (source of truth from parent). */
     value: string;
+    /** Document identity — remount parent with {#key} on change; also gates reloads. */
     contentSyncKey: string;
     disabled?: boolean;
     slashOpen?: boolean;
@@ -42,18 +46,17 @@
   let editor: Editor | null = null;
   let frontmatter = $state<string | null>(null);
   let tags = $state<string[]>([]);
-  let syncedKey = $state("");
+  /** Key this editor instance is bound to — never flush if it diverges. */
+  let boundKey = "";
   let applyingExternal = false;
-  /** Ignore TipTap noise until initial setContent settles. */
   let ready = false;
-  /** Last markdown we emitted or loaded — used to skip echo reloads + empty wipes. */
-  let lastGoodMarkdown = "";
 
   const onchangeRef = { current: onchange };
   const onSlashCheckRef = { current: onSlashCheck };
   const onSlashKeyRef = { current: onSlashKey };
   const onEditFenceRef = { current: onEditFenceInBuild };
   const slashOpenRef = { current: slashOpen };
+  const boundKeyRef = { current: "" };
 
   $effect(() => {
     onchangeRef.current = onchange;
@@ -63,45 +66,23 @@
     slashOpenRef.current = slashOpen;
   });
 
-  function isEffectivelyEmpty(md: string): boolean {
-    const { content } = (() => {
-      // local strip to avoid importing cycles in hot paths — use same rule as codec
-      const trimmed = md.trimStart();
-      if (!trimmed.startsWith("---")) return { content: md };
-      const rest = trimmed.slice(3);
-      const end = rest.indexOf("\n---");
-      if (end === -1) return { content: md };
-      return { content: rest.slice(end + 4) };
-    })();
-    return content.replace(/\s+/g, "").length === 0;
-  }
-
   function emitMarkdown() {
     if (!editor || applyingExternal || !ready) return;
+    // Document switched out from under us — do not write stale TipTap into vault.
+    if (boundKeyRef.current !== contentSyncKey) return;
     const md = serializeLiveMarkdown(editor.getJSON(), frontmatter);
-    // Never replace a real note with an empty serialize (mount/destroy races).
-    if (isEffectivelyEmpty(md) && !isEffectivelyEmpty(lastGoodMarkdown)) {
-      return;
-    }
-    if (md === lastGoodMarkdown) return;
-    lastGoodMarkdown = md;
     onchangeRef.current(md);
   }
 
   function loadFromMarkdown(md: string) {
     if (!editor) return;
-    if (md === lastGoodMarkdown && !isEffectivelyEmpty(md)) {
-      return;
-    }
     const parsed = parseLiveMarkdown(md);
     frontmatter = parsed.frontmatter;
     tags = parsed.tags;
     applyingExternal = true;
     ready = false;
     editor.commands.setContent(parsed.doc, { contentType: "json" });
-    lastGoodMarkdown = md;
     applyingExternal = false;
-    // Allow emits on the next tick so setContent's update is ignored.
     queueMicrotask(() => {
       ready = true;
     });
@@ -132,7 +113,8 @@
     const parsed = parseLiveMarkdown(initial);
     frontmatter = parsed.frontmatter;
     tags = parsed.tags;
-    lastGoodMarkdown = initial;
+    boundKey = contentSyncKey;
+    boundKeyRef.current = contentSyncKey;
 
     editor = new Editor({
       element: hostEl,
@@ -160,6 +142,14 @@
                 return true;
               }
             }
+          }
+
+          if (editor && handleLiveNavKey(editor, event)) {
+            return true;
+          }
+
+          if (editor && handleLiveHeadingKey(editor, event)) {
+            return true;
           }
 
           const mod = event.metaKey || event.ctrlKey;
@@ -213,11 +203,10 @@
       },
     });
 
-    syncedKey = contentSyncKey;
     queueMicrotask(() => {
       ready = true;
-      // Catch mount-before-hydrate: parent draft filled after TipTap created.
-      if (value && value !== lastGoodMarkdown) {
+      // Mount-before-hydrate: parent may fill value after TipTap created.
+      if (value !== initial) {
         loadFromMarkdown(value);
       }
     });
@@ -229,48 +218,36 @@
   });
 
   /**
-   * Align with external note switches — not with our own markDirty echo.
-   * Same pattern as CodeMirror: only replace when value actually differs.
+   * Parent should remount this component with `{#key contentSyncKey}` on note switch.
+   * Same-key path only hydrates empty→content (mount race). Never re-parse on typing.
    */
   $effect(() => {
     if (!editor) return;
-    const next = value;
     const key = contentSyncKey;
-    if (next === lastGoodMarkdown) {
-      syncedKey = key;
+    const next = value;
+    if (key !== boundKey) {
+      boundKey = key;
+      boundKeyRef.current = key;
+      loadFromMarkdown(next);
       return;
     }
-    if (key !== syncedKey || (isEffectivelyEmpty(lastGoodMarkdown) && !isEffectivelyEmpty(next))) {
-      syncedKey = key;
+    // Same document: catch mount-before-hydrate only.
+    if (next.trim() && editor.isEmpty) {
       loadFromMarkdown(next);
     }
   });
 
   onDestroy(() => {
-    if (!editor) return;
-    // Flush only when we have real content — never wipe the open note on unmount
-    // (noteLoading tears the editor down while switching notes).
-    if (ready) {
-      const md = serializeLiveMarkdown(editor.getJSON(), frontmatter);
-      if (!isEffectivelyEmpty(md) || isEffectivelyEmpty(lastGoodMarkdown)) {
-        if (md !== lastGoodMarkdown) {
-          lastGoodMarkdown = md;
-          onchangeRef.current(md);
-        }
-      }
-    }
-    editor.destroy();
+    // Never flush on destroy — note switches remount with a new key; flushing
+    // here would write the previous note's TipTap doc onto the new vault.content.
+    editor?.destroy();
     editor = null;
   });
 
+  /** Explicit serialize for Live→Build plane switch (caller must invoke before unmount). */
   export function flush(): string {
-    if (!editor) return lastGoodMarkdown || value;
-    const md = serializeLiveMarkdown(editor.getJSON(), frontmatter);
-    if (isEffectivelyEmpty(md) && !isEffectivelyEmpty(lastGoodMarkdown)) {
-      return lastGoodMarkdown;
-    }
-    lastGoodMarkdown = md;
-    return md;
+    if (!editor) return value;
+    return serializeLiveMarkdown(editor.getJSON(), frontmatter);
   }
 
   export function getSlashAnchor(container: HTMLElement | null) {

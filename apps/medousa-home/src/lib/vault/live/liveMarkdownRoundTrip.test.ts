@@ -10,6 +10,7 @@ import {
   parseLiveMarkdown,
   serializeLiveMarkdown,
 } from "./liveMarkdownCodec";
+import { LIQUID_REPORT_TEMPLATE } from "$lib/utils/liquidFenceTemplates";
 
 const DAILY_FIXTURE = `---
 kind: daily
@@ -66,6 +67,28 @@ describe("splitMarkdownSegments", () => {
     expect(detectFenceTitle("title: Weekly pulse\nrange: 7d")).toBe("Weekly pulse");
     expect(fencePreviewLine("title: X\nrange: 7d")).toBe("range: 7d");
   });
+
+  it("keeps nested report→chart as one top-level fence", () => {
+    const body = `# Hello\n\n${LIQUID_REPORT_TEMPLATE}\n\nAfter.`;
+    const segs = splitMarkdownSegments(body);
+    expect(segs.map((s) => s.kind)).toEqual(["prose", "fence", "prose"]);
+    const fence = segs[1];
+    if (fence.kind !== "fence") throw new Error("expected fence");
+    expect(fence.lang).toBe("report");
+    expect(fence.raw).toContain("```chart");
+    expect(fence.raw).toContain("## Deep dive");
+    expect(fence.raw).toContain("Engagement matrix");
+    expect(fence.body).toContain("```chart");
+    // Nested charts must not leak as sibling fence segments
+    expect(segs.filter((s) => s.kind === "fence")).toHaveLength(1);
+    const prose = segs
+      .filter((s) => s.kind === "prose")
+      .map((s) => (s as { text: string }).text)
+      .join("");
+    expect(prose).toContain("# Hello");
+    expect(prose).toContain("After.");
+    expect(prose).not.toContain("Deep dive");
+  });
 });
 
 describe("liveDoc markdown round-trip", () => {
@@ -117,5 +140,31 @@ describe("liveDoc markdown round-trip", () => {
     const text = JSON.stringify(parsed.doc);
     expect(text).not.toContain("kind: daily");
     expect(text).not.toContain('"tags"');
+  });
+
+  it("round-trips nested report as a single fence atom", () => {
+    const full = `---\nkind: daily\n---\n\n# Hello\n\n${LIQUID_REPORT_TEMPLATE}`;
+    const parsed = parseLiveMarkdown(full);
+    const fences = (parsed.doc.content ?? []).filter((n) => n.type === "fenceBlock");
+    expect(fences).toHaveLength(1);
+    expect(fences[0]?.attrs?.lang).toBe("report");
+    expect(String(fences[0]?.attrs?.raw)).toContain("## Deep dive");
+    expect(String(fences[0]?.attrs?.raw)).toContain("```chart");
+
+    const proseTypes = (parsed.doc.content ?? [])
+      .filter((n) => n.type !== "fenceBlock")
+      .map((n) => n.type);
+    expect(proseTypes).toContain("heading");
+    // Deep dive must not become a live heading outside the card
+    const headings = (parsed.doc.content ?? []).filter((n) => n.type === "heading");
+    const headingText = headings
+      .map((h) => (h.content ?? []).map((c) => c.text ?? "").join(""))
+      .join("\n");
+    expect(headingText).toContain("Hello");
+    expect(headingText).not.toContain("Deep dive");
+
+    const out = serializeLiveMarkdown(parsed.doc, parsed.frontmatter);
+    expect(out).toContain("## Deep dive");
+    expect(out).toContain("Engagement matrix");
   });
 });

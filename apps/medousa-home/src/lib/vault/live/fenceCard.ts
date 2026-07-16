@@ -3,6 +3,8 @@
  * Fences stay byte-stable for Live cards → Build jump / serialize.
  */
 
+import { scanTopLevelFences } from "./fenceScan";
+
 export type LiveProseSegment = {
   kind: "prose";
   text: string;
@@ -23,19 +25,7 @@ export type LiveFenceSegment = {
 
 export type LiveSegment = LiveProseSegment | LiveFenceSegment;
 
-/** Line-start fenced code block (```lang … ```). */
-const FENCE_RE = /^```([^\r\n`]*)\r?\n([\s\S]*?)^```[ \t]*\r?$/gm;
-
-export function parseFenceInfo(info: string): { lang: string; meta: string } {
-  const trimmed = info.trim();
-  if (!trimmed) return { lang: "", meta: "" };
-  const space = trimmed.search(/\s/);
-  if (space === -1) return { lang: trimmed.toLowerCase(), meta: "" };
-  return {
-    lang: trimmed.slice(0, space).toLowerCase(),
-    meta: trimmed.slice(space).trim(),
-  };
-}
+export { parseFenceInfo } from "./fenceScan";
 
 /** One-line title from common liquid KV (`title:` / `name:`). */
 export function detectFenceTitle(body: string): string | null {
@@ -55,7 +45,7 @@ export function fencePreviewLine(body: string, max = 72): string {
   for (const line of body.split(/\r?\n/)) {
     const trimmed = line.trim();
     if (!trimmed) continue;
-    if (/^(?:title|name|type|chart|description|legend|labels|surface|colors)\s*:/i.test(trimmed)) {
+    if (/^(?:title|name|type|chart|description|legend|labels|surface|colors|subtitle|columns)\s*:/i.test(trimmed)) {
       continue;
     }
     return trimmed.length > max ? `${trimmed.slice(0, max - 1)}…` : trimmed;
@@ -65,49 +55,55 @@ export function fencePreviewLine(body: string, max = 72): string {
   return first.length > max ? `${first.slice(0, max - 1)}…` : first;
 }
 
+/**
+ * Split body into prose | fence segments.
+ * Nested fences (report → chart) stay a single top-level fence atom.
+ */
 export function splitMarkdownSegments(body: string): LiveSegment[] {
+  const normalized = body.replace(/\r\n/g, "\n");
+  const top = scanTopLevelFences(normalized);
   const segments: LiveSegment[] = [];
-  const re = new RegExp(FENCE_RE.source, "gm");
   let last = 0;
-  let match: RegExpExecArray | null;
-  while ((match = re.exec(body)) !== null) {
-    const start = match.index;
-    const end = start + match[0].length;
-    if (start > last) {
+
+  for (const fence of top) {
+    if (fence.start > last) {
       segments.push({
         kind: "prose",
-        text: body.slice(last, start),
+        text: normalized.slice(last, fence.start),
         start: last,
-        end: start,
+        end: fence.start,
       });
     }
-    const info = match[1] ?? "";
-    const { lang } = parseFenceInfo(info);
     segments.push({
       kind: "fence",
-      raw: match[0],
-      lang,
-      body: match[2] ?? "",
-      start,
-      end,
+      raw: fence.raw,
+      lang: fence.lang,
+      body: fence.body,
+      start: fence.start,
+      end: fence.end,
     });
-    last = end;
+    last = fence.end;
   }
-  if (last < body.length) {
+
+  if (last < normalized.length) {
     segments.push({
       kind: "prose",
-      text: body.slice(last),
+      text: normalized.slice(last),
       start: last,
-      end: body.length,
+      end: normalized.length,
     });
   }
   if (segments.length === 0) {
-    segments.push({ kind: "prose", text: body, start: 0, end: body.length });
+    segments.push({
+      kind: "prose",
+      text: normalized,
+      start: 0,
+      end: normalized.length,
+    });
   }
   return segments;
 }
 
 export function findFenceOffset(body: string, raw: string): number {
-  const idx = body.indexOf(raw);
-  return idx;
+  return body.replace(/\r\n/g, "\n").indexOf(raw);
 }

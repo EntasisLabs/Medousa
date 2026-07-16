@@ -8081,15 +8081,6 @@
     word-wrap: break-word;
   }
 
-  .vault-live-editor .ProseMirror p.is-editor-empty:first-child::before,
-  .vault-live-editor .ProseMirror .is-empty::before {
-    content: attr(data-placeholder);
-    float: left;
-    height: 0;
-    pointer-events: none;
-    color: rgb(var(--shell-muted, var(--color-surface-500)) / 0.65);
-  }
-
   .vault-live-prose h1 {
     @apply text-2xl font-semibold tracking-tight mb-3 mt-1;
   }
@@ -8100,6 +8091,17 @@
 
   .vault-live-prose h3 {
     @apply text-lg font-medium mb-2 mt-5;
+  }
+
+  .vault-live-heading-marks {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.75em;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    color: rgb(var(--color-surface-500));
+    opacity: 0.72;
+    user-select: none;
+    pointer-events: none;
   }
 
   .vault-live-prose p {

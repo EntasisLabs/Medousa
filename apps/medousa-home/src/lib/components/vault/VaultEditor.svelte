@@ -501,7 +501,11 @@
               class:vault-note-plane-pill-btn--active={isBuildPlane}
               aria-pressed={isBuildPlane}
               title="Build — format, split, source, links"
-              onclick={() => vault.setNotePlane("build")}
+              onclick={() => {
+                // Serialize Live into vault.content before Build mounts.
+                markdownEditorEl?.flushLive();
+                vault.setNotePlane("build");
+              }}
             >
               Build
             </button>

@@ -664,7 +664,7 @@ export class VaultStore {
       this.stampCompletionInline,
     );
     if (!next || next === this.content) return;
-    this.markDirty(next);
+    this.markDirty(next, { reloadEditors: true });
   }
 
   queueEditorInsert(text: string) {
@@ -710,7 +710,7 @@ export class VaultStore {
         query,
       );
       if (next) {
-        this.markDirty(next);
+        this.markDirty(next, { reloadEditors: true });
         invalidateMedousaViewCache();
       }
     } else {
@@ -720,7 +720,7 @@ export class VaultStore {
         this.viewBridgeInsertAt,
         fence,
       );
-      this.markDirty(result.content);
+      this.markDirty(result.content, { reloadEditors: true });
     }
     this.closeViewBridge();
   }
@@ -750,7 +750,7 @@ export class VaultStore {
       this.chartBridgeEditIndex,
       kv,
     );
-    if (next) this.markDirty(next);
+    if (next) this.markDirty(next, { reloadEditors: true });
     this.closeChartBridge();
   }
 
@@ -1140,10 +1140,21 @@ export class VaultStore {
     }
   }
 
-  markDirty(nextContent: string) {
+  /**
+   * Update note markdown (source of truth).
+   * Editor keystrokes must NOT bump contentSyncKey — that remounts Live/Build and
+   * causes stale TipTap flushes to clobber the open note. Pass `reloadEditors: true`
+   * only for out-of-band mutations (attachments, bridges, preview toggles).
+   */
+  markDirty(
+    nextContent: string,
+    options?: { reloadEditors?: boolean },
+  ) {
     this.content = nextContent;
     this.dirty = true;
-    this.bumpContentSync();
+    if (options?.reloadEditors) {
+      this.bumpContentSync();
+    }
     if (
       this.previewingAttachmentPath &&
       !listAttachments(nextContent).some(
@@ -1365,7 +1376,9 @@ export class VaultStore {
     const link = weeklyReviewWikilink();
     const plain = link.slice(2, -2);
     if (this.content.includes(plain)) return;
-    this.markDirty(insertTextAtSection(this.content, "## Links", link));
+    this.markDirty(insertTextAtSection(this.content, "## Links", link), {
+      reloadEditors: true,
+    });
   }
 
   async promoteNote(targetSpaceId: "journal" | "projects") {
@@ -1520,7 +1533,7 @@ export class VaultStore {
     if (!this.selectedPath || !newTitle.trim()) return false;
     this.error = null;
     const nextContent = setNoteTitleInContent(this.content, newTitle.trim());
-    this.markDirty(nextContent);
+    this.markDirty(nextContent, { reloadEditors: true });
     const ok = await this.save({ source: "manual" });
     if (ok) {
       await this.refreshNotes();
@@ -1658,14 +1671,18 @@ export class VaultStore {
     if (!this.selectedPath) return;
     const picked = await pickAttachmentFiles();
     if (picked.length === 0) return;
-    this.markDirty(addAttachments(this.content, picked));
+    this.markDirty(addAttachments(this.content, picked), {
+      reloadEditors: true,
+    });
   }
 
   async linkSpreadsheetFiles() {
     if (!this.selectedPath) return;
     const picked = await pickSpreadsheetFiles();
     if (picked.length === 0) return;
-    this.markDirty(addAttachments(this.content, picked));
+    this.markDirty(addAttachments(this.content, picked), {
+      reloadEditors: true,
+    });
   }
 
   linkExternalFile(path: string) {
@@ -1679,13 +1696,16 @@ export class VaultStore {
           mime: guessMimeFromPath(path),
         },
       ]),
+      { reloadEditors: true },
     );
     return true;
   }
 
   removeAttachment(path: string) {
     if (!this.selectedPath) return;
-    this.markDirty(dropAttachment(this.content, path));
+    this.markDirty(dropAttachment(this.content, path), {
+      reloadEditors: true,
+    });
     if (this.previewingAttachmentPath === path) {
       this.closeAttachmentPreview();
     }

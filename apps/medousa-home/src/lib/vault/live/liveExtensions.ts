@@ -2,10 +2,10 @@ import StarterKit from "@tiptap/starter-kit";
 import Link from "@tiptap/extension-link";
 import TaskList from "@tiptap/extension-task-list";
 import TaskItem from "@tiptap/extension-task-item";
-import Placeholder from "@tiptap/extension-placeholder";
 import { Markdown } from "@tiptap/markdown";
 import type { AnyExtension } from "@tiptap/core";
 import { FenceBlock, type FenceBlockOptions } from "./fenceBlockExtension";
+import { HeadingMarks } from "./headingMarksExtension";
 
 export function createLiveExtensions(
   fenceOptions?: FenceBlockOptions,
@@ -26,12 +26,10 @@ export function createLiveExtensions(
     }),
     TaskList,
     TaskItem.configure({ nested: true }),
-    Placeholder.configure({
-      placeholder: "Write…",
-    }),
     Markdown.configure({
       indentation: { style: "space", size: 2 },
     }),
+    HeadingMarks,
     FenceBlock.configure(fenceOptions ?? {}),
   ];
 }
