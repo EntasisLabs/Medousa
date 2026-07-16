@@ -73,7 +73,7 @@ export function mountCalloutSurface(
   root.contentEditable = "false";
 
   const chrome = document.createElement("div");
-  chrome.className = "vault-live-callout__chrome";
+  chrome.className = "vault-live-quiet-chrome vault-live-callout__chrome";
   for (const tone of TONES) {
     const btn = document.createElement("button");
     btn.type = "button";

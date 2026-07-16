@@ -361,13 +361,7 @@
         });
         return;
       }
-      if (block === "liquid_chart") {
-        slashOpen = false;
-        void clearSlashAndRememberInsert().then(() => {
-          chartTypePickerOpen = true;
-        });
-        return;
-      }
+      // Live: chart arrives as a living figure — pick type on the organism (no modal).
       liveEl.applySlash(block);
       slashOpen = false;
       return;

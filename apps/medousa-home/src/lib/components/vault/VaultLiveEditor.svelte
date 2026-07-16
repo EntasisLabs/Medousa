@@ -170,7 +170,9 @@
   function handleHostClick(event: MouseEvent) {
     const target = event.target as HTMLElement;
 
-    const configureChart = target.closest(".liquid-chart-configure");
+    const configureChart = target.closest(
+      ".liquid-chart-configure, [data-live-chart-configure]",
+    );
     if (configureChart) {
       event.preventDefault();
       event.stopPropagation();

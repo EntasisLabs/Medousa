@@ -63,11 +63,15 @@ describe("vaultChartFence", () => {
       surface: "",
       colors: "blue",
       seriesMarks: "",
+      width: "md",
+      height: "lg",
     });
     expect(next).toBeTruthy();
     expect(next!).toContain("type: line");
     expect(next!).toContain("title: Traffic");
     expect(next!).toContain("description: Updated");
+    expect(next!).toContain("width: md");
+    expect(next!).toContain("height: lg");
     expect(next!).toContain("| Jan   | 186     | 80     |");
     expect(next!).not.toContain("title: Visitors");
 
@@ -80,6 +84,8 @@ describe("vaultChartFence", () => {
       surface: "soft",
       colors: "purple",
       seriesMarks: "",
+      width: "",
+      height: "",
     });
     expect(nested!).toContain("title: Team");
     expect(nested!).toContain("surface: soft");

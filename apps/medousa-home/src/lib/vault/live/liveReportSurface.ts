@@ -95,7 +95,7 @@ export function mountReportSurface(
   root.contentEditable = "false";
 
   const chrome = document.createElement("div");
-  chrome.className = "vault-live-report__chrome";
+  chrome.className = "vault-live-quiet-chrome vault-live-report__chrome";
 
   const colGroup = document.createElement("div");
   colGroup.className = "vault-live-report__cols";

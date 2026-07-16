@@ -16,11 +16,12 @@ import {
   LIQUID_TABS_TEMPLATE,
   LIQUID_TREE_TEMPLATE,
 } from "$lib/utils/liquidFenceTemplates";
+import { LIQUID_CHART_ARRIVAL_TEMPLATE } from "./liveChartSurface";
 
 const LIQUID_TEMPLATES: Partial<Record<SlashBlockId, string>> = {
   liquid_callout: LIQUID_CALLOUT_TEMPLATE,
   liquid_card: LIQUID_CARD_TEMPLATE,
-  // liquid_chart: host opens chart type picker
+  liquid_chart: LIQUID_CHART_ARRIVAL_TEMPLATE,
   liquid_dashboard: LIQUID_DASHBOARD_TEMPLATE,
   liquid_report: LIQUID_REPORT_TEMPLATE,
   liquid_tabs: LIQUID_TABS_TEMPLATE,
@@ -108,7 +109,6 @@ export function applyLiveSlashBlock(editor: Editor, block: SlashBlockId): boolea
     case "wikilink":
     case "embed":
     case "view":
-    case "liquid_chart":
       // Handled by host (pickers / bridges).
       return true;
     default:

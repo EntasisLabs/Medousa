@@ -21,6 +21,10 @@ import {
   mountReportSurface,
   type ReportSurfaceHandles,
 } from "./liveReportSurface";
+import {
+  mountChartSurface,
+  type ChartSurfaceHandles,
+} from "./liveChartSurface";
 import { resolveMedousaViews } from "$lib/utils/resolveMedousaViews";
 import type { VaultNote } from "$lib/types/vault";
 
@@ -135,6 +139,7 @@ export const FenceBlock = Node.create<FenceBlockOptions>({
 
       let callout: CalloutSurfaceHandles | null = null;
       let report: ReportSurfaceHandles | null = null;
+      let chart: ChartSurfaceHandles | null = null;
       let mountGen = 0;
 
       const applyRawUpdate = (raw: string) => {
@@ -151,6 +156,8 @@ export const FenceBlock = Node.create<FenceBlockOptions>({
         callout = null;
         report?.destroy();
         report = null;
+        chart?.destroy();
+        chart = null;
         unmountLiquidFence(dom);
         dom.replaceChildren();
         dom.setAttribute("data-lang", nextAttrs.lang || "code");
@@ -164,6 +171,16 @@ export const FenceBlock = Node.create<FenceBlockOptions>({
           callout = mountCalloutSurface(dom, model, (updated) => {
             applyRawUpdate(serializeCalloutRaw(updated));
           });
+          return;
+        }
+
+        if (lang === "chart") {
+          chart = mountChartSurface(
+            dom,
+            nextAttrs.raw,
+            opts.getLiquidContext?.() ?? {},
+            (updatedRaw) => applyRawUpdate(updatedRaw),
+          );
           return;
         }
 
@@ -226,6 +243,8 @@ export const FenceBlock = Node.create<FenceBlockOptions>({
           callout = null;
           report?.destroy();
           report = null;
+          chart?.destroy();
+          chart = null;
           unmountLiquidFence(dom);
         },
       };

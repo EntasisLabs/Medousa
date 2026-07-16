@@ -25,6 +25,10 @@ export interface ChartFenceKv {
   surface: string;
   colors: string;
   seriesMarks: string;
+  /** sm | md | lg | full | CSS length */
+  width: string;
+  /** sm | md | lg | xl | auto | CSS length */
+  height: string;
 }
 
 export interface ChartFenceParts {
@@ -61,6 +65,8 @@ const EDITABLE_KEYS = new Set([
   "colors",
   "seriesmarks",
   "series_marks",
+  "width",
+  "height",
 ]);
 
 export function extractChartFences(source: string): ChartFenceBlock[] {
@@ -129,6 +135,8 @@ export function parseChartFenceParts(body: string): ChartFenceParts {
     surface: allFields.surface ?? allFields.plot ?? "",
     colors: allFields.colors ?? "",
     seriesMarks: allFields.seriesmarks ?? allFields.series_marks ?? "",
+    width: allFields.width ?? "",
+    height: allFields.height ?? "",
   };
 
   return {
@@ -147,6 +155,8 @@ function serializeEditableKv(kv: ChartFenceKv, preserved: Record<string, string>
   if (kv.surface.trim()) lines.push(`surface: ${kv.surface.trim()}`);
   if (kv.colors.trim()) lines.push(`colors: ${kv.colors.trim()}`);
   if (kv.seriesMarks.trim()) lines.push(`seriesMarks: ${kv.seriesMarks.trim()}`);
+  if (kv.width.trim()) lines.push(`width: ${kv.width.trim()}`);
+  if (kv.height.trim()) lines.push(`height: ${kv.height.trim()}`);
 
   for (const [key, value] of Object.entries(preserved)) {
     const lower = key.toLowerCase();

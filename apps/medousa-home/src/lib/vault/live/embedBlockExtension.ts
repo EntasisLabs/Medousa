@@ -166,11 +166,12 @@ export const EmbedBlock = Node.create<EmbedBlockOptions>({
         const shell = document.createElement("aside");
         shell.className =
           "markdown-transclusion vault-live-embed vault-live-embed--collapsed";
-        shell.innerHTML = `<header class="markdown-transclusion-header vault-live-embed__header"><span class="markdown-transclusion-label"></span><div class="vault-live-embed__actions"><button type="button" class="vault-live-embed__icon-btn" data-live-embed-expand aria-expanded="false" title="Expand note" aria-label="Expand note">${LIVE_ICON_CHEVRON_DOWN}</button><button type="button" class="vault-live-embed__icon-btn" data-live-embed-open title="Open note" aria-label="Open note">${LIVE_ICON_OPEN}</button><button type="button" class="vault-live-embed__icon-btn" data-live-embed-detach title="Detach embed" aria-label="Detach embed">${LIVE_ICON_DETACH}</button></div></header><div class="markdown-transclusion-body markdown-content vault-live-embed__body" data-live-embed-body></div>`;
+        shell.innerHTML = `<header class="markdown-transclusion-header vault-live-embed__header" data-live-embed-header><span class="markdown-transclusion-label"></span><div class="vault-live-embed__actions"><button type="button" class="vault-live-embed__icon-btn vault-live-embed__expand" data-live-embed-expand aria-expanded="false" title="Expand note" aria-label="Expand note">${LIVE_ICON_CHEVRON_DOWN}</button><span class="vault-live-quiet-chrome vault-live-embed__secondary"><button type="button" class="vault-live-embed__icon-btn" data-live-embed-open title="Open note" aria-label="Open note">${LIVE_ICON_OPEN}</button><button type="button" class="vault-live-embed__icon-btn" data-live-embed-detach title="Detach embed" aria-label="Detach embed">${LIVE_ICON_DETACH}</button></span></div></header><div class="markdown-transclusion-body markdown-content vault-live-embed__body" data-live-embed-body></div>`;
         dom.append(shell);
 
         const labelEl = shell.querySelector(".markdown-transclusion-label");
         const bodyEl = shell.querySelector<HTMLElement>("[data-live-embed-body]");
+        const headerEl = shell.querySelector<HTMLElement>("[data-live-embed-header]");
         if (labelEl) labelEl.textContent = nextAttrs.label || nextAttrs.path;
 
         const expandBtn = shell.querySelector<HTMLButtonElement>("[data-live-embed-expand]");
@@ -197,6 +198,15 @@ export const EmbedBlock = Node.create<EmbedBlockOptions>({
           e.stopPropagation();
         });
         expandBtn?.addEventListener("click", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setExpanded(shell.classList.contains("vault-live-embed--collapsed"));
+        });
+
+        // Header click toggles open/closed — note opens in the stream, not a ritual.
+        headerEl?.addEventListener("click", (e) => {
+          const t = e.target as HTMLElement;
+          if (t.closest("button")) return;
           e.preventDefault();
           e.stopPropagation();
           setExpanded(shell.classList.contains("vault-live-embed--collapsed"));
@@ -327,7 +337,10 @@ export const EmbedBlock = Node.create<EmbedBlockOptions>({
             bodyEl.addEventListener("blur", finish, { once: true });
           };
 
-          bodyEl.addEventListener("dblclick", (e) => {
+          // Click into the body to edit — no dblclick ritual.
+          bodyEl.addEventListener("click", (e) => {
+            if (editing) return;
+            if ((e.target as HTMLElement).closest("a, button")) return;
             e.preventDefault();
             e.stopPropagation();
             void enterEdit();
