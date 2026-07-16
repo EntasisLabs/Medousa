@@ -4,7 +4,11 @@
     CHART_FENCE_TYPE_OPTIONS,
     type ChartFenceType,
   } from "$lib/utils/liquidFenceTemplates";
-  import type { ChartFenceKv } from "$lib/utils/vaultChartFence";
+  import VaultChartDataSheet from "$lib/components/vault/VaultChartDataSheet.svelte";
+  import {
+    summarizeChartTable,
+    type ChartFenceKv,
+  } from "$lib/utils/vaultChartFence";
   import {
     MARKDOWN_COLOR_HEX,
     MARKDOWN_COLOR_OPTIONS,
@@ -16,11 +20,18 @@
   interface Props {
     open: boolean;
     initialKv?: ChartFenceKv | null;
-    onSave: (kv: ChartFenceKv) => void;
+    initialTableMarkdown?: string;
+    onSave: (kv: ChartFenceKv, tableMarkdown: string) => void;
     onClose: () => void;
   }
 
-  let { open, initialKv = null, onSave, onClose }: Props = $props();
+  let {
+    open,
+    initialKv = null,
+    initialTableMarkdown = "",
+    onSave,
+    onClose,
+  }: Props = $props();
 
   type EditKey =
     | "kind"
@@ -86,8 +97,11 @@
   let heightDraft = $state("");
   let hexPickerOpen = $state(false);
   let hexDraft = $state("#60A5FA");
+  let tableMarkdown = $state("");
+  let dataSheetOpen = $state(false);
 
   const showSeriesMarks = $derived(type === "combo");
+  const dataLabel = $derived(summarizeChartTable(tableMarkdown));
   const colorTokens = $derived(
     colors
       .split(/[,|]/)
@@ -117,11 +131,13 @@
     seriesMarks = seed?.seriesMarks ?? (type === "combo" ? "bar, line" : "");
     width = seed?.width ?? "";
     height = seed?.height ?? "";
+    tableMarkdown = initialTableMarkdown;
     showDescription = Boolean(seed?.description?.trim());
     editing = null;
     widthDraft = seed?.width ?? "";
     heightDraft = seed?.height ?? "";
     hexPickerOpen = false;
+    dataSheetOpen = false;
   });
 
   function labelForSize(
@@ -232,23 +248,39 @@
   }
 
   function commit() {
-    onSave({
-      type,
-      title,
-      description,
-      legend,
-      labels,
-      surface,
-      colors,
-      seriesMarks: showSeriesMarks ? seriesMarks : "",
-      width,
-      height,
-    });
+    onSave(
+      {
+        type,
+        title,
+        description,
+        legend,
+        labels,
+        surface,
+        colors,
+        seriesMarks: showSeriesMarks ? seriesMarks : "",
+        width,
+        height,
+      },
+      tableMarkdown,
+    );
+  }
+
+  function openDataView() {
+    closeEdit();
+    dataSheetOpen = true;
+  }
+
+  function closeDataView() {
+    dataSheetOpen = false;
   }
 
   function onSheetKeydown(event: KeyboardEvent) {
     if (event.key === "Escape") {
       event.preventDefault();
+      if (dataSheetOpen) {
+        closeDataView();
+        return;
+      }
       if (hexPickerOpen) {
         cancelHexPicker();
         return;
@@ -262,6 +294,7 @@
   }
 
   function onFormClick(event: MouseEvent) {
+    if (dataSheetOpen) return;
     const target = event.target as HTMLElement;
     if (target.closest("[data-chart-fact-row]") || target.closest(".vault-color-hex")) {
       return;
@@ -284,21 +317,52 @@
     class="vault-interact-backdrop"
     role="dialog"
     aria-modal="true"
-    aria-labelledby="chart-builder-title"
+    aria-labelledby={dataSheetOpen ? "chart-data-title" : "chart-builder-title"}
     tabindex="-1"
     onkeydown={onSheetKeydown}
     onclick={(event) => {
-      if (event.target === event.currentTarget) onClose();
+      if (event.target === event.currentTarget) {
+        if (dataSheetOpen) closeDataView();
+        else onClose();
+      }
     }}
   >
     <form
       class="vault-interact-sheet vault-chart-builder-sheet"
+      class:vault-chart-builder-sheet--data={dataSheetOpen}
       onclick={onFormClick}
       onsubmit={(event) => {
         event.preventDefault();
+        if (dataSheetOpen) {
+          closeDataView();
+          return;
+        }
         commit();
       }}
     >
+      {#if dataSheetOpen}
+        <header class="vault-chart-builder-header">
+          <h3 id="chart-data-title" class="vault-chart-data-title">Data</h3>
+          <button
+            type="button"
+            class="vault-interact-dismiss shrink-0"
+            aria-label="Back to chart"
+            onclick={closeDataView}
+          >
+            <X size={14} strokeWidth={2} />
+          </button>
+        </header>
+
+        <VaultChartDataSheet
+          {tableMarkdown}
+          chartType={type}
+          onChange={(next) => (tableMarkdown = next)}
+        />
+
+        <footer class="vault-chart-builder-footer">
+          <button type="submit" class="vault-chart-builder-done">Done</button>
+        </footer>
+      {:else}
       <header class="vault-chart-builder-header">
         <div class="vault-chart-builder-identity min-w-0">
           <input
@@ -341,6 +405,20 @@
       </header>
 
       <div class="vault-chart-facts">
+        <!-- Data — swaps this sheet into the grid -->
+        <div class="vault-chart-fact" data-chart-fact-row>
+          <div class="vault-chart-fact__row">
+            <span class="vault-chart-fact__label">Data</span>
+            <button
+              type="button"
+              class="vault-chart-fact__value"
+              onclick={openDataView}
+            >
+              {dataLabel}
+            </button>
+          </div>
+        </div>
+
         <!-- Kind — full type set (Live only has quick chips) -->
         <div
           class="vault-chart-fact"
@@ -732,6 +810,7 @@
         </button>
         <button type="submit" class="vault-chart-builder-done">Done</button>
       </footer>
+      {/if}
     </form>
   </div>
 {/if}

@@ -441,11 +441,6 @@
             >
               Loose file
             </span>
-          {:else if vault.selectedPath}
-            <VaultKindBadge
-              kind={vault.selectedKind}
-              path={vault.selectedPath}
-            />
           {/if}
         </div>
         {#if vault.selectedPath && vault.editorMode === "preview"}
@@ -510,51 +505,6 @@
               Build
             </button>
           </div>
-        {/if}
-
-        {#if showPreviewButton}
-          <button
-            type="button"
-            class="btn btn-sm {vault.editorMode === 'preview'
-              ? 'variant-soft-primary'
-              : 'variant-ghost-surface'}"
-            onclick={() =>
-              vault.editorMode === "edit"
-                ? vault.enterPreviewMode()
-                : vault.enterEditMode()}
-            title={vault.editorMode === "edit"
-              ? "View rendered note"
-              : "Return to editing"}
-          >
-            {vault.editorMode === "edit" ? "Preview" : "Edit"}
-          </button>
-        {/if}
-
-        {#if showSplitButton}
-          <button
-            type="button"
-            class="btn btn-sm {layout.vaultSplitEnabled
-              ? 'variant-soft-primary'
-              : 'variant-ghost-surface'}"
-            onclick={() => layout.toggleVaultSplitEnabled()}
-            title="Split edit and preview"
-          >
-            Split
-          </button>
-        {/if}
-
-        {#if showLinksToggle}
-          <button
-            type="button"
-            class="btn btn-sm {layout.vaultLinksPanelOpen
-              ? 'variant-soft-surface'
-              : 'variant-ghost-surface'}"
-            onclick={() => layout.toggleVaultLinksPanel()}
-            title="Show note links"
-          >
-            Links
-            <span class="tabular-nums text-surface-400">({linkCount})</span>
-          </button>
         {/if}
 
         {#if showLedgerViewToggle}
@@ -630,6 +580,12 @@
           hasKanbanBoard={hasKanbanBoard}
           boardEditMode={vault.boardEditMode}
           linkedWork={linkedWork}
+          showPreviewToggle={showPreviewButton}
+          showSplitToggle={showSplitButton}
+          splitEnabled={layout.vaultSplitEnabled}
+          showLinksToggle={showLinksToggle}
+          linksOpen={layout.vaultLinksPanelOpen}
+          {linkCount}
           onOpenChat={onOpenChat}
           onOpenWork={onOpenWork}
           onSelectCard={onSelectCard}
@@ -661,7 +617,20 @@
           onToggleBoard={
             vault.isLooseFile ? undefined : () => vault.toggleBoardEditMode()
           }
+          onTogglePreview={() =>
+            vault.editorMode === "edit"
+              ? vault.enterPreviewMode()
+              : vault.enterEditMode()}
+          onToggleSplit={() => layout.toggleVaultSplitEnabled()}
+          onToggleLinks={() => layout.toggleVaultLinksPanel()}
         />
+
+        {#if !vault.isLooseFile && vault.selectedPath}
+          <VaultKindBadge
+            kind={vault.selectedKind}
+            path={vault.selectedPath}
+          />
+        {/if}
       </div>
     </header>
   {:else if mobile}
@@ -726,6 +695,7 @@
             bind:this={markdownEditorEl}
             content={vault.content}
             contentSyncKey={vault.contentSyncKey}
+            {displayTitle}
             disabled={vault.noteLoading}
             class="flex-1"
             surface={editorSurface}
@@ -798,7 +768,8 @@
 <VaultChartBuilderSheet
   open={vault.chartBridgeOpen}
   initialKv={vault.chartBridgeKv}
-  onSave={(kv) => vault.commitChartBridge(kv)}
+  initialTableMarkdown={vault.chartBridgeTableMarkdown}
+  onSave={(kv, tableMarkdown) => vault.commitChartBridge(kv, tableMarkdown)}
   onClose={() => vault.closeChartBridge()}
 />
 <VaultPdfPreviewModal

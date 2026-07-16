@@ -104,7 +104,7 @@ import {
 import {
   extractChartFences,
   parseChartFenceParts,
-  replaceChartFencePropsAt,
+  replaceChartFenceAt,
   type ChartFenceKv,
 } from "$lib/utils/vaultChartFence";
 import { insertTextAtCursor } from "$lib/utils/vaultMarkdownEdit";
@@ -223,6 +223,7 @@ export class VaultStore {
   chartBridgeOpen = $state(false);
   chartBridgeEditIndex = $state<number | null>(null);
   chartBridgeKv = $state<ChartFenceKv | null>(null);
+  chartBridgeTableMarkdown = $state("");
 
   private autosaveTimer: ReturnType<typeof setTimeout> | null = null;
   private savedWhisperTimer: ReturnType<typeof setTimeout> | null = null;
@@ -729,26 +730,30 @@ export class VaultStore {
     const blocks = extractChartFences(this.content);
     const block = blocks[index];
     if (!block) return;
+    const parts = parseChartFenceParts(block.body);
     this.chartBridgeEditIndex = index;
-    this.chartBridgeKv = parseChartFenceParts(block.body).kv;
+    this.chartBridgeKv = parts.kv;
+    this.chartBridgeTableMarkdown = parts.tableMarkdown;
     this.chartBridgeOpen = true;
   }
 
   closeChartBridge() {
     this.chartBridgeOpen = false;
     this.chartBridgeKv = null;
+    this.chartBridgeTableMarkdown = "";
     this.chartBridgeEditIndex = null;
   }
 
-  commitChartBridge(kv: ChartFenceKv) {
+  commitChartBridge(kv: ChartFenceKv, tableMarkdown?: string) {
     if (this.chartBridgeEditIndex == null) {
       this.closeChartBridge();
       return;
     }
-    const next = replaceChartFencePropsAt(
+    const next = replaceChartFenceAt(
       this.content,
       this.chartBridgeEditIndex,
       kv,
+      tableMarkdown,
     );
     if (next) this.markDirty(next, { reloadEditors: true });
     this.closeChartBridge();
@@ -1150,6 +1155,10 @@ export class VaultStore {
     nextContent: string,
     options?: { reloadEditors?: boolean },
   ) {
+    // Live serialize/organism remounts must not mark dirty on open with no edits.
+    if (nextContent === this.content) {
+      return;
+    }
     this.content = nextContent;
     this.dirty = true;
     if (options?.reloadEditors) {

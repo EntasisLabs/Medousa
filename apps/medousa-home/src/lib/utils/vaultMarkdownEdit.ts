@@ -696,7 +696,6 @@ export const SLASH_WRITING_IDS: SlashBlockId[] = [
   "checkbox",
   "link",
   "quote",
-  "callout",
   "divider",
 ];
 

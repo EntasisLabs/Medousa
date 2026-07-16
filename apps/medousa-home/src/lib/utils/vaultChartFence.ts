@@ -1,9 +1,13 @@
 /**
  * Chart fence extract / KV splice helpers for vault Configure.
- * Table markdown is preserved byte-for-byte on prop edits.
+ * Table markdown is preserved byte-for-byte on prop-only edits.
  */
 
-import type { ChartFenceType } from "$lib/utils/liquidFenceTemplates";
+import {
+  chartFenceTemplateForType,
+  type ChartFenceType,
+} from "$lib/utils/liquidFenceTemplates";
+import { findFirstPipeTable } from "$lib/utils/markdownTable";
 
 const CHART_FENCE_RE = /```chart\s*\n([\s\S]*?)```/gi;
 
@@ -175,16 +179,66 @@ export function serializeChartFenceFromParts(parts: ChartFenceParts, kv: ChartFe
   return `\`\`\`chart\n${body}\n\`\`\``;
 }
 
+/** Replace the Nth ```chart fence (0-based). Optional tableMarkdown overrides the body table. */
+export function replaceChartFenceAt(
+  source: string,
+  index: number,
+  kv: ChartFenceKv,
+  tableMarkdown?: string,
+): string | null {
+  const blocks = extractChartFences(source);
+  const block = blocks[index];
+  if (!block) return null;
+  const parts = parseChartFenceParts(block.body);
+  const nextParts: ChartFenceParts =
+    tableMarkdown === undefined
+      ? parts
+      : { ...parts, tableMarkdown };
+  const replacement = serializeChartFenceFromParts(nextParts, kv);
+  return source.slice(0, block.start) + replacement + source.slice(block.end);
+}
+
 /** Replace the Nth ```chart fence (0-based), splicing only KV props. */
 export function replaceChartFencePropsAt(
   source: string,
   index: number,
   kv: ChartFenceKv,
 ): string | null {
-  const blocks = extractChartFences(source);
-  const block = blocks[index];
-  if (!block) return null;
-  const parts = parseChartFenceParts(block.body);
-  const replacement = serializeChartFenceFromParts(parts, kv);
-  return source.slice(0, block.start) + replacement + source.slice(block.end);
+  return replaceChartFenceAt(source, index, kv);
+}
+
+/** Fact-row label for a chart GFM table (`3 rows · 2 series`, `empty`, `invalid table`). */
+export function summarizeChartTable(tableMarkdown: string): string {
+  const trimmed = tableMarkdown.trim();
+  if (!trimmed) return "empty";
+  const table = findFirstPipeTable(trimmed);
+  if (!table) return "invalid table";
+  const series = Math.max(0, table.headers.length - 1);
+  const rows = table.rows.length;
+  if (rows === 0 && series === 0) return "empty";
+  const rowPart = rows === 1 ? "1 row" : `${rows} rows`;
+  const seriesPart = series === 1 ? "1 series" : `${series} series`;
+  return `${rowPart} · ${seriesPart}`;
+}
+
+/** Seed GFM table for a chart type (from liquid templates) when the fence has no usable table. */
+export function seedChartTableMarkdown(type: ChartFenceType): string {
+  const fence = chartFenceTemplateForType(type);
+  const match = fence.match(/```chart\s*\n([\s\S]*?)```/i);
+  if (!match?.[1]) {
+    return [
+      "| Category | Series |",
+      "| --- | --- |",
+      "| A | 1 |",
+      "| B | 2 |",
+    ].join("\n");
+  }
+  const table = parseChartFenceParts(match[1]).tableMarkdown.trim();
+  if (table && findFirstPipeTable(table)) return table;
+  return [
+    "| Category | Series |",
+    "| --- | --- |",
+    "| A | 1 |",
+    "| B | 2 |",
+  ].join("\n");
 }

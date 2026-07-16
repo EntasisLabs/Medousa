@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  restingVaultTagChips,
   serializeFrontmatter,
   setFrontmatterKind,
+  sortVaultTagsForDisplay,
   stripFrontmatter,
 } from "./vaultFrontmatter";
 
@@ -28,5 +30,26 @@ describe("vaultFrontmatter", () => {
     expect(serializeFrontmatter("\n\nkind: note\n\n", "# Hi")).toBe(
       "---\nkind: note\n---\n\n# Hi",
     );
+  });
+
+  it("sorts human tags before workshop tags", () => {
+    expect(
+      sortVaultTagsForDisplay([
+        "medousa",
+        "bonsai",
+        "chat:foo",
+        "phoenix",
+        "vault",
+      ]),
+    ).toEqual(["bonsai", "phoenix", "medousa", "chat:foo", "vault"]);
+  });
+
+  it("rests at most two human tags with +N for the rest", () => {
+    expect(
+      restingVaultTagChips(
+        ["medousa", "arizona", "bonsai", "guide", "vault"],
+        2,
+      ),
+    ).toEqual({ visible: ["arizona", "bonsai"], hiddenCount: 3 });
   });
 });

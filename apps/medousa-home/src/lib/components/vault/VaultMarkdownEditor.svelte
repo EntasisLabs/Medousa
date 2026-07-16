@@ -30,6 +30,8 @@
   interface Props {
     content: string;
     contentSyncKey: string;
+    /** Header title for Live duplicate-H1 collapse. */
+    displayTitle?: string;
     disabled?: boolean;
     class?: string;
     onchange: (next: string) => void;
@@ -53,6 +55,7 @@
   let {
     content,
     contentSyncKey,
+    displayTitle = "",
     disabled = false,
     class: className = "",
     onchange,
@@ -284,6 +287,7 @@
   }
 
   function handleLiveChange(next: string) {
+    if (next === draft) return;
     draft = next;
     onchange(next);
     syncSlashMenu();
@@ -570,6 +574,7 @@
               bind:this={liveEl}
               value={draft}
               {contentSyncKey}
+              {displayTitle}
               {disabled}
               {slashOpen}
               onchange={handleLiveChange}

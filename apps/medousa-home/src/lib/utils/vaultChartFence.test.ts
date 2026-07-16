@@ -3,7 +3,9 @@ import { decodeLiquidProps, preprocessLiquidEmbeds } from "$lib/markdown/liquidE
 import {
   extractChartFences,
   parseChartFenceParts,
+  replaceChartFenceAt,
   replaceChartFencePropsAt,
+  summarizeChartTable,
 } from "./vaultChartFence";
 
 const SAMPLE = `Intro
@@ -91,6 +93,44 @@ describe("vaultChartFence", () => {
     expect(nested!).toContain("surface: soft");
     expect(nested!).toContain("| Speed | 80 | 55 |");
     expect(nested!).toContain("More prose.");
+  });
+
+  it("replaces KV and table together", () => {
+    const nextTable = [
+      "| Category | Alpha |",
+      "| --- | --- |",
+      "| Q1 | 10 |",
+      "| Q2 | 20 |",
+    ].join("\n");
+    const next = replaceChartFenceAt(
+      SAMPLE,
+      0,
+      {
+        type: "bar",
+        title: "Visitors",
+        description: "",
+        legend: "bottom",
+        labels: "",
+        surface: "",
+        colors: "blue, purple",
+        seriesMarks: "",
+        width: "",
+        height: "",
+      },
+      nextTable,
+    );
+    expect(next).toBeTruthy();
+    expect(next!).toContain("| Q1 | 10 |");
+    expect(next!).toContain("| Q2 | 20 |");
+    expect(next!).not.toContain("| Jan   | 186     | 80     |");
+    expect(next!).toContain("title: Visitors");
+  });
+
+  it("summarizes chart tables for the Data fact row", () => {
+    expect(summarizeChartTable("")).toBe("empty");
+    expect(summarizeChartTable("not a table")).toBe("invalid table");
+    const parts = parseChartFenceParts(extractChartFences(SAMPLE)[0]!.body);
+    expect(summarizeChartTable(parts.tableMarkdown)).toBe("2 rows · 2 series");
   });
 });
 

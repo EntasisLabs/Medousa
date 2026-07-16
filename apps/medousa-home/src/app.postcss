@@ -3480,6 +3480,32 @@
       0 18px 48px rgb(0 0 0 / 0.35);
   }
 
+  .vault-chart-builder-sheet--data {
+    width: min(40rem, calc(100vw - 2rem));
+    max-width: min(40rem, calc(100vw - 2rem));
+  }
+
+  .vault-chart-data-title {
+    margin: 0;
+    color: rgb(var(--color-surface-50));
+    font-size: 1.05rem;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    line-height: 1.25;
+  }
+
+  .vault-chart-data-body {
+    min-width: 0;
+  }
+
+  .vault-chart-data-sheet-table {
+    margin-bottom: 0.35rem;
+  }
+
+  .vault-chart-builder-sheet--data .vault-chart-builder-footer {
+    justify-content: flex-end;
+  }
+
   .vault-chart-builder-header {
     display: flex;
     align-items: flex-start;
@@ -8314,6 +8340,7 @@
   }
 
   .vault-live-tag-chip {
+    appearance: none;
     font-size: 0.6875rem;
     letter-spacing: 0.02em;
     color: rgb(var(--shell-muted, var(--color-surface-400)));
@@ -8321,6 +8348,15 @@
     border: 1px solid rgb(var(--shell-border, var(--color-surface-500)) / 0.22);
     border-radius: 0.25rem;
     padding: 0.15rem 0.45rem;
+  }
+
+  .vault-live-tag-chip--more {
+    cursor: pointer;
+    color: rgb(var(--color-surface-500));
+  }
+
+  .vault-live-tag-chip--more:hover {
+    color: rgb(var(--color-surface-300));
   }
 
   .vault-live-editor__host {
@@ -8336,6 +8372,27 @@
     line-height: 1.7;
     white-space: pre-wrap;
     word-wrap: break-word;
+  }
+
+  .vault-live-editor .ProseMirror p.is-editor-empty:first-child::before {
+    content: attr(data-placeholder);
+    float: left;
+    height: 0;
+    pointer-events: none;
+    color: rgb(var(--shell-muted, var(--color-surface-600)));
+    font-weight: 400;
+  }
+
+  .vault-live-editor .ProseMirror > h1.vault-live-h1--dup-title {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
   }
 
   .vault-live-prose h1 {
@@ -8673,13 +8730,34 @@
     display: block;
   }
 
-  /* Collapsed = chrome only. Expanded = nested note in the stream. */
+  /* Collapsed = compact chip on the right, not a full-bleed bar. */
+  .vault-live-embed.vault-live-embed--collapsed {
+    display: flex;
+    justify-content: flex-end;
+    width: 100%;
+    margin: 0.35rem 0;
+    border: none;
+    background: transparent;
+    overflow: visible;
+  }
+
   .vault-live-embed--collapsed .vault-live-embed__body {
     display: none;
   }
 
   .vault-live-embed--collapsed .vault-live-embed__header {
-    border-bottom: none;
+    width: fit-content;
+    max-width: min(100%, 20rem);
+    margin-left: auto;
+    border: 1px solid rgb(var(--shell-border, var(--color-surface-500)) / 0.28);
+    border-radius: 0.55rem;
+    background: rgb(var(--color-surface-900) / 0.72);
+    padding: 0.35rem 0.5rem 0.35rem 0.7rem;
+    border-bottom: 1px solid rgb(var(--shell-border, var(--color-surface-500)) / 0.28);
+  }
+
+  .vault-live-embed--collapsed .markdown-transclusion-label {
+    max-width: 14rem;
   }
 
   .vault-live-embed--expanded {

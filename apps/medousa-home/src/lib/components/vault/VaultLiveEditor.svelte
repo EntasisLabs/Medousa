@@ -28,12 +28,18 @@
   import { invalidateTransclusionCache } from "$lib/utils/resolveTransclusion";
   import { copyTextToClipboard } from "$lib/utils/vaultClipboard";
   import type { SlashBlockId } from "$lib/utils/vaultMarkdownEdit";
+  import {
+    restingVaultTagChips,
+    sortVaultTagsForDisplay,
+  } from "$lib/utils/vaultFrontmatter";
 
   interface Props {
     /** Full note markdown (source of truth from parent). */
     value: string;
     /** Document identity — remount parent with {#key} on change; also gates reloads. */
     contentSyncKey: string;
+    /** Header title — used to hide a matching leading H1 in Live (display-only). */
+    displayTitle?: string;
     disabled?: boolean;
     slashOpen?: boolean;
     onchange: (next: string) => void;
@@ -44,6 +50,7 @@
   let {
     value,
     contentSyncKey,
+    displayTitle = "",
     disabled = false,
     slashOpen = false,
     onchange,
@@ -55,6 +62,12 @@
   let editor: Editor | null = null;
   let frontmatter = $state<string | null>(null);
   let tags = $state<string[]>([]);
+  let tagsExpanded = $state(false);
+
+  const tagChips = $derived(restingVaultTagChips(tags, 2));
+  const shownTags = $derived(
+    tagsExpanded ? sortVaultTagsForDisplay(tags) : tagChips.visible,
+  );
   /** Key this editor instance is bound to — never flush if it diverges. */
   let boundKey = "";
   let applyingExternal = false;
@@ -75,11 +88,32 @@
     valueRef.current = value;
   });
 
+  function liveMarkdownEqual(a: string, b: string): boolean {
+    const norm = (s: string) => s.replace(/\r\n/g, "\n").replace(/\n+$/g, "\n");
+    return norm(a) === norm(b);
+  }
+
   function emitMarkdown() {
     if (!editor || applyingExternal || !ready) return;
     if (boundKeyRef.current !== contentSyncKey) return;
     const md = serializeLiveMarkdown(editor.getJSON(), frontmatter);
+    // Open/mount round-trips must not look like user edits.
+    if (liveMarkdownEqual(md, valueRef.current)) return;
     onchangeRef.current(md);
+  }
+
+  function normalizeTitle(value: string): string {
+    return value.replace(/\s+/g, " ").trim().toLowerCase();
+  }
+
+  function syncDupTitleHeading() {
+    if (!hostEl) return;
+    const h1 = hostEl.querySelector(".ProseMirror > h1:first-child");
+    if (!(h1 instanceof HTMLElement)) return;
+    const match =
+      Boolean(displayTitle.trim()) &&
+      normalizeTitle(h1.textContent ?? "") === normalizeTitle(displayTitle);
+    h1.classList.toggle("vault-live-h1--dup-title", match);
   }
 
   function loadFromMarkdown(md: string) {
@@ -87,12 +121,15 @@
     const parsed = parseLiveMarkdown(md);
     frontmatter = parsed.frontmatter;
     tags = parsed.tags;
+    tagsExpanded = false;
     applyingExternal = true;
     ready = false;
     editor.commands.setContent(parsed.doc, { contentType: "json" });
-    applyingExternal = false;
+    // Keep suppress until after TipTap's deferred update notifications.
     queueMicrotask(() => {
       ready = true;
+      applyingExternal = false;
+      syncDupTitleHeading();
     });
   }
 
@@ -254,6 +291,8 @@
     tags = parsed.tags;
     boundKey = contentSyncKey;
     boundKeyRef.current = contentSyncKey;
+    applyingExternal = true;
+    ready = false;
 
     editor = new Editor({
       element: hostEl,
@@ -362,26 +401,41 @@
           return false;
         },
       },
-      onUpdate: () => {
+      onUpdate: ({ transaction }) => {
+        // Ignore selection-only / history-less programmatic loads.
+        if (!transaction.docChanged) return;
+        if (transaction.getMeta("addToHistory") === false) return;
         emitMarkdown();
         syncSlash();
+        syncDupTitleHeading();
       },
       onSelectionUpdate: () => {
         syncSlash();
       },
     });
 
+    // Defer accepting emits until after mount + node-view setup settles.
     queueMicrotask(() => {
-      ready = true;
       if (value !== initial) {
         loadFromMarkdown(value);
+        return;
       }
+      requestAnimationFrame(() => {
+        ready = true;
+        applyingExternal = false;
+        syncDupTitleHeading();
+      });
     });
   });
 
   $effect(() => {
     if (!editor) return;
     editor.setEditable(!disabled);
+  });
+
+  $effect(() => {
+    displayTitle;
+    syncDupTitleHeading();
   });
 
   /**
@@ -477,11 +531,21 @@
 </script>
 
 <div class="vault-live-editor flex min-h-0 flex-1 flex-col overflow-y-auto">
-  {#if tags.length > 0}
+  {#if tags.length > 0 && (shownTags.length > 0 || tagChips.hiddenCount > 0)}
     <div class="vault-live-tag-chips" aria-label="Tags">
-      {#each tags as tag (tag)}
+      {#each shownTags as tag (tag)}
         <span class="vault-live-tag-chip">{tag}</span>
       {/each}
+      {#if !tagsExpanded && tagChips.hiddenCount > 0}
+        <button
+          type="button"
+          class="vault-live-tag-chip vault-live-tag-chip--more"
+          aria-label="Show {tagChips.hiddenCount} more tags"
+          onclick={() => (tagsExpanded = true)}
+        >
+          +{tagChips.hiddenCount}
+        </button>
+      {/if}
     </div>
   {/if}
   <div bind:this={hostEl} class="vault-live-editor__host min-h-0 flex-1"></div>

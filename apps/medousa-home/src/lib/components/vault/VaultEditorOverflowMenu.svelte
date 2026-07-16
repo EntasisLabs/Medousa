@@ -27,6 +27,12 @@
     hasKanbanBoard?: boolean;
     boardEditMode?: "board" | "raw";
     linkedWork?: WorkCard[];
+    showPreviewToggle?: boolean;
+    showSplitToggle?: boolean;
+    splitEnabled?: boolean;
+    showLinksToggle?: boolean;
+    linksOpen?: boolean;
+    linkCount?: number;
     onOpenChat?: () => void;
     onOpenWork?: () => void;
     onSelectCard?: (id: string) => void | Promise<void>;
@@ -40,6 +46,9 @@
     onPromoteJournal?: () => void | Promise<void>;
     onPromoteProject?: () => void | Promise<void>;
     onToggleBoard?: () => void;
+    onTogglePreview?: () => void;
+    onToggleSplit?: () => void;
+    onToggleLinks?: () => void;
   }
 
   let {
@@ -55,6 +64,12 @@
     hasKanbanBoard = false,
     boardEditMode = "board",
     linkedWork = [],
+    showPreviewToggle = false,
+    showSplitToggle = false,
+    splitEnabled = false,
+    showLinksToggle = false,
+    linksOpen = false,
+    linkCount = 0,
     onOpenChat,
     onOpenWork,
     onSelectCard,
@@ -68,6 +83,9 @@
     onPromoteJournal,
     onPromoteProject,
     onToggleBoard,
+    onTogglePreview,
+    onToggleSplit,
+    onToggleLinks,
   }: Props = $props();
 
   let open = $state(false);
@@ -88,11 +106,49 @@
 
     if (!selectedPath) return rows;
 
+    if (showPreviewToggle && onTogglePreview) {
+      rows.push({
+        id: "preview",
+        label: editorMode === "preview" ? "Back to editing" : "Preview",
+        onClick: () => {
+          open = false;
+          onTogglePreview();
+        },
+      });
+    }
+
+    if (showSplitToggle && onToggleSplit) {
+      rows.push({
+        id: "split",
+        label: splitEnabled ? "Hide split preview" : "Split preview",
+        onClick: () => {
+          open = false;
+          onToggleSplit();
+        },
+      });
+    }
+
+    if (showLinksToggle && onToggleLinks) {
+      rows.push({
+        id: "links",
+        label: linksOpen
+          ? "Hide links"
+          : linkCount > 0
+            ? `Links (${linkCount})`
+            : "Links",
+        onClick: () => {
+          open = false;
+          onToggleLinks();
+        },
+      });
+    }
+
     if (onAskInChat) {
       rows.push({
         id: "send-chat",
         label: "Talk about this note",
         disabled: noteLoading,
+        dividerBefore: rows.length > 0,
         onClick: async () => {
           open = false;
           await onAskInChat();

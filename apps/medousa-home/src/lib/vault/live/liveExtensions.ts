@@ -1,5 +1,6 @@
 import StarterKit from "@tiptap/starter-kit";
 import Link from "@tiptap/extension-link";
+import Placeholder from "@tiptap/extension-placeholder";
 import TaskList from "@tiptap/extension-task-list";
 import TaskItem from "@tiptap/extension-task-item";
 import { Markdown } from "@tiptap/markdown";
@@ -39,6 +40,13 @@ export function createLiveExtensions(
       HTMLAttributes: {
         class: "vault-live-link",
       },
+    }),
+    Placeholder.configure({
+      placeholder: "Type / to add a chart, callout, or note",
+      emptyEditorClass: "is-editor-empty",
+      emptyNodeClass: "is-empty",
+      showOnlyWhenEditable: true,
+      showOnlyCurrent: true,
     }),
     TaskList,
     TaskItem.configure({ nested: true }),

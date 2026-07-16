@@ -231,17 +231,42 @@ export function readBodyTags(body: string): string[] {
   return parseFrontmatterTags(frontmatter);
 }
 
-/** Workshop/system tags first, then user tags; deduped. */
+/** System/workshop tags that should stay quiet in the UI. */
+export function isWorkshopVaultTag(tag: string): boolean {
+  const t = tag.trim().toLowerCase();
+  return (
+    t === "medousa" ||
+    t === "vault" ||
+    t === "session" ||
+    t.startsWith("profile:") ||
+    t.startsWith("chat:")
+  );
+}
+
+/** Human tags first, workshop/system last; deduped. */
 export function sortVaultTagsForDisplay(tags: string[]): string[] {
-  const workshop = new Set(["medousa", "vault", "session"]);
-  const ordered: string[] = [];
+  const human: string[] = [];
+  const workshop: string[] = [];
   for (const tag of tags) {
-    if (workshop.has(tag) || tag.startsWith("profile:") || tag.startsWith("chat:")) {
-      if (!ordered.includes(tag)) ordered.push(tag);
+    if (!tag.trim()) continue;
+    if (isWorkshopVaultTag(tag)) {
+      if (!workshop.includes(tag)) workshop.push(tag);
+    } else if (!human.includes(tag)) {
+      human.push(tag);
     }
   }
-  for (const tag of tags) {
-    if (!ordered.includes(tag)) ordered.push(tag);
-  }
-  return ordered;
+  return [...human, ...workshop];
+}
+
+/** Resting Live chips: up to `limit` human tags; rest (incl. workshop) behind +N. */
+export function restingVaultTagChips(
+  tags: string[],
+  limit = 2,
+): { visible: string[]; hiddenCount: number } {
+  const ordered = sortVaultTagsForDisplay(tags);
+  const human = ordered.filter((t) => !isWorkshopVaultTag(t));
+  const workshop = ordered.filter((t) => isWorkshopVaultTag(t));
+  const visible = human.slice(0, limit);
+  const hiddenCount = human.length - visible.length + workshop.length;
+  return { visible, hiddenCount: Math.max(0, hiddenCount) };
 }
