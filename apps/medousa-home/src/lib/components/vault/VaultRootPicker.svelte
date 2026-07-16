@@ -1,7 +1,7 @@
 <script lang="ts">
   import { Check, ChevronDown, FolderOpen, Plus } from "@lucide/svelte";
   import { vault } from "$lib/stores/vault.svelte";
-  import { pickExternalFolder } from "$lib/utils/externalDeskApi";
+  import { pickExternalFolder, rootLabelFromPath } from "$lib/utils/externalDeskApi";
   import {
     isCoLocatedWorkshop,
     vaultAddRootRemoteHint,
@@ -29,7 +29,11 @@
 
   async function pickFolder() {
     const path = await pickExternalFolder();
-    if (path) pathDraft = path;
+    if (!path) return;
+    pathDraft = path;
+    if (!labelDraft.trim()) {
+      labelDraft = rootLabelFromPath(path);
+    }
   }
 
   async function submitAddRoot() {
@@ -89,11 +93,13 @@
     >
       <FolderOpen size={12} strokeWidth={2} class="shrink-0 opacity-70" />
       <span class="truncate">
-        {#if vault.vaultRootsLoading}
-          …
-        {:else}
-          {activeRoot?.label ?? "Personal"}
-        {/if}
+          {#if vault.vaultRootsLoading}
+            …
+          {:else}
+            {activeRoot?.label ?? "Personal"}{#if activeRoot?.isObsidian}
+              <span class="workshop-faint"> · Obsidian</span>
+            {/if}
+          {/if}
       </span>
       <ChevronDown size={12} strokeWidth={2} class="shrink-0 opacity-60" />
     </button>
@@ -120,7 +126,14 @@
               class="mt-0.5 shrink-0 {root.active ? 'text-primary-300' : 'opacity-0'}"
             />
             <span class="min-w-0 flex-1">
-              <span class="block font-medium text-surface-100">{root.label}</span>
+              <span class="flex items-center gap-1.5">
+                <span class="block font-medium text-surface-100">{root.label}</span>
+                {#if root.isObsidian}
+                  <span class="badge variant-soft-surface px-1.5 py-0 text-[10px] font-medium">
+                    Obsidian
+                  </span>
+                {/if}
+              </span>
               <span class="workshop-faint mt-0.5 block truncate font-mono text-[10px]" title={root.path}>
                 {truncatePath(root.path)}
               </span>
@@ -165,7 +178,9 @@
           {#if vault.vaultRootsLoading}
             Loading vaults…
           {:else}
-            {activeRoot?.label ?? "Personal"}
+            {activeRoot?.label ?? "Personal"}{#if activeRoot?.isObsidian}
+              <span class="workshop-faint"> · Obsidian</span>
+            {/if}
           {/if}
         </span>
         <ChevronDown size={14} strokeWidth={2} class="shrink-0 opacity-70" />
@@ -190,7 +205,14 @@
                 class="mt-0.5 shrink-0 {root.active ? 'text-primary-300' : 'opacity-0'}"
               />
               <span class="min-w-0">
-                <span class="font-medium">{root.label}</span>
+                <span class="flex items-center gap-1.5">
+                  <span class="font-medium">{root.label}</span>
+                  {#if root.isObsidian}
+                    <span class="badge variant-soft-surface px-1.5 py-0 text-[10px] font-medium">
+                      Obsidian
+                    </span>
+                  {/if}
+                </span>
                 <span class="workshop-faint mt-0.5 block truncate font-mono text-[10px]" title={root.path}>
                   {truncatePath(root.path)}
                 </span>
@@ -218,7 +240,8 @@
       <header>
         <h3 class="text-base font-semibold text-surface-50">Add vault folder</h3>
         <p class="workshop-faint mt-1 text-sm">
-          Point this engine at another markdown folder on this Mac. Switch vaults anytime from the library sidebar.
+          Point this engine at another markdown folder on this Mac — including an Obsidian vault
+          (folder with <code class="font-mono text-[11px]">.obsidian</code>). Switch vaults anytime from the library sidebar.
         </p>
       </header>
       <label class="block space-y-1 text-sm">

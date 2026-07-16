@@ -117,9 +117,18 @@ export function kindBadgeClass(kind: VaultNoteKind): string {
   }
 }
 
-export function wrapWithFrontmatter(kind: VaultNoteKind, body: string): string {
+/** Serialize YAML frontmatter without leading/trailing blank YAML lines. */
+export function serializeFrontmatter(yaml: string, body: string): string {
+  const yamlBody = yaml.replace(/^\n+/, "").replace(/\n+$/, "");
   const trimmed = body.replace(/^\n+/, "");
-  return `---\nkind: ${kind}\n---\n\n${trimmed}`;
+  if (!yamlBody) {
+    return trimmed;
+  }
+  return `---\n${yamlBody}\n---\n\n${trimmed}`;
+}
+
+export function wrapWithFrontmatter(kind: VaultNoteKind, body: string): string {
+  return serializeFrontmatter(`kind: ${kind}`, body);
 }
 
 export function stripFrontmatter(body: string): { content: string; frontmatter: string | null } {
@@ -132,7 +141,8 @@ export function stripFrontmatter(body: string): { content: string; frontmatter: 
   if (end === -1) {
     return { content: body, frontmatter: null };
   }
-  const frontmatter = rest.slice(0, end);
+  // Drop the newline(s) that follow the opening `---` so rewrite does not grow blanks.
+  const frontmatter = rest.slice(0, end).replace(/^\n+/, "").replace(/\n+$/, "");
   const content = rest.slice(end + 4).replace(/^\n+/, "");
   return { content, frontmatter };
 }
@@ -154,7 +164,7 @@ export function setFrontmatterKind(body: string, kind: VaultNoteKind): string {
   if (!replaced) {
     nextLines.unshift(`kind: ${kind}`);
   }
-  return `---\n${nextLines.join("\n")}\n---\n\n${content}`;
+  return serializeFrontmatter(nextLines.join("\n"), content);
 }
 
 export function insertTextAtSection(

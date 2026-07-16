@@ -21,6 +21,7 @@
   import { settings } from "$lib/stores/settings.svelte";
   import { workshop } from "$lib/stores/workshop.svelte";
   import type { LSPClient } from "@codemirror/lsp-client";
+  import { formatShortcut } from "$lib/platform";
 
   interface Props {
     visible: boolean;
@@ -457,7 +458,7 @@
         {/if}
       </span>
       <span class="text-surface-500">
-        <kbd class="vault-kbd">⌘S</kbd> save ·
+        <kbd class="vault-kbd">{formatShortcut("S")}</kbd> save ·
         <kbd class="vault-kbd">F12</kbd> go to definition
       </span>
     </div>

@@ -53,6 +53,10 @@ Desktop Library **Files** tab pins folders outside the vault root. Search spans 
 
 Mobile: external files are desktop-first today; notes and presentations are fully supported on mobile.
 
+**Obsidian on the same Mac:** use **Add vault folder…** and point at the Obsidian vault directory. See [vault.md](../engine/vault.md#multi-root--obsidian).
+
+**Single markdown file:** **Open markdown file…** (empty library, overflow menu, or command spotlight) edits a `.md` without registering a vault root.
+
 ---
 
 ## Talk about a note

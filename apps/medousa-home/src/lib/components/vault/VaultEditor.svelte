@@ -38,6 +38,7 @@
   import { vaultFind } from "$lib/stores/vaultFind.svelte";
   import { vaultQuickSwitcher } from "$lib/stores/vaultQuickSwitcher.svelte";
   import { stripFrontmatter } from "$lib/utils/vaultFrontmatter";
+  import { formatShortcut } from "$lib/platform";
   import { writeVaultStickyPath } from "$lib/utils/vaultSticky";
   import { isTauri, showVaultSticky } from "$lib/window";
   import VaultPdfPreviewModal from "./VaultPdfPreviewModal.svelte";
@@ -69,16 +70,23 @@
   let pdfPreviewContent = $state("");
   let pdfPreviewLabels = $state<Map<string, string>>(new Map());
   let lastFindNotePath = $state<string | null>(null);
+  let previewScrollEl = $state<HTMLElement | null>(null);
 
   const displayTitle = $derived(
-    vault.selectedPath
-      ? (vault.labelByPathMap.get(vault.selectedPath) ??
-        vaultDisplayTitle(vault.title, vault.selectedPath))
-      : "Library",
+    vault.isLooseFile && vault.looseFilePath
+      ? (vault.looseFilePath.split(/[/\\]/).pop() ?? vault.looseFilePath)
+      : vault.selectedPath
+        ? (vault.labelByPathMap.get(vault.selectedPath) ??
+          vaultDisplayTitle(vault.title, vault.selectedPath))
+        : "Library",
   );
 
   const breadcrumb = $derived(
-    vault.selectedPath ? vaultBreadcrumb(vault.selectedPath) : null,
+    vault.isLooseFile && vault.looseFilePath
+      ? vault.looseFilePath
+      : vault.selectedPath
+        ? vaultBreadcrumb(vault.selectedPath)
+        : null,
   );
 
   const activeSpace = $derived(vault.activeSpace);
@@ -132,6 +140,7 @@
   const linkCount = $derived(vault.wikilinksOut.length + vault.backlinks.length);
   const showLinksToggle = $derived(
     !stickyNote &&
+      !vault.isLooseFile &&
       Boolean(vault.selectedPath) &&
       supportsLinksPanel(noteKind) &&
       linkCount > 0,
@@ -383,7 +392,14 @@
         {/if}
         <div class="flex min-w-0 items-center gap-2">
           <h1 class="truncate text-base font-semibold">{displayTitle}</h1>
-          {#if vault.selectedPath}
+          {#if vault.isLooseFile}
+            <span
+              class="badge variant-soft-warning shrink-0 text-xs font-medium"
+              title="Editing a single file outside the vault"
+            >
+              Loose file
+            </span>
+          {:else if vault.selectedPath}
             <VaultKindBadge
               kind={vault.selectedKind}
               path={vault.selectedPath}
@@ -392,7 +408,7 @@
         </div>
         {#if vault.selectedPath && vault.editorMode === "preview"}
           <p class="mt-1 text-[11px] text-surface-500">
-            Press <kbd class="vault-kbd">E</kbd> to edit · <kbd class="vault-kbd">⌘F</kbd> to find
+            Press <kbd class="vault-kbd">E</kbd> to edit · <kbd class="vault-kbd">{formatShortcut("F")}</kbd> to find
             · type <kbd class="vault-kbd">/</kbd> on a new line for blocks
           </p>
         {/if}
@@ -523,7 +539,7 @@
         <button
           type="button"
           class="btn btn-sm variant-ghost-surface"
-          title="Find note (⌘O)"
+          title="Find note ({formatShortcut('O')})"
           aria-label="Find note"
           onclick={() => vaultQuickSwitcher.openSwitcher()}
         >
@@ -546,19 +562,34 @@
           onOpenChat={onOpenChat}
           onOpenWork={onOpenWork}
           onSelectCard={onSelectCard}
-          onExportPdf={handleExportPdf}
-          onAskInChat={handleAskInChatTab}
-          onSendToWork={handleSendToWork}
+          onExportPdf={vault.isLooseFile ? undefined : handleExportPdf}
+          onAskInChat={vault.isLooseFile ? undefined : handleAskInChatTab}
+          onSendToWork={vault.isLooseFile ? undefined : handleSendToWork}
           onSave={handleSave}
-          onOpenNoteActions={() => vault.openNoteActions()}
-          onInsertWeeklyReview={() => vault.insertWeeklyReviewLink()}
-          onPromoteJournal={async () => {
-            await vault.promoteNote("journal");
-          }}
-          onPromoteProject={async () => {
-            await vault.promoteNote("projects");
-          }}
-          onToggleBoard={() => vault.toggleBoardEditMode()}
+          onOpenNoteActions={
+            vault.isLooseFile ? undefined : () => vault.openNoteActions()
+          }
+          onOpenLooseMarkdown={() => void vault.openLooseMarkdownFile()}
+          onInsertWeeklyReview={
+            vault.isLooseFile ? undefined : () => vault.insertWeeklyReviewLink()
+          }
+          onPromoteJournal={
+            vault.isLooseFile
+              ? undefined
+              : async () => {
+                  await vault.promoteNote("journal");
+                }
+          }
+          onPromoteProject={
+            vault.isLooseFile
+              ? undefined
+              : async () => {
+                  await vault.promoteNote("projects");
+                }
+          }
+          onToggleBoard={
+            vault.isLooseFile ? undefined : () => vault.toggleBoardEditMode()
+          }
         />
       </div>
     </header>
@@ -626,8 +657,9 @@
             split={showSplitEditor}
             splitWidth={layout.vaultEditorPaneWidth}
             onSplitResize={(width) => layout.setVaultEditorPaneWidth(width)}
+            previewScrollEl={previewScrollEl}
             onchange={(next) => vault.markDirty(next)}
-            showFloat={!stickyNote && isTauri() && Boolean(vault.selectedPath)}
+            showFloat={!stickyNote && isTauri() && Boolean(vault.selectedPath) && !vault.isLooseFile}
             onFloat={() => void handleFloatSticky()}
           >
             {#snippet preview()}
@@ -635,7 +667,8 @@
                 content={vault.content}
                 {labelByPath}
                 compact
-                onWikilink={handleWikilink}
+                bind:scrollEl={previewScrollEl}
+                onWikilink={vault.isLooseFile ? undefined : handleWikilink}
               />
             {/snippet}
           </VaultMarkdownEditor>
@@ -643,7 +676,7 @@
           <VaultMarkdownPreview
             content={vault.content}
             {labelByPath}
-            onWikilink={handleWikilink}
+            onWikilink={vault.isLooseFile ? undefined : handleWikilink}
           />
         {/if}
         </div>
@@ -671,7 +704,7 @@
     />
   {/if}
 
-  {#if vault.selectedPath && !mobile && !noteWorkshop.open}
+  {#if vault.selectedPath && !mobile && !noteWorkshop.open && !vault.isLooseFile}
     <VaultNoteChatFab />
   {/if}
 </section>

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { vaultNoteStats, formatVaultNoteStats } from "$lib/utils/vaultNoteStats";
   import { sortVaultTagsForDisplay } from "$lib/utils/vaultFrontmatter";
+  import { formatShortcut } from "$lib/platform";
 
   interface Props {
     content: string;
@@ -33,11 +34,11 @@
   </p>
   <p class="vault-note-status-hints">
     {#if editorMode === "preview"}
-      <kbd class="vault-kbd">⌘F</kbd> find
+      <kbd class="vault-kbd">{formatShortcut("F")}</kbd> find
     {:else}
-      <kbd class="vault-kbd">⌘F</kbd> find
+      <kbd class="vault-kbd">{formatShortcut("F")}</kbd> find
       <span class="vault-note-status-sep" aria-hidden="true">·</span>
-      <kbd class="vault-kbd">⌘S</kbd> save
+      <kbd class="vault-kbd">{formatShortcut("S")}</kbd> save
     {/if}
   </p>
 </footer>

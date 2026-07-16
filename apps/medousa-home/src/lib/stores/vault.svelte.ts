@@ -109,7 +109,13 @@ import {
 } from "$lib/utils/vaultChartFence";
 import { insertTextAtCursor } from "$lib/utils/vaultMarkdownEdit";
 import { invalidateTransclusionCache } from "$lib/utils/resolveTransclusion";
-import { invalidateVaultRootCache } from "$lib/utils/vaultFilesystem";
+import {
+  fileNameFromAbsolutePath,
+  invalidateVaultRootCache,
+  pickMarkdownFile,
+  readAbsoluteTextFile,
+  writeAbsoluteTextFile,
+} from "$lib/utils/vaultFilesystem";
 import { loadVaultRecent, rememberVaultRecent } from "$lib/utils/vaultRecent";
 import {
   formatDiffChip,
@@ -140,6 +146,8 @@ export class VaultStore {
   notes = $state<VaultNote[]>([]);
   tree = $state<VaultTreeNode[]>([]);
   selectedPath = $state<string | null>(loadLastNote());
+  /** Absolute path when editing a single .md outside any vault root. */
+  looseFilePath = $state<string | null>(null);
   content = $state("");
   baselineContent = $state("");
   contentHash = $state<string | null>(null);
@@ -245,9 +253,16 @@ export class VaultStore {
     ),
   );
 
-  contentSyncKey = $derived(`${this.selectedPath ?? ""}:${this.contentRevision}`);
+  contentSyncKey = $derived(
+    `${this.looseFilePath ?? this.selectedPath ?? ""}:${this.contentRevision}`,
+  );
+
+  get isLooseFile(): boolean {
+    return Boolean(this.looseFilePath);
+  }
 
   activeSpace = $derived.by((): ReturnType<typeof getSpaceById> => {
+    if (this.looseFilePath) return undefined;
     if (this.selectedPath) {
       const note = this.notes.find((row) => row.path === this.selectedPath);
       if (note) {
@@ -780,6 +795,7 @@ export class VaultStore {
   resetForWorkshopSwitch() {
     this.clearAutosaveTimer();
     this.clearProposal();
+    this.clearLooseFile();
     this.selectedPath = null;
     this.content = "";
     this.baselineContent = "";
@@ -805,6 +821,58 @@ export class VaultStore {
     void this.refreshNotes();
   }
 
+  clearLooseFile() {
+    this.looseFilePath = null;
+  }
+
+  /** Open a single .md file without registering a vault root (desktop, co-located). */
+  async openLooseMarkdownFile() {
+    const path = await pickMarkdownFile();
+    if (!path) return false;
+    return this.openLooseFile(path);
+  }
+
+  async openLooseFile(absolutePath: string) {
+    const trimmed = absolutePath.trim();
+    if (!trimmed) return false;
+    if (this.dirty && this.selectedPath) {
+      this.clearAutosaveTimer();
+      await this.save({ source: "autosave" });
+    }
+    this.noteLoading = true;
+    this.loading = true;
+    this.error = null;
+    this.clearProposal();
+    this.closeAttachmentPreview();
+    try {
+      const content = await readAbsoluteTextFile(trimmed);
+      const name = fileNameFromAbsolutePath(trimmed);
+      const title = name.replace(/\.md$/i, "").replace(/\.markdown$/i, "") || name;
+      this.clearLooseFile();
+      this.looseFilePath = trimmed;
+      this.selectedPath = trimmed;
+      this.resetSaveState();
+      this.content = content;
+      this.baselineContent = content;
+      this.contentHash = null;
+      this.title = title;
+      this.selectedKind = "note";
+      this.wikilinksOut = [];
+      this.backlinks = [];
+      this.noteTags = [];
+      this.dirty = false;
+      this.editorMode = "edit";
+      this.bumpContentSync();
+      return true;
+    } catch (err) {
+      this.error = err instanceof Error ? err.message : String(err);
+      return false;
+    } finally {
+      this.noteLoading = false;
+      this.loading = false;
+    }
+  }
+
   async refreshVaultRoots() {
     this.vaultRootsLoading = true;
     this.vaultRootsError = null;
@@ -825,6 +893,7 @@ export class VaultStore {
             path: "",
             isDefault: true,
             active: true,
+            isObsidian: false,
           },
         ];
         this.activeVaultRootId = "personal";
@@ -840,6 +909,7 @@ export class VaultStore {
     if (!rootId.trim() || rootId === this.activeVaultRootId) return;
     this.clearAutosaveTimer();
     this.clearProposal();
+    this.clearLooseFile();
     this.selectedPath = null;
     this.content = "";
     this.baselineContent = "";
@@ -914,6 +984,7 @@ export class VaultStore {
       this.clearProposal();
       this.closeAttachmentPreview();
     }
+    this.clearLooseFile();
     this.noteLoading = true;
     this.loading = true;
     this.error = null;
@@ -993,6 +1064,8 @@ export class VaultStore {
   }
 
   enterEditMode() {
+    // Prefer split for markdown notes that support preview (layout.vaultSplitEnabled
+    // defaults true). Never force split off when returning to edit.
     this.editorMode = "edit";
   }
 
@@ -1037,6 +1110,10 @@ export class VaultStore {
   }
 
   async refreshBacklinks(path: string) {
+    if (this.isLooseFile) {
+      this.backlinks = [];
+      return;
+    }
     try {
       const response = await getVaultBacklinks(path);
       this.backlinks = response.backlinks;
@@ -1091,8 +1168,28 @@ export class VaultStore {
 
     const pathSnapshot = this.selectedPath;
     const contentSnapshot = this.content;
+    const loosePath = this.looseFilePath;
 
     try {
+      if (loosePath) {
+        await writeAbsoluteTextFile(loosePath, contentSnapshot);
+        if (this.selectedPath !== pathSnapshot || this.looseFilePath !== loosePath) {
+          return true;
+        }
+        if (this.content !== contentSnapshot) {
+          this.baselineContent = contentSnapshot;
+          this.dirty = true;
+          this.saveStatus = "unsaved";
+          this.scheduleAutosave();
+          return true;
+        }
+        this.baselineContent = this.content;
+        this.dirty = false;
+        this.clearProposal();
+        this.flashSavedWhisper();
+        return true;
+      }
+
       const response = await saveVaultNote(pathSnapshot, contentSnapshot, {
         contentHash: options?.force ? undefined : (this.contentHash ?? undefined),
         sessionId: workshopSessionIdForVaultSave(pathSnapshot),
@@ -1121,7 +1218,7 @@ export class VaultStore {
       void this.refreshBacklinks(pathSnapshot);
       return true;
     } catch (err) {
-      if (isVaultConflictError(err)) {
+      if (!loosePath && isVaultConflictError(err)) {
         this.saveStatus = "conflict";
         this.conflictMessage =
           "This note changed on disk. Reload the latest version or keep your edits.";
@@ -1142,6 +1239,24 @@ export class VaultStore {
 
   async reloadFromServer() {
     if (!this.selectedPath) return;
+    if (this.looseFilePath) {
+      this.noteLoading = true;
+      this.error = null;
+      try {
+        const content = await readAbsoluteTextFile(this.looseFilePath);
+        this.content = content;
+        this.baselineContent = content;
+        this.dirty = false;
+        this.resetSaveState();
+        this.clearProposal();
+        this.bumpContentSync();
+      } catch (err) {
+        this.error = err instanceof Error ? err.message : String(err);
+      } finally {
+        this.noteLoading = false;
+      }
+      return;
+    }
     this.noteLoading = true;
     this.error = null;
     try {
@@ -1317,6 +1432,7 @@ export class VaultStore {
   }
 
   openNoteActions() {
+    if (this.isLooseFile) return;
     this.noteActionsOpen = true;
   }
 

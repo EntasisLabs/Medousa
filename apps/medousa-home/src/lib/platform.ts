@@ -56,6 +56,38 @@ export function watchMobileViewport(onChange: (mobile: boolean) => void): () => 
  * Tag native shells for CSS overrides. Tauri iOS only needs bottom-chrome padding
  * adjusted — do not zero global safe-area vars or change html/body positioning.
  */
+/** Prefer ⌘ on Apple platforms, Ctrl elsewhere (for shortcut hint labels). */
+export function usesMetaModKey(): boolean {
+  if (typeof navigator === "undefined") return false;
+  // Prefer platform / userAgentData when available; fall back to UA.
+  const platform =
+    (navigator as Navigator & { userAgentData?: { platform?: string } }).userAgentData
+      ?.platform ??
+    navigator.platform ??
+    "";
+  if (/Mac|iPhone|iPad|iPod/i.test(platform)) return true;
+  return /Mac OS X|Macintosh|iPhone|iPad|iPod/i.test(navigator.userAgent);
+}
+
+/** Modifier key glyph/label for UI hints: `⌘` or `Ctrl`. */
+export function modKeyLabel(): string {
+  return usesMetaModKey() ? "⌘" : "Ctrl";
+}
+
+/**
+ * Format a shortcut hint for the current platform.
+ * Pass the key chord without the primary modifier, e.g. `K`, `⇧B`, `⇧T`.
+ * On non-Apple platforms, Shift is spelled out as `Shift+` when `⇧` is used.
+ */
+export function formatShortcut(chord: string): string {
+  const mod = modKeyLabel();
+  if (usesMetaModKey()) {
+    return `${mod}${chord}`;
+  }
+  const normalized = chord.replace(/⇧/g, "Shift+").replace(/⌥/g, "Alt+");
+  return `${mod}+${normalized}`;
+}
+
 export function applyNativeMobileShellLayout(): () => void {
   if (typeof document === "undefined") return () => {};
 

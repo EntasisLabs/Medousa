@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { isMedousaStoreRequest, isValidStoreKey } from "./medousaStoreClient";
+import {
+  artifactStoreScopeId,
+  isMedousaStoreRequest,
+  isValidStoreKey,
+} from "./medousaStoreClient";
 
 describe("medousaStoreClient", () => {
   it("recognizes store postMessages", () => {
@@ -17,5 +21,14 @@ describe("medousaStoreClient", () => {
   it("validates store keys", () => {
     expect(isValidStoreKey("thoughts")).toBe(true);
     expect(isValidStoreKey("bad key")).toBe(false);
+  });
+
+  it("derives stable kebab-case store scopes from artifact ids", () => {
+    const a = artifactStoreScopeId("art:sess:ui:abc123");
+    const b = artifactStoreScopeId("art:sess:ui:abc123");
+    const c = artifactStoreScopeId("art:other");
+    expect(a).toBe(b);
+    expect(a).toMatch(/^art-kv-[0-9a-f]{12}$/);
+    expect(a).not.toBe(c);
   });
 });

@@ -857,10 +857,25 @@
         "format": "uint",
         "minimum": 0.0
       },
+      "skipped": {
+        "description": "Non-event components (and other non-fatal skips) that were not imported.",
+        "default": 0,
+        "type": "integer",
+        "format": "uint",
+        "minimum": 0.0
+      },
       "updated": {
         "type": "integer",
         "format": "uint",
         "minimum": 0.0
+      },
+      "warnings": {
+        "description": "Human-readable skip / fallback notes for the import run.",
+        "default": [],
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
       }
     }
   },
@@ -11806,6 +11821,11 @@
           },
           "isDefault": {
             "type": "boolean"
+          },
+          "isObsidian": {
+            "default": false,
+            "type": "boolean",
+            "description": "True when `{path}/.obsidian` exists (co-located Obsidian vault)."
           },
           "label": {
             "type": "string"

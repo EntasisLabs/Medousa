@@ -4,6 +4,7 @@
   import { browserHistory } from "$lib/stores/browserHistory.svelte";
   import { hostnameFromUrl, tabDisplayLabel } from "$lib/utils/browserFavicon";
   import { setMobileBrowserUrlFocus } from "$lib/utils/mobileKeyboardViewport";
+  import { formatShortcut } from "$lib/platform";
 
   const humanBrowser = $derived(humanBrowserForWindow());
 
@@ -136,7 +137,7 @@
     autocapitalize="off"
     aria-label="Address bar"
     aria-autocomplete="list"
-    title="Search or enter URL (⌘L)"
+    title="Search or enter URL ({formatShortcut('L')})"
     onfocus={handleFocus}
     onblur={handleBlur}
     oninput={handleInput}

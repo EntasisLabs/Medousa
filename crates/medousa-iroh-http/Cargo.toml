@@ -1,6 +1,6 @@
 [package]
 name = "medousa-iroh-http"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 description = "HTTP/1.1 over Iroh QUIC — shared client for engine and mobile"
 

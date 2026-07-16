@@ -20,6 +20,7 @@
 
   let query = $state("");
   let searchTimer: ReturnType<typeof setTimeout> | null = null;
+  let searchInputEl = $state<HTMLInputElement | null>(null);
   let renamingSession = $state<SessionSummary | null>(null);
   let renameDraft = $state("");
   let renameError = $state<string | null>(null);
@@ -37,6 +38,8 @@
     if (open) {
       query = chat.sessionListQuery;
       void chat.refreshSessions({ force: true, q: query });
+      // Autofocus so the drawer feels interactive immediately.
+      queueMicrotask(() => searchInputEl?.focus());
     }
   });
 
@@ -254,9 +257,10 @@
       <label class="session-sidebar-search">
         <Search size={14} strokeWidth={1.75} class="session-sidebar-search-icon" aria-hidden="true" />
         <input
+          bind:this={searchInputEl}
           class="session-sidebar-search-input"
           type="search"
-          placeholder="Search sessions…"
+          placeholder="Search titles…"
           bind:value={query}
         />
       </label>

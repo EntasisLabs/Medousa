@@ -85,7 +85,8 @@ pub fn strip_frontmatter(body: &str) -> (&str, Option<&str>) {
     let Some(end) = rest.find("\n---") else {
         return (body, None);
     };
-    let frontmatter = &rest[..end];
+    // Drop newlines that follow the opening `---` so rewrite does not grow blanks.
+    let frontmatter = rest[..end].trim_matches('\n');
     let content = &rest[end + 4..];
     (content.trim_start(), Some(frontmatter))
 }

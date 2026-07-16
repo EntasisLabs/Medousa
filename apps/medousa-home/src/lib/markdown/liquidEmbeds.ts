@@ -28,6 +28,11 @@ export const LIQUID_FENCE_LANGS = new Set([
   "dashboard",
   "chart",
   "report",
+  "tabs",
+  "steps",
+  "accordion",
+  "code",
+  "tree",
 ]);
 
 const CALLOUT_TONES = new Set(["note", "warn", "error", "success"]);
@@ -85,7 +90,12 @@ export type LiquidEmbedKind =
   | "brief"
   | "dashboard"
   | "chart"
-  | "report";
+  | "report"
+  | "tabs"
+  | "steps"
+  | "accordion"
+  | "code"
+  | "tree";
 
 export interface LiquidCardPoint {
   label: string;
@@ -382,6 +392,78 @@ export interface LiquidSectionProps {
   title: string;
   subtitle?: string;
   body?: string;
+}
+
+export interface LiquidTabsPanel {
+  id: string;
+  label: string;
+  body: string;
+  emoji?: string;
+}
+
+export interface LiquidTabsProps {
+  title?: string;
+  subtitle?: string;
+  /** Initial panel id, label, or 1-based index. */
+  default?: string;
+  panels: LiquidTabsPanel[];
+}
+
+export type LiquidStepStatus = "done" | "current" | "pending";
+
+export interface LiquidStepItem {
+  id: string;
+  label: string;
+  body?: string;
+  status?: LiquidStepStatus;
+  emoji?: string;
+}
+
+export interface LiquidStepsProps {
+  title?: string;
+  subtitle?: string;
+  steps: LiquidStepItem[];
+}
+
+export interface LiquidAccordionItem {
+  id: string;
+  label: string;
+  body: string;
+  open?: boolean;
+  emoji?: string;
+}
+
+export interface LiquidAccordionProps {
+  title?: string;
+  subtitle?: string;
+  /** Allow multiple panels open at once (default false). */
+  multiple?: boolean;
+  items: LiquidAccordionItem[];
+}
+
+export interface LiquidCodeProps {
+  /** Source snippet (required). */
+  source: string;
+  /** Language badge (js, ts, rust, diff, …). */
+  lang?: string;
+  title?: string;
+  /** When true, render as a unified diff (lines starting with +/-). */
+  diff?: boolean;
+  /** Show copy button (default true). */
+  copy?: boolean;
+}
+
+export interface LiquidTreeNode {
+  id: string;
+  name: string;
+  kind: "file" | "folder";
+  children?: LiquidTreeNode[];
+}
+
+export interface LiquidTreeProps {
+  title?: string;
+  subtitle?: string;
+  nodes: LiquidTreeNode[];
 }
 
 export interface LiquidChipProps {
@@ -1427,6 +1509,305 @@ function parseReportBody(body: string): LiquidReportProps | null {
   return report;
 }
 
+const STEP_STATUSES = new Set(["done", "current", "pending"]);
+
+/** Shared --- panel/item blocks for tabs / steps / accordion. */
+function parseLabeledSectionBlocks(
+  body: string,
+): { fields: Record<string, string>; blocks: Record<string, string>[] } | null {
+  const normalized = body.replace(/\r\n/g, "\n").trim();
+  if (!normalized) return null;
+
+  const parts = normalized.split(/^---[ \t]*$/m);
+  const preamble = parts[0] ?? "";
+  const sectionBlocks = parts.slice(1);
+  if (sectionBlocks.length < 1) return null;
+
+  const fields = parseKvBlock(preamble);
+  const blocks: Record<string, string>[] = [];
+
+  for (const block of sectionBlocks) {
+    const sep = block.search(/^---[ \t]*$/m);
+    let header = block;
+    let proseBody: string | undefined;
+    if (sep >= 0) {
+      header = block.slice(0, sep);
+      proseBody = block.slice(sep).replace(/^---[ \t]*\n?/, "").trim() || undefined;
+    }
+    const itemFields = parseKvBlock(header);
+    if (proseBody && !itemFields.body) itemFields.body = proseBody;
+    // Accept freeform prose-only --- blocks as body when a prior label is pending —
+    // but require label/title on the block itself for paste-first clarity.
+    const label = (itemFields.label ?? itemFields.title)?.trim();
+    if (!label) continue;
+    if (!itemFields.body?.trim() && !itemFields.summary?.trim()) {
+      // Allow label-only steps; tabs/accordion need body — callers enforce.
+      blocks.push(itemFields);
+      continue;
+    }
+    if (!itemFields.body && itemFields.summary) itemFields.body = itemFields.summary;
+    blocks.push(itemFields);
+  }
+
+  if (blocks.length < 1) return null;
+  return { fields, blocks };
+}
+
+function parseTabsBody(body: string): LiquidTabsProps | null {
+  const parsed = parseLabeledSectionBlocks(body);
+  if (!parsed) return null;
+
+  const panels: LiquidTabsPanel[] = [];
+  for (const block of parsed.blocks) {
+    const label = (block.label ?? block.title)?.trim();
+    const panelBody = (block.body ?? block.summary)?.trim();
+    if (!label || !panelBody) continue;
+    const panel: LiquidTabsPanel = {
+      id: slugCompareId(label, "tab", panels.length),
+      label,
+      body: panelBody,
+    };
+    if (block.emoji) panel.emoji = block.emoji;
+    panels.push(panel);
+  }
+  if (panels.length < 2) return null;
+
+  const tabs: LiquidTabsProps = { panels };
+  if (parsed.fields.title) tabs.title = parsed.fields.title;
+  if (parsed.fields.subtitle) tabs.subtitle = parsed.fields.subtitle;
+  const def = (parsed.fields.default ?? parsed.fields.active)?.trim();
+  if (def) tabs.default = def;
+  return tabs;
+}
+
+function parseStepsBody(body: string): LiquidStepsProps | null {
+  const parsed = parseLabeledSectionBlocks(body);
+  if (!parsed) return null;
+
+  const steps: LiquidStepItem[] = [];
+  for (const block of parsed.blocks) {
+    const label = (block.label ?? block.title)?.trim();
+    if (!label) continue;
+    const step: LiquidStepItem = {
+      id: slugCompareId(label, "step", steps.length),
+      label,
+    };
+    const stepBody = (block.body ?? block.summary)?.trim();
+    if (stepBody) step.body = stepBody;
+    if (block.emoji) step.emoji = block.emoji;
+    const status = block.status?.trim().toLowerCase();
+    if (status && STEP_STATUSES.has(status)) step.status = status as LiquidStepStatus;
+    steps.push(step);
+  }
+  if (steps.length < 2) return null;
+
+  const out: LiquidStepsProps = { steps };
+  if (parsed.fields.title) out.title = parsed.fields.title;
+  if (parsed.fields.subtitle) out.subtitle = parsed.fields.subtitle;
+  return out;
+}
+
+function parseBoolLoose(raw: string | undefined): boolean | undefined {
+  if (!raw) return undefined;
+  const v = raw.trim().toLowerCase();
+  if (["true", "yes", "1", "on", "open"].includes(v)) return true;
+  if (["false", "no", "0", "off", "closed"].includes(v)) return false;
+  return undefined;
+}
+
+function parseAccordionBody(body: string): LiquidAccordionProps | null {
+  const parsed = parseLabeledSectionBlocks(body);
+  if (!parsed) return null;
+
+  const items: LiquidAccordionItem[] = [];
+  for (const block of parsed.blocks) {
+    const label = (block.label ?? block.title)?.trim();
+    const itemBody = (block.body ?? block.summary)?.trim();
+    if (!label || !itemBody) continue;
+    const item: LiquidAccordionItem = {
+      id: slugCompareId(label, "item", items.length),
+      label,
+      body: itemBody,
+    };
+    if (block.emoji) item.emoji = block.emoji;
+    const open =
+      parseBoolLoose(block.open) ??
+      parseBoolLoose(block.default) ??
+      parseBoolLoose(block.expanded);
+    if (open !== undefined) item.open = open;
+    items.push(item);
+  }
+  if (items.length < 1) return null;
+
+  const accordion: LiquidAccordionProps = { items };
+  if (parsed.fields.title) accordion.title = parsed.fields.title;
+  if (parsed.fields.subtitle) accordion.subtitle = parsed.fields.subtitle;
+  const multiple = parseBoolLoose(parsed.fields.multiple);
+  if (multiple !== undefined) accordion.multiple = multiple;
+  return accordion;
+}
+
+function parseCodeBody(body: string): LiquidCodeProps | null {
+  const normalized = body.replace(/\r\n/g, "\n");
+  // Prefer --- separator: KV header + source body
+  const sep = normalized.search(/^---[ \t]*$/m);
+  let header = "";
+  let source = "";
+  if (sep >= 0) {
+    header = normalized.slice(0, sep);
+    source = normalized.slice(sep).replace(/^---[ \t]*\n?/, "");
+  } else {
+    // No --- : require lang: (or language:) KV, then remainder is source
+    const lines = normalized.split("\n");
+    const preamble: string[] = [];
+    let bodyStart = 0;
+    for (let i = 0; i < lines.length; i++) {
+      const stripped = stripFenceLineChrome(lines[i] ?? "");
+      if (!stripped) {
+        if (preamble.length > 0) {
+          bodyStart = i + 1;
+          break;
+        }
+        continue;
+      }
+      if (
+        /^(lang|language|title|diff|copy)\s*:/i.test(stripped) &&
+        !stripped.startsWith("|")
+      ) {
+        preamble.push(lines[i] ?? "");
+        bodyStart = i + 1;
+        continue;
+      }
+      bodyStart = i;
+      break;
+    }
+    header = preamble.join("\n");
+    source = lines.slice(bodyStart).join("\n");
+  }
+
+  const fields = parseKvBlock(header);
+  const trimmedSource = source.replace(/\s+$/, "").replace(/^\n+/, "");
+  if (!trimmedSource) return null;
+
+  // Require intentional liquid shape: lang/language/title/diff present, or --- was used
+  const hasLiquidChrome =
+    sep >= 0 ||
+    Boolean(fields.lang || fields.language || fields.title || fields.diff || fields.copy);
+  if (!hasLiquidChrome) return null;
+
+  const code: LiquidCodeProps = { source: trimmedSource };
+  const lang = (fields.lang ?? fields.language)?.trim();
+  if (lang) code.lang = lang;
+  if (fields.title) code.title = fields.title;
+  const diff = parseBoolLoose(fields.diff);
+  if (diff !== undefined) code.diff = diff;
+  else if (lang?.toLowerCase() === "diff") code.diff = true;
+  const copy = parseBoolLoose(fields.copy);
+  if (copy !== undefined) code.copy = copy;
+  return code;
+}
+
+function parseTreeIndentedLines(raw: string): LiquidTreeNode[] {
+  const lines = raw.replace(/\r\n/g, "\n").split("\n");
+  type StackEntry = { indent: number; node: LiquidTreeNode };
+  const roots: LiquidTreeNode[] = [];
+  const stack: StackEntry[] = [];
+  let counter = 0;
+
+  for (const rawLine of lines) {
+    if (!rawLine.trim() || rawLine.trim().startsWith("#")) continue;
+    // Preserve leading spaces; tabs → 2 spaces
+    const expanded = rawLine.replace(/\t/g, "  ").replace(/\r$/, "");
+    const trimmed = expanded.trimEnd();
+    const match = trimmed.match(/^( *)(.*)$/);
+    if (!match) continue;
+    const indent = match[1].length;
+    let name = match[2].trim();
+    // Strip list markers models often emit
+    // Strip list markers / ascii tree chrome models often emit
+    name = name
+      .replace(/^[-*+]\s+/, "")
+      .replace(/^[|\\+\-`]+[─\-]*\s*/, "")
+      .trim();
+    if (!name) continue;
+
+    let kind: "file" | "folder" = "file";
+    if (name.endsWith("/")) {
+      kind = "folder";
+      name = name.slice(0, -1).trim();
+    } else if (!name.includes(".") && /\/$/.test(match[2].trim())) {
+      kind = "folder";
+    }
+    // Heuristic: trailing slash already handled; bare directory words kept as files unless /
+    const node: LiquidTreeNode = {
+      id: `tree-${counter++}`,
+      name,
+      kind,
+    };
+    if (kind === "folder") node.children = [];
+
+    while (stack.length && stack[stack.length - 1].indent >= indent) {
+      stack.pop();
+    }
+
+    if (stack.length === 0) {
+      roots.push(node);
+    } else {
+      const parent = stack[stack.length - 1].node;
+      if (!parent.children) parent.children = [];
+      parent.kind = "folder";
+      parent.children.push(node);
+    }
+    stack.push({ indent, node });
+  }
+
+  return roots;
+}
+
+function parseTreeBody(body: string): LiquidTreeProps | null {
+  const normalized = body.replace(/\r\n/g, "\n");
+  const sep = normalized.search(/^---[ \t]*$/m);
+  let header = "";
+  let treeBody = normalized;
+  if (sep >= 0) {
+    header = normalized.slice(0, sep);
+    treeBody = normalized.slice(sep).replace(/^---[ \t]*\n?/, "");
+  } else {
+    // Optional leading KV lines (title/subtitle only)
+    const lines = normalized.split("\n");
+    const preamble: string[] = [];
+    let bodyStart = 0;
+    for (let i = 0; i < lines.length; i++) {
+      const stripped = stripFenceLineChrome(lines[i] ?? "");
+      if (!stripped) {
+        if (preamble.length > 0) {
+          bodyStart = i + 1;
+          break;
+        }
+        continue;
+      }
+      if (/^(title|subtitle)\s*:/i.test(stripped)) {
+        preamble.push(lines[i] ?? "");
+        bodyStart = i + 1;
+        continue;
+      }
+      bodyStart = i;
+      break;
+    }
+    header = preamble.join("\n");
+    treeBody = lines.slice(bodyStart).join("\n");
+  }
+
+  const fields = parseKvBlock(header);
+  const nodes = parseTreeIndentedLines(treeBody);
+  if (nodes.length < 1) return null;
+
+  const tree: LiquidTreeProps = { nodes };
+  if (fields.title) tree.title = fields.title;
+  if (fields.subtitle) tree.subtitle = fields.subtitle;
+  return tree;
+}
+
 const CHART_TYPES = new Set<LiquidChartType>([
   "bar",
   "line",
@@ -1782,32 +2163,47 @@ export function looksLikeProseNotCode(body: string): boolean {
 /**
  * Strip a trailing unclosed ``` / ```code opener when the remainder is prose
  * (models often leave a bare fence before the final statement).
+ *
+ * Uses CommonMark open/close pairing — ```tabs inside a docs sample must not
+ * count as a closer, or leftover trailing ``` wrappers get treated as balanced.
  */
 function repairTrailingUnclosedProseFence(source: string): string {
   const lines = source.split("\n");
-  let lastFence = -1;
-  let fenceCount = 0;
+  let depth = 0;
+  let openLine = -1;
+  let openLang = "";
   for (let i = 0; i < lines.length; i++) {
-    if (/^```[a-zA-Z0-9_-]*[ \t]*$/.test(lines[i])) {
-      lastFence = i;
-      fenceCount++;
+    const line = lines[i]!;
+    if (depth === 0) {
+      const open = matchFenceOpen(line);
+      if (!open) continue;
+      depth = 1;
+      openLine = i;
+      openLang = open.lang;
+      continue;
+    }
+    const open = matchFenceOpen(lines[openLine]!);
+    const ticks = open?.ticks ?? 3;
+    if (matchFenceClose(line, ticks)) {
+      depth = 0;
+      openLine = -1;
+      openLang = "";
     }
   }
-  // Even count ⇒ every opener already has a closer (incl. a trailing ```).
-  if (lastFence < 0 || fenceCount % 2 === 0) return source;
-  const after = lines.slice(lastFence + 1).join("\n");
+  if (depth === 0 || openLine < 0) return source;
+
+  const after = lines.slice(openLine + 1).join("\n");
   if (/^```/m.test(after)) return source;
-  const lang = lines[lastFence].slice(3).trim().toLowerCase();
-  if (lang && LIQUID_FENCE_LANGS.has(lang)) return source;
+  if (openLang && LIQUID_FENCE_LANGS.has(openLang)) return source;
   if (!after.trim()) {
-    return lines.slice(0, lastFence).join("\n");
+    return lines.slice(0, openLine).join("\n");
   }
   if (
-    lang === "" ||
-    PROSE_MISTAKEN_FENCE_LANGS.has(lang) ||
+    openLang === "" ||
+    PROSE_MISTAKEN_FENCE_LANGS.has(openLang) ||
     looksLikeProseNotCode(after)
   ) {
-    return [...lines.slice(0, lastFence), ...lines.slice(lastFence + 1)].join("\n");
+    return [...lines.slice(0, openLine), ...lines.slice(openLine + 1)].join("\n");
   }
   return source;
 }
@@ -1821,7 +2217,17 @@ function replaceLiquidFenceMatch(
 ): string {
   const lang = langRaw.trim().toLowerCase();
 
-  // Models wrap final statements in ```code / bare ``` — unwrap when clearly prose
+  // Liquid ```code (lang:/title:/---) wins over mistaken-prose unwrap of ```code
+  if (lang === "code") {
+    const code = parseCodeBody(body);
+    if (code) return `\n${placeholder("code", code)}\n`;
+    if (looksLikeProseNotCode(body)) {
+      return `\n${body.trim()}\n`;
+    }
+    return match;
+  }
+
+  // Models wrap final statements in bare ``` / ```text — unwrap when clearly prose
   if (
     (lang === "" || PROSE_MISTAKEN_FENCE_LANGS.has(lang)) &&
     looksLikeProseNotCode(body)
@@ -1934,6 +2340,30 @@ function replaceLiquidFenceMatch(
     return `\n${placeholder("chart", chart, chartIndex)}\n`;
   }
 
+  if (lang === "tabs") {
+    const tabs = parseTabsBody(body);
+    if (!tabs) return match;
+    return `\n${placeholder("tabs", tabs)}\n`;
+  }
+
+  if (lang === "steps") {
+    const steps = parseStepsBody(body);
+    if (!steps) return match;
+    return `\n${placeholder("steps", steps)}\n`;
+  }
+
+  if (lang === "accordion") {
+    const accordion = parseAccordionBody(body);
+    if (!accordion) return match;
+    return `\n${placeholder("accordion", accordion)}\n`;
+  }
+
+  if (lang === "tree") {
+    const tree = parseTreeBody(body);
+    if (!tree) return match;
+    return `\n${placeholder("tree", tree)}\n`;
+  }
+
   return match;
 }
 
@@ -1942,6 +2372,10 @@ function replaceLiquidFenceMatch(
  *
  * Nested liquid fences (```cite inside ```brief) are resolved innermost-first
  * so an outer fence does not close on an inner fence's backticks.
+ *
+ * Documentation fences (bare / markdown / python / …) are protected first so
+ * example ```tabs inside them stay opaque text instead of becoming placeholder HTML.
+ *
  * Mistaken prose ```code / bare ``` fences unwrap; trailing unclosed prose
  * openers are stripped.
  */
@@ -1953,18 +2387,10 @@ export function preprocessLiquidEmbeds(source: string): string {
     (_m, src: string) => `*Source: ${String(src).trim()}*`,
   );
 
-  // Body must not contain a nested fence line — forces innermost-first matching.
-  // Lang optional — bare ``` … ``` often wraps final statements.
-  const fenceRe = /^```([a-zA-Z0-9_-]*)[ \t]*\n((?:(?!^```)[\s\S])*?)^```[ \t]*$/gm;
-
-  for (let pass = 0; pass < 12; pass++) {
-    const next = out.replace(fenceRe, (match, langRaw: string, body: string, offset: number) =>
-      replaceLiquidFenceMatch(match, langRaw, body, out, offset),
-    );
-    if (next === out) break;
-    out = next;
-  }
-
+  const protectedSlots: string[] = [];
+  out = shieldNonLiquidDocumentationFences(out, protectedSlots);
+  out = processNestedLiquidFences(out);
+  out = restoreProtectedFences(out, protectedSlots);
   out = repairTrailingUnclosedProseFence(out);
 
   // Inline icons — skip inside remaining fences
@@ -1991,4 +2417,134 @@ export function preprocessLiquidEmbeds(source: string): string {
     );
   }
   return result.join("\n");
+}
+
+interface TopLevelFence {
+  openLine: number;
+  closeLine: number;
+  lang: string;
+  body: string;
+  raw: string;
+}
+
+function matchFenceOpen(line: string): { lang: string; ticks: number } | null {
+  const m = line.match(/^(````*)([a-zA-Z0-9_-]*)[ \t]*$/);
+  if (!m || m[1]!.length < 3) return null;
+  return { ticks: m[1]!.length, lang: (m[2] ?? "").toLowerCase() };
+}
+
+function matchFenceClose(line: string, openTicks: number): boolean {
+  // CommonMark: closer has no info string and at least as many backticks.
+  const m = line.match(/^(````*)[ \t]*$/);
+  if (!m || m[1]!.length < openTicks) return false;
+  return true;
+}
+
+function scanTopLevelFences(source: string): TopLevelFence[] {
+  const lines = source.split("\n");
+  const fences: TopLevelFence[] = [];
+  let i = 0;
+  while (i < lines.length) {
+    const open = matchFenceOpen(lines[i]!);
+    if (!open) {
+      i += 1;
+      continue;
+    }
+    let j = i + 1;
+    while (j < lines.length && !matchFenceClose(lines[j]!, open.ticks)) {
+      j += 1;
+    }
+    if (j >= lines.length) {
+      break;
+    }
+    const body = lines.slice(i + 1, j).join("\n");
+    let closeLine = j;
+    // Authors often wrap examples as ```\n```tabs\n...\n```\n``` — the final
+    // bare fence is a redundant outer closer. Drop it so it cannot open a new
+    // code block over trailing prose.
+    const isLiquid = Boolean(open.lang && LIQUID_FENCE_LANGS.has(open.lang));
+    if (
+      !isLiquid &&
+      bodyContainsFenceOpener(body) &&
+      j + 1 < lines.length &&
+      matchFenceClose(lines[j + 1]!, open.ticks)
+    ) {
+      closeLine = j + 1;
+    }
+    fences.push({
+      openLine: i,
+      closeLine,
+      lang: open.lang,
+      body,
+      raw: lines.slice(i, j + 1).join("\n"),
+    });
+    i = closeLine + 1;
+  }
+  return fences;
+}
+
+function bodyContainsFenceOpener(body: string): boolean {
+  return /^````*[a-zA-Z0-9_-]*[ \t]*$/m.test(body);
+}
+
+const DOC_FENCE_SLOT_RE = /\uE000LIQUID_DOC_FENCE_(\d+)\uE000/g;
+
+/**
+ * Shield non-liquid fences so innermost-first liquid rewriting cannot eat
+ * ```tabs examples inside documentation code blocks.
+ */
+function shieldNonLiquidDocumentationFences(
+  source: string,
+  slots: string[],
+): string {
+  const fences = scanTopLevelFences(source);
+  if (fences.length === 0) return source;
+
+  const lines = source.split("\n");
+  for (let i = fences.length - 1; i >= 0; i--) {
+    const fence = fences[i]!;
+    const isLiquid = Boolean(fence.lang && LIQUID_FENCE_LANGS.has(fence.lang));
+    if (isLiquid) continue;
+
+    const mistakenProse =
+      (!fence.lang || PROSE_MISTAKEN_FENCE_LANGS.has(fence.lang)) &&
+      !bodyContainsFenceOpener(fence.body) &&
+      looksLikeProseNotCode(fence.body);
+
+    if (mistakenProse) {
+      const bodyLines = fence.body.length > 0 ? fence.body.split("\n") : [];
+      lines.splice(fence.openLine, fence.closeLine - fence.openLine + 1, ...bodyLines);
+      continue;
+    }
+
+    const token = `\uE000LIQUID_DOC_FENCE_${slots.length}\uE000`;
+    slots.push(fence.raw);
+    lines.splice(fence.openLine, fence.closeLine - fence.openLine + 1, token);
+  }
+  return lines.join("\n");
+}
+
+function restoreProtectedFences(source: string, slots: string[]): string {
+  if (slots.length === 0) return source;
+  return source.replace(DOC_FENCE_SLOT_RE, (_m, index: string) => {
+    const slot = slots[Number(index)];
+    return slot ?? "";
+  });
+}
+
+/** Innermost-first liquid rewrite (nest hosts + top-level liquid leaves). */
+function processNestedLiquidFences(body: string): string {
+  const fenceRe =
+    /^```([a-zA-Z0-9_-]*)[ \t]*\n((?:(?!^```)[\s\S])*?)^```[ \t]*$/gm;
+  let out = body;
+  for (let pass = 0; pass < 12; pass++) {
+    const next = out.replace(
+      fenceRe,
+      (match, langRaw: string, inner: string, offset: number) =>
+        replaceLiquidFenceMatch(match, langRaw, inner, out, offset),
+    );
+    if (next === out) break;
+    out = next;
+  }
+  return out;
 }

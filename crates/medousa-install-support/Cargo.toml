@@ -1,6 +1,6 @@
 [package]
 name = "medousa-install-support"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 description = "Install manifests, package catalog, and model downloads for Medousa Installer (no engine deps)"
 

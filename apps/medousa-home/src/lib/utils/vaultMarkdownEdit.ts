@@ -4,11 +4,16 @@ import {
   SLASH_TOC_TEMPLATE,
 } from "$lib/utils/vaultTemplates";
 import {
+  LIQUID_ACCORDION_TEMPLATE,
   LIQUID_CALLOUT_TEMPLATE,
   LIQUID_CARD_TEMPLATE,
   LIQUID_CHART_TEMPLATE,
+  LIQUID_CODE_TEMPLATE,
   LIQUID_DASHBOARD_TEMPLATE,
   LIQUID_REPORT_TEMPLATE,
+  LIQUID_STEPS_TEMPLATE,
+  LIQUID_TABS_TEMPLATE,
+  LIQUID_TREE_TEMPLATE,
 } from "$lib/utils/liquidFenceTemplates";
 import {
   MARKDOWN_COLOR_IDS,
@@ -53,6 +58,11 @@ export type SlashBlockId =
   | "liquid_chart"
   | "liquid_dashboard"
   | "liquid_report"
+  | "liquid_tabs"
+  | "liquid_steps"
+  | "liquid_accordion"
+  | "liquid_code"
+  | "liquid_tree"
   | "embed"
   | "view"
   | "board"
@@ -358,6 +368,11 @@ export function insertSlashBlock(
     liquid_chart: LIQUID_CHART_TEMPLATE,
     liquid_dashboard: LIQUID_DASHBOARD_TEMPLATE,
     liquid_report: LIQUID_REPORT_TEMPLATE,
+    liquid_tabs: LIQUID_TABS_TEMPLATE,
+    liquid_steps: LIQUID_STEPS_TEMPLATE,
+    liquid_accordion: LIQUID_ACCORDION_TEMPLATE,
+    liquid_code: LIQUID_CODE_TEMPLATE,
+    liquid_tree: LIQUID_TREE_TEMPLATE,
     embed: "",
     view: "",
     board: SLASH_BOARD_TEMPLATE,
@@ -481,4 +496,64 @@ export function selectedLineCount(
   selectionEnd: number,
 ): number {
   return selectedLines(content, selectionStart, selectionEnd).length;
+}
+
+const INDENT = "  ";
+
+/** Indent the current line or every selected line with two spaces. */
+export function indentLines(
+  content: string,
+  selectionStart: number,
+  selectionEnd: number,
+): EditResult {
+  const startLine = lineRangeAt(content, selectionStart).start;
+  const endLine = lineRangeAt(content, Math.max(selectionStart, selectionEnd - 1)).end;
+  const block = content.slice(startLine, endLine);
+  const lines = block.split("\n");
+  const nextBlock = lines.map((line) => `${INDENT}${line}`).join("\n");
+  const next = `${content.slice(0, startLine)}${nextBlock}${content.slice(endLine)}`;
+  const added = lines.length * INDENT.length;
+  return {
+    content: next,
+    selectionStart: selectionStart + INDENT.length,
+    selectionEnd: selectionEnd + added,
+  };
+}
+
+/** Remove up to two leading spaces (or one leading tab) from each selected line. */
+export function outdentLines(
+  content: string,
+  selectionStart: number,
+  selectionEnd: number,
+): EditResult {
+  const startLine = lineRangeAt(content, selectionStart).start;
+  const endLine = lineRangeAt(content, Math.max(selectionStart, selectionEnd - 1)).end;
+  const block = content.slice(startLine, endLine);
+  const lines = block.split("\n");
+  let removedBeforeCursor = 0;
+  let removedTotal = 0;
+  const nextLines = lines.map((line, index) => {
+    let removed = 0;
+    let next = line;
+    if (line.startsWith("\t")) {
+      next = line.slice(1);
+      removed = 1;
+    } else if (line.startsWith(INDENT)) {
+      next = line.slice(INDENT.length);
+      removed = INDENT.length;
+    } else if (line.startsWith(" ")) {
+      next = line.slice(1);
+      removed = 1;
+    }
+    if (index === 0) removedBeforeCursor = removed;
+    removedTotal += removed;
+    return next;
+  });
+  const nextBlock = nextLines.join("\n");
+  const next = `${content.slice(0, startLine)}${nextBlock}${content.slice(endLine)}`;
+  return {
+    content: next,
+    selectionStart: Math.max(startLine, selectionStart - removedBeforeCursor),
+    selectionEnd: Math.max(startLine, selectionEnd - removedTotal),
+  };
 }

@@ -1,7 +1,7 @@
 /** M8c — vault note attachments in frontmatter (paths to external files). */
 
 import { isSpreadsheetPath } from "$lib/utils/spreadsheetPreview";
-import { stripFrontmatter } from "$lib/utils/vaultFrontmatter";
+import { serializeFrontmatter, stripFrontmatter } from "$lib/utils/vaultFrontmatter";
 
 export interface VaultAttachment {
   path: string;
@@ -187,7 +187,7 @@ export function setAttachments(content: string, attachments: VaultAttachment[]):
     return body;
   }
 
-  return `---\n${baseLines.join("\n")}\n---\n\n${body.replace(/^\n+/, "")}`;
+  return serializeFrontmatter(baseLines.join("\n"), body);
 }
 
 export function addAttachments(

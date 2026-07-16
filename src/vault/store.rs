@@ -183,7 +183,11 @@ impl VaultStore {
             let entry = entry?;
             let path = entry.path();
             if path.is_dir() {
-                if path.file_name().and_then(|name| name.to_str()) == Some(".trash") {
+                let dir_name = path.file_name().and_then(|name| name.to_str()).unwrap_or("");
+                if dir_name == ".trash" || dir_name == ".obsidian" || dir_name == ".git" {
+                    continue;
+                }
+                if dir_name.starts_with('.') {
                     continue;
                 }
                 self.scan_dir(root, &path, source.clone(), drafts)?;
@@ -196,6 +200,9 @@ impl VaultStore {
             if file_name == INDEX_FILE || file_name == LINKS_FILE {
                 continue;
             }
+            if !Self::is_indexable_vault_file(&path) {
+                continue;
+            }
             let relative = path
                 .strip_prefix(root)
                 .ok()
@@ -206,9 +213,15 @@ impl VaultStore {
                 Ok(value) => value,
                 Err(_) => continue,
             };
-            let body = fs::read_to_string(&path)
-                .with_context(|| format!("read vault note {}", path.display()))?;
-            let metadata = fs::metadata(&path)?;
+            // Skip binary / non-UTF8 instead of failing the whole vault scan.
+            let body = match fs::read_to_string(&path) {
+                Ok(body) => body,
+                Err(_) => continue,
+            };
+            let metadata = match fs::metadata(&path) {
+                Ok(metadata) => metadata,
+                Err(_) => continue,
+            };
             let modified = Self::file_timestamp(metadata.modified());
             let created = Self::file_timestamp(metadata.created());
 
@@ -221,6 +234,35 @@ impl VaultStore {
             });
         }
         Ok(())
+    }
+
+    /// Prefer markdown and known text; skip binaries so Obsidian assets don't break scans.
+    fn is_indexable_vault_file(path: &Path) -> bool {
+        let ext = path
+            .extension()
+            .and_then(|value| value.to_str())
+            .unwrap_or("")
+            .to_ascii_lowercase();
+        matches!(
+            ext.as_str(),
+            "md" | "markdown"
+                | "txt"
+                | "csv"
+                | "tsv"
+                | "json"
+                | "yaml"
+                | "yml"
+                | "toml"
+                | "html"
+                | "htm"
+                | "svg"
+                | "xml"
+                | "css"
+                | "js"
+                | "ts"
+                | "mjs"
+                | "cjs"
+        )
     }
 
     fn merge_discovered(&self, discovered: HashMap<String, VaultIndexEntry>) {

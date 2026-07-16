@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Ellipsis, FileDown, MessageSquare, Send } from "@lucide/svelte";
+  import { Ellipsis, FileDown, FileText, MessageSquare, Send } from "@lucide/svelte";
   import type { WorkCard } from "$lib/types/workspace";
   import { formatCardTitle } from "$lib/utils/formatWork";
   import type { VaultNoteKind } from "$lib/utils/vaultFrontmatter";
@@ -35,6 +35,7 @@
     onSendToWork?: () => void | Promise<void>;
     onSave?: () => void | Promise<void>;
     onOpenNoteActions?: () => void;
+    onOpenLooseMarkdown?: () => void | Promise<void>;
     onInsertWeeklyReview?: () => void;
     onPromoteJournal?: () => void | Promise<void>;
     onPromoteProject?: () => void | Promise<void>;
@@ -62,6 +63,7 @@
     onSendToWork,
     onSave,
     onOpenNoteActions,
+    onOpenLooseMarkdown,
     onInsertWeeklyReview,
     onPromoteJournal,
     onPromoteProject,
@@ -71,9 +73,20 @@
   let open = $state(false);
 
   const items = $derived.by((): MenuItem[] => {
-    if (!selectedPath) return [];
-
     const rows: MenuItem[] = [];
+
+    if (onOpenLooseMarkdown) {
+      rows.push({
+        id: "open-loose",
+        label: "Open markdown file…",
+        onClick: async () => {
+          open = false;
+          await onOpenLooseMarkdown();
+        },
+      });
+    }
+
+    if (!selectedPath) return rows;
 
     if (onAskInChat) {
       rows.push({
@@ -254,6 +267,8 @@
               <Send size={14} aria-hidden="true" />
             {:else if item.id === "export-pdf"}
               <FileDown size={14} aria-hidden="true" />
+            {:else if item.id === "open-loose"}
+              <FileText size={14} aria-hidden="true" />
             {/if}
             {item.label}
           </button>

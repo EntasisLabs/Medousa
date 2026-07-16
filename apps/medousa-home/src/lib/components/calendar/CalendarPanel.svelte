@@ -122,9 +122,11 @@
   async function handleImportFile(file: File | undefined) {
     if (!file) return;
     try {
+      calendar.error = null;
       const text = await file.text();
       await calendar.importIcs(text);
     } catch (err) {
+      calendar.notice = null;
       calendar.error = err instanceof Error ? err.message : String(err);
     }
   }
@@ -222,6 +224,8 @@
 
   {#if calendar.error}
     <p class="calendar-error">{calendar.error}</p>
+  {:else if calendar.notice}
+    <p class="calendar-notice">{calendar.notice}</p>
   {/if}
 
   <div class="calendar-body">
@@ -578,6 +582,13 @@
     padding: 0.45rem 1.1rem;
     font-size: 0.75rem;
     color: rgb(var(--color-error-400));
+  }
+
+  .calendar-notice {
+    margin: 0;
+    padding: 0.45rem 1.1rem;
+    font-size: 0.75rem;
+    color: rgb(var(--color-primary-300));
   }
 
   .calendar-body {

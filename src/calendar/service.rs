@@ -148,13 +148,33 @@ impl CalendarService {
         let mut cal = Self::load_or_create(&calendar_path)?;
         let mut imported = 0usize;
         let mut updated = 0usize;
+        let mut skipped = 0usize;
+        let mut warnings = Vec::new();
 
         for component in incoming.components {
-            let CalendarComponent::Event(event) = component else {
+            let CalendarComponent::Event(mut event) = component else {
+                skipped += 1;
+                let kind = match &component {
+                    CalendarComponent::Todo(_) => "VTODO",
+                    CalendarComponent::Venue(_) => "VVENUE",
+                    CalendarComponent::Other(_) => "other",
+                    CalendarComponent::Event(_) => unreachable!(),
+                    _ => "unknown",
+                };
+                warnings.push(format!("skipped non-event component ({kind})"));
                 continue;
             };
-            let Some(uid) = event.get_uid().map(str::to_string) else {
-                continue;
+            let uid = match event
+                .get_uid()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+            {
+                Some(uid) => uid.to_string(),
+                None => {
+                    let uid = format!("{}@medousa", Uuid::new_v4());
+                    event.uid(&uid);
+                    uid
+                }
             };
             if let Some(idx) = cal.components.iter().position(|existing| {
                 matches!(existing, CalendarComponent::Event(e) if e.get_uid() == Some(uid.as_str()))
@@ -171,6 +191,8 @@ impl CalendarService {
             calendar_path,
             imported,
             updated,
+            skipped,
+            warnings,
         })
     }
 
@@ -324,15 +346,39 @@ fn end_to_utc(value: DatePerhapsTime) -> Option<DateTime<Utc>> {
     }
 }
 
+/// Map common Windows/Outlook TZIDs to IANA names when chrono_tz cannot parse them.
+fn windows_tzid_to_iana(tzid: &str) -> Option<&'static str> {
+    match tzid.trim() {
+        "Pacific Standard Time" => Some("America/Los_Angeles"),
+        "Eastern Standard Time" => Some("America/New_York"),
+        "Central Standard Time" => Some("America/Chicago"),
+        "Mountain Standard Time" => Some("America/Denver"),
+        "GMT Standard Time" => Some("Europe/London"),
+        "UTC" | "Coordinated Universal Time" => Some("Etc/UTC"),
+        _ => None,
+    }
+}
+
+fn resolve_tz(tzid: &str) -> Option<chrono_tz::Tz> {
+    chrono_tz::Tz::from_str(tzid)
+        .ok()
+        .or_else(|| windows_tzid_to_iana(tzid).and_then(|iana| chrono_tz::Tz::from_str(iana).ok()))
+}
+
 fn calendar_dt_to_utc(value: CalendarDateTime) -> Option<DateTime<Utc>> {
     match value {
         CalendarDateTime::Floating(naive) => Some(Utc.from_utc_datetime(&naive)),
         CalendarDateTime::Utc(dt) => Some(dt),
         CalendarDateTime::WithTimezone { date_time, tzid } => {
-            let tz = chrono_tz::Tz::from_str(&tzid).ok()?;
-            tz.from_local_datetime(&date_time)
-                .single()
-                .map(|dt| dt.with_timezone(&Utc))
+            if let Some(tz) = resolve_tz(&tzid) {
+                return tz
+                    .from_local_datetime(&date_time)
+                    .single()
+                    .map(|dt| dt.with_timezone(&Utc))
+                    .or_else(|| Some(Utc.from_utc_datetime(&date_time)));
+            }
+            // Unknown TZID — treat as floating/UTC rather than dropping the event.
+            Some(Utc.from_utc_datetime(&date_time))
         }
     }
 }
@@ -577,6 +623,59 @@ mod tests {
             )
             .expect("list empty");
             assert!(listed.events.is_empty());
+        });
+    }
+
+    #[test]
+    fn import_missing_uid_and_windows_tzid() {
+        with_temp_vault(|| {
+            let ics = [
+                "BEGIN:VCALENDAR",
+                "VERSION:2.0",
+                "PRODID:-//Test//EN",
+                "BEGIN:VEVENT",
+                "SUMMARY:Outlook lunch",
+                "DTSTART;TZID=Pacific Standard Time:20260715T120000",
+                "DTEND;TZID=Pacific Standard Time:20260715T130000",
+                "END:VEVENT",
+                "BEGIN:VTODO",
+                "SUMMARY:Skipped todo",
+                "END:VTODO",
+                "END:VCALENDAR",
+            ]
+            .join("\r\n");
+
+            let result = CalendarService::import(&CalendarImportRequest {
+                ics,
+                calendar_path: None,
+            })
+            .expect("import");
+            assert_eq!(result.imported, 1);
+            assert_eq!(result.updated, 0);
+            assert_eq!(result.skipped, 1);
+            assert!(
+                result
+                    .warnings
+                    .iter()
+                    .any(|warning| warning.contains("VTODO")),
+                "expected VTODO skip warning, got {:?}",
+                result.warnings
+            );
+
+            let from = Utc.with_ymd_and_hms(2026, 7, 15, 0, 0, 0).unwrap();
+            let to = Utc.with_ymd_and_hms(2026, 7, 16, 0, 0, 0).unwrap();
+            let listed = CalendarService::list_events(None, Some(from), Some(to)).expect("list");
+            let event = listed
+                .events
+                .iter()
+                .find(|event| event.summary == "Outlook lunch")
+                .expect("imported Outlook lunch event");
+            assert!(!event.uid.is_empty(), "missing UID should be generated");
+            // Pacific Daylight Time in July is UTC-7 → 12:00 local = 19:00 UTC.
+            assert_eq!(
+                event.dtstart,
+                Utc.with_ymd_and_hms(2026, 7, 15, 19, 0, 0).unwrap()
+            );
         });
     }
 }

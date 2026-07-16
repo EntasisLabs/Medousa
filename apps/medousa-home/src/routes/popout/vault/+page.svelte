@@ -21,6 +21,7 @@
     setVaultStickyWindowTitle,
   } from "$lib/window";
   import { connectWorkshop } from "$lib/workshopConnection";
+  import { formatShortcut } from "$lib/platform";
 
   let alwaysOnTop = $state(true);
   let loadingPath = $state(true);
@@ -169,7 +170,7 @@
       <button
         type="button"
         class="vault-sticky-icon"
-        title="Find note (⌘O)"
+        title="Find note ({formatShortcut('O')})"
         aria-label="Find note"
         onclick={() => (findOpen = true)}
       >
@@ -178,7 +179,7 @@
       <button
         type="button"
         class="vault-sticky-icon"
-        title="New note (⌘N)"
+        title="New note ({formatShortcut('N')})"
         aria-label="New note"
         onclick={() => void openNewNote()}
       >

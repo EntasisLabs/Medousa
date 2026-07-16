@@ -1,6 +1,7 @@
 <script lang="ts">
   import {
     BookOpen,
+    FileText,
     FolderOpen,
     Inbox,
     Pin,
@@ -10,6 +11,7 @@
   } from "@lucide/svelte";
   import { externalDesk } from "$lib/stores/externalDesk.svelte";
   import { vault } from "$lib/stores/vault.svelte";
+  import { canUseLocalVaultFilesystem } from "$lib/utils/vaultFilesystem";
 
   let captureLine = $state("");
 
@@ -41,6 +43,10 @@
 
   async function handlePinFolder() {
     await externalDesk.pinFolder();
+  }
+
+  async function handleOpenMarkdown() {
+    await vault.openLooseMarkdownFile();
   }
 </script>
 
@@ -103,6 +109,16 @@
     >
       New note…
     </button>
+    {#if canUseLocalVaultFilesystem()}
+      <button
+        type="button"
+        class="btn variant-soft-surface"
+        onclick={() => void handleOpenMarkdown()}
+      >
+        <FileText size={16} strokeWidth={2} />
+        Open markdown file…
+      </button>
+    {/if}
     {#if vault.lastNotePath}
       <button type="button" class="btn variant-ghost-surface" onclick={() => void handleOpenLast()}>
         Open last note

@@ -74,6 +74,7 @@
             label={artifact.label}
             mime={artifact.mime}
             heightPx={artifact.heightPx ?? 900}
+            rootArtifactId={artifact.rootArtifactId}
             bare={true}
             mode="fullscreen"
           />

@@ -139,6 +139,7 @@
               label={artifact.label}
               mime={artifact.mime}
               heightPx={artifact.heightPx}
+              rootArtifactId={artifact.rootArtifactId}
               bare={true}
               mode="inline"
               onOpenFull={() => openPanel(artifact)}

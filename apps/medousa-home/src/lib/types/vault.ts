@@ -67,6 +67,8 @@ export interface VaultRootView {
   path: string;
   isDefault: boolean;
   active: boolean;
+  /** Co-located Obsidian vault (`.obsidian` present). */
+  isObsidian?: boolean;
 }
 
 export interface VaultRootsResponse {

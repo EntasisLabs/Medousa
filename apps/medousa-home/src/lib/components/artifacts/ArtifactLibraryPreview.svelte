@@ -96,6 +96,7 @@
         artifactId={artifact.artifact_id}
         label={artifact.label}
         mime="text/html"
+        rootArtifactId={artifact.root_artifact_id}
         mode="panel"
         bare={true}
         manageable={true}

@@ -1,6 +1,6 @@
 /** Phase E — markdown-native kanban boards (`medousa-board` frontmatter + ## columns). */
 
-import { normalizeKind, stripFrontmatter } from "$lib/utils/vaultFrontmatter";
+import { normalizeKind, serializeFrontmatter, stripFrontmatter } from "$lib/utils/vaultFrontmatter";
 
 export interface KanbanCard {
   text: string;
@@ -188,8 +188,7 @@ export function kanbanColumnsFromContent(markdown: string): KanbanColumn[] {
 }
 
 export function wrapWithKanbanFrontmatter(body: string): string {
-  const trimmed = body.replace(/^\n+/, "");
-  return `---\nkind: board\nmedousa-board: basic\n---\n\n${trimmed}`;
+  return serializeFrontmatter("kind: board\nmedousa-board: basic", body);
 }
 
 /** Ensure board frontmatter so slash `/board` activates board mode. */
@@ -202,7 +201,7 @@ export function ensureKanbanBoardFrontmatter(markdown: string): string {
     if (!lines.some((line) => line.trimStart().toLowerCase().startsWith("medousa-board:"))) {
       lines.push("medousa-board: basic");
     }
-    return `---\n${lines.join("\n")}\n---\n\n${content}`;
+    return serializeFrontmatter(lines.join("\n"), content);
   }
   const { content, frontmatter } = stripFrontmatter(markdown);
   if (frontmatter == null) return wrapWithKanbanFrontmatter(content);
@@ -219,5 +218,5 @@ export function ensureKanbanBoardFrontmatter(markdown: string): string {
   if (!nextLines.some((line) => line.trimStart().toLowerCase().startsWith("medousa-board:"))) {
     nextLines.push("medousa-board: basic");
   }
-  return `---\n${nextLines.join("\n")}\n---\n\n${content}`;
+  return serializeFrontmatter(nextLines.join("\n"), content);
 }

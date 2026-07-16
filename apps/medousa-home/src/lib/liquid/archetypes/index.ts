@@ -22,6 +22,11 @@ export { card } from "./molecules/card/card";
 export { carousel } from "./molecules/carousel/carousel";
 export { actionRow } from "./molecules/action_row/actionRow";
 export { observability } from "./molecules/observability/observability";
+export { tabs } from "./molecules/tabs/tabs";
+export { steps } from "./molecules/steps/steps";
+export { accordion } from "./molecules/accordion/accordion";
+export { code } from "./molecules/code/code";
+export { tree } from "./molecules/tree/tree";
 
 // layout
 export { stack } from "./layout/stack/stack";

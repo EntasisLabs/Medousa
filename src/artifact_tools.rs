@@ -471,6 +471,13 @@ impl StasisTool for CognitionArtifactWriteTool {
         .map_err(StasisError::PortFailure)?;
 
         let previous_artifact_id = record.supersedes_artifact_id.clone();
+        if let Some(ref old_id) = previous_artifact_id {
+            let _ = crate::artifact_store::rebind_artifact_aliases(
+                &record.session_id,
+                old_id,
+                &record.artifact_id,
+            );
+        }
         Ok(json!({
             "ok": true,
             "artifact_id": record.artifact_id,

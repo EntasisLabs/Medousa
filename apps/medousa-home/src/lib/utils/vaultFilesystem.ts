@@ -1,8 +1,10 @@
 /** Resolve vault note paths on disk (desktop Tauri) — only when co-located. */
 
+import { invoke } from "@tauri-apps/api/core";
 import { listVaultRoots } from "$lib/daemon";
 import { isCoLocatedWorkshop } from "$lib/utils/workshopLocality";
 import { isTauri } from "$lib/window";
+import { readExternalFile } from "$lib/utils/externalDeskApi";
 
 let cachedVaultRoot: { path: string; fetchedAt: number } | null = null;
 const CACHE_MS = 5_000;
@@ -96,4 +98,44 @@ export async function openFileWithDefaultApp(absolutePath: string): Promise<void
 /** Whether Finder / open-with-default are available for vault notes on this connection. */
 export function canUseLocalVaultFilesystem(): boolean {
   return isTauri() && isCoLocatedWorkshop();
+}
+
+/** Pick a single markdown file without registering a vault root. */
+export async function pickMarkdownFile(): Promise<string | null> {
+  if (!isTauri() || !isCoLocatedWorkshop()) return null;
+  try {
+    const { open } = await import("@tauri-apps/plugin-dialog");
+    const selected = await open({
+      multiple: false,
+      title: "Open markdown file",
+      filters: [{ name: "Markdown", extensions: ["md", "markdown"] }],
+    });
+    if (!selected) return null;
+    return Array.isArray(selected) ? selected[0] ?? null : selected;
+  } catch {
+    return null;
+  }
+}
+
+export async function readAbsoluteTextFile(absolutePath: string): Promise<string> {
+  const payload = await readExternalFile(absolutePath);
+  if (payload.kind !== "text") {
+    throw new Error("Expected a text markdown file.");
+  }
+  return payload.content;
+}
+
+export async function writeAbsoluteTextFile(
+  absolutePath: string,
+  content: string,
+): Promise<void> {
+  if (!isTauri()) {
+    throw new Error("Saving a loose file needs the Medousa desktop app.");
+  }
+  const bytes = Array.from(new TextEncoder().encode(content));
+  await invoke("write_file_bytes", { path: absolutePath, bytes });
+}
+
+export function fileNameFromAbsolutePath(absolutePath: string): string {
+  return absolutePath.split(/[/\\]/).pop() ?? absolutePath;
 }

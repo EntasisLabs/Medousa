@@ -12,9 +12,11 @@
   import {
     applyMarkdownFormat,
     applyMarkdownColor,
+    indentLines,
     insertSlashBlock,
     insertTextAtCursor,
     insertVaultWikilink,
+    outdentLines,
     replaceSlashWith,
     serializeTransclusion,
     shouldOpenSlashMenu,
@@ -25,6 +27,7 @@
   } from "$lib/utils/vaultMarkdownEdit";
   import { vaultDisplayTitle } from "$lib/utils/formatVault";
   import { handleVaultNoteContextMenuEvent } from "$lib/utils/vaultContextMenuEvents";
+  import { createVaultScrollSync } from "$lib/utils/vaultScrollSync";
 
   interface Props {
     content: string;
@@ -39,6 +42,8 @@
     splitMin?: number;
     splitMax?: number;
     onSplitResize?: (width: number) => void;
+    /** Preview scroll container for bidirectional sync when split is on. */
+    previewScrollEl?: HTMLElement | null;
     preview?: Snippet;
     formatCompact?: boolean;
     showFloat?: boolean;
@@ -57,6 +62,7 @@
     splitMin = 280,
     splitMax = 720,
     onSplitResize,
+    previewScrollEl = null,
     preview,
     formatCompact = false,
     showFloat = false,
@@ -64,6 +70,7 @@
   }: Props = $props();
 
   let textareaEl = $state<HTMLTextAreaElement | null>(null);
+  const scrollSync = createVaultScrollSync();
   let textareaBackdropEl = $state<HTMLElement | null>(null);
   let slashMenuEl = $state<ReturnType<typeof VaultSlashMenu> | null>(null);
   let draft = $state("");
@@ -121,6 +128,23 @@
     if (!textareaEl || !textareaBackdropEl || textareaBackdropEl.hidden) return;
     syncTextareaFindScroll(textareaEl, textareaBackdropEl);
   }
+
+  function handleTextareaScroll() {
+    syncFindScroll();
+    if (split && textareaEl && previewScrollEl) {
+      scrollSync.sync(textareaEl, previewScrollEl);
+    }
+  }
+
+  $effect(() => {
+    if (!split || !previewScrollEl) return;
+    const previewEl = previewScrollEl;
+    const onPreviewScroll = () => {
+      if (textareaEl) scrollSync.sync(previewEl, textareaEl);
+    };
+    previewEl.addEventListener("scroll", onPreviewScroll, { passive: true });
+    return () => previewEl.removeEventListener("scroll", onPreviewScroll);
+  });
 
   function captureSelection() {
     if (!textareaEl) return;
@@ -286,6 +310,15 @@
       captureSelection();
       return;
     }
+    if (event.key === "Tab" && !event.altKey && !event.metaKey && !event.ctrlKey) {
+      event.preventDefault();
+      captureSelection();
+      const result = event.shiftKey
+        ? outdentLines(draft, selectionStart, selectionEnd)
+        : indentLines(draft, selectionStart, selectionEnd);
+      void applyEdit(result);
+      return;
+    }
     if (event.key === "Escape" && slashOpen) {
       event.preventDefault();
       closeSlashMenu();
@@ -357,7 +390,7 @@
             {disabled}
             oninput={handleInput}
             onkeydown={handleKeydown}
-            onscroll={syncFindScroll}
+            onscroll={handleTextareaScroll}
             oncontextmenu={handleContextMenu}
             onselect={() => {
               captureSelection();
@@ -391,7 +424,7 @@
           {disabled}
           oninput={handleInput}
           onkeydown={handleKeydown}
-          onscroll={syncFindScroll}
+          onscroll={handleTextareaScroll}
           oncontextmenu={handleContextMenu}
           onselect={() => {
             captureSelection();

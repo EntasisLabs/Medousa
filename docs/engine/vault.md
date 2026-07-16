@@ -24,6 +24,14 @@ Multi-workshop / data dir: [upgrade-and-data-dir runbook](../runbooks/upgrade-an
 
 ---
 
+## Multi-root & Obsidian
+
+Add another markdown folder on the same Mac via **Add vault folder…** (Library sidebar). Roots with a `.obsidian` directory are labeled **Obsidian** in the picker. Medousa indexes `*.md` and other known text files, skips `.obsidian` / binary assets, and does not inject workshop semantic tags into Obsidian or other external roots on write — so YAML frontmatter stays yours.
+
+Same-PC co-located Obsidian vaults work as an additional root; switch with the vault folder picker. For a single `.md` without registering a root, use **Open markdown file…**.
+
+---
+
 ## Agent tools
 
 | Tool | Purpose |

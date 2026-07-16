@@ -1,6 +1,6 @@
 [package]
 name = "medousa-local-inference"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 description = "Local inference catalog/hardware/engine logic and the standalone medousa_local offline-brain binary (isolated from the medousa app crate)"
 

@@ -65,6 +65,29 @@ export function isValidStoreKey(key: string): boolean {
 }
 
 /**
+ * Derive a stable MedousaStore scope id from an artifact / root artifact id.
+ * Canonical `art:…` ids are not valid store scopes (need kebab-case), so chat
+ * embeds hash them to `art-kv-{12 hex chars}`. Same input → same output.
+ */
+export function artifactStoreScopeId(rootOrArtifactId: string): string {
+  const input = rootOrArtifactId.trim() || "artifact";
+  // FNV-1a 32-bit → 8 hex, then mix a second pass for 12 hex chars total.
+  let h1 = 0x811c9dc5;
+  let h2 = 0x811c9dc5 ^ 0x9e3779b9;
+  for (let i = 0; i < input.length; i++) {
+    const c = input.charCodeAt(i);
+    h1 ^= c;
+    h1 = Math.imul(h1, 0x01000193);
+    h2 ^= c;
+    h2 = Math.imul(h2, 0x01000193);
+  }
+  const hex =
+    (h1 >>> 0).toString(16).padStart(8, "0") +
+    (h2 >>> 0).toString(16).padStart(8, "0");
+  return `art-kv-${hex.slice(0, 12)}`;
+}
+
+/**
  * Host-backed key/value store for sandboxed presentation artifacts.
  * Requires `window.__MEDOUSA_STORE__.componentId` injected by the host.
  */
