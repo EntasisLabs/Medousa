@@ -86,8 +86,10 @@
     vault.isLooseFile && vault.looseFilePath
       ? (vault.looseFilePath.split(/[/\\]/).pop() ?? vault.looseFilePath)
       : vault.selectedPath
-        ? (vault.labelByPathMap.get(vault.selectedPath) ??
-          vaultDisplayTitle(vault.title, vault.selectedPath))
+        ? // Prefer live draft title so Properties edits update chrome immediately.
+          vaultDisplayTitle(vault.title, vault.selectedPath) ||
+          vault.labelByPathMap.get(vault.selectedPath) ||
+          "Untitled"
         : "Library",
   );
 
@@ -646,6 +648,9 @@
           <VaultKindBadge
             kind={vault.selectedKind}
             path={vault.selectedPath}
+            interactive
+            disabled={vault.noteLoading || vault.saving}
+            onKindChange={(kind) => vault.setNoteKind(kind)}
           />
         {/if}
       </div>

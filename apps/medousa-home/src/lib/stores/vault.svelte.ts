@@ -59,9 +59,12 @@ import {
 } from "$lib/utils/vaultTemplates";
 import {
   insertTextAtSection,
+  normalizeKind,
+  parseFrontmatterTitle,
   resolveKind,
   setFrontmatterKind,
   sortVaultTagsForDisplay,
+  stripFrontmatter,
   type VaultNoteKind,
 } from "$lib/utils/vaultFrontmatter";
 import { workshopSessionIdForVaultSave } from "$lib/utils/vaultNoteWorkshop";
@@ -1253,6 +1256,11 @@ export class VaultStore {
     }
     this.content = nextContent;
     this.dirty = true;
+    const { frontmatter } = stripFrontmatter(nextContent);
+    const fmTitle = parseFrontmatterTitle(frontmatter).trim();
+    if (fmTitle) {
+      this.title = fmTitle;
+    }
     if (options?.reloadEditors) {
       this.bumpContentSync();
     }
@@ -1274,6 +1282,16 @@ export class VaultStore {
       this.saveStatus = "unsaved";
     }
     this.scheduleAutosave();
+  }
+
+  /** Update note kind in frontmatter and chrome immediately. */
+  setNoteKind(kind: VaultNoteKind) {
+    if (!this.selectedPath || this.isLooseFile) return;
+    const next = normalizeKind(kind);
+    this.selectedKind = next;
+    this.markDirty(setFrontmatterKind(this.content, next), {
+      reloadEditors: true,
+    });
   }
 
   private applySaveResponse(response: VaultNoteContentResponse["note"]) {

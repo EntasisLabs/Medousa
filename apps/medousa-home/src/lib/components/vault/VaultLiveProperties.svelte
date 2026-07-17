@@ -1,19 +1,16 @@
 <script lang="ts">
   /**
-   * Cursor-like quiet properties for Live — title, kind, tags.
+   * Live properties — title + human tags as a living instrument.
+   * Kind lives on the chrome pill; workshop tags stay in Build/YAML.
    */
+  import { tick } from "svelte";
+  import { AlignLeft, ChevronRight, Plus, Tag, X } from "@lucide/svelte";
   import {
     isWorkshopVaultTag,
-    kindLabel,
-    normalizeKind,
-    parseFrontmatterKindValue,
     parseFrontmatterTitle,
-    setFrontmatterKindYaml,
     setFrontmatterTagsYaml,
     setFrontmatterTitleYaml,
     sortVaultTagsForDisplay,
-    VAULT_KIND_OPTIONS,
-    type VaultNoteKind,
   } from "$lib/utils/vaultFrontmatter";
 
   interface Props {
@@ -33,34 +30,27 @@
     onFrontmatterChange,
   }: Props = $props();
 
+  let open = $state(true);
   let titleDraft = $state("");
-  let kindDraft = $state<VaultNoteKind>("note");
   let addingTag = $state(false);
   let newTag = $state("");
-  let showWorkshop = $state(false);
+  let titleFocused = $state(false);
+  let titleInputEl = $state<HTMLInputElement | null>(null);
+  let tagInputEl = $state<HTMLInputElement | null>(null);
 
-  const orderedTags = $derived(sortVaultTagsForDisplay(tags));
-  const humanTags = $derived(orderedTags.filter((t) => !isWorkshopVaultTag(t)));
-  const workshopTags = $derived(orderedTags.filter((t) => isWorkshopVaultTag(t)));
-  const visibleTags = $derived(
-    showWorkshop ? orderedTags : humanTags,
+  const humanTags = $derived(
+    sortVaultTagsForDisplay(tags).filter((t) => !isWorkshopVaultTag(t)),
   );
+  const tagsEmpty = $derived(humanTags.length === 0 && !addingTag);
 
   $effect(() => {
     const fromFm = parseFrontmatterTitle(frontmatter);
     titleDraft = fromFm || fallbackTitle;
-    const rawKind = parseFrontmatterKindValue(frontmatter);
-    kindDraft = normalizeKind(rawKind || "note");
   });
 
   function commitTitle() {
+    titleFocused = false;
     const next = setFrontmatterTitleYaml(frontmatter, titleDraft);
-    onFrontmatterChange(next || null);
-  }
-
-  function commitKind(kind: VaultNoteKind) {
-    kindDraft = kind;
-    const next = setFrontmatterKindYaml(frontmatter, kind);
     onFrontmatterChange(next || null);
   }
 
@@ -86,109 +76,195 @@
     newTag = "";
     addingTag = false;
   }
+
+  async function focusTitle() {
+    if (disabled) return;
+    titleInputEl?.focus();
+    // Caret at end — select-all on every key click is hostile.
+    const len = titleInputEl?.value.length ?? 0;
+    titleInputEl?.setSelectionRange(len, len);
+  }
+
+  async function beginAddTag() {
+    if (disabled) return;
+    addingTag = true;
+    newTag = "";
+    await tick();
+    tagInputEl?.focus();
+  }
+
+  function onTagsRowClick(event: MouseEvent) {
+    if (disabled || addingTag) return;
+    const target = event.target as HTMLElement | null;
+    if (target?.closest("button, input, a, .vault-live-properties__tag")) return;
+    void beginAddTag();
+  }
 </script>
 
-<div class="vault-live-properties" aria-label="Properties">
-  <p class="vault-live-properties__eyebrow">Properties</p>
-
-  <div class="vault-live-properties__row">
-    <span class="vault-live-properties__label">title</span>
-    <input
-      class="vault-live-properties__value"
-      type="text"
-      spellcheck="true"
-      placeholder="Untitled"
-      bind:value={titleDraft}
-      {disabled}
-      onblur={commitTitle}
-      onkeydown={(event) => {
-        if (event.key === "Enter") {
-          event.preventDefault();
-          (event.currentTarget as HTMLInputElement).blur();
-        }
-      }}
+<div
+  class="vault-live-properties"
+  class:vault-live-properties--open={open}
+  class:vault-live-properties--disabled={disabled}
+>
+  <button
+    type="button"
+    class="vault-live-properties__disclosure"
+    aria-expanded={open}
+    aria-controls="vault-live-properties-body"
+    onclick={() => {
+      open = !open;
+    }}
+  >
+    <span class="vault-live-properties__disclosure-label">Properties</span>
+    <ChevronRight
+      size={12}
+      strokeWidth={2.25}
+      class="vault-live-properties__chevron"
+      aria-hidden="true"
     />
-  </div>
+  </button>
 
-  <div class="vault-live-properties__row">
-    <span class="vault-live-properties__label">kind</span>
-    <select
-      class="vault-live-properties__value vault-live-properties__select"
-      value={kindDraft}
-      {disabled}
-      onchange={(event) => {
-        const value = (event.currentTarget as HTMLSelectElement).value;
-        commitKind(normalizeKind(value));
-      }}
+  {#if open}
+    <div
+      id="vault-live-properties-body"
+      class="vault-live-properties__body"
+      role="group"
+      aria-label="Note properties"
     >
-      {#each VAULT_KIND_OPTIONS as kind (kind)}
-        <option value={kind}>{kindLabel(kind)}</option>
-      {/each}
-    </select>
-  </div>
-
-  <div class="vault-live-properties__row vault-live-properties__row--tags">
-    <span class="vault-live-properties__label">tags</span>
-    <div class="vault-live-properties__tags">
-      {#each visibleTags as tag (tag)}
-        <span class="vault-live-properties__tag">
-          {tag}
-          <button
-            type="button"
-            class="vault-live-properties__tag-remove"
-            title="Remove {tag}"
-            aria-label="Remove tag {tag}"
-            {disabled}
-            onclick={() => removeTag(tag)}
-          >
-            ×
-          </button>
-        </span>
-      {/each}
-      {#if !showWorkshop && workshopTags.length > 0}
+      <div
+        class="vault-live-properties__row"
+        class:vault-live-properties__row--active={titleFocused}
+        class:vault-live-properties__row--disabled={disabled}
+      >
         <button
           type="button"
-          class="vault-live-properties__tag vault-live-properties__tag--more"
+          class="vault-live-properties__key"
           {disabled}
-          onclick={() => (showWorkshop = true)}
+          tabindex="-1"
+          onclick={() => void focusTitle()}
         >
-          +{workshopTags.length}
+          <AlignLeft
+            size={14}
+            strokeWidth={1.75}
+            class="vault-live-properties__icon"
+            aria-hidden="true"
+          />
+          <span class="vault-live-properties__label">title</span>
         </button>
-      {/if}
-      {#if addingTag}
         <input
-          class="vault-live-properties__tag-input"
+          bind:this={titleInputEl}
+          class="vault-live-properties__value"
           type="text"
-          spellcheck="false"
-          placeholder="tag"
-          bind:value={newTag}
+          spellcheck="true"
+          placeholder="Untitled"
+          aria-label="Note title"
+          bind:value={titleDraft}
           {disabled}
-          onblur={addTag}
+          onfocus={() => {
+            titleFocused = true;
+          }}
+          onblur={commitTitle}
           onkeydown={(event) => {
             if (event.key === "Enter") {
               event.preventDefault();
-              addTag();
+              (event.currentTarget as HTMLInputElement).blur();
             }
             if (event.key === "Escape") {
               event.preventDefault();
-              addingTag = false;
-              newTag = "";
+              const fromFm = parseFrontmatterTitle(frontmatter);
+              titleDraft = fromFm || fallbackTitle;
+              (event.currentTarget as HTMLInputElement).blur();
             }
           }}
         />
-      {:else}
+      </div>
+
+      <div
+        class="vault-live-properties__row vault-live-properties__row--tags"
+        class:vault-live-properties__row--active={addingTag}
+        class:vault-live-properties__row--empty={tagsEmpty}
+        class:vault-live-properties__row--disabled={disabled}
+        onclick={onTagsRowClick}
+        role="group"
+      >
         <button
           type="button"
-          class="vault-live-properties__add"
+          class="vault-live-properties__key"
           {disabled}
-          onclick={() => {
-            addingTag = true;
-            newTag = "";
-          }}
+          tabindex="-1"
+          onclick={() => void beginAddTag()}
         >
-          + Add
+          <Tag
+            size={14}
+            strokeWidth={1.75}
+            class="vault-live-properties__icon"
+            aria-hidden="true"
+          />
+          <span class="vault-live-properties__label">tags</span>
         </button>
-      {/if}
+        <div class="vault-live-properties__tags">
+          {#each humanTags as tag (tag)}
+            <span class="vault-live-properties__tag">
+              <span class="vault-live-properties__tag-text">{tag}</span>
+              <button
+                type="button"
+                class="vault-live-properties__tag-remove"
+                title="Remove {tag}"
+                aria-label="Remove tag {tag}"
+                {disabled}
+                onclick={() => removeTag(tag)}
+              >
+                <X size={10} strokeWidth={2.25} aria-hidden="true" />
+              </button>
+            </span>
+          {/each}
+          {#if addingTag}
+            <input
+              bind:this={tagInputEl}
+              class="vault-live-properties__tag-input"
+              type="text"
+              spellcheck="false"
+              placeholder="tag"
+              aria-label="New tag"
+              style:width="{Math.max(3.5, (newTag || 'tag').length + 1.25)}ch"
+              bind:value={newTag}
+              {disabled}
+              onblur={addTag}
+              onkeydown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  addTag();
+                }
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  addingTag = false;
+                  newTag = "";
+                }
+              }}
+            />
+          {:else if tagsEmpty}
+            <button
+              type="button"
+              class="vault-live-properties__add vault-live-properties__add--empty"
+              {disabled}
+              onclick={() => void beginAddTag()}
+            >
+              Add tags…
+            </button>
+          {:else}
+            <button
+              type="button"
+              class="vault-live-properties__add"
+              {disabled}
+              onclick={() => void beginAddTag()}
+              title="Add tag"
+              aria-label="Add tag"
+            >
+              <Plus size={12} strokeWidth={2} aria-hidden="true" />
+            </button>
+          {/if}
+        </div>
+      </div>
     </div>
-  </div>
+  {/if}
 </div>
