@@ -1,6 +1,13 @@
 <script lang="ts">
   import { onMount, tick } from "svelte";
-  import { PanelLeftOpen, Search } from "@lucide/svelte";
+  import {
+    BookOpen,
+    Code2,
+    Columns3,
+    PanelLeftOpen,
+    Search,
+    Table2,
+  } from "@lucide/svelte";
   import { layout } from "$lib/stores/layout.svelte";
   import { vault } from "$lib/stores/vault.svelte";
   import { workspace } from "$lib/stores/workspace.svelte";
@@ -453,16 +460,16 @@
         {/if}
       </div>
 
-      <div class="vault-editor-tools flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+      <div class="vault-editor-tools flex shrink-0 flex-wrap items-center justify-end gap-0.5">
         {#if layout.vaultSidebarCollapsed}
           <button
             type="button"
-            class="btn btn-sm variant-ghost-surface vault-editor-tool-btn"
+            class="vault-editor-icon-btn"
             title="Show library browser"
             aria-label="Show library browser"
             onclick={() => layout.setVaultSidebarCollapsed(false)}
           >
-            <PanelLeftOpen size={14} strokeWidth={2} />
+            <PanelLeftOpen size={15} strokeWidth={1.75} />
           </button>
         {/if}
 
@@ -483,56 +490,65 @@
         {#if showNotePlaneToggle && isBuildPlane}
           <button
             type="button"
-            class="vault-editor-back-live"
+            class="vault-editor-icon-btn"
             title="Back to Live"
+            aria-label="Back to Live"
             onclick={() => vault.setNotePlane("live")}
           >
-            Back to Live
+            <BookOpen size={15} strokeWidth={1.75} />
           </button>
         {/if}
 
         {#if showLedgerViewToggle}
-          <div class="ledger-mode-toggle" role="group" aria-label="Ledger view">
+          <div class="vault-editor-icon-pair" role="group" aria-label="Ledger view">
             <button
               type="button"
-              class="ledger-mode-btn {vault.ledgerEditMode === 'table'
-                ? 'ledger-mode-btn-active'
-                : ''}"
+              class="vault-editor-icon-btn"
+              class:vault-editor-icon-btn--active={vault.ledgerEditMode === "table"}
+              title="Table view"
+              aria-label="Table view"
+              aria-pressed={vault.ledgerEditMode === "table"}
               onclick={() => vault.setLedgerEditMode("table")}
             >
-              Table
+              <Table2 size={15} strokeWidth={1.75} />
             </button>
             <button
               type="button"
-              class="ledger-mode-btn {vault.ledgerEditMode === 'raw'
-                ? 'ledger-mode-btn-active'
-                : ''}"
+              class="vault-editor-icon-btn"
+              class:vault-editor-icon-btn--active={vault.ledgerEditMode === "raw"}
+              title="Raw markdown"
+              aria-label="Raw markdown"
+              aria-pressed={vault.ledgerEditMode === "raw"}
               onclick={() => vault.setLedgerEditMode("raw")}
             >
-              Raw
+              <Code2 size={15} strokeWidth={1.75} />
             </button>
           </div>
         {/if}
 
         {#if showBoardViewToggle}
-          <div class="ledger-mode-toggle" role="group" aria-label="Board view">
+          <div class="vault-editor-icon-pair" role="group" aria-label="Board view">
             <button
               type="button"
-              class="ledger-mode-btn {vault.boardEditMode === 'board'
-                ? 'ledger-mode-btn-active'
-                : ''}"
+              class="vault-editor-icon-btn"
+              class:vault-editor-icon-btn--active={vault.boardEditMode === "board"}
+              title="Board view"
+              aria-label="Board view"
+              aria-pressed={vault.boardEditMode === "board"}
               onclick={() => vault.setBoardEditMode("board")}
             >
-              Board
+              <Columns3 size={15} strokeWidth={1.75} />
             </button>
             <button
               type="button"
-              class="ledger-mode-btn {vault.boardEditMode === 'raw'
-                ? 'ledger-mode-btn-active'
-                : ''}"
+              class="vault-editor-icon-btn"
+              class:vault-editor-icon-btn--active={vault.boardEditMode === "raw"}
+              title="Raw markdown"
+              aria-label="Raw markdown"
+              aria-pressed={vault.boardEditMode === "raw"}
               onclick={() => vault.setBoardEditMode("raw")}
             >
-              Raw
+              <Code2 size={15} strokeWidth={1.75} />
             </button>
           </div>
         {/if}
@@ -543,12 +559,12 @@
 
         <button
           type="button"
-          class="btn btn-sm variant-ghost-surface vault-editor-tool-btn"
+          class="vault-editor-icon-btn"
           title="Find note ({formatShortcut('O')})"
           aria-label="Find note"
           onclick={() => vaultQuickSwitcher.openSwitcher()}
         >
-          <Search size={14} strokeWidth={2} />
+          <Search size={15} strokeWidth={1.75} />
         </button>
 
         <VaultEditorOverflowMenu
@@ -571,6 +587,11 @@
           linksOpen={layout.vaultLinksPanelOpen}
           showEditSource={showNotePlaneToggle && isLivePlane}
           showBackToLive={showNotePlaneToggle && isBuildPlane}
+          showEditorToggles={isBuildPlane && vault.editorMode === "edit"}
+          buildWordWrap={vault.buildWordWrap}
+          buildLineNumbers={vault.buildLineNumbers}
+          buildAutoSave={vault.buildAutoSave}
+          monoSource={vault.editorSurface === "source"}
           {linkCount}
           onOpenChat={onOpenChat}
           onOpenWork={onOpenWork}
@@ -614,6 +635,11 @@
             vault.setNotePlane("build");
           }}
           onBackToLive={() => vault.setNotePlane("live")}
+          onToggleWordWrap={() => vault.setBuildWordWrap(!vault.buildWordWrap)}
+          onToggleLineNumbers={() =>
+            vault.setBuildLineNumbers(!vault.buildLineNumbers)}
+          onToggleAutoSave={() => vault.setBuildAutoSave(!vault.buildAutoSave)}
+          onToggleMonoSource={() => vault.toggleEditorSurface()}
         />
 
         {#if !vault.isLooseFile && vault.selectedPath}

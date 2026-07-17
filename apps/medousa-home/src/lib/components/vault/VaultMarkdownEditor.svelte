@@ -495,9 +495,7 @@
       compact={formatCompact}
       {showFloat}
       {onFloat}
-      {surface}
       {activeActions}
-      onToggleSurface={() => vault.toggleEditorSurface()}
       onFormat={handleFormat}
       onColor={handleColor}
     />

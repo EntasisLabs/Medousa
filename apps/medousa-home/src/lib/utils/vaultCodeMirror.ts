@@ -164,6 +164,9 @@ export const vaultEditorBaseTheme = EditorView.theme(
     ".cm-activeLine": {
       backgroundColor: "rgb(var(--color-surface-900) / 0.45)",
     },
+    ".cm-activeLineGutter": {
+      backgroundColor: "transparent",
+    },
     "&.cm-focused": {
       outline: "none",
     },
@@ -176,6 +179,27 @@ export const vaultEditorBaseTheme = EditorView.theme(
     ".cm-vault-find-mark-active": {
       backgroundColor: "rgb(250 204 21 / 0.62)",
       boxShadow: "inset 0 -1.5px 0 0 rgb(234 179 8 / 0.85)",
+    },
+  },
+  { dark: true },
+);
+
+/** Shown when Build line-numbers pref is on (overrides base gutters: none). */
+export const vaultEditorLineNumbersTheme = EditorView.theme(
+  {
+    ".cm-gutters": {
+      display: "flex",
+      backgroundColor: "transparent",
+      border: "none",
+      color: "rgb(var(--shell-muted, var(--color-surface-500)))",
+      minWidth: "2.1rem",
+    },
+    ".cm-lineNumbers .cm-gutterElement": {
+      padding: "0 0.45rem 0 0.15rem",
+      minWidth: "1.75rem",
+    },
+    ".cm-foldGutter": {
+      display: "none",
     },
   },
   { dark: true },

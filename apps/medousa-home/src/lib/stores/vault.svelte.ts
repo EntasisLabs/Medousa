@@ -22,7 +22,13 @@ import {
   saveShowSystemNotes,
 } from "$lib/config/vaultSpaces";
 import {
+  readVaultBuildAutoSave,
+  readVaultBuildLineNumbers,
+  readVaultBuildWordWrap,
   readVaultStampCompletionEnabled,
+  writeVaultBuildAutoSave,
+  writeVaultBuildLineNumbers,
+  writeVaultBuildWordWrap,
   writeVaultStampCompletionEnabled,
 } from "$lib/config/vaultPreferences";
 import type { WorkspaceEvent } from "$lib/types/workspace";
@@ -190,6 +196,12 @@ export class VaultStore {
   boardEditMode = $state<"board" | "raw">("board");
   showSystemNotes = $state(loadShowSystemNotes());
   stampCompletionInline = $state(readVaultStampCompletionEnabled());
+  /** Build editor: wrap long lines (CodeMirror). */
+  buildWordWrap = $state(readVaultBuildWordWrap());
+  /** Build editor: show line numbers gutter. */
+  buildLineNumbers = $state(readVaultBuildLineNumbers());
+  /** Autosave dirty notes on a timer. */
+  buildAutoSave = $state(readVaultBuildAutoSave());
   activeSpaceFilter = $state<string | null>(loadLastSpace());
   newNoteDialogOpen = $state(false);
   /** M7f: agent/server edit waiting for accept/discard. */
@@ -383,6 +395,7 @@ export class VaultStore {
   scheduleAutosave() {
     this.clearAutosaveTimer();
     if (
+      !this.buildAutoSave ||
       !this.selectedPath ||
       !this.dirty ||
       this.saveStatus === "conflict" ||
@@ -670,6 +683,26 @@ export class VaultStore {
   setStampCompletionInline(value: boolean) {
     this.stampCompletionInline = value;
     writeVaultStampCompletionEnabled(value);
+  }
+
+  setBuildWordWrap(value: boolean) {
+    this.buildWordWrap = value;
+    writeVaultBuildWordWrap(value);
+  }
+
+  setBuildLineNumbers(value: boolean) {
+    this.buildLineNumbers = value;
+    writeVaultBuildLineNumbers(value);
+  }
+
+  setBuildAutoSave(value: boolean) {
+    this.buildAutoSave = value;
+    writeVaultBuildAutoSave(value);
+    if (value) {
+      if (this.dirty) this.scheduleAutosave();
+    } else {
+      this.clearAutosaveTimer();
+    }
   }
 
   togglePreviewTask(taskIndex: number, checked: boolean) {

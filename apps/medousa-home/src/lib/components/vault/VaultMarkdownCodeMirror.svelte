@@ -23,10 +23,12 @@
     getCodeMirrorCaretAnchor,
     revealFindMatchInView,
     vaultEditorBaseTheme,
+    vaultEditorLineNumbersTheme,
     vaultFindHighlightExtension,
     vaultMarkdownSyntax,
   } from "$lib/utils/vaultCodeMirror";
   import { vaultFind } from "$lib/stores/vaultFind.svelte";
+  import { vault } from "$lib/stores/vault.svelte";
   import type { FindMatch } from "$lib/utils/vaultFindInNote";
 
   interface Props {
@@ -62,7 +64,17 @@
   let syncedKey = $state("");
   const readOnlyCompartment = new Compartment();
   const slashKeymapCompartment = new Compartment();
+  const wrapCompartment = new Compartment();
+  const lineNumbersCompartment = new Compartment();
   let findDecorationsEpoch = $state(0);
+
+  function wrapExt(enabled: boolean) {
+    return enabled ? EditorView.lineWrapping : [];
+  }
+
+  function lineNumbersExt(enabled: boolean) {
+    return enabled ? vaultEditorLineNumbersTheme : [];
+  }
 
   let findMatches = $state<FindMatch[]>([]);
   let findActiveIndex = $state(0);
@@ -330,8 +342,9 @@
           basicSetup,
           markdown(),
           vaultMarkdownSyntax,
-          EditorView.lineWrapping,
           vaultEditorBaseTheme,
+          wrapCompartment.of(wrapExt(vault.buildWordWrap)),
+          lineNumbersCompartment.of(lineNumbersExt(vault.buildLineNumbers)),
           placeholder("Write…"),
           readOnlyCompartment.of(EditorState.readOnly.of(disabled)),
           slashKeymapCompartment.of(slashKeymapExt(slashOpen)),
@@ -387,6 +400,22 @@
     if (!view) return;
     view.dispatch({
       effects: slashKeymapCompartment.reconfigure(slashKeymapExt(slashOpen)),
+    });
+  });
+
+  $effect(() => {
+    if (!view) return;
+    const wrap = vault.buildWordWrap;
+    view.dispatch({
+      effects: wrapCompartment.reconfigure(wrapExt(wrap)),
+    });
+  });
+
+  $effect(() => {
+    if (!view) return;
+    const numbers = vault.buildLineNumbers;
+    view.dispatch({
+      effects: lineNumbersCompartment.reconfigure(lineNumbersExt(numbers)),
     });
   });
 

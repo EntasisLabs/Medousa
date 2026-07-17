@@ -14,6 +14,13 @@
     onClick: () => void | Promise<void>;
   }
 
+  interface ToggleItem {
+    id: string;
+    label: string;
+    on: boolean;
+    onToggle: () => void;
+  }
+
   interface Props {
     selectedPath: string | null;
     selectedKind: VaultNoteKind;
@@ -35,6 +42,12 @@
     linkCount?: number;
     showEditSource?: boolean;
     showBackToLive?: boolean;
+    /** Build plane: show Editor toggles (wrap / line numbers / autosave / mono). */
+    showEditorToggles?: boolean;
+    buildWordWrap?: boolean;
+    buildLineNumbers?: boolean;
+    buildAutoSave?: boolean;
+    monoSource?: boolean;
     onOpenChat?: () => void;
     onOpenWork?: () => void;
     onSelectCard?: (id: string) => void | Promise<void>;
@@ -53,6 +66,10 @@
     onToggleLinks?: () => void;
     onEditSource?: () => void;
     onBackToLive?: () => void;
+    onToggleWordWrap?: () => void;
+    onToggleLineNumbers?: () => void;
+    onToggleAutoSave?: () => void;
+    onToggleMonoSource?: () => void;
   }
 
   let {
@@ -76,6 +93,11 @@
     linkCount = 0,
     showEditSource = false,
     showBackToLive = false,
+    showEditorToggles = false,
+    buildWordWrap = true,
+    buildLineNumbers = false,
+    buildAutoSave = true,
+    monoSource = false,
     onOpenChat,
     onOpenWork,
     onSelectCard,
@@ -94,6 +116,10 @@
     onToggleLinks,
     onEditSource,
     onBackToLive,
+    onToggleWordWrap,
+    onToggleLineNumbers,
+    onToggleAutoSave,
+    onToggleMonoSource,
   }: Props = $props();
 
   let open = $state(false);
@@ -305,14 +331,53 @@
     return rows.filter((row) => !row.hidden);
   });
 
-  const hasItems = $derived(items.length > 0);
+  const editorToggles = $derived.by((): ToggleItem[] => {
+    if (!showEditorToggles) return [];
+    const rows: ToggleItem[] = [];
+    if (onToggleLineNumbers) {
+      rows.push({
+        id: "line-numbers",
+        label: "Line numbers",
+        on: buildLineNumbers,
+        onToggle: onToggleLineNumbers,
+      });
+    }
+    if (onToggleWordWrap) {
+      rows.push({
+        id: "word-wrap",
+        label: "Word wrap",
+        on: buildWordWrap,
+        onToggle: onToggleWordWrap,
+      });
+    }
+    if (onToggleAutoSave) {
+      rows.push({
+        id: "auto-save",
+        label: "Auto save",
+        on: buildAutoSave,
+        onToggle: onToggleAutoSave,
+      });
+    }
+    if (onToggleMonoSource) {
+      rows.push({
+        id: "mono-source",
+        label: "Mono source",
+        on: monoSource,
+        onToggle: onToggleMonoSource,
+      });
+    }
+    return rows;
+  });
+
+  const hasItems = $derived(items.length > 0 || editorToggles.length > 0);
 </script>
 
 {#if hasItems}
   <div class="relative">
     <button
       type="button"
-      class="btn btn-sm variant-ghost-surface"
+      class="vault-editor-icon-btn"
+      class:vault-editor-icon-btn--active={open}
       aria-label="More note actions"
       aria-expanded={open}
       aria-haspopup="menu"
@@ -320,7 +385,7 @@
         open = !open;
       }}
     >
-      <Ellipsis size={14} strokeWidth={2} />
+      <Ellipsis size={15} strokeWidth={1.75} />
     </button>
 
     {#if open}
@@ -333,32 +398,58 @@
         }}
       ></button>
       <div
-        class="absolute right-0 top-full z-50 mt-1 min-w-[12.5rem] max-w-[16rem] rounded-container-token border border-surface-500/40 bg-surface-900 py-1 shadow-lg"
+        class="vault-editor-overflow absolute right-0 top-full z-50 mt-1 min-w-[13.5rem] max-w-[17rem] rounded-container-token border border-surface-500/40 bg-surface-900 py-1 shadow-lg"
         role="menu"
       >
         {#each items as item (item.id)}
           {#if item.dividerBefore}
-            <div class="my-1 border-t border-surface-500/35" role="separator"></div>
+            <div class="vault-editor-overflow__sep" role="separator"></div>
           {/if}
           <button
             type="button"
-            class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-surface-200 hover:bg-surface-800/80 disabled:cursor-not-allowed disabled:opacity-50"
+            class="vault-editor-overflow__item"
             role="menuitem"
             disabled={item.disabled}
             onclick={() => void item.onClick()}
           >
-            {#if item.id === "send-chat"}
-              <MessageSquare size={14} aria-hidden="true" />
-            {:else if item.id === "send-work"}
-              <Send size={14} aria-hidden="true" />
-            {:else if item.id === "export-pdf"}
-              <FileDown size={14} aria-hidden="true" />
-            {:else if item.id === "open-loose"}
-              <FileText size={14} aria-hidden="true" />
-            {/if}
-            {item.label}
+            <span class="vault-editor-overflow__icon" aria-hidden="true">
+              {#if item.id === "send-chat"}
+                <MessageSquare size={14} />
+              {:else if item.id === "send-work"}
+                <Send size={14} />
+              {:else if item.id === "export-pdf"}
+                <FileDown size={14} />
+              {:else if item.id === "open-loose"}
+                <FileText size={14} />
+              {/if}
+            </span>
+            <span class="vault-editor-overflow__label">{item.label}</span>
           </button>
         {/each}
+
+        {#if editorToggles.length > 0}
+          {#if items.length > 0}
+            <div class="vault-editor-overflow__sep" role="separator"></div>
+          {/if}
+          {#each editorToggles as toggle (toggle.id)}
+            <button
+              type="button"
+              class="vault-editor-overflow__toggle"
+              role="menuitemcheckbox"
+              aria-checked={toggle.on}
+              onclick={() => toggle.onToggle()}
+            >
+              <span class="vault-editor-overflow__label">{toggle.label}</span>
+              <span
+                class="vault-editor-overflow__switch"
+                class:vault-editor-overflow__switch--on={toggle.on}
+                aria-hidden="true"
+              >
+                <span class="vault-editor-overflow__knob"></span>
+              </span>
+            </button>
+          {/each}
+        {/if}
       </div>
     {/if}
   </div>

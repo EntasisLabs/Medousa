@@ -16,8 +16,6 @@
     /** Subtle float-note control at the trailing end of the bar. */
     showFloat?: boolean;
     onFloat?: () => void;
-    surface?: "write" | "source";
-    onToggleSurface?: () => void;
     /** Format actions that already wrap the current selection. */
     activeActions?: MarkdownFormatAction[];
     onFormat: (action: MarkdownFormatAction) => void;
@@ -29,8 +27,6 @@
     compact: compactProp,
     showFloat = false,
     onFloat,
-    surface = "write",
-    onToggleSurface,
     activeActions = [],
     onFormat,
     onColor,
@@ -183,54 +179,7 @@
         </div>
       </div>
 
-      {#if !compact}
-        <div class="ml-auto flex items-center gap-2">
-          {#if onToggleSurface}
-            <button
-              type="button"
-              class="vault-format-btn vault-format-btn--surface text-[11px] font-medium tracking-wide"
-              class:vault-format-btn--active={surface === "source"}
-              title={surface === "write" ? "Switch to source (mono)" : "Switch to write (prose)"}
-              aria-label={surface === "write" ? "Switch to source" : "Switch to write"}
-              aria-pressed={surface === "source"}
-              {disabled}
-              onclick={() => onToggleSurface()}
-            >
-              {surface === "write" ? "Source" : "Write"}
-            </button>
-          {/if}
-          <p class="hidden text-[11px] text-surface-500 sm:block">
-            Select text to format · type <kbd class="vault-kbd">/</kbd> for blocks
-          </p>
-          {#if showFloat && onFloat}
-            <button
-              type="button"
-              class="vault-format-btn vault-format-btn--float"
-              title="Float note (always on top)"
-              aria-label="Float note"
-              {disabled}
-              onclick={() => onFloat()}
-            >
-              <ExternalLink size={14} strokeWidth={1.75} />
-            </button>
-          {/if}
-        </div>
-      {:else}
-        {#if onToggleSurface}
-          <button
-            type="button"
-            class="vault-format-btn vault-format-btn--surface text-[11px] font-medium tracking-wide"
-            class:vault-format-btn--active={surface === "source"}
-            title={surface === "write" ? "Switch to source (mono)" : "Switch to write (prose)"}
-            aria-label={surface === "write" ? "Switch to source" : "Switch to write"}
-            aria-pressed={surface === "source"}
-            {disabled}
-            onclick={() => onToggleSurface()}
-          >
-            {surface === "write" ? "Source" : "Write"}
-          </button>
-        {/if}
-        {#if showFloat && onFloat}
+      {#if showFloat && onFloat}
         <button
           type="button"
           class="vault-format-btn vault-format-btn--float ml-auto"
@@ -241,7 +190,6 @@
         >
           <ExternalLink size={14} strokeWidth={1.75} />
         </button>
-        {/if}
       {/if}
     </div>
   {/if}
