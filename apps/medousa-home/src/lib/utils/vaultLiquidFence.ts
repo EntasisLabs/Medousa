@@ -1,7 +1,9 @@
 /**
  * Liquid fence extract / parse / serialize for Live Configure
- * (card, callout, dashboard, tabs, steps, accordion, code, tree).
+ * (card, callout, dashboard, tabs, steps, accordion, code, tree, compare).
  */
+
+import { findFirstPipeTable, serializePipeTable } from "$lib/utils/markdownTable";
 
 export type LiquidFenceLang =
   | "card"
@@ -11,7 +13,8 @@ export type LiquidFenceLang =
   | "steps"
   | "accordion"
   | "code"
-  | "tree";
+  | "tree"
+  | "compare";
 
 export interface LiquidFenceBlock {
   index: number;
@@ -100,6 +103,17 @@ export type LiquidTreeDraft = {
   treeText: string;
 };
 
+export type LiquidCompareMode = "matrix" | "faceoff";
+
+export type LiquidCompareDraft = {
+  title: string;
+  subtitle: string;
+  recommendation: string;
+  mode: LiquidCompareMode;
+  /** GFM pipe table body (corner | entities… + axis rows). */
+  tableMarkdown: string;
+};
+
 export type LiquidFenceDraft =
   | { lang: "card"; draft: LiquidCardDraft }
   | { lang: "callout"; draft: LiquidCalloutDraft }
@@ -108,7 +122,14 @@ export type LiquidFenceDraft =
   | { lang: "steps"; draft: LiquidStepsDraft }
   | { lang: "accordion"; draft: LiquidAccordionDraft }
   | { lang: "code"; draft: LiquidCodeDraft }
-  | { lang: "tree"; draft: LiquidTreeDraft };
+  | { lang: "tree"; draft: LiquidTreeDraft }
+  | { lang: "compare"; draft: LiquidCompareDraft };
+
+const DEFAULT_COMPARE_TABLE = [
+  "| | Option A | Option B |",
+  "| --- | --- | --- |",
+  "| Axis | … | … |",
+].join("\n");
 
 const DASHBOARD_TONES = new Set(["default", "accent", "success", "warn", "error"]);
 const DASHBOARD_COLUMNS = new Set(["2", "3", "4"]);
@@ -541,6 +562,78 @@ export function serializeTreeFence(draft: LiquidTreeDraft): string {
   return lines.join("\n") + "\n";
 }
 
+function normalizeCompareMode(raw: string | undefined): LiquidCompareMode {
+  const modeRaw = (raw ?? "").trim().toLowerCase().replace(/[_ ]+/g, "-");
+  if (modeRaw === "faceoff" || modeRaw === "face-off") return "faceoff";
+  return "matrix";
+}
+
+function normalizeCompareTable(markdown: string): string {
+  const table = findFirstPipeTable(markdown.trim()) ?? findFirstPipeTable(DEFAULT_COMPARE_TABLE);
+  if (!table) return DEFAULT_COMPARE_TABLE;
+  let headers = [...table.headers];
+  // Ensure corner + ≥2 entity columns.
+  while (headers.length < 3) headers.push(`Option ${headers.length}`);
+  if (!headers[0]?.trim()) headers[0] = "";
+  let rows =
+    table.rows.length > 0
+      ? table.rows.map((row) => headers.map((_, i) => row[i] ?? ""))
+      : [headers.map((_, i) => (i === 0 ? "Axis" : "…"))];
+  if (rows.length < 1) {
+    rows = [headers.map((_, i) => (i === 0 ? "Axis" : "…"))];
+  }
+  // Drop empty trailing entity columns only if we'd still have ≥2 entities.
+  while (headers.length > 3) {
+    const last = headers.length - 1;
+    const entityEmpty = !headers[last]?.trim();
+    const cellsEmpty = rows.every((r) => !(r[last] ?? "").trim());
+    if (!entityEmpty || !cellsEmpty) break;
+    headers = headers.slice(0, last);
+    rows = rows.map((r) => r.slice(0, last));
+  }
+  return serializePipeTable(headers, rows);
+}
+
+export function parseCompareFenceBody(body: string): LiquidCompareDraft {
+  const normalized = body.replace(/\r\n/g, "\n");
+  const table = findFirstPipeTable(normalized);
+  let preamble = normalized;
+  let tableMarkdown = DEFAULT_COMPARE_TABLE;
+  if (table) {
+    const lines = normalized.split("\n");
+    preamble = lines.slice(0, table.startLine).join("\n");
+    tableMarkdown = serializePipeTable(table.headers, table.rows);
+  }
+  const fields = parseKvLines(preamble);
+  return {
+    title: fields.title ?? "",
+    subtitle: fields.subtitle ?? "",
+    recommendation: (fields.recommendation ?? fields.highlight ?? "").trim(),
+    mode: normalizeCompareMode(fields.mode),
+    tableMarkdown: normalizeCompareTable(tableMarkdown),
+  };
+}
+
+export function serializeCompareFence(draft: LiquidCompareDraft): string {
+  const lines = ["```compare"];
+  if (draft.title.trim()) lines.push(`title: ${draft.title.trim()}`);
+  if (draft.subtitle.trim()) lines.push(`subtitle: ${draft.subtitle.trim()}`);
+  if (draft.recommendation.trim()) {
+    lines.push(`recommendation: ${draft.recommendation.trim()}`);
+  }
+  if (draft.mode === "faceoff") lines.push("mode: faceoff");
+  lines.push("");
+  lines.push(normalizeCompareTable(draft.tableMarkdown));
+  lines.push("```");
+  return lines.join("\n") + "\n";
+}
+
+export function compareEntityLabels(draft: LiquidCompareDraft): string[] {
+  const table = findFirstPipeTable(normalizeCompareTable(draft.tableMarkdown));
+  if (!table) return ["Option A", "Option B"];
+  return table.headers.slice(1).map((h, i) => h.trim() || `Option ${i + 1}`);
+}
+
 export function parseLiquidFenceDraft(
   lang: LiquidFenceLang,
   body: string,
@@ -562,6 +655,8 @@ export function parseLiquidFenceDraft(
       return { lang, draft: parseCodeFenceBody(body) };
     case "tree":
       return { lang, draft: parseTreeFenceBody(body) };
+    case "compare":
+      return { lang, draft: parseCompareFenceBody(body) };
   }
 }
 
@@ -583,6 +678,8 @@ export function serializeLiquidFenceDraft(state: LiquidFenceDraft): string {
       return serializeCodeFence(state.draft);
     case "tree":
       return serializeTreeFence(state.draft);
+    case "compare":
+      return serializeCompareFence(state.draft);
   }
 }
 
@@ -616,6 +713,14 @@ export function summarizeTreeText(draft: LiquidTreeDraft): string {
   return lines === 1 ? "1 node" : `${lines} lines`;
 }
 
+export function summarizeCompareTable(draft: LiquidCompareDraft): string {
+  const table = findFirstPipeTable(normalizeCompareTable(draft.tableMarkdown));
+  const entities = Math.max(0, (table?.headers.length ?? 1) - 1);
+  const axes = table?.rows.length ?? 0;
+  if (entities === 1 && axes === 1) return "1×1";
+  return `${entities}×${axes}`;
+}
+
 export const LIQUID_FENCE_LANGS: LiquidFenceLang[] = [
   "card",
   "callout",
@@ -625,6 +730,7 @@ export const LIQUID_FENCE_LANGS: LiquidFenceLang[] = [
   "accordion",
   "code",
   "tree",
+  "compare",
 ];
 
 export function isLiquidConfigureLang(lang: string): lang is LiquidFenceLang {

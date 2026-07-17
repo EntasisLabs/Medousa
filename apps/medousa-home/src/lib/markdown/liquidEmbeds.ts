@@ -172,10 +172,14 @@ export interface LiquidCompareEntity {
   values: Record<string, string>;
 }
 
+export type LiquidCompareMode = "matrix" | "faceoff";
+
 export interface LiquidCompareProps {
   title?: string;
   subtitle?: string;
   recommendation?: string;
+  /** Presentation: matrix (default) or 2-up faceoff. */
+  mode?: LiquidCompareMode;
   axes: LiquidCompareAxis[];
   entities: LiquidCompareEntity[];
 }
@@ -1000,6 +1004,13 @@ function parseCompareBody(body: string): LiquidCompareProps | null {
   if (fields.subtitle) compare.subtitle = fields.subtitle;
   const rec = (fields.recommendation ?? fields.highlight)?.trim();
   if (rec) compare.recommendation = rec;
+  const modeRaw = (fields.mode ?? "").trim().toLowerCase().replace(/[_ ]+/g, "-");
+  if (modeRaw === "faceoff" || modeRaw === "face-off") {
+    compare.mode = "faceoff";
+  } else if (modeRaw === "matrix") {
+    compare.mode = "matrix";
+  }
+  // Unknown / omitted → render as matrix default (no mode field).
   return compare;
 }
 

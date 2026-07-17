@@ -5,6 +5,7 @@ import {
   parseCalloutFenceBody,
   parseCardFenceBody,
   parseCodeFenceBody,
+  parseCompareFenceBody,
   parseDashboardFenceBody,
   parseStepsFenceBody,
   parseTabsFenceBody,
@@ -14,6 +15,7 @@ import {
   serializeCalloutFence,
   serializeCardFence,
   serializeCodeFence,
+  serializeCompareFence,
   serializeDashboardFence,
   serializeStepsFence,
   serializeTabsFence,
@@ -116,6 +118,46 @@ describe("vaultLiquidFence", () => {
     const raw = serializeTreeFence(draft);
     const body = extractLiquidFences(raw, "tree")[0]?.body ?? "";
     expect(parseTreeFenceBody(body)).toEqual(draft);
+  });
+
+  it("round-trips compare table + faceoff mode", () => {
+    const draft = {
+      title: "Head to head",
+      subtitle: "Live polish",
+      recommendation: "Alpha",
+      mode: "faceoff" as const,
+      tableMarkdown: [
+        "| | Alpha | Beta |",
+        "| --- | --- | --- |",
+        "| Speed | Fast | Slow |",
+        "| Taste | High | Medium |",
+      ].join("\n"),
+    };
+    const raw = serializeCompareFence(draft);
+    expect(raw).toContain("mode: faceoff");
+    const body = extractLiquidFences(raw, "compare")[0]?.body ?? "";
+    const parsed = parseCompareFenceBody(body);
+    expect(parsed.title).toBe("Head to head");
+    expect(parsed.subtitle).toBe("Live polish");
+    expect(parsed.recommendation).toBe("Alpha");
+    expect(parsed.mode).toBe("faceoff");
+    expect(parsed.tableMarkdown).toContain("Alpha");
+    expect(parsed.tableMarkdown).toContain("Speed");
+  });
+
+  it("omits matrix mode from compare serialize (default)", () => {
+    const raw = serializeCompareFence({
+      title: "Grid",
+      subtitle: "",
+      recommendation: "",
+      mode: "matrix",
+      tableMarkdown: [
+        "| | A | B |",
+        "| --- | --- | --- |",
+        "| X | 1 | 2 |",
+      ].join("\n"),
+    });
+    expect(raw).not.toContain("mode:");
   });
 
   it("replaces the Nth card fence", () => {

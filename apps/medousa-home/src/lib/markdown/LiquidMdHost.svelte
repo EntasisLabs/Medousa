@@ -308,6 +308,7 @@
         ...(props.title ? { title: props.title } : {}),
         ...(props.subtitle ? { subtitle: props.subtitle } : {}),
         ...(props.recommendation ? { recommendation: props.recommendation } : {}),
+        ...(props.mode ? { mode: props.mode } : {}),
         axes: props.axes,
         entities: props.entities,
       },

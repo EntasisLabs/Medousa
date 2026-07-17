@@ -429,6 +429,41 @@ describe("preprocessLiquidEmbeds", () => {
     expect(props?.recommendation).toBe("A7IV");
   });
 
+  it("parses compare mode faceoff (and face-off alias)", () => {
+    const src = [
+      "```compare",
+      "title: Head to head",
+      "mode: face-off",
+      "recommendation: Alpha",
+      "",
+      "| | Alpha | Beta |",
+      "| --- | --- | --- |",
+      "| Speed | Fast | Slow |",
+      "```",
+    ].join("\n");
+    const out = preprocessLiquidEmbeds(src);
+    const match = out.match(/data-liquid-props="([^"]+)"/);
+    const props = decodeLiquidProps<{ mode?: string; entities: { label: string }[] }>(match![1]);
+    expect(props?.mode).toBe("faceoff");
+    expect(props?.entities).toHaveLength(2);
+  });
+
+  it("omits unknown compare mode (matrix default)", () => {
+    const src = [
+      "```compare",
+      "mode: radar",
+      "",
+      "| | A | B |",
+      "| --- | --- | --- |",
+      "| X | 1 | 2 |",
+      "```",
+    ].join("\n");
+    const out = preprocessLiquidEmbeds(src);
+    const match = out.match(/data-liquid-props="([^"]+)"/);
+    const props = decodeLiquidProps<{ mode?: string }>(match![1]);
+    expect(props?.mode).toBeUndefined();
+  });
+
   it("rejects compare with fewer than two entities", () => {
     const src = [
       "```compare",

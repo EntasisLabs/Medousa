@@ -11,6 +11,7 @@ export const compare = defineArchetype({
     title: { type: "string" },
     subtitle: { type: "string" },
     recommendation: { type: "string" },
+    mode: { type: "string" },
     axes: { type: "array", required: true },
     entities: { type: "array", required: true },
   },

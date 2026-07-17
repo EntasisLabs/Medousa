@@ -1,8 +1,10 @@
 <script lang="ts">
   import { Plus, Trash2, X } from "@lucide/svelte";
   import {
+    compareEntityLabels,
     summarizeAccordionItems,
     summarizeCodeSource,
+    summarizeCompareTable,
     summarizeDashboardTiles,
     summarizeSteps,
     summarizeTabsPanels,
@@ -11,6 +13,7 @@
     type LiquidCalloutDraft,
     type LiquidCardDraft,
     type LiquidCodeDraft,
+    type LiquidCompareDraft,
     type LiquidDashboardDraft,
     type LiquidFenceDraft,
     type LiquidFenceLang,
@@ -18,6 +21,7 @@
     type LiquidTabsDraft,
     type LiquidTreeDraft,
   } from "$lib/utils/vaultLiquidFence";
+  import ChartPipeTableEditor from "./ChartPipeTableEditor.svelte";
   import VaultLiquidQuietItemEdit from "./VaultLiquidQuietItemEdit.svelte";
   import VaultLiquidQuietList from "./VaultLiquidQuietList.svelte";
 
@@ -83,9 +87,16 @@
   });
   let code = $state<LiquidCodeDraft>({ lang: "typescript", title: "", source: "" });
   let tree = $state<LiquidTreeDraft>({ title: "", treeText: "" });
+  let compare = $state<LiquidCompareDraft>({
+    title: "",
+    subtitle: "",
+    recommendation: "",
+    mode: "matrix",
+    tableMarkdown: "| | Option A | Option B |\n| --- | --- | --- |\n| Axis | … | … |",
+  });
 
   let editing = $state<
-    "emoji" | "meta" | "points" | "tone" | "default" | "lang" | null
+    "emoji" | "meta" | "points" | "tone" | "default" | "lang" | "recommendation" | null
   >(null);
   /** List / source swap inside the sheet (tiles, panels, steps, items, source, tree). */
   let listView = $state(false);
@@ -139,6 +150,9 @@
         break;
       case "tree":
         tree = { ...initial.draft };
+        break;
+      case "compare":
+        compare = { ...initial.draft };
         break;
     }
     editing = null;
@@ -224,6 +238,10 @@
           treeText: tree.treeText.trimEnd() || "src/",
         },
       });
+      return;
+    }
+    if (lang === "compare") {
+      onSave({ lang: "compare", draft: { ...compare } });
     }
   }
 
@@ -434,8 +452,12 @@
               ? "Source"
               : lang === "tree"
                 ? "Tree"
-                : "Edit",
+                : lang === "compare"
+                  ? "Table"
+                  : "Edit",
   );
+
+  const compareEntities = $derived(compareEntityLabels(compare));
 
   const listHeaderTitle = $derived(
     itemEditIndex != null
@@ -601,6 +623,15 @@
               bind:value={tree.treeText}
             ></textarea>
           </div>
+        {:else if lang === "compare"}
+          <div class="vault-liquid-compare-table">
+            <ChartPipeTableEditor
+              content={compare.tableMarkdown}
+              onchange={(next) => {
+                compare = { ...compare, tableMarkdown: next };
+              }}
+            />
+          </div>
         {/if}
 
         <footer class="vault-chart-builder-footer">
@@ -624,6 +655,9 @@
               <input id="liquid-builder-title" class="vault-chart-builder-title-input" type="text" placeholder="Untitled accordion" aria-label="Accordion title" bind:value={accordion.title} />
             {:else if lang === "code"}
               <input id="liquid-builder-title" class="vault-chart-builder-title-input" type="text" placeholder="filename.ts" aria-label="Code title" bind:value={code.title} />
+            {:else if lang === "compare"}
+              <input id="liquid-builder-title" class="vault-chart-builder-title-input" type="text" placeholder="Untitled compare" aria-label="Compare title" bind:value={compare.title} />
+              <input class="vault-chart-builder-desc-input" type="text" placeholder="Subtitle" aria-label="Subtitle" bind:value={compare.subtitle} />
             {:else}
               <input id="liquid-builder-title" class="vault-chart-builder-title-input" type="text" placeholder="Untitled tree" aria-label="Tree title" bind:value={tree.title} />
             {/if}
@@ -844,6 +878,73 @@
                 <span class="vault-chart-fact__label">Tree</span>
                 <button type="button" class="vault-chart-fact__value" onclick={() => (listView = true)}>{summarizeTreeText(tree)}</button>
               </div>
+            </div>
+          {:else if lang === "compare"}
+            <div class="vault-chart-fact" data-chart-fact-row>
+              <div class="vault-chart-fact__row">
+                <span class="vault-chart-fact__label">Table</span>
+                <button type="button" class="vault-chart-fact__value" onclick={() => (listView = true)}>{summarizeCompareTable(compare)}</button>
+              </div>
+            </div>
+            <div class="vault-chart-fact" data-chart-fact-row>
+              <div class="vault-chart-fact__row">
+                <span class="vault-chart-fact__label">Mode</span>
+                <button
+                  type="button"
+                  class="vault-chart-fact__value"
+                  onclick={() =>
+                    (compare = {
+                      ...compare,
+                      mode: compare.mode === "faceoff" ? "matrix" : "faceoff",
+                    })}
+                >
+                  {compare.mode === "faceoff" ? "Face-off" : "Matrix"}
+                </button>
+              </div>
+            </div>
+            <div class="vault-chart-fact" class:vault-chart-fact--open={editing === "recommendation"} data-chart-fact-row>
+              <div class="vault-chart-fact__row">
+                <span class="vault-chart-fact__label">Pick</span>
+                {#if editing !== "recommendation"}
+                  <button type="button" class="vault-chart-fact__value" onclick={() => (editing = "recommendation")}>
+                    {compare.recommendation.trim() || "None"}
+                  </button>
+                {/if}
+              </div>
+              {#if editing === "recommendation"}
+                <div class="vault-chart-fact__editor">
+                  <div class="vault-chart-builder-seg" role="listbox" aria-label="Recommended entity">
+                    <button
+                      type="button"
+                      class="vault-chart-builder-seg__btn"
+                      class:vault-chart-builder-seg__btn--on={!compare.recommendation.trim()}
+                      role="option"
+                      aria-selected={!compare.recommendation.trim()}
+                      onclick={() => {
+                        compare = { ...compare, recommendation: "" };
+                        editing = null;
+                      }}
+                    >
+                      None
+                    </button>
+                    {#each compareEntities as entity (entity)}
+                      <button
+                        type="button"
+                        class="vault-chart-builder-seg__btn"
+                        class:vault-chart-builder-seg__btn--on={compare.recommendation.trim() === entity}
+                        role="option"
+                        aria-selected={compare.recommendation.trim() === entity}
+                        onclick={() => {
+                          compare = { ...compare, recommendation: entity };
+                          editing = null;
+                        }}
+                      >
+                        {entity}
+                      </button>
+                    {/each}
+                  </div>
+                </div>
+              {/if}
             </div>
           {/if}
         </div>

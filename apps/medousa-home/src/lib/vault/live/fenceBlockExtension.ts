@@ -54,6 +54,10 @@ import {
   mountTreeSurface,
   type TreeSurfaceHandles,
 } from "./liveTreeSurface";
+import {
+  mountCompareSurface,
+  type CompareSurfaceHandles,
+} from "./liveCompareSurface";
 import { resolveMedousaViews } from "$lib/utils/resolveMedousaViews";
 import type { VaultNote } from "$lib/types/vault";
 
@@ -176,6 +180,7 @@ export const FenceBlock = Node.create<FenceBlockOptions>({
       let accordion: AccordionSurfaceHandles | null = null;
       let code: CodeSurfaceHandles | null = null;
       let tree: TreeSurfaceHandles | null = null;
+      let compare: CompareSurfaceHandles | null = null;
       let mountGen = 0;
 
       const applyRawUpdate = (raw: string) => {
@@ -208,6 +213,8 @@ export const FenceBlock = Node.create<FenceBlockOptions>({
         code = null;
         tree?.destroy();
         tree = null;
+        compare?.destroy();
+        compare = null;
         unmountLiquidFence(dom);
         dom.replaceChildren();
         dom.setAttribute("data-lang", nextAttrs.lang || "code");
@@ -305,6 +312,16 @@ export const FenceBlock = Node.create<FenceBlockOptions>({
           return;
         }
 
+        if (lang === "compare") {
+          compare = mountCompareSurface(
+            dom,
+            nextAttrs.raw,
+            opts.getLiquidContext?.() ?? {},
+            (updatedRaw) => applyRawUpdate(updatedRaw),
+          );
+          return;
+        }
+
         if (lang === "report") {
           report = mountReportSurface(
             dom,
@@ -392,6 +409,8 @@ export const FenceBlock = Node.create<FenceBlockOptions>({
           code = null;
           tree?.destroy();
           tree = null;
+          compare?.destroy();
+          compare = null;
           unmountLiquidFence(dom);
         },
       };
