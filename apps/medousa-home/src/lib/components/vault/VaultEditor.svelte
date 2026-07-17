@@ -1,6 +1,14 @@
 <script lang="ts">
   import { onMount, tick } from "svelte";
-  import { PanelLeftOpen, Search } from "@lucide/svelte";
+  import {
+    BookOpen,
+    Code2,
+    Columns3,
+    PanelLeftOpen,
+    Search,
+    StickyNote,
+    Table2,
+  } from "@lucide/svelte";
   import { layout } from "$lib/stores/layout.svelte";
   import { vault } from "$lib/stores/vault.svelte";
   import { workspace } from "$lib/stores/workspace.svelte";
@@ -38,10 +46,13 @@
   import { vaultFind } from "$lib/stores/vaultFind.svelte";
   import { vaultQuickSwitcher } from "$lib/stores/vaultQuickSwitcher.svelte";
   import { stripFrontmatter } from "$lib/utils/vaultFrontmatter";
+  import { formatShortcut } from "$lib/platform";
   import { writeVaultStickyPath } from "$lib/utils/vaultSticky";
   import { isTauri, showVaultSticky } from "$lib/window";
   import VaultPdfPreviewModal from "./VaultPdfPreviewModal.svelte";
   import VaultChartBuilderSheet from "./VaultChartBuilderSheet.svelte";
+  import VaultLiquidBuilderSheet from "./VaultLiquidBuilderSheet.svelte";
+  import LiquidCardDetailSheet from "$lib/components/chat/LiquidCardDetailSheet.svelte";
 
   interface Props {
     visible: boolean;
@@ -69,16 +80,26 @@
   let pdfPreviewContent = $state("");
   let pdfPreviewLabels = $state<Map<string, string>>(new Map());
   let lastFindNotePath = $state<string | null>(null);
+  let previewScrollEl = $state<HTMLElement | null>(null);
+  let markdownEditorEl = $state<ReturnType<typeof VaultMarkdownEditor> | null>(null);
 
   const displayTitle = $derived(
-    vault.selectedPath
-      ? (vault.labelByPathMap.get(vault.selectedPath) ??
-        vaultDisplayTitle(vault.title, vault.selectedPath))
-      : "Library",
+    vault.isLooseFile && vault.looseFilePath
+      ? (vault.looseFilePath.split(/[/\\]/).pop() ?? vault.looseFilePath)
+      : vault.selectedPath
+        ? // Prefer live draft title so Properties edits update chrome immediately.
+          vaultDisplayTitle(vault.title, vault.selectedPath) ||
+          vault.labelByPathMap.get(vault.selectedPath) ||
+          "Untitled"
+        : "Library",
   );
 
   const breadcrumb = $derived(
-    vault.selectedPath ? vaultBreadcrumb(vault.selectedPath) : null,
+    vault.isLooseFile && vault.looseFilePath
+      ? vault.looseFilePath
+      : vault.selectedPath
+        ? vaultBreadcrumb(vault.selectedPath)
+        : null,
   );
 
   const activeSpace = $derived(vault.activeSpace);
@@ -118,11 +139,22 @@
     vault.editorMode === "edit" && !showLedgerTable && !showKanbanBoard,
   );
 
+  const notePlane = $derived(vault.notePlane);
+  const isLivePlane = $derived(notePlane === "live");
+  const isBuildPlane = $derived(notePlane === "build");
+
   const showSplitEditor = $derived(
-    !mobile && !stickyNote && showMarkdownEditor && layout.vaultSplitEnabled,
+    !mobile &&
+      !stickyNote &&
+      showMarkdownEditor &&
+      isBuildPlane &&
+      layout.vaultSplitEnabled,
   );
 
-  const editorSurface = $derived<"write" | "source">(vault.editorSurface);
+  /** Live always uses write typography; Build respects source/write choice. */
+  const editorSurface = $derived<"write" | "source">(
+    isLivePlane ? "write" : vault.editorSurface,
+  );
 
   const showPreviewOnly = $derived(
     vault.editorMode === "preview" && !showKanbanBoard && !showLedgerTable,
@@ -131,20 +163,45 @@
   const noteKind = $derived(vault.selectedKind);
   const linkCount = $derived(vault.wikilinksOut.length + vault.backlinks.length);
   const showLinksToggle = $derived(
-    !stickyNote &&
+    isBuildPlane &&
+      !stickyNote &&
+      !vault.isLooseFile &&
       Boolean(vault.selectedPath) &&
       supportsLinksPanel(noteKind) &&
       linkCount > 0,
   );
   const showLinksPanel = $derived(
-    !mobile && !stickyNote && layout.vaultLinksPanelOpen && showLinksToggle,
+    !mobile &&
+      !stickyNote &&
+      isBuildPlane &&
+      layout.vaultLinksPanelOpen &&
+      showLinksToggle,
   );
   const showPreviewButton = $derived(
     Boolean(vault.selectedPath) && supportsPreviewSplit(noteKind),
   );
   const showSplitButton = $derived(
-    !stickyNote && showMarkdownEditor && supportsPreviewSplit(noteKind),
+    isBuildPlane &&
+      !stickyNote &&
+      showMarkdownEditor &&
+      supportsPreviewSplit(noteKind),
   );
+  /** Live | Build pill for markdown note editing (not ledger/board surfaces). */
+  const showNotePlaneToggle = $derived(
+    !mobile &&
+      !stickyNote &&
+      Boolean(vault.selectedPath) &&
+      supportsPreviewSplit(noteKind) &&
+      !showLedgerTable &&
+      !showKanbanBoard,
+  );
+
+  $effect(() => {
+    if (isLivePlane && layout.vaultLinksPanelOpen) {
+      layout.setVaultLinksPanelOpen(false);
+    }
+  });
+
   const showLedgerViewToggle = $derived(
     Boolean(vault.selectedPath) &&
       vault.selectedKind === "ledger" &&
@@ -217,6 +274,7 @@
     vaultFind.revealEpoch;
     vaultFind.matchIndex;
     vaultFind.sourceText;
+    vaultFind.matchCase;
     findMode;
     void tick().then(() => syncFind());
   });
@@ -278,8 +336,15 @@
     await vault.flushSave();
   }
 
+  const canFloatSticky = $derived(
+    !stickyNote &&
+      isTauri() &&
+      Boolean(vault.selectedPath) &&
+      !vault.isLooseFile,
+  );
+
   async function handleFloatSticky() {
-    if (!vault.selectedPath || !isTauri() || stickyNote) return;
+    if (!vault.selectedPath || !canFloatSticky) return;
     if (vault.dirty) await vault.flushSave();
     writeVaultStickyPath(vault.selectedPath);
     await showVaultSticky();
@@ -333,8 +398,13 @@
 
     if (mobile) return;
 
-    const tag = (event.target as HTMLElement).tagName;
-    const typing = tag === "TEXTAREA" || tag === "INPUT";
+    const target = event.target as HTMLElement | null;
+    const tag = target?.tagName ?? "";
+    const typing =
+      tag === "TEXTAREA" ||
+      tag === "INPUT" ||
+      Boolean(target?.isContentEditable) ||
+      Boolean(target?.closest?.(".cm-editor"));
 
     if (typing && (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
       event.preventDefault();
@@ -383,31 +453,33 @@
         {/if}
         <div class="flex min-w-0 items-center gap-2">
           <h1 class="truncate text-base font-semibold">{displayTitle}</h1>
-          {#if vault.selectedPath}
-            <VaultKindBadge
-              kind={vault.selectedKind}
-              path={vault.selectedPath}
-            />
+          {#if vault.isLooseFile}
+            <span
+              class="badge variant-soft-warning shrink-0 text-xs font-medium"
+              title="Editing a single file outside the vault"
+            >
+              Loose file
+            </span>
           {/if}
         </div>
         {#if vault.selectedPath && vault.editorMode === "preview"}
           <p class="mt-1 text-[11px] text-surface-500">
-            Press <kbd class="vault-kbd">E</kbd> to edit · <kbd class="vault-kbd">⌘F</kbd> to find
+            Press <kbd class="vault-kbd">E</kbd> to edit · <kbd class="vault-kbd">{formatShortcut("F")}</kbd> to find
             · type <kbd class="vault-kbd">/</kbd> on a new line for blocks
           </p>
         {/if}
       </div>
 
-      <div class="flex shrink-0 flex-wrap items-center justify-end gap-2">
+      <div class="vault-editor-tools flex shrink-0 flex-wrap items-center justify-end gap-0.5">
         {#if layout.vaultSidebarCollapsed}
           <button
             type="button"
-            class="btn btn-sm variant-ghost-surface"
+            class="vault-editor-icon-btn"
             title="Show library browser"
             aria-label="Show library browser"
             onclick={() => layout.setVaultSidebarCollapsed(false)}
           >
-            <PanelLeftOpen size={14} strokeWidth={2} />
+            <PanelLeftOpen size={15} strokeWidth={1.75} />
           </button>
         {/if}
 
@@ -425,93 +497,68 @@
           </span>
         {/if}
 
-        {#if showPreviewButton}
+        {#if showNotePlaneToggle && isBuildPlane}
           <button
             type="button"
-            class="btn btn-sm {vault.editorMode === 'preview'
-              ? 'variant-soft-primary'
-              : 'variant-ghost-surface'}"
-            onclick={() =>
-              vault.editorMode === "edit"
-                ? vault.enterPreviewMode()
-                : vault.enterEditMode()}
-            title={vault.editorMode === "edit"
-              ? "View rendered note"
-              : "Return to editing"}
+            class="vault-editor-icon-btn"
+            title="Back to Live"
+            aria-label="Back to Live"
+            onclick={() => vault.setNotePlane("live")}
           >
-            {vault.editorMode === "edit" ? "Preview" : "Edit"}
-          </button>
-        {/if}
-
-        {#if showSplitButton}
-          <button
-            type="button"
-            class="btn btn-sm {layout.vaultSplitEnabled
-              ? 'variant-soft-primary'
-              : 'variant-ghost-surface'}"
-            onclick={() => layout.toggleVaultSplitEnabled()}
-            title="Split edit and preview"
-          >
-            Split
-          </button>
-        {/if}
-
-        {#if showLinksToggle}
-          <button
-            type="button"
-            class="btn btn-sm {layout.vaultLinksPanelOpen
-              ? 'variant-soft-surface'
-              : 'variant-ghost-surface'}"
-            onclick={() => layout.toggleVaultLinksPanel()}
-            title="Show note links"
-          >
-            Links
-            <span class="tabular-nums text-surface-400">({linkCount})</span>
+            <BookOpen size={15} strokeWidth={1.75} />
           </button>
         {/if}
 
         {#if showLedgerViewToggle}
-          <div class="ledger-mode-toggle" role="group" aria-label="Ledger view">
+          <div class="vault-editor-icon-pair" role="group" aria-label="Ledger view">
             <button
               type="button"
-              class="ledger-mode-btn {vault.ledgerEditMode === 'table'
-                ? 'ledger-mode-btn-active'
-                : ''}"
+              class="vault-editor-icon-btn"
+              class:vault-editor-icon-btn--active={vault.ledgerEditMode === "table"}
+              title="Table view"
+              aria-label="Table view"
+              aria-pressed={vault.ledgerEditMode === "table"}
               onclick={() => vault.setLedgerEditMode("table")}
             >
-              Table
+              <Table2 size={15} strokeWidth={1.75} />
             </button>
             <button
               type="button"
-              class="ledger-mode-btn {vault.ledgerEditMode === 'raw'
-                ? 'ledger-mode-btn-active'
-                : ''}"
+              class="vault-editor-icon-btn"
+              class:vault-editor-icon-btn--active={vault.ledgerEditMode === "raw"}
+              title="Raw markdown"
+              aria-label="Raw markdown"
+              aria-pressed={vault.ledgerEditMode === "raw"}
               onclick={() => vault.setLedgerEditMode("raw")}
             >
-              Raw
+              <Code2 size={15} strokeWidth={1.75} />
             </button>
           </div>
         {/if}
 
         {#if showBoardViewToggle}
-          <div class="ledger-mode-toggle" role="group" aria-label="Board view">
+          <div class="vault-editor-icon-pair" role="group" aria-label="Board view">
             <button
               type="button"
-              class="ledger-mode-btn {vault.boardEditMode === 'board'
-                ? 'ledger-mode-btn-active'
-                : ''}"
+              class="vault-editor-icon-btn"
+              class:vault-editor-icon-btn--active={vault.boardEditMode === "board"}
+              title="Board view"
+              aria-label="Board view"
+              aria-pressed={vault.boardEditMode === "board"}
               onclick={() => vault.setBoardEditMode("board")}
             >
-              Board
+              <Columns3 size={15} strokeWidth={1.75} />
             </button>
             <button
               type="button"
-              class="ledger-mode-btn {vault.boardEditMode === 'raw'
-                ? 'ledger-mode-btn-active'
-                : ''}"
+              class="vault-editor-icon-btn"
+              class:vault-editor-icon-btn--active={vault.boardEditMode === "raw"}
+              title="Raw markdown"
+              aria-label="Raw markdown"
+              aria-pressed={vault.boardEditMode === "raw"}
               onclick={() => vault.setBoardEditMode("raw")}
             >
-              Raw
+              <Code2 size={15} strokeWidth={1.75} />
             </button>
           </div>
         {/if}
@@ -520,14 +567,27 @@
           <VaultLinkedFilesMenu disabled={vault.noteLoading || vault.saving} />
         {/if}
 
+        {#if canFloatSticky}
+          <button
+            type="button"
+            class="vault-editor-icon-btn"
+            title="Float note"
+            aria-label="Float note"
+            disabled={vault.noteLoading || vault.saving}
+            onclick={() => void handleFloatSticky()}
+          >
+            <StickyNote size={15} strokeWidth={1.75} />
+          </button>
+        {/if}
+
         <button
           type="button"
-          class="btn btn-sm variant-ghost-surface"
-          title="Find note (⌘O)"
+          class="vault-editor-icon-btn"
+          title="Find note ({formatShortcut('O')})"
           aria-label="Find note"
           onclick={() => vaultQuickSwitcher.openSwitcher()}
         >
-          <Search size={14} strokeWidth={2} />
+          <Search size={15} strokeWidth={1.75} />
         </button>
 
         <VaultEditorOverflowMenu
@@ -543,23 +603,81 @@
           hasKanbanBoard={hasKanbanBoard}
           boardEditMode={vault.boardEditMode}
           linkedWork={linkedWork}
+          showPreviewToggle={showPreviewButton}
+          showSplitToggle={showSplitButton}
+          splitEnabled={layout.vaultSplitEnabled}
+          showLinksToggle={showLinksToggle}
+          linksOpen={layout.vaultLinksPanelOpen}
+          showEditSource={showNotePlaneToggle && isLivePlane}
+          showBackToLive={showNotePlaneToggle && isBuildPlane}
+          showEditorToggles={isBuildPlane && vault.editorMode === "edit"}
+          buildWordWrap={vault.buildWordWrap}
+          buildLineNumbers={vault.buildLineNumbers}
+          buildAutoSave={vault.buildAutoSave}
+          buildScrollSync={vault.buildScrollSync}
+          monoSource={vault.editorSurface === "source"}
+          {linkCount}
           onOpenChat={onOpenChat}
           onOpenWork={onOpenWork}
           onSelectCard={onSelectCard}
-          onExportPdf={handleExportPdf}
-          onAskInChat={handleAskInChatTab}
-          onSendToWork={handleSendToWork}
+          onExportPdf={vault.isLooseFile ? undefined : handleExportPdf}
+          onAskInChat={vault.isLooseFile ? undefined : handleAskInChatTab}
+          onSendToWork={vault.isLooseFile ? undefined : handleSendToWork}
           onSave={handleSave}
-          onOpenNoteActions={() => vault.openNoteActions()}
-          onInsertWeeklyReview={() => vault.insertWeeklyReviewLink()}
-          onPromoteJournal={async () => {
-            await vault.promoteNote("journal");
+          onOpenNoteActions={
+            vault.isLooseFile ? undefined : () => vault.openNoteActions()
+          }
+          onOpenLooseMarkdown={() => void vault.openLooseMarkdownFile()}
+          onInsertWeeklyReview={
+            vault.isLooseFile ? undefined : () => vault.insertWeeklyReviewLink()
+          }
+          onPromoteJournal={
+            vault.isLooseFile
+              ? undefined
+              : async () => {
+                  await vault.promoteNote("journal");
+                }
+          }
+          onPromoteProject={
+            vault.isLooseFile
+              ? undefined
+              : async () => {
+                  await vault.promoteNote("projects");
+                }
+          }
+          onToggleBoard={
+            vault.isLooseFile ? undefined : () => vault.toggleBoardEditMode()
+          }
+          onTogglePreview={() =>
+            vault.editorMode === "edit"
+              ? vault.enterPreviewMode()
+              : vault.enterEditMode()}
+          onToggleSplit={() => layout.toggleVaultSplitEnabled()}
+          onToggleLinks={() => layout.toggleVaultLinksPanel()}
+          onEditSource={() => {
+            markdownEditorEl?.flushLive();
+            vault.setNotePlane("build");
           }}
-          onPromoteProject={async () => {
-            await vault.promoteNote("projects");
-          }}
-          onToggleBoard={() => vault.toggleBoardEditMode()}
+          onBackToLive={() => vault.setNotePlane("live")}
+          onToggleWordWrap={() => vault.setBuildWordWrap(!vault.buildWordWrap)}
+          onToggleLineNumbers={() =>
+            vault.setBuildLineNumbers(!vault.buildLineNumbers)}
+          onToggleAutoSave={() => vault.setBuildAutoSave(!vault.buildAutoSave)}
+          onToggleScrollSync={() =>
+            vault.setBuildScrollSync(!vault.buildScrollSync)}
+          onToggleMonoSource={() => vault.toggleEditorSurface()}
+          onFloatNote={canFloatSticky ? handleFloatSticky : undefined}
         />
+
+        {#if !vault.isLooseFile && vault.selectedPath}
+          <VaultKindBadge
+            kind={vault.selectedKind}
+            path={vault.selectedPath}
+            interactive
+            disabled={vault.noteLoading || vault.saving}
+            onKindChange={(kind) => vault.setNoteKind(kind)}
+          />
+        {/if}
       </div>
     </header>
   {:else if mobile}
@@ -595,12 +713,15 @@
 
   {#if !vault.selectedPath}
     <VaultEmptyState />
-  {:else if vault.noteLoading}
-    <div class="flex flex-1 items-center justify-center text-sm text-surface-400">
-      Loading note…
-    </div>
   {:else}
-    <div class="flex min-h-0 flex-1">
+    <div class="relative flex min-h-0 flex-1">
+      {#if vault.noteLoading}
+        <div
+          class="absolute inset-0 z-10 flex items-center justify-center bg-surface-950/50 text-sm text-surface-400"
+        >
+          Loading note…
+        </div>
+      {/if}
       <div class="relative flex min-h-0 min-w-0 flex-1 flex-col">
         <div class="flex min-h-0 min-w-0 flex-1 flex-col">
         {#if showLedgerTable}
@@ -618,16 +739,21 @@
           />
         {:else if showMarkdownEditor}
           <VaultMarkdownEditor
+            bind:this={markdownEditorEl}
             content={vault.content}
             contentSyncKey={vault.contentSyncKey}
+            {displayTitle}
             disabled={vault.noteLoading}
             class="flex-1"
             surface={editorSurface}
+            showFormatChrome={isBuildPlane}
             split={showSplitEditor}
             splitWidth={layout.vaultEditorPaneWidth}
             onSplitResize={(width) => layout.setVaultEditorPaneWidth(width)}
+            previewScrollEl={previewScrollEl}
+            scrollSyncEnabled={vault.buildScrollSync}
             onchange={(next) => vault.markDirty(next)}
-            showFloat={!stickyNote && isTauri() && Boolean(vault.selectedPath)}
+            showFloat={canFloatSticky}
             onFloat={() => void handleFloatSticky()}
           >
             {#snippet preview()}
@@ -635,7 +761,9 @@
                 content={vault.content}
                 {labelByPath}
                 compact
-                onWikilink={handleWikilink}
+                bind:scrollEl={previewScrollEl}
+                onWikilink={vault.isLooseFile ? undefined : handleWikilink}
+                onHeadingClick={(heading) => markdownEditorEl?.scrollToHeadingSource(heading)}
               />
             {/snippet}
           </VaultMarkdownEditor>
@@ -643,7 +771,7 @@
           <VaultMarkdownPreview
             content={vault.content}
             {labelByPath}
-            onWikilink={handleWikilink}
+            onWikilink={vault.isLooseFile ? undefined : handleWikilink}
           />
         {/if}
         </div>
@@ -668,10 +796,11 @@
       content={vault.content}
       tags={vault.noteTags}
       editorMode={vault.editorMode}
+      dense={isLivePlane}
     />
   {/if}
 
-  {#if vault.selectedPath && !mobile && !noteWorkshop.open}
+  {#if vault.selectedPath && !mobile && !noteWorkshop.open && !vault.isLooseFile}
     <VaultNoteChatFab />
   {/if}
 </section>
@@ -687,8 +816,21 @@
 <VaultChartBuilderSheet
   open={vault.chartBridgeOpen}
   initialKv={vault.chartBridgeKv}
-  onSave={(kv) => vault.commitChartBridge(kv)}
+  initialTableMarkdown={vault.chartBridgeTableMarkdown}
+  onSave={(kv, tableMarkdown) => vault.commitChartBridge(kv, tableMarkdown)}
   onClose={() => vault.closeChartBridge()}
+/>
+<VaultLiquidBuilderSheet
+  open={vault.liquidBridgeOpen}
+  lang={vault.liquidBridgeLang}
+  initial={vault.liquidBridgeDraft}
+  onSave={(next) => vault.commitLiquidBridge(next)}
+  onClose={() => vault.closeLiquidBridge()}
+/>
+<LiquidCardDetailSheet
+  open={vault.cardDetailOpen}
+  detail={vault.cardDetail}
+  onClose={() => vault.closeCardDetail()}
 />
 <VaultPdfPreviewModal
   open={pdfPreviewOpen}

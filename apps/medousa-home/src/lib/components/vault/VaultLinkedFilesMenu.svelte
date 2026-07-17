@@ -76,19 +76,21 @@
 <div class="relative">
   <button
     type="button"
-    class="btn btn-sm {open || count > 0 ? 'variant-soft-surface' : 'variant-ghost-surface'}"
+    class="vault-editor-icon-btn"
+    class:vault-editor-icon-btn--active={open || count > 0}
     aria-haspopup="menu"
     aria-expanded={open}
     title={count > 0 ? `${count} linked file${count === 1 ? "" : "s"}` : "Linked files"}
+    aria-label={count > 0 ? `${count} linked files` : "Linked files"}
     {disabled}
     onclick={(event) => {
       event.stopPropagation();
       open = !open;
     }}
   >
-    <Paperclip size={14} strokeWidth={2} />
+    <Paperclip size={15} strokeWidth={1.75} />
     {#if count > 0}
-      <span class="tabular-nums text-surface-400">{count}</span>
+      <span class="vault-editor-icon-btn__badge">{count > 9 ? "9+" : count}</span>
     {/if}
   </button>
 

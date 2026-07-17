@@ -27,6 +27,10 @@
     /** Allow Configure on medousa-view blocks (current note only). */
     configureViews?: boolean;
     onWikilink?: (target: string) => void;
+    /** Split edit: jump source toward the clicked heading. */
+    onHeadingClick?: (headingText: string) => void;
+    /** Scroll container (the article) for split-pane sync. */
+    scrollEl?: HTMLElement | null;
   }
 
   let {
@@ -35,6 +39,8 @@
     compact = false,
     configureViews = true,
     onWikilink,
+    onHeadingClick,
+    scrollEl = $bindable<HTMLElement | null>(null),
   }: Props = $props();
 
   const body = $derived(stripFrontmatter(content).content);
@@ -101,17 +107,16 @@
     })();
   });
 
-  let container: HTMLElement | undefined = $state();
-
   $effect(() => {
     previewHtml;
-    if (!container) return;
+    if (!scrollEl) return;
     const titles = untrack(() => labelByPath);
     const imagePath = untrack(() => vault.selectedPath);
-    void hydrateMarkdownContainer(container, {
+    void hydrateMarkdownContainer(scrollEl, {
       liquidContext: {
         titleByPath: titles,
         openLinksInWeb: false,
+        onOpenCardDetail: (detail) => vault.openCardDetail(detail),
       },
       localImagePath: imagePath,
       code: true,
@@ -122,44 +127,44 @@
   });
 
   onDestroy(() => {
-    if (container) destroyLiquidEmbeds(container);
+    if (scrollEl) destroyLiquidEmbeds(scrollEl);
   });
 
   $effect(() => {
     vault.headingScrollRequest;
     const heading = vault.pendingHeadingScroll;
-    if (!heading || !container) return;
+    if (!heading || !scrollEl) return;
     void tick().then(() => {
-      if (container) {
-        scrollToHeadingInContainer(container, heading);
+      if (scrollEl) {
+        scrollToHeadingInContainer(scrollEl, heading);
       }
     });
   });
 
   $effect(() => {
-    vaultFind.registerPreview(container ?? null);
+    vaultFind.registerPreview(scrollEl ?? null);
     return () => vaultFind.registerPreview(null);
   });
 
   $effect(() => {
-    if (!container) return;
+    if (!scrollEl) return;
     if (!vaultFind.open || vault.editorMode === "edit") {
-      clearFindHighlights(container);
+      clearFindHighlights(scrollEl);
     }
   });
 
   $effect(() => {
     previewHtml;
-    if (!container || !vaultFind.open || vault.editorMode === "edit") return;
+    if (!scrollEl || !vaultFind.open || vault.editorMode === "edit") return;
     void tick().then(() => {
-      if (!container || !vaultFind.open || vault.editorMode === "edit") return;
-      vaultFind.setSourceText(renderedPlainText(container));
+      if (!scrollEl || !vaultFind.open || vault.editorMode === "edit") return;
+      vaultFind.setSourceText(renderedPlainText(scrollEl));
     });
   });
 
   function scrollFromLink(raw: string | null | undefined) {
-    if (!raw || !container) return;
-    scrollToHeadingInContainer(container, raw.startsWith("#") ? raw.slice(1) : raw);
+    if (!raw || !scrollEl) return;
+    scrollToHeadingInContainer(scrollEl, raw.startsWith("#") ? raw.slice(1) : raw);
   }
 
   function handleChange(event: Event) {
@@ -235,6 +240,17 @@
       return;
     }
 
+    if (onHeadingClick) {
+      const heading = (event.target as HTMLElement).closest("h1, h2, h3, h4, h5, h6");
+      if (heading && scrollEl?.contains(heading)) {
+        const text = (heading.textContent ?? "").trim();
+        if (text) {
+          onHeadingClick(text);
+          return;
+        }
+      }
+    }
+
     const tocLink = (event.target as HTMLElement).closest("[data-heading-link]");
     if (tocLink) {
       event.preventDefault();
@@ -243,7 +259,7 @@
     }
 
     const hashLink = (event.target as HTMLElement).closest('a[href^="#"]');
-    if (hashLink && container?.contains(hashLink)) {
+    if (hashLink && scrollEl?.contains(hashLink)) {
       const href = hashLink.getAttribute("href");
       if (href && href.length > 1) {
         event.preventDefault();
@@ -261,8 +277,8 @@
       sel &&
       !sel.isCollapsed &&
       sel.rangeCount > 0 &&
-      container &&
-      (container.contains(sel.anchorNode) || container.contains(sel.focusNode))
+      scrollEl &&
+      (scrollEl.contains(sel.anchorNode) || scrollEl.contains(sel.focusNode))
     ) {
       const text = sel.toString();
       if (text.trim()) selection = { text };
@@ -274,8 +290,8 @@
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "f") {
       event.preventDefault();
       event.stopPropagation();
-      if (container) {
-        vaultFind.setSourceText(renderedPlainText(container));
+      if (scrollEl) {
+        vaultFind.setSourceText(renderedPlainText(scrollEl));
       }
       vaultFind.openFind();
       return;
@@ -326,7 +342,7 @@
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <article
-  bind:this={container}
+  bind:this={scrollEl}
   class="markdown-content vault-markdown-preview min-w-0 max-w-full flex-1 overflow-x-auto overflow-y-auto text-sm {compact
     ? 'px-4 py-3'
     : 'px-5 py-4'}"

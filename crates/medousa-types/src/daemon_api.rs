@@ -2186,6 +2186,9 @@ pub struct VaultRootView {
     pub path: String,
     pub is_default: bool,
     pub active: bool,
+    /// True when `{path}/.obsidian` exists (co-located Obsidian vault).
+    #[serde(default)]
+    pub is_obsidian: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -2564,6 +2567,12 @@ pub struct CalendarImportResponse {
     pub calendar_path: String,
     pub imported: usize,
     pub updated: usize,
+    /// Non-event components (and other non-fatal skips) that were not imported.
+    #[serde(default)]
+    pub skipped: usize,
+    /// Human-readable skip / fallback notes for the import run.
+    #[serde(default)]
+    pub warnings: Vec<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

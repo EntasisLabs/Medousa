@@ -3,15 +3,14 @@
   import SplitPane from "$lib/components/layout/SplitPane.svelte";
   import { vault } from "$lib/stores/vault.svelte";
   import { vaultFind } from "$lib/stores/vaultFind.svelte";
-  import { syncTextareaFindScroll } from "$lib/utils/vaultFindInNote";
   import VaultFormatBar from "./VaultFormatBar.svelte";
   import VaultSlashMenu from "./VaultSlashMenu.svelte";
   import VaultNotePicker from "./VaultNotePicker.svelte";
   import VaultCalloutBuilderSheet from "./VaultCalloutBuilderSheet.svelte";
   import VaultChartTypePicker from "./VaultChartTypePicker.svelte";
+  import VaultMarkdownCodeMirror from "./VaultMarkdownCodeMirror.svelte";
+  import VaultLiveEditor from "./VaultLiveEditor.svelte";
   import {
-    applyMarkdownFormat,
-    applyMarkdownColor,
     insertSlashBlock,
     insertTextAtCursor,
     insertVaultWikilink,
@@ -19,28 +18,39 @@
     serializeTransclusion,
     shouldOpenSlashMenu,
     slashMenuFilter,
+    type EditResult,
     type MarkdownFormatAction,
     type MarkdownColorToken,
     type SlashBlockId,
   } from "$lib/utils/vaultMarkdownEdit";
   import { vaultDisplayTitle } from "$lib/utils/formatVault";
   import { handleVaultNoteContextMenuEvent } from "$lib/utils/vaultContextMenuEvents";
+  import { createVaultScrollSync } from "$lib/utils/vaultScrollSync";
+  import type { SlashMenuAnchor } from "$lib/utils/slashMenuPlacement";
 
   interface Props {
     content: string;
     contentSyncKey: string;
+    /** Header title for Live duplicate-H1 collapse. */
+    displayTitle?: string;
     disabled?: boolean;
     class?: string;
     onchange: (next: string) => void;
     surface?: "write" | "source";
-    /** Live preview pane beside the textarea (split view). */
+    /** Live preview pane beside the source editor (split view). */
     split?: boolean;
     splitWidth?: number;
     splitMin?: number;
     splitMax?: number;
     onSplitResize?: (width: number) => void;
+    /** Preview scroll container for bidirectional sync when split is on. */
+    previewScrollEl?: HTMLElement | null;
+    /** When false, Build and Preview scroll independently (split still open). */
+    scrollSyncEnabled?: boolean;
     preview?: Snippet;
     formatCompact?: boolean;
+    /** Build plane shows the format bar; Live hides it (slash/shortcuts remain). */
+    showFormatChrome?: boolean;
     showFloat?: boolean;
     onFloat?: () => void;
   }
@@ -48,6 +58,7 @@
   let {
     content,
     contentSyncKey,
+    displayTitle = "",
     disabled = false,
     class: className = "",
     onchange,
@@ -57,35 +68,117 @@
     splitMin = 280,
     splitMax = 720,
     onSplitResize,
+    previewScrollEl = null,
+    scrollSyncEnabled = true,
     preview,
     formatCompact = false,
+    showFormatChrome = true,
     showFloat = false,
     onFloat,
   }: Props = $props();
 
-  let textareaEl = $state<HTMLTextAreaElement | null>(null);
-  let textareaBackdropEl = $state<HTMLElement | null>(null);
+  let cmEl = $state<ReturnType<typeof VaultMarkdownCodeMirror> | null>(null);
+  let liveEl = $state<ReturnType<typeof VaultLiveEditor> | null>(null);
+  let editorShellEl = $state<HTMLElement | null>(null);
+  const scrollSync = createVaultScrollSync();
   let slashMenuEl = $state<ReturnType<typeof VaultSlashMenu> | null>(null);
-  let draft = $state("");
-  let syncedKey = $state("");
+  // Seed from content so CM doesn't mount on an empty draft during hydrate.
+  let draft = $state(content);
+  let syncedKey = $state(contentSyncKey);
   let selectionStart = $state(0);
   let selectionEnd = $state(0);
   let slashOpen = $state(false);
+  let slashAnchor = $state<SlashMenuAnchor | null>(null);
   let notePickerOpen = $state(false);
   let notePickerMode = $state<"wikilink" | "embed">("wikilink");
   let calloutBuilderOpen = $state(false);
   let chartTypePickerOpen = $state(false);
   let bridgeInsertAt = $state(0);
+  let activeActions = $state<MarkdownFormatAction[]>([]);
+  let lastPlane = $state<"live" | "build" | null>(null);
+  let liveSlashFilter = $state("");
+  /** Keep Live scroll through bridge/configure remounts ({#key contentSyncKey}). */
+  let preservedLiveScroll = $state<number | null>(null);
+  let restoreScrollKey = $state<string | null>(null);
 
+  const isLivePlane = $derived(vault.notePlane === "live");
   const slashFilter = $derived(
-    textareaEl ? slashMenuFilter(textareaEl.value, textareaEl.selectionStart) : "",
+    isLivePlane ? liveSlashFilter : slashMenuFilter(draft, selectionStart),
   );
 
-  $effect(() => {
+  /**
+   * Document identity changed → adopt vault.content before {#key} remounts.
+   * Must be `pre` so Live/Build never mount on the previous note's draft.
+   */
+  $effect.pre(() => {
     if (contentSyncKey !== syncedKey) {
+      const prevPath = syncedKey.split(":")[0] ?? "";
+      const nextPath = contentSyncKey.split(":")[0] ?? "";
+      const sameNote = Boolean(prevPath) && prevPath === nextPath;
+      const scrollEl = liveEl?.getScrollEl?.();
+      if (sameNote && scrollEl && isLivePlane) {
+        preservedLiveScroll = scrollEl.scrollTop;
+        restoreScrollKey = contentSyncKey;
+      } else {
+        preservedLiveScroll = null;
+        restoreScrollKey = null;
+      }
       draft = content;
       syncedKey = contentSyncKey;
+      slashOpen = false;
+      slashAnchor = null;
+      liveSlashFilter = "";
     }
+  });
+
+  /** After Live remounts for the same note, put the user back where they were. */
+  $effect(() => {
+    const key = restoreScrollKey;
+    const top = preservedLiveScroll;
+    if (key == null || top == null) return;
+    if (contentSyncKey !== key || !isLivePlane) return;
+    void tick().then(() => {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (restoreScrollKey !== key) return;
+          const el = liveEl?.getScrollEl?.();
+          if (el) el.scrollTop = top;
+          preservedLiveScroll = null;
+          restoreScrollKey = null;
+        });
+      });
+    });
+  });
+
+  /**
+   * Flush the leaving plane into draft/vault BEFORE the editor unmounts.
+   * Live must never flush in onDestroy (that races note switches).
+   */
+  $effect.pre(() => {
+    const plane = vault.notePlane;
+    if (lastPlane === null) {
+      lastPlane = plane;
+      return;
+    }
+    if (lastPlane === plane) return;
+
+    if (lastPlane === "live" && plane === "build") {
+      const flushed = liveEl?.flush();
+      if (flushed != null) {
+        draft = flushed;
+        onchange(flushed);
+      }
+    } else if (lastPlane === "build" && plane === "live") {
+      const fromCm = cmEl?.getContent();
+      if (fromCm != null) {
+        draft = fromCm;
+        onchange(fromCm);
+      }
+    }
+    slashOpen = false;
+    slashAnchor = null;
+    liveSlashFilter = "";
+    lastPlane = plane;
   });
 
   $effect(() => {
@@ -95,20 +188,30 @@
   $effect(() => {
     vault.editorInsertRequest;
     const insert = vault.takeEditorInsert();
-    if (!insert || !textareaEl) return;
-    captureSelection();
-    const result = insertTextAtCursor(draft, selectionStart, insert);
-    void applyEdit(result);
+    if (!insert) return;
+    if (isLivePlane) {
+      if (!liveEl) return;
+      liveEl.insertText(insert);
+      return;
+    }
+    if (!cmEl) return;
+    const { start } = cmEl.getSelection();
+    void applyEdit(insertTextAtCursor(draft, start, insert));
   });
 
   $effect(() => {
-    vaultFind.registerTextarea(textareaEl);
-    return () => vaultFind.registerTextarea(null);
-  });
-
-  $effect(() => {
-    vaultFind.registerTextareaBackdrop(textareaBackdropEl);
-    return () => vaultFind.registerTextareaBackdrop(null);
+    vaultFind.registerReplaceHandler((result) => {
+      if (isLivePlane) return;
+      void applyEdit(result);
+    });
+    vaultFind.registerHighlightHandler((matches, activeIndex) => {
+      if (isLivePlane) return;
+      cmEl?.refreshFindHighlights(matches, activeIndex);
+    });
+    return () => {
+      vaultFind.registerReplaceHandler(null);
+      vaultFind.registerHighlightHandler(null);
+    };
   });
 
   $effect(() => {
@@ -117,24 +220,133 @@
     vaultFind.setSourceText(draft);
   });
 
-  function syncFindScroll() {
-    if (!textareaEl || !textareaBackdropEl || textareaBackdropEl.hidden) return;
-    syncTextareaFindScroll(textareaEl, textareaBackdropEl);
+  function handleCmScroll() {
+    const scrollEl = cmEl?.getScrollEl();
+    if (split && scrollSyncEnabled && scrollEl && previewScrollEl) {
+      scrollSync.sync(scrollEl, previewScrollEl);
+    }
+    if (slashOpen) updateSlashAnchor();
   }
 
-  function captureSelection() {
-    if (!textareaEl) return;
-    selectionStart = textareaEl.selectionStart;
-    selectionEnd = textareaEl.selectionEnd;
+  $effect(() => {
+    const scrollEl = cmEl?.getScrollEl();
+    if (!scrollEl) return;
+    const onScroll = () => handleCmScroll();
+    scrollEl.addEventListener("scroll", onScroll, { passive: true });
+    return () => scrollEl.removeEventListener("scroll", onScroll);
+  });
+
+  $effect(() => {
+    if (!split || !scrollSyncEnabled || !previewScrollEl) return;
+    const previewEl = previewScrollEl;
+    const onPreviewScroll = () => {
+      const scrollEl = cmEl?.getScrollEl();
+      if (scrollEl) scrollSync.sync(previewEl, scrollEl);
+    };
+    previewEl.addEventListener("scroll", onPreviewScroll, { passive: true });
+    return () => previewEl.removeEventListener("scroll", onPreviewScroll);
+  });
+
+  function updateSlashAnchor() {
+    if (!slashOpen) {
+      slashAnchor = null;
+      return;
+    }
+    if (isLivePlane) {
+      slashAnchor = liveEl?.getSlashAnchor(editorShellEl) ?? null;
+      return;
+    }
+    if (!cmEl) {
+      slashAnchor = null;
+      return;
+    }
+    slashAnchor = cmEl.getSlashAnchor(editorShellEl);
+  }
+
+  function syncSlashMenu() {
+    if (isLivePlane) {
+      slashOpen = liveEl?.isSlashOpen() ?? false;
+      liveSlashFilter = liveEl?.slashFilter() ?? "";
+      if (slashOpen) updateSlashAnchor();
+      else slashAnchor = null;
+      return;
+    }
+    if (!cmEl) {
+      slashOpen = false;
+      slashAnchor = null;
+      return;
+    }
+    const { start } = cmEl.getSelection();
+    slashOpen = shouldOpenSlashMenu(draft, start);
+    if (slashOpen) updateSlashAnchor();
+    else slashAnchor = null;
+  }
+
+  function applyEdit(result: EditResult) {
+    cmEl?.applyEdit(result);
+    draft = result.content;
+    onchange(result.content);
+    selectionStart = result.selectionStart;
+    selectionEnd = result.selectionEnd;
+    activeActions = cmEl?.getActiveFormats() ?? [];
+    syncSlashMenu();
+  }
+
+  function handleFormat(action: MarkdownFormatAction) {
+    cmEl?.format(action);
+    draft = cmEl?.getContent() ?? draft;
+    onchange(draft);
+    const sel = cmEl?.getSelection();
+    if (sel) {
+      selectionStart = sel.start;
+      selectionEnd = sel.end;
+    }
+    activeActions = cmEl?.getActiveFormats() ?? [];
+    syncSlashMenu();
+  }
+
+  function handleColor(color: MarkdownColorToken) {
+    cmEl?.color(color);
+    draft = cmEl?.getContent() ?? draft;
+    onchange(draft);
+    const sel = cmEl?.getSelection();
+    if (sel) {
+      selectionStart = sel.start;
+      selectionEnd = sel.end;
+    }
+    syncSlashMenu();
+  }
+
+  function handleContentChange(next: string) {
+    draft = next;
+    onchange(next);
+    syncSlashMenu();
+  }
+
+  function handleLiveChange(next: string) {
+    if (next === draft) return;
+    draft = next;
+    onchange(next);
+    syncSlashMenu();
+  }
+
+  function handleSelectionChange(start: number, end: number) {
+    selectionStart = start;
+    selectionEnd = end;
+    activeActions = cmEl?.getActiveFormats() ?? [];
+    syncSlashMenu();
   }
 
   function handleContextMenu(event: MouseEvent) {
     const path = vault.selectedPath;
-    if (!path || !textareaEl) return;
-    captureSelection();
-    const start = Math.min(selectionStart, selectionEnd);
-    const end = Math.max(selectionStart, selectionEnd);
-    const text = draft.slice(start, end);
+    if (!path) return;
+    if (isLivePlane) {
+      handleVaultNoteContextMenuEvent(path, event, null);
+      return;
+    }
+    if (!cmEl) return;
+    const { start, end } = cmEl.getSelection();
+    const text = draft.slice(Math.min(start, end), Math.max(start, end));
     handleVaultNoteContextMenuEvent(
       path,
       event,
@@ -142,62 +354,61 @@
     );
   }
 
-  function syncSlashMenu() {
-    if (!textareaEl) {
-      slashOpen = false;
-      return;
-    }
-    slashOpen = shouldOpenSlashMenu(textareaEl.value, textareaEl.selectionStart);
-  }
-
-  async function applyEdit(result: {
-    content: string;
-    selectionStart: number;
-    selectionEnd: number;
-  }) {
-    draft = result.content;
-    onchange(result.content);
-    await tick();
-    if (!textareaEl) return;
-    textareaEl.focus();
-    textareaEl.setSelectionRange(result.selectionStart, result.selectionEnd);
-    selectionStart = result.selectionStart;
-    selectionEnd = result.selectionEnd;
-    syncSlashMenu();
-  }
-
-  function handleFormat(action: MarkdownFormatAction) {
-    if (!textareaEl) return;
-    captureSelection();
-    const result = applyMarkdownFormat(draft, selectionStart, selectionEnd, action);
-    void applyEdit(result);
-  }
-
-  function handleColor(color: MarkdownColorToken) {
-    if (!textareaEl) return;
-    captureSelection();
-    const result = applyMarkdownColor(draft, selectionStart, selectionEnd, color);
-    void applyEdit(result);
-  }
-
-  function handleInput() {
-    onchange(draft);
-    if (!textareaEl) return;
-    selectionStart = textareaEl.selectionStart;
-    selectionEnd = textareaEl.selectionEnd;
-    syncSlashMenu();
-  }
-
   async function clearSlashAndRememberInsert(): Promise<number> {
-    captureSelection();
+    if (isLivePlane) {
+      liveEl?.clearSlash();
+      bridgeInsertAt = 0;
+      return 0;
+    }
     const cleared = replaceSlashWith(draft, selectionStart, "");
-    await applyEdit(cleared);
+    applyEdit(cleared);
     bridgeInsertAt = cleared.selectionStart;
     return cleared.selectionStart;
   }
 
   function handleSlashSelect(block: SlashBlockId) {
-    if (!textareaEl) return;
+    if (isLivePlane) {
+      if (!liveEl) return;
+      if (block === "wikilink") {
+        slashOpen = false;
+        notePickerMode = "wikilink";
+        notePickerOpen = true;
+        return;
+      }
+      if (block === "embed") {
+        slashOpen = false;
+        void clearSlashAndRememberInsert().then(() => {
+          notePickerMode = "embed";
+          notePickerOpen = true;
+        });
+        return;
+      }
+      if (block === "view") {
+        slashOpen = false;
+        void clearSlashAndRememberInsert().then(() => {
+          const el = liveEl;
+          if (!el) return;
+          const flushed = el.flush();
+          draft = flushed;
+          onchange(flushed);
+          vault.openViewBridgeInsert(flushed.length);
+        });
+        return;
+      }
+      if (block === "callout") {
+        slashOpen = false;
+        void clearSlashAndRememberInsert().then(() => {
+          calloutBuilderOpen = true;
+        });
+        return;
+      }
+      // Live: chart arrives as a living figure — pick type on the organism (no modal).
+      liveEl.applySlash(block);
+      slashOpen = false;
+      return;
+    }
+
+    if (!cmEl) return;
     if (block === "wikilink") {
       slashOpen = false;
       notePickerMode = "wikilink";
@@ -233,14 +444,29 @@
       });
       return;
     }
-    captureSelection();
     const result = insertSlashBlock(draft, selectionStart, block);
     slashOpen = false;
-    void applyEdit(result);
+    applyEdit(result);
   }
 
   function handleNotePick(path: string) {
-    if (!textareaEl) return;
+    if (isLivePlane) {
+      if (!liveEl) return;
+      if (notePickerMode === "embed") {
+        liveEl.clearSlash();
+        liveEl.insertEmbed(path);
+        notePickerOpen = false;
+        return;
+      }
+      liveEl.clearSlash();
+      const label =
+        vault.labelByPath().get(path) ??
+        vaultDisplayTitle(path.split("/").pop()?.replace(/\.md$/i, "") ?? path, path);
+      liveEl.insertWikilink(path, label.trim() || path);
+      notePickerOpen = false;
+      return;
+    }
+    if (!cmEl) return;
     if (notePickerMode === "embed") {
       const result = insertTextAtCursor(
         draft,
@@ -248,76 +474,68 @@
         serializeTransclusion(path),
       );
       notePickerOpen = false;
-      void applyEdit(result);
+      applyEdit(result);
       return;
     }
-    captureSelection();
     const label =
       vault.labelByPath().get(path) ??
       vaultDisplayTitle(path.split("/").pop()?.replace(/\.md$/i, "") ?? path, path);
     const result = insertVaultWikilink(draft, selectionStart, path, label);
     notePickerOpen = false;
-    void applyEdit(result);
+    applyEdit(result);
   }
 
   function handleBridgeInsert(markdown: string) {
-    const result = insertTextAtCursor(draft, bridgeInsertAt, markdown);
-    void applyEdit(result);
+    if (isLivePlane) {
+      if (markdown.trimStart().startsWith("```")) {
+        liveEl?.insertFence(markdown);
+      } else {
+        liveEl?.insertText(markdown);
+      }
+      return;
+    }
+    applyEdit(insertTextAtCursor(draft, bridgeInsertAt, markdown));
   }
 
   function closeSlashMenu() {
     slashOpen = false;
+    slashAnchor = null;
   }
 
-  function handleKeydown(event: KeyboardEvent) {
-    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "f") {
-      event.preventDefault();
-      event.stopPropagation();
-      vaultFind.setSourceText(draft);
-      vaultFind.openFind();
-      return;
-    }
-    if (slashMenuEl?.handleMenuKeydown(event)) {
-      return;
-    }
-    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "a") {
-      event.preventDefault();
-      textareaEl?.select();
-      captureSelection();
-      return;
-    }
-    if (event.key === "Escape" && slashOpen) {
-      event.preventDefault();
-      closeSlashMenu();
-    }
+  function handleSlashKey(key: string): boolean {
+    return slashMenuEl?.handleMenuKey(key) ?? false;
   }
 
-  const textareaClass =
-    "vault-editor-textarea vault-find-editor-input textarea h-full w-full resize-none rounded-none border-0 bg-surface-950 text-sm leading-relaxed";
-  const backdropClass =
-    "vault-find-editor-backdrop vault-editor-textarea textarea h-full w-full resize-none rounded-none border-0 bg-surface-950 text-sm leading-relaxed";
+  export function scrollToHeadingSource(headingText: string) {
+    if (isLivePlane) return;
+    cmEl?.scrollToHeadingSource(headingText);
+  }
+
+  export function flushLive(): string {
+    if (!isLivePlane) return draft;
+    const flushed = liveEl?.flush() ?? draft;
+    draft = flushed;
+    return flushed;
+  }
 </script>
 
+<!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
   class="vault-markdown-editor vault-markdown-editor--{surface} relative flex min-h-0 flex-1 flex-col {className}"
+  class:vault-markdown-editor--live={isLivePlane || !showFormatChrome}
+  oncontextmenu={handleContextMenu}
 >
-  <VaultFormatBar
-    {disabled}
-    compact={formatCompact}
-    {showFloat}
-    {onFloat}
-    {surface}
-    onToggleSurface={() => vault.toggleEditorSurface()}
-    onFormat={handleFormat}
-    onColor={handleColor}
-  />
-  <VaultSlashMenu
-    bind:this={slashMenuEl}
-    open={slashOpen}
-    filter={slashFilter}
-    onSelect={handleSlashSelect}
-    onClose={closeSlashMenu}
-  />
+  {#if showFormatChrome && !isLivePlane}
+    <VaultFormatBar
+      {disabled}
+      compact={formatCompact}
+      {showFloat}
+      {onFloat}
+      {activeActions}
+      onFormat={handleFormat}
+      onColor={handleColor}
+    />
+  {/if}
   <VaultNotePicker
     open={notePickerOpen}
     onSelect={handleNotePick}
@@ -335,7 +553,7 @@
   />
 
   <div class="flex min-h-0 flex-1">
-    {#if split && preview && onSplitResize}
+    {#if split && preview && onSplitResize && !isLivePlane}
       <SplitPane
         width={splitWidth}
         side="left"
@@ -343,70 +561,76 @@
         max={splitMax}
         onResize={onSplitResize}
       >
-        <div class="vault-find-editor-shell relative flex min-h-0 flex-1 flex-col">
-          <div
-            bind:this={textareaBackdropEl}
-            class={backdropClass}
-            hidden
-            aria-hidden="true"
-          ></div>
-          <textarea
-            bind:this={textareaEl}
-            class="{textareaClass} relative z-[1]"
-            bind:value={draft}
-            {disabled}
-            oninput={handleInput}
-            onkeydown={handleKeydown}
-            onscroll={syncFindScroll}
-            oncontextmenu={handleContextMenu}
-            onselect={() => {
-              captureSelection();
-              syncSlashMenu();
-            }}
-            onkeyup={() => {
-              captureSelection();
-              syncSlashMenu();
-            }}
-            onmouseup={() => {
-              captureSelection();
-              syncSlashMenu();
-            }}
-            onclick={captureSelection}
-          ></textarea>
+        <div
+          bind:this={editorShellEl}
+          class="vault-find-editor-shell relative flex min-h-0 flex-1 flex-col"
+        >
+          <VaultSlashMenu
+            bind:this={slashMenuEl}
+            open={slashOpen}
+            filter={slashFilter}
+            anchor={slashAnchor}
+            onSelect={handleSlashSelect}
+            onClose={closeSlashMenu}
+          />
+          {#key contentSyncKey}
+            <VaultMarkdownCodeMirror
+              bind:this={cmEl}
+              value={draft}
+              {contentSyncKey}
+              {disabled}
+              {surface}
+              {slashOpen}
+              onchange={handleContentChange}
+              onSelectionChange={handleSelectionChange}
+              onSlashCheck={syncSlashMenu}
+              onSlashKey={handleSlashKey}
+            />
+          {/key}
         </div>
       </SplitPane>
       {@render preview()}
     {:else}
-      <div class="vault-find-editor-shell relative flex min-h-0 flex-1 flex-col">
-        <div
-          bind:this={textareaBackdropEl}
-          class="{backdropClass} flex-1"
-          hidden
-          aria-hidden="true"
-        ></div>
-        <textarea
-          bind:this={textareaEl}
-          class="{textareaClass} relative z-[1] flex-1"
-          bind:value={draft}
-          {disabled}
-          oninput={handleInput}
-          onkeydown={handleKeydown}
-          onscroll={syncFindScroll}
-          oncontextmenu={handleContextMenu}
-          onselect={() => {
-            captureSelection();
-            syncSlashMenu();
-          }}
-          onkeyup={() => {
-            captureSelection();
-            syncSlashMenu();
-          }}
-          onmouseup={() => {
-            captureSelection();
-            syncSlashMenu();
-          }}
-          onclick={captureSelection}
-        ></textarea>
+      <div
+        bind:this={editorShellEl}
+        class="vault-find-editor-shell relative flex min-h-0 flex-1 flex-col"
+      >
+        <VaultSlashMenu
+          bind:this={slashMenuEl}
+          open={slashOpen}
+          filter={slashFilter}
+          anchor={slashAnchor}
+          onSelect={handleSlashSelect}
+          onClose={closeSlashMenu}
+        />
+        {#key contentSyncKey}
+          {#if isLivePlane}
+            <VaultLiveEditor
+              bind:this={liveEl}
+              value={draft}
+              {contentSyncKey}
+              {displayTitle}
+              {disabled}
+              {slashOpen}
+              onchange={handleLiveChange}
+              onSlashCheck={syncSlashMenu}
+              onSlashKey={handleSlashKey}
+            />
+          {:else}
+            <VaultMarkdownCodeMirror
+              bind:this={cmEl}
+              value={draft}
+              {contentSyncKey}
+              {disabled}
+              {surface}
+              {slashOpen}
+              onchange={handleContentChange}
+              onSelectionChange={handleSelectionChange}
+              onSlashCheck={syncSlashMenu}
+              onSlashKey={handleSlashKey}
+            />
+          {/if}
+        {/key}
       </div>
     {/if}
   </div>

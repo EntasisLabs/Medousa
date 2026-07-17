@@ -3,6 +3,7 @@ import {
   buildAskCommands,
   buildBrowserCommands,
   buildGoCommands,
+  buildLibraryCommands,
   buildTuneCommands,
 } from "./registry";
 import { buildSuggestedCommands, buildBudgetListCommand } from "./contextCommands";
@@ -67,6 +68,7 @@ export function collectWorkshopCommands(
     ...buildAskCommands(),
     ...buildTuneCommands(),
     ...buildBrowserCommands(),
+    ...buildLibraryCommands(),
   ];
 
   if (showAdvanced || rawQuery.length > 0) {

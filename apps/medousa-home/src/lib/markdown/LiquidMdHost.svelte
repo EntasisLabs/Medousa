@@ -27,13 +27,20 @@
   import Section from "$lib/liquid/archetypes/molecules/section/Section.svelte";
   import ChipGroup from "$lib/liquid/archetypes/molecules/chip_group/ChipGroup.svelte";
   import Media from "$lib/liquid/archetypes/atoms/media/Media.svelte";
+  import Tabs from "$lib/liquid/archetypes/molecules/tabs/Tabs.svelte";
+  import Steps from "$lib/liquid/archetypes/molecules/steps/Steps.svelte";
+  import Accordion from "$lib/liquid/archetypes/molecules/accordion/Accordion.svelte";
+  import CodeEmbed from "$lib/liquid/archetypes/molecules/code/Code.svelte";
+  import Tree from "$lib/liquid/archetypes/molecules/tree/Tree.svelte";
   import type {
     LiquidActionProps,
+    LiquidAccordionProps,
     LiquidBriefProps,
     LiquidCalloutProps,
     LiquidCardProps,
     LiquidChipProps,
     LiquidCiteProps,
+    LiquidCodeProps,
     LiquidCompareProps,
     LiquidDashboardProps,
     LiquidChartProps,
@@ -44,7 +51,10 @@
     LiquidPlanProps,
     LiquidSectionProps,
     LiquidShortlistProps,
+    LiquidStepsProps,
+    LiquidTabsProps,
     LiquidTimelineProps,
+    LiquidTreeProps,
   } from "$lib/markdown/liquidEmbeds";
   import {
     AlertTriangle,
@@ -87,10 +97,6 @@
   }
 
   let { kind, payload, context = {}, animate = true }: Props = $props();
-
-  const hostClass = $derived(
-    animate ? "liquid-md-host liquid-md-enter" : "liquid-md-host",
-  );
 
   // Seed before child Card mounts — same pattern as SceneRenderer.
   // `$effect` runs too late; Card captures context at init for sheet expand.
@@ -302,6 +308,7 @@
         ...(props.title ? { title: props.title } : {}),
         ...(props.subtitle ? { subtitle: props.subtitle } : {}),
         ...(props.recommendation ? { recommendation: props.recommendation } : {}),
+        ...(props.mode ? { mode: props.mode } : {}),
         axes: props.axes,
         entities: props.entities,
       },
@@ -474,10 +481,101 @@
     });
   });
 
+  const tabs = $derived.by(() => {
+    if (kind !== "tabs") return null;
+    const props = payload as LiquidTabsProps;
+    if (!props?.panels || props.panels.length < 2) return null;
+    return createNode({
+      id: "md-tabs",
+      type: "tabs",
+      props: {
+        ...(props.title ? { title: props.title } : {}),
+        ...(props.subtitle ? { subtitle: props.subtitle } : {}),
+        ...(props.default ? { default: props.default } : {}),
+        panels: props.panels,
+      },
+      fillState: "ready",
+    });
+  });
+
+  const steps = $derived.by(() => {
+    if (kind !== "steps") return null;
+    const props = payload as LiquidStepsProps;
+    if (!props?.steps || props.steps.length < 2) return null;
+    return createNode({
+      id: "md-steps",
+      type: "steps",
+      props: {
+        ...(props.title ? { title: props.title } : {}),
+        ...(props.subtitle ? { subtitle: props.subtitle } : {}),
+        steps: props.steps,
+      },
+      fillState: "ready",
+    });
+  });
+
+  const accordion = $derived.by(() => {
+    if (kind !== "accordion") return null;
+    const props = payload as LiquidAccordionProps;
+    if (!props?.items || props.items.length < 1) return null;
+    return createNode({
+      id: "md-accordion",
+      type: "accordion",
+      props: {
+        ...(props.title ? { title: props.title } : {}),
+        ...(props.subtitle ? { subtitle: props.subtitle } : {}),
+        ...(props.multiple != null ? { multiple: props.multiple } : {}),
+        items: props.items,
+      },
+      fillState: "ready",
+    });
+  });
+
+  const code = $derived.by(() => {
+    if (kind !== "code") return null;
+    const props = payload as LiquidCodeProps;
+    if (!props?.source?.trim()) return null;
+    return createNode({
+      id: "md-code",
+      type: "code",
+      props: {
+        source: props.source,
+        ...(props.lang ? { lang: props.lang } : {}),
+        ...(props.title ? { title: props.title } : {}),
+        ...(props.diff != null ? { diff: props.diff } : {}),
+        ...(props.copy != null ? { copy: props.copy } : {}),
+      },
+      fillState: "ready",
+    });
+  });
+
+  const tree = $derived.by(() => {
+    if (kind !== "tree") return null;
+    const props = payload as LiquidTreeProps;
+    if (!props?.nodes || props.nodes.length < 1) return null;
+    return createNode({
+      id: "md-tree",
+      type: "tree",
+      props: {
+        ...(props.title ? { title: props.title } : {}),
+        ...(props.subtitle ? { subtitle: props.subtitle } : {}),
+        nodes: props.nodes,
+      },
+      fillState: "ready",
+    });
+  });
+
   const IconComp = $derived.by(() => {
     if (kind !== "icon") return null;
     const id = typeof payload === "string" ? payload : "";
     return ICON_MAP[id] ?? null;
+  });
+
+  const staggerKinds = new Set(["tabs", "steps", "accordion", "tree"]);
+  const hostClass = $derived.by(() => {
+    const base = animate ? "liquid-md-host liquid-md-enter" : "liquid-md-host";
+    if (animate && staggerKinds.has(kind)) return `${base} liquid-md-stagger`;
+    return base;
   });
 </script>
 
@@ -552,6 +650,26 @@
   <div class="{hostClass} liquid-md-host-chart">
     <Chart node={chart} />
   </div>
+{:else if kind === "tabs" && tabs}
+  <div class="{hostClass} liquid-md-host-tabs">
+    <Tabs node={tabs} />
+  </div>
+{:else if kind === "steps" && steps}
+  <div class="{hostClass} liquid-md-host-steps">
+    <Steps node={steps} />
+  </div>
+{:else if kind === "accordion" && accordion}
+  <div class="{hostClass} liquid-md-host-accordion">
+    <Accordion node={accordion} />
+  </div>
+{:else if kind === "code" && code}
+  <div class="{hostClass} liquid-md-host-code">
+    <CodeEmbed node={code} />
+  </div>
+{:else if kind === "tree" && tree}
+  <div class="{hostClass} liquid-md-host-tree">
+    <Tree node={tree} />
+  </div>
 {:else if kind === "icon" && IconComp}
   <span class="liquid-md-host-icon">
     <IconComp size={14} strokeWidth={2} aria-hidden="true" />
@@ -589,6 +707,15 @@
     animation: liquid-md-enter 0.32s ease-out both;
   }
 
+  .liquid-md-stagger :global(.liquid-tabs-tab),
+  .liquid-md-stagger :global(.liquid-tabs-panel),
+  .liquid-md-stagger :global(.liquid-steps-item),
+  .liquid-md-stagger :global(.liquid-accordion-item),
+  .liquid-md-stagger :global(.liquid-tree-node) {
+    animation: liquid-md-enter 0.36s ease-out both;
+    animation-delay: calc(var(--stagger, 0) * 45ms);
+  }
+
   @keyframes liquid-md-enter {
     from {
       opacity: 0;
@@ -601,7 +728,12 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .liquid-md-enter {
+    .liquid-md-enter,
+    .liquid-md-stagger :global(.liquid-tabs-tab),
+    .liquid-md-stagger :global(.liquid-tabs-panel),
+    .liquid-md-stagger :global(.liquid-steps-item),
+    .liquid-md-stagger :global(.liquid-accordion-item),
+    .liquid-md-stagger :global(.liquid-tree-node) {
       animation: none;
     }
   }

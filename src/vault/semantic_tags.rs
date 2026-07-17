@@ -97,6 +97,10 @@ pub fn upsert_frontmatter_tags(body: &str, tags: &[String]) -> String {
         let mut lines: Vec<String> = Vec::new();
         let mut replaced = false;
         for line in fm.lines() {
+            // Skip empty lines left by previously bloated frontmatter.
+            if line.is_empty() {
+                continue;
+            }
             if line.trim_start().starts_with("tags:") {
                 lines.push(tags_line.clone());
                 replaced = true;
@@ -146,6 +150,29 @@ mod tests {
         assert!(out.contains("tags:"));
         assert!(out.contains("medousa"));
         assert!(out.contains("kind: note"));
+    }
+
+    #[test]
+    fn upsert_frontmatter_tags_is_stable_across_rewrites() {
+        let mut body = "---\nkind: note\n---\n\n# Hello".to_string();
+        for _ in 0..8 {
+            body = upsert_frontmatter_tags(&body, &["medousa".into(), "vault".into()]);
+        }
+        assert!(
+            !body.contains("---\n\nkind") && !body.starts_with("---\n\n"),
+            "frontmatter must not grow leading blank lines: {body:?}"
+        );
+        assert!(body.starts_with("---\nkind: note\n"));
+        let count = body.matches("---").count();
+        assert_eq!(count, 2, "exactly one frontmatter fence pair: {body:?}");
+    }
+
+    #[test]
+    fn upsert_heals_bloated_leading_blank_lines() {
+        let bloated = "---\n\n\nkind: note\n---\n\n# Hello";
+        let out = upsert_frontmatter_tags(bloated, &["medousa".into()]);
+        assert!(out.starts_with("---\nkind: note\n"));
+        assert!(!out.contains("---\n\nkind"));
     }
 
     #[test]

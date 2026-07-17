@@ -302,3 +302,79 @@ export const LIQUID_DASHBOARD_TEMPLATE = [
   "```",
   "",
 ].join("\n");
+
+export const LIQUID_TABS_TEMPLATE = [
+  "```tabs",
+  "title: Getting started",
+  "default: Run",
+  "",
+  "---",
+  "label: Install",
+  "body: npm install medousa",
+  "---",
+  "label: Run",
+  "body: medousa up",
+  "```",
+  "",
+].join("\n");
+
+export const LIQUID_STEPS_TEMPLATE = [
+  "```steps",
+  "title: Ship it",
+  "",
+  "---",
+  "label: Build",
+  "body: cargo build --release",
+  "status: done",
+  "---",
+  "label: Test",
+  "body: Run the smoke suite",
+  "status: current",
+  "---",
+  "label: Deploy",
+  "body: Push to production",
+  "status: pending",
+  "```",
+  "",
+].join("\n");
+
+export const LIQUID_ACCORDION_TEMPLATE = [
+  "```accordion",
+  "title: FAQ",
+  "",
+  "---",
+  "label: What is Liquid?",
+  "body: Paste-first markdown embeds hydrated by the client.",
+  "open: true",
+  "---",
+  "label: Who owns the vocabulary?",
+  "body: The runtime — agents write fences, not HTML.",
+  "```",
+  "",
+].join("\n");
+
+export const LIQUID_CODE_TEMPLATE = [
+  "```code",
+  "lang: typescript",
+  "title: greet.ts",
+  "---",
+  "export function greet(name: string) {",
+  '  return `Hello, ${name}`;',
+  "}",
+  "```",
+  "",
+].join("\n");
+
+export const LIQUID_TREE_TEMPLATE = [
+  "```tree",
+  "title: Project",
+  "---",
+  "src/",
+  "  lib/",
+  "    index.ts",
+  "  routes/",
+  "    +page.svelte",
+  "README.md",
+  "```",
+  "",
+].join("\n");

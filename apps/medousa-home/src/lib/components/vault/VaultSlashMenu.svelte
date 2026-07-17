@@ -1,140 +1,369 @@
 <script lang="ts">
-  import type { SlashBlockId } from "$lib/utils/vaultMarkdownEdit";
+  import {
+    SLASH_BLOCK_IDS,
+    SLASH_WRITING_IDS,
+    type SlashBlockId,
+  } from "$lib/utils/vaultMarkdownEdit";
+  import type { SlashMenuAnchor } from "$lib/utils/slashMenuPlacement";
 
   interface SlashItem {
     id: SlashBlockId;
     label: string;
     hint: string;
     keywords: string;
+    group: "writing" | "blocks";
   }
 
   interface Props {
     open: boolean;
     filter?: string;
+    anchor?: SlashMenuAnchor | null;
     onSelect: (block: SlashBlockId) => void;
     onClose: () => void;
   }
 
-  let { open, filter = "", onSelect, onClose }: Props = $props();
+  let { open, filter = "", anchor = null, onSelect, onClose }: Props = $props();
 
   const items: SlashItem[] = [
-    { id: "wikilink", label: "Link to note", hint: "[[path|label]]", keywords: "link note wikilink wiki" },
-    { id: "h1", label: "Title", hint: "# heading", keywords: "title h1 heading" },
-    { id: "h2", label: "Section", hint: "## heading", keywords: "section h2 heading" },
-    { id: "h3", label: "Subsection", hint: "### heading", keywords: "subsection h3 heading" },
-    { id: "bullet", label: "Bullet list", hint: "- item", keywords: "bullet list ul" },
-    { id: "numbered", label: "Numbered list", hint: "1. item", keywords: "numbered ordered ol" },
-    { id: "checkbox", label: "To-do", hint: "- [ ] item", keywords: "todo task checkbox check" },
-    { id: "link", label: "Web link", hint: "[text](url)", keywords: "link url href" },
-    { id: "quote", label: "Quote", hint: "> quote", keywords: "quote blockquote" },
-    { id: "callout", label: "Callout", hint: "> [!note]", keywords: "callout aside warning tip note obsidian" },
-    { id: "liquid_callout", label: "Liquid callout", hint: "```callout", keywords: "liquid callout aside tone note warn" },
-    { id: "liquid_card", label: "Card", hint: "```card", keywords: "liquid card summary" },
-    { id: "liquid_chart", label: "Chart", hint: "```chart", keywords: "liquid chart bar pie radar scatter combo heatmap plot graph" },
-    { id: "liquid_dashboard", label: "Dashboard", hint: "```dashboard", keywords: "liquid dashboard metrics pulse" },
-    { id: "liquid_report", label: "Report", hint: "```report", keywords: "liquid report narrative charts figures prose" },
-    { id: "embed", label: "Embed note", hint: "![[note]]", keywords: "embed transclude include" },
-    { id: "divider", label: "Divider", hint: "---", keywords: "divider hr rule" },
-    { id: "toc", label: "Table of contents", hint: "medousa-toc", keywords: "toc contents table" },
-    { id: "view", label: "Query view", hint: "from a table", keywords: "view query table dashboard" },
-    { id: "board", label: "Kanban board", hint: "## columns", keywords: "board kanban columns" },
-    { id: "table", label: "Data table", hint: "| col |", keywords: "table database rows" },
+    {
+      id: "wikilink",
+      label: "Link to note",
+      hint: "Jump to a note",
+      keywords: "link note wikilink wiki [[",
+      group: "writing",
+    },
+    {
+      id: "h1",
+      label: "Title",
+      hint: "Big heading",
+      keywords: "title h1 heading #",
+      group: "writing",
+    },
+    {
+      id: "h2",
+      label: "Section",
+      hint: "Section heading",
+      keywords: "section h2 heading ##",
+      group: "writing",
+    },
+    {
+      id: "h3",
+      label: "Subsection",
+      hint: "Smaller heading",
+      keywords: "subsection h3 heading ###",
+      group: "writing",
+    },
+    {
+      id: "bullet",
+      label: "Bullet list",
+      hint: "Unordered list",
+      keywords: "bullet list ul -",
+      group: "writing",
+    },
+    {
+      id: "numbered",
+      label: "Numbered list",
+      hint: "Ordered list",
+      keywords: "numbered ordered ol 1.",
+      group: "writing",
+    },
+    {
+      id: "checkbox",
+      label: "To-do",
+      hint: "Checklist item",
+      keywords: "todo task checkbox check [ ]",
+      group: "writing",
+    },
+    {
+      id: "link",
+      label: "Web link",
+      hint: "Link to a URL",
+      keywords: "link url href http",
+      group: "writing",
+    },
+    {
+      id: "quote",
+      label: "Quote",
+      hint: "Quoted passage",
+      keywords: "quote blockquote >",
+      group: "writing",
+    },
+    {
+      id: "divider",
+      label: "Divider",
+      hint: "Horizontal rule",
+      keywords: "divider hr rule ---",
+      group: "writing",
+    },
+    {
+      id: "liquid_callout",
+      label: "Callout",
+      hint: "Highlighted aside",
+      keywords: "liquid callout aside tone note warn tip warning important ```callout > [!note] obsidian",
+      group: "blocks",
+    },
+    {
+      id: "liquid_card",
+      label: "Card",
+      hint: "Summary card",
+      keywords: "liquid card summary ```card",
+      group: "blocks",
+    },
+    {
+      id: "liquid_chart",
+      label: "Chart",
+      hint: "Bar, line, pie…",
+      keywords: "liquid chart bar pie radar scatter combo heatmap plot graph ```chart",
+      group: "blocks",
+    },
+    {
+      id: "liquid_dashboard",
+      label: "Dashboard",
+      hint: "Metrics at a glance",
+      keywords: "liquid dashboard metrics pulse ```dashboard",
+      group: "blocks",
+    },
+    {
+      id: "liquid_report",
+      label: "Report",
+      hint: "Narrative with figures",
+      keywords: "liquid report narrative charts figures prose ```report",
+      group: "blocks",
+    },
+    {
+      id: "liquid_tabs",
+      label: "Tabs",
+      hint: "Switchable panels",
+      keywords: "liquid tabs panels switcher ```tabs",
+      group: "blocks",
+    },
+    {
+      id: "liquid_steps",
+      label: "Steps",
+      hint: "Numbered how-to",
+      keywords: "liquid steps numbered howto ```steps",
+      group: "blocks",
+    },
+    {
+      id: "liquid_accordion",
+      label: "Accordion",
+      hint: "Expandable sections",
+      keywords: "liquid accordion collapse faq ```accordion",
+      group: "blocks",
+    },
+    {
+      id: "liquid_code",
+      label: "Code snippet",
+      hint: "Copyable code",
+      keywords: "liquid code snippet copy diff ```code",
+      group: "blocks",
+    },
+    {
+      id: "liquid_tree",
+      label: "File tree",
+      hint: "Folders and files",
+      keywords: "liquid tree files folders ```tree",
+      group: "blocks",
+    },
+    {
+      id: "embed",
+      label: "Embed note",
+      hint: "Show another note here",
+      keywords: "embed transclude include ![[",
+      group: "blocks",
+    },
+    {
+      id: "toc",
+      label: "Table of contents",
+      hint: "Jump links for headings",
+      keywords: "toc contents table medousa-toc",
+      group: "blocks",
+    },
+    {
+      id: "view",
+      label: "Query view",
+      hint: "Live table from notes",
+      keywords: "view query table dashboard",
+      group: "blocks",
+    },
+    {
+      id: "board",
+      label: "Kanban board",
+      hint: "Cards in columns",
+      keywords: "board kanban columns ##",
+      group: "blocks",
+    },
+    {
+      id: "table",
+      label: "Data table",
+      hint: "Rows and columns",
+      keywords: "table database rows |",
+      group: "blocks",
+    },
   ];
 
   const filteredItems = $derived.by(() => {
     const query = filter.trim().toLowerCase();
-    if (!query) return items;
-    return items.filter(
-      (item) =>
+    const pool = items.filter((item) => {
+      if (!query) return true;
+      return (
         item.id.includes(query) ||
         item.label.toLowerCase().includes(query) ||
         item.hint.toLowerCase().includes(query) ||
-        item.keywords.includes(query),
-    );
+        item.keywords.includes(query)
+      );
+    });
+    const writing = pool.filter((item) => SLASH_WRITING_IDS.includes(item.id));
+    const blocks = pool.filter((item) => SLASH_BLOCK_IDS.includes(item.id));
+    return { writing, blocks, flat: [...writing, ...blocks] };
   });
 
   let highlightIndex = $state(0);
+  let menuEl = $state<HTMLElement | null>(null);
+  let listEl = $state<HTMLElement | null>(null);
+  let wasOpen = false;
 
   $effect(() => {
-    if (open) highlightIndex = 0;
+    if (open && !wasOpen) {
+      highlightIndex = 0;
+    }
+    wasOpen = open;
   });
 
   $effect(() => {
     filter;
-    if (highlightIndex >= filteredItems.length) {
-      highlightIndex = Math.max(0, filteredItems.length - 1);
+    if (highlightIndex >= filteredItems.flat.length) {
+      highlightIndex = Math.max(0, filteredItems.flat.length - 1);
     }
   });
 
-  export function handleMenuKeydown(event: KeyboardEvent): boolean {
+  $effect(() => {
+    if (!open || !listEl) return;
+    const index = highlightIndex;
+    const active = listEl.querySelector<HTMLElement>(
+      `[data-slash-index="${index}"]`,
+    );
+    if (!active) return;
+    const listRect = listEl.getBoundingClientRect();
+    const rowRect = active.getBoundingClientRect();
+    if (rowRect.top < listRect.top) {
+      listEl.scrollTop -= listRect.top - rowRect.top + 4;
+    } else if (rowRect.bottom > listRect.bottom) {
+      listEl.scrollTop += rowRect.bottom - listRect.bottom + 4;
+    }
+  });
+
+  // Click-outside only — keyboard nav is owned by CodeMirror Prec.highest keymap.
+  $effect(() => {
+    if (!open) return;
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (menuEl && target && menuEl.contains(target)) return;
+      onClose();
+    };
+    document.addEventListener("pointerdown", onPointerDown, true);
+    return () => document.removeEventListener("pointerdown", onPointerDown, true);
+  });
+
+  /** Called from the editor keymap (single owner of ↑↓/Enter/Esc). */
+  export function handleMenuKey(key: string): boolean {
     if (!open) return false;
-    const visible = filteredItems;
+    const visible = filteredItems.flat;
     if (visible.length === 0) {
-      if (event.key === "Escape") {
-        event.preventDefault();
+      if (key === "Escape") {
         onClose();
         return true;
       }
       return false;
     }
-    if (event.key === "Escape") {
-      event.preventDefault();
+    if (key === "Escape") {
       onClose();
       return true;
     }
-    if (event.key === "ArrowDown") {
-      event.preventDefault();
+    if (key === "ArrowDown") {
       highlightIndex = (highlightIndex + 1) % visible.length;
       return true;
     }
-    if (event.key === "ArrowUp") {
-      event.preventDefault();
+    if (key === "ArrowUp") {
       highlightIndex = (highlightIndex - 1 + visible.length) % visible.length;
       return true;
     }
-    if (event.key === "Enter") {
-      event.preventDefault();
+    if (key === "Enter") {
       onSelect(visible[highlightIndex]!.id);
       return true;
     }
     return false;
   }
+
+  function flatIndexOf(id: SlashBlockId): number {
+    return filteredItems.flat.findIndex((item) => item.id === id);
+  }
+
+  function selectItem(id: SlashBlockId, event: Event) {
+    event.preventDefault();
+    onSelect(id);
+  }
 </script>
 
 {#if open}
   <div
-    class="vault-slash-menu shrink-0 border-b border-primary-500/30 bg-surface-900/95 shadow-lg"
+    bind:this={menuEl}
+    class="vault-slash-menu"
+    class:vault-slash-menu--anchored={Boolean(anchor)}
+    class:vault-slash-menu--above={Boolean(anchor?.bottom != null)}
     role="listbox"
     aria-label="Insert block"
+    style:top={anchor?.top != null ? `${anchor.top}px` : undefined}
+    style:bottom={anchor?.bottom != null ? `${anchor.bottom}px` : undefined}
+    style:left={anchor ? `${anchor.left}px` : undefined}
+    style:max-height={anchor ? `${anchor.maxHeight}px` : undefined}
   >
-    <div class="flex items-center justify-between gap-2 px-3 py-1.5">
-      <p class="text-[10px] font-medium uppercase tracking-wide text-primary-300">
-        Insert block
-      </p>
-      <p class="text-[10px] text-surface-500">
-        ↑↓ · Enter · Esc
-      </p>
+    <div class="vault-slash-menu-chrome">
+      <p class="vault-slash-menu-title">Insert</p>
+      <p class="vault-slash-menu-hint">↑↓ · Enter · Esc</p>
     </div>
-    <ul class="grid max-h-48 grid-cols-1 gap-0.5 overflow-y-auto px-2 pb-2 sm:grid-cols-2">
-      {#each filteredItems as item, index (item.id)}
-        <li>
-          <button
-            type="button"
-            role="option"
-            aria-selected={index === highlightIndex}
-            class="flex w-full items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-left text-sm transition-colors {index ===
-            highlightIndex
-              ? 'bg-primary-500/20 text-primary-100'
-              : 'text-surface-200 hover:bg-surface-800'}"
-            onclick={() => onSelect(item.id)}
-          >
-            <span>{item.label}</span>
-            <span class="font-mono text-[10px] text-surface-500">{item.hint}</span>
-          </button>
-        </li>
-      {:else}
-        <li class="px-2.5 py-3 text-sm text-surface-500">No matching blocks</li>
-      {/each}
+    <ul bind:this={listEl} class="vault-slash-menu-list">
+      {#if filteredItems.writing.length > 0}
+        <li class="vault-slash-menu-section" role="presentation">Writing</li>
+        {#each filteredItems.writing as item (item.id)}
+          {@const index = flatIndexOf(item.id)}
+          <li role="presentation">
+            <div
+              role="option"
+              data-slash-index={index}
+              aria-selected={index === highlightIndex}
+              class="vault-slash-menu-item"
+              class:vault-slash-menu-item--active={index === highlightIndex}
+              onpointerdown={(event) => selectItem(item.id, event)}
+            >
+              <span>{item.label}</span>
+              <span class="vault-slash-menu-item-hint">{item.hint}</span>
+            </div>
+          </li>
+        {/each}
+      {/if}
+      {#if filteredItems.blocks.length > 0}
+        <li class="vault-slash-menu-section" role="presentation">Blocks</li>
+        {#each filteredItems.blocks as item (item.id)}
+          {@const index = flatIndexOf(item.id)}
+          <li role="presentation">
+            <div
+              role="option"
+              data-slash-index={index}
+              aria-selected={index === highlightIndex}
+              class="vault-slash-menu-item"
+              class:vault-slash-menu-item--active={index === highlightIndex}
+              onpointerdown={(event) => selectItem(item.id, event)}
+            >
+              <span>{item.label}</span>
+              <span class="vault-slash-menu-item-hint">{item.hint}</span>
+            </div>
+          </li>
+        {/each}
+      {/if}
+      {#if filteredItems.flat.length === 0}
+        <li class="vault-slash-menu-empty">No matching blocks</li>
+      {/if}
     </ul>
   </div>
 {/if}

@@ -70,6 +70,7 @@ export function artifactSummaryToUi(artifact: ArtifactSummary): {
   presentation: UiArtifactPresentation;
   byteSize: number | null;
   heightPx: number | null;
+  rootArtifactId: string | null;
 } {
   return {
     artifactId: artifact.artifact_id,
@@ -81,6 +82,7 @@ export function artifactSummaryToUi(artifact: ArtifactSummary): {
         : "inline",
     byteSize: artifact.byte_size,
     heightPx: null,
+    rootArtifactId: artifact.root_artifact_id ?? null,
   };
 }
 
@@ -93,6 +95,7 @@ export function mapStreamUiArtifact(
     byte_size?: number | null;
     height_px?: number | null;
   },
+  rootArtifactId?: string | null,
 ): {
   artifactId: string;
   mime: string;
@@ -100,6 +103,7 @@ export function mapStreamUiArtifact(
   presentation: UiArtifactPresentation;
   byteSize: number | null;
   heightPx: number | null;
+  rootArtifactId: string | null;
 } {
   return {
     artifactId: artifact.artifact_id,
@@ -111,6 +115,7 @@ export function mapStreamUiArtifact(
         : "inline",
     byteSize: artifact.byte_size ?? null,
     heightPx: artifact.height_px ?? null,
+    rootArtifactId: rootArtifactId ?? null,
   };
 }
 

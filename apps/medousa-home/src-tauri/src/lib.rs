@@ -650,10 +650,11 @@ pub fn run() {
 fn setup_desktop_tray(app: &tauri::App) -> tauri::Result<()> {
     let show = MenuItem::with_id(app, "show", "Show Medousa", true, None::<&str>)?;
     let chat = MenuItem::with_id(app, "chat", "Open Chat", true, None::<&str>)?;
+    let note = MenuItem::with_id(app, "note", "Open Note", true, None::<&str>)?;
     let web = MenuItem::with_id(app, "web", "Open Web", true, None::<&str>)?;
     let hide = MenuItem::with_id(app, "hide", "Hide", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&show, &chat, &web, &hide, &quit])?;
+    let menu = Menu::with_items(app, &[&show, &chat, &note, &web, &hide, &quit])?;
 
     if let Some(icon) = app.default_window_icon().cloned() {
         TrayIconBuilder::with_id("main-tray")
@@ -664,6 +665,9 @@ fn setup_desktop_tray(app: &tauri::App) -> tauri::Result<()> {
                 "show" => show_main_window(app),
                 "chat" => {
                     let _ = window::window_show_chat_popout(app.clone());
+                }
+                "note" => {
+                    let _ = window::window_show_vault_sticky(app.clone());
                 }
                 "web" => {
                     let _ = window::window_show_browser(app.clone());

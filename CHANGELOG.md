@@ -13,6 +13,28 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+## [0.2.0] — 2026-07-15
+
+### Added
+
+- Liquid markdown Blume-aligned embeds: `tabs`, `steps`, `accordion`, `code`, and `tree` (plus stagger enter animations)
+- Open a single markdown file without adding a vault root (loose-file mode)
+- Obsidian vault support on co-located workshops — detect `.obsidian`, safer scans, no auto workshop tags on external roots
+- Dual-pane vault editing with bidirectional scroll sync between source and live preview
+- Platform-aware shortcut hints (`⌘` on macOS, `Ctrl` elsewhere)
+
+### Fixed
+
+- Vault Tab key indents markdown instead of moving focus
+- Vault YAML frontmatter no longer grows blank lines on every save (TS + Rust)
+- Chat session search autofocuses and coalesces in-flight refreshes so typing is not dropped
+- Artifact MedousaStore persists across chat embed revisions via stable store scopes + alias rebind
+- Calendar `.ics` import generates missing UIDs, maps Outlook/Windows TZIDs, and surfaces import stats
+
+### Changed
+
+- Chat session search placeholder clarifies title/preview search (“Search titles…”)
+
 ## [0.1.0] — 2026-07-14
 
 ### Added
@@ -34,4 +56,5 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 - Product path is **Home-first**: download the app, chat, then add packages from Settings; Installer remains an advanced/repair escape hatch
 - Connection → Extras and welcome-wizard offline CTAs open Settings → Packages instead of launching the Installer by default
 
+[0.2.0]: https://github.com/EntasisLabs/Medousa/releases/tag/v0.2.0
 [0.1.0]: https://github.com/EntasisLabs/Medousa/releases/tag/v0.1.0

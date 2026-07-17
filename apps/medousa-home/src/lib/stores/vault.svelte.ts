@@ -22,7 +22,15 @@ import {
   saveShowSystemNotes,
 } from "$lib/config/vaultSpaces";
 import {
+  readVaultBuildAutoSave,
+  readVaultBuildLineNumbers,
+  readVaultBuildScrollSync,
+  readVaultBuildWordWrap,
   readVaultStampCompletionEnabled,
+  writeVaultBuildAutoSave,
+  writeVaultBuildLineNumbers,
+  writeVaultBuildScrollSync,
+  writeVaultBuildWordWrap,
   writeVaultStampCompletionEnabled,
 } from "$lib/config/vaultPreferences";
 import type { WorkspaceEvent } from "$lib/types/workspace";
@@ -53,9 +61,12 @@ import {
 } from "$lib/utils/vaultTemplates";
 import {
   insertTextAtSection,
+  normalizeKind,
+  parseFrontmatterTitle,
   resolveKind,
   setFrontmatterKind,
   sortVaultTagsForDisplay,
+  stripFrontmatter,
   type VaultNoteKind,
 } from "$lib/utils/vaultFrontmatter";
 import { workshopSessionIdForVaultSave } from "$lib/utils/vaultNoteWorkshop";
@@ -104,12 +115,27 @@ import {
 import {
   extractChartFences,
   parseChartFenceParts,
-  replaceChartFencePropsAt,
+  replaceChartFenceAt,
   type ChartFenceKv,
 } from "$lib/utils/vaultChartFence";
+import {
+  extractLiquidFences,
+  parseLiquidFenceDraft,
+  replaceLiquidFenceRawAt,
+  serializeLiquidFenceDraft,
+  type LiquidFenceDraft,
+  type LiquidFenceLang,
+} from "$lib/utils/vaultLiquidFence";
+import type { CardDetailPayload } from "$lib/markdown/liquidEmbeds";
 import { insertTextAtCursor } from "$lib/utils/vaultMarkdownEdit";
 import { invalidateTransclusionCache } from "$lib/utils/resolveTransclusion";
-import { invalidateVaultRootCache } from "$lib/utils/vaultFilesystem";
+import {
+  fileNameFromAbsolutePath,
+  invalidateVaultRootCache,
+  pickMarkdownFile,
+  readAbsoluteTextFile,
+  writeAbsoluteTextFile,
+} from "$lib/utils/vaultFilesystem";
 import { loadVaultRecent, rememberVaultRecent } from "$lib/utils/vaultRecent";
 import {
   formatDiffChip,
@@ -120,6 +146,10 @@ import {
 const LAST_NOTE_KEY = "medousa-home-last-note";
 const LIBRARY_BROWSE_MODE_KEY = "medousa-home-vault-browse-mode";
 const EDITOR_SURFACE_KEY = "medousa-home-vault-editor-surface";
+/** LME writing plane: Live = calm page; Build = full chrome. */
+const NOTE_PLANE_KEY = "medousa-home-vault-note-plane";
+
+export type VaultNotePlane = "live" | "build";
 const RECENT_BROWSE_LIMIT = 40;
 const KIND_BROWSE_ORDER: VaultNoteKind[] = [
   "daily",
@@ -140,6 +170,8 @@ export class VaultStore {
   notes = $state<VaultNote[]>([]);
   tree = $state<VaultTreeNode[]>([]);
   selectedPath = $state<string | null>(loadLastNote());
+  /** Absolute path when editing a single .md outside any vault root. */
+  looseFilePath = $state<string | null>(null);
   content = $state("");
   baselineContent = $state("");
   contentHash = $state<string | null>(null);
@@ -161,12 +193,22 @@ export class VaultStore {
   editorMode = $state<"edit" | "preview">("edit");
   /** Write = prose typography; source = mono fence surgery. */
   editorSurface = $state<"write" | "source">(loadEditorSurface());
+  /** Live = calm LME page; Build = format bar / split / source depth. */
+  notePlane = $state<VaultNotePlane>(loadNotePlane());
   /** Ledger notes: table-first editing (M7c.2). */
   ledgerEditMode = $state<"table" | "raw">("table");
   /** Board notes: kanban-first editing (Phase E). */
   boardEditMode = $state<"board" | "raw">("board");
   showSystemNotes = $state(loadShowSystemNotes());
   stampCompletionInline = $state(readVaultStampCompletionEnabled());
+  /** Build editor: wrap long lines (CodeMirror). */
+  buildWordWrap = $state(readVaultBuildWordWrap());
+  /** Build editor: show line numbers gutter. */
+  buildLineNumbers = $state(readVaultBuildLineNumbers());
+  /** Autosave dirty notes on a timer. */
+  buildAutoSave = $state(readVaultBuildAutoSave());
+  /** Build split: sync CodeMirror ↔ Preview scroll. */
+  buildScrollSync = $state(readVaultBuildScrollSync());
   activeSpaceFilter = $state<string | null>(loadLastSpace());
   newNoteDialogOpen = $state(false);
   /** M7f: agent/server edit waiting for accept/discard. */
@@ -209,6 +251,14 @@ export class VaultStore {
   chartBridgeOpen = $state(false);
   chartBridgeEditIndex = $state<number | null>(null);
   chartBridgeKv = $state<ChartFenceKv | null>(null);
+  chartBridgeTableMarkdown = $state("");
+  liquidBridgeOpen = $state(false);
+  liquidBridgeLang = $state<LiquidFenceLang | null>(null);
+  liquidBridgeEditIndex = $state<number | null>(null);
+  liquidBridgeDraft = $state<LiquidFenceDraft | null>(null);
+  /** Vault card detail sheet (same payload as chat Liquid cards). */
+  cardDetailOpen = $state(false);
+  cardDetail = $state<CardDetailPayload | null>(null);
 
   private autosaveTimer: ReturnType<typeof setTimeout> | null = null;
   private savedWhisperTimer: ReturnType<typeof setTimeout> | null = null;
@@ -245,9 +295,16 @@ export class VaultStore {
     ),
   );
 
-  contentSyncKey = $derived(`${this.selectedPath ?? ""}:${this.contentRevision}`);
+  contentSyncKey = $derived(
+    `${this.looseFilePath ?? this.selectedPath ?? ""}:${this.contentRevision}`,
+  );
+
+  get isLooseFile(): boolean {
+    return Boolean(this.looseFilePath);
+  }
 
   activeSpace = $derived.by((): ReturnType<typeof getSpaceById> => {
+    if (this.looseFilePath) return undefined;
     if (this.selectedPath) {
       const note = this.notes.find((row) => row.path === this.selectedPath);
       if (note) {
@@ -345,6 +402,7 @@ export class VaultStore {
   scheduleAutosave() {
     this.clearAutosaveTimer();
     if (
+      !this.buildAutoSave ||
       !this.selectedPath ||
       !this.dirty ||
       this.saveStatus === "conflict" ||
@@ -634,6 +692,31 @@ export class VaultStore {
     writeVaultStampCompletionEnabled(value);
   }
 
+  setBuildWordWrap(value: boolean) {
+    this.buildWordWrap = value;
+    writeVaultBuildWordWrap(value);
+  }
+
+  setBuildLineNumbers(value: boolean) {
+    this.buildLineNumbers = value;
+    writeVaultBuildLineNumbers(value);
+  }
+
+  setBuildAutoSave(value: boolean) {
+    this.buildAutoSave = value;
+    writeVaultBuildAutoSave(value);
+    if (value) {
+      if (this.dirty) this.scheduleAutosave();
+    } else {
+      this.clearAutosaveTimer();
+    }
+  }
+
+  setBuildScrollSync(value: boolean) {
+    this.buildScrollSync = value;
+    writeVaultBuildScrollSync(value);
+  }
+
   togglePreviewTask(taskIndex: number, checked: boolean) {
     if (!this.selectedPath || this.proposalActive) return;
     const next = togglePreviewTaskInContent(
@@ -643,7 +726,7 @@ export class VaultStore {
       this.stampCompletionInline,
     );
     if (!next || next === this.content) return;
-    this.markDirty(next);
+    this.markDirty(next, { reloadEditors: true });
   }
 
   queueEditorInsert(text: string) {
@@ -689,7 +772,7 @@ export class VaultStore {
         query,
       );
       if (next) {
-        this.markDirty(next);
+        this.markDirty(next, { reloadEditors: true });
         invalidateMedousaViewCache();
       }
     } else {
@@ -699,7 +782,7 @@ export class VaultStore {
         this.viewBridgeInsertAt,
         fence,
       );
-      this.markDirty(result.content);
+      this.markDirty(result.content, { reloadEditors: true });
     }
     this.closeViewBridge();
   }
@@ -708,29 +791,76 @@ export class VaultStore {
     const blocks = extractChartFences(this.content);
     const block = blocks[index];
     if (!block) return;
+    const parts = parseChartFenceParts(block.body);
     this.chartBridgeEditIndex = index;
-    this.chartBridgeKv = parseChartFenceParts(block.body).kv;
+    this.chartBridgeKv = parts.kv;
+    this.chartBridgeTableMarkdown = parts.tableMarkdown;
     this.chartBridgeOpen = true;
   }
 
   closeChartBridge() {
     this.chartBridgeOpen = false;
     this.chartBridgeKv = null;
+    this.chartBridgeTableMarkdown = "";
     this.chartBridgeEditIndex = null;
   }
 
-  commitChartBridge(kv: ChartFenceKv) {
+  commitChartBridge(kv: ChartFenceKv, tableMarkdown?: string) {
     if (this.chartBridgeEditIndex == null) {
       this.closeChartBridge();
       return;
     }
-    const next = replaceChartFencePropsAt(
+    const next = replaceChartFenceAt(
       this.content,
       this.chartBridgeEditIndex,
       kv,
+      tableMarkdown,
     );
-    if (next) this.markDirty(next);
+    if (next) this.markDirty(next, { reloadEditors: true });
     this.closeChartBridge();
+  }
+
+  openLiquidBridgeEdit(lang: LiquidFenceLang, index: number) {
+    const blocks = extractLiquidFences(this.content, lang);
+    const block = blocks[index];
+    if (!block) return;
+    this.liquidBridgeLang = lang;
+    this.liquidBridgeEditIndex = index;
+    this.liquidBridgeDraft = parseLiquidFenceDraft(lang, block.body);
+    this.liquidBridgeOpen = true;
+  }
+
+  closeLiquidBridge() {
+    this.liquidBridgeOpen = false;
+    this.liquidBridgeLang = null;
+    this.liquidBridgeEditIndex = null;
+    this.liquidBridgeDraft = null;
+  }
+
+  commitLiquidBridge(next: LiquidFenceDraft) {
+    if (this.liquidBridgeEditIndex == null || !this.liquidBridgeLang) {
+      this.closeLiquidBridge();
+      return;
+    }
+    const raw = serializeLiquidFenceDraft(next);
+    const replaced = replaceLiquidFenceRawAt(
+      this.content,
+      this.liquidBridgeLang,
+      this.liquidBridgeEditIndex,
+      raw,
+    );
+    if (replaced) this.markDirty(replaced, { reloadEditors: true });
+    this.closeLiquidBridge();
+  }
+
+  openCardDetail(detail: CardDetailPayload) {
+    this.cardDetail = detail;
+    this.cardDetailOpen = true;
+  }
+
+  closeCardDetail() {
+    this.cardDetailOpen = false;
+    this.cardDetail = null;
   }
 
   async insertImageEmbed(imagePath: string) {
@@ -780,6 +910,7 @@ export class VaultStore {
   resetForWorkshopSwitch() {
     this.clearAutosaveTimer();
     this.clearProposal();
+    this.clearLooseFile();
     this.selectedPath = null;
     this.content = "";
     this.baselineContent = "";
@@ -805,6 +936,58 @@ export class VaultStore {
     void this.refreshNotes();
   }
 
+  clearLooseFile() {
+    this.looseFilePath = null;
+  }
+
+  /** Open a single .md file without registering a vault root (desktop, co-located). */
+  async openLooseMarkdownFile() {
+    const path = await pickMarkdownFile();
+    if (!path) return false;
+    return this.openLooseFile(path);
+  }
+
+  async openLooseFile(absolutePath: string) {
+    const trimmed = absolutePath.trim();
+    if (!trimmed) return false;
+    if (this.dirty && this.selectedPath) {
+      this.clearAutosaveTimer();
+      await this.save({ source: "autosave" });
+    }
+    this.noteLoading = true;
+    this.loading = true;
+    this.error = null;
+    this.clearProposal();
+    this.closeAttachmentPreview();
+    try {
+      const content = await readAbsoluteTextFile(trimmed);
+      const name = fileNameFromAbsolutePath(trimmed);
+      const title = name.replace(/\.md$/i, "").replace(/\.markdown$/i, "") || name;
+      this.clearLooseFile();
+      this.looseFilePath = trimmed;
+      this.selectedPath = trimmed;
+      this.resetSaveState();
+      this.content = content;
+      this.baselineContent = content;
+      this.contentHash = null;
+      this.title = title;
+      this.selectedKind = "note";
+      this.wikilinksOut = [];
+      this.backlinks = [];
+      this.noteTags = [];
+      this.dirty = false;
+      this.editorMode = "edit";
+      this.bumpContentSync();
+      return true;
+    } catch (err) {
+      this.error = err instanceof Error ? err.message : String(err);
+      return false;
+    } finally {
+      this.noteLoading = false;
+      this.loading = false;
+    }
+  }
+
   async refreshVaultRoots() {
     this.vaultRootsLoading = true;
     this.vaultRootsError = null;
@@ -825,6 +1008,7 @@ export class VaultStore {
             path: "",
             isDefault: true,
             active: true,
+            isObsidian: false,
           },
         ];
         this.activeVaultRootId = "personal";
@@ -840,6 +1024,7 @@ export class VaultStore {
     if (!rootId.trim() || rootId === this.activeVaultRootId) return;
     this.clearAutosaveTimer();
     this.clearProposal();
+    this.clearLooseFile();
     this.selectedPath = null;
     this.content = "";
     this.baselineContent = "";
@@ -914,6 +1099,7 @@ export class VaultStore {
       this.clearProposal();
       this.closeAttachmentPreview();
     }
+    this.clearLooseFile();
     this.noteLoading = true;
     this.loading = true;
     this.error = null;
@@ -992,7 +1178,30 @@ export class VaultStore {
     this.setEditorSurface(this.editorSurface === "write" ? "source" : "write");
   }
 
+  setNotePlane(plane: VaultNotePlane) {
+    this.notePlane = plane;
+    saveNotePlane(plane);
+    if (plane === "live") {
+      this.setEditorSurface("write");
+    }
+  }
+
+  /**
+   * Sticky popout: force Live + write surface without writing prefs
+   * so the main window's plane/surface stay intact.
+   */
+  applyStickyLivePlane() {
+    this.notePlane = "live";
+    this.editorSurface = "write";
+  }
+
+  toggleNotePlane() {
+    this.setNotePlane(this.notePlane === "live" ? "build" : "live");
+  }
+
   enterEditMode() {
+    // Prefer split for markdown notes that support preview (layout.vaultSplitEnabled
+    // defaults true). Never force split off when returning to edit.
     this.editorMode = "edit";
   }
 
@@ -1037,6 +1246,10 @@ export class VaultStore {
   }
 
   async refreshBacklinks(path: string) {
+    if (this.isLooseFile) {
+      this.backlinks = [];
+      return;
+    }
     try {
       const response = await getVaultBacklinks(path);
       this.backlinks = response.backlinks;
@@ -1045,10 +1258,30 @@ export class VaultStore {
     }
   }
 
-  markDirty(nextContent: string) {
+  /**
+   * Update note markdown (source of truth).
+   * Editor keystrokes must NOT bump contentSyncKey — that remounts Live/Build and
+   * causes stale TipTap flushes to clobber the open note. Pass `reloadEditors: true`
+   * only for out-of-band mutations (attachments, bridges, preview toggles).
+   */
+  markDirty(
+    nextContent: string,
+    options?: { reloadEditors?: boolean },
+  ) {
+    // Live serialize/organism remounts must not mark dirty on open with no edits.
+    if (nextContent === this.content) {
+      return;
+    }
     this.content = nextContent;
     this.dirty = true;
-    this.bumpContentSync();
+    const { frontmatter } = stripFrontmatter(nextContent);
+    const fmTitle = parseFrontmatterTitle(frontmatter).trim();
+    if (fmTitle) {
+      this.title = fmTitle;
+    }
+    if (options?.reloadEditors) {
+      this.bumpContentSync();
+    }
     if (
       this.previewingAttachmentPath &&
       !listAttachments(nextContent).some(
@@ -1067,6 +1300,16 @@ export class VaultStore {
       this.saveStatus = "unsaved";
     }
     this.scheduleAutosave();
+  }
+
+  /** Update note kind in frontmatter and chrome immediately. */
+  setNoteKind(kind: VaultNoteKind) {
+    if (!this.selectedPath || this.isLooseFile) return;
+    const next = normalizeKind(kind);
+    this.selectedKind = next;
+    this.markDirty(setFrontmatterKind(this.content, next), {
+      reloadEditors: true,
+    });
   }
 
   private applySaveResponse(response: VaultNoteContentResponse["note"]) {
@@ -1091,8 +1334,28 @@ export class VaultStore {
 
     const pathSnapshot = this.selectedPath;
     const contentSnapshot = this.content;
+    const loosePath = this.looseFilePath;
 
     try {
+      if (loosePath) {
+        await writeAbsoluteTextFile(loosePath, contentSnapshot);
+        if (this.selectedPath !== pathSnapshot || this.looseFilePath !== loosePath) {
+          return true;
+        }
+        if (this.content !== contentSnapshot) {
+          this.baselineContent = contentSnapshot;
+          this.dirty = true;
+          this.saveStatus = "unsaved";
+          this.scheduleAutosave();
+          return true;
+        }
+        this.baselineContent = this.content;
+        this.dirty = false;
+        this.clearProposal();
+        this.flashSavedWhisper();
+        return true;
+      }
+
       const response = await saveVaultNote(pathSnapshot, contentSnapshot, {
         contentHash: options?.force ? undefined : (this.contentHash ?? undefined),
         sessionId: workshopSessionIdForVaultSave(pathSnapshot),
@@ -1121,7 +1384,7 @@ export class VaultStore {
       void this.refreshBacklinks(pathSnapshot);
       return true;
     } catch (err) {
-      if (isVaultConflictError(err)) {
+      if (!loosePath && isVaultConflictError(err)) {
         this.saveStatus = "conflict";
         this.conflictMessage =
           "This note changed on disk. Reload the latest version or keep your edits.";
@@ -1142,6 +1405,24 @@ export class VaultStore {
 
   async reloadFromServer() {
     if (!this.selectedPath) return;
+    if (this.looseFilePath) {
+      this.noteLoading = true;
+      this.error = null;
+      try {
+        const content = await readAbsoluteTextFile(this.looseFilePath);
+        this.content = content;
+        this.baselineContent = content;
+        this.dirty = false;
+        this.resetSaveState();
+        this.clearProposal();
+        this.bumpContentSync();
+      } catch (err) {
+        this.error = err instanceof Error ? err.message : String(err);
+      } finally {
+        this.noteLoading = false;
+      }
+      return;
+    }
     this.noteLoading = true;
     this.error = null;
     try {
@@ -1232,7 +1513,9 @@ export class VaultStore {
     const link = weeklyReviewWikilink();
     const plain = link.slice(2, -2);
     if (this.content.includes(plain)) return;
-    this.markDirty(insertTextAtSection(this.content, "## Links", link));
+    this.markDirty(insertTextAtSection(this.content, "## Links", link), {
+      reloadEditors: true,
+    });
   }
 
   async promoteNote(targetSpaceId: "journal" | "projects") {
@@ -1317,6 +1600,7 @@ export class VaultStore {
   }
 
   openNoteActions() {
+    if (this.isLooseFile) return;
     this.noteActionsOpen = true;
   }
 
@@ -1386,7 +1670,7 @@ export class VaultStore {
     if (!this.selectedPath || !newTitle.trim()) return false;
     this.error = null;
     const nextContent = setNoteTitleInContent(this.content, newTitle.trim());
-    this.markDirty(nextContent);
+    this.markDirty(nextContent, { reloadEditors: true });
     const ok = await this.save({ source: "manual" });
     if (ok) {
       await this.refreshNotes();
@@ -1524,14 +1808,18 @@ export class VaultStore {
     if (!this.selectedPath) return;
     const picked = await pickAttachmentFiles();
     if (picked.length === 0) return;
-    this.markDirty(addAttachments(this.content, picked));
+    this.markDirty(addAttachments(this.content, picked), {
+      reloadEditors: true,
+    });
   }
 
   async linkSpreadsheetFiles() {
     if (!this.selectedPath) return;
     const picked = await pickSpreadsheetFiles();
     if (picked.length === 0) return;
-    this.markDirty(addAttachments(this.content, picked));
+    this.markDirty(addAttachments(this.content, picked), {
+      reloadEditors: true,
+    });
   }
 
   linkExternalFile(path: string) {
@@ -1545,13 +1833,16 @@ export class VaultStore {
           mime: guessMimeFromPath(path),
         },
       ]),
+      { reloadEditors: true },
     );
     return true;
   }
 
   removeAttachment(path: string) {
     if (!this.selectedPath) return;
-    this.markDirty(dropAttachment(this.content, path));
+    this.markDirty(dropAttachment(this.content, path), {
+      reloadEditors: true,
+    });
     if (this.previewingAttachmentPath === path) {
       this.closeAttachmentPreview();
     }
@@ -1626,6 +1917,26 @@ function saveEditorSurface(surface: "write" | "source") {
   if (typeof localStorage === "undefined") return;
   try {
     localStorage.setItem(EDITOR_SURFACE_KEY, surface);
+  } catch {
+    /* ignore */
+  }
+}
+
+function loadNotePlane(): VaultNotePlane {
+  if (typeof localStorage === "undefined") return "live";
+  try {
+    const raw = localStorage.getItem(NOTE_PLANE_KEY);
+    if (raw === "live" || raw === "build") return raw;
+  } catch {
+    /* ignore */
+  }
+  return "live";
+}
+
+function saveNotePlane(plane: VaultNotePlane) {
+  if (typeof localStorage === "undefined") return;
+  try {
+    localStorage.setItem(NOTE_PLANE_KEY, plane);
   } catch {
     /* ignore */
   }

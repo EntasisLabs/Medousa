@@ -340,6 +340,36 @@ pub fn register_artifact_alias(
     save_artifact_aliases(session_id, &aliases)
 }
 
+/// Rebind aliases that pointed at `old_id` so they resolve to `new_id` after a revision.
+pub fn rebind_artifact_aliases(
+    session_id: &str,
+    old_id: &str,
+    new_id: &str,
+) -> Result<(), String> {
+    let old_id = old_id.trim();
+    let new_id = new_id.trim();
+    if old_id.is_empty() || new_id.is_empty() || old_id == new_id {
+        return Ok(());
+    }
+    if !new_id.starts_with("art:") {
+        return Err(format!(
+            "artifact_id must be a canonical art:… id (got {new_id})"
+        ));
+    }
+    let mut aliases = load_artifact_aliases(session_id);
+    let mut changed = false;
+    for target in aliases.values_mut() {
+        if target.as_str() == old_id {
+            *target = new_id.to_string();
+            changed = true;
+        }
+    }
+    if changed {
+        save_artifact_aliases(session_id, &aliases)?;
+    }
+    Ok(())
+}
+
 pub fn resolve_artifact_alias(session_id: &str, alias: &str) -> Option<String> {
     let alias = alias.trim();
     if alias.is_empty() {
@@ -1254,6 +1284,35 @@ mod tests {
         let fetched = fetch_artifact(session_id, "adhd-guide-index").expect("fetch by alias");
         assert_eq!(fetched.record.artifact_id, record.artifact_id);
         assert!(fetched.body.contains("Alias test"));
+    }
+
+    #[test]
+    fn rebind_artifact_aliases_updates_targets() {
+        let session_id = "test-ui-artifact-alias-rebind-v2";
+        let first = persist_ui_artifact(
+            session_id,
+            "<p>rebind-v1-unique</p>",
+            "Rebind",
+            "inline",
+            None,
+        )
+        .expect("first");
+        register_artifact_alias(session_id, "widget-a", &first.artifact_id).expect("alias");
+        let second = persist_ui_artifact(
+            session_id,
+            "<p>rebind-v2-unique</p>",
+            "Rebind",
+            "inline",
+            None,
+        )
+        .expect("second");
+        rebind_artifact_aliases(session_id, &first.artifact_id, &second.artifact_id)
+            .expect("rebind");
+        assert_eq!(
+            resolve_artifact_alias(session_id, "widget-a").as_deref(),
+            Some(second.artifact_id.as_str())
+        );
+        let _ = std::fs::remove_dir_all(artifacts_root().join(session_id));
     }
 
     #[test]

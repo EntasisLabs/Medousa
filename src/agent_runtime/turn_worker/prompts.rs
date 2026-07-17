@@ -64,6 +64,11 @@ This client can render UI (supports_ui_artifacts) — prefer enriched markdown f
   - ```dashboard … ``` for monitor / at-a-glance / how-is-X-doing (optional title/subtitle/columns; tiles separated by --- with label/value required; delta/tone/emoji/hint/unit optional; per-tile feed: id + optional field: summary|payload.path for live tail-from-chat — no canvas subscribe required)
   - ```chart … ``` for plots (type: bar|line|area|pie|donut|radar|radial|scatter|combo|heatmap; optional title/description/legend/labels/labelPosition/activeKey/curve/layout/stacked/centerValue/centerLabel/seriesMarks/width/height/surface; then a GFM table — category series, or scatter X|Y|group, or heatmap corner+cols / row labels + cells; need ≥2 data rows, radar ≥3 axes, scatter ≥2 points; combo: seriesMarks bar|line → dual Y left bars / right lines)
   - ```report … ``` for narrative + nested chart figures (optional title/subtitle/columns 1|2|3; body is markdown with nested ```chart fences — prose full-bleed, charts in a figure grid; prefer over dashboard when the answer is a written review with plots)
+  - ```tabs … ``` for multi-panel switchers (optional title/subtitle/default; panels separated by --- with label/body required; ≥2 panels)
+  - ```steps … ``` for numbered how-tos (optional title/subtitle; steps separated by --- with label required, body/status done|current|pending optional; ≥2 steps)
+  - ```accordion … ``` for collapsible FAQ / sections (optional title/subtitle/multiple; items separated by --- with label/body; optional open: true)
+  - ```code … ``` for enhanced snippets (lang:/title: + --- source, or lang: then source; optional diff:/copy:; do NOT use bare ```code for prose)
+  - ```tree … ``` for file/folder trees (optional title/subtitle; indented list after ---; trailing / = folder)
   - {{icon:sparkles}} inline Lucide icons (allowlisted names only)
 - After tools: CURATE into the answer — do not dump raw tool JSON. Tool lineage already paints as a quiet footnote.
   - Web search → ```cite``` (title + url + short quote) or a markdown link
@@ -76,6 +81,11 @@ This client can render UI (supports_ui_artifacts) — prefer enriched markdown f
   - Research / explain with sources → ```brief``` (not a Wikipedia wall)
   - Monitor / pulse / at-a-glance → ```dashboard``` (not a shortlist or compare matrix)
   - Narrative review with figures → ```report``` (not a dashboard of KPI tiles; not bare charts without framing prose)
+  - Multi-panel switcher → ```tabs``` (not a flat bullet list of sections)
+  - Numbered how-to → ```steps``` (not a plain ordered list when sequencing matters)
+  - Collapsible FAQ → ```accordion```
+  - Highlighted snippet / diff → ```code``` (with lang: + ---; not bare ```code prose)
+  - Repo / folder layout → ```tree``` (indented list)
   - Where it stands / facets as tappable cards → ```carousel``` with --- items + summary/chips/point: (not a flat bullet list)
   - Images → ```media``` with https src
   - Diagrams / flows → ```mermaid``` fences (already hydrate)
@@ -413,6 +423,10 @@ mod tests {
         assert!(ui.contains("feed:"));
         assert!(ui.contains("```chart"));
         assert!(ui.contains("```report"));
+        assert!(ui.contains("```tabs"));
+        assert!(ui.contains("```steps"));
+        assert!(ui.contains("```accordion"));
+        assert!(ui.contains("```tree"));
         assert!(ui.contains("scatter"));
         assert!(ui.contains("dual Y"));
         assert!(ui.contains("```mermaid"));

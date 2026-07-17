@@ -67,6 +67,7 @@ pub fn list_vault_root_views() -> crate::daemon_api::VaultRootsResponse {
         .roots
         .iter()
         .map(|entry| {
+            let absolute = resolve_root_path(entry);
             let is_default = entry
                 .path
                 .as_deref()
@@ -76,9 +77,10 @@ pub fn list_vault_root_views() -> crate::daemon_api::VaultRootsResponse {
             crate::daemon_api::VaultRootView {
                 id: entry.id.clone(),
                 label: entry.label.clone(),
-                path: resolve_root_path(entry).display().to_string(),
+                path: absolute.display().to_string(),
                 is_default,
                 active: entry.id == config.active_root_id,
+                is_obsidian: absolute.join(".obsidian").is_dir(),
             }
         })
         .collect();
@@ -86,6 +88,27 @@ pub fn list_vault_root_views() -> crate::daemon_api::VaultRootsResponse {
         active_root_id: config.active_root_id,
         roots,
     }
+}
+
+/// True when the active vault root is an external (non-default) folder and/or Obsidian.
+pub fn active_root_skips_auto_workshop_tags() -> bool {
+    let config = normalize_vault_config(&load_product_config().vault);
+    let entry = config
+        .roots
+        .iter()
+        .find(|root| root.id == config.active_root_id)
+        .cloned()
+        .unwrap_or_else(|| default_vault_roots().remove(0));
+    let is_external = entry
+        .path
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .is_some();
+    if is_external {
+        return true;
+    }
+    resolve_root_path(&entry).join(".obsidian").is_dir()
 }
 
 pub fn set_active_vault_root(root_id: &str) -> Result<crate::daemon_api::VaultRootsResponse> {
@@ -203,6 +226,7 @@ fn slugify_vault_root_id(label: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
 
     #[test]
     fn normalize_fills_default_root() {
@@ -214,5 +238,22 @@ mod tests {
     #[test]
     fn slugify_strips_spaces() {
         assert_eq!(slugify_vault_root_id("Work Notes"), "work-notes");
+    }
+
+    #[test]
+    fn detects_obsidian_dir_on_root_path() {
+        let dir = std::env::temp_dir().join(format!(
+            "medousa-obsidian-detect-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(dir.join(".obsidian")).expect("obsidian");
+        let entry = VaultRootEntry {
+            id: "obs".to_string(),
+            label: "Notes".to_string(),
+            path: Some(dir.display().to_string()),
+        };
+        assert!(resolve_root_path(&entry).join(".obsidian").is_dir());
+        let _ = fs::remove_dir_all(&dir);
     }
 }

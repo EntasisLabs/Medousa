@@ -75,6 +75,7 @@ class CalendarStore {
   calendarPath = $state("calendar/personal.ics");
   loading = $state(false);
   error = $state<string | null>(null);
+  notice = $state<string | null>(null);
   editorOpen = $state(false);
   editing = $state<CalendarEvent | null>(null);
 
@@ -209,7 +210,18 @@ class CalendarStore {
   }
 
   async importIcs(ics: string) {
-    await importCalendarIcs(ics, this.calendarPath);
+    this.notice = null;
+    const result = await importCalendarIcs(ics, this.calendarPath);
+    const skipped = result.skipped ?? 0;
+    const parts = [
+      `Imported ${result.imported}`,
+      `updated ${result.updated}`,
+      `skipped ${skipped}`,
+    ];
+    this.notice = parts.join(", ");
+    if (result.warnings?.length) {
+      this.notice = `${this.notice}. ${result.warnings.slice(0, 3).join("; ")}`;
+    }
     await this.refresh();
   }
 

@@ -80,6 +80,7 @@
             label={artifact.label}
             mime={artifact.mime}
             heightPx={artifact.heightPx ?? 720}
+            rootArtifactId={artifact.rootArtifactId}
             bare={true}
             mode="panel"
             manageable={true}

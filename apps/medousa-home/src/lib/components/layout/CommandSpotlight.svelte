@@ -12,6 +12,7 @@
     popBrowserPopoverOverlay,
     pushBrowserPopoverOverlay,
   } from "$lib/utils/browserPopoverOverlay";
+  import { formatShortcut } from "$lib/platform";
 
   interface Props {
     onFocusChat?: () => void;
@@ -281,7 +282,7 @@
 
       <footer class="command-spotlight-footer">
         <span>↑↓ navigate · ↵ run · esc close</span>
-        <span class="command-spotlight-kbd">⌘K</span>
+        <span class="command-spotlight-kbd">{formatShortcut("K")}</span>
       </footer>
     </div>
   </div>

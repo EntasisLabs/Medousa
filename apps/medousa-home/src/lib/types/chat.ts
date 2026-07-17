@@ -16,6 +16,8 @@ export interface UiArtifact {
   presentation: UiArtifactPresentation;
   byteSize?: number | null;
   heightPx?: number | null;
+  /** Stable lineage id for MedousaStore scope across revisions. */
+  rootArtifactId?: string | null;
 }
 
 export interface ToolRunState {

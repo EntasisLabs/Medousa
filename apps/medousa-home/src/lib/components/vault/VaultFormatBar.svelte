@@ -1,25 +1,13 @@
 <script lang="ts">
   import { ChevronDown, ExternalLink } from "@lucide/svelte";
   import { layout } from "$lib/stores/layout.svelte";
-  import {
-    Bold,
-    Italic,
-    Heading1,
-    Heading2,
-    Heading3,
-    List,
-    ListOrdered,
-    Link,
-    Code,
-    SquareCheck,
-    Highlighter,
-  } from "@lucide/svelte";
   import type { MarkdownFormatAction } from "$lib/utils/vaultMarkdownEdit";
   import {
     MARKDOWN_COLOR_OPTIONS,
     normalizeMarkdownHexColor,
     type MarkdownColorToken,
   } from "$lib/utils/vaultMarkdownColors";
+  import { VAULT_FORMAT_ACTION_GROUPS } from "$lib/utils/vaultFormatActions";
 
   interface Props {
     disabled?: boolean;
@@ -28,8 +16,8 @@
     /** Subtle float-note control at the trailing end of the bar. */
     showFloat?: boolean;
     onFloat?: () => void;
-    surface?: "write" | "source";
-    onToggleSurface?: () => void;
+    /** Format actions that already wrap the current selection. */
+    activeActions?: MarkdownFormatAction[];
     onFormat: (action: MarkdownFormatAction) => void;
     onColor: (color: MarkdownColorToken) => void;
   }
@@ -39,11 +27,12 @@
     compact: compactProp,
     showFloat = false,
     onFloat,
-    surface = "write",
-    onToggleSurface,
+    activeActions = [],
     onFormat,
     onColor,
   }: Props = $props();
+
+  const activeSet = $derived(new Set(activeActions));
 
   let expanded = $state(false);
   let customHex = $state("#F87171");
@@ -69,40 +58,7 @@
     hexPickerOpen = false;
   }
 
-  const groups: {
-    label: string;
-    items: { action: MarkdownFormatAction; title: string; Icon: typeof Bold }[];
-  }[] = [
-    {
-      label: "Style",
-      items: [
-        { action: "bold", title: "Bold", Icon: Bold },
-        { action: "italic", title: "Italic", Icon: Italic },
-        { action: "code", title: "Inline code", Icon: Code },
-        { action: "highlight", title: "Highlight", Icon: Highlighter },
-      ],
-    },
-    {
-      label: "Structure",
-      items: [
-        { action: "h1", title: "Title", Icon: Heading1 },
-        { action: "h2", title: "Section", Icon: Heading2 },
-        { action: "h3", title: "Subsection", Icon: Heading3 },
-      ],
-    },
-    {
-      label: "Lists",
-      items: [
-        { action: "bullet", title: "Bullet list", Icon: List },
-        { action: "numbered", title: "Numbered list", Icon: ListOrdered },
-        { action: "checkbox", title: "Checkbox", Icon: SquareCheck },
-      ],
-    },
-    {
-      label: "Insert",
-      items: [{ action: "link", title: "Link", Icon: Link }],
-    },
-  ];
+  const groups = VAULT_FORMAT_ACTION_GROUPS;
 </script>
 
 <div
@@ -139,8 +95,10 @@
           <button
             type="button"
             class="vault-format-btn"
+            class:vault-format-btn--active={activeSet.has(item.action)}
             title={item.title}
             aria-label={item.title}
+            aria-pressed={activeSet.has(item.action)}
             {disabled}
             onclick={() => onFormat(item.action)}
           >
@@ -221,54 +179,7 @@
         </div>
       </div>
 
-      {#if !compact}
-        <div class="ml-auto flex items-center gap-2">
-          {#if onToggleSurface}
-            <button
-              type="button"
-              class="vault-format-btn vault-format-btn--surface text-[11px] font-medium tracking-wide"
-              class:vault-format-btn--active={surface === "source"}
-              title={surface === "write" ? "Switch to source (mono)" : "Switch to write (prose)"}
-              aria-label={surface === "write" ? "Switch to source" : "Switch to write"}
-              aria-pressed={surface === "source"}
-              {disabled}
-              onclick={() => onToggleSurface()}
-            >
-              {surface === "write" ? "Source" : "Write"}
-            </button>
-          {/if}
-          <p class="hidden text-[11px] text-surface-500 sm:block">
-            Select text to format · type <kbd class="vault-kbd">/</kbd> for blocks
-          </p>
-          {#if showFloat && onFloat}
-            <button
-              type="button"
-              class="vault-format-btn vault-format-btn--float"
-              title="Float note (always on top)"
-              aria-label="Float note"
-              {disabled}
-              onclick={() => onFloat()}
-            >
-              <ExternalLink size={14} strokeWidth={1.75} />
-            </button>
-          {/if}
-        </div>
-      {:else}
-        {#if onToggleSurface}
-          <button
-            type="button"
-            class="vault-format-btn vault-format-btn--surface text-[11px] font-medium tracking-wide"
-            class:vault-format-btn--active={surface === "source"}
-            title={surface === "write" ? "Switch to source (mono)" : "Switch to write (prose)"}
-            aria-label={surface === "write" ? "Switch to source" : "Switch to write"}
-            aria-pressed={surface === "source"}
-            {disabled}
-            onclick={() => onToggleSurface()}
-          >
-            {surface === "write" ? "Source" : "Write"}
-          </button>
-        {/if}
-        {#if showFloat && onFloat}
+      {#if showFloat && onFloat}
         <button
           type="button"
           class="vault-format-btn vault-format-btn--float ml-auto"
@@ -279,7 +190,6 @@
         >
           <ExternalLink size={14} strokeWidth={1.75} />
         </button>
-        {/if}
       {/if}
     </div>
   {/if}

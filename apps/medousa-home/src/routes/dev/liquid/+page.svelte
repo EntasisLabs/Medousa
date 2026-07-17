@@ -490,6 +490,97 @@
     "```",
   ].join("\n");
 
+  const tabsMarkdown = [
+    "```tabs",
+    "title: Getting started",
+    "default: Run",
+    "",
+    "---",
+    "label: Install",
+    "emoji: 📦",
+    "body: npm install medousa",
+    "---",
+    "label: Run",
+    "emoji: 🚀",
+    "body: medousa up",
+    "---",
+    "label: Verify",
+    "emoji: ✅",
+    "body: Open /dev/liquid and confirm embeds hydrate.",
+    "```",
+  ].join("\n");
+
+  const stepsMarkdown = [
+    "```steps",
+    "title: Ship a fence",
+    "subtitle: Parse → host → archetype",
+    "",
+    "---",
+    "label: Parse",
+    "body: Add the fence language to liquidEmbeds.ts",
+    "status: done",
+    "---",
+    "label: Host",
+    "body: Branch LiquidMdHost to the new molecule",
+    "status: current",
+    "---",
+    "label: Gallery",
+    "body: Drop a markdown example on /dev/liquid",
+    "status: pending",
+    "```",
+  ].join("\n");
+
+  const accordionMarkdown = [
+    "```accordion",
+    "title: FAQ",
+    "",
+    "---",
+    "label: What is Liquid markdown?",
+    "body: Paste-first fences the client hydrates into UI archetypes.",
+    "open: true",
+    "---",
+    "label: Do I import Blume?",
+    "body: No — port vocabulary only; keep the parse → host → archetype path.",
+    "```",
+  ].join("\n");
+
+  const codeMarkdown = [
+    "```code",
+    "lang: typescript",
+    "title: greet.ts",
+    "---",
+    "export function greet(name: string) {",
+    "  return `Hello, ${name}`;",
+    "}",
+    "```",
+    "",
+    "```code",
+    "lang: diff",
+    "title: bump version",
+    "---",
+    '- const VERSION = "0.1.0";',
+    '+ const VERSION = "0.2.0";',
+    "```",
+  ].join("\n");
+
+  const treeMarkdown = [
+    "```tree",
+    "title: Liquid archetypes",
+    "subtitle: molecules added in 0.2.0",
+    "---",
+    "molecules/",
+    "  tabs/",
+    "    Tabs.svelte",
+    "    tabs.ts",
+    "  steps/",
+    "    Steps.svelte",
+    "  accordion/",
+    "  code/",
+    "  tree/",
+    "index.ts",
+    "```",
+  ].join("\n");
+
   // ---- Stage 3: streamed structured turn (daemon wire contract) ------------
   // Each batch is the *opaque JSON* a `ui_scene` stream event would carry. We
   // run it through the real decoder + reducer — the exact client pipeline — so
@@ -655,6 +746,19 @@
     <SceneRenderer node={chartHeatmap} context={monogramContext} />
     <MarkdownContent content={chartMarkdown} />
     <MarkdownContent content={reportMarkdown} />
+  </section>
+
+  <h2 class="harness-subhead">Layout embeds (0.2.0)</h2>
+  <p class="harness-note">
+    <code>```tabs</code> · <code>```steps</code> · <code>```accordion</code> ·
+    <code>```code</code> · <code>```tree</code> — paste-first fences with stagger enter.
+  </p>
+  <section class="harness-stage harness-charts">
+    <MarkdownContent content={tabsMarkdown} />
+    <MarkdownContent content={stepsMarkdown} />
+    <MarkdownContent content={accordionMarkdown} />
+    <MarkdownContent content={codeMarkdown} />
+    <MarkdownContent content={treeMarkdown} />
   </section>
 
   <h2 class="harness-subhead">Streamed structured turn (daemon wire)</h2>

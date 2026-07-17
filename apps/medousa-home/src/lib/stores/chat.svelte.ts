@@ -143,6 +143,8 @@ export class ChatStore {
   private sessionsFetchedAt = 0;
   private sessionsRefreshTimer: ReturnType<typeof setTimeout> | null = null;
   private sessionsRefreshInFlight: Promise<void> | null = null;
+  /** Latest query requested while a refresh is in flight (coalesce to this). */
+  private sessionsRefreshDesiredQuery: string | null = null;
   /** Turn ids with an active local SSE listener (subset of `turns`). */
   private streamOwners = new Map<string, StreamOwner>();
   /**
@@ -383,6 +385,8 @@ export class ChatStore {
     if (options?.q !== undefined) {
       this.sessionListQuery = query;
     }
+    this.sessionsRefreshDesiredQuery = query;
+
     const hadCache = this.sessions.length > 0;
     const fresh =
       !force &&
@@ -398,7 +402,18 @@ export class ChatStore {
       return this.sessionsRefreshInFlight;
     }
 
-    this.sessionsRefreshInFlight = this.fetchSessions(hadCache, query);
+    this.sessionsRefreshInFlight = (async () => {
+      // Drain desired query so a typed search never loses to a stale in-flight fetch.
+      while (true) {
+        const q = this.sessionsRefreshDesiredQuery ?? "";
+        const cacheHint = this.sessions.length > 0;
+        await this.fetchSessions(cacheHint, q);
+        if ((this.sessionsRefreshDesiredQuery ?? "") === q) {
+          break;
+        }
+      }
+    })();
+
     try {
       await this.sessionsRefreshInFlight;
     } finally {
@@ -1850,7 +1865,11 @@ export class ChatStore {
     if (event.event_type === "artifact_presented") {
       const messageId = this.messageIdForTurn(event.turn_id);
       if (messageId && event.ui_artifact) {
-        this.applyArtifactPresented(messageId, event.ui_artifact);
+        this.applyArtifactPresented(
+          messageId,
+          event.ui_artifact,
+          event.root_artifact_id ?? null,
+        );
       }
       return;
     }
@@ -2056,12 +2075,13 @@ export class ChatStore {
   private applyArtifactPresented(
     messageId: string,
     artifact: NonNullable<InteractiveTurnStreamEvent["ui_artifact"]>,
+    rootArtifactId: string | null = null,
   ) {
     const idx = this.messages.findIndex((message) => message.id === messageId);
     if (idx < 0) return;
 
     const current = this.messages[idx];
-    const nextArtifact = mapStreamUiArtifact(artifact);
+    const nextArtifact = mapStreamUiArtifact(artifact, rootArtifactId);
 
     const existing = current.uiArtifacts ?? [];
     if (existing.some((item) => item.artifactId === nextArtifact.artifactId)) {
@@ -2088,7 +2108,7 @@ export class ChatStore {
     if (idx < 0) return;
 
     const current = this.messages[idx];
-    const nextArtifact = mapStreamUiArtifact(artifact);
+    const nextArtifact = mapStreamUiArtifact(artifact, rootArtifactId);
     const existing = current.uiArtifacts ?? [];
     const updated = replaceUiArtifactEntry(
       existing,

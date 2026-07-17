@@ -111,11 +111,17 @@ impl VaultService {
             .filter(|value| !value.is_empty())
             .ok_or_else(|| anyhow::anyhow!("path is required"))?;
         let existed = vault_store().get_entry(target_path).is_some();
+        let auto_workshop_tags = if crate::vault::roots::active_root_skips_auto_workshop_tags()
+        {
+            false
+        } else {
+            request.auto_workshop_tags
+        };
         let content = apply_semantic_tags_on_write(
             &request.content,
             request.session_id.as_deref(),
             request.semantic_tags.as_deref(),
-            request.auto_workshop_tags,
+            auto_workshop_tags,
         );
         let entry = vault_store().write_content(target_path, &content, if_match)?;
         append_vault_feed_event(&entry.path, &entry.title, !existed, actor, tool_name);

@@ -1,4 +1,4 @@
-import { stripFrontmatter } from "$lib/utils/vaultFrontmatter";
+import { stripFrontmatter, serializeFrontmatter } from "$lib/utils/vaultFrontmatter";
 
 export function setNoteTitleInContent(content: string, title: string): string {
   const trimmedTitle = title.trim();
@@ -16,7 +16,7 @@ export function setNoteTitleInContent(content: string, title: string): string {
 
   const nextBody = lines.join("\n").replace(/^\n+/, "");
   if (!frontmatter) return nextBody;
-  return `---\n${frontmatter}\n---\n\n${nextBody}`;
+  return serializeFrontmatter(frontmatter, nextBody);
 }
 
 export function normalizeVaultNotePath(path: string): string {

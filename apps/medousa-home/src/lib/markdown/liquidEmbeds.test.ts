@@ -429,6 +429,41 @@ describe("preprocessLiquidEmbeds", () => {
     expect(props?.recommendation).toBe("A7IV");
   });
 
+  it("parses compare mode faceoff (and face-off alias)", () => {
+    const src = [
+      "```compare",
+      "title: Head to head",
+      "mode: face-off",
+      "recommendation: Alpha",
+      "",
+      "| | Alpha | Beta |",
+      "| --- | --- | --- |",
+      "| Speed | Fast | Slow |",
+      "```",
+    ].join("\n");
+    const out = preprocessLiquidEmbeds(src);
+    const match = out.match(/data-liquid-props="([^"]+)"/);
+    const props = decodeLiquidProps<{ mode?: string; entities: { label: string }[] }>(match![1]);
+    expect(props?.mode).toBe("faceoff");
+    expect(props?.entities).toHaveLength(2);
+  });
+
+  it("omits unknown compare mode (matrix default)", () => {
+    const src = [
+      "```compare",
+      "mode: radar",
+      "",
+      "| | A | B |",
+      "| --- | --- | --- |",
+      "| X | 1 | 2 |",
+      "```",
+    ].join("\n");
+    const out = preprocessLiquidEmbeds(src);
+    const match = out.match(/data-liquid-props="([^"]+)"/);
+    const props = decodeLiquidProps<{ mode?: string }>(match![1]);
+    expect(props?.mode).toBeUndefined();
+  });
+
   it("rejects compare with fewer than two entities", () => {
     const src = [
       "```compare",
@@ -927,6 +962,70 @@ describe("preprocessLiquidEmbeds", () => {
   it("leaves real code fences alone", () => {
     const src = ["```python", "def hello():", "    return 1", "```"].join("\n");
     expect(preprocessLiquidEmbeds(src)).toContain("```python");
+  });
+
+  it("does not rewrite ```tabs examples inside a documentation fence", () => {
+    // Exact shape from LED: docs fence wrapping a tabs example, plus a redundant
+    // outer closer that must not open a code block over trailing prose.
+    const src = [
+      "So: the format is:",
+      "",
+      "```",
+      "```tabs",
+      "title: … | default: …",
+      "",
+      "---",
+      "label: Panel name",
+      "body: Content here",
+      "---",
+      "label: Another panel",
+      "body: More content",
+      "```",
+      "```",
+      "",
+      "Straightforward. Now I'm ready to actually **build something** with these. What's the move?",
+    ].join("\n");
+    const out = preprocessLiquidEmbeds(src);
+    expect(out).not.toContain("data-liquid-embed");
+    expect(out).toContain("```tabs");
+    expect(out).toContain("label: Panel name");
+    expect(out).toContain(
+      "Straightforward. Now I'm ready to actually **build something** with these. What's the move?",
+    );
+
+    const lines = out.split("\n");
+    const proseLine = lines.findIndex((l) => l.startsWith("Straightforward."));
+    expect(proseLine).toBeGreaterThan(0);
+    let depth = 0;
+    for (let i = 0; i < proseLine; i++) {
+      const open = lines[i]!.match(/^(````*)([a-zA-Z0-9_-]*)[ \t]*$/);
+      if (depth === 0 && open && open[1]!.length >= 3) {
+        depth = 1;
+        continue;
+      }
+      if (depth === 1 && /^(````*)[ \t]*$/.test(lines[i]!)) {
+        depth = 0;
+      }
+    }
+    expect(depth).toBe(0);
+  });
+
+  it("still hydrates a live ```tabs fence at top level", () => {
+    const src = [
+      "```tabs",
+      "title: Blume × Medousa | default: Demo",
+      "",
+      "---",
+      "label: Demo",
+      "body: Working tabs embed",
+      "---",
+      "label: Next Move",
+      "body: Pick a direction",
+      "```",
+    ].join("\n");
+    const out = preprocessLiquidEmbeds(src);
+    expect(out).toContain('data-liquid-embed="tabs"');
+    expect(out).not.toContain("```tabs");
   });
 
   it("resolves nested cite inside brief without eating the cite closer (Mon Laferte shape)", () => {
@@ -1459,6 +1558,180 @@ describe("preprocessLiquidEmbeds", () => {
     const match = out.match(/data-liquid-props="([^"]+)"/);
     const props = decodeLiquidProps<{ columns?: string }>(match![1]);
     expect(props?.columns).toBe("2");
+  });
+
+  it("turns a tabs fence into panels payload", () => {
+    const src = [
+      "```tabs",
+      "title: Setup",
+      "default: Run",
+      "",
+      "---",
+      "label: Install",
+      "body: npm install medousa",
+      "---",
+      "label: Run",
+      "body: medousa up",
+      "```",
+    ].join("\n");
+    const out = preprocessLiquidEmbeds(src);
+    expect(out).toContain('data-liquid-embed="tabs"');
+    const match = out.match(/data-liquid-props="([^"]+)"/);
+    const props = decodeLiquidProps<{
+      title?: string;
+      default?: string;
+      panels: { label: string; body: string }[];
+    }>(match![1]);
+    expect(props?.title).toBe("Setup");
+    expect(props?.default).toBe("Run");
+    expect(props?.panels).toHaveLength(2);
+    expect(props?.panels[0].label).toBe("Install");
+    expect(props?.panels[1].body).toBe("medousa up");
+  });
+
+  it("rejects tabs with fewer than two panels", () => {
+    const src = ["```tabs", "---", "label: Only", "body: one", "```"].join("\n");
+    expect(preprocessLiquidEmbeds(src)).toContain("```tabs");
+  });
+
+  it("turns a steps fence into numbered steps", () => {
+    const src = [
+      "```steps",
+      "title: Ship",
+      "",
+      "---",
+      "label: Build",
+      "body: cargo build --release",
+      "status: done",
+      "---",
+      "label: Deploy",
+      "body: Upload the binary",
+      "status: current",
+      "```",
+    ].join("\n");
+    const out = preprocessLiquidEmbeds(src);
+    expect(out).toContain('data-liquid-embed="steps"');
+    const match = out.match(/data-liquid-props="([^"]+)"/);
+    const props = decodeLiquidProps<{
+      steps: { label: string; status?: string }[];
+    }>(match![1]);
+    expect(props?.steps).toHaveLength(2);
+    expect(props?.steps[0].status).toBe("done");
+    expect(props?.steps[1].label).toBe("Deploy");
+  });
+
+  it("turns an accordion fence into collapsible items", () => {
+    const src = [
+      "```accordion",
+      "title: FAQ",
+      "multiple: true",
+      "",
+      "---",
+      "label: What is Liquid?",
+      "body: Paste-first markdown embeds.",
+      "open: true",
+      "---",
+      "label: Who hydrates?",
+      "body: The client runtime.",
+      "```",
+    ].join("\n");
+    const out = preprocessLiquidEmbeds(src);
+    expect(out).toContain('data-liquid-embed="accordion"');
+    const match = out.match(/data-liquid-props="([^"]+)"/);
+    const props = decodeLiquidProps<{
+      multiple?: boolean;
+      items: { label: string; open?: boolean }[];
+    }>(match![1]);
+    expect(props?.multiple).toBe(true);
+    expect(props?.items).toHaveLength(2);
+    expect(props?.items[0].open).toBe(true);
+  });
+
+  it("turns a structured code fence into an enhanced snippet", () => {
+    const src = [
+      "```code",
+      "lang: typescript",
+      "title: greet.ts",
+      "---",
+      "export const greet = (n: string) => `hi ${n}`;",
+      "```",
+    ].join("\n");
+    const out = preprocessLiquidEmbeds(src);
+    expect(out).toContain('data-liquid-embed="code"');
+    const match = out.match(/data-liquid-props="([^"]+)"/);
+    const props = decodeLiquidProps<{
+      lang?: string;
+      title?: string;
+      source: string;
+    }>(match![1]);
+    expect(props?.lang).toBe("typescript");
+    expect(props?.title).toBe("greet.ts");
+    expect(props?.source).toContain("export const greet");
+  });
+
+  it("parses diff code fences", () => {
+    const src = [
+      "```code",
+      "lang: diff",
+      "title: patch",
+      "---",
+      "- const a = 1",
+      "+ const a = 2",
+      "```",
+    ].join("\n");
+    const out = preprocessLiquidEmbeds(src);
+    const match = out.match(/data-liquid-props="([^"]+)"/);
+    const props = decodeLiquidProps<{ diff?: boolean; source: string }>(match![1]);
+    expect(props?.diff).toBe(true);
+    expect(props?.source).toContain("+ const a = 2");
+  });
+
+  it("still unwraps mistaken prose ```code fences", () => {
+    const src = [
+      "```code",
+      "That's the full analysis. She hits the soul hard because she **never flinches**.",
+      "```",
+    ].join("\n");
+    const out = preprocessLiquidEmbeds(src);
+    expect(out).not.toContain("```code");
+    expect(out).not.toContain('data-liquid-embed="code"');
+    expect(out).toContain("**never flinches**");
+  });
+
+  it("turns a tree fence into nested file nodes", () => {
+    const src = [
+      "```tree",
+      "title: Project",
+      "---",
+      "src/",
+      "  lib/",
+      "    index.ts",
+      "  routes/",
+      "    +page.svelte",
+      "README.md",
+      "```",
+    ].join("\n");
+    const out = preprocessLiquidEmbeds(src);
+    expect(out).toContain('data-liquid-embed="tree"');
+    const match = out.match(/data-liquid-props="([^"]+)"/);
+    const props = decodeLiquidProps<{
+      title?: string;
+      nodes: { name: string; kind: string; children?: { name: string }[] }[];
+    }>(match![1]);
+    expect(props?.title).toBe("Project");
+    expect(props?.nodes).toHaveLength(2);
+    expect(props?.nodes[0].name).toBe("src");
+    expect(props?.nodes[0].kind).toBe("folder");
+    expect(props?.nodes[0].children?.[0].name).toBe("lib");
+    expect(props?.nodes[1].name).toBe("README.md");
+    expect(props?.nodes[1].kind).toBe("file");
+  });
+
+  it("rejects empty tree and bare code without liquid chrome", () => {
+    expect(preprocessLiquidEmbeds("```tree\n```")).toContain("```tree");
+    expect(
+      preprocessLiquidEmbeds(["```code", "function foo() {}", "```"].join("\n")),
+    ).toContain("```code");
   });
 });
 

@@ -43,6 +43,8 @@ export interface CalendarImportResponse {
   calendar_path: string;
   imported: number;
   updated: number;
+  skipped?: number;
+  warnings?: string[];
 }
 
 export interface CalendarExportResponse {

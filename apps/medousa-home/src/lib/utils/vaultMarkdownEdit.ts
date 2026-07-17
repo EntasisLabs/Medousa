@@ -4,11 +4,16 @@ import {
   SLASH_TOC_TEMPLATE,
 } from "$lib/utils/vaultTemplates";
 import {
+  LIQUID_ACCORDION_TEMPLATE,
   LIQUID_CALLOUT_TEMPLATE,
   LIQUID_CARD_TEMPLATE,
   LIQUID_CHART_TEMPLATE,
+  LIQUID_CODE_TEMPLATE,
   LIQUID_DASHBOARD_TEMPLATE,
   LIQUID_REPORT_TEMPLATE,
+  LIQUID_STEPS_TEMPLATE,
+  LIQUID_TABS_TEMPLATE,
+  LIQUID_TREE_TEMPLATE,
 } from "$lib/utils/liquidFenceTemplates";
 import {
   MARKDOWN_COLOR_IDS,
@@ -53,6 +58,11 @@ export type SlashBlockId =
   | "liquid_chart"
   | "liquid_dashboard"
   | "liquid_report"
+  | "liquid_tabs"
+  | "liquid_steps"
+  | "liquid_accordion"
+  | "liquid_code"
+  | "liquid_tree"
   | "embed"
   | "view"
   | "board"
@@ -358,6 +368,11 @@ export function insertSlashBlock(
     liquid_chart: LIQUID_CHART_TEMPLATE,
     liquid_dashboard: LIQUID_DASHBOARD_TEMPLATE,
     liquid_report: LIQUID_REPORT_TEMPLATE,
+    liquid_tabs: LIQUID_TABS_TEMPLATE,
+    liquid_steps: LIQUID_STEPS_TEMPLATE,
+    liquid_accordion: LIQUID_ACCORDION_TEMPLATE,
+    liquid_code: LIQUID_CODE_TEMPLATE,
+    liquid_tree: LIQUID_TREE_TEMPLATE,
     embed: "",
     view: "",
     board: SLASH_BOARD_TEMPLATE,
@@ -482,3 +497,222 @@ export function selectedLineCount(
 ): number {
   return selectedLines(content, selectionStart, selectionEnd).length;
 }
+
+const INDENT = "  ";
+
+/** Indent the current line or every selected line with two spaces. */
+export function indentLines(
+  content: string,
+  selectionStart: number,
+  selectionEnd: number,
+): EditResult {
+  const startLine = lineRangeAt(content, selectionStart).start;
+  const endLine = lineRangeAt(content, Math.max(selectionStart, selectionEnd - 1)).end;
+  const block = content.slice(startLine, endLine);
+  const lines = block.split("\n");
+  const nextBlock = lines.map((line) => `${INDENT}${line}`).join("\n");
+  const next = `${content.slice(0, startLine)}${nextBlock}${content.slice(endLine)}`;
+  const added = lines.length * INDENT.length;
+  return {
+    content: next,
+    selectionStart: selectionStart + INDENT.length,
+    selectionEnd: selectionEnd + added,
+  };
+}
+
+/** Remove up to two leading spaces (or one leading tab) from each selected line. */
+export function outdentLines(
+  content: string,
+  selectionStart: number,
+  selectionEnd: number,
+): EditResult {
+  const startLine = lineRangeAt(content, selectionStart).start;
+  const endLine = lineRangeAt(content, Math.max(selectionStart, selectionEnd - 1)).end;
+  const block = content.slice(startLine, endLine);
+  const lines = block.split("\n");
+  let removedBeforeCursor = 0;
+  let removedTotal = 0;
+  const nextLines = lines.map((line, index) => {
+    let removed = 0;
+    let next = line;
+    if (line.startsWith("\t")) {
+      next = line.slice(1);
+      removed = 1;
+    } else if (line.startsWith(INDENT)) {
+      next = line.slice(INDENT.length);
+      removed = INDENT.length;
+    } else if (line.startsWith(" ")) {
+      next = line.slice(1);
+      removed = 1;
+    }
+    if (index === 0) removedBeforeCursor = removed;
+    removedTotal += removed;
+    return next;
+  });
+  const nextBlock = nextLines.join("\n");
+  const next = `${content.slice(0, startLine)}${nextBlock}${content.slice(endLine)}`;
+  return {
+    content: next,
+    selectionStart: Math.max(startLine, selectionStart - removedBeforeCursor),
+    selectionEnd: Math.max(startLine, selectionEnd - removedTotal),
+  };
+}
+
+/** List marker at line start: bullets, numbered, or task checkboxes. */
+const LIST_MARKER_RE = /^(\s*)(- \[[ xX]\] |[*+-] |\d+\. )(.*)$/;
+
+function listMarkerParts(
+  line: string,
+): { indent: string; marker: string; body: string } | null {
+  const match = line.match(LIST_MARKER_RE);
+  if (!match) return null;
+  return { indent: match[1] ?? "", marker: match[2] ?? "", body: match[3] ?? "" };
+}
+
+function nextListMarker(marker: string): string {
+  const numbered = marker.match(/^(\d+)\. $/);
+  if (numbered) {
+    return `${Number(numbered[1]) + 1}. `;
+  }
+  if (/^- \[[ xX]\] $/.test(marker)) {
+    return "- [ ] ";
+  }
+  return marker;
+}
+
+/**
+ * Smart Enter on a list line: continue the marker, or exit when the line is empty.
+ * Returns null when the caret is not on a list line.
+ */
+export function continueListOnEnter(
+  content: string,
+  cursorIndex: number,
+): EditResult | null {
+  const { start, end } = lineRangeAt(content, cursorIndex);
+  const line = content.slice(start, end);
+  const parts = listMarkerParts(line);
+  if (!parts) return null;
+
+  const markerEnd = start + parts.indent.length + parts.marker.length;
+  if (cursorIndex < markerEnd) return null;
+
+  if (!parts.body.trim()) {
+    const next = `${content.slice(0, start)}${parts.indent}${content.slice(end)}`;
+    const cursor = start + parts.indent.length;
+    return { content: next, selectionStart: cursor, selectionEnd: cursor };
+  }
+
+  const insert = `\n${parts.indent}${nextListMarker(parts.marker)}`;
+  return insertTextAtCursor(content, cursorIndex, insert);
+}
+
+/**
+ * Smart Backspace: when the caret sits right after a list marker, remove the marker.
+ * Returns null when Backspace should use the default behavior.
+ */
+export function backspaceListPrefix(
+  content: string,
+  cursorIndex: number,
+): EditResult | null {
+  const { start } = lineRangeAt(content, cursorIndex);
+  const before = content.slice(start, cursorIndex);
+  const match = before.match(/^(\s*)(- \[[ xX]\] |[*+-] |\d+\. )$/);
+  if (!match) return null;
+  const indent = match[1] ?? "";
+  const next = `${content.slice(0, start)}${indent}${content.slice(cursorIndex)}`;
+  const cursor = start + indent.length;
+  return { content: next, selectionStart: cursor, selectionEnd: cursor };
+}
+
+/** Cheap selection-wrapper parse for format-bar pressed states. */
+export function activeMarkdownFormats(
+  content: string,
+  selectionStart: number,
+  selectionEnd: number,
+): MarkdownFormatAction[] {
+  if (selectionStart === selectionEnd) return [];
+  const selected = content.slice(selectionStart, selectionEnd);
+  const active: MarkdownFormatAction[] = [];
+  if (
+    selected.startsWith("**") &&
+    selected.endsWith("**") &&
+    selected.length >= 4
+  ) {
+    active.push("bold");
+  }
+  if (
+    selected.startsWith("*") &&
+    selected.endsWith("*") &&
+    selected.length >= 2 &&
+    !selected.startsWith("**")
+  ) {
+    active.push("italic");
+  }
+  if (selected.startsWith("`") && selected.endsWith("`") && selected.length >= 2) {
+    active.push("code");
+  }
+  if (
+    selected.startsWith("==") &&
+    selected.endsWith("==") &&
+    selected.length >= 4
+  ) {
+    active.push("highlight");
+  }
+  if (/^\[[^\]]*\]\([^)]*\)$/.test(selected)) {
+    active.push("link");
+  }
+  return active;
+}
+
+/** Locate a markdown heading line by visible text (for preview → source jump). */
+export function findHeadingSourceOffset(
+  content: string,
+  headingText: string,
+): number | null {
+  const needle = headingText.trim().replace(/\s+/g, " ");
+  if (!needle) return null;
+  const lines = content.replace(/\r\n/g, "\n").split("\n");
+  let offset = 0;
+  for (const line of lines) {
+    const match = line.match(/^\s{0,3}#{1,6}\s+(.+?)\s*#*\s*$/);
+    if (match) {
+      const body = (match[1] ?? "").trim().replace(/\s+/g, " ");
+      if (body === needle || body.includes(needle) || needle.includes(body)) {
+        return offset;
+      }
+    }
+    offset += line.length + 1;
+  }
+  return null;
+}
+
+export const SLASH_WRITING_IDS: SlashBlockId[] = [
+  "wikilink",
+  "h1",
+  "h2",
+  "h3",
+  "bullet",
+  "numbered",
+  "checkbox",
+  "link",
+  "quote",
+  "divider",
+];
+
+export const SLASH_BLOCK_IDS: SlashBlockId[] = [
+  "liquid_callout",
+  "liquid_card",
+  "liquid_chart",
+  "liquid_dashboard",
+  "liquid_report",
+  "liquid_tabs",
+  "liquid_steps",
+  "liquid_accordion",
+  "liquid_code",
+  "liquid_tree",
+  "embed",
+  "toc",
+  "view",
+  "board",
+  "table",
+];

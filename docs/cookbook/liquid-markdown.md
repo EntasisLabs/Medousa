@@ -8,14 +8,14 @@ Paste-first UI blocks for **chat** and **vault** notes. The client turns fenced 
 |---------|----------|
 | Chat | Hydrated via `MarkdownContent` |
 | Vault preview | Same hydrate pipeline (charts, cards, Mermaid, code) |
-| Vault slash (`/`) | Insert starters: Chart, Card, Liquid callout, Dashboard, Report |
+| Vault slash (`/`) | Insert starters: Chart, Card, Liquid callout, Dashboard, Report, Tabs, Steps, Accordion, Code snippet, File tree |
 | PDF export | Hydrates then captures (charts render as painted DOM) |
 
 Live gallery (dev): `/dev/liquid` in medousa-home.
 
 ## Fence catalog
 
-Supported langs: `card`, `carousel`, `actions`, `callout`, `section`, `chips`, `media`, `cite`, `compare`, `plan`, `timeline`, `shortlist`, `decision`, `brief`, `dashboard`, `chart`, `report`, plus `mermaid` and `{{icon:name}}`.
+Supported langs: `card`, `carousel`, `actions`, `callout`, `section`, `chips`, `media`, `cite`, `compare`, `plan`, `timeline`, `shortlist`, `decision`, `brief`, `dashboard`, `chart`, `report`, `tabs`, `steps`, `accordion`, `code`, `tree`, plus `mermaid` and `{{icon:name}}`.
 
 Agents on UI-capable clients get recipes from `[MEDOUSA_PRESENTATION]` and `cognition_environment_wiki(topic=ui_scene|scene_vs_html)`.
 
@@ -141,6 +141,76 @@ More prose after the figures.
 - **KV:** `title`, `subtitle`, `columns` (`1`|`2`|`3`, default `2`)
 - **Body:** markdown after the preamble — nested ` ```chart ` fences hydrate innermost-first; prose spans full width, consecutive chart embeds sit in the column grid
 
+## Tabs / steps / accordion
+
+Multi-panel and procedural blocks share the same paste shape: optional header KV, then `---` separated sections with `label:` + `body:`.
+
+````md
+```tabs
+title: Getting started
+default: Run
+
+---
+label: Install
+body: npm install medousa
+---
+label: Run
+body: medousa up
+```
+````
+
+- **tabs:** ≥2 panels; optional `default:` (label, id, or 1-based index)
+- **steps:** ≥2 steps; optional per-step `status:` `done`|`current`|`pending`
+- **accordion:** ≥1 item; optional `multiple: true`, per-item `open: true`
+
+````md
+```steps
+title: Ship it
+
+---
+label: Build
+body: cargo build --release
+status: done
+---
+label: Deploy
+body: Push to production
+status: current
+```
+````
+
+## Code snippet
+
+Enhanced fence (lang badge + copy). Requires liquid chrome (`lang:` / `title:` / `---` + source) so mistaken prose ` ```code ` still unwraps.
+
+````md
+```code
+lang: typescript
+title: greet.ts
+---
+export function greet(name: string) {
+  return `Hello, ${name}`;
+}
+```
+````
+
+- Optional `diff: true` (or `lang: diff`) tints `+` / `-` lines
+- Optional `copy: false` hides the copy button
+
+## File tree
+
+Indented list (2 spaces). Trailing `/` marks folders.
+
+````md
+```tree
+title: Project
+---
+src/
+  lib/
+    index.ts
+README.md
+```
+````
+
 ## Vault insert
 
-In the vault editor, type `/` and pick **Chart**, **Card**, **Liquid callout**, **Dashboard**, or **Report** for a paste-ready fence (edit the numbers in place).
+In the vault editor, type `/` and pick **Chart**, **Card**, **Liquid callout**, **Dashboard**, **Report**, **Tabs**, **Steps**, **Accordion**, **Code snippet**, or **File tree** for a paste-ready fence.

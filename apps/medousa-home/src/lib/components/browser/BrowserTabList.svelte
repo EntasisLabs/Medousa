@@ -4,6 +4,7 @@
 
   const humanBrowser = $derived(humanBrowserForWindow());
   import { faviconUrlForSite, tabDisplayLabel } from "$lib/utils/browserFavicon";
+  import { formatShortcut } from "$lib/platform";
 
   interface Props {
     variant?: "bar" | "sheet";
@@ -68,7 +69,7 @@
       type="button"
       class="browser-tab-new"
       aria-label="New tab"
-      title="New tab (⌘T)"
+      title="New tab ({formatShortcut('T')})"
       onclick={handleNewTab}
     >
       <Plus size={14} strokeWidth={2} />

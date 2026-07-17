@@ -7,7 +7,7 @@ import {
   listManuscripts,
   listTurnBudgetRequests,
 } from "$lib/daemon";
-import { homeChannelSurface } from "$lib/platform";
+  import { homeChannelSurface, formatShortcut } from "$lib/platform";
 import { humanBrowser } from "$lib/stores/humanBrowser.svelte";
 import { copyBrowserUrl, openUrlInDefaultBrowser } from "$lib/utils/browserActions";
 import {
@@ -57,7 +57,7 @@ export function buildBrowserCommands(): WorkshopCommand[] {
       id: "browser-focus-url",
       section: "open",
       label: "Focus address bar",
-      subtitle: "⌘L — select the URL / search field",
+      subtitle: `${formatShortcut("L")} — select the URL / search field`,
       keywords: "browser url address bar omnibox focus swap search web",
       run: (ctx) => {
         ctx.navigate("web");
@@ -69,7 +69,7 @@ export function buildBrowserCommands(): WorkshopCommand[] {
       id: "browser-new-tab",
       section: "open",
       label: "New browser tab",
-      subtitle: "⌘T — open a blank tab",
+      subtitle: `${formatShortcut("T")} — open a blank tab`,
       keywords: "browser new tab blank web",
       run: async (ctx) => {
         ctx.navigate("web");
@@ -81,7 +81,7 @@ export function buildBrowserCommands(): WorkshopCommand[] {
       id: "browser-bookmarks",
       section: "open",
       label: "Open bookmarks",
-      subtitle: "⌘⇧B — history, bookmarks, and library saves",
+      subtitle: `${formatShortcut("⇧B")} — history, bookmarks, and library saves`,
       keywords: "browser bookmarks saved favorites history web",
       run: (ctx) => {
         ctx.navigate("web");
@@ -93,7 +93,7 @@ export function buildBrowserCommands(): WorkshopCommand[] {
       id: "browser-find-in-page",
       section: "open",
       label: "Find in page",
-      subtitle: "⌘F — search text on the current page",
+      subtitle: `${formatShortcut("F")} — search text on the current page`,
       keywords: "browser find search page web",
       run: (ctx) => {
         ctx.navigate("web");
@@ -188,6 +188,28 @@ export function buildBrowserCommands(): WorkshopCommand[] {
         }
         ctx.notice("Link copied.");
         ctx.callbacks.close();
+      },
+    },
+  ];
+}
+
+export function buildLibraryCommands(): WorkshopCommand[] {
+  return [
+    {
+      id: "open-loose-markdown",
+      section: "open",
+      label: "Open markdown file…",
+      subtitle: "Edit a single .md without adding a vault folder",
+      keywords: "open file markdown md loose note document",
+      run: async (ctx) => {
+        const { canUseLocalVaultFilesystem } = await import("$lib/utils/vaultFilesystem");
+        if (!canUseLocalVaultFilesystem()) {
+          ctx.error("Open markdown file needs the desktop app on this Mac.");
+          return;
+        }
+        ctx.navigate("library");
+        const opened = await ctx.vault.openLooseMarkdownFile();
+        if (opened) ctx.callbacks.close();
       },
     },
   ];

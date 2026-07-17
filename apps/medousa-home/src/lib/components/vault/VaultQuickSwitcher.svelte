@@ -4,6 +4,7 @@
   import { vaultDisplayTitle } from "$lib/utils/formatVault";
   import { fuzzyMatchVaultNotes } from "$lib/utils/vaultFuzzyMatch";
   import { writeVaultStickyPath } from "$lib/utils/vaultSticky";
+  import { formatShortcut } from "$lib/platform";
   import VaultKindBadge from "./VaultKindBadge.svelte";
 
   interface Props {
@@ -134,7 +135,7 @@
         {/each}
       </ul>
       <p class="border-t border-surface-800 px-4 py-2 text-[11px] text-surface-500">
-        ↑↓ navigate · Enter open · Esc close · <kbd class="vault-kbd">⌘O</kbd> toggle
+        ↑↓ navigate · Enter open · Esc close · <kbd class="vault-kbd">{formatShortcut("O")}</kbd> toggle
       </p>
     </div>
   </div>

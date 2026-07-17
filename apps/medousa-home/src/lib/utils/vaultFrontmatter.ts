@@ -117,9 +117,161 @@ export function kindBadgeClass(kind: VaultNoteKind): string {
   }
 }
 
-export function wrapWithFrontmatter(kind: VaultNoteKind, body: string): string {
+/** Serialize YAML frontmatter without leading/trailing blank YAML lines. */
+export function serializeFrontmatter(yaml: string, body: string): string {
+  const yamlBody = yaml.replace(/^\n+/, "").replace(/\n+$/, "");
   const trimmed = body.replace(/^\n+/, "");
-  return `---\nkind: ${kind}\n---\n\n${trimmed}`;
+  if (!yamlBody) {
+    return trimmed;
+  }
+  return `---\n${yamlBody}\n---\n\n${trimmed}`;
+}
+
+export function wrapWithFrontmatter(kind: VaultNoteKind, body: string): string {
+  return serializeFrontmatter(`kind: ${kind}`, body);
+}
+
+/** Known kinds for Live properties kind picker (display order). */
+export const VAULT_KIND_OPTIONS: VaultNoteKind[] = [
+  "note",
+  "daily",
+  "project",
+  "ledger",
+  "board",
+  "inbox",
+  "bug",
+];
+
+function readFrontmatterField(
+  frontmatter: string | null,
+  key: string,
+): string | null {
+  if (!frontmatter?.trim()) return null;
+  const prefix = `${key}:`;
+  for (const raw of frontmatter.split("\n")) {
+    const trimmed = raw.trim();
+    if (!trimmed.startsWith(prefix)) continue;
+    return trimmed.slice(prefix.length).trim().replace(/^['"]|['"]$/g, "");
+  }
+  return null;
+}
+
+function upsertFrontmatterField(
+  frontmatter: string | null,
+  key: string,
+  value: string,
+): string {
+  const lines = (frontmatter ?? "").split("\n").filter((line, i, arr) => {
+    if (line.trim()) return true;
+    // keep interior blanks only
+    return i > 0 && i < arr.length - 1;
+  });
+  const prefix = `${key}:`;
+  let replaced = false;
+  const next = lines.map((line) => {
+    if (line.trimStart().startsWith(prefix)) {
+      replaced = true;
+      return `${key}: ${value}`;
+    }
+    return line;
+  });
+  if (!replaced) {
+    if (key === "title") next.unshift(`${key}: ${value}`);
+    else if (key === "kind") {
+      const titleIdx = next.findIndex((l) => l.trimStart().startsWith("title:"));
+      if (titleIdx >= 0) next.splice(titleIdx + 1, 0, `${key}: ${value}`);
+      else next.unshift(`${key}: ${value}`);
+    } else {
+      next.push(`${key}: ${value}`);
+    }
+  }
+  return next.join("\n").replace(/^\n+/, "").replace(/\n+$/, "");
+}
+
+export function parseFrontmatterTitle(frontmatter: string | null): string {
+  return readFrontmatterField(frontmatter, "title") ?? "";
+}
+
+export function parseFrontmatterKindValue(
+  frontmatter: string | null,
+): string {
+  return readFrontmatterField(frontmatter, "kind") ?? "";
+}
+
+/** Update `title:` in YAML (creates frontmatter when missing). */
+export function setFrontmatterTitleYaml(
+  frontmatter: string | null,
+  title: string,
+): string {
+  const trimmed = title.trim();
+  if (!trimmed) {
+    if (!frontmatter) return "";
+    return frontmatter
+      .split("\n")
+      .filter((line) => !line.trimStart().startsWith("title:"))
+      .join("\n")
+      .replace(/^\n+/, "")
+      .replace(/\n+$/, "");
+  }
+  return upsertFrontmatterField(frontmatter, "title", trimmed);
+}
+
+/** Update `kind:` in YAML (creates frontmatter when missing). */
+export function setFrontmatterKindYaml(
+  frontmatter: string | null,
+  kind: VaultNoteKind,
+): string {
+  return upsertFrontmatterField(frontmatter, "kind", kind);
+}
+
+/** Replace `tags:` with an inline list; preserves other YAML keys. */
+export function setFrontmatterTagsYaml(
+  frontmatter: string | null,
+  tags: string[],
+): string {
+  const cleaned = [...new Set(tags.map((t) => t.trim()).filter(Boolean))];
+  const tagsLine =
+    cleaned.length === 0
+      ? null
+      : `tags: [${cleaned.map((t) => (t.includes(" ") || t.includes(":") ? `"${t}"` : t)).join(", ")}]`;
+
+  const lines = (frontmatter ?? "").split("\n");
+  const out: string[] = [];
+  let inTagsBlock = false;
+  let wroteTags = false;
+  for (const raw of lines) {
+    const trimmed = raw.trim();
+    if (!inTagsBlock && trimmed.startsWith("tags:")) {
+      const inline = trimmed.slice("tags:".length).trim();
+      if (!inline || (inline.startsWith("[") && inline.endsWith("]"))) {
+        if (tagsLine) {
+          out.push(tagsLine);
+          wroteTags = true;
+        }
+        continue;
+      }
+      if (inline) {
+        if (tagsLine) {
+          out.push(tagsLine);
+          wroteTags = true;
+        }
+        continue;
+      }
+      inTagsBlock = true;
+      if (tagsLine) {
+        out.push(tagsLine);
+        wroteTags = true;
+      }
+      continue;
+    }
+    if (inTagsBlock) {
+      if (trimmed.startsWith("-")) continue;
+      inTagsBlock = false;
+    }
+    if (trimmed || out.length > 0) out.push(raw);
+  }
+  if (!wroteTags && tagsLine) out.push(tagsLine);
+  return out.join("\n").replace(/^\n+/, "").replace(/\n+$/, "");
 }
 
 export function stripFrontmatter(body: string): { content: string; frontmatter: string | null } {
@@ -132,7 +284,8 @@ export function stripFrontmatter(body: string): { content: string; frontmatter: 
   if (end === -1) {
     return { content: body, frontmatter: null };
   }
-  const frontmatter = rest.slice(0, end);
+  // Drop the newline(s) that follow the opening `---` so rewrite does not grow blanks.
+  const frontmatter = rest.slice(0, end).replace(/^\n+/, "").replace(/\n+$/, "");
   const content = rest.slice(end + 4).replace(/^\n+/, "");
   return { content, frontmatter };
 }
@@ -154,7 +307,7 @@ export function setFrontmatterKind(body: string, kind: VaultNoteKind): string {
   if (!replaced) {
     nextLines.unshift(`kind: ${kind}`);
   }
-  return `---\n${nextLines.join("\n")}\n---\n\n${content}`;
+  return serializeFrontmatter(nextLines.join("\n"), content);
 }
 
 export function insertTextAtSection(
@@ -221,17 +374,42 @@ export function readBodyTags(body: string): string[] {
   return parseFrontmatterTags(frontmatter);
 }
 
-/** Workshop/system tags first, then user tags; deduped. */
+/** System/workshop tags that should stay quiet in the UI. */
+export function isWorkshopVaultTag(tag: string): boolean {
+  const t = tag.trim().toLowerCase();
+  return (
+    t === "medousa" ||
+    t === "vault" ||
+    t === "session" ||
+    t.startsWith("profile:") ||
+    t.startsWith("chat:")
+  );
+}
+
+/** Human tags first, workshop/system last; deduped. */
 export function sortVaultTagsForDisplay(tags: string[]): string[] {
-  const workshop = new Set(["medousa", "vault", "session"]);
-  const ordered: string[] = [];
+  const human: string[] = [];
+  const workshop: string[] = [];
   for (const tag of tags) {
-    if (workshop.has(tag) || tag.startsWith("profile:") || tag.startsWith("chat:")) {
-      if (!ordered.includes(tag)) ordered.push(tag);
+    if (!tag.trim()) continue;
+    if (isWorkshopVaultTag(tag)) {
+      if (!workshop.includes(tag)) workshop.push(tag);
+    } else if (!human.includes(tag)) {
+      human.push(tag);
     }
   }
-  for (const tag of tags) {
-    if (!ordered.includes(tag)) ordered.push(tag);
-  }
-  return ordered;
+  return [...human, ...workshop];
+}
+
+/** Resting Live chips: up to `limit` human tags; rest (incl. workshop) behind +N. */
+export function restingVaultTagChips(
+  tags: string[],
+  limit = 2,
+): { visible: string[]; hiddenCount: number } {
+  const ordered = sortVaultTagsForDisplay(tags);
+  const human = ordered.filter((t) => !isWorkshopVaultTag(t));
+  const workshop = ordered.filter((t) => isWorkshopVaultTag(t));
+  const visible = human.slice(0, limit);
+  const hiddenCount = human.length - visible.length + workshop.length;
+  return { visible, hiddenCount: Math.max(0, hiddenCount) };
 }

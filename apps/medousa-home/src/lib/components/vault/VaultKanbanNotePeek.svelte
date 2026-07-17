@@ -104,6 +104,7 @@
       liquidContext: {
         titleByPath: new Map(vault.notes.map((note) => [note.path, note.title] as const)),
         openLinksInWeb: false,
+        onOpenCardDetail: (detail) => vault.openCardDetail(detail),
       },
       localImagePath: notePath,
       code: true,

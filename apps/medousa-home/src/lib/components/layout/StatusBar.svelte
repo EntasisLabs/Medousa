@@ -2,6 +2,7 @@
   import type { DaemonHealth } from "$lib/daemon";
   import type { WorkCard } from "$lib/types/workspace";
   import WorkMotionPeek from "$lib/components/layout/WorkMotionPeek.svelte";
+  import { formatShortcut } from "$lib/platform";
   import { Activity } from "@lucide/svelte";
 
   interface Props {
@@ -213,7 +214,7 @@
         title="Command spotlight"
         onclick={onOpenSpotlight}
       >
-        ⌘K
+        {formatShortcut("K")}
       </button>
     {/if}
   </div>

@@ -20,6 +20,7 @@
   const humanBrowser = $derived(humanBrowserForWindow());
   import { normalizeBrowserUrl } from "$lib/utils/browserUrl";
   import { copyBrowserUrl, openUrlInDefaultBrowser } from "$lib/utils/browserActions";
+  import { formatShortcut } from "$lib/platform";
   import { toast } from "$lib/stores/toast.svelte";
   import {
     openSavedVaultNote,
@@ -242,12 +243,12 @@
     <button type="button" class="browser-popover-row" onclick={handleFindInPage}>
       <Search size={16} class="shrink-0 text-surface-400" />
       <span class="text-sm text-surface-50">Find in page</span>
-      <span class="browser-popover-kbd">⌘F</span>
+      <span class="browser-popover-kbd">{formatShortcut("F")}</span>
     </button>
     <button type="button" class="browser-popover-row" onclick={() => void handleReopenTab()}>
       <RotateCcw size={16} class="shrink-0 text-surface-400" />
       <span class="text-sm text-surface-50">Reopen closed tab</span>
-      <span class="browser-popover-kbd">⌘⇧T</span>
+      <span class="browser-popover-kbd">{formatShortcut("⇧T")}</span>
     </button>
     {#if showHandBack}
       <button type="button" class="browser-popover-row" onclick={handleHandBack}>
@@ -369,12 +370,12 @@
       <button type="button" class="browser-popover-row" onclick={handleFindInPage}>
         <Search size={16} class="shrink-0 text-surface-400" />
         <span class="text-sm text-surface-50">Find in page</span>
-        <span class="browser-popover-kbd">⌘F</span>
+        <span class="browser-popover-kbd">{formatShortcut("F")}</span>
       </button>
       <button type="button" class="browser-popover-row" onclick={() => void handleReopenTab()}>
         <RotateCcw size={16} class="shrink-0 text-surface-400" />
         <span class="text-sm text-surface-50">Reopen closed tab</span>
-        <span class="browser-popover-kbd">⌘⇧T</span>
+        <span class="browser-popover-kbd">{formatShortcut("⇧T")}</span>
       </button>
       {#if showHandBack}
         <button type="button" class="browser-popover-row" onclick={handleHandBack}>
@@ -389,7 +390,7 @@
       type="button"
       class="browser-chrome-btn"
       aria-label="Bookmarks"
-      title="Bookmarks (⌘⇧B)"
+      title="Bookmarks ({formatShortcut('⇧B')})"
       data-browser-popover-trigger
       data-browser-saved-trigger
       aria-expanded={savedOpen}
