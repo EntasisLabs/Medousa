@@ -23,6 +23,7 @@ import {
   LIVE_ICON_DETACH,
   LIVE_ICON_OPEN,
 } from "./liveIcons";
+import { liveNodeViewStopEvent } from "./liveNodeViewStopEvent";
 
 export type EmbedBlockAttrs = {
   path: string;
@@ -165,8 +166,8 @@ export const EmbedBlock = Node.create<EmbedBlockOptions>({
 
         const shell = document.createElement("aside");
         shell.className =
-          "markdown-transclusion vault-live-embed vault-live-embed--collapsed";
-        shell.innerHTML = `<header class="markdown-transclusion-header vault-live-embed__header" data-live-embed-header><span class="markdown-transclusion-label"></span><div class="vault-live-embed__actions"><button type="button" class="vault-live-embed__icon-btn vault-live-embed__expand" data-live-embed-expand aria-expanded="false" title="Expand note" aria-label="Expand note">${LIVE_ICON_CHEVRON_DOWN}</button><span class="vault-live-quiet-chrome vault-live-embed__secondary"><button type="button" class="vault-live-embed__icon-btn" data-live-embed-open title="Open" aria-label="Open note">${LIVE_ICON_OPEN}</button><button type="button" class="vault-live-embed__icon-btn" data-live-embed-detach title="Remove from page" aria-label="Remove from page">${LIVE_ICON_DETACH}</button></span></div></header><div class="markdown-transclusion-body markdown-content vault-live-embed__body" data-live-embed-body></div>`;
+          "markdown-transclusion vault-live-embed vault-live-embed--collapsed vault-live-embed--fold";
+        shell.innerHTML = `<header class="markdown-transclusion-header vault-live-embed__header" data-live-embed-header><span class="markdown-transclusion-label"></span><div class="vault-live-embed__actions"><button type="button" class="vault-live-embed__icon-btn vault-live-embed__expand" data-live-embed-expand aria-expanded="false" title="Expand" aria-label="Expand note">${LIVE_ICON_CHEVRON_DOWN}</button><span class="vault-live-quiet-chrome vault-live-embed__secondary"><button type="button" class="vault-live-embed__icon-btn" data-live-embed-open title="Open" aria-label="Open note">${LIVE_ICON_OPEN}</button><button type="button" class="vault-live-embed__icon-btn" data-live-embed-detach title="Remove from page" aria-label="Remove from page">${LIVE_ICON_DETACH}</button></span></div></header><div class="markdown-transclusion-body markdown-content vault-live-embed__body" data-live-embed-body></div>`;
         dom.append(shell);
 
         const labelEl = shell.querySelector(".markdown-transclusion-label");
@@ -352,6 +353,7 @@ export const EmbedBlock = Node.create<EmbedBlockOptions>({
 
       return {
         dom,
+        stopEvent: liveNodeViewStopEvent,
         ignoreMutation: () => true,
         update: (updated) => {
           if (updated.type.name !== this.name) return false;

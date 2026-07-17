@@ -2450,11 +2450,25 @@ function scanTopLevelFences(source: string): TopLevelFence[] {
       i += 1;
       continue;
     }
+    // Nest-aware close: ```report … ```chart … ``` … ``` must not treat the
+    // inner chart closer as the report closer (that orphaned the real closer +
+    // following sibling fences into a shielded "docs" slot).
+    let depth = 1;
     let j = i + 1;
-    while (j < lines.length && !matchFenceClose(lines[j]!, open.ticks)) {
+    while (j < lines.length && depth > 0) {
+      const nestedOpen = matchFenceOpen(lines[j]!);
+      if (nestedOpen && nestedOpen.ticks >= open.ticks && nestedOpen.lang) {
+        depth += 1;
+        j += 1;
+        continue;
+      }
+      if (matchFenceClose(lines[j]!, open.ticks)) {
+        depth -= 1;
+        if (depth === 0) break;
+      }
       j += 1;
     }
-    if (j >= lines.length) {
+    if (j >= lines.length || depth !== 0) {
       break;
     }
     const body = lines.slice(i + 1, j).join("\n");
@@ -2476,7 +2490,7 @@ function scanTopLevelFences(source: string): TopLevelFence[] {
       closeLine,
       lang: open.lang,
       body,
-      raw: lines.slice(i, j + 1).join("\n"),
+      raw: lines.slice(i, closeLine + 1).join("\n"),
     });
     i = closeLine + 1;
   }
@@ -2532,19 +2546,47 @@ function restoreProtectedFences(source: string, slots: string[]): string {
   });
 }
 
-/** Innermost-first liquid rewrite (nest hosts + top-level liquid leaves). */
+/**
+ * Innermost-first liquid rewrite (nest hosts + top-level liquid leaves).
+ * Replace one fence per pass. Global multi-match String#replace breaks when a
+ * nested chart and a later sibling card both match — the report host never
+ * rewrites and the card stays raw.
+ */
 function processNestedLiquidFences(body: string): string {
-  const fenceRe =
-    /^```([a-zA-Z0-9_-]*)[ \t]*\n((?:(?!^```)[\s\S])*?)^```[ \t]*$/gm;
+  const fenceReSource =
+    "^```([a-zA-Z0-9_-]*)[ \\t]*\\n((?:(?!^```)[\\s\\S])*?)^```[ \\t]*$";
   let out = body;
-  for (let pass = 0; pass < 12; pass++) {
-    const next = out.replace(
-      fenceRe,
-      (match, langRaw: string, inner: string, offset: number) =>
-        replaceLiquidFenceMatch(match, langRaw, inner, out, offset),
-    );
-    if (next === out) break;
-    out = next;
+  for (let pass = 0; pass < 64; pass++) {
+    const fenceRe = new RegExp(fenceReSource, "gm");
+    const hits: { index: number; text: string; lang: string; inner: string }[] =
+      [];
+    let match: RegExpExecArray | null;
+    while ((match = fenceRe.exec(out)) !== null) {
+      hits.push({
+        index: match.index,
+        text: match[0],
+        lang: match[1] ?? "",
+        inner: match[2] ?? "",
+      });
+    }
+    let replacedOne = false;
+    for (const hit of hits) {
+      const replaced = replaceLiquidFenceMatch(
+        hit.text,
+        hit.lang,
+        hit.inner,
+        out,
+        hit.index,
+      );
+      if (replaced === hit.text) continue;
+      out =
+        out.slice(0, hit.index) +
+        replaced +
+        out.slice(hit.index + hit.text.length);
+      replacedOne = true;
+      break;
+    }
+    if (!replacedOne) break;
   }
   return out;
 }

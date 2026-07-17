@@ -26,6 +26,7 @@
   import { vaultDisplayTitle } from "$lib/utils/formatVault";
   import { handleVaultNoteContextMenuEvent } from "$lib/utils/vaultContextMenuEvents";
   import { createVaultScrollSync } from "$lib/utils/vaultScrollSync";
+  import type { SlashMenuAnchor } from "$lib/utils/slashMenuPlacement";
 
   interface Props {
     content: string;
@@ -84,7 +85,7 @@
   let selectionStart = $state(0);
   let selectionEnd = $state(0);
   let slashOpen = $state(false);
-  let slashAnchor = $state<{ top: number; left: number } | null>(null);
+  let slashAnchor = $state<SlashMenuAnchor | null>(null);
   let notePickerOpen = $state(false);
   let notePickerMode = $state<"wikilink" | "embed">("wikilink");
   let calloutBuilderOpen = $state(false);

@@ -107,6 +107,15 @@ import {
   replaceChartFenceAt,
   type ChartFenceKv,
 } from "$lib/utils/vaultChartFence";
+import {
+  extractLiquidFences,
+  parseLiquidFenceDraft,
+  replaceLiquidFenceRawAt,
+  serializeLiquidFenceDraft,
+  type LiquidFenceDraft,
+  type LiquidFenceLang,
+} from "$lib/utils/vaultLiquidFence";
+import type { CardDetailPayload } from "$lib/markdown/liquidEmbeds";
 import { insertTextAtCursor } from "$lib/utils/vaultMarkdownEdit";
 import { invalidateTransclusionCache } from "$lib/utils/resolveTransclusion";
 import {
@@ -224,6 +233,13 @@ export class VaultStore {
   chartBridgeEditIndex = $state<number | null>(null);
   chartBridgeKv = $state<ChartFenceKv | null>(null);
   chartBridgeTableMarkdown = $state("");
+  liquidBridgeOpen = $state(false);
+  liquidBridgeLang = $state<LiquidFenceLang | null>(null);
+  liquidBridgeEditIndex = $state<number | null>(null);
+  liquidBridgeDraft = $state<LiquidFenceDraft | null>(null);
+  /** Vault card detail sheet (same payload as chat Liquid cards). */
+  cardDetailOpen = $state(false);
+  cardDetail = $state<CardDetailPayload | null>(null);
 
   private autosaveTimer: ReturnType<typeof setTimeout> | null = null;
   private savedWhisperTimer: ReturnType<typeof setTimeout> | null = null;
@@ -757,6 +773,49 @@ export class VaultStore {
     );
     if (next) this.markDirty(next, { reloadEditors: true });
     this.closeChartBridge();
+  }
+
+  openLiquidBridgeEdit(lang: LiquidFenceLang, index: number) {
+    const blocks = extractLiquidFences(this.content, lang);
+    const block = blocks[index];
+    if (!block) return;
+    this.liquidBridgeLang = lang;
+    this.liquidBridgeEditIndex = index;
+    this.liquidBridgeDraft = parseLiquidFenceDraft(lang, block.body);
+    this.liquidBridgeOpen = true;
+  }
+
+  closeLiquidBridge() {
+    this.liquidBridgeOpen = false;
+    this.liquidBridgeLang = null;
+    this.liquidBridgeEditIndex = null;
+    this.liquidBridgeDraft = null;
+  }
+
+  commitLiquidBridge(next: LiquidFenceDraft) {
+    if (this.liquidBridgeEditIndex == null || !this.liquidBridgeLang) {
+      this.closeLiquidBridge();
+      return;
+    }
+    const raw = serializeLiquidFenceDraft(next);
+    const replaced = replaceLiquidFenceRawAt(
+      this.content,
+      this.liquidBridgeLang,
+      this.liquidBridgeEditIndex,
+      raw,
+    );
+    if (replaced) this.markDirty(replaced, { reloadEditors: true });
+    this.closeLiquidBridge();
+  }
+
+  openCardDetail(detail: CardDetailPayload) {
+    this.cardDetail = detail;
+    this.cardDetailOpen = true;
+  }
+
+  closeCardDetail() {
+    this.cardDetailOpen = false;
+    this.cardDetail = null;
   }
 
   async insertImageEmbed(imagePath: string) {

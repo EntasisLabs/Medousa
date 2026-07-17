@@ -131,6 +131,149 @@ export function wrapWithFrontmatter(kind: VaultNoteKind, body: string): string {
   return serializeFrontmatter(`kind: ${kind}`, body);
 }
 
+/** Known kinds for Live properties kind picker (display order). */
+export const VAULT_KIND_OPTIONS: VaultNoteKind[] = [
+  "note",
+  "daily",
+  "project",
+  "ledger",
+  "board",
+  "inbox",
+  "bug",
+];
+
+function readFrontmatterField(
+  frontmatter: string | null,
+  key: string,
+): string | null {
+  if (!frontmatter?.trim()) return null;
+  const prefix = `${key}:`;
+  for (const raw of frontmatter.split("\n")) {
+    const trimmed = raw.trim();
+    if (!trimmed.startsWith(prefix)) continue;
+    return trimmed.slice(prefix.length).trim().replace(/^['"]|['"]$/g, "");
+  }
+  return null;
+}
+
+function upsertFrontmatterField(
+  frontmatter: string | null,
+  key: string,
+  value: string,
+): string {
+  const lines = (frontmatter ?? "").split("\n").filter((line, i, arr) => {
+    if (line.trim()) return true;
+    // keep interior blanks only
+    return i > 0 && i < arr.length - 1;
+  });
+  const prefix = `${key}:`;
+  let replaced = false;
+  const next = lines.map((line) => {
+    if (line.trimStart().startsWith(prefix)) {
+      replaced = true;
+      return `${key}: ${value}`;
+    }
+    return line;
+  });
+  if (!replaced) {
+    if (key === "title") next.unshift(`${key}: ${value}`);
+    else if (key === "kind") {
+      const titleIdx = next.findIndex((l) => l.trimStart().startsWith("title:"));
+      if (titleIdx >= 0) next.splice(titleIdx + 1, 0, `${key}: ${value}`);
+      else next.unshift(`${key}: ${value}`);
+    } else {
+      next.push(`${key}: ${value}`);
+    }
+  }
+  return next.join("\n").replace(/^\n+/, "").replace(/\n+$/, "");
+}
+
+export function parseFrontmatterTitle(frontmatter: string | null): string {
+  return readFrontmatterField(frontmatter, "title") ?? "";
+}
+
+export function parseFrontmatterKindValue(
+  frontmatter: string | null,
+): string {
+  return readFrontmatterField(frontmatter, "kind") ?? "";
+}
+
+/** Update `title:` in YAML (creates frontmatter when missing). */
+export function setFrontmatterTitleYaml(
+  frontmatter: string | null,
+  title: string,
+): string {
+  const trimmed = title.trim();
+  if (!trimmed) {
+    if (!frontmatter) return "";
+    return frontmatter
+      .split("\n")
+      .filter((line) => !line.trimStart().startsWith("title:"))
+      .join("\n")
+      .replace(/^\n+/, "")
+      .replace(/\n+$/, "");
+  }
+  return upsertFrontmatterField(frontmatter, "title", trimmed);
+}
+
+/** Update `kind:` in YAML (creates frontmatter when missing). */
+export function setFrontmatterKindYaml(
+  frontmatter: string | null,
+  kind: VaultNoteKind,
+): string {
+  return upsertFrontmatterField(frontmatter, "kind", kind);
+}
+
+/** Replace `tags:` with an inline list; preserves other YAML keys. */
+export function setFrontmatterTagsYaml(
+  frontmatter: string | null,
+  tags: string[],
+): string {
+  const cleaned = [...new Set(tags.map((t) => t.trim()).filter(Boolean))];
+  const tagsLine =
+    cleaned.length === 0
+      ? null
+      : `tags: [${cleaned.map((t) => (t.includes(" ") || t.includes(":") ? `"${t}"` : t)).join(", ")}]`;
+
+  const lines = (frontmatter ?? "").split("\n");
+  const out: string[] = [];
+  let inTagsBlock = false;
+  let wroteTags = false;
+  for (const raw of lines) {
+    const trimmed = raw.trim();
+    if (!inTagsBlock && trimmed.startsWith("tags:")) {
+      const inline = trimmed.slice("tags:".length).trim();
+      if (!inline || (inline.startsWith("[") && inline.endsWith("]"))) {
+        if (tagsLine) {
+          out.push(tagsLine);
+          wroteTags = true;
+        }
+        continue;
+      }
+      if (inline) {
+        if (tagsLine) {
+          out.push(tagsLine);
+          wroteTags = true;
+        }
+        continue;
+      }
+      inTagsBlock = true;
+      if (tagsLine) {
+        out.push(tagsLine);
+        wroteTags = true;
+      }
+      continue;
+    }
+    if (inTagsBlock) {
+      if (trimmed.startsWith("-")) continue;
+      inTagsBlock = false;
+    }
+    if (trimmed || out.length > 0) out.push(raw);
+  }
+  if (!wroteTags && tagsLine) out.push(tagsLine);
+  return out.join("\n").replace(/^\n+/, "").replace(/\n+$/, "");
+}
+
 export function stripFrontmatter(body: string): { content: string; frontmatter: string | null } {
   const trimmed = body.trimStart();
   if (!trimmed.startsWith("---")) {

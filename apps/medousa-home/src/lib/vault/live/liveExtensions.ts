@@ -9,6 +9,8 @@ import { FenceBlock, type FenceBlockOptions } from "./fenceBlockExtension";
 import { EmbedBlock, type EmbedBlockOptions } from "./embedBlockExtension";
 import { HeadingMarks } from "./headingMarksExtension";
 import { LiveHorizontalRule } from "./liveHorizontalRule";
+import { LiveHighlight } from "./liveHighlightMark";
+import { LiveTextColor } from "./liveTextColorMark";
 
 export type LiveExtensionOptions = {
   fence?: FenceBlockOptions;
@@ -28,6 +30,8 @@ export function createLiveExtensions(
       heading: { levels: [1, 2, 3] },
     }),
     LiveHorizontalRule,
+    LiveHighlight,
+    LiveTextColor,
     Link.configure({
       openOnClick: false,
       autolink: true,

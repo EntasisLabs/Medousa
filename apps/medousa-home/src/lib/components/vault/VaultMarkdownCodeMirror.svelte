@@ -158,7 +158,9 @@
   }
 
   export function getSlashAnchor(relativeTo?: HTMLElement | null) {
-    if (!view) return { top: 40, left: 16 };
+    if (!view) {
+      return { top: 40, left: 16, maxHeight: 320 };
+    }
     return getCodeMirrorCaretAnchor(view, relativeTo);
   }
 

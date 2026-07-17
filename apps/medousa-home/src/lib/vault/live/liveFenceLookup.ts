@@ -1,6 +1,10 @@
 /** Resolve Configure indices for fences mounted as isolated TipTap atoms. */
 
 import { extractChartFences } from "$lib/utils/vaultChartFence";
+import {
+  extractLiquidFences,
+  type LiquidFenceLang,
+} from "$lib/utils/vaultLiquidFence";
 
 function normalizeFence(raw: string): string {
   return raw.replace(/\r\n/g, "\n").trim().replace(/\n+$/, "");
@@ -47,4 +51,15 @@ export function findViewFenceIndex(documentMarkdown: string, fenceRaw: string): 
     index += 1;
   }
   return -1;
+}
+
+export function findLiquidFenceIndex(
+  documentMarkdown: string,
+  lang: LiquidFenceLang,
+  fenceRaw: string,
+): number {
+  const target = normalizeFence(fenceRaw);
+  if (!target) return -1;
+  const blocks = extractLiquidFences(documentMarkdown, lang);
+  return blocks.findIndex((b) => normalizeFence(b.fullMatch) === target);
 }

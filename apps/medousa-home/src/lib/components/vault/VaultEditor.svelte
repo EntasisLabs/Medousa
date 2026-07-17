@@ -43,6 +43,8 @@
   import { isTauri, showVaultSticky } from "$lib/window";
   import VaultPdfPreviewModal from "./VaultPdfPreviewModal.svelte";
   import VaultChartBuilderSheet from "./VaultChartBuilderSheet.svelte";
+  import VaultLiquidBuilderSheet from "./VaultLiquidBuilderSheet.svelte";
+  import LiquidCardDetailSheet from "$lib/components/chat/LiquidCardDetailSheet.svelte";
 
   interface Props {
     visible: boolean;
@@ -451,11 +453,11 @@
         {/if}
       </div>
 
-      <div class="flex shrink-0 flex-wrap items-center justify-end gap-2">
+      <div class="vault-editor-tools flex shrink-0 flex-wrap items-center justify-end gap-1.5">
         {#if layout.vaultSidebarCollapsed}
           <button
             type="button"
-            class="btn btn-sm variant-ghost-surface"
+            class="btn btn-sm variant-ghost-surface vault-editor-tool-btn"
             title="Show library browser"
             aria-label="Show library browser"
             onclick={() => layout.setVaultSidebarCollapsed(false)}
@@ -478,33 +480,15 @@
           </span>
         {/if}
 
-        {#if showNotePlaneToggle}
-          <div class="vault-note-plane-pill" role="group" aria-label="Note plane">
-            <button
-              type="button"
-              class="vault-note-plane-pill-btn"
-              class:vault-note-plane-pill-btn--active={isLivePlane}
-              aria-pressed={isLivePlane}
-              title="Live — calm writing plane"
-              onclick={() => vault.setNotePlane("live")}
-            >
-              Live
-            </button>
-            <button
-              type="button"
-              class="vault-note-plane-pill-btn"
-              class:vault-note-plane-pill-btn--active={isBuildPlane}
-              aria-pressed={isBuildPlane}
-              title="Build — format, split, source, links"
-              onclick={() => {
-                // Serialize Live into vault.content before Build mounts.
-                markdownEditorEl?.flushLive();
-                vault.setNotePlane("build");
-              }}
-            >
-              Build
-            </button>
-          </div>
+        {#if showNotePlaneToggle && isBuildPlane}
+          <button
+            type="button"
+            class="vault-editor-back-live"
+            title="Back to Live"
+            onclick={() => vault.setNotePlane("live")}
+          >
+            Back to Live
+          </button>
         {/if}
 
         {#if showLedgerViewToggle}
@@ -559,7 +543,7 @@
 
         <button
           type="button"
-          class="btn btn-sm variant-ghost-surface"
+          class="btn btn-sm variant-ghost-surface vault-editor-tool-btn"
           title="Find note ({formatShortcut('O')})"
           aria-label="Find note"
           onclick={() => vaultQuickSwitcher.openSwitcher()}
@@ -585,6 +569,8 @@
           splitEnabled={layout.vaultSplitEnabled}
           showLinksToggle={showLinksToggle}
           linksOpen={layout.vaultLinksPanelOpen}
+          showEditSource={showNotePlaneToggle && isLivePlane}
+          showBackToLive={showNotePlaneToggle && isBuildPlane}
           {linkCount}
           onOpenChat={onOpenChat}
           onOpenWork={onOpenWork}
@@ -623,6 +609,11 @@
               : vault.enterEditMode()}
           onToggleSplit={() => layout.toggleVaultSplitEnabled()}
           onToggleLinks={() => layout.toggleVaultLinksPanel()}
+          onEditSource={() => {
+            markdownEditorEl?.flushLive();
+            vault.setNotePlane("build");
+          }}
+          onBackToLive={() => vault.setNotePlane("live")}
         />
 
         {#if !vault.isLooseFile && vault.selectedPath}
@@ -771,6 +762,18 @@
   initialTableMarkdown={vault.chartBridgeTableMarkdown}
   onSave={(kv, tableMarkdown) => vault.commitChartBridge(kv, tableMarkdown)}
   onClose={() => vault.closeChartBridge()}
+/>
+<VaultLiquidBuilderSheet
+  open={vault.liquidBridgeOpen}
+  lang={vault.liquidBridgeLang}
+  initial={vault.liquidBridgeDraft}
+  onSave={(next) => vault.commitLiquidBridge(next)}
+  onClose={() => vault.closeLiquidBridge()}
+/>
+<LiquidCardDetailSheet
+  open={vault.cardDetailOpen}
+  detail={vault.cardDetail}
+  onClose={() => vault.closeCardDetail()}
 />
 <VaultPdfPreviewModal
   open={pdfPreviewOpen}

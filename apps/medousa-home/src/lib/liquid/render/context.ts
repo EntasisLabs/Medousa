@@ -27,7 +27,7 @@ export interface LiquidRenderContext {
   onPromoteToFlow?: (
     ref: import("$lib/types/toolHistory").ToolHistorySliceRef,
   ) => void | Promise<void>;
-  /** Chat-only: open structured card detail sheet (Monogram expand). */
+  /** Open structured card detail sheet (chat + vault Live/Preview). */
   onOpenCardDetail?: (detail: CardDetailPayload) => void;
 }
 

@@ -128,7 +128,7 @@ export function mountReportSurface(
   const editBtn = document.createElement("button");
   editBtn.type = "button";
   editBtn.className = "vault-live-report__edit";
-  editBtn.textContent = "Edit narrative";
+  editBtn.textContent = "Write";
   editBtn.addEventListener("mousedown", (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -141,11 +141,17 @@ export function mountReportSurface(
 
   const showOrganism = () => {
     editing = false;
-    editBtn.textContent = "Edit narrative";
+    editBtn.textContent = "Write";
     stage.replaceChildren();
     const mount = document.createElement("div");
     stage.append(mount);
     mountLiquidFence(mount, serializeReportRaw(model), liquidContext);
+    queueMicrotask(() => {
+      for (const btn of mount.querySelectorAll<HTMLElement>(".liquid-chart-configure")) {
+        btn.textContent = "data";
+        btn.title = "Configure chart";
+      }
+    });
   };
 
   const showEditor = () => {
@@ -168,7 +174,7 @@ export function mountReportSurface(
 
     const body = document.createElement("textarea");
     body.className = "vault-live-report__body";
-    body.placeholder = "Narrative and nested ```chart``` fences…";
+    body.placeholder = "Prose, then charts if you need them…";
     body.value = model.body;
     body.rows = Math.min(16, Math.max(6, model.body.split("\n").length + 2));
 

@@ -11,6 +11,7 @@ import {
   mountPlainFence,
   unmountLiquidFence,
 } from "./liveOrganismHost";
+import { liveNodeViewStopEvent } from "./liveNodeViewStopEvent";
 import {
   mountCalloutSurface,
   parseCalloutRaw,
@@ -25,6 +26,34 @@ import {
   mountChartSurface,
   type ChartSurfaceHandles,
 } from "./liveChartSurface";
+import {
+  mountCardSurface,
+  type CardSurfaceHandles,
+} from "./liveCardSurface";
+import {
+  mountDashboardSurface,
+  type DashboardSurfaceHandles,
+} from "./liveDashboardSurface";
+import {
+  mountTabsSurface,
+  type TabsSurfaceHandles,
+} from "./liveTabsSurface";
+import {
+  mountStepsSurface,
+  type StepsSurfaceHandles,
+} from "./liveStepsSurface";
+import {
+  mountAccordionSurface,
+  type AccordionSurfaceHandles,
+} from "./liveAccordionSurface";
+import {
+  mountCodeSurface,
+  type CodeSurfaceHandles,
+} from "./liveCodeSurface";
+import {
+  mountTreeSurface,
+  type TreeSurfaceHandles,
+} from "./liveTreeSurface";
 import { resolveMedousaViews } from "$lib/utils/resolveMedousaViews";
 import type { VaultNote } from "$lib/types/vault";
 
@@ -140,6 +169,13 @@ export const FenceBlock = Node.create<FenceBlockOptions>({
       let callout: CalloutSurfaceHandles | null = null;
       let report: ReportSurfaceHandles | null = null;
       let chart: ChartSurfaceHandles | null = null;
+      let card: CardSurfaceHandles | null = null;
+      let dashboard: DashboardSurfaceHandles | null = null;
+      let tabs: TabsSurfaceHandles | null = null;
+      let steps: StepsSurfaceHandles | null = null;
+      let accordion: AccordionSurfaceHandles | null = null;
+      let code: CodeSurfaceHandles | null = null;
+      let tree: TreeSurfaceHandles | null = null;
       let mountGen = 0;
 
       const applyRawUpdate = (raw: string) => {
@@ -158,6 +194,20 @@ export const FenceBlock = Node.create<FenceBlockOptions>({
         report = null;
         chart?.destroy();
         chart = null;
+        card?.destroy();
+        card = null;
+        dashboard?.destroy();
+        dashboard = null;
+        tabs?.destroy();
+        tabs = null;
+        steps?.destroy();
+        steps = null;
+        accordion?.destroy();
+        accordion = null;
+        code?.destroy();
+        code = null;
+        tree?.destroy();
+        tree = null;
         unmountLiquidFence(dom);
         dom.replaceChildren();
         dom.setAttribute("data-lang", nextAttrs.lang || "code");
@@ -176,6 +226,77 @@ export const FenceBlock = Node.create<FenceBlockOptions>({
 
         if (lang === "chart") {
           chart = mountChartSurface(
+            dom,
+            nextAttrs.raw,
+            opts.getLiquidContext?.() ?? {},
+            (updatedRaw) => applyRawUpdate(updatedRaw),
+          );
+          return;
+        }
+
+        if (lang === "card") {
+          const ctx = opts.getLiquidContext?.() ?? {};
+          card = mountCardSurface(
+            dom,
+            nextAttrs.raw,
+            (updatedRaw) => applyRawUpdate(updatedRaw),
+            ctx.onOpenCardDetail,
+          );
+          return;
+        }
+
+        if (lang === "dashboard") {
+          dashboard = mountDashboardSurface(
+            dom,
+            nextAttrs.raw,
+            opts.getLiquidContext?.() ?? {},
+            (updatedRaw) => applyRawUpdate(updatedRaw),
+          );
+          return;
+        }
+
+        if (lang === "tabs") {
+          tabs = mountTabsSurface(
+            dom,
+            nextAttrs.raw,
+            opts.getLiquidContext?.() ?? {},
+            (updatedRaw) => applyRawUpdate(updatedRaw),
+          );
+          return;
+        }
+
+        if (lang === "steps") {
+          steps = mountStepsSurface(
+            dom,
+            nextAttrs.raw,
+            opts.getLiquidContext?.() ?? {},
+            (updatedRaw) => applyRawUpdate(updatedRaw),
+          );
+          return;
+        }
+
+        if (lang === "accordion") {
+          accordion = mountAccordionSurface(
+            dom,
+            nextAttrs.raw,
+            opts.getLiquidContext?.() ?? {},
+            (updatedRaw) => applyRawUpdate(updatedRaw),
+          );
+          return;
+        }
+
+        if (lang === "code") {
+          code = mountCodeSurface(
+            dom,
+            nextAttrs.raw,
+            opts.getLiquidContext?.() ?? {},
+            (updatedRaw) => applyRawUpdate(updatedRaw),
+          );
+          return;
+        }
+
+        if (lang === "tree") {
+          tree = mountTreeSurface(
             dom,
             nextAttrs.raw,
             opts.getLiquidContext?.() ?? {},
@@ -225,6 +346,7 @@ export const FenceBlock = Node.create<FenceBlockOptions>({
 
       return {
         dom,
+        stopEvent: liveNodeViewStopEvent,
         ignoreMutation: () => true,
         update: (updated) => {
           if (updated.type.name !== this.name) return false;
@@ -245,6 +367,20 @@ export const FenceBlock = Node.create<FenceBlockOptions>({
           report = null;
           chart?.destroy();
           chart = null;
+          card?.destroy();
+          card = null;
+          dashboard?.destroy();
+          dashboard = null;
+          tabs?.destroy();
+          tabs = null;
+          steps?.destroy();
+          steps = null;
+          accordion?.destroy();
+          accordion = null;
+          code?.destroy();
+          code = null;
+          tree?.destroy();
+          tree = null;
           unmountLiquidFence(dom);
         },
       };

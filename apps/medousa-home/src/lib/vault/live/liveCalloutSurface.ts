@@ -98,6 +98,19 @@ export function mountCalloutSurface(
     chrome.append(btn);
   }
 
+  const configure = document.createElement("button");
+  configure.type = "button";
+  configure.className = "vault-live-callout__configure";
+  configure.textContent = "more";
+  configure.title = "Configure callout";
+  configure.dataset.liveLiquidConfigure = "1";
+  configure.dataset.liveLiquidLang = "callout";
+  configure.addEventListener("mousedown", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+  });
+  chrome.append(configure);
+
   const title = document.createElement("p");
   title.className = "liquid-callout-title vault-live-callout__title";
   title.contentEditable = "true";

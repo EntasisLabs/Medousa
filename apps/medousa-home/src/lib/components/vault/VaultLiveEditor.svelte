@@ -17,9 +17,14 @@
   import { handleLiveHeadingKey } from "$lib/vault/live/headingKeymap";
   import { handleLiveNavKey } from "$lib/vault/live/liveNavKeymap";
   import {
+    findLiquidFenceIndex,
     findViewFenceIndex,
     resolveLiveChartIndex,
   } from "$lib/vault/live/liveFenceLookup";
+  import {
+    isLiquidConfigureLang,
+    type LiquidFenceLang,
+  } from "$lib/utils/vaultLiquidFence";
   import {
     foreignUndoArmed,
     takeForeignUndo,
@@ -27,11 +32,20 @@
   import { saveVaultNote } from "$lib/daemon";
   import { invalidateTransclusionCache } from "$lib/utils/resolveTransclusion";
   import { copyTextToClipboard } from "$lib/utils/vaultClipboard";
-  import type { SlashBlockId } from "$lib/utils/vaultMarkdownEdit";
+  import type { MarkdownFormatAction, SlashBlockId } from "$lib/utils/vaultMarkdownEdit";
+  import type { MarkdownColorToken } from "$lib/utils/vaultMarkdownColors";
+  import { placeSlashMenuAnchor } from "$lib/utils/slashMenuPlacement";
+  import type { CardDetailPayload } from "$lib/markdown/liquidEmbeds";
+  import VaultSelectionFormatBubble from "./VaultSelectionFormatBubble.svelte";
+  import VaultLiveProperties from "./VaultLiveProperties.svelte";
   import {
-    restingVaultTagChips,
-    sortVaultTagsForDisplay,
-  } from "$lib/utils/vaultFrontmatter";
+    applyLiveFormatAction,
+    applyLiveTextColor,
+    liveActiveFormatActions,
+    liveSelectionAnchor,
+    liveSelectionHasText,
+    type SelectionAnchor,
+  } from "$lib/vault/live/liveSelectionFormat";
 
   interface Props {
     /** Full note markdown (source of truth from parent). */
@@ -62,12 +76,12 @@
   let editor: Editor | null = null;
   let frontmatter = $state<string | null>(null);
   let tags = $state<string[]>([]);
-  let tagsExpanded = $state(false);
-
-  const tagChips = $derived(restingVaultTagChips(tags, 2));
-  const shownTags = $derived(
-    tagsExpanded ? sortVaultTagsForDisplay(tags) : tagChips.visible,
-  );
+  let formatBubbleOpen = $state(false);
+  let formatBubbleAnchor = $state<SelectionAnchor | null>(null);
+  let formatActiveActions = $state<MarkdownFormatAction[]>([]);
+  /** Last nonempty selection — restored when bubble buttons steal focus. */
+  let formatSelectionRange = $state<{ from: number; to: number } | null>(null);
+  let removeFormatBubbleListeners: (() => void) | null = null;
   /** Key this editor instance is bound to — never flush if it diverges. */
   let boundKey = "";
   let applyingExternal = false;
@@ -102,8 +116,16 @@
     onchangeRef.current(md);
   }
 
+  /** Compare titles ignoring emoji/punctuation prefixes and whitespace. */
   function normalizeTitle(value: string): string {
-    return value.replace(/\s+/g, " ").trim().toLowerCase();
+    return value
+      .replace(/\s+/g, " ")
+      .trim()
+      .replace(/^[\p{Extended_Pictographic}\p{Emoji_Presentation}\p{So}\s]+/u, "")
+      .replace(/[^\p{L}\p{N}\s]+/gu, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .toLowerCase();
   }
 
   function syncDupTitleHeading() {
@@ -116,17 +138,49 @@
     h1.classList.toggle("vault-live-h1--dup-title", match);
   }
 
+  /** Prefer caret outside headings so open doesn't greet with `#` graffiti. */
+  function placeRestingCaret() {
+    if (!editor) return;
+    const { doc } = editor.state;
+    let target: number | null = null;
+    doc.forEach((node, offset) => {
+      if (target != null) return;
+      if (node.type.name === "heading") return;
+      if (node.isTextblock) {
+        target = offset + 1;
+      }
+    });
+    if (target == null) {
+      // Fall through first heading into the next textblock if any.
+      let afterHeading: number | null = null;
+      let sawHeading = false;
+      doc.forEach((node, offset) => {
+        if (afterHeading != null) return;
+        if (node.type.name === "heading") {
+          sawHeading = true;
+          return;
+        }
+        if (sawHeading && node.isTextblock) {
+          afterHeading = offset + 1;
+        }
+      });
+      target = afterHeading ?? doc.content.size;
+    }
+    const safe = Math.max(1, Math.min(target, doc.content.size));
+    editor.commands.setTextSelection(safe);
+  }
+
   function loadFromMarkdown(md: string) {
     if (!editor) return;
     const parsed = parseLiveMarkdown(md);
     frontmatter = parsed.frontmatter;
     tags = parsed.tags;
-    tagsExpanded = false;
     applyingExternal = true;
     ready = false;
     editor.commands.setContent(parsed.doc, { contentType: "json" });
     // Keep suppress until after TipTap's deferred update notifications.
     queueMicrotask(() => {
+      placeRestingCaret();
       ready = true;
       applyingExternal = false;
       syncDupTitleHeading();
@@ -137,15 +191,14 @@
     onSlashCheckRef.current?.();
   }
 
-  function slashAnchorFor(container: HTMLElement | null): { top: number; left: number } | null {
+  function slashAnchorFor(container: HTMLElement | null) {
     if (!editor || !container) return null;
     const { from } = editor.state.selection;
     const coords = editor.view.coordsAtPos(from);
-    const rect = container.getBoundingClientRect();
-    return {
-      top: coords.bottom - rect.top + 6,
-      left: coords.left - rect.left,
-    };
+    return placeSlashMenuAnchor(
+      { top: coords.top, bottom: coords.bottom, left: coords.left },
+      container,
+    );
   }
 
   function resolveContext() {
@@ -162,7 +215,73 @@
     return {
       titleByPath: vault.labelByPath(),
       openLinksInWeb: false,
+      onOpenCardDetail: (detail: CardDetailPayload) => {
+        vault.openCardDetail(detail);
+      },
     };
+  }
+
+  function syncFormatBubble() {
+    if (!editor || disabled) {
+      formatBubbleOpen = false;
+      formatBubbleAnchor = null;
+      formatActiveActions = [];
+      formatSelectionRange = null;
+      return;
+    }
+    if (!liveSelectionHasText(editor)) {
+      // Editor blur (e.g. before mousedown preventDefault) can empty selection —
+      // keep the bubble + stashed range so the click can still apply.
+      if (formatBubbleOpen && formatSelectionRange && !editor.isFocused) {
+        return;
+      }
+      formatBubbleOpen = false;
+      formatBubbleAnchor = null;
+      formatActiveActions = [];
+      if (editor.isFocused) formatSelectionRange = null;
+      return;
+    }
+    const { from, to } = editor.state.selection;
+    formatSelectionRange = { from, to };
+    formatBubbleAnchor = liveSelectionAnchor(editor);
+    formatActiveActions = liveActiveFormatActions(editor);
+    formatBubbleOpen = Boolean(formatBubbleAnchor);
+  }
+
+  function handleFormatAction(action: MarkdownFormatAction) {
+    if (!editor) return;
+    const range = formatSelectionRange;
+    applyLiveFormatAction(editor, action, range);
+    // Refresh range from whatever TipTap kept after the command.
+    if (liveSelectionHasText(editor)) {
+      const { from, to } = editor.state.selection;
+      formatSelectionRange = { from, to };
+    } else if (range) {
+      formatSelectionRange = range;
+    }
+    syncFormatBubble();
+  }
+
+  function handleFormatColor(color: MarkdownColorToken) {
+    if (!editor) return;
+    const range = formatSelectionRange;
+    applyLiveTextColor(editor, color, range);
+    if (liveSelectionHasText(editor)) {
+      const { from, to } = editor.state.selection;
+      formatSelectionRange = { from, to };
+    } else if (range) {
+      formatSelectionRange = range;
+    }
+    syncFormatBubble();
+  }
+
+  function commitFrontmatter(next: string | null) {
+    frontmatter = next && next.trim() ? next : null;
+    if (!editor) return;
+    const md = serializeLiveMarkdown(editor.getJSON(), frontmatter);
+    const parsed = parseLiveMarkdown(md);
+    tags = parsed.tags;
+    onchangeRef.current(md);
   }
 
   function detachEmbed(path: string, label: string, pos: number) {
@@ -224,6 +343,25 @@
         Number.isFinite(localIndex) ? localIndex : 0,
       );
       if (index >= 0) vault.openChartBridgeEdit(index);
+      return;
+    }
+
+    const configureLiquid = target.closest("[data-live-liquid-configure]");
+    if (configureLiquid) {
+      event.preventDefault();
+      event.stopPropagation();
+      const langRaw =
+        configureLiquid.getAttribute("data-live-liquid-lang") ?? "";
+      if (!isLiquidConfigureLang(langRaw)) return;
+      const lang = langRaw as LiquidFenceLang;
+      const host = configureLiquid.closest<HTMLElement>("[data-live-fence-raw]");
+      const raw = host?.dataset.liveFenceRaw ?? "";
+      const index = findLiquidFenceIndex(
+        valueRef.current || vault.content,
+        lang,
+        raw,
+      );
+      if (index >= 0) vault.openLiquidBridgeEdit(lang, index);
       return;
     }
 
@@ -352,6 +490,12 @@
             }
           }
 
+          if (event.key === "Escape" && formatBubbleOpen) {
+            event.preventDefault();
+            formatBubbleOpen = false;
+            return true;
+          }
+
           if (editor && handleLiveNavKey(editor, event)) {
             return true;
           }
@@ -411,8 +555,30 @@
       },
       onSelectionUpdate: () => {
         syncSlash();
+        syncFormatBubble();
+      },
+      onBlur: () => {
+        queueMicrotask(() => {
+          const active = document.activeElement;
+          if (active?.closest(".vault-selection-format-bubble")) return;
+          if (editor && liveSelectionHasText(editor)) {
+            syncFormatBubble();
+            return;
+          }
+          formatBubbleOpen = false;
+          formatSelectionRange = null;
+        });
       },
     });
+
+    const scrollParent = hostEl.closest(".vault-live-editor");
+    const onScrollOrResize = () => syncFormatBubble();
+    scrollParent?.addEventListener("scroll", onScrollOrResize, { passive: true });
+    window.addEventListener("resize", onScrollOrResize);
+    removeFormatBubbleListeners = () => {
+      scrollParent?.removeEventListener("scroll", onScrollOrResize);
+      window.removeEventListener("resize", onScrollOrResize);
+    };
 
     // Defer accepting emits until after mount + node-view setup settles.
     queueMicrotask(() => {
@@ -421,6 +587,7 @@
         return;
       }
       requestAnimationFrame(() => {
+        placeRestingCaret();
         ready = true;
         applyingExternal = false;
         syncDupTitleHeading();
@@ -458,6 +625,8 @@
   });
 
   onDestroy(() => {
+    removeFormatBubbleListeners?.();
+    removeFormatBubbleListeners = null;
     editor?.destroy();
     editor = null;
   });
@@ -531,22 +700,24 @@
 </script>
 
 <div class="vault-live-editor flex min-h-0 flex-1 flex-col overflow-y-auto">
-  {#if tags.length > 0 && (shownTags.length > 0 || tagChips.hiddenCount > 0)}
-    <div class="vault-live-tag-chips" aria-label="Tags">
-      {#each shownTags as tag (tag)}
-        <span class="vault-live-tag-chip">{tag}</span>
-      {/each}
-      {#if !tagsExpanded && tagChips.hiddenCount > 0}
-        <button
-          type="button"
-          class="vault-live-tag-chip vault-live-tag-chip--more"
-          aria-label="Show {tagChips.hiddenCount} more tags"
-          onclick={() => (tagsExpanded = true)}
-        >
-          +{tagChips.hiddenCount}
-        </button>
-      {/if}
-    </div>
-  {/if}
+  <VaultLiveProperties
+    {frontmatter}
+    {tags}
+    fallbackTitle={displayTitle}
+    disabled={disabled}
+    onFrontmatterChange={commitFrontmatter}
+  />
   <div bind:this={hostEl} class="vault-live-editor__host min-h-0 flex-1"></div>
 </div>
+
+<VaultSelectionFormatBubble
+  open={formatBubbleOpen}
+  anchor={formatBubbleAnchor}
+  activeActions={formatActiveActions}
+  disabled={disabled}
+  onFormat={handleFormatAction}
+  onColor={handleFormatColor}
+  onClose={() => {
+    formatBubbleOpen = false;
+  }}
+/>

@@ -1,25 +1,13 @@
 <script lang="ts">
   import { ChevronDown, ExternalLink } from "@lucide/svelte";
   import { layout } from "$lib/stores/layout.svelte";
-  import {
-    Bold,
-    Italic,
-    Heading1,
-    Heading2,
-    Heading3,
-    List,
-    ListOrdered,
-    Link,
-    Code,
-    SquareCheck,
-    Highlighter,
-  } from "@lucide/svelte";
   import type { MarkdownFormatAction } from "$lib/utils/vaultMarkdownEdit";
   import {
     MARKDOWN_COLOR_OPTIONS,
     normalizeMarkdownHexColor,
     type MarkdownColorToken,
   } from "$lib/utils/vaultMarkdownColors";
+  import { VAULT_FORMAT_ACTION_GROUPS } from "$lib/utils/vaultFormatActions";
 
   interface Props {
     disabled?: boolean;
@@ -74,40 +62,7 @@
     hexPickerOpen = false;
   }
 
-  const groups: {
-    label: string;
-    items: { action: MarkdownFormatAction; title: string; Icon: typeof Bold }[];
-  }[] = [
-    {
-      label: "Style",
-      items: [
-        { action: "bold", title: "Bold", Icon: Bold },
-        { action: "italic", title: "Italic", Icon: Italic },
-        { action: "code", title: "Inline code", Icon: Code },
-        { action: "highlight", title: "Highlight", Icon: Highlighter },
-      ],
-    },
-    {
-      label: "Structure",
-      items: [
-        { action: "h1", title: "Title", Icon: Heading1 },
-        { action: "h2", title: "Section", Icon: Heading2 },
-        { action: "h3", title: "Subsection", Icon: Heading3 },
-      ],
-    },
-    {
-      label: "Lists",
-      items: [
-        { action: "bullet", title: "Bullet list", Icon: List },
-        { action: "numbered", title: "Numbered list", Icon: ListOrdered },
-        { action: "checkbox", title: "Checkbox", Icon: SquareCheck },
-      ],
-    },
-    {
-      label: "Insert",
-      items: [{ action: "link", title: "Link", Icon: Link }],
-    },
-  ];
+  const groups = VAULT_FORMAT_ACTION_GROUPS;
 </script>
 
 <div

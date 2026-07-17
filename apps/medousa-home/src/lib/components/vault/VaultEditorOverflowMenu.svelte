@@ -33,6 +33,8 @@
     showLinksToggle?: boolean;
     linksOpen?: boolean;
     linkCount?: number;
+    showEditSource?: boolean;
+    showBackToLive?: boolean;
     onOpenChat?: () => void;
     onOpenWork?: () => void;
     onSelectCard?: (id: string) => void | Promise<void>;
@@ -49,6 +51,8 @@
     onTogglePreview?: () => void;
     onToggleSplit?: () => void;
     onToggleLinks?: () => void;
+    onEditSource?: () => void;
+    onBackToLive?: () => void;
   }
 
   let {
@@ -70,6 +74,8 @@
     showLinksToggle = false,
     linksOpen = false,
     linkCount = 0,
+    showEditSource = false,
+    showBackToLive = false,
     onOpenChat,
     onOpenWork,
     onSelectCard,
@@ -86,6 +92,8 @@
     onTogglePreview,
     onToggleSplit,
     onToggleLinks,
+    onEditSource,
+    onBackToLive,
   }: Props = $props();
 
   let open = $state(false);
@@ -105,6 +113,28 @@
     }
 
     if (!selectedPath) return rows;
+
+    if (showEditSource && onEditSource) {
+      rows.push({
+        id: "edit-source",
+        label: "Edit source",
+        onClick: () => {
+          open = false;
+          onEditSource();
+        },
+      });
+    }
+
+    if (showBackToLive && onBackToLive) {
+      rows.push({
+        id: "back-live",
+        label: "Back to Live",
+        onClick: () => {
+          open = false;
+          onBackToLive();
+        },
+      });
+    }
 
     if (showPreviewToggle && onTogglePreview) {
       rows.push({

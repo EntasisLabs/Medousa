@@ -11,6 +11,10 @@ import {
 } from "@codemirror/view";
 import type { EditResult } from "$lib/utils/vaultMarkdownEdit";
 import type { FindMatch } from "$lib/utils/vaultFindInNote";
+import {
+  placeSlashMenuAnchor,
+  type SlashMenuAnchor,
+} from "$lib/utils/slashMenuPlacement";
 
 export function applyEditResult(view: EditorView, result: EditResult) {
   const old = view.state.doc.toString();
@@ -100,19 +104,29 @@ export function vaultFindHighlightExtension(
   );
 }
 
-/** Caret coords relative to a shell element for slash menu anchoring. */
+/** Caret-aware slash menu placement inside an editor shell. */
 export function getCodeMirrorCaretAnchor(
   view: EditorView,
   relativeTo?: HTMLElement | null,
-): { top: number; left: number } {
+): SlashMenuAnchor {
   const head = view.state.selection.main.head;
   const coords = view.coordsAtPos(head);
-  if (!coords) return { top: 40, left: 16 };
-  const origin = relativeTo?.getBoundingClientRect() ?? view.dom.getBoundingClientRect();
-  return {
-    top: Math.max(0, coords.bottom - origin.top + 4),
-    left: Math.max(8, coords.left - origin.left),
-  };
+  const shell = relativeTo ?? view.dom;
+  if (!coords) {
+    const origin = shell.getBoundingClientRect();
+    return placeSlashMenuAnchor(
+      {
+        top: origin.top + 40,
+        bottom: origin.top + 58,
+        left: origin.left + 16,
+      },
+      shell,
+    );
+  }
+  return placeSlashMenuAnchor(
+    { top: coords.top, bottom: coords.bottom, left: coords.left },
+    shell,
+  );
 }
 
 /** Dark-mode vault editor chrome (matches Grapheme / app surfaces). */

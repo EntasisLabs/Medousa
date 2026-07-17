@@ -4,6 +4,7 @@
     SLASH_WRITING_IDS,
     type SlashBlockId,
   } from "$lib/utils/vaultMarkdownEdit";
+  import type { SlashMenuAnchor } from "$lib/utils/slashMenuPlacement";
 
   interface SlashItem {
     id: SlashBlockId;
@@ -16,7 +17,7 @@
   interface Props {
     open: boolean;
     filter?: string;
-    anchor?: { top: number; left: number } | null;
+    anchor?: SlashMenuAnchor | null;
     onSelect: (block: SlashBlockId) => void;
     onClose: () => void;
   }
@@ -309,10 +310,13 @@
     bind:this={menuEl}
     class="vault-slash-menu"
     class:vault-slash-menu--anchored={Boolean(anchor)}
+    class:vault-slash-menu--above={Boolean(anchor?.bottom != null)}
     role="listbox"
     aria-label="Insert block"
-    style:top={anchor ? `${anchor.top}px` : undefined}
+    style:top={anchor?.top != null ? `${anchor.top}px` : undefined}
+    style:bottom={anchor?.bottom != null ? `${anchor.bottom}px` : undefined}
     style:left={anchor ? `${anchor.left}px` : undefined}
+    style:max-height={anchor ? `${anchor.maxHeight}px` : undefined}
   >
     <div class="vault-slash-menu-chrome">
       <p class="vault-slash-menu-title">Insert</p>
