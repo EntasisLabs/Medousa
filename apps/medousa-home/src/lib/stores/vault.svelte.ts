@@ -1177,6 +1177,15 @@ export class VaultStore {
     }
   }
 
+  /**
+   * Sticky popout: force Live + write surface without writing prefs
+   * so the main window's plane/surface stay intact.
+   */
+  applyStickyLivePlane() {
+    this.notePlane = "live";
+    this.editorSurface = "write";
+  }
+
   toggleNotePlane() {
     this.setNotePlane(this.notePlane === "live" ? "build" : "live");
   }

@@ -355,6 +355,17 @@ export const FenceBlock = Node.create<FenceBlockOptions>({
             attrs = next;
             return true;
           }
+          // Report: in-place apply avoids destroy/remount that blanks nested charts.
+          if (
+            attrs.lang === "report" &&
+            next.lang === "report" &&
+            report &&
+            typeof report.applyRaw === "function"
+          ) {
+            attrs = next;
+            report.applyRaw(next.raw);
+            return true;
+          }
           attrs = next;
           remount(attrs);
           return true;

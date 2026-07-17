@@ -70,6 +70,8 @@
     onToggleLineNumbers?: () => void;
     onToggleAutoSave?: () => void;
     onToggleMonoSource?: () => void;
+    /** Tauri: float current note into sticky Live window. */
+    onFloatNote?: () => void | Promise<void>;
   }
 
   let {
@@ -120,6 +122,7 @@
     onToggleLineNumbers,
     onToggleAutoSave,
     onToggleMonoSource,
+    onFloatNote,
   }: Props = $props();
 
   let open = $state(false);
@@ -232,6 +235,19 @@
         onClick: async () => {
           open = false;
           await onExportPdf();
+        },
+      });
+    }
+
+    if (onFloatNote) {
+      rows.push({
+        id: "float-note",
+        label: "Float note",
+        disabled: noteLoading || saving,
+        dividerBefore: rows.length > 0,
+        onClick: async () => {
+          open = false;
+          await onFloatNote();
         },
       });
     }

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { type Snippet } from "svelte";
+  import { tick, type Snippet } from "svelte";
   import SplitPane from "$lib/components/layout/SplitPane.svelte";
   import { vault } from "$lib/stores/vault.svelte";
   import { vaultFind } from "$lib/stores/vaultFind.svelte";
@@ -94,6 +94,9 @@
   let activeActions = $state<MarkdownFormatAction[]>([]);
   let lastPlane = $state<"live" | "build" | null>(null);
   let liveSlashFilter = $state("");
+  /** Keep Live scroll through bridge/configure remounts ({#key contentSyncKey}). */
+  let preservedLiveScroll = $state<number | null>(null);
+  let restoreScrollKey = $state<string | null>(null);
 
   const isLivePlane = $derived(vault.notePlane === "live");
   const slashFilter = $derived(
@@ -106,12 +109,42 @@
    */
   $effect.pre(() => {
     if (contentSyncKey !== syncedKey) {
+      const prevPath = syncedKey.split(":")[0] ?? "";
+      const nextPath = contentSyncKey.split(":")[0] ?? "";
+      const sameNote = Boolean(prevPath) && prevPath === nextPath;
+      const scrollEl = liveEl?.getScrollEl?.();
+      if (sameNote && scrollEl && isLivePlane) {
+        preservedLiveScroll = scrollEl.scrollTop;
+        restoreScrollKey = contentSyncKey;
+      } else {
+        preservedLiveScroll = null;
+        restoreScrollKey = null;
+      }
       draft = content;
       syncedKey = contentSyncKey;
       slashOpen = false;
       slashAnchor = null;
       liveSlashFilter = "";
     }
+  });
+
+  /** After Live remounts for the same note, put the user back where they were. */
+  $effect(() => {
+    const key = restoreScrollKey;
+    const top = preservedLiveScroll;
+    if (key == null || top == null) return;
+    if (contentSyncKey !== key || !isLivePlane) return;
+    void tick().then(() => {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (restoreScrollKey !== key) return;
+          const el = liveEl?.getScrollEl?.();
+          if (el) el.scrollTop = top;
+          preservedLiveScroll = null;
+          restoreScrollKey = null;
+        });
+      });
+    });
   });
 
   /**

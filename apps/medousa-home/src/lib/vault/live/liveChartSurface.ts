@@ -14,6 +14,10 @@ import {
   type ChartFenceKv,
 } from "$lib/utils/vaultChartFence";
 import { mountLiquidFence, unmountLiquidFence } from "./liveOrganismHost";
+import {
+  whenElementHasLayout,
+  type LayoutWaitHandle,
+} from "./whenElementHasLayout";
 
 const QUICK_TYPES: ChartFenceType[] = ["bar", "line", "area", "pie"];
 
@@ -115,6 +119,9 @@ export function mountChartSurface(
     }
   };
 
+  /** Assigned after stage exists; applyType calls it after type changes. */
+  let remountPlot: () => void = () => {};
+
   const applyType = (type: ChartFenceType) => {
     if (arrival) {
       arrival = false;
@@ -126,6 +133,7 @@ export function mountChartSurface(
       title.textContent = kv.title;
       syncTypePressed();
       onChange(currentRaw.endsWith("\n") ? currentRaw : `${currentRaw}\n`);
+      remountPlot();
       return;
     }
     if (kv.type === type) return;
@@ -133,6 +141,7 @@ export function mountChartSurface(
     syncTypePressed();
     currentRaw = patchFenceRaw(currentRaw, kv, { clearArrival: true });
     onChange(currentRaw);
+    remountPlot();
   };
 
   for (const type of QUICK_TYPES) {
@@ -216,21 +225,28 @@ export function mountChartSurface(
   }
   arrivalPane.append(arrivalTypes);
 
-  const remountPlot = () => {
+  let layoutWait: LayoutWaitHandle | null = null;
+
+  remountPlot = () => {
+    layoutWait?.cancel();
+    layoutWait = null;
     unmountLiquidFence(stage);
     stage.replaceChildren();
     if (arrival) {
       stage.append(arrivalPane);
       return;
     }
-    mountLiquidFence(stage, currentRaw, liquidContext);
-    queueMicrotask(() => {
-      for (const el of stage.querySelectorAll<HTMLElement>(".liquid-chart-header")) {
-        el.hidden = true;
-      }
-      for (const el of stage.querySelectorAll(".liquid-chart-toolbar")) {
-        el.remove();
-      }
+    layoutWait = whenElementHasLayout(stage, () => {
+      layoutWait = null;
+      mountLiquidFence(stage, currentRaw, liquidContext);
+      queueMicrotask(() => {
+        for (const el of stage.querySelectorAll<HTMLElement>(".liquid-chart-header")) {
+          el.hidden = true;
+        }
+        for (const el of stage.querySelectorAll(".liquid-chart-toolbar")) {
+          el.remove();
+        }
+      });
     });
   };
 
@@ -240,6 +256,8 @@ export function mountChartSurface(
 
   return {
     destroy: () => {
+      layoutWait?.cancel();
+      layoutWait = null;
       unmountLiquidFence(stage);
       host.replaceChildren();
     },

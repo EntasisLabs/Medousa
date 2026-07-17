@@ -6,6 +6,7 @@
     Columns3,
     PanelLeftOpen,
     Search,
+    StickyNote,
     Table2,
   } from "@lucide/svelte";
   import { layout } from "$lib/stores/layout.svelte";
@@ -335,8 +336,15 @@
     await vault.flushSave();
   }
 
+  const canFloatSticky = $derived(
+    !stickyNote &&
+      isTauri() &&
+      Boolean(vault.selectedPath) &&
+      !vault.isLooseFile,
+  );
+
   async function handleFloatSticky() {
-    if (!vault.selectedPath || !isTauri() || stickyNote) return;
+    if (!vault.selectedPath || !canFloatSticky) return;
     if (vault.dirty) await vault.flushSave();
     writeVaultStickyPath(vault.selectedPath);
     await showVaultSticky();
@@ -559,6 +567,19 @@
           <VaultLinkedFilesMenu disabled={vault.noteLoading || vault.saving} />
         {/if}
 
+        {#if canFloatSticky}
+          <button
+            type="button"
+            class="vault-editor-icon-btn"
+            title="Float note"
+            aria-label="Float note"
+            disabled={vault.noteLoading || vault.saving}
+            onclick={() => void handleFloatSticky()}
+          >
+            <StickyNote size={15} strokeWidth={1.75} />
+          </button>
+        {/if}
+
         <button
           type="button"
           class="vault-editor-icon-btn"
@@ -642,6 +663,7 @@
             vault.setBuildLineNumbers(!vault.buildLineNumbers)}
           onToggleAutoSave={() => vault.setBuildAutoSave(!vault.buildAutoSave)}
           onToggleMonoSource={() => vault.toggleEditorSurface()}
+          onFloatNote={canFloatSticky ? handleFloatSticky : undefined}
         />
 
         {#if !vault.isLooseFile && vault.selectedPath}
@@ -727,7 +749,7 @@
             onSplitResize={(width) => layout.setVaultEditorPaneWidth(width)}
             previewScrollEl={previewScrollEl}
             onchange={(next) => vault.markDirty(next)}
-            showFloat={!stickyNote && isTauri() && Boolean(vault.selectedPath) && !vault.isLooseFile}
+            showFloat={canFloatSticky}
             onFloat={() => void handleFloatSticky()}
           >
             {#snippet preview()}

@@ -18,6 +18,8 @@
     type LiquidTabsDraft,
     type LiquidTreeDraft,
   } from "$lib/utils/vaultLiquidFence";
+  import VaultLiquidQuietItemEdit from "./VaultLiquidQuietItemEdit.svelte";
+  import VaultLiquidQuietList from "./VaultLiquidQuietList.svelte";
 
   interface Props {
     open: boolean;
@@ -87,6 +89,8 @@
   >(null);
   /** List / source swap inside the sheet (tiles, panels, steps, items, source, tree). */
   let listView = $state(false);
+  /** Nested quiet-row editor index (accordion / tabs / steps). */
+  let itemEditIndex = $state<number | null>(null);
 
   const sheetTitle = $derived(
     lang
@@ -139,6 +143,7 @@
     }
     editing = null;
     listView = false;
+    itemEditIndex = null;
   });
 
   function commit() {
@@ -222,9 +227,21 @@
     }
   }
 
+  function leaveListOrItem() {
+    if (itemEditIndex != null) {
+      itemEditIndex = null;
+      return;
+    }
+    listView = false;
+  }
+
   function onSheetKeydown(event: KeyboardEvent) {
     if (event.key !== "Escape") return;
     event.preventDefault();
+    if (itemEditIndex != null) {
+      itemEditIndex = null;
+      return;
+    }
     if (listView) {
       listView = false;
       return;
@@ -234,6 +251,121 @@
       return;
     }
     onClose();
+  }
+
+  const quietListLang = $derived(
+    lang === "accordion" || lang === "tabs" || lang === "steps",
+  );
+
+  const quietRows = $derived.by(() => {
+    if (lang === "accordion") {
+      return accordion.items.map((i) => ({ title: i.label, body: i.body }));
+    }
+    if (lang === "tabs") {
+      return tabs.panels.map((p) => ({ title: p.label, body: p.body }));
+    }
+    if (lang === "steps") {
+      return steps.steps.map((s) => ({ title: s.label, body: s.body }));
+    }
+    return [];
+  });
+
+  const quietMinRows = $derived(lang === "accordion" ? 1 : 2);
+
+  const quietAddLabel = $derived(
+    lang === "tabs" ? "Add panel" : lang === "steps" ? "Add step" : "Add item",
+  );
+
+  function openQuietEdit(index: number) {
+    itemEditIndex = index;
+  }
+
+  function quietRemove(index: number) {
+    if (lang === "accordion") removeItem(index);
+    else if (lang === "tabs") removePanel(index);
+    else if (lang === "steps") removeStep(index);
+    if (itemEditIndex === index) itemEditIndex = null;
+    else if (itemEditIndex != null && itemEditIndex > index) {
+      itemEditIndex -= 1;
+    }
+  }
+
+  function quietAdd() {
+    if (lang === "accordion") addItem();
+    else if (lang === "tabs") addPanel();
+    else if (lang === "steps") addStep();
+  }
+
+  function setQuietTitle(value: string) {
+    if (itemEditIndex == null) return;
+    const i = itemEditIndex;
+    if (lang === "accordion") {
+      accordion = {
+        ...accordion,
+        items: accordion.items.map((item, idx) =>
+          idx === i ? { ...item, label: value } : item,
+        ),
+      };
+    } else if (lang === "tabs") {
+      tabs = {
+        ...tabs,
+        panels: tabs.panels.map((panel, idx) =>
+          idx === i ? { ...panel, label: value } : panel,
+        ),
+      };
+    } else if (lang === "steps") {
+      steps = {
+        ...steps,
+        steps: steps.steps.map((step, idx) =>
+          idx === i ? { ...step, label: value } : step,
+        ),
+      };
+    }
+  }
+
+  function setQuietBody(value: string) {
+    if (itemEditIndex == null) return;
+    const i = itemEditIndex;
+    if (lang === "accordion") {
+      accordion = {
+        ...accordion,
+        items: accordion.items.map((item, idx) =>
+          idx === i ? { ...item, body: value } : item,
+        ),
+      };
+    } else if (lang === "tabs") {
+      tabs = {
+        ...tabs,
+        panels: tabs.panels.map((panel, idx) =>
+          idx === i ? { ...panel, body: value } : panel,
+        ),
+      };
+    } else if (lang === "steps") {
+      steps = {
+        ...steps,
+        steps: steps.steps.map((step, idx) =>
+          idx === i ? { ...step, body: value } : step,
+        ),
+      };
+    }
+  }
+
+  function toggleAccordionOpen(index: number) {
+    accordion = {
+      ...accordion,
+      items: accordion.items.map((item, idx) =>
+        idx === index ? { ...item, open: !item.open } : item,
+      ),
+    };
+  }
+
+  function setStepStatus(index: number, status: string) {
+    steps = {
+      ...steps,
+      steps: steps.steps.map((step, idx) =>
+        idx === index ? { ...step, status } : step,
+      ),
+    };
   }
 
   function addPoint() {
@@ -304,6 +436,16 @@
                 ? "Tree"
                 : "Edit",
   );
+
+  const listHeaderTitle = $derived(
+    itemEditIndex != null
+      ? lang === "tabs"
+        ? "Edit panel"
+        : lang === "steps"
+          ? "Edit step"
+          : "Edit item"
+      : listLabel,
+  );
 </script>
 
 {#if open && lang}
@@ -324,6 +466,10 @@
       class:vault-liquid-builder-sheet--list={listView}
       onsubmit={(event) => {
         event.preventDefault();
+        if (itemEditIndex != null) {
+          itemEditIndex = null;
+          return;
+        }
         if (listView) {
           listView = false;
           return;
@@ -333,18 +479,87 @@
     >
       {#if listView}
         <header class="vault-chart-builder-header">
-          <h3 id="liquid-builder-title" class="vault-chart-data-title">{listLabel}</h3>
+          <h3 id="liquid-builder-title" class="vault-chart-data-title">{listHeaderTitle}</h3>
           <button
             type="button"
             class="vault-interact-dismiss shrink-0"
             aria-label="Back"
-            onclick={() => (listView = false)}
+            onclick={leaveListOrItem}
           >
             <X size={14} strokeWidth={2} />
           </button>
         </header>
 
-        {#if lang === "dashboard"}
+        {#if quietListLang && itemEditIndex != null && quietRows[itemEditIndex]}
+          <VaultLiquidQuietItemEdit
+            titleLabel={lang === "accordion" ? "Question" : "Title"}
+            bodyLabel={lang === "accordion" ? "Answer" : "Body"}
+            titlePlaceholder={lang === "accordion" ? "Question" : "Label"}
+            bodyPlaceholder={lang === "accordion" ? "Answer" : "Body"}
+            title={quietRows[itemEditIndex].title}
+            body={quietRows[itemEditIndex].body}
+            onTitleChange={setQuietTitle}
+            onBodyChange={setQuietBody}
+          />
+        {:else if quietListLang && lang === "tabs"}
+          <VaultLiquidQuietList
+            rows={quietRows}
+            addLabel={quietAddLabel}
+            minRows={quietMinRows}
+            onEdit={openQuietEdit}
+            onRemove={quietRemove}
+            onAdd={quietAdd}
+          />
+        {:else if quietListLang && lang === "accordion"}
+          <VaultLiquidQuietList
+            rows={quietRows}
+            addLabel={quietAddLabel}
+            minRows={quietMinRows}
+            onEdit={openQuietEdit}
+            onRemove={quietRemove}
+            onAdd={quietAdd}
+          >
+            {#snippet leading(index)}
+              <button
+                type="button"
+                class="vault-liquid-quiet-toggle"
+                class:vault-liquid-quiet-toggle--on={accordion.items[index]?.open}
+                aria-pressed={accordion.items[index]?.open ?? false}
+                title={accordion.items[index]?.open ? "Open by default" : "Closed by default"}
+                aria-label={accordion.items[index]?.open ? "Open by default" : "Closed by default"}
+                onclick={() => toggleAccordionOpen(index)}
+              >
+                <span class="vault-liquid-quiet-toggle__knob"></span>
+              </button>
+            {/snippet}
+          </VaultLiquidQuietList>
+        {:else if quietListLang && lang === "steps"}
+          <VaultLiquidQuietList
+            rows={quietRows}
+            addLabel={quietAddLabel}
+            minRows={quietMinRows}
+            onEdit={openQuietEdit}
+            onRemove={quietRemove}
+            onAdd={quietAdd}
+          >
+            {#snippet leading(index)}
+              <select
+                class="vault-liquid-quiet-status"
+                aria-label="Step status"
+                value={steps.steps[index]?.status ?? "pending"}
+                onchange={(event) =>
+                  setStepStatus(
+                    index,
+                    (event.currentTarget as HTMLSelectElement).value,
+                  )}
+              >
+                {#each STEP_STATUSES as status (status.id)}
+                  <option value={status.id}>{status.label}</option>
+                {/each}
+              </select>
+            {/snippet}
+          </VaultLiquidQuietList>
+        {:else if lang === "dashboard"}
           <div class="vault-liquid-list">
             {#each dashboard.tiles as tile, index (index)}
               <div class="vault-liquid-list__item">
@@ -363,60 +578,6 @@
             {/each}
             <button type="button" class="vault-liquid-list__add" onclick={addTile}>
               <Plus size={14} strokeWidth={2} /> Add tile
-            </button>
-          </div>
-        {:else if lang === "tabs"}
-          <div class="vault-liquid-list">
-            {#each tabs.panels as panel, index (index)}
-              <div class="vault-liquid-list__item vault-liquid-list__item--panel">
-                <input class="vault-liquid-list__field" type="text" placeholder="Label" aria-label="Panel label" bind:value={panel.label} />
-                <button type="button" class="vault-liquid-list__remove" aria-label="Remove panel" disabled={tabs.panels.length <= 2} onclick={() => removePanel(index)}>
-                  <Trash2 size={14} strokeWidth={2} />
-                </button>
-                <textarea class="vault-liquid-list__area" rows="3" placeholder="Panel body" aria-label="Panel body" bind:value={panel.body}></textarea>
-              </div>
-            {/each}
-            <button type="button" class="vault-liquid-list__add" onclick={addPanel}>
-              <Plus size={14} strokeWidth={2} /> Add panel
-            </button>
-          </div>
-        {:else if lang === "steps"}
-          <div class="vault-liquid-list">
-            {#each steps.steps as step, index (index)}
-              <div class="vault-liquid-list__item vault-liquid-list__item--step">
-                <input class="vault-liquid-list__field" type="text" placeholder="Label" aria-label="Step label" bind:value={step.label} />
-                <select class="vault-liquid-list__select" aria-label="Status" bind:value={step.status}>
-                  {#each STEP_STATUSES as status (status.id)}
-                    <option value={status.id}>{status.label}</option>
-                  {/each}
-                </select>
-                <button type="button" class="vault-liquid-list__remove" aria-label="Remove step" disabled={steps.steps.length <= 2} onclick={() => removeStep(index)}>
-                  <Trash2 size={14} strokeWidth={2} />
-                </button>
-                <textarea class="vault-liquid-list__area" rows="2" placeholder="Step body" aria-label="Step body" bind:value={step.body}></textarea>
-              </div>
-            {/each}
-            <button type="button" class="vault-liquid-list__add" onclick={addStep}>
-              <Plus size={14} strokeWidth={2} /> Add step
-            </button>
-          </div>
-        {:else if lang === "accordion"}
-          <div class="vault-liquid-list">
-            {#each accordion.items as item, index (index)}
-              <div class="vault-liquid-list__item vault-liquid-list__item--panel">
-                <input class="vault-liquid-list__field" type="text" placeholder="Label" aria-label="Item label" bind:value={item.label} />
-                <button type="button" class="vault-liquid-list__remove" aria-label="Remove item" disabled={accordion.items.length <= 1} onclick={() => removeItem(index)}>
-                  <Trash2 size={14} strokeWidth={2} />
-                </button>
-                <label class="vault-liquid-list__check">
-                  <input type="checkbox" bind:checked={item.open} />
-                  Open
-                </label>
-                <textarea class="vault-liquid-list__area" rows="3" placeholder="Item body" aria-label="Item body" bind:value={item.body}></textarea>
-              </div>
-            {/each}
-            <button type="button" class="vault-liquid-list__add" onclick={addItem}>
-              <Plus size={14} strokeWidth={2} /> Add item
             </button>
           </div>
         {:else if lang === "code"}

@@ -11,7 +11,7 @@
   import { supportsPreviewSplit } from "$lib/utils/vaultNoteKind";
   import {
     VAULT_STICKY_PATH_KEY,
-    readVaultStickyPath,
+    resolveVaultStickyOpenPath,
     writeVaultStickyPath,
   } from "$lib/utils/vaultSticky";
   import {
@@ -61,6 +61,7 @@
     });
 
     async function openStickyPath(path: string | null) {
+      vault.applyStickyLivePlane();
       if (!path) {
         missingPath = true;
         loadingPath = false;
@@ -70,6 +71,7 @@
       missingPath = false;
       try {
         await vault.openNote(path);
+        vault.applyStickyLivePlane();
       } catch {
         missingPath = true;
       } finally {
@@ -77,11 +79,11 @@
       }
     }
 
-    void openStickyPath(readVaultStickyPath());
+    void openStickyPath(resolveVaultStickyOpenPath());
 
     const onStorage = (event: StorageEvent) => {
       if (event.key !== VAULT_STICKY_PATH_KEY) return;
-      const next = event.newValue?.trim() || null;
+      const next = event.newValue?.trim() || resolveVaultStickyOpenPath();
       void openStickyPath(next);
     };
 

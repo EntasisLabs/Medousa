@@ -5,6 +5,10 @@
 
 import type { LiquidRenderContext } from "$lib/liquid/render/context";
 import { mountLiquidFence, unmountLiquidFence } from "./liveOrganismHost";
+import {
+  whenElementHasLayout,
+  type LayoutWaitHandle,
+} from "./whenElementHasLayout";
 
 export type LiveReportModel = {
   title: string;
@@ -80,6 +84,8 @@ export function serializeReportRaw(model: LiveReportModel): string {
 
 export type ReportSurfaceHandles = {
   destroy: () => void;
+  /** In-place raw update — avoids full NodeView remount (chart flash/blank). */
+  applyRaw: (raw: string) => void;
 };
 
 export function mountReportSurface(
@@ -99,10 +105,84 @@ export function mountReportSurface(
 
   const colGroup = document.createElement("div");
   colGroup.className = "vault-live-report__cols";
+
+  const syncColPressed = () => {
+    for (const el of colGroup.querySelectorAll<HTMLButtonElement>(".vault-live-report__col")) {
+      const col = el.dataset.col ?? "";
+      el.setAttribute("aria-pressed", col === model.columns ? "true" : "false");
+    }
+  };
+
+  const stage = document.createElement("div");
+  stage.className = "vault-live-report__stage";
+  let layoutWait: LayoutWaitHandle | null = null;
+  let colRelayoutTimer = 0;
+  let mountEl: HTMLElement | null = null;
+
+  const polishChartChrome = (mount: HTMLElement) => {
+    for (const btn of mount.querySelectorAll<HTMLElement>(".liquid-chart-configure")) {
+      btn.textContent = "data";
+      btn.title = "Configure chart";
+    }
+  };
+
+  const hydrateMount = (mount: HTMLElement) => {
+    mountLiquidFence(mount, serializeReportRaw(model), liquidContext);
+    queueMicrotask(() => polishChartChrome(mount));
+  };
+
+  const showOrganism = () => {
+    layoutWait?.cancel();
+    layoutWait = null;
+    if (colRelayoutTimer) {
+      clearTimeout(colRelayoutTimer);
+      colRelayoutTimer = 0;
+    }
+    editing = false;
+    editBtn.textContent = "Write";
+    unmountLiquidFence(stage);
+    stage.replaceChildren();
+    const mount = document.createElement("div");
+    mount.className = "vault-live-report__mount";
+    mountEl = mount;
+    stage.append(mount);
+
+    layoutWait = whenElementHasLayout(stage, () => {
+      layoutWait = null;
+      if (!mount.isConnected) return;
+      hydrateMount(mount);
+    });
+  };
+
+  /** Columns-only: update grid CSS, then remount charts after reflow (no TipTap destroy). */
+  const applyColumnsInPlace = (col: "1" | "2" | "3") => {
+    model = { ...model, columns: col };
+    syncColPressed();
+    const report = stage.querySelector<HTMLElement>(".liquid-report");
+    if (report) {
+      report.dataset.columns = col;
+      report.style.setProperty("--report-cols", col);
+    }
+    const mount = mountEl;
+    if (mount?.isConnected) {
+      if (colRelayoutTimer) clearTimeout(colRelayoutTimer);
+      colRelayoutTimer = window.setTimeout(() => {
+        colRelayoutTimer = 0;
+        if (!mount.isConnected) return;
+        unmountLiquidFence(mount);
+        hydrateMount(mount);
+      }, 32);
+    } else if (!editing) {
+      showOrganism();
+    }
+    onChange(serializeReportRaw(model));
+  };
+
   for (const col of ["1", "2", "3"] as const) {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "vault-live-report__col";
+    btn.dataset.col = col;
     btn.textContent = `${col} col`;
     btn.setAttribute("aria-pressed", model.columns === col ? "true" : "false");
     btn.addEventListener("mousedown", (e) => {
@@ -113,14 +193,7 @@ export function mountReportSurface(
       e.preventDefault();
       e.stopPropagation();
       if (model.columns === col) return;
-      model = { ...model, columns: col };
-      for (const el of colGroup.querySelectorAll<HTMLButtonElement>(".vault-live-report__col")) {
-        el.setAttribute(
-          "aria-pressed",
-          el.textContent?.startsWith(col) ? "true" : "false",
-        );
-      }
-      onChange(serializeReportRaw(model));
+      applyColumnsInPlace(col);
     });
     colGroup.append(btn);
   }
@@ -136,26 +209,15 @@ export function mountReportSurface(
 
   chrome.append(colGroup, editBtn);
 
-  const stage = document.createElement("div");
-  stage.className = "vault-live-report__stage";
-
-  const showOrganism = () => {
-    editing = false;
-    editBtn.textContent = "Write";
-    stage.replaceChildren();
-    const mount = document.createElement("div");
-    stage.append(mount);
-    mountLiquidFence(mount, serializeReportRaw(model), liquidContext);
-    queueMicrotask(() => {
-      for (const btn of mount.querySelectorAll<HTMLElement>(".liquid-chart-configure")) {
-        btn.textContent = "data";
-        btn.title = "Configure chart";
-      }
-    });
-  };
-
   const showEditor = () => {
+    layoutWait?.cancel();
+    layoutWait = null;
+    if (colRelayoutTimer) {
+      clearTimeout(colRelayoutTimer);
+      colRelayoutTimer = 0;
+    }
     editing = true;
+    mountEl = null;
     editBtn.textContent = "Done";
     unmountLiquidFence(stage);
     stage.replaceChildren();
@@ -215,12 +277,53 @@ export function mountReportSurface(
     showEditor();
   });
 
+  const applyRaw = (nextRaw: string) => {
+    const next = parseReportRaw(nextRaw);
+    const prev = model;
+    model = next;
+    syncColPressed();
+    if (editing) return;
+
+    const columnsOnly =
+      prev.columns !== next.columns &&
+      prev.body === next.body &&
+      prev.title === next.title &&
+      prev.subtitle === next.subtitle;
+
+    if (columnsOnly) {
+      const report = stage.querySelector<HTMLElement>(".liquid-report");
+      const mount = mountEl;
+      if (report && mount?.isConnected) {
+        report.dataset.columns = next.columns;
+        report.style.setProperty("--report-cols", next.columns);
+        if (colRelayoutTimer) clearTimeout(colRelayoutTimer);
+        colRelayoutTimer = window.setTimeout(() => {
+          colRelayoutTimer = 0;
+          if (!mount.isConnected) return;
+          unmountLiquidFence(mount);
+          hydrateMount(mount);
+        }, 32);
+        return;
+      }
+    }
+
+    showOrganism();
+  };
+
   root.append(chrome, stage);
   host.replaceChildren(root);
   showOrganism();
 
   return {
+    applyRaw,
     destroy: () => {
+      layoutWait?.cancel();
+      layoutWait = null;
+      if (colRelayoutTimer) {
+        clearTimeout(colRelayoutTimer);
+        colRelayoutTimer = 0;
+      }
+      mountEl = null;
       unmountLiquidFence(stage);
       host.replaceChildren();
     },
