@@ -614,6 +614,7 @@
           buildWordWrap={vault.buildWordWrap}
           buildLineNumbers={vault.buildLineNumbers}
           buildAutoSave={vault.buildAutoSave}
+          buildScrollSync={vault.buildScrollSync}
           monoSource={vault.editorSurface === "source"}
           {linkCount}
           onOpenChat={onOpenChat}
@@ -662,6 +663,8 @@
           onToggleLineNumbers={() =>
             vault.setBuildLineNumbers(!vault.buildLineNumbers)}
           onToggleAutoSave={() => vault.setBuildAutoSave(!vault.buildAutoSave)}
+          onToggleScrollSync={() =>
+            vault.setBuildScrollSync(!vault.buildScrollSync)}
           onToggleMonoSource={() => vault.toggleEditorSurface()}
           onFloatNote={canFloatSticky ? handleFloatSticky : undefined}
         />
@@ -748,6 +751,7 @@
             splitWidth={layout.vaultEditorPaneWidth}
             onSplitResize={(width) => layout.setVaultEditorPaneWidth(width)}
             previewScrollEl={previewScrollEl}
+            scrollSyncEnabled={vault.buildScrollSync}
             onchange={(next) => vault.markDirty(next)}
             showFloat={canFloatSticky}
             onFloat={() => void handleFloatSticky()}

@@ -31,15 +31,27 @@ export function handleLiveHeadingKey(
   if (mod && !event.altKey && !event.shiftKey) {
     if (event.key === "1") {
       event.preventDefault();
-      return editor.chain().focus().toggleHeading({ level: 1 }).run();
+      return editor
+        .chain()
+        .focus(undefined, { scrollIntoView: false })
+        .toggleHeading({ level: 1 })
+        .run();
     }
     if (event.key === "2") {
       event.preventDefault();
-      return editor.chain().focus().toggleHeading({ level: 2 }).run();
+      return editor
+        .chain()
+        .focus(undefined, { scrollIntoView: false })
+        .toggleHeading({ level: 2 })
+        .run();
     }
     if (event.key === "3") {
       event.preventDefault();
-      return editor.chain().focus().toggleHeading({ level: 3 }).run();
+      return editor
+        .chain()
+        .focus(undefined, { scrollIntoView: false })
+        .toggleHeading({ level: 3 })
+        .run();
     }
   }
 
@@ -49,10 +61,14 @@ export function handleLiveHeadingKey(
   if (event.key === "Backspace" && !mod && !event.altKey) {
     event.preventDefault();
     if (ctx.level <= 1) {
-      return editor.chain().focus().setParagraph().run();
+      return editor.chain().focus(undefined, { scrollIntoView: false }).setParagraph().run();
     }
     const next = (ctx.level - 1) as 1 | 2;
-    return editor.chain().focus().setHeading({ level: next }).run();
+    return editor
+      .chain()
+      .focus(undefined, { scrollIntoView: false })
+      .setHeading({ level: next })
+      .run();
   }
 
   if (event.key === "#" && !mod && !event.altKey) {
@@ -62,7 +78,11 @@ export function handleLiveHeadingKey(
     }
     event.preventDefault();
     const next = (ctx.level + 1) as 2 | 3;
-    return editor.chain().focus().setHeading({ level: next }).run();
+    return editor
+      .chain()
+      .focus(undefined, { scrollIntoView: false })
+      .setHeading({ level: next })
+      .run();
   }
 
   return false;

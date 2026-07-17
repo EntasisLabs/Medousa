@@ -16,11 +16,15 @@ function moveCaret(editor: Editor, pos: number, select: boolean): boolean {
   if (select) {
     return editor
       .chain()
-      .focus()
+      .focus(undefined, { scrollIntoView: false })
       .setTextSelection({ from: anchor, to: next })
       .run();
   }
-  return editor.chain().focus().setTextSelection(next).run();
+  return editor
+    .chain()
+    .focus(undefined, { scrollIntoView: false })
+    .setTextSelection(next)
+    .run();
 }
 
 function lineHomePos(editor: Editor): number | null {

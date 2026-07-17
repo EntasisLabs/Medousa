@@ -24,10 +24,12 @@ import {
 import {
   readVaultBuildAutoSave,
   readVaultBuildLineNumbers,
+  readVaultBuildScrollSync,
   readVaultBuildWordWrap,
   readVaultStampCompletionEnabled,
   writeVaultBuildAutoSave,
   writeVaultBuildLineNumbers,
+  writeVaultBuildScrollSync,
   writeVaultBuildWordWrap,
   writeVaultStampCompletionEnabled,
 } from "$lib/config/vaultPreferences";
@@ -205,6 +207,8 @@ export class VaultStore {
   buildLineNumbers = $state(readVaultBuildLineNumbers());
   /** Autosave dirty notes on a timer. */
   buildAutoSave = $state(readVaultBuildAutoSave());
+  /** Build split: sync CodeMirror ↔ Preview scroll. */
+  buildScrollSync = $state(readVaultBuildScrollSync());
   activeSpaceFilter = $state<string | null>(loadLastSpace());
   newNoteDialogOpen = $state(false);
   /** M7f: agent/server edit waiting for accept/discard. */
@@ -706,6 +710,11 @@ export class VaultStore {
     } else {
       this.clearAutosaveTimer();
     }
+  }
+
+  setBuildScrollSync(value: boolean) {
+    this.buildScrollSync = value;
+    writeVaultBuildScrollSync(value);
   }
 
   togglePreviewTask(taskIndex: number, checked: boolean) {

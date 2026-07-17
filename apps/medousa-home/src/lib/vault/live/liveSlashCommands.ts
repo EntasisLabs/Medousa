@@ -55,7 +55,11 @@ export function clearLiveSlash(editor: Editor): boolean {
   if (!match) return false;
   const from = $from.start();
   const to = $from.pos;
-  return editor.chain().focus().deleteRange({ from, to }).run();
+  return editor.chain().focus(undefined, { scrollIntoView: false }).deleteRange({ from, to }).run();
+}
+
+function focusChain(editor: Editor) {
+  return editor.chain().focus(undefined, { scrollIntoView: false });
 }
 
 export function applyLiveSlashBlock(editor: Editor, block: SlashBlockId): boolean {
@@ -63,30 +67,28 @@ export function applyLiveSlashBlock(editor: Editor, block: SlashBlockId): boolea
 
   const liquid = LIQUID_TEMPLATES[block];
   if (liquid) {
-    return editor.chain().focus().insertFenceBlock(liquid.trimEnd() + "\n").run();
+    return focusChain(editor).insertFenceBlock(liquid.trimEnd() + "\n").run();
   }
 
   switch (block) {
     case "h1":
-      return editor.chain().focus().toggleHeading({ level: 1 }).run();
+      return focusChain(editor).toggleHeading({ level: 1 }).run();
     case "h2":
-      return editor.chain().focus().toggleHeading({ level: 2 }).run();
+      return focusChain(editor).toggleHeading({ level: 2 }).run();
     case "h3":
-      return editor.chain().focus().toggleHeading({ level: 3 }).run();
+      return focusChain(editor).toggleHeading({ level: 3 }).run();
     case "bullet":
-      return editor.chain().focus().toggleBulletList().run();
+      return focusChain(editor).toggleBulletList().run();
     case "numbered":
-      return editor.chain().focus().toggleOrderedList().run();
+      return focusChain(editor).toggleOrderedList().run();
     case "checkbox":
-      return editor.chain().focus().toggleTaskList().run();
+      return focusChain(editor).toggleTaskList().run();
     case "quote":
-      return editor.chain().focus().toggleBlockquote().run();
+      return focusChain(editor).toggleBlockquote().run();
     case "divider":
-      return editor.chain().focus().setHorizontalRule().run();
+      return focusChain(editor).setHorizontalRule().run();
     case "link":
-      return editor
-        .chain()
-        .focus()
+      return focusChain(editor)
         .insertContent("label")
         .setTextSelection({
           from: editor.state.selection.from - 5,
@@ -95,15 +97,13 @@ export function applyLiveSlashBlock(editor: Editor, block: SlashBlockId): boolea
         .setLink({ href: "https://" })
         .run();
     case "table":
-      return editor.chain().focus().insertContent(SLASH_TABLE_TEMPLATE).run();
+      return focusChain(editor).insertContent(SLASH_TABLE_TEMPLATE).run();
     case "board":
-      return editor.chain().focus().insertContent(SLASH_BOARD_TEMPLATE).run();
+      return focusChain(editor).insertContent(SLASH_BOARD_TEMPLATE).run();
     case "toc":
-      return editor.chain().focus().insertFenceBlock(SLASH_TOC_TEMPLATE).run();
+      return focusChain(editor).insertFenceBlock(SLASH_TOC_TEMPLATE).run();
     case "callout":
-      return editor
-        .chain()
-        .focus()
+      return focusChain(editor)
         .insertContent("> [!note] Title\n> Body\n")
         .run();
     case "wikilink":

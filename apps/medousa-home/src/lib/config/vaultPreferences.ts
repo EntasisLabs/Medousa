@@ -4,6 +4,7 @@ const STAMP_COMPLETION_KEY = "medousa-vault-stamp-completion";
 const BUILD_WORD_WRAP_KEY = "medousa-vault-build-word-wrap";
 const BUILD_LINE_NUMBERS_KEY = "medousa-vault-build-line-numbers";
 const BUILD_AUTO_SAVE_KEY = "medousa-vault-build-auto-save";
+const BUILD_SCROLL_SYNC_KEY = "medousa-vault-build-scroll-sync";
 
 function readBool(key: string, defaultValue: boolean): boolean {
   if (typeof localStorage === "undefined") return defaultValue;
@@ -50,4 +51,13 @@ export function readVaultBuildAutoSave(): boolean {
 
 export function writeVaultBuildAutoSave(enabled: boolean): void {
   writeBool(BUILD_AUTO_SAVE_KEY, enabled);
+}
+
+/** Build split: sync CodeMirror ↔ Preview scroll (default on). */
+export function readVaultBuildScrollSync(): boolean {
+  return readBool(BUILD_SCROLL_SYNC_KEY, true);
+}
+
+export function writeVaultBuildScrollSync(enabled: boolean): void {
+  writeBool(BUILD_SCROLL_SYNC_KEY, enabled);
 }

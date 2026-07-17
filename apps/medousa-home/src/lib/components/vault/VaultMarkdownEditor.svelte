@@ -45,6 +45,8 @@
     onSplitResize?: (width: number) => void;
     /** Preview scroll container for bidirectional sync when split is on. */
     previewScrollEl?: HTMLElement | null;
+    /** When false, Build and Preview scroll independently (split still open). */
+    scrollSyncEnabled?: boolean;
     preview?: Snippet;
     formatCompact?: boolean;
     /** Build plane shows the format bar; Live hides it (slash/shortcuts remain). */
@@ -67,6 +69,7 @@
     splitMax = 720,
     onSplitResize,
     previewScrollEl = null,
+    scrollSyncEnabled = true,
     preview,
     formatCompact = false,
     showFormatChrome = true,
@@ -219,7 +222,7 @@
 
   function handleCmScroll() {
     const scrollEl = cmEl?.getScrollEl();
-    if (split && scrollEl && previewScrollEl) {
+    if (split && scrollSyncEnabled && scrollEl && previewScrollEl) {
       scrollSync.sync(scrollEl, previewScrollEl);
     }
     if (slashOpen) updateSlashAnchor();
@@ -234,7 +237,7 @@
   });
 
   $effect(() => {
-    if (!split || !previewScrollEl) return;
+    if (!split || !scrollSyncEnabled || !previewScrollEl) return;
     const previewEl = previewScrollEl;
     const onPreviewScroll = () => {
       const scrollEl = cmEl?.getScrollEl();

@@ -42,11 +42,12 @@
     linkCount?: number;
     showEditSource?: boolean;
     showBackToLive?: boolean;
-    /** Build plane: show Editor toggles (wrap / line numbers / autosave / mono). */
+    /** Build plane: show Editor toggles (wrap / line numbers / autosave / sync scroll / mono). */
     showEditorToggles?: boolean;
     buildWordWrap?: boolean;
     buildLineNumbers?: boolean;
     buildAutoSave?: boolean;
+    buildScrollSync?: boolean;
     monoSource?: boolean;
     onOpenChat?: () => void;
     onOpenWork?: () => void;
@@ -69,6 +70,7 @@
     onToggleWordWrap?: () => void;
     onToggleLineNumbers?: () => void;
     onToggleAutoSave?: () => void;
+    onToggleScrollSync?: () => void;
     onToggleMonoSource?: () => void;
     /** Tauri: float current note into sticky Live window. */
     onFloatNote?: () => void | Promise<void>;
@@ -99,6 +101,7 @@
     buildWordWrap = true,
     buildLineNumbers = false,
     buildAutoSave = true,
+    buildScrollSync = true,
     monoSource = false,
     onOpenChat,
     onOpenWork,
@@ -121,6 +124,7 @@
     onToggleWordWrap,
     onToggleLineNumbers,
     onToggleAutoSave,
+    onToggleScrollSync,
     onToggleMonoSource,
     onFloatNote,
   }: Props = $props();
@@ -372,6 +376,14 @@
         label: "Auto save",
         on: buildAutoSave,
         onToggle: onToggleAutoSave,
+      });
+    }
+    if (onToggleScrollSync) {
+      rows.push({
+        id: "scroll-sync",
+        label: "Sync scroll",
+        on: buildScrollSync,
+        onToggle: onToggleScrollSync,
       });
     }
     if (onToggleMonoSource) {

@@ -46,6 +46,7 @@
     liveSelectionHasText,
     type SelectionAnchor,
   } from "$lib/vault/live/liveSelectionFormat";
+  import { handleLiveScrollToSelection } from "$lib/vault/live/liveScrollSelection";
 
   interface Props {
     /** Full note markdown (source of truth from parent). */
@@ -291,7 +292,7 @@
     const text = label.trim() || token;
     editor
       .chain()
-      .focus()
+      .focus(undefined, { scrollIntoView: false })
       .command(({ tr, dispatch }) => {
         if (dispatch) {
           tr.replaceWith(
@@ -459,6 +460,7 @@
         attributes: {
           class: "vault-live-prose",
         },
+        handleScrollToSelection: (view) => handleLiveScrollToSelection(view),
         handleDOMEvents: {
           click: (_view, event) => {
             handleHostClick(event);
@@ -508,17 +510,17 @@
             const key = event.key.toLowerCase();
             if (key === "b") {
               event.preventDefault();
-              editor.chain().focus().toggleBold().run();
+              editor.chain().focus(undefined, { scrollIntoView: false }).toggleBold().run();
               return true;
             }
             if (key === "i") {
               event.preventDefault();
-              editor.chain().focus().toggleItalic().run();
+              editor.chain().focus(undefined, { scrollIntoView: false }).toggleItalic().run();
               return true;
             }
             if (key === "e") {
               event.preventDefault();
-              editor.chain().focus().toggleCode().run();
+              editor.chain().focus(undefined, { scrollIntoView: false }).toggleCode().run();
               return true;
             }
             if (key === "k") {
@@ -527,9 +529,14 @@
               const href = window.prompt("Link URL", prev ?? "https://");
               if (href === null) return true;
               if (!href) {
-                editor.chain().focus().unsetLink().run();
+                editor.chain().focus(undefined, { scrollIntoView: false }).unsetLink().run();
               } else {
-                editor.chain().focus().extendMarkRange("link").setLink({ href }).run();
+                editor
+                  .chain()
+                  .focus(undefined, { scrollIntoView: false })
+                  .extendMarkRange("link")
+                  .setLink({ href })
+                  .run();
               }
               return true;
             }
@@ -661,17 +668,25 @@
 
   export function insertText(text: string): void {
     if (!editor) return;
-    editor.chain().focus().insertContent(text).run();
+    editor.chain().focus(undefined, { scrollIntoView: false }).insertContent(text).run();
   }
 
   export function insertFence(raw: string): void {
     if (!editor) return;
-    editor.chain().focus().insertFenceBlock(raw.trimEnd() + "\n").run();
+    editor
+      .chain()
+      .focus(undefined, { scrollIntoView: false })
+      .insertFenceBlock(raw.trimEnd() + "\n")
+      .run();
   }
 
   export function insertEmbed(path: string, label?: string): void {
     if (!editor) return;
-    editor.chain().focus().insertEmbedBlock(path, label).run();
+    editor
+      .chain()
+      .focus(undefined, { scrollIntoView: false })
+      .insertEmbedBlock(path, label)
+      .run();
   }
 
   export function insertWikilink(path: string, label: string): void {
@@ -681,7 +696,7 @@
     const text = label.trim() || token;
     editor
       .chain()
-      .focus()
+      .focus(undefined, { scrollIntoView: false })
       .insertContent({
         type: "text",
         text,
@@ -691,7 +706,7 @@
   }
 
   export function focus() {
-    editor?.commands.focus();
+    editor?.commands.focus(undefined, { scrollIntoView: false });
   }
 
   export function getScrollEl(): HTMLElement | null {

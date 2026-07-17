@@ -67,7 +67,11 @@ export function restoreLiveSelection(
   const nextFrom = Math.max(0, Math.min(from, size));
   const nextTo = Math.max(0, Math.min(to, size));
   if (nextFrom === nextTo) return false;
-  return editor.chain().focus().setTextSelection({ from: nextFrom, to: nextTo }).run();
+  return editor
+    .chain()
+    .focus(undefined, { scrollIntoView: false })
+    .setTextSelection({ from: nextFrom, to: nextTo })
+    .run();
 }
 
 export function applyLiveFormatAction(
@@ -81,7 +85,7 @@ export function applyLiveFormatAction(
     return false;
   }
 
-  const chain = editor.chain().focus();
+  const chain = editor.chain().focus(undefined, { scrollIntoView: false });
   switch (action) {
     case "bold":
       return chain.toggleBold().run();
@@ -128,7 +132,7 @@ export function applyLiveTextColor(
 
   const current = editor.getAttributes("textColor").color as string | undefined;
   if (current && String(current).toLowerCase() === String(color).toLowerCase()) {
-    return editor.chain().focus().unsetTextColor().run();
+    return editor.chain().focus(undefined, { scrollIntoView: false }).unsetTextColor().run();
   }
-  return editor.chain().focus().setTextColor(color).run();
+  return editor.chain().focus(undefined, { scrollIntoView: false }).setTextColor(color).run();
 }
