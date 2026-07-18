@@ -34,15 +34,35 @@ text = project.read_text()
 original = text
 
 product_name = "Medousa"
+app_version = "0.2.0"
 development_team = os.environ.get("APPLE_DEVELOPMENT_TEAM", "").strip()
 if tauri_conf.is_file():
     cfg = json.loads(tauri_conf.read_text())
     product_name = (cfg.get("productName") or product_name).strip()
+    app_version = str(cfg.get("version") or app_version).strip() or app_version
     development_team = (
         development_team
         or (cfg.get("bundle") or {}).get("iOS", {}).get("developmentTeam", "")
         or ""
     ).strip()
+
+# Keep iOS marketing / bundle versions aligned with tauri.conf.json (avoids App Store
+# “version mismatch” warnings when widgets still ship 1.0 / stale 0.1.x).
+text = re.sub(
+    r"CFBundleShortVersionString:\s*[^\n]+",
+    f"CFBundleShortVersionString: {app_version}",
+    text,
+)
+text = re.sub(
+    r'CFBundleVersion:\s*"[^"]+"',
+    f'CFBundleVersion: "{app_version}"',
+    text,
+)
+text = re.sub(
+    r"CFBundleVersion:\s*(?!['\"])(\S+)",
+    f'CFBundleVersion: "{app_version}"',
+    text,
+)
 
 # Live Activity Swift is compiled into libMedousaLiveActivity.a via build.rs — do NOT add
 # ios-live-activity sources to the Xcode target (duplicate @_cdecl symbols crash at launch).
@@ -120,11 +140,30 @@ if "MEDOUSA_LIVE_ACTIVITY" not in text:
 # Live Activity: declare support in the main iOS app Info.plist (XcodeGen merge).
 if "UIBackgroundModes" not in text:
     if "NSSupportsLiveActivities" not in text:
-        text = text.replace(
-            "        CFBundleVersion: \"0.1.0\"\n",
-            "        CFBundleVersion: \"0.1.0\"\n        NSSupportsLiveActivities: true\n        UIBackgroundModes:\n          - remote-notification\n",
-            1,
-        )
+        version_anchor = f'        CFBundleVersion: "{app_version}"\n'
+        if version_anchor in text:
+            text = text.replace(
+                version_anchor,
+                version_anchor
+                + "        NSSupportsLiveActivities: true\n"
+                + "        UIBackgroundModes:\n"
+                + "          - remote-notification\n",
+                1,
+            )
+        else:
+            text = text.replace(
+                "        CFBundleShortVersionString: "
+                + app_version
+                + "\n",
+                "        CFBundleShortVersionString: "
+                + app_version
+                + "\n"
+                + f'        CFBundleVersion: "{app_version}"\n'
+                + "        NSSupportsLiveActivities: true\n"
+                + "        UIBackgroundModes:\n"
+                + "          - remote-notification\n",
+                1,
+            )
     else:
         text = text.replace(
             "        NSSupportsLiveActivities: true\n",
@@ -134,7 +173,7 @@ if "UIBackgroundModes" not in text:
 
 # Widget Extension target for Lock Screen / Dynamic Island Live Activity UI.
 if "MedousaWorkWidget:" not in text:
-    widget_target = """
+    widget_target = f"""
   MedousaWorkWidget:
     type: app-extension
     platform: iOS
@@ -148,6 +187,8 @@ if "MedousaWorkWidget:" not in text:
       path: ../../ios-live-activity/Widget/Info.plist
       properties:
         CFBundleDisplayName: Medousa Work
+        CFBundleShortVersionString: {app_version}
+        CFBundleVersion: "{app_version}"
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
     entitlements:
@@ -222,10 +263,67 @@ if "com.apple.Push" not in text and "medousa-home_iOS:" in text:
         1,
     )
 
+# Widget Info.plist is rewritten by xcodegen — stamp versions into its info.properties too.
+if "MedousaWorkWidget:" in text:
+    widget_props = (
+        "      properties:\n"
+        "        CFBundleDisplayName: Medousa Work\n"
+        f"        CFBundleShortVersionString: {app_version}\n"
+        f'        CFBundleVersion: "{app_version}"\n'
+        "        NSExtension:\n"
+        "          NSExtensionPointIdentifier: com.apple.widgetkit-extension\n"
+    )
+    text = re.sub(
+        r"(  MedousaWorkWidget:.*?info:\n"
+        r"      path: ../../ios-live-activity/Widget/Info.plist\n)"
+        r"      properties:\n"
+        r"(?:        .*\n)*?",
+        r"\1" + widget_props,
+        text,
+        count=1,
+        flags=re.S,
+    )
+
 if text != original:
     project.write_text(text)
-    print("[ios-prepare] patched project.yml")
+    print(f"[ios-prepare] patched project.yml (version {app_version})")
+else:
+    # Still rewrite so version stamps always land even when other patches are no-ops.
+    project.write_text(text)
+    print(f"[ios-prepare] project.yml version {app_version}")
 PY
+
+sync_ios_versions() {
+  APP_VERSION="$(node -p "require('$ROOT/src-tauri/tauri.conf.json').version")"
+  python3 - <<PY
+from pathlib import Path
+import re
+app_version = "${APP_VERSION}"
+paths = [
+    Path("${ROOT}/src-tauri/ios-live-activity/Widget/Info.plist"),
+    Path("${GEN}/medousa-home_iOS/Info.plist"),
+]
+for path in paths:
+    if not path.is_file():
+        continue
+    text = path.read_text()
+    next_text = re.sub(
+        r"(<key>CFBundleShortVersionString</key>\s*<string>)[^<]+(</string>)",
+        rf"\g<1>{app_version}\2",
+        text,
+        count=1,
+    )
+    next_text = re.sub(
+        r"(<key>CFBundleVersion</key>\s*<string>)[^<]+(</string>)",
+        rf"\g<1>{app_version}\2",
+        next_text,
+        count=1,
+    )
+    if next_text != text:
+        path.write_text(next_text)
+        print(f"[ios-prepare] synced {path.name} to {app_version}")
+PY
+}
 
 if command -v xcodegen >/dev/null 2>&1; then
   (cd "$GEN" && xcodegen >/dev/null)
@@ -235,6 +333,9 @@ else
   echo "[ios-prepare] warn: install xcodegen (brew install xcodegen) to sync Xcode after patches"
   apply_push_entitlements
 fi
+
+# xcodegen rewrites widget Info.plist defaults (1.0) — re-stamp after sync.
+sync_ios_versions
 
 # xcodegen can reintroduce libapp.a in Copy Bundle Resources — remove it.
 PBXPROJ="$GEN/medousa-home.xcodeproj/project.pbxproj"
