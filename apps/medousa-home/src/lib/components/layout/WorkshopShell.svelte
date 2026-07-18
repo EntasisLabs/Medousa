@@ -19,7 +19,6 @@
   import SessionSidebar from "$lib/components/chat/SessionSidebar.svelte";
   import ContextPanel from "$lib/components/context/ContextPanel.svelte";
   import ProfilesPanel from "$lib/components/profiles/ProfilesPanel.svelte";
-  import AutomationsPanel from "$lib/components/automations/AutomationsPanel.svelte";
   import MessagingPanel from "$lib/components/messaging/MessagingPanel.svelte";
   import PeersPanel from "$lib/components/peers/PeersPanel.svelte";
   import { peerUnreadCount } from "$lib/utils/lanShareApi";
@@ -27,7 +26,7 @@
   import { automationDraft } from "$lib/stores/automationDraft.svelte";
   import { catalog } from "$lib/stores/catalog.svelte";
   import { automationDraftForSpecialist } from "$lib/utils/specialistAutomation";
-  import LibraryPanel from "$lib/components/vault/LibraryPanel.svelte";
+  import LmePanel from "$lib/components/lme/LmePanel.svelte";
   import CalendarPanel from "$lib/components/calendar/CalendarPanel.svelte";
   import WorkPanel from "$lib/components/work/WorkPanel.svelte";
   import { workspace } from "$lib/stores/workspace.svelte";
@@ -36,6 +35,7 @@
   import { chat } from "$lib/stores/chat.svelte";
   import { automations } from "$lib/stores/automations.svelte";
   import { runtime } from "$lib/stores/runtime.svelte";
+  import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
   import { isTauri } from "$lib/platform";
   import { updateTrayBlockedCount } from "$lib/window";
   import HumanBrowserPanel from "$lib/components/browser/HumanBrowserPanel.svelte";
@@ -109,6 +109,20 @@
   );
 
   function navigateToSurface(surface: string) {
+    // Automations folds into the LME workspace (library surface).
+    if (surface === "automations") {
+      const mode = lmeWorkspace.explorerMode;
+      if (
+        mode !== "scripts" &&
+        mode !== "flows" &&
+        mode !== "schedules" &&
+        mode !== "history"
+      ) {
+        lmeWorkspace.setExplorerMode("scripts");
+      }
+      layout.navigateDesktop("library", { bump: true });
+      return;
+    }
     layout.navigateDesktop(surface, { bump: true });
     if (surface === "work") {
       void workspace.prefetchCardDetails();
@@ -129,7 +143,7 @@
 
   async function handleOpenNote(path: string) {
     layout.navigateDesktop("library");
-    await vault.openNote(path);
+    await lmeWorkspace.openNote(path);
   }
 
   async function handleCardSelect(id: string) {
@@ -178,8 +192,8 @@
                 goToSurface("settings");
               }}
             />
-          {:else if activeSurface === "library"}
-            <LibraryPanel
+          {:else if activeSurface === "library" || activeSurface === "automations"}
+            <LmePanel
               visible={true}
               onOpenChat={() => goToSurface("chat")}
               onOpenWork={() => goToSurface("work")}
@@ -205,17 +219,17 @@
                 automationDraft.openCreate(
                   automationDraftForSpecialist(entry, catalog.manuscriptDetail),
                 );
+                lmeWorkspace.setExplorerMode("schedules");
                 navigateToSurface("automations");
               }}
               onUseInAutomation={(entry) => {
                 automationDraft.openCreate(
                   automationDraftForSpecialist(entry, catalog.manuscriptDetail),
                 );
+                lmeWorkspace.setExplorerMode("schedules");
                 navigateToSurface("automations");
               }}
             />
-          {:else if activeSurface === "automations"}
-            <AutomationsPanel visible={true} />
           {:else if activeSurface === "peers"}
             <PeersPanel visible={true} />
           {:else if activeSurface === "messaging"}

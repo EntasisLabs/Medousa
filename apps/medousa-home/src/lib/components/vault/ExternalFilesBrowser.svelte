@@ -10,9 +10,11 @@
 
   interface Props {
     compact?: boolean;
+    /** When set (LME), open goes through workspace tabs instead of pane preview only. */
+    onOpenFile?: (entry: ExternalFileEntry) => void | Promise<void>;
   }
 
-  let { compact = false }: Props = $props();
+  let { compact = false, onOpenFile }: Props = $props();
 
   const RECENT_PEEK = $derived(compact ? 6 : 10);
 
@@ -58,6 +60,10 @@
   }
 
   async function handleOpen(entry: ExternalFileEntry) {
+    if (onOpenFile) {
+      await onOpenFile(entry);
+      return;
+    }
     externalDesk.selectExternalPath(entry.path);
     const attachment = externalDesk.attachmentForPath(entry.path);
     if (canPreviewAttachment(attachment)) {

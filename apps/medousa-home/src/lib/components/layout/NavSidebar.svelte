@@ -30,10 +30,12 @@
   }: Props = $props();
 
   const LIFE_IDS = new Set(["chat", "work", "library", "calendar", "web", "context", "peers"]);
-  const WORKSHOP_IDS = new Set(["workshop", "automations"]);
+  const WORKSHOP_IDS = new Set(["workshop"]);
   const UTILITY_IDS = new Set(["messaging", SAFETY_SURFACE_RUNTIME]);
 
   function navTier(surface: SurfaceDef): "life" | "workshop" | "utility" | "hidden" {
+    // Automations lives inside Workspace (LME) explorer modes — hide the duplicate rail item.
+    if (surface.id === "automations") return "hidden";
     if (surface.id === "home" || surface.id === SAFETY_SURFACE_SETTINGS) return "hidden";
     if (surface.kind === "custom") return "life";
     if (WORKSHOP_IDS.has(surface.id)) return "workshop";
@@ -51,6 +53,7 @@
   const utilityIconProps = { size: 16, strokeWidth: 1.5 };
 
   function navTitle(surface: SurfaceDef): string {
+    if (surface.id === "library") return "Workspace";
     if (surface.id === "context") return "Threads & memory";
     if (surface.id === "peers") return "Peers";
     return surface.label;

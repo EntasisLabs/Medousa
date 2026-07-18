@@ -23,6 +23,7 @@
   } from "$lib/grapheme/scriptWorkbenchHelpers";
   import { graphemeScriptEditor } from "$lib/stores/graphemeScriptEditor.svelte";
   import { layout } from "$lib/stores/layout.svelte";
+  import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
   import { workshop } from "$lib/stores/workshop.svelte";
   import type {
     GraphemeModuleSummary,
@@ -191,16 +192,29 @@
   ];
 
   async function openScript(entry: GraphemeScriptEntry) {
+    if (embedded) {
+      await lmeWorkspace.openScriptById(entry.id);
+      return;
+    }
     await graphemeScriptEditor.openScriptById(entry.id);
   }
 
   function startNewScript() {
+    if (embedded) {
+      lmeWorkspace.openNewScript();
+      return;
+    }
     graphemeScriptEditor.openNewTab();
   }
 
   function startFromRecipe(recipe: GraphemeRecipe) {
-    graphemeScriptEditor.openNewTab();
+    if (embedded) {
+      lmeWorkspace.openNewScript();
+    } else {
+      graphemeScriptEditor.openNewTab();
+    }
     graphemeScriptEditor.patchActiveTab(applyRecipeToEditor(recipe));
+    if (embedded) lmeWorkspace.syncScriptTabFromEditor();
   }
 </script>
 
@@ -571,6 +585,7 @@
         {leftOpen}
         consoleOpen={mobile ? outputSheetOpen : consoleOpen}
         chatOpen={false}
+        hideTabStrip={embedded}
         onShowSidebar={() => (leftOpen = true)}
         onToggleConsole={() => (mobile ? (outputSheetOpen = !outputSheetOpen) : (consoleOpen = !consoleOpen))}
         onToggleChat={() => openTools("chat")}

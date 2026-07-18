@@ -25,6 +25,8 @@
     onToggleConsole: () => void;
     onToggleChat: () => void;
     onOpenOutput?: () => void;
+    /** When true, document tabs live on the LME strip above. */
+    hideTabStrip?: boolean;
   }
 
   let {
@@ -36,6 +38,7 @@
     onToggleConsole,
     onToggleChat,
     onOpenOutput,
+    hideTabStrip = false,
   }: Props = $props();
 
   let flowError = $state<string | null>(null);
@@ -119,7 +122,9 @@
     </button>
   {/if}
 
-  <ScriptEditorTabStrip compact {mobile} />
+  {#if !hideTabStrip}
+    <ScriptEditorTabStrip compact {mobile} />
+  {/if}
 
   <div class="scripts-workbench-titlebar-actions flex shrink-0 items-center gap-0.5 pl-1">
     <button

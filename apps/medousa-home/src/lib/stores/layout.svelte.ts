@@ -153,7 +153,23 @@ export class LayoutStore {
   }
 
   navigateDesktop(surface: string, options?: { bump?: boolean }) {
-    const next = surface === "home" ? "chat" : surface;
+    // Legacy Automations surface → LME workspace (library). Callers that need a
+    // specific explorer mode should set `lmeWorkspace` before navigating.
+    let next = surface === "home" ? "chat" : surface;
+    if (next === "automations") {
+      next = "library";
+      void import("$lib/stores/lmeWorkspace.svelte").then(({ lmeWorkspace }) => {
+        const mode = lmeWorkspace.explorerMode;
+        if (
+          mode !== "scripts" &&
+          mode !== "flows" &&
+          mode !== "schedules" &&
+          mode !== "history"
+        ) {
+          lmeWorkspace.setExplorerMode("scripts");
+        }
+      });
+    }
     if (next !== "chat") {
       this.setSessionDrawerOpen(false);
       this.setIdentityDrawerOpen(false);

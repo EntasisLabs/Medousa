@@ -23,9 +23,19 @@
     visible: boolean;
     mobile?: boolean;
     embedded?: boolean;
+    /** Hosted inside LME — section tabs owned by LME mode bar. */
+    lmeHosted?: boolean;
+    /** When set (LME), keep this section active. */
+    forcedSection?: AutomationsSection | null;
   }
 
-  let { visible, mobile = false, embedded = false }: Props = $props();
+  let {
+    visible,
+    mobile = false,
+    embedded = false,
+    lmeHosted = false,
+    forcedSection = null,
+  }: Props = $props();
 
   let section = $state<AutomationsSection>("scripts");
 
@@ -84,8 +94,12 @@
 
   $effect(() => {
     if (!visible) return;
+    if (forcedSection) {
+      if (section !== forcedSection) section = forcedSection;
+      return;
+    }
     const pending = automationsNav.consumeSection();
-    if (pending) section = pending;
+    if (pending && section !== pending) section = pending;
   });
 
   $effect(() => {
@@ -179,6 +193,7 @@
     : ''} {visible ? '' : 'hidden'}"
 >
   {#if section === "scripts"}
+    {#if !lmeHosted}
     <header class="{embedded ? 'border-b border-surface-500/40 px-4 py-3' : 'workshop-header'}">
       <div class="flex flex-wrap items-center justify-between gap-3">
         {#if !embedded}
@@ -200,8 +215,10 @@
         {/each}
       </div>
     </header>
+    {/if}
     <ScriptsWorkbenchPanel visible={true} {mobile} {embedded} />
   {:else if section === "flows"}
+    {#if !lmeHosted}
     <header class="{embedded ? 'border-b border-surface-500/40 px-4 py-3' : 'workshop-header'}">
       <div class="flex flex-wrap items-center justify-between gap-3">
         {#if !embedded}
@@ -223,8 +240,10 @@
         {/each}
       </div>
     </header>
+    {/if}
     <FlowsPanel visible={true} {mobile} {embedded} />
   {:else if section === "history"}
+    {#if !lmeHosted}
     <header class="{embedded ? 'border-b border-surface-500/40 px-4 py-3' : 'workshop-header'}">
       <div class="flex flex-wrap items-center justify-between gap-3">
         {#if !embedded}
@@ -246,6 +265,7 @@
         {/each}
       </div>
     </header>
+    {/if}
     <HistoryPanel
       visible={true}
       {mobile}
@@ -255,7 +275,7 @@
   {:else}
   {#if !mobileDetailOpen}
     <header class="{embedded ? 'border-b border-surface-500/40 px-4 py-3' : 'workshop-header'}">
-      {#if !embedded}
+      {#if !embedded && !lmeHosted}
         <div class="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 class="text-base font-semibold text-surface-50">Automations</h1>
@@ -266,6 +286,7 @@
         </div>
       {/if}
 
+      {#if !lmeHosted}
       <div class="workshop-tabs workshop-tabs-mobile mt-3">
         {#each AUTOMATIONS_SECTIONS as tab (tab.id)}
           <button
@@ -277,6 +298,7 @@
           </button>
         {/each}
       </div>
+      {/if}
 
       <div class="mt-3 flex items-center justify-between gap-2">
         {#if embedded}

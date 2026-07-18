@@ -17,6 +17,7 @@
   import { layout } from "$lib/stores/layout.svelte";
   import { toast } from "$lib/stores/toast.svelte";
   import { vault } from "$lib/stores/vault.svelte";
+  import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
   import { wizard } from "$lib/stores/wizard.svelte";
   import { workshops } from "$lib/stores/workshops.svelte";
   import { workspace } from "$lib/stores/workspace.svelte";
@@ -50,7 +51,7 @@
 
   async function openVaultNote(notePath: string) {
     layout.navigateDesktop("library");
-    await vault.openNote(notePath);
+    await lmeWorkspace.openNote(notePath);
   }
 
   async function openPeerThread(input: {

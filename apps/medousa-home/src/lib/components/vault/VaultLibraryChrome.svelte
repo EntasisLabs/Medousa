@@ -25,9 +25,11 @@
   interface Props {
     showVaultChrome: boolean;
     onSearchExternal?: (query: string) => void;
+    /** When true, Vault/Files/Decks tabs are owned by the LME mode bar. */
+    hideLibraryTabs?: boolean;
   }
 
-  let { showVaultChrome, onSearchExternal }: Props = $props();
+  let { showVaultChrome, onSearchExternal, hideLibraryTabs = false }: Props = $props();
 
   let createOpen = $state(false);
   let filtersOpen = $state(false);
@@ -70,6 +72,7 @@
 <div class="vault-browser-chrome shrink-0 border-b border-surface-500/45 bg-surface-800/50">
   <div class="vault-library-tabbar">
     <div class="vault-library-tabbar-tabs pl-1">
+      {#if !hideLibraryTabs}
       <button
         type="button"
         role="tab"
@@ -103,6 +106,7 @@
       >
         Presentations
       </button>
+      {/if}
     </div>
     <button
       type="button"
