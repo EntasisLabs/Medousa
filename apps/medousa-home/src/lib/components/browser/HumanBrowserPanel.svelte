@@ -65,10 +65,6 @@
       registerBrowserCompositor(compositor);
     }
 
-    if (visible) {
-      void humanBrowser.syncActiveTabToNative();
-    }
-
     const onFocusUrl = () => focusUrlBar();
 
     const onKeydown = (event: KeyboardEvent) => {
@@ -145,9 +141,15 @@
     };
   });
 
+  // Sync only on visible edge — a bare `if (!visible) return` effect still re-ran
+  // whenever the panel invalidates and could re-activate tabs mid-load.
+  let wasPanelVisible = false;
   $effect(() => {
-    if (!visible) return;
-    void humanBrowser.syncActiveTabToNative();
+    const isVisible = visible;
+    if (isVisible && !wasPanelVisible) {
+      void humanBrowser.syncActiveTabToNative();
+    }
+    wasPanelVisible = isVisible;
   });
 
   $effect(() => {

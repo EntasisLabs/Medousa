@@ -131,7 +131,9 @@ export class HumanBrowserStore {
   closedTabs = $state<HumanBrowserTab[]>([]);
 
   private loadingClearTimer: ReturnType<typeof setTimeout> | null = null;
+  private lastReloadAt = 0;
   private static readonly LOADING_FALLBACK_MS = 4500;
+  private static readonly RELOAD_DEBOUNCE_MS = 450;
 
   activeTab = $derived(this.tabs.find((tab) => tab.active) ?? this.tabs[0] ?? null);
   activeUrl = $derived(this.activeTab?.url ?? "about:blank");
@@ -324,6 +326,17 @@ export class HumanBrowserStore {
 
     const previous = this.activeUrl;
 
+    // Same destination → reload (native navigate is a same-URL no-op).
+    if (
+      previous &&
+      previous !== "about:blank" &&
+      previous === normalized &&
+      !options?.skipHistory
+    ) {
+      await this.reload();
+      return;
+    }
+
     if (
       !options?.skipHistory &&
       previous &&
@@ -343,7 +356,7 @@ export class HumanBrowserStore {
       const active = this.activeTab;
       // Ensure native embed exists before navigate (cold-open); same-URL is a no-op.
       if (active) {
-        await humanBrowserActivateTab(active.id, active.url).catch(() => {});
+        await humanBrowserActivateTab(active.id, normalized).catch(() => {});
       }
       await humanBrowserNavigate(normalized);
       this.setActiveTabLocal(normalized);
@@ -427,12 +440,13 @@ export class HumanBrowserStore {
   }
 
   async reload() {
+    const now = Date.now();
+    if (now - this.lastReloadAt < HumanBrowserStore.RELOAD_DEBOUNCE_MS) {
+      return;
+    }
+    this.lastReloadAt = now;
     this.setLoading(true);
     try {
-      const active = this.activeTab;
-      if (active) {
-        await humanBrowserActivateTab(active.id, active.url).catch(() => {});
-      }
       await humanBrowserReload();
     } catch {
       this.setLoading(false);
