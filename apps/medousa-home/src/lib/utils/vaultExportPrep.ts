@@ -41,8 +41,25 @@ async function waitForPaint(): Promise<void> {
 async function waitForLiquidLayout(): Promise<void> {
   await waitForPaint();
   await new Promise<void>((resolve) => {
-    setTimeout(resolve, 100);
+    setTimeout(resolve, 140);
   });
+}
+
+/** Normalize heading text for title dedupe. */
+export function normalizeExportTitle(text: string): string {
+  return text.replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+/**
+ * True when the rendered body already opens with an h1 matching the note title.
+ */
+export function bodyHasMatchingTitleH1(
+  bodyEl: HTMLElement,
+  title: string,
+): boolean {
+  const first = bodyEl.querySelector(":scope > h1");
+  if (!first) return false;
+  return normalizeExportTitle(first.textContent ?? "") === normalizeExportTitle(title);
 }
 
 /** Expand FAQ / accordion content for print capture. */
@@ -68,7 +85,7 @@ export function stripExportChrome(root: HTMLElement): void {
   for (const el of kill) el.remove();
 
   for (const btn of root.querySelectorAll(
-    ".liquid-compare-entity-btn, .liquid-compare-card",
+    ".liquid-compare-entity-btn, .liquid-compare-card, .liquid-accordion-trigger, .liquid-tabs-tab, .liquid-card-main",
   )) {
     if (btn instanceof HTMLElement) {
       btn.style.pointerEvents = "none";
@@ -80,7 +97,7 @@ export function stripExportChrome(root: HTMLElement): void {
 /** Ensure tables/embeds don't collapse under constrained page width. */
 export function hardenExportLayout(root: HTMLElement): void {
   for (const el of root.querySelectorAll<HTMLElement>(
-    "table, .liquid-md-embed, .liquid-compare, .liquid-chart, .liquid-report, .markdown-table-scroll",
+    "table, .liquid-md-embed, .liquid-compare, .liquid-chart, .liquid-report, .markdown-table-scroll, .liquid-accordion, .liquid-card, .liquid-callout",
   )) {
     el.style.minWidth = "0";
     if (!el.style.width) el.style.width = "100%";
@@ -88,8 +105,273 @@ export function hardenExportLayout(root: HTMLElement): void {
 }
 
 /**
+ * Classify organisms for page flow:
+ * - Heading+embed sections / compare: keep whole unit unless taller than a page
+ *   (fixes orphan h2 + cropped compare sliver at page bottom)
+ * - Other short organisms: keep when keepTogether or always for brief/tabs
+ */
+export function markTallEmbedsForPageFlow(
+  root: HTMLElement,
+  pageContentHeightPx = 1000,
+  keepTogether = false,
+): void {
+  const pageFitAt = pageContentHeightPx * 0.92;
+  const shortAt = pageContentHeightPx * 0.42;
+  for (const el of root.querySelectorAll<HTMLElement>(
+    [
+      ".vault-export-section",
+      ".liquid-md-embed",
+      ".liquid-compare",
+      ".liquid-report",
+      ".liquid-accordion",
+      ".liquid-brief",
+      ".liquid-tabs",
+      ".liquid-carousel",
+      ".liquid-cite",
+    ].join(", "),
+  )) {
+    const h = el.scrollHeight;
+    el.classList.remove("vault-export-allow-break", "vault-export-keep");
+
+    // Sections (h2+embed) and compare matrices: never start mid-page as a sliver.
+    if (
+      el.classList.contains("vault-export-section") ||
+      el.classList.contains("liquid-compare") ||
+      el.matches('.liquid-md-embed[data-liquid-embed="compare"]')
+    ) {
+      if (h > pageFitAt) el.classList.add("vault-export-allow-break");
+      else if (h > 0) el.classList.add("vault-export-keep");
+      continue;
+    }
+
+    if (h > pageFitAt) {
+      el.classList.add("vault-export-allow-break");
+      continue;
+    }
+    const alwaysKeep = el.matches(
+      ".liquid-brief, .liquid-tabs, .liquid-cite, .liquid-callout, .liquid-carousel",
+    );
+    if (h > 0 && h <= shortAt && (keepTogether || alwaysKeep)) {
+      el.classList.add("vault-export-keep");
+    }
+  }
+}
+
+/**
+ * Wrap markdown h2/h3 + following liquid embed so the heading cannot
+ * sit alone at the bottom of a page while the organism starts on the next.
+ */
+function isExportGlueEmbed(el: HTMLElement): boolean {
+  return (
+    el.classList.contains("liquid-md-embed") ||
+    el.classList.contains("liquid-compare") ||
+    el.classList.contains("liquid-brief") ||
+    el.classList.contains("liquid-tabs") ||
+    el.classList.contains("liquid-report") ||
+    el.classList.contains("liquid-carousel") ||
+    el.classList.contains("liquid-callout") ||
+    el.classList.contains("liquid-accordion") ||
+    el.classList.contains("liquid-cite")
+  );
+}
+
+export function glueHeadingsToFollowingEmbed(bodyEl: HTMLElement): void {
+  const kids = [...bodyEl.children];
+  for (let i = 0; i < kids.length - 1; i++) {
+    const cur = kids[i];
+    if (!(cur instanceof HTMLElement)) continue;
+    if (!/^H[23]$/.test(cur.tagName)) continue;
+    if (cur.parentElement?.classList.contains("vault-export-section")) continue;
+
+    // Skip empty <p> so "Compare\\n\\n```compare" still glues.
+    const skipped: HTMLElement[] = [];
+    let next: HTMLElement | null = null;
+    for (let j = i + 1; j < kids.length; j++) {
+      const cand = kids[j];
+      if (!(cand instanceof HTMLElement)) continue;
+      if (cand.tagName === "P" && !(cand.textContent ?? "").trim()) {
+        skipped.push(cand);
+        continue;
+      }
+      next = cand;
+      break;
+    }
+    if (!next || !isExportGlueEmbed(next)) continue;
+
+    const wrap = document.createElement("div");
+    wrap.className = "vault-export-section";
+    cur.before(wrap);
+    wrap.append(cur, ...skipped, next);
+  }
+}
+
+/** True for short bold label lines like "**Anchors:**" / "**Nails:**". */
+export function isLabelLikeParagraph(el: HTMLElement): boolean {
+  if (el.tagName !== "P") return false;
+  const text = (el.textContent ?? "").replace(/\s+/g, " ").trim();
+  if (!text || text.length > 80 || !text.endsWith(":")) return false;
+  const strong = el.querySelector("strong, b");
+  if (!strong) return false;
+  const strongText = (strong.textContent ?? "").replace(/\s+/g, " ").trim();
+  return strongText === text || strongText === text.replace(/:$/, "") + ":";
+}
+
+/**
+ * Glue bold label paragraphs to the following list/table so they are not
+ * orphaned at the bottom of a PDF page ("Anchors:" alone).
+ */
+export function glueLabelParagraphsToFollowing(bodyEl: HTMLElement): void {
+  const kids = [...bodyEl.children];
+  for (let i = 0; i < kids.length - 1; i++) {
+    const cur = kids[i];
+    if (!(cur instanceof HTMLElement) || !isLabelLikeParagraph(cur)) continue;
+    if (
+      cur.parentElement?.classList.contains("vault-export-label-group") ||
+      cur.parentElement?.classList.contains("vault-export-section")
+    ) {
+      continue;
+    }
+    const next = kids[i + 1];
+    if (!(next instanceof HTMLElement)) continue;
+    const tag = next.tagName;
+    const isFollow =
+      tag === "UL" ||
+      tag === "OL" ||
+      tag === "TABLE" ||
+      next.classList.contains("markdown-table-scroll");
+    if (!isFollow) continue;
+    const wrap = document.createElement("div");
+    wrap.className = "vault-export-label-group";
+    cur.before(wrap);
+    wrap.append(cur, next);
+  }
+}
+
+/**
+ * Ensure markdown tables have a real `<thead>` so PDF continuation pages
+ * can repeat the header row (`display: table-header-group`).
+ */
+export function ensureTableHeadersForExport(root: HTMLElement): void {
+  for (const table of root.querySelectorAll("table")) {
+    if (table.classList.contains("liquid-compare-table")) continue;
+    if (table.querySelector("thead")) continue;
+    const firstRow = table.querySelector("tr");
+    if (!firstRow) continue;
+    const hasTh = firstRow.querySelector("th") != null;
+    if (!hasTh) continue;
+    const thead = document.createElement("thead");
+    firstRow.parentElement?.insertBefore(thead, firstRow);
+    thead.appendChild(firstRow);
+  }
+}
+
+/** Shrink wide compare matrices so html2canvas does not clip columns. */
+export function densifyCompareForExport(root: HTMLElement): void {
+  for (const table of root.querySelectorAll<HTMLElement>(".liquid-compare-table")) {
+    table.style.setProperty("width", "100%", "important");
+    table.style.setProperty("min-width", "0", "important");
+    table.style.setProperty("max-width", "100%", "important");
+    table.style.setProperty("table-layout", "fixed", "important");
+  }
+  for (const scroll of root.querySelectorAll<HTMLElement>(".liquid-compare-scroll")) {
+    scroll.style.setProperty("overflow", "visible", "important");
+    scroll.style.setProperty("overflow-x", "visible", "important");
+    scroll.style.setProperty("max-width", "100%", "important");
+  }
+  for (const cell of root.querySelectorAll<HTMLElement>(
+    ".liquid-compare-corner, .liquid-compare-axis, .liquid-compare-entity, .liquid-compare-cell",
+  )) {
+    cell.style.setProperty("min-width", "0", "important");
+    cell.style.setProperty("max-width", "none", "important");
+    cell.style.setProperty("width", "auto", "important");
+    cell.style.setProperty("white-space", "normal", "important");
+    cell.style.setProperty("overflow-wrap", "anywhere", "important");
+    cell.style.setProperty("word-break", "break-word", "important");
+  }
+}
+
+/**
+ * After sanitize bakes computed colors, force paper ink/bg on organisms that
+ * often keep dark-theme leftovers (callout / accordion / card).
+ */
+export function applyPaperColorsAfterSanitize(root: HTMLElement): void {
+  const PAPER_BG = "#f9fafb";
+  const PAPER_INK = "#111827";
+  const PAPER_MUTED = "#374151";
+  const PAPER_BORDER = "#d1d5db";
+  const WHITE = "#ffffff";
+
+  for (const el of root.querySelectorAll<HTMLElement>(
+    ".liquid-callout, .liquid-accordion, .liquid-card, .liquid-tabs, .liquid-brief, .liquid-cite, .markdown-callout",
+  )) {
+    el.style.setProperty("background", PAPER_BG, "important");
+    el.style.setProperty("background-image", "none", "important");
+    el.style.setProperty("color", PAPER_INK, "important");
+    el.style.setProperty("border-color", PAPER_BORDER, "important");
+    el.style.setProperty("box-shadow", "none", "important");
+  }
+
+  for (const el of root.querySelectorAll<HTMLElement>(
+    [
+      ".liquid-callout *",
+      ".liquid-accordion-title",
+      ".liquid-accordion-label",
+      ".liquid-accordion-panel",
+      ".liquid-accordion-panel *",
+      ".liquid-card-title",
+      ".liquid-card-body",
+      ".liquid-card-subtitle",
+      ".liquid-tabs-title",
+      ".liquid-tabs-panel",
+      ".liquid-tabs-panel *",
+      ".markdown-callout *",
+    ].join(","),
+  )) {
+    el.style.setProperty("color", PAPER_INK, "important");
+  }
+
+  for (const el of root.querySelectorAll<HTMLElement>(
+    ".liquid-accordion-subtitle, .liquid-card-subtitle, .liquid-tabs-subtitle, .liquid-tabs-export-label, .liquid-accordion-chevron",
+  )) {
+    el.style.setProperty("color", PAPER_MUTED, "important");
+  }
+
+  for (const el of root.querySelectorAll<HTMLElement>(
+    ".liquid-accordion-item, .liquid-accordion-panel, .liquid-card, .liquid-tabs-panel--export",
+  )) {
+    el.style.setProperty("background", WHITE, "important");
+    el.style.setProperty("background-image", "none", "important");
+  }
+
+  for (const el of root.querySelectorAll<HTMLElement>(
+    ".liquid-accordion-trigger, .liquid-card-main",
+  )) {
+    el.style.setProperty("background", WHITE, "important");
+    el.style.setProperty("color", PAPER_INK, "important");
+  }
+
+  // Body prose — theme gray on li/em must not survive on white paper.
+  for (const el of root.querySelectorAll<HTMLElement>(
+    [
+      ".vault-pdf-export-body p",
+      ".vault-pdf-export-body li",
+      ".vault-pdf-export-body em",
+      ".vault-pdf-export-body strong",
+      ".vault-pdf-export-body ul",
+      ".vault-pdf-export-body ol",
+      ".vault-pdf-export-body td",
+      ".vault-pdf-export-body th",
+    ].join(", "),
+  )) {
+    if (el.closest("a, .markdown-wikilink")) continue;
+    el.style.setProperty("color", PAPER_INK, "important");
+  }
+}
+
+/**
  * html2canvas cannot parse `color-mix()` / `color()` — bake resolved rgb/hex
- * onto liquid embeds before capture.
+ * onto liquid embeds before capture. Skips paper-themed organisms so dark ink
+ * is not locked in before applyPaperColorsAfterSanitize.
  */
 const COLOR_STYLE_PROPS = [
   "color",
@@ -104,6 +386,14 @@ const COLOR_STYLE_PROPS = [
   "stop-color",
 ] as const;
 
+function isPaperManagedOrganism(el: Element): boolean {
+  return Boolean(
+    el.closest(
+      ".liquid-callout, .liquid-accordion, .liquid-card, .liquid-tabs, .markdown-callout",
+    ),
+  );
+}
+
 export function sanitizeUnsupportedCssColors(root: HTMLElement): void {
   const scope = root.querySelectorAll<Element>(
     ".liquid-report, .liquid-report *, .liquid-chart, .liquid-chart *, .liquid-compare, .liquid-compare *, .liquid-md-embed, .liquid-md-embed *",
@@ -112,6 +402,7 @@ export function sanitizeUnsupportedCssColors(root: HTMLElement): void {
 
   for (const el of nodes) {
     if (!(el instanceof HTMLElement) && !(el instanceof SVGElement)) continue;
+    if (isPaperManagedOrganism(el) && el !== root) continue;
     const computed = getComputedStyle(el);
 
     for (const prop of COLOR_STYLE_PROPS) {
@@ -211,37 +502,66 @@ export function scrubUnsupportedColorFunctionsInClone(doc: Document): void {
 
 /**
  * Snapshot a DOM node to a PNG data URL (for Word ImageRun / PDF freeze).
- * Returns null if capture fails or node has no size.
+ * Temporarily reveals off-screen export mounts so html2canvas can measure.
  */
 export async function snapshotElementToPng(
   el: HTMLElement,
 ): Promise<{ dataUrl: string; width: number; height: number } | null> {
-  const rect = el.getBoundingClientRect();
-  const width = Math.max(1, Math.ceil(el.scrollWidth || rect.width));
-  const height = Math.max(1, Math.ceil(el.scrollHeight || rect.height));
-  if (width < 2 || height < 2) return null;
+  const shell = el.closest(".vault-pdf-export-shell") as HTMLElement | null;
+  const prevShell = shell
+    ? {
+        visibility: shell.style.visibility,
+        opacity: shell.style.opacity,
+        pointerEvents: shell.style.pointerEvents,
+      }
+    : null;
+
+  if (shell) {
+    shell.style.visibility = "visible";
+    shell.style.opacity = "0";
+    shell.style.pointerEvents = "none";
+  }
 
   try {
-    const html2canvas = (await import("html2canvas")).default;
-    const canvas = await html2canvas(el, {
-      backgroundColor: "#ffffff",
-      scale: 2,
-      useCORS: true,
-      logging: false,
-      width,
-      height,
-      windowWidth: width,
-      onclone: (clonedDoc: Document) => {
-        scrubUnsupportedColorFunctionsInClone(clonedDoc);
-      },
-    });
-    return {
-      dataUrl: canvas.toDataURL("image/png"),
-      width: canvas.width,
-      height: canvas.height,
+    await waitForPaint();
+    const attempt = async () => {
+      const rect = el.getBoundingClientRect();
+      const width = Math.max(1, Math.ceil(el.scrollWidth || rect.width));
+      const height = Math.max(1, Math.ceil(el.scrollHeight || rect.height));
+      if (width < 2 || height < 2) return null;
+
+      const html2canvas = (await import("html2canvas")).default;
+      const canvas = await html2canvas(el, {
+        backgroundColor: "#ffffff",
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        width,
+        height,
+        windowWidth: width,
+        onclone: (clonedDoc: Document) => {
+          scrubUnsupportedColorFunctionsInClone(clonedDoc);
+        },
+      });
+      return {
+        dataUrl: canvas.toDataURL("image/png"),
+        width: canvas.width,
+        height: canvas.height,
+      };
     };
+
+    const first = await attempt();
+    if (first) return first;
+    await new Promise<void>((r) => setTimeout(r, 80));
+    return await attempt();
   } catch {
     return null;
+  } finally {
+    if (shell && prevShell) {
+      shell.style.visibility = prevShell.visibility;
+      shell.style.opacity = prevShell.opacity;
+      shell.style.pointerEvents = prevShell.pointerEvents;
+    }
   }
 }
 
@@ -272,14 +592,19 @@ export async function prepareVaultExportMount(
   const styleEl = document.createElement("style");
   styleEl.textContent = buildExportPrintCss(options);
 
-  const titleEl = document.createElement("h1");
-  titleEl.textContent = input.title;
-
   const bodyEl = document.createElement("div");
   bodyEl.className = "vault-pdf-export-body markdown-content";
   bodyEl.innerHTML = html;
 
-  mount.append(styleEl, titleEl, bodyEl);
+  mount.append(styleEl, bodyEl);
+
+  // Inject title only when the note body does not already start with the same H1.
+  if (!bodyHasMatchingTitleH1(bodyEl, input.title)) {
+    const titleEl = document.createElement("h1");
+    titleEl.textContent = input.title;
+    mount.insertBefore(titleEl, bodyEl);
+  }
+
   shell.appendChild(mount);
   document.body.appendChild(shell);
 
@@ -288,6 +613,7 @@ export async function prepareVaultExportMount(
       liquidContext: {
         titleByPath: input.labelByPath,
         openLinksInWeb: false,
+        exportPaper: true,
       },
       localImagePath: input.notePath ?? null,
       code: true,
@@ -300,7 +626,13 @@ export async function prepareVaultExportMount(
     expandDetailsForExport(mount);
     stripExportChrome(mount);
     hardenExportLayout(mount);
+    glueHeadingsToFollowingEmbed(bodyEl);
+    glueLabelParagraphsToFollowing(bodyEl);
+    ensureTableHeadersForExport(mount);
+    densifyCompareForExport(mount);
+    markTallEmbedsForPageFlow(mount, 1000, options.keepTogether);
     sanitizeUnsupportedCssColors(mount);
+    applyPaperColorsAfterSanitize(mount);
 
     return {
       options,

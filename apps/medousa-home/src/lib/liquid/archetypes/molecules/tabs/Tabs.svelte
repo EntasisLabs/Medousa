@@ -110,7 +110,18 @@
       {/each}
     </div>
 
-    {#if active}
+    {#if ctx.exportPaper}
+      {#each panels as panel, i (panel.id)}
+        <div
+          class="liquid-tabs-panel liquid-tabs-panel--export"
+          role="tabpanel"
+          style="--stagger: {i}"
+        >
+          <p class="liquid-tabs-export-label">{panel.label}</p>
+          {@html renderInlineMarkdown(panel.body)}
+        </div>
+      {/each}
+    {:else if active}
       <div
         class="liquid-tabs-panel"
         role="tabpanel"
@@ -189,5 +200,25 @@
     font-size: 0.82rem;
     line-height: 1.55;
     color: rgb(var(--color-surface-200));
+  }
+
+  .liquid-tabs-panel--export {
+    margin-top: 0.85rem;
+    padding-top: 0.65rem;
+    border-top: 1px solid color-mix(in srgb, var(--color-surface-500) 22%, transparent);
+  }
+
+  .liquid-tabs-panel--export:first-of-type {
+    border-top: 0;
+    padding-top: 0;
+  }
+
+  .liquid-tabs-export-label {
+    margin: 0 0 0.35rem;
+    font-size: 0.72rem;
+    font-weight: 650;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: rgb(var(--color-surface-400));
   }
 </style>

@@ -34,7 +34,7 @@ export const DEFAULT_VAULT_EXPORT_OPTIONS: VaultExportOptions = {
   orientation: "portrait",
   margins: "comfortable",
   breakBeforeH2: false,
-  keepTogether: true,
+  keepTogether: false,
 };
 
 const FONT_STACKS: Record<VaultExportFontFamily, string> = {
@@ -86,6 +86,18 @@ export function exportMarginTwips(margins: VaultExportMargins) {
   return MARGIN_TWIPS[margins] ?? MARGIN_TWIPS.comfortable;
 }
 
+/** Usable content width in DXA/twips for Word tables (page − left/right margins). */
+export function exportDocxContentWidthDxa(options: VaultExportOptions): number {
+  const page =
+    options.pageSize === "a4"
+      ? { width: 11906, height: 16838 }
+      : { width: 12240, height: 15840 };
+  const margins = exportMarginTwips(options.margins);
+  const pageW =
+    options.orientation === "landscape" ? page.height : page.width;
+  return Math.max(2400, pageW - margins.left - margins.right);
+}
+
 /** Content width in px for the off-screen export mount (approx letter/A4 minus margins). */
 export function exportContentWidthPx(options: VaultExportOptions): number {
   const pageWidthIn = options.pageSize === "a4" ? 8.27 : 8.5;
@@ -126,7 +138,7 @@ export function normalizeVaultExportOptions(
     orientation,
     margins,
     breakBeforeH2: Boolean(base.breakBeforeH2),
-    keepTogether: base.keepTogether !== false,
+    keepTogether: Boolean(base.keepTogether),
   };
 }
 

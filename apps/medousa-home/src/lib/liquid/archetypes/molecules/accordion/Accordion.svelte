@@ -49,7 +49,14 @@
 
   $effect(() => {
     const list = items;
-    if (!seeded && list.length > 0) {
+    if (list.length === 0) return;
+    // Export capture: mount every panel so FAQ answers are not missing.
+    if (ctx.exportPaper) {
+      openIds = new Set(list.map((item) => item.id));
+      seeded = true;
+      return;
+    }
+    if (!seeded) {
       const initial = new Set<string>();
       for (const item of list) {
         if (item.open) initial.add(item.id);

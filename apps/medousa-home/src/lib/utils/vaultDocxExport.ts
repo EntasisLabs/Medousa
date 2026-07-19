@@ -3,14 +3,17 @@
  */
 
 import {
+  AlignmentType,
   BorderStyle,
   Document,
   HeadingLevel,
   ImageRun,
+  LevelFormat,
   Packer,
   Paragraph,
   Table,
   TableCell,
+  TableLayoutType,
   TableRow,
   TextRun,
   WidthType,
@@ -20,6 +23,7 @@ import {
   type IRunOptions,
 } from "docx";
 import {
+  exportDocxContentWidthDxa,
   exportDocxFontName,
   exportMarginTwips,
   normalizeVaultExportOptions,
@@ -28,6 +32,8 @@ import {
   type VaultExportOptions,
 } from "./vaultExportOptions";
 import {
+  bodyHasMatchingTitleH1,
+  isLabelLikeParagraph,
   prepareVaultExportMount,
   snapshotElementToPng,
 } from "./vaultExportPrep";
@@ -77,6 +83,9 @@ function isElement(node: Node): node is HTMLElement {
 function textOf(node: Node): string {
   return (node.textContent ?? "").replace(/\s+/g, " ").trim();
 }
+
+/** Explicit ink so Word theme blue does not paint headings. */
+export const DOCX_HEADING_COLOR = "111827";
 
 function runOpts(
   text: string,
@@ -164,42 +173,71 @@ function paragraphFromElement(
 ): Paragraph {
   const children = [...el.childNodes].flatMap((c) => inlineFromNode(c, ctx));
   return new Paragraph({
-    spacing: { after: 120 },
+    spacing: { after: 80, line: 240 },
     ...extras,
     children: children.length > 0 ? children : [new TextRun(runOpts("", ctx))],
   });
 }
 
-function tableFromElement(table: HTMLElement, ctx: InlineCtx): Table {
+/** Equal column widths in DXA that sum exactly to contentWidth. */
+export function buildDocxColumnWidths(
+  columnCount: number,
+  contentWidthDxa: number,
+): number[] {
+  const cols = Math.max(1, columnCount);
+  const base = Math.floor(contentWidthDxa / cols);
+  const widths = Array.from({ length: cols }, () => base);
+  const drift = contentWidthDxa - base * cols;
+  widths[cols - 1] += drift;
+  return widths;
+}
+
+function tableFromElement(
+  table: HTMLElement,
+  ctx: InlineCtx,
+  contentWidthDxa: number,
+): Table {
   const rows = [...table.querySelectorAll("tr")];
+  const colCount = Math.max(
+    1,
+    ...rows.map((tr) => tr.querySelectorAll("th, td").length),
+  );
+  const columnWidths = buildDocxColumnWidths(colCount, contentWidthDxa);
+  const cellBorders = {
+    top: { style: BorderStyle.SINGLE, size: 4, color: "D1D5DB" },
+    bottom: { style: BorderStyle.SINGLE, size: 4, color: "D1D5DB" },
+    left: { style: BorderStyle.SINGLE, size: 4, color: "D1D5DB" },
+    right: { style: BorderStyle.SINGLE, size: 4, color: "D1D5DB" },
+  };
+
   return new Table({
-    width: { size: 100, type: WidthType.PERCENTAGE },
+    width: { size: contentWidthDxa, type: WidthType.DXA },
+    columnWidths,
+    layout: TableLayoutType.FIXED,
     rows: rows.map((tr, rowIndex) => {
       const cells = [...tr.querySelectorAll("th, td")];
       return new TableRow({
-        children: cells.map(
-          (cell) =>
-            new TableCell({
-              borders: {
-                top: { style: BorderStyle.SINGLE, size: 4, color: "D1D5DB" },
-                bottom: { style: BorderStyle.SINGLE, size: 4, color: "D1D5DB" },
-                left: { style: BorderStyle.SINGLE, size: 4, color: "D1D5DB" },
-                right: { style: BorderStyle.SINGLE, size: 4, color: "D1D5DB" },
-              },
-              children: [
-                new Paragraph({
-                  children: [
-                    new TextRun(
-                      runOpts(textOf(cell) || " ", {
-                        ...ctx,
-                        bold: rowIndex === 0 || cell.tagName === "TH",
-                      }),
-                    ),
-                  ],
-                }),
-              ],
-            }),
-        ),
+        children: columnWidths.map((colW, colIndex) => {
+          const cell = cells[colIndex];
+          return new TableCell({
+            borders: cellBorders,
+            width: { size: colW, type: WidthType.DXA },
+            children: [
+              new Paragraph({
+                children: [
+                  new TextRun(
+                    runOpts(cell ? textOf(cell) || " " : " ", {
+                      ...ctx,
+                      bold:
+                        rowIndex === 0 ||
+                        (cell != null && cell.tagName === "TH"),
+                    }),
+                  ),
+                ],
+              }),
+            ],
+          });
+        }),
       });
     }),
   });
@@ -230,17 +268,19 @@ function listItems(
     const opts: IParagraphOptions = !checkbox
       ? ordered
         ? {
-            spacing: { after: 60 },
+            spacing: { after: 40, line: 240 },
             children: runs.length > 0 ? runs : [new TextRun(runOpts("", ctx))],
             numbering: { reference: "vault-export-num", level: listLevel },
           }
         : {
-            spacing: { after: 60 },
+            spacing: { after: 40, line: 240 },
+            // Built-in bullets often lack indent; pin left like numbered lists.
+            indent: { left: 720 + listLevel * 360, hanging: 360 },
             children: runs.length > 0 ? runs : [new TextRun(runOpts("", ctx))],
             bullet: { level: listLevel },
           }
       : {
-          spacing: { after: 60 },
+          spacing: { after: 40, line: 240 },
           children: runs.length > 0 ? runs : [new TextRun(runOpts("", ctx))],
         };
     out.push(new Paragraph(opts));
@@ -256,17 +296,55 @@ function listItems(
   return out;
 }
 
-function isRichSnapshotTarget(el: HTMLElement): boolean {
-  if (el.classList.contains("liquid-compare")) return true;
-  if (el.classList.contains("liquid-chart")) return true;
-  if (el.classList.contains("liquid-report")) return true;
-  if (el.classList.contains("mermaid") || el.tagName === "PRE" && el.classList.contains("mermaid"))
-    return true;
-  if (el.classList.contains("liquid-md-embed")) {
-    const kind = el.dataset.liquidEmbed ?? "";
-    return ["chart", "compare", "report", "kanban"].includes(kind);
+/** CSS selector for Word PNG freeze targets (every liquid embed + static boards). */
+export const DOCX_SNAPSHOT_SELECTOR = [
+  ".liquid-md-embed",
+  ".liquid-mini-kanban",
+  "pre.mermaid",
+  ".liquid-compare",
+  ".liquid-chart",
+  ".liquid-report",
+].join(", ");
+
+/**
+ * Collect unique snapshot roots.
+ * Prefer `.vault-export-section` (heading + embed) so Word cannot orphan
+ * "Compare" / "Price story" above a tall PNG — keepNext alone is not enough.
+ */
+export function selectDocxSnapshotTargets(root: HTMLElement): HTMLElement[] {
+  const seen = new Set<HTMLElement>();
+  const targets: HTMLElement[] = [];
+
+  const markNested = (host: HTMLElement) => {
+    seen.add(host);
+    for (const nested of host.querySelectorAll<HTMLElement>(
+      `${DOCX_SNAPSHOT_SELECTOR}, .vault-export-section`,
+    )) {
+      seen.add(nested);
+    }
+  };
+
+  // 1) Glued heading+embed sections — bake the heading into the image.
+  for (const section of root.querySelectorAll<HTMLElement>(".vault-export-section")) {
+    if (seen.has(section)) continue;
+    markNested(section);
+    targets.push(section);
   }
-  return false;
+
+  // 2) Remaining liquid hosts not already covered by a section.
+  for (const el of root.querySelectorAll<HTMLElement>(DOCX_SNAPSHOT_SELECTOR)) {
+    if (seen.has(el)) continue;
+    if (el.closest(".vault-export-section")) continue;
+    if (el.classList.contains("liquid-md-embed")) {
+      markNested(el);
+      targets.push(el);
+      continue;
+    }
+    if (el.closest(".liquid-md-embed")) continue;
+    seen.add(el);
+    targets.push(el);
+  }
+  return targets;
 }
 
 async function collectSnapshots(
@@ -276,36 +354,7 @@ async function collectSnapshots(
     HTMLElement,
     { data: Uint8Array; width: number; height: number }
   >();
-  const candidates = [
-    ...root.querySelectorAll<HTMLElement>(
-      ".liquid-compare, .liquid-chart, .liquid-report, pre.mermaid, .liquid-md-embed[data-liquid-embed]",
-    ),
-  ];
-  // Prefer outer liquid-md-embed when it wraps an organism
-  const seen = new Set<HTMLElement>();
-  for (const el of candidates) {
-    if (seen.has(el)) continue;
-    if (el.classList.contains("liquid-md-embed")) {
-      const inner = el.querySelector<HTMLElement>(
-        ".liquid-compare, .liquid-chart, .liquid-report",
-      );
-      const target = inner ?? el;
-      if (!isRichSnapshotTarget(target) && !inner) continue;
-      if (seen.has(target)) continue;
-      seen.add(target);
-      seen.add(el);
-      const snap = await snapshotElementToPng(target);
-      if (snap) {
-        map.set(el, {
-          data: dataUrlToUint8Array(snap.dataUrl),
-          width: snap.width,
-          height: snap.height,
-        });
-      }
-      continue;
-    }
-    if (el.closest(".liquid-md-embed")) continue;
-    seen.add(el);
+  for (const el of selectDocxSnapshotTargets(root)) {
     const snap = await snapshotElementToPng(el);
     if (snap) {
       map.set(el, {
@@ -353,6 +402,7 @@ export function htmlExportToDocxChildren(
   const mono = "Courier New";
   const size = halfPoints(options.baseFontPx);
   const ctx: InlineCtx = { font, mono, size };
+  const contentWidthDxa = exportDocxContentWidthDxa(options);
   const out: DocxChild[] = [];
 
   const walk = (parent: HTMLElement) => {
@@ -362,7 +412,7 @@ export function htmlExportToDocxChildren(
         if (t) {
           out.push(
             new Paragraph({
-              spacing: { after: 120 },
+              spacing: { after: 80, line: 240 },
               children: [new TextRun(runOpts(t, ctx))],
             }),
           );
@@ -390,48 +440,97 @@ export function htmlExportToDocxChildren(
         node.classList.contains("liquid-compare") ||
         node.classList.contains("liquid-chart") ||
         node.classList.contains("liquid-report") ||
-        node.classList.contains("liquid-md-embed")
+        node.classList.contains("liquid-md-embed") ||
+        node.classList.contains("liquid-mini-kanban") ||
+        node.classList.contains("liquid-callout") ||
+        node.classList.contains("liquid-accordion") ||
+        node.classList.contains("liquid-card") ||
+        node.classList.contains("liquid-tabs")
       ) {
         const nestedSnap =
           snapshots.get(node) ??
-          [...snapshots.entries()].find(([el]) => node.contains(el))?.[1];
+          [...snapshots.entries()].find(([el]) => node.contains(el) || el.contains(node))?.[1];
         if (nestedSnap) {
           out.push(imageParagraph(nestedSnap));
           continue;
         }
+        // Plain prose fallback — never italic bracket dumps.
         const fallback = textOf(node);
         if (fallback) {
+          const chunk = fallback.length > 1200 ? `${fallback.slice(0, 1200)}…` : fallback;
           out.push(
             new Paragraph({
-              spacing: { after: 120 },
-              children: [new TextRun(runOpts(`[${fallback.slice(0, 80)}]`, ctx, { italics: true }))],
+              spacing: { after: 80, line: 240 },
+              children: [new TextRun(runOpts(chunk, ctx))],
             }),
           );
         }
         continue;
       }
 
+      // Glued section already snapshotted as one image (heading baked in).
+      if (node.classList.contains("vault-export-section")) {
+        const sectionSnap =
+          snapshots.get(node) ??
+          [...snapshots.entries()].find(([el]) => node.contains(el))?.[1];
+        if (sectionSnap) {
+          out.push(imageParagraph(sectionSnap));
+          continue;
+        }
+        walk(node);
+        continue;
+      }
+
       if (/^h[1-6]$/.test(tag)) {
+        // If this heading lives inside a snapshotted section, skip — it's in the PNG.
+        const section = node.closest(".vault-export-section");
+        if (section && snapshots.has(section)) continue;
+
         const level = Number(tag[1]);
         const headingCtx = {
           ...ctx,
           size: halfPoints(options.baseFontPx * (level === 1 ? 1.5 : level === 2 ? 1.25 : 1.1)),
           bold: true,
         };
+        const nextEl = node.nextElementSibling as HTMLElement | null;
+        const nextIsSnap = Boolean(
+          nextEl &&
+            (snapshots.has(nextEl) ||
+              [...snapshots.keys()].some(
+                (el) => nextEl === el || nextEl.contains(el),
+              )),
+        );
+        // keepNext alone fails when the following PNG is taller than the
+        // remaining page — force the heading onto the next page with its body.
         out.push(
           new Paragraph({
             heading: headingLevel(level),
-            spacing: { before: level === 1 ? 0 : 200, after: 120 },
-            children: [...node.childNodes].flatMap((c) =>
-              inlineFromNode(c, headingCtx),
-            ),
+            keepNext: true,
+            keepLines: true,
+            pageBreakBefore: nextIsSnap && level >= 2,
+            spacing: { before: level === 1 ? 0 : 160, after: 80, line: 240 },
+            children: [
+              new TextRun(
+                runOpts(textOf(node) || " ", headingCtx, {
+                  color: DOCX_HEADING_COLOR,
+                }),
+              ),
+            ],
           }),
         );
         continue;
       }
 
       if (tag === "p") {
-        out.push(paragraphFromElement(node, ctx));
+        const labelKeep = isLabelLikeParagraph(node)
+          ? { keepNext: true, keepLines: true }
+          : undefined;
+        out.push(paragraphFromElement(node, ctx, labelKeep));
+        continue;
+      }
+
+      if (node.classList.contains("vault-export-label-group")) {
+        walk(node);
         continue;
       }
 
@@ -471,13 +570,13 @@ export function htmlExportToDocxChildren(
       }
 
       if (tag === "table") {
-        out.push(tableFromElement(node, ctx));
+        out.push(tableFromElement(node, ctx, contentWidthDxa));
         continue;
       }
 
       if (tag === "div" && node.classList.contains("markdown-table-scroll")) {
         const table = node.querySelector("table");
-        if (table) out.push(tableFromElement(table, ctx));
+        if (table) out.push(tableFromElement(table, ctx, contentWidthDxa));
         continue;
       }
 
@@ -676,7 +775,7 @@ export async function renderVaultNoteDocxBlob(options: {
       snapshots,
     );
     const doc = buildDocument(options.title, children, exportOptions, {
-      includeTitle: true,
+      includeTitle: !bodyHasMatchingTitleH1(prepared.bodyEl, options.title),
     });
     return Packer.toBlob(doc);
   } finally {
@@ -700,14 +799,62 @@ function buildDocument(
       : { width: 12240, height: 15840 };
   const landscape = options.orientation === "landscape";
 
+  const headingColor = DOCX_HEADING_COLOR;
+  const headingDefs = [
+    { id: "Heading1", name: "Heading 1", level: 1, scale: 1.5, before: 0, after: 80 },
+    { id: "Heading2", name: "Heading 2", level: 2, scale: 1.25, before: 160, after: 60 },
+    { id: "Heading3", name: "Heading 3", level: 3, scale: 1.1, before: 140, after: 60 },
+    { id: "Heading4", name: "Heading 4", level: 4, scale: 1.05, before: 120, after: 40 },
+    { id: "Heading5", name: "Heading 5", level: 5, scale: 1, before: 100, after: 40 },
+    { id: "Heading6", name: "Heading 6", level: 6, scale: 1, before: 100, after: 40 },
+  ] as const;
+
   return new Document({
     styles: {
       default: {
         document: {
-          run: { font, size },
-          paragraph: { spacing: { after: 120, line: 276 } },
+          run: { font, size, color: headingColor },
+          paragraph: { spacing: { after: 80, line: 240 } },
         },
       },
+      paragraphStyles: [
+        {
+          id: "Title",
+          name: "Title",
+          basedOn: "Normal",
+          next: "Normal",
+          quickStyle: true,
+          run: {
+            font,
+            size: halfPoints(options.baseFontPx * 1.6),
+            bold: true,
+            color: headingColor,
+          },
+          paragraph: {
+            spacing: { after: 120, line: 240 },
+            keepNext: true,
+            keepLines: true,
+          },
+        },
+        ...headingDefs.map((h) => ({
+          id: h.id,
+          name: h.name,
+          basedOn: "Normal",
+          next: "Normal",
+          quickStyle: true,
+          run: {
+            font,
+            size: halfPoints(options.baseFontPx * h.scale),
+            bold: true,
+            color: headingColor,
+          },
+          paragraph: {
+            spacing: { before: h.before, after: h.after, line: 240 },
+            keepNext: true,
+            keepLines: true,
+          },
+        })),
+      ],
     },
     numbering: {
       config: [
@@ -715,9 +862,20 @@ function buildDocument(
           reference: "vault-export-num",
           levels: [0, 1, 2].map((level) => ({
             level,
-            format: "decimal" as const,
+            format: LevelFormat.DECIMAL,
             text: `%${level + 1}.`,
-            alignment: "left" as const,
+            alignment: AlignmentType.LEFT,
+            start: 1,
+            // Without indent, Word parks numbered body text in a tiny
+            // right-edge column (character-wrap "squish").
+            style: {
+              paragraph: {
+                indent: {
+                  left: 720 + level * 360,
+                  hanging: 360,
+                },
+              },
+            },
           })),
         },
       ],
@@ -737,12 +895,15 @@ function buildDocument(
             ? [
                 new Paragraph({
                   heading: HeadingLevel.TITLE,
+                  keepNext: true,
+                  keepLines: true,
                   children: [
                     new TextRun({
                       text: title || "Untitled",
                       bold: true,
                       font,
                       size: halfPoints(options.baseFontPx * 1.6),
+                      color: headingColor,
                     }),
                   ],
                 }),

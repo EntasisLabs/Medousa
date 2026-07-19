@@ -24,7 +24,14 @@
 </script>
 
 {#if items.length}
-  <div class="liquid-carousel" data-no-tab-swipe onscroll={onScroll}>
+  <div
+    class="liquid-carousel"
+    class:liquid-carousel--export={ctx.exportPaper}
+    data-no-tab-swipe
+    onscroll={(e) => {
+      if (!ctx.exportPaper) onScroll(e);
+    }}
+  >
     {#each items as item (item.id)}
       <div class="liquid-carousel-item">
         <Slot nodes={[item]} />
@@ -56,5 +63,25 @@
     flex: 0 0 auto;
     width: min(16.5rem, 82%);
     scroll-snap-align: start;
+  }
+
+  /* Print / PDF / Word: wrap every card — no horizontal clip. */
+  .liquid-carousel--export {
+    flex-wrap: wrap;
+    overflow: visible;
+    scroll-snap-type: none;
+    touch-action: auto;
+    overscroll-behavior: auto;
+    mask-image: none;
+    -webkit-mask-image: none;
+    padding: 0.1rem 0;
+  }
+
+  .liquid-carousel--export .liquid-carousel-item {
+    flex: 1 1 calc(50% - 0.4rem);
+    width: auto;
+    min-width: min(14rem, 100%);
+    max-width: 100%;
+    scroll-snap-align: none;
   }
 </style>

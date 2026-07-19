@@ -30,6 +30,15 @@ describe("vaultExportOptions", () => {
     expect(opts.baseFontPx).toBe(16);
     expect(opts.pageSize).toBe("letter");
     expect(opts.margins).toBe("comfortable");
+    expect(opts.keepTogether).toBe(false);
+  });
+
+  it("defaults keepTogether to false and honors explicit true", () => {
+    expect(DEFAULT_VAULT_EXPORT_OPTIONS.keepTogether).toBe(false);
+    expect(normalizeVaultExportOptions(null).keepTogether).toBe(false);
+    expect(
+      normalizeVaultExportOptions({ keepTogether: true }).keepTogether,
+    ).toBe(true);
   });
 
   it("persists and reads options", () => {

@@ -75,7 +75,38 @@ export async function renderVaultNotePdfBlob(options: {
           format: exportOptions.pageSize,
           orientation: exportOptions.orientation,
         },
-        pagebreak: { mode: ["css", "legacy"] },
+        // Always avoid splitting glued sections / compare (orphans + cropped slivers).
+        // keepTogether adds smaller unit avoids on top.
+        pagebreak: {
+          mode: ["css"],
+          avoid: [
+            // Always: never split mid-row / orphan thead; keep glued sections.
+            "tr",
+            "thead",
+            ".vault-export-section",
+            ".vault-export-keep",
+            ".vault-export-label-group",
+            ".liquid-compare",
+            '.liquid-md-embed[data-liquid-embed="compare"]',
+            "h2",
+            "h3",
+            "h4",
+            ...(exportOptions.keepTogether
+              ? [
+                  "img",
+                  ".liquid-callout",
+                  ".liquid-compare-card",
+                  ".liquid-compare-faceoff",
+                  ".liquid-carousel-item",
+                  ".liquid-brief",
+                  ".liquid-tabs",
+                  ".markdown-callout",
+                  ".markdown-code-block",
+                  "pre",
+                ]
+              : []),
+          ],
+        },
       })
       .from(mount);
 
