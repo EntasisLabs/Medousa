@@ -12,7 +12,7 @@ export const GRAPHEME_STARTER_RECIPES: GraphemeRecipe[] = [
   {
     id: "hello",
     title: "Say hello",
-    subtitle: "One line — your first win in seconds",
+    subtitle: "Print a short message",
     scriptName: "Hello world",
     intent: "Quick intro script",
     body: `glyph Main {
@@ -23,7 +23,7 @@ export const GRAPHEME_STARTER_RECIPES: GraphemeRecipe[] = [
   {
     id: "web-search",
     title: "Search the web",
-    subtitle: "Look something up and read real results",
+    subtitle: "DuckDuckGo search, top results",
     scriptName: "Web search",
     intent: "Search the web for a topic",
     body: `glyph Main {
@@ -34,7 +34,7 @@ export const GRAPHEME_STARTER_RECIPES: GraphemeRecipe[] = [
   {
     id: "pipe-demo",
     title: "Chain steps together",
-    subtitle: "Set data, then pass it through a pipe",
+    subtitle: "Pass a value into the next step",
     scriptName: "Simple pipeline",
     intent: "Learn how pipes connect steps",
     body: `query Demo on Any {
@@ -46,7 +46,7 @@ export const GRAPHEME_STARTER_RECIPES: GraphemeRecipe[] = [
   {
     id: "shell-echo",
     title: "Run a sandboxed command",
-    subtitle: "Medousa OS shell — no Docker required",
+    subtitle: "Run echo in the sandbox",
     scriptName: "Shell echo",
     intent: "Run echo via shell.run",
     body: `query ShellEcho {

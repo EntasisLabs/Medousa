@@ -106,23 +106,16 @@
     <div class="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
       <FolderOpen size={28} strokeWidth={1.5} class="text-surface-500" />
       <div class="max-w-xs space-y-1">
-        <p class="text-sm font-medium text-surface-100">Pin folders from {hostComputerPhrase()}</p>
+        <p class="text-sm font-medium text-surface-100">
+          Add folders from {hostComputerPhrase()}
+        </p>
         <p class="text-xs leading-relaxed text-surface-500">
-          Use <span class="text-surface-400">Pin folder</span> above, then search or expand a pin
-          to link files into your notes.
+          Folders you add show up here. Open a file, or link it into a note.
         </p>
       </div>
     </div>
   {:else}
-    <div class="min-h-0 flex-1 overflow-y-auto p-2">
-      <p class="mb-2 px-1 text-[10px] leading-relaxed text-surface-500">
-        {#if canLink}
-          Click a file to open · hover to link to your note
-        {:else}
-          Open a note to link files · search pinned folders above
-        {/if}
-      </p>
-
+    <div class="min-h-0 flex-1 overflow-y-auto px-1.5 py-1">
       {#each externalDesk.pinnedRoots as root (root.id)}
         {@const expanded = isExpanded(root.id)}
         {@const { entries, total } = filesToShow(root)}
@@ -158,7 +151,8 @@
             <button
               type="button"
               class="vault-toolbar-btn"
-              aria-label="Unpin folder"
+              aria-label="Remove folder"
+              title="Remove"
               onclick={(event) => {
                 event.stopPropagation();
                 externalDesk.unpinRoot(root.id);

@@ -1950,7 +1950,8 @@ const LIBRARY_BROWSE_MODES = new Set<LibraryBrowseMode>([
 ]);
 
 function loadLibraryBrowseMode(): LibraryBrowseMode {
-  if (typeof localStorage === "undefined") return "folders";
+  // Default Recent — notes first, structure on request (Folders stays one click away).
+  if (typeof localStorage === "undefined") return "recent";
   try {
     const raw = localStorage.getItem(LIBRARY_BROWSE_MODE_KEY);
     if (raw && LIBRARY_BROWSE_MODES.has(raw as LibraryBrowseMode)) {
@@ -1959,7 +1960,7 @@ function loadLibraryBrowseMode(): LibraryBrowseMode {
   } catch {
     /* ignore */
   }
-  return "folders";
+  return "recent";
 }
 
 function saveLibraryBrowseMode(mode: LibraryBrowseMode) {

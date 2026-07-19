@@ -112,7 +112,6 @@ export class FlowsStore {
     this.composerDraft = {
       ...emptyFlowDraft(),
       name: label,
-      goal: label ? `Automate: ${label}` : "My automation",
       steps: [
         {
           kind: "grapheme",
@@ -125,9 +124,7 @@ export class FlowsStore {
     };
     this.lastPlan = null;
     this.composerOpen = true;
-    this.actionMessage = label
-      ? `Ready to run “${label}” on a schedule`
-      : "Your script is step 1 — name the flow and run it";
+    this.actionMessage = label ? `Loaded “${label}”.` : "Script added as step 1.";
   }
 
   openComposerWithRecipe(recipe: {
@@ -135,11 +132,12 @@ export class FlowsStore {
     goal?: string;
     body: string;
   }) {
-    const name = recipe.flowName?.trim() ?? "My first flow";
+    const name = recipe.flowName?.trim() ?? "Untitled flow";
     this.composerDraft = {
       ...emptyFlowDraft(),
       name,
-      goal: recipe.goal ?? name,
+      // Keep goal empty so Plan stays disarmed; recipe.goal is opt-in via Plan with AI.
+      goal: "",
       steps: [
         {
           kind: "grapheme",
@@ -150,7 +148,7 @@ export class FlowsStore {
     };
     this.lastPlan = null;
     this.composerOpen = true;
-    this.actionMessage = "Recipe loaded — try Run now, then Schedule";
+    this.actionMessage = null;
   }
 
   closeComposer() {
@@ -262,13 +260,16 @@ export class FlowsStore {
     if (draft.steps.length === 0) {
       throw new Error("Add at least one step before scheduling.");
     }
+    if (!draft.cron_expr.trim()) {
+      throw new Error("Pick when it should repeat before scheduling.");
+    }
     this.scheduling = true;
     this.actionMessage = null;
     try {
       const base = workflowRunRequestFromDraft(draft);
       const request: WorkflowScheduleRequest = {
         ...base,
-        cron_expr: draft.cron_expr.trim() || "0 9 * * *",
+        cron_expr: draft.cron_expr.trim(),
         timezone: draft.timezone.trim() || "UTC",
         display_name: draft.name.trim() || null,
         delivery: this.buildDeliveryPayload(deliveryMode, telegramChatId),

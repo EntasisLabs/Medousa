@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Plus, SlidersHorizontal } from "@lucide/svelte";
   import AutomationCreateForm from "$lib/components/automations/AutomationCreateForm.svelte";
   import FlowsPanel from "$lib/components/automations/FlowsPanel.svelte";
   import HistoryPanel from "$lib/components/automations/HistoryPanel.svelte";
@@ -13,6 +14,7 @@
   import { automations } from "$lib/stores/automations.svelte";
   import { flowDraft } from "$lib/stores/flowDraft.svelte";
   import { flows } from "$lib/stores/flows.svelte";
+  import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
   import { runtime } from "$lib/stores/runtime.svelte";
   import type {
     AutomationDeliveryMode,
@@ -40,8 +42,10 @@
   let section = $state<AutomationsSection>("scripts");
 
   let search = $state("");
+  let filterOpen = $state(false);
   let selectedId = $state<string | null>(null);
   let detailTab = $state<"schedule" | "runs" | "delivery">("schedule");
+  const filterActive = $derived(search.trim().length > 0);
 
   const mobileDetailOpen = $derived(
     mobile && (selectedId !== null || automationDraft.showCreate),
@@ -108,7 +112,9 @@
       .applyFromSliceRefs(flowDraft.pendingRefs, flowDraft.seedDraft.name)
       .finally(() => {
         section = "flows";
+        const title = flows.composerDraft.name.trim() || "New flow";
         flowDraft.clear();
+        lmeWorkspace.focusFlowComposerTab(title);
       });
   });
 
@@ -273,8 +279,8 @@
       onOpenFlows={() => (section = "flows")}
     />
   {:else}
-  {#if !mobileDetailOpen}
-    <header class="{embedded ? 'border-b border-surface-500/40 px-4 py-3' : 'workshop-header'}">
+  {#if !mobileDetailOpen && !(embedded && lmeHosted)}
+    <header class="{embedded ? 'px-3 py-2' : 'workshop-header'}">
       {#if !embedded && !lmeHosted}
         <div class="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -300,22 +306,17 @@
       </div>
       {/if}
 
+      {#if !embedded}
       <div class="mt-3 flex items-center justify-between gap-2">
-        {#if embedded}
-          <p class="workshop-faint text-xs">
-            {counts.enabled}/{counts.total} active
-          </p>
-        {:else}
-          <p class="workshop-header-line">
-            Recurring agent turns · delivery in run history
-          </p>
-        {/if}
+        <p class="workshop-header-line">
+          Recurring agent turns · delivery in run history
+        </p>
         <button
           type="button"
           class="btn btn-sm shrink-0 variant-filled-primary"
           onclick={openNew}
         >
-          {embedded ? "+ New" : "+ New schedule"}
+          + New schedule
         </button>
       </div>
 
@@ -333,14 +334,15 @@
           />
         </div>
       </label>
+      {/if}
     </header>
   {/if}
 
   <div class="flex min-h-0 flex-1 overflow-hidden">
     <div
-      class="workshop-list-pane mobile-you-scroll min-w-0 flex-1 overflow-y-auto px-4 py-3 {mobileDetailOpen
-        ? 'hidden'
-        : ''}"
+      class="workshop-list-pane min-w-0 flex-1 overflow-y-auto {embedded
+        ? 'px-2 py-1'
+        : 'mobile-you-scroll px-4 py-3'} {mobileDetailOpen ? 'hidden' : ''}"
     >
       {#if automations.loading && automations.definitions.length === 0}
         <p class="workshop-muted">Loading schedules…</p>
@@ -606,5 +608,75 @@
       {/if}
     </aside>
   </div>
+
+  {#if embedded && !mobileDetailOpen}
+    <footer
+      class="relative flex shrink-0 items-center gap-1 border-t border-surface-500/25 px-2 py-1.5"
+    >
+      <div class="min-w-0 flex-1">
+        <span class="workshop-faint truncate text-[11px]">
+          {counts.enabled}/{counts.total} active
+        </span>
+      </div>
+      <button
+        type="button"
+        class="vault-dock-icon-btn"
+        aria-label="New schedule"
+        title="New"
+        onclick={openNew}
+      >
+        <Plus size={16} strokeWidth={1.75} />
+      </button>
+      <div class="relative shrink-0">
+        <button
+          type="button"
+          class="vault-dock-icon-btn {filterActive ? 'vault-dock-icon-btn-active' : ''}"
+          aria-haspopup="menu"
+          aria-expanded={filterOpen}
+          aria-label="Filter schedules"
+          title="Filter"
+          onclick={(event) => {
+            event.stopPropagation();
+            filterOpen = !filterOpen;
+          }}
+        >
+          <SlidersHorizontal size={15} strokeWidth={1.75} />
+        </button>
+        {#if filterOpen}
+          <div
+            class="vault-notes-filter-menu absolute bottom-full right-0 z-30 mb-1 w-[min(17.5rem,calc(100vw-2rem))] rounded-lg border border-surface-500/50 bg-surface-900 py-2 shadow-xl"
+            role="menu"
+            tabindex="-1"
+            onclick={(event) => event.stopPropagation()}
+          >
+            <div class="px-2.5 pb-1">
+              <input
+                class="input w-full text-xs"
+                type="search"
+                placeholder="Search schedules…"
+                bind:value={search}
+                autocapitalize="off"
+                autocorrect="off"
+                spellcheck="false"
+                onclick={(event) => event.stopPropagation()}
+              />
+            </div>
+            {#if filterActive}
+              <button
+                type="button"
+                role="menuitem"
+                class="vault-menu-item text-surface-400"
+                onclick={() => {
+                  search = "";
+                }}
+              >
+                Clear
+              </button>
+            {/if}
+          </div>
+        {/if}
+      </div>
+    </footer>
+  {/if}
   {/if}
 </section>

@@ -3,9 +3,11 @@
 import type { AutomationsSection } from "$lib/stores/automationsNav.svelte";
 import { artifacts } from "$lib/stores/artifacts.svelte";
 import { catalog } from "$lib/stores/catalog.svelte";
+import { flows } from "$lib/stores/flows.svelte";
 import { graphemeScriptEditor } from "$lib/stores/graphemeScriptEditor.svelte";
 import { vault } from "$lib/stores/vault.svelte";
 import { externalDesk } from "$lib/stores/externalDesk.svelte";
+import type { FlowComposerDraft } from "$lib/types/workflow";
 
 export type LmeExplorerMode =
   | "notes"
@@ -48,6 +50,13 @@ export type LmeTab =
       tabId: string;
       kind: "manuscript";
       manuscriptId: string;
+      title: string;
+    }
+  | {
+      tabId: string;
+      kind: "flow";
+      /** null = draft / new flow composer */
+      workflowId: string | null;
       title: string;
     };
 
@@ -287,6 +296,77 @@ export class LmeWorkspaceStore {
     void catalog.loadManuscriptDetail(manuscriptId);
   }
 
+  /** Focus the single draft flow tab (composer). Does not reset an already-seeded draft. */
+  focusFlowComposerTab(title?: string) {
+    this.setExplorerMode("flows");
+    flows.composerOpen = true;
+    const label = title?.trim() || flows.composerDraft.name.trim() || "New flow";
+    const existing = this.tabs.find(
+      (tab) => tab.kind === "flow" && tab.workflowId === null,
+    );
+    if (existing) {
+      this.activeTabId = existing.tabId;
+      if (existing.title !== label) {
+        this.tabs = this.tabs.map((tab) =>
+          tab.tabId === existing.tabId ? { ...tab, title: label } : tab,
+        );
+      }
+      return;
+    }
+    const tab: LmeTab = {
+      tabId: newTabId("flow"),
+      kind: "flow",
+      workflowId: null,
+      title: label,
+    };
+    this.tabs = [...this.tabs, tab].slice(-MAX_TABS);
+    this.activeTabId = tab.tabId;
+  }
+
+  openNewFlow(seed?: Partial<FlowComposerDraft>) {
+    flows.openComposer(seed);
+    this.focusFlowComposerTab(seed?.name?.trim() || "New flow");
+  }
+
+  openFlow(workflowId: string, title: string) {
+    this.setExplorerMode("flows");
+    const label = title.trim() || workflowId;
+    const existing = this.tabs.find(
+      (tab) => tab.kind === "flow" && tab.workflowId === workflowId,
+    );
+    if (existing) {
+      this.activeTabId = existing.tabId;
+      if (existing.title !== label) {
+        this.tabs = this.tabs.map((tab) =>
+          tab.tabId === existing.tabId ? { ...tab, title: label } : tab,
+        );
+      }
+    } else {
+      const tab: LmeTab = {
+        tabId: newTabId("flow"),
+        kind: "flow",
+        workflowId,
+        title: label,
+      };
+      this.tabs = [...this.tabs, tab].slice(-MAX_TABS);
+      this.activeTabId = tab.tabId;
+    }
+    void flows.loadDetail(workflowId);
+    void flows.loadRuns(workflowId);
+  }
+
+  /** Keep draft tab title in sync with the composer name field. */
+  syncFlowComposerTabTitle(title: string) {
+    const label = title.trim() || "New flow";
+    const existing = this.tabs.find(
+      (tab) => tab.kind === "flow" && tab.workflowId === null,
+    );
+    if (!existing || existing.title === label) return;
+    this.tabs = this.tabs.map((tab) =>
+      tab.tabId === existing.tabId ? { ...tab, title: label } : tab,
+    );
+  }
+
   /** Mirror the active grapheme editor tab into the LME strip. Idempotent. */
   syncScriptTabFromEditor(options?: { activate?: boolean }) {
     const scriptTab = graphemeScriptEditor.activeTab;
@@ -347,6 +427,16 @@ export class LmeWorkspaceStore {
       void catalog.loadManuscriptDetail(tab.manuscriptId);
       return;
     }
+    if (tab.kind === "flow") {
+      this.setExplorerMode("flows");
+      if (tab.workflowId) {
+        void flows.loadDetail(tab.workflowId);
+        void flows.loadRuns(tab.workflowId);
+      } else {
+        flows.composerOpen = true;
+      }
+      return;
+    }
     this.setExplorerMode("presentations");
     artifacts.selectArtifact(tab.artifactId);
   }
@@ -359,6 +449,9 @@ export class LmeWorkspaceStore {
 
     if (closing.kind === "script") {
       graphemeScriptEditor.closeTab(closing.scriptTabId);
+    }
+    if (closing.kind === "flow" && closing.workflowId === null) {
+      flows.closeComposer();
     }
     if (closing.kind === "file" && vault.previewingAttachmentPath === closing.path) {
       vault.closeAttachmentPreview();

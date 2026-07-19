@@ -1,6 +1,7 @@
 import { automationsNav } from "$lib/stores/automationsNav.svelte";
 import { flows } from "$lib/stores/flows.svelte";
 import { layout } from "$lib/stores/layout.svelte";
+import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
 
 export function promoteScriptToFlow(
   source: string,
@@ -13,6 +14,7 @@ export function promoteScriptToFlow(
   }
 
   flows.openComposerWithGrapheme(trimmed, scriptName, scriptId);
+  lmeWorkspace.focusFlowComposerTab(scriptName?.trim() || "New flow");
   automationsNav.openSection("flows");
 
   if (layout.isMobile) {
@@ -20,5 +22,5 @@ export function promoteScriptToFlow(
     return;
   }
 
-  layout.navigateDesktop("automations", { bump: true });
+  layout.navigateDesktop("library", { bump: true });
 }

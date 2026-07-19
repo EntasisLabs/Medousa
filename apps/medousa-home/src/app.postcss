@@ -1023,6 +1023,63 @@
     @apply bg-surface-700/60 text-surface-100;
   }
 
+  .vault-browse-mode-bar--quiet {
+    @apply gap-2 px-3 pb-2 pt-0;
+  }
+
+  .vault-browse-mode-btn--quiet {
+    @apply rounded-none bg-transparent px-0 py-0.5 text-[11px] font-normal tracking-normal hover:bg-transparent hover:text-surface-200;
+  }
+
+  .vault-browse-mode-btn-quiet-active {
+    @apply bg-transparent text-surface-100;
+  }
+
+  .vault-dock-icon-btn {
+    @apply inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-surface-400 transition hover:bg-surface-800/70 hover:text-surface-100;
+  }
+
+  .vault-dock-icon-btn-active {
+    @apply text-primary-300;
+  }
+
+  .lme-dock-search-expand {
+    @apply relative flex min-w-0 items-center;
+    animation: lme-dock-search-in 160ms ease-out;
+  }
+
+  .lme-dock-search-glyph {
+    @apply pointer-events-none absolute left-2 text-surface-500;
+  }
+
+  .lme-dock-search-input {
+    @apply h-8 w-full rounded-md border border-surface-500/40 bg-surface-800/70 py-1 pl-7 pr-2 text-xs text-surface-100 outline-none transition placeholder:text-surface-500 focus:border-primary-500/40 focus:bg-surface-800;
+  }
+
+  @keyframes lme-dock-search-in {
+    from {
+      opacity: 0.55;
+      transform: translateX(0.35rem);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+
+  .vault-notes-filter-menu {
+    max-height: min(28rem, calc(100vh - 8rem));
+    overflow-y: auto;
+  }
+
+  .vault-notes-filter-seg-btn {
+    @apply rounded px-1 py-1.5 text-center text-[11px] font-medium text-surface-500 transition hover:text-surface-200;
+  }
+
+  .vault-notes-filter-seg-btn-active {
+    @apply bg-surface-700/90 text-surface-100 shadow-sm;
+  }
+
   .vault-sticky-shell {
     @apply overflow-hidden;
   }

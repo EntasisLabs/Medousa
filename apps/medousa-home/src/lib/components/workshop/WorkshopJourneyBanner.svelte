@@ -19,9 +19,7 @@
     const hasFlowDraft =
       flows.composerOpen && flows.composerDraft.steps.length > 0;
     const hasSchedule = Boolean(
-      flows.composerOpen &&
-        flows.composerDraft.cron_expr.trim() &&
-        flows.composerDraft.cron_expr !== "0 9 * * *",
+      flows.composerOpen && flows.composerDraft.cron_expr.trim(),
     );
 
     if (hasSchedule || (hasFlowDraft && flows.composerDraft.name.trim())) {

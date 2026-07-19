@@ -6,10 +6,6 @@
     FilePlus,
     FolderPlus,
     PanelLeftClose,
-    Pin,
-    Plus,
-    RefreshCw,
-    Search,
     SlidersHorizontal,
   } from "@lucide/svelte";
   import { allFilterSpaces } from "$lib/config/vaultSpaces";
@@ -69,282 +65,285 @@
 
 <svelte:window onclick={closeMenus} />
 
-<div class="vault-browser-chrome shrink-0 border-b border-surface-500/45 bg-surface-800/50">
-  <div class="vault-library-tabbar">
-    <div class="vault-library-tabbar-tabs pl-1">
-      {#if !hideLibraryTabs}
+<div
+  class="vault-browser-chrome shrink-0 {hideLibraryTabs
+    ? 'border-b border-surface-500/25'
+    : 'border-b border-surface-500/45 bg-surface-800/50'}"
+>
+  {#if !hideLibraryTabs}
+    <div class="vault-library-tabbar">
+      <div class="vault-library-tabbar-tabs pl-1">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={externalDesk.sidebarMode === "vault"}
+          class="vault-sidebar-tab {externalDesk.sidebarMode === 'vault'
+            ? 'vault-sidebar-tab-active'
+            : ''}"
+          onclick={() => externalDesk.setSidebarMode("vault")}
+        >
+          Vault
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={externalDesk.sidebarMode === "files"}
+          class="vault-sidebar-tab {externalDesk.sidebarMode === 'files'
+            ? 'vault-sidebar-tab-active'
+            : ''}"
+          onclick={() => externalDesk.setSidebarMode("files")}
+        >
+          Your files
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={externalDesk.sidebarMode === "presentations"}
+          class="vault-sidebar-tab {externalDesk.sidebarMode === 'presentations'
+            ? 'vault-sidebar-tab-active'
+            : ''}"
+          onclick={() => externalDesk.setSidebarMode("presentations")}
+        >
+          Presentations
+        </button>
+      </div>
       <button
         type="button"
-        role="tab"
-        aria-selected={externalDesk.sidebarMode === "vault"}
-        class="vault-sidebar-tab {externalDesk.sidebarMode === 'vault'
-          ? 'vault-sidebar-tab-active'
-          : ''}"
-        onclick={() => externalDesk.setSidebarMode("vault")}
+        class="vault-toolbar-btn my-1.5"
+        title="Hide library browser"
+        aria-label="Hide library browser"
+        onclick={() => layout.setVaultSidebarCollapsed(true)}
       >
-        Vault
+        <PanelLeftClose size={14} strokeWidth={2} />
       </button>
-      <button
-        type="button"
-        role="tab"
-        aria-selected={externalDesk.sidebarMode === "files"}
-        class="vault-sidebar-tab {externalDesk.sidebarMode === 'files'
-          ? 'vault-sidebar-tab-active'
-          : ''}"
-        onclick={() => externalDesk.setSidebarMode("files")}
-      >
-        Your files
-      </button>
-      <button
-        type="button"
-        role="tab"
-        aria-selected={externalDesk.sidebarMode === "presentations"}
-        class="vault-sidebar-tab {externalDesk.sidebarMode === 'presentations'
-          ? 'vault-sidebar-tab-active'
-          : ''}"
-        onclick={() => externalDesk.setSidebarMode("presentations")}
-      >
-        Presentations
-      </button>
-      {/if}
     </div>
-    <button
-      type="button"
-      class="vault-toolbar-btn my-1.5"
-      title="Hide library browser"
-      aria-label="Hide library browser"
-      onclick={() => layout.setVaultSidebarCollapsed(true)}
-    >
-      <PanelLeftClose size={14} strokeWidth={2} />
-    </button>
-  </div>
+  {/if}
 
   {#if showVaultChrome}
-    <div class="vault-library-toolbar">
-      <div class="min-w-0 flex-1">
-        <VaultRootPicker compact />
-      </div>
+      <div class="flex items-center gap-2 px-3 py-2">
+        <div class="min-w-0 flex-1">
+          <VaultRootPicker compact />
+        </div>
 
-      <div class="flex shrink-0 items-center gap-1">
-        <div class="relative">
-          <button
-            type="button"
-            class="vault-toolbar-btn {menuActiveCount > 0 ? 'vault-toolbar-btn-active' : ''}"
-            aria-haspopup="menu"
-            aria-expanded={filtersOpen}
-            title="Filter by group"
-            onclick={(event) => {
-              event.stopPropagation();
-              createOpen = false;
-              filtersOpen = !filtersOpen;
-            }}
-          >
-            <SlidersHorizontal size={14} strokeWidth={2} />
-          </button>
-          {#if filtersOpen}
-            <div
-              class="vault-library-filter-menu absolute right-0 top-full z-30 mt-1 rounded-lg border border-surface-500/50 bg-surface-900 py-1 shadow-xl"
-              role="menu"
-              tabindex="-1"
-              onclick={(event) => event.stopPropagation()}
-              onkeydown={handleMenuKeydown}
+        <div class="flex shrink-0 items-center gap-2">
+          <div class="relative">
+            <button
+              type="button"
+              class="workshop-text-action text-xs {menuActiveCount > 0
+                ? 'text-primary-300'
+                : 'text-surface-500'}"
+              aria-haspopup="menu"
+              aria-expanded={filtersOpen}
+              title="Filter by group"
+              onclick={(event) => {
+                event.stopPropagation();
+                createOpen = false;
+                filtersOpen = !filtersOpen;
+              }}
             >
-              <p class="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wide text-surface-500">
-                Group
-              </p>
-              <button
-                type="button"
-                role="menuitemradio"
-                aria-checked={vault.activeSpaceFilter === null}
-                class="vault-menu-item w-full justify-between {vault.activeSpaceFilter === null
-                  ? 'text-primary-200'
-                  : ''}"
-                onclick={() => selectSpace(null)}
+              <span class="inline-flex items-center gap-1">
+                <SlidersHorizontal size={12} strokeWidth={2} />
+                Filter
+              </span>
+            </button>
+            {#if filtersOpen}
+              <div
+                class="vault-library-filter-menu absolute right-0 top-full z-30 mt-1 rounded-lg border border-surface-500/50 bg-surface-900 py-1 shadow-xl"
+                role="menu"
+                tabindex="-1"
+                onclick={(event) => event.stopPropagation()}
+                onkeydown={handleMenuKeydown}
               >
-                <span>All notes</span>
-                {#if vault.activeSpaceFilter === null}
-                  <Check size={14} strokeWidth={2} class="text-primary-300" />
-                {/if}
-              </button>
-              {#each visibleSpaces as space (space.id)}
-                {@const _ = folderIconMap}
-                {@const Icon = iconForSpace(space.id)}
-                {@const count = spaceCounts.get(space.id) ?? 0}
+                <p class="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wide text-surface-500">
+                  Group
+                </p>
                 <button
                   type="button"
                   role="menuitemradio"
-                  aria-checked={vault.activeSpaceFilter === space.id}
-                  class="vault-menu-item w-full justify-between {vault.activeSpaceFilter === space.id
+                  aria-checked={vault.activeSpaceFilter === null}
+                  class="vault-menu-item w-full justify-between {vault.activeSpaceFilter === null
                     ? 'text-primary-200'
                     : ''}"
-                  onclick={() => selectSpace(space.id)}
+                  onclick={() => selectSpace(null)}
                 >
-                  <span class="inline-flex min-w-0 items-center gap-2">
-                    <Icon size={14} strokeWidth={2} class="shrink-0 opacity-80" />
-                    <span class="truncate">{space.label}</span>
-                    {#if count > 0}
-                      <span class="workshop-faint tabular-nums">{count}</span>
-                    {/if}
-                  </span>
-                  {#if vault.activeSpaceFilter === space.id}
-                    <Check size={14} strokeWidth={2} class="shrink-0 text-primary-300" />
+                  <span>All notes</span>
+                  {#if vault.activeSpaceFilter === null}
+                    <Check size={14} strokeWidth={2} class="text-primary-300" />
                   {/if}
                 </button>
-              {/each}
+                {#each visibleSpaces as space (space.id)}
+                  {@const _ = folderIconMap}
+                  {@const Icon = iconForSpace(space.id)}
+                  {@const count = spaceCounts.get(space.id) ?? 0}
+                  <button
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={vault.activeSpaceFilter === space.id}
+                    class="vault-menu-item w-full justify-between {vault.activeSpaceFilter ===
+                    space.id
+                      ? 'text-primary-200'
+                      : ''}"
+                    onclick={() => selectSpace(space.id)}
+                  >
+                    <span class="inline-flex min-w-0 items-center gap-2">
+                      <Icon size={14} strokeWidth={2} class="shrink-0 opacity-80" />
+                      <span class="truncate">{space.label}</span>
+                      {#if count > 0}
+                        <span class="workshop-faint tabular-nums">{count}</span>
+                      {/if}
+                    </span>
+                    {#if vault.activeSpaceFilter === space.id}
+                      <Check size={14} strokeWidth={2} class="shrink-0 text-primary-300" />
+                    {/if}
+                  </button>
+                {/each}
 
-              <div class="my-1 border-t border-surface-500/35"></div>
+                <div class="my-1 border-t border-surface-500/35"></div>
 
-              <p class="px-3 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-wide text-surface-500">
-                View
-              </p>
-              <button
-                type="button"
-                role="menuitemcheckbox"
-                aria-checked={vault.showAgentReviewFilter}
-                class="vault-menu-item w-full justify-between {vault.showAgentReviewFilter
-                  ? 'text-primary-200'
-                  : ''}"
-                onclick={() => vault.setShowAgentReviewFilter(!vault.showAgentReviewFilter)}
-              >
-                Agent review
-                {#if vault.showAgentReviewFilter}
-                  <span class="text-[10px] text-primary-300">On</span>
-                {/if}
-              </button>
-              <button
-                type="button"
-                role="menuitemcheckbox"
-                aria-checked={vault.showSystemNotes}
-                class="vault-menu-item w-full justify-between {vault.showSystemNotes
-                  ? 'text-primary-200'
-                  : ''}"
-                onclick={() => vault.setShowSystemNotes(!vault.showSystemNotes)}
-              >
-                Developer notes
-                {#if vault.showSystemNotes}
-                  <span class="text-[10px] text-primary-300">On</span>
-                {/if}
-              </button>
-            </div>
-          {/if}
-        </div>
+                <p class="px-3 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-wide text-surface-500">
+                  View
+                </p>
+                <button
+                  type="button"
+                  role="menuitemcheckbox"
+                  aria-checked={vault.showAgentReviewFilter}
+                  class="vault-menu-item w-full justify-between {vault.showAgentReviewFilter
+                    ? 'text-primary-200'
+                    : ''}"
+                  onclick={() => vault.setShowAgentReviewFilter(!vault.showAgentReviewFilter)}
+                >
+                  Agent review
+                  {#if vault.showAgentReviewFilter}
+                    <span class="text-[10px] text-primary-300">On</span>
+                  {/if}
+                </button>
+                <button
+                  type="button"
+                  role="menuitemcheckbox"
+                  aria-checked={vault.showSystemNotes}
+                  class="vault-menu-item w-full justify-between {vault.showSystemNotes
+                    ? 'text-primary-200'
+                    : ''}"
+                  onclick={() => vault.setShowSystemNotes(!vault.showSystemNotes)}
+                >
+                  Developer notes
+                  {#if vault.showSystemNotes}
+                    <span class="text-[10px] text-primary-300">On</span>
+                  {/if}
+                </button>
+              </div>
+            {/if}
+          </div>
 
-        <div class="relative">
-          <button
-            type="button"
-            class="vault-toolbar-new variant-filled-primary"
-            aria-haspopup="menu"
-            aria-expanded={createOpen}
-            onclick={(event) => {
-              event.stopPropagation();
-              filtersOpen = false;
-              createOpen = !createOpen;
-            }}
-          >
-            <Plus size={14} strokeWidth={2} />
-            New
-          </button>
-          {#if createOpen}
-            <div
-              class="absolute right-0 top-full z-30 mt-1 min-w-[11rem] rounded-lg border border-surface-500/50 bg-surface-900 py-1 shadow-xl"
-              role="menu"
-              tabindex="-1"
-              onclick={(event) => event.stopPropagation()}
-              onkeydown={handleMenuKeydown}
+          <div class="relative">
+            <button
+              type="button"
+              class="workshop-text-action text-xs"
+              aria-haspopup="menu"
+              aria-expanded={createOpen}
+              onclick={(event) => {
+                event.stopPropagation();
+                filtersOpen = false;
+                createOpen = !createOpen;
+              }}
             >
-              <button
-                type="button"
-                role="menuitem"
-                class="vault-menu-item"
-                disabled={vault.saving}
-                onclick={() => {
-                  closeMenus();
-                  void vault.createDailyNote();
-                }}
+              + New
+            </button>
+            {#if createOpen}
+              <div
+                class="absolute right-0 top-full z-30 mt-1 min-w-[11rem] rounded-lg border border-surface-500/50 bg-surface-900 py-1 shadow-xl"
+                role="menu"
+                tabindex="-1"
+                onclick={(event) => event.stopPropagation()}
+                onkeydown={handleMenuKeydown}
               >
-                <Calendar size={14} strokeWidth={2} />
-                Daily note
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                class="vault-menu-item"
-                disabled={vault.saving}
-                onclick={() => {
-                  closeMenus();
-                  void vault.createWeeklyReview();
-                }}
-              >
-                <CalendarRange size={14} strokeWidth={2} />
-                Weekly review
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                class="vault-menu-item"
-                onclick={() => {
-                  closeMenus();
-                  vault.openNewNoteDialog();
-                }}
-              >
-                <FilePlus size={14} strokeWidth={2} />
-                New note
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                class="vault-menu-item"
-                onclick={() => {
-                  closeMenus();
-                  vault.openNewGroupDialog();
-                }}
-              >
-                <FolderPlus size={14} strokeWidth={2} />
-                New group
-              </button>
-            </div>
-          {/if}
+                <button
+                  type="button"
+                  role="menuitem"
+                  class="vault-menu-item"
+                  disabled={vault.saving}
+                  onclick={() => {
+                    closeMenus();
+                    void vault.createDailyNote();
+                  }}
+                >
+                  <Calendar size={14} strokeWidth={2} />
+                  Daily note
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  class="vault-menu-item"
+                  disabled={vault.saving}
+                  onclick={() => {
+                    closeMenus();
+                    void vault.createWeeklyReview();
+                  }}
+                >
+                  <CalendarRange size={14} strokeWidth={2} />
+                  Weekly review
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  class="vault-menu-item"
+                  onclick={() => {
+                    closeMenus();
+                    vault.openNewNoteDialog();
+                  }}
+                >
+                  <FilePlus size={14} strokeWidth={2} />
+                  New note
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  class="vault-menu-item"
+                  onclick={() => {
+                    closeMenus();
+                    vault.openNewGroupDialog();
+                  }}
+                >
+                  <FolderPlus size={14} strokeWidth={2} />
+                  New group
+                </button>
+              </div>
+            {/if}
+          </div>
         </div>
       </div>
-    </div>
-    <VaultLibraryBrowseModeBar />
+      <VaultLibraryBrowseModeBar />
   {:else}
     <div class="px-3 py-2">
-      <label class="vault-search-trigger cursor-text">
-        <Search size={14} strokeWidth={2} class="shrink-0 opacity-60" />
-        <input
-          class="min-w-0 flex-1 border-0 bg-transparent p-0 text-sm text-surface-100 outline-none placeholder:text-surface-500"
-          type="search"
-          placeholder="Search pinned folders…"
-          value={vault.searchQuery}
-          oninput={(event) => onSearchExternal?.((event.currentTarget as HTMLInputElement).value)}
-        />
-      </label>
+      <input
+        class="input w-full text-xs"
+        type="search"
+        placeholder="Search pinned folders…"
+        value={vault.searchQuery}
+        oninput={(event) => onSearchExternal?.((event.currentTarget as HTMLInputElement).value)}
+      />
     </div>
-    <div class="vault-library-toolbar border-t border-surface-500/35">
+    <div class="flex flex-wrap items-center gap-3 px-3 pb-2">
       {#if coLocated}
         <button
           type="button"
-          class="vault-toolbar-new variant-soft-primary"
+          class="workshop-text-action text-xs"
           onclick={() => void externalDesk.pinFolder()}
         >
-          <Pin size={14} strokeWidth={2} />
-          Pin folder
+          + Pin folder
         </button>
         {#if externalDesk.pinnedRoots.length > 0}
           <button
             type="button"
-            class="vault-toolbar-btn ml-auto"
-            title="Refresh all pinned folders"
-            aria-label="Refresh all pinned folders"
+            class="workshop-text-action text-xs text-surface-500"
             disabled={Boolean(externalDesk.loadingRoot)}
             onclick={() => void externalDesk.refreshAllRoots()}
           >
-            <RefreshCw size={14} strokeWidth={2} />
+            Refresh
           </button>
         {/if}
       {:else}
-        <p class="workshop-faint px-1 py-1 text-[11px] leading-snug">
+        <p class="workshop-faint text-[11px] leading-snug">
           {vaultPinFolderRemoteHint()}
         </p>
       {/if}

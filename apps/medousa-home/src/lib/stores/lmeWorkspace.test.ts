@@ -84,6 +84,30 @@ vi.mock("$lib/stores/catalog.svelte", () => ({
   },
 }));
 
+const openComposer = vi.fn((seed?: Record<string, unknown>) => {
+  flowsMock.composerOpen = true;
+  if (seed?.name) flowsMock.composerDraft = { name: String(seed.name) };
+});
+const closeComposer = vi.fn(() => {
+  flowsMock.composerOpen = false;
+  flowsMock.composerDraft = { name: "" };
+});
+const loadDetail = vi.fn(async (_id: string) => {});
+const loadRuns = vi.fn(async (_id: string) => {});
+
+const flowsMock = {
+  composerOpen: false,
+  composerDraft: { name: "" },
+  openComposer,
+  closeComposer,
+  loadDetail,
+  loadRuns,
+};
+
+vi.mock("$lib/stores/flows.svelte", () => ({
+  flows: flowsMock,
+}));
+
 const { LmeWorkspaceStore } = await import("$lib/stores/lmeWorkspace.svelte");
 
 describe("lmeWorkspace", () => {
@@ -92,6 +116,8 @@ describe("lmeWorkspace", () => {
   beforeEach(() => {
     scriptTabs.length = 0;
     activeTabId = null;
+    flowsMock.composerOpen = false;
+    flowsMock.composerDraft = { name: "" };
     store = new LmeWorkspaceStore();
     store.tabs = [];
     store.activeTabId = null;
@@ -215,5 +241,39 @@ describe("lmeWorkspace", () => {
     await store.activateTab(tabId);
     expect(store.explorerMode).toBe("agents");
     expect(loadManuscriptDetail).toHaveBeenCalledWith("user/morning-brief");
+  });
+
+  it("opens named flows as tabs", () => {
+    store.openFlow("wf-1", "Morning web");
+    expect(store.explorerMode).toBe("flows");
+    expect(store.tabs[0]).toMatchObject({
+      kind: "flow",
+      workflowId: "wf-1",
+      title: "Morning web",
+    });
+    expect(loadDetail).toHaveBeenCalledWith("wf-1");
+    expect(loadRuns).toHaveBeenCalledWith("wf-1");
+  });
+
+  it("opens a single draft flow composer tab", () => {
+    store.openNewFlow({ name: "Draft A" });
+    store.openNewFlow({ name: "Draft B" });
+    expect(store.tabs).toHaveLength(1);
+    expect(store.tabs[0]).toMatchObject({
+      kind: "flow",
+      workflowId: null,
+      title: "Draft B",
+    });
+    expect(openComposer).toHaveBeenCalled();
+    expect(flowsMock.composerOpen).toBe(true);
+  });
+
+  it("activates flow tabs into flows mode", async () => {
+    store.openFlow("wf-1", "Morning web");
+    store.setExplorerMode("notes");
+    const tabId = store.activeTabId!;
+    await store.activateTab(tabId);
+    expect(store.explorerMode).toBe("flows");
+    expect(loadDetail).toHaveBeenCalledWith("wf-1");
   });
 });

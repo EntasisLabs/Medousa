@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Bot, FileCode2, FileText, Files, Presentation, X } from "@lucide/svelte";
+  import { Bot, FileCode2, FileText, Files, GitBranch, Presentation, X } from "@lucide/svelte";
   import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
 </script>
 
@@ -33,6 +33,8 @@
             <Presentation size={12} strokeWidth={1.75} class="shrink-0 opacity-70" />
           {:else if tab.kind === "manuscript"}
             <Bot size={12} strokeWidth={1.75} class="shrink-0 opacity-70" />
+          {:else if tab.kind === "flow"}
+            <GitBranch size={12} strokeWidth={1.75} class="shrink-0 opacity-70" />
           {:else}
             <FileText size={12} strokeWidth={1.75} class="shrink-0 opacity-70" />
           {/if}

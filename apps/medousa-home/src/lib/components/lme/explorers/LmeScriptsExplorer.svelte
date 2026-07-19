@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Plus, SlidersHorizontal } from "@lucide/svelte";
   import { onMount } from "svelte";
   import {
     applyRecipeToEditor,
@@ -20,12 +21,34 @@
   } from "$lib/types/grapheme";
 
   let search = $state("");
+  let filterOpen = $state(false);
   let selectedModuleId = $state<string | null>(null);
   let wasmPath = $state("");
   let wasmVersion = $state("");
   let wasmModuleId = $state("");
 
   const section = $derived(lmeWorkspace.scriptsExplorerSection);
+  const filterActive = $derived(search.trim().length > 0);
+  const searchPlaceholder = $derived(
+    section === "scripts"
+      ? "Search saved scripts…"
+      : section === "templates"
+        ? "Search templates…"
+        : section === "modules"
+          ? "Search modules or actions…"
+          : "Filter modules…",
+  );
+
+  function closeMenus() {
+    filterOpen = false;
+  }
+
+  function handleMenuKeydown(event: KeyboardEvent) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeMenus();
+    }
+  }
 
   onMount(() => {
     void workshop.refreshModulesAndScripts();
@@ -155,24 +178,11 @@
   }
 </script>
 
-<aside class="lme-scripts-explorer flex h-full min-h-0 w-full flex-col" aria-label="Scripts">
-  <div class="px-3 py-2">
-    <input
-      class="input w-full text-xs"
-      type="search"
-      placeholder={section === "scripts"
-        ? "Search saved scripts…"
-        : section === "templates"
-          ? "Search templates…"
-          : section === "modules"
-            ? "Search modules or actions…"
-            : "Filter modules…"}
-      bind:value={search}
-    />
-  </div>
+<svelte:window onclick={closeMenus} />
 
+<aside class="lme-scripts-explorer flex h-full min-h-0 w-full flex-col" aria-label="Scripts">
   <div
-    class="mobile-you-scroll min-h-0 flex-1 {section === 'modules'
+    class="min-h-0 flex-1 {section === 'modules'
       ? 'flex flex-col overflow-hidden'
       : 'overflow-y-auto'}"
   >
@@ -181,11 +191,8 @@
     {:else if workshop.error}
       <p class="px-3 py-2 text-sm text-error-400">{workshop.error}</p>
     {:else if section === "templates"}
-      <p class="workshop-faint px-3 pb-2 text-[11px] leading-relaxed">
-        Starter scripts — click to load in the editor.
-      </p>
       {#if filteredRecipes.length === 0}
-        <p class="workshop-muted px-3 py-2 text-xs">No templates match.</p>
+        <p class="workshop-muted px-3 py-4 text-xs">No templates match.</p>
       {:else}
         <ul class="divide-y divide-surface-500/35 border-y border-surface-500/35">
           {#each filteredRecipes as recipe (recipe.id)}
@@ -205,13 +212,10 @@
         </ul>
       {/if}
     {:else if section === "scripts"}
-      <div class="px-3 pb-2">
-        <button type="button" class="workshop-text-action text-xs" onclick={startNewScript}>
-          + New script
-        </button>
-      </div>
       {#if filteredScripts.length === 0}
-        <p class="workshop-muted px-3 pb-4 text-xs">No saved scripts yet.</p>
+        <p class="workshop-muted px-3 py-4 text-xs">
+          {filterActive ? "No scripts match." : "No saved scripts yet."}
+        </p>
       {:else}
         <ul class="divide-y divide-surface-500/35 border-y border-surface-500/35">
           {#each filteredScripts as entry (entry.id)}
@@ -298,7 +302,7 @@
             {/each}
           </ul>
 
-          <div class="scripts-workbench-module-detail mobile-you-scroll min-h-0 flex-1 overflow-y-auto">
+          <div class="scripts-workbench-module-detail min-h-0 flex-1 overflow-y-auto">
             {#if selectedModule}
               <div class="border-b border-surface-500/35 px-3 py-2.5">
                 <p class="font-mono text-sm font-medium text-surface-50">
@@ -364,10 +368,7 @@
         </div>
       {/if}
     {:else}
-      <div class="space-y-3 px-3 pb-4">
-        <p class="workshop-faint text-[11px] leading-relaxed">
-          Drop-in WASM extensions for the Grapheme runtime — separate from native modules.
-        </p>
+      <div class="space-y-3 px-3 py-2 pb-4">
         <label class="block">
           <span class="workshop-label">Module id</span>
           <select class="input mt-1 w-full text-xs" bind:value={wasmModuleId}>
@@ -446,4 +447,76 @@
       </div>
     {/if}
   </div>
+
+  <footer
+    class="relative flex shrink-0 items-center gap-1 border-t border-surface-500/25 px-2 py-1.5"
+  >
+    <div class="min-w-0 flex-1">
+      {#if filterActive}
+        <span class="workshop-faint truncate text-[11px]">Filtered</span>
+      {/if}
+    </div>
+
+    {#if section === "scripts"}
+      <button
+        type="button"
+        class="vault-dock-icon-btn"
+        aria-label="New script"
+        title="New"
+        onclick={startNewScript}
+      >
+        <Plus size={16} strokeWidth={1.75} />
+      </button>
+    {/if}
+
+    {#if section !== "wasm"}
+      <div class="relative shrink-0">
+        <button
+          type="button"
+          class="vault-dock-icon-btn {filterActive ? 'vault-dock-icon-btn-active' : ''}"
+          aria-haspopup="menu"
+          aria-expanded={filterOpen}
+          aria-label="Filter"
+          title="Filter"
+          onclick={(event) => {
+            event.stopPropagation();
+            filterOpen = !filterOpen;
+          }}
+        >
+          <SlidersHorizontal size={15} strokeWidth={1.75} />
+        </button>
+        {#if filterOpen}
+          <div
+            class="vault-notes-filter-menu absolute bottom-full right-0 z-30 mb-1 w-[min(17.5rem,calc(100vw-2rem))] rounded-lg border border-surface-500/50 bg-surface-900 py-2 shadow-xl"
+            role="menu"
+            tabindex="-1"
+            onclick={(event) => event.stopPropagation()}
+            onkeydown={handleMenuKeydown}
+          >
+            <div class="px-2.5 pb-1">
+              <input
+                class="input w-full text-xs"
+                type="search"
+                placeholder={searchPlaceholder}
+                bind:value={search}
+                onclick={(event) => event.stopPropagation()}
+              />
+            </div>
+            {#if filterActive}
+              <button
+                type="button"
+                role="menuitem"
+                class="vault-menu-item text-surface-400"
+                onclick={() => {
+                  search = "";
+                }}
+              >
+                Clear
+              </button>
+            {/if}
+          </div>
+        {/if}
+      </div>
+    {/if}
+  </footer>
 </aside>

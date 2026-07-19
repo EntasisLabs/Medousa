@@ -1,6 +1,7 @@
 <script lang="ts">
   import ArtifactLibraryPreview from "$lib/components/artifacts/ArtifactLibraryPreview.svelte";
   import LmeAgentEditor from "$lib/components/lme/LmeAgentEditor.svelte";
+  import LmeFlowEditor from "$lib/components/lme/LmeFlowEditor.svelte";
   import LmeScriptEditor from "$lib/components/lme/LmeScriptEditor.svelte";
   import LmeTabStrip from "$lib/components/lme/LmeTabStrip.svelte";
   import VaultAttachmentPreviewContent from "$lib/components/vault/VaultAttachmentPreviewContent.svelte";
@@ -108,5 +109,7 @@
     />
   {:else if active.kind === "manuscript"}
     <LmeAgentEditor {onOpenChat} />
+  {:else if active.kind === "flow"}
+    <LmeFlowEditor />
   {/if}
 </div>

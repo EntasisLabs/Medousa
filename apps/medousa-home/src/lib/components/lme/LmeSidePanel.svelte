@@ -14,6 +14,7 @@
   } from "@lucide/svelte";
   import LmeAgentsExplorer from "$lib/components/lme/explorers/LmeAgentsExplorer.svelte";
   import LmeAutomationsExplorer from "$lib/components/lme/explorers/LmeAutomationsExplorer.svelte";
+  import LmeFlowsExplorer from "$lib/components/lme/explorers/LmeFlowsExplorer.svelte";
   import LmeDecksExplorer from "$lib/components/lme/explorers/LmeDecksExplorer.svelte";
   import LmeFilesExplorer from "$lib/components/lme/explorers/LmeFilesExplorer.svelte";
   import LmeNotesExplorer from "$lib/components/lme/explorers/LmeNotesExplorer.svelte";
@@ -36,8 +37,8 @@
     icon: typeof BookOpen;
   }> = [
     { id: "notes", label: "Notes", icon: BookOpen },
-    { id: "files", label: "Files", icon: Files },
-    { id: "presentations", label: "Decks", icon: Presentation },
+    { id: "files", label: "Local Files", icon: Files },
+    { id: "presentations", label: "Presentations", icon: Presentation },
     { id: "scripts", label: "Scripts", icon: FileCode2 },
     { id: "agents", label: "Agents", icon: Bot },
     { id: "flows", label: "Flows", icon: GitBranch },
@@ -57,15 +58,14 @@
   ];
 
   const mode = $derived(lmeWorkspace.explorerMode);
-  const modeLabel = $derived(MODES.find((entry) => entry.id === mode)?.label ?? "Workspace");
 </script>
 
 <div
-  class="lme-side-panel flex h-full min-h-0 w-full flex-col border-r border-surface-500/45 bg-surface-900/40"
+  class="lme-side-panel flex h-full min-h-0 w-full flex-col border-r border-surface-500/30 bg-surface-900/30"
   data-debug-label="lme-side-panel"
 >
   <div
-    class="lme-side-mode-bar flex shrink-0 items-center gap-0.5 overflow-x-auto border-b border-surface-500/40 px-1.5 py-1"
+    class="lme-side-mode-bar flex shrink-0 items-center gap-0.5 overflow-x-auto border-b border-surface-500/25 px-1.5 py-1"
     role="tablist"
     aria-label="Workspace explorer"
   >
@@ -114,10 +114,6 @@
     </div>
   {/if}
 
-  <div class="flex min-h-0 items-center justify-between border-b border-surface-500/30 px-3 py-1.5">
-    <p class="workshop-label text-[10px]">{modeLabel}</p>
-  </div>
-
   <div class="min-h-0 flex-1 overflow-hidden">
     {#if mode === "notes"}
       <LmeNotesExplorer />
@@ -129,6 +125,8 @@
       <LmeScriptsExplorer />
     {:else if mode === "agents"}
       <LmeAgentsExplorer {onOpenChat} />
+    {:else if mode === "flows"}
+      <LmeFlowsExplorer />
     {:else}
       <LmeAutomationsExplorer />
     {/if}
