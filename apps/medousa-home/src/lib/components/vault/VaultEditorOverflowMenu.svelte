@@ -1,5 +1,20 @@
 <script lang="ts">
-  import { Ellipsis, FileDown, FileText, MessageSquare, Send } from "@lucide/svelte";
+  import {
+    BookOpen,
+    Columns3,
+    Ellipsis,
+    FileDown,
+    FilePen,
+    FileText,
+    FileType2,
+    MessageSquare,
+    Move,
+    PanelTop,
+    Send,
+    StickyNote,
+  } from "@lucide/svelte";
+  import type { Component } from "svelte";
+  import { formatShortcut } from "$lib/platform";
   import type { WorkCard } from "$lib/types/workspace";
   import { formatCardTitle } from "$lib/utils/formatWork";
   import type { VaultNoteKind } from "$lib/utils/vaultFrontmatter";
@@ -8,6 +23,8 @@
   interface MenuItem {
     id: string;
     label: string;
+    shortcut?: string;
+    icon?: Component;
     disabled?: boolean;
     hidden?: boolean;
     dividerBefore?: boolean;
@@ -30,6 +47,7 @@
     dirty?: boolean;
     saveStatus?: VaultSaveStatus;
     exportingPdf?: boolean;
+    exportingWord?: boolean;
     askSubmitting?: boolean;
     hasKanbanBoard?: boolean;
     boardEditMode?: "board" | "raw";
@@ -53,6 +71,7 @@
     onOpenWork?: () => void;
     onSelectCard?: (id: string) => void | Promise<void>;
     onExportPdf?: () => void | Promise<void>;
+    onExportWord?: () => void | Promise<void>;
     onAskInChat?: () => void | Promise<void>;
     onSendToWork?: () => void | Promise<void>;
     onSave?: () => void | Promise<void>;
@@ -72,6 +91,8 @@
     onToggleAutoSave?: () => void;
     onToggleScrollSync?: () => void;
     onToggleMonoSource?: () => void;
+    readingPaletteLabel?: string;
+    onCycleReadingPalette?: () => void;
     /** Tauri: float current note into sticky Live window. */
     onFloatNote?: () => void | Promise<void>;
   }
@@ -85,6 +106,7 @@
     dirty = false,
     saveStatus = "idle",
     exportingPdf = false,
+    exportingWord = false,
     askSubmitting = false,
     hasKanbanBoard = false,
     boardEditMode = "board",
@@ -107,6 +129,7 @@
     onOpenWork,
     onSelectCard,
     onExportPdf,
+    onExportWord,
     onAskInChat,
     onSendToWork,
     onSave,
@@ -126,6 +149,8 @@
     onToggleAutoSave,
     onToggleScrollSync,
     onToggleMonoSource,
+    readingPaletteLabel,
+    onCycleReadingPalette,
     onFloatNote,
   }: Props = $props();
 
@@ -138,6 +163,7 @@
       rows.push({
         id: "open-loose",
         label: "Open markdown file…",
+        icon: FileText,
         onClick: async () => {
           open = false;
           await onOpenLooseMarkdown();
@@ -151,6 +177,8 @@
       rows.push({
         id: "edit-source",
         label: "Edit source",
+        shortcut: formatShortcut("⇧E"),
+        icon: FilePen,
         onClick: () => {
           open = false;
           onEditSource();
@@ -162,6 +190,8 @@
       rows.push({
         id: "back-live",
         label: "Back to Live",
+        shortcut: formatShortcut("⇧E"),
+        icon: BookOpen,
         onClick: () => {
           open = false;
           onBackToLive();
@@ -173,6 +203,7 @@
       rows.push({
         id: "preview",
         label: editorMode === "preview" ? "Back to editing" : "Preview",
+        icon: BookOpen,
         onClick: () => {
           open = false;
           onTogglePreview();
@@ -184,6 +215,7 @@
       rows.push({
         id: "split",
         label: splitEnabled ? "Hide split preview" : "Split preview",
+        icon: Columns3,
         onClick: () => {
           open = false;
           onToggleSplit();
@@ -210,8 +242,9 @@
       rows.push({
         id: "send-chat",
         label: "Talk about this note",
-        disabled: noteLoading,
+        icon: MessageSquare,
         dividerBefore: rows.length > 0,
+        disabled: noteLoading,
         onClick: async () => {
           open = false;
           await onAskInChat();
@@ -223,6 +256,7 @@
       rows.push({
         id: "send-work",
         label: askSubmitting ? "Sending to Work…" : "Send to Work",
+        icon: Send,
         disabled: noteLoading || askSubmitting,
         onClick: async () => {
           open = false;
@@ -235,6 +269,8 @@
       rows.push({
         id: "export-pdf",
         label: exportingPdf ? "Preparing PDF…" : "Export PDF…",
+        shortcut: exportingPdf ? undefined : formatShortcut("⇧P"),
+        icon: FileDown,
         disabled: exportingPdf || noteLoading,
         onClick: async () => {
           open = false;
@@ -243,12 +279,39 @@
       });
     }
 
+    if (onExportWord) {
+      rows.push({
+        id: "export-word",
+        label: exportingWord ? "Preparing Word…" : "Export Word…",
+        icon: FileType2,
+        disabled: exportingWord || noteLoading,
+        onClick: async () => {
+          open = false;
+          await onExportWord();
+        },
+      });
+    }
+
+    if (onCycleReadingPalette) {
+      rows.push({
+        id: "reading-palette",
+        label: readingPaletteLabel
+          ? `Reading: ${readingPaletteLabel}`
+          : "Reading palette",
+        dividerBefore: true,
+        onClick: () => {
+          onCycleReadingPalette();
+        },
+      });
+    }
+
     if (onFloatNote) {
       rows.push({
         id: "float-note",
         label: "Float note",
+        icon: StickyNote,
+        dividerBefore: true,
         disabled: noteLoading || saving,
-        dividerBefore: rows.length > 0,
         onClick: async () => {
           open = false;
           await onFloatNote();
@@ -260,7 +323,7 @@
       rows.push({
         id: "weekly-review",
         label: "Link weekly review",
-        dividerBefore: rows.length > 0,
+        dividerBefore: true,
         onClick: () => {
           open = false;
           onInsertWeeklyReview();
@@ -273,8 +336,9 @@
         rows.push({
           id: "promote-journal",
           label: "Move to Journal",
+          icon: Move,
           disabled: saving,
-          dividerBefore: rows.length > 0,
+          dividerBefore: true,
           onClick: async () => {
             open = false;
             await onPromoteJournal();
@@ -285,7 +349,9 @@
         rows.push({
           id: "promote-project",
           label: "Move to Project",
+          icon: Move,
           disabled: saving,
+          dividerBefore: !onPromoteJournal && rows.length > 0,
           onClick: async () => {
             open = false;
             await onPromoteProject();
@@ -298,7 +364,9 @@
       rows.push({
         id: "board-mode",
         label: boardEditMode === "board" ? "Raw markdown" : "Board view",
-        dividerBefore: rows.length > 0,
+        shortcut: formatShortcut("⇧B"),
+        icon: PanelTop,
+        dividerBefore: true,
         onClick: () => {
           open = false;
           onToggleBoard();
@@ -312,7 +380,7 @@
         rows.push({
           id: `linked-${card.id}`,
           label: `Open linked · ${formatCardTitle(card)}`,
-          dividerBefore: linkedIndex === 0 && rows.length > 0,
+          dividerBefore: linkedIndex === 0,
           onClick: () => {
             open = false;
             void onSelectCard(card.id);
@@ -326,8 +394,9 @@
       rows.push({
         id: "save-now",
         label: saving ? "Saving…" : "Save now",
+        shortcut: saving ? undefined : formatShortcut("S"),
         disabled: saving,
-        dividerBefore: rows.length > 0,
+        dividerBefore: true,
         onClick: async () => {
           open = false;
           await onSave();
@@ -339,8 +408,9 @@
       rows.push({
         id: "note-actions",
         label: "Rename / move / delete…",
+        icon: Move,
         disabled: noteLoading,
-        dividerBefore: rows.length > 0,
+        dividerBefore: true,
         onClick: () => {
           open = false;
           onOpenNoteActions();
@@ -425,10 +495,7 @@
           open = false;
         }}
       ></button>
-      <div
-        class="vault-editor-overflow absolute right-0 top-full z-50 mt-1 min-w-[13.5rem] max-w-[17rem] rounded-container-token border border-surface-500/40 bg-surface-900 py-1 shadow-lg"
-        role="menu"
-      >
+      <div class="vault-editor-overflow absolute right-0 top-full z-50 mt-1" role="menu">
         {#each items as item (item.id)}
           {#if item.dividerBefore}
             <div class="vault-editor-overflow__sep" role="separator"></div>
@@ -441,17 +508,15 @@
             onclick={() => void item.onClick()}
           >
             <span class="vault-editor-overflow__icon" aria-hidden="true">
-              {#if item.id === "send-chat"}
-                <MessageSquare size={14} />
-              {:else if item.id === "send-work"}
-                <Send size={14} />
-              {:else if item.id === "export-pdf"}
-                <FileDown size={14} />
-              {:else if item.id === "open-loose"}
-                <FileText size={14} />
+              {#if item.icon}
+                {@const Icon = item.icon}
+                <Icon size={14} strokeWidth={1.75} />
               {/if}
             </span>
             <span class="vault-editor-overflow__label">{item.label}</span>
+            {#if item.shortcut}
+              <span class="vault-editor-overflow__shortcut">{item.shortcut}</span>
+            {/if}
           </button>
         {/each}
 
@@ -467,6 +532,7 @@
               aria-checked={toggle.on}
               onclick={() => toggle.onToggle()}
             >
+              <span class="vault-editor-overflow__icon" aria-hidden="true"></span>
               <span class="vault-editor-overflow__label">{toggle.label}</span>
               <span
                 class="vault-editor-overflow__switch"

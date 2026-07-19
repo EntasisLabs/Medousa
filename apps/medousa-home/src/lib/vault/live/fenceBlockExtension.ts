@@ -58,6 +58,15 @@ import {
   mountCompareSurface,
   type CompareSurfaceHandles,
 } from "./liveCompareSurface";
+import {
+  measureFenceHost,
+  mountFenceRawEdit,
+  type FenceRawEditHandles,
+} from "./fenceRawEdit";
+import {
+  mountKanbanSurface,
+  type KanbanSurfaceHandles,
+} from "./liveKanbanSurface";
 import { resolveMedousaViews } from "$lib/utils/resolveMedousaViews";
 import type { VaultNote } from "$lib/types/vault";
 
@@ -181,6 +190,8 @@ export const FenceBlock = Node.create<FenceBlockOptions>({
       let code: CodeSurfaceHandles | null = null;
       let tree: TreeSurfaceHandles | null = null;
       let compare: CompareSurfaceHandles | null = null;
+      let kanban: KanbanSurfaceHandles | null = null;
+      let rawEdit: FenceRawEditHandles | null = null;
       let mountGen = 0;
 
       const applyRawUpdate = (raw: string) => {
@@ -191,8 +202,9 @@ export const FenceBlock = Node.create<FenceBlockOptions>({
         editor.view.dispatch(tr);
       };
 
-      const remount = (nextAttrs: FenceBlockAttrs) => {
-        const gen = ++mountGen;
+      const destroySurfaces = () => {
+        rawEdit?.destroy();
+        rawEdit = null;
         callout?.destroy();
         callout = null;
         report?.destroy();
@@ -215,7 +227,48 @@ export const FenceBlock = Node.create<FenceBlockOptions>({
         tree = null;
         compare?.destroy();
         compare = null;
+        kanban?.destroy();
+        kanban = null;
         unmountLiquidFence(dom);
+      };
+
+      const enterRawEdit = () => {
+        if (rawEdit?.active() || editor.isDestroyed || !editor.isEditable) return;
+        // Measure before teardown so the editor keeps the rendered fence’s box.
+        const lockSize = measureFenceHost(dom);
+        const scrollParent = dom.closest(".vault-live-editor") as HTMLElement | null;
+        const scrollTop = scrollParent?.scrollTop;
+        const snapshot = attrs.raw;
+        const restoreScroll = () => {
+          if (scrollParent && typeof scrollTop === "number") {
+            scrollParent.scrollTop = scrollTop;
+          }
+        };
+        destroySurfaces();
+        rawEdit = mountFenceRawEdit(dom, snapshot, {
+          lockSize,
+          scrollParent,
+          scrollTop,
+          onCommit: (nextRaw) => {
+            rawEdit = null;
+            if (nextRaw === attrs.raw) {
+              remount(attrs);
+            } else {
+              applyRawUpdate(nextRaw);
+            }
+            requestAnimationFrame(restoreScroll);
+          },
+          onCancel: () => {
+            rawEdit = null;
+            remount(attrs);
+            requestAnimationFrame(restoreScroll);
+          },
+        });
+      };
+
+      const remount = (nextAttrs: FenceBlockAttrs) => {
+        const gen = ++mountGen;
+        destroySurfaces();
         dom.replaceChildren();
         dom.setAttribute("data-lang", nextAttrs.lang || "code");
         dom.dataset.liveFenceRaw = nextAttrs.raw;
@@ -298,6 +351,17 @@ export const FenceBlock = Node.create<FenceBlockOptions>({
             nextAttrs.raw,
             opts.getLiquidContext?.() ?? {},
             (updatedRaw) => applyRawUpdate(updatedRaw),
+            enterRawEdit,
+          );
+          return;
+        }
+
+        if (lang === "kanban") {
+          kanban = mountKanbanSurface(
+            dom,
+            nextAttrs.raw,
+            (updatedRaw) => applyRawUpdate(updatedRaw),
+            enterRawEdit,
           );
           return;
         }
@@ -356,7 +420,7 @@ export const FenceBlock = Node.create<FenceBlockOptions>({
           return;
         }
 
-        mountPlainFence(dom, lang, fenceBody(nextAttrs.raw));
+        mountPlainFence(dom, lang, fenceBody(nextAttrs.raw), enterRawEdit);
       };
 
       remount(attrs);
@@ -367,6 +431,7 @@ export const FenceBlock = Node.create<FenceBlockOptions>({
         ignoreMutation: () => true,
         update: (updated) => {
           if (updated.type.name !== this.name) return false;
+          if (rawEdit?.active()) return true;
           const next = updated.attrs as FenceBlockAttrs;
           if (next.raw === attrs.raw && next.lang === attrs.lang) {
             attrs = next;
@@ -389,29 +454,7 @@ export const FenceBlock = Node.create<FenceBlockOptions>({
         },
         destroy: () => {
           mountGen += 1;
-          callout?.destroy();
-          callout = null;
-          report?.destroy();
-          report = null;
-          chart?.destroy();
-          chart = null;
-          card?.destroy();
-          card = null;
-          dashboard?.destroy();
-          dashboard = null;
-          tabs?.destroy();
-          tabs = null;
-          steps?.destroy();
-          steps = null;
-          accordion?.destroy();
-          accordion = null;
-          code?.destroy();
-          code = null;
-          tree?.destroy();
-          tree = null;
-          compare?.destroy();
-          compare = null;
-          unmountLiquidFence(dom);
+          destroySurfaces();
         },
       };
     };

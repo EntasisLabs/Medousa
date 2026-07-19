@@ -378,3 +378,17 @@ export const LIQUID_TREE_TEMPLATE = [
   "```",
   "",
 ].join("\n");
+
+export const LIQUID_KANBAN_TEMPLATE = [
+  "```kanban",
+  "## Backlog",
+  "- [ ] First crumb",
+  "",
+  "## Doing",
+  "- [ ] In progress",
+  "",
+  "## Done",
+  "- [x] Shipped",
+  "```",
+  "",
+].join("\n");

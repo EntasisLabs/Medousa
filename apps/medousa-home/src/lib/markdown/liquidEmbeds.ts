@@ -6,7 +6,8 @@
  * owns the component vocabulary.
  */
 
-import { escapeAttr } from "./escape";
+import { parseKanbanColumnsFromBody } from "$lib/utils/markdownKanban";
+import { escapeAttr, escapeHtml } from "./escape";
 
 export const LIQUID_FENCE_LANGS = new Set([
   "card",
@@ -33,6 +34,7 @@ export const LIQUID_FENCE_LANGS = new Set([
   "accordion",
   "code",
   "tree",
+  "kanban",
 ]);
 
 const CALLOUT_TONES = new Set(["note", "warn", "error", "success"]);
@@ -2373,6 +2375,22 @@ function replaceLiquidFenceMatch(
     const tree = parseTreeBody(body);
     if (!tree) return match;
     return `\n${placeholder("tree", tree)}\n`;
+  }
+
+  if (lang === "kanban") {
+    const columns = parseKanbanColumnsFromBody(body);
+    const cols = columns
+      .map((column) => {
+        const cards = column.cards
+          .map(
+            (card) =>
+              `<div class="liquid-mini-kanban__card">${escapeHtml(card.text || "Card")}</div>`,
+          )
+          .join("");
+        return `<div class="liquid-mini-kanban__column"><p class="liquid-mini-kanban__column-title">${escapeHtml(column.title)}</p><div class="liquid-mini-kanban__cards">${cards}</div></div>`;
+      })
+      .join("");
+    return `\n<div class="liquid-mini-kanban" data-liquid-static="kanban"><p class="liquid-mini-kanban__label">Board</p><div class="liquid-mini-kanban__board">${cols}</div></div>\n`;
   }
 
   return match;

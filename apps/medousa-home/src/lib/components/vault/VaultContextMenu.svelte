@@ -210,6 +210,25 @@
             }
           },
         },
+        {
+          id: "export-word",
+          label: "Export Word…",
+          onClick: async () => {
+            try {
+              const response = await getVaultNote(path);
+              const title =
+                vault.labelByPath().get(path) ??
+                vaultDisplayTitle(response.note.title, path);
+              const { exportVaultNoteDocx } = await import("$lib/utils/vaultDocxExport");
+              await exportVaultNoteDocx({
+                title,
+                content: response.content,
+              });
+            } catch (err) {
+              vault.error = err instanceof Error ? err.message : String(err);
+            }
+          },
+        },
       ];
     }
 

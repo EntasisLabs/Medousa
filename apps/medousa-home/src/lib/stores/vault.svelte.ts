@@ -27,11 +27,15 @@ import {
   readVaultBuildScrollSync,
   readVaultBuildWordWrap,
   readVaultStampCompletionEnabled,
+  cycleVaultReadingPalette,
+  readVaultReadingPalette,
   writeVaultBuildAutoSave,
   writeVaultBuildLineNumbers,
   writeVaultBuildScrollSync,
   writeVaultBuildWordWrap,
+  writeVaultReadingPalette,
   writeVaultStampCompletionEnabled,
+  type VaultReadingPalette,
 } from "$lib/config/vaultPreferences";
 import type { WorkspaceEvent } from "$lib/types/workspace";
 import { vaultRefPath } from "$lib/utils/activityEnrichment";
@@ -209,6 +213,8 @@ export class VaultStore {
   buildAutoSave = $state(readVaultBuildAutoSave());
   /** Build split: sync CodeMirror ↔ Preview scroll. */
   buildScrollSync = $state(readVaultBuildScrollSync());
+  /** Live / preview reading palette (Medousa-native, not shell theme). */
+  readingPalette = $state<VaultReadingPalette>(readVaultReadingPalette());
   activeSpaceFilter = $state<string | null>(loadLastSpace());
   newNoteDialogOpen = $state(false);
   /** M7f: agent/server edit waiting for accept/discard. */
@@ -715,6 +721,15 @@ export class VaultStore {
   setBuildScrollSync(value: boolean) {
     this.buildScrollSync = value;
     writeVaultBuildScrollSync(value);
+  }
+
+  setReadingPalette(palette: VaultReadingPalette) {
+    this.readingPalette = palette;
+    writeVaultReadingPalette(palette);
+  }
+
+  cycleReadingPalette() {
+    this.setReadingPalette(cycleVaultReadingPalette(this.readingPalette));
   }
 
   togglePreviewTask(taskIndex: number, checked: boolean) {

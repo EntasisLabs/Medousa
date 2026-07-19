@@ -14,6 +14,7 @@ import {
   LIQUID_STEPS_TEMPLATE,
   LIQUID_TABS_TEMPLATE,
   LIQUID_TREE_TEMPLATE,
+  LIQUID_KANBAN_TEMPLATE,
 } from "$lib/utils/liquidFenceTemplates";
 import {
   MARKDOWN_COLOR_IDS,
@@ -63,6 +64,7 @@ export type SlashBlockId =
   | "liquid_accordion"
   | "liquid_code"
   | "liquid_tree"
+  | "liquid_kanban"
   | "embed"
   | "view"
   | "board"
@@ -373,6 +375,7 @@ export function insertSlashBlock(
     liquid_accordion: LIQUID_ACCORDION_TEMPLATE,
     liquid_code: LIQUID_CODE_TEMPLATE,
     liquid_tree: LIQUID_TREE_TEMPLATE,
+    liquid_kanban: LIQUID_KANBAN_TEMPLATE,
     embed: "",
     view: "",
     board: SLASH_BOARD_TEMPLATE,
@@ -710,6 +713,7 @@ export const SLASH_BLOCK_IDS: SlashBlockId[] = [
   "liquid_accordion",
   "liquid_code",
   "liquid_tree",
+  "liquid_kanban",
   "embed",
   "toc",
   "view",

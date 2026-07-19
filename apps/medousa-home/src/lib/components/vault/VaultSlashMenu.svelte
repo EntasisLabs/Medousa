@@ -166,6 +166,13 @@
       group: "blocks",
     },
     {
+      id: "liquid_kanban",
+      label: "Mini board",
+      hint: "In-note kanban crumbs",
+      keywords: "liquid kanban board mini columns cards ```kanban",
+      group: "blocks",
+    },
+    {
       id: "embed",
       label: "Embed note",
       hint: "Show another note here",

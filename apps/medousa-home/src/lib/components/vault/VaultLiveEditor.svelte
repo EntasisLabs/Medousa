@@ -37,13 +37,16 @@
   import { placeSlashMenuAnchor } from "$lib/utils/slashMenuPlacement";
   import type { CardDetailPayload } from "$lib/markdown/liquidEmbeds";
   import VaultSelectionFormatBubble from "./VaultSelectionFormatBubble.svelte";
+  import VaultLiveTableChrome from "./VaultLiveTableChrome.svelte";
   import VaultLiveProperties from "./VaultLiveProperties.svelte";
   import {
     applyLiveFormatAction,
     applyLiveTextColor,
     liveActiveFormatActions,
+    liveCoordsAnchor,
     liveSelectionAnchor,
     liveSelectionHasText,
+    liveTableChromeOpen,
     type SelectionAnchor,
   } from "$lib/vault/live/liveSelectionFormat";
   import { handleLiveScrollToSelection } from "$lib/vault/live/liveScrollSelection";
@@ -83,6 +86,9 @@
   /** Last nonempty selection — restored when bubble buttons steal focus. */
   let formatSelectionRange = $state<{ from: number; to: number } | null>(null);
   let removeFormatBubbleListeners: (() => void) | null = null;
+  let tableChromeOpen = $state(false);
+  let tableChromeAnchor = $state<SelectionAnchor | null>(null);
+  let liveEditor = $state<Editor | null>(null);
   /** Key this editor instance is bound to — never flush if it diverges. */
   let boundKey = "";
   let applyingExternal = false;
@@ -222,14 +228,26 @@
     };
   }
 
+  function syncTableChrome() {
+    if (!editor || disabled || !liveTableChromeOpen(editor)) {
+      tableChromeOpen = false;
+      tableChromeAnchor = null;
+      return;
+    }
+    tableChromeAnchor = liveCoordsAnchor(editor);
+    tableChromeOpen = Boolean(tableChromeAnchor);
+  }
+
   function syncFormatBubble() {
     if (!editor || disabled) {
       formatBubbleOpen = false;
       formatBubbleAnchor = null;
       formatActiveActions = [];
       formatSelectionRange = null;
+      syncTableChrome();
       return;
     }
+    syncTableChrome();
     if (!liveSelectionHasText(editor)) {
       // Editor blur (e.g. before mousedown preventDefault) can empty selection —
       // keep the bubble + stashed range so the click can still apply.
@@ -568,15 +586,19 @@
         queueMicrotask(() => {
           const active = document.activeElement;
           if (active?.closest(".vault-selection-format-bubble")) return;
+          if (active?.closest(".vault-live-table-chrome")) return;
           if (editor && liveSelectionHasText(editor)) {
             syncFormatBubble();
             return;
           }
           formatBubbleOpen = false;
           formatSelectionRange = null;
+          syncTableChrome();
         });
       },
     });
+
+    liveEditor = editor;
 
     const scrollParent = hostEl.closest(".vault-live-editor");
     const onScrollOrResize = () => syncFormatBubble();
@@ -636,6 +658,9 @@
     removeFormatBubbleListeners = null;
     editor?.destroy();
     editor = null;
+    liveEditor = null;
+    tableChromeOpen = false;
+    tableChromeAnchor = null;
   });
 
   /** Explicit serialize for Live→Build plane switch (caller must invoke before unmount). */
@@ -735,4 +760,11 @@
   onClose={() => {
     formatBubbleOpen = false;
   }}
+/>
+
+<VaultLiveTableChrome
+  open={tableChromeOpen && !formatBubbleOpen}
+  anchor={tableChromeAnchor}
+  editor={liveEditor}
+  disabled={disabled}
 />

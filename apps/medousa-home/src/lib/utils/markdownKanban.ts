@@ -96,6 +96,73 @@ export function serializeKanbanColumns(columns: KanbanColumn[]): string {
     .join("\n\n");
 }
 
+/** Parse ## columns + task cards from a fence body (no board frontmatter required). */
+export function parseKanbanColumnsFromBody(body: string): KanbanColumn[] {
+  const lines = body.replace(/\r\n/g, "\n").split("\n");
+  const columns: KanbanColumn[] = [];
+  let current: KanbanColumn | null = null;
+
+  for (const line of lines) {
+    const heading = parseH2(line);
+    if (heading) {
+      if (current) columns.push(current);
+      current = { title: heading, cards: [] };
+      continue;
+    }
+    const item = parseTaskItem(line);
+    if (item && current) {
+      current.cards.push(item);
+    }
+  }
+  if (current) columns.push(current);
+
+  if (columns.length === 0) {
+    return DEFAULT_KANBAN_COLUMNS.map((column) => ({
+      title: column.title,
+      cards: [...column.cards],
+    }));
+  }
+  return columns;
+}
+
+/** Wrap column markdown in a ```kanban fence. */
+export function serializeKanbanFence(columns: KanbanColumn[]): string {
+  const body = serializeKanbanColumns(columns).replace(/\s+$/, "");
+  return `\`\`\`kanban\n${body}\n\`\`\`\n`;
+}
+
+export function moveKanbanCard(
+  columns: KanbanColumn[],
+  fromCol: number,
+  fromCard: number,
+  toCol: number,
+  toCard?: number,
+): KanbanColumn[] {
+  if (
+    fromCol < 0 ||
+    toCol < 0 ||
+    fromCol >= columns.length ||
+    toCol >= columns.length
+  ) {
+    return columns;
+  }
+  const next = columns.map((column) => ({
+    title: column.title,
+    cards: column.cards.map((card) => ({ ...card })),
+  }));
+  const [card] = next[fromCol].cards.splice(fromCard, 1);
+  if (!card) return columns;
+  const insertAt =
+    toCard == null
+      ? next[toCol].cards.length
+      : Math.max(0, Math.min(toCard, next[toCol].cards.length));
+  // Adjust when moving within the same column after the removal.
+  const adjusted =
+    fromCol === toCol && toCard != null && fromCard < toCard ? insertAt - 1 : insertAt;
+  next[toCol].cards.splice(Math.max(0, adjusted), 0, card);
+  return next;
+}
+
 /** Parse the kanban region from a note with `medousa-board` (or kind: board). */
 export function findKanbanBoard(markdown: string): KanbanBoardRegion | null {
   if (!noteHasKanbanBoard(markdown)) return null;

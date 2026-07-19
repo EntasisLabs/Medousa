@@ -21,11 +21,16 @@ export function liveSelectionHasText(editor: Editor): boolean {
 
 export function liveSelectionAnchor(editor: Editor): SelectionAnchor | null {
   if (!liveSelectionHasText(editor)) return null;
+  return liveCoordsAnchor(editor);
+}
+
+/** Caret / selection coords for chrome that follows the cursor (e.g. table toolbar). */
+export function liveCoordsAnchor(editor: Editor): SelectionAnchor | null {
   const view = editor.view;
   const { from, to } = editor.state.selection;
   try {
     const start = view.coordsAtPos(from);
-    const end = view.coordsAtPos(to);
+    const end = from === to ? start : view.coordsAtPos(to);
     const left = Math.min(start.left, end.left);
     const right = Math.max(start.right, end.right);
     const top = Math.min(start.top, end.top);
@@ -39,6 +44,10 @@ export function liveSelectionAnchor(editor: Editor): SelectionAnchor | null {
   } catch {
     return null;
   }
+}
+
+export function liveTableChromeOpen(editor: Editor): boolean {
+  return editor.isEditable && editor.isActive("table");
 }
 
 export function liveActiveFormatActions(editor: Editor): MarkdownFormatAction[] {

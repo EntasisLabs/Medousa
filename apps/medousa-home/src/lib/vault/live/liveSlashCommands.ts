@@ -2,7 +2,6 @@ import type { Editor } from "@tiptap/core";
 import type { SlashBlockId } from "$lib/utils/vaultMarkdownEdit";
 import {
   SLASH_BOARD_TEMPLATE,
-  SLASH_TABLE_TEMPLATE,
   SLASH_TOC_TEMPLATE,
 } from "$lib/utils/vaultTemplates";
 import {
@@ -15,6 +14,7 @@ import {
   LIQUID_STEPS_TEMPLATE,
   LIQUID_TABS_TEMPLATE,
   LIQUID_TREE_TEMPLATE,
+  LIQUID_KANBAN_TEMPLATE,
 } from "$lib/utils/liquidFenceTemplates";
 import { LIQUID_CHART_ARRIVAL_TEMPLATE } from "./liveChartSurface";
 
@@ -29,6 +29,7 @@ const LIQUID_TEMPLATES: Partial<Record<SlashBlockId, string>> = {
   liquid_accordion: LIQUID_ACCORDION_TEMPLATE,
   liquid_code: LIQUID_CODE_TEMPLATE,
   liquid_tree: LIQUID_TREE_TEMPLATE,
+  liquid_kanban: LIQUID_KANBAN_TEMPLATE,
 };
 
 /** Text before cursor in the current textblock (for `/filter`). */
@@ -97,7 +98,9 @@ export function applyLiveSlashBlock(editor: Editor, block: SlashBlockId): boolea
         .setLink({ href: "https://" })
         .run();
     case "table":
-      return focusChain(editor).insertContent(SLASH_TABLE_TEMPLATE).run();
+      return focusChain(editor)
+        .insertTable({ rows: 3, cols: 3, withHeaderRow: true })
+        .run();
     case "board":
       return focusChain(editor).insertContent(SLASH_BOARD_TEMPLATE).run();
     case "toc":

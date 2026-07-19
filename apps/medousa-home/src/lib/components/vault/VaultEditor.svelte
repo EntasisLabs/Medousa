@@ -48,6 +48,11 @@
   import { stripFrontmatter } from "$lib/utils/vaultFrontmatter";
   import { formatShortcut } from "$lib/platform";
   import { writeVaultStickyPath } from "$lib/utils/vaultSticky";
+  import { exportVaultNoteDocx } from "$lib/utils/vaultDocxExport";
+  import {
+    isPlainTextEditingTarget,
+    matchVaultHotkey,
+  } from "$lib/utils/vaultHotkeys";
   import { isTauri, showVaultSticky } from "$lib/window";
   import VaultPdfPreviewModal from "./VaultPdfPreviewModal.svelte";
   import VaultChartBuilderSheet from "./VaultChartBuilderSheet.svelte";
@@ -75,6 +80,7 @@
   }: Props = $props();
 
   let exportingPdf = $state(false);
+  let exportingWord = $state(false);
   let pdfPreviewOpen = $state(false);
   let pdfPreviewTitle = $state("");
   let pdfPreviewContent = $state("");
@@ -367,6 +373,23 @@
     pdfPreviewOpen = true;
   }
 
+  async function handleExportWord() {
+    if (!vault.selectedPath || exportingWord) return;
+    if (vault.dirty) await vault.flushSave();
+    exportingWord = true;
+    vault.error = null;
+    try {
+      await exportVaultNoteDocx({
+        title: displayTitle,
+        content: vault.content,
+      });
+    } catch (err) {
+      vault.error = err instanceof Error ? err.message : String(err);
+    } finally {
+      exportingWord = false;
+    }
+  }
+
   function handlePdfPreviewClose() {
     pdfPreviewOpen = false;
     exportingPdf = false;
@@ -391,30 +414,54 @@
       return;
     }
 
-    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "f") {
+    const action = matchVaultHotkey(event);
+    if (!action) return;
+
+    const typing = isPlainTextEditingTarget(event.target);
+    const modChord = event.metaKey || event.ctrlKey;
+
+    // Mod chords work from editors; bare keys do not while typing.
+    if (typing && !modChord) return;
+    if (mobile && action !== "save" && action !== "find") return;
+
+    if (action === "find") {
       handleFindShortcut(event);
       return;
     }
 
-    if (mobile) return;
-
-    const target = event.target as HTMLElement | null;
-    const tag = target?.tagName ?? "";
-    const typing =
-      tag === "TEXTAREA" ||
-      tag === "INPUT" ||
-      Boolean(target?.isContentEditable) ||
-      Boolean(target?.closest?.(".cm-editor"));
-
-    if (typing && (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
+    if (action === "save") {
       event.preventDefault();
       void handleSave();
       return;
     }
 
-    if (typing) return;
+    if (action === "togglePlane") {
+      if (!showNotePlaneToggle) return;
+      event.preventDefault();
+      if (isLivePlane) {
+        markdownEditorEl?.flushLive();
+        vault.setNotePlane("build");
+      } else {
+        vault.setNotePlane("live");
+      }
+      return;
+    }
 
-    if (event.key === "e" && !event.metaKey && !event.ctrlKey && !event.altKey) {
+    if (action === "exportPdf") {
+      if (vault.isLooseFile) return;
+      event.preventDefault();
+      void handleExportPdf();
+      return;
+    }
+
+    if (action === "toggleBoard") {
+      if (!hasKanbanBoard || vault.isLooseFile) return;
+      event.preventDefault();
+      vault.toggleBoardEditMode();
+      return;
+    }
+
+    if (action === "enterEdit") {
       if (vault.editorMode === "preview") {
         event.preventDefault();
         vault.enterEditMode();
@@ -422,8 +469,8 @@
       return;
     }
 
-    if (event.key === "Escape" && vault.editorMode === "edit" && !typing && !vaultFind.open) {
-      if (previewFirstKind) {
+    if (action === "enterPreview") {
+      if (vault.editorMode === "edit" && !typing && !vaultFind.open && previewFirstKind) {
         event.preventDefault();
         vault.enterPreviewMode();
       }
@@ -438,6 +485,7 @@
 
 <section
   class="vault-editor relative flex h-full min-h-0 min-w-0 flex-1 flex-col {visible ? '' : 'hidden'}"
+  data-reading-palette={vault.readingPalette}
 >
   {#if !mobile && !stickyNote}
     <header class="vault-editor-header workshop-header flex items-center justify-between gap-3 py-3">
@@ -599,6 +647,7 @@
           dirty={vault.dirty}
           saveStatus={vault.saveStatus}
           exportingPdf={exportingPdf}
+          exportingWord={exportingWord}
           askSubmitting={workspace.askSubmitting}
           hasKanbanBoard={hasKanbanBoard}
           boardEditMode={vault.boardEditMode}
@@ -621,6 +670,7 @@
           onOpenWork={onOpenWork}
           onSelectCard={onSelectCard}
           onExportPdf={vault.isLooseFile ? undefined : handleExportPdf}
+          onExportWord={vault.isLooseFile ? undefined : handleExportWord}
           onAskInChat={vault.isLooseFile ? undefined : handleAskInChatTab}
           onSendToWork={vault.isLooseFile ? undefined : handleSendToWork}
           onSave={handleSave}
@@ -666,6 +716,8 @@
           onToggleScrollSync={() =>
             vault.setBuildScrollSync(!vault.buildScrollSync)}
           onToggleMonoSource={() => vault.toggleEditorSurface()}
+          readingPaletteLabel={vault.readingPalette}
+          onCycleReadingPalette={() => vault.cycleReadingPalette()}
           onFloatNote={canFloatSticky ? handleFloatSticky : undefined}
         />
 

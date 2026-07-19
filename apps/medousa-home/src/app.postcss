@@ -9234,10 +9234,23 @@
     color: rgb(var(--shell-muted, var(--color-surface-400)));
   }
 
-  /* Cursor-clean note overflow (⋯) */
+  /* Note overflow (⋯) — Cursor-coherent menu chrome */
+  .vault-editor-overflow {
+    min-width: 14.5rem;
+    max-width: min(18rem, calc(100vw - 1.5rem));
+    padding: 0.28rem;
+    border-radius: 0.55rem;
+    border: 1px solid rgb(var(--color-surface-500) / 0.42);
+    background: rgb(var(--color-surface-900) / 0.97);
+    box-shadow:
+      0 12px 32px rgb(0 0 0 / 0.42),
+      0 0 0 1px rgb(0 0 0 / 0.18);
+    backdrop-filter: blur(14px);
+  }
+
   .vault-editor-overflow__sep {
-    margin: 0.3rem 0;
-    border-top: 1px solid rgb(var(--shell-border, var(--color-surface-500)) / 0.35);
+    margin: 0.28rem 0.35rem;
+    border-top: 1px solid rgb(var(--shell-border, var(--color-surface-500)) / 0.32);
   }
 
   .vault-editor-overflow__item,
@@ -9245,11 +9258,13 @@
     display: flex;
     width: 100%;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.45rem 0.75rem;
+    gap: 0.55rem;
+    padding: 0.38rem 0.55rem;
+    border-radius: 0.35rem;
     text-align: left;
     font-size: 0.8125rem;
-    color: rgb(var(--shell-fg, var(--color-surface-200)));
+    line-height: 1.25;
+    color: rgb(var(--shell-fg, var(--color-surface-100)));
     background: transparent;
     border: none;
     cursor: pointer;
@@ -9257,12 +9272,12 @@
 
   .vault-editor-overflow__item:hover,
   .vault-editor-overflow__toggle:hover {
-    background: rgb(var(--color-surface-800) / 0.8);
+    background: rgb(var(--color-surface-700) / 0.72);
   }
 
   .vault-editor-overflow__item:disabled {
     cursor: not-allowed;
-    opacity: 0.45;
+    opacity: 0.42;
   }
 
   .vault-kind-badge__trigger {
@@ -9313,6 +9328,16 @@
   .vault-editor-overflow__label {
     flex: 1;
     min-width: 0;
+    text-align: left;
+  }
+
+  .vault-editor-overflow__shortcut {
+    flex-shrink: 0;
+    margin-left: 1.25rem;
+    font-size: 0.75rem;
+    letter-spacing: 0.01em;
+    color: rgb(var(--shell-muted, var(--color-surface-500)));
+    font-variant-numeric: tabular-nums;
   }
 
   .vault-editor-overflow__toggle {
@@ -9376,6 +9401,54 @@
     overflow-anchor: none;
   }
 
+  /* Medousa-native reading palettes (Live + preview), not shell colorTheme. */
+  .vault-editor[data-reading-palette="neutral"] {
+    --vault-read-fg: rgb(var(--color-surface-100));
+    --vault-read-muted: rgb(var(--color-surface-400));
+    --vault-read-bg: transparent;
+    --vault-read-accent: rgb(var(--color-primary-300));
+  }
+
+  .vault-editor[data-reading-palette="warm"] {
+    --vault-read-fg: #f3e8d8;
+    --vault-read-muted: #c4a98a;
+    --vault-read-bg: rgb(42 32 24 / 0.35);
+    --vault-read-accent: #e0a86a;
+  }
+
+  .vault-editor[data-reading-palette="cool"] {
+    --vault-read-fg: #dde8f5;
+    --vault-read-muted: #8fa6c2;
+    --vault-read-bg: rgb(20 32 48 / 0.4);
+    --vault-read-accent: #7eb6e8;
+  }
+
+  .vault-editor[data-reading-palette="ink"] {
+    --vault-read-fg: #e8e6e1;
+    --vault-read-muted: #9a968c;
+    --vault-read-bg: rgb(12 12 11 / 0.55);
+    --vault-read-accent: #d4c4a0;
+  }
+
+  .vault-editor[data-reading-palette] .vault-live-prose,
+  .vault-editor[data-reading-palette] .markdown-content {
+    color: var(--vault-read-fg);
+  }
+
+  .vault-editor[data-reading-palette="warm"] .vault-live-editor,
+  .vault-editor[data-reading-palette="cool"] .vault-live-editor,
+  .vault-editor[data-reading-palette="ink"] .vault-live-editor,
+  .vault-editor[data-reading-palette="warm"] .vault-markdown-preview,
+  .vault-editor[data-reading-palette="cool"] .vault-markdown-preview,
+  .vault-editor[data-reading-palette="ink"] .vault-markdown-preview {
+    background: var(--vault-read-bg);
+  }
+
+  .vault-editor[data-reading-palette] .vault-live-prose a,
+  .vault-editor[data-reading-palette] .markdown-content a {
+    color: var(--vault-read-accent);
+  }
+
   /* Gapcursor: TipTap/StarterKit needs these or the widget paints as a blank square. */
   .vault-live-editor .ProseMirror-gapcursor {
     display: none;
@@ -9401,6 +9474,190 @@
 
   .vault-live-editor .ProseMirror-focused .ProseMirror-gapcursor {
     display: block;
+  }
+
+  .vault-live-prose table.vault-live-table,
+  .vault-live-prose .vault-live-table {
+    width: 100%;
+    margin: 0.75rem 0 1rem;
+    border-collapse: collapse;
+    font-size: 0.875rem;
+  }
+
+  .vault-live-prose .vault-live-table th,
+  .vault-live-prose .vault-live-table td {
+    position: relative;
+    border: 1px solid rgb(var(--shell-border, var(--color-surface-500)) / 0.35);
+    padding: 0.35rem 0.55rem;
+    vertical-align: top;
+    min-width: 3rem;
+  }
+
+  .vault-live-prose .vault-live-table th {
+    background: rgb(var(--color-surface-800) / 0.55);
+    font-weight: 600;
+    color: rgb(var(--color-surface-100));
+    text-align: left;
+  }
+
+  .vault-live-prose .vault-live-table td {
+    background: rgb(var(--color-surface-900) / 0.25);
+  }
+
+  .vault-live-prose .vault-live-table .selectedCell::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: rgb(var(--color-primary-500) / 0.12);
+  }
+
+  .vault-live-table-chrome {
+    position: fixed;
+    z-index: 80;
+    display: flex;
+    align-items: center;
+    gap: 0.15rem;
+    padding: 0.2rem 0.3rem;
+    border: 1px solid rgb(var(--color-surface-500) / 0.4);
+    border-radius: 0.4rem;
+    background: rgb(var(--color-surface-900) / 0.96);
+    box-shadow: 0 8px 24px rgb(0 0 0 / 0.35);
+  }
+
+  .vault-live-table-chrome__btn {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.75rem;
+    height: 1.75rem;
+    border-radius: 0.3rem;
+    color: rgb(var(--color-surface-300));
+    transition: background 120ms ease, color 120ms ease;
+  }
+
+  .vault-live-table-chrome__btn:hover:not(:disabled) {
+    background: rgb(var(--color-surface-700) / 0.7);
+    color: rgb(var(--color-surface-50));
+  }
+
+  .vault-live-table-chrome__btn--danger:hover:not(:disabled) {
+    color: rgb(var(--color-error-300));
+  }
+
+  .vault-live-table-chrome__sep {
+    width: 1px;
+    height: 1rem;
+    margin: 0 0.15rem;
+    background: rgb(var(--color-surface-500) / 0.45);
+  }
+
+  .vault-live-table-chrome__badge {
+    position: absolute;
+    right: 0.1rem;
+    bottom: 0.1rem;
+  }
+
+  .vault-live-mini-kanban,
+  .liquid-mini-kanban {
+    margin: 0.65rem 0 1rem;
+    min-width: 0;
+  }
+
+  .vault-live-mini-kanban__label,
+  .liquid-mini-kanban__label {
+    margin: 0 0 0.4rem;
+    font-size: 0.6875rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: rgb(var(--shell-muted, var(--color-surface-500)));
+  }
+
+  .vault-live-mini-kanban__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+
+  .vault-live-mini-kanban__board,
+  .liquid-mini-kanban__board {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
+    gap: 0.5rem;
+  }
+
+  .vault-live-mini-kanban__column,
+  .liquid-mini-kanban__column {
+    min-width: 0;
+    padding: 0.45rem;
+    border: 1px solid rgb(var(--shell-border, var(--color-surface-500)) / 0.28);
+    border-radius: 0.35rem;
+    background: rgb(var(--color-surface-900) / 0.35);
+  }
+
+  .vault-live-mini-kanban__column.is-drop-target {
+    border-color: rgb(var(--color-primary-400) / 0.55);
+  }
+
+  .vault-live-mini-kanban__column-title,
+  .liquid-mini-kanban__column-title {
+    margin: 0 0 0.4rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: rgb(var(--color-surface-200));
+  }
+
+  .vault-live-mini-kanban__cards,
+  .liquid-mini-kanban__cards {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+  }
+
+  .vault-live-mini-kanban__card,
+  .liquid-mini-kanban__card {
+    padding: 0.4rem 0.45rem;
+    border-radius: 0.28rem;
+    background: rgb(var(--color-surface-800) / 0.7);
+    color: rgb(var(--color-surface-100));
+    font-size: 0.8125rem;
+    line-height: 1.35;
+    cursor: grab;
+  }
+
+  .vault-live-mini-kanban__card.is-drop-before {
+    box-shadow: inset 0 2px 0 rgb(var(--color-primary-400) / 0.7);
+  }
+
+  .vault-live-mini-kanban__card.is-drop-after {
+    box-shadow: inset 0 -2px 0 rgb(var(--color-primary-400) / 0.7);
+  }
+
+  .vault-live-mini-kanban__card-text {
+    outline: none;
+    min-height: 1.1em;
+  }
+
+  .vault-live-mini-kanban__add {
+    margin-top: 0.35rem;
+    width: 100%;
+    padding: 0.25rem;
+    border-radius: 0.25rem;
+    font-size: 0.6875rem;
+    color: rgb(var(--color-surface-400));
+    text-align: left;
+  }
+
+  .vault-live-mini-kanban__add:hover {
+    background: rgb(var(--color-surface-700) / 0.45);
+    color: rgb(var(--color-surface-200));
+  }
+
+  .vault-live-mini-kanban__source {
+    font-size: 0.6875rem;
+    color: rgb(var(--color-surface-400));
   }
 
   .vault-live-tag-chips {
@@ -10136,20 +10393,46 @@
 
   .vault-live-plain-fence {
     margin: 0;
-    padding: 0.65rem 0.8rem;
+    padding: 0.5rem 0.75rem 0.65rem;
     border: 1px solid rgb(var(--shell-border, var(--color-surface-500)) / 0.22);
     border-radius: 0.3rem;
     background: rgb(var(--color-surface-900) / 0.4);
   }
 
+  .vault-live-plain-fence__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    min-height: 1.1rem;
+    margin-bottom: 0.3rem;
+  }
+
   .vault-live-plain-fence__lang {
-    display: block;
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     font-size: 0.625rem;
     letter-spacing: 0.04em;
     text-transform: lowercase;
     color: rgb(var(--shell-muted, var(--color-surface-500)));
-    margin-bottom: 0.35rem;
+  }
+
+  .vault-live-plain-fence__meta {
+    margin-left: auto;
+  }
+
+  .vault-live-plain-fence__edit {
+    appearance: none;
+    border: none;
+    background: transparent;
+    padding: 0.12rem 0.2rem;
+    font-size: 0.625rem;
+    letter-spacing: 0.02em;
+    color: rgb(var(--shell-muted, var(--color-surface-500)));
+    cursor: pointer;
+  }
+
+  .vault-live-plain-fence__edit:hover {
+    color: rgb(var(--color-surface-200));
   }
 
   .vault-live-plain-fence__body {
@@ -10160,6 +10443,70 @@
     color: rgb(var(--color-surface-200));
     white-space: pre-wrap;
     word-break: break-word;
+    cursor: text;
+    user-select: text;
+    -webkit-user-select: text;
+  }
+
+  .vault-live-code__stage,
+  .vault-live-code__stage .liquid-code-pre,
+  .vault-live-code__stage .liquid-code-pre code {
+    cursor: text;
+    user-select: text;
+    -webkit-user-select: text;
+  }
+
+  .vault-live-fence-raw-shell {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    border: 1px solid rgb(var(--color-primary-400) / 0.35);
+    border-radius: 0.3rem;
+    background: rgb(var(--color-surface-900) / 0.55);
+    overflow: hidden;
+  }
+
+  .vault-live-fence-raw {
+    display: block;
+    box-sizing: border-box;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    padding: 0.65rem 0.75rem;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: rgb(var(--color-surface-100));
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.75rem;
+    line-height: 1.45;
+    resize: none;
+    outline: none;
+    box-shadow: none;
+    caret-color: rgb(var(--color-primary-300));
+    appearance: none;
+    -webkit-appearance: none;
+    overflow: auto;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .vault-live-fence-raw::-webkit-scrollbar {
+    display: none;
+    width: 0;
+    height: 0;
+  }
+
+  .vault-live-fence-raw:focus,
+  .vault-live-fence-raw:focus-visible {
+    outline: none;
+    box-shadow: none;
+    background: transparent;
+  }
+
+  .vault-live-fence-raw::selection {
+    background: rgb(var(--color-primary-500) / 0.28);
+    color: rgb(var(--color-surface-50));
   }
 
   /* Shared quiet chrome — calm at rest, present on intent */
@@ -10203,7 +10550,9 @@
   .vault-live-compare:hover .vault-live-quiet-chrome,
   .vault-live-compare:focus-within .vault-live-quiet-chrome,
   .vault-live-embed:hover .vault-live-quiet-chrome,
-  .vault-live-embed:focus-within .vault-live-quiet-chrome {
+  .vault-live-embed:focus-within .vault-live-quiet-chrome,
+  .vault-live-plain-fence:hover .vault-live-quiet-chrome,
+  .vault-live-plain-fence:focus-within .vault-live-quiet-chrome {
     opacity: 1;
     max-height: 2.75rem;
     pointer-events: auto;

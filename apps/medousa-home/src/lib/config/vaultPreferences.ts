@@ -5,6 +5,20 @@ const BUILD_WORD_WRAP_KEY = "medousa-vault-build-word-wrap";
 const BUILD_LINE_NUMBERS_KEY = "medousa-vault-build-line-numbers";
 const BUILD_AUTO_SAVE_KEY = "medousa-vault-build-auto-save";
 const BUILD_SCROLL_SYNC_KEY = "medousa-vault-build-scroll-sync";
+const READING_PALETTE_KEY = "medousa-vault-reading-palette";
+
+export type VaultReadingPalette = "neutral" | "warm" | "cool" | "ink";
+
+export const VAULT_READING_PALETTES: VaultReadingPalette[] = [
+  "neutral",
+  "warm",
+  "cool",
+  "ink",
+];
+
+export function isVaultReadingPalette(value: string): value is VaultReadingPalette {
+  return (VAULT_READING_PALETTES as string[]).includes(value);
+}
 
 function readBool(key: string, defaultValue: boolean): boolean {
   if (typeof localStorage === "undefined") return defaultValue;
@@ -60,4 +74,25 @@ export function readVaultBuildScrollSync(): boolean {
 
 export function writeVaultBuildScrollSync(enabled: boolean): void {
   writeBool(BUILD_SCROLL_SYNC_KEY, enabled);
+}
+
+/** Live / preview reading palette (not shell colorTheme). */
+export function readVaultReadingPalette(): VaultReadingPalette {
+  if (typeof localStorage === "undefined") return "neutral";
+  const raw = localStorage.getItem(READING_PALETTE_KEY);
+  if (raw && isVaultReadingPalette(raw)) return raw;
+  return "neutral";
+}
+
+export function writeVaultReadingPalette(palette: VaultReadingPalette): void {
+  if (typeof localStorage === "undefined") return;
+  localStorage.setItem(READING_PALETTE_KEY, palette);
+}
+
+export function cycleVaultReadingPalette(
+  current: VaultReadingPalette,
+): VaultReadingPalette {
+  const index = VAULT_READING_PALETTES.indexOf(current);
+  const next = VAULT_READING_PALETTES[(index + 1) % VAULT_READING_PALETTES.length];
+  return next ?? "neutral";
 }
