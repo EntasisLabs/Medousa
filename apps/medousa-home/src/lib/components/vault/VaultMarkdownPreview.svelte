@@ -116,6 +116,7 @@
       liquidContext: {
         titleByPath: titles,
         openLinksInWeb: false,
+        localImagePath: imagePath,
         onOpenCardDetail: (detail) => vault.openCardDetail(detail),
       },
       localImagePath: imagePath,

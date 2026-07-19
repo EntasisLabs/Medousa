@@ -53,7 +53,10 @@
   aria-label="Workspace"
 >
   {#if layout.vaultSidebarCollapsed}
-    <VaultSidebarCollapsedStrip onExpand={() => layout.setVaultSidebarCollapsed(false)} />
+    <VaultSidebarCollapsedStrip
+      label="Browse"
+      onExpand={() => layout.setVaultSidebarCollapsed(false)}
+    />
   {:else}
     <SplitPane
       width={layout.vaultTreeWidth}

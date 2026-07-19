@@ -34,6 +34,8 @@ export interface LiquidRenderContext {
    * (accordion/tabs) and prefer print-stable layout.
    */
   exportPaper?: boolean;
+  /** Vault note path for resolving relative slide/media backgrounds. */
+  localImagePath?: string | null;
 }
 
 const KEY = Symbol("liquid.render.context");

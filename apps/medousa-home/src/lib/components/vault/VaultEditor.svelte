@@ -92,6 +92,7 @@
   let lastFindNotePath = $state<string | null>(null);
   let previewScrollEl = $state<HTMLElement | null>(null);
   let markdownEditorEl = $state<ReturnType<typeof VaultMarkdownEditor> | null>(null);
+  let slidesDeckEl = $state<ReturnType<typeof SlidesDeckEditor> | null>(null);
 
   const displayTitle = $derived(
     vault.isLooseFile && vault.looseFilePath
@@ -365,8 +366,18 @@
     }
   }
 
+  /** Promote nested Write drafts (Live slides/report, deck editor) before disk save. */
+  function flushPendingEditorDrafts() {
+    slidesDeckEl?.flush();
+    const flushed = markdownEditorEl?.flushLive();
+    if (typeof flushed === "string" && flushed !== vault.content) {
+      vault.markDirty(flushed);
+    }
+  }
+
   async function handleSave(event?: Event) {
     event?.preventDefault();
+    flushPendingEditorDrafts();
     await vault.flushSave();
   }
 
@@ -461,7 +472,7 @@
       if (!showNotePlaneToggle) return;
       event.preventDefault();
       if (isLivePlane) {
-        markdownEditorEl?.flushLive();
+        flushPendingEditorDrafts();
         vault.setNotePlane("build");
       } else {
         vault.setNotePlane("live");
@@ -754,7 +765,7 @@
           onToggleSplit={() => layout.toggleVaultSplitEnabled()}
           onToggleLinks={() => layout.toggleVaultLinksPanel()}
           onEditSource={() => {
-            markdownEditorEl?.flushLive();
+            flushPendingEditorDrafts();
             vault.setNotePlane("build");
           }}
           onBackToLive={() => vault.setNotePlane("live")}
@@ -840,6 +851,7 @@
           />
         {:else if showSlidesDeck}
           <SlidesDeckEditor
+            bind:this={slidesDeckEl}
             content={vault.content}
             disabled={vault.saving || vault.editorMode === "preview"}
             onchange={(next) => vault.markDirty(next)}

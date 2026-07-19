@@ -4,6 +4,7 @@
  */
 
 import type { LiquidRenderContext } from "$lib/liquid/render/context";
+import { registerLiveDraftFlush } from "./liveDraftFlush";
 import { mountLiquidFence, unmountLiquidFence } from "./liveOrganismHost";
 import {
   whenElementHasLayout,
@@ -86,6 +87,8 @@ export type ReportSurfaceHandles = {
   destroy: () => void;
   /** In-place raw update — avoids full NodeView remount (chart flash/blank). */
   applyRaw: (raw: string) => void;
+  /** Promote Write-mode drafts into TipTap (for Cmd/Ctrl+S / plane switch). */
+  flush: () => void;
 };
 
 export function mountReportSurface(
@@ -96,6 +99,7 @@ export function mountReportSurface(
 ): ReportSurfaceHandles {
   let model = parseReportRaw(raw);
   let editing = false;
+  let commitTimer: ReturnType<typeof setTimeout> | null = null;
   const root = document.createElement("div");
   root.className = "vault-live-report";
   root.contentEditable = "false";
@@ -192,6 +196,7 @@ export function mountReportSurface(
     btn.addEventListener("click", (e) => {
       e.preventDefault();
       e.stopPropagation();
+      if (editing) flushEditor();
       if (model.columns === col) return;
       applyColumnsInPlace(col);
     });
@@ -209,12 +214,33 @@ export function mountReportSurface(
 
   chrome.append(colGroup, editBtn);
 
+  const flushEditor = () => {
+    if (commitTimer) {
+      clearTimeout(commitTimer);
+      commitTimer = null;
+    }
+    if (!editing) return;
+    const fields = stage.querySelectorAll<HTMLInputElement>(".vault-live-report__field");
+    const body = stage.querySelector<HTMLTextAreaElement>(".vault-live-report__body");
+    model = {
+      ...model,
+      title: fields[0]?.value.trim() ?? model.title,
+      subtitle: fields[1]?.value.trim() ?? model.subtitle,
+      body: body?.value.replace(/\r\n/g, "\n").trim() ?? model.body,
+    };
+    onChange(serializeReportRaw(model));
+  };
+
   const showEditor = () => {
     layoutWait?.cancel();
     layoutWait = null;
     if (colRelayoutTimer) {
       clearTimeout(colRelayoutTimer);
       colRelayoutTimer = 0;
+    }
+    if (commitTimer) {
+      clearTimeout(commitTimer);
+      commitTimer = null;
     }
     editing = true;
     mountEl = null;
@@ -250,9 +276,28 @@ export function mountReportSurface(
       onChange(serializeReportRaw(model));
     };
 
-    title.addEventListener("change", commit);
-    subtitle.addEventListener("change", commit);
-    body.addEventListener("change", commit);
+    const scheduleCommit = () => {
+      if (commitTimer) clearTimeout(commitTimer);
+      commitTimer = setTimeout(() => {
+        commitTimer = null;
+        commit();
+      }, 160);
+    };
+
+    const commitNow = () => {
+      if (commitTimer) {
+        clearTimeout(commitTimer);
+        commitTimer = null;
+      }
+      commit();
+    };
+
+    title.addEventListener("input", scheduleCommit);
+    subtitle.addEventListener("input", scheduleCommit);
+    body.addEventListener("input", scheduleCommit);
+    title.addEventListener("change", commitNow);
+    subtitle.addEventListener("change", commitNow);
+    body.addEventListener("change", commitNow);
 
     stage.append(title, subtitle, body);
     title.focus();
@@ -262,15 +307,7 @@ export function mountReportSurface(
     e.preventDefault();
     e.stopPropagation();
     if (editing) {
-      const fields = stage.querySelectorAll<HTMLInputElement>(".vault-live-report__field");
-      const body = stage.querySelector<HTMLTextAreaElement>(".vault-live-report__body");
-      model = {
-        ...model,
-        title: fields[0]?.value.trim() ?? model.title,
-        subtitle: fields[1]?.value.trim() ?? model.subtitle,
-        body: body?.value.replace(/\r\n/g, "\n").trim() ?? model.body,
-      };
-      onChange(serializeReportRaw(model));
+      flushEditor();
       showOrganism();
       return;
     }
@@ -314,9 +351,17 @@ export function mountReportSurface(
   host.replaceChildren(root);
   showOrganism();
 
+  const unregisterFlush = registerLiveDraftFlush(flushEditor);
+
   return {
     applyRaw,
+    flush: flushEditor,
     destroy: () => {
+      unregisterFlush();
+      if (commitTimer) {
+        clearTimeout(commitTimer);
+        commitTimer = null;
+      }
       layoutWait?.cancel();
       layoutWait = null;
       if (colRelayoutTimer) {

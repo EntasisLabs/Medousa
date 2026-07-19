@@ -28,26 +28,51 @@
   let draftBody = $state("");
   let draftTitle = $state("");
   let emitTimer: ReturnType<typeof setTimeout> | null = null;
+  let sourceContent = content;
 
   const fencePreview = $derived(
     "```slides\n" + serializeSlidesDeckBody(deck).trimEnd() + "\n```\n",
   );
 
-  function emit(next: SlidesDeck) {
+  function deckFromDrafts(): SlidesDeck {
+    const next = parseSlidesDeck(draftBody);
+    if (next) {
+      return {
+        ...next,
+        title: draftTitle.trim() || next.title,
+        columns: next.columns || deck.columns,
+      };
+    }
+    return { ...deck, title: draftTitle.trim() };
+  }
+
+  function emit(next: SlidesDeck, options?: { immediate?: boolean }) {
     deck = next;
-    const markdown = replaceSlidesDeck(content, next);
+    const markdown = replaceSlidesDeck(sourceContent, next);
     syncedContent = markdown;
-    if (emitTimer) clearTimeout(emitTimer);
+    sourceContent = markdown;
+    if (emitTimer) {
+      clearTimeout(emitTimer);
+      emitTimer = null;
+    }
+    if (options?.immediate) {
+      vault.setCompositionHold(false);
+      onchange(markdown);
+      return;
+    }
+    vault.setCompositionHold(true);
     emitTimer = setTimeout(() => {
       emitTimer = null;
+      vault.setCompositionHold(false);
       onchange(markdown);
-    }, 120);
+    }, 160);
   }
 
   $effect(() => {
     if (content === syncedContent) return;
     deck = slidesDeckFromContent(content);
     syncedContent = content;
+    sourceContent = content;
     if (editing) {
       draftTitle = deck.title;
       draftBody = serializeSlidesDeckBody(deck).trim();
@@ -56,11 +81,16 @@
 
   onDestroy(() => {
     if (emitTimer) clearTimeout(emitTimer);
+    vault.setCompositionHold(false);
   });
 
   function setColumns(columns: "1" | "2" | "3") {
     if (disabled || deck.columns === columns) return;
-    emit({ ...deck, columns });
+    if (editing) {
+      emit({ ...deckFromDrafts(), columns }, { immediate: true });
+      return;
+    }
+    emit({ ...deck, columns }, { immediate: true });
   }
 
   function beginWrite() {
@@ -70,18 +100,32 @@
     draftBody = serializeSlidesDeckBody(deck).trim();
   }
 
+  function commitDrafts(options?: { immediate?: boolean }) {
+    emit(deckFromDrafts(), options);
+  }
+
   function finishWrite() {
-    const next = parseSlidesDeck(draftBody);
-    if (next) {
-      emit({
-        ...next,
-        title: draftTitle.trim() || next.title,
-        columns: next.columns || deck.columns,
-      });
-    } else {
-      emit({ ...deck, title: draftTitle.trim() });
-    }
+    commitDrafts({ immediate: true });
     editing = false;
+  }
+
+  function onDraftInput() {
+    if (!editing || disabled) return;
+    commitDrafts();
+  }
+
+  /** Promote Write drafts before Cmd/Ctrl+S. */
+  export function flush(): void {
+    if (!editing) {
+      if (emitTimer) {
+        clearTimeout(emitTimer);
+        emitTimer = null;
+        vault.setCompositionHold(false);
+        onchange(syncedContent);
+      }
+      return;
+    }
+    commitDrafts({ immediate: true });
   }
 </script>
 
@@ -119,6 +163,7 @@
         placeholder="Deck title"
         bind:value={draftTitle}
         {disabled}
+        oninput={onDraftInput}
       />
       <textarea
         class="slides-deck-body"
@@ -126,6 +171,7 @@
         placeholder={"---\nlabel: Title\nlayout: hero\n\n# Slide…"}
         bind:value={draftBody}
         {disabled}
+        oninput={onDraftInput}
       ></textarea>
     </div>
   {:else}
@@ -133,6 +179,10 @@
       <MarkdownContent
         content={fencePreview}
         titleByPath={vault.labelByPathMap}
+        liquidContext={{
+          titleByPath: vault.labelByPathMap,
+          localImagePath: vault.selectedPath,
+        }}
       />
     </div>
   {/if}

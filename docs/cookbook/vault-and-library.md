@@ -45,6 +45,8 @@ Notes use `[[wikilink]]` syntax. Spaces (Journal, Inbox, …) filter the tree in
 
 Structured views (kanban, database) — see [vault-editing plan](../../architecture/vault-editing-and-structured-notes-plan.md).
 
+**Slides decks:** `kind: slides` / ` ```slides ` fences, washes, photo backgrounds, one-slide-per-page export — [vault-slides.md](vault-slides.md). Liquid fence catalog: [liquid-markdown.md](liquid-markdown.md).
+
 ---
 
 ## External files

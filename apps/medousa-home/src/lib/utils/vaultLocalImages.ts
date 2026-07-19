@@ -35,7 +35,12 @@ export function isLocalImageHref(href: string): boolean {
   const trimmed = href.trim();
   if (!trimmed || isRemoteImageHref(trimmed)) return false;
   if (trimmed.startsWith("wikilink:")) return false;
-  return IMAGE_EXT.test(trimmed.split("?")[0]?.split("#")[0] ?? trimmed);
+  // Obsidian `path|400` / `path|400x240` — ignore size when detecting images.
+  const withoutSize = trimmed.includes("|")
+    ? trimmed.slice(0, trimmed.lastIndexOf("|")).trim()
+    : trimmed;
+  const pathOnly = withoutSize.split("?")[0]?.split("#")[0] ?? withoutSize;
+  return IMAGE_EXT.test(pathOnly);
 }
 
 function joinPath(base: string, relative: string): string {

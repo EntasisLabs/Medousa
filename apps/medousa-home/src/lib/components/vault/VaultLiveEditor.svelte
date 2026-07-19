@@ -30,6 +30,7 @@
     takeForeignUndo,
   } from "$lib/vault/live/liveForeignUndo";
   import { saveVaultNote } from "$lib/daemon";
+  import { flushLiveDrafts } from "$lib/vault/live/liveDraftFlush";
   import { invalidateTransclusionCache } from "$lib/utils/resolveTransclusion";
   import { copyTextToClipboard } from "$lib/utils/vaultClipboard";
   import type { MarkdownFormatAction, SlashBlockId } from "$lib/utils/vaultMarkdownEdit";
@@ -222,6 +223,7 @@
     return {
       titleByPath: vault.labelByPath(),
       openLinksInWeb: false,
+      localImagePath: vault.selectedPath,
       onOpenCardDetail: (detail: CardDetailPayload) => {
         vault.openCardDetail(detail);
       },
@@ -665,6 +667,8 @@
 
   /** Explicit serialize for Live→Build plane switch (caller must invoke before unmount). */
   export function flush(): string {
+    // Promote nested Write drafts (slides/report inputs) into TipTap attrs first.
+    flushLiveDrafts();
     if (!editor) return value;
     return serializeLiveMarkdown(editor.getJSON(), frontmatter);
   }

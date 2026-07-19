@@ -6,6 +6,11 @@ import type { VaultNote } from "$lib/types/vault";
 import { plainHeadingText, uniqueHeadingSlug } from "$lib/markdown/headingRender";
 import { escapeAttr, escapeHtml } from "./escape";
 import { preprocessMarkdown } from "./preprocess";
+import {
+  imageSizeStyle,
+  splitImageAltSize,
+  splitImageHrefSize,
+} from "./imageSize";
 import { isLocalImageHref, isRemoteImageHref } from "$lib/utils/vaultLocalImages";
 
 export interface MarkdownRenderOptions {
@@ -117,18 +122,27 @@ function configureMarked(): void {
         return `<input ${checked ? 'checked="" ' : ""}type="checkbox" class="vault-preview-task" data-vault-task="${index}" aria-label="Toggle task"> `;
       },
       image({ href, title, text }: Tokens.Image) {
-        const alt = escapeHtml(text || title || "");
+        const { href: cleanHref, size: hrefSize } = splitImageHrefSize(
+          href ?? "",
+        );
+        const { alt: cleanAlt, size: altSize } = splitImageAltSize(text || "");
+        const size = hrefSize ?? altSize;
+        const alt = escapeHtml(cleanAlt || title || "");
         const titleAttr = title ? ` title="${escapeAttr(title)}"` : "";
+        const sizeAttr = size
+          ? ` style="${escapeAttr(imageSizeStyle(size))}"`
+          : "";
+        const sizeClass = size ? " markdown-image--sized" : "";
         if (
           activeRenderOptions.resolveLocalImages &&
-          href &&
-          !isRemoteImageHref(href) &&
-          isLocalImageHref(href)
+          cleanHref &&
+          !isRemoteImageHref(cleanHref) &&
+          isLocalImageHref(cleanHref)
         ) {
-          return `<figure class="markdown-image markdown-image-local"><img class="markdown-local-image" data-local-image="${escapeAttr(href)}" alt="${alt}"${titleAttr} loading="lazy" decoding="async"></figure>`;
+          return `<figure class="markdown-image markdown-image-local${sizeClass}"><img class="markdown-local-image" data-local-image="${escapeAttr(cleanHref)}" alt="${alt}"${titleAttr}${sizeAttr} loading="lazy" decoding="async"></figure>`;
         }
-        const safeHref = escapeAttr(href ?? "");
-        return `<figure class="markdown-image"><img src="${safeHref}" alt="${alt}"${titleAttr} loading="lazy" decoding="async"></figure>`;
+        const safeHref = escapeAttr(cleanHref);
+        return `<figure class="markdown-image${sizeClass}"><img src="${safeHref}" alt="${alt}"${titleAttr}${sizeAttr} loading="lazy" decoding="async"></figure>`;
       },
     },
   });

@@ -50,6 +50,15 @@ async function waitForLiquidLayout(): Promise<void> {
   });
 }
 
+/** Give slide background image resolution a beat before capture. */
+async function waitForSlideAtmosphere(root: HTMLElement): Promise<void> {
+  if (!root.querySelector(".liquid-slide")) return;
+  await waitForPaint();
+  await new Promise<void>((resolve) => {
+    setTimeout(resolve, 220);
+  });
+}
+
 /** Normalize heading text for title dedupe. */
 export function normalizeExportTitle(text: string): string {
   return text.replace(/\s+/g, " ").trim().toLowerCase();
@@ -398,6 +407,7 @@ export function applyPaperColorsAfterSanitize(root: HTMLElement): void {
   }
 
   // Body prose — theme gray on li/em must not survive on white paper.
+  // Skip slide frames — they own ink via wash/scrim atmosphere.
   for (const el of root.querySelectorAll<HTMLElement>(
     [
       ".vault-pdf-export-body p",
@@ -411,6 +421,7 @@ export function applyPaperColorsAfterSanitize(root: HTMLElement): void {
     ].join(", "),
   )) {
     if (el.closest("a, .markdown-wikilink")) continue;
+    if (el.closest(".liquid-slide")) continue;
     el.style.setProperty("color", PAPER_INK, "important");
   }
 }
@@ -679,6 +690,7 @@ export async function prepareVaultExportMount(
         titleByPath: input.labelByPath,
         openLinksInWeb: false,
         exportPaper: true,
+        localImagePath: input.notePath ?? null,
       },
       localImagePath: input.notePath ?? null,
       code: true,
@@ -688,6 +700,7 @@ export async function prepareVaultExportMount(
       animate: false,
     });
     await waitForLiquidLayout();
+    await waitForSlideAtmosphere(mount);
     expandDetailsForExport(mount);
     stripExportChrome(mount);
     hardenExportLayout(mount);

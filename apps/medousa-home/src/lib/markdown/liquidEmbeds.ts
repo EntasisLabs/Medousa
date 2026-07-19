@@ -310,12 +310,16 @@ export interface LiquidReportProps {
 }
 
 export type LiquidSlideLayout = "hero" | "split" | "stack";
+export type LiquidSlideScrim = "dark" | "light" | "none";
 
 export interface LiquidSlideItem {
   id: string;
   label: string;
   layout?: LiquidSlideLayout;
   body: string;
+  /** Named wash or image path/URL. */
+  bg?: string;
+  scrim?: LiquidSlideScrim;
 }
 
 /** Slides organism — labeled deck frames with nested figure-grid bodies. */
@@ -2373,12 +2377,17 @@ function replaceLiquidFenceMatch(
     const deck = parseSlidesDeck(body);
     if (!deck) return match;
     const slides: LiquidSlidesProps = {
-      slides: deck.slides.map((s) => ({
-        id: s.id,
-        label: s.label,
-        layout: s.layout,
-        body: s.body,
-      })),
+      slides: deck.slides.map((s) => {
+        const item: LiquidSlideItem = {
+          id: s.id,
+          label: s.label,
+          layout: s.layout,
+          body: s.body,
+        };
+        if (s.bg) item.bg = s.bg;
+        if (s.scrim) item.scrim = s.scrim;
+        return item;
+      }),
       columns: deck.columns,
       theme: deck.theme,
     };

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { preprocessLiquidEmbeds, decodeLiquidProps } from "$lib/markdown/liquidEmbeds";
 import { LIQUID_SLIDES_TEMPLATE } from "./liquidFenceTemplates";
 import {
+  isSlideBgImage,
   noteHasSlidesDeck,
   parseSlidesDeck,
   serializeSlidesDeckBody,
@@ -9,6 +10,8 @@ import {
   splitTopLevelSectionBreaks,
 } from "./markdownSlides";
 import { prepareSlidesExportMarkdown } from "./vaultExportPrep";
+import { buildExportPrintCss } from "./vaultExportPrintCss";
+import { DEFAULT_VAULT_EXPORT_OPTIONS } from "./vaultExportOptions";
 
 describe("markdownSlides", () => {
   it("parses nest-aware --- sections with a chart fence inside", () => {
@@ -94,14 +97,86 @@ describe("markdownSlides", () => {
     expect(match).toBeTruthy();
     const props = decodeLiquidProps<{
       title?: string;
-      slides: { label: string; body: string }[];
+      theme?: string;
+      slides: { label: string; body: string; bg?: string; scrim?: string }[];
     }>(match![1]);
     expect(props?.title).toBe("Mid-2026 pitch");
+    expect(props?.theme).toBe("dusk");
     expect(props?.slides?.length).toBeGreaterThanOrEqual(2);
+    const title = props?.slides.find((s) => s.label === "Title");
+    expect(title?.bg).toBe("ember");
     const price = props?.slides.find((s) => s.label === "Price story");
     expect(price?.body).toMatch(/Prose wraps beside the chart/);
+    expect(price?.bg).toBe("./shots/sky.png");
     // Innermost-first preprocess turns nested ```chart into a placeholder host.
     expect(price?.body).toMatch(/data-liquid-embed="chart"|```chart/);
+  });
+
+  it("round-trips wash + image atmosphere fields", () => {
+    const deck = parseSlidesDeck(
+      [
+        "title: Atmosphere",
+        "theme: dusk",
+        "columns: 2",
+        "",
+        "---",
+        "label: Title",
+        "layout: hero",
+        "bg: ember",
+        "",
+        "# Hero",
+        "",
+        "---",
+        "label: Photo",
+        "layout: stack",
+        "bg: ./hero.png",
+        "scrim: light",
+        "",
+        "Caption",
+      ].join("\n"),
+    )!;
+    expect(deck.theme).toBe("dusk");
+    expect(deck.slides[0]!.bg).toBe("ember");
+    expect(deck.slides[1]!.bg).toBe("./hero.png");
+    expect(deck.slides[1]!.scrim).toBe("light");
+    expect(isSlideBgImage("./hero.png")).toBe(true);
+    expect(isSlideBgImage("ember")).toBe(false);
+
+    const again = parseSlidesDeck(serializeSlidesDeckBody(deck))!;
+    expect(again.theme).toBe("dusk");
+    expect(again.slides[0]!.bg).toBe("ember");
+    expect(again.slides[1]!.bg).toBe("./hero.png");
+    expect(again.slides[1]!.scrim).toBe("light");
+    // Default none scrim on images is omitted from serialize.
+    const withDefault = parseSlidesDeck(
+      [
+        "theme: paper",
+        "",
+        "---",
+        "label: Pic",
+        "layout: hero",
+        "bg: ./a.png",
+        "",
+        "Hi",
+      ].join("\n"),
+    )!;
+    expect(withDefault.slides[0]!.scrim).toBe("none");
+    expect(serializeSlidesDeckBody(withDefault)).not.toContain("scrim:");
+    const withDark = parseSlidesDeck(
+      [
+        "theme: paper",
+        "",
+        "---",
+        "label: Pic",
+        "layout: hero",
+        "bg: ./a.png",
+        "scrim: dark",
+        "",
+        "Hi",
+      ].join("\n"),
+    )!;
+    expect(withDark.slides[0]!.scrim).toBe("dark");
+    expect(serializeSlidesDeckBody(withDark)).toContain("scrim: dark");
   });
 
   it("wraps whole-note decks for export prep", () => {
@@ -124,5 +199,13 @@ describe("markdownSlides", () => {
     expect(wrapped).toContain("```slides");
     expect(wrapped).toContain("kind: slides");
     expect(prepareSlidesExportMarkdown(wrapped)).toContain("```slides");
+  });
+
+  it("keeps slide wash gradients in export print CSS", () => {
+    const css = buildExportPrintCss(DEFAULT_VAULT_EXPORT_OPTIONS);
+    expect(css).toContain('.liquid-slide[data-bg="ember"]');
+    expect(css).toContain("linear-gradient");
+    expect(css).toContain("liquid-slide-bg-image");
+    expect(css).toContain("print-color-adjust: exact");
   });
 });

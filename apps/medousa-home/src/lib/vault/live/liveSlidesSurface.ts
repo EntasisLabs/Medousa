@@ -9,6 +9,7 @@ import {
   serializeSlidesFence,
   type SlidesDeck,
 } from "$lib/utils/markdownSlides";
+import { registerLiveDraftFlush } from "./liveDraftFlush";
 import { mountLiquidFence, unmountLiquidFence } from "./liveOrganismHost";
 import {
   whenElementHasLayout,
@@ -49,6 +50,8 @@ export function serializeSlidesRaw(model: SlidesDeck): string {
 export type SlidesSurfaceHandles = {
   destroy: () => void;
   applyRaw: (raw: string) => void;
+  /** Promote Write-mode drafts into TipTap (for Cmd/Ctrl+S / plane switch). */
+  flush: () => void;
 };
 
 export function mountSlidesSurface(
@@ -59,6 +62,7 @@ export function mountSlidesSurface(
 ): SlidesSurfaceHandles {
   let model = parseSlidesRaw(raw);
   let editing = false;
+  let commitTimer: ReturnType<typeof setTimeout> | null = null;
   const root = document.createElement("div");
   root.className = "vault-live-slides";
   root.contentEditable = "false";
@@ -117,6 +121,7 @@ export function mountSlidesSurface(
     btn.addEventListener("click", (e) => {
       e.preventDefault();
       e.stopPropagation();
+      if (editing) flushEditor();
       if (model.columns === col) return;
       model = { ...model, columns: col };
       syncColPressed();
@@ -156,9 +161,24 @@ export function mountSlidesSurface(
     onChange(serializeSlidesRaw(model));
   };
 
+  const flushEditor = () => {
+    if (commitTimer) {
+      clearTimeout(commitTimer);
+      commitTimer = null;
+    }
+    if (!editing) return;
+    const title = stage.querySelector<HTMLInputElement>(".vault-live-slides__field");
+    const body = stage.querySelector<HTMLTextAreaElement>(".vault-live-slides__body");
+    if (title && body) commitFromEditor(title, body);
+  };
+
   const showEditor = () => {
     layoutWait?.cancel();
     layoutWait = null;
+    if (commitTimer) {
+      clearTimeout(commitTimer);
+      commitTimer = null;
+    }
     editing = true;
     editBtn.textContent = "Done";
     unmountLiquidFence(stage);
@@ -176,8 +196,26 @@ export function mountSlidesSurface(
     body.value = serializeSlidesDeckBody(model).trim();
     body.rows = Math.min(22, Math.max(10, body.value.split("\n").length + 2));
 
-    title.addEventListener("change", () => commitFromEditor(title, body));
-    body.addEventListener("change", () => commitFromEditor(title, body));
+    const scheduleCommit = () => {
+      if (commitTimer) clearTimeout(commitTimer);
+      commitTimer = setTimeout(() => {
+        commitTimer = null;
+        commitFromEditor(title, body);
+      }, 160);
+    };
+
+    title.addEventListener("input", scheduleCommit);
+    body.addEventListener("input", scheduleCommit);
+    title.addEventListener("change", () => {
+      if (commitTimer) clearTimeout(commitTimer);
+      commitTimer = null;
+      commitFromEditor(title, body);
+    });
+    body.addEventListener("change", () => {
+      if (commitTimer) clearTimeout(commitTimer);
+      commitTimer = null;
+      commitFromEditor(title, body);
+    });
     stage.append(title, body);
     title.focus();
   };
@@ -186,9 +224,7 @@ export function mountSlidesSurface(
     e.preventDefault();
     e.stopPropagation();
     if (editing) {
-      const title = stage.querySelector<HTMLInputElement>(".vault-live-slides__field");
-      const body = stage.querySelector<HTMLTextAreaElement>(".vault-live-slides__body");
-      if (title && body) commitFromEditor(title, body);
+      flushEditor();
       showOrganism();
       return;
     }
@@ -205,9 +241,17 @@ export function mountSlidesSurface(
   host.replaceChildren(root);
   showOrganism();
 
+  const unregisterFlush = registerLiveDraftFlush(flushEditor);
+
   return {
     applyRaw,
+    flush: flushEditor,
     destroy: () => {
+      unregisterFlush();
+      if (commitTimer) {
+        clearTimeout(commitTimer);
+        commitTimer = null;
+      }
       layoutWait?.cancel();
       layoutWait = null;
       unmountLiquidFence(stage);

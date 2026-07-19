@@ -69,6 +69,51 @@ export function buildExportPrintCss(options: VaultExportOptions): string {
   .vault-pdf-export-mount .liquid-slide {
     break-inside: avoid !important;
     page-break-inside: avoid !important;
+    /* Keep wash gradients / paper fills — do not flatten to white. */
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .vault-pdf-export-mount .liquid-slide[data-bg="paper"] {
+    background: #f8f7f4 !important;
+  }
+  .vault-pdf-export-mount .liquid-slide[data-bg="mist"] {
+    background: linear-gradient(145deg, #e8eef3 0%, #f4f6f8 48%, #dde5ec 100%) !important;
+  }
+  .vault-pdf-export-mount .liquid-slide[data-bg="dusk"] {
+    background: linear-gradient(155deg, #1a2332 0%, #243044 42%, #2c3a52 100%) !important;
+  }
+  .vault-pdf-export-mount .liquid-slide[data-bg="ink"] {
+    background: #0f1115 !important;
+  }
+  .vault-pdf-export-mount .liquid-slide[data-bg="ember"] {
+    background: linear-gradient(150deg, #1c1410 0%, #3a2218 45%, #6b3420 100%) !important;
+  }
+
+  .vault-pdf-export-mount .liquid-slide-bg-image {
+    position: absolute !important;
+    inset: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: cover !important;
+  }
+
+  .vault-pdf-export-mount .liquid-slide-scrim--dark {
+    background: linear-gradient(
+      160deg,
+      rgb(15 17 21 / 0.72) 0%,
+      rgb(15 17 21 / 0.55) 55%,
+      rgb(15 17 21 / 0.68) 100%
+    ) !important;
+  }
+
+  .vault-pdf-export-mount .liquid-slide-scrim--light {
+    background: linear-gradient(
+      160deg,
+      rgb(248 247 244 / 0.82) 0%,
+      rgb(248 247 244 / 0.7) 55%,
+      rgb(248 247 244 / 0.78) 100%
+    ) !important;
   }
 
   .vault-pdf-export-mount .liquid-slides-tabs {

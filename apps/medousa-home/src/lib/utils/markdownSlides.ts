@@ -10,12 +10,17 @@ import {
 } from "$lib/utils/vaultFrontmatter";
 
 export type SlideLayout = "hero" | "split" | "stack";
+export type SlideWash = "paper" | "dusk" | "ink" | "mist" | "ember";
+export type SlideScrim = "dark" | "light" | "none";
 
 export interface SlideSection {
   id: string;
   label: string;
   layout: SlideLayout;
   body: string;
+  /** Named wash or image path/URL. Empty = inherit deck theme. */
+  bg?: string;
+  scrim?: SlideScrim;
 }
 
 export interface SlidesDeck {
@@ -26,6 +31,56 @@ export interface SlidesDeck {
 }
 
 const SLIDE_LAYOUTS = new Set<SlideLayout>(["hero", "split", "stack"]);
+export const SLIDE_WASHES = new Set<SlideWash>([
+  "paper",
+  "dusk",
+  "ink",
+  "mist",
+  "ember",
+]);
+const SLIDE_SCRIMS = new Set<SlideScrim>(["dark", "light", "none"]);
+
+/** Dark washes use light ink; light washes use dark ink. */
+export const SLIDE_WASH_INK: Record<SlideWash, "dark" | "light"> = {
+  paper: "dark",
+  mist: "dark",
+  dusk: "light",
+  ink: "light",
+  ember: "light",
+};
+
+export function isSlideWash(value: string): value is SlideWash {
+  return SLIDE_WASHES.has(value.trim().toLowerCase() as SlideWash);
+}
+
+export function normalizeSlideWash(value: string | undefined): SlideWash {
+  const v = (value ?? "paper").trim().toLowerCase();
+  return isSlideWash(v) ? v : "paper";
+}
+
+/** True when bg is a vault path or remote URL (not a named wash). */
+export function isSlideBgImage(bg: string | undefined): boolean {
+  const v = (bg ?? "").trim();
+  if (!v || isSlideWash(v)) return false;
+  return (
+    v.startsWith("./") ||
+    v.startsWith("../") ||
+    v.startsWith("/") ||
+    /^https?:\/\//i.test(v) ||
+    /\.(png|jpe?g|gif|webp|svg|avif)(\?.*)?$/i.test(v)
+  );
+}
+
+export function normalizeSlideScrim(
+  value: string | undefined,
+  bgIsImage: boolean,
+): SlideScrim | undefined {
+  const v = (value ?? "").trim().toLowerCase();
+  if (v && SLIDE_SCRIMS.has(v as SlideScrim)) return v as SlideScrim;
+  // Image backgrounds default to full photo brightness (no overlay).
+  if (bgIsImage) return "none";
+  return undefined;
+}
 
 function matchFenceOpen(line: string): { ticks: number; lang: string } | null {
   const m = /^(`{3,})([^\s`]*)/.exec(line);
@@ -140,12 +195,20 @@ export function parseSlidesDeck(body: string): SlidesDeck | null {
         (parsed.fields.label ?? parsed.fields.title)?.trim() || `Slide ${i + 1}`;
       const slideBody = parsed.body;
       if (!label && !slideBody) continue;
-      slides.push({
+      const bg = parsed.fields.bg?.trim();
+      const bgIsImage = isSlideBgImage(bg);
+      const scrim = normalizeSlideScrim(parsed.fields.scrim, bgIsImage);
+      const slide: SlideSection = {
         id: slugSlideId(label, i),
         label,
         layout: normalizeLayout(parsed.fields.layout),
         body: slideBody,
-      });
+      };
+      if (bg) slide.bg = bg;
+      if (scrim && (bgIsImage || parsed.fields.scrim?.trim())) {
+        slide.scrim = scrim;
+      }
+      slides.push(slide);
     }
   }
 
@@ -157,7 +220,7 @@ export function parseSlidesDeck(body: string): SlidesDeck | null {
 
   return {
     title: preamble.fields.title?.trim() ?? "",
-    theme: preamble.fields.theme?.trim() || "paper",
+    theme: normalizeSlideWash(preamble.fields.theme),
     columns,
     slides,
   };
@@ -179,6 +242,11 @@ export function serializeSlidesDeckBody(deck: SlidesDeck): string {
     lines.push("---");
     lines.push(`label: ${slide.label}`);
     lines.push(`layout: ${slide.layout}`);
+    if (slide.bg?.trim()) lines.push(`bg: ${slide.bg.trim()}`);
+    // Default for images is `none` — only serialize when explicit non-default.
+    if (slide.scrim && !(isSlideBgImage(slide.bg) && slide.scrim === "none")) {
+      lines.push(`scrim: ${slide.scrim}`);
+    }
     lines.push("");
     if (slide.body.trim()) lines.push(slide.body.trim());
     lines.push("");

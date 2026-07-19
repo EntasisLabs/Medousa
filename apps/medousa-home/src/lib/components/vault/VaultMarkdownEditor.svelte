@@ -511,6 +511,7 @@
     cmEl?.scrollToHeadingSource(headingText);
   }
 
+  /** Flush nested Live Write drafts + serialize TipTap (Cmd/Ctrl+S, Live→Build). */
   export function flushLive(): string {
     if (!isLivePlane) return draft;
     const flushed = liveEl?.flush() ?? draft;

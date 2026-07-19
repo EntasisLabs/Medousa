@@ -4,6 +4,7 @@
     CalendarRange,
     Check,
     FilePlus,
+    FileText,
     FolderPlus,
     PanelLeftClose,
     SlidersHorizontal,
@@ -13,6 +14,7 @@
   import { vault } from "$lib/stores/vault.svelte";
   import { externalDesk } from "$lib/stores/externalDesk.svelte";
   import { iconForSpace } from "$lib/utils/vaultSpaceIcons";
+  import { canUseLocalVaultFilesystem } from "$lib/utils/vaultFilesystem";
   import VaultRootPicker from "./VaultRootPicker.svelte";
   import VaultLibraryBrowseModeBar from "./VaultLibraryBrowseModeBar.svelte";
   import { vaultFolderIcons } from "$lib/stores/vaultFolderIcons.svelte";
@@ -307,6 +309,21 @@
                   <FolderPlus size={14} strokeWidth={2} />
                   New group
                 </button>
+                {#if canUseLocalVaultFilesystem()}
+                  <div class="my-1 border-t border-surface-500/35"></div>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    class="vault-menu-item"
+                    onclick={() => {
+                      closeMenus();
+                      void vault.openLooseMarkdownFile();
+                    }}
+                  >
+                    <FileText size={14} strokeWidth={2} />
+                    Open markdown file…
+                  </button>
+                {/if}
               </div>
             {/if}
           </div>
