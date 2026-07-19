@@ -3,23 +3,34 @@
  * Hex/rgb only — html2canvas rejects color-mix().
  */
 
+import type { VaultNoteKind } from "./vaultFrontmatter";
 import {
   exportFontStack,
   exportMonoFontStack,
   type VaultExportOptions,
 } from "./vaultExportOptions";
 
+export type ExportPrintCssMeta = {
+  noteKind?: VaultNoteKind | null;
+};
+
 /** Build parameterized export stylesheet for `.vault-pdf-export-mount`. */
-export function buildExportPrintCss(options: VaultExportOptions): string {
+export function buildExportPrintCss(
+  options: VaultExportOptions,
+  meta?: ExportPrintCssMeta,
+): string {
   const font = exportFontStack(options.fontFamily);
   const mono = exportMonoFontStack();
   const base = options.baseFontPx;
-  const h1 = (base * 1.5).toFixed(2);
-  const h2 = (base * 1.25).toFixed(2);
-  const h3 = (base * 1.1).toFixed(2);
-  const keep = options.keepTogether;
-  const breakH2 = options.breakBeforeH2
-    ? `
+  const resume = meta?.noteKind === "resume";
+  const h1 = (base * (resume ? 1.65 : 1.5)).toFixed(2);
+  const h2 = (base * (resume ? 0.85 : 1.25)).toFixed(2);
+  const h3 = (base * (resume ? 1.05 : 1.1)).toFixed(2);
+  const keep = options.keepTogether || resume;
+  // Resumes almost never want a page break per section.
+  const breakH2 =
+    options.breakBeforeH2 && !resume
+      ? `
   .vault-pdf-export-mount h2 {
     break-before: page !important;
     page-break-before: always !important;
@@ -28,7 +39,7 @@ export function buildExportPrintCss(options: VaultExportOptions): string {
     break-before: auto !important;
     page-break-before: auto !important;
   }`
-    : "";
+      : "";
 
   // Small units only — never blanket whole `table` (must span pages at row bounds).
   const avoid = keep
@@ -43,9 +54,186 @@ export function buildExportPrintCss(options: VaultExportOptions): string {
   .vault-pdf-export-mount .liquid-tabs-panel--export,
   .vault-pdf-export-mount blockquote,
   .vault-pdf-export-mount .markdown-callout,
-  .vault-pdf-export-mount details {
+  .vault-pdf-export-mount details${
+    resume
+      ? `,
+  .vault-pdf-export-mount .markdown-table--matrix`
+      : ""
+  } {
     break-inside: avoid !important;
     page-break-inside: avoid !important;
+  }`
+    : "";
+
+  const resumePack = resume
+    ? `
+  .vault-pdf-export-mount[data-note-kind="resume"] {
+    padding: 36px 36px 48px !important;
+  }
+
+  .vault-pdf-export-mount[data-note-kind="resume"] h1 {
+    font-size: ${h1}px !important;
+    margin: 0 0 0.45rem !important;
+    letter-spacing: -0.02em !important;
+  }
+
+  .vault-pdf-export-mount[data-note-kind="resume"] > h1 + .vault-pdf-export-body {
+    margin-top: 0.35rem !important;
+  }
+
+  .vault-pdf-export-mount[data-note-kind="resume"] h1 + p,
+  .vault-pdf-export-mount[data-note-kind="resume"] .vault-pdf-export-body > h1 + p {
+    margin: 0 0 0.85rem !important;
+    font-size: ${(base * 0.9).toFixed(2)}px !important;
+    color: #4b5563 !important;
+  }
+
+  .vault-pdf-export-mount[data-note-kind="resume"] h2 {
+    font-size: ${h2}px !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.08em !important;
+    text-transform: uppercase !important;
+    color: #374151 !important;
+    margin: 1.15rem 0 0.4rem !important;
+    padding-bottom: 0.25rem !important;
+    border-bottom: 1px solid #d1d5db !important;
+  }
+
+  .vault-pdf-export-mount[data-note-kind="resume"] h3 {
+    font-size: ${h3}px !important;
+    margin: 0.85rem 0 0.4rem !important;
+  }
+
+  .vault-pdf-export-mount[data-note-kind="resume"] .vault-export-job > h3 {
+    margin-top: 0 !important;
+  }
+
+  .vault-pdf-export-mount[data-note-kind="resume"] h3 + p {
+    margin: 0 0 0.4rem !important;
+    font-size: ${(base * 0.9).toFixed(2)}px !important;
+    color: #4b5563 !important;
+  }
+
+  /* Table layout survives html2canvas better than flex+gap. */
+  .vault-pdf-export-mount[data-note-kind="resume"] .resume-role-meta {
+    display: table !important;
+    width: 100% !important;
+    table-layout: fixed !important;
+    margin: 0 0 0.45rem !important;
+    font-size: ${(base * 0.9).toFixed(2)}px !important;
+    color: #4b5563 !important;
+  }
+
+  .vault-pdf-export-mount[data-note-kind="resume"] .resume-role-org,
+  .vault-pdf-export-mount[data-note-kind="resume"] .resume-role-dates {
+    display: table-cell !important;
+    vertical-align: baseline !important;
+  }
+
+  .vault-pdf-export-mount[data-note-kind="resume"] .resume-role-org {
+    font-weight: 600 !important;
+    color: #374151 !important;
+    text-align: left !important;
+    padding-right: 0.75rem !important;
+  }
+
+  .vault-pdf-export-mount[data-note-kind="resume"] .resume-role-dates {
+    color: #6b7280 !important;
+    text-align: right !important;
+    white-space: nowrap !important;
+    width: 1% !important;
+  }
+
+  .vault-pdf-export-mount[data-note-kind="resume"] .vault-export-job {
+    margin: 0 0 0.65rem !important;
+  }
+
+  /* Explicit bullets — html2canvas mangles native list markers into stars. */
+  .vault-pdf-export-mount[data-note-kind="resume"] .vault-export-job > ul,
+  .vault-pdf-export-mount[data-note-kind="resume"] .vault-pdf-export-body > ul {
+    list-style: none !important;
+    padding-left: 1.15rem !important;
+    margin: 0.2rem 0 0.35rem !important;
+  }
+
+  .vault-pdf-export-mount[data-note-kind="resume"] .vault-export-job > ul > li,
+  .vault-pdf-export-mount[data-note-kind="resume"] .vault-pdf-export-body > ul > li {
+    position: relative !important;
+    margin: 0.28rem 0 !important;
+    line-height: 1.4 !important;
+    padding-left: 0.15rem !important;
+  }
+
+  .vault-pdf-export-mount[data-note-kind="resume"] .vault-export-job > ul > li::before,
+  .vault-pdf-export-mount[data-note-kind="resume"] .vault-pdf-export-body > ul > li::before {
+    content: "\\2022" !important;
+    position: absolute !important;
+    left: -0.95rem !important;
+    top: 0 !important;
+    color: #111827 !important;
+    font-weight: 700 !important;
+  }
+
+  .vault-pdf-export-mount[data-note-kind="resume"] li > strong:first-child {
+    font-weight: 650 !important;
+    color: #111827 !important;
+  }
+
+  .vault-pdf-export-mount[data-note-kind="resume"] h2 + ul {
+    display: block !important;
+    margin: 0.4rem 0 0.75rem !important;
+    padding: 0 !important;
+    list-style: none !important;
+  }
+
+  .vault-pdf-export-mount[data-note-kind="resume"] h2 + ul > li {
+    display: inline-block !important;
+    position: static !important;
+    margin: 0 6px 6px 0 !important;
+    padding: 5px 10px !important;
+    border: 1px solid #d1d5db !important;
+    border-radius: 999px !important;
+    background: #f9fafb !important;
+    font-size: ${(base * 0.85).toFixed(2)}px !important;
+    font-weight: 550 !important;
+    color: #111827 !important;
+  }
+
+  .vault-pdf-export-mount[data-note-kind="resume"] h2 + ul > li::before {
+    content: none !important;
+  }
+
+  .vault-pdf-export-mount[data-note-kind="resume"] .markdown-table--matrix {
+    margin: 0.4rem 0 0.75rem !important;
+    border: 0 !important;
+    padding: 0 !important;
+  }
+
+  .vault-pdf-export-mount[data-note-kind="resume"] .markdown-table--matrix table {
+    width: 100% !important;
+    border-collapse: separate !important;
+    border-spacing: 6px !important;
+    margin: 0 !important;
+    table-layout: fixed !important;
+  }
+
+  .vault-pdf-export-mount[data-note-kind="resume"] .markdown-table--matrix th,
+  .vault-pdf-export-mount[data-note-kind="resume"] .markdown-table--matrix td {
+    border: 1px solid #d1d5db !important;
+    border-radius: 6px !important;
+    background: #f9fafb !important;
+    padding: 7px 8px !important;
+    text-align: center !important;
+    font-size: ${(base * 0.85).toFixed(2)}px !important;
+    font-weight: 550 !important;
+    vertical-align: middle !important;
+  }
+
+  .vault-pdf-export-mount[data-note-kind="resume"] .markdown-table--matrix th {
+    background: #f3f4f6 !important;
+    font-weight: 650 !important;
+    text-transform: none !important;
+    letter-spacing: 0 !important;
   }`
     : "";
 
@@ -911,5 +1099,6 @@ export function buildExportPrintCss(options: VaultExportOptions): string {
 
   ${pageFlow}
   ${avoid}
+  ${resumePack}
 `;
 }

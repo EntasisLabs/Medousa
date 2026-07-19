@@ -47,6 +47,8 @@ Structured views (kanban, database) — see [vault-editing plan](../../architect
 
 **Slides decks:** `kind: slides` / ` ```slides ` fences, washes, photo backgrounds, one-slide-per-page export — [vault-slides.md](vault-slides.md). Liquid fence catalog: [liquid-markdown.md](liquid-markdown.md).
 
+**Resumes:** `kind: resume` — GFM CV with section rhythm + skills-matrix tables; PDF/Word pack — [vault-resume.md](vault-resume.md).
+
 ---
 
 ## External files

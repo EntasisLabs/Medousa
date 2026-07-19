@@ -44,11 +44,12 @@ export async function renderVaultNotePdfBlob(options: {
   });
 
   const filename = vaultPdfFilename(options.title);
-  const { mount, dispose } = prepared;
+  const { mount, dispose, options: preparedOptions } = prepared;
+  const isResume = mount.dataset.noteKind === "resume";
 
   try {
     const html2pdf = (await import("html2pdf.js")).default;
-    const margins = exportMarginInches(exportOptions.margins);
+    const margins = exportMarginInches(preparedOptions.margins);
     const worker = html2pdf()
       .set({
         margin: margins,
@@ -72,11 +73,12 @@ export async function renderVaultNotePdfBlob(options: {
         },
         jsPDF: {
           unit: "in",
-          format: exportOptions.pageSize,
-          orientation: exportOptions.orientation,
+          format: preparedOptions.pageSize,
+          orientation: preparedOptions.orientation,
         },
         // Always avoid splitting glued sections / compare (orphans + cropped slivers).
         // keepTogether adds smaller unit avoids on top.
+        // Resumes: avoid job wrappers, not bare h3 (bare h3 orphans the list).
         pagebreak: {
           mode: ["css"],
           avoid: [
@@ -86,12 +88,13 @@ export async function renderVaultNotePdfBlob(options: {
             ".vault-export-section",
             ".vault-export-keep",
             ".vault-export-label-group",
+            ".vault-export-job",
             ".liquid-compare",
             '.liquid-md-embed[data-liquid-embed="compare"]',
             "h2",
-            "h3",
+            ...(isResume ? [] : ["h3"]),
             "h4",
-            ...(exportOptions.keepTogether
+            ...(preparedOptions.keepTogether
               ? [
                   "img",
                   ".liquid-callout",

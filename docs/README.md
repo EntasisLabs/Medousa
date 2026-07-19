@@ -56,6 +56,7 @@ Doc conventions: [CONTRIBUTING-DOCS.md](CONTRIBUTING-DOCS.md)
 | [Environment canvas (advanced)](cookbook/environment-canvas-advanced.md) | Operators: spec, presets, feeds, HTTP |
 | [Vault & library](cookbook/vault-and-library.md) | Multi-root vault, wikilinks, external files |
 | [Vault slides](cookbook/vault-slides.md) | Deck notes, washes, photo backgrounds, export |
+| [Vault resumes](cookbook/vault-resume.md) | CV notes, skills matrix tables, PDF/Word pack |
 | [Liquid markdown](cookbook/liquid-markdown.md) | Chart/card/report/slides fences |
 
 ### Engine — embed & scale

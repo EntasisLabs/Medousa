@@ -162,6 +162,7 @@ const KIND_BROWSE_ORDER: VaultNoteKind[] = [
   "ledger",
   "board",
   "slides",
+  "resume",
   "inbox",
   "bug",
   "note",

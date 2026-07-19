@@ -3504,6 +3504,152 @@
     margin-block: 1.1rem;
   }
 
+  /* Resume kind — ATS-safe single column with tighter section rhythm. */
+  [data-note-kind="resume"] .markdown-content {
+    max-width: 46rem;
+  }
+
+  [data-note-kind="resume"] .markdown-content h1 {
+    @apply mt-0 mb-1 text-2xl tracking-tight;
+  }
+
+  [data-note-kind="resume"] .markdown-content h1 + p {
+    @apply mt-0 mb-4 text-sm text-surface-400;
+  }
+
+  [data-note-kind="resume"] .markdown-content h2 {
+    @apply mt-7 mb-2 text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-surface-400;
+    padding-bottom: 0.35rem;
+    border-bottom: 1px solid color-mix(in srgb, var(--color-surface-500) 40%, transparent);
+  }
+
+  [data-note-kind="resume"] .markdown-content h3 {
+    @apply mt-4 mb-0.5 text-[1rem] font-semibold tracking-tight text-surface-50;
+  }
+
+  [data-note-kind="resume"] .markdown-content h3 + p {
+    @apply mt-0 mb-1.5 text-sm text-surface-400;
+  }
+
+  /* Role timeline: `Company | Dates` → org left / dates right (preview + export). */
+  .markdown-content .resume-role-meta,
+  [data-note-kind="resume"] .markdown-content .resume-role-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.35rem 1rem;
+    margin: 0 0 0.55rem;
+    font-size: 0.875rem;
+    line-height: 1.35;
+    color: rgb(var(--color-surface-400));
+  }
+
+  .markdown-content .resume-role-org {
+    font-weight: 550;
+    color: rgb(var(--color-surface-300));
+  }
+
+  .markdown-content .resume-role-dates {
+    font-variant-numeric: tabular-nums;
+    color: rgb(var(--color-surface-500));
+    white-space: nowrap;
+  }
+
+  [data-note-kind="resume"] .markdown-content p {
+    @apply my-2 text-[0.95rem] leading-relaxed text-surface-200;
+  }
+
+  [data-note-kind="resume"] .markdown-content ul,
+  [data-note-kind="resume"] .markdown-content ol {
+    @apply my-2;
+  }
+
+  [data-note-kind="resume"] .markdown-content li {
+    @apply my-1.5 leading-relaxed;
+  }
+
+  /* Experience bullets: bold lead-in reads as a label, not shouty weight. */
+  [data-note-kind="resume"] .markdown-content li > strong:first-child {
+    color: rgb(var(--color-surface-100));
+    font-weight: 650;
+  }
+
+  /*
+   * Skills / tools: a list directly under an H2 becomes a chip cloud.
+   * Job bullets stay normal lists (they sit under H3, not H2).
+   */
+  [data-note-kind="resume"] .markdown-content h2 + ul {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin: 0.55rem 0 0.85rem;
+    padding: 0;
+    list-style: none;
+  }
+
+  [data-note-kind="resume"] .markdown-content h2 + ul > li {
+    margin: 0;
+    padding: 0.28rem 0.65rem;
+    border: 1px solid color-mix(in srgb, var(--color-surface-500) 34%, transparent);
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--color-surface-800) 48%, transparent);
+    font-size: 0.8rem;
+    font-weight: 550;
+    line-height: 1.3;
+    color: rgb(var(--color-surface-100));
+  }
+
+  /* Skills / expertise matrix — chip grid instead of data table. */
+  [data-note-kind="resume"] .markdown-content .markdown-table--matrix,
+  .markdown-content .markdown-table--matrix {
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    overflow: visible;
+  }
+
+  [data-note-kind="resume"] .markdown-content .markdown-table--matrix table,
+  .markdown-content .markdown-table--matrix table {
+    table-layout: fixed;
+    border-collapse: separate;
+    border-spacing: 0.4rem 0.4rem;
+  }
+
+  [data-note-kind="resume"] .markdown-content .markdown-table--matrix th,
+  [data-note-kind="resume"] .markdown-content .markdown-table--matrix td,
+  .markdown-content .markdown-table--matrix th,
+  .markdown-content .markdown-table--matrix td {
+    @apply px-2.5 py-2 text-center text-[0.8rem] font-medium text-surface-100;
+    border: 1px solid color-mix(in srgb, var(--color-surface-500) 32%, transparent);
+    border-radius: 0.55rem;
+    background: color-mix(in srgb, var(--color-surface-800) 45%, transparent);
+    max-width: none;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  [data-note-kind="resume"] .markdown-content .markdown-table--matrix th,
+  .markdown-content .markdown-table--matrix th {
+    @apply font-semibold normal-case tracking-normal text-surface-200;
+    background: color-mix(in srgb, var(--color-surface-700) 55%, transparent);
+    font-size: 0.75rem;
+    letter-spacing: 0.01em;
+    text-transform: none;
+  }
+
+  [data-note-kind="resume"] .markdown-content .markdown-table--matrix tr:last-child td,
+  .markdown-content .markdown-table--matrix tr:last-child td {
+    border-bottom: 1px solid color-mix(in srgb, var(--color-surface-500) 32%, transparent);
+  }
+
+  [data-note-kind="resume"] .markdown-content .markdown-table--matrix td:first-child,
+  .markdown-content .markdown-table--matrix td:first-child {
+    @apply font-medium;
+    max-width: none;
+  }
+
   .markdown-content .liquid-md-embed {
     margin: 1.15rem 0;
   }
@@ -9644,6 +9790,104 @@
 
   .vault-live-prose .vault-live-table td {
     background: rgb(var(--color-surface-900) / 0.25);
+  }
+
+  /* Resume Live: section rhythm + wide short-cell tables as matrix chips. */
+  [data-note-kind="resume"] .vault-live-prose h1 {
+    margin: 0 0 0.35rem;
+    font-size: 1.65rem;
+    letter-spacing: -0.03em;
+  }
+
+  [data-note-kind="resume"] .vault-live-prose h1 + p {
+    margin: 0 0 1rem;
+    font-size: 0.875rem;
+    color: rgb(var(--color-surface-400));
+  }
+
+  [data-note-kind="resume"] .vault-live-prose h2 {
+    margin: 1.65rem 0 0.55rem;
+    padding-bottom: 0.3rem;
+    font-size: 0.72rem;
+    font-weight: 650;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: rgb(var(--color-surface-400));
+    border-bottom: 1px solid rgb(var(--color-surface-500) / 0.4);
+  }
+
+  [data-note-kind="resume"] .vault-live-prose h3 {
+    margin: 1rem 0 0.2rem;
+    font-size: 1rem;
+    font-weight: 650;
+  }
+
+  [data-note-kind="resume"] .vault-live-prose h3 + p {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 0.35rem 1rem;
+    margin: 0 0 0.45rem;
+    font-size: 0.875rem;
+    color: rgb(var(--color-surface-400));
+  }
+
+  [data-note-kind="resume"] .vault-live-prose ul,
+  [data-note-kind="resume"] .vault-live-prose ol {
+    margin: 0.35rem 0 0.85rem;
+  }
+
+  [data-note-kind="resume"] .vault-live-prose li {
+    margin: 0.35rem 0;
+    line-height: 1.45;
+  }
+
+  [data-note-kind="resume"] .vault-live-prose li > strong:first-child {
+    color: rgb(var(--color-surface-100));
+    font-weight: 650;
+  }
+
+  /* Live: section skill lists directly under H2 become chip rows. */
+  [data-note-kind="resume"] .vault-live-prose h2 + ul {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin: 0.45rem 0 0.85rem;
+    padding: 0;
+    list-style: none;
+  }
+
+  [data-note-kind="resume"] .vault-live-prose h2 + ul > li {
+    margin: 0;
+    padding: 0.28rem 0.65rem;
+    border: 1px solid rgb(var(--color-surface-500) / 0.34);
+    border-radius: 999px;
+    background: rgb(var(--color-surface-800) / 0.48);
+    font-size: 0.8rem;
+    font-weight: 550;
+    line-height: 1.3;
+  }
+
+  [data-note-kind="resume"] .vault-live-prose .vault-live-table:has(tr > :nth-child(3)) {
+    border-collapse: separate;
+    border-spacing: 0.4rem;
+    margin: 0.5rem 0 1rem;
+  }
+
+  [data-note-kind="resume"] .vault-live-prose .vault-live-table:has(tr > :nth-child(3)) th,
+  [data-note-kind="resume"] .vault-live-prose .vault-live-table:has(tr > :nth-child(3)) td {
+    border: 1px solid rgb(var(--color-surface-500) / 0.35);
+    border-radius: 0.55rem;
+    text-align: center;
+    background: rgb(var(--color-surface-800) / 0.45);
+    font-size: 0.8rem;
+    font-weight: 550;
+  }
+
+  [data-note-kind="resume"] .vault-live-prose .vault-live-table:has(tr > :nth-child(3)) th {
+    background: rgb(var(--color-surface-700) / 0.55);
+    text-transform: none;
+    letter-spacing: 0.01em;
   }
 
   .vault-live-prose .vault-live-table .selectedCell::after {

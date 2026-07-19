@@ -25,6 +25,7 @@ Product overview: [README](../../README.md) → download **Medousa**.
 | [Environment canvas (advanced)](environment-canvas-advanced.md) | Spec, presets, feeds, HTTP API, operators |
 | [Vault & library](vault-and-library.md) | Notes, multi-root, wikilinks |
 | [Vault slides](vault-slides.md) | ` ```slides ` decks, washes, photo backgrounds, PDF export |
+| [Vault resumes](vault-resume.md) | `kind: resume` CVs, skills matrix tables, export pack |
 | [Liquid markdown](liquid-markdown.md) | Chart/card/dashboard/slides fences in chat and vault |
 
 Engine reference: [../engine/README.md](../engine/README.md) · SDK: [../sdk/README.md](../sdk/README.md)

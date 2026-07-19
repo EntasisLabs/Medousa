@@ -11,6 +11,7 @@ import {
   splitImageAltSize,
   splitImageHrefSize,
 } from "./imageSize";
+import { enhanceResumePresentation } from "./resumePresentation";
 import { isLocalImageHref, isRemoteImageHref } from "$lib/utils/vaultLocalImages";
 
 export interface MarkdownRenderOptions {
@@ -229,15 +230,47 @@ export function renderMarkdown(
     activeRenderOptions.titleByPath,
   );
   const raw = marked.parse(preprocessed, { async: false }) as string;
-  return sanitizeHtml(wrapMarkdownTables(raw));
+  return sanitizeHtml(enhanceResumePresentation(wrapMarkdownTables(raw)));
+}
+
+/** Strip tags for short-cell heuristics (skills / expertise matrices). */
+function plainTableCellText(cellHtml: string): string {
+  return cellHtml
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Wide GFM tables with short cells → skills matrix chrome.
+ * Narrative / wide-text tables keep the default data-card shell.
+ */
+export function markdownTableShellClass(tableHtml: string): string {
+  const firstRow = tableHtml.match(/<tr\b[\s\S]*?<\/tr>/i)?.[0] ?? "";
+  const headerCells =
+    firstRow.match(/<t[hd]\b[^>]*>[\s\S]*?<\/t[hd]>/gi) ?? [];
+  if (headerCells.length < 3) return "markdown-table-scroll";
+
+  const cells = tableHtml.match(/<t[hd]\b[^>]*>[\s\S]*?<\/t[hd]>/gi) ?? [];
+  if (cells.length === 0) return "markdown-table-scroll";
+
+  const texts = cells.map(plainTableCellText);
+  const maxLen = Math.max(...texts.map((t) => t.length), 0);
+  const avgLen =
+    texts.reduce((sum, t) => sum + t.length, 0) / Math.max(texts.length, 1);
+  if (maxLen <= 80 && avgLen <= 42) {
+    return "markdown-table-scroll markdown-table--matrix";
+  }
+  return "markdown-table-scroll";
 }
 
 /** Scroll shell around tables so overflow never forces `display:block` on `<table>`. */
 function wrapMarkdownTables(html: string): string {
-  return html.replace(
-    /<table\b[^>]*>[\s\S]*?<\/table>/gi,
-    (table) => `<div class="markdown-table-scroll">${table}</div>`,
-  );
+  return html.replace(/<table\b[^>]*>[\s\S]*?<\/table>/gi, (table) => {
+    const shell = markdownTableShellClass(table);
+    return `<div class="${shell}">${table}</div>`;
+  });
 }
 
 /** Back-compat alias used by vault editor and legacy imports. */

@@ -9,12 +9,14 @@ import {
   formatExportByline,
   glueHeadingsToFollowingEmbed,
   glueLabelParagraphsToFollowing,
+  glueResumeJobBlocks,
   hardenExportLayout,
   injectExportByline,
   isLabelLikeParagraph,
   markTallEmbedsForPageFlow,
   normalizeExportTitle,
   prepareSlidesExportMarkdown,
+  shouldInjectExportTitle,
   stripExportChrome,
 } from "./vaultExportPrep";
 import { buildExportPrintCss } from "./vaultExportPrintCss";
@@ -62,6 +64,43 @@ describe("vaultExportPrep helpers", () => {
     const noH1 = document.createElement("div");
     noH1.innerHTML = `<h2>Section</h2>`;
     expect(bodyHasMatchingTitleH1(noH1, "Section")).toBe(false);
+  });
+
+  it("skips resume title inject when the body already has a name H1", () => {
+    const body = document.createElement("div");
+    body.innerHTML = `<h1>LaKenya "Elle" Smith</h1><p>Maricopa, AZ</p>`;
+    expect(shouldInjectExportTitle(body, "Elle Smith Resume", "resume")).toBe(
+      false,
+    );
+    expect(shouldInjectExportTitle(body, "Elle Smith Resume", "note")).toBe(
+      true,
+    );
+    const empty = document.createElement("div");
+    empty.innerHTML = `<h2>Summary</h2>`;
+    expect(shouldInjectExportTitle(empty, "Resume", "resume")).toBe(true);
+  });
+
+  it("glues resume job blocks into keep-together wrappers", () => {
+    const body = document.createElement("div");
+    body.innerHTML = `
+      <h3>Logistics Coordinator</h3>
+      <p class="resume-role-meta"><span class="resume-role-org">DriveTime</span><span class="resume-role-dates">May 2026 – Present</span></p>
+      <ul><li>One</li><li>Two</li></ul>
+      <h3>Advisor</h3>
+      <p>Bridgecrest | January 2025 – May 2026</p>
+      <ul><li>Three</li></ul>
+    `;
+    glueResumeJobBlocks(body);
+    const jobs = body.querySelectorAll(".vault-export-job");
+    expect(jobs.length).toBe(2);
+    expect(jobs[0]?.querySelector("h3")?.textContent).toBe(
+      "Logistics Coordinator",
+    );
+    expect(jobs[0]?.querySelector("ul")?.children.length).toBe(2);
+    expect(jobs[1]?.querySelector(".resume-role-meta, p")?.textContent).toContain(
+      "Bridgecrest",
+    );
+    expect(body.querySelector(":scope > h3")).toBeNull();
   });
 
   it("keeps compare/section units unless taller than a page", () => {
@@ -260,6 +299,31 @@ describe("vaultExportPrintCss", () => {
     expect(css).toContain("break-after: avoid");
     expect(css).toContain(".liquid-brief");
     expect(css).toContain("vault-export-keep");
+  });
+
+  it("includes resume presentation pack when noteKind is resume", () => {
+    const css = buildExportPrintCss(DEFAULT_VAULT_EXPORT_OPTIONS, {
+      noteKind: "resume",
+    });
+    expect(css).toContain('data-note-kind="resume"');
+    expect(css).toContain(".markdown-table--matrix");
+    expect(css).toContain("text-transform: uppercase");
+    expect(css).toContain("resume-role-meta");
+    expect(css).toContain("display: table");
+    expect(css).toContain("vault-export-job");
+    expect(css).toContain("\\2022");
+    // Keep-together targets matrix / job wrappers — not bare h3.
+    expect(css).not.toMatch(
+      /details\s*,\s*\n\s*\.vault-pdf-export-mount h3\s*,/,
+    );
+    // Resume suppresses H2 page breaks even if the option is on.
+    const withBreak = buildExportPrintCss(
+      { ...DEFAULT_VAULT_EXPORT_OPTIONS, breakBeforeH2: true },
+      { noteKind: "resume" },
+    );
+    expect(withBreak).not.toMatch(
+      /\.vault-pdf-export-mount h2 \{\s*break-before:\s*page/,
+    );
   });
 
   it("formats byline from frontmatter toggles", () => {

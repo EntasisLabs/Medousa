@@ -9,6 +9,8 @@ import { renderMarkdownPreview } from "$lib/markdown";
 import {
   parseFrontmatterAuthor,
   parseFrontmatterDate,
+  parseFrontmatterKindValue,
+  resolveKind,
   stripFrontmatter,
 } from "$lib/utils/vaultFrontmatter";
 import { noteHasSlidesDeck } from "$lib/utils/markdownSlides";
@@ -74,6 +76,21 @@ export function bodyHasMatchingTitleH1(
   const first = bodyEl.querySelector(":scope > h1");
   if (!first) return false;
   return normalizeExportTitle(first.textContent ?? "") === normalizeExportTitle(title);
+}
+
+/**
+ * Whether to inject the note title as an H1 above the body.
+ * Resumes already lead with the candidate name — never double-title them.
+ */
+export function shouldInjectExportTitle(
+  bodyEl: HTMLElement,
+  title: string,
+  noteKind?: string | null,
+): boolean {
+  if (noteKind === "resume") {
+    return bodyEl.querySelector(":scope > h1") == null;
+  }
+  return !bodyHasMatchingTitleH1(bodyEl, title);
 }
 
 /** Build muted export byline from frontmatter + toggles. */
@@ -176,6 +193,7 @@ export function markTallEmbedsForPageFlow(
   for (const el of root.querySelectorAll<HTMLElement>(
     [
       ".vault-export-section",
+      ".vault-export-label-group",
       ".liquid-md-embed",
       ".liquid-compare",
       ".liquid-report",
@@ -189,9 +207,10 @@ export function markTallEmbedsForPageFlow(
     const h = el.scrollHeight;
     el.classList.remove("vault-export-allow-break", "vault-export-keep");
 
-    // Sections (h2+embed) and compare matrices: never start mid-page as a sliver.
+    // Sections (h2+embed), resume job blocks, and compare: keep whole unit unless taller than a page.
     if (
       el.classList.contains("vault-export-section") ||
+      el.classList.contains("vault-export-label-group") ||
       el.classList.contains("liquid-compare") ||
       el.matches('.liquid-md-embed[data-liquid-embed="compare"]')
     ) {
@@ -300,6 +319,57 @@ export function glueLabelParagraphsToFollowing(bodyEl: HTMLElement): void {
     wrap.className = "vault-export-label-group";
     cur.before(wrap);
     wrap.append(cur, next);
+  }
+}
+
+function isResumeRoleMetaParagraph(el: HTMLElement): boolean {
+  if (el.tagName !== "P") return false;
+  if (el.classList.contains("resume-role-meta")) return true;
+  const text = (el.textContent ?? "").replace(/\s+/g, " ").trim();
+  if (!text || text.length > 96) return false;
+  const pipe = text.indexOf("|");
+  return pipe > 0 && pipe === text.lastIndexOf("|");
+}
+
+/**
+ * Wrap resume job blocks (h3 + optional Company|Dates meta + list) so PDF
+ * page breaks move the whole role instead of orphaning the title.
+ */
+export function glueResumeJobBlocks(bodyEl: HTMLElement): void {
+  let i = 0;
+  while (i < bodyEl.children.length) {
+    const heading = bodyEl.children[i];
+    if (!(heading instanceof HTMLElement) || heading.tagName !== "H3") {
+      i += 1;
+      continue;
+    }
+
+    const bundle: HTMLElement[] = [heading];
+    let cursor = i + 1;
+    const maybeMeta = bodyEl.children[cursor];
+    if (
+      maybeMeta instanceof HTMLElement &&
+      isResumeRoleMetaParagraph(maybeMeta)
+    ) {
+      bundle.push(maybeMeta);
+      cursor += 1;
+    }
+    const list = bodyEl.children[cursor];
+    if (
+      !(list instanceof HTMLElement) ||
+      (list.tagName !== "UL" && list.tagName !== "OL")
+    ) {
+      i += 1;
+      continue;
+    }
+    bundle.push(list);
+
+    const wrap = document.createElement("div");
+    wrap.className = "vault-export-label-group vault-export-job";
+    heading.before(wrap);
+    wrap.append(...bundle);
+    // Advance past the wrapper we just inserted.
+    i += 1;
   }
 }
 
@@ -640,9 +710,22 @@ export function prepareSlidesExportMarkdown(content: string): string {
 export async function prepareVaultExportMount(
   input: VaultExportPrepInput,
 ): Promise<VaultExportPrepResult> {
-  const options = normalizeVaultExportOptions(input.options);
   const exportContent = prepareSlidesExportMarkdown(input.content);
-  const body = stripFrontmatter(exportContent).content;
+  const { content: body, frontmatter } = stripFrontmatter(exportContent);
+  const noteKind = resolveKind(
+    input.notePath ?? "",
+    parseFrontmatterKindValue(frontmatter),
+  );
+  let options = normalizeVaultExportOptions(input.options);
+  if (noteKind === "resume") {
+    options = normalizeVaultExportOptions({
+      ...options,
+      breakBeforeH2: false,
+      keepTogether: true,
+      // Soft default: article "comfortable" → resume-friendly compact.
+      margins: options.margins === "comfortable" ? "compact" : options.margins,
+    });
+  }
   const html = renderMarkdownPreview(body, {
     titleByPath: input.labelByPath,
     resolveLocalImages: Boolean(input.notePath),
@@ -660,10 +743,13 @@ export async function prepareVaultExportMount(
   const mount = document.createElement("div");
   mount.className = "vault-pdf-export-mount";
   mount.dataset.exportPaper = "1";
-  mount.style.cssText = `width:${width}px;max-width:${width}px;margin:0;padding:48px 40px 64px;background:#ffffff;`;
+  mount.dataset.noteKind = noteKind;
+  const pad =
+    noteKind === "resume" ? "36px 36px 48px" : "48px 40px 64px";
+  mount.style.cssText = `width:${width}px;max-width:${width}px;margin:0;padding:${pad};background:#ffffff;`;
 
   const styleEl = document.createElement("style");
-  styleEl.textContent = buildExportPrintCss(options);
+  styleEl.textContent = buildExportPrintCss(options, { noteKind });
 
   const bodyEl = document.createElement("div");
   bodyEl.className = "vault-pdf-export-body markdown-content";
@@ -671,8 +757,8 @@ export async function prepareVaultExportMount(
 
   mount.append(styleEl, bodyEl);
 
-  // Inject title only when the note body does not already start with the same H1.
-  if (!bodyHasMatchingTitleH1(bodyEl, input.title)) {
+  // Inject title only when the body lacks a matching (or resume name) H1.
+  if (shouldInjectExportTitle(bodyEl, input.title, noteKind)) {
     const titleEl = document.createElement("h1");
     titleEl.textContent = input.title;
     mount.insertBefore(titleEl, bodyEl);
@@ -706,6 +792,9 @@ export async function prepareVaultExportMount(
     hardenExportLayout(mount);
     glueHeadingsToFollowingEmbed(bodyEl);
     glueLabelParagraphsToFollowing(bodyEl);
+    if (noteKind === "resume") {
+      glueResumeJobBlocks(bodyEl);
+    }
     ensureTableHeadersForExport(mount);
     densifyCompareForExport(mount);
     markTallEmbedsForPageFlow(mount, 1000, options.keepTogether);

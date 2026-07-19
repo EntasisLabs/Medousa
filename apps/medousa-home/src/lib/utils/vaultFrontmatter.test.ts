@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  normalizeKind,
   parseFrontmatterAuthor,
   parseFrontmatterDate,
+  resolveKindFromPath,
   restingVaultTagChips,
   serializeFrontmatter,
   setFrontmatterAuthorYaml,
@@ -69,5 +71,12 @@ describe("vaultFrontmatter", () => {
 
   it("falls back to updated when date is absent", () => {
     expect(parseFrontmatterDate("updated: 2026-01-01")).toBe("2026-01-01");
+  });
+
+  it("normalizes resume aliases and path inference", () => {
+    expect(normalizeKind("cv")).toBe("resume");
+    expect(normalizeKind("curriculum")).toBe("resume");
+    expect(resolveKindFromPath("resumes/elle.md")).toBe("resume");
+    expect(resolveKindFromPath("cv/elle.md")).toBe("resume");
   });
 });

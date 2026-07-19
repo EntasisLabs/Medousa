@@ -519,6 +519,7 @@
 <section
   class="vault-editor relative flex h-full min-h-0 min-w-0 flex-1 flex-col {visible ? '' : 'hidden'}"
   data-reading-palette={vault.readingPalette}
+  data-note-kind={vault.selectedKind}
 >
   {#if !mobile && !stickyNote}
     <header class="vault-editor-header workshop-header flex items-center justify-between gap-3 py-3">
