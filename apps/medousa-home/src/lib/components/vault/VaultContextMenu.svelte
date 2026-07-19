@@ -24,7 +24,8 @@
   import { canUseLocalVaultFilesystem } from "$lib/utils/vaultFilesystem";
   import { vaultHostSideHint } from "$lib/utils/workshopLocality";
   import { revealInFileManagerLabel } from "$lib/platformCopy";
-  import VaultPdfPreviewModal from "./VaultPdfPreviewModal.svelte";
+  import type { VaultExportFormat } from "$lib/utils/vaultExportOptions";
+  import VaultExportPreviewModal from "./VaultExportPreviewModal.svelte";
 
   interface MenuItem {
     id: string;
@@ -35,10 +36,12 @@
   }
 
   let menuEl = $state<HTMLDivElement | null>(null);
-  let pdfPreviewOpen = $state(false);
-  let pdfPreviewTitle = $state("");
-  let pdfPreviewContent = $state("");
-  let pdfPreviewLabels = $state<Map<string, string>>(new Map());
+  let exportPreviewOpen = $state(false);
+  let exportPreviewFormat = $state<VaultExportFormat>("pdf");
+  let exportPreviewTitle = $state("");
+  let exportPreviewContent = $state("");
+  let exportPreviewLabels = $state<Map<string, string>>(new Map());
+  let exportPreviewPath = $state<string | null>(null);
 
   const target = $derived(vaultContextMenu.target);
   const desktopTauri = $derived(isTauri());
@@ -201,10 +204,12 @@
               const title =
                 vault.labelByPath().get(path) ??
                 vaultDisplayTitle(response.note.title, path);
-              pdfPreviewTitle = title;
-              pdfPreviewContent = response.content;
-              pdfPreviewLabels = vault.labelByPath();
-              pdfPreviewOpen = true;
+              exportPreviewTitle = title;
+              exportPreviewContent = response.content;
+              exportPreviewLabels = vault.labelByPath();
+              exportPreviewPath = path;
+              exportPreviewFormat = "pdf";
+              exportPreviewOpen = true;
             } catch (err) {
               vault.error = err instanceof Error ? err.message : String(err);
             }
@@ -219,11 +224,12 @@
               const title =
                 vault.labelByPath().get(path) ??
                 vaultDisplayTitle(response.note.title, path);
-              const { exportVaultNoteDocx } = await import("$lib/utils/vaultDocxExport");
-              await exportVaultNoteDocx({
-                title,
-                content: response.content,
-              });
+              exportPreviewTitle = title;
+              exportPreviewContent = response.content;
+              exportPreviewLabels = vault.labelByPath();
+              exportPreviewPath = path;
+              exportPreviewFormat = "docx";
+              exportPreviewOpen = true;
             } catch (err) {
               vault.error = err instanceof Error ? err.message : String(err);
             }
@@ -412,12 +418,14 @@
   </div>
 {/if}
 
-<VaultPdfPreviewModal
-  open={pdfPreviewOpen}
-  title={pdfPreviewTitle}
-  content={pdfPreviewContent}
-  labelByPath={pdfPreviewLabels}
+<VaultExportPreviewModal
+  open={exportPreviewOpen}
+  title={exportPreviewTitle}
+  content={exportPreviewContent}
+  labelByPath={exportPreviewLabels}
+  notePath={exportPreviewPath}
+  initialFormat={exportPreviewFormat}
   onClose={() => {
-    pdfPreviewOpen = false;
+    exportPreviewOpen = false;
   }}
 />

@@ -6,7 +6,10 @@ declare module "html2canvas" {
     scrollX?: number;
     scrollY?: number;
     windowWidth?: number;
+    width?: number;
+    height?: number;
     logging?: boolean;
+    onclone?: (doc: Document) => void;
   }
 
   function html2canvas(

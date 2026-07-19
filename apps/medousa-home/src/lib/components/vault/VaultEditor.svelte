@@ -48,13 +48,13 @@
   import { stripFrontmatter } from "$lib/utils/vaultFrontmatter";
   import { formatShortcut } from "$lib/platform";
   import { writeVaultStickyPath } from "$lib/utils/vaultSticky";
-  import { exportVaultNoteDocx } from "$lib/utils/vaultDocxExport";
   import {
     isPlainTextEditingTarget,
     matchVaultHotkey,
   } from "$lib/utils/vaultHotkeys";
   import { isTauri, showVaultSticky } from "$lib/window";
-  import VaultPdfPreviewModal from "./VaultPdfPreviewModal.svelte";
+  import type { VaultExportFormat } from "$lib/utils/vaultExportOptions";
+  import VaultExportPreviewModal from "./VaultExportPreviewModal.svelte";
   import VaultChartBuilderSheet from "./VaultChartBuilderSheet.svelte";
   import VaultLiquidBuilderSheet from "./VaultLiquidBuilderSheet.svelte";
   import LiquidCardDetailSheet from "$lib/components/chat/LiquidCardDetailSheet.svelte";
@@ -81,10 +81,12 @@
 
   let exportingPdf = $state(false);
   let exportingWord = $state(false);
-  let pdfPreviewOpen = $state(false);
-  let pdfPreviewTitle = $state("");
-  let pdfPreviewContent = $state("");
-  let pdfPreviewLabels = $state<Map<string, string>>(new Map());
+  let exportPreviewOpen = $state(false);
+  let exportPreviewFormat = $state<VaultExportFormat>("pdf");
+  let exportPreviewTitle = $state("");
+  let exportPreviewContent = $state("");
+  let exportPreviewLabels = $state<Map<string, string>>(new Map());
+  let exportPreviewPath = $state<string | null>(null);
   let lastFindNotePath = $state<string | null>(null);
   let previewScrollEl = $state<HTMLElement | null>(null);
   let markdownEditorEl = $state<ReturnType<typeof VaultMarkdownEditor> | null>(null);
@@ -363,36 +365,30 @@
     vault.openWikilink(target);
   }
 
-  async function handleExportPdf() {
-    if (!vault.selectedPath || pdfPreviewOpen) return;
+  async function openExportPreview(format: VaultExportFormat) {
+    if (!vault.selectedPath || exportPreviewOpen) return;
     if (vault.dirty) await vault.flushSave();
     vault.error = null;
-    pdfPreviewTitle = displayTitle;
-    pdfPreviewContent = vault.content;
-    pdfPreviewLabels = vault.labelByPathMap;
-    pdfPreviewOpen = true;
+    exportPreviewFormat = format;
+    exportPreviewTitle = displayTitle;
+    exportPreviewContent = vault.content;
+    exportPreviewLabels = vault.labelByPathMap;
+    exportPreviewPath = vault.selectedPath;
+    exportPreviewOpen = true;
+  }
+
+  async function handleExportPdf() {
+    await openExportPreview("pdf");
   }
 
   async function handleExportWord() {
-    if (!vault.selectedPath || exportingWord) return;
-    if (vault.dirty) await vault.flushSave();
-    exportingWord = true;
-    vault.error = null;
-    try {
-      await exportVaultNoteDocx({
-        title: displayTitle,
-        content: vault.content,
-      });
-    } catch (err) {
-      vault.error = err instanceof Error ? err.message : String(err);
-    } finally {
-      exportingWord = false;
-    }
+    await openExportPreview("docx");
   }
 
-  function handlePdfPreviewClose() {
-    pdfPreviewOpen = false;
+  function handleExportPreviewClose() {
+    exportPreviewOpen = false;
     exportingPdf = false;
+    exportingWord = false;
   }
 
   function handleFindShortcut(event: KeyboardEvent) {
@@ -884,13 +880,17 @@
   detail={vault.cardDetail}
   onClose={() => vault.closeCardDetail()}
 />
-<VaultPdfPreviewModal
-  open={pdfPreviewOpen}
-  title={pdfPreviewTitle}
-  content={pdfPreviewContent}
-  labelByPath={pdfPreviewLabels}
-  onClose={handlePdfPreviewClose}
+<VaultExportPreviewModal
+  open={exportPreviewOpen}
+  title={exportPreviewTitle}
+  content={exportPreviewContent}
+  labelByPath={exportPreviewLabels}
+  notePath={exportPreviewPath}
+  initialFormat={exportPreviewFormat}
+  onClose={handleExportPreviewClose}
   onPreparingChange={(preparing) => {
+    // Format can switch inside the modal — reflect busy state on both labels.
     exportingPdf = preparing;
+    exportingWord = preparing;
   }}
 />
