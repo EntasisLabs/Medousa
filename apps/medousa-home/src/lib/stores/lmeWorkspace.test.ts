@@ -10,6 +10,7 @@ const openNewTab = vi.fn();
 const selectTab = vi.fn();
 const closeTab = vi.fn();
 const selectArtifact = vi.fn();
+const loadManuscriptDetail = vi.fn(async (_id: string) => {});
 
 const scriptTabs: Array<{ tabId: string; scriptId: string | null; name: string }> = [];
 let activeTabId: string | null = null;
@@ -74,6 +75,12 @@ vi.mock("$lib/stores/artifacts.svelte", () => ({
   artifacts: {
     artifacts: [{ artifact_id: "deck-1", label: "Pitch", session_id: "s1" }],
     selectArtifact,
+  },
+}));
+
+vi.mock("$lib/stores/catalog.svelte", () => ({
+  catalog: {
+    loadManuscriptDetail,
   },
 }));
 
@@ -181,5 +188,32 @@ describe("lmeWorkspace", () => {
       title: "Pitch",
     });
     expect(selectArtifact).toHaveBeenCalledWith("deck-1");
+  });
+
+  it("opens manuscripts as agent tabs", () => {
+    store.openManuscript("user/morning-brief", "Morning Brief");
+    expect(store.explorerMode).toBe("agents");
+    expect(store.tabs[0]).toMatchObject({
+      kind: "manuscript",
+      manuscriptId: "user/morning-brief",
+      title: "Morning Brief",
+    });
+    expect(loadManuscriptDetail).toHaveBeenCalledWith("user/morning-brief");
+  });
+
+  it("reuses an existing manuscript tab", () => {
+    store.openManuscript("user/morning-brief", "Morning Brief");
+    store.openManuscript("user/morning-brief", "Morning Brief");
+    expect(store.tabs).toHaveLength(1);
+    expect(loadManuscriptDetail).toHaveBeenCalledTimes(2);
+  });
+
+  it("activates manuscript tabs into agents mode", async () => {
+    store.openManuscript("user/morning-brief", "Morning Brief");
+    store.setExplorerMode("notes");
+    const tabId = store.activeTabId!;
+    await store.activateTab(tabId);
+    expect(store.explorerMode).toBe("agents");
+    expect(loadManuscriptDetail).toHaveBeenCalledWith("user/morning-brief");
   });
 });

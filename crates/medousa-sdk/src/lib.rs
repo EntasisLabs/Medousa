@@ -30,6 +30,8 @@ pub mod reconnecting_stream;
 #[cfg(feature = "async")]
 mod jobs;
 #[cfg(feature = "async")]
+mod manuscripts;
+#[cfg(feature = "async")]
 mod mcp_gateway;
 #[cfg(feature = "async")]
 mod recurring;

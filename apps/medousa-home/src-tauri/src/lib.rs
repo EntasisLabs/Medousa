@@ -509,6 +509,7 @@ pub fn run() {
             daemon::media::media_upload_path,
             daemon::catalog::catalog_list_manuscripts,
             daemon::catalog::catalog_get_manuscript,
+            daemon::catalog::catalog_create_manuscript,
             daemon::catalog::catalog_update_manuscript,
             daemon::catalog::catalog_import_manuscripts,
             daemon::catalog::catalog_list_capabilities,

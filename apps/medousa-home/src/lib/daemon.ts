@@ -82,6 +82,7 @@ import type {
   GraphemeScriptsListResponse,
 } from "$lib/types/grapheme";
 import type {
+  CreateManuscriptRequest,
   ManuscriptDetailResponse,
   ManuscriptImportRequest,
   ManuscriptImportResponse,
@@ -285,6 +286,14 @@ export async function getManuscript(
 ): Promise<ManuscriptDetailResponse> {
   return invoke<ManuscriptDetailResponse>("catalog_get_manuscript", {
     manuscriptId,
+  });
+}
+
+export async function createManuscript(
+  request: CreateManuscriptRequest,
+): Promise<ManuscriptDetailResponse> {
+  return invoke<ManuscriptDetailResponse>("catalog_create_manuscript", {
+    request,
   });
 }
 

@@ -2,6 +2,7 @@
   import GrowingTextarea from "$lib/components/ui/GrowingTextarea.svelte";
   import FriendlySchedulePicker from "$lib/components/automations/FriendlySchedulePicker.svelte";
   import { haptic } from "$lib/haptics";
+  import { catalog } from "$lib/stores/catalog.svelte";
   import type { AutomationDeliveryMode } from "$lib/types/recurring";
 
   interface Props {
@@ -35,6 +36,19 @@
   }: Props = $props();
 
   const barClass = $derived(mobile ? "composer-bar composer-bar-mobile" : "composer-bar");
+
+  const manuscriptLabel = $derived.by(() => {
+    const id = manuscript?.trim();
+    if (!id) return null;
+    const name = catalog.manuscripts.find((entry) => entry.id === id)?.name;
+    return name ? { name, id } : { name: id, id };
+  });
+
+  $effect(() => {
+    if (manuscript?.trim() && catalog.manuscripts.length === 0 && !catalog.loading) {
+      void catalog.refresh();
+    }
+  });
 </script>
 
 <form
@@ -102,9 +116,12 @@
     </label>
   {/if}
 
-  {#if manuscript}
+  {#if manuscriptLabel}
     <p class="cron-field-hint">
-      Specialist · <span class="font-mono">{manuscript}</span>
+      Then: <span class="font-medium text-surface-200">{manuscriptLabel.name}</span>
+      {#if manuscriptLabel.name !== manuscriptLabel.id}
+        <span class="workshop-faint"> · {manuscriptLabel.id}</span>
+      {/if}
     </p>
   {/if}
 

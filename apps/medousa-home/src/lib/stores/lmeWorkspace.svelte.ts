@@ -2,6 +2,7 @@
 
 import type { AutomationsSection } from "$lib/stores/automationsNav.svelte";
 import { artifacts } from "$lib/stores/artifacts.svelte";
+import { catalog } from "$lib/stores/catalog.svelte";
 import { graphemeScriptEditor } from "$lib/stores/graphemeScriptEditor.svelte";
 import { vault } from "$lib/stores/vault.svelte";
 import { externalDesk } from "$lib/stores/externalDesk.svelte";
@@ -11,6 +12,7 @@ export type LmeExplorerMode =
   | "files"
   | "presentations"
   | "scripts"
+  | "agents"
   | "flows"
   | "schedules"
   | "history";
@@ -41,6 +43,12 @@ export type LmeTab =
       kind: "deck";
       artifactId: string;
       title: string;
+    }
+  | {
+      tabId: string;
+      kind: "manuscript";
+      manuscriptId: string;
+      title: string;
     };
 
 const EXPLORER_MODE_KEY = "medousa-lme-explorer-mode";
@@ -55,6 +63,7 @@ function loadExplorerMode(): LmeExplorerMode {
     raw === "files" ||
     raw === "presentations" ||
     raw === "scripts" ||
+    raw === "agents" ||
     raw === "flows" ||
     raw === "schedules" ||
     raw === "history"
@@ -252,6 +261,32 @@ export class LmeWorkspaceStore {
     artifacts.selectArtifact(artifactId);
   }
 
+  openManuscript(manuscriptId: string, title: string) {
+    this.setExplorerMode("agents");
+    const label = title.trim() || manuscriptId;
+    const existing = this.tabs.find(
+      (tab) => tab.kind === "manuscript" && tab.manuscriptId === manuscriptId,
+    );
+    if (existing) {
+      this.activeTabId = existing.tabId;
+      if (existing.title !== label) {
+        this.tabs = this.tabs.map((tab) =>
+          tab.tabId === existing.tabId ? { ...tab, title: label } : tab,
+        );
+      }
+    } else {
+      const tab: LmeTab = {
+        tabId: newTabId("manuscript"),
+        kind: "manuscript",
+        manuscriptId,
+        title: label,
+      };
+      this.tabs = [...this.tabs, tab].slice(-MAX_TABS);
+      this.activeTabId = tab.tabId;
+    }
+    void catalog.loadManuscriptDetail(manuscriptId);
+  }
+
   /** Mirror the active grapheme editor tab into the LME strip. Idempotent. */
   syncScriptTabFromEditor(options?: { activate?: boolean }) {
     const scriptTab = graphemeScriptEditor.activeTab;
@@ -305,6 +340,11 @@ export class LmeWorkspaceStore {
       this.setExplorerMode("files");
       externalDesk.selectExternalPath(tab.path);
       vault.previewAttachment(tab.path, "pane");
+      return;
+    }
+    if (tab.kind === "manuscript") {
+      this.setExplorerMode("agents");
+      void catalog.loadManuscriptDetail(tab.manuscriptId);
       return;
     }
     this.setExplorerMode("presentations");

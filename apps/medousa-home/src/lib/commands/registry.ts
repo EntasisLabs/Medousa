@@ -24,11 +24,11 @@ import type { WorkshopCommand, WorkshopCommandContext } from "./types";
 
 const GO_DESTINATIONS: { surface: Surface; label: string; subtitle: string; keywords: string }[] = [
   { surface: "chat", label: "Chat", subtitle: "Talk with Medousa", keywords: "message compose conversation" },
-  { surface: "library", label: "Workspace", subtitle: "Notes, files, scripts, and flows", keywords: "vault notes documents library lme scripts automations" },
+  { surface: "library", label: "Workspace", subtitle: "Notes, files, scripts, agents, and flows", keywords: "vault notes documents library lme scripts automations agents" },
   { surface: "work", label: "Work", subtitle: "Tasks and kanban board", keywords: "kanban cards jobs" },
   { surface: "web", label: "Browser", subtitle: "Built-in web workshop", keywords: "browser web surf" },
   { surface: "automations", label: "Automations", subtitle: "Scripts and schedules", keywords: "cron scripts grapheme" },
-  { surface: "workshop", label: "Capabilities", subtitle: "Skills and specialist workspaces", keywords: "skills manuscripts workshop capabilities specialist" },
+  { surface: "workshop", label: "Agents", subtitle: "Specialist agents in Workspace", keywords: "skills manuscripts workshop capabilities specialist agents" },
   { surface: "context", label: "Context map", subtitle: "Memory and threads", keywords: "memory locus context" },
   { surface: "peers", label: "Peers", subtitle: "Nearby workshops and inbox", keywords: "peers nearby share trust lan inbox" },
   { surface: "profiles", label: "Profiles", subtitle: "People and identity", keywords: "profiles identity people" },
@@ -38,17 +38,31 @@ const GO_DESTINATIONS: { surface: Surface; label: string; subtitle: string; keyw
 ];
 
 export function buildGoCommands(): WorkshopCommand[] {
-  return GO_DESTINATIONS.map((dest) => ({
+  const destinations = GO_DESTINATIONS.map((dest) => ({
     id: `go-${dest.surface}`,
-    section: "go",
+    section: "go" as const,
     label: dest.label,
     subtitle: dest.subtitle,
     keywords: dest.keywords,
-    run: (ctx) => {
+    run: (ctx: WorkshopCommandContext) => {
       ctx.navigate(dest.surface);
       ctx.callbacks.close();
     },
   }));
+  return [
+    ...destinations,
+    {
+      id: "go-mcp-connections",
+      section: "go",
+      label: "MCP connections",
+      subtitle: "Manage MCP servers in Settings → Packages",
+      keywords: "mcp connections gateway servers packages tools",
+      run: (ctx) => {
+        ctx.openSettingsSection("packages");
+        ctx.callbacks.close();
+      },
+    },
+  ];
 }
 
 export function buildBrowserCommands(): WorkshopCommand[] {

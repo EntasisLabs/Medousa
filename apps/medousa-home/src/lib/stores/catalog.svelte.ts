@@ -1,4 +1,5 @@
 import {
+  createManuscript as createManuscriptApi,
   getCapability,
   getManuscript,
   importManuscripts,
@@ -12,6 +13,7 @@ import type {
   ManuscriptCatalogEntry,
 } from "$lib/types/catalog";
 import type {
+  CreateManuscriptRequest,
   ManuscriptDetailResponse,
   ManuscriptImportRequest,
   ManuscriptImportResponse,
@@ -101,6 +103,24 @@ export class CatalogStore {
     this.manuscriptDetail = null;
     this.manuscriptDetailError = null;
     this.manuscriptSaveMessage = null;
+  }
+
+  async createManuscript(
+    request: CreateManuscriptRequest,
+  ): Promise<ManuscriptDetailResponse> {
+    this.manuscriptDetailError = null;
+    this.manuscriptSaveMessage = null;
+    try {
+      const detail = await createManuscriptApi(request);
+      await this.refresh();
+      this.manuscriptDetailId = detail.id;
+      this.manuscriptDetail = detail;
+      return detail;
+    } catch (err) {
+      this.manuscriptDetailError =
+        err instanceof Error ? err.message : String(err);
+      throw err;
+    }
   }
 
   async saveManuscriptDetail(

@@ -34,8 +34,8 @@
   const UTILITY_IDS = new Set(["messaging", SAFETY_SURFACE_RUNTIME]);
 
   function navTier(surface: SurfaceDef): "life" | "workshop" | "utility" | "hidden" {
-    // Automations lives inside Workspace (LME) explorer modes — hide the duplicate rail item.
-    if (surface.id === "automations") return "hidden";
+    // Automations + Capabilities live inside Workspace (LME) — hide duplicate rail items.
+    if (surface.id === "automations" || surface.id === "workshop") return "hidden";
     if (surface.id === "home" || surface.id === SAFETY_SURFACE_SETTINGS) return "hidden";
     if (surface.kind === "custom") return "life";
     if (WORKSHOP_IDS.has(surface.id)) return "workshop";

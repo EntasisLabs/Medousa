@@ -4,8 +4,10 @@
   import ChatComposerBar from "$lib/components/chat/ChatComposerBar.svelte";
   import VaultChatContextChip from "$lib/components/vault/VaultChatContextChip.svelte";
   import MobileComposerTurnSettings from "$lib/components/mobile/MobileComposerTurnSettings.svelte";
+  import ComposerAgentChip from "$lib/components/chat/ComposerAgentChip.svelte";
   import ProfileSwitcherCompact from "$lib/components/mobile/ProfileSwitcherCompact.svelte";
   import WorkshopSwitcherCompact from "$lib/components/workshops/WorkshopSwitcherCompact.svelte";
+  import { applyActiveAgentPrompt } from "$lib/utils/activeAgentPrompt";
   import { buildInteractiveTurnOptions } from "$lib/interactiveTurnOptions";
   import { haptic } from "$lib/haptics";
   import { chat } from "$lib/stores/chat.svelte";
@@ -76,9 +78,8 @@
   async function submit(event: Event) {
     event.preventDefault();
     if (connection.offline) return;
-    const prompt = ensureVaultSelectionInPrompt(
-      chat.draft.trim(),
-      chat.vaultNoteContext,
+    const prompt = applyActiveAgentPrompt(
+      ensureVaultSelectionInPrompt(chat.draft.trim(), chat.vaultNoteContext),
     );
     const hasAttachments = chat.pendingMediaRefs.length > 0;
     if (!prompt && !hasAttachments) return;
@@ -154,10 +155,16 @@
   <div class="mobile-composer-pills">
     <WorkshopSwitcherCompact />
     <ProfileSwitcherCompact />
+    <ComposerAgentChip />
     {#if settings.showChatModelPicker}
       <MobileComposerTurnSettings disabled={controlsDisabled} />
     {/if}
   </div>
+  {#if chat.hasWorkshopHandoff()}
+    <p class="mb-1.5 px-1 text-[11px] font-medium text-primary-300/90">
+      Steering handoff — your next message continues the worker
+    </p>
+  {/if}
   {#if chat.vaultNoteContext}
     <VaultChatContextChip compact class="mb-2" />
   {/if}

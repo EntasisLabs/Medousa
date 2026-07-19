@@ -5,7 +5,9 @@
   import ChatAttachmentChips from "$lib/components/chat/ChatAttachmentChips.svelte";
   import ChatModelPicker from "$lib/components/chat/ChatModelPicker.svelte";
   import ChatVoiceRecorder from "$lib/components/chat/ChatVoiceRecorder.svelte";
+  import ComposerAgentChip from "$lib/components/chat/ComposerAgentChip.svelte";
   import ContextUsageIndicator from "$lib/components/chat/ContextUsageIndicator.svelte";
+  import ProfileSwitcherCompact from "$lib/components/mobile/ProfileSwitcherCompact.svelte";
   import { chat } from "$lib/stores/chat.svelte";
   import { settings } from "$lib/stores/settings.svelte";
   import {
@@ -327,20 +329,27 @@
       {/if}
     </button>
 
+    <div class="flex shrink-0 items-center gap-1.5">
+      <ProfileSwitcherCompact hideWhenSingle={false} />
+      <ComposerAgentChip />
+    </div>
+
     {#if settings.showChatModelPicker}
       <ChatModelPicker {disabled} />
     {/if}
 
     <GrowingTextarea
       bind:value={chat.draft}
-      placeholder="Message Medousa…"
+      placeholder={chat.hasWorkshopHandoff()
+        ? "Steer the handoff…"
+        : "Message Medousa…"}
       disabled={blocked}
       maxHeight={128}
       minHeight={36}
       {onkeydown}
       {onfocus}
       {onblur}
-      aria-label="Message"
+      aria-label={chat.hasWorkshopHandoff() ? "Steer handoff" : "Message"}
     />
 
     <button

@@ -22,10 +22,6 @@
   import MessagingPanel from "$lib/components/messaging/MessagingPanel.svelte";
   import PeersPanel from "$lib/components/peers/PeersPanel.svelte";
   import { peerUnreadCount } from "$lib/utils/lanShareApi";
-  import SkillsPanel from "$lib/components/skills/SkillsPanel.svelte";
-  import { automationDraft } from "$lib/stores/automationDraft.svelte";
-  import { catalog } from "$lib/stores/catalog.svelte";
-  import { automationDraftForSpecialist } from "$lib/utils/specialistAutomation";
   import LmePanel from "$lib/components/lme/LmePanel.svelte";
   import CalendarPanel from "$lib/components/calendar/CalendarPanel.svelte";
   import WorkPanel from "$lib/components/work/WorkPanel.svelte";
@@ -109,17 +105,23 @@
   );
 
   function navigateToSurface(surface: string) {
-    // Automations folds into the LME workspace (library surface).
+    // Automations + Capabilities fold into the LME workspace (library surface).
     if (surface === "automations") {
       const mode = lmeWorkspace.explorerMode;
       if (
         mode !== "scripts" &&
         mode !== "flows" &&
         mode !== "schedules" &&
-        mode !== "history"
+        mode !== "history" &&
+        mode !== "agents"
       ) {
         lmeWorkspace.setExplorerMode("scripts");
       }
+      layout.navigateDesktop("library", { bump: true });
+      return;
+    }
+    if (surface === "workshop") {
+      lmeWorkspace.setExplorerMode("agents");
       layout.navigateDesktop("library", { bump: true });
       return;
     }
@@ -211,25 +213,6 @@
             />
           {:else if activeSurface === "profiles"}
             <ProfilesPanel visible={true} onOpenChat={() => goToSurface("chat")} />
-          {:else if activeSurface === "workshop"}
-            <SkillsPanel
-              visible={true}
-              onOpenChat={() => goToSurface("chat")}
-              onScheduleSkill={(entry) => {
-                automationDraft.openCreate(
-                  automationDraftForSpecialist(entry, catalog.manuscriptDetail),
-                );
-                lmeWorkspace.setExplorerMode("schedules");
-                navigateToSurface("automations");
-              }}
-              onUseInAutomation={(entry) => {
-                automationDraft.openCreate(
-                  automationDraftForSpecialist(entry, catalog.manuscriptDetail),
-                );
-                lmeWorkspace.setExplorerMode("schedules");
-                navigateToSurface("automations");
-              }}
-            />
           {:else if activeSurface === "peers"}
             <PeersPanel visible={true} />
           {:else if activeSurface === "messaging"}

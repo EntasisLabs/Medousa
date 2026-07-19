@@ -27,7 +27,7 @@ export const MORE_DESTINATIONS: {
 }[] = [
   { id: "profiles", label: "Profiles", hint: "Who you are — teach her facts" },
   { id: "context", label: "Context", hint: "What she remembers about you" },
-  { id: "workshop", label: "Capabilities", hint: "Specialists & connections" },
+  { id: "workshop", label: "Agents", hint: "Specialist agents you can run" },
   { id: "calendar", label: "Calendar", hint: "Meetings, reminders & .ics" },
   { id: "messaging", label: "Channels", hint: "Telegram, Discord, Slack & more" },
   { id: "peers", label: "Peers", hint: "Nearby workshops & inbox" },
@@ -43,12 +43,12 @@ export const MORE_HUB_SECTIONS: {
 }[] = [
   {
     title: "Stay in touch",
-    subtitle: "Memory, skills, and channels",
+    subtitle: "Memory, agents, and channels",
     destinations: ["profiles", "context", "workshop", "calendar", "messaging", "peers"],
   },
   {
-    title: "Capabilities",
-    subtitle: "Preferences and tuning",
+    title: "Preferences",
+    subtitle: "Tuning and workshop pulse",
     destinations: ["settings", "runtime"],
   },
 ];

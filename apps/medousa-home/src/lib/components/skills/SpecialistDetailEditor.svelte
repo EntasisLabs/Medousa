@@ -1,8 +1,16 @@
 <script lang="ts">
+  import AgentToolsPicker from "$lib/components/skills/AgentToolsPicker.svelte";
   import GrowingTextarea from "$lib/components/ui/GrowingTextarea.svelte";
   import { catalog } from "$lib/stores/catalog.svelte";
   import type { ManuscriptCatalogEntry } from "$lib/types/catalog";
   import type { UpdateManuscriptRequest } from "$lib/types/manuscript";
+  import { workshopMonogram } from "$lib/types/workshopRegistry";
+  import {
+    displayVoiceAppendix,
+    humanizeScheduleValidationError,
+    isSkillYamlResidue,
+  } from "$lib/utils/agentVoiceField";
+  import "./agentEditor.css";
 
   interface Props {
     entry: ManuscriptCatalogEntry;
@@ -20,8 +28,14 @@
     onOpenFile,
   }: Props = $props();
 
-  let showAdvanced = $state(false);
-  let toolSearch = $state("");
+  let rightPane = $state<"tools" | "schedule">("tools");
+  let showOpenshell = $state(false);
+  let name = $state("");
+  let description = $state("");
+  let displayName = $state("");
+  let voiceAppendix = $state("");
+  /** True when disk voice looked like SKILL/YAML residue — Save clears it unless user types prose. */
+  let voiceWasResidue = $state(false);
   let taskTemplate = $state("");
   let scheduleCron = $state("");
   let scheduleExecutionMode = $state("agent_turn");
@@ -32,8 +46,20 @@
 
   const detail = $derived(catalog.manuscriptDetail);
 
+  const scheduleErrorHuman = $derived(
+    humanizeScheduleValidationError(detail?.schedule_validation_error),
+  );
+
+  const monogram = $derived(workshopMonogram(name.trim() || entry.name || "Agent"));
+
   $effect(() => {
     if (!detail || detail.id !== entry.id) return;
+    name = detail.name ?? entry.name;
+    description = detail.description ?? entry.description ?? "";
+    displayName = detail.display_name ?? "";
+    const rawVoice = detail.voice_appendix ?? "";
+    voiceWasResidue = isSkillYamlResidue(rawVoice);
+    voiceAppendix = displayVoiceAppendix(rawVoice);
     taskTemplate = detail.task_template ?? "";
     scheduleCron = detail.schedule_cron ?? "";
     scheduleExecutionMode = detail.schedule_execution_mode ?? "agent_turn";
@@ -41,15 +67,8 @@
     deliveryOnComplete = detail.delivery_on_complete ?? "";
     toolsAllow = [...detail.tools_allow];
     openshellAllowScheduled = detail.openshell.allow_scheduled;
+    rightPane = "tools";
   });
-
-  const filteredPalette = $derived(
-    (detail?.palette_tools ?? []).filter((tool) => {
-      const needle = toolSearch.trim().toLowerCase();
-      if (!needle) return true;
-      return tool.toLowerCase().includes(needle);
-    }),
-  );
 
   function toggleTool(tool: string, enabled: boolean) {
     if (enabled) {
@@ -61,8 +80,21 @@
     }
   }
 
+  function openToolsFromSchedule() {
+    rightPane = "tools";
+  }
+
   async function saveChanges() {
+    const voiceTrimmed = voiceAppendix.trim();
     const request: UpdateManuscriptRequest = {
+      name: name.trim() || undefined,
+      description: description.trim() || undefined,
+      clear_description: description.trim() ? undefined : true,
+      display_name: displayName.trim() || undefined,
+      clear_display_name: displayName.trim() ? undefined : true,
+      // Empty field clears disk residue (including SKILL YAML dumps) on save.
+      voice_appendix: voiceTrimmed || undefined,
+      clear_voice_appendix: voiceTrimmed ? undefined : true,
       task_template: taskTemplate.trim() || undefined,
       clear_task_template: taskTemplate.trim() ? undefined : true,
       tools_allow: toolsAllow,
@@ -74,213 +106,319 @@
       openshell_allow_scheduled: openshellAllowScheduled,
     };
     await catalog.saveManuscriptDetail(entry.id, request);
+    if (voiceTrimmed || voiceWasResidue) voiceWasResidue = false;
   }
 </script>
 
-<h2 class="workshop-section-title">Specialist detail</h2>
-<p class="mt-2 font-medium text-surface-100">{entry.name}</p>
-<p class="workshop-faint mt-1 font-mono text-[11px]">{entry.id}</p>
+<span class="sr-only">Agent id {entry.id}</span>
 
 {#if catalog.manuscriptDetailLoading}
   <p class="workshop-muted mt-4 text-sm">Loading editor…</p>
 {:else if catalog.manuscriptDetailError}
   <p class="mt-4 text-sm text-warning-400">{catalog.manuscriptDetailError}</p>
 {:else if detail}
-  {#if entry.description || detail.description}
-    <p class="mt-3 text-sm leading-relaxed text-surface-300">
-      {entry.description ?? detail.description}
-    </p>
-  {/if}
+  <div class="agent-liquid h-full min-h-0">
+    <div class="agent-liquid-wash" aria-hidden="true"></div>
 
-  <div class="mt-4 rounded-md border border-surface-500/35 px-3 py-2 text-xs">
-    <div class="flex flex-wrap items-center gap-2">
-      <span class="workshop-label">Schedule readiness</span>
-      {#if detail.schedule_ready}
-        <span class="text-[10px] uppercase tracking-wide text-primary-300">Ready</span>
-      {:else}
-        <span class="text-[10px] uppercase tracking-wide text-warning-400">Needs attention</span>
-      {/if}
-    </div>
-    {#if detail.schedule_validation_error}
-      <p class="mt-1 text-warning-400/90">{detail.schedule_validation_error}</p>
-    {/if}
-  </div>
-
-  <label class="mt-4 block text-xs">
-    <span class="workshop-label">Task template</span>
-    <GrowingTextarea
-      bind:value={taskTemplate}
-      minHeight={72}
-      maxHeight={160}
-      placeholder="What this specialist does when scheduled or invoked…"
-      aria-label="Task template"
-    />
-  </label>
-
-  <div class="mt-4 grid gap-3">
-    <label class="block text-xs">
-      <span class="workshop-label">Default schedule (cron)</span>
-      <input class="input mt-1 w-full font-mono text-sm" bind:value={scheduleCron} placeholder="0 9 * * *" />
-    </label>
-    <label class="block text-xs">
-      <span class="workshop-label">Execution mode</span>
-      <select class="input mt-1 w-full text-sm" bind:value={scheduleExecutionMode}>
-        <option value="agent_turn">Agent turn (default)</option>
-        <option value="prompt">Quick prompt only</option>
-      </select>
-    </label>
-  </div>
-
-  <div class="mt-4 grid gap-3">
-    <label class="block text-xs">
-      <span class="workshop-label">Delivery mode</span>
-      <input class="input mt-1 w-full text-sm" bind:value={deliveryMode} placeholder="optional" />
-    </label>
-    <label class="block text-xs">
-      <span class="workshop-label">On complete</span>
-      <select class="input mt-1 w-full text-sm" bind:value={deliveryOnComplete}>
-        <option value="">None</option>
-        <option value="locus">Remember (Locus)</option>
-        <option value="store">Store</option>
-      </select>
-    </label>
-  </div>
-
-  <div class="mt-4">
-    <div class="flex items-center justify-between gap-2">
-      <h3 class="workshop-label">Skills attached</h3>
-      <span class="workshop-faint text-[11px]">{toolsAllow.length} selected</span>
-    </div>
-    <input
-      class="input mt-2 w-full text-sm"
-      type="search"
-      placeholder="Filter tools…"
-      bind:value={toolSearch}
-    />
-    <ul class="mt-2 max-h-40 space-y-1 overflow-y-auto">
-      {#each filteredPalette as tool (tool)}
-        <li>
-          <label class="flex items-center gap-2 rounded px-1 py-1 text-[11px] text-surface-300 hover:bg-surface-800/60">
+    <div class="agent-liquid-split">
+      <section class="agent-liquid-identity" aria-label="Who she is">
+        <div class="agent-liquid-field flex items-center gap-3.5">
+          <div class="agent-liquid-mono" aria-hidden="true">{monogram}</div>
+          <div class="min-w-0 flex-1">
+            <p class="text-[11px] tracking-[0.14em] text-surface-500 uppercase">Meet her</p>
             <input
-              type="checkbox"
-              class="checkbox"
-              checked={toolsAllow.includes(tool)}
-              onchange={(event) =>
-                toggleTool(tool, (event.currentTarget as HTMLInputElement).checked)}
+              class="agent-liquid-name"
+              bind:value={name}
+              placeholder="Name her…"
+              aria-label="Name"
             />
-            <span class="font-mono">{tool}</span>
-          </label>
-        </li>
-      {/each}
-    </ul>
-  </div>
-
-  {#if detail.scheduled_tools.length > 0}
-    <div class="mt-4">
-      <h3 class="workshop-label">Scheduled lane preview</h3>
-      <ul class="mt-2 max-h-36 space-y-1 overflow-y-auto">
-        {#each detail.scheduled_tools as row (row.tool)}
-          <li class="rounded-md border border-surface-500/30 px-2 py-1.5 text-[11px]">
-            <div class="flex flex-wrap items-center gap-2">
-              <span class="font-mono text-surface-200">{row.tool}</span>
-              <span
-                class="text-[10px] uppercase tracking-wide {row.allowed_on_schedule
-                  ? 'text-primary-300'
-                  : 'text-warning-400/80'}"
-              >
-                {row.allowed_on_schedule ? "schedule ok" : "interactive only"}
-              </span>
-            </div>
-            {#if row.reason}
-              <p class="workshop-faint mt-0.5">{row.reason}</p>
-            {/if}
-          </li>
-        {/each}
-      </ul>
-    </div>
-  {/if}
-
-  {#if detail.openshell.enabled}
-    <div class="mt-4 rounded-md border border-surface-500/35">
-      <button
-        type="button"
-        class="flex w-full items-center justify-between px-3 py-2 text-left text-xs"
-        onclick={() => (showAdvanced = !showAdvanced)}
-      >
-        <span class="workshop-label">Advanced · OpenShell sandbox</span>
-        <span class="text-surface-500">{showAdvanced ? "−" : "+"}</span>
-      </button>
-      {#if showAdvanced}
-        <div class="border-t border-surface-500/35 px-3 py-3 text-xs text-surface-300">
-          <p>
-            Default automation path:
-            <span class="text-surface-200">{detail.openshell.default_path}</span>
-          </p>
-          {#if detail.openshell.policy_template}
-            <p class="mt-2 font-mono text-[11px]">
-              Policy: {detail.openshell.policy_template}
-            </p>
-          {/if}
-          {#if detail.openshell.sandbox_from}
-            <p class="mt-1 font-mono text-[11px]">
-              Sandbox: {detail.openshell.sandbox_from}
-            </p>
-          {/if}
-          <label class="mt-3 flex items-center gap-2">
-            <input type="checkbox" class="checkbox" bind:checked={openshellAllowScheduled} />
-            Allow OpenShell tools on scheduled runs
-          </label>
+          </div>
         </div>
-      {/if}
+
+        <div class="agent-liquid-field mt-6">
+          <p class="agent-liquid-whisper">What she helps with</p>
+          <GrowingTextarea
+            class="agent-liquid-textarea mt-1"
+            bind:value={description}
+            minHeight={48}
+            maxHeight={120}
+            placeholder="A short job — enough that you’d trust her with it…"
+            aria-label="What she helps with"
+          />
+        </div>
+
+        <div class="agent-liquid-field mt-5">
+          <p class="agent-liquid-whisper">How she introduces herself</p>
+          <input
+            class="agent-liquid-input mt-1"
+            bind:value={displayName}
+            placeholder="What you call her in conversation…"
+            aria-label="How she introduces herself"
+          />
+        </div>
+
+        <div class="agent-liquid-field mt-5">
+          <p class="agent-liquid-whisper">How she sounds</p>
+          <GrowingTextarea
+            class="agent-liquid-textarea mt-1"
+            bind:value={voiceAppendix}
+            minHeight={56}
+            maxHeight={140}
+            placeholder="Tone in plain language — warm, sharp, spare…"
+            aria-label="How she sounds"
+          />
+        </div>
+
+        <div class="agent-liquid-field mt-5">
+          <p class="agent-liquid-whisper">When you call on her</p>
+          <GrowingTextarea
+            class="agent-liquid-textarea mt-1"
+            bind:value={taskTemplate}
+            minHeight={56}
+            maxHeight={140}
+            placeholder="What she does the moment she’s invoked…"
+            aria-label="When you call on her"
+          />
+        </div>
+
+        <div class="agent-liquid-field mt-7 flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            class="agent-liquid-cta btn btn-sm variant-filled-primary"
+            disabled={catalog.manuscriptSaveBusy || !name.trim()}
+            onclick={() => void saveChanges()}
+          >
+            {catalog.manuscriptSaveBusy ? "Saving…" : "This feels right"}
+          </button>
+          <button
+            type="button"
+            class="agent-liquid-cta btn btn-sm variant-ghost-surface"
+            onclick={() => onRunSkill(entry.id)}
+          >
+            Run in chat
+          </button>
+          {#if catalog.manuscriptSaveMessage}
+            <span class="text-xs text-surface-400">{catalog.manuscriptSaveMessage}</span>
+          {/if}
+        </div>
+
+        <div class="agent-liquid-foot mt-8 flex flex-wrap gap-3">
+          <button
+            type="button"
+            class="workshop-text-action text-xs"
+            onclick={() => onOpenFile(entry.path)}
+          >
+            Open YAML
+          </button>
+          <span class="workshop-faint self-center font-mono text-[10px]">{entry.id}</span>
+        </div>
+      </section>
+
+      <aside class="agent-liquid-powers" aria-label="Powers and schedule">
+        <div class="agent-liquid-powers-head">
+          <div>
+            <p class="text-[11px] tracking-[0.12em] text-surface-500 uppercase">Alongside her</p>
+            <p class="mt-1 text-sm text-surface-300">
+              {#if rightPane === "tools"}
+                {#if toolsAllow.length > 0}
+                  {toolsAllow.length} tools ready
+                {:else}
+                  Choose what she may reach for
+                {/if}
+              {:else}
+                Recurring runs — only if you want them
+              {/if}
+            </p>
+          </div>
+          <div class="agent-liquid-pane-tabs" role="tablist" aria-label="Powers pane">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={rightPane === "tools"}
+              class="agent-liquid-pane-tab {rightPane === 'tools'
+                ? 'agent-liquid-pane-tab-active'
+                : ''}"
+              onclick={() => (rightPane = "tools")}
+            >
+              Tools
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={rightPane === "schedule"}
+              class="agent-liquid-pane-tab {rightPane === 'schedule'
+                ? 'agent-liquid-pane-tab-active'
+                : ''}"
+              onclick={() => (rightPane = "schedule")}
+            >
+              Schedule
+            </button>
+          </div>
+        </div>
+
+        <div class="agent-liquid-powers-body" data-pane={rightPane}>
+          {#if rightPane === "tools"}
+            <AgentToolsPicker
+              palette={detail.palette_tools}
+              selected={toolsAllow}
+              onToggle={toggleTool}
+              fill
+            />
+
+            {#if detail.openshell.enabled}
+              <div class="mt-3 shrink-0 rounded-lg border border-surface-500/25 bg-surface-950/30">
+                <button
+                  type="button"
+                  class="flex w-full items-center justify-between px-3 py-2 text-left text-xs"
+                  onclick={() => (showOpenshell = !showOpenshell)}
+                >
+                  <span class="text-surface-300">OpenShell sandbox</span>
+                  <span class="text-surface-500">{showOpenshell ? "−" : "+"}</span>
+                </button>
+                {#if showOpenshell}
+                  <div class="border-t border-surface-500/25 px-3 py-2.5 text-xs text-surface-300">
+                    <p>
+                      Default path:
+                      <span class="text-surface-200">{detail.openshell.default_path}</span>
+                    </p>
+                    <label class="mt-3 flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        class="checkbox"
+                        bind:checked={openshellAllowScheduled}
+                      />
+                      Allow OpenShell tools on scheduled runs
+                    </label>
+                  </div>
+                {/if}
+              </div>
+            {/if}
+
+            {#if entry.scripts.length > 0}
+              <div class="mt-3 shrink-0">
+                <p class="agent-liquid-whisper">Scripts</p>
+                <ul class="mt-2 space-y-1 text-[11px] text-surface-300">
+                  {#each entry.scripts as script (script.relative_path)}
+                    <li class="font-mono">
+                      {script.relative_path}
+                      <span class="text-surface-500">({script.risk_class})</span>
+                    </li>
+                  {/each}
+                </ul>
+              </div>
+            {/if}
+          {:else}
+            <div class="rounded-lg border border-surface-500/25 bg-surface-950/30 px-3 py-2.5 text-xs">
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="text-surface-400">Schedule readiness</span>
+                {#if detail.schedule_ready}
+                  <span class="text-[10px] tracking-wide text-primary-300 uppercase">Ready</span>
+                {:else}
+                  <span class="text-[10px] tracking-wide text-warning-400 uppercase">Needs a step</span>
+                {/if}
+              </div>
+              {#if scheduleErrorHuman}
+                <p class="mt-1 text-warning-400/90">{scheduleErrorHuman}</p>
+                {#if /tool/i.test(scheduleErrorHuman)}
+                  <button
+                    type="button"
+                    class="workshop-text-action mt-2 text-xs"
+                    onclick={openToolsFromSchedule}
+                  >
+                    Choose tools →
+                  </button>
+                {/if}
+              {/if}
+            </div>
+
+            <div class="mt-4 grid gap-4">
+              <label class="block">
+                <span class="agent-liquid-whisper">Default schedule</span>
+                <input
+                  class="agent-liquid-input mt-1 font-mono"
+                  bind:value={scheduleCron}
+                  placeholder="0 9 * * *"
+                  aria-label="Default schedule cron"
+                />
+              </label>
+              <label class="block">
+                <span class="agent-liquid-whisper">How it runs</span>
+                <select
+                  class="agent-liquid-input mt-1"
+                  bind:value={scheduleExecutionMode}
+                  aria-label="How it runs"
+                >
+                  <option value="agent_turn">Full agent turn</option>
+                  <option value="prompt">Quick prompt only</option>
+                </select>
+              </label>
+              <label class="block">
+                <span class="agent-liquid-whisper">Delivery</span>
+                <input
+                  class="agent-liquid-input mt-1"
+                  bind:value={deliveryMode}
+                  placeholder="optional"
+                  aria-label="Delivery"
+                />
+              </label>
+              <label class="block">
+                <span class="agent-liquid-whisper">On complete</span>
+                <select
+                  class="agent-liquid-input mt-1"
+                  bind:value={deliveryOnComplete}
+                  aria-label="On complete"
+                >
+                  <option value="">None</option>
+                  <option value="locus">Remember (Locus)</option>
+                  <option value="store">Store</option>
+                </select>
+              </label>
+            </div>
+
+            {#if detail.scheduled_tools.length > 0}
+              <div class="mt-4">
+                <p class="agent-liquid-whisper">Scheduled lane preview</p>
+                <ul class="mt-2 max-h-36 space-y-1 overflow-y-auto">
+                  {#each detail.scheduled_tools as row (row.tool)}
+                    <li class="rounded-lg border border-surface-500/25 px-2.5 py-1.5 text-[11px]">
+                      <div class="flex flex-wrap items-center gap-2">
+                        <span class="font-mono text-surface-200">{row.tool}</span>
+                        <span
+                          class="text-[10px] tracking-wide uppercase {row.allowed_on_schedule
+                            ? 'text-primary-300'
+                            : 'text-warning-400/80'}"
+                        >
+                          {row.allowed_on_schedule ? "schedule ok" : "interactive only"}
+                        </span>
+                      </div>
+                      {#if row.reason}
+                        <p class="workshop-faint mt-0.5">{row.reason}</p>
+                      {/if}
+                    </li>
+                  {/each}
+                </ul>
+              </div>
+            {/if}
+
+            <div class="mt-4 flex flex-wrap gap-3">
+              <button
+                type="button"
+                class="workshop-text-action text-xs"
+                onclick={() => onScheduleSkill(entry)}
+              >
+                Schedule…
+              </button>
+              <button
+                type="button"
+                class="workshop-text-action text-xs"
+                onclick={() => onUseInAutomation(entry)}
+              >
+                Use in automation
+              </button>
+            </div>
+          {/if}
+        </div>
+      </aside>
     </div>
-  {:else}
-    <p class="workshop-faint mt-4 text-xs">
-      Grapheme is the default skill path. OpenShell appears here when this specialist ships scripts.
-    </p>
-  {/if}
-
-  {#if entry.scripts.length > 0}
-    <div class="mt-4">
-      <h3 class="workshop-label">Scripts</h3>
-      <ul class="mt-2 space-y-1 text-[11px] text-surface-300">
-        {#each entry.scripts as script (script.relative_path)}
-          <li class="font-mono">
-            {script.relative_path}
-            <span class="text-surface-500">({script.risk_class})</span>
-          </li>
-        {/each}
-      </ul>
-    </div>
-  {/if}
-
-  <div class="mt-4 flex flex-wrap gap-3">
-    <button
-      type="button"
-      class="btn btn-sm variant-filled-primary"
-      disabled={catalog.manuscriptSaveBusy}
-      onclick={() => void saveChanges()}
-    >
-      {catalog.manuscriptSaveBusy ? "Saving…" : "Save changes"}
-    </button>
-    {#if catalog.manuscriptSaveMessage}
-      <span class="self-center text-xs text-surface-400">{catalog.manuscriptSaveMessage}</span>
-    {/if}
-  </div>
-
-  <div class="mt-5 flex flex-wrap gap-3">
-    {#if entry.has_scripts}
-      <button type="button" class="workshop-text-action" onclick={() => onRunSkill(entry.id)}>
-        Run in chat
-      </button>
-    {/if}
-    <button type="button" class="workshop-text-action" onclick={() => onUseInAutomation(entry)}>
-      Use in automation
-    </button>
-    <button type="button" class="workshop-text-action" onclick={() => onScheduleSkill(entry)}>
-      Schedule…
-    </button>
-    <button type="button" class="workshop-text-action" onclick={() => onOpenFile(entry.path)}>
-      Open YAML
-    </button>
   </div>
 {/if}

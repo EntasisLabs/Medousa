@@ -2,6 +2,7 @@
   import {
     Blocks,
     BookOpen,
+    Bot,
     CalendarClock,
     FileCode2,
     Files,
@@ -11,6 +12,7 @@
     Package,
     Presentation,
   } from "@lucide/svelte";
+  import LmeAgentsExplorer from "$lib/components/lme/explorers/LmeAgentsExplorer.svelte";
   import LmeAutomationsExplorer from "$lib/components/lme/explorers/LmeAutomationsExplorer.svelte";
   import LmeDecksExplorer from "$lib/components/lme/explorers/LmeDecksExplorer.svelte";
   import LmeFilesExplorer from "$lib/components/lme/explorers/LmeFilesExplorer.svelte";
@@ -37,6 +39,7 @@
     { id: "files", label: "Files", icon: Files },
     { id: "presentations", label: "Decks", icon: Presentation },
     { id: "scripts", label: "Scripts", icon: FileCode2 },
+    { id: "agents", label: "Agents", icon: Bot },
     { id: "flows", label: "Flows", icon: GitBranch },
     { id: "schedules", label: "Schedules", icon: CalendarClock },
     { id: "history", label: "History", icon: History },
@@ -124,6 +127,8 @@
       <LmeDecksExplorer {onOpenChat} />
     {:else if mode === "scripts"}
       <LmeScriptsExplorer />
+    {:else if mode === "agents"}
+      <LmeAgentsExplorer {onOpenChat} />
     {:else}
       <LmeAutomationsExplorer />
     {/if}

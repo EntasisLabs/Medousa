@@ -22,6 +22,8 @@ use crate::interactive::InteractiveApi;
 #[cfg(feature = "async")]
 use crate::jobs::JobsApi;
 #[cfg(feature = "async")]
+use crate::manuscripts::ManuscriptsApi;
+#[cfg(feature = "async")]
 use crate::mcp_gateway::McpGatewayApi;
 #[cfg(feature = "async")]
 use crate::recurring::RecurringApi;
@@ -73,6 +75,11 @@ impl MedousaClient {
     #[cfg(feature = "async")]
     pub fn capabilities(&self) -> CapabilitiesApi<'_> {
         CapabilitiesApi { client: self }
+    }
+
+    #[cfg(feature = "async")]
+    pub fn manuscripts(&self) -> ManuscriptsApi<'_> {
+        ManuscriptsApi { client: self }
     }
 
     #[cfg(feature = "async")]

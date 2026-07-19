@@ -12,8 +12,8 @@
   import type { FlowComposerDraft, WorkflowStepKind, WorkflowStepSpec } from "$lib/types/workflow";
   import { newStepId } from "$lib/types/workflow";
   import {
+    flowStepSequenceLabel,
     flowStepSubtitle,
-    flowStepTitle,
     GRAPHEME_STEP_PLACEHOLDER,
   } from "$lib/utils/flowStepLabels";
 
@@ -204,10 +204,10 @@
             <div class="flex items-start justify-between gap-2">
               <div class="min-w-0">
                 <p class="text-[10px] font-semibold uppercase tracking-wide text-primary-400">
-                  Step {index + 1}
+                  {index === 0 ? "Start" : `Then ${index + 1}`}
                 </p>
                 <p class="mt-1 text-sm font-medium text-surface-50">
-                  {flowStepTitle(step)}
+                  {flowStepSequenceLabel(index, step)}
                 </p>
                 <p class="workshop-faint mt-0.5 text-[11px]">{flowStepSubtitle(step)}</p>
               </div>

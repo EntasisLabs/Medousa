@@ -2337,6 +2337,10 @@ pub struct ManuscriptDetailResponse {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub extends_from: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub voice_appendix: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub task_template: Option<String>,
     pub tools_allow: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -2360,7 +2364,34 @@ pub struct ManuscriptDetailResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct CreateManuscriptRequest {
+    pub name: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub scope: Option<String>,
+    /// Optional seed for `spec.prompts.task_template`.
+    #[serde(default)]
+    pub template: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct UpdateManuscriptRequest {
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub clear_description: Option<bool>,
+    #[serde(default)]
+    pub display_name: Option<String>,
+    #[serde(default)]
+    pub clear_display_name: Option<bool>,
+    #[serde(default)]
+    pub voice_appendix: Option<String>,
+    #[serde(default)]
+    pub clear_voice_appendix: Option<bool>,
     #[serde(default)]
     pub task_template: Option<String>,
     #[serde(default)]

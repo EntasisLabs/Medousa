@@ -24,6 +24,7 @@
   import { formatSessionLabel } from "$lib/utils/formatSession";
   import { visibleChatStatusLine } from "$lib/utils/chatStreamDisplay";
   import { STARTER_PROMPTS } from "$lib/utils/starterPrompts";
+  import { applyActiveAgentPrompt } from "$lib/utils/activeAgentPrompt";
   import {
     ensureVaultSelectionInPrompt,
     vaultContextHasSelection,
@@ -283,7 +284,9 @@
     event.preventDefault();
     if (connection.offline) return;
     const scopeForSend = chat.vaultNoteContext;
-    const prompt = ensureVaultSelectionInPrompt(chat.draft.trim(), scopeForSend);
+    const prompt = applyActiveAgentPrompt(
+      ensureVaultSelectionInPrompt(chat.draft.trim(), scopeForSend),
+    );
     const hasAttachments = chat.pendingMediaRefs.length > 0;
     if (!prompt && !hasAttachments) return;
     if (hasVisionMediaRefs(chat.pendingMediaRefs)) {
@@ -817,6 +820,13 @@
             <li>{hint}</li>
           {/each}
         </ul>
+      {/if}
+      {#if chat.hasWorkshopHandoff()}
+        <p
+          class="{workshop ? 'mb-1.5' : 'mx-4 mb-1.5'} text-[11px] font-medium text-primary-300/90"
+        >
+          Steering handoff — your next message continues the worker
+        </p>
       {/if}
       <ChatComposerBar
         mobile={workshop || useMobileChatLayout}

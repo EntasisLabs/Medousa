@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { FileCode2, FileText, Files, Presentation, X } from "@lucide/svelte";
+  import { Bot, FileCode2, FileText, Files, Presentation, X } from "@lucide/svelte";
   import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
 </script>
 
@@ -31,6 +31,8 @@
             <Files size={12} strokeWidth={1.75} class="shrink-0 opacity-70" />
           {:else if tab.kind === "deck"}
             <Presentation size={12} strokeWidth={1.75} class="shrink-0 opacity-70" />
+          {:else if tab.kind === "manuscript"}
+            <Bot size={12} strokeWidth={1.75} class="shrink-0 opacity-70" />
           {:else}
             <FileText size={12} strokeWidth={1.75} class="shrink-0 opacity-70" />
           {/if}
