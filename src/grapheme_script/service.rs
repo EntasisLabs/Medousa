@@ -48,6 +48,14 @@ impl GraphemeScriptService {
         )
     }
 
+    pub fn delete(id: &str) -> Result<GraphemeScriptEntry> {
+        grapheme_script_store().delete_script(id)
+    }
+
+    pub fn rename(id: &str, name: &str) -> Result<GraphemeScriptEntry> {
+        grapheme_script_store().rename_script(id, name)
+    }
+
     pub fn load(id: &str) -> Result<(GraphemeScriptEntry, String)> {
         let entry = grapheme_script_store()
             .get(id)

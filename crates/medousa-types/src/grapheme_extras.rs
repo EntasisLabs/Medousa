@@ -103,3 +103,17 @@ pub struct GraphemeScriptSaveRequest {
 pub struct GraphemeScriptSaveResponse {
     pub script: GraphemeScriptEntryDto,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct GraphemeScriptDeleteResponse {
+    pub deleted: bool,
+    pub id: String,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct GraphemeScriptRenameRequest {
+    pub name: String,
+}

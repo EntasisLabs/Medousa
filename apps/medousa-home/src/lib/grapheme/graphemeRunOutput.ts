@@ -1,6 +1,7 @@
 import type { GraphemeRunResponse } from "$lib/types/grapheme";
 
 const OUTPUT_KEYS = [
+  "stdout",
   "output_text",
   "final_output_text",
   "response_text",
@@ -18,12 +19,33 @@ function readText(value: unknown): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (value == null || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function prettyJson(value: unknown): string {
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+}
+
+function readNumber(record: Record<string, unknown>, ...keys: string[]): number | null {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+  }
+  return null;
+}
+
 function extractOutputText(payload: unknown): string | null {
   if (payload == null) return null;
   if (typeof payload === "string") return readText(payload);
 
-  if (typeof payload !== "object") return null;
-  const record = payload as Record<string, unknown>;
+  const record = asRecord(payload);
+  if (!record) return null;
 
   for (const key of OUTPUT_KEYS) {
     const text = readText(record[key]);
@@ -37,7 +59,7 @@ function extractOutputText(payload: unknown): string | null {
     }
   }
 
-  for (const key of ["result", "response", "output", "final", "completion"]) {
+  for (const key of ["result", "response", "output", "final", "completion", "execution"]) {
     const nested = record[key];
     if (nested && typeof nested === "object") {
       const text = extractOutputText(nested);
@@ -45,13 +67,43 @@ function extractOutputText(payload: unknown): string | null {
     }
   }
 
-  return readText(JSON.stringify(record));
+  return null;
+}
+
+function collectMeta(record: Record<string, unknown>): string | null {
+  const parts: string[] = [];
+  const duration = readNumber(record, "duration_ms", "elapsed_ms");
+  if (duration != null) parts.push(`${duration}ms`);
+
+  const exitCode = readNumber(record, "exit_code");
+  if (exitCode != null) parts.push(`exit ${exitCode}`);
+
+  const backend = readText(record.backend);
+  if (backend) parts.push(backend);
+
+  if (record.sandboxed === true) parts.push("sandboxed");
+  if (record.timed_out === true) parts.push("timed out");
+
+  const execution = asRecord(record.execution);
+  if (execution) {
+    const outcome = readText(execution.outcome);
+    if (outcome && outcome !== "succeeded" && outcome !== "failed") {
+      parts.push(outcome);
+    }
+  }
+
+  return parts.length > 0 ? parts.join(" · ") : null;
 }
 
 export interface ParsedGraphemeRunResult {
   succeeded: boolean;
+  /** Engineer status line — always "Run succeeded" / "Run failed". */
   headline: string;
+  /** Compact facts: duration, exit code, backend. */
+  meta: string | null;
+  /** Primary console body (stdout or pretty JSON). */
   summary: string | null;
+  /** Full diagnostics dump when distinct from summary. */
   details: string | null;
 }
 
@@ -61,17 +113,16 @@ export function parseGraphemeRunResult(
   if (!result) return null;
 
   const succeeded = result.succeeded ?? false;
-  const headline = succeeded ? "It worked" : "Something went wrong";
+  const headline = succeeded ? "Run succeeded" : "Run failed";
 
   const diagnostics = result.diagnostics;
   if (diagnostics == null) {
     return {
       succeeded,
       headline,
-      summary: succeeded
-        ? "Your script finished without errors."
-        : result.attempt_outcome ?? "The run did not complete.",
-      details: result.attempt_outcome ? `Outcome: ${result.attempt_outcome}` : null,
+      meta: result.attempt_outcome ? `outcome ${result.attempt_outcome}` : null,
+      summary: null,
+      details: null,
     };
   }
 
@@ -80,99 +131,65 @@ export function parseGraphemeRunResult(
     return {
       succeeded,
       headline,
-      summary: text ?? (succeeded ? "Run completed." : "Run failed."),
+      meta: null,
+      summary: text,
       details: null,
     };
   }
 
-  const record = diagnostics as Record<string, unknown>;
+  const record = asRecord(diagnostics) ?? {};
+  const meta = collectMeta(record);
   const finalState = record.final_state ?? record.finalState;
-  const outputText = extractOutputText(record);
+  const stdout = extractOutputText(record);
+  const fullDump = prettyJson(finalState !== undefined ? finalState : record);
 
-  if (outputText) {
+  if (stdout) {
+    const stderr = readText(record.stderr);
+    const body = stderr ? `${stdout}\n\nstderr:\n${stderr}` : stdout;
+    const detailsDistinct = fullDump !== body;
     return {
       succeeded,
       headline,
-      summary: outputText.length > 280 ? `${outputText.slice(0, 277)}…` : outputText,
-      details:
-        finalState !== undefined
-          ? JSON.stringify(finalState, null, 2)
-          : JSON.stringify(record, null, 2),
+      meta,
+      summary: body,
+      details: detailsDistinct ? fullDump : null,
     };
   }
 
   if (finalState !== undefined) {
-    const pretty = JSON.stringify(finalState, null, 2);
-    const firstLine = pretty.split("\n").find((line) => line.trim()) ?? pretty;
     return {
       succeeded,
       headline,
-      summary:
-        firstLine.length > 120
-          ? "Your script returned structured data — expand for details."
-          : firstLine.trim(),
-      details: pretty,
+      meta,
+      summary: prettyJson(finalState),
+      details: null,
     };
   }
 
-  const pretty = JSON.stringify(record, null, 2);
   return {
     succeeded,
     headline,
-    summary: succeeded
-      ? "Your script finished. Expand technical details below."
-      : "The run failed. Expand technical details below.",
-    details: pretty,
+    meta: meta ?? (result.attempt_outcome ? `outcome ${result.attempt_outcome}` : null),
+    summary: fullDump,
+    details: null,
   };
 }
 
 export function formatGraphemeRunResult(
   result: GraphemeRunResponse["result"] | null | undefined,
 ): string {
-  if (!result) return "No run result.";
+  const parsed = parseGraphemeRunResult(result);
+  if (!parsed) return "No run result.";
 
-  const succeeded = result.succeeded ?? false;
-  const lines = [succeeded ? "Run succeeded" : "Run failed"];
-
-  const diagnostics = result.diagnostics;
-  if (diagnostics == null) {
-    if (result.attempt_outcome) {
-      lines.push(`Outcome: ${result.attempt_outcome}`);
-    }
-    return lines.join("\n");
-  }
-
-  if (typeof diagnostics === "string") {
-    const text = readText(diagnostics);
-    if (text) {
-      lines.push("");
-      lines.push(text);
-    }
-    return lines.join("\n");
-  }
-
-  const record = diagnostics as Record<string, unknown>;
-  const finalState = record.final_state ?? record.finalState;
-  if (finalState !== undefined) {
+  const lines = [parsed.headline];
+  if (parsed.meta) lines.push(parsed.meta);
+  if (parsed.summary) {
     lines.push("");
-    lines.push(JSON.stringify(finalState, null, 2));
-    return lines.join("\n");
+    lines.push(parsed.summary);
   }
-
-  const outputText = extractOutputText(record);
-  if (outputText) {
+  if (parsed.details && parsed.details !== parsed.summary) {
     lines.push("");
-    lines.push(outputText);
-    return lines.join("\n");
+    lines.push(parsed.details);
   }
-
-  lines.push("");
-  lines.push(JSON.stringify(record, null, 2));
-
-  if (!succeeded && result.attempt_outcome) {
-    lines.push("");
-    lines.push(`Outcome: ${result.attempt_outcome}`);
-  }
-
   return lines.join("\n");
 }

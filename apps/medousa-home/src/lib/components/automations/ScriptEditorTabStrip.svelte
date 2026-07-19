@@ -1,6 +1,8 @@
 <script lang="ts">
   import { Plus, X } from "@lucide/svelte";
+  import { persistScriptName } from "$lib/grapheme/scriptWorkbenchActions";
   import { graphemeScriptEditor } from "$lib/stores/graphemeScriptEditor.svelte";
+  import { scriptRenameUi } from "$lib/stores/scriptRenameUi.svelte";
 
   interface Props {
     compact?: boolean;
@@ -13,6 +15,8 @@
   let renameDraft = $state("");
   let renameInput = $state<HTMLInputElement | null>(null);
   let longPressTimer: ReturnType<typeof setTimeout> | null = null;
+  let renameBusy = $state(false);
+  let handledRenameToken = $state(-1);
 
   function startRename(tabId: string, name: string, event?: Event) {
     event?.preventDefault();
@@ -38,16 +42,44 @@
     }
   }
 
-  function commitRename(tabId: string) {
-    if (renamingTabId !== tabId) return;
+  async function commitRename(tabId: string) {
+    if (renamingTabId !== tabId || renameBusy) return;
+    const tab = graphemeScriptEditor.tabs.find((entry) => entry.tabId === tabId);
+    if (!tab) {
+      renamingTabId = null;
+      scriptRenameUi.clearEditor();
+      return;
+    }
     const trimmed = renameDraft.trim() || "Untitled script";
-    graphemeScriptEditor.patchTab(tabId, { name: trimmed });
-    renamingTabId = null;
+    renameBusy = true;
+    try {
+      await persistScriptName(tab, trimmed);
+    } catch {
+      graphemeScriptEditor.patchTab(tabId, { name: trimmed });
+    } finally {
+      renameBusy = false;
+      renamingTabId = null;
+      scriptRenameUi.clearEditor();
+    }
   }
 
   function cancelRename() {
     renamingTabId = null;
+    scriptRenameUi.clearEditor();
   }
+
+  $effect(() => {
+    const tabId = scriptRenameUi.editorTabId;
+    const token = scriptRenameUi.token;
+    if (!tabId || token === handledRenameToken) return;
+    handledRenameToken = token;
+    const tab = graphemeScriptEditor.tabs.find((entry) => entry.tabId === tabId);
+    if (!tab) {
+      scriptRenameUi.clearEditor();
+      return;
+    }
+    startRename(tab.tabId, tab.name);
+  });
 </script>
 
 <div
@@ -68,15 +100,16 @@
       {#if renamingTabId === tab.tabId}
         <input
           bind:this={renameInput}
-          class="script-editor-tab-rename min-w-[5rem] max-w-[180px] bg-surface-950 px-1 py-0.5 text-[11px] text-surface-100 outline-none ring-1 ring-primary-500/50"
+          class="script-editor-tab-rename"
           type="text"
           bind:value={renameDraft}
           aria-label="Rename script tab"
-          onblur={() => commitRename(tab.tabId)}
+          spellcheck="false"
+          onblur={() => void commitRename(tab.tabId)}
           onkeydown={(event) => {
             if (event.key === "Enter") {
               event.preventDefault();
-              commitRename(tab.tabId);
+              void commitRename(tab.tabId);
             }
             if (event.key === "Escape") {
               event.preventDefault();

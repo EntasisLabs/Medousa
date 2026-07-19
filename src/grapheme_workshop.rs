@@ -91,6 +91,31 @@ pub fn save_script(request: GraphemeScriptSaveRequest) -> Result<GraphemeScriptS
     })
 }
 
+pub fn delete_script(script_id: &str) -> Result<GraphemeScriptDeleteResponse, String> {
+    let entry = crate::grapheme_script::service::GraphemeScriptService::delete(script_id)
+        .map_err(|err| err.to_string())?;
+    Ok(GraphemeScriptDeleteResponse {
+        deleted: true,
+        id: entry.id,
+        name: entry.name,
+    })
+}
+
+pub fn rename_script(
+    script_id: &str,
+    name: &str,
+) -> Result<GraphemeScriptSaveResponse, String> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Err("name is required".to_string());
+    }
+    let entry = crate::grapheme_script::service::GraphemeScriptService::rename(script_id, name)
+        .map_err(|err| err.to_string())?;
+    Ok(GraphemeScriptSaveResponse {
+        script: crate::grapheme_handlers::script_entry_dto(entry),
+    })
+}
+
 pub async fn compile_source(request: GraphemeCompileRequest) -> Result<GraphemeCompileResponse, String> {
     let source = request.source.trim();
     if source.is_empty() {

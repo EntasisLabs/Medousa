@@ -77,6 +77,7 @@ import type {
   GraphemeModuleOpsResponse,
   GraphemeModulesListResponse,
   GraphemeRunResponse,
+  GraphemeScriptDeleteResponse,
   GraphemeScriptDetailResponse,
   GraphemeScriptSaveRequest,
   GraphemeScriptSaveResponse,
@@ -1450,6 +1451,24 @@ export async function saveGraphemeScript(
   request: GraphemeScriptSaveRequest,
 ): Promise<GraphemeScriptSaveResponse> {
   return invoke<GraphemeScriptSaveResponse>("grapheme_save_script", { request });
+}
+
+export async function deleteGraphemeScript(
+  scriptId: string,
+): Promise<GraphemeScriptDeleteResponse> {
+  return invoke<GraphemeScriptDeleteResponse>("grapheme_delete_script", {
+    scriptId,
+  });
+}
+
+export async function renameGraphemeScript(
+  scriptId: string,
+  name: string,
+): Promise<GraphemeScriptSaveResponse> {
+  return invoke<GraphemeScriptSaveResponse>("grapheme_rename_script", {
+    scriptId,
+    name,
+  });
 }
 
 export async function compileGraphemeSource(

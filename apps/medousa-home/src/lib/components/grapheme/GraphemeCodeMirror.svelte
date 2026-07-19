@@ -10,6 +10,7 @@
     graphemeLanguageSupport,
   } from "$lib/grapheme/graphemeEditorTheme";
   import { graphemeHostCompletions } from "$lib/grapheme/graphemeHostCompletions";
+  import { observeGraphemeHovers } from "$lib/grapheme/graphemeHoverEnhance";
 
   interface Props {
     value: string;
@@ -29,6 +30,7 @@
 
   let host: HTMLDivElement | undefined = $state();
   let view: EditorView | undefined;
+  let stopHoverObserve: (() => void) | undefined;
 
   onMount(() => {
     if (!host) return;
@@ -56,9 +58,12 @@
         extensions,
       }),
     });
+    stopHoverObserve = observeGraphemeHovers(host);
   });
 
   onDestroy(() => {
+    stopHoverObserve?.();
+    stopHoverObserve = undefined;
     view?.destroy();
     view = undefined;
   });

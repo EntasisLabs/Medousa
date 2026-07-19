@@ -18,10 +18,11 @@ use crate::grapheme_host_catalog::{
 use crate::grapheme_lsp_bridge::{get_lsp_workspace, grapheme_lsp_ws};
 use crate::grapheme_script::service::GraphemeScriptService;
 use crate::grapheme_workshop::{
-    compile_source, enforce_grapheme_allowlist, get_allowlist, lifecycle_events, load_wasm_module,
-    save_script, update_allowlist, GraphemeAllowlistResponse, GraphemeAllowlistUpdateRequest,
-    GraphemeCompileRequest, GraphemeCompileResponse, GraphemeLifecycleResponse,
-    GraphemeModuleLoadRequest, GraphemeModuleLoadResponse, GraphemeScriptSaveRequest,
+    compile_source, delete_script, enforce_grapheme_allowlist, get_allowlist, lifecycle_events,
+    load_wasm_module, rename_script, save_script, update_allowlist, GraphemeAllowlistResponse,
+    GraphemeAllowlistUpdateRequest, GraphemeCompileRequest, GraphemeCompileResponse,
+    GraphemeLifecycleResponse, GraphemeModuleLoadRequest, GraphemeModuleLoadResponse,
+    GraphemeScriptDeleteResponse, GraphemeScriptRenameRequest, GraphemeScriptSaveRequest,
     GraphemeScriptSaveResponse,
 };
 use crate::tools::run_grapheme_via_runtime;
@@ -251,6 +252,41 @@ pub async fn post_grapheme_script_save(
         .map_err(|err| (StatusCode::BAD_REQUEST, err))
 }
 
+pub async fn delete_grapheme_script(
+    Path(script_id): Path<String>,
+) -> Result<Json<GraphemeScriptDeleteResponse>, (StatusCode, String)> {
+    let script_id = script_id.trim();
+    if script_id.is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "script_id is required".to_string()));
+    }
+    delete_script(script_id).map(Json).map_err(|err| {
+        if err.contains("not found") {
+            (StatusCode::NOT_FOUND, err)
+        } else {
+            (StatusCode::BAD_REQUEST, err)
+        }
+    })
+}
+
+pub async fn post_grapheme_script_rename(
+    Path(script_id): Path<String>,
+    Json(request): Json<GraphemeScriptRenameRequest>,
+) -> Result<Json<GraphemeScriptSaveResponse>, (StatusCode, String)> {
+    let script_id = script_id.trim();
+    if script_id.is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "script_id is required".to_string()));
+    }
+    rename_script(script_id, &request.name)
+        .map(Json)
+        .map_err(|err| {
+            if err.contains("not found") {
+                (StatusCode::NOT_FOUND, err)
+            } else {
+                (StatusCode::BAD_REQUEST, err)
+            }
+        })
+}
+
 pub async fn post_grapheme_compile(
     Json(request): Json<GraphemeCompileRequest>,
 ) -> Result<Json<GraphemeCompileResponse>, (StatusCode, String)> {
@@ -319,7 +355,11 @@ pub fn grapheme_router(state: GraphemeApiState) -> axum::Router {
         )
         .route(
             "/v1/grapheme/scripts/{script_id}",
-            get(get_grapheme_script),
+            get(get_grapheme_script).delete(delete_grapheme_script),
+        )
+        .route(
+            "/v1/grapheme/scripts/{script_id}/rename",
+            post(post_grapheme_script_rename),
         )
         .route(
             "/v1/grapheme/run",

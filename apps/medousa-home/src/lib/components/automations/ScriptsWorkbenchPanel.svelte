@@ -6,18 +6,26 @@
     PanelLeftClose,
   } from "@lucide/svelte";
   import ScriptWorkbenchChatPanel from "$lib/components/automations/ScriptWorkbenchChatPanel.svelte";
+  import ScriptWorkbenchConsole from "$lib/components/automations/ScriptWorkbenchConsole.svelte";
   import ScriptWorkbenchOutputSheet from "$lib/components/automations/ScriptWorkbenchOutputSheet.svelte";
   import ScriptWorkbenchStatusBar from "$lib/components/automations/ScriptWorkbenchStatusBar.svelte";
   import ScriptWorkbenchTitlebar from "$lib/components/automations/ScriptWorkbenchTitlebar.svelte";
   import ScriptWorkbenchToolsSheet from "$lib/components/automations/ScriptWorkbenchToolsSheet.svelte";
-  import GraphemeRunResultCard from "$lib/components/grapheme/GraphemeRunResultCard.svelte";
   import GraphemeScriptEditorPanel from "$lib/components/grapheme/GraphemeScriptEditorPanel.svelte";
   import { applyRecipeToEditor, GRAPHEME_STARTER_RECIPES, type GraphemeRecipe } from "$lib/grapheme/graphemeRecipes";
+  import { renameScriptById } from "$lib/grapheme/scriptWorkbenchActions";
   import { graphemeScriptEditor } from "$lib/stores/graphemeScriptEditor.svelte";
   import { layout } from "$lib/stores/layout.svelte";
   import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
+  import { scriptRenameUi } from "$lib/stores/scriptRenameUi.svelte";
   import { workshop } from "$lib/stores/workshop.svelte";
   import type { GraphemeScriptEntry } from "$lib/types/grapheme";
+  import {
+    bindScriptLongPress,
+    handleScriptContextMenuEvent,
+    shouldSuppressScriptContextMenuClick,
+  } from "$lib/utils/scriptContextMenuEvents";
+  import { tick } from "svelte";
 
   interface Props {
     visible: boolean;
@@ -40,6 +48,10 @@
   let toolsSheetOpen = $state(false);
   let outputSheetOpen = $state(false);
   let toolsInitialView = $state<"root" | "templates" | "library" | "chat">("root");
+  let libraryRenameDraft = $state("");
+  let libraryRenameInput = $state<HTMLInputElement | null>(null);
+  let libraryRenameBusy = $state(false);
+  let handledLibraryRenameToken = $state(-1);
 
   const showMobileEmptyHint = $derived(
     mobile &&
@@ -112,11 +124,43 @@
   ];
 
   async function openScript(entry: GraphemeScriptEntry) {
+    if (shouldSuppressScriptContextMenuClick()) return;
     if (embedded) {
       await lmeWorkspace.openScriptById(entry.id);
       return;
     }
     await graphemeScriptEditor.openScriptById(entry.id);
+  }
+
+  $effect(() => {
+    const scriptId = scriptRenameUi.libraryScriptId;
+    const token = scriptRenameUi.token;
+    if (!scriptId || token === handledLibraryRenameToken) return;
+    handledLibraryRenameToken = token;
+    const entry = workshop.scripts.find((item) => item.id === scriptId);
+    libraryRenameDraft = entry?.name ?? "";
+    void tick().then(() => {
+      libraryRenameInput?.focus();
+      libraryRenameInput?.select();
+    });
+  });
+
+  async function commitLibraryRename(scriptId: string) {
+    if (scriptRenameUi.libraryScriptId !== scriptId || libraryRenameBusy) return;
+    const trimmed = libraryRenameDraft.trim() || "Untitled script";
+    libraryRenameBusy = true;
+    try {
+      await renameScriptById(scriptId, trimmed);
+    } catch (err) {
+      workshop.error = err instanceof Error ? err.message : String(err);
+    } finally {
+      libraryRenameBusy = false;
+      scriptRenameUi.clearLibrary();
+    }
+  }
+
+  function cancelLibraryRename() {
+    scriptRenameUi.clearLibrary();
   }
 
   function startNewScript() {
@@ -234,19 +278,47 @@
             <ul class="divide-y divide-surface-500/35 border-y border-surface-500/35">
               {#each filteredScripts as entry (entry.id)}
                 <li>
-                  <button
-                    type="button"
-                    class="flex w-full flex-col px-3 py-2 text-left transition hover:bg-surface-800/70 {graphemeScriptEditor.activeTab?.scriptId ===
-                    entry.id
-                      ? 'workshop-list-row-active'
-                      : ''}"
-                    onclick={() => void openScript(entry)}
-                  >
-                    <span class="truncate text-sm font-medium text-surface-100">{entry.name}</span>
-                    <span class="workshop-faint mt-0.5 truncate font-mono text-[10px]">
-                      {entry.id}
-                    </span>
-                  </button>
+                  {#if scriptRenameUi.libraryScriptId === entry.id}
+                    <div class="flex flex-col gap-0.5 px-3 py-2">
+                      <input
+                        bind:this={libraryRenameInput}
+                        class="script-library-rename"
+                        type="text"
+                        aria-label="Rename script"
+                        spellcheck="false"
+                        bind:value={libraryRenameDraft}
+                        onblur={() => void commitLibraryRename(entry.id)}
+                        onkeydown={(event) => {
+                          if (event.key === "Enter") {
+                            event.preventDefault();
+                            void commitLibraryRename(entry.id);
+                          }
+                          if (event.key === "Escape") {
+                            event.preventDefault();
+                            cancelLibraryRename();
+                          }
+                        }}
+                      />
+                      <span class="workshop-faint truncate font-mono text-[10px]">{entry.id}</span>
+                    </div>
+                  {:else}
+                    <button
+                      type="button"
+                      class="flex w-full flex-col px-3 py-2 text-left transition hover:bg-surface-800/70 {graphemeScriptEditor.activeTab?.scriptId ===
+                      entry.id
+                        ? 'workshop-list-row-active'
+                        : ''}"
+                      onclick={() => void openScript(entry)}
+                      oncontextmenu={(event) =>
+                        handleScriptContextMenuEvent(entry.id, entry.name, event)}
+                      use:bindScriptLongPress={() => ({ scriptId: entry.id, name: entry.name })}
+                    >
+                      <span class="truncate text-sm font-medium text-surface-100">{entry.name}</span>
+                      <span class="workshop-faint mt-0.5 truncate font-mono text-[10px]">
+                        {entry.id}
+                      </span>
+                    </button>
+                  {/if}
                 </li>
               {/each}
             </ul>
@@ -369,37 +441,7 @@
             </div>
           {/if}
           {#if !mobile && consoleOpen}
-            <div class="scripts-workbench-console shrink-0 border-t border-surface-500/40">
-              <div class="flex items-center justify-between gap-2 px-3 py-1.5">
-                <p class="workshop-label text-[10px]">Output</p>
-                <button
-                  type="button"
-                  class="workshop-text-action text-[10px]"
-                  onclick={() => (consoleOpen = false)}
-                >
-                  Hide
-                </button>
-              </div>
-              <div class="max-h-40 overflow-y-auto px-3 pb-3">
-                {#if graphemeScriptEditor.compileError}
-                  <p class="text-xs text-error-400">{graphemeScriptEditor.compileError}</p>
-                {:else if graphemeScriptEditor.compileResult}
-                  <div class="space-y-1 text-[11px] text-surface-300">
-                    {#each graphemeScriptEditor.compileResult.compile_hints as hint (hint)}
-                      <p>{hint}</p>
-                    {/each}
-                    {#each graphemeScriptEditor.compileResult.lint_warnings as warning (warning)}
-                      <p class="text-warning-400">{warning}</p>
-                    {/each}
-                  </div>
-                {/if}
-                <GraphemeRunResultCard
-                  result={workshop.runResult?.result}
-                  error={workshop.runError}
-                  emptyMessage="Run or compile to see output here."
-                />
-              </div>
-            </div>
+            <ScriptWorkbenchConsole onHide={() => (consoleOpen = false)} />
           {/if}
         </div>
 

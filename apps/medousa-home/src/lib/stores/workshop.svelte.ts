@@ -247,6 +247,12 @@ export class WorkshopStore {
     }
   }
 
+  /** Hard-delete a saved script and close any open editor / LME tabs for it. */
+  async deleteScript(scriptId: string) {
+    const { deleteScriptById } = await import("$lib/grapheme/scriptWorkbenchActions");
+    await deleteScriptById(scriptId);
+  }
+
   async compileEditorSource(mode: "check" | "aot" = "check") {
     this.compileBusy = true;
     this.compileError = null;

@@ -5,6 +5,7 @@
   import CommandSpotlight from "$lib/components/layout/CommandSpotlight.svelte";
   import WizardContainer from "$lib/components/wizard/WizardContainer.svelte";
   import VaultGarageImportWizard from "$lib/components/vault/VaultGarageImportWizard.svelte";
+  import ScriptContextMenu from "$lib/components/automations/ScriptContextMenu.svelte";
   import VaultContextMenu from "$lib/components/vault/VaultContextMenu.svelte";
   import VaultNoteWorkshop from "$lib/components/vault/VaultNoteWorkshop.svelte";
   import VaultAttachmentPanel from "$lib/components/vault/VaultAttachmentPanel.svelte";
@@ -162,6 +163,7 @@
 
 <VaultGarageImportWizard />
 <VaultContextMenu />
+<ScriptContextMenu />
 <VaultAttachmentPanel />
 {#if !layout.isMobile}
   <VaultNoteWorkshop

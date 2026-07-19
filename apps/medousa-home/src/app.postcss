@@ -4200,6 +4200,63 @@
     background-color: rgb(var(--color-surface-950) / 0.6);
   }
 
+  .grapheme-run-console {
+    @apply min-w-0;
+  }
+
+  .grapheme-run-console-status {
+    @apply flex flex-wrap items-baseline gap-x-2 gap-y-0.5;
+  }
+
+  .grapheme-run-console-outcome {
+    @apply text-[11px] font-semibold tracking-[-0.01em];
+  }
+
+  .grapheme-run-console-outcome.is-ok {
+    @apply text-success-300;
+  }
+
+  .grapheme-run-console-outcome.is-error {
+    @apply text-error-300;
+  }
+
+  .grapheme-run-console-meta {
+    @apply font-mono text-[10px] text-surface-500;
+  }
+
+  .grapheme-run-console-body {
+    @apply mt-1.5 m-0 max-w-full overflow-x-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-[1.45] text-surface-200;
+  }
+
+  .grapheme-run-console-error .grapheme-run-console-body {
+    @apply text-error-300/90;
+  }
+
+  .grapheme-run-console-raw {
+    @apply mt-2;
+  }
+
+  .grapheme-run-console-raw > summary {
+    @apply cursor-pointer select-none text-[10px] font-medium text-surface-500 transition hover:text-surface-300;
+    list-style: none;
+  }
+
+  .grapheme-run-console-raw > summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .grapheme-run-console-raw[open] > summary {
+    @apply text-surface-400;
+  }
+
+  .grapheme-run-console-raw .grapheme-run-console-body {
+    @apply mt-1 text-surface-400;
+  }
+
+  .grapheme-run-console-empty {
+    @apply text-[11px] text-surface-500;
+  }
+
   .workshop-recipe-card {
     @apply rounded-lg border border-surface-500/40 bg-surface-900/50 p-3 transition;
   }
@@ -4319,7 +4376,8 @@
   }
 
   .scripts-workbench-titlebar {
-    background-color: rgb(var(--color-surface-900) / 0.45);
+    background-color: rgb(var(--color-surface-900) / 0.92);
+    border-bottom-color: rgb(var(--color-surface-500) / 0.4);
   }
 
   .scripts-workbench-titlebar-actions {
@@ -4435,7 +4493,7 @@
 
   .scripts-workbench-status-bar {
     @apply grid shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-3 border-t border-surface-500/45 px-3 py-1 text-[10px];
-    background-color: rgb(var(--color-primary-500) / 0.08);
+    background-color: rgb(var(--color-surface-900) / 0.95);
     min-height: 1.375rem;
   }
 
@@ -4447,8 +4505,52 @@
     @apply cursor-pointer transition hover:text-surface-200;
   }
 
+  /* In-place tab rename — edit the title, don't drop a form field into the strip. */
   .script-editor-tab-rename {
-    @apply rounded-sm;
+    @apply min-w-[5rem] max-w-[10rem] flex-1 border-0 border-b bg-transparent px-0 py-0 text-[11px] font-medium leading-none text-primary-200 outline-none;
+    appearance: none;
+    -webkit-appearance: none;
+    border-bottom-color: rgb(var(--color-primary-400) / 0.45);
+    border-radius: 0;
+    box-shadow: none;
+    caret-color: rgb(var(--color-primary-300));
+  }
+
+  .script-editor-tab-rename:focus,
+  .script-editor-tab-rename:focus-visible {
+    border-bottom-color: rgb(var(--color-primary-300) / 0.85);
+    outline: none;
+    box-shadow: none;
+    background: transparent;
+  }
+
+  .script-editor-tab-rename::selection {
+    background: rgb(var(--color-primary-500) / 0.28);
+    color: rgb(var(--color-surface-50));
+  }
+
+  /* Library list rename — same type as the row title, hairline underline only. */
+  .script-library-rename {
+    @apply w-full border-0 border-b bg-transparent px-0 py-0 text-sm font-medium leading-snug text-surface-100 outline-none;
+    appearance: none;
+    -webkit-appearance: none;
+    border-bottom-color: rgb(var(--color-surface-500) / 0.55);
+    border-radius: 0;
+    box-shadow: none;
+    caret-color: rgb(var(--color-primary-300));
+  }
+
+  .script-library-rename:focus,
+  .script-library-rename:focus-visible {
+    border-bottom-color: rgb(var(--color-primary-400) / 0.7);
+    outline: none;
+    box-shadow: none;
+    background: transparent;
+  }
+
+  .script-library-rename::selection {
+    background: rgb(var(--color-primary-500) / 0.28);
+    color: rgb(var(--color-surface-50));
   }
 
   .scripts-workbench-modules-split {
@@ -5011,11 +5113,38 @@
   }
 
   .scripts-workbench-center {
-    background-color: rgb(var(--color-surface-900) / 0.2);
+    background-color: rgb(var(--color-surface-950) / 0.55);
   }
 
   .scripts-workbench-console {
-    background-color: rgb(var(--color-surface-950) / 0.6);
+    @apply relative flex min-h-0 flex-col;
+    background-color: rgb(var(--color-surface-950) / 0.92);
+  }
+
+  .scripts-workbench-console.is-resizing {
+    @apply select-none;
+  }
+
+  .scripts-workbench-console-resizer {
+    @apply absolute inset-x-0 top-0 z-10 h-1.5 cursor-row-resize;
+  }
+
+  .scripts-workbench-console-resizer::after {
+    content: "";
+    @apply absolute inset-x-8 top-0.5 h-px rounded-full bg-surface-600/0 transition;
+  }
+
+  .scripts-workbench-console-resizer:hover::after,
+  .scripts-workbench-console.is-resizing .scripts-workbench-console-resizer::after {
+    background-color: rgb(var(--color-primary-400) / 0.55);
+  }
+
+  .scripts-workbench-console-head {
+    @apply flex shrink-0 items-center justify-between gap-2 border-b border-surface-500/30 px-3 py-1;
+  }
+
+  .scripts-workbench-console-body {
+    @apply min-h-0 flex-1 overflow-y-auto px-3 py-2;
   }
 
   .scripts-workbench-chat {

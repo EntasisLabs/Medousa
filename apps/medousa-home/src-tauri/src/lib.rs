@@ -523,6 +523,8 @@ pub fn run() {
             daemon::grapheme::grapheme_get_allowlist,
             daemon::grapheme::grapheme_update_allowlist,
             daemon::grapheme::grapheme_save_script,
+            daemon::grapheme::grapheme_delete_script,
+            daemon::grapheme::grapheme_rename_script,
             daemon::grapheme::grapheme_compile_source,
             daemon::grapheme::grapheme_load_module,
             daemon::grapheme::grapheme_get_lifecycle,
