@@ -23,6 +23,7 @@
   import { addVaultSelectionToChat } from "$lib/utils/vaultNoteWorkshop";
   import { canUseLocalVaultFilesystem } from "$lib/utils/vaultFilesystem";
   import { vaultHostSideHint } from "$lib/utils/workshopLocality";
+  import { revealInFileManagerLabel } from "$lib/platformCopy";
   import VaultPdfPreviewModal from "./VaultPdfPreviewModal.svelte";
 
   interface MenuItem {
@@ -170,7 +171,7 @@
         },
         {
           id: "reveal",
-          label: "Reveal in Finder",
+          label: revealInFileManagerLabel(),
           hidden: !localFs,
           onClick: async () => {
             await revealVaultNoteInFinder(path);
@@ -250,7 +251,7 @@
       },
       {
         id: "reveal",
-        label: "Reveal in Finder",
+        label: revealInFileManagerLabel(),
         hidden: !localFs,
         onClick: async () => {
           await revealFileInFinder(path);

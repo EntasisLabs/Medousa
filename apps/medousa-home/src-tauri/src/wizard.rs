@@ -279,18 +279,10 @@ pub fn wizard_advance(request: WizardAdvanceRequest) -> Result<WizardBootstrap, 
                 {
                     file.screen1_model = Some(model.to_string());
                 }
+                // Phone pairing is optional invite-later — not on the critical path.
                 file.screen2_skipped = Some(true);
-                let mobile_client = request
-                    .screen1_model
-                    .as_deref()
-                    .map(str::trim)
-                    == Some("mobile-client");
-                if mobile_client {
-                    file.screen3_skipped = Some(true);
-                    file.screen = Some(WizardScreen::Completion);
-                } else {
-                    file.screen = Some(WizardScreen::Screen3);
-                }
+                file.screen3_skipped = Some(true);
+                file.screen = Some(WizardScreen::Completion);
             }
             WizardScreen::Screen2 => {
                 file.screen2_skipped = Some(true);
@@ -307,7 +299,8 @@ pub fn wizard_advance(request: WizardAdvanceRequest) -> Result<WizardBootstrap, 
         "skip" => match screen {
             WizardScreen::Screen1 => {
                 file.screen2_skipped = Some(true);
-                file.screen = Some(WizardScreen::Screen3);
+                file.screen3_skipped = Some(true);
+                file.screen = Some(WizardScreen::Completion);
             }
             WizardScreen::Screen2 => {
                 file.screen2_skipped = Some(true);

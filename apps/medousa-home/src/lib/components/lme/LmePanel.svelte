@@ -2,6 +2,7 @@
   import { onMount, untrack } from "svelte";
   import LmeEditorHost from "$lib/components/lme/LmeEditorHost.svelte";
   import LmeSidePanel from "$lib/components/lme/LmeSidePanel.svelte";
+  import ConnectionsInviteSheet from "$lib/components/lme/ConnectionsInviteSheet.svelte";
   import SplitPane from "$lib/components/layout/SplitPane.svelte";
   import VaultNewGroupDialog from "$lib/components/vault/VaultNewGroupDialog.svelte";
   import VaultNewNoteDialog from "$lib/components/vault/VaultNewNoteDialog.svelte";
@@ -75,3 +76,6 @@
 
 <VaultNewNoteDialog />
 <VaultNewGroupDialog />
+{#if visible}
+  <ConnectionsInviteSheet />
+{/if}

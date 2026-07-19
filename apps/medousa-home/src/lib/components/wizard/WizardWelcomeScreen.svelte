@@ -12,13 +12,11 @@
   import type { ProviderCatalogEntry } from "$lib/types/providers";
   import {
     probeProviders,
-    requireEngineReady,
     startEngine,
     validateProviderKey,
     waitForEngine,
     type ProvidersProbeResult,
   } from "$lib/utils/providersApi";
-  import { ensureSkipReadyModel } from "$lib/utils/wizardModelReady";
   import {
     ensureLocalModelReady,
     fetchLocalCatalog,
@@ -31,9 +29,12 @@
     type ModelDownloadProgress,
   } from "$lib/utils/localInferenceApi";
   import { layout } from "$lib/stores/layout.svelte";
+  import { hostComputerPhrase } from "$lib/platformCopy";
   import { settingsNav } from "$lib/stores/settingsNav.svelte";
 
   type WizardPath = "byok" | "offline";
+
+  const hostPhrase = hostComputerPhrase();
 
   let showAdvanced = $state(false);
   let selectedPath = $state<WizardPath | null>("offline");
@@ -145,26 +146,15 @@
 
   async function skipSetup() {
     wizard.error = null;
-    statusMessage = "Starting Medousa…";
+    statusMessage = null;
     validating = true;
     try {
-      await requireEngineReady({ privateBrain: false, timeoutSeconds: 45 });
-      const modelReady = await ensureSkipReadyModel(
-        wizard.existingProvider,
-        wizard.existingModel,
-        probe,
-      );
-      if (!modelReady.ok) {
-        statusMessage = modelReady.message;
-        wizard.error = modelReady.message;
-        return;
-      }
-      await wizard.skipCurrent();
+      // Brain is optional even on the AI branch — skip without forcing a model.
+      await wizard.skipBrain();
     } catch (err) {
       const message =
         err instanceof Error ? err.message : String(err);
-      statusMessage =
-        message || "Medousa engine did not start — try again or finish setup before continuing.";
+      statusMessage = message || "Could not continue — try again.";
       wizard.error = statusMessage;
     } finally {
       validating = false;
@@ -201,7 +191,7 @@
         downloadProgress = progress;
       });
 
-      statusMessage = "Loading local brain…";
+      statusMessage = "Loading…";
       const engine = await loadLocalEngine(modelId);
       if (!engine.loaded) {
         statusMessage = engine.message;
@@ -289,7 +279,7 @@
       if (selectedPath === "offline" && downloadProgress) {
         return `Downloading ${Math.round(downloadProgress.percent)}%`;
       }
-      return "Starting Medousa…";
+      return "Working…";
     }
     if (selectedPath === "offline") return "Download Gemma 4 & continue";
     return "Continue";
@@ -297,19 +287,26 @@
 </script>
 
 <div class="flex h-full flex-col">
-  <p class="text-[11px] font-semibold uppercase tracking-wide text-primary-300">Step 1 of 2</p>
-  <h1 id="product-wizard-title" class="mt-2 text-2xl font-semibold text-surface-50">
-    Welcome to Medousa
+  <button
+    type="button"
+    class="workshop-text-action self-start text-sm"
+    disabled={wizard.busy}
+    onclick={() => void wizard.back()}
+  >
+    ← Back
+  </button>
+
+  <h1 id="product-wizard-title" class="mt-4 text-2xl font-semibold text-surface-50">
+    Give this desk a brain
   </h1>
-  <p class="mt-3 text-sm leading-relaxed text-surface-300">
-    Let's get you talking. Pick how Medousa thinks on this computer — you can change it later in
-    Settings.
+  <p class="mt-2 text-sm text-surface-400">
+    Private on {hostPhrase}, or your own key. Skip anytime — your desk still opens.
   </p>
 
   {#if probing || localLoading}
     <div class="mt-6 flex items-center gap-2 text-sm text-surface-400">
       <LoaderCircle class="h-4 w-4 animate-spin" aria-hidden="true" />
-      Checking this computer…
+      Checking hardware…
     </div>
   {/if}
 
@@ -318,7 +315,7 @@
       ? 'wizard-path-card-active'
       : ''}"
     role="group"
-    aria-label="Recommended — private on this computer"
+    aria-label="Recommended — private"
   >
     <button
       type="button"
@@ -329,7 +326,7 @@
       <div class="flex items-start gap-3">
         <Sparkles class="mt-0.5 h-5 w-5 shrink-0 text-primary-300" aria-hidden="true" />
         <div class="min-w-0 flex-1">
-          <p class="font-semibold text-surface-50">Recommended — private on this computer</p>
+          <p class="font-semibold text-surface-50">Recommended — private</p>
           <p class="mt-1 text-sm text-surface-300">
             {#if localLoading}
               Finding the right local model for your hardware…
@@ -428,8 +425,7 @@
           <div class="min-w-0">
             <p class="font-semibold text-surface-50">Your API key or Ollama</p>
             <p class="mt-1 text-sm text-surface-300">
-              OpenAI, Anthropic, DeepSeek, Groq, and 20+ more — or Ollama on this computer. Keys stay
-              on this device.
+              OpenAI, Anthropic, DeepSeek, Groq, and 20+ more — or Ollama. Keys stay on this device.
             </p>
           </div>
         </div>

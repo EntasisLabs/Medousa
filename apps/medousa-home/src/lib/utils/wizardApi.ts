@@ -114,6 +114,7 @@ function advanceScreen(
     return screen;
   }
   if (action === "skip") {
+    if (screen === "screen1") return "completion";
     if (screen === "screen2") return "screen3";
     if (screen === "screen3") return "completion";
     return screen;
@@ -122,8 +123,8 @@ function advanceScreen(
     case "migration":
       return "completion";
     case "screen1":
-      if (request?.screen1Model?.trim() === "mobile-client") return "completion";
-      return "screen3";
+      // Phone pairing is optional invite-later — not on the critical path.
+      return "completion";
     case "screen2":
       return "screen3";
     case "screen3":

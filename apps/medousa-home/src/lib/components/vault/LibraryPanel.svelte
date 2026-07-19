@@ -18,7 +18,6 @@
   import { openAttachmentPath } from "$lib/utils/vaultAttachmentPicker";
   import { canPreviewAttachment } from "$lib/utils/vaultAttachments";
   import type { ExternalFileEntry } from "$lib/types/externalDesk";
-  import { shouldShowGarageWizard } from "$lib/utils/garageOnboarding";
   import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
 
   interface Props {
@@ -75,9 +74,6 @@
         await externalDesk.refreshAllRoots();
       }
       if (cancelled) return;
-      if (shouldShowGarageWizard() && !vault.selectedPath) {
-        vault.openGarageWizard();
-      }
     })();
     return () => {
       cancelled = true;

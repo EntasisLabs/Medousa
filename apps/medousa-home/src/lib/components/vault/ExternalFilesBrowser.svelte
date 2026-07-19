@@ -7,6 +7,7 @@
   import type { ExternalFileEntry, PinnedRoot } from "$lib/types/externalDesk";
   import ExternalFileRow from "./ExternalFileRow.svelte";
   import { isCoLocatedWorkshop, vaultPinFolderRemoteHint } from "$lib/utils/workshopLocality";
+  import { hostComputerPhrase } from "$lib/platformCopy";
 
   interface Props {
     compact?: boolean;
@@ -105,7 +106,7 @@
     <div class="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
       <FolderOpen size={28} strokeWidth={1.5} class="text-surface-500" />
       <div class="max-w-xs space-y-1">
-        <p class="text-sm font-medium text-surface-100">Pin folders from your Mac</p>
+        <p class="text-sm font-medium text-surface-100">Pin folders from {hostComputerPhrase()}</p>
         <p class="text-xs leading-relaxed text-surface-500">
           Use <span class="text-surface-400">Pin folder</span> above, then search or expand a pin
           to link files into your notes.

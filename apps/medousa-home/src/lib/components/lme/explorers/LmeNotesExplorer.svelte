@@ -5,7 +5,6 @@
   import VaultLibraryChrome from "$lib/components/vault/VaultLibraryChrome.svelte";
   import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
   import { vault } from "$lib/stores/vault.svelte";
-  import { shouldShowGarageWizard } from "$lib/utils/garageOnboarding";
 
   onMount(() => {
     let cancelled = false;
@@ -16,10 +15,6 @@
       if (cancelled) return;
       if (vault.selectedPath) {
         await lmeWorkspace.openNote(vault.selectedPath, { activateMode: false });
-      }
-      if (cancelled) return;
-      if (shouldShowGarageWizard() && !vault.selectedPath) {
-        vault.openGarageWizard();
       }
     })();
     return () => {
