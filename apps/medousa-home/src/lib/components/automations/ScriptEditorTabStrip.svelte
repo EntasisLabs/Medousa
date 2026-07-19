@@ -103,7 +103,7 @@
           {tab.dirty ? "*" : ""}{tab.name}
         </button>
       {/if}
-      {#if graphemeScriptEditor.tabs.length > 1 && renamingTabId !== tab.tabId}
+      {#if renamingTabId !== tab.tabId}
         <button
           type="button"
           class="rounded p-0.5 text-surface-500 opacity-0 transition group-hover:opacity-100 hover:text-surface-200"

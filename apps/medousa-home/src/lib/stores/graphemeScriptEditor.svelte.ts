@@ -157,9 +157,6 @@ export class GraphemeScriptEditorStore {
     this.tabs = next;
     if (this.activeTabId === tabId) {
       this.activeTabId = next.at(-1)?.tabId ?? null;
-      if (next.length === 0) {
-        this.openNewTab();
-      }
     }
   }
 

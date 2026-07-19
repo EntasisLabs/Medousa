@@ -275,6 +275,8 @@ export class LmeWorkspaceStore {
       }
       return;
     }
+    // Background sync (titles) must not resurrect tabs after the strip was emptied.
+    if (!activate) return;
     const tab: LmeTab = {
       tabId: newTabId("script"),
       kind: "script",
@@ -282,9 +284,7 @@ export class LmeWorkspaceStore {
       title: nextTitle,
     };
     this.tabs = [...this.tabs, tab].slice(-MAX_TABS);
-    if (activate || !this.activeTabId) {
-      this.activeTabId = tab.tabId;
-    }
+    this.activeTabId = tab.tabId;
   }
 
   async activateTab(tabId: string) {

@@ -55,7 +55,14 @@ vi.mock("$lib/stores/graphemeScriptEditor.svelte", () => ({
       selectTab(tabId);
       activeTabId = tabId;
     },
-    closeTab,
+    closeTab: (tabId: string) => {
+      closeTab(tabId);
+      const idx = scriptTabs.findIndex((tab) => tab.tabId === tabId);
+      if (idx >= 0) scriptTabs.splice(idx, 1);
+      if (activeTabId === tabId) {
+        activeTabId = scriptTabs.at(-1)?.tabId ?? null;
+      }
+    },
   },
 }));
 
@@ -141,6 +148,17 @@ describe("lmeWorkspace", () => {
     store.setExplorerMode("scripts");
     expect(store.activeTabId).toBe(scriptTabId);
     expect(store.tabs.some((tab) => tab.kind === "script")).toBe(true);
+  });
+
+  it("closing the last script tab empties the strip", async () => {
+    await store.openScriptById("s1");
+    const tabId = store.activeTabId;
+    expect(tabId).toBeTruthy();
+    await store.closeTab(tabId!);
+    expect(store.tabs).toHaveLength(0);
+    expect(store.activeTabId).toBeNull();
+    store.syncScriptTabFromEditor({ activate: false });
+    expect(store.tabs).toHaveLength(0);
   });
 
   it("opens external files as tabs", () => {
