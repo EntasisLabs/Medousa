@@ -19,8 +19,6 @@ export type LmeExplorerMode =
   | "schedules"
   | "history";
 
-export type LmeScriptsExplorerSection = "scripts" | "templates" | "wasm";
-
 export type LmeTab =
   | {
       tabId: string;
@@ -61,7 +59,6 @@ export type LmeTab =
     };
 
 const EXPLORER_MODE_KEY = "medousa-lme-explorer-mode";
-const SCRIPTS_SECTION_KEY = "medousa-lme-scripts-section";
 const MAX_TABS = 16;
 
 function loadExplorerMode(): LmeExplorerMode {
@@ -82,16 +79,6 @@ function loadExplorerMode(): LmeExplorerMode {
   return "notes";
 }
 
-function loadScriptsSection(): LmeScriptsExplorerSection {
-  if (typeof localStorage === "undefined") return "scripts";
-  const raw = localStorage.getItem(SCRIPTS_SECTION_KEY);
-  if (raw === "scripts" || raw === "templates" || raw === "wasm") {
-    return raw;
-  }
-  // Legacy "modules" lived in the side panel; catalog is editor-hosted now.
-  return "scripts";
-}
-
 function noteTitle(path: string): string {
   return vault.labelByPathMap.get(path) ?? path.split("/").pop() ?? path;
 }
@@ -106,7 +93,6 @@ function newTabId(prefix: string): string {
 
 export class LmeWorkspaceStore {
   explorerMode = $state<LmeExplorerMode>(loadExplorerMode());
-  scriptsExplorerSection = $state<LmeScriptsExplorerSection>(loadScriptsSection());
   tabs = $state<LmeTab[]>([]);
   activeTabId = $state<string | null>(null);
 
@@ -128,13 +114,6 @@ export class LmeWorkspaceStore {
       externalDesk.setSidebarMode("files");
     } else if (mode === "presentations") {
       externalDesk.setSidebarMode("presentations");
-    }
-  }
-
-  setScriptsExplorerSection(section: LmeScriptsExplorerSection) {
-    this.scriptsExplorerSection = section;
-    if (typeof localStorage !== "undefined") {
-      localStorage.setItem(SCRIPTS_SECTION_KEY, section);
     }
   }
 

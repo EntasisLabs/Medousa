@@ -7,8 +7,6 @@
     Files,
     GitBranch,
     History,
-    LayoutTemplate,
-    Package,
     Presentation,
   } from "@lucide/svelte";
   import LmeAgentsExplorer from "$lib/components/lme/explorers/LmeAgentsExplorer.svelte";
@@ -18,11 +16,7 @@
   import LmeFilesExplorer from "$lib/components/lme/explorers/LmeFilesExplorer.svelte";
   import LmeNotesExplorer from "$lib/components/lme/explorers/LmeNotesExplorer.svelte";
   import LmeScriptsExplorer from "$lib/components/lme/explorers/LmeScriptsExplorer.svelte";
-  import {
-    lmeWorkspace,
-    type LmeExplorerMode,
-    type LmeScriptsExplorerSection,
-  } from "$lib/stores/lmeWorkspace.svelte";
+  import { lmeWorkspace, type LmeExplorerMode } from "$lib/stores/lmeWorkspace.svelte";
 
   interface Props {
     onOpenChat: () => void;
@@ -43,16 +37,6 @@
     { id: "flows", label: "Flows", icon: GitBranch },
     { id: "schedules", label: "Schedules", icon: CalendarClock },
     { id: "history", label: "History", icon: History },
-  ];
-
-  const SCRIPT_SECTIONS: Array<{
-    id: LmeScriptsExplorerSection;
-    label: string;
-    icon: typeof FileCode2;
-  }> = [
-    { id: "scripts", label: "Library", icon: FileCode2 },
-    { id: "templates", label: "Templates", icon: LayoutTemplate },
-    { id: "wasm", label: "WASM", icon: Package },
   ];
 
   const mode = $derived(lmeWorkspace.explorerMode);
@@ -85,32 +69,6 @@
       </button>
     {/each}
   </div>
-
-  {#if mode === "scripts"}
-    <div
-      class="lme-scripts-subnav flex shrink-0 items-center gap-0.5 overflow-x-auto border-b border-surface-500/35 px-1.5 py-1"
-      role="tablist"
-      aria-label="Scripts explorer sections"
-    >
-      {#each SCRIPT_SECTIONS as entry (entry.id)}
-        {@const Icon = entry.icon}
-        <button
-          type="button"
-          role="tab"
-          aria-selected={lmeWorkspace.scriptsExplorerSection === entry.id}
-          class="inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[10px] font-medium transition-colors
-            {lmeWorkspace.scriptsExplorerSection === entry.id
-            ? 'bg-surface-800 text-surface-100'
-            : 'text-surface-500 hover:bg-surface-800/60 hover:text-surface-300'}"
-          title={entry.label}
-          onclick={() => lmeWorkspace.setScriptsExplorerSection(entry.id)}
-        >
-          <Icon size={12} strokeWidth={1.75} />
-          <span>{entry.label}</span>
-        </button>
-      {/each}
-    </div>
-  {/if}
 
   <div class="min-h-0 flex-1 overflow-hidden">
     {#if mode === "notes"}
