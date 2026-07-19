@@ -19,7 +19,7 @@ export type LmeExplorerMode =
   | "schedules"
   | "history";
 
-export type LmeScriptsExplorerSection = "scripts" | "templates" | "modules" | "wasm";
+export type LmeScriptsExplorerSection = "scripts" | "templates" | "wasm";
 
 export type LmeTab =
   | {
@@ -85,14 +85,10 @@ function loadExplorerMode(): LmeExplorerMode {
 function loadScriptsSection(): LmeScriptsExplorerSection {
   if (typeof localStorage === "undefined") return "scripts";
   const raw = localStorage.getItem(SCRIPTS_SECTION_KEY);
-  if (
-    raw === "scripts" ||
-    raw === "templates" ||
-    raw === "modules" ||
-    raw === "wasm"
-  ) {
+  if (raw === "scripts" || raw === "templates" || raw === "wasm") {
     return raw;
   }
+  // Legacy "modules" lived in the side panel; catalog is editor-hosted now.
   return "scripts";
 }
 

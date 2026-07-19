@@ -1,6 +1,5 @@
 <script lang="ts">
   import {
-    Blocks,
     ChevronLeft,
     ChevronRight,
     FileCode2,
@@ -14,19 +13,13 @@
     GRAPHEME_STARTER_RECIPES,
     type GraphemeRecipe,
   } from "$lib/grapheme/graphemeRecipes";
-  import { prepareModuleInsert, qualifyModuleOp } from "$lib/grapheme/graphemeModuleSnippet";
-  import {
-    effectBadgeClass,
-    moduleBlurb,
-    stabilityLabel,
-  } from "$lib/grapheme/scriptWorkbenchHelpers";
   import { haptic } from "$lib/haptics";
   import { registerMobileBackHandler } from "$lib/mobileNavigation";
   import { attachMobileSheetGestures } from "$lib/utils/mobileSheetGestures";
   import { graphemeScriptEditor } from "$lib/stores/graphemeScriptEditor.svelte";
   import { layout } from "$lib/stores/layout.svelte";
   import { workshop } from "$lib/stores/workshop.svelte";
-  import type { GraphemeModuleSummary, GraphemeScriptEntry } from "$lib/types/grapheme";
+  import type { GraphemeScriptEntry } from "$lib/types/grapheme";
 
   interface Props {
     open: boolean;
@@ -37,13 +30,7 @@
     onInserted?: () => void;
   }
 
-  type ToolsView =
-    | "root"
-    | "templates"
-    | "library"
-    | "modules-list"
-    | "modules-detail"
-    | "chat";
+  type ToolsView = "root" | "templates" | "library" | "chat";
 
   let {
     open,
@@ -51,12 +38,10 @@
     initialView = "root",
     onOpen,
     onClose,
-    onInserted,
   }: Props = $props();
 
   let view = $state<ToolsView>("root");
   let search = $state("");
-  let selectedModuleId = $state<string | null>(null);
   let sheetEl = $state<HTMLDivElement | null>(null);
   let headerEl = $state<HTMLElement | null>(null);
 
@@ -64,7 +49,6 @@
     if (!open) {
       view = "root";
       search = "";
-      selectedModuleId = null;
       return;
     }
     view = initialView;
@@ -78,24 +62,9 @@
         ? "Templates"
         : view === "library"
           ? "Library"
-          : view === "modules-list"
-            ? "Modules"
-            : view === "modules-detail"
-              ? (selectedModuleId ?? "Module")
-              : view === "chat"
-                ? "Script chat"
-                : "Script tools",
-  );
-
-  const filteredModules = $derived(
-    workshop.modules.filter((entry) => {
-      const needle = search.trim().toLowerCase();
-      if (!needle) return true;
-      return (
-        entry.module_id.toLowerCase().includes(needle) ||
-        entry.effects.some((effect) => effect.includes(needle))
-      );
-    }),
+          : view === "chat"
+            ? "Script chat"
+            : "Script tools",
   );
 
   const filteredScripts = $derived(
@@ -120,30 +89,6 @@
     }),
   );
 
-  const selectedModule = $derived(
-    selectedModuleId
-      ? (workshop.modules.find((entry) => entry.module_id === selectedModuleId) ?? null)
-      : null,
-  );
-
-  const moduleDetailForSelected = $derived(
-    selectedModuleId && workshop.moduleDetail?.info.module_id === selectedModuleId
-      ? workshop.moduleDetail
-      : null,
-  );
-
-  const filteredModuleOps = $derived.by(() => {
-    const ops = moduleDetailForSelected?.info.exported_ops ?? [];
-    const needle = search.trim().toLowerCase();
-    if (!needle) return ops;
-    return ops.filter(
-      (op) =>
-        op.op.toLowerCase().includes(needle) ||
-        op.effect.toLowerCase().includes(needle) ||
-        op.output_type.toLowerCase().includes(needle),
-    );
-  });
-
   function closeAll() {
     haptic("light");
     onClose();
@@ -157,32 +102,8 @@
 
   function goBack() {
     haptic("light");
-    if (view === "modules-detail") {
-      view = "modules-list";
-      search = "";
-      return;
-    }
     view = "root";
     search = "";
-  }
-
-  function selectModule(entry: GraphemeModuleSummary) {
-    haptic("light");
-    selectedModuleId = entry.module_id;
-    view = "modules-detail";
-    search = "";
-    void workshop.loadModuleDetail(entry.module_id);
-  }
-
-  function insertOp(op: string) {
-    graphemeScriptEditor.ensureInitialTab();
-    const examples = workshop.moduleDetail?.examples ?? [];
-    const body = graphemeScriptEditor.activeTab?.body ?? "";
-    const qualified = qualifyModuleOp(selectedModuleId, op);
-    graphemeScriptEditor.queueInsert(prepareModuleInsert(body, qualified, examples));
-    haptic("success");
-    onInserted?.();
-    closeAll();
   }
 
   function applyTemplate(recipe: GraphemeRecipe) {
@@ -211,11 +132,6 @@
 
   function handleSheetSwipeBack(): boolean {
     if (view === "root") return false;
-    if (view === "modules-detail") {
-      view = "modules-list";
-      search = "";
-      return true;
-    }
     view = "root";
     search = "";
     return true;
@@ -333,17 +249,6 @@
             <button
               type="button"
               class="mobile-turn-sheet-link-row mobile-turn-sheet-row-divider"
-              onclick={() => goTo("modules-list")}
-            >
-              <span class="flex items-center gap-2">
-                <Blocks size={16} strokeWidth={1.75} class="text-primary-300" />
-                <span class="mobile-turn-sheet-link-label">Modules</span>
-              </span>
-              <ChevronRight size={16} strokeWidth={2} class="mobile-turn-sheet-link-chevron" />
-            </button>
-            <button
-              type="button"
-              class="mobile-turn-sheet-link-row mobile-turn-sheet-row-divider"
               onclick={() => goTo("chat")}
             >
               <span class="flex items-center gap-2">
@@ -393,71 +298,6 @@
                     <span class="workshop-faint mt-0.5 truncate font-mono text-[10px]">
                       {entry.id}
                     </span>
-                  </button>
-                </li>
-              {/each}
-            </ul>
-          {/if}
-        {:else if view === "modules-list"}
-          {#if filteredModules.length === 0}
-            <p class="workshop-muted px-4 py-4 text-xs">No modules match.</p>
-          {:else}
-            <ul class="divide-y divide-surface-500/35">
-              {#each filteredModules as entry (entry.module_id)}
-                <li>
-                  <button
-                    type="button"
-                    class="flex w-full items-center gap-3 px-4 py-3 text-left active:bg-surface-800/70"
-                    onclick={() => selectModule(entry)}
-                  >
-                    <span class="min-w-0 flex-1 truncate font-mono text-sm text-surface-100">
-                      {entry.module_id}
-                    </span>
-                    <span class="workshop-faint shrink-0 text-[10px] tabular-nums">
-                      {entry.op_count} ops
-                    </span>
-                    <ChevronRight size={14} strokeWidth={2} class="shrink-0 text-surface-500" />
-                  </button>
-                </li>
-              {/each}
-            </ul>
-          {/if}
-        {:else if view === "modules-detail" && selectedModule}
-          <div class="border-b border-surface-500/35 px-4 py-3">
-            <p class="workshop-faint text-[11px] leading-snug">{moduleBlurb(selectedModule)}</p>
-            <div class="mt-2 flex flex-wrap gap-1">
-              <span class="scripts-workbench-meta-chip">v{selectedModule.version}</span>
-              <span class="scripts-workbench-meta-chip">{selectedModule.op_count} ops</span>
-              {#each selectedModule.effects as effect (effect)}
-                <span class="scripts-workbench-effect-chip {effectBadgeClass(effect)}">
-                  {effect}
-                </span>
-              {/each}
-            </div>
-          </div>
-          {#if workshop.moduleDetailLoading && !moduleDetailForSelected}
-            <p class="workshop-muted px-4 py-4 text-xs">Loading actions…</p>
-          {:else if workshop.moduleDetailError}
-            <p class="px-4 py-4 text-xs text-error-400">{workshop.moduleDetailError}</p>
-          {:else if filteredModuleOps.length === 0}
-            <p class="workshop-muted px-4 py-4 text-xs">No actions match.</p>
-          {:else}
-            <ul class="space-y-2 p-3">
-              {#each filteredModuleOps as op (op.op)}
-                <li>
-                  <button
-                    type="button"
-                    class="scripts-workbench-op-card w-full rounded-md border border-surface-500/35 px-3 py-2.5 text-left active:border-primary-500/30 active:bg-surface-800/60"
-                    onclick={() => insertOp(op.op)}
-                  >
-                    <p class="truncate font-mono text-[12px] text-surface-100">{op.op}()</p>
-                    <p class="workshop-faint mt-1 truncate text-[10px]">→ {op.output_type}</p>
-                    <div class="mt-1.5 flex flex-wrap gap-1">
-                      <span class="scripts-workbench-effect-chip {effectBadgeClass(op.effect)}">
-                        {op.effect}
-                      </span>
-                      <span class="scripts-workbench-meta-chip">{stabilityLabel(op)}</span>
-                    </div>
                   </button>
                 </li>
               {/each}

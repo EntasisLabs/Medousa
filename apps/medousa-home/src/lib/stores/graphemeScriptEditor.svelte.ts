@@ -35,9 +35,8 @@ export class GraphemeScriptEditorStore {
   activeTabId = $state<string | null>(null);
   lspWorkspace = $state<GraphemeLspWorkspaceResponse | null>(null);
   lspReady = $state(false);
-  sidePane = $state<"diagnostics" | "info" | "modules">("diagnostics");
+  sidePane = $state<"diagnostics" | "info">("diagnostics");
   pendingInsert = $state<string | null>(null);
-  modulesPaneModuleId = $state<string | null>(null);
   compileResult = $state<import("$lib/types/grapheme").GraphemeCompileResponse | null>(
     null,
   );

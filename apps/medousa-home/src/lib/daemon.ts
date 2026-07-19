@@ -74,6 +74,7 @@ import type {
   GraphemeModuleDetailResponse,
   GraphemeModuleLoadRequest,
   GraphemeModuleLoadResponse,
+  GraphemeModuleOpsResponse,
   GraphemeModulesListResponse,
   GraphemeRunResponse,
   GraphemeScriptDetailResponse,
@@ -1392,6 +1393,16 @@ export async function getGraphemeModule(
 ): Promise<GraphemeModuleDetailResponse> {
   return invoke<GraphemeModuleDetailResponse>("grapheme_get_module", {
     moduleId,
+  });
+}
+
+export async function getGraphemeModuleOps(
+  moduleId: string,
+  query?: string,
+): Promise<GraphemeModuleOpsResponse> {
+  return invoke<GraphemeModuleOpsResponse>("grapheme_get_module_ops", {
+    moduleId,
+    q: query?.trim() || null,
   });
 }
 

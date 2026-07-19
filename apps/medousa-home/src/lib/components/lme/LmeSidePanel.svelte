@@ -1,6 +1,5 @@
 <script lang="ts">
   import {
-    Blocks,
     BookOpen,
     Bot,
     CalendarClock,
@@ -53,7 +52,6 @@
   }> = [
     { id: "scripts", label: "Library", icon: FileCode2 },
     { id: "templates", label: "Templates", icon: LayoutTemplate },
-    { id: "modules", label: "Modules", icon: Blocks },
     { id: "wasm", label: "WASM", icon: Package },
   ];
 

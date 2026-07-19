@@ -11,6 +11,7 @@
     Zap,
   } from "@lucide/svelte";
   import ScriptEditorTabStrip from "$lib/components/automations/ScriptEditorTabStrip.svelte";
+  import GraphemeModuleLibraryPicker from "$lib/components/grapheme/GraphemeModuleLibraryPicker.svelte";
   import { promoteScriptToFlow } from "$lib/grapheme/graphemeFlowBridge";
   import { compileGraphemeSource, saveGraphemeScript } from "$lib/daemon";
   import { graphemeScriptEditor } from "$lib/stores/graphemeScriptEditor.svelte";
@@ -177,6 +178,8 @@
     >
       <Zap size={15} strokeWidth={1.75} />
     </button>
+
+    <GraphemeModuleLibraryPicker />
 
     {#if mobile}
       <button
