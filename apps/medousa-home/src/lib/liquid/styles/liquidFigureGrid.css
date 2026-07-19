@@ -1,0 +1,32 @@
+/**
+ * Shared prose + figure column grid (report bodies, slide bodies).
+ * Prose/headings full-bleed; chart/media/compare sit in the column track.
+ */
+
+.liquid-figure-grid {
+  display: grid;
+  grid-template-columns: repeat(var(--figure-cols, 2), minmax(0, 1fr));
+  column-gap: 0.95rem;
+  row-gap: 1.15rem;
+  min-width: 0;
+}
+
+.liquid-figure-grid > * {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+
+.liquid-figure-grid > .liquid-md-embed[data-liquid-embed="chart"],
+.liquid-figure-grid > .liquid-md-host-chart,
+.liquid-figure-grid > .liquid-md-embed[data-liquid-embed="media"],
+.liquid-figure-grid > .liquid-md-host-media,
+.liquid-figure-grid > .liquid-md-embed[data-liquid-embed="compare"],
+.liquid-figure-grid > .liquid-md-host-compare {
+  grid-column: auto;
+}
+
+@media (max-width: 640px) {
+  .liquid-figure-grid {
+    grid-template-columns: 1fr;
+  }
+}

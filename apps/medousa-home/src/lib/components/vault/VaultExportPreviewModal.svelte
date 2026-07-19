@@ -23,6 +23,11 @@
     type VaultExportOrientation,
     type VaultExportPageSize,
   } from "$lib/utils/vaultExportOptions";
+  import {
+    parseFrontmatterAuthor,
+    parseFrontmatterDate,
+    stripFrontmatter,
+  } from "$lib/utils/vaultFrontmatter";
 
   interface Props {
     open: boolean;
@@ -50,6 +55,12 @@
 
   let format = $state<VaultExportFormat>("pdf");
   let options = $state<VaultExportOptions>({ ...DEFAULT_VAULT_EXPORT_OPTIONS });
+  const hasAuthor = $derived(
+    Boolean(parseFrontmatterAuthor(stripFrontmatter(content).frontmatter).trim()),
+  );
+  const hasDate = $derived(
+    Boolean(parseFrontmatterDate(stripFrontmatter(content).frontmatter).trim()),
+  );
   let blob = $state<Blob | null>(null);
   let blobUrl = $state<string | null>(null);
   let loading = $state(false);
@@ -195,6 +206,8 @@
     void options.margins;
     void options.breakBeforeH2;
     void options.keepTogether;
+    void options.includeAuthor;
+    void options.includeDate;
 
     scheduleRender();
   });
@@ -394,6 +407,28 @@
             />
             <span>Keep blocks together</span>
           </label>
+
+          <label class="vault-export-check" class:vault-export-check--disabled={!hasAuthor}>
+            <input
+              type="checkbox"
+              checked={options.includeAuthor}
+              disabled={!hasAuthor}
+              onchange={(e) =>
+                patchOptions({ includeAuthor: e.currentTarget.checked })}
+            />
+            <span>Include author</span>
+          </label>
+
+          <label class="vault-export-check" class:vault-export-check--disabled={!hasDate}>
+            <input
+              type="checkbox"
+              checked={options.includeDate}
+              disabled={!hasDate}
+              onchange={(e) =>
+                patchOptions({ includeDate: e.currentTarget.checked })}
+            />
+            <span>Include date</span>
+          </label>
         </aside>
 
         <div class="vault-export-preview-body">
@@ -538,6 +573,11 @@
     font-size: 0.72rem;
     color: rgb(var(--color-surface-200));
     cursor: pointer;
+  }
+
+  .vault-export-check--disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
   }
 
   .vault-export-check input {

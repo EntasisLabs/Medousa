@@ -7,6 +7,7 @@
  */
 
 import { parseKanbanColumnsFromBody } from "$lib/utils/markdownKanban";
+import { parseSlidesDeck } from "$lib/utils/markdownSlides";
 import { escapeAttr, escapeHtml } from "./escape";
 
 export const LIQUID_FENCE_LANGS = new Set([
@@ -29,6 +30,7 @@ export const LIQUID_FENCE_LANGS = new Set([
   "dashboard",
   "chart",
   "report",
+  "slides",
   "tabs",
   "steps",
   "accordion",
@@ -93,6 +95,7 @@ export type LiquidEmbedKind =
   | "dashboard"
   | "chart"
   | "report"
+  | "slides"
   | "tabs"
   | "steps"
   | "accordion"
@@ -304,6 +307,26 @@ export interface LiquidReportProps {
   columns?: string;
   /** Markdown body (may include hydrated chart placeholders). */
   body: string;
+}
+
+export type LiquidSlideLayout = "hero" | "split" | "stack";
+
+export interface LiquidSlideItem {
+  id: string;
+  label: string;
+  layout?: LiquidSlideLayout;
+  body: string;
+}
+
+/** Slides organism — labeled deck frames with nested figure-grid bodies. */
+export interface LiquidSlidesProps {
+  title?: string;
+  theme?: string;
+  columns?: string;
+  slides: LiquidSlideItem[];
+  /** Preview/export: render every slide (page-break between). */
+  showAll?: boolean;
+  exportPaper?: boolean;
 }
 
 /**
@@ -2344,6 +2367,23 @@ function replaceLiquidFenceMatch(
     const report = parseReportBody(body);
     if (!report) return match;
     return `\n${placeholder("report", report)}\n`;
+  }
+
+  if (lang === "slides") {
+    const deck = parseSlidesDeck(body);
+    if (!deck) return match;
+    const slides: LiquidSlidesProps = {
+      slides: deck.slides.map((s) => ({
+        id: s.id,
+        label: s.label,
+        layout: s.layout,
+        body: s.body,
+      })),
+      columns: deck.columns,
+      theme: deck.theme,
+    };
+    if (deck.title) slides.title = deck.title;
+    return `\n${placeholder("slides", slides)}\n`;
   }
 
   if (lang === "chart") {

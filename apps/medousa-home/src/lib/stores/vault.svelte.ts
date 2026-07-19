@@ -104,6 +104,7 @@ import {
   setNoteTitleInContent,
 } from "$lib/utils/vaultNoteTitle";
 import { noteHasKanbanBoard } from "$lib/utils/markdownKanban";
+import { noteHasSlidesDeck } from "$lib/utils/markdownSlides";
 import { togglePreviewTaskInContent } from "$lib/utils/vaultPreviewTasks";
 import {
   embedPathForNote,
@@ -160,6 +161,7 @@ const KIND_BROWSE_ORDER: VaultNoteKind[] = [
   "project",
   "ledger",
   "board",
+  "slides",
   "inbox",
   "bug",
   "note",
@@ -203,6 +205,8 @@ export class VaultStore {
   ledgerEditMode = $state<"table" | "raw">("table");
   /** Board notes: kanban-first editing (Phase E). */
   boardEditMode = $state<"board" | "raw">("board");
+  /** Slides notes: deck-first editing. */
+  deckEditMode = $state<"deck" | "raw">("deck");
   showSystemNotes = $state(loadShowSystemNotes());
   stampCompletionInline = $state(readVaultStampCompletionEnabled());
   /** Build editor: wrap long lines (CodeMirror). */
@@ -1171,6 +1175,9 @@ export class VaultStore {
     if (noteHasKanbanBoard(response.content) || this.selectedKind === "board") {
       this.boardEditMode = "board";
     }
+    if (noteHasSlidesDeck(response.content) || this.selectedKind === "slides") {
+      this.deckEditMode = "deck";
+    }
     this.bumpContentSync();
   }
 
@@ -1817,6 +1824,14 @@ export class VaultStore {
 
   setBoardEditMode(mode: "board" | "raw") {
     this.boardEditMode = mode;
+  }
+
+  toggleDeckEditMode() {
+    this.deckEditMode = this.deckEditMode === "deck" ? "raw" : "deck";
+  }
+
+  setDeckEditMode(mode: "deck" | "raw") {
+    this.deckEditMode = mode;
   }
 
   async linkAttachmentFiles() {

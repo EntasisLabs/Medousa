@@ -10890,7 +10890,8 @@
     padding: 0.5rem 0;
   }
 
-  .vault-live-report__chrome {
+  .vault-live-report__chrome,
+  .vault-live-slides__chrome {
     justify-content: space-between;
     margin: 0 0 0.45rem;
   }
@@ -11049,13 +11050,16 @@
     display: none;
   }
 
-  .vault-live-report__cols {
+  .vault-live-report__cols,
+  .vault-live-slides__cols {
     display: flex;
     gap: 0.25rem;
   }
 
   .vault-live-report__col,
-  .vault-live-report__edit {
+  .vault-live-report__edit,
+  .vault-live-slides__col,
+  .vault-live-slides__edit {
     font-size: 0.625rem;
     letter-spacing: 0.02em;
     color: rgb(var(--shell-muted, var(--color-surface-400)));
@@ -11066,12 +11070,14 @@
     cursor: pointer;
   }
 
-  .vault-live-report__col[aria-pressed="true"] {
+  .vault-live-report__col[aria-pressed="true"],
+  .vault-live-slides__col[aria-pressed="true"] {
     color: rgb(var(--shell-fg, var(--color-surface-50)));
     border-color: rgb(var(--shell-border, var(--color-surface-300)) / 0.55);
   }
 
-  .vault-live-report__field {
+  .vault-live-report__field,
+  .vault-live-slides__field {
     display: block;
     width: 100%;
     margin: 0 0 0.4rem;
@@ -11083,7 +11089,8 @@
     font-size: 0.875rem;
   }
 
-  .vault-live-report__body {
+  .vault-live-report__body,
+  .vault-live-slides__body {
     display: block;
     width: 100%;
     min-height: 8rem;
@@ -11508,7 +11515,9 @@
 
   .vault-live-chart__stage,
   .vault-live-report__stage,
-  .vault-live-report__mount {
+  .vault-live-report__mount,
+  .vault-live-slides__stage,
+  .vault-live-slides__mount {
     width: 100%;
     min-width: 0;
   }

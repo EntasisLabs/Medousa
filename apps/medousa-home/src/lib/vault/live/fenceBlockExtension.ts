@@ -23,6 +23,10 @@ import {
   type ReportSurfaceHandles,
 } from "./liveReportSurface";
 import {
+  mountSlidesSurface,
+  type SlidesSurfaceHandles,
+} from "./liveSlidesSurface";
+import {
   mountChartSurface,
   type ChartSurfaceHandles,
 } from "./liveChartSurface";
@@ -181,6 +185,7 @@ export const FenceBlock = Node.create<FenceBlockOptions>({
 
       let callout: CalloutSurfaceHandles | null = null;
       let report: ReportSurfaceHandles | null = null;
+      let slides: SlidesSurfaceHandles | null = null;
       let chart: ChartSurfaceHandles | null = null;
       let card: CardSurfaceHandles | null = null;
       let dashboard: DashboardSurfaceHandles | null = null;
@@ -209,6 +214,8 @@ export const FenceBlock = Node.create<FenceBlockOptions>({
         callout = null;
         report?.destroy();
         report = null;
+        slides?.destroy();
+        slides = null;
         chart?.destroy();
         chart = null;
         card?.destroy();
@@ -396,6 +403,16 @@ export const FenceBlock = Node.create<FenceBlockOptions>({
           return;
         }
 
+        if (lang === "slides") {
+          slides = mountSlidesSurface(
+            dom,
+            nextAttrs.raw,
+            opts.getLiquidContext?.() ?? {},
+            (updatedRaw) => applyRawUpdate(updatedRaw),
+          );
+          return;
+        }
+
         if (lang === "medousa-view") {
           const placeholder = document.createElement("div");
           placeholder.className = "vault-live-organism vault-live-view-pending markdown-content";
@@ -446,6 +463,16 @@ export const FenceBlock = Node.create<FenceBlockOptions>({
           ) {
             attrs = next;
             report.applyRaw(next.raw);
+            return true;
+          }
+          if (
+            attrs.lang === "slides" &&
+            next.lang === "slides" &&
+            slides &&
+            typeof slides.applyRaw === "function"
+          ) {
+            attrs = next;
+            slides.applyRaw(next.raw);
             return true;
           }
           attrs = next;

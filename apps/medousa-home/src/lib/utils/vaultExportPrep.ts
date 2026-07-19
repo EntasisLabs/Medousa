@@ -6,7 +6,12 @@
 import { destroyLiquidEmbeds } from "$lib/markdown/hydrateLiquidEmbeds";
 import { hydrateMarkdownContainer } from "$lib/markdown/hydrateMarkdownContainer";
 import { renderMarkdownPreview } from "$lib/markdown";
-import { stripFrontmatter } from "$lib/utils/vaultFrontmatter";
+import {
+  parseFrontmatterAuthor,
+  parseFrontmatterDate,
+  stripFrontmatter,
+} from "$lib/utils/vaultFrontmatter";
+import { noteHasSlidesDeck } from "$lib/utils/markdownSlides";
 import {
   exportContentWidthPx,
   normalizeVaultExportOptions,
@@ -60,6 +65,48 @@ export function bodyHasMatchingTitleH1(
   const first = bodyEl.querySelector(":scope > h1");
   if (!first) return false;
   return normalizeExportTitle(first.textContent ?? "") === normalizeExportTitle(title);
+}
+
+/** Build muted export byline from frontmatter + toggles. */
+export function formatExportByline(
+  content: string,
+  options: Pick<VaultExportOptions, "includeAuthor" | "includeDate">,
+): string {
+  const { frontmatter } = stripFrontmatter(content);
+  const parts: string[] = [];
+  if (options.includeAuthor) {
+    const author = parseFrontmatterAuthor(frontmatter).trim();
+    if (author) parts.push(author);
+  }
+  if (options.includeDate) {
+    const date = parseFrontmatterDate(frontmatter).trim();
+    if (date) parts.push(date);
+  }
+  return parts.join(" · ");
+}
+
+/** Insert byline after the export title (injected or body H1). */
+export function injectExportByline(
+  mount: HTMLElement,
+  bodyEl: HTMLElement,
+  byline: string,
+): void {
+  const text = byline.trim();
+  if (!text) return;
+  const el = document.createElement("p");
+  el.className = "vault-export-byline";
+  el.textContent = text;
+  const injectedTitle = mount.querySelector(":scope > h1");
+  if (injectedTitle) {
+    injectedTitle.insertAdjacentElement("afterend", el);
+    return;
+  }
+  const bodyTitle = bodyEl.querySelector(":scope > h1");
+  if (bodyTitle) {
+    bodyTitle.insertAdjacentElement("afterend", el);
+    return;
+  }
+  mount.insertBefore(el, bodyEl);
 }
 
 /** Expand FAQ / accordion content for print capture. */
@@ -565,11 +612,26 @@ export async function snapshotElementToPng(
   }
 }
 
+/** Whole-note decks store fence grammar without a ```slides wrapper — wrap for export. */
+export function prepareSlidesExportMarkdown(content: string): string {
+  if (!noteHasSlidesDeck(content)) return content;
+  const { frontmatter, content: body } = stripFrontmatter(content);
+  const trimmed = body.trim();
+  if (!trimmed) return content;
+  if (/^```slides\b/i.test(trimmed)) {
+    return content;
+  }
+  const wrapped = "```slides\n" + trimmed + "\n```\n";
+  if (!frontmatter) return wrapped;
+  return `---\n${frontmatter}\n---\n\n${wrapped}`;
+}
+
 export async function prepareVaultExportMount(
   input: VaultExportPrepInput,
 ): Promise<VaultExportPrepResult> {
   const options = normalizeVaultExportOptions(input.options);
-  const body = stripFrontmatter(input.content).content;
+  const exportContent = prepareSlidesExportMarkdown(input.content);
+  const body = stripFrontmatter(exportContent).content;
   const html = renderMarkdownPreview(body, {
     titleByPath: input.labelByPath,
     resolveLocalImages: Boolean(input.notePath),
@@ -604,6 +666,9 @@ export async function prepareVaultExportMount(
     titleEl.textContent = input.title;
     mount.insertBefore(titleEl, bodyEl);
   }
+
+  const byline = formatExportByline(exportContent, options);
+  injectExportByline(mount, bodyEl, byline);
 
   shell.appendChild(mount);
   document.body.appendChild(shell);

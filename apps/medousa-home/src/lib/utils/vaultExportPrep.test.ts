@@ -6,12 +6,15 @@ import {
   densifyCompareForExport,
   ensureTableHeadersForExport,
   expandDetailsForExport,
+  formatExportByline,
   glueHeadingsToFollowingEmbed,
   glueLabelParagraphsToFollowing,
   hardenExportLayout,
+  injectExportByline,
   isLabelLikeParagraph,
   markTallEmbedsForPageFlow,
   normalizeExportTitle,
+  prepareSlidesExportMarkdown,
   stripExportChrome,
 } from "./vaultExportPrep";
 import { buildExportPrintCss } from "./vaultExportPrintCss";
@@ -257,5 +260,60 @@ describe("vaultExportPrintCss", () => {
     expect(css).toContain("break-after: avoid");
     expect(css).toContain(".liquid-brief");
     expect(css).toContain("vault-export-keep");
+  });
+
+  it("formats byline from frontmatter toggles", () => {
+    const note = "---\nauthor: Ada\ndate: 2026-07-18\n---\n\n# Hi";
+    expect(
+      formatExportByline(note, { includeAuthor: false, includeDate: false }),
+    ).toBe("");
+    expect(
+      formatExportByline(note, { includeAuthor: true, includeDate: false }),
+    ).toBe("Ada");
+    expect(
+      formatExportByline(note, { includeAuthor: true, includeDate: true }),
+    ).toBe("Ada · 2026-07-18");
+  });
+
+  it("injects byline after title", () => {
+    const mount = document.createElement("div");
+    const title = document.createElement("h1");
+    title.textContent = "Note";
+    const body = document.createElement("div");
+    body.className = "markdown-content";
+    body.innerHTML = "<p>Body</p>";
+    mount.append(title, body);
+    injectExportByline(mount, body, "Ada · 2026-07-18");
+    const byline = mount.querySelector(".vault-export-byline");
+    expect(byline?.textContent).toBe("Ada · 2026-07-18");
+    expect(title.nextElementSibling).toBe(byline);
+  });
+
+  it("wraps kind:slides notes so export can page-break between slides", () => {
+    const note = [
+      "---",
+      "kind: slides",
+      "medousa-deck: basic",
+      "---",
+      "",
+      "title: Pitch",
+      "columns: 2",
+      "",
+      "---",
+      "label: One",
+      "layout: hero",
+      "",
+      "# One",
+      "",
+      "---",
+      "label: Two",
+      "layout: stack",
+      "",
+      "# Two",
+    ].join("\n");
+    const wrapped = prepareSlidesExportMarkdown(note);
+    expect(wrapped).toContain("```slides");
+    expect(wrapped).toContain("label: One");
+    expect(wrapped).toContain("label: Two");
   });
 });

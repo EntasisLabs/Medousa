@@ -37,6 +37,7 @@ const ALL_IDS = [
   "dashboard",
   "chart",
   "report",
+  "slides",
   "thinking",
   "tool_trace",
   "presentation",

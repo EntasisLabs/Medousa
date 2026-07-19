@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  parseFrontmatterAuthor,
+  parseFrontmatterDate,
   restingVaultTagChips,
   serializeFrontmatter,
+  setFrontmatterAuthorYaml,
+  setFrontmatterDateYaml,
   setFrontmatterKind,
   sortVaultTagsForDisplay,
   stripFrontmatter,
@@ -51,5 +55,19 @@ describe("vaultFrontmatter", () => {
         2,
       ),
     ).toEqual({ visible: ["arizona", "bonsai"], hiddenCount: 3 });
+  });
+
+  it("round-trips author and date frontmatter fields", () => {
+    let fm = setFrontmatterAuthorYaml(null, "Ada Lovelace");
+    fm = setFrontmatterDateYaml(fm, "2026-07-18");
+    expect(parseFrontmatterAuthor(fm)).toBe("Ada Lovelace");
+    expect(parseFrontmatterDate(fm)).toBe("2026-07-18");
+    fm = setFrontmatterAuthorYaml(fm, "");
+    expect(parseFrontmatterAuthor(fm)).toBe("");
+    expect(parseFrontmatterDate(fm)).toBe("2026-07-18");
+  });
+
+  it("falls back to updated when date is absent", () => {
+    expect(parseFrontmatterDate("updated: 2026-01-01")).toBe("2026-01-01");
   });
 });

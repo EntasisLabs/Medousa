@@ -33,6 +33,7 @@ import {
 } from "./vaultExportOptions";
 import {
   bodyHasMatchingTitleH1,
+  formatExportByline,
   isLabelLikeParagraph,
   prepareVaultExportMount,
   snapshotElementToPng,
@@ -304,12 +305,14 @@ export const DOCX_SNAPSHOT_SELECTOR = [
   ".liquid-compare",
   ".liquid-chart",
   ".liquid-report",
+  ".liquid-slide",
 ].join(", ");
 
 /**
  * Collect unique snapshot roots.
  * Prefer `.vault-export-section` (heading + embed) so Word cannot orphan
  * "Compare" / "Price story" above a tall PNG — keepNext alone is not enough.
+ * Slides: snapshot each `.liquid-slide` (one deck page) instead of the host.
  */
 export function selectDocxSnapshotTargets(root: HTMLElement): HTMLElement[] {
   const seen = new Set<HTMLElement>();
@@ -324,6 +327,15 @@ export function selectDocxSnapshotTargets(root: HTMLElement): HTMLElement[] {
     }
   };
 
+  // 0) Deck slides — one PNG per frame (before host embeds swallow them).
+  for (const slide of root.querySelectorAll<HTMLElement>(".liquid-slide")) {
+    if (seen.has(slide)) continue;
+    markNested(slide);
+    const host = slide.closest<HTMLElement>(".liquid-md-embed, .liquid-slides");
+    if (host) seen.add(host);
+    targets.push(slide);
+  }
+
   // 1) Glued heading+embed sections — bake the heading into the image.
   for (const section of root.querySelectorAll<HTMLElement>(".vault-export-section")) {
     if (seen.has(section)) continue;
@@ -335,7 +347,12 @@ export function selectDocxSnapshotTargets(root: HTMLElement): HTMLElement[] {
   for (const el of root.querySelectorAll<HTMLElement>(DOCX_SNAPSHOT_SELECTOR)) {
     if (seen.has(el)) continue;
     if (el.closest(".vault-export-section")) continue;
+    if (el.classList.contains("liquid-slide")) continue;
     if (el.classList.contains("liquid-md-embed")) {
+      if (el.querySelector(".liquid-slide")) {
+        seen.add(el);
+        continue;
+      }
       markNested(el);
       targets.push(el);
       continue;
@@ -437,6 +454,35 @@ export function htmlExportToDocxChildren(
       if (tag === "style" || tag === "script") continue;
 
       if (
+        node.classList.contains("liquid-slides") ||
+        (node.classList.contains("liquid-md-embed") &&
+          node.querySelector(".liquid-slide"))
+      ) {
+        const slides = [
+          ...node.querySelectorAll<HTMLElement>(":scope .liquid-slide, .liquid-slide"),
+        ];
+        // Prefer direct stage children when nested.
+        const unique = [...new Set(slides)];
+        for (let i = 0; i < unique.length; i++) {
+          const slide = unique[i]!;
+          const slideSnap = snapshots.get(slide);
+          if (slideSnap) out.push(imageParagraph(slideSnap));
+          if (i < unique.length - 1) {
+            out.push(new Paragraph({ children: [new PageBreak()] }));
+          }
+        }
+        continue;
+      }
+
+      if (node.classList.contains("liquid-slide")) {
+        const slideSnap = snapshots.get(node);
+        if (slideSnap) {
+          out.push(imageParagraph(slideSnap));
+          continue;
+        }
+      }
+
+      if (
         node.classList.contains("liquid-compare") ||
         node.classList.contains("liquid-chart") ||
         node.classList.contains("liquid-report") ||
@@ -484,7 +530,7 @@ export function htmlExportToDocxChildren(
       if (/^h[1-6]$/.test(tag)) {
         // If this heading lives inside a snapshotted section, skip — it's in the PNG.
         const section = node.closest(".vault-export-section");
-        if (section && snapshots.has(section)) continue;
+        if (section instanceof HTMLElement && snapshots.has(section)) continue;
 
         const level = Number(tag[1]);
         const headingCtx = {
@@ -774,8 +820,18 @@ export async function renderVaultNoteDocxBlob(options: {
       exportOptions,
       snapshots,
     );
+    const includeTitle = !bodyHasMatchingTitleH1(
+      prepared.bodyEl,
+      options.title,
+    );
+    // Prep puts byline inside bodyEl when the title H1 already lives there;
+    // only inject a Word meta paragraph when the title itself is synthesized.
+    const byline = includeTitle
+      ? formatExportByline(options.content, exportOptions)
+      : "";
     const doc = buildDocument(options.title, children, exportOptions, {
-      includeTitle: !bodyHasMatchingTitleH1(prepared.bodyEl, options.title),
+      includeTitle,
+      byline,
     });
     return Packer.toBlob(doc);
   } finally {
@@ -787,12 +843,13 @@ function buildDocument(
   title: string,
   children: DocxChild[],
   options: VaultExportOptions,
-  flags: { includeTitle?: boolean } = {},
+  flags: { includeTitle?: boolean; byline?: string } = {},
 ): Document {
   const font = exportDocxFontName(options.fontFamily);
   const size = halfPoints(options.baseFontPx);
   const margins = exportMarginTwips(options.margins);
   const includeTitle = flags.includeTitle !== false;
+  const byline = (flags.byline ?? "").trim();
   const page =
     options.pageSize === "a4"
       ? { width: 11906, height: 16838 }
@@ -800,6 +857,7 @@ function buildDocument(
   const landscape = options.orientation === "landscape";
 
   const headingColor = DOCX_HEADING_COLOR;
+  const bylineColor = "374151";
   const headingDefs = [
     { id: "Heading1", name: "Heading 1", level: 1, scale: 1.5, before: 0, after: 80 },
     { id: "Heading2", name: "Heading 2", level: 2, scale: 1.25, before: 160, after: 60 },
@@ -904,6 +962,24 @@ function buildDocument(
                       font,
                       size: halfPoints(options.baseFontPx * 1.6),
                       color: headingColor,
+                    }),
+                  ],
+                }),
+              ]
+            : []),
+          ...(byline
+            ? [
+                new Paragraph({
+                  keepNext: true,
+                  keepLines: true,
+                  spacing: { after: 160 },
+                  children: [
+                    new TextRun({
+                      text: byline,
+                      font,
+                      size: halfPoints(options.baseFontPx * 0.9),
+                      color: bylineColor,
+                      italics: true,
                     }),
                   ],
                 }),

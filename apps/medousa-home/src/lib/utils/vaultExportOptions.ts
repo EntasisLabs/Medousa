@@ -25,6 +25,10 @@ export interface VaultExportOptions {
   breakBeforeH2: boolean;
   /** Prefer keeping tables/code/embeds together across page breaks. */
   keepTogether: boolean;
+  /** Include frontmatter author in the export byline. */
+  includeAuthor: boolean;
+  /** Include frontmatter date in the export byline. */
+  includeDate: boolean;
 }
 
 export const DEFAULT_VAULT_EXPORT_OPTIONS: VaultExportOptions = {
@@ -35,6 +39,8 @@ export const DEFAULT_VAULT_EXPORT_OPTIONS: VaultExportOptions = {
   margins: "comfortable",
   breakBeforeH2: false,
   keepTogether: false,
+  includeAuthor: false,
+  includeDate: false,
 };
 
 const FONT_STACKS: Record<VaultExportFontFamily, string> = {
@@ -139,6 +145,8 @@ export function normalizeVaultExportOptions(
     margins,
     breakBeforeH2: Boolean(base.breakBeforeH2),
     keepTogether: Boolean(base.keepTogether),
+    includeAuthor: Boolean(base.includeAuthor),
+    includeDate: Boolean(base.includeDate),
   };
 }
 

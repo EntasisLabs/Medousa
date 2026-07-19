@@ -4,13 +4,11 @@
    * Paste-first from ```report markdown. Body re-enters MarkdownContent so
    * nested chart placeholders hydrate like brief section bodies.
    */
-  import MarkdownContent from "$lib/components/ui/MarkdownContent.svelte";
   import { renderInlineMarkdown } from "$lib/markdown";
-  import { getLiquidContext } from "$lib/liquid/render/context";
   import type { ArchetypeProps } from "$lib/liquid/render/types";
+  import FigureGridBody from "../slides/FigureGridBody.svelte";
 
   let { node }: ArchetypeProps = $props();
-  const ctx = getLiquidContext();
 
   const title = $derived(typeof node.props.title === "string" ? node.props.title : "");
   const subtitle = $derived(
@@ -43,11 +41,7 @@
 
     {#if body}
       <div class="liquid-report-body">
-        <MarkdownContent
-          content={body}
-          titleByPath={ctx.titleByPath}
-          openLinksInWeb={ctx.openLinksInWeb ?? false}
-        />
+        <FigureGridBody {body} {columns} />
       </div>
     {/if}
   </article>
@@ -123,67 +117,5 @@
 
   .liquid-report-body {
     min-width: 0;
-  }
-
-  .liquid-report-body :global(.markdown-content) {
-    display: grid;
-    grid-template-columns: repeat(var(--report-cols, 2), minmax(0, 1fr));
-    column-gap: 0.95rem;
-    row-gap: 1.15rem;
-    font-size: 0.875rem;
-    line-height: 1.55;
-    color: rgb(var(--chart-fg-secondary));
-  }
-
-  /* Prose / headings full-bleed; chart embeds sit in the figure grid */
-  .liquid-report-body :global(.markdown-content > *) {
-    grid-column: 1 / -1;
-    min-width: 0;
-  }
-
-  .liquid-report-body :global(.markdown-content > .liquid-md-embed[data-liquid-embed="chart"]),
-  .liquid-report-body :global(.markdown-content > .liquid-md-host-chart) {
-    grid-column: auto;
-  }
-
-  .liquid-report-body :global(.markdown-content > p) {
-    margin: 0;
-    color: rgb(var(--chart-fg-secondary));
-  }
-
-  .liquid-report-body :global(.markdown-content > h1),
-  .liquid-report-body :global(.markdown-content > h2),
-  .liquid-report-body :global(.markdown-content > h3),
-  .liquid-report-body :global(.markdown-content > h4) {
-    margin: 0.55rem 0 0;
-    color: rgb(var(--chart-fg));
-  }
-
-  /* Nested chart chrome — same ink as standalone charts in vault */
-  .liquid-report-body :global(.liquid-chart-title) {
-    color: rgb(var(--chart-fg));
-  }
-
-  .liquid-report-body :global(.liquid-chart-description),
-  .liquid-report-body :global(.liquid-chart-caption),
-  .liquid-report-body :global(.liquid-chart-heatmap-col-label),
-  .liquid-report-body :global(.liquid-chart-heatmap-row-label) {
-    color: rgb(var(--chart-fg-muted));
-  }
-
-  .liquid-report-body :global(.liquid-chart) {
-    margin: 0;
-    height: 100%;
-  }
-
-  .liquid-report-body :global(.liquid-md-embed[data-liquid-embed="chart"]),
-  .liquid-report-body :global(.liquid-md-host-chart) {
-    min-width: 0;
-  }
-
-  @media (max-width: 640px) {
-    .liquid-report-body :global(.markdown-content) {
-      grid-template-columns: 1fr;
-    }
   }
 </style>

@@ -53,6 +53,7 @@ export function buildExportPrintCss(options: VaultExportOptions): string {
   const pageFlow = `
   .vault-pdf-export-mount .liquid-md-embed,
   .vault-pdf-export-mount .liquid-report,
+  .vault-pdf-export-mount .liquid-slides,
   .vault-pdf-export-mount .liquid-compare,
   .vault-pdf-export-mount .liquid-chart,
   .vault-pdf-export-mount .liquid-tabs,
@@ -63,6 +64,15 @@ export function buildExportPrintCss(options: VaultExportOptions): string {
   .vault-pdf-export-mount table:not(.liquid-compare-table) {
     break-inside: auto !important;
     page-break-inside: auto !important;
+  }
+
+  .vault-pdf-export-mount .liquid-slide {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  .vault-pdf-export-mount .liquid-slides-tabs {
+    display: none !important;
   }
 
   .vault-pdf-export-mount tr {
@@ -177,6 +187,14 @@ export function buildExportPrintCss(options: VaultExportOptions): string {
     font-size: ${h1}px !important;
     margin: 0 0 1rem !important;
     break-before: auto !important;
+  }
+
+  .vault-pdf-export-mount .vault-export-byline {
+    margin: -0.5rem 0 1.1rem !important;
+    font-size: ${(base * 0.9).toFixed(2)}px !important;
+    line-height: 1.4 !important;
+    color: #374151 !important;
+    font-style: italic !important;
   }
 
   .vault-pdf-export-mount > h1:first-child {

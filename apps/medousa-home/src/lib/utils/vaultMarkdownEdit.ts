@@ -11,6 +11,7 @@ import {
   LIQUID_CODE_TEMPLATE,
   LIQUID_DASHBOARD_TEMPLATE,
   LIQUID_REPORT_TEMPLATE,
+  LIQUID_SLIDES_TEMPLATE,
   LIQUID_STEPS_TEMPLATE,
   LIQUID_TABS_TEMPLATE,
   LIQUID_TREE_TEMPLATE,
@@ -59,6 +60,7 @@ export type SlashBlockId =
   | "liquid_chart"
   | "liquid_dashboard"
   | "liquid_report"
+  | "liquid_slides"
   | "liquid_tabs"
   | "liquid_steps"
   | "liquid_accordion"
@@ -370,6 +372,7 @@ export function insertSlashBlock(
     liquid_chart: LIQUID_CHART_TEMPLATE,
     liquid_dashboard: LIQUID_DASHBOARD_TEMPLATE,
     liquid_report: LIQUID_REPORT_TEMPLATE,
+    liquid_slides: LIQUID_SLIDES_TEMPLATE,
     liquid_tabs: LIQUID_TABS_TEMPLATE,
     liquid_steps: LIQUID_STEPS_TEMPLATE,
     liquid_accordion: LIQUID_ACCORDION_TEMPLATE,
@@ -708,6 +711,7 @@ export const SLASH_BLOCK_IDS: SlashBlockId[] = [
   "liquid_chart",
   "liquid_dashboard",
   "liquid_report",
+  "liquid_slides",
   "liquid_tabs",
   "liquid_steps",
   "liquid_accordion",

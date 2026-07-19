@@ -131,6 +131,13 @@
       group: "blocks",
     },
     {
+      id: "liquid_slides",
+      label: "Slides",
+      hint: "Deck with labeled slides",
+      keywords: "liquid slides deck presentation pitch ```slides",
+      group: "blocks",
+    },
+    {
       id: "liquid_tabs",
       label: "Tabs",
       hint: "Switchable panels",

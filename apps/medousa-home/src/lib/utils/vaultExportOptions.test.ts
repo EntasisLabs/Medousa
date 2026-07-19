@@ -41,6 +41,15 @@ describe("vaultExportOptions", () => {
     ).toBe(true);
   });
 
+  it("defaults includeAuthor/includeDate to false", () => {
+    expect(DEFAULT_VAULT_EXPORT_OPTIONS.includeAuthor).toBe(false);
+    expect(DEFAULT_VAULT_EXPORT_OPTIONS.includeDate).toBe(false);
+    expect(normalizeVaultExportOptions(null).includeAuthor).toBe(false);
+    expect(
+      normalizeVaultExportOptions({ includeAuthor: true, includeDate: true }),
+    ).toMatchObject({ includeAuthor: true, includeDate: true });
+  });
+
   it("persists and reads options", () => {
     writeVaultExportOptions({
       ...DEFAULT_VAULT_EXPORT_OPTIONS,

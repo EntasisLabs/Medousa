@@ -23,10 +23,12 @@
   import { iconForSpace } from "$lib/utils/vaultSpaceIcons";
   import { findLedgerTable } from "$lib/utils/markdownTable";
   import { findKanbanBoard, noteHasKanbanBoard } from "$lib/utils/markdownKanban";
+  import { noteHasSlidesDeck } from "$lib/utils/markdownSlides";
   import VaultEmptyState from "./VaultEmptyState.svelte";
   import VaultKindBadge from "./VaultKindBadge.svelte";
   import LedgerTableEditor from "./LedgerTableEditor.svelte";
   import KanbanBoardEditor from "./KanbanBoardEditor.svelte";
+  import SlidesDeckEditor from "./SlidesDeckEditor.svelte";
   import VaultMarkdownPreview from "./VaultMarkdownPreview.svelte";
   import VaultNoteLinksPanel from "./VaultNoteLinksPanel.svelte";
   import VaultConflictBar from "./VaultConflictBar.svelte";
@@ -127,6 +129,7 @@
   const hasLedgerTable = $derived(Boolean(findLedgerTable(vault.content)));
   const hasKanbanBoard = $derived(noteHasKanbanBoard(vault.content));
   const kanbanBoard = $derived(hasKanbanBoard ? findKanbanBoard(vault.content) : null);
+  const hasSlidesDeck = $derived(noteHasSlidesDeck(vault.content));
 
   const showLedgerTable = $derived(
     !mobile &&
@@ -143,8 +146,17 @@
         (vault.editorMode === "edit" && vault.boardEditMode === "board")),
   );
 
+  const showSlidesDeck = $derived(
+    hasSlidesDeck &&
+      (vault.editorMode === "preview" ||
+        (vault.editorMode === "edit" && vault.deckEditMode === "deck")),
+  );
+
   const showMarkdownEditor = $derived(
-    vault.editorMode === "edit" && !showLedgerTable && !showKanbanBoard,
+    vault.editorMode === "edit" &&
+      !showLedgerTable &&
+      !showKanbanBoard &&
+      !showSlidesDeck,
   );
 
   const notePlane = $derived(vault.notePlane);
@@ -165,7 +177,10 @@
   );
 
   const showPreviewOnly = $derived(
-    vault.editorMode === "preview" && !showKanbanBoard && !showLedgerTable,
+    vault.editorMode === "preview" &&
+      !showKanbanBoard &&
+      !showLedgerTable &&
+      !showSlidesDeck,
   );
 
   const noteKind = $derived(vault.selectedKind);
@@ -201,7 +216,8 @@
       Boolean(vault.selectedPath) &&
       supportsPreviewSplit(noteKind) &&
       !showLedgerTable &&
-      !showKanbanBoard,
+      !showKanbanBoard &&
+      !showSlidesDeck,
   );
 
   $effect(() => {
@@ -223,6 +239,12 @@
       vault.editorMode === "edit",
   );
 
+  const showDeckViewToggle = $derived(
+    Boolean(vault.selectedPath) &&
+      hasSlidesDeck &&
+      vault.editorMode === "edit",
+  );
+
   const previewFirstKind = $derived(
     !vault.isWriteFirstKind &&
       (vault.selectedKind === "daily" || vault.selectedKind === "note"),
@@ -238,7 +260,10 @@
     Boolean(vault.selectedPath) &&
       !vault.noteLoading &&
       (showMarkdownEditor ||
-        (showPreviewOnly && !showLedgerTable && !showKanbanBoard)),
+        (showPreviewOnly &&
+          !showLedgerTable &&
+          !showKanbanBoard &&
+          !showSlidesDeck)),
   );
 
   const findSourceText = $derived(
@@ -255,7 +280,8 @@
     Boolean(vault.selectedPath) &&
       !vault.noteLoading &&
       !showLedgerTable &&
-      !showKanbanBoard,
+      !showKanbanBoard &&
+      !showSlidesDeck,
   );
 
   $effect(() => {
@@ -607,6 +633,33 @@
           </div>
         {/if}
 
+        {#if showDeckViewToggle}
+          <div class="vault-editor-icon-pair" role="group" aria-label="Deck view">
+            <button
+              type="button"
+              class="vault-editor-icon-btn"
+              class:vault-editor-icon-btn--active={vault.deckEditMode === "deck"}
+              title="Deck view"
+              aria-label="Deck view"
+              aria-pressed={vault.deckEditMode === "deck"}
+              onclick={() => vault.setDeckEditMode("deck")}
+            >
+              <BookOpen size={15} strokeWidth={1.75} />
+            </button>
+            <button
+              type="button"
+              class="vault-editor-icon-btn"
+              class:vault-editor-icon-btn--active={vault.deckEditMode === "raw"}
+              title="Raw markdown"
+              aria-label="Raw markdown"
+              aria-pressed={vault.deckEditMode === "raw"}
+              onclick={() => vault.setDeckEditMode("raw")}
+            >
+              <Code2 size={15} strokeWidth={1.75} />
+            </button>
+          </div>
+        {/if}
+
         {#if vault.selectedPath}
           <VaultLinkedFilesMenu disabled={vault.noteLoading || vault.saving} />
         {/if}
@@ -784,6 +837,12 @@
             disabled={vault.saving || vault.editorMode === "preview"}
             onchange={(next) => vault.markDirty(next)}
             onWikilink={handleWikilink}
+          />
+        {:else if showSlidesDeck}
+          <SlidesDeckEditor
+            content={vault.content}
+            disabled={vault.saving || vault.editorMode === "preview"}
+            onchange={(next) => vault.markDirty(next)}
           />
         {:else if showMarkdownEditor}
           <VaultMarkdownEditor
