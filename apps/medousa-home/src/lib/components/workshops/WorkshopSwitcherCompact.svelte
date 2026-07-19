@@ -15,16 +15,22 @@
   } from "$lib/types/workshopRegistry";
   import { isTauriMobilePlatform } from "$lib/platform";
   import { isTauri } from "$lib/window";
+  import { placeRailPopover } from "$lib/utils/railPopover";
+  import { tick } from "svelte";
 
   interface Props {
     hideWhenSingle?: boolean;
     variant?: "mobile" | "desktop" | "rail";
+    /** When rail is expanded, show workshop name beside the monogram. */
+    expanded?: boolean;
   }
 
-  let { hideWhenSingle = true, variant = "mobile" }: Props = $props();
+  let { hideWhenSingle = true, variant = "mobile", expanded = false }: Props = $props();
 
   let sheetOpen = $state(false);
   let joinOpen = $state(false);
+  let railTriggerEl = $state<HTMLButtonElement | null>(null);
+  let railMenuEl = $state<HTMLDivElement | null>(null);
 
   const showPill = $derived(
     variant !== "rail" &&
@@ -34,6 +40,29 @@
 
   const showRail = $derived(variant === "rail");
   const isRailMenu = $derived(variant === "rail");
+
+  $effect(() => {
+    if (!sheetOpen || !isRailMenu || !railTriggerEl || !railMenuEl) return;
+    layout.shellSidebarWidth;
+    let frame = 0;
+    const place = () => {
+      if (!railTriggerEl || !railMenuEl) return;
+      placeRailPopover(railTriggerEl, railMenuEl);
+      frame = window.requestAnimationFrame(() => {
+        if (railTriggerEl && railMenuEl) placeRailPopover(railTriggerEl, railMenuEl);
+      });
+    };
+    void tick().then(place);
+    window.addEventListener("resize", place);
+    window.visualViewport?.addEventListener("resize", place);
+    window.visualViewport?.addEventListener("scroll", place);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener("resize", place);
+      window.visualViewport?.removeEventListener("resize", place);
+      window.visualViewport?.removeEventListener("scroll", place);
+    };
+  });
 
   const activeBrandStyle = $derived(workshopBrandCssVars(workshops.activeWorkshop?.brandColor));
 
@@ -88,8 +117,9 @@
 
 {#if showRail}
   <button
+    bind:this={railTriggerEl}
     type="button"
-    class="workshop-rail-btn workshop-rail-workshop-btn mb-9 font-semibold leading-none {sheetOpen
+    class="workshop-rail-btn workshop-rail-workshop-btn mt-1 font-semibold leading-none {sheetOpen
       ? 'workshop-rail-workshop-btn-open'
       : ''}"
     style={activeBrandStyle}
@@ -100,9 +130,14 @@
     disabled={workshops.switching}
     onclick={openSheet}
   >
-    <span class="workshop-rail-workshop-monogram" aria-hidden="true">
-      {workshops.activeMonogram}
+    <span class="workshop-rail-btn-icon" aria-hidden="true">
+      <span class="workshop-rail-workshop-monogram">
+        {workshops.activeMonogram}
+      </span>
     </span>
+    {#if expanded}
+      <span class="workshop-rail-btn-label">{workshops.activeLabel}</span>
+    {/if}
   </button>
 {:else if showPill}
   <button
@@ -233,6 +268,7 @@
     }}
   >
     <div
+      bind:this={railMenuEl}
       class="{isRailMenu ? 'workshop-rail-sheet workshop-switcher-menu' : 'mobile-sheet'}"
       role="menu"
       aria-label="Switch workshop"

@@ -29,6 +29,7 @@
     hasKnownChatSession,
   } from "$lib/utils/contextCrossLinks";
   import type { ContextMapNode } from "$lib/utils/contextMap";
+  import ShellSidebarExpandButton from "$lib/components/layout/ShellSidebarExpandButton.svelte";
   import { ChevronLeft, X } from "@lucide/svelte";
   import { registerMobileBackHandler } from "$lib/mobileNavigation";
 
@@ -424,11 +425,14 @@
     <header class="{embedded ? 'border-b border-surface-500/40 px-4 py-3' : 'workshop-header'}">
       {#if !embedded}
         <div class="flex flex-wrap items-start justify-between gap-3">
-          <div class="min-w-0">
-            <h1 class="text-base font-semibold text-surface-50">Context</h1>
-            <p class="workshop-header-line mt-1">
-              The shelf — what happened, what she remembers, how you showed up
-            </p>
+          <div class="flex min-w-0 items-start gap-2">
+            <ShellSidebarExpandButton label="Show rail" />
+            <div class="min-w-0">
+              <h1 class="text-base font-semibold text-surface-50">Context</h1>
+              <p class="workshop-header-line mt-1">
+                The shelf — what happened, what she remembers, how you showed up
+              </p>
+            </div>
           </div>
           {#if showRefresh}
             <button

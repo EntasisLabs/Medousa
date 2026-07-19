@@ -1,5 +1,6 @@
 <script lang="ts">
   import { untrack } from "svelte";
+  import ShellSidebarExpandButton from "$lib/components/layout/ShellSidebarExpandButton.svelte";
   import { chat } from "$lib/stores/chat.svelte";
   import { runtime } from "$lib/stores/runtime.svelte";
   import { settings } from "$lib/stores/settings.svelte";
@@ -74,9 +75,12 @@
   <header class="{embedded ? 'border-b border-surface-500/40 px-4 py-3' : 'workshop-header'}">
     <div class="flex items-start justify-between gap-4">
       {#if !embedded}
-        <div>
-          <h1 class="text-sm font-semibold text-surface-50">Runtime</h1>
-          <p class="workshop-header-line mt-0.5">Live workshop telemetry</p>
+        <div class="flex min-w-0 items-start gap-2">
+          <ShellSidebarExpandButton label="Show rail" />
+          <div class="min-w-0">
+            <h1 class="text-sm font-semibold text-surface-50">Runtime</h1>
+            <p class="workshop-header-line mt-0.5">Live workshop telemetry</p>
+          </div>
         </div>
       {:else}
         <p class="workshop-faint text-xs">Live telemetry</p>

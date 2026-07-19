@@ -1,15 +1,11 @@
 <script lang="ts">
   import { onMount, untrack } from "svelte";
   import LmeEditorHost from "$lib/components/lme/LmeEditorHost.svelte";
-  import LmeSidePanel from "$lib/components/lme/LmeSidePanel.svelte";
   import ConnectionsInviteSheet from "$lib/components/lme/ConnectionsInviteSheet.svelte";
-  import SplitPane from "$lib/components/layout/SplitPane.svelte";
   import VaultNewGroupDialog from "$lib/components/vault/VaultNewGroupDialog.svelte";
   import VaultNewNoteDialog from "$lib/components/vault/VaultNewNoteDialog.svelte";
-  import VaultSidebarCollapsedStrip from "$lib/components/vault/VaultSidebarCollapsedStrip.svelte";
   import { automationsNav } from "$lib/stores/automationsNav.svelte";
   import { graphemeScriptEditor } from "$lib/stores/graphemeScriptEditor.svelte";
-  import { layout } from "$lib/stores/layout.svelte";
   import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
   import { workshop } from "$lib/stores/workshop.svelte";
 
@@ -52,23 +48,6 @@
   data-debug-label="lme-panel"
   aria-label="Workspace"
 >
-  {#if layout.vaultSidebarCollapsed}
-    <VaultSidebarCollapsedStrip
-      label="Browse"
-      onExpand={() => layout.setVaultSidebarCollapsed(false)}
-    />
-  {:else}
-    <SplitPane
-      width={layout.vaultTreeWidth}
-      side="left"
-      min={200}
-      max={420}
-      onResize={(width) => layout.setVaultTreeWidth(width)}
-    >
-      <LmeSidePanel {onOpenChat} />
-    </SplitPane>
-  {/if}
-
   <LmeEditorHost
     {visible}
     {onOpenChat}

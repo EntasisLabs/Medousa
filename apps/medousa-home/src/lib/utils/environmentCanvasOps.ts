@@ -2,9 +2,11 @@ import type {
   ComponentDef,
   EnvironmentSpec,
   LayoutNode,
+  ShellChromeDesktop,
   SurfaceDef,
   SurfaceLayout,
 } from "$lib/types/environment";
+import { applyDesktopShellChromePatch } from "$lib/utils/desktopEnvironmentChrome";
 import { cloneLayoutNode } from "$lib/utils/layoutEditOps";
 import { isAllowedSurfaceIcon } from "$lib/utils/environmentIconCatalog";
 import {
@@ -340,6 +342,14 @@ export function setMobileDefaultHome(spec: EnvironmentSpec, surfaceId: string): 
   }
   spec.updatedAt = new Date().toISOString();
   spec.updatedBy = "operator";
+}
+
+/** Patch desktop shell chrome (`shellChrome.desktop`) on the spec + active preset. */
+export function setDesktopShellChrome(
+  spec: EnvironmentSpec,
+  patch: Partial<ShellChromeDesktop>,
+): void {
+  applyDesktopShellChromePatch(spec, patch);
 }
 
 export function updateCustomSurfaceInSpec(

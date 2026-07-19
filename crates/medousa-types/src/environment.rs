@@ -105,6 +105,14 @@ pub enum ActivityRailMode {
     Hidden,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum VaultSidebarMode {
+    Visible,
+    Hidden,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
@@ -137,6 +145,12 @@ pub struct ShellChromeDesktop {
     pub nav_style: Option<DesktopNavStyle>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub activity_rail: Option<ActivityRailMode>,
+    /// Vault note chat FAB on desktop. Default true when unset.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vault_chat_fab: Option<bool>,
+    /// LME vault sidebar. Default visible when unset.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vault_sidebar: Option<VaultSidebarMode>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

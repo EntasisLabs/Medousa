@@ -5,10 +5,10 @@
     FileText,
     Files,
     GitBranch,
-    PanelLeftOpen,
     Presentation,
     X,
   } from "@lucide/svelte";
+  import ShellSidebarExpandButton from "$lib/components/layout/ShellSidebarExpandButton.svelte";
   import { persistScriptName } from "$lib/grapheme/scriptWorkbenchActions";
   import { graphemeScriptEditor } from "$lib/stores/graphemeScriptEditor.svelte";
   import { layout } from "$lib/stores/layout.svelte";
@@ -99,22 +99,16 @@
   });
 </script>
 
-{#if layout.vaultSidebarCollapsed || lmeWorkspace.tabs.length > 0}
+{#if !layout.shellSidebarExpanded || lmeWorkspace.tabs.length > 0}
   <div
     class="lme-tab-strip flex min-w-0 shrink-0 items-center gap-0.5 overflow-x-auto border-b border-surface-500/40 bg-surface-950/60 px-1.5 pt-1"
     role="tablist"
     aria-label="Open workspace documents"
   >
-    {#if layout.vaultSidebarCollapsed}
-      <button
-        type="button"
-        class="mb-0.5 inline-flex size-7 shrink-0 items-center justify-center rounded-md text-surface-400 transition-colors hover:bg-surface-800/80 hover:text-surface-200"
-        title="Show workspace browser"
-        aria-label="Show workspace browser"
-        onclick={() => layout.setVaultSidebarCollapsed(false)}
-      >
-        <PanelLeftOpen size={15} strokeWidth={1.75} />
-      </button>
+    {#if !layout.shellSidebarExpanded}
+      <div class="mb-0.5">
+        <ShellSidebarExpandButton label="Show workspace browser" />
+      </div>
     {/if}
     {#each lmeWorkspace.tabs as tab (tab.tabId)}
       {@const active = lmeWorkspace.activeTabId === tab.tabId}

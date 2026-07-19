@@ -518,15 +518,70 @@
   }
 
   .workshop-icon-rail {
-    @apply flex w-[52px] shrink-0 flex-col items-center py-2.5;
+    @apply flex h-full w-full min-h-0 shrink-0 flex-col items-center py-2.5;
     border-right: 1px solid rgb(var(--shell-border) / var(--shell-rail-edge));
     background-color: rgb(var(--shell-chrome-bg));
     box-shadow: var(--shell-nav-inset), var(--shell-nav-shadow);
   }
 
+  .workshop-icon-rail-expanded {
+    @apply items-stretch px-1.5;
+  }
+
+  .workshop-icon-rail-view {
+    @apply px-[0.35rem];
+  }
+
+  .workshop-icon-rail-expanded .workshop-icon-rail-items {
+    @apply items-stretch;
+  }
+
+  .workshop-icon-rail-expanded .workshop-rail-tier-divider {
+    @apply w-auto mx-2;
+  }
+
   .workshop-rail-btn {
     @apply flex h-9 w-9 items-center justify-center rounded-md transition;
     color: rgb(var(--shell-icon));
+  }
+
+  .workshop-icon-rail-expanded .workshop-rail-btn {
+    @apply h-9 w-full justify-start gap-2.5 px-2;
+  }
+
+  .workshop-icon-rail-expanded .workshop-rail-btn-tier-utility {
+    @apply h-8 w-full;
+  }
+
+  .workshop-rail-btn-icon {
+    @apply relative inline-flex h-[1.125rem] w-[1.125rem] shrink-0 items-center justify-center;
+  }
+
+  .workshop-rail-workshop-btn .workshop-rail-btn-icon {
+    @apply h-5 w-5;
+  }
+
+  .workshop-rail-btn-label {
+    @apply min-w-0 flex-1 truncate text-left text-[12px] font-medium tracking-[-0.01em];
+    color: inherit;
+  }
+
+  /* Chrome control that owns the rail — sits under the workshop mark, above destinations. */
+  .workshop-rail-nav-toggle {
+    @apply mb-2.5;
+    color: rgb(var(--shell-icon) / 0.62);
+  }
+
+  .workshop-rail-nav-toggle:hover {
+    color: rgb(var(--shell-icon-hover) / 0.9);
+  }
+
+  .workshop-icon-rail-expanded .workshop-rail-nav-toggle {
+    @apply mb-3;
+  }
+
+  .workshop-icon-rail:not(.workshop-icon-rail-expanded) .workshop-rail-nav-toggle {
+    @apply mb-3;
   }
 
   .workshop-rail-btn:hover {

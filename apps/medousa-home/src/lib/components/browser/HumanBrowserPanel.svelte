@@ -8,6 +8,7 @@
   import BrowserCaptchaBanner from "$lib/components/browser/BrowserCaptchaBanner.svelte";
   import BrowserFindBar from "$lib/components/browser/BrowserFindBar.svelte";
   import BrowserStartPage from "$lib/components/browser/BrowserStartPage.svelte";
+  import ShellSidebarExpandButton from "$lib/components/layout/ShellSidebarExpandButton.svelte";
   import {
     createBrowserCompositor,
     registerBrowserCompositor,
@@ -157,6 +158,8 @@
     humanBrowser.showStartPage;
     layout.activityWidth;
     layout.activityCollapsed;
+    layout.shellSidebarExpanded;
+    layout.shellSidebarWidth;
     layout.viewportWidth;
     layout.viewportHeight;
     workRailVisible;
@@ -188,6 +191,7 @@
     </div>
 
     <div class="browser-toolbar" data-debug-label="browser-url-row">
+      <ShellSidebarExpandButton label="Show rail" />
       <div class="browser-nav-cluster">
         <button
           type="button"

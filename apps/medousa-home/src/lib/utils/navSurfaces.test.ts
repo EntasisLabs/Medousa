@@ -1,0 +1,32 @@
+import { describe, expect, it } from "vitest";
+import {
+  shellSidebarViewTitle,
+  surfaceHasShellSidebarView,
+} from "./navSurfaces";
+
+describe("navSurfaces shell sidebar views", () => {
+  it("marks 1B surfaces as having a sidebar view list", () => {
+    expect(surfaceHasShellSidebarView("peers")).toBe(true);
+    expect(surfaceHasShellSidebarView("chat")).toBe(true);
+    expect(surfaceHasShellSidebarView("messaging")).toBe(true);
+    expect(surfaceHasShellSidebarView("library")).toBe(true);
+    expect(surfaceHasShellSidebarView("settings")).toBe(true);
+  });
+
+  it("leaves map-only surfaces without a view list", () => {
+    expect(surfaceHasShellSidebarView("work")).toBe(false);
+    expect(surfaceHasShellSidebarView("calendar")).toBe(false);
+    expect(surfaceHasShellSidebarView("web")).toBe(false);
+    expect(surfaceHasShellSidebarView("context")).toBe(false);
+    expect(surfaceHasShellSidebarView("runtime")).toBe(false);
+    expect(surfaceHasShellSidebarView("profiles")).toBe(false);
+  });
+
+  it("titles view lists for the active surface", () => {
+    expect(shellSidebarViewTitle("peers")).toBe("Peers");
+    expect(shellSidebarViewTitle("chat")).toBe("Sessions");
+    expect(shellSidebarViewTitle("messaging")).toBe("Channels");
+    expect(shellSidebarViewTitle("library")).toBe("Workspace");
+    expect(shellSidebarViewTitle("settings")).toBe("Settings");
+  });
+});

@@ -6,6 +6,7 @@
   import TilingLayoutView from "$lib/components/environment/TilingLayoutView.svelte";
   import PresentationFrame from "$lib/components/environment/PresentationFrame.svelte";
   import ChromeActionRenderer from "$lib/components/environment/ChromeActionRenderer.svelte";
+  import ShellSidebarExpandButton from "$lib/components/layout/ShellSidebarExpandButton.svelte";
   import { chat } from "$lib/stores/chat.svelte";
   import { environment } from "$lib/stores/environment.svelte";
   import { layout } from "$lib/stores/layout.svelte";
@@ -117,6 +118,7 @@
           <div class="environment-renderer-canvas-bar">
             {#if surface}
               <div class="environment-renderer-surface-title">
+                <ShellSidebarExpandButton label="Show rail" />
                 <SurfaceIcon size={16} strokeWidth={1.75} aria-hidden="true" />
                 <span>{surface.label}</span>
               </div>

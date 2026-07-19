@@ -7,7 +7,6 @@
     Files,
     GitBranch,
     History,
-    PanelLeftClose,
     Presentation,
   } from "@lucide/svelte";
   import LmeAgentsExplorer from "$lib/components/lme/explorers/LmeAgentsExplorer.svelte";
@@ -17,7 +16,6 @@
   import LmeFilesExplorer from "$lib/components/lme/explorers/LmeFilesExplorer.svelte";
   import LmeNotesExplorer from "$lib/components/lme/explorers/LmeNotesExplorer.svelte";
   import LmeScriptsExplorer from "$lib/components/lme/explorers/LmeScriptsExplorer.svelte";
-  import { layout } from "$lib/stores/layout.svelte";
   import { lmeWorkspace, type LmeExplorerMode } from "$lib/stores/lmeWorkspace.svelte";
 
   interface Props {
@@ -45,7 +43,7 @@
 </script>
 
 <div
-  class="lme-side-panel flex h-full min-h-0 w-full flex-col border-r border-surface-500/30 bg-surface-900/30"
+  class="lme-side-panel flex h-full min-h-0 w-full flex-col"
   data-debug-label="lme-side-panel"
 >
   <div
@@ -72,15 +70,6 @@
         </button>
       {/each}
     </div>
-    <button
-      type="button"
-      class="lme-side-mode-btn inline-flex size-8 shrink-0 items-center justify-center rounded-md text-surface-400 transition-colors hover:bg-surface-800/80 hover:text-surface-200"
-      title="Hide workspace browser"
-      aria-label="Hide workspace browser"
-      onclick={() => layout.setVaultSidebarCollapsed(true)}
-    >
-      <PanelLeftClose size={15} strokeWidth={1.75} />
-    </button>
   </div>
 
   <div class="min-h-0 flex-1 overflow-hidden">

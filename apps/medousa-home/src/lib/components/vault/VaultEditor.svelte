@@ -4,12 +4,13 @@
     BookOpen,
     Code2,
     Columns3,
-    PanelLeftOpen,
     Search,
     StickyNote,
     Table2,
   } from "@lucide/svelte";
+  import ShellSidebarExpandButton from "$lib/components/layout/ShellSidebarExpandButton.svelte";
   import { layout } from "$lib/stores/layout.svelte";
+  import { environment } from "$lib/stores/environment.svelte";
   import { vault } from "$lib/stores/vault.svelte";
   import { workspace } from "$lib/stores/workspace.svelte";
   import { chat } from "$lib/stores/chat.svelte";
@@ -553,17 +554,7 @@
       </div>
 
       <div class="vault-editor-tools flex shrink-0 flex-wrap items-center justify-end gap-0.5">
-        {#if layout.vaultSidebarCollapsed}
-          <button
-            type="button"
-            class="vault-editor-icon-btn"
-            title="Show library browser"
-            aria-label="Show library browser"
-            onclick={() => layout.setVaultSidebarCollapsed(false)}
-          >
-            <PanelLeftOpen size={15} strokeWidth={1.75} />
-          </button>
-        {/if}
+        <ShellSidebarExpandButton label="Show workspace browser" />
 
         {#if saveWhisper}
           <span
@@ -920,7 +911,7 @@
     />
   {/if}
 
-  {#if vault.selectedPath && !mobile && !noteWorkshop.open && !vault.isLooseFile}
+  {#if vault.selectedPath && !mobile && !noteWorkshop.open && !vault.isLooseFile && environment.desktopShellChrome.vaultChatFab}
     <VaultNoteChatFab />
   {/if}
 </section>

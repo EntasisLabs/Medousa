@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import NavSidebar from "$lib/components/layout/NavSidebar.svelte";
+  import MasterRailHost from "$lib/components/layout/MasterRailHost.svelte";
   import { connectWorkshop, refreshDaemonHealth } from "$lib/workshopConnection";
   import ActivityCollapsedStrip from "$lib/components/layout/ActivityCollapsedStrip.svelte";
   import EnvironmentRenderer from "$lib/components/environment/EnvironmentRenderer.svelte";
@@ -94,10 +94,12 @@
     };
   });
 
+  const desktopChrome = $derived(environment.desktopShellChrome);
+  const activityRailHidden = $derived(desktopChrome.activityRail === "hidden");
   const desktopRails = $derived(
     layoutDesktopRails({
       viewportWidth: layout.viewportWidth,
-      activityCollapsed: layout.activityCollapsed,
+      activityCollapsed: layout.activityCollapsed || activityRailHidden,
       activityWidth: layout.activityWidth,
       workInspectorOpen: false,
       workInspectorWidth: layout.workInspectorWidth,
@@ -160,9 +162,11 @@
   data-debug-label="app-root"
 >
   <div class="flex min-h-0 flex-1" data-debug-label="app-row">
-    <NavSidebar
+    <MasterRailHost
       active={activeSurface}
       onSelect={handleSurfaceSelect}
+      onOpenChat={() => goToSurface("chat")}
+      health={daemonHealth}
       chatActivity={chat.backgroundActivity}
       workActivity={workspace.inMotionCount()}
       peersActivity={peersUnread}
@@ -255,51 +259,55 @@
         </div>
         </div>
 
-        {#if layout.activityCollapsed || desktopRails.showActivityStrip}
-          <ActivityCollapsedStrip
-            onExpand={() => layout.setActivityCollapsed(false)}
-          />
-        {:else}
-          <div
-            class="workshop-rail flex h-full min-w-0 shrink-0 overflow-hidden"
-            data-debug-label="activity-rail"
-          >
-          <SplitPane
-            width={desktopRails.activityPaneWidth}
-            side="right"
-            min={220}
-            max={desktopRails.activityPaneMax}
-            onResize={(width) => layout.setActivityWidth(width)}
-          >
-            <ActivityPanel
-              events={workspace.feed}
-              error={workspace.streamError}
-              notePath={vault.selectedPath}
-              noteTitle={vault.title}
-              wikilinksOut={vault.wikilinksOut}
-              backlinks={vault.backlinks}
-              browserUrl={browserContext.activeUrl}
-              browserTitle={browserContext.scopeLabel}
-              cardDetail={activeSurface === "work"
-                ? null
-                : workspace.selectedCardDetail}
-              cardError={workspace.cardDetailError}
-              noteDiffChip={vault.diffChipText}
-              onOpenNote={handleOpenNote}
-              onOpenWeb={() => navigateToSurface("web")}
-              onSelectCard={handleCardSelect}
-              onCollapse={() => layout.setActivityCollapsed(true)}
+        {#if !activityRailHidden}
+          {#if layout.activityCollapsed || desktopRails.showActivityStrip}
+            <ActivityCollapsedStrip
+              onExpand={() => layout.setActivityCollapsed(false)}
             />
-          </SplitPane>
-          </div>
+          {:else}
+            <div
+              class="workshop-rail flex h-full min-w-0 shrink-0 overflow-hidden"
+              data-debug-label="activity-rail"
+            >
+            <SplitPane
+              width={desktopRails.activityPaneWidth}
+              side="right"
+              min={220}
+              max={desktopRails.activityPaneMax}
+              onResize={(width) => layout.setActivityWidth(width)}
+            >
+              <ActivityPanel
+                events={workspace.feed}
+                error={workspace.streamError}
+                notePath={vault.selectedPath}
+                noteTitle={vault.title}
+                wikilinksOut={vault.wikilinksOut}
+                backlinks={vault.backlinks}
+                browserUrl={browserContext.activeUrl}
+                browserTitle={browserContext.scopeLabel}
+                cardDetail={activeSurface === "work"
+                  ? null
+                  : workspace.selectedCardDetail}
+                cardError={workspace.cardDetailError}
+                noteDiffChip={vault.diffChipText}
+                onOpenNote={handleOpenNote}
+                onOpenWeb={() => navigateToSurface("web")}
+                onSelectCard={handleCardSelect}
+                onCollapse={() => layout.setActivityCollapsed(true)}
+              />
+            </SplitPane>
+            </div>
+          {/if}
         {/if}
       </div>
 
       {#if activeSurface === "chat"}
-        <SessionSidebar
-          open={layout.sessionDrawerOpen}
-          onClose={() => layout.setSessionDrawerOpen(false)}
-        />
+        {#if layout.sessionDrawerOpen && !layout.shellSidebarExpanded}
+          <SessionSidebar
+            open={true}
+            onClose={() => layout.setSessionDrawerOpen(false)}
+          />
+        {/if}
         <IdentityDrawer
           open={layout.identityDrawerOpen}
           onClose={() => layout.setIdentityDrawerOpen(false)}

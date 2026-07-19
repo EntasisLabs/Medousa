@@ -28,8 +28,14 @@ import {
   ensureCalendarSurfaceInSpec,
   ensurePeersSurfaceInSpec,
 } from "$lib/utils/environmentDefault";
+import {
+  resolveDesktopShellChrome,
+  seedDesktopShellChromeFromPreferredMode,
+} from "$lib/utils/desktopEnvironmentChrome";
 import { mainComponentsForSurface, resolveLayoutRoot } from "$lib/utils/layoutPresentation";
-import type { LayoutNode } from "$lib/types/environment";
+import type { LayoutNode, ShellChromeDesktop } from "$lib/types/environment";
+import type { PreferredMode } from "$lib/utils/preferredMode";
+import { layout } from "$lib/stores/layout.svelte";
 
 function migrateBuiltinNavSurfaces(spec: EnvironmentSpec): EnvironmentSpec {
   return ensureCalendarSurfaceInSpec(ensurePeersSurfaceInSpec(spec));
@@ -81,6 +87,10 @@ export class EnvironmentStore {
 
   get mobileAskEntry() {
     return this.shellChrome?.mobile?.askEntry ?? "inline";
+  }
+
+  get desktopShellChrome() {
+    return resolveDesktopShellChrome(this.spec);
   }
 
   navSurfaces(): SurfaceDef[] {
@@ -156,6 +166,8 @@ export class EnvironmentStore {
       const response = await getEnvironmentSpec(profileId);
       this.applySpec(response.spec, response.revision);
       await this.persistPeersMigrationIfNeeded(response.spec);
+      await this.seedDesktopChromeFromPreferredModeIfNeeded(profileId);
+      this.syncDesktopChromeToLayout();
       await this.refreshPending(profileId);
       this.streamError = null;
     } catch (err) {
@@ -166,6 +178,16 @@ export class EnvironmentStore {
     } finally {
       this.loading = false;
     }
+  }
+
+  /** Soft seed when preferred mode is known and desktop chrome fields are still unset. */
+  private async seedDesktopChromeFromPreferredModeIfNeeded(
+    profileId?: string,
+  ): Promise<void> {
+    const { loadPreferredMode } = await import("$lib/utils/preferredMode");
+    const mode = loadPreferredMode();
+    if (!mode) return;
+    await this.seedDesktopChromeFromPreferredMode(mode, profileId);
   }
 
   applyEvent(event: EnvironmentStreamEvent) {
@@ -202,6 +224,28 @@ export class EnvironmentStore {
   applySpec(spec: EnvironmentSpec, revision: number) {
     this.spec = migrateBuiltinNavSurfaces(spec);
     this.revision = revision;
+  }
+
+  /**
+   * Apply persisted desktop chrome defaults onto session layout flags.
+   * Called on load / Your-space edits — not on every stream applySpec, so a
+   * temporary expand while mode is collapsed is not immediately wiped.
+   */
+  private syncDesktopChromeToLayout() {
+    const chrome = resolveDesktopShellChrome(this.spec);
+    if (chrome.activityRail === "collapsed" || chrome.activityRail === "hidden") {
+      layout.setActivityCollapsed(true);
+    }
+    if (chrome.vaultSidebar === "hidden") {
+      layout.setVaultSidebarCollapsed(true);
+    }
+    // Only apply when explicitly set — don't clobber a session expand with the default.
+    const explicitNav = this.spec?.shellChrome?.desktop?.navStyle;
+    if (explicitNav === "rail") {
+      layout.setNavExpanded(true);
+    } else if (explicitNav === "compact") {
+      layout.setNavExpanded(false);
+    }
   }
 
   /** Persist Peers into the daemon so rail + Canvas settings stay in sync after reload. */
@@ -292,6 +336,42 @@ export class EnvironmentStore {
     const spec = await this.cloneCurrentSpec(profileId);
     applyMobileHome(spec, surfaceId);
     await this.saveSpec(spec);
+  }
+
+  async patchShellChromeDesktop(
+    patch: Partial<ShellChromeDesktop>,
+    profileId?: string,
+  ): Promise<void> {
+    const { setDesktopShellChrome } = await import("$lib/utils/environmentCanvasOps");
+    const spec = await this.cloneCurrentSpec(profileId);
+    setDesktopShellChrome(spec, patch);
+    await this.saveSpec(spec);
+    if (patch.activityRail === "visible") {
+      layout.setActivityCollapsed(false);
+    } else if (patch.activityRail === "collapsed" || patch.activityRail === "hidden") {
+      layout.setActivityCollapsed(true);
+    }
+    if (patch.vaultSidebar === "visible") {
+      layout.setVaultSidebarCollapsed(false);
+    } else if (patch.vaultSidebar === "hidden") {
+      layout.setVaultSidebarCollapsed(true);
+    }
+    if (patch.navStyle === "rail") {
+      layout.setNavExpanded(true);
+    } else if (patch.navStyle === "compact") {
+      layout.setNavExpanded(false);
+    }
+  }
+
+  /** Seed desktop chrome from preferred mode when fields are still unset. */
+  async seedDesktopChromeFromPreferredMode(
+    mode: PreferredMode,
+    profileId?: string,
+  ): Promise<void> {
+    const spec = await this.cloneCurrentSpec(profileId);
+    if (!seedDesktopShellChromeFromPreferredMode(spec, mode)) return;
+    await this.saveSpec(spec);
+    this.syncDesktopChromeToLayout();
   }
 
   async applyPendingProposal(profileId?: string): Promise<void> {

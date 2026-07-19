@@ -2407,6 +2407,24 @@
                 "type": "null"
               }
             ]
+          },
+          "vaultChatFab": {
+            "description": "Vault note chat FAB on desktop. Default true when unset.",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "vaultSidebar": {
+            "description": "LME vault sidebar. Default visible when unset.",
+            "anyOf": [
+              {
+                "$ref": "#/definitions/VaultSidebarMode"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         }
       },
@@ -2561,6 +2579,13 @@
           "inline",
           "panel",
           "fullscreen"
+        ]
+      },
+      "VaultSidebarMode": {
+        "type": "string",
+        "enum": [
+          "visible",
+          "hidden"
         ]
       }
     }
@@ -3063,6 +3088,24 @@
                 "type": "null"
               }
             ]
+          },
+          "vaultChatFab": {
+            "description": "Vault note chat FAB on desktop. Default true when unset.",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "vaultSidebar": {
+            "description": "LME vault sidebar. Default visible when unset.",
+            "anyOf": [
+              {
+                "$ref": "#/definitions/VaultSidebarMode"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         }
       },
@@ -3217,6 +3260,13 @@
           "inline",
           "panel",
           "fullscreen"
+        ]
+      },
+      "VaultSidebarMode": {
+        "type": "string",
+        "enum": [
+          "visible",
+          "hidden"
         ]
       }
     }
@@ -3693,6 +3743,24 @@
                 "type": "null"
               }
             ]
+          },
+          "vaultChatFab": {
+            "description": "Vault note chat FAB on desktop. Default true when unset.",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "vaultSidebar": {
+            "description": "LME vault sidebar. Default visible when unset.",
+            "anyOf": [
+              {
+                "$ref": "#/definitions/VaultSidebarMode"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         }
       },
@@ -3847,6 +3915,13 @@
           "inline",
           "panel",
           "fullscreen"
+        ]
+      },
+      "VaultSidebarMode": {
+        "type": "string",
+        "enum": [
+          "visible",
+          "hidden"
         ]
       }
     }
@@ -4334,6 +4409,24 @@
                 "type": "null"
               }
             ]
+          },
+          "vaultChatFab": {
+            "description": "Vault note chat FAB on desktop. Default true when unset.",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "vaultSidebar": {
+            "description": "LME vault sidebar. Default visible when unset.",
+            "anyOf": [
+              {
+                "$ref": "#/definitions/VaultSidebarMode"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         }
       },
@@ -4488,6 +4581,13 @@
           "inline",
           "panel",
           "fullscreen"
+        ]
+      },
+      "VaultSidebarMode": {
+        "type": "string",
+        "enum": [
+          "visible",
+          "hidden"
         ]
       }
     }
@@ -4981,6 +5081,24 @@
                 "type": "null"
               }
             ]
+          },
+          "vaultChatFab": {
+            "description": "Vault note chat FAB on desktop. Default true when unset.",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "vaultSidebar": {
+            "description": "LME vault sidebar. Default visible when unset.",
+            "anyOf": [
+              {
+                "$ref": "#/definitions/VaultSidebarMode"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         }
       },
@@ -5135,6 +5253,13 @@
           "inline",
           "panel",
           "fullscreen"
+        ]
+      },
+      "VaultSidebarMode": {
+        "type": "string",
+        "enum": [
+          "visible",
+          "hidden"
         ]
       }
     }
@@ -6485,6 +6610,24 @@
                 "type": "null"
               }
             ]
+          },
+          "vaultChatFab": {
+            "description": "Vault note chat FAB on desktop. Default true when unset.",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "vaultSidebar": {
+            "description": "LME vault sidebar. Default visible when unset.",
+            "anyOf": [
+              {
+                "$ref": "#/definitions/VaultSidebarMode"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         }
       },
@@ -6639,6 +6782,13 @@
           "inline",
           "panel",
           "fullscreen"
+        ]
+      },
+      "VaultSidebarMode": {
+        "type": "string",
+        "enum": [
+          "visible",
+          "hidden"
         ]
       }
     }
@@ -7147,6 +7297,24 @@
                 "type": "null"
               }
             ]
+          },
+          "vaultChatFab": {
+            "description": "Vault note chat FAB on desktop. Default true when unset.",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "vaultSidebar": {
+            "description": "LME vault sidebar. Default visible when unset.",
+            "anyOf": [
+              {
+                "$ref": "#/definitions/VaultSidebarMode"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         }
       },
@@ -7301,6 +7469,13 @@
           "inline",
           "panel",
           "fullscreen"
+        ]
+      },
+      "VaultSidebarMode": {
+        "type": "string",
+        "enum": [
+          "visible",
+          "hidden"
         ]
       }
     }
@@ -11823,9 +11998,9 @@
             "type": "boolean"
           },
           "isObsidian": {
+            "description": "True when `{path}/.obsidian` exists (co-located Obsidian vault).",
             "default": false,
-            "type": "boolean",
-            "description": "True when `{path}/.obsidian` exists (co-located Obsidian vault)."
+            "type": "boolean"
           },
           "label": {
             "type": "string"

@@ -91,6 +91,18 @@ She can diagnose nav visibility, storage, and HTML problems without you opening 
 
 ---
 
+## Your space (shell chrome)
+
+**Settings → Canvas → Your space** controls desktop shell chrome — the left sidebar, vault chat button, activity rail, and related prefs. These live on your **environment profile** and survive reload.
+
+The left chrome is one **master rail**: visible shows destination names (or the active view’s list); hidden is fully gone until you reopen it from the content header. Drag the rail’s right edge to resize. On Peers, Settings, Chat, Messaging, or Workspace, that same rail morphs to the view’s list — **Back** returns to destination nav; the collapse control hides the rail entirely.
+
+This is not the same as **Edit layout** on a custom view (widget tiling). Your space hides or shows app chrome; Edit layout rearranges widgets inside a room you built.
+
+First-run mode seeds a calm default: **Workspace** starts with the vault chat button off and the activity rail collapsed; **Workspace + AI** keeps chat and the activity rail visible. You can change any of these later in Your space.
+
+---
+
 ## Themes and icons
 
 Medousa can set a **canvas theme** (color palette, accent, tagline) for your environment. Widgets can use host CSS variables such as `var(--medousa-host-accent)` so they match your chosen look.

@@ -3,13 +3,17 @@
   import { layout } from "$lib/stores/layout.svelte";
   import { settingsNav } from "$lib/stores/settingsNav.svelte";
   import { presetDescription, presetDisplayLabel } from "$lib/utils/customViewStatus";
+  import { placeRailPopover } from "$lib/utils/railPopover";
   import { Check, Focus, PanelsTopLeft, Settings2 } from "@lucide/svelte";
+  import { tick } from "svelte";
 
   interface Props {
     variant?: "settings" | "rail";
+    /** When rail is expanded, show a short label beside the icon. */
+    expanded?: boolean;
   }
 
-  let { variant = "settings" }: Props = $props();
+  let { variant = "settings", expanded = false }: Props = $props();
 
   const presets = $derived(environment.spec?.layoutPresets ?? []);
   const activePreset = $derived(
@@ -26,6 +30,32 @@
 
   let open = $state(false);
   let busy = $state(false);
+  let triggerEl = $state<HTMLButtonElement | null>(null);
+  let menuEl = $state<HTMLDivElement | null>(null);
+
+  $effect(() => {
+    if (!open || !triggerEl || !menuEl) return;
+    layout.shellSidebarWidth;
+    let frame = 0;
+    const place = () => {
+      if (!triggerEl || !menuEl) return;
+      placeRailPopover(triggerEl, menuEl);
+      // Second pass after max-height/layout settle so final clamp uses real size.
+      frame = window.requestAnimationFrame(() => {
+        if (triggerEl && menuEl) placeRailPopover(triggerEl, menuEl);
+      });
+    };
+    void tick().then(place);
+    window.addEventListener("resize", place);
+    window.visualViewport?.addEventListener("resize", place);
+    window.visualViewport?.addEventListener("scroll", place);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener("resize", place);
+      window.visualViewport?.removeEventListener("resize", place);
+      window.visualViewport?.removeEventListener("scroll", place);
+    };
+  });
 
   async function selectPreset(presetId: string) {
     if (busy || presetId === activePreset?.id) {
@@ -55,6 +85,7 @@
 {#if show}
   {#if variant === "rail"}
     <button
+      bind:this={triggerEl}
       type="button"
       class="workshop-rail-btn workshop-rail-btn-tier-utility relative mt-2 {open
         ? 'workshop-rail-workshop-btn-open'
@@ -66,7 +97,12 @@
       disabled={busy}
       onclick={() => (open = !open)}
     >
-      <PanelsTopLeft size={16} strokeWidth={1.5} aria-hidden="true" />
+      <span class="workshop-rail-btn-icon" aria-hidden="true">
+        <PanelsTopLeft size={16} strokeWidth={1.5} />
+      </span>
+      {#if expanded}
+        <span class="workshop-rail-btn-label">Layout</span>
+      {/if}
     </button>
 
     {#if open}
@@ -77,7 +113,12 @@
           if (event.target === event.currentTarget) open = false;
         }}
       >
-        <div class="workshop-rail-sheet workshop-switcher-menu" role="menu" aria-label="Canvas layout">
+        <div
+          bind:this={menuEl}
+          class="workshop-rail-sheet workshop-switcher-menu"
+          role="menu"
+          aria-label="Canvas layout"
+        >
           <header class="workshop-switcher-header">
             <div class="min-w-0">
               <h2 class="workshop-switcher-title">Canvas layout</h2>

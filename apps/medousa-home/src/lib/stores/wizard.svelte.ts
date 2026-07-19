@@ -209,6 +209,7 @@ class WizardStore {
     savePreferredMode(mode);
     this.preferredMode = mode;
     markWizardTrustDone();
+    await this.seedDesktopChrome(mode);
 
     if (mode === "workspace-ai") {
       this.uiPhase = "brain";
@@ -226,9 +227,19 @@ class WizardStore {
   async skipBrain() {
     savePreferredMode("workspace");
     this.preferredMode = "workspace";
+    await this.seedDesktopChrome("workspace");
     await this.skipCurrent();
     this.markPathComplete();
     this.uiPhase = "ready";
+  }
+
+  private async seedDesktopChrome(mode: PreferredMode) {
+    try {
+      const { environment } = await import("$lib/stores/environment.svelte");
+      await environment.seedDesktopChromeFromPreferredMode(mode);
+    } catch {
+      // Environment may not be loaded yet during early wizard — ignore.
+    }
   }
 
   continueExtras() {

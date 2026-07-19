@@ -5,6 +5,7 @@
   import ChatComposerBar from "$lib/components/chat/ChatComposerBar.svelte";
   import BudgetApprovalBar from "$lib/components/chat/BudgetApprovalBar.svelte";
   import AgentBrowserPanel from "$lib/components/chat/AgentBrowserPanel.svelte";
+  import ShellSidebarExpandButton from "$lib/components/layout/ShellSidebarExpandButton.svelte";
   import VaultChatContextChip from "$lib/components/vault/VaultChatContextChip.svelte";
   import ScriptChatContextChip from "$lib/components/grapheme/ScriptChatContextChip.svelte";
   import { buildInteractiveTurnOptions } from "$lib/interactiveTurnOptions";
@@ -412,20 +413,20 @@
             <PanelLeft size={20} strokeWidth={1.75} />
           </button>
         {:else}
-          <button
-            type="button"
-            class="workshop-rail-btn shrink-0"
-            aria-label="Open sessions"
-            title="Sessions"
-            onclick={() => layout.toggleSessionDrawer()}
-          >
-            <PanelLeft size={16} strokeWidth={1.75} />
-          </button>
+          <ShellSidebarExpandButton label="Show sessions" />
         {/if}
         <button
           type="button"
           class="min-w-0 text-left {mobile ? 'py-1' : ''}"
-          onclick={() => layout.toggleSessionDrawer()}
+          onclick={() => {
+            if (mobile) {
+              layout.toggleSessionDrawer();
+              return;
+            }
+            if (!layout.shellSidebarExpanded) {
+              layout.openShellSidebarView("chat");
+            }
+          }}
         >
           {#if mobile}
             <h1 class="truncate text-sm font-semibold text-surface-50">

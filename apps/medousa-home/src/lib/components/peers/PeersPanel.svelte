@@ -3,7 +3,9 @@
   import PeerComposer from "$lib/components/peers/PeerComposer.svelte";
   import PeerListRow from "$lib/components/peers/PeerListRow.svelte";
   import PeerThread from "$lib/components/peers/PeerThread.svelte";
+  import ShellSidebarExpandButton from "$lib/components/layout/ShellSidebarExpandButton.svelte";
   import { artifacts } from "$lib/stores/artifacts.svelte";
+  import { peersShell } from "$lib/stores/peersShell.svelte";
   import { toast } from "$lib/stores/toast.svelte";
   import { vault } from "$lib/stores/vault.svelte";
   import { workshops } from "$lib/stores/workshops.svelte";
@@ -97,11 +99,11 @@
   let lanPairing = $state<LanPairingStatus | null>(null);
   let lanBusy = $state(false);
   let composeIdentity = $state<PeerComposeIdentity | null>(null);
-  let peopleQuery = $state("");
-
   let pollTimer: ReturnType<typeof setInterval> | null = null;
   let countdownTimer: ReturnType<typeof setInterval> | null = null;
 
+  const shellList = $derived(!mobile && !embedded);
+  const peopleQuery = $derived(peersShell.peopleQuery);
   const noteOptions = $derived((vault.notes ?? []).slice(0, 40));
   const artifactOptions = $derived((artifacts.artifacts ?? []).slice(0, 40));
   const hasPeers = $derived(trusted.length > 0);
@@ -122,6 +124,16 @@
       );
     }
     return rows;
+  });
+
+  $effect(() => {
+    peersShell.publish({
+      rows: conversationRows,
+      nearbyUntrustedCount: nearbyUntrusted.length,
+      hasPeers,
+      showPeopleSearch,
+      selectedPeerId,
+    });
   });
 
   const selectedPeer = $derived(
@@ -513,6 +525,17 @@
   }
 
   $effect(() => {
+    peersShell.onSelectPeer = (id) => {
+      void selectPeer(id);
+    };
+    peersShell.onAddPeer = () => openAddPeer();
+    return () => {
+      peersShell.onSelectPeer = null;
+      peersShell.onAddPeer = null;
+    };
+  });
+
+  $effect(() => {
     if (!visible) return;
     void refreshAll();
   });
@@ -573,6 +596,7 @@
   class:peers-panel-embedded={embedded}
   aria-label="Peers"
 >
+  {#if !shellList}
   <aside class="peers-sidebar" class:peers-mobile-pane-hidden={mobile && !!selectedPeer}>
     <header class="peers-sidebar-head">
       {#if !embedded}
@@ -638,7 +662,10 @@
           class="peers-sidebar-search-input"
           type="search"
           placeholder="Search people…"
-          bind:value={peopleQuery}
+          value={peopleQuery}
+          oninput={(event) => {
+            peersShell.peopleQuery = (event.currentTarget as HTMLInputElement).value;
+          }}
         />
       </label>
     {/if}
@@ -669,8 +696,15 @@
       </ul>
     {/if}
   </aside>
+  {/if}
 
   <div class="peers-main" class:peers-mobile-pane-hidden={mobile && !selectedPeer}>
+    {#if shellList}
+      <div class="flex items-center gap-2 border-b border-surface-500/35 px-3 py-2">
+        <ShellSidebarExpandButton label="Show people" />
+        <p class="text-sm font-semibold text-surface-100">Peers</p>
+      </div>
+    {/if}
     {#if !selectedPeer}
       <div class="peers-empty-main">
         <div class="peers-empty-icon" aria-hidden="true">
