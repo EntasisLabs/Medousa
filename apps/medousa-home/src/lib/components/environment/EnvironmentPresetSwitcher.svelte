@@ -87,9 +87,9 @@
     <button
       bind:this={triggerEl}
       type="button"
-      class="workshop-rail-btn workshop-rail-btn-tier-utility relative mt-2 {open
+      class="workshop-rail-btn workshop-rail-btn-tier-utility workshop-rail-dock-btn relative {open
         ? 'workshop-rail-workshop-btn-open'
-        : ''} {activePreset?.id === 'focus' ? 'workshop-rail-btn-active' : ''}"
+        : ''} {activePreset?.id === 'focus' ? 'workshop-rail-btn-active-quiet' : ''}"
       title="Canvas layout — {activeLabel}"
       aria-label="Canvas layout — {activeLabel}"
       aria-haspopup="menu"

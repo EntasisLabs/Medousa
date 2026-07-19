@@ -119,7 +119,7 @@
   <button
     bind:this={railTriggerEl}
     type="button"
-    class="workshop-rail-btn workshop-rail-workshop-btn mt-1 font-semibold leading-none {sheetOpen
+    class="workshop-rail-btn workshop-rail-workshop-btn workshop-rail-dock-btn font-semibold leading-none {sheetOpen
       ? 'workshop-rail-workshop-btn-open'
       : ''}"
     style={activeBrandStyle}

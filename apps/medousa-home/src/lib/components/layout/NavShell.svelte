@@ -20,11 +20,35 @@
     shellSidebarViewTitle,
     surfaceHasShellSidebarView,
   } from "$lib/utils/navSurfaces";
-  import { ChevronLeft, PanelLeftClose, Settings, UserRound } from "@lucide/svelte";
+  import {
+    activateNestItem,
+    NAV_RAIL_NEST_LIMIT,
+    nestItemIsActive,
+    nestItemsForSurface,
+    prefetchRailNestData,
+    surfaceSupportsRailNest,
+    type NavRailNestItem,
+  } from "$lib/utils/navRailNest";
+  import { ChevronLeft, ChevronRight, PanelLeftClose, Settings, UserRound } from "@lucide/svelte";
   import { SAFETY_SURFACE_SETTINGS } from "$lib/types/environment";
   import type { DaemonHealth } from "$lib/daemon";
   import { fade, fly } from "svelte/transition";
   import { cubicOut } from "svelte/easing";
+  import { onMount } from "svelte";
+
+  const NEST_OPEN_KEY = "medousa-home-rail-nest-open";
+
+  function loadNestOpen(): Record<string, boolean> {
+    if (typeof localStorage === "undefined") return {};
+    try {
+      const raw = localStorage.getItem(NEST_OPEN_KEY);
+      if (!raw) return {};
+      const parsed = JSON.parse(raw) as Record<string, boolean>;
+      return parsed && typeof parsed === "object" ? parsed : {};
+    } catch {
+      return {};
+    }
+  }
 
   interface Props {
     active: string;
@@ -60,7 +84,11 @@
   const utility = $derived(surfaces.filter((surface) => navTier(surface) === "utility"));
 
   const iconProps = { size: 18, strokeWidth: 1.75 };
-  const utilityIconProps = { size: 16, strokeWidth: 1.5 };
+  /** Quieter tree parents — closer to Cursor folder icons. */
+  const treeIconProps = { size: 14, strokeWidth: 1.5 };
+  const utilityIconProps = { size: 14, strokeWidth: 1.5 };
+  /** Explicit open map; missing key = collapsed by default. */
+  let nestOpen = $state<Record<string, boolean>>(loadNestOpen());
 
   function activityFor(id: string): number {
     if (id === "chat") return chatActivity;
@@ -81,12 +109,24 @@
     );
   }
 
-  function railBtnClass(id: string, tier: "life" | "utility"): string {
+  function railBtnClass(
+    id: string,
+    tier: "life" | "utility",
+    options?: { quietActive?: boolean },
+  ): string {
     const isActive = active === id;
-    const activeClass = isActive ? "workshop-rail-btn-active" : "";
+    const activeClass = isActive
+      ? options?.quietActive
+        ? "workshop-rail-btn-active-quiet"
+        : "workshop-rail-btn-active"
+      : "";
     const tierClass =
       tier === "life" ? "workshop-rail-btn-tier-life" : "workshop-rail-btn-tier-utility";
     return `workshop-rail-btn relative ${tierClass} ${activeClass}`;
+  }
+
+  function nestHasActiveItem(surfaceId: string, nest: NavRailNestItem[]): boolean {
+    return nest.some((item) => nestItemIsActive(surfaceId, item.id));
   }
 
   function hideRail() {
@@ -106,6 +146,42 @@
   function backToNav() {
     layout.shellSidebarBackToNav();
   }
+
+  function nestFor(surfaceId: string): NavRailNestItem[] {
+    if (!surfaceSupportsRailNest(surfaceId)) return [];
+    return nestItemsForSurface(surfaceId);
+  }
+
+  function isNestExpanded(surfaceId: string): boolean {
+    return nestOpen[surfaceId] === true;
+  }
+
+  function persistNestOpen() {
+    if (typeof localStorage === "undefined") return;
+    localStorage.setItem(NEST_OPEN_KEY, JSON.stringify(nestOpen));
+  }
+
+  function toggleNest(surfaceId: string, event: Event) {
+    event.preventDefault();
+    event.stopPropagation();
+    nestOpen = { ...nestOpen, [surfaceId]: !isNestExpanded(surfaceId) };
+    persistNestOpen();
+  }
+
+  async function openNestItem(surfaceId: string, item: NavRailNestItem) {
+    onSelect(surfaceId);
+    // Keep hierarchical nav visible (Cursor-style); don’t morph into view mode.
+    layout.setShellSidebarMode("nav");
+    if (!isNestExpanded(surfaceId)) {
+      nestOpen = { ...nestOpen, [surfaceId]: true };
+      persistNestOpen();
+    }
+    await activateNestItem(surfaceId, item.id);
+  }
+
+  onMount(() => {
+    prefetchRailNestData();
+  });
 </script>
 
 <nav
@@ -202,34 +278,108 @@
           </button>
         </header>
 
-        <div class="workshop-icon-rail-items flex flex-1 flex-col gap-1">
+        <div
+          class="workshop-icon-rail-items workshop-rail-tree flex min-h-0 flex-1 flex-col overflow-y-auto"
+        >
           {#each lifeOrbit as surface (surface.id)}
             {@const Icon = environmentIcon(surface.icon)}
             {@const badge = activityFor(surface.id)}
             {@const feedBadge = feedBadgeForSurface(surface)}
-            <button
-              type="button"
-              class={railBtnClass(surface.id, "life")}
-              title={navTitle(surface)}
-              aria-label={badge > 0 ? `${navTitle(surface)} (${badge} active)` : navTitle(surface)}
-              aria-current={active === surface.id ? "page" : undefined}
-              onclick={() => selectDestination(surface.id)}
+            {@const nest = nestFor(surface.id)}
+            {@const leafActive = nestHasActiveItem(surface.id, nest)}
+            {@const nestExpanded = nest.length > 0 && isNestExpanded(surface.id)}
+            <div
+              class="workshop-rail-dest"
+              class:workshop-rail-dest-has-nest={nest.length > 0}
+              class:workshop-rail-dest-expanded={nestExpanded}
             >
-              <span class="workshop-rail-btn-icon" aria-hidden="true">
-                <Icon {...iconProps} />
-                {#if badge > 0 && showCountBadge(surface.id)}
-                  <span class="workshop-rail-count-badge">{badge > 9 ? "9+" : badge}</span>
-                {:else if badge > 0}
-                  <span class="workshop-rail-badge"></span>
-                {:else if feedBadge !== "none"}
-                  <span
-                    class="workshop-rail-feed-badge workshop-rail-feed-badge-{feedBadge}"
-                    title={feedBadge === "live" ? "Live feed" : "Stale feed"}
+              <div class="workshop-rail-dest-row">
+                {#if nest.length > 0}
+                  <button
+                    type="button"
+                    class="workshop-rail-dest-twist-btn"
+                    title={nestExpanded ? "Collapse" : "Expand"}
+                    aria-label={nestExpanded
+                      ? `Collapse ${navLabel(surface)}`
+                      : `Expand ${navLabel(surface)}`}
+                    aria-expanded={nestExpanded}
+                    onclick={(event) => toggleNest(surface.id, event)}
+                  >
+                    <ChevronRight
+                      size={12}
+                      strokeWidth={2}
+                      class="workshop-rail-dest-chevron {nestExpanded
+                        ? 'workshop-rail-dest-chevron-open'
+                        : ''}"
+                    />
+                  </button>
+                {:else}
+                  <span class="workshop-rail-dest-twist workshop-rail-dest-twist-empty" aria-hidden="true"
                   ></span>
                 {/if}
-              </span>
-              <span class="workshop-rail-btn-label">{navLabel(surface)}</span>
-            </button>
+                <button
+                  type="button"
+                  class="{railBtnClass(surface.id, 'life', {
+                    quietActive: true,
+                  })} workshop-rail-dest-btn"
+                  class:workshop-rail-dest-btn-dimmed={leafActive && nestExpanded}
+                  title={navTitle(surface)}
+                  aria-label={badge > 0 ? `${navTitle(surface)} (${badge} active)` : navTitle(surface)}
+                  aria-current={active === surface.id && !leafActive ? "page" : undefined}
+                  onclick={() => selectDestination(surface.id)}
+                >
+                  <span class="workshop-rail-btn-icon" aria-hidden="true">
+                    <Icon {...treeIconProps} />
+                    {#if badge > 0 && showCountBadge(surface.id)}
+                      <span class="workshop-rail-count-badge">{badge > 9 ? "9+" : badge}</span>
+                    {:else if badge > 0}
+                      <span class="workshop-rail-badge"></span>
+                    {:else if feedBadge !== "none"}
+                      <span
+                        class="workshop-rail-feed-badge workshop-rail-feed-badge-{feedBadge}"
+                        title={feedBadge === "live" ? "Live feed" : "Stale feed"}
+                      ></span>
+                    {/if}
+                  </span>
+                  <span class="workshop-rail-btn-label">{navLabel(surface)}</span>
+                </button>
+              </div>
+              {#if nestExpanded}
+                <ul class="workshop-rail-nest" aria-label="{navLabel(surface)} recent">
+                  {#each nest as item (item.id)}
+                    <li>
+                      <button
+                        type="button"
+                        class="workshop-rail-nest-btn"
+                        class:workshop-rail-nest-btn-active={nestItemIsActive(surface.id, item.id)}
+                        class:workshop-rail-nest-btn-accent={item.accent}
+                        title={item.meta ? `${item.label} · ${item.meta}` : item.label}
+                        onclick={() => void openNestItem(surface.id, item)}
+                      >
+                        {#if item.accent}
+                          <span class="workshop-rail-nest-dot" aria-hidden="true"></span>
+                        {/if}
+                        <span class="workshop-rail-nest-label">{item.label}</span>
+                        {#if item.meta}
+                          <span class="workshop-rail-nest-meta">{item.meta}</span>
+                        {/if}
+                      </button>
+                    </li>
+                  {/each}
+                  {#if nest.length >= NAV_RAIL_NEST_LIMIT}
+                    <li>
+                      <button
+                        type="button"
+                        class="workshop-rail-nest-more"
+                        onclick={() => selectDestination(surface.id)}
+                      >
+                        More
+                      </button>
+                    </li>
+                  {/if}
+                </ul>
+              {/if}
+            </div>
           {/each}
 
           {#if workshopNav.length > 0}
@@ -258,7 +408,7 @@
               {@const Icon = environmentIcon(surface.icon)}
               <button
                 type="button"
-                class={railBtnClass(surface.id, "utility")}
+                class="{railBtnClass(surface.id, 'utility', { quietActive: true })} workshop-rail-tree-row"
                 title={surface.label}
                 aria-label={surface.label}
                 aria-current={active === surface.id ? "page" : undefined}
@@ -273,42 +423,40 @@
           {/if}
         </div>
 
-        <button
-          type="button"
-          class="workshop-rail-btn workshop-rail-btn-tier-utility relative mt-2 {active ===
-          'profiles'
-            ? 'workshop-rail-btn-active'
-            : ''}"
-          title="You — {activeProfileLabel}"
-          aria-label="You ({activeProfileLabel})"
-          aria-current={active === "profiles" ? "page" : undefined}
-          onclick={() => selectDestination("profiles")}
-        >
-          <span class="workshop-rail-btn-icon" aria-hidden="true">
-            <UserRound {...utilityIconProps} />
-          </span>
-          <span class="workshop-rail-btn-label">You</span>
-        </button>
+        <div class="workshop-rail-dock">
+          <button
+            type="button"
+            class="{railBtnClass('profiles', 'utility', { quietActive: true })} workshop-rail-dock-btn"
+            title="You — {activeProfileLabel}"
+            aria-label="You ({activeProfileLabel})"
+            aria-current={active === "profiles" ? "page" : undefined}
+            onclick={() => selectDestination("profiles")}
+          >
+            <span class="workshop-rail-btn-icon" aria-hidden="true">
+              <UserRound {...utilityIconProps} />
+            </span>
+            <span class="workshop-rail-btn-label">You</span>
+          </button>
 
-        <EnvironmentPresetSwitcher variant="rail" expanded={true} />
-        <WorkshopSwitcherCompact variant="rail" expanded={true} />
+          <EnvironmentPresetSwitcher variant="rail" expanded={true} />
+          <WorkshopSwitcherCompact variant="rail" expanded={true} />
 
-        <button
-          type="button"
-          class="workshop-rail-btn workshop-rail-btn-tier-utility relative mt-1 mb-1 {active ===
-          SAFETY_SURFACE_SETTINGS
-            ? 'workshop-rail-btn-active'
-            : ''}"
-          title="Settings"
-          aria-label="Settings"
-          aria-current={active === SAFETY_SURFACE_SETTINGS ? "page" : undefined}
-          onclick={() => selectDestination(SAFETY_SURFACE_SETTINGS)}
-        >
-          <span class="workshop-rail-btn-icon" aria-hidden="true">
-            <Settings {...utilityIconProps} />
-          </span>
-          <span class="workshop-rail-btn-label">Settings</span>
-        </button>
+          <button
+            type="button"
+            class="{railBtnClass(SAFETY_SURFACE_SETTINGS, 'utility', {
+              quietActive: true,
+            })} workshop-rail-dock-btn"
+            title="Settings"
+            aria-label="Settings"
+            aria-current={active === SAFETY_SURFACE_SETTINGS ? "page" : undefined}
+            onclick={() => selectDestination(SAFETY_SURFACE_SETTINGS)}
+          >
+            <span class="workshop-rail-btn-icon" aria-hidden="true">
+              <Settings {...utilityIconProps} />
+            </span>
+            <span class="workshop-rail-btn-label">Settings</span>
+          </button>
+        </div>
       {/if}
     </div>
   {/key}
@@ -333,7 +481,7 @@
     gap: 0.25rem;
     min-height: 2.35rem;
     margin-bottom: 0.25rem;
-    padding: 0.2rem 0.15rem;
+    padding: 0.25rem 0.55rem 0.35rem 0.55rem;
     border-bottom: 1px solid rgb(var(--shell-border) / 0.28);
   }
 

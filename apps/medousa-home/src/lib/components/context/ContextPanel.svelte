@@ -170,6 +170,16 @@
   );
 
   $effect(() => {
+    if (!visible) return;
+    const focusId = contextThreads.railFocusSyncKey;
+    if (!focusId) return;
+    activeTab = "threads";
+    selectedThreadId = focusId;
+    mobileDetailOpen = mobile;
+    contextThreads.consumeRailFocus();
+  });
+
+  $effect(() => {
     if (!visible || activeTab !== "recall") return;
     void identity.refresh();
   });

@@ -11,6 +11,8 @@ export class ContextThreadsStore {
   detailLoading = $state(false);
   error = $state<string | null>(null);
   detailError = $state<string | null>(null);
+  /** Set by the master rail — ContextPanel consumes and focuses Threads. */
+  railFocusSyncKey = $state<string | null>(null);
 
   async refresh(options?: { sessionId?: string; q?: string; limit?: number }) {
     this.loading = true;
@@ -46,6 +48,19 @@ export class ContextThreadsStore {
   clearDetail() {
     this.detail = null;
     this.detailError = null;
+  }
+
+  focusThreadFromRail(syncKey: string) {
+    const trimmed = syncKey.trim();
+    if (!trimmed) return;
+    this.railFocusSyncKey = trimmed;
+    void this.loadDetail(trimmed);
+  }
+
+  consumeRailFocus(): string | null {
+    const key = this.railFocusSyncKey;
+    this.railFocusSyncKey = null;
+    return key;
   }
 }
 
