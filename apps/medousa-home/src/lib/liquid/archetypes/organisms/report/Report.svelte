@@ -58,15 +58,21 @@
     margin: 0;
     padding: 0.95rem 1rem 1.05rem;
     border-radius: 0.95rem;
-    border: 1px solid color-mix(in srgb, var(--color-surface-500) 22%, transparent);
-    background: color-mix(in srgb, var(--color-surface-50) 42%, transparent);
-    box-shadow:
-      0 1px 0 color-mix(in srgb, var(--color-surface-50) 70%, transparent) inset,
-      0 8px 24px rgb(0 0 0 / 0.03);
+    border: 1px solid color-mix(in srgb, var(--color-surface-500) 28%, transparent);
+    background: color-mix(in srgb, var(--color-surface-900) 42%, transparent);
+    box-shadow: inset 0 1px 0 color-mix(in srgb, var(--color-surface-50) 4%, transparent);
     min-width: 0;
   }
 
-  :global(html.dark) .liquid-report {
+  :global(html:not(.dark)) .liquid-report {
+    background: color-mix(in srgb, var(--color-surface-50) 42%, transparent);
+    border-color: color-mix(in srgb, var(--color-surface-500) 22%, transparent);
+    box-shadow:
+      0 1px 0 color-mix(in srgb, var(--color-surface-50) 70%, transparent) inset,
+      0 8px 24px rgb(0 0 0 / 0.03);
+  }
+
+  :global(html:not(.dark) .vault-editor) .liquid-report {
     background: color-mix(in srgb, var(--color-surface-900) 42%, transparent);
     border-color: color-mix(in srgb, var(--color-surface-500) 28%, transparent);
     box-shadow: inset 0 1px 0 color-mix(in srgb, var(--color-surface-50) 4%, transparent);

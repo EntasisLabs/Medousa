@@ -9401,6 +9401,45 @@
     overflow-anchor: none;
   }
 
+  /*
+   * Vault reading surface — always dark-canvas coherent with the workshop shell.
+   * Chart/report tokens here beat html:not(.dark) “paper ink” so embeds don’t flashbang
+   * or paint body-dark text on the note canvas.
+   */
+  .vault-editor {
+    --vault-read-fg: rgb(var(--color-surface-100));
+    --vault-read-muted: rgb(var(--shell-muted, var(--color-surface-400)));
+    --vault-read-accent: rgb(var(--color-primary-300));
+    --vault-read-bg: transparent;
+    --vault-embed-bg: color-mix(
+      in srgb,
+      rgb(var(--shell-pane-bg, var(--color-surface-900))) 78%,
+      transparent
+    );
+    --vault-embed-border: color-mix(
+      in srgb,
+      rgb(var(--shell-border, var(--color-surface-500))) 34%,
+      transparent
+    );
+
+    --chart-fg: 241 245 249;
+    --chart-fg-secondary: 203 213 225;
+    --chart-fg-muted: 148 163 184;
+    --chart-fg-subtle: 100 116 139;
+    --chart-plot-ink: 241 245 249;
+    --chart-plot: color-mix(in srgb, rgb(241 245 249) 7%, transparent);
+    --chart-plot-muted: color-mix(in srgb, rgb(241 245 249) 14%, transparent);
+    --chart-grid: color-mix(in srgb, rgb(148 163 184) 28%, transparent);
+    --markdown-chart-red: 248 113 113;
+    --markdown-chart-orange: 251 146 60;
+    --markdown-chart-yellow: 250 204 21;
+    --markdown-chart-green: 74 222 128;
+    --markdown-chart-blue: 96 165 250;
+    --markdown-chart-purple: 192 132 252;
+    --markdown-chart-pink: 244 114 182;
+    --markdown-chart-gray: 148 163 184;
+  }
+
   /* Medousa-native reading palettes (Live + preview), not shell colorTheme. */
   .vault-editor[data-reading-palette="neutral"] {
     --vault-read-fg: rgb(var(--color-surface-100));
@@ -9410,29 +9449,77 @@
   }
 
   .vault-editor[data-reading-palette="warm"] {
-    --vault-read-fg: #f3e8d8;
-    --vault-read-muted: #c4a98a;
-    --vault-read-bg: rgb(42 32 24 / 0.35);
-    --vault-read-accent: #e0a86a;
+    --vault-read-fg: #f6ecdf;
+    --vault-read-muted: #d0b896;
+    --vault-read-bg: rgb(42 32 24 / 0.22);
+    --vault-read-accent: #e8b57a;
+    --chart-fg: 246 236 223;
+    --chart-fg-secondary: 224 200 168;
+    --chart-fg-muted: 196 169 138;
+    --chart-plot-ink: 246 236 223;
   }
 
   .vault-editor[data-reading-palette="cool"] {
-    --vault-read-fg: #dde8f5;
-    --vault-read-muted: #8fa6c2;
-    --vault-read-bg: rgb(20 32 48 / 0.4);
-    --vault-read-accent: #7eb6e8;
+    --vault-read-fg: #eef4fb;
+    --vault-read-muted: #a8bdd4;
+    --vault-read-bg: rgb(20 32 48 / 0.22);
+    --vault-read-accent: #8ec4f0;
+    --chart-fg: 238 244 251;
+    --chart-fg-secondary: 196 214 232;
+    --chart-fg-muted: 143 166 194;
+    --chart-plot-ink: 238 244 251;
   }
 
   .vault-editor[data-reading-palette="ink"] {
-    --vault-read-fg: #e8e6e1;
-    --vault-read-muted: #9a968c;
-    --vault-read-bg: rgb(12 12 11 / 0.55);
-    --vault-read-accent: #d4c4a0;
+    --vault-read-fg: #f0eee8;
+    --vault-read-muted: #b4b0a4;
+    --vault-read-bg: rgb(12 12 11 / 0.28);
+    --vault-read-accent: #dcc9a4;
+    --chart-fg: 240 238 232;
+    --chart-fg-secondary: 210 206 194;
+    --chart-fg-muted: 154 150 140;
+    --chart-plot-ink: 240 238 232;
   }
 
+  .vault-editor[data-reading-palette] .vault-live-editor .ProseMirror,
   .vault-editor[data-reading-palette] .vault-live-prose,
   .vault-editor[data-reading-palette] .markdown-content {
     color: var(--vault-read-fg);
+  }
+
+  /* Beat hard-coded surface/shell colors on body copy (headings already inherit). */
+  .vault-editor[data-reading-palette]
+    :is(.vault-live-prose, .markdown-content)
+    :is(p, li, td, th, h1, h2, h3, h4, h5, h6) {
+    color: var(--vault-read-fg);
+  }
+
+  .vault-editor[data-reading-palette]
+    :is(.vault-live-prose, .markdown-content)
+    :is(blockquote, del),
+  .vault-editor[data-reading-palette] .vault-live-heading-marks,
+  .vault-editor[data-reading-palette]
+    .vault-live-prose
+    ul[data-type="taskList"]
+    li[data-checked="true"],
+  .vault-editor[data-reading-palette]
+    .markdown-content
+    li:has(> input[type="checkbox"]:checked) {
+    color: var(--vault-read-muted);
+  }
+
+  .vault-editor[data-reading-palette]
+    :is(.vault-live-prose, .markdown-content)
+    :is(a, a.vault-live-link),
+  .vault-editor[data-reading-palette] .vault-live-prose a[href^="wikilink:"],
+  .vault-editor[data-reading-palette] .markdown-wikilink {
+    color: var(--vault-read-accent);
+  }
+
+  .vault-editor[data-reading-palette] .vault-live-prose code,
+  .vault-editor[data-reading-palette] .markdown-content :not(pre) > code {
+    color: var(--vault-read-fg);
+    background: color-mix(in srgb, var(--vault-read-fg) 10%, transparent);
   }
 
   .vault-editor[data-reading-palette="warm"] .vault-live-editor,
@@ -9444,9 +9531,74 @@
     background: var(--vault-read-bg);
   }
 
-  .vault-editor[data-reading-palette] .vault-live-prose a,
-  .vault-editor[data-reading-palette] .markdown-content a {
-    color: var(--vault-read-accent);
+  /* Named color marks keep their swatches; force bright (dark-canvas) values in light shell. */
+  html:not(.dark) .vault-editor .markdown-color-red,
+  html:not(.dark) .vault-editor .markdown-content .markdown-color-red,
+  html:not(.dark) .vault-editor .markdown-content span.markdown-color-red {
+    color: #f87171 !important;
+  }
+
+  html:not(.dark) .vault-editor .markdown-color-orange,
+  html:not(.dark) .vault-editor .markdown-content .markdown-color-orange,
+  html:not(.dark) .vault-editor .markdown-content span.markdown-color-orange {
+    color: #fb923c !important;
+  }
+
+  html:not(.dark) .vault-editor .markdown-color-yellow,
+  html:not(.dark) .vault-editor .markdown-content .markdown-color-yellow,
+  html:not(.dark) .vault-editor .markdown-content span.markdown-color-yellow {
+    color: #facc15 !important;
+  }
+
+  html:not(.dark) .vault-editor .markdown-color-green,
+  html:not(.dark) .vault-editor .markdown-content .markdown-color-green,
+  html:not(.dark) .vault-editor .markdown-content span.markdown-color-green {
+    color: #4ade80 !important;
+  }
+
+  html:not(.dark) .vault-editor .markdown-color-blue,
+  html:not(.dark) .vault-editor .markdown-content .markdown-color-blue,
+  html:not(.dark) .vault-editor .markdown-content span.markdown-color-blue {
+    color: #60a5fa !important;
+  }
+
+  html:not(.dark) .vault-editor .markdown-color-purple,
+  html:not(.dark) .vault-editor .markdown-content .markdown-color-purple,
+  html:not(.dark) .vault-editor .markdown-content span.markdown-color-purple {
+    color: #c084fc !important;
+  }
+
+  html:not(.dark) .vault-editor .markdown-color-pink,
+  html:not(.dark) .vault-editor .markdown-content .markdown-color-pink,
+  html:not(.dark) .vault-editor .markdown-content span.markdown-color-pink {
+    color: #f472b6 !important;
+  }
+
+  /* Embeds: shell pane glass — never light-paper flash inside the note. */
+  .vault-editor .liquid-chart,
+  .vault-editor .liquid-report,
+  html:not(.dark) .vault-editor .liquid-chart,
+  html:not(.dark) .vault-editor .liquid-report {
+    background: var(--vault-embed-bg);
+    border-color: var(--vault-embed-border);
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.04);
+  }
+
+  .vault-editor .liquid-chart-tooltip,
+  html:not(.dark) .vault-editor .liquid-chart-tooltip {
+    background: color-mix(
+      in srgb,
+      rgb(var(--shell-pane-bg, var(--color-surface-900))) 86%,
+      transparent
+    );
+    border-color: var(--vault-embed-border);
+    box-shadow: 0 10px 28px rgb(0 0 0 / 0.4);
+    color: rgb(var(--chart-fg));
+  }
+
+  .vault-editor .vault-live-chart {
+    background: var(--vault-embed-bg);
+    border-color: var(--vault-embed-border);
   }
 
   /* Gapcursor: TipTap/StarterKit needs these or the widget paints as a blank square. */

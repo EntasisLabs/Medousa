@@ -136,11 +136,10 @@
     margin: 0;
     padding: 0.75rem 0.85rem 0.8rem;
     border-radius: 0.9rem;
-    border: 1px solid color-mix(in srgb, var(--color-surface-500) 22%, transparent);
-    background: color-mix(in srgb, var(--color-surface-50) 55%, transparent);
-    box-shadow:
-      0 1px 0 color-mix(in srgb, var(--color-surface-50) 70%, transparent) inset,
-      0 8px 24px rgb(0 0 0 / 0.04);
+    border: 1px solid color-mix(in srgb, var(--color-surface-500) 28%, transparent);
+    /* Dark-canvas default — vault + chat are ink-first; paper only in light shell outside vault. */
+    background: color-mix(in srgb, var(--color-surface-900) 48%, transparent);
+    box-shadow: inset 0 1px 0 color-mix(in srgb, var(--color-surface-50) 4%, transparent);
     width: 100%;
     max-width: 100%;
     box-sizing: border-box;
@@ -150,7 +149,16 @@
     max-width: 100%;
   }
 
-  :global(html.dark) .liquid-chart {
+  :global(html:not(.dark)) .liquid-chart {
+    background: color-mix(in srgb, var(--color-surface-50) 55%, transparent);
+    border-color: color-mix(in srgb, var(--color-surface-500) 22%, transparent);
+    box-shadow:
+      0 1px 0 color-mix(in srgb, var(--color-surface-50) 70%, transparent) inset,
+      0 8px 24px rgb(0 0 0 / 0.04);
+  }
+
+  /* Vault note surface stays ink-glass even when the shell is in light mode. */
+  :global(html:not(.dark) .vault-editor) .liquid-chart {
     background: color-mix(in srgb, var(--color-surface-900) 48%, transparent);
     border-color: color-mix(in srgb, var(--color-surface-500) 28%, transparent);
     box-shadow: inset 0 1px 0 color-mix(in srgb, var(--color-surface-50) 4%, transparent);

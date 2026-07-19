@@ -48,11 +48,9 @@
     max-width: min(14rem, calc(100% - 0.75rem));
     padding: 0.45rem 0.6rem;
     border-radius: 0.55rem;
-    border: 1px solid color-mix(in srgb, var(--color-surface-500) 28%, transparent);
-    background: color-mix(in srgb, var(--color-surface-50) 72%, transparent);
-    box-shadow:
-      0 10px 28px rgb(0 0 0 / 0.12),
-      0 1px 0 color-mix(in srgb, var(--color-surface-50) 55%, transparent) inset;
+    border: 1px solid color-mix(in srgb, var(--color-surface-500) 42%, transparent);
+    background: color-mix(in srgb, var(--color-surface-900) 78%, transparent);
+    box-shadow: 0 10px 28px rgb(0 0 0 / 0.4);
     backdrop-filter: blur(14px) saturate(1.15);
     -webkit-backdrop-filter: blur(14px) saturate(1.15);
     transform: translate(-50%, calc(-100% - 0.45rem));
@@ -60,7 +58,15 @@
     color: rgb(var(--chart-fg));
   }
 
-  :global(html.dark) .liquid-chart-tooltip {
+  :global(html:not(.dark)) .liquid-chart-tooltip {
+    background: color-mix(in srgb, var(--color-surface-50) 72%, transparent);
+    border-color: color-mix(in srgb, var(--color-surface-500) 28%, transparent);
+    box-shadow:
+      0 10px 28px rgb(0 0 0 / 0.12),
+      0 1px 0 color-mix(in srgb, var(--color-surface-50) 55%, transparent) inset;
+  }
+
+  :global(html:not(.dark) .vault-editor) .liquid-chart-tooltip {
     background: color-mix(in srgb, var(--color-surface-900) 78%, transparent);
     border-color: color-mix(in srgb, var(--color-surface-500) 42%, transparent);
     box-shadow: 0 10px 28px rgb(0 0 0 / 0.4);
