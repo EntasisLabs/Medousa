@@ -139,7 +139,9 @@ export async function embedPathForNote(
 
 export function formatImageEmbedMarkdown(embedPath: string, alt?: string): string {
   const label = (alt ?? embedPath.split("/").pop() ?? "image").replace(/[\[\]]/g, "");
-  const needsQuotes = /[()\s]/.test(embedPath);
+  // Angle-bracket destinations keep long data: URLs / spaces / () intact in CommonMark.
+  const needsQuotes =
+    /[()\s]/.test(embedPath) || embedPath.startsWith("data:") || embedPath.length > 200;
   const href = needsQuotes ? `<${embedPath}>` : embedPath;
   return `![${label}](${href})\n`;
 }

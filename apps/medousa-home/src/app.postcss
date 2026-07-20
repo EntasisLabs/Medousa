@@ -2746,6 +2746,72 @@
     @apply flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-surface-400 transition hover:bg-surface-700/60 hover:text-surface-200 disabled:pointer-events-none disabled:opacity-40;
   }
 
+  .composer-model-trigger--quiet {
+    @apply max-w-[11rem] border-transparent bg-transparent px-1.5 py-1;
+  }
+
+  .composer-model-trigger--quiet:hover:not(:disabled) {
+    border-color: transparent;
+    background: rgb(var(--color-surface-800) / 0.35);
+  }
+
+  .composer-model-trigger--quiet .composer-model-trigger-name {
+    @apply text-[12px] font-normal text-surface-400;
+  }
+
+  .composer-model-trigger--quiet.composer-model-trigger-open .composer-model-trigger-name {
+    @apply text-surface-200;
+  }
+
+  .composer-footer-chip-wrap {
+    @apply inline-flex max-w-[9rem] shrink-0 items-center gap-0.5;
+  }
+
+  .composer-footer-chip {
+    @apply inline-flex min-w-0 max-w-[8rem] items-center gap-1 rounded-full border border-surface-500/35 bg-surface-900/55 px-2 py-0.5 text-[11px] text-surface-300 transition hover:border-primary-500/35 hover:text-surface-100;
+  }
+
+  .composer-footer-chip-mono {
+    @apply flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-surface-700 text-[9px] font-semibold text-surface-200;
+  }
+
+  .composer-footer-chip-dismiss {
+    @apply flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-surface-500 transition hover:bg-surface-700/70 hover:text-surface-200;
+  }
+
+  .composer-anchored-menu {
+    @apply z-[60] flex min-w-[16rem] max-w-[20rem] flex-col overflow-hidden rounded-xl;
+    position: fixed;
+    top: 0;
+    left: 0;
+    border: 1px solid rgb(var(--color-surface-600) / 0.35);
+    background: rgb(var(--color-surface-900) / 0.98);
+    box-shadow:
+      0 12px 32px rgb(0 0 0 / 0.35),
+      0 0 0 1px rgb(0 0 0 / 0.12);
+    backdrop-filter: blur(16px);
+  }
+
+  .composer-anchored-menu-header {
+    @apply shrink-0 border-b border-surface-700/40 px-3 py-2.5;
+  }
+
+  .composer-anchored-menu-body {
+    @apply min-h-0 flex-1 overflow-y-auto px-2 py-2;
+  }
+
+  .composer-plus-menu-panel {
+    @apply min-w-[12.5rem] py-1;
+  }
+
+  .composer-plus-menu-item {
+    @apply flex w-full items-center gap-2.5 px-3 py-2 text-left text-[13px] text-surface-200 transition hover:bg-surface-800/70;
+  }
+
+  .composer-plus-menu-dot {
+    @apply h-2 w-2 shrink-0 rounded-full bg-primary-400;
+  }
+
   .composer-bar-voice-btn {
     @apply opacity-80;
   }
@@ -6478,6 +6544,23 @@
       0 1px 2px rgb(0 0 0 / 0.16);
   }
 
+  /* Cursor-quiet stacked composer: textarea above, compact footer below */
+  .composer-bar.composer-bar-stacked {
+    @apply flex-col items-stretch gap-0.5 px-2 py-1.5;
+  }
+
+  .composer-bar-stacked-input {
+    @apply w-full min-w-0 px-1.5 pt-0.5;
+  }
+
+  .composer-bar-footer {
+    @apply flex min-w-0 items-center gap-1;
+  }
+
+  .composer-bar-footer-spacer {
+    @apply min-w-0 flex-1;
+  }
+
   .composer-bar:focus-within {
     border-color: rgb(var(--color-primary-500) / 0.42);
     background-color: rgb(var(--color-surface-800) / 0.82);
@@ -6625,6 +6708,14 @@
     @apply flex max-w-full min-w-0 items-center gap-1 rounded-full px-2.5 py-1.5 text-left transition;
     background: rgb(var(--color-surface-700) / 0.42);
     border: 1px solid rgb(var(--color-surface-600) / 0.28);
+  }
+
+  .mobile-composer-turn-trigger--quiet {
+    @apply max-w-[10rem] border-transparent bg-transparent px-1.5 py-1;
+  }
+
+  .mobile-composer-turn-trigger--quiet .mobile-composer-turn-trigger-label {
+    @apply text-[12px] font-normal text-surface-400;
   }
 
   .mobile-composer-turn-trigger:disabled {

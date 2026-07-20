@@ -43,9 +43,11 @@
   interface Props {
     disabled?: boolean;
     readonly?: boolean;
+    /** Cursor-quiet trigger: name + chevron only (no Voice/Stance/Reasoning meta). */
+    quiet?: boolean;
   }
 
-  let { disabled = false, readonly = false }: Props = $props();
+  let { disabled = false, readonly = false, quiet = false }: Props = $props();
 
   let open = $state(false);
   let search = $state("");
@@ -258,11 +260,13 @@
   }
 </script>
 
-<div class="composer-model-picker">
+<div class="composer-model-picker" class:composer-model-picker-quiet={quiet}>
   <button
     bind:this={triggerEl}
     type="button"
-    class="composer-model-trigger {nativeMobileReadonly ? 'composer-model-trigger-readonly' : ''}"
+    class="composer-model-trigger {quiet
+      ? 'composer-model-trigger--quiet'
+      : ''} {nativeMobileReadonly ? 'composer-model-trigger-readonly' : ''}"
     class:composer-model-trigger-open={open}
     disabled={disabled || runtime.savingControls}
     aria-haspopup="listbox"
@@ -272,7 +276,11 @@
   >
     <span class="composer-model-trigger-copy">
       <span class="composer-model-trigger-name">{displayName}</span>
-      <span class="composer-model-trigger-meta">{voiceLabel} · {depthLabel} · {reasoningLabel}</span>
+      {#if !quiet}
+        <span class="composer-model-trigger-meta"
+          >{voiceLabel} · {depthLabel} · {reasoningLabel}</span
+        >
+      {/if}
     </span>
     {#if runtime.savingControls}
       <LoaderCircle size={13} class="composer-model-trigger-spinner animate-spin" />

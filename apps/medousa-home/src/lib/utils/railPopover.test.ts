@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { placeRailPopover } from "./railPopover";
+import { placeComposerPopover, placeRailPopover } from "./railPopover";
 
 function fakeRect(partial: Partial<DOMRect>): DOMRect {
   return {
@@ -29,7 +29,13 @@ function fakeMenu(size: { width: number; height: number }) {
       }),
     offsetWidth: size.width,
     offsetHeight: size.height,
-    style: { top: "", left: "", maxWidth: "", maxHeight: "" } as Record<string, string>,
+    style: {
+      top: "",
+      left: "",
+      maxWidth: "",
+      maxHeight: "",
+      position: "",
+    } as Record<string, string>,
   } as unknown as HTMLElement & { style: Record<string, string> };
 }
 
@@ -120,5 +126,41 @@ describe("placeRailPopover", () => {
     const top = Number.parseInt(menu.style.top, 10);
     expect(left).toBe(8);
     expect(top).toBe(8);
+  });
+});
+
+describe("placeComposerPopover", () => {
+  beforeEach(() => {
+    vi.stubGlobal("window", {
+      innerWidth: 1200,
+      innerHeight: 800,
+      visualViewport: undefined,
+    });
+  });
+
+  it("places the menu above the trigger", () => {
+    const trigger = {
+      getBoundingClientRect: () =>
+        fakeRect({ top: 600, left: 40, right: 80, bottom: 636, width: 40, height: 36 }),
+    } as HTMLElement;
+    const menu = fakeMenu({ width: 280, height: 200 });
+
+    placeComposerPopover(trigger, menu);
+
+    expect(menu.style.position).toBe("fixed");
+    expect(Number.parseInt(menu.style.top, 10)).toBe(600 - 8 - 200);
+    expect(Number.parseInt(menu.style.left, 10)).toBe(40);
+  });
+
+  it("flips below when there is not enough room above", () => {
+    const trigger = {
+      getBoundingClientRect: () =>
+        fakeRect({ top: 40, left: 40, right: 80, bottom: 76, width: 40, height: 36 }),
+    } as HTMLElement;
+    const menu = fakeMenu({ width: 280, height: 200 });
+
+    placeComposerPopover(trigger, menu);
+
+    expect(Number.parseInt(menu.style.top, 10)).toBe(76 + 8);
   });
 });

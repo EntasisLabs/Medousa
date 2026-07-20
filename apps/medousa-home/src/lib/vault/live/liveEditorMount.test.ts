@@ -1,3 +1,4 @@
+/** @vitest-environment happy-dom */
 import { describe, expect, it } from "vitest";
 import { Editor } from "@tiptap/core";
 import {
@@ -93,5 +94,19 @@ describe("VaultLiveEditor TipTap mount", () => {
       console.warn = orig;
     }
     expect(warns.some((w) => w.includes("Duplicate extension"))).toBe(false);
+  });
+
+  it("inserts inline data-image via setImage (paste path)", () => {
+    const dataUrl =
+      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+    const { editor, host, frontmatter } = mount("");
+    editor.chain().focus().setImage({ src: dataUrl, alt: "pixel" }).run();
+    const img = host.querySelector("img");
+    expect(img?.getAttribute("src")).toBe(dataUrl);
+    const out = serializeLiveMarkdown(editor.getJSON(), frontmatter);
+    expect(out).toContain("![pixel](data:image/png;base64,");
+    expect(out).not.toContain("!\\[pixel\\]");
+    editor.destroy();
+    host.remove();
   });
 });

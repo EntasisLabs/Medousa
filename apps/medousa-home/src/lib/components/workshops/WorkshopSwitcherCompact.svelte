@@ -23,23 +23,37 @@
     variant?: "mobile" | "desktop" | "rail";
     /** When rail is expanded, show workshop name beside the monogram. */
     expanded?: boolean;
+    /** Render the pill/rail trigger (false when opened from ComposerPlusMenu). */
+    showTrigger?: boolean;
+    sheetOpen?: boolean;
   }
 
-  let { hideWhenSingle = true, variant = "mobile", expanded = false }: Props = $props();
-
-  let sheetOpen = $state(false);
+  let {
+    hideWhenSingle = true,
+    variant = "mobile",
+    expanded = false,
+    showTrigger = true,
+    sheetOpen = $bindable(false),
+  }: Props = $props();
   let joinOpen = $state(false);
   let railTriggerEl = $state<HTMLButtonElement | null>(null);
   let railMenuEl = $state<HTMLDivElement | null>(null);
 
   const showPill = $derived(
-    variant !== "rail" &&
+    showTrigger &&
+      variant !== "rail" &&
       isTauri() &&
       (!hideWhenSingle || workshops.hasMultipleWorkshops),
   );
 
   const showRail = $derived(variant === "rail");
   const isRailMenu = $derived(variant === "rail");
+
+  $effect(() => {
+    if (sheetOpen && workshops.workshops.length === 0 && !workshops.loading) {
+      void workshops.load();
+    }
+  });
 
   $effect(() => {
     if (!sheetOpen || !isRailMenu || !railTriggerEl || !railMenuEl) return;

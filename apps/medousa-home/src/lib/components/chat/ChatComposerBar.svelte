@@ -1,15 +1,19 @@
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
-  import { LoaderCircle, Mic, Plus } from "@lucide/svelte";
+  import { Mic } from "@lucide/svelte";
   import GrowingTextarea from "$lib/components/ui/GrowingTextarea.svelte";
   import ChatAttachmentChips from "$lib/components/chat/ChatAttachmentChips.svelte";
   import ChatModelPicker from "$lib/components/chat/ChatModelPicker.svelte";
   import ChatVoiceRecorder from "$lib/components/chat/ChatVoiceRecorder.svelte";
   import ComposerAgentChip from "$lib/components/chat/ComposerAgentChip.svelte";
+  import ComposerPlusMenu from "$lib/components/chat/ComposerPlusMenu.svelte";
   import ContextUsageIndicator from "$lib/components/chat/ContextUsageIndicator.svelte";
+  import MobileComposerTurnSettings from "$lib/components/mobile/MobileComposerTurnSettings.svelte";
   import ProfileSwitcherCompact from "$lib/components/mobile/ProfileSwitcherCompact.svelte";
+  import WorkshopSwitcherCompact from "$lib/components/workshops/WorkshopSwitcherCompact.svelte";
   import { chat } from "$lib/stores/chat.svelte";
   import { settings } from "$lib/stores/settings.svelte";
+  import { isTauriMobilePlatform } from "$lib/platform";
   import {
     MAX_MEDIA_REFS_PER_TURN,
     MAX_MEDIA_UPLOAD_MB,
@@ -59,6 +63,11 @@
   let dictationBase = $state("");
   let sttAvailable = $state(false);
   let sttReason = $state<string | null>(null);
+
+  let plusAnchorEl = $state<HTMLElement | null>(null);
+  let profileOpen = $state(false);
+  let agentOpen = $state(false);
+  let workshopOpen = $state(false);
 
   let voiceSession: ComposerAudioCaptureSession | null = null;
   let waveFrame = 0;
@@ -253,19 +262,46 @@
       />
 
       <div class="mobile-composer-dock-toolbar">
-        <button
-          type="button"
-          class="composer-bar-icon-btn"
-          aria-label="Attach file"
-          disabled={blocked || chat.pendingMediaUploading}
-          onclick={() => void chat.attachFilesFromPicker()}
-        >
-          {#if chat.pendingMediaUploading}
-            <LoaderCircle size={16} class="animate-spin" />
+        <div bind:this={plusAnchorEl} class="composer-plus-anchor relative shrink-0">
+          <ComposerPlusMenu
+            disabled={blocked}
+            showWorkshop={true}
+            onProfile={() => {
+              agentOpen = false;
+              profileOpen = true;
+            }}
+            onAgent={() => {
+              profileOpen = false;
+              agentOpen = true;
+            }}
+            onWorkshop={() => {
+              profileOpen = false;
+              agentOpen = false;
+              workshopOpen = true;
+            }}
+          />
+        </div>
+
+        <ProfileSwitcherCompact
+          showChip
+          bind:open={profileOpen}
+          anchorEl={plusAnchorEl}
+        />
+        <ComposerAgentChip showChip bind:open={agentOpen} anchorEl={plusAnchorEl} />
+        <WorkshopSwitcherCompact
+          variant="mobile"
+          hideWhenSingle={false}
+          showTrigger={false}
+          bind:sheetOpen={workshopOpen}
+        />
+
+        {#if settings.showChatModelPicker}
+          {#if isTauriMobilePlatform()}
+            <MobileComposerTurnSettings disabled={blocked} quiet />
           {:else}
-            <Plus size={18} strokeWidth={2} />
+            <ChatModelPicker disabled={blocked} quiet />
           {/if}
-        </button>
+        {/if}
 
         <span class="mobile-composer-dock-spacer" aria-hidden="true"></span>
 
@@ -296,9 +332,9 @@
   </div>
 {:else}
 <div
-  class="composer-bar chat-composer-shell chat-composer-bar {voiceActive ? 'composer-bar-voice-mode' : ''} {voiceTranscribing
-    ? 'composer-bar-voice-transcribing'
-    : ''}"
+  class="composer-bar chat-composer-shell chat-composer-bar composer-bar-stacked {voiceActive
+    ? 'composer-bar-voice-mode'
+    : ''} {voiceTranscribing ? 'composer-bar-voice-transcribing' : ''}"
 >
   {#if voiceActive}
     <ChatVoiceRecorder
@@ -315,29 +351,6 @@
       onAttach={() => void chat.attachFilesFromPicker()}
     />
   {:else}
-    <button
-      type="button"
-      class="composer-bar-icon-btn"
-      aria-label="Attach file"
-      disabled={blocked || chat.pendingMediaUploading}
-      onclick={() => void chat.attachFilesFromPicker()}
-    >
-      {#if chat.pendingMediaUploading}
-        <LoaderCircle size={16} class="animate-spin" />
-      {:else}
-        <Plus size={18} strokeWidth={2} />
-      {/if}
-    </button>
-
-    <div class="flex shrink-0 items-center gap-1.5">
-      <ProfileSwitcherCompact hideWhenSingle={false} />
-      <ComposerAgentChip />
-    </div>
-
-    {#if settings.showChatModelPicker}
-      <ChatModelPicker {disabled} />
-    {/if}
-
     <GrowingTextarea
       bind:value={chat.draft}
       placeholder={chat.hasWorkshopHandoff()
@@ -346,34 +359,64 @@
       disabled={blocked}
       maxHeight={128}
       minHeight={36}
+      class="composer-bar-stacked-input"
       {onkeydown}
       {onfocus}
       {onblur}
       aria-label={chat.hasWorkshopHandoff() ? "Steer handoff" : "Message"}
     />
 
-    <button
-      type="button"
-      class="composer-bar-icon-btn composer-bar-voice-btn"
-      aria-label={voiceSupported ? "Voice input" : voiceHint}
-      title={voiceSupported ? "Voice input" : voiceHint}
-      disabled={blocked || !voiceSupported}
-      onclick={() => void startVoice()}
-    >
-      <Mic size={16} strokeWidth={2} />
-    </button>
+    <div class="composer-bar-footer">
+      <div bind:this={plusAnchorEl} class="composer-plus-anchor relative shrink-0">
+        <ComposerPlusMenu
+          disabled={blocked}
+          onProfile={() => {
+            agentOpen = false;
+            profileOpen = true;
+          }}
+          onAgent={() => {
+            profileOpen = false;
+            agentOpen = true;
+          }}
+        />
+      </div>
 
-    <ContextUsageIndicator />
+      <ProfileSwitcherCompact
+        showChip
+        bind:open={profileOpen}
+        anchorEl={plusAnchorEl}
+      />
+      <ComposerAgentChip showChip bind:open={agentOpen} anchorEl={plusAnchorEl} />
 
-    <button
-      type="submit"
-      class="composer-bar-send"
-      disabled={!canSend}
-      aria-label="Send message"
-      onmousedown={(event) => event.preventDefault()}
-    >
-      {composerBlocked ? "…" : "↑"}
-    </button>
+      {#if settings.showChatModelPicker}
+        <ChatModelPicker {disabled} quiet />
+      {/if}
+
+      <span class="composer-bar-footer-spacer" aria-hidden="true"></span>
+
+      <button
+        type="button"
+        class="composer-bar-icon-btn composer-bar-voice-btn"
+        aria-label={voiceSupported ? "Voice input" : voiceHint}
+        title={voiceSupported ? "Voice input" : voiceHint}
+        disabled={blocked || !voiceSupported}
+        onclick={() => void startVoice()}
+      >
+        <Mic size={16} strokeWidth={2} />
+      </button>
+
+      <ContextUsageIndicator />
+
+      <button
+        type="submit"
+        class="composer-bar-send"
+        disabled={!canSend}
+        aria-label="Send message"
+        onmousedown={(event) => event.preventDefault()}
+      >
+        {composerBlocked ? "…" : "↑"}
+      </button>
+    </div>
   {/if}
 </div>
 {/if}

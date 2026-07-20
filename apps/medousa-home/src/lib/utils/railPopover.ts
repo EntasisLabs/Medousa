@@ -64,3 +64,46 @@ export function placeRailPopover(
   menu.style.top = `${Math.round(top)}px`;
   menu.style.left = `${Math.round(left)}px`;
 }
+
+/**
+ * Place a fixed popover above a composer trigger (Cursor-style).
+ * Prefers above + start-aligned; flips below / clamps into the viewport.
+ */
+export function placeComposerPopover(
+  trigger: HTMLElement,
+  menu: HTMLElement,
+  options?: { gap?: number; pad?: number },
+): void {
+  const gap = options?.gap ?? 8;
+  const pad = options?.pad ?? 8;
+  const view = viewportBox();
+  const maxW = Math.max(0, view.width - pad * 2);
+  const maxH = Math.max(0, Math.min(view.height - pad * 2, view.height * 0.5));
+
+  menu.style.maxWidth = `${Math.round(Math.min(maxW, 20 * 16))}px`;
+  menu.style.maxHeight = `${Math.round(maxH)}px`;
+
+  const tr = trigger.getBoundingClientRect();
+  const measured = menu.getBoundingClientRect();
+  const menuW = Math.min(menu.offsetWidth || measured.width, maxW, 20 * 16);
+  const menuH = Math.min(menu.offsetHeight || measured.height, maxH);
+
+  const minLeft = view.left + pad;
+  const maxLeft = view.left + view.width - pad - menuW;
+  const minTop = view.top + pad;
+  const maxTop = view.top + view.height - pad - menuH;
+
+  let left = tr.left;
+  left = clamp(left, minLeft, maxLeft);
+
+  // Prefer above the trigger.
+  let top = tr.top - gap - menuH;
+  if (top < minTop) {
+    top = tr.bottom + gap;
+  }
+  top = clamp(top, minTop, maxTop);
+
+  menu.style.position = "fixed";
+  menu.style.top = `${Math.round(top)}px`;
+  menu.style.left = `${Math.round(left)}px`;
+}

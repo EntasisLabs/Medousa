@@ -54,7 +54,8 @@
   import { toast } from "$lib/stores/toast.svelte";
   import {
     dataTransferHasImage,
-    markdownFromImageDataTransfer,
+    imageFileFromDataTransfer,
+    markdownFromImageFile,
   } from "$lib/utils/vaultImagePaste";
 
   interface Props {
@@ -122,17 +123,21 @@
     data: DataTransfer | null,
   ): boolean {
     if (disabledRef.current || !editor || !dataTransferHasImage(data)) return false;
+    // Must capture File during the event — DataTransfer is cleared afterward.
+    const file = imageFileFromDataTransfer(data);
+    if (!file) return false;
     event.preventDefault();
     void (async () => {
-      const result = await markdownFromImageDataTransfer(data);
+      const result = await markdownFromImageFile(file);
       if (result.ok === false) {
         toast.show(result.message);
         return;
       }
+      // setImage keeps the data URL intact (markdown insert can mangle huge srcs).
       editor
         ?.chain()
         .focus(undefined, { scrollIntoView: false })
-        .insertContent(result.markdown)
+        .setImage({ src: result.dataUrl, alt: result.alt })
         .run();
       emitMarkdown();
     })();

@@ -33,7 +33,8 @@
   import type { FindMatch } from "$lib/utils/vaultFindInNote";
   import {
     dataTransferHasImage,
-    markdownFromImageDataTransfer,
+    imageFileFromDataTransfer,
+    markdownFromImageFile,
   } from "$lib/utils/vaultImagePaste";
 
   interface Props {
@@ -102,9 +103,12 @@
     event: Event,
   ): boolean {
     if (disabledRef || !dataTransferHasImage(data)) return false;
+    // Must capture File during the event — DataTransfer is cleared afterward.
+    const file = imageFileFromDataTransfer(data);
+    if (!file) return false;
     event.preventDefault();
     void (async () => {
-      const result = await markdownFromImageDataTransfer(data);
+      const result = await markdownFromImageFile(file);
       if (result.ok === false) {
         toast.show(result.message);
         return;

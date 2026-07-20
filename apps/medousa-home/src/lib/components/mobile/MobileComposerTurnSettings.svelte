@@ -30,9 +30,11 @@
 
   interface Props {
     disabled?: boolean;
+    /** Quiet footer trigger — model name only. */
+    quiet?: boolean;
   }
 
-  let { disabled = false }: Props = $props();
+  let { disabled = false, quiet = false }: Props = $props();
 
   let open = $state(false);
   let sheetView = $state<SheetView>("main");
@@ -209,10 +211,12 @@
   }
 </script>
 
-<div class="mobile-composer-turn">
+<div class="mobile-composer-turn" class:mobile-composer-turn-quiet={quiet}>
   <button
     type="button"
-    class="mobile-composer-turn-trigger {open ? 'mobile-composer-turn-trigger-open' : ''}"
+    class="mobile-composer-turn-trigger {quiet
+      ? 'mobile-composer-turn-trigger--quiet'
+      : ''} {open ? 'mobile-composer-turn-trigger-open' : ''}"
     aria-haspopup="dialog"
     aria-expanded={open}
     aria-label="Model and turn settings: {modelLabel}, {depthLabel} stance, {voiceLabel} voice"
@@ -221,8 +225,10 @@
   >
     <span class="mobile-composer-turn-trigger-label">
       {loading ? "Model" : modelLabel}
-      <span class="mobile-composer-turn-trigger-sep" aria-hidden="true">·</span>
-      {depthLabel}
+      {#if !quiet}
+        <span class="mobile-composer-turn-trigger-sep" aria-hidden="true">·</span>
+        {depthLabel}
+      {/if}
     </span>
     <ChevronDown size={13} class="mobile-composer-turn-trigger-chevron" />
   </button>
