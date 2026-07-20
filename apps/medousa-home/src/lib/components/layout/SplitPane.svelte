@@ -5,6 +5,7 @@
     max?: number;
     side?: "left" | "right";
     onResize: (width: number) => void;
+    onResizeEnd?: () => void;
     children: import("svelte").Snippet;
   }
 
@@ -14,6 +15,7 @@
     max = 520,
     side = "right",
     onResize,
+    onResizeEnd,
     children,
   }: Props = $props();
 
@@ -37,6 +39,7 @@
 
     function onUp() {
       dragging = false;
+      onResizeEnd?.();
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
     }

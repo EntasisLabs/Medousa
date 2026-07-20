@@ -36,21 +36,53 @@ export function unmountLiquidFence(host: HTMLElement): void {
   host.replaceChildren();
 }
 
-/** Plain (non-liquid) fence: calm monospace body, no Build exile. */
+/** Plain (non-liquid) fence: calm monospace body + quiet corner edit. */
 export function mountPlainFence(
   host: HTMLElement,
   lang: string,
   body: string,
+  onEditRaw?: () => void,
 ): void {
   host.replaceChildren();
   const card = document.createElement("div");
   card.className = "vault-live-plain-fence";
+
+  const head = document.createElement("div");
+  head.className = "vault-live-plain-fence__head";
+
   const label = document.createElement("span");
   label.className = "vault-live-plain-fence__lang";
   label.textContent = lang || "code";
+
+  head.append(label);
+
+  if (onEditRaw) {
+    const meta = document.createElement("div");
+    meta.className = "vault-live-plain-fence__meta vault-live-quiet-chrome";
+
+    const edit = document.createElement("button");
+    edit.type = "button";
+    edit.className = "vault-live-plain-fence__edit";
+    edit.textContent = "edit";
+    edit.title = "Edit fence source";
+    edit.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+    });
+    edit.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      onEditRaw();
+    });
+
+    meta.append(edit);
+    head.append(meta);
+  }
+
   const pre = document.createElement("pre");
   pre.className = "vault-live-plain-fence__body";
   pre.textContent = body;
-  card.append(label, pre);
+
+  card.append(head, pre);
   host.append(card);
 }

@@ -21,6 +21,8 @@ export interface ManuscriptDetailResponse {
   scope: string;
   path: string;
   extends_from?: string | null;
+  display_name?: string | null;
+  voice_appendix?: string | null;
   task_template?: string | null;
   tools_allow: string[];
   schedule_cron?: string | null;
@@ -36,7 +38,21 @@ export interface ManuscriptDetailResponse {
   palette_tools: string[];
 }
 
+export interface CreateManuscriptRequest {
+  name: string;
+  description?: string;
+  scope?: string;
+  template?: string;
+}
+
 export interface UpdateManuscriptRequest {
+  name?: string;
+  description?: string;
+  clear_description?: boolean;
+  display_name?: string;
+  clear_display_name?: boolean;
+  voice_appendix?: string;
+  clear_voice_appendix?: boolean;
   task_template?: string;
   clear_task_template?: boolean;
   tools_allow?: string[];

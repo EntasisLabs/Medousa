@@ -31,6 +31,9 @@ const POPOUT_CHROME_HEIGHT_LOGICAL: f64 = 132.0;
 static POPOUT_SHELL_READY: AtomicBool = AtomicBool::new(false);
 static EMBED_READY: AtomicBool = AtomicBool::new(false);
 static EMBED_VISIBLE: AtomicBool = AtomicBool::new(false);
+/// When true, show/flush should apply `LAST_EMBED_ACTIVE_URL` once (cold open / pre-create nav).
+/// Cleared after flush or a successful embedded navigate — prevents show→navigate reload loops.
+static EMBED_NAV_PENDING: AtomicBool = AtomicBool::new(false);
 /// When true the embedded webview was created with a mobile Safari user agent.
 static EMBED_MOBILE_UA: AtomicBool = AtomicBool::new(false);
 /// Set by the frontend when the mobile shell owns embed layout (blocks workshop resize reapply).
@@ -1529,56 +1532,50 @@ fn apply_embedded_dom_bounds(app: &AppHandle, dom: EmbedBounds) -> Result<(), St
     let target = dom_bounds_to_window_child_bounds(app, dom)?;
     apply_embedded_bounds(app, target)?;
 
-    for _ in 0..2 {
-        let Some(content) = embedded_content_webview(app) else {
-            return Ok(());
-        };
-
-        #[cfg(target_os = "macos")]
-        let (actual_x, actual_y, actual_w, actual_h) =
-            if let Some((x, y, w, h)) = macos_webview_frame_in_window_content(&content) {
-                (x, y, w, h)
-            } else {
-                let window = workshop_window(app)?;
-                let scale = window.scale_factor().map_err(|err| err.to_string())?;
-                let rect = content.bounds().map_err(|err| err.to_string())?;
-                let pos = rect.position.to_logical::<f64>(scale);
-                let size = rect.size.to_logical::<f64>(scale);
-                (pos.x, pos.y, size.width, size.height)
+    // Gap chase is macOS-only (flipped contentView / title-bar inset mismatch).
+    // On Windows/Linux, repeated set_bounds during load can abort navigation (reload spam).
+    #[cfg(target_os = "macos")]
+    {
+        for _ in 0..2 {
+            let Some(content) = embedded_content_webview(app) else {
+                return Ok(());
             };
 
-        #[cfg(not(target_os = "macos"))]
-        let (actual_x, actual_y, actual_w, actual_h) = {
-            let window = workshop_window(app)?;
-            let scale = window.scale_factor().map_err(|err| err.to_string())?;
-            let rect = content.bounds().map_err(|err| err.to_string())?;
-            let pos = rect.position.to_logical::<f64>(scale);
-            let size = rect.size.to_logical::<f64>(scale);
-            (pos.x, pos.y, size.width, size.height)
-        };
+            let (actual_x, actual_y, actual_w, actual_h) =
+                if let Some((x, y, w, h)) = macos_webview_frame_in_window_content(&content) {
+                    (x, y, w, h)
+                } else {
+                    let window = workshop_window(app)?;
+                    let scale = window.scale_factor().map_err(|err| err.to_string())?;
+                    let rect = content.bounds().map_err(|err| err.to_string())?;
+                    let pos = rect.position.to_logical::<f64>(scale);
+                    let size = rect.size.to_logical::<f64>(scale);
+                    (pos.x, pos.y, size.width, size.height)
+                };
 
-        let gap_x = target.x - actual_x;
-        let gap_y = target.y - actual_y;
-        let gap_w = target.width - actual_w;
-        let gap_h = target.height - actual_h;
+            let gap_x = target.x - actual_x;
+            let gap_y = target.y - actual_y;
+            let gap_w = target.width - actual_w;
+            let gap_h = target.height - actual_h;
 
-        if gap_x.abs() <= 2.0
-            && gap_y.abs() <= 2.0
-            && gap_w.abs() <= 2.0
-            && gap_h.abs() <= 2.0
-        {
-            break;
+            if gap_x.abs() <= 2.0
+                && gap_y.abs() <= 2.0
+                && gap_w.abs() <= 2.0
+                && gap_h.abs() <= 2.0
+            {
+                break;
+            }
+
+            apply_embedded_bounds(
+                app,
+                EmbedBounds {
+                    x: target.x + gap_x,
+                    y: target.y + gap_y,
+                    width: target.width + gap_w,
+                    height: target.height + gap_h,
+                },
+            )?;
         }
-
-        apply_embedded_bounds(
-            app,
-            EmbedBounds {
-                x: target.x + gap_x,
-                y: target.y + gap_y,
-                width: target.width + gap_w,
-                height: target.height + gap_h,
-            },
-        )?;
     }
     finalize_desktop_embed_compositing(app, Some(target));
     Ok(())
@@ -1856,6 +1853,7 @@ fn activate_embed_tab(
             hide_embed_surface(app);
         }
         navigate_tab_webview(app, BrowserSurface::Embed, initial_url, true)?;
+        EMBED_NAV_PENDING.store(false, Ordering::SeqCst);
         if blank {
             // Start page owns the UI — keep the blank native webview hidden.
             hide_embed_surface(app);
@@ -1868,6 +1866,7 @@ fn activate_embed_tab(
         }
     } else {
         navigate_tab_webview(app, BrowserSurface::Embed, initial_url, false)?;
+        EMBED_NAV_PENDING.store(false, Ordering::SeqCst);
         emit_loading(app, BrowserSurface::Embed, false);
         if blank {
             hide_embed_surface(app);
@@ -1946,19 +1945,30 @@ fn close_surface_tab(app: &AppHandle, surface: BrowserSurface, tab_id: &str) -> 
 }
 
 fn flush_pending_embed_navigation(app: &AppHandle) {
+    // Only apply a URL that was queued before the embed existed. Calling navigate on every
+    // show/layout (especially Windows WebView2) aborts in-flight loads → reload spam.
+    if !EMBED_NAV_PENDING.swap(false, Ordering::SeqCst) {
+        return;
+    }
     let url = human_browser_active_url();
     let trimmed = url.trim();
     if trimmed.is_empty() || trimmed == "about:blank" {
         return;
     }
     let Some(tab_id) = active_tab_id(BrowserSurface::Embed) else {
+        EMBED_NAV_PENDING.store(true, Ordering::SeqCst);
         return;
     };
     if tab_webview(app, BrowserSurface::Embed, &tab_id).is_none() {
-        let _ = activate_surface_tab(app, BrowserSurface::Embed, &tab_id, trimmed);
+        match activate_surface_tab(app, BrowserSurface::Embed, &tab_id, trimmed) {
+            Ok(()) => EMBED_NAV_PENDING.store(false, Ordering::SeqCst),
+            Err(_) => EMBED_NAV_PENDING.store(true, Ordering::SeqCst),
+        }
         return;
     }
-    let _ = navigate_tab_webview(app, BrowserSurface::Embed, trimmed, false);
+    if navigate_tab_webview(app, BrowserSurface::Embed, trimmed, false).is_err() {
+        EMBED_NAV_PENDING.store(true, Ordering::SeqCst);
+    }
 }
 
 fn navigate_embedded_url(app: &AppHandle, url: &str) -> Result<(), String> {
@@ -1969,7 +1979,13 @@ fn navigate_embedded_url(app: &AppHandle, url: &str) -> Result<(), String> {
             .expect("embed active url");
         *guard = trimmed.to_string();
     }
-    navigate_tab_webview(app, BrowserSurface::Embed, trimmed, true)
+    // Same-URL is a no-op (reload uses location.reload). force:true was restarting loads
+    // whenever show/flush raced an in-flight navigation.
+    let result = navigate_tab_webview(app, BrowserSurface::Embed, trimmed, false);
+    if result.is_ok() {
+        EMBED_NAV_PENDING.store(false, Ordering::SeqCst);
+    }
+    result
 }
 
 fn navigate_popout_url(app: &AppHandle, url: &str) -> Result<(), String> {
@@ -2067,15 +2083,25 @@ pub fn human_browser_embed_set_bounds(
 #[tauri::command]
 pub fn human_browser_embed_show(app: AppHandle) -> Result<(), String> {
     ensure_embedded_content(&app)?;
-    EMBED_VISIBLE.store(true, Ordering::SeqCst);
+    let was_visible = EMBED_VISIBLE.swap(true, Ordering::SeqCst);
     let placement = LAST_EMBED_PLACEMENT.lock().ok().and_then(|guard| *guard);
     match placement {
-        // Compositor calls set_bounds immediately before show — reapply DOM bounds + show.
         Some(EmbedPlacement::Freeform(bounds)) => {
-            apply_embedded_dom_bounds(&app, bounds)?;
+            if was_visible {
+                // Already composited — compositor owns set_bounds; avoid gap-chase + nav flush.
+                if let Some(content) = embedded_content_webview(&app) {
+                    content.show().map_err(|err| err.to_string())?;
+                }
+            } else {
+                apply_embedded_dom_bounds(&app, bounds)?;
+            }
         }
         Some(_) => {
-            reapply_embedded_placement(&app)?;
+            if !was_visible {
+                reapply_embedded_placement(&app)?;
+            } else if let Some(content) = embedded_content_webview(&app) {
+                content.show().map_err(|err| err.to_string())?;
+            }
         }
         None => {
             if let Some(content) = embedded_content_webview(&app) {
@@ -2404,8 +2430,8 @@ pub async fn human_browser_navigate(app: AppHandle, url: String) -> Result<(), S
     }
 
     if embedded_content_webview(&app).is_none() {
-        // No webview yet — do not emit loading=true (nothing will emit Finished).
-        // Frontend syncActiveTabToNative / activate creates the embed.
+        // No webview yet — queue for flush on first show (do not emit loading=true).
+        EMBED_NAV_PENDING.store(true, Ordering::SeqCst);
         return Ok(());
     }
 
@@ -2419,20 +2445,16 @@ pub async fn human_browser_popout_navigate(app: AppHandle, url: String) -> Resul
 
 #[tauri::command]
 pub async fn human_browser_reload(app: AppHandle) -> Result<(), String> {
-    let url = human_browser_active_url();
-    let trimmed = url.trim();
     if embedded_content_webview(&app).is_none() {
         return Ok(());
     }
-    if trimmed.is_empty() || trimmed == "about:blank" {
-        let content = embedded_content_webview(&app)
-            .ok_or_else(|| "browser content webview not ready".to_string())?;
-        content
-            .eval("window.location.reload()")
-            .map_err(|err| err.to_string())?;
-        return Ok(());
-    }
-    navigate_embedded_url(&app, trimmed)
+    let content = embedded_content_webview(&app)
+        .ok_or_else(|| "browser content webview not ready".to_string())?;
+    content
+        .eval("window.location.reload()")
+        .map_err(|err| err.to_string())?;
+    emit_loading(&app, BrowserSurface::Embed, true);
+    Ok(())
 }
 
 #[tauri::command]

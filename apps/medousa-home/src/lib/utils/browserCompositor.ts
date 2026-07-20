@@ -271,7 +271,9 @@ export function createBrowserCompositor(
         await humanBrowserEmbedSetBounds(bounds);
         lastBounds = bounds;
       }
-      if (boundsChanged || !lastVisible) {
+      // Only show (and native flush) when becoming visible. Re-show on every bounds
+      // change was re-navigating mid-load on Windows WebView2.
+      if (!lastVisible) {
         lastBounds = bounds;
         await humanBrowserEmbedShow();
         lastVisible = true;

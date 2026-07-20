@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, untrack } from "svelte";
   import SplitPane from "$lib/components/layout/SplitPane.svelte";
   import { layout } from "$lib/stores/layout.svelte";
   import { vault } from "$lib/stores/vault.svelte";
@@ -18,16 +18,32 @@
   import { openAttachmentPath } from "$lib/utils/vaultAttachmentPicker";
   import { canPreviewAttachment } from "$lib/utils/vaultAttachments";
   import type { ExternalFileEntry } from "$lib/types/externalDesk";
-  import { shouldShowGarageWizard } from "$lib/utils/garageOnboarding";
+  import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
 
   interface Props {
     visible: boolean;
     onOpenChat: () => void;
     onOpenWork: () => void;
     onSelectCard: (id: string) => void | Promise<void>;
+    /** Hosted inside LME — hide library tabs; open notes as workspace tabs. */
+    lmeHosted?: boolean;
   }
 
-  let { visible, onOpenChat, onOpenWork, onSelectCard }: Props = $props();
+  let {
+    visible,
+    onOpenChat,
+    onOpenWork,
+    onSelectCard,
+    lmeHosted = false,
+  }: Props = $props();
+
+  async function openNote(path: string) {
+    if (lmeHosted) {
+      await lmeWorkspace.openNote(path);
+      return;
+    }
+    await vault.openNote(path);
+  }
 
   const externalHits = $derived(externalDesk.searchHitsList);
   const showVaultChrome = $derived(externalDesk.sidebarMode === "vault");
@@ -39,19 +55,36 @@
   const canLinkFiles = $derived(Boolean(vault.selectedPath));
 
   onMount(() => {
+    let cancelled = false;
     (async () => {
       await vault.refreshVaultRoots();
+      if (cancelled) return;
       await vault.refreshNotes();
+      if (cancelled) return;
       if (vault.selectedPath) {
-        await vault.openNote(vault.selectedPath);
+        if (lmeHosted) {
+          // Hydrate only — never force explorer mode (remount races yank Scripts → Notes).
+          await lmeWorkspace.openNote(vault.selectedPath, { activateMode: false });
+        } else {
+          await vault.openNote(vault.selectedPath);
+        }
       }
+      if (cancelled) return;
       if (externalDesk.sidebarMode === "files" && externalDesk.pinnedRoots.length > 0) {
         await externalDesk.refreshAllRoots();
       }
-      if (shouldShowGarageWizard() && !vault.selectedPath) {
-        vault.openGarageWizard();
-      }
+      if (cancelled) return;
     })();
+    return () => {
+      cancelled = true;
+    };
+  });
+
+  $effect(() => {
+    if (!lmeHosted || !visible) return;
+    // Subscribe to label map; refresh must not track `lmeWorkspace.tabs` (write loop).
+    void vault.labelByPathMap;
+    untrack(() => lmeWorkspace.refreshNoteTitles());
   });
 
   function handleExternalSearch(query: string) {
@@ -78,7 +111,7 @@
 <section class="flex h-full min-w-0 flex-1 {visible ? '' : 'hidden'}">
   {#if showPresentations}
     <div class="flex h-full min-w-0 flex-1 flex-col">
-      <VaultLibraryChrome showVaultChrome={false} />
+      <VaultLibraryChrome showVaultChrome={false} hideLibraryTabs={lmeHosted} />
       <ArtifactLibraryPanel {onOpenChat} />
     </div>
   {:else if showYourFiles}
@@ -96,7 +129,11 @@
           class="workshop-drawer flex h-full w-full flex-col border-r-2"
           aria-label="External files browser"
         >
-          <VaultLibraryChrome showVaultChrome={false} onSearchExternal={handleExternalSearch} />
+          <VaultLibraryChrome
+            showVaultChrome={false}
+            hideLibraryTabs={lmeHosted}
+            onSearchExternal={handleExternalSearch}
+          />
 
           {#if showFilesSearch}
             <div class="flex min-h-0 flex-1 flex-col overflow-y-auto p-2">
@@ -148,7 +185,11 @@
         class="workshop-drawer flex h-full w-full flex-col border-r-2"
         aria-label="Library browser"
       >
-        <VaultLibraryChrome showVaultChrome={true} onSearchExternal={handleExternalSearch} />
+        <VaultLibraryChrome
+          showVaultChrome={true}
+          hideLibraryTabs={lmeHosted}
+          onSearchExternal={handleExternalSearch}
+        />
 
         {#if vault.error}
           <p class="mx-2 mb-2 rounded-container-token border border-error-500/30 bg-error-500/10 px-2 py-1.5 text-xs text-error-300">
@@ -162,13 +203,13 @@
             selectedPath={vault.selectedPath}
             labelByPath={vault.labelByPathMap}
             activeSpaceFilter={vault.activeSpaceFilter}
-            onSelect={(path) => vault.openNote(path)}
+            onSelect={(path) => void openNote(path)}
             onMoveNote={(sourcePath, targetPrefix) => {
               void vault.moveNoteToFolder(sourcePath, targetPrefix);
             }}
           />
         {:else}
-          <VaultLibraryBrowseLists onSelect={(path) => void vault.openNote(path)} />
+          <VaultLibraryBrowseLists onSelect={(path) => void openNote(path)} />
         {/if}
       </aside>
     </SplitPane>

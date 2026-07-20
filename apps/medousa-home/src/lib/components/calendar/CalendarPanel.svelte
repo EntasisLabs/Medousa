@@ -1,6 +1,7 @@
 <script lang="ts">
   import { ChevronLeft, ChevronRight, Download, Plus, Upload } from "@lucide/svelte";
   import EventEditor from "$lib/components/calendar/EventEditor.svelte";
+  import ShellSidebarExpandButton from "$lib/components/layout/ShellSidebarExpandButton.svelte";
   import { registerMobileBackHandler } from "$lib/mobileNavigation";
   import { calendar, calendarDateUtils } from "$lib/stores/calendar.svelte";
   import type { CalendarEvent } from "$lib/types/calendar";
@@ -139,6 +140,7 @@
 >
   <header class="calendar-chrome">
     <div class="calendar-chrome-left">
+      <ShellSidebarExpandButton label="Show rail" />
       <h1 class="calendar-month-title">{rangeTitle}</h1>
     </div>
 
@@ -474,8 +476,11 @@
   }
 
   .calendar-chrome-left {
+    display: flex;
     min-width: 0;
     flex: 1 1 10rem;
+    align-items: center;
+    gap: 0.5rem;
   }
 
   .calendar-month-title {

@@ -267,6 +267,42 @@ export const LIQUID_REPORT_TEMPLATE = [
   "",
 ].join("\n");
 
+export const LIQUID_SLIDES_TEMPLATE = [
+  "```slides",
+  "title: Mid-2026 pitch",
+  "theme: dusk",
+  "columns: 2",
+  "",
+  "---",
+  "label: Title",
+  "layout: hero",
+  "bg: ember",
+  "",
+  "# Frontier models",
+  "One pick for Live polish",
+  "",
+  "---",
+  "label: Price story",
+  "layout: split",
+  "bg: ./shots/sky.png",
+  "",
+  "Prose wraps beside the chart…",
+  "",
+  "```chart",
+  "type: line",
+  "title: Price",
+  "legend: bottom",
+  "",
+  "| Month | Price |",
+  "| ----- | ----- |",
+  "| Jan   | 12    |",
+  "| Feb   | 18    |",
+  "| Mar   | 15    |",
+  "```",
+  "```",
+  "",
+].join("\n");
+
 export const LIQUID_CARD_TEMPLATE = [
   "```card",
   "title: Summary",
@@ -375,6 +411,197 @@ export const LIQUID_TREE_TEMPLATE = [
   "  routes/",
   "    +page.svelte",
   "README.md",
+  "```",
+  "",
+].join("\n");
+
+export const LIQUID_KANBAN_TEMPLATE = [
+  "```kanban",
+  "## Backlog",
+  "- [ ] First crumb",
+  "",
+  "## Doing",
+  "- [ ] In progress",
+  "",
+  "## Done",
+  "- [x] Shipped",
+  "```",
+  "",
+].join("\n");
+
+export const LIQUID_CAROUSEL_TEMPLATE = [
+  "```carousel",
+  "title: Picks",
+  "",
+  "---",
+  "title: Option A",
+  "subtitle: Strong all-rounder",
+  "emoji: ⭐",
+  "body: Short pitch for the first pick.",
+  "---",
+  "title: Option B",
+  "subtitle: Budget friendly",
+  "emoji: 💡",
+  "body: Short pitch for the second pick.",
+  "```",
+  "",
+].join("\n");
+
+export const LIQUID_ACTIONS_TEMPLATE = [
+  "```actions",
+  "Dig deeper | dig-deeper",
+  "Compare options | compare",
+  "```",
+  "",
+].join("\n");
+
+export const LIQUID_SECTION_TEMPLATE = [
+  "```section",
+  "title: Section",
+  "subtitle: Optional context",
+  "---",
+  "Supporting paragraph for this section.",
+  "```",
+  "",
+].join("\n");
+
+export const LIQUID_CHIPS_TEMPLATE = [
+  "```chips",
+  "- Focus | tone: accent | value: focus",
+  "Fast | tone: default",
+  "Careful | tone: warn",
+  "```",
+  "",
+].join("\n");
+
+export const LIQUID_MEDIA_TEMPLATE = [
+  "```media",
+  "src: https://example.com/image.png",
+  "alt: Diagram",
+  "caption: Replace with your image URL or vault path",
+  "ratio: 16/9",
+  "```",
+  "",
+].join("\n");
+
+export const LIQUID_CITE_TEMPLATE = [
+  "```cite",
+  "title: Source title",
+  "url: https://example.com",
+  "quote: A short excerpt from the source.",
+  "source: web",
+  "```",
+  "",
+].join("\n");
+
+export const LIQUID_COMPARE_TEMPLATE = [
+  "```compare",
+  "title: Head to head",
+  "subtitle: Two options",
+  "recommendation: Option A",
+  "",
+  "| | Option A | Option B |",
+  "| --- | --- | --- |",
+  "| Speed | Fast | Steady |",
+  "| Cost | Higher | Lower |",
+  "```",
+  "",
+].join("\n");
+
+export const LIQUID_PLAN_TEMPLATE = [
+  "```plan",
+  "title: Plan",
+  "subtitle: Simple pacing",
+  "grouping: day",
+  "",
+  "---",
+  "label: Start here",
+  "time: Day 1",
+  "emoji: 🚀",
+  "body: First move",
+  "---",
+  "label: Follow through",
+  "time: Day 2",
+  "emoji: ✅",
+  "body: Finish strong",
+  "```",
+  "",
+].join("\n");
+
+export const LIQUID_TIMELINE_TEMPLATE = [
+  "```timeline",
+  "title: Timeline",
+  "subtitle: What happened",
+  "granularity: day",
+  "",
+  "---",
+  "ts: Day 1",
+  "label: Kickoff",
+  "detail: Scoped the work",
+  "emoji: 🏁",
+  "---",
+  "ts: Day 2",
+  "label: Shipped",
+  "detail: Landed the change",
+  "emoji: ✨",
+  "```",
+  "",
+].join("\n");
+
+export const LIQUID_SHORTLIST_TEMPLATE = [
+  "```shortlist",
+  "title: Shortlist",
+  "subtitle: Top picks",
+  "criteria: fit · cost · speed",
+  "density: comfortable",
+  "",
+  "---",
+  "label: Pick A",
+  "summary: Best overall fit",
+  "score: 9.1",
+  "emoji: 🥇",
+  "---",
+  "label: Pick B",
+  "summary: Strong runner-up",
+  "score: 8.4",
+  "emoji: 🥈",
+  "```",
+  "",
+].join("\n");
+
+export const LIQUID_DECISION_TEMPLATE = [
+  "```decision",
+  "title: Which option?",
+  "subtitle: Tradeoffs",
+  "factors: speed · cost · risk",
+  "recommendation: Option A",
+  "",
+  "---",
+  "label: Option A",
+  "score: 9.0",
+  "pros: Fast | Clear path",
+  "cons: Higher cost",
+  "---",
+  "label: Option B",
+  "score: 7.5",
+  "pros: Cheaper | Familiar",
+  "cons: Slower",
+  "```",
+  "",
+].join("\n");
+
+export const LIQUID_BRIEF_TEMPLATE = [
+  "```brief",
+  "title: Brief",
+  "subtitle: One-page take",
+  "tone: research",
+  "",
+  "---",
+  "heading: Why it matters",
+  "body: Lead with the point the reader needs.",
+  "---",
+  "heading: Next step",
+  "body: What to do with this.",
   "```",
   "",
 ].join("\n");

@@ -57,7 +57,7 @@ Custom views are agent-built surfaces pinned in nav. The **environment store** (
 
 | Location | Behavior |
 |----------|----------|
-| Left nav rail (`NavSidebar.svelte`) | Custom surface icons from active preset; feed live dots |
+| Left master rail (`NavShell.svelte`) | Visible destinations or view lists; fully hideable from content headers |
 | Settings → Canvas (`SettingsCanvasSection.svelte`) | Preset switcher, pending apply/dismiss, per-surface status |
 | Mobile More → My views (`MoreHub.svelte`) | Custom surfaces from active preset |
 | `EnvironmentRenderer.svelte` | Renders custom vs builtin; `PresentationFrame` for HTML widgets |

@@ -28,7 +28,6 @@
   let container: HTMLDivElement | undefined = $state();
 
   const inherited = getLiquidContext();
-  const html = $derived(renderMarkdown(content, titleByPath));
 
   function resolveContext(): LiquidRenderContext {
     return {
@@ -36,8 +35,19 @@
       ...liquidContext,
       openLinksInWeb: liquidContext?.openLinksInWeb ?? openLinksInWeb ?? inherited.openLinksInWeb,
       titleByPath: titleByPath ?? liquidContext?.titleByPath ?? inherited.titleByPath,
+      localImagePath:
+        liquidContext?.localImagePath ?? inherited.localImagePath ?? null,
     };
   }
+
+  const html = $derived.by(() => {
+    const ctx = resolveContext();
+    return renderMarkdown(content, {
+      titleByPath: ctx.titleByPath,
+      // Nested slide/report bodies need the same vault image pipeline as preview.
+      resolveLocalImages: Boolean(ctx.localImagePath),
+    });
+  });
 
   function handleLinkClick(event: MouseEvent) {
     if (!openLinksInWeb) return;
@@ -58,11 +68,14 @@
   $effect(() => {
     html;
     if (!container) return;
+    const ctx = resolveContext();
     void hydrateMarkdownContainer(container, {
-      liquidContext: resolveContext(),
+      liquidContext: ctx,
+      localImagePath: ctx.localImagePath ?? null,
       code: true,
       mermaid: true,
       liquid: true,
+      localImages: Boolean(ctx.localImagePath),
     });
   });
 

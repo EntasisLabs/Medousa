@@ -17,6 +17,7 @@
     findShelfEntryAfterRemember,
     humanDigestLines,
   } from "$lib/utils/profileShelf";
+  import ShellSidebarExpandButton from "$lib/components/layout/ShellSidebarExpandButton.svelte";
   import { UserPlus } from "@lucide/svelte";
 
   interface Props {
@@ -133,11 +134,14 @@
   {#if !embedded}
     <header class="workshop-header shrink-0">
       <div class="flex flex-wrap items-start justify-between gap-3">
-        <div class="min-w-0">
-          <h1 class="text-base font-semibold text-surface-50">You</h1>
-          <p class="workshop-header-line mt-1">
-            Who she knows you as — feel the field, tap to focus
-          </p>
+        <div class="flex min-w-0 items-start gap-2">
+          <ShellSidebarExpandButton label="Show rail" />
+          <div class="min-w-0">
+            <h1 class="text-base font-semibold text-surface-50">You</h1>
+            <p class="workshop-header-line mt-1">
+              Who she knows you as — feel the field, tap to focus
+            </p>
+          </div>
         </div>
         <div class="flex shrink-0 items-center gap-1">
           <button

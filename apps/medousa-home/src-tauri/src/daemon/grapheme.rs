@@ -3,8 +3,8 @@ use crate::daemon::types::{
     GraphemeCompileResponse, GraphemeLifecycleResponse, GraphemeLspWorkspaceResponse,
     GraphemeModuleDetailResponse, GraphemeModuleLoadRequest, GraphemeModuleLoadResponse,
     GraphemeModuleOpsResponse, GraphemeModulesListResponse, GraphemeRunRequest, GraphemeRunResponse,
-    GraphemeScriptDetailResponse, GraphemeScriptSaveRequest, GraphemeScriptSaveResponse,
-    GraphemeScriptsListResponse,
+    GraphemeScriptDeleteResponse, GraphemeScriptDetailResponse, GraphemeScriptRenameRequest,
+    GraphemeScriptSaveRequest, GraphemeScriptSaveResponse, GraphemeScriptsListResponse,
 };
 use tauri::State;
 
@@ -117,6 +117,30 @@ pub async fn grapheme_save_script(
     request: GraphemeScriptSaveRequest,
 ) -> Result<GraphemeScriptSaveResponse, String> {
     workshop_http::post_json(&state, "/v1/grapheme/scripts", &request).await
+}
+
+#[tauri::command]
+pub async fn grapheme_delete_script(
+    state: State<'_, DaemonState>,
+    script_id: String,
+) -> Result<GraphemeScriptDeleteResponse, String> {
+    let id = urlencoding::encode(script_id.trim());
+    workshop_http::delete_json(&state, &format!("/v1/grapheme/scripts/{id}")).await
+}
+
+#[tauri::command]
+pub async fn grapheme_rename_script(
+    state: State<'_, DaemonState>,
+    script_id: String,
+    name: String,
+) -> Result<GraphemeScriptSaveResponse, String> {
+    let id = urlencoding::encode(script_id.trim());
+    workshop_http::post_json(
+        &state,
+        &format!("/v1/grapheme/scripts/{id}/rename"),
+        &GraphemeScriptRenameRequest { name },
+    )
+    .await
 }
 
 #[tauri::command]

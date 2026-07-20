@@ -11,6 +11,7 @@
     type HomePackagesCatalog,
     type PackageProgressEvent,
   } from "$lib/utils/packagesApi";
+  import McpServersPanel from "$lib/components/skills/McpServersPanel.svelte";
   import { settingsNav } from "$lib/stores/settingsNav.svelte";
   import { layout } from "$lib/stores/layout.svelte";
   import { isTauri } from "$lib/window";
@@ -125,7 +126,7 @@
     <h2 class="text-sm font-semibold text-surface-100">Packages</h2>
     <p class="workshop-faint mt-1 text-xs">
       Home already has the engine. Add what you need here — offline brain, channel adapters, CLI,
-      MCP gateway.
+      and MCP servers.
     </p>
 
     {#if loading}
@@ -227,6 +228,16 @@
         </div>
       {/if}
     {/if}
+
+    <div class="mt-10 border-t border-surface-500/30 pt-6">
+      <h3 class="settings-subsection-heading">MCP servers</h3>
+      <p class="settings-subsection-lead">
+        External tools connected through the MCP gateway — what’s live right now.
+      </p>
+      <div class="mt-4">
+        <McpServersPanel />
+      </div>
+    </div>
 
     {#if error}
       <p class="mt-4 text-xs text-warning-400">{error}</p>

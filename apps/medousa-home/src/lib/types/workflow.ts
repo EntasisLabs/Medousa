@@ -169,7 +169,7 @@ export function emptyFlowDraft(): FlowComposerDraft {
     name: "",
     goal: "",
     steps: [],
-    cron_expr: "0 9 * * *",
+    cron_expr: "",
     timezone: "UTC",
   };
 }

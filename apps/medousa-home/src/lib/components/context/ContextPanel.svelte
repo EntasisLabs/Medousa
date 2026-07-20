@@ -1,17 +1,20 @@
 <script lang="ts">
   import ContextMapMomentDetail from "$lib/components/context/ContextMapMomentDetail.svelte";
   import ContextMapView from "$lib/components/context/ContextMapView.svelte";
+  import ContextModeBar from "$lib/components/context/ContextModeBar.svelte";
   import ContextPostureDetail from "$lib/components/context/ContextPostureDetail.svelte";
   import ContextPostureList from "$lib/components/context/ContextPostureList.svelte";
   import ContextRecallDetail from "$lib/components/context/ContextRecallDetail.svelte";
   import ContextRecallList from "$lib/components/context/ContextRecallList.svelte";
   import ContextThreadsDetail from "$lib/components/context/ContextThreadsDetail.svelte";
   import ContextThreadsList from "$lib/components/context/ContextThreadsList.svelte";
+  import ShellSidebarExpandButton from "$lib/components/layout/ShellSidebarExpandButton.svelte";
   import { chat } from "$lib/stores/chat.svelte";
   import { contextPosture } from "$lib/stores/contextPosture.svelte";
+  import { contextShell } from "$lib/stores/contextShell.svelte";
   import { contextThreads } from "$lib/stores/contextThreads.svelte";
   import { identity } from "$lib/stores/identity.svelte";
-  import { CONTEXT_TABS, type ContextTabId } from "$lib/types/context";
+  import { CONTEXT_TABS } from "$lib/types/context";
   import {
     buildContextRecallEntries,
     filterContextRecallEntries,
@@ -41,13 +44,15 @@
 
   let { visible, mobile = false, embedded = false, onOpenChat }: Props = $props();
 
-  let activeTab = $state<ContextTabId>("recall");
-  let search = $state("");
-  let threadSessionFilter = $state<string | null>(null);
-  let selectedRecallId = $state<string | null>(null);
-  let selectedThreadId = $state<string | null>(null);
-  let selectedPostureId = $state<string | null>(null);
-  let selectedMapNodeId = $state<string | null>(null);
+  /** Desktop: list + icon modes live in the master rail. */
+  const shellList = $derived(!mobile && !embedded);
+  const activeTab = $derived(contextShell.activeTab);
+  const search = $derived(contextShell.search);
+  const threadSessionFilter = $derived(contextShell.threadSessionFilter);
+  const selectedRecallId = $derived(contextShell.selectedRecallId);
+  const selectedThreadId = $derived(contextShell.selectedThreadId);
+  const selectedPostureId = $derived(contextShell.selectedPostureId);
+  const selectedMapNodeId = $derived(contextShell.selectedMapNodeId);
   let mobileDetailOpen = $state(false);
 
   const sessionLabels = $derived(
@@ -169,6 +174,16 @@
   );
 
   $effect(() => {
+    if (!visible) return;
+    const focusId = contextThreads.railFocusSyncKey;
+    if (!focusId) return;
+    contextShell.activeTab = "threads";
+    contextShell.selectedThreadId = focusId;
+    mobileDetailOpen = mobile;
+    contextThreads.consumeRailFocus();
+  });
+
+  $effect(() => {
     if (!visible || activeTab !== "recall") return;
     void identity.refresh();
   });
@@ -207,7 +222,7 @@
   $effect(() => {
     if (activeTab !== "recall") return;
     if (filteredRecallEntries.length === 0) {
-      selectedRecallId = null;
+      contextShell.selectedRecallId = null;
       return;
     }
     if (
@@ -217,14 +232,14 @@
       return;
     }
     if (!mobile) {
-      selectedRecallId = filteredRecallEntries[0]?.id ?? null;
+      contextShell.selectedRecallId = filteredRecallEntries[0]?.id ?? null;
     }
   });
 
   $effect(() => {
     if (activeTab !== "threads") return;
     if (filteredThreadEntries.length === 0) {
-      selectedThreadId = null;
+      contextShell.selectedThreadId = null;
       contextThreads.clearDetail();
       return;
     }
@@ -236,7 +251,7 @@
     }
     if (!mobile) {
       const first = filteredThreadEntries[0]?.id ?? null;
-      selectedThreadId = first;
+      contextShell.selectedThreadId = first;
       if (first) {
         void contextThreads.loadDetail(first);
       }
@@ -251,7 +266,7 @@
   $effect(() => {
     if (activeTab !== "posture") return;
     if (filteredPostureEntries.length === 0) {
-      selectedPostureId = null;
+      contextShell.selectedPostureId = null;
       return;
     }
     if (
@@ -261,33 +276,33 @@
       return;
     }
     if (!mobile) {
-      selectedPostureId = filteredPostureEntries[0]?.id ?? null;
+      contextShell.selectedPostureId = filteredPostureEntries[0]?.id ?? null;
     }
   });
 
   function selectRecall(id: string) {
-    selectedRecallId = id;
+    contextShell.selectRecall(id);
     if (mobile) mobileDetailOpen = true;
   }
 
   function selectThread(id: string) {
-    selectedThreadId = id;
+    contextShell.selectThread(id);
     if (mobile) mobileDetailOpen = true;
   }
 
   function selectPosture(id: string) {
-    selectedPostureId = id;
+    contextShell.selectPosture(id);
     if (mobile) mobileDetailOpen = true;
   }
 
   function clearMapFocus() {
-    selectedMapNodeId = null;
+    contextShell.selectMapNode(null);
     contextThreads.clearDetail();
     mobileDetailOpen = false;
   }
 
   function focusMapNode(node: ContextMapNode) {
-    selectedMapNodeId = node.id;
+    contextShell.selectMapNode(node.id);
     if (node.kind === "thread" && node.syncKey) {
       void contextThreads.loadDetail(node.syncKey);
       if (mobile) mobileDetailOpen = true;
@@ -296,27 +311,9 @@
     contextThreads.clearDetail();
   }
 
-  function setTab(tab: ContextTabId) {
-    const meta = CONTEXT_TABS.find((entry) => entry.id === tab);
-    if (!meta?.available) return;
-    activeTab = tab;
-    search = "";
-    selectedRecallId = null;
-    selectedThreadId = null;
-    selectedPostureId = null;
-    selectedMapNodeId = null;
-    mobileDetailOpen = false;
-    if (tab !== "threads") {
-      threadSessionFilter = null;
-    }
-    contextThreads.clearDetail();
-  }
-
   function clearThreadSessionFilter() {
-    threadSessionFilter = null;
-    selectedThreadId = null;
+    contextShell.clearThreadSessionFilter();
     mobileDetailOpen = false;
-    contextThreads.clearDetail();
     if (activeTab === "threads" && visible) {
       void contextThreads.refresh();
     }
@@ -325,14 +322,8 @@
   function openThreadsForSession(sessionId: string, syncKey?: string) {
     const meta = CONTEXT_TABS.find((entry) => entry.id === "threads");
     if (!meta?.available) return;
-    activeTab = "threads";
-    threadSessionFilter = sessionId;
-    search = "";
-    selectedRecallId = null;
-    selectedPostureId = null;
-    selectedThreadId = syncKey ?? null;
+    contextShell.openThreadsForSession(sessionId, syncKey);
     mobileDetailOpen = Boolean(syncKey && mobile);
-    contextThreads.clearDetail();
     void contextThreads.refresh({ sessionId }).then(() => {
       if (syncKey) {
         void contextThreads.loadDetail(syncKey);
@@ -343,36 +334,30 @@
   function openPostureForSession(sessionId: string) {
     const meta = CONTEXT_TABS.find((entry) => entry.id === "posture");
     if (!meta?.available) return;
-    activeTab = "posture";
-    search = "";
-    threadSessionFilter = null;
-    selectedRecallId = null;
-    selectedThreadId = null;
-    mobileDetailOpen = false;
-    contextThreads.clearDetail();
+    contextShell.openPostureForSession(sessionId);
     const entry =
       postureEntries.find((candidate) => candidate.sessionId === sessionId) ??
       filteredPostureEntries.find((candidate) => candidate.sessionId === sessionId);
-    selectedPostureId = entry?.id ?? null;
+    contextShell.selectedPostureId = entry?.id ?? null;
     if (entry && mobile) {
       mobileDetailOpen = true;
     } else if (!entry) {
-      search = sessionId;
+      contextShell.search = sessionId;
     }
   }
 
   function searchThreads(query: string) {
     const meta = CONTEXT_TABS.find((entry) => entry.id === "threads");
     if (!meta?.available) return;
-    activeTab = "threads";
-    threadSessionFilter = null;
-    search = query.trim();
-    selectedRecallId = null;
-    selectedPostureId = null;
-    selectedThreadId = null;
+    contextShell.setTab("threads");
+    contextShell.threadSessionFilter = null;
+    contextShell.search = query.trim();
+    contextShell.selectedRecallId = null;
+    contextShell.selectedPostureId = null;
+    contextShell.selectedThreadId = null;
     mobileDetailOpen = false;
     contextThreads.clearDetail();
-    void contextThreads.refresh(search ? { q: search } : undefined);
+    void contextThreads.refresh(contextShell.search ? { q: contextShell.search } : undefined);
   }
 
   function openChatForSession(sessionId: string) {
@@ -424,11 +409,14 @@
     <header class="{embedded ? 'border-b border-surface-500/40 px-4 py-3' : 'workshop-header'}">
       {#if !embedded}
         <div class="flex flex-wrap items-start justify-between gap-3">
-          <div class="min-w-0">
-            <h1 class="text-base font-semibold text-surface-50">Context</h1>
-            <p class="workshop-header-line mt-1">
-              The shelf — what happened, what she remembers, how you showed up
-            </p>
+          <div class="flex min-w-0 items-start gap-2">
+            <ShellSidebarExpandButton label="Show rail" />
+            <div class="min-w-0">
+              <h1 class="text-base font-semibold text-surface-50">Context</h1>
+              <p class="workshop-header-line mt-1">
+                The shelf — what happened, what she remembers, how you showed up
+              </p>
+            </div>
           </div>
           {#if showRefresh}
             <button
@@ -454,48 +442,41 @@
         </div>
       {/if}
 
-      <div class="workshop-tabs {embedded ? 'mt-0' : 'mt-3'}">
-        {#each CONTEXT_TABS as tab (tab.id)}
-          <button
-            type="button"
-            class="workshop-tab {activeTab === tab.id ? 'workshop-tab-active' : ''} {!tab.available
-              ? 'opacity-50'
-              : ''}"
-            disabled={!tab.available}
-            title={tab.available ? tab.hint : `${tab.hint} — coming soon`}
-            onclick={() => setTab(tab.id)}
-          >
-            {tab.label}
-          </button>
-        {/each}
-      </div>
-
-      {#if showRefresh && (!mobile || !mobileDetailOpen)}
-        <label class="mt-3 block">
-          <span class="sr-only">{searchPlaceholder}</span>
-          <input
-            class="input w-full {embedded ? '' : 'max-w-lg'} text-sm"
-            type="search"
-            placeholder={searchPlaceholder}
-            bind:value={search}
-          />
-        </label>
-      {/if}
-
-      {#if activeTab === "threads" && threadSessionFilter && (!mobile || !mobileDetailOpen)}
-        <div class="mt-2 flex flex-wrap items-center gap-2">
-          <span class="workshop-faint text-[11px]">Filtered to session</span>
-          <button
-            type="button"
-            class="vault-filter-chip vault-filter-chip-active inline-flex items-center gap-1"
-            onclick={clearThreadSessionFilter}
-          >
-            <span class="max-w-[14rem] truncate">
-              {sessionLabels[threadSessionFilter] ?? threadSessionFilter}
-            </span>
-            <X size={12} strokeWidth={2} />
-          </button>
+      {#if !shellList}
+        <div class="{embedded ? 'mt-0' : 'mt-3'}">
+          <ContextModeBar />
         </div>
+
+        {#if showRefresh && (!mobile || !mobileDetailOpen)}
+          <label class="mt-3 block">
+            <span class="sr-only">{searchPlaceholder}</span>
+            <input
+              class="input w-full {embedded ? '' : 'max-w-lg'} text-sm"
+              type="search"
+              placeholder={searchPlaceholder}
+              value={contextShell.search}
+              oninput={(event) => {
+                contextShell.search = (event.currentTarget as HTMLInputElement).value;
+              }}
+            />
+          </label>
+        {/if}
+
+        {#if activeTab === "threads" && threadSessionFilter && (!mobile || !mobileDetailOpen)}
+          <div class="mt-2 flex flex-wrap items-center gap-2">
+            <span class="workshop-faint text-[11px]">Filtered to session</span>
+            <button
+              type="button"
+              class="vault-filter-chip vault-filter-chip-active inline-flex items-center gap-1"
+              onclick={clearThreadSessionFilter}
+            >
+              <span class="max-w-[14rem] truncate">
+                {sessionLabels[threadSessionFilter] ?? threadSessionFilter}
+              </span>
+              <X size={12} strokeWidth={2} />
+            </button>
+          </div>
+        {/if}
       {/if}
     </header>
   {:else if mobile && mobileDetailOpen}
@@ -516,7 +497,7 @@
 
   {#if activeTab === "recall"}
     <div class="flex min-h-0 flex-1 overflow-hidden">
-      {#if !mobile || !mobileDetailOpen}
+      {#if !shellList && (!mobile || !mobileDetailOpen)}
         <aside
           class="workshop-list-pane mobile-you-scroll min-w-0 shrink-0 overflow-y-auto px-3 py-3 {mobile
             ? 'w-full'
@@ -533,9 +514,10 @@
         </aside>
       {/if}
 
-      {#if !mobile || mobileDetailOpen}
+      {#if shellList || !mobile || mobileDetailOpen}
         <div
-          class="workshop-detail-pane mobile-you-scroll min-w-0 flex-1 overflow-y-auto px-4 py-4 {mobile
+          class="workshop-detail-pane mobile-you-scroll min-w-0 flex-1 overflow-y-auto px-4 py-4 {mobile ||
+          shellList
             ? ''
             : 'border-l border-surface-500/40'}"
         >
@@ -552,7 +534,7 @@
     </div>
   {:else if activeTab === "threads"}
     <div class="flex min-h-0 flex-1 overflow-hidden">
-      {#if !mobile || !mobileDetailOpen}
+      {#if !shellList && (!mobile || !mobileDetailOpen)}
         <aside
           class="workshop-list-pane mobile-you-scroll min-w-0 shrink-0 overflow-y-auto px-3 py-3 {mobile
             ? 'w-full'
@@ -570,9 +552,10 @@
         </aside>
       {/if}
 
-      {#if !mobile || mobileDetailOpen}
+      {#if shellList || !mobile || mobileDetailOpen}
         <div
-          class="workshop-detail-pane mobile-you-scroll min-w-0 flex-1 overflow-y-auto px-4 py-4 {mobile
+          class="workshop-detail-pane mobile-you-scroll min-w-0 flex-1 overflow-y-auto px-4 py-4 {mobile ||
+          shellList
             ? ''
             : 'border-l border-surface-500/40'}"
         >
@@ -599,7 +582,7 @@
     </div>
   {:else if activeTab === "posture"}
     <div class="flex min-h-0 flex-1 overflow-hidden">
-      {#if !mobile || !mobileDetailOpen}
+      {#if !shellList && (!mobile || !mobileDetailOpen)}
         <aside
           class="workshop-list-pane mobile-you-scroll min-w-0 shrink-0 overflow-y-auto px-3 py-3 {mobile
             ? 'w-full'
@@ -616,9 +599,10 @@
         </aside>
       {/if}
 
-      {#if !mobile || mobileDetailOpen}
+      {#if shellList || !mobile || mobileDetailOpen}
         <div
-          class="workshop-detail-pane mobile-you-scroll min-w-0 flex-1 overflow-y-auto px-4 py-4 {mobile
+          class="workshop-detail-pane mobile-you-scroll min-w-0 flex-1 overflow-y-auto px-4 py-4 {mobile ||
+          shellList
             ? ''
             : 'border-l border-surface-500/40'}"
         >

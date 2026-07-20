@@ -1,5 +1,6 @@
 <script lang="ts">
   import EmptyState from "$lib/components/ui/EmptyState.svelte";
+  import ShellSidebarExpandButton from "$lib/components/layout/ShellSidebarExpandButton.svelte";
   import WorkManifestCard from "$lib/components/work/WorkManifestCard.svelte";
   import { chat } from "$lib/stores/chat.svelte";
   import { workspace } from "$lib/stores/workspace.svelte";
@@ -37,17 +38,20 @@
 
 <section class="work-hub-stage">
   <header class="work-hub-stage-header">
-    <div>
-      <h1 class="text-sm font-semibold text-surface-50">Work</h1>
-      <p class="mt-0.5 text-[11px] text-surface-500">
-        {#if living.length === 1}
-          1 in motion
-        {:else if living.length > 1}
-          {living.length} in motion
-        {:else}
-          Nothing in motion
-        {/if}
-      </p>
+    <div class="flex min-w-0 items-start gap-2">
+      <ShellSidebarExpandButton label="Show rail" />
+      <div class="min-w-0">
+        <h1 class="text-sm font-semibold text-surface-50">Work</h1>
+        <p class="mt-0.5 text-[11px] text-surface-500">
+          {#if living.length === 1}
+            1 in motion
+          {:else if living.length > 1}
+            {living.length} in motion
+          {:else}
+            Nothing in motion
+          {/if}
+        </p>
+      </div>
     </div>
   </header>
 

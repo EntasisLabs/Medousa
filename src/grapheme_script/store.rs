@@ -174,6 +174,46 @@ impl GraphemeScriptStore {
         self.persist_index()?;
         Ok(entry)
     }
+
+    pub fn delete_script(&self, id: &str) -> Result<GraphemeScriptEntry> {
+        let id = id.trim();
+        if id.is_empty() {
+            bail!("script_id is required");
+        }
+        let entry = self
+            .get(id)
+            .ok_or_else(|| anyhow::anyhow!("grapheme script not found: {id}"))?;
+
+        let absolute = Self::root_dir().join(&entry.body_path);
+        if absolute.exists() {
+            ensure_within_root(&Self::root_dir(), &absolute)?;
+            fs::remove_file(&absolute)
+                .with_context(|| format!("delete script body {}", absolute.display()))?;
+        }
+
+        self.index
+            .write()
+            .expect("grapheme script index")
+            .remove(id);
+        self.persist_index()?;
+        Ok(entry)
+    }
+
+    pub fn rename_script(&self, id: &str, name: &str) -> Result<GraphemeScriptEntry> {
+        let entry = self
+            .get(id.trim())
+            .ok_or_else(|| anyhow::anyhow!("grapheme script not found: {id}"))?;
+        let body = self.read_body(&entry)?;
+        self.save_script(
+            Some(&entry.id),
+            name,
+            &body,
+            entry.modules,
+            entry.tags,
+            entry.intent,
+            entry.source_session_id,
+        )
+    }
 }
 
 fn normalize_tokens(values: Vec<String>) -> Vec<String> {

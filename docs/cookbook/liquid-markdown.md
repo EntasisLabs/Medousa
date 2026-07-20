@@ -8,14 +8,14 @@ Paste-first UI blocks for **chat** and **vault** notes. The client turns fenced 
 |---------|----------|
 | Chat | Hydrated via `MarkdownContent` |
 | Vault preview | Same hydrate pipeline (charts, cards, Mermaid, code) |
-| Vault slash (`/`) | Insert starters: Chart, Card, Liquid callout, Dashboard, Report, Tabs, Steps, Accordion, Code snippet, File tree |
+| Vault slash (`/`) | Insert starters for the full Liquid catalog: Callout, Card, Carousel, Actions, Section, Chips, Media, Citation, Compare, Plan, Timeline, Shortlist, Decision, Brief, Chart, Dashboard, Report, Slides, Tabs, Steps, Accordion, Code, File tree, Mini board — plus embed / TOC / query view / kanban board / table |
 | PDF export | Hydrates then captures (charts render as painted DOM) |
 
 Live gallery (dev): `/dev/liquid` in medousa-home.
 
 ## Fence catalog
 
-Supported langs: `card`, `carousel`, `actions`, `callout`, `section`, `chips`, `media`, `cite`, `compare`, `plan`, `timeline`, `shortlist`, `decision`, `brief`, `dashboard`, `chart`, `report`, `tabs`, `steps`, `accordion`, `code`, `tree`, plus `mermaid` and `{{icon:name}}`.
+Supported langs: `card`, `carousel`, `actions`, `callout`, `section`, `chips`, `media`, `cite`, `compare`, `plan`, `timeline`, `shortlist`, `decision`, `brief`, `dashboard`, `chart`, `report`, `slides`, `tabs`, `steps`, `accordion`, `code`, `tree`, plus `mermaid` and `{{icon:name}}`.
 
 Agents on UI-capable clients get recipes from `[MEDOUSA_PRESENTATION]` and `cognition_environment_wiki(topic=ui_scene|scene_vs_html)`.
 
@@ -140,6 +140,81 @@ More prose after the figures.
 
 - **KV:** `title`, `subtitle`, `columns` (`1`|`2`|`3`, default `2`)
 - **Body:** markdown after the preamble — nested ` ```chart ` fences hydrate innermost-first; prose spans full width, consecutive chart embeds sit in the column grid
+
+## Slides schema
+
+16:9 deck frames with labeled sections. Prefer a dedicated cookbook for atmosphere, deck notes, and export: **[Vault slides](vault-slides.md)**.
+
+````md
+```slides
+title: Mid-2026 pitch
+theme: dusk
+columns: 2
+
+---
+label: Title
+layout: hero
+bg: ember
+
+# Frontier models
+One pick for Live polish
+
+---
+label: Price story
+layout: split
+bg: ./shots/sky.png
+
+Prose wraps beside the chart…
+
+```chart
+type: line
+title: Price
+legend: bottom
+
+| Month | Price |
+| ----- | ----- |
+| Jan   | 12    |
+| Feb   | 18    |
+```
+```
+````
+
+- **Deck KV:** `title`, `theme` (`paper`|`dusk`|`ink`|`mist`|`ember`), `columns` (`1`|`2`|`3`)
+- **Section KV:** `label`, `layout` (`hero`|`split`|`stack`), optional `bg` (wash id or image path), optional `scrim` (`none`|`dark`|`light`; **default `none`** on images)
+- **`split`:** prose and figures share the column grid; **`report`-style full-bleed prose** is for ` ```report `, not slide split
+- **Whole-note decks:** `kind: slides` + `medousa-deck: basic` — see [vault-slides.md](vault-slides.md)
+
+## Media schema
+
+Inline image figure (PNG/JPEG/GIF/WebP/SVG). Vault-relative `src` resolves like markdown `![](./…)` — not as a raw browser URL.
+
+````md
+```media
+src: ./shots/architecture.svg
+alt: System diagram
+caption: Mid-2026 topology
+ratio: 16/9
+```
+````
+
+- **KV:** `src` (required), optional `alt`, `caption`, `ratio` (CSS aspect-ratio, e.g. `16/9`)
+- Prefer ` ```media ` when you want a caption/ratio; use `![](./file.png)` for a quick drop-in
+
+## Image size (Obsidian-style)
+
+Resize markdown images on the fly with a pipe size token — width in px, or `WxH`:
+
+```md
+![](./shots/logo.png|320)
+![](./shots/diagram.png|480x270)
+![Caption|200](./shots/icon.png)
+![[assets/photo.jpg|400]]
+```
+
+- `|320` sets width; height stays auto (scales with aspect ratio)
+- `|480x270` sets both width and height
+- Works for remote URLs, vault-relative paths, and wiki image embeds (`![[…]]`)
+- Images still cap at `max-width: 100%` so they don't overflow narrow columns
 
 ## Tabs / steps / accordion
 

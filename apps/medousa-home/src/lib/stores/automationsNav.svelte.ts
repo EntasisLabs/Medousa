@@ -5,6 +5,12 @@ export class AutomationsNavStore {
 
   openSection(section: AutomationsSection) {
     this.pendingSection = section;
+    void import("$lib/stores/lmeWorkspace.svelte").then(({ lmeWorkspace }) => {
+      lmeWorkspace.openAutomationsSection(section);
+    });
+    void import("$lib/stores/layout.svelte").then(({ layout }) => {
+      layout.navigateDesktop("library", { bump: true });
+    });
   }
 
   consumeSection(): AutomationsSection | null {

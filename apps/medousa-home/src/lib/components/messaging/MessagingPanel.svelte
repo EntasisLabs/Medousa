@@ -1,7 +1,9 @@
 <script lang="ts">
   import MessagingChannelDetail from "$lib/components/messaging/MessagingChannelDetail.svelte";
   import MessagingChannelList from "$lib/components/messaging/MessagingChannelList.svelte";
+  import ShellSidebarExpandButton from "$lib/components/layout/ShellSidebarExpandButton.svelte";
   import { messaging } from "$lib/stores/messaging.svelte";
+  import { messagingShell } from "$lib/stores/messagingShell.svelte";
   import type { DaemonHealth } from "$lib/daemon";
   import {
     formatNumberCsv,
@@ -22,9 +24,10 @@
 
   let { visible, health, mobile = false, embedded = false }: Props = $props();
 
-  let search = $state("");
-  let selectedChannel = $state<ChannelId>("telegram");
   let mobileDetailOpen = $state(false);
+  const shellList = $derived(!mobile && !embedded);
+  const search = $derived(messagingShell.search);
+  const selectedChannel = $derived(messagingShell.selectedChannel);
 
   let telegramAllowedUsers = $state("");
   let telegramHeartbeatChats = $state("");
@@ -93,11 +96,15 @@
   });
 
   function selectChannel(id: ChannelId) {
-    selectedChannel = id;
+    messagingShell.selectChannel(id);
     messaging.saveMessage = null;
     if (mobile) {
       mobileDetailOpen = true;
     }
+  }
+
+  function setSearch(value: string) {
+    messagingShell.search = value;
   }
 
   async function saveSelected() {
@@ -157,11 +164,14 @@
   {#if !embedded}
     <header class="workshop-header">
       <div class="flex flex-wrap items-start justify-between gap-3">
-        <div class="min-w-0">
-          <h1 class="text-base font-semibold text-surface-50">Messaging</h1>
-          <p class="workshop-header-line mt-1">
-            Doors into the workshop — open one, then tell her who may walk through.
-          </p>
+        <div class="flex min-w-0 items-start gap-2">
+          <ShellSidebarExpandButton label="Show channels" />
+          <div class="min-w-0">
+            <h1 class="text-base font-semibold text-surface-50">Messaging</h1>
+            <p class="workshop-header-line mt-1">
+              Doors into the workshop — open one, then tell her who may walk through.
+            </p>
+          </div>
         </div>
         <button
           type="button"
@@ -172,14 +182,15 @@
         </button>
       </div>
 
-      {#if !mobile || !mobileDetailOpen}
+      {#if (!mobile || !mobileDetailOpen) && !shellList}
         <label class="mt-3 block max-w-md">
           <span class="sr-only">Search messaging</span>
           <input
             class="input w-full text-sm"
             type="search"
             placeholder="Search channels…"
-            bind:value={search}
+            value={search}
+            oninput={(event) => setSearch((event.currentTarget as HTMLInputElement).value)}
           />
         </label>
       {/if}
@@ -214,14 +225,15 @@
           class="input w-full text-sm"
           type="search"
           placeholder="Search messaging…"
-          bind:value={search}
+          value={search}
+          oninput={(event) => setSearch((event.currentTarget as HTMLInputElement).value)}
         />
       </div>
     {/if}
   {/if}
 
   <div class="flex min-h-0 flex-1 overflow-hidden">
-    {#if !mobile || !mobileDetailOpen}
+    {#if (!shellList && !mobile) || (mobile && !mobileDetailOpen)}
       <aside
         class="workshop-list-pane mobile-you-scroll min-w-0 shrink-0 overflow-y-auto px-3 py-3 {mobile
           ? 'w-full'

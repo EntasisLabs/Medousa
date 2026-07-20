@@ -38,7 +38,7 @@
   }
 </script>
 
-<div class="artifact-library-list flex min-h-0 flex-1 flex-col overflow-y-auto p-2">
+<div class="artifact-library-list flex min-h-0 flex-1 flex-col overflow-y-auto px-1.5 py-1">
   {#if artifacts.length === 0}
     <p class="px-2 py-6 text-sm text-surface-500">No presentations yet.</p>
   {:else}

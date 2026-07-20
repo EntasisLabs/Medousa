@@ -6,7 +6,9 @@
  * owns the component vocabulary.
  */
 
-import { escapeAttr } from "./escape";
+import { parseKanbanColumnsFromBody } from "$lib/utils/markdownKanban";
+import { parseSlidesDeck } from "$lib/utils/markdownSlides";
+import { escapeAttr, escapeHtml } from "./escape";
 
 export const LIQUID_FENCE_LANGS = new Set([
   "card",
@@ -28,11 +30,13 @@ export const LIQUID_FENCE_LANGS = new Set([
   "dashboard",
   "chart",
   "report",
+  "slides",
   "tabs",
   "steps",
   "accordion",
   "code",
   "tree",
+  "kanban",
 ]);
 
 const CALLOUT_TONES = new Set(["note", "warn", "error", "success"]);
@@ -91,6 +95,7 @@ export type LiquidEmbedKind =
   | "dashboard"
   | "chart"
   | "report"
+  | "slides"
   | "tabs"
   | "steps"
   | "accordion"
@@ -302,6 +307,30 @@ export interface LiquidReportProps {
   columns?: string;
   /** Markdown body (may include hydrated chart placeholders). */
   body: string;
+}
+
+export type LiquidSlideLayout = "hero" | "split" | "stack";
+export type LiquidSlideScrim = "dark" | "light" | "none";
+
+export interface LiquidSlideItem {
+  id: string;
+  label: string;
+  layout?: LiquidSlideLayout;
+  body: string;
+  /** Named wash or image path/URL. */
+  bg?: string;
+  scrim?: LiquidSlideScrim;
+}
+
+/** Slides organism — labeled deck frames with nested figure-grid bodies. */
+export interface LiquidSlidesProps {
+  title?: string;
+  theme?: string;
+  columns?: string;
+  slides: LiquidSlideItem[];
+  /** Preview/export: render every slide (page-break between). */
+  showAll?: boolean;
+  exportPaper?: boolean;
 }
 
 /**
@@ -2344,6 +2373,28 @@ function replaceLiquidFenceMatch(
     return `\n${placeholder("report", report)}\n`;
   }
 
+  if (lang === "slides") {
+    const deck = parseSlidesDeck(body);
+    if (!deck) return match;
+    const slides: LiquidSlidesProps = {
+      slides: deck.slides.map((s) => {
+        const item: LiquidSlideItem = {
+          id: s.id,
+          label: s.label,
+          layout: s.layout,
+          body: s.body,
+        };
+        if (s.bg) item.bg = s.bg;
+        if (s.scrim) item.scrim = s.scrim;
+        return item;
+      }),
+      columns: deck.columns,
+      theme: deck.theme,
+    };
+    if (deck.title) slides.title = deck.title;
+    return `\n${placeholder("slides", slides)}\n`;
+  }
+
   if (lang === "chart") {
     const chart = parseChartBody(body);
     if (!chart) return match;
@@ -2373,6 +2424,22 @@ function replaceLiquidFenceMatch(
     const tree = parseTreeBody(body);
     if (!tree) return match;
     return `\n${placeholder("tree", tree)}\n`;
+  }
+
+  if (lang === "kanban") {
+    const columns = parseKanbanColumnsFromBody(body);
+    const cols = columns
+      .map((column) => {
+        const cards = column.cards
+          .map(
+            (card) =>
+              `<div class="liquid-mini-kanban__card">${escapeHtml(card.text || "Card")}</div>`,
+          )
+          .join("");
+        return `<div class="liquid-mini-kanban__column"><p class="liquid-mini-kanban__column-title">${escapeHtml(column.title)}</p><div class="liquid-mini-kanban__cards">${cards}</div></div>`;
+      })
+      .join("");
+    return `\n<div class="liquid-mini-kanban" data-liquid-static="kanban"><p class="liquid-mini-kanban__label">Board</p><div class="liquid-mini-kanban__board">${cols}</div></div>\n`;
   }
 
   return match;

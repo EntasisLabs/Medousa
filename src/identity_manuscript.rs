@@ -798,6 +798,87 @@ pub fn install_manuscript(source: &Path, scope: ManuscriptScope) -> Result<PathB
     Ok(target)
 }
 
+fn slugify_manuscript_id(name: &str) -> String {
+    let mut out = String::new();
+    for ch in name.trim().chars() {
+        let lower = ch.to_ascii_lowercase();
+        if lower.is_ascii_alphanumeric() {
+            out.push(lower);
+        } else if (lower == '-' || lower == '_' || lower.is_whitespace()) && !out.ends_with('-') {
+            out.push('-');
+        }
+    }
+    let trimmed = out.trim_matches('-').to_string();
+    if trimmed.is_empty() {
+        "agent".to_string()
+    } else {
+        trimmed.chars().take(48).collect()
+    }
+}
+
+/// Create a blank IdentityManuscript YAML under user/project manuscripts.
+pub fn create_manuscript(
+    name: &str,
+    description: Option<&str>,
+    scope: ManuscriptScope,
+    task_template: Option<&str>,
+) -> Result<(String, PathBuf)> {
+    let name = name.trim();
+    if name.is_empty() {
+        bail!("name is required");
+    }
+
+    let target_dir = match scope {
+        ManuscriptScope::Project => project_manuscripts_dir(),
+        ManuscriptScope::User => user_manuscripts_dir(),
+    };
+    std::fs::create_dir_all(&target_dir)
+        .with_context(|| format!("create manuscript dir {}", target_dir.display()))?;
+
+    let base_id = slugify_manuscript_id(name);
+    let mut id = base_id.clone();
+    let mut suffix = 2u32;
+    while resolve_manuscript_path(&id).is_ok() {
+        id = format!("{base_id}-{suffix}");
+        suffix += 1;
+        if suffix > 999 {
+            bail!("could not allocate a unique manuscript id");
+        }
+    }
+
+    let target = target_dir.join(format!("{id}.yaml"));
+    let file = IdentityManuscriptFile {
+        api_version: MANUSCRIPT_API_VERSION.to_string(),
+        kind: MANUSCRIPT_KIND.to_string(),
+        metadata: ManuscriptMetadata {
+            id: id.clone(),
+            name: name.to_string(),
+            description: description
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(|value| value.to_string()),
+            extends: None,
+        },
+        spec: ManuscriptSpec {
+            persona: ManuscriptPersonaSpec {
+                display_name: Some(name.to_string()),
+                voice_appendix: None,
+                soul_md: None,
+            },
+            prompts: ManuscriptPromptsSpec {
+                system_appendix_sttp: None,
+                task_template: task_template
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .map(|value| value.to_string()),
+            },
+            ..ManuscriptSpec::default()
+        },
+    };
+    save_manuscript_file(&target, &file)?;
+    Ok((id, target))
+}
+
 fn resolve_voice_appendix(base_dir: &Path, persona: &ManuscriptPersonaSpec) -> Result<Option<String>> {
     let inline = persona
         .voice_appendix
@@ -943,6 +1024,31 @@ pub fn apply_editor_lite_update(
     request: &crate::daemon_api::UpdateManuscriptRequest,
 ) -> Result<ManuscriptContext> {
     let (mut file, path) = load_manuscript(id)?;
+
+    if let Some(name) = request.name.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
+        file.metadata.name = name.to_string();
+    }
+
+    if request.clear_description == Some(true) {
+        file.metadata.description = None;
+    } else if let Some(description) = request.description.as_deref() {
+        file.metadata.description = Some(description.trim().to_string())
+            .filter(|value| !value.is_empty());
+    }
+
+    if request.clear_display_name == Some(true) {
+        file.spec.persona.display_name = None;
+    } else if let Some(display_name) = request.display_name.as_deref() {
+        file.spec.persona.display_name = Some(display_name.trim().to_string())
+            .filter(|value| !value.is_empty());
+    }
+
+    if request.clear_voice_appendix == Some(true) {
+        file.spec.persona.voice_appendix = None;
+    } else if let Some(voice_appendix) = request.voice_appendix.as_deref() {
+        file.spec.persona.voice_appendix = Some(voice_appendix.trim().to_string())
+            .filter(|value| !value.is_empty());
+    }
 
     if request.clear_task_template == Some(true) {
         file.spec.prompts.task_template = None;

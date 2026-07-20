@@ -11,9 +11,16 @@
     Zap,
   } from "@lucide/svelte";
   import ScriptEditorTabStrip from "$lib/components/automations/ScriptEditorTabStrip.svelte";
+  import GraphemeModuleLibraryPicker from "$lib/components/grapheme/GraphemeModuleLibraryPicker.svelte";
   import { promoteScriptToFlow } from "$lib/grapheme/graphemeFlowBridge";
+  import {
+    closeActiveScriptTab,
+    isPlainTextEditingTarget,
+  } from "$lib/grapheme/scriptWorkbenchActions";
   import { compileGraphemeSource, saveGraphemeScript } from "$lib/daemon";
+  import { formatShortcut } from "$lib/platform";
   import { graphemeScriptEditor } from "$lib/stores/graphemeScriptEditor.svelte";
+  import { scriptRenameUi } from "$lib/stores/scriptRenameUi.svelte";
   import { workshop } from "$lib/stores/workshop.svelte";
 
   interface Props {
@@ -25,6 +32,8 @@
     onToggleConsole: () => void;
     onToggleChat: () => void;
     onOpenOutput?: () => void;
+    /** When true, document tabs live on the LME strip above. */
+    hideTabStrip?: boolean;
   }
 
   let {
@@ -36,6 +45,7 @@
     onToggleConsole,
     onToggleChat,
     onOpenOutput,
+    hideTabStrip = false,
   }: Props = $props();
 
   let flowError = $state<string | null>(null);
@@ -105,7 +115,48 @@
     graphemeScriptEditor.runError = workshop.runError;
     onOpenOutput?.();
   }
+
+  function handleWorkbenchKeydown(event: KeyboardEvent) {
+    if (mobile) return;
+    const inPlainField = isPlainTextEditingTarget(event.target);
+
+    if (event.key === "F2" && !event.metaKey && !event.ctrlKey && !event.altKey) {
+      // Allow from CodeMirror; ignore when typing in plain form fields.
+      if (inPlainField) return;
+      if (!graphemeScriptEditor.activeTab) return;
+      event.preventDefault();
+      scriptRenameUi.startActiveRename();
+      return;
+    }
+
+    const mod = event.metaKey || event.ctrlKey;
+    if (!mod || event.altKey) return;
+    if (inPlainField) return;
+
+    const key = event.key.toLowerCase();
+    if (key === "s") {
+      event.preventDefault();
+      void saveActive();
+      return;
+    }
+    if (key === "enter") {
+      event.preventDefault();
+      void runActive();
+      return;
+    }
+    if (key === "b" && !event.shiftKey) {
+      event.preventDefault();
+      void compileActive("check");
+      return;
+    }
+    if (key === "w" && !event.shiftKey) {
+      event.preventDefault();
+      void closeActiveScriptTab();
+    }
+  }
 </script>
+
+<svelte:window onkeydown={handleWorkbenchKeydown} />
 
 <div class="scripts-workbench-titlebar flex shrink-0 items-center gap-1 border-b border-surface-500/35 px-1 py-0.5">
   {#if !mobile && !leftOpen}
@@ -119,7 +170,9 @@
     </button>
   {/if}
 
-  <ScriptEditorTabStrip compact {mobile} />
+  {#if !hideTabStrip}
+    <ScriptEditorTabStrip compact {mobile} />
+  {/if}
 
   <div class="scripts-workbench-titlebar-actions flex shrink-0 items-center gap-0.5 pl-1">
     <button
@@ -135,7 +188,7 @@
     <button
       type="button"
       class="scripts-workbench-toolbar-btn scripts-workbench-toolbar-btn-primary"
-      title={graphemeScriptEditor.saveBusy ? "Saving…" : "Save"}
+      title={graphemeScriptEditor.saveBusy ? "Saving…" : `Save (${formatShortcut("S")})`}
       aria-label="Save script"
       disabled={graphemeScriptEditor.saveBusy || !graphemeScriptEditor.activeTab}
       onclick={() => void saveActive()}
@@ -145,7 +198,7 @@
     <button
       type="button"
       class="scripts-workbench-toolbar-btn scripts-workbench-toolbar-btn-run"
-      title={workshop.runBusy ? "Running…" : "Run"}
+      title={workshop.runBusy ? "Running…" : `Run (${formatShortcut("Enter")})`}
       aria-label="Run script"
       disabled={workshop.runBusy || !graphemeScriptEditor.activeTab?.body.trim()}
       onclick={() => void runActive()}
@@ -155,7 +208,9 @@
     <button
       type="button"
       class="scripts-workbench-toolbar-btn"
-      title={graphemeScriptEditor.compileBusy ? "Compiling…" : "Compile"}
+      title={graphemeScriptEditor.compileBusy
+        ? "Compiling…"
+        : `Compile (${formatShortcut("B")})`}
       aria-label="Compile script"
       disabled={graphemeScriptEditor.compileBusy || !graphemeScriptEditor.activeTab?.body.trim()}
       onclick={() => void compileActive("check")}
@@ -173,6 +228,8 @@
       <Zap size={15} strokeWidth={1.75} />
     </button>
 
+    <GraphemeModuleLibraryPicker />
+
     {#if mobile}
       <button
         type="button"
@@ -188,7 +245,7 @@
       <button
         type="button"
         class="scripts-workbench-toolbar-btn {consoleOpen ? 'scripts-workbench-toolbar-btn-active' : ''}"
-        title="{consoleOpen ? 'Hide' : 'Show'} output panel"
+        title="{consoleOpen ? 'Hide' : 'Show'} output"
         aria-label="{consoleOpen ? 'Hide' : 'Show'} output panel"
         aria-pressed={consoleOpen}
         onclick={onToggleConsole}
@@ -198,7 +255,7 @@
       <button
         type="button"
         class="scripts-workbench-toolbar-btn {chatOpen ? 'scripts-workbench-toolbar-btn-active' : ''}"
-        title="{chatOpen ? 'Hide' : 'Show'} script chat"
+        title="{chatOpen ? 'Hide' : 'Show'} chat"
         aria-label="{chatOpen ? 'Hide' : 'Show'} script chat"
         aria-pressed={chatOpen}
         onclick={onToggleChat}

@@ -3,15 +3,12 @@
   import AgentBrowserPanel from "$lib/components/chat/AgentBrowserPanel.svelte";
   import ChatComposerBar from "$lib/components/chat/ChatComposerBar.svelte";
   import VaultChatContextChip from "$lib/components/vault/VaultChatContextChip.svelte";
-  import MobileComposerTurnSettings from "$lib/components/mobile/MobileComposerTurnSettings.svelte";
-  import ProfileSwitcherCompact from "$lib/components/mobile/ProfileSwitcherCompact.svelte";
-  import WorkshopSwitcherCompact from "$lib/components/workshops/WorkshopSwitcherCompact.svelte";
+  import { applyActiveAgentPrompt } from "$lib/utils/activeAgentPrompt";
   import { buildInteractiveTurnOptions } from "$lib/interactiveTurnOptions";
   import { haptic } from "$lib/haptics";
   import { chat } from "$lib/stores/chat.svelte";
   import { connection } from "$lib/stores/connection.svelte";
   import { runtime } from "$lib/stores/runtime.svelte";
-  import { settings } from "$lib/stores/settings.svelte";
   import { voicePresets } from "$lib/stores/voicePresets.svelte";
   import { switchMobileTab } from "$lib/mobileNavigation";
   import { workspace } from "$lib/stores/workspace.svelte";
@@ -27,10 +24,6 @@
   import { ensureVaultSelectionInPrompt } from "$lib/utils/vaultNoteBridge";
 
   let composerBlurTimer: ReturnType<typeof setTimeout> | undefined;
-
-  const controlsDisabled = $derived(
-    connection.offline || chat.composerBlocked || runtime.savingControls,
-  );
 
   function parseDaemonAskPrompt(value: string): string | null {
     const slash = parseChatSlashInput(value);
@@ -76,9 +69,8 @@
   async function submit(event: Event) {
     event.preventDefault();
     if (connection.offline) return;
-    const prompt = ensureVaultSelectionInPrompt(
-      chat.draft.trim(),
-      chat.vaultNoteContext,
+    const prompt = applyActiveAgentPrompt(
+      ensureVaultSelectionInPrompt(chat.draft.trim(), chat.vaultNoteContext),
     );
     const hasAttachments = chat.pendingMediaRefs.length > 0;
     if (!prompt && !hasAttachments) return;
@@ -151,13 +143,11 @@
 </script>
 
 <form class="mobile-chat-composer" onsubmit={submit}>
-  <div class="mobile-composer-pills">
-    <WorkshopSwitcherCompact />
-    <ProfileSwitcherCompact />
-    {#if settings.showChatModelPicker}
-      <MobileComposerTurnSettings disabled={controlsDisabled} />
-    {/if}
-  </div>
+  {#if chat.hasWorkshopHandoff()}
+    <p class="mb-1.5 px-1 text-[11px] font-medium text-primary-300/90">
+      Steering handoff — your next message continues the worker
+    </p>
+  {/if}
   {#if chat.vaultNoteContext}
     <VaultChatContextChip compact class="mb-2" />
   {/if}

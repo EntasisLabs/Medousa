@@ -511,6 +511,7 @@
     cmEl?.scrollToHeadingSource(headingText);
   }
 
+  /** Flush nested Live Write drafts + serialize TipTap (Cmd/Ctrl+S, Live→Build). */
   export function flushLive(): string {
     if (!isLivePlane) return draft;
     const flushed = liveEl?.flush() ?? draft;
@@ -521,7 +522,7 @@
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
-  class="vault-markdown-editor vault-markdown-editor--{surface} relative flex min-h-0 flex-1 flex-col {className}"
+  class="vault-markdown-editor vault-markdown-editor--{surface} relative flex min-h-0 min-w-0 max-w-full flex-1 flex-col overflow-hidden {className}"
   class:vault-markdown-editor--live={isLivePlane || !showFormatChrome}
   oncontextmenu={handleContextMenu}
 >
@@ -552,7 +553,7 @@
     onClose={() => (chartTypePickerOpen = false)}
   />
 
-  <div class="flex min-h-0 flex-1">
+  <div class="flex min-h-0 min-w-0 max-w-full flex-1 overflow-hidden">
     {#if split && preview && onSplitResize && !isLivePlane}
       <SplitPane
         width={splitWidth}
@@ -563,7 +564,7 @@
       >
         <div
           bind:this={editorShellEl}
-          class="vault-find-editor-shell relative flex min-h-0 flex-1 flex-col"
+          class="vault-find-editor-shell relative flex min-h-0 min-w-0 max-w-full flex-1 flex-col overflow-hidden"
         >
           <VaultSlashMenu
             bind:this={slashMenuEl}
@@ -593,7 +594,7 @@
     {:else}
       <div
         bind:this={editorShellEl}
-        class="vault-find-editor-shell relative flex min-h-0 flex-1 flex-col"
+        class="vault-find-editor-shell relative flex min-h-0 min-w-0 max-w-full flex-1 flex-col overflow-hidden"
       >
         <VaultSlashMenu
           bind:this={slashMenuEl}

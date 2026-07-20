@@ -24,6 +24,7 @@
   import Dashboard from "$lib/liquid/archetypes/organisms/dashboard/Dashboard.svelte";
   import Chart from "$lib/liquid/archetypes/organisms/chart/Chart.svelte";
   import Report from "$lib/liquid/archetypes/organisms/report/Report.svelte";
+  import Slides from "$lib/liquid/archetypes/organisms/slides/Slides.svelte";
   import Section from "$lib/liquid/archetypes/molecules/section/Section.svelte";
   import ChipGroup from "$lib/liquid/archetypes/molecules/chip_group/ChipGroup.svelte";
   import Media from "$lib/liquid/archetypes/atoms/media/Media.svelte";
@@ -45,6 +46,7 @@
     LiquidDashboardProps,
     LiquidChartProps,
     LiquidReportProps,
+    LiquidSlidesProps,
     LiquidDecisionProps,
     LiquidEmbedKind,
     LiquidMediaProps,
@@ -438,6 +440,25 @@
     });
   });
 
+  const slides = $derived.by(() => {
+    if (kind !== "slides") return null;
+    const props = payload as LiquidSlidesProps;
+    if (!props?.slides?.length) return null;
+    return createNode({
+      id: "md-slides",
+      type: "slides",
+      props: {
+        ...(props.title ? { title: props.title } : {}),
+        ...(props.theme ? { theme: props.theme } : {}),
+        ...(props.columns ? { columns: props.columns } : {}),
+        ...(props.showAll != null ? { showAll: props.showAll } : {}),
+        ...(props.exportPaper != null ? { exportPaper: props.exportPaper } : {}),
+        slides: props.slides,
+      },
+      fillState: "ready",
+    });
+  });
+
   const chart = $derived.by(() => {
     if (kind !== "chart") return null;
     const props = payload as LiquidChartProps;
@@ -645,6 +666,10 @@
 {:else if kind === "report" && report}
   <div class="{hostClass} liquid-md-host-report">
     <Report node={report} />
+  </div>
+{:else if kind === "slides" && slides}
+  <div class="{hostClass} liquid-md-host-slides">
+    <Slides node={slides} />
   </div>
 {:else if kind === "chart" && chart}
   <div class="{hostClass} liquid-md-host-chart">

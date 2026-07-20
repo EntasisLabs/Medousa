@@ -11,8 +11,8 @@
   }
 
   let {
-    title = "Start with a recipe",
-    hint = "Pick one — run it, tweak it, save it, turn it into a flow.",
+    title = "Recipes",
+    hint = "",
     recipes = GRAPHEME_STARTER_RECIPES,
     compact = false,
     onselect,
@@ -22,7 +22,7 @@
 <div class="workshop-recipe-grid {compact ? 'workshop-recipe-grid-compact' : ''}">
   <div class="mb-3">
     <p class="text-sm font-medium text-surface-100">{title}</p>
-    {#if hint}
+    {#if hint.trim()}
       <p class="workshop-faint mt-1 text-xs leading-relaxed">{hint}</p>
     {/if}
   </div>

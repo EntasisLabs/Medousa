@@ -1,8 +1,40 @@
-import { isTauriMobilePlatform } from "$lib/platform";
+import {
+  isTauriMacDesktop,
+  isTauriMobilePlatform,
+} from "$lib/platform";
 
 /** Phone/tablet shell talking to a remote workshop daemon. */
 export function isCompanionShell(): boolean {
   return isTauriMobilePlatform();
+}
+
+function isLikelyWindowsHost(): boolean {
+  if (typeof navigator === "undefined") return false;
+  const platform =
+    (navigator as Navigator & { userAgentData?: { platform?: string } }).userAgentData
+      ?.platform ??
+    navigator.platform ??
+    "";
+  return /Win/i.test(platform) || /Windows/i.test(navigator.userAgent);
+}
+
+/** OS-adaptive noun for the machine running Medousa (desktop host). */
+export function hostComputerNoun(): string {
+  if (isCompanionShell()) return "computer";
+  if (isTauriMacDesktop()) return "Mac";
+  if (isLikelyWindowsHost()) return "PC";
+  return "computer";
+}
+
+export function hostComputerPhrase(): string {
+  return `your ${hostComputerNoun()}`;
+}
+
+/** File manager name for reveal/pin copy. */
+export function hostFileManagerNoun(): string {
+  if (isTauriMacDesktop()) return "Finder";
+  if (isLikelyWindowsHost()) return "File Explorer";
+  return "file manager";
 }
 
 /** User-facing noun for the machine running the Medousa daemon. */
@@ -85,21 +117,27 @@ export function workshopBasementConnectionLabel(mobile: boolean): string {
 }
 
 export function workshopBasementRestartHint(): string {
-  return "Restarts Medousa on your network so QR pairing and companion apps can reach this machine";
+  return `Restarts Medousa on your network so QR pairing and companion apps can reach ${hostComputerPhrase()}`;
 }
 
 export function localBrainOnDeviceHint(): string {
   return isCompanionShell()
-    ? "Optional local Gemma engine on the host — separate from cloud chat models."
-    : "Optional local Gemma engine on this machine — separate from cloud chat models.";
+    ? `Optional local Gemma engine on ${hostComputerPhrase()} — separate from cloud chat models.`
+    : `Optional local Gemma engine on ${hostComputerPhrase()} — separate from cloud chat models.`;
 }
 
 export function vaultPinFolderHint(): string {
   return isCompanionShell()
-    ? "Your real files live outside the vault too. Pin a folder from the host — Documents, Desktop, or a project root."
-    : "Your real files live outside the vault too. Pin a folder — Documents, Desktop, or a project root.";
+    ? `Your real files live outside the vault too. Pin a folder from the host — Documents, Desktop, or a project root.`
+    : `Your real files live outside the vault too. Pin a folder on ${hostComputerPhrase()} — Documents, Desktop, or a project root.`;
 }
 
 export function vaultRemoteFilesystemHint(): string {
-  return "This workshop’s files live on the host Mac. Pin folders and reveal in Finder there.";
+  return `This workshop’s files live on the host ${hostComputerNoun()}. Pin folders and reveal in ${hostFileManagerNoun()} there.`;
+}
+
+export function revealInFileManagerLabel(): string {
+  if (isTauriMacDesktop()) return "Reveal in Finder";
+  if (isLikelyWindowsHost()) return "Show in File Explorer";
+  return "Show in folder";
 }

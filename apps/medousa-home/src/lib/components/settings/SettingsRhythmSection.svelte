@@ -6,7 +6,7 @@
     queryLiveActivityAvailability,
     type LiveActivityStatus,
   } from "$lib/liveActivity";
-  import {
+  import { hostComputerPhrase,
     workshopRetentionLocalHint,
     workshopRetentionReadHint,
   } from "$lib/platformCopy";
@@ -131,7 +131,7 @@
         <span class="min-w-0 flex-1">
           <span class="block text-sm font-medium text-surface-100">Remote push</span>
           <span class="workshop-faint mt-0.5 block text-xs">
-            Notify this phone from your Mac when work finishes or needs attention — even when the app is closed
+            Notify this phone from {hostComputerPhrase()} when work finishes or needs attention — even when the app is closed
           </span>
         </span>
         <input

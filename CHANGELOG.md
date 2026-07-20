@@ -9,9 +9,29 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+### Changed
+
+## [0.3.0] — 2026-07-20
+
+### Added
+
+- Shell tabs with split panes — tile Workspace / Chat / Web side by side; multi-live chat transcripts per pane
+- Per-pane note buffers so background Workspace panes keep their open note without fighting the focused editor
+- Quieter chat composer — `+` menu for Attach / Profile / Agent, optional non-default chips, anchored popovers
+- Expandable chat error details (`View details`) when the daemon provides a debug message
+- Onboarding model picker shares Settings’ catalog → live → default resolution
+- Paste / drop images into vault notes as inline `data:image/…;base64,…` (Live + Build + Preview)
+- Slash menu starters for the full Liquid fence catalog (carousel, actions, section, chips, media, cite, compare, plan, timeline, shortlist, decision, brief, …)
 - `scripts/install-app.sh` — curlable desktop installer (reads CDN `installer-bootstrap.json`, verifies checksum, opens the right artifact)
 
 ### Changed
+
+- Workspace nav icon is now panels (tiling workspace); book icon stays for Notes / vault library affordances
+- Profile and Agent manage links from the composer open the correct desktop shell tabs / mobile More destinations
+
+### Fixed
+
+- Live image paste no longer inserts escaped markdown text; clipboard `File` is captured synchronously so data URLs stay valid
 
 ## [0.2.0] — 2026-07-15
 
@@ -56,5 +76,6 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 - Product path is **Home-first**: download the app, chat, then add packages from Settings; Installer remains an advanced/repair escape hatch
 - Connection → Extras and welcome-wizard offline CTAs open Settings → Packages instead of launching the Installer by default
 
+[0.3.0]: https://github.com/EntasisLabs/Medousa/releases/tag/v0.3.0
 [0.2.0]: https://github.com/EntasisLabs/Medousa/releases/tag/v0.2.0
 [0.1.0]: https://github.com/EntasisLabs/Medousa/releases/tag/v0.1.0

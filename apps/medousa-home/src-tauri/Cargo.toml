@@ -2,7 +2,7 @@
 
 [package]
 name = "medousa-home"
-version = "0.2.0"
+version = "0.3.0"
 description = "Medousa desktop app (Tauri)"
 authors = ["Entasis Labs"]
 edition = "2021"
@@ -51,6 +51,7 @@ medousa-install-support = { path = "../../../crates/medousa-install-support" }
 medousa-host = { path = "../../../crates/medousa-host" }
 axum = "0.8"
 medousa-browser-bridge = { path = "../../../crates/medousa-browser-bridge" }
+tauri-plugin-window-state = "2"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

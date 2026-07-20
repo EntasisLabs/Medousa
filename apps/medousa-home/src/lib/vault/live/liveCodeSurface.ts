@@ -28,6 +28,7 @@ export function mountCodeSurface(
   raw: string,
   liquidContext: LiquidRenderContext,
   onChange: (raw: string) => void,
+  onEditRaw?: () => void,
 ): CodeSurfaceHandles {
   let draft: LiquidCodeDraft = parseCodeFenceBody(codeBody(raw));
   let currentRaw = serializeCodeFence(draft);
@@ -65,13 +66,25 @@ export function mountCodeSurface(
   configure.type = "button";
   configure.className = "vault-live-code__configure";
   configure.textContent = "source";
-  configure.title = "Edit source";
-  configure.dataset.liveLiquidConfigure = "1";
-  configure.dataset.liveLiquidLang = "code";
-  configure.addEventListener("mousedown", (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-  });
+  configure.title = onEditRaw ? "Edit fence source" : "Edit source";
+  if (onEditRaw) {
+    configure.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+    });
+    configure.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      onEditRaw();
+    });
+  } else {
+    configure.dataset.liveLiquidConfigure = "1";
+    configure.dataset.liveLiquidLang = "code";
+    configure.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+    });
+  }
 
   meta.append(lang, configure);
   head.append(title, meta);

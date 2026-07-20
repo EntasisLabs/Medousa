@@ -518,15 +518,346 @@
   }
 
   .workshop-icon-rail {
-    @apply flex w-[52px] shrink-0 flex-col items-center py-2.5;
+    @apply flex h-full w-full min-h-0 shrink-0 flex-col items-center py-2.5;
     border-right: 1px solid rgb(var(--shell-border) / var(--shell-rail-edge));
     background-color: rgb(var(--shell-chrome-bg));
     box-shadow: var(--shell-nav-inset), var(--shell-nav-shadow);
   }
 
+  .workshop-icon-rail-expanded {
+    @apply items-stretch px-2;
+  }
+
+  .workshop-icon-rail-view {
+    @apply px-[0.35rem];
+  }
+
+  .workshop-icon-rail-expanded .workshop-icon-rail-items {
+    @apply items-stretch;
+  }
+
+  .workshop-icon-rail-expanded .workshop-rail-tier-divider {
+    @apply w-auto mx-2;
+  }
+
   .workshop-rail-btn {
     @apply flex h-9 w-9 items-center justify-center rounded-md transition;
     color: rgb(var(--shell-icon));
+  }
+
+  .workshop-icon-rail-expanded .workshop-rail-btn {
+    @apply h-9 w-full justify-start gap-2.5 px-2;
+  }
+
+  .workshop-icon-rail-expanded .workshop-rail-btn-tier-utility {
+    @apply h-8 w-full;
+  }
+
+  .workshop-rail-btn-icon {
+    @apply relative inline-flex h-[1.125rem] w-[1.125rem] shrink-0 items-center justify-center;
+  }
+
+  .workshop-rail-workshop-btn .workshop-rail-btn-icon {
+    @apply h-5 w-5;
+  }
+
+  .workshop-rail-btn-label {
+    @apply min-w-0 flex-1 truncate text-left text-[12px] font-medium tracking-[-0.01em];
+    color: inherit;
+  }
+
+  /*
+   * Life-orbit tree: one continuous list (Cursor Agents).
+   * Parents ≈ children in type size; selection is a quiet surface pill, not purple chrome.
+   */
+  .workshop-rail-tree {
+    gap: 1px;
+    padding: 0 0.15rem 0.35rem 0.2rem;
+  }
+
+  /* Bottom chrome — same inset / row metrics as the life-orbit tree. */
+  .workshop-rail-dock {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    margin-top: auto;
+    padding: 0.45rem 0.35rem 0.35rem 0.2rem;
+    border-top: 1px solid rgb(var(--shell-border) / 0.16);
+  }
+
+  .workshop-icon-rail-expanded .workshop-rail-dock .workshop-rail-dock-btn,
+  .workshop-icon-rail-expanded .workshop-rail-tree .workshop-rail-tree-row {
+    height: 1.75rem;
+    width: 100%;
+    justify-content: flex-start;
+    gap: 0.65rem;
+    padding-inline: 0.65rem 0.5rem;
+    border-radius: 0.4rem;
+  }
+
+  .workshop-icon-rail-expanded .workshop-rail-dock .workshop-rail-dock-btn .workshop-rail-btn-icon,
+  .workshop-icon-rail-expanded .workshop-rail-tree .workshop-rail-tree-row .workshop-rail-btn-icon {
+    color: rgb(var(--color-surface-400));
+  }
+
+  .workshop-icon-rail-expanded .workshop-rail-dock .workshop-rail-dock-btn .workshop-rail-btn-label,
+  .workshop-icon-rail-expanded .workshop-rail-tree .workshop-rail-tree-row .workshop-rail-btn-label {
+    font-size: 0.8125rem;
+    font-weight: 500;
+    letter-spacing: -0.012em;
+    color: rgb(var(--color-surface-200) / 0.96);
+  }
+
+  .workshop-icon-rail-expanded
+    .workshop-rail-dock
+    .workshop-rail-dock-btn.workshop-rail-btn-active-quiet
+    .workshop-rail-btn-label,
+  .workshop-icon-rail-expanded
+    .workshop-rail-tree
+    .workshop-rail-tree-row.workshop-rail-btn-active-quiet
+    .workshop-rail-btn-label {
+    color: rgb(var(--color-surface-50));
+  }
+
+  .workshop-icon-rail-expanded .workshop-rail-dock .workshop-rail-workshop-btn {
+    margin-top: 0;
+  }
+
+  .workshop-rail-dest {
+    display: flex;
+    width: 100%;
+    flex-direction: column;
+  }
+
+  .workshop-rail-dest-has-nest {
+    margin-bottom: 0.2rem;
+  }
+
+  .workshop-rail-dest-row {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    gap: 0.15rem;
+    padding-inline: 0.25rem 0.15rem;
+  }
+
+  .workshop-rail-dest-btn {
+    min-width: 0;
+    flex: 1;
+  }
+
+  .workshop-icon-rail-expanded .workshop-rail-tree .workshop-rail-dest-btn {
+    height: 1.75rem;
+    gap: 0.45rem;
+    padding-inline: 0.3rem 0.45rem;
+    border-radius: 0.4rem;
+  }
+
+  .workshop-rail-dest-twist,
+  .workshop-rail-dest-twist-btn {
+    display: inline-flex;
+    width: 1rem;
+    height: 1.35rem;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .workshop-rail-dest-twist-btn {
+    border-radius: 0.25rem;
+    color: rgb(var(--color-surface-500));
+  }
+
+  .workshop-rail-dest-twist-btn:hover {
+    color: rgb(var(--color-surface-200));
+    background-color: rgb(var(--color-surface-800) / 0.45);
+  }
+
+  .workshop-rail-dest-chevron {
+    display: block;
+    transition: transform 120ms ease;
+  }
+
+  .workshop-rail-dest-chevron-open {
+    transform: rotate(90deg);
+  }
+
+  .workshop-icon-rail-expanded .workshop-rail-tree .workshop-rail-dest-btn .workshop-rail-btn-icon {
+    width: 0.875rem;
+    height: 0.875rem;
+    color: rgb(var(--color-surface-400));
+  }
+
+  .workshop-icon-rail-expanded .workshop-rail-tree .workshop-rail-dest-btn .workshop-rail-btn-label {
+    font-size: 0.8125rem;
+    font-weight: 500;
+    letter-spacing: -0.012em;
+    color: rgb(var(--color-surface-200) / 0.96);
+  }
+
+  .workshop-icon-rail-expanded
+    .workshop-rail-tree
+    .workshop-rail-dest-btn.workshop-rail-btn-active-quiet
+    .workshop-rail-btn-label {
+    color: rgb(var(--color-surface-50));
+  }
+
+  .workshop-icon-rail-expanded
+    .workshop-rail-tree
+    .workshop-rail-dest-btn.workshop-rail-btn-active-quiet
+    .workshop-rail-btn-icon {
+    color: rgb(var(--color-surface-100));
+  }
+
+  /* Leaf owns selection — parent stays present but not “selected chrome”. */
+  .workshop-rail-dest-btn-dimmed.workshop-rail-btn-active-quiet {
+    background-color: transparent !important;
+    box-shadow: none !important;
+  }
+
+  .workshop-rail-dest-btn-dimmed .workshop-rail-btn-label {
+    color: rgb(var(--color-surface-300) / 0.92) !important;
+  }
+
+  .workshop-rail-btn-active-quiet {
+    background-color: rgb(var(--color-surface-800) / 0.55);
+    color: rgb(var(--color-surface-50));
+  }
+
+  .workshop-rail-btn-active-quiet:hover {
+    background-color: rgb(var(--color-surface-800) / 0.7);
+  }
+
+  .workshop-rail-nest {
+    display: flex;
+    list-style: none;
+    flex-direction: column;
+    gap: 1px;
+    margin: 0;
+    /* Align under parent label column. */
+    padding: 0 0.35rem 0.1rem 2.45rem;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .workshop-rail-dest-chevron {
+      transition: none;
+    }
+  }
+
+  .workshop-rail-nest-btn {
+    display: flex;
+    width: 100%;
+    min-height: 1.65rem;
+    align-items: center;
+    gap: 0.4rem;
+    border-radius: 0.4rem;
+    padding: 0.2rem 0.4rem 0.2rem 0.45rem;
+    text-align: left;
+    transition:
+      color 110ms ease,
+      background 110ms ease;
+  }
+
+  .workshop-rail-nest-btn:hover {
+    background-color: rgb(var(--color-surface-800) / 0.35);
+  }
+
+  .workshop-rail-nest-btn:focus-visible {
+    outline: none;
+    box-shadow: inset 0 0 0 1px rgb(var(--color-surface-500) / 0.35);
+  }
+
+  .workshop-rail-nest-btn-active {
+    background-color: rgb(var(--color-surface-800) / 0.72);
+  }
+
+  .workshop-rail-nest-btn-active:hover {
+    background-color: rgb(var(--color-surface-800) / 0.82);
+  }
+
+  .workshop-rail-nest-dot {
+    width: 0.35rem;
+    height: 0.35rem;
+    flex-shrink: 0;
+    border-radius: 999px;
+    background-color: rgb(234 179 8 / 0.92);
+  }
+
+  .workshop-rail-nest-label {
+    min-width: 0;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.8125rem;
+    font-weight: 400;
+    line-height: 1.25;
+    letter-spacing: -0.011em;
+    color: rgb(var(--color-surface-300) / 0.9);
+  }
+
+  .workshop-rail-nest-btn:hover .workshop-rail-nest-label {
+    color: rgb(var(--color-surface-100) / 0.92);
+  }
+
+  .workshop-rail-nest-btn-active .workshop-rail-nest-label {
+    color: rgb(var(--color-surface-50));
+  }
+
+  .workshop-rail-nest-btn-accent .workshop-rail-nest-label {
+    color: rgb(var(--color-surface-200));
+  }
+
+  .workshop-rail-nest-meta {
+    max-width: 2.5rem;
+    flex-shrink: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.6875rem;
+    font-weight: 400;
+    letter-spacing: 0.01em;
+    font-variant-numeric: tabular-nums;
+    color: rgb(var(--color-surface-500));
+  }
+
+  .workshop-rail-nest-btn-active .workshop-rail-nest-meta {
+    color: rgb(var(--color-surface-400));
+  }
+
+  .workshop-rail-nest-more {
+    display: block;
+    width: 100%;
+    border-radius: 0.4rem;
+    padding: 0.15rem 0.45rem 0.25rem;
+    text-align: left;
+    font-size: 0.75rem;
+    font-weight: 400;
+    letter-spacing: -0.01em;
+    color: rgb(var(--color-surface-500));
+    transition: color 110ms ease;
+  }
+
+  .workshop-rail-nest-more:hover {
+    color: rgb(var(--color-surface-200));
+  }
+
+  /* Chrome control that owns the rail — sits under the workshop mark, above destinations. */
+  .workshop-rail-nav-toggle {
+    @apply mb-2.5;
+    color: rgb(var(--shell-icon) / 0.62);
+  }
+
+  .workshop-rail-nav-toggle:hover {
+    color: rgb(var(--shell-icon-hover) / 0.9);
+  }
+
+  .workshop-icon-rail-expanded .workshop-rail-nav-toggle {
+    @apply mb-3;
+  }
+
+  .workshop-icon-rail:not(.workshop-icon-rail-expanded) .workshop-rail-nav-toggle {
+    @apply mb-3;
   }
 
   .workshop-rail-btn:hover {

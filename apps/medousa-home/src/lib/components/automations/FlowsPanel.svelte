@@ -267,9 +267,7 @@
 
       {#if flows.composerOpen}
         <h2 class="workshop-section-title">New flow</h2>
-        <p class="workshop-faint mt-1 text-xs">
-          Name it, add steps, try it, then schedule it.
-        </p>
+        <p class="workshop-faint mt-1 text-xs">New flow</p>
         <div class="mt-4">
           <FlowComposer
             {mobile}

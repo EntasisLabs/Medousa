@@ -29,6 +29,13 @@ export interface LiquidRenderContext {
   ) => void | Promise<void>;
   /** Open structured card detail sheet (chat + vault Live/Preview). */
   onOpenCardDetail?: (detail: CardDetailPayload) => void;
+  /**
+   * Vault PDF/Word export capture — organisms should reveal all panels
+   * (accordion/tabs) and prefer print-stable layout.
+   */
+  exportPaper?: boolean;
+  /** Vault note path for resolving relative slide/media backgrounds. */
+  localImagePath?: string | null;
 }
 
 const KEY = Symbol("liquid.render.context");

@@ -7,9 +7,36 @@ import {
 } from "$lib/utils/vaultMarkdownColors";
 
 import { escapeAttr, escapeHtml } from "./escape";
+import { parseImageSizeToken } from "./imageSize";
 
 const CALLOUT_LINE = /^>\s*\[!(\w+)\]\s*(.*)$/i;
 const CALLOUT_CONT = /^>\s?(.*)$/;
+const WIKI_IMAGE_EXT =
+  /\.(png|jpe?g|gif|webp|svg|bmp|ico|heic|heif|avif)$/i;
+
+/**
+ * Obsidian image embeds `![[shot.png|400]]` → markdown images with size on the href.
+ * Note embeds (`![[Other note]]`) are left for transclusion resolution.
+ */
+export function preprocessWikiImageEmbeds(source: string): string {
+  return source.replace(
+    /!\[\[([^\]|#]+)(?:\|([^\]]+))?\]\]/g,
+    (match, target: string, pipe: string | undefined) => {
+      const path = target.trim();
+      if (!WIKI_IMAGE_EXT.test(path.split("?")[0]?.split("#")[0] ?? path)) {
+        return match;
+      }
+      const token = pipe?.trim();
+      if (token && parseImageSizeToken(token)) {
+        return `![](${path}|${token})`;
+      }
+      if (token) {
+        return `![${token}](${path})`;
+      }
+      return `![](${path})`;
+    },
+  );
+}
 
 /** Obsidian wikilinks → internal link protocol for the marked renderer. */
 export function preprocessWikilinks(
@@ -205,7 +232,8 @@ export function preprocessMarkdown(
   const withHighlights = preprocessHighlights(normalized);
   const withColors = preprocessColorSpans(withHighlights);
   const withLedgerHeaders = preprocessLedgerColumnHeaders(withColors);
-  const withWikilinks = preprocessWikilinks(withLedgerHeaders, titleByPath);
+  const withWikiImages = preprocessWikiImageEmbeds(withLedgerHeaders);
+  const withWikilinks = preprocessWikilinks(withWikiImages, titleByPath);
   const withCallouts = preprocessCallouts(withWikilinks);
   const withToc = preprocessTableOfContents(withCallouts);
   return preprocessLiquidEmbeds(withToc);

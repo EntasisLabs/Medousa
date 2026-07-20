@@ -8,6 +8,9 @@ export function flowStepTitle(step: WorkflowStepSpec): string {
   }
 
   if (step.kind === "grapheme") {
+    if (step.script_name?.trim()) {
+      return step.script_name.trim();
+    }
     const source = step.source.trim();
     if (!source) return "Run a Grapheme script";
     const call = source.match(/[\w.]+\([^)]*\)/)?.[0] ?? source.split("\n").find((line) => line.trim())?.trim();
@@ -31,25 +34,30 @@ export function flowStepTitle(step: WorkflowStepSpec): string {
   return "Step";
 }
 
-export function flowStepSubtitle(step: WorkflowStepSpec): string {
-  const meta = `${step.kind} · ${step.id}`;
+/** Human sequence label — “Then: …” after the first step. */
+export function flowStepSequenceLabel(index: number, step: WorkflowStepSpec): string {
+  const title = flowStepTitle(step);
+  if (index === 0) return title;
+  return `Then: ${title}`;
+}
 
+export function flowStepSubtitle(step: WorkflowStepSpec): string {
   switch (step.kind) {
     case "prompt":
-      return meta;
+      return "Ask Medousa";
     case "grapheme":
       if (step.script_name?.trim()) {
-        return `${meta} · ${step.script_name.trim()}`;
+        return `Script · ${step.script_name.trim()}`;
       }
-      return `${meta} · Grapheme source`;
+      return "Grapheme script";
     case "mcp":
       return step.server_id.trim()
-        ? `${meta} · ${step.server_id}.${step.tool_name || "tool"}`
-        : meta;
+        ? `Tool · ${step.server_id}.${step.tool_name || "tool"}`
+        : "External tool";
     case "tool_replay":
-      return `${meta} · ${step.tool_name}`;
+      return `Replay · ${step.tool_name}`;
     default:
-      return meta;
+      return "Step";
   }
 }
 

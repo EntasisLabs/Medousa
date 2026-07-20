@@ -115,6 +115,16 @@ export interface GraphemeScriptSaveResponse {
   script: GraphemeScriptEntry;
 }
 
+export interface GraphemeScriptDeleteResponse {
+  deleted: boolean;
+  id: string;
+  name: string;
+}
+
+export interface GraphemeScriptRenameRequest {
+  name: string;
+}
+
 export interface GraphemeCompileRequest {
   source: string;
   mode?: string | null;

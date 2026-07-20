@@ -7,7 +7,6 @@
   import WorkshopJourneyBanner from "$lib/components/workshop/WorkshopJourneyBanner.svelte";
   import { connectGraphemeLspClient } from "$lib/grapheme/lspClient";
   import { promoteScriptToFlow } from "$lib/grapheme/graphemeFlowBridge";
-  import { prepareModuleInsert, qualifyModuleOp } from "$lib/grapheme/graphemeModuleSnippet";
   import {
     applyRecipeToEditor,
     type GraphemeRecipe,
@@ -33,9 +32,19 @@
   let lspClient = $state<LSPClient | null>(null);
   let lspError = $state<string | null>(null);
   let codeMirror = $state<GraphemeCodeMirror | undefined>();
-  let modulePickerId = $state("");
   let flowError = $state<string | null>(null);
   let showAdvancedActions = $state(false);
+  let pieceLanded = $state(false);
+  let pieceLandTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function flashPieceLanded() {
+    pieceLanded = true;
+    if (pieceLandTimer) clearTimeout(pieceLandTimer);
+    pieceLandTimer = setTimeout(() => {
+      pieceLanded = false;
+      pieceLandTimer = null;
+    }, 480);
+  }
 
   onMount(() => {
     void getGraphemeLspWorkspace().then((workspace) => {
@@ -66,10 +75,12 @@
       codeMirror.insertText(pending);
       codeMirror.focusEditor();
       graphemeScriptEditor.clearPendingInsert();
+      flashPieceLanded();
       return;
     }
     graphemeScriptEditor.appendToActiveBody(pending);
     graphemeScriptEditor.clearPendingInsert();
+    flashPieceLanded();
   });
 
   const showRecipePicker = $derived(
@@ -78,35 +89,6 @@
         !graphemeScriptEditor.activeTab.body.trim(),
     ),
   );
-
-  const moduleDetail = $derived(workshop.moduleDetail);
-  const moduleOps = $derived(moduleDetail?.info.exported_ops ?? []);
-  const moduleExamples = $derived(moduleDetail?.examples ?? []);
-
-  $effect(() => {
-    if (graphemeScriptEditor.modulesPaneModuleId) {
-      modulePickerId = graphemeScriptEditor.modulesPaneModuleId;
-      graphemeScriptEditor.modulesPaneModuleId = null;
-    }
-  });
-
-  $effect(() => {
-    if (graphemeScriptEditor.sidePane !== "modules") return;
-    if (!modulePickerId && workshop.modules.length > 0) {
-      modulePickerId = workshop.modules[0]?.module_id ?? "";
-    }
-    if (modulePickerId) {
-      void workshop.loadModuleDetail(modulePickerId);
-    }
-  });
-
-  function insertModuleOp(op: string) {
-    const body = graphemeScriptEditor.activeTab?.body ?? "";
-    const qualified = qualifyModuleOp(modulePickerId, op);
-    graphemeScriptEditor.queueInsert(
-      prepareModuleInsert(body, qualified, moduleExamples),
-    );
-  }
 
   function startFromRecipe(recipe: GraphemeRecipe) {
     graphemeScriptEditor.ensureInitialTab();
@@ -181,7 +163,11 @@
   }
 </script>
 
-<div class="grapheme-script-editor flex min-h-0 flex-1 flex-col overflow-hidden">
+<div
+  class="grapheme-script-editor flex min-h-0 flex-1 flex-col overflow-hidden {pieceLanded
+    ? 'scripts-piece-landed'
+    : ''}"
+>
   {#if !workbenchMode}
   <header class="workshop-header shrink-0 border-b border-surface-500/40 px-4 py-3">
     <div class="flex flex-wrap items-start justify-between gap-3">
@@ -297,15 +283,6 @@
         </button>
         <button
           type="button"
-          class="rounded-md px-2 py-1 text-[11px] {graphemeScriptEditor.sidePane === 'modules'
-            ? 'bg-surface-800 text-primary-300'
-            : 'text-surface-400'}"
-          onclick={() => (graphemeScriptEditor.sidePane = "modules")}
-        >
-          Modules
-        </button>
-        <button
-          type="button"
           class="rounded-md px-2 py-1 text-[11px] {graphemeScriptEditor.sidePane === 'diagnostics'
             ? 'bg-surface-800 text-primary-300'
             : 'text-surface-400'}"
@@ -358,49 +335,6 @@
               {graphemeScriptEditor.activeTab.scriptId} · v{graphemeScriptEditor.activeTab.version}
             </p>
           {/if}
-        {/if}
-      {:else if graphemeScriptEditor.sidePane === "modules"}
-        <label class="mt-4 block">
-          <span class="workshop-label">Module</span>
-          <select
-            class="input mt-1 w-full text-sm"
-            bind:value={modulePickerId}
-            onchange={() => {
-              if (modulePickerId) void workshop.loadModuleDetail(modulePickerId);
-            }}
-          >
-            {#each workshop.modules as entry (entry.module_id)}
-              <option value={entry.module_id}>{entry.module_id}</option>
-            {/each}
-          </select>
-        </label>
-
-        {#if workshop.moduleDetailLoading}
-          <p class="workshop-muted mt-4 text-sm">Loading module ops…</p>
-        {:else if workshop.moduleDetailError}
-          <p class="mt-4 text-sm text-warning-400">{workshop.moduleDetailError}</p>
-        {:else if moduleOps.length === 0}
-          <p class="workshop-muted mt-4 text-sm">No exported ops for this module.</p>
-        {:else}
-          <ul class="mt-4 space-y-2">
-            {#each moduleOps as op (op.op)}
-              <li class="rounded-md border border-surface-500/35 px-3 py-2 text-xs">
-                <div class="flex items-start justify-between gap-2">
-                  <div class="min-w-0">
-                    <p class="font-mono text-surface-100">{op.op}</p>
-                    <p class="workshop-faint mt-1">{op.output_type}</p>
-                  </div>
-                  <button
-                    type="button"
-                    class="workshop-text-action shrink-0 text-[11px]"
-                    onclick={() => insertModuleOp(op.op)}
-                  >
-                    Insert
-                  </button>
-                </div>
-              </li>
-            {/each}
-          </ul>
         {/if}
       {:else if graphemeScriptEditor.compileError}
         <p class="mt-4 text-sm text-error-400">{graphemeScriptEditor.compileError}</p>

@@ -159,11 +159,16 @@
     line-height: 1.5;
     color: rgb(var(--color-surface-100));
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    cursor: text;
+    user-select: text;
+    -webkit-user-select: text;
   }
 
   .liquid-code-pre code {
     font-family: inherit;
     white-space: pre;
+    user-select: text;
+    -webkit-user-select: text;
   }
 
   .liquid-code-add {

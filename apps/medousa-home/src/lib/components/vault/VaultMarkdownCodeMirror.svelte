@@ -29,7 +29,13 @@
   } from "$lib/utils/vaultCodeMirror";
   import { vaultFind } from "$lib/stores/vaultFind.svelte";
   import { vault } from "$lib/stores/vault.svelte";
+  import { toast } from "$lib/stores/toast.svelte";
   import type { FindMatch } from "$lib/utils/vaultFindInNote";
+  import {
+    dataTransferHasImage,
+    imageFileFromDataTransfer,
+    markdownFromImageFile,
+  } from "$lib/utils/vaultImagePaste";
 
   interface Props {
     value: string;
@@ -82,10 +88,40 @@
   // Mount-stable refs for keymap run functions.
   let slashOpenRef = false;
   let slashKeyHandler: ((key: string) => boolean) | null = null;
+  let disabledRef = false;
+  let onchangeRef: ((value: string) => void) | undefined;
   $effect(() => {
     slashOpenRef = slashOpen;
     slashKeyHandler = onSlashKey ?? null;
+    disabledRef = disabled;
+    onchangeRef = onchange;
   });
+
+  function handleImageTransfer(
+    view: EditorView,
+    data: DataTransfer | null,
+    event: Event,
+  ): boolean {
+    if (disabledRef || !dataTransferHasImage(data)) return false;
+    // Must capture File during the event — DataTransfer is cleared afterward.
+    const file = imageFileFromDataTransfer(data);
+    if (!file) return false;
+    event.preventDefault();
+    void (async () => {
+      const result = await markdownFromImageFile(file);
+      if (result.ok === false) {
+        toast.show(result.message);
+        return;
+      }
+      const { from, to } = view.state.selection.main;
+      view.dispatch({
+        changes: { from, to, insert: result.markdown },
+        selection: { anchor: from + result.markdown.length },
+      });
+      onchangeRef?.(view.state.doc.toString());
+    })();
+    return true;
+  }
 
   function slashKeymapExt(active: boolean) {
     if (!active) return [];
@@ -369,6 +405,18 @@
               onSlashCheck?.();
               return false;
             },
+            paste: (event, view) =>
+              handleImageTransfer(view, event.clipboardData, event),
+            drop: (event, view) =>
+              handleImageTransfer(view, event.dataTransfer, event),
+            dragover: (event) => {
+              if (disabledRef) return false;
+              if (event.dataTransfer?.types.includes("Files")) {
+                event.preventDefault();
+                return true;
+              }
+              return false;
+            },
           }),
         ],
       }),
@@ -445,6 +493,6 @@
 
 <div
   bind:this={host}
-  class="vault-codemirror-host vault-codemirror-host--{surface} min-h-0 flex-1 {className}"
+  class="vault-codemirror-host vault-codemirror-host--{surface} min-h-0 min-w-0 max-w-full flex-1 overflow-hidden {className}"
   data-find-epoch={findDecorationsEpoch}
 ></div>

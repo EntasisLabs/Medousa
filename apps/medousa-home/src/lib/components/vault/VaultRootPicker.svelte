@@ -10,9 +10,13 @@
 
   interface Props {
     compact?: boolean;
+    /** Text-style trigger — no filled control. */
+    quiet?: boolean;
+    /** Open the menu above the trigger (e.g. bottom dock). */
+    dropUp?: boolean;
   }
 
-  let { compact = false }: Props = $props();
+  let { compact = false, quiet = false, dropUp = false }: Props = $props();
 
   let menuOpen = $state(false);
   let addBusy = $state(false);
@@ -80,10 +84,12 @@
     Personal vault
   </span>
 {:else if compact}
-  <div class="relative min-w-0 w-full">
+  <div class="relative min-w-0 {quiet ? '' : 'w-full'}">
     <button
       type="button"
-      class="vault-root-trigger vault-root-trigger-fill"
+      class={quiet
+        ? "workshop-text-action inline-flex max-w-full items-center gap-1 text-xs text-surface-400"
+        : "vault-root-trigger vault-root-trigger-fill"}
       aria-haspopup="listbox"
       aria-expanded={menuOpen}
       disabled={vault.vaultRootsLoading}
@@ -106,7 +112,9 @@
 
     {#if menuOpen}
       <div
-        class="absolute left-0 top-full z-30 mt-1 w-full min-w-[12rem] rounded-lg border border-surface-500/50 bg-surface-900 py-1 shadow-xl"
+        class="absolute left-0 z-30 w-full min-w-[12rem] rounded-lg border border-surface-500/50 bg-surface-900 py-1 shadow-xl {dropUp
+          ? 'bottom-full mb-1'
+          : 'top-full mt-1'}"
         role="listbox"
         aria-label="Vault folders"
       >

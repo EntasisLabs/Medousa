@@ -84,6 +84,20 @@ pub fn run() {
         .manage(DaemonState::new())
         .manage(daemon::local_inference::LocalInferenceStreamState::new());
 
+    // Desktop only: restore main window size / position / maximized across restarts.
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
+    {
+        use tauri_plugin_window_state::{Builder as WindowStateBuilder, StateFlags};
+        builder = builder.plugin(
+            WindowStateBuilder::default()
+                .with_state_flags(
+                    StateFlags::SIZE | StateFlags::POSITION | StateFlags::MAXIMIZED,
+                )
+                .with_filter(|label| label == "main")
+                .build(),
+        );
+    }
+
     builder = builder
         .setup(|app| {
             eprintln!("[medousa-home] setup start");
@@ -509,6 +523,7 @@ pub fn run() {
             daemon::media::media_upload_path,
             daemon::catalog::catalog_list_manuscripts,
             daemon::catalog::catalog_get_manuscript,
+            daemon::catalog::catalog_create_manuscript,
             daemon::catalog::catalog_update_manuscript,
             daemon::catalog::catalog_import_manuscripts,
             daemon::catalog::catalog_list_capabilities,
@@ -522,6 +537,8 @@ pub fn run() {
             daemon::grapheme::grapheme_get_allowlist,
             daemon::grapheme::grapheme_update_allowlist,
             daemon::grapheme::grapheme_save_script,
+            daemon::grapheme::grapheme_delete_script,
+            daemon::grapheme::grapheme_rename_script,
             daemon::grapheme::grapheme_compile_source,
             daemon::grapheme::grapheme_load_module,
             daemon::grapheme::grapheme_get_lifecycle,

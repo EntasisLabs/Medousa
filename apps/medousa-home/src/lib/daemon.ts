@@ -74,14 +74,17 @@ import type {
   GraphemeModuleDetailResponse,
   GraphemeModuleLoadRequest,
   GraphemeModuleLoadResponse,
+  GraphemeModuleOpsResponse,
   GraphemeModulesListResponse,
   GraphemeRunResponse,
+  GraphemeScriptDeleteResponse,
   GraphemeScriptDetailResponse,
   GraphemeScriptSaveRequest,
   GraphemeScriptSaveResponse,
   GraphemeScriptsListResponse,
 } from "$lib/types/grapheme";
 import type {
+  CreateManuscriptRequest,
   ManuscriptDetailResponse,
   ManuscriptImportRequest,
   ManuscriptImportResponse,
@@ -285,6 +288,14 @@ export async function getManuscript(
 ): Promise<ManuscriptDetailResponse> {
   return invoke<ManuscriptDetailResponse>("catalog_get_manuscript", {
     manuscriptId,
+  });
+}
+
+export async function createManuscript(
+  request: CreateManuscriptRequest,
+): Promise<ManuscriptDetailResponse> {
+  return invoke<ManuscriptDetailResponse>("catalog_create_manuscript", {
+    request,
   });
 }
 
@@ -1386,6 +1397,16 @@ export async function getGraphemeModule(
   });
 }
 
+export async function getGraphemeModuleOps(
+  moduleId: string,
+  query?: string,
+): Promise<GraphemeModuleOpsResponse> {
+  return invoke<GraphemeModuleOpsResponse>("grapheme_get_module_ops", {
+    moduleId,
+    q: query?.trim() || null,
+  });
+}
+
 export async function listGraphemeScripts(options?: {
   query?: string;
   module?: string;
@@ -1430,6 +1451,24 @@ export async function saveGraphemeScript(
   request: GraphemeScriptSaveRequest,
 ): Promise<GraphemeScriptSaveResponse> {
   return invoke<GraphemeScriptSaveResponse>("grapheme_save_script", { request });
+}
+
+export async function deleteGraphemeScript(
+  scriptId: string,
+): Promise<GraphemeScriptDeleteResponse> {
+  return invoke<GraphemeScriptDeleteResponse>("grapheme_delete_script", {
+    scriptId,
+  });
+}
+
+export async function renameGraphemeScript(
+  scriptId: string,
+  name: string,
+): Promise<GraphemeScriptSaveResponse> {
+  return invoke<GraphemeScriptSaveResponse>("grapheme_rename_script", {
+    scriptId,
+    name,
+  });
 }
 
 export async function compileGraphemeSource(

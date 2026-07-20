@@ -9,6 +9,7 @@
     "opener:default",
     "notification:default",
     "mobile-push:default",
-    "deep-link:default"
+    "deep-link:default",
+    "window-state:default"
   ]
 }

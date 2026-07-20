@@ -8,13 +8,8 @@
     filterProviders,
     groupProvidersByCategory,
   } from "$lib/types/providers";
-  import { findCatalogProvider, listProviderModels, listProviders } from "$lib/utils/providersApi";
-  import {
-    badgesForCapability,
-    defaultProviderRecords,
-    listModelCatalog,
-    recordsFromModelIds,
-  } from "$lib/utils/modelCapabilityCatalog";
+  import { listProviders } from "$lib/utils/providersApi";
+  import { badgesForCapability } from "$lib/utils/modelCapabilityCatalog";
   import type { ModelCapabilityRecord } from "$lib/types/modelCapability";
   import ModelCapabilityBadges from "$lib/components/settings/ModelCapabilityBadges.svelte";
   import { resolveModelDisplayLabel } from "$lib/utils/modelCatalog";
@@ -37,6 +32,7 @@
     resolveProviderBaseUrl,
     resolveRuntimeProviderId,
   } from "$lib/utils/providerSettings";
+  import { resolveModelsForProvider } from "$lib/utils/resolveProviderModels";
 
   type PickerStep = "provider" | "model";
 
@@ -140,43 +136,6 @@
     });
   });
 
-  async function resolveModelsForProvider(entry: ProviderCatalogEntry): Promise<ModelCapabilityRecord[]> {
-    if (!target) return [];
-    const runtimeId = await resolveRuntimeProviderId(entry.id);
-    const baseUrl = await resolveProviderBaseUrl(entry);
-
-    if (entry.id !== CUSTOM_PROVIDER_CATALOG_ID) {
-      try {
-        const response = await listModelCatalog({
-          provider: entry.id,
-          capability: pickerRequiresVision(target) ? "vision" : undefined,
-        });
-        const fromCatalog = response.models.filter(
-          (record) =>
-            record.provider.trim().toLowerCase() === entry.id.toLowerCase() ||
-            record.provider.trim().toLowerCase() === runtimeId.toLowerCase(),
-        );
-        if (fromCatalog.length > 0) return fromCatalog;
-      } catch {
-        // Fall through.
-      }
-    }
-
-    try {
-      const live = await listProviderModels({
-        provider: runtimeId,
-        baseUrl: baseUrl ?? undefined,
-      });
-      if (live.models.length > 0) {
-        return recordsFromModelIds(runtimeId, live.models, live.source);
-      }
-    } catch {
-      // Fall through.
-    }
-
-    return defaultProviderRecords({ ...entry, id: runtimeId, defaultModel: entry.defaultModel });
-  }
-
   async function loadProviderModels(entry: ProviderCatalogEntry) {
     if (!target) return;
     const seq = ++loadSeq;
@@ -188,7 +147,9 @@
         models = [];
         return;
       }
-      const next = await resolveModelsForProvider(entry);
+      const next = await resolveModelsForProvider(entry, {
+        capability: pickerRequiresVision(target) ? "vision" : undefined,
+      });
       if (seq !== loadSeq) return;
       models = next;
     } finally {

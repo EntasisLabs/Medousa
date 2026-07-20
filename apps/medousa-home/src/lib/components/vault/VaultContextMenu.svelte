@@ -23,7 +23,9 @@
   import { addVaultSelectionToChat } from "$lib/utils/vaultNoteWorkshop";
   import { canUseLocalVaultFilesystem } from "$lib/utils/vaultFilesystem";
   import { vaultHostSideHint } from "$lib/utils/workshopLocality";
-  import VaultPdfPreviewModal from "./VaultPdfPreviewModal.svelte";
+  import { revealInFileManagerLabel } from "$lib/platformCopy";
+  import type { VaultExportFormat } from "$lib/utils/vaultExportOptions";
+  import VaultExportPreviewModal from "./VaultExportPreviewModal.svelte";
 
   interface MenuItem {
     id: string;
@@ -34,10 +36,12 @@
   }
 
   let menuEl = $state<HTMLDivElement | null>(null);
-  let pdfPreviewOpen = $state(false);
-  let pdfPreviewTitle = $state("");
-  let pdfPreviewContent = $state("");
-  let pdfPreviewLabels = $state<Map<string, string>>(new Map());
+  let exportPreviewOpen = $state(false);
+  let exportPreviewFormat = $state<VaultExportFormat>("pdf");
+  let exportPreviewTitle = $state("");
+  let exportPreviewContent = $state("");
+  let exportPreviewLabels = $state<Map<string, string>>(new Map());
+  let exportPreviewPath = $state<string | null>(null);
 
   const target = $derived(vaultContextMenu.target);
   const desktopTauri = $derived(isTauri());
@@ -170,7 +174,7 @@
         },
         {
           id: "reveal",
-          label: "Reveal in Finder",
+          label: revealInFileManagerLabel(),
           hidden: !localFs,
           onClick: async () => {
             await revealVaultNoteInFinder(path);
@@ -200,10 +204,32 @@
               const title =
                 vault.labelByPath().get(path) ??
                 vaultDisplayTitle(response.note.title, path);
-              pdfPreviewTitle = title;
-              pdfPreviewContent = response.content;
-              pdfPreviewLabels = vault.labelByPath();
-              pdfPreviewOpen = true;
+              exportPreviewTitle = title;
+              exportPreviewContent = response.content;
+              exportPreviewLabels = vault.labelByPath();
+              exportPreviewPath = path;
+              exportPreviewFormat = "pdf";
+              exportPreviewOpen = true;
+            } catch (err) {
+              vault.error = err instanceof Error ? err.message : String(err);
+            }
+          },
+        },
+        {
+          id: "export-word",
+          label: "Export Word…",
+          onClick: async () => {
+            try {
+              const response = await getVaultNote(path);
+              const title =
+                vault.labelByPath().get(path) ??
+                vaultDisplayTitle(response.note.title, path);
+              exportPreviewTitle = title;
+              exportPreviewContent = response.content;
+              exportPreviewLabels = vault.labelByPath();
+              exportPreviewPath = path;
+              exportPreviewFormat = "docx";
+              exportPreviewOpen = true;
             } catch (err) {
               vault.error = err instanceof Error ? err.message : String(err);
             }
@@ -250,7 +276,7 @@
       },
       {
         id: "reveal",
-        label: "Reveal in Finder",
+        label: revealInFileManagerLabel(),
         hidden: !localFs,
         onClick: async () => {
           await revealFileInFinder(path);
@@ -392,12 +418,14 @@
   </div>
 {/if}
 
-<VaultPdfPreviewModal
-  open={pdfPreviewOpen}
-  title={pdfPreviewTitle}
-  content={pdfPreviewContent}
-  labelByPath={pdfPreviewLabels}
+<VaultExportPreviewModal
+  open={exportPreviewOpen}
+  title={exportPreviewTitle}
+  content={exportPreviewContent}
+  labelByPath={exportPreviewLabels}
+  notePath={exportPreviewPath}
+  initialFormat={exportPreviewFormat}
   onClose={() => {
-    pdfPreviewOpen = false;
+    exportPreviewOpen = false;
   }}
 />

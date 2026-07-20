@@ -230,22 +230,26 @@
     <aside
       class="{variant === 'drawer'
         ? 'workshop-drawer absolute left-0 top-0 z-30 w-64 border-r-2'
-        : 'workshop-drawer relative w-56 shrink-0 border-r-2'} relative flex h-full flex-col"
+        : variant === 'inline'
+          ? 'relative flex h-full min-h-0 w-full flex-col'
+          : 'workshop-drawer relative w-56 shrink-0 border-r-2'} relative flex h-full flex-col"
       aria-label="Chat sessions"
     >
-      <div class="session-sidebar-header">
-        <p class="text-sm font-semibold text-surface-100">Sessions</p>
-        {#if onClose}
-          <button
-            type="button"
-            class="session-sidebar-icon-btn"
-            aria-label="Close sessions"
-            onclick={onClose}
-          >
-            <X size={15} strokeWidth={1.75} />
-          </button>
-        {/if}
-      </div>
+      {#if variant !== "inline"}
+        <div class="session-sidebar-header">
+          <p class="text-sm font-semibold text-surface-100">Sessions</p>
+          {#if onClose}
+            <button
+              type="button"
+              class="session-sidebar-icon-btn"
+              aria-label="Close sessions"
+              onclick={onClose}
+            >
+              <X size={15} strokeWidth={1.75} />
+            </button>
+          {/if}
+        </div>
+      {/if}
       {@render sessionPanelBody()}
     </aside>
   {/if}

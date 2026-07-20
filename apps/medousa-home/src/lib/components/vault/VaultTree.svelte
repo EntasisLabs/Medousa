@@ -40,7 +40,7 @@
   );
 </script>
 
-<nav class="flex-1 overflow-y-auto p-2" aria-label="Vault tree">
+<nav class="flex-1 overflow-y-auto px-1.5 py-1" aria-label="Vault tree">
   {#if scopedRecent.length > 0}
     <VaultTreeRecentRows
       paths={scopedRecent}

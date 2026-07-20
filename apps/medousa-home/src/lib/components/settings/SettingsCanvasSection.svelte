@@ -11,7 +11,15 @@
   import { workshops } from "$lib/stores/workshops.svelte";
   import { resolveEnvironmentTheme } from "$lib/utils/environmentTheme";
   import { openUrlInDefaultBrowser } from "$lib/utils/browserActions";
-  import { ChevronDown, LayoutGrid } from "@lucide/svelte";
+  import {
+    ChevronDown,
+    LayoutGrid,
+    MessageSquare,
+    PanelLeft,
+    PanelRight,
+    PanelsTopLeft,
+  } from "@lucide/svelte";
+  import type { ActivityRailMode } from "$lib/types/environment";
 
   const CUSTOM_VIEWS_DOC =
     "https://github.com/EntasisLabs/Medousa/blob/main/docs/cookbook/custom-views-and-canvas.md";
@@ -50,8 +58,11 @@
   let advancedOpen = $state(false);
   let mobileHomeBusy = $state(false);
   let mobileHomeError = $state<string | null>(null);
+  let yourSpaceBusy = $state(false);
+  let yourSpaceError = $state<string | null>(null);
 
   const mobileHomeValue = $derived(environment.mobileDefaultHome);
+  const desktopChrome = $derived(environment.desktopShellChrome);
 
   function navVisibleFor(surfaceId: string): boolean {
     const statusRow = canvasStatus?.customSurfaces.find((row) => row.surfaceId === surfaceId);
@@ -83,6 +94,20 @@
       mobileHomeError = err instanceof Error ? err.message : String(err);
     } finally {
       mobileHomeBusy = false;
+    }
+  }
+
+  async function patchYourSpace(
+    patch: Parameters<typeof environment.patchShellChromeDesktop>[0],
+  ) {
+    yourSpaceBusy = true;
+    yourSpaceError = null;
+    try {
+      await environment.patchShellChromeDesktop(patch);
+    } catch (err) {
+      yourSpaceError = err instanceof Error ? err.message : String(err);
+    } finally {
+      yourSpaceBusy = false;
     }
   }
 </script>
@@ -147,6 +172,133 @@
         quick profiles like Focus.
       </p>
       <CanvasNavDestinationsPanel {spec} />
+    </div>
+
+    <div class="canvas-settings-block" id="your-space">
+      <h3 class="canvas-settings-heading">Your space</h3>
+      <p class="canvas-settings-lead">
+        Desktop chrome for this profile — separate from Edit layout on a custom view.
+      </p>
+      <div class="canvas-your-space">
+        <p class="canvas-your-space-group-label">Desktop</p>
+        <div class="settings-toggle-list">
+          <label class="settings-toggle-row canvas-your-space-row">
+            <span class="canvas-your-space-copy">
+              <span class="canvas-your-space-icon" aria-hidden="true">
+                <PanelsTopLeft size={15} strokeWidth={1.75} />
+              </span>
+              <span class="min-w-0 flex-1">
+                <span class="block text-sm font-medium text-surface-100">Show left rail</span>
+                <span class="workshop-faint mt-0.5 block text-xs">
+                  Master rail with destinations or the active view’s list. Off = fully hidden.
+                </span>
+              </span>
+            </span>
+            <input
+              type="checkbox"
+              class="checkbox shrink-0"
+              checked={desktopChrome.navStyle === "rail"}
+              disabled={yourSpaceBusy}
+              onchange={(event) =>
+                void patchYourSpace({
+                  navStyle: (event.currentTarget as HTMLInputElement).checked
+                    ? "rail"
+                    : "compact",
+                })}
+            />
+          </label>
+
+          <label class="settings-toggle-row canvas-your-space-row">
+            <span class="canvas-your-space-copy">
+              <span class="canvas-your-space-icon" aria-hidden="true">
+                <MessageSquare size={15} strokeWidth={1.75} />
+              </span>
+              <span class="min-w-0 flex-1">
+                <span class="block text-sm font-medium text-surface-100">Vault chat button</span>
+                <span class="workshop-faint mt-0.5 block text-xs">Floating ask on open notes</span>
+              </span>
+            </span>
+            <input
+              type="checkbox"
+              class="checkbox shrink-0"
+              checked={desktopChrome.vaultChatFab}
+              disabled={yourSpaceBusy}
+              onchange={(event) =>
+                void patchYourSpace({
+                  vaultChatFab: (event.currentTarget as HTMLInputElement).checked,
+                })}
+            />
+          </label>
+
+          <label class="settings-toggle-row canvas-your-space-row">
+            <span class="canvas-your-space-copy">
+              <span class="canvas-your-space-icon" aria-hidden="true">
+                <PanelLeft size={15} strokeWidth={1.75} />
+              </span>
+              <span class="min-w-0 flex-1">
+                <span class="block text-sm font-medium text-surface-100">Vault sidebar</span>
+                <span class="workshop-faint mt-0.5 block text-xs">
+                  Notes & browse panel — expand from the top bar when hidden
+                </span>
+              </span>
+            </span>
+            <input
+              type="checkbox"
+              class="checkbox shrink-0"
+              checked={desktopChrome.vaultSidebar === "visible"}
+              disabled={yourSpaceBusy}
+              onchange={(event) =>
+                void patchYourSpace({
+                  vaultSidebar: (event.currentTarget as HTMLInputElement).checked
+                    ? "visible"
+                    : "hidden",
+                })}
+            />
+          </label>
+
+          <div
+            class="settings-toggle-row settings-metric-row canvas-your-space-row canvas-your-space-rail-row"
+          >
+            <span class="canvas-your-space-copy">
+              <span class="canvas-your-space-icon" aria-hidden="true">
+                <PanelRight size={15} strokeWidth={1.75} />
+              </span>
+              <span class="min-w-0 flex-1">
+                <span class="block text-sm font-medium text-surface-100">Activity rail</span>
+                <span class="workshop-faint mt-0.5 block text-xs">Feed, links, and context</span>
+              </span>
+            </span>
+            <div
+              class="canvas-your-space-choices"
+              role="radiogroup"
+              aria-label="Activity rail"
+            >
+              {#each [
+                { id: "visible", label: "Show" },
+                { id: "collapsed", label: "Fold" },
+                { id: "hidden", label: "Hide" },
+              ] as choice (choice.id)}
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={desktopChrome.activityRail === choice.id}
+                  class="canvas-your-space-choice {desktopChrome.activityRail === choice.id
+                    ? 'canvas-your-space-choice-active'
+                    : ''}"
+                  disabled={yourSpaceBusy}
+                  onclick={() =>
+                    void patchYourSpace({ activityRail: choice.id as ActivityRailMode })}
+                >
+                  {choice.label}
+                </button>
+              {/each}
+            </div>
+          </div>
+        </div>
+      </div>
+      {#if yourSpaceError}
+        <p class="canvas-settings-note text-warning-200">{yourSpaceError}</p>
+      {/if}
     </div>
 
     <div class="canvas-settings-block">
@@ -394,6 +546,91 @@
   .canvas-settings-note {
     margin-top: 0.55rem;
     margin-bottom: 0;
+  }
+
+  .canvas-your-space {
+    display: grid;
+    gap: 0.35rem;
+  }
+
+  .canvas-your-space-group-label {
+    margin: 0;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: rgb(var(--color-surface-500));
+  }
+
+  .canvas-your-space-row {
+    gap: 0.75rem;
+  }
+
+  .canvas-your-space-copy {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+
+  .canvas-your-space-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.65rem;
+    height: 1.65rem;
+    flex-shrink: 0;
+    border-radius: 0.4rem;
+    color: rgb(var(--color-surface-300));
+    background: color-mix(in srgb, var(--color-surface-800) 70%, transparent);
+  }
+
+  .canvas-your-space-rail-row {
+    flex-wrap: wrap;
+    align-items: center;
+    row-gap: 0.55rem;
+  }
+
+  .canvas-your-space-choices {
+    display: inline-flex;
+    margin-left: auto;
+    flex-shrink: 0;
+    gap: 0.25rem;
+    padding: 0.15rem;
+    border-radius: 999px;
+    border: 1px solid color-mix(in srgb, var(--color-surface-600) 45%, transparent);
+    background: color-mix(in srgb, var(--color-surface-900) 55%, transparent);
+  }
+
+  .canvas-your-space-choice {
+    min-height: 1.75rem;
+    padding: 0.2rem 0.7rem;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: rgb(var(--color-surface-400));
+    font-size: 0.6875rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition:
+      color 120ms ease,
+      background 120ms ease;
+  }
+
+  .canvas-your-space-choice:hover:not(:disabled) {
+    color: rgb(var(--color-surface-100));
+  }
+
+  .canvas-your-space-choice:disabled {
+    opacity: 0.45;
+    cursor: default;
+  }
+
+  .canvas-your-space-choice-active {
+    background: color-mix(in srgb, var(--color-primary-500) 16%, transparent);
+    color: rgb(var(--color-surface-50));
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-primary-500) 28%, transparent);
   }
 
   .canvas-pin-callout {

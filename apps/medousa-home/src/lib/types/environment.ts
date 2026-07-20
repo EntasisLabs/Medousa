@@ -21,6 +21,8 @@ export type DesktopNavStyle = "rail" | "compact";
 
 export type ActivityRailMode = "visible" | "collapsed" | "hidden";
 
+export type VaultSidebarMode = "visible" | "hidden";
+
 export interface EnvironmentTheme {
   colorThemeId?: string | null;
   brandColor?: string | null;
@@ -36,6 +38,10 @@ export interface ShellChromeMobile {
 export interface ShellChromeDesktop {
   navStyle?: DesktopNavStyle | null;
   activityRail?: ActivityRailMode | null;
+  /** Vault note chat FAB on desktop. Default true when unset. */
+  vaultChatFab?: boolean | null;
+  /** LME vault sidebar. Default visible when unset. */
+  vaultSidebar?: VaultSidebarMode | null;
 }
 
 export interface ShellChromeDef {

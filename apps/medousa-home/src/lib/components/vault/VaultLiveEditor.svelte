@@ -30,6 +30,7 @@
     takeForeignUndo,
   } from "$lib/vault/live/liveForeignUndo";
   import { saveVaultNote } from "$lib/daemon";
+  import { flushLiveDrafts } from "$lib/vault/live/liveDraftFlush";
   import { invalidateTransclusionCache } from "$lib/utils/resolveTransclusion";
   import { copyTextToClipboard } from "$lib/utils/vaultClipboard";
   import type { MarkdownFormatAction, SlashBlockId } from "$lib/utils/vaultMarkdownEdit";
@@ -37,16 +38,25 @@
   import { placeSlashMenuAnchor } from "$lib/utils/slashMenuPlacement";
   import type { CardDetailPayload } from "$lib/markdown/liquidEmbeds";
   import VaultSelectionFormatBubble from "./VaultSelectionFormatBubble.svelte";
+  import VaultLiveTableChrome from "./VaultLiveTableChrome.svelte";
   import VaultLiveProperties from "./VaultLiveProperties.svelte";
   import {
     applyLiveFormatAction,
     applyLiveTextColor,
     liveActiveFormatActions,
+    liveCoordsAnchor,
     liveSelectionAnchor,
     liveSelectionHasText,
+    liveTableChromeOpen,
     type SelectionAnchor,
   } from "$lib/vault/live/liveSelectionFormat";
   import { handleLiveScrollToSelection } from "$lib/vault/live/liveScrollSelection";
+  import { toast } from "$lib/stores/toast.svelte";
+  import {
+    dataTransferHasImage,
+    imageFileFromDataTransfer,
+    markdownFromImageFile,
+  } from "$lib/utils/vaultImagePaste";
 
   interface Props {
     /** Full note markdown (source of truth from parent). */
@@ -83,6 +93,9 @@
   /** Last nonempty selection — restored when bubble buttons steal focus. */
   let formatSelectionRange = $state<{ from: number; to: number } | null>(null);
   let removeFormatBubbleListeners: (() => void) | null = null;
+  let tableChromeOpen = $state(false);
+  let tableChromeAnchor = $state<SelectionAnchor | null>(null);
+  let liveEditor = $state<Editor | null>(null);
   /** Key this editor instance is bound to — never flush if it diverges. */
   let boundKey = "";
   let applyingExternal = false;
@@ -92,6 +105,7 @@
   const onSlashCheckRef = { current: onSlashCheck };
   const onSlashKeyRef = { current: onSlashKey };
   const slashOpenRef = { current: slashOpen };
+  const disabledRef = { current: disabled };
   const boundKeyRef = { current: "" };
   const valueRef = { current: value };
 
@@ -100,8 +114,35 @@
     onSlashCheckRef.current = onSlashCheck;
     onSlashKeyRef.current = onSlashKey;
     slashOpenRef.current = slashOpen;
+    disabledRef.current = disabled;
     valueRef.current = value;
   });
+
+  function handleImageTransferEvent(
+    event: ClipboardEvent | DragEvent,
+    data: DataTransfer | null,
+  ): boolean {
+    if (disabledRef.current || !editor || !dataTransferHasImage(data)) return false;
+    // Must capture File during the event — DataTransfer is cleared afterward.
+    const file = imageFileFromDataTransfer(data);
+    if (!file) return false;
+    event.preventDefault();
+    void (async () => {
+      const result = await markdownFromImageFile(file);
+      if (result.ok === false) {
+        toast.show(result.message);
+        return;
+      }
+      // setImage keeps the data URL intact (markdown insert can mangle huge srcs).
+      editor
+        ?.chain()
+        .focus(undefined, { scrollIntoView: false })
+        .setImage({ src: result.dataUrl, alt: result.alt })
+        .run();
+      emitMarkdown();
+    })();
+    return true;
+  }
 
   function liveMarkdownEqual(a: string, b: string): boolean {
     const norm = (s: string) => s.replace(/\r\n/g, "\n").replace(/\n+$/g, "\n");
@@ -216,10 +257,21 @@
     return {
       titleByPath: vault.labelByPath(),
       openLinksInWeb: false,
+      localImagePath: vault.selectedPath,
       onOpenCardDetail: (detail: CardDetailPayload) => {
         vault.openCardDetail(detail);
       },
     };
+  }
+
+  function syncTableChrome() {
+    if (!editor || disabled || !liveTableChromeOpen(editor)) {
+      tableChromeOpen = false;
+      tableChromeAnchor = null;
+      return;
+    }
+    tableChromeAnchor = liveCoordsAnchor(editor);
+    tableChromeOpen = Boolean(tableChromeAnchor);
   }
 
   function syncFormatBubble() {
@@ -228,8 +280,10 @@
       formatBubbleAnchor = null;
       formatActiveActions = [];
       formatSelectionRange = null;
+      syncTableChrome();
       return;
     }
+    syncTableChrome();
     if (!liveSelectionHasText(editor)) {
       // Editor blur (e.g. before mousedown preventDefault) can empty selection —
       // keep the bubble + stashed range so the click can still apply.
@@ -461,9 +515,21 @@
           class: "vault-live-prose",
         },
         handleScrollToSelection: (view) => handleLiveScrollToSelection(view),
+        handlePaste: (_view, event) =>
+          handleImageTransferEvent(event, event.clipboardData),
+        handleDrop: (_view, event) =>
+          handleImageTransferEvent(event, event.dataTransfer),
         handleDOMEvents: {
           click: (_view, event) => {
             handleHostClick(event);
+            return false;
+          },
+          dragover: (_view, event) => {
+            if (disabledRef.current) return false;
+            if (event.dataTransfer?.types.includes("Files")) {
+              event.preventDefault();
+              return true;
+            }
             return false;
           },
         },
@@ -568,15 +634,19 @@
         queueMicrotask(() => {
           const active = document.activeElement;
           if (active?.closest(".vault-selection-format-bubble")) return;
+          if (active?.closest(".vault-live-table-chrome")) return;
           if (editor && liveSelectionHasText(editor)) {
             syncFormatBubble();
             return;
           }
           formatBubbleOpen = false;
           formatSelectionRange = null;
+          syncTableChrome();
         });
       },
     });
+
+    liveEditor = editor;
 
     const scrollParent = hostEl.closest(".vault-live-editor");
     const onScrollOrResize = () => syncFormatBubble();
@@ -636,10 +706,15 @@
     removeFormatBubbleListeners = null;
     editor?.destroy();
     editor = null;
+    liveEditor = null;
+    tableChromeOpen = false;
+    tableChromeAnchor = null;
   });
 
   /** Explicit serialize for Live→Build plane switch (caller must invoke before unmount). */
   export function flush(): string {
+    // Promote nested Write drafts (slides/report inputs) into TipTap attrs first.
+    flushLiveDrafts();
     if (!editor) return value;
     return serializeLiveMarkdown(editor.getJSON(), frontmatter);
   }
@@ -714,7 +789,7 @@
   }
 </script>
 
-<div class="vault-live-editor flex min-h-0 flex-1 flex-col overflow-y-auto">
+<div class="vault-live-editor flex min-h-0 min-w-0 max-w-full flex-1 flex-col overflow-x-hidden overflow-y-auto">
   <VaultLiveProperties
     {frontmatter}
     {tags}
@@ -724,6 +799,16 @@
   />
   <div bind:this={hostEl} class="vault-live-editor__host min-h-0 flex-1"></div>
 </div>
+
+<style>
+  :global(.vault-live-prose img.vault-live-image) {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    margin: 0.75rem 0;
+    border-radius: 0.35rem;
+  }
+</style>
 
 <VaultSelectionFormatBubble
   open={formatBubbleOpen}
@@ -735,4 +820,11 @@
   onClose={() => {
     formatBubbleOpen = false;
   }}
+/>
+
+<VaultLiveTableChrome
+  open={tableChromeOpen && !formatBubbleOpen}
+  anchor={tableChromeAnchor}
+  editor={liveEditor}
+  disabled={disabled}
 />

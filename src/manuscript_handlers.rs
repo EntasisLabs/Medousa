@@ -7,10 +7,10 @@ use axum::{Json, Router};
 use axum::extract::Query;
 
 use crate::daemon_api::{
-    ManuscriptCatalogEntry, ManuscriptCatalogQuery, ManuscriptCatalogResponse,
-    ManuscriptDetailResponse, ManuscriptImportRequest, ManuscriptImportResponse,
-    ManuscriptImportResultEntry, ManuscriptOpenshellSummary, ManuscriptScriptEntry,
-    UpdateManuscriptRequest,
+    CreateManuscriptRequest, ManuscriptCatalogEntry, ManuscriptCatalogQuery,
+    ManuscriptCatalogResponse, ManuscriptDetailResponse, ManuscriptImportRequest,
+    ManuscriptImportResponse, ManuscriptImportResultEntry, ManuscriptOpenshellSummary,
+    ManuscriptScriptEntry, UpdateManuscriptRequest,
 };
 use crate::identity_manuscript::{
     self, ManuscriptScope, build_manuscript_context, palette_tools_for_editor,
@@ -189,6 +189,35 @@ pub async fn patch_manuscript_detail(
     )))
 }
 
+pub async fn create_manuscript(
+    Json(request): Json<CreateManuscriptRequest>,
+) -> Result<Json<ManuscriptDetailResponse>, (StatusCode, String)> {
+    let scope = parse_scope(request.scope.as_deref())?;
+    let (id, _path) = identity_manuscript::create_manuscript(
+        &request.name,
+        request.description.as_deref(),
+        scope,
+        request.template.as_deref(),
+    )
+    .map_err(|err| (StatusCode::BAD_REQUEST, err.to_string()))?;
+
+    let context = build_manuscript_context(&id)
+        .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
+    let schedule_validation_error = validate_manuscript_for_scheduled_lane(&context)
+        .err()
+        .map(|err| err.to_string());
+    let schedule_ready = schedule_validation_error.is_none();
+
+    Ok(Json(build_detail_response(
+        context,
+        scope_label(scope),
+        false,
+        Vec::new(),
+        schedule_ready,
+        schedule_validation_error,
+    )))
+}
+
 pub async fn import_manuscripts(
     Json(request): Json<ManuscriptImportRequest>,
 ) -> Result<Json<ManuscriptImportResponse>, (StatusCode, String)> {
@@ -240,6 +269,8 @@ fn build_detail_response(
         scope,
         path: context.source_path.display().to_string(),
         extends_from: context.extends_from.clone(),
+        display_name: context.display_name.clone(),
+        voice_appendix: context.voice_appendix.clone(),
         task_template: context.task_template.clone(),
         tools_allow: context.tools_allow.clone(),
         schedule_cron: context.schedule_cron.clone(),
@@ -298,6 +329,7 @@ pub fn manuscript_router() -> Router {
             "/v1/manuscripts",
             get(list_manuscripts_catalog).post(import_manuscripts),
         )
+        .route("/v1/manuscripts/create", axum::routing::post(create_manuscript))
         .route(
             "/v1/manuscripts/{manuscript_id}",
             get(get_manuscript_detail).patch(patch_manuscript_detail),

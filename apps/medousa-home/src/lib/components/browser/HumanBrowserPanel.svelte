@@ -8,6 +8,7 @@
   import BrowserCaptchaBanner from "$lib/components/browser/BrowserCaptchaBanner.svelte";
   import BrowserFindBar from "$lib/components/browser/BrowserFindBar.svelte";
   import BrowserStartPage from "$lib/components/browser/BrowserStartPage.svelte";
+  import ShellSidebarExpandButton from "$lib/components/layout/ShellSidebarExpandButton.svelte";
   import {
     createBrowserCompositor,
     registerBrowserCompositor,
@@ -27,9 +28,11 @@
   interface Props {
     visible?: boolean;
     workRailVisible?: boolean;
+    /** When true, the shell tab strip owns tabs — hide the local tab bar. */
+    shellTabChrome?: boolean;
   }
 
-  let { visible = true, workRailVisible = false }: Props = $props();
+  let { visible = true, workRailVisible = false, shellTabChrome = false }: Props = $props();
 
   let urlBarFocusNonce = $state(0);
   let panelEl = $state<HTMLElement | null>(null);
@@ -63,10 +66,6 @@
         getActiveTabId: () => humanBrowser.activeTab?.id ?? null,
       });
       registerBrowserCompositor(compositor);
-    }
-
-    if (visible) {
-      void humanBrowser.syncActiveTabToNative();
     }
 
     const onFocusUrl = () => focusUrlBar();
@@ -145,9 +144,15 @@
     };
   });
 
+  // Sync only on visible edge — a bare `if (!visible) return` effect still re-ran
+  // whenever the panel invalidates and could re-activate tabs mid-load.
+  let wasPanelVisible = false;
   $effect(() => {
-    if (!visible) return;
-    void humanBrowser.syncActiveTabToNative();
+    const isVisible = visible;
+    if (isVisible && !wasPanelVisible) {
+      void humanBrowser.syncActiveTabToNative();
+    }
+    wasPanelVisible = isVisible;
   });
 
   $effect(() => {
@@ -155,6 +160,8 @@
     humanBrowser.showStartPage;
     layout.activityWidth;
     layout.activityCollapsed;
+    layout.shellSidebarExpanded;
+    layout.shellSidebarWidth;
     layout.viewportWidth;
     layout.viewportHeight;
     workRailVisible;
@@ -178,14 +185,17 @@
     class="human-browser-chrome relative z-50 flex w-full shrink-0 flex-col"
     data-debug-label="browser-chrome"
   >
-    <div data-debug-label="browser-tab-bar">
-      <HumanBrowserTabBar />
-    </div>
+    {#if !shellTabChrome}
+      <div data-debug-label="browser-tab-bar">
+        <HumanBrowserTabBar />
+      </div>
+    {/if}
     <div data-debug-label="browser-agent-handoff">
       <BrowserControlHandoff />
     </div>
 
     <div class="browser-toolbar" data-debug-label="browser-url-row">
+      <ShellSidebarExpandButton label="Show rail" />
       <div class="browser-nav-cluster">
         <button
           type="button"

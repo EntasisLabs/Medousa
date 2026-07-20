@@ -88,6 +88,30 @@ describe("chatMessageToScene — assistant order (thinking → body → tools)",
     expect(findNode(scene, "m1:retry")?.props.action).toBe("retry_worker");
   });
 
+  it("passes distinct errorDetail into the callout for View details", () => {
+    const scene = chatMessageToScene(
+      msg({
+        failed: true,
+        errorLine: "The model could not complete this turn.",
+        errorDetail: "provider timeout after 30s",
+      }),
+    );
+    expect(findNode(scene, "m1:error")?.props.detail).toBe(
+      "provider timeout after 30s",
+    );
+  });
+
+  it("omits detail when identical to the friendly line", () => {
+    const scene = chatMessageToScene(
+      msg({
+        failed: true,
+        errorLine: "same",
+        errorDetail: "same",
+      }),
+    );
+    expect(findNode(scene, "m1:error")?.props.detail).toBeUndefined();
+  });
+
   it("maps structured tool runs to tool_trace at the bottom", () => {
     const runs: ToolRunState[] = [
       { runId: "r1", toolName: "web.search", status: "succeeded", round: 1 },

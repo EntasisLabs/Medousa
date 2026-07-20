@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { SlidersHorizontal } from "@lucide/svelte";
   import { flows } from "$lib/stores/flows.svelte";
   import { flowDraft } from "$lib/stores/flowDraft.svelte";
   import { settings } from "$lib/stores/settings.svelte";
@@ -31,9 +32,22 @@
   let { visible, mobile = false, embedded = false, onOpenFlows }: Props = $props();
 
   let search = $state("");
+  let filterOpen = $state(false);
   let flowName = $state("");
   let expandedId = $state<string | null>(null);
   let searchOpen = $state(false);
+  const filterActive = $derived(search.trim().length > 0);
+
+  function closeMenus() {
+    filterOpen = false;
+  }
+
+  function handleMenuKeydown(event: KeyboardEvent) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeMenus();
+    }
+  }
 
   const filtered = $derived.by(() => {
     const query = search.trim().toLowerCase();
@@ -148,7 +162,7 @@
       name: response.draft.name ?? flowName,
       goal: "",
       steps: response.draft.steps,
-      cron_expr: "0 9 * * *",
+      cron_expr: "",
       timezone: "UTC",
     };
     flows.lastPlan = null;
@@ -168,7 +182,7 @@
         ? `Repeat: ${humanToolRunHeadline(entry)}`
         : "",
       steps: response.draft.steps,
-      cron_expr: "0 9 * * *",
+      cron_expr: "",
       timezone: "UTC",
     };
     flows.lastPlan = null;
@@ -177,13 +191,15 @@
   }
 </script>
 
+<svelte:window onclick={closeMenus} />
+
 <section
   class="automations-history flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden {visible
     ? ''
     : 'hidden'}"
 >
-  <header class="{embedded ? 'border-b border-surface-500/40 px-4 py-3' : 'workshop-header'}">
-    {#if !embedded}
+  {#if !embedded}
+    <header class="workshop-header">
       <div class="flex flex-wrap items-end justify-between gap-3">
         <div class="min-w-0 max-w-xl">
           <p class="history-kicker">From conversation</p>
@@ -212,25 +228,29 @@
           </button>
         {/if}
       </div>
-    {/if}
 
-    {#if hasRuns && (searchOpen || search.trim())}
-      <label class="mt-4 block max-w-md">
-        <span class="sr-only">Search history</span>
-        <input
-          class="input w-full text-sm"
-          type="search"
-          placeholder="Search moments…"
-          bind:value={search}
-          autocapitalize="off"
-          autocorrect="off"
-          spellcheck="false"
-        />
-      </label>
-    {/if}
-  </header>
+      {#if hasRuns && (searchOpen || search.trim())}
+        <label class="mt-4 block max-w-md">
+          <span class="sr-only">Search history</span>
+          <input
+            class="input w-full text-sm"
+            type="search"
+            placeholder="Search moments…"
+            bind:value={search}
+            autocapitalize="off"
+            autocorrect="off"
+            spellcheck="false"
+          />
+        </label>
+      {/if}
+    </header>
+  {/if}
 
-  <div class="mobile-you-scroll min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-4 py-5">
+  <div
+    class="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto {embedded
+      ? 'px-2 py-1'
+      : 'mobile-you-scroll px-4 py-5'}"
+  >
     {#if toolHistory.loading && toolHistory.runs.length === 0}
       <p class="workshop-muted">Gathering recent moments…</p>
     {:else if toolHistory.error}
@@ -344,6 +364,68 @@
       <p class="mt-4 text-xs text-primary-300">{toolHistory.actionMessage}</p>
     {/if}
   </div>
+
+  {#if embedded}
+    <footer
+      class="relative flex shrink-0 items-center gap-1 border-t border-surface-500/25 px-2 py-1.5"
+    >
+      <div class="min-w-0 flex-1">
+        {#if filterActive}
+          <span class="workshop-faint truncate text-[11px]">Filtered</span>
+        {/if}
+      </div>
+      <div class="relative shrink-0">
+        <button
+          type="button"
+          class="vault-dock-icon-btn {filterActive ? 'vault-dock-icon-btn-active' : ''}"
+          aria-haspopup="menu"
+          aria-expanded={filterOpen}
+          aria-label="Filter history"
+          title="Filter"
+          onclick={(event) => {
+            event.stopPropagation();
+            filterOpen = !filterOpen;
+          }}
+        >
+          <SlidersHorizontal size={15} strokeWidth={1.75} />
+        </button>
+        {#if filterOpen}
+          <div
+            class="vault-notes-filter-menu absolute bottom-full right-0 z-30 mb-1 w-[min(17.5rem,calc(100vw-2rem))] rounded-lg border border-surface-500/50 bg-surface-900 py-2 shadow-xl"
+            role="menu"
+            tabindex="-1"
+            onclick={(event) => event.stopPropagation()}
+            onkeydown={handleMenuKeydown}
+          >
+            <div class="px-2.5 pb-1">
+              <input
+                class="input w-full text-xs"
+                type="search"
+                placeholder="Search history…"
+                bind:value={search}
+                autocapitalize="off"
+                autocorrect="off"
+                spellcheck="false"
+                onclick={(event) => event.stopPropagation()}
+              />
+            </div>
+            {#if filterActive}
+              <button
+                type="button"
+                role="menuitem"
+                class="vault-menu-item text-surface-400"
+                onclick={() => {
+                  search = "";
+                }}
+              >
+                Clear
+              </button>
+            {/if}
+          </div>
+        {/if}
+      </div>
+    </footer>
+  {/if}
 
   {#if selectedCount > 0}
     <div class="history-dock" role="region" aria-label="Save selection as flow">

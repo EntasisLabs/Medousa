@@ -42,6 +42,7 @@ export { brief } from "./organisms/brief/brief";
 export { dashboard } from "./organisms/dashboard/dashboard";
 export { chart } from "./organisms/chart/chart";
 export { report } from "./organisms/report/report";
+export { slides } from "./organisms/slides/slides";
 
 // shell (reuse of native chat molecules)
 export { thinking } from "./shell/thinking/thinking";

@@ -5,6 +5,8 @@ export type VaultNoteKind =
   | "project"
   | "ledger"
   | "board"
+  | "slides"
+  | "resume"
   | "inbox"
   | "bug"
   | "note";
@@ -14,6 +16,8 @@ const KNOWN_KINDS = new Set<VaultNoteKind>([
   "project",
   "ledger",
   "board",
+  "slides",
+  "resume",
   "inbox",
   "bug",
   "note",
@@ -34,6 +38,14 @@ export function normalizeKind(value: string | null | undefined): VaultNoteKind {
     case "board":
     case "boards":
       return "board";
+    case "slides":
+    case "deck":
+    case "presentation":
+      return "slides";
+    case "resume":
+    case "cv":
+    case "curriculum":
+      return "resume";
     case "inbox":
     case "capture":
       return "inbox";
@@ -55,6 +67,8 @@ export function resolveKindFromPath(path: string): VaultNoteKind {
   if (path.startsWith("projects/")) return "project";
   if (path.startsWith("finance/")) return "ledger";
   if (path.startsWith("boards/")) return "board";
+  if (path.startsWith("slides/") || path.startsWith("decks/")) return "slides";
+  if (path.startsWith("resumes/") || path.startsWith("cv/")) return "resume";
   if (path.startsWith("inbox/")) return "inbox";
   if (path.startsWith("bugs/")) return "bug";
   return "note";
@@ -78,6 +92,12 @@ export function kindForSpace(spaceId: string): VaultNoteKind {
       return "ledger";
     case "boards":
       return "board";
+    case "slides":
+    case "decks":
+      return "slides";
+    case "resumes":
+    case "cv":
+      return "resume";
     case "inbox":
       return "inbox";
     case "bugs":
@@ -97,6 +117,10 @@ export function kindLabel(kind: VaultNoteKind): string {
       return "Ledger";
     case "board":
       return "Board";
+    case "slides":
+      return "Slides";
+    case "resume":
+      return "Resume";
     case "inbox":
       return "Inbox";
     case "bug":
@@ -138,6 +162,8 @@ export const VAULT_KIND_OPTIONS: VaultNoteKind[] = [
   "project",
   "ledger",
   "board",
+  "slides",
+  "resume",
   "inbox",
   "bug",
 ];
@@ -196,6 +222,52 @@ export function parseFrontmatterKindValue(
   frontmatter: string | null,
 ): string {
   return readFrontmatterField(frontmatter, "kind") ?? "";
+}
+
+export function parseFrontmatterAuthor(frontmatter: string | null): string {
+  return readFrontmatterField(frontmatter, "author") ?? "";
+}
+
+export function parseFrontmatterDate(frontmatter: string | null): string {
+  return (
+    readFrontmatterField(frontmatter, "date") ??
+    readFrontmatterField(frontmatter, "updated") ??
+    ""
+  );
+}
+
+export function setFrontmatterAuthorYaml(
+  frontmatter: string | null,
+  author: string,
+): string {
+  const trimmed = author.trim();
+  if (!trimmed) {
+    if (!frontmatter) return "";
+    return frontmatter
+      .split("\n")
+      .filter((line) => !line.trimStart().startsWith("author:"))
+      .join("\n")
+      .replace(/^\n+/, "")
+      .replace(/\n+$/, "");
+  }
+  return upsertFrontmatterField(frontmatter, "author", trimmed);
+}
+
+export function setFrontmatterDateYaml(
+  frontmatter: string | null,
+  date: string,
+): string {
+  const trimmed = date.trim();
+  if (!trimmed) {
+    if (!frontmatter) return "";
+    return frontmatter
+      .split("\n")
+      .filter((line) => !line.trimStart().startsWith("date:"))
+      .join("\n")
+      .replace(/^\n+/, "")
+      .replace(/\n+$/, "");
+  }
+  return upsertFrontmatterField(frontmatter, "date", trimmed);
 }
 
 /** Update `title:` in YAML (creates frontmatter when missing). */

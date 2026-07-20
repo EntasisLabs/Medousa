@@ -83,6 +83,7 @@ export type VaultTemplateId =
   | "ledger"
   | "inbox"
   | "bug"
+  | "resume"
   | "blank";
 
 export interface VaultTemplateOption {
@@ -101,14 +102,24 @@ export const VAULT_TEMPLATES_BY_SPACE: Record<string, VaultTemplateOption[]> = {
     { id: "board", label: "Kanban board" },
     { id: "database", label: "Database table" },
     { id: "view", label: "Query view" },
+    { id: "resume", label: "Resume" },
   ],
   finance: [{ id: "ledger", label: "Ledger" }],
   inbox: [{ id: "inbox", label: "Quick capture" }],
   bugs: [{ id: "bug", label: "Bug report" }],
+  other: [
+    { id: "resume", label: "Resume" },
+    { id: "blank", label: "Blank note" },
+  ],
 };
 
 export function templatesForSpace(spaceId: string): VaultTemplateOption[] {
-  return VAULT_TEMPLATES_BY_SPACE[spaceId] ?? [{ id: "blank", label: "Blank note" }];
+  return (
+    VAULT_TEMPLATES_BY_SPACE[spaceId] ?? [
+      { id: "resume", label: "Resume" },
+      { id: "blank", label: "Blank note" },
+    ]
+  );
 }
 
 export function defaultTemplateForSpace(spaceId: string): VaultTemplateId {
@@ -272,6 +283,47 @@ export function bugNoteTemplate(title: string): string {
   );
 }
 
+export function resumeNoteTemplate(title: string): string {
+  const trimmed = title.trim() || "Resume";
+  return withKind(
+    "resume",
+    `# ${trimmed}
+
+City, ST | [email@example.com](mailto:email@example.com) | (555) 555-5555
+
+## Professional summary
+
+One or two sentences on the role you want and the strengths you bring.
+
+## Areas of expertise
+
+| Strength | Strength | Strength |
+| -------- | -------- | -------- |
+| Skill one | Skill two | Skill three |
+| Skill four | Skill five | Skill six |
+| Skill seven | Skill eight | Skill nine |
+
+## Professional experience
+
+### Role title
+
+Company | Month Year – Present
+
+- **Theme:** Concrete win with scope and outcome.
+- **Theme:** Another result in plain language.
+
+## Education
+
+- School — Program or credential
+
+## Technical skills
+
+- Tooling and platforms you use daily
+
+`,
+  );
+}
+
 export function templateForSpace(spaceId: string, title: string): string {
   return contentForTemplate(defaultTemplateForSpace(spaceId), title);
 }
@@ -301,6 +353,8 @@ export function contentForTemplate(
       return bugNoteTemplate(title);
     case "inbox":
       return inboxCaptureTemplate(title.trim() || "Captured thought");
+    case "resume":
+      return resumeNoteTemplate(title);
     case "blank":
     default: {
       const trimmed = title.trim() || "Note";
@@ -328,6 +382,8 @@ export function pathForTemplate(
       return weeklyReviewPath(date);
     case "inbox":
       return inboxCapturePath(date);
+    case "resume":
+      return `resumes/${slugifyTitle(title)}.md`;
     default: {
       const spaceConfig = getSpaceById(spaceId);
       const prefix = spaceConfig?.prefix;

@@ -1,12 +1,31 @@
 import type { MobileTab, MoreDestination } from "$lib/types/mobile";
 import type { Surface } from "$lib/types/ui";
 import { shouldUseMobileShell } from "$lib/platform";
+import { surfaceHasShellSidebarView } from "$lib/utils/navSurfaces";
 
 const LAST_SURFACE_KEY = "medousa-home-last-surface";
-const LANDING_SURFACES: Surface[] = ["chat", "work", "library", "web", "workshop"];
+const LANDING_SURFACES: Surface[] = [
+  "chat",
+  "work",
+  "library",
+  "web",
+  "workshop",
+  "peers",
+  "messaging",
+  "settings",
+  "calendar",
+  "context",
+  "runtime",
+  "profiles",
+];
 
 const ACTIVITY_WIDTH_KEY = "medousa-home-activity-width";
+const SHELL_SIDEBAR_WIDTH_KEY = "medousa-home-shell-sidebar-width";
 const VAULT_TREE_WIDTH_KEY = "medousa-home-vault-tree-width";
+
+export const SHELL_SIDEBAR_WIDTH_MIN = 200;
+export const SHELL_SIDEBAR_WIDTH_MAX = 420;
+export const SHELL_SIDEBAR_WIDTH_DEFAULT = 248;
 const VAULT_EDITOR_PANE_WIDTH_KEY = "medousa-home-vault-editor-pane-width";
 const VAULT_SPLIT_ENABLED_KEY = "medousa-home-vault-split-enabled";
 const VAULT_LINKS_PANEL_KEY = "medousa-home-vault-links-panel";
@@ -15,11 +34,31 @@ const SESSION_DRAWER_KEY = "medousa-home-session-drawer";
 const IDENTITY_DRAWER_KEY = "medousa-home-identity-drawer";
 const ACTIVITY_COLLAPSED_KEY = "medousa-home-activity-collapsed";
 const VAULT_SIDEBAR_COLLAPSED_KEY = "medousa-home-vault-sidebar-collapsed";
+/** Persists left master rail visible/hidden (`navStyle` rail=visible, compact=hidden). */
+const SHELL_SIDEBAR_EXPANDED_KEY = "medousa-home-shell-sidebar-expanded";
+const NAV_EXPANDED_KEY = "medousa-home-nav-expanded";
 const MOBILE_TAB_KEY = "medousa-home-mobile-tab";
 const MORE_DESTINATION_KEY = "medousa-home-you-destination";
 const LIBRARY_VIEW_KEY = "medousa-home-library-view";
 
 export type LibraryView = "list" | "reader";
+/** Master rail content: destination nav, or the active view’s list in the same rail. */
+export type ShellSidebarMode = "nav" | "view";
+
+function loadShellSidebarExpanded(): boolean {
+  if (typeof localStorage === "undefined") return true;
+  const shell = localStorage.getItem(SHELL_SIDEBAR_EXPANDED_KEY);
+  if (shell === "1") return true;
+  if (shell === "0") return false;
+  // Migrate prior nav-labels flag.
+  const legacy = localStorage.getItem(NAV_EXPANDED_KEY);
+  if (legacy === "0") return false;
+  if (legacy === "1") return true;
+  // Prefer previous vault sidebar open state when present.
+  const vault = localStorage.getItem(VAULT_SIDEBAR_COLLAPSED_KEY);
+  if (vault === "1") return false;
+  return true;
+}
 
 export class LayoutStore {
   isMobile = $state(
@@ -37,6 +76,10 @@ export class LayoutStore {
   activitySheetOpen = $state(false);
   askSheetOpen = $state(false);
   activityWidth = $state(loadWidth(ACTIVITY_WIDTH_KEY, 288));
+  /** Master left rail width when visible (px). */
+  shellSidebarWidth = $state(
+    loadWidth(SHELL_SIDEBAR_WIDTH_KEY, SHELL_SIDEBAR_WIDTH_DEFAULT),
+  );
   vaultTreeWidth = $state(loadWidth(VAULT_TREE_WIDTH_KEY, 224));
   vaultEditorPaneWidth = $state(loadWidth(VAULT_EDITOR_PANE_WIDTH_KEY, 420));
   vaultSplitEnabled = $state(loadFlag(VAULT_SPLIT_ENABLED_KEY, true));
@@ -45,7 +88,19 @@ export class LayoutStore {
   sessionDrawerOpen = $state(loadFlag(SESSION_DRAWER_KEY, false));
   identityDrawerOpen = $state(loadFlag(IDENTITY_DRAWER_KEY, false));
   activityCollapsed = $state(loadFlag(ACTIVITY_COLLAPSED_KEY, false));
-  vaultSidebarCollapsed = $state(loadFlag(VAULT_SIDEBAR_COLLAPSED_KEY, false));
+  /**
+   * Master rail visible (true) vs fully hidden (false). No icon-strip intermediate.
+   * Kept in sync with vaultSidebarCollapsed (inverted) and legacy navExpanded.
+   */
+  shellSidebarExpanded = $state(loadShellSidebarExpanded());
+  /** nav = destinations in the rail; view = active surface list in the same rail. */
+  shellSidebarMode = $state<ShellSidebarMode>(
+    surfaceHasShellSidebarView(loadLastSurface()) ? "view" : "nav",
+  );
+  /** @deprecated Use !shellSidebarExpanded — kept for LME call sites. */
+  vaultSidebarCollapsed = $state(!loadShellSidebarExpanded());
+  /** @deprecated Alias of shellSidebarExpanded (navStyle rail=visible / compact=hidden). */
+  navExpanded = $state(loadShellSidebarExpanded());
   viewportWidth = $state(
     typeof window !== "undefined" ? window.innerWidth : 1280,
   );
@@ -73,6 +128,15 @@ export class LayoutStore {
   setActivityWidth(width: number) {
     this.activityWidth = clamp(width, 220, 520);
     localStorage.setItem(ACTIVITY_WIDTH_KEY, String(this.activityWidth));
+  }
+
+  setShellSidebarWidth(width: number) {
+    this.shellSidebarWidth = clamp(
+      width,
+      SHELL_SIDEBAR_WIDTH_MIN,
+      SHELL_SIDEBAR_WIDTH_MAX,
+    );
+    localStorage.setItem(SHELL_SIDEBAR_WIDTH_KEY, String(this.shellSidebarWidth));
   }
 
   setVaultTreeWidth(width: number) {
@@ -135,13 +199,56 @@ export class LayoutStore {
     this.setActivityCollapsed(!this.activityCollapsed);
   }
 
+  setShellSidebarExpanded(expanded: boolean) {
+    this.shellSidebarExpanded = expanded;
+    this.navExpanded = expanded;
+    this.vaultSidebarCollapsed = !expanded;
+    localStorage.setItem(SHELL_SIDEBAR_EXPANDED_KEY, expanded ? "1" : "0");
+    localStorage.setItem(NAV_EXPANDED_KEY, expanded ? "1" : "0");
+    localStorage.setItem(VAULT_SIDEBAR_COLLAPSED_KEY, expanded ? "0" : "1");
+  }
+
+  toggleShellSidebarExpanded() {
+    this.setShellSidebarExpanded(!this.shellSidebarExpanded);
+  }
+
+  setShellSidebarMode(mode: ShellSidebarMode) {
+    this.shellSidebarMode = mode;
+  }
+
+  /** Leave view list → destination nav in the same expanded rail. */
+  shellSidebarBackToNav() {
+    this.shellSidebarMode = "nav";
+    if (!this.shellSidebarExpanded) {
+      this.setShellSidebarExpanded(true);
+    }
+  }
+
+  /** Expand the master rail into the active view’s list (Peers, Settings, …). */
+  openShellSidebarView(surfaceId: string) {
+    if (!surfaceHasShellSidebarView(surfaceId)) {
+      this.shellSidebarMode = "nav";
+      this.setShellSidebarExpanded(true);
+      return;
+    }
+    this.shellSidebarMode = "view";
+    this.setShellSidebarExpanded(true);
+  }
+
   setVaultSidebarCollapsed(collapsed: boolean) {
-    this.vaultSidebarCollapsed = collapsed;
-    localStorage.setItem(VAULT_SIDEBAR_COLLAPSED_KEY, collapsed ? "1" : "0");
+    this.setShellSidebarExpanded(!collapsed);
   }
 
   toggleVaultSidebarCollapsed() {
-    this.setVaultSidebarCollapsed(!this.vaultSidebarCollapsed);
+    this.toggleShellSidebarExpanded();
+  }
+
+  setNavExpanded(expanded: boolean) {
+    this.setShellSidebarExpanded(expanded);
+  }
+
+  toggleNavExpanded() {
+    this.toggleShellSidebarExpanded();
   }
 
   setMobile(mobile: boolean) {
@@ -152,8 +259,37 @@ export class LayoutStore {
     this.navigationEpoch += 1;
   }
 
+  /**
+   * Update rail / last-surface hint without remounting the center column.
+   * Used by the shell tab host when activating tabs.
+   */
+  focusDesktopSurface(surface: string) {
+    let next = surface === "home" ? "chat" : surface;
+    if (next === "automations" || next === "workshop") next = "library";
+    if (this.desktopSurface === next) return;
+    this.desktopSurface = next as Surface;
+    saveLastSurface(next);
+    this.shellSidebarMode = surfaceHasShellSidebarView(next) ? "view" : "nav";
+  }
+
   navigateDesktop(surface: string, options?: { bump?: boolean }) {
-    const next = surface === "home" ? "chat" : surface;
+    // Legacy Automations surface → LME workspace (library). Callers that need a
+    // specific explorer mode should set `lmeWorkspace` before navigating.
+    let next = surface === "home" ? "chat" : surface;
+    if (next === "automations") {
+      next = "library";
+      void import("$lib/stores/lmeWorkspace.svelte").then(({ lmeWorkspace }) => {
+        const mode = lmeWorkspace.explorerMode;
+        if (
+          mode !== "scripts" &&
+          mode !== "flows" &&
+          mode !== "schedules" &&
+          mode !== "history"
+        ) {
+          lmeWorkspace.setExplorerMode("scripts");
+        }
+      });
+    }
     if (next !== "chat") {
       this.setSessionDrawerOpen(false);
       this.setIdentityDrawerOpen(false);
@@ -164,6 +300,8 @@ export class LayoutStore {
     const changed = this.desktopSurface !== next;
     this.desktopSurface = next;
     saveLastSurface(next);
+    // Drill into view lists when landing on a list surface; otherwise stay on nav.
+    this.shellSidebarMode = surfaceHasShellSidebarView(next) ? "view" : "nav";
     if (changed || options?.bump) {
       this.bumpNavigation();
     }

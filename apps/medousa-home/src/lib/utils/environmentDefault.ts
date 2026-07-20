@@ -30,11 +30,10 @@ function defaultSurfaces() {
     { id: "chat", label: "Chat", icon: "message-circle", builtinId: "chat", mobileTab: "chat" },
     { id: "peers", label: "Peers", icon: "users", builtinId: "peers" },
     { id: "work", label: "Work", icon: "layout-grid", builtinId: "work" },
-    { id: "library", label: "Library", icon: "book-open", builtinId: "library", mobileTab: "notes" },
+    { id: "library", label: "Workspace", icon: "panels-top-left", builtinId: "library", mobileTab: "notes" },
     { id: "calendar", label: "Calendar", icon: "calendar-days", builtinId: "calendar" },
     { id: "web", label: "Web", icon: "globe", builtinId: "web", mobileTab: "web" },
     { id: "context", label: "Context", icon: "orbit", builtinId: "context" },
-    { id: "workshop", label: "Capabilities", icon: "zap", builtinId: "workshop" },
     { id: "automations", label: "Automations", icon: "calendar", builtinId: "automations" },
     { id: "messaging", label: "Messaging", icon: "radio", builtinId: "messaging" },
     {

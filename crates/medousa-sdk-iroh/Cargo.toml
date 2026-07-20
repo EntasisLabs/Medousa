@@ -1,6 +1,6 @@
 [package]
 name = "medousa-sdk-iroh"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 description = "Workshop LAN transport adapter for medousa-sdk (Iroh routing via Tauri workshop_transport)"
 
