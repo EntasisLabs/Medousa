@@ -78,6 +78,26 @@ export function operatorStreamErrorLine(
   return "Something went wrong on this turn. Try again in a moment.";
 }
 
+/**
+ * Raw debug text for a collapsed “View details” expand.
+ * Returns null when identical to the friendly line (nothing extra to show).
+ */
+export function operatorStreamErrorDetail(
+  event: InteractiveTurnStreamEvent,
+  friendlyLine: string,
+): string | null {
+  const debug =
+    event.debug_message?.trim() ||
+    (event.message?.trim() && isEngineTelemetryText(event.message)
+      ? event.message.trim()
+      : null) ||
+    event.message?.trim() ||
+    null;
+  if (!debug) return null;
+  if (debug === friendlyLine.trim()) return null;
+  return debug;
+}
+
 export function shouldMirrorStatusIntoContent(
   _event: InteractiveTurnStreamEvent,
   _showEngineDetails: boolean,

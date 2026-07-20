@@ -40,6 +40,7 @@ import {
 } from "$lib/utils/turnInterimDisplay";
 import {
   isEngineTelemetryText,
+  operatorStreamErrorDetail,
   operatorStreamErrorLine,
   operatorStreamStatusLine,
   shouldSuppressStreamContentDelta,
@@ -1631,6 +1632,7 @@ export class ChatStore {
         ...current,
         failed: false,
         errorLine: null,
+        errorDetail: null,
         answerState: null,
         streaming: true,
         statusLine: "Loading result…",
@@ -2244,11 +2246,12 @@ export class ChatStore {
       event,
       settings.showEngineDetailsInChat,
     );
+    const errorDetail = operatorStreamErrorDetail(event, errorLine);
     this.streamError = errorLine;
 
     const messageId = this.messageIdForTurn(event.turn_id);
     if (messageId) {
-      this.markMessageFailed(messageId, errorLine);
+      this.markMessageFailed(messageId, errorLine, errorDetail);
       if (this.assistantId === messageId) {
         this.assistantId = null;
       }
@@ -2261,7 +2264,11 @@ export class ChatStore {
     }
   }
 
-  private markMessageFailed(messageId: string, errorLine: string) {
+  private markMessageFailed(
+    messageId: string,
+    errorLine: string,
+    errorDetail: string | null = null,
+  ) {
     const idx = this.messages.findIndex((message) => message.id === messageId);
     if (idx < 0) return;
     const current = this.messages[idx];
@@ -2272,6 +2279,7 @@ export class ChatStore {
         streaming: false,
         failed: true,
         errorLine,
+        errorDetail,
         answerState: "failed",
         phase: null,
         statusLine: null,

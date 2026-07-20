@@ -5,7 +5,6 @@
   import { filterProviders, groupProvidersByCategory } from "$lib/types/providers";
   import {
     findCatalogProvider,
-    listProviderModels,
     listProviders,
     probeProviders,
     validateProviderKey,
@@ -14,10 +13,13 @@
   import {
     badgesForModel,
     capabilityMapFromCatalog,
-    listModelCatalog,
   } from "$lib/utils/modelCapabilityCatalog";
   import type { ModelCapabilityRecord } from "$lib/types/modelCapability";
   import ModelCapabilityBadges from "$lib/components/settings/ModelCapabilityBadges.svelte";
+  import {
+    pickModelFromRecords,
+    resolveModelsForProvider,
+  } from "$lib/utils/resolveProviderModels";
 
   interface Props {
     providerId: string;
@@ -54,13 +56,16 @@
   let catalog = $state<ProvidersListResult | null>(null);
   let probe = $state<ProvidersProbeResult | null>(null);
   let search = $state("");
+  let modelSearch = $state("");
   let loading = $state(true);
   let validating = $state(false);
   let validatedOk = $state<boolean | null>(null);
-  let liveModels = $state<string[]>([]);
+  let modelRecords = $state<ModelCapabilityRecord[]>([]);
   let loadingModels = $state(false);
   let modelsMessage = $state<string | null>(null);
   let capabilityMap = $state<Map<string, ModelCapabilityRecord>>(new Map());
+  let loadSeq = 0;
+  let showManualModel = $state(false);
 
   const selected = $derived(
     catalog ? findCatalogProvider(catalog, providerId) : undefined,
@@ -76,20 +81,19 @@
     catalog ? groupProvidersByCategory(filtered, catalog.categories) : [],
   );
 
+  const filteredModels = $derived.by(() => {
+    const needle = modelSearch.trim().toLowerCase();
+    if (!needle) return modelRecords;
+    return modelRecords.filter(
+      (record) =>
+        record.modelId.toLowerCase().includes(needle) ||
+        (record.displayName?.toLowerCase().includes(needle) ?? false),
+    );
+  });
+
   const selectedModelBadges = $derived(
     selected ? badgesForModel(capabilityMap, selected.id, model) : [],
   );
-
-  async function loadCapabilityCatalog(provider?: string) {
-    try {
-      const response = await listModelCatalog(
-        provider ? { provider } : {},
-      );
-      capabilityMap = capabilityMapFromCatalog(response.models);
-    } catch {
-      capabilityMap = new Map();
-    }
-  }
 
   onMount(() => {
     void bootstrap();
@@ -101,7 +105,6 @@
       const [listed, probed] = await Promise.all([listProviders(), probeProviders()]);
       catalog = listed;
       probe = probed;
-      await loadCapabilityCatalog(providerId);
       if (!selected && listed.providers.length > 0) {
         const fallback =
           findCatalogProvider(listed, providerId) ??
@@ -109,8 +112,10 @@
           listed.providers[0];
         if (fallback) {
           onProviderChange(fallback.id, fallback);
-          if (!model.trim()) onModelChange(fallback.defaultModel);
+          await loadModelsForEntry(fallback, { preferSuggested: true });
         }
+      } else if (selected) {
+        await loadModelsForEntry(selected, { preferSuggested: true, keepCurrent: true });
       }
     } catch (err) {
       onStatus?.(err instanceof Error ? err.message : String(err), false);
@@ -119,51 +124,69 @@
     }
   }
 
+  async function loadModelsForEntry(
+    entry: ProviderCatalogEntry,
+    options?: { preferSuggested?: boolean; keepCurrent?: boolean },
+  ) {
+    const seq = ++loadSeq;
+    loadingModels = true;
+    modelsMessage = null;
+    showManualModel = false;
+    try {
+      const next = await resolveModelsForProvider(entry, {
+        apiKey: apiKey.trim() || undefined,
+        baseUrl: baseUrl.trim() || entry.defaultBaseUrl || undefined,
+      });
+      if (seq !== loadSeq) return;
+      modelRecords = next;
+      capabilityMap = capabilityMapFromCatalog(next);
+
+      const suggested =
+        entry.id === "ollama"
+          ? (probe?.suggestedOllamaModel ?? probe?.ollamaModels?.[0] ?? null)
+          : null;
+      const picked = pickModelFromRecords(next, {
+        preferred: options?.preferSuggested ? suggested : null,
+        current: options?.keepCurrent ? model : null,
+        fallbackDefault: entry.defaultModel,
+      });
+      if (picked && picked !== model.trim()) {
+        onModelChange(picked);
+      } else if (!model.trim() && picked) {
+        onModelChange(picked);
+      }
+
+      if (next.length === 0) {
+        modelsMessage = "No models found — enter a model ID manually.";
+        showManualModel = true;
+      } else if (next.length === 1 && next[0]?.source === "catalog.default") {
+        modelsMessage = "Using provider default (connect or browse for the full list).";
+      } else {
+        modelsMessage = `${next.length} model${next.length === 1 ? "" : "s"} available`;
+      }
+    } catch (err) {
+      if (seq !== loadSeq) return;
+      modelRecords = [];
+      modelsMessage = err instanceof Error ? err.message : String(err);
+      showManualModel = true;
+      if (!model.trim()) onModelChange(entry.defaultModel);
+    } finally {
+      if (seq === loadSeq) loadingModels = false;
+    }
+  }
+
   function selectProvider(entry: ProviderCatalogEntry) {
     validatedOk = null;
-    liveModels = [];
+    modelSearch = "";
     modelsMessage = null;
     onProviderChange(entry.id, entry);
-    onModelChange(
-      entry.id === "ollama"
-        ? (probe?.suggestedOllamaModel ?? entry.defaultModel)
-        : entry.defaultModel,
-    );
     if (entry.supportsCustomBaseUrl && entry.defaultBaseUrl) {
       onBaseUrlChange?.(entry.defaultBaseUrl);
     } else if (!entry.supportsCustomBaseUrl) {
       onBaseUrlChange?.("");
     }
     onStatus?.(null);
-    void loadCapabilityCatalog(entry.id);
-  }
-
-  async function runBrowseModels() {
-    if (!selected) return;
-    loadingModels = true;
-    modelsMessage = null;
-    try {
-      const result = await listProviderModels({
-        provider: selected.id,
-        apiKey: apiKey.trim() || undefined,
-        baseUrl: baseUrl.trim() || selected.defaultBaseUrl || undefined,
-      });
-      liveModels = result.models;
-      if (result.models.length === 0) {
-        modelsMessage = "No models returned — enter a model ID manually.";
-      } else {
-        modelsMessage = `${result.models.length} models from ${result.source}`;
-        if (!model.trim() || !result.models.includes(model.trim())) {
-          onModelChange(result.models[0] ?? model);
-        }
-        await loadCapabilityCatalog(selected.id);
-      }
-    } catch (err) {
-      liveModels = [];
-      modelsMessage = err instanceof Error ? err.message : String(err);
-    } finally {
-      loadingModels = false;
-    }
+    void loadModelsForEntry(entry, { preferSuggested: true });
   }
 
   async function runValidate() {
@@ -183,7 +206,7 @@
         onModelChange(result.suggestedModel);
       }
       if (result.ok) {
-        await runBrowseModels();
+        await loadModelsForEntry(selected, { preferSuggested: true, keepCurrent: true });
       }
     } catch (err) {
       validatedOk = false;
@@ -290,58 +313,89 @@
         </label>
       {/if}
 
-      <label class="block">
-        <span class="block text-sm font-medium text-surface-100">Model</span>
-        {#if selected.id === "ollama" && (probe?.ollamaModels.length ?? 0) > 0}
-          <select
-            class="select mt-2 w-full font-mono text-sm"
-            value={model}
-            disabled={disabled || validating}
-            onchange={(event) =>
-              onModelChange((event.currentTarget as HTMLSelectElement).value)}
-          >
-            {#each probe?.ollamaModels ?? [] as name (name)}
-              <option value={name}>{name}</option>
-            {/each}
-          </select>
-        {:else if liveModels.length > 0}
+      <div class="block">
+        <div class="flex items-center justify-between gap-2">
+          <span class="block text-sm font-medium text-surface-100">Model</span>
+          {#if loadingModels}
+            <span class="workshop-faint flex items-center gap-1 text-xs">
+              <LoaderCircle class="h-3 w-3 animate-spin" aria-hidden="true" />
+              Loading…
+            </span>
+          {/if}
+        </div>
+
+        {#if modelRecords.length > 3}
+          <div class="relative mt-2">
+            <Search
+              class="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-surface-500"
+              aria-hidden="true"
+            />
+            <input
+              class="input w-full pl-9 text-sm"
+              type="search"
+              placeholder="Search models…"
+              bind:value={modelSearch}
+              disabled={disabled || validating || loadingModels}
+            />
+          </div>
+        {/if}
+
+        {#if modelRecords.length > 0}
           <div class="provider-model-list mt-2 max-h-48 space-y-1 overflow-y-auto pr-1">
-            {#each liveModels as name (name)}
-              {@const badges = badgesForModel(capabilityMap, selected.id, name)}
+            {#each filteredModels as record (record.modelId)}
+              {@const badges = badgesForModel(capabilityMap, selected.id, record.modelId)}
               <button
                 type="button"
-                class="provider-model-list-item {model === name ? 'provider-model-list-item-active' : ''}"
+                class="provider-model-list-item {model === record.modelId
+                  ? 'provider-model-list-item-active'
+                  : ''}"
                 disabled={disabled || validating || loadingModels}
-                onclick={() => onModelChange(name)}
+                onclick={() => onModelChange(record.modelId)}
               >
-                <span class="provider-model-list-name">{name}</span>
+                <span class="provider-model-list-name">
+                  {record.displayName || record.modelId}
+                </span>
                 <ModelCapabilityBadges badges={badges} compact />
               </button>
             {/each}
+            {#if filteredModels.length === 0}
+              <p class="workshop-faint px-1 py-2 text-xs">No models match “{modelSearch}”.</p>
+            {/if}
           </div>
-          {#if modelsMessage}
-            <p class="workshop-faint mt-1.5 text-xs">{modelsMessage}</p>
-          {/if}
-        {:else}
+        {/if}
+
+        {#if showManualModel || modelRecords.length === 0}
           <input
             class="input mt-2 w-full font-mono text-sm"
             value={model}
+            placeholder={selected.defaultModel || "model id"}
             disabled={disabled || validating}
             oninput={(event) =>
               onModelChange((event.currentTarget as HTMLInputElement).value)}
           />
-          {#if selectedModelBadges.length > 0}
-            <div class="mt-2">
-              <ModelCapabilityBadges badges={selectedModelBadges} />
-            </div>
-          {/if}
-          {#if modelsMessage}
-            <p class="workshop-faint mt-1.5 text-xs text-warning-400">{modelsMessage}</p>
-          {/if}
+        {:else if selectedModelBadges.length > 0 && modelRecords.length <= 3}
+          <div class="mt-2">
+            <ModelCapabilityBadges badges={selectedModelBadges} />
+          </div>
         {/if}
-      </label>
 
-      {#if selected.id !== "ollama" && selected.id !== "medousa-local"}
+        {#if modelsMessage}
+          <p class="workshop-faint mt-1.5 text-xs">{modelsMessage}</p>
+        {/if}
+
+        {#if modelRecords.length > 0 && !showManualModel}
+          <button
+            type="button"
+            class="mt-1.5 text-xs text-primary-300 hover:text-primary-200"
+            disabled={disabled}
+            onclick={() => (showManualModel = true)}
+          >
+            Enter model ID manually
+          </button>
+        {/if}
+      </div>
+
+      {#if selected.needsApiKey && onApiKeyChange}
         <button
           type="button"
           class="btn variant-ghost-surface min-h-9 text-sm"
@@ -349,15 +403,15 @@
             disabled ||
             validating ||
             loadingModels ||
-            (selected.needsApiKey && !apiKey.trim())
+            !apiKey.trim()
           }
-          onclick={() => void runBrowseModels()}
+          onclick={() => void loadModelsForEntry(selected, { keepCurrent: true })}
         >
           {#if loadingModels}
             <LoaderCircle class="mr-2 inline h-4 w-4 animate-spin" aria-hidden="true" />
             Loading models…
           {:else}
-            Browse live models
+            Refresh models
           {/if}
         </button>
       {/if}
@@ -383,3 +437,39 @@
     {/if}
   {/if}
 </div>
+
+<style>
+  :global(.provider-model-list-item) {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    border-radius: 0.5rem;
+    border: 1px solid color-mix(in srgb, var(--color-surface-500) 35%, transparent);
+    background: color-mix(in srgb, var(--color-surface-800) 55%, transparent);
+    padding: 0.45rem 0.65rem;
+    text-align: left;
+    transition: border-color 120ms ease, background 120ms ease;
+  }
+
+  :global(.provider-model-list-item:hover:not(:disabled)) {
+    border-color: color-mix(in srgb, var(--color-primary-400) 45%, transparent);
+  }
+
+  :global(.provider-model-list-item-active) {
+    border-color: color-mix(in srgb, var(--color-primary-400) 70%, transparent);
+    background: color-mix(in srgb, var(--color-primary-500) 12%, transparent);
+  }
+
+  :global(.provider-model-list-name) {
+    min-width: 0;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.75rem;
+    color: rgb(var(--color-surface-100));
+  }
+</style>

@@ -99,7 +99,16 @@ function assistantFlow(message: ChatMessage, opts: ChatSceneOptions): SceneNode[
 
   // 3. Errors before body
   if (message.failed && message.errorLine) {
-    flow.push(child(`${id}:error`, "callout", { tone: "error", body: message.errorLine }));
+    const detail = message.errorDetail?.trim() || null;
+    flow.push(
+      child(`${id}:error`, "callout", {
+        tone: "error",
+        body: message.errorLine,
+        ...(detail && detail !== message.errorLine.trim()
+          ? { detail }
+          : {}),
+      }),
+    );
     if (message.workId) {
       flow.push(
         child(`${id}:retry`, "button", {

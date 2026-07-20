@@ -51,6 +51,11 @@
     type SelectionAnchor,
   } from "$lib/vault/live/liveSelectionFormat";
   import { handleLiveScrollToSelection } from "$lib/vault/live/liveScrollSelection";
+  import { toast } from "$lib/stores/toast.svelte";
+  import {
+    dataTransferHasImage,
+    markdownFromImageDataTransfer,
+  } from "$lib/utils/vaultImagePaste";
 
   interface Props {
     /** Full note markdown (source of truth from parent). */
@@ -99,6 +104,7 @@
   const onSlashCheckRef = { current: onSlashCheck };
   const onSlashKeyRef = { current: onSlashKey };
   const slashOpenRef = { current: slashOpen };
+  const disabledRef = { current: disabled };
   const boundKeyRef = { current: "" };
   const valueRef = { current: value };
 
@@ -107,8 +113,31 @@
     onSlashCheckRef.current = onSlashCheck;
     onSlashKeyRef.current = onSlashKey;
     slashOpenRef.current = slashOpen;
+    disabledRef.current = disabled;
     valueRef.current = value;
   });
+
+  function handleImageTransferEvent(
+    event: ClipboardEvent | DragEvent,
+    data: DataTransfer | null,
+  ): boolean {
+    if (disabledRef.current || !editor || !dataTransferHasImage(data)) return false;
+    event.preventDefault();
+    void (async () => {
+      const result = await markdownFromImageDataTransfer(data);
+      if (result.ok === false) {
+        toast.show(result.message);
+        return;
+      }
+      editor
+        ?.chain()
+        .focus(undefined, { scrollIntoView: false })
+        .insertContent(result.markdown)
+        .run();
+      emitMarkdown();
+    })();
+    return true;
+  }
 
   function liveMarkdownEqual(a: string, b: string): boolean {
     const norm = (s: string) => s.replace(/\r\n/g, "\n").replace(/\n+$/g, "\n");
@@ -481,9 +510,21 @@
           class: "vault-live-prose",
         },
         handleScrollToSelection: (view) => handleLiveScrollToSelection(view),
+        handlePaste: (_view, event) =>
+          handleImageTransferEvent(event, event.clipboardData),
+        handleDrop: (_view, event) =>
+          handleImageTransferEvent(event, event.dataTransfer),
         handleDOMEvents: {
           click: (_view, event) => {
             handleHostClick(event);
+            return false;
+          },
+          dragover: (_view, event) => {
+            if (disabledRef.current) return false;
+            if (event.dataTransfer?.types.includes("Files")) {
+              event.preventDefault();
+              return true;
+            }
             return false;
           },
         },
@@ -753,6 +794,16 @@
   />
   <div bind:this={hostEl} class="vault-live-editor__host min-h-0 flex-1"></div>
 </div>
+
+<style>
+  :global(.vault-live-prose img.vault-live-image) {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    margin: 0.75rem 0;
+    border-radius: 0.35rem;
+  }
+</style>
 
 <VaultSelectionFormatBubble
   open={formatBubbleOpen}

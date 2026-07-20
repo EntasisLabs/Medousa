@@ -69,6 +69,8 @@ export interface ChatMessage {
   /** Turn ended with an error — partial content preserved for debugging. */
   failed?: boolean;
   errorLine?: string | null;
+  /** Raw debug/engine detail for collapsed “View details” (when distinct from errorLine). */
+  errorDetail?: string | null;
   /** Turn index in session history (1-based, matches slice_id turn:N). */
   turnIndex?: number | null;
 }

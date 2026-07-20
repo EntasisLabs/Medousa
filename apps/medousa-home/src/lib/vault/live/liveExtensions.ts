@@ -1,4 +1,5 @@
 import StarterKit from "@tiptap/starter-kit";
+import Image from "@tiptap/extension-image";
 import Link from "@tiptap/extension-link";
 import Placeholder from "@tiptap/extension-placeholder";
 import TaskList from "@tiptap/extension-task-list";
@@ -47,6 +48,13 @@ export function createLiveExtensions(
       },
       HTMLAttributes: {
         class: "vault-live-link",
+      },
+    }),
+    Image.configure({
+      inline: false,
+      allowBase64: true,
+      HTMLAttributes: {
+        class: "vault-live-image",
       },
     }),
     Placeholder.configure({

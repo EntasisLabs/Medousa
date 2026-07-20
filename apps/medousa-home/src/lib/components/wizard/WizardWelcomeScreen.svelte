@@ -129,10 +129,7 @@
     byokProvider = id;
     byokNeedsKey = entry.needsApiKey;
     statusMessage = null;
-    model =
-      id === "ollama"
-        ? (probe?.suggestedOllamaModel ?? entry.defaultModel)
-        : entry.defaultModel;
+    // Model id comes from ProviderPicker via onModelChange after catalog/live resolve.
     baseUrl = entry.defaultBaseUrl ?? "";
   }
 

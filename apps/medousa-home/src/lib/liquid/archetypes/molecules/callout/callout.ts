@@ -11,6 +11,8 @@ export const callout = defineArchetype({
     tone: { type: "string" },
     title: { type: "string" },
     body: { type: "string", required: true },
+    /** Optional collapsed technical detail (e.g. model/provider error dump). */
+    detail: { type: "string" },
   },
   acceptsBindings: ["inline"],
   writeCapable: false,
