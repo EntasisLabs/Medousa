@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (0.3 follow-up foundation)
+Accepted (shipped in 0.3.0; see also [ADR-007](adr-007-shell-split-panes.md))
 
 ## Context
 

@@ -8,7 +8,7 @@ Paste-first UI blocks for **chat** and **vault** notes. The client turns fenced 
 |---------|----------|
 | Chat | Hydrated via `MarkdownContent` |
 | Vault preview | Same hydrate pipeline (charts, cards, Mermaid, code) |
-| Vault slash (`/`) | Insert starters: Chart, Card, Liquid callout, Dashboard, Report, Slides, Tabs, Steps, Accordion, Code snippet, File tree |
+| Vault slash (`/`) | Insert starters for the full Liquid catalog: Callout, Card, Carousel, Actions, Section, Chips, Media, Citation, Compare, Plan, Timeline, Shortlist, Decision, Brief, Chart, Dashboard, Report, Slides, Tabs, Steps, Accordion, Code, File tree, Mini board — plus embed / TOC / query view / kanban board / table |
 | PDF export | Hydrates then captures (charts render as painted DOM) |
 
 Live gallery (dev): `/dev/liquid` in medousa-home.

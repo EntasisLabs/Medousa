@@ -5,17 +5,29 @@ import {
 } from "$lib/utils/vaultTemplates";
 import {
   LIQUID_ACCORDION_TEMPLATE,
+  LIQUID_ACTIONS_TEMPLATE,
+  LIQUID_BRIEF_TEMPLATE,
   LIQUID_CALLOUT_TEMPLATE,
   LIQUID_CARD_TEMPLATE,
+  LIQUID_CAROUSEL_TEMPLATE,
   LIQUID_CHART_TEMPLATE,
+  LIQUID_CHIPS_TEMPLATE,
+  LIQUID_CITE_TEMPLATE,
   LIQUID_CODE_TEMPLATE,
+  LIQUID_COMPARE_TEMPLATE,
   LIQUID_DASHBOARD_TEMPLATE,
+  LIQUID_DECISION_TEMPLATE,
+  LIQUID_KANBAN_TEMPLATE,
+  LIQUID_MEDIA_TEMPLATE,
+  LIQUID_PLAN_TEMPLATE,
   LIQUID_REPORT_TEMPLATE,
+  LIQUID_SECTION_TEMPLATE,
+  LIQUID_SHORTLIST_TEMPLATE,
   LIQUID_SLIDES_TEMPLATE,
   LIQUID_STEPS_TEMPLATE,
   LIQUID_TABS_TEMPLATE,
+  LIQUID_TIMELINE_TEMPLATE,
   LIQUID_TREE_TEMPLATE,
-  LIQUID_KANBAN_TEMPLATE,
 } from "$lib/utils/liquidFenceTemplates";
 import {
   MARKDOWN_COLOR_IDS,
@@ -57,6 +69,18 @@ export type SlashBlockId =
   | "callout"
   | "liquid_callout"
   | "liquid_card"
+  | "liquid_carousel"
+  | "liquid_actions"
+  | "liquid_section"
+  | "liquid_chips"
+  | "liquid_media"
+  | "liquid_cite"
+  | "liquid_compare"
+  | "liquid_plan"
+  | "liquid_timeline"
+  | "liquid_shortlist"
+  | "liquid_decision"
+  | "liquid_brief"
   | "liquid_chart"
   | "liquid_dashboard"
   | "liquid_report"
@@ -369,6 +393,18 @@ export function insertSlashBlock(
     callout: "",
     liquid_callout: LIQUID_CALLOUT_TEMPLATE,
     liquid_card: LIQUID_CARD_TEMPLATE,
+    liquid_carousel: LIQUID_CAROUSEL_TEMPLATE,
+    liquid_actions: LIQUID_ACTIONS_TEMPLATE,
+    liquid_section: LIQUID_SECTION_TEMPLATE,
+    liquid_chips: LIQUID_CHIPS_TEMPLATE,
+    liquid_media: LIQUID_MEDIA_TEMPLATE,
+    liquid_cite: LIQUID_CITE_TEMPLATE,
+    liquid_compare: LIQUID_COMPARE_TEMPLATE,
+    liquid_plan: LIQUID_PLAN_TEMPLATE,
+    liquid_timeline: LIQUID_TIMELINE_TEMPLATE,
+    liquid_shortlist: LIQUID_SHORTLIST_TEMPLATE,
+    liquid_decision: LIQUID_DECISION_TEMPLATE,
+    liquid_brief: LIQUID_BRIEF_TEMPLATE,
     liquid_chart: LIQUID_CHART_TEMPLATE,
     liquid_dashboard: LIQUID_DASHBOARD_TEMPLATE,
     liquid_report: LIQUID_REPORT_TEMPLATE,
@@ -708,6 +744,18 @@ export const SLASH_WRITING_IDS: SlashBlockId[] = [
 export const SLASH_BLOCK_IDS: SlashBlockId[] = [
   "liquid_callout",
   "liquid_card",
+  "liquid_carousel",
+  "liquid_actions",
+  "liquid_section",
+  "liquid_chips",
+  "liquid_media",
+  "liquid_cite",
+  "liquid_compare",
+  "liquid_plan",
+  "liquid_timeline",
+  "liquid_shortlist",
+  "liquid_decision",
+  "liquid_brief",
   "liquid_chart",
   "liquid_dashboard",
   "liquid_report",

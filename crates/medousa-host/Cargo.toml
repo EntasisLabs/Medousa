@@ -1,6 +1,6 @@
 [package]
 name = "medousa-host"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 description = "Host OS utilities for Medousa (process spawn, binary resolution)"
 

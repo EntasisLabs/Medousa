@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Activity, BookOpen, Globe, MessageCircle, MoreHorizontal } from "@lucide/svelte";
+  import { Activity, Globe, MessageCircle, MoreHorizontal, PanelsTopLeft } from "@lucide/svelte";
   import { switchMobileTab } from "$lib/mobileNavigation";
   import { environment } from "$lib/stores/environment.svelte";
   import { layout } from "$lib/stores/layout.svelte";
@@ -10,7 +10,7 @@
   const icons: Record<MobileTab, Component> = {
     home: Activity,
     chat: MessageCircle,
-    notes: BookOpen,
+    notes: PanelsTopLeft,
     web: Globe,
     more: MoreHorizontal,
   };
