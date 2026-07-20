@@ -27,14 +27,31 @@ export type ShellTab =
       title: string;
     };
 
-/** Future split-view pane. Phase 0–3 use a single group. */
+/** Leaf pane — ordered tabs + focused tab. */
 export type EditorGroup = {
   id: string;
   tabIds: string[];
   activeTabId: string | null;
 };
 
+/** Binary split tree for TMUX-style tiling. */
+export type SplitNode =
+  | { type: "group"; id: string }
+  | {
+      type: "branch";
+      id: string;
+      direction: "row" | "column";
+      /** Share for child `a` in 0..1 (clamped on write). */
+      ratio: number;
+      a: SplitNode;
+      b: SplitNode;
+    };
+
 export type ShellTabKind = ShellTab["kind"];
+export type SplitDirection = "right" | "down";
+
+/** Soft cap on leaf panes (v1). */
+export const MAX_SHELL_PANES = 4;
 
 /** Singleton surfaces that open as at most one tab each. */
 export const SHELL_SURFACE_TAB_IDS = new Set<string>([

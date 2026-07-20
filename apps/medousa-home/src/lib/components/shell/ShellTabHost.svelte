@@ -1,25 +1,14 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import HumanBrowserPanel from "$lib/components/browser/HumanBrowserPanel.svelte";
-  import CalendarPanel from "$lib/components/calendar/CalendarPanel.svelte";
-  import ChatPanel from "$lib/components/chat/ChatPanel.svelte";
-  import ContextPanel from "$lib/components/context/ContextPanel.svelte";
-  import EnvironmentRenderer from "$lib/components/environment/EnvironmentRenderer.svelte";
-  import SettingsPanel from "$lib/components/layout/SettingsPanel.svelte";
-  import LmePanel from "$lib/components/lme/LmePanel.svelte";
-  import MessagingPanel from "$lib/components/messaging/MessagingPanel.svelte";
-  import PeersPanel from "$lib/components/peers/PeersPanel.svelte";
-  import ProfilesPanel from "$lib/components/profiles/ProfilesPanel.svelte";
-  import RuntimePanel from "$lib/components/runtime/RuntimePanel.svelte";
-  import ShellTabStrip from "$lib/components/shell/ShellTabStrip.svelte";
-  import WorkPanel from "$lib/components/work/WorkPanel.svelte";
+  import ShellPane from "$lib/components/shell/ShellPane.svelte";
+  import ShellSplitNode from "$lib/components/shell/ShellSplitNode.svelte";
+  import ShellPaneCheatSheet from "$lib/components/shell/ShellPaneCheatSheet.svelte";
   import { chat } from "$lib/stores/chat.svelte";
   import { humanBrowser } from "$lib/stores/humanBrowser.svelte";
   import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
   import { shellTabs } from "$lib/stores/shellTabs.svelte";
-  import { workspace } from "$lib/stores/workspace.svelte";
+  import { attachShellPaneHotkeys } from "$lib/utils/shellPaneHotkeys";
   import type { DaemonHealth } from "$lib/daemon";
-  import { refreshDaemonHealth } from "$lib/workshopConnection";
 
   interface Props {
     health?: DaemonHealth | null;
@@ -43,38 +32,28 @@
     onDaemonHealth,
   }: Props = $props();
 
-  const active = $derived(shellTabs.activeTab);
+  let cheatSheetOpen = $state(false);
 
-  const showChat = $derived(active?.kind === "chat");
-  const showLme = $derived(
-    active?.kind === "lme" ||
-      (active?.kind === "surface" && active.surfaceId === "library"),
-  );
-  const showWeb = $derived(active?.kind === "web");
-  const showSurface = $derived(active?.kind === "surface" ? active.surfaceId : null);
-
-  /** Keep chat/web/lme hosts mounted once opened (plan keep-alive policy). */
-  let chatMounted = $state(false);
-  let lmeMounted = $state(false);
-  let webMounted = $state(false);
-
-  $effect(() => {
-    if (showChat || shellTabs.orderedTabs.some((tab) => tab.kind === "chat")) {
-      chatMounted = true;
+  /** First group (in leaf order) whose active tab needs LME / web owns the shared host. */
+  const lmeOwnerGroupId = $derived.by(() => {
+    for (const group of shellTabs.groups) {
+      const tab = shellTabs.tabs.find((entry) => entry.id === group.activeTabId);
+      if (
+        tab?.kind === "lme" ||
+        (tab?.kind === "surface" && tab.surfaceId === "library")
+      ) {
+        return group.id;
+      }
     }
+    return shellTabs.activeGroupId;
   });
-  $effect(() => {
-    if (
-      showLme ||
-      shellTabs.orderedTabs.some((tab) => tab.kind === "lme" || (tab.kind === "surface" && tab.surfaceId === "library"))
-    ) {
-      lmeMounted = true;
+
+  const webOwnerGroupId = $derived.by(() => {
+    for (const group of shellTabs.groups) {
+      const tab = shellTabs.tabs.find((entry) => entry.id === group.activeTabId);
+      if (tab?.kind === "web") return group.id;
     }
-  });
-  $effect(() => {
-    if (showWeb || shellTabs.orderedTabs.some((tab) => tab.kind === "web")) {
-      webMounted = true;
-    }
+    return shellTabs.activeGroupId;
   });
 
   $effect(() => {
@@ -98,124 +77,49 @@
 
   onMount(() => {
     shellTabs.bootstrap();
+    return attachShellPaneHotkeys({
+      onCheatSheet: () => {
+        cheatSheetOpen = true;
+      },
+    });
   });
-
-  const surfaceForCustom = $derived(
-    showSurface && showSurface !== "library" ? showSurface : layoutDesktopHint(),
-  );
-
-  function layoutDesktopHint(): string {
-    if (showChat) return "chat";
-    if (showLme) return "library";
-    if (showWeb) return "web";
-    return showSurface ?? "chat";
-  }
 </script>
 
 <div
-  class="shell-tab-host flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
+  class="shell-tab-host relative flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
   data-debug-label="shell-tab-host"
 >
-  <ShellTabStrip />
+  {#if shellTabs.zoomedGroupId}
+    <ShellPane
+      groupId={shellTabs.zoomedGroupId}
+      {health}
+      {onOpenChat}
+      {onOpenWork}
+      {onOpenContext}
+      {onOpenConnection}
+      {onOpenNote}
+      {onSelectCard}
+      {onDaemonHealth}
+      ownsLmeHost={lmeOwnerGroupId === shellTabs.zoomedGroupId}
+      ownsWebHost={webOwnerGroupId === shellTabs.zoomedGroupId}
+    />
+  {:else}
+    <ShellSplitNode
+      node={shellTabs.splitRoot}
+      {health}
+      {onOpenChat}
+      {onOpenWork}
+      {onOpenContext}
+      {onOpenConnection}
+      {onOpenNote}
+      {onSelectCard}
+      {onDaemonHealth}
+      {lmeOwnerGroupId}
+      {webOwnerGroupId}
+    />
+  {/if}
 
-  <div class="relative min-h-0 min-w-0 flex-1 overflow-hidden">
-    {#if chatMounted}
-      <div
-        class="absolute inset-0 flex min-h-0 flex-col overflow-hidden"
-        class:hidden={!showChat}
-        aria-hidden={!showChat}
-        data-debug-label="shell-tab-body-chat"
-      >
-        <ChatPanel
-          visible={showChat}
-          onOpenContext={onOpenContext}
-          onOpenConnection={onOpenConnection}
-        />
-      </div>
-    {/if}
-
-    {#if lmeMounted}
-      <div
-        class="absolute inset-0 flex min-h-0 flex-col overflow-hidden"
-        class:hidden={!showLme}
-        aria-hidden={!showLme}
-        data-debug-label="shell-tab-body-lme"
-      >
-        <LmePanel
-          visible={showLme}
-          {onOpenChat}
-          {onOpenWork}
-          {onSelectCard}
-        />
-      </div>
-    {/if}
-
-    {#if webMounted}
-      <div
-        class="absolute inset-0 flex min-h-0 flex-col overflow-hidden"
-        class:hidden={!showWeb}
-        aria-hidden={!showWeb}
-        data-debug-label="shell-tab-body-web"
-      >
-        <HumanBrowserPanel visible={showWeb} workRailVisible={false} shellTabChrome={true} />
-      </div>
-    {/if}
-
-    {#if showSurface && showSurface !== "library"}
-      <div
-        class="absolute inset-0 flex min-h-0 flex-col overflow-hidden"
-        data-debug-label="shell-tab-body-surface"
-      >
-        <EnvironmentRenderer surfaceId={surfaceForCustom}>
-          {#snippet builtin()}
-            {#if showSurface === "calendar"}
-              <CalendarPanel visible={true} />
-            {:else if showSurface === "context"}
-              <ContextPanel
-                visible={true}
-                onOpenChat={async (sessionId) => {
-                  shellTabs.openChat(sessionId, { activate: true });
-                  await chat.switchSession(sessionId);
-                }}
-              />
-            {:else if showSurface === "profiles"}
-              <ProfilesPanel visible={true} onOpenChat={onOpenChat} />
-            {:else if showSurface === "peers"}
-              <PeersPanel visible={true} />
-            {:else if showSurface === "messaging"}
-              <MessagingPanel visible={true} {health} />
-            {:else if showSurface === "work"}
-              <WorkPanel
-                visible={true}
-                {onOpenNote}
-                {onOpenChat}
-                {onSelectCard}
-              />
-            {:else if showSurface === "runtime"}
-              <RuntimePanel visible={true} inMotionCount={workspace.inMotionCount()} />
-            {:else if showSurface === "settings"}
-              <SettingsPanel
-                visible={true}
-                revision={workspace.revision}
-                {health}
-                onDaemonHealth={async () => {
-                  const next = await refreshDaemonHealth();
-                  onDaemonHealth?.(next);
-                }}
-              />
-            {/if}
-          {/snippet}
-        </EnvironmentRenderer>
-      </div>
-    {/if}
-
-    {#if !active}
-      <div
-        class="flex h-full items-center justify-center p-8 text-sm text-surface-500"
-        data-debug-label="shell-tab-empty"
-      >
-        Open something from the rail.
-      </div>
-    {/if}
-  </div>
+  {#if cheatSheetOpen}
+    <ShellPaneCheatSheet onClose={() => (cheatSheetOpen = false)} />
+  {/if}
 </div>

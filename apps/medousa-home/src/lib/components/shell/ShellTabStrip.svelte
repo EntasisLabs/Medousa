@@ -15,6 +15,15 @@
   import { shellTabs } from "$lib/stores/shellTabs.svelte";
   import type { ShellTab } from "$lib/types/shellTabs";
 
+  interface Props {
+    groupId: string;
+  }
+
+  let { groupId }: Props = $props();
+
+  const tabs = $derived(shellTabs.tabsForGroup(groupId));
+  const group = $derived(shellTabs.groups.find((entry) => entry.id === groupId));
+
   function iconFor(tab: ShellTab) {
     if (tab.kind === "chat") return MessageSquare;
     if (tab.kind === "web") return Globe;
@@ -30,15 +39,16 @@
   }
 </script>
 
-{#if shellTabs.orderedTabs.length > 0}
+{#if tabs.length > 0}
   <div
     class="shell-tab-strip flex min-w-0 shrink-0 items-center gap-0.5 overflow-x-auto border-b border-surface-500/40 bg-surface-950/60 px-1.5 pt-1"
     role="tablist"
     aria-label="Open tabs"
     data-debug-label="shell-tab-strip"
+    data-group-id={groupId}
   >
-    {#each shellTabs.orderedTabs as tab (tab.id)}
-      {@const active = shellTabs.activeTabId === tab.id}
+    {#each tabs as tab (tab.id)}
+      {@const active = group?.activeTabId === tab.id}
       {@const Icon = iconFor(tab)}
       <div
         class="group flex max-w-[200px] shrink-0 items-center gap-1 rounded-t-md border border-b-0 px-2 py-1 text-[11px]

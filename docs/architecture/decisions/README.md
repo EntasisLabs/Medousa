@@ -9,6 +9,7 @@ Short, durable decisions — not sprint plans. For build history see [../../../a
 | [adr-004-durable-turn-spine.md](adr-004-durable-turn-spine.md) | Durable turn journal + SSE `?since=` replay | Accepted |
 | [adr-005-host-scheduler-bound-workshop.md](adr-005-host-scheduler-bound-workshop.md) | Host scheduler + bound async workshop turns | Accepted |
 | [adr-006-shell-tabs.md](adr-006-shell-tabs.md) | Shell-level tabs (everything is a tab) | Accepted |
+| [adr-007-shell-split-panes.md](adr-007-shell-split-panes.md) | Shell split panes + stream pool | Accepted |
 
 ## Template
 

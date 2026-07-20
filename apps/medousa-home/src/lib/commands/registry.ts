@@ -18,6 +18,8 @@ import { reconnectWorkshop } from "$lib/workshopConnection";
 import { buildInteractiveTurnOptions } from "$lib/interactiveTurnOptions";
 import { createTurnTicket } from "$lib/daemon";
 import { connection } from "$lib/stores/connection.svelte";
+import { layout } from "$lib/stores/layout.svelte";
+import { shellTabs } from "$lib/stores/shellTabs.svelte";
 import type { Surface } from "$lib/types/ui";
 import type { DepthMode } from "$lib/types/runtime";
 import type { WorkshopCommand, WorkshopCommandContext } from "./types";
@@ -59,6 +61,95 @@ export function buildGoCommands(): WorkshopCommand[] {
       keywords: "mcp connections gateway servers packages tools",
       run: (ctx) => {
         ctx.openSettingsSection("packages");
+        ctx.callbacks.close();
+      },
+    },
+  ];
+}
+
+export function buildPaneCommands(): WorkshopCommand[] {
+  return [
+    {
+      id: "pane-split-right",
+      section: "advanced",
+      label: "Split pane right",
+      subtitle: `${formatShortcut("Ctrl+; %")} — TMUX-style vertical split`,
+      keywords: "split pane right vertical tmux editor group",
+      advanced: true,
+      run: (ctx) => {
+        shellTabs.splitActive("right");
+        ctx.callbacks.close();
+      },
+    },
+    {
+      id: "pane-split-down",
+      section: "advanced",
+      label: "Split pane down",
+      subtitle: `${formatShortcut('Ctrl+; "')} — TMUX-style horizontal split`,
+      keywords: "split pane down horizontal tmux editor group",
+      advanced: true,
+      run: (ctx) => {
+        shellTabs.splitActive("down");
+        ctx.callbacks.close();
+      },
+    },
+    {
+      id: "pane-focus-next",
+      section: "advanced",
+      label: "Focus next pane",
+      subtitle: "Move focus to the next editor pane",
+      keywords: "focus pane next split",
+      advanced: true,
+      run: (ctx) => {
+        shellTabs.focusDirection("right");
+        ctx.callbacks.close();
+      },
+    },
+    {
+      id: "pane-zoom",
+      section: "advanced",
+      label: "Zoom pane",
+      subtitle: `${formatShortcut("Ctrl+; z")} — maximize / restore active pane`,
+      keywords: "zoom pane maximize tmux",
+      advanced: true,
+      run: (ctx) => {
+        shellTabs.zoomToggle();
+        ctx.callbacks.close();
+      },
+    },
+    {
+      id: "pane-close",
+      section: "advanced",
+      label: "Close pane",
+      subtitle: `${formatShortcut("Ctrl+; x")} — close active pane`,
+      keywords: "close pane split",
+      advanced: true,
+      run: (ctx) => {
+        shellTabs.closeActiveGroup();
+        ctx.callbacks.close();
+      },
+    },
+    {
+      id: "pane-new-chat",
+      section: "advanced",
+      label: "New chat in pane",
+      subtitle: `${formatShortcut("Ctrl+; c")} — open chat tab in the active pane`,
+      keywords: "chat pane new session tab",
+      advanced: true,
+      run: (ctx) => {
+        shellTabs.openDestination("chat");
+        ctx.callbacks.close();
+      },
+    },
+    {
+      id: "pane-toggle-rail",
+      section: "advanced",
+      label: "Toggle left rail",
+      subtitle: `${formatShortcut("Ctrl+B")} — show or hide the master rail`,
+      keywords: "sidebar rail toggle vscode cursor panel",
+      advanced: true,
+      run: (ctx) => {
+        layout.toggleShellSidebarExpanded();
         ctx.callbacks.close();
       },
     },

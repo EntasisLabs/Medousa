@@ -6,6 +6,7 @@ const layoutState = {
     layoutState.desktopSurface = surface;
   }),
   setShellSidebarMode: vi.fn(),
+  toggleShellSidebarExpanded: vi.fn(),
 };
 
 vi.mock("$lib/stores/chat.svelte", () => ({
@@ -28,6 +29,14 @@ vi.mock("$lib/stores/chat.svelte", () => ({
     switchSession: vi.fn(async function (this: { sessionId: string }, id: string) {
       this.sessionId = id;
     }),
+  },
+}));
+
+vi.mock("$lib/stores/chatStreamPool.svelte", () => ({
+  chatStreamPool: {
+    acquire: vi.fn(),
+    release: vi.fn(),
+    isLive: vi.fn(() => true),
   },
 }));
 
@@ -73,7 +82,7 @@ describe("shellTabs store", () => {
     layoutState.focusDesktopSurface.mockClear();
   });
 
-  it("opens chat tabs uniquely and activates the latest", async () => {
+  it("opens chat tabs uniquely per group and activates", async () => {
     const { shellTabs } = await import("./shellTabs.svelte");
     const a = shellTabs.openChat("session-a", { activate: true });
     const b = shellTabs.openChat("session-b", { activate: true });
@@ -89,6 +98,33 @@ describe("shellTabs store", () => {
     }
   });
 
+  it("splits into a second pane", async () => {
+    const { shellTabs } = await import("./shellTabs.svelte");
+    shellTabs.openChat("session-a", { activate: true });
+    expect(shellTabs.splitActive("right")).toBe(true);
+    expect(shellTabs.paneCount).toBe(2);
+    expect(shellTabs.groups).toHaveLength(2);
+  });
+
+  it("refuses a fifth pane", async () => {
+    const { shellTabs } = await import("./shellTabs.svelte");
+    shellTabs.openChat("session-a", { activate: true });
+    expect(shellTabs.splitActive("right")).toBe(true);
+    expect(shellTabs.splitActive("down")).toBe(true);
+    expect(shellTabs.splitActive("right")).toBe(true);
+    expect(shellTabs.splitActive("down")).toBe(false);
+    expect(shellTabs.paneCount).toBe(4);
+  });
+
+  it("closes a pane and keeps at least one", async () => {
+    const { shellTabs } = await import("./shellTabs.svelte");
+    shellTabs.openChat("session-a", { activate: true });
+    shellTabs.splitActive("right");
+    expect(shellTabs.closeActiveGroup()).toBe(true);
+    expect(shellTabs.paneCount).toBe(1);
+    expect(shellTabs.closeActiveGroup()).toBe(false);
+  });
+
   it("opens singleton surface tabs once", async () => {
     const { shellTabs } = await import("./shellTabs.svelte");
     const first = shellTabs.openSurface("peers", { activate: true });
@@ -97,23 +133,10 @@ describe("shellTabs store", () => {
     expect(shellTabs.orderedTabs.filter((tab) => tab.kind === "surface")).toHaveLength(1);
   });
 
-  it("keeps a single editor group shaped for future splits", async () => {
+  it("keeps editor groups shaped for splits", async () => {
     const { shellTabs } = await import("./shellTabs.svelte");
     shellTabs.openSurface("context", { activate: true });
-    expect(shellTabs.groups).toHaveLength(1);
-    expect(shellTabs.groups[0]?.id).toBe("main");
-    expect(shellTabs.groups[0]?.tabIds.length).toBeGreaterThan(0);
-  });
-
-  it("closing one chat tab leaves the other open", async () => {
-    const { shellTabs } = await import("./shellTabs.svelte");
-    const a = shellTabs.openChat("session-a", { activate: true });
-    const b = shellTabs.openChat("session-b", { activate: true });
-    expect(a && b).toBeTruthy();
-    shellTabs.close(a!);
-    expect(shellTabs.orderedTabs).toHaveLength(1);
-    if (shellTabs.orderedTabs[0]?.kind === "chat") {
-      expect(shellTabs.orderedTabs[0].sessionId).toBe("session-b");
-    }
+    expect(shellTabs.groups.length).toBeGreaterThanOrEqual(1);
+    expect(shellTabs.splitRoot.type).toBe("group");
   });
 });

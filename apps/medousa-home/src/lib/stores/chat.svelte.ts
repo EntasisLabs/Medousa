@@ -654,6 +654,9 @@ export class ChatStore {
 
   async switchSession(sessionId: string) {
     const mirrorShellChat = () => {
+      void import("$lib/stores/chatStreamPool.svelte").then(({ chatStreamPool }) => {
+        chatStreamPool.acquire(sessionId);
+      });
       void import("$lib/stores/shellTabs.svelte").then(({ shellTabs }) => {
         const active = shellTabs.activeTab;
         if (active?.kind === "chat" && active.sessionId === sessionId) return;
