@@ -1,8 +1,9 @@
 <script lang="ts">
   import HumanBrowserPanel from "$lib/components/browser/HumanBrowserPanel.svelte";
   import CalendarPanel from "$lib/components/calendar/CalendarPanel.svelte";
-  import ChatPanel from "$lib/components/chat/ChatPanel.svelte";
+  import ChatSessionView from "$lib/components/chat/ChatSessionView.svelte";
   import ChatPaneIdle from "$lib/components/shell/ChatPaneIdle.svelte";
+  import { chatStreamPool } from "$lib/stores/chatStreamPool.svelte";
   import ContextPanel from "$lib/components/context/ContextPanel.svelte";
   import EnvironmentRenderer from "$lib/components/environment/EnvironmentRenderer.svelte";
   import SettingsPanel from "$lib/components/layout/SettingsPanel.svelte";
@@ -61,8 +62,10 @@
     hovering || focused || shellTabs.shouldForceShowTabs(groupId),
   );
 
-  /** Focused chat pane owns the live ChatPanel; others show cached idle. */
-  const showLiveChat = $derived(activeTab?.kind === "chat" && focused);
+  /** Live pool slot — not merely focused (multi-live transcripts). */
+  const showLiveChat = $derived(
+    activeTab?.kind === "chat" && chatStreamPool.isLive(activeTab.sessionId),
+  );
 
   const showLme = $derived(
     ownsLmeHost &&
@@ -106,11 +109,15 @@
   <div class="relative min-h-0 min-w-0 flex-1 overflow-hidden">
     {#if activeTab?.kind === "chat"}
       {#if showLiveChat}
-        <ChatPanel
-          visible={true}
-          onOpenContext={onOpenContext}
-          onOpenConnection={onOpenConnection}
-        />
+        {#key activeTab.sessionId}
+          <ChatSessionView
+            sessionId={activeTab.sessionId}
+            interactive={focused}
+            visible={true}
+            {onOpenContext}
+            {onOpenConnection}
+          />
+        {/key}
       {:else}
         <ChatPaneIdle
           {groupId}

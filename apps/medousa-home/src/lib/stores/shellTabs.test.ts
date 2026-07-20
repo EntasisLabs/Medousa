@@ -139,4 +139,71 @@ describe("shellTabs store", () => {
     expect(shellTabs.groups.length).toBeGreaterThanOrEqual(1);
     expect(shellTabs.splitRoot.type).toBe("group");
   });
+
+  it("persists and restores split layout across bootstrap", async () => {
+    const { shellTabs } = await import("./shellTabs.svelte");
+    shellTabs.openChat("session-a", { activate: true });
+    expect(shellTabs.splitActive("right")).toBe(true);
+    const branchId =
+      shellTabs.splitRoot.type === "branch" ? shellTabs.splitRoot.id : null;
+    expect(branchId).toBeTruthy();
+    if (branchId) shellTabs.setRatio(branchId, 0.35);
+    shellTabs.zoomToggle();
+    const zoomed = shellTabs.zoomedGroupId;
+    const activeGroup = shellTabs.activeGroupId;
+    const ratio =
+      shellTabs.splitRoot.type === "branch" ? shellTabs.splitRoot.ratio : null;
+    expect(ratio).toBeCloseTo(0.35);
+
+    vi.resetModules();
+    const { shellTabs: restored } = await import("./shellTabs.svelte");
+    restored.bootstrap();
+    expect(restored.paneCount).toBe(2);
+    expect(restored.activeGroupId).toBe(activeGroup);
+    expect(restored.zoomedGroupId).toBe(zoomed);
+    expect(restored.splitRoot.type).toBe("branch");
+    if (restored.splitRoot.type === "branch") {
+      expect(restored.splitRoot.ratio).toBeCloseTo(0.35);
+    }
+    expect(restored.chatSessionIdsForLiveRestore()).toContain("session-a");
+  });
+
+  it("lists chat sessions for live restore with active pane first", async () => {
+    const { shellTabs } = await import("./shellTabs.svelte");
+    shellTabs.openChat("session-a", { activate: true });
+    shellTabs.splitActive("right");
+    // New pane seeds same session; open distinct chat in the other group.
+    const otherGroup = shellTabs.groups.find((g) => g.id !== shellTabs.activeGroupId);
+    expect(otherGroup).toBeTruthy();
+    if (otherGroup) {
+      shellTabs.openChat("session-b", { activate: true, groupId: otherGroup.id });
+    }
+    const ids = shellTabs.chatSessionIdsForLiveRestore();
+    expect(ids[0]).toBe("session-b");
+    expect(ids).toEqual(expect.arrayContaining(["session-a", "session-b"]));
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("closing the last chat tab leaves the pane empty (no library placeholder)", async () => {
+    const { shellTabs } = await import("./shellTabs.svelte");
+    const tabId = shellTabs.openChat("session-a", { activate: true });
+    expect(tabId).toBeTruthy();
+    shellTabs.close(tabId!);
+    expect(shellTabs.tabs).toHaveLength(0);
+    expect(shellTabs.activeTab).toBeNull();
+  });
+
+  it("opens multiple distinct chat tabs in the same group", async () => {
+    const { shellTabs } = await import("./shellTabs.svelte");
+    const a = shellTabs.openChat("session-a", { activate: true });
+    const b = shellTabs.openChat("session-b", { activate: true });
+    expect(a).toBeTruthy();
+    expect(b).toBeTruthy();
+    expect(a).not.toBe(b);
+    expect(shellTabs.orderedTabs.filter((tab) => tab.kind === "chat")).toHaveLength(2);
+    expect(shellTabs.activeTab?.kind).toBe("chat");
+    if (shellTabs.activeTab?.kind === "chat") {
+      expect(shellTabs.activeTab.sessionId).toBe("session-b");
+    }
+  });
 });

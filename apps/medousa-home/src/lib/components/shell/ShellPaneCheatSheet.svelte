@@ -47,4 +47,5 @@
       </li>
     {/each}
   </ul>
+  <p class="mt-3 text-[11px] text-surface-500">Up to 4 live chats stream at once.</p>
 </div>

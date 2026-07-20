@@ -41,6 +41,19 @@ describe("ChatStreamPool", () => {
     expect(pool.liveSessionIds).toHaveLength(2);
   });
 
+  it("setMaxLive(4) keeps four live sessions", () => {
+    pool.setMaxLive(4);
+    pool.acquire("a");
+    pool.acquire("b");
+    pool.acquire("c");
+    pool.acquire("d");
+    expect(pool.liveSessionIds).toHaveLength(4);
+    const demoted = pool.acquire("e");
+    expect(demoted).toHaveLength(1);
+    expect(pool.liveSessionIds).toHaveLength(4);
+    expect(pool.isLive("e")).toBe(true);
+  });
+
   it("re-acquire refreshes live without demoting self", () => {
     pool.acquire("a");
     const demoted = pool.acquire("a");

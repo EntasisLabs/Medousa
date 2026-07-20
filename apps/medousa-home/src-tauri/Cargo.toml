@@ -51,6 +51,7 @@ medousa-install-support = { path = "../../../crates/medousa-install-support" }
 medousa-host = { path = "../../../crates/medousa-host" }
 axum = "0.8"
 medousa-browser-bridge = { path = "../../../crates/medousa-browser-bridge" }
+tauri-plugin-window-state = "2"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

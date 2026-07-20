@@ -259,6 +259,30 @@ export class ShellTabsStore {
     );
   }
 
+  /**
+   * Unique chat session ids to re-acquire as live on restart.
+   * Active pane first, then remaining leaves in visual order.
+   */
+  chatSessionIdsForLiveRestore(): string[] {
+    const ids: string[] = [];
+    const seen = new Set<string>();
+    const pushActiveChat = (groupId: string) => {
+      const group = this.groups.find((entry) => entry.id === groupId);
+      if (!group?.activeTabId) return;
+      const tab = this.tabs.find((entry) => entry.id === group.activeTabId);
+      if (tab?.kind !== "chat") return;
+      const sessionId = tab.sessionId.trim();
+      if (!sessionId || seen.has(sessionId)) return;
+      seen.add(sessionId);
+      ids.push(sessionId);
+    };
+    pushActiveChat(this.activeGroupId);
+    for (const groupId of leafOrder(this.splitRoot)) {
+      pushActiveChat(groupId);
+    }
+    return ids;
+  }
+
   bootstrap() {
     if (this.bootstrapped) return;
     this.bootstrapped = true;
@@ -323,17 +347,15 @@ export class ShellTabsStore {
       return existingInGroup.id;
     }
 
-    // Prefer focusing an existing chat tab for this session in another group when activating.
-    if (activate) {
+    // Same session already open in another pane — focus it (unless split passed groupId).
+    if (activate && options?.groupId === undefined) {
       const elsewhere = this.tabs.find(
         (tab) => tab.kind === "chat" && tab.sessionId === trimmed,
       );
-      if (elsewhere && options?.groupId === undefined) {
-        // Splitting may pass groupId explicitly to clone into the new pane.
-        const host = this.groupForTab(elsewhere.id);
-        if (host && host.id === groupId) {
-          /* fall through */
-        }
+      if (elsewhere) {
+        if (options?.title) this.patchTitle(elsewhere.id, options.title);
+        void this.activate(elsewhere.id);
+        return elsewhere.id;
       }
     }
 
@@ -579,14 +601,9 @@ export class ShellTabsStore {
       : this.activeGroup;
     if (wasActive && group?.activeTabId) {
       void this.activate(group.activeTabId);
-    } else if (group && group.tabIds.length === 0) {
-      const sessionId = chat.sessionId?.trim();
-      if (sessionId) {
-        this.openChat(sessionId, { activate: true, groupId: group.id });
-      } else {
-        this.openSurface("library", { activate: true, groupId: group.id });
-      }
     }
+    // Empty group stays empty — ShellPane shows “Open something from the rail.”
+    // Do not auto-open library/chat placeholders (felt like stuck empty workspace tabs).
     this.persist();
   }
 
@@ -690,7 +707,15 @@ export class ShellTabsStore {
         } else if (tab.kind === "web") {
           void humanBrowser.closeTab(tab.browserTabId);
         } else if (tab.kind === "chat") {
-          chatStreamPool.release(tab.sessionId);
+          const stillOpen = this.tabs.some(
+            (entry) =>
+              entry.id !== tabId &&
+              entry.kind === "chat" &&
+              entry.sessionId === tab.sessionId,
+          );
+          if (!stillOpen) {
+            chatStreamPool.release(tab.sessionId);
+          }
         }
       } finally {
         this.endSuppressMirror();

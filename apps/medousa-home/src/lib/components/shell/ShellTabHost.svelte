@@ -77,6 +77,7 @@
 
   onMount(() => {
     shellTabs.bootstrap();
+    chat.bootstrapMultiLive(shellTabs.chatSessionIdsForLiveRestore());
     return attachShellPaneHotkeys({
       onCheatSheet: () => {
         cheatSheetOpen = true;

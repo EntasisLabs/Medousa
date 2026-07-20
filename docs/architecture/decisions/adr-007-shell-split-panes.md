@@ -15,15 +15,18 @@ Accepted
 3. **Keyboard:**
    - `Ctrl+;` prefix → pane ops (`%`/`"` split, hjkl focus, `z` zoom, `x` close, …)
    - `Ctrl+B` → toggle left master rail (VS Code/Cursor); never pane ops
-4. **`ChatStreamPool`:** slots keyed by `sessionId` with `acquire` / `release` / `setMaxLive`. **v1 `maxLiveStreams = 1`** — focused chat pane owns the live SSE; other chat panes show a cached/idle view. Raising max later should not require host rewrites.
-5. **LME / web:** one shared host each (focus steals). Dual editors deferred.
-6. Do **not** reuse custom-surface `TilingNode` for shell panes.
+4. **`ChatStreamPool`:** slots keyed by `sessionId` with `acquire` / `release` / `setMaxLive`. **`maxLiveStreams = MAX_SHELL_PANES` (4)** — every chat pane can be live; pool LRU-evicts when a 5th session acquires. Demoted sessions stop owned SSE but keep cached transcripts (`ChatPaneIdle` only when `!isLive`).
+5. **Compose:** only the focused pane’s chat accepts send/input; background live panes still stream and update transcripts (`ChatSessionView` with `interactive={focused}`).
+6. **LME / web:** one shared host each (focus steals). Dual editors deferred.
+7. Do **not** reuse custom-surface `TilingNode` for shell panes.
 
 ## Consequences
 
 - Persistence key `medousa-home-shell-tabs-v2` stores tabs, groups, splitRoot, activeGroupId, zoom.
+- **Restart restore:** shell chrome hydrates from that key; open chat panes are re-acquired into `ChatStreamPool` (active first, up to `maxLiveStreams`); background sessions warm history via `warmBackgroundSession`. Main window size/position/maximized persist via `tauri-plugin-window-state` (desktop, label `main` only).
 - Spotlight exposes pane commands under Advanced.
-- Follow-ups: `maxLiveStreams > 1`, drag tab to split, dual LME/web, remappable keys.
+- Session-scoped chat runtimes (`chat.svelte.ts` + `chatSessionRuntime.ts`) keep messages/drafts across focus swaps; stream events route by owned `turnId` → `sessionId`.
+- Follow-ups: drag tab to split, dual LME/web, remappable keys, soft LRU for cached runtimes.
 
 ## Code anchors
 

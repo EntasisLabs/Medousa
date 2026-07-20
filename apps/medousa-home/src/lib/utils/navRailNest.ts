@@ -112,7 +112,8 @@ export async function activateNestItem(
 ): Promise<void> {
   switch (surfaceId) {
     case "chat":
-      shellTabs.openChat(itemId, { activate: true });
+      // switchSession mirrors the shell tab (same path as SessionSidebar).
+      // Avoid openChat+activate first — that raced reopen of the prior session.
       await chat.switchSession(itemId);
       return;
     case "peers":

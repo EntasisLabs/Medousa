@@ -105,9 +105,12 @@
 
   const scrollPinThresholdPx = $derived(mobile ? 24 : 96);
 
-  const chatMessages = $derived(chat.messages.filter((message) => isChatLaneMessage(message)));
-  const askThreads = $derived(groupAskThreads(chat.messages));
-  const workerThreads = $derived(groupWorkerThreads(chat.messages));
+  /** Stable principal — ignores temporary session swaps during background SSE. */
+  const panelSessionId = $derived(chat.focusedSessionId);
+  const panelMessages = $derived(chat.messagesFor(panelSessionId));
+  const chatMessages = $derived(panelMessages.filter((message) => isChatLaneMessage(message)));
+  const askThreads = $derived(groupAskThreads(panelMessages));
+  const workerThreads = $derived(groupWorkerThreads(panelMessages));
   const showInlineComposer = $derived(!mobile || (embedded && scriptWorkbench));
   const useMobileChatLayout = $derived(mobile);
   const showChatEmptyState = $derived(
@@ -124,25 +127,25 @@
     const result = await saveChatTurnToVault({
       assistant,
       user: user ?? null,
-      sessionId: chat.sessionId,
+      sessionId: panelSessionId,
     });
     showChatTurnSaveFeedback(result);
   }
   const sessionLabel = $derived.by(() => {
-    const session = chat.sessions.find((entry) => entry.session_id === chat.sessionId);
+    const session = chat.sessions.find((entry) => entry.session_id === panelSessionId);
     if (session) return formatSessionLabel(session);
     return formatSessionLabel({
-      session_id: chat.sessionId,
+      session_id: panelSessionId,
       preview: "",
       turns: 0,
       verification_runs: 0,
     });
   });
   const recentSessions = $derived(
-    chat.sessions.filter((session) => session.session_id !== chat.sessionId).slice(0, 4),
+    chat.sessions.filter((session) => session.session_id !== panelSessionId).slice(0, 4),
   );
   const streamingMessage = $derived(
-    chat.messages.find((message) => message.streaming && message.role === "assistant"),
+    panelMessages.find((message) => message.streaming && message.role === "assistant"),
   );
   const phaseLine = $derived.by(() => {
     if (!streamingMessage) return null;
@@ -174,8 +177,10 @@
     if (chat.liveStreamActive) return "Thinking…";
     if (chat.backgroundActivity > 0) return "Background work · see Work";
     if (showChatEmptyState) return "What are you working on?";
-    if (chat.historyLoading && chat.messages.length === 0) return "Opening thread…";
-    const last = [...chat.messages].reverse().find((message) => message.content.trim());
+    if (chat.historyLoadingFor(panelSessionId) && panelMessages.length === 0) {
+      return "Opening thread…";
+    }
+    const last = [...panelMessages].reverse().find((message) => message.content.trim());
     if (last?.content) {
       const line = last.content.trim().split("\n")[0];
       if (/^done\s*[—–-]\s*vault/i.test(line)) {
@@ -193,7 +198,7 @@
   );
 
   $effect(() => {
-    void chat.sessionId;
+    void panelSessionId;
     atBottom = true;
   });
 
@@ -476,9 +481,9 @@
         {/if}
       </div>
     </div>
-    {#if chat.streamError}
-      <p class="mt-1 text-[11px] text-error-400" role="alert">{chat.streamError}</p>
-    {:else if !mobile && chat.historyLoading && chat.messages.length === 0}
+    {#if chat.streamErrorFor(panelSessionId)}
+      <p class="mt-1 text-[11px] text-error-400" role="alert">{chat.streamErrorFor(panelSessionId)}</p>
+    {:else if !mobile && chat.historyLoadingFor(panelSessionId) && panelMessages.length === 0}
       <p class="mt-1 text-[11px] text-surface-400">Loading conversation…</p>
     {/if}
   </header>
@@ -607,7 +612,7 @@
               <div class="chat-ask-thread-body space-y-3">
                 <ChatMessageList
                   messages={thread.messages}
-                  sessionId={chat.sessionId}
+                  sessionId={panelSessionId}
                   {mobile}
                   compact={true}
                   scrollRoot={scrollEl}
@@ -665,7 +670,7 @@
               <div class="chat-ask-thread-body space-y-3">
                 <ChatMessageList
                   messages={thread.messages}
-                  sessionId={chat.sessionId}
+                  sessionId={panelSessionId}
                   {mobile}
                   compact={true}
                   workerThread={true}
@@ -685,7 +690,7 @@
       {#if chatMessages.length > 0}
         <ChatMessageList
           messages={chatMessages}
-          sessionId={chat.sessionId}
+          sessionId={panelSessionId}
           {mobile}
           scrollRoot={scrollEl}
           onPromoteToFlow={handlePromoteToFlow}
@@ -772,7 +777,7 @@
           <p class="mt-3 text-sm text-surface-400">No prior sessions</p>
         {/if}
       </div>
-      {:else if chat.historyLoading && chat.messages.length === 0 && !mobile}
+      {:else if chat.historyLoadingFor(panelSessionId) && panelMessages.length === 0 && !mobile}
       <div class="flex min-h-[200px] items-center justify-center">
         <LoaderCircle size={22} class="animate-spin text-surface-500/80" aria-label="Loading" />
       </div>

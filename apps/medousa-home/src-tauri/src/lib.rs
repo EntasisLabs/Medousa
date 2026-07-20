@@ -84,6 +84,20 @@ pub fn run() {
         .manage(DaemonState::new())
         .manage(daemon::local_inference::LocalInferenceStreamState::new());
 
+    // Desktop only: restore main window size / position / maximized across restarts.
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
+    {
+        use tauri_plugin_window_state::{Builder as WindowStateBuilder, StateFlags};
+        builder = builder.plugin(
+            WindowStateBuilder::default()
+                .with_state_flags(
+                    StateFlags::SIZE | StateFlags::POSITION | StateFlags::MAXIMIZED,
+                )
+                .with_filter(|label| label == "main")
+                .build(),
+        );
+    }
+
     builder = builder
         .setup(|app| {
             eprintln!("[medousa-home] setup start");

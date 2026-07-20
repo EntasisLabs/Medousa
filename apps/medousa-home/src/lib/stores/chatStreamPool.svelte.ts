@@ -1,6 +1,6 @@
 /**
- * Chat stream pool — backbone for multi-live streams later.
- * v1: maxLiveStreams = 1 (focused session owns the live SSE slot).
+ * Chat stream pool — concurrent live SSE slots keyed by sessionId.
+ * Bootstrap sets maxLiveStreams = MAX_SHELL_PANES (4).
  */
 
 export type ChatStreamSlotStatus = "live" | "cached" | "idle";
@@ -57,6 +57,13 @@ export class ChatStreamPool {
     map.set(trimmed, { sessionId: trimmed, status: "live", lastEventAt: now });
     this.slots = map;
     demoted.push(...this.evictOverflow(trimmed));
+    if (demoted.length > 0) {
+      void import("$lib/stores/chat.svelte").then(({ chat }) => {
+        for (const sessionId of demoted) {
+          void chat.onSessionDemoted(sessionId);
+        }
+      });
+    }
     return demoted;
   }
 

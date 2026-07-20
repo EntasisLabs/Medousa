@@ -66,6 +66,13 @@ import { workerStatusLineForColumn } from "$lib/utils/workerThreads";
 import { budgetRequestIdFromStreamEvent } from "$lib/notifications";
 import type { VaultNoteContextScope } from "$lib/utils/vaultNoteBridge";
 import type { ScriptWorkbenchContextScope } from "$lib/utils/scriptWorkbenchBridge";
+import {
+  cloneRuntime,
+  emptySessionRuntime,
+  type ChatSessionRuntime,
+} from "$lib/stores/chatSessionRuntime";
+import { chatStreamPool } from "$lib/stores/chatStreamPool.svelte";
+import { MAX_SHELL_PANES } from "$lib/types/shellTabs";
 
 const SESSION_KEY = "medousa-home-session-id";
 const PINS_KEY = "medousa-home-pinned-sessions";
@@ -160,10 +167,250 @@ export class ChatStore {
   streamRole: "owner" | "observer" = "owner";
   private recentlySettledTurns = new Map<string, number>();
   private terminalReconcileTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  /** Background + focused session caches (focused also mirrored on public fields). */
+  private sessionRuntimes = new Map<string, ChatSessionRuntime>();
+  /** Bumps when a non-focused runtime is mutated (multi-pane transcript reactivity). */
+  runtimeRevision = $state(0);
+  private streamApplyChain: Promise<void> = Promise.resolve();
+  private multiLiveBootstrapped = false;
+  /**
+   * When set, public `$state` fields are temporarily swapped to another session
+   * for stream apply. UI must use `focusedSessionId` / `messagesFor` — never raw
+   * `sessionId`/`messages` — so panes don't flash the wrong transcript.
+   */
+  private streamApplyPrincipalId: string | null = null;
 
   /** Pop-out / secondary shells: display stream events without reattaching SSE. */
   setStreamRole(role: "owner" | "observer") {
     this.streamRole = role;
+  }
+
+  /**
+   * Enable up to N concurrent live streams and re-acquire open chat panes.
+   * `sessionIds` should list active pane first, then other leaves (from shellTabs).
+   */
+  bootstrapMultiLive(sessionIds?: string[]) {
+    if (this.multiLiveBootstrapped) return;
+    this.multiLiveBootstrapped = true;
+    chatStreamPool.setMaxLive(MAX_SHELL_PANES);
+
+    const principal = this.sessionId.trim();
+    const ordered: string[] = [];
+    const seen = new Set<string>();
+    const push = (id: string) => {
+      const trimmed = id.trim();
+      if (!trimmed || seen.has(trimmed)) return;
+      seen.add(trimmed);
+      ordered.push(trimmed);
+    };
+    push(principal);
+    for (const id of sessionIds ?? []) push(id);
+
+    for (const id of ordered) {
+      chatStreamPool.acquire(id);
+    }
+    for (const id of ordered) {
+      if (id !== principal) void this.warmBackgroundSession(id);
+    }
+  }
+
+  /** Load history into a non-focused session runtime (restart restore). */
+  async warmBackgroundSession(sessionId: string) {
+    const trimmed = sessionId.trim();
+    if (!trimmed || trimmed === this.sessionId) return;
+
+    const existing = this.sessionRuntimes.get(trimmed);
+    if (existing && (existing.messages.length > 0 || existing.historyLoading)) {
+      return;
+    }
+
+    const runtime = emptySessionRuntime(trimmed, loadDraftForSession(trimmed));
+    runtime.historyLoading = true;
+    this.sessionRuntimes.set(trimmed, runtime);
+    this.bumpRuntimeRevision();
+
+    try {
+      const history = await getSessionHistory(trimmed);
+      if (this.sessionId === trimmed) return;
+      const current =
+        this.sessionRuntimes.get(trimmed) ??
+        emptySessionRuntime(trimmed, loadDraftForSession(trimmed));
+      current.messages = mapTurns(history.turns, { sessionId: trimmed });
+      current.historyLoading = false;
+      current.streamError = null;
+      this.sessionRuntimes.set(trimmed, current);
+      this.bumpRuntimeRevision();
+    } catch (err) {
+      if (this.sessionId === trimmed) return;
+      const current = this.sessionRuntimes.get(trimmed);
+      if (!current) return;
+      current.historyLoading = false;
+      current.streamError = err instanceof Error ? err.message : String(err);
+      this.sessionRuntimes.set(trimmed, current);
+      this.bumpRuntimeRevision();
+    }
+  }
+
+  /**
+   * Session the UI should treat as principal (composer / ChatPanel).
+   * Stable during background stream applies that temporarily swap `$state` fields.
+   */
+  get focusedSessionId(): string {
+    return this.streamApplyPrincipalId ?? this.sessionId;
+  }
+
+  /** Whether public fields currently belong to `focusedSessionId` (not a stream-apply swap). */
+  private fieldsMatchFocused(): boolean {
+    return this.streamApplyPrincipalId == null;
+  }
+
+  /** Transcript for any cached/live session (for non-focused panes). */
+  messagesFor(sessionId: string): ChatMessage[] {
+    void this.runtimeRevision;
+    const trimmed = sessionId.trim();
+    if (!trimmed) return [];
+    if (this.fieldsMatchFocused() && trimmed === this.sessionId) return this.messages;
+    // During background stream apply, principal data lives in the stash map.
+    if (
+      this.streamApplyPrincipalId &&
+      trimmed === this.streamApplyPrincipalId
+    ) {
+      return this.sessionRuntimes.get(trimmed)?.messages ?? [];
+    }
+    // Session currently loaded into public fields (apply target or focused).
+    if (trimmed === this.sessionId) return this.messages;
+    return this.sessionRuntimes.get(trimmed)?.messages ?? [];
+  }
+
+  draftFor(sessionId: string): string {
+    void this.runtimeRevision;
+    const trimmed = sessionId.trim();
+    if (!trimmed) return "";
+    if (this.fieldsMatchFocused() && trimmed === this.sessionId) return this.draft;
+    if (
+      this.streamApplyPrincipalId &&
+      trimmed === this.streamApplyPrincipalId
+    ) {
+      return (
+        this.sessionRuntimes.get(trimmed)?.draft ?? loadDraftForSession(trimmed)
+      );
+    }
+    if (trimmed === this.sessionId) return this.draft;
+    return this.sessionRuntimes.get(trimmed)?.draft ?? loadDraftForSession(trimmed);
+  }
+
+  streamErrorFor(sessionId: string): string | null {
+    void this.runtimeRevision;
+    const trimmed = sessionId.trim();
+    if (!trimmed) return null;
+    if (this.fieldsMatchFocused() && trimmed === this.sessionId) {
+      return this.streamError;
+    }
+    if (
+      this.streamApplyPrincipalId &&
+      trimmed === this.streamApplyPrincipalId
+    ) {
+      return this.sessionRuntimes.get(trimmed)?.streamError ?? null;
+    }
+    if (trimmed === this.sessionId) return this.streamError;
+    return this.sessionRuntimes.get(trimmed)?.streamError ?? null;
+  }
+
+  historyLoadingFor(sessionId: string): boolean {
+    void this.runtimeRevision;
+    const trimmed = sessionId.trim();
+    if (!trimmed) return false;
+    if (this.fieldsMatchFocused() && trimmed === this.sessionId) {
+      return this.historyLoading;
+    }
+    if (
+      this.streamApplyPrincipalId &&
+      trimmed === this.streamApplyPrincipalId
+    ) {
+      return this.sessionRuntimes.get(trimmed)?.historyLoading ?? false;
+    }
+    if (trimmed === this.sessionId) return this.historyLoading;
+    return this.sessionRuntimes.get(trimmed)?.historyLoading ?? false;
+  }
+
+  private snapshotFocusedRuntime(): ChatSessionRuntime {
+    return {
+      sessionId: this.sessionId,
+      messages: this.messages.map((message) => ({ ...message })),
+      draft: this.draft,
+      streamError: this.streamError,
+      historyLoading: this.historyLoading,
+      sessionPristine: this.sessionPristine,
+      historyNotice: this.historyNotice,
+      activeTurnId: this.activeTurnId,
+      turns: new Map(this.turns),
+      workers: new Map(
+        [...this.workers.entries()].map(([key, value]) => [key, { ...value }]),
+      ),
+      assistantId: this.assistantId,
+      transcriptEpoch: this.transcriptEpoch,
+      lastSeqByTurn: new Map(this.lastSeqByTurn),
+      backgroundActivity: this.backgroundActivity,
+    };
+  }
+
+  private stashFocusedRuntime() {
+    const snap = this.snapshotFocusedRuntime();
+    this.sessionRuntimes.set(snap.sessionId, snap);
+  }
+
+  private loadRuntimeIntoFocused(runtime: ChatSessionRuntime) {
+    this.sessionId = runtime.sessionId;
+    this.messages = runtime.messages.map((message) => ({ ...message }));
+    this.draft = runtime.draft;
+    this.streamError = runtime.streamError;
+    this.historyLoading = runtime.historyLoading;
+    this.sessionPristine = runtime.sessionPristine;
+    this.historyNotice = runtime.historyNotice;
+    this.activeTurnId = runtime.activeTurnId;
+    this.turns = new Map(runtime.turns);
+    this.workers = new Map(
+      [...runtime.workers.entries()].map(([key, value]) => [key, { ...value }]),
+    ) as typeof this.workers;
+    this.assistantId = runtime.assistantId;
+    this.transcriptEpoch = runtime.transcriptEpoch;
+    this.lastSeqByTurn = new Map(runtime.lastSeqByTurn);
+    this.backgroundActivity = runtime.backgroundActivity;
+  }
+
+  private bumpRuntimeRevision() {
+    this.runtimeRevision += 1;
+  }
+
+  /**
+   * Run `fn` with focused fields temporarily swapped to `sessionId`'s runtime
+   * (for applying stream events to background sessions without rewriting every mutator).
+   * Pins `focusedSessionId` so ChatPanel / panes never render the swapped session.
+   */
+  private withSessionFields(sessionId: string, fn: () => void) {
+    const trimmed = sessionId.trim();
+    if (!trimmed || trimmed === this.sessionId) {
+      fn();
+      this.stashFocusedRuntime();
+      return;
+    }
+    this.stashFocusedRuntime();
+    const focusedId = this.sessionId;
+    const target =
+      this.sessionRuntimes.get(trimmed) ??
+      emptySessionRuntime(trimmed, loadDraftForSession(trimmed));
+    this.streamApplyPrincipalId = focusedId;
+    this.loadRuntimeIntoFocused(cloneRuntime(target));
+    try {
+      fn();
+      this.stashFocusedRuntime();
+    } finally {
+      const restore =
+        this.sessionRuntimes.get(focusedId) ?? emptySessionRuntime(focusedId);
+      this.loadRuntimeIntoFocused(cloneRuntime(restore));
+      this.streamApplyPrincipalId = null;
+      this.bumpRuntimeRevision();
+    }
   }
 
   ownsInteractiveStreams(): boolean {
@@ -530,25 +777,18 @@ export class ChatStore {
 
   async newSession() {
     this.flushDraftPersist();
-    this.transcriptEpoch += 1;
-    this.historyLoading = false;
-    this.sessionPristine = true;
+    this.stashFocusedRuntime();
     const id = `medousa-home-${crypto.randomUUID()}`;
     localStorage.setItem(SESSION_KEY, id);
-    this.sessionId = id;
-    this.draft = loadDraftForSession(id);
-    this.messages = [];
+    this.loadRuntimeIntoFocused(emptySessionRuntime(id, loadDraftForSession(id)));
+    this.sessionPristine = true;
+    this.transcriptEpoch += 1;
     chatScenes.reset();
     chatInteractions.reset();
-    this.streamError = null;
-    this.historyNotice = null;
-    this.backgroundActivity = 0;
-    this.activeTurnId = null;
     this.contextUsage = null;
     this.contextUsagePanelOpen = false;
-    this.turns = new Map();
-    this.workers = new Map();
-    void this.clearStreamOwnership();
+    chatStreamPool.acquire(id);
+    this.stashFocusedRuntime();
     await this.refreshSessions({ force: true });
   }
 
@@ -578,9 +818,12 @@ export class ChatStore {
     if (!sessionId) return;
 
     const epoch = this.transcriptEpoch;
+    const stillSameSession = () =>
+      epoch === this.transcriptEpoch && this.sessionId.trim() === sessionId;
+
     try {
       const attached = await this.tryReattachActiveTurn(cards);
-      if (epoch !== this.transcriptEpoch) return;
+      if (!stillSameSession()) return;
 
       // Handoff / budget turns are not live interactive streams — synthesis lands via
       // workspace cards + session history. Blocking history merge here left mobile
@@ -611,7 +854,7 @@ export class ChatStore {
       }
 
       const history = await getSessionHistory(sessionId);
-      if (epoch !== this.transcriptEpoch) return;
+      if (!stillSameSession()) return;
 
       const daemonMessages = mapTurns(history.turns, { sessionId });
       this.messages = mergeTranscript(this.messages, daemonMessages);
@@ -631,22 +874,25 @@ export class ChatStore {
     if (!sessionId) return;
 
     const epoch = this.transcriptEpoch;
+    const stillSameSession = () =>
+      epoch === this.transcriptEpoch && this.sessionId.trim() === sessionId;
+
     this.historyLoading = true;
     this.streamError = null;
     try {
       const history = await getSessionHistory(sessionId);
-      if (epoch !== this.transcriptEpoch) return;
+      if (!stillSameSession()) return;
       this.messages = mapTurns(history.turns, { sessionId });
       if (options?.notice !== false && history.turns.length > 0) {
         const count = history.turns.length;
         this.historyNotice = `Restored ${count} turn${count === 1 ? "" : "s"}`;
       }
     } catch (err) {
-      if (epoch === this.transcriptEpoch) {
+      if (stillSameSession()) {
         this.streamError = err instanceof Error ? err.message : String(err);
       }
     } finally {
-      if (epoch === this.transcriptEpoch) {
+      if (stillSameSession()) {
         this.historyLoading = false;
       }
     }
@@ -654,9 +900,7 @@ export class ChatStore {
 
   async switchSession(sessionId: string) {
     const mirrorShellChat = () => {
-      void import("$lib/stores/chatStreamPool.svelte").then(({ chatStreamPool }) => {
-        chatStreamPool.acquire(sessionId);
-      });
+      chatStreamPool.acquire(sessionId);
       void import("$lib/stores/shellTabs.svelte").then(({ shellTabs }) => {
         const active = shellTabs.activeTab;
         if (active?.kind === "chat" && active.sessionId === sessionId) return;
@@ -664,46 +908,82 @@ export class ChatStore {
       });
     };
 
-    if (sessionId === this.sessionId) {
+    const trimmed = sessionId.trim();
+    if (!trimmed) return;
+
+    if (trimmed === this.sessionId) {
       await this.reloadCurrentSession({ notice: false });
+      this.stashFocusedRuntime();
       mirrorShellChat();
       return;
     }
+
     this.flushDraftPersist();
-    this.sessionPristine = false;
+    this.stashFocusedRuntime();
+    // Invalidate in-flight reconcile/reload for the previous session (prevents A→B merge).
     this.transcriptEpoch += 1;
-    this.sessionId = sessionId;
-    localStorage.setItem(SESSION_KEY, sessionId);
-    this.draft = loadDraftForSession(sessionId);
-    this.streamError = null;
-    this.historyNotice = null;
-    this.messages = [];
+    const switchEpoch = this.transcriptEpoch;
+    // Keep other sessions' SSE alive — do not clearStreamOwnership here.
+
+    const cached = this.sessionRuntimes.get(trimmed);
+    if (cached && cached.messages.length > 0) {
+      const runtime = cloneRuntime(cached);
+      runtime.transcriptEpoch = switchEpoch;
+      this.loadRuntimeIntoFocused(runtime);
+      this.transcriptEpoch = switchEpoch;
+      localStorage.setItem(SESSION_KEY, trimmed);
+      chatScenes.reset();
+      chatInteractions.reset();
+      chatStreamPool.acquire(trimmed);
+      this.stashFocusedRuntime();
+      const { workshops } = await import("$lib/stores/workshops.svelte");
+      void workshops.saveActiveSession(trimmed);
+      void this.tryReattachActiveTurn();
+      mirrorShellChat();
+      return;
+    }
+
+    const fresh = emptySessionRuntime(trimmed, loadDraftForSession(trimmed));
+    fresh.historyLoading = true;
+    fresh.transcriptEpoch = switchEpoch;
+    this.loadRuntimeIntoFocused(fresh);
+    this.transcriptEpoch = switchEpoch;
+    localStorage.setItem(SESSION_KEY, trimmed);
     chatScenes.reset();
     chatInteractions.reset();
-    this.backgroundActivity = 0;
-    this.activeTurnId = null;
-    this.turns = new Map();
-    this.workers = new Map();
-    void this.clearStreamOwnership();
-    this.historyLoading = true;
-    const epoch = this.transcriptEpoch;
     try {
-      const history = await getSessionHistory(sessionId);
-      if (epoch !== this.transcriptEpoch) return;
-      this.messages = mapTurns(history.turns, { sessionId });
+      const history = await getSessionHistory(trimmed);
+      if (this.sessionId !== trimmed || switchEpoch !== this.transcriptEpoch) return;
+      this.messages = mapTurns(history.turns, { sessionId: trimmed });
       const { workshops } = await import("$lib/stores/workshops.svelte");
-      void workshops.saveActiveSession(sessionId);
+      void workshops.saveActiveSession(trimmed);
     } catch (err) {
-      if (epoch === this.transcriptEpoch) {
+      if (this.sessionId === trimmed && switchEpoch === this.transcriptEpoch) {
         this.streamError = err instanceof Error ? err.message : String(err);
       }
     } finally {
-      if (epoch === this.transcriptEpoch) {
+      if (this.sessionId === trimmed && switchEpoch === this.transcriptEpoch) {
         this.historyLoading = false;
       }
     }
+    this.stashFocusedRuntime();
+    chatStreamPool.acquire(trimmed);
     void this.tryReattachActiveTurn();
     mirrorShellChat();
+  }
+
+  /** Pool demoted a session from live → cached; stop its SSE but keep transcript. */
+  async onSessionDemoted(sessionId: string) {
+    const trimmed = sessionId.trim();
+    if (!trimmed) return;
+    await this.detachStreamsForSession(trimmed);
+  }
+
+  private async detachStreamsForSession(sessionId: string) {
+    const turnIds = [...this.streamOwners.entries()]
+      .filter(([, owner]) => owner.sessionId === sessionId)
+      .map(([turnId]) => turnId);
+    await Promise.all(turnIds.map((turnId) => this.detachStreamOwner(turnId)));
   }
 
   clearHistoryNotice() {
@@ -1819,6 +2099,20 @@ export class ChatStore {
   }
 
   applyStreamEvent(event: InteractiveTurnStreamEvent) {
+    const owner = this.streamOwners.get(event.turn_id);
+    const targetSession = owner?.sessionId?.trim() || this.sessionId;
+    this.streamApplyChain = this.streamApplyChain
+      .then(() => {
+        this.withSessionFields(targetSession, () => {
+          this.applyStreamEventOnFocusedFields(event);
+        });
+      })
+      .catch(() => {
+        /* keep queue alive */
+      });
+  }
+
+  private applyStreamEventOnFocusedFields(event: InteractiveTurnStreamEvent) {
     if (!this.isRelevantStreamEvent(event)) return;
 
     // Exactly-once: drop anything at or below the highest seq we've applied for

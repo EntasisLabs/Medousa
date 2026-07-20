@@ -170,8 +170,8 @@
   }
 
   async function openNestItem(surfaceId: string, item: NavRailNestItem) {
-    onSelect(surfaceId);
-    // Keep hierarchical nav visible (Cursor-style); don’t morph into view mode.
+    // Do not call onSelect(surface) — for chat that re-opens the *current* session
+    // and races ensureSessionHydrated against the nest target (transcript bleed).
     layout.setShellSidebarMode("nav");
     if (!isNestExpanded(surfaceId)) {
       nestOpen = { ...nestOpen, [surfaceId]: true };
