@@ -26,6 +26,10 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
+  # Vite production builds (tauri beforeBuildCommand) routinely exceed Node's ~2GB
+  # default heap on GitHub-hosted macOS runners (~7GB RAM). Without this, npm run
+  # build OOMs with exit 134 while Linux/Windows often scrape by.
+  NODE_OPTIONS: --max-old-space-size=4096
   # Keep the target dir inside the workspace. On self-hosted runners github.workspace
   # persists between runs, so this doubles as a warm incremental cache with no cache
   # action needed. (.cargo/config.toml points at ../.cache/cargo-target, outside
