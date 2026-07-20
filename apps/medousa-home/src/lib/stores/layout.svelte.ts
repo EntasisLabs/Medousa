@@ -259,6 +259,19 @@ export class LayoutStore {
     this.navigationEpoch += 1;
   }
 
+  /**
+   * Update rail / last-surface hint without remounting the center column.
+   * Used by the shell tab host when activating tabs.
+   */
+  focusDesktopSurface(surface: string) {
+    let next = surface === "home" ? "chat" : surface;
+    if (next === "automations" || next === "workshop") next = "library";
+    if (this.desktopSurface === next) return;
+    this.desktopSurface = next as Surface;
+    saveLastSurface(next);
+    this.shellSidebarMode = surfaceHasShellSidebarView(next) ? "view" : "nav";
+  }
+
   navigateDesktop(surface: string, options?: { bump?: boolean }) {
     // Legacy Automations surface → LME workspace (library). Callers that need a
     // specific explorer mode should set `lmeWorkspace` before navigating.

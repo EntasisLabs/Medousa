@@ -28,9 +28,11 @@
   interface Props {
     visible?: boolean;
     workRailVisible?: boolean;
+    /** When true, the shell tab strip owns tabs — hide the local tab bar. */
+    shellTabChrome?: boolean;
   }
 
-  let { visible = true, workRailVisible = false }: Props = $props();
+  let { visible = true, workRailVisible = false, shellTabChrome = false }: Props = $props();
 
   let urlBarFocusNonce = $state(0);
   let panelEl = $state<HTMLElement | null>(null);
@@ -183,9 +185,11 @@
     class="human-browser-chrome relative z-50 flex w-full shrink-0 flex-col"
     data-debug-label="browser-chrome"
   >
-    <div data-debug-label="browser-tab-bar">
-      <HumanBrowserTabBar />
-    </div>
+    {#if !shellTabChrome}
+      <div data-debug-label="browser-tab-bar">
+        <HumanBrowserTabBar />
+      </div>
+    {/if}
     <div data-debug-label="browser-agent-handoff">
       <BrowserControlHandoff />
     </div>

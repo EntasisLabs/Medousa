@@ -10,6 +10,7 @@ describe("navSurfaces shell sidebar views", () => {
     expect(surfaceHasShellSidebarView("chat")).toBe(true);
     expect(surfaceHasShellSidebarView("messaging")).toBe(true);
     expect(surfaceHasShellSidebarView("library")).toBe(true);
+    expect(surfaceHasShellSidebarView("context")).toBe(true);
     expect(surfaceHasShellSidebarView("settings")).toBe(true);
   });
 
@@ -17,7 +18,6 @@ describe("navSurfaces shell sidebar views", () => {
     expect(surfaceHasShellSidebarView("work")).toBe(false);
     expect(surfaceHasShellSidebarView("calendar")).toBe(false);
     expect(surfaceHasShellSidebarView("web")).toBe(false);
-    expect(surfaceHasShellSidebarView("context")).toBe(false);
     expect(surfaceHasShellSidebarView("runtime")).toBe(false);
     expect(surfaceHasShellSidebarView("profiles")).toBe(false);
   });
@@ -27,6 +27,7 @@ describe("navSurfaces shell sidebar views", () => {
     expect(shellSidebarViewTitle("chat")).toBe("Sessions");
     expect(shellSidebarViewTitle("messaging")).toBe("Channels");
     expect(shellSidebarViewTitle("library")).toBe("Workspace");
+    expect(shellSidebarViewTitle("context")).toBe("Context");
     expect(shellSidebarViewTitle("settings")).toBe("Settings");
   });
 });

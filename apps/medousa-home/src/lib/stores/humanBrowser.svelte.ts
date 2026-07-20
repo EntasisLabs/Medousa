@@ -380,6 +380,9 @@ export class HumanBrowserStore {
       // Belt-and-suspenders: compositor hide is rAF-deferred; blank must not flash.
       await humanBrowserEmbedHide().catch(() => {});
     }
+    void import("$lib/stores/shellTabs.svelte").then(({ shellTabs }) => {
+      shellTabs.mirrorWebTab(tab.id, { activate: true });
+    });
   }
 
   async activateTab(tabId: string) {
@@ -393,6 +396,9 @@ export class HumanBrowserStore {
       await humanBrowserEmbedHide().catch(() => {});
     }
     void this.refreshNativeNavState();
+    void import("$lib/stores/shellTabs.svelte").then(({ shellTabs }) => {
+      shellTabs.mirrorWebTab(tabId, { activate: true });
+    });
   }
 
   async closeTab(tabId: string) {

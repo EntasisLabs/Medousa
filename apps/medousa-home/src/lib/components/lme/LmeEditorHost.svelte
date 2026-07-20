@@ -3,11 +3,12 @@
   import LmeAgentEditor from "$lib/components/lme/LmeAgentEditor.svelte";
   import LmeFlowEditor from "$lib/components/lme/LmeFlowEditor.svelte";
   import LmeScriptEditor from "$lib/components/lme/LmeScriptEditor.svelte";
-  import LmeTabStrip from "$lib/components/lme/LmeTabStrip.svelte";
+  import ShellSidebarExpandButton from "$lib/components/layout/ShellSidebarExpandButton.svelte";
   import VaultAttachmentPreviewContent from "$lib/components/vault/VaultAttachmentPreviewContent.svelte";
   import VaultEditor from "$lib/components/vault/VaultEditor.svelte";
   import { artifacts } from "$lib/stores/artifacts.svelte";
   import { chat } from "$lib/stores/chat.svelte";
+  import { layout } from "$lib/stores/layout.svelte";
   import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
   import { vault } from "$lib/stores/vault.svelte";
   import { openAttachmentPath } from "$lib/utils/vaultAttachmentPicker";
@@ -52,11 +53,16 @@
   class="lme-editor-host flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
   data-debug-label="lme-editor-host"
 >
-  <LmeTabStrip />
-
   {#if !active}
-    <div class="flex flex-1 items-center justify-center p-8 text-sm text-surface-500">
-      Open something from the side panel.
+    <div class="flex flex-1 flex-col">
+      {#if !layout.shellSidebarExpanded}
+        <div class="flex items-center px-2 pt-1.5">
+          <ShellSidebarExpandButton label="Show workspace browser" />
+        </div>
+      {/if}
+      <div class="flex flex-1 items-center justify-center p-8 text-sm text-surface-500">
+        Open something from the side panel.
+      </div>
     </div>
   {:else if active.kind === "note"}
     <VaultEditor

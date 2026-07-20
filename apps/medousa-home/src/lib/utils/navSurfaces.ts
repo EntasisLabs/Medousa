@@ -15,6 +15,7 @@ export const SHELL_SIDEBAR_VIEW_SURFACES = new Set([
   "automations",
   "peers",
   "messaging",
+  "context",
   SAFETY_SURFACE_SETTINGS,
 ]);
 
@@ -57,6 +58,8 @@ export function shellSidebarViewTitle(surfaceId: string): string {
       return "Peers";
     case "messaging":
       return "Channels";
+    case "context":
+      return "Context";
     case SAFETY_SURFACE_SETTINGS:
       return "Settings";
     default:

@@ -1,8 +1,10 @@
 import { chat } from "$lib/stores/chat.svelte";
+import { contextShell } from "$lib/stores/contextShell.svelte";
 import { contextThreads } from "$lib/stores/contextThreads.svelte";
 import { humanBrowser } from "$lib/stores/humanBrowser.svelte";
 import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
 import { peersShell } from "$lib/stores/peersShell.svelte";
+import { shellTabs } from "$lib/stores/shellTabs.svelte";
 import { hostnameFromUrl, tabDisplayLabel } from "$lib/utils/browserFavicon";
 import { buildContextThreadEntries } from "$lib/utils/contextThreads";
 import { formatSessionLabel, formatSessionWhen } from "$lib/utils/formatSession";
@@ -82,7 +84,11 @@ export function nestItemsForSurface(surfaceId: string): NavRailNestItem[] {
 export function nestItemIsActive(surfaceId: string, itemId: string): boolean {
   switch (surfaceId) {
     case "chat":
-      return chat.sessionId === itemId;
+      return (
+        (shellTabs.activeTab?.kind === "chat" &&
+          shellTabs.activeTab.sessionId === itemId) ||
+        chat.sessionId === itemId
+      );
     case "peers":
       return peersShell.selectedPeerId === itemId;
     case "library":
@@ -91,6 +97,7 @@ export function nestItemIsActive(surfaceId: string, itemId: string): boolean {
       return humanBrowser.activeTab?.id === itemId;
     case "context":
       return (
+        contextShell.selectedThreadId === itemId ||
         contextThreads.railFocusSyncKey === itemId ||
         contextThreads.detail?.node.sync_key === itemId
       );
@@ -105,9 +112,11 @@ export async function activateNestItem(
 ): Promise<void> {
   switch (surfaceId) {
     case "chat":
+      shellTabs.openChat(itemId, { activate: true });
       await chat.switchSession(itemId);
       return;
     case "peers":
+      shellTabs.openSurface("peers", { activate: true });
       peersShell.selectPeer(itemId);
       return;
     case "library":
@@ -117,6 +126,9 @@ export async function activateNestItem(
       await humanBrowser.activateTab(itemId);
       return;
     case "context":
+      shellTabs.openSurface("context", { activate: true });
+      contextShell.activeTab = "threads";
+      contextShell.selectedThreadId = itemId;
       contextThreads.focusThreadFromRail(itemId);
       return;
     default:

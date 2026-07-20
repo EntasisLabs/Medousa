@@ -8,6 +8,7 @@ Short, durable decisions — not sprint plans. For build history see [../../../a
 | [adr-003-multi-workshop-connections.md](adr-003-multi-workshop-connections.md) | Multi-workshop registry and active workshop | Accepted |
 | [adr-004-durable-turn-spine.md](adr-004-durable-turn-spine.md) | Durable turn journal + SSE `?since=` replay | Accepted |
 | [adr-005-host-scheduler-bound-workshop.md](adr-005-host-scheduler-bound-workshop.md) | Host scheduler + bound async workshop turns | Accepted |
+| [adr-006-shell-tabs.md](adr-006-shell-tabs.md) | Shell-level tabs (everything is a tab) | Accepted |
 
 ## Template
 

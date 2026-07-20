@@ -91,6 +91,13 @@ function newTabId(prefix: string): string {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 }
 
+function mirrorActiveTabToShell(tabId: string | null, title?: string) {
+  if (!tabId) return;
+  void import("$lib/stores/shellTabs.svelte").then(({ shellTabs }) => {
+    shellTabs.mirrorLmeTab(tabId, { activate: true, title });
+  });
+}
+
 export class LmeWorkspaceStore {
   explorerMode = $state<LmeExplorerMode>(loadExplorerMode());
   tabs = $state<LmeTab[]>([]);
@@ -162,6 +169,7 @@ export class LmeWorkspaceStore {
     if (existing) {
       if (activateMode) {
         this.activeTabId = existing.tabId;
+        mirrorActiveTabToShell(existing.tabId, existing.title);
       }
       await vault.openNote(path);
       return;
@@ -176,6 +184,7 @@ export class LmeWorkspaceStore {
     this.tabs = [...this.tabs, tab].slice(-MAX_TABS);
     if (activateMode || !this.activeTabId) {
       this.activeTabId = tab.tabId;
+      if (activateMode) mirrorActiveTabToShell(tab.tabId, tab.title);
     }
   }
 
@@ -202,6 +211,7 @@ export class LmeWorkspaceStore {
     );
     if (existing) {
       this.activeTabId = existing.tabId;
+      mirrorActiveTabToShell(existing.tabId, existing.title);
     } else {
       const tab: LmeTab = {
         tabId: newTabId("file"),
@@ -211,6 +221,7 @@ export class LmeWorkspaceStore {
       };
       this.tabs = [...this.tabs, tab].slice(-MAX_TABS);
       this.activeTabId = tab.tabId;
+      mirrorActiveTabToShell(tab.tabId, tab.title);
     }
     externalDesk.selectExternalPath(path);
     vault.previewAttachment(path, "pane");
@@ -232,6 +243,7 @@ export class LmeWorkspaceStore {
           tab.tabId === existing.tabId ? { ...tab, title: label } : tab,
         );
       }
+      mirrorActiveTabToShell(existing.tabId, label);
     } else {
       const tab: LmeTab = {
         tabId: newTabId("deck"),
@@ -241,6 +253,7 @@ export class LmeWorkspaceStore {
       };
       this.tabs = [...this.tabs, tab].slice(-MAX_TABS);
       this.activeTabId = tab.tabId;
+      mirrorActiveTabToShell(tab.tabId, tab.title);
     }
     artifacts.selectArtifact(artifactId);
   }
@@ -258,6 +271,7 @@ export class LmeWorkspaceStore {
           tab.tabId === existing.tabId ? { ...tab, title: label } : tab,
         );
       }
+      mirrorActiveTabToShell(existing.tabId, label);
     } else {
       const tab: LmeTab = {
         tabId: newTabId("manuscript"),
@@ -267,6 +281,7 @@ export class LmeWorkspaceStore {
       };
       this.tabs = [...this.tabs, tab].slice(-MAX_TABS);
       this.activeTabId = tab.tabId;
+      mirrorActiveTabToShell(tab.tabId, tab.title);
     }
     void catalog.loadManuscriptDetail(manuscriptId);
   }
@@ -286,6 +301,7 @@ export class LmeWorkspaceStore {
           tab.tabId === existing.tabId ? { ...tab, title: label } : tab,
         );
       }
+      mirrorActiveTabToShell(existing.tabId, label);
       return;
     }
     const tab: LmeTab = {
@@ -296,6 +312,7 @@ export class LmeWorkspaceStore {
     };
     this.tabs = [...this.tabs, tab].slice(-MAX_TABS);
     this.activeTabId = tab.tabId;
+    mirrorActiveTabToShell(tab.tabId, tab.title);
   }
 
   openNewFlow(seed?: Partial<FlowComposerDraft>) {
@@ -316,6 +333,7 @@ export class LmeWorkspaceStore {
           tab.tabId === existing.tabId ? { ...tab, title: label } : tab,
         );
       }
+      mirrorActiveTabToShell(existing.tabId, label);
     } else {
       const tab: LmeTab = {
         tabId: newTabId("flow"),
@@ -325,6 +343,7 @@ export class LmeWorkspaceStore {
       };
       this.tabs = [...this.tabs, tab].slice(-MAX_TABS);
       this.activeTabId = tab.tabId;
+      mirrorActiveTabToShell(tab.tabId, tab.title);
     }
     void flows.loadDetail(workflowId);
     void flows.loadRuns(workflowId);
@@ -362,6 +381,7 @@ export class LmeWorkspaceStore {
       }
       if (activeChanged) {
         this.activeTabId = existing.tabId;
+        mirrorActiveTabToShell(existing.tabId, nextTitle);
       }
       return;
     }
@@ -375,12 +395,14 @@ export class LmeWorkspaceStore {
     };
     this.tabs = [...this.tabs, tab].slice(-MAX_TABS);
     this.activeTabId = tab.tabId;
+    mirrorActiveTabToShell(tab.tabId, tab.title);
   }
 
   async activateTab(tabId: string) {
     const tab = this.tabs.find((entry) => entry.tabId === tabId);
     if (!tab) return;
     this.activeTabId = tabId;
+    mirrorActiveTabToShell(tab.tabId, tab.title);
     if (tab.kind === "note") {
       this.setExplorerMode("notes");
       await vault.openNote(tab.path);
@@ -416,7 +438,7 @@ export class LmeWorkspaceStore {
     artifacts.selectArtifact(tab.artifactId);
   }
 
-  async closeTab(tabId: string) {
+  async closeTab(tabId: string, options?: { activateNext?: boolean }) {
     const closing = this.tabs.find((tab) => tab.tabId === tabId);
     if (!closing) return;
     const wasActive = this.activeTabId === tabId;
@@ -436,7 +458,7 @@ export class LmeWorkspaceStore {
 
     const next = this.tabs.at(-1) ?? null;
     this.activeTabId = next?.tabId ?? null;
-    if (next) {
+    if (next && options?.activateNext !== false) {
       await this.activateTab(next.tabId);
     }
   }

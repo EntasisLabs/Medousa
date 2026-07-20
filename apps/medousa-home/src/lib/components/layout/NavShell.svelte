@@ -1,5 +1,6 @@
 <script lang="ts">
   import SessionSidebar from "$lib/components/chat/SessionSidebar.svelte";
+  import ContextSidePanel from "$lib/components/context/ContextSidePanel.svelte";
   import EnvironmentPresetSwitcher from "$lib/components/environment/EnvironmentPresetSwitcher.svelte";
   import LmeSidePanel from "$lib/components/lme/LmeSidePanel.svelte";
   import MessagingChannelList from "$lib/components/messaging/MessagingChannelList.svelte";
@@ -262,6 +263,8 @@
             </div>
           {:else if active === "peers"}
             <PeersShellList />
+          {:else if active === "context"}
+            <ContextSidePanel />
           {/if}
         </div>
       {:else}

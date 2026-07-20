@@ -653,8 +653,17 @@ export class ChatStore {
   }
 
   async switchSession(sessionId: string) {
+    const mirrorShellChat = () => {
+      void import("$lib/stores/shellTabs.svelte").then(({ shellTabs }) => {
+        const active = shellTabs.activeTab;
+        if (active?.kind === "chat" && active.sessionId === sessionId) return;
+        shellTabs.openChat(sessionId, { activate: true });
+      });
+    };
+
     if (sessionId === this.sessionId) {
       await this.reloadCurrentSession({ notice: false });
+      mirrorShellChat();
       return;
     }
     this.flushDraftPersist();
@@ -691,6 +700,7 @@ export class ChatStore {
       }
     }
     void this.tryReattachActiveTurn();
+    mirrorShellChat();
   }
 
   clearHistoryNotice() {
