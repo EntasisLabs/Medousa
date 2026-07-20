@@ -29,8 +29,6 @@ export function formatTurnPhase(phase: string): string {
       return "Needs approval";
     case "final_pending":
       return "Wrapping up";
-    case "tool_loop":
-      return "Running tools";
     case "complete":
       return "Done";
     default:
