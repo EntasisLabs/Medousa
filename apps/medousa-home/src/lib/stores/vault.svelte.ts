@@ -111,6 +111,7 @@ import {
   formatImageEmbedMarkdown,
 } from "$lib/utils/vaultLocalImages";
 import { invalidateMedousaViewCache } from "$lib/utils/resolveMedousaViews";
+import { type NoteBuffer } from "$lib/stores/noteBuffer";
 import {
   extractMedousaViewBlocks,
   replaceMedousaViewFenceAt,
@@ -182,6 +183,12 @@ export class VaultStore {
   content = $state("");
   baselineContent = $state("");
   contentHash = $state<string | null>(null);
+  /**
+   * Background pane note snapshots (path-keyed). Focused note stays on public fields.
+   * Bumps `noteBufferRevision` when a non-focused buffer changes.
+   */
+  private noteBuffers = new Map<string, NoteBuffer>();
+  noteBufferRevision = $state(0);
   wikilinksOut = $state<string[]>([]);
   backlinks = $state<string[]>([]);
   noteTags = $state<string[]>([]);
@@ -483,6 +490,135 @@ export class VaultStore {
 
   private bumpContentSync() {
     this.contentRevision += 1;
+  }
+
+  private bumpNoteBuffers() {
+    this.noteBufferRevision += 1;
+  }
+
+  private normalizeNotePath(path: string): string {
+    return normalizeVaultNotePath(path.trim()) || path.trim();
+  }
+
+  isFocusedPath(path: string | null | undefined): boolean {
+    const trimmed = path?.trim();
+    if (!trimmed) return false;
+    return this.normalizeNotePath(trimmed) === (this.selectedPath?.trim() ?? "");
+  }
+
+  /** Markdown for any path — focused live fields or a background buffer. */
+  contentFor(path: string): string {
+    void this.noteBufferRevision;
+    void this.content;
+    const trimmed = this.normalizeNotePath(path);
+    if (!trimmed) return "";
+    if (this.isFocusedPath(trimmed)) return this.content;
+    return this.noteBuffers.get(trimmed)?.content ?? "";
+  }
+
+  contentSyncKeyFor(path: string): string {
+    void this.noteBufferRevision;
+    void this.contentSyncKey;
+    const trimmed = this.normalizeNotePath(path);
+    if (!trimmed) return "";
+    if (this.isFocusedPath(trimmed)) return this.contentSyncKey;
+    const buffer = this.noteBuffers.get(trimmed);
+    return `${trimmed}:${buffer?.contentRevision ?? 0}`;
+  }
+
+  titleFor(path: string): string {
+    void this.noteBufferRevision;
+    void this.title;
+    const trimmed = this.normalizeNotePath(path);
+    if (!trimmed) return "";
+    if (this.isFocusedPath(trimmed)) return this.title;
+    return this.noteBuffers.get(trimmed)?.title ?? "";
+  }
+
+  noteLoadingFor(path: string): boolean {
+    void this.noteBufferRevision;
+    void this.noteLoading;
+    const trimmed = this.normalizeNotePath(path);
+    if (!trimmed) return false;
+    if (this.isFocusedPath(trimmed)) return this.noteLoading;
+    const buffer = this.noteBuffers.get(trimmed);
+    return !buffer && this.bufferWarmInFlight.has(trimmed);
+  }
+
+  private bufferWarmInFlight = new Set<string>();
+
+  /** Test helper: seed a background buffer without network. */
+  seedBufferForTest(buffer: NoteBuffer) {
+    const key = this.normalizeNotePath(buffer.path);
+    this.noteBuffers.set(key, { ...buffer, path: key });
+    this.bumpNoteBuffers();
+  }
+
+  private stashSelectedBuffer() {
+    const path = this.selectedPath?.trim();
+    if (!path || this.isLooseFile) return;
+    const key = this.normalizeNotePath(path);
+    this.noteBuffers.set(key, {
+      path: key,
+      content: this.content,
+      baselineContent: this.baselineContent,
+      contentHash: this.contentHash,
+      title: this.title,
+      dirty: this.dirty,
+      contentRevision: this.contentRevision,
+    });
+    this.bumpNoteBuffers();
+  }
+
+  private writeBufferFromResponse(path: string, response: VaultNoteContentResponse) {
+    const key = this.normalizeNotePath(path);
+    this.noteBuffers.set(key, {
+      path: key,
+      content: response.content,
+      baselineContent: response.content,
+      contentHash: response.note.content_hash,
+      title: response.note.title,
+      dirty: false,
+      contentRevision: (this.noteBuffers.get(key)?.contentRevision ?? 0) + 1,
+    });
+    this.bumpNoteBuffers();
+  }
+
+  /** Prefetch a note into a background buffer (multi-pane Workspace). */
+  async warmBuffer(path: string) {
+    const trimmed = this.normalizeNotePath(path);
+    if (!trimmed || this.isFocusedPath(trimmed)) return;
+    if (this.noteBuffers.has(trimmed) || this.bufferWarmInFlight.has(trimmed)) {
+      return;
+    }
+    this.bufferWarmInFlight.add(trimmed);
+    this.bumpNoteBuffers();
+    try {
+      const response = await getVaultNote(trimmed);
+      if (this.isFocusedPath(trimmed)) return;
+      this.writeBufferFromResponse(trimmed, response);
+    } catch {
+      // Leave pane empty; focused openNote will surface errors.
+    } finally {
+      this.bufferWarmInFlight.delete(trimmed);
+      this.bumpNoteBuffers();
+    }
+  }
+
+  private restoreBufferIntoFocused(buffer: NoteBuffer) {
+    this.content = buffer.content;
+    this.baselineContent = buffer.baselineContent;
+    this.contentHash = buffer.contentHash;
+    this.title = buffer.title;
+    this.dirty = buffer.dirty;
+    this.contentRevision = buffer.contentRevision;
+    this.selectedKind = resolveKind(buffer.path, undefined);
+    if (noteHasKanbanBoard(buffer.content) || this.selectedKind === "board") {
+      this.boardEditMode = "board";
+    }
+    if (noteHasSlidesDeck(buffer.content) || this.selectedKind === "slides") {
+      this.deckEditMode = "deck";
+    }
   }
 
   rebuildTree() {
@@ -1111,27 +1247,45 @@ export class VaultStore {
   }
 
   async openNote(path: string) {
-    if (this.dirty && this.selectedPath && this.selectedPath !== path) {
+    const nextPath = this.normalizeNotePath(path);
+    if (!nextPath) return;
+
+    if (this.dirty && this.selectedPath && this.selectedPath !== nextPath) {
       this.clearAutosaveTimer();
       await this.save({ source: "autosave" });
     }
-    if (this.selectedPath !== path) {
+    if (this.selectedPath && this.selectedPath !== nextPath) {
+      this.stashSelectedBuffer();
       this.clearProposal();
       this.closeAttachmentPreview();
     }
     this.clearLooseFile();
+
+    const buffered = this.noteBuffers.get(nextPath);
+    if (buffered?.dirty) {
+      this.selectedPath = nextPath;
+      this.restoreBufferIntoFocused(buffered);
+      localStorage.setItem(LAST_NOTE_KEY, nextPath);
+      rememberVaultRecent(nextPath);
+      this.recentPaths = loadVaultRecent();
+      this.rememberSpaceForPath(nextPath, buffered.title);
+      await this.refreshBacklinks(nextPath);
+      return;
+    }
+
     this.noteLoading = true;
     this.loading = true;
     this.error = null;
     try {
-      const response: VaultNoteContentResponse = await getVaultNote(path);
+      const response: VaultNoteContentResponse = await getVaultNote(nextPath);
       this.applyNote(response);
-      this.selectedPath = path;
-      localStorage.setItem(LAST_NOTE_KEY, path);
-      rememberVaultRecent(path);
+      this.selectedPath = nextPath;
+      this.writeBufferFromResponse(nextPath, response);
+      localStorage.setItem(LAST_NOTE_KEY, nextPath);
+      rememberVaultRecent(nextPath);
       this.recentPaths = loadVaultRecent();
-      this.rememberSpaceForPath(path, response.note.title);
-      await this.refreshBacklinks(path);
+      this.rememberSpaceForPath(nextPath, response.note.title);
+      await this.refreshBacklinks(nextPath);
     } catch (err) {
       this.error = err instanceof Error ? err.message : String(err);
     } finally {

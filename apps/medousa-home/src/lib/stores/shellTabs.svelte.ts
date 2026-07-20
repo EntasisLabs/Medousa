@@ -132,6 +132,10 @@ export class ShellTabsStore {
   splitRoot = $state<SplitNode>({ type: "group", id: MAIN_GROUP_ID });
   activeGroupId = $state(MAIN_GROUP_ID);
   zoomedGroupId = $state<string | null>(null);
+  /** Pane under an in-progress shell-tab drag (highlight). */
+  tabDropTargetGroupId = $state<string | null>(null);
+  /** Spotlight / commands request the pane cheat sheet. */
+  cheatSheetOpenRequest = $state(0);
   /** Force-show tabs in a pane until timestamp (Ctrl+; w). */
   forceShowTabsUntil = $state(0);
   forceShowTabsGroupId = $state<string | null>(null);
@@ -624,7 +628,13 @@ export class ShellTabsStore {
       tabIds: [...to.tabIds, tabId],
       activeTabId: tabId,
     });
+    this.activeGroupId = toGroupId;
+    this.syncLayoutHint(tab);
     this.persist();
+  }
+
+  requestCheatSheet() {
+    this.cheatSheetOpenRequest += 1;
   }
 
   splitActive(direction: SplitDirection): boolean {

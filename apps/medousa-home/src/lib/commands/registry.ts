@@ -74,7 +74,7 @@ export function buildPaneCommands(): WorkshopCommand[] {
       section: "advanced",
       label: "Split pane right",
       subtitle: `${formatShortcut("Ctrl+; %")} — TMUX-style vertical split`,
-      keywords: "split pane right vertical tmux editor group",
+      keywords: "split pane right vertical tmux editor group window",
       advanced: true,
       run: (ctx) => {
         shellTabs.splitActive("right");
@@ -86,7 +86,7 @@ export function buildPaneCommands(): WorkshopCommand[] {
       section: "advanced",
       label: "Split pane down",
       subtitle: `${formatShortcut('Ctrl+; "')} — TMUX-style horizontal split`,
-      keywords: "split pane down horizontal tmux editor group",
+      keywords: "split pane down horizontal tmux editor group window",
       advanced: true,
       run: (ctx) => {
         shellTabs.splitActive("down");
@@ -94,11 +94,47 @@ export function buildPaneCommands(): WorkshopCommand[] {
       },
     },
     {
-      id: "pane-focus-next",
+      id: "pane-focus-left",
       section: "advanced",
-      label: "Focus next pane",
-      subtitle: "Move focus to the next editor pane",
-      keywords: "focus pane next split",
+      label: "Focus pane left",
+      subtitle: `${formatShortcut("Ctrl+; h")} — move focus left`,
+      keywords: "focus pane left split hjkl window",
+      advanced: true,
+      run: (ctx) => {
+        shellTabs.focusDirection("left");
+        ctx.callbacks.close();
+      },
+    },
+    {
+      id: "pane-focus-down",
+      section: "advanced",
+      label: "Focus pane down",
+      subtitle: `${formatShortcut("Ctrl+; j")} — move focus down`,
+      keywords: "focus pane down split hjkl window",
+      advanced: true,
+      run: (ctx) => {
+        shellTabs.focusDirection("down");
+        ctx.callbacks.close();
+      },
+    },
+    {
+      id: "pane-focus-up",
+      section: "advanced",
+      label: "Focus pane up",
+      subtitle: `${formatShortcut("Ctrl+; k")} — move focus up`,
+      keywords: "focus pane up split hjkl window",
+      advanced: true,
+      run: (ctx) => {
+        shellTabs.focusDirection("up");
+        ctx.callbacks.close();
+      },
+    },
+    {
+      id: "pane-focus-right",
+      section: "advanced",
+      label: "Focus pane right",
+      subtitle: `${formatShortcut("Ctrl+; l")} — move focus right`,
+      keywords: "focus pane right next split hjkl window",
       advanced: true,
       run: (ctx) => {
         shellTabs.focusDirection("right");
@@ -110,7 +146,7 @@ export function buildPaneCommands(): WorkshopCommand[] {
       section: "advanced",
       label: "Zoom pane",
       subtitle: `${formatShortcut("Ctrl+; z")} — maximize / restore active pane`,
-      keywords: "zoom pane maximize tmux",
+      keywords: "zoom pane maximize tmux window",
       advanced: true,
       run: (ctx) => {
         shellTabs.zoomToggle();
@@ -122,7 +158,7 @@ export function buildPaneCommands(): WorkshopCommand[] {
       section: "advanced",
       label: "Close pane",
       subtitle: `${formatShortcut("Ctrl+; x")} — close active pane`,
-      keywords: "close pane split",
+      keywords: "close pane split window",
       advanced: true,
       run: (ctx) => {
         shellTabs.closeActiveGroup();
@@ -134,10 +170,58 @@ export function buildPaneCommands(): WorkshopCommand[] {
       section: "advanced",
       label: "New chat in pane",
       subtitle: `${formatShortcut("Ctrl+; c")} — open chat tab in the active pane`,
-      keywords: "chat pane new session tab",
+      keywords: "chat pane new session tab window",
       advanced: true,
       run: (ctx) => {
         shellTabs.openDestination("chat");
+        ctx.callbacks.close();
+      },
+    },
+    {
+      id: "pane-next-tab",
+      section: "advanced",
+      label: "Next tab in pane",
+      subtitle: `${formatShortcut("Ctrl+; n")} — cycle tabs forward`,
+      keywords: "tab next pane cycle window",
+      advanced: true,
+      run: (ctx) => {
+        shellTabs.nextTabInActiveGroup();
+        ctx.callbacks.close();
+      },
+    },
+    {
+      id: "pane-prev-tab",
+      section: "advanced",
+      label: "Previous tab in pane",
+      subtitle: `${formatShortcut("Ctrl+; p")} — cycle tabs backward`,
+      keywords: "tab previous prev pane cycle window",
+      advanced: true,
+      run: (ctx) => {
+        shellTabs.prevTabInActiveGroup();
+        ctx.callbacks.close();
+      },
+    },
+    {
+      id: "pane-show-tabs",
+      section: "advanced",
+      label: "Show pane tabs",
+      subtitle: `${formatShortcut("Ctrl+; w")} — briefly reveal the tab strip`,
+      keywords: "tabs show flash reveal pane window",
+      advanced: true,
+      run: (ctx) => {
+        shellTabs.flashTabs();
+        ctx.callbacks.close();
+      },
+    },
+    {
+      id: "pane-cheat-sheet",
+      section: "advanced",
+      label: "Pane keyboard shortcuts",
+      subtitle: `${formatShortcut("Ctrl+; ?")} — cheat sheet for splits and focus`,
+      keywords: "cheat sheet help shortcuts pane tmux window keyboard binds",
+      advanced: true,
+      run: (ctx) => {
+        shellTabs.requestCheatSheet();
         ctx.callbacks.close();
       },
     },
@@ -146,7 +230,7 @@ export function buildPaneCommands(): WorkshopCommand[] {
       section: "advanced",
       label: "Toggle left rail",
       subtitle: `${formatShortcut("Ctrl+B")} — show or hide the master rail`,
-      keywords: "sidebar rail toggle vscode cursor panel",
+      keywords: "sidebar rail toggle vscode cursor panel window",
       advanced: true,
       run: (ctx) => {
         layout.toggleShellSidebarExpanded();

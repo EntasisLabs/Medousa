@@ -16,14 +16,43 @@
 
   interface Props {
     visible?: boolean;
+    /** Focused pane may edit; background panes render read-only. */
+    interactive?: boolean;
+    /** Shell-bound LME tab — when set, resolve content from that tab (not global active). */
+    lmeTabId?: string | null;
     onOpenChat: () => void;
     onOpenWork: () => void;
     onSelectCard: (id: string) => void | Promise<void>;
   }
 
-  let { visible = true, onOpenChat, onOpenWork, onSelectCard }: Props = $props();
+  let {
+    visible = true,
+    interactive = true,
+    lmeTabId = null,
+    onOpenChat,
+    onOpenWork,
+    onSelectCard,
+  }: Props = $props();
 
-  const active = $derived(lmeWorkspace.activeTab);
+  const active = $derived.by(() => {
+    const id = lmeTabId?.trim();
+    if (id) {
+      return lmeWorkspace.tabs.find((tab) => tab.tabId === id) ?? null;
+    }
+    return lmeWorkspace.activeTab;
+  });
+
+  const notePath = $derived(
+    active?.kind === "note" ? active.path : null,
+  );
+
+  // Keep background note panes populated without stealing vault focus.
+  $effect(() => {
+    const path = notePath;
+    if (!path || !visible) return;
+    if (vault.isFocusedPath(path)) return;
+    void vault.warmBuffer(path);
+  });
 
   const fileAttachment = $derived.by(() => {
     if (active?.kind !== "file") return null;
@@ -65,12 +94,16 @@
       </div>
     </div>
   {:else if active.kind === "note"}
-    <VaultEditor
-      visible={visible}
-      {onOpenChat}
-      {onOpenWork}
-      {onSelectCard}
-    />
+    {#key active.path}
+      <VaultEditor
+        visible={visible}
+        {interactive}
+        path={active.path}
+        {onOpenChat}
+        {onOpenWork}
+        {onSelectCard}
+      />
+    {/key}
   {:else if active.kind === "script"}
     <LmeScriptEditor {visible} />
   {:else if active.kind === "file"}

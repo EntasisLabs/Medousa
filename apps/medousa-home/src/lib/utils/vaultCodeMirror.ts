@@ -134,12 +134,15 @@ export const vaultEditorBaseTheme = EditorView.theme(
   {
     "&": {
       height: "100%",
+      width: "100%",
+      maxWidth: "100%",
       fontSize: "inherit",
       color: "rgb(var(--color-surface-100))",
       backgroundColor: "transparent",
     },
     ".cm-scroller": {
       overflow: "auto",
+      maxWidth: "100%",
       fontFamily: "inherit",
       lineHeight: "inherit",
     },

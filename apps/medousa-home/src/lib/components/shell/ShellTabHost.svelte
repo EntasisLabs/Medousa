@@ -34,20 +34,7 @@
 
   let cheatSheetOpen = $state(false);
 
-  /** First group (in leaf order) whose active tab needs LME / web owns the shared host. */
-  const lmeOwnerGroupId = $derived.by(() => {
-    for (const group of shellTabs.groups) {
-      const tab = shellTabs.tabs.find((entry) => entry.id === group.activeTabId);
-      if (
-        tab?.kind === "lme" ||
-        (tab?.kind === "surface" && tab.surfaceId === "library")
-      ) {
-        return group.id;
-      }
-    }
-    return shellTabs.activeGroupId;
-  });
-
+  /** Browser webviews stay single-host; Workspace/notes mount in every pane. */
   const webOwnerGroupId = $derived.by(() => {
     for (const group of shellTabs.groups) {
       const tab = shellTabs.tabs.find((entry) => entry.id === group.activeTabId);
@@ -84,6 +71,13 @@
       },
     });
   });
+
+  $effect(() => {
+    void shellTabs.cheatSheetOpenRequest;
+    if (shellTabs.cheatSheetOpenRequest > 0) {
+      cheatSheetOpen = true;
+    }
+  });
 </script>
 
 <div
@@ -101,7 +95,6 @@
       {onOpenNote}
       {onSelectCard}
       {onDaemonHealth}
-      ownsLmeHost={lmeOwnerGroupId === shellTabs.zoomedGroupId}
       ownsWebHost={webOwnerGroupId === shellTabs.zoomedGroupId}
     />
   {:else}
@@ -115,7 +108,6 @@
       {onOpenNote}
       {onSelectCard}
       {onDaemonHealth}
-      {lmeOwnerGroupId}
       {webOwnerGroupId}
     />
   {/if}

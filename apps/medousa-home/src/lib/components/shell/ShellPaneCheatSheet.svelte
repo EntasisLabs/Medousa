@@ -16,6 +16,7 @@
     { keys: "Ctrl+; n/p", action: "Next / prev tab" },
     { keys: "Ctrl+; w", action: "Show tabs" },
     { keys: "Ctrl+; 1–9", action: "Focus pane by index" },
+    { keys: "Drag tab", action: "Move tab to another pane" },
   ];
 </script>
 
@@ -47,5 +48,7 @@
       </li>
     {/each}
   </ul>
-  <p class="mt-3 text-[11px] text-surface-500">Up to 4 live chats stream at once.</p>
+  <p class="mt-3 text-[11px] text-surface-500">
+    Up to 4 live chats. Pane actions also live in Spotlight (Advanced).
+  </p>
 </div>

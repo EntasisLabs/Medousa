@@ -30,8 +30,7 @@
     onOpenNote: (path: string) => void | Promise<void>;
     onSelectCard: (id: string) => void | Promise<void>;
     onDaemonHealth?: (health: DaemonHealth | null) => void;
-    /** Shared hosts: only the owning pane mounts LME/web. */
-    ownsLmeHost: boolean;
+    /** Browser still single-hosts (webview); Workspace mounts per pane. */
     ownsWebHost: boolean;
   }
 
@@ -45,7 +44,6 @@
     onOpenNote,
     onSelectCard,
     onDaemonHealth,
-    ownsLmeHost,
     ownsWebHost,
   }: Props = $props();
 
@@ -59,8 +57,12 @@
   );
 
   const showTabs = $derived(
-    hovering || focused || shellTabs.shouldForceShowTabs(groupId),
+    hovering ||
+      focused ||
+      shellTabs.shouldForceShowTabs(groupId) ||
+      shellTabs.tabDropTargetGroupId === groupId,
   );
+  const dropTarget = $derived(shellTabs.tabDropTargetGroupId === groupId);
 
   /** Live pool slot — not merely focused (multi-live transcripts). */
   const showLiveChat = $derived(
@@ -68,9 +70,8 @@
   );
 
   const showLme = $derived(
-    ownsLmeHost &&
-      (activeTab?.kind === "lme" ||
-        (activeTab?.kind === "surface" && activeTab.surfaceId === "library")),
+    activeTab?.kind === "lme" ||
+      (activeTab?.kind === "surface" && activeTab.surfaceId === "library"),
   );
   const showWeb = $derived(ownsWebHost && activeTab?.kind === "web");
   const showSurface = $derived(
@@ -86,7 +87,8 @@
 
 <section
   class="shell-pane relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden
-    {focused ? 'shell-pane-focused' : 'shell-pane-idle'}"
+    {focused ? 'shell-pane-focused' : 'shell-pane-idle'}
+    {dropTarget ? 'shell-pane-drop-target' : ''}"
   data-debug-label="shell-pane"
   data-group-id={groupId}
   role="group"
@@ -128,6 +130,8 @@
     {:else if showLme}
       <LmePanel
         visible={true}
+        interactive={focused}
+        lmeTabId={activeTab.kind === "lme" ? activeTab.lmeTabId : null}
         {onOpenChat}
         {onOpenWork}
         {onSelectCard}
@@ -175,11 +179,10 @@
           {/if}
         {/snippet}
       </EnvironmentRenderer>
-    {:else if activeTab?.kind === "lme" || activeTab?.kind === "web"}
+    {:else if activeTab?.kind === "web"}
       <div class="flex h-full items-center justify-center px-6 text-center">
         <p class="workshop-faint text-xs leading-relaxed">
-          {activeTab.kind === "lme" ? "Workspace" : "Browser"} is open in another pane —
-          focus that pane or open it here.
+          Browser is open in another pane — focus that pane or open it here.
         </p>
       </div>
     {:else}
@@ -196,6 +199,14 @@
   }
   .shell-pane-idle {
     opacity: 0.92;
+  }
+  .shell-pane-drop-target {
+    box-shadow: inset 0 0 0 2px color-mix(in oklab, var(--color-primary-400, #a78bfa) 80%, transparent);
+    background: color-mix(in oklab, var(--color-primary-500, #8b5cf6) 8%, transparent);
+  }
+  :global(body.shell-tab-dragging) {
+    cursor: grabbing;
+    user-select: none;
   }
   @media (prefers-reduced-motion: reduce) {
     .shell-pane-tabs {

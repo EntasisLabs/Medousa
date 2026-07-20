@@ -206,4 +206,20 @@ describe("shellTabs store", () => {
       expect(shellTabs.activeTab.sessionId).toBe("session-b");
     }
   });
+
+  it("moves a tab between panes", async () => {
+    const { shellTabs } = await import("./shellTabs.svelte");
+    const a = shellTabs.openChat("session-a", { activate: true });
+    expect(shellTabs.splitActive("right")).toBe(true);
+    expect(shellTabs.groups).toHaveLength(2);
+    const sourceId = shellTabs.groups.find((g) => g.tabIds.includes(a!))?.id;
+    const destId = shellTabs.groups.find((g) => g.id !== sourceId)?.id;
+    expect(sourceId && destId).toBeTruthy();
+    shellTabs.moveTab(a!, destId!);
+    const dest = shellTabs.groups.find((g) => g.id === destId);
+    const source = shellTabs.groups.find((g) => g.id === sourceId);
+    expect(dest?.tabIds).toContain(a);
+    expect(source?.tabIds).not.toContain(a);
+    expect(shellTabs.activeGroupId).toBe(destId);
+  });
 });

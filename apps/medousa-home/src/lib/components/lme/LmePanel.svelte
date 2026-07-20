@@ -11,14 +11,26 @@
 
   interface Props {
     visible: boolean;
+    /** Focused pane — owns dialogs / hotkeys; background panes still render. */
+    interactive?: boolean;
+    /** Shell LME tab id — binds this pane to a specific Workspace tab (multi-pane). */
+    lmeTabId?: string | null;
     onOpenChat: () => void;
     onOpenWork: () => void;
     onSelectCard: (id: string) => void | Promise<void>;
   }
 
-  let { visible, onOpenChat, onOpenWork, onSelectCard }: Props = $props();
+  let {
+    visible,
+    interactive = true,
+    lmeTabId = null,
+    onOpenChat,
+    onOpenWork,
+    onSelectCard,
+  }: Props = $props();
 
   onMount(() => {
+    if (!interactive) return;
     const pending = automationsNav.consumeSection();
     if (pending) {
       lmeWorkspace.openAutomationsSection(pending);
@@ -27,7 +39,7 @@
 
   // Keep script tab titles fresh — never force-activate (mode bar must not steal focus).
   $effect(() => {
-    if (!visible) return;
+    if (!visible || !interactive) return;
     const scriptTabs = graphemeScriptEditor.tabs;
     const activeId = graphemeScriptEditor.activeTabId;
     void scriptTabs;
@@ -38,26 +50,32 @@
   });
 
   $effect(() => {
-    if (!visible || lmeWorkspace.explorerMode !== "scripts") return;
+    if (!visible || !interactive || lmeWorkspace.explorerMode !== "scripts") return;
     void workshop.refreshModulesAndScripts();
   });
 </script>
 
 <section
-  class="lme-panel flex h-full min-h-0 min-w-0 flex-1 {visible ? '' : 'hidden'}"
+  class="lme-panel flex h-full min-h-0 min-w-0 max-w-full flex-1 overflow-hidden {visible
+    ? ''
+    : 'hidden'}"
   data-debug-label="lme-panel"
   aria-label="Workspace"
 >
   <LmeEditorHost
     {visible}
+    {interactive}
+    {lmeTabId}
     {onOpenChat}
     {onOpenWork}
     {onSelectCard}
   />
 </section>
 
-<VaultNewNoteDialog />
-<VaultNewGroupDialog />
-{#if visible}
-  <ConnectionsInviteSheet />
+{#if interactive}
+  <VaultNewNoteDialog />
+  <VaultNewGroupDialog />
+  {#if visible}
+    <ConnectionsInviteSheet />
+  {/if}
 {/if}

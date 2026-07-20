@@ -445,6 +445,6 @@
 
 <div
   bind:this={host}
-  class="vault-codemirror-host vault-codemirror-host--{surface} min-h-0 flex-1 {className}"
+  class="vault-codemirror-host vault-codemirror-host--{surface} min-h-0 min-w-0 max-w-full flex-1 overflow-hidden {className}"
   data-find-epoch={findDecorationsEpoch}
 ></div>

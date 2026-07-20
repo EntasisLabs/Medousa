@@ -743,7 +743,7 @@
   }
 </script>
 
-<div class="vault-live-editor flex min-h-0 flex-1 flex-col overflow-y-auto">
+<div class="vault-live-editor flex min-h-0 min-w-0 max-w-full flex-1 flex-col overflow-x-hidden overflow-y-auto">
   <VaultLiveProperties
     {frontmatter}
     {tags}

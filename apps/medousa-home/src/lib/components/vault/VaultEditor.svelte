@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, tick } from "svelte";
+  import { tick } from "svelte";
   import {
     BookOpen,
     Code2,
@@ -64,6 +64,10 @@
 
   interface Props {
     visible: boolean;
+    /** Focused shell pane — hotkeys + editing. Background tiled panes stay read-only. */
+    interactive?: boolean;
+    /** Bound note path for multi-pane Workspace (background panes keep their own buffer). */
+    path?: string | null;
     /** Mobile reader: preview-only, no edit chrome. */
     mobile?: boolean;
     /** Sticky pop-out: slim companion chrome, keep note IM chat. */
@@ -75,12 +79,20 @@
 
   let {
     visible,
+    interactive = true,
+    path = null,
     mobile = false,
     stickyNote = false,
     onOpenChat,
     onOpenWork,
     onSelectCard,
   }: Props = $props();
+
+  const notePath = $derived(path?.trim() || vault.selectedPath);
+  const bound = $derived(!path?.trim() || vault.isFocusedPath(path));
+  const displayContent = $derived(notePath ? vault.contentFor(notePath) : "");
+  const displaySyncKey = $derived(notePath ? vault.contentSyncKeyFor(notePath) : "");
+  const displayLoading = $derived(notePath ? vault.noteLoadingFor(notePath) : false);
 
   let exportingPdf = $state(false);
   let exportingWord = $state(false);
@@ -96,21 +108,24 @@
   let slidesDeckEl = $state<ReturnType<typeof SlidesDeckEditor> | null>(null);
 
   const displayTitle = $derived(
-    vault.isLooseFile && vault.looseFilePath
+    bound && vault.isLooseFile && vault.looseFilePath
       ? (vault.looseFilePath.split(/[/\\]/).pop() ?? vault.looseFilePath)
-      : vault.selectedPath
+      : notePath
         ? // Prefer live draft title so Properties edits update chrome immediately.
-          vaultDisplayTitle(vault.title, vault.selectedPath) ||
-          vault.labelByPathMap.get(vault.selectedPath) ||
+          vaultDisplayTitle(
+            bound ? vault.title : vault.titleFor(notePath),
+            notePath,
+          ) ||
+          vault.labelByPathMap.get(notePath) ||
           "Untitled"
         : "Library",
   );
 
   const breadcrumb = $derived(
-    vault.isLooseFile && vault.looseFilePath
+    bound && vault.isLooseFile && vault.looseFilePath
       ? vault.looseFilePath
-      : vault.selectedPath
-        ? vaultBreadcrumb(vault.selectedPath)
+      : notePath
+        ? vaultBreadcrumb(notePath)
         : null,
   );
 
@@ -128,10 +143,10 @@
   });
 
   const labelByPath = $derived(vault.labelByPathMap);
-  const hasLedgerTable = $derived(Boolean(findLedgerTable(vault.content)));
-  const hasKanbanBoard = $derived(noteHasKanbanBoard(vault.content));
-  const kanbanBoard = $derived(hasKanbanBoard ? findKanbanBoard(vault.content) : null);
-  const hasSlidesDeck = $derived(noteHasSlidesDeck(vault.content));
+  const hasLedgerTable = $derived(Boolean(findLedgerTable(displayContent)));
+  const hasKanbanBoard = $derived(noteHasKanbanBoard(displayContent));
+  const kanbanBoard = $derived(hasKanbanBoard ? findKanbanBoard(displayContent) : null);
+  const hasSlidesDeck = $derived(noteHasSlidesDeck(displayContent));
 
   const showLedgerTable = $derived(
     !mobile &&
@@ -270,8 +285,8 @@
 
   const findSourceText = $derived(
     showMarkdownEditor && vault.editorMode === "edit"
-      ? vault.content
-      : stripFrontmatter(vault.content).content,
+      ? displayContent
+      : stripFrontmatter(displayContent).content,
   );
 
   const findMode = $derived<"edit" | "preview">(
@@ -511,7 +526,8 @@
     }
   }
 
-  onMount(() => {
+  $effect(() => {
+    if (!interactive || !visible) return;
     window.addEventListener("keydown", handleKeydown, true);
     return () => window.removeEventListener("keydown", handleKeydown, true);
   });
@@ -524,8 +540,8 @@
 >
   {#if !mobile && !stickyNote}
     <header class="vault-editor-header workshop-header flex items-center justify-between gap-3 py-3">
-      <div class="min-w-0" title={vault.selectedPath ?? undefined}>
-        {#if activeSpace && SpaceIcon}
+      <div class="min-w-0" title={notePath ?? undefined}>
+        {#if bound && activeSpace && SpaceIcon}
           <p class="mb-1 flex items-center gap-1.5 text-xs font-medium text-primary-300">
             <SpaceIcon size={13} strokeWidth={2} />
             {activeSpace.label}
@@ -536,7 +552,7 @@
         {/if}
         <div class="flex min-w-0 items-center gap-2">
           <h1 class="truncate text-base font-semibold">{displayTitle}</h1>
-          {#if vault.isLooseFile}
+          {#if bound && vault.isLooseFile}
             <span
               class="badge variant-soft-warning shrink-0 text-xs font-medium"
               title="Editing a single file outside the vault"
@@ -545,7 +561,7 @@
             </span>
           {/if}
         </div>
-        {#if vault.selectedPath && vault.editorMode === "preview"}
+        {#if bound && vault.selectedPath && vault.editorMode === "preview"}
           <p class="mt-1 text-[11px] text-surface-500">
             Press <kbd class="vault-kbd">E</kbd> to edit · <kbd class="vault-kbd">{formatShortcut("F")}</kbd> to find
             · type <kbd class="vault-kbd">/</kbd> on a new line for blocks
@@ -554,6 +570,7 @@
       </div>
 
       <div class="vault-editor-tools flex shrink-0 flex-wrap items-center justify-end gap-0.5">
+        {#if bound}
         <ShellSidebarExpandButton label="Show workspace browser" />
 
         {#if saveWhisper}
@@ -782,6 +799,7 @@
             onKindChange={(kind) => vault.setNoteKind(kind)}
           />
         {/if}
+        {/if}
       </div>
     </header>
   {:else if mobile}
@@ -793,16 +811,18 @@
     </div>
   {/if}
 
-  {#if vault.error}
+  {#if bound && vault.error}
     <p class="border-b border-error-500/30 bg-error-500/10 px-4 py-2 text-xs text-error-300">
       {vault.error}
     </p>
   {/if}
 
+  {#if bound}
   <VaultProposalBar {mobile} />
   <VaultConflictBar />
+  {/if}
 
-  {#if showLinksToggle && !layout.vaultLinksPanelOpen && !mobile}
+  {#if bound && showLinksToggle && !layout.vaultLinksPanelOpen && !mobile}
     <div class="flex shrink-0 items-center gap-2 border-b border-surface-500/30 px-4 py-1.5 text-xs">
       <span class="text-surface-500">{linkCount} linked note{linkCount === 1 ? "" : "s"}</span>
       <button
@@ -815,46 +835,61 @@
     </div>
   {/if}
 
-  {#if !vault.selectedPath}
+  {#if !notePath}
     <VaultEmptyState />
-  {:else}
-    <div class="relative flex min-h-0 flex-1">
-      {#if vault.noteLoading}
+  {:else if !bound}
+    <div class="relative flex min-h-0 min-w-0 max-w-full flex-1 overflow-hidden">
+      {#if displayLoading}
         <div
           class="absolute inset-0 z-10 flex items-center justify-center bg-surface-950/50 text-sm text-surface-400"
         >
           Loading note…
         </div>
       {/if}
-      <div class="relative flex min-h-0 min-w-0 flex-1 flex-col">
-        <div class="flex min-h-0 min-w-0 flex-1 flex-col">
+      <VaultMarkdownPreview
+        content={displayContent}
+        {labelByPath}
+        onWikilink={undefined}
+      />
+    </div>
+  {:else}
+    <div class="relative flex min-h-0 min-w-0 max-w-full flex-1 overflow-hidden">
+      {#if displayLoading}
+        <div
+          class="absolute inset-0 z-10 flex items-center justify-center bg-surface-950/50 text-sm text-surface-400"
+        >
+          Loading note…
+        </div>
+      {/if}
+      <div class="relative flex min-h-0 min-w-0 max-w-full flex-1 flex-col overflow-hidden">
+        <div class="flex min-h-0 min-w-0 max-w-full flex-1 flex-col overflow-hidden">
         {#if showLedgerTable}
           <LedgerTableEditor
-            content={vault.content}
-            disabled={vault.saving}
+            content={displayContent}
+            disabled={!interactive || vault.saving}
             onchange={(next) => vault.markDirty(next)}
           />
         {:else if showKanbanBoard}
           <KanbanBoardEditor
-            content={vault.content}
-            disabled={vault.saving || vault.editorMode === "preview"}
+            content={displayContent}
+            disabled={!interactive || vault.saving || vault.editorMode === "preview"}
             onchange={(next) => vault.markDirty(next)}
             onWikilink={handleWikilink}
           />
         {:else if showSlidesDeck}
           <SlidesDeckEditor
             bind:this={slidesDeckEl}
-            content={vault.content}
-            disabled={vault.saving || vault.editorMode === "preview"}
+            content={displayContent}
+            disabled={!interactive || vault.saving || vault.editorMode === "preview"}
             onchange={(next) => vault.markDirty(next)}
           />
         {:else if showMarkdownEditor}
           <VaultMarkdownEditor
             bind:this={markdownEditorEl}
-            content={vault.content}
-            contentSyncKey={vault.contentSyncKey}
+            content={displayContent}
+            contentSyncKey={displaySyncKey}
             {displayTitle}
-            disabled={vault.noteLoading}
+            disabled={!interactive || displayLoading}
             class="flex-1"
             surface={editorSurface}
             showFormatChrome={isBuildPlane}
@@ -869,7 +904,7 @@
           >
             {#snippet preview()}
               <VaultMarkdownPreview
-                content={vault.content}
+                content={displayContent}
                 {labelByPath}
                 compact
                 bind:scrollEl={previewScrollEl}
@@ -880,7 +915,7 @@
           </VaultMarkdownEditor>
         {:else if showPreviewOnly}
           <VaultMarkdownPreview
-            content={vault.content}
+            content={displayContent}
             {labelByPath}
             onWikilink={vault.isLooseFile ? undefined : handleWikilink}
           />
@@ -902,58 +937,60 @@
     </div>
   {/if}
 
-  {#if showNoteStatus}
+  {#if showNoteStatus && bound}
     <VaultNoteStatusBar
-      content={vault.content}
+      content={displayContent}
       tags={vault.noteTags}
       editorMode={vault.editorMode}
       dense={isLivePlane}
     />
   {/if}
 
-  {#if vault.selectedPath && !mobile && !noteWorkshop.open && !vault.isLooseFile && environment.desktopShellChrome.vaultChatFab}
+  {#if interactive && bound && vault.selectedPath && !mobile && !noteWorkshop.open && !vault.isLooseFile && environment.desktopShellChrome.vaultChatFab}
     <VaultNoteChatFab />
   {/if}
 </section>
 
-<VaultNoteActionsMenu />
-<VaultViewBuilderSheet
-  open={vault.viewBridgeOpen}
-  mode={vault.viewBridgeMode}
-  initialQuery={vault.viewBridgeQuery}
-  onSave={(query) => vault.commitViewBridge(query)}
-  onClose={() => vault.closeViewBridge()}
-/>
-<VaultChartBuilderSheet
-  open={vault.chartBridgeOpen}
-  initialKv={vault.chartBridgeKv}
-  initialTableMarkdown={vault.chartBridgeTableMarkdown}
-  onSave={(kv, tableMarkdown) => vault.commitChartBridge(kv, tableMarkdown)}
-  onClose={() => vault.closeChartBridge()}
-/>
-<VaultLiquidBuilderSheet
-  open={vault.liquidBridgeOpen}
-  lang={vault.liquidBridgeLang}
-  initial={vault.liquidBridgeDraft}
-  onSave={(next) => vault.commitLiquidBridge(next)}
-  onClose={() => vault.closeLiquidBridge()}
-/>
-<LiquidCardDetailSheet
-  open={vault.cardDetailOpen}
-  detail={vault.cardDetail}
-  onClose={() => vault.closeCardDetail()}
-/>
-<VaultExportPreviewModal
-  open={exportPreviewOpen}
-  title={exportPreviewTitle}
-  content={exportPreviewContent}
-  labelByPath={exportPreviewLabels}
-  notePath={exportPreviewPath}
-  initialFormat={exportPreviewFormat}
-  onClose={handleExportPreviewClose}
-  onPreparingChange={(preparing) => {
-    // Format can switch inside the modal — reflect busy state on both labels.
-    exportingPdf = preparing;
-    exportingWord = preparing;
-  }}
-/>
+{#if interactive && bound}
+  <VaultNoteActionsMenu />
+  <VaultViewBuilderSheet
+    open={vault.viewBridgeOpen}
+    mode={vault.viewBridgeMode}
+    initialQuery={vault.viewBridgeQuery}
+    onSave={(query) => vault.commitViewBridge(query)}
+    onClose={() => vault.closeViewBridge()}
+  />
+  <VaultChartBuilderSheet
+    open={vault.chartBridgeOpen}
+    initialKv={vault.chartBridgeKv}
+    initialTableMarkdown={vault.chartBridgeTableMarkdown}
+    onSave={(kv, tableMarkdown) => vault.commitChartBridge(kv, tableMarkdown)}
+    onClose={() => vault.closeChartBridge()}
+  />
+  <VaultLiquidBuilderSheet
+    open={vault.liquidBridgeOpen}
+    lang={vault.liquidBridgeLang}
+    initial={vault.liquidBridgeDraft}
+    onSave={(next) => vault.commitLiquidBridge(next)}
+    onClose={() => vault.closeLiquidBridge()}
+  />
+  <LiquidCardDetailSheet
+    open={vault.cardDetailOpen}
+    detail={vault.cardDetail}
+    onClose={() => vault.closeCardDetail()}
+  />
+  <VaultExportPreviewModal
+    open={exportPreviewOpen}
+    title={exportPreviewTitle}
+    content={exportPreviewContent}
+    labelByPath={exportPreviewLabels}
+    notePath={exportPreviewPath}
+    initialFormat={exportPreviewFormat}
+    onClose={handleExportPreviewClose}
+    onPreparingChange={(preparing) => {
+      // Format can switch inside the modal — reflect busy state on both labels.
+      exportingPdf = preparing;
+      exportingWord = preparing;
+    }}
+  />
+{/if}

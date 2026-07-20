@@ -15,7 +15,6 @@
     onOpenNote: (path: string) => void | Promise<void>;
     onSelectCard: (id: string) => void | Promise<void>;
     onDaemonHealth?: (health: DaemonHealth | null) => void;
-    lmeOwnerGroupId: string | null;
     webOwnerGroupId: string | null;
   }
 
@@ -29,7 +28,6 @@
     onOpenNote,
     onSelectCard,
     onDaemonHealth,
-    lmeOwnerGroupId,
     webOwnerGroupId,
   }: Props = $props();
 </script>
@@ -45,7 +43,6 @@
     {onOpenNote}
     {onSelectCard}
     {onDaemonHealth}
-    ownsLmeHost={lmeOwnerGroupId === node.id}
     ownsWebHost={webOwnerGroupId === node.id}
   />
 {:else}
@@ -57,7 +54,7 @@
     data-debug-label="shell-split-branch"
   >
     <div
-      class="flex min-h-0 min-w-0 overflow-hidden"
+      class="flex h-full min-h-0 min-w-0 max-w-full flex-col overflow-hidden"
       style={`flex: ${node.ratio} 1 0%;`}
     >
       <ShellSplitNode
@@ -70,7 +67,6 @@
         {onOpenNote}
         {onSelectCard}
         {onDaemonHealth}
-        {lmeOwnerGroupId}
         {webOwnerGroupId}
       />
     </div>
@@ -80,7 +76,7 @@
       ratio={node.ratio}
     />
     <div
-      class="flex min-h-0 min-w-0 overflow-hidden"
+      class="flex h-full min-h-0 min-w-0 max-w-full flex-col overflow-hidden"
       style={`flex: ${1 - node.ratio} 1 0%;`}
     >
       <ShellSplitNode
@@ -93,7 +89,6 @@
         {onOpenNote}
         {onSelectCard}
         {onDaemonHealth}
-        {lmeOwnerGroupId}
         {webOwnerGroupId}
       />
     </div>

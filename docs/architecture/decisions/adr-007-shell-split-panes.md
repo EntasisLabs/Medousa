@@ -17,7 +17,7 @@ Accepted
    - `Ctrl+B` → toggle left master rail (VS Code/Cursor); never pane ops
 4. **`ChatStreamPool`:** slots keyed by `sessionId` with `acquire` / `release` / `setMaxLive`. **`maxLiveStreams = MAX_SHELL_PANES` (4)** — every chat pane can be live; pool LRU-evicts when a 5th session acquires. Demoted sessions stop owned SSE but keep cached transcripts (`ChatPaneIdle` only when `!isLive`).
 5. **Compose:** only the focused pane’s chat accepts send/input; background live panes still stream and update transcripts (`ChatSessionView` with `interactive={focused}`).
-6. **LME / web:** one shared host each (focus steals). Dual editors deferred.
+6. **Workspace (LME):** every pane with a Workspace/note tab mounts `LmePanel` (focused pane is interactive; background panes render read-only). Note bodies are **path-keyed buffers** on `vault` (`contentFor` / `warmBuffer` / stash on `openNote`) so two panes can show different notes without stealing. **Web:** still one shared browser host (focus steals) — dual webviews deferred.
 7. Do **not** reuse custom-surface `TilingNode` for shell panes.
 
 ## Consequences
@@ -26,7 +26,8 @@ Accepted
 - **Restart restore:** shell chrome hydrates from that key; open chat panes are re-acquired into `ChatStreamPool` (active first, up to `maxLiveStreams`); background sessions warm history via `warmBackgroundSession`. Main window size/position/maximized persist via `tauri-plugin-window-state` (desktop, label `main` only).
 - Spotlight exposes pane commands under Advanced.
 - Session-scoped chat runtimes (`chat.svelte.ts` + `chatSessionRuntime.ts`) keep messages/drafts across focus swaps; stream events route by owned `turnId` → `sessionId`.
-- Follow-ups: drag tab to split, dual LME/web, remappable keys, soft LRU for cached runtimes.
+- Path-keyed note buffers (`noteBuffer.ts` + `vault.svelte.ts`) keep demoted notes visible in background panes; shell passes `lmeTabId` → `VaultEditor path`.
+- Follow-ups: same note in two panes, dual webviews, remappable keys, soft LRU for cached runtimes.
 
 ## Code anchors
 
