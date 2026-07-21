@@ -37,6 +37,8 @@ export interface VaultFileContentResponse {
 export interface VaultWriteResponse {
   note: VaultNote;
   created: boolean;
+  /** Body actually persisted after semantic-tag rewrite (when present). */
+  content?: string | null;
 }
 
 export interface VaultSearchHit {

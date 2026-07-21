@@ -401,11 +401,26 @@ export class LmeWorkspaceStore {
   async activateTab(tabId: string) {
     const tab = this.tabs.find((entry) => entry.tabId === tabId);
     if (!tab) return;
+
+    const leaving = this.activeTab;
+    const leavingNote =
+      leaving &&
+      leaving.tabId !== tabId &&
+      leaving.kind === "note" &&
+      (tab.kind !== "note" || tab.path !== leaving.path);
+    if (leavingNote) {
+      // Flush TipTap/CM + save BEFORE swapping activeTabId (remount hammer).
+      const ok = await vault.flushBeforeLeave();
+      if (!ok) return;
+    }
+
     this.activeTabId = tabId;
     mirrorActiveTabToShell(tab.tabId, tab.title);
     if (tab.kind === "note") {
       this.setExplorerMode("notes");
-      await vault.openNote(tab.path);
+      await vault.openNote(tab.path, {
+        skipLeaveFlush: Boolean(leavingNote),
+      });
       return;
     }
     if (tab.kind === "script") {

@@ -702,6 +702,18 @@
   });
 
   onDestroy(() => {
+    // Last-chance serialize before TipTap dies — parent leave-flush should run first.
+    if (editor && !disabled) {
+      try {
+        flushLiveDrafts();
+        const serialized = serializeLiveMarkdown(editor.getJSON(), frontmatter);
+        if (serialized !== value) {
+          onchange(serialized);
+        }
+      } catch {
+        // Destroy must proceed even if serialize fails.
+      }
+    }
     removeFormatBubbleListeners?.();
     removeFormatBubbleListeners = null;
     editor?.destroy();

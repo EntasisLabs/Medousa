@@ -47,6 +47,8 @@
   import VaultFindBar from "./VaultFindBar.svelte";
   import VaultNoteStatusBar from "./VaultNoteStatusBar.svelte";
   import { vaultFind } from "$lib/stores/vaultFind.svelte";
+  import { noteEditorRuntimes } from "$lib/stores/noteEditorRuntimes.svelte";
+  import { registerVaultLeaveFlush } from "$lib/stores/vaultLeaveFlush";
   import { vaultQuickSwitcher } from "$lib/stores/vaultQuickSwitcher.svelte";
   import { stripFrontmatter } from "$lib/utils/vaultFrontmatter";
   import { formatShortcut } from "$lib/platform";
@@ -68,6 +70,11 @@
     interactive?: boolean;
     /** Bound note path for multi-pane Workspace (background panes keep their own buffer). */
     path?: string | null;
+    /**
+     * Keep TipTap/CM mounted while this host is not focused (hidden keep-alive pool).
+     * Unfocused keep-alive hosts stay inert and do not fall back to preview-only.
+     */
+    keepAlive?: boolean;
     /** Mobile reader: preview-only, no edit chrome. */
     mobile?: boolean;
     /** Sticky pop-out: slim companion chrome, keep note IM chat. */
@@ -81,6 +88,7 @@
     visible,
     interactive = true,
     path = null,
+    keepAlive = false,
     mobile = false,
     stickyNote = false,
     onOpenChat,
@@ -90,6 +98,8 @@
 
   const notePath = $derived(path?.trim() || vault.selectedPath);
   const bound = $derived(!path?.trim() || vault.isFocusedPath(path));
+  /** Focused editor, or keep-alive host that must retain TipTap/CM. */
+  const liveHost = $derived(bound || keepAlive);
   const displayContent = $derived(notePath ? vault.contentFor(notePath) : "");
   const displaySyncKey = $derived(notePath ? vault.contentSyncKeyFor(notePath) : "");
   const displayLoading = $derived(notePath ? vault.noteLoadingFor(notePath) : false);
@@ -170,10 +180,12 @@
   );
 
   const showMarkdownEditor = $derived(
-    vault.editorMode === "edit" &&
-      !showLedgerTable &&
-      !showKanbanBoard &&
-      !showSlidesDeck,
+    // Keep-alive hosts retain TipTap even while unfocused (global mode is for the focused note).
+    (keepAlive && !bound) ||
+      (vault.editorMode === "edit" &&
+        !showLedgerTable &&
+        !showKanbanBoard &&
+        !showSlidesDeck),
   );
 
   const notePlane = $derived(vault.notePlane);
@@ -302,10 +314,37 @@
   );
 
   $effect(() => {
+    if (!bound || !interactive) return;
     const path = vault.selectedPath;
-    if (path === lastFindNotePath) return;
+    if (!path || path === lastFindNotePath) return;
+    // Stash find for the note we are leaving; restore per-path find from runtime.
+    if (lastFindNotePath) {
+      noteEditorRuntimes.patchUi(lastFindNotePath, {
+        find: {
+          query: vaultFind.query,
+          matchIndex: vaultFind.matchIndex,
+          matchCase: vaultFind.matchCase,
+        },
+      });
+    }
     lastFindNotePath = path;
-    vaultFind.reset();
+    const runtime = noteEditorRuntimes.ensure(path);
+    const find = runtime.ui.find;
+    if (find?.query) {
+      vaultFind.query = find.query;
+      vaultFind.matchCase = find.matchCase;
+      vaultFind.matchIndex = find.matchIndex;
+    } else {
+      vaultFind.reset();
+    }
+  });
+
+  $effect(() => {
+    if (!bound || !interactive || !visible) return;
+    registerVaultLeaveFlush(() => {
+      flushPendingEditorDrafts();
+    });
+    return () => registerVaultLeaveFlush(null);
   });
 
   $effect(() => {
@@ -837,7 +876,7 @@
 
   {#if !notePath}
     <VaultEmptyState />
-  {:else if !bound}
+  {:else if !liveHost}
     <div class="relative flex min-h-0 min-w-0 max-w-full flex-1 overflow-hidden">
       {#if displayLoading}
         <div
@@ -889,16 +928,19 @@
             content={displayContent}
             contentSyncKey={displaySyncKey}
             {displayTitle}
-            disabled={!interactive || displayLoading}
+            disabled={!bound || !interactive || displayLoading}
             class="flex-1"
             surface={editorSurface}
-            showFormatChrome={isBuildPlane}
-            split={showSplitEditor}
+            showFormatChrome={bound && isBuildPlane}
+            split={bound && showSplitEditor}
             splitWidth={layout.vaultEditorPaneWidth}
             onSplitResize={(width) => layout.setVaultEditorPaneWidth(width)}
             previewScrollEl={previewScrollEl}
             scrollSyncEnabled={vault.buildScrollSync}
-            onchange={(next) => vault.markDirty(next)}
+            onchange={(next) => {
+              if (!bound) return;
+              vault.markDirty(next);
+            }}
             showFloat={canFloatSticky}
             onFloat={() => void handleFloatSticky()}
           >

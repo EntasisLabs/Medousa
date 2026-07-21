@@ -7,6 +7,7 @@ import { chatStreamPool } from "$lib/stores/chatStreamPool.svelte";
 import { humanBrowser } from "$lib/stores/humanBrowser.svelte";
 import { layout } from "$lib/stores/layout.svelte";
 import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
+import { vault } from "$lib/stores/vault.svelte";
 import {
   isShellSurfaceTabId,
   MAX_SHELL_PANES,
@@ -525,6 +526,19 @@ export class ShellTabsStore {
   async activate(tabId: string, options?: { skipOpen?: boolean }) {
     const tab = this.tabs.find((entry) => entry.id === tabId);
     if (!tab) return;
+
+    const previous = this.activeTab;
+    const leavingLmeNote =
+      previous &&
+      previous.id !== tabId &&
+      previous.kind === "lme" &&
+      lmeWorkspace.activeTab?.kind === "note";
+    if (leavingLmeNote) {
+      // Flush vault drafts before shell remounts / swaps the active host.
+      const ok = await vault.flushBeforeLeave();
+      if (!ok) return;
+    }
+
     const host = this.groupForTab(tabId);
     if (host) {
       this.activeGroupId = host.id;
