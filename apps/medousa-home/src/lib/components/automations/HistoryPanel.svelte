@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { SlidersHorizontal } from "@lucide/svelte";
+  import { Search, X } from "@lucide/svelte";
+  import { tick } from "svelte";
   import { flows } from "$lib/stores/flows.svelte";
   import { flowDraft } from "$lib/stores/flowDraft.svelte";
   import { settings } from "$lib/stores/settings.svelte";
@@ -32,20 +33,32 @@
   let { visible, mobile = false, embedded = false, onOpenFlows }: Props = $props();
 
   let search = $state("");
-  let filterOpen = $state(false);
   let flowName = $state("");
   let expandedId = $state<string | null>(null);
   let searchOpen = $state(false);
+  let searchExpanded = $state(false);
+  let searchInputEl = $state<HTMLInputElement | null>(null);
   const filterActive = $derived(search.trim().length > 0);
 
-  function closeMenus() {
-    filterOpen = false;
+  $effect(() => {
+    if (filterActive && !searchExpanded) searchExpanded = true;
+  });
+
+  async function openDockSearch() {
+    searchExpanded = true;
+    await tick();
+    searchInputEl?.focus();
   }
 
-  function handleMenuKeydown(event: KeyboardEvent) {
+  function closeDockSearch() {
+    searchExpanded = false;
+    search = "";
+  }
+
+  function handleDockSearchKeydown(event: KeyboardEvent) {
     if (event.key === "Escape") {
       event.preventDefault();
-      closeMenus();
+      closeDockSearch();
     }
   }
 
@@ -190,8 +203,6 @@
     onOpenFlows?.();
   }
 </script>
-
-<svelte:window onclick={closeMenus} />
 
 <section
   class="automations-history flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden {visible
@@ -365,61 +376,42 @@
     <footer
       class="relative flex shrink-0 items-center gap-1 border-t border-surface-500/25 px-2 py-1.5"
     >
-      <div class="min-w-0 flex-1">
-        {#if filterActive}
-          <span class="workshop-faint truncate text-[11px]">Filtered</span>
-        {/if}
-      </div>
-      <div class="relative shrink-0">
+      {#if searchExpanded}
+        <div class="lme-dock-search-expand min-w-0 flex-1">
+          <Search size={14} strokeWidth={1.75} class="lme-dock-search-glyph" />
+          <input
+            bind:this={searchInputEl}
+            class="lme-dock-search-input"
+            type="search"
+            placeholder="Search history…"
+            bind:value={search}
+            autocapitalize="off"
+            autocorrect="off"
+            spellcheck="false"
+            onkeydown={handleDockSearchKeydown}
+          />
+        </div>
         <button
           type="button"
-          class="vault-dock-icon-btn {filterActive ? 'vault-dock-icon-btn-active' : ''}"
-          aria-haspopup="menu"
-          aria-expanded={filterOpen}
-          aria-label="Filter history"
-          title="Filter"
-          onclick={(event) => {
-            event.stopPropagation();
-            filterOpen = !filterOpen;
-          }}
+          class="vault-dock-icon-btn"
+          aria-label="Close search"
+          title="Close search"
+          onclick={closeDockSearch}
         >
-          <SlidersHorizontal size={15} strokeWidth={1.75} />
+          <X size={15} strokeWidth={1.75} />
         </button>
-        {#if filterOpen}
-          <div
-            class="vault-notes-filter-menu absolute bottom-full right-0 z-30 mb-1 w-[min(17.5rem,calc(100vw-2rem))] rounded-lg border border-surface-500/50 bg-surface-900 py-2 shadow-xl"
-            role="menu"
-            tabindex="-1"
-            onclick={(event) => event.stopPropagation()}
-            onkeydown={handleMenuKeydown}
-          >
-            <div class="px-2.5 pb-1">
-              <input
-                class="input w-full text-xs"
-                type="search"
-                placeholder="Search history…"
-                bind:value={search}
-                autocapitalize="off"
-                autocorrect="off"
-                spellcheck="false"
-                onclick={(event) => event.stopPropagation()}
-              />
-            </div>
-            {#if filterActive}
-              <button
-                type="button"
-                role="menuitem"
-                class="vault-menu-item text-surface-400"
-                onclick={() => {
-                  search = "";
-                }}
-              >
-                Clear
-              </button>
-            {/if}
-          </div>
-        {/if}
-      </div>
+      {:else}
+        <div class="min-w-0 flex-1"></div>
+        <button
+          type="button"
+          class="vault-dock-icon-btn"
+          aria-label="Search history"
+          title="Search"
+          onclick={() => void openDockSearch()}
+        >
+          <Search size={15} strokeWidth={1.75} />
+        </button>
+      {/if}
     </footer>
   {/if}
 
