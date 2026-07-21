@@ -8,9 +8,12 @@
   import {
     isSlideBgImage,
     isSlideWash,
+    normalizeSlideMotion,
     normalizeSlideScrim,
     normalizeSlideWash,
     SLIDE_WASH_INK,
+    type SlideLayer,
+    type SlideMotion,
     type SlideScrim,
     type SlideWash,
   } from "$lib/utils/markdownSlides";
@@ -26,6 +29,9 @@
     body: string;
     bg?: string;
     scrim?: SlideScrim;
+    layers?: SlideLayer[];
+    motion?: SlideMotion;
+    notes?: string;
   };
 
   type ResolvedAtmosphere = {
@@ -70,6 +76,42 @@
       const bg = typeof rec.bg === "string" ? rec.bg.trim() : undefined;
       const scrimRaw = typeof rec.scrim === "string" ? rec.scrim : undefined;
       const scrim = normalizeSlideScrim(scrimRaw, isSlideBgImage(bg));
+      const motion = normalizeSlideMotion(
+        typeof rec.motion === "string" ? rec.motion : undefined,
+      );
+      const notes = typeof rec.notes === "string" ? rec.notes.trim() : undefined;
+      const layers: SlideLayer[] = [];
+      if (Array.isArray(rec.layers)) {
+        for (const rawLayer of rec.layers) {
+          if (!rawLayer || typeof rawLayer !== "object") continue;
+          const lr = rawLayer as Record<string, unknown>;
+          const src = typeof lr.src === "string" ? lr.src.trim() : "";
+          if (!src) continue;
+          const id =
+            typeof lr.id === "string" && lr.id.trim()
+              ? lr.id.trim()
+              : `layer-${layers.length + 1}`;
+          const x = typeof lr.x === "number" ? lr.x : Number(lr.x);
+          const y = typeof lr.y === "number" ? lr.y : Number(lr.y);
+          const w = typeof lr.w === "number" ? lr.w : Number(lr.w);
+          const h =
+            lr.h === undefined
+              ? undefined
+              : typeof lr.h === "number"
+                ? lr.h
+                : Number(lr.h);
+          layers.push({
+            id,
+            src,
+            x: Number.isFinite(x) ? Math.min(1, Math.max(0, x)) : 0,
+            y: Number.isFinite(y) ? Math.min(1, Math.max(0, y)) : 0,
+            w: Number.isFinite(w) ? Math.min(1, Math.max(0, w)) : 0.2,
+            ...(h !== undefined && Number.isFinite(h)
+              ? { h: Math.min(1, Math.max(0, h)) }
+              : {}),
+          });
+        }
+      }
       out.push({
         id: typeof rec.id === "string" && rec.id.trim() ? rec.id : `slide-${index + 1}`,
         label: label || `Slide ${index + 1}`,
@@ -77,6 +119,9 @@
         body,
         ...(bg ? { bg } : {}),
         ...(scrim ? { scrim } : {}),
+        ...(layers.length ? { layers } : {}),
+        ...(motion !== "none" ? { motion } : {}),
+        ...(notes ? { notes } : {}),
       });
     }
     return out;
@@ -109,29 +154,49 @@
 
   const atmospheres = $derived(slides.map(resolveAtmosphere));
 
-  /** Resolved blob/asset URLs for vault-relative slide backgrounds. */
+  /** Resolved blob/asset URLs for vault-relative slide backgrounds + layers. */
   let resolvedImages = $state<Record<string, string>>({});
+  let resolvedLayers = $state<Record<string, string>>({});
 
   $effect(() => {
     const notePath = ctx.localImagePath ?? null;
     const pending = slides
       .map((slide, i) => ({ slide, atm: atmospheres[i]! }))
       .filter(({ atm }) => Boolean(atm.imageRaw));
-    if (pending.length === 0) {
+    const layerPending = slides.flatMap((slide) =>
+      (slide.layers ?? []).map((layer) => ({
+        key: `${slide.id}::${layer.id}`,
+        src: layer.src,
+      })),
+    );
+    if (pending.length === 0 && layerPending.length === 0) {
       resolvedImages = {};
+      resolvedLayers = {};
       return;
     }
     let cancelled = false;
     void (async () => {
       const next: Record<string, string> = {};
-      await Promise.all(
-        pending.map(async ({ slide, atm }) => {
+      const nextLayers: Record<string, string> = {};
+      await Promise.all([
+        ...pending.map(async ({ slide, atm }) => {
           const raw = atm.imageRaw!;
           const url = await resolveLocalImagePreviewUrl(raw, notePath);
           if (url) next[slide.id] = url;
         }),
-      );
-      if (!cancelled) resolvedImages = next;
+        ...layerPending.map(async ({ key, src }) => {
+          if (/^https?:\/\//i.test(src)) {
+            nextLayers[key] = src;
+            return;
+          }
+          const url = await resolveLocalImagePreviewUrl(src, notePath);
+          if (url) nextLayers[key] = url;
+        }),
+      ]);
+      if (!cancelled) {
+        resolvedImages = next;
+        resolvedLayers = nextLayers;
+      }
     })();
     return () => {
       cancelled = true;
@@ -222,6 +287,7 @@
             data-layout={slide.layout}
             data-bg={atm.wash}
             data-scrim={atm.scrim}
+            data-motion={slide.motion ?? "none"}
           >
             {#if imgUrl}
               <img
@@ -240,6 +306,25 @@
                 ></div>
               {/if}
             {/if}
+
+            {#each slide.layers ?? [] as layer (layer.id)}
+              {@const layerUrl =
+                resolvedLayers[`${slide.id}::${layer.id}`] ??
+                (/^https?:\/\//i.test(layer.src) ? layer.src : null)}
+              {#if layerUrl}
+                <img
+                  class="liquid-slide-layer"
+                  src={layerUrl}
+                  alt=""
+                  aria-hidden="true"
+                  decoding="async"
+                  style:left={`${layer.x * 100}%`}
+                  style:top={`${layer.y * 100}%`}
+                  style:width={`${layer.w * 100}%`}
+                  style:height={layer.h !== undefined ? `${layer.h * 100}%` : "auto"}
+                />
+              {/if}
+            {/each}
 
             <div class="liquid-slide-content">
               {#if slide.layout === "hero"}
@@ -338,6 +423,14 @@
     background: #f8f7f4;
   }
 
+  .liquid-slide-layer {
+    position: absolute;
+    z-index: 2;
+    object-fit: contain;
+    pointer-events: none;
+    user-select: none;
+  }
+
   /* Named washes */
   .liquid-slide[data-bg="paper"] {
     background: #f8f7f4;
@@ -415,7 +508,7 @@
 
   .liquid-slide-content {
     position: relative;
-    z-index: 2;
+    z-index: 3;
     min-width: 0;
     height: 100%;
     overflow: auto;

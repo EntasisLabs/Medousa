@@ -9,6 +9,8 @@ export type VaultNoteKind =
   | "resume"
   | "inbox"
   | "bug"
+  | "workbook"
+  | "sheet"
   | "note";
 
 const KNOWN_KINDS = new Set<VaultNoteKind>([
@@ -20,6 +22,8 @@ const KNOWN_KINDS = new Set<VaultNoteKind>([
   "resume",
   "inbox",
   "bug",
+  "workbook",
+  "sheet",
   "note",
 ]);
 
@@ -35,6 +39,12 @@ export function normalizeKind(value: string | null | undefined): VaultNoteKind {
     case "ledger":
     case "finance":
       return "ledger";
+    case "workbook":
+    case "workbooks":
+      return "workbook";
+    case "sheet":
+    case "sheets":
+      return "sheet";
     case "board":
     case "boards":
       return "board";
@@ -66,6 +76,11 @@ export function resolveKindFromPath(path: string): VaultNoteKind {
   if (path.startsWith("journal/")) return "daily";
   if (path.startsWith("projects/")) return "project";
   if (path.startsWith("finance/")) return "ledger";
+  if (path.startsWith("workbooks/")) {
+    const base = path.split("/").pop() ?? "";
+    if (base === "_workbook.md" || base === ".medousa-workbook") return "workbook";
+    return "sheet";
+  }
   if (path.startsWith("boards/")) return "board";
   if (path.startsWith("slides/") || path.startsWith("decks/")) return "slides";
   if (path.startsWith("resumes/") || path.startsWith("cv/")) return "resume";
@@ -90,6 +105,8 @@ export function kindForSpace(spaceId: string): VaultNoteKind {
       return "project";
     case "finance":
       return "ledger";
+    case "workbooks":
+      return "workbook";
     case "boards":
       return "board";
     case "slides":
@@ -115,6 +132,10 @@ export function kindLabel(kind: VaultNoteKind): string {
       return "Project";
     case "ledger":
       return "Ledger";
+    case "workbook":
+      return "Workbook";
+    case "sheet":
+      return "Sheet";
     case "board":
       return "Board";
     case "slides":
@@ -161,6 +182,8 @@ export const VAULT_KIND_OPTIONS: VaultNoteKind[] = [
   "daily",
   "project",
   "ledger",
+  "workbook",
+  "sheet",
   "board",
   "slides",
   "resume",

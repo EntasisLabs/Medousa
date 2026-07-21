@@ -13,6 +13,7 @@
     type SlidesDeck,
   } from "$lib/utils/markdownSlides";
   import { vault } from "$lib/stores/vault.svelte";
+  import SlidesPlayer from "$lib/components/vault/SlidesPlayer.svelte";
 
   interface Props {
     content: string;
@@ -25,6 +26,7 @@
   let deck = $state<SlidesDeck>(slidesDeckFromContent(content));
   let syncedContent = $state(content);
   let editing = $state(false);
+  let presenting = $state(false);
   let draftBody = $state("");
   let draftTitle = $state("");
   let emitTimer: ReturnType<typeof setTimeout> | null = null;
@@ -145,14 +147,24 @@
         </button>
       {/each}
     </div>
-    <button
-      type="button"
-      class="slides-deck-write"
-      disabled={disabled}
-      onclick={() => (editing ? finishWrite() : beginWrite())}
-    >
-      {editing ? "Done" : "Write"}
-    </button>
+    <div class="slides-deck-actions">
+      <button
+        type="button"
+        class="slides-deck-write"
+        disabled={disabled || deck.slides.length === 0}
+        onclick={() => (presenting = true)}
+      >
+        Present
+      </button>
+      <button
+        type="button"
+        class="slides-deck-write"
+        disabled={disabled}
+        onclick={() => (editing ? finishWrite() : beginWrite())}
+      >
+        {editing ? "Done" : "Write"}
+      </button>
+    </div>
   </div>
 
   {#if editing}
@@ -188,6 +200,10 @@
   {/if}
 </div>
 
+{#if presenting}
+  <SlidesPlayer deck={deck} open={presenting} onclose={() => (presenting = false)} />
+{/if}
+
 <style>
   .slides-deck-editor {
     display: flex;
@@ -213,6 +229,12 @@
 
   .slides-deck-cols {
     display: flex;
+    gap: 0.35rem;
+  }
+
+  .slides-deck-actions {
+    display: flex;
+    align-items: center;
     gap: 0.35rem;
   }
 

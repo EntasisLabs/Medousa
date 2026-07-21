@@ -161,7 +161,7 @@
   const showLedgerTable = $derived(
     !mobile &&
       vault.editorMode === "edit" &&
-      vault.selectedKind === "ledger" &&
+      (vault.selectedKind === "ledger" || vault.selectedKind === "sheet") &&
       vault.ledgerEditMode === "table" &&
       hasLedgerTable,
   );

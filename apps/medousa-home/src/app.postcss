@@ -2332,6 +2332,37 @@
     background: rgb(var(--color-surface-900) / 0.98);
   }
 
+  .ledger-formula-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.35rem 1rem 0.15rem;
+    min-height: 2rem;
+  }
+
+  .ledger-formula-addr {
+    flex: 0 0 2.75rem;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: rgb(var(--color-surface-300) / 0.85);
+  }
+
+  .ledger-formula-input {
+    flex: 1;
+    min-width: 0;
+    border-radius: 0.45rem;
+    border: 1px solid color-mix(in srgb, var(--color-surface-500) 28%, transparent);
+    background: color-mix(in srgb, var(--color-surface-950) 45%, transparent);
+    color: rgb(var(--color-surface-100));
+    padding: 0.28rem 0.55rem;
+    font-size: 0.78rem;
+  }
+
+  .ledger-formula-input:disabled {
+    opacity: 0.45;
+  }
+
   .ledger-cell {
     width: 100%;
     border: 0;
@@ -2343,6 +2374,10 @@
     line-height: 1.35;
     outline: none;
     box-shadow: none;
+  }
+
+  .ledger-cell--formula {
+    color: rgb(var(--color-primary-200) / 0.95);
   }
 
   .ledger-cell:hover:not(:disabled):not(:focus) {

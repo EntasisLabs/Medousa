@@ -22,6 +22,8 @@ members = [
     "crates/medousa-browser-lite",
     "crates/medousa-browser-bridge",
     "crates/medousa-install-support",
+    "crates/medousa-mcp-server",
+    "crates/medousa-acp-client",
 ]
 exclude = ["apps/medousa-home/src-tauri", "apps/medousa-installer/src-tauri"]
 

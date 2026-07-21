@@ -12,6 +12,17 @@ import {
 export type SlideLayout = "hero" | "split" | "stack";
 export type SlideWash = "paper" | "dusk" | "ink" | "mist" | "ember";
 export type SlideScrim = "dark" | "light" | "none";
+export type SlideMotion = "none" | "fade" | "fade-up";
+
+/** Declarative positioned graphic on the 16:9 stage (normalized 0–1). */
+export interface SlideLayer {
+  id: string;
+  src: string;
+  x: number;
+  y: number;
+  w: number;
+  h?: number;
+}
 
 export interface SlideSection {
   id: string;
@@ -21,6 +32,10 @@ export interface SlideSection {
   /** Named wash or image path/URL. Empty = inherit deck theme. */
   bg?: string;
   scrim?: SlideScrim;
+  layers?: SlideLayer[];
+  motion?: SlideMotion;
+  /** Speaker notes (player chrome; not shown on slide face). */
+  notes?: string;
 }
 
 export interface SlidesDeck {
@@ -39,6 +54,23 @@ export const SLIDE_WASHES = new Set<SlideWash>([
   "ember",
 ]);
 const SLIDE_SCRIMS = new Set<SlideScrim>(["dark", "light", "none"]);
+const SLIDE_MOTIONS = new Set<SlideMotion>(["none", "fade", "fade-up"]);
+
+export function normalizeSlideMotion(value: string | undefined): SlideMotion {
+  const v = (value ?? "none").trim().toLowerCase();
+  return SLIDE_MOTIONS.has(v as SlideMotion) ? (v as SlideMotion) : "none";
+}
+
+function clamp01(n: number): number {
+  if (!Number.isFinite(n)) return 0;
+  return Math.min(1, Math.max(0, n));
+}
+
+function parseCoord(raw: string | undefined, fallback: number): number {
+  if (raw === undefined || raw === "") return fallback;
+  const n = Number(raw);
+  return clamp01(Number.isFinite(n) ? n : fallback);
+}
 
 /** Dark washes use light ink; light washes use dark ink. */
 export const SLIDE_WASH_INK: Record<SlideWash, "dark" | "light"> = {
@@ -150,6 +182,75 @@ function parseKvPreamble(block: string): {
   return { fields, body: lines.slice(i).join("\n").trim() };
 }
 
+/** Slide KV + nested `layer:` blocks (indented props). */
+function parseSlideSectionBlock(block: string): {
+  fields: Record<string, string>;
+  layers: SlideLayer[];
+  body: string;
+} {
+  const lines = block.replace(/\r\n/g, "\n").split("\n");
+  const fields: Record<string, string> = {};
+  const layers: SlideLayer[] = [];
+  let i = 0;
+
+  while (i < lines.length) {
+    const raw = lines[i] ?? "";
+    const stripped = raw.trim();
+    if (!stripped) {
+      if (Object.keys(fields).length > 0 || layers.length > 0) {
+        i += 1;
+        break;
+      }
+      i += 1;
+      continue;
+    }
+    if (stripped.startsWith("|") || stripped.startsWith("#") || stripped.startsWith("```")) {
+      break;
+    }
+    if (!/^[a-zA-Z][a-zA-Z0-9_-]*\s*:/.test(stripped)) break;
+
+    const colon = stripped.indexOf(":");
+    const key = stripped.slice(0, colon).trim().toLowerCase();
+    const value = stripped.slice(colon + 1).trim();
+
+    if (key === "layer") {
+      const id = value || `layer-${layers.length + 1}`;
+      const props: Record<string, string> = {};
+      i += 1;
+      while (i < lines.length) {
+        const nested = lines[i] ?? "";
+        if (!/^\s+\S/.test(nested)) break;
+        const nestTrim = nested.trim();
+        if (!/^[a-zA-Z][a-zA-Z0-9_-]*\s*:/.test(nestTrim)) break;
+        const nc = nestTrim.indexOf(":");
+        const nk = nestTrim.slice(0, nc).trim().toLowerCase();
+        const nv = nestTrim.slice(nc + 1).trim();
+        if (nk) props[nk] = nv;
+        i += 1;
+      }
+      const src = (props.src ?? "").trim();
+      if (src) {
+        layers.push({
+          id,
+          src,
+          x: parseCoord(props.x, 0),
+          y: parseCoord(props.y, 0),
+          w: parseCoord(props.w, 0.2),
+          ...(props.h !== undefined && props.h !== ""
+            ? { h: parseCoord(props.h, 0.2) }
+            : {}),
+        });
+      }
+      continue;
+    }
+
+    if (key && value) fields[key] = value;
+    i += 1;
+  }
+
+  return { fields, layers, body: lines.slice(i).join("\n").trim() };
+}
+
 function slugSlideId(label: string, index: number): string {
   const base = label
     .toLowerCase()
@@ -190,7 +291,7 @@ export function parseSlidesDeck(body: string): SlidesDeck | null {
     }
   } else {
     for (let i = 0; i < sectionParts.length; i++) {
-      const parsed = parseKvPreamble(sectionParts[i] ?? "");
+      const parsed = parseSlideSectionBlock(sectionParts[i] ?? "");
       const label =
         (parsed.fields.label ?? parsed.fields.title)?.trim() || `Slide ${i + 1}`;
       const slideBody = parsed.body;
@@ -198,6 +299,8 @@ export function parseSlidesDeck(body: string): SlidesDeck | null {
       const bg = parsed.fields.bg?.trim();
       const bgIsImage = isSlideBgImage(bg);
       const scrim = normalizeSlideScrim(parsed.fields.scrim, bgIsImage);
+      const motion = normalizeSlideMotion(parsed.fields.motion);
+      const notes = parsed.fields.notes?.trim();
       const slide: SlideSection = {
         id: slugSlideId(label, i),
         label,
@@ -208,6 +311,9 @@ export function parseSlidesDeck(body: string): SlidesDeck | null {
       if (scrim && (bgIsImage || parsed.fields.scrim?.trim())) {
         slide.scrim = scrim;
       }
+      if (parsed.layers.length > 0) slide.layers = parsed.layers;
+      if (motion !== "none") slide.motion = motion;
+      if (notes) slide.notes = notes;
       slides.push(slide);
     }
   }
@@ -246,6 +352,18 @@ export function serializeSlidesDeckBody(deck: SlidesDeck): string {
     // Default for images is `none` — only serialize when explicit non-default.
     if (slide.scrim && !(isSlideBgImage(slide.bg) && slide.scrim === "none")) {
       lines.push(`scrim: ${slide.scrim}`);
+    }
+    if (slide.motion && slide.motion !== "none") {
+      lines.push(`motion: ${slide.motion}`);
+    }
+    if (slide.notes?.trim()) lines.push(`notes: ${slide.notes.trim()}`);
+    for (const layer of slide.layers ?? []) {
+      lines.push(`layer: ${layer.id}`);
+      lines.push(`  src: ${layer.src}`);
+      lines.push(`  x: ${layer.x}`);
+      lines.push(`  y: ${layer.y}`);
+      lines.push(`  w: ${layer.w}`);
+      if (layer.h !== undefined) lines.push(`  h: ${layer.h}`);
     }
     lines.push("");
     if (slide.body.trim()) lines.push(slide.body.trim());

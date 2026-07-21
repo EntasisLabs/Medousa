@@ -311,6 +311,16 @@ export interface LiquidReportProps {
 
 export type LiquidSlideLayout = "hero" | "split" | "stack";
 export type LiquidSlideScrim = "dark" | "light" | "none";
+export type LiquidSlideMotion = "none" | "fade" | "fade-up";
+
+export interface LiquidSlideLayer {
+  id: string;
+  src: string;
+  x: number;
+  y: number;
+  w: number;
+  h?: number;
+}
 
 export interface LiquidSlideItem {
   id: string;
@@ -320,6 +330,9 @@ export interface LiquidSlideItem {
   /** Named wash or image path/URL. */
   bg?: string;
   scrim?: LiquidSlideScrim;
+  layers?: LiquidSlideLayer[];
+  motion?: LiquidSlideMotion;
+  notes?: string;
 }
 
 /** Slides organism — labeled deck frames with nested figure-grid bodies. */
@@ -2410,6 +2423,9 @@ function replaceLiquidFenceMatch(
         };
         if (s.bg) item.bg = s.bg;
         if (s.scrim) item.scrim = s.scrim;
+        if (s.layers?.length) item.layers = s.layers;
+        if (s.motion) item.motion = s.motion;
+        if (s.notes) item.notes = s.notes;
         return item;
       }),
       columns: deck.columns,

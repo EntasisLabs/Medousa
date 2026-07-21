@@ -170,6 +170,8 @@ const KIND_BROWSE_ORDER: VaultNoteKind[] = [
   "daily",
   "project",
   "ledger",
+  "workbook",
+  "sheet",
   "board",
   "slides",
   "resume",

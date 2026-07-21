@@ -72,8 +72,25 @@ legend: bottom
 | `layout` | `hero` \| `split` \| `stack` | Hero = title-centric; **split** = prose beside figures; stack = vertical |
 | `bg` | wash id **or** image path/URL | Wash: `paper`/`dusk`/`ink`/`mist`/`ember`. Image: `./shots/sky.png`, `/…`, or `https://…` |
 | `scrim` | `none` \| `dark` \| `light` | Overlay on **image** backgrounds only. Default **`none`** (full photo + **dark** ink). Use `dark` for a dim overlay + **light** ink on busy/dark photos; `light` for a cream wash + dark ink |
+| `motion` | `none` \| `fade` \| `fade-up` | Entrance when advancing in **Present** mode |
+| `notes` | string | Speaker notes (player chrome only) |
+| `layer:` | nested block | Positioned graphic — see below |
+
+**Layers** (normalized 0–1 on the 16:9 stage):
+
+```markdown
+layer: logo
+  src: media/mark.svg
+  x: 0.82
+  y: 0.06
+  w: 0.14
+```
 
 Section body is nest-aware markdown — nested ` ```chart `, ` ```media `, callouts, etc. hydrate like reports.
+
+### Present
+
+Deck notes expose **Present** — fullscreen player with ←/→/Esc, progress, speaker notes, and motion v1. Konva/Fabric freeform editing is deferred.
 
 ---
 
@@ -146,4 +163,4 @@ Optional export byline: frontmatter `author` / `date` + Export sheet toggles **I
 - **PDF:** each slide is a page (`vault-export-page-break` between frames); washes and photos bake into the frame.
 - **Word:** each `.liquid-slide` is snapshotted as an image (same path as other liquid embeds).
 
-Out of scope for v1: presenter mode, freeform CSS gradients, LME HTML artifact decks (see [Artifacts & presentations](artifacts-and-presentations.md)).
+Out of scope for v1: freeform CSS gradients, Konva canvas authoring, PPTX, LME HTML artifact decks (see [Artifacts & presentations](artifacts-and-presentations.md)).

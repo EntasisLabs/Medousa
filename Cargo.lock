@@ -7261,6 +7261,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "medousa-acp-client"
+version = "0.3.1"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "medousa-browser-bridge"
 version = "0.3.2"
 dependencies = [
@@ -7367,6 +7379,18 @@ dependencies = [
  "serde_json",
  "sysinfo 0.33.1",
  "tokio",
+]
+
+[[package]]
+name = "medousa-mcp-server"
+version = "0.3.1"
+dependencies = [
+ "anyhow",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
