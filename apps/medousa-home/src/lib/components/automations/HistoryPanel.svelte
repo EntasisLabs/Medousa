@@ -256,13 +256,11 @@
     {:else if toolHistory.error}
       <p class="text-sm text-warning-400">{toolHistory.error}</p>
     {:else if !hasRuns}
-      <div class="history-empty">
-        <p class="history-title">Nothing to retell yet</p>
-        <p class="history-lead mt-2">
-          When tools succeed in chat, they land here as beats. Gather a few and turn that stretch
-          into a flow.
-        </p>
-      </div>
+      <p class="history-empty-line">
+        {embedded
+          ? "Nothing here yet — tool runs from chat show up as moments."
+          : "Nothing to retell yet. When tools succeed in chat, they land here."}
+      </p>
     {:else if filtered.length === 0}
       <p class="workshop-muted py-6 text-sm">No moments match that search.</p>
     {:else}
@@ -318,7 +316,7 @@
                 <div class="history-beat-actions">
                   <button
                     type="button"
-                    class="history-beat-more"
+                    class="history-beat-act"
                     onclick={() => toggleExpanded(entry.entry_id)}
                     aria-expanded={expanded}
                   >
@@ -327,7 +325,7 @@
                   {#if entry.status === "succeeded"}
                     <button
                       type="button"
-                      class="history-beat-more"
+                      class="history-beat-act"
                       disabled={toolHistory.promoting}
                       onclick={(event) => void automateEntry(entry, event)}
                     >
@@ -339,17 +337,15 @@
                 {#if expanded}
                   <div class="history-beat-expand">
                     {#if ask}
-                      <p class="history-beat-expand-label">She took in</p>
+                      <p class="history-beat-expand-label">Asked</p>
                       <p class="history-beat-expand-copy">{ask}</p>
                     {/if}
                     {#if result}
-                      <p class="history-beat-expand-label {ask ? 'mt-3' : ''}">Came back</p>
+                      <p class="history-beat-expand-label {ask ? 'mt-2.5' : ''}">Result</p>
                       <p class="history-beat-expand-copy">{result}</p>
                     {/if}
                     {#if !ask && !result}
-                      <p class="history-beat-expand-copy workshop-faint">
-                        No prose detail on this beat.
-                      </p>
+                      <p class="history-beat-expand-copy workshop-faint">No detail on this beat.</p>
                     {/if}
                   </div>
                 {/if}
@@ -429,7 +425,7 @@
 
   {#if selectedCount > 0}
     <div class="history-dock" role="region" aria-label="Save selection as flow">
-      <span class="history-dock-count">{selectedCount}</span>
+      <span class="history-dock-count">{selectedCount} selected</span>
       <input
         class="history-dock-input"
         bind:value={flowName}
@@ -440,7 +436,7 @@
       <div class="history-dock-actions">
         <button
           type="button"
-          class="btn btn-sm variant-filled-primary"
+          class="history-dock-act history-dock-act-primary"
           disabled={toolHistory.promoting}
           onclick={() => void buildFlow(false)}
         >
@@ -448,7 +444,7 @@
         </button>
         <button
           type="button"
-          class="btn btn-sm variant-soft-surface"
+          class="history-dock-act"
           disabled={toolHistory.promoting}
           onclick={() => void buildFlow(true)}
         >
@@ -456,14 +452,14 @@
         </button>
         <button
           type="button"
-          class="history-dock-clear"
+          class="history-dock-act"
           aria-label="Clear selection"
           onclick={() => {
             toolHistory.clearSelection();
             flowName = "";
           }}
         >
-          ✕
+          Clear
         </button>
       </div>
     </div>
@@ -474,16 +470,15 @@
   .history-kicker {
     margin: 0;
     font-size: 0.6875rem;
-    font-weight: 600;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
+    font-weight: 500;
+    letter-spacing: -0.01em;
     color: rgb(var(--shell-muted, var(--color-surface-500)));
   }
 
   .history-title {
     margin: 0.35rem 0 0;
     font-size: 1.125rem;
-    font-weight: 600;
+    font-weight: 560;
     letter-spacing: -0.02em;
     color: rgb(var(--shell-label, var(--color-surface-50)));
   }
@@ -496,9 +491,12 @@
     color: rgb(var(--shell-muted, var(--color-surface-400)));
   }
 
-  .history-empty {
-    max-width: 28rem;
-    padding: 2.5rem 0;
+  .history-empty-line {
+    margin: 0;
+    padding: 1.75rem 0.25rem;
+    font-size: 0.8rem;
+    line-height: 1.45;
+    color: rgb(var(--shell-muted, var(--color-surface-500)));
   }
 
   .history-dock {
@@ -507,37 +505,33 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 0.55rem 0.75rem;
+    gap: 0.45rem 0.85rem;
     margin: 0;
-    padding: 0.55rem 0.85rem;
-    border-top: 1px solid rgb(var(--shell-border, var(--color-surface-500)) / 0.35);
-    background: rgb(var(--shell-pane-bg, var(--color-surface-900)) / 0.92);
-    backdrop-filter: blur(10px);
+    padding: 0.5rem 0.75rem;
+    border-top: 1px solid rgb(var(--shell-border, var(--color-surface-500)) / 0.22);
+    background: rgb(var(--shell-pane-bg, var(--color-surface-900)) / 0.88);
   }
 
   .history-dock-count {
-    display: inline-flex;
-    min-width: 1.4rem;
-    height: 1.4rem;
-    align-items: center;
-    justify-content: center;
-    border-radius: 999px;
-    background: rgb(var(--color-primary-500) / 0.16);
-    color: rgb(var(--color-primary-300));
-    font-size: 0.6875rem;
-    font-weight: 650;
+    flex-shrink: 0;
+    font-size: 0.68rem;
+    letter-spacing: -0.01em;
+    color: rgb(var(--shell-muted, var(--color-surface-500)));
     font-variant-numeric: tabular-nums;
   }
 
   .history-dock-input {
     min-width: 0;
-    flex: 1 1 10rem;
+    flex: 1 1 8rem;
     border: none;
     background: transparent;
-    padding: 0.2rem 0;
-    font-size: 0.8125rem;
-    font-weight: 500;
-    color: rgb(var(--shell-label, var(--color-surface-50)));
+    padding: 0.15rem 0;
+    font-size: 0.8rem;
+    font-weight: 450;
+    letter-spacing: -0.015em;
+    color: rgb(var(--shell-label, var(--color-surface-100)));
+    outline: none;
+    box-shadow: none;
   }
 
   .history-dock-input:focus {
@@ -553,54 +547,63 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 0.4rem;
+    gap: 0.75rem;
   }
 
-  .history-dock-clear {
+  .history-dock-act {
     margin: 0;
-    margin-left: 0.15rem;
-    padding: 0.15rem 0.4rem;
+    padding: 0.1rem 0;
     border: none;
-    border-radius: 0.4rem;
     background: transparent;
-    color: rgb(var(--shell-muted, var(--color-surface-400)));
-    font-size: 0.75rem;
-    line-height: 1;
+    font-size: 0.72rem;
+    font-weight: 450;
+    letter-spacing: -0.015em;
+    color: rgb(var(--shell-muted, var(--color-surface-500)));
     cursor: pointer;
+    transition: color 140ms ease;
   }
 
-  .history-dock-clear:hover {
-    color: rgb(var(--shell-label, var(--color-surface-100)));
-    background: rgb(var(--shell-pane-muted-bg, var(--color-surface-800)) / 0.6);
+  .history-dock-act:hover:not(:disabled) {
+    color: rgb(var(--shell-label, var(--color-surface-200)));
+  }
+
+  .history-dock-act-primary {
+    color: rgb(var(--shell-label, var(--color-surface-250, var(--color-surface-200))));
+    font-weight: 520;
+  }
+
+  .history-dock-act-primary:hover:not(:disabled) {
+    color: rgb(var(--shell-label, var(--color-surface-50)));
+  }
+
+  .history-dock-act:disabled {
+    opacity: 0.35;
+    cursor: default;
   }
 
   .history-chapter {
-    margin-bottom: 2rem;
+    margin-bottom: 1.65rem;
   }
 
   .history-chapter-header {
-    position: sticky;
-    top: 0;
-    z-index: 1;
     display: flex;
     align-items: baseline;
     gap: 1rem;
-    padding: 0.35rem 0 0.75rem;
-    background: rgb(var(--shell-canvas-bg, var(--color-surface-900)) / 0.92);
-    backdrop-filter: blur(8px);
+    padding: 0.2rem 0 0.55rem;
   }
 
   .history-chapter-title {
     margin: 0;
-    font-size: 0.9375rem;
-    font-weight: 600;
+    font-size: 0.82rem;
+    font-weight: 520;
     letter-spacing: -0.015em;
-    color: rgb(var(--shell-label, var(--color-surface-50)));
+    color: rgb(var(--shell-label, var(--color-surface-200)));
   }
 
   .history-chapter-meta {
-    margin: 0.2rem 0 0;
-    font-size: 0.75rem;
+    margin: 0.15rem 0 0;
+    font-size: 0.68rem;
+    letter-spacing: -0.01em;
     color: rgb(var(--shell-muted, var(--color-surface-500)));
   }
 
@@ -614,8 +617,8 @@
     position: relative;
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
-    gap: 0.35rem 0.75rem;
-    padding: 0.15rem 0 0.85rem;
+    gap: 0.25rem 0.55rem;
+    padding: 0.1rem 0 0.7rem;
   }
 
   .history-beat-hit {
@@ -625,9 +628,9 @@
     align-items: start;
     width: 100%;
     margin: 0;
-    padding: 0.35rem 0.4rem 0.35rem 0;
+    padding: 0.25rem 0.25rem 0.25rem 0;
     border: none;
-    border-radius: 0.65rem;
+    border-radius: 0.4rem;
     background: transparent;
     text-align: left;
     cursor: pointer;
@@ -635,18 +638,23 @@
   }
 
   .history-beat-hit:hover {
-    background: rgb(var(--shell-pane-muted-bg, var(--color-surface-800)) / 0.45);
+    background: rgb(var(--shell-pane-muted-bg, var(--color-surface-800)) / 0.28);
   }
 
   .history-beat-selected .history-beat-hit {
-    background: rgb(var(--color-primary-500) / 0.08);
+    background: transparent;
+  }
+
+  .history-beat-selected .history-beat-title {
+    color: rgb(var(--shell-label, var(--color-surface-50)));
+    font-weight: 560;
   }
 
   .history-beat-time {
     padding-top: 0.15rem;
     font-size: 0.6875rem;
     font-variant-numeric: tabular-nums;
-    letter-spacing: 0.02em;
+    letter-spacing: -0.01em;
     color: rgb(var(--shell-muted, var(--color-surface-500)));
     text-align: right;
   }
@@ -663,9 +671,9 @@
     content: "";
     position: absolute;
     top: 0.9rem;
-    bottom: -1.1rem;
+    bottom: -0.95rem;
     width: 1px;
-    background: rgb(var(--shell-border, var(--color-surface-500)) / 0.4);
+    background: rgb(var(--shell-border, var(--color-surface-500)) / 0.28);
   }
 
   .history-beat-last .history-beat-rail::before {
@@ -675,100 +683,111 @@
   .history-beat-dot {
     position: relative;
     z-index: 1;
-    width: 0.45rem;
-    height: 0.45rem;
+    width: 0.4rem;
+    height: 0.4rem;
     border-radius: 999px;
-    background: rgb(var(--shell-border, var(--color-surface-500)) / 0.8);
+    background: rgb(var(--shell-border, var(--color-surface-500)) / 0.65);
     box-shadow: 0 0 0 3px rgb(var(--shell-canvas-bg, var(--color-surface-900)) / 0.95);
   }
 
   .history-beat-dot-on {
-    background: rgb(var(--color-primary-400));
-    box-shadow:
-      0 0 0 3px rgb(var(--shell-canvas-bg, var(--color-surface-900)) / 0.95),
-      0 0 0 5px rgb(var(--color-primary-500) / 0.2);
+    background: rgb(var(--shell-label, var(--color-surface-200)));
+    box-shadow: 0 0 0 3px rgb(var(--shell-canvas-bg, var(--color-surface-900)) / 0.95);
   }
 
   .history-beat-body {
     min-width: 0;
     display: flex;
     flex-direction: column;
-    gap: 0.15rem;
+    gap: 0.12rem;
     padding-top: 0.05rem;
   }
 
   .history-beat-title {
-    font-size: 0.875rem;
-    font-weight: 500;
+    font-size: 0.84rem;
+    font-weight: 450;
     line-height: 1.35;
-    letter-spacing: -0.01em;
-    color: rgb(var(--shell-label, var(--color-surface-50)));
+    letter-spacing: -0.015em;
+    color: rgb(var(--shell-label, var(--color-surface-100)));
   }
 
   .history-beat-sub {
-    font-size: 0.71875rem;
+    font-size: 0.7rem;
+    letter-spacing: -0.01em;
     color: rgb(var(--shell-muted, var(--color-surface-500)));
   }
 
   .history-beat-failed {
-    color: rgb(var(--color-warning-400));
+    color: rgb(var(--color-warning-400) / 0.9);
   }
 
   .history-beat-actions {
     display: flex;
     align-items: flex-start;
-    gap: 0.55rem;
-    padding-top: 0.35rem;
-    opacity: 0.55;
-    transition: opacity 120ms ease;
+    gap: 0.65rem;
+    padding-top: 0.3rem;
+    opacity: 0;
+    transition: opacity 140ms ease;
   }
 
   .history-beat:hover .history-beat-actions,
-  .history-beat-selected .history-beat-actions {
+  .history-beat:focus-within .history-beat-actions {
     opacity: 1;
   }
 
-  .history-beat-more {
+  @media (hover: none) {
+    .history-beat-actions {
+      opacity: 0.75;
+    }
+  }
+
+  .history-beat-act {
     margin: 0;
     padding: 0;
     border: none;
     background: transparent;
-    font-size: 0.6875rem;
-    font-weight: 500;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    color: rgb(var(--color-primary-300));
+    font-size: 0.68rem;
+    font-weight: 450;
+    letter-spacing: -0.01em;
+    text-transform: none;
+    color: rgb(var(--shell-muted, var(--color-surface-500)));
     cursor: pointer;
+    transition: color 140ms ease;
   }
 
-  .history-beat-more:disabled {
-    opacity: 0.5;
+  .history-beat-act:hover:not(:disabled) {
+    color: rgb(var(--shell-label, var(--color-surface-250, var(--color-surface-200))));
+  }
+
+  .history-beat-act:disabled {
+    opacity: 0.4;
     cursor: not-allowed;
   }
 
   .history-beat-expand {
     grid-column: 1 / -1;
-    margin: 0.15rem 0 0.25rem 4.9rem;
-    padding: 0.75rem 0.9rem;
-    border-radius: 0.65rem;
-    background: rgb(var(--shell-pane-bg, var(--color-surface-900)) / 0.55);
-    border: 1px solid rgb(var(--shell-border, var(--color-surface-500)) / 0.3);
+    margin: 0.05rem 0 0.15rem 4.9rem;
+    padding: 0.15rem 0 0.2rem;
+    border: none;
+    border-radius: 0;
+    background: transparent;
   }
 
   .history-beat-expand-label {
     margin: 0;
-    font-size: 0.625rem;
-    font-weight: 600;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    color: rgb(var(--shell-muted, var(--color-surface-500)));
+    font-size: 0.65rem;
+    font-weight: 450;
+    letter-spacing: -0.01em;
+    text-transform: none;
+    color: rgb(var(--shell-muted, var(--color-surface-500)) / 0.9);
   }
 
   .history-beat-expand-copy {
-    margin: 0.3rem 0 0;
-    font-size: 0.8125rem;
-    line-height: 1.5;
-    color: rgb(var(--shell-label, var(--color-surface-200)));
+    margin: 0.2rem 0 0;
+    font-size: 0.78rem;
+    line-height: 1.45;
+    letter-spacing: -0.01em;
+    color: rgb(var(--shell-label, var(--color-surface-300)));
   }
 
   @media (max-width: 640px) {
