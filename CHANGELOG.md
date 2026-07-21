@@ -11,6 +11,32 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+## [0.3.1] — 2026-07-20
+
+### Added
+
+- LME schedule tabs — open a schedule in the workspace with a calm detail editor (Runs / Deliveries / Pause)
+- Progressive **New schedule** popover — title, prompt, natural-language when; frequency → time → timezone on demand
+- Vault editor right-click context menu (cut / copy / paste / select all and related actions)
+- Stronger note buffer / save-queue persistence so open notes survive tab and rail navigation
+
+### Changed
+
+- Quieter LME rails to match a Jobs-cut workbench: agents, flows, schedules, and history
+- History: hover-reveal More / Flow, cardless expand, liquid selection dock, inline dock search (same pattern as Files / Scripts / Decks)
+- Schedules: human titles and one health line; machine cron / ids under Details; create no longer takes over the rail
+- Flows and specialists: calmer titlebars and liquid forms instead of loud workshop chrome
+- Shell tab strips — hover reveal with safer hit targets so titlebar actions stay clickable
+
+### Fixed
+
+- Live kanban boards not dragging after surface updates
+- Shell tabs hiding incorrectly when the pointer was over the active view
+- Note / editor state lost when switching tabs or navigating the side rail
+- Editor truncation glitches in LME script and vault surfaces
+- Script editor action buttons and tab overlays stealing clicks
+- Schedule / split-rail boundary issues so pane chrome and titlebar controls don’t fight
+
 ## [0.3.0] — 2026-07-20
 
 ### Added
@@ -76,6 +102,7 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 - Product path is **Home-first**: download the app, chat, then add packages from Settings; Installer remains an advanced/repair escape hatch
 - Connection → Extras and welcome-wizard offline CTAs open Settings → Packages instead of launching the Installer by default
 
+[0.3.1]: https://github.com/EntasisLabs/Medousa/releases/tag/v0.3.1
 [0.3.0]: https://github.com/EntasisLabs/Medousa/releases/tag/v0.3.0
 [0.2.0]: https://github.com/EntasisLabs/Medousa/releases/tag/v0.2.0
 [0.1.0]: https://github.com/EntasisLabs/Medousa/releases/tag/v0.1.0
