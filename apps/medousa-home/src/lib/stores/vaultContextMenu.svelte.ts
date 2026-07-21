@@ -1,4 +1,17 @@
 import type { AllowedSurfaceIcon } from "$lib/utils/environmentIconCatalog";
+import type { MarkdownFormatAction } from "$lib/utils/vaultMarkdownEdit";
+
+/** Callbacks owned by the focused editor while its context menu is open. */
+export type VaultEditorContextActions = {
+  cut: () => void | Promise<void>;
+  copy: () => void | Promise<void>;
+  paste: () => void | Promise<void>;
+  selectAll: () => void;
+  format: (action: MarkdownFormatAction) => void;
+  insertWikilink: () => void;
+  hasSelection: boolean;
+  canFormat: boolean;
+};
 
 export type VaultContextTarget =
   | {
@@ -9,6 +22,16 @@ export type VaultContextTarget =
         start?: number;
         end?: number;
       };
+    }
+  | {
+      kind: "editor";
+      path: string;
+      selection?: {
+        text: string;
+        start?: number;
+        end?: number;
+      };
+      actions: VaultEditorContextActions;
     }
   | { kind: "attachment"; path: string; notePath: string }
   | {
@@ -49,6 +72,24 @@ export class VaultContextMenuStore {
       selection: trimmed
         ? { text: trimmed, start: selection?.start, end: selection?.end }
         : undefined,
+    });
+  }
+
+  showEditor(
+    path: string,
+    clientX: number,
+    clientY: number,
+    selection: { text: string; start?: number; end?: number } | null | undefined,
+    actions: VaultEditorContextActions,
+  ) {
+    const trimmed = selection?.text.trim();
+    this.showAt(clientX, clientY, {
+      kind: "editor",
+      path,
+      selection: trimmed
+        ? { text: trimmed, start: selection?.start, end: selection?.end }
+        : undefined,
+      actions,
     });
   }
 

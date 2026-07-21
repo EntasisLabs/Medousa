@@ -42,8 +42,8 @@
 
 {#if tabs.length > 0}
   <div
-    class="shell-tab-strip flex h-7 min-w-0 items-center gap-0.5 overflow-x-auto px-1.5
-      bg-surface-950/85 backdrop-blur-sm"
+    class="shell-tab-strip flex h-7 w-max max-w-full min-w-0 items-center gap-0.5 overflow-x-auto rounded-b-md px-1.5
+      bg-surface-950/90 backdrop-blur-sm"
     role="tablist"
     aria-label="Open tabs"
     data-debug-label="shell-tab-strip"

@@ -1,6 +1,7 @@
 import {
   vaultContextMenu,
   type VaultContextTarget,
+  type VaultEditorContextActions,
 } from "$lib/stores/vaultContextMenu.svelte";
 import { shouldUseMobileShell } from "$lib/platform";
 
@@ -56,6 +57,28 @@ export function handleVaultNoteContextMenuEvent(
   openVaultNoteContextMenu(path, event.clientX, event.clientY, selection);
 }
 
+export function openVaultEditorContextMenu(
+  path: string,
+  clientX: number,
+  clientY: number,
+  selection: { text: string; start?: number; end?: number } | null | undefined,
+  actions: VaultEditorContextActions,
+) {
+  markContextMenuOpened();
+  vaultContextMenu.showEditor(path, clientX, clientY, selection, actions);
+}
+
+export function handleVaultEditorContextMenuEvent(
+  path: string,
+  event: MouseEvent,
+  selection: { text: string; start?: number; end?: number } | null | undefined,
+  actions: VaultEditorContextActions,
+) {
+  event.preventDefault();
+  event.stopPropagation();
+  openVaultEditorContextMenu(path, event.clientX, event.clientY, selection, actions);
+}
+
 export function handleVaultFolderContextMenuEvent(
   iconKey: string,
   label: string,
@@ -88,6 +111,11 @@ function bindVaultContextTargetLongPress(
     if (!target) return;
     if (target.kind === "note") {
       openVaultNoteContextMenu(target.path, clientX, clientY);
+      return;
+    }
+    if (target.kind === "editor") {
+      // Editor menus need live action callbacks — long-press uses note menu.
+      openVaultNoteContextMenu(target.path, clientX, clientY, target.selection);
       return;
     }
     if (target.kind === "folder") {

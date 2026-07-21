@@ -32,6 +32,7 @@
     label: string;
     disabled?: boolean;
     hidden?: boolean;
+    separatorBefore?: boolean;
     onClick: () => void | Promise<void>;
   }
 
@@ -94,6 +95,112 @@
           hidden: !hasCustom,
           onClick: () => {
             vaultFolderIcons.clear(iconKey);
+          },
+        },
+      ];
+    }
+
+    if (target.kind === "editor") {
+      const path = target.path;
+      const selection = target.selection;
+      const { actions } = target;
+      const hasSel = actions.hasSelection;
+      return [
+        {
+          id: "cut",
+          label: "Cut",
+          disabled: !hasSel,
+          onClick: () => actions.cut(),
+        },
+        {
+          id: "copy",
+          label: "Copy",
+          disabled: !hasSel,
+          onClick: () => actions.copy(),
+        },
+        {
+          id: "paste",
+          label: "Paste",
+          onClick: () => actions.paste(),
+        },
+        {
+          id: "select-all",
+          label: "Select all",
+          onClick: () => actions.selectAll(),
+        },
+        {
+          id: "bold",
+          label: "Bold",
+          separatorBefore: true,
+          hidden: !actions.canFormat,
+          disabled: !hasSel,
+          onClick: () => actions.format("bold"),
+        },
+        {
+          id: "italic",
+          label: "Italic",
+          hidden: !actions.canFormat,
+          disabled: !hasSel,
+          onClick: () => actions.format("italic"),
+        },
+        {
+          id: "code",
+          label: "Inline code",
+          hidden: !actions.canFormat,
+          disabled: !hasSel,
+          onClick: () => actions.format("code"),
+        },
+        {
+          id: "insert-wikilink",
+          label: "Insert wikilink…",
+          separatorBefore: true,
+          onClick: () => actions.insertWikilink(),
+        },
+        {
+          id: "add-to-chat",
+          label: "Add to chat",
+          hidden: !selection?.text.trim(),
+          onClick: async () => {
+            if (!selection?.text.trim()) return;
+            await addVaultSelectionToChat({
+              path,
+              title:
+                vault.selectedPath === path
+                  ? vault.title
+                  : (vault.labelByPath().get(path) ?? path),
+              content: vault.selectedPath === path ? vault.content : undefined,
+              wikilinksOut: vault.selectedPath === path ? vault.wikilinksOut : [],
+              backlinks: vault.selectedPath === path ? vault.backlinks : [],
+              selection,
+              flushSave:
+                vault.selectedPath === path && vault.dirty
+                  ? async () => {
+                      await vault.flushSave();
+                    }
+                  : undefined,
+            });
+          },
+        },
+        {
+          id: "copy-path",
+          label: "Copy path",
+          separatorBefore: true,
+          onClick: async () => {
+            await copyTextToClipboard(path);
+          },
+        },
+        {
+          id: "copy-wikilink",
+          label: "Copy wikilink",
+          onClick: async () => {
+            await copyTextToClipboard(wikilinkForPath(path));
+          },
+        },
+        {
+          id: "rename",
+          label: "Rename / move…",
+          onClick: async () => {
+            await vault.openNoteActionsForPath(path);
           },
         },
       ];
@@ -295,6 +402,7 @@
   const visibleItems = $derived(items.filter((item) => !item.hidden));
 
   async function runItem(item: MenuItem) {
+    if (item.disabled) return;
     if (item.id === "change-icon") {
       await item.onClick();
       return;
@@ -399,20 +507,19 @@
       </div>
     {:else}
       {#each visibleItems as item (item.id)}
-        {#if item.disabled}
-          <p class="vault-context-menu-hint px-3 py-2 text-[11px] leading-snug text-surface-500">
-            {item.label}
-          </p>
-        {:else}
-          <button
-            type="button"
-            class="vault-context-menu-item"
-            role="menuitem"
-            onclick={() => void runItem(item)}
-          >
-            {item.label}
-          </button>
+        {#if item.separatorBefore}
+          <div class="vault-context-menu-sep" role="separator"></div>
         {/if}
+        <button
+          type="button"
+          class="vault-context-menu-item"
+          class:vault-context-menu-item--hint={item.disabled && item.id === "host-hint"}
+          role="menuitem"
+          disabled={item.disabled}
+          onclick={() => void runItem(item)}
+        >
+          {item.label}
+        </button>
       {/each}
     {/if}
   </div>
