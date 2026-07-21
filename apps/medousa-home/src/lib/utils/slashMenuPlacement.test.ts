@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { placeSlashMenuAnchor } from "./slashMenuPlacement";
 
 function fakeShell(box: {
@@ -29,9 +29,7 @@ describe("placeSlashMenuAnchor", () => {
       { top: 140, bottom: 158, left: 80 },
       shell,
     );
-    expect(anchor.top).toBeDefined();
-    expect(anchor.bottom).toBeUndefined();
-    expect(anchor.top).toBeGreaterThan(58);
+    expect(anchor.top).toBeGreaterThanOrEqual(158);
     expect(anchor.maxHeight).toBeGreaterThan(140);
   });
 
@@ -41,12 +39,11 @@ describe("placeSlashMenuAnchor", () => {
       { top: 450, bottom: 468, left: 80 },
       shell,
     );
-    expect(anchor.bottom).toBeDefined();
-    expect(anchor.top).toBeUndefined();
+    expect(anchor.top).toBeLessThan(450);
     expect(anchor.maxHeight).toBeLessThanOrEqual(320);
   });
 
-  it("clamps left so the menu stays in the shell", () => {
+  it("clamps left so the menu stays in the viewport", () => {
     const shell = fakeShell({ top: 0, left: 0, width: 280, height: 500 });
     const anchor = placeSlashMenuAnchor(
       { top: 40, bottom: 58, left: 260 },

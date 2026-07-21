@@ -11,6 +11,23 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+## [0.3.2] — 2026-07-21
+
+### Fixed
+
+- Creating a note no longer wipes / retitles the previously active note (cold-open write-lease handoff)
+- Live editor remount / destroy flushes no longer clobber another note during tab switches or paste storms
+- Empty / frontmatter-only notes no longer freeze the app when entering Live or side-preview edit
+- Opening external markdown files binds an LME tab and renders content (absolute paths no longer vault-normalized away)
+- Liquid `compare` fences with duplicate axis or entity labels no longer abort the rest of the preview
+- Embed write-through and foreign undo go through the versioned per-path save queue
+- Vault editor context-menu cut/copy/paste no longer hangs the shell on Windows (clipboard timeouts + menu portal)
+- Slash menu no longer freezes Live/Build on Windows (IME key guards, hard dismiss, deferred serialize, BodyPortal)
+
+### Changed
+
+- Vault open / save coordination uses generation fencing, path-scoped dirty, and quiescent leave-flush before lease transfer
+
 ## [0.3.1] — 2026-07-20
 
 ### Added
@@ -102,6 +119,7 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 - Product path is **Home-first**: download the app, chat, then add packages from Settings; Installer remains an advanced/repair escape hatch
 - Connection → Extras and welcome-wizard offline CTAs open Settings → Packages instead of launching the Installer by default
 
+[0.3.2]: https://github.com/EntasisLabs/Medousa/releases/tag/v0.3.2
 [0.3.1]: https://github.com/EntasisLabs/Medousa/releases/tag/v0.3.1
 [0.3.0]: https://github.com/EntasisLabs/Medousa/releases/tag/v0.3.0
 [0.2.0]: https://github.com/EntasisLabs/Medousa/releases/tag/v0.2.0

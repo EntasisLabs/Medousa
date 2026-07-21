@@ -100,6 +100,7 @@ import {
 } from "$lib/utils/garageOnboarding";
 import { addCustomVaultSpace } from "$lib/utils/vaultCustomSpaces";
 import {
+  isAbsoluteDiskPath,
   normalizeVaultNotePath,
   setNoteTitleInContent,
 } from "$lib/utils/vaultNoteTitle";
@@ -294,6 +295,11 @@ export class VaultStore {
   private compositionHold = $state(false);
   private saveEchoPath: string | null = null;
   private saveEchoUntil = 0;
+  /**
+   * Bumped on every openNote / openLooseFile start. Stale fetch completions and
+   * remount emits must not apply when this no longer matches their generation.
+   */
+  private openGeneration = 0;
 
   attachments = $derived(listAttachments(this.content));
 
@@ -433,6 +439,7 @@ export class VaultStore {
       !this.buildAutoSave ||
       !this.selectedPath ||
       !this.dirty ||
+      this.noteLoading ||
       this.saveStatus === "conflict" ||
       this.proposalActive ||
       this.compositionHold
@@ -513,6 +520,13 @@ export class VaultStore {
   isFocusedPath(path: string | null | undefined): boolean {
     const trimmed = path?.trim();
     if (!trimmed) return false;
+    // Loose markdown uses an absolute OS path — do not vault-normalize (strips drive/root).
+    if (this.looseFilePath) {
+      return trimmed === this.looseFilePath || trimmed === (this.selectedPath?.trim() ?? "");
+    }
+    if (isAbsoluteDiskPath(trimmed)) {
+      return trimmed === (this.selectedPath?.trim() ?? "");
+    }
     return this.normalizeNotePath(trimmed) === (this.selectedPath?.trim() ?? "");
   }
 
@@ -520,39 +534,52 @@ export class VaultStore {
   contentFor(path: string): string {
     void this.noteBufferRevision;
     void this.content;
-    const trimmed = this.normalizeNotePath(path);
-    if (!trimmed) return "";
-    if (this.isFocusedPath(trimmed)) return this.content;
-    return this.noteBuffers.get(trimmed)?.content ?? "";
+    const raw = path.trim();
+    if (!raw) return "";
+    // Check raw first — absolute loose paths must not be vault-normalized.
+    if (this.isFocusedPath(raw)) return this.content;
+    if (isAbsoluteDiskPath(raw)) return "";
+    const key = this.normalizeNotePath(raw);
+    if (!key) return "";
+    return this.noteBuffers.get(key)?.content ?? "";
   }
 
   contentSyncKeyFor(path: string): string {
     void this.noteBufferRevision;
     void this.contentSyncKey;
-    const trimmed = this.normalizeNotePath(path);
-    if (!trimmed) return "";
-    if (this.isFocusedPath(trimmed)) return this.contentSyncKey;
-    const buffer = this.noteBuffers.get(trimmed);
-    return `${trimmed}:${buffer?.contentRevision ?? 0}`;
+    const raw = path.trim();
+    if (!raw) return "";
+    if (this.isFocusedPath(raw)) return this.contentSyncKey;
+    if (isAbsoluteDiskPath(raw)) return `${raw}:0`;
+    const key = this.normalizeNotePath(raw);
+    if (!key) return "";
+    const buffer = this.noteBuffers.get(key);
+    return `${key}:${buffer?.contentRevision ?? 0}`;
   }
 
   titleFor(path: string): string {
     void this.noteBufferRevision;
     void this.title;
-    const trimmed = this.normalizeNotePath(path);
-    if (!trimmed) return "";
-    if (this.isFocusedPath(trimmed)) return this.title;
-    return this.noteBuffers.get(trimmed)?.title ?? "";
+    const raw = path.trim();
+    if (!raw) return "";
+    if (this.isFocusedPath(raw)) return this.title;
+    if (isAbsoluteDiskPath(raw)) return "";
+    const key = this.normalizeNotePath(raw);
+    if (!key) return "";
+    return this.noteBuffers.get(key)?.title ?? "";
   }
 
   noteLoadingFor(path: string): boolean {
     void this.noteBufferRevision;
     void this.noteLoading;
-    const trimmed = this.normalizeNotePath(path);
-    if (!trimmed) return false;
-    if (this.isFocusedPath(trimmed)) return this.noteLoading;
-    const buffer = this.noteBuffers.get(trimmed);
-    return !buffer && this.bufferWarmInFlight.has(trimmed);
+    const raw = path.trim();
+    if (!raw) return false;
+    if (this.isFocusedPath(raw)) return this.noteLoading;
+    if (isAbsoluteDiskPath(raw)) return false;
+    const key = this.normalizeNotePath(raw);
+    if (!key) return false;
+    const buffer = this.noteBuffers.get(key);
+    return !buffer && this.bufferWarmInFlight.has(key);
   }
 
   private bufferWarmInFlight = new Set<string>();
@@ -567,6 +594,9 @@ export class VaultStore {
   private stashSelectedBuffer() {
     const path = this.selectedPath?.trim();
     if (!path || this.isLooseFile) return;
+    // Failed cold-open placeholders (empty, no hash, not dirty) must not become
+    // a buffer session — that would block refetch on retry.
+    if (!this.dirty && this.contentHash == null && !this.content.trim()) return;
     const key = this.normalizeNotePath(path);
     this.noteBuffers.set(key, {
       path: key,
@@ -596,7 +626,10 @@ export class VaultStore {
 
   /** Prefetch a note into a background buffer (multi-pane Workspace). */
   async warmBuffer(path: string) {
-    const trimmed = this.normalizeNotePath(path);
+    const raw = path.trim();
+    // Absolute loose files are not vault notes — never hit getVaultNote.
+    if (!raw || isAbsoluteDiskPath(raw)) return;
+    const trimmed = this.normalizeNotePath(raw);
     if (!trimmed || this.isFocusedPath(trimmed)) return;
     if (this.noteBuffers.has(trimmed) || this.bufferWarmInFlight.has(trimmed)) {
       return;
@@ -785,6 +818,7 @@ export class VaultStore {
   async ingestRemoteUpdate(event: WorkspaceEvent) {
     const path = vaultRefPath(event);
     if (!path || path !== this.selectedPath) return;
+    if (this.noteLoading) return;
 
     this.clearAutosaveTimer();
     try {
@@ -1113,44 +1147,94 @@ export class VaultStore {
     return this.openLooseFile(path);
   }
 
-  async openLooseFile(absolutePath: string) {
+  async openLooseFile(
+    absolutePath: string,
+    options?: { skipLeaveFlush?: boolean },
+  ) {
     const trimmed = absolutePath.trim();
     if (!trimmed) return false;
-    if (this.dirty && this.selectedPath) {
-      this.clearAutosaveTimer();
-      await this.save({ source: "autosave" });
+    if (
+      this.looseFilePath === trimmed &&
+      this.selectedPath === trimmed &&
+      !this.noteLoading
+    ) {
+      return true;
     }
+
+    const openGen = ++this.openGeneration;
+
+    if (this.selectedPath && this.selectedPath !== trimmed) {
+      const ok = options?.skipLeaveFlush
+        ? await this.flushBeforeLeave({ skipEditorFlush: true })
+        : await this.flushBeforeLeave();
+      if (!ok) return false;
+      if (openGen !== this.openGeneration) return false;
+      this.clearProposal();
+      this.closeAttachmentPreview();
+    }
+    if (openGen !== this.openGeneration) return false;
+
     this.noteLoading = true;
     this.loading = true;
     this.error = null;
-    this.clearProposal();
-    this.closeAttachmentPreview();
+    // Lease first with empty body so a failed read cannot leave another note's
+    // content under this absolute path.
+    this.clearLooseFile();
+    this.looseFilePath = trimmed;
+    this.selectedPath = trimmed;
+    this.resetSaveState();
+    this.content = "";
+    this.baselineContent = "";
+    this.contentHash = null;
+    this.title = fileNameFromAbsolutePath(trimmed)
+      .replace(/\.md$/i, "")
+      .replace(/\.markdown$/i, "") || trimmed;
+    this.dirty = false;
+    this.editorMode = "edit";
+    this.selectedKind = "note";
+    this.bumpContentSync();
+    // Bind the LME tab immediately so the keep-alive host focuses this path
+    // while the file read is in flight (shows loading instead of the old note).
+    await this.syncLmeNoteTab(trimmed);
+    if (openGen !== this.openGeneration || this.looseFilePath !== trimmed) {
+      return false;
+    }
     try {
       const content = await readAbsoluteTextFile(trimmed);
+      if (openGen !== this.openGeneration || this.looseFilePath !== trimmed) {
+        return false;
+      }
       const name = fileNameFromAbsolutePath(trimmed);
       const title = name.replace(/\.md$/i, "").replace(/\.markdown$/i, "") || name;
-      this.clearLooseFile();
-      this.looseFilePath = trimmed;
-      this.selectedPath = trimmed;
-      this.resetSaveState();
       this.content = content;
       this.baselineContent = content;
-      this.contentHash = null;
       this.title = title;
-      this.selectedKind = "note";
       this.wikilinksOut = [];
       this.backlinks = [];
       this.noteTags = [];
       this.dirty = false;
-      this.editorMode = "edit";
       this.bumpContentSync();
       return true;
     } catch (err) {
-      this.error = err instanceof Error ? err.message : String(err);
+      if (openGen === this.openGeneration && this.looseFilePath === trimmed) {
+        this.error = err instanceof Error ? err.message : String(err);
+      }
       return false;
     } finally {
-      this.noteLoading = false;
-      this.loading = false;
+      if (openGen === this.openGeneration) {
+        this.noteLoading = false;
+        this.loading = false;
+      }
+    }
+  }
+
+  /** Bind the LME keep-alive host to the focused note (create/activate tab). */
+  private async syncLmeNoteTab(path: string) {
+    try {
+      const { lmeWorkspace } = await import("$lib/stores/lmeWorkspace.svelte");
+      lmeWorkspace.ensureAndActivateNoteTab(path);
+    } catch {
+      // Unit tests / non-shell contexts may not load the LME workspace.
     }
   }
 
@@ -1352,7 +1436,15 @@ export class VaultStore {
   }
 
   async openNote(path: string, options?: { skipLeaveFlush?: boolean }) {
-    const nextPath = this.normalizeNotePath(path);
+    const raw = path.trim();
+    if (!raw) return;
+    // Absolute OS paths are loose markdown — never vault-normalize / getVaultNote.
+    if (isAbsoluteDiskPath(raw)) {
+      await this.openLooseFile(raw, { skipLeaveFlush: options?.skipLeaveFlush });
+      return;
+    }
+
+    const nextPath = this.normalizeNotePath(raw);
     if (!nextPath) return;
 
     if (this.selectedPath === nextPath && !this.isLooseFile && !this.noteLoading) {
@@ -1366,15 +1458,19 @@ export class VaultStore {
       }
     }
 
+    const openGen = ++this.openGeneration;
+
     if (this.selectedPath && this.selectedPath !== nextPath) {
       // activateTab already flushed the mounted editor — do not flush the remounted host.
       const ok = options?.skipLeaveFlush
         ? await this.flushBeforeLeave({ skipEditorFlush: true })
         : await this.flushBeforeLeave();
       if (!ok) return;
+      if (openGen !== this.openGeneration) return;
       this.clearProposal();
       this.closeAttachmentPreview();
     }
+    if (openGen !== this.openGeneration) return;
     this.clearLooseFile();
 
     const buffered = this.noteBuffers.get(nextPath);
@@ -1391,13 +1487,27 @@ export class VaultStore {
       return;
     }
 
+    // Quiescent handoff: take the write lease on `nextPath` *before* applying
+    // body so remounts / destroy flushes / autosave cannot PUT onto the old path.
+    // Clear body identity so a failed fetch cannot leave the previous note's
+    // content under the new path (and so retry is not skipped via contentHash).
     this.noteLoading = true;
     this.loading = true;
     this.error = null;
+    this.selectedPath = nextPath;
+    this.content = "";
+    this.baselineContent = "";
+    this.contentHash = null;
+    this.title = "";
+    this.dirty = false;
+    this.resetSaveState();
+    this.bumpContentSync();
     try {
       const response: VaultNoteContentResponse = await getVaultNote(nextPath);
+      if (openGen !== this.openGeneration || this.selectedPath !== nextPath) {
+        return;
+      }
       this.applyNote(response);
-      this.selectedPath = nextPath;
       this.writeBufferFromResponse(nextPath, response);
       this.restoreEditorUi(nextPath);
       localStorage.setItem(LAST_NOTE_KEY, nextPath);
@@ -1406,12 +1516,19 @@ export class VaultStore {
       this.rememberSpaceForPath(nextPath, response.note.title);
       await this.refreshBacklinks(nextPath);
     } catch (err) {
-      this.error = err instanceof Error ? err.message : String(err);
+      if (openGen === this.openGeneration && this.selectedPath === nextPath) {
+        this.error = err instanceof Error ? err.message : String(err);
+        // Drop any placeholder buffer so the next openNote refetches.
+        this.noteBuffers.delete(nextPath);
+        this.bumpNoteBuffers();
+      }
     } finally {
-      this.noteLoading = false;
-      this.loading = false;
-      if (this.pendingHeadingScroll) {
-        this.headingScrollRequest += 1;
+      if (openGen === this.openGeneration) {
+        this.noteLoading = false;
+        this.loading = false;
+        if (this.pendingHeadingScroll) {
+          this.headingScrollRequest += 1;
+        }
       }
     }
   }
@@ -1568,11 +1685,22 @@ export class VaultStore {
    * Editor keystrokes must NOT bump contentSyncKey — that remounts Live/Build and
    * causes stale TipTap flushes to clobber the open note. Pass `reloadEditors: true`
    * only for out-of-band mutations (attachments, bridges, preview toggles).
+   *
+   * Pass `path` from the emitting editor so remounts / keep-alive hosts cannot
+   * write into a different leased session.
    */
   markDirty(
     nextContent: string,
-    options?: { reloadEditors?: boolean; allowEmpty?: boolean },
+    options?: { reloadEditors?: boolean; allowEmpty?: boolean; path?: string | null },
   ) {
+    if (this.noteLoading) {
+      return;
+    }
+    if (options?.path != null && options.path.trim() !== "") {
+      if (!this.isFocusedPath(options.path)) {
+        return;
+      }
+    }
     // Live serialize/organism remounts must not mark dirty on open with no edits.
     if (nextContent === this.content) {
       return;
@@ -1608,6 +1736,29 @@ export class VaultStore {
       this.saveStatus = "unsaved";
     }
     this.scheduleAutosave();
+  }
+
+  /**
+   * Persist a non-focused (or focused) path through the per-path save queue
+   * with If-Match — never bypass versioning for embed write-through.
+   */
+  async saveNoteAtPath(
+    path: string,
+    content: string,
+    options?: { force?: boolean },
+  ): Promise<boolean> {
+    const key = this.normalizeNotePath(path);
+    if (!key) return false;
+    const hash = this.isFocusedPath(key)
+      ? this.contentHash
+      : (this.noteBuffers.get(key)?.contentHash ?? null);
+    const result = await this.saveQueue.enqueue(key, {
+      content,
+      contentHash: options?.force ? null : hash,
+      force: Boolean(options?.force),
+      source: "manual",
+    });
+    return result.ok;
   }
 
   /** Refuse empty/near-empty Live serialize over a substantial note body. */
@@ -1746,6 +1897,7 @@ export class VaultStore {
 
   async save(options?: { force?: boolean; source?: "manual" | "autosave" }) {
     if (!this.selectedPath) return false;
+    if (this.noteLoading && options?.source === "autosave") return false;
     if (!this.dirty && !options?.force) return true;
     if (this.proposalActive && !options?.force) return false;
 
@@ -1900,6 +2052,7 @@ export class VaultStore {
       await this.refreshNotes();
       if (options.open !== false) {
         await this.openNote(response.note.path);
+        await this.syncLmeNoteTab(response.note.path);
       }
       return response.note.path;
     } catch (err) {

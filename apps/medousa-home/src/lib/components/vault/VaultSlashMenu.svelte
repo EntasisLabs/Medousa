@@ -5,6 +5,7 @@
     type SlashBlockId,
   } from "$lib/utils/vaultMarkdownEdit";
   import type { SlashMenuAnchor } from "$lib/utils/slashMenuPlacement";
+  import BodyPortal from "$lib/components/ui/BodyPortal.svelte";
 
   interface SlashItem {
     id: SlashBlockId;
@@ -351,10 +352,12 @@
     }
   });
 
-  // Click-outside only — keyboard nav is owned by CodeMirror Prec.highest keymap.
+  // Click-outside only — keyboard nav is owned by editor keymaps.
   $effect(() => {
     if (!open) return;
     const onPointerDown = (event: PointerEvent) => {
+      // Ignore the opening right-click / aux sequence (Windows WebView2).
+      if (event.button === 2) return;
       const target = event.target as Node | null;
       if (menuEl && target && menuEl.contains(target)) return;
       onClose();
@@ -404,64 +407,64 @@
 </script>
 
 {#if open}
-  <div
-    bind:this={menuEl}
-    class="vault-slash-menu"
-    class:vault-slash-menu--anchored={Boolean(anchor)}
-    class:vault-slash-menu--above={Boolean(anchor?.bottom != null)}
-    role="listbox"
-    aria-label="Insert block"
-    style:top={anchor?.top != null ? `${anchor.top}px` : undefined}
-    style:bottom={anchor?.bottom != null ? `${anchor.bottom}px` : undefined}
-    style:left={anchor ? `${anchor.left}px` : undefined}
-    style:max-height={anchor ? `${anchor.maxHeight}px` : undefined}
-  >
-    <div class="vault-slash-menu-chrome">
-      <p class="vault-slash-menu-title">Insert</p>
-      <p class="vault-slash-menu-hint">↑↓ · Enter · Esc</p>
+  <BodyPortal>
+    <div
+      bind:this={menuEl}
+      class="vault-slash-menu"
+      class:vault-slash-menu--anchored={Boolean(anchor)}
+      role="listbox"
+      aria-label="Insert block"
+      style:top={anchor ? `${anchor.top}px` : undefined}
+      style:left={anchor ? `${anchor.left}px` : undefined}
+      style:max-height={anchor ? `${anchor.maxHeight}px` : undefined}
+    >
+      <div class="vault-slash-menu-chrome">
+        <p class="vault-slash-menu-title">Insert</p>
+        <p class="vault-slash-menu-hint">↑↓ · Enter · Esc</p>
+      </div>
+      <ul bind:this={listEl} class="vault-slash-menu-list">
+        {#if filteredItems.writing.length > 0}
+          <li class="vault-slash-menu-section" role="presentation">Writing</li>
+          {#each filteredItems.writing as item (item.id)}
+            {@const index = flatIndexOf(item.id)}
+            <li role="presentation">
+              <div
+                role="option"
+                data-slash-index={index}
+                aria-selected={index === highlightIndex}
+                class="vault-slash-menu-item"
+                class:vault-slash-menu-item--active={index === highlightIndex}
+                onpointerdown={(event) => selectItem(item.id, event)}
+              >
+                <span>{item.label}</span>
+                <span class="vault-slash-menu-item-hint">{item.hint}</span>
+              </div>
+            </li>
+          {/each}
+        {/if}
+        {#if filteredItems.blocks.length > 0}
+          <li class="vault-slash-menu-section" role="presentation">Blocks</li>
+          {#each filteredItems.blocks as item (item.id)}
+            {@const index = flatIndexOf(item.id)}
+            <li role="presentation">
+              <div
+                role="option"
+                data-slash-index={index}
+                aria-selected={index === highlightIndex}
+                class="vault-slash-menu-item"
+                class:vault-slash-menu-item--active={index === highlightIndex}
+                onpointerdown={(event) => selectItem(item.id, event)}
+              >
+                <span>{item.label}</span>
+                <span class="vault-slash-menu-item-hint">{item.hint}</span>
+              </div>
+            </li>
+          {/each}
+        {/if}
+        {#if filteredItems.flat.length === 0}
+          <li class="vault-slash-menu-empty">No matching blocks</li>
+        {/if}
+      </ul>
     </div>
-    <ul bind:this={listEl} class="vault-slash-menu-list">
-      {#if filteredItems.writing.length > 0}
-        <li class="vault-slash-menu-section" role="presentation">Writing</li>
-        {#each filteredItems.writing as item (item.id)}
-          {@const index = flatIndexOf(item.id)}
-          <li role="presentation">
-            <div
-              role="option"
-              data-slash-index={index}
-              aria-selected={index === highlightIndex}
-              class="vault-slash-menu-item"
-              class:vault-slash-menu-item--active={index === highlightIndex}
-              onpointerdown={(event) => selectItem(item.id, event)}
-            >
-              <span>{item.label}</span>
-              <span class="vault-slash-menu-item-hint">{item.hint}</span>
-            </div>
-          </li>
-        {/each}
-      {/if}
-      {#if filteredItems.blocks.length > 0}
-        <li class="vault-slash-menu-section" role="presentation">Blocks</li>
-        {#each filteredItems.blocks as item (item.id)}
-          {@const index = flatIndexOf(item.id)}
-          <li role="presentation">
-            <div
-              role="option"
-              data-slash-index={index}
-              aria-selected={index === highlightIndex}
-              class="vault-slash-menu-item"
-              class:vault-slash-menu-item--active={index === highlightIndex}
-              onpointerdown={(event) => selectItem(item.id, event)}
-            >
-              <span>{item.label}</span>
-              <span class="vault-slash-menu-item-hint">{item.hint}</span>
-            </div>
-          </li>
-        {/each}
-      {/if}
-      {#if filteredItems.flat.length === 0}
-        <li class="vault-slash-menu-empty">No matching blocks</li>
-      {/if}
-    </ul>
-  </div>
+  </BodyPortal>
 {/if}

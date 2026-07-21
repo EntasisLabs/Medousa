@@ -173,6 +173,34 @@ describe("lmeWorkspace", () => {
     expect(store.tabs.some((tab) => tab.kind === "note")).toBe(true);
   });
 
+  it("ensureAndActivateNoteTab creates and activates a note tab", () => {
+    store.tabs = [
+      {
+        tabId: "note-old",
+        kind: "note",
+        path: "notes/old.md",
+        title: "Old",
+      },
+    ];
+    store.activeTabId = "note-old";
+    store.ensureAndActivateNoteTab("notes/new.md");
+    expect(store.tabs.some((tab) => tab.kind === "note" && tab.path === "notes/new.md")).toBe(
+      true,
+    );
+    const active = store.tabs.find((tab) => tab.tabId === store.activeTabId);
+    expect(active).toMatchObject({ kind: "note", path: "notes/new.md" });
+    expect(store.explorerMode).toBe("notes");
+  });
+
+  it("ensureAndActivateNoteTab reuses and focuses an existing note tab", async () => {
+    await store.openNote("notes/a.md");
+    store.ensureAndActivateNoteTab("/tmp/loose.md");
+    store.ensureAndActivateNoteTab("notes/a.md");
+    expect(store.tabs.filter((tab) => tab.kind === "note")).toHaveLength(2);
+    const active = store.tabs.find((tab) => tab.tabId === store.activeTabId);
+    expect(active).toMatchObject({ kind: "note", path: "notes/a.md" });
+  });
+
   it("mode switch does not clear the active script tab", async () => {
     await store.openScriptById("s1");
     const scriptTabId = store.activeTabId;
@@ -234,12 +262,14 @@ describe("lmeWorkspace", () => {
     expect(loadManuscriptDetail).toHaveBeenCalledTimes(2);
   });
 
-  it("activates manuscript tabs into agents mode", async () => {
+  it("activates manuscript tabs without stealing explorer mode", async () => {
     store.openManuscript("user/morning-brief", "Morning Brief");
     store.setExplorerMode("notes");
     const tabId = store.activeTabId!;
+    loadManuscriptDetail.mockClear();
     await store.activateTab(tabId);
-    expect(store.explorerMode).toBe("agents");
+    // Rail mode is user-driven — tab activate must not yank Notes → Agents.
+    expect(store.explorerMode).toBe("notes");
     expect(loadManuscriptDetail).toHaveBeenCalledWith("user/morning-brief");
   });
 
@@ -268,12 +298,14 @@ describe("lmeWorkspace", () => {
     expect(flowsMock.composerOpen).toBe(true);
   });
 
-  it("activates flow tabs into flows mode", async () => {
+  it("activates flow tabs without stealing explorer mode", async () => {
     store.openFlow("wf-1", "Morning web");
     store.setExplorerMode("notes");
     const tabId = store.activeTabId!;
+    loadDetail.mockClear();
     await store.activateTab(tabId);
-    expect(store.explorerMode).toBe("flows");
+    // Rail mode is user-driven — tab activate must not yank Notes → Flows.
+    expect(store.explorerMode).toBe("notes");
     expect(loadDetail).toHaveBeenCalledWith("wf-1");
   });
 });

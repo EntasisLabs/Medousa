@@ -25,7 +25,7 @@
   } from "$lib/utils/vaultMarkdownEdit";
   import { vaultDisplayTitle } from "$lib/utils/formatVault";
   import { handleVaultEditorContextMenuEvent } from "$lib/utils/vaultContextMenuEvents";
-  import { copyTextToClipboard } from "$lib/utils/vaultClipboard";
+  import { copyTextToClipboard, readTextFromClipboard } from "$lib/utils/vaultClipboard";
   import { createVaultScrollSync } from "$lib/utils/vaultScrollSync";
   import type { SlashMenuAnchor } from "$lib/utils/slashMenuPlacement";
 
@@ -221,12 +221,22 @@
     vaultFind.setSourceText(draft);
   });
 
+  let slashAnchorRaf = 0;
+
   function handleCmScroll() {
     const scrollEl = cmEl?.getScrollEl();
     if (split && scrollSyncEnabled && scrollEl && previewScrollEl) {
       scrollSync.sync(scrollEl, previewScrollEl);
     }
-    if (slashOpen) updateSlashAnchor();
+    if (slashOpen) scheduleSlashAnchorUpdate();
+  }
+
+  function scheduleSlashAnchorUpdate() {
+    if (slashAnchorRaf) return;
+    slashAnchorRaf = requestAnimationFrame(() => {
+      slashAnchorRaf = 0;
+      updateSlashAnchor();
+    });
   }
 
   $effect(() => {
@@ -268,7 +278,7 @@
     if (isLivePlane) {
       slashOpen = liveEl?.isSlashOpen() ?? false;
       liveSlashFilter = liveEl?.slashFilter() ?? "";
-      if (slashOpen) updateSlashAnchor();
+      if (slashOpen) scheduleSlashAnchorUpdate();
       else slashAnchor = null;
       return;
     }
@@ -279,7 +289,7 @@
     }
     const { start } = cmEl.getSelection();
     slashOpen = shouldOpenSlashMenu(draft, start);
-    if (slashOpen) updateSlashAnchor();
+    if (slashOpen) scheduleSlashAnchorUpdate();
     else slashAnchor = null;
   }
 
@@ -356,7 +366,12 @@
   function handleContextMenu(event: MouseEvent) {
     const path = vault.selectedPath;
     if (!path || disabled) return;
-    const selection = readEditorSelection();
+    const rawSelection = readEditorSelection();
+    // Cap payload so Select-all right-click on huge notes cannot stall the UI.
+    const selection =
+      rawSelection && rawSelection.text.length > 48_000
+        ? { ...rawSelection, text: rawSelection.text.slice(0, 48_000) }
+        : rawSelection;
     const hasSelection = Boolean(selection?.text.trim());
 
     handleVaultEditorContextMenuEvent(path, event, selection, {
@@ -390,20 +405,16 @@
           return;
         }
         if (!cmEl) return;
-        try {
-          const text = await navigator.clipboard.readText();
-          if (!text) return;
-          const { start, end } = cmEl.getSelection();
-          const from = Math.min(start, end);
-          const to = Math.max(start, end);
-          applyEdit({
-            content: `${draft.slice(0, from)}${text}${draft.slice(to)}`,
-            selectionStart: from + text.length,
-            selectionEnd: from + text.length,
-          });
-        } catch {
-          /* clipboard denied */
-        }
+        const text = await readTextFromClipboard();
+        if (!text) return;
+        const { start, end } = cmEl.getSelection();
+        const from = Math.min(start, end);
+        const to = Math.max(start, end);
+        applyEdit({
+          content: `${draft.slice(0, from)}${text}${draft.slice(to)}`,
+          selectionStart: from + text.length,
+          selectionEnd: from + text.length,
+        });
       },
       selectAll: () => {
         if (isLivePlane) {
@@ -480,8 +491,13 @@
         return;
       }
       // Live: chart arrives as a living figure — pick type on the organism (no modal).
-      liveEl.applySlash(block);
+      // Close first, then yield so liquid organism mounts don't stall the menu frame.
       slashOpen = false;
+      slashAnchor = null;
+      const live = liveEl;
+      requestAnimationFrame(() => {
+        live?.applySlash(block);
+      });
       return;
     }
 
@@ -521,9 +537,13 @@
       });
       return;
     }
-    const result = insertSlashBlock(draft, selectionStart, block);
+    const start = selectionStart;
+    const body = draft;
     slashOpen = false;
-    applyEdit(result);
+    slashAnchor = null;
+    requestAnimationFrame(() => {
+      applyEdit(insertSlashBlock(body, start, block));
+    });
   }
 
   function handleNotePick(path: string) {
@@ -574,9 +594,29 @@
     applyEdit(insertTextAtCursor(draft, bridgeInsertAt, markdown));
   }
 
+  /**
+   * Hard dismiss: clear the `/token` so syncSlashMenu cannot reopen on the next
+   * selection tick (Esc / outside-click thrash freezes Windows WebView2).
+   */
   function closeSlashMenu() {
     slashOpen = false;
     slashAnchor = null;
+    liveSlashFilter = "";
+    if (isLivePlane) {
+      liveEl?.clearSlash();
+      // Serialize now that the slash prefix is gone (emit was skipped while open).
+      const flushed = liveEl?.flush();
+      if (typeof flushed === "string" && flushed !== draft) {
+        draft = flushed;
+        onchange(flushed);
+      }
+      return;
+    }
+    if (!cmEl) return;
+    const { start } = cmEl.getSelection();
+    if (shouldOpenSlashMenu(draft, start)) {
+      applyEdit(replaceSlashWith(draft, start, ""));
+    }
   }
 
   function handleSlashKey(key: string): boolean {

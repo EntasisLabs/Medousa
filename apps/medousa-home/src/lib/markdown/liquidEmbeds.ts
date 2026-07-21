@@ -947,12 +947,20 @@ function parseCiteBody(body: string): LiquidCiteProps | null {
   return cite;
 }
 
-function slugCompareId(label: string, prefix: string, index: number): string {
+function slugCompareId(
+  label: string,
+  prefix: string,
+  index: number,
+  seen: Map<string, number>,
+): string {
   const base = label
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
-  return base ? `${prefix}-${base}` : `${prefix}-${index}`;
+  const stem = base ? `${prefix}-${base}` : `${prefix}-${index}`;
+  const n = seen.get(stem) ?? 0;
+  seen.set(stem, n + 1);
+  return n === 0 ? stem : `${stem}-${n}`;
 }
 
 function splitPipeCells(line: string): string[] {
@@ -972,6 +980,7 @@ function isGfmSeparatorRow(cells: string[]): boolean {
 }
 
 function parseCompareBody(body: string): LiquidCompareProps | null {
+  const seenIds = new Map<string, number>();
   const normalized = body.replace(/\r\n/g, "\n");
   const lines = normalized.split("\n");
   const preamble: string[] = [];
@@ -1007,7 +1016,7 @@ function parseCompareBody(body: string): LiquidCompareProps | null {
   if (entityLabels.length < 2) return null;
 
   const entities: LiquidCompareEntity[] = entityLabels.map((label, i) => ({
-    id: slugCompareId(label, "entity", i),
+    id: slugCompareId(label, "entity", i, seenIds),
     label,
     values: {},
   }));
@@ -1017,7 +1026,7 @@ function parseCompareBody(body: string): LiquidCompareProps | null {
     const cells = rows[r];
     const axisLabel = (cells[0] ?? "").trim();
     if (!axisLabel) continue;
-    const axisId = slugCompareId(axisLabel, "axis", axes.length);
+    const axisId = slugCompareId(axisLabel, "axis", axes.length, seenIds);
     axes.push({ id: axisId, label: axisLabel });
     for (let e = 0; e < entities.length; e++) {
       const value = (cells[e + 1] ?? "").trim();
@@ -1046,6 +1055,7 @@ function parseCompareBody(body: string): LiquidCompareProps | null {
 const PLAN_GROUPINGS = new Set(["day", "phase", "milestone"]);
 
 function parsePlanBody(body: string): LiquidPlanProps | null {
+  const seenIds = new Map<string, number>();
   const normalized = body.replace(/\r\n/g, "\n").trim();
   if (!normalized) return null;
 
@@ -1063,7 +1073,7 @@ function parsePlanBody(body: string): LiquidPlanProps | null {
     const label = (segFields.label ?? segFields.title)?.trim();
     if (!label) continue;
     const seg: LiquidPlanSegment = {
-      id: slugCompareId(label, "segment", segments.length),
+      id: slugCompareId(label, "segment", segments.length, seenIds),
       label,
     };
     if (segFields.time) seg.time = segFields.time;
@@ -1088,6 +1098,7 @@ function parsePlanBody(body: string): LiquidPlanProps | null {
 const TIMELINE_GRANULARITIES = new Set(["day", "hour", "event"]);
 
 function parseTimelineBody(body: string): LiquidTimelineProps | null {
+  const seenIds = new Map<string, number>();
   const normalized = body.replace(/\r\n/g, "\n").trim();
   if (!normalized) return null;
 
@@ -1103,7 +1114,7 @@ function parseTimelineBody(body: string): LiquidTimelineProps | null {
     const label = (evFields.label ?? evFields.title)?.trim();
     if (!label) continue;
     const ev: LiquidTimelineEvent = {
-      id: slugCompareId(label, "event", events.length),
+      id: slugCompareId(label, "event", events.length, seenIds),
       label,
     };
     if (evFields.ts) ev.ts = evFields.ts;
@@ -1128,6 +1139,7 @@ function parseTimelineBody(body: string): LiquidTimelineProps | null {
 const SHORTLIST_DENSITIES = new Set(["comfortable", "compact"]);
 
 function parseShortlistBody(body: string): LiquidShortlistProps | null {
+  const seenIds = new Map<string, number>();
   const normalized = body.replace(/\r\n/g, "\n").trim();
   if (!normalized) return null;
 
@@ -1143,7 +1155,7 @@ function parseShortlistBody(body: string): LiquidShortlistProps | null {
     const label = (itemFields.label ?? itemFields.title)?.trim();
     if (!label) continue;
     const item: LiquidShortlistItem = {
-      id: slugCompareId(label, "item", items.length),
+      id: slugCompareId(label, "item", items.length, seenIds),
       label,
     };
     if (itemFields.summary) item.summary = itemFields.summary;
@@ -1196,6 +1208,7 @@ function parseDecisionOptionFields(block: string): Record<string, string> {
 }
 
 function parseDecisionBody(body: string): LiquidDecisionProps | null {
+  const seenIds = new Map<string, number>();
   const normalized = body.replace(/\r\n/g, "\n").trim();
   if (!normalized) return null;
 
@@ -1213,7 +1226,7 @@ function parseDecisionBody(body: string): LiquidDecisionProps | null {
     const pros = splitTradeoffList(optFields.pros ?? optFields.pro);
     const cons = splitTradeoffList(optFields.cons ?? optFields.con);
     const opt: LiquidDecisionOption = {
-      id: slugCompareId(label, "option", options.length),
+      id: slugCompareId(label, "option", options.length, seenIds),
       label,
       pros,
       cons,
@@ -1245,6 +1258,7 @@ function stripAtxHeading(line: string): string | null {
 
 /** Split a markdown blob on ATX headings into brief sections. */
 function parseAtxBriefSections(block: string, startIndex: number): LiquidBriefSection[] {
+  const seenIds = new Map<string, number>();
   const lines = block.replace(/\r\n/g, "\n").split("\n");
   const sections: LiquidBriefSection[] = [];
   let heading: string | null = null;
@@ -1258,7 +1272,7 @@ function parseAtxBriefSections(block: string, startIndex: number): LiquidBriefSe
       return;
     }
     sections.push({
-      id: slugCompareId(heading, "section", startIndex + sections.length),
+      id: slugCompareId(heading, "section", startIndex + sections.length, seenIds),
       heading,
       body,
     });
@@ -1294,6 +1308,7 @@ function parseBriefSectionBlock(
   block: string,
   index: number,
 ): LiquidBriefSection | null {
+  const seenIds = new Map<string, number>();
   const normalized = block.replace(/\r\n/g, "\n").trim();
   if (!normalized) return null;
 
@@ -1311,7 +1326,7 @@ function parseBriefSectionBlock(
     const body = (fields.body ?? proseBody)?.trim();
     if (body) {
       return {
-        id: slugCompareId(heading, "section", index),
+        id: slugCompareId(heading, "section", index, seenIds),
         heading,
         body,
       };
@@ -1331,11 +1346,12 @@ function parseBriefSourceBlock(
   block: string,
   index: number,
 ): LiquidBriefSource | null {
+  const seenIds = new Map<string, number>();
   const fields = parseDecisionOptionFields(block);
   const title = (fields.title ?? fields.label)?.trim();
   if (!title) return null;
   const src: LiquidBriefSource = {
-    id: slugCompareId(title, "source", index),
+    id: slugCompareId(title, "source", index, seenIds),
     title,
   };
   if (fields.url) src.url = fields.url;
@@ -1345,6 +1361,7 @@ function parseBriefSourceBlock(
 }
 
 function parseBriefBody(body: string): LiquidBriefProps | null {
+  const seenIds = new Map<string, number>();
   const normalized = body.replace(/\r\n/g, "\n").trim();
   if (!normalized) return null;
 
@@ -1389,7 +1406,7 @@ function parseBriefBody(body: string): LiquidBriefProps | null {
       const prose = block.replace(/\r\n/g, "\n").trim();
       if (prose) {
         sections.push({
-          id: slugCompareId(pendingHeading, "section", sections.length),
+          id: slugCompareId(pendingHeading, "section", sections.length, seenIds),
           heading: pendingHeading,
           body: prose,
         });
@@ -1424,7 +1441,7 @@ function parseBriefBody(body: string): LiquidBriefProps | null {
         } else {
           const heading = fields.title?.trim() || "Overview";
           sections.push({
-            id: slugCompareId(heading, "section", 0),
+            id: slugCompareId(heading, "section", 0, seenIds),
             heading,
             body: rest,
           });
@@ -1463,6 +1480,7 @@ const DASHBOARD_TONES = new Set(["default", "accent", "success", "warn", "error"
 const DASHBOARD_COLUMNS = new Set(["2", "3", "4"]);
 
 function parseDashboardBody(body: string): LiquidDashboardProps | null {
+  const seenIds = new Map<string, number>();
   const normalized = body.replace(/\r\n/g, "\n").trim();
   if (!normalized) return null;
 
@@ -1480,7 +1498,7 @@ function parseDashboardBody(body: string): LiquidDashboardProps | null {
     if (!label || !value) continue;
     // binding: ignored (wave C+); feed:/field: hydrate for tail-from-chat
     const tile: LiquidDashboardTile = {
-      id: slugCompareId(label, "tile", tiles.length),
+      id: slugCompareId(label, "tile", tiles.length, seenIds),
       label,
       value,
     };
@@ -1594,6 +1612,7 @@ function parseLabeledSectionBlocks(
 }
 
 function parseTabsBody(body: string): LiquidTabsProps | null {
+  const seenIds = new Map<string, number>();
   const parsed = parseLabeledSectionBlocks(body);
   if (!parsed) return null;
 
@@ -1603,7 +1622,7 @@ function parseTabsBody(body: string): LiquidTabsProps | null {
     const panelBody = (block.body ?? block.summary)?.trim();
     if (!label || !panelBody) continue;
     const panel: LiquidTabsPanel = {
-      id: slugCompareId(label, "tab", panels.length),
+      id: slugCompareId(label, "tab", panels.length, seenIds),
       label,
       body: panelBody,
     };
@@ -1621,6 +1640,7 @@ function parseTabsBody(body: string): LiquidTabsProps | null {
 }
 
 function parseStepsBody(body: string): LiquidStepsProps | null {
+  const seenIds = new Map<string, number>();
   const parsed = parseLabeledSectionBlocks(body);
   if (!parsed) return null;
 
@@ -1629,7 +1649,7 @@ function parseStepsBody(body: string): LiquidStepsProps | null {
     const label = (block.label ?? block.title)?.trim();
     if (!label) continue;
     const step: LiquidStepItem = {
-      id: slugCompareId(label, "step", steps.length),
+      id: slugCompareId(label, "step", steps.length, seenIds),
       label,
     };
     const stepBody = (block.body ?? block.summary)?.trim();
@@ -1656,6 +1676,7 @@ function parseBoolLoose(raw: string | undefined): boolean | undefined {
 }
 
 function parseAccordionBody(body: string): LiquidAccordionProps | null {
+  const seenIds = new Map<string, number>();
   const parsed = parseLabeledSectionBlocks(body);
   if (!parsed) return null;
 
@@ -1665,7 +1686,7 @@ function parseAccordionBody(body: string): LiquidAccordionProps | null {
     const itemBody = (block.body ?? block.summary)?.trim();
     if (!label || !itemBody) continue;
     const item: LiquidAccordionItem = {
-      id: slugCompareId(label, "item", items.length),
+      id: slugCompareId(label, "item", items.length, seenIds),
       label,
       body: itemBody,
     };
@@ -1944,6 +1965,7 @@ function parseCategorySeriesTable(
   rows: string[][],
   type: LiquidChartType,
 ): LiquidChartProps | null {
+  const seenIds = new Map<string, number>();
   const header = rows[0].map((cell) => cell.trim());
   if (header.length < 2) return null;
 
@@ -1978,7 +2000,7 @@ function parseCategorySeriesTable(
   if (categories.length < minCats) return null;
 
   const series: LiquidChartSeries[] = seriesHeaders.map((label, i) => ({
-    key: slugCompareId(label, "series", i),
+    key: slugCompareId(label, "series", i, seenIds),
     label,
     values: seriesValues[i],
   }));
@@ -1987,6 +2009,7 @@ function parseCategorySeriesTable(
 }
 
 function parseScatterTable(rows: string[][], type: LiquidChartType): LiquidChartProps | null {
+  const seenIds = new Map<string, number>();
   const header = rows[0].map((cell) => cell.trim());
   if (header.length < 2) return null;
   const hasGroup = header.length >= 3;
@@ -2012,7 +2035,7 @@ function parseScatterTable(rows: string[][], type: LiquidChartType): LiquidChart
   const series: LiquidChartSeries[] =
     groupNames.length > 0
       ? groupNames.map((label, i) => ({
-          key: slugCompareId(label, "series", i),
+          key: slugCompareId(label, "series", i, seenIds),
           label,
           values: points.filter((p) => p.group === label).map((p) => p.y),
         }))
@@ -2027,6 +2050,7 @@ function parseScatterTable(rows: string[][], type: LiquidChartType): LiquidChart
 }
 
 function parseHeatmapTable(rows: string[][], type: LiquidChartType): LiquidChartProps | null {
+  const seenIds = new Map<string, number>();
   const header = rows[0].map((cell) => cell.trim());
   if (header.length < 2) return null;
   const cols = header.slice(1).map((c) => c.trim()).filter(Boolean);
@@ -2060,7 +2084,7 @@ function parseHeatmapTable(rows: string[][], type: LiquidChartType): LiquidChart
     type,
     categories: cols,
     series: rowLabels.map((label, i) => ({
-      key: slugCompareId(label, "row", i),
+      key: slugCompareId(label, "row", i, seenIds),
       label,
       values: values[i],
     })),

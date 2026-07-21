@@ -1,14 +1,13 @@
 /**
- * Place the vault slash menu inside an editor shell without clipping edges.
- * Flips above the caret when space below is tight; clamps left and max-height.
+ * Place the vault slash menu in the viewport (BodyPortal / position:fixed)
+ * without clipping shell edges. Flips above the caret when space below is tight.
  */
 
 export type SlashMenuAnchor = {
+  /** Viewport X (CSS `left` for `position: fixed`). */
   left: number;
-  /** Distance from shell top when opening below the caret. */
-  top?: number;
-  /** Distance from shell bottom when opening above the caret. */
-  bottom?: number;
+  /** Viewport Y (CSS `top` for `position: fixed`). */
+  top: number;
   maxHeight: number;
 };
 
@@ -32,8 +31,15 @@ export function placeSlashMenuAnchor(
   shell: HTMLElement,
 ): SlashMenuAnchor {
   const rect = shell.getBoundingClientRect();
-  const spaceBelow = rect.bottom - caret.bottom - GAP;
-  const spaceAbove = caret.top - rect.top - GAP;
+  const viewH =
+    typeof window !== "undefined" ? window.innerHeight : rect.bottom + EDGE;
+  const viewW =
+    typeof window !== "undefined" ? window.innerWidth : rect.right + EDGE;
+
+  // Clamp available space to the intersection of the shell and the viewport.
+  const spaceBelow =
+    Math.min(rect.bottom, viewH - EDGE) - caret.bottom - GAP;
+  const spaceAbove = caret.top - Math.max(rect.top, EDGE) - GAP;
 
   const openAbove =
     spaceBelow < MIN_USEFUL_HEIGHT && spaceAbove > spaceBelow;
@@ -44,21 +50,24 @@ export function placeSlashMenuAnchor(
     Math.min(PREFERRED_HEIGHT, Math.floor(available)),
   );
 
-  let left = caret.left - rect.left;
-  const maxLeft = Math.max(EDGE, rect.width - Math.min(MENU_WIDTH, rect.width - EDGE) - EDGE);
+  let left = caret.left;
+  const maxLeft = Math.max(
+    EDGE,
+    viewW - Math.min(MENU_WIDTH, viewW - EDGE) - EDGE,
+  );
   left = Math.max(EDGE, Math.min(left, maxLeft));
 
   if (openAbove) {
     return {
       left,
-      bottom: Math.max(EDGE, rect.bottom - caret.top + GAP),
+      top: Math.max(EDGE, caret.top - GAP - maxHeight),
       maxHeight,
     };
   }
 
   return {
     left,
-    top: Math.max(EDGE, caret.bottom - rect.top + GAP),
+    top: Math.min(viewH - EDGE - 40, caret.bottom + GAP),
     maxHeight,
   };
 }

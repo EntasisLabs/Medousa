@@ -932,12 +932,12 @@
   }
 
   .vault-slash-menu {
-    @apply z-[80] w-[min(100%-1rem,22rem)] overflow-hidden rounded-lg border border-primary-500/30 shadow-xl;
+    @apply z-[120] w-[min(100%-1rem,22rem)] overflow-hidden rounded-lg border border-primary-500/30 shadow-xl;
     background-color: rgb(var(--color-surface-900) / 0.97);
   }
 
   .vault-slash-menu--anchored {
-    @apply absolute flex flex-col;
+    @apply fixed flex flex-col;
   }
 
   .vault-slash-menu:not(.vault-slash-menu--anchored) {

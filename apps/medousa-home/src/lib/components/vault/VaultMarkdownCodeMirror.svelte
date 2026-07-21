@@ -125,9 +125,11 @@
 
   function slashKeymapExt(active: boolean) {
     if (!active) return [];
-    // While the menu is open, always claim these keys (return true) so
-    // defaultKeymap cursor/select line bindings never run — including Shift.
-    const claim = (key: string) => () => {
+    // While the menu is open, claim these keys so defaultKeymap cursor/select
+    // line bindings never run — including Shift. Never steal keys during IME
+    // composition (Windows WebView2 can deadlock the input pipeline).
+    const claim = (key: string) => (view: EditorView) => {
+      if (view.composing) return false;
       slashKeyHandler?.(key);
       return true;
     };
