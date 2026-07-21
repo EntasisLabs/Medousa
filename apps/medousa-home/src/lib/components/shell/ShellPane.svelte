@@ -76,6 +76,12 @@
   const tabStripOffsetLeft = $derived(
     !layout.isMobile && !layout.shellSidebarExpanded ? "2.25rem" : "0px",
   );
+  /**
+   * Reserve the titlebar action cluster (Save / Run / Tools / Schedule, etc.)
+   * so hover tabs never cover clickable chrome on the right.
+   */
+  const tabStripOffsetRight = "9.75rem";
+  const tabActionReservePx = 156;
   const dropTarget = $derived(shellTabs.tabDropTargetGroupId === groupId);
 
   /** Live pool slot — not merely focused (multi-live transcripts). */
@@ -100,9 +106,13 @@
 
   function handlePanePointerMove(event: PointerEvent) {
     const target = event.currentTarget as HTMLElement;
-    const y = event.clientY - target.getBoundingClientRect().top;
+    const rect = target.getBoundingClientRect();
+    const y = event.clientY - rect.top;
+    const x = event.clientX - rect.left;
+    // Don't reveal tabs while aiming at right-side titlebar actions.
+    const inActionZone = x >= rect.width - tabActionReservePx;
     // Slightly taller zone while open so moving onto the strip feels natural.
-    nearTop = y <= (showTabs ? 40 : 22);
+    nearTop = !inActionZone && y <= (showTabs ? 40 : 22);
   }
 
   function handlePanePointerLeave() {
@@ -123,14 +133,15 @@
   onpointerdown={focusPane}
 >
   {#if showTabs}
-    <!-- Full-bleed hit zone is pointer-events-none so view chrome stays clickable;
-         only the tab chips capture pointer. Left inset clears the rail-expand icon. -->
+    <!-- Overlay is pointer-events-none so view chrome stays clickable; only the
+         bounded tab strip captures pointer. Left/right insets clear expand + actions. -->
     <div
       class="shell-pane-tabs pointer-events-none absolute inset-x-0 top-0 z-30"
       style:padding-left={tabStripOffsetLeft}
+      style:padding-right={tabStripOffsetRight}
     >
       <div
-        class="pointer-events-auto w-max max-w-full"
+        class="pointer-events-auto w-full min-w-0"
         onpointerenter={() => {
           overStrip = true;
         }}

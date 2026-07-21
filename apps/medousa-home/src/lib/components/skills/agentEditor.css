@@ -1,4 +1,4 @@
-/* Agent authorship — one setup surface: who she is · what she can do. */
+/* Agent specialist editor — calm identity form + titlebar popovers. */
 
 .agent-liquid {
   position: relative;
@@ -9,113 +9,27 @@
   max-width: none;
 }
 
-.agent-liquid-wash {
-  pointer-events: none;
-  position: absolute;
-  inset: -2rem -1.5rem auto;
-  height: 18rem;
-  background:
-    radial-gradient(ellipse 70% 60% at 22% 18%, rgb(var(--color-primary-500) / 0.12), transparent 70%),
-    radial-gradient(ellipse 45% 50% at 88% 8%, rgb(var(--color-surface-400) / 0.07), transparent 65%);
-  opacity: 0.9;
-}
-
-.agent-liquid-split {
-  position: relative;
-  display: grid;
-  grid-template-columns: minmax(16.5rem, 1fr) minmax(20rem, 1.2fr);
-  gap: 0 2.25rem;
-  align-items: stretch;
-  flex: 1;
-  min-height: 0;
-}
-
-.agent-liquid-identity,
-.agent-liquid-powers {
-  min-width: 0;
-  min-height: 0;
-  padding-bottom: 1.25rem;
-}
-
 .agent-liquid-identity {
-  max-width: 28rem;
-  padding-right: 0.25rem;
-  overflow-y: auto;
+  min-width: 0;
 }
 
-.agent-liquid-powers {
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  padding-left: 2rem;
-  border-left: 1px solid rgb(var(--color-surface-500) / 0.22);
-}
-
-.agent-liquid-powers-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 0.5rem 1rem;
-  margin-bottom: 0.85rem;
-}
-
-.agent-liquid-pane-tabs {
-  display: flex;
-  gap: 0.15rem;
-  padding: 0.2rem;
-  border-radius: 9999px;
-  background: rgb(var(--color-surface-950) / 0.55);
-  border: 1px solid rgb(var(--color-surface-500) / 0.28);
-}
-
-.agent-liquid-pane-tab {
-  border-radius: 9999px;
-  padding: 0.35rem 0.85rem;
-  font-size: 0.7rem;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: rgb(var(--color-surface-500));
-  transition:
-    color 160ms ease,
-    background 160ms ease;
-}
-
-.agent-liquid-pane-tab:hover {
-  color: rgb(var(--color-surface-200));
-}
-
-.agent-liquid-pane-tab-active {
-  background: rgb(var(--color-primary-500) / 0.16);
-  color: rgb(var(--color-primary-200));
-}
-
-.agent-liquid-powers-body {
-  display: flex;
-  flex: 1;
-  min-height: 0;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.agent-liquid-powers-body[data-pane="schedule"] {
-  overflow-y: auto;
+.agent-liquid-form {
+  max-width: 40rem;
 }
 
 .agent-liquid-mono {
   display: flex;
-  width: 3.25rem;
-  height: 3.25rem;
+  width: 2.5rem;
+  height: 2.5rem;
   align-items: center;
   justify-content: center;
-  border-radius: 9999px;
-  border: 1px solid rgb(var(--color-primary-500) / 0.35);
-  background: rgb(var(--color-primary-500) / 0.12);
-  font-size: 1.05rem;
+  border-radius: 0.5rem;
+  border: 1px solid rgb(var(--color-surface-500) / 0.35);
+  background: rgb(var(--color-surface-800) / 0.55);
+  font-size: 0.8rem;
   font-weight: 600;
   letter-spacing: 0.04em;
-  color: rgb(var(--color-primary-200));
-  box-shadow: 0 12px 32px -20px rgb(var(--color-primary-500) / 0.55);
+  color: rgb(var(--color-surface-200));
 }
 
 .agent-liquid-name {
@@ -123,14 +37,14 @@
   border: none;
   border-bottom: 1px solid rgb(var(--color-surface-500) / 0.4);
   background: transparent;
-  padding: 0.35rem 0 0.55rem;
-  font-size: 1.65rem;
+  padding: 0.2rem 0 0.4rem;
+  font-size: 1.35rem;
   font-weight: 560;
   letter-spacing: -0.02em;
-  line-height: 1.2;
+  line-height: 1.25;
   color: rgb(var(--color-surface-50));
   outline: none;
-  transition: border-color 180ms ease;
+  transition: border-color 160ms ease;
 }
 
 .agent-liquid-name::placeholder {
@@ -143,9 +57,9 @@
 }
 
 .agent-liquid-whisper {
-  margin-top: 0.35rem;
+  margin-top: 0.2rem;
   font-size: 0.7rem;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.03em;
   text-transform: uppercase;
   color: rgb(var(--color-surface-500));
 }
@@ -164,7 +78,7 @@
   line-height: 1.45;
   color: rgb(var(--color-surface-100));
   outline: none;
-  transition: border-color 180ms ease;
+  transition: border-color 160ms ease;
   resize: none;
 }
 
@@ -179,103 +93,73 @@
   border-bottom-color: rgb(var(--color-primary-400) / 0.55) !important;
 }
 
-.agent-liquid-field {
-  animation: agent-liquid-in 480ms cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-
-.agent-liquid-identity > .agent-liquid-field:nth-child(1) {
-  animation-delay: 40ms;
-}
-.agent-liquid-identity > .agent-liquid-field:nth-child(2) {
-  animation-delay: 100ms;
-}
-.agent-liquid-identity > .agent-liquid-field:nth-child(3) {
-  animation-delay: 160ms;
-}
-.agent-liquid-identity > .agent-liquid-field:nth-child(4) {
-  animation-delay: 220ms;
-}
-.agent-liquid-identity > .agent-liquid-field:nth-child(5) {
-  animation-delay: 280ms;
-}
-.agent-liquid-identity > .agent-liquid-field:nth-child(6) {
-  animation-delay: 340ms;
-}
-
-.agent-liquid-powers {
-  animation: agent-liquid-in 560ms cubic-bezier(0.22, 1, 0.36, 1) both;
-  animation-delay: 120ms;
-}
-
-@keyframes agent-liquid-in {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.agent-liquid-cta {
-  transition:
-    transform 160ms ease,
-    filter 160ms ease;
-}
-
-.agent-liquid-cta:hover:not(:disabled) {
-  transform: translateY(-1px);
-}
-
-.agent-liquid-cta:active:not(:disabled) {
-  transform: translateY(0);
-}
-
 .agent-liquid-foot {
-  position: relative;
-  margin-top: auto;
   padding-top: 0.75rem;
   border-top: 1px solid rgb(var(--color-surface-500) / 0.18);
 }
 
-@media (max-width: 1024px) {
-  .agent-liquid-split {
-    grid-template-columns: 1fr;
-    gap: 1.75rem;
-    overflow-y: auto;
-  }
-
-  .agent-liquid-identity,
-  .agent-liquid-powers {
-    overflow: visible;
-    max-width: none;
-  }
-
-  .agent-liquid-powers {
-    padding-left: 0;
-    border-left: none;
-    border-top: 1px solid rgb(var(--color-surface-500) / 0.22);
-    padding-top: 1.5rem;
-  }
-
-  .agent-liquid-powers-body {
-    overflow: visible;
-  }
+.agent-editor-popover-panel {
+  position: fixed;
+  z-index: 80;
+  display: flex;
+  max-height: min(32rem, 75vh);
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 0.75rem;
+  border: 1px solid rgb(var(--color-surface-600) / 0.32);
+  background: rgb(var(--color-surface-900) / 0.98);
+  box-shadow:
+    0 12px 32px rgb(0 0 0 / 0.32),
+    0 0 0 1px rgb(0 0 0 / 0.12);
+  backdrop-filter: blur(16px);
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .agent-liquid-field,
-  .agent-liquid-powers {
-    animation: none;
-  }
+.agent-editor-popover-panel-schedule {
+  max-height: min(28rem, 70vh);
+}
 
-  .agent-liquid-cta,
-  .agent-liquid-pane-tab {
-    transition: none;
-  }
+.agent-editor-popover-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  border-bottom: 1px solid rgb(var(--color-surface-700) / 0.35);
+  padding: 0.5rem 0.75rem;
+}
 
-  .agent-liquid-cta:hover:not(:disabled) {
-    transform: none;
-  }
+.agent-editor-popover-body {
+  min-height: 0;
+}
+
+.agent-editor-popover .scripts-workbench-toolbar-btn {
+  position: relative;
+}
+
+.agent-editor-popover-badge {
+  position: absolute;
+  top: 0.15rem;
+  right: 0.1rem;
+  min-width: 0.9rem;
+  border-radius: 9999px;
+  background: rgb(var(--color-primary-500) / 0.85);
+  padding: 0 0.2rem;
+  font-size: 0.55rem;
+  font-weight: 600;
+  line-height: 0.9rem;
+  color: rgb(var(--color-surface-50));
+  text-align: center;
+}
+
+.agent-editor-popover-dot {
+  position: absolute;
+  top: 0.3rem;
+  right: 0.3rem;
+  width: 0.35rem;
+  height: 0.35rem;
+  border-radius: 9999px;
+  background: rgb(var(--color-primary-400));
+}
+
+.agent-editor-popover-dot-warn {
+  background: rgb(var(--color-warning-400));
 }
