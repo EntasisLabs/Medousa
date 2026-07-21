@@ -9,8 +9,10 @@ import {
   type KanbanColumn,
 } from "$lib/utils/markdownKanban";
 import {
+  isKanbanPointerDragging,
   resolveDropInsertIndex,
   startKanbanPointerDrag,
+  type KanbanDragSource,
   type KanbanDropTarget,
 } from "$lib/utils/vaultKanbanDrag";
 
@@ -21,6 +23,10 @@ function kanbanBody(raw: string): string {
     return raw.slice(open[0].length, closeIdx);
   }
   return raw.replace(/^```[^\n]*\n?/i, "").replace(/\n?```\s*$/, "");
+}
+
+function gripIconSvg(): string {
+  return `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true"><circle cx="9" cy="6" r="1.2"/><circle cx="15" cy="6" r="1.2"/><circle cx="9" cy="12" r="1.2"/><circle cx="15" cy="12" r="1.2"/><circle cx="9" cy="18" r="1.2"/><circle cx="15" cy="18" r="1.2"/></svg>`;
 }
 
 export type KanbanSurfaceHandles = {
@@ -35,6 +41,7 @@ export function mountKanbanSurface(
 ): KanbanSurfaceHandles {
   let columns: KanbanColumn[] = parseKanbanColumnsFromBody(kanbanBody(raw));
   let highlight: KanbanDropTarget | null = null;
+  let dragging: KanbanDragSource | null = null;
 
   const root = document.createElement("div");
   root.className = "vault-live-mini-kanban";
@@ -73,10 +80,90 @@ export function mountKanbanSurface(
   const board = document.createElement("div");
   board.className = "vault-live-mini-kanban__board";
 
+  /** Toggle drop/drag classes in place — never remount mid-drag (kills pointer capture). */
+  const paintChrome = () => {
+    board.querySelectorAll(".is-drop-target").forEach((el) => {
+      el.classList.remove("is-drop-target");
+    });
+    board.querySelectorAll(".is-drop-before, .is-drop-after").forEach((el) => {
+      el.classList.remove("is-drop-before", "is-drop-after");
+    });
+    board.querySelectorAll(".is-dragging").forEach((el) => {
+      el.classList.remove("is-dragging");
+    });
+
+    if (dragging) {
+      board
+        .querySelector(
+          `[data-column-index="${dragging.columnIndex}"][data-card-index="${dragging.cardIndex}"]`,
+        )
+        ?.classList.add("is-dragging");
+    }
+
+    if (!highlight) return;
+    if (highlight.cardIndex == null) {
+      board
+        .querySelector(`[data-kanban-drop-column="${highlight.columnIndex}"]`)
+        ?.classList.add("is-drop-target");
+      return;
+    }
+    const card = board.querySelector(
+      `[data-column-index="${highlight.columnIndex}"][data-card-index="${highlight.cardIndex}"]`,
+    );
+    card?.classList.add(
+      highlight.insertBefore === false ? "is-drop-after" : "is-drop-before",
+    );
+  };
+
+  const setHighlight = (target: KanbanDropTarget | null) => {
+    highlight = target;
+    // Drag util clears body class then calls onHighlight(null) on cancel —
+    // drop the local dragging chrome too.
+    if (target == null && dragging && !isKanbanPointerDragging()) {
+      dragging = null;
+    }
+    paintChrome();
+  };
+
+  const setDragging = (source: KanbanDragSource | null) => {
+    dragging = source;
+    paintChrome();
+  };
+
   const commit = (next: KanbanColumn[]) => {
     columns = next;
     onChange(serializeKanbanFence(columns));
     render();
+  };
+
+  const startCardDrag = (
+    columnIndex: number,
+    cardIndex: number,
+    event: PointerEvent,
+  ) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setDragging({ columnIndex, cardIndex });
+    startKanbanPointerDrag(
+      { columnIndex, cardIndex },
+      (target) => setHighlight(target),
+      (from, to) => {
+        const insertAt = resolveDropInsertIndex(to);
+        setDragging(null);
+        setHighlight(null);
+        commit(
+          moveKanbanCard(
+            columns,
+            from.columnIndex,
+            from.cardIndex,
+            to.columnIndex,
+            insertAt,
+          ),
+        );
+      },
+      event,
+    );
   };
 
   const render = () => {
@@ -85,9 +172,6 @@ export function mountKanbanSurface(
       const col = document.createElement("div");
       col.className = "vault-live-mini-kanban__column";
       col.dataset.kanbanDropColumn = String(columnIndex);
-      if (highlight?.columnIndex === columnIndex && highlight.cardIndex == null) {
-        col.classList.add("is-drop-target");
-      }
 
       const title = document.createElement("p");
       title.className = "vault-live-mini-kanban__column-title";
@@ -102,14 +186,21 @@ export function mountKanbanSurface(
         item.dataset.columnIndex = String(columnIndex);
         item.dataset.cardIndex = String(cardIndex);
         item.dataset.kanbanDropCard = "1";
-        if (
-          highlight?.columnIndex === columnIndex &&
-          highlight.cardIndex === cardIndex
-        ) {
-          item.classList.add(
-            highlight.insertBefore === false ? "is-drop-after" : "is-drop-before",
-          );
-        }
+
+        const grip = document.createElement("button");
+        grip.type = "button";
+        grip.className = "vault-live-mini-kanban__grip";
+        grip.title = "Drag card";
+        grip.setAttribute("aria-label", "Drag card");
+        grip.innerHTML = gripIconSvg();
+        grip.addEventListener("pointerdown", (event) => {
+          startCardDrag(columnIndex, cardIndex, event);
+        });
+        // Keep TipTap from treating grip as text selection.
+        grip.addEventListener("mousedown", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+        });
 
         const text = document.createElement("div");
         text.className = "vault-live-mini-kanban__card-text";
@@ -138,34 +229,7 @@ export function mountKanbanSurface(
           }
         });
 
-        item.addEventListener("pointerdown", (event) => {
-          if ((event.target as HTMLElement).closest("[contenteditable=true]")) return;
-          if (event.button !== 0) return;
-          event.preventDefault();
-          startKanbanPointerDrag(
-            { columnIndex, cardIndex },
-            (target) => {
-              highlight = target;
-              render();
-            },
-            (from, to) => {
-              const insertAt = resolveDropInsertIndex(to);
-              commit(
-                moveKanbanCard(
-                  columns,
-                  from.columnIndex,
-                  from.cardIndex,
-                  to.columnIndex,
-                  insertAt,
-                ),
-              );
-              highlight = null;
-            },
-            event,
-          );
-        });
-
-        item.append(text);
+        item.append(grip, text);
         list.append(item);
       });
 
@@ -191,6 +255,9 @@ export function mountKanbanSurface(
       col.append(title, list, add);
       board.append(col);
     });
+
+    // Re-apply chrome after rebuild (e.g. post-commit).
+    paintChrome();
   };
 
   root.append(head, board);
