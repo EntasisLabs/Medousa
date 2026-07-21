@@ -127,22 +127,24 @@ describe("shellTabs store", () => {
     expect(shellTabs.groups).toHaveLength(2);
   });
 
-  it("splits an LME tab into the new pane instead of chat", async () => {
+  it("splits by moving the active tab into the new pane", async () => {
     const { shellTabs } = await import("./shellTabs.svelte");
     lmeState.tabs = [
       { tabId: "lme-1", kind: "note", path: "notes/split.md", title: "Split note" },
     ];
     lmeState.activeTabId = "lme-1";
-    shellTabs.openLme("lme-1", { activate: true, title: "Split note" });
-    expect(shellTabs.activeTab?.kind).toBe("lme");
+    const shellId = shellTabs.openLme("lme-1", { activate: true, title: "Split note" });
+    expect(shellId).toBeTruthy();
+    const fromGroupId = shellTabs.activeGroupId;
     expect(shellTabs.splitActive("right")).toBe(true);
     expect(shellTabs.paneCount).toBe(2);
-    expect(shellTabs.activeTab?.kind).toBe("lme");
-    if (shellTabs.activeTab?.kind === "lme") {
-      expect(shellTabs.activeTab.lmeTabId).toBe("lme-1");
-    }
-    expect(shellTabs.tabs.filter((tab) => tab.kind === "lme")).toHaveLength(2);
-    expect(shellTabs.tabs.some((tab) => tab.kind === "chat")).toBe(false);
+    expect(shellTabs.activeGroupId).not.toBe(fromGroupId);
+    expect(shellTabs.activeTab?.id).toBe(shellId);
+    expect(shellTabs.tabs.filter((tab) => tab.kind === "lme")).toHaveLength(1);
+    const from = shellTabs.groups.find((group) => group.id === fromGroupId);
+    const to = shellTabs.groups.find((group) => group.id === shellTabs.activeGroupId);
+    expect(from?.tabIds).not.toContain(shellId);
+    expect(to?.tabIds).toContain(shellId);
   });
 
   it("refuses a fifth pane", async () => {
@@ -211,7 +213,7 @@ describe("shellTabs store", () => {
     const { shellTabs } = await import("./shellTabs.svelte");
     shellTabs.openChat("session-a", { activate: true });
     shellTabs.splitActive("right");
-    // New pane seeds same session; open distinct chat in the other group.
+    // Split moves session-a into the new pane; open distinct chat in the empty pane.
     const otherGroup = shellTabs.groups.find((g) => g.id !== shellTabs.activeGroupId);
     expect(otherGroup).toBeTruthy();
     if (otherGroup) {

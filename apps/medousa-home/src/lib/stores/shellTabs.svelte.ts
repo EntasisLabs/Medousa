@@ -634,9 +634,19 @@ export class ShellTabsStore {
     this.beginSuppressMirror();
     try {
       if (tab.kind === "lme") {
-        void lmeWorkspace.closeTab(tab.lmeTabId, { activateNext: false });
+        const stillOpen = this.tabs.some(
+          (entry) => entry.kind === "lme" && entry.lmeTabId === tab.lmeTabId,
+        );
+        if (!stillOpen) {
+          void lmeWorkspace.closeTab(tab.lmeTabId, { activateNext: false });
+        }
       } else if (tab.kind === "web") {
-        void humanBrowser.closeTab(tab.browserTabId);
+        const stillOpen = this.tabs.some(
+          (entry) => entry.kind === "web" && entry.browserTabId === tab.browserTabId,
+        );
+        if (!stillOpen) {
+          void humanBrowser.closeTab(tab.browserTabId);
+        }
       } else if (tab.kind === "chat") {
         const stillOpen = this.tabs.some(
           (entry) => entry.kind === "chat" && entry.sessionId === tab.sessionId,
@@ -690,39 +700,22 @@ export class ShellTabsStore {
     if (countLeaves(this.splitRoot) >= MAX_SHELL_PANES) {
       return false;
     }
+    const fromGroupId = this.activeGroupId;
+    const seed = this.activeTab;
     const newGroupId = newSplitId("group");
-    const result = splitLeaf(this.splitRoot, this.activeGroupId, direction, newGroupId);
+    const result = splitLeaf(this.splitRoot, fromGroupId, direction, newGroupId);
     if (!result) return false;
 
     this.splitRoot = result.root;
     this.groups = [...this.groups, { id: newGroupId, tabIds: [], activeTabId: null }];
 
-    const seed = this.activeTab;
-    this.activeGroupId = newGroupId;
-    if (seed?.kind === "chat") {
-      this.openChat(seed.sessionId, {
-        activate: true,
-        title: seed.title,
-        groupId: newGroupId,
-      });
-    } else if (seed?.kind === "lme") {
-      this.openLme(seed.lmeTabId, {
-        activate: true,
-        title: seed.title,
-        groupId: newGroupId,
-      });
-    } else if (seed?.kind === "web") {
-      this.openWeb(seed.browserTabId, {
-        activate: true,
-        title: seed.title,
-        groupId: newGroupId,
-      });
-    } else if (seed?.kind === "surface") {
-      this.openSurface(seed.surfaceId, {
-        activate: true,
-        groupId: newGroupId,
-      });
+    if (seed) {
+      // Move the focused tab into the new pane — do not clone. Shared LME/web
+      // identities meant closing one shell tab tore down both views.
+      this.moveTab(seed.id, newGroupId);
+      void this.activate(seed.id);
     } else {
+      this.activeGroupId = newGroupId;
       this.openSurface("library", { activate: true, groupId: newGroupId });
     }
     this.persist();
@@ -766,9 +759,25 @@ export class ShellTabsStore {
       this.beginSuppressMirror();
       try {
         if (tab.kind === "lme") {
-          void lmeWorkspace.closeTab(tab.lmeTabId, { activateNext: false });
+          const stillOpen = this.tabs.some(
+            (entry) =>
+              entry.id !== tabId &&
+              entry.kind === "lme" &&
+              entry.lmeTabId === tab.lmeTabId,
+          );
+          if (!stillOpen) {
+            void lmeWorkspace.closeTab(tab.lmeTabId, { activateNext: false });
+          }
         } else if (tab.kind === "web") {
-          void humanBrowser.closeTab(tab.browserTabId);
+          const stillOpen = this.tabs.some(
+            (entry) =>
+              entry.id !== tabId &&
+              entry.kind === "web" &&
+              entry.browserTabId === tab.browserTabId,
+          );
+          if (!stillOpen) {
+            void humanBrowser.closeTab(tab.browserTabId);
+          }
         } else if (tab.kind === "chat") {
           const stillOpen = this.tabs.some(
             (entry) =>

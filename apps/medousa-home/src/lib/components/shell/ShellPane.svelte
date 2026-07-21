@@ -47,7 +47,10 @@
     ownsWebHost,
   }: Props = $props();
 
-  let hovering = $state(false);
+  /** Pointer in the top hot-zone (reveals tabs). */
+  let nearTop = $state(false);
+  /** Pointer over the revealed strip (keeps it open while using tabs). */
+  let overStrip = $state(false);
 
   const focused = $derived(shellTabs.activeGroupId === groupId);
   const group = $derived(shellTabs.groups.find((entry) => entry.id === groupId));
@@ -56,11 +59,14 @@
     tabs.find((tab) => tab.id === group?.activeTabId) ?? tabs[0] ?? null,
   );
 
-  const showTabs = $derived(
-    hovering ||
-      focused ||
-      shellTabs.shouldForceShowTabs(groupId) ||
+  const forceTabs = $derived(
+    shellTabs.shouldForceShowTabs(groupId) ||
       shellTabs.tabDropTargetGroupId === groupId,
+  );
+
+  /** Tabs only when the pointer is near the top of this pane (or drag/force). */
+  const showTabs = $derived(
+    tabs.length > 0 && (nearTop || overStrip || forceTabs),
   );
   const dropTarget = $derived(shellTabs.tabDropTargetGroupId === groupId);
 
@@ -83,30 +89,44 @@
   function focusPane() {
     if (!focused) shellTabs.focusGroup(groupId);
   }
+
+  function handlePanePointerMove(event: PointerEvent) {
+    const target = event.currentTarget as HTMLElement;
+    const y = event.clientY - target.getBoundingClientRect().top;
+    // Slightly taller zone while open so moving onto the strip feels natural.
+    nearTop = y <= (showTabs ? 40 : 22);
+  }
+
+  function handlePanePointerLeave() {
+    nearTop = false;
+  }
 </script>
 
 <section
-  class="shell-pane relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden
+  class="shell-pane relative flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden
     {focused ? 'shell-pane-focused' : 'shell-pane-idle'}
     {dropTarget ? 'shell-pane-drop-target' : ''}"
   data-debug-label="shell-pane"
   data-group-id={groupId}
   role="group"
   aria-label="Editor pane"
-  onpointerenter={() => {
-    hovering = true;
-  }}
-  onpointerleave={() => {
-    hovering = false;
-  }}
+  onpointermove={handlePanePointerMove}
+  onpointerleave={handlePanePointerLeave}
   onpointerdown={focusPane}
 >
-  <div
-    class="shell-pane-tabs shrink-0 overflow-hidden transition-[max-height,opacity] duration-150
-      {showTabs ? 'max-h-12 opacity-100' : 'max-h-0 opacity-0'}"
-  >
-    <ShellTabStrip {groupId} />
-  </div>
+  {#if showTabs}
+    <div
+      class="shell-pane-tabs pointer-events-auto absolute inset-x-0 top-0 z-30"
+      onpointerenter={() => {
+        overStrip = true;
+      }}
+      onpointerleave={() => {
+        overStrip = false;
+      }}
+    >
+      <ShellTabStrip {groupId} />
+    </div>
+  {/if}
 
   <div class="relative min-h-0 min-w-0 flex-1 overflow-hidden">
     {#if activeTab?.kind === "chat"}
@@ -204,13 +224,26 @@
     box-shadow: inset 0 0 0 2px color-mix(in oklab, var(--color-primary-400, #a78bfa) 80%, transparent);
     background: color-mix(in oklab, var(--color-primary-500, #8b5cf6) 8%, transparent);
   }
+  .shell-pane-tabs {
+    animation: shell-tabs-in 120ms ease-out;
+  }
+  @keyframes shell-tabs-in {
+    from {
+      opacity: 0;
+      transform: translateY(-4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
   :global(body.shell-tab-dragging) {
     cursor: grabbing;
     user-select: none;
   }
   @media (prefers-reduced-motion: reduce) {
     .shell-pane-tabs {
-      transition: none;
+      animation: none;
     }
   }
 </style>
