@@ -24,7 +24,8 @@
     type SlashBlockId,
   } from "$lib/utils/vaultMarkdownEdit";
   import { vaultDisplayTitle } from "$lib/utils/formatVault";
-  import { handleVaultNoteContextMenuEvent } from "$lib/utils/vaultContextMenuEvents";
+  import { handleVaultEditorContextMenuEvent } from "$lib/utils/vaultContextMenuEvents";
+  import { copyTextToClipboard } from "$lib/utils/vaultClipboard";
   import { createVaultScrollSync } from "$lib/utils/vaultScrollSync";
   import type { SlashMenuAnchor } from "$lib/utils/slashMenuPlacement";
 
@@ -337,21 +338,97 @@
     syncSlashMenu();
   }
 
-  function handleContextMenu(event: MouseEvent) {
-    const path = vault.selectedPath;
-    if (!path) return;
+  function readEditorSelection(): {
+    text: string;
+    start?: number;
+    end?: number;
+  } | null {
     if (isLivePlane) {
-      handleVaultNoteContextMenuEvent(path, event, null);
-      return;
+      const text = liveEl?.getSelectedText?.() ?? "";
+      return text.trim() ? { text } : null;
     }
-    if (!cmEl) return;
+    if (!cmEl) return null;
     const { start, end } = cmEl.getSelection();
     const text = draft.slice(Math.min(start, end), Math.max(start, end));
-    handleVaultNoteContextMenuEvent(
-      path,
-      event,
-      text.trim() ? { text, start, end } : null,
-    );
+    return text.trim() ? { text, start, end } : null;
+  }
+
+  function handleContextMenu(event: MouseEvent) {
+    const path = vault.selectedPath;
+    if (!path || disabled) return;
+    const selection = readEditorSelection();
+    const hasSelection = Boolean(selection?.text.trim());
+
+    handleVaultEditorContextMenuEvent(path, event, selection, {
+      hasSelection,
+      canFormat: true,
+      cut: async () => {
+        if (isLivePlane) {
+          await liveEl?.cutSelection?.();
+          return;
+        }
+        if (!cmEl || !selection) return;
+        const start = Math.min(selection.start ?? 0, selection.end ?? 0);
+        const end = Math.max(selection.start ?? 0, selection.end ?? 0);
+        await copyTextToClipboard(selection.text);
+        applyEdit({
+          content: `${draft.slice(0, start)}${draft.slice(end)}`,
+          selectionStart: start,
+          selectionEnd: start,
+        });
+      },
+      copy: async () => {
+        if (isLivePlane) {
+          await liveEl?.copySelection?.();
+          return;
+        }
+        if (selection?.text) await copyTextToClipboard(selection.text);
+      },
+      paste: async () => {
+        if (isLivePlane) {
+          await liveEl?.pasteClipboard?.();
+          return;
+        }
+        if (!cmEl) return;
+        try {
+          const text = await navigator.clipboard.readText();
+          if (!text) return;
+          const { start, end } = cmEl.getSelection();
+          const from = Math.min(start, end);
+          const to = Math.max(start, end);
+          applyEdit({
+            content: `${draft.slice(0, from)}${text}${draft.slice(to)}`,
+            selectionStart: from + text.length,
+            selectionEnd: from + text.length,
+          });
+        } catch {
+          /* clipboard denied */
+        }
+      },
+      selectAll: () => {
+        if (isLivePlane) {
+          liveEl?.selectAll?.();
+          return;
+        }
+        cmEl?.focusOffset(0, draft.length);
+      },
+      format: (action) => {
+        if (isLivePlane) {
+          liveEl?.applyFormat?.(action);
+          return;
+        }
+        handleFormat(action);
+      },
+      insertWikilink: () => {
+        notePickerMode = "wikilink";
+        if (isLivePlane) {
+          bridgeInsertAt = 0;
+        } else {
+          bridgeInsertAt = cmEl?.getSelection().start ?? selectionStart;
+        }
+        notePickerOpen = true;
+      },
+    });
   }
 
   async function clearSlashAndRememberInsert(): Promise<number> {

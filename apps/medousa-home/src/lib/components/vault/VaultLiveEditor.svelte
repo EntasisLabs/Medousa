@@ -799,6 +799,53 @@
   export function getScrollEl(): HTMLElement | null {
     return hostEl?.closest(".vault-live-editor") as HTMLElement | null;
   }
+
+  export function getSelectedText(): string {
+    if (!editor) return "";
+    const { from, to } = editor.state.selection;
+    if (from === to) return "";
+    return editor.state.doc.textBetween(from, to, "\n");
+  }
+
+  export function hasTextSelection(): boolean {
+    return editor ? liveSelectionHasText(editor) : false;
+  }
+
+  export async function copySelection(): Promise<boolean> {
+    const text = getSelectedText();
+    if (!text.trim()) return false;
+    await copyTextToClipboard(text);
+    return true;
+  }
+
+  export async function cutSelection(): Promise<boolean> {
+    if (!editor || disabled) return false;
+    const ok = await copySelection();
+    if (!ok) return false;
+    editor.chain().focus(undefined, { scrollIntoView: false }).deleteSelection().run();
+    return true;
+  }
+
+  export async function pasteClipboard(): Promise<boolean> {
+    if (!editor || disabled) return false;
+    try {
+      const text = await navigator.clipboard.readText();
+      if (!text) return false;
+      editor.chain().focus(undefined, { scrollIntoView: false }).insertContent(text).run();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  export function selectAll() {
+    editor?.chain().focus(undefined, { scrollIntoView: false }).selectAll().run();
+  }
+
+  export function applyFormat(action: MarkdownFormatAction) {
+    if (!editor || disabled) return;
+    applyLiveFormatAction(editor, action);
+  }
 </script>
 
 <div class="vault-live-editor flex min-h-0 min-w-0 max-w-full flex-1 flex-col overflow-x-hidden overflow-y-auto">

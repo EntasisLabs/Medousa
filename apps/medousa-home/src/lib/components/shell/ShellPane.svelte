@@ -15,6 +15,7 @@
   import ShellTabStrip from "$lib/components/shell/ShellTabStrip.svelte";
   import WorkPanel from "$lib/components/work/WorkPanel.svelte";
   import { chat } from "$lib/stores/chat.svelte";
+  import { layout } from "$lib/stores/layout.svelte";
   import { shellTabs } from "$lib/stores/shellTabs.svelte";
   import { workspace } from "$lib/stores/workspace.svelte";
   import type { DaemonHealth } from "$lib/daemon";
@@ -68,6 +69,13 @@
   const showTabs = $derived(
     tabs.length > 0 && (nearTop || overStrip || forceTabs),
   );
+  /**
+   * When the master rail is collapsed, views show a left expand control in the
+   * top chrome. Inset the hover tab strip so it never covers that icon.
+   */
+  const tabStripOffsetLeft = $derived(
+    !layout.isMobile && !layout.shellSidebarExpanded ? "2.25rem" : "0px",
+  );
   const dropTarget = $derived(shellTabs.tabDropTargetGroupId === groupId);
 
   /** Live pool slot — not merely focused (multi-live transcripts). */
@@ -115,16 +123,23 @@
   onpointerdown={focusPane}
 >
   {#if showTabs}
+    <!-- Full-bleed hit zone is pointer-events-none so view chrome stays clickable;
+         only the tab chips capture pointer. Left inset clears the rail-expand icon. -->
     <div
-      class="shell-pane-tabs pointer-events-auto absolute inset-x-0 top-0 z-30"
-      onpointerenter={() => {
-        overStrip = true;
-      }}
-      onpointerleave={() => {
-        overStrip = false;
-      }}
+      class="shell-pane-tabs pointer-events-none absolute inset-x-0 top-0 z-30"
+      style:padding-left={tabStripOffsetLeft}
     >
-      <ShellTabStrip {groupId} />
+      <div
+        class="pointer-events-auto w-max max-w-full"
+        onpointerenter={() => {
+          overStrip = true;
+        }}
+        onpointerleave={() => {
+          overStrip = false;
+        }}
+      >
+        <ShellTabStrip {groupId} />
+      </div>
     </div>
   {/if}
 

@@ -4,6 +4,7 @@
   import ScriptWorkbenchStatusBar from "$lib/components/automations/ScriptWorkbenchStatusBar.svelte";
   import ScriptWorkbenchTitlebar from "$lib/components/automations/ScriptWorkbenchTitlebar.svelte";
   import GraphemeScriptEditorPanel from "$lib/components/grapheme/GraphemeScriptEditorPanel.svelte";
+  import { environment } from "$lib/stores/environment.svelte";
   import { layout } from "$lib/stores/layout.svelte";
 
   interface Props {
@@ -14,6 +15,11 @@
 
   let consoleOpen = $state(true);
   let chatOpen = $state(false);
+
+  function showWorkspaceBrowser() {
+    layout.openShellSidebarView(layout.desktopSurface);
+    void environment.patchShellChromeDesktop({ navStyle: "rail" }).catch(() => {});
+  }
 </script>
 
 <div
@@ -21,11 +27,11 @@
   data-debug-label="lme-script-editor"
 >
   <ScriptWorkbenchTitlebar
-    leftOpen={true}
+    leftOpen={layout.shellSidebarExpanded}
     {consoleOpen}
     {chatOpen}
     hideTabStrip={true}
-    onShowSidebar={() => {}}
+    onShowSidebar={showWorkspaceBrowser}
     onToggleConsole={() => (consoleOpen = !consoleOpen)}
     onToggleChat={() => (chatOpen = !chatOpen)}
   />

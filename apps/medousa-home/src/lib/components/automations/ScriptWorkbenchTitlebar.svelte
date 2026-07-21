@@ -32,7 +32,7 @@
     onToggleConsole: () => void;
     onToggleChat: () => void;
     onOpenOutput?: () => void;
-    /** When true, document tabs live on the LME strip above. */
+    /** When true, document tabs live on the shell hover strip (not this titlebar). */
     hideTabStrip?: boolean;
   }
 
@@ -163,7 +163,8 @@
     <button
       type="button"
       class="scripts-workbench-toolbar-btn shrink-0"
-      aria-label="Show sidebar"
+      title="Show workspace browser"
+      aria-label="Show workspace browser"
       onclick={onShowSidebar}
     >
       <PanelLeftOpen size={15} strokeWidth={1.75} />
@@ -172,9 +173,15 @@
 
   {#if !hideTabStrip}
     <ScriptEditorTabStrip compact {mobile} />
+  {:else}
+    <!-- Spacer: document tabs live on the shell hover strip; keep actions right. -->
+    <div class="min-w-0 flex-1" aria-hidden="true"></div>
   {/if}
 
-  <div class="scripts-workbench-titlebar-actions flex shrink-0 items-center gap-0.5 pl-1">
+  <div
+    class="scripts-workbench-titlebar-actions flex shrink-0 items-center gap-0.5 pl-1
+      {hideTabStrip ? 'ml-auto' : ''}"
+  >
     <button
       type="button"
       class="scripts-workbench-toolbar-btn"
