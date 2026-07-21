@@ -188,6 +188,43 @@ describe("vault note buffers (multi-pane)", () => {
     expect(store.dirty).toBe(true);
   });
 
+  it("failed cold open clears body and allows retry refetch", async () => {
+    const { store, getVaultNote } = await loadStore();
+    getVaultNote
+      .mockResolvedValueOnce(noteResponse("notes/a.md", "alpha", "Alpha") as never)
+      .mockRejectedValueOnce(new Error("boom"))
+      .mockResolvedValueOnce(noteResponse("notes/b.md", "bravo", "Bravo") as never);
+
+    await store.openNote("notes/a.md");
+    await store.openNote("notes/b.md");
+
+    expect(store.selectedPath).toBe("notes/b.md");
+    expect(store.content).toBe("");
+    expect(store.contentHash).toBeNull();
+    expect(store.error).toMatch(/boom/);
+
+    await store.openNote("notes/b.md");
+    expect(store.content).toBe("bravo");
+    expect(store.title).toBe("Bravo");
+    expect(getVaultNote).toHaveBeenCalledTimes(3);
+  });
+
+  it("serves absolute loose paths without vault-normalizing contentFor", async () => {
+    const { store } = await loadStore();
+    store.looseFilePath = "/tmp/loose-note.md";
+    store.selectedPath = "/tmp/loose-note.md";
+    store.content = "loose body";
+    store.title = "loose-note";
+    store.contentHash = null;
+    store.dirty = false;
+
+    expect(store.isFocusedPath("/tmp/loose-note.md")).toBe(true);
+    expect(store.contentFor("/tmp/loose-note.md")).toBe("loose body");
+    expect(store.contentSyncKeyFor("/tmp/loose-note.md")).toBe(store.contentSyncKey);
+    // Vault-normalized form must not steal the focused absolute body.
+    expect(store.contentFor("tmp/loose-note.md")).toBe("");
+  });
+
   it("createNote handoff does not leave prior path dirty with new template", async () => {
     const { store } = await loadStore();
     const { createVaultNote, getVaultNote, saveVaultNote } = await import("$lib/daemon");

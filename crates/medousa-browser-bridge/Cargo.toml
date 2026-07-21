@@ -1,6 +1,6 @@
 [package]
 name = "medousa-browser-bridge"
-version = "0.3.1"
+version = "0.3.2"
 edition = "2021"
 description = "Shared browser tab group model and session driver for Medousa BrowserHost"
 

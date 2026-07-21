@@ -476,6 +476,7 @@ export class LmeWorkspaceStore {
     // Do not setExplorerMode here — rail mode is user-driven so browsing
     // Local Files / Notes survives tab and shell switches.
     if (tab.kind === "note") {
+      // Absolute paths route to openLooseFile inside openNote (skipLeaveFlush preserved).
       await vault.openNote(tab.path, {
         skipLeaveFlush: Boolean(leavingNote),
       });

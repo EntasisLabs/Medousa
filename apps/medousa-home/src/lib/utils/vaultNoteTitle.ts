@@ -24,3 +24,9 @@ export function normalizeVaultNotePath(path: string): string {
   if (!trimmed) return "";
   return trimmed.endsWith(".md") ? trimmed : `${trimmed}.md`;
 }
+
+/** Absolute OS path (POSIX or Windows) — never pass these through `normalizeVaultNotePath`. */
+export function isAbsoluteDiskPath(path: string): boolean {
+  const normalized = path.trim().replace(/\\/g, "/");
+  return /^[A-Za-z]:\//.test(normalized) || normalized.startsWith("/");
+}

@@ -262,12 +262,14 @@ describe("lmeWorkspace", () => {
     expect(loadManuscriptDetail).toHaveBeenCalledTimes(2);
   });
 
-  it("activates manuscript tabs into agents mode", async () => {
+  it("activates manuscript tabs without stealing explorer mode", async () => {
     store.openManuscript("user/morning-brief", "Morning Brief");
     store.setExplorerMode("notes");
     const tabId = store.activeTabId!;
+    loadManuscriptDetail.mockClear();
     await store.activateTab(tabId);
-    expect(store.explorerMode).toBe("agents");
+    // Rail mode is user-driven — tab activate must not yank Notes → Agents.
+    expect(store.explorerMode).toBe("notes");
     expect(loadManuscriptDetail).toHaveBeenCalledWith("user/morning-brief");
   });
 
@@ -296,12 +298,14 @@ describe("lmeWorkspace", () => {
     expect(flowsMock.composerOpen).toBe(true);
   });
 
-  it("activates flow tabs into flows mode", async () => {
+  it("activates flow tabs without stealing explorer mode", async () => {
     store.openFlow("wf-1", "Morning web");
     store.setExplorerMode("notes");
     const tabId = store.activeTabId!;
+    loadDetail.mockClear();
     await store.activateTab(tabId);
-    expect(store.explorerMode).toBe("flows");
+    // Rail mode is user-driven — tab activate must not yank Notes → Flows.
+    expect(store.explorerMode).toBe("notes");
     expect(loadDetail).toHaveBeenCalledWith("wf-1");
   });
 });
