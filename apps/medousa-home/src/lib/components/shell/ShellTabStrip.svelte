@@ -42,7 +42,8 @@
 
 {#if tabs.length > 0}
   <div
-    class="shell-tab-strip flex min-w-0 shrink-0 items-center gap-0.5 overflow-x-auto border-b border-surface-500/40 bg-surface-950/60 px-1.5 pt-1"
+    class="shell-tab-strip flex h-7 min-w-0 items-center gap-0.5 overflow-x-auto px-1.5
+      bg-surface-950/85 backdrop-blur-sm"
     role="tablist"
     aria-label="Open tabs"
     data-debug-label="shell-tab-strip"
@@ -52,10 +53,10 @@
       {@const active = group?.activeTabId === tab.id}
       {@const Icon = iconFor(tab)}
       <div
-        class="group flex max-w-[200px] shrink-0 cursor-grab items-center gap-1 rounded-t-md border border-b-0 px-2 py-1 text-[11px] active:cursor-grabbing
+        class="group flex h-5 max-w-[180px] shrink-0 cursor-grab items-center gap-1 px-1.5 text-[11px] leading-none active:cursor-grabbing
           {active
-          ? 'border-surface-500/55 bg-surface-900 text-primary-300'
-          : 'border-transparent text-surface-400 hover:bg-surface-800/70'}"
+          ? 'rounded-md bg-surface-700/90 text-surface-100'
+          : 'rounded-md text-surface-400 hover:bg-surface-800/60 hover:text-surface-200'}"
         role="presentation"
         onpointerdown={(event) => beginShellTabDrag(event, tab.id, groupId)}
       >
@@ -67,12 +68,12 @@
           title="{tab.title} — drag to another pane"
           tabindex={-1}
         >
-          <Icon size={12} strokeWidth={1.75} class="shrink-0 opacity-70" />
+          <Icon size={11} strokeWidth={1.75} class="shrink-0 opacity-65" />
           <span class="truncate">{tab.title}</span>
         </button>
         <button
           type="button"
-          class="rounded p-0.5 opacity-0 transition-opacity hover:bg-surface-700 group-hover:opacity-100 focus:opacity-100"
+          class="rounded p-0.5 opacity-0 transition-opacity hover:bg-surface-600/80 group-hover:opacity-100 focus:opacity-100"
           aria-label="Close {tab.title}"
           onclick={(event) => {
             event.stopPropagation();
@@ -80,7 +81,7 @@
           }}
           onpointerdown={(event) => event.stopPropagation()}
         >
-          <X size={11} strokeWidth={2} />
+          <X size={10} strokeWidth={2} />
         </button>
       </div>
     {/each}
