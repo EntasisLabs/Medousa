@@ -139,11 +139,32 @@ export class LmeWorkspaceStore {
   ensureNoteTabForSelection() {
     const path = vault.selectedPath;
     if (!path) return;
+    this.ensureAndActivateNoteTab(path, { activate: false });
+  }
+
+  /**
+   * Create or focus an LME note tab for `path` so the keep-alive host binds to
+   * the vault lease. Used after createNote / openLooseFile (vault already open).
+   */
+  ensureAndActivateNoteTab(
+    path: string,
+    options?: { activate?: boolean; activateMode?: boolean },
+  ) {
+    const trimmed = path.trim();
+    if (!trimmed) return;
+    const activate = options?.activate !== false;
+    const activateMode = options?.activateMode !== false;
+    if (activate && activateMode) {
+      this.setExplorerMode("notes");
+    }
     const existing = this.tabs.find(
-      (tab) => tab.kind === "note" && tab.path === path,
+      (tab) => tab.kind === "note" && tab.path === trimmed,
     );
     if (existing) {
-      if (this.explorerMode === "notes" && !this.activeTabId) {
+      if (activate) {
+        this.activeTabId = existing.tabId;
+        mirrorActiveTabToShell(existing.tabId, existing.title);
+      } else if (this.explorerMode === "notes" && !this.activeTabId) {
         this.activeTabId = existing.tabId;
       }
       return;
@@ -151,12 +172,13 @@ export class LmeWorkspaceStore {
     const tab: LmeTab = {
       tabId: newTabId("note"),
       kind: "note",
-      path,
-      title: noteTitle(path),
+      path: trimmed,
+      title: noteTitle(trimmed),
     };
     this.tabs = [...this.tabs, tab].slice(-MAX_TABS);
-    if (this.explorerMode === "notes" && !this.activeTabId) {
+    if (activate || (this.explorerMode === "notes" && !this.activeTabId)) {
       this.activeTabId = tab.tabId;
+      if (activate) mirrorActiveTabToShell(tab.tabId, tab.title);
     }
   }
 

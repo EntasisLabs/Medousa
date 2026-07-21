@@ -6,6 +6,7 @@
   import {
     parseLiveMarkdown,
     serializeLiveMarkdown,
+    significantLiveText,
   } from "$lib/vault/live/liveMarkdownCodec";
   import { createLiveExtensions } from "$lib/vault/live/liveExtensions";
   import {
@@ -29,7 +30,6 @@
     foreignUndoArmed,
     takeForeignUndo,
   } from "$lib/vault/live/liveForeignUndo";
-  import { saveVaultNote } from "$lib/daemon";
   import { flushLiveDrafts } from "$lib/vault/live/liveDraftFlush";
   import { invalidateTransclusionCache } from "$lib/utils/resolveTransclusion";
   import { copyTextToClipboard } from "$lib/utils/vaultClipboard";
@@ -369,7 +369,7 @@
         onchangeRef.current(entry.content);
         loadFromMarkdown(entry.content);
       } else {
-        await saveVaultNote(entry.path, entry.content);
+        await vault.saveNoteAtPath(entry.path, entry.content, { force: true });
         invalidateTransclusionCache(entry.path);
       }
       return true;
@@ -504,6 +504,10 @@
           onWriteThroughSelected: (_path, content) => {
             onchangeRef.current(content);
             loadFromMarkdown(content);
+          },
+          onWriteThroughForeign: async (path, content) => {
+            await vault.saveNoteAtPath(path, content);
+            invalidateTransclusionCache(path);
           },
         },
       }),
@@ -684,10 +688,12 @@
 
   /**
    * Parent should remount this component with `{#key contentSyncKey}` on note switch.
-   * Same-key path only hydrates empty→content (mount race). Never re-parse on typing.
+   * Same-key path only hydrates empty→content when the body has significant text
+   * (mount race). Frontmatter-only notes must not re-enter loadFromMarkdown or
+   * TipTap stays `isEmpty` forever and `$effect` loops. Never re-parse on typing.
    */
   $effect(() => {
-    if (!editor) return;
+    if (!editor || applyingExternal) return;
     const key = contentSyncKey;
     const next = value;
     if (key !== boundKey) {
@@ -696,24 +702,16 @@
       loadFromMarkdown(next);
       return;
     }
-    if (next.trim() && editor.isEmpty) {
+    // Mount race: editor came up empty before draft hydrated. Only reload when
+    // there is significant body text TipTap would actually render.
+    if (editor.isEmpty && significantLiveText(next).length > 0) {
       loadFromMarkdown(next);
     }
   });
 
   onDestroy(() => {
-    // Last-chance serialize before TipTap dies — parent leave-flush should run first.
-    if (editor && !disabled) {
-      try {
-        flushLiveDrafts();
-        const serialized = serializeLiveMarkdown(editor.getJSON(), frontmatter);
-        if (serialized !== value) {
-          onchange(serialized);
-        }
-      } catch {
-        // Destroy must proceed even if serialize fails.
-      }
-    }
+    // Do NOT serialize→onchange here. Leave-flush / explicit flush() own that
+    // handoff; destroy flushes race note switches and clobber the leased path.
     removeFormatBubbleListeners?.();
     removeFormatBubbleListeners = null;
     editor?.destroy();

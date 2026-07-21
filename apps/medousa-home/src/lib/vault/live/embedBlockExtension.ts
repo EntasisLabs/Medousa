@@ -1,5 +1,5 @@
 import { Node, mergeAttributes } from "@tiptap/core";
-import { getVaultNote, saveVaultNote } from "$lib/daemon";
+import { getVaultNote } from "$lib/daemon";
 import { vaultDisplayTitle } from "$lib/utils/formatVault";
 import {
   serializeFrontmatter,
@@ -7,7 +7,6 @@ import {
 } from "$lib/utils/vaultFrontmatter";
 import { resolveWikilinkTarget } from "$lib/utils/resolveWikilink";
 import {
-  invalidateTransclusionCache,
   resolveTransclusions,
 } from "$lib/utils/resolveTransclusion";
 import {
@@ -46,6 +45,8 @@ export type EmbedBlockOptions = {
   onDetach?: (path: string, label: string, pos: number) => void;
   /** When write-through targets the open note, update vault.content. */
   onWriteThroughSelected?: (path: string, content: string) => void;
+  /** Cross-note write-through — must go through the versioned save queue. */
+  onWriteThroughForeign?: (path: string, content: string) => void | Promise<void>;
 };
 
 declare module "@tiptap/core" {
@@ -110,6 +111,7 @@ export const EmbedBlock = Node.create<EmbedBlockOptions>({
       onOpenNote: undefined,
       onDetach: undefined,
       onWriteThroughSelected: undefined,
+      onWriteThroughForeign: undefined,
     };
   },
 
@@ -311,8 +313,7 @@ export const EmbedBlock = Node.create<EmbedBlockOptions>({
                     if (path === ctx.selectedPath) {
                       opts().onWriteThroughSelected?.(path, nextFull);
                     } else {
-                      await saveVaultNote(path, nextFull);
-                      invalidateTransclusionCache(path);
+                      await opts().onWriteThroughForeign?.(path, nextFull);
                     }
                   } catch {
                     // keep previous rendered state on failure

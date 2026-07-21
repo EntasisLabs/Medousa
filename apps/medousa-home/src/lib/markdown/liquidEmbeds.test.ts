@@ -477,6 +477,36 @@ describe("preprocessLiquidEmbeds", () => {
     expect(preprocessLiquidEmbeds(src)).toContain("```compare");
   });
 
+  it("uniquifies duplicate compare axis and entity labels", () => {
+    const src = [
+      "```compare",
+      "title: Dupes",
+      "",
+      "| | Alpha | Alpha |",
+      "| --- | --- | --- |",
+      "| Pros | A1 | A2 |",
+      "| Pros | B1 | B2 |",
+      "```",
+    ].join("\n");
+    const out = preprocessLiquidEmbeds(src);
+    expect(out).toContain('data-liquid-embed="compare"');
+    const match = out.match(/data-liquid-props="([^"]+)"/);
+    const props = decodeLiquidProps<{
+      axes: { id: string; label: string }[];
+      entities: { id: string; label: string; values: Record<string, string> }[];
+    }>(match![1]);
+    const axisIds = props!.axes.map((a) => a.id);
+    const entityIds = props!.entities.map((e) => e.id);
+    expect(new Set(axisIds).size).toBe(axisIds.length);
+    expect(new Set(entityIds).size).toBe(entityIds.length);
+    expect(props!.axes.map((a) => a.label)).toEqual(["Pros", "Pros"]);
+    expect(props!.entities.map((e) => e.label)).toEqual(["Alpha", "Alpha"]);
+    expect(props!.entities[0].values[axisIds[0]]).toBe("A1");
+    expect(props!.entities[0].values[axisIds[1]]).toBe("B1");
+    expect(props!.entities[1].values[axisIds[0]]).toBe("A2");
+    expect(props!.entities[1].values[axisIds[1]]).toBe("B2");
+  });
+
   it("turns a plan fence into segments payload", () => {
     const src = [
       "```plan",

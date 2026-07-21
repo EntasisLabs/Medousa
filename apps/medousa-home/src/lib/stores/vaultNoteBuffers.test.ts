@@ -127,4 +127,124 @@ describe("vault note buffers (multi-pane)", () => {
     expect(store.content).toBe("alpha");
     expect(store.contentFor("notes/b.md")).toBe("bravo");
   });
+
+  it("sets selectedPath before applying cold-open body (handoff)", async () => {
+    const { store, getVaultNote } = await loadStore();
+    let pathDuringFetch: string | null = null;
+    getVaultNote.mockImplementation(async (path: string) => {
+      pathDuringFetch = store.selectedPath;
+      return noteResponse(path, `body:${path}`, path === "notes/b.md" ? "Bravo" : "Alpha") as never;
+    });
+
+    await store.openNote("notes/a.md");
+    await store.openNote("notes/b.md");
+
+    expect(pathDuringFetch).toBe("notes/b.md");
+    expect(store.selectedPath).toBe("notes/b.md");
+    expect(store.content).toBe("body:notes/b.md");
+    expect(store.title).toBe("Bravo");
+    // Previous note preserved in buffer — not overwritten by B's template.
+    expect(store.contentFor("notes/a.md")).toBe("body:notes/a.md");
+  });
+
+  it("drops stale overlapping openNote fetches", async () => {
+    const { store, getVaultNote } = await loadStore();
+    let releaseA!: (value: unknown) => void;
+    const holdA = new Promise((resolve) => {
+      releaseA = resolve;
+    });
+
+    getVaultNote.mockImplementation(async (path: string) => {
+      if (path === "notes/a.md") {
+        await holdA;
+        return noteResponse(path, "stale-a", "Stale A") as never;
+      }
+      return noteResponse(path, "fresh-b", "Fresh B") as never;
+    });
+
+    const openA = store.openNote("notes/a.md");
+    await store.openNote("notes/b.md");
+    releaseA(undefined);
+    await openA;
+
+    expect(store.selectedPath).toBe("notes/b.md");
+    expect(store.content).toBe("fresh-b");
+    expect(store.title).toBe("Fresh B");
+  });
+
+  it("rejects markDirty from a non-focused path", async () => {
+    const { store, getVaultNote } = await loadStore();
+    getVaultNote.mockImplementation(async (path: string) =>
+      noteResponse(path, `body:${path}`) as never,
+    );
+
+    await store.openNote("notes/a.md");
+    store.markDirty("hijack", { path: "notes/b.md" });
+    expect(store.content).toBe("body:notes/a.md");
+    expect(store.dirty).toBe(false);
+
+    store.markDirty("legit edit", { path: "notes/a.md" });
+    expect(store.content).toBe("legit edit");
+    expect(store.dirty).toBe(true);
+  });
+
+  it("createNote handoff does not leave prior path dirty with new template", async () => {
+    const { store } = await loadStore();
+    const { createVaultNote, getVaultNote, saveVaultNote } = await import("$lib/daemon");
+    const createMock = vi.mocked(createVaultNote);
+    const getMock = vi.mocked(getVaultNote);
+    const saveMock = vi.mocked(saveVaultNote);
+    saveMock.mockResolvedValue({
+      content: "template-b",
+      note: {
+        path: "notes/a.md",
+        title: "Wiped",
+        kind: "note",
+        content_hash: "hash-bad",
+        wikilinks_out: [],
+        backlinks: [],
+        tags: [],
+      },
+    } as never);
+
+    getMock.mockImplementation(async (path: string) => {
+      if (path === "notes/a.md") return noteResponse(path, "hours of work", "Active") as never;
+      return noteResponse(path, "template-b", "New Note") as never;
+    });
+    createMock.mockResolvedValue(
+      noteResponse("notes/new-note.md", "template-b", "New Note") as never,
+    );
+
+    await store.openNote("notes/a.md");
+    store.markDirty("hours of work — edited", { path: "notes/a.md" });
+    // Simulate leave-flush success without actually waiting on timers.
+    saveMock.mockResolvedValueOnce({
+      content: "hours of work — edited",
+      note: {
+        path: "notes/a.md",
+        title: "Active",
+        kind: "note",
+        content_hash: "hash-a2",
+        wikilinks_out: [],
+        backlinks: [],
+        tags: [],
+      },
+    } as never);
+
+    await store.createNote({
+      spaceId: "other",
+      title: "New Note",
+      path: "notes/new-note.md",
+      content: "template-b",
+    });
+
+    expect(store.selectedPath).toBe("notes/new-note.md");
+    expect(store.content).toBe("template-b");
+    // Prior note buffer must still hold the edited body, not the new template.
+    expect(store.contentFor("notes/a.md")).toBe("hours of work — edited");
+    const wipedPuts = saveMock.mock.calls.filter(
+      (call) => call[0] === "notes/a.md" && call[1] === "template-b",
+    );
+    expect(wipedPuts).toHaveLength(0);
+  });
 });

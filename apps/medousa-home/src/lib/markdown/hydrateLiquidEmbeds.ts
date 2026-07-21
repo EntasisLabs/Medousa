@@ -91,7 +91,15 @@ export function hydrateLiquidEmbeds(
     const payload = decodeLiquidProps(encoded);
     if (payload == null) continue;
     el.dataset.liquidHydrated = "1";
-    handles.push(mountHost(el, kind, payload, context, animate));
+    try {
+      handles.push(mountHost(el, kind, payload, context, animate));
+    } catch (err) {
+      // One bad embed (e.g. duplicate Svelte keys) must not abort later mounts.
+      console.warn("[liquid] embed mount failed", kind, err);
+      delete el.dataset.liquidHydrated;
+      el.classList.add("liquid-md-embed--error");
+      el.textContent = el.textContent || `[${kind} failed to render]`;
+    }
   }
 
   const icons = root.querySelectorAll<HTMLElement>("[data-liquid-icon]");
@@ -100,7 +108,12 @@ export function hydrateLiquidEmbeds(
     const id = el.dataset.liquidIcon?.trim();
     if (!id) continue;
     el.dataset.liquidHydrated = "1";
-    handles.push(mountHost(el, "icon", id, context, animate));
+    try {
+      handles.push(mountHost(el, "icon", id, context, animate));
+    } catch (err) {
+      console.warn("[liquid] icon mount failed", id, err);
+      delete el.dataset.liquidHydrated;
+    }
   }
 
   if (handles.length > 0) {

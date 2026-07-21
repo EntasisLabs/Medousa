@@ -294,6 +294,11 @@ export class VaultStore {
   private compositionHold = $state(false);
   private saveEchoPath: string | null = null;
   private saveEchoUntil = 0;
+  /**
+   * Bumped on every openNote / openLooseFile start. Stale fetch completions and
+   * remount emits must not apply when this no longer matches their generation.
+   */
+  private openGeneration = 0;
 
   attachments = $derived(listAttachments(this.content));
 
@@ -433,6 +438,7 @@ export class VaultStore {
       !this.buildAutoSave ||
       !this.selectedPath ||
       !this.dirty ||
+      this.noteLoading ||
       this.saveStatus === "conflict" ||
       this.proposalActive ||
       this.compositionHold
@@ -513,6 +519,10 @@ export class VaultStore {
   isFocusedPath(path: string | null | undefined): boolean {
     const trimmed = path?.trim();
     if (!trimmed) return false;
+    // Loose markdown uses an absolute OS path — do not vault-normalize (strips drive/root).
+    if (this.looseFilePath) {
+      return trimmed === this.looseFilePath || trimmed === (this.selectedPath?.trim() ?? "");
+    }
     return this.normalizeNotePath(trimmed) === (this.selectedPath?.trim() ?? "");
   }
 
@@ -785,6 +795,7 @@ export class VaultStore {
   async ingestRemoteUpdate(event: WorkspaceEvent) {
     const path = vaultRefPath(event);
     if (!path || path !== this.selectedPath) return;
+    if (this.noteLoading) return;
 
     this.clearAutosaveTimer();
     try {
@@ -1120,6 +1131,7 @@ export class VaultStore {
       this.clearAutosaveTimer();
       await this.save({ source: "autosave" });
     }
+    const openGen = ++this.openGeneration;
     this.noteLoading = true;
     this.loading = true;
     this.error = null;
@@ -1127,9 +1139,11 @@ export class VaultStore {
     this.closeAttachmentPreview();
     try {
       const content = await readAbsoluteTextFile(trimmed);
+      if (openGen !== this.openGeneration) return false;
       const name = fileNameFromAbsolutePath(trimmed);
       const title = name.replace(/\.md$/i, "").replace(/\.markdown$/i, "") || name;
       this.clearLooseFile();
+      // Lease transfer before body apply — remounts/saves target this path.
       this.looseFilePath = trimmed;
       this.selectedPath = trimmed;
       this.resetSaveState();
@@ -1144,6 +1158,7 @@ export class VaultStore {
       this.dirty = false;
       this.editorMode = "edit";
       this.bumpContentSync();
+      await this.syncLmeNoteTab(trimmed);
       return true;
     } catch (err) {
       this.error = err instanceof Error ? err.message : String(err);
@@ -1151,6 +1166,16 @@ export class VaultStore {
     } finally {
       this.noteLoading = false;
       this.loading = false;
+    }
+  }
+
+  /** Bind the LME keep-alive host to the focused note (create/activate tab). */
+  private async syncLmeNoteTab(path: string) {
+    try {
+      const { lmeWorkspace } = await import("$lib/stores/lmeWorkspace.svelte");
+      lmeWorkspace.ensureAndActivateNoteTab(path);
+    } catch {
+      // Unit tests / non-shell contexts may not load the LME workspace.
     }
   }
 
@@ -1366,15 +1391,19 @@ export class VaultStore {
       }
     }
 
+    const openGen = ++this.openGeneration;
+
     if (this.selectedPath && this.selectedPath !== nextPath) {
       // activateTab already flushed the mounted editor — do not flush the remounted host.
       const ok = options?.skipLeaveFlush
         ? await this.flushBeforeLeave({ skipEditorFlush: true })
         : await this.flushBeforeLeave();
       if (!ok) return;
+      if (openGen !== this.openGeneration) return;
       this.clearProposal();
       this.closeAttachmentPreview();
     }
+    if (openGen !== this.openGeneration) return;
     this.clearLooseFile();
 
     const buffered = this.noteBuffers.get(nextPath);
@@ -1391,13 +1420,20 @@ export class VaultStore {
       return;
     }
 
+    // Quiescent handoff: take the write lease on `nextPath` *before* applying
+    // body so remounts / destroy flushes / autosave cannot PUT onto the old path.
     this.noteLoading = true;
     this.loading = true;
     this.error = null;
+    this.selectedPath = nextPath;
+    this.dirty = false;
+    this.resetSaveState();
     try {
       const response: VaultNoteContentResponse = await getVaultNote(nextPath);
+      if (openGen !== this.openGeneration || this.selectedPath !== nextPath) {
+        return;
+      }
       this.applyNote(response);
-      this.selectedPath = nextPath;
       this.writeBufferFromResponse(nextPath, response);
       this.restoreEditorUi(nextPath);
       localStorage.setItem(LAST_NOTE_KEY, nextPath);
@@ -1406,12 +1442,16 @@ export class VaultStore {
       this.rememberSpaceForPath(nextPath, response.note.title);
       await this.refreshBacklinks(nextPath);
     } catch (err) {
-      this.error = err instanceof Error ? err.message : String(err);
+      if (openGen === this.openGeneration && this.selectedPath === nextPath) {
+        this.error = err instanceof Error ? err.message : String(err);
+      }
     } finally {
-      this.noteLoading = false;
-      this.loading = false;
-      if (this.pendingHeadingScroll) {
-        this.headingScrollRequest += 1;
+      if (openGen === this.openGeneration) {
+        this.noteLoading = false;
+        this.loading = false;
+        if (this.pendingHeadingScroll) {
+          this.headingScrollRequest += 1;
+        }
       }
     }
   }
@@ -1568,11 +1608,22 @@ export class VaultStore {
    * Editor keystrokes must NOT bump contentSyncKey — that remounts Live/Build and
    * causes stale TipTap flushes to clobber the open note. Pass `reloadEditors: true`
    * only for out-of-band mutations (attachments, bridges, preview toggles).
+   *
+   * Pass `path` from the emitting editor so remounts / keep-alive hosts cannot
+   * write into a different leased session.
    */
   markDirty(
     nextContent: string,
-    options?: { reloadEditors?: boolean; allowEmpty?: boolean },
+    options?: { reloadEditors?: boolean; allowEmpty?: boolean; path?: string | null },
   ) {
+    if (this.noteLoading) {
+      return;
+    }
+    if (options?.path != null && options.path.trim() !== "") {
+      if (!this.isFocusedPath(options.path)) {
+        return;
+      }
+    }
     // Live serialize/organism remounts must not mark dirty on open with no edits.
     if (nextContent === this.content) {
       return;
@@ -1608,6 +1659,29 @@ export class VaultStore {
       this.saveStatus = "unsaved";
     }
     this.scheduleAutosave();
+  }
+
+  /**
+   * Persist a non-focused (or focused) path through the per-path save queue
+   * with If-Match — never bypass versioning for embed write-through.
+   */
+  async saveNoteAtPath(
+    path: string,
+    content: string,
+    options?: { force?: boolean },
+  ): Promise<boolean> {
+    const key = this.normalizeNotePath(path);
+    if (!key) return false;
+    const hash = this.isFocusedPath(key)
+      ? this.contentHash
+      : (this.noteBuffers.get(key)?.contentHash ?? null);
+    const result = await this.saveQueue.enqueue(key, {
+      content,
+      contentHash: options?.force ? null : hash,
+      force: Boolean(options?.force),
+      source: "manual",
+    });
+    return result.ok;
   }
 
   /** Refuse empty/near-empty Live serialize over a substantial note body. */
@@ -1746,6 +1820,7 @@ export class VaultStore {
 
   async save(options?: { force?: boolean; source?: "manual" | "autosave" }) {
     if (!this.selectedPath) return false;
+    if (this.noteLoading && options?.source === "autosave") return false;
     if (!this.dirty && !options?.force) return true;
     if (this.proposalActive && !options?.force) return false;
 
@@ -1900,6 +1975,7 @@ export class VaultStore {
       await this.refreshNotes();
       if (options.open !== false) {
         await this.openNote(response.note.path);
+        await this.syncLmeNoteTab(response.note.path);
       }
       return response.note.path;
     } catch (err) {

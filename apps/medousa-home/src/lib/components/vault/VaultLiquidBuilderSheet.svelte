@@ -927,7 +927,7 @@
                     >
                       None
                     </button>
-                    {#each compareEntities as entity (entity)}
+                    {#each compareEntities as entity, entityIndex (entityIndex)}
                       <button
                         type="button"
                         class="vault-chart-builder-seg__btn"

@@ -445,7 +445,7 @@
     slidesDeckEl?.flush();
     const flushed = markdownEditorEl?.flushLive();
     if (typeof flushed === "string" && flushed !== vault.content) {
-      vault.markDirty(flushed);
+      vault.markDirty(flushed, { path: notePath });
     }
   }
 
@@ -925,13 +925,13 @@
           <LedgerTableEditor
             content={displayContent}
             disabled={!interactive || vault.saving}
-            onchange={(next) => vault.markDirty(next)}
+            onchange={(next) => vault.markDirty(next, { path: notePath })}
           />
         {:else if showKanbanBoard}
           <KanbanBoardEditor
             content={displayContent}
             disabled={!interactive || vault.saving || vault.editorMode === "preview"}
-            onchange={(next) => vault.markDirty(next)}
+            onchange={(next) => vault.markDirty(next, { path: notePath })}
             onWikilink={handleWikilink}
           />
         {:else if showSlidesDeck}
@@ -939,7 +939,7 @@
             bind:this={slidesDeckEl}
             content={displayContent}
             disabled={!interactive || vault.saving || vault.editorMode === "preview"}
-            onchange={(next) => vault.markDirty(next)}
+            onchange={(next) => vault.markDirty(next, { path: notePath })}
           />
         {:else if showMarkdownEditor}
           <VaultMarkdownEditor
@@ -958,7 +958,7 @@
             scrollSyncEnabled={vault.buildScrollSync}
             onchange={(next) => {
               if (!bound) return;
-              vault.markDirty(next);
+              vault.markDirty(next, { path: notePath });
             }}
             showFloat={canFloatSticky}
             onFloat={() => void handleFloatSticky()}
