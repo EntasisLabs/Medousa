@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { placeComposerPopover, placeRailPopover } from "./railPopover";
+import {
+  placeComposerPopover,
+  placeRailPopover,
+  placeToolbarPopover,
+} from "./railPopover";
 
 function fakeRect(partial: Partial<DOMRect>): DOMRect {
   return {
@@ -162,5 +166,61 @@ describe("placeComposerPopover", () => {
     placeComposerPopover(trigger, menu);
 
     expect(Number.parseInt(menu.style.top, 10)).toBe(76 + 8);
+  });
+});
+
+describe("placeToolbarPopover", () => {
+  beforeEach(() => {
+    vi.stubGlobal("window", {
+      innerWidth: 1200,
+      innerHeight: 800,
+      visualViewport: undefined,
+    });
+  });
+
+  it("opens above a dock trigger near the bottom", () => {
+    const trigger = {
+      getBoundingClientRect: () =>
+        fakeRect({ top: 760, left: 300, right: 332, bottom: 792, width: 32, height: 32 }),
+    } as HTMLElement;
+    const menu = fakeMenu({ width: 352, height: 420 });
+    (menu as HTMLElement & { scrollHeight: number }).scrollHeight = 420;
+
+    placeToolbarPopover(trigger, menu, { prefer: "above", width: 352 });
+
+    const top = Number.parseInt(menu.style.top, 10);
+    const left = Number.parseInt(menu.style.left, 10);
+    const maxH = Number.parseInt(menu.style.maxHeight, 10);
+    expect(top + Math.min(420, maxH)).toBeLessThanOrEqual(760);
+    expect(left + 352).toBeLessThanOrEqual(1188);
+    expect(maxH).toBeLessThanOrEqual(760 - 12 - 6);
+  });
+
+  it("opens below a titlebar trigger when there is room", () => {
+    const trigger = {
+      getBoundingClientRect: () =>
+        fakeRect({ top: 48, left: 900, right: 932, bottom: 80, width: 32, height: 32 }),
+    } as HTMLElement;
+    const menu = fakeMenu({ width: 352, height: 200 });
+
+    placeToolbarPopover(trigger, menu, { prefer: "below", width: 352 });
+
+    expect(Number.parseInt(menu.style.top, 10)).toBe(80 + 6);
+  });
+
+  it("caps height to available space above a bottom dock", () => {
+    const trigger = {
+      getBoundingClientRect: () =>
+        fakeRect({ top: 700, left: 300, right: 332, bottom: 732, width: 32, height: 32 }),
+    } as HTMLElement;
+    const menu = fakeMenu({ width: 352, height: 900 });
+
+    placeToolbarPopover(trigger, menu, { prefer: "above", width: 352 });
+
+    const maxH = Number.parseInt(menu.style.maxHeight, 10);
+    const top = Number.parseInt(menu.style.top, 10);
+    expect(maxH).toBeLessThanOrEqual(700 - 12 - 6);
+    expect(top).toBeGreaterThanOrEqual(12);
+    expect(top + Math.min(900, maxH)).toBeLessThanOrEqual(800 - 12);
   });
 });

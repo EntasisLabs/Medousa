@@ -2,6 +2,7 @@
   import ArtifactLibraryPreview from "$lib/components/artifacts/ArtifactLibraryPreview.svelte";
   import LmeAgentEditor from "$lib/components/lme/LmeAgentEditor.svelte";
   import LmeFlowEditor from "$lib/components/lme/LmeFlowEditor.svelte";
+  import LmeScheduleEditor from "$lib/components/lme/LmeScheduleEditor.svelte";
   import LmeScriptEditor from "$lib/components/lme/LmeScriptEditor.svelte";
   import ShellSidebarExpandButton from "$lib/components/layout/ShellSidebarExpandButton.svelte";
   import VaultAttachmentPreviewContent from "$lib/components/vault/VaultAttachmentPreviewContent.svelte";
@@ -209,6 +210,10 @@
     {:else if active.kind === "flow"}
       <div class="relative z-10 flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <LmeFlowEditor />
+      </div>
+    {:else if active.kind === "schedule"}
+      <div class="relative z-10 flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        <LmeScheduleEditor />
       </div>
     {/if}
   {/if}

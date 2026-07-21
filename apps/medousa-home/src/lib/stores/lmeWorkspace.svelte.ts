@@ -3,6 +3,7 @@
 import type { AutomationsSection } from "$lib/stores/automationsNav.svelte";
 import { artifacts } from "$lib/stores/artifacts.svelte";
 import { catalog } from "$lib/stores/catalog.svelte";
+import { automations } from "$lib/stores/automations.svelte";
 import { flows } from "$lib/stores/flows.svelte";
 import { graphemeScriptEditor } from "$lib/stores/graphemeScriptEditor.svelte";
 import { vault } from "$lib/stores/vault.svelte";
@@ -55,6 +56,12 @@ export type LmeTab =
       kind: "flow";
       /** null = draft / new flow composer */
       workflowId: string | null;
+      title: string;
+    }
+  | {
+      tabId: string;
+      kind: "schedule";
+      recurringId: string;
       title: string;
     };
 
@@ -349,6 +356,34 @@ export class LmeWorkspaceStore {
     void flows.loadRuns(workflowId);
   }
 
+  openSchedule(recurringId: string, title: string) {
+    this.setExplorerMode("schedules");
+    const label = title.trim() || recurringId;
+    const existing = this.tabs.find(
+      (tab) => tab.kind === "schedule" && tab.recurringId === recurringId,
+    );
+    if (existing) {
+      this.activeTabId = existing.tabId;
+      if (existing.title !== label) {
+        this.tabs = this.tabs.map((tab) =>
+          tab.tabId === existing.tabId ? { ...tab, title: label } : tab,
+        );
+      }
+      mirrorActiveTabToShell(existing.tabId, label);
+    } else {
+      const tab: LmeTab = {
+        tabId: newTabId("schedule"),
+        kind: "schedule",
+        recurringId,
+        title: label,
+      };
+      this.tabs = [...this.tabs, tab].slice(-MAX_TABS);
+      this.activeTabId = tab.tabId;
+      mirrorActiveTabToShell(tab.tabId, tab.title);
+    }
+    void automations.loadRuns(recurringId);
+  }
+
   /** Keep draft tab title in sync with the composer name field. */
   syncFlowComposerTabTitle(title: string) {
     const label = title.trim() || "New flow";
@@ -444,6 +479,10 @@ export class LmeWorkspaceStore {
       } else {
         flows.composerOpen = true;
       }
+      return;
+    }
+    if (tab.kind === "schedule") {
+      void automations.loadRuns(tab.recurringId);
       return;
     }
     artifacts.selectArtifact(tab.artifactId);
