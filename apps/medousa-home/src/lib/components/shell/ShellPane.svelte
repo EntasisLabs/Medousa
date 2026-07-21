@@ -80,8 +80,9 @@
    * Reserve the titlebar action cluster (Save / Run / Tools / Schedule, etc.)
    * so hover tabs never cover clickable chrome on the right.
    */
-  const tabStripOffsetRight = "9.75rem";
-  const tabActionReservePx = 156;
+  /** Room for flow/agent titlebar actions (add / plan / run / schedule / discard). */
+  const tabStripOffsetRight = "11.5rem";
+  const tabActionReservePx = 184;
   const dropTarget = $derived(shellTabs.tabDropTargetGroupId === groupId);
 
   /** Live pool slot — not merely focused (multi-live transcripts). */
