@@ -251,14 +251,16 @@
     <aside
       class="{mobile
         ? mobileDetailOpen
-          ? 'mobile-you-scroll flex min-h-0 flex-1 flex-col overflow-y-auto'
+          ? 'mobile-you-scroll flex min-h-0 flex-1 flex-col'
           : 'hidden'
-        : 'workshop-detail-pane w-[min(420px,42%)] shrink-0 overflow-y-auto border-l border-surface-500/40'} px-4 py-4"
+        : 'workshop-detail-pane flex w-[min(420px,42%)] shrink-0 flex-col border-l border-surface-500/40'} {flows.composerOpen
+        ? 'overflow-hidden'
+        : 'overflow-y-auto px-4 py-4'}"
     >
-      {#if mobileDetailOpen}
+      {#if mobileDetailOpen && !flows.composerOpen}
         <button
           type="button"
-          class="workshop-text-action mb-3 shrink-0 text-sm"
+          class="workshop-text-action mb-3 shrink-0 self-start text-sm"
           onclick={closeMobileDetail}
         >
           ← Back to list
@@ -266,13 +268,12 @@
       {/if}
 
       {#if flows.composerOpen}
-        <h2 class="workshop-section-title">New flow</h2>
-        <p class="workshop-faint mt-1 text-xs">New flow</p>
-        <div class="mt-4">
+        <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           <FlowComposer
             {mobile}
             bind:draft={flows.composerDraft}
             onCancel={() => flows.closeComposer()}
+            hideSidebarExpand={true}
           />
         </div>
       {:else if selected}

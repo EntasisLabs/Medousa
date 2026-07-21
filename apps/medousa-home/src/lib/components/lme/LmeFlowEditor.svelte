@@ -81,42 +81,37 @@
   }
 </script>
 
-<div class="lme-flow-editor flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-y-auto px-6 py-5 sm:px-8">
+<div class="lme-flow-editor flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
   {#if !active}
-    <p class="text-sm text-surface-500">Select a flow from the side panel.</p>
+    <p class="px-5 py-5 text-sm text-surface-500 sm:px-7 sm:py-6">
+      Select a flow from the side panel.
+    </p>
   {:else if isDraft}
-    <div class="flow-liquid relative mx-auto w-full max-w-2xl">
-      <div class="flow-liquid-wash" aria-hidden="true"></div>
-      <div class="relative">
-        <p class="flow-liquid-whisper">New flow</p>
-        <h2 class="mt-1 text-2xl font-semibold tracking-tight text-surface-50">
-          {flows.composerDraft.name.trim() || "Untitled flow"}
-        </h2>
-        <div class="mt-6">
-          <FlowComposer bind:draft={flows.composerDraft} onCancel={cancelDraft} />
-        </div>
-      </div>
+    <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+      <FlowComposer bind:draft={flows.composerDraft} onCancel={cancelDraft} />
     </div>
   {:else if !selected && !selectedDetail}
-    {#if active.workflowId && flows.detailLoadingId === active.workflowId}
-      <p class="text-sm text-surface-500">Loading flow…</p>
-    {:else if active.workflowId && flows.detailErrorById[active.workflowId]}
-      <p class="text-sm text-warning-400">{flows.detailErrorById[active.workflowId]}</p>
-    {:else}
-      <p class="text-sm text-surface-500">
-        Flow <span class="font-mono text-surface-300">{active.workflowId}</span> not found.
-      </p>
-      <button
-        type="button"
-        class="btn btn-sm variant-ghost-surface mt-3 self-start"
-        onclick={() => void flows.refresh()}
-      >
-        Refresh
-      </button>
-    {/if}
+    <div class="overflow-y-auto px-5 py-5 sm:px-7 sm:py-6">
+      {#if active.workflowId && flows.detailLoadingId === active.workflowId}
+        <p class="text-sm text-surface-500">Loading flow…</p>
+      {:else if active.workflowId && flows.detailErrorById[active.workflowId]}
+        <p class="text-sm text-warning-400">{flows.detailErrorById[active.workflowId]}</p>
+      {:else}
+        <p class="text-sm text-surface-500">
+          Flow <span class="font-mono text-surface-300">{active.workflowId}</span> not found.
+        </p>
+        <button
+          type="button"
+          class="btn btn-sm variant-ghost-surface mt-3 self-start"
+          onclick={() => void flows.refresh()}
+        >
+          Refresh
+        </button>
+      {/if}
+    </div>
   {:else}
     {@const entry = selected}
-    <div class="mx-auto w-full max-w-2xl">
+    <div class="mx-auto w-full max-w-2xl overflow-y-auto px-5 py-5 sm:px-7 sm:py-6">
       <p class="text-[11px] tracking-[0.12em] text-surface-500 uppercase">Named flow</p>
       <div class="mt-1 flex flex-wrap items-center gap-2">
         <h2 class="text-xl font-semibold tracking-tight text-surface-50">
