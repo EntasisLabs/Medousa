@@ -97,6 +97,8 @@ export class LayoutStore {
   shellSidebarMode = $state<ShellSidebarMode>(
     surfaceHasShellSidebarView(loadLastSurface()) ? "view" : "nav",
   );
+  /** Per-surface rail mode — survive chat ↔ Workspace switches. */
+  private sidebarModeBySurface: Record<string, ShellSidebarMode> = {};
   /** @deprecated Use !shellSidebarExpanded — kept for LME call sites. */
   vaultSidebarCollapsed = $state(!loadShellSidebarExpanded());
   /** @deprecated Alias of shellSidebarExpanded (navStyle rail=visible / compact=hidden). */
@@ -214,11 +216,12 @@ export class LayoutStore {
 
   setShellSidebarMode(mode: ShellSidebarMode) {
     this.shellSidebarMode = mode;
+    this.sidebarModeBySurface[this.desktopSurface] = mode;
   }
 
   /** Leave view list → destination nav in the same expanded rail. */
   shellSidebarBackToNav() {
-    this.shellSidebarMode = "nav";
+    this.setShellSidebarMode("nav");
     if (!this.shellSidebarExpanded) {
       this.setShellSidebarExpanded(true);
     }
@@ -227,12 +230,18 @@ export class LayoutStore {
   /** Expand the master rail into the active view’s list (Peers, Settings, …). */
   openShellSidebarView(surfaceId: string) {
     if (!surfaceHasShellSidebarView(surfaceId)) {
-      this.shellSidebarMode = "nav";
+      this.setShellSidebarMode("nav");
       this.setShellSidebarExpanded(true);
       return;
     }
-    this.shellSidebarMode = "view";
+    this.setShellSidebarMode("view");
     this.setShellSidebarExpanded(true);
+  }
+
+  private restoreSidebarModeFor(surface: string): ShellSidebarMode {
+    const remembered = this.sidebarModeBySurface[surface];
+    if (remembered === "nav" || remembered === "view") return remembered;
+    return surfaceHasShellSidebarView(surface) ? "view" : "nav";
   }
 
   setVaultSidebarCollapsed(collapsed: boolean) {
@@ -267,9 +276,10 @@ export class LayoutStore {
     let next = surface === "home" ? "chat" : surface;
     if (next === "automations" || next === "workshop") next = "library";
     if (this.desktopSurface === next) return;
+    this.sidebarModeBySurface[this.desktopSurface] = this.shellSidebarMode;
     this.desktopSurface = next as Surface;
     saveLastSurface(next);
-    this.shellSidebarMode = surfaceHasShellSidebarView(next) ? "view" : "nav";
+    this.shellSidebarMode = this.restoreSidebarModeFor(next);
   }
 
   navigateDesktop(surface: string, options?: { bump?: boolean }) {
@@ -298,10 +308,12 @@ export class LayoutStore {
       this.setActivityCollapsed(true);
     }
     const changed = this.desktopSurface !== next;
+    if (changed) {
+      this.sidebarModeBySurface[this.desktopSurface] = this.shellSidebarMode;
+    }
     this.desktopSurface = next;
     saveLastSurface(next);
-    // Drill into view lists when landing on a list surface; otherwise stay on nav.
-    this.shellSidebarMode = surfaceHasShellSidebarView(next) ? "view" : "nav";
+    this.shellSidebarMode = this.restoreSidebarModeFor(next);
     if (changed || options?.bump) {
       this.bumpNavigation();
     }

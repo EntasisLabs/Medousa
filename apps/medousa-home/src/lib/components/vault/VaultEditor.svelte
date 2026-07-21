@@ -343,8 +343,27 @@
     if (!bound || !interactive || !visible) return;
     registerVaultLeaveFlush(() => {
       flushPendingEditorDrafts();
+      const scrollTop = markdownEditorEl?.getScrollTop?.() ?? 0;
+      vault.stashEditorScroll(vault.selectedPath, scrollTop);
     });
     return () => registerVaultLeaveFlush(null);
+  });
+
+  /** Apply stashed scroll after openNote / pane focus restores UI. */
+  $effect(() => {
+    const epoch = vault.editorScrollRestoreEpoch;
+    const path = vault.editorScrollRestorePath;
+    const top = vault.editorScrollRestoreTop;
+    if (!bound || !notePath || !path || path !== notePath) return;
+    if (epoch <= 0 || top <= 0) return;
+    void tick().then(() => {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (vault.editorScrollRestoreEpoch !== epoch) return;
+          markdownEditorEl?.setScrollTop?.(top);
+        });
+      });
+    });
   });
 
   $effect(() => {

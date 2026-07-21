@@ -1279,13 +1279,60 @@ export class VaultStore {
     return ok;
   }
 
-  private stashFocusedEditorUi() {
+  /** Bumped when openNote restores UI — editors apply scrollTop from runtime. */
+  editorScrollRestoreEpoch = $state(0);
+  editorScrollRestorePath = $state<string | null>(null);
+  editorScrollRestoreTop = $state(0);
+
+  /**
+   * Folder-tree expand map (session). Key = folder path / space id / name.
+   * Survives Workspace rail remounts.
+   */
+  treeExpandedByKey = $state<Record<string, boolean>>({});
+
+  treeExpandKeyFor(node: {
+    path?: string | null;
+    spaceId?: string | null;
+    dropPrefix?: string | null;
+    name: string;
+  }): string {
+    return (node.path ?? node.spaceId ?? node.dropPrefix ?? node.name).trim();
+  }
+
+  isTreeExpanded(key: string): boolean | undefined {
+    const normalized = key.trim();
+    if (!normalized) return undefined;
+    if (Object.prototype.hasOwnProperty.call(this.treeExpandedByKey, normalized)) {
+      return this.treeExpandedByKey[normalized];
+    }
+    return undefined;
+  }
+
+  setTreeExpanded(key: string, expanded: boolean) {
+    const normalized = key.trim();
+    if (!normalized) return;
+    this.treeExpandedByKey = {
+      ...this.treeExpandedByKey,
+      [normalized]: expanded,
+    };
+  }
+
+  stashEditorScroll(path: string | null | undefined, scrollTop: number) {
+    const key = path?.trim();
+    if (!key || this.isLooseFile) return;
+    noteEditorRuntimes.patchUi(key, {
+      scrollTop: Math.max(0, scrollTop),
+    });
+  }
+
+  private stashFocusedEditorUi(scrollTop?: number) {
     const path = this.selectedPath?.trim();
     if (!path || this.isLooseFile) return;
     noteEditorRuntimes.patchUi(path, {
       plane: this.notePlane,
       editorMode: this.editorMode,
       editorSurface: this.editorSurface,
+      ...(typeof scrollTop === "number" ? { scrollTop: Math.max(0, scrollTop) } : {}),
     });
   }
 
@@ -1299,6 +1346,9 @@ export class VaultStore {
     this.notePlane = runtime.ui.plane;
     this.editorMode = runtime.ui.editorMode;
     this.editorSurface = runtime.ui.editorSurface;
+    this.editorScrollRestorePath = path;
+    this.editorScrollRestoreTop = runtime.ui.scrollTop ?? 0;
+    this.editorScrollRestoreEpoch += 1;
   }
 
   async openNote(path: string, options?: { skipLeaveFlush?: boolean }) {
@@ -1457,11 +1507,11 @@ export class VaultStore {
   enterEditMode() {
     // Prefer split for markdown notes that support preview (layout.vaultSplitEnabled
     // defaults true). Never force split off when returning to edit.
-    this.editorMode = "edit";
+    this.setEditorMode("edit");
   }
 
   enterPreviewMode() {
-    this.editorMode = "preview";
+    this.setEditorMode("preview");
   }
 
   resolveWikilinkPath(rawTarget: string): string | null {

@@ -52,25 +52,27 @@
     return node.children.some((child) => treeNodeContainsPath(child, path));
   }
 
+  const expandKey = $derived(vault.treeExpandKeyFor(node));
+
   const startsExpanded = $derived(
     node.defaultCollapsed
       ? false
       : treeNodeContainsPath(node, selectedPath) ||
           (activeSpaceFilter != null && node.spaceId === activeSpaceFilter),
   );
-  let expanded = $state(false);
-  let initialized = $state(false);
 
-  $effect(() => {
-    if (!initialized && startsExpanded) {
-      expanded = true;
-      initialized = true;
-    }
+  const expanded = $derived.by(() => {
+    void vault.treeExpandedByKey;
+    const stored = vault.isTreeExpanded(expandKey);
+    if (stored !== undefined) return stored;
+    return startsExpanded;
   });
 
   $effect(() => {
     if (selectedPath && treeNodeContainsPath(node, selectedPath)) {
-      expanded = true;
+      if (vault.isTreeExpanded(expandKey) !== true) {
+        vault.setTreeExpanded(expandKey, true);
+      }
     }
   });
 
@@ -164,7 +166,7 @@
       onSelect(node.path);
       return;
     }
-    expanded = !expanded;
+    vault.setTreeExpanded(expandKey, !expanded);
   }
 
   function handleContextMenu(event: MouseEvent) {
@@ -186,7 +188,7 @@
 
   function handlePointerEnter() {
     if (isVaultPointerDragging() && node.isFolder && !expanded) {
-      expanded = true;
+      vault.setTreeExpanded(expandKey, true);
     }
   }
 
