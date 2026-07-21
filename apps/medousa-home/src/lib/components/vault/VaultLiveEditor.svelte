@@ -152,6 +152,12 @@
   function emitMarkdown() {
     if (!editor || applyingExternal || !ready) return;
     if (boundKeyRef.current !== contentSyncKey) return;
+    // While a slash prefix is active, skip full-doc serialize — filter keystrokes
+    // only need TipTap's local prefix (syncSlash). Serialize resumes on close.
+    if (liveSlashOpen(editor)) {
+      syncSlash();
+      return;
+    }
     const md = serializeLiveMarkdown(editor.getJSON(), frontmatter);
     // Open/mount round-trips must not look like user edits.
     if (liveMarkdownEqual(md, valueRef.current)) return;
@@ -235,10 +241,11 @@
 
   function slashAnchorFor(container: HTMLElement | null) {
     if (!editor || !container) return null;
-    const { from } = editor.state.selection;
-    const coords = editor.view.coordsAtPos(from);
+    // coordsAtPos can throw near atom node views — never kill the update cycle.
+    const coords = liveCoordsAnchor(editor);
+    if (!coords) return null;
     return placeSlashMenuAnchor(
-      { top: coords.top, bottom: coords.bottom, left: coords.left },
+      { top: coords.top, bottom: coords.top + coords.height, left: coords.left },
       container,
     );
   }
@@ -547,7 +554,12 @@
             }
           }
 
-          if (slashOpenRef.current) {
+          // Never steal ↑↓/Enter from Windows IME composition (WebView2 deadlock).
+          if (
+            slashOpenRef.current &&
+            !event.isComposing &&
+            event.keyCode !== 229
+          ) {
             if (
               event.key === "ArrowDown" ||
               event.key === "ArrowUp" ||

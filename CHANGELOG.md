@@ -22,6 +22,7 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 - Liquid `compare` fences with duplicate axis or entity labels no longer abort the rest of the preview
 - Embed write-through and foreign undo go through the versioned per-path save queue
 - Vault editor context-menu cut/copy/paste no longer hangs the shell on Windows (clipboard timeouts + menu portal)
+- Slash menu no longer freezes Live/Build on Windows (IME key guards, hard dismiss, deferred serialize, BodyPortal)
 
 ### Changed
 
