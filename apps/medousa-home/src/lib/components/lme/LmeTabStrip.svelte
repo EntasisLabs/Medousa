@@ -1,6 +1,7 @@
 <script lang="ts">
   import {
     Bot,
+    CalendarClock,
     FileCode2,
     FileText,
     Files,
@@ -174,6 +175,8 @@
               <Bot size={12} strokeWidth={1.75} class="shrink-0 opacity-70" />
             {:else if tab.kind === "flow"}
               <GitBranch size={12} strokeWidth={1.75} class="shrink-0 opacity-70" />
+            {:else if tab.kind === "schedule"}
+              <CalendarClock size={12} strokeWidth={1.75} class="shrink-0 opacity-70" />
             {:else}
               <FileText size={12} strokeWidth={1.75} class="shrink-0 opacity-70" />
             {/if}

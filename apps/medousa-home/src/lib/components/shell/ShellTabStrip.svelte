@@ -1,6 +1,7 @@
 <script lang="ts">
   import {
     Bot,
+    CalendarClock,
     ChevronLeft,
     ChevronRight,
     FileCode2,
@@ -43,6 +44,7 @@
     if (lme.kind === "deck") return Presentation;
     if (lme.kind === "manuscript") return Bot;
     if (lme.kind === "flow") return GitBranch;
+    if (lme.kind === "schedule") return CalendarClock;
     return FileText;
   }
 

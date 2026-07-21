@@ -165,5 +165,6 @@ function prettyKind(kind: string): string {
   if (kind === "deck") return "Deck";
   if (kind === "manuscript") return "Manuscript";
   if (kind === "flow") return "Flow";
+  if (kind === "schedule") return "Schedule";
   return kind;
 }

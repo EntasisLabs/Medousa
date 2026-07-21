@@ -15,6 +15,26 @@ import type {
   UpdateRecurringRequest,
 } from "$lib/types/recurring";
 
+function clipLabel(value: string, maxChars: number): string {
+  if (value.length <= maxChars) return value;
+  return `${value.slice(0, Math.max(1, maxChars - 1)).trimEnd()}…`;
+}
+
+/** Turn a prompt into a short human name — not a truncated sentence. */
+export function titleFromPrompt(prompt: string): string {
+  let s = prompt.trim().replace(/\s+/g, " ");
+  s = s.replace(/^(can you|could you|would you|please|help me to|help me)\s+/i, "");
+  s = s.replace(
+    /^(look up|look into|find|search for|get|fetch|check|keep|write|create|update|make)\s+(the\s+|an?\s+)?/i,
+    "",
+  );
+  s = s.replace(/\?+$/g, "").trim();
+  const firstClause = (s.split(/\s+and\s+/i)[0] ?? s).trim();
+  let out = firstClause || s || "Schedule";
+  out = clipLabel(out, 34);
+  return out.charAt(0).toUpperCase() + out.slice(1);
+}
+
 export class AutomationsStore {
   definitions = $state<RecurringDefinitionEntry[]>([]);
   loading = $state(false);
@@ -77,9 +97,29 @@ export class AutomationsStore {
 
   labelFor(entry: RecurringDefinitionEntry): string {
     if (entry.display_name?.trim()) return entry.display_name.trim();
-    if (entry.manuscript_id) return entry.manuscript_id;
-    if (entry.prompt_excerpt) return entry.prompt_excerpt;
-    return entry.recurring_id;
+    if (entry.prompt_excerpt?.trim()) {
+      return titleFromPrompt(entry.prompt_excerpt);
+    }
+    if (entry.manuscript_id?.trim()) return entry.manuscript_id.trim();
+    return "Schedule";
+  }
+
+  clipForList(value: string, maxChars: number): string {
+    return clipLabel(value, maxChars);
+  }
+
+  /** One-line status for lists — pause and failure don’t compete. */
+  healthLineFor(entry: RecurringDefinitionEntry): string {
+    if (!entry.enabled) {
+      if (entry.last_run_status === "failed") return "Paused · last run failed";
+      return "Paused";
+    }
+    if (entry.last_run_status === "failed") {
+      return entry.last_run_at_utc
+        ? `Failed · ${this.formatNextRun(entry.last_run_at_utc)}`
+        : "Last run failed";
+    }
+    return `Next ${this.formatNextRun(entry.next_run_at_utc)}`;
   }
 
   originFor(entry: RecurringDefinitionEntry): string {
