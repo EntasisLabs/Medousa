@@ -65,6 +65,7 @@ medousa-install-support = { path = "crates/medousa-install-support" }
 medousa-engine = { path = "crates/medousa-engine" }
 medousa-host = { path = "crates/medousa-host" }
 medousa-sdk = { path = "crates/medousa-sdk" }
+medousa-acp-client = { path = "crates/medousa-acp-client" }
 medousa-browser-lite = { path = "crates/medousa-browser-lite" }
 medousa-local-inference = { path = "crates/medousa-local-inference" }
 anyhow = "1"

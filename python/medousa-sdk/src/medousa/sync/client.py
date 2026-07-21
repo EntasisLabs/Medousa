@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from medousa.sync.health import HealthApiSync
     from medousa.sync.ingest import IngestApiSync
     from medousa.sync.interactive import InteractiveApiSync
+    from medousa.sync.agents import AgentsApiSync
     from medousa.sync.jobs import JobsApiSync
     from medousa.sync.local_models import LocalModelsApiSync
     from medousa.sync.mcp_gateway import McpGatewayApiSync
@@ -74,6 +75,11 @@ class MedousaClientSync:
         from medousa.sync.interactive import InteractiveApiSync
 
         return InteractiveApiSync(self)
+
+    def agents(self) -> AgentsApiSync:
+        from medousa.sync.agents import AgentsApiSync
+
+        return AgentsApiSync(self)
 
     def runtime(self) -> RuntimeApiSync:
         from medousa.sync.runtime import RuntimeApiSync

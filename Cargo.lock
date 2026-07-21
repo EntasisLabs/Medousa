@@ -7216,6 +7216,7 @@ dependencies = [
  "libc",
  "locus-core-rs",
  "mdns-sd",
+ "medousa-acp-client",
  "medousa-browser-lite",
  "medousa-engine",
  "medousa-host",

@@ -173,6 +173,25 @@ See [vault.md](vault.md).
 
 ---
 
+## Agents (hot-swappable runtimes)
+
+External ACP agents (Cursor / Codex). Clients use the Medousa SDK `agents()` accessor — not raw ACP. Native Medousa turns remain on `/v1/turns` + interactive.
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/v1/agents/runtimes` | List runtimes + availability |
+| POST | `/v1/agents/sessions` | Create ACP session (bind Medousa `session_id`) |
+| POST | `/v1/agents/sessions/{id}/prompt` | Send prompt |
+| GET | `/v1/agents/sessions/{id}/stream` | SSE (same event shape as interactive) |
+| POST | `/v1/agents/sessions/{id}/cancel` | Cancel session |
+| GET | `/v1/agents/permission-requests` | List pending ACP permissions |
+| POST | `/v1/agents/permission-requests/{id}/approve` | Approve |
+| POST | `/v1/agents/permission-requests/{id}/deny` | Deny |
+
+See [ADR-008](../architecture/decisions/adr-008-hot-swappable-agent-runtime.md) and [acp-external-agents](../cookbook/acp-external-agents.md).
+
+---
+
 ## Calendar
 
 | Method | Path | Purpose |

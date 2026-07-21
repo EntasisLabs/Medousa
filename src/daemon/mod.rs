@@ -6,6 +6,7 @@ pub mod http;
 pub mod identity;
 pub mod ingest;
 pub mod interactive;
+pub mod agents;
 pub mod jobs;
 pub mod router;
 pub mod runtime_tui_defaults;

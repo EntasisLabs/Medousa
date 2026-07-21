@@ -115,6 +115,19 @@ fn main() {
     export_type!(schemas, CalendarImportResponse, "CalendarImportResponse");
     export_type!(schemas, CalendarExportResponse, "CalendarExportResponse");
 
+    // Agents (hot-swappable runtimes)
+    export_type!(schemas, AgentRuntimeInfo, "AgentRuntimeInfo");
+    export_type!(schemas, AgentRuntimeListResponse, "AgentRuntimeListResponse");
+    export_type!(schemas, CreateAgentSessionRequest, "CreateAgentSessionRequest");
+    export_type!(schemas, CreateAgentSessionResponse, "CreateAgentSessionResponse");
+    export_type!(schemas, AgentSessionPromptRequest, "AgentSessionPromptRequest");
+    export_type!(schemas, AgentSessionPromptResponse, "AgentSessionPromptResponse");
+    export_type!(schemas, CancelAgentSessionResponse, "CancelAgentSessionResponse");
+    export_type!(schemas, AgentPermissionRequestRecord, "AgentPermissionRequestRecord");
+    export_type!(schemas, AgentPermissionRequestListResponse, "AgentPermissionRequestListResponse");
+    export_type!(schemas, AgentPermissionResolveRequest, "AgentPermissionResolveRequest");
+    export_type!(schemas, AgentPermissionResolveResponse, "AgentPermissionResolveResponse");
+
     // Workspace
     export_type!(schemas, WorkspaceCardActionResponse, "WorkspaceCardActionResponse");
     export_type!(schemas, WorkspaceLinkVaultRequest, "WorkspaceLinkVaultRequest");

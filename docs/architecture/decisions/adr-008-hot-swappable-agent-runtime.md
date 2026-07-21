@@ -10,33 +10,38 @@ Medousa Home already has a strong vault, context, and native turn loop. Users wh
 
 We must not marry the product to a single model **or** a single agent loop. The durable constant is Medousa space; the loop is swappable.
 
+If ACP were wired only inside Home chat, Telegram / TUI / CLI / Discord would each reimplement agent spawning, streaming, and permission gates. That fights the daemon’s role as the workshop’s single control plane (already true for native interactive turns and the MCP **client** gateway pattern).
+
 ## Decision
 
-1. **North star:** Home chat is a client over a pluggable agentic runtime. External runtimes reach vault/context/calendar/artifacts via a first-party **Medousa MCP server**. Home drives external loops via an **ACP client**.
-2. **0.4.0 ships bones only:**
-   - `crates/medousa-mcp-server` — stdio MCP surface for space tools; **deny** spawn/turn/host orchestration
-   - `crates/medousa-acp-client` — traits + Cursor/Codex config stubs + stub session
-   - Prove the pipes; do **not** require polished “Runtime: Medousa | Cursor | Codex” composer UX
-3. **QA bar for bones:** Cursor + Codex. Claude Code / Devin are watch-only.
-4. **Later (not 0.4.0):** per-session runtime picker, UX parity across loops, per-workshop defaults, Medousa-as-ACP-agent.
+1. **North star:** Any Medousa **channel** messages through the **daemon** via the **Medousa SDK** (`AgentsApi`). The daemon exposes `/v1/agents/…` for external ACP runtimes (Cursor, Codex). Native Medousa stays on `/v1/turns`. External runtimes reach vault/context via **Medousa MCP server**.
+2. **SDK-only clients:** Home Tauri calls `client().agents()` only — no raw ACP sockets, no ad-hoc `workshop_http` path strings for agents. Python SDK mirrors the same accessor. TUI/CLI/Telegram use the same SDK surface.
+3. **Where ACP lives:** In-process daemon library [`medousa-acp-client`](../../../crates/medousa-acp-client) (`ExternalAcpClient` + stub fallback). Optional sidecar later for crash isolation.
+4. **Permissions:** ACP `PermissionRequest` → SSE `permission_request` + `/v1/agents/permission-requests/{id}/approve|deny` (budget-approval pattern).
+5. **0.4.0 bones:** list runtimes, create/prompt/stream/cancel, Cursor/Codex spawn-when-available (else stub), thin Home runtime select. Not polished multi-channel pickers.
 
 ```text
-User → Home chat → [Medousa loop | Cursor/Codex via ACP]
-                              ↓
-                    Medousa MCP server → vault / context / calendar
+Channel → Medousa SDK AgentsApi → Daemon /v1/agents
+                                      ├── ExternalAcpClient → Cursor / Codex
+                                      └── (native) /v1/turns → Medousa loop
+External agent → Medousa MCP server → vault / context / calendar
 ```
 
 ## Consequences
 
-- Native Medousa turns remain the default path; ACP is opt-in once wired.
-- External agents see markdown literals for workbook formulas (overlay-only); an evaluate API may come later.
-- Gateway (`medousa_mcp_gateway`) stays the MCP **client** broker for third-party servers; `medousa_mcp_server` is the inverse — Medousa as a server.
+- Native turns remain default; ACP is opt-in per session (Home: Runtime select).
+- Contract parity includes `agents` accessor rows in `sdk-contract/manifest.yaml`.
+- Stream events reuse `InteractiveTurnStreamEvent` with `agent_session_id` / `permission_request_id` fields.
 
 ## Code anchors
 
-- `crates/medousa-mcp-server/`
 - `crates/medousa-acp-client/`
-- `src/mcp_gateway/` (existing client gateway)
-- `apps/medousa-home/src/lib/components/chat/ChatPanel.svelte` (future thin runtime branch)
-- `docs/cookbook/mcp-server-setup.md` (operator docs — follow-up)
-- `docs/cookbook/acp-external-agents.md` (operator docs — follow-up)
+- `crates/medousa-mcp-server/`
+- `crates/medousa-sdk/src/agents.rs` — `MedousaClient::agents()`
+- `python/medousa-sdk/src/medousa/agents.py`
+- `src/daemon/agents.rs` — `/v1/agents/…`
+- `src/agent_permission_request.rs`
+- `apps/medousa-home/src-tauri/src/daemon/agents.rs`
+- `apps/medousa-home/src/lib/utils/sessionAgentRuntime.ts`
+- `docs/cookbook/mcp-server-setup.md`
+- `docs/cookbook/acp-external-agents.md`

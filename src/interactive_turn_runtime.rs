@@ -657,6 +657,9 @@ fn build_event_messages(
         browser_session_id: None,
         browser_challenge_url: None,
         context_usage: None,
+        permission_request_id: None,
+        agent_session_id: None,
+        agent_runtime: None,
     })
 }
 

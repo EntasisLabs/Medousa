@@ -117,6 +117,24 @@ Both Rust (`sse` feature) and Python ship built-in SSE clients — [interactive-
 
 ---
 
+## `agents()`
+
+Hot-swappable external agent runtimes (Cursor / Codex via ACP). Native Medousa turns stay on `interactive()` / turn tickets. See [ADR-008](../architecture/decisions/adr-008-hot-swappable-agent-runtime.md).
+
+| Method | HTTP | Types |
+|--------|------|-------|
+| `list_runtimes()` | `GET /v1/agents/runtimes` | `AgentRuntimeListResponse` |
+| `create_session(request)` | `POST /v1/agents/sessions` | `CreateAgentSessionRequest` → `CreateAgentSessionResponse` |
+| `prompt(id, request)` | `POST /v1/agents/sessions/{id}/prompt` | `AgentSessionPromptRequest` → `AgentSessionPromptResponse` |
+| `stream(stream_url)` | `GET …/stream` (SSE) | `InteractiveTurnStreamEvent` |
+| `stream_session(request)` | create + SSE | combined helper |
+| `cancel(id)` | `POST /v1/agents/sessions/{id}/cancel` | `CancelAgentSessionResponse` |
+| `list_permission_requests(status?, limit?)` | `GET /v1/agents/permission-requests` | `AgentPermissionRequestListResponse` |
+| `approve_permission(id, request)` | `POST …/approve` | `AgentPermissionResolveResponse` |
+| `deny_permission(id, request)` | `POST …/deny` | `AgentPermissionResolveResponse` |
+
+---
+
 ## `runtime()`
 
 | Method | HTTP | Types |

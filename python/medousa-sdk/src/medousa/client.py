@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from medousa.http import HttpApi
     from medousa.ingest import IngestApi
     from medousa.interactive import InteractiveApi
+    from medousa.agents import AgentsApi
     from medousa.jobs import JobsApi
     from medousa.local_models import LocalModelsApi
     from medousa.mcp_gateway import McpGatewayApi
@@ -76,6 +77,11 @@ class MedousaClient:
         from medousa.interactive import InteractiveApi
 
         return InteractiveApi(self)
+
+    def agents(self) -> AgentsApi:
+        from medousa.agents import AgentsApi
+
+        return AgentsApi(self)
 
     def runtime(self) -> RuntimeApi:
         from medousa.runtime import RuntimeApi

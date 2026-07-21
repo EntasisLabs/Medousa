@@ -268,6 +268,68 @@ methods:
     streaming: false
     sync: true
 
+  # agents (hot-swappable external runtimes)
+  - accessor: agents
+    method: list_runtimes
+    http: GET
+    path: /v1/agents/runtimes
+    response_type: AgentRuntimeListResponse
+    streaming: false
+    sync: true
+  - accessor: agents
+    method: create_session
+    http: POST
+    path: /v1/agents/sessions
+    request_type: CreateAgentSessionRequest
+    response_type: CreateAgentSessionResponse
+    streaming: false
+    sync: true
+  - accessor: agents
+    method: prompt
+    http: POST
+    path: /v1/agents/sessions/{agent_session_id}/prompt
+    request_type: AgentSessionPromptRequest
+    response_type: AgentSessionPromptResponse
+    streaming: false
+    sync: true
+  - accessor: agents
+    method: stream
+    http: GET
+    path: /v1/agents/sessions/{agent_session_id}/stream
+    response_type: InteractiveTurnStreamEvent
+    streaming: true
+    sync: false
+  - accessor: agents
+    method: cancel
+    http: POST
+    path: /v1/agents/sessions/{agent_session_id}/cancel
+    response_type: CancelAgentSessionResponse
+    streaming: false
+    sync: true
+  - accessor: agents
+    method: list_permission_requests
+    http: GET
+    path: /v1/agents/permission-requests
+    response_type: AgentPermissionRequestListResponse
+    streaming: false
+    sync: true
+  - accessor: agents
+    method: approve_permission
+    http: POST
+    path: /v1/agents/permission-requests/{request_id}/approve
+    request_type: AgentPermissionResolveRequest
+    response_type: AgentPermissionResolveResponse
+    streaming: false
+    sync: true
+  - accessor: agents
+    method: deny_permission
+    http: POST
+    path: /v1/agents/permission-requests/{request_id}/deny
+    request_type: AgentPermissionResolveRequest
+    response_type: AgentPermissionResolveResponse
+    streaming: false
+    sync: true
+
   # runtime
   - accessor: runtime
     method: artifact_command
@@ -763,6 +825,11 @@ client_helpers:
       - stream_turn_reconnecting
     rust_module: medousa_sdk::interactive
     python_module: medousa.interactive
+  - accessor: agents
+    methods:
+      - stream_session
+    rust_module: medousa_sdk::agents
+    python_module: medousa.agents
 
 planned_streaming:
   - accessor: http
