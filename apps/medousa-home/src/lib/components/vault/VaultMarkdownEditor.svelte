@@ -518,6 +518,24 @@
     draft = flushed;
     return flushed;
   }
+
+  export function getScrollTop(): number {
+    if (isLivePlane) {
+      return liveEl?.getScrollEl?.()?.scrollTop ?? 0;
+    }
+    return cmEl?.getScrollEl?.()?.scrollTop ?? 0;
+  }
+
+  export function setScrollTop(top: number) {
+    const next = Math.max(0, top);
+    if (isLivePlane) {
+      const el = liveEl?.getScrollEl?.();
+      if (el) el.scrollTop = next;
+      return;
+    }
+    const el = cmEl?.getScrollEl?.();
+    if (el) el.scrollTop = next;
+  }
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->

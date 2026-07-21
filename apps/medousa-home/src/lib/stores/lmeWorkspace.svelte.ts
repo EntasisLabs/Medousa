@@ -416,31 +416,28 @@ export class LmeWorkspaceStore {
 
     this.activeTabId = tabId;
     mirrorActiveTabToShell(tab.tabId, tab.title);
+    // Do not setExplorerMode here — rail mode is user-driven so browsing
+    // Local Files / Notes survives tab and shell switches.
     if (tab.kind === "note") {
-      this.setExplorerMode("notes");
       await vault.openNote(tab.path, {
         skipLeaveFlush: Boolean(leavingNote),
       });
       return;
     }
     if (tab.kind === "script") {
-      this.setExplorerMode("scripts");
       graphemeScriptEditor.selectTab(tab.scriptTabId);
       return;
     }
     if (tab.kind === "file") {
-      this.setExplorerMode("files");
       externalDesk.selectExternalPath(tab.path);
       vault.previewAttachment(tab.path, "pane");
       return;
     }
     if (tab.kind === "manuscript") {
-      this.setExplorerMode("agents");
       void catalog.loadManuscriptDetail(tab.manuscriptId);
       return;
     }
     if (tab.kind === "flow") {
-      this.setExplorerMode("flows");
       if (tab.workflowId) {
         void flows.loadDetail(tab.workflowId);
         void flows.loadRuns(tab.workflowId);
@@ -449,7 +446,6 @@ export class LmeWorkspaceStore {
       }
       return;
     }
-    this.setExplorerMode("presentations");
     artifacts.selectArtifact(tab.artifactId);
   }
 

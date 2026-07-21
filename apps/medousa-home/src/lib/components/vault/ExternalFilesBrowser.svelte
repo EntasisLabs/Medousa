@@ -19,9 +19,6 @@
 
   const RECENT_PEEK = $derived(compact ? 6 : 10);
 
-  let expandedPins = $state<Record<string, boolean>>({});
-  let showAllByRoot = $state<Record<string, boolean>>({});
-
   const canLink = $derived(Boolean(vault.selectedPath));
   const coLocated = $derived(isCoLocatedWorkshop());
 
@@ -37,19 +34,19 @@
   }
 
   function isExpanded(rootId: string): boolean {
-    return expandedPins[rootId] ?? false;
+    return externalDesk.isPinExpanded(rootId);
   }
 
   function togglePin(rootId: string) {
-    expandedPins = { ...expandedPins, [rootId]: !isExpanded(rootId) };
+    externalDesk.togglePinExpanded(rootId);
   }
 
   function showAll(rootId: string): boolean {
-    return showAllByRoot[rootId] ?? false;
+    return externalDesk.isShowAll(rootId);
   }
 
   function setShowAll(rootId: string, value: boolean) {
-    showAllByRoot = { ...showAllByRoot, [rootId]: value };
+    externalDesk.setShowAll(rootId, value);
   }
 
   function filesToShow(root: PinnedRoot): { entries: ExternalFileEntry[]; total: number } {

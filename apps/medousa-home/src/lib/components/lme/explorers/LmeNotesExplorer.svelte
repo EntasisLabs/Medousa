@@ -9,12 +9,13 @@
     Plus,
     SlidersHorizontal,
   } from "@lucide/svelte";
-  import { onMount, untrack } from "svelte";
+  import { onMount, tick, untrack } from "svelte";
   import VaultKindBadge from "$lib/components/vault/VaultKindBadge.svelte";
   import VaultLibraryBrowseLists from "$lib/components/vault/VaultLibraryBrowseLists.svelte";
   import VaultRootPicker from "$lib/components/vault/VaultRootPicker.svelte";
   import VaultTree from "$lib/components/vault/VaultTree.svelte";
   import { allFilterSpaces } from "$lib/config/vaultSpaces";
+  import { layout } from "$lib/stores/layout.svelte";
   import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
   import { vault, type LibraryBrowseMode } from "$lib/stores/vault.svelte";
   import { vaultFolderIcons } from "$lib/stores/vaultFolderIcons.svelte";
@@ -24,6 +25,7 @@
 
   let createOpen = $state(false);
   let filterOpen = $state(false);
+  let listScrollEl = $state<HTMLElement | null>(null);
 
   const searching = $derived(vault.searchQuery.trim().length > 0);
   const folderIconMap = $derived(vaultFolderIcons.icons);
@@ -98,6 +100,19 @@
   function onNotesSearch(value: string) {
     void vault.runSearch(value);
   }
+
+  function handleListScroll(event: Event) {
+    layout.setLibraryListScrollTop((event.currentTarget as HTMLDivElement).scrollTop);
+  }
+
+  $effect(() => {
+    const el = listScrollEl;
+    if (!el) return;
+    const top = untrack(() => layout.libraryListScrollTop);
+    void tick().then(() => {
+      if (listScrollEl === el) el.scrollTop = top;
+    });
+  });
 </script>
 
 <svelte:window onclick={closeMenus} />
@@ -107,7 +122,11 @@
     <p class="shrink-0 px-3 py-2 text-sm text-error-400">{vault.error}</p>
   {/if}
 
-  <div class="min-h-0 flex-1 overflow-y-auto">
+  <div
+    class="min-h-0 flex-1 overflow-y-auto"
+    bind:this={listScrollEl}
+    onscroll={handleListScroll}
+  >
     {#if searching}
       {#if vault.searchHits.length === 0}
         <p class="workshop-muted px-3 py-4 text-xs">No notes match.</p>

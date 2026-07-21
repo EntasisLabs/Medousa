@@ -65,8 +65,8 @@
   );
 
   /**
-   * Focused-pane keep-alive pool: active note + LRU of other open notes.
-   * Background (non-interactive) panes stay single-host preview.
+   * TipTap keep-alive pool. Focused pane: active note + LRU.
+   * Background panes: single host, still keepAlive (inert TipTap — not preview).
    */
   const keepAliveNoteTabs = $derived.by(() => {
     void noteEditorRuntimes.revision;
@@ -147,7 +147,7 @@
         <VaultEditor
           visible={visible && isActiveNote}
           interactive={interactive && isActiveNote}
-          keepAlive={interactive}
+          keepAlive={true}
           path={tab.path}
           {onOpenChat}
           {onOpenWork}

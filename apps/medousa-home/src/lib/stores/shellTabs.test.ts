@@ -40,13 +40,30 @@ vi.mock("$lib/stores/chatStreamPool.svelte", () => ({
   },
 }));
 
+const lmeState = {
+  tabs: [] as Array<{
+    tabId: string;
+    kind: string;
+    path?: string;
+    title: string;
+  }>,
+  activeTabId: null as string | null,
+  get activeTab() {
+    return this.tabs.find((tab) => tab.tabId === this.activeTabId) ?? null;
+  },
+  activateTab: vi.fn(async () => {}),
+  closeTab: vi.fn(async () => {}),
+};
+
 vi.mock("$lib/stores/lmeWorkspace.svelte", () => ({
-  lmeWorkspace: {
-    tabs: [],
-    activeTabId: null,
-    activeTab: null,
-    activateTab: vi.fn(async () => {}),
-    closeTab: vi.fn(async () => {}),
+  lmeWorkspace: lmeState,
+}));
+
+vi.mock("$lib/stores/vault.svelte", () => ({
+  vault: {
+    flushBeforeLeave: vi.fn(async () => true),
+    openNote: vi.fn(async () => {}),
+    isFocusedPath: vi.fn(() => true),
   },
 }));
 
@@ -80,6 +97,10 @@ describe("shellTabs store", () => {
     });
     layoutState.desktopSurface = "chat";
     layoutState.focusDesktopSurface.mockClear();
+    lmeState.tabs = [];
+    lmeState.activeTabId = null;
+    lmeState.activateTab.mockClear();
+    lmeState.closeTab.mockClear();
   });
 
   it("opens chat tabs uniquely per group and activates", async () => {
@@ -104,6 +125,24 @@ describe("shellTabs store", () => {
     expect(shellTabs.splitActive("right")).toBe(true);
     expect(shellTabs.paneCount).toBe(2);
     expect(shellTabs.groups).toHaveLength(2);
+  });
+
+  it("splits an LME tab into the new pane instead of chat", async () => {
+    const { shellTabs } = await import("./shellTabs.svelte");
+    lmeState.tabs = [
+      { tabId: "lme-1", kind: "note", path: "notes/split.md", title: "Split note" },
+    ];
+    lmeState.activeTabId = "lme-1";
+    shellTabs.openLme("lme-1", { activate: true, title: "Split note" });
+    expect(shellTabs.activeTab?.kind).toBe("lme");
+    expect(shellTabs.splitActive("right")).toBe(true);
+    expect(shellTabs.paneCount).toBe(2);
+    expect(shellTabs.activeTab?.kind).toBe("lme");
+    if (shellTabs.activeTab?.kind === "lme") {
+      expect(shellTabs.activeTab.lmeTabId).toBe("lme-1");
+    }
+    expect(shellTabs.tabs.filter((tab) => tab.kind === "lme")).toHaveLength(2);
+    expect(shellTabs.tabs.some((tab) => tab.kind === "chat")).toBe(false);
   });
 
   it("refuses a fifth pane", async () => {

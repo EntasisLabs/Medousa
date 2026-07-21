@@ -46,6 +46,9 @@ export class ExternalDeskStore {
   selectedExternalPath = $state<string | null>(null);
   error = $state<string | null>(null);
   searchQuery = $state("");
+  /** Session UI — survives Workspace rail remounts. */
+  expandedPins = $state<Record<string, boolean>>({});
+  showAllByRoot = $state<Record<string, boolean>>({});
 
   searchHitsList = $derived.by((): ExternalFileEntry[] => {
     const query = this.searchQuery.trim().toLowerCase();
@@ -132,6 +135,25 @@ export class ExternalDeskStore {
 
   selectExternalPath(path: string | null) {
     this.selectedExternalPath = path;
+  }
+
+  isPinExpanded(rootId: string): boolean {
+    return this.expandedPins[rootId] ?? false;
+  }
+
+  togglePinExpanded(rootId: string) {
+    this.expandedPins = {
+      ...this.expandedPins,
+      [rootId]: !this.isPinExpanded(rootId),
+    };
+  }
+
+  isShowAll(rootId: string): boolean {
+    return this.showAllByRoot[rootId] ?? false;
+  }
+
+  setShowAll(rootId: string, value: boolean) {
+    this.showAllByRoot = { ...this.showAllByRoot, [rootId]: value };
   }
 
   async refreshRoot(rootPath: string) {

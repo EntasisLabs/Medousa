@@ -389,24 +389,34 @@ export class ShellTabsStore {
     if (!trimmed) return null;
     const activate = options?.activate !== false;
     const groupId = options?.groupId ?? this.activeGroupId;
-    const existing = this.tabs.find(
-      (tab) => tab.kind === "lme" && tab.lmeTabId === trimmed,
-    );
     const lmeTab = lmeWorkspace.tabs.find((tab) => tab.tabId === trimmed);
     const title =
       options?.title?.trim() || lmeTab?.title?.trim() || "Document";
-    if (existing) {
-      this.patchTitle(existing.id, title);
-      if (activate) {
-        // Steal into active group if needed.
-        const host = this.groupForTab(existing.id);
-        if (host && host.id !== groupId) {
-          this.moveTab(existing.id, groupId);
-        }
-        void this.activate(existing.id);
-      }
-      return existing.id;
+
+    const existingInGroup = this.tabs.find(
+      (tab) =>
+        tab.kind === "lme" &&
+        tab.lmeTabId === trimmed &&
+        this.groupForTab(tab.id)?.id === groupId,
+    );
+    if (existingInGroup) {
+      this.patchTitle(existingInGroup.id, title);
+      if (activate) void this.activate(existingInGroup.id);
+      return existingInGroup.id;
     }
+
+    // Same document elsewhere — focus it unless split passed an explicit groupId.
+    if (activate && options?.groupId === undefined) {
+      const elsewhere = this.tabs.find(
+        (tab) => tab.kind === "lme" && tab.lmeTabId === trimmed,
+      );
+      if (elsewhere) {
+        this.patchTitle(elsewhere.id, title);
+        void this.activate(elsewhere.id);
+        return elsewhere.id;
+      }
+    }
+
     const librarySurface = this.tabs.find(
       (tab) => tab.kind === "surface" && tab.surfaceId === "library",
     );
@@ -433,24 +443,34 @@ export class ShellTabsStore {
     if (!trimmed) return null;
     const activate = options?.activate !== false;
     const groupId = options?.groupId ?? this.activeGroupId;
-    const existing = this.tabs.find(
-      (tab) => tab.kind === "web" && tab.browserTabId === trimmed,
-    );
     const browserTab = humanBrowser.tabs.find((tab) => tab.id === trimmed);
     const title =
       options?.title?.trim() ||
       (browserTab ? tabDisplayLabel(browserTab.title, browserTab.url) : "Web");
-    if (existing) {
-      this.patchTitle(existing.id, title);
-      if (activate) {
-        const host = this.groupForTab(existing.id);
-        if (host && host.id !== groupId) {
-          this.moveTab(existing.id, groupId);
-        }
-        void this.activate(existing.id);
-      }
-      return existing.id;
+
+    const existingInGroup = this.tabs.find(
+      (tab) =>
+        tab.kind === "web" &&
+        tab.browserTabId === trimmed &&
+        this.groupForTab(tab.id)?.id === groupId,
+    );
+    if (existingInGroup) {
+      this.patchTitle(existingInGroup.id, title);
+      if (activate) void this.activate(existingInGroup.id);
+      return existingInGroup.id;
     }
+
+    if (activate && options?.groupId === undefined) {
+      const elsewhere = this.tabs.find(
+        (tab) => tab.kind === "web" && tab.browserTabId === trimmed,
+      );
+      if (elsewhere) {
+        this.patchTitle(elsewhere.id, title);
+        void this.activate(elsewhere.id);
+        return elsewhere.id;
+      }
+    }
+
     const tab: ShellTab = {
       id: newTabId("web"),
       kind: "web",
@@ -494,19 +514,28 @@ export class ShellTabsStore {
       return null;
     }
     const activate = options?.activate !== false;
-    const existing = this.tabs.find(
-      (tab) => tab.kind === "surface" && tab.surfaceId === next,
+    const existingInGroup = this.tabs.find(
+      (tab) =>
+        tab.kind === "surface" &&
+        tab.surfaceId === next &&
+        this.groupForTab(tab.id)?.id === groupId,
     );
-    if (existing) {
-      if (activate) {
-        const host = this.groupForTab(existing.id);
-        if (host && host.id !== groupId) {
-          this.moveTab(existing.id, groupId);
-        }
-        void this.activate(existing.id);
-      }
-      return existing.id;
+    if (existingInGroup) {
+      if (activate) void this.activate(existingInGroup.id);
+      return existingInGroup.id;
     }
+
+    // Singleton surfaces focus elsewhere unless split passed an explicit groupId.
+    if (activate && options?.groupId === undefined) {
+      const elsewhere = this.tabs.find(
+        (tab) => tab.kind === "surface" && tab.surfaceId === next,
+      );
+      if (elsewhere) {
+        void this.activate(elsewhere.id);
+        return elsewhere.id;
+      }
+    }
+
     const tab: ShellTab = {
       id: newTabId("surface"),
       kind: "surface",
@@ -559,6 +588,12 @@ export class ShellTabsStore {
       if (tab.kind === "lme") {
         if (lmeWorkspace.activeTabId !== tab.lmeTabId) {
           await lmeWorkspace.activateTab(tab.lmeTabId);
+        } else {
+          // Same LME tab (e.g. pane focus) — still promote vault focus if it drifted.
+          const lme = lmeWorkspace.tabs.find((entry) => entry.tabId === tab.lmeTabId);
+          if (lme?.kind === "note" && !vault.isFocusedPath(lme.path)) {
+            await vault.openNote(lme.path);
+          }
         }
         return;
       }
@@ -670,21 +705,25 @@ export class ShellTabsStore {
         title: seed.title,
         groupId: newGroupId,
       });
-    } else if (seed) {
-      // Clone focus: open a parallel chat seed so the new pane isn't empty.
-      const sessionId = chat.sessionId?.trim();
-      if (sessionId) {
-        this.openChat(sessionId, { activate: true, groupId: newGroupId });
-      } else {
-        this.openSurface("library", { activate: true, groupId: newGroupId });
-      }
+    } else if (seed?.kind === "lme") {
+      this.openLme(seed.lmeTabId, {
+        activate: true,
+        title: seed.title,
+        groupId: newGroupId,
+      });
+    } else if (seed?.kind === "web") {
+      this.openWeb(seed.browserTabId, {
+        activate: true,
+        title: seed.title,
+        groupId: newGroupId,
+      });
+    } else if (seed?.kind === "surface") {
+      this.openSurface(seed.surfaceId, {
+        activate: true,
+        groupId: newGroupId,
+      });
     } else {
-      const sessionId = chat.sessionId?.trim();
-      if (sessionId) {
-        this.openChat(sessionId, { activate: true, groupId: newGroupId });
-      } else {
-        this.openSurface("library", { activate: true, groupId: newGroupId });
-      }
+      this.openSurface("library", { activate: true, groupId: newGroupId });
     }
     this.persist();
     return true;
