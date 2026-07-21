@@ -158,7 +158,7 @@
 
 <svelte:window onkeydown={handleWorkbenchKeydown} />
 
-<div class="scripts-workbench-titlebar flex shrink-0 items-center gap-1 border-b border-surface-500/35 px-1 py-0.5">
+<div class="scripts-workbench-titlebar relative z-40 flex shrink-0 items-center gap-1 border-b border-surface-500/35 px-1 py-0.5">
   {#if !mobile && !leftOpen}
     <button
       type="button"

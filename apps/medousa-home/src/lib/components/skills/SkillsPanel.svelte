@@ -270,36 +270,39 @@
     <aside
       class="{mobile
         ? mobileDetailOpen
-          ? 'mobile-you-scroll flex min-h-0 flex-1 flex-col overflow-y-auto'
+          ? 'mobile-you-scroll flex min-h-0 flex-1 flex-col overflow-hidden'
           : 'hidden'
-        : 'workshop-detail-pane w-[min(360px,40%)] shrink-0 overflow-y-auto border-l border-surface-500/40'} px-4 py-4"
+        : 'workshop-detail-pane flex w-[min(360px,40%)] shrink-0 flex-col overflow-hidden border-l border-surface-500/40'}"
     >
       {#if mobileDetailOpen}
         <button
           type="button"
-          class="workshop-text-action mb-3 shrink-0 text-sm"
+          class="workshop-text-action mx-4 mt-4 mb-1 shrink-0 self-start text-sm"
           onclick={closeMobileDetail}
         >
           ← Back to list
         </button>
       {/if}
       {#if selectedSkill}
-        <SpecialistDetailEditor
-          entry={selectedSkill}
-          onRunSkill={runSkill}
-          onUseInAutomation={onUseInAutomation}
-          onScheduleSkill={onScheduleSkill}
-          onOpenFile={(path) => void openConfigPath(path)}
-        />
+        <div class="flex min-h-0 min-w-0 flex-1 flex-col">
+          <SpecialistDetailEditor
+            entry={selectedSkill}
+            onRunSkill={runSkill}
+            onUseInAutomation={onUseInAutomation}
+            onScheduleSkill={onScheduleSkill}
+            onOpenFile={(path) => void openConfigPath(path)}
+            hideSidebarExpand={true}
+          />
+        </div>
       {:else if catalog.manuscripts.length === 0}
-        <div class="py-2">
+        <div class="px-4 py-4">
           <p class="settings-subsection-heading">Details</p>
           <p class="settings-subsection-lead mb-0">
             After you import, pick an agent here to tune tools and schedule.
           </p>
         </div>
       {:else}
-        <div class="py-2">
+        <div class="px-4 py-4">
           <p class="settings-subsection-heading">Details</p>
           <p class="settings-subsection-lead mb-0">
             Open an agent to set tool policy, schedule it, or run it in chat.

@@ -44,28 +44,32 @@
 </script>
 
 <div
-  class="lme-agent-editor flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden px-5 py-5 sm:px-7 sm:py-6"
+  class="lme-agent-editor flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
 >
   {#if !active}
-    <p class="text-sm text-surface-500">Select an agent from the side panel.</p>
+    <p class="px-5 py-5 text-sm text-surface-500 sm:px-7 sm:py-6">
+      Select an agent from the side panel.
+    </p>
   {:else if !entry}
-    {#if catalog.manuscriptDetailLoading}
-      <p class="text-sm text-surface-500">Loading agent…</p>
-    {:else if catalog.manuscriptDetailError}
-      <p class="text-sm text-warning-400">{catalog.manuscriptDetailError}</p>
-    {:else}
-      <p class="text-sm text-surface-500">
-        Agent <span class="font-mono text-surface-300">{active.manuscriptId}</span> not found in
-        catalog.
-      </p>
-      <button
-        type="button"
-        class="btn btn-sm variant-ghost-surface mt-3 self-start"
-        onclick={() => void catalog.refresh()}
-      >
-        Refresh catalog
-      </button>
-    {/if}
+    <div class="px-5 py-5 sm:px-7 sm:py-6">
+      {#if catalog.manuscriptDetailLoading}
+        <p class="text-sm text-surface-500">Loading agent…</p>
+      {:else if catalog.manuscriptDetailError}
+        <p class="text-sm text-warning-400">{catalog.manuscriptDetailError}</p>
+      {:else}
+        <p class="text-sm text-surface-500">
+          Agent <span class="font-mono text-surface-300">{active.manuscriptId}</span> not found in
+          catalog.
+        </p>
+        <button
+          type="button"
+          class="btn btn-sm variant-ghost-surface mt-3 self-start"
+          onclick={() => void catalog.refresh()}
+        >
+          Refresh catalog
+        </button>
+      {/if}
+    </div>
   {:else}
     <div class="flex min-h-0 min-w-0 flex-1 flex-col">
       <SpecialistDetailEditor
