@@ -626,7 +626,10 @@ export class VaultStore {
 
   /** Prefetch a note into a background buffer (multi-pane Workspace). */
   async warmBuffer(path: string) {
-    const trimmed = this.normalizeNotePath(path);
+    const raw = path.trim();
+    // Absolute loose files are not vault notes — never hit getVaultNote.
+    if (!raw || isAbsoluteDiskPath(raw)) return;
+    const trimmed = this.normalizeNotePath(raw);
     if (!trimmed || this.isFocusedPath(trimmed)) return;
     if (this.noteBuffers.has(trimmed) || this.bufferWarmInFlight.has(trimmed)) {
       return;
@@ -1183,9 +1186,19 @@ export class VaultStore {
     this.content = "";
     this.baselineContent = "";
     this.contentHash = null;
-    this.title = "";
+    this.title = fileNameFromAbsolutePath(trimmed)
+      .replace(/\.md$/i, "")
+      .replace(/\.markdown$/i, "") || trimmed;
     this.dirty = false;
+    this.editorMode = "edit";
+    this.selectedKind = "note";
     this.bumpContentSync();
+    // Bind the LME tab immediately so the keep-alive host focuses this path
+    // while the file read is in flight (shows loading instead of the old note).
+    await this.syncLmeNoteTab(trimmed);
+    if (openGen !== this.openGeneration || this.looseFilePath !== trimmed) {
+      return false;
+    }
     try {
       const content = await readAbsoluteTextFile(trimmed);
       if (openGen !== this.openGeneration || this.looseFilePath !== trimmed) {
@@ -1196,14 +1209,11 @@ export class VaultStore {
       this.content = content;
       this.baselineContent = content;
       this.title = title;
-      this.selectedKind = "note";
       this.wikilinksOut = [];
       this.backlinks = [];
       this.noteTags = [];
       this.dirty = false;
-      this.editorMode = "edit";
       this.bumpContentSync();
-      await this.syncLmeNoteTab(trimmed);
       return true;
     } catch (err) {
       if (openGen === this.openGeneration && this.looseFilePath === trimmed) {

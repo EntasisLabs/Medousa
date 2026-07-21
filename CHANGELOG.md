@@ -21,6 +21,7 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 - Opening external markdown files binds an LME tab and renders content (absolute paths no longer vault-normalized away)
 - Liquid `compare` fences with duplicate axis or entity labels no longer abort the rest of the preview
 - Embed write-through and foreign undo go through the versioned per-path save queue
+- Vault editor context-menu cut/copy/paste no longer hangs the shell on Windows (clipboard timeouts + menu portal)
 
 ### Changed
 

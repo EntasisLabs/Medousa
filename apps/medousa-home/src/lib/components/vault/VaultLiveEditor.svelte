@@ -32,7 +32,7 @@
   } from "$lib/vault/live/liveForeignUndo";
   import { flushLiveDrafts } from "$lib/vault/live/liveDraftFlush";
   import { invalidateTransclusionCache } from "$lib/utils/resolveTransclusion";
-  import { copyTextToClipboard } from "$lib/utils/vaultClipboard";
+  import { copyTextToClipboard, readTextFromClipboard } from "$lib/utils/vaultClipboard";
   import type { MarkdownFormatAction, SlashBlockId } from "$lib/utils/vaultMarkdownEdit";
   import type { MarkdownColorToken } from "$lib/utils/vaultMarkdownColors";
   import { placeSlashMenuAnchor } from "$lib/utils/slashMenuPlacement";
@@ -686,6 +686,10 @@
     syncDupTitleHeading();
   });
 
+  /** Cap same-key empty→content reloads so cut/paste races cannot freeze the app. */
+  let emptyHydrateAttempts = 0;
+  let emptyHydrateKey = "";
+
   /**
    * Parent should remount this component with `{#key contentSyncKey}` on note switch.
    * Same-key path only hydrates empty→content when the body has significant text
@@ -699,12 +703,20 @@
     if (key !== boundKey) {
       boundKey = key;
       boundKeyRef.current = key;
+      emptyHydrateKey = key;
+      emptyHydrateAttempts = 0;
       loadFromMarkdown(next);
       return;
     }
     // Mount race: editor came up empty before draft hydrated. Only reload when
     // there is significant body text TipTap would actually render.
     if (editor.isEmpty && significantLiveText(next).length > 0) {
+      if (emptyHydrateKey !== key) {
+        emptyHydrateKey = key;
+        emptyHydrateAttempts = 0;
+      }
+      if (emptyHydrateAttempts >= 2) return;
+      emptyHydrateAttempts += 1;
       loadFromMarkdown(next);
     }
   });
@@ -826,14 +838,13 @@
 
   export async function pasteClipboard(): Promise<boolean> {
     if (!editor || disabled) return false;
-    try {
-      const text = await navigator.clipboard.readText();
-      if (!text) return false;
-      editor.chain().focus(undefined, { scrollIntoView: false }).insertContent(text).run();
-      return true;
-    } catch {
+    const text = await readTextFromClipboard();
+    if (!text) {
+      toast.show("Couldn’t read clipboard — try Ctrl+V / ⌘V", { durationMs: 2800 });
       return false;
     }
+    editor.chain().focus(undefined, { scrollIntoView: false }).insertContent(text).run();
+    return true;
   }
 
   export function selectAll() {

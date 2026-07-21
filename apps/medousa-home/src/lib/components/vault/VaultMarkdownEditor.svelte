@@ -25,7 +25,7 @@
   } from "$lib/utils/vaultMarkdownEdit";
   import { vaultDisplayTitle } from "$lib/utils/formatVault";
   import { handleVaultEditorContextMenuEvent } from "$lib/utils/vaultContextMenuEvents";
-  import { copyTextToClipboard } from "$lib/utils/vaultClipboard";
+  import { copyTextToClipboard, readTextFromClipboard } from "$lib/utils/vaultClipboard";
   import { createVaultScrollSync } from "$lib/utils/vaultScrollSync";
   import type { SlashMenuAnchor } from "$lib/utils/slashMenuPlacement";
 
@@ -356,7 +356,12 @@
   function handleContextMenu(event: MouseEvent) {
     const path = vault.selectedPath;
     if (!path || disabled) return;
-    const selection = readEditorSelection();
+    const rawSelection = readEditorSelection();
+    // Cap payload so Select-all right-click on huge notes cannot stall the UI.
+    const selection =
+      rawSelection && rawSelection.text.length > 48_000
+        ? { ...rawSelection, text: rawSelection.text.slice(0, 48_000) }
+        : rawSelection;
     const hasSelection = Boolean(selection?.text.trim());
 
     handleVaultEditorContextMenuEvent(path, event, selection, {
@@ -390,20 +395,16 @@
           return;
         }
         if (!cmEl) return;
-        try {
-          const text = await navigator.clipboard.readText();
-          if (!text) return;
-          const { start, end } = cmEl.getSelection();
-          const from = Math.min(start, end);
-          const to = Math.max(start, end);
-          applyEdit({
-            content: `${draft.slice(0, from)}${text}${draft.slice(to)}`,
-            selectionStart: from + text.length,
-            selectionEnd: from + text.length,
-          });
-        } catch {
-          /* clipboard denied */
-        }
+        const text = await readTextFromClipboard();
+        if (!text) return;
+        const { start, end } = cmEl.getSelection();
+        const from = Math.min(start, end);
+        const to = Math.max(start, end);
+        applyEdit({
+          content: `${draft.slice(0, from)}${text}${draft.slice(to)}`,
+          selectionStart: from + text.length,
+          selectionEnd: from + text.length,
+        });
       },
       selectAll: () => {
         if (isLivePlane) {

@@ -25,7 +25,11 @@
   import { vaultHostSideHint } from "$lib/utils/workshopLocality";
   import { revealInFileManagerLabel } from "$lib/platformCopy";
   import type { VaultExportFormat } from "$lib/utils/vaultExportOptions";
+  import BodyPortal from "$lib/components/ui/BodyPortal.svelte";
+  import { toast } from "$lib/stores/toast.svelte";
   import VaultExportPreviewModal from "./VaultExportPreviewModal.svelte";
+
+  const MENU_ACTION_TIMEOUT_MS = 8000;
 
   interface MenuItem {
     id: string;
@@ -407,8 +411,23 @@
       await item.onClick();
       return;
     }
-    vaultContextMenu.close();
-    await item.onClick();
+    // Run the action before closing when possible so clipboard paste keeps a
+    // user-activation gesture on WebView2; still hard-timeout so Windows
+    // clipboard permission dialogs cannot freeze the shell forever.
+    try {
+      await Promise.race([
+        Promise.resolve(item.onClick()),
+        new Promise<never>((_, reject) => {
+          setTimeout(() => reject(new Error("menu-action-timeout")), MENU_ACTION_TIMEOUT_MS);
+        }),
+      ]);
+    } catch {
+      toast.show("That action timed out — try the keyboard shortcut", {
+        durationMs: 3200,
+      });
+    } finally {
+      vaultContextMenu.close();
+    }
   }
 
   function selectIcon(name: AllowedSurfaceIcon) {
@@ -429,51 +448,71 @@
     if (event.key === "Escape") vaultContextMenu.close();
   }
 
-  function onWindowClick(event: MouseEvent) {
+  function onWindowPointerDown(event: PointerEvent) {
     if (!vaultContextMenu.open) return;
+    // Ignore the opening right-click / aux-button sequence on Windows WebView2.
+    if (event.button === 2) return;
     if (menuEl?.contains(event.target as Node)) return;
     vaultContextMenu.close();
   }
 
   onMount(() => {
     window.addEventListener("keydown", onWindowKeydown);
-    window.addEventListener("click", onWindowClick, true);
+    window.addEventListener("pointerdown", onWindowPointerDown, true);
     return () => {
       window.removeEventListener("keydown", onWindowKeydown);
-      window.removeEventListener("click", onWindowClick, true);
+      window.removeEventListener("pointerdown", onWindowPointerDown, true);
     };
   });
 </script>
 
 {#if vaultContextMenu.open && (target || pickingIcon)}
-  <div
-    bind:this={menuEl}
-    class="vault-context-menu"
-    class:vault-context-menu--icons={pickingIcon}
-    role="menu"
-    style:left="{position.x}px"
-    style:top="{position.y}px"
-  >
-    {#if pickingIcon}
-      <div class="vault-folder-icon-picker">
-        <div class="vault-folder-icon-picker-head">
-          <p class="vault-folder-icon-picker-title">
-            Icon for {vaultContextMenu.iconPickerLabel || "folder"}
-          </p>
-          {#if activeIcon}
-            <button
-              type="button"
-              class="vault-folder-icon-picker-reset"
-              onclick={resetIcon}
-            >
-              Reset
-            </button>
-          {/if}
-        </div>
-        {#each Object.entries(SURFACE_ICON_GROUPS) as [group, icons] (group)}
-          <p class="vault-folder-icon-group">{group}</p>
+  <BodyPortal>
+    <div
+      bind:this={menuEl}
+      class="vault-context-menu"
+      class:vault-context-menu--icons={pickingIcon}
+      role="menu"
+      style:left="{position.x}px"
+      style:top="{position.y}px"
+    >
+      {#if pickingIcon}
+        <div class="vault-folder-icon-picker">
+          <div class="vault-folder-icon-picker-head">
+            <p class="vault-folder-icon-picker-title">
+              Icon for {vaultContextMenu.iconPickerLabel || "folder"}
+            </p>
+            {#if activeIcon}
+              <button
+                type="button"
+                class="vault-folder-icon-picker-reset"
+                onclick={resetIcon}
+              >
+                Reset
+              </button>
+            {/if}
+          </div>
+          {#each Object.entries(SURFACE_ICON_GROUPS) as [group, icons] (group)}
+            <p class="vault-folder-icon-group">{group}</p>
+            <div class="vault-folder-icon-grid">
+              {#each icons as name (name)}
+                {@const Icon = environmentIcon(name)}
+                <button
+                  type="button"
+                  class="vault-folder-icon-option"
+                  class:vault-folder-icon-option--active={activeIcon === name}
+                  title={name}
+                  aria-label={name}
+                  onclick={() => selectIcon(name)}
+                >
+                  <Icon size={16} strokeWidth={1.75} />
+                </button>
+              {/each}
+            </div>
+          {/each}
+          <p class="vault-folder-icon-group">all</p>
           <div class="vault-folder-icon-grid">
-            {#each icons as name (name)}
+            {#each ALLOWED_SURFACE_ICONS as name (name)}
               {@const Icon = environmentIcon(name)}
               <button
                 type="button"
@@ -487,42 +526,26 @@
               </button>
             {/each}
           </div>
-        {/each}
-        <p class="vault-folder-icon-group">all</p>
-        <div class="vault-folder-icon-grid">
-          {#each ALLOWED_SURFACE_ICONS as name (name)}
-            {@const Icon = environmentIcon(name)}
-            <button
-              type="button"
-              class="vault-folder-icon-option"
-              class:vault-folder-icon-option--active={activeIcon === name}
-              title={name}
-              aria-label={name}
-              onclick={() => selectIcon(name)}
-            >
-              <Icon size={16} strokeWidth={1.75} />
-            </button>
-          {/each}
         </div>
-      </div>
-    {:else}
-      {#each visibleItems as item (item.id)}
-        {#if item.separatorBefore}
-          <div class="vault-context-menu-sep" role="separator"></div>
-        {/if}
-        <button
-          type="button"
-          class="vault-context-menu-item"
-          class:vault-context-menu-item--hint={item.disabled && item.id === "host-hint"}
-          role="menuitem"
-          disabled={item.disabled}
-          onclick={() => void runItem(item)}
-        >
-          {item.label}
-        </button>
-      {/each}
-    {/if}
-  </div>
+      {:else}
+        {#each visibleItems as item (item.id)}
+          {#if item.separatorBefore}
+            <div class="vault-context-menu-sep" role="separator"></div>
+          {/if}
+          <button
+            type="button"
+            class="vault-context-menu-item"
+            class:vault-context-menu-item--hint={item.disabled && item.id === "host-hint"}
+            role="menuitem"
+            disabled={item.disabled}
+            onclick={() => void runItem(item)}
+          >
+            {item.label}
+          </button>
+        {/each}
+      {/if}
+    </div>
+  </BodyPortal>
 {/if}
 
 <VaultExportPreviewModal
