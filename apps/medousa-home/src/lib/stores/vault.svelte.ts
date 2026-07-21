@@ -113,6 +113,14 @@ import {
 import { invalidateMedousaViewCache } from "$lib/utils/resolveMedousaViews";
 import { type NoteBuffer } from "$lib/stores/noteBuffer";
 import {
+  NoteSaveQueue,
+  type NoteSaveJob,
+  type NoteSaveResult,
+} from "$lib/stores/noteSaveQueue";
+import { noteEditorRuntimes } from "$lib/stores/noteEditorRuntimes.svelte";
+import { invokeVaultLeaveFlush } from "$lib/stores/vaultLeaveFlush";
+import { significantLiveText } from "$lib/vault/live/liveMarkdownCodec";
+import {
   extractMedousaViewBlocks,
   replaceMedousaViewFenceAt,
   serializeMedousaViewFence,
@@ -189,6 +197,8 @@ export class VaultStore {
    */
   private noteBuffers = new Map<string, NoteBuffer>();
   noteBufferRevision = $state(0);
+  /** Per-path serialized PUTs — coalesce superseding bodies; never reuse stale If-Match. */
+  private saveQueue = new NoteSaveQueue((path, job) => this.runSaveJob(path, job));
   wikilinksOut = $state<string[]>([]);
   backlinks = $state<string[]>([]);
   noteTags = $state<string[]>([]);
@@ -1246,25 +1256,83 @@ export class VaultStore {
     }
   }
 
-  async openNote(path: string) {
+  /**
+   * Flush TipTap/CM drafts + save the leaving note before remount/activate.
+   * On failure (conflict/error), stays on the current note — caller must not
+   * change activeTabId.
+   */
+  async flushBeforeLeave(options?: { skipEditorFlush?: boolean }): Promise<boolean> {
+    if (!options?.skipEditorFlush) {
+      await invokeVaultLeaveFlush();
+    }
+    if (!this.selectedPath && !this.looseFilePath) return true;
+    if (!this.dirty) {
+      this.stashSelectedBuffer();
+      this.stashFocusedEditorUi();
+      return true;
+    }
+    const ok = await this.save({ source: "autosave" });
+    if (ok) {
+      this.stashSelectedBuffer();
+      this.stashFocusedEditorUi();
+    }
+    return ok;
+  }
+
+  private stashFocusedEditorUi() {
+    const path = this.selectedPath?.trim();
+    if (!path || this.isLooseFile) return;
+    noteEditorRuntimes.patchUi(path, {
+      plane: this.notePlane,
+      editorMode: this.editorMode,
+      editorSurface: this.editorSurface,
+    });
+  }
+
+  private restoreEditorUi(path: string) {
+    const runtime = noteEditorRuntimes.ensure(path, {
+      plane: this.notePlane,
+      editorMode: this.editorMode,
+      editorSurface: this.editorSurface,
+    });
+    noteEditorRuntimes.touch(path);
+    this.notePlane = runtime.ui.plane;
+    this.editorMode = runtime.ui.editorMode;
+    this.editorSurface = runtime.ui.editorSurface;
+  }
+
+  async openNote(path: string, options?: { skipLeaveFlush?: boolean }) {
     const nextPath = this.normalizeNotePath(path);
     if (!nextPath) return;
 
-    if (this.dirty && this.selectedPath && this.selectedPath !== nextPath) {
-      this.clearAutosaveTimer();
-      await this.save({ source: "autosave" });
+    if (this.selectedPath === nextPath && !this.isLooseFile && !this.noteLoading) {
+      const hasSession =
+        this.contentHash != null ||
+        this.dirty ||
+        this.noteBuffers.has(nextPath);
+      if (hasSession) {
+        noteEditorRuntimes.touch(nextPath);
+        return;
+      }
     }
+
     if (this.selectedPath && this.selectedPath !== nextPath) {
-      this.stashSelectedBuffer();
+      // activateTab already flushed the mounted editor — do not flush the remounted host.
+      const ok = options?.skipLeaveFlush
+        ? await this.flushBeforeLeave({ skipEditorFlush: true })
+        : await this.flushBeforeLeave();
+      if (!ok) return;
       this.clearProposal();
       this.closeAttachmentPreview();
     }
     this.clearLooseFile();
 
     const buffered = this.noteBuffers.get(nextPath);
-    if (buffered?.dirty) {
+    // Buffer-first reopen: dirty or recently stashed clean — skip cold refetch.
+    if (buffered) {
       this.selectedPath = nextPath;
       this.restoreBufferIntoFocused(buffered);
+      this.restoreEditorUi(nextPath);
       localStorage.setItem(LAST_NOTE_KEY, nextPath);
       rememberVaultRecent(nextPath);
       this.recentPaths = loadVaultRecent();
@@ -1281,6 +1349,7 @@ export class VaultStore {
       this.applyNote(response);
       this.selectedPath = nextPath;
       this.writeBufferFromResponse(nextPath, response);
+      this.restoreEditorUi(nextPath);
       localStorage.setItem(LAST_NOTE_KEY, nextPath);
       rememberVaultRecent(nextPath);
       this.recentPaths = loadVaultRecent();
@@ -1344,11 +1413,17 @@ export class VaultStore {
 
   setEditorMode(mode: "edit" | "preview") {
     this.editorMode = mode;
+    if (this.selectedPath && !this.isLooseFile) {
+      noteEditorRuntimes.patchUi(this.selectedPath, { editorMode: mode });
+    }
   }
 
   setEditorSurface(surface: "write" | "source") {
     this.editorSurface = surface;
     saveEditorSurface(surface);
+    if (this.selectedPath && !this.isLooseFile) {
+      noteEditorRuntimes.patchUi(this.selectedPath, { editorSurface: surface });
+    }
   }
 
   toggleEditorSurface() {
@@ -1358,6 +1433,9 @@ export class VaultStore {
   setNotePlane(plane: VaultNotePlane) {
     this.notePlane = plane;
     saveNotePlane(plane);
+    if (this.selectedPath && !this.isLooseFile) {
+      noteEditorRuntimes.patchUi(this.selectedPath, { plane });
+    }
     if (plane === "live") {
       this.setEditorSurface("write");
     }
@@ -1443,10 +1521,13 @@ export class VaultStore {
    */
   markDirty(
     nextContent: string,
-    options?: { reloadEditors?: boolean },
+    options?: { reloadEditors?: boolean; allowEmpty?: boolean },
   ) {
     // Live serialize/organism remounts must not mark dirty on open with no edits.
     if (nextContent === this.content) {
+      return;
+    }
+    if (!options?.allowEmpty && this.shouldRefuseEmptyOverwrite(this.content, nextContent)) {
       return;
     }
     this.content = nextContent;
@@ -1479,6 +1560,18 @@ export class VaultStore {
     this.scheduleAutosave();
   }
 
+  /** Refuse empty/near-empty Live serialize over a substantial note body. */
+  private shouldRefuseEmptyOverwrite(previous: string, next: string): boolean {
+    const prevSig = significantLiveText(previous);
+    const nextSig = significantLiveText(next);
+    if (prevSig.length <= 20) return false;
+    if (nextSig.length === 0) return true;
+    if (prevSig.length > 40 && nextSig.length < 3 && nextSig.length < prevSig.length * 0.05) {
+      return true;
+    }
+    return false;
+  }
+
   /** Update note kind in frontmatter and chrome immediately. */
   setNoteKind(kind: VaultNoteKind) {
     if (!this.selectedPath || this.isLooseFile) return;
@@ -1489,14 +1582,116 @@ export class VaultStore {
     });
   }
 
-  private applySaveResponse(response: VaultNoteContentResponse["note"]) {
+  private applySaveResponse(
+    response: VaultNoteContentResponse["note"],
+    writtenContent?: string | null,
+  ) {
     this.contentHash = response.content_hash;
     this.title = response.title;
     this.selectedKind = resolveKind(response.path, response.kind);
     this.wikilinksOut = response.wikilinks_out;
     this.noteTags = response.tags ?? [];
-    this.baselineContent = this.content;
+    // Prefer server body echo (semantic tags) so baseline matches disk.
+    if (typeof writtenContent === "string") {
+      this.content = writtenContent;
+      this.baselineContent = writtenContent;
+    } else {
+      this.baselineContent = this.content;
+    }
     this.dirty = false;
+  }
+
+  private patchBufferAfterSave(
+    path: string,
+    writtenContent: string,
+    note: VaultNoteContentResponse["note"],
+  ) {
+    const key = this.normalizeNotePath(path);
+    const prior = this.noteBuffers.get(key);
+    if (this.isFocusedPath(key)) {
+      this.noteBuffers.set(key, {
+        path: key,
+        content: this.content,
+        baselineContent: writtenContent,
+        contentHash: note.content_hash,
+        title: note.title,
+        dirty: this.dirty,
+        contentRevision: this.contentRevision,
+      });
+    } else {
+      const content = prior?.content ?? writtenContent;
+      this.noteBuffers.set(key, {
+        path: key,
+        content,
+        baselineContent: writtenContent,
+        contentHash: note.content_hash,
+        title: note.title,
+        dirty: content !== writtenContent,
+        contentRevision: prior?.contentRevision ?? 0,
+      });
+    }
+    this.bumpNoteBuffers();
+  }
+
+  private async runSaveJob(path: string, job: NoteSaveJob): Promise<NoteSaveResult> {
+    try {
+      const response = await saveVaultNote(path, job.content, {
+        contentHash: job.force ? undefined : (job.contentHash ?? undefined),
+        sessionId: workshopSessionIdForVaultSave(path),
+      });
+      const written = response.content ?? job.content;
+
+      if (this.isFocusedPath(path)) {
+        this.contentHash = response.note.content_hash;
+        this.title = response.note.title;
+        this.selectedKind = resolveKind(response.note.path, response.note.kind);
+        this.wikilinksOut = response.note.wikilinks_out;
+        this.noteTags = response.note.tags ?? [];
+        if (this.content === job.content || this.content === written) {
+          this.content = written;
+          this.baselineContent = written;
+          this.dirty = false;
+        } else {
+          // Typed during in-flight save — keep newer draft dirty vs written baseline.
+          this.baselineContent = written;
+          this.dirty = true;
+        }
+      }
+
+      this.patchBufferAfterSave(path, written, response.note);
+
+      invalidateMedousaViewCache(path);
+      invalidateTransclusionCache(path);
+      this.markSaveEcho(path);
+      this.scheduleNotesRefresh();
+      if (this.isFocusedPath(path)) {
+        void this.refreshBacklinks(path);
+      }
+
+      return {
+        ok: true,
+        contentHash: response.note.content_hash,
+        writtenContent: written,
+      };
+    } catch (err) {
+      if (isVaultConflictError(err)) {
+        if (this.isFocusedPath(path)) {
+          this.saveStatus = "conflict";
+          this.conflictMessage =
+            "This note changed on disk. Reload the latest version or keep your edits.";
+        }
+        return {
+          ok: false,
+          conflict: true,
+          error: "conflict",
+        };
+      }
+      const message = err instanceof Error ? err.message : String(err);
+      if (this.isFocusedPath(path)) {
+        this.error = message;
+      }
+      return { ok: false, error: message };
+    }
   }
 
   async save(options?: { force?: boolean; source?: "manual" | "autosave" }) {
@@ -1533,50 +1728,46 @@ export class VaultStore {
         return true;
       }
 
-      const response = await saveVaultNote(pathSnapshot, contentSnapshot, {
-        contentHash: options?.force ? undefined : (this.contentHash ?? undefined),
-        sessionId: workshopSessionIdForVaultSave(pathSnapshot),
+      const result = await this.saveQueue.enqueue(pathSnapshot, {
+        content: contentSnapshot,
+        contentHash: options?.force ? null : this.contentHash,
+        force: Boolean(options?.force),
+        source: options?.source ?? "manual",
       });
-      if (this.selectedPath !== pathSnapshot) return true;
 
-      // Typed during in-flight save — keep newer buffer dirty against the snapshot we wrote.
-      if (this.content !== contentSnapshot) {
-        this.contentHash = response.note.content_hash;
-        this.baselineContent = contentSnapshot;
-        this.dirty = true;
+      if (this.selectedPath !== pathSnapshot) return result.ok;
+
+      if (!result.ok) {
+        if (!result.conflict) {
+          this.saveStatus = "unsaved";
+          this.scheduleAutosave();
+        }
+        return false;
+      }
+
+      if (this.dirty) {
         this.saveStatus = "unsaved";
-        this.markSaveEcho(pathSnapshot);
-        this.scheduleNotesRefresh();
         this.scheduleAutosave();
         return true;
       }
 
-      this.applySaveResponse(response.note);
-      invalidateMedousaViewCache(pathSnapshot);
-      invalidateTransclusionCache(pathSnapshot);
       this.clearProposal();
-      this.markSaveEcho(pathSnapshot);
       this.flashSavedWhisper();
-      this.scheduleNotesRefresh();
-      void this.refreshBacklinks(pathSnapshot);
       return true;
     } catch (err) {
-      if (!loosePath && isVaultConflictError(err)) {
-        this.saveStatus = "conflict";
-        this.conflictMessage =
-          "This note changed on disk. Reload the latest version or keep your edits.";
-        return false;
-      }
       this.saveStatus = "unsaved";
       this.error = err instanceof Error ? err.message : String(err);
       this.scheduleAutosave();
       return false;
     } finally {
-      this.saving = false;
+      this.saving = this.selectedPath
+        ? this.saveQueue.isBusy(this.selectedPath)
+        : false;
     }
   }
 
   async flushSave() {
+    await invokeVaultLeaveFlush();
     return this.save({ source: "manual" });
   }
 

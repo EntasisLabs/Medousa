@@ -12174,6 +12174,13 @@
       "note"
     ],
     "properties": {
+      "content": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "description": "Body actually persisted after semantic-tag rewrite (when present)."
+      },
       "created": {
         "type": "boolean"
       },

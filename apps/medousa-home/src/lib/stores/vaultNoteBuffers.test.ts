@@ -30,6 +30,9 @@ function noteResponse(path: string, content: string, title = "Note") {
 }
 
 describe("vault note buffers (multi-pane)", () => {
+  // VaultStore pulls a large editor/codec graph; cold dynamic import is slow.
+  vi.setConfig({ testTimeout: 20_000 });
+
   beforeEach(() => {
     vi.resetModules();
     const storage = new Map<string, string>();
@@ -89,6 +92,25 @@ describe("vault note buffers (multi-pane)", () => {
     await store.openNote("notes/a.md");
     expect(store.content).toBe("dirty draft");
     expect(store.dirty).toBe(true);
+    expect(getVaultNote).not.toHaveBeenCalled();
+  });
+
+  it("restores a clean stashed buffer instead of refetching", async () => {
+    const { store, getVaultNote } = await loadStore();
+    getVaultNote.mockResolvedValue(noteResponse("notes/a.md", "fresh") as never);
+
+    store.seedBufferForTest({
+      path: "notes/a.md",
+      content: "stashed",
+      baselineContent: "stashed",
+      contentHash: "hash-a",
+      title: "A",
+      dirty: false,
+      contentRevision: 1,
+    });
+
+    await store.openNote("notes/a.md");
+    expect(store.content).toBe("stashed");
     expect(getVaultNote).not.toHaveBeenCalled();
   });
 

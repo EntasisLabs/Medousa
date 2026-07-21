@@ -128,6 +128,7 @@ impl VaultService {
         Ok(VaultWriteResponse {
             note: entry.to_vault_note(vault_store().backlinks_for(&entry.path)),
             created: !existed,
+            content: Some(content),
         })
     }
 
@@ -149,6 +150,7 @@ impl VaultService {
             return Self::get_note(from).map(|read| VaultWriteResponse {
                 note: read.note,
                 created: false,
+                content: Some(read.content),
             });
         }
         if vault_store().get_entry(to).is_some() {
