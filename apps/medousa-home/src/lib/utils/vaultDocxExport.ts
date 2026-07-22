@@ -163,6 +163,17 @@ function inlineFromNode(node: Node, ctx: InlineCtx): (TextRun | ExternalHyperlin
       new TextRun(runOpts(text, ctx, { highlight: "yellow" })),
     ];
   }
+  if (tag === "sup" || node.classList.contains("markdown-footnote-ref")) {
+    const text = node.textContent ?? "";
+    if (!text) return [];
+    return [
+      new TextRun(
+        runOpts(text, { ...ctx, size: Math.max(14, ctx.size - 4) }, {
+          superScript: true,
+        }),
+      ),
+    ];
+  }
 
   return [...node.childNodes].flatMap((c) => inlineFromNode(c, ctx));
 }
@@ -589,6 +600,16 @@ export function htmlExportToDocxChildren(
             },
           }),
         );
+        continue;
+      }
+
+      if (tag === "section" && node.classList.contains("markdown-footnotes")) {
+        const list = node.querySelector("ol");
+        if (list) {
+          out.push(...listItems(list, ctx, true, 0));
+        } else {
+          walk(node);
+        }
         continue;
       }
 

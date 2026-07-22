@@ -1,6 +1,7 @@
 @import "./lib/styles/chat-mobile-tokens.postcss";
 @import "./lib/styles/syntax-tokens.postcss";
 @import "./lib/styles/markdown-tokens.postcss";
+@import "./lib/styles/callout-tokens.postcss";
 @import "./lib/styles/chart-tokens.postcss";
 @import "./lib/styles/workshop-shell.postcss";
 @import "./lib/styles/peers.postcss";
@@ -5625,42 +5626,7 @@
     @apply min-w-[4.5rem] text-right font-medium tracking-wide transition-opacity duration-300;
   }
 
-  .markdown-callout {
-    @apply my-3 overflow-hidden rounded-md border border-surface-500/40 bg-surface-800/60;
-  }
-
-  .markdown-callout-title {
-    @apply border-b border-surface-500/35 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-surface-200;
-  }
-
-  .markdown-callout-body {
-    @apply px-3 py-2 text-surface-200;
-  }
-
-  .markdown-callout-body p {
-    @apply my-1 first:mt-0 last:mb-0;
-  }
-
-  .markdown-callout-note .markdown-callout-title {
-    @apply text-primary-300;
-    background-color: rgb(var(--color-primary-500) / 0.12);
-  }
-
-  .markdown-callout-tip .markdown-callout-title {
-    @apply text-success-300;
-    background-color: rgb(var(--color-success-500) / 0.12);
-  }
-
-  .markdown-callout-warning .markdown-callout-title {
-    @apply text-warning-300;
-    background-color: rgb(var(--color-warning-500) / 0.12);
-  }
-
-  .markdown-callout-danger .markdown-callout-title,
-  .markdown-callout-error .markdown-callout-title {
-    @apply text-error-300;
-    background-color: rgb(var(--color-error-500) / 0.12);
-  }
+  /* Callout chrome lives in callout-tokens.postcss (GitHub-style accent). */
 
   .markdown-content pre.mermaid {
     @apply my-4 overflow-x-auto rounded-lg border border-surface-500/30 bg-surface-900/80 p-4 text-sm leading-relaxed;
@@ -5690,6 +5656,55 @@
   html:not(.dark) .markdown-content mark.markdown-highlight {
     background-color: rgb(254 240 138 / 0.85);
     color: rgb(66 32 6);
+  }
+
+  /* Obsidian-compatible footnotes — Medousa chrome */
+  .markdown-content .markdown-footnote-ref,
+  .markdown-content .markdown-footnote-ref a {
+    color: rgb(var(--color-primary-300));
+    font-size: 0.75em;
+    font-weight: 600;
+    line-height: 0;
+    text-decoration: none;
+    vertical-align: super;
+  }
+
+  .markdown-content .markdown-footnote-ref a:hover {
+    color: rgb(var(--color-primary-200));
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
+  .markdown-content .markdown-footnotes {
+    margin: 1.75rem 0 0.5rem;
+    padding: 0.85rem 0 0;
+    border-top: 1px solid rgb(var(--color-surface-600) / 0.45);
+    font-size: 0.8125rem;
+    color: rgb(var(--color-surface-300));
+  }
+
+  .markdown-content .markdown-footnotes-list {
+    margin: 0;
+    padding: 0 0 0 1.25rem;
+    list-style: decimal;
+  }
+
+  .markdown-content .markdown-footnote-item {
+    margin: 0.35rem 0;
+    padding: 0;
+    line-height: 1.45;
+    break-inside: avoid;
+  }
+
+  .markdown-content .markdown-footnote-back {
+    margin-left: 0.25rem;
+    color: rgb(var(--color-primary-400));
+    text-decoration: none;
+    font-size: 0.85em;
+  }
+
+  .markdown-content .markdown-footnote-back:hover {
+    color: rgb(var(--color-primary-200));
   }
 
   .markdown-color-red,
@@ -10963,6 +10978,37 @@
     color: inherit;
     border-radius: 0.15rem;
     padding: 0 0.05em;
+  }
+
+  .vault-live-prose .vault-live-footnote-ref,
+  .vault-live-prose .vault-live-inline-footnote {
+    color: rgb(var(--color-primary-300));
+    font-size: 0.75em;
+    font-weight: 600;
+    line-height: 0;
+    vertical-align: super;
+  }
+
+  .vault-live-prose .vault-live-inline-footnote {
+    border-bottom: 1px dotted rgb(var(--color-primary-400) / 0.55);
+    cursor: help;
+  }
+
+  .vault-live-prose .vault-live-footnote-def {
+    margin: 0.35rem 0;
+    padding: 0.2rem 0 0.2rem 0.65rem;
+    border-left: 2px solid rgb(var(--color-primary-500) / 0.35);
+    font-size: 0.8125rem;
+    line-height: 1.45;
+    color: rgb(var(--color-surface-300));
+  }
+
+  .vault-live-prose .vault-live-footnote-def::before {
+    content: "[^" attr(data-footnote-id) "]: ";
+    color: rgb(var(--color-primary-300));
+    font-weight: 600;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.9em;
   }
 
   .vault-live-editor__host {

@@ -54,6 +54,7 @@ export function buildExportPrintCss(
   .vault-pdf-export-mount .liquid-tabs-panel--export,
   .vault-pdf-export-mount blockquote,
   .vault-pdf-export-mount .markdown-callout,
+  .vault-pdf-export-mount .markdown-footnote-item,
   .vault-pdf-export-mount details${
     resume
       ? `,
@@ -585,39 +586,87 @@ export function buildExportPrintCss(
     color: #422006 !important;
   }
 
-  .vault-pdf-export-mount .markdown-callout {
-    border: 1px solid #9ca3af !important;
-    background: #f3f4f6 !important;
-    border-radius: 6px !important;
-    padding: 12px 14px !important;
+  .vault-pdf-export-mount .markdown-footnotes {
+    margin-top: 18px !important;
+    padding-top: 10px !important;
+    border-top: 1px solid #9ca3af !important;
+    color: #374151 !important;
+    font-size: 11px !important;
+  }
+
+  .vault-pdf-export-mount .markdown-footnote-ref,
+  .vault-pdf-export-mount .markdown-footnote-ref a {
+    color: #2563eb !important;
+    text-decoration: none !important;
+  }
+
+  .vault-pdf-export-mount .markdown-footnote-back {
+    color: #2563eb !important;
+    text-decoration: none !important;
+  }
+
+  .vault-pdf-export-mount .markdown-callout,
+  .vault-pdf-export-mount .liquid-callout {
+    border: none !important;
+    border-left: 3px solid #2563eb !important;
+    background: transparent !important;
+    background-image: none !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    padding: 4px 0 4px 14px !important;
     margin: 12px 0 !important;
     color: #111827 !important;
+  }
+
+  .vault-pdf-export-mount .markdown-callout-header,
+  .vault-pdf-export-mount .liquid-callout-header,
+  .vault-pdf-export-mount .markdown-callout-title,
+  .vault-pdf-export-mount .liquid-callout-title {
+    color: #2563eb !important;
+  }
+
+  .vault-pdf-export-mount .markdown-callout-tip,
+  .vault-pdf-export-mount .liquid-callout[data-tone="tip"],
+  .vault-pdf-export-mount .liquid-callout[data-tone="success"] {
+    border-left-color: #16a34a !important;
+  }
+
+  .vault-pdf-export-mount .markdown-callout-tip .markdown-callout-header,
+  .vault-pdf-export-mount .markdown-callout-tip .markdown-callout-title,
+  .vault-pdf-export-mount .liquid-callout[data-tone="tip"] .liquid-callout-header,
+  .vault-pdf-export-mount .liquid-callout[data-tone="success"] .liquid-callout-header {
+    color: #16a34a !important;
+  }
+
+  .vault-pdf-export-mount .markdown-callout-warning,
+  .vault-pdf-export-mount .liquid-callout[data-tone="warn"] {
+    border-left-color: #ca8a04 !important;
+  }
+
+  .vault-pdf-export-mount .markdown-callout-warning .markdown-callout-header,
+  .vault-pdf-export-mount .liquid-callout[data-tone="warn"] .liquid-callout-header {
+    color: #ca8a04 !important;
+  }
+
+  .vault-pdf-export-mount .markdown-callout-danger,
+  .vault-pdf-export-mount .markdown-callout-error,
+  .vault-pdf-export-mount .liquid-callout[data-tone="error"] {
+    border-left-color: #dc2626 !important;
+  }
+
+  .vault-pdf-export-mount .markdown-callout-danger .markdown-callout-header,
+  .vault-pdf-export-mount .markdown-callout-error .markdown-callout-header,
+  .vault-pdf-export-mount .liquid-callout[data-tone="error"] .liquid-callout-header {
+    color: #dc2626 !important;
   }
 
   .vault-pdf-export-mount .markdown-callout,
   .vault-pdf-export-mount .markdown-callout p,
   .vault-pdf-export-mount .markdown-callout li,
   .vault-pdf-export-mount .markdown-callout em,
-  .vault-pdf-export-mount .markdown-callout strong {
-    color: #111827 !important;
-  }
-
-  /* —— Liquid callout (paper) —— */
-  .vault-pdf-export-mount .liquid-callout {
-    margin: 12px 0 !important;
-    padding: 14px 16px !important;
-    border-radius: 10px !important;
-    border: 1px solid #9ca3af !important;
-    background: #f3f4f6 !important;
-    background-image: none !important;
-    box-shadow: none !important;
-    color: #111827 !important;
-  }
-
-  .vault-pdf-export-mount .liquid-callout-title,
+  .vault-pdf-export-mount .markdown-callout strong,
   .vault-pdf-export-mount .liquid-callout-body,
   .vault-pdf-export-mount .liquid-callout-body p,
-  .vault-pdf-export-mount .vault-live-callout__title,
   .vault-pdf-export-mount .vault-live-callout__body {
     color: #111827 !important;
   }

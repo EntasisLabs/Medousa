@@ -39,7 +39,7 @@ export const LIQUID_FENCE_LANGS = new Set([
   "kanban",
 ]);
 
-const CALLOUT_TONES = new Set(["note", "warn", "error", "success"]);
+const CALLOUT_TONES = new Set(["note", "warn", "error", "success", "tip", "important"]);
 const CHIP_TONES = new Set(["default", "accent", "success", "warn"]);
 
 /** Lucide icon ids allowed in `{{icon:name}}` (kebab or camel). */

@@ -184,11 +184,25 @@ function sanitizeHtml(html: string): string {
       "data-liquid-embed",
       "data-liquid-props",
       "data-liquid-icon",
+      "data-footnote-ref",
       "src",
       "loading",
       "decoding",
+      "value",
     ],
-    ADD_TAGS: ["input", "mark", "span", "nav", "aside", "header", "button", "figure", "figcaption"],
+    ADD_TAGS: [
+      "input",
+      "mark",
+      "span",
+      "nav",
+      "aside",
+      "header",
+      "button",
+      "figure",
+      "figcaption",
+      "sup",
+      "section",
+    ],
   });
 }
 

@@ -16,6 +16,9 @@ import { HeadingMarks } from "./headingMarksExtension";
 import { LiveHorizontalRule } from "./liveHorizontalRule";
 import { LiveHighlight } from "./liveHighlightMark";
 import { LiveTextColor } from "./liveTextColorMark";
+import { LiveFootnoteRef } from "./liveFootnoteRefNode";
+import { LiveInlineFootnote } from "./liveInlineFootnoteMark";
+import { LiveFootnoteDefinition } from "./liveFootnoteDefinition";
 
 export type LiveExtensionOptions = {
   fence?: FenceBlockOptions;
@@ -37,6 +40,9 @@ export function createLiveExtensions(
     LiveHorizontalRule,
     LiveHighlight,
     LiveTextColor,
+    LiveFootnoteRef,
+    LiveInlineFootnote,
+    LiveFootnoteDefinition,
     Link.configure({
       openOnClick: false,
       autolink: true,

@@ -316,7 +316,7 @@ export const LIQUID_CARD_TEMPLATE = [
 export const LIQUID_CALLOUT_TEMPLATE = [
   "```callout",
   "tone: note",
-  "title: Aside",
+  "title: Note",
   "body: Supporting detail for the reader.",
   "```",
   "",

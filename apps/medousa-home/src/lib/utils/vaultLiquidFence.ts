@@ -133,7 +133,7 @@ const DEFAULT_COMPARE_TABLE = [
 
 const DASHBOARD_TONES = new Set(["default", "accent", "success", "warn", "error"]);
 const DASHBOARD_COLUMNS = new Set(["2", "3", "4"]);
-const CALLOUT_TONES = new Set(["note", "warn", "error", "success"]);
+const CALLOUT_TONES = new Set(["note", "warn", "error", "success", "tip", "important"]);
 const STEP_STATUSES = new Set(["done", "current", "pending"]);
 
 function fenceRe(lang: LiquidFenceLang): RegExp {

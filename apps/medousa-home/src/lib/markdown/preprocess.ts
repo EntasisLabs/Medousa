@@ -6,7 +6,18 @@ import {
   normalizeMarkdownHexColor,
 } from "$lib/utils/vaultMarkdownColors";
 
+import {
+  calloutDefaultTitle,
+  calloutIconForTone,
+  calloutIconSvg,
+} from "$lib/styles/calloutIcons";
+
 import { escapeAttr, escapeHtml } from "./escape";
+import {
+  buildFootnotesSectionHtml,
+  planFootnotes,
+  replaceFootnoteMarkers,
+} from "./footnotes";
 import { parseImageSizeToken } from "./imageSize";
 
 const CALLOUT_LINE = /^>\s*\[!(\w+)\]\s*(.*)$/i;
@@ -70,7 +81,7 @@ export function preprocessCallouts(source: string): string {
     }
 
     const kind = match[1].toLowerCase();
-    const title = match[2]?.trim() ?? kind;
+    const title = match[2]?.trim() || calloutDefaultTitle(kind);
     index += 1;
     const body: string[] = [];
 
@@ -81,16 +92,15 @@ export function preprocessCallouts(source: string): string {
       index += 1;
     }
 
-    const titleHtml = title
-      ? `<p class="markdown-callout-title">${escapeHtml(title)}</p>`
-      : "";
+    const iconHtml = calloutIconSvg(calloutIconForTone(kind));
+    const headerHtml = `<div class="markdown-callout-header"><span class="markdown-callout-icon">${iconHtml}</span><p class="markdown-callout-title">${escapeHtml(title)}</p></div>`;
     const bodyHtml = body
       .filter((line) => line.trim().length > 0)
       .map((line) => `<p>${escapeHtml(line)}</p>`)
       .join("");
 
     out.push(
-      `<div class="markdown-callout markdown-callout-${escapeAttr(kind)}" data-callout="${escapeAttr(kind)}">${titleHtml}<div class="markdown-callout-body">${bodyHtml}</div></div>`,
+      `<aside class="markdown-callout markdown-callout-${escapeAttr(kind)}" data-callout="${escapeAttr(kind)}">${headerHtml}<div class="markdown-callout-body">${bodyHtml}</div></aside>`,
     );
     out.push("");
   }
@@ -224,6 +234,19 @@ import { preprocessTableOfContents } from "./toc";
 import { preprocessLiquidEmbeds } from "./liquidEmbeds";
 import { columnDisplayLabel } from "$lib/utils/ledgerSheet";
 
+/**
+ * Obsidian footnotes → superscript refs + footer section (skipped inside fences).
+ * Inline bodies and definition text are escaped; Preview can still wrap with marked.
+ */
+export function preprocessFootnotes(source: string): string {
+  const plan = planFootnotes(source);
+  if (plan.orderedIds.length === 0) return source;
+
+  const withMarkers = replaceFootnoteMarkers(plan.bodyWithoutDefs, plan.numberById);
+  const footer = buildFootnotesSectionHtml(plan, (md) => escapeHtml(md));
+  return `${withMarkers.replace(/\s+$/, "")}${footer}`;
+}
+
 export function preprocessMarkdown(
   source: string,
   titleByPath?: Map<string, string>,
@@ -235,6 +258,7 @@ export function preprocessMarkdown(
   const withWikiImages = preprocessWikiImageEmbeds(withLedgerHeaders);
   const withWikilinks = preprocessWikilinks(withWikiImages, titleByPath);
   const withCallouts = preprocessCallouts(withWikilinks);
-  const withToc = preprocessTableOfContents(withCallouts);
+  const withFootnotes = preprocessFootnotes(withCallouts);
+  const withToc = preprocessTableOfContents(withFootnotes);
   return preprocessLiquidEmbeds(withToc);
 }
