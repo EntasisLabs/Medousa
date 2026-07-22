@@ -8,8 +8,10 @@ import {
   serializeCompareFence,
   type LiquidCompareDraft,
   type LiquidCompareMode,
+  type LiquidCompareWidth,
 } from "$lib/utils/vaultLiquidFence";
 import { mountLiquidFence, unmountLiquidFence } from "./liveOrganismHost";
+import { LIVE_EMBED_WIDTHS, embedWidthClass } from "./liveEmbedWidth";
 
 function compareBody(raw: string): string {
   const open = /^```compare[^\r\n]*\r?\n/i.exec(raw);
@@ -34,8 +36,12 @@ export function mountCompareSurface(
   let currentRaw = serializeCompareFence(draft);
 
   const root = document.createElement("div");
-  root.className = "vault-live-compare";
+  root.className = `vault-live-compare ${embedWidthClass(draft.width ?? "wide")}`;
   root.contentEditable = "false";
+
+  const syncWidthClass = () => {
+    root.className = `vault-live-compare ${embedWidthClass(draft.width ?? "wide")}`;
+  };
 
   const head = document.createElement("div");
   head.className = "vault-live-compare__head";
@@ -105,7 +111,34 @@ export function mountCompareSurface(
     e.stopPropagation();
   });
 
-  meta.append(modeGroup, configure);
+  const widthBtn = document.createElement("button");
+  widthBtn.type = "button";
+  widthBtn.className = "vault-live-compare__width";
+  const syncWidthLabel = () => {
+    const w = draft.width ?? "wide";
+    widthBtn.textContent = w;
+    widthBtn.title = `Width: ${w}`;
+  };
+  syncWidthLabel();
+  widthBtn.addEventListener("mousedown", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+  });
+  widthBtn.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const cur = draft.width ?? "wide";
+    const idx = LIVE_EMBED_WIDTHS.indexOf(cur as LiquidCompareWidth);
+    const next =
+      LIVE_EMBED_WIDTHS[(idx + 1) % LIVE_EMBED_WIDTHS.length] ?? "wide";
+    draft = { ...draft, width: next };
+    syncWidthLabel();
+    syncWidthClass();
+    currentRaw = serializeCompareFence(draft);
+    onChange(currentRaw);
+  });
+
+  meta.append(modeGroup, widthBtn, configure);
   head.append(title, meta);
 
   const stage = document.createElement("div");

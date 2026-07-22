@@ -33,6 +33,8 @@
   import { flushLiveDrafts } from "$lib/vault/live/liveDraftFlush";
   import { invalidateTransclusionCache } from "$lib/utils/resolveTransclusion";
   import { copyTextToClipboard, readTextFromClipboard } from "$lib/utils/vaultClipboard";
+  import { resolveMedousaViewHostClick } from "$lib/utils/medousaViewHostClick";
+  import { attachHostCollapse } from "$lib/vault/live/liveHostCollapse";
   import type { MarkdownFormatAction, SlashBlockId } from "$lib/utils/vaultMarkdownEdit";
   import type { MarkdownColorToken } from "$lib/utils/vaultMarkdownColors";
   import type { MarkdownFontFamily } from "$lib/utils/vaultMarkdownFonts";
@@ -474,6 +476,20 @@
     }
   }
 
+  let tableCollapseDisposers: (() => void)[] = [];
+
+  function bindTableCollapse() {
+    for (const dispose of tableCollapseDisposers) dispose();
+    tableCollapseDisposers = [];
+    if (!hostEl) return;
+    for (const table of hostEl.querySelectorAll("table.vault-live-table")) {
+      const host =
+        (table.closest(".markdown-table-scroll") as HTMLElement | null) ??
+        (table as HTMLElement);
+      tableCollapseDisposers.push(attachHostCollapse(host, { label: "Table" }));
+    }
+  }
+
   function handleHostClick(event: MouseEvent) {
     const target = event.target as HTMLElement;
 
@@ -516,16 +532,27 @@
       return;
     }
 
-    const configureView = target.closest(
-      ".medousa-view-configure, [data-edit-view-index]",
-    );
-    if (configureView) {
+    const viewClick = resolveMedousaViewHostClick(target);
+    if (viewClick.kind === "copyCsv") {
       event.preventDefault();
       event.stopPropagation();
-      const host = configureView.closest<HTMLElement>("[data-live-fence-raw]");
+      if (viewClick.payload) {
+        try {
+          void copyTextToClipboard(decodeURIComponent(viewClick.payload));
+        } catch {
+          // ignore
+        }
+      }
+      return;
+    }
+    if (viewClick.kind === "configure") {
+      event.preventDefault();
+      event.stopPropagation();
+      const host = target.closest<HTMLElement>("[data-live-fence-raw]");
       const raw = host?.dataset.liveFenceRaw ?? "";
       const index = findViewFenceIndex(valueRef.current || vault.content, raw);
       if (index >= 0) vault.openViewBridgeEdit(index);
+      else if (viewClick.index >= 0) vault.openViewBridgeEdit(viewClick.index);
       return;
     }
 
@@ -535,23 +562,6 @@
       event.stopPropagation();
       const path = openSource.getAttribute("data-open-vault-note");
       if (path) void vault.openNote(path);
-      return;
-    }
-
-    const copyCsv = target.closest("[data-copy-view-csv]");
-    if (copyCsv) {
-      event.preventDefault();
-      event.stopPropagation();
-      const payload =
-        copyCsv.getAttribute("data-view-csv") ??
-        copyCsv.getAttribute("data-copy-view-csv");
-      if (payload) {
-        try {
-          void copyTextToClipboard(decodeURIComponent(payload));
-        } catch {
-          // ignore
-        }
-      }
       return;
     }
 
@@ -586,6 +596,7 @@
     editor = new Editor({
       element: hostEl,
       extensions: createLiveExtensions({
+        hideMarkdownSyntax: () => vault.hideLiveMarkdownSyntax,
         fence: {
           getLiquidContext: liquidContext,
           getResolveContext: resolveContext,
@@ -731,6 +742,7 @@
         syncSlash();
         // Guarded: only mutates the class when the H1↔title match flips.
         syncDupTitleHeading();
+        queueMicrotask(() => bindTableCollapse());
       },
       onSelectionUpdate: () => {
         syncSlash();
@@ -829,9 +841,18 @@
     }
   });
 
+  $effect(() => {
+    void vault.hideLiveMarkdownSyntax;
+    if (!editor) return;
+    // Re-run heading-mark decorations when the WYSIWYG toggle flips.
+    editor.view.dispatch(editor.state.tr);
+  });
+
   onDestroy(() => {
     // Do NOT serialize→onchange here. Leave-flush / explicit flush() own that
     // handoff; destroy flushes race note switches and clobber the leased path.
+    for (const dispose of tableCollapseDisposers) dispose();
+    tableCollapseDisposers = [];
     removeFormatBubbleListeners?.();
     removeFormatBubbleListeners = null;
     editor?.destroy();
@@ -965,7 +986,10 @@
   }
 </script>
 
-<div class="vault-live-editor flex min-h-0 min-w-0 max-w-full flex-1 flex-col overflow-x-hidden overflow-y-auto">
+<div
+  class="vault-live-editor vault-paper-width flex min-h-0 min-w-0 max-w-full flex-1 flex-col overflow-x-hidden overflow-y-auto"
+  data-paper-width={vault.paperWidth}
+>
   <VaultLiveProperties
     {frontmatter}
     {tags}

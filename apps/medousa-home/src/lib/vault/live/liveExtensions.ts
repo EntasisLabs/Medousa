@@ -22,10 +22,12 @@ import { LiveFootnoteRef } from "./liveFootnoteRefNode";
 import { LiveInlineFootnote } from "./liveInlineFootnoteMark";
 import { LiveFootnoteDefinition } from "./liveFootnoteDefinition";
 import { LiveHeading, LiveParagraph } from "./liveBlockIdNodes";
+import { LiveSectionFold } from "./liveSectionFold";
 
 export type LiveExtensionOptions = {
   fence?: FenceBlockOptions;
   embed?: EmbedBlockOptions;
+  hideMarkdownSyntax?: () => boolean;
 };
 
 export function createLiveExtensions(
@@ -93,7 +95,10 @@ export function createLiveExtensions(
     Markdown.configure({
       indentation: { style: "space", size: 2 },
     }),
-    HeadingMarks,
+    HeadingMarks.configure({
+      hideSyntax: options.hideMarkdownSyntax,
+    }),
+    LiveSectionFold,
     FenceBlock.configure(options.fence ?? {}),
     EmbedBlock.configure(options.embed ?? {}),
   ];

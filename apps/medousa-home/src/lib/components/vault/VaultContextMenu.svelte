@@ -457,11 +457,21 @@
   }
 
   onMount(() => {
+    const onFocusLoss = () => {
+      if (vaultContextMenu.open) vaultContextMenu.close();
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") onFocusLoss();
+    };
     window.addEventListener("keydown", onWindowKeydown);
     window.addEventListener("pointerdown", onWindowPointerDown, true);
+    window.addEventListener("blur", onFocusLoss);
+    document.addEventListener("visibilitychange", onVisibility);
     return () => {
       window.removeEventListener("keydown", onWindowKeydown);
       window.removeEventListener("pointerdown", onWindowPointerDown, true);
+      window.removeEventListener("blur", onFocusLoss);
+      document.removeEventListener("visibilitychange", onVisibility);
     };
   });
 </script>

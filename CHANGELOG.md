@@ -11,6 +11,39 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+### Fixed
+
+- Creating a note with a title/path that already exists no longer overwrites disk or the editor buffer (frontend refuse + `POST /v1/vault/notes` create-only)
+- Windows Build split: slash menu anchors immediately (fixed coords) and IME keyCode 229 no longer claims ↑↓/Enter (WebView2 input deadlock)
+- Windows focus loss (Greenshot / snipping tools): hard-dismiss slash + context menus; skip clipboard while unfocused; release split sash pointer capture
+
+## [0.4.1] — 2026-07-22
+
+### Added
+
+- Live heading / list fold (Obsidian-style chevrons; session-local)
+- Collapsible GFM tables and `medousa-view` hosts in Live
+- Optional Live toggle to hide heading `#` / `##` marks (no layout shift)
+- Paper width presets for Live / Preview (narrow → full)
+- Width controls for compare, slides, and Live tables (`width:` fence KV where applicable)
+- Syntax highlighting for C, C++, C#, Java, PHP, R, Scala (plus common aliases)
+- Workbook marker surface (title + sheet list) with View / Raw toggle
+
+### Changed
+
+- External / loose markdown files use absolute-path note buffers + editor UI restore so Live keep-alive / multi-pane no longer mounts blank
+- Loose-file leave flush can autosave via absolute write; export Word/PDF available for loose notes
+- Local images beside an absolute note resolve next to the file, not the vault root
+- Kind pill for sheet / ledger / workbook / slides / board seeds object body and opens table/deck/board/manifest (not empty Live)
+
+### Fixed
+
+- Preview callout icon / title alignment (no longer fights `.markdown-content p` margins)
+- Copy CSV on query views no longer opens Configure (click priority)
+- `contentSyncKey` path parsing keeps absolute OS paths intact
+- Sheet / workbook / slides kind no longer snaps back to Note after buffer restore (frontmatter kind wins)
+- Sheet View/Raw toggle available (was ledger-only)
+
 ## [0.4.0] — 2026-07-21
 
 ### Added
@@ -144,6 +177,7 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 - Product path is **Home-first**: download the app, chat, then add packages from Settings; Installer remains an advanced/repair escape hatch
 - Connection → Extras and welcome-wizard offline CTAs open Settings → Packages instead of launching the Installer by default
 
+[0.4.1]: https://github.com/EntasisLabs/Medousa/releases/tag/v0.4.1
 [0.4.0]: https://github.com/EntasisLabs/Medousa/releases/tag/v0.4.0
 [0.3.2]: https://github.com/EntasisLabs/Medousa/releases/tag/v0.3.2
 [0.3.1]: https://github.com/EntasisLabs/Medousa/releases/tag/v0.3.1

@@ -6,14 +6,26 @@ type HeadingMarksState = { focused: boolean };
 
 const headingMarksKey = new PluginKey<HeadingMarksState>("liveHeadingMarks");
 
+export type HeadingMarksOptions = {
+  /** When true, never show `#` widgets (optional Live WYSIWYG). */
+  hideSyntax?: () => boolean;
+};
+
 /**
  * Show muted `#` / `##` / `###` when the caret is inside a heading and the
  * editor is focused. Resting (unfocused) Live shows no syntax graffiti.
  */
-export const HeadingMarks = Extension.create({
+export const HeadingMarks = Extension.create<HeadingMarksOptions>({
   name: "liveHeadingMarks",
 
+  addOptions() {
+    return {
+      hideSyntax: () => false,
+    };
+  },
+
   addProseMirrorPlugins() {
+    const hideSyntax = () => this.options.hideSyntax?.() ?? false;
     return [
       new Plugin<HeadingMarksState>({
         key: headingMarksKey,
@@ -27,6 +39,7 @@ export const HeadingMarks = Extension.create({
         },
         props: {
           decorations(state) {
+            if (hideSyntax()) return PMView.DecorationSet.empty;
             const pluginState = headingMarksKey.getState(state);
             if (!pluginState?.focused) return PMView.DecorationSet.empty;
 

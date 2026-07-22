@@ -89,7 +89,7 @@ pub async fn put_vault_note(
 pub async fn post_vault_note(
     Json(request): Json<VaultWriteRequest>,
 ) -> Result<Json<VaultWriteResponse>, (StatusCode, String)> {
-    VaultService::write_note(None, &request, None)
+    VaultService::create_note(&request)
         .map(Json)
         .map_err(map_vault_error)
 }

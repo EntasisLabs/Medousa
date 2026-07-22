@@ -38,10 +38,14 @@ export interface SlideSection {
   notes?: string;
 }
 
+export type SlidesDeckWidth = "narrow" | "medium" | "wide" | "full";
+
 export interface SlidesDeck {
   title: string;
   theme: string;
   columns: "1" | "2" | "3";
+  /** Optional Live / Preview paper width for the deck surface. */
+  width?: SlidesDeckWidth;
   slides: SlideSection[];
 }
 
@@ -324,10 +328,20 @@ export function parseSlidesDeck(body: string): SlidesDeck | null {
   const columns =
     columnsRaw === "1" || columnsRaw === "3" ? columnsRaw : "2";
 
+  const widthRaw = (preamble.fields.width ?? "").trim().toLowerCase();
+  const width =
+    widthRaw === "narrow" ||
+    widthRaw === "medium" ||
+    widthRaw === "wide" ||
+    widthRaw === "full"
+      ? (widthRaw as SlidesDeckWidth)
+      : undefined;
+
   return {
     title: preamble.fields.title?.trim() ?? "",
     theme: normalizeSlideWash(preamble.fields.theme),
     columns,
+    ...(width ? { width } : {}),
     slides,
   };
 }
@@ -342,6 +356,9 @@ export function serializeSlidesDeckBody(deck: SlidesDeck): string {
     lines.push(`theme: paper`);
   }
   lines.push(`columns: ${deck.columns}`);
+  if (deck.width && deck.width !== "wide") {
+    lines.push(`width: ${deck.width}`);
+  }
   lines.push("");
 
   for (const slide of deck.slides) {

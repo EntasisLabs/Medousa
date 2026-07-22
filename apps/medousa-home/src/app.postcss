@@ -9915,6 +9915,100 @@
     overflow-anchor: none;
   }
 
+  /* Live / Preview paper column (overflow menu cycles data-paper-width). */
+  .vault-paper-width[data-paper-width="narrow"] .vault-live-prose,
+  .vault-paper-width[data-paper-width="narrow"].markdown-content {
+    max-width: 36rem;
+    margin-inline: auto;
+  }
+  .vault-paper-width[data-paper-width="medium"] .vault-live-prose,
+  .vault-paper-width[data-paper-width="medium"].markdown-content {
+    max-width: 48rem;
+    margin-inline: auto;
+  }
+  .vault-paper-width[data-paper-width="wide"] .vault-live-prose,
+  .vault-paper-width[data-paper-width="wide"].markdown-content {
+    max-width: 64rem;
+    margin-inline: auto;
+  }
+  .vault-paper-width[data-paper-width="full"] .vault-live-prose,
+  .vault-paper-width[data-paper-width="full"].markdown-content {
+    max-width: none;
+    margin-inline: 0;
+  }
+
+  .vault-live-embed-width--narrow {
+    max-width: 28rem;
+    margin-inline: auto;
+  }
+  .vault-live-embed-width--medium {
+    max-width: 40rem;
+    margin-inline: auto;
+  }
+  .vault-live-embed-width--wide {
+    max-width: 56rem;
+    margin-inline: auto;
+  }
+  .vault-live-embed-width--full {
+    max-width: none;
+    margin-inline: 0;
+  }
+
+  .vault-live-fold-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.1rem;
+    height: 1.1rem;
+    margin-right: 0.2rem;
+    padding: 0;
+    border: none;
+    border-radius: 0.25rem;
+    background: transparent;
+    color: rgb(var(--color-surface-400));
+    cursor: pointer;
+    vertical-align: middle;
+  }
+  .vault-live-fold-btn:hover {
+    color: rgb(var(--color-surface-100));
+    background: color-mix(in srgb, currentColor 12%, transparent);
+  }
+  .vault-live-section-folded {
+    display: none !important;
+  }
+
+  .vault-live-collapsible-host {
+    position: relative;
+  }
+  .vault-live-host-collapse-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    margin: 0.15rem 0 0.35rem;
+  }
+  .vault-live-host-collapse-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.25rem;
+    height: 1.25rem;
+    padding: 0;
+    border: none;
+    border-radius: 0.25rem;
+    background: transparent;
+    color: rgb(var(--color-surface-400));
+    cursor: pointer;
+  }
+  .vault-live-host-collapse-label {
+    font-size: 0.7rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: rgb(var(--color-surface-500));
+  }
+  .vault-live-collapsible-host--collapsed > :not(.vault-live-host-collapse-bar) {
+    display: none !important;
+  }
+
   /* Keep note surface inside tiled shell panes (flex min-content otherwise expands). */
   .shell-pane .vault-editor,
   .shell-pane .lme-panel,

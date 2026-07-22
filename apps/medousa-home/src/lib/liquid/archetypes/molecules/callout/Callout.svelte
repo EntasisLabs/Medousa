@@ -33,7 +33,7 @@
 >
   <div class="liquid-callout-header">
     <span class="liquid-callout-icon">{@html iconHtml}</span>
-    <p class="liquid-callout-title">{@html renderInlineMarkdown(title)}</p>
+    <span class="liquid-callout-title">{@html renderInlineMarkdown(title)}</span>
   </div>
   {#if body}
     <div class="liquid-callout-body">{@html renderInlineMarkdown(body)}</div>

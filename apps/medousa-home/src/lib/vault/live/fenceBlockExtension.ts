@@ -441,6 +441,13 @@ export const FenceBlock = Node.create<FenceBlockOptions>({
             if (gen !== mountGen) return;
             placeholder.innerHTML = html;
             placeholder.classList.remove("vault-live-view-pending");
+            const viewHost =
+              placeholder.querySelector<HTMLElement>(".medousa-view") ??
+              placeholder;
+            void import("./liveHostCollapse").then(({ attachHostCollapse }) => {
+              if (gen !== mountGen) return;
+              attachHostCollapse(viewHost, { label: "View" });
+            });
           });
           return;
         }

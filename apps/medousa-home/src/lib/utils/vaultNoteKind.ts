@@ -12,9 +12,9 @@ export function isDataFirstKind(kind: VaultNoteKind): boolean {
 }
 
 export function supportsLinksPanel(kind: VaultNoteKind): boolean {
-  return kind !== "ledger" && kind !== "sheet";
+  return kind !== "ledger" && kind !== "sheet" && kind !== "workbook";
 }
 
 export function supportsPreviewSplit(kind: VaultNoteKind): boolean {
-  return kind !== "ledger" && kind !== "sheet";
+  return kind !== "ledger" && kind !== "sheet" && kind !== "workbook";
 }

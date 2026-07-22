@@ -96,6 +96,20 @@ impl VaultService {
         Self::write_note_with_actor(path, request, if_match, WorkspaceEventActor::Operator, None)
     }
 
+    /// Create-only write used by `POST /v1/vault/notes`. Refuses to clobber an existing path.
+    pub fn create_note(request: &VaultWriteRequest) -> Result<VaultWriteResponse> {
+        let target_path = request
+            .path
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| anyhow::anyhow!("path is required"))?;
+        if vault_store().note_exists(target_path) {
+            anyhow::bail!("a note already exists at path: {target_path}");
+        }
+        Self::write_note(None, request, None)
+    }
+
     pub fn write_note_with_actor(
         path: Option<&str>,
         request: &VaultWriteRequest,
@@ -341,6 +355,36 @@ mod tests {
 
         let backlinks = VaultService::backlinks(&weekly).expect("backlinks");
         assert!(backlinks.backlinks.iter().any(|path| path == &daily));
+    }
+
+    #[test]
+    fn create_note_refuses_existing_path() {
+        let _guard = vault_test_lock();
+        let path = format!(
+            "journal/create-once-{}.md",
+            uuid::Uuid::new_v4().simple()
+        );
+        let request = VaultWriteRequest {
+            path: Some(path.clone()),
+            content: "# Keep me\n\nimportant body\n".to_string(),
+            ..Default::default()
+        };
+        let first = VaultService::create_note(&request).expect("first create");
+        assert!(first.created);
+        let clash = VaultWriteRequest {
+            path: Some(path.clone()),
+            content: "# Wiped\n\ntemplate\n".to_string(),
+            ..Default::default()
+        };
+        let err = VaultService::create_note(&clash).expect_err("second create must fail");
+        assert!(
+            err.to_string().contains("already exists"),
+            "unexpected error: {err}"
+        );
+        let read = VaultService::get_note(&path).expect("read after refused create");
+        assert!(read.content.contains("important body"));
+        assert!(!read.content.contains("template"));
+        let _ = VaultService::delete_note(&path);
     }
 
     #[test]

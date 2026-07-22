@@ -93,6 +93,10 @@
     onToggleMonoSource?: () => void;
     readingPaletteLabel?: string;
     onCycleReadingPalette?: () => void;
+    hideLiveMarkdownSyntax?: boolean;
+    onToggleHideLiveMarkdownSyntax?: () => void;
+    paperWidthLabel?: string;
+    onCyclePaperWidth?: () => void;
     /** Tauri: float current note into sticky Live window. */
     onFloatNote?: () => void | Promise<void>;
   }
@@ -151,6 +155,10 @@
     onToggleMonoSource,
     readingPaletteLabel,
     onCycleReadingPalette,
+    hideLiveMarkdownSyntax = false,
+    onToggleHideLiveMarkdownSyntax,
+    paperWidthLabel,
+    onCyclePaperWidth,
     onFloatNote,
   }: Props = $props();
 
@@ -301,6 +309,28 @@
         dividerBefore: true,
         onClick: () => {
           onCycleReadingPalette();
+        },
+      });
+    }
+
+    if (onToggleHideLiveMarkdownSyntax) {
+      rows.push({
+        id: "hide-live-syntax",
+        label: hideLiveMarkdownSyntax
+          ? "Show markdown marks"
+          : "Hide markdown marks",
+        onClick: () => {
+          onToggleHideLiveMarkdownSyntax();
+        },
+      });
+    }
+
+    if (onCyclePaperWidth) {
+      rows.push({
+        id: "paper-width",
+        label: paperWidthLabel ? `Paper: ${paperWidthLabel}` : "Paper width",
+        onClick: () => {
+          onCyclePaperWidth();
         },
       });
     }
