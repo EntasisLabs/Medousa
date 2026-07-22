@@ -7,6 +7,8 @@
 
   const rows = [
     { keys: "Ctrl+B", action: "Toggle left rail" },
+    { keys: "Ctrl+ + / −", action: "Content zoom in / out" },
+    { keys: "Ctrl+0", action: "Reset content zoom" },
     { keys: "Ctrl+; %", action: "Split right" },
     { keys: 'Ctrl+; "', action: "Split down" },
     { keys: "Ctrl+; h/j/k/l", action: "Focus pane" },

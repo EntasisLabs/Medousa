@@ -82,7 +82,7 @@
 
   /** Rough first-paint guess before measure; type menu is the tall one. */
   function estimateClearance(): number {
-    const row = 44;
+    const row = 38;
     if (!menu) return row;
     if (menu === "color") return row + (hexPickerOpen ? 96 : 52);
     if (menu === "type") return row + 236;

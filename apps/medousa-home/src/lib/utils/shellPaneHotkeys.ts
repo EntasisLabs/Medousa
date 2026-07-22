@@ -1,5 +1,11 @@
+import {
+  contentZoomPercent,
+  resetContentZoom,
+  stepContentZoom,
+} from "$lib/config/contentZoom";
 import { layout } from "$lib/stores/layout.svelte";
 import { shellTabs } from "$lib/stores/shellTabs.svelte";
+import { toast } from "$lib/stores/toast.svelte";
 
 const PREFIX_TIMEOUT_MS = 1200;
 
@@ -60,6 +66,34 @@ export function attachShellPaneHotkeys(handlers: ShellPaneHotkeyHandlers = {}): 
       event.preventDefault();
       prefixArmedUntil = Date.now() + PREFIX_TIMEOUT_MS;
       return;
+    }
+
+    // Content zoom (notes / chats / scripts) — VS Code style. Not pane maximize.
+    // Skip while Ctrl+; chord is armed so Ctrl+; - keeps "split down".
+    if (
+      ctrl &&
+      !event.altKey &&
+      !event.shiftKey &&
+      Date.now() > prefixArmedUntil
+    ) {
+      if (key === "=" || key === "+" || key === "Add") {
+        event.preventDefault();
+        const zoom = stepContentZoom(1);
+        toast.show(`Zoom ${contentZoomPercent(zoom)}`, { durationMs: 1200 });
+        return;
+      }
+      if (key === "-" || key === "_" || key === "Subtract") {
+        event.preventDefault();
+        const zoom = stepContentZoom(-1);
+        toast.show(`Zoom ${contentZoomPercent(zoom)}`, { durationMs: 1200 });
+        return;
+      }
+      if (key === "0" || key === "Digit0") {
+        event.preventDefault();
+        const zoom = resetContentZoom();
+        toast.show(`Zoom ${contentZoomPercent(zoom)}`, { durationMs: 1200 });
+        return;
+      }
     }
 
     if (Date.now() > prefixArmedUntil) return;

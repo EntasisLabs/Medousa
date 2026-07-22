@@ -23,6 +23,9 @@
   html {
     --mobile-keyboard-inset: 0px;
     --mobile-bottom-chrome-height: 5.5rem;
+    /* Cmd/Ctrl +/- content zoom — multiply into surface font-sizes (never CSS `zoom`
+       on scroll hosts: that reflowed Live coords every keystroke). */
+    --content-zoom: 1;
   }
 
   /* iOS WKWebView auto-zooms focused inputs below 16px — enforce minimum app-wide. */
@@ -902,6 +905,10 @@
     @apply mx-auto w-full max-w-3xl border-b-0 bg-transparent px-6;
   }
 
+  .vault-markdown-preview {
+    font-size: calc(0.875rem * var(--content-zoom, 1));
+  }
+
   .vault-codemirror-host {
     @apply min-h-0 min-w-0 max-w-full flex-1 overflow-hidden;
     background-color: rgb(var(--color-surface-950));
@@ -917,7 +924,8 @@
   }
 
   .vault-codemirror-host--write .cm-scroller {
-    @apply font-sans text-base leading-relaxed;
+    @apply font-sans leading-relaxed;
+    font-size: calc(1rem * var(--content-zoom, 1));
   }
 
   .vault-codemirror-host--write .cm-content {
@@ -925,7 +933,8 @@
   }
 
   .vault-codemirror-host--source .cm-scroller {
-    @apply font-mono text-sm leading-7;
+    @apply font-mono leading-7;
+    font-size: calc(0.875rem * var(--content-zoom, 1));
     tab-size: 2;
     -moz-tab-size: 2;
   }
@@ -2886,7 +2895,8 @@
   }
 
   .chat-voice {
-    @apply max-w-[min(100%,44rem)] text-[15px] leading-[1.65] text-surface-100;
+    @apply max-w-[min(100%,44rem)] leading-[1.65] text-surface-100;
+    font-size: calc(15px * var(--content-zoom, 1));
   }
 
   .chat-voice-full {
@@ -2894,7 +2904,8 @@
   }
 
   .chat-voice .markdown-content {
-    @apply text-[15px] leading-[1.65];
+    @apply leading-[1.65];
+    font-size: calc(15px * var(--content-zoom, 1));
   }
 
   /* Timeline shell: prose keeps a soft measure; embeds use the full column */
@@ -4649,7 +4660,8 @@
   }
 
   .grapheme-codemirror-host .cm-scroller {
-    @apply min-h-0 flex-1 overflow-auto font-mono text-[13px] leading-relaxed;
+    @apply min-h-0 flex-1 overflow-auto font-mono leading-relaxed;
+    font-size: calc(13px * var(--content-zoom, 1));
   }
 
   .grapheme-script-side-pane {
@@ -10869,15 +10881,18 @@
     z-index: 80;
     display: flex;
     flex-direction: column;
-    gap: 0.2rem;
-    padding: 0.3rem 0.4rem 0.28rem;
-    border-radius: 0.65rem;
-    border: 1px solid rgb(var(--shell-border, var(--color-surface-500)) / 0.45);
-    background: rgb(var(--color-surface-900) / 0.97);
+    gap: 0.15rem;
+    padding: 0.22rem 0.3rem 0.2rem;
+    border-radius: 0.8rem;
+    border: 1px solid rgb(var(--shell-border, var(--color-surface-500)) / 0.38);
+    background: rgb(var(--color-surface-900) / 0.94);
     box-shadow:
-      0 10px 28px rgb(0 0 0 / 0.3),
-      0 0 0 1px rgb(0 0 0 / 0.06);
-    backdrop-filter: blur(14px);
+      0 1px 0 rgb(255 255 255 / 0.04) inset,
+      0 14px 36px rgb(0 0 0 / 0.38),
+      0 4px 12px rgb(0 0 0 / 0.22),
+      0 0 0 1px rgb(0 0 0 / 0.1);
+    backdrop-filter: blur(18px) saturate(1.15);
+    -webkit-backdrop-filter: blur(18px) saturate(1.15);
     max-width: calc(100vw - 1rem);
     animation: vault-format-bubble-in 140ms ease-out;
   }
@@ -10950,9 +10965,9 @@
     border: none;
     background: transparent;
     color: rgb(var(--shell-muted, var(--color-surface-300)));
-    width: 1.85rem;
-    height: 1.85rem;
-    border-radius: 0.35rem;
+    width: 1.65rem;
+    height: 1.65rem;
+    border-radius: 0.3rem;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -10985,15 +11000,15 @@
     border: none;
     background: transparent;
     color: rgb(var(--shell-muted, var(--color-surface-200)));
-    min-height: 1.85rem;
-    padding: 0 0.35rem;
-    border-radius: 0.35rem;
+    min-height: 1.65rem;
+    padding: 0 0.28rem;
+    border-radius: 0.3rem;
     display: inline-flex;
     align-items: center;
-    gap: 0.15rem;
+    gap: 0.12rem;
     cursor: pointer;
     flex-shrink: 0;
-    font-size: 0.72rem;
+    font-size: 0.68rem;
     font-weight: 600;
     letter-spacing: 0.01em;
     transition:
@@ -11033,10 +11048,12 @@
     gap: 0.05rem;
     margin-top: 0.15rem;
     padding: 0.3rem;
-    border-radius: 0.5rem;
-    border: 1px solid rgb(var(--color-surface-600) / 0.35);
-    background: rgb(var(--color-surface-900) / 0.98);
-    box-shadow: 0 8px 20px rgb(0 0 0 / 0.28);
+    border-radius: 0.65rem;
+    border: 1px solid rgb(var(--color-surface-600) / 0.32);
+    background: rgb(var(--color-surface-900) / 0.96);
+    box-shadow:
+      0 10px 24px rgb(0 0 0 / 0.3),
+      0 0 0 1px rgb(0 0 0 / 0.06);
     animation: vault-format-menu-in 120ms ease-out;
     max-height: min(16rem, calc(100vh - 8rem));
     overflow-y: auto;
@@ -11296,7 +11313,7 @@
     max-width: 100%;
     min-height: 12rem;
     color: rgb(var(--color-surface-50));
-    font-size: 0.9375rem;
+    font-size: calc(0.9375rem * var(--content-zoom, 1));
     line-height: 1.7;
     white-space: pre-wrap;
     word-wrap: break-word;

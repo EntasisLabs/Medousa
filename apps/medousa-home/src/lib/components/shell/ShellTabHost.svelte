@@ -3,6 +3,7 @@
   import ShellPane from "$lib/components/shell/ShellPane.svelte";
   import ShellSplitNode from "$lib/components/shell/ShellSplitNode.svelte";
   import ShellPaneCheatSheet from "$lib/components/shell/ShellPaneCheatSheet.svelte";
+  import { applyContentZoomCss } from "$lib/config/contentZoom";
   import { chat } from "$lib/stores/chat.svelte";
   import { humanBrowser } from "$lib/stores/humanBrowser.svelte";
   import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
@@ -65,6 +66,7 @@
   onMount(() => {
     shellTabs.bootstrap();
     chat.bootstrapMultiLive(shellTabs.chatSessionIdsForLiveRestore());
+    applyContentZoomCss();
     return attachShellPaneHotkeys({
       onCheatSheet: () => {
         cheatSheetOpen = true;
