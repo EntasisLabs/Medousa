@@ -6,6 +6,20 @@ Supports **full-train** releases (`v*` tags) and **targeted** component ships (`
 
 Per-package stamps live in [`scripts/release/package-versions.toml`](../../scripts/release/package-versions.toml). Bump only the packages you ship.
 
+### Package map (CDN tarballs)
+
+| Package id | Binaries | Notes |
+|------------|----------|-------|
+| `engine` | `medousa`, `medousa_daemon`, `medousa_cli`, `medousa_tui` | Headless core — no separate `cli` package |
+| `adapter-*` | one each | Slim crates under `adapters/` (not root `[[bin]]`s) |
+| `mcp-gateway` | `medousa_mcp_gateway` | Slim crate under `adapters/medousa-mcp-gateway` |
+| `local-brain` | `medousa_local` | Offline inference |
+| `desktop` / `installer` | app bundles | Tauri |
+
+There is **no** `medousa-v*` / `engine-suite` archive. Operators install extras with `medousa pull <name>`.
+
+After dropping the suite, the **next** publish that should clean the channel index is a **full train** (`ship_all` or `v*` tag). Targeted merges keep untouched keys (including any leftover `cli-*` / suite entries from older channels).
+
 ---
 
 ## Two URLs (don’t mix them up)
@@ -172,6 +186,9 @@ curl -s https://releases.entasislabs.com/medousa/stable/installer-bootstrap.json
 curl -s https://releases.entasislabs.com/medousa/stable/installer-bootstrap.json | jq '.platforms["windows-x64"]'
 # Expect artifactKind "desktop" and fileName Medousa_*_x64-setup.exe
 curl -s https://releases.entasislabs.com/medousa/stable/release-manifest.json | jq '.packages | keys'
+# Expect engine-* keys; no medousa-v* / engine-suite / cli-* after a full train
+curl -s https://releases.entasislabs.com/medousa/stable/release-manifest.json \
+  | jq '[.packages | keys[] | select(startswith("engine-") or startswith("cli-") or startswith("medousa-") or startswith("engine-suite"))]'
 ```
 
 ### Republish manifests only (no rebuild)

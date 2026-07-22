@@ -38,10 +38,13 @@ medousa/stable/
   Medousa_0.1.0_x64-setup.exe          # Windows default download (signed desktop)
   MedousaInstaller_0.1.0_x64-setup.exe # Windows add-ons / customize (optional)
   Medousa Installer_0.1.0_aarch64.dmg    # macOS default download
-  engine-v0.1.0-….tar.gz
+  engine-v0.1.0-….tar.gz               # launcher + daemon + CLI + TUI
   adapter-telegram-v0.1.0-….tar.gz
+  mcp-gateway-v0.1.0-….tar.gz
   …
 ```
+
+No `medousa-v*` suite tarball. Headless install uses the engine archive (`scripts/install.sh`); extras via `medousa pull`.
 
 Public URLs:
 

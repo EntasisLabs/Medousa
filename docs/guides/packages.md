@@ -6,7 +6,14 @@ standalone installer.
 Home already ships with the **engine** (daemon, CLI, and TUI). Packages is where
 you add more later — offline brain, messaging adapters, MCP gateway.
 
-From a terminal you can also use `medousa pull <name>` / `medousa update`.
+From a terminal you can also use:
+
+```bash
+medousa packages status
+medousa pull mcp-gateway
+medousa pull telegram
+medousa update
+```
 
 ---
 

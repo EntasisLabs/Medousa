@@ -26,7 +26,17 @@ CLI is operator-first: honest framing, plain language, scriptable (`--json`). Cu
 6. **Extend** — identity, manuscripts, skills
 7. **Channels** — discord, telegram, slack, whatsapp (secondary; slim adapter crates)
 
-Engine release package includes `medousa`, `medousa_daemon`, `medousa_cli`, and `medousa_tui`. Adapters and MCP gateway are separate packages (`medousa pull …`).
+Engine release package includes `medousa`, `medousa_daemon`, `medousa_cli`, and `medousa_tui`. Adapters and MCP gateway are separate packages (`medousa pull …`):
+
+| Binary | Crate |
+|--------|-------|
+| `medousa_telegram` | `adapters/medousa-telegram` |
+| `medousa_discord` | `adapters/medousa-discord` |
+| `medousa_slack` | `adapters/medousa-slack` |
+| `medousa_whatsapp` | `adapters/medousa-whatsapp` |
+| `medousa_mcp_gateway` | `adapters/medousa-mcp-gateway` |
+
+Shared ingest helpers: `crates/medousa-adapter-common`.
 
 ## Headless operator path
 
