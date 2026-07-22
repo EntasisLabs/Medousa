@@ -1,0 +1,17 @@
+# Per-package release versions (channel artifact stamps).
+# Bump only the packages you ship. Full `v*` tags should keep these equal to the tag.
+#
+# Archive names: {id}-v{version}-{target}.tar.gz
+# Channel head (top-level release-manifest.version) is computed at publish time.
+
+[packages]
+engine = "0.4.1"
+cli = "0.4.1"
+adapter-telegram = "0.4.1"
+adapter-discord = "0.4.1"
+adapter-slack = "0.4.1"
+adapter-whatsapp = "0.4.1"
+mcp-gateway = "0.4.1"
+local-brain = "0.4.1"
+desktop = "0.4.1"
+installer = "0.4.1"

@@ -40,10 +40,11 @@
 
   function cycleTableWidth() {
     if (!editor || disabled) return;
-    const { $from } = editor.state.selection;
-    for (let d = $from.depth; d > 0; d -= 1) {
-      if ($from.node(d).type.name === "table") {
-        const dom = editor.view.nodeDOM($from.before(d));
+    // Don't bind `$from` — Svelte reserves the `$` prefix in .svelte files.
+    const from = editor.state.selection.$from;
+    for (let d = from.depth; d > 0; d -= 1) {
+      if (from.node(d).type.name === "table") {
+        const dom = editor.view.nodeDOM(from.before(d));
         const table =
           dom instanceof HTMLTableElement
             ? dom

@@ -62,12 +62,125 @@ medousa_whatsapp_version() {
   medousa_parse_cargo_version "$(medousa_repo_root)/${MEDOUSA_WHATSAPP_CARGO_TOML}"
 }
 
-medousa_assert_versions_match() {
-  local root_v wa_v
-  root_v="$(medousa_version)"
+MEDOUSA_PACKAGE_VERSIONS_TOML="${MEDOUSA_PACKAGE_VERSIONS_TOML:-scripts/release/package-versions.toml}"
+
+# All package ids that carry an independent release stamp.
+MEDOUSA_PACKAGE_VERSION_IDS=(
+  engine
+  cli
+  adapter-telegram
+  adapter-discord
+  adapter-slack
+  adapter-whatsapp
+  mcp-gateway
+  local-brain
+  desktop
+  installer
+)
+
+medousa_package_versions_path() {
+  echo "$(medousa_repo_root)/${MEDOUSA_PACKAGE_VERSIONS_TOML}"
+}
+
+# Look up a package's release version from package-versions.toml.
+medousa_package_version() {
+  local package_id="$1"
+  local path line value
+  path="$(medousa_package_versions_path)"
+  if [[ ! -f "${path}" ]]; then
+    echo "error: missing package versions file: ${path}" >&2
+    return 1
+  fi
+  line="$(grep -E "^[[:space:]]*${package_id}[[:space:]]*=" "${path}" | head -1 || true)"
+  if [[ -z "${line}" ]]; then
+    echo "error: package version not found for '${package_id}' in ${path}" >&2
+    return 1
+  fi
+  value="$(printf '%s' "${line}" | sed -n 's/.*=[[:space:]]*"\([^"]*\)".*/\1/p')"
+  if [[ -z "${value}" ]]; then
+    echo "error: could not parse version for '${package_id}' in ${path}" >&2
+    return 1
+  fi
+  echo "${value}"
+}
+
+# Max of two dotted semver-ish strings (numeric segments only).
+medousa_semver_max() {
+  local a="$1" b="$2"
+  local IFS=.
+  # shellcheck disable=SC2206
+  local -a aa=(${a}) bb=(${b})
+  local i ai bi
+  local len="${#aa[@]}"
+  if [[ "${#bb[@]}" -gt "${len}" ]]; then
+    len="${#bb[@]}"
+  fi
+  for ((i = 0; i < len; i++)); do
+    ai="${aa[i]:-0}"
+    bi="${bb[i]:-0}"
+    if ((10#${ai} > 10#${bi})); then
+      echo "${a}"
+      return 0
+    fi
+    if ((10#${ai} < 10#${bi})); then
+      echo "${b}"
+      return 0
+    fi
+  done
+  echo "${a}"
+}
+
+# Highest version among all package-versions.toml entries (channel-head candidate).
+medousa_max_package_version() {
+  local id v max=""
+  for id in "${MEDOUSA_PACKAGE_VERSION_IDS[@]}"; do
+    v="$(medousa_package_version "${id}")"
+    if [[ -z "${max}" ]]; then
+      max="${v}"
+    else
+      max="$(medousa_semver_max "${max}" "${v}")"
+    fi
+  done
+  echo "${max}"
+}
+
+# When shipping WhatsApp, crate version must match adapter-whatsapp package stamp.
+# Full-train releases additionally assert every package stamp equals the train version.
+medousa_assert_whatsapp_package_version() {
+  local wa_v pkg_v
   wa_v="$(medousa_whatsapp_version)"
-  if [[ "${root_v}" != "${wa_v}" ]]; then
-    echo "error: version mismatch — root Cargo.toml (${root_v}) != whatsapp (${wa_v})" >&2
+  pkg_v="$(medousa_package_version adapter-whatsapp)"
+  if [[ "${wa_v}" != "${pkg_v}" ]]; then
+    echo "error: version mismatch — whatsapp Cargo.toml (${wa_v}) != package-versions adapter-whatsapp (${pkg_v})" >&2
+    exit 1
+  fi
+}
+
+# Backward-compatible name: only checks WhatsApp package stamp (no global lockstep).
+medousa_assert_versions_match() {
+  medousa_assert_whatsapp_package_version
+}
+
+# For `v*` full trains: every package-versions.toml entry must equal TRAIN_VERSION.
+medousa_assert_full_train_versions() {
+  local train="${1:-}"
+  local id v
+  if [[ -z "${train}" ]]; then
+    echo "error: medousa_assert_full_train_versions requires a version" >&2
+    exit 1
+  fi
+  for id in "${MEDOUSA_PACKAGE_VERSION_IDS[@]}"; do
+    v="$(medousa_package_version "${id}")"
+    if [[ "${v}" != "${train}" ]]; then
+      echo "error: full-train release v${train} requires package-versions.toml ${id}=\"${train}\" (found \"${v}\")" >&2
+      exit 1
+    fi
+  done
+  medousa_assert_whatsapp_package_version
+  local root_v
+  root_v="$(medousa_version)"
+  if [[ "${root_v}" != "${train}" ]]; then
+    echo "error: full-train release v${train} requires root Cargo.toml version \"${train}\" (found \"${root_v}\")" >&2
     exit 1
   fi
 }
@@ -169,6 +282,15 @@ medousa_component_basename() {
 
 medousa_component_archive_name() {
   echo "$(medousa_component_basename "$1" "$2" "$3").tar.gz"
+}
+
+# Archive name using package-versions.toml for the package id.
+medousa_component_archive_for_package() {
+  local package_id="$1"
+  local target="$2"
+  local version
+  version="$(medousa_package_version "${package_id}")"
+  medousa_component_archive_name "${package_id}" "${version}" "${target}"
 }
 
 medousa_release_base_url() {

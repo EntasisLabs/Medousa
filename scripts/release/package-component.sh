@@ -48,8 +48,10 @@ medousa_require_cmd tar
 ROOT="$(medousa_repo_root)"
 cd "${ROOT}"
 
-medousa_assert_versions_match
-VERSION="$(medousa_version)"
+if [[ "${PACKAGE_ID}" == "adapter-whatsapp" ]]; then
+  medousa_assert_whatsapp_package_version
+fi
+VERSION="$(medousa_package_version "${PACKAGE_ID}")"
 
 if [[ -z "${TARGET}" ]]; then
   if [[ -n "${INPUT}" && -f "${INPUT}/build-meta.env" ]]; then

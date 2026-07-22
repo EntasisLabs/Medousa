@@ -43,7 +43,7 @@ done
 ROOT="$(medousa_repo_root)"
 cd "${ROOT}"
 DIST_DIR="${DIST_DIR:-${ROOT}/dist}"
-VERSION="${VERSION:-$(medousa_version)}"
+VERSION="${VERSION:-$(medousa_max_package_version)}"
 
 if [[ -n "${BASE_URL_OVERRIDE}" ]]; then
   BASE_URL="${BASE_URL_OVERRIDE%/}/${CHANNEL}"
@@ -153,6 +153,13 @@ WIN_INSTALLER="$(medousa_installer_bundle_for_platform "${DIST_DIR}" windows-x64
   echo "}"
 } >"${OUT}"
 
-medousa_assert_installer_bootstrap_nonempty "${OUT}"
-
-medousa_log "wrote ${OUT}"
+# Targeted releases may ship no desktop/installer — leave an empty platforms map
+# so merge-installer-bootstrap can keep the prior channel bootstrap.
+if grep -q '"platforms": {}' "${OUT}" 2>/dev/null || grep -q '"platforms": {\n\n  }' "${OUT}" 2>/dev/null; then
+  medousa_log "wrote ${OUT} (no platforms in staging — ok for component-only ships)"
+elif ! grep -q '"platform":' "${OUT}"; then
+  medousa_log "wrote ${OUT} (no platforms in staging — ok for component-only ships)"
+else
+  medousa_assert_installer_bootstrap_nonempty "${OUT}"
+  medousa_log "wrote ${OUT}"
+fi

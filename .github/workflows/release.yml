@@ -7,9 +7,49 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Release version without v (default — Cargo.toml)"
+        description: "Channel-head version without v (default — max package-versions / Cargo.toml)"
         required: false
         type: string
+      ship_all:
+        description: Ship every component group (same as a v* tag)
+        required: true
+        type: boolean
+        default: false
+      ship_engine:
+        description: Ship engine (medousa + medousa_daemon)
+        required: true
+        type: boolean
+        default: false
+      ship_cli:
+        description: Ship CLI + TUI
+        required: true
+        type: boolean
+        default: false
+      ship_adapters:
+        description: Ship channel adapters (telegram/discord/slack/whatsapp)
+        required: true
+        type: boolean
+        default: false
+      ship_mcp:
+        description: Ship MCP gateway
+        required: true
+        type: boolean
+        default: false
+      ship_desktop:
+        description: Ship Medousa Home desktop
+        required: true
+        type: boolean
+        default: false
+      ship_installer:
+        description: Ship Medousa Installer
+        required: true
+        type: boolean
+        default: false
+      ship_local_brain:
+        description: Ship offline local-brain
+        required: true
+        type: boolean
+        default: false
       upload_r2:
         description: Upload artifacts to Cloudflare R2
         required: true
@@ -72,10 +112,84 @@ jobs:
   # CI (ci.yml) always stays on GitHub-hosted runners.
   # ---------------------------------------------------------------------------
 
-  # Fast, daemon-only build. Feeds the desktop sidecar so build-desktop does not
-  # recompile medousa_daemon (prepare-engine-sidecar.sh honors MEDOUSA_SIDECAR_DAEMON).
+  # Resolve which component groups to ship. Tag pushes always ship everything.
+  prepare:
+    name: prepare release selection
+    runs-on: ubuntu-latest
+    outputs:
+      ship_engine: ${{ steps.sel.outputs.ship_engine }}
+      ship_cli: ${{ steps.sel.outputs.ship_cli }}
+      ship_adapters: ${{ steps.sel.outputs.ship_adapters }}
+      ship_mcp: ${{ steps.sel.outputs.ship_mcp }}
+      ship_desktop: ${{ steps.sel.outputs.ship_desktop }}
+      ship_installer: ${{ steps.sel.outputs.ship_installer }}
+      ship_local_brain: ${{ steps.sel.outputs.ship_local_brain }}
+      full_train: ${{ steps.sel.outputs.full_train }}
+      version: ${{ steps.sel.outputs.version }}
+      tag: ${{ steps.sel.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: sel
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            FULL=1
+            VERSION="${GITHUB_REF_NAME#v}"
+            TAG="${GITHUB_REF_NAME}"
+          else
+            FULL=0
+            [[ "${{ github.event.inputs.ship_all }}" == "true" ]] && FULL=1
+            if [[ -n "${{ github.event.inputs.version }}" ]]; then
+              VERSION="${{ github.event.inputs.version }}"
+              VERSION="${VERSION#v}"
+            else
+              VERSION="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
+            fi
+            TAG="v${VERSION}"
+          fi
+
+          source scripts/release/common.sh
+          if [[ "${FULL}" -eq 1 ]]; then
+            medousa_assert_full_train_versions "${VERSION}"
+            E=true; C=true; A=true; M=true; D=true; I=true; L=true
+          else
+            E="${{ github.event.inputs.ship_engine }}"
+            C="${{ github.event.inputs.ship_cli }}"
+            A="${{ github.event.inputs.ship_adapters }}"
+            M="${{ github.event.inputs.ship_mcp }}"
+            D="${{ github.event.inputs.ship_desktop }}"
+            I="${{ github.event.inputs.ship_installer }}"
+            L="${{ github.event.inputs.ship_local_brain }}"
+            if [[ "${E}" != "true" && "${C}" != "true" && "${A}" != "true" && "${M}" != "true" && "${D}" != "true" && "${I}" != "true" && "${L}" != "true" ]]; then
+              echo "::error::Select at least one ship_* component (or ship_all)"
+              exit 1
+            fi
+            # Channel head for targeted ships: max(input/cargo, package-versions).
+            VERSION="$(medousa_semver_max "${VERSION}" "$(medousa_max_package_version)")"
+            TAG="v${VERSION}"
+          fi
+
+          {
+            echo "ship_engine=${E}"
+            echo "ship_cli=${C}"
+            echo "ship_adapters=${A}"
+            echo "ship_mcp=${M}"
+            echo "ship_desktop=${D}"
+            echo "ship_installer=${I}"
+            echo "ship_local_brain=${L}"
+            echo "full_train=${FULL}"
+            echo "version=${VERSION}"
+            echo "tag=${TAG}"
+          } >> "${GITHUB_OUTPUT}"
+          echo "Release selection: engine=${E} cli=${C} adapters=${A} mcp=${M} desktop=${D} installer=${I} local-brain=${L} full=${FULL} v=${VERSION}"
+
+  # Daemon (+ launcher) build. Feeds desktop sidecar and engine packaging so
+  # other jobs do not recompile medousa_daemon.
   build-daemon:
     name: daemon (${{ matrix.name }})
+    needs: prepare
+    if: needs.prepare.outputs.ship_engine == 'true' || needs.prepare.outputs.ship_desktop == 'true'
     runs-on: ${{ vars.MEDOUSA_SELF_HOSTED == 'true' && matrix.runner || matrix.os }}
     defaults:
       run:
@@ -88,6 +202,10 @@ jobs:
             target: aarch64-apple-darwin
             os: macos-14
             runner: [self-hosted, macOS, ARM64]
+          - name: macos-x64
+            target: x86_64-apple-darwin
+            os: macos-15-intel
+            runner: [self-hosted, macOS, X64]
           - name: windows-x64
             target: x86_64-pc-windows-msvc
             os: windows-latest
@@ -95,6 +213,10 @@ jobs:
           - name: linux-x64
             target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
+            runner: [self-hosted, Linux, X64]
+          - name: linux-aarch64
+            target: aarch64-unknown-linux-gnu
+            os: ubuntu-24.04-arm
             runner: [self-hosted, Linux, X64]
     steps:
       - uses: actions/checkout@v4
@@ -114,28 +236,37 @@ jobs:
           cache-on-failure: true
           shared-key: release-daemon-${{ matrix.name }}
 
-      - name: Build medousa_daemon
+      - name: Build medousa + medousa_daemon
         run: |
-          cargo build --release -p medousa --bin medousa_daemon \
+          cargo build --release -p medousa --bin medousa --bin medousa_daemon \
             --features iroh-transport --target "${{ matrix.target }}"
 
-      - name: Stage daemon binary
+      - name: Stage daemon + launcher binaries
         run: |
           EXT=""
           [[ "${{ matrix.target }}" == *-pc-windows-msvc ]] && EXT=".exe"
-          SRC="${CARGO_TARGET_DIR}/${{ matrix.target }}/release/medousa_daemon${EXT}"
+          REL="${CARGO_TARGET_DIR}/${{ matrix.target }}/release"
           mkdir -p dist/daemon
-          cp -f "${SRC}" "dist/daemon/medousa_daemon-${{ matrix.target }}${EXT}"
+          cp -f "${REL}/medousa_daemon${EXT}" "dist/daemon/medousa_daemon-${{ matrix.target }}${EXT}"
+          cp -f "${REL}/medousa${EXT}" "dist/daemon/medousa-${{ matrix.target }}${EXT}"
 
       - name: Upload daemon artifact
         uses: actions/upload-artifact@v4
         with:
-          name: medousa-daemon-${{ matrix.name }}
+          name: medousa-daemon-${{ matrix.target }}
           path: dist/daemon/*
           if-no-files-found: error
 
   build-cli:
-    name: cli (${{ matrix.target }})
+    name: cli/engine (${{ matrix.target }})
+    needs: [prepare, build-daemon]
+    if: |
+      always() && !cancelled() &&
+      (needs.prepare.outputs.ship_cli == 'true' || needs.prepare.outputs.ship_engine == 'true') &&
+      (
+        needs.prepare.outputs.ship_engine != 'true' ||
+        needs.build-daemon.result == 'success'
+      )
     runs-on: ${{ vars.MEDOUSA_SELF_HOSTED == 'true' && matrix.runner || matrix.os }}
     defaults:
       run:
@@ -147,18 +278,12 @@ jobs:
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
             runner: [self-hosted, Linux, X64]
-          # No native ARM64 Linux host in the fleet: on self-hosted this is
-          # cross-compiled on the x64 Linux runner (needs an aarch64 linker,
-          # e.g. gcc-aarch64-linux-gnu). On hosted it uses ubuntu-24.04-arm.
-          # Drop this entry if you do not ship ARM64 Linux.
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-24.04-arm
             runner: [self-hosted, Linux, X64]
           - target: aarch64-apple-darwin
             os: macos-14
             runner: [self-hosted, macOS, ARM64]
-          # Intel Mac. If you only have an Apple Silicon Mac, point this at
-          # [self-hosted, macOS, ARM64] and let cargo cross-compile x86_64.
           - target: x86_64-apple-darwin
             os: macos-15-intel
             runner: [self-hosted, macOS, X64]
@@ -184,30 +309,201 @@ jobs:
           cache-on-failure: true
           shared-key: release-cli-${{ matrix.target }}
 
-      - name: Build release binaries
-        run: |
-          ./scripts/release/build.sh --target "${{ matrix.target }}" --without-local-brain
+      - name: Download prebuilt daemon
+        if: needs.prepare.outputs.ship_engine == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: medousa-daemon-${{ matrix.target }}
+          path: dist/prebuilt-daemon
 
-      - name: Package release archives
+      - name: Build selected bins (reuse daemon when present)
+        env:
+          SHIP_ENGINE: ${{ needs.prepare.outputs.ship_engine }}
+          SHIP_CLI: ${{ needs.prepare.outputs.ship_cli }}
         run: |
-          ./scripts/release/package-all-components.sh --target "${{ matrix.target }}"
+          EXT=""
+          [[ "${{ matrix.target }}" == *-pc-windows-msvc ]] && EXT=".exe"
+          COMPS=()
+          [[ "${SHIP_ENGINE}" == "true" ]] && COMPS+=(engine)
+          [[ "${SHIP_CLI}" == "true" ]] && COMPS+=(cli)
+          COMP_CSV="$(IFS=,; echo "${COMPS[*]}")"
+          DAEMON="dist/prebuilt-daemon/medousa_daemon-${{ matrix.target }}${EXT}"
+          LAUNCHER="dist/prebuilt-daemon/medousa-${{ matrix.target }}${EXT}"
+          if [[ "${SHIP_ENGINE}" == "true" && -f "${DAEMON}" ]]; then
+            export MEDOUSA_PREBUILT_DAEMON="${GITHUB_WORKSPACE}/${DAEMON}"
+          fi
+          if [[ "${SHIP_ENGINE}" == "true" && -f "${LAUNCHER}" ]]; then
+            export MEDOUSA_PREBUILT_LAUNCHER="${GITHUB_WORKSPACE}/${LAUNCHER}"
+          fi
+          ./scripts/release/build.sh \
+            --target "${{ matrix.target }}" \
+            --without-local-brain \
+            --components "${COMP_CSV}"
 
-      - name: Upload CLI artifact
+      - name: Package selected archives
+        env:
+          SHIP_ENGINE: ${{ needs.prepare.outputs.ship_engine }}
+          SHIP_CLI: ${{ needs.prepare.outputs.ship_cli }}
+        run: |
+          PKGS=()
+          [[ "${SHIP_ENGINE}" == "true" ]] && PKGS+=(engine)
+          [[ "${SHIP_CLI}" == "true" ]] && PKGS+=(cli)
+          PKG_CSV="$(IFS=,; echo "${PKGS[*]}")"
+          SUITE_FLAG=()
+          [[ "${SHIP_ENGINE}" == "true" && "${SHIP_CLI}" == "true" ]] || SUITE_FLAG=(--skip-suite)
+          ./scripts/release/package-all-components.sh \
+            --target "${{ matrix.target }}" \
+            --packages "${PKG_CSV}" \
+            "${SUITE_FLAG[@]}"
+          # suite when engine+cli both shipping
+          if [[ "${SHIP_ENGINE}" == "true" && "${SHIP_CLI}" == "true" ]]; then
+            ./scripts/release/package.sh --target "${{ matrix.target }}"
+          fi
+
+      - name: Upload CLI/engine artifact
         uses: actions/upload-artifact@v4
         with:
           name: medousa-cli-${{ matrix.target }}
           path: |
             dist/engine-*.tar.gz
             dist/cli-*.tar.gz
-            dist/adapter-*.tar.gz
-            dist/mcp-gateway-*.tar.gz
             dist/medousa-*.tar.gz
+            dist/SHA256SUMS
+          if-no-files-found: error
+
+  build-adapters:
+    name: adapters (${{ matrix.target }})
+    needs: prepare
+    if: needs.prepare.outputs.ship_adapters == 'true'
+    runs-on: ${{ vars.MEDOUSA_SELF_HOSTED == 'true' && matrix.runner || matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            runner: [self-hosted, Linux, X64]
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-24.04-arm
+            runner: [self-hosted, Linux, X64]
+          - target: aarch64-apple-darwin
+            os: macos-14
+            runner: [self-hosted, macOS, ARM64]
+          - target: x86_64-apple-darwin
+            os: macos-15-intel
+            runner: [self-hosted, macOS, X64]
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            runner: [self-hosted, Windows, X64]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - name: Rust cache (hosted only)
+        if: ${{ vars.MEDOUSA_SELF_HOSTED != 'true' }}
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> .cache/cargo-target
+          cache-workspace-crates: true
+          cache-on-failure: true
+          shared-key: release-adapters-${{ matrix.target }}
+      - name: Build adapters
+        run: |
+          ./scripts/release/build.sh \
+            --target "${{ matrix.target }}" \
+            --without-local-brain \
+            --components adapters
+      - name: Package adapters
+        run: |
+          ./scripts/release/package-all-components.sh \
+            --target "${{ matrix.target }}" \
+            --packages adapter-telegram,adapter-discord,adapter-slack,adapter-whatsapp \
+            --skip-suite
+      - name: Upload adapters artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: medousa-adapters-${{ matrix.target }}
+          path: |
+            dist/adapter-*.tar.gz
+            dist/SHA256SUMS
+          if-no-files-found: error
+
+  build-mcp:
+    name: mcp (${{ matrix.target }})
+    needs: prepare
+    if: needs.prepare.outputs.ship_mcp == 'true'
+    runs-on: ${{ vars.MEDOUSA_SELF_HOSTED == 'true' && matrix.runner || matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            runner: [self-hosted, Linux, X64]
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-24.04-arm
+            runner: [self-hosted, Linux, X64]
+          - target: aarch64-apple-darwin
+            os: macos-14
+            runner: [self-hosted, macOS, ARM64]
+          - target: x86_64-apple-darwin
+            os: macos-15-intel
+            runner: [self-hosted, macOS, X64]
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            runner: [self-hosted, Windows, X64]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - name: Rust cache (hosted only)
+        if: ${{ vars.MEDOUSA_SELF_HOSTED != 'true' }}
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> .cache/cargo-target
+          cache-workspace-crates: true
+          cache-on-failure: true
+          shared-key: release-mcp-${{ matrix.target }}
+      - name: Build MCP gateway
+        run: |
+          ./scripts/release/build.sh \
+            --target "${{ matrix.target }}" \
+            --without-local-brain \
+            --components mcp
+      - name: Package MCP gateway
+        run: |
+          ./scripts/release/package-all-components.sh \
+            --target "${{ matrix.target }}" \
+            --packages mcp-gateway \
+            --skip-suite
+      - name: Upload MCP artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: medousa-mcp-${{ matrix.target }}
+          path: |
+            dist/mcp-gateway-*.tar.gz
             dist/SHA256SUMS
           if-no-files-found: error
 
   build-desktop:
     name: app (${{ matrix.name }})
-    needs: build-daemon
+    needs: [prepare, build-daemon]
+    if: |
+      always() && !cancelled() &&
+      needs.prepare.outputs.ship_desktop == 'true' &&
+      needs.build-daemon.result == 'success'
     runs-on: ${{ vars.MEDOUSA_SELF_HOSTED == 'true' && matrix.runner || matrix.os }}
     permissions:
       contents: read
@@ -283,7 +579,7 @@ jobs:
       - name: Download prebuilt daemon
         uses: actions/download-artifact@v4
         with:
-          name: medousa-daemon-${{ matrix.name }}
+          name: medousa-daemon-${{ matrix.target }}
           path: dist/prebuilt-daemon
 
       - name: Point sidecar at prebuilt daemon
@@ -434,6 +730,8 @@ jobs:
 
   build-installer:
     name: installer (${{ matrix.name }})
+    needs: prepare
+    if: needs.prepare.outputs.ship_installer == 'true'
     runs-on: ${{ vars.MEDOUSA_SELF_HOSTED == 'true' && matrix.runner || matrix.os }}
     permissions:
       contents: read
@@ -643,6 +941,8 @@ jobs:
   # omitted here (cross-compiling mistralrs is not supported by this setup).
   build-local-brain:
     name: local-brain (${{ matrix.target }})
+    needs: prepare
+    if: needs.prepare.outputs.ship_local_brain == 'true'
     runs-on: ${{ vars.MEDOUSA_SELF_HOSTED == 'true' && matrix.runner || matrix.os }}
     defaults:
       run:
@@ -696,13 +996,34 @@ jobs:
 
   release:
     name: publish (GitHub + R2)
+    needs:
+      [
+        prepare,
+        build-cli,
+        build-adapters,
+        build-mcp,
+        build-desktop,
+        build-installer,
+        build-local-brain,
+      ]
+    # Skipped legs are OK — only fail if a selected job failed.
     if: |
-      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) ||
-      github.event_name == 'workflow_dispatch'
-    needs: [build-cli, build-desktop, build-installer, build-local-brain]
-    # Self-hosted: home-server runner collects every artifact locally. Hosted:
-    # ubuntu-latest. Either way publish-self-hosted.sh + upload-r2.sh + gh release
-    # run here. (aws CLI must be present on the home-server runner.)
+      always() && !cancelled() &&
+      needs.prepare.result == 'success' &&
+      (needs.build-cli.result == 'success' || needs.build-cli.result == 'skipped') &&
+      (needs.build-adapters.result == 'success' || needs.build-adapters.result == 'skipped') &&
+      (needs.build-mcp.result == 'success' || needs.build-mcp.result == 'skipped') &&
+      (needs.build-desktop.result == 'success' || needs.build-desktop.result == 'skipped') &&
+      (needs.build-installer.result == 'success' || needs.build-installer.result == 'skipped') &&
+      (needs.build-local-brain.result == 'success' || needs.build-local-brain.result == 'skipped') &&
+      (
+        needs.build-cli.result == 'success' ||
+        needs.build-adapters.result == 'success' ||
+        needs.build-mcp.result == 'success' ||
+        needs.build-desktop.result == 'success' ||
+        needs.build-installer.result == 'success' ||
+        needs.build-local-brain.result == 'success'
+      )
     runs-on: ${{ vars.MEDOUSA_SELF_HOSTED == 'true' && fromJSON('["self-hosted","Linux","X64","medousa-publish"]') || 'ubuntu-latest' }}
     environment: MEDOUSA
     defaults:
@@ -711,22 +1032,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Resolve release version
-        id: version
-        run: |
-          if [[ "${{ github.event_name }}" == "push" ]]; then
-            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
-            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
-          elif [[ -n "${{ github.event.inputs.version }}" ]]; then
-            v="${{ github.event.inputs.version }}"
-            v="${v#v}"
-            echo "version=${v}" >> "$GITHUB_OUTPUT"
-            echo "tag=v${v}" >> "$GITHUB_OUTPUT"
-          else
-            v="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
-            echo "version=${v}" >> "$GITHUB_OUTPUT"
-            echo "tag=v${v}" >> "$GITHUB_OUTPUT"
-          fi
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
 
       - name: Download all build artifacts
         uses: actions/download-artifact@v4
@@ -761,16 +1068,36 @@ jobs:
           done
           cd dist/final && ls -la
 
+      - name: Fetch channel manifests for merge
+        if: needs.prepare.outputs.full_train != '1'
+        env:
+          MEDOUSA_RELEASE_BASE_URL: ${{ env.MEDOUSA_RELEASE_BASE_URL }}
+          MEDOUSA_RELEASE_CHANNEL: ${{ env.MEDOUSA_RELEASE_CHANNEL }}
+        run: |
+          mkdir -p dist/channel-base
+          base="${MEDOUSA_RELEASE_BASE_URL%/}/${MEDOUSA_RELEASE_CHANNEL}"
+          curl -fsSL "${base}/release-manifest.json" -o dist/channel-base/release-manifest.json \
+            || echo "no prior release-manifest (first publish)"
+          curl -fsSL "${base}/installer-bootstrap.json" -o dist/channel-base/installer-bootstrap.json \
+            || echo "no prior installer-bootstrap (first publish)"
+
       - name: Generate release manifests
         env:
           MEDOUSA_RELEASE_BASE_URL: ${{ env.MEDOUSA_RELEASE_BASE_URL }}
           MEDOUSA_RELEASE_CHANNEL: ${{ env.MEDOUSA_RELEASE_CHANNEL }}
         run: |
-          ./scripts/release/publish-self-hosted.sh \
-            --staging dist/final \
-            --version "${{ steps.version.outputs.version }}" \
-            --channel "${MEDOUSA_RELEASE_CHANNEL}" \
+          ARGS=(
+            --staging dist/final
+            --version "${{ needs.prepare.outputs.version }}"
+            --channel "${MEDOUSA_RELEASE_CHANNEL}"
             --base-url "${MEDOUSA_RELEASE_BASE_URL}"
+          )
+          if [[ "${{ needs.prepare.outputs.full_train }}" == "1" ]]; then
+            ARGS+=(--full-train)
+          elif [[ -d dist/channel-base ]]; then
+            ARGS+=(--merge-base dist/channel-base)
+          fi
+          ./scripts/release/publish-self-hosted.sh "${ARGS[@]}"
 
       - name: Upload to Cloudflare R2
         if: github.event_name == 'push' || github.event.inputs.upload_r2 == 'true'
@@ -793,8 +1120,8 @@ jobs:
         if: github.event_name == 'push' || github.event.inputs.publish_github == 'true'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.version.outputs.tag }}
-          name: Medousa ${{ steps.version.outputs.tag }}
+          tag_name: ${{ needs.prepare.outputs.tag }}
+          name: Medousa ${{ needs.prepare.outputs.tag }}
           files: |
             dist/final/engine-*.tar.gz
             dist/final/cli-*.tar.gz

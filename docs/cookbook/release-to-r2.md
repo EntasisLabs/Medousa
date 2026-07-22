@@ -72,17 +72,39 @@ Sign/notarize desktop + installer DMGs with your Developer ID (see `.github/work
 
 ---
 
+## Per-package versions
+
+[`scripts/release/package-versions.toml`](../../scripts/release/package-versions.toml) stamps each package archive independently (`engine-v0.4.2-…`, `adapter-discord-v0.4.1-…`). The channel `release-manifest.json` top-level `version` is the **channel head** (max of package versions / last full train). Home Packages and the Installer offer updates from **per-package** version inequality — shipping desktop alone must not flip WhatsApp to “update available”.
+
+Prefer CI targeted dispatch for partial ships (see [release-ci-setup.md](release-ci-setup.md)). Locally:
+
+```bash
+# Build only what you need
+./scripts/release/build.sh --components engine,cli --without-local-brain
+./scripts/release/package-all-components.sh --packages engine,cli --skip-suite
+
+# Merge into existing channel indexes when publishing a partial set
+./scripts/release/publish-self-hosted.sh \
+  --staging dist \
+  --merge-base /path/to/downloaded/channel \
+  --version "$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
+```
+
+Full train (replace channel indexes): add `--full-train`.
+
 ## Release checklist (every version)
 
 Run on each platform, then merge artifacts into one `dist/` folder on the machine that publishes.
 
 | Step | Command |
 |------|---------|
-| Build engine + packages | `./scripts/release/build.sh` + `./scripts/release/package-all-components.sh` |
+| Bump stamps | Edit `scripts/release/package-versions.toml` (only packages you ship) |
+| Build selected bins | `./scripts/release/build.sh --components engine,cli,…` |
+| Package selected | `./scripts/release/package-all-components.sh --packages …` |
 | Build desktop | `cd apps/medousa-home && npm run tauri build` |
 | Sign Windows desktop | `.\scripts\release\sign-windows.ps1 dist\final\Medousa_*_x64-setup.exe` (required before publish) |
 | Copy all artifacts into | `dist/` |
-| Publish manifests | `./scripts/release/publish-local.sh` |
+| Publish manifests | `./scripts/release/publish-local.sh` (or `publish-self-hosted.sh --merge-base …`) |
 | Upload to R2 | `./scripts/release/publish-local.sh --upload` |
 | Bake R2 URL into installer | `./scripts/release/set-installer-config.sh` |
 | Rebuild installer | `cd apps/medousa-installer && npm run tauri:build` |

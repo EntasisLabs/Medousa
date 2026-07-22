@@ -17,6 +17,10 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 - Windows Build split: slash menu anchors immediately (fixed coords) and IME keyCode 229 no longer claims ↑↓/Enter (WebView2 input deadlock)
 - Windows focus loss (Greenshot / snipping tools): hard-dismiss slash + context menus; skip clipboard while unfocused; release split sash pointer capture
 
+### Changed
+
+- Release CI supports targeted per-package ships (`workflow_dispatch` `ship_*` checkboxes); `v*` tags remain full-train. Daemon builds once and is reused by desktop + engine packaging. Channel manifests merge so untouched packages keep prior versions/URLs (`scripts/release/package-versions.toml`).
+
 ## [0.4.1] — 2026-07-22
 
 ### Added

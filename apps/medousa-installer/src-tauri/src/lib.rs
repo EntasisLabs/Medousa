@@ -304,10 +304,10 @@ async fn installer_bootstrap() -> Result<BootstrapResponse, String> {
     let installed_version = install::read_local_install_manifest(&install_root)
         .map(|m| m.version);
     let remote_version = remote.as_ref().map(|m| m.version.clone());
-    let version_mismatch = installed_version
-        .as_ref()
-        .zip(remote_version.as_ref())
-        .is_some_and(|(local, remote)| local != remote);
+    let packages = build_package_summaries(&selected, &remote, &installed);
+    // Channel head can advance without every package bumping — treat mismatch as
+    // "any installed package has a newer remote stamp", not top-level inequality.
+    let version_mismatch = packages.iter().any(|p| p.update_available);
 
     Ok(BootstrapResponse {
         install_root: install_root.display().to_string(),
@@ -317,7 +317,7 @@ async fn installer_bootstrap() -> Result<BootstrapResponse, String> {
         release_channel: release_channel(),
         installer_version: env!("CARGO_PKG_VERSION").to_string(),
         profiles: build_profile_summaries(&remote),
-        packages: build_package_summaries(&selected, &remote, &installed),
+        packages,
         modify_mode: modify_mode_from_args()
             || install::install_manifest_path(&install_root).exists(),
         installed_version,
@@ -335,16 +335,15 @@ async fn installer_catalog(selected_ids: Vec<String>) -> Result<CatalogResponse,
     let installed_version = install::read_local_install_manifest(&install_root)
         .map(|m| m.version);
     let remote_version = remote.as_ref().map(|m| m.version.clone());
+    let packages = build_package_summaries(&selected, &remote, &installed);
+    let version_mismatch = packages.iter().any(|p| p.update_available);
 
     Ok(CatalogResponse {
         profiles: build_profile_summaries(&remote),
-        packages: build_package_summaries(&selected, &remote, &installed),
+        packages,
         installed_version: installed_version.clone(),
         remote_version: remote_version.clone(),
-        version_mismatch: installed_version
-            .as_ref()
-            .zip(remote_version.as_ref())
-            .is_some_and(|(a, b)| a != b),
+        version_mismatch,
     })
 }
 
@@ -370,10 +369,17 @@ async fn installer_resolve_selection(
             }
         }
         if let Some(local) = install::read_local_install_manifest(&default_install_root()) {
-            if local.version != manifest.version {
+            // Channel head is informational under per-package versions — only warn
+            // when installed packages themselves are behind remote stamps.
+            let installed = installed_records(&default_install_root());
+            let selected: HashSet<String> = expanded.iter().cloned().collect();
+            let any_pkg_update = build_package_summaries(&selected, &remote, &installed)
+                .iter()
+                .any(|p| p.update_available);
+            if any_pkg_update {
                 warnings.push(format!(
-                    "Installed version {} differs from release {}",
-                    local.version, manifest.version
+                    "Updates available (channel head {}; local install head {})",
+                    manifest.version, local.version
                 ));
             }
         }

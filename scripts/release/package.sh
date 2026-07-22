@@ -56,8 +56,8 @@ medousa_require_cmd tar
 ROOT="$(medousa_repo_root)"
 cd "${ROOT}"
 
-medousa_assert_versions_match
-VERSION="$(medousa_version)"
+# Full-suite archive tracks the engine package stamp.
+VERSION="$(medousa_package_version engine)"
 
 if [[ -z "${TARGET}" ]]; then
   if [[ -n "${INPUT}" && -f "${INPUT}/build-meta.env" ]]; then
