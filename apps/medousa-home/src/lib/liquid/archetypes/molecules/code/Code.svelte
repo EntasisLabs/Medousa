@@ -4,6 +4,7 @@
    * Paste-first from ```code markdown (not a mistaken prose ```code fence).
    */
   import type { ArchetypeProps } from "$lib/liquid/render/types";
+  import { highlightElement } from "$lib/syntax/highlightCode";
 
   let { node }: ArchetypeProps = $props();
 
@@ -19,6 +20,18 @@
 
   let copied = $state(false);
   let copyTimer: ReturnType<typeof setTimeout> | null = null;
+  let codeEl = $state<HTMLElement | null>(null);
+
+  $effect(() => {
+    const el = codeEl;
+    const src = source;
+    const language = lang;
+    if (!el || isDiff) return;
+    delete el.dataset.hljs;
+    el.textContent = src;
+    el.className = language ? `syn-code language-${language}` : "syn-code";
+    void highlightElement(el, language || "plaintext");
+  });
 
   async function copySource() {
     if (!source || typeof navigator === "undefined" || !navigator.clipboard?.writeText) return;
@@ -82,7 +95,7 @@
             >{/if}{/each}</code
         ></pre>
     {:else}
-      <pre class="liquid-code-pre"><code>{source}</code></pre>
+      <pre class="liquid-code-pre"><code bind:this={codeEl} class="syn-code"></code></pre>
     {/if}
   </div>
 {/if}
@@ -157,7 +170,7 @@
     overflow-x: auto;
     font-size: 0.78rem;
     line-height: 1.5;
-    color: rgb(var(--color-surface-100));
+    color: rgb(var(--syn-fg));
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     cursor: text;
     user-select: text;

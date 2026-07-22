@@ -1,4 +1,5 @@
 @import "./lib/styles/chat-mobile-tokens.postcss";
+@import "./lib/styles/syntax-tokens.postcss";
 @import "./lib/styles/markdown-tokens.postcss";
 @import "./lib/styles/chart-tokens.postcss";
 @import "./lib/styles/workshop-shell.postcss";
@@ -4638,7 +4639,7 @@
 
   .grapheme-codemirror-host {
     @apply min-h-0 flex-1 overflow-hidden;
-    background-color: rgb(var(--color-surface-950) / 0.4);
+    background-color: rgb(var(--color-surface-950) / 0.72);
   }
 
   .grapheme-codemirror-host .cm-editor {
@@ -5902,7 +5903,7 @@
     word-break: break-word;
   }
 
-  /* Syntax token colors live in markdown-tokens.postcss */
+  /* Syntax token colors live in syntax-tokens.postcss */
 
   /* Mobile shell (M8) */
   .mobile-shell {
@@ -10008,10 +10009,16 @@
     color: var(--vault-read-accent);
   }
 
-  .vault-editor[data-reading-palette] .vault-live-prose code,
+  .vault-editor[data-reading-palette] .vault-live-prose :not(pre) > code,
   .vault-editor[data-reading-palette] .markdown-content :not(pre) > code {
     color: var(--vault-read-fg);
     background: color-mix(in srgb, var(--vault-read-fg) 10%, transparent);
+  }
+
+  .vault-editor[data-reading-palette] .vault-live-prose pre code,
+  .vault-editor[data-reading-palette] .vault-live-prose .syn-code {
+    background: transparent;
+    color: inherit;
   }
 
   .vault-editor[data-reading-palette="warm"] .vault-live-editor,
@@ -11155,8 +11162,19 @@
     border-top-color: rgb(var(--color-surface-400) / 0.85);
   }
 
-  .vault-live-prose code {
+  /* Inline code only — fence <code.syn-code> must not get the chip background
+   * (it reads as a gray selection highlighter over syntax tokens). */
+  .vault-live-prose :not(pre) > code {
     @apply text-[0.85em] px-1 py-0.5 rounded bg-surface-800/80 text-surface-200;
+  }
+
+  .vault-live-prose pre code,
+  .vault-live-prose .syn-code {
+    background: transparent;
+    padding: 0;
+    border-radius: 0;
+    color: inherit;
+    font-size: inherit;
   }
 
   .vault-live-prose a.vault-live-link {
@@ -11232,12 +11250,20 @@
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     font-size: 0.75rem;
     line-height: 1.45;
-    color: rgb(var(--color-surface-200));
+    color: rgb(var(--syn-fg));
     white-space: pre-wrap;
     word-break: break-word;
     cursor: text;
     user-select: text;
     -webkit-user-select: text;
+  }
+
+  .vault-live-plain-fence__body > code {
+    font-family: inherit;
+    font-size: inherit;
+    line-height: inherit;
+    white-space: inherit;
+    word-break: inherit;
   }
 
   .vault-live-code__stage,

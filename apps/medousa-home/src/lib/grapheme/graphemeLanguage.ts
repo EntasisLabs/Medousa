@@ -64,6 +64,8 @@ export const graphemeLanguage = StreamLanguage.define({
       if (KEYWORDS.has(word)) return "keyword";
       if (word.includes(".")) return "namespace";
       if (/^[A-Z]/.test(word)) return "typeName";
+      /* Call sites: name( → function tag so --syn-function applies. */
+      if (stream.match(/^\s*\(/, false)) return "function";
       return "variableName";
     }
 
@@ -79,6 +81,7 @@ export const graphemeLanguage = StreamLanguage.define({
     namespace: t.namespace,
     typeName: t.typeName,
     variableName: t.variableName,
+    function: t.function(t.variableName),
     special: t.special(t.variableName),
   },
 });

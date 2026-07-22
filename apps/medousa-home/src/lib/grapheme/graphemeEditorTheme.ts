@@ -1,7 +1,10 @@
-import { tags as t } from "@lezer/highlight";
-import { HighlightStyle, LanguageSupport, syntaxHighlighting } from "@codemirror/language";
+import { LanguageSupport } from "@codemirror/language";
 import { EditorView } from "@codemirror/view";
 import { graphemeLanguage } from "$lib/grapheme/graphemeLanguage";
+import {
+  medousaSyntaxHighlightStyle,
+  medousaSyntaxHighlighting,
+} from "$lib/syntax/codemirrorSyntaxTheme";
 
 const tooltipShell = {
   border: "1px solid rgb(var(--color-surface-600) / 0.4)",
@@ -14,7 +17,7 @@ const tooltipShell = {
 export const graphemeEditorTheme = EditorView.theme(
   {
     "&": {
-      color: "rgb(var(--color-surface-100))",
+      color: "rgb(var(--syn-fg))",
       backgroundColor: "rgb(var(--color-surface-950))",
       height: "100%",
     },
@@ -209,19 +212,8 @@ export const graphemeEditorTheme = EditorView.theme(
   { dark: true },
 );
 
-export const graphemeHighlightStyle = HighlightStyle.define([
-  { tag: t.keyword, color: "rgb(var(--color-secondary-300))" },
-  { tag: [t.function(t.variableName), t.function(t.propertyName)], color: "rgb(var(--color-primary-300))" },
-  { tag: [t.typeName, t.namespace], color: "rgb(var(--color-warning-300))" },
-  { tag: t.string, color: "rgb(var(--color-success-300))" },
-  { tag: t.number, color: "rgb(var(--color-warning-200))" },
-  { tag: t.operator, color: "rgb(var(--color-surface-300))" },
-  { tag: t.variableName, color: "rgb(var(--color-surface-100))" },
-  { tag: t.special(t.variableName), color: "rgb(var(--color-primary-200))" },
-  { tag: t.comment, color: "rgb(var(--color-surface-500))", fontStyle: "italic" },
-]);
-
-export const graphemeSyntax = syntaxHighlighting(graphemeHighlightStyle);
+export const graphemeHighlightStyle = medousaSyntaxHighlightStyle;
+export const graphemeSyntax = medousaSyntaxHighlighting;
 
 export const graphemeLanguageSupport = new LanguageSupport(graphemeLanguage, [
   graphemeSyntax,
