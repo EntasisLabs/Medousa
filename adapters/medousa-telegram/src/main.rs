@@ -2,12 +2,13 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Result, anyhow};
-use medousa::{
-    AdapterDeliveryOutcome, IngestRequest, default_delivery_timeout,
-    format_ingest_ack, wait_for_ask_delivery, resolve_daemon_url,
+use medousa_adapter_common::{
+    AdapterDeliveryOutcome, default_delivery_timeout, format_for_telegram_markdown_v2,
+    format_ingest_ack, should_send_immediate_ingest_reply, truncate_for_telegram,
+    wait_for_ask_delivery,
 };
-use medousa::channel_delivery::{format_for_telegram_markdown_v2, truncate_for_telegram};
 use medousa_sdk::{HttpTransport, MedousaClient};
+use medousa_types::{IngestRequest, resolve_daemon_url};
 use reqwest::Client;
 use teloxide::dispatching::UpdateFilterExt;
 use teloxide::dptree;
@@ -150,7 +151,7 @@ async fn handle_message(
         return Ok(());
     }
 
-    if medousa::adapter_ingest::should_send_immediate_ingest_reply(&response) {
+    if should_send_immediate_ingest_reply(&response) {
         bot.send_message(msg.chat.id, format_ingest_ack(&response)).await?;
     }
     Ok(())
@@ -231,7 +232,7 @@ ingester endpoint (POST /v1/ingest). Final replies are delivered by the daemon v
 outbox push; this process only sends acks, typing indicators, and fallback text.
 
 usage:
-  cargo run -p medousa --bin medousa_telegram -- [options]
+  medousa_telegram [options]
 
 options:
   --daemon-url <url>   Daemon base URL (default: MEDOUSA_DAEMON_URL or http://127.0.0.1:7419)

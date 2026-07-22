@@ -5,9 +5,13 @@ edition = "2024"
 description = "Shared Medousa daemon API types (serde DTOs)"
 
 [dependencies]
+anyhow = "1"
+base64 = "0.22"
 chrono = { version = "0.4", features = ["serde"] }
+hmac = "0.12"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+sha2 = "0.10"
 schemars = { version = "0.8", optional = true, features = ["chrono"] }
 
 [features]

@@ -1,20 +1,26 @@
 //! Thin Slack adapter — Socket Mode via slack-morphism, forwards to daemon ingester.
 
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use anyhow::{Context, Result, anyhow};
-use medousa::channel_delivery::truncate_for_slack;
-use medousa::{
-    AdapterDeliveryOutcome, IngestRequest, default_delivery_timeout,
-    format_ingest_ack, resolve_daemon_url, wait_for_ask_delivery,
+use medousa_adapter_common::{
+    AdapterDeliveryOutcome, default_delivery_timeout, format_ingest_ack,
+    should_send_immediate_ingest_reply, truncate_for_slack, wait_for_ask_delivery,
 };
 use medousa_sdk::{HttpTransport, MedousaClient};
+use medousa_types::{IngestRequest, resolve_daemon_url};
 use reqwest::Client;
 use slack_morphism::hyper_tokio::SlackClientHyperHttpsConnector;
 use slack_morphism::listener::SlackClientEventsListenerEnvironment;
 use slack_morphism::prelude::*;
 use slack_morphism::socket_mode::SlackClientSocketModeListener;
 use slack_morphism::socket_mode::SlackSocketModeListenerCallbacks;
+
+const SLACK_BOT_TOKEN_SERVICE: &str = "medousa.slack";
+const SLACK_BOT_TOKEN_ACCOUNT: &str = "bot_token";
+const SLACK_APP_TOKEN_SERVICE: &str = "medousa.slack";
+const SLACK_APP_TOKEN_ACCOUNT: &str = "app_token";
 
 #[derive(Clone)]
 struct SlackAdapterState {
@@ -178,7 +184,7 @@ async fn handle_push_event(
         return Ok(());
     }
 
-    if medousa::adapter_ingest::should_send_immediate_ingest_reply(&response) {
+    if should_send_immediate_ingest_reply(&response) {
         post_slack_message(&state, &channel_id, &format_ingest_ack(&response)).await?;
     }
 
@@ -216,12 +222,47 @@ async fn post_slack_message(state: &SlackAdapterState, channel: &str, text: &str
     Ok(())
 }
 
+fn medousa_data_dir() -> PathBuf {
+    std::env::var("MEDOUSA_DATA_DIR")
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            dirs::data_local_dir()
+                .unwrap_or_else(|| PathBuf::from("."))
+                .join("medousa")
+        })
+}
+
+fn slack_bot_token_secret_path() -> PathBuf {
+    medousa_data_dir().join("secrets").join("slack_bot_token")
+}
+
+fn slack_app_token_secret_path() -> PathBuf {
+    medousa_data_dir().join("secrets").join("slack_app_token")
+}
+
+fn read_secret_file(path: &PathBuf) -> Option<String> {
+    std::fs::read_to_string(path)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
 fn resolve_slack_bot_token(explicit: Option<&str>) -> Result<String> {
     explicit
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(ToString::to_string)
-        .or_else(medousa::session::load_slack_bot_token)
+        .or_else(|| {
+            keyring::Entry::new(SLACK_BOT_TOKEN_SERVICE, SLACK_BOT_TOKEN_ACCOUNT)
+                .ok()
+                .and_then(|entry| entry.get_password().ok())
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty())
+        })
+        .or_else(|| read_secret_file(&slack_bot_token_secret_path()))
         .or_else(|| non_empty_env("MEDOUSA_SLACK_BOT_TOKEN"))
         .or_else(|| non_empty_env("SLACK_BOT_TOKEN"))
         .ok_or_else(|| {
@@ -236,7 +277,14 @@ fn resolve_slack_app_token(explicit: Option<&str>) -> Result<String> {
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(ToString::to_string)
-        .or_else(medousa::session::load_slack_app_token)
+        .or_else(|| {
+            keyring::Entry::new(SLACK_APP_TOKEN_SERVICE, SLACK_APP_TOKEN_ACCOUNT)
+                .ok()
+                .and_then(|entry| entry.get_password().ok())
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty())
+        })
+        .or_else(|| read_secret_file(&slack_app_token_secret_path()))
         .or_else(|| non_empty_env("MEDOUSA_SLACK_APP_TOKEN"))
         .or_else(|| non_empty_env("SLACK_APP_TOKEN"))
         .ok_or_else(|| {

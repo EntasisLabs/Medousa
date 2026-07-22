@@ -1,7 +1,7 @@
 use chrono::Utc;
 
-use crate::capability_catalog::{McpCatalogSyncEntry, McpCatalogSyncResponse};
-use crate::mcp_gateway_api::{McpEffectClass, McpToolCatalogEntry};
+use medousa_types::mcp_gateway_api::{McpCatalogSyncEntry, McpCatalogSyncResponse};
+use medousa_types::mcp_gateway_api::{McpEffectClass, McpToolCatalogEntry};
 
 pub fn mock_tool_catalog() -> Vec<McpToolCatalogEntry> {
     vec![

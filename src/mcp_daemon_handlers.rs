@@ -7,7 +7,7 @@ use crate::capability_catalog::{
     capabilities_manifest_path, load_capability_manifest, CapabilityListResponse,
     CapabilityReindexResponse, CapabilityRegistry, CapabilityResolveResponse,
 };
-use crate::mcp_gateway::verify_policy_bearer;
+use medousa_mcp_gateway::verify_policy_bearer;
 use crate::mcp_gateway_api::{
     resolve_mcp_gateway_url, McpGatewayHealthResponse, McpPolicyEvaluateRequest,
     McpPolicyEvaluateResponse, McpServerSummary, McpServersResponse,
@@ -174,7 +174,7 @@ pub async fn mcp_policy_evaluate(
 ) -> Result<Json<McpPolicyEvaluateResponse>, (StatusCode, String)> {
     if !verify_policy_bearer(
         headers.get(AUTHORIZATION).and_then(|value| value.to_str().ok()),
-        crate::mcp_gateway::resolve_mcp_policy_token().as_deref(),
+        medousa_mcp_gateway::resolve_mcp_policy_token().as_deref(),
     ) {
         return Err((
             StatusCode::UNAUTHORIZED,

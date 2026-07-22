@@ -2,12 +2,12 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, Result, anyhow};
-use medousa::{
-    AdapterDeliveryOutcome, IngestRequest, IngestResponse,
-    default_delivery_timeout, wait_for_ask_delivery, resolve_daemon_url,
+use medousa_adapter_common::{
+    AdapterDeliveryOutcome, default_delivery_timeout, should_send_immediate_ingest_reply,
+    truncate_for_discord, wait_for_ask_delivery,
 };
-use medousa::channel_delivery::truncate_for_discord;
 use medousa_sdk::{HttpTransport, MedousaClient};
+use medousa_types::{IngestRequest, IngestResponse, resolve_daemon_url};
 use reqwest::Client;
 use serenity::all::GatewayIntents;
 use serenity::model::channel::Message;
@@ -175,7 +175,7 @@ async fn handle_message(
         return Ok(());
     }
 
-    if medousa::adapter_ingest::should_send_immediate_ingest_reply(&response) {
+    if should_send_immediate_ingest_reply(&response) {
         msg.channel_id
             .say(
                 &ctx.http,
@@ -219,8 +219,6 @@ fn normalize_for_ingester(input: &str, command_prefix: &str) -> String {
         .split_once(char::is_whitespace)
         .map(|(cmd, tail)| (cmd, tail.trim()))
         .unwrap_or((rest, ""));
-
-    
 
     match command.to_ascii_lowercase().as_str() {
         "start" | "help" => "/help".to_string(),
@@ -293,7 +291,7 @@ ingester endpoint (POST /v1/ingest). Final replies are delivered by the daemon v
 outbox push; this process only sends acks, typing indicators, and fallback text.
 
 usage:
-  cargo run -p medousa --bin medousa_discord -- [options]
+  medousa_discord [options]
 
 options:
   --daemon-url <url>        Daemon base URL (default: MEDOUSA_DAEMON_URL or http://127.0.0.1:7419)

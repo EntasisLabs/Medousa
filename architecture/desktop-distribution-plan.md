@@ -23,7 +23,7 @@ full workloads. In-app **Settings → Packages** covers optional sidecars after 
 
 ```
 Tag v*  →  CI builds per OS  →  GitHub Release assets
-           ├─ medousa-v*-.tar.gz     (CLI, existing)
+           ├─ engine-v*-.tar.gz      (launcher + daemon + CLI + TUI)
            ├─ Medousa_*_aarch64.dmg   (macOS Apple Silicon)
            ├─ Medousa_*_x64.dmg       (macOS Intel, optional)
            ├─ Medousa_*_x64-setup.exe / .msi  (Windows)

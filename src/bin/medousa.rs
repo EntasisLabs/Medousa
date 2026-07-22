@@ -40,6 +40,9 @@ mod peer_cli;
 #[path = "medousa/iroh_cli.rs"]
 mod iroh_cli;
 
+#[path = "medousa/packages_cli.rs"]
+mod packages_cli;
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 struct OnboardProfile {
     daemon_url: Option<String>,
@@ -87,6 +90,9 @@ fn main() -> Result<()> {
         "peer" => peer_cli::run_peer(&args[1..]),
         "iroh" => iroh_cli::run_iroh(&args[1..]),
         "models" => medousa::local_inference_cli::run_models_command(&args[1..]),
+        "pull" => packages_cli::run_pull(&args[1..]),
+        "update" => packages_cli::run_update(&args[1..]),
+        "packages" => packages_cli::run_packages(&args[1..]),
         "help" | "--help" | "-h" => {
             print_help();
             Ok(())
@@ -2866,15 +2872,24 @@ fn resolve_component_command(binary_name: &str) -> Result<ComponentCommand> {
     }
 
     if find_command_in_path("cargo").is_some() && Path::new("Cargo.toml").exists() {
-        if binary_name == "medousa_whatsapp" {
-            let manifest = Path::new("adapters/medousa-whatsapp/Cargo.toml");
-            if manifest.exists() {
+        let adapter_manifest = match binary_name {
+            "medousa_whatsapp" => Some("adapters/medousa-whatsapp/Cargo.toml"),
+            "medousa_telegram" => Some("adapters/medousa-telegram/Cargo.toml"),
+            "medousa_discord" => Some("adapters/medousa-discord/Cargo.toml"),
+            "medousa_slack" => Some("adapters/medousa-slack/Cargo.toml"),
+            "medousa_mcp_gateway" => Some("adapters/medousa-mcp-gateway/Cargo.toml"),
+            _ => None,
+        };
+
+        if let Some(manifest) = adapter_manifest {
+            let manifest_path = Path::new(manifest);
+            if manifest_path.exists() {
                 return Ok(ComponentCommand {
                     program: "cargo".to_string(),
                     pre_args: vec![
                         "run".to_string(),
                         "--manifest-path".to_string(),
-                        manifest.to_string_lossy().to_string(),
+                        manifest_path.to_string_lossy().to_string(),
                         "--".to_string(),
                     ],
                 });
@@ -3616,6 +3631,11 @@ fn print_help() {
     println!("  medousa status              Engine bind, health, data dir");
     println!("  medousa daemon [--backend <name>] [--bind <host:port>] [--public]");
     println!("  medousa tui [--daemon-url <url>] [--no-daemon]");
+    println!();
+    println!("Packages (CDN install into data dir):");
+    println!("  medousa pull <name> [--json]     engine, mcp-gateway, telegram, local-brain, …");
+    println!("  medousa update [<name>] [--json] Update installed packages when newer");
+    println!("  medousa packages list|status [--json]");
     println!();
     println!("Diagnose:");
     println!("  medousa doctor [--config] [--json] [--local-engine]");

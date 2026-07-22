@@ -155,7 +155,7 @@ CI asserts all package stamps equal the tag, builds the full matrix, and **repla
 |------|------------|------|
 | Home polish | `ship_desktop` (+ `ship_engine` if daemon API changed) | `desktop` (+ `engine`) |
 | Adapter fix | `ship_adapters` | that adapter id |
-| CLI only | `ship_cli` | `cli` |
+| Engine / CLI / TUI | `ship_engine` | `engine` |
 | MCP only | `ship_mcp` | `mcp-gateway` |
 | Offline brain | `ship_local_brain` | `local-brain` |
 | Everything | `ship_all` or push a `v*` tag | all ids |
@@ -203,9 +203,9 @@ If you still have `dist/final` from the publish job on a runner, skip the downlo
 ## What the workflow does
 
 1. **prepare** — resolve `ship_*` selection (`v*` / `ship_all` = full train)
-2. **build-daemon** — `medousa` + `medousa_daemon` once per OS (when engine/cli/desktop selected)
-3. **build-cli** — CLI and/or engine packages; **reuses** prebuilt daemon (no second compile)
-4. **build-adapters** / **build-mcp** / **build-local-brain** — only when selected
+2. **build-daemon** — `medousa` + `medousa_daemon` once per OS (when engine/desktop selected)
+3. **build-engine** — packages `engine` (launcher + daemon + CLI + TUI); **reuses** prebuilt daemon (no second compile). Never builds the retired `medousa-v*` suite.
+4. **build-adapters** / **build-mcp** / **build-local-brain** — independent legs (slim adapter crates; never rebuild engine)
 5. **build-desktop** / **build-installer** — only when selected (desktop reuses daemon sidecar)
 6. **release** — stage artifacts → generate delta manifests → **merge** into channel (or replace on full train) → **upload R2** → optional **GitHub Release**
 

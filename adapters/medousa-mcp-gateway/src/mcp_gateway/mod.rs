@@ -1,12 +1,12 @@
 //! MCP Client gateway — config, registry, HTTP handlers.
 
 mod auth;
-mod catalog;
-mod config;
+pub mod catalog;
+pub mod config;
 mod policy_client;
-mod registry;
-mod server_config;
-mod starter_config;
+pub mod registry;
+pub mod server_config;
+pub mod starter_config;
 mod remote_client;
 mod stdio_client;
 
@@ -29,7 +29,7 @@ use axum::{Json, Router};
 use chrono::Utc;
 use tokio::sync::RwLock;
 
-use crate::mcp_gateway_api::{
+use medousa_types::mcp_gateway_api::{
     McpAdminStatusResponse, McpDiscoverRequest, McpDiscoverResponse, McpGatewayHealthResponse,
     McpInvokeRequest, McpInvokeResponse, McpServersResponse,
 };
@@ -119,7 +119,7 @@ async fn discover(
 async fn catalog(
     State(state): State<GatewayState>,
     headers: HeaderMap,
-) -> Result<Json<crate::capability_catalog::McpCatalogSyncResponse>, (StatusCode, String)> {
+) -> Result<Json<medousa_types::mcp_gateway_api::McpCatalogSyncResponse>, (StatusCode, String)> {
     authorize_gateway(&headers, &state)?;
     Ok(Json(state.registry.catalog_sync().await))
 }

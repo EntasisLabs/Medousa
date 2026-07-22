@@ -16,12 +16,7 @@ on:
         type: boolean
         default: false
       ship_engine:
-        description: Ship engine (medousa + medousa_daemon)
-        required: true
-        type: boolean
-        default: false
-      ship_cli:
-        description: Ship CLI + TUI
+        description: Ship engine (medousa + daemon + CLI + TUI)
         required: true
         type: boolean
         default: false
@@ -118,7 +113,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       ship_engine: ${{ steps.sel.outputs.ship_engine }}
-      ship_cli: ${{ steps.sel.outputs.ship_cli }}
       ship_adapters: ${{ steps.sel.outputs.ship_adapters }}
       ship_mcp: ${{ steps.sel.outputs.ship_mcp }}
       ship_desktop: ${{ steps.sel.outputs.ship_desktop }}
@@ -152,16 +146,15 @@ jobs:
           source scripts/release/common.sh
           if [[ "${FULL}" -eq 1 ]]; then
             medousa_assert_full_train_versions "${VERSION}"
-            E=true; C=true; A=true; M=true; D=true; I=true; L=true
+            E=true; A=true; M=true; D=true; I=true; L=true
           else
             E="${{ github.event.inputs.ship_engine }}"
-            C="${{ github.event.inputs.ship_cli }}"
             A="${{ github.event.inputs.ship_adapters }}"
             M="${{ github.event.inputs.ship_mcp }}"
             D="${{ github.event.inputs.ship_desktop }}"
             I="${{ github.event.inputs.ship_installer }}"
             L="${{ github.event.inputs.ship_local_brain }}"
-            if [[ "${E}" != "true" && "${C}" != "true" && "${A}" != "true" && "${M}" != "true" && "${D}" != "true" && "${I}" != "true" && "${L}" != "true" ]]; then
+            if [[ "${E}" != "true" && "${A}" != "true" && "${M}" != "true" && "${D}" != "true" && "${I}" != "true" && "${L}" != "true" ]]; then
               echo "::error::Select at least one ship_* component (or ship_all)"
               exit 1
             fi
@@ -172,7 +165,6 @@ jobs:
 
           {
             echo "ship_engine=${E}"
-            echo "ship_cli=${C}"
             echo "ship_adapters=${A}"
             echo "ship_mcp=${M}"
             echo "ship_desktop=${D}"
@@ -182,7 +174,7 @@ jobs:
             echo "version=${VERSION}"
             echo "tag=${TAG}"
           } >> "${GITHUB_OUTPUT}"
-          echo "Release selection: engine=${E} cli=${C} adapters=${A} mcp=${M} desktop=${D} installer=${I} local-brain=${L} full=${FULL} v=${VERSION}"
+          echo "Release selection: engine=${E} adapters=${A} mcp=${M} desktop=${D} installer=${I} local-brain=${L} full=${FULL} v=${VERSION}"
 
   # Daemon (+ launcher) build. Feeds desktop sidecar and engine packaging so
   # other jobs do not recompile medousa_daemon.
@@ -257,16 +249,13 @@ jobs:
           path: dist/daemon/*
           if-no-files-found: error
 
-  build-cli:
-    name: cli/engine (${{ matrix.target }})
+  build-engine:
+    name: engine (${{ matrix.target }})
     needs: [prepare, build-daemon]
     if: |
       always() && !cancelled() &&
-      (needs.prepare.outputs.ship_cli == 'true' || needs.prepare.outputs.ship_engine == 'true') &&
-      (
-        needs.prepare.outputs.ship_engine != 'true' ||
-        needs.build-daemon.result == 'success'
-      )
+      needs.prepare.outputs.ship_engine == 'true' &&
+      needs.build-daemon.result == 'success'
     runs-on: ${{ vars.MEDOUSA_SELF_HOSTED == 'true' && matrix.runner || matrix.os }}
     defaults:
       run:
@@ -307,67 +296,44 @@ jobs:
             . -> .cache/cargo-target
           cache-workspace-crates: true
           cache-on-failure: true
-          shared-key: release-cli-${{ matrix.target }}
+          shared-key: release-engine-${{ matrix.target }}
 
       - name: Download prebuilt daemon
-        if: needs.prepare.outputs.ship_engine == 'true'
         uses: actions/download-artifact@v4
         with:
           name: medousa-daemon-${{ matrix.target }}
           path: dist/prebuilt-daemon
 
-      - name: Build selected bins (reuse daemon when present)
-        env:
-          SHIP_ENGINE: ${{ needs.prepare.outputs.ship_engine }}
-          SHIP_CLI: ${{ needs.prepare.outputs.ship_cli }}
+      - name: Build engine bins (reuse daemon + launcher)
         run: |
           EXT=""
           [[ "${{ matrix.target }}" == *-pc-windows-msvc ]] && EXT=".exe"
-          COMPS=()
-          [[ "${SHIP_ENGINE}" == "true" ]] && COMPS+=(engine)
-          [[ "${SHIP_CLI}" == "true" ]] && COMPS+=(cli)
-          COMP_CSV="$(IFS=,; echo "${COMPS[*]}")"
           DAEMON="dist/prebuilt-daemon/medousa_daemon-${{ matrix.target }}${EXT}"
           LAUNCHER="dist/prebuilt-daemon/medousa-${{ matrix.target }}${EXT}"
-          if [[ "${SHIP_ENGINE}" == "true" && -f "${DAEMON}" ]]; then
+          if [[ -f "${DAEMON}" ]]; then
             export MEDOUSA_PREBUILT_DAEMON="${GITHUB_WORKSPACE}/${DAEMON}"
           fi
-          if [[ "${SHIP_ENGINE}" == "true" && -f "${LAUNCHER}" ]]; then
+          if [[ -f "${LAUNCHER}" ]]; then
             export MEDOUSA_PREBUILT_LAUNCHER="${GITHUB_WORKSPACE}/${LAUNCHER}"
           fi
+          # Compile CLI+TUI (+ launcher only if not prebuilt). Never adapters/mcp here.
           ./scripts/release/build.sh \
             --target "${{ matrix.target }}" \
             --without-local-brain \
-            --components "${COMP_CSV}"
+            --components engine
 
-      - name: Package selected archives
-        env:
-          SHIP_ENGINE: ${{ needs.prepare.outputs.ship_engine }}
-          SHIP_CLI: ${{ needs.prepare.outputs.ship_cli }}
+      - name: Package engine archive only
         run: |
-          PKGS=()
-          [[ "${SHIP_ENGINE}" == "true" ]] && PKGS+=(engine)
-          [[ "${SHIP_CLI}" == "true" ]] && PKGS+=(cli)
-          PKG_CSV="$(IFS=,; echo "${PKGS[*]}")"
-          SUITE_FLAG=()
-          [[ "${SHIP_ENGINE}" == "true" && "${SHIP_CLI}" == "true" ]] || SUITE_FLAG=(--skip-suite)
           ./scripts/release/package-all-components.sh \
             --target "${{ matrix.target }}" \
-            --packages "${PKG_CSV}" \
-            "${SUITE_FLAG[@]}"
-          # suite when engine+cli both shipping
-          if [[ "${SHIP_ENGINE}" == "true" && "${SHIP_CLI}" == "true" ]]; then
-            ./scripts/release/package.sh --target "${{ matrix.target }}"
-          fi
+            --packages engine
 
-      - name: Upload CLI/engine artifact
+      - name: Upload engine artifact
         uses: actions/upload-artifact@v4
         with:
-          name: medousa-cli-${{ matrix.target }}
+          name: medousa-engine-${{ matrix.target }}
           path: |
             dist/engine-*.tar.gz
-            dist/cli-*.tar.gz
-            dist/medousa-*.tar.gz
             dist/SHA256SUMS
           if-no-files-found: error
 
@@ -423,8 +389,7 @@ jobs:
         run: |
           ./scripts/release/package-all-components.sh \
             --target "${{ matrix.target }}" \
-            --packages adapter-telegram,adapter-discord,adapter-slack,adapter-whatsapp \
-            --skip-suite
+            --packages adapter-telegram,adapter-discord,adapter-slack,adapter-whatsapp
       - name: Upload adapters artifact
         uses: actions/upload-artifact@v4
         with:
@@ -486,8 +451,7 @@ jobs:
         run: |
           ./scripts/release/package-all-components.sh \
             --target "${{ matrix.target }}" \
-            --packages mcp-gateway \
-            --skip-suite
+            --packages mcp-gateway
       - name: Upload MCP artifact
         uses: actions/upload-artifact@v4
         with:
@@ -999,7 +963,7 @@ jobs:
     needs:
       [
         prepare,
-        build-cli,
+        build-engine,
         build-adapters,
         build-mcp,
         build-desktop,
@@ -1010,14 +974,14 @@ jobs:
     if: |
       always() && !cancelled() &&
       needs.prepare.result == 'success' &&
-      (needs.build-cli.result == 'success' || needs.build-cli.result == 'skipped') &&
+      (needs.build-engine.result == 'success' || needs.build-engine.result == 'skipped') &&
       (needs.build-adapters.result == 'success' || needs.build-adapters.result == 'skipped') &&
       (needs.build-mcp.result == 'success' || needs.build-mcp.result == 'skipped') &&
       (needs.build-desktop.result == 'success' || needs.build-desktop.result == 'skipped') &&
       (needs.build-installer.result == 'success' || needs.build-installer.result == 'skipped') &&
       (needs.build-local-brain.result == 'success' || needs.build-local-brain.result == 'skipped') &&
       (
-        needs.build-cli.result == 'success' ||
+        needs.build-engine.result == 'success' ||
         needs.build-adapters.result == 'success' ||
         needs.build-mcp.result == 'success' ||
         needs.build-desktop.result == 'success' ||
@@ -1045,10 +1009,8 @@ jobs:
         run: |
           mkdir -p dist/final
           find dist/artifacts -name 'engine-*.tar.gz' -exec cp {} dist/final/ \;
-          find dist/artifacts -name 'cli-*.tar.gz' -exec cp {} dist/final/ \;
           find dist/artifacts -name 'adapter-*.tar.gz' -exec cp {} dist/final/ \;
           find dist/artifacts -name 'mcp-gateway-*.tar.gz' -exec cp {} dist/final/ \;
-          find dist/artifacts -name 'medousa-*.tar.gz' -exec cp {} dist/final/ \;
           find dist/artifacts -name 'medousa_local-*.tar.gz' -exec cp {} dist/final/ \;
           find dist/artifacts -type f \( \
             -name 'MedousaInstaller*' -o \
@@ -1124,10 +1086,8 @@ jobs:
           name: Medousa ${{ needs.prepare.outputs.tag }}
           files: |
             dist/final/engine-*.tar.gz
-            dist/final/cli-*.tar.gz
             dist/final/adapter-*.tar.gz
             dist/final/mcp-gateway-*.tar.gz
-            dist/final/medousa-*.tar.gz
             dist/final/medousa_local-*.tar.gz
             dist/final/release-manifest.json
             dist/final/installer-bootstrap.json

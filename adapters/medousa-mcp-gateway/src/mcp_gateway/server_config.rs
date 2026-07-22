@@ -138,13 +138,13 @@ fn load_gateway_file_config() -> McpGatewayFileConfig {
 }
 
 fn default_bind() -> String {
-    crate::mcp_gateway_api::DEFAULT_MCP_GATEWAY_BIND.to_string()
+    medousa_types::mcp_gateway_api::DEFAULT_MCP_GATEWAY_BIND.to_string()
 }
 
 fn default_daemon_policy_url() -> String {
     format!(
         "{}/v1/mcp/policy/evaluate",
-        crate::daemon_api::DEFAULT_DAEMON_URL
+        medousa_types::daemon_api::DEFAULT_DAEMON_URL
     )
 }
 

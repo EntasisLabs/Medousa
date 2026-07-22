@@ -11,17 +11,17 @@ use tokio::sync::RwLock;
 use tokio::time::Duration;
 use uuid::Uuid;
 
-use crate::capability_catalog::{McpCatalogSyncEntry, McpCatalogSyncResponse};
+use medousa_types::mcp_gateway_api::{McpCatalogSyncEntry, McpCatalogSyncResponse};
 use crate::mcp_gateway::catalog::{auto_tag_capabilities, discover_from_entries, mock_tool_catalog};
 use crate::mcp_gateway::policy_client::DaemonPolicyClient;
 use crate::mcp_gateway::remote_client::{RemoteMcpSession, RemoteTransport};
 use crate::mcp_gateway::server_config::{McpGatewayFullConfig, McpServerConfig};
 use crate::mcp_gateway::stdio_client::StdioMcpSession;
-use crate::mcp_gateway_api::{
+use medousa_types::mcp_gateway_api::{
     McpEffectClass, McpInvokeError, McpInvokeRequest, McpInvokeResponse, McpPolicyEvaluateRequest,
     McpServerSummary, McpServersResponse, McpToolCatalogEntry, McpTurnLane,
 };
-use crate::mcp_turn_token::verify_mcp_turn_token;
+use medousa_types::mcp_turn_token::verify_mcp_turn_token;
 
 #[derive(Debug, Clone)]
 pub struct ServerRuntimeStatus {
@@ -251,7 +251,7 @@ impl ServerRegistry {
             if let Err(error) = verify_mcp_turn_token(token, &request.turn_context) {
                 return fail("invalid_turn_token", error.to_string(), false);
             }
-        } else if crate::mcp_turn_token::resolve_mcp_turn_token_secret().is_some() {
+        } else if medousa_types::mcp_turn_token::resolve_mcp_turn_token_secret().is_some() {
             return fail(
                 "missing_turn_token",
                 "turn token required for MCP invoke".to_string(),

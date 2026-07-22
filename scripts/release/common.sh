@@ -42,6 +42,10 @@ medousa_is_optional_binary() {
 MEDOUSA_MAIN_CARGO_TOML="${MEDOUSA_MAIN_CARGO_TOML:-Cargo.toml}"
 MEDOUSA_WHATSAPP_CARGO_TOML="${MEDOUSA_WHATSAPP_CARGO_TOML:-adapters/medousa-whatsapp/Cargo.toml}"
 MEDOUSA_WHATSAPP_MANIFEST="${MEDOUSA_WHATSAPP_MANIFEST:-adapters/medousa-whatsapp/Cargo.toml}"
+MEDOUSA_TELEGRAM_MANIFEST="${MEDOUSA_TELEGRAM_MANIFEST:-adapters/medousa-telegram/Cargo.toml}"
+MEDOUSA_DISCORD_MANIFEST="${MEDOUSA_DISCORD_MANIFEST:-adapters/medousa-discord/Cargo.toml}"
+MEDOUSA_SLACK_MANIFEST="${MEDOUSA_SLACK_MANIFEST:-adapters/medousa-slack/Cargo.toml}"
+MEDOUSA_MCP_GATEWAY_MANIFEST="${MEDOUSA_MCP_GATEWAY_MANIFEST:-adapters/medousa-mcp-gateway/Cargo.toml}"
 
 medousa_repo_root() {
   local script_dir
@@ -62,12 +66,36 @@ medousa_whatsapp_version() {
   medousa_parse_cargo_version "$(medousa_repo_root)/${MEDOUSA_WHATSAPP_CARGO_TOML}"
 }
 
+medousa_adapter_manifest() {
+  case "$1" in
+    medousa_telegram) echo "${MEDOUSA_TELEGRAM_MANIFEST}" ;;
+    medousa_discord) echo "${MEDOUSA_DISCORD_MANIFEST}" ;;
+    medousa_slack) echo "${MEDOUSA_SLACK_MANIFEST}" ;;
+    medousa_whatsapp) echo "${MEDOUSA_WHATSAPP_MANIFEST}" ;;
+    medousa_mcp_gateway) echo "${MEDOUSA_MCP_GATEWAY_MANIFEST}" ;;
+    *)
+      echo "error: no adapter manifest for binary: $1" >&2
+      return 1
+      ;;
+  esac
+}
+
+medousa_is_adapter_binary() {
+  case "$1" in
+    medousa_telegram | medousa_discord | medousa_slack | medousa_whatsapp | medousa_mcp_gateway)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
 MEDOUSA_PACKAGE_VERSIONS_TOML="${MEDOUSA_PACKAGE_VERSIONS_TOML:-scripts/release/package-versions.toml}"
 
 # All package ids that carry an independent release stamp.
 MEDOUSA_PACKAGE_VERSION_IDS=(
   engine
-  cli
   adapter-telegram
   adapter-discord
   adapter-slack
@@ -225,9 +253,9 @@ medousa_asset_archive_name() {
 }
 
 # Component package IDs (separate release artifacts).
+# engine = launcher + daemon + CLI + TUI (headless core). No full-suite archive.
 MEDOUSA_COMPONENT_IDS=(
   engine
-  cli
   adapter-telegram
   adapter-discord
   adapter-slack
@@ -237,8 +265,9 @@ MEDOUSA_COMPONENT_IDS=(
 
 medousa_component_binaries() {
   case "$1" in
-    engine) echo "medousa medousa_daemon" ;;
-    cli) echo "medousa_cli medousa_tui" ;;
+    engine) echo "medousa medousa_daemon medousa_cli medousa_tui" ;;
+    # Legacy alias — redirected to engine contents for older scripts.
+    cli) echo "medousa medousa_daemon medousa_cli medousa_tui" ;;
     adapter-telegram) echo "medousa_telegram" ;;
     adapter-discord) echo "medousa_discord" ;;
     adapter-slack) echo "medousa_slack" ;;
@@ -253,7 +282,7 @@ medousa_component_binaries() {
 
 medousa_component_category() {
   case "$1" in
-    engine | cli) echo "core" ;;
+    engine) echo "core" ;;
     adapter-*) echo "adapter" ;;
     mcp-gateway) echo "core" ;;
     local-brain) echo "core" ;;
@@ -267,7 +296,7 @@ medousa_component_category() {
 medousa_component_depends() {
   case "$1" in
     engine | desktop | installer) echo "" ;;
-    cli | adapter-* | mcp-gateway | local-brain) echo "engine" ;;
+    adapter-* | mcp-gateway | local-brain) echo "engine" ;;
     model-*) echo "local-brain" ;;
     *) echo "" ;;
   esac

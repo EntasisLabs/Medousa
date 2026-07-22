@@ -1,6 +1,6 @@
 use std::env;
 
-use medousa::mcp_gateway::McpGatewayFullConfig;
+use medousa_mcp_gateway::McpGatewayFullConfig;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -11,7 +11,7 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let config = McpGatewayFullConfig::from_env_and_args(&args);
-    medousa::mcp_gateway::serve(config).await
+    medousa_mcp_gateway::serve(config).await
 }
 
 fn print_help() {

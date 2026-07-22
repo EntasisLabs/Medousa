@@ -3,8 +3,10 @@
 **Audience:** Medousa app users who want optional binaries without opening the
 standalone installer.
 
-Home already ships with the **engine**. Packages is where you add more later —
-offline brain, messaging adapters, CLI tools, MCP gateway.
+Home already ships with the **engine** (daemon, CLI, and TUI). Packages is where
+you add more later — offline brain, messaging adapters, MCP gateway.
+
+From a terminal you can also use `medousa pull <name>` / `medousa update`.
 
 ---
 
@@ -24,7 +26,6 @@ or **Installed**.
 | Package | What you get |
 |---------|----------------|
 | **Offline brain** | `medousa_local` — on-device inference for Gemma |
-| **Command-line tools** | `medousa` CLI / TUI helpers |
 | **MCP gateway** | Connect MCP tool servers to Medousa |
 | **Telegram / Discord / Slack / WhatsApp** | Channel adapter binaries |
 

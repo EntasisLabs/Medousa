@@ -1,0 +1,18 @@
+[package]
+name = "medousa-telegram"
+version = "0.4.1"
+edition = "2024"
+
+[[bin]]
+name = "medousa_telegram"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+medousa-adapter-common = { path = "../../crates/medousa-adapter-common" }
+medousa-sdk = { path = "../../crates/medousa-sdk" }
+medousa-types = { path = "../../crates/medousa-types" }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
+teloxide = "0.17.0"
+telegram-escape = "0.4.0"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "signal", "sync"] }

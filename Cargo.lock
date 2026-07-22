@@ -7217,12 +7217,14 @@ dependencies = [
  "locus-core-rs",
  "mdns-sd",
  "medousa-acp-client",
+ "medousa-adapter-common",
  "medousa-browser-lite",
  "medousa-engine",
  "medousa-host",
  "medousa-install-support",
  "medousa-iroh-http",
  "medousa-local-inference",
+ "medousa-mcp-gateway",
  "medousa-sdk",
  "medousa-types",
  "once_cell",
@@ -7248,7 +7250,6 @@ dependencies = [
  "surrealdb",
  "surrealdb-types",
  "sysinfo 0.33.1",
- "telegram-escape",
  "teloxide",
  "tokio",
  "toml 0.8.23",
@@ -7274,6 +7275,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "medousa-adapter-common"
+version = "0.4.1"
+dependencies = [
+ "anyhow",
+ "futures-util",
+ "medousa-types",
+ "reqwest 0.12.28",
+ "serde_json",
+ "telegram-escape",
+ "tokio",
+]
+
+[[package]]
 name = "medousa-browser-bridge"
 version = "0.4.1"
 dependencies = [
@@ -7296,6 +7310,19 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "tokio",
+]
+
+[[package]]
+name = "medousa-discord"
+version = "0.4.1"
+dependencies = [
+ "anyhow",
+ "medousa-adapter-common",
+ "medousa-sdk",
+ "medousa-types",
+ "reqwest 0.12.28",
+ "serenity",
  "tokio",
 ]
 
@@ -7383,6 +7410,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "medousa-mcp-gateway"
+version = "0.4.1"
+dependencies = [
+ "anyhow",
+ "axum 0.8.9",
+ "chrono",
+ "dirs 5.0.1",
+ "futures-util",
+ "medousa-types",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "tokio",
+ "toml 0.8.23",
+ "uuid 1.23.1",
+]
+
+[[package]]
 name = "medousa-mcp-server"
 version = "0.4.1"
 dependencies = [
@@ -7425,13 +7470,47 @@ dependencies = [
 ]
 
 [[package]]
+name = "medousa-slack"
+version = "0.4.1"
+dependencies = [
+ "anyhow",
+ "dirs 5.0.1",
+ "keyring",
+ "medousa-adapter-common",
+ "medousa-sdk",
+ "medousa-types",
+ "reqwest 0.12.28",
+ "serde_json",
+ "slack-morphism",
+ "tokio",
+]
+
+[[package]]
+name = "medousa-telegram"
+version = "0.4.1"
+dependencies = [
+ "anyhow",
+ "medousa-adapter-common",
+ "medousa-sdk",
+ "medousa-types",
+ "reqwest 0.12.28",
+ "telegram-escape",
+ "teloxide",
+ "tokio",
+]
+
+[[package]]
 name = "medousa-types"
 version = "0.4.1"
 dependencies = [
+ "anyhow",
+ "base64 0.22.1",
  "chrono",
+ "hmac 0.12.1",
  "schemars 0.8.22",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
 ]
 
 [[package]]

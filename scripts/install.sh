@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Medousa enterprise installer — release archives, local dist, or in-repo source builds.
+# Medousa enterprise installer — engine package from CDN, local dist, or source.
 #
-# Installs the full component set atomically (launcher + daemon + adapters) so sibling
-# binary resolution never mixes stale builds. See scripts/release/common.sh.
+# Installs the engine set (launcher + daemon + CLI + TUI). Extra packages
+# (adapters, mcp-gateway, local-brain) are pulled afterward via `medousa pull`.
 
 set -euo pipefail
 
@@ -23,19 +23,23 @@ FORCE=0
 SKIP_CHECKSUM=0
 VERIFY_ONLY=0
 INSTALL_PROFILE=""
+PULL_LOCAL_BRAIN=0
 
 INSTALL_RECORD="${STATE_DIR}/install.json"
+
+# Engine package binaries (headless core). Adapters are not in the engine tarball.
+MEDOUSA_BINARIES=(medousa medousa_daemon medousa_cli medousa_tui)
 
 usage() {
   cat <<EOF
 Usage: install.sh [options]
 
-Install Medousa CLI components (launcher, daemon, TUI, adapters) as one versioned set.
+Install the Medousa engine package (launcher, daemon, CLI, TUI).
 
 Options:
   --version <tag>       Release tag (default: latest), e.g. v0.1.0
   --install-dir <dir>   Install directory (default: ~/.local/bin)
-  --from-dist <path>    Install from a local release .tar.gz
+  --from-dist <path>    Install from a local engine-*.tar.gz
   --from-source         Build from the current git checkout and install (recommended for dev)
   --system              Install to /usr/local/bin (requires write permission)
   --force               Install even if medousa_daemon is running
@@ -45,7 +49,8 @@ Options:
   --uninstall           Remove installed Medousa binaries from the install directory
   --registry-url <url>  Self-hosted release base URL (or MEDOUSA_RELEASE_BASE_URL)
   --channel <name>      Release channel (default: stable)
-  --profile <name>      Install profile: default | headless-server (engine CLI only)
+  --profile <name>      Install profile: default | headless-server
+                        headless-server also runs: medousa pull local-brain
   -h, --help            Show this help
 
 Environment:
@@ -58,17 +63,21 @@ Environment:
   MEDOUSA_STATE_DIR     Install metadata directory (default: ~/.local/share/medousa)
 
 Examples:
-  # Production: pinned release from GitHub
+  # Production: pinned release from CDN / GitHub
   curl -fsSL https://raw.githubusercontent.com/${MEDOUSA_GITHUB_REPO}/main/scripts/install.sh | bash -s -- --version v0.1.0
 
-  # Enterprise / air-gap: local artifact
-  ./scripts/install.sh --from-dist dist/medousa-v0.1.0-x86_64-unknown-linux-gnu.tar.gz
+  # Enterprise / air-gap: local engine artifact
+  ./scripts/install.sh --from-dist dist/engine-v0.1.0-x86_64-unknown-linux-gnu.tar.gz
 
-  # Development: build and install from source (always coherent binary set)
+  # Development: build and install from source
   ./scripts/install.sh --from-source
 
   # Post-install validation
   ./scripts/install.sh --verify-only
+
+  # Extra packages after install
+  medousa pull mcp-gateway
+  medousa pull telegram
 EOF
 }
 
@@ -165,8 +174,10 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ "${INSTALL_PROFILE}" == "headless-server" ]]; then
-  MEDOUSA_BINARIES=(medousa medousa_cli medousa_daemon medousa_local)
-  log "profile=headless-server (engine binaries only — no TUI/adapters)"
+  # Engine package (includes TUI binary; adapters stay optional via medousa pull).
+  MEDOUSA_BINARIES=(medousa medousa_daemon medousa_cli medousa_tui)
+  PULL_LOCAL_BRAIN=1
+  log "profile=headless-server (engine package + medousa pull local-brain)"
 elif [[ -n "${INSTALL_PROFILE}" && "${INSTALL_PROFILE}" != "default" ]]; then
   die "unknown profile: ${INSTALL_PROFILE} (try default or headless-server)"
 fi
@@ -547,7 +558,7 @@ verify_archive_checksum() {
 
 install_from_release() {
   local target="$1"
-  local tmp archive_path checksums_path version_tag version archive_name
+  local tmp archive_path checksums_path version_tag version archive_name engine_version
 
   medousa_require_cmd curl
   require_sha_tool
@@ -558,7 +569,9 @@ install_from_release() {
 
   version_tag="$(resolve_release_tag)"
   version="${version_tag#v}"
-  archive_name="medousa-v${version}-${target}.tar.gz"
+  # Prefer per-package engine stamp from channel manifest when available.
+  engine_version="$(resolve_engine_package_version "${version}")"
+  archive_name="engine-v${engine_version}-${target}.tar.gz"
   archive_path="${tmp}/${archive_name}"
   checksums_path="${tmp}/SHA256SUMS"
 
@@ -571,7 +584,44 @@ install_from_release() {
     die "SHA256SUMS missing for remote install — use --insecure-skip-checksum to override"
   fi
 
-  install_from_archive "${archive_path}" "${target}" "${version}"
+  install_from_archive "${archive_path}" "${target}" "${engine_version}"
+}
+
+# Resolve engine package version from channel release-manifest when registry is set.
+resolve_engine_package_version() {
+  local fallback="$1"
+  if [[ -z "${REGISTRY_URL}" ]]; then
+    echo "${fallback}"
+    return 0
+  fi
+  medousa_require_cmd curl
+  local manifest_url raw pkg_version
+  manifest_url="$(MEDOUSA_RELEASE_BASE_URL="${REGISTRY_URL}" MEDOUSA_RELEASE_CHANNEL="${RELEASE_CHANNEL}" medousa_release_manifest_url)"
+  raw="$(curl -fsSL "${manifest_url}" 2>/dev/null || true)"
+  [[ -n "${raw}" ]] || {
+    echo "${fallback}"
+    return 0
+  }
+  # Prefer an engine-* package entry version for this host target when present.
+  pkg_version="$(printf '%s' "${raw}" | sed -n 's/.*"id": "engine".*"version": "\([^"]*\)".*/\1/p' | head -1)"
+  if [[ -z "${pkg_version}" ]]; then
+    pkg_version="$(printf '%s' "${raw}" | python3 -c '
+import json,sys
+try:
+  m=json.load(sys.stdin)
+  for p in m.get("packages",{}).values():
+    if p.get("id")=="engine":
+      print(p.get("version",""))
+      break
+except Exception:
+  pass
+' 2>/dev/null || true)"
+  fi
+  if [[ -n "${pkg_version}" ]]; then
+    echo "${pkg_version}"
+  else
+    echo "${fallback}"
+  fi
 }
 
 install_from_source() {
@@ -588,16 +638,21 @@ install_from_source() {
   version="$(medousa_version)"
   staging="${root}/dist/build/${target}"
 
-  log "building medousa v${version} for ${target} from source"
-  "${SCRIPT_DIR}/release/build.sh" --target "${target}" --output "${staging}"
+  log "building medousa engine v${version} for ${target} from source"
+  "${SCRIPT_DIR}/release/build.sh" \
+    --target "${target}" \
+    --output "${staging}" \
+    --without-local-brain \
+    --components engine
 
   local payload_root="${staging}"
   if [[ ! -d "${staging}/bin" ]]; then
     die "build staging missing bin/: ${staging}/bin"
   fi
 
-  medousa_write_install_manifest \
+  medousa_write_component_install_manifest \
     "${staging}/bin" \
+    "engine" \
     "${version}" \
     "${target}" \
     "${staging}/install-manifest.json"
@@ -689,7 +744,11 @@ main() {
     medousa_require_cmd tar
     local version="${MEDOUSA_VERSION}"
     if [[ "${version}" == "latest" ]]; then
-      version="$(medousa_version_from_tag "$(basename "${FROM_DIST}" .tar.gz | sed -n 's/^medousa-v\([^-]*\)-.*/\1/p')")"
+      version="$(medousa_version_from_tag "$(basename "${FROM_DIST}" .tar.gz | sed -n 's/^engine-v\([^-]*\)-.*/\1/p')")"
+      if [[ -z "${version}" || "${version}" == "unknown" ]]; then
+        # Legacy suite archive name fallback.
+        version="$(medousa_version_from_tag "$(basename "${FROM_DIST}" .tar.gz | sed -n 's/^medousa-v\([^-]*\)-.*/\1/p')")"
+      fi
       [[ -n "${version}" ]] || version="unknown"
     else
       version="${version#v}"
@@ -702,15 +761,27 @@ main() {
   postflight_install "${target}"
   append_path_to_shell_rc "${INSTALL_DIR}"
 
+  if [[ "${PULL_LOCAL_BRAIN}" -eq 1 && "${DRY_RUN}" -eq 0 ]]; then
+    local launcher
+    launcher="$(medousa_binary_filename medousa "${target}")"
+    if [[ -x "${INSTALL_DIR}/${launcher}" ]]; then
+      log "pulling local-brain (headless-server profile)"
+      if ! PATH="${INSTALL_DIR}:${PATH}" "${INSTALL_DIR}/${launcher}" pull local-brain; then
+        warn "medousa pull local-brain failed — install engine succeeded; retry later"
+      fi
+    fi
+  fi
+
   log ""
-  log "Medousa v$(medousa_read_manifest_field "${INSTALL_RECORD}" version) installed to ${INSTALL_DIR}"
+  log "Medousa engine v$(medousa_read_manifest_field "${INSTALL_RECORD}" version) installed to ${INSTALL_DIR}"
   log "Install record: ${INSTALL_RECORD}"
   log ""
   log "Next steps:"
   log "  1. Open a new terminal (or: export PATH=\"${INSTALL_DIR}:\$PATH\")"
   log "  2. medousa setup          # first-time configuration"
   log "  3. medousa doctor         # health check"
-  log "  4. ./scripts/install.sh --verify-only   # validate binary set coherence"
+  log "  4. medousa pull <name>    # optional: mcp-gateway, telegram, local-brain, …"
+  log "  5. ./scripts/install.sh --verify-only   # validate engine binary set"
   log ""
 }
 
