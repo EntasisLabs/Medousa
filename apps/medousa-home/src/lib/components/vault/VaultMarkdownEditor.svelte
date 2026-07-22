@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { tick, type Snippet } from "svelte";
+  import { onMount, tick, type Snippet } from "svelte";
   import SplitPane from "$lib/components/layout/SplitPane.svelte";
   import { vault } from "$lib/stores/vault.svelte";
   import { vaultFind } from "$lib/stores/vaultFind.svelte";
@@ -28,6 +28,7 @@
   import { copyTextToClipboard, readTextFromClipboard } from "$lib/utils/vaultClipboard";
   import { createVaultScrollSync } from "$lib/utils/vaultScrollSync";
   import type { SlashMenuAnchor } from "$lib/utils/slashMenuPlacement";
+  import { splitContentSyncKey } from "$lib/utils/contentSyncKey";
 
   interface Props {
     content: string;
@@ -113,8 +114,8 @@
    */
   $effect.pre(() => {
     if (contentSyncKey !== syncedKey) {
-      const prevPath = syncedKey.split(":")[0] ?? "";
-      const nextPath = contentSyncKey.split(":")[0] ?? "";
+      const { path: prevPath } = splitContentSyncKey(syncedKey);
+      const { path: nextPath } = splitContentSyncKey(contentSyncKey);
       const sameNote = Boolean(prevPath) && prevPath === nextPath;
       const scrollEl = liveEl?.getScrollEl?.();
       if (sameNote && scrollEl && isLivePlane) {
@@ -239,6 +240,20 @@
     });
   }
 
+  /** First paint must be fixed+anchored — RAF-only left the menu unanchored under split hydrate. */
+  function openSlashWithAnchor() {
+    updateSlashAnchor();
+    if (!slashAnchor) {
+      // Fallback viewport box so BodyPortal never mounts the non-fixed chrome style.
+      slashAnchor = {
+        left: 16,
+        top: 72,
+        maxHeight: 280,
+      };
+    }
+    scheduleSlashAnchorUpdate();
+  }
+
   $effect(() => {
     const scrollEl = cmEl?.getScrollEl();
     if (!scrollEl) return;
@@ -279,7 +294,7 @@
       try {
         slashOpen = liveEl?.isSlashOpen() ?? false;
         liveSlashFilter = liveEl?.slashFilter() ?? "";
-        if (slashOpen) scheduleSlashAnchorUpdate();
+        if (slashOpen) openSlashWithAnchor();
         else slashAnchor = null;
       } catch (err) {
         console.error("Live slash menu sync failed", err);
@@ -295,8 +310,10 @@
       return;
     }
     const { start } = cmEl.getSelection();
-    slashOpen = shouldOpenSlashMenu(draft, start);
-    if (slashOpen) scheduleSlashAnchorUpdate();
+    // Prefer live CM doc over parent draft — split preview hydrate can lag draft.
+    const source = cmEl.getContent() ?? draft;
+    slashOpen = shouldOpenSlashMenu(source, start);
+    if (slashOpen) openSlashWithAnchor();
     else slashAnchor = null;
   }
 
@@ -609,6 +626,7 @@
     slashOpen = false;
     slashAnchor = null;
     liveSlashFilter = "";
+    vault.setCompositionHold(false);
     if (isLivePlane) {
       liveEl?.clearSlash();
       // Serialize now that the slash prefix is gone (emit was skipped while open).
@@ -621,10 +639,51 @@
     }
     if (!cmEl) return;
     const { start } = cmEl.getSelection();
-    if (shouldOpenSlashMenu(draft, start)) {
-      applyEdit(replaceSlashWith(draft, start, ""));
+    const source = cmEl.getContent() ?? draft;
+    if (shouldOpenSlashMenu(source, start)) {
+      applyEdit(replaceSlashWith(source, start, ""));
     }
   }
+
+  /**
+   * OS overlays (Greenshot, Win+Shift+S, IME) steal HWND focus on Windows.
+   * Tear down slash / composition chrome immediately — don't touch clipboard.
+   */
+  function suspendChromeForFocusLoss() {
+    if (!slashOpen) return;
+    slashOpen = false;
+    slashAnchor = null;
+    liveSlashFilter = "";
+    vault.setCompositionHold(false);
+    try {
+      liveEl?.clearSlash();
+    } catch {
+      /* editor may already be torn down */
+    }
+    if (!cmEl || isLivePlane) return;
+    try {
+      const { start } = cmEl.getSelection();
+      const source = cmEl.getContent() ?? draft;
+      if (shouldOpenSlashMenu(source, start)) {
+        applyEdit(replaceSlashWith(source, start, ""));
+      }
+    } catch {
+      /* ignore — focus-loss path must never throw into WebView2 */
+    }
+  }
+
+  onMount(() => {
+    const onFocusLoss = () => suspendChromeForFocusLoss();
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") suspendChromeForFocusLoss();
+    };
+    window.addEventListener("blur", onFocusLoss);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("blur", onFocusLoss);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  });
 
   function handleSlashKey(key: string): boolean {
     return slashMenuEl?.handleMenuKey(key) ?? false;

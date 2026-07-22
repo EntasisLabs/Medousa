@@ -69,6 +69,21 @@
     letter-spacing: inherit;
   }
 
+  /* Beat `.markdown-content p { my-2 }` so Preview matches Live icon/title align. */
+  .markdown-content .liquid-callout-header,
+  .markdown-content .markdown-callout-header,
+  .markdown-content .liquid-callout-title,
+  .markdown-content .markdown-callout-title,
+  .markdown-content p.liquid-callout-title,
+  .markdown-content p.markdown-callout-title {
+    margin: 0;
+  }
+
+  .markdown-content .liquid-callout-header,
+  .markdown-content .markdown-callout-header {
+    margin-bottom: 0.3rem;
+  }
+
   /* Keep Live contenteditable title on the accent (ProseMirror body color wins otherwise). */
   .vault-live-callout .liquid-callout-header,
   .vault-live-callout .liquid-callout-title {

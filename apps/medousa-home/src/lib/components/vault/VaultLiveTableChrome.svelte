@@ -35,6 +35,35 @@
     if (!editor || disabled) return;
     cmd();
   }
+
+  const WIDTHS = ["narrow", "medium", "wide", "full"] as const;
+
+  function cycleTableWidth() {
+    if (!editor || disabled) return;
+    const { $from } = editor.state.selection;
+    for (let d = $from.depth; d > 0; d -= 1) {
+      if ($from.node(d).type.name === "table") {
+        const dom = editor.view.nodeDOM($from.before(d));
+        const table =
+          dom instanceof HTMLTableElement
+            ? dom
+            : dom instanceof HTMLElement
+              ? dom.querySelector("table")
+              : null;
+        if (!table) return;
+        const cur =
+          WIDTHS.find((w) =>
+            table.classList.contains(`vault-live-embed-width--${w}`),
+          ) ?? "wide";
+        const next = WIDTHS[(WIDTHS.indexOf(cur) + 1) % WIDTHS.length] ?? "wide";
+        for (const w of WIDTHS) {
+          table.classList.remove(`vault-live-embed-width--${w}`);
+        }
+        table.classList.add("vault-live-embed-width", `vault-live-embed-width--${next}`);
+        return;
+      }
+    }
+  }
 </script>
 
 {#if open && anchor && editor}
@@ -66,6 +95,16 @@
         onclick={() => run(() => editor.chain().focus().addRowAfter().run())}
       >
         <Rows3 size={14} strokeWidth={2} />
+      </button>
+      <button
+        type="button"
+        class="vault-live-table-chrome__btn"
+        title="Cycle table width"
+        aria-label="Cycle table width"
+        {disabled}
+        onclick={() => cycleTableWidth()}
+      >
+        Width
       </button>
       <span class="vault-live-table-chrome__sep" aria-hidden="true"></span>
       <button

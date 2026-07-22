@@ -19,6 +19,7 @@
     handleVaultNoteContextMenuEvent,
   } from "$lib/utils/vaultContextMenuEvents";
   import { copyTextToClipboard } from "$lib/utils/vaultClipboard";
+  import { resolveMedousaViewHostClick } from "$lib/utils/medousaViewHostClick";
 
   interface Props {
     content: string;
@@ -195,16 +196,23 @@
       return;
     }
 
-    const configureView = (event.target as HTMLElement).closest(
-      "[data-edit-view-index]",
-    );
-    if (configureView) {
+    const viewClick = resolveMedousaViewHostClick(event.target as HTMLElement);
+    if (viewClick.kind === "copyCsv") {
+      event.preventDefault();
+      if (viewClick.payload) {
+        try {
+          void copyTextToClipboard(decodeURIComponent(viewClick.payload));
+        } catch {
+          // ignore malformed payloads
+        }
+      }
+      return;
+    }
+    if (viewClick.kind === "configure") {
       event.preventDefault();
       if (!configureViews || content !== vault.content) return;
-      const raw = configureView.getAttribute("data-edit-view-index");
-      const index = raw == null ? NaN : Number(raw);
-      if (Number.isFinite(index)) {
-        vault.openViewBridgeEdit(index);
+      if (Number.isFinite(viewClick.index)) {
+        vault.openViewBridgeEdit(viewClick.index);
       }
       return;
     }
@@ -214,22 +222,6 @@
       event.preventDefault();
       const path = openSource.getAttribute("data-open-vault-note");
       if (path) void vault.openNote(path);
-      return;
-    }
-
-    const copyCsv = (event.target as HTMLElement).closest("[data-copy-view-csv]");
-    if (copyCsv) {
-      event.preventDefault();
-      const payload =
-        copyCsv.getAttribute("data-view-csv") ??
-        copyCsv.getAttribute("data-copy-view-csv");
-      if (payload) {
-        try {
-          void copyTextToClipboard(decodeURIComponent(payload));
-        } catch {
-          // ignore malformed payloads
-        }
-      }
       return;
     }
 
@@ -312,16 +304,23 @@
       }
       return;
     }
-    const configureView = (event.target as HTMLElement).closest(
-      "[data-edit-view-index]",
-    );
-    if (configureView) {
+    const viewClick = resolveMedousaViewHostClick(event.target as HTMLElement);
+    if (viewClick.kind === "copyCsv") {
+      event.preventDefault();
+      if (viewClick.payload) {
+        try {
+          void copyTextToClipboard(decodeURIComponent(viewClick.payload));
+        } catch {
+          // ignore
+        }
+      }
+      return;
+    }
+    if (viewClick.kind === "configure") {
       event.preventDefault();
       if (!configureViews || content !== vault.content) return;
-      const raw = configureView.getAttribute("data-edit-view-index");
-      const index = raw == null ? NaN : Number(raw);
-      if (Number.isFinite(index)) {
-        vault.openViewBridgeEdit(index);
+      if (Number.isFinite(viewClick.index)) {
+        vault.openViewBridgeEdit(viewClick.index);
       }
       return;
     }
@@ -344,9 +343,10 @@
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <article
   bind:this={scrollEl}
-  class="markdown-content vault-markdown-preview min-w-0 max-w-full flex-1 overflow-x-auto overflow-y-auto {compact
+  class="markdown-content vault-markdown-preview vault-paper-width min-w-0 max-w-full flex-1 overflow-x-auto overflow-y-auto {compact
     ? 'px-4 py-3'
     : 'px-5 py-4'}"
+  data-paper-width={vault.paperWidth}
   onclick={handleClick}
   onchange={handleChange}
   onkeydown={handleKeydown}

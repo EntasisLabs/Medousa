@@ -14,9 +14,20 @@ vi.mock("$lib/daemon", () => ({
   setActiveVaultRoot: vi.fn(),
 }));
 
+vi.mock("$lib/utils/vaultFilesystem", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("$lib/utils/vaultFilesystem")>();
+  return {
+    ...actual,
+    readAbsoluteTextFile: vi.fn(),
+    writeAbsoluteTextFile: vi.fn(),
+    pickMarkdownFile: vi.fn(),
+  };
+});
+
 function noteResponse(path: string, content: string, title = "Note") {
   return {
     content,
+    created: true,
     note: {
       path,
       title,
@@ -225,6 +236,64 @@ describe("vault note buffers (multi-pane)", () => {
     expect(store.contentFor("tmp/loose-note.md")).toBe("");
   });
 
+  it("stashes and restores absolute loose buffers across focus switches", async () => {
+    const { store } = await loadStore();
+    const { readAbsoluteTextFile, writeAbsoluteTextFile } = await import(
+      "$lib/utils/vaultFilesystem"
+    );
+    const readMock = vi.mocked(readAbsoluteTextFile);
+    const writeMock = vi.mocked(writeAbsoluteTextFile);
+    writeMock.mockResolvedValue(undefined as never);
+    readMock.mockImplementation(async (path: string) => {
+      if (path === "/tmp/a.md") return "# Alpha loose";
+      if (path === "/tmp/b.md") return "# Bravo loose";
+      throw new Error(`unexpected path ${path}`);
+    });
+
+    expect(await store.openLooseFile("/tmp/a.md")).toBe(true);
+    expect(store.content).toBe("# Alpha loose");
+    store.markDirty("# Alpha loose — edited", { path: "/tmp/a.md" });
+
+    expect(await store.openLooseFile("/tmp/b.md")).toBe(true);
+    expect(store.content).toBe("# Bravo loose");
+    // Leave flush autosaves absolute files, then keeps the body in the buffer.
+    expect(writeMock).toHaveBeenCalledWith("/tmp/a.md", "# Alpha loose — edited");
+    expect(store.contentFor("/tmp/a.md")).toBe("# Alpha loose — edited");
+
+    expect(await store.openLooseFile("/tmp/a.md")).toBe(true);
+    expect(store.content).toBe("# Alpha loose — edited");
+    // Buffer-first reopen should not re-read disk for a.
+    expect(readMock.mock.calls.filter((c) => c[0] === "/tmp/a.md")).toHaveLength(1);
+  });
+
+  it("failed loose open clears body and does not leave a blocking buffer", async () => {
+    const { store } = await loadStore();
+    const { readAbsoluteTextFile } = await import("$lib/utils/vaultFilesystem");
+    const readMock = vi.mocked(readAbsoluteTextFile);
+    readMock
+      .mockRejectedValueOnce(new Error("enoent"))
+      .mockResolvedValueOnce("# recovered");
+
+    expect(await store.openLooseFile("/tmp/missing.md")).toBe(false);
+    expect(store.content).toBe("");
+    expect(store.error).toMatch(/enoent/);
+    expect(store.contentFor("/tmp/missing.md")).toBe("");
+
+    expect(await store.openLooseFile("/tmp/missing.md")).toBe(true);
+    expect(store.content).toBe("# recovered");
+  });
+
+  it("never vault-normalizes absolute paths away on openLooseFile", async () => {
+    const { store } = await loadStore();
+    const { readAbsoluteTextFile } = await import("$lib/utils/vaultFilesystem");
+    vi.mocked(readAbsoluteTextFile).mockResolvedValue("body");
+
+    await store.openLooseFile("/tmp/loose-note.md");
+    expect(store.selectedPath).toBe("/tmp/loose-note.md");
+    expect(store.looseFilePath).toBe("/tmp/loose-note.md");
+    expect(store.isLooseFile).toBe(true);
+  });
+
   it("createNote handoff does not leave prior path dirty with new template", async () => {
     const { store } = await loadStore();
     const { createVaultNote, getVaultNote, saveVaultNote } = await import("$lib/daemon");
@@ -283,5 +352,46 @@ describe("vault note buffers (multi-pane)", () => {
       (call) => call[0] === "notes/a.md" && call[1] === "template-b",
     );
     expect(wipedPuts).toHaveLength(0);
+  });
+
+  it("createNote refuses an existing path without calling createVaultNote", async () => {
+    const { store } = await loadStore();
+    const { createVaultNote, listVaultNotes, getVaultNote } = await import("$lib/daemon");
+    const createMock = vi.mocked(createVaultNote);
+    const listMock = vi.mocked(listVaultNotes);
+    const getMock = vi.mocked(getVaultNote);
+
+    listMock.mockResolvedValue({
+      notes: [
+        {
+          path: "notes/taken.md",
+          title: "Taken",
+          kind: "note",
+          content_hash: "hash-taken",
+          wikilinks_out: [],
+          backlinks: [],
+          tags: [],
+        },
+      ],
+    } as never);
+    getMock.mockResolvedValue(noteResponse("notes/taken.md", "keep this body", "Taken") as never);
+
+    await store.refreshNotes();
+    await store.openNote("notes/other.md");
+    store.markDirty("other draft", { path: "notes/other.md" });
+    createMock.mockClear();
+
+    const result = await store.createNote({
+      spaceId: "other",
+      title: "Taken",
+      path: "notes/taken.md",
+      content: "# Wiped template\n",
+    });
+
+    expect(result).toBeNull();
+    expect(store.error).toMatch(/already exists/i);
+    expect(createMock).not.toHaveBeenCalled();
+    expect(store.contentFor("notes/other.md")).toBe("other draft");
+    expect(store.selectedPath).toBe("notes/other.md");
   });
 });

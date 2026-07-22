@@ -6,8 +6,24 @@ const BUILD_LINE_NUMBERS_KEY = "medousa-vault-build-line-numbers";
 const BUILD_AUTO_SAVE_KEY = "medousa-vault-build-auto-save";
 const BUILD_SCROLL_SYNC_KEY = "medousa-vault-build-scroll-sync";
 const READING_PALETTE_KEY = "medousa-vault-reading-palette";
+const HIDE_LIVE_MARKDOWN_SYNTAX_KEY = "medousa-vault-hide-live-markdown-syntax";
+const PAPER_WIDTH_KEY = "medousa-vault-paper-width";
 
 export type VaultReadingPalette = "neutral" | "warm" | "cool" | "ink";
+
+/** Live / Preview reading column width (paper view). */
+export type VaultPaperWidth = "narrow" | "medium" | "wide" | "full";
+
+export const VAULT_PAPER_WIDTHS: VaultPaperWidth[] = [
+  "narrow",
+  "medium",
+  "wide",
+  "full",
+];
+
+export function isVaultPaperWidth(value: string): value is VaultPaperWidth {
+  return (VAULT_PAPER_WIDTHS as string[]).includes(value);
+}
 
 export const VAULT_READING_PALETTES: VaultReadingPalette[] = [
   "neutral",
@@ -95,4 +111,30 @@ export function cycleVaultReadingPalette(
   const index = VAULT_READING_PALETTES.indexOf(current);
   const next = VAULT_READING_PALETTES[(index + 1) % VAULT_READING_PALETTES.length];
   return next ?? "neutral";
+}
+
+/** Live: hide focused heading `#` / `##` widgets (WYSIWYG, no layout shift). */
+export function readVaultHideLiveMarkdownSyntax(): boolean {
+  return readBool(HIDE_LIVE_MARKDOWN_SYNTAX_KEY, false);
+}
+
+export function writeVaultHideLiveMarkdownSyntax(enabled: boolean): void {
+  writeBool(HIDE_LIVE_MARKDOWN_SYNTAX_KEY, enabled);
+}
+
+export function readVaultPaperWidth(): VaultPaperWidth {
+  if (typeof localStorage === "undefined") return "wide";
+  const raw = localStorage.getItem(PAPER_WIDTH_KEY);
+  if (raw && isVaultPaperWidth(raw)) return raw;
+  return "wide";
+}
+
+export function writeVaultPaperWidth(width: VaultPaperWidth): void {
+  if (typeof localStorage === "undefined") return;
+  localStorage.setItem(PAPER_WIDTH_KEY, width);
+}
+
+export function cycleVaultPaperWidth(current: VaultPaperWidth): VaultPaperWidth {
+  const index = VAULT_PAPER_WIDTHS.indexOf(current);
+  return VAULT_PAPER_WIDTHS[(index + 1) % VAULT_PAPER_WIDTHS.length] ?? "wide";
 }

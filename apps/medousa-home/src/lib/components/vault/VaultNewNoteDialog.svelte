@@ -179,10 +179,11 @@
     event.preventDefault();
     const prefillPath = vault.newNotePrefillPath?.trim() || undefined;
 
+    let createdPath: string | null = null;
     if (userTemplateId) {
       const selected = userTemplates.find((row) => row.id === userTemplateId);
       if (!selected) return;
-      await vault.createNote({
+      createdPath = await vault.createNote({
         spaceId,
         title: title.trim() || selected.name,
         content: selected.content,
@@ -194,7 +195,7 @@
       if (!title.trim() && templateId !== "daily" && templateId !== "weekly") {
         return;
       }
-      await vault.createNote({
+      createdPath = await vault.createNote({
         spaceId,
         title: title.trim() || "Note",
         templateId,
@@ -203,6 +204,8 @@
         subfolder: subfolder.trim() || undefined,
       });
     }
+    // Keep the sheet open on collision / failure so the user can rename.
+    if (!createdPath) return;
     title = "";
     userTemplateId = "";
     subfolder = "";
@@ -399,6 +402,10 @@
           {/if}
         {/if}
       </div>
+
+      {#if vault.error}
+        <p class="vault-interact-note text-rose-300" role="alert">{vault.error}</p>
+      {/if}
 
       <div class="vault-compose-footer">
         <button

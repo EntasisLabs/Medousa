@@ -362,15 +362,24 @@
   // Click-outside only — keyboard nav is owned by editor keymaps.
   $effect(() => {
     if (!open) return;
+    // Wait a tick so BodyPortal can bind menuEl; ignore the opening gesture.
+    let armed = false;
+    const armTimer = window.setTimeout(() => {
+      armed = true;
+    }, 0);
     const onPointerDown = (event: PointerEvent) => {
       // Ignore the opening right-click / aux sequence (Windows WebView2).
       if (event.button === 2) return;
+      if (!armed || !menuEl) return;
       const target = event.target as Node | null;
-      if (menuEl && target && menuEl.contains(target)) return;
+      if (target && menuEl.contains(target)) return;
       onClose();
     };
     document.addEventListener("pointerdown", onPointerDown, true);
-    return () => document.removeEventListener("pointerdown", onPointerDown, true);
+    return () => {
+      window.clearTimeout(armTimer);
+      document.removeEventListener("pointerdown", onPointerDown, true);
+    };
   });
 
   /** Called from the editor keymap (single owner of ↑↓/Enter/Esc). */
@@ -417,13 +426,12 @@
   <BodyPortal>
     <div
       bind:this={menuEl}
-      class="vault-slash-menu"
-      class:vault-slash-menu--anchored={Boolean(anchor)}
+      class="vault-slash-menu vault-slash-menu--anchored"
       role="listbox"
       aria-label="Insert block"
-      style:top={anchor ? `${anchor.top}px` : undefined}
-      style:left={anchor ? `${anchor.left}px` : undefined}
-      style:max-height={anchor ? `${anchor.maxHeight}px` : undefined}
+      style:top={`${anchor?.top ?? 72}px`}
+      style:left={`${anchor?.left ?? 16}px`}
+      style:max-height={`${anchor?.maxHeight ?? 280}px`}
     >
       <div class="vault-slash-menu-chrome">
         <p class="vault-slash-menu-title">Insert</p>

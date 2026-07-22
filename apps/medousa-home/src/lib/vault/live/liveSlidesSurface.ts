@@ -8,6 +8,7 @@ import {
   serializeSlidesDeckBody,
   serializeSlidesFence,
   type SlidesDeck,
+  type SlidesDeckWidth,
 } from "$lib/utils/markdownSlides";
 import { registerLiveDraftFlush } from "./liveDraftFlush";
 import { mountLiquidFence, unmountLiquidFence } from "./liveOrganismHost";
@@ -15,6 +16,7 @@ import {
   whenElementHasLayout,
   type LayoutWaitHandle,
 } from "./whenElementHasLayout";
+import { LIVE_EMBED_WIDTHS, embedWidthClass } from "./liveEmbedWidth";
 
 function fenceInner(raw: string): string {
   const open = /^```slides[^\r\n]*\r?\n/i.exec(raw);
@@ -64,8 +66,12 @@ export function mountSlidesSurface(
   let editing = false;
   let commitTimer: ReturnType<typeof setTimeout> | null = null;
   const root = document.createElement("div");
-  root.className = "vault-live-slides";
+  root.className = `vault-live-slides ${embedWidthClass(model.width ?? "wide")}`;
   root.contentEditable = "false";
+
+  const syncWidthClass = () => {
+    root.className = `vault-live-slides ${embedWidthClass(model.width ?? "wide")}`;
+  };
 
   const chrome = document.createElement("div");
   chrome.className = "vault-live-quiet-chrome vault-live-slides__chrome";
@@ -140,7 +146,34 @@ export function mountSlidesSurface(
     e.stopPropagation();
   });
 
-  chrome.append(colGroup, editBtn);
+  const widthBtn = document.createElement("button");
+  widthBtn.type = "button";
+  widthBtn.className = "vault-live-slides__width";
+  const syncWidthLabel = () => {
+    const w = model.width ?? "wide";
+    widthBtn.textContent = w;
+    widthBtn.title = `Width: ${w}`;
+  };
+  syncWidthLabel();
+  widthBtn.addEventListener("mousedown", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+  });
+  widthBtn.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (editing) flushEditor();
+    const cur = model.width ?? "wide";
+    const idx = LIVE_EMBED_WIDTHS.indexOf(cur as SlidesDeckWidth);
+    const next =
+      LIVE_EMBED_WIDTHS[(idx + 1) % LIVE_EMBED_WIDTHS.length] ?? "wide";
+    model = { ...model, width: next };
+    syncWidthLabel();
+    syncWidthClass();
+    onChange(serializeSlidesRaw(model));
+  });
+
+  chrome.append(colGroup, widthBtn, editBtn);
 
   const commitFromEditor = (
     titleEl: HTMLInputElement,
@@ -153,6 +186,7 @@ export function mountSlidesSurface(
         ...next,
         title: titleEl.value.trim() || next.title,
         columns: next.columns || model.columns,
+        width: next.width ?? model.width,
       };
     } else {
       model = { ...model, title: titleEl.value.trim() };

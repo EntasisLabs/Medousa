@@ -1,14 +1,19 @@
 /** @vitest-environment happy-dom */
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  cycleVaultPaperWidth,
   readVaultBuildAutoSave,
   readVaultBuildLineNumbers,
   readVaultBuildScrollSync,
   readVaultBuildWordWrap,
+  readVaultHideLiveMarkdownSyntax,
+  readVaultPaperWidth,
   writeVaultBuildAutoSave,
   writeVaultBuildLineNumbers,
   writeVaultBuildScrollSync,
   writeVaultBuildWordWrap,
+  writeVaultHideLiveMarkdownSyntax,
+  writeVaultPaperWidth,
 } from "./vaultPreferences";
 
 const KEYS = [
@@ -16,6 +21,8 @@ const KEYS = [
   "medousa-vault-build-line-numbers",
   "medousa-vault-build-auto-save",
   "medousa-vault-build-scroll-sync",
+  "medousa-vault-hide-live-markdown-syntax",
+  "medousa-vault-paper-width",
 ];
 
 describe("vault build editor preferences", () => {
@@ -39,5 +46,15 @@ describe("vault build editor preferences", () => {
     expect(readVaultBuildLineNumbers()).toBe(true);
     expect(readVaultBuildAutoSave()).toBe(false);
     expect(readVaultBuildScrollSync()).toBe(false);
+  });
+
+  it("persists hide-live-syntax and paper width", () => {
+    expect(readVaultHideLiveMarkdownSyntax()).toBe(false);
+    expect(readVaultPaperWidth()).toBe("wide");
+    writeVaultHideLiveMarkdownSyntax(true);
+    writeVaultPaperWidth("narrow");
+    expect(readVaultHideLiveMarkdownSyntax()).toBe(true);
+    expect(readVaultPaperWidth()).toBe("narrow");
+    expect(cycleVaultPaperWidth("narrow")).toBe("medium");
   });
 });

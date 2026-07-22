@@ -1,6 +1,6 @@
 [package]
 name = "medousa-local-engine"
-version = "0.4.0"
+version = "0.4.1"
 edition = "2024"
 description = "Embedded mistralrs local inference runtime for medousa_local"
 

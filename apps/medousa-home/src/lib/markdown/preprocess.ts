@@ -108,7 +108,7 @@ export function preprocessCallouts(source: string): string {
     }
 
     const iconHtml = calloutIconSvg(calloutIconForTone(kind));
-    const headerHtml = `<div class="markdown-callout-header"><span class="markdown-callout-icon">${iconHtml}</span><p class="markdown-callout-title">${escapeHtml(title)}</p></div>`;
+    const headerHtml = `<div class="markdown-callout-header"><span class="markdown-callout-icon">${iconHtml}</span><span class="markdown-callout-title">${escapeHtml(title)}</span></div>`;
     const bodyHtml = body
       .filter((line) => line.trim().length > 0)
       .map((line) => `<p>${escapeHtml(line)}</p>`)

@@ -29,12 +29,21 @@
     };
     const onUp = () => {
       dragging = false;
-      target.releasePointerCapture(event.pointerId);
+      try {
+        target.releasePointerCapture(event.pointerId);
+      } catch {
+        /* already released (e.g. OS overlay stole focus) */
+      }
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+      window.removeEventListener("blur", onUp);
     };
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
+    // Greenshot / Win+Shift+S steal HWND focus mid-drag — release capture.
+    window.addEventListener("blur", onUp);
   }
 
   function onDblClick() {

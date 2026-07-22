@@ -90,6 +90,9 @@
   let slashKeyHandler: ((key: string) => boolean) | null = null;
   let disabledRef = false;
   let onchangeRef: ((value: string) => void) | undefined;
+  /** WebView2 IME: keyCode 229 can land with composing===false. */
+  let lastImeKeyCode = 0;
+  let slashKeymapRaf = 0;
   $effect(() => {
     slashOpenRef = slashOpen;
     slashKeyHandler = onSlashKey ?? null;
@@ -128,10 +131,11 @@
     // While the menu is open, claim these keys so defaultKeymap cursor/select
     // line bindings never run — including Shift. Never steal keys during IME
     // composition (Windows WebView2 can deadlock the input pipeline).
+    // keyCode 229 often arrives with composing===false on WebView2 — parity with Live.
     const claim = (key: string) => (view: EditorView) => {
-      if (view.composing) return false;
-      slashKeyHandler?.(key);
-      return true;
+      if (view.composing || lastImeKeyCode === 229) return false;
+      const consumed = slashKeyHandler?.(key) ?? false;
+      return consumed;
     };
     return Prec.highest(
       keymap.of([
@@ -407,6 +411,11 @@
               onSlashCheck?.();
               return false;
             },
+            keydown: (event) => {
+              // Track IME keyCode for slashKeymap (WebView2 often reports composing=false).
+              lastImeKeyCode = event.keyCode;
+              return false;
+            },
             paste: (event, view) =>
               handleImageTransfer(view, event.clipboardData, event),
             drop: (event, view) =>
@@ -434,6 +443,8 @@
   });
 
   onDestroy(() => {
+    if (slashKeymapRaf) cancelAnimationFrame(slashKeymapRaf);
+    slashKeymapRaf = 0;
     vaultFind.registerCodeMirror(null);
     view?.destroy();
     view = undefined;
@@ -448,9 +459,20 @@
 
   $effect(() => {
     if (!view) return;
-    view.dispatch({
-      effects: slashKeymapCompartment.reconfigure(slashKeymapExt(slashOpen)),
+    const active = slashOpen;
+    // Defer reconfigure so we never rebuild the keymap mid-keystroke (WebView2).
+    if (slashKeymapRaf) cancelAnimationFrame(slashKeymapRaf);
+    slashKeymapRaf = requestAnimationFrame(() => {
+      slashKeymapRaf = 0;
+      if (!view) return;
+      view.dispatch({
+        effects: slashKeymapCompartment.reconfigure(slashKeymapExt(active)),
+      });
     });
+    return () => {
+      if (slashKeymapRaf) cancelAnimationFrame(slashKeymapRaf);
+      slashKeymapRaf = 0;
+    };
   });
 
   $effect(() => {

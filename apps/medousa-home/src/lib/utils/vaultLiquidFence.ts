@@ -105,6 +105,8 @@ export type LiquidTreeDraft = {
 
 export type LiquidCompareMode = "matrix" | "faceoff";
 
+export type LiquidCompareWidth = "narrow" | "medium" | "wide" | "full";
+
 export type LiquidCompareDraft = {
   title: string;
   subtitle: string;
@@ -112,6 +114,8 @@ export type LiquidCompareDraft = {
   mode: LiquidCompareMode;
   /** GFM pipe table body (corner | entities… + axis rows). */
   tableMarkdown: string;
+  /** Optional Live / Preview paper width for the compare surface. */
+  width?: LiquidCompareWidth;
 };
 
 export type LiquidFenceDraft =
@@ -605,12 +609,21 @@ export function parseCompareFenceBody(body: string): LiquidCompareDraft {
     tableMarkdown = serializePipeTable(table.headers, table.rows);
   }
   const fields = parseKvLines(preamble);
+  const widthRaw = (fields.width ?? "").trim().toLowerCase();
+  const width =
+    widthRaw === "narrow" ||
+    widthRaw === "medium" ||
+    widthRaw === "wide" ||
+    widthRaw === "full"
+      ? widthRaw
+      : undefined;
   return {
     title: fields.title ?? "",
     subtitle: fields.subtitle ?? "",
     recommendation: (fields.recommendation ?? fields.highlight ?? "").trim(),
     mode: normalizeCompareMode(fields.mode),
     tableMarkdown: normalizeCompareTable(tableMarkdown),
+    ...(width ? { width } : {}),
   };
 }
 
@@ -622,6 +635,9 @@ export function serializeCompareFence(draft: LiquidCompareDraft): string {
     lines.push(`recommendation: ${draft.recommendation.trim()}`);
   }
   if (draft.mode === "faceoff") lines.push("mode: faceoff");
+  if (draft.width && draft.width !== "wide") {
+    lines.push(`width: ${draft.width}`);
+  }
   lines.push("");
   lines.push(normalizeCompareTable(draft.tableMarkdown));
   lines.push("```");

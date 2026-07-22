@@ -25,11 +25,14 @@
   import { findLedgerTable } from "$lib/utils/markdownTable";
   import { findKanbanBoard, noteHasKanbanBoard } from "$lib/utils/markdownKanban";
   import { noteHasSlidesDeck } from "$lib/utils/markdownSlides";
+  import { kindFromNoteContent } from "$lib/utils/dataFirstSurface";
+  import { parseWorkbookManifest } from "$lib/utils/workbook";
   import VaultEmptyState from "./VaultEmptyState.svelte";
   import VaultKindBadge from "./VaultKindBadge.svelte";
   import LedgerTableEditor from "./LedgerTableEditor.svelte";
   import KanbanBoardEditor from "./KanbanBoardEditor.svelte";
   import SlidesDeckEditor from "./SlidesDeckEditor.svelte";
+  import WorkbookManifestEditor from "./WorkbookManifestEditor.svelte";
   import VaultMarkdownPreview from "./VaultMarkdownPreview.svelte";
   import VaultNoteLinksPanel from "./VaultNoteLinksPanel.svelte";
   import VaultConflictBar from "./VaultConflictBar.svelte";
@@ -153,7 +156,21 @@
   });
 
   const labelByPath = $derived(vault.labelByPathMap);
+  /** Content frontmatter wins so chrome kind can't snap sheet → note after buffer restore. */
+  const contentKind = $derived(kindFromNoteContent(notePath, displayContent));
+  const sheetLikeKind = $derived(
+    contentKind === "ledger" ||
+      contentKind === "sheet" ||
+      vault.selectedKind === "ledger" ||
+      vault.selectedKind === "sheet",
+  );
+  const workbookKind = $derived(
+    contentKind === "workbook" || vault.selectedKind === "workbook",
+  );
   const hasLedgerTable = $derived(Boolean(findLedgerTable(displayContent)));
+  const hasWorkbookManifest = $derived(
+    workbookKind && Boolean(parseWorkbookManifest(displayContent)),
+  );
   const hasKanbanBoard = $derived(noteHasKanbanBoard(displayContent));
   const kanbanBoard = $derived(hasKanbanBoard ? findKanbanBoard(displayContent) : null);
   const hasSlidesDeck = $derived(noteHasSlidesDeck(displayContent));
@@ -161,9 +178,17 @@
   const showLedgerTable = $derived(
     !mobile &&
       vault.editorMode === "edit" &&
-      (vault.selectedKind === "ledger" || vault.selectedKind === "sheet") &&
+      sheetLikeKind &&
       vault.ledgerEditMode === "table" &&
       hasLedgerTable,
+  );
+
+  const showWorkbookManifest = $derived(
+    !mobile &&
+      vault.editorMode === "edit" &&
+      workbookKind &&
+      vault.workbookEditMode === "view" &&
+      hasWorkbookManifest,
   );
 
   const showKanbanBoard = $derived(
@@ -184,6 +209,7 @@
     (keepAlive && !bound) ||
       (vault.editorMode === "edit" &&
         !showLedgerTable &&
+        !showWorkbookManifest &&
         !showKanbanBoard &&
         !showSlidesDeck),
   );
@@ -209,10 +235,13 @@
     vault.editorMode === "preview" &&
       !showKanbanBoard &&
       !showLedgerTable &&
+      !showWorkbookManifest &&
       !showSlidesDeck,
   );
 
-  const noteKind = $derived(vault.selectedKind);
+  const noteKind = $derived(
+    contentKind !== "note" ? contentKind : vault.selectedKind,
+  );
   const linkCount = $derived(vault.wikilinksOut.length + vault.backlinks.length);
   const showLinksToggle = $derived(
     isBuildPlane &&
@@ -245,6 +274,7 @@
       Boolean(vault.selectedPath) &&
       supportsPreviewSplit(noteKind) &&
       !showLedgerTable &&
+      !showWorkbookManifest &&
       !showKanbanBoard &&
       !showSlidesDeck,
   );
@@ -257,9 +287,16 @@
 
   const showLedgerViewToggle = $derived(
     Boolean(vault.selectedPath) &&
-      vault.selectedKind === "ledger" &&
+      sheetLikeKind &&
       vault.editorMode === "edit" &&
       hasLedgerTable,
+  );
+
+  const showWorkbookViewToggle = $derived(
+    Boolean(vault.selectedPath) &&
+      workbookKind &&
+      vault.editorMode === "edit" &&
+      hasWorkbookManifest,
   );
 
   const showBoardViewToggle = $derived(
@@ -291,6 +328,7 @@
       (showMarkdownEditor ||
         (showPreviewOnly &&
           !showLedgerTable &&
+          !showWorkbookManifest &&
           !showKanbanBoard &&
           !showSlidesDeck)),
   );
@@ -309,6 +347,7 @@
     Boolean(vault.selectedPath) &&
       !vault.noteLoading &&
       !showLedgerTable &&
+      !showWorkbookManifest &&
       !showKanbanBoard &&
       !showSlidesDeck,
   );
@@ -610,7 +649,7 @@
 <section
   class="vault-editor relative flex h-full min-h-0 min-w-0 flex-1 flex-col {visible ? '' : 'hidden'}"
   data-reading-palette={vault.readingPalette}
-  data-note-kind={vault.selectedKind}
+  data-note-kind={noteKind}
 >
   {#if !mobile && !stickyNote}
     <header class="vault-editor-header workshop-header flex items-center justify-between gap-3 py-3">
@@ -674,7 +713,7 @@
         {/if}
 
         {#if showLedgerViewToggle}
-          <div class="vault-editor-icon-pair" role="group" aria-label="Ledger view">
+          <div class="vault-editor-icon-pair" role="group" aria-label="Sheet view">
             <button
               type="button"
               class="vault-editor-icon-btn"
@@ -694,6 +733,33 @@
               aria-label="Raw markdown"
               aria-pressed={vault.ledgerEditMode === "raw"}
               onclick={() => vault.setLedgerEditMode("raw")}
+            >
+              <Code2 size={15} strokeWidth={1.75} />
+            </button>
+          </div>
+        {/if}
+
+        {#if showWorkbookViewToggle}
+          <div class="vault-editor-icon-pair" role="group" aria-label="Workbook view">
+            <button
+              type="button"
+              class="vault-editor-icon-btn"
+              class:vault-editor-icon-btn--active={vault.workbookEditMode === "view"}
+              title="Workbook view"
+              aria-label="Workbook view"
+              aria-pressed={vault.workbookEditMode === "view"}
+              onclick={() => vault.setWorkbookEditMode("view")}
+            >
+              <BookOpen size={15} strokeWidth={1.75} />
+            </button>
+            <button
+              type="button"
+              class="vault-editor-icon-btn"
+              class:vault-editor-icon-btn--active={vault.workbookEditMode === "raw"}
+              title="Raw markdown"
+              aria-label="Raw markdown"
+              aria-pressed={vault.workbookEditMode === "raw"}
+              onclick={() => vault.setWorkbookEditMode("raw")}
             >
               <Code2 size={15} strokeWidth={1.75} />
             </button>
@@ -783,7 +849,7 @@
 
         <VaultEditorOverflowMenu
           selectedPath={vault.selectedPath}
-          selectedKind={vault.selectedKind}
+          selectedKind={noteKind}
           editorMode={vault.editorMode}
           noteLoading={vault.noteLoading}
           saving={vault.saving}
@@ -812,8 +878,8 @@
           onOpenChat={onOpenChat}
           onOpenWork={onOpenWork}
           onSelectCard={onSelectCard}
-          onExportPdf={vault.isLooseFile ? undefined : handleExportPdf}
-          onExportWord={vault.isLooseFile ? undefined : handleExportWord}
+          onExportPdf={handleExportPdf}
+          onExportWord={handleExportWord}
           onAskInChat={vault.isLooseFile ? undefined : handleAskInChatTab}
           onSendToWork={vault.isLooseFile ? undefined : handleSendToWork}
           onSave={handleSave}
@@ -861,12 +927,17 @@
           onToggleMonoSource={() => vault.toggleEditorSurface()}
           readingPaletteLabel={vault.readingPalette}
           onCycleReadingPalette={() => vault.cycleReadingPalette()}
+          hideLiveMarkdownSyntax={vault.hideLiveMarkdownSyntax}
+          onToggleHideLiveMarkdownSyntax={() =>
+            vault.toggleHideLiveMarkdownSyntax()}
+          paperWidthLabel={vault.paperWidth}
+          onCyclePaperWidth={() => vault.cyclePaperWidth()}
           onFloatNote={canFloatSticky ? handleFloatSticky : undefined}
         />
 
         {#if !vault.isLooseFile && vault.selectedPath}
           <VaultKindBadge
-            kind={vault.selectedKind}
+            kind={noteKind}
             path={vault.selectedPath}
             interactive
             disabled={vault.noteLoading || vault.saving}
@@ -939,6 +1010,12 @@
         <div class="flex min-h-0 min-w-0 max-w-full flex-1 flex-col overflow-hidden">
         {#if showLedgerTable}
           <LedgerTableEditor
+            content={displayContent}
+            disabled={!interactive || vault.saving}
+            onchange={(next) => vault.markDirty(next, { path: notePath })}
+          />
+        {:else if showWorkbookManifest}
+          <WorkbookManifestEditor
             content={displayContent}
             disabled={!interactive || vault.saving}
             onchange={(next) => vault.markDirty(next, { path: notePath })}

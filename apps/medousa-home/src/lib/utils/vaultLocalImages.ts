@@ -96,6 +96,15 @@ export async function resolveLocalImagePath(
     return normalized;
   }
 
+  // Loose / absolute note path — resolve relatives beside the file, not vault root.
+  if (noteVaultPath && isAbsoluteDiskPath(noteVaultPath.replace(/\\/g, "/"))) {
+    const noteAbs = noteVaultPath.replace(/\\/g, "/");
+    const noteDir = noteAbs.includes("/")
+      ? noteAbs.slice(0, noteAbs.lastIndexOf("/"))
+      : noteAbs;
+    return joinPath(noteDir, normalized);
+  }
+
   const vaultRoot = await getVaultRootAbsolutePath();
   if (!vaultRoot) return null;
 
