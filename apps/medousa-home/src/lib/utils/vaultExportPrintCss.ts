@@ -586,6 +586,29 @@ export function buildExportPrintCss(
     color: #422006 !important;
   }
 
+  .vault-pdf-export-mount .liquid-styled-block {
+    font-family: var(--block-font, inherit) !important;
+    font-size: var(--block-size, inherit) !important;
+    line-height: var(--block-spacing, 1.55) !important;
+    text-align: var(--block-align, left) !important;
+    color: #111827 !important;
+    margin: 12px 0 !important;
+  }
+
+  .vault-pdf-export-mount .markdown-font-family,
+  .vault-pdf-export-mount .vault-live-font-family {
+    font-family: inherit;
+  }
+
+  .vault-pdf-export-mount .markdown-font-size,
+  .vault-pdf-export-mount .vault-live-font-size {
+    font-size: inherit;
+  }
+
+  .vault-pdf-export-mount .vault-live-block-id-chip {
+    display: none !important;
+  }
+
   .vault-pdf-export-mount .markdown-footnotes {
     margin-top: 18px !important;
     padding-top: 10px !important;

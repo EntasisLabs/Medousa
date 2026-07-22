@@ -1651,11 +1651,15 @@ export class VaultStore {
   openWikilink(rawTarget: string) {
     const decoded = decodeURIComponent(rawTarget.trim());
     const { pathToken, heading } = parseWikilinkTarget(decoded);
-    const path = resolveWikilinkTarget(
-      pathToken || decoded,
-      this.selectedPath,
-      this.notes,
-    );
+    // Same-note fragment: `[[#Heading]]` / `[[#^id]]`
+    const path =
+      !pathToken.trim() && heading
+        ? this.selectedPath
+        : resolveWikilinkTarget(
+            pathToken || decoded,
+            this.selectedPath,
+            this.notes,
+          );
     if (!path) {
       this.openNewNoteDialogForWikilink(decoded);
       return;

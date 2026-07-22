@@ -276,10 +276,17 @@
 
   function syncSlashMenu() {
     if (isLivePlane) {
-      slashOpen = liveEl?.isSlashOpen() ?? false;
-      liveSlashFilter = liveEl?.slashFilter() ?? "";
-      if (slashOpen) scheduleSlashAnchorUpdate();
-      else slashAnchor = null;
+      try {
+        slashOpen = liveEl?.isSlashOpen() ?? false;
+        liveSlashFilter = liveEl?.slashFilter() ?? "";
+        if (slashOpen) scheduleSlashAnchorUpdate();
+        else slashAnchor = null;
+      } catch (err) {
+        console.error("Live slash menu sync failed", err);
+        slashOpen = false;
+        slashAnchor = null;
+        liveSlashFilter = "";
+      }
       return;
     }
     if (!cmEl) {

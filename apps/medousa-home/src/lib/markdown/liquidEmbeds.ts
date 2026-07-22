@@ -9,6 +9,9 @@
 import { parseKanbanColumnsFromBody } from "$lib/utils/markdownKanban";
 import { parseSlidesDeck } from "$lib/utils/markdownSlides";
 import { escapeAttr, escapeHtml } from "./escape";
+import { parseStyledBlockBody, type LiquidBlockProps } from "./styledBlock";
+
+export type { LiquidBlockProps };
 
 export const LIQUID_FENCE_LANGS = new Set([
   "card",
@@ -17,6 +20,7 @@ export const LIQUID_FENCE_LANGS = new Set([
   "action_row",
   "callout",
   "section",
+  "block",
   "chips",
   "chip_group",
   "media",
@@ -83,6 +87,7 @@ export type LiquidEmbedKind =
   | "actions"
   | "callout"
   | "section"
+  | "block"
   | "chips"
   | "media"
   | "cite"
@@ -2342,6 +2347,12 @@ function replaceLiquidFenceMatch(
     const section = parseSectionBody(body);
     if (!section) return match;
     return `\n${placeholder("section", section)}\n`;
+  }
+
+  if (lang === "block") {
+    const block = parseStyledBlockBody(body);
+    if (!block) return match;
+    return `\n${placeholder("block", block)}\n`;
   }
 
   if (lang === "chips" || lang === "chip_group") {

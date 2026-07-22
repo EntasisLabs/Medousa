@@ -465,6 +465,19 @@ export const LIQUID_SECTION_TEMPLATE = [
   "",
 ].join("\n");
 
+export const LIQUID_BLOCK_TEMPLATE = [
+  "```block",
+  "id: styled-block",
+  "font: serif",
+  "size: lg",
+  "align: left",
+  "spacing: relaxed",
+  "---",
+  "Styled body — adjust font, size, align, and spacing in the block chrome.",
+  "```",
+  "",
+].join("\n");
+
 export const LIQUID_CHIPS_TEMPLATE = [
   "```chips",
   "- Focus | tone: accent | value: focus",

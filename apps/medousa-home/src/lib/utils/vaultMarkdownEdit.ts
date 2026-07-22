@@ -22,6 +22,7 @@ import {
   LIQUID_PLAN_TEMPLATE,
   LIQUID_REPORT_TEMPLATE,
   LIQUID_SECTION_TEMPLATE,
+  LIQUID_BLOCK_TEMPLATE,
   LIQUID_SHORTLIST_TEMPLATE,
   LIQUID_SLIDES_TEMPLATE,
   LIQUID_STEPS_TEMPLATE,
@@ -72,6 +73,7 @@ export type SlashBlockId =
   | "liquid_carousel"
   | "liquid_actions"
   | "liquid_section"
+  | "liquid_block"
   | "liquid_chips"
   | "liquid_media"
   | "liquid_cite"
@@ -374,6 +376,77 @@ export function applyMarkdownColor(
   );
 }
 
+const FONT_FAMILY_WRAP = /^\{\{font:(sans|serif|mono)\|((?:(?!\}\}).)*)\}\}$/i;
+const FONT_SIZE_WRAP = /^\{\{size:([a-zA-Z0-9.]+)\|((?:(?!\}\}).)*)\}\}$/i;
+
+/** Build-mode wrap for `{{font:serif|…}}`. */
+export function applyMarkdownFontFamily(
+  content: string,
+  selectionStart: number,
+  selectionEnd: number,
+  font: "sans" | "serif" | "mono",
+): EditResult {
+  const hasSelection = selectionStart !== selectionEnd;
+  const selected = hasSelection
+    ? content.slice(selectionStart, selectionEnd)
+    : "text";
+  const match = selected.match(FONT_FAMILY_WRAP);
+  if (match) {
+    const current = match[1]!.toLowerCase();
+    const inner = match[2]!;
+    if (current === font) {
+      return replaceRange(content, selectionStart, selectionEnd, inner);
+    }
+    return replaceRange(
+      content,
+      selectionStart,
+      selectionEnd,
+      `{{font:${font}|${inner}}}`,
+    );
+  }
+  return replaceRange(
+    content,
+    selectionStart,
+    selectionEnd,
+    `{{font:${font}|${selected}}}`,
+  );
+}
+
+/** Build-mode wrap for `{{size:lg|…}}`. */
+export function applyMarkdownFontSize(
+  content: string,
+  selectionStart: number,
+  selectionEnd: number,
+  size: string,
+): EditResult {
+  const token = size.trim().toLowerCase();
+  if (!token) return { content, selectionStart, selectionEnd };
+  const hasSelection = selectionStart !== selectionEnd;
+  const selected = hasSelection
+    ? content.slice(selectionStart, selectionEnd)
+    : "text";
+  const match = selected.match(FONT_SIZE_WRAP);
+  if (match) {
+    const current = match[1]!.toLowerCase();
+    const inner = match[2]!;
+    if (current === token) {
+      return replaceRange(content, selectionStart, selectionEnd, inner);
+    }
+    return replaceRange(
+      content,
+      selectionStart,
+      selectionEnd,
+      `{{size:${token}|${inner}}}`,
+    );
+  }
+  return replaceRange(
+    content,
+    selectionStart,
+    selectionEnd,
+    `{{size:${token}|${selected}}}`,
+  );
+}
+
 export function insertSlashBlock(
   content: string,
   cursorIndex: number,
@@ -396,6 +469,7 @@ export function insertSlashBlock(
     liquid_carousel: LIQUID_CAROUSEL_TEMPLATE,
     liquid_actions: LIQUID_ACTIONS_TEMPLATE,
     liquid_section: LIQUID_SECTION_TEMPLATE,
+    liquid_block: LIQUID_BLOCK_TEMPLATE,
     liquid_chips: LIQUID_CHIPS_TEMPLATE,
     liquid_media: LIQUID_MEDIA_TEMPLATE,
     liquid_cite: LIQUID_CITE_TEMPLATE,
@@ -747,6 +821,7 @@ export const SLASH_BLOCK_IDS: SlashBlockId[] = [
   "liquid_carousel",
   "liquid_actions",
   "liquid_section",
+  "liquid_block",
   "liquid_chips",
   "liquid_media",
   "liquid_cite",

@@ -26,6 +26,7 @@
   import Report from "$lib/liquid/archetypes/organisms/report/Report.svelte";
   import Slides from "$lib/liquid/archetypes/organisms/slides/Slides.svelte";
   import Section from "$lib/liquid/archetypes/molecules/section/Section.svelte";
+  import Block from "$lib/liquid/archetypes/molecules/block/Block.svelte";
   import ChipGroup from "$lib/liquid/archetypes/molecules/chip_group/ChipGroup.svelte";
   import Media from "$lib/liquid/archetypes/atoms/media/Media.svelte";
   import Tabs from "$lib/liquid/archetypes/molecules/tabs/Tabs.svelte";
@@ -52,6 +53,7 @@
     LiquidMediaProps,
     LiquidPlanProps,
     LiquidSectionProps,
+    LiquidBlockProps,
     LiquidShortlistProps,
     LiquidStepsProps,
     LiquidTabsProps,
@@ -233,6 +235,36 @@
       props: {
         title: props.title,
         ...(props.subtitle ? { subtitle: props.subtitle } : {}),
+      },
+      slots,
+      fillState: "ready",
+    });
+  });
+
+  const styledBlock = $derived.by(() => {
+    if (kind !== "block") return null;
+    const props = payload as LiquidBlockProps;
+    if (!props?.body?.trim() && !props?.id && !props?.font) return null;
+    const slots: Record<string, ReturnType<typeof createNode>[]> = {};
+    if (props.body?.trim()) {
+      slots.content = [
+        createNode({
+          id: "md-block-body",
+          type: "prose",
+          props: { markdown: props.body },
+          fillState: "ready",
+        }),
+      ];
+    }
+    return createNode({
+      id: "md-block",
+      type: "block",
+      props: {
+        ...(props.id ? { id: props.id } : {}),
+        ...(props.font ? { font: props.font } : {}),
+        ...(props.size ? { size: props.size } : {}),
+        ...(props.align ? { align: props.align } : {}),
+        ...(props.spacing ? { spacing: props.spacing } : {}),
       },
       slots,
       fillState: "ready",
@@ -622,6 +654,10 @@
 {:else if kind === "section" && section}
   <div class="{hostClass} liquid-md-host-section">
     <Section node={section} />
+  </div>
+{:else if kind === "block" && styledBlock}
+  <div class="{hostClass} liquid-md-host-block">
+    <Block node={styledBlock} />
   </div>
 {:else if kind === "chips" && chips}
   <div class="{hostClass} liquid-md-host-chips">

@@ -174,8 +174,96 @@ function inlineFromNode(node: Node, ctx: InlineCtx): (TextRun | ExternalHyperlin
       ),
     ];
   }
+  if (
+    node.classList.contains("markdown-font-family") ||
+    node.hasAttribute("data-md-font")
+  ) {
+    const fontToken = (node.getAttribute("data-md-font") ?? "").toLowerCase();
+    const nextFont =
+      fontToken === "serif"
+        ? "Georgia"
+        : fontToken === "mono"
+          ? ctx.mono
+          : fontToken === "sans"
+            ? "Calibri"
+            : ctx.font;
+    return [...node.childNodes].flatMap((c) =>
+      inlineFromNode(c, { ...ctx, font: nextFont }),
+    );
+  }
+  if (
+    node.classList.contains("markdown-font-size") ||
+    node.hasAttribute("data-md-size")
+  ) {
+    const sizeToken = (node.getAttribute("data-md-size") ?? "").toLowerCase();
+    const scale =
+      sizeToken === "sm"
+        ? 0.875
+        : sizeToken === "lg"
+          ? 1.125
+          : sizeToken === "xl"
+            ? 1.35
+            : sizeToken === "md"
+              ? 1
+              : /^\d+(\.\d+)?$/.test(sizeToken)
+                ? Number(sizeToken) / 16
+                : 1;
+    const nextSize = Math.max(14, Math.round(ctx.size * scale));
+    return [...node.childNodes].flatMap((c) =>
+      inlineFromNode(c, { ...ctx, size: nextSize }),
+    );
+  }
 
   return [...node.childNodes].flatMap((c) => inlineFromNode(c, ctx));
+}
+
+function styledBlockParagraphExtras(el: HTMLElement): Partial<IParagraphOptions> {
+  const style = el.style;
+  const align = (
+    style.getPropertyValue("--block-align") ||
+    style.textAlign ||
+    ""
+  ).toLowerCase();
+  const spacingRaw = style.getPropertyValue("--block-spacing").trim();
+  const lineHeight = Number(spacingRaw);
+  const alignment =
+    align === "center"
+      ? AlignmentType.CENTER
+      : align === "right"
+        ? AlignmentType.RIGHT
+        : align === "justify"
+          ? AlignmentType.BOTH
+          : undefined;
+  const line =
+    Number.isFinite(lineHeight) && lineHeight > 0
+      ? Math.round(lineHeight * 240)
+      : undefined;
+  return {
+    ...(alignment ? { alignment } : {}),
+    ...(line ? { spacing: { after: 80, line } } : {}),
+  };
+}
+
+function inlineCtxFromStyledBlock(el: HTMLElement, ctx: InlineCtx): InlineCtx {
+  const style = el.style;
+  const font = style.getPropertyValue("--block-font").toLowerCase();
+  const size = style.getPropertyValue("--block-size").trim();
+  let next = { ...ctx };
+  if (font.includes("georgia") || font.includes("serif")) {
+    next.font = "Georgia";
+  } else if (font.includes("mono") || font.includes("consolas")) {
+    next.font = ctx.mono;
+  } else if (font.includes("sans") || font.includes("system-ui")) {
+    next.font = "Calibri";
+  }
+  if (size.endsWith("px")) {
+    const px = Number(size.replace(/px$/i, ""));
+    if (Number.isFinite(px) && px > 0) next.size = halfPoints(px);
+  } else if (size.endsWith("rem")) {
+    const rem = Number(size.replace(/rem$/i, ""));
+    if (Number.isFinite(rem) && rem > 0) next.size = halfPoints(rem * 16);
+  }
+  return next;
 }
 
 function paragraphFromElement(
@@ -582,7 +670,23 @@ export function htmlExportToDocxChildren(
         const labelKeep = isLabelLikeParagraph(node)
           ? { keepNext: true, keepLines: true }
           : undefined;
-        out.push(paragraphFromElement(node, ctx, labelKeep));
+        const styledHost = node.closest(".liquid-styled-block");
+        const styledExtras =
+          styledHost instanceof HTMLElement
+            ? styledBlockParagraphExtras(styledHost)
+            : {};
+        const styledCtx =
+          styledHost instanceof HTMLElement
+            ? inlineCtxFromStyledBlock(styledHost, ctx)
+            : ctx;
+        out.push(
+          paragraphFromElement(node, styledCtx, { ...styledExtras, ...labelKeep }),
+        );
+        continue;
+      }
+
+      if (node.classList.contains("liquid-styled-block")) {
+        walk(node);
         continue;
       }
 

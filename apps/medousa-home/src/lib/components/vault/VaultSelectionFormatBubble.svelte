@@ -10,15 +10,24 @@
     normalizeMarkdownHexColor,
     type MarkdownColorToken,
   } from "$lib/utils/vaultMarkdownColors";
+  import {
+    MARKDOWN_FONT_FAMILY_OPTIONS,
+    MARKDOWN_FONT_SIZE_OPTIONS,
+    type MarkdownFontFamily,
+  } from "$lib/utils/vaultMarkdownFonts";
 
   interface Props {
     open: boolean;
     /** Viewport coords for the selection (bubble anchors above). */
     anchor: { left: number; top: number; width: number; height: number } | null;
     activeActions?: MarkdownFormatAction[];
+    activeFontFamily?: MarkdownFontFamily | null;
+    activeFontSize?: string | null;
     disabled?: boolean;
     onFormat: (action: MarkdownFormatAction) => void;
     onColor: (color: MarkdownColorToken) => void;
+    onFontFamily: (font: MarkdownFontFamily) => void;
+    onFontSize: (size: string) => void;
     onClose?: () => void;
   }
 
@@ -26,9 +35,13 @@
     open,
     anchor,
     activeActions = [],
+    activeFontFamily = null,
+    activeFontSize = null,
     disabled = false,
     onFormat,
     onColor,
+    onFontFamily,
+    onFontSize,
     onClose,
   }: Props = $props();
 
@@ -40,8 +53,8 @@
   const style = $derived.by(() => {
     if (!anchor) return "";
     const pad = 8;
-    const bubbleW = 360;
-    const bubbleH = colorsOpen || hexPickerOpen ? 72 : 40;
+    const bubbleW = 380;
+    const bubbleH = colorsOpen || hexPickerOpen ? 108 : 72;
     let left = anchor.left + anchor.width / 2 - bubbleW / 2;
     left = Math.max(pad, Math.min(left, window.innerWidth - bubbleW - pad));
     let top = anchor.top - bubbleH - 8;
@@ -75,7 +88,7 @@
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
       class="vault-selection-format-bubble"
-      class:vault-selection-format-bubble--wide={colorsOpen || hexPickerOpen}
+      class:vault-selection-format-bubble--wide={true}
       style={style}
       role="toolbar"
       tabindex="-1"
@@ -126,6 +139,42 @@
         >
           A
         </button>
+      </div>
+
+      <div
+        class="vault-selection-format-bubble__row vault-selection-format-bubble__row--type"
+        role="group"
+        aria-label="Font"
+      >
+        {#each MARKDOWN_FONT_FAMILY_OPTIONS as font (font.id)}
+          <button
+            type="button"
+            class="vault-selection-format-bubble__btn vault-selection-format-bubble__btn--label"
+            class:vault-selection-format-bubble__btn--active={activeFontFamily === font.id}
+            title={`Font: ${font.label}`}
+            aria-label={`Font: ${font.label}`}
+            aria-pressed={activeFontFamily === font.id}
+            {disabled}
+            onclick={() => onFontFamily(font.id)}
+          >
+            {font.label}
+          </button>
+        {/each}
+        <span class="vault-selection-format-bubble__sep" aria-hidden="true"></span>
+        {#each MARKDOWN_FONT_SIZE_OPTIONS as size (size.id)}
+          <button
+            type="button"
+            class="vault-selection-format-bubble__btn vault-selection-format-bubble__btn--label"
+            class:vault-selection-format-bubble__btn--active={activeFontSize === size.id}
+            title={`Size: ${size.id}`}
+            aria-label={`Size: ${size.id}`}
+            aria-pressed={activeFontSize === size.id}
+            {disabled}
+            onclick={() => onFontSize(size.id)}
+          >
+            {size.label}
+          </button>
+        {/each}
       </div>
 
       {#if colorsOpen}

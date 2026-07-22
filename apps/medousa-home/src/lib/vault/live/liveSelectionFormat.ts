@@ -3,6 +3,7 @@
 import type { Editor } from "@tiptap/core";
 import type { MarkdownFormatAction } from "$lib/utils/vaultMarkdownEdit";
 import type { MarkdownColorToken } from "$lib/utils/vaultMarkdownColors";
+import type { MarkdownFontFamily } from "$lib/utils/vaultMarkdownFonts";
 
 export type SelectionAnchor = {
   left: number;
@@ -144,4 +145,56 @@ export function applyLiveTextColor(
     return editor.chain().focus(undefined, { scrollIntoView: false }).unsetTextColor().run();
   }
   return editor.chain().focus(undefined, { scrollIntoView: false }).setTextColor(color).run();
+}
+
+export function applyLiveFontFamily(
+  editor: Editor,
+  font: MarkdownFontFamily,
+  range?: { from: number; to: number } | null,
+): boolean {
+  if (range && range.from !== range.to) {
+    restoreLiveSelection(editor, range.from, range.to);
+  } else if (!liveSelectionHasText(editor)) {
+    return false;
+  }
+
+  const current = editor.getAttributes("fontFamily").font as string | undefined;
+  if (current && String(current).toLowerCase() === String(font).toLowerCase()) {
+    return editor
+      .chain()
+      .focus(undefined, { scrollIntoView: false })
+      .unsetFontFamily()
+      .run();
+  }
+  return editor
+    .chain()
+    .focus(undefined, { scrollIntoView: false })
+    .setFontFamily(font)
+    .run();
+}
+
+export function applyLiveFontSize(
+  editor: Editor,
+  size: string,
+  range?: { from: number; to: number } | null,
+): boolean {
+  if (range && range.from !== range.to) {
+    restoreLiveSelection(editor, range.from, range.to);
+  } else if (!liveSelectionHasText(editor)) {
+    return false;
+  }
+
+  const current = editor.getAttributes("fontSize").size as string | undefined;
+  if (current && String(current).toLowerCase() === String(size).toLowerCase()) {
+    return editor
+      .chain()
+      .focus(undefined, { scrollIntoView: false })
+      .unsetFontSize()
+      .run();
+  }
+  return editor
+    .chain()
+    .focus(undefined, { scrollIntoView: false })
+    .setFontSize(size)
+    .run();
 }

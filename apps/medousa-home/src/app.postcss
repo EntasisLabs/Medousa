@@ -2,6 +2,7 @@
 @import "./lib/styles/syntax-tokens.postcss";
 @import "./lib/styles/markdown-tokens.postcss";
 @import "./lib/styles/callout-tokens.postcss";
+@import "./lib/styles/block-tokens.postcss";
 @import "./lib/styles/chart-tokens.postcss";
 @import "./lib/styles/workshop-shell.postcss";
 @import "./lib/styles/peers.postcss";
@@ -10884,6 +10885,12 @@
     gap: 0.1rem;
   }
 
+  .vault-selection-format-bubble__row--type {
+    margin-top: 0.2rem;
+    padding-top: 0.2rem;
+    border-top: 1px solid rgb(var(--shell-border, var(--color-surface-500)) / 0.35);
+  }
+
   .vault-selection-format-bubble__sep {
     width: 1px;
     height: 1rem;
@@ -11074,6 +11081,34 @@
     opacity: 0.72;
     user-select: none;
     pointer-events: none;
+  }
+
+  /* Out of flow so chip widgets never reflow the line (avoids scroll jump on type). */
+  .vault-live-prose p[data-block-id],
+  .vault-live-prose h1[data-block-id],
+  .vault-live-prose h2[data-block-id],
+  .vault-live-prose h3[data-block-id] {
+    position: relative;
+  }
+
+  .vault-live-block-id-chip {
+    position: absolute;
+    right: 0;
+    top: 0.15em;
+    display: inline-block;
+    margin: 0;
+    padding: 0.05rem 0.3rem;
+    border-radius: 0.2rem;
+    border: 1px solid rgb(var(--shell-border, var(--color-surface-500)) / 0.35);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.65em;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    color: rgb(var(--color-primary-300));
+    opacity: 0.85;
+    user-select: none;
+    pointer-events: none;
+    white-space: nowrap;
   }
 
   .vault-live-prose p {
@@ -11424,6 +11459,109 @@
 
   .vault-live-callout {
     position: relative;
+  }
+
+  .vault-live-styled-block {
+    position: relative;
+  }
+
+  /*
+   * Keep chrome out of document flow. Quiet-chrome max-height:0→N on
+   * hover/focus-within was pushing the note and fighting scroll anchoring.
+   * Beat `.vault-live-organism-host:hover .vault-live-quiet-chrome` specificity.
+   */
+  .vault-live-organism-host .vault-live-styled-block__chrome.vault-live-quiet-chrome,
+  .vault-live-organism-host:hover
+    .vault-live-styled-block__chrome.vault-live-quiet-chrome,
+  .vault-live-organism-host:focus-within
+    .vault-live-styled-block__chrome.vault-live-quiet-chrome,
+  .ProseMirror-selectednode .vault-live-styled-block__chrome.vault-live-quiet-chrome {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 100%;
+    z-index: 2;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.35rem;
+    margin: 0 0 0.25rem;
+    max-height: none;
+    overflow: visible;
+    transition: opacity 150ms ease;
+  }
+
+  .vault-live-styled-block__chrome {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.35rem;
+  }
+
+  .vault-live-styled-block__seg {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 0.15rem;
+  }
+
+  .vault-live-styled-block__chip {
+    font-size: 0.625rem;
+    letter-spacing: 0.02em;
+    text-transform: lowercase;
+    color: rgb(var(--shell-muted, var(--color-surface-400)));
+    background: transparent;
+    border: 1px solid rgb(var(--shell-border, var(--color-surface-500)) / 0.35);
+    border-radius: 0.2rem;
+    padding: 0.1rem 0.35rem;
+    cursor: pointer;
+  }
+
+  .vault-live-styled-block__chip[aria-pressed="true"] {
+    color: rgb(var(--shell-fg, var(--color-surface-50)));
+    border-color: rgb(var(--shell-border, var(--color-surface-300)) / 0.55);
+  }
+
+  .vault-live-styled-block__id-row {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+  }
+
+  .vault-live-styled-block__id-label {
+    font-size: 0.7rem;
+    color: rgb(var(--color-primary-300));
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  }
+
+  .vault-live-styled-block__id {
+    width: 7rem;
+    margin: 0;
+    padding: 0.1rem 0.3rem;
+    border: 1px solid rgb(var(--shell-border, var(--color-surface-500)) / 0.35);
+    border-radius: 0.2rem;
+    background: transparent;
+    color: rgb(var(--color-surface-200));
+    font-size: 0.65rem;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  }
+
+  .vault-live-styled-block__body {
+    outline: none;
+    min-height: 1.4em;
+    white-space: pre-wrap;
+  }
+
+  .vault-live-styled-block__body:empty::before {
+    content: attr(data-placeholder);
+    color: rgb(var(--shell-muted, var(--color-surface-500)));
+    pointer-events: none;
+  }
+
+  .vault-live-styled-block:hover .vault-live-styled-block__chrome.vault-live-quiet-chrome,
+  .vault-live-styled-block:focus-within
+    .vault-live-styled-block__chrome.vault-live-quiet-chrome {
+    opacity: 1;
+    pointer-events: auto;
   }
 
   .vault-live-callout__chrome {

@@ -1,5 +1,6 @@
 import type { JSONContent } from "@tiptap/core";
 import { MarkdownManager } from "@tiptap/markdown";
+import { preprocessTurboBlocks } from "$lib/markdown/preprocess";
 import { splitMarkdownSegments } from "./fenceCard";
 import { fenceAttrsFromRaw } from "./fenceBlockExtension";
 import { embedAttrsFromPath } from "./embedBlockExtension";
@@ -28,7 +29,7 @@ function proseToNodes(text: string): JSONContent[] {
 
 /** Markdown body (no frontmatter) → TipTap JSON doc with fence + embed atoms. */
 export function markdownToLiveDoc(body: string): JSONContent {
-  const segments = splitMarkdownSegments(body);
+  const segments = splitMarkdownSegments(preprocessTurboBlocks(body));
   const content: JSONContent[] = [];
 
   for (const seg of segments) {

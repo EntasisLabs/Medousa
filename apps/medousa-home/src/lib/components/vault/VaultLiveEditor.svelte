@@ -35,12 +35,15 @@
   import { copyTextToClipboard, readTextFromClipboard } from "$lib/utils/vaultClipboard";
   import type { MarkdownFormatAction, SlashBlockId } from "$lib/utils/vaultMarkdownEdit";
   import type { MarkdownColorToken } from "$lib/utils/vaultMarkdownColors";
+  import type { MarkdownFontFamily } from "$lib/utils/vaultMarkdownFonts";
   import { placeSlashMenuAnchor } from "$lib/utils/slashMenuPlacement";
   import type { CardDetailPayload } from "$lib/markdown/liquidEmbeds";
   import VaultSelectionFormatBubble from "./VaultSelectionFormatBubble.svelte";
   import VaultLiveTableChrome from "./VaultLiveTableChrome.svelte";
   import VaultLiveProperties from "./VaultLiveProperties.svelte";
   import {
+    applyLiveFontFamily,
+    applyLiveFontSize,
     applyLiveFormatAction,
     applyLiveTextColor,
     liveActiveFormatActions,
@@ -90,6 +93,8 @@
   let formatBubbleOpen = $state(false);
   let formatBubbleAnchor = $state<SelectionAnchor | null>(null);
   let formatActiveActions = $state<MarkdownFormatAction[]>([]);
+  let formatActiveFontFamily = $state<MarkdownFontFamily | null>(null);
+  let formatActiveFontSize = $state<string | null>(null);
   /** Last nonempty selection — restored when bubble buttons steal focus. */
   let formatSelectionRange = $state<{ from: number; to: number } | null>(null);
   let removeFormatBubbleListeners: (() => void) | null = null;
@@ -152,16 +157,20 @@
   function emitMarkdown() {
     if (!editor || applyingExternal || !ready) return;
     if (boundKeyRef.current !== contentSyncKey) return;
-    // While a slash prefix is active, skip full-doc serialize — filter keystrokes
-    // only need TipTap's local prefix (syncSlash). Serialize resumes on close.
-    if (liveSlashOpen(editor)) {
-      syncSlash();
-      return;
+    try {
+      // While a slash prefix is active, skip full-doc serialize — filter keystrokes
+      // only need TipTap's local prefix (syncSlash). Serialize resumes on close.
+      if (liveSlashOpen(editor)) {
+        syncSlash();
+        return;
+      }
+      const md = serializeLiveMarkdown(editor.getJSON(), frontmatter);
+      // Open/mount round-trips must not look like user edits.
+      if (liveMarkdownEqual(md, valueRef.current)) return;
+      onchangeRef.current(md);
+    } catch (err) {
+      console.error("Live emitMarkdown failed", err);
     }
-    const md = serializeLiveMarkdown(editor.getJSON(), frontmatter);
-    // Open/mount round-trips must not look like user edits.
-    if (liveMarkdownEqual(md, valueRef.current)) return;
-    onchangeRef.current(md);
   }
 
   /** Compare titles ignoring emoji/punctuation prefixes and whitespace. */
@@ -180,9 +189,25 @@
     if (!hostEl) return;
     const h1 = hostEl.querySelector(".ProseMirror > h1:first-child");
     if (!(h1 instanceof HTMLElement)) return;
+    // Skip contenteditable=false widgets (heading `#` marks, chips). Those
+    // pollute textContent and flip vault-live-h1--dup-title, which pulls the
+    // H1 out of flow and shifts the whole note on the type path.
+    let text = "";
+    const walk = (node: Node) => {
+      if (node instanceof HTMLElement && node.contentEditable === "false") return;
+      if (node.nodeType === Node.TEXT_NODE) {
+        text += node.textContent ?? "";
+        return;
+      }
+      node.childNodes.forEach(walk);
+    };
+    walk(h1);
     const match =
       Boolean(displayTitle.trim()) &&
-      normalizeTitle(h1.textContent ?? "") === normalizeTitle(displayTitle);
+      normalizeTitle(text) === normalizeTitle(displayTitle);
+    // Only mutate the class when the match actually changes — toggling the
+    // clipped H1 in/out of flow reflows the whole note and fights scroll.
+    if (h1.classList.contains("vault-live-h1--dup-title") === match) return;
     h1.classList.toggle("vault-live-h1--dup-title", match);
   }
 
@@ -220,23 +245,43 @@
 
   function loadFromMarkdown(md: string) {
     if (!editor) return;
-    const parsed = parseLiveMarkdown(md);
-    frontmatter = parsed.frontmatter;
-    tags = parsed.tags;
     applyingExternal = true;
     ready = false;
-    editor.commands.setContent(parsed.doc, { contentType: "json" });
-    // Keep suppress until after TipTap's deferred update notifications.
-    queueMicrotask(() => {
-      placeRestingCaret();
+    try {
+      const parsed = parseLiveMarkdown(md);
+      frontmatter = parsed.frontmatter;
+      tags = parsed.tags;
+      editor.commands.setContent(parsed.doc, { contentType: "json" });
+    } catch (err) {
+      // A thrown setContent/parse must not leave Live permanently muted
+      // (ready=false + applyingExternal=true freezes emits / slash sync).
+      console.error("Live loadFromMarkdown failed", err);
       ready = true;
       applyingExternal = false;
-      syncDupTitleHeading();
+      return;
+    }
+    // Keep suppress until after TipTap's deferred update notifications.
+    queueMicrotask(() => {
+      try {
+        if (editor && !editor.isDestroyed) {
+          placeRestingCaret();
+          syncDupTitleHeading();
+        }
+      } catch (err) {
+        console.error("Live resting caret failed", err);
+      } finally {
+        ready = true;
+        applyingExternal = false;
+      }
     });
   }
 
   function syncSlash() {
-    onSlashCheckRef.current?.();
+    try {
+      onSlashCheckRef.current?.();
+    } catch (err) {
+      console.error("Live slash sync failed", err);
+    }
   }
 
   function slashAnchorFor(container: HTMLElement | null) {
@@ -281,11 +326,25 @@
     tableChromeOpen = Boolean(tableChromeAnchor);
   }
 
+  function refreshFormatSelectionRange(
+    range: { from: number; to: number } | null,
+  ) {
+    if (!editor) return;
+    if (liveSelectionHasText(editor)) {
+      const { from, to } = editor.state.selection;
+      formatSelectionRange = { from, to };
+    } else if (range) {
+      formatSelectionRange = range;
+    }
+  }
+
   function syncFormatBubble() {
     if (!editor || disabled) {
       formatBubbleOpen = false;
       formatBubbleAnchor = null;
       formatActiveActions = [];
+      formatActiveFontFamily = null;
+      formatActiveFontSize = null;
       formatSelectionRange = null;
       syncTableChrome();
       return;
@@ -300,6 +359,8 @@
       formatBubbleOpen = false;
       formatBubbleAnchor = null;
       formatActiveActions = [];
+      formatActiveFontFamily = null;
+      formatActiveFontSize = null;
       if (editor.isFocused) formatSelectionRange = null;
       return;
     }
@@ -307,6 +368,11 @@
     formatSelectionRange = { from, to };
     formatBubbleAnchor = liveSelectionAnchor(editor);
     formatActiveActions = liveActiveFormatActions(editor);
+    const font = editor.getAttributes("fontFamily").font as string | undefined;
+    formatActiveFontFamily =
+      font === "sans" || font === "serif" || font === "mono" ? font : null;
+    formatActiveFontSize =
+      (editor.getAttributes("fontSize").size as string | undefined) ?? null;
     formatBubbleOpen = Boolean(formatBubbleAnchor);
   }
 
@@ -314,13 +380,7 @@
     if (!editor) return;
     const range = formatSelectionRange;
     applyLiveFormatAction(editor, action, range);
-    // Refresh range from whatever TipTap kept after the command.
-    if (liveSelectionHasText(editor)) {
-      const { from, to } = editor.state.selection;
-      formatSelectionRange = { from, to };
-    } else if (range) {
-      formatSelectionRange = range;
-    }
+    refreshFormatSelectionRange(range);
     syncFormatBubble();
   }
 
@@ -328,12 +388,23 @@
     if (!editor) return;
     const range = formatSelectionRange;
     applyLiveTextColor(editor, color, range);
-    if (liveSelectionHasText(editor)) {
-      const { from, to } = editor.state.selection;
-      formatSelectionRange = { from, to };
-    } else if (range) {
-      formatSelectionRange = range;
-    }
+    refreshFormatSelectionRange(range);
+    syncFormatBubble();
+  }
+
+  function handleFormatFontFamily(font: MarkdownFontFamily) {
+    if (!editor) return;
+    const range = formatSelectionRange;
+    applyLiveFontFamily(editor, font, range);
+    refreshFormatSelectionRange(range);
+    syncFormatBubble();
+  }
+
+  function handleFormatFontSize(size: string) {
+    if (!editor) return;
+    const range = formatSelectionRange;
+    applyLiveFontSize(editor, size, range);
+    refreshFormatSelectionRange(range);
     syncFormatBubble();
   }
 
@@ -640,6 +711,7 @@
         if (transaction.getMeta("addToHistory") === false) return;
         emitMarkdown();
         syncSlash();
+        // Guarded: only mutates the class when the H1↔title match flips.
         syncDupTitleHeading();
       },
       onSelectionUpdate: () => {
@@ -712,24 +784,30 @@
     if (!editor || applyingExternal) return;
     const key = contentSyncKey;
     const next = value;
-    if (key !== boundKey) {
-      boundKey = key;
-      boundKeyRef.current = key;
-      emptyHydrateKey = key;
-      emptyHydrateAttempts = 0;
-      loadFromMarkdown(next);
-      return;
-    }
-    // Mount race: editor came up empty before draft hydrated. Only reload when
-    // there is significant body text TipTap would actually render.
-    if (editor.isEmpty && significantLiveText(next).length > 0) {
-      if (emptyHydrateKey !== key) {
+    try {
+      if (key !== boundKey) {
+        boundKey = key;
+        boundKeyRef.current = key;
         emptyHydrateKey = key;
         emptyHydrateAttempts = 0;
+        loadFromMarkdown(next);
+        return;
       }
-      if (emptyHydrateAttempts >= 2) return;
-      emptyHydrateAttempts += 1;
-      loadFromMarkdown(next);
+      // Mount race: editor came up empty before draft hydrated. Only reload when
+      // there is significant body text TipTap would actually render.
+      if (editor.isEmpty && significantLiveText(next).length > 0) {
+        if (emptyHydrateKey !== key) {
+          emptyHydrateKey = key;
+          emptyHydrateAttempts = 0;
+        }
+        if (emptyHydrateAttempts >= 2) return;
+        emptyHydrateAttempts += 1;
+        loadFromMarkdown(next);
+      }
+    } catch (err) {
+      console.error("Live hydrate effect failed", err);
+      ready = true;
+      applyingExternal = false;
     }
   });
 
@@ -894,9 +972,13 @@
   open={formatBubbleOpen}
   anchor={formatBubbleAnchor}
   activeActions={formatActiveActions}
+  activeFontFamily={formatActiveFontFamily}
+  activeFontSize={formatActiveFontSize}
   disabled={disabled}
   onFormat={handleFormatAction}
   onColor={handleFormatColor}
+  onFontFamily={handleFormatFontFamily}
+  onFontSize={handleFormatFontSize}
   onClose={() => {
     formatBubbleOpen = false;
   }}

@@ -71,6 +71,10 @@ import {
   mountKanbanSurface,
   type KanbanSurfaceHandles,
 } from "./liveKanbanSurface";
+import {
+  mountBlockSurface,
+  type BlockSurfaceHandles,
+} from "./liveBlockSurface";
 import { resolveMedousaViews } from "$lib/utils/resolveMedousaViews";
 import type { VaultNote } from "$lib/types/vault";
 
@@ -196,6 +200,7 @@ export const FenceBlock = Node.create<FenceBlockOptions>({
       let tree: TreeSurfaceHandles | null = null;
       let compare: CompareSurfaceHandles | null = null;
       let kanban: KanbanSurfaceHandles | null = null;
+      let styledBlock: BlockSurfaceHandles | null = null;
       let rawEdit: FenceRawEditHandles | null = null;
       let mountGen = 0;
 
@@ -236,6 +241,8 @@ export const FenceBlock = Node.create<FenceBlockOptions>({
         compare = null;
         kanban?.destroy();
         kanban = null;
+        styledBlock?.destroy();
+        styledBlock = null;
         unmountLiquidFence(dom);
       };
 
@@ -287,6 +294,13 @@ export const FenceBlock = Node.create<FenceBlockOptions>({
           const model = parseCalloutRaw(nextAttrs.raw);
           callout = mountCalloutSurface(dom, model, (updated) => {
             applyRawUpdate(serializeCalloutRaw(updated));
+          });
+          return;
+        }
+
+        if (lang === "block") {
+          styledBlock = mountBlockSurface(dom, nextAttrs.raw, (updatedRaw) => {
+            applyRawUpdate(updatedRaw);
           });
           return;
         }
@@ -473,6 +487,18 @@ export const FenceBlock = Node.create<FenceBlockOptions>({
           ) {
             attrs = next;
             slides.applyRaw(next.raw);
+            return true;
+          }
+          // Styled block: remount destroy/recreates the contenteditable and
+          // collapses quiet chrome → layout jump + scroll fight on every chip/blur.
+          if (
+            attrs.lang === "block" &&
+            next.lang === "block" &&
+            styledBlock &&
+            typeof styledBlock.applyRaw === "function"
+          ) {
+            attrs = next;
+            styledBlock.applyRaw(next.raw);
             return true;
           }
           attrs = next;
