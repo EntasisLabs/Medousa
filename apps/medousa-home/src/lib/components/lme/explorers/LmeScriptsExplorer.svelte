@@ -294,9 +294,7 @@
     {/if}
   </div>
 
-  <footer
-    class="relative flex shrink-0 items-center gap-1 border-t border-surface-500/25 px-2 py-1.5"
-  >
+  <footer class="lme-side-rail-dock">
     {#if searchExpanded}
       <div class="lme-dock-search-expand min-w-0 flex-1">
         <Search size={14} strokeWidth={1.75} class="lme-dock-search-glyph" />
@@ -313,49 +311,30 @@
       <div class="min-w-0 flex-1"></div>
     {/if}
 
-    <button
-      type="button"
-      class="vault-dock-icon-btn"
-      aria-label="New script"
-      title="New"
-      onclick={startNewScript}
-    >
-      <Plus size={16} strokeWidth={1.75} />
-    </button>
-
-    <button
-      type="button"
-      class="vault-dock-icon-btn"
-      aria-label="Refresh"
-      title="Refresh"
-      disabled={refreshing}
-      onclick={refreshLibrary}
-    >
-      <RefreshCw size={15} strokeWidth={1.75} class={refreshing ? "animate-spin" : ""} />
-    </button>
-
-    {#if searchExpanded}
+    {#if !searchExpanded}
       <button
         type="button"
         class="vault-dock-icon-btn"
-        aria-label="Close search"
-        title="Close search"
-        onclick={closeSearch}
+        aria-label="New script"
+        title="New"
+        onclick={startNewScript}
       >
-        <X size={15} strokeWidth={1.75} />
+        <Plus size={16} strokeWidth={1.75} />
       </button>
-    {:else}
+
       <button
         type="button"
         class="vault-dock-icon-btn"
-        aria-label="Search"
-        title="Search"
-        onclick={() => void openSearch()}
+        aria-label="Refresh"
+        title="Refresh"
+        disabled={refreshing}
+        onclick={refreshLibrary}
       >
-        <Search size={15} strokeWidth={1.75} />
+        <RefreshCw size={15} strokeWidth={1.75} class={refreshing ? "animate-spin" : ""} />
       </button>
     {/if}
 
+    {#if !searchExpanded}
     <div class="relative shrink-0">
       <button
         type="button"
@@ -576,5 +555,28 @@
         </div>
       {/if}
     </div>
+    {/if}
+
+    {#if searchExpanded}
+      <button
+        type="button"
+        class="vault-dock-icon-btn"
+        aria-label="Close search"
+        title="Close search"
+        onclick={closeSearch}
+      >
+        <X size={15} strokeWidth={1.75} />
+      </button>
+    {:else}
+      <button
+        type="button"
+        class="vault-dock-icon-btn"
+        aria-label="Search"
+        title="Search"
+        onclick={() => void openSearch()}
+      >
+        <Search size={15} strokeWidth={1.75} />
+      </button>
+    {/if}
   </footer>
 </aside>

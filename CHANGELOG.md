@@ -11,6 +11,31 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+## [0.4.0] — 2026-07-21
+
+### Added
+
+- Liquid `block` fences — typography containers (font, size, align, spacing) with Obsidian-style trailing `^block-id` round-trip
+- Redesigned Live selection format bubble — Shape / Voice pages, paragraph + heading menu, Build-style color wheel + hex apply
+- Content zoom (`⌘`/`Ctrl` `+` / `-` / `0`) for notes, chats, and scripts
+- Markdown footnotes in Live and Preview (definitions + refs)
+- Callout visual refresh with shared icon / token styling
+- Syntax highlighting for fenced code snippets
+- Daemon agents surface + ACP client wiring so Home chat can talk to external agent runtimes
+- Workbooks foundation and improved slides player for vault decks
+
+### Changed
+
+- Vault new-note creation flow
+- Side rail interactions and vault filtering polish
+- Styled-block chrome uses Type / Layout doors instead of dense chip rows
+
+### Fixed
+
+- Live editor no longer jumps scroll on typing or format actions
+- Styled blocks update in place without remount / layout jumps that fight the viewport
+- Editor race condition and menu serialization under rapid Live interactions
+
 ## [0.3.2] — 2026-07-21
 
 ### Fixed
@@ -119,6 +144,7 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 - Product path is **Home-first**: download the app, chat, then add packages from Settings; Installer remains an advanced/repair escape hatch
 - Connection → Extras and welcome-wizard offline CTAs open Settings → Packages instead of launching the Installer by default
 
+[0.4.0]: https://github.com/EntasisLabs/Medousa/releases/tag/v0.4.0
 [0.3.2]: https://github.com/EntasisLabs/Medousa/releases/tag/v0.3.2
 [0.3.1]: https://github.com/EntasisLabs/Medousa/releases/tag/v0.3.1
 [0.3.0]: https://github.com/EntasisLabs/Medousa/releases/tag/v0.3.0

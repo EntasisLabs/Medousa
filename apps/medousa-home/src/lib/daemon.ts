@@ -246,6 +246,99 @@ export async function createTurnTicket(
   });
 }
 
+export type AgentRuntimeInfo = {
+  runtime: string;
+  available: boolean;
+  command?: string | null;
+  detail?: string | null;
+  uses_native_turns?: boolean;
+};
+
+export type AgentRuntimeListResponse = {
+  runtimes: AgentRuntimeInfo[];
+};
+
+export type CreateAgentSessionRequest = {
+  session_id: string;
+  runtime: string;
+  prompt?: string | null;
+  cwd?: string | null;
+  command?: string | null;
+  args?: string[] | null;
+};
+
+export type CreateAgentSessionResponse = {
+  agent_session_id: string;
+  session_id: string;
+  runtime: string;
+  phase: string;
+  stream_url: string;
+  stream_ready: boolean;
+  accepted_at_utc?: string;
+};
+
+export type AgentSessionPromptRequest = {
+  prompt: string;
+};
+
+export async function listAgentRuntimes(): Promise<AgentRuntimeListResponse> {
+  return invoke<AgentRuntimeListResponse>("agents_list_runtimes");
+}
+
+export async function createAgentSession(
+  request: CreateAgentSessionRequest,
+): Promise<CreateAgentSessionResponse> {
+  return invoke<CreateAgentSessionResponse>("agents_create_session", {
+    request: invokePlain(request),
+  });
+}
+
+export async function promptAgentSession(
+  agentSessionId: string,
+  prompt: string,
+): Promise<{ accepted: boolean; agent_session_id: string }> {
+  return invoke("agents_prompt", {
+    agentSessionId,
+    request: { prompt },
+  });
+}
+
+export async function cancelAgentSession(
+  agentSessionId: string,
+): Promise<{ cancelled: boolean; agent_session_id: string; message: string }> {
+  return invoke("agents_cancel", { agentSessionId });
+}
+
+export async function listAgentPermissionRequests(options?: {
+  status?: string;
+  limit?: number;
+}): Promise<{ requests: unknown[] }> {
+  return invoke("agents_list_permission_requests", {
+    status: options?.status ?? "pending",
+    limit: options?.limit ?? null,
+  });
+}
+
+export async function approveAgentPermission(
+  requestId: string,
+  resolvedBy?: string,
+): Promise<unknown> {
+  return invoke("agents_approve_permission", {
+    requestId,
+    resolvedBy: resolvedBy ?? null,
+  });
+}
+
+export async function denyAgentPermission(
+  requestId: string,
+  resolvedBy?: string,
+): Promise<unknown> {
+  return invoke("agents_deny_permission", {
+    requestId,
+    resolvedBy: resolvedBy ?? null,
+  });
+}
+
 export async function listSessionTurns(
   sessionId: string,
   activeOnly = true,

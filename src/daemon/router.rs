@@ -395,6 +395,38 @@ pub fn build_core_router(state: AppState) -> Router {
             "/v1/interactive/turn/{turn_id}/stream",
             get(interactive_turn_stream),
         )
+        .route(
+            "/v1/agents/runtimes",
+            get(crate::daemon::agents::list_agent_runtimes),
+        )
+        .route(
+            "/v1/agents/sessions",
+            post(crate::daemon::agents::create_agent_session),
+        )
+        .route(
+            "/v1/agents/sessions/{agent_session_id}/prompt",
+            post(crate::daemon::agents::prompt_agent_session),
+        )
+        .route(
+            "/v1/agents/sessions/{agent_session_id}/stream",
+            get(crate::daemon::agents::agent_session_stream),
+        )
+        .route(
+            "/v1/agents/sessions/{agent_session_id}/cancel",
+            post(crate::daemon::agents::cancel_agent_session),
+        )
+        .route(
+            "/v1/agents/permission-requests",
+            get(crate::daemon::agents::list_agent_permission_requests),
+        )
+        .route(
+            "/v1/agents/permission-requests/{request_id}/approve",
+            post(crate::daemon::agents::approve_agent_permission_request),
+        )
+        .route(
+            "/v1/agents/permission-requests/{request_id}/deny",
+            post(crate::daemon::agents::deny_agent_permission_request),
+        )
         .route("/v1/runtime/artifact/command", post(artifact_command))
         .route("/v1/runtime/artifact/fetch", post(artifact_fetch))
         .route("/v1/runtime/artifact/write", post(artifact_write))

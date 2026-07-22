@@ -91,51 +91,103 @@ export interface VaultTemplateOption {
   label: string;
 }
 
+/** Full kind catalog — not gated by space. Space only suggests defaults. */
+export const VAULT_ALL_TEMPLATES: VaultTemplateOption[] = [
+  { id: "blank", label: "Blank note" },
+  { id: "daily", label: "Daily note" },
+  { id: "weekly", label: "Weekly review" },
+  { id: "project", label: "Project" },
+  { id: "board", label: "Kanban board" },
+  { id: "database", label: "Database table" },
+  { id: "view", label: "Query view" },
+  { id: "ledger", label: "Ledger" },
+  { id: "inbox", label: "Quick capture" },
+  { id: "bug", label: "Bug report" },
+  { id: "resume", label: "Resume" },
+];
+
+/** Soft suggestions only — never hide kinds from the picker. */
 export const VAULT_TEMPLATES_BY_SPACE: Record<string, VaultTemplateOption[]> = {
   journal: [
+    { id: "blank", label: "Blank note" },
     { id: "daily", label: "Daily note" },
     { id: "weekly", label: "Weekly review" },
-    { id: "blank", label: "Blank journal note" },
   ],
   projects: [
+    { id: "blank", label: "Blank note" },
     { id: "project", label: "Project" },
     { id: "board", label: "Kanban board" },
     { id: "database", label: "Database table" },
     { id: "view", label: "Query view" },
     { id: "resume", label: "Resume" },
   ],
-  finance: [{ id: "ledger", label: "Ledger" }],
-  inbox: [{ id: "inbox", label: "Quick capture" }],
-  bugs: [{ id: "bug", label: "Bug report" }],
-  other: [
-    { id: "resume", label: "Resume" },
+  finance: [
     { id: "blank", label: "Blank note" },
+    { id: "ledger", label: "Ledger" },
+  ],
+  inbox: [
+    { id: "blank", label: "Blank note" },
+    { id: "inbox", label: "Quick capture" },
+  ],
+  bugs: [
+    { id: "blank", label: "Blank note" },
+    { id: "bug", label: "Bug report" },
+  ],
+  other: [
+    { id: "blank", label: "Blank note" },
+    { id: "resume", label: "Resume" },
   ],
 };
 
+export function allVaultTemplates(): VaultTemplateOption[] {
+  return VAULT_ALL_TEMPLATES;
+}
+
+export function isVaultTemplateId(value: string | undefined): value is VaultTemplateId {
+  return Boolean(value && VAULT_ALL_TEMPLATES.some((option) => option.id === value));
+}
+
+/** @deprecated Prefer allVaultTemplates — kept for soft space suggestions. */
 export function templatesForSpace(spaceId: string): VaultTemplateOption[] {
-  return (
-    VAULT_TEMPLATES_BY_SPACE[spaceId] ?? [
-      { id: "resume", label: "Resume" },
-      { id: "blank", label: "Blank note" },
-    ]
-  );
+  return VAULT_TEMPLATES_BY_SPACE[spaceId] ?? [
+    { id: "blank", label: "Blank note" },
+    { id: "resume", label: "Resume" },
+  ];
 }
 
-export function defaultTemplateForSpace(spaceId: string): VaultTemplateId {
-  const options = templatesForSpace(spaceId);
-  return options[0]?.id ?? "blank";
+export function defaultTemplateForSpace(_spaceId: string): VaultTemplateId {
+  return "blank";
 }
 
+/** Accept any known template; do not clamp to the space’s suggestion list. */
 export function resolveTemplateForSpace(
-  spaceId: string,
+  _spaceId: string,
   templateId?: VaultTemplateId,
 ): VaultTemplateId {
-  const options = templatesForSpace(spaceId);
-  if (templateId && options.some((option) => option.id === templateId)) {
-    return templateId;
-  }
-  return defaultTemplateForSpace(spaceId);
+  if (templateId && isVaultTemplateId(templateId)) return templateId;
+  return "blank";
+}
+
+/** Parent folder prefix for a note path (`projects/foo/bar.md` → `projects/foo/`). */
+export function folderPrefixFromNotePath(path: string | null | undefined): string | null {
+  const trimmed = (path ?? "").trim().replace(/\\/g, "/");
+  if (!trimmed || trimmed.includes("://")) return null;
+  const normalized = trimmed.replace(/^\//, "");
+  const slash = normalized.lastIndexOf("/");
+  if (slash < 0) return "";
+  return `${normalized.slice(0, slash + 1)}`;
+}
+
+export function joinVaultFolder(
+  prefix: string,
+  subfolder?: string | null,
+): string {
+  let base = prefix.trim().replace(/\\/g, "/").replace(/^\//, "");
+  if (base && !base.endsWith("/")) base += "/";
+  const sub = (subfolder ?? "").trim().replace(/^\/+|\/+$/g, "");
+  if (!sub) return base;
+  const slug = slugifyTitle(sub);
+  return `${base}${slug}/`.replace(/\/+/g, "/");
 }
 
 function withKind(kind: VaultNoteKind, body: string): string {
@@ -374,17 +426,51 @@ export function pathForTemplate(
   spaceId: string,
   title: string,
   date = new Date(),
+  /** When set, place the note under this folder instead of the space root. */
+  folderPrefix?: string | null,
 ): string | undefined {
   switch (templateId) {
     case "daily":
+      // Dated daily/weekly stay in journal convention unless a folder override is set.
+      if (folderPrefix !== undefined && folderPrefix !== null) {
+        return `${joinVaultFolder(folderPrefix)}${isoDateLocal(date)}.md`.replace(
+          /\/+/g,
+          "/",
+        );
+      }
       return dailyNotePath(date);
     case "weekly":
+      if (folderPrefix !== undefined && folderPrefix !== null) {
+        return `${joinVaultFolder(folderPrefix)}weekly-review-${isoWeekStart(date)}.md`.replace(
+          /\/+/g,
+          "/",
+        );
+      }
       return weeklyReviewPath(date);
     case "inbox":
+      if (folderPrefix !== undefined && folderPrefix !== null) {
+        const stamp = date.toISOString().replace(/[:.]/g, "-");
+        return `${joinVaultFolder(folderPrefix)}capture-${stamp}.md`.replace(
+          /\/+/g,
+          "/",
+        );
+      }
       return inboxCapturePath(date);
     case "resume":
+      if (folderPrefix !== undefined && folderPrefix !== null) {
+        return `${joinVaultFolder(folderPrefix)}${slugifyTitle(title)}.md`.replace(
+          /\/+/g,
+          "/",
+        );
+      }
       return `resumes/${slugifyTitle(title)}.md`;
     default: {
+      if (folderPrefix !== undefined && folderPrefix !== null) {
+        return `${joinVaultFolder(folderPrefix)}${slugifyTitle(title)}.md`.replace(
+          /\/+/g,
+          "/",
+        );
+      }
       const spaceConfig = getSpaceById(spaceId);
       const prefix = spaceConfig?.prefix;
       if (!prefix) return undefined;

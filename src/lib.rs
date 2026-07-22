@@ -43,6 +43,7 @@ pub mod grapheme_workshop;
 pub mod learning_artifacts;
 pub mod manuscript_overlay_tools;
 pub mod turn_budget_request;
+pub mod agent_permission_request;
 pub mod turn_budget_handlers;
 pub mod turn_budget_notify;
 pub mod turn_worker_notify;

@@ -16,6 +16,12 @@ import { HeadingMarks } from "./headingMarksExtension";
 import { LiveHorizontalRule } from "./liveHorizontalRule";
 import { LiveHighlight } from "./liveHighlightMark";
 import { LiveTextColor } from "./liveTextColorMark";
+import { LiveFontFamily } from "./liveFontFamilyMark";
+import { LiveFontSize } from "./liveFontSizeMark";
+import { LiveFootnoteRef } from "./liveFootnoteRefNode";
+import { LiveInlineFootnote } from "./liveInlineFootnoteMark";
+import { LiveFootnoteDefinition } from "./liveFootnoteDefinition";
+import { LiveHeading, LiveParagraph } from "./liveBlockIdNodes";
 
 export type LiveExtensionOptions = {
   fence?: FenceBlockOptions;
@@ -32,11 +38,22 @@ export function createLiveExtensions(
       link: false,
       // Custom Live HR: click unrenders to editable ---.
       horizontalRule: false,
-      heading: { levels: [1, 2, 3] },
+      // Custom paragraph/heading carry Obsidian ` ^id` block attrs.
+      heading: false,
+      paragraph: false,
     }),
+    LiveParagraph,
+    LiveHeading.configure({ levels: [1, 2, 3] }),
+    // No LiveBlockIdChips — widget decorations on the type path reflowed the
+    // doc and fought scroll anchoring. Attrs + serialize still round-trip ^id.
     LiveHorizontalRule,
     LiveHighlight,
     LiveTextColor,
+    LiveFontFamily,
+    LiveFontSize,
+    LiveFootnoteRef,
+    LiveInlineFootnote,
+    LiveFootnoteDefinition,
     Link.configure({
       openOnClick: false,
       autolink: true,

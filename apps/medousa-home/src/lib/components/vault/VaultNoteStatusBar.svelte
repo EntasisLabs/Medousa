@@ -45,10 +45,14 @@
     <p class="vault-note-status-hints">
       {#if editorMode === "preview"}
         <kbd class="vault-kbd">{formatShortcut("F")}</kbd> find
+        <span class="vault-note-status-sep" aria-hidden="true">·</span>
+        <kbd class="vault-kbd">{formatShortcut("N")}</kbd> new
       {:else}
         <kbd class="vault-kbd">{formatShortcut("F")}</kbd> find
         <span class="vault-note-status-sep" aria-hidden="true">·</span>
         <kbd class="vault-kbd">{formatShortcut("S")}</kbd> save
+        <span class="vault-note-status-sep" aria-hidden="true">·</span>
+        <kbd class="vault-kbd">{formatShortcut("N")}</kbd> new
       {/if}
     </p>
   {/if}

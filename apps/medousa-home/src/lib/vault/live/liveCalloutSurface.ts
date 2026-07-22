@@ -1,8 +1,14 @@
 /**
- * Liquid Live callout — tinted aside editable in place (no Build exile).
+ * Liquid Live callout — GitHub-style aside editable in place (no Build exile).
  */
 
-const TONES = ["note", "warn", "error", "success"] as const;
+import {
+  calloutDefaultTitle,
+  calloutIconForTone,
+  calloutIconSvg,
+} from "$lib/styles/calloutIcons";
+
+const TONES = ["note", "warn", "error", "success", "tip", "important"] as const;
 export type CalloutTone = (typeof TONES)[number];
 
 export type LiveCalloutModel = {
@@ -58,6 +64,10 @@ export type CalloutSurfaceHandles = {
   destroy: () => void;
 };
 
+function syncIcon(iconEl: HTMLElement, tone: CalloutTone): void {
+  iconEl.innerHTML = calloutIconSvg(calloutIconForTone(tone));
+}
+
 /**
  * Mount an editable callout. Calls `onChange` when tone/title/body settle (blur / tone click).
  */
@@ -90,6 +100,10 @@ export function mountCalloutSurface(
       e.stopPropagation();
       model = { ...model, tone };
       root.dataset.tone = tone;
+      syncIcon(icon, tone);
+      if (!title.textContent?.trim()) {
+        title.dataset.placeholder = calloutDefaultTitle(tone);
+      }
       for (const el of chrome.querySelectorAll<HTMLButtonElement>(".vault-live-callout__tone")) {
         el.setAttribute("aria-pressed", el.dataset.tone === tone ? "true" : "false");
       }
@@ -111,14 +125,23 @@ export function mountCalloutSurface(
   });
   chrome.append(configure);
 
+  const header = document.createElement("div");
+  header.className = "liquid-callout-header";
+
+  const icon = document.createElement("span");
+  icon.className = "liquid-callout-icon";
+  syncIcon(icon, model.tone);
+
   const title = document.createElement("p");
   title.className = "liquid-callout-title vault-live-callout__title";
   title.contentEditable = "true";
   title.spellcheck = true;
   title.textContent = model.title;
-  title.dataset.placeholder = "Title";
+  title.dataset.placeholder = calloutDefaultTitle(model.tone);
 
-  const body = document.createElement("p");
+  header.append(icon, title);
+
+  const body = document.createElement("div");
   body.className = "liquid-callout-body vault-live-callout__body";
   body.contentEditable = "true";
   body.spellcheck = true;
@@ -151,7 +174,7 @@ export function mountCalloutSurface(
     }
   });
 
-  root.append(chrome, title, body);
+  root.append(chrome, header, body);
   host.replaceChildren(root);
 
   return {
@@ -159,7 +182,9 @@ export function mountCalloutSurface(
     setModel: (next) => {
       model = { ...next };
       root.dataset.tone = model.tone;
+      syncIcon(icon, model.tone);
       title.textContent = model.title;
+      title.dataset.placeholder = calloutDefaultTitle(model.tone);
       body.textContent = model.body;
       for (const el of chrome.querySelectorAll<HTMLButtonElement>(".vault-live-callout__tone")) {
         el.setAttribute(

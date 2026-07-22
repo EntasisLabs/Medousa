@@ -1411,6 +1411,15 @@ pub struct InteractiveTurnStreamEvent {
     /// Per-layer context budget estimate (chars/4 heuristic) for operator telemetry.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub context_usage: Option<ContextUsageReport>,
+    /// External ACP agent permission pause — resolve via `/v1/agents/permission-requests/{id}/approve|deny`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub permission_request_id: Option<String>,
+    /// Bound Medousa chat session for agent-runtime streams (`turn_id` holds agent_session_id).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_session_id: Option<String>,
+    /// External runtime kind when streaming an ACP session (`cursor` / `codex`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_runtime: Option<String>,
 }
 
 /// One slice of the prompt/context budget (Cursor-style context usage UI).
@@ -2622,4 +2631,160 @@ pub struct CalendarExportResponse {
     pub calendar_path: String,
     pub content_type: String,
     pub ics: String,
+}
+
+// --- Hot-swappable agent runtimes (`/v1/agents`) ---
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "lowercase")]
+pub enum AgentRuntimeId {
+    Medousa,
+    Cursor,
+    Codex,
+}
+
+impl AgentRuntimeId {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Medousa => "medousa",
+            Self::Cursor => "cursor",
+            Self::Codex => "codex",
+        }
+    }
+
+    pub fn parse(raw: &str) -> Option<Self> {
+        match raw.trim().to_ascii_lowercase().as_str() {
+            "medousa" | "native" => Some(Self::Medousa),
+            "cursor" => Some(Self::Cursor),
+            "codex" => Some(Self::Codex),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct AgentRuntimeInfo {
+    pub runtime: String,
+    pub available: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub command: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+    /// Native Medousa turns use `/v1/turns` — not `/v1/agents/sessions`.
+    #[serde(default)]
+    pub uses_native_turns: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct AgentRuntimeListResponse {
+    pub runtimes: Vec<AgentRuntimeInfo>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct CreateAgentSessionRequest {
+    pub session_id: String,
+    /// External runtime: `cursor` or `codex` (not `medousa`).
+    pub runtime: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompt: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cwd: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub command: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub args: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub surface: Option<TurnSurfaceContext>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct CreateAgentSessionResponse {
+    pub agent_session_id: String,
+    pub session_id: String,
+    pub runtime: String,
+    pub phase: String,
+    pub stream_url: String,
+    pub stream_ready: bool,
+    pub accepted_at_utc: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct AgentSessionPromptRequest {
+    pub prompt: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct AgentSessionPromptResponse {
+    pub accepted: bool,
+    pub agent_session_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct CancelAgentSessionResponse {
+    pub cancelled: bool,
+    pub agent_session_id: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum AgentPermissionRequestStatus {
+    Pending,
+    Approved,
+    Denied,
+    Expired,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct AgentPermissionRequestRecord {
+    pub request_id: String,
+    pub agent_session_id: String,
+    pub session_id: String,
+    pub runtime: String,
+    pub summary: String,
+    pub status: AgentPermissionRequestStatus,
+    pub created_at_utc: DateTime<Utc>,
+    pub updated_at_utc: DateTime<Utc>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolved_at_utc: Option<DateTime<Utc>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolved_by: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct AgentPermissionRequestListQuery {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limit: Option<usize>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct AgentPermissionRequestListResponse {
+    pub requests: Vec<AgentPermissionRequestRecord>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct AgentPermissionResolveRequest {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolved_by: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct AgentPermissionResolveResponse {
+    pub request: AgentPermissionRequestRecord,
 }

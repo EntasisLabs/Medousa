@@ -112,6 +112,39 @@ describe("markdownSlides", () => {
     expect(price?.body).toMatch(/data-liquid-embed="chart"|```chart/);
   });
 
+  it("parses layers, motion, and speaker notes", () => {
+    const deck = parseSlidesDeck(
+      [
+        "title: Roadmap",
+        "theme: paper",
+        "columns: 2",
+        "",
+        "---",
+        "label: Roadmap",
+        "layout: stack",
+        "bg: dusk",
+        "motion: fade-up",
+        "notes: Speaker — emphasize Q3",
+        "layer: logo",
+        "  src: media/mark.svg",
+        "  x: 0.82",
+        "  y: 0.06",
+        "  w: 0.14",
+        "",
+        "# Q3",
+      ].join("\n"),
+    )!;
+    expect(deck.slides[0]!.motion).toBe("fade-up");
+    expect(deck.slides[0]!.notes).toBe("Speaker — emphasize Q3");
+    expect(deck.slides[0]!.layers).toEqual([
+      { id: "logo", src: "media/mark.svg", x: 0.82, y: 0.06, w: 0.14 },
+    ]);
+    const again = parseSlidesDeck(serializeSlidesDeckBody(deck))!;
+    expect(again.slides[0]!.layers?.[0]?.src).toBe("media/mark.svg");
+    expect(again.slides[0]!.motion).toBe("fade-up");
+    expect(again.slides[0]!.notes).toContain("Q3");
+  });
+
   it("round-trips wash + image atmosphere fields", () => {
     const deck = parseSlidesDeck(
       [

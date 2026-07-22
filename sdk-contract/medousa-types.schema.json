@@ -1,4 +1,357 @@
 {
+  "AgentPermissionRequestListResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "AgentPermissionRequestListResponse",
+    "type": "object",
+    "required": [
+      "requests"
+    ],
+    "properties": {
+      "requests": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/AgentPermissionRequestRecord"
+        }
+      }
+    },
+    "definitions": {
+      "AgentPermissionRequestRecord": {
+        "type": "object",
+        "required": [
+          "agent_session_id",
+          "created_at_utc",
+          "request_id",
+          "runtime",
+          "session_id",
+          "status",
+          "summary",
+          "updated_at_utc"
+        ],
+        "properties": {
+          "agent_session_id": {
+            "type": "string"
+          },
+          "created_at_utc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "resolved_at_utc": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "resolved_by": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "runtime": {
+            "type": "string"
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/definitions/AgentPermissionRequestStatus"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "updated_at_utc": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "AgentPermissionRequestStatus": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "approved",
+          "denied",
+          "expired"
+        ]
+      }
+    }
+  },
+  "AgentPermissionRequestRecord": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "AgentPermissionRequestRecord",
+    "type": "object",
+    "required": [
+      "agent_session_id",
+      "created_at_utc",
+      "request_id",
+      "runtime",
+      "session_id",
+      "status",
+      "summary",
+      "updated_at_utc"
+    ],
+    "properties": {
+      "agent_session_id": {
+        "type": "string"
+      },
+      "created_at_utc": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "request_id": {
+        "type": "string"
+      },
+      "resolved_at_utc": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "format": "date-time"
+      },
+      "resolved_by": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "runtime": {
+        "type": "string"
+      },
+      "session_id": {
+        "type": "string"
+      },
+      "status": {
+        "$ref": "#/definitions/AgentPermissionRequestStatus"
+      },
+      "summary": {
+        "type": "string"
+      },
+      "updated_at_utc": {
+        "type": "string",
+        "format": "date-time"
+      }
+    },
+    "definitions": {
+      "AgentPermissionRequestStatus": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "approved",
+          "denied",
+          "expired"
+        ]
+      }
+    }
+  },
+  "AgentPermissionResolveRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "AgentPermissionResolveRequest",
+    "type": "object",
+    "properties": {
+      "resolved_by": {
+        "type": [
+          "string",
+          "null"
+        ]
+      }
+    }
+  },
+  "AgentPermissionResolveResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "AgentPermissionResolveResponse",
+    "type": "object",
+    "required": [
+      "request"
+    ],
+    "properties": {
+      "request": {
+        "$ref": "#/definitions/AgentPermissionRequestRecord"
+      }
+    },
+    "definitions": {
+      "AgentPermissionRequestRecord": {
+        "type": "object",
+        "required": [
+          "agent_session_id",
+          "created_at_utc",
+          "request_id",
+          "runtime",
+          "session_id",
+          "status",
+          "summary",
+          "updated_at_utc"
+        ],
+        "properties": {
+          "agent_session_id": {
+            "type": "string"
+          },
+          "created_at_utc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "resolved_at_utc": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "resolved_by": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "runtime": {
+            "type": "string"
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/definitions/AgentPermissionRequestStatus"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "updated_at_utc": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "AgentPermissionRequestStatus": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "approved",
+          "denied",
+          "expired"
+        ]
+      }
+    }
+  },
+  "AgentRuntimeInfo": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "AgentRuntimeInfo",
+    "type": "object",
+    "required": [
+      "available",
+      "runtime"
+    ],
+    "properties": {
+      "available": {
+        "type": "boolean"
+      },
+      "command": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "detail": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "runtime": {
+        "type": "string"
+      },
+      "uses_native_turns": {
+        "description": "Native Medousa turns use `/v1/turns` — not `/v1/agents/sessions`.",
+        "default": false,
+        "type": "boolean"
+      }
+    }
+  },
+  "AgentRuntimeListResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "AgentRuntimeListResponse",
+    "type": "object",
+    "required": [
+      "runtimes"
+    ],
+    "properties": {
+      "runtimes": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/AgentRuntimeInfo"
+        }
+      }
+    },
+    "definitions": {
+      "AgentRuntimeInfo": {
+        "type": "object",
+        "required": [
+          "available",
+          "runtime"
+        ],
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "command": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "detail": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "runtime": {
+            "type": "string"
+          },
+          "uses_native_turns": {
+            "description": "Native Medousa turns use `/v1/turns` — not `/v1/agents/sessions`.",
+            "default": false,
+            "type": "boolean"
+          }
+        }
+      }
+    }
+  },
+  "AgentSessionPromptRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "AgentSessionPromptRequest",
+    "type": "object",
+    "required": [
+      "prompt"
+    ],
+    "properties": {
+      "prompt": {
+        "type": "string"
+      }
+    }
+  },
+  "AgentSessionPromptResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "AgentSessionPromptResponse",
+    "type": "object",
+    "required": [
+      "accepted",
+      "agent_session_id"
+    ],
+    "properties": {
+      "accepted": {
+        "type": "boolean"
+      },
+      "agent_session_id": {
+        "type": "string"
+      }
+    }
+  },
   "ArchiveAskJobRequest": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "ArchiveAskJobRequest",
@@ -1103,6 +1456,27 @@
       }
     }
   },
+  "CancelAgentSessionResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "CancelAgentSessionResponse",
+    "type": "object",
+    "required": [
+      "agent_session_id",
+      "cancelled",
+      "message"
+    ],
+    "properties": {
+      "agent_session_id": {
+        "type": "string"
+      },
+      "cancelled": {
+        "type": "boolean"
+      },
+      "message": {
+        "type": "string"
+      }
+    }
+  },
   "CapabilityListResponse": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "CapabilityListResponse",
@@ -1666,6 +2040,138 @@
       "updatedAtUtc": {
         "type": "string",
         "format": "date-time"
+      }
+    }
+  },
+  "CreateAgentSessionRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "CreateAgentSessionRequest",
+    "type": "object",
+    "required": [
+      "runtime",
+      "session_id"
+    ],
+    "properties": {
+      "args": {
+        "type": [
+          "array",
+          "null"
+        ],
+        "items": {
+          "type": "string"
+        }
+      },
+      "command": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "cwd": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "prompt": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "runtime": {
+        "description": "External runtime: `cursor` or `codex` (not `medousa`).",
+        "type": "string"
+      },
+      "session_id": {
+        "type": "string"
+      },
+      "surface": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/TurnSurfaceContext"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "definitions": {
+      "TurnSurfaceContext": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "default": null,
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "channel_surface": {
+            "description": "Adapter surface: telegram, discord, slack, home-desktop, home-ios, tui, api, …",
+            "default": null,
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "supports_browser_host": {
+            "description": "When true, the connected client can run Agent Browser (local BrowserHost or client WebView). Telegram/TUI/ingest leave this false; Home desktop/iOS set true when browser is available.",
+            "default": false,
+            "type": "boolean"
+          },
+          "supports_ui_artifacts": {
+            "description": "When true, the connected client can render sandboxed HTML UI artifacts (`cognition_ui_present`). Channel adapters and clients set this — the daemon does not infer it from channel name.",
+            "default": false,
+            "type": "boolean"
+          },
+          "user_id": {
+            "default": null,
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    }
+  },
+  "CreateAgentSessionResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "CreateAgentSessionResponse",
+    "type": "object",
+    "required": [
+      "accepted_at_utc",
+      "agent_session_id",
+      "phase",
+      "runtime",
+      "session_id",
+      "stream_ready",
+      "stream_url"
+    ],
+    "properties": {
+      "accepted_at_utc": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "agent_session_id": {
+        "type": "string"
+      },
+      "phase": {
+        "type": "string"
+      },
+      "runtime": {
+        "type": "string"
+      },
+      "session_id": {
+        "type": "string"
+      },
+      "stream_ready": {
+        "type": "boolean"
+      },
+      "stream_url": {
+        "type": "string"
       }
     }
   },
@@ -8285,6 +8791,20 @@
       "turn_id"
     ],
     "properties": {
+      "agent_runtime": {
+        "description": "External runtime kind when streaming an ACP session (`cursor` / `codex`).",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "agent_session_id": {
+        "description": "Bound Medousa chat session for agent-runtime streams (`turn_id` holds agent_session_id).",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
       "browser_challenge_url": {
         "description": "URL the client should load in Agent Browser WebView.",
         "type": [
@@ -8348,6 +8868,13 @@
       },
       "operator_message": {
         "description": "Human-facing status whisper for rich surfaces (Home default).",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "permission_request_id": {
+        "description": "External ACP agent permission pause — resolve via `/v1/agents/permission-requests/{id}/approve|deny`.",
         "type": [
           "string",
           "null"
@@ -12175,11 +12702,11 @@
     ],
     "properties": {
       "content": {
+        "description": "Body actually persisted (after semantic-tag rewrite). Clients use this to stay aligned with disk instead of assuming the request body was stored.",
         "type": [
           "string",
           "null"
-        ],
-        "description": "Body actually persisted after semantic-tag rewrite (when present)."
+        ]
       },
       "created": {
         "type": "boolean"

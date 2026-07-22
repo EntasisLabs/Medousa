@@ -161,7 +161,7 @@
   const showLedgerTable = $derived(
     !mobile &&
       vault.editorMode === "edit" &&
-      vault.selectedKind === "ledger" &&
+      (vault.selectedKind === "ledger" || vault.selectedKind === "sheet") &&
       vault.ledgerEditMode === "table" &&
       hasLedgerTable,
   );
@@ -511,7 +511,24 @@
     vaultFind.openFind();
   }
 
+  async function openNewNoteFromHotkey() {
+    if (vault.newNoteDialogOpen) return;
+    if (vault.dirty) await vault.flushSave();
+    vault.openNewNoteDialog();
+  }
+
   function handleKeydown(event: KeyboardEvent) {
+    const action = matchVaultHotkey(event);
+
+    // New note works even with no note selected (empty library / flow-state).
+    if (action === "newNote") {
+      if (mobile || vault.newNoteDialogOpen) return;
+      event.preventDefault();
+      event.stopPropagation();
+      void openNewNoteFromHotkey();
+      return;
+    }
+
     if (!vault.selectedPath) return;
 
     if (vaultFind.open && event.key === "Escape") {
@@ -521,7 +538,6 @@
       return;
     }
 
-    const action = matchVaultHotkey(event);
     if (!action) return;
 
     const typing = isPlainTextEditingTarget(event.target);

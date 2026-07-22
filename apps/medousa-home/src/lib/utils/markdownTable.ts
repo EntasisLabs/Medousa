@@ -41,7 +41,8 @@ function frontmatterKindIsLedger(markdown: string): boolean {
   for (const line of frontmatter.split("\n")) {
     if (!line.trimStart().startsWith("kind:")) continue;
     const value = line.slice(line.indexOf(":") + 1);
-    return normalizeKind(value) === "ledger";
+    const kind = normalizeKind(value);
+    return kind === "ledger" || kind === "sheet";
   }
   return false;
 }

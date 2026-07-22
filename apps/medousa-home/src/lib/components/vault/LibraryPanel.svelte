@@ -7,6 +7,7 @@
   import VaultTree from "./VaultTree.svelte";
   import VaultLibraryBrowseLists from "./VaultLibraryBrowseLists.svelte";
   import VaultEditor from "./VaultEditor.svelte";
+  import VaultKindBadge from "./VaultKindBadge.svelte";
   import VaultNewNoteDialog from "./VaultNewNoteDialog.svelte";
   import ExternalFilesBrowser from "./ExternalFilesBrowser.svelte";
   import ExternalFileRow from "./ExternalFileRow.svelte";
@@ -19,6 +20,7 @@
   import { canPreviewAttachment } from "$lib/utils/vaultAttachments";
   import type { ExternalFileEntry } from "$lib/types/externalDesk";
   import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
+  import { vaultDisplayTitle } from "$lib/utils/formatVault";
 
   interface Props {
     visible: boolean;
@@ -51,6 +53,9 @@
   const showPresentations = $derived(externalDesk.sidebarMode === "presentations");
   const showFilesSearch = $derived(
     showYourFiles && vault.searchQuery.trim().length > 0,
+  );
+  const searchingNotes = $derived(
+    showVaultChrome && vault.searchQuery.trim().length > 0,
   );
   const canLinkFiles = $derived(Boolean(vault.selectedPath));
 
@@ -197,7 +202,37 @@
           </p>
         {/if}
 
-        {#if vault.libraryBrowseMode === "folders"}
+        {#if searchingNotes}
+          {#if vault.searchHits.length === 0}
+            <p class="workshop-muted px-3 py-4 text-xs">No notes match.</p>
+          {:else}
+            <ul class="min-h-0 flex-1 divide-y divide-surface-500/35 overflow-y-auto">
+              {#each vault.searchHits as hit (hit.note.path)}
+                <li>
+                  <button
+                    type="button"
+                    class="flex w-full items-center gap-2 px-3 py-2 text-left transition hover:bg-surface-800/70 {vault.selectedPath ===
+                    hit.note.path
+                      ? 'workshop-list-row-active'
+                      : ''}"
+                    onclick={() => void openNote(hit.note.path)}
+                  >
+                    <span class="min-w-0 flex-1">
+                      <span class="block truncate text-sm font-medium text-surface-100">
+                        {vault.labelByPathMap.get(hit.note.path) ??
+                          vaultDisplayTitle(hit.note.title, hit.note.path)}
+                      </span>
+                      <span class="workshop-faint mt-0.5 block truncate font-mono text-[10px]">
+                        {hit.note.path}
+                      </span>
+                    </span>
+                    <VaultKindBadge kind={hit.note.kind} path={hit.note.path} compact />
+                  </button>
+                </li>
+              {/each}
+            </ul>
+          {/if}
+        {:else if vault.libraryBrowseMode === "folders"}
           <VaultTree
             tree={vault.tree}
             selectedPath={vault.selectedPath}

@@ -8,6 +8,7 @@ import {
 } from "$lib/markdown/hydrateLiquidEmbeds";
 import { preprocessLiquidEmbeds, LIQUID_FENCE_LANGS } from "$lib/markdown/liquidEmbeds";
 import type { LiquidRenderContext } from "$lib/liquid/render/context";
+import { highlightElement } from "$lib/syntax/highlightCode";
 
 export function isLiquidFenceLang(lang: string): boolean {
   return LIQUID_FENCE_LANGS.has(lang.toLowerCase());
@@ -81,8 +82,15 @@ export function mountPlainFence(
 
   const pre = document.createElement("pre");
   pre.className = "vault-live-plain-fence__body";
-  pre.textContent = body;
+
+  const code = document.createElement("code");
+  const langId = lang.trim().toLowerCase() || "plaintext";
+  code.className = `syn-code language-${langId}`;
+  code.textContent = body;
+  pre.append(code);
 
   card.append(head, pre);
   host.append(card);
+
+  void highlightElement(code, langId);
 }

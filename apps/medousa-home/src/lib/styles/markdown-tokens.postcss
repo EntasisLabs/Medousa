@@ -1,23 +1,8 @@
-/* Markdown readability tokens — theme-agnostic code + prose polish (chat + vault). */
+/* Markdown readability tokens — chrome + prose polish (chat + vault).
+ * Syntax token colors live in syntax-tokens.postcss (--syn-* / --md-code-* aliases). */
 
 @layer base {
   html.dark {
-    --md-code-bg: 32 34 44;
-    --md-code-border: 96 102 124;
-    --md-code-header-bg: 40 43 56;
-    --md-code-fg: 232 234 240;
-    --md-code-comment: 122 130 148;
-    --md-code-keyword: 196 176 255;
-    --md-code-string: 134 210 154;
-    --md-code-number: 255 190 120;
-    --md-code-title: 248 248 252;
-    --md-code-attr: 178 198 255;
-    --md-code-function: 232 234 240;
-    --md-code-meta: 148 156 172;
-    --md-code-addition-fg: 134 210 154;
-    --md-code-addition-bg: 52 199 89;
-    --md-code-deletion-fg: 255 143 143;
-    --md-code-deletion-bg: 255 59 48;
     --md-inline-code-bg: 40 42 54;
     --md-inline-code-fg: 232 234 240;
     --md-inline-code-border: 62 66 78;
@@ -32,22 +17,6 @@
   }
 
   html:not(.dark) {
-    --md-code-bg: 224 228 236;
-    --md-code-border: 156 163 178;
-    --md-code-header-bg: 214 218 228;
-    --md-code-fg: 36 41 47;
-    --md-code-comment: 101 109 118;
-    --md-code-keyword: 207 34 46;
-    --md-code-string: 3 47 98;
-    --md-code-number: 5 80 174;
-    --md-code-title: 149 56 0;
-    --md-code-attr: 17 99 41;
-    --md-code-function: 130 80 223;
-    --md-code-meta: 101 109 118;
-    --md-code-addition-fg: 17 99 41;
-    --md-code-addition-bg: 52 199 89;
-    --md-code-deletion-fg: 207 34 46;
-    --md-code-deletion-bg: 255 59 48;
     --md-inline-code-bg: 228 230 236;
     --md-inline-code-fg: 36 41 47;
     --md-inline-code-border: 202 208 218;
@@ -114,82 +83,5 @@
   .markdown-code-copy:hover {
     background-color: rgb(var(--md-code-border) / 0.35);
     color: rgb(var(--md-code-fg));
-  }
-
-  .markdown-code {
-    color: rgb(var(--md-code-fg));
-    font-variant-ligatures: none;
-    tab-size: 2;
-  }
-
-  .markdown-code .hljs-comment,
-  .markdown-code .hljs-quote {
-    color: rgb(var(--md-code-comment));
-    font-style: italic;
-  }
-
-  .markdown-code .hljs-keyword,
-  .markdown-code .hljs-selector-tag,
-  .markdown-code .hljs-built_in,
-  .markdown-code .hljs-meta .hljs-keyword {
-    color: rgb(var(--md-code-keyword));
-  }
-
-  .markdown-code .hljs-string,
-  .markdown-code .hljs-regexp,
-  .markdown-code .hljs-template-tag,
-  .markdown-code .hljs-template-variable {
-    color: rgb(var(--md-code-string));
-  }
-
-  .markdown-code .hljs-number,
-  .markdown-code .hljs-literal {
-    color: rgb(var(--md-code-number));
-  }
-
-  .markdown-code .hljs-title,
-  .markdown-code .hljs-section,
-  .markdown-code .hljs-name,
-  .markdown-code .hljs-type {
-    color: rgb(var(--md-code-title));
-  }
-
-  .markdown-code .hljs-attr,
-  .markdown-code .hljs-attribute,
-  .markdown-code .hljs-variable,
-  .markdown-code .hljs-params {
-    color: rgb(var(--md-code-attr));
-  }
-
-  .markdown-code .hljs-function,
-  .markdown-code .hljs-title.function_ {
-    color: rgb(var(--md-code-function));
-  }
-
-  .markdown-code .hljs-symbol,
-  .markdown-code .hljs-bullet,
-  .markdown-code .hljs-link,
-  .markdown-code .hljs-meta {
-    color: rgb(var(--md-code-meta));
-  }
-
-  .markdown-code .hljs-emphasis {
-    color: rgb(var(--md-code-fg) / 0.88);
-    font-style: italic;
-  }
-
-  .markdown-code .hljs-strong {
-    color: rgb(var(--md-code-fg));
-    font-weight: 600;
-  }
-
-  .markdown-code .hljs-addition {
-    color: rgb(var(--md-code-addition-fg));
-    background-color: rgb(var(--md-code-addition-bg) / 0.12);
-  }
-
-  .markdown-code .hljs-deletion {
-    color: rgb(var(--md-code-deletion-fg));
-    background-color: rgb(var(--md-code-deletion-bg) / 0.12);
   }
 }

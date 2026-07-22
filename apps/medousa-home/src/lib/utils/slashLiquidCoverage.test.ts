@@ -15,6 +15,7 @@ describe("slash liquid coverage", () => {
       "carousel",
       "actions",
       "section",
+      "block",
       "chips",
       "media",
       "cite",

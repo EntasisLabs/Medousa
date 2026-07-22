@@ -30,8 +30,8 @@ describe("renderInlineMarkdown", () => {
         "| Winter | No fertilizer | None |",
       ].join("\n"),
     );
-    expect(html).toContain('class="markdown-table-scroll"');
-    expect(html).toMatch(/<div class="markdown-table-scroll">\s*<table>/);
+    expect(html).toMatch(/class="[^"]*\bmarkdown-table-scroll\b[^"]*"/);
+    expect(html).toMatch(/<div class="[^"]*\bmarkdown-table-scroll\b[^"]*">\s*<table>/);
     expect(html).toContain("</table></div>");
     expect(html).toContain('align="right"');
     expect(html).toContain("Every 2 weeks");

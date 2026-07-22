@@ -3,6 +3,7 @@
 import type { Editor } from "@tiptap/core";
 import type { MarkdownFormatAction } from "$lib/utils/vaultMarkdownEdit";
 import type { MarkdownColorToken } from "$lib/utils/vaultMarkdownColors";
+import type { MarkdownFontFamily } from "$lib/utils/vaultMarkdownFonts";
 
 export type SelectionAnchor = {
   left: number;
@@ -66,21 +67,44 @@ export function liveActiveFormatActions(editor: Editor): MarkdownFormatAction[] 
   return active;
 }
 
+/**
+ * Keep the Live scroll host planted across focus/selection restores.
+ * TipTap's scrollIntoView:false still loses to browser focus scrolling.
+ */
+export function withPinnedLiveScroll<T>(editor: Editor, fn: () => T): T {
+  const host = editor.view.dom.closest(".vault-live-editor");
+  const top = host instanceof HTMLElement ? host.scrollTop : null;
+  const pin = () => {
+    if (host instanceof HTMLElement && typeof top === "number") {
+      host.scrollTop = top;
+    }
+  };
+  try {
+    return fn();
+  } finally {
+    pin();
+    // Browser focus scrolling can land a frame later.
+    requestAnimationFrame(pin);
+  }
+}
+
 /** Restore a stored range before formatting (bubble clicks can clear selection). */
 export function restoreLiveSelection(
   editor: Editor,
   from: number,
   to: number,
 ): boolean {
-  const size = editor.state.doc.content.size;
-  const nextFrom = Math.max(0, Math.min(from, size));
-  const nextTo = Math.max(0, Math.min(to, size));
-  if (nextFrom === nextTo) return false;
-  return editor
-    .chain()
-    .focus(undefined, { scrollIntoView: false })
-    .setTextSelection({ from: nextFrom, to: nextTo })
-    .run();
+  return withPinnedLiveScroll(editor, () => {
+    const size = editor.state.doc.content.size;
+    const nextFrom = Math.max(0, Math.min(from, size));
+    const nextTo = Math.max(0, Math.min(to, size));
+    if (nextFrom === nextTo) return false;
+    return editor
+      .chain()
+      .focus(undefined, { scrollIntoView: false })
+      .setTextSelection({ from: nextFrom, to: nextTo })
+      .run();
+  });
 }
 
 export function applyLiveFormatAction(
@@ -104,6 +128,8 @@ export function applyLiveFormatAction(
       return chain.toggleCode().run();
     case "highlight":
       return chain.toggleHighlight().run();
+    case "paragraph":
+      return chain.setParagraph().run();
     case "h1":
       return chain.toggleHeading({ level: 1 }).run();
     case "h2":
@@ -144,4 +170,56 @@ export function applyLiveTextColor(
     return editor.chain().focus(undefined, { scrollIntoView: false }).unsetTextColor().run();
   }
   return editor.chain().focus(undefined, { scrollIntoView: false }).setTextColor(color).run();
+}
+
+export function applyLiveFontFamily(
+  editor: Editor,
+  font: MarkdownFontFamily,
+  range?: { from: number; to: number } | null,
+): boolean {
+  if (range && range.from !== range.to) {
+    restoreLiveSelection(editor, range.from, range.to);
+  } else if (!liveSelectionHasText(editor)) {
+    return false;
+  }
+
+  const current = editor.getAttributes("fontFamily").font as string | undefined;
+  if (current && String(current).toLowerCase() === String(font).toLowerCase()) {
+    return editor
+      .chain()
+      .focus(undefined, { scrollIntoView: false })
+      .unsetFontFamily()
+      .run();
+  }
+  return editor
+    .chain()
+    .focus(undefined, { scrollIntoView: false })
+    .setFontFamily(font)
+    .run();
+}
+
+export function applyLiveFontSize(
+  editor: Editor,
+  size: string,
+  range?: { from: number; to: number } | null,
+): boolean {
+  if (range && range.from !== range.to) {
+    restoreLiveSelection(editor, range.from, range.to);
+  } else if (!liveSelectionHasText(editor)) {
+    return false;
+  }
+
+  const current = editor.getAttributes("fontSize").size as string | undefined;
+  if (current && String(current).toLowerCase() === String(size).toLowerCase()) {
+    return editor
+      .chain()
+      .focus(undefined, { scrollIntoView: false })
+      .unsetFontSize()
+      .run();
+  }
+  return editor
+    .chain()
+    .focus(undefined, { scrollIntoView: false })
+    .setFontSize(size)
+    .run();
 }

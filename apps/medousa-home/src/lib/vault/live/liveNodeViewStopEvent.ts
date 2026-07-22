@@ -9,7 +9,7 @@
  */
 
 const FENCE_SELECTABLE =
-  ".vault-live-plain-fence__body, .vault-live-code__stage, .liquid-code-pre, .liquid-code-pre code, .vault-live-fence-raw, .vault-live-fence-raw-shell";
+  ".vault-live-plain-fence__body, .vault-live-plain-fence__body code, .vault-live-code__stage, .liquid-code-pre, .liquid-code-pre code, .vault-live-fence-raw, .vault-live-fence-raw-shell";
 
 function selectionInsideFence(): boolean {
   if (typeof window === "undefined") return false;

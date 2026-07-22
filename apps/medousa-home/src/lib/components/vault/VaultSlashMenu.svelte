@@ -132,6 +132,13 @@
       group: "blocks",
     },
     {
+      id: "liquid_block",
+      label: "Styled block",
+      hint: "Font, size, align, spacing",
+      keywords: "liquid block styled font size align spacing ::block:: turbo ```block",
+      group: "blocks",
+    },
+    {
       id: "liquid_chips",
       label: "Chips",
       hint: "Filter / tag pills",

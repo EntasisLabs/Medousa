@@ -45,8 +45,10 @@
 
   const CALLOUT_TONES = [
     { id: "note", label: "Note" },
-    { id: "warn", label: "Warn" },
-    { id: "error", label: "Error" },
+    { id: "tip", label: "Tip" },
+    { id: "important", label: "Important" },
+    { id: "warn", label: "Warning" },
+    { id: "error", label: "Caution" },
     { id: "success", label: "Success" },
   ] as const;
 

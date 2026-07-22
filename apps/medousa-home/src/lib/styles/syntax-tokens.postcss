@@ -1,0 +1,216 @@
+/* Shared Medousa syntax palette — Preview, Live fences, liquid code, CodeMirror.
+ * Calm chroma with clear role separation (keyword ≠ function ≠ string ≠ type). */
+
+@layer base {
+  html.dark {
+    --syn-bg: 30 32 42;
+    --syn-border: 78 84 104;
+    --syn-header-bg: 36 39 50;
+    --syn-fg: 214 218 228;
+    --syn-comment: 118 126 146;
+    --syn-keyword: 186 164 228;
+    --syn-string: 132 186 152;
+    --syn-number: 214 168 118;
+    --syn-function: 142 186 222;
+    --syn-type: 212 178 128;
+    --syn-attr: 156 176 210;
+    --syn-operator: 148 156 174;
+    --syn-meta: 128 136 156;
+    --syn-punctuation: 140 148 166;
+    --syn-title: 222 226 236;
+    --syn-addition-fg: 132 186 152;
+    --syn-addition-bg: 52 199 89;
+    --syn-deletion-fg: 230 140 140;
+    --syn-deletion-bg: 255 59 48;
+
+    /* Preview chrome aliases — keep --md-code-* consumers working. */
+    --md-code-bg: var(--syn-bg);
+    --md-code-border: var(--syn-border);
+    --md-code-header-bg: var(--syn-header-bg);
+    --md-code-fg: var(--syn-fg);
+    --md-code-comment: var(--syn-comment);
+    --md-code-keyword: var(--syn-keyword);
+    --md-code-string: var(--syn-string);
+    --md-code-number: var(--syn-number);
+    --md-code-title: var(--syn-title);
+    --md-code-attr: var(--syn-attr);
+    --md-code-function: var(--syn-function);
+    --md-code-meta: var(--syn-meta);
+    --md-code-addition-fg: var(--syn-addition-fg);
+    --md-code-addition-bg: var(--syn-addition-bg);
+    --md-code-deletion-fg: var(--syn-deletion-fg);
+    --md-code-deletion-bg: var(--syn-deletion-bg);
+  }
+
+  html:not(.dark) {
+    --syn-bg: 246 247 249;
+    --syn-border: 196 202 214;
+    --syn-header-bg: 236 238 244;
+    --syn-fg: 36 41 47;
+    --syn-comment: 101 109 118;
+    --syn-keyword: 207 34 46;
+    --syn-string: 10 48 105;
+    --syn-number: 5 80 174;
+    --syn-function: 102 57 196;
+    --syn-type: 149 56 0;
+    --syn-attr: 17 99 41;
+    --syn-operator: 87 96 106;
+    --syn-meta: 101 109 118;
+    --syn-punctuation: 87 96 106;
+    --syn-title: 149 56 0;
+    --syn-addition-fg: 17 99 41;
+    --syn-addition-bg: 52 199 89;
+    --syn-deletion-fg: 207 34 46;
+    --syn-deletion-bg: 255 59 48;
+
+    --md-code-bg: var(--syn-bg);
+    --md-code-border: var(--syn-border);
+    --md-code-header-bg: var(--syn-header-bg);
+    --md-code-fg: var(--syn-fg);
+    --md-code-comment: var(--syn-comment);
+    --md-code-keyword: var(--syn-keyword);
+    --md-code-string: var(--syn-string);
+    --md-code-number: var(--syn-number);
+    --md-code-title: var(--syn-title);
+    --md-code-attr: var(--syn-attr);
+    --md-code-function: var(--syn-function);
+    --md-code-meta: var(--syn-meta);
+    --md-code-addition-fg: var(--syn-addition-fg);
+    --md-code-addition-bg: var(--syn-addition-bg);
+    --md-code-deletion-fg: var(--syn-deletion-fg);
+    --md-code-deletion-bg: var(--syn-deletion-bg);
+  }
+}
+
+@layer components {
+  .syn-code,
+  .markdown-code {
+    color: rgb(var(--syn-fg));
+    font-variant-ligatures: none;
+    tab-size: 2;
+  }
+
+  /* Never paint token backgrounds — only color (diff add/del excepted). */
+  .syn-code [class^="hljs-"],
+  .syn-code [class*=" hljs-"],
+  .markdown-code [class^="hljs-"],
+  .markdown-code [class*=" hljs-"] {
+    background: transparent;
+  }
+
+  .syn-code .hljs-comment,
+  .syn-code .hljs-quote,
+  .markdown-code .hljs-comment,
+  .markdown-code .hljs-quote {
+    color: rgb(var(--syn-comment));
+    font-style: normal;
+  }
+
+  .syn-code .hljs-keyword,
+  .syn-code .hljs-selector-tag,
+  .syn-code .hljs-meta .hljs-keyword,
+  .markdown-code .hljs-keyword,
+  .markdown-code .hljs-selector-tag,
+  .markdown-code .hljs-meta .hljs-keyword {
+    color: rgb(var(--syn-keyword));
+  }
+
+  /* Built-ins read as types, not keywords — less purple noise. */
+  .syn-code .hljs-built_in,
+  .markdown-code .hljs-built_in {
+    color: rgb(var(--syn-type));
+  }
+
+  .syn-code .hljs-string,
+  .syn-code .hljs-regexp,
+  .syn-code .hljs-template-tag,
+  .syn-code .hljs-template-variable,
+  .markdown-code .hljs-string,
+  .markdown-code .hljs-regexp,
+  .markdown-code .hljs-template-tag,
+  .markdown-code .hljs-template-variable {
+    color: rgb(var(--syn-string));
+  }
+
+  .syn-code .hljs-number,
+  .syn-code .hljs-literal,
+  .markdown-code .hljs-number,
+  .markdown-code .hljs-literal {
+    color: rgb(var(--syn-number));
+  }
+
+  .syn-code .hljs-title,
+  .syn-code .hljs-section,
+  .syn-code .hljs-name,
+  .syn-code .hljs-type,
+  .markdown-code .hljs-title,
+  .markdown-code .hljs-section,
+  .markdown-code .hljs-name,
+  .markdown-code .hljs-type {
+    color: rgb(var(--syn-type));
+  }
+
+  .syn-code .hljs-attr,
+  .syn-code .hljs-attribute,
+  .markdown-code .hljs-attr,
+  .markdown-code .hljs-attribute {
+    color: rgb(var(--syn-attr));
+  }
+
+  /* Params / locals stay body color — avoids blue soup in call sites. */
+  .syn-code .hljs-variable,
+  .syn-code .hljs-params,
+  .markdown-code .hljs-variable,
+  .markdown-code .hljs-params {
+    color: rgb(var(--syn-fg));
+  }
+
+  .syn-code .hljs-function,
+  .syn-code .hljs-title.function_,
+  .markdown-code .hljs-function,
+  .markdown-code .hljs-title.function_ {
+    color: rgb(var(--syn-function));
+  }
+
+  .syn-code .hljs-symbol,
+  .syn-code .hljs-bullet,
+  .syn-code .hljs-link,
+  .syn-code .hljs-meta,
+  .markdown-code .hljs-symbol,
+  .markdown-code .hljs-bullet,
+  .markdown-code .hljs-link,
+  .markdown-code .hljs-meta {
+    color: rgb(var(--syn-meta));
+  }
+
+  .syn-code .hljs-punctuation,
+  .syn-code .hljs-operator,
+  .markdown-code .hljs-punctuation,
+  .markdown-code .hljs-operator {
+    color: rgb(var(--syn-operator));
+  }
+
+  .syn-code .hljs-emphasis,
+  .markdown-code .hljs-emphasis {
+    color: rgb(var(--syn-fg) / 0.88);
+    font-style: italic;
+  }
+
+  .syn-code .hljs-strong,
+  .markdown-code .hljs-strong {
+    color: rgb(var(--syn-fg));
+    font-weight: 600;
+  }
+
+  .syn-code .hljs-addition,
+  .markdown-code .hljs-addition {
+    color: rgb(var(--syn-addition-fg));
+    background-color: rgb(var(--syn-addition-bg) / 0.12);
+  }
+
+  .syn-code .hljs-deletion,
+  .markdown-code .hljs-deletion {
+    color: rgb(var(--syn-deletion-fg));
+    background-color: rgb(var(--syn-deletion-bg) / 0.12);
+  }
+}

@@ -5,8 +5,25 @@ import {
   isMarkdownHexColor,
   normalizeMarkdownHexColor,
 } from "$lib/utils/vaultMarkdownColors";
+import {
+  fontFamilySpanHtml,
+  fontSizeSpanHtml,
+  isMarkdownFontFamily,
+  isMarkdownFontSizeToken,
+} from "$lib/utils/vaultMarkdownFonts";
+
+import {
+  calloutDefaultTitle,
+  calloutIconForTone,
+  calloutIconSvg,
+} from "$lib/styles/calloutIcons";
 
 import { escapeAttr, escapeHtml } from "./escape";
+import {
+  buildFootnotesSectionHtml,
+  planFootnotes,
+  replaceFootnoteMarkers,
+} from "./footnotes";
 import { parseImageSizeToken } from "./imageSize";
 
 const CALLOUT_LINE = /^>\s*\[!(\w+)\]\s*(.*)$/i;
@@ -44,11 +61,20 @@ export function preprocessWikilinks(
   titleByPath?: Map<string, string>,
 ): string {
   return source.replace(
-    /\[\[([^\]|#]+)(?:#([^\]|]+))?(?:\|([^\]]+))?\]\]/g,
-    (_match, target: string, heading: string | undefined, alias: string | undefined) => {
+    /\[\[([^\]|#]*)(?:#([^\]|]+))?(?:\|([^\]]+))?\]\]/g,
+    (
+      match,
+      target: string,
+      heading: string | undefined,
+      alias: string | undefined,
+    ) => {
       const path = target.trim();
-      const label = alias?.trim() || wikilinkLabel(path, titleByPath);
-      const hash = heading?.trim() ? `#${heading.trim()}` : "";
+      const hashPart = heading?.trim() ?? "";
+      if (!path && !hashPart) return match;
+      const label =
+        alias?.trim() ||
+        (path ? wikilinkLabel(path, titleByPath) : `#${hashPart}`);
+      const hash = hashPart ? `#${hashPart}` : "";
       const href = `wikilink:${encodeURIComponent(path + hash)}`;
       return `[${label}](${href})`;
     },
@@ -70,7 +96,7 @@ export function preprocessCallouts(source: string): string {
     }
 
     const kind = match[1].toLowerCase();
-    const title = match[2]?.trim() ?? kind;
+    const title = match[2]?.trim() || calloutDefaultTitle(kind);
     index += 1;
     const body: string[] = [];
 
@@ -81,16 +107,15 @@ export function preprocessCallouts(source: string): string {
       index += 1;
     }
 
-    const titleHtml = title
-      ? `<p class="markdown-callout-title">${escapeHtml(title)}</p>`
-      : "";
+    const iconHtml = calloutIconSvg(calloutIconForTone(kind));
+    const headerHtml = `<div class="markdown-callout-header"><span class="markdown-callout-icon">${iconHtml}</span><p class="markdown-callout-title">${escapeHtml(title)}</p></div>`;
     const bodyHtml = body
       .filter((line) => line.trim().length > 0)
       .map((line) => `<p>${escapeHtml(line)}</p>`)
       .join("");
 
     out.push(
-      `<div class="markdown-callout markdown-callout-${escapeAttr(kind)}" data-callout="${escapeAttr(kind)}">${titleHtml}<div class="markdown-callout-body">${bodyHtml}</div></div>`,
+      `<aside class="markdown-callout markdown-callout-${escapeAttr(kind)}" data-callout="${escapeAttr(kind)}">${headerHtml}<div class="markdown-callout-body">${bodyHtml}</div></aside>`,
     );
     out.push("");
   }
@@ -174,6 +199,52 @@ export function preprocessColorSpans(source: string): string {
   return out.join("\n");
 }
 
+const FONT_FAMILY_SPAN =
+  /\{\{font:(sans|serif|mono)\|((?:(?!\}\}).)*)\}\}/gi;
+const FONT_SIZE_SPAN = /\{\{size:([a-zA-Z0-9.]+)\|((?:(?!\}\}).)*)\}\}/gi;
+
+function replaceFontMarkup(line: string): string {
+  let next = line.replace(
+    FONT_FAMILY_SPAN,
+    (_match, font: string, text: string) => {
+      const id = font.toLowerCase();
+      return isMarkdownFontFamily(id)
+        ? fontFamilySpanHtml(id, escapeHtml(text))
+        : _match;
+    },
+  );
+  next = next.replace(FONT_SIZE_SPAN, (_match, size: string, text: string) => {
+    const token = size.toLowerCase();
+    return isMarkdownFontSizeToken(token)
+      ? fontSizeSpanHtml(token, escapeHtml(text))
+      : _match;
+  });
+  return next;
+}
+
+/** `{{font:serif|text}}` / `{{size:lg|text}}` → styled spans for preview. */
+export function preprocessFontSpans(source: string): string {
+  const lines = source.replace(/\r\n/g, "\n").split("\n");
+  const out: string[] = [];
+  let inFence = false;
+
+  for (const line of lines) {
+    const trimmed = line.trimStart();
+    if (trimmed.startsWith("```")) {
+      inFence = !inFence;
+      out.push(line);
+      continue;
+    }
+    if (inFence) {
+      out.push(line);
+      continue;
+    }
+    out.push(replaceFontMarkup(line));
+  }
+
+  return out.join("\n");
+}
+
 /** Strip `{{Label key:value}}` table headers down to labels for preview HTML. */
 export function preprocessLedgerColumnHeaders(source: string): string {
   const lines = source.replace(/\r\n/g, "\n").split("\n");
@@ -223,6 +294,83 @@ function splitPipeRowForPreview(line: string): string[] | null {
 import { preprocessTableOfContents } from "./toc";
 import { preprocessLiquidEmbeds } from "./liquidEmbeds";
 import { columnDisplayLabel } from "$lib/utils/ledgerSheet";
+import { serializeStyledBlockFence, parseStyledBlockBody } from "./styledBlock";
+
+/**
+ * Obsidian footnotes → superscript refs + footer section (skipped inside fences).
+ * Inline bodies and definition text are escaped; Preview can still wrap with marked.
+ */
+export function preprocessFootnotes(source: string): string {
+  const plan = planFootnotes(source);
+  if (plan.orderedIds.length === 0) return source;
+
+  const withMarkers = replaceFootnoteMarkers(plan.bodyWithoutDefs, plan.numberById);
+  const footer = buildFootnotesSectionHtml(plan, (md) => escapeHtml(md));
+  return `${withMarkers.replace(/\s+$/, "")}${footer}`;
+}
+
+const TURBO_OPEN = /^::block::\s*$/i;
+const TURBO_CLOSE = /^::end(?:\s+block)?::\s*$/i;
+
+/**
+ * Turbo-fish `::block::` … `::end::` → canonical ` ```block ` fence (skipped inside fences).
+ */
+export function preprocessTurboBlocks(source: string): string {
+  const lines = source.replace(/\r\n/g, "\n").split("\n");
+  const out: string[] = [];
+  let inFence = false;
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = lines[i]!;
+    const trimmed = line.trimStart();
+
+    if (trimmed.startsWith("```")) {
+      inFence = !inFence;
+      out.push(line);
+      i += 1;
+      continue;
+    }
+
+    if (inFence || !TURBO_OPEN.test(line.trim())) {
+      out.push(line);
+      i += 1;
+      continue;
+    }
+
+    i += 1;
+    const inner: string[] = [];
+    let closed = false;
+    while (i < lines.length) {
+      if (TURBO_CLOSE.test(lines[i]!.trim())) {
+        closed = true;
+        i += 1;
+        break;
+      }
+      // Don't swallow a nested ``` fence opener as close.
+      if (lines[i]!.trimStart().startsWith("```")) {
+        break;
+      }
+      inner.push(lines[i]!);
+      i += 1;
+    }
+
+    if (!closed) {
+      // Malformed — emit open literally and continue from where we left off.
+      out.push("::block::", ...inner);
+      continue;
+    }
+
+    const parsed = parseStyledBlockBody(inner.join("\n"));
+    if (!parsed) {
+      out.push("::block::", ...inner, "::end::");
+      continue;
+    }
+    out.push(serializeStyledBlockFence(parsed).replace(/\n$/, ""));
+  }
+
+  return out.join("\n");
+}
 
 export function preprocessMarkdown(
   source: string,
@@ -231,10 +379,13 @@ export function preprocessMarkdown(
   const normalized = source.replace(/\r\n/g, "\n");
   const withHighlights = preprocessHighlights(normalized);
   const withColors = preprocessColorSpans(withHighlights);
-  const withLedgerHeaders = preprocessLedgerColumnHeaders(withColors);
+  const withFonts = preprocessFontSpans(withColors);
+  const withLedgerHeaders = preprocessLedgerColumnHeaders(withFonts);
   const withWikiImages = preprocessWikiImageEmbeds(withLedgerHeaders);
   const withWikilinks = preprocessWikilinks(withWikiImages, titleByPath);
   const withCallouts = preprocessCallouts(withWikilinks);
-  const withToc = preprocessTableOfContents(withCallouts);
+  const withFootnotes = preprocessFootnotes(withCallouts);
+  const withTurbo = preprocessTurboBlocks(withFootnotes);
+  const withToc = preprocessTableOfContents(withTurbo);
   return preprocessLiquidEmbeds(withToc);
 }

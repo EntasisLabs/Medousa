@@ -40,6 +40,12 @@
     MARKDOWN_COLOR_HEX,
     type MarkdownColorId,
   } from "$lib/utils/vaultMarkdownColors";
+  import { evaluateSheetOverlay } from "$lib/utils/workbookFormulas";
+  import {
+    parseSheetFormulas,
+    rowColToA1,
+    upsertSheetFormulas,
+  } from "$lib/utils/workbook";
 
   interface Props {
     content: string;
@@ -57,6 +63,8 @@
   let copyTimer: ReturnType<typeof setTimeout> | null = null;
   let selectionAnchor = $state<number | null>(null);
   let selectionFocus = $state<number | null>(null);
+  let activeCell = $state<{ row: number; col: number } | null>(null);
+  let formulaDraft = $state("");
   let focusRequest = $state<{ row: number; col: number } | null>(null);
   let headerFocusRequest = $state<number | null>(null);
   let resizeDraftWidth = $state<string | null>(null);
@@ -77,9 +85,79 @@
 
   const sheetActive = $derived(!isMedousaSheetConfigEmpty(sheet));
 
+  /** Overlay-only HyperFormula values (never written into pipe cells). */
+  const formulaOverlay = $derived(evaluateSheetOverlay("Sheet", content));
+  const formulaMap = $derived(parseSheetFormulas(content).formulas);
+  const hasFormulas = $derived(Object.keys(formulaMap).length > 0);
+
+  const activeAddr = $derived(
+    activeCell ? rowColToA1(activeCell.row + 1, activeCell.col) : null,
+  );
+
   const viewBadgeCount = $derived(
     sheet.filters.length + (sheet.sort ? 1 : 0),
   );
+
+  function cellDisplay(rowIndex: number, colIndex: number, literal: string): string {
+    const addr = rowColToA1(rowIndex + 1, colIndex);
+    const overlay = formulaOverlay.cells[addr];
+    if (overlay?.fromFormula) return overlay.display;
+    return literal;
+  }
+
+  function cellHasFormula(rowIndex: number, colIndex: number): boolean {
+    const addr = rowColToA1(rowIndex + 1, colIndex);
+    return Boolean(formulaMap[addr]);
+  }
+
+  function selectCell(rowIndex: number, colIndex: number) {
+    activeCell = { row: rowIndex, col: colIndex };
+    const addr = rowColToA1(rowIndex + 1, colIndex);
+    formulaDraft = formulaMap[addr] ?? "";
+  }
+
+  function commitFormulaBar() {
+    if (!activeCell || disabled) return;
+    const addr = rowColToA1(activeCell.row + 1, activeCell.col);
+    const next = { ...formulaMap };
+    const trimmed = formulaDraft.trim();
+    if (!trimmed) {
+      delete next[addr];
+    } else {
+      next[addr] = trimmed.startsWith("=") ? trimmed : `=${trimmed}`;
+    }
+    const base = syncedContent || content;
+    const markdown = upsertSheetFormulas(base, next);
+    syncedContent = markdown;
+    onchange(markdown);
+  }
+
+  function updateCellClearingFormula(
+    rowIndex: number,
+    colIndex: number,
+    value: string,
+  ) {
+    const addr = rowColToA1(rowIndex + 1, colIndex);
+    const nextFormulas = { ...formulaMap };
+    delete nextFormulas[addr];
+    const nextRows = rows.map((row, ri) =>
+      ri === rowIndex
+        ? row.map((cell, ci) => (ci === colIndex ? value : cell))
+        : [...row],
+    );
+    rows = nextRows;
+    const base = syncedContent || content;
+    let updated = replaceLedgerTable(
+      base,
+      nextRows,
+      serializeLedgerColumns(columns),
+    );
+    if (!updated) return;
+    updated = upsertLedgerSheetFence(updated, sheet);
+    updated = upsertSheetFormulas(updated, nextFormulas);
+    syncedContent = updated;
+    onchange(updated);
+  }
 
   const canAddFilter = $derived(filterValue.trim().length > 0);
 
@@ -695,6 +773,28 @@
     </p>
   {/if}
 
+  <div class="ledger-formula-bar" class:ledger-formula-bar--active={hasFormulas || activeCell}>
+    <span class="ledger-formula-addr">{activeAddr ?? "—"}</span>
+    <input
+      class="ledger-formula-input font-mono"
+      type="text"
+      placeholder="=SUM(B2:B11)"
+      value={formulaDraft}
+      disabled={disabled || !activeCell}
+      aria-label="Formula"
+      oninput={(event) => {
+        formulaDraft = (event.currentTarget as HTMLInputElement).value;
+      }}
+      onkeydown={(event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          commitFormulaBar();
+        }
+      }}
+      onblur={commitFormulaBar}
+    />
+  </div>
+
   <div class="min-h-0 flex-1 overflow-auto p-4 pt-2">
     <table class="ledger-table w-full min-w-[560px] border-collapse text-sm">
       <colgroup>
@@ -935,21 +1035,26 @@
                   )
                     ? 'ledger-cell-amount font-mono tabular-nums'
                     : ''}"
+                  class:ledger-cell--formula={cellHasFormula(rowIndex, colIndex)}
                   type="text"
-                  value={row[colIndex] ?? ""}
+                  value={cellDisplay(rowIndex, colIndex, row[colIndex] ?? "")}
                   {disabled}
                   data-ledger-cell="{rowIndex}-{colIndex}"
                   onfocus={() => {
+                    selectCell(rowIndex, colIndex);
                     if (selectionAnchor != null && !selectedRowIndexes.has(rowIndex)) {
                       clearSelection();
                     }
                   }}
-                  oninput={(event) =>
-                    updateCell(
-                      rowIndex,
-                      colIndex,
-                      (event.currentTarget as HTMLInputElement).value,
-                    )}
+                  oninput={(event) => {
+                    const value = (event.currentTarget as HTMLInputElement).value;
+                    if (cellHasFormula(rowIndex, colIndex)) {
+                      updateCellClearingFormula(rowIndex, colIndex, value);
+                      formulaDraft = "";
+                      return;
+                    }
+                    updateCell(rowIndex, colIndex, value);
+                  }}
                   onkeydown={(event) =>
                     handleCellKeydown(event, rowIndex, colIndex)}
                 />

@@ -1,4 +1,5 @@
 pub mod artifact;
+pub mod agents;
 pub mod calendar;
 pub mod catalog;
 pub mod grapheme;
@@ -136,16 +137,19 @@ fn replace_cancel_slot(slot: &Mutex<Option<watch::Sender<bool>>>) -> watch::Rece
 }
 
 fn extract_turn_id_from_stream_url(stream_url: &str) -> Option<String> {
-    const MARKER: &str = "/v1/interactive/turn/";
-    let start = stream_url.find(MARKER)? + MARKER.len();
-    let rest = &stream_url[start..];
-    let end = rest.find("/stream").or_else(|| rest.find('?'))?;
-    let turn_id = rest[..end].trim();
-    if turn_id.is_empty() {
-        None
-    } else {
-        Some(turn_id.to_string())
+    for marker in ["/v1/interactive/turn/", "/v1/agents/sessions/"] {
+        let Some(found) = stream_url.find(marker) else {
+            continue;
+        };
+        let start = found + marker.len();
+        let rest = &stream_url[start..];
+        let end = rest.find("/stream").or_else(|| rest.find('?'))?;
+        let turn_id = rest[..end].trim();
+        if !turn_id.is_empty() {
+            return Some(turn_id.to_string());
+        }
     }
+    None
 }
 
 fn add_interactive_stream_slot(

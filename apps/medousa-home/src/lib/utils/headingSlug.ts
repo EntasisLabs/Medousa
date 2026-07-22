@@ -1,3 +1,8 @@
+import {
+  blockIdFromFragment,
+  isBlockIdFragment,
+} from "$lib/markdown/blockAnchors";
+
 /** Obsidian-style heading slug for in-doc anchors and `[[note#Heading]]`. */
 export function slugifyHeading(text: string): string {
   return text
@@ -68,6 +73,27 @@ export function scrollToHeadingInContainer(
   container: HTMLElement,
   rawHeading: string,
 ): boolean {
+  if (isBlockIdFragment(rawHeading)) {
+    const blockId = blockIdFromFragment(rawHeading);
+    if (blockId) {
+      const byData = container.querySelector<HTMLElement>(
+        `[data-block-id="${cssEscapeAttr(blockId)}"]`,
+      );
+      if (byData) {
+        scrollElementWithinContainer(container, byData);
+        return true;
+      }
+      const byId = container.querySelector<HTMLElement>(
+        `#${cssEscape(`^${blockId}`)}`,
+      );
+      if (byId) {
+        scrollElementWithinContainer(container, byId);
+        return true;
+      }
+    }
+    return false;
+  }
+
   for (const slug of headingSlugCandidates(rawHeading)) {
     const byId = container.querySelector<HTMLElement>(`#${cssEscape(slug)}`);
     if (byId) {

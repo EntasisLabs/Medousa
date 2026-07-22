@@ -224,14 +224,14 @@ export const vaultMarkdownHighlightStyle = HighlightStyle.define([
   { tag: t.monospace, color: "rgb(var(--color-warning-200))" },
   { tag: t.quote, color: "rgb(var(--color-surface-300))", fontStyle: "italic" },
   { tag: t.list, color: "rgb(var(--color-surface-200))" },
-  { tag: t.meta, color: "rgb(var(--color-surface-400))" },
-  { tag: t.processingInstruction, color: "rgb(var(--color-surface-400))" },
+  { tag: t.meta, color: "rgb(var(--syn-meta))" },
+  { tag: t.processingInstruction, color: "rgb(var(--syn-meta))" },
   { tag: t.contentSeparator, color: "rgb(var(--color-surface-500))" },
-  { tag: t.comment, color: "rgb(var(--color-surface-500))", fontStyle: "italic" },
-  { tag: t.atom, color: "rgb(var(--color-warning-200))" },
-  { tag: t.bool, color: "rgb(var(--color-warning-200))" },
-  { tag: t.literal, color: "rgb(var(--color-success-300))" },
-  { tag: t.string, color: "rgb(var(--color-success-300))" },
+  { tag: t.comment, color: "rgb(var(--syn-comment))", fontStyle: "italic" },
+  { tag: t.atom, color: "rgb(var(--syn-number))" },
+  { tag: t.bool, color: "rgb(var(--syn-number))" },
+  { tag: t.literal, color: "rgb(var(--syn-string))" },
+  { tag: t.string, color: "rgb(var(--syn-string))" },
 ]);
 
 export const vaultMarkdownSyntax = syntaxHighlighting(vaultMarkdownHighlightStyle, {

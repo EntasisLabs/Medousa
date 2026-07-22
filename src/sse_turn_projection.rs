@@ -388,6 +388,9 @@ fn empty_stream_event(turn_id: &str) -> InteractiveTurnStreamEvent {
         browser_session_id: None,
         browser_challenge_url: None,
         context_usage: None,
+        permission_request_id: None,
+        agent_session_id: None,
+        agent_runtime: None,
     }
 }
 

@@ -9,6 +9,9 @@
 import { parseKanbanColumnsFromBody } from "$lib/utils/markdownKanban";
 import { parseSlidesDeck } from "$lib/utils/markdownSlides";
 import { escapeAttr, escapeHtml } from "./escape";
+import { parseStyledBlockBody, type LiquidBlockProps } from "./styledBlock";
+
+export type { LiquidBlockProps };
 
 export const LIQUID_FENCE_LANGS = new Set([
   "card",
@@ -17,6 +20,7 @@ export const LIQUID_FENCE_LANGS = new Set([
   "action_row",
   "callout",
   "section",
+  "block",
   "chips",
   "chip_group",
   "media",
@@ -39,7 +43,7 @@ export const LIQUID_FENCE_LANGS = new Set([
   "kanban",
 ]);
 
-const CALLOUT_TONES = new Set(["note", "warn", "error", "success"]);
+const CALLOUT_TONES = new Set(["note", "warn", "error", "success", "tip", "important"]);
 const CHIP_TONES = new Set(["default", "accent", "success", "warn"]);
 
 /** Lucide icon ids allowed in `{{icon:name}}` (kebab or camel). */
@@ -83,6 +87,7 @@ export type LiquidEmbedKind =
   | "actions"
   | "callout"
   | "section"
+  | "block"
   | "chips"
   | "media"
   | "cite"
@@ -311,6 +316,16 @@ export interface LiquidReportProps {
 
 export type LiquidSlideLayout = "hero" | "split" | "stack";
 export type LiquidSlideScrim = "dark" | "light" | "none";
+export type LiquidSlideMotion = "none" | "fade" | "fade-up";
+
+export interface LiquidSlideLayer {
+  id: string;
+  src: string;
+  x: number;
+  y: number;
+  w: number;
+  h?: number;
+}
 
 export interface LiquidSlideItem {
   id: string;
@@ -320,6 +335,9 @@ export interface LiquidSlideItem {
   /** Named wash or image path/URL. */
   bg?: string;
   scrim?: LiquidSlideScrim;
+  layers?: LiquidSlideLayer[];
+  motion?: LiquidSlideMotion;
+  notes?: string;
 }
 
 /** Slides organism — labeled deck frames with nested figure-grid bodies. */
@@ -2331,6 +2349,12 @@ function replaceLiquidFenceMatch(
     return `\n${placeholder("section", section)}\n`;
   }
 
+  if (lang === "block") {
+    const block = parseStyledBlockBody(body);
+    if (!block) return match;
+    return `\n${placeholder("block", block)}\n`;
+  }
+
   if (lang === "chips" || lang === "chip_group") {
     const chips = parseChipsBody(body);
     if (chips.length === 0) return match;
@@ -2410,6 +2434,9 @@ function replaceLiquidFenceMatch(
         };
         if (s.bg) item.bg = s.bg;
         if (s.scrim) item.scrim = s.scrim;
+        if (s.layers?.length) item.layers = s.layers;
+        if (s.motion) item.motion = s.motion;
+        if (s.notes) item.notes = s.notes;
         return item;
       }),
       columns: deck.columns,

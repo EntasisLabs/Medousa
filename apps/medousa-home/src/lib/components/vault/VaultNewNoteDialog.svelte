@@ -1,10 +1,9 @@
 <script lang="ts">
   import { vault } from "$lib/stores/vault.svelte";
-  import { creatableVaultSpaces } from "$lib/config/vaultSpaces";
+  import { creatableVaultSpaces, resolveSpaceForPath } from "$lib/config/vaultSpaces";
   import {
-    templatesForSpace,
-    defaultTemplateForSpace,
-    resolveTemplateForSpace,
+    allVaultTemplates,
+    joinVaultFolder,
     type VaultTemplateId,
   } from "$lib/utils/vaultTemplates";
   import {
@@ -15,12 +14,17 @@
   import { tick } from "svelte";
   import { X } from "@lucide/svelte";
 
-  type Picker = null | "space" | "template";
+  type Picker = null | "location" | "template";
+  type LocationMode = "here" | "space";
 
   const SPACE_PREVIEW = 4;
 
+  let locationMode = $state<LocationMode>("space");
   let spaceId = $state("journal");
-  let templateId = $state<VaultTemplateId>("daily");
+  let herePrefix = $state<string | null>(null);
+  let subfolder = $state("");
+  let showSubfolder = $state(false);
+  let templateId = $state<VaultTemplateId>("blank");
   let userTemplateId = $state("");
   let title = $state("");
   let wasOpen = $state(false);
@@ -29,12 +33,28 @@
   let picker = $state<Picker>(null);
   let showAllSpaces = $state(false);
 
-  const templateOptions = $derived(templatesForSpace(spaceId));
+  const templateOptions = $derived(allVaultTemplates());
   const creatableSpaces = $derived(creatableVaultSpaces());
   const usingUserTemplate = $derived(Boolean(userTemplateId));
-  const spaceLabel = $derived(
-    creatableSpaces.find((space) => space.id === spaceId)?.label ?? "Space",
-  );
+  const canCreateHere = $derived(herePrefix !== null);
+
+  const locationLabel = $derived.by(() => {
+    if (locationMode === "here" && herePrefix !== null) {
+      const base = formatFolderLabel(herePrefix);
+      if (subfolder.trim()) {
+        return `${base === "Vault root" ? "" : `${base}/`}${subfolder.trim()}`.replace(
+          /^\/+/,
+          "",
+        );
+      }
+      return base;
+    }
+    const spaceLabel =
+      creatableSpaces.find((space) => space.id === spaceId)?.label ?? "Space";
+    if (subfolder.trim()) return `${spaceLabel} / ${subfolder.trim()}`;
+    return spaceLabel;
+  });
+
   const templateLabel = $derived.by(() => {
     if (userTemplateId) {
       return (
@@ -42,13 +62,14 @@
       );
     }
     return (
-      templateOptions.find((option) => option.id === templateId)?.label ??
-      "Template"
+      templateOptions.find((option) => option.id === templateId)?.label ?? "Blank note"
     );
   });
+
   const titleRequired = $derived(
     !usingUserTemplate && templateId !== "daily" && templateId !== "weekly",
   );
+
   const visibleSpaces = $derived.by(() => {
     if (showAllSpaces || creatableSpaces.length <= SPACE_PREVIEW) {
       return creatableSpaces;
@@ -62,11 +83,36 @@
     Math.max(0, creatableSpaces.length - visibleSpaces.length),
   );
 
+  function formatFolderLabel(prefix: string): string {
+    const trimmed = prefix.replace(/\/+$/, "");
+    if (!trimmed) return "Vault root";
+    const parts = trimmed.split("/");
+    if (parts.length <= 2) return trimmed;
+    return `…/${parts.slice(-2).join("/")}`;
+  }
+
+  function inferSpaceIdFromFolder(prefix: string): string {
+    const probe = prefix ? `${prefix}note.md` : "note.md";
+    const space = resolveSpaceForPath(probe, "note");
+    if (space.id === "system_bucket") return vault.defaultCreateSpaceId;
+    return space.id;
+  }
+
   $effect(() => {
     const open = vault.newNoteDialogOpen;
     if (open && !wasOpen) {
-      spaceId = vault.defaultCreateSpaceId;
-      templateId = defaultTemplateForSpace(spaceId);
+      const folder = vault.currentCreateFolderPrefix;
+      herePrefix = folder;
+      subfolder = "";
+      showSubfolder = false;
+      if (folder !== null) {
+        locationMode = "here";
+        spaceId = inferSpaceIdFromFolder(folder);
+      } else {
+        locationMode = "space";
+        spaceId = vault.defaultCreateSpaceId;
+      }
+      templateId = "blank";
       userTemplateId = "";
       title = vault.newNotePrefillTitle.trim();
       userTemplates = listVaultUserTemplates();
@@ -86,14 +132,21 @@
 
   function togglePicker(next: Picker) {
     picker = picker === next ? null : next;
-    if (picker !== "space") showAllSpaces = false;
+    if (picker !== "location") showAllSpaces = false;
     if (picker !== "template") manageTemplates = false;
   }
 
+  function selectHere() {
+    if (herePrefix === null) return;
+    locationMode = "here";
+    spaceId = inferSpaceIdFromFolder(herePrefix);
+    picker = null;
+    showAllSpaces = false;
+  }
+
   function selectSpace(id: string) {
+    locationMode = "space";
     spaceId = id;
-    templateId = defaultTemplateForSpace(spaceId);
-    userTemplateId = "";
     picker = null;
     showAllSpaces = false;
   }
@@ -108,6 +161,7 @@
     userTemplateId = id;
     const selected = userTemplates.find((row) => row.id === id);
     if (selected?.spaceId) {
+      locationMode = "space";
       spaceId = selected.spaceId;
     }
     picker = null;
@@ -123,6 +177,8 @@
 
   async function handleCreate(event: Event) {
     event.preventDefault();
+    const prefillPath = vault.newNotePrefillPath?.trim() || undefined;
+
     if (userTemplateId) {
       const selected = userTemplates.find((row) => row.id === userTemplateId);
       if (!selected) return;
@@ -130,20 +186,26 @@
         spaceId,
         title: title.trim() || selected.name,
         content: selected.content,
+        path: prefillPath,
+        folderPrefix: locationMode === "here" ? (herePrefix ?? "") : undefined,
+        subfolder: subfolder.trim() || undefined,
       });
     } else {
-      const resolvedTemplate = resolveTemplateForSpace(spaceId, templateId);
-      if (!title.trim() && resolvedTemplate !== "daily" && resolvedTemplate !== "weekly") {
+      if (!title.trim() && templateId !== "daily" && templateId !== "weekly") {
         return;
       }
       await vault.createNote({
         spaceId,
         title: title.trim() || "Note",
-        templateId: resolvedTemplate,
+        templateId,
+        path: prefillPath,
+        folderPrefix: locationMode === "here" ? (herePrefix ?? "") : undefined,
+        subfolder: subfolder.trim() || undefined,
       });
     }
     title = "";
     userTemplateId = "";
+    subfolder = "";
     vault.closeNewNoteDialog();
   }
 
@@ -212,13 +274,13 @@
           <button
             type="button"
             class="vault-compose-em-btn"
-            class:vault-compose-em-btn--open={picker === "space"}
-            aria-expanded={picker === "space"}
-            onclick={() => togglePicker("space")}
+            class:vault-compose-em-btn--open={picker === "location"}
+            aria-expanded={picker === "location"}
+            onclick={() => togglePicker("location")}
           >
-            {spaceLabel}
+            {locationLabel}
           </button>
-          · starting from
+          · as
           <button
             type="button"
             class="vault-compose-em-btn"
@@ -230,15 +292,28 @@
           </button>
         </p>
 
-        {#if picker === "space"}
-          <div class="vault-chip-row" role="listbox" aria-label="Space">
+        {#if picker === "location"}
+          <div class="vault-chip-row" role="listbox" aria-label="Location">
+            {#if canCreateHere}
+              <button
+                type="button"
+                class="vault-chip"
+                class:vault-chip--active={locationMode === "here"}
+                role="option"
+                aria-selected={locationMode === "here"}
+                onclick={selectHere}
+                title={herePrefix ? joinVaultFolder(herePrefix) || "/" : "/"}
+              >
+                This folder
+              </button>
+            {/if}
             {#each visibleSpaces as space (space.id)}
               <button
                 type="button"
                 class="vault-chip"
-                class:vault-chip--active={spaceId === space.id}
+                class:vault-chip--active={locationMode === "space" && spaceId === space.id}
                 role="option"
-                aria-selected={spaceId === space.id}
+                aria-selected={locationMode === "space" && spaceId === space.id}
                 onclick={() => selectSpace(space.id)}
               >
                 {space.label}
@@ -254,8 +329,24 @@
               </button>
             {/if}
           </div>
+          <button
+            type="button"
+            class="vault-compose-manage"
+            onclick={() => (showSubfolder = !showSubfolder)}
+          >
+            {showSubfolder ? "Hide new subfolder" : "New subfolder…"}
+          </button>
+          {#if showSubfolder}
+            <input
+              class="vault-compose-subfolder"
+              type="text"
+              placeholder="Subfolder name"
+              bind:value={subfolder}
+              data-new-note-subfolder
+            />
+          {/if}
         {:else if picker === "template"}
-          <div class="vault-chip-row" role="listbox" aria-label="Template">
+          <div class="vault-chip-row" role="listbox" aria-label="Note kind">
             {#each templateOptions as option (option.id)}
               <button
                 type="button"

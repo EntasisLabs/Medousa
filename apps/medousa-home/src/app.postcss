@@ -1,5 +1,8 @@
 @import "./lib/styles/chat-mobile-tokens.postcss";
+@import "./lib/styles/syntax-tokens.postcss";
 @import "./lib/styles/markdown-tokens.postcss";
+@import "./lib/styles/callout-tokens.postcss";
+@import "./lib/styles/block-tokens.postcss";
 @import "./lib/styles/chart-tokens.postcss";
 @import "./lib/styles/workshop-shell.postcss";
 @import "./lib/styles/peers.postcss";
@@ -20,6 +23,9 @@
   html {
     --mobile-keyboard-inset: 0px;
     --mobile-bottom-chrome-height: 5.5rem;
+    /* Cmd/Ctrl +/- content zoom — multiply into surface font-sizes (never CSS `zoom`
+       on scroll hosts: that reflowed Live coords every keystroke). */
+    --content-zoom: 1;
   }
 
   /* iOS WKWebView auto-zooms focused inputs below 16px — enforce minimum app-wide. */
@@ -899,6 +905,10 @@
     @apply mx-auto w-full max-w-3xl border-b-0 bg-transparent px-6;
   }
 
+  .vault-markdown-preview {
+    font-size: calc(0.875rem * var(--content-zoom, 1));
+  }
+
   .vault-codemirror-host {
     @apply min-h-0 min-w-0 max-w-full flex-1 overflow-hidden;
     background-color: rgb(var(--color-surface-950));
@@ -914,7 +924,8 @@
   }
 
   .vault-codemirror-host--write .cm-scroller {
-    @apply font-sans text-base leading-relaxed;
+    @apply font-sans leading-relaxed;
+    font-size: calc(1rem * var(--content-zoom, 1));
   }
 
   .vault-codemirror-host--write .cm-content {
@@ -922,7 +933,8 @@
   }
 
   .vault-codemirror-host--source .cm-scroller {
-    @apply font-mono text-sm leading-7;
+    @apply font-mono leading-7;
+    font-size: calc(0.875rem * var(--content-zoom, 1));
     tab-size: 2;
     -moz-tab-size: 2;
   }
@@ -1012,6 +1024,14 @@
     @apply min-w-[13rem] max-w-[min(16rem,calc(100vw-2rem))];
   }
 
+  .vault-browse-mode-icons {
+    @apply flex shrink-0 items-center gap-0.5;
+  }
+
+  .vault-browse-mode-icons--flush {
+    @apply gap-0;
+  }
+
   .vault-browse-mode-bar {
     @apply flex items-center gap-0.5 px-3 pb-2 pt-0;
   }
@@ -1040,12 +1060,190 @@
     @apply bg-transparent text-surface-100;
   }
 
+  /* Match StatusBar (`workshop-status` h-8) across all LME side-rail docks. */
+  .lme-side-rail-dock {
+    @apply relative flex h-8 shrink-0 items-center gap-0.5 overflow-visible border-t border-surface-500/25 px-1;
+  }
+
   .vault-dock-icon-btn {
-    @apply inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-surface-400 transition hover:bg-surface-800/70 hover:text-surface-100;
+    @apply inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-surface-400 transition hover:bg-surface-800/70 hover:text-surface-100;
   }
 
   .vault-dock-icon-btn-active {
     @apply text-primary-300;
+  }
+
+  /* Cursor-style dock popover — portaled, soft rounded card. */
+  .vault-dock-popover {
+    position: fixed;
+    z-index: 80;
+    display: flex;
+    flex-direction: column;
+    gap: 0.05rem;
+    overflow-x: hidden;
+    overflow-y: auto;
+    border: 1px solid rgb(var(--color-surface-600) / 0.28);
+    border-radius: 0.85rem;
+    background: rgb(var(--color-surface-850, var(--color-surface-900)) / 0.97);
+    padding: 0.35rem;
+    box-shadow:
+      0 10px 28px rgb(0 0 0 / 0.34),
+      0 0 0 1px rgb(0 0 0 / 0.08);
+    backdrop-filter: blur(16px);
+  }
+
+  .vault-dock-popover__sep {
+    margin: 0.25rem 0.4rem;
+    border-top: 1px solid rgb(var(--color-surface-500) / 0.22);
+  }
+
+  /* Branch-style dock triggers: icon + current label. */
+  .vault-dock-branch {
+    display: inline-flex;
+    max-width: 9.5rem;
+    min-width: 0;
+    height: 1.75rem;
+    align-items: center;
+    gap: 0.3rem;
+    border: 0;
+    border-radius: 0.3rem;
+    background: transparent;
+    padding: 0 0.35rem;
+    color: rgb(var(--color-surface-400));
+    font-size: 0.7rem;
+    font-weight: 500;
+    line-height: 1;
+    transition:
+      color 120ms ease,
+      background 120ms ease;
+  }
+
+  .vault-dock-branch:hover {
+    background: rgb(var(--color-surface-800) / 0.55);
+    color: rgb(var(--color-surface-150, var(--color-surface-100)));
+  }
+
+  .vault-dock-branch[aria-expanded="true"],
+  .vault-dock-branch--active {
+    color: rgb(var(--color-surface-200));
+  }
+
+  .vault-dock-branch__icon {
+    flex-shrink: 0;
+    opacity: 0.85;
+  }
+
+  .vault-dock-branch__label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .vault-dock-branch-menu {
+    position: absolute;
+    z-index: 30;
+    width: min(14.5rem, calc(100vw - 2rem));
+    max-height: min(22rem, calc(100vh - 8rem));
+    overflow-x: hidden;
+    overflow-y: auto;
+    border: 1px solid rgb(var(--color-surface-600) / 0.35);
+    border-radius: 0.55rem;
+    background: rgb(var(--color-surface-900) / 0.98);
+    padding: 0.25rem;
+    box-shadow:
+      0 12px 32px rgb(0 0 0 / 0.32),
+      0 0 0 1px rgb(0 0 0 / 0.1);
+    backdrop-filter: blur(14px);
+  }
+
+  .vault-dock-branch-menu--up {
+    bottom: 100%;
+    left: 0;
+    margin-bottom: 0.35rem;
+  }
+
+  .vault-dock-branch-menu--down {
+    top: 100%;
+    left: 0;
+    margin-top: 0.35rem;
+  }
+
+  .vault-dock-branch-menu--end.vault-dock-branch-menu--up,
+  .vault-dock-branch-menu--end.vault-dock-branch-menu--down {
+    left: auto;
+    right: 0;
+  }
+
+  .vault-dock-branch-menu__sep {
+    margin: 0.2rem 0.35rem;
+    border-top: 1px solid rgb(var(--color-surface-500) / 0.28);
+  }
+
+  .vault-dock-branch-option {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    border: 0;
+    border-radius: 0.35rem;
+    background: transparent;
+    padding: 0.35rem 0.45rem;
+    color: rgb(var(--color-surface-300));
+    text-align: left;
+    transition: background 100ms ease;
+  }
+
+  .vault-dock-branch-option:hover {
+    background: rgb(var(--color-surface-800) / 0.7);
+    color: rgb(var(--color-surface-100));
+  }
+
+  .vault-dock-branch-option--selected {
+    color: rgb(var(--color-surface-100));
+  }
+
+  .vault-dock-branch-option--soft {
+    color: rgb(var(--color-surface-500));
+  }
+
+  .vault-dock-branch-option--soft:hover,
+  .vault-dock-branch-option--soft.vault-dock-branch-option--selected {
+    color: rgb(var(--color-surface-300));
+  }
+
+  .vault-dock-branch-option__main {
+    display: inline-flex;
+    min-width: 0;
+    align-items: center;
+    gap: 0.4rem;
+  }
+
+  .vault-dock-branch-option__icon {
+    flex-shrink: 0;
+    opacity: 0.75;
+  }
+
+  .vault-dock-branch-option__label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.78rem;
+    font-weight: 500;
+  }
+
+  .vault-dock-branch-option__meta {
+    flex-shrink: 0;
+    color: rgb(var(--color-surface-500));
+    font-size: 0.68rem;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .vault-dock-branch-option__check {
+    flex-shrink: 0;
+    color: rgb(var(--color-primary-300));
   }
 
   .lme-dock-search-expand {
@@ -1058,7 +1256,7 @@
   }
 
   .lme-dock-search-input {
-    @apply h-8 w-full rounded-md border border-surface-500/40 bg-surface-800/70 py-1 pl-7 pr-2 text-xs text-surface-100 outline-none transition placeholder:text-surface-500 focus:border-primary-500/40 focus:bg-surface-800;
+    @apply h-7 w-full rounded-md border border-surface-500/40 bg-surface-800/70 py-0.5 pl-7 pr-2 text-xs text-surface-100 outline-none transition placeholder:text-surface-500 focus:border-primary-500/40 focus:bg-surface-800;
   }
 
   @keyframes lme-dock-search-in {
@@ -1704,6 +1902,25 @@
     color: rgb(var(--color-surface-450, var(--color-surface-500)));
   }
 
+  .vault-compose-subfolder {
+    width: 100%;
+    border: 1px solid rgb(var(--color-surface-500) / 0.35);
+    border-radius: 0.55rem;
+    background: rgb(var(--color-surface-900) / 0.45);
+    padding: 0.4rem 0.65rem;
+    color: rgb(var(--color-surface-100));
+    font-size: 0.78rem;
+  }
+
+  .vault-compose-subfolder::placeholder {
+    color: rgb(var(--color-surface-500));
+  }
+
+  .vault-compose-subfolder:focus {
+    border-color: rgb(var(--color-primary-500) / 0.45);
+    outline: none;
+  }
+
   .vault-compose-manage {
     align-self: flex-start;
     border: 0;
@@ -2332,6 +2549,37 @@
     background: rgb(var(--color-surface-900) / 0.98);
   }
 
+  .ledger-formula-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.35rem 1rem 0.15rem;
+    min-height: 2rem;
+  }
+
+  .ledger-formula-addr {
+    flex: 0 0 2.75rem;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: rgb(var(--color-surface-300) / 0.85);
+  }
+
+  .ledger-formula-input {
+    flex: 1;
+    min-width: 0;
+    border-radius: 0.45rem;
+    border: 1px solid color-mix(in srgb, var(--color-surface-500) 28%, transparent);
+    background: color-mix(in srgb, var(--color-surface-950) 45%, transparent);
+    color: rgb(var(--color-surface-100));
+    padding: 0.28rem 0.55rem;
+    font-size: 0.78rem;
+  }
+
+  .ledger-formula-input:disabled {
+    opacity: 0.45;
+  }
+
   .ledger-cell {
     width: 100%;
     border: 0;
@@ -2343,6 +2591,10 @@
     line-height: 1.35;
     outline: none;
     box-shadow: none;
+  }
+
+  .ledger-cell--formula {
+    color: rgb(var(--color-primary-200) / 0.95);
   }
 
   .ledger-cell:hover:not(:disabled):not(:focus) {
@@ -2643,7 +2895,8 @@
   }
 
   .chat-voice {
-    @apply max-w-[min(100%,44rem)] text-[15px] leading-[1.65] text-surface-100;
+    @apply max-w-[min(100%,44rem)] leading-[1.65] text-surface-100;
+    font-size: calc(15px * var(--content-zoom, 1));
   }
 
   .chat-voice-full {
@@ -2651,7 +2904,8 @@
   }
 
   .chat-voice .markdown-content {
-    @apply text-[15px] leading-[1.65];
+    @apply leading-[1.65];
+    font-size: calc(15px * var(--content-zoom, 1));
   }
 
   /* Timeline shell: prose keeps a soft measure; embeds use the full column */
@@ -4398,7 +4652,7 @@
 
   .grapheme-codemirror-host {
     @apply min-h-0 flex-1 overflow-hidden;
-    background-color: rgb(var(--color-surface-950) / 0.4);
+    background-color: rgb(var(--color-surface-950) / 0.72);
   }
 
   .grapheme-codemirror-host .cm-editor {
@@ -4406,7 +4660,8 @@
   }
 
   .grapheme-codemirror-host .cm-scroller {
-    @apply min-h-0 flex-1 overflow-auto font-mono text-[13px] leading-relaxed;
+    @apply min-h-0 flex-1 overflow-auto font-mono leading-relaxed;
+    font-size: calc(13px * var(--content-zoom, 1));
   }
 
   .grapheme-script-side-pane {
@@ -5384,42 +5639,7 @@
     @apply min-w-[4.5rem] text-right font-medium tracking-wide transition-opacity duration-300;
   }
 
-  .markdown-callout {
-    @apply my-3 overflow-hidden rounded-md border border-surface-500/40 bg-surface-800/60;
-  }
-
-  .markdown-callout-title {
-    @apply border-b border-surface-500/35 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-surface-200;
-  }
-
-  .markdown-callout-body {
-    @apply px-3 py-2 text-surface-200;
-  }
-
-  .markdown-callout-body p {
-    @apply my-1 first:mt-0 last:mb-0;
-  }
-
-  .markdown-callout-note .markdown-callout-title {
-    @apply text-primary-300;
-    background-color: rgb(var(--color-primary-500) / 0.12);
-  }
-
-  .markdown-callout-tip .markdown-callout-title {
-    @apply text-success-300;
-    background-color: rgb(var(--color-success-500) / 0.12);
-  }
-
-  .markdown-callout-warning .markdown-callout-title {
-    @apply text-warning-300;
-    background-color: rgb(var(--color-warning-500) / 0.12);
-  }
-
-  .markdown-callout-danger .markdown-callout-title,
-  .markdown-callout-error .markdown-callout-title {
-    @apply text-error-300;
-    background-color: rgb(var(--color-error-500) / 0.12);
-  }
+  /* Callout chrome lives in callout-tokens.postcss (GitHub-style accent). */
 
   .markdown-content pre.mermaid {
     @apply my-4 overflow-x-auto rounded-lg border border-surface-500/30 bg-surface-900/80 p-4 text-sm leading-relaxed;
@@ -5449,6 +5669,55 @@
   html:not(.dark) .markdown-content mark.markdown-highlight {
     background-color: rgb(254 240 138 / 0.85);
     color: rgb(66 32 6);
+  }
+
+  /* Obsidian-compatible footnotes — Medousa chrome */
+  .markdown-content .markdown-footnote-ref,
+  .markdown-content .markdown-footnote-ref a {
+    color: rgb(var(--color-primary-300));
+    font-size: 0.75em;
+    font-weight: 600;
+    line-height: 0;
+    text-decoration: none;
+    vertical-align: super;
+  }
+
+  .markdown-content .markdown-footnote-ref a:hover {
+    color: rgb(var(--color-primary-200));
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
+  .markdown-content .markdown-footnotes {
+    margin: 1.75rem 0 0.5rem;
+    padding: 0.85rem 0 0;
+    border-top: 1px solid rgb(var(--color-surface-600) / 0.45);
+    font-size: 0.8125rem;
+    color: rgb(var(--color-surface-300));
+  }
+
+  .markdown-content .markdown-footnotes-list {
+    margin: 0;
+    padding: 0 0 0 1.25rem;
+    list-style: decimal;
+  }
+
+  .markdown-content .markdown-footnote-item {
+    margin: 0.35rem 0;
+    padding: 0;
+    line-height: 1.45;
+    break-inside: avoid;
+  }
+
+  .markdown-content .markdown-footnote-back {
+    margin-left: 0.25rem;
+    color: rgb(var(--color-primary-400));
+    text-decoration: none;
+    font-size: 0.85em;
+  }
+
+  .markdown-content .markdown-footnote-back:hover {
+    color: rgb(var(--color-primary-200));
   }
 
   .markdown-color-red,
@@ -5662,7 +5931,7 @@
     word-break: break-word;
   }
 
-  /* Syntax token colors live in markdown-tokens.postcss */
+  /* Syntax token colors live in syntax-tokens.postcss */
 
   /* Mobile shell (M8) */
   .mobile-shell {
@@ -9768,10 +10037,16 @@
     color: var(--vault-read-accent);
   }
 
-  .vault-editor[data-reading-palette] .vault-live-prose code,
+  .vault-editor[data-reading-palette] .vault-live-prose :not(pre) > code,
   .vault-editor[data-reading-palette] .markdown-content :not(pre) > code {
     color: var(--vault-read-fg);
     background: color-mix(in srgb, var(--vault-read-fg) 10%, transparent);
+  }
+
+  .vault-editor[data-reading-palette] .vault-live-prose pre code,
+  .vault-editor[data-reading-palette] .vault-live-prose .syn-code {
+    background: transparent;
+    color: inherit;
   }
 
   .vault-editor[data-reading-palette="warm"] .vault-live-editor,
@@ -10606,75 +10881,316 @@
     z-index: 80;
     display: flex;
     flex-direction: column;
-    gap: 0.35rem;
-    padding: 0.28rem 0.35rem;
-    border-radius: 0.55rem;
-    border: 1px solid rgb(var(--shell-border, var(--color-surface-500)) / 0.45);
-    background: rgb(var(--color-surface-900) / 0.96);
-    box-shadow: 0 8px 28px rgb(0 0 0 / 0.28);
+    gap: 0.15rem;
+    padding: 0.22rem 0.3rem 0.2rem;
+    border-radius: 0.8rem;
+    border: 1px solid rgb(var(--shell-border, var(--color-surface-500)) / 0.38);
+    background: rgb(var(--color-surface-900) / 0.94);
+    box-shadow:
+      0 1px 0 rgb(255 255 255 / 0.04) inset,
+      0 14px 36px rgb(0 0 0 / 0.38),
+      0 4px 12px rgb(0 0 0 / 0.22),
+      0 0 0 1px rgb(0 0 0 / 0.1);
+    backdrop-filter: blur(18px) saturate(1.15);
+    -webkit-backdrop-filter: blur(18px) saturate(1.15);
     max-width: calc(100vw - 1rem);
+    animation: vault-format-bubble-in 140ms ease-out;
+  }
+
+  @keyframes vault-format-bubble-in {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .vault-selection-format-bubble__track {
+    overflow: hidden;
+  }
+
+  .vault-selection-format-bubble__track--next .vault-selection-format-bubble__row {
+    animation: vault-format-page-next 160ms ease-out;
+  }
+
+  .vault-selection-format-bubble__track--prev .vault-selection-format-bubble__row {
+    animation: vault-format-page-prev 160ms ease-out;
+  }
+
+  @keyframes vault-format-page-next {
+    from {
+      opacity: 0.35;
+      transform: translateX(12px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+
+  @keyframes vault-format-page-prev {
+    from {
+      opacity: 0.35;
+      transform: translateX(-12px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
   }
 
   .vault-selection-format-bubble__row {
     display: flex;
     flex-wrap: nowrap;
     align-items: center;
-    gap: 0.1rem;
+    gap: 0.12rem;
+    min-height: 1.85rem;
+    padding: 0 0.05rem;
   }
 
   .vault-selection-format-bubble__sep {
     width: 1px;
     height: 1rem;
-    margin: 0 0.2rem;
+    margin: 0 0.22rem;
     background: rgb(var(--shell-border, var(--color-surface-500)) / 0.4);
     flex-shrink: 0;
   }
 
-  .vault-selection-format-bubble__btn {
+  .vault-selection-format-bubble__btn,
+  .vault-selection-format-bubble__pager {
     appearance: none;
     border: none;
     background: transparent;
     color: rgb(var(--shell-muted, var(--color-surface-300)));
-    width: 1.55rem;
-    height: 1.55rem;
+    width: 1.65rem;
+    height: 1.65rem;
     border-radius: 0.3rem;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
     flex-shrink: 0;
+    transition:
+      color 80ms ease,
+      background 80ms ease;
   }
 
-  .vault-selection-format-bubble__btn:hover {
+  .vault-selection-format-bubble__btn:hover,
+  .vault-selection-format-bubble__pager:hover,
+  .vault-selection-format-bubble__state:hover {
     background: rgb(var(--color-surface-700) / 0.45);
     color: rgb(var(--shell-fg, var(--color-surface-50)));
   }
 
-  .vault-selection-format-bubble__btn--active {
+  .vault-selection-format-bubble__btn--active,
+  .vault-selection-format-bubble__state--open {
     background: rgb(var(--color-surface-700) / 0.55);
     color: rgb(var(--shell-fg, var(--color-surface-50)));
   }
 
-  .vault-selection-format-bubble__btn--label {
-    font-size: 0.75rem;
-    font-weight: 600;
+  .vault-selection-format-bubble__pager {
+    color: rgb(var(--shell-muted, var(--color-surface-400)));
   }
 
-  .vault-selection-format-bubble__colors {
+  .vault-selection-format-bubble__state {
+    appearance: none;
+    border: none;
+    background: transparent;
+    color: rgb(var(--shell-muted, var(--color-surface-200)));
+    min-height: 1.65rem;
+    padding: 0 0.28rem;
+    border-radius: 0.3rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.12rem;
+    cursor: pointer;
+    flex-shrink: 0;
+    font-size: 0.68rem;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    transition:
+      color 80ms ease,
+      background 80ms ease;
+  }
+
+  .vault-selection-format-bubble__state-label {
+    line-height: 1;
+  }
+
+  .vault-selection-format-bubble__state-meta {
+    font-size: 0.62rem;
+    font-weight: 500;
+    color: rgb(var(--shell-muted, var(--color-surface-400)));
+  }
+
+  .vault-selection-format-bubble__state--font-serif .vault-selection-format-bubble__state-label {
+    font-family: ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
+  }
+
+  .vault-selection-format-bubble__state--font-mono .vault-selection-format-bubble__state-label {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  }
+
+  .vault-selection-format-bubble__color-letter {
+    font-size: 0.85rem;
+    font-weight: 700;
+    line-height: 1;
+    border-bottom: 2px solid var(--vault-format-color, currentColor);
+    padding-bottom: 1px;
+  }
+
+  .vault-selection-format-bubble__menu {
+    display: flex;
+    flex-direction: column;
+    gap: 0.05rem;
+    margin-top: 0.15rem;
+    padding: 0.3rem;
+    border-radius: 0.65rem;
+    border: 1px solid rgb(var(--color-surface-600) / 0.32);
+    background: rgb(var(--color-surface-900) / 0.96);
+    box-shadow:
+      0 10px 24px rgb(0 0 0 / 0.3),
+      0 0 0 1px rgb(0 0 0 / 0.06);
+    animation: vault-format-menu-in 120ms ease-out;
+    max-height: min(16rem, calc(100vh - 8rem));
+    overflow-y: auto;
+  }
+
+  @keyframes vault-format-menu-in {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .vault-selection-format-bubble__menu-heading {
+    padding: 0.2rem 0.45rem 0.15rem;
+    color: rgb(var(--shell-muted, var(--color-surface-500)));
+    font-size: 0.62rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  .vault-selection-format-bubble__menu-sep {
+    margin: 0.25rem 0.35rem;
+    border-top: 1px solid rgb(var(--color-surface-500) / 0.28);
+  }
+
+  .vault-selection-format-bubble__option {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    border: 0;
+    border-radius: 0.35rem;
+    background: transparent;
+    padding: 0.35rem 0.45rem;
+    color: rgb(var(--color-surface-300));
+    text-align: left;
+    cursor: pointer;
+    transition: background 100ms ease;
+  }
+
+  .vault-selection-format-bubble__option:hover {
+    background: rgb(var(--color-surface-800) / 0.7);
+    color: rgb(var(--color-surface-100));
+  }
+
+  .vault-selection-format-bubble__option--selected {
+    color: rgb(var(--color-surface-100));
+  }
+
+  .vault-selection-format-bubble__option-main {
+    display: inline-flex;
+    min-width: 0;
+    align-items: center;
+    gap: 0.4rem;
+  }
+
+  .vault-selection-format-bubble__option-label {
+    font-size: 0.78rem;
+    font-weight: 500;
+  }
+
+  .vault-selection-format-bubble__option-meta {
+    flex-shrink: 0;
+    color: rgb(var(--color-surface-500));
+    font-size: 0.68rem;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .vault-selection-format-bubble__option--font-serif .vault-selection-format-bubble__option-label {
+    font-family: ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
+  }
+
+  .vault-selection-format-bubble__option--font-mono .vault-selection-format-bubble__option-label {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  }
+
+  .vault-selection-format-bubble__check {
+    flex-shrink: 0;
+    color: rgb(var(--color-primary-300));
+  }
+
+  .vault-selection-format-bubble__size-row {
+    display: flex;
+    gap: 0.25rem;
+    padding: 0.15rem 0.35rem 0.25rem;
+  }
+
+  .vault-selection-format-bubble__size {
+    appearance: none;
+    border: 1px solid rgb(var(--shell-border, var(--color-surface-500)) / 0.35);
+    background: transparent;
+    color: rgb(var(--shell-muted, var(--color-surface-300)));
+    min-width: 2rem;
+    height: 1.7rem;
+    border-radius: 0.3rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .vault-selection-format-bubble__size:hover {
+    background: rgb(var(--color-surface-800) / 0.7);
+    color: rgb(var(--color-surface-100));
+  }
+
+  .vault-selection-format-bubble__size--selected {
+    background: rgb(var(--color-surface-700) / 0.55);
+    border-color: rgb(var(--shell-border, var(--color-surface-300)) / 0.45);
+    color: rgb(var(--shell-fg, var(--color-surface-50)));
+  }
+
+  .vault-selection-format-bubble__swatches {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 0.3rem;
-    padding: 0.1rem 0.15rem 0.15rem;
+    gap: 0.35rem;
+    padding: 0.25rem 0.3rem;
   }
 
   .vault-selection-format-bubble__swatch {
-    width: 0.85rem;
-    height: 0.85rem;
+    width: 0.95rem;
+    height: 0.95rem;
     border-radius: 999px;
     border: 1px solid rgb(var(--shell-border, var(--color-surface-500)) / 0.35);
     cursor: pointer;
     padding: 0;
+  }
+
+  .vault-selection-format-bubble__swatch--selected {
+    outline: 2px solid rgb(var(--color-primary-300) / 0.85);
+    outline-offset: 1px;
   }
 
   .vault-selection-format-bubble__swatch--custom {
@@ -10690,24 +11206,59 @@
     );
   }
 
+  .vault-selection-format-bubble__hex-row {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin: 0.15rem 0.15rem 0.1rem;
+    padding: 0.4rem 0.45rem;
+    border-radius: 0.5rem;
+    border: 1px solid rgb(var(--color-surface-600) / 0.35);
+    background: rgb(var(--color-surface-950) / 0.45);
+  }
+
+  .vault-selection-format-bubble__hex-wheel {
+    width: 1.75rem;
+    height: 1.75rem;
+    flex-shrink: 0;
+    cursor: pointer;
+    border: 1px solid rgb(var(--color-surface-500) / 0.45);
+    border-radius: 0.35rem;
+    background: transparent;
+    padding: 0;
+  }
+
   .vault-selection-format-bubble__hex {
     appearance: none;
     width: 5.5rem;
     border: 1px solid rgb(var(--shell-border, var(--color-surface-500)) / 0.4);
-    background: transparent;
-    border-radius: 0.25rem;
-    padding: 0.15rem 0.35rem;
-    font-size: 0.6875rem;
+    background: rgb(var(--color-surface-950) / 0.35);
+    border-radius: 0.35rem;
+    padding: 0.28rem 0.4rem;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.7rem;
     color: rgb(var(--shell-fg, var(--color-surface-50)));
+    outline: none;
+  }
+
+  .vault-selection-format-bubble__hex:focus {
+    border-color: rgb(var(--color-primary-400) / 0.45);
   }
 
   .vault-selection-format-bubble__hex-apply {
     appearance: none;
-    border: none;
-    background: transparent;
-    font-size: 0.6875rem;
-    color: rgb(var(--shell-muted, var(--color-surface-300)));
+    border: 0;
+    border-radius: 0.35rem;
+    background: rgb(var(--color-primary-500) / 0.88);
+    padding: 0.28rem 0.55rem;
+    color: rgb(var(--color-surface-950));
+    font-size: 0.68rem;
+    font-weight: 650;
     cursor: pointer;
+  }
+
+  .vault-selection-format-bubble__hex-apply:hover:not(:disabled) {
+    background: rgb(var(--color-primary-400));
   }
 
   .vault-live-prose mark.vault-live-highlight,
@@ -10716,6 +11267,37 @@
     color: inherit;
     border-radius: 0.15rem;
     padding: 0 0.05em;
+  }
+
+  .vault-live-prose .vault-live-footnote-ref,
+  .vault-live-prose .vault-live-inline-footnote {
+    color: rgb(var(--color-primary-300));
+    font-size: 0.75em;
+    font-weight: 600;
+    line-height: 0;
+    vertical-align: super;
+  }
+
+  .vault-live-prose .vault-live-inline-footnote {
+    border-bottom: 1px dotted rgb(var(--color-primary-400) / 0.55);
+    cursor: help;
+  }
+
+  .vault-live-prose .vault-live-footnote-def {
+    margin: 0.35rem 0;
+    padding: 0.2rem 0 0.2rem 0.65rem;
+    border-left: 2px solid rgb(var(--color-primary-500) / 0.35);
+    font-size: 0.8125rem;
+    line-height: 1.45;
+    color: rgb(var(--color-surface-300));
+  }
+
+  .vault-live-prose .vault-live-footnote-def::before {
+    content: "[^" attr(data-footnote-id) "]: ";
+    color: rgb(var(--color-primary-300));
+    font-weight: 600;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.9em;
   }
 
   .vault-live-editor__host {
@@ -10731,7 +11313,7 @@
     max-width: 100%;
     min-height: 12rem;
     color: rgb(var(--color-surface-50));
-    font-size: 0.9375rem;
+    font-size: calc(0.9375rem * var(--content-zoom, 1));
     line-height: 1.7;
     white-space: pre-wrap;
     word-wrap: break-word;
@@ -10781,6 +11363,34 @@
     opacity: 0.72;
     user-select: none;
     pointer-events: none;
+  }
+
+  /* Out of flow so chip widgets never reflow the line (avoids scroll jump on type). */
+  .vault-live-prose p[data-block-id],
+  .vault-live-prose h1[data-block-id],
+  .vault-live-prose h2[data-block-id],
+  .vault-live-prose h3[data-block-id] {
+    position: relative;
+  }
+
+  .vault-live-block-id-chip {
+    position: absolute;
+    right: 0;
+    top: 0.15em;
+    display: inline-block;
+    margin: 0;
+    padding: 0.05rem 0.3rem;
+    border-radius: 0.2rem;
+    border: 1px solid rgb(var(--shell-border, var(--color-surface-500)) / 0.35);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.65em;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    color: rgb(var(--color-primary-300));
+    opacity: 0.85;
+    user-select: none;
+    pointer-events: none;
+    white-space: nowrap;
   }
 
   .vault-live-prose p {
@@ -10915,8 +11525,19 @@
     border-top-color: rgb(var(--color-surface-400) / 0.85);
   }
 
-  .vault-live-prose code {
+  /* Inline code only — fence <code.syn-code> must not get the chip background
+   * (it reads as a gray selection highlighter over syntax tokens). */
+  .vault-live-prose :not(pre) > code {
     @apply text-[0.85em] px-1 py-0.5 rounded bg-surface-800/80 text-surface-200;
+  }
+
+  .vault-live-prose pre code,
+  .vault-live-prose .syn-code {
+    background: transparent;
+    padding: 0;
+    border-radius: 0;
+    color: inherit;
+    font-size: inherit;
   }
 
   .vault-live-prose a.vault-live-link {
@@ -10992,12 +11613,20 @@
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     font-size: 0.75rem;
     line-height: 1.45;
-    color: rgb(var(--color-surface-200));
+    color: rgb(var(--syn-fg));
     white-space: pre-wrap;
     word-break: break-word;
     cursor: text;
     user-select: text;
     -webkit-user-select: text;
+  }
+
+  .vault-live-plain-fence__body > code {
+    font-family: inherit;
+    font-size: inherit;
+    line-height: inherit;
+    white-space: inherit;
+    word-break: inherit;
   }
 
   .vault-live-code__stage,
@@ -11112,6 +11741,280 @@
 
   .vault-live-callout {
     position: relative;
+  }
+
+  .vault-live-styled-block {
+    position: relative;
+  }
+
+  /*
+   * Keep chrome out of document flow. Quiet-chrome max-height:0→N on
+   * hover/focus-within was pushing the note and fighting scroll anchoring.
+   */
+  .vault-live-organism-host .vault-live-styled-block__chrome.vault-live-quiet-chrome,
+  .vault-live-organism-host:hover
+    .vault-live-styled-block__chrome.vault-live-quiet-chrome,
+  .vault-live-organism-host:focus-within
+    .vault-live-styled-block__chrome.vault-live-quiet-chrome,
+  .ProseMirror-selectednode .vault-live-styled-block__chrome.vault-live-quiet-chrome {
+    position: absolute;
+    left: 0;
+    bottom: calc(100% + 0.2rem);
+    z-index: 3;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.25rem;
+    margin: 0;
+    max-height: none;
+    overflow: visible;
+    transition: opacity 150ms ease;
+  }
+
+  .vault-live-styled-block__chrome {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.25rem;
+  }
+
+  .vault-live-styled-block__bar {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.12rem;
+    padding: 0.22rem 0.3rem;
+    border-radius: 0.55rem;
+    border: 1px solid rgb(var(--shell-border, var(--color-surface-500)) / 0.45);
+    background: rgb(var(--color-surface-900) / 0.97);
+    box-shadow: 0 8px 22px rgb(0 0 0 / 0.28);
+    backdrop-filter: blur(12px);
+  }
+
+  .vault-live-styled-block__sep {
+    width: 1px;
+    height: 1rem;
+    margin: 0 0.18rem;
+    background: rgb(var(--shell-border, var(--color-surface-500)) / 0.4);
+    flex-shrink: 0;
+  }
+
+  .vault-live-styled-block__door {
+    appearance: none;
+    border: none;
+    background: transparent;
+    color: rgb(var(--shell-muted, var(--color-surface-200)));
+    min-height: 1.75rem;
+    padding: 0 0.35rem;
+    border-radius: 0.35rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+    cursor: pointer;
+    font-size: 0.7rem;
+    font-weight: 600;
+    transition:
+      color 80ms ease,
+      background 80ms ease;
+  }
+
+  .vault-live-styled-block__door:hover,
+  .vault-live-styled-block__door--open {
+    background: rgb(var(--color-surface-700) / 0.5);
+    color: rgb(var(--shell-fg, var(--color-surface-50)));
+  }
+
+  .vault-live-styled-block__door--id {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    color: rgb(var(--color-primary-300));
+    min-width: 1.75rem;
+    justify-content: center;
+  }
+
+  .vault-live-styled-block__door--has-id {
+    color: rgb(var(--color-primary-200));
+  }
+
+  .vault-live-styled-block__door-label--serif {
+    font-family: ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
+  }
+
+  .vault-live-styled-block__door-label--mono {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  }
+
+  .vault-live-styled-block__door-meta {
+    font-size: 0.6rem;
+    font-weight: 500;
+    color: rgb(var(--shell-muted, var(--color-surface-400)));
+  }
+
+  .vault-live-styled-block__chev {
+    font-size: 0.55rem;
+    opacity: 0.7;
+  }
+
+  .vault-live-styled-block__align-glyph {
+    font-size: 0.85rem;
+    line-height: 1;
+    letter-spacing: -0.04em;
+  }
+
+  .vault-live-styled-block__menu-host {
+    min-width: 10.5rem;
+  }
+
+  .vault-live-styled-block__menu {
+    display: flex;
+    flex-direction: column;
+    gap: 0.05rem;
+    padding: 0.3rem;
+    border-radius: 0.5rem;
+    border: 1px solid rgb(var(--color-surface-600) / 0.35);
+    background: rgb(var(--color-surface-900) / 0.98);
+    box-shadow: 0 8px 20px rgb(0 0 0 / 0.28);
+    animation: vault-format-menu-in 120ms ease-out;
+  }
+
+  .vault-live-styled-block__menu-heading {
+    padding: 0.2rem 0.45rem 0.15rem;
+    color: rgb(var(--shell-muted, var(--color-surface-500)));
+    font-size: 0.62rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  .vault-live-styled-block__menu-sep {
+    margin: 0.25rem 0.35rem;
+    border-top: 1px solid rgb(var(--color-surface-500) / 0.28);
+  }
+
+  .vault-live-styled-block__option {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    border: 0;
+    border-radius: 0.35rem;
+    background: transparent;
+    padding: 0.35rem 0.45rem;
+    color: rgb(var(--color-surface-300));
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .vault-live-styled-block__option:hover {
+    background: rgb(var(--color-surface-800) / 0.7);
+    color: rgb(var(--color-surface-100));
+  }
+
+  .vault-live-styled-block__option--selected {
+    color: rgb(var(--color-surface-100));
+  }
+
+  .vault-live-styled-block__option-main {
+    display: inline-flex;
+    min-width: 0;
+    align-items: center;
+    gap: 0.4rem;
+  }
+
+  .vault-live-styled-block__option-label {
+    font-size: 0.78rem;
+    font-weight: 500;
+  }
+
+  .vault-live-styled-block__sample--serif {
+    font-family: ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
+  }
+
+  .vault-live-styled-block__sample--mono {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  }
+
+  .vault-live-styled-block__option-meta {
+    color: rgb(var(--color-surface-500));
+    font-size: 0.68rem;
+  }
+
+  .vault-live-styled-block__check {
+    color: rgb(var(--color-primary-300));
+    font-size: 0.75rem;
+  }
+
+  .vault-live-styled-block__size-row {
+    display: flex;
+    gap: 0.25rem;
+    padding: 0.15rem 0.35rem 0.25rem;
+  }
+
+  .vault-live-styled-block__size {
+    appearance: none;
+    border: 1px solid rgb(var(--shell-border, var(--color-surface-500)) / 0.35);
+    background: transparent;
+    color: rgb(var(--shell-muted, var(--color-surface-300)));
+    min-width: 2rem;
+    height: 1.7rem;
+    border-radius: 0.3rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .vault-live-styled-block__size:hover {
+    background: rgb(var(--color-surface-800) / 0.7);
+    color: rgb(var(--color-surface-100));
+  }
+
+  .vault-live-styled-block__size--selected {
+    background: rgb(var(--color-surface-700) / 0.55);
+    border-color: rgb(var(--shell-border, var(--color-surface-300)) / 0.45);
+    color: rgb(var(--shell-fg, var(--color-surface-50)));
+  }
+
+  .vault-live-styled-block__id-row {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.2rem 0.3rem;
+  }
+
+  .vault-live-styled-block__id-label {
+    font-size: 0.75rem;
+    color: rgb(var(--color-primary-300));
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  }
+
+  .vault-live-styled-block__id {
+    width: 7.5rem;
+    margin: 0;
+    padding: 0.2rem 0.35rem;
+    border: 1px solid rgb(var(--shell-border, var(--color-surface-500)) / 0.35);
+    border-radius: 0.3rem;
+    background: transparent;
+    color: rgb(var(--color-surface-200));
+    font-size: 0.7rem;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  }
+
+  .vault-live-styled-block__body {
+    outline: none;
+    min-height: 1.4em;
+    white-space: pre-wrap;
+  }
+
+  .vault-live-styled-block__body:empty::before {
+    content: attr(data-placeholder);
+    color: rgb(var(--shell-muted, var(--color-surface-500)));
+    pointer-events: none;
+  }
+
+  .vault-live-styled-block:hover .vault-live-styled-block__chrome.vault-live-quiet-chrome,
+  .vault-live-styled-block:focus-within
+    .vault-live-styled-block__chrome.vault-live-quiet-chrome {
+    opacity: 1;
+    pointer-events: auto;
   }
 
   .vault-live-callout__chrome {

@@ -7,7 +7,11 @@ import {
   listManuscripts,
   listTurnBudgetRequests,
 } from "$lib/daemon";
-  import { homeChannelSurface, formatShortcut } from "$lib/platform";
+  import {
+  resetContentZoom,
+  stepContentZoom,
+} from "$lib/config/contentZoom";
+import { homeChannelSurface, formatShortcut } from "$lib/platform";
 import { humanBrowser } from "$lib/stores/humanBrowser.svelte";
 import { copyBrowserUrl, openUrlInDefaultBrowser } from "$lib/utils/browserActions";
 import {
@@ -150,6 +154,42 @@ export function buildPaneCommands(): WorkshopCommand[] {
       advanced: true,
       run: (ctx) => {
         shellTabs.zoomToggle();
+        ctx.callbacks.close();
+      },
+    },
+    {
+      id: "content-zoom-in",
+      section: "advanced",
+      label: "Zoom content in",
+      subtitle: `${formatShortcut("+")} — notes, chats, scripts`,
+      keywords: "zoom content font size larger scale editor",
+      advanced: true,
+      run: (ctx) => {
+        stepContentZoom(1);
+        ctx.callbacks.close();
+      },
+    },
+    {
+      id: "content-zoom-out",
+      section: "advanced",
+      label: "Zoom content out",
+      subtitle: `${formatShortcut("−")} — notes, chats, scripts`,
+      keywords: "zoom content font size smaller scale editor",
+      advanced: true,
+      run: (ctx) => {
+        stepContentZoom(-1);
+        ctx.callbacks.close();
+      },
+    },
+    {
+      id: "content-zoom-reset",
+      section: "advanced",
+      label: "Reset content zoom",
+      subtitle: `${formatShortcut("0")} — back to 100%`,
+      keywords: "zoom content reset default 100",
+      advanced: true,
+      run: (ctx) => {
+        resetContentZoom();
         ctx.callbacks.close();
       },
     },

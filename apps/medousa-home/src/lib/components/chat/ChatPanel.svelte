@@ -18,10 +18,17 @@
   import { userProfiles } from "$lib/stores/userProfiles.svelte";
   import { settings } from "$lib/stores/settings.svelte";
   import {
+    createAgentSession,
     createTurnTicket,
     steerBoundWorkshop,
   } from "$lib/daemon";
-
+  import {
+    agentRuntimeLabel,
+    getSessionAgentRuntime,
+    setSessionAgentRuntime,
+    type ChatAgentRuntime,
+  } from "$lib/utils/sessionAgentRuntime";
+  import type { TurnTicketResponse } from "$lib/types/session";
   import { formatSessionLabel } from "$lib/utils/formatSession";
   import { visibleChatStatusLine } from "$lib/utils/chatStreamDisplay";
   import { STARTER_PROMPTS } from "$lib/utils/starterPrompts";
@@ -258,6 +265,33 @@
   });
 
   async function submitTurn(userContent: string, prompt: string, mode: "interactive" | "background") {
+    const runtime = getSessionAgentRuntime(chat.sessionId);
+    if (runtime !== "medousa" && mode === "interactive") {
+      const acceptedAgent = await createAgentSession({
+        session_id: chat.sessionId,
+        runtime,
+        prompt,
+      });
+      const ticket: TurnTicketResponse = {
+        turn_id: acceptedAgent.agent_session_id,
+        session_id: acceptedAgent.session_id,
+        mode: "interactive",
+        phase: "accepted" as TurnTicketResponse["phase"],
+        accepted_at_utc: acceptedAgent.accepted_at_utc ?? new Date().toISOString(),
+        stream_url: acceptedAgent.stream_url,
+        stream_ready: acceptedAgent.stream_ready,
+      };
+      chat.beginTurn(userContent, ticket, []);
+      chat.clearPendingMedia();
+      scrollToLatest(true);
+      await chat.startTurnStream(
+        ticket.turn_id,
+        ticket.session_id,
+        ticket.stream_url,
+      );
+      return;
+    }
+
     const opts = buildInteractiveTurnOptions();
     const mediaRefs = [...chat.pendingMediaRefs];
     const voice = voicePresets.turnVoiceFields();
@@ -284,6 +318,20 @@
       accepted.session_id,
       accepted.stream_url,
     );
+  }
+
+  let sessionRuntime = $state<ChatAgentRuntime>(
+    getSessionAgentRuntime(chat.sessionId),
+  );
+
+  $effect(() => {
+    sessionRuntime = getSessionAgentRuntime(chat.sessionId);
+  });
+
+  function onRuntimeChange(event: Event) {
+    const value = (event.currentTarget as HTMLSelectElement).value as ChatAgentRuntime;
+    sessionRuntime = value;
+    setSessionAgentRuntime(chat.sessionId, value);
   }
 
   async function submit(event: Event) {
@@ -833,6 +881,22 @@
         >
           Steering handoff — your next message continues the worker
         </p>
+      {/if}
+      {#if !workshop && !embedded}
+        <div class="mx-4 mb-1.5 flex items-center gap-2 text-[11px] text-surface-400">
+          <label for="chat-agent-runtime" class="shrink-0">Runtime</label>
+          <select
+            id="chat-agent-runtime"
+            class="rounded-md border border-surface-500/30 bg-surface-900/40 px-2 py-0.5 text-surface-200"
+            value={sessionRuntime}
+            onchange={onRuntimeChange}
+            disabled={connection.offline || chat.composerBlocked}
+          >
+            <option value="medousa">{agentRuntimeLabel("medousa")}</option>
+            <option value="cursor">{agentRuntimeLabel("cursor")}</option>
+            <option value="codex">{agentRuntimeLabel("codex")}</option>
+          </select>
+        </div>
       {/if}
       <ChatComposerBar
         mobile={workshop || useMobileChatLayout}

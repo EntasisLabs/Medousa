@@ -110,6 +110,17 @@ export function allFilterSpaces(showDeveloperNotes: boolean): VaultSpaceConfig[]
   );
 }
 
+/**
+ * Groups for the library group picker: built-ins, user-created groups, and Other.
+ * Excludes the system bucket; bugs only when developer notes are on.
+ */
+export function selectableGroupSpaces(showDeveloperNotes: boolean): VaultSpaceConfig[] {
+  const spaces = allVaultSpaces().filter(
+    (space) => !space.devOnly || showDeveloperNotes,
+  );
+  return [...spaces, VAULT_OTHER_SPACE];
+}
+
 export function isDevSpaceNote(path: string): boolean {
   return path.startsWith("bugs/");
 }

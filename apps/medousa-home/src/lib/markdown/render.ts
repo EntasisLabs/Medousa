@@ -4,6 +4,7 @@ import { marked, type Tokens } from "marked";
 import { parseWikilinkTarget, resolveWikilinkTarget } from "$lib/utils/resolveWikilink";
 import type { VaultNote } from "$lib/types/vault";
 import { plainHeadingText, uniqueHeadingSlug } from "$lib/markdown/headingRender";
+import { stripTrailingBlockIdHtml } from "$lib/markdown/blockAnchors";
 import { escapeAttr, escapeHtml } from "./escape";
 import { preprocessMarkdown } from "./preprocess";
 import {
@@ -42,8 +43,10 @@ function notesStubFromKnown(paths: ReadonlySet<string> | undefined): VaultNote[]
 function wikilinkIsUnresolved(target: string): boolean {
   const known = activeRenderOptions.knownPaths;
   if (!known || known.size === 0) return false;
-  const { pathToken } = parseWikilinkTarget(target);
+  const { pathToken, heading } = parseWikilinkTarget(target);
   const token = pathToken.trim();
+  // Same-note fragment links (`[[#Heading]]` / `[[#^id]]`) resolve to the open note.
+  if (!token && heading) return false;
   if (!token) return true;
   return (
     resolveWikilinkTarget(
@@ -65,10 +68,23 @@ function configureMarked(): void {
 
   marked.use({
     renderer: {
-      heading({ text, depth }: Tokens.Heading) {
-        const plain = plainHeadingText(text);
+      heading(this: { parser: { parseInline: (t: Tokens.Heading["tokens"]) => string } }, token: Tokens.Heading) {
+        const html = this.parser.parseInline(token.tokens);
+        const stripped = stripTrailingBlockIdHtml(html);
+        const plain = plainHeadingText(stripped.html);
         const slug = uniqueHeadingSlug(plain, activeHeadingSlugCounts);
-        return `<h${depth} id="${escapeAttr(slug)}" class="markdown-heading" data-heading-slug="${escapeAttr(slug)}">${text}</h${depth}>`;
+        const blockAttr = stripped.blockId
+          ? ` data-block-id="${escapeAttr(stripped.blockId)}"`
+          : "";
+        return `<h${token.depth} id="${escapeAttr(slug)}" class="markdown-heading" data-heading-slug="${escapeAttr(slug)}"${blockAttr}>${stripped.html}</h${token.depth}>`;
+      },
+      paragraph(this: { parser: { parseInline: (t: Tokens.Paragraph["tokens"]) => string } }, token: Tokens.Paragraph) {
+        const html = this.parser.parseInline(token.tokens);
+        const stripped = stripTrailingBlockIdHtml(html);
+        const blockAttr = stripped.blockId
+          ? ` id="^${escapeAttr(stripped.blockId)}" data-block-id="${escapeAttr(stripped.blockId)}"`
+          : "";
+        return `<p${blockAttr}>${stripped.html}</p>\n`;
       },
       link({ href, title, text }: Tokens.Link) {
         if (href?.startsWith("wikilink:")) {
@@ -184,11 +200,28 @@ function sanitizeHtml(html: string): string {
       "data-liquid-embed",
       "data-liquid-props",
       "data-liquid-icon",
+      "data-footnote-ref",
+      "data-block-id",
+      "data-md-font",
+      "data-md-size",
       "src",
       "loading",
       "decoding",
+      "value",
     ],
-    ADD_TAGS: ["input", "mark", "span", "nav", "aside", "header", "button", "figure", "figcaption"],
+    ADD_TAGS: [
+      "input",
+      "mark",
+      "span",
+      "nav",
+      "aside",
+      "header",
+      "button",
+      "figure",
+      "figcaption",
+      "sup",
+      "section",
+    ],
   });
 }
 

@@ -316,7 +316,7 @@ export const LIQUID_CARD_TEMPLATE = [
 export const LIQUID_CALLOUT_TEMPLATE = [
   "```callout",
   "tone: note",
-  "title: Aside",
+  "title: Note",
   "body: Supporting detail for the reader.",
   "```",
   "",
@@ -461,6 +461,19 @@ export const LIQUID_SECTION_TEMPLATE = [
   "subtitle: Optional context",
   "---",
   "Supporting paragraph for this section.",
+  "```",
+  "",
+].join("\n");
+
+export const LIQUID_BLOCK_TEMPLATE = [
+  "```block",
+  "id: styled-block",
+  "font: serif",
+  "size: lg",
+  "align: left",
+  "spacing: relaxed",
+  "---",
+  "Styled body — adjust font, size, align, and spacing in the block chrome.",
   "```",
   "",
 ].join("\n");

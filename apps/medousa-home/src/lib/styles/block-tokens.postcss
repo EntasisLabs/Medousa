@@ -1,0 +1,29 @@
+/* Styled liquid `block` — typography container. */
+
+@layer components {
+  .liquid-styled-block {
+    --block-font: inherit;
+    --block-size: inherit;
+    --block-align: left;
+    --block-spacing: 1.55;
+    margin: 0.75rem 0 1rem;
+    min-width: 0;
+    font-family: var(--block-font);
+    font-size: var(--block-size);
+    line-height: var(--block-spacing);
+    text-align: var(--block-align);
+    color: rgb(var(--color-surface-100));
+  }
+
+  .liquid-styled-block__body {
+    min-width: 0;
+  }
+
+  .liquid-styled-block__body > :first-child {
+    margin-top: 0;
+  }
+
+  .liquid-styled-block__body > :last-child {
+    margin-bottom: 0;
+  }
+}

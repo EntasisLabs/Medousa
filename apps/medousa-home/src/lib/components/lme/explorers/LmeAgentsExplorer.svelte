@@ -187,9 +187,7 @@
     {/if}
   </div>
 
-  <footer
-    class="relative flex shrink-0 items-center gap-1 border-t border-surface-500/25 px-2 py-1.5"
-  >
+  <footer class="lme-side-rail-dock">
     <div class="min-w-0 flex-1">
       {#if filterActive}
         <span class="workshop-faint truncate text-[11px]">Filtered</span>
