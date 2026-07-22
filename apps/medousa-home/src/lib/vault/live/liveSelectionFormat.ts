@@ -67,21 +67,44 @@ export function liveActiveFormatActions(editor: Editor): MarkdownFormatAction[] 
   return active;
 }
 
+/**
+ * Keep the Live scroll host planted across focus/selection restores.
+ * TipTap's scrollIntoView:false still loses to browser focus scrolling.
+ */
+export function withPinnedLiveScroll<T>(editor: Editor, fn: () => T): T {
+  const host = editor.view.dom.closest(".vault-live-editor");
+  const top = host instanceof HTMLElement ? host.scrollTop : null;
+  const pin = () => {
+    if (host instanceof HTMLElement && typeof top === "number") {
+      host.scrollTop = top;
+    }
+  };
+  try {
+    return fn();
+  } finally {
+    pin();
+    // Browser focus scrolling can land a frame later.
+    requestAnimationFrame(pin);
+  }
+}
+
 /** Restore a stored range before formatting (bubble clicks can clear selection). */
 export function restoreLiveSelection(
   editor: Editor,
   from: number,
   to: number,
 ): boolean {
-  const size = editor.state.doc.content.size;
-  const nextFrom = Math.max(0, Math.min(from, size));
-  const nextTo = Math.max(0, Math.min(to, size));
-  if (nextFrom === nextTo) return false;
-  return editor
-    .chain()
-    .focus(undefined, { scrollIntoView: false })
-    .setTextSelection({ from: nextFrom, to: nextTo })
-    .run();
+  return withPinnedLiveScroll(editor, () => {
+    const size = editor.state.doc.content.size;
+    const nextFrom = Math.max(0, Math.min(from, size));
+    const nextTo = Math.max(0, Math.min(to, size));
+    if (nextFrom === nextTo) return false;
+    return editor
+      .chain()
+      .focus(undefined, { scrollIntoView: false })
+      .setTextSelection({ from: nextFrom, to: nextTo })
+      .run();
+  });
 }
 
 export function applyLiveFormatAction(
@@ -105,6 +128,8 @@ export function applyLiveFormatAction(
       return chain.toggleCode().run();
     case "highlight":
       return chain.toggleHighlight().run();
+    case "paragraph":
+      return chain.setParagraph().run();
     case "h1":
       return chain.toggleHeading({ level: 1 }).run();
     case "h2":

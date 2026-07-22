@@ -47,6 +47,7 @@
     applyLiveFormatAction,
     applyLiveTextColor,
     liveActiveFormatActions,
+    withPinnedLiveScroll,
     liveCoordsAnchor,
     liveSelectionAnchor,
     liveSelectionHasText,
@@ -95,6 +96,7 @@
   let formatActiveActions = $state<MarkdownFormatAction[]>([]);
   let formatActiveFontFamily = $state<MarkdownFontFamily | null>(null);
   let formatActiveFontSize = $state<string | null>(null);
+  let formatActiveColor = $state<string | null>(null);
   /** Last nonempty selection — restored when bubble buttons steal focus. */
   let formatSelectionRange = $state<{ from: number; to: number } | null>(null);
   let removeFormatBubbleListeners: (() => void) | null = null;
@@ -345,6 +347,7 @@
       formatActiveActions = [];
       formatActiveFontFamily = null;
       formatActiveFontSize = null;
+      formatActiveColor = null;
       formatSelectionRange = null;
       syncTableChrome();
       return;
@@ -361,6 +364,7 @@
       formatActiveActions = [];
       formatActiveFontFamily = null;
       formatActiveFontSize = null;
+      formatActiveColor = null;
       if (editor.isFocused) formatSelectionRange = null;
       return;
     }
@@ -373,39 +377,53 @@
       font === "sans" || font === "serif" || font === "mono" ? font : null;
     formatActiveFontSize =
       (editor.getAttributes("fontSize").size as string | undefined) ?? null;
+    formatActiveColor =
+      (editor.getAttributes("textColor").color as string | undefined) ?? null;
     formatBubbleOpen = Boolean(formatBubbleAnchor);
   }
 
   function handleFormatAction(action: MarkdownFormatAction) {
     if (!editor) return;
+    const ed = editor;
     const range = formatSelectionRange;
-    applyLiveFormatAction(editor, action, range);
-    refreshFormatSelectionRange(range);
-    syncFormatBubble();
+    withPinnedLiveScroll(ed, () => {
+      applyLiveFormatAction(ed, action, range);
+      refreshFormatSelectionRange(range);
+      syncFormatBubble();
+    });
   }
 
   function handleFormatColor(color: MarkdownColorToken) {
     if (!editor) return;
+    const ed = editor;
     const range = formatSelectionRange;
-    applyLiveTextColor(editor, color, range);
-    refreshFormatSelectionRange(range);
-    syncFormatBubble();
+    withPinnedLiveScroll(ed, () => {
+      applyLiveTextColor(ed, color, range);
+      refreshFormatSelectionRange(range);
+      syncFormatBubble();
+    });
   }
 
   function handleFormatFontFamily(font: MarkdownFontFamily) {
     if (!editor) return;
+    const ed = editor;
     const range = formatSelectionRange;
-    applyLiveFontFamily(editor, font, range);
-    refreshFormatSelectionRange(range);
-    syncFormatBubble();
+    withPinnedLiveScroll(ed, () => {
+      applyLiveFontFamily(ed, font, range);
+      refreshFormatSelectionRange(range);
+      syncFormatBubble();
+    });
   }
 
   function handleFormatFontSize(size: string) {
     if (!editor) return;
+    const ed = editor;
     const range = formatSelectionRange;
-    applyLiveFontSize(editor, size, range);
-    refreshFormatSelectionRange(range);
-    syncFormatBubble();
+    withPinnedLiveScroll(ed, () => {
+      applyLiveFontSize(ed, size, range);
+      refreshFormatSelectionRange(range);
+      syncFormatBubble();
+    });
   }
 
   function commitFrontmatter(next: string | null) {
@@ -974,6 +992,7 @@
   activeActions={formatActiveActions}
   activeFontFamily={formatActiveFontFamily}
   activeFontSize={formatActiveFontSize}
+  activeColor={formatActiveColor}
   disabled={disabled}
   onFormat={handleFormatAction}
   onColor={handleFormatColor}

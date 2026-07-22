@@ -46,6 +46,7 @@ export type MarkdownFormatAction =
   | "italic"
   | "code"
   | "link"
+  | "paragraph"
   | "h1"
   | "h2"
   | "h3"
@@ -283,9 +284,9 @@ function setHeadingLevel(
   content: string,
   selectionStart: number,
   selectionEnd: number,
-  level: 1 | 2 | 3,
+  level: 0 | 1 | 2 | 3,
 ): EditResult {
-  const marker = `${"#".repeat(level)} `;
+  const marker = level === 0 ? "" : `${"#".repeat(level)} `;
   const startLine = lineRangeAt(content, selectionStart).start;
   const endLine = lineRangeAt(content, Math.max(selectionStart, selectionEnd - 1)).end;
   const block = content.slice(startLine, endLine);
@@ -317,6 +318,8 @@ export function applyMarkdownFormat(
       return toggleWrapSelection(content, selectionStart, selectionEnd, "`", "`", "code");
     case "link":
       return wrapSelection(content, selectionStart, selectionEnd, "[", "](url)", "label");
+    case "paragraph":
+      return setHeadingLevel(content, selectionStart, selectionEnd, 0);
     case "h1":
       return setHeadingLevel(content, selectionStart, selectionEnd, 1);
     case "h2":
