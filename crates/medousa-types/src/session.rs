@@ -81,6 +81,9 @@ pub struct TuiDefaults {
     /// Master switch for `cognition_shell_*` agent tools (default off — sensitive).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shell_agent_tools_enabled: Option<bool>,
+    /// Vault Versions (Git-backed). Off by default; product language is "Versions".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vault_git_enabled: Option<bool>,
     /// Charter ceiling for shell network access (default off).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shell_network_default: Option<bool>,

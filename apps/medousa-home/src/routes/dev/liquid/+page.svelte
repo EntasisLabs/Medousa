@@ -530,6 +530,52 @@
     "```",
   ].join("\n");
 
+  const timelineRailMarkdown = [
+    "```timeline",
+    "title: Ship log",
+    "subtitle: Vertical rail (default)",
+    "granularity: day",
+    "",
+    "---",
+    "ts: Day 1",
+    "label: Kickoff",
+    "detail: Scoped the work",
+    "emoji: 🏁",
+    "---",
+    "ts: Day 2",
+    "label: Shipped",
+    "detail: Landed the change",
+    "emoji: ✨",
+    "```",
+  ].join("\n");
+
+  const timelineSnapshotMarkdown = [
+    "```timeline",
+    "title: Trip snapshot",
+    "subtitle: Horizontal track + peek cards",
+    "layout: snapshot",
+    "",
+    "---",
+    "ts: Jul 12",
+    "title: Arrive Narita",
+    "meta: travel",
+    "body: N'EX in, hotel near the station.",
+    "emoji: ✈️",
+    "---",
+    "ts: Jul 13–15",
+    "title: Tokyo base",
+    "meta: stay",
+    "body: Markets, food, neon nights.",
+    "emoji: 🗼",
+    "---",
+    "ts: Jul 16",
+    "title: Kyoto day trip",
+    "meta: day trip",
+    "body: Fushimi Inari and tea.",
+    "emoji: ⛩️",
+    "```",
+  ].join("\n");
+
   const accordionMarkdown = [
     "```accordion",
     "title: FAQ",
@@ -751,7 +797,7 @@
   <h2 class="harness-subhead">Layout embeds (0.2.0)</h2>
   <p class="harness-note">
     <code>```tabs</code> · <code>```steps</code> · <code>```accordion</code> ·
-    <code>```code</code> · <code>```tree</code> — paste-first fences with stagger enter.
+    <code>```code</code> · <code>```tree</code> · <code>```timeline</code> — paste-first fences with stagger enter.
   </p>
   <section class="harness-stage harness-charts">
     <MarkdownContent content={tabsMarkdown} />
@@ -759,6 +805,8 @@
     <MarkdownContent content={accordionMarkdown} />
     <MarkdownContent content={codeMarkdown} />
     <MarkdownContent content={treeMarkdown} />
+    <MarkdownContent content={timelineRailMarkdown} />
+    <MarkdownContent content={timelineSnapshotMarkdown} />
   </section>
 
   <h2 class="harness-subhead">Streamed structured turn (daemon wire)</h2>

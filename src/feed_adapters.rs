@@ -9,6 +9,7 @@ use crate::feed_bus::{publish, FeedPublishRequest};
 use crate::recurring_feed::FeedPayloadMode;
 
 pub const TRIP_LONDON_TRAINS_FEED_ID: &str = "trip.london.trains";
+pub const SUMMER_AI_DIGEST_FEED_ID: &str = "summer-ai-digest";
 
 pub const WORKSHOP_PULSE: &str = WORKSHOP_PULSE_FEED_ID;
 
@@ -203,6 +204,23 @@ pub fn build_recurring_tick_slice(ctx: &RecurringTickContext) -> Value {
                 .map(|text| truncate(text, excerpt_cap))
         });
 
+    let body_cap = match ctx.payload_mode {
+        FeedPayloadMode::Summary => 480,
+        FeedPayloadMode::ParsedPoll => 1600,
+        FeedPayloadMode::RawExcerpt => 1800,
+    };
+    let body = ctx
+        .output_excerpt
+        .as_deref()
+        .or_else(|| {
+            ctx.parsed_poll
+                .as_ref()
+                .and_then(|parsed| parsed.get("bodyExcerpt"))
+                .and_then(|v| v.as_str())
+        })
+        .map(|text| truncate(text, body_cap))
+        .filter(|value| !value.is_empty());
+
     let mut payload = json!({
         "phase": ctx.phase.as_str(),
         "checkedAt": checked_at,
@@ -217,6 +235,11 @@ pub fn build_recurring_tick_slice(ctx: &RecurringTickContext) -> Value {
     if let Some(excerpt) = excerpt.filter(|value| !value.is_empty()) {
         payload["excerpt"] = Value::String(excerpt);
     }
+    if let Some(body) = body {
+        payload["body"] = Value::String(body.clone());
+        payload["datatype"] = Value::String(infer_feed_datatype(&body));
+        payload["finishedAt"] = Value::String(checked_at.clone());
+    }
 
     if ctx.payload_mode == FeedPayloadMode::ParsedPoll
         && let Some(parsed) = &ctx.parsed_poll {
@@ -229,6 +252,59 @@ pub fn build_recurring_tick_slice(ctx: &RecurringTickContext) -> Value {
         }
 
     payload
+}
+
+pub fn infer_feed_datatype(body: &str) -> String {
+    let trimmed = body.trim();
+    if trimmed.is_empty() {
+        return "text".to_string();
+    }
+    if trimmed.starts_with("data:image/") || looks_like_image_ref(trimmed) {
+        return "image".to_string();
+    }
+    if serde_json::from_str::<Value>(trimmed).is_ok() {
+        return "json".to_string();
+    }
+    if looks_like_csv(trimmed) {
+        return "csv".to_string();
+    }
+    if trimmed.contains("# ")
+        || trimmed.contains("**")
+        || trimmed.contains("\n- ")
+        || trimmed.contains("\n* ")
+    {
+        return "md".to_string();
+    }
+    "text".to_string()
+}
+
+fn looks_like_image_ref(value: &str) -> bool {
+    let lower = value.to_lowercase();
+    lower.starts_with("http://")
+        || lower.starts_with("https://")
+        || lower.starts_with("vault/")
+        || lower.ends_with(".png")
+        || lower.ends_with(".jpg")
+        || lower.ends_with(".jpeg")
+        || lower.ends_with(".webp")
+        || lower.ends_with(".gif")
+        || lower.ends_with(".svg")
+}
+
+fn looks_like_csv(text: &str) -> bool {
+    let lines: Vec<_> = text
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .collect();
+    if lines.len() < 2 {
+        return false;
+    }
+    let comma_lines = lines
+        .iter()
+        .filter(|line| line.contains(','))
+        .count();
+    comma_lines >= 2 && comma_lines * 2 >= lines.len()
 }
 
 /// Parse http.fetch / http_poll grapheme output into bounded structured fields.
@@ -342,8 +418,40 @@ mod recurring_feed_tests {
         assert_eq!(payload["phase"], "tick_succeeded");
         assert_eq!(payload["statusCode"], json!(200));
         assert_eq!(payload["recurringId"], "trip-london-poll");
+        assert_eq!(payload["datatype"], json!("text"));
+        assert!(payload["body"].as_str().is_some());
         assert!(payload["excerpt"].as_str().is_some());
         let serialized = serde_json::to_string(payload).expect("serialize");
         assert!(serialized.len() <= 2048);
+    }
+
+    #[tokio::test]
+    async fn summer_digest_demo_publishes_markdown_body() {
+        use crate::feed_store::feed_store;
+
+        let digest = "# Summer AI digest\n\n- Gemini updates\n- Claude releases";
+        let ctx = RecurringTickContext {
+            recurring_id: "summer-digest-poll".to_string(),
+            job_id: "job-digest-1".to_string(),
+            job_type: "workflow.grapheme.run".to_string(),
+            phase: JobTerminalPhase::TickSucceeded,
+            output_excerpt: Some(digest.to_string()),
+            parsed_poll: None,
+            payload_mode: FeedPayloadMode::RawExcerpt,
+        };
+
+        publish_recurring_tick(SUMMER_AI_DIGEST_FEED_ID, &ctx).await;
+
+        let latest = feed_store()
+            .latest_good(
+                medousa_types::environment_default::DEFAULT_PROFILE_ID,
+                SUMMER_AI_DIGEST_FEED_ID,
+            )
+            .await
+            .expect("latest good");
+        assert_eq!(latest.feed_id, SUMMER_AI_DIGEST_FEED_ID);
+        assert_eq!(latest.datatype, "md");
+        assert!(latest.body.contains("Summer AI digest"));
+        assert_eq!(latest.job_id.as_deref(), Some("job-digest-1"));
     }
 }

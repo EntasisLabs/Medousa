@@ -12,6 +12,7 @@
     subscribeFeedTail,
     type LiveTileOverrides,
   } from "$lib/liquid/feeds/feedTail";
+  import LiquidGlyph from "$lib/liquid/icons/LiquidGlyph.svelte";
 
   type TileTone = "default" | "accent" | "success" | "warn" | "error";
   type TileLiveStatus = "static" | "loading" | "ready" | "stale" | "error";
@@ -24,6 +25,7 @@
     delta?: string;
     tone: TileTone;
     emoji?: string;
+    icon?: string;
     hint?: string;
     unit?: string;
     feed?: string;
@@ -61,6 +63,7 @@
         const tile: DashboardTile = { id, label, value, tone };
         if (typeof row.delta === "string" && row.delta.trim()) tile.delta = row.delta.trim();
         if (typeof row.emoji === "string" && row.emoji.trim()) tile.emoji = row.emoji.trim();
+        if (typeof row.icon === "string" && row.icon.trim()) tile.icon = row.icon.trim();
         if (typeof row.hint === "string" && row.hint.trim()) tile.hint = row.hint.trim();
         if (typeof row.unit === "string" && row.unit.trim()) tile.unit = row.unit.trim();
         if (typeof row.feed === "string" && row.feed.trim()) tile.feed = row.feed.trim();
@@ -178,8 +181,10 @@
             onclick={() => selectTile(tile)}
           >
             <span class="liquid-dashboard-tile-top">
-              {#if tile.emoji}
-                <span class="liquid-dashboard-emoji" aria-hidden="true">{tile.emoji}</span>
+              {#if tile.emoji || tile.icon}
+                <span class="liquid-dashboard-emoji" aria-hidden="true">
+                  <LiquidGlyph icon={tile.icon} emoji={tile.emoji} size={14} />
+                </span>
               {/if}
               <span class="liquid-dashboard-label">{tile.label}</span>
             </span>

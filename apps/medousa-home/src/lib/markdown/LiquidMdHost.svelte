@@ -22,6 +22,7 @@
   import Decision from "$lib/liquid/archetypes/organisms/decision/Decision.svelte";
   import Brief from "$lib/liquid/archetypes/organisms/brief/Brief.svelte";
   import Dashboard from "$lib/liquid/archetypes/organisms/dashboard/Dashboard.svelte";
+  import Feed from "$lib/liquid/archetypes/organisms/feed/Feed.svelte";
   import Chart from "$lib/liquid/archetypes/organisms/chart/Chart.svelte";
   import Report from "$lib/liquid/archetypes/organisms/report/Report.svelte";
   import Slides from "$lib/liquid/archetypes/organisms/slides/Slides.svelte";
@@ -45,6 +46,7 @@
     LiquidCodeProps,
     LiquidCompareProps,
     LiquidDashboardProps,
+    LiquidFeedProps,
     LiquidChartProps,
     LiquidReportProps,
     LiquidSlidesProps,
@@ -60,37 +62,7 @@
     LiquidTimelineProps,
     LiquidTreeProps,
   } from "$lib/markdown/liquidEmbeds";
-  import {
-    AlertTriangle,
-    Book,
-    Brain,
-    Check,
-    Clock,
-    Code,
-    Coins,
-    Compass,
-    Cpu,
-    FileCode,
-    Globe,
-    Hourglass,
-    Info,
-    Layers,
-    Lock,
-    Map,
-    MessageCircle,
-    Mic,
-    Pencil,
-    Rocket,
-    Search,
-    Shield,
-    Sparkles,
-    Star,
-    Table,
-    Tag,
-    X,
-    Zap,
-    type Icon as LucideIcon,
-  } from "@lucide/svelte";
+  import { LIQUID_ICON_MAP } from "$lib/liquid/icons/liquidIcons";
 
   interface Props {
     kind: LiquidEmbedKind | "icon";
@@ -106,37 +78,6 @@
   // `$effect` runs too late; Card captures context at init for sheet expand.
   const rootContext = untrack(() => context);
   setLiquidContext(rootContext);
-
-  const ICON_MAP: Record<string, typeof LucideIcon> = {
-    sparkles: Sparkles,
-    lock: Lock,
-    globe: Globe,
-    "message-circle": MessageCircle,
-    brain: Brain,
-    shield: Shield,
-    code: Code,
-    cpu: Cpu,
-    zap: Zap,
-    clock: Clock,
-    hourglass: Hourglass,
-    coins: Coins,
-    tag: Tag,
-    mic: Mic,
-    pencil: Pencil,
-    "file-code": FileCode,
-    table: Table,
-    layers: Layers,
-    rocket: Rocket,
-    star: Star,
-    check: Check,
-    x: X,
-    info: Info,
-    "alert-triangle": AlertTriangle,
-    search: Search,
-    book: Book,
-    map: Map,
-    compass: Compass,
-  };
 
   function cardNode(id: string, card: LiquidCardProps) {
     return createNode({
@@ -378,6 +319,7 @@
         ...(props.title ? { title: props.title } : {}),
         ...(props.subtitle ? { subtitle: props.subtitle } : {}),
         ...(props.granularity ? { granularity: props.granularity } : {}),
+        ...(props.layout ? { layout: props.layout } : {}),
         events: props.events,
       },
       fillState: "ready",
@@ -450,6 +392,24 @@
         ...(props.subtitle ? { subtitle: props.subtitle } : {}),
         ...(props.columns ? { columns: props.columns } : {}),
         tiles: props.tiles,
+      },
+      fillState: "ready",
+    });
+  });
+
+  const feed = $derived.by(() => {
+    if (kind !== "feed") return null;
+    const props = payload as LiquidFeedProps;
+    if (!props?.feedId || !props.datatype) return null;
+    return createNode({
+      id: "md-feed",
+      type: "feed",
+      props: {
+        feedId: props.feedId,
+        datatype: props.datatype,
+        ...(props.title ? { title: props.title } : {}),
+        ...(props.empty ? { empty: props.empty } : {}),
+        ...(props.refresh ? { refresh: props.refresh } : {}),
       },
       fillState: "ready",
     });
@@ -621,7 +581,7 @@
   const IconComp = $derived.by(() => {
     if (kind !== "icon") return null;
     const id = typeof payload === "string" ? payload : "";
-    return ICON_MAP[id] ?? null;
+    return LIQUID_ICON_MAP[id] ?? null;
   });
 
   const staggerKinds = new Set(["tabs", "steps", "accordion", "tree"]);
@@ -698,6 +658,10 @@
 {:else if kind === "dashboard" && dashboard}
   <div class="{hostClass} liquid-md-host-dashboard">
     <Dashboard node={dashboard} />
+  </div>
+{:else if kind === "feed" && feed}
+  <div class="{hostClass} liquid-md-host-feed">
+    <Feed node={feed} />
   </div>
 {:else if kind === "report" && report}
   <div class="{hostClass} liquid-md-host-report">

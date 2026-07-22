@@ -11816,6 +11816,8 @@
   .vault-live-tabs:focus-within .vault-live-quiet-chrome,
   .vault-live-steps:hover .vault-live-quiet-chrome,
   .vault-live-steps:focus-within .vault-live-quiet-chrome,
+  .vault-live-timeline:hover .vault-live-quiet-chrome,
+  .vault-live-timeline:focus-within .vault-live-quiet-chrome,
   .vault-live-accordion:hover .vault-live-quiet-chrome,
   .vault-live-accordion:focus-within .vault-live-quiet-chrome,
   .vault-live-code:hover .vault-live-quiet-chrome,
@@ -12548,6 +12550,7 @@
   .vault-live-dashboard__configure,
   .vault-live-tabs__configure,
   .vault-live-steps__configure,
+  .vault-live-timeline__configure,
   .vault-live-accordion__configure,
   .vault-live-code__configure,
   .vault-live-code__lang,
@@ -12570,6 +12573,7 @@
   .vault-live-dashboard__configure,
   .vault-live-tabs__configure,
   .vault-live-steps__configure,
+  .vault-live-timeline__configure,
   .vault-live-accordion__configure,
   .vault-live-code__configure,
   .vault-live-code__lang,
@@ -12584,6 +12588,7 @@
   .vault-live-dashboard__configure:hover,
   .vault-live-tabs__configure:hover,
   .vault-live-steps__configure:hover,
+  .vault-live-timeline__configure:hover,
   .vault-live-accordion__configure:hover,
   .vault-live-code__configure:hover,
   .vault-live-code__lang:hover,
@@ -12598,6 +12603,7 @@
   .vault-live-dashboard__title,
   .vault-live-tabs__title,
   .vault-live-steps__title,
+  .vault-live-timeline__title,
   .vault-live-accordion__title,
   .vault-live-code__title,
   .vault-live-tree__title,
@@ -12611,6 +12617,7 @@
   .vault-live-dashboard__title,
   .vault-live-tabs__title,
   .vault-live-steps__title,
+  .vault-live-timeline__title,
   .vault-live-accordion__title,
   .vault-live-code__title,
   .vault-live-tree__title,
@@ -12638,6 +12645,7 @@
   .vault-live-dashboard__title:empty::before,
   .vault-live-tabs__title:empty::before,
   .vault-live-steps__title:empty::before,
+  .vault-live-timeline__title:empty::before,
   .vault-live-accordion__title:empty::before,
   .vault-live-code__title:empty::before,
   .vault-live-tree__title:empty::before,
@@ -12649,6 +12657,7 @@
   .vault-live-dashboard__head,
   .vault-live-tabs__head,
   .vault-live-steps__head,
+  .vault-live-timeline__head,
   .vault-live-accordion__head,
   .vault-live-code__head,
   .vault-live-tree__head,
@@ -12662,6 +12671,7 @@
   .vault-live-dashboard__meta,
   .vault-live-tabs__meta,
   .vault-live-steps__meta,
+  .vault-live-timeline__meta,
   .vault-live-accordion__meta,
   .vault-live-code__meta,
   .vault-live-tree__meta,
@@ -12674,7 +12684,8 @@
 
   .vault-live-dashboard__cols,
   .vault-live-tabs__strip,
-  .vault-live-compare__modes {
+  .vault-live-compare__modes,
+  .vault-live-timeline__layouts {
     display: flex;
     flex-wrap: wrap;
     gap: 0.25rem;
@@ -12682,7 +12693,8 @@
 
   .vault-live-dashboard__col,
   .vault-live-tabs__tab,
-  .vault-live-compare__mode {
+  .vault-live-compare__mode,
+  .vault-live-timeline__layout {
     font-size: 0.625rem;
     letter-spacing: 0.02em;
     color: rgb(var(--shell-muted, var(--color-surface-400)));
@@ -12695,7 +12707,8 @@
 
   .vault-live-dashboard__col[aria-pressed="true"],
   .vault-live-tabs__tab[aria-selected="true"],
-  .vault-live-compare__mode[aria-pressed="true"] {
+  .vault-live-compare__mode[aria-pressed="true"],
+  .vault-live-timeline__layout[aria-pressed="true"] {
     color: rgb(var(--shell-fg, var(--color-surface-50)));
     border-color: rgb(var(--shell-border, var(--color-surface-300)) / 0.55);
   }
@@ -12703,6 +12716,8 @@
   .vault-live-dashboard__stage .liquid-dashboard,
   .vault-live-tabs__stage .liquid-tabs,
   .vault-live-steps__stage .liquid-steps,
+  .vault-live-timeline__stage .liquid-timeline,
+  .vault-live-timeline__stage .liquid-timeline-snapshot,
   .vault-live-accordion__stage .liquid-accordion,
   .vault-live-code__stage .liquid-code,
   .vault-live-tree__stage .liquid-tree,

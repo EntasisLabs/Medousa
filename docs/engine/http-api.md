@@ -141,6 +141,7 @@ Patch ops (`remove_custom_surface`, `remove_component`, etc.) are **agent-tool o
 |--------|------|-----|
 | GET | `/v1/feeds` | `feeds().list` |
 | GET | `/v1/feeds/{feed_id}/tail` | `feeds().tail` |
+| GET | `/v1/feeds/{feed_id}/latest-good` | `feeds().latest_good` |
 | POST | `/v1/feeds/{feed_id}/read` | `feeds().mark_read` |
 | GET (SSE) | `/v1/feeds/stream` | `feeds().stream` |
 

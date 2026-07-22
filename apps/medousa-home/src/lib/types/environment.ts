@@ -179,6 +179,14 @@ export interface FeedTailResponse {
   events: FeedEvent[];
 }
 
+export interface FeedLatestGoodResponse {
+  feedId: string;
+  datatype: string;
+  body: string;
+  jobId?: string | null;
+  finishedAt?: string | null;
+}
+
 export interface ComponentFeedPatch {
   componentId: string;
   feedId: string;

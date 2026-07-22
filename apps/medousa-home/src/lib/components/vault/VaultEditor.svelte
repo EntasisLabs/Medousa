@@ -37,6 +37,7 @@
   import VaultNoteLinksPanel from "./VaultNoteLinksPanel.svelte";
   import VaultConflictBar from "./VaultConflictBar.svelte";
   import VaultProposalBar from "./VaultProposalBar.svelte";
+  import VaultVersionsPanel from "./VaultVersionsPanel.svelte";
   import VaultMarkdownEditor from "./VaultMarkdownEditor.svelte";
   import VaultNoteActionsMenu from "./VaultNoteActionsMenu.svelte";
   import VaultViewBuilderSheet from "./VaultViewBuilderSheet.svelte";
@@ -996,6 +997,9 @@
         {labelByPath}
         onWikilink={undefined}
       />
+      {#if interactive && bound}
+        <VaultVersionsPanel />
+      {/if}
     </div>
   {:else}
     <div class="relative flex min-h-0 min-w-0 max-w-full flex-1 overflow-hidden">
@@ -1087,6 +1091,9 @@
           {labelByPath}
           onOpenNote={(path) => vault.openNote(path)}
         />
+      {/if}
+      {#if interactive && bound}
+        <VaultVersionsPanel />
       {/if}
     </div>
   {/if}

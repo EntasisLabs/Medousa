@@ -11,6 +11,7 @@ export const timeline = defineArchetype({
     title: { type: "string" },
     subtitle: { type: "string" },
     granularity: { type: "string" },
+    layout: { type: "string" },
     events: { type: "array", required: true },
   },
   acceptsBindings: ["inline"],

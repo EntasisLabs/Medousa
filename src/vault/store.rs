@@ -417,6 +417,66 @@ impl VaultStore {
         Ok(())
     }
 
+    pub fn list_trash(&self, limit: usize) -> Result<Vec<(String, Option<DateTime<Utc>>)>> {
+        let root = user_vault_root().join(".trash");
+        if !root.is_dir() {
+            return Ok(Vec::new());
+        }
+        let mut entries = Vec::new();
+        fn walk(
+            dir: &Path,
+            prefix: &str,
+            out: &mut Vec<(String, Option<DateTime<Utc>>)>,
+        ) -> Result<()> {
+            for entry in fs::read_dir(dir)? {
+                let entry = entry?;
+                let name = entry.file_name().to_string_lossy().to_string();
+                if name.starts_with('.') {
+                    continue;
+                }
+                let rel = if prefix.is_empty() {
+                    name.clone()
+                } else {
+                    format!("{prefix}/{name}")
+                };
+                let path = entry.path();
+                if path.is_dir() {
+                    walk(&path, &rel, out)?;
+                } else if path.is_file() {
+                    let modified = path
+                        .metadata()
+                        .ok()
+                        .and_then(|m| m.modified().ok())
+                        .map(DateTime::<Utc>::from);
+                    out.push((rel, modified));
+                }
+            }
+            Ok(())
+        }
+        walk(&root, "", &mut entries)?;
+        entries.sort_by(|a, b| b.1.cmp(&a.1));
+        entries.truncate(limit.max(1).min(500));
+        Ok(entries)
+    }
+
+    pub fn restore_from_trash(&self, path: &str) -> Result<String> {
+        let normalized = normalize_vault_path(path)?;
+        let trash = trash_path_for(&normalized)?;
+        if !trash.is_file() {
+            bail!("trashed note not found: {normalized}");
+        }
+        let absolute = resolve_user_note_path(&normalized)?;
+        if absolute.exists() {
+            bail!("a note already exists at path: {normalized}");
+        }
+        if let Some(parent) = absolute.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::rename(&trash, &absolute)?;
+        let _ = self.refresh_from_disk();
+        Ok(normalized)
+    }
+
     pub fn note_exists(&self, path: &str) -> bool {
         let _ = self.refresh_from_disk();
         normalize_vault_path(path)

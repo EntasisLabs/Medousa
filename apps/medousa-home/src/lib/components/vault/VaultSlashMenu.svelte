@@ -216,6 +216,13 @@
       group: "blocks",
     },
     {
+      id: "liquid_feed",
+      label: "Feed",
+      hint: "Last-good Stasis output",
+      keywords: "liquid feed stasis recurring digest ```feed latest",
+      group: "blocks",
+    },
+    {
       id: "liquid_report",
       label: "Report",
       hint: "Narrative with figures",

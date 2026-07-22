@@ -296,6 +296,7 @@ const TOPICS: &[WikiTopic] = &[
         decision(.99): "```decision\\ntitle: Which laptop?\\nrecommendation: MacBook Pro 14\\n\\n---\\nlabel: MacBook Pro 14\\npros: Display | Battery\\ncons: Price\\n---\\nlabel: XPS 15\\npros: Ports\\ncons: Thermals\\n```",
         brief(.99): "```brief\\ntitle: Why Tokyo first\\ntone: research\\n\\n---\\nheading: Easy logistics\\nbody: One simple route\\n\\n===\\n---\\ntitle: JNTO guide\\nurl: https://example.com\\n```",
         dashboard(.99): "```dashboard\\ntitle: Trip pulse\\ncolumns: 2\\n\\n---\\nlabel: Days locked\\nvalue: 7\\ntone: success\\n---\\nlabel: Trains\\nvalue: …\\nfeed: trip.london.trains\\nfield: summary\\ntone: accent\\n``` (chat tiles poll feed_tail — no cognition_feed_subscribe required; canvas HTML widgets still use subscribe)",
+        feed(.99): "```feed\\nid: summer-ai-digest\\ndatatype: md\\ntitle: Summer digest\\nrefresh: load\\n``` (hydrates last-good via GET /v1/feeds/{id}/latest-good; datatypes md|text|json|csv|image; pair with recurring feeds.feed_ids on workflow.grapheme.run)",
         chart(.99): "```chart\\ntype: bar\\ntitle: Visitors\\nlegend: bottom\\n\\n| Month | Desktop | Mobile |\\n| ----- | ------- | ------ |\\n| Jan   | 186     | 80     |\\n| Feb   | 305     | 200    |\\n``` (types: bar|line|area|pie|donut|radar|radial; first col categories, other cols numeric series)",
         mermaid(.97): "```mermaid\\nflowchart LR\\n  A --> B\\n```",
         icon(.98): "{{icon:sparkles}} — allowlisted Lucide names only"

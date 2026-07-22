@@ -673,6 +673,51 @@ describe("preprocessLiquidEmbeds", () => {
     expect(preprocessLiquidEmbeds(src)).toContain("```timeline");
   });
 
+  it("parses timeline snapshot layout and snapshot event fields", () => {
+    const src = [
+      "```timeline",
+      "title: Trip snapshot",
+      "layout: snapshot",
+      "",
+      "---",
+      "ts: Jul 12",
+      "title: Arrive",
+      "meta: travel",
+      "body: Landed and checked in",
+      "emoji: ✈️",
+      "icon: plane",
+      "---",
+      "ts: Jul 13",
+      "title: Explore",
+      "body: Markets and food",
+      "image: https://example.com/photo.jpg",
+      "```",
+    ].join("\n");
+    const out = preprocessLiquidEmbeds(src);
+    expect(out).toContain('data-liquid-embed="timeline"');
+    const match = out.match(/data-liquid-props="([^"]+)"/);
+    const props = decodeLiquidProps<{
+      title?: string;
+      layout?: string;
+      events: {
+        label: string;
+        ts?: string;
+        meta?: string;
+        body?: string;
+        emoji?: string;
+        icon?: string;
+        image?: string;
+      }[];
+    }>(match![1]);
+    expect(props?.layout).toBe("snapshot");
+    expect(props?.events).toHaveLength(2);
+    expect(props?.events[0].label).toBe("Arrive");
+    expect(props?.events[0].meta).toBe("travel");
+    expect(props?.events[0].body).toBe("Landed and checked in");
+    expect(props?.events[0].emoji).toBe("✈️");
+    expect(props?.events[1].image).toBe("https://example.com/photo.jpg");
+  });
+
   it("turns a shortlist fence into items payload", () => {
     const src = [
       "```shortlist",

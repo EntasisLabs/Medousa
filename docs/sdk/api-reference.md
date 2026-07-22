@@ -249,6 +249,7 @@ Incremental patch ops (`remove_custom_surface`, `remove_component`, etc.) are ag
 |--------|------|-------|
 | `list(profile_id?)` | `GET /v1/feeds` | `FeedListResponse` |
 | `tail(feed_id, query)` | `GET /v1/feeds/{feed_id}/tail` | `FeedTailQuery` |
+| `latest_good(feed_id, query)` | `GET /v1/feeds/{feed_id}/latest-good` | `FeedLatestGoodQuery` |
 | `mark_read(feed_id, request)` | `POST /v1/feeds/{feed_id}/read` | `FeedReadRequest` |
 | `stream(profile_id?)` | SSE `GET /v1/feeds/stream` | `FeedStreamEvent` |
 

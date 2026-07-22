@@ -6,6 +6,7 @@
   import { getLiquidContext } from "$lib/liquid/render/context";
   import { createSceneEvent } from "$lib/liquid/core";
   import type { ArchetypeProps } from "$lib/liquid/render/types";
+  import LiquidGlyph from "$lib/liquid/icons/LiquidGlyph.svelte";
   import { isHttpUrl } from "$lib/utils/openInBrowser";
 
   interface PlanSegment {
@@ -13,6 +14,7 @@
     label: string;
     time?: string;
     emoji?: string;
+    icon?: string;
     image?: string;
     subtitle?: string;
     body?: string;
@@ -41,6 +43,7 @@
         const seg: PlanSegment = { id, label };
         if (typeof row.time === "string" && row.time.trim()) seg.time = row.time.trim();
         if (typeof row.emoji === "string" && row.emoji.trim()) seg.emoji = row.emoji.trim();
+        if (typeof row.icon === "string" && row.icon.trim()) seg.icon = row.icon.trim();
         if (typeof row.image === "string" && row.image.trim()) seg.image = row.image.trim();
         if (typeof row.subtitle === "string" && row.subtitle.trim()) seg.subtitle = row.subtitle.trim();
         if (typeof row.body === "string" && row.body.trim()) seg.body = row.body.trim();
@@ -115,8 +118,10 @@
           aria-selected={i === activeIndex}
           onclick={() => selectSegment(i)}
         >
-          {#if seg.emoji}
-            <span class="liquid-plan-scrub-emoji" aria-hidden="true">{seg.emoji}</span>
+          {#if seg.emoji || seg.icon}
+            <span class="liquid-plan-scrub-emoji" aria-hidden="true">
+              <LiquidGlyph icon={seg.icon} emoji={seg.emoji} size={12} />
+            </span>
           {/if}
           <span class="liquid-plan-scrub-label">{scrubberLabel(seg)}</span>
         </button>
@@ -143,8 +148,10 @@
                   <span class="liquid-plan-card-badge">{seg.badge}</span>
                 {/if}
               </span>
-            {:else if seg.emoji}
-              <span class="liquid-plan-card-emoji-hero" aria-hidden="true">{seg.emoji}</span>
+            {:else if seg.emoji || seg.icon}
+              <span class="liquid-plan-card-emoji-hero" aria-hidden="true">
+                <LiquidGlyph icon={seg.icon} emoji={seg.emoji} size={28} />
+              </span>
             {/if}
             <span class="liquid-plan-card-text">
               <span class="liquid-plan-card-title">{seg.label}</span>

@@ -9,6 +9,7 @@
   import { getLiquidContext } from "$lib/liquid/render/context";
   import { createSceneEvent } from "$lib/liquid/core";
   import type { ArchetypeProps } from "$lib/liquid/render/types";
+  import LiquidGlyph from "$lib/liquid/icons/LiquidGlyph.svelte";
   import { renderInlineMarkdown } from "$lib/markdown";
   import {
     cardHasDetail,
@@ -23,6 +24,7 @@
   const subtitle = $derived(typeof node.props.subtitle === "string" ? node.props.subtitle : "");
   const body = $derived(typeof node.props.body === "string" ? node.props.body : "");
   const emoji = $derived(typeof node.props.emoji === "string" ? node.props.emoji : "");
+  const icon = $derived(typeof node.props.icon === "string" ? node.props.icon : "");
   const image = $derived(typeof node.props.image === "string" ? node.props.image : "");
   const meta = $derived(typeof node.props.meta === "string" ? node.props.meta : "");
   const summary = $derived(typeof node.props.summary === "string" ? node.props.summary : "");
@@ -44,6 +46,7 @@
         if (!label || !pointBody) return null;
         const point: LiquidCardPoint = { label, body: pointBody };
         if (typeof row.emoji === "string" && row.emoji.trim()) point.emoji = row.emoji.trim();
+        if (typeof row.icon === "string" && row.icon.trim()) point.icon = row.icon.trim();
         return point;
       })
       .filter((p): p is LiquidCardPoint => p !== null);
@@ -109,8 +112,10 @@
   >
     {#if image}
       <img class="liquid-card-thumb" src={image} alt="" loading="lazy" />
-    {:else if emoji}
-      <span class="liquid-card-emoji" aria-hidden="true">{emoji}</span>
+    {:else if emoji || icon}
+      <span class="liquid-card-emoji" aria-hidden="true">
+        <LiquidGlyph {icon} {emoji} size={18} />
+      </span>
     {/if}
     <span class="liquid-card-text">
       <span class="liquid-card-title">{@html renderInlineMarkdown(title)}</span>

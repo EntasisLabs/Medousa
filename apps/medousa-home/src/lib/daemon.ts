@@ -487,6 +487,16 @@ export async function fetchFeedTail(
   });
 }
 
+export async function fetchFeedLatestGood(
+  feedId: string,
+  profileId?: string,
+): Promise<import("$lib/types/environment").FeedLatestGoodResponse> {
+  return invoke("feed_latest_good", {
+    feedId,
+    profileId: profileId ?? null,
+  });
+}
+
 export async function componentStoreGet(
   componentId: string,
   options?: { key?: string; profileId?: string },
@@ -948,6 +958,104 @@ export async function addVaultRoot(
   id?: string,
 ): Promise<VaultRootsResponse> {
   return invoke<VaultRootsResponse>("vault_add_root", { label, path, id });
+}
+
+export type VaultTrashEntry = {
+  path: string;
+  trashedAt?: string | null;
+};
+
+export async function listVaultTrash(limit?: number): Promise<{ entries: VaultTrashEntry[] }> {
+  return invoke("vault_list_trash", { limit });
+}
+
+export async function restoreVaultTrash(
+  path: string,
+): Promise<{ path: string; restored: boolean }> {
+  return invoke("vault_restore_trash", { path });
+}
+
+export type VaultGitDetect = {
+  available: boolean;
+  path?: string | null;
+  version?: string | null;
+  enabled: boolean;
+  platformHint: string;
+};
+
+export type VaultGitStatus = {
+  enabled: boolean;
+  available: boolean;
+  isRepo: boolean;
+  branch?: string | null;
+  dirtyCount: number;
+  vaultRoot: string;
+  gitPath?: string | null;
+};
+
+export type VaultGitLogEntry = {
+  id: string;
+  shortId: string;
+  message: string;
+  author: string;
+  committedAt: string;
+};
+
+export async function vaultGitDetect(): Promise<VaultGitDetect> {
+  return invoke<VaultGitDetect>("vault_git_detect");
+}
+
+export async function vaultGitStatus(): Promise<VaultGitStatus> {
+  return invoke<VaultGitStatus>("vault_git_status");
+}
+
+export async function vaultGitEnable(
+  enabled: boolean,
+  initIfNeeded = false,
+): Promise<{ enabled: boolean; status: VaultGitStatus }> {
+  return invoke("vault_git_enable", { enabled, initIfNeeded });
+}
+
+export async function vaultGitInit(): Promise<VaultGitStatus> {
+  return invoke<VaultGitStatus>("vault_git_init");
+}
+
+export async function vaultGitInstall(): Promise<VaultGitDetect> {
+  return invoke<VaultGitDetect>("vault_git_install");
+}
+
+export async function vaultGitLog(options?: {
+  path?: string;
+  limit?: number;
+}): Promise<VaultGitLogEntry[]> {
+  return invoke<VaultGitLogEntry[]>("vault_git_log", {
+    path: options?.path,
+    limit: options?.limit,
+  });
+}
+
+export async function vaultGitCommit(
+  message: string,
+  paths?: string[],
+): Promise<{ id: string; message: string }> {
+  return invoke("vault_git_commit", { message, paths: paths ?? [] });
+}
+
+export async function vaultGitRestore(commit: string, path: string): Promise<void> {
+  await invoke("vault_git_restore", { commit, path });
+}
+
+export async function vaultGitDiff(
+  path: string,
+  commit?: string,
+): Promise<{ path: string; patch: string }> {
+  return invoke("vault_git_diff", { path, commit });
+}
+
+export async function vaultGitWorktrees(): Promise<
+  Array<{ path: string; head: string; branch?: string | null }>
+> {
+  return invoke("vault_git_worktrees");
 }
 
 export async function getWorkspaceCard(

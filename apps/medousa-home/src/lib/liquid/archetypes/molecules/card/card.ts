@@ -12,6 +12,7 @@ export const card = defineArchetype({
     subtitle: { type: "string" },
     body: { type: "string" },
     emoji: { type: "string" },
+    icon: { type: "string" },
     image: { type: "string" },
     badges: { type: "array" },
     meta: { type: "string" },

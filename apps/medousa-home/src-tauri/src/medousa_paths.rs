@@ -123,6 +123,7 @@ pub struct TuiDefaultsDto {
     pub custom_voice_presets: Option<Vec<VoicePresetDto>>,
     pub inference_profiles: Option<InferenceProfilesDto>,
     pub shell_agent_tools_enabled: Option<bool>,
+    pub vault_git_enabled: Option<bool>,
     pub shell_network_default: Option<bool>,
     pub shell_timeout_ms: Option<u64>,
     pub shell_max_output_bytes: Option<u64>,
@@ -222,6 +223,8 @@ struct TuiDefaultsFile {
     inference_profiles: Option<InferenceProfilesDto>,
     #[serde(default)]
     shell_agent_tools_enabled: Option<bool>,
+    #[serde(default)]
+    vault_git_enabled: Option<bool>,
     #[serde(default)]
     shell_network_default: Option<bool>,
     #[serde(default)]
@@ -323,6 +326,7 @@ fn file_to_dto(file: &TuiDefaultsFile) -> TuiDefaultsDto {
         custom_voice_presets: file.custom_voice_presets.clone(),
         inference_profiles: file.inference_profiles.clone(),
         shell_agent_tools_enabled: file.shell_agent_tools_enabled,
+        vault_git_enabled: file.vault_git_enabled,
         shell_network_default: file.shell_network_default,
         shell_timeout_ms: file.shell_timeout_ms,
         shell_max_output_bytes: file.shell_max_output_bytes,
@@ -415,6 +419,7 @@ fn apply_dto_to_file(file: &mut TuiDefaultsFile, dto: &TuiDefaultsDto) {
     file.custom_voice_presets = normalize_voice_presets(dto.custom_voice_presets.clone());
     file.inference_profiles = dto.inference_profiles.clone();
     file.shell_agent_tools_enabled = dto.shell_agent_tools_enabled;
+    file.vault_git_enabled = dto.vault_git_enabled;
     file.shell_network_default = dto.shell_network_default;
     file.shell_timeout_ms = dto.shell_timeout_ms;
     file.shell_max_output_bytes = dto.shell_max_output_bytes;

@@ -561,6 +561,34 @@ export const LIQUID_TIMELINE_TEMPLATE = [
   "",
 ].join("\n");
 
+export const LIQUID_TIMELINE_SNAPSHOT_TEMPLATE = [
+  "```timeline",
+  "title: Trip snapshot",
+  "subtitle: Horizontal track + peek cards",
+  "layout: snapshot",
+  "",
+  "---",
+  "ts: Jul 12",
+  "title: Arrive Narita",
+  "meta: travel",
+  "body: N'EX in, hotel near the station.",
+  "icon: plane",
+  "---",
+  "ts: Jul 13–15",
+  "title: Tokyo base",
+  "meta: stay",
+  "body: Markets, food, neon nights.",
+  "icon: map-pin",
+  "---",
+  "ts: Jul 16",
+  "title: Kyoto day trip",
+  "meta: day trip",
+  "body: Fushimi Inari and tea.",
+  "icon: landmark",
+  "```",
+  "",
+].join("\n");
+
 export const LIQUID_SHORTLIST_TEMPLATE = [
   "```shortlist",
   "title: Shortlist",
@@ -615,6 +643,17 @@ export const LIQUID_BRIEF_TEMPLATE = [
   "---",
   "heading: Next step",
   "body: What to do with this.",
+  "```",
+  "",
+].join("\n");
+
+export const LIQUID_FEED_TEMPLATE = [
+  "```feed",
+  "id: summer-ai-digest",
+  "datatype: md",
+  "title: Summer AI digest",
+  "empty: Waiting for the next successful run…",
+  "refresh: load",
   "```",
   "",
 ].join("\n");

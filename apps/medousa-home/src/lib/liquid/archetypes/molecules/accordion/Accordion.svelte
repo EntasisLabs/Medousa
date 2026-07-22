@@ -6,6 +6,7 @@
   import { getLiquidContext } from "$lib/liquid/render/context";
   import { createSceneEvent } from "$lib/liquid/core";
   import type { ArchetypeProps } from "$lib/liquid/render/types";
+  import LiquidGlyph from "$lib/liquid/icons/LiquidGlyph.svelte";
   import { renderInlineMarkdown } from "$lib/markdown";
 
   interface AccordionItem {
@@ -14,6 +15,7 @@
     body: string;
     open?: boolean;
     emoji?: string;
+    icon?: string;
   }
 
   let { node }: ArchetypeProps = $props();
@@ -39,6 +41,7 @@
         const out: AccordionItem = { id, label, body };
         if (row.open === true) out.open = true;
         if (typeof row.emoji === "string" && row.emoji.trim()) out.emoji = row.emoji.trim();
+        if (typeof row.icon === "string" && row.icon.trim()) out.icon = row.icon.trim();
         return out;
       })
       .filter((i): i is AccordionItem => i !== null);
@@ -119,8 +122,10 @@
             onclick={() => toggle(item)}
           >
             <span class="liquid-accordion-label-row">
-              {#if item.emoji}
-                <span class="liquid-accordion-emoji" aria-hidden="true">{item.emoji}</span>
+              {#if item.emoji || item.icon}
+                <span class="liquid-accordion-emoji" aria-hidden="true">
+                  <LiquidGlyph icon={item.icon} emoji={item.emoji} size={14} />
+                </span>
               {/if}
               <span class="liquid-accordion-label">{@html renderInlineMarkdown(item.label)}</span>
             </span>

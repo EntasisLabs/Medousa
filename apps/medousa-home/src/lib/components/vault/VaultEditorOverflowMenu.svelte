@@ -7,12 +7,15 @@
     FilePen,
     FileText,
     FileType2,
+    History,
     MessageSquare,
     Move,
     PanelTop,
     Send,
     StickyNote,
   } from "@lucide/svelte";
+  import { vaultVersions } from "$lib/stores/vaultVersions.svelte";
+  import { workshopDefaults } from "$lib/stores/workshopDefaults.svelte";
   import type { Component } from "svelte";
   import { formatShortcut } from "$lib/platform";
   import type { WorkCard } from "$lib/types/workspace";
@@ -430,6 +433,19 @@
         onClick: async () => {
           open = false;
           await onSave();
+        },
+      });
+    }
+
+    if (workshopDefaults.draft.vaultGitEnabled && selectedPath) {
+      rows.push({
+        id: "versions",
+        label: "Versions…",
+        icon: History,
+        dividerBefore: true,
+        onClick: () => {
+          open = false;
+          vaultVersions.openPanel();
         },
       });
     }

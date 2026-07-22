@@ -30,7 +30,8 @@ use medousa_types::{
     ComponentStoreListResponse, ComponentStoreSetRequest, ComponentStoreSetResponse,
     EnvironmentPendingResponse, EnvironmentProposeResponse, EnvironmentSpecPutRequest,
     EnvironmentSpecResponse, EnvironmentStatusResponse, EnvironmentValidateRequest,
-    EnvironmentValidateResponse, FeedListResponse, FeedReadRequest, FeedTailQuery,
+    EnvironmentValidateResponse, FeedLatestGoodQuery, FeedLatestGoodResponse, FeedListResponse,
+    FeedReadRequest, FeedTailQuery,
     FeedTailResponse, CalendarDeleteResponse, CalendarExportQuery, CalendarExportResponse,
     CalendarImportRequest, CalendarImportResponse, CalendarListQuery, CalendarListResponse,
     CalendarWriteRequest, CalendarWriteResponse,
@@ -1121,6 +1122,17 @@ impl BlockingFeedsApi<'_> {
         self.http.get(&path_with_query(
             &format!("/v1/feeds/{}/tail", feed_id.trim()),
             &Self::feed_tail_query_params(query),
+        ))
+    }
+
+    pub fn latest_good(
+        &self,
+        feed_id: &str,
+        query: &FeedLatestGoodQuery,
+    ) -> Result<FeedLatestGoodResponse, SdkError> {
+        self.http.get(&path_with_query(
+            &format!("/v1/feeds/{}/latest-good", feed_id.trim()),
+            &Self::feed_profile_query(query.profile_id.as_deref()),
         ))
     }
 

@@ -47,6 +47,10 @@ import {
   type StepsSurfaceHandles,
 } from "./liveStepsSurface";
 import {
+  mountTimelineSurface,
+  type TimelineSurfaceHandles,
+} from "./liveTimelineSurface";
+import {
   mountAccordionSurface,
   type AccordionSurfaceHandles,
 } from "./liveAccordionSurface";
@@ -195,6 +199,7 @@ export const FenceBlock = Node.create<FenceBlockOptions>({
       let dashboard: DashboardSurfaceHandles | null = null;
       let tabs: TabsSurfaceHandles | null = null;
       let steps: StepsSurfaceHandles | null = null;
+      let timeline: TimelineSurfaceHandles | null = null;
       let accordion: AccordionSurfaceHandles | null = null;
       let code: CodeSurfaceHandles | null = null;
       let tree: TreeSurfaceHandles | null = null;
@@ -231,6 +236,8 @@ export const FenceBlock = Node.create<FenceBlockOptions>({
         tabs = null;
         steps?.destroy();
         steps = null;
+        timeline?.destroy();
+        timeline = null;
         accordion?.destroy();
         accordion = null;
         code?.destroy();
@@ -348,6 +355,16 @@ export const FenceBlock = Node.create<FenceBlockOptions>({
 
         if (lang === "steps") {
           steps = mountStepsSurface(
+            dom,
+            nextAttrs.raw,
+            opts.getLiquidContext?.() ?? {},
+            (updatedRaw) => applyRawUpdate(updatedRaw),
+          );
+          return;
+        }
+
+        if (lang === "timeline") {
+          timeline = mountTimelineSurface(
             dom,
             nextAttrs.raw,
             opts.getLiquidContext?.() ?? {},

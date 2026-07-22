@@ -11,6 +11,7 @@ export type LiquidFenceLang =
   | "dashboard"
   | "tabs"
   | "steps"
+  | "timeline"
   | "accordion"
   | "code"
   | "tree"
@@ -80,6 +81,29 @@ export type LiquidStepsDraft = {
   steps: LiquidStepDraft[];
 };
 
+export type LiquidTimelineEventDraft = {
+  label: string;
+  ts: string;
+  detail: string;
+  lane: string;
+  emoji: string;
+  icon: string;
+  meta: string;
+  body: string;
+  image: string;
+  media: string;
+};
+
+export type LiquidTimelineLayout = "rail" | "snapshot";
+
+export type LiquidTimelineDraft = {
+  title: string;
+  subtitle: string;
+  granularity: string;
+  layout: LiquidTimelineLayout;
+  events: LiquidTimelineEventDraft[];
+};
+
 export type LiquidAccordionItemDraft = {
   label: string;
   body: string;
@@ -124,6 +148,7 @@ export type LiquidFenceDraft =
   | { lang: "dashboard"; draft: LiquidDashboardDraft }
   | { lang: "tabs"; draft: LiquidTabsDraft }
   | { lang: "steps"; draft: LiquidStepsDraft }
+  | { lang: "timeline"; draft: LiquidTimelineDraft }
   | { lang: "accordion"; draft: LiquidAccordionDraft }
   | { lang: "code"; draft: LiquidCodeDraft }
   | { lang: "tree"; draft: LiquidTreeDraft }
@@ -139,6 +164,8 @@ const DASHBOARD_TONES = new Set(["default", "accent", "success", "warn", "error"
 const DASHBOARD_COLUMNS = new Set(["2", "3", "4"]);
 const CALLOUT_TONES = new Set(["note", "warn", "error", "success", "tip", "important"]);
 const STEP_STATUSES = new Set(["done", "current", "pending"]);
+const TIMELINE_GRANULARITIES = new Set(["day", "hour", "event"]);
+const TIMELINE_LAYOUTS = new Set<LiquidTimelineLayout>(["rail", "snapshot"]);
 
 function fenceRe(lang: LiquidFenceLang): RegExp {
   return new RegExp("```" + lang + "\\s*\\n([\\s\\S]*?)```", "gi");
@@ -421,6 +448,94 @@ export function serializeStepsFence(draft: LiquidStepsDraft): string {
   return lines.join("\n") + "\n";
 }
 
+export function parseTimelineFenceBody(body: string): LiquidTimelineDraft {
+  const { preamble, sections } = splitSections(body);
+  const fields = parseKvLines(preamble);
+  const events: LiquidTimelineEventDraft[] = [];
+  for (const section of sections) {
+    const item = parseKvLines(section);
+    const label = (item.label ?? item.title ?? "").trim();
+    if (!label) continue;
+    events.push({
+      label,
+      ts: (item.ts ?? item.time ?? "").trim(),
+      detail: (item.detail ?? "").trim(),
+      lane: (item.lane ?? "").trim(),
+      emoji: (item.emoji ?? "").trim(),
+      icon: (item.icon ?? "").trim(),
+      meta: (item.meta ?? "").trim(),
+      body: (item.body ?? "").trim(),
+      image: (item.image ?? "").trim(),
+      media: (item.media ?? "").trim(),
+    });
+  }
+  const layoutRaw = (fields.layout ?? "rail").trim().toLowerCase() as LiquidTimelineLayout;
+  const granularityRaw = (fields.granularity ?? "").trim().toLowerCase();
+  return {
+    title: fields.title ?? "",
+    subtitle: fields.subtitle ?? "",
+    granularity:
+      granularityRaw && TIMELINE_GRANULARITIES.has(granularityRaw) ? granularityRaw : "",
+    layout: TIMELINE_LAYOUTS.has(layoutRaw) ? layoutRaw : "rail",
+    events:
+      events.length >= 2
+        ? events
+        : [
+            {
+              label: "Kickoff",
+              ts: "Day 1",
+              detail: "Scoped the work",
+              lane: "",
+              emoji: "🏁",
+              icon: "",
+              meta: "",
+              body: "",
+              image: "",
+              media: "",
+            },
+            {
+              label: "Shipped",
+              ts: "Day 2",
+              detail: "Landed the change",
+              lane: "",
+              emoji: "✨",
+              icon: "",
+              meta: "",
+              body: "",
+              image: "",
+              media: "",
+            },
+          ],
+  };
+}
+
+export function serializeTimelineFence(draft: LiquidTimelineDraft): string {
+  const lines = ["```timeline"];
+  if (draft.title.trim()) lines.push(`title: ${draft.title.trim()}`);
+  if (draft.subtitle.trim()) lines.push(`subtitle: ${draft.subtitle.trim()}`);
+  if (draft.granularity.trim()) lines.push(`granularity: ${draft.granularity.trim()}`);
+  if (draft.layout !== "rail") lines.push(`layout: ${draft.layout}`);
+  for (const event of draft.events) {
+    const label = event.label.trim();
+    if (!label) continue;
+    lines.push("");
+    lines.push("---");
+    if (event.ts.trim()) lines.push(`ts: ${event.ts.trim()}`);
+    lines.push(`title: ${label}`);
+    const body = event.body.trim() || event.detail.trim();
+    if (body) lines.push(`body: ${body}`);
+    else if (event.detail.trim()) lines.push(`detail: ${event.detail.trim()}`);
+    if (event.meta.trim()) lines.push(`meta: ${event.meta.trim()}`);
+    else if (event.lane.trim()) lines.push(`lane: ${event.lane.trim()}`);
+    if (event.emoji.trim()) lines.push(`emoji: ${event.emoji.trim()}`);
+    if (event.icon.trim()) lines.push(`icon: ${event.icon.trim()}`);
+    if (event.image.trim()) lines.push(`image: ${event.image.trim()}`);
+    else if (event.media.trim()) lines.push(`media: ${event.media.trim()}`);
+  }
+  lines.push("```");
+  return lines.join("\n") + "\n";
+}
+
 function parseBoolLoose(raw: string | undefined): boolean | undefined {
   if (!raw) return undefined;
   const v = raw.trim().toLowerCase();
@@ -665,6 +780,8 @@ export function parseLiquidFenceDraft(
       return { lang, draft: parseTabsFenceBody(body) };
     case "steps":
       return { lang, draft: parseStepsFenceBody(body) };
+    case "timeline":
+      return { lang, draft: parseTimelineFenceBody(body) };
     case "accordion":
       return { lang, draft: parseAccordionFenceBody(body) };
     case "code":
@@ -688,6 +805,8 @@ export function serializeLiquidFenceDraft(state: LiquidFenceDraft): string {
       return serializeTabsFence(state.draft);
     case "steps":
       return serializeStepsFence(state.draft);
+    case "timeline":
+      return serializeTimelineFence(state.draft);
     case "accordion":
       return serializeAccordionFence(state.draft);
     case "code":
@@ -712,6 +831,11 @@ export function summarizeTabsPanels(draft: LiquidTabsDraft): string {
 export function summarizeSteps(draft: LiquidStepsDraft): string {
   const n = draft.steps.filter((s) => s.label.trim()).length;
   return n === 1 ? "1 step" : `${n} steps`;
+}
+
+export function summarizeTimeline(draft: LiquidTimelineDraft): string {
+  const n = draft.events.filter((e) => e.label.trim()).length;
+  return n === 1 ? "1 event" : `${n} events`;
 }
 
 export function summarizeAccordionItems(draft: LiquidAccordionDraft): string {
@@ -743,6 +867,7 @@ export const LIQUID_FENCE_LANGS: LiquidFenceLang[] = [
   "dashboard",
   "tabs",
   "steps",
+  "timeline",
   "accordion",
   "code",
   "tree",

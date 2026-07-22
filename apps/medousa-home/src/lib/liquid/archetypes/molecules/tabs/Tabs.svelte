@@ -6,6 +6,7 @@
   import { getLiquidContext } from "$lib/liquid/render/context";
   import { createSceneEvent } from "$lib/liquid/core";
   import type { ArchetypeProps } from "$lib/liquid/render/types";
+  import LiquidGlyph from "$lib/liquid/icons/LiquidGlyph.svelte";
   import { renderInlineMarkdown } from "$lib/markdown";
 
   interface TabPanel {
@@ -13,6 +14,7 @@
     label: string;
     body: string;
     emoji?: string;
+    icon?: string;
   }
 
   let { node }: ArchetypeProps = $props();
@@ -36,6 +38,7 @@
         const id = typeof row.id === "string" && row.id ? row.id : `tab-${i}`;
         const panel: TabPanel = { id, label, body };
         if (typeof row.emoji === "string" && row.emoji.trim()) panel.emoji = row.emoji.trim();
+        if (typeof row.icon === "string" && row.icon.trim()) panel.icon = row.icon.trim();
         return panel;
       })
       .filter((p): p is TabPanel => p !== null);
@@ -102,8 +105,10 @@
           style="--stagger: {i}"
           onclick={() => selectTab(i)}
         >
-          {#if panel.emoji}
-            <span class="liquid-tabs-emoji" aria-hidden="true">{panel.emoji}</span>
+          {#if panel.emoji || panel.icon}
+            <span class="liquid-tabs-emoji" aria-hidden="true">
+              <LiquidGlyph icon={panel.icon} emoji={panel.emoji} size={13} />
+            </span>
           {/if}
           <span>{panel.label}</span>
         </button>

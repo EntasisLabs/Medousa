@@ -9,6 +9,13 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Versions** (optional, off by default): Git-backed vault history via Settings → Versions; Save version / History / Restore; Advanced Git worktrees + diffs
+- Platform Git detect/install: Windows portable MinGit into data `bin/`; macOS Xcode CLT hint; Linux package-manager hint
+- Liquid **snapshot** timeline (`layout: snapshot`) — horizontal track + synced peek carousel; Live dedicated surface
+- Liquid **```feed```** fence — hydrate Stasis last-good result (`GET /v1/feeds/{id}/latest-good`) with datatypes `md|text|json|csv|image`
+- Vault **Trash** restore UI (`GET /v1/vault/trash`, `POST /v1/vault/trash/restore`)
+- Scripts **CodeEditorShell** extract (Grapheme first; plaintext/md/shell highlight stubs)
+
 ### Changed
 
 ### Fixed

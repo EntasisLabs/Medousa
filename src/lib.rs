@@ -74,6 +74,8 @@ pub mod daemon_api;
 pub mod daemon_handlers;
 pub mod vault;
 pub mod vault_handlers;
+pub mod vault_git;
+pub mod vault_git_handlers;
 pub mod vault_tools;
 pub mod calendar;
 pub mod calendar_handlers;

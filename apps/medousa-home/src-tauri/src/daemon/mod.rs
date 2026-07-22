@@ -19,6 +19,7 @@ pub mod sse;
 pub mod stt;
 pub mod types;
 pub mod vault;
+pub mod vault_git;
 pub mod workspace_card;
 pub mod turn_budget;
 pub mod tool_history;

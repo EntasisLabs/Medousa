@@ -10,6 +10,7 @@ export const actionRow = defineArchetype({
   props: {
     label: { type: "string", required: true },
     emoji: { type: "string" },
+    icon: { type: "string" },
     chevron: { type: "boolean" },
     intent: { type: "string" },
   },
