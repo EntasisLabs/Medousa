@@ -71,7 +71,7 @@ fi
 mkdir -p "${STAGING_DIR}"
 STAGING_DIR="$(cd "${STAGING_DIR}" && pwd)"
 
-VERSION="${VERSION:-$(medousa_version)}"
+VERSION="${VERSION:-$(medousa_max_package_version)}"
 PREFIX="${MEDOUSA_R2_PREFIX:-medousa/${CHANNEL}}"
 ENDPOINT="${MEDOUSA_R2_ENDPOINT:-${AWS_ENDPOINT_URL:-}}"
 BUCKET="${MEDOUSA_R2_BUCKET:-}"

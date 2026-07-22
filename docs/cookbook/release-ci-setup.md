@@ -2,7 +2,9 @@
 
 Workflow: [`.github/workflows/release.yml`](../../.github/workflows/release.yml)
 
-Builds CLI + desktop + installer on every tag push or manual run, then publishes to **Cloudflare R2** and **GitHub Releases**.
+Supports **full-train** releases (`v*` tags) and **targeted** component ships (`workflow_dispatch` checkboxes). Publishes to **Cloudflare R2** and optionally **GitHub Releases**. Untouched packages keep their prior channel URLs/versions via manifest merge.
+
+Per-package stamps live in [`scripts/release/package-versions.toml`](../../scripts/release/package-versions.toml). Bump only the packages you ship.
 
 ---
 
@@ -128,28 +130,49 @@ Redeploy landing after first R2 upload. **Get Medousa** should use `platforms.<o
 
 ## How to run
 
+### Full train (`v*` tag) — ship everything
+
+1. Set every entry in `scripts/release/package-versions.toml` to `X.Y.Z`.
+2. Align root `Cargo.toml`, WhatsApp crate, Home/Installer `package.json` + tauri conf to `X.Y.Z`.
+3. Tag and push:
+
+```bash
+git tag v0.4.2
+git push origin v0.4.2
+```
+
+CI asserts all package stamps equal the tag, builds the full matrix, and **replaces** channel indexes (`--full-train`).
+
+### Targeted ship (workflow_dispatch)
+
+1. Bump only the packages you changed in `package-versions.toml` (and matching app/crate version if needed).
+2. Actions → **Release** → **Run workflow**.
+3. Check the `ship_*` boxes you need (e.g. `ship_desktop` only). Leave `ship_all` off.
+4. Keep **Upload R2** on. GitHub Release is optional for partial ships.
+5. Publish **merges** into the existing channel `release-manifest.json` — adapters you did not rebuild keep their old version/URL.
+
+| Goal | Checkboxes | Bump |
+|------|------------|------|
+| Home polish | `ship_desktop` (+ `ship_engine` if daemon API changed) | `desktop` (+ `engine`) |
+| Adapter fix | `ship_adapters` | that adapter id |
+| CLI only | `ship_cli` | `cli` |
+| MCP only | `ship_mcp` | `mcp-gateway` |
+| Offline brain | `ship_local_brain` | `local-brain` |
+| Everything | `ship_all` or push a `v*` tag | all ids |
+
 ### First run (recommended)
 
 1. Add `R2_ACCESS_KEY_ID` + `R2_SECRET_ACCESS_KEY` secrets.
-2. Actions → **Release** → **Run workflow**.
-3. Leave version blank (uses `Cargo.toml`), keep **Upload R2** and **GitHub Release** checked.
-4. Wait ~30–60 min for matrix builds.
-5. Verify:
+2. Actions → **Release** → **Run workflow** with `ship_all` (or push a `v*` tag).
+3. Wait for matrix builds.
+4. Verify:
 
 ```bash
 curl -s https://releases.entasislabs.com/medousa/stable/installer-bootstrap.json | head
 curl -s https://releases.entasislabs.com/medousa/stable/installer-bootstrap.json | jq '.platforms["windows-x64"]'
 # Expect artifactKind "desktop" and fileName Medousa_*_x64-setup.exe
+curl -s https://releases.entasislabs.com/medousa/stable/release-manifest.json | jq '.packages | keys'
 ```
-
-### Tag release (normal flow)
-
-```bash
-git tag v0.1.0
-git push origin v0.1.0
-```
-
-Same pipeline runs automatically.
 
 ### Republish manifests only (no rebuild)
 
@@ -179,14 +202,16 @@ If you still have `dist/final` from the publish job on a runner, skip the downlo
 
 ## What the workflow does
 
-1. **build-cli** — engine, adapters, tarballs (5 targets)
-2. **build-desktop** — Medousa app (Mac signed via `MEDOUSA` env, Win/Linux)
-3. **build-installer** — writes `installer-config.json` with CDN URL, builds installer
-4. **release** — merge artifacts → manifests → **upload R2** → **GitHub Release**
+1. **prepare** — resolve `ship_*` selection (`v*` / `ship_all` = full train)
+2. **build-daemon** — `medousa` + `medousa_daemon` once per OS (when engine/cli/desktop selected)
+3. **build-cli** — CLI and/or engine packages; **reuses** prebuilt daemon (no second compile)
+4. **build-adapters** / **build-mcp** / **build-local-brain** — only when selected
+5. **build-desktop** / **build-installer** — only when selected (desktop reuses daemon sidecar)
+6. **release** — stage artifacts → generate delta manifests → **merge** into channel (or replace on full train) → **upload R2** → optional **GitHub Release**
 
-All matrix jobs set **`shell: bash`** at the job level. Windows runners default to PowerShell; release scripts (`.sh`, `find`, `[[ ]]`) require bash (Git Bash on `windows-latest`).
+Skipped legs do not block publish. Daemon is compiled once per OS and shared by desktop + engine packaging.
 
-Installers baked in step 3 fetch packages from `https://releases.entasislabs.com/medousa/stable/release-manifest.json`.
+All matrix jobs set **`shell: bash`**. Windows runners default to PowerShell; release scripts require bash (Git Bash on `windows-latest`).
 
 ---
 

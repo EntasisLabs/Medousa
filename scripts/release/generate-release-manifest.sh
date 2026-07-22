@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Generate release-manifest.json from built release artifacts in dist/.
+# Each package entry uses its own version from package-versions.toml (or discovery).
 
 set -euo pipefail
 
@@ -18,12 +19,13 @@ Usage: scripts/release/generate-release-manifest.sh [options]
 
 Options:
   --dist <dir>          Directory containing release archives (default: dist/)
-  --version <version>   Release version without v prefix (default: Cargo.toml)
+  --version <version>   Channel-head version (default: max package-versions)
   --channel <name>      Release channel (default: stable)
   --base-url <url>      Artifact base URL (or set MEDOUSA_RELEASE_BASE_URL)
   -h, --help            Show this help
 
 Writes dist/release-manifest.json indexing package id → url, sha256, size, depends.
+Package entries use per-package versions from package-versions.toml.
 EOF
 }
 
@@ -41,7 +43,7 @@ done
 ROOT="$(medousa_repo_root)"
 cd "${ROOT}"
 DIST_DIR="${DIST_DIR:-${ROOT}/dist}"
-VERSION="${VERSION:-$(medousa_version)}"
+VERSION="${VERSION:-$(medousa_max_package_version)}"
 
 if [[ -n "${BASE_URL_OVERRIDE}" ]]; then
   BASE_URL="${BASE_URL_OVERRIDE%/}/${CHANNEL}"
@@ -85,6 +87,7 @@ binaries_json_for() {
   echo "${out}"
 }
 
+# append_package_json id display target archive depends backend category package_version
 append_package_json() {
   local id="$1"
   local display_name="$2"
@@ -93,6 +96,7 @@ append_package_json() {
   local depends_csv="$5"
   local backend="${6:-}"
   local category="${7:-}"
+  local pkg_version="${8:-${VERSION}}"
   local url="${BASE_URL}/${archive}"
   local sha256
   sha256="$(sha_for "${archive}")"
@@ -126,11 +130,15 @@ append_package_json() {
   if [[ "${binaries_json}" != "[]" ]]; then
     binaries_field=$(printf ',\n      "binaries": %s' "${binaries_json}")
   fi
+  local key="${id}-${target}"
+  if [[ -n "${backend}" && "${id}" == "local-brain" ]]; then
+    key="${id}-${backend}-${target}"
+  fi
   cat <<EOF
-    "${id}-${target}": {
+    "${key}": {
       "id": "${id}",
       "displayName": "${display_name}",
-      "version": "${VERSION}",
+      "version": "${pkg_version}",
       "target": "${target}",
       "url": "${url}",
       "sha256": "${sha256}",
@@ -176,59 +184,64 @@ PUBLISHED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
     for entry in "${COMPONENT_DISPLAY_NAMES[@]}"; do
       package_id="${entry%%:*}"
       display_name="${entry#*:}"
-      archive="$(medousa_component_archive_name "${package_id}" "${VERSION}" "${target}")"
+      pkg_version="$(medousa_package_version "${package_id}")"
+      archive="$(medousa_component_archive_name "${package_id}" "${pkg_version}" "${target}")"
       if [[ -f "${DIST_DIR}/${archive}" ]]; then
         [[ "${first}" -eq 1 ]] || echo ","
         first=0
         depends="$(medousa_component_depends "${package_id}")"
         category="$(medousa_component_category "${package_id}")"
-        append_package_json "${package_id}" "${display_name}" "${target}" "${archive}" "${depends}" "" "${category}"
+        append_package_json "${package_id}" "${display_name}" "${target}" "${archive}" "${depends}" "" "${category}" "${pkg_version}"
       fi
     done
 
-    suite_archive="medousa-v${VERSION}-${target}.tar.gz"
+    engine_v="$(medousa_package_version engine)"
+    suite_archive="medousa-v${engine_v}-${target}.tar.gz"
     if [[ -f "${DIST_DIR}/${suite_archive}" ]]; then
       [[ "${first}" -eq 1 ]] || echo ","
       first=0
-      append_package_json "engine-suite" "Medousa Engine (full suite)" "${target}" "${suite_archive}" "" "" "core"
+      append_package_json "engine-suite" "Medousa Engine (full suite)" "${target}" "${suite_archive}" "" "" "core" "${engine_v}"
     fi
 
+    brain_v="$(medousa_package_version local-brain)"
     for backend in auto metal cpu cuda; do
-      local_archive="medousa_local-${backend}-v${VERSION}-${target}.tar.gz"
+      local_archive="medousa_local-${backend}-v${brain_v}-${target}.tar.gz"
       if [[ -f "${DIST_DIR}/${local_archive}" ]]; then
         [[ "${first}" -eq 1 ]] || echo ","
         first=0
-        append_package_json "local-brain" "Offline brain (${backend})" "${target}" "${local_archive}" "engine" "${backend}" "core"
+        append_package_json "local-brain" "Offline brain (${backend})" "${target}" "${local_archive}" "engine" "${backend}" "core" "${brain_v}"
       fi
     done
 
     for model in model-gemma-e2b model-gemma-e4b model-gemma-12b; do
-      model_archive="${model}-v${VERSION}.manifest.json"
+      model_archive="${model}-v${brain_v}.manifest.json"
       if [[ -f "${DIST_DIR}/${model_archive}" ]]; then
         [[ "${first}" -eq 1 ]] || echo ","
         first=0
-        append_package_json "${model}" "${model}" "any" "${model_archive}" "local-brain" "" "model"
+        append_package_json "${model}" "${model}" "any" "${model_archive}" "local-brain" "" "model" "${brain_v}"
       fi
     done
   done
 
+  desktop_v="$(medousa_package_version desktop)"
   for name in macos-aarch64 macos-x64 windows-x64 linux-x64; do
     found="$(medousa_desktop_bundle_for_platform "${DIST_DIR}" "${name}" || true)"
     if [[ -n "${found}" ]]; then
       archive="$(basename "${found}")"
       [[ "${first}" -eq 1 ]] || echo ","
       first=0
-      append_package_json "desktop" "Medousa Desktop (${name})" "${name}" "${archive}" "" "" "core"
+      append_package_json "desktop" "Medousa Desktop (${name})" "${name}" "${archive}" "" "" "core" "${desktop_v}"
     fi
   done
 
+  installer_v="$(medousa_package_version installer)"
   for name in macos-aarch64 macos-x64 windows-x64 linux-x64; do
     found="$(medousa_installer_bundle_for_platform "${DIST_DIR}" "${name}" || true)"
     if [[ -n "${found}" ]]; then
       archive="$(basename "${found}")"
       [[ "${first}" -eq 1 ]] || echo ","
       first=0
-      append_package_json "installer" "Medousa Installer (${name})" "${name}" "${archive}" "" "" "core"
+      append_package_json "installer" "Medousa Installer (${name})" "${name}" "${archive}" "" "" "core" "${installer_v}"
     fi
   done
 
@@ -239,4 +252,4 @@ PUBLISHED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 
 medousa_assert_release_manifest_nonempty "${OUT}"
 
-medousa_log "wrote ${OUT}"
+medousa_log "wrote ${OUT} (channel head ${VERSION})"

@@ -24,7 +24,7 @@ done
 
 ROOT="$(medousa_repo_root)"
 cd "${ROOT}"
-VERSION="$(medousa_version)"
+VERSION="$(medousa_package_version local-brain)"
 TARGET="${TARGET:-$(medousa_host_target)}"
 INPUT="${INPUT:-${ROOT}/dist/build-local-brain/${TARGET}}"
 DIST_DIR="${DIST_DIR:-${ROOT}/dist}"
