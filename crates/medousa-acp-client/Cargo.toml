@@ -1,6 +1,6 @@
 [package]
 name = "medousa-acp-client"
-version = "0.3.1"
+version = "0.4.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "ACP client bones — Home chat talks to external agentic runtimes (Cursor, Codex)"
