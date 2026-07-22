@@ -54,6 +54,8 @@ import {
   dailyNoteTemplate,
   inboxCapturePath,
   inboxCaptureTemplate,
+  folderPrefixFromNotePath,
+  joinVaultFolder,
   pathForTemplate,
   resolveTemplateForSpace,
   slugifyTitle,
@@ -398,6 +400,15 @@ export class VaultStore {
       return last;
     }
     return "journal";
+  }
+
+  /**
+   * Folder to create into when the user is mid-flow (parent of the open note).
+   * Null when there is no vault note context (loose file / empty selection).
+   */
+  get currentCreateFolderPrefix(): string | null {
+    if (this.isLooseFile) return null;
+    return folderPrefixFromNotePath(this.selectedPath);
   }
 
   spaceCounts(): Map<string, number> {
@@ -2022,6 +2033,10 @@ export class VaultStore {
     content?: string;
     path?: string;
     templateId?: VaultTemplateId;
+    /** Explicit folder (e.g. current working folder). Empty string = vault root. */
+    folderPrefix?: string | null;
+    /** Optional new subfolder under folderPrefix or the space root. */
+    subfolder?: string | null;
     /** When false, refresh the index but do not open the note (browser save). */
     open?: boolean;
   }) {
@@ -2038,10 +2053,24 @@ export class VaultStore {
         options.spaceId,
         options.templateId,
       );
+      let folderForPath: string | undefined;
+      if (options.folderPrefix !== undefined && options.folderPrefix !== null) {
+        folderForPath = joinVaultFolder(options.folderPrefix, options.subfolder);
+      } else if (options.subfolder?.trim()) {
+        folderForPath = joinVaultFolder(prefix, options.subfolder);
+      }
       const path =
         options.path ??
-        pathForTemplate(templateId, options.spaceId, options.title.trim() || slug) ??
-        `${prefix}${slug}.md`.replace(/\/+/g, "/").replace(/^\//, "");
+        pathForTemplate(
+          templateId,
+          options.spaceId,
+          options.title.trim() || slug,
+          new Date(),
+          folderForPath,
+        ) ??
+        `${(folderForPath ?? prefix)}${slug}.md`
+          .replace(/\/+/g, "/")
+          .replace(/^\//, "");
       const content =
         options.content ??
         contentForTemplate(
@@ -2459,6 +2488,7 @@ export class VaultStore {
 
   openNewNoteDialog() {
     this.newNotePrefillTitle = "";
+    this.newNotePrefillPath = null;
     this.newNoteDialogOpen = true;
   }
 

@@ -20,6 +20,7 @@
   import { vault, type LibraryBrowseMode } from "$lib/stores/vault.svelte";
   import { vaultFolderIcons } from "$lib/stores/vaultFolderIcons.svelte";
   import { vaultDisplayTitle } from "$lib/utils/formatVault";
+  import { formatShortcut } from "$lib/platform";
   import { canUseLocalVaultFilesystem } from "$lib/utils/vaultFilesystem";
   import { iconForSpace } from "$lib/utils/vaultSpaceIcons";
 
@@ -233,14 +234,17 @@
           <button
             type="button"
             role="menuitem"
-            class="vault-menu-item"
+            class="vault-menu-item w-full justify-between"
             onclick={() => {
               closeMenus();
               vault.openNewNoteDialog();
             }}
           >
-            <FilePlus size={14} strokeWidth={2} />
-            New note
+            <span class="inline-flex items-center gap-2">
+              <FilePlus size={14} strokeWidth={2} />
+              New note
+            </span>
+            <kbd class="vault-kbd">{formatShortcut("N")}</kbd>
           </button>
           <button
             type="button"

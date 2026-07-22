@@ -15,9 +15,11 @@ function key(
 }
 
 describe("matchVaultHotkey", () => {
-  it("matches save / find / plane / export / board", () => {
+  it("matches save / find / new note / plane / export / board", () => {
     expect(matchVaultHotkey(key("s", { meta: true }))).toBe("save");
     expect(matchVaultHotkey(key("f", { ctrl: true }))).toBe("find");
+    expect(matchVaultHotkey(key("n", { meta: true }))).toBe("newNote");
+    expect(matchVaultHotkey(key("n", { ctrl: true }))).toBe("newNote");
     expect(matchVaultHotkey(key("e", { meta: true, shift: true }))).toBe("togglePlane");
     expect(matchVaultHotkey(key("p", { meta: true, shift: true }))).toBe("exportPdf");
     expect(matchVaultHotkey(key("b", { meta: true, shift: true }))).toBe("toggleBoard");

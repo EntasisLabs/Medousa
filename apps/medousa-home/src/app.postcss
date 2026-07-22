@@ -1704,6 +1704,25 @@
     color: rgb(var(--color-surface-450, var(--color-surface-500)));
   }
 
+  .vault-compose-subfolder {
+    width: 100%;
+    border: 1px solid rgb(var(--color-surface-500) / 0.35);
+    border-radius: 0.55rem;
+    background: rgb(var(--color-surface-900) / 0.45);
+    padding: 0.4rem 0.65rem;
+    color: rgb(var(--color-surface-100));
+    font-size: 0.78rem;
+  }
+
+  .vault-compose-subfolder::placeholder {
+    color: rgb(var(--color-surface-500));
+  }
+
+  .vault-compose-subfolder:focus {
+    border-color: rgb(var(--color-primary-500) / 0.45);
+    outline: none;
+  }
+
   .vault-compose-manage {
     align-self: flex-start;
     border: 0;

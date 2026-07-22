@@ -6,6 +6,7 @@
 export type VaultHotkeyAction =
   | "save"
   | "find"
+  | "newNote"
   | "togglePlane"
   | "exportPdf"
   | "toggleBoard"
@@ -29,6 +30,7 @@ export function matchVaultHotkey(event: KeyboardEvent): VaultHotkeyAction | null
 
   if (mod && !event.altKey && key === "s" && !event.shiftKey) return "save";
   if (mod && !event.altKey && key === "f" && !event.shiftKey) return "find";
+  if (mod && !event.altKey && key === "n" && !event.shiftKey) return "newNote";
   if (mod && event.shiftKey && !event.altKey && key === "e") return "togglePlane";
   if (mod && event.shiftKey && !event.altKey && key === "p") return "exportPdf";
   if (mod && event.shiftKey && !event.altKey && key === "b") return "toggleBoard";
