@@ -13,6 +13,12 @@ Desktop **Settings → Packages** → install the adapter for your channel
 (Telegram, Discord, Slack, WhatsApp). Home finds the binary under your data
 `bin` folder.
 
+From a terminal (same CDN packages):
+
+```bash
+medousa pull telegram    # or discord / slack / whatsapp
+```
+
 Guide: [Packages](packages.md).
 
 ---

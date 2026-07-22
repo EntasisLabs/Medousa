@@ -15,10 +15,12 @@ medousa doctor --config [--json]
 medousa setup --yes        Non-interactive bootstrap (flags/env)
 medousa start daemon --inference
 medousa tui                Terminal workspace
+medousa pull <name>        Install CDN package into data dir (engine, mcp-gateway, telegram, …)
+medousa update [<name>]    Update installed packages when newer
+medousa packages status    Local vs remote package versions
 medousa pair …             LAN / QR pairing
 medousa iroh …             Relay smoke / tickets
 ```
-
 Desktop Settings now read/write **per-engine** `tui_defaults.json` via `GET/PUT /v1/runtime/tui-defaults` (not host-global file).
 
 ### Start services

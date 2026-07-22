@@ -158,7 +158,6 @@ TARGETS=(
 
 COMPONENT_DISPLAY_NAMES=(
   "engine:Medousa Engine"
-  "cli:Command-line tools"
   "adapter-telegram:Telegram adapter"
   "adapter-discord:Discord adapter"
   "adapter-slack:Slack adapter"
@@ -194,14 +193,6 @@ PUBLISHED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
         append_package_json "${package_id}" "${display_name}" "${target}" "${archive}" "${depends}" "" "${category}" "${pkg_version}"
       fi
     done
-
-    engine_v="$(medousa_package_version engine)"
-    suite_archive="medousa-v${engine_v}-${target}.tar.gz"
-    if [[ -f "${DIST_DIR}/${suite_archive}" ]]; then
-      [[ "${first}" -eq 1 ]] || echo ","
-      first=0
-      append_package_json "engine-suite" "Medousa Engine (full suite)" "${target}" "${suite_archive}" "" "" "core" "${engine_v}"
-    fi
 
     brain_v="$(medousa_package_version local-brain)"
     for backend in auto metal cpu cuda; do

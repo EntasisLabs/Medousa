@@ -530,7 +530,7 @@ Update [polish-and-package-plan.md](polish-and-package-plan.md) P4 section to po
 | Workflows | `src/workflow.rs`, `src/workflow_plan.rs`, `src/runtime_tools.rs` |
 | Grapheme | `src/tools.rs`, `src/bridge_tools.rs`, `src/grapheme_script/`, `src/grapheme_workshop.rs`, `src/grapheme_lsp_bridge.rs`, `src/runtime/stasis_wire.rs` |
 | Tool history | `src/turn_slice.rs`, `src/turn_parts.rs`, `src/tool_history_tools.rs`, `src/artifact_store.rs` |
-| Capabilities + MCP | `src/capability_catalog.rs`, `src/mcp_gateway/`, `src/mcp_daemon_handlers.rs` |
+| Capabilities + MCP | `src/capability_catalog.rs`, `adapters/medousa-mcp-gateway/`, `src/mcp_daemon_handlers.rs` |
 | Stasis admin dashboard | `stasis-rs` `dashboard/handlers.rs` (mounted in `src/bin/medousa_daemon.rs`) |
 | Home UI | `apps/medousa-home/src/lib/components/skills/`, `components/grapheme/`, `stores/graphemeScriptEditor.svelte.ts`, `cron/`, `stores/recurring.svelte.ts` |
 | Tauri bridge | `apps/medousa-home/src-tauri/src/daemon/recurring.rs`, `catalog.rs`, `mcp_gateway.rs` |

@@ -290,82 +290,40 @@ pub async fn seed_internal_outbox_endpoint_for_runtime(
 }
 
 pub fn truncate_for_telegram(text: &str) -> String {
-    const MAX_CHARS: usize = 4000;
-    if text.chars().count() <= MAX_CHARS {
-        return text.to_string();
-    }
-
-    let truncated = text.chars().take(MAX_CHARS).collect::<String>();
-    format!("{truncated}...")
+    medousa_adapter_common::truncate_for_telegram(text)
 }
 
 /// Escape model markdown for Telegram `MarkdownV2` delivery (preserves structure, escapes specials).
 pub fn format_for_telegram_markdown_v2(text: &str) -> String {
-    telegram_escape::tg_escape(&truncate_for_telegram(text))
+    medousa_adapter_common::format_for_telegram_markdown_v2(text)
 }
 
 pub fn parse_telegram_chat_id(channel_id: &str) -> Result<i64> {
-    channel_id
-        .strip_prefix("telegram:chat:")
-        .or_else(|| channel_id.strip_prefix("telegram:"))
-        .context("telegram channel_id must be telegram:chat:<id>")?
-        .parse::<i64>()
-        .context("telegram chat id must be numeric")
+    medousa_adapter_common::parse_telegram_chat_id(channel_id)
 }
 
 pub fn truncate_for_discord(text: &str) -> String {
-    const MAX_CHARS: usize = 1900;
-    if text.chars().count() <= MAX_CHARS {
-        return text.to_string();
-    }
-
-    let truncated = text.chars().take(MAX_CHARS).collect::<String>();
-    format!("{truncated}...")
+    medousa_adapter_common::truncate_for_discord(text)
 }
 
 pub fn truncate_for_slack(text: &str) -> String {
-    const MAX_CHARS: usize = 3900;
-    if text.chars().count() <= MAX_CHARS {
-        return text.to_string();
-    }
-
-    let truncated = text.chars().take(MAX_CHARS).collect::<String>();
-    format!("{truncated}...")
+    medousa_adapter_common::truncate_for_slack(text)
 }
 
 pub fn truncate_for_whatsapp(text: &str) -> String {
-    const MAX_CHARS: usize = 4000;
-    if text.chars().count() <= MAX_CHARS {
-        return text.to_string();
-    }
-
-    let truncated = text.chars().take(MAX_CHARS).collect::<String>();
-    format!("{truncated}...")
+    medousa_adapter_common::truncate_for_whatsapp(text)
 }
 
 pub fn parse_discord_channel_id(channel_id: &str) -> Result<u64> {
-    channel_id
-        .strip_prefix("discord:channel:")
-        .or_else(|| channel_id.strip_prefix("discord:"))
-        .context("discord channel_id must be discord:channel:<id>")?
-        .parse::<u64>()
-        .context("discord channel id must be numeric")
+    medousa_adapter_common::parse_discord_channel_id(channel_id)
 }
 
 pub fn parse_slack_channel_id(channel_id: &str) -> Result<String> {
-    channel_id
-        .strip_prefix("slack:channel:")
-        .or_else(|| channel_id.strip_prefix("slack:"))
-        .context("slack channel_id must be slack:channel:<id>")
-        .map(str::to_string)
+    medousa_adapter_common::parse_slack_channel_id(channel_id)
 }
 
 pub fn parse_whatsapp_chat_jid(channel_id: &str) -> Result<String> {
-    channel_id
-        .strip_prefix("whatsapp:chat:")
-        .or_else(|| channel_id.strip_prefix("whatsapp:"))
-        .context("whatsapp channel_id must be whatsapp:chat:<jid>")
-        .map(str::to_string)
+    medousa_adapter_common::parse_whatsapp_chat_jid(channel_id)
 }
 
 pub fn resolve_whatsapp_deliver_url() -> String {

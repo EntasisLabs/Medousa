@@ -17,7 +17,7 @@ usage() {
 Usage: scripts/release/package-component.sh [options]
 
 Options:
-  --package <id>      Component package id (engine, cli, adapter-telegram, …)
+  --package <id>      Component package id (engine, adapter-telegram, mcp-gateway, …)
   --target <triple>   Rust target triple (default: host)
   --input <dir>       Staging dir from build.sh (contains bin/)
   --dist <dir>        Output directory (default: dist/)

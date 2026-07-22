@@ -33,7 +33,14 @@ The setup wizard writes a starter file when none exists. To reset from the templ
 
 ```bash
 medousa setup --yes
-# or copy from: medousa::mcp_gateway::STARTER_MCP_GATEWAY_TOML (see src/mcp_gateway/starter_config.rs)
+# or copy from: medousa::mcp_gateway::STARTER_MCP_GATEWAY_TOML
+# (adapters/medousa-mcp-gateway/src/mcp_gateway/starter_config.rs)
+```
+
+Install the binary from CDN if it is not already on PATH:
+
+```bash
+medousa pull mcp-gateway
 ```
 
 ### `[gateway]` section

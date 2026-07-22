@@ -6,6 +6,20 @@ Supports **full-train** releases (`v*` tags) and **targeted** component ships (`
 
 Per-package stamps live in [`scripts/release/package-versions.toml`](../../scripts/release/package-versions.toml). Bump only the packages you ship.
 
+### Package map (CDN tarballs)
+
+| Package id | Binaries | Notes |
+|------------|----------|-------|
+| `engine` | `medousa`, `medousa_daemon`, `medousa_cli`, `medousa_tui` | Headless core — no separate `cli` package |
+| `adapter-*` | one each | Slim crates under `adapters/` (not root `[[bin]]`s) |
+| `mcp-gateway` | `medousa_mcp_gateway` | Slim crate under `adapters/medousa-mcp-gateway` |
+| `local-brain` | `medousa_local` | Offline inference |
+| `desktop` / `installer` | app bundles | Tauri |
+
+There is **no** `medousa-v*` / `engine-suite` archive. Operators install extras with `medousa pull <name>`.
+
+After dropping the suite, the **next** publish that should clean the channel index is a **full train** (`ship_all` or `v*` tag). Targeted merges keep untouched keys (including any leftover `cli-*` / suite entries from older channels).
+
 ---
 
 ## Two URLs (don’t mix them up)
@@ -155,7 +169,7 @@ CI asserts all package stamps equal the tag, builds the full matrix, and **repla
 |------|------------|------|
 | Home polish | `ship_desktop` (+ `ship_engine` if daemon API changed) | `desktop` (+ `engine`) |
 | Adapter fix | `ship_adapters` | that adapter id |
-| CLI only | `ship_cli` | `cli` |
+| Engine / CLI / TUI | `ship_engine` | `engine` |
 | MCP only | `ship_mcp` | `mcp-gateway` |
 | Offline brain | `ship_local_brain` | `local-brain` |
 | Everything | `ship_all` or push a `v*` tag | all ids |
@@ -172,6 +186,9 @@ curl -s https://releases.entasislabs.com/medousa/stable/installer-bootstrap.json
 curl -s https://releases.entasislabs.com/medousa/stable/installer-bootstrap.json | jq '.platforms["windows-x64"]'
 # Expect artifactKind "desktop" and fileName Medousa_*_x64-setup.exe
 curl -s https://releases.entasislabs.com/medousa/stable/release-manifest.json | jq '.packages | keys'
+# Expect engine-* keys; no medousa-v* / engine-suite / cli-* after a full train
+curl -s https://releases.entasislabs.com/medousa/stable/release-manifest.json \
+  | jq '[.packages | keys[] | select(startswith("engine-") or startswith("cli-") or startswith("medousa-") or startswith("engine-suite"))]'
 ```
 
 ### Republish manifests only (no rebuild)
@@ -203,9 +220,9 @@ If you still have `dist/final` from the publish job on a runner, skip the downlo
 ## What the workflow does
 
 1. **prepare** — resolve `ship_*` selection (`v*` / `ship_all` = full train)
-2. **build-daemon** — `medousa` + `medousa_daemon` once per OS (when engine/cli/desktop selected)
-3. **build-cli** — CLI and/or engine packages; **reuses** prebuilt daemon (no second compile)
-4. **build-adapters** / **build-mcp** / **build-local-brain** — only when selected
+2. **build-daemon** — `medousa` + `medousa_daemon` once per OS (when engine/desktop selected)
+3. **build-engine** — packages `engine` (launcher + daemon + CLI + TUI); **reuses** prebuilt daemon (no second compile). Never builds the retired `medousa-v*` suite.
+4. **build-adapters** / **build-mcp** / **build-local-brain** — independent legs (slim adapter crates; never rebuild engine)
 5. **build-desktop** / **build-installer** — only when selected (desktop reuses daemon sidecar)
 6. **release** — stage artifacts → generate delta manifests → **merge** into channel (or replace on full train) → **upload R2** → optional **GitHub Release**
 

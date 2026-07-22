@@ -53,7 +53,8 @@ pub mod turn_text_heuristics;
 pub mod context_pack;
 pub mod capability_catalog;
 pub mod mcp_daemon_handlers;
-pub mod mcp_gateway;
+/// Re-export slim MCP gateway crate (binary lives in adapters/medousa-mcp-gateway).
+pub use medousa_mcp_gateway::mcp_gateway;
 pub mod openshell_handoff;
 pub mod openshell_sandbox_run;
 pub mod openshell_tools;

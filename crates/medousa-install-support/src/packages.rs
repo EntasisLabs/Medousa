@@ -99,11 +99,11 @@ pub fn package_catalog() -> Vec<PackageCatalogEntry> {
             "engine",
             "Medousa Engine",
             &[],
-            &["medousa", "medousa_daemon"],
+            &["medousa", "medousa_daemon", "medousa_cli", "medousa_tui"],
             PackageCategory::Core,
             "Zap",
             &["express", "offline-workstation", "developer", "headless-server"],
-            45 * 1024 * 1024,
+            70 * 1024 * 1024,
             false,
             false,
         ),
@@ -116,18 +116,6 @@ pub fn package_catalog() -> Vec<PackageCatalogEntry> {
             "Brain",
             &["offline-workstation"],
             350 * 1024 * 1024,
-            true,
-            false,
-        ),
-        entry(
-            "cli",
-            "Command-line tools",
-            &["engine"],
-            &["medousa_cli", "medousa_tui"],
-            PackageCategory::Core,
-            "Terminal",
-            &["developer"],
-            25 * 1024 * 1024,
             true,
             false,
         ),
@@ -289,10 +277,10 @@ pub fn default_install_profiles() -> Vec<PackageProfile> {
         PackageProfile {
             id: "developer",
             display_name: "Developer",
-            short_description: "CLI tools and MCP gateway for power users.",
+            short_description: "Engine (includes CLI/TUI) and MCP gateway for power users.",
             icon: "Terminal",
             section: "Desktop & Core",
-            packages: &["desktop", "engine", "cli", "mcp-gateway"],
+            packages: &["desktop", "engine", "mcp-gateway"],
         },
         PackageProfile {
             id: "headless-server",
@@ -367,7 +355,6 @@ pub fn is_home_packages_package(package_id: &str) -> bool {
     matches!(
         package_id,
         "local-brain"
-            | "cli"
             | "mcp-gateway"
             | "adapter-telegram"
             | "adapter-discord"
@@ -393,8 +380,8 @@ pub fn expand_home_package_dependencies(selected: &[&str]) -> Vec<String> {
 
 pub fn package_short_hint(package_id: &str) -> &'static str {
     match package_id {
+        "engine" => "Launcher, daemon, CLI, and TUI.",
         "local-brain" => "On-device inference binary for offline Gemma.",
-        "cli" => "Command-line tools and terminal UI.",
         "mcp-gateway" => "Connect MCP servers to Medousa.",
         "adapter-telegram" => "Telegram channel adapter.",
         "adapter-discord" => "Discord channel adapter.",
@@ -404,11 +391,26 @@ pub fn package_short_hint(package_id: &str) -> &'static str {
     }
 }
 
+/// Resolve user-facing package names/aliases to catalog package ids.
+pub fn resolve_package_alias(name: &str) -> Option<&'static str> {
+    match name.trim().to_ascii_lowercase().as_str() {
+        "engine" | "daemon" | "cli" | "tui" | "core" => Some("engine"),
+        "mcp" | "mcp_gateway" | "mcp-gateway" => Some("mcp-gateway"),
+        "telegram" | "adapter-telegram" => Some("adapter-telegram"),
+        "discord" | "adapter-discord" => Some("adapter-discord"),
+        "slack" | "adapter-slack" => Some("adapter-slack"),
+        "whatsapp" | "adapter-whatsapp" => Some("adapter-whatsapp"),
+        "local-brain" | "brain" | "local_brain" => Some("local-brain"),
+        "desktop" => Some("desktop"),
+        other => catalog_entry(other).map(|entry| entry.id),
+    }
+}
+
 pub fn install_order_key(package_id: &str) -> u8 {
     match package_id {
         "desktop" => 0,
         "engine" => 1,
-        id if id.starts_with("adapter-") || id == "cli" || id == "mcp-gateway" => 2,
+        id if id.starts_with("adapter-") || id == "mcp-gateway" => 2,
         "local-brain" => 3,
         id if is_model_pack(id) => 4,
         _ => 5,
@@ -429,5 +431,41 @@ pub fn phase_label(phase: &str) -> &'static str {
         "failed" => "Failed",
         "removed" => "Removed",
         _ => "Working",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn engine_package_includes_cli_and_tui() {
+        let engine = catalog_entry("engine").expect("engine catalog entry");
+        assert!(engine.binaries.contains(&"medousa_cli"));
+        assert!(engine.binaries.contains(&"medousa_tui"));
+        assert!(catalog_entry("cli").is_none());
+    }
+
+    #[test]
+    fn package_aliases_resolve() {
+        assert_eq!(resolve_package_alias("daemon"), Some("engine"));
+        assert_eq!(resolve_package_alias("cli"), Some("engine"));
+        assert_eq!(resolve_package_alias("mcp"), Some("mcp-gateway"));
+        assert_eq!(resolve_package_alias("telegram"), Some("adapter-telegram"));
+        assert_eq!(resolve_package_alias("brain"), Some("local-brain"));
+    }
+
+    #[test]
+    fn developer_profile_no_longer_lists_cli() {
+        let packages = resolve_profile_packages("developer").expect("developer profile");
+        assert!(packages.contains(&"engine"));
+        assert!(packages.contains(&"mcp-gateway"));
+        assert!(!packages.contains(&"cli"));
+    }
+
+    #[test]
+    fn home_packages_excludes_cli() {
+        assert!(!is_home_packages_package("cli"));
+        assert!(is_home_packages_package("mcp-gateway"));
     }
 }

@@ -24,6 +24,11 @@ members = [
     "crates/medousa-install-support",
     "crates/medousa-mcp-server",
     "crates/medousa-acp-client",
+    "crates/medousa-adapter-common",
+    "adapters/medousa-telegram",
+    "adapters/medousa-discord",
+    "adapters/medousa-slack",
+    "adapters/medousa-mcp-gateway",
 ]
 exclude = ["apps/medousa-home/src-tauri", "apps/medousa-installer/src-tauri"]
 
@@ -43,24 +48,10 @@ path = "src/bin/medousa_daemon.rs"
 name = "medousa_tui"
 path = "src/bin/medousa_tui.rs"
 
-[[bin]]
-name = "medousa_telegram"
-path = "src/bin/medousa_telegram.rs"
-
-[[bin]]
-name = "medousa_discord"
-path = "src/bin/medousa_discord.rs"
-
-[[bin]]
-name = "medousa_slack"
-path = "src/bin/medousa_slack.rs"
-
-[[bin]]
-name = "medousa_mcp_gateway"
-path = "src/bin/medousa_mcp_gateway.rs"
-
 [dependencies]
 medousa-types = { path = "crates/medousa-types" }
+medousa-adapter-common = { path = "crates/medousa-adapter-common" }
+medousa-mcp-gateway = { path = "adapters/medousa-mcp-gateway" }
 medousa-install-support = { path = "crates/medousa-install-support" }
 medousa-engine = { path = "crates/medousa-engine" }
 medousa-host = { path = "crates/medousa-host" }
@@ -96,7 +87,6 @@ genai = "0.6.5"
 keyring = "2.3"
 locus-core-rs = "0.4.2"
 teloxide = "0.17.0"
-telegram-escape = "0.4.0"
 serenity = "0.12.5"
 slack-morphism = { version = "2.22", default-features = false, features = ["hyper"] }
 once_cell = "1"

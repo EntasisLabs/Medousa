@@ -3,10 +3,11 @@
 #
 # Archive names: {id}-v{version}-{target}.tar.gz
 # Channel head (top-level release-manifest.version) is computed at publish time.
+#
+# engine = medousa + medousa_daemon + medousa_cli + medousa_tui
 
 [packages]
 engine = "0.4.1"
-cli = "0.4.1"
 adapter-telegram = "0.4.1"
 adapter-discord = "0.4.1"
 adapter-slack = "0.4.1"

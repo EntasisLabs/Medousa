@@ -363,23 +363,7 @@ pub struct CapabilityReindexResponse {
 }
 
 /// MCP catalog row synced from gateway (includes capability tags).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct McpCatalogSyncEntry {
-    pub server_id: String,
-    pub tool_name: String,
-    pub title: String,
-    #[serde(default)]
-    pub capability_ids: Vec<CapabilityId>,
-    pub available: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub unavailable_reason: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct McpCatalogSyncResponse {
-    pub entries: Vec<McpCatalogSyncEntry>,
-    pub now_utc: chrono::DateTime<chrono::Utc>,
-}
+pub use medousa_types::mcp_gateway_api::{McpCatalogSyncEntry, McpCatalogSyncResponse};
 
 /// In-memory capability registry with inverted index.
 #[derive(Debug, Clone, Default)]

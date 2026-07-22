@@ -15,9 +15,10 @@ It is **not** the agent brain. The daemon's `MedousaAgentRuntime` remains the so
 
 ## Entry Point
 
-- Binary: `medousa/src/bin/medousa_mcp_gateway.rs` (planned)
+- Binary crate: [`adapters/medousa-mcp-gateway/`](../adapters/medousa-mcp-gateway/) → bin `medousa_mcp_gateway`
 - Default bind: `127.0.0.1:7420`
-- Contract types: `medousa/src/mcp_gateway_api.rs`
+- Contract types: [`crates/medousa-types/src/mcp_gateway_api.rs`](../crates/medousa-types/src/mcp_gateway_api.rs)
+- Release package id: `mcp-gateway` (`medousa pull mcp-gateway`)
 
 ## Process Model
 
@@ -76,9 +77,11 @@ Daemon syncs MCP bindings via `GET /v1/mcp/catalog`. See [capability-catalog-des
 
 Phase D (after gateway MVP): MCP invokes can be promoted to Stasis jobs (`cognition.mcp.promote_to_job`), same pattern as Grapheme promote-to-recurring. Gateway remains the only MCP client — Stasis jobs call gateway HTTP, not MCP directly.
 
-## Code Anchors (planned)
+## Code Anchors
 
-- `src/mcp_gateway_api.rs` — shared HTTP contract
-- `src/bin/medousa_mcp_gateway.rs` — gateway binary
+- `crates/medousa-types/src/mcp_gateway_api.rs` — shared HTTP contract
+- `crates/medousa-types/src/mcp_turn_token.rs` — turn-scoped invoke tokens
+- `adapters/medousa-mcp-gateway/` — gateway library + binary (no Surreal / no `medousa` lib)
+- `src/mcp_gateway.rs` — thin re-export for daemon/setup helpers
 - `src/tools.rs` — `CognitionMcp*Tool` implementations
 - `src/bin/medousa_daemon.rs` — `/v1/mcp/policy/evaluate` handler

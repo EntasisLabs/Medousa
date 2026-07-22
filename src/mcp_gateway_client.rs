@@ -4,7 +4,7 @@ use anyhow::{Context, Result};
 use reqwest::Client;
 
 use crate::capability_catalog::McpCatalogSyncResponse;
-use crate::mcp_gateway::resolve_mcp_gateway_token;
+use medousa_mcp_gateway::resolve_mcp_gateway_token;
 use crate::mcp_gateway_api::{
     McpDiscoverRequest, McpDiscoverResponse, McpGatewayHealthResponse, McpInvokeRequest,
     McpInvokeResponse, McpServersResponse, resolve_mcp_gateway_url,

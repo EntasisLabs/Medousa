@@ -12,8 +12,9 @@ OUTPUT=""
 PRINT_TARGET_ONLY=0
 WITH_LOCAL_BRAIN=1
 WITH_IROH=1
-# Comma list: engine,cli,adapters,mcp (default: all of them)
-COMPONENTS="engine,cli,adapters,mcp"
+# Comma list: engine,adapters,mcp (default: all of them)
+# `cli` is accepted as a legacy alias for engine.
+COMPONENTS="engine,adapters,mcp"
 
 usage() {
   cat <<'EOF'
@@ -23,7 +24,7 @@ Options:
   --target <triple>     Rust target triple (default: host)
   --output <dir>        Staging directory (default: dist/build/<target>)
   --print-target        Print resolved target triple and exit
-  --components <list>   Comma list: engine,cli,adapters,mcp (default: all)
+  --components <list>   Comma list: engine,adapters,mcp (default: all)
   --with-local-brain    Also build medousa_local into <output>/bin/ (default: on)
   --without-local-brain Skip medousa_local (mistralrs) build
   --without-iroh        Omit iroh-transport (LAN-only pairing)
@@ -36,8 +37,8 @@ Environment:
   MEDOUSA_PREBUILT_LAUNCHER Path to a prebuilt medousa launcher (optional with daemon).
 
 Component groups → bins:
-  engine    medousa, medousa_daemon
-  cli       medousa_cli, medousa_tui
+  engine    medousa, medousa_daemon, medousa_cli, medousa_tui
+  cli       legacy alias for engine
   adapters  medousa_telegram, medousa_discord, medousa_slack, medousa_whatsapp
   mcp       medousa_mcp_gateway
 EOF
@@ -123,13 +124,16 @@ want_component() {
 }
 
 NEED_ENGINE=0
-NEED_CLI=0
 NEED_ADAPTERS=0
 NEED_MCP=0
 NEED_WHATSAPP=0
+NEED_TELEGRAM=0
+NEED_DISCORD=0
+NEED_SLACK=0
+# engine includes launcher + daemon + cli + tui (cli is a legacy alias for engine).
 want_component engine && NEED_ENGINE=1
-want_component cli && NEED_CLI=1
-want_component adapters && NEED_ADAPTERS=1 && NEED_WHATSAPP=1
+want_component cli && NEED_ENGINE=1
+want_component adapters && NEED_ADAPTERS=1 && NEED_WHATSAPP=1 && NEED_TELEGRAM=1 && NEED_DISCORD=1 && NEED_SLACK=1
 want_component mcp && NEED_MCP=1
 
 if [[ "${NEED_WHATSAPP}" -eq 1 ]]; then
@@ -166,15 +170,7 @@ if [[ "${NEED_ENGINE}" -eq 1 ]]; then
   else
     ROOT_BINS+=(medousa_daemon)
   fi
-fi
-if [[ "${NEED_CLI}" -eq 1 ]]; then
   ROOT_BINS+=(medousa_cli medousa_tui)
-fi
-if [[ "${NEED_ADAPTERS}" -eq 1 ]]; then
-  ROOT_BINS+=(medousa_telegram medousa_discord medousa_slack)
-fi
-if [[ "${NEED_MCP}" -eq 1 ]]; then
-  ROOT_BINS+=(medousa_mcp_gateway)
 fi
 
 if [[ ${#ROOT_BINS[@]} -gt 0 ]]; then
@@ -186,14 +182,22 @@ if [[ ${#ROOT_BINS[@]} -gt 0 ]]; then
   cargo build "${CARGO_BUILD_ARGS[@]}" "${BIN_ARGS[@]}"
 fi
 
-if [[ "${NEED_WHATSAPP}" -eq 1 ]]; then
-  medousa_log "cargo build (medousa_whatsapp)…"
-  WA_BUILD_ARGS=(--release --manifest-path "${MEDOUSA_WHATSAPP_MANIFEST}")
+build_adapter_manifest() {
+  local manifest="$1"
+  local label="$2"
+  medousa_log "cargo build (${label})…"
+  local ADAPTER_BUILD_ARGS=(--release --manifest-path "${manifest}")
   if [[ -n "${TARGET}" ]]; then
-    WA_BUILD_ARGS+=(--target "${TARGET}")
+    ADAPTER_BUILD_ARGS+=(--target "${TARGET}")
   fi
-  cargo build "${WA_BUILD_ARGS[@]}"
-fi
+  cargo build "${ADAPTER_BUILD_ARGS[@]}"
+}
+
+[[ "${NEED_TELEGRAM}" -eq 1 ]] && build_adapter_manifest "${MEDOUSA_TELEGRAM_MANIFEST}" "medousa_telegram"
+[[ "${NEED_DISCORD}" -eq 1 ]] && build_adapter_manifest "${MEDOUSA_DISCORD_MANIFEST}" "medousa_discord"
+[[ "${NEED_SLACK}" -eq 1 ]] && build_adapter_manifest "${MEDOUSA_SLACK_MANIFEST}" "medousa_slack"
+[[ "${NEED_WHATSAPP}" -eq 1 ]] && build_adapter_manifest "${MEDOUSA_WHATSAPP_MANIFEST}" "medousa_whatsapp"
+[[ "${NEED_MCP}" -eq 1 ]] && build_adapter_manifest "${MEDOUSA_MCP_GATEWAY_MANIFEST}" "medousa_mcp_gateway"
 
 MAIN_RELEASE="$(medousa_cargo_release_dir "${TARGET}")"
 WA_RELEASE="$(medousa_whatsapp_cargo_release_dir "${TARGET}")"
@@ -233,7 +237,7 @@ if [[ "${NEED_ENGINE}" -eq 1 ]]; then
 fi
 
 STAGE_LIST=()
-[[ "${NEED_CLI}" -eq 1 ]] && STAGE_LIST+=(medousa_cli medousa_tui)
+[[ "${NEED_ENGINE}" -eq 1 ]] && STAGE_LIST+=(medousa_cli medousa_tui)
 [[ "${NEED_ADAPTERS}" -eq 1 ]] && STAGE_LIST+=(medousa_telegram medousa_discord medousa_slack medousa_whatsapp)
 [[ "${NEED_MCP}" -eq 1 ]] && STAGE_LIST+=(medousa_mcp_gateway)
 

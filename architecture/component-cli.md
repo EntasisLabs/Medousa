@@ -19,11 +19,24 @@ CLI is operator-first: honest framing, plain language, scriptable (`--json`). Cu
 ## Command taxonomy (`medousa --help`)
 
 1. **Lifecycle** — `start`, `stop`, `status`, `daemon`
-2. **Diagnose** — `doctor [--config] [--json]`, `models probe`
-3. **Workshop** — `workspace`, `vault`, `pair`, `iroh`
-4. **Configure** — `setup --yes`, `doctor --config`
-5. **Extend** — identity, manuscripts, skills
-6. **Channels** — discord, telegram, slack, whatsapp (secondary)
+2. **Packages** — `pull`, `update`, `packages list|status` (CDN installs via `medousa-install-support`)
+3. **Diagnose** — `doctor [--config] [--json]`, `models probe`
+4. **Workshop** — `workspace`, `vault`, `pair`, `iroh`
+5. **Configure** — `setup --yes`, `doctor --config`
+6. **Extend** — identity, manuscripts, skills
+7. **Channels** — discord, telegram, slack, whatsapp (secondary; slim adapter crates)
+
+Engine release package includes `medousa`, `medousa_daemon`, `medousa_cli`, and `medousa_tui`. Adapters and MCP gateway are separate packages (`medousa pull …`):
+
+| Binary | Crate |
+|--------|-------|
+| `medousa_telegram` | `adapters/medousa-telegram` |
+| `medousa_discord` | `adapters/medousa-discord` |
+| `medousa_slack` | `adapters/medousa-slack` |
+| `medousa_whatsapp` | `adapters/medousa-whatsapp` |
+| `medousa_mcp_gateway` | `adapters/medousa-mcp-gateway` |
+
+Shared ingest helpers: `crates/medousa-adapter-common`.
 
 ## Headless operator path
 

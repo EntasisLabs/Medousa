@@ -39,7 +39,7 @@ disk — day-to-day extras are **Settings → Packages**.
 
 ### CLI / headless install
 
-One command installs the full versioned set (launcher, engine, TUI, channel adapters) to `~/.local/bin`:
+One command installs the **engine** package (launcher, daemon, CLI, TUI) to `~/.local/bin`:
 
 ```bash
 export MEDOUSA_RELEASE_BASE_URL=https://releases.example.com/medousa
@@ -52,10 +52,24 @@ Self-hosted registry with pinned version:
 ./scripts/install.sh --registry-url https://releases.example.com/medousa --version v0.1.0
 ```
 
-Air-gap / local artifact:
+Air-gap / local artifact (engine tarball):
 
 ```bash
-./scripts/install.sh --from-dist dist/medousa-v0.1.0-x86_64-unknown-linux-gnu.tar.gz
+./scripts/install.sh --from-dist dist/engine-v0.1.0-x86_64-unknown-linux-gnu.tar.gz
+```
+
+Headless server profile also pulls the offline brain:
+
+```bash
+./scripts/install.sh --profile headless-server
+```
+
+Optional packages after install:
+
+```bash
+medousa pull mcp-gateway
+medousa pull telegram
+medousa packages status
 ```
 
 Verify install:
@@ -64,7 +78,6 @@ Verify install:
 ./scripts/install.sh --verify-only
 medousa doctor
 ```
-
 ---
 
 ## First-time setup (TUI wizard)

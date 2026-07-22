@@ -8,9 +8,8 @@ const CATEGORY_LABELS: Record<string, string> = {
 /** Benefit-focused blurbs — what the user gets, not what we ship. */
 export const PACKAGE_BLURBS: Record<string, string> = {
   desktop: "The Medousa app on your computer.",
-  engine: "Runs in the background and powers your workspace.",
+  engine: "Daemon, CLI, and TUI — powers your workspace.",
   "local-brain": "On-device AI — works without the cloud.",
-  cli: "Terminal tools for scripting and automation.",
   "adapter-telegram": "Chat with Medousa from Telegram.",
   "adapter-discord": "Use Medousa inside Discord servers.",
   "adapter-slack": "Bring Medousa into your Slack workspace.",
@@ -38,7 +37,7 @@ export const PRESET_CHIPS: {
   {
     id: "developer",
     label: "Developer tools",
-    description: "CLI and MCP gateway",
+    description: "Engine (CLI/TUI) and MCP gateway",
     profileId: "developer",
   },
 ];

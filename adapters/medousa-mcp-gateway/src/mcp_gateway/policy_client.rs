@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use reqwest::Client;
 
-use crate::mcp_gateway_api::{McpPolicyEvaluateRequest, McpPolicyEvaluateResponse};
+use medousa_types::mcp_gateway_api::{McpPolicyEvaluateRequest, McpPolicyEvaluateResponse};
 
 #[derive(Clone)]
 pub struct DaemonPolicyClient {

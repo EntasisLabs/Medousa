@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Package component tarballs (optionally filtered) plus the full-suite archive.
+# Package component tarballs (engine, adapters, mcp-gateway). No full-suite archive.
 
 set -euo pipefail
 
@@ -12,7 +12,6 @@ INPUT=""
 DIST_DIR=""
 # Comma-separated package ids, or empty = all MEDOUSA_COMPONENT_IDS
 PACKAGES=""
-SKIP_SUITE=0
 
 usage() {
   cat <<'EOF'
@@ -23,11 +22,11 @@ Options:
   --input <dir>         Staging dir from build.sh
   --dist <dir>          Output directory (default: dist/)
   --packages <list>     Comma-separated package ids (default: all components)
-  --skip-suite          Do not build the full medousa-v* suite tarball
+  --skip-suite          Deprecated no-op (suite archives are no longer built)
   -h, --help            Show this help
 
-Packages engine, cli, each adapter, mcp-gateway (or a subset), and optionally
-the full medousa-v* suite tarball.
+Packages engine (launcher+daemon+cli+tui), each adapter, and mcp-gateway.
+There is no medousa-v* / engine-suite archive.
 EOF
 }
 
@@ -37,7 +36,7 @@ while [[ $# -gt 0 ]]; do
     --input) INPUT="$2"; shift 2 ;;
     --dist) DIST_DIR="$2"; shift 2 ;;
     --packages) PACKAGES="$2"; shift 2 ;;
-    --skip-suite) SKIP_SUITE=1; shift ;;
+    --skip-suite) shift ;; # deprecated no-op
     -h | --help) usage; exit 0 ;;
     *) echo "error: unknown argument: $1" >&2; exit 1 ;;
   esac
@@ -58,13 +57,9 @@ fi
 for package_id in "${PACKAGE_LIST[@]}"; do
   package_id="$(echo "${package_id}" | xargs)"
   [[ -n "${package_id}" ]] || continue
+  # Legacy: cli package retired — engine includes CLI+TUI.
+  if [[ "${package_id}" == "cli" ]]; then
+    package_id="engine"
+  fi
   "${SCRIPT_DIR}/package-component.sh" --package "${package_id}" "${ARGS[@]}"
 done
-
-if [[ "${SKIP_SUITE}" -eq 0 ]]; then
-  # Suite only when packaging the full component set (or explicitly engine+cli…).
-  # Skip when a narrow targeted list omits most bins.
-  if [[ -z "${PACKAGES}" ]]; then
-    "${SCRIPT_DIR}/package.sh" "${ARGS[@]}"
-  fi
-fi
