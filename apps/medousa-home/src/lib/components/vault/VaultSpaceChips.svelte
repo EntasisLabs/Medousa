@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { allFilterSpaces } from "$lib/config/vaultSpaces";
+  import { selectableGroupSpaces } from "$lib/config/vaultSpaces";
   import { vault } from "$lib/stores/vault.svelte";
   import { iconForSpace } from "$lib/utils/vaultSpaceIcons";
 
@@ -13,7 +13,7 @@
 
   let { compact = false, embedded = false, scrollable = false }: Props = $props();
 
-  const visibleSpaces = $derived(allFilterSpaces(vault.showSystemNotes));
+  const visibleSpaces = $derived(selectableGroupSpaces(vault.showSystemNotes));
 
   const counts = $derived(vault.spaceCountsMap);
 

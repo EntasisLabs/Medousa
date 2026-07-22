@@ -1,7 +1,12 @@
 <script lang="ts">
   import { Check, ChevronDown, FolderOpen, Plus } from "@lucide/svelte";
+  import BodyPortal from "$lib/components/ui/BodyPortal.svelte";
   import { vault } from "$lib/stores/vault.svelte";
   import { pickExternalFolder, rootLabelFromPath } from "$lib/utils/externalDeskApi";
+  import {
+    placeDockPopover,
+    type DockPopoverPlacement,
+  } from "$lib/utils/dockPopoverPlace";
   import {
     isCoLocatedWorkshop,
     vaultAddRootRemoteHint,
@@ -12,13 +17,16 @@
     compact?: boolean;
     /** Text-style trigger — no filled control. */
     quiet?: boolean;
-    /** Open the menu above the trigger (e.g. bottom dock). */
+    /** Prefer opening the menu above the trigger (bottom dock). */
     dropUp?: boolean;
   }
 
-  let { compact = false, quiet = false, dropUp = false }: Props = $props();
+  let { compact = false, quiet = false, dropUp = true }: Props = $props();
 
   let menuOpen = $state(false);
+  let triggerEl = $state<HTMLButtonElement | null>(null);
+  let menuEl = $state<HTMLDivElement | null>(null);
+  let placement = $state<DockPopoverPlacement | null>(null);
   let addBusy = $state(false);
   let addError = $state<string | null>(null);
   let labelDraft = $state("");
@@ -30,6 +38,28 @@
     isTauri() && coLocated && !vault.vaultRootsUnavailable,
   );
   const showPicker = $derived(!vault.vaultRootsUnavailable && vault.vaultRoots.length > 0);
+  const usePortalMenu = $derived(compact && quiet);
+
+  function place() {
+    if (!triggerEl) return;
+    placement = placeDockPopover(triggerEl, { preferUp: dropUp, width: 216 });
+  }
+
+  function closeMenu() {
+    menuOpen = false;
+    placement = null;
+  }
+
+  function openMenu() {
+    menuOpen = true;
+    requestAnimationFrame(place);
+  }
+
+  function toggleMenu(event: MouseEvent) {
+    event.stopPropagation();
+    if (menuOpen) closeMenu();
+    else openMenu();
+  }
 
   async function pickFolder() {
     const path = await pickExternalFolder();
@@ -62,7 +92,7 @@
   }
 
   async function selectRoot(rootId: string) {
-    menuOpen = false;
+    closeMenu();
     if (rootId === vault.activeVaultRootId) return;
     try {
       await vault.switchVaultRoot(rootId);
@@ -77,6 +107,39 @@
     if (parts.length <= 3) return path;
     return `…/${parts.slice(-2).join("/")}`;
   }
+
+  function onWindowPointerDown(event: PointerEvent) {
+    if (!menuOpen || !usePortalMenu) return;
+    const target = event.target as Node;
+    if (triggerEl?.contains(target) || menuEl?.contains(target)) return;
+    closeMenu();
+  }
+
+  function onWindowKeydown(event: KeyboardEvent) {
+    if (!menuOpen) return;
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeMenu();
+    }
+  }
+
+  function onWindowReposition() {
+    if (menuOpen && usePortalMenu) place();
+  }
+
+  $effect(() => {
+    if (!menuOpen || !usePortalMenu) return;
+    window.addEventListener("pointerdown", onWindowPointerDown, true);
+    window.addEventListener("keydown", onWindowKeydown);
+    window.addEventListener("resize", onWindowReposition);
+    window.addEventListener("scroll", onWindowReposition, true);
+    return () => {
+      window.removeEventListener("pointerdown", onWindowPointerDown, true);
+      window.removeEventListener("keydown", onWindowKeydown);
+      window.removeEventListener("resize", onWindowReposition);
+      window.removeEventListener("scroll", onWindowReposition, true);
+    };
+  });
 </script>
 
 {#if vault.vaultRootsUnavailable}
@@ -84,39 +147,45 @@
     Personal vault
   </span>
 {:else if compact}
-  <div class="relative min-w-0 {quiet ? '' : 'w-full'}">
+  <div class="relative min-w-0 {quiet ? 'shrink' : 'w-full'}">
     <button
+      bind:this={triggerEl}
       type="button"
-      class={quiet
-        ? "workshop-text-action inline-flex max-w-full items-center gap-1 text-xs text-surface-400"
-        : "vault-root-trigger vault-root-trigger-fill"}
+      class={quiet ? "vault-dock-branch" : "vault-root-trigger vault-root-trigger-fill"}
       aria-haspopup="listbox"
       aria-expanded={menuOpen}
+      aria-label="Vault: {activeRoot?.label ?? 'Personal'}"
+      title="Switch vault"
       disabled={vault.vaultRootsLoading}
-      onclick={() => {
-        menuOpen = !menuOpen;
-      }}
+      onclick={toggleMenu}
     >
-      <FolderOpen size={12} strokeWidth={2} class="shrink-0 opacity-70" />
-      <span class="truncate">
-          {#if vault.vaultRootsLoading}
-            …
-          {:else}
-            {activeRoot?.label ?? "Personal"}{#if activeRoot?.isObsidian}
-              <span class="workshop-faint"> · Obsidian</span>
-            {/if}
+      <FolderOpen
+        size={quiet ? 13 : 12}
+        strokeWidth={1.75}
+        class={quiet ? "vault-dock-branch__icon" : "shrink-0 opacity-70"}
+      />
+      <span class={quiet ? "vault-dock-branch__label" : "truncate"}>
+        {#if vault.vaultRootsLoading}
+          …
+        {:else}
+          {activeRoot?.label ?? "Personal"}{#if activeRoot?.isObsidian && !quiet}
+            <span class="workshop-faint"> · Obsidian</span>
           {/if}
+        {/if}
       </span>
-      <ChevronDown size={12} strokeWidth={2} class="shrink-0 opacity-60" />
+      {#if !quiet}
+        <ChevronDown size={12} strokeWidth={2} class="shrink-0 opacity-60" />
+      {/if}
     </button>
 
-    {#if menuOpen}
+    {#if menuOpen && !usePortalMenu}
       <div
         class="absolute left-0 z-30 w-full min-w-[12rem] rounded-lg border border-surface-500/50 bg-surface-900 py-1 shadow-xl {dropUp
           ? 'bottom-full mb-1'
           : 'top-full mt-1'}"
         role="listbox"
         aria-label="Vault folders"
+        onclick={(event) => event.stopPropagation()}
       >
         {#each vault.vaultRoots as root (root.id)}
           <button
@@ -153,7 +222,7 @@
             type="button"
             class="flex w-full items-center gap-2 border-t border-surface-500/40 px-3 py-2 text-left text-sm text-surface-200 hover:bg-surface-800/80"
             onclick={() => {
-              menuOpen = false;
+              closeMenu();
               addError = null;
               vault.openAddVaultRootDialog();
             }}
@@ -169,6 +238,66 @@
       </div>
     {/if}
   </div>
+
+  {#if menuOpen && usePortalMenu && placement}
+    <BodyPortal>
+      <div
+        bind:this={menuEl}
+        class="vault-dock-popover"
+        role="listbox"
+        aria-label="Vault folders"
+        style:left="{placement.left}px"
+        style:top="{placement.top}px"
+        style:width="{placement.width}px"
+        style:max-height="{placement.maxHeight}px"
+        style:transform={placement.transform}
+        onclick={(event) => event.stopPropagation()}
+      >
+        {#each vault.vaultRoots as root (root.id)}
+          <button
+            type="button"
+            role="option"
+            aria-selected={root.active}
+            class="vault-dock-branch-option"
+            class:vault-dock-branch-option--selected={root.active}
+            onclick={() => void selectRoot(root.id)}
+          >
+            <span class="vault-dock-branch-option__main">
+              <FolderOpen size={13} strokeWidth={1.75} class="vault-dock-branch-option__icon" />
+              <span class="vault-dock-branch-option__label">{root.label}</span>
+              {#if root.isObsidian}
+                <span class="vault-dock-branch-option__meta">Obsidian</span>
+              {/if}
+            </span>
+            {#if root.active}
+              <Check size={13} strokeWidth={2} class="vault-dock-branch-option__check" />
+            {/if}
+          </button>
+        {/each}
+        {#if canAddRoot}
+          <div class="vault-dock-popover__sep"></div>
+          <button
+            type="button"
+            class="vault-dock-branch-option vault-dock-branch-option--soft"
+            onclick={() => {
+              closeMenu();
+              addError = null;
+              vault.openAddVaultRootDialog();
+            }}
+          >
+            <span class="vault-dock-branch-option__main">
+              <Plus size={13} strokeWidth={1.75} class="vault-dock-branch-option__icon" />
+              <span class="vault-dock-branch-option__label">Add vault…</span>
+            </span>
+          </button>
+        {:else if isTauri() && !coLocated && !vault.vaultRootsUnavailable}
+          <p class="workshop-faint px-2.5 py-2 text-[11px] leading-snug">
+            {vaultAddRootRemoteHint()}
+          </p>
+        {/if}
+      </div>
+    </BodyPortal>
+  {/if}
 {:else if showPicker}
   <div class="px-3 pb-2 pt-2">
     <div class="relative min-w-0">

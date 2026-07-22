@@ -72,9 +72,7 @@
     {/if}
   </div>
 
-  <footer
-    class="relative flex shrink-0 items-center gap-1 border-t border-surface-500/25 px-2 py-1.5"
-  >
+  <footer class="lme-side-rail-dock">
     {#if searchExpanded}
       <div class="lme-dock-search-expand min-w-0 flex-1">
         <Search size={14} strokeWidth={1.75} class="lme-dock-search-glyph" />

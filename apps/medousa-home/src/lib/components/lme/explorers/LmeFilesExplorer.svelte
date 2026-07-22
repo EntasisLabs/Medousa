@@ -104,7 +104,7 @@
   </div>
 
   <footer
-    class="lme-files-dock relative flex shrink-0 items-center gap-1 border-t border-surface-500/25 px-2 py-1.5"
+    class="lme-side-rail-dock lme-files-dock"
   >
     {#if searchExpanded}
       <div class="lme-dock-search-expand min-w-0 flex-1">
