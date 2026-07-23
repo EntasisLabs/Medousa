@@ -42,7 +42,13 @@
     surfaceSupportsRailNest,
     type NavRailNestItem,
   } from "$lib/utils/navRailNest";
-  import { ChevronLeft, ChevronRight, PanelLeftClose, Settings, UserRound } from "@lucide/svelte";
+  import {
+    ChevronLeft,
+    ChevronRight,
+    PanelLeftClose,
+    Settings,
+    UserRound,
+  } from "@lucide/svelte";
   import { SAFETY_SURFACE_SETTINGS } from "$lib/types/environment";
   import type { DaemonHealth } from "$lib/daemon";
   import { fade, fly } from "svelte/transition";
@@ -90,12 +96,16 @@
   }: Props = $props();
 
   const mode = $derived(layout.shellSidebarMode);
+  /** List hosted in the rail — may differ from main `active` content surface. */
+  const viewSurface = $derived(layout.shellSidebarViewSurface ?? active);
   /** View list fills the same rail — never a second column. */
-  const showView = $derived(mode === "view" && surfaceHasShellSidebarView(active));
+  const showView = $derived(
+    mode === "view" && surfaceHasShellSidebarView(viewSurface),
+  );
   const viewTitle = $derived(
-    active === "library" || active === "automations"
+    viewSurface === "library" || viewSurface === "automations"
       ? labelForLmeExplorerMode(lmeWorkspace.explorerMode)
-      : shellSidebarViewTitle(active),
+      : shellSidebarViewTitle(viewSurface),
   );
   const daemonOk = $derived(health?.ok ?? false);
 
@@ -113,6 +123,8 @@
   /** In-place flyout — replaces rail view-mode swaps for list surfaces. */
   let railPopover = $state<RailPopoverTarget | null>(null);
   let railPopoverTriggerEl = $state<HTMLElement | null>(null);
+  /** Click point so the toolbar floats next to the mouse (not rail-docked). */
+  let railPopoverCursor = $state<{ x: number; y: number } | null>(null);
 
   const railPopoverTitle = $derived(
     railPopover?.kind === "lme"
@@ -189,6 +201,7 @@
   function closeRailPopover() {
     railPopover = null;
     railPopoverTriggerEl = null;
+    railPopoverCursor = null;
   }
 
   function sameRailPopover(target: RailPopoverTarget): boolean {
@@ -202,12 +215,25 @@
     return false;
   }
 
-  function openRailPopover(target: RailPopoverTarget, trigger: HTMLElement) {
+  function openRailPopover(
+    target: RailPopoverTarget,
+    trigger: HTMLElement,
+    event?: MouseEvent,
+  ) {
     if (sameRailPopover(target)) {
       closeRailPopover();
       return;
     }
     railPopoverTriggerEl = trigger;
+    if (event) {
+      railPopoverCursor = { x: event.clientX, y: event.clientY };
+    } else {
+      const rect = trigger.getBoundingClientRect();
+      railPopoverCursor = {
+        x: rect.left + rect.width / 2,
+        y: rect.top + rect.height / 2,
+      };
+    }
     railPopover = target;
   }
 
@@ -223,7 +249,11 @@
       event.stopPropagation();
       // Popover only — don't open a shell tab until the user picks something.
       layout.setShellSidebarMode("nav");
-      openRailPopover({ kind: "surface", surfaceId }, event.currentTarget as HTMLElement);
+      openRailPopover(
+        { kind: "surface", surfaceId },
+        event.currentTarget as HTMLElement,
+        event,
+      );
       return;
     }
     closeRailPopover();
@@ -237,7 +267,11 @@
     lmeWorkspace.setExplorerMode(modeId);
     layout.setShellSidebarMode("nav");
     // Popover only — opening a note/script/etc. creates the tab when chosen.
-    openRailPopover({ kind: "lme", mode: modeId }, event.currentTarget as HTMLElement);
+    openRailPopover(
+      { kind: "lme", mode: modeId },
+      event.currentTarget as HTMLElement,
+      event,
+    );
   }
 
   /** Open the real surface/tab after a concrete pick inside a rail popover. */
@@ -245,6 +279,20 @@
     closeRailPopover();
     onSelect(surfaceId);
     layout.setShellSidebarMode("nav");
+  }
+
+  /** Popover → full side-rail view only (no main-content / tab activation). */
+  function dockPopoverToRail() {
+    if (!railPopover) return;
+    if (railPopover.kind === "lme") {
+      lmeWorkspace.setExplorerMode(railPopover.mode);
+      closeRailPopover();
+      layout.openShellSidebarView("library");
+      return;
+    }
+    const surfaceId = railPopover.surfaceId;
+    closeRailPopover();
+    layout.openShellSidebarView(surfaceId);
   }
 
   function backToNav() {
@@ -345,18 +393,18 @@
         </header>
 
         <div class="master-rail-view-body">
-          {#if active === SAFETY_SURFACE_SETTINGS}
+          {#if viewSurface === SAFETY_SURFACE_SETTINGS}
             <div class="min-h-0 flex-1 overflow-y-auto px-1.5 py-1">
               <SettingsNav
                 active={settingsNav.activeSection}
                 onSelect={(section) => settingsNav.setActiveSection(section)}
               />
             </div>
-          {:else if active === "chat"}
+          {:else if viewSurface === "chat"}
             <SessionSidebar open={true} variant="inline" />
-          {:else if active === "library" || active === "automations"}
+          {:else if viewSurface === "library" || viewSurface === "automations"}
             <LmeSidePanel {onOpenChat} />
-          {:else if active === "messaging"}
+          {:else if viewSurface === "messaging"}
             <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
               <label class="block px-1.5 pb-1.5 pt-1">
                 <span class="sr-only">Search channels</span>
@@ -382,9 +430,9 @@
                 />
               </div>
             </div>
-          {:else if active === "peers"}
+          {:else if viewSurface === "peers"}
             <PeersShellList />
-          {:else if active === "context"}
+          {:else if viewSurface === "context"}
             <ContextSidePanel />
           {/if}
         </div>
@@ -708,7 +756,9 @@
     title={railPopoverTitle}
     targetKey={railPopoverTargetKey}
     triggerEl={railPopoverTriggerEl}
+    cursorAnchor={railPopoverCursor}
     onClose={closeRailPopover}
+    onDockToRail={dockPopoverToRail}
     dockHost={railPopoverUsesLmeDock}
   >
     {#snippet toolbar()}

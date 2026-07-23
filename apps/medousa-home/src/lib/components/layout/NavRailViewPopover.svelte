@@ -1,6 +1,12 @@
 <script lang="ts">
-  import { ChevronRight } from "@lucide/svelte";
-  import { placeRailPopover } from "$lib/utils/railPopover";
+  import { ChevronRight, Expand } from "@lucide/svelte";
+  import {
+    placeRailPopover,
+    railPopoverOpenHeightCap,
+    resolveRailPopoverExpand,
+    type RailPopoverCursor,
+    type RailPopoverExpand,
+  } from "$lib/utils/railPopover";
   import { popLmeDockHost, pushLmeDockHost } from "$lib/utils/lmeDockHost";
   import type { Snippet } from "svelte";
   import { tick } from "svelte";
@@ -13,7 +19,14 @@
     /** Reset expand state when this changes (e.g. surface/mode id). */
     targetKey?: string;
     triggerEl: HTMLElement | null;
+    /**
+     * Click point — float the toolbar next to the mouse (selection-bubble style)
+     * instead of docking beside the rail.
+     */
+    cursorAnchor?: RailPopoverCursor | null;
     onClose: () => void;
+    /** Dock this list into the master side rail (view mode). */
+    onDockToRail?: () => void;
     /** Left-side action controls (New, Search, dock buttons, etc.). */
     toolbar?: Snippet;
     /** Host LME explorer docks in the toolbar strip while open. */
@@ -26,7 +39,9 @@
     title,
     targetKey = "",
     triggerEl,
+    cursorAnchor = null,
     onClose,
+    onDockToRail,
     toolbar,
     dockHost = false,
     children,
@@ -37,16 +52,22 @@
   let phase = $state<PopoverPhase>("seed");
   let lastTargetKey = $state("");
   let sequenceGen = 0;
-  /** Freeze vertical anchor while height/width animate so place() can't jump the card. */
+  /** Freeze trigger-adjacent edge while height/width animate. */
   let anchorLocked = $state(false);
+  /** Persist for the popover session so expand/collapse doesn't flip mid-gesture. */
+  let expandDir = $state<RailPopoverExpand>("down");
+  let openHeightPx = $state(32 * 16);
 
   const listOpen = $derived(phase === "open");
   const chromeExpanded = $derived(phase === "toolbar" || phase === "open");
+  const expandUp = $derived(expandDir === "up");
 
   /** Match CSS transition durations in this component. */
   const WIDTH_MS = 320;
   const HEIGHT_MS = 360;
   const CHROME_MS = 300;
+  const PLACE_PAD = 10;
+  const OPEN_MAX_PX = 32 * 16;
 
   function prefersReducedMotion() {
     return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -58,29 +79,47 @@
     });
   }
 
-  function placeMenu(opts?: { lockTop?: boolean }) {
+  function syncGeometryFromTrigger() {
+    if (!triggerEl) return;
+    expandDir = resolveRailPopoverExpand(triggerEl, {
+      pad: PLACE_PAD,
+      cursor: cursorAnchor,
+    });
+    openHeightPx = railPopoverOpenHeightCap(triggerEl, expandDir, {
+      pad: PLACE_PAD,
+      maxHeight: OPEN_MAX_PX,
+      cursor: cursorAnchor,
+    });
+  }
+
+  function placeMenu(opts?: { lockEdge?: boolean }) {
     if (!triggerEl || !menuEl) return;
+    const lock = opts?.lockEdge ?? anchorLocked;
     placeRailPopover(triggerEl, menuEl, {
       gap: 10,
-      pad: 10,
+      pad: PLACE_PAD,
       alignY: "start",
-      lockTop: opts?.lockTop ?? anchorLocked,
+      expand: expandDir,
+      openHeight: openHeightPx,
+      cursor: cursorAnchor,
+      lockEdge: lock ? (expandDir === "up" ? "bottom" : "top") : undefined,
     });
+    menuEl.style.setProperty("--nav-rail-popover-open-height", `${openHeightPx}px`);
   }
 
   async function runExpandSequence() {
     const gen = ++sequenceGen;
     anchorLocked = true;
-    placeMenu({ lockTop: true });
+    placeMenu({ lockEdge: true });
     phase = "toolbar";
     await tick();
-    placeMenu({ lockTop: true });
+    placeMenu({ lockEdge: true });
     if (gen !== sequenceGen) return;
     if (!prefersReducedMotion()) await sleep(CHROME_MS);
     if (gen !== sequenceGen) return;
     phase = "open";
     await tick();
-    placeMenu({ lockTop: true });
+    placeMenu({ lockEdge: true });
     if (gen !== sequenceGen) return;
     if (!prefersReducedMotion()) await sleep(HEIGHT_MS);
     if (gen !== sequenceGen) return;
@@ -90,24 +129,23 @@
   async function runCollapseSequence() {
     const gen = ++sequenceGen;
     anchorLocked = true;
-    // Pin top before height changes so vertical-center math can't yank the card up.
-    placeMenu({ lockTop: true });
+    placeMenu({ lockEdge: true });
     // 1) Tuck the drawer first (full width bar stays).
     phase = "toolbar";
     await tick();
-    placeMenu({ lockTop: true });
+    placeMenu({ lockEdge: true });
     if (gen !== sequenceGen) return;
     if (!prefersReducedMotion()) await sleep(HEIGHT_MS);
     if (gen !== sequenceGen) return;
     // 2) Then retract the bar to super-compact.
     phase = "seed";
     await tick();
-    placeMenu({ lockTop: true });
+    placeMenu({ lockEdge: true });
     if (gen !== sequenceGen) return;
     if (!prefersReducedMotion()) await sleep(WIDTH_MS);
     if (gen !== sequenceGen) return;
     anchorLocked = false;
-    placeMenu({ lockTop: false });
+    placeMenu({ lockEdge: false });
   }
 
   function resetPhase() {
@@ -125,6 +163,15 @@
     if (targetKey !== lastTargetKey) {
       lastTargetKey = targetKey;
       resetPhase();
+      syncGeometryFromTrigger();
+    }
+  });
+
+  $effect(() => {
+    if (!open || !triggerEl) return;
+    // Initial geometry when first opened (or trigger becomes available).
+    if (phase === "seed" && !anchorLocked) {
+      syncGeometryFromTrigger();
     }
   });
 
@@ -141,6 +188,14 @@
     let frame = 0;
     const place = () => {
       if (!triggerEl || !menuEl) return;
+      if (!anchorLocked) {
+        // Resize may change available height; keep direction for the session.
+        openHeightPx = railPopoverOpenHeightCap(triggerEl, expandDir, {
+          pad: PLACE_PAD,
+          maxHeight: OPEN_MAX_PX,
+          cursor: cursorAnchor,
+        });
+      }
       placeMenu();
       frame = window.requestAnimationFrame(() => {
         placeMenu();
@@ -198,7 +253,6 @@
       return;
     }
     if (phase === "toolbar") {
-      // Mid-sequence click: finish open or bail to seed.
       void runExpandSequence();
       return;
     }
@@ -212,10 +266,13 @@
     class="nav-rail-view-popover"
     class:nav-rail-view-popover--chrome={chromeExpanded}
     class:nav-rail-view-popover--open={listOpen}
+    class:nav-rail-view-popover--up={expandUp}
     data-phase={phase}
+    data-expand={expandDir}
     role="dialog"
     aria-label={title}
     data-debug-label="nav-rail-view-popover"
+    style:--nav-rail-popover-open-height="{openHeightPx}px"
     onclick={(event) => event.stopPropagation()}
   >
     <div class="nav-rail-view-popover-toolbar">
@@ -231,6 +288,21 @@
           ></div>
         {/if}
       </div>
+      {#if listOpen && onDockToRail}
+        <button
+          type="button"
+          class="nav-rail-view-popover-expand nav-rail-view-popover-dock"
+          title="Expand to side rail"
+          aria-label="Expand {title} to side rail"
+          onclick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onDockToRail();
+          }}
+        >
+          <Expand size={14} strokeWidth={1.75} />
+        </button>
+      {/if}
       <button
         type="button"
         class="nav-rail-view-popover-expand"
@@ -284,6 +356,11 @@
     animation: nav-rail-view-popover-in 180ms cubic-bezier(0.16, 1, 0.3, 1);
   }
 
+  /* Toolbar stays on the trigger edge; list opens upward. */
+  .nav-rail-view-popover--up {
+    flex-direction: column-reverse;
+  }
+
   .nav-rail-view-popover--chrome,
   .nav-rail-view-popover--open,
   .nav-rail-view-popover:has(.lme-dock-search-expand),
@@ -325,11 +402,16 @@
     box-sizing: border-box;
     padding: 0.2rem 0.25rem 0.2rem 0.3rem;
     border-bottom: 1px solid transparent;
+    border-top: 1px solid transparent;
     transition: border-color 180ms ease;
   }
 
-  .nav-rail-view-popover--open .nav-rail-view-popover-toolbar {
+  .nav-rail-view-popover--open:not(.nav-rail-view-popover--up) .nav-rail-view-popover-toolbar {
     border-bottom-color: rgb(var(--color-surface-700) / 0.32);
+  }
+
+  .nav-rail-view-popover--open.nav-rail-view-popover--up .nav-rail-view-popover-toolbar {
+    border-top-color: rgb(var(--color-surface-700) / 0.32);
   }
 
   .nav-rail-view-popover-actions {
@@ -495,6 +577,21 @@
   /* Keep `>` pointing right — no rotate, no filled "active" chrome. */
   .nav-rail-view-popover-expand-active {
     color: rgb(var(--color-surface-200));
+  }
+
+  .nav-rail-view-popover-dock {
+    animation: nav-rail-view-popover-dock-in 180ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  @keyframes nav-rail-view-popover-dock-in {
+    from {
+      opacity: 0;
+      transform: scale(0.92);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
   }
 
   .nav-rail-view-popover-body {

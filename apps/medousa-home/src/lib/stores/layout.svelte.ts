@@ -93,9 +93,16 @@ export class LayoutStore {
    * Kept in sync with vaultSidebarCollapsed (inverted) and legacy navExpanded.
    */
   shellSidebarExpanded = $state(loadShellSidebarExpanded());
-  /** nav = destinations in the rail; view = active surface list in the same rail. */
+  /** nav = destinations in the rail; view = a list surface hosted in the same rail. */
   shellSidebarMode = $state<ShellSidebarMode>(
     surfaceHasShellSidebarView(loadLastSurface()) ? "view" : "nav",
+  );
+  /**
+   * Which list the rail shows in view mode. Can differ from {@link desktopSurface}
+   * so docking a popover doesn't remount / activate main content.
+   */
+  shellSidebarViewSurface = $state<string | null>(
+    surfaceHasShellSidebarView(loadLastSurface()) ? loadLastSurface() : null,
   );
   /** Per-surface rail mode — survive chat ↔ Workspace switches. */
   private sidebarModeBySurface: Record<string, ShellSidebarMode> = {};
@@ -217,6 +224,9 @@ export class LayoutStore {
   setShellSidebarMode(mode: ShellSidebarMode) {
     this.shellSidebarMode = mode;
     this.sidebarModeBySurface[this.desktopSurface] = mode;
+    if (mode === "nav") {
+      this.shellSidebarViewSurface = null;
+    }
   }
 
   /** Leave view list → destination nav in the same expanded rail. */
@@ -227,13 +237,19 @@ export class LayoutStore {
     }
   }
 
-  /** Expand the master rail into the active view’s list (Peers, Settings, …). */
+  /**
+   * Host a list surface in the master rail (view mode).
+   * Does not change {@link desktopSurface} / main content — callers that need a
+   * tab switch should navigate separately.
+   */
   openShellSidebarView(surfaceId: string) {
     if (!surfaceHasShellSidebarView(surfaceId)) {
       this.setShellSidebarMode("nav");
       this.setShellSidebarExpanded(true);
       return;
     }
+    const viewId = surfaceId === "automations" ? "library" : surfaceId;
+    this.shellSidebarViewSurface = viewId;
     this.setShellSidebarMode("view");
     this.setShellSidebarExpanded(true);
   }
@@ -242,6 +258,11 @@ export class LayoutStore {
     const remembered = this.sidebarModeBySurface[surface];
     if (remembered === "nav" || remembered === "view") return remembered;
     return surfaceHasShellSidebarView(surface) ? "view" : "nav";
+  }
+
+  private syncViewSurfaceForMode(surface: string, mode: ShellSidebarMode) {
+    this.shellSidebarViewSurface =
+      mode === "view" && surfaceHasShellSidebarView(surface) ? surface : null;
   }
 
   setVaultSidebarCollapsed(collapsed: boolean) {
@@ -279,7 +300,9 @@ export class LayoutStore {
     this.sidebarModeBySurface[this.desktopSurface] = this.shellSidebarMode;
     this.desktopSurface = next as Surface;
     saveLastSurface(next);
-    this.shellSidebarMode = this.restoreSidebarModeFor(next);
+    const mode = this.restoreSidebarModeFor(next);
+    this.shellSidebarMode = mode;
+    this.syncViewSurfaceForMode(next, mode);
   }
 
   navigateDesktop(surface: string, options?: { bump?: boolean }) {
@@ -313,7 +336,9 @@ export class LayoutStore {
     }
     this.desktopSurface = next;
     saveLastSurface(next);
-    this.shellSidebarMode = this.restoreSidebarModeFor(next);
+    const mode = this.restoreSidebarModeFor(next);
+    this.shellSidebarMode = mode;
+    this.syncViewSurfaceForMode(next, mode);
     if (changed || options?.bump) {
       this.bumpNavigation();
     }

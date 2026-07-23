@@ -3,6 +3,8 @@ import {
   placeComposerPopover,
   placeRailPopover,
   placeToolbarPopover,
+  railPopoverOpenHeightCap,
+  resolveRailPopoverExpand,
 } from "./railPopover";
 
 function fakeRect(partial: Partial<DOMRect>): DOMRect {
@@ -130,6 +132,141 @@ describe("placeRailPopover", () => {
     const top = Number.parseInt(menu.style.top, 10);
     expect(left).toBe(8);
     expect(top).toBe(8);
+  });
+
+  it("resolves expand down when there is useful space below", () => {
+    const trigger = {
+      getBoundingClientRect: () =>
+        fakeRect({ top: 120, left: 20, right: 200, bottom: 156, width: 180, height: 36 }),
+    } as HTMLElement;
+    expect(resolveRailPopoverExpand(trigger, { pad: 8 })).toBe("down");
+  });
+
+  it("resolves expand up near the bottom of the viewport", () => {
+    const trigger = {
+      getBoundingClientRect: () =>
+        fakeRect({ top: 720, left: 20, right: 200, bottom: 756, width: 180, height: 36 }),
+    } as HTMLElement;
+    expect(resolveRailPopoverExpand(trigger, { pad: 8 })).toBe("up");
+  });
+
+  it("caps open height to available space on the expand side", () => {
+    const trigger = {
+      getBoundingClientRect: () =>
+        fakeRect({ top: 700, left: 20, right: 200, bottom: 736, width: 180, height: 36 }),
+    } as HTMLElement;
+    const down = railPopoverOpenHeightCap(trigger, "down", { pad: 8, maxHeight: 512 });
+    const up = railPopoverOpenHeightCap(trigger, "up", { pad: 8, maxHeight: 900 });
+    expect(down).toBe(800 - 8 - 700); // 92 — room below trigger top
+    expect(up).toBe(736 - 8); // 728 — room above trigger bottom
+    expect(up).toBeGreaterThan(down);
+    expect(
+      railPopoverOpenHeightCap(trigger, "up", { pad: 8, maxHeight: 200 }),
+    ).toBe(200);
+  });
+
+  it("pins top when expanding down from the trigger", () => {
+    const trigger = {
+      getBoundingClientRect: () =>
+        fakeRect({ top: 200, left: 20, right: 200, bottom: 236, width: 180, height: 36 }),
+    } as HTMLElement;
+    const menu = fakeMenu({ width: 280, height: 40 });
+
+    placeRailPopover(trigger, menu, {
+      alignY: "start",
+      expand: "down",
+      openHeight: 400,
+      pad: 8,
+    });
+
+    expect(menu.style.top).toBe("200px");
+    expect(menu.style.bottom).toBe("auto");
+    expect(menu.style.maxHeight).toBe("400px");
+  });
+
+  it("pins bottom when expanding up from the trigger", () => {
+    const trigger = {
+      getBoundingClientRect: () =>
+        fakeRect({ top: 720, left: 20, right: 200, bottom: 756, width: 180, height: 36 }),
+    } as HTMLElement;
+    const menu = fakeMenu({ width: 280, height: 40 });
+
+    placeRailPopover(trigger, menu, {
+      alignY: "start",
+      expand: "up",
+      openHeight: 400,
+      pad: 8,
+    });
+
+    expect(menu.style.top).toBe("auto");
+    expect(menu.style.bottom).toBe("44px"); // 800 - 756
+    expect(menu.style.maxHeight).toBe("400px");
+  });
+
+  it("keeps bottom locked while expanding up", () => {
+    const trigger = {
+      getBoundingClientRect: () =>
+        fakeRect({ top: 720, left: 20, right: 200, bottom: 756, width: 180, height: 36 }),
+    } as HTMLElement;
+    const menu = fakeMenu({ width: 280, height: 40 });
+    menu.style.bottom = "44px";
+
+    placeRailPopover(trigger, menu, {
+      alignY: "start",
+      expand: "up",
+      openHeight: 400,
+      lockEdge: "bottom",
+      pad: 8,
+    });
+
+    expect(menu.style.bottom).toBe("44px");
+    expect(menu.style.top).toBe("auto");
+  });
+
+  it("places to the right of the cursor instead of docking beside the rail", () => {
+    const trigger = {
+      getBoundingClientRect: () =>
+        fakeRect({ top: 200, left: 20, right: 200, bottom: 236, width: 180, height: 36 }),
+    } as HTMLElement;
+    const menu = fakeMenu({ width: 120, height: 40 });
+
+    placeRailPopover(trigger, menu, {
+      alignY: "start",
+      expand: "down",
+      openHeight: 400,
+      cursor: { x: 400, y: 300 },
+      cursorGap: 12,
+      pad: 8,
+    });
+
+    // Right of cursor: 400 + 12 = 412
+    expect(menu.style.left).toBe("412px");
+    // Vertically centered on cursor: 300 - 40/2 = 280
+    expect(menu.style.top).toBe("280px");
+    // Not rail-docked (would have been 200 + gap)
+    expect(menu.style.left).not.toBe("208px");
+  });
+
+  it("keeps cursor-right placement when expanding up", () => {
+    const trigger = {
+      getBoundingClientRect: () =>
+        fakeRect({ top: 720, left: 20, right: 200, bottom: 756, width: 180, height: 36 }),
+    } as HTMLElement;
+    const menu = fakeMenu({ width: 120, height: 40 });
+
+    placeRailPopover(trigger, menu, {
+      alignY: "start",
+      expand: "up",
+      openHeight: 400,
+      cursor: { x: 400, y: 740 },
+      cursorGap: 12,
+      pad: 8,
+    });
+
+    // menuBottom = 740 + 20 = 760 → bottom inset = 800 - 760 = 40
+    expect(menu.style.top).toBe("auto");
+    expect(menu.style.bottom).toBe("40px");
+    expect(menu.style.left).toBe("412px");
   });
 });
 
