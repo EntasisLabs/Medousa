@@ -26,6 +26,10 @@ export const SHELL_SIDEBAR_VIEW_SURFACES = new Set([
   "peers",
   "messaging",
   "context",
+  "calendar",
+  "work",
+  "web",
+  "profiles",
   SAFETY_SURFACE_SETTINGS,
 ]);
 
@@ -82,6 +86,14 @@ export function shellSidebarViewTitle(surfaceId: string): string {
       return "Channels";
     case "context":
       return "Context";
+    case "calendar":
+      return "Calendar";
+    case "work":
+      return "Work";
+    case "web":
+      return "Web";
+    case "profiles":
+      return "You";
     case SAFETY_SURFACE_SETTINGS:
       return "Settings";
     default:

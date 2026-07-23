@@ -12,6 +12,8 @@
   } from "$lib/utils/askPrompt";
   import { filterSkills } from "$lib/utils/skillCatalog";
   import { filterTools } from "$lib/utils/toolCatalog";
+  import { WORK_FOCUS_ASK_EVENT } from "$lib/utils/workChromeEvents";
+  import { onMount, tick } from "svelte";
 
   interface Props {
     visible: boolean;
@@ -21,6 +23,22 @@
   }
 
   let { visible, sheet = false, onQueued }: Props = $props();
+  let rootEl = $state<HTMLElement | null>(null);
+
+  onMount(() => {
+    const onFocusAsk = () => {
+      void (async () => {
+        rootEl?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+        await tick();
+        const input = rootEl?.querySelector<HTMLTextAreaElement>(
+          'textarea[aria-label="Ask prompt"]',
+        );
+        input?.focus();
+      })();
+    };
+    window.addEventListener(WORK_FOCUS_ASK_EVENT, onFocusAsk);
+    return () => window.removeEventListener(WORK_FOCUS_ASK_EVENT, onFocusAsk);
+  });
 
   let prompt = $state("");
   let selectedSkillIds = $state<string[]>([]);
@@ -123,6 +141,7 @@
 
 {#if visible}
   <form
+    bind:this={rootEl}
     class="{sheet
       ? 'flex flex-col'
       : 'work-hub-composer shrink-0'}"

@@ -3,6 +3,11 @@
   import { workspace } from "$lib/stores/workspace.svelte";
   import { findBlockedGroupForCard, prepareBlockedColumn } from "$lib/utils/groupWork";
   import { partitionWorkHub, type WorkHubLayer } from "$lib/utils/workHub";
+  import {
+    WORK_OPEN_TRAY_EVENT,
+    type WorkTrayId,
+  } from "$lib/utils/workChromeEvents";
+  import { onMount } from "svelte";
 
   interface Props {
     onSelectCard: (id: string) => void | Promise<void>;
@@ -14,6 +19,16 @@
 
   let openTray = $state<TrayId | null>(null);
   let trayBusy = $state(false);
+
+  onMount(() => {
+    const onOpenTray = (event: Event) => {
+      const tray = (event as CustomEvent<{ tray: WorkTrayId }>).detail?.tray;
+      if (!tray) return;
+      openTray = tray;
+    };
+    window.addEventListener(WORK_OPEN_TRAY_EVENT, onOpenTray);
+    return () => window.removeEventListener(WORK_OPEN_TRAY_EVENT, onOpenTray);
+  });
 
   const partition = $derived(partitionWorkHub(workspace.visibleCards()));
   const blockedDisplay = $derived(prepareBlockedColumn(workspace.cards));

@@ -516,7 +516,8 @@
 
   .nav-rail-view-popover--chrome :global(.lme-dock-chrome-secondary),
   .nav-rail-view-popover--open :global(.lme-dock-chrome-secondary) {
-    max-width: 18rem;
+    /* Wide enough for Calendar (Today/nav/mode/import) and similar dense docks. */
+    max-width: min(22rem, 70vw);
     opacity: 1;
     transform: translateX(0);
     pointer-events: auto;

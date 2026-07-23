@@ -78,13 +78,15 @@ describe("buildLifeRailLayout", () => {
     expect(layout.customStartIndex).toBe(2);
   });
 
-  it("nests Context under You in the dock zone", () => {
+  it("keeps Context as a dock sibling next to You (not nested, not primary)", () => {
     const layout = buildLifeRailLayout([
       surface("chat", "Chat"),
       surface("context", "Context"),
     ]);
     expect(layout.you.kind === "surface" && layout.you.surface.label).toBe("You");
+    expect(layout.primary.map((item) => item.id)).toEqual(["chat"]);
     expect(layout.context?.id).toBe("context");
+    expect(railSectionForItemId("context")).toBe("memory");
     expect(railSectionForItemId("profiles")).toBe("memory");
     expect(railSectionForItemId("library")).toBe("library");
   });

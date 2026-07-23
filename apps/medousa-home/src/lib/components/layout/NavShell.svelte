@@ -10,6 +10,14 @@
   import PeersRailToolbar from "$lib/components/peers/PeersRailToolbar.svelte";
   import PeersShellList from "$lib/components/peers/PeersShellList.svelte";
   import SettingsNav from "$lib/components/settings/SettingsNav.svelte";
+  import WebRailToolbar from "$lib/components/browser/WebRailToolbar.svelte";
+  import WebRailList from "$lib/components/browser/WebRailList.svelte";
+  import CalendarRailToolbar from "$lib/components/calendar/CalendarRailToolbar.svelte";
+  import CalendarRailList from "$lib/components/calendar/CalendarRailList.svelte";
+  import YouRailToolbar from "$lib/components/profiles/YouRailToolbar.svelte";
+  import YouRailList from "$lib/components/profiles/YouRailList.svelte";
+  import WorkRailToolbar from "$lib/components/work/WorkRailToolbar.svelte";
+  import WorkRailList from "$lib/components/work/WorkRailList.svelte";
   import { environment } from "$lib/stores/environment.svelte";
   import { layout } from "$lib/stores/layout.svelte";
   import { lmeWorkspace, type LmeExplorerMode } from "$lib/stores/lmeWorkspace.svelte";
@@ -228,18 +236,6 @@
 
   function lmeFamilyForSurface(surfaceId: string): LmeExplorerFamily {
     return surfaceId === "automations" ? "automations" : "library";
-  }
-
-  const YOU_NEST_KEY = "you";
-
-  function youNestItems(): NavRailNestItem[] {
-    if (!lifeRail.context || lifeRail.context.kind !== "surface") return [];
-    return [
-      {
-        id: "context",
-        label: navLabel(lifeRail.context.surface),
-      },
-    ];
   }
 
   function surfacePopoverOpen(surfaceId: string): boolean {
@@ -529,6 +525,48 @@
             <PeersShellList />
           {:else if viewSurface === "context"}
             <ContextSidePanel />
+          {:else if viewSurface === "web"}
+            <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
+              <div class="min-h-0 flex-1 overflow-hidden">
+                <WebRailList onPickTab={() => onSelect("web")} />
+              </div>
+              <div class="lme-side-rail-dock">
+                <WebRailToolbar onNavigated={() => onSelect("web")} />
+              </div>
+            </div>
+          {:else if viewSurface === "calendar"}
+            <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
+              <div class="min-h-0 flex-1 overflow-hidden">
+                <CalendarRailList onPickEvent={() => onSelect("calendar")} />
+              </div>
+              <div class="lme-side-rail-dock">
+                <CalendarRailToolbar onAction={() => onSelect("calendar")} />
+              </div>
+            </div>
+          {:else if viewSurface === "work"}
+            <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
+              <div class="min-h-0 flex-1 overflow-hidden">
+                <WorkRailList onPickCard={() => onSelect("work")} />
+              </div>
+              <div class="lme-side-rail-dock">
+                <WorkRailToolbar onAction={() => onSelect("work")} />
+              </div>
+            </div>
+          {:else if viewSurface === "profiles"}
+            <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
+              <div class="min-h-0 flex-1 overflow-hidden">
+                <YouRailList
+                  onPickProfile={() => onSelect("profiles")}
+                  onOpenContext={() => selectDestination("context")}
+                />
+              </div>
+              <div class="lme-side-rail-dock">
+                <YouRailToolbar
+                  onAction={() => onSelect("profiles")}
+                  onOpenContext={() => selectDestination("context")}
+                />
+              </div>
+            </div>
           {/if}
         </div>
       {:else}
@@ -731,32 +769,36 @@
         </div>
 
         <div class="workshop-rail-dock">
-          {#if lifeRail.you.kind === "surface"}
-            {@const youSurface = lifeRail.you.surface}
-            {@const YouIcon = environmentIcon(youSurface.icon)}
-            {@const youNest = youNestItems()}
-            {@const youNestExpanded = youNest.length > 0 && isNestExpanded(YOU_NEST_KEY)}
-            {@const contextActive =
-              active === "context" || surfacePopoverOpen("context")}
+          {#if lifeRail.context?.kind === "surface"}
+            {@const contextSurface = lifeRail.context.surface}
+            {@const ContextIcon = environmentIcon(contextSurface.icon)}
+            {@const contextNest = nestFor("context")}
+            {@const contextNestExpanded =
+              contextNest.length > 0 && isNestExpanded("context")}
+            {@const contextLeafActive = nestHasActiveItem("context", contextNest)}
+            {@const contextDoorActive =
+              active === "context" ||
+              surfacePopoverOpen("context") ||
+              (showView && viewSurface === "context")}
             <div
-              class="workshop-rail-dest workshop-rail-dock-you"
-              class:workshop-rail-dest-has-nest={youNest.length > 0}
-              class:workshop-rail-dest-expanded={youNestExpanded}
+              class="workshop-rail-dest workshop-rail-dock-context"
+              class:workshop-rail-dest-has-nest={contextNest.length > 0}
+              class:workshop-rail-dest-expanded={contextNestExpanded}
             >
               <div class="workshop-rail-dest-row">
-                {#if youNest.length > 0}
+                {#if contextNest.length > 0}
                   <button
                     type="button"
                     class="workshop-rail-dest-twist-btn"
-                    title={youNestExpanded ? "Collapse" : "Expand"}
-                    aria-label={youNestExpanded ? "Collapse You" : "Expand You"}
-                    aria-expanded={youNestExpanded}
-                    onclick={(event) => toggleNest(YOU_NEST_KEY, event)}
+                    title={contextNestExpanded ? "Collapse" : "Expand"}
+                    aria-label={contextNestExpanded ? "Collapse Context" : "Expand Context"}
+                    aria-expanded={contextNestExpanded}
+                    onclick={(event) => toggleNest("context", event)}
                   >
                     <ChevronRight
                       size={12}
                       strokeWidth={2}
-                      class="workshop-rail-dest-chevron {youNestExpanded
+                      class="workshop-rail-dest-chevron {contextNestExpanded
                         ? 'workshop-rail-dest-chevron-open'
                         : ''}"
                     />
@@ -769,43 +811,78 @@
                 {/if}
                 <button
                   type="button"
-                  class="{railBtnClass('profiles', 'utility', {
+                  data-rail-surface="context"
+                  class="{railBtnClass('context', 'utility', {
                     quietActive: true,
-                    active:
-                      active === 'profiles' ||
-                      contextActive ||
-                      surfacePopoverOpen('profiles'),
+                    active: contextDoorActive,
                   })} workshop-rail-dock-btn workshop-rail-dest-btn"
-                  class:workshop-rail-dest-btn-dimmed={contextActive && youNestExpanded}
-                  title="You — {activeProfileLabel}"
-                  aria-label="You ({activeProfileLabel})"
-                  aria-current={active === "profiles" ? "page" : undefined}
-                  onclick={(event) => selectDestination("profiles", event)}
+                  class:workshop-rail-dest-btn-dimmed={contextLeafActive &&
+                    contextNestExpanded}
+                  title={navTitle(contextSurface)}
+                  aria-label={navLabel(contextSurface)}
+                  aria-current={contextDoorActive && !contextLeafActive
+                    ? "page"
+                    : undefined}
+                  aria-expanded={surfacePopoverOpen("context")}
+                  aria-haspopup="dialog"
+                  onclick={(event) => selectDestination("context", event)}
                 >
                   <span class="workshop-rail-btn-icon" aria-hidden="true">
-                    <YouIcon {...utilityIconProps} />
+                    <ContextIcon {...utilityIconProps} />
                   </span>
-                  <span class="workshop-rail-btn-label">You</span>
+                  <span class="workshop-rail-btn-label">{navLabel(contextSurface)}</span>
                 </button>
               </div>
-              {#if youNestExpanded}
-                <ul class="workshop-rail-nest" aria-label="Memory">
-                  {#each youNest as nestItem (nestItem.id)}
+              {#if contextNestExpanded}
+                <ul class="workshop-rail-nest" aria-label="Recent threads">
+                  {#each contextNest as nestItem (nestItem.id)}
                     <li>
                       <button
                         type="button"
                         class="workshop-rail-nest-btn"
-                        class:workshop-rail-nest-btn-active={contextActive}
-                        title={nestItem.label}
-                        onclick={(event) => selectDestination(nestItem.id, event)}
+                        class:workshop-rail-nest-btn-active={nestItemIsActive(
+                          "context",
+                          nestItem.id,
+                        )}
+                        title={nestItem.meta
+                          ? `${nestItem.label} · ${nestItem.meta}`
+                          : nestItem.label}
+                        onclick={() => void openNestItem("context", nestItem)}
                       >
                         <span class="workshop-rail-nest-label">{nestItem.label}</span>
+                        {#if nestItem.meta}
+                          <span class="workshop-rail-nest-meta">{nestItem.meta}</span>
+                        {/if}
                       </button>
                     </li>
                   {/each}
                 </ul>
               {/if}
             </div>
+          {/if}
+
+          {#if lifeRail.you.kind === "surface"}
+            {@const youSurface = lifeRail.you.surface}
+            {@const YouIcon = environmentIcon(youSurface.icon)}
+            <button
+              type="button"
+              data-rail-surface="profiles"
+              class="{railBtnClass('profiles', 'utility', {
+                quietActive: true,
+                active: active === 'profiles' || surfacePopoverOpen('profiles'),
+              })} workshop-rail-dock-btn"
+              title="You — {activeProfileLabel}"
+              aria-label="You ({activeProfileLabel})"
+              aria-current={active === "profiles" ? "page" : undefined}
+              aria-expanded={surfacePopoverOpen("profiles")}
+              aria-haspopup="dialog"
+              onclick={(event) => selectDestination("profiles", event)}
+            >
+              <span class="workshop-rail-btn-icon" aria-hidden="true">
+                <YouIcon {...utilityIconProps} />
+              </span>
+              <span class="workshop-rail-btn-label">You</span>
+            </button>
           {/if}
 
           <button
@@ -862,6 +939,20 @@
         <div class="nav-rail-context-toolbar">
           <ContextModeBar />
         </div>
+      {:else if railPopover.surfaceId === "web"}
+        <WebRailToolbar onNavigated={() => commitPopoverSurface("web")} />
+      {:else if railPopover.surfaceId === "calendar"}
+        <CalendarRailToolbar onAction={() => commitPopoverSurface("calendar")} />
+      {:else if railPopover.surfaceId === "work"}
+        <WorkRailToolbar onAction={() => commitPopoverSurface("work")} />
+      {:else if railPopover.surfaceId === "profiles"}
+        <YouRailToolbar
+          onAction={() => commitPopoverSurface("profiles")}
+          onOpenContext={() => {
+            closeRailPopover();
+            selectDestination("context");
+          }}
+        />
       {:else if railPopover.surfaceId === SAFETY_SURFACE_SETTINGS}
         <span class="nav-rail-popover-toolbar-label">Settings</span>
       {/if}
@@ -915,6 +1006,20 @@
       <ContextSidePanel
         chrome="rail-list"
         onPick={() => commitPopoverSurface("context")}
+      />
+    {:else if railPopover.surfaceId === "web"}
+      <WebRailList onPickTab={() => commitPopoverSurface("web")} />
+    {:else if railPopover.surfaceId === "calendar"}
+      <CalendarRailList onPickEvent={() => commitPopoverSurface("calendar")} />
+    {:else if railPopover.surfaceId === "work"}
+      <WorkRailList onPickCard={() => commitPopoverSurface("work")} />
+    {:else if railPopover.surfaceId === "profiles"}
+      <YouRailList
+        onPickProfile={() => commitPopoverSurface("profiles")}
+        onOpenContext={() => {
+          closeRailPopover();
+          selectDestination("context");
+        }}
       />
     {/if}
   </NavRailViewPopover>

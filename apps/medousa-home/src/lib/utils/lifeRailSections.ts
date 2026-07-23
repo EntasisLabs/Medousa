@@ -8,7 +8,7 @@ import type { LifeRailItem } from "$lib/utils/lifeRailItems";
 /**
  * Jobs rail — open doors, not a table of contents.
  * Library (vault) and Automations are separate destinations; modes live inside.
- * Custom peers sit with Work. Dock identity is You; Context nests under it.
+ * Context and You are sibling dock doors at the bottom (not nested).
  */
 export type LifeRailLayout = {
   primary: LifeRailItem[];
@@ -21,6 +21,7 @@ export type LifeRailLayout = {
   /** Show Automations door next to Library. */
   showAutomations: boolean;
   you: LifeRailItem;
+  /** Dock sibling next to You (own door, not nested). */
   context: LifeRailItem | null;
 };
 
@@ -189,8 +190,9 @@ export function buildLifeRailSections(surfaces: SurfaceDef[]): {
       items,
     });
   }
-  const memory: LifeRailItem[] = [layout.you];
-  if (layout.context) memory.unshift(layout.context);
+  const memory: LifeRailItem[] = [];
+  if (layout.context) memory.push(layout.context);
+  memory.push(layout.you);
   sections.push({ id: "memory", label: "Memory", items: memory });
   if (custom.length) sections.push({ id: "custom", label: "Custom", items: custom });
   return sections;

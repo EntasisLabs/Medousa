@@ -8,6 +8,10 @@ describe("resolveSummonToolbarSurface", () => {
     expect(resolveSummonToolbarSurface("messaging", "history")).toBe("messaging");
     expect(resolveSummonToolbarSurface("context", "notes")).toBe("context");
     expect(resolveSummonToolbarSurface("settings", "agents")).toBe("settings");
+    expect(resolveSummonToolbarSurface("web", "notes")).toBe("web");
+    expect(resolveSummonToolbarSurface("calendar", "scripts")).toBe("calendar");
+    expect(resolveSummonToolbarSurface("work", "notes")).toBe("work");
+    expect(resolveSummonToolbarSurface("profiles", "notes")).toBe("profiles");
   });
 
   it("maps library/workshop desktop to explorer family", () => {
@@ -20,8 +24,6 @@ describe("resolveSummonToolbarSurface", () => {
   });
 
   it("returns null for surfaces without list chrome", () => {
-    expect(resolveSummonToolbarSurface("web", "notes")).toBeNull();
-    expect(resolveSummonToolbarSurface("calendar", "scripts")).toBeNull();
-    expect(resolveSummonToolbarSurface("work", "notes")).toBeNull();
+    expect(resolveSummonToolbarSurface("runtime", "notes")).toBeNull();
   });
 });
