@@ -69,6 +69,15 @@ Shipped product features: [artifacts](../docs/engine/artifacts.md), [mobile shel
 | [embedded-local-inference-plan.md](embedded-local-inference-plan.md) | Embedded Gemma engine |
 | [desktop-distribution-plan.md](desktop-distribution-plan.md) | Signed app bundles |
 
+## Investigations
+
+| Doc | Topic |
+|-----|--------|
+| [investigations/liquid-html-in-canvas/REPORT.md](investigations/liquid-html-in-canvas/REPORT.md) | Liquid markdown × HTML-in-Canvas fit for Tauri 2 (watch / defer) |
+| [investigations/runtime-friction/REPORT.md](investigations/runtime-friction/REPORT.md) | Runtime friction (web search / prompt calibration) |
+
+---
+
 Future / deferred (not blockers):
 
 | Doc | Topic |
