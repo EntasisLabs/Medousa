@@ -49,7 +49,6 @@
   } from "$lib/utils/vaultNoteKind";
   import VaultNoteChatFab from "./VaultNoteChatFab.svelte";
   import VaultFindBar from "./VaultFindBar.svelte";
-  import VaultNoteStatusBar from "./VaultNoteStatusBar.svelte";
   import { vaultFind } from "$lib/stores/vaultFind.svelte";
   import { noteEditorRuntimes } from "$lib/stores/noteEditorRuntimes.svelte";
   import { registerVaultLeaveFlush } from "$lib/stores/vaultLeaveFlush";
@@ -342,15 +341,6 @@
 
   const findMode = $derived<"edit" | "preview">(
     showMarkdownEditor && vault.editorMode === "edit" ? "edit" : "preview",
-  );
-
-  const showNoteStatus = $derived(
-    Boolean(vault.selectedPath) &&
-      !vault.noteLoading &&
-      !showLedgerTable &&
-      !showWorkbookManifest &&
-      !showKanbanBoard &&
-      !showSlidesDeck,
   );
 
   $effect(() => {
@@ -1096,15 +1086,6 @@
         <VaultVersionsPanel />
       {/if}
     </div>
-  {/if}
-
-  {#if showNoteStatus && bound}
-    <VaultNoteStatusBar
-      content={displayContent}
-      tags={vault.noteTags}
-      editorMode={vault.editorMode}
-      dense={isLivePlane}
-    />
   {/if}
 
   {#if interactive && bound && vault.selectedPath && !mobile && !noteWorkshop.open && !vault.isLooseFile && environment.desktopShellChrome.vaultChatFab}

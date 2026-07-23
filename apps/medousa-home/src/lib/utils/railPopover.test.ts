@@ -325,10 +325,12 @@ describe("placeToolbarPopover", () => {
 
     placeToolbarPopover(trigger, menu, { prefer: "above", width: 352 });
 
-    const top = Number.parseInt(menu.style.top, 10);
+    const bottom = Number.parseInt(menu.style.bottom, 10);
     const left = Number.parseInt(menu.style.left, 10);
     const maxH = Number.parseInt(menu.style.maxHeight, 10);
-    expect(top + Math.min(420, maxH)).toBeLessThanOrEqual(760);
+    // Bottom-anchored: menu bottom edge sits at trigger.top - gap.
+    expect(menu.style.top).toBe("auto");
+    expect(800 - bottom).toBe(760 - 6);
     expect(left + 352).toBeLessThanOrEqual(1188);
     expect(maxH).toBeLessThanOrEqual(760 - 12 - 6);
   });
@@ -342,6 +344,7 @@ describe("placeToolbarPopover", () => {
 
     placeToolbarPopover(trigger, menu, { prefer: "below", width: 352 });
 
+    expect(menu.style.bottom).toBe("auto");
     expect(Number.parseInt(menu.style.top, 10)).toBe(80 + 6);
   });
 
@@ -355,9 +358,32 @@ describe("placeToolbarPopover", () => {
     placeToolbarPopover(trigger, menu, { prefer: "above", width: 352 });
 
     const maxH = Number.parseInt(menu.style.maxHeight, 10);
-    const top = Number.parseInt(menu.style.top, 10);
+    const bottom = Number.parseInt(menu.style.bottom, 10);
+    expect(menu.style.top).toBe("auto");
     expect(maxH).toBeLessThanOrEqual(700 - 12 - 6);
-    expect(top).toBeGreaterThanOrEqual(12);
-    expect(top + Math.min(900, maxH)).toBeLessThanOrEqual(800 - 12);
+    expect(800 - bottom).toBe(700 - 6);
+  });
+
+  it("keeps above menus glued when content height shrinks", () => {
+    const trigger = {
+      getBoundingClientRect: () =>
+        fakeRect({ top: 760, left: 300, right: 332, bottom: 792, width: 32, height: 32 }),
+    } as HTMLElement;
+    const menu = fakeMenu({ width: 352, height: 420 });
+    (menu as HTMLElement & { scrollHeight: number }).scrollHeight = 420;
+    placeToolbarPopover(trigger, menu, { prefer: "above", width: 352 });
+    const bottomTall = menu.style.bottom;
+
+    (menu as HTMLElement & { scrollHeight: number }).scrollHeight = 160;
+    Object.assign(menu, {
+      offsetHeight: 160,
+      getBoundingClientRect: () =>
+        fakeRect({ top: 0, left: 0, right: 352, bottom: 160, width: 352, height: 160 }),
+    });
+    placeToolbarPopover(trigger, menu, { prefer: "above", width: 352 });
+
+    // Bottom pin is stable — shrink settles toward the trigger, not up the viewport.
+    expect(menu.style.bottom).toBe(bottomTall);
+    expect(menu.style.top).toBe("auto");
   });
 });

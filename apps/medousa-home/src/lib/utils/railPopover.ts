@@ -342,12 +342,20 @@ export function placeToolbarPopover(
   );
   menuH = Math.min(naturalH || cappedH, cappedH);
 
-  const minTop = view.top + pad;
-  const maxTop = view.top + view.height - pad - menuH;
-  let top = openAbove ? tr.top - gap - menuH : tr.bottom + gap;
-  top = clamp(top, minTop, maxTop);
-
-  menu.style.top = `${Math.round(top)}px`;
   menu.style.left = `${Math.round(left)}px`;
   menu.style.overflow = "hidden";
+
+  if (openAbove) {
+    // Pin the bottom edge to the trigger so shrink/clear settles onto the bar
+    // instead of leaving a stuck `top` floating mid-viewport.
+    const bottomPx = Math.max(0, window.innerHeight - (tr.top - gap));
+    menu.style.top = "auto";
+    menu.style.bottom = `${Math.round(bottomPx)}px`;
+  } else {
+    const minTop = view.top + pad;
+    const maxTop = view.top + view.height - pad - menuH;
+    const top = clamp(tr.bottom + gap, minTop, maxTop);
+    menu.style.bottom = "auto";
+    menu.style.top = `${Math.round(top)}px`;
+  }
 }

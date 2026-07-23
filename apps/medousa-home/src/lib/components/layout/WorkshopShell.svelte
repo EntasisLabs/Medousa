@@ -2,22 +2,16 @@
   import { onMount } from "svelte";
   import MasterRailHost from "$lib/components/layout/MasterRailHost.svelte";
   import { connectWorkshop } from "$lib/workshopConnection";
-  import ActivityCollapsedStrip from "$lib/components/layout/ActivityCollapsedStrip.svelte";
-  import ActivityPanel from "$lib/components/layout/ActivityPanel.svelte";
-  import SplitPane from "$lib/components/layout/SplitPane.svelte";
   import StatusBar from "$lib/components/layout/StatusBar.svelte";
   import ShellTabHost from "$lib/components/shell/ShellTabHost.svelte";
   import IdentityDrawer from "$lib/components/chat/IdentityDrawer.svelte";
   import SessionSidebar from "$lib/components/chat/SessionSidebar.svelte";
-  import { environment } from "$lib/stores/environment.svelte";
   import { layout } from "$lib/stores/layout.svelte";
   import { settingsNav } from "$lib/stores/settingsNav.svelte";
   import { userProfiles } from "$lib/stores/userProfiles.svelte";
-  import { layoutDesktopRails } from "$lib/utils/desktopRails";
   import { peerUnreadCount } from "$lib/utils/lanShareApi";
   import { workspace } from "$lib/stores/workspace.svelte";
   import { browserContext } from "$lib/stores/browserContext.svelte";
-  import { vault } from "$lib/stores/vault.svelte";
   import { chat } from "$lib/stores/chat.svelte";
   import { automations } from "$lib/stores/automations.svelte";
   import { runtime } from "$lib/stores/runtime.svelte";
@@ -85,18 +79,6 @@
       detachBrowserContext();
     };
   });
-
-  const desktopChrome = $derived(environment.desktopShellChrome);
-  const activityRailHidden = $derived(desktopChrome.activityRail === "hidden");
-  const desktopRails = $derived(
-    layoutDesktopRails({
-      viewportWidth: layout.viewportWidth,
-      activityCollapsed: layout.activityCollapsed || activityRailHidden,
-      activityWidth: layout.activityWidth,
-      workInspectorOpen: false,
-      workInspectorWidth: layout.workInspectorWidth,
-    }),
-  );
 
   function navigateToSurface(surface: string) {
     // Automations + Capabilities fold into the LME workspace (library surface).
@@ -200,47 +182,6 @@
             }}
           />
         </div>
-
-        {#if !activityRailHidden}
-          {#if layout.activityCollapsed || desktopRails.showActivityStrip}
-            <ActivityCollapsedStrip
-              onExpand={() => layout.setActivityCollapsed(false)}
-            />
-          {:else}
-            <div
-              class="workshop-rail flex h-full min-w-0 shrink-0 overflow-hidden"
-              data-debug-label="activity-rail"
-            >
-            <SplitPane
-              width={desktopRails.activityPaneWidth}
-              side="right"
-              min={220}
-              max={desktopRails.activityPaneMax}
-              onResize={(width) => layout.setActivityWidth(width)}
-            >
-              <ActivityPanel
-                events={workspace.feed}
-                error={workspace.streamError}
-                notePath={vault.selectedPath}
-                noteTitle={vault.title}
-                wikilinksOut={vault.wikilinksOut}
-                backlinks={vault.backlinks}
-                browserUrl={browserContext.activeUrl}
-                browserTitle={browserContext.scopeLabel}
-                cardDetail={activeSurface === "work"
-                  ? null
-                  : workspace.selectedCardDetail}
-                cardError={workspace.cardDetailError}
-                noteDiffChip={vault.diffChipText}
-                onOpenNote={handleOpenNote}
-                onOpenWeb={() => navigateToSurface("web")}
-                onSelectCard={handleCardSelect}
-                onCollapse={() => layout.setActivityCollapsed(true)}
-              />
-            </SplitPane>
-            </div>
-          {/if}
-        {/if}
       </div>
 
       {#if showChatChrome}

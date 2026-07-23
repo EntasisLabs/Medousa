@@ -48,7 +48,11 @@
   );
 
   const showRail = $derived(variant === "rail");
-  const showStatus = $derived(variant === "status" && Boolean(workshops.activeLabel));
+  const showStatus = $derived(
+    variant === "status" &&
+      Boolean(workshops.activeLabel) &&
+      (!hideWhenSingle || workshops.hasMultipleWorkshops),
+  );
   /** Floating popover menu (rail or status bar) vs mobile bottom sheet. */
   const isFloatingMenu = $derived(variant === "rail" || variant === "status");
 
@@ -165,7 +169,9 @@
     onclick={openSheet}
   >
     <Monitor size={12} strokeWidth={1.75} class="shrink-0 opacity-80" aria-hidden="true" />
-    <span class="truncate">{workshops.activeLabel}</span>
+    {#if workshops.hasMultipleWorkshops}
+      <span class="truncate">{workshops.activeLabel}</span>
+    {/if}
   </button>
 {:else if showRail}
   <button

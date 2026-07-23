@@ -1,11 +1,11 @@
 <script lang="ts">
   import ScriptWorkbenchChatPanel from "$lib/components/automations/ScriptWorkbenchChatPanel.svelte";
   import ScriptWorkbenchConsole from "$lib/components/automations/ScriptWorkbenchConsole.svelte";
-  import ScriptWorkbenchStatusBar from "$lib/components/automations/ScriptWorkbenchStatusBar.svelte";
   import ScriptWorkbenchTitlebar from "$lib/components/automations/ScriptWorkbenchTitlebar.svelte";
   import GraphemeScriptEditorPanel from "$lib/components/grapheme/GraphemeScriptEditorPanel.svelte";
   import { environment } from "$lib/stores/environment.svelte";
   import { layout } from "$lib/stores/layout.svelte";
+  import { SCRIPT_WORKBENCH_OPEN_CONSOLE_EVENT } from "$lib/utils/scriptWorkbenchChromeEvents";
 
   interface Props {
     visible?: boolean;
@@ -20,6 +20,14 @@
     layout.openShellSidebarView(layout.desktopSurface);
     void environment.patchShellChromeDesktop({ navStyle: "rail" }).catch(() => {});
   }
+
+  $effect(() => {
+    const onOpen = () => {
+      consoleOpen = true;
+    };
+    window.addEventListener(SCRIPT_WORKBENCH_OPEN_CONSOLE_EVENT, onOpen);
+    return () => window.removeEventListener(SCRIPT_WORKBENCH_OPEN_CONSOLE_EVENT, onOpen);
+  });
 </script>
 
 <div
@@ -51,6 +59,4 @@
       />
     {/if}
   </div>
-
-  <ScriptWorkbenchStatusBar onToggleConsole={() => (consoleOpen = true)} />
 </div>

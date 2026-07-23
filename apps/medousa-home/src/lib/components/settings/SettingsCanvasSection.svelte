@@ -16,10 +16,8 @@
     LayoutGrid,
     MessageSquare,
     PanelLeft,
-    PanelRight,
     PanelsTopLeft,
   } from "@lucide/svelte";
-  import type { ActivityRailMode } from "$lib/types/environment";
 
   const CUSTOM_VIEWS_DOC =
     "https://github.com/EntasisLabs/Medousa/blob/main/docs/cookbook/custom-views-and-canvas.md";
@@ -256,43 +254,15 @@
             />
           </label>
 
-          <div
-            class="settings-toggle-row settings-metric-row canvas-your-space-row canvas-your-space-rail-row"
-          >
+          <div class="settings-toggle-row canvas-your-space-row">
             <span class="canvas-your-space-copy">
-              <span class="canvas-your-space-icon" aria-hidden="true">
-                <PanelRight size={15} strokeWidth={1.75} />
-              </span>
               <span class="min-w-0 flex-1">
-                <span class="block text-sm font-medium text-surface-100">Activity rail</span>
-                <span class="workshop-faint mt-0.5 block text-xs">Feed, links, and context</span>
+                <span class="block text-sm font-medium text-surface-100">Activity history</span>
+                <span class="workshop-faint mt-0.5 block text-xs">
+                  Lives in the status bar — click the activity pulse for the feed
+                </span>
               </span>
             </span>
-            <div
-              class="canvas-your-space-choices"
-              role="radiogroup"
-              aria-label="Activity rail"
-            >
-              {#each [
-                { id: "visible", label: "Show" },
-                { id: "collapsed", label: "Fold" },
-                { id: "hidden", label: "Hide" },
-              ] as choice (choice.id)}
-                <button
-                  type="button"
-                  role="radio"
-                  aria-checked={desktopChrome.activityRail === choice.id}
-                  class="canvas-your-space-choice {desktopChrome.activityRail === choice.id
-                    ? 'canvas-your-space-choice-active'
-                    : ''}"
-                  disabled={yourSpaceBusy}
-                  onclick={() =>
-                    void patchYourSpace({ activityRail: choice.id as ActivityRailMode })}
-                >
-                  {choice.label}
-                </button>
-              {/each}
-            </div>
           </div>
         </div>
       </div>

@@ -117,7 +117,6 @@
       onclick={() => (open = !open)}
     >
       <PanelsTopLeft size={12} strokeWidth={1.75} class="shrink-0 opacity-80" aria-hidden="true" />
-      <span class="truncate">{activeLabel}</span>
     </button>
   {:else if showRail}
     <button
