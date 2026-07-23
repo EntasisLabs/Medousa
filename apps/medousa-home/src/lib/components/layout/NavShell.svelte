@@ -47,6 +47,13 @@
     type NavRailNestItem,
   } from "$lib/utils/navRailNest";
   import {
+    registerRailPopoverSummon,
+    setLastPointer,
+    type RailPopoverCursor,
+  } from "$lib/utils/railPopoverSummon";
+  import { resolveSummonToolbarSurface } from "$lib/utils/resolveSummonToolbarSurface";
+  import { toast } from "$lib/stores/toast.svelte";
+  import {
     ChevronLeft,
     ChevronRight,
     PanelLeftClose,
@@ -127,6 +134,10 @@
   let railPopoverTriggerEl = $state<HTMLElement | null>(null);
   /** Click point so the toolbar floats next to the mouse (not rail-docked). */
   let railPopoverCursor = $state<{ x: number; y: number } | null>(null);
+  /** Landing phase — summon uses toolbar; rail clicks use seed. */
+  let railPopoverPreferPhase = $state<"seed" | "toolbar">("seed");
+  /** Invisible 1×1 anchor when the rail button isn’t in the DOM. */
+  let syntheticTriggerEl: HTMLElement | null = null;
 
   const railPopoverTitle = $derived(
     railPopover?.kind === "lme"
@@ -235,10 +246,34 @@
     return railPopover?.kind === "surface" && railPopover.surfaceId === surfaceId;
   }
 
+  function disposeSyntheticTrigger() {
+    if (!syntheticTriggerEl) return;
+    syntheticTriggerEl.remove();
+    syntheticTriggerEl = null;
+  }
+
+  function ensureSyntheticTrigger(cursor: RailPopoverCursor): HTMLElement {
+    disposeSyntheticTrigger();
+    const el = document.createElement("div");
+    el.setAttribute("data-rail-popover-synthetic-trigger", "");
+    el.setAttribute("aria-hidden", "true");
+    el.style.cssText = `position:fixed;left:${cursor.x}px;top:${cursor.y}px;width:1px;height:1px;pointer-events:none;opacity:0;z-index:-1;`;
+    document.body.appendChild(el);
+    syntheticTriggerEl = el;
+    return el;
+  }
+
+  function findRailTrigger(surfaceId: string): HTMLElement | null {
+    if (typeof document === "undefined") return null;
+    return document.querySelector(`[data-rail-surface="${CSS.escape(surfaceId)}"]`);
+  }
+
   function closeRailPopover() {
     railPopover = null;
     railPopoverTriggerEl = null;
     railPopoverCursor = null;
+    railPopoverPreferPhase = "seed";
+    disposeSyntheticTrigger();
   }
 
   function sameRailPopover(target: RailPopoverTarget): boolean {
@@ -256,13 +291,17 @@
     target: RailPopoverTarget,
     trigger: HTMLElement,
     event?: MouseEvent,
+    options?: { cursor?: RailPopoverCursor; preferPhase?: "seed" | "toolbar" },
   ) {
     if (sameRailPopover(target)) {
       closeRailPopover();
       return;
     }
+    railPopoverPreferPhase = options?.preferPhase ?? "seed";
     railPopoverTriggerEl = trigger;
-    if (event) {
+    if (options?.cursor) {
+      railPopoverCursor = options.cursor;
+    } else if (event) {
       railPopoverCursor = { x: event.clientX, y: event.clientY };
     } else {
       const rect = trigger.getBoundingClientRect();
@@ -272,6 +311,39 @@
       };
     }
     railPopover = target;
+  }
+
+  /** Hotkey / mouse-shake: compact toolbar for the current view at the cursor. */
+  function handleSummonViewToolbar(cursor?: RailPopoverCursor | null): boolean {
+    const surfaceId = resolveSummonToolbarSurface(
+      layout.desktopSurface,
+      lmeWorkspace.explorerMode,
+    );
+    if (!surfaceId) {
+      toast.show("No toolbar for this view", { durationMs: 1400 });
+      return true;
+    }
+
+    const point: RailPopoverCursor =
+      cursor ??
+      ({
+        x: typeof window !== "undefined" ? window.innerWidth / 2 : 0,
+        y: typeof window !== "undefined" ? window.innerHeight / 2 : 0,
+      });
+
+    const target: RailPopoverTarget = { kind: "surface", surfaceId };
+    if (sameRailPopover(target)) {
+      closeRailPopover();
+      return true;
+    }
+
+    ensureFamilyForSurface(surfaceId);
+    const trigger = findRailTrigger(surfaceId) ?? ensureSyntheticTrigger(point);
+    openRailPopover(target, trigger, undefined, {
+      cursor: point,
+      preferPhase: "toolbar",
+    });
+    return true;
   }
 
   function hideRail() {
@@ -364,6 +436,16 @@
 
   onMount(() => {
     prefetchRailNestData();
+    registerRailPopoverSummon(handleSummonViewToolbar);
+    const onPointerMove = (event: PointerEvent) => {
+      setLastPointer({ x: event.clientX, y: event.clientY });
+    };
+    window.addEventListener("pointermove", onPointerMove, { passive: true });
+    return () => {
+      registerRailPopoverSummon(null);
+      window.removeEventListener("pointermove", onPointerMove);
+      disposeSyntheticTrigger();
+    };
   });
 </script>
 
@@ -516,6 +598,7 @@
                   {/if}
                   <button
                     type="button"
+                    data-rail-surface={surface.id}
                     class="{railBtnClass(surface.id, 'life', {
                       quietActive: true,
                       active: doorActive,
@@ -727,6 +810,7 @@
 
           <button
             type="button"
+            data-rail-surface={SAFETY_SURFACE_SETTINGS}
             class="{railBtnClass(SAFETY_SURFACE_SETTINGS, 'utility', {
               quietActive: true,
               active:
@@ -758,6 +842,7 @@
     targetKey={railPopoverTargetKey}
     triggerEl={railPopoverTriggerEl}
     cursorAnchor={railPopoverCursor}
+    preferPhase={railPopoverPreferPhase}
     onClose={closeRailPopover}
     onDockToRail={dockPopoverToRail}
     dockHost={railPopoverUsesLmeDock}

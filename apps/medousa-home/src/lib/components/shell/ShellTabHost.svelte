@@ -9,6 +9,7 @@
   import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
   import { shellTabs } from "$lib/stores/shellTabs.svelte";
   import { attachShellPaneHotkeys } from "$lib/utils/shellPaneHotkeys";
+  import { attachMouseShakeToolbar } from "$lib/utils/mouseShake";
   import type { DaemonHealth } from "$lib/daemon";
 
   interface Props {
@@ -68,11 +69,16 @@
     shellTabs.bootstrap();
     chat.bootstrapMultiLive(shellTabs.chatSessionIdsForLiveRestore());
     applyContentZoomCss();
-    return attachShellPaneHotkeys({
+    const detachHotkeys = attachShellPaneHotkeys({
       onCheatSheet: () => {
         cheatSheetOpen = true;
       },
     });
+    const detachShake = attachMouseShakeToolbar();
+    return () => {
+      detachHotkeys();
+      detachShake();
+    };
   });
 
   $effect(() => {

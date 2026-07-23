@@ -1094,6 +1094,11 @@
     @apply relative flex h-8 shrink-0 items-center gap-0.5 overflow-visible border-t border-surface-500/25 px-1;
   }
 
+  /* Keep secondary chrome in a single row (avoids stacked buttons overflowing the bar). */
+  .lme-side-rail-dock .lme-dock-chrome-secondary {
+    @apply flex shrink-0 items-center gap-0.5;
+  }
+
   /* Compact chrome when the dock is temporarily hosted in a rail popover toolbar. */
   .lme-side-rail-dock--status {
     @apply flex h-full w-full min-w-0 items-center gap-0.5 border-t-0 bg-transparent px-0.5;

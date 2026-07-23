@@ -6,6 +6,7 @@ import {
 import { layout } from "$lib/stores/layout.svelte";
 import { shellTabs } from "$lib/stores/shellTabs.svelte";
 import { toast } from "$lib/stores/toast.svelte";
+import { summonViewToolbar } from "$lib/utils/railPopoverSummon";
 
 const PREFIX_TIMEOUT_MS = 1200;
 
@@ -32,6 +33,7 @@ function modalBlocksHotkeys(): boolean {
 /**
  * Attach window capture listeners for:
  * - Ctrl+B — toggle left rail
+ * - Ctrl/Cmd+Shift+. — summon current view toolbar at cursor
  * - Ctrl+; then command — pane ops
  */
 export function attachShellPaneHotkeys(handlers: ShellPaneHotkeyHandlers = {}): () => void {
@@ -46,9 +48,16 @@ export function attachShellPaneHotkeys(handlers: ShellPaneHotkeyHandlers = {}): 
     const lower = key.length === 1 ? key.toLowerCase() : key;
 
     // Ctrl+B — left rail (VS Code / Cursor). Not a pane prefix.
-    if (ctrl && !event.altKey && lower === "b") {
+    if (ctrl && !event.altKey && !event.shiftKey && lower === "b") {
       event.preventDefault();
       layout.toggleShellSidebarExpanded();
+      return;
+    }
+
+    // Ctrl/Cmd+Shift+. — summon compact view toolbar at the cursor.
+    if (ctrl && event.shiftKey && !event.altKey && (key === "." || key === ">")) {
+      event.preventDefault();
+      summonViewToolbar();
       return;
     }
 

@@ -18,12 +18,18 @@ import {
   dispatchBrowserFocusUrl,
   dispatchBrowserOpenBookmarks,
 } from "$lib/utils/browserChromeEvents";
+import { summonViewToolbar } from "$lib/utils/railPopoverSummon";
+import {
+  isMouseShakeToolbarEnabled,
+  toggleMouseShakeToolbarEnabled,
+} from "$lib/utils/mouseShake";
 import { reconnectWorkshop } from "$lib/workshopConnection";
 import { buildInteractiveTurnOptions } from "$lib/interactiveTurnOptions";
 import { createTurnTicket } from "$lib/daemon";
 import { connection } from "$lib/stores/connection.svelte";
 import { layout } from "$lib/stores/layout.svelte";
 import { shellTabs } from "$lib/stores/shellTabs.svelte";
+import { toast } from "$lib/stores/toast.svelte";
 import type { Surface } from "$lib/types/ui";
 import type { DepthMode } from "$lib/types/runtime";
 import type { WorkshopCommand, WorkshopCommandContext } from "./types";
@@ -359,6 +365,36 @@ export function buildPaneCommands(): WorkshopCommand[] {
       advanced: true,
       run: (ctx) => {
         layout.toggleShellSidebarExpanded();
+        ctx.callbacks.close();
+      },
+    },
+    {
+      id: "pane-summon-view-toolbar",
+      section: "advanced",
+      label: "Summon view toolbar",
+      subtitle: `${formatShortcut("Ctrl+Shift+.")} — compact toolbar at the cursor (or shake the mouse)`,
+      keywords: "toolbar summon shake mouse hud library automations chat rail popover",
+      advanced: true,
+      run: (ctx) => {
+        summonViewToolbar();
+        ctx.callbacks.close();
+      },
+    },
+    {
+      id: "pane-toggle-mouse-shake-toolbar",
+      section: "advanced",
+      label: isMouseShakeToolbarEnabled()
+        ? "Disable shake to summon toolbar"
+        : "Enable shake to summon toolbar",
+      subtitle: "Mouse-shake gesture for the view toolbar HUD",
+      keywords: "shake mouse toolbar gesture preference disable enable",
+      advanced: true,
+      run: (ctx) => {
+        const enabled = toggleMouseShakeToolbarEnabled();
+        toast.show(
+          enabled ? "Shake to summon toolbar on" : "Shake to summon toolbar off",
+          { durationMs: 1600 },
+        );
         ctx.callbacks.close();
       },
     },

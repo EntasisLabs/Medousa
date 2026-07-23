@@ -33,6 +33,11 @@
     toolbar?: Snippet;
     /** Host LME explorer docks in the toolbar strip while open. */
     dockHost?: boolean;
+    /**
+     * Landing phase when the popover opens / retargets.
+     * Rail clicks use seed; summon-at-cursor uses toolbar (compact chrome, no list).
+     */
+    preferPhase?: "seed" | "toolbar";
     children: Snippet;
   }
 
@@ -46,6 +51,7 @@
     onDockToRail,
     toolbar,
     dockHost = false,
+    preferPhase = "seed",
     children,
   }: Props = $props();
 
@@ -171,7 +177,7 @@
   function resetPhase() {
     sequenceGen += 1;
     anchorLocked = false;
-    phase = "seed";
+    phase = preferPhase === "toolbar" ? "toolbar" : "seed";
   }
 
   $effect(() => {
@@ -190,7 +196,7 @@
   $effect(() => {
     if (!open || !triggerEl) return;
     // Initial geometry when first opened (or trigger becomes available).
-    if (phase === "seed" && !anchorLocked) {
+    if ((phase === "seed" || phase === "toolbar") && !anchorLocked && !listOpen) {
       syncGeometryFromTrigger();
     }
   });
