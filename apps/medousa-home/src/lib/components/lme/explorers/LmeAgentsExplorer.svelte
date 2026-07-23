@@ -189,7 +189,7 @@
   </div>
 
   <footer class="lme-side-rail-dock" use:portLmeDock>
-    <div class="min-w-0 flex-1">
+    <div class="lme-dock-leading-ghost min-w-0 flex-1">
       {#if filterActive}
         <span class="workshop-faint truncate text-[11px]">Filtered</span>
       {/if}
@@ -244,7 +244,7 @@
       {/if}
     </div>
 
-    <div class="relative shrink-0">
+    <div class="lme-dock-chrome-secondary relative shrink-0">
       <button
         type="button"
         class="vault-dock-icon-btn {filterActive ? 'vault-dock-icon-btn-active' : ''}"

@@ -7,7 +7,9 @@
     type RailPopoverCursor,
     type RailPopoverExpand,
   } from "$lib/utils/railPopover";
+  import BodyPortal from "$lib/components/ui/BodyPortal.svelte";
   import { popLmeDockHost, pushLmeDockHost } from "$lib/utils/lmeDockHost";
+  import { setRailPopoverChrome } from "$lib/utils/railPopoverChrome";
   import type { Snippet } from "svelte";
   import { tick } from "svelte";
 
@@ -125,6 +127,24 @@
     if (gen !== sequenceGen) return;
     anchorLocked = false;
   }
+
+  /** Public: open the list from seed/toolbar (used by dock search). */
+  async function ensureListOpen() {
+    if (phase === "open") return;
+    await runExpandSequence();
+  }
+
+  $effect(() => {
+    if (!open) {
+      setRailPopoverChrome(null);
+      return;
+    }
+    setRailPopoverChrome({
+      ensureOpen: ensureListOpen,
+      isOpen: () => phase === "open",
+    });
+    return () => setRailPopoverChrome(null);
+  });
 
   async function runCollapseSequence() {
     const gen = ++sequenceGen;
@@ -261,68 +281,71 @@
 </script>
 
 {#if open}
-  <div
-    bind:this={menuEl}
-    class="nav-rail-view-popover"
-    class:nav-rail-view-popover--chrome={chromeExpanded}
-    class:nav-rail-view-popover--open={listOpen}
-    class:nav-rail-view-popover--up={expandUp}
-    data-phase={phase}
-    data-expand={expandDir}
-    role="dialog"
-    aria-label={title}
-    data-debug-label="nav-rail-view-popover"
-    style:--nav-rail-popover-open-height="{openHeightPx}px"
-    onclick={(event) => event.stopPropagation()}
-  >
-    <div class="nav-rail-view-popover-toolbar">
-      <div class="nav-rail-view-popover-actions">
-        {#if toolbar}
-          {@render toolbar()}
+  <!-- Escape the master-rail stacking context (z-index: 2) so the editor can't cover us. -->
+  <BodyPortal>
+    <div
+      bind:this={menuEl}
+      class="nav-rail-view-popover"
+      class:nav-rail-view-popover--chrome={chromeExpanded}
+      class:nav-rail-view-popover--open={listOpen}
+      class:nav-rail-view-popover--up={expandUp}
+      data-phase={phase}
+      data-expand={expandDir}
+      role="dialog"
+      aria-label={title}
+      data-debug-label="nav-rail-view-popover"
+      style:--nav-rail-popover-open-height="{openHeightPx}px"
+      onclick={(event) => event.stopPropagation()}
+    >
+      <div class="nav-rail-view-popover-toolbar">
+        <div class="nav-rail-view-popover-actions">
+          {#if toolbar}
+            {@render toolbar()}
+          {/if}
+          {#if dockHost}
+            <div
+              bind:this={dockSlotEl}
+              class="nav-rail-view-popover-dock-slot"
+              data-debug-label="nav-rail-dock-slot"
+            ></div>
+          {/if}
+        </div>
+        {#if listOpen && onDockToRail}
+          <button
+            type="button"
+            class="nav-rail-view-popover-expand nav-rail-view-popover-dock"
+            title="Expand to side rail"
+            aria-label="Expand {title} to side rail"
+            onclick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              onDockToRail();
+            }}
+          >
+            <Expand size={14} strokeWidth={1.75} />
+          </button>
         {/if}
-        {#if dockHost}
-          <div
-            bind:this={dockSlotEl}
-            class="nav-rail-view-popover-dock-slot"
-            data-debug-label="nav-rail-dock-slot"
-          ></div>
-        {/if}
-      </div>
-      {#if listOpen && onDockToRail}
         <button
           type="button"
-          class="nav-rail-view-popover-expand nav-rail-view-popover-dock"
-          title="Expand to side rail"
-          aria-label="Expand {title} to side rail"
-          onclick={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            onDockToRail();
-          }}
+          class="nav-rail-view-popover-expand"
+          class:nav-rail-view-popover-expand-active={listOpen}
+          title={listOpen ? `Hide ${title}` : `Show ${title}`}
+          aria-label={listOpen ? `Hide ${title}` : `Show ${title}`}
+          aria-expanded={listOpen}
+          onclick={toggleExpanded}
         >
-          <Expand size={14} strokeWidth={1.75} />
+          <ChevronRight size={15} strokeWidth={2} />
         </button>
-      {/if}
-      <button
-        type="button"
-        class="nav-rail-view-popover-expand"
-        class:nav-rail-view-popover-expand-active={listOpen}
-        title={listOpen ? `Hide ${title}` : `Show ${title}`}
-        aria-label={listOpen ? `Hide ${title}` : `Show ${title}`}
-        aria-expanded={listOpen}
-        onclick={toggleExpanded}
-      >
-        <ChevronRight size={15} strokeWidth={2} />
-      </button>
-    </div>
+      </div>
 
-    <!-- Keep children mounted so LME docks can portal into the toolbar. -->
-    <div class="nav-rail-view-popover-body" aria-hidden={!listOpen}>
-      <div class="nav-rail-view-popover-body-inner">
-        {@render children()}
+      <!-- Keep children mounted so LME docks can portal into the toolbar. -->
+      <div class="nav-rail-view-popover-body" aria-hidden={!listOpen}>
+        <div class="nav-rail-view-popover-body-inner">
+          {@render children()}
+        </div>
       </div>
     </div>
-  </div>
+  </BodyPortal>
 {/if}
 
 <style>
@@ -334,7 +357,8 @@
     --nav-rail-popover-open-height: min(32rem, calc(100vh - 2rem));
 
     position: fixed;
-    z-index: 80;
+    /* Above shell chrome / editors; below full-screen modals (~200). */
+    z-index: 120;
     display: flex;
     width: var(--nav-rail-popover-seed-width);
     height: var(--nav-rail-popover-bar-height);
@@ -453,17 +477,16 @@
     justify-content: flex-start;
   }
 
-  /* Sparse docks: collapse leading spacers / ghost status so icons sit left. */
+  /* Sparse docks: collapse dedicated ghost spacers so icons sit left.
+     Never match real chrome (search expand, crumbs, primary verbs). */
+  .nav-rail-view-popover-dock-slot
+    :global(.lme-side-rail-dock > .lme-dock-leading-ghost),
   .nav-rail-view-popover-dock-slot
     :global(.lme-side-rail-dock > .min-w-0.flex-1:first-child:empty),
   .nav-rail-view-popover-dock-slot
     :global(.lme-side-rail-dock > .min-w-1.flex-1:first-child:empty),
   .nav-rail-view-popover-dock-slot
-    :global(.lme-side-rail-dock > .flex-1:first-child:empty),
-  .nav-rail-view-popover-dock-slot
-    :global(
-      .lme-side-rail-dock > .min-w-0.flex-1:first-child:not(:has(.vault-dock-branch))
-    ) {
+    :global(.lme-side-rail-dock > .flex-1:first-child:empty) {
     display: none;
   }
 

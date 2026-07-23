@@ -4,9 +4,19 @@ import {
   SAFETY_SURFACE_SETTINGS,
 } from "$lib/types/environment";
 
-const LIFE_IDS = new Set(["chat", "work", "library", "calendar", "web", "context", "peers"]);
+const LIFE_IDS = new Set([
+  "chat",
+  "work",
+  "library",
+  "calendar",
+  "web",
+  "context",
+  "peers",
+  "messaging",
+]);
 const WORKSHOP_IDS = new Set(["workshop"]);
-const UTILITY_IDS = new Set(["messaging", SAFETY_SURFACE_RUNTIME]);
+/** Runtime lives in Settings / status bar — never the life rail. */
+const HIDDEN_IDS = new Set([SAFETY_SURFACE_RUNTIME]);
 
 /** Surfaces whose list chrome lives in the master left rail (view mode). */
 export const SHELL_SIDEBAR_VIEW_SURFACES = new Set([
@@ -34,23 +44,27 @@ export function navTier(surface: SurfaceDef): "life" | "workshop" | "utility" | 
     return "hidden";
   }
   if (surface.id === "home" || surface.id === SAFETY_SURFACE_SETTINGS) return "hidden";
+  if (HIDDEN_IDS.has(surface.id)) return "hidden";
   if (surface.kind === "custom") return "life";
   if (WORKSHOP_IDS.has(surface.id)) return "workshop";
-  if (UTILITY_IDS.has(surface.id)) return "utility";
   if (LIFE_IDS.has(surface.id)) return "life";
   return "life";
 }
 
 export function navTitle(surface: SurfaceDef): string {
-  if (surface.id === "library") return "Workspace";
+  if (surface.id === "library") return "Library";
+  if (surface.id === "automations") return "Automations";
   if (surface.id === "context") return "Threads & memory";
   if (surface.id === "peers") return "Peers";
+  if (surface.id === "profiles") return "You";
   return surface.label;
 }
 
 export function navLabel(surface: SurfaceDef): string {
-  if (surface.id === "library") return "Workspace";
+  if (surface.id === "library") return "Library";
+  if (surface.id === "automations") return "Automations";
   if (surface.id === "context") return "Context";
+  if (surface.id === "profiles") return "You";
   return surface.label;
 }
 
@@ -59,8 +73,9 @@ export function shellSidebarViewTitle(surfaceId: string): string {
     case "chat":
       return "Sessions";
     case "library":
+      return "Library";
     case "automations":
-      return "Workspace";
+      return "Automations";
     case "peers":
       return "Peers";
     case "messaging":

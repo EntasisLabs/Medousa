@@ -1,64 +1,91 @@
 /**
- * Experiment: host LME side-rail docks in the app StatusBar.
- * Flip {@link LME_DOCK_IN_STATUS_BAR} to restore docks to the rail footers.
+ * LME explorer docks live in their side-rail footers by default.
+ * Rail popovers temporarily host them in the toolbar via push/pop.
  */
 
-/** When false, `portLmeDock` is a no-op and docks stay in the side rail. */
-export const LME_DOCK_IN_STATUS_BAR = true;
+/** Compact chrome class while the dock sits in a popover toolbar (legacy name). */
+const HOSTED_CLASS = "lme-side-rail-dock--status";
 
-const STATUS_CLASS = "lme-side-rail-dock--status";
+/** @deprecated Always false — docks no longer live in the status bar. */
+export const LME_DOCK_IN_STATUS_BAR = false;
 
-let hostEl: HTMLElement | null = null;
+/** Where the dock returns when no overlay host is active. */
+let homeParent: HTMLElement | null = null;
+/** Temporary hosts (rail popover dock slots), top of stack is active. */
+const overlayStack: HTMLElement[] = [];
 let activeDock: HTMLElement | null = null;
-/** Previous hosts so rail popovers can temporarily own the dock slot. */
-const hostStack: HTMLElement[] = [];
 
-export function setLmeDockHost(el: HTMLElement | null) {
-  hostEl = el;
-  if (activeDock && hostEl && activeDock.parentElement !== hostEl) {
-    hostEl.appendChild(activeDock);
+function overlayHost(): HTMLElement | null {
+  return overlayStack.length > 0
+    ? (overlayStack[overlayStack.length - 1] ?? null)
+    : null;
+}
+
+function applyActiveHost() {
+  if (!activeDock) return;
+  const host = overlayHost();
+  if (host) {
+    activeDock.classList.add(HOSTED_CLASS);
+    if (activeDock.parentElement !== host) {
+      host.appendChild(activeDock);
+    }
+    return;
+  }
+
+  activeDock.classList.remove(HOSTED_CLASS);
+  if (homeParent && activeDock.parentElement !== homeParent) {
+    homeParent.appendChild(activeDock);
   }
 }
 
+/**
+ * @deprecated Status-bar hosting removed. Kept as a no-op so callers compile.
+ */
+export function setLmeDockHost(_el: HTMLElement | null) {
+  // Intentionally ignored — docks stay in rail footers unless a popover overlays.
+}
+
 export function getLmeDockHost(): HTMLElement | null {
-  return hostEl;
+  return overlayHost() ?? homeParent;
 }
 
 /** Temporarily host docks in another slot (e.g. rail popover toolbar). */
 export function pushLmeDockHost(el: HTMLElement) {
-  if (hostEl && hostEl !== el) {
-    hostStack.push(hostEl);
+  if (overlayHost() === el) {
+    applyActiveHost();
+    return;
   }
-  setLmeDockHost(el);
+  overlayStack.push(el);
+  applyActiveHost();
 }
 
-/** Restore the host from before the last {@link pushLmeDockHost}. */
+/** Restore the dock to its side-rail footer (or prior overlay). */
 export function popLmeDockHost() {
-  const previous = hostStack.pop() ?? null;
-  setLmeDockHost(previous);
+  overlayStack.pop();
+  applyActiveHost();
 }
 
-/** Svelte action — moves an LME dock footer into the active dock host. */
+/**
+ * Svelte action — registers an LME dock footer.
+ * Moves into a popover overlay when one is pushed; otherwise stays put.
+ */
 export function portLmeDock(node: HTMLElement) {
-  if (!LME_DOCK_IN_STATUS_BAR) {
-    return {};
-  }
-
   activeDock = node;
-  node.classList.add(STATUS_CLASS);
-  if (hostEl) {
-    hostEl.appendChild(node);
-  }
+  homeParent = node.parentElement;
+  applyActiveHost();
 
   return {
     destroy() {
       if (activeDock === node) {
         activeDock = null;
       }
-      node.classList.remove(STATUS_CLASS);
-      // Detach if still in the status host; Svelte also removes on unmount.
-      if (node.parentElement === hostEl) {
-        node.remove();
+      node.classList.remove(HOSTED_CLASS);
+      // If still sitting in an overlay host, put it back so Svelte can unmount.
+      if (homeParent && node.parentElement !== homeParent) {
+        homeParent.appendChild(node);
+      }
+      if (homeParent === node.parentElement) {
+        homeParent = null;
       }
     },
   };

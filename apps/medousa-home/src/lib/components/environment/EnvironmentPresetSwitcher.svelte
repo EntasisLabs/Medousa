@@ -3,12 +3,12 @@
   import { layout } from "$lib/stores/layout.svelte";
   import { settingsNav } from "$lib/stores/settingsNav.svelte";
   import { presetDescription, presetDisplayLabel } from "$lib/utils/customViewStatus";
-  import { placeRailPopover } from "$lib/utils/railPopover";
+  import { placeRailPopover, placeToolbarPopover } from "$lib/utils/railPopover";
   import { Check, Focus, PanelsTopLeft, Settings2 } from "@lucide/svelte";
   import { tick } from "svelte";
 
   interface Props {
-    variant?: "settings" | "rail";
+    variant?: "settings" | "rail" | "status";
     /** When rail is expanded, show a short label beside the icon. */
     expanded?: boolean;
   }
@@ -22,8 +22,10 @@
       null,
   );
   const showRail = $derived(variant === "rail" && presets.length > 1);
+  const showStatus = $derived(variant === "status" && presets.length > 1);
   const showSettings = $derived(variant === "settings" && presets.length > 0);
-  const show = $derived(showRail || showSettings);
+  const show = $derived(showRail || showStatus || showSettings);
+  const isFloatingMenu = $derived(variant === "rail" || variant === "status");
   const activeLabel = $derived(
     presetDisplayLabel(activePreset?.id ?? "default", activePreset?.label),
   );
@@ -34,15 +36,33 @@
   let menuEl = $state<HTMLDivElement | null>(null);
 
   $effect(() => {
-    if (!open || !triggerEl || !menuEl) return;
+    if (!open || !isFloatingMenu || !triggerEl || !menuEl) return;
     layout.shellSidebarWidth;
     let frame = 0;
     const place = () => {
       if (!triggerEl || !menuEl) return;
-      placeRailPopover(triggerEl, menuEl);
-      // Second pass after max-height/layout settle so final clamp uses real size.
+      if (variant === "status") {
+        placeToolbarPopover(triggerEl, menuEl, {
+          prefer: "above",
+          width: 280,
+          gap: 8,
+          pad: 10,
+        });
+      } else {
+        placeRailPopover(triggerEl, menuEl);
+      }
       frame = window.requestAnimationFrame(() => {
-        if (triggerEl && menuEl) placeRailPopover(triggerEl, menuEl);
+        if (!triggerEl || !menuEl) return;
+        if (variant === "status") {
+          placeToolbarPopover(triggerEl, menuEl, {
+            prefer: "above",
+            width: 280,
+            gap: 8,
+            pad: 10,
+          });
+        } else {
+          placeRailPopover(triggerEl, menuEl);
+        }
       });
     };
     void tick().then(place);
@@ -83,7 +103,23 @@
 </script>
 
 {#if show}
-  {#if variant === "rail"}
+  {#if showStatus}
+    <button
+      bind:this={triggerEl}
+      type="button"
+      class="workshop-status-workshop"
+      class:workshop-status-workshop--open={open}
+      title="Canvas layout — {activeLabel}"
+      aria-label="Canvas layout — {activeLabel}"
+      aria-haspopup="menu"
+      aria-expanded={open}
+      disabled={busy}
+      onclick={() => (open = !open)}
+    >
+      <PanelsTopLeft size={12} strokeWidth={1.75} class="shrink-0 opacity-80" aria-hidden="true" />
+      <span class="truncate">{activeLabel}</span>
+    </button>
+  {:else if showRail}
     <button
       bind:this={triggerEl}
       type="button"
@@ -104,74 +140,7 @@
         <span class="workshop-rail-btn-label">Layout</span>
       {/if}
     </button>
-
-    {#if open}
-      <div
-        class="mobile-sheet-backdrop workshop-rail-sheet-backdrop"
-        role="presentation"
-        onclick={(event) => {
-          if (event.target === event.currentTarget) open = false;
-        }}
-      >
-        <div
-          bind:this={menuEl}
-          class="workshop-rail-sheet workshop-switcher-menu"
-          role="menu"
-          aria-label="Canvas layout"
-        >
-          <header class="workshop-switcher-header">
-            <div class="min-w-0">
-              <h2 class="workshop-switcher-title">Canvas layout</h2>
-              <p class="workshop-switcher-subtitle">Choose which destinations appear in the rail</p>
-            </div>
-          </header>
-
-          <div class="workshop-switcher-list">
-            {#each presets as preset (preset.id)}
-              {@const isActive = preset.id === activePreset?.id}
-              {@const Icon = presetIcon(preset.id)}
-              <button
-                type="button"
-                role="menuitemradio"
-                aria-checked={isActive}
-                class="workshop-switcher-row {isActive ? 'workshop-switcher-row-active' : ''}"
-                disabled={busy}
-                onclick={() => void selectPreset(preset.id)}
-              >
-                <span class="workshop-switcher-avatar" aria-hidden="true">
-                  <Icon size={16} strokeWidth={1.75} />
-                </span>
-                <span class="workshop-switcher-row-body">
-                  <span class="workshop-switcher-row-name">
-                    {presetDisplayLabel(preset.id, preset.label)}
-                  </span>
-                  <span class="workshop-switcher-row-meta">{presetDescription(preset.id)}</span>
-                </span>
-                {#if isActive}
-                  <Check size={16} strokeWidth={2.5} class="workshop-switcher-row-check" aria-hidden="true" />
-                {/if}
-              </button>
-            {/each}
-          </div>
-
-          <div class="workshop-switcher-footer">
-            <div class="workshop-switcher-divider" aria-hidden="true"></div>
-            <button
-              type="button"
-              role="menuitem"
-              class="workshop-switcher-action"
-              onclick={openCanvasSettings}
-            >
-              <span class="workshop-switcher-action-icon" aria-hidden="true">
-                <Settings2 size={14} strokeWidth={2} />
-              </span>
-              Canvas settings — layouts & views
-            </button>
-          </div>
-        </div>
-      </div>
-    {/if}
-  {:else}
+  {:else if showSettings}
     <div class="env-preset-segment" role="group" aria-label="Layout preset">
       {#each presets as preset (preset.id)}
         <button
@@ -185,6 +154,73 @@
           {presetDisplayLabel(preset.id, preset.label)}
         </button>
       {/each}
+    </div>
+  {/if}
+
+  {#if open && isFloatingMenu}
+    <div
+      class="mobile-sheet-backdrop workshop-rail-sheet-backdrop"
+      role="presentation"
+      onclick={(event) => {
+        if (event.target === event.currentTarget) open = false;
+      }}
+    >
+      <div
+        bind:this={menuEl}
+        class="workshop-rail-sheet workshop-switcher-menu"
+        role="menu"
+        aria-label="Canvas layout"
+      >
+        <header class="workshop-switcher-header">
+          <div class="min-w-0">
+            <h2 class="workshop-switcher-title">Canvas layout</h2>
+            <p class="workshop-switcher-subtitle">Choose which destinations appear in the rail</p>
+          </div>
+        </header>
+
+        <div class="workshop-switcher-list">
+          {#each presets as preset (preset.id)}
+            {@const isActive = preset.id === activePreset?.id}
+            {@const Icon = presetIcon(preset.id)}
+            <button
+              type="button"
+              role="menuitemradio"
+              aria-checked={isActive}
+              class="workshop-switcher-row {isActive ? 'workshop-switcher-row-active' : ''}"
+              disabled={busy}
+              onclick={() => void selectPreset(preset.id)}
+            >
+              <span class="workshop-switcher-avatar" aria-hidden="true">
+                <Icon size={16} strokeWidth={1.75} />
+              </span>
+              <span class="workshop-switcher-row-body">
+                <span class="workshop-switcher-row-name">
+                  {presetDisplayLabel(preset.id, preset.label)}
+                </span>
+                <span class="workshop-switcher-row-meta">{presetDescription(preset.id)}</span>
+              </span>
+              {#if isActive}
+                <Check size={16} strokeWidth={2.5} class="workshop-switcher-row-check" aria-hidden="true" />
+              {/if}
+            </button>
+          {/each}
+        </div>
+
+        <div class="workshop-switcher-footer">
+          <div class="workshop-switcher-divider" aria-hidden="true"></div>
+          <button
+            type="button"
+            role="menuitem"
+            class="workshop-switcher-action"
+            onclick={openCanvasSettings}
+          >
+            <span class="workshop-switcher-action-icon" aria-hidden="true">
+              <Settings2 size={14} strokeWidth={2} />
+            </span>
+            Canvas settings — layouts & views
+          </button>
+        </div>
+      </div>
     </div>
   {/if}
 {/if}

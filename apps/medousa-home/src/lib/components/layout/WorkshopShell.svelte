@@ -264,9 +264,6 @@
         minimal={showChatChrome}
         continuity={activeSurface === "library"}
         health={daemonHealth}
-        workshopLabel={activeSurface === "library" || workshops.hasMultipleWorkshops
-          ? workshops.activeLabel
-          : null}
         inMotionCount={workspace.inMotionCount()}
         needsAttentionCount={workspace.needsAttentionCount()}
         cronActiveCount={automations.activeCount().enabled}

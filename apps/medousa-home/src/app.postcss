@@ -751,6 +751,35 @@
     color: rgb(var(--color-surface-200));
   }
 
+  .workshop-status-workshop {
+    display: inline-flex;
+    max-width: 9rem;
+    min-width: 0;
+    align-items: center;
+    gap: 0.3rem;
+    border: 0;
+    border-radius: 0.3rem;
+    background: transparent;
+    padding: 0.05rem 0.25rem;
+    margin: 0 -0.25rem;
+    color: rgb(var(--color-surface-500));
+    font: inherit;
+    line-height: 1.2;
+    transition:
+      color 140ms ease,
+      background-color 140ms ease;
+  }
+
+  .workshop-status-workshop:hover,
+  .workshop-status-workshop--open {
+    background: rgb(var(--color-surface-800) / 0.55);
+    color: rgb(var(--color-surface-200));
+  }
+
+  .workshop-status-workshop:disabled {
+    opacity: 0.55;
+  }
+
   .workshop-status-spotlight {
     border: 1px solid rgb(var(--color-surface-700) / 0.45);
     border-radius: 0.3rem;
@@ -1060,22 +1089,14 @@
     @apply bg-transparent text-surface-100;
   }
 
-  /* Match StatusBar (`workshop-status` h-8) across all LME side-rail docks. */
+  /* Side-rail dock footers (h-8 matches workshop status bar height). */
   .lme-side-rail-dock {
     @apply relative flex h-8 shrink-0 items-center gap-0.5 overflow-visible border-t border-surface-500/25 px-1;
   }
 
-  /* Experiment: dock portaled into StatusBar (see lmeDockHost.ts). */
-  .lme-status-dock-slot {
-    @apply flex h-full min-w-0 items-stretch overflow-visible;
-  }
-
-  .lme-status-dock-slot:empty {
-    @apply hidden;
-  }
-
+  /* Compact chrome when the dock is temporarily hosted in a rail popover toolbar. */
   .lme-side-rail-dock--status {
-    @apply h-full w-full min-w-0 border-t-0 bg-transparent px-0.5;
+    @apply flex h-full w-full min-w-0 items-center gap-0.5 border-t-0 bg-transparent px-0.5;
   }
 
   .vault-dock-icon-btn {
@@ -1086,10 +1107,11 @@
     @apply text-primary-300;
   }
 
-  /* Cursor-style dock popover — portaled, soft rounded card. */
+  /* Cursor-style dock popover — portaled, soft rounded card.
+     Above nav-rail view popover (120) so menus aren’t trapped underneath. */
   .vault-dock-popover {
     position: fixed;
-    z-index: 80;
+    z-index: 130;
     display: flex;
     flex-direction: column;
     gap: 0.05rem;

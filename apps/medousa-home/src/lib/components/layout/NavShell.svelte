@@ -1,7 +1,6 @@
 <script lang="ts">
   import SessionSidebar from "$lib/components/chat/SessionSidebar.svelte";
   import ContextSidePanel from "$lib/components/context/ContextSidePanel.svelte";
-  import EnvironmentPresetSwitcher from "$lib/components/environment/EnvironmentPresetSwitcher.svelte";
   import SessionRailToolbar from "$lib/components/chat/SessionRailToolbar.svelte";
   import ContextModeBar from "$lib/components/context/ContextModeBar.svelte";
   import NavRailViewPopover from "$lib/components/layout/NavRailViewPopover.svelte";
@@ -11,7 +10,6 @@
   import PeersRailToolbar from "$lib/components/peers/PeersRailToolbar.svelte";
   import PeersShellList from "$lib/components/peers/PeersShellList.svelte";
   import SettingsNav from "$lib/components/settings/SettingsNav.svelte";
-  import WorkshopSwitcherCompact from "$lib/components/workshops/WorkshopSwitcherCompact.svelte";
   import { environment } from "$lib/stores/environment.svelte";
   import { layout } from "$lib/stores/layout.svelte";
   import { lmeWorkspace, type LmeExplorerMode } from "$lib/stores/lmeWorkspace.svelte";
@@ -20,24 +18,30 @@
   import { settingsNav } from "$lib/stores/settingsNav.svelte";
   import { feedBadgeForComponents } from "$lib/utils/customViewStatus";
   import { environmentIcon } from "$lib/utils/environmentIcons";
-  import { labelForLmeExplorerMode } from "$lib/utils/lmeExplorerModes";
-  import { buildLifeRailItems } from "$lib/utils/lifeRailItems";
+  import {
+    defaultModeForLmeFamily,
+    isLmeAutomationsMode,
+    isLmeLibraryMode,
+    labelForLmeExplorerMode,
+    type LmeExplorerFamily,
+  } from "$lib/utils/lmeExplorerModes";
+  import {
+    automationsRailSurface,
+    buildLifeRailLayout,
+    libraryRailSurface,
+  } from "$lib/utils/lifeRailSections";
+  import type { LifeRailItem } from "$lib/utils/lifeRailItems";
   import {
     navLabel,
-    navTier,
     navTitle,
     shellSidebarViewTitle,
     surfaceHasShellSidebarView,
   } from "$lib/utils/navSurfaces";
   import {
-    activateLmeModeNestItem,
     activateNestItem,
     NAV_RAIL_NEST_LIMIT,
     nestItemIsActive,
-    nestItemIsActiveForLmeMode,
-    nestItemsForLmeMode,
     nestItemsForSurface,
-    nestKeyForLmeMode,
     prefetchRailNestData,
     surfaceSupportsRailNest,
     type NavRailNestItem,
@@ -47,7 +51,6 @@
     ChevronRight,
     PanelLeftClose,
     Settings,
-    UserRound,
   } from "@lucide/svelte";
   import { SAFETY_SURFACE_SETTINGS } from "$lib/types/environment";
   import type { DaemonHealth } from "$lib/daemon";
@@ -72,6 +75,7 @@
       return {};
     }
   }
+
 
   interface Props {
     active: string;
@@ -110,13 +114,11 @@
   const daemonOk = $derived(health?.ok ?? false);
 
   const surfaces = $derived(environment.navSurfaces());
-  const lifeRailItems = $derived(buildLifeRailItems(surfaces));
-  const workshopNav = $derived(surfaces.filter((surface) => navTier(surface) === "workshop"));
-  const utility = $derived(surfaces.filter((surface) => navTier(surface) === "utility"));
+  const lifeRail = $derived(buildLifeRailLayout(surfaces));
 
-  const iconProps = { size: 18, strokeWidth: 1.75 };
   /** Quieter tree parents — closer to Cursor folder icons. */
   const treeIconProps = { size: 14, strokeWidth: 1.5 };
+  const heroIconProps = { size: 17, strokeWidth: 1.85 };
   const utilityIconProps = { size: 14, strokeWidth: 1.5 };
   /** Explicit open map; missing key = collapsed by default. */
   let nestOpen = $state<Record<string, boolean>>(loadNestOpen());
@@ -186,12 +188,47 @@
     return nest.some((item) => nestItemIsActive(surfaceId, item.id));
   }
 
-  function lmeModeIsActive(modeId: LmeExplorerMode): boolean {
-    if (railPopover?.kind === "lme" && railPopover.mode === modeId) return true;
-    return (
-      (active === "library" || active === "automations") &&
-      lmeWorkspace.explorerMode === modeId
-    );
+  function libraryIsActive(): boolean {
+    if (surfacePopoverOpen("library")) return true;
+    if (railPopover?.kind === "lme" && isLmeLibraryMode(railPopover.mode)) return true;
+    if (showView && viewSurface === "library") return true;
+    if (active !== "library" && active !== "automations") return false;
+    return isLmeLibraryMode(lmeWorkspace.explorerMode);
+  }
+
+  function automationsIsActive(): boolean {
+    if (surfacePopoverOpen("automations")) return true;
+    if (railPopover?.kind === "lme" && isLmeAutomationsMode(railPopover.mode)) return true;
+    if (showView && viewSurface === "automations") return true;
+    if (active !== "library" && active !== "automations") return false;
+    return isLmeAutomationsMode(lmeWorkspace.explorerMode);
+  }
+
+  function ensureFamilyForSurface(surfaceId: string) {
+    if (surfaceId === "library" && !isLmeLibraryMode(lmeWorkspace.explorerMode)) {
+      lmeWorkspace.setExplorerMode(defaultModeForLmeFamily("library"));
+    } else if (
+      surfaceId === "automations" &&
+      !isLmeAutomationsMode(lmeWorkspace.explorerMode)
+    ) {
+      lmeWorkspace.setExplorerMode(defaultModeForLmeFamily("automations"));
+    }
+  }
+
+  function lmeFamilyForSurface(surfaceId: string): LmeExplorerFamily {
+    return surfaceId === "automations" ? "automations" : "library";
+  }
+
+  const YOU_NEST_KEY = "you";
+
+  function youNestItems(): NavRailNestItem[] {
+    if (!lifeRail.context || lifeRail.context.kind !== "surface") return [];
+    return [
+      {
+        id: "context",
+        label: navLabel(lifeRail.context.surface),
+      },
+    ];
   }
 
   function surfacePopoverOpen(surfaceId: string): boolean {
@@ -248,6 +285,7 @@
       event.preventDefault();
       event.stopPropagation();
       // Popover only — don't open a shell tab until the user picks something.
+      ensureFamilyForSurface(surfaceId);
       layout.setShellSidebarMode("nav");
       openRailPopover(
         { kind: "surface", surfaceId },
@@ -257,21 +295,9 @@
       return;
     }
     closeRailPopover();
+    ensureFamilyForSurface(surfaceId);
     onSelect(surfaceId);
     layout.setShellSidebarMode("nav");
-  }
-
-  function selectLmeMode(modeId: LmeExplorerMode, event: MouseEvent) {
-    event.preventDefault();
-    event.stopPropagation();
-    lmeWorkspace.setExplorerMode(modeId);
-    layout.setShellSidebarMode("nav");
-    // Popover only — opening a note/script/etc. creates the tab when chosen.
-    openRailPopover(
-      { kind: "lme", mode: modeId },
-      event.currentTarget as HTMLElement,
-      event,
-    );
   }
 
   /** Open the real surface/tab after a concrete pick inside a rail popover. */
@@ -285,12 +311,14 @@
   function dockPopoverToRail() {
     if (!railPopover) return;
     if (railPopover.kind === "lme") {
-      lmeWorkspace.setExplorerMode(railPopover.mode);
+      const mode = railPopover.mode;
+      lmeWorkspace.setExplorerMode(mode);
       closeRailPopover();
-      layout.openShellSidebarView("library");
+      layout.openShellSidebarView(isLmeAutomationsMode(mode) ? "automations" : "library");
       return;
     }
     const surfaceId = railPopover.surfaceId;
+    ensureFamilyForSurface(surfaceId);
     closeRailPopover();
     layout.openShellSidebarView(surfaceId);
   }
@@ -303,10 +331,6 @@
   function nestFor(surfaceId: string): NavRailNestItem[] {
     if (!surfaceSupportsRailNest(surfaceId)) return [];
     return nestItemsForSurface(surfaceId);
-  }
-
-  function nestForLmeMode(modeId: LmeExplorerMode): NavRailNestItem[] {
-    return nestItemsForLmeMode(modeId);
   }
 
   function isNestExpanded(nestKey: string): boolean {
@@ -325,6 +349,7 @@
     persistNestOpen();
   }
 
+
   async function openNestItem(surfaceId: string, item: NavRailNestItem) {
     // Do not call onSelect(surface) — for chat that re-opens the *current* session
     // and races ensureSessionHydrated against the nest target (transcript bleed).
@@ -335,18 +360,6 @@
       persistNestOpen();
     }
     await activateNestItem(surfaceId, item.id);
-  }
-
-  async function openLmeNestItem(modeId: LmeExplorerMode, item: NavRailNestItem) {
-    const nestKey = nestKeyForLmeMode(modeId);
-    if (!isNestExpanded(nestKey)) {
-      nestOpen = { ...nestOpen, [nestKey]: true };
-      persistNestOpen();
-    }
-    closeRailPopover();
-    // activateTab / openNote mirrors an LME shell tab — no blank library surface.
-    await activateLmeModeNestItem(modeId, item.id);
-    layout.setShellSidebarMode("nav");
   }
 
   onMount(() => {
@@ -403,7 +416,7 @@
           {:else if viewSurface === "chat"}
             <SessionSidebar open={true} variant="inline" />
           {:else if viewSurface === "library" || viewSurface === "automations"}
-            <LmeSidePanel {onOpenChat} />
+            <LmeSidePanel {onOpenChat} family={lmeFamilyForSurface(viewSurface)} />
           {:else if viewSurface === "messaging"}
             <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
               <label class="block px-1.5 pb-1.5 pt-1">
@@ -451,102 +464,10 @@
         </header>
 
         <div
-          class="workshop-icon-rail-items workshop-rail-tree flex min-h-0 flex-1 flex-col overflow-y-auto"
+          class="workshop-icon-rail-items workshop-rail-tree workshop-rail-tree-jobs flex min-h-0 flex-1 flex-col overflow-y-auto"
         >
-          {#each lifeRailItems as item (item.id)}
-            {#if item.kind === "lme-mode"}
-              {@const Icon = item.mode.icon}
-              {@const modeActive = lmeModeIsActive(item.mode.id)}
-              {@const nest = nestForLmeMode(item.mode.id)}
-              {@const nestKey = nestKeyForLmeMode(item.mode.id)}
-              {@const leafActive = nest.some((nestItem) =>
-                nestItemIsActiveForLmeMode(item.mode.id, nestItem.id),
-              )}
-              {@const nestExpanded = nest.length > 0 && isNestExpanded(nestKey)}
-              <div
-                class="workshop-rail-dest"
-                class:workshop-rail-dest-has-nest={nest.length > 0}
-                class:workshop-rail-dest-expanded={nestExpanded}
-              >
-                <div class="workshop-rail-dest-row">
-                  {#if nest.length > 0}
-                    <button
-                      type="button"
-                      class="workshop-rail-dest-twist-btn"
-                      title={nestExpanded ? "Collapse" : "Expand"}
-                      aria-label={nestExpanded
-                        ? `Collapse ${item.mode.label}`
-                        : `Expand ${item.mode.label}`}
-                      aria-expanded={nestExpanded}
-                      onclick={(event) => toggleNest(nestKey, event)}
-                    >
-                      <ChevronRight
-                        size={12}
-                        strokeWidth={2}
-                        class="workshop-rail-dest-chevron {nestExpanded
-                          ? 'workshop-rail-dest-chevron-open'
-                          : ''}"
-                      />
-                    </button>
-                  {:else}
-                    <span
-                      class="workshop-rail-dest-twist workshop-rail-dest-twist-empty"
-                      aria-hidden="true"
-                    ></span>
-                  {/if}
-                  <button
-                    type="button"
-                    class="{railBtnClass(item.mode.id, 'life', {
-                      quietActive: true,
-                      active: modeActive,
-                    })} workshop-rail-dest-btn"
-                    class:workshop-rail-dest-btn-dimmed={leafActive && nestExpanded}
-                    title={item.mode.label}
-                    aria-label={item.mode.label}
-                    aria-current={modeActive && !leafActive ? "page" : undefined}
-                    aria-expanded={railPopover?.kind === "lme" && railPopover.mode === item.mode.id}
-                    aria-haspopup="dialog"
-                    onclick={(event) => selectLmeMode(item.mode.id, event)}
-                  >
-                    <span class="workshop-rail-btn-icon" aria-hidden="true">
-                      <Icon {...treeIconProps} />
-                    </span>
-                    <span class="workshop-rail-btn-label">{item.mode.label}</span>
-                  </button>
-                </div>
-                {#if nestExpanded}
-                  <ul class="workshop-rail-nest" aria-label="{item.mode.label} recent">
-                    {#each nest as nestItem (nestItem.id)}
-                      <li>
-                        <button
-                          type="button"
-                          class="workshop-rail-nest-btn"
-                          class:workshop-rail-nest-btn-active={nestItemIsActiveForLmeMode(
-                            item.mode.id,
-                            nestItem.id,
-                          )}
-                          title={nestItem.label}
-                          onclick={() => void openLmeNestItem(item.mode.id, nestItem)}
-                        >
-                          <span class="workshop-rail-nest-label">{nestItem.label}</span>
-                        </button>
-                      </li>
-                    {/each}
-                    {#if nest.length >= NAV_RAIL_NEST_LIMIT}
-                      <li>
-                        <button
-                          type="button"
-                          class="workshop-rail-nest-more"
-                          onclick={(event) => selectLmeMode(item.mode.id, event)}
-                        >
-                          More
-                        </button>
-                      </li>
-                    {/if}
-                  </ul>
-                {/if}
-              </div>
-            {:else}
+          {#snippet railDest(item: LifeRailItem, hero = false)}
+            {#if item.kind === "surface"}
               {@const surface = item.surface}
               {@const Icon = environmentIcon(surface.icon)}
               {@const badge = activityFor(surface.id)}
@@ -554,8 +475,16 @@
               {@const nest = nestFor(surface.id)}
               {@const leafActive = nestHasActiveItem(surface.id, nest)}
               {@const nestExpanded = nest.length > 0 && isNestExpanded(surface.id)}
+              {@const isLibrary = surface.id === "library"}
+              {@const isAutomations = surface.id === "automations"}
+              {@const doorActive = isLibrary
+                ? libraryIsActive()
+                : isAutomations
+                  ? automationsIsActive()
+                  : active === surface.id || surfacePopoverOpen(surface.id)}
               <div
                 class="workshop-rail-dest"
+                class:workshop-rail-dest-hero={hero}
                 class:workshop-rail-dest-has-nest={nest.length > 0}
                 class:workshop-rail-dest-expanded={nestExpanded}
               >
@@ -589,19 +518,30 @@
                     type="button"
                     class="{railBtnClass(surface.id, 'life', {
                       quietActive: true,
-                      active:
-                        active === surface.id || surfacePopoverOpen(surface.id),
+                      active: doorActive,
                     })} workshop-rail-dest-btn"
                     class:workshop-rail-dest-btn-dimmed={leafActive && nestExpanded}
+                    class:workshop-rail-library-btn={isLibrary || isAutomations}
                     title={navTitle(surface)}
                     aria-label={badge > 0 ? `${navTitle(surface)} (${badge} active)` : navTitle(surface)}
-                    aria-current={active === surface.id && !leafActive ? "page" : undefined}
-                    aria-expanded={surfacePopoverOpen(surface.id)}
-                    aria-haspopup={surfaceHasShellSidebarView(surface.id) ? "dialog" : undefined}
+                    aria-current={doorActive && !leafActive ? "page" : undefined}
+                    aria-expanded={isLibrary
+                      ? surfacePopoverOpen("library") ||
+                        (railPopover?.kind === "lme" && isLmeLibraryMode(railPopover.mode))
+                      : isAutomations
+                        ? surfacePopoverOpen("automations") ||
+                          (railPopover?.kind === "lme" &&
+                            isLmeAutomationsMode(railPopover.mode))
+                        : surfacePopoverOpen(surface.id)}
+                    aria-haspopup={surfaceHasShellSidebarView(surface.id) ||
+                    isLibrary ||
+                    isAutomations
+                      ? "dialog"
+                      : undefined}
                     onclick={(event) => selectDestination(surface.id, event)}
                   >
                     <span class="workshop-rail-btn-icon" aria-hidden="true">
-                      <Icon {...treeIconProps} />
+                      <Icon {...(hero ? heroIconProps : treeIconProps)} />
                       {#if badge > 0 && showCountBadge(surface.id)}
                         <span class="workshop-rail-count-badge">{badge > 9 ? "9+" : badge}</span>
                       {:else if badge > 0}
@@ -658,71 +598,132 @@
                 {/if}
               </div>
             {/if}
-          {/each}
+          {/snippet}
 
-          {#if workshopNav.length > 0}
-            <div class="workshop-rail-tier-divider" aria-hidden="true"></div>
-            {#each workshopNav as surface (surface.id)}
-              {@const Icon = environmentIcon(surface.icon)}
-              <button
-                type="button"
-                class={railBtnClass(surface.id, "life")}
-                title={surface.label}
-                aria-label={surface.label}
-                aria-current={active === surface.id ? "page" : undefined}
-                onclick={(event) => selectDestination(surface.id, event)}
-              >
-                <span class="workshop-rail-btn-icon" aria-hidden="true">
-                  <Icon {...iconProps} />
-                </span>
-                <span class="workshop-rail-btn-label">{surface.label}</span>
-              </button>
+          <div class="workshop-rail-primary">
+            {#each lifeRail.primary as item, index (item.id)}
+              {#if lifeRail.focusStartIndex > 0 && index === lifeRail.focusStartIndex}
+                <div class="workshop-rail-breath" aria-hidden="true"></div>
+              {/if}
+              {#if lifeRail.customStartIndex >= 0 && index === lifeRail.customStartIndex}
+                {#if lifeRail.showLibrary}
+                  {@render railDest(
+                    { kind: "surface", id: "library", surface: libraryRailSurface() },
+                    false,
+                  )}
+                {/if}
+                {#if lifeRail.showAutomations}
+                  {@render railDest(
+                    {
+                      kind: "surface",
+                      id: "automations",
+                      surface: automationsRailSurface(),
+                    },
+                    false,
+                  )}
+                {/if}
+                <div class="workshop-rail-breath" aria-hidden="true"></div>
+              {/if}
+              {@render railDest(item, item.id === "chat")}
             {/each}
-          {/if}
-
-          {#if utility.length > 0}
-            <div class="workshop-rail-tier-divider" aria-hidden="true"></div>
-            {#each utility as surface (surface.id)}
-              {@const Icon = environmentIcon(surface.icon)}
-              <button
-                type="button"
-                class="{railBtnClass(surface.id, 'utility', {
-                  quietActive: true,
-                  active: active === surface.id || surfacePopoverOpen(surface.id),
-                })} workshop-rail-tree-row"
-                title={surface.label}
-                aria-label={surface.label}
-                aria-current={active === surface.id ? "page" : undefined}
-                aria-expanded={surfacePopoverOpen(surface.id)}
-                aria-haspopup={surfaceHasShellSidebarView(surface.id) ? "dialog" : undefined}
-                onclick={(event) => selectDestination(surface.id, event)}
-              >
-                <span class="workshop-rail-btn-icon" aria-hidden="true">
-                  <Icon {...utilityIconProps} />
-                </span>
-                <span class="workshop-rail-btn-label">{surface.label}</span>
-              </button>
-            {/each}
-          {/if}
+            {#if (lifeRail.showLibrary || lifeRail.showAutomations) && lifeRail.customStartIndex < 0}
+              {#if lifeRail.showLibrary}
+                {@render railDest(
+                  { kind: "surface", id: "library", surface: libraryRailSurface() },
+                  false,
+                )}
+              {/if}
+              {#if lifeRail.showAutomations}
+                {@render railDest(
+                  {
+                    kind: "surface",
+                    id: "automations",
+                    surface: automationsRailSurface(),
+                  },
+                  false,
+                )}
+              {/if}
+            {/if}
+          </div>
         </div>
 
         <div class="workshop-rail-dock">
-          <button
-            type="button"
-            class="{railBtnClass('profiles', 'utility', { quietActive: true })} workshop-rail-dock-btn"
-            title="You — {activeProfileLabel}"
-            aria-label="You ({activeProfileLabel})"
-            aria-current={active === "profiles" ? "page" : undefined}
-            onclick={(event) => selectDestination("profiles", event)}
-          >
-            <span class="workshop-rail-btn-icon" aria-hidden="true">
-              <UserRound {...utilityIconProps} />
-            </span>
-            <span class="workshop-rail-btn-label">You</span>
-          </button>
-
-          <EnvironmentPresetSwitcher variant="rail" expanded={true} />
-          <WorkshopSwitcherCompact variant="rail" expanded={true} />
+          {#if lifeRail.you.kind === "surface"}
+            {@const youSurface = lifeRail.you.surface}
+            {@const YouIcon = environmentIcon(youSurface.icon)}
+            {@const youNest = youNestItems()}
+            {@const youNestExpanded = youNest.length > 0 && isNestExpanded(YOU_NEST_KEY)}
+            {@const contextActive =
+              active === "context" || surfacePopoverOpen("context")}
+            <div
+              class="workshop-rail-dest workshop-rail-dock-you"
+              class:workshop-rail-dest-has-nest={youNest.length > 0}
+              class:workshop-rail-dest-expanded={youNestExpanded}
+            >
+              <div class="workshop-rail-dest-row">
+                {#if youNest.length > 0}
+                  <button
+                    type="button"
+                    class="workshop-rail-dest-twist-btn"
+                    title={youNestExpanded ? "Collapse" : "Expand"}
+                    aria-label={youNestExpanded ? "Collapse You" : "Expand You"}
+                    aria-expanded={youNestExpanded}
+                    onclick={(event) => toggleNest(YOU_NEST_KEY, event)}
+                  >
+                    <ChevronRight
+                      size={12}
+                      strokeWidth={2}
+                      class="workshop-rail-dest-chevron {youNestExpanded
+                        ? 'workshop-rail-dest-chevron-open'
+                        : ''}"
+                    />
+                  </button>
+                {:else}
+                  <span
+                    class="workshop-rail-dest-twist workshop-rail-dest-twist-empty"
+                    aria-hidden="true"
+                  ></span>
+                {/if}
+                <button
+                  type="button"
+                  class="{railBtnClass('profiles', 'utility', {
+                    quietActive: true,
+                    active:
+                      active === 'profiles' ||
+                      contextActive ||
+                      surfacePopoverOpen('profiles'),
+                  })} workshop-rail-dock-btn workshop-rail-dest-btn"
+                  class:workshop-rail-dest-btn-dimmed={contextActive && youNestExpanded}
+                  title="You — {activeProfileLabel}"
+                  aria-label="You ({activeProfileLabel})"
+                  aria-current={active === "profiles" ? "page" : undefined}
+                  onclick={(event) => selectDestination("profiles", event)}
+                >
+                  <span class="workshop-rail-btn-icon" aria-hidden="true">
+                    <YouIcon {...utilityIconProps} />
+                  </span>
+                  <span class="workshop-rail-btn-label">You</span>
+                </button>
+              </div>
+              {#if youNestExpanded}
+                <ul class="workshop-rail-nest" aria-label="Memory">
+                  {#each youNest as nestItem (nestItem.id)}
+                    <li>
+                      <button
+                        type="button"
+                        class="workshop-rail-nest-btn"
+                        class:workshop-rail-nest-btn-active={contextActive}
+                        title={nestItem.label}
+                        onclick={(event) => selectDestination(nestItem.id, event)}
+                      >
+                        <span class="workshop-rail-nest-label">{nestItem.label}</span>
+                      </button>
+                    </li>
+                  {/each}
+                </ul>
+              {/if}
+            </div>
+          {/if}
 
           <button
             type="button"
@@ -782,9 +783,12 @@
     {/snippet}
 
     {#if railPopover.kind === "lme"}
-      <LmeSidePanel {onOpenChat} />
+      <LmeSidePanel
+        {onOpenChat}
+        family={isLmeAutomationsMode(railPopover.mode) ? "automations" : "library"}
+      />
     {:else if railPopover.surfaceId === "library" || railPopover.surfaceId === "automations"}
-      <LmeSidePanel {onOpenChat} />
+      <LmeSidePanel {onOpenChat} family={lmeFamilyForSurface(railPopover.surfaceId)} />
     {:else if railPopover.surfaceId === SAFETY_SURFACE_SETTINGS}
       <div class="min-h-0 flex-1 overflow-y-auto px-1.5 py-1">
         <SettingsNav

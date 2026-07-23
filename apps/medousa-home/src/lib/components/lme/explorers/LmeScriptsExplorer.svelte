@@ -20,6 +20,7 @@
   import { scriptRenameUi } from "$lib/stores/scriptRenameUi.svelte";
   import { workshop } from "$lib/stores/workshop.svelte";
   import { portLmeDock } from "$lib/utils/lmeDockHost";
+  import { ensureRailPopoverOpen } from "$lib/utils/railPopoverChrome";
   import type { GraphemeScriptEntry } from "$lib/types/grapheme";
   import {
     bindScriptLongPress,
@@ -74,6 +75,7 @@
 
   async function openSearch() {
     closeMenus();
+    await ensureRailPopoverOpen();
     searchExpanded = true;
     await tick();
     searchInputEl?.focus();
@@ -297,20 +299,27 @@
 
   <footer class="lme-side-rail-dock" use:portLmeDock>
     {#if searchExpanded}
-      <div class="lme-dock-search-expand min-w-0 flex-1">
-        <Search size={14} strokeWidth={1.75} class="lme-dock-search-glyph" />
+      <div class="lme-dock-search-expand flex min-w-0 flex-1 items-center gap-1">
+        <Search size={14} strokeWidth={1.75} class="shrink-0 text-surface-500" aria-hidden="true" />
         <input
           bind:this={searchInputEl}
-          class="lme-dock-search-input"
+          class="min-w-0 flex-1 border-0 bg-transparent text-[12px] text-surface-100 placeholder:text-surface-500 focus:outline-none focus:ring-0"
           type="search"
           placeholder="Search scripts…"
           bind:value={search}
           onkeydown={handleSearchKeydown}
         />
+        <button
+          type="button"
+          class="vault-dock-icon-btn"
+          aria-label="Close search"
+          title="Close search"
+          onclick={closeSearch}
+        >
+          <X size={14} strokeWidth={1.75} />
+        </button>
       </div>
-    {/if}
-
-    {#if !searchExpanded}
+    {:else}
       <button
         type="button"
         class="vault-dock-icon-btn"
@@ -321,33 +330,32 @@
         <Plus size={16} strokeWidth={1.75} />
       </button>
 
-      <button
-        type="button"
-        class="vault-dock-icon-btn"
-        aria-label="Refresh"
-        title="Refresh"
-        disabled={refreshing}
-        onclick={refreshLibrary}
-      >
-        <RefreshCw size={15} strokeWidth={1.75} class={refreshing ? "animate-spin" : ""} />
-      </button>
-    {/if}
+      <div class="lme-dock-chrome-secondary shrink-0 items-center gap-0.5">
+        <button
+          type="button"
+          class="vault-dock-icon-btn"
+          aria-label="Refresh"
+          title="Refresh"
+          disabled={refreshing}
+          onclick={refreshLibrary}
+        >
+          <RefreshCw size={15} strokeWidth={1.75} class={refreshing ? "animate-spin" : ""} />
+        </button>
 
-    {#if !searchExpanded}
-    <div class="relative shrink-0">
-      <button
-        type="button"
-        class="vault-dock-icon-btn {dockMenu === 'templates'
-          ? 'bg-surface-800 text-primary-300'
-          : ''}"
-        aria-haspopup="dialog"
-        aria-expanded={dockMenu === "templates"}
-        aria-label="Templates"
-        title="Templates"
-        onclick={(event) => toggleMenu("templates", event)}
-      >
-        <LayoutTemplate size={15} strokeWidth={1.75} />
-      </button>
+        <div class="relative shrink-0">
+          <button
+            type="button"
+            class="vault-dock-icon-btn {dockMenu === 'templates'
+              ? 'bg-surface-800 text-primary-300'
+              : ''}"
+            aria-haspopup="dialog"
+            aria-expanded={dockMenu === "templates"}
+            aria-label="Templates"
+            title="Templates"
+            onclick={(event) => toggleMenu("templates", event)}
+          >
+            <LayoutTemplate size={15} strokeWidth={1.75} />
+          </button>
       {#if dockMenu === "templates"}
         <div
           class="lme-scripts-popover absolute bottom-full right-0 z-30 mb-1.5 w-[min(19rem,calc(100vw-2rem))]"
@@ -553,20 +561,9 @@
           {/if}
         </div>
       {/if}
-    </div>
-    {/if}
+        </div>
+      </div>
 
-    {#if searchExpanded}
-      <button
-        type="button"
-        class="vault-dock-icon-btn"
-        aria-label="Close search"
-        title="Close search"
-        onclick={closeSearch}
-      >
-        <X size={15} strokeWidth={1.75} />
-      </button>
-    {:else}
       <button
         type="button"
         class="vault-dock-icon-btn"

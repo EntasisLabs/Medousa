@@ -1,6 +1,7 @@
 <script lang="ts">
   import { Plus, Search, X } from "@lucide/svelte";
   import { chat } from "$lib/stores/chat.svelte";
+  import { ensureRailPopoverOpen } from "$lib/utils/railPopoverChrome";
   import { tick } from "svelte";
 
   interface Props {
@@ -34,6 +35,7 @@
   });
 
   async function openSearch() {
+    await ensureRailPopoverOpen();
     searchOpen = true;
     await tick();
     searchInputEl?.focus();

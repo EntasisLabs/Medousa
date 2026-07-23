@@ -2,12 +2,12 @@
   import type { DaemonHealth } from "$lib/daemon";
   import type { WorkCard } from "$lib/types/workspace";
   import WorkMotionPeek from "$lib/components/layout/WorkMotionPeek.svelte";
+  import EnvironmentPresetSwitcher from "$lib/components/environment/EnvironmentPresetSwitcher.svelte";
+  import WorkshopSwitcherCompact from "$lib/components/workshops/WorkshopSwitcherCompact.svelte";
   import { formatShortcut } from "$lib/platform";
+  import { environment } from "$lib/stores/environment.svelte";
   import { shellTabs } from "$lib/stores/shellTabs.svelte";
-  import {
-    LME_DOCK_IN_STATUS_BAR,
-    setLmeDockHost,
-  } from "$lib/utils/lmeDockHost";
+  import { workshops } from "$lib/stores/workshops.svelte";
   import { Activity } from "@lucide/svelte";
 
   interface Props {
@@ -22,8 +22,6 @@
     minimal?: boolean;
     /** Library continuity — connection + brain name styling. */
     continuity?: boolean;
-    /** Active workshop label when multiple engines are saved. */
-    workshopLabel?: string | null;
     motionCards?: WorkCard[];
     selectedMotionId?: string | null;
     onSelectMotion?: (id: string) => void | Promise<void>;
@@ -42,7 +40,6 @@
     lastTickAt = null,
     minimal = false,
     continuity = false,
-    workshopLabel = null,
     motionCards = [],
     selectedMotionId = null,
     onSelectMotion,
@@ -51,19 +48,16 @@
     onOpenSpotlight,
   }: Props = $props();
 
+  const showWorkshopSwitcher = $derived(
+    Boolean(workshops.activeLabel) && (!minimal || continuity || workshops.hasMultipleWorkshops),
+  );
+  const showLayoutSwitcher = $derived(
+    (environment.spec?.layoutPresets?.length ?? 0) > 1,
+  );
+
   let motionPeekOpen = $state(false);
-  let lmeDockHostEl = $state<HTMLElement | null>(null);
 
   const quiet = $derived(minimal || continuity);
-
-  $effect(() => {
-    if (!LME_DOCK_IN_STATUS_BAR) {
-      setLmeDockHost(null);
-      return;
-    }
-    setLmeDockHost(lmeDockHostEl);
-    return () => setLmeDockHost(null);
-  });
 
   const statusLabel = $derived(
     health?.ok ? "Connected" : health ? "Offline" : "Connecting…",
@@ -135,22 +129,17 @@
   <span class="workshop-status-whisper shrink-0 {statusTextClass}">
     <span class={statusDotClass} aria-hidden="true"></span>
     <span class="truncate">{statusLabel}</span>
-    {#if workshopLabel && (!minimal || continuity)}
+    {#if showWorkshopSwitcher}
       <span class="text-surface-600">·</span>
-      <span class="truncate text-surface-500">{workshopLabel}</span>
+      <WorkshopSwitcherCompact variant="status" />
+    {/if}
+    {#if showLayoutSwitcher}
+      <span class="text-surface-600">·</span>
+      <EnvironmentPresetSwitcher variant="status" />
     {/if}
   </span>
 
-  {#if LME_DOCK_IN_STATUS_BAR}
-    <div
-      bind:this={lmeDockHostEl}
-      class="lme-status-dock-slot min-h-0 min-w-0 flex-1"
-      data-lme-dock-slot
-      data-debug-label="lme-status-dock-slot"
-    ></div>
-  {:else}
-    <div class="min-w-0 flex-1"></div>
-  {/if}
+  <div class="min-w-0 flex-1"></div>
 
   <div class="flex shrink-0 items-center gap-2.5 text-surface-500">
     {#if !quiet}

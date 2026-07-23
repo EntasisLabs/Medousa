@@ -16,6 +16,7 @@
     suggestFlowNameFromRuns,
   } from "$lib/utils/toolHistorySummary";
   import { portLmeDock } from "$lib/utils/lmeDockHost";
+  import { ensureRailPopoverOpen } from "$lib/utils/railPopoverChrome";
 
   interface Props {
     visible: boolean;
@@ -46,6 +47,7 @@
   });
 
   async function openDockSearch() {
+    await ensureRailPopoverOpen();
     searchExpanded = true;
     await tick();
     searchInputEl?.focus();
@@ -379,11 +381,11 @@
       use:portLmeDock
     >
       {#if searchExpanded}
-        <div class="lme-dock-search-expand min-w-0 flex-1">
-          <Search size={14} strokeWidth={1.75} class="lme-dock-search-glyph" />
+        <div class="lme-dock-search-expand flex min-w-0 flex-1 items-center gap-1">
+          <Search size={14} strokeWidth={1.75} class="shrink-0 text-surface-500" aria-hidden="true" />
           <input
             bind:this={searchInputEl}
-            class="lme-dock-search-input"
+            class="min-w-0 flex-1 border-0 bg-transparent text-[12px] text-surface-100 placeholder:text-surface-500 focus:outline-none focus:ring-0"
             type="search"
             placeholder="Search history…"
             bind:value={search}
@@ -392,18 +394,18 @@
             spellcheck="false"
             onkeydown={handleDockSearchKeydown}
           />
+          <button
+            type="button"
+            class="vault-dock-icon-btn"
+            aria-label="Close search"
+            title="Close search"
+            onclick={closeDockSearch}
+          >
+            <X size={14} strokeWidth={1.75} />
+          </button>
         </div>
-        <button
-          type="button"
-          class="vault-dock-icon-btn"
-          aria-label="Close search"
-          title="Close search"
-          onclick={closeDockSearch}
-        >
-          <X size={15} strokeWidth={1.75} />
-        </button>
       {:else}
-        <div class="min-w-0 flex-1"></div>
+        <div class="lme-dock-leading-ghost min-w-0 flex-1"></div>
         <button
           type="button"
           class="vault-dock-icon-btn"

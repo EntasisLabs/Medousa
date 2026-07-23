@@ -1,12 +1,14 @@
 <script lang="ts">
   import { Search, X } from "@lucide/svelte";
   import { messagingShell } from "$lib/stores/messagingShell.svelte";
+  import { ensureRailPopoverOpen } from "$lib/utils/railPopoverChrome";
   import { tick } from "svelte";
 
   let searchOpen = $state(false);
   let searchInputEl = $state<HTMLInputElement | null>(null);
 
   async function openSearch() {
+    await ensureRailPopoverOpen();
     searchOpen = true;
     await tick();
     searchInputEl?.focus();
