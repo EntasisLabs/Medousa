@@ -191,6 +191,8 @@ export interface HumanBrowserNavigatedPayload {
   favicon?: string | null;
   tabId?: string | null;
   surface?: HumanBrowserSurface;
+  /** Same-document / History API change — update URL without shell history push. */
+  inPage?: boolean;
 }
 
 export interface HumanBrowserLoadingPayload {

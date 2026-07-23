@@ -263,6 +263,7 @@ export class HumanBrowserStore {
     const title = payload.title?.trim();
     const favicon = payload.favicon?.trim() || null;
     const tabId = payload.tabId?.trim();
+    const inPage = payload.inPage === true;
 
     if (tabId) {
       const idx = this.tabs.findIndex((tab) => tab.id === tabId);
@@ -276,7 +277,8 @@ export class HumanBrowserStore {
         return;
       }
 
-      if (tab.active) {
+      // Full document navigations own shell history; SPA/history API uses native stack.
+      if (!inPage && tab.active) {
         const previous = tab.url;
         if (previous && previous !== "about:blank" && previous !== trimmed) {
           this.updateActiveTab((entry) => ({
@@ -285,8 +287,8 @@ export class HumanBrowserStore {
             historyForward: [],
           }));
         }
-        void this.refreshNativeNavState();
       }
+      if (tab.active) void this.refreshNativeNavState();
 
       this.updateTabAt(idx, trimmed, title, favicon);
       return;
@@ -300,13 +302,15 @@ export class HumanBrowserStore {
       return;
     }
 
-    const previous = this.activeUrl;
-    if (previous && previous !== "about:blank" && previous !== trimmed) {
-      this.updateActiveTab((tab) => ({
-        ...tab,
-        historyBack: [...tab.historyBack, previous],
-        historyForward: [],
-      }));
+    if (!inPage) {
+      const previous = this.activeUrl;
+      if (previous && previous !== "about:blank" && previous !== trimmed) {
+        this.updateActiveTab((tab) => ({
+          ...tab,
+          historyBack: [...tab.historyBack, previous],
+          historyForward: [],
+        }));
+      }
     }
 
     this.setActiveTabLocal(trimmed, title, favicon);

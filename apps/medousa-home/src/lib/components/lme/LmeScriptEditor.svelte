@@ -5,6 +5,7 @@
   import GraphemeScriptEditorPanel from "$lib/components/grapheme/GraphemeScriptEditorPanel.svelte";
   import { environment } from "$lib/stores/environment.svelte";
   import { layout } from "$lib/stores/layout.svelte";
+  import { usesUnifiedTitlebar } from "$lib/platform";
   import { SCRIPT_WORKBENCH_OPEN_CONSOLE_EVENT } from "$lib/utils/scriptWorkbenchChromeEvents";
 
   interface Props {
@@ -15,6 +16,9 @@
 
   let consoleOpen = $state(true);
   let chatOpen = $state(false);
+
+  /** Unified titlebar owns master-rail expand — pretend rail is open so titlebar hides it. */
+  const shellLeftOpen = $derived(usesUnifiedTitlebar() || layout.shellSidebarExpanded);
 
   function showWorkspaceBrowser() {
     layout.openShellSidebarView(layout.desktopSurface);
@@ -35,7 +39,7 @@
   data-debug-label="lme-script-editor"
 >
   <ScriptWorkbenchTitlebar
-    leftOpen={layout.shellSidebarExpanded}
+    leftOpen={shellLeftOpen}
     {consoleOpen}
     {chatOpen}
     hideTabStrip={true}

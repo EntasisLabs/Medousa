@@ -151,6 +151,8 @@ export function createBrowserCompositor(
   let layoutChain: Promise<void> = Promise.resolve();
   let lastBounds: HumanBrowserEmbedBounds | null = null;
   let lastVisible = false;
+  /** After host remount / split, always push bounds once (ignore equality). */
+  let forceBoundsNext = false;
   let resizeListenerBound = false;
   let tauriResizeUnlisten: (() => void) | null = null;
 
@@ -227,9 +229,20 @@ export function createBrowserCompositor(
       bottomChromeEl,
       chromeEl,
     );
-    if (!bounds || gen !== layoutGeneration) return;
+    // Host not laid out yet (common right after split remount) — keep native hidden
+    // so we never paint at stale pre-split LAST_EMBED_PLACEMENT bounds.
+    if (!bounds) {
+      if (lastVisible) {
+        await humanBrowserEmbedHide().catch(() => {});
+        lastVisible = false;
+      }
+      if (gen === layoutGeneration) scheduleLayout();
+      return;
+    }
+    if (gen !== layoutGeneration) return;
 
-    const boundsChanged = !boundsEqual(lastBounds, bounds);
+    const boundsChanged = forceBoundsNext || !boundsEqual(lastBounds, bounds);
+    forceBoundsNext = false;
 
     if (options.mode === "mobile") {
       lastBounds = bounds;
@@ -267,14 +280,14 @@ export function createBrowserCompositor(
     } else {
       await humanBrowserSetMobileShellActive(false);
       if (gen !== layoutGeneration) return;
-      if (boundsChanged) {
+      // Bounds before show — critical after split so we don't flash full-pane size.
+      if (boundsChanged || !lastVisible) {
         await humanBrowserEmbedSetBounds(bounds);
         lastBounds = bounds;
       }
       // Only show (and native flush) when becoming visible. Re-show on every bounds
       // change was re-navigating mid-load on Windows WebView2.
       if (!lastVisible) {
-        lastBounds = bounds;
         await humanBrowserEmbedShow();
         lastVisible = true;
       }
@@ -332,6 +345,11 @@ export function createBrowserCompositor(
       return;
     }
 
+    // New embed host (split / ownership move) — never reuse prior pane rect.
+    lastBounds = null;
+    lastVisible = false;
+    forceBoundsNext = true;
+
     resizeObserver?.disconnect();
     resizeObserver = new ResizeObserver(() => scheduleLayout());
     resizeObserver.observe(hostEl);
@@ -369,6 +387,8 @@ export function createBrowserCompositor(
     panelEl = null;
     bottomChromeEl = null;
     chromeEl = null;
+    lastBounds = null;
+    forceBoundsNext = false;
     void humanBrowserEmbedHide().catch(() => {});
     lastVisible = false;
     notifyState();
@@ -396,6 +416,11 @@ let sharedCompositor: BrowserCompositor | null = null;
 
 export function registerBrowserCompositor(compositor: BrowserCompositor | null) {
   sharedCompositor = compositor;
+}
+
+/** Only clear the shared slot if this instance still owns it (split remount races). */
+export function unregisterBrowserCompositor(compositor: BrowserCompositor) {
+  if (sharedCompositor === compositor) sharedCompositor = null;
 }
 
 export function getBrowserCompositor(): BrowserCompositor | null {

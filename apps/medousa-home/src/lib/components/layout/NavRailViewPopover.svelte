@@ -9,6 +9,10 @@
   } from "$lib/utils/railPopover";
   import BodyPortal from "$lib/components/ui/BodyPortal.svelte";
   import { popLmeDockHost, pushLmeDockHost } from "$lib/utils/lmeDockHost";
+  import {
+    popBrowserPopoverOverlay,
+    pushBrowserPopoverOverlay,
+  } from "$lib/utils/browserPopoverOverlay";
   import { setRailPopoverChrome } from "$lib/utils/railPopoverChrome";
   import type { Snippet } from "svelte";
   import { tick } from "svelte";
@@ -150,6 +154,15 @@
       isOpen: () => phase === "open",
     });
     return () => setRailPopoverChrome(null);
+  });
+
+  // Native browser embed paints above DOM — hide it while the rail sheet is open.
+  $effect(() => {
+    if (!open) return;
+    void pushBrowserPopoverOverlay();
+    return () => {
+      void popBrowserPopoverOverlay();
+    };
   });
 
   async function runCollapseSequence() {

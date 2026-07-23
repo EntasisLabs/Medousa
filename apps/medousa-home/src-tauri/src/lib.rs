@@ -117,6 +117,30 @@ pub fn run() {
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             setup_desktop_tray(app)?;
 
+            // Unified title bar: macOS Overlay traffic lights over content; Win/Linux
+            // frameless so HTML window controls own the chrome (see AppTitlebar).
+            // Platform tauri.*.conf.json must also set these — those files replace the
+            // windows[] list and previously dropped Overlay/hiddenTitle (double chrome).
+            #[cfg(target_os = "macos")]
+            {
+                if let Some(main) = app.get_webview_window("main") {
+                    if let Err(err) = main.set_title_bar_style(tauri::TitleBarStyle::Overlay) {
+                        eprintln!("[medousa-home] set_title_bar_style(Overlay): {err}");
+                    }
+                }
+            }
+            #[cfg(all(
+                not(any(target_os = "ios", target_os = "android")),
+                not(target_os = "macos")
+            ))]
+            {
+                if let Some(main) = app.get_webview_window("main") {
+                    if let Err(err) = main.set_decorations(false) {
+                        eprintln!("[medousa-home] set_decorations(false): {err}");
+                    }
+                }
+            }
+
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             {
                 human_browser::init_app_handle(app.handle().clone());
@@ -334,6 +358,8 @@ pub fn run() {
             human_browser::human_browser_embed_coord_probe,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             human_browser::human_browser_set_mobile_shell_active,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            human_browser::human_browser_report_location,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             human_browser::human_browser_report_title,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]

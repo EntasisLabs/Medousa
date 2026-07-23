@@ -214,7 +214,7 @@
     open={menuOpen}
     onClose={closeMenu}
     anchorRect={menuAnchorRect}
-    placement="above"
+    placement="below"
     title="Page actions"
     ariaLabel="Browser page actions"
     width={280}

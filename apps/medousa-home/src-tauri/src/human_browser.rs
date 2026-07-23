@@ -24,7 +24,9 @@ const EMBED_SURFACE_COLOR: Color = Color(12, 14, 18, 255);
 const BROWSER_WINDOW_LABEL: &str = "browser";
 const BROWSER_CONTENT_LABEL: &str = "browser-content";
 const BROWSER_CHROME_LABEL: &str = "browser-chrome";
-const CHROME_HEIGHT_LOGICAL: f64 = 156.0;
+/// Workshop-layout fallback only (desktop freeform uses DOM host measure).
+/// Keep roughly in sync with AppTitlebar (~40) + browser toolbar (~36).
+const CHROME_HEIGHT_LOGICAL: f64 = 96.0;
 /// Pop-out chrome strip — must match `h-[132px]` in `popout/browser-chrome/+page.svelte`.
 const POPOUT_CHROME_HEIGHT_LOGICAL: f64 = 132.0;
 
@@ -286,6 +288,9 @@ pub struct HumanBrowserNavigatedPayload {
     pub tab_id: Option<String>,
     #[serde(default = "default_embed_surface")]
     pub surface: String,
+    /// Same-document / History API change — update the URL bar without shell history push.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub in_page: bool,
 }
 
 fn default_embed_surface() -> String {
@@ -740,6 +745,18 @@ fn emit_navigated(
     favicon: Option<String>,
     tab_id: Option<String>,
 ) {
+    emit_navigated_ex(app, surface, url, title, favicon, tab_id, false);
+}
+
+fn emit_navigated_ex(
+    app: &AppHandle,
+    surface: BrowserSurface,
+    url: &str,
+    title: Option<String>,
+    favicon: Option<String>,
+    tab_id: Option<String>,
+    in_page: bool,
+) {
     let resolved_tab_id = tab_id.or_else(|| active_tab_id(surface));
     if resolved_tab_id.as_deref() == active_tab_id(surface).as_deref() {
         let mut guard = surface_url_lock(surface)
@@ -753,6 +770,7 @@ fn emit_navigated(
         favicon,
         tab_id: resolved_tab_id,
         surface: surface.as_str().to_string(),
+        in_page,
     };
     let _ = app.emit("human-browser-navigated", payload);
 }
@@ -787,13 +805,14 @@ fn probe_page_metadata(
     let url_json = serde_json::to_string(url).unwrap_or_else(|_| "\"\"".to_string());
     let surface_json =
         serde_json::to_string(surface.as_str()).unwrap_or_else(|_| "\"embed\"".to_string());
+    // Prefer live location.href so server redirects aren't stuck on the requested URL.
     let script = [
-        "(function(){try{var u=",
+        "(function(){try{var u=(window.location&&window.location.href)||",
         &url_json,
         ";var s=",
         &surface_json,
         ";var t=(document.title||'').trim();var fav=null;try{var link=document.querySelector('link[rel~=\"icon\"]');if(link&&link.href)fav=link.href;}catch(e){}var i=window.__TAURI_INTERNALS__||window.__TAURI__;if(!i||!i.invoke)return;",
-        "if(t)i.invoke('human_browser_report_title',{url:u,title:t,surface:s});",
+        "i.invoke('human_browser_report_location',{url:u,title:t||null,surface:s,inPage:false});",
         "if(fav)i.invoke('human_browser_report_favicon',{url:u,favicon:fav,surface:s});",
         "i.invoke('human_browser_report_nav_state',{canGoBack:window.history.length>1,canGoForward:false,surface:s});",
         "}catch(e){}})();",
@@ -819,6 +838,21 @@ fn desktop_hotkey_install_js(surface: BrowserSurface) -> String {
     )
 }
 
+/// Keep the shell URL bar in sync with SPA / History API navigations and redirects.
+fn desktop_location_sync_install_js(surface: BrowserSurface) -> String {
+    let surface = surface.as_str();
+    format!(
+        r#"(function(){{if(window.__medousaLocationSyncInstalled)return;window.__medousaLocationSyncInstalled=true;var last='';function report(){{try{{var u=(window.location&&window.location.href)||'';if(!u||u==='about:blank'||u===last)return;last=u;var i=window.__TAURI_INTERNALS__||window.__TAURI__;if(!i||!i.invoke)return;var t=(document.title||'').trim()||null;i.invoke('human_browser_report_location',{{url:u,title:t,surface:'{surface}',inPage:true}});}}catch(e){{}}}}function wrap(name){{var orig=history[name];if(typeof orig!=='function')return;history[name]=function(){{var ret=orig.apply(this,arguments);report();return ret;}};}}wrap('pushState');wrap('replaceState');window.addEventListener('popstate',report);window.addEventListener('hashchange',report);report();}})();"#
+    )
+}
+
+fn desktop_report_location_js(surface: BrowserSurface) -> String {
+    let surface = surface.as_str();
+    format!(
+        r#"(function(){{try{{var u=(window.location&&window.location.href)||'';if(!u||u==='about:blank')return;var i=window.__TAURI_INTERNALS__||window.__TAURI__;if(!i||!i.invoke)return;var t=(document.title||'').trim()||null;i.invoke('human_browser_report_location',{{url:u,title:t,surface:'{surface}',inPage:true}});}}catch(e){{}}}})();"#
+    )
+}
+
 fn content_builder(
     app: &AppHandle,
     label: String,
@@ -835,8 +869,10 @@ fn content_builder(
     let tab_id_load = tab_id;
     let new_window_js = desktop_new_window_install_js(surface);
     let hotkey_js = desktop_hotkey_install_js(surface);
+    let location_sync_js = desktop_location_sync_install_js(surface);
     let mut builder = WebviewBuilder::new(label, WebviewUrl::External("about:blank".parse().unwrap()))
         .initialization_script(hotkey_js.clone())
+        .initialization_script(location_sync_js.clone())
         .on_new_window(move |url, _features| {
             let href = url.as_str();
             if !(href.starts_with("http://") || href.starts_with("https://")) {
@@ -875,10 +911,12 @@ fn content_builder(
                         let _ = webview.eval(MOBILE_EMBED_FIX_JS);
                         let _ = webview.eval(&new_window_js);
                         let _ = webview.eval(&hotkey_js);
+                        let _ = webview.eval(&location_sync_js);
                     } else {
                         let _ = webview.eval(DESKTOP_EMBED_FILL_JS);
                         let _ = webview.eval(&new_window_js);
                         let _ = webview.eval(&hotkey_js);
+                        let _ = webview.eval(&location_sync_js);
                     }
                 }
             }
@@ -993,16 +1031,30 @@ fn compute_mobile_embedded_bounds(
     })
 }
 
-/// DOM `getBoundingClientRect` is in the **shell webview layout viewport** (top-left),
-/// which on macOS begins below the title bar (`NSWindow.contentLayoutRect`, ~32px).
-/// Tauri child `set_bounds` uses the **window contentView** (top-left, y=0 at view top).
-fn dom_bounds_to_window_child_bounds(app: &AppHandle, dom: EmbedBounds) -> Result<EmbedBounds, String> {
-    let (shell_x, shell_y) = shell_webview_origin(app)?;
+/// DOM `getBoundingClientRect` is in the shell webview layout viewport (top-left).
+/// Tauri child `set_bounds` uses the window contentView (top-left, y=0 at view top).
+///
+/// Pre-Overlay macOS: the shell WKWebView sat *below* the title bar, so DOM y=0 was
+/// already inset and we still had to add `contentLayoutRect` when converting.
+/// Overlay + fullSizeContentView: the shell webview is full-bleed from contentView
+/// (0,0) and AppTitlebar is in-flow HTML — DOM rects are already contentView coords.
+/// Adding the title-bar inset again shifts the embed down (~28–40px gap under chrome).
+fn macos_dom_to_content_view_adjust(app: &AppHandle, shell_x: f64, shell_y: f64) -> (f64, f64) {
     let (viewport_inset_x, viewport_inset_y) =
         macos_shell_viewport_origin_in_window(app).unwrap_or((0.0, 0.0));
+    // Full-bleed shell webview: skip contentLayoutRect inset.
+    if shell_x.abs() < 1.0 && shell_y.abs() < 1.0 {
+        return (0.0, 0.0);
+    }
+    (viewport_inset_x, viewport_inset_y)
+}
+
+fn dom_bounds_to_window_child_bounds(app: &AppHandle, dom: EmbedBounds) -> Result<EmbedBounds, String> {
+    let (shell_x, shell_y) = shell_webview_origin(app)?;
+    let (adj_x, adj_y) = macos_dom_to_content_view_adjust(app, shell_x, shell_y);
     Ok(EmbedBounds {
-        x: dom.x + shell_x + viewport_inset_x,
-        y: dom.y + shell_y + viewport_inset_y,
+        x: dom.x + shell_x + adj_x,
+        y: dom.y + shell_y + adj_y,
         width: dom.width,
         height: dom.height,
     })
@@ -1010,11 +1062,10 @@ fn dom_bounds_to_window_child_bounds(app: &AppHandle, dom: EmbedBounds) -> Resul
 
 fn window_child_bounds_to_dom_bounds(app: &AppHandle, window_bounds: EmbedBounds) -> EmbedBounds {
     let (shell_x, shell_y) = shell_webview_origin(app).unwrap_or((0.0, 0.0));
-    let (viewport_inset_x, viewport_inset_y) =
-        macos_shell_viewport_origin_in_window(app).unwrap_or((0.0, 0.0));
+    let (adj_x, adj_y) = macos_dom_to_content_view_adjust(app, shell_x, shell_y);
     EmbedBounds {
-        x: window_bounds.x - shell_x - viewport_inset_x,
-        y: window_bounds.y - shell_y - viewport_inset_y,
+        x: window_bounds.x - shell_x - adj_x,
+        y: window_bounds.y - shell_y - adj_y,
         width: window_bounds.width,
         height: window_bounds.height,
     }
@@ -1801,6 +1852,11 @@ fn is_blank_browser_url(url: &str) -> bool {
 
 fn hide_embed_surface(app: &AppHandle) {
     EMBED_VISIBLE.store(false, Ordering::SeqCst);
+    // Drop freeform placement so a later show cannot revive pre-split full-pane bounds
+    // while the shell compositor is still measuring the new tile host.
+    if let Ok(mut last) = LAST_EMBED_PLACEMENT.lock() {
+        *last = None;
+    }
     let ids = tab_ids_lock(BrowserSurface::Embed)
         .lock()
         .ok()
@@ -2472,7 +2528,11 @@ pub async fn human_browser_go_back(app: AppHandle) -> Result<(), String> {
         .ok_or_else(|| "browser content webview not ready".to_string())?;
     content
         .eval("window.history.back()")
-        .map_err(|err| err.to_string())
+        .map_err(|err| err.to_string())?;
+    // History API may not fire Finished — pull live location after the stack settles.
+    let report = desktop_report_location_js(BrowserSurface::Embed);
+    let _ = content.eval(&format!("setTimeout(function(){{{report}}},0)"));
+    Ok(())
 }
 
 #[tauri::command]
@@ -2481,7 +2541,10 @@ pub async fn human_browser_popout_go_back(app: AppHandle) -> Result<(), String> 
         .ok_or_else(|| "pop-out browser content not ready".to_string())?;
     content
         .eval("window.history.back()")
-        .map_err(|err| err.to_string())
+        .map_err(|err| err.to_string())?;
+    let report = desktop_report_location_js(BrowserSurface::Popout);
+    let _ = content.eval(&format!("setTimeout(function(){{{report}}},0)"));
+    Ok(())
 }
 
 #[tauri::command]
@@ -2490,7 +2553,10 @@ pub async fn human_browser_go_forward(app: AppHandle) -> Result<(), String> {
         .ok_or_else(|| "browser content webview not ready".to_string())?;
     content
         .eval("window.history.forward()")
-        .map_err(|err| err.to_string())
+        .map_err(|err| err.to_string())?;
+    let report = desktop_report_location_js(BrowserSurface::Embed);
+    let _ = content.eval(&format!("setTimeout(function(){{{report}}},0)"));
+    Ok(())
 }
 
 #[tauri::command]
@@ -2499,7 +2565,39 @@ pub async fn human_browser_popout_go_forward(app: AppHandle) -> Result<(), Strin
         .ok_or_else(|| "pop-out browser content not ready".to_string())?;
     content
         .eval("window.history.forward()")
-        .map_err(|err| err.to_string())
+        .map_err(|err| err.to_string())?;
+    let report = desktop_report_location_js(BrowserSurface::Popout);
+    let _ = content.eval(&format!("setTimeout(function(){{{report}}},0)"));
+    Ok(())
+}
+
+#[tauri::command]
+pub fn human_browser_report_location(
+    app: AppHandle,
+    url: String,
+    title: Option<String>,
+    surface: Option<String>,
+    in_page: Option<bool>,
+) -> Result<(), String> {
+    let trimmed = url.trim();
+    if trimmed.is_empty() || trimmed == "about:blank" {
+        return Ok(());
+    }
+    let title = title
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+    emit_navigated_ex(
+        &app,
+        parse_surface(surface.as_deref()),
+        trimmed,
+        title,
+        None,
+        None,
+        in_page.unwrap_or(true),
+    );
+    Ok(())
 }
 
 #[tauri::command]

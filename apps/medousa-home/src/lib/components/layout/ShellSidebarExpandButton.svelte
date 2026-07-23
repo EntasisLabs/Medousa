@@ -2,6 +2,7 @@
   import { PanelLeftOpen } from "@lucide/svelte";
   import { environment } from "$lib/stores/environment.svelte";
   import { layout } from "$lib/stores/layout.svelte";
+  import { usesUnifiedTitlebar } from "$lib/platform";
 
   interface Props {
     /** Optional label override for title/aria. */
@@ -10,8 +11,10 @@
 
   let { label = "Show rail" }: Props = $props();
 
-  /** Peers-style show control — only when the master rail is fully hidden. */
-  const show = $derived(!layout.isMobile && !layout.shellSidebarExpanded);
+  /** AppTitlebar owns rail toggle on desktop Tauri; keep in-pane expand for web/mobile. */
+  const show = $derived(
+    !usesUnifiedTitlebar() && !layout.isMobile && !layout.shellSidebarExpanded,
+  );
 
   function expand() {
     layout.openShellSidebarView(layout.desktopSurface);

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import AppTitlebar from "$lib/components/layout/AppTitlebar.svelte";
   import MasterRailHost from "$lib/components/layout/MasterRailHost.svelte";
   import { connectWorkshop } from "$lib/workshopConnection";
   import StatusBar from "$lib/components/layout/StatusBar.svelte";
@@ -141,6 +142,7 @@
   class="flex h-screen w-screen flex-col text-surface-50 workshop-app-root"
   data-debug-label="app-root"
 >
+  <AppTitlebar />
   <div class="flex min-h-0 flex-1" data-debug-label="app-row">
     <MasterRailHost
       active={activeSurface}

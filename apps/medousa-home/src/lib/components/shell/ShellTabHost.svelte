@@ -36,13 +36,27 @@
 
   let cheatSheetOpen = $state(false);
 
-  /** Browser webviews stay single-host; Workspace/notes mount in every pane. */
+  /**
+   * Single native webview host:
+   * 1) focused group if its active tab is web
+   * 2) else first group with an active web tab
+   * Never assign ownership to a non-web focused pane (that stranded split browser panes).
+   */
   const webOwnerGroupId = $derived.by(() => {
+    const activeTabOf = (groupId: string) => {
+      const group = shellTabs.groups.find((entry) => entry.id === groupId);
+      if (!group) return null;
+      return shellTabs.tabs.find((entry) => entry.id === group.activeTabId) ?? null;
+    };
+
+    const focused = activeTabOf(shellTabs.activeGroupId);
+    if (focused?.kind === "web") return shellTabs.activeGroupId;
+
     for (const group of shellTabs.groups) {
-      const tab = shellTabs.tabs.find((entry) => entry.id === group.activeTabId);
+      const tab = activeTabOf(group.id);
       if (tab?.kind === "web") return group.id;
     }
-    return shellTabs.activeGroupId;
+    return null;
   });
 
   $effect(() => {

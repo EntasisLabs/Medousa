@@ -4,6 +4,10 @@
   import { browserHistory } from "$lib/stores/browserHistory.svelte";
   import { hostnameFromUrl, tabDisplayLabel } from "$lib/utils/browserFavicon";
   import { setMobileBrowserUrlFocus } from "$lib/utils/mobileKeyboardViewport";
+  import {
+    popBrowserPopoverOverlay,
+    pushBrowserPopoverOverlay,
+  } from "$lib/utils/browserPopoverOverlay";
   import { formatShortcut } from "$lib/platform";
 
   const humanBrowser = $derived(humanBrowserForWindow());
@@ -18,7 +22,7 @@
 
   let inputEl = $state<HTMLInputElement | null>(null);
   let blurTimer: ReturnType<typeof setTimeout> | undefined;
-  let hasMounted = false;
+  let lastFocusNonce: number | null = null;
   let suggestionsOpen = $state(false);
   let suppressSuggestions = $state(false);
 
@@ -29,18 +33,30 @@
     !mobile && suggestionsOpen && suggestions.length > 0 && !suppressSuggestions,
   );
 
+  // Native WKWebView paints above DOM — hide embed while the suggestion list is open.
   $effect(() => {
-    urlBarFocusNonce;
-    if (!hasMounted) {
-      hasMounted = true;
-      if (mobile) {
-        const isBlank = untrack(() => humanBrowser.activeUrl) === "about:blank";
-        if (!isBlank) return;
+    if (!showSuggestions) return;
+    void pushBrowserPopoverOverlay();
+    return () => {
+      void popBrowserPopoverOverlay();
+    };
+  });
+
+  // Only focus on explicit request (⌘L / focus event). Do not steal focus when the
+  // browser pane remounts or becomes the active shell tab.
+  $effect(() => {
+    const nonce = urlBarFocusNonce;
+    if (lastFocusNonce === null) {
+      lastFocusNonce = nonce;
+      // Mobile blank start page: allow typing a URL without an extra tap.
+      if (mobile && untrack(() => humanBrowser.activeUrl) === "about:blank") {
+        inputEl?.focus();
+        inputEl?.select();
       }
-      inputEl?.focus();
-      inputEl?.select();
       return;
     }
+    if (nonce === lastFocusNonce) return;
+    lastFocusNonce = nonce;
     inputEl?.focus();
     inputEl?.select();
   });

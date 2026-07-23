@@ -21,29 +21,30 @@
     background: rgb(var(--shell-canvas-bg, var(--color-surface-950)));
   }
 
+  /* Match vault-editor-header rhythm (px-3 py-1) under the unified title bar. */
   .browser-toolbar {
     display: flex;
     flex-shrink: 0;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.4rem 0.55rem 0.5rem;
+    gap: 0.4rem;
+    padding: 0.25rem 0.75rem;
   }
 
   .browser-nav-cluster {
     display: flex;
     flex-shrink: 0;
     align-items: center;
-    gap: 0.1rem;
-    padding: 0.1rem;
-    border-radius: 0.65rem;
+    gap: 0.05rem;
+    padding: 0.05rem;
+    border-radius: 0.5rem;
     background: rgb(var(--shell-pane-muted-bg, var(--color-surface-800)) / 0.45);
   }
 
   .browser-nav-btn,
   .browser-chrome-btn {
     display: inline-flex;
-    height: 1.85rem;
-    width: 1.85rem;
+    height: 1.55rem;
+    width: 1.55rem;
     flex-shrink: 0;
     align-items: center;
     justify-content: center;
@@ -87,13 +88,13 @@
 
   .browser-save-btn {
     display: inline-flex;
-    height: 1.85rem;
+    height: 1.55rem;
     flex-shrink: 0;
     align-items: center;
     gap: 0.3rem;
     border: 1px solid rgb(var(--shell-border, var(--color-surface-500)) / 0.35);
     border-radius: 0.5rem;
-    padding: 0 0.55rem;
+    padding: 0 0.5rem;
     font-size: 0.75rem;
     font-weight: 600;
     color: rgb(var(--shell-label, var(--color-surface-200)));
@@ -338,8 +339,9 @@
     border: 1px solid rgb(var(--shell-border, var(--color-surface-500)) / 0.32);
     border-radius: 999px;
     background: rgb(var(--shell-canvas-bg, var(--color-surface-950)) / 0.55);
-    padding: 0.4rem 0.85rem;
+    padding: 0.2rem 0.75rem;
     font-size: 0.8125rem;
+    line-height: 1.35;
     color: rgb(var(--color-surface-100));
     box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.02);
     transition:

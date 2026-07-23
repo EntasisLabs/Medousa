@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, tick } from "svelte";
   import { ArrowLeft, ArrowRight, Square, RefreshCw } from "@lucide/svelte";
   import HumanBrowserTabBar from "$lib/components/browser/HumanBrowserTabBar.svelte";
   import HumanBrowserUrlBar from "$lib/components/browser/HumanBrowserUrlBar.svelte";
@@ -8,10 +8,10 @@
   import BrowserCaptchaBanner from "$lib/components/browser/BrowserCaptchaBanner.svelte";
   import BrowserFindBar from "$lib/components/browser/BrowserFindBar.svelte";
   import BrowserStartPage from "$lib/components/browser/BrowserStartPage.svelte";
-  import ShellSidebarExpandButton from "$lib/components/layout/ShellSidebarExpandButton.svelte";
   import {
     createBrowserCompositor,
     registerBrowserCompositor,
+    unregisterBrowserCompositor,
     type BrowserCompositor,
   } from "$lib/utils/browserCompositor";
   import {
@@ -23,6 +23,7 @@
   } from "$lib/utils/browserHotkeys";
   import { humanBrowser } from "$lib/stores/humanBrowser.svelte";
   import { layout } from "$lib/stores/layout.svelte";
+  import { shellTabs } from "$lib/stores/shellTabs.svelte";
   import { isTauri, shouldUseMobileShell } from "$lib/platform";
 
   interface Props {
@@ -138,21 +139,33 @@
     return () => {
       window.removeEventListener("keydown", onKeydown);
       window.removeEventListener(BROWSER_FOCUS_URL_EVENT, onFocusUrl);
-      compositor?.detach();
-      registerBrowserCompositor(null);
+      const active = compositor;
+      active?.detach();
+      if (active) unregisterBrowserCompositor(active);
       compositor = null;
     };
   });
 
-  // Sync only on visible edge — a bare `if (!visible) return` effect still re-ran
-  // whenever the panel invalidates and could re-activate tabs mid-load.
+  // Sync only on visible edge — wait for tile host measure so native webview
+  // never shows at pre-split full-pane bounds over a sibling pane.
   let wasPanelVisible = false;
   $effect(() => {
     const isVisible = visible;
     if (isVisible && !wasPanelVisible) {
-      void humanBrowser.syncActiveTabToNative();
+      wasPanelVisible = true;
+      void (async () => {
+        await tick();
+        await new Promise<void>((resolve) => {
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+        });
+        const active = compositor;
+        if (active) await active.flushLayout();
+        await humanBrowser.syncActiveTabToNative();
+        if (active) await active.flushLayout();
+      })();
+      return;
     }
-    wasPanelVisible = isVisible;
+    if (!isVisible) wasPanelVisible = false;
   });
 
   $effect(() => {
@@ -166,6 +179,9 @@
     layout.viewportHeight;
     workRailVisible;
     humanBrowser.findOpen;
+    // Split / ownership remounts change the host box — force re-attach path.
+    shellTabs.paneCount;
+    shellTabs.activeGroupId;
     compositor.attach({
       hostEl: embedHostEl,
       panelEl,
@@ -195,7 +211,6 @@
     </div>
 
     <div class="browser-toolbar" data-debug-label="browser-url-row">
-      <ShellSidebarExpandButton label="Show rail" />
       <div class="browser-nav-cluster">
         <button
           type="button"
@@ -204,7 +219,7 @@
           disabled={!humanBrowser.canGoBack}
           onclick={() => void humanBrowser.goBack()}
         >
-          <ArrowLeft size={16} strokeWidth={1.75} />
+          <ArrowLeft size={15} strokeWidth={1.75} />
         </button>
         <button
           type="button"
@@ -213,7 +228,7 @@
           disabled={!humanBrowser.canGoForward}
           onclick={() => void humanBrowser.goForward()}
         >
-          <ArrowRight size={16} strokeWidth={1.75} />
+          <ArrowRight size={15} strokeWidth={1.75} />
         </button>
         {#if humanBrowser.loading}
           <button
@@ -222,7 +237,7 @@
             aria-label="Stop loading"
             onclick={() => void humanBrowser.stop()}
           >
-            <Square size={12} strokeWidth={2.25} />
+            <Square size={11} strokeWidth={2.25} />
           </button>
         {:else}
           <button
@@ -231,7 +246,7 @@
             aria-label="Reload"
             onclick={() => void humanBrowser.reload()}
           >
-            <RefreshCw size={15} strokeWidth={1.75} />
+            <RefreshCw size={14} strokeWidth={1.75} />
           </button>
         {/if}
       </div>
