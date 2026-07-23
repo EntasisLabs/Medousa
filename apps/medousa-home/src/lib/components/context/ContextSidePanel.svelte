@@ -25,9 +25,13 @@
   interface Props {
     /** Fired after a recall/thread/posture pick (e.g. open context from a rail popover). */
     onPick?: () => void;
+    /** `rail-list` hides the mode bar (it lives in the rail popover strip). */
+    chrome?: "default" | "rail-list";
   }
 
-  let { onPick }: Props = $props();
+  let { onPick, chrome = "default" }: Props = $props();
+
+  const showModeBar = $derived(chrome !== "rail-list");
 
   const activeTab = $derived(contextShell.activeTab);
   const search = $derived(contextShell.search);
@@ -79,7 +83,9 @@
   class="context-side-panel flex h-full min-h-0 w-full flex-col"
   data-debug-label="context-side-panel"
 >
-  <ContextModeBar />
+  {#if showModeBar}
+    <ContextModeBar />
+  {/if}
 
   <div class="shrink-0 space-y-1.5 border-b border-surface-500/25 px-1.5 py-1.5">
     <label class="block">

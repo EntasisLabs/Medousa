@@ -1,28 +1,149 @@
 <script lang="ts">
+  import { ChevronRight } from "@lucide/svelte";
   import { placeRailPopover } from "$lib/utils/railPopover";
+  import { popLmeDockHost, pushLmeDockHost } from "$lib/utils/lmeDockHost";
   import type { Snippet } from "svelte";
   import { tick } from "svelte";
+
+  type PopoverPhase = "seed" | "toolbar" | "open";
 
   interface Props {
     open: boolean;
     title: string;
+    /** Reset expand state when this changes (e.g. surface/mode id). */
+    targetKey?: string;
     triggerEl: HTMLElement | null;
     onClose: () => void;
+    /** Left-side action controls (New, Search, dock buttons, etc.). */
+    toolbar?: Snippet;
+    /** Host LME explorer docks in the toolbar strip while open. */
+    dockHost?: boolean;
     children: Snippet;
   }
 
-  let { open, title, triggerEl, onClose, children }: Props = $props();
+  let {
+    open,
+    title,
+    targetKey = "",
+    triggerEl,
+    onClose,
+    toolbar,
+    dockHost = false,
+    children,
+  }: Props = $props();
 
   let menuEl = $state<HTMLDivElement | null>(null);
+  let dockSlotEl = $state<HTMLElement | null>(null);
+  let phase = $state<PopoverPhase>("seed");
+  let lastTargetKey = $state("");
+  let sequenceGen = 0;
+  /** Freeze vertical anchor while height/width animate so place() can't jump the card. */
+  let anchorLocked = $state(false);
+
+  const listOpen = $derived(phase === "open");
+  const chromeExpanded = $derived(phase === "toolbar" || phase === "open");
+
+  /** Match CSS transition durations in this component. */
+  const WIDTH_MS = 320;
+  const HEIGHT_MS = 360;
+  const CHROME_MS = 300;
+
+  function prefersReducedMotion() {
+    return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  }
+
+  function sleep(ms: number) {
+    return new Promise<void>((resolve) => {
+      window.setTimeout(resolve, ms);
+    });
+  }
+
+  function placeMenu(opts?: { lockTop?: boolean }) {
+    if (!triggerEl || !menuEl) return;
+    placeRailPopover(triggerEl, menuEl, {
+      gap: 10,
+      pad: 10,
+      alignY: "start",
+      lockTop: opts?.lockTop ?? anchorLocked,
+    });
+  }
+
+  async function runExpandSequence() {
+    const gen = ++sequenceGen;
+    anchorLocked = true;
+    placeMenu({ lockTop: true });
+    phase = "toolbar";
+    await tick();
+    placeMenu({ lockTop: true });
+    if (gen !== sequenceGen) return;
+    if (!prefersReducedMotion()) await sleep(CHROME_MS);
+    if (gen !== sequenceGen) return;
+    phase = "open";
+    await tick();
+    placeMenu({ lockTop: true });
+    if (gen !== sequenceGen) return;
+    if (!prefersReducedMotion()) await sleep(HEIGHT_MS);
+    if (gen !== sequenceGen) return;
+    anchorLocked = false;
+  }
+
+  async function runCollapseSequence() {
+    const gen = ++sequenceGen;
+    anchorLocked = true;
+    // Pin top before height changes so vertical-center math can't yank the card up.
+    placeMenu({ lockTop: true });
+    // 1) Tuck the drawer first (full width bar stays).
+    phase = "toolbar";
+    await tick();
+    placeMenu({ lockTop: true });
+    if (gen !== sequenceGen) return;
+    if (!prefersReducedMotion()) await sleep(HEIGHT_MS);
+    if (gen !== sequenceGen) return;
+    // 2) Then retract the bar to super-compact.
+    phase = "seed";
+    await tick();
+    placeMenu({ lockTop: true });
+    if (gen !== sequenceGen) return;
+    if (!prefersReducedMotion()) await sleep(WIDTH_MS);
+    if (gen !== sequenceGen) return;
+    anchorLocked = false;
+    placeMenu({ lockTop: false });
+  }
+
+  function resetPhase() {
+    sequenceGen += 1;
+    anchorLocked = false;
+    phase = "seed";
+  }
+
+  $effect(() => {
+    if (!open) {
+      resetPhase();
+      lastTargetKey = "";
+      return;
+    }
+    if (targetKey !== lastTargetKey) {
+      lastTargetKey = targetKey;
+      resetPhase();
+    }
+  });
+
+  $effect(() => {
+    if (!open || !dockHost || !dockSlotEl) return;
+    pushLmeDockHost(dockSlotEl);
+    return () => {
+      popLmeDockHost();
+    };
+  });
 
   $effect(() => {
     if (!open || !triggerEl || !menuEl) return;
     let frame = 0;
     const place = () => {
       if (!triggerEl || !menuEl) return;
-      placeRailPopover(triggerEl, menuEl, { gap: 10, pad: 10 });
+      placeMenu();
       frame = window.requestAnimationFrame(() => {
-        if (triggerEl && menuEl) placeRailPopover(triggerEl, menuEl, { gap: 10, pad: 10 });
+        placeMenu();
       });
     };
     void tick().then(place);
@@ -68,42 +189,120 @@
       window.removeEventListener("keydown", onKeydown);
     };
   });
+
+  function toggleExpanded(event: MouseEvent) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (phase === "open") {
+      void runCollapseSequence();
+      return;
+    }
+    if (phase === "toolbar") {
+      // Mid-sequence click: finish open or bail to seed.
+      void runExpandSequence();
+      return;
+    }
+    void runExpandSequence();
+  }
 </script>
 
 {#if open}
   <div
     bind:this={menuEl}
     class="nav-rail-view-popover"
+    class:nav-rail-view-popover--chrome={chromeExpanded}
+    class:nav-rail-view-popover--open={listOpen}
+    data-phase={phase}
     role="dialog"
     aria-label={title}
     data-debug-label="nav-rail-view-popover"
     onclick={(event) => event.stopPropagation()}
   >
-    <header class="nav-rail-view-popover-head">
-      <p class="nav-rail-view-popover-title">{title}</p>
-    </header>
-    <div class="nav-rail-view-popover-body">
-      {@render children()}
+    <div class="nav-rail-view-popover-toolbar">
+      <div class="nav-rail-view-popover-actions">
+        {#if toolbar}
+          {@render toolbar()}
+        {/if}
+        {#if dockHost}
+          <div
+            bind:this={dockSlotEl}
+            class="nav-rail-view-popover-dock-slot"
+            data-debug-label="nav-rail-dock-slot"
+          ></div>
+        {/if}
+      </div>
+      <button
+        type="button"
+        class="nav-rail-view-popover-expand"
+        class:nav-rail-view-popover-expand-active={listOpen}
+        title={listOpen ? `Hide ${title}` : `Show ${title}`}
+        aria-label={listOpen ? `Hide ${title}` : `Show ${title}`}
+        aria-expanded={listOpen}
+        onclick={toggleExpanded}
+      >
+        <ChevronRight size={15} strokeWidth={2} />
+      </button>
+    </div>
+
+    <!-- Keep children mounted so LME docks can portal into the toolbar. -->
+    <div class="nav-rail-view-popover-body" aria-hidden={!listOpen}>
+      <div class="nav-rail-view-popover-body-inner">
+        {@render children()}
+      </div>
     </div>
   </div>
 {/if}
 
 <style>
   .nav-rail-view-popover {
+    --nav-rail-popover-seed-width: 7.1rem;
+    --nav-rail-popover-full-width: min(22rem, calc(100vw - 2rem));
+    /* Match icon btn (1.75rem) + equal vertical padding — keeps seed optically centered. */
+    --nav-rail-popover-bar-height: 2.35rem;
+    --nav-rail-popover-open-height: min(32rem, calc(100vh - 2rem));
+
     position: fixed;
     z-index: 80;
     display: flex;
-    width: min(22rem, calc(100vw - 2rem));
-    height: min(32rem, calc(100vh - 2rem));
+    width: var(--nav-rail-popover-seed-width);
+    height: var(--nav-rail-popover-bar-height);
+    max-height: var(--nav-rail-popover-open-height);
     flex-direction: column;
     overflow: hidden;
-    border: 1px solid rgb(var(--color-surface-600) / 0.32);
-    border-radius: 0.75rem;
-    background: rgb(var(--color-surface-900) / 0.98);
+    border: 1px solid rgb(var(--color-surface-600) / 0.3);
+    /* Keep radius constant — morphing pill→rect on open reads as a jump. */
+    border-radius: 1rem;
+    background: rgb(var(--color-surface-900) / 0.97);
     box-shadow:
       0 14px 36px rgb(0 0 0 / 0.36),
       0 0 0 1px rgb(255 255 255 / 0.03);
+    backdrop-filter: blur(16px);
+    transition:
+      width 320ms cubic-bezier(0.16, 1, 0.3, 1),
+      height 360ms cubic-bezier(0.16, 1, 0.3, 1),
+      box-shadow 220ms ease;
     animation: nav-rail-view-popover-in 180ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .nav-rail-view-popover--chrome,
+  .nav-rail-view-popover--open,
+  .nav-rail-view-popover:has(.lme-dock-search-expand),
+  .nav-rail-view-popover:has(.nav-rail-context-toolbar) {
+    width: var(--nav-rail-popover-full-width);
+  }
+
+  .nav-rail-view-popover:has(.nav-rail-popover-toolbar-label) {
+    width: fit-content;
+    min-width: var(--nav-rail-popover-seed-width);
+  }
+
+  .nav-rail-view-popover--chrome:has(.nav-rail-popover-toolbar-label),
+  .nav-rail-view-popover--open:has(.nav-rail-popover-toolbar-label) {
+    width: var(--nav-rail-popover-full-width);
+  }
+
+  .nav-rail-view-popover--open {
+    height: var(--nav-rail-popover-open-height);
   }
 
   @keyframes nav-rail-view-popover-in {
@@ -117,27 +316,219 @@
     }
   }
 
-  .nav-rail-view-popover-head {
+  .nav-rail-view-popover-toolbar {
     display: flex;
+    height: var(--nav-rail-popover-bar-height);
     flex-shrink: 0;
     align-items: center;
-    border-bottom: 1px solid rgb(var(--color-surface-700) / 0.35);
-    padding: 0.55rem 0.75rem;
+    gap: 0.1rem;
+    box-sizing: border-box;
+    padding: 0.2rem 0.25rem 0.2rem 0.3rem;
+    border-bottom: 1px solid transparent;
+    transition: border-color 180ms ease;
   }
 
-  .nav-rail-view-popover-title {
+  .nav-rail-view-popover--open .nav-rail-view-popover-toolbar {
+    border-bottom-color: rgb(var(--color-surface-700) / 0.32);
+  }
+
+  .nav-rail-view-popover-actions {
+    display: flex;
+    min-width: 0;
+    flex: 1;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 0.05rem;
+    overflow: hidden;
+  }
+
+  .nav-rail-view-popover-dock-slot {
+    display: flex;
+    min-width: 0;
+    flex: 1;
+    align-items: center;
+    align-self: center;
+    height: 1.75rem;
+  }
+
+  .nav-rail-view-popover-dock-slot :global(.lme-side-rail-dock) {
+    display: flex;
+    width: 100%;
+    height: 1.75rem;
+    min-height: 0;
+    min-width: 0;
+    align-items: center;
+    gap: 0.05rem;
     margin: 0;
-    font-size: 0.6875rem;
-    font-weight: 600;
+    border: 0;
+    padding: 0;
+    background: transparent;
+  }
+
+  .nav-rail-view-popover-dock-slot :global(.lme-side-rail-dock--status) {
+    flex: 1;
+    height: 1.75rem;
+    justify-content: flex-start;
+  }
+
+  /* Sparse docks: collapse leading spacers / ghost status so icons sit left. */
+  .nav-rail-view-popover-dock-slot
+    :global(.lme-side-rail-dock > .min-w-0.flex-1:first-child:empty),
+  .nav-rail-view-popover-dock-slot
+    :global(.lme-side-rail-dock > .min-w-1.flex-1:first-child:empty),
+  .nav-rail-view-popover-dock-slot
+    :global(.lme-side-rail-dock > .flex-1:first-child:empty),
+  .nav-rail-view-popover-dock-slot
+    :global(
+      .lme-side-rail-dock > .min-w-0.flex-1:first-child:not(:has(.vault-dock-branch))
+    ) {
+    display: none;
+  }
+
+  .nav-rail-view-popover-dock-slot :global(.workshop-faint) {
+    display: none;
+  }
+
+  /* Seed: only primary verbs (+ / search). Secondary chrome waits for bar extend. */
+  .nav-rail-view-popover:not(.nav-rail-view-popover--chrome):not(.nav-rail-view-popover--open)
+    :global(.lme-dock-chrome-secondary) {
+    max-width: 0 !important;
+    max-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    opacity: 0;
+    transform: translateX(-0.3rem);
+    pointer-events: none;
+    overflow: hidden;
+    border: 0 !important;
+  }
+
+  .nav-rail-view-popover--chrome :global(.lme-dock-chrome-secondary),
+  .nav-rail-view-popover--open :global(.lme-dock-chrome-secondary) {
+    max-width: 18rem;
+    opacity: 1;
+    transform: translateX(0);
+    pointer-events: auto;
+    transition:
+      max-width 300ms cubic-bezier(0.16, 1, 0.3, 1),
+      opacity 220ms ease 40ms,
+      transform 300ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .nav-rail-view-popover--chrome :global(.lme-dock-chrome-secondary--spacer),
+  .nav-rail-view-popover--open :global(.lme-dock-chrome-secondary--spacer) {
+    max-width: none;
+    flex: 1 1 auto;
+    min-width: 0.35rem;
+  }
+
+  .nav-rail-view-popover-dock-slot :global(.lme-dock-chrome-secondary) {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 0.1rem;
+    overflow: hidden;
+    transition:
+      max-width 280ms cubic-bezier(0.16, 1, 0.3, 1),
+      opacity 200ms ease,
+      transform 280ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .nav-rail-view-popover:not(.nav-rail-view-popover--chrome):not(.nav-rail-view-popover--open)
+    :global(.lme-dock-chrome-secondary--spacer) {
+    flex: 0 0 0;
+    min-width: 0;
+  }
+
+  /* Notes breadcrumb: readable text, no junk icons. */
+  .nav-rail-view-popover-dock-slot :global(.vault-dock-branch) {
+    max-width: 5.75rem;
+    color: rgb(var(--color-surface-100));
+    font-size: 0.72rem;
+    font-weight: 500;
     letter-spacing: -0.01em;
+  }
+
+  .nav-rail-view-popover-dock-slot :global(.vault-dock-branch__icon) {
+    display: none;
+  }
+
+  .nav-rail-view-popover-dock-slot :global(.vault-dock-branch__label) {
+    color: inherit;
+  }
+
+  .nav-rail-view-popover-dock-slot :global(.nav-rail-dock-crumb-sep) {
+    color: rgb(var(--color-surface-500));
+  }
+
+  .nav-rail-view-popover-actions :global(.vault-dock-icon-btn),
+  .nav-rail-view-popover-dock-slot :global(.vault-dock-icon-btn) {
+    width: 1.75rem;
+    height: 1.75rem;
+    color: rgb(var(--color-surface-200));
+  }
+
+  .nav-rail-view-popover-actions :global(.vault-dock-icon-btn:hover),
+  .nav-rail-view-popover-dock-slot :global(.vault-dock-icon-btn:hover) {
+    color: rgb(var(--color-surface-50));
+  }
+
+  .nav-rail-view-popover-expand {
+    display: inline-flex;
+    width: 1.75rem;
+    height: 1.75rem;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    border-radius: 0.4rem;
+    color: rgb(var(--color-surface-400));
+    transition:
+      background-color 120ms ease,
+      color 120ms ease;
+  }
+
+  .nav-rail-view-popover-expand:hover {
+    background: color-mix(in srgb, var(--color-surface-800) 70%, transparent);
     color: rgb(var(--color-surface-100));
   }
 
+  /* Keep `>` pointing right — no rotate, no filled "active" chrome. */
+  .nav-rail-view-popover-expand-active {
+    color: rgb(var(--color-surface-200));
+  }
+
   .nav-rail-view-popover-body {
+    display: grid;
+    min-height: 0;
+    flex: 0 0 auto;
+    grid-template-rows: 0fr;
+    opacity: 0;
+    transition:
+      grid-template-rows 340ms cubic-bezier(0.16, 1, 0.3, 1),
+      opacity 220ms ease;
+  }
+
+  .nav-rail-view-popover--open .nav-rail-view-popover-body {
+    flex: 1 1 auto;
+    grid-template-rows: 1fr;
+    opacity: 1;
+    transition:
+      grid-template-rows 360ms cubic-bezier(0.16, 1, 0.3, 1) 40ms,
+      opacity 240ms ease 60ms;
+  }
+
+  .nav-rail-view-popover-body-inner {
     display: flex;
     min-height: 0;
-    flex: 1;
     flex-direction: column;
     overflow: hidden;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .nav-rail-view-popover,
+    .nav-rail-view-popover-body,
+    .nav-rail-view-popover-dock-slot :global(.lme-dock-chrome-secondary) {
+      transition: none !important;
+    }
   }
 </style>

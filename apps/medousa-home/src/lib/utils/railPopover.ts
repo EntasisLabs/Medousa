@@ -24,14 +24,25 @@ function viewportBox(): { left: number; top: number; width: number; height: numb
 /**
  * Place a fixed popover beside a rail trigger.
  * Caps the menu to the viewport and clamps left/top so it never paints out of bounds.
+ *
+ * `alignY: "start"` pins the top to the trigger (drawer grows/shrinks downward).
+ * Pass `lockTop` during height animations to avoid jump-repositioning.
  */
 export function placeRailPopover(
   trigger: HTMLElement,
   menu: HTMLElement,
-  options?: { gap?: number; pad?: number },
+  options?: {
+    gap?: number;
+    pad?: number;
+    alignY?: "center" | "start";
+    /** Keep the current `style.top` (only refresh left / max bounds). */
+    lockTop?: boolean;
+  },
 ): void {
   const gap = options?.gap ?? 8;
   const pad = options?.pad ?? 8;
+  const alignY = options?.alignY ?? "center";
+  const lockTop = options?.lockTop ?? false;
   const view = viewportBox();
   const maxW = Math.max(0, view.width - pad * 2);
   const maxH = Math.max(0, view.height - pad * 2);
@@ -57,9 +68,22 @@ export function placeRailPopover(
   }
   left = clamp(left, minLeft, maxLeft);
 
-  // Prefer vertically centered on the trigger, then clamp into the viewport.
-  let top = tr.top + tr.height / 2 - menuH / 2;
-  top = clamp(top, minTop, maxTop);
+  let top: number;
+  if (lockTop) {
+    const current = Number.parseFloat(menu.style.top);
+    top = Number.isFinite(current) ? current : measured.top;
+    // Don't re-clamp against the tall menu height — that yanks the card upward mid-collapse.
+    const toolbarFloor = view.top + view.height - pad - 48;
+    top = clamp(top, minTop, toolbarFloor);
+  } else if (alignY === "start") {
+    // Grow/shrink downward from the trigger — no vertical jump on height changes.
+    top = tr.top;
+    top = clamp(top, minTop, maxTop);
+  } else {
+    // Prefer vertically centered on the trigger, then clamp into the viewport.
+    top = tr.top + tr.height / 2 - menuH / 2;
+    top = clamp(top, minTop, maxTop);
+  }
 
   menu.style.top = `${Math.round(top)}px`;
   menu.style.left = `${Math.round(left)}px`;

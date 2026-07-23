@@ -308,8 +308,6 @@
           onkeydown={handleSearchKeydown}
         />
       </div>
-    {:else}
-      <div class="min-w-0 flex-1"></div>
     {/if}
 
     {#if !searchExpanded}

@@ -13,11 +13,13 @@
     quiet?: boolean;
     /** Icon buttons with tooltips (dock / chrome). */
     icons?: boolean;
+    /** Rail popover dock: only the short verb set (Recent + Tags). */
+    rail?: boolean;
   }
 
-  let { flush = false, quiet = false, icons = false }: Props = $props();
+  let { flush = false, quiet = false, icons = false, rail = false }: Props = $props();
 
-  const modes: {
+  const allModes: {
     id: LibraryBrowseMode;
     label: string;
     Icon: Component;
@@ -27,6 +29,12 @@
     { id: "tags", label: "Tags", Icon: Tags },
     { id: "kind", label: "Kind", Icon: Shapes },
   ];
+
+  const modes = $derived(
+    rail
+      ? allModes.filter((mode) => mode.id === "recent" || mode.id === "tags")
+      : allModes,
+  );
 
   function selectMode(mode: LibraryBrowseMode) {
     if (vault.searchQuery.trim()) void vault.runSearch("");

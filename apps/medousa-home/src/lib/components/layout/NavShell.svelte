@@ -2,9 +2,13 @@
   import SessionSidebar from "$lib/components/chat/SessionSidebar.svelte";
   import ContextSidePanel from "$lib/components/context/ContextSidePanel.svelte";
   import EnvironmentPresetSwitcher from "$lib/components/environment/EnvironmentPresetSwitcher.svelte";
+  import SessionRailToolbar from "$lib/components/chat/SessionRailToolbar.svelte";
+  import ContextModeBar from "$lib/components/context/ContextModeBar.svelte";
   import NavRailViewPopover from "$lib/components/layout/NavRailViewPopover.svelte";
   import LmeSidePanel from "$lib/components/lme/LmeSidePanel.svelte";
   import MessagingChannelList from "$lib/components/messaging/MessagingChannelList.svelte";
+  import MessagingRailToolbar from "$lib/components/messaging/MessagingRailToolbar.svelte";
+  import PeersRailToolbar from "$lib/components/peers/PeersRailToolbar.svelte";
   import PeersShellList from "$lib/components/peers/PeersShellList.svelte";
   import SettingsNav from "$lib/components/settings/SettingsNav.svelte";
   import WorkshopSwitcherCompact from "$lib/components/workshops/WorkshopSwitcherCompact.svelte";
@@ -118,6 +122,18 @@
         : "",
   );
   const railPopoverOpen = $derived(railPopover !== null);
+  const railPopoverTargetKey = $derived(
+    railPopover?.kind === "lme"
+      ? `lme:${railPopover.mode}`
+      : railPopover
+        ? `surface:${railPopover.surfaceId}`
+        : "",
+  );
+  const railPopoverUsesLmeDock = $derived(
+    railPopover?.kind === "lme" ||
+      railPopover?.surfaceId === "library" ||
+      railPopover?.surfaceId === "automations",
+  );
 
   function activityFor(id: string): number {
     if (id === "chat") return chatActivity;
@@ -690,9 +706,31 @@
   <NavRailViewPopover
     open={railPopoverOpen}
     title={railPopoverTitle}
+    targetKey={railPopoverTargetKey}
     triggerEl={railPopoverTriggerEl}
     onClose={closeRailPopover}
+    dockHost={railPopoverUsesLmeDock}
   >
+    {#snippet toolbar()}
+      {#if railPopover.kind === "lme"}
+        <!-- LME dock icons portal into the popover dock slot. -->
+      {:else if railPopover.surfaceId === "library" || railPopover.surfaceId === "automations"}
+        <!-- LME dock icons portal into the popover dock slot. -->
+      {:else if railPopover.surfaceId === "chat"}
+        <SessionRailToolbar onCreated={closeRailPopover} />
+      {:else if railPopover.surfaceId === "peers"}
+        <PeersRailToolbar />
+      {:else if railPopover.surfaceId === "messaging"}
+        <MessagingRailToolbar />
+      {:else if railPopover.surfaceId === "context"}
+        <div class="nav-rail-context-toolbar">
+          <ContextModeBar />
+        </div>
+      {:else if railPopover.surfaceId === SAFETY_SURFACE_SETTINGS}
+        <span class="nav-rail-popover-toolbar-label">Settings</span>
+      {/if}
+    {/snippet}
+
     {#if railPopover.kind === "lme"}
       <LmeSidePanel {onOpenChat} />
     {:else if railPopover.surfaceId === "library" || railPopover.surfaceId === "automations"}
@@ -708,45 +746,68 @@
         />
       </div>
     {:else if railPopover.surfaceId === "chat"}
-      <SessionSidebar open={true} variant="inline" onPick={closeRailPopover} />
+      <SessionSidebar
+        open={true}
+        variant="inline"
+        chrome="rail-list"
+        onPick={closeRailPopover}
+      />
     {:else if railPopover.surfaceId === "messaging"}
-      <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
-        <label class="block px-1.5 pb-1.5 pt-1">
-          <span class="sr-only">Search channels</span>
-          <input
-            class="input w-full text-sm"
-            type="search"
-            placeholder="Search channels…"
-            value={messagingShell.search}
-            oninput={(event) => {
-              messagingShell.search = (event.currentTarget as HTMLInputElement).value;
-            }}
-          />
-        </label>
-        <div class="min-h-0 flex-1 overflow-y-auto px-1.5 pb-2">
-          <MessagingChannelList
-            search={messagingShell.search}
-            selected={messagingShell.selectedChannel}
-            summary={messaging.summary}
-            {daemonOk}
-            loading={messaging.loading}
-            error={messaging.error}
-            onSelect={(id) => {
-              messagingShell.selectChannel(id);
-              commitPopoverSurface("messaging");
-            }}
-          />
-        </div>
+      <div class="min-h-0 flex-1 overflow-y-auto px-1.5 py-2">
+        <MessagingChannelList
+          search={messagingShell.search}
+          selected={messagingShell.selectedChannel}
+          summary={messaging.summary}
+          {daemonOk}
+          loading={messaging.loading}
+          error={messaging.error}
+          onSelect={(id) => {
+            messagingShell.selectChannel(id);
+            commitPopoverSurface("messaging");
+          }}
+        />
       </div>
     {:else if railPopover.surfaceId === "peers"}
-      <PeersShellList onPickPeer={() => commitPopoverSurface("peers")} />
+      <PeersShellList
+        chrome="rail-list"
+        onPickPeer={() => commitPopoverSurface("peers")}
+      />
     {:else if railPopover.surfaceId === "context"}
-      <ContextSidePanel onPick={() => commitPopoverSurface("context")} />
+      <ContextSidePanel
+        chrome="rail-list"
+        onPick={() => commitPopoverSurface("context")}
+      />
     {/if}
   </NavRailViewPopover>
 {/if}
 
 <style>
+  :global(.nav-rail-context-toolbar) {
+    display: flex;
+    min-width: 0;
+    flex: 1;
+    align-items: center;
+    justify-content: flex-start;
+  }
+
+  :global(.nav-rail-context-toolbar .lme-side-mode-bar) {
+    width: auto;
+    border-bottom: 0;
+    padding: 0;
+  }
+
+  :global(.nav-rail-context-toolbar .lme-side-mode-bar > .flex-1) {
+    flex: 0 1 auto;
+  }
+
+  :global(.nav-rail-popover-toolbar-label) {
+    padding: 0 0.35rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: rgb(var(--color-surface-200));
+  }
+
   .master-rail-root {
     position: relative;
   }

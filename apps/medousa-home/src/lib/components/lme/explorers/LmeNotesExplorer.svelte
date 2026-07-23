@@ -25,6 +25,8 @@
   import { canUseLocalVaultFilesystem } from "$lib/utils/vaultFilesystem";
 
   let createOpen = $state(false);
+  let createMenuDropUp = $state(true);
+  let createBtnEl = $state<HTMLButtonElement | null>(null);
   let searchExpanded = $state(false);
   let searchInputEl = $state<HTMLInputElement | null>(null);
   let listScrollEl = $state<HTMLElement | null>(null);
@@ -180,16 +182,26 @@
         />
       </div>
     {:else}
-      <div class="flex min-w-0 items-center gap-0.5">
+      <div class="lme-dock-chrome-secondary lme-dock-chrome-secondary--crumb min-w-0">
         <VaultRootPicker compact quiet dropUp />
+        <span
+          class="nav-rail-dock-crumb-sep shrink-0 px-px text-[11px] font-medium text-surface-500"
+          aria-hidden="true"
+        >
+          /
+        </span>
         <VaultGroupPicker dropUp />
       </div>
-      <div class="min-w-1 flex-1"></div>
+      <!-- Push action cluster toward `>` once the bar extends. -->
+      <div
+        class="lme-dock-chrome-secondary lme-dock-chrome-secondary--spacer min-w-1 flex-1"
+      ></div>
     {/if}
 
     {#if !searchExpanded}
       <div class="relative shrink-0">
         <button
+          bind:this={createBtnEl}
           type="button"
           class="vault-dock-icon-btn"
           aria-haspopup="menu"
@@ -198,6 +210,9 @@
           title="New"
           onclick={(event) => {
             event.stopPropagation();
+            if (!createOpen) {
+              createMenuDropUp = !createBtnEl?.closest(".nav-rail-view-popover-dock-slot");
+            }
             createOpen = !createOpen;
           }}
         >
@@ -205,7 +220,9 @@
         </button>
         {#if createOpen}
           <div
-            class="absolute bottom-full right-0 z-30 mb-1 min-w-[11rem] rounded-lg border border-surface-500/50 bg-surface-900 py-1 shadow-xl"
+            class="absolute right-0 z-30 min-w-[11rem] rounded-lg border border-surface-500/50 bg-surface-900 py-1 shadow-xl {createMenuDropUp
+              ? 'bottom-full mb-1'
+              : 'top-full mt-1'}"
             role="menu"
             tabindex="-1"
             onclick={(event) => event.stopPropagation()}
@@ -282,7 +299,9 @@
           </div>
         {/if}
       </div>
-      <VaultLibraryBrowseModeBar icons flush />
+      <div class="lme-dock-chrome-secondary shrink-0">
+        <VaultLibraryBrowseModeBar icons flush rail />
+      </div>
     {/if}
 
     {#if searchExpanded}
