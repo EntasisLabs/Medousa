@@ -6,6 +6,7 @@
   import { externalDesk } from "$lib/stores/externalDesk.svelte";
   import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
   import { vault } from "$lib/stores/vault.svelte";
+  import { portLmeDock } from "$lib/utils/lmeDockHost";
   import { openAttachmentPath } from "$lib/utils/vaultAttachmentPicker";
   import { canPreviewAttachment } from "$lib/utils/vaultAttachments";
   import {
@@ -105,6 +106,7 @@
 
   <footer
     class="lme-side-rail-dock lme-files-dock"
+    use:portLmeDock
   >
     {#if searchExpanded}
       <div class="lme-dock-search-expand min-w-0 flex-1">

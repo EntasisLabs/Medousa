@@ -22,7 +22,7 @@ Accepted
 
 ## Consequences
 
-- Persistence key `medousa-home-shell-tabs-v2` stores tabs, groups, splitRoot, activeGroupId, zoom.
+- Persistence key `medousa-home-shell-tabs-v3` stores named virtual desktops (each holding the former v2 layout blob). See [ADR-010](adr-010-virtual-shell-workspaces.md).
 - **Restart restore:** shell chrome hydrates from that key; open chat panes are re-acquired into `ChatStreamPool` (active first, up to `maxLiveStreams`); background sessions warm history via `warmBackgroundSession`. Main window size/position/maximized persist via `tauri-plugin-window-state` (desktop, label `main` only).
 - Spotlight exposes pane commands under Advanced.
 - Session-scoped chat runtimes (`chat.svelte.ts` + `chatSessionRuntime.ts`) keep messages/drafts across focus swaps; stream events route by owned `turnId` → `sessionId`.

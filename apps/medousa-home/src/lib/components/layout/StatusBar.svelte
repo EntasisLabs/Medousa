@@ -3,6 +3,11 @@
   import type { WorkCard } from "$lib/types/workspace";
   import WorkMotionPeek from "$lib/components/layout/WorkMotionPeek.svelte";
   import { formatShortcut } from "$lib/platform";
+  import { shellTabs } from "$lib/stores/shellTabs.svelte";
+  import {
+    LME_DOCK_IN_STATUS_BAR,
+    setLmeDockHost,
+  } from "$lib/utils/lmeDockHost";
   import { Activity } from "@lucide/svelte";
 
   interface Props {
@@ -47,8 +52,18 @@
   }: Props = $props();
 
   let motionPeekOpen = $state(false);
+  let lmeDockHostEl = $state<HTMLElement | null>(null);
 
   const quiet = $derived(minimal || continuity);
+
+  $effect(() => {
+    if (!LME_DOCK_IN_STATUS_BAR) {
+      setLmeDockHost(null);
+      return;
+    }
+    setLmeDockHost(lmeDockHostEl);
+    return () => setLmeDockHost(null);
+  });
 
   const statusLabel = $derived(
     health?.ok ? "Connected" : health ? "Offline" : "Connecting…",
@@ -110,14 +125,14 @@
 
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <footer
-  class="workshop-status relative flex h-8 shrink-0 items-center justify-between gap-4 px-3 text-[11px]"
+  class="workshop-status relative flex h-8 shrink-0 items-center gap-3 px-3 text-[11px]"
   class:workshop-status--quiet={quiet}
   class:workshop-status--peek-open={motionPeekOpen}
   aria-label="Medousa status"
   data-debug-label="status-bar"
   onkeydown={onFooterKeydown}
 >
-  <span class="workshop-status-whisper {statusTextClass}">
+  <span class="workshop-status-whisper shrink-0 {statusTextClass}">
     <span class={statusDotClass} aria-hidden="true"></span>
     <span class="truncate">{statusLabel}</span>
     {#if workshopLabel && (!minimal || continuity)}
@@ -125,6 +140,17 @@
       <span class="truncate text-surface-500">{workshopLabel}</span>
     {/if}
   </span>
+
+  {#if LME_DOCK_IN_STATUS_BAR}
+    <div
+      bind:this={lmeDockHostEl}
+      class="lme-status-dock-slot min-h-0 min-w-0 flex-1"
+      data-lme-dock-slot
+      data-debug-label="lme-status-dock-slot"
+    ></div>
+  {:else}
+    <div class="min-w-0 flex-1"></div>
+  {/if}
 
   <div class="flex shrink-0 items-center gap-2.5 text-surface-500">
     {#if !quiet}
@@ -205,6 +231,21 @@
       </div>
     {:else if !quiet && needsAttentionCount > 0}
       <span class="text-warning-400/85">{needsAttentionCount} need attention</span>
+    {/if}
+
+    {#if shellTabs.desktops.length > 0}
+      <button
+        type="button"
+        class="workshop-status-action max-w-[9rem] truncate"
+        title={
+          shellTabs.desktops.length > 1
+            ? `Workspace: ${shellTabs.activeDesktopName} (click to cycle)`
+            : `Workspace: ${shellTabs.activeDesktopName}`
+        }
+        onclick={() => shellTabs.cycleDesktop(1)}
+      >
+        {shellTabs.activeDesktopName}
+      </button>
     {/if}
 
     {#if onOpenSpotlight}

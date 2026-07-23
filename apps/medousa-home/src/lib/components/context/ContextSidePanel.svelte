@@ -22,6 +22,13 @@
   } from "$lib/utils/contextThreads";
   import { Map as MapIcon, X } from "@lucide/svelte";
 
+  interface Props {
+    /** Fired after a recall/thread/posture pick (e.g. open context from a rail popover). */
+    onPick?: () => void;
+  }
+
+  let { onPick }: Props = $props();
+
   const activeTab = $derived(contextShell.activeTab);
   const search = $derived(contextShell.search);
 
@@ -113,7 +120,10 @@
         selectedId={contextShell.selectedRecallId}
         loading={identity.loading}
         error={identity.error}
-        onSelect={(id) => contextShell.selectRecall(id)}
+        onSelect={(id) => {
+          contextShell.selectRecall(id);
+          onPick?.();
+        }}
       />
     {:else if activeTab === "threads"}
       <ContextThreadsList
@@ -123,7 +133,10 @@
         loading={contextThreads.loading}
         error={contextThreads.error}
         retrieved={contextThreads.nodes.length}
-        onSelect={(id) => contextShell.selectThread(id)}
+        onSelect={(id) => {
+          contextShell.selectThread(id);
+          onPick?.();
+        }}
       />
     {:else if activeTab === "posture"}
       <ContextPostureList
@@ -132,7 +145,10 @@
         selectedId={contextShell.selectedPostureId}
         loading={contextPosture.loading}
         error={contextPosture.error}
-        onSelect={(id) => contextShell.selectPosture(id)}
+        onSelect={(id) => {
+          contextShell.selectPosture(id);
+          onPick?.();
+        }}
       />
     {:else}
       <div class="flex flex-col items-center gap-2 px-3 py-8 text-center">

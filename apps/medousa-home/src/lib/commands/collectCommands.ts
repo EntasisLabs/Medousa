@@ -6,6 +6,7 @@ import {
   buildLibraryCommands,
   buildPaneCommands,
   buildTuneCommands,
+  buildWorkspaceCommands,
 } from "./registry";
 import { buildSuggestedCommands, buildBudgetListCommand } from "./contextCommands";
 import {
@@ -66,6 +67,7 @@ export function collectWorkshopCommands(
   const staticPool: WorkshopCommand[] = [
     ...suggested,
     ...buildGoCommands(),
+    ...buildWorkspaceCommands(),
     ...buildAskCommands(),
     ...buildTuneCommands(),
     ...buildBrowserCommands(),

@@ -4,6 +4,7 @@ use anyhow::Context;
 use stasis::application::orchestration::prompt_pipeline::PromptExecutionPipeline;
 use stasis::application::runtime::agent_session_job_handler::AgentSessionJobHandler;
 use stasis::application::runtime::agent_turn_job_handler::AgentTurnJobHandler;
+use stasis::application::runtime::agent_turn_waitable_job_handler::AgentTurnWaitableJobHandler;
 use stasis::application::runtime::concurrent_pattern_job_handler::ConcurrentPatternJobHandler;
 use stasis::application::runtime::coordinator_failover_job_handler::CoordinatorFailoverJobHandler;
 use stasis::application::runtime::grapheme_echo_job_handler::GraphemeEchoJobHandler;
@@ -172,9 +173,23 @@ async fn build_in_memory_daemon_composition(
         );
     }
 
+    // Stasis 0.8 agent platform ports (ADR-008). Default local tool-loop path is
+    // unchanged; ACP completion feeds the same process-local ingress/wait store.
+    let agent_ports = crate::runtime::agent_platform::shared_agent_platform_ports();
+    builder = builder
+        .with_agent_message_codec(agent_ports.codec.clone())
+        .with_turn_wait_store(agent_ports.wait_store.clone())
+        .with_agent_event_ingress(agent_ports.ingress.clone())
+        .with_mcp_export_allowlist(crate::runtime::agent_platform::mcp_export_allowlist());
+
     builder = workflow::attach_workflow_handler(builder, prompt_pipeline, workflow_registry);
     builder = attach_otel_to_builder(builder)?;
-    let runtime = builder.with_tool(MockWebSearchTool)?.build().await?;
+    // Prefer build_with_handles so MCP bridge handles are available to the
+    // composition root when configured (no behavior change when unused).
+    let (runtime, _handles) = builder
+        .with_tool(MockWebSearchTool)?
+        .build_with_handles()
+        .await?;
 
     channel_delivery::seed_internal_outbox_endpoint_for_runtime(
         &runtime,
@@ -239,6 +254,7 @@ async fn build_in_memory_local_composition(
     let workflow_registry = workflow::shared_workflow_registry();
     let prompt_pipeline = PromptExecutionPipeline::new(chat_client.clone());
 
+    let agent_ports = crate::runtime::agent_platform::shared_agent_platform_ports();
     let builder = workflow::attach_workflow_handler(
         StasisRuntimeBuilder::new(config.backend.clone())
             .with_chat_client(chat_client)
@@ -246,11 +262,17 @@ async fn build_in_memory_local_composition(
             .with_memory_context_writer(memory.memory_writer.clone())
             .with_memory_operations(memory.memory_operations.clone())
             .with_identity_memory_store(memory.identity_store_dyn())
-            .with_locus_memory(),
+            .with_locus_memory()
+            .with_agent_message_codec(agent_ports.codec.clone())
+            .with_turn_wait_store(agent_ports.wait_store.clone())
+            .with_agent_event_ingress(agent_ports.ingress.clone())
+            .with_mcp_export_allowlist(crate::runtime::agent_platform::mcp_export_allowlist()),
         prompt_pipeline,
         workflow_registry,
     );
-    let runtime = attach_otel_to_builder(builder)?.build().await?;
+    let (runtime, _handles) = attach_otel_to_builder(builder)?
+        .build_with_handles()
+        .await?;
 
     Ok(runtime)
 }
@@ -556,6 +578,15 @@ where
         memory_context_reader.clone(),
         memory_context_writer.clone(),
         identity_memory_store.clone(),
+    ))?;
+
+    // Process-local waitable external turns (Stasis 0.8). Surreal backends still
+    // use the in-memory TurnWaitStore unless a durable store is injected later.
+    let agent_ports = crate::runtime::agent_platform::shared_agent_platform_ports();
+    rt.register_handler(AgentTurnWaitableJobHandler::new(
+        agent_ports.wait_store.clone(),
+        agent_ports.codec.clone(),
+        Some(agent_ports.ingress.clone()),
     ))?;
 
     if let Some(reader) = memory_context_reader.clone() {

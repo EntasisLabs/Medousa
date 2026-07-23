@@ -30,7 +30,9 @@ use crate::agent_permission_request::{
 use crate::daemon::ingest::{publish_interactive_turn_event, stream_events_from_registry};
 use crate::daemon::state::AppState;
 use crate::daemon::turn_stream_registry::{TurnStreamEntry, TurnStreamRegistryPortAdapter};
+use crate::runtime::agent_platform::{publish_acp_terminal, AcpTerminalKind};
 use medousa_engine::TurnStreamRegistryPort;
+use serde_json::json;
 
 #[derive(Clone)]
 struct LiveAgentSession {
@@ -259,6 +261,17 @@ pub async fn cancel_agent_session(
         entry.channel.mark_closed();
     }
 
+    publish_acp_terminal(
+        AcpTerminalKind::Cancelled,
+        &live.session_id,
+        Some(&agent_session_id),
+        &agent_session_id,
+        &live.runtime,
+        "agent session cancelled",
+        json!({}),
+    )
+    .await;
+
     Ok(Json(CancelAgentSessionResponse {
         cancelled: true,
         agent_session_id,
@@ -374,6 +387,16 @@ async fn run_prompt_pump(
                     None,
                     None,
                 );
+                publish_acp_terminal(
+                    AcpTerminalKind::Completed,
+                    &live.session_id,
+                    Some(&live.agent_session_id),
+                    &live.agent_session_id,
+                    &live.runtime,
+                    "agent prompt complete (idle)",
+                    json!({ "reason": "idle" }),
+                )
+                .await;
                 break;
             }
             tokio::time::sleep(std::time::Duration::from_millis(40)).await;
@@ -466,6 +489,16 @@ async fn run_prompt_pump(
                     None,
                     None,
                 );
+                publish_acp_terminal(
+                    AcpTerminalKind::Failed,
+                    &live.session_id,
+                    Some(&live.agent_session_id),
+                    &live.agent_session_id,
+                    &live.runtime,
+                    &message,
+                    json!({ "error": message }),
+                )
+                .await;
             }
             AcpEvent::Done => {
                 publish_agent_event(
@@ -480,6 +513,16 @@ async fn run_prompt_pump(
                     None,
                     None,
                 );
+                publish_acp_terminal(
+                    AcpTerminalKind::Completed,
+                    &live.session_id,
+                    Some(&live.agent_session_id),
+                    &live.agent_session_id,
+                    &live.runtime,
+                    "agent prompt complete",
+                    json!({}),
+                )
+                .await;
                 break;
             }
         }

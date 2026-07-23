@@ -19,6 +19,7 @@
   import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
   import { scriptRenameUi } from "$lib/stores/scriptRenameUi.svelte";
   import { workshop } from "$lib/stores/workshop.svelte";
+  import { portLmeDock } from "$lib/utils/lmeDockHost";
   import type { GraphemeScriptEntry } from "$lib/types/grapheme";
   import {
     bindScriptLongPress,
@@ -294,7 +295,7 @@
     {/if}
   </div>
 
-  <footer class="lme-side-rail-dock">
+  <footer class="lme-side-rail-dock" use:portLmeDock>
     {#if searchExpanded}
       <div class="lme-dock-search-expand min-w-0 flex-1">
         <Search size={14} strokeWidth={1.75} class="lme-dock-search-glyph" />

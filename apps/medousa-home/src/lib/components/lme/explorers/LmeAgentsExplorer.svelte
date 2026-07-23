@@ -8,6 +8,7 @@
   import { layout } from "$lib/stores/layout.svelte";
   import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
   import type { ManuscriptCatalogEntry } from "$lib/types/catalog";
+  import { portLmeDock } from "$lib/utils/lmeDockHost";
   import { automationDraftForSpecialist } from "$lib/utils/specialistAutomation";
   import {
     SKILL_FILTER_CHIPS,
@@ -187,7 +188,7 @@
     {/if}
   </div>
 
-  <footer class="lme-side-rail-dock">
+  <footer class="lme-side-rail-dock" use:portLmeDock>
     <div class="min-w-0 flex-1">
       {#if filterActive}
         <span class="workshop-faint truncate text-[11px]">Filtered</span>

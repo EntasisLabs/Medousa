@@ -1,10 +1,23 @@
-/** Per-session agent runtime preference (Medousa native vs ACP external). */
+/**
+ * Per-session agent runtime preference (Medousa native vs ACP external).
+ *
+ * External runtimes (Cursor / Codex) use the daemon `/v1/agents` SDK façade.
+ * Stasis 0.8 can also park `workflow.stasis.agent_turn.waitable` jobs on the
+ * process-local TurnWaitStore until ACP completion feeds AgentEventIngress.
+ * Home chat still selects runtimes here; it does not speak ACP or Stasis wait
+ * stores directly.
+ */
 
 const STORAGE_KEY = "medousa-home-agent-runtime-v1";
 
 export type ChatAgentRuntime = "medousa" | "cursor" | "codex";
 
 const VALID = new Set<ChatAgentRuntime>(["medousa", "cursor", "codex"]);
+
+/** Cursor/Codex — external ACP participants (waitable turns on the daemon). */
+export function isExternalAgentRuntime(runtime: ChatAgentRuntime): boolean {
+  return runtime === "cursor" || runtime === "codex";
+}
 
 function loadMap(): Record<string, ChatAgentRuntime> {
   if (typeof localStorage === "undefined") return {};

@@ -50,8 +50,24 @@ export type SplitNode =
 export type ShellTabKind = ShellTab["kind"];
 export type SplitDirection = "right" | "down";
 
-/** Soft cap on leaf panes (v1). */
+/** Soft cap on leaf panes per virtual desktop (v1). */
 export const MAX_SHELL_PANES = 4;
+
+/** Pane layout snapshot stored inside a virtual shell desktop. */
+export type ShellDesktopLayout = {
+  tabs: ShellTab[];
+  groups: EditorGroup[];
+  splitRoot: SplitNode;
+  activeGroupId: string;
+  zoomedGroupId?: string | null;
+};
+
+/** Named virtual desktop — layout only; vault/chat/workshop stay shared. */
+export type ShellDesktop = {
+  id: string;
+  name: string;
+  layout: ShellDesktopLayout;
+};
 
 /** Singleton surfaces that open as at most one tab each. */
 export const SHELL_SURFACE_TAB_IDS = new Set<string>([

@@ -14,6 +14,7 @@
   import { flows } from "$lib/stores/flows.svelte";
   import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
   import type { RecurringDefinitionEntry } from "$lib/types/recurring";
+  import { portLmeDock } from "$lib/utils/lmeDockHost";
 
   interface Props {
     visible: boolean;
@@ -373,6 +374,7 @@
   {#if embedded && !mobileDetailOpen}
     <footer
       class="lme-side-rail-dock"
+      use:portLmeDock
     >
       <div class="min-w-0 flex-1">
         <span class="workshop-faint truncate text-[11px]">

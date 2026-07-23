@@ -13,10 +13,12 @@
   interface Props {
     open: boolean;
     onClose?: () => void;
+    /** Fired after a session is opened/created (e.g. close a rail popover). */
+    onPick?: () => void;
     variant?: "drawer" | "inline" | "sheet";
   }
 
-  let { open, onClose, variant = "drawer" }: Props = $props();
+  let { open, onClose, onPick, variant = "drawer" }: Props = $props();
 
   let query = $state("");
   let searchTimer: ReturnType<typeof setTimeout> | null = null;
@@ -113,6 +115,7 @@
 
   async function selectSession(sessionId: string) {
     await chat.switchSession(sessionId);
+    onPick?.();
     if (variant === "drawer" || variant === "sheet") {
       layout.setSessionDrawerOpen(false);
       onClose?.();
@@ -121,6 +124,7 @@
 
   async function createSession() {
     await chat.newSession();
+    onPick?.();
     if (variant === "drawer" || variant === "sheet") {
       layout.setSessionDrawerOpen(false);
       onClose?.();

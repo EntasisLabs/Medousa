@@ -1065,6 +1065,19 @@
     @apply relative flex h-8 shrink-0 items-center gap-0.5 overflow-visible border-t border-surface-500/25 px-1;
   }
 
+  /* Experiment: dock portaled into StatusBar (see lmeDockHost.ts). */
+  .lme-status-dock-slot {
+    @apply flex h-full min-w-0 items-stretch overflow-visible;
+  }
+
+  .lme-status-dock-slot:empty {
+    @apply hidden;
+  }
+
+  .lme-side-rail-dock--status {
+    @apply h-full w-full min-w-0 border-t-0 bg-transparent px-0.5;
+  }
+
   .vault-dock-icon-btn {
     @apply inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-surface-400 transition hover:bg-surface-800/70 hover:text-surface-100;
   }

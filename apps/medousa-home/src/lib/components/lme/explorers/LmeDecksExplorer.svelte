@@ -4,6 +4,7 @@
   import ArtifactLibraryList from "$lib/components/artifacts/ArtifactLibraryList.svelte";
   import { artifacts } from "$lib/stores/artifacts.svelte";
   import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
+  import { portLmeDock } from "$lib/utils/lmeDockHost";
 
   interface Props {
     onOpenChat: () => void;
@@ -72,7 +73,7 @@
     {/if}
   </div>
 
-  <footer class="lme-side-rail-dock">
+  <footer class="lme-side-rail-dock" use:portLmeDock>
     {#if searchExpanded}
       <div class="lme-dock-search-expand min-w-0 flex-1">
         <Search size={14} strokeWidth={1.75} class="lme-dock-search-glyph" />

@@ -3591,9 +3591,13 @@ dependencies = [
 name = "medousa-types"
 version = "0.4.1"
 dependencies = [
+ "anyhow",
+ "base64 0.22.1",
  "chrono",
+ "hmac",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
 ]
 
 [[package]]

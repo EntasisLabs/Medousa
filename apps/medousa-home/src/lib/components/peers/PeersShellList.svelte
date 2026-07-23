@@ -2,6 +2,13 @@
   import PeerListRow from "$lib/components/peers/PeerListRow.svelte";
   import { peersShell } from "$lib/stores/peersShell.svelte";
   import { Plus, Search, Users } from "@lucide/svelte";
+
+  interface Props {
+    /** Fired after a peer is chosen (e.g. open the peers surface from a rail popover). */
+    onPickPeer?: (id: string) => void;
+  }
+
+  let { onPickPeer }: Props = $props();
 </script>
 
 <div class="peers-shell-list flex h-full min-h-0 flex-col">
@@ -55,7 +62,10 @@
           <PeerListRow
             {row}
             selected={peersShell.selectedPeerId === row.workshopId}
-            onSelect={() => peersShell.selectPeer(row.workshopId)}
+            onSelect={() => {
+              peersShell.selectPeer(row.workshopId);
+              onPickPeer?.(row.workshopId);
+            }}
           />
         </li>
       {/each}

@@ -791,6 +791,12 @@ export class ChatStore {
     chatStreamPool.acquire(id);
     this.stashFocusedRuntime();
     await this.refreshSessions({ force: true });
+    // Shell tab host mounts ChatSessionView by shell tab sessionId — without
+    // opening a tab here the previous chat (often full of worker history) stays on screen.
+    const { shellTabs } = await import("$lib/stores/shellTabs.svelte");
+    shellTabs.openChat(id, { activate: true });
+    const { workshops } = await import("$lib/stores/workshops.svelte");
+    void workshops.saveActiveSession(id);
   }
 
   /** Pull transcript from the daemon when the UI remounted empty (startup / reconnect). */

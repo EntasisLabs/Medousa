@@ -2,6 +2,7 @@
   import SessionSidebar from "$lib/components/chat/SessionSidebar.svelte";
   import ContextSidePanel from "$lib/components/context/ContextSidePanel.svelte";
   import EnvironmentPresetSwitcher from "$lib/components/environment/EnvironmentPresetSwitcher.svelte";
+  import NavRailViewPopover from "$lib/components/layout/NavRailViewPopover.svelte";
   import LmeSidePanel from "$lib/components/lme/LmeSidePanel.svelte";
   import MessagingChannelList from "$lib/components/messaging/MessagingChannelList.svelte";
   import PeersShellList from "$lib/components/peers/PeersShellList.svelte";
@@ -9,11 +10,14 @@
   import WorkshopSwitcherCompact from "$lib/components/workshops/WorkshopSwitcherCompact.svelte";
   import { environment } from "$lib/stores/environment.svelte";
   import { layout } from "$lib/stores/layout.svelte";
+  import { lmeWorkspace, type LmeExplorerMode } from "$lib/stores/lmeWorkspace.svelte";
   import { messaging } from "$lib/stores/messaging.svelte";
   import { messagingShell } from "$lib/stores/messagingShell.svelte";
   import { settingsNav } from "$lib/stores/settingsNav.svelte";
   import { feedBadgeForComponents } from "$lib/utils/customViewStatus";
   import { environmentIcon } from "$lib/utils/environmentIcons";
+  import { labelForLmeExplorerMode } from "$lib/utils/lmeExplorerModes";
+  import { buildLifeRailItems } from "$lib/utils/lifeRailItems";
   import {
     navLabel,
     navTier,
@@ -22,10 +26,14 @@
     surfaceHasShellSidebarView,
   } from "$lib/utils/navSurfaces";
   import {
+    activateLmeModeNestItem,
     activateNestItem,
     NAV_RAIL_NEST_LIMIT,
     nestItemIsActive,
+    nestItemIsActiveForLmeMode,
+    nestItemsForLmeMode,
     nestItemsForSurface,
+    nestKeyForLmeMode,
     prefetchRailNestData,
     surfaceSupportsRailNest,
     type NavRailNestItem,
@@ -36,6 +44,10 @@
   import { fade, fly } from "svelte/transition";
   import { cubicOut } from "svelte/easing";
   import { onMount } from "svelte";
+
+  type RailPopoverTarget =
+    | { kind: "lme"; mode: LmeExplorerMode }
+    | { kind: "surface"; surfaceId: string };
 
   const NEST_OPEN_KEY = "medousa-home-rail-nest-open";
 
@@ -76,11 +88,15 @@
   const mode = $derived(layout.shellSidebarMode);
   /** View list fills the same rail — never a second column. */
   const showView = $derived(mode === "view" && surfaceHasShellSidebarView(active));
-  const viewTitle = $derived(shellSidebarViewTitle(active));
+  const viewTitle = $derived(
+    active === "library" || active === "automations"
+      ? labelForLmeExplorerMode(lmeWorkspace.explorerMode)
+      : shellSidebarViewTitle(active),
+  );
   const daemonOk = $derived(health?.ok ?? false);
 
   const surfaces = $derived(environment.navSurfaces());
-  const lifeOrbit = $derived(surfaces.filter((surface) => navTier(surface) === "life"));
+  const lifeRailItems = $derived(buildLifeRailItems(surfaces));
   const workshopNav = $derived(surfaces.filter((surface) => navTier(surface) === "workshop"));
   const utility = $derived(surfaces.filter((surface) => navTier(surface) === "utility"));
 
@@ -90,6 +106,18 @@
   const utilityIconProps = { size: 14, strokeWidth: 1.5 };
   /** Explicit open map; missing key = collapsed by default. */
   let nestOpen = $state<Record<string, boolean>>(loadNestOpen());
+  /** In-place flyout — replaces rail view-mode swaps for list surfaces. */
+  let railPopover = $state<RailPopoverTarget | null>(null);
+  let railPopoverTriggerEl = $state<HTMLElement | null>(null);
+
+  const railPopoverTitle = $derived(
+    railPopover?.kind === "lme"
+      ? labelForLmeExplorerMode(railPopover.mode)
+      : railPopover
+        ? shellSidebarViewTitle(railPopover.surfaceId)
+        : "",
+  );
+  const railPopoverOpen = $derived(railPopover !== null);
 
   function activityFor(id: string): number {
     if (id === "chat") return chatActivity;
@@ -113,9 +141,9 @@
   function railBtnClass(
     id: string,
     tier: "life" | "utility",
-    options?: { quietActive?: boolean },
+    options?: { quietActive?: boolean; active?: boolean },
   ): string {
-    const isActive = active === id;
+    const isActive = options?.active ?? active === id;
     const activeClass = isActive
       ? options?.quietActive
         ? "workshop-rail-btn-active-quiet"
@@ -130,21 +158,81 @@
     return nest.some((item) => nestItemIsActive(surfaceId, item.id));
   }
 
+  function lmeModeIsActive(modeId: LmeExplorerMode): boolean {
+    if (railPopover?.kind === "lme" && railPopover.mode === modeId) return true;
+    return (
+      (active === "library" || active === "automations") &&
+      lmeWorkspace.explorerMode === modeId
+    );
+  }
+
+  function surfacePopoverOpen(surfaceId: string): boolean {
+    return railPopover?.kind === "surface" && railPopover.surfaceId === surfaceId;
+  }
+
+  function closeRailPopover() {
+    railPopover = null;
+    railPopoverTriggerEl = null;
+  }
+
+  function sameRailPopover(target: RailPopoverTarget): boolean {
+    if (!railPopover) return false;
+    if (target.kind === "lme" && railPopover.kind === "lme") {
+      return railPopover.mode === target.mode;
+    }
+    if (target.kind === "surface" && railPopover.kind === "surface") {
+      return railPopover.surfaceId === target.surfaceId;
+    }
+    return false;
+  }
+
+  function openRailPopover(target: RailPopoverTarget, trigger: HTMLElement) {
+    if (sameRailPopover(target)) {
+      closeRailPopover();
+      return;
+    }
+    railPopoverTriggerEl = trigger;
+    railPopover = target;
+  }
+
   function hideRail() {
+    closeRailPopover();
     layout.setShellSidebarExpanded(false);
     void environment.patchShellChromeDesktop({ navStyle: "compact" }).catch(() => {});
   }
 
-  function selectDestination(surfaceId: string) {
-    onSelect(surfaceId);
-    if (surfaceHasShellSidebarView(surfaceId)) {
-      layout.setShellSidebarMode("view");
-    } else {
+  function selectDestination(surfaceId: string, event?: MouseEvent) {
+    if (surfaceHasShellSidebarView(surfaceId) && event) {
+      event.preventDefault();
+      event.stopPropagation();
+      // Popover only — don't open a shell tab until the user picks something.
       layout.setShellSidebarMode("nav");
+      openRailPopover({ kind: "surface", surfaceId }, event.currentTarget as HTMLElement);
+      return;
     }
+    closeRailPopover();
+    onSelect(surfaceId);
+    layout.setShellSidebarMode("nav");
+  }
+
+  function selectLmeMode(modeId: LmeExplorerMode, event: MouseEvent) {
+    event.preventDefault();
+    event.stopPropagation();
+    lmeWorkspace.setExplorerMode(modeId);
+    layout.setShellSidebarMode("nav");
+    // Popover only — opening a note/script/etc. creates the tab when chosen.
+    openRailPopover({ kind: "lme", mode: modeId }, event.currentTarget as HTMLElement);
+  }
+
+  /** Open the real surface/tab after a concrete pick inside a rail popover. */
+  function commitPopoverSurface(surfaceId: string) {
+    closeRailPopover();
+    onSelect(surfaceId);
+    layout.setShellSidebarMode("nav");
   }
 
   function backToNav() {
+    closeRailPopover();
     layout.shellSidebarBackToNav();
   }
 
@@ -153,8 +241,12 @@
     return nestItemsForSurface(surfaceId);
   }
 
-  function isNestExpanded(surfaceId: string): boolean {
-    return nestOpen[surfaceId] === true;
+  function nestForLmeMode(modeId: LmeExplorerMode): NavRailNestItem[] {
+    return nestItemsForLmeMode(modeId);
+  }
+
+  function isNestExpanded(nestKey: string): boolean {
+    return nestOpen[nestKey] === true;
   }
 
   function persistNestOpen() {
@@ -162,22 +254,35 @@
     localStorage.setItem(NEST_OPEN_KEY, JSON.stringify(nestOpen));
   }
 
-  function toggleNest(surfaceId: string, event: Event) {
+  function toggleNest(nestKey: string, event: Event) {
     event.preventDefault();
     event.stopPropagation();
-    nestOpen = { ...nestOpen, [surfaceId]: !isNestExpanded(surfaceId) };
+    nestOpen = { ...nestOpen, [nestKey]: !isNestExpanded(nestKey) };
     persistNestOpen();
   }
 
   async function openNestItem(surfaceId: string, item: NavRailNestItem) {
     // Do not call onSelect(surface) — for chat that re-opens the *current* session
     // and races ensureSessionHydrated against the nest target (transcript bleed).
+    closeRailPopover();
     layout.setShellSidebarMode("nav");
     if (!isNestExpanded(surfaceId)) {
       nestOpen = { ...nestOpen, [surfaceId]: true };
       persistNestOpen();
     }
     await activateNestItem(surfaceId, item.id);
+  }
+
+  async function openLmeNestItem(modeId: LmeExplorerMode, item: NavRailNestItem) {
+    const nestKey = nestKeyForLmeMode(modeId);
+    if (!isNestExpanded(nestKey)) {
+      nestOpen = { ...nestOpen, [nestKey]: true };
+      persistNestOpen();
+    }
+    closeRailPopover();
+    // activateTab / openNote mirrors an LME shell tab — no blank library surface.
+    await activateLmeModeNestItem(modeId, item.id);
+    layout.setShellSidebarMode("nav");
   }
 
   onMount(() => {
@@ -284,105 +389,211 @@
         <div
           class="workshop-icon-rail-items workshop-rail-tree flex min-h-0 flex-1 flex-col overflow-y-auto"
         >
-          {#each lifeOrbit as surface (surface.id)}
-            {@const Icon = environmentIcon(surface.icon)}
-            {@const badge = activityFor(surface.id)}
-            {@const feedBadge = feedBadgeForSurface(surface)}
-            {@const nest = nestFor(surface.id)}
-            {@const leafActive = nestHasActiveItem(surface.id, nest)}
-            {@const nestExpanded = nest.length > 0 && isNestExpanded(surface.id)}
-            <div
-              class="workshop-rail-dest"
-              class:workshop-rail-dest-has-nest={nest.length > 0}
-              class:workshop-rail-dest-expanded={nestExpanded}
-            >
-              <div class="workshop-rail-dest-row">
-                {#if nest.length > 0}
+          {#each lifeRailItems as item (item.id)}
+            {#if item.kind === "lme-mode"}
+              {@const Icon = item.mode.icon}
+              {@const modeActive = lmeModeIsActive(item.mode.id)}
+              {@const nest = nestForLmeMode(item.mode.id)}
+              {@const nestKey = nestKeyForLmeMode(item.mode.id)}
+              {@const leafActive = nest.some((nestItem) =>
+                nestItemIsActiveForLmeMode(item.mode.id, nestItem.id),
+              )}
+              {@const nestExpanded = nest.length > 0 && isNestExpanded(nestKey)}
+              <div
+                class="workshop-rail-dest"
+                class:workshop-rail-dest-has-nest={nest.length > 0}
+                class:workshop-rail-dest-expanded={nestExpanded}
+              >
+                <div class="workshop-rail-dest-row">
+                  {#if nest.length > 0}
+                    <button
+                      type="button"
+                      class="workshop-rail-dest-twist-btn"
+                      title={nestExpanded ? "Collapse" : "Expand"}
+                      aria-label={nestExpanded
+                        ? `Collapse ${item.mode.label}`
+                        : `Expand ${item.mode.label}`}
+                      aria-expanded={nestExpanded}
+                      onclick={(event) => toggleNest(nestKey, event)}
+                    >
+                      <ChevronRight
+                        size={12}
+                        strokeWidth={2}
+                        class="workshop-rail-dest-chevron {nestExpanded
+                          ? 'workshop-rail-dest-chevron-open'
+                          : ''}"
+                      />
+                    </button>
+                  {:else}
+                    <span
+                      class="workshop-rail-dest-twist workshop-rail-dest-twist-empty"
+                      aria-hidden="true"
+                    ></span>
+                  {/if}
                   <button
                     type="button"
-                    class="workshop-rail-dest-twist-btn"
-                    title={nestExpanded ? "Collapse" : "Expand"}
-                    aria-label={nestExpanded
-                      ? `Collapse ${navLabel(surface)}`
-                      : `Expand ${navLabel(surface)}`}
-                    aria-expanded={nestExpanded}
-                    onclick={(event) => toggleNest(surface.id, event)}
+                    class="{railBtnClass(item.mode.id, 'life', {
+                      quietActive: true,
+                      active: modeActive,
+                    })} workshop-rail-dest-btn"
+                    class:workshop-rail-dest-btn-dimmed={leafActive && nestExpanded}
+                    title={item.mode.label}
+                    aria-label={item.mode.label}
+                    aria-current={modeActive && !leafActive ? "page" : undefined}
+                    aria-expanded={railPopover?.kind === "lme" && railPopover.mode === item.mode.id}
+                    aria-haspopup="dialog"
+                    onclick={(event) => selectLmeMode(item.mode.id, event)}
                   >
-                    <ChevronRight
-                      size={12}
-                      strokeWidth={2}
-                      class="workshop-rail-dest-chevron {nestExpanded
-                        ? 'workshop-rail-dest-chevron-open'
-                        : ''}"
-                    />
+                    <span class="workshop-rail-btn-icon" aria-hidden="true">
+                      <Icon {...treeIconProps} />
+                    </span>
+                    <span class="workshop-rail-btn-label">{item.mode.label}</span>
                   </button>
-                {:else}
-                  <span class="workshop-rail-dest-twist workshop-rail-dest-twist-empty" aria-hidden="true"
-                  ></span>
-                {/if}
-                <button
-                  type="button"
-                  class="{railBtnClass(surface.id, 'life', {
-                    quietActive: true,
-                  })} workshop-rail-dest-btn"
-                  class:workshop-rail-dest-btn-dimmed={leafActive && nestExpanded}
-                  title={navTitle(surface)}
-                  aria-label={badge > 0 ? `${navTitle(surface)} (${badge} active)` : navTitle(surface)}
-                  aria-current={active === surface.id && !leafActive ? "page" : undefined}
-                  onclick={() => selectDestination(surface.id)}
-                >
-                  <span class="workshop-rail-btn-icon" aria-hidden="true">
-                    <Icon {...treeIconProps} />
-                    {#if badge > 0 && showCountBadge(surface.id)}
-                      <span class="workshop-rail-count-badge">{badge > 9 ? "9+" : badge}</span>
-                    {:else if badge > 0}
-                      <span class="workshop-rail-badge"></span>
-                    {:else if feedBadge !== "none"}
-                      <span
-                        class="workshop-rail-feed-badge workshop-rail-feed-badge-{feedBadge}"
-                        title={feedBadge === "live" ? "Live feed" : "Stale feed"}
-                      ></span>
+                </div>
+                {#if nestExpanded}
+                  <ul class="workshop-rail-nest" aria-label="{item.mode.label} recent">
+                    {#each nest as nestItem (nestItem.id)}
+                      <li>
+                        <button
+                          type="button"
+                          class="workshop-rail-nest-btn"
+                          class:workshop-rail-nest-btn-active={nestItemIsActiveForLmeMode(
+                            item.mode.id,
+                            nestItem.id,
+                          )}
+                          title={nestItem.label}
+                          onclick={() => void openLmeNestItem(item.mode.id, nestItem)}
+                        >
+                          <span class="workshop-rail-nest-label">{nestItem.label}</span>
+                        </button>
+                      </li>
+                    {/each}
+                    {#if nest.length >= NAV_RAIL_NEST_LIMIT}
+                      <li>
+                        <button
+                          type="button"
+                          class="workshop-rail-nest-more"
+                          onclick={(event) => selectLmeMode(item.mode.id, event)}
+                        >
+                          More
+                        </button>
+                      </li>
                     {/if}
-                  </span>
-                  <span class="workshop-rail-btn-label">{navLabel(surface)}</span>
-                </button>
+                  </ul>
+                {/if}
               </div>
-              {#if nestExpanded}
-                <ul class="workshop-rail-nest" aria-label="{navLabel(surface)} recent">
-                  {#each nest as item (item.id)}
-                    <li>
-                      <button
-                        type="button"
-                        class="workshop-rail-nest-btn"
-                        class:workshop-rail-nest-btn-active={nestItemIsActive(surface.id, item.id)}
-                        class:workshop-rail-nest-btn-accent={item.accent}
-                        title={item.meta ? `${item.label} · ${item.meta}` : item.label}
-                        onclick={() => void openNestItem(surface.id, item)}
-                      >
-                        {#if item.accent}
-                          <span class="workshop-rail-nest-dot" aria-hidden="true"></span>
-                        {/if}
-                        <span class="workshop-rail-nest-label">{item.label}</span>
-                        {#if item.meta}
-                          <span class="workshop-rail-nest-meta">{item.meta}</span>
-                        {/if}
-                      </button>
-                    </li>
-                  {/each}
-                  {#if nest.length >= NAV_RAIL_NEST_LIMIT}
-                    <li>
-                      <button
-                        type="button"
-                        class="workshop-rail-nest-more"
-                        onclick={() => selectDestination(surface.id)}
-                      >
-                        More
-                      </button>
-                    </li>
+            {:else}
+              {@const surface = item.surface}
+              {@const Icon = environmentIcon(surface.icon)}
+              {@const badge = activityFor(surface.id)}
+              {@const feedBadge = feedBadgeForSurface(surface)}
+              {@const nest = nestFor(surface.id)}
+              {@const leafActive = nestHasActiveItem(surface.id, nest)}
+              {@const nestExpanded = nest.length > 0 && isNestExpanded(surface.id)}
+              <div
+                class="workshop-rail-dest"
+                class:workshop-rail-dest-has-nest={nest.length > 0}
+                class:workshop-rail-dest-expanded={nestExpanded}
+              >
+                <div class="workshop-rail-dest-row">
+                  {#if nest.length > 0}
+                    <button
+                      type="button"
+                      class="workshop-rail-dest-twist-btn"
+                      title={nestExpanded ? "Collapse" : "Expand"}
+                      aria-label={nestExpanded
+                        ? `Collapse ${navLabel(surface)}`
+                        : `Expand ${navLabel(surface)}`}
+                      aria-expanded={nestExpanded}
+                      onclick={(event) => toggleNest(surface.id, event)}
+                    >
+                      <ChevronRight
+                        size={12}
+                        strokeWidth={2}
+                        class="workshop-rail-dest-chevron {nestExpanded
+                          ? 'workshop-rail-dest-chevron-open'
+                          : ''}"
+                      />
+                    </button>
+                  {:else}
+                    <span
+                      class="workshop-rail-dest-twist workshop-rail-dest-twist-empty"
+                      aria-hidden="true"
+                    ></span>
                   {/if}
-                </ul>
-              {/if}
-            </div>
+                  <button
+                    type="button"
+                    class="{railBtnClass(surface.id, 'life', {
+                      quietActive: true,
+                      active:
+                        active === surface.id || surfacePopoverOpen(surface.id),
+                    })} workshop-rail-dest-btn"
+                    class:workshop-rail-dest-btn-dimmed={leafActive && nestExpanded}
+                    title={navTitle(surface)}
+                    aria-label={badge > 0 ? `${navTitle(surface)} (${badge} active)` : navTitle(surface)}
+                    aria-current={active === surface.id && !leafActive ? "page" : undefined}
+                    aria-expanded={surfacePopoverOpen(surface.id)}
+                    aria-haspopup={surfaceHasShellSidebarView(surface.id) ? "dialog" : undefined}
+                    onclick={(event) => selectDestination(surface.id, event)}
+                  >
+                    <span class="workshop-rail-btn-icon" aria-hidden="true">
+                      <Icon {...treeIconProps} />
+                      {#if badge > 0 && showCountBadge(surface.id)}
+                        <span class="workshop-rail-count-badge">{badge > 9 ? "9+" : badge}</span>
+                      {:else if badge > 0}
+                        <span class="workshop-rail-badge"></span>
+                      {:else if feedBadge !== "none"}
+                        <span
+                          class="workshop-rail-feed-badge workshop-rail-feed-badge-{feedBadge}"
+                          title={feedBadge === "live" ? "Live feed" : "Stale feed"}
+                        ></span>
+                      {/if}
+                    </span>
+                    <span class="workshop-rail-btn-label">{navLabel(surface)}</span>
+                  </button>
+                </div>
+                {#if nestExpanded}
+                  <ul class="workshop-rail-nest" aria-label="{navLabel(surface)} recent">
+                    {#each nest as nestItem (nestItem.id)}
+                      <li>
+                        <button
+                          type="button"
+                          class="workshop-rail-nest-btn"
+                          class:workshop-rail-nest-btn-active={nestItemIsActive(
+                            surface.id,
+                            nestItem.id,
+                          )}
+                          class:workshop-rail-nest-btn-accent={nestItem.accent}
+                          title={nestItem.meta
+                            ? `${nestItem.label} · ${nestItem.meta}`
+                            : nestItem.label}
+                          onclick={() => void openNestItem(surface.id, nestItem)}
+                        >
+                          {#if nestItem.accent}
+                            <span class="workshop-rail-nest-dot" aria-hidden="true"></span>
+                          {/if}
+                          <span class="workshop-rail-nest-label">{nestItem.label}</span>
+                          {#if nestItem.meta}
+                            <span class="workshop-rail-nest-meta">{nestItem.meta}</span>
+                          {/if}
+                        </button>
+                      </li>
+                    {/each}
+                    {#if nest.length >= NAV_RAIL_NEST_LIMIT}
+                      <li>
+                        <button
+                          type="button"
+                          class="workshop-rail-nest-more"
+                          onclick={(event) => selectDestination(surface.id, event)}
+                        >
+                          More
+                        </button>
+                      </li>
+                    {/if}
+                  </ul>
+                {/if}
+              </div>
+            {/if}
           {/each}
 
           {#if workshopNav.length > 0}
@@ -395,7 +606,7 @@
                 title={surface.label}
                 aria-label={surface.label}
                 aria-current={active === surface.id ? "page" : undefined}
-                onclick={() => selectDestination(surface.id)}
+                onclick={(event) => selectDestination(surface.id, event)}
               >
                 <span class="workshop-rail-btn-icon" aria-hidden="true">
                   <Icon {...iconProps} />
@@ -411,11 +622,16 @@
               {@const Icon = environmentIcon(surface.icon)}
               <button
                 type="button"
-                class="{railBtnClass(surface.id, 'utility', { quietActive: true })} workshop-rail-tree-row"
+                class="{railBtnClass(surface.id, 'utility', {
+                  quietActive: true,
+                  active: active === surface.id || surfacePopoverOpen(surface.id),
+                })} workshop-rail-tree-row"
                 title={surface.label}
                 aria-label={surface.label}
                 aria-current={active === surface.id ? "page" : undefined}
-                onclick={() => selectDestination(surface.id)}
+                aria-expanded={surfacePopoverOpen(surface.id)}
+                aria-haspopup={surfaceHasShellSidebarView(surface.id) ? "dialog" : undefined}
+                onclick={(event) => selectDestination(surface.id, event)}
               >
                 <span class="workshop-rail-btn-icon" aria-hidden="true">
                   <Icon {...utilityIconProps} />
@@ -433,7 +649,7 @@
             title="You — {activeProfileLabel}"
             aria-label="You ({activeProfileLabel})"
             aria-current={active === "profiles" ? "page" : undefined}
-            onclick={() => selectDestination("profiles")}
+            onclick={(event) => selectDestination("profiles", event)}
           >
             <span class="workshop-rail-btn-icon" aria-hidden="true">
               <UserRound {...utilityIconProps} />
@@ -448,11 +664,16 @@
             type="button"
             class="{railBtnClass(SAFETY_SURFACE_SETTINGS, 'utility', {
               quietActive: true,
+              active:
+                active === SAFETY_SURFACE_SETTINGS ||
+                surfacePopoverOpen(SAFETY_SURFACE_SETTINGS),
             })} workshop-rail-dock-btn"
             title="Settings"
             aria-label="Settings"
             aria-current={active === SAFETY_SURFACE_SETTINGS ? "page" : undefined}
-            onclick={() => selectDestination(SAFETY_SURFACE_SETTINGS)}
+            aria-expanded={surfacePopoverOpen(SAFETY_SURFACE_SETTINGS)}
+            aria-haspopup="dialog"
+            onclick={(event) => selectDestination(SAFETY_SURFACE_SETTINGS, event)}
           >
             <span class="workshop-rail-btn-icon" aria-hidden="true">
               <Settings {...utilityIconProps} />
@@ -464,6 +685,66 @@
     </div>
   {/key}
 </nav>
+
+{#if railPopover}
+  <NavRailViewPopover
+    open={railPopoverOpen}
+    title={railPopoverTitle}
+    triggerEl={railPopoverTriggerEl}
+    onClose={closeRailPopover}
+  >
+    {#if railPopover.kind === "lme"}
+      <LmeSidePanel {onOpenChat} />
+    {:else if railPopover.surfaceId === "library" || railPopover.surfaceId === "automations"}
+      <LmeSidePanel {onOpenChat} />
+    {:else if railPopover.surfaceId === SAFETY_SURFACE_SETTINGS}
+      <div class="min-h-0 flex-1 overflow-y-auto px-1.5 py-1">
+        <SettingsNav
+          active={settingsNav.activeSection}
+          onSelect={(section) => {
+            settingsNav.setActiveSection(section);
+            commitPopoverSurface(SAFETY_SURFACE_SETTINGS);
+          }}
+        />
+      </div>
+    {:else if railPopover.surfaceId === "chat"}
+      <SessionSidebar open={true} variant="inline" onPick={closeRailPopover} />
+    {:else if railPopover.surfaceId === "messaging"}
+      <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <label class="block px-1.5 pb-1.5 pt-1">
+          <span class="sr-only">Search channels</span>
+          <input
+            class="input w-full text-sm"
+            type="search"
+            placeholder="Search channels…"
+            value={messagingShell.search}
+            oninput={(event) => {
+              messagingShell.search = (event.currentTarget as HTMLInputElement).value;
+            }}
+          />
+        </label>
+        <div class="min-h-0 flex-1 overflow-y-auto px-1.5 pb-2">
+          <MessagingChannelList
+            search={messagingShell.search}
+            selected={messagingShell.selectedChannel}
+            summary={messaging.summary}
+            {daemonOk}
+            loading={messaging.loading}
+            error={messaging.error}
+            onSelect={(id) => {
+              messagingShell.selectChannel(id);
+              commitPopoverSurface("messaging");
+            }}
+          />
+        </div>
+      </div>
+    {:else if railPopover.surfaceId === "peers"}
+      <PeersShellList onPickPeer={() => commitPopoverSurface("peers")} />
+    {:else if railPopover.surfaceId === "context"}
+      <ContextSidePanel onPick={() => commitPopoverSurface("context")} />
+    {/if}
+  </NavRailViewPopover>
+{/if}
 
 <style>
   .master-rail-root {

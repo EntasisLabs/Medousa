@@ -25,7 +25,14 @@ export function surfaceHasShellSidebarView(surfaceId: string): boolean {
 }
 
 export function navTier(surface: SurfaceDef): "life" | "workshop" | "utility" | "hidden" {
-  if (surface.id === "automations" || surface.id === "workshop") return "hidden";
+  // Workspace host stays real for LME/shell tabs; rail shows explorer modes instead.
+  if (
+    surface.id === "library" ||
+    surface.id === "automations" ||
+    surface.id === "workshop"
+  ) {
+    return "hidden";
+  }
   if (surface.id === "home" || surface.id === SAFETY_SURFACE_SETTINGS) return "hidden";
   if (surface.kind === "custom") return "life";
   if (WORKSHOP_IDS.has(surface.id)) return "workshop";

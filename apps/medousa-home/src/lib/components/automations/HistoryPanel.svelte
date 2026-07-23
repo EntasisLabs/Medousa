@@ -15,6 +15,7 @@
     suggestFlowNameFromRun,
     suggestFlowNameFromRuns,
   } from "$lib/utils/toolHistorySummary";
+  import { portLmeDock } from "$lib/utils/lmeDockHost";
 
   interface Props {
     visible: boolean;
@@ -375,6 +376,7 @@
   {#if embedded}
     <footer
       class="lme-side-rail-dock"
+      use:portLmeDock
     >
       {#if searchExpanded}
         <div class="lme-dock-search-expand min-w-0 flex-1">

@@ -195,6 +195,7 @@ describe("shellTabs store", () => {
     const ratio =
       shellTabs.splitRoot.type === "branch" ? shellTabs.splitRoot.ratio : null;
     expect(ratio).toBeCloseTo(0.35);
+    expect(shellTabs.activeDesktopName).toBe("Main");
 
     vi.resetModules();
     const { shellTabs: restored } = await import("./shellTabs.svelte");
@@ -207,6 +208,77 @@ describe("shellTabs store", () => {
       expect(restored.splitRoot.ratio).toBeCloseTo(0.35);
     }
     expect(restored.chatSessionIdsForLiveRestore()).toContain("session-a");
+    expect(restored.activeDesktopName).toBe("Main");
+  });
+
+  it("migrates v2 layout into a Main desktop", async () => {
+    const v2 = {
+      tabs: [
+        {
+          id: "chat-1",
+          kind: "chat",
+          sessionId: "session-a",
+          title: "Alpha",
+        },
+      ],
+      groups: [{ id: "main", tabIds: ["chat-1"], activeTabId: "chat-1" }],
+      splitRoot: { type: "group", id: "main" },
+      activeGroupId: "main",
+      zoomedGroupId: null,
+    };
+    localStorage.setItem("medousa-home-shell-tabs-v2", JSON.stringify(v2));
+
+    const { shellTabs } = await import("./shellTabs.svelte");
+    shellTabs.bootstrap();
+    expect(shellTabs.desktops).toHaveLength(1);
+    expect(shellTabs.activeDesktopName).toBe("Main");
+    expect(shellTabs.activeTab?.kind).toBe("chat");
+    expect(localStorage.getItem("medousa-home-shell-tabs-v3")).toBeTruthy();
+  });
+
+  it("switches desktops and keeps layouts independent", async () => {
+    const { shellTabs } = await import("./shellTabs.svelte");
+    const { chatStreamPool } = await import("./chatStreamPool.svelte");
+    shellTabs.openChat("session-a", { activate: true });
+    const researchId = shellTabs.createDesktop("Research");
+    await vi.waitFor(() => expect(shellTabs.activeDesktopId).toBe(researchId));
+    expect(shellTabs.tabs).toHaveLength(0);
+    shellTabs.openChat("session-b", { activate: true });
+    expect(shellTabs.activeTab?.kind).toBe("chat");
+    if (shellTabs.activeTab?.kind === "chat") {
+      expect(shellTabs.activeTab.sessionId).toBe("session-b");
+    }
+
+    const mainId = shellTabs.desktops.find((d) => d.name === "Main")!.id;
+    await shellTabs.switchDesktop(mainId);
+    expect(shellTabs.activeDesktopName).toBe("Main");
+    expect(shellTabs.activeTab?.kind).toBe("chat");
+    if (shellTabs.activeTab?.kind === "chat") {
+      expect(shellTabs.activeTab.sessionId).toBe("session-a");
+    }
+    expect(chatStreamPool.release).toHaveBeenCalled();
+    expect(chatStreamPool.acquire).toHaveBeenCalled();
+  });
+
+  it("allows the same chat session on two desktops without stealing", async () => {
+    const { shellTabs } = await import("./shellTabs.svelte");
+    shellTabs.openChat("session-a", { activate: true });
+    const researchId = shellTabs.createDesktop("Research");
+    await vi.waitFor(() => expect(shellTabs.activeDesktopId).toBe(researchId));
+    const opened = shellTabs.openChat("session-a", { activate: true });
+    expect(opened).toBeTruthy();
+    expect(shellTabs.tabs.filter((tab) => tab.kind === "chat")).toHaveLength(1);
+  });
+
+  it("does not reassign desktops on routine persist (avoids effect storms)", async () => {
+    const { shellTabs } = await import("./shellTabs.svelte");
+    shellTabs.openChat("session-a", { activate: true });
+    const before = shellTabs.desktops;
+    shellTabs.syncTitlesFromStores();
+    shellTabs.syncFromLmeWorkspace();
+    shellTabs.patchTitle(shellTabs.tabs[0]!.id, "Alpha renamed");
+    expect(shellTabs.desktops).toBe(before);
+    expect(localStorage.getItem("medousa-home-shell-tabs-v3")).toContain("Alpha renamed");
   });
 
   it("lists chat sessions for live restore with active pane first", async () => {

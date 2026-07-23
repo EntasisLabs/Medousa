@@ -71,6 +71,91 @@ export function buildGoCommands(): WorkshopCommand[] {
   ];
 }
 
+export function buildWorkspaceCommands(): WorkshopCommand[] {
+  const switchCommands = shellTabs.desktops.map((desktop) => ({
+    id: `workspace-switch-${desktop.id}`,
+    section: "go" as const,
+    label: `Switch workspace: ${desktop.name}`,
+    subtitle:
+      desktop.id === shellTabs.activeDesktopId
+        ? "Current virtual desktop"
+        : "Swap pane layout only — vault and chat stay shared",
+    keywords: `workspace desktop virtual switch ${desktop.name}`,
+    run: async (ctx: WorkshopCommandContext) => {
+      await shellTabs.switchDesktop(desktop.id);
+      ctx.callbacks.close();
+      ctx.notice(`Workspace: ${desktop.name}`);
+    },
+  }));
+
+  return [
+    {
+      id: "workspace-new",
+      section: "go",
+      label: "New workspace",
+      subtitle: "Create a named virtual desktop (pane layout snapshot)",
+      keywords: "workspace desktop virtual new create hyprland",
+      prompt: {
+        placeholder: "Workspace name",
+        submitLabel: "Create",
+      },
+      run: (ctx, args) => {
+        const id = shellTabs.createDesktop(args);
+        const name =
+          shellTabs.desktops.find((desktop) => desktop.id === id)?.name ?? "Workspace";
+        ctx.callbacks.close();
+        ctx.notice(`Created workspace: ${name}`);
+      },
+    },
+    {
+      id: "workspace-rename",
+      section: "go",
+      label: "Rename workspace",
+      subtitle: `Rename “${shellTabs.activeDesktopName}”`,
+      keywords: "workspace desktop virtual rename",
+      prompt: {
+        placeholder: "New workspace name",
+        submitLabel: "Rename",
+      },
+      run: (ctx, args) => {
+        const ok = shellTabs.renameDesktop(shellTabs.activeDesktopId, args ?? "");
+        if (!ok) {
+          ctx.error("Enter a workspace name.");
+          return;
+        }
+        ctx.callbacks.close();
+        ctx.notice(`Renamed workspace: ${shellTabs.activeDesktopName}`);
+      },
+    },
+    {
+      id: "workspace-remove",
+      section: "go",
+      label: "Remove workspace",
+      subtitle:
+        shellTabs.desktops.length <= 1
+          ? "Keep at least one workspace"
+          : `Delete “${shellTabs.activeDesktopName}” (layout only)`,
+      keywords: "workspace desktop virtual remove delete close",
+      risk: shellTabs.desktops.length > 1 ? "attention" : "safe",
+      run: async (ctx) => {
+        if (shellTabs.desktops.length <= 1) {
+          ctx.error("Keep at least one workspace.");
+          return;
+        }
+        const name = shellTabs.activeDesktopName;
+        const ok = await shellTabs.removeDesktop();
+        if (!ok) {
+          ctx.error("Could not remove workspace.");
+          return;
+        }
+        ctx.callbacks.close();
+        ctx.notice(`Removed workspace: ${name}`);
+      },
+    },
+    ...switchCommands,
+  ];
+}
+
 export function buildPaneCommands(): WorkshopCommand[] {
   return [
     {

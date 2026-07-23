@@ -21,6 +21,7 @@
   import { vault } from "$lib/stores/vault.svelte";
   import { vaultDisplayTitle } from "$lib/utils/formatVault";
   import { formatShortcut } from "$lib/platform";
+  import { portLmeDock } from "$lib/utils/lmeDockHost";
   import { canUseLocalVaultFilesystem } from "$lib/utils/vaultFilesystem";
 
   let createOpen = $state(false);
@@ -163,7 +164,7 @@
     {/if}
   </div>
 
-  <footer class="lme-side-rail-dock">
+  <footer class="lme-side-rail-dock" use:portLmeDock>
     {#if searchExpanded}
       <div class="lme-dock-search-expand min-w-0 flex-1">
         <Search size={14} strokeWidth={1.75} class="lme-dock-search-glyph" />

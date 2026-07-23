@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, untrack } from "svelte";
   import ShellPane from "$lib/components/shell/ShellPane.svelte";
   import ShellSplitNode from "$lib/components/shell/ShellSplitNode.svelte";
   import ShellPaneCheatSheet from "$lib/components/shell/ShellPaneCheatSheet.svelte";
@@ -48,19 +48,20 @@
     void chat.sessions;
     void lmeWorkspace.tabs;
     void humanBrowser.tabs;
-    shellTabs.syncTitlesFromStores();
+    // Do not subscribe to shellTabs writes inside sync (avoids effect storms).
+    untrack(() => shellTabs.syncTitlesFromStores());
   });
 
   $effect(() => {
     void lmeWorkspace.tabs;
     void lmeWorkspace.activeTabId;
-    shellTabs.syncFromLmeWorkspace();
+    untrack(() => shellTabs.syncFromLmeWorkspace());
   });
 
   $effect(() => {
     void humanBrowser.tabs;
     void humanBrowser.activeTab?.id;
-    shellTabs.syncFromHumanBrowser();
+    untrack(() => shellTabs.syncFromHumanBrowser());
   });
 
   onMount(() => {
@@ -86,33 +87,35 @@
   class="shell-tab-host relative flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
   data-debug-label="shell-tab-host"
 >
-  {#if shellTabs.zoomedGroupId}
-    <ShellPane
-      groupId={shellTabs.zoomedGroupId}
-      {health}
-      {onOpenChat}
-      {onOpenWork}
-      {onOpenContext}
-      {onOpenConnection}
-      {onOpenNote}
-      {onSelectCard}
-      {onDaemonHealth}
-      ownsWebHost={webOwnerGroupId === shellTabs.zoomedGroupId}
-    />
-  {:else}
-    <ShellSplitNode
-      node={shellTabs.splitRoot}
-      {health}
-      {onOpenChat}
-      {onOpenWork}
-      {onOpenContext}
-      {onOpenConnection}
-      {onOpenNote}
-      {onSelectCard}
-      {onDaemonHealth}
-      {webOwnerGroupId}
-    />
-  {/if}
+  {#key shellTabs.activeDesktopId}
+    {#if shellTabs.zoomedGroupId}
+      <ShellPane
+        groupId={shellTabs.zoomedGroupId}
+        {health}
+        {onOpenChat}
+        {onOpenWork}
+        {onOpenContext}
+        {onOpenConnection}
+        {onOpenNote}
+        {onSelectCard}
+        {onDaemonHealth}
+        ownsWebHost={webOwnerGroupId === shellTabs.zoomedGroupId}
+      />
+    {:else}
+      <ShellSplitNode
+        node={shellTabs.splitRoot}
+        {health}
+        {onOpenChat}
+        {onOpenWork}
+        {onOpenContext}
+        {onOpenConnection}
+        {onOpenNote}
+        {onSelectCard}
+        {onDaemonHealth}
+        {webOwnerGroupId}
+      />
+    {/if}
+  {/key}
 
   {#if cheatSheetOpen}
     <ShellPaneCheatSheet onClose={() => (cheatSheetOpen = false)} />

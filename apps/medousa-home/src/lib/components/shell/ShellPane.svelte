@@ -65,9 +65,15 @@
       shellTabs.tabDropTargetGroupId === groupId,
   );
 
-  /** Tabs only when the pointer is near the top of this pane (or drag/force). */
+  /**
+   * Browser embeds steal pointer events, and their chrome sits above the hover
+   * overlay — so web panes always show the shell tab strip in-flow.
+   * Other surfaces keep hover-reveal tabs.
+   */
+  const webChrome = $derived(activeTab?.kind === "web");
   const showTabs = $derived(
-    tabs.length > 0 && (nearTop || overStrip || forceTabs),
+    tabs.length > 0 &&
+      (webChrome || nearTop || overStrip || forceTabs),
   );
   /**
    * When the master rail is collapsed, views show a left expand control in the
@@ -133,7 +139,12 @@
   onpointerleave={handlePanePointerLeave}
   onpointerdown={focusPane}
 >
-  {#if showTabs}
+  {#if showTabs && webChrome}
+    <!-- In-flow strip: native webview/chrome would otherwise hide hover tabs. -->
+    <div class="shell-pane-tabs shell-pane-tabs-web shrink-0">
+      <ShellTabStrip {groupId} />
+    </div>
+  {:else if showTabs}
     <!-- Overlay is pointer-events-none so view chrome stays clickable; only the
          bounded tab strip captures pointer. Left/right insets clear expand + actions. -->
     <div
@@ -253,6 +264,15 @@
   }
   .shell-pane-tabs {
     animation: shell-tabs-in 120ms ease-out;
+  }
+  .shell-pane-tabs-web {
+    border-bottom: 1px solid
+      color-mix(in oklab, var(--color-surface-500, #78716c) 35%, transparent);
+    background: color-mix(
+      in oklab,
+      var(--color-surface-900, #1c1917) 55%,
+      transparent
+    );
   }
   @keyframes shell-tabs-in {
     from {

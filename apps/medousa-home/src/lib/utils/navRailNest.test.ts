@@ -1,16 +1,22 @@
 import { describe, expect, it } from "vitest";
-import { NAV_RAIL_NEST_LIMIT, surfaceSupportsRailNest } from "./navRailNest";
+import {
+  LME_MODE_TAB_KIND,
+  lmeModeSupportsRailNest,
+  NAV_RAIL_NEST_LIMIT,
+  nestKeyForLmeMode,
+  surfaceSupportsRailNest,
+} from "./navRailNest";
 
 describe("navRailNest", () => {
   it("supports hierarchy destinations", () => {
     expect(surfaceSupportsRailNest("chat")).toBe(true);
     expect(surfaceSupportsRailNest("peers")).toBe(true);
-    expect(surfaceSupportsRailNest("library")).toBe(true);
     expect(surfaceSupportsRailNest("web")).toBe(true);
     expect(surfaceSupportsRailNest("context")).toBe(true);
   });
 
-  it("leaves work and utility surfaces alone", () => {
+  it("leaves workspace modes and utility surfaces alone", () => {
+    expect(surfaceSupportsRailNest("library")).toBe(false);
     expect(surfaceSupportsRailNest("work")).toBe(false);
     expect(surfaceSupportsRailNest("messaging")).toBe(false);
     expect(surfaceSupportsRailNest("calendar")).toBe(false);
@@ -19,5 +25,13 @@ describe("navRailNest", () => {
 
   it("caps nest size at five", () => {
     expect(NAV_RAIL_NEST_LIMIT).toBe(5);
+  });
+
+  it("supports nests for open-tab explorer modes", () => {
+    expect(lmeModeSupportsRailNest("notes")).toBe(true);
+    expect(lmeModeSupportsRailNest("files")).toBe(true);
+    expect(lmeModeSupportsRailNest("history")).toBe(false);
+    expect(LME_MODE_TAB_KIND.agents).toBe("manuscript");
+    expect(nestKeyForLmeMode("scripts")).toBe("lme:scripts");
   });
 });

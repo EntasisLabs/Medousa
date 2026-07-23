@@ -1,3 +1,4 @@
+pub mod agent_platform;
 pub mod locus_surreal_client;
 pub mod memory_bundle;
 pub mod platform;
