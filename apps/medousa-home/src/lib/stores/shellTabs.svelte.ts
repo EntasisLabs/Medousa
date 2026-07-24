@@ -214,8 +214,13 @@ export class ShellTabsStore {
   forceShowTabsUntil = $state(0);
   forceShowTabsGroupId = $state<string | null>(null);
 
+  /** Cursor-style tab visit history for rail back/forward. */
+  navBackStack = $state<string[]>([]);
+  navForwardStack = $state<string[]>([]);
+
   private bootstrapped = false;
   private suppressMirrorDepth = 0;
+  private navQuiet = false;
 
   private get suppressMirror() {
     return this.suppressMirrorDepth > 0;
@@ -242,6 +247,9 @@ export class ShellTabsStore {
     if (!id) return null;
     return this.tabs.find((tab) => tab.id === id) ?? null;
   });
+
+  canGoNavBack = $derived(this.navBackStack.length > 0);
+  canGoNavForward = $derived(this.navForwardStack.length > 0);
 
   orderedTabs = $derived.by(() => this.tabsForGroup(this.activeGroupId));
 
@@ -702,6 +710,55 @@ export class ShellTabsStore {
     this.openSurface(surfaceId, { activate: true });
   }
 
+  private recordNavVisit(nextTabId: string) {
+    if (this.navQuiet) return;
+    const current = this.activeTabId;
+    if (!current || current === nextTabId) return;
+    if (!this.tabs.some((tab) => tab.id === current)) return;
+    this.navBackStack = [...this.navBackStack, current].slice(-40);
+    this.navForwardStack = [];
+  }
+
+  private pruneNavStacks() {
+    const alive = new Set(this.tabs.map((tab) => tab.id));
+    this.navBackStack = this.navBackStack.filter((id) => alive.has(id));
+    this.navForwardStack = this.navForwardStack.filter((id) => alive.has(id));
+  }
+
+  async goNavBack() {
+    while (this.navBackStack.length > 0) {
+      const prev = this.navBackStack[this.navBackStack.length - 1]!;
+      this.navBackStack = this.navBackStack.slice(0, -1);
+      if (!this.tabs.some((tab) => tab.id === prev)) continue;
+      const current = this.activeTabId;
+      if (current) this.navForwardStack = [...this.navForwardStack, current];
+      this.navQuiet = true;
+      try {
+        await this.activate(prev);
+      } finally {
+        this.navQuiet = false;
+      }
+      return;
+    }
+  }
+
+  async goNavForward() {
+    while (this.navForwardStack.length > 0) {
+      const next = this.navForwardStack[this.navForwardStack.length - 1]!;
+      this.navForwardStack = this.navForwardStack.slice(0, -1);
+      if (!this.tabs.some((tab) => tab.id === next)) continue;
+      const current = this.activeTabId;
+      if (current) this.navBackStack = [...this.navBackStack, current];
+      this.navQuiet = true;
+      try {
+        await this.activate(next);
+      } finally {
+        this.navQuiet = false;
+      }
+      return;
+    }
+  }
+
   async activate(tabId: string, options?: { skipOpen?: boolean }) {
     const tab = this.tabs.find((entry) => entry.id === tabId);
     if (!tab) return;
@@ -716,6 +773,10 @@ export class ShellTabsStore {
       // Flush vault drafts before shell remounts / swaps the active host.
       const ok = await vault.flushBeforeLeave();
       if (!ok) return;
+    }
+
+    if (tabId !== this.activeTabId) {
+      this.recordNavVisit(tabId);
     }
 
     const host = this.groupForTab(tabId);
@@ -780,6 +841,7 @@ export class ShellTabsStore {
     const host = this.groupForTab(tabId);
     const wasActive = this.activeTabId === tabId && host?.id === this.activeGroupId;
     this.removeTabFromAllGroups(tabId);
+    this.pruneNavStacks();
 
     this.beginSuppressMirror();
     try {

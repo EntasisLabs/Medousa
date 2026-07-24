@@ -62,9 +62,7 @@
   import { resolveSummonToolbarSurface } from "$lib/utils/resolveSummonToolbarSurface";
   import { toast } from "$lib/stores/toast.svelte";
   import {
-    ChevronLeft,
     ChevronRight,
-    PanelLeftClose,
     Settings,
   } from "@lucide/svelte";
   import { SAFETY_SURFACE_SETTINGS } from "$lib/types/environment";
@@ -343,12 +341,6 @@
     return true;
   }
 
-  function hideRail() {
-    closeRailPopover();
-    layout.setShellSidebarExpanded(false);
-    void environment.patchShellChromeDesktop({ navStyle: "compact" }).catch(() => {});
-  }
-
   function selectDestination(surfaceId: string, event?: MouseEvent) {
     if (surfaceHasShellSidebarView(surfaceId) && event) {
       event.preventDefault();
@@ -390,11 +382,6 @@
     ensureFamilyForSurface(surfaceId);
     closeRailPopover();
     layout.openShellSidebarView(surfaceId);
-  }
-
-  function backToNav() {
-    closeRailPopover();
-    layout.shellSidebarBackToNav();
   }
 
   function nestFor(surfaceId: string): NavRailNestItem[] {
@@ -461,29 +448,6 @@
       out:fade={{ duration: 110 }}
     >
       {#if showView}
-        <header class="master-rail-header">
-          <button
-            type="button"
-            class="master-rail-back"
-            title="Back to navigation"
-            aria-label="Back to navigation"
-            onclick={backToNav}
-          >
-            <ChevronLeft size={16} strokeWidth={1.75} />
-            <span>Back</span>
-          </button>
-          <p class="master-rail-view-title">{viewTitle}</p>
-          <button
-            type="button"
-            class="master-rail-collapse"
-            title="Hide rail"
-            aria-label="Hide rail"
-            onclick={hideRail}
-          >
-            <PanelLeftClose size={15} strokeWidth={1.75} />
-          </button>
-        </header>
-
         <div class="master-rail-view-body">
           {#if viewSurface === SAFETY_SURFACE_SETTINGS}
             <div class="min-h-0 flex-1 overflow-y-auto px-1.5 py-1">
@@ -571,19 +535,6 @@
           {/if}
         </div>
       {:else}
-        <header class="master-rail-header master-rail-header-nav">
-          <span class="master-rail-nav-spacer" aria-hidden="true"></span>
-          <button
-            type="button"
-            class="master-rail-collapse"
-            title="Hide rail"
-            aria-label="Hide rail"
-            onclick={hideRail}
-          >
-            <PanelLeftClose size={15} strokeWidth={1.75} />
-          </button>
-        </header>
-
         <div
           class="workshop-icon-rail-items workshop-rail-tree workshop-rail-tree-jobs flex min-h-0 flex-1 flex-col overflow-y-auto"
         >
@@ -999,68 +950,6 @@
     display: flex;
     min-height: 0;
     flex-direction: column;
-  }
-
-  .master-rail-header {
-    display: flex;
-    align-items: center;
-    gap: 0.25rem;
-    min-height: 2.35rem;
-    margin-bottom: 0.25rem;
-    padding: 0.25rem 0.55rem 0.35rem 0.55rem;
-    border-bottom: 1px solid rgb(var(--shell-border) / 0.28);
-  }
-
-  .master-rail-header-nav {
-    justify-content: flex-end;
-  }
-
-  .master-rail-nav-spacer {
-    flex: 1;
-  }
-
-  .master-rail-back {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.05rem;
-    padding: 0.2rem 0.35rem 0.2rem 0.1rem;
-    border-radius: 0.375rem;
-    color: rgb(var(--color-surface-300));
-    font-size: 0.75rem;
-    font-weight: 600;
-  }
-
-  .master-rail-back:hover {
-    background: color-mix(in srgb, var(--color-surface-800) 70%, transparent);
-    color: rgb(var(--color-surface-100));
-  }
-
-  .master-rail-view-title {
-    margin: 0;
-    min-width: 0;
-    flex: 1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-size: 0.8125rem;
-    font-weight: 600;
-    color: rgb(var(--color-surface-100));
-  }
-
-  .master-rail-collapse {
-    display: inline-flex;
-    width: 1.75rem;
-    height: 1.75rem;
-    flex-shrink: 0;
-    align-items: center;
-    justify-content: center;
-    border-radius: 0.375rem;
-    color: rgb(var(--color-surface-500));
-  }
-
-  .master-rail-collapse:hover {
-    background: color-mix(in srgb, var(--color-surface-800) 70%, transparent);
-    color: rgb(var(--color-surface-200));
   }
 
   .master-rail-view-body {
