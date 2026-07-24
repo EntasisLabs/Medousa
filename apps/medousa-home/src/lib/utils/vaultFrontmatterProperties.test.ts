@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  listFrontmatterScalarFields,
   parseFrontmatterKindValue,
   parseFrontmatterTags,
   parseFrontmatterTitle,
+  removeFrontmatterFieldYaml,
+  setFrontmatterFieldYaml,
   setFrontmatterKindYaml,
   setFrontmatterTagsYaml,
   setFrontmatterTitleYaml,
@@ -27,5 +30,35 @@ describe("Live frontmatter property helpers", () => {
   it("creates frontmatter when missing", () => {
     const fm = setFrontmatterTagsYaml(null, ["vault"]);
     expect(parseFrontmatterTags(fm)).toEqual(["vault"]);
+  });
+
+  it("lists and upserts extra scalar fields (skips managed keys)", () => {
+    let fm = "title: Hello\nkind: note\nauthor: Ada\nstatus: draft\ntags: [a]";
+    expect(listFrontmatterScalarFields(fm)).toEqual([
+      { key: "author", value: "Ada" },
+      { key: "status", value: "draft" },
+    ]);
+
+    fm = setFrontmatterFieldYaml(fm, "status", "shipped");
+    expect(listFrontmatterScalarFields(fm)).toEqual([
+      { key: "author", value: "Ada" },
+      { key: "status", value: "shipped" },
+    ]);
+
+    fm = setFrontmatterFieldYaml(fm, "priority", "high");
+    expect(listFrontmatterScalarFields(fm).map((f) => f.key)).toEqual([
+      "author",
+      "status",
+      "priority",
+    ]);
+
+    fm = removeFrontmatterFieldYaml(fm, "author");
+    expect(listFrontmatterScalarFields(fm).map((f) => f.key)).toEqual([
+      "status",
+      "priority",
+    ]);
+
+    fm = setFrontmatterFieldYaml(fm, "status", "");
+    expect(listFrontmatterScalarFields(fm).map((f) => f.key)).toEqual(["priority"]);
   });
 });

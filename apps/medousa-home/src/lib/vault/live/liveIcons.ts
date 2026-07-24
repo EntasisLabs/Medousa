@@ -19,3 +19,6 @@ export const LIVE_ICON_CHEVRON_DOWN = svg(
 export const LIVE_ICON_CHEVRON_UP = svg(
   `<path d="m18 15-6-6-6 6"/>`,
 );
+
+/** Horizontal dash — collapsed section (tucked content). */
+export const LIVE_ICON_MINUS = svg(`<path d="M5 12h14"/>`);

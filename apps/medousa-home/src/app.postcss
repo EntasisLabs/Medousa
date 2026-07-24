@@ -9928,23 +9928,28 @@
     overflow-anchor: none;
   }
 
-  /* Live / Preview paper column (overflow menu cycles data-paper-width). */
+  /* Live / Preview paper column (overflow menu cycles data-paper-width).
+     Properties share the same column as prose so they track paper width. */
   .vault-paper-width[data-paper-width="narrow"] .vault-live-prose,
+  .vault-paper-width[data-paper-width="narrow"] .vault-live-properties,
   .vault-paper-width[data-paper-width="narrow"].markdown-content {
     max-width: 36rem;
     margin-inline: auto;
   }
   .vault-paper-width[data-paper-width="medium"] .vault-live-prose,
+  .vault-paper-width[data-paper-width="medium"] .vault-live-properties,
   .vault-paper-width[data-paper-width="medium"].markdown-content {
     max-width: 48rem;
     margin-inline: auto;
   }
   .vault-paper-width[data-paper-width="wide"] .vault-live-prose,
+  .vault-paper-width[data-paper-width="wide"] .vault-live-properties,
   .vault-paper-width[data-paper-width="wide"].markdown-content {
     max-width: 64rem;
     margin-inline: auto;
   }
   .vault-paper-width[data-paper-width="full"] .vault-live-prose,
+  .vault-paper-width[data-paper-width="full"] .vault-live-properties,
   .vault-paper-width[data-paper-width="full"].markdown-content {
     max-width: none;
     margin-inline: 0;
@@ -9988,6 +9993,7 @@
   }
   .vault-live-section-folded {
     display: none !important;
+    pointer-events: none !important;
   }
 
   .vault-live-collapsible-host {
@@ -10623,7 +10629,8 @@
     --vlp-ink: rgb(var(--shell-fg, var(--color-surface-100)));
     --vlp-mute: rgb(var(--shell-muted, var(--color-surface-400)));
     --vlp-faint: rgb(var(--shell-muted, var(--color-surface-500)));
-    margin: 0 0 1.35rem;
+    width: 100%;
+    margin-block: 0 1.35rem;
     padding: 0;
   }
 
@@ -10749,6 +10756,102 @@
   }
 
   .vault-live-properties__key:disabled {
+    cursor: default;
+  }
+
+  .vault-live-properties__key--static {
+    cursor: default;
+  }
+
+  .vault-live-properties__key-input {
+    width: 100%;
+    min-width: 0;
+    margin: 0;
+    padding: 0.15rem 0;
+    border: none;
+    border-radius: 0.25rem;
+    background: transparent;
+    color: var(--vlp-mute);
+    font: inherit;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    letter-spacing: -0.01em;
+    outline: none;
+  }
+
+  .vault-live-properties__key-input::placeholder {
+    color: var(--vlp-faint);
+    opacity: 0.7;
+  }
+
+  .vault-live-properties__value-row {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 0.15rem;
+  }
+
+  .vault-live-properties__value-row .vault-live-properties__value {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .vault-live-properties__field-remove {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    width: 1.25rem;
+    height: 1.25rem;
+    margin: 0;
+    padding: 0;
+    border: none;
+    border-radius: 0.25rem;
+    background: transparent;
+    color: var(--vlp-faint);
+    opacity: 0;
+    cursor: pointer;
+    transition: opacity 120ms ease, color 120ms ease, background-color 120ms ease;
+  }
+
+  .vault-live-properties__row:hover .vault-live-properties__field-remove,
+  .vault-live-properties__row:focus-within .vault-live-properties__field-remove,
+  .vault-live-properties__field-remove:focus-visible {
+    opacity: 1;
+  }
+
+  .vault-live-properties__field-remove:hover {
+    color: rgb(var(--color-error-300));
+    background: rgb(var(--color-error-500) / 0.12);
+  }
+
+  .vault-live-properties__add-field {
+    appearance: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    align-self: flex-start;
+    margin: 0.2rem 0 0;
+    padding: 0.28rem 0.45rem;
+    border: none;
+    border-radius: 0.35rem;
+    background: transparent;
+    color: var(--vlp-faint);
+    cursor: pointer;
+    font: inherit;
+    font-size: 0.75rem;
+    font-weight: 500;
+    letter-spacing: -0.005em;
+    transition: color 140ms ease, background-color 140ms ease;
+  }
+
+  .vault-live-properties__add-field:hover:not(:disabled) {
+    color: var(--vlp-ink);
+    background: rgb(var(--color-surface-800) / 0.35);
+  }
+
+  .vault-live-properties__add-field:disabled {
+    opacity: 0.45;
     cursor: default;
   }
 
