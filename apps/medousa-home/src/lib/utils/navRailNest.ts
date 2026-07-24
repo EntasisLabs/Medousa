@@ -1,5 +1,4 @@
 import { chat } from "$lib/stores/chat.svelte";
-import { contextShell } from "$lib/stores/contextShell.svelte";
 import { contextThreads } from "$lib/stores/contextThreads.svelte";
 import { humanBrowser } from "$lib/stores/humanBrowser.svelte";
 import {
@@ -11,7 +10,6 @@ import { peersShell } from "$lib/stores/peersShell.svelte";
 import { shellTabs } from "$lib/stores/shellTabs.svelte";
 import { vault } from "$lib/stores/vault.svelte";
 import { hostnameFromUrl, tabDisplayLabel } from "$lib/utils/browserFavicon";
-import { buildContextThreadEntries } from "$lib/utils/contextThreads";
 import { formatSessionLabel, formatSessionWhen } from "$lib/utils/formatSession";
 
 export const NAV_RAIL_NEST_LIMIT = 5;
@@ -22,7 +20,6 @@ export const NAV_RAIL_NEST_SURFACES = new Set([
   "chat",
   "peers",
   "web",
-  "context",
 ]);
 
 /** Explorer mode → open LME tab kind for rail nests. */
@@ -140,15 +137,6 @@ export function nestItemsForSurface(surfaceId: string): NavRailNestItem[] {
           host && !label.toLowerCase().includes(host.toLowerCase()) ? host : undefined;
         return { id: tab.id, label, meta };
       });
-    case "context":
-      return buildContextThreadEntries(contextThreads.nodes)
-        .slice(0, NAV_RAIL_NEST_LIMIT)
-        .map((entry) => ({
-          id: entry.syncKey,
-          label: entry.title,
-          // Compact relative time (matches chat nest) — not "Tuesday · 7:34 PM".
-          meta: formatSessionWhen(entry.timestamp) || undefined,
-        }));
     default:
       return [];
   }
@@ -166,12 +154,6 @@ export function nestItemIsActive(surfaceId: string, itemId: string): boolean {
       return peersShell.selectedPeerId === itemId;
     case "web":
       return humanBrowser.activeTab?.id === itemId;
-    case "context":
-      return (
-        contextShell.selectedThreadId === itemId ||
-        contextThreads.railFocusSyncKey === itemId ||
-        contextThreads.detail?.node.sync_key === itemId
-      );
     default:
       return false;
   }
@@ -193,12 +175,6 @@ export async function activateNestItem(
       return;
     case "web":
       await humanBrowser.activateTab(itemId);
-      return;
-    case "context":
-      shellTabs.openSurface("context", { activate: true });
-      contextShell.activeTab = "threads";
-      contextShell.selectedThreadId = itemId;
-      contextThreads.focusThreadFromRail(itemId);
       return;
     default:
       return;

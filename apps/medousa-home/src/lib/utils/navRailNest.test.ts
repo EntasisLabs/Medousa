@@ -12,7 +12,7 @@ describe("navRailNest", () => {
     expect(surfaceSupportsRailNest("chat")).toBe(true);
     expect(surfaceSupportsRailNest("peers")).toBe(true);
     expect(surfaceSupportsRailNest("web")).toBe(true);
-    expect(surfaceSupportsRailNest("context")).toBe(true);
+    expect(surfaceSupportsRailNest("context")).toBe(false);
   });
 
   it("leaves workspace modes and utility surfaces alone", () => {

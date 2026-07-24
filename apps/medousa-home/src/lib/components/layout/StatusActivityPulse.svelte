@@ -44,10 +44,9 @@
     feedHot || workshop.runBusy || graphemeScriptEditor.compileBusy,
   );
 
-  /** Idle = glyph only; label wakes when something is happening. */
-  const showLabel = $derived(hot);
+  /** Always labeled — "Idle" at rest, live summary when something is moving. */
   const displayLabel = $derived(
-    showLabel ? truncateActivityLabel(latestLabel, 32) : "",
+    hot ? truncateActivityLabel(latestLabel, 32) : "Idle",
   );
 
   $effect(() => {
@@ -77,16 +76,16 @@
   }
 </script>
 
-<div class="status-activity-pulse" class:status-activity-pulse--idle={!showLabel}>
+<div class="status-activity-pulse" class:status-activity-pulse--idle={!hot}>
   <button
     bind:this={triggerEl}
     type="button"
     class="status-activity-pulse-btn"
     class:status-activity-pulse-btn--hot={hot}
     class:status-activity-pulse-btn--open={open}
-    class:status-activity-pulse-btn--idle={!showLabel}
-    title={latestLabel}
-    aria-label="Activity: {latestLabel}"
+    class:status-activity-pulse-btn--idle={!hot}
+    title={hot ? latestLabel : "Activity — idle"}
+    aria-label="Activity: {displayLabel}"
     aria-expanded={open}
     aria-haspopup="dialog"
     onclick={toggle}
@@ -104,9 +103,7 @@
         ></span>
       {/each}
     </span>
-    {#if showLabel}
-      <span class="status-activity-pulse-label truncate">{displayLabel}</span>
-    {/if}
+    <span class="status-activity-pulse-label truncate">{displayLabel}</span>
   </button>
 
   <ActivityHistoryPopover {open} {triggerEl} onClose={close} />
@@ -134,12 +131,12 @@
     max-width: 100%;
     min-width: 0;
     align-items: center;
-    gap: 0.45rem;
+    gap: 0.5rem;
     border: 0;
     border-radius: 0.3rem;
     background: transparent;
-    padding: 0.05rem 0.25rem;
-    margin: 0 -0.25rem;
+    padding: 0.15rem 0.3rem;
+    margin: 0;
     color: rgb(var(--color-surface-500));
     font: inherit;
     line-height: 1.2;
@@ -150,7 +147,7 @@
   }
 
   .status-activity-pulse-btn--idle {
-    opacity: 0.6;
+    opacity: 0.85;
   }
 
   .status-activity-pulse-btn:hover,
@@ -165,15 +162,15 @@
     opacity: 1;
   }
 
-  /* Lucide audio-lines silhouette — 6 rounded bars, optically matched to 12px icons. */
+  /* Lucide audio-lines silhouette — 6 rounded bars, optically matched to 13px status icons. */
   .status-audio-lines {
     display: flex;
     flex-shrink: 0;
     align-items: center;
     justify-content: space-between;
     gap: 1.5px;
-    width: 12px;
-    height: 12px;
+    width: 13px;
+    height: 13px;
     line-height: 0;
   }
 

@@ -23,7 +23,21 @@ describe("resolveSummonToolbarSurface", () => {
     expect(resolveSummonToolbarSurface("automations", "history")).toBe("automations");
   });
 
+  it("prefers open LME tab kind over stale explorer mode", () => {
+    // Script tab open while rail mode still says Notes.
+    expect(resolveSummonToolbarSurface("library", "notes", "script")).toBe(
+      "automations",
+    );
+    expect(resolveSummonToolbarSurface("library", "scripts", "note")).toBe(
+      "library",
+    );
+    expect(resolveSummonToolbarSurface("workshop", "notes", "flow")).toBe(
+      "automations",
+    );
+  });
+
   it("returns null for surfaces without list chrome", () => {
     expect(resolveSummonToolbarSurface("runtime", "notes")).toBeNull();
   });
 });
+

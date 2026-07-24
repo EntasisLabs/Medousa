@@ -314,6 +314,7 @@
     const surfaceId = resolveSummonToolbarSurface(
       layout.desktopSurface,
       lmeWorkspace.explorerMode,
+      lmeWorkspace.activeTab?.kind ?? null,
     );
     if (!surfaceId) {
       toast.show("No toolbar for this view", { durationMs: 1400 });
@@ -772,93 +773,29 @@
           {#if lifeRail.context?.kind === "surface"}
             {@const contextSurface = lifeRail.context.surface}
             {@const ContextIcon = environmentIcon(contextSurface.icon)}
-            {@const contextNest = nestFor("context")}
-            {@const contextNestExpanded =
-              contextNest.length > 0 && isNestExpanded("context")}
-            {@const contextLeafActive = nestHasActiveItem("context", contextNest)}
             {@const contextDoorActive =
               active === "context" ||
               surfacePopoverOpen("context") ||
               (showView && viewSurface === "context")}
-            <div
-              class="workshop-rail-dest workshop-rail-dock-context"
-              class:workshop-rail-dest-has-nest={contextNest.length > 0}
-              class:workshop-rail-dest-expanded={contextNestExpanded}
+            <button
+              type="button"
+              data-rail-surface="context"
+              class="{railBtnClass('context', 'utility', {
+                quietActive: true,
+                active: contextDoorActive,
+              })} workshop-rail-dock-btn"
+              title={navTitle(contextSurface)}
+              aria-label={navLabel(contextSurface)}
+              aria-current={contextDoorActive ? "page" : undefined}
+              aria-expanded={surfacePopoverOpen("context")}
+              aria-haspopup="dialog"
+              onclick={(event) => selectDestination("context", event)}
             >
-              <div class="workshop-rail-dest-row">
-                {#if contextNest.length > 0}
-                  <button
-                    type="button"
-                    class="workshop-rail-dest-twist-btn"
-                    title={contextNestExpanded ? "Collapse" : "Expand"}
-                    aria-label={contextNestExpanded ? "Collapse Context" : "Expand Context"}
-                    aria-expanded={contextNestExpanded}
-                    onclick={(event) => toggleNest("context", event)}
-                  >
-                    <ChevronRight
-                      size={12}
-                      strokeWidth={2}
-                      class="workshop-rail-dest-chevron {contextNestExpanded
-                        ? 'workshop-rail-dest-chevron-open'
-                        : ''}"
-                    />
-                  </button>
-                {:else}
-                  <span
-                    class="workshop-rail-dest-twist workshop-rail-dest-twist-empty"
-                    aria-hidden="true"
-                  ></span>
-                {/if}
-                <button
-                  type="button"
-                  data-rail-surface="context"
-                  class="{railBtnClass('context', 'utility', {
-                    quietActive: true,
-                    active: contextDoorActive,
-                  })} workshop-rail-dock-btn workshop-rail-dest-btn"
-                  class:workshop-rail-dest-btn-dimmed={contextLeafActive &&
-                    contextNestExpanded}
-                  title={navTitle(contextSurface)}
-                  aria-label={navLabel(contextSurface)}
-                  aria-current={contextDoorActive && !contextLeafActive
-                    ? "page"
-                    : undefined}
-                  aria-expanded={surfacePopoverOpen("context")}
-                  aria-haspopup="dialog"
-                  onclick={(event) => selectDestination("context", event)}
-                >
-                  <span class="workshop-rail-btn-icon" aria-hidden="true">
-                    <ContextIcon {...utilityIconProps} />
-                  </span>
-                  <span class="workshop-rail-btn-label">{navLabel(contextSurface)}</span>
-                </button>
-              </div>
-              {#if contextNestExpanded}
-                <ul class="workshop-rail-nest" aria-label="Recent threads">
-                  {#each contextNest as nestItem (nestItem.id)}
-                    <li>
-                      <button
-                        type="button"
-                        class="workshop-rail-nest-btn"
-                        class:workshop-rail-nest-btn-active={nestItemIsActive(
-                          "context",
-                          nestItem.id,
-                        )}
-                        title={nestItem.meta
-                          ? `${nestItem.label} · ${nestItem.meta}`
-                          : nestItem.label}
-                        onclick={() => void openNestItem("context", nestItem)}
-                      >
-                        <span class="workshop-rail-nest-label">{nestItem.label}</span>
-                        {#if nestItem.meta}
-                          <span class="workshop-rail-nest-meta">{nestItem.meta}</span>
-                        {/if}
-                      </button>
-                    </li>
-                  {/each}
-                </ul>
-              {/if}
-            </div>
+              <span class="workshop-rail-btn-icon" aria-hidden="true">
+                <ContextIcon {...utilityIconProps} />
+              </span>
+              <span class="workshop-rail-btn-label">{navLabel(contextSurface)}</span>
+            </button>
           {/if}
 
           {#if lifeRail.you.kind === "surface"}

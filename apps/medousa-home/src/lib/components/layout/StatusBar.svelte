@@ -11,7 +11,13 @@
   import { shellTabs } from "$lib/stores/shellTabs.svelte";
   import { workshops } from "$lib/stores/workshops.svelte";
   import { placeToolbarPopover } from "$lib/utils/railPopover";
-  import { Activity, MoreHorizontal } from "@lucide/svelte";
+  import {
+    Activity,
+    LoaderCircle,
+    MoreHorizontal,
+    Radio,
+    Unplug,
+  } from "@lucide/svelte";
   import { tick } from "svelte";
 
   interface Props {
@@ -58,7 +64,7 @@
     (environment.spec?.layoutPresets?.length ?? 0) > 1,
   );
   const connectionOk = $derived(Boolean(health?.ok));
-  /** Word only when not fine — the dot carries “Connected”. */
+  /** Word only when not fine — the radio icon carries “Connected”. */
   const statusLabel = $derived(
     health?.ok ? null : health ? "Offline" : "Connecting…",
   );
@@ -70,20 +76,18 @@
 
   const quiet = $derived(minimal || continuity);
 
-  const statusDotClass = $derived(
-    connectionOk
-      ? "workshop-status-dot workshop-status-dot-live"
-      : health
-        ? "workshop-status-dot workshop-status-dot-warning"
-        : "workshop-status-dot workshop-status-dot-muted",
+  const connectionTitle = $derived(
+    connectionOk ? "Connected" : statusLabel ?? "Connecting…",
   );
 
-  const statusTextClass = $derived(
+  const connectionToneClass = $derived(
     connectionOk
       ? "text-surface-500"
-      : quiet
-        ? "text-warning-400/80"
-        : "text-warning-400/90",
+      : health
+        ? quiet
+          ? "text-warning-400/80"
+          : "text-warning-400/90"
+        : "text-surface-500",
   );
 
   const deliveryLabel = $derived.by(() => {
@@ -181,37 +185,77 @@
 
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <footer
-  class="workshop-status relative flex h-8 shrink-0 items-center gap-2.5 px-3 text-[11px]"
+  class="workshop-status relative flex h-8 shrink-0 items-center gap-3.5 px-3.5 text-[11px]"
   class:workshop-status--quiet={quiet}
   class:workshop-status--peek-open={motionPeekOpen || overflowOpen}
   aria-label="Medousa status"
   data-debug-label="status-bar"
   onkeydown={onFooterKeydown}
 >
-  <span
-    class="workshop-status-whisper shrink-0 {statusTextClass}"
-    title={connectionOk ? "Connected" : statusLabel ?? "Connecting…"}
-    aria-label={connectionOk ? "Connected" : statusLabel ?? "Connecting…"}
-  >
-    <span class={statusDotClass} aria-hidden="true"></span>
-    {#if statusLabel}
-      <span class="truncate">{statusLabel}</span>
+  <div class="workshop-status-cluster shrink-0">
+    {#if onOpenRuntime}
+      <button
+        type="button"
+        class="workshop-status-workshop {connectionToneClass}"
+        title={connectionTitle}
+        aria-label={connectionTitle}
+        onclick={onOpenRuntime}
+      >
+        {#if connectionOk}
+          <Radio size={13} strokeWidth={1.75} class="shrink-0 opacity-80" aria-hidden="true" />
+          <span class="truncate">Connected</span>
+        {:else if health}
+          <Unplug size={13} strokeWidth={1.75} class="shrink-0 opacity-80" aria-hidden="true" />
+          <span class="truncate">{statusLabel}</span>
+        {:else}
+          <LoaderCircle
+            size={13}
+            strokeWidth={1.75}
+            class="shrink-0 animate-spin opacity-80"
+            aria-hidden="true"
+          />
+          <span class="truncate">{statusLabel}</span>
+        {/if}
+      </button>
+    {:else}
+      <span
+        class="workshop-status-workshop workshop-status-workshop--static {connectionToneClass}"
+        title={connectionTitle}
+        aria-label={connectionTitle}
+      >
+        {#if connectionOk}
+          <Radio size={13} strokeWidth={1.75} class="shrink-0 opacity-80" aria-hidden="true" />
+          <span class="truncate">Connected</span>
+        {:else if health}
+          <Unplug size={13} strokeWidth={1.75} class="shrink-0 opacity-80" aria-hidden="true" />
+          <span class="truncate">{statusLabel}</span>
+        {:else}
+          <LoaderCircle
+            size={13}
+            strokeWidth={1.75}
+            class="shrink-0 animate-spin opacity-80"
+            aria-hidden="true"
+          />
+          <span class="truncate">{statusLabel}</span>
+        {/if}
+      </span>
     {/if}
     {#if showWorkshopSwitcher}
-      <span class="text-surface-600" aria-hidden="true">·</span>
       <WorkshopSwitcherCompact variant="status" />
     {/if}
     {#if showLayoutSwitcher}
-      <span class="text-surface-600" aria-hidden="true">·</span>
       <EnvironmentPresetSwitcher variant="status" />
     {/if}
-  </span>
+  </div>
 
   <StatusActivityPulse />
 
-  <StatusContextualSlot />
+  <!-- Keeps connection/activity left and contextual + ⌘K pinned right. -->
+  <div class="status-bar-mid min-w-0 flex-1" aria-hidden="true"></div>
 
-  <div class="flex shrink-0 items-center gap-2.5 text-surface-500">
+  <div class="status-bar-trailing flex min-w-0 shrink-0 items-center gap-3 text-surface-500">
+    <StatusContextualSlot />
+
     {#if showMotion}
       <div class="work-motion-control">
         <button
@@ -375,6 +419,25 @@
 {/if}
 
 <style>
+  .status-bar-mid {
+    min-width: 0.5rem;
+  }
+
+  .workshop-status-cluster {
+    display: inline-flex;
+    min-width: 0;
+    align-items: center;
+    gap: 0.55rem;
+  }
+
+  .status-bar-trailing {
+    justify-content: flex-end;
+  }
+
+  :global(.workshop-status-workshop--static) {
+    pointer-events: none;
+  }
+
   .status-overflow {
     position: relative;
     display: inline-flex;

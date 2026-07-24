@@ -34,28 +34,14 @@
   const width = $derived(layout.shellSidebarWidth);
   const slotWidth = $derived(open ? width : 0);
 
-  /** Keep mounted through close animation so the rail can slide away. */
-  let mounted = $state(layout.shellSidebarExpanded);
   let resizing = $state(false);
-
-  $effect(() => {
-    if (open) {
-      mounted = true;
-      return;
-    }
-    // Fallback when width transition is skipped (reduced motion / already 0).
-    const id = window.setTimeout(() => {
-      if (!layout.shellSidebarExpanded) mounted = false;
-    }, 240);
-    return () => window.clearTimeout(id);
-  });
-
-  function onSlotTransitionEnd(event: TransitionEvent) {
-    if (event.propertyName !== "width") return;
-    if (!open) mounted = false;
-  }
 </script>
 
+<!--
+  Keep NavShell mounted when collapsed. Summon (shake / ⌘⇧.) registers on NavShell
+  mount — unmounting the rail made “toolbar for active view” a no-op exactly when
+  you need it (deep in content, rail tucked away).
+-->
 <div
   class="master-rail-slot"
   class:master-rail-slot-open={open}
@@ -63,36 +49,33 @@
   style="width: {slotWidth}px"
   data-debug-label="master-rail-slot"
   aria-hidden={!open}
-  ontransitionend={onSlotTransitionEnd}
 >
-  {#if mounted}
-    <div class="master-rail-inner" style="width: {width}px">
-      <SplitPane
-        {width}
-        side="left"
-        min={SHELL_SIDEBAR_WIDTH_MIN}
-        max={SHELL_SIDEBAR_WIDTH_MAX}
-        onResize={(next) => {
-          resizing = true;
-          layout.setShellSidebarWidth(next);
-        }}
-        onResizeEnd={() => {
-          resizing = false;
-        }}
-      >
-        <NavShell
-          {active}
-          {onSelect}
-          {onOpenChat}
-          {health}
-          {chatActivity}
-          {workActivity}
-          {peersActivity}
-          {activeProfileLabel}
-        />
-      </SplitPane>
-    </div>
-  {/if}
+  <div class="master-rail-inner" style="width: {width}px">
+    <SplitPane
+      {width}
+      side="left"
+      min={SHELL_SIDEBAR_WIDTH_MIN}
+      max={SHELL_SIDEBAR_WIDTH_MAX}
+      onResize={(next) => {
+        resizing = true;
+        layout.setShellSidebarWidth(next);
+      }}
+      onResizeEnd={() => {
+        resizing = false;
+      }}
+    >
+      <NavShell
+        {active}
+        {onSelect}
+        {onOpenChat}
+        {health}
+        {chatActivity}
+        {workActivity}
+        {peersActivity}
+        {activeProfileLabel}
+      />
+    </SplitPane>
+  </div>
 </div>
 
 <style>

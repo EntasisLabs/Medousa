@@ -168,7 +168,7 @@
     disabled={workshops.switching}
     onclick={openSheet}
   >
-    <Monitor size={12} strokeWidth={1.75} class="shrink-0 opacity-80" aria-hidden="true" />
+    <Monitor size={13} strokeWidth={1.75} class="shrink-0 opacity-80" aria-hidden="true" />
     {#if workshops.hasMultipleWorkshops}
       <span class="truncate">{workshops.activeLabel}</span>
     {/if}

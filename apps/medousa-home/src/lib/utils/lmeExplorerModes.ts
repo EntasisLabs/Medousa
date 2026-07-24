@@ -72,6 +72,23 @@ export function familyForLmeExplorerMode(mode: LmeExplorerMode): LmeExplorerFami
   return isLmeAutomationsMode(mode) ? "automations" : "library";
 }
 
+/** Map an open LME tab kind → Library vs Automations (for summon / focus hints). */
+export function familyForLmeTabKind(kind: string): LmeExplorerFamily | null {
+  switch (kind) {
+    case "script":
+    case "manuscript":
+    case "flow":
+    case "schedule":
+      return "automations";
+    case "note":
+    case "file":
+    case "deck":
+      return "library";
+    default:
+      return null;
+  }
+}
+
 /** Automations strip page: 0 = scripts/agents/flows/schedules, 1 = history. */
 export function automationsStripPageForMode(mode: LmeExplorerMode): 0 | 1 {
   return AUTOMATIONS_SECONDARY_IDS.has(mode) ? 1 : 0;

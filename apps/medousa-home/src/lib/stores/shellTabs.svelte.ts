@@ -91,7 +91,24 @@ function surfaceTitle(surfaceId: string): string {
 function focusSurfaceHint(tab: ShellTab | null): string | null {
   if (!tab) return null;
   if (tab.kind === "chat") return "chat";
-  if (tab.kind === "lme") return "library";
+  if (tab.kind === "lme") {
+    // Prefer the open tab’s family — explorerMode is intentionally not synced on activate.
+    // Inline map (avoid importing lmeExplorerModes → circular init with lmeWorkspace).
+    const lme = lmeWorkspace.tabs.find((entry) => entry.tabId === tab.lmeTabId);
+    switch (lme?.kind) {
+      case "script":
+      case "manuscript":
+      case "flow":
+      case "schedule":
+        return "automations";
+      case "note":
+      case "file":
+      case "deck":
+        return "library";
+      default:
+        return "library";
+    }
+  }
   if (tab.kind === "web") return "web";
   return tab.surfaceId;
 }

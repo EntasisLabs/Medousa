@@ -141,10 +141,11 @@
     max-width: 18rem;
     flex: 0 1 auto;
     align-items: center;
+    justify-content: flex-end;
     gap: 0.35rem;
-    margin-left: auto;
     color: rgb(var(--color-surface-500));
     overflow: hidden;
+    text-align: right;
   }
 
   .status-contextual-item {
@@ -163,7 +164,7 @@
     padding: 0;
     color: inherit;
     font: inherit;
-    text-align: left;
+    text-align: right;
     transition: color 140ms ease;
   }
 
