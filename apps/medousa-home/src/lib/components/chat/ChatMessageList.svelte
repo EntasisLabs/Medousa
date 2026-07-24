@@ -3,9 +3,11 @@
    * Chat message list — runtime-governed Liquid is the sole paint path.
    * User→assistant pairs render as timeline beats (whisper + full-width voice).
    */
+  import { Copy, Library } from "@lucide/svelte";
   import ChatUserWhisper from "$lib/components/chat/ChatUserWhisper.svelte";
   import LiquidChatMessage from "$lib/components/chat/LiquidChatMessage.svelte";
   import { chat } from "$lib/stores/chat.svelte";
+  import { toast } from "$lib/stores/toast.svelte";
   import type { ChatMessage } from "$lib/types/chat";
   import {
     groupChatTurnBeats,
@@ -16,6 +18,7 @@
     presentChatMessages,
     presentWorkerThreadMessages,
   } from "$lib/utils/presentChatTurns";
+  import { copyTextToClipboard } from "$lib/utils/vaultClipboard";
 
   interface Props {
     messages: ChatMessage[];
@@ -69,11 +72,53 @@
     return voice;
   }
 
+  function canCopyAssistantTurn(message: ChatMessage): boolean {
+    return canSaveAssistantTurn(message);
+  }
+
   function saveAssistant(assistant: ChatMessage, user: ChatMessage | null = null) {
     if (!onSaveToVault || !canSaveAssistantTurn(assistant)) return;
     void onSaveToVault(assistant, user);
   }
+
+  async function copyAssistant(assistant: ChatMessage) {
+    const raw = assistant.content ?? "";
+    if (!raw.trim()) return;
+    const ok = await copyTextToClipboard(raw);
+    toast.show(ok ? "Copied" : "Couldn’t copy", { durationMs: 1400 });
+  }
 </script>
+
+{#snippet turnActions(assistant: ChatMessage, user: ChatMessage | null = null)}
+  {@const showCopy = canCopyAssistantTurn(assistant)}
+  {@const showSave = onSaveToVault && canSaveAssistantTurn(assistant)}
+  {#if showCopy || showSave}
+    <div class="chat-turn-actions" class:chat-turn-actions--mobile={mobile}>
+      {#if showCopy}
+        <button
+          type="button"
+          class="chat-turn-action"
+          title="Copy"
+          aria-label="Copy"
+          onclick={() => void copyAssistant(assistant)}
+        >
+          <Copy size={14} strokeWidth={1.75} />
+        </button>
+      {/if}
+      {#if showSave}
+        <button
+          type="button"
+          class="chat-turn-action"
+          title="Save to Library"
+          aria-label="Save to Library"
+          onclick={() => saveAssistant(assistant, user)}
+        >
+          <Library size={14} strokeWidth={1.75} />
+        </button>
+      {/if}
+    </div>
+  {/if}
+{/snippet}
 
 {#each beats as beat, beatIndex (beat.kind === "pair" ? `${beat.user.id}:${beat.assistant.id}` : beat.message.id)}
   {@const previousBeat = beatIndex > 0 ? beats[beatIndex - 1] : null}
@@ -94,15 +139,6 @@
         {onSubmitIntent}
       />
       <article class="group relative {assistantClass(beat.assistant)}">
-        {#if onSaveToVault && canSaveAssistantTurn(beat.assistant)}
-          <button
-            type="button"
-            class="chat-save-to-library workshop-text-action"
-            onclick={() => saveAssistant(beat.assistant, beat.user)}
-          >
-            Save to Library
-          </button>
-        {/if}
         <LiquidChatMessage
           message={beat.assistant}
           {sessionId}
@@ -113,6 +149,7 @@
           {onOpenCardDetail}
           onRetryWorker={retryWorkerSynthesis}
         />
+        {@render turnActions(beat.assistant, beat.user)}
       </article>
     </section>
   {:else if beat.message.role === "user"}
@@ -129,15 +166,6 @@
     </div>
   {:else}
     <article class="group relative {turnBreak ? 'chat-turn-break' : ''} {assistantClass(beat.message)}">
-      {#if beat.message.role === "assistant" && onSaveToVault && canSaveAssistantTurn(beat.message)}
-        <button
-          type="button"
-          class="chat-save-to-library workshop-text-action"
-          onclick={() => saveAssistant(beat.message, null)}
-        >
-          Save to Library
-        </button>
-      {/if}
       <LiquidChatMessage
         message={beat.message}
         {sessionId}
@@ -148,6 +176,9 @@
         {onOpenCardDetail}
         onRetryWorker={retryWorkerSynthesis}
       />
+      {#if beat.message.role === "assistant"}
+        {@render turnActions(beat.message, null)}
+      {/if}
     </article>
   {/if}
 {/each}

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tick } from "svelte";
   import { ArrowDown, ExternalLink, LoaderCircle, PanelLeft, Users } from "@lucide/svelte";
   import ChatAsyncToolsHint from "$lib/components/chat/ChatAsyncToolsHint.svelte";
   import ChatMessageList from "$lib/components/chat/ChatMessageList.svelte";
@@ -29,9 +30,12 @@
     type ChatAgentRuntime,
   } from "$lib/utils/sessionAgentRuntime";
   import type { TurnTicketResponse } from "$lib/types/session";
-  import { formatSessionLabel } from "$lib/utils/formatSession";
+  import {
+    formatSessionLabel,
+    presenceRoomTitle,
+    presenceSubline,
+  } from "$lib/utils/formatSession";
   import { visibleChatStatusLine } from "$lib/utils/chatStreamDisplay";
-  import { STARTER_PROMPTS } from "$lib/utils/starterPrompts";
   import { applyActiveAgentPrompt } from "$lib/utils/activeAgentPrompt";
   import {
     ensureVaultSelectionInPrompt,
@@ -123,6 +127,27 @@
   const showChatEmptyState = $derived(
     chatMessages.length === 0 && askThreads.length === 0 && workerThreads.length === 0,
   );
+
+  /** Presence — the quiet, centered landing for a genuinely empty main chat. */
+  const showPresenceEmpty = $derived(
+    showChatEmptyState && !workshop && !scriptWorkbench && !embedded,
+  );
+  const presenceAsk = $derived(presenceSubline());
+
+  let presenceDockMode = $state<"center" | "docking" | "docked">("docked");
+  let presenceDockEl = $state<HTMLDivElement | undefined>(undefined);
+  let presenceBlurpToken = 0;
+  let presenceDockLocked = $state(false);
+  /** translateY offset that parks the bottom-anchored dock in visual center. */
+  let presenceCenterOffset = $state(0);
+  let presenceCenterPlaced = $state(false);
+
+  const presenceComposerCentered = $derived(
+    showPresenceEmpty &&
+      showInlineComposer &&
+      (presenceDockMode === "center" || presenceDockMode === "docking"),
+  );
+
   function handlePromoteToFlow(ref: ToolHistorySliceRef) {
     flowDraft.queuePromotion([ref]);
     automationsNav.openSection("flows");
@@ -140,17 +165,29 @@
   }
   const sessionLabel = $derived.by(() => {
     const session = chat.sessions.find((entry) => entry.session_id === panelSessionId);
-    if (session) return formatSessionLabel(session);
-    return formatSessionLabel({
-      session_id: panelSessionId,
-      preview: "",
-      turns: 0,
-      verification_runs: 0,
-    });
+    const label = session
+      ? formatSessionLabel(session)
+      : formatSessionLabel({
+          session_id: panelSessionId,
+          preview: "",
+          turns: 0,
+          verification_runs: 0,
+        });
+    if (showChatEmptyState && label === "New conversation") return presenceRoomTitle();
+    return label;
   });
-  const recentSessions = $derived(
-    chat.sessions.filter((session) => session.session_id !== panelSessionId).slice(0, 4),
-  );
+  /** Most recently active other session — surfaced as "continue where you left off". */
+  const continueSession = $derived.by(() => {
+    const others = chat.sessions.filter(
+      (session) => session.session_id !== panelSessionId && session.turns > 0,
+    );
+    if (others.length === 0) return null;
+    return [...others].sort((a, b) => {
+      const at = a.last_timestamp ? Date.parse(a.last_timestamp) : 0;
+      const bt = b.last_timestamp ? Date.parse(b.last_timestamp) : 0;
+      return bt - at;
+    })[0];
+  });
   const streamingMessage = $derived(
     panelMessages.find((message) => message.streaming && message.role === "assistant"),
   );
@@ -183,7 +220,7 @@
     if (chat.liveStreamActive && phaseLine) return phaseLine;
     if (chat.liveStreamActive) return "Thinking…";
     if (chat.backgroundActivity > 0) return "Background work · see Work";
-    if (showChatEmptyState) return "What are you working on?";
+    if (showChatEmptyState) return presenceAsk;
     if (chat.historyLoadingFor(panelSessionId) && panelMessages.length === 0) {
       return "Opening thread…";
     }
@@ -249,6 +286,158 @@
     }, 4000);
     return () => clearTimeout(timer);
   });
+
+  /** Presence dock — float to center for a fresh landing, dock back down once busy. */
+  $effect(() => {
+    if (
+      showPresenceEmpty &&
+      showInlineComposer &&
+      !presenceDockLocked &&
+      presenceDockMode === "docked"
+    ) {
+      presenceDockMode = "center";
+    }
+  });
+
+  $effect(() => {
+    if (showPresenceEmpty && showInlineComposer) return;
+    presenceDockLocked = false;
+    presenceCenterOffset = 0;
+    presenceCenterPlaced = false;
+    if (presenceDockMode !== "docking") {
+      presenceDockMode = "docked";
+    }
+  });
+
+  /** Bottom-anchored dock + translateY to visual center (no layout FLIP). */
+  async function placePresenceCentered() {
+    presenceCenterPlaced = false;
+    await tick();
+    const el = presenceDockEl;
+    const parent = el?.parentElement;
+    if (!el || !parent || presenceDockMode !== "center") return;
+
+    el.style.transition = "none";
+    el.style.transform = "translate3d(0, 0, 0)";
+    void el.offsetHeight;
+
+    const parentRect = parent.getBoundingClientRect();
+    const elRect = el.getBoundingClientRect();
+    const centeredTop = parentRect.top + (parentRect.height - elRect.height) / 2;
+    const offset = centeredTop - elRect.top;
+    presenceCenterOffset = offset;
+    el.style.transform = `translate3d(0, ${offset}px, 0)`;
+    presenceCenterPlaced = true;
+  }
+
+  $effect(() => {
+    if (presenceDockMode !== "center" || presenceDockLocked) return;
+    void placePresenceCentered();
+  });
+
+  function prefersReducedMotion(): boolean {
+    return (
+      typeof window !== "undefined" &&
+      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true
+    );
+  }
+
+  /**
+   * Slime-drop: one continuous WAAPI deform (stretch in flight → soft splat → settle).
+   * Ask fades in parallel — no staged shrink/move/expand.
+   */
+  async function runPresenceDockBlurp() {
+    presenceDockLocked = true;
+    const token = ++presenceBlurpToken;
+    const el = presenceDockEl;
+    const y = presenceCenterOffset;
+
+    if (!el || prefersReducedMotion()) {
+      presenceDockMode = "docked";
+      presenceCenterOffset = 0;
+      if (el) {
+        el.getAnimations().forEach((animation) => animation.cancel());
+        el.style.transition = "";
+        el.style.transform = "";
+        el.style.transformOrigin = "";
+      }
+      return;
+    }
+
+    el.getAnimations().forEach((animation) => animation.cancel());
+    presenceDockMode = "docking";
+    el.style.transition = "none";
+    el.style.transformOrigin = "50% 50%";
+    el.style.willChange = "transform";
+    el.style.backfaceVisibility = "hidden";
+    el.style.transform = `translate3d(0, ${y}px, 0) scale3d(1, 1, 1)`;
+
+    /**
+     * Dense samples of one continuous hourglass curve (not hand-keyed corners).
+     * Same duration — smoother because each step is tiny + C1-ish easing.
+     */
+    const smootherstep = (t: number) =>
+      t * t * t * (t * (t * 6 - 15) + 10);
+    const mix = (a: number, b: number, t: number) => a + (b - a) * t;
+
+    const STEPS = 20;
+    const NECK = 0.5;
+    const FALL_START = 0.16; // pinch first, then fall
+    const NECK_AT = 0.58; // narrowest just past mid-drop
+
+    const keyframes: Keyframe[] = [];
+    for (let i = 0; i <= STEPS; i += 1) {
+      const t = i / STEPS;
+
+      // Y: hold, then smooth fall (no per-segment easing kinks)
+      const fallT =
+        t <= FALL_START ? 0 : smootherstep((t - FALL_START) / (1 - FALL_START));
+      const yPos = y * (1 - fallT);
+
+      // Width: hourglass — shrink to neck, then bloom
+      let scaleX: number;
+      if (t <= NECK_AT) {
+        scaleX = mix(1, NECK, smootherstep(t / NECK_AT));
+      } else {
+        scaleX = mix(NECK, 1, smootherstep((t - NECK_AT) / (1 - NECK_AT)));
+      }
+
+      // Height: slight stretch in the neck, ease back — keeps mass feeling continuous
+      const pinch = 1 - scaleX; // 0 at bulbs, max at neck
+      const scaleY = 1 + pinch * 0.35;
+
+      keyframes.push({
+        transform: `translate3d(0, ${yPos}px, 0) scale3d(${scaleX}, ${scaleY}, 1)`,
+        offset: t,
+      });
+    }
+
+    const drop = el.animate(keyframes, {
+      duration: 1080,
+      easing: "linear",
+      fill: "forwards",
+    });
+
+    try {
+      await drop.finished;
+    } catch {
+      /* aborted */
+    }
+    if (token !== presenceBlurpToken) return;
+
+    // Hold the final identity frame, then clear — avoids a cancel() snap.
+    el.style.transform = "translate3d(0, 0, 0) scale3d(1, 1, 1)";
+    drop.cancel();
+    await tick();
+    if (token !== presenceBlurpToken) return;
+
+    el.style.transition = "";
+    el.style.transform = "";
+    el.style.transformOrigin = "";
+    el.style.willChange = "";
+    presenceCenterOffset = 0;
+    presenceDockMode = "docked";
+  }
 
   function parseDaemonAskPrompt(value: string): string | null {
     const slash = parseChatSlashInput(value);
@@ -367,6 +556,10 @@
         return;
       }
 
+      if (presenceComposerCentered && presenceDockMode === "center") {
+        void runPresenceDockBlurp();
+      }
+
       if (askPrompt) {
         await submitTurn(prompt || pendingMediaLabels(chat.pendingMediaRefs), askPrompt, "background");
         return;
@@ -419,6 +612,11 @@
 
   async function resumeSession(sessionId: string) {
     await chat.switchSession(sessionId);
+  }
+
+  function continueWhereLeftOff() {
+    if (!continueSession) return;
+    void resumeSession(continueSession.session_id);
   }
 
   async function sendStarterPrompt(prompt: string) {
@@ -488,7 +686,6 @@
             <p class="truncate text-[11px] text-surface-400">{mobileChatSubtitle}</p>
           {:else}
             <h1 class="truncate text-sm font-semibold text-surface-50">{sessionLabel}</h1>
-            <p class="workshop-header-line truncate">Talk with her in this session</p>
           {/if}
         </button>
         {#if chat.hasTurnActivity && mobile}
@@ -506,28 +703,30 @@
           </span>
         {/if}
       </div>
-      <div class="flex shrink-0 items-center gap-0.5">
-        <button
-          type="button"
-          class="{mobile ? 'mobile-icon-btn' : 'workshop-rail-btn'}"
-          aria-label="Identity recall"
-          title="Identity recall"
-          onclick={() => layout.toggleIdentityDrawer()}
-        >
-          <Users size={mobile ? 20 : 16} strokeWidth={1.75} />
-        </button>
-        {#if showPopout && isTauri()}
+      {#if mobile || !showChatEmptyState}
+        <div class="flex shrink-0 items-center gap-0.5">
           <button
             type="button"
-            class="workshop-rail-btn"
-            aria-label="Pop out chat"
-            title="Pop out"
-            onclick={() => showChatPopout()}
+            class="{mobile ? 'mobile-icon-btn' : 'workshop-rail-btn'}"
+            aria-label="Identity recall"
+            title="Identity recall"
+            onclick={() => layout.toggleIdentityDrawer()}
           >
-            <ExternalLink size={16} strokeWidth={1.75} />
+            <Users size={mobile ? 20 : 16} strokeWidth={1.75} />
           </button>
-        {/if}
-      </div>
+          {#if showPopout && isTauri()}
+            <button
+              type="button"
+              class="workshop-rail-btn"
+              aria-label="Pop out chat"
+              title="Pop out"
+              onclick={() => showChatPopout()}
+            >
+              <ExternalLink size={16} strokeWidth={1.75} />
+            </button>
+          {/if}
+        </div>
+      {/if}
     </div>
     {#if chat.streamErrorFor(panelSessionId)}
       <p class="mt-1 text-[11px] text-error-400" role="alert">{chat.streamErrorFor(panelSessionId)}</p>
@@ -593,6 +792,7 @@
     </div>
   {/if}
 
+  <div class="chat-panel-main">
   <div
     class="{embedded && !useMobileChatLayout
       ? 'vault-workshop-chat-body'
@@ -607,7 +807,7 @@
         ? 'vault-workshop-chat-scroll space-y-3'
         : useMobileChatLayout
           ? 'mobile-chat-scroll space-y-3'
-          : 'chat-scroll space-y-4'}"
+          : 'chat-scroll space-y-4'} {showPresenceEmpty ? 'chat-scroll--presence' : ''}"
     >
       <ChatAsyncToolsHint {mobile} />
       {#if askThreads.length > 0 && !embedded}
@@ -747,10 +947,10 @@
           onOpenCardDetail={openCardDetail}
         />
       {:else if showChatEmptyState}
-      <div
-        class="flex min-h-[120px] flex-col justify-center {embedded ? 'px-3 py-2' : mobile ? 'px-1 pb-4' : 'px-2'}"
-      >
         {#if scriptWorkbench && chat.scriptWorkbenchContext}
+        <div
+          class="flex min-h-[120px] flex-col justify-center {embedded ? 'px-3 py-2' : mobile ? 'px-1 pb-4' : 'px-2'}"
+        >
           <p class="text-sm text-surface-400">Ask about this script — fixes, modules, or next steps.</p>
           <div class="mt-3 flex flex-wrap gap-2">
             {#each ["Explain this script", "Fix compile errors", "Suggest a module to use"] as prompt (prompt)}
@@ -764,7 +964,11 @@
               </button>
             {/each}
           </div>
+        </div>
         {:else if workshop && chat.vaultNoteContext}
+        <div
+          class="flex min-h-[120px] flex-col justify-center {embedded ? 'px-3 py-2' : mobile ? 'px-1 pb-4' : 'px-2'}"
+        >
           {#if workshopSticky}
             <p class="px-1 text-[12px] leading-relaxed text-surface-500">
               {vaultContextHasSelection(chat.vaultNoteContext)
@@ -792,52 +996,42 @@
               {/each}
             </div>
           {/if}
-        {:else}
-        <p class="text-sm text-surface-400 {mobile ? '' : 'mt-8'}">What are you working on?</p>
-        <div class="mt-4 flex flex-wrap gap-2">
-          {#each STARTER_PROMPTS as prompt (prompt)}
-            <button
-              type="button"
-              class="rounded-full border border-surface-500/40 bg-surface-950/50 px-3 py-1.5 text-sm text-surface-200 transition hover:border-primary-400/50 hover:text-surface-50"
-              disabled={connection.offline || chat.composerBlocked}
-              onclick={() => void sendStarterPrompt(prompt)}
-            >
-              {prompt}
-            </button>
-          {/each}
         </div>
         {/if}
-        {#if recentSessions.length > 0 && !embedded}
-          <ul class="mt-5 space-y-1.5">
-            {#each recentSessions as session (session.session_id)}
-              <li>
-                <button
-                  type="button"
-                  class="workshop-text-action block max-w-md truncate text-left"
-                  onclick={() => resumeSession(session.session_id)}
-                >
-                  {formatSessionLabel(session)}
-                </button>
-              </li>
-            {/each}
-          </ul>
-        {:else if !workshopSticky}
-          <p class="mt-3 text-sm text-surface-400">No prior sessions</p>
-        {/if}
-      </div>
       {:else if chat.historyLoadingFor(panelSessionId) && panelMessages.length === 0 && !mobile}
       <div class="flex min-h-[200px] items-center justify-center">
         <LoaderCircle size={22} class="animate-spin text-surface-500/80" aria-label="Loading" />
       </div>
       {/if}
     </div>
-    {#if !useMobileChatLayout}
+    {#if !useMobileChatLayout && !presenceComposerCentered}
       <div class="chat-scroll-fade" aria-hidden="true"></div>
     {/if}
   </div>
 
   {#if showInlineComposer}
-    {#if !embedded}
+  <div
+    bind:this={presenceDockEl}
+    class="chat-presence-dock chat-presence-dock--{presenceDockMode}"
+    class:chat-presence-dock--placed={presenceCenterPlaced ||
+      presenceDockMode === "docking" ||
+      presenceDockMode === "docked"}
+  >
+    {#if showPresenceEmpty && (presenceDockMode === "center" || presenceDockMode === "docking")}
+      <div class="chat-presence-empty {presenceDockMode === 'docking' ? 'chat-presence-empty--exiting' : ''}">
+        <p class="chat-presence-ask">{presenceAsk}</p>
+        {#if continueSession}
+          <button
+            type="button"
+            class="chat-presence-continue"
+            onclick={() => void continueWhereLeftOff()}
+          >
+            Continue where we left off
+          </button>
+        {/if}
+      </div>
+    {/if}
+    {#if !embedded && presenceDockMode === "docked"}
     <BudgetApprovalBar
       onOpenWork={() => {
         workspace.workView = "kanban";
@@ -854,7 +1048,7 @@
           : workshopSticky
             ? 'vault-workshop-chat-composer vault-workshop-chat-composer--sticky'
             : 'vault-workshop-chat-composer'
-        : 'chat-composer'}"
+        : 'chat-composer'} {presenceComposerCentered ? 'chat-composer--presence-center' : ''}"
       onsubmit={submit}
     >
       {#if chat.scriptWorkbenchContext}
@@ -882,9 +1076,9 @@
           Steering handoff — your next message continues the worker
         </p>
       {/if}
-      {#if !workshop && !embedded}
+      {#if !workshop && !embedded && !showChatEmptyState}
         <div class="mx-4 mb-1.5 flex items-center gap-2 text-[11px] text-surface-400">
-          <label for="chat-agent-runtime" class="shrink-0">Runtime</label>
+          <label for="chat-agent-runtime" class="sr-only">Model</label>
           <select
             id="chat-agent-runtime"
             class="rounded-md border border-surface-500/30 bg-surface-900/40 px-2 py-0.5 text-surface-200"
@@ -902,10 +1096,13 @@
         mobile={workshop || useMobileChatLayout}
         disabled={connection.offline}
         composerBlocked={chat.composerBlocked}
+        quietChrome={showPresenceEmpty || presenceDockMode === "docking"}
         onkeydown={handleKeydown}
       />
     </form>
+  </div>
   {/if}
+  </div>
 
   {#if visible && connection.offline}
     <OfflineChatGate {mobile} {onOpenConnection} />
@@ -929,3 +1126,103 @@
     </button>
   {/if}
 </section>
+
+<style>
+  .chat-panel-main {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    flex: 1;
+  }
+
+  /*
+   * Center + docking stay bottom-anchored; visual center is translateY only.
+   * That avoids FLIP layout thrash (the jump-up / jump-down you saw).
+   */
+  .chat-presence-dock--center,
+  .chat-presence-dock--docking {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 6;
+    display: flex;
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+    /* Same geometry as docked — only translateY moves. No width/padding handoff jump. */
+    padding: 0;
+  }
+
+  .chat-presence-dock--center:not(.chat-presence-dock--placed) {
+    visibility: hidden;
+  }
+
+  .chat-presence-dock--docked {
+    position: relative;
+    z-index: 10;
+    display: flex;
+    width: 100%;
+    flex-shrink: 0;
+    flex-direction: column;
+    align-items: stretch;
+    padding: 0;
+  }
+
+  .chat-composer--presence-center {
+    width: 100%;
+  }
+
+  .chat-presence-empty {
+    position: absolute;
+    bottom: calc(100% + 0.75rem);
+    left: 50%;
+    display: flex;
+    width: max-content;
+    max-width: min(24rem, 100%);
+    flex-direction: column;
+    align-items: center;
+    gap: 0.375rem;
+    text-align: center;
+    transform: translateX(-50%);
+  }
+
+  .chat-presence-ask {
+    margin: 0;
+    max-width: 24rem;
+    font-size: clamp(1.15rem, 2vw, 1.4rem);
+    font-weight: 500;
+    line-height: 1.35;
+    letter-spacing: -0.015em;
+    color: rgb(var(--color-surface-100));
+  }
+
+  .chat-presence-continue {
+    border: 0;
+    background: transparent;
+    font-size: 0.8125rem;
+    color: rgb(var(--color-surface-400));
+    text-decoration: underline;
+    text-decoration-color: rgb(var(--color-surface-500) / 0.5);
+    text-underline-offset: 0.18em;
+    cursor: pointer;
+    transition:
+      color 150ms ease,
+      text-decoration-color 150ms ease;
+  }
+
+  .chat-presence-continue:hover {
+    color: rgb(var(--color-surface-200));
+    text-decoration-color: rgb(var(--color-surface-400) / 0.7);
+  }
+
+  .chat-presence-empty--exiting {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-0.5rem);
+    transition:
+      opacity 420ms cubic-bezier(0.22, 1, 0.36, 1),
+      transform 420ms cubic-bezier(0.22, 1, 0.36, 1);
+    pointer-events: none;
+  }
+</style>

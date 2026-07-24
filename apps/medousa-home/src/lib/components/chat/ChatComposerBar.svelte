@@ -39,6 +39,8 @@
     mobile?: boolean;
     disabled?: boolean;
     composerBlocked?: boolean;
+    /** Hide attachment hint + model picker (Presence empty landing). */
+    quietChrome?: boolean;
     onkeydown?: (event: KeyboardEvent) => void;
     onfocus?: () => void;
     onblur?: () => void;
@@ -48,10 +50,23 @@
     mobile = false,
     disabled = false,
     composerBlocked = false,
+    quietChrome = false,
     onkeydown,
     onfocus,
     onblur,
   }: Props = $props();
+
+  const showModelPicker = $derived(settings.showChatModelPicker && !quietChrome);
+  const showAttachmentHint = $derived(
+    settings.showChatAttachmentHint && !quietChrome && chat.pendingMediaRefs.length === 0,
+  );
+  const placeholder = $derived(
+    chat.hasWorkshopHandoff()
+      ? "Steer the handoff…"
+      : quietChrome
+        ? "Ask anything"
+        : "Message Medousa…",
+  );
 
   let voiceActive = $state(false);
   let voiceError = $state<string | null>(null);
@@ -217,7 +232,7 @@
 </script>
 
 <ChatAttachmentChips {disabled} />
-{#if settings.showChatAttachmentHint && chat.pendingMediaRefs.length === 0 && !voiceActive}
+{#if showAttachmentHint && !voiceActive}
   <p class="composer-attachment-hint text-[11px] text-surface-500">
     Up to {MAX_MEDIA_REFS_PER_TURN} files, {MAX_MEDIA_UPLOAD_MB} MB each — PDF, images, spreadsheets, text
   </p>
@@ -295,7 +310,7 @@
           bind:sheetOpen={workshopOpen}
         />
 
-        {#if settings.showChatModelPicker}
+        {#if showModelPicker}
           {#if isTauriMobilePlatform()}
             <MobileComposerTurnSettings disabled={blocked} quiet />
           {:else}
@@ -353,9 +368,7 @@
   {:else}
     <GrowingTextarea
       bind:value={chat.draft}
-      placeholder={chat.hasWorkshopHandoff()
-        ? "Steer the handoff…"
-        : "Message Medousa…"}
+      placeholder={placeholder}
       disabled={blocked}
       maxHeight={128}
       minHeight={36}
@@ -388,7 +401,7 @@
       />
       <ComposerAgentChip showChip bind:open={agentOpen} anchorEl={plusAnchorEl} />
 
-      {#if settings.showChatModelPicker}
+      {#if showModelPicker}
         <ChatModelPicker {disabled} quiet />
       {/if}
 

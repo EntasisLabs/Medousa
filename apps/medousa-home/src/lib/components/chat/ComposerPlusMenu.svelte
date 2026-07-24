@@ -105,7 +105,7 @@
   >
     <button type="button" class="composer-plus-menu-item" role="menuitem" onclick={attach}>
       <Paperclip size={15} strokeWidth={1.75} class="shrink-0 opacity-70" />
-      <span>Attach files</span>
+      <span>Attach</span>
     </button>
     {#if showWorkshop && onWorkshop}
       <button
@@ -115,16 +115,16 @@
         onclick={pickWorkshop}
       >
         <span class="composer-plus-menu-dot" aria-hidden="true"></span>
-        <span>Workshop…</span>
+        <span>Workshop</span>
       </button>
     {/if}
     <button type="button" class="composer-plus-menu-item" role="menuitem" onclick={pickProfile}>
       <UserRound size={15} strokeWidth={1.75} class="shrink-0 opacity-70" />
-      <span>Profile…</span>
+      <span>Profile</span>
     </button>
     <button type="button" class="composer-plus-menu-item" role="menuitem" onclick={pickAgent}>
       <Bot size={15} strokeWidth={1.75} class="shrink-0 opacity-70" />
-      <span>Agent…</span>
+      <span>Agent</span>
     </button>
   </div>
 {/if}

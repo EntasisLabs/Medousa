@@ -2890,6 +2890,11 @@
     scrollbar-gutter: stable;
   }
 
+  .chat-scroll--presence {
+    display: flex;
+    flex-direction: column;
+  }
+
   .chat-scroll-fade {
     @apply pointer-events-none absolute inset-x-0 bottom-0 z-[1] h-12;
     background: linear-gradient(
@@ -2944,18 +2949,36 @@
     @apply max-w-full;
   }
 
-  /* Quiet promote — visible on hover/focus within the assistant beat */
-  .chat-save-to-library {
-    @apply absolute right-0 top-0 z-[1] text-[10px] opacity-0 transition-opacity duration-200;
+  /* Quiet turn actions — bottom of assistant beat, hover/focus reveal */
+  .chat-turn-actions {
+    @apply mt-2 flex items-center justify-end gap-1 opacity-0 transition-opacity duration-200;
   }
 
-  .group:hover .chat-save-to-library,
-  .group:focus-within .chat-save-to-library {
+  .chat-turn-actions--mobile {
+    opacity: 0.4;
+  }
+
+  .group:hover .chat-turn-actions,
+  .group:focus-within .chat-turn-actions,
+  .chat-turn-actions--mobile:hover,
+  .chat-turn-actions--mobile:focus-within {
     @apply opacity-100;
   }
 
-  .chat-save-to-library:focus-visible {
-    @apply opacity-100 outline-none;
+  .chat-turn-actions:focus-within {
+    @apply opacity-100;
+  }
+
+  .chat-turn-action {
+    @apply inline-flex h-7 w-7 items-center justify-center rounded-md text-surface-400 transition-colors;
+  }
+
+  .chat-turn-action:hover {
+    @apply bg-surface-800/70 text-surface-100;
+  }
+
+  .chat-turn-action:focus-visible {
+    @apply opacity-100 outline-none ring-1 ring-surface-500/50;
   }
 
   .chat-ask-rail {
