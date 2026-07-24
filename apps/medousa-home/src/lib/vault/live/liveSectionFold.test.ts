@@ -105,7 +105,7 @@ describe("liveSectionFold", () => {
     expect(buttonsAfter.length).toBe(1);
     expect(buttonsAfter[0]?.getAttribute("aria-expanded")).toBe("false");
 
-    buttonsAfter[0]!.click();
+    (buttonsAfter[0] as HTMLButtonElement).click();
     expect(host.querySelectorAll(".vault-live-fold-btn").length).toBe(buttonsBefore);
 
     editor.destroy();

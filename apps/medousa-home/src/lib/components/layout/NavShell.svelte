@@ -662,6 +662,7 @@
 </nav>
 
 {#if railPopover}
+  {@const popover = railPopover}
   <NavRailViewPopover
     open={railPopoverOpen}
     title={railPopoverTitle}
@@ -674,27 +675,27 @@
     dockHost={railPopoverUsesLmeDock}
   >
     {#snippet toolbar()}
-      {#if railPopover.kind === "lme"}
+      {#if popover.kind === "lme"}
         <!-- LME dock icons portal into the popover dock slot. -->
-      {:else if railPopover.surfaceId === "library" || railPopover.surfaceId === "automations"}
+      {:else if popover.surfaceId === "library" || popover.surfaceId === "automations"}
         <!-- LME dock icons portal into the popover dock slot. -->
-      {:else if railPopover.surfaceId === "chat"}
+      {:else if popover.surfaceId === "chat"}
         <SessionRailToolbar onCreated={closeRailPopover} />
-      {:else if railPopover.surfaceId === "peers"}
+      {:else if popover.surfaceId === "peers"}
         <PeersRailToolbar />
-      {:else if railPopover.surfaceId === "messaging"}
+      {:else if popover.surfaceId === "messaging"}
         <MessagingRailToolbar />
-      {:else if railPopover.surfaceId === "context"}
+      {:else if popover.surfaceId === "context"}
         <div class="nav-rail-context-toolbar">
           <ContextModeBar />
         </div>
-      {:else if railPopover.surfaceId === "web"}
+      {:else if popover.surfaceId === "web"}
         <WebRailToolbar onNavigated={() => commitPopoverSurface("web")} />
-      {:else if railPopover.surfaceId === "calendar"}
+      {:else if popover.surfaceId === "calendar"}
         <CalendarRailToolbar onAction={() => commitPopoverSurface("calendar")} />
-      {:else if railPopover.surfaceId === "work"}
+      {:else if popover.surfaceId === "work"}
         <WorkRailToolbar onAction={() => commitPopoverSurface("work")} />
-      {:else if railPopover.surfaceId === "profiles"}
+      {:else if popover.surfaceId === "profiles"}
         <YouRailToolbar
           onAction={() => commitPopoverSurface("profiles")}
           onOpenContext={() => {
@@ -702,19 +703,19 @@
             selectDestination("context");
           }}
         />
-      {:else if railPopover.surfaceId === SAFETY_SURFACE_SETTINGS}
+      {:else if popover.surfaceId === SAFETY_SURFACE_SETTINGS}
         <span class="nav-rail-popover-toolbar-label">Settings</span>
       {/if}
     {/snippet}
 
-    {#if railPopover.kind === "lme"}
+    {#if popover.kind === "lme"}
       <LmeSidePanel
         {onOpenChat}
-        family={isLmeAutomationsMode(railPopover.mode) ? "automations" : "library"}
+        family={isLmeAutomationsMode(popover.mode) ? "automations" : "library"}
       />
-    {:else if railPopover.surfaceId === "library" || railPopover.surfaceId === "automations"}
-      <LmeSidePanel {onOpenChat} family={lmeFamilyForSurface(railPopover.surfaceId)} />
-    {:else if railPopover.surfaceId === SAFETY_SURFACE_SETTINGS}
+    {:else if popover.surfaceId === "library" || popover.surfaceId === "automations"}
+      <LmeSidePanel {onOpenChat} family={lmeFamilyForSurface(popover.surfaceId)} />
+    {:else if popover.surfaceId === SAFETY_SURFACE_SETTINGS}
       <div class="min-h-0 flex-1 overflow-y-auto px-1.5 py-1">
         <SettingsNav
           active={settingsNav.activeSection}
@@ -724,14 +725,14 @@
           }}
         />
       </div>
-    {:else if railPopover.surfaceId === "chat"}
+    {:else if popover.surfaceId === "chat"}
       <SessionSidebar
         open={true}
         variant="inline"
         chrome="rail-list"
         onPick={closeRailPopover}
       />
-    {:else if railPopover.surfaceId === "messaging"}
+    {:else if popover.surfaceId === "messaging"}
       <div class="min-h-0 flex-1 overflow-y-auto px-1.5 py-2">
         <MessagingChannelList
           search={messagingShell.search}
@@ -746,23 +747,23 @@
           }}
         />
       </div>
-    {:else if railPopover.surfaceId === "peers"}
+    {:else if popover.surfaceId === "peers"}
       <PeersShellList
         chrome="rail-list"
         onPickPeer={() => commitPopoverSurface("peers")}
       />
-    {:else if railPopover.surfaceId === "context"}
+    {:else if popover.surfaceId === "context"}
       <ContextSidePanel
         chrome="rail-list"
         onPick={() => commitPopoverSurface("context")}
       />
-    {:else if railPopover.surfaceId === "web"}
+    {:else if popover.surfaceId === "web"}
       <WebRailList onPickTab={() => commitPopoverSurface("web")} />
-    {:else if railPopover.surfaceId === "calendar"}
+    {:else if popover.surfaceId === "calendar"}
       <CalendarRailList onPickEvent={() => commitPopoverSurface("calendar")} />
-    {:else if railPopover.surfaceId === "work"}
+    {:else if popover.surfaceId === "work"}
       <WorkRailList onPickCard={() => commitPopoverSurface("work")} />
-    {:else if railPopover.surfaceId === "profiles"}
+    {:else if popover.surfaceId === "profiles"}
       <YouRailList
         onPickProfile={() => commitPopoverSurface("profiles")}
         onOpenContext={() => {

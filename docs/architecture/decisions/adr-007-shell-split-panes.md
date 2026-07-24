@@ -13,7 +13,7 @@ Accepted
 1. **Binary split tree** (`SplitNode`: leaf group | row/column branch + ratio) over `EditorGroup` leaves. Soft cap **4 panes** in v1.
 2. **Tabs are chrome:** per-pane strip hidden until hover, focus, or `Ctrl+; w`.
 3. **Keyboard:**
-   - `Ctrl+;` prefix → pane ops (`%`/`"` split, hjkl focus, `z` zoom, `x` close, …)
+   - `Ctrl+;` prefix → pane ops (`%`/`"` split, hjkl focus, `z` zoom, `x` close, …) and `1–4` → switch virtual desktop ([ADR-010](adr-010-virtual-shell-workspaces.md))
    - `Ctrl+B` → toggle left master rail (VS Code/Cursor); never pane ops
 4. **`ChatStreamPool`:** slots keyed by `sessionId` with `acquire` / `release` / `setMaxLive`. **`maxLiveStreams = MAX_SHELL_PANES` (4)** — every chat pane can be live; pool LRU-evicts when a 5th session acquires. Demoted sessions stop owned SSE but keep cached transcripts (`ChatPaneIdle` only when `!isLive`).
 5. **Compose:** only the focused pane’s chat accepts send/input; background live panes still stream and update transcripts (`ChatSessionView` with `interactive={focused}`).

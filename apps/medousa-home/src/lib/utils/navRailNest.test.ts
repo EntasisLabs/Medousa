@@ -15,9 +15,9 @@ describe("navRailNest", () => {
     expect(surfaceSupportsRailNest("context")).toBe(false);
   });
 
-  it("leaves workspace modes and utility surfaces alone", () => {
+  it("supports Work nest (Board / Asks) and leaves other utilities alone", () => {
+    expect(surfaceSupportsRailNest("work")).toBe(true);
     expect(surfaceSupportsRailNest("library")).toBe(false);
-    expect(surfaceSupportsRailNest("work")).toBe(false);
     expect(surfaceSupportsRailNest("messaging")).toBe(false);
     expect(surfaceSupportsRailNest("calendar")).toBe(false);
     expect(surfaceSupportsRailNest("settings")).toBe(false);

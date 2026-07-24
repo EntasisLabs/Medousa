@@ -45,7 +45,7 @@
 
   let status = $state<FeedStatus>("idle");
   let result = $state<FeedLatestGoodResult | null>(null);
-  let inFlight = false;
+  let inFlight = $state(false);
 
   async function hydrate(force = false) {
     if (!feedId || inFlight) return;

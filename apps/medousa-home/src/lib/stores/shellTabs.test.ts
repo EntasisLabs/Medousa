@@ -26,6 +26,8 @@ vi.mock("$lib/stores/chat.svelte", () => ({
         last_timestamp: null,
       },
     ],
+    messagesFor: vi.fn(() => []),
+    historyLoadingFor: vi.fn(() => false),
     switchSession: vi.fn(async function (this: { sessionId: string }, id: string) {
       this.sessionId = id;
     }),

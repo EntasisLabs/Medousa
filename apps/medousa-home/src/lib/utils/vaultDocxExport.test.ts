@@ -93,7 +93,7 @@ const x = 1;
       new Map(),
     );
     expect(children.length).toBe(1);
-    const para = children[0] as { root?: unknown[] };
+    const para = children[0] as unknown as { root?: unknown[] };
     const json = JSON.stringify(para);
     expect(json).toContain("Ghost ink callout body text");
     expect(json).not.toContain("[Ghost");

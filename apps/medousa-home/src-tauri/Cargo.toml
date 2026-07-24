@@ -2,7 +2,7 @@
 
 [package]
 name = "medousa-home"
-version = "0.4.1"
+version = "0.5.0"
 description = "Medousa desktop app (Tauri)"
 authors = ["Entasis Labs"]
 edition = "2021"

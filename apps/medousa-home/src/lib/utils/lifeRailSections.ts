@@ -163,7 +163,9 @@ export function buildLifeRailSections(surfaces: SurfaceDef[]): {
 }[] {
   const layout = buildLifeRailLayout(surfaces);
   const talk = layout.primary.filter(
-    (item) => !FOCUS_IDS.has(item.id) && item.surface?.kind !== "custom",
+    (item) =>
+      !FOCUS_IDS.has(item.id) &&
+      !(item.kind === "surface" && item.surface.kind === "custom"),
   );
   const focus = layout.primary.filter((item) => FOCUS_IDS.has(item.id));
   const custom = layout.primary.filter(

@@ -23,7 +23,8 @@ function fakeHost(id: string): HTMLElement {
         );
       }
       children.push(node);
-      (node as HTMLElement & { parentElement: HTMLElement | null }).parentElement = el;
+      (node as HTMLElement & { parentElement: HTMLElement | null }).parentElement =
+        el as unknown as HTMLElement;
       return node;
     },
     removeChild(node: HTMLElement) {

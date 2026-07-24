@@ -7,6 +7,8 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-07-24
+
 ### Added
 
 - **Versions** (optional, off by default): Git-backed vault history via Settings → Versions; Save version / History / Restore; Advanced Git worktrees + diffs
@@ -15,18 +17,29 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 - Liquid **```feed```** fence — hydrate Stasis last-good result (`GET /v1/feeds/{id}/latest-good`) with datatypes `md|text|json|csv|image`
 - Vault **Trash** restore UI (`GET /v1/vault/trash`, `POST /v1/vault/trash/restore`)
 - Scripts **CodeEditorShell** extract (Grapheme first; plaintext/md/shell highlight stubs)
+- **Virtual shell desktops** (up to 4): named pane-layout snapshots, status-bar strip, Spotlight workspace commands, `Ctrl+; 1–4` to switch
+- Status bar: activity pulse, contextual vault/script whisper, automations `enabled/total`, desktop strip
+- Rail popovers, shake-to-reveal / `Ctrl/Cmd+Shift+.` summon toolbar, per-surface rail lists & toolbars
+- App titlebar: New Tab menu, per-tab back/forward history
+- Chat presence empty state (time-of-day room title + centered composer)
+- Work surface **Asks** panel
+- Vault note property controls and tag addition
 
 ### Changed
+
+- Shell persistence → `medousa-home-shell-tabs-v3` (migrates v1/v2 into one “Main” desktop)
+- `Ctrl+; 1–4` switches virtual desktops (no longer focuses panes by index)
+- Status bar overflow (`…`) removed in favor of first-class desktop strip + Automations control
+- Side-rail / navigation IA and vault top bar reworked
+- Stasis dependency bumped to **0.8.0**
+- Release CI supports targeted per-package ships (`workflow_dispatch` `ship_*` checkboxes); `v*` tags remain full-train. Daemon builds once and is reused by desktop + engine packaging. Channel manifests merge so untouched packages keep prior versions/URLs (`scripts/release/package-versions.toml`). **0.5.0 ships `engine` + `desktop` only** — adapters / installer / mcp / local-brain remain 0.4.1.
 
 ### Fixed
 
 - Creating a note with a title/path that already exists no longer overwrites disk or the editor buffer (frontend refuse + `POST /v1/vault/notes` create-only)
 - Windows Build split: slash menu anchors immediately (fixed coords) and IME keyCode 229 no longer claims ↑↓/Enter (WebView2 input deadlock)
 - Windows focus loss (Greenshot / snipping tools): hard-dismiss slash + context menus; skip clipboard while unfocused; release split sash pointer capture
-
-### Changed
-
-- Release CI supports targeted per-package ships (`workflow_dispatch` `ship_*` checkboxes); `v*` tags remain full-train. Daemon builds once and is reused by desktop + engine packaging. Channel manifests merge so untouched packages keep prior versions/URLs (`scripts/release/package-versions.toml`).
+- Vault expand/collapse bugs around nested folders
 
 ## [0.4.1] — 2026-07-22
 
@@ -188,6 +201,7 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 - Product path is **Home-first**: download the app, chat, then add packages from Settings; Installer remains an advanced/repair escape hatch
 - Connection → Extras and welcome-wizard offline CTAs open Settings → Packages instead of launching the Installer by default
 
+[0.5.0]: https://github.com/EntasisLabs/Medousa/releases/tag/v0.5.0
 [0.4.1]: https://github.com/EntasisLabs/Medousa/releases/tag/v0.4.1
 [0.4.0]: https://github.com/EntasisLabs/Medousa/releases/tag/v0.4.0
 [0.3.2]: https://github.com/EntasisLabs/Medousa/releases/tag/v0.3.2

@@ -611,6 +611,7 @@
         </header>
 
         {#if quietListLang && itemEditIndex != null && quietRows[itemEditIndex]}
+          {@const editIdx = itemEditIndex}
           {#if lang === "timeline"}
             <div class="vault-liquid-quiet-item">
               <label class="vault-liquid-quiet-item__field">
@@ -620,7 +621,7 @@
                   type="text"
                   placeholder="Event title"
                   aria-label="Event title"
-                  value={timeline.events[itemEditIndex]?.label ?? ""}
+                  value={timeline.events[editIdx]?.label ?? ""}
                   oninput={(event) =>
                     setQuietTitle((event.currentTarget as HTMLInputElement).value)}
                 />
@@ -632,10 +633,10 @@
                   type="text"
                   placeholder="Jul 12"
                   aria-label="Timestamp"
-                  value={timeline.events[itemEditIndex]?.ts ?? ""}
+                  value={timeline.events[editIdx]?.ts ?? ""}
                   oninput={(event) =>
                     setTimelineEventField(
-                      itemEditIndex,
+                      editIdx,
                       "ts",
                       (event.currentTarget as HTMLInputElement).value,
                     )}
@@ -648,10 +649,10 @@
                   type="text"
                   placeholder="travel"
                   aria-label="Meta"
-                  value={timeline.events[itemEditIndex]?.meta ?? ""}
+                  value={timeline.events[editIdx]?.meta ?? ""}
                   oninput={(event) =>
                     setTimelineEventField(
-                      itemEditIndex,
+                      editIdx,
                       "meta",
                       (event.currentTarget as HTMLInputElement).value,
                     )}
@@ -665,10 +666,10 @@
                   maxlength="8"
                   placeholder="✈️"
                   aria-label="Emoji"
-                  value={timeline.events[itemEditIndex]?.emoji ?? ""}
+                  value={timeline.events[editIdx]?.emoji ?? ""}
                   oninput={(event) =>
                     setTimelineEventField(
-                      itemEditIndex,
+                      editIdx,
                       "emoji",
                       (event.currentTarget as HTMLInputElement).value,
                     )}
@@ -681,10 +682,10 @@
                   type="text"
                   placeholder="plane"
                   aria-label="Lucide icon"
-                  value={timeline.events[itemEditIndex]?.icon ?? ""}
+                  value={timeline.events[editIdx]?.icon ?? ""}
                   oninput={(event) =>
                     setTimelineEventField(
-                      itemEditIndex,
+                      editIdx,
                       "icon",
                       (event.currentTarget as HTMLInputElement).value,
                     )}
@@ -697,10 +698,10 @@
                   type="text"
                   placeholder="https://…"
                   aria-label="Image URL"
-                  value={timeline.events[itemEditIndex]?.image ?? ""}
+                  value={timeline.events[editIdx]?.image ?? ""}
                   oninput={(event) =>
                     setTimelineEventField(
-                      itemEditIndex,
+                      editIdx,
                       "image",
                       (event.currentTarget as HTMLInputElement).value,
                     )}
@@ -713,7 +714,7 @@
                   rows="6"
                   placeholder="What happened"
                   aria-label="Body"
-                  value={timeline.events[itemEditIndex]?.body || timeline.events[itemEditIndex]?.detail || ""}
+                  value={timeline.events[editIdx]?.body || timeline.events[editIdx]?.detail || ""}
                   oninput={(event) =>
                     setQuietBody((event.currentTarget as HTMLTextAreaElement).value)}
                 ></textarea>
