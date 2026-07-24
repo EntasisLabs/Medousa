@@ -59,7 +59,6 @@
           embedded={true}
           workshop={true}
           mobile={true}
-          showPopout={false}
           onOpenContext={() => onOpenFullChat?.()}
         />
       </div>

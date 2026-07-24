@@ -1,6 +1,6 @@
 <script lang="ts">
   import { tick } from "svelte";
-  import { ArrowDown, ExternalLink, LoaderCircle, PanelLeft, Users } from "@lucide/svelte";
+  import { ArrowDown, LoaderCircle, PanelLeft } from "@lucide/svelte";
   import ChatAsyncToolsHint from "$lib/components/chat/ChatAsyncToolsHint.svelte";
   import ChatMessageList from "$lib/components/chat/ChatMessageList.svelte";
   import ChatComposerBar from "$lib/components/chat/ChatComposerBar.svelte";
@@ -24,7 +24,6 @@
     steerBoundWorkshop,
   } from "$lib/daemon";
   import {
-    agentRuntimeLabel,
     getSessionAgentRuntime,
     setSessionAgentRuntime,
     type ChatAgentRuntime,
@@ -54,9 +53,9 @@
     runSlashCommand,
   } from "$lib/utils/runSlashCommand";
   import { SLASH_COMMAND_HINTS } from "$lib/utils/slashCommands";
-  import { isTauri, showChatPopout } from "$lib/window";
   import OfflineChatGate from "$lib/components/chat/OfflineChatGate.svelte";
   import LiquidCardDetailSheet from "$lib/components/chat/LiquidCardDetailSheet.svelte";
+  import ChatRuntimePicker from "$lib/components/chat/ChatRuntimePicker.svelte";
   import { pendingMediaLabels } from "$lib/utils/chatMediaUpload";
   import { hasVisionMediaRefs } from "$lib/types/media";
   import { visionProfileReady } from "$lib/types/inferenceProfiles";
@@ -69,7 +68,6 @@
 
   interface Props {
     visible: boolean;
-    showPopout?: boolean;
     mobile?: boolean;
     embedded?: boolean;
     workshop?: boolean;
@@ -82,7 +80,6 @@
 
   let {
     visible,
-    showPopout = true,
     mobile = false,
     embedded = false,
     workshop = false,
@@ -517,8 +514,7 @@
     sessionRuntime = getSessionAgentRuntime(chat.sessionId);
   });
 
-  function onRuntimeChange(event: Event) {
-    const value = (event.currentTarget as HTMLSelectElement).value as ChatAgentRuntime;
+  function onRuntimeChange(value: ChatAgentRuntime) {
     sessionRuntime = value;
     setSessionAgentRuntime(chat.sessionId, value);
   }
@@ -652,80 +648,54 @@
 >
   {#if !embedded}
   <header class="{mobile ? 'mobile-chat-header' : 'workshop-header'}">
-    <div class="flex items-center justify-between gap-3">
-      <div class="flex min-w-0 items-center gap-2">
-        {#if mobile}
-          <button
-            type="button"
-            class="mobile-icon-btn shrink-0"
-            aria-label="Open sessions"
-            onclick={() => layout.toggleSessionDrawer()}
-          >
-            <PanelLeft size={20} strokeWidth={1.75} />
-          </button>
-        {:else}
-          <ShellSidebarExpandButton label="Show sessions" />
-        {/if}
+    <div class="flex min-w-0 items-center gap-2">
+      {#if mobile}
         <button
           type="button"
-          class="min-w-0 text-left {mobile ? 'py-1' : ''}"
-          onclick={() => {
-            if (mobile) {
-              layout.toggleSessionDrawer();
-              return;
-            }
-            if (!layout.shellSidebarExpanded) {
-              layout.openShellSidebarView("chat");
-            }
-          }}
+          class="mobile-icon-btn shrink-0"
+          aria-label="Open sessions"
+          onclick={() => layout.toggleSessionDrawer()}
         >
-          {#if mobile}
-            <h1 class="truncate text-sm font-semibold text-surface-50">
-              {mobileChatTitle}
-            </h1>
-            <p class="truncate text-[11px] text-surface-400">{mobileChatSubtitle}</p>
-          {:else}
-            <h1 class="truncate text-sm font-semibold text-surface-50">{sessionLabel}</h1>
-          {/if}
+          <PanelLeft size={20} strokeWidth={1.75} />
         </button>
-        {#if chat.hasTurnActivity && mobile}
-          <span
-            class="badge shrink-0 variant-soft-primary text-[10px] font-medium normal-case"
-            title={chat.liveStreamActive
-              ? "Live turn streaming"
-              : `${chat.backgroundActivity} background turn(s)`}
-          >
-            {#if chat.liveStreamActive}
-              Live
-            {:else}
-              {chat.backgroundActivity} active
-            {/if}
-          </span>
+      {:else}
+        <ShellSidebarExpandButton label="Show sessions" />
+      {/if}
+      <button
+        type="button"
+        class="min-w-0 text-left {mobile ? 'py-1' : ''}"
+        onclick={() => {
+          if (mobile) {
+            layout.toggleSessionDrawer();
+            return;
+          }
+          if (!layout.shellSidebarExpanded) {
+            layout.openShellSidebarView("chat");
+          }
+        }}
+      >
+        {#if mobile}
+          <h1 class="truncate text-sm font-semibold text-surface-50">
+            {mobileChatTitle}
+          </h1>
+          <p class="truncate text-[11px] text-surface-400">{mobileChatSubtitle}</p>
+        {:else}
+          <h1 class="truncate text-sm font-semibold text-surface-50">{sessionLabel}</h1>
         {/if}
-      </div>
-      {#if mobile || !showChatEmptyState}
-        <div class="flex shrink-0 items-center gap-0.5">
-          <button
-            type="button"
-            class="{mobile ? 'mobile-icon-btn' : 'workshop-rail-btn'}"
-            aria-label="Identity recall"
-            title="Identity recall"
-            onclick={() => layout.toggleIdentityDrawer()}
-          >
-            <Users size={mobile ? 20 : 16} strokeWidth={1.75} />
-          </button>
-          {#if showPopout && isTauri()}
-            <button
-              type="button"
-              class="workshop-rail-btn"
-              aria-label="Pop out chat"
-              title="Pop out"
-              onclick={() => showChatPopout()}
-            >
-              <ExternalLink size={16} strokeWidth={1.75} />
-            </button>
+      </button>
+      {#if chat.hasTurnActivity && mobile}
+        <span
+          class="badge shrink-0 variant-soft-primary text-[10px] font-medium normal-case"
+          title={chat.liveStreamActive
+            ? "Live turn streaming"
+            : `${chat.backgroundActivity} background turn(s)`}
+        >
+          {#if chat.liveStreamActive}
+            Live
+          {:else}
+            {chat.backgroundActivity} active
           {/if}
-        </div>
+        </span>
       {/if}
     </div>
     {#if chat.streamErrorFor(panelSessionId)}
@@ -1076,22 +1046,6 @@
           Steering handoff — your next message continues the worker
         </p>
       {/if}
-      {#if !workshop && !embedded && !showChatEmptyState}
-        <div class="mx-4 mb-1.5 flex items-center gap-2 text-[11px] text-surface-400">
-          <label for="chat-agent-runtime" class="sr-only">Model</label>
-          <select
-            id="chat-agent-runtime"
-            class="rounded-md border border-surface-500/30 bg-surface-900/40 px-2 py-0.5 text-surface-200"
-            value={sessionRuntime}
-            onchange={onRuntimeChange}
-            disabled={connection.offline || chat.composerBlocked}
-          >
-            <option value="medousa">{agentRuntimeLabel("medousa")}</option>
-            <option value="cursor">{agentRuntimeLabel("cursor")}</option>
-            <option value="codex">{agentRuntimeLabel("codex")}</option>
-          </select>
-        </div>
-      {/if}
       <ChatComposerBar
         mobile={workshop || useMobileChatLayout}
         disabled={connection.offline}
@@ -1099,6 +1053,15 @@
         quietChrome={showPresenceEmpty || presenceDockMode === "docking"}
         onkeydown={handleKeydown}
       />
+      {#if !workshop && !embedded && !showChatEmptyState}
+        <div class="chat-runtime-under">
+          <ChatRuntimePicker
+            value={sessionRuntime}
+            disabled={connection.offline || chat.composerBlocked}
+            onChange={onRuntimeChange}
+          />
+        </div>
+      {/if}
     </form>
   </div>
   {/if}

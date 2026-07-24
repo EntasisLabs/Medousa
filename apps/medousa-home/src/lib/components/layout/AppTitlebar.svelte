@@ -1,5 +1,13 @@
 <script lang="ts">
-  import { ArrowLeft, ArrowRight, Columns2, PanelLeft, PanelLeftClose, Plus } from "@lucide/svelte";
+  import {
+    ArrowLeft,
+    ArrowRight,
+    Columns2,
+    ExternalLink,
+    PanelLeft,
+    PanelLeftClose,
+    Plus,
+  } from "@lucide/svelte";
   import ShellTabStrip from "$lib/components/shell/ShellTabStrip.svelte";
   import NewTabMenu from "$lib/components/layout/NewTabMenu.svelte";
   import WindowControls from "$lib/components/layout/WindowControls.svelte";
@@ -7,6 +15,7 @@
   import { environment } from "$lib/stores/environment.svelte";
   import { shellTabs } from "$lib/stores/shellTabs.svelte";
   import { titlebarMode, usesUnifiedTitlebar } from "$lib/platform";
+  import { isTauri, showChatPopout } from "$lib/window";
 
   const mode = $derived(titlebarMode());
   const show = $derived(usesUnifiedTitlebar());
@@ -17,6 +26,9 @@
     shellTabs.canGoNavBack || layout.shellSidebarMode === "view",
   );
   const canNavForward = $derived(shellTabs.canGoNavForward);
+  const showChatPopoutBtn = $derived(
+    isTauri() && shellTabs.activeTab?.kind === "chat",
+  );
 
   function toggleRail() {
     if (railExpanded) {
@@ -127,6 +139,17 @@
       <NewTabMenu>
         <Plus size={14} strokeWidth={2} />
       </NewTabMenu>
+      {#if showChatPopoutBtn}
+        <button
+          type="button"
+          class="app-titlebar-btn"
+          title="Pop out chat"
+          aria-label="Pop out chat"
+          onclick={() => void showChatPopout()}
+        >
+          <ExternalLink size={14} strokeWidth={1.75} />
+        </button>
+      {/if}
       <button
         type="button"
         class="app-titlebar-btn"

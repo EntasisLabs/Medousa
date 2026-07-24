@@ -173,7 +173,6 @@
           visible={true}
           embedded={true}
           workshop={true}
-          showPopout={false}
           onOpenContext={handleOpenFullChat}
         />
       </div>

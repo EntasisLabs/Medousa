@@ -3006,7 +3006,7 @@
   }
 
   .chat-composer {
-    @apply relative z-10 shrink-0 px-8 pb-6 pt-2;
+    @apply relative z-10 mx-auto w-full max-w-[40rem] shrink-0 px-4 pb-2 pt-1.5;
   }
 
   .chat-composer-bar {
@@ -3036,22 +3036,6 @@
     @apply flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-surface-400 transition hover:bg-surface-700/60 hover:text-surface-200 disabled:pointer-events-none disabled:opacity-40;
   }
 
-  .composer-model-trigger--quiet {
-    @apply max-w-[11rem] border-transparent bg-transparent px-1.5 py-1;
-  }
-
-  .composer-model-trigger--quiet:hover:not(:disabled) {
-    border-color: transparent;
-    background: rgb(var(--color-surface-800) / 0.35);
-  }
-
-  .composer-model-trigger--quiet .composer-model-trigger-name {
-    @apply text-[12px] font-normal text-surface-400;
-  }
-
-  .composer-model-trigger--quiet.composer-model-trigger-open .composer-model-trigger-name {
-    @apply text-surface-200;
-  }
 
   .composer-footer-chip-wrap {
     @apply inline-flex max-w-[9rem] shrink-0 items-center gap-0.5;
@@ -3337,20 +3321,36 @@
     @apply relative shrink-0;
   }
 
+  /* Blended into composer chrome — text + chevron, no chip. */
   .composer-model-trigger {
-    @apply inline-flex max-w-[12rem] items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-left transition-colors duration-150 disabled:pointer-events-none disabled:opacity-45;
-    border: 1px solid rgb(var(--color-surface-600) / 0.22);
-    background: rgb(var(--color-surface-900) / 0.35);
+    @apply inline-flex max-w-[12rem] items-center gap-1.5 rounded-md px-1.5 py-1 text-left transition-colors duration-150 disabled:pointer-events-none disabled:opacity-45;
+    border: 1px solid transparent;
+    background: transparent;
   }
 
   .composer-model-trigger:hover:not(:disabled) {
-    border-color: rgb(var(--color-surface-600) / 0.38);
-    background: rgb(var(--color-surface-800) / 0.45);
+    border-color: transparent;
+    background: transparent;
   }
 
   .composer-model-trigger-open {
-    border-color: rgb(var(--color-surface-600) / 0.45);
-    background: rgb(var(--color-surface-800) / 0.55);
+    border-color: transparent;
+    background: transparent;
+  }
+
+  .composer-model-trigger--quiet {
+    @apply max-w-[11rem];
+  }
+
+  .composer-model-trigger--quiet .composer-model-trigger-name {
+    @apply text-[12px] font-normal text-surface-400;
+  }
+
+  .composer-model-trigger:hover:not(:disabled) .composer-model-trigger-name,
+  .composer-model-trigger-open .composer-model-trigger-name,
+  .composer-model-trigger--quiet:hover:not(:disabled) .composer-model-trigger-name,
+  .composer-model-trigger--quiet.composer-model-trigger-open .composer-model-trigger-name {
+    @apply text-surface-200;
   }
 
   .composer-model-trigger-readonly {
@@ -6856,6 +6856,50 @@
 
   .composer-bar-stacked-input {
     @apply w-full min-w-0 px-1.5 pt-0.5;
+  }
+
+  /* Quiet under-composer runtime row (Cursor-style meta). */
+  .chat-runtime-under {
+    @apply mt-1 flex min-h-0 items-center px-1;
+  }
+
+  .chat-runtime-picker {
+    @apply relative inline-flex min-w-0 max-w-full;
+  }
+
+  .chat-runtime-trigger {
+    @apply inline-flex max-w-full items-center gap-1.5 rounded-md px-1 py-0.5 text-[11px] text-surface-500 transition-colors duration-150;
+    border: 1px solid transparent;
+    background: transparent;
+  }
+
+  .chat-runtime-trigger:hover:not(:disabled),
+  .chat-runtime-trigger-open {
+    @apply text-surface-300;
+  }
+
+  .chat-runtime-trigger:disabled {
+    @apply pointer-events-none opacity-45;
+  }
+
+  .chat-runtime-trigger-label {
+    @apply truncate font-medium;
+  }
+
+  .chat-runtime-trigger-chevron {
+    @apply opacity-50 transition-transform duration-150;
+  }
+
+  .chat-runtime-trigger-open .chat-runtime-trigger-chevron {
+    transform: rotate(180deg);
+  }
+
+  .chat-runtime-option {
+    @apply flex w-full items-start gap-2.5 rounded-lg px-2.5 py-2 text-left transition hover:bg-surface-800/70;
+  }
+
+  .chat-runtime-option-active {
+    @apply bg-surface-800/55;
   }
 
   .composer-bar-footer {

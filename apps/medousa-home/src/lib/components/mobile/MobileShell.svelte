@@ -240,7 +240,6 @@
       {:else if layout.mobileTab === "chat"}
         <ChatPanel
           visible={true}
-          showPopout={false}
           mobile={true}
           onOpenContext={() => {
             layout.setIdentityDrawerOpen(false);
