@@ -116,6 +116,14 @@ export class EnvironmentStore {
       ordered.splice(0, ordered.length, ...withoutPeers);
     }
 
+    // Automations is Library's twin door — keep it available even when older
+    // presets dropped it after modes were folded under Library.
+    const automations = byId.get("automations");
+    const libraryAt = ordered.findIndex((surface) => surface.id === "library");
+    if (automations && libraryAt >= 0 && !ordered.some((surface) => surface.id === "automations")) {
+      ordered.splice(libraryAt + 1, 0, automations);
+    }
+
     for (const safetyId of [SAFETY_SURFACE_SETTINGS, SAFETY_SURFACE_RUNTIME]) {
       if (!ordered.some((surface) => surface.id === safetyId)) {
         const safety = byId.get(safetyId);

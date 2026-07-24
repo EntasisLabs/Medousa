@@ -7,12 +7,12 @@
 # engine = medousa + medousa_daemon + medousa_cli + medousa_tui
 
 [packages]
-engine = "0.4.1"
+engine = "0.5.0"
 adapter-telegram = "0.4.1"
 adapter-discord = "0.4.1"
 adapter-slack = "0.4.1"
 adapter-whatsapp = "0.4.1"
 mcp-gateway = "0.4.1"
 local-brain = "0.4.1"
-desktop = "0.4.1"
+desktop = "0.5.0"
 installer = "0.4.1"

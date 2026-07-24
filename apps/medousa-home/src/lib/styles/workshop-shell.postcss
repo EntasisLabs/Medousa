@@ -518,14 +518,14 @@
   }
 
   .workshop-icon-rail {
-    @apply flex h-full w-full min-h-0 shrink-0 flex-col items-center py-2.5;
+    @apply flex h-full w-full min-h-0 shrink-0 flex-col items-center py-1;
     border-right: 1px solid rgb(var(--shell-border) / var(--shell-rail-edge));
     background-color: rgb(var(--shell-chrome-bg));
     box-shadow: var(--shell-nav-inset), var(--shell-nav-shadow);
   }
 
   .workshop-icon-rail-expanded {
-    @apply items-stretch px-2;
+    @apply items-stretch px-1.5 pt-0.5;
   }
 
   .workshop-icon-rail-view {
@@ -571,8 +571,58 @@
    * Parents ≈ children in type size; selection is a quiet surface pill, not purple chrome.
    */
   .workshop-rail-tree {
-    gap: 1px;
+    gap: 0.45rem;
     padding: 0 0.15rem 0.35rem 0.2rem;
+  }
+
+  .workshop-rail-tree-jobs {
+    gap: 0.55rem;
+  }
+
+  .workshop-rail-primary,
+  .workshop-rail-custom {
+    display: flex;
+    width: 100%;
+    flex-direction: column;
+    gap: 1px;
+  }
+
+  /* Soft mode break — talk vs do — no taxonomy label. */
+  .workshop-rail-breath {
+    height: 0.55rem;
+    margin: 0.1rem 0.55rem 0.05rem;
+    border-top: 1px solid rgb(var(--shell-border) / 0.14);
+  }
+
+  .workshop-rail-dest-hero .workshop-rail-dest-btn {
+    min-height: 2.15rem;
+  }
+
+  .workshop-icon-rail-expanded .workshop-rail-tree .workshop-rail-dest-hero .workshop-rail-dest-btn {
+    height: 2.15rem;
+  }
+
+  .workshop-rail-dest-hero .workshop-rail-btn-label {
+    font-size: 0.9375rem;
+    font-weight: 650;
+    letter-spacing: -0.025em;
+  }
+
+  .workshop-rail-dest-hero .workshop-rail-btn-icon {
+    color: rgb(var(--color-surface-50) / 0.96);
+  }
+
+  .workshop-rail-dest-hero {
+    margin-bottom: 0.15rem;
+  }
+
+  .workshop-rail-library-btn .workshop-rail-btn-label {
+    font-weight: 600;
+    letter-spacing: -0.015em;
+  }
+
+  .workshop-rail-dock-you {
+    width: 100%;
   }
 
   /* Bottom chrome — same inset / row metrics as the life-orbit tree. */
@@ -781,6 +831,24 @@
     flex-shrink: 0;
     border-radius: 999px;
     background-color: rgb(234 179 8 / 0.92);
+  }
+
+  .workshop-rail-nest-icon {
+    display: inline-flex;
+    width: 0.875rem;
+    height: 0.875rem;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    color: rgb(var(--color-surface-500));
+  }
+
+  .workshop-rail-nest-btn:hover .workshop-rail-nest-icon {
+    color: rgb(var(--color-surface-300));
+  }
+
+  .workshop-rail-nest-btn-active .workshop-rail-nest-icon {
+    color: rgb(var(--color-surface-200));
   }
 
   .workshop-rail-nest-label {

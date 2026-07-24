@@ -191,6 +191,15 @@ export const VAULT_KIND_OPTIONS: VaultNoteKind[] = [
   "bug",
 ];
 
+/** Keys with dedicated Live chrome — not shown as generic property rows. */
+export const LIVE_MANAGED_FRONTMATTER_KEYS = new Set([
+  "title",
+  "tags",
+  "kind",
+]);
+
+export type FrontmatterScalarField = { key: string; value: string };
+
 function readFrontmatterField(
   frontmatter: string | null,
   key: string,
@@ -203,6 +212,77 @@ function readFrontmatterField(
     return trimmed.slice(prefix.length).trim().replace(/^['"]|['"]$/g, "");
   }
   return null;
+}
+
+/**
+ * Simple `key: value` lines for Live properties (skips title/tags/kind,
+ * block tags, and complex YAML shapes).
+ */
+export function listFrontmatterScalarFields(
+  frontmatter: string | null,
+): FrontmatterScalarField[] {
+  if (!frontmatter?.trim()) return [];
+  const fields: FrontmatterScalarField[] = [];
+  let inTagsBlock = false;
+  for (const raw of frontmatter.split("\n")) {
+    const trimmed = raw.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    if (inTagsBlock) {
+      if (trimmed.startsWith("-")) continue;
+      inTagsBlock = false;
+    }
+    if (trimmed.startsWith("tags:")) {
+      const inline = trimmed.slice("tags:".length).trim();
+      if (!inline) {
+        inTagsBlock = true;
+        continue;
+      }
+      continue;
+    }
+    const colon = trimmed.indexOf(":");
+    if (colon <= 0) continue;
+    const key = trimmed.slice(0, colon).trim();
+    if (!key || LIVE_MANAGED_FRONTMATTER_KEYS.has(key)) continue;
+    if (!/^[A-Za-z_][\w.-]*$/.test(key)) continue;
+    const value = trimmed
+      .slice(colon + 1)
+      .trim()
+      .replace(/^['"]|['"]$/g, "");
+    if (!value || value === "|" || value === ">" || value === "|-" || value === ">-") {
+      continue;
+    }
+    if (value.startsWith("{") || value.startsWith("[")) continue;
+    fields.push({ key, value });
+  }
+  return fields;
+}
+
+export function removeFrontmatterFieldYaml(
+  frontmatter: string | null,
+  key: string,
+): string {
+  const k = key.trim();
+  if (!frontmatter?.trim() || !k) return frontmatter ?? "";
+  const prefix = `${k}:`;
+  return frontmatter
+    .split("\n")
+    .filter((line) => !line.trimStart().startsWith(prefix))
+    .join("\n")
+    .replace(/^\n+/, "")
+    .replace(/\n+$/, "");
+}
+
+/** Upsert a scalar YAML field; empty value removes the key. */
+export function setFrontmatterFieldYaml(
+  frontmatter: string | null,
+  key: string,
+  value: string,
+): string {
+  const k = key.trim();
+  if (!k) return frontmatter ?? "";
+  const trimmed = value.trim();
+  if (!trimmed) return removeFrontmatterFieldYaml(frontmatter, k);
+  return upsertFrontmatterField(frontmatter, k, trimmed);
 }
 
 function upsertFrontmatterField(

@@ -7,6 +7,7 @@
     FolderPlus,
     PanelLeftClose,
     Search,
+    Trash2,
     X,
   } from "@lucide/svelte";
   import { tick } from "svelte";
@@ -18,6 +19,7 @@
   import VaultGroupPicker from "./VaultGroupPicker.svelte";
   import VaultRootPicker from "./VaultRootPicker.svelte";
   import VaultLibraryBrowseModeBar from "./VaultLibraryBrowseModeBar.svelte";
+  import VaultTrashPanel from "./VaultTrashPanel.svelte";
   import { isCoLocatedWorkshop, vaultPinFolderRemoteHint } from "$lib/utils/workshopLocality";
 
   interface Props {
@@ -31,6 +33,7 @@
 
   let createOpen = $state(false);
   let searchExpanded = $state(false);
+  let trashOpen = $state(false);
   let searchInputEl = $state<HTMLInputElement | null>(null);
 
   const coLocated = $derived(isCoLocatedWorkshop());
@@ -258,6 +261,19 @@
 
         <button
           type="button"
+          class="vault-dock-icon-btn {trashOpen ? 'vault-dock-icon-btn-active' : ''}"
+          aria-label="Trash"
+          title="Trash"
+          onclick={() => {
+            closeMenus();
+            trashOpen = !trashOpen;
+          }}
+        >
+          <Trash2 size={15} strokeWidth={1.75} />
+        </button>
+
+        <button
+          type="button"
           class="vault-dock-icon-btn {searching ? 'vault-dock-icon-btn-active' : ''}"
           aria-label="Search notes"
           title="Search"
@@ -304,3 +320,5 @@
     </div>
   {/if}
 </div>
+
+<VaultTrashPanel open={trashOpen} onClose={() => (trashOpen = false)} />

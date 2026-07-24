@@ -124,6 +124,5 @@
     workshop={true}
     scriptWorkbench={true}
     {mobile}
-    showPopout={false}
   />
 </div>

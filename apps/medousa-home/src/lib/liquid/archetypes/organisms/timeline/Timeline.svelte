@@ -1,11 +1,13 @@
 <script lang="ts">
   /**
-   * `timeline` organism — vertical dated event rail for history / what-happened.
+   * `timeline` organism — vertical rail (default) or horizontal snapshot carousel.
    * Distinct from `plan` (forward phases + scrubber). Paste-first from ```timeline.
    */
   import { getLiquidContext } from "$lib/liquid/render/context";
   import { createSceneEvent } from "$lib/liquid/core";
   import type { ArchetypeProps } from "$lib/liquid/render/types";
+  import LiquidGlyph from "$lib/liquid/icons/LiquidGlyph.svelte";
+  import TimelineSnapshot from "./TimelineSnapshot.svelte";
 
   interface TimelineEvent {
     id: string;
@@ -14,6 +16,11 @@
     detail?: string;
     lane?: string;
     emoji?: string;
+    icon?: string;
+    meta?: string;
+    body?: string;
+    image?: string;
+    media?: string;
   }
 
   let { node }: ArchetypeProps = $props();
@@ -23,6 +30,11 @@
   const subtitle = $derived(typeof node.props.subtitle === "string" ? node.props.subtitle : "");
   const granularity = $derived(
     typeof node.props.granularity === "string" ? node.props.granularity.trim().toLowerCase() : "",
+  );
+  const layout = $derived(
+    typeof node.props.layout === "string" && node.props.layout.trim().toLowerCase() === "snapshot"
+      ? "snapshot"
+      : "rail",
   );
 
   const events = $derived.by((): TimelineEvent[] => {
@@ -38,8 +50,13 @@
         const ev: TimelineEvent = { id, label };
         if (typeof row.ts === "string" && row.ts.trim()) ev.ts = row.ts.trim();
         if (typeof row.detail === "string" && row.detail.trim()) ev.detail = row.detail.trim();
+        if (typeof row.body === "string" && row.body.trim()) ev.body = row.body.trim();
         if (typeof row.lane === "string" && row.lane.trim()) ev.lane = row.lane.trim();
         if (typeof row.emoji === "string" && row.emoji.trim()) ev.emoji = row.emoji.trim();
+        if (typeof row.icon === "string" && row.icon.trim()) ev.icon = row.icon.trim();
+        if (typeof row.meta === "string" && row.meta.trim()) ev.meta = row.meta.trim();
+        if (typeof row.image === "string" && row.image.trim()) ev.image = row.image.trim();
+        if (typeof row.media === "string" && row.media.trim()) ev.media = row.media.trim();
         return ev;
       })
       .filter((e): e is TimelineEvent => e !== null);
@@ -51,51 +68,57 @@
 </script>
 
 {#if events.length >= 2}
-  <div class="liquid-timeline" role="list" aria-label={title || "Timeline"}>
-    {#if title || subtitle || granularity}
-      <header class="liquid-timeline-header">
-        {#if title}
-          <h3 class="liquid-timeline-title">{title}</h3>
-        {/if}
-        {#if subtitle}
-          <p class="liquid-timeline-subtitle">{subtitle}</p>
-        {/if}
-        {#if granularity === "day" || granularity === "hour" || granularity === "event"}
-          <p class="liquid-timeline-granularity">{granularity}</p>
-        {/if}
-      </header>
-    {/if}
+  {#if layout === "snapshot"}
+    <TimelineSnapshot {node} {events} {title} {subtitle} />
+  {:else}
+    <div class="liquid-timeline" role="list" aria-label={title || "Timeline"}>
+      {#if title || subtitle || granularity}
+        <header class="liquid-timeline-header">
+          {#if title}
+            <h3 class="liquid-timeline-title">{title}</h3>
+          {/if}
+          {#if subtitle}
+            <p class="liquid-timeline-subtitle">{subtitle}</p>
+          {/if}
+          {#if granularity === "day" || granularity === "hour" || granularity === "event"}
+            <p class="liquid-timeline-granularity">{granularity}</p>
+          {/if}
+        </header>
+      {/if}
 
-    <ol class="liquid-timeline-rail">
-      {#each events as ev, i (ev.id)}
-        <li class="liquid-timeline-item" class:liquid-timeline-item-last={i === events.length - 1}>
-          <div class="liquid-timeline-spine" aria-hidden="true">
-            <span class="liquid-timeline-dot"></span>
-            {#if i < events.length - 1}
-              <span class="liquid-timeline-line"></span>
-            {/if}
-          </div>
-          <button type="button" class="liquid-timeline-card" onclick={() => selectEvent(ev)}>
-            {#if ev.ts}
-              <span class="liquid-timeline-ts">{ev.ts}</span>
-            {/if}
-            <span class="liquid-timeline-label-row">
-              {#if ev.emoji}
-                <span class="liquid-timeline-emoji" aria-hidden="true">{ev.emoji}</span>
+      <ol class="liquid-timeline-rail">
+        {#each events as ev, i (ev.id)}
+          <li class="liquid-timeline-item" class:liquid-timeline-item-last={i === events.length - 1}>
+            <div class="liquid-timeline-spine" aria-hidden="true">
+              <span class="liquid-timeline-dot"></span>
+              {#if i < events.length - 1}
+                <span class="liquid-timeline-line"></span>
               {/if}
-              <span class="liquid-timeline-label">{ev.label}</span>
-              {#if ev.lane}
-                <span class="liquid-timeline-lane">{ev.lane}</span>
+            </div>
+            <button type="button" class="liquid-timeline-card" onclick={() => selectEvent(ev)}>
+              {#if ev.ts}
+                <span class="liquid-timeline-ts">{ev.ts}</span>
               {/if}
-            </span>
-            {#if ev.detail}
-              <span class="liquid-timeline-detail">{ev.detail}</span>
-            {/if}
-          </button>
-        </li>
-      {/each}
-    </ol>
-  </div>
+              <span class="liquid-timeline-label-row">
+                {#if ev.emoji || ev.icon}
+                  <span class="liquid-timeline-emoji" aria-hidden="true">
+                    <LiquidGlyph icon={ev.icon} emoji={ev.emoji} size={14} />
+                  </span>
+                {/if}
+                <span class="liquid-timeline-label">{ev.label}</span>
+                {#if ev.meta || ev.lane}
+                  <span class="liquid-timeline-lane">{ev.meta || ev.lane}</span>
+                {/if}
+              </span>
+              {#if ev.body || ev.detail}
+                <span class="liquid-timeline-detail">{ev.body || ev.detail}</span>
+              {/if}
+            </button>
+          </li>
+        {/each}
+      </ol>
+    </div>
+  {/if}
 {/if}
 
 <style>

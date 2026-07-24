@@ -5,9 +5,17 @@
 
 First-run UX, Home shell milestones, turn-loop FSM, user profiles (Phases 0–6), and **centralized agent runtime + host/worker bus + Specialists** are **shipped**. See [turn-runtime-and-lanes.md](turn-runtime-and-lanes.md), [identity-manuscripts-and-recall-plan.md](identity-manuscripts-and-recall-plan.md), [ADR-002](../docs/architecture/decisions/adr-002-user-profiles.md).
 
-Remaining focus: **Workshop + Automations** (Home exposure of Grapheme/Stasis/MCP), **polish & package**, **attachments**, **Iroh pairing**, and **distribution**.
+Remaining focus: **0.5.0 Vault / Versions / Liquid feeds**, **Workshop + Automations**, **polish & package**, **attachments**, **Iroh pairing**, and **distribution**.
 
-Full plans: **[workshop-and-automations-plan.md](workshop-and-automations-plan.md)** · **[scripts-workbench-plan.md](scripts-workbench-plan.md)** · **[polish-and-package-plan.md](polish-and-package-plan.md)**
+Full plans: **[v0.5.0-vault-versions-plan.md](v0.5.0-vault-versions-plan.md)** · **[workshop-and-automations-plan.md](workshop-and-automations-plan.md)** · **[scripts-workbench-plan.md](scripts-workbench-plan.md)** · **[polish-and-package-plan.md](polish-and-package-plan.md)**
+
+---
+
+## 0.5.0 Vault, Versions, Liquid feeds (active)
+
+**Goal:** Optional Git-backed **Versions** (off by default), liquid snapshot timeline+carousel, ```feed``` last-good Stasis results, Scripts `CodeEditorShell`, trash restore.
+
+Living plan: [v0.5.0-vault-versions-plan.md](v0.5.0-vault-versions-plan.md)
 
 ---
 

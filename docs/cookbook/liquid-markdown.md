@@ -15,7 +15,9 @@ Live gallery (dev): `/dev/liquid` in medousa-home.
 
 ## Fence catalog
 
-Supported langs: `card`, `carousel`, `actions`, `callout`, `section`, `chips`, `media`, `cite`, `compare`, `plan`, `timeline`, `shortlist`, `decision`, `brief`, `dashboard`, `chart`, `report`, `slides`, `tabs`, `steps`, `accordion`, `code`, `tree`, plus `mermaid` and `{{icon:name}}`.
+Supported langs: `card`, `carousel`, `actions`, `callout`, `section`, `chips`, `media`, `cite`, `compare`, `plan`, `timeline`, `feed`, `shortlist`, `decision`, `brief`, `dashboard`, `chart`, `report`, `slides`, `tabs`, `steps`, `accordion`, `code`, `tree`, plus `mermaid` and `{{icon:name}}`.
+
+**Lucide glyphs:** use inline `{{icon:sparkles}}` in prose, or fence `icon: plane` (same allowlist) on timeline / plan / card / shortlist / dashboard / tabs / steps / accordion / actions. Prefer `icon:` over `emoji:` when both are set.
 
 Agents on UI-capable clients get recipes from `[MEDOUSA_PRESENTATION]` and `cognition_environment_wiki(topic=ui_scene|scene_vs_html)`.
 
@@ -237,6 +239,75 @@ body: medousa up
 - **tabs:** ≥2 panels; optional `default:` (label, id, or 1-based index)
 - **steps:** ≥2 steps; optional per-step `status:` `done`|`current`|`pending`
 - **accordion:** ≥1 item; optional `multiple: true`, per-item `open: true`
+
+## Timeline
+
+Chronological event rail. Default layout is vertical **rail**; set `layout: snapshot` for a horizontal date strip synced to a peeking card carousel (one fence owns both chrome strips).
+
+````md
+```timeline
+title: Japan trip so far
+subtitle: What we locked in
+granularity: day
+
+---
+ts: Day 1 · Jul 12
+label: Arrive Narita → Shinjuku
+detail: N'EX in, hotel near the station.
+lane: travel
+emoji: ✈️
+---
+ts: Days 2–4
+label: Tokyo base
+detail: Markets and neon nights.
+lane: stay
+```
+````
+
+- **rail (default):** vertical spine; optional preamble `granularity:` `day`|`hour`|`event`
+- **snapshot:** horizontal track + synced carousel; events use `ts`, `title`/`label`, `meta`, `body`/`detail`, `emoji`/`icon`, optional `image`/`media`
+- ≥2 events required; aliases: `title`→`label`, `body`→`detail`, `time`→`ts`
+- **Glyphs:** `emoji:` for unicode; `icon:` for Lucide (same allowlist as `{{icon:name}}` — e.g. `plane`, `map-pin`, `sparkles`). `icon` wins when both are set; a Lucide id in `emoji:` also resolves.
+
+````md
+```timeline
+title: Trip snapshot
+subtitle: Horizontal track + peek cards
+layout: snapshot
+
+---
+ts: Jul 12
+title: Arrive Narita
+meta: travel
+body: N'EX in, hotel near the station.
+icon: plane
+---
+ts: Jul 13–15
+title: Tokyo base
+meta: stay
+body: Markets, food, neon nights.
+icon: map-pin
+```
+````
+
+## Feed (Stasis last-good)
+
+Bind a vault note to the latest successful feed event from a recurring Stasis job. Hydrates once on load (`refresh: load`) or via a manual Refresh control (`refresh: manual`).
+
+````md
+```feed
+id: summer-ai-digest
+datatype: md
+title: Summer AI digest
+empty: Waiting for the next successful run…
+refresh: load
+```
+````
+
+- **id:** feed channel id (required)
+- **datatype:** `md` | `text` | `json` | `csv` | `image`
+- **title / empty / refresh:** optional chrome
+- Daemon: `GET /v1/feeds/{id}/latest-good` returns `{ datatype, body, jobId, finishedAt }`
 
 ````md
 ```steps

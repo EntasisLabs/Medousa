@@ -90,4 +90,25 @@ describe("liveSectionFold", () => {
     editor.destroy();
     host.remove();
   });
+
+  it("does not leave fold widgets inside a collapsed section", () => {
+    const { editor, host } = mountDoc();
+    const buttonsBefore = host.querySelectorAll(".vault-live-fold-btn").length;
+    expect(buttonsBefore).toBeGreaterThanOrEqual(3);
+
+    const firstBtn = host.querySelector<HTMLButtonElement>(".vault-live-fold-btn");
+    expect(firstBtn).not.toBeNull();
+    firstBtn!.click();
+
+    // Nested H2 chevrons must not remain as hit targets under the fold.
+    const buttonsAfter = [...host.querySelectorAll(".vault-live-fold-btn")];
+    expect(buttonsAfter.length).toBe(1);
+    expect(buttonsAfter[0]?.getAttribute("aria-expanded")).toBe("false");
+
+    (buttonsAfter[0] as HTMLButtonElement).click();
+    expect(host.querySelectorAll(".vault-live-fold-btn").length).toBe(buttonsBefore);
+
+    editor.destroy();
+    host.remove();
+  });
 });

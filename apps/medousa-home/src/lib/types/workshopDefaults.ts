@@ -58,6 +58,8 @@ export interface TuiDefaults {
   workCardWipeAfterDays?: number | null;
   /** Master switch for cognition_shell_* (default off). */
   shellAgentToolsEnabled?: boolean | null;
+  /** Vault Versions (Git-backed). Off by default. */
+  vaultGitEnabled?: boolean | null;
   /** Charter ceiling for shell network (default off). */
   shellNetworkDefault?: boolean | null;
   shellTimeoutMs?: number | null;
@@ -206,6 +208,7 @@ export function normalizeWorkshopDefaults(raw: TuiDefaults): TuiDefaults {
     workCardHideAfterHours: raw.workCardHideAfterHours ?? 24,
     workCardWipeAfterDays: raw.workCardWipeAfterDays ?? 7,
     shellAgentToolsEnabled: raw.shellAgentToolsEnabled ?? false,
+    vaultGitEnabled: raw.vaultGitEnabled ?? false,
     shellNetworkDefault: raw.shellNetworkDefault ?? false,
     shellTimeoutMs: raw.shellTimeoutMs ?? 30_000,
     shellMaxOutputBytes: raw.shellMaxOutputBytes ?? 262_144,

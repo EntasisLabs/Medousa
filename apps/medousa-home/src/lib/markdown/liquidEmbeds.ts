@@ -41,45 +41,14 @@ export const LIQUID_FENCE_LANGS = new Set([
   "code",
   "tree",
   "kanban",
+  "feed",
 ]);
 
 const CALLOUT_TONES = new Set(["note", "warn", "error", "success", "tip", "important"]);
 const CHIP_TONES = new Set(["default", "accent", "success", "warn"]);
 
-/** Lucide icon ids allowed in `{{icon:name}}` (kebab or camel). */
-export const LIQUID_ICON_ALLOWLIST = new Set([
-  "sparkles",
-  "lock",
-  "globe",
-  "message-circle",
-  "messagecircle",
-  "brain",
-  "shield",
-  "code",
-  "cpu",
-  "zap",
-  "clock",
-  "hourglass",
-  "coins",
-  "tag",
-  "mic",
-  "pencil",
-  "file-code",
-  "filecode",
-  "table",
-  "layers",
-  "rocket",
-  "star",
-  "check",
-  "x",
-  "info",
-  "alert-triangle",
-  "alerttriangle",
-  "search",
-  "book",
-  "map",
-  "compass",
-]);
+export { LIQUID_ICON_ALLOWLIST, normalizeLiquidIconId } from "$lib/liquid/icons/liquidIcons";
+import { normalizeLiquidIconId } from "$lib/liquid/icons/liquidIcons";
 
 export type LiquidEmbedKind =
   | "card"
@@ -105,12 +74,14 @@ export type LiquidEmbedKind =
   | "steps"
   | "accordion"
   | "code"
-  | "tree";
+  | "tree"
+  | "feed";
 
 export interface LiquidCardPoint {
   label: string;
   body: string;
   emoji?: string;
+  icon?: string;
 }
 
 export interface LiquidCardProps {
@@ -118,6 +89,7 @@ export interface LiquidCardProps {
   subtitle?: string;
   body?: string;
   emoji?: string;
+  icon?: string;
   image?: string;
   meta?: string;
   summary?: string;
@@ -155,6 +127,7 @@ export interface LiquidActionProps {
   label: string;
   intent?: string;
   emoji?: string;
+  icon?: string;
 }
 
 export interface LiquidCalloutProps {
@@ -199,6 +172,7 @@ export interface LiquidPlanSegment {
   label: string;
   time?: string;
   emoji?: string;
+  icon?: string;
   image?: string;
   subtitle?: string;
   body?: string;
@@ -219,12 +193,20 @@ export interface LiquidTimelineEvent {
   detail?: string;
   lane?: string;
   emoji?: string;
+  icon?: string;
+  meta?: string;
+  body?: string;
+  image?: string;
+  media?: string;
 }
+
+export type LiquidTimelineLayout = "rail" | "snapshot";
 
 export interface LiquidTimelineProps {
   title?: string;
   subtitle?: string;
   granularity?: string;
+  layout?: LiquidTimelineLayout;
   events: LiquidTimelineEvent[];
 }
 
@@ -235,6 +217,7 @@ export interface LiquidShortlistItem {
   score?: string;
   meta?: string;
   emoji?: string;
+  icon?: string;
   image?: string;
 }
 
@@ -291,6 +274,7 @@ export interface LiquidDashboardTile {
   delta?: string;
   tone?: string;
   emoji?: string;
+  icon?: string;
   hint?: string;
   unit?: string;
   feed?: string;
@@ -450,6 +434,7 @@ export interface LiquidTabsPanel {
   label: string;
   body: string;
   emoji?: string;
+  icon?: string;
 }
 
 export interface LiquidTabsProps {
@@ -468,6 +453,7 @@ export interface LiquidStepItem {
   body?: string;
   status?: LiquidStepStatus;
   emoji?: string;
+  icon?: string;
 }
 
 export interface LiquidStepsProps {
@@ -482,6 +468,7 @@ export interface LiquidAccordionItem {
   body: string;
   open?: boolean;
   emoji?: string;
+  icon?: string;
 }
 
 export interface LiquidAccordionProps {
@@ -528,6 +515,17 @@ export interface LiquidMediaProps {
   alt?: string;
   caption?: string;
   ratio?: string;
+}
+
+export type LiquidFeedDatatype = "md" | "text" | "json" | "csv" | "image";
+export type LiquidFeedRefresh = "manual" | "load";
+
+export interface LiquidFeedProps {
+  feedId: string;
+  datatype: LiquidFeedDatatype;
+  title?: string;
+  empty?: string;
+  refresh?: LiquidFeedRefresh;
 }
 
 function encodeProps(value: unknown): string {
@@ -783,6 +781,7 @@ function parseCardBlock(block: string): LiquidCardProps | null {
   if (fields.subtitle) card.subtitle = fields.subtitle;
   if (fields.body) card.body = fields.body;
   if (fields.emoji) card.emoji = fields.emoji;
+  if (fields.icon) card.icon = fields.icon;
   if (fields.image) card.image = fields.image;
   if (fields.meta) card.meta = fields.meta;
   if (fields.summary) card.summary = fields.summary;
@@ -842,6 +841,7 @@ function parseCarouselBody(body: string): LiquidCardProps[] {
     if (fields.subtitle) card.subtitle = fields.subtitle;
     if (fields.body) card.body = fields.body;
     if (fields.emoji) card.emoji = fields.emoji;
+  if (fields.icon) card.icon = fields.icon;
     if (fields.image) card.image = fields.image;
     const badges = parsePipeLabels(fields.badges);
     if (badges.length) card.badges = badges;
@@ -950,6 +950,26 @@ function parseMediaBody(body: string): LiquidMediaProps | null {
   if (fields.caption) media.caption = fields.caption;
   if (fields.ratio) media.ratio = fields.ratio;
   return media;
+}
+
+const FEED_DATATYPES = new Set<LiquidFeedDatatype>(["md", "text", "json", "csv", "image"]);
+
+function parseFeedBody(body: string): LiquidFeedProps | null {
+  const fields = parseKvBlock(body);
+  const feedId = (fields.id ?? fields.feed ?? fields.feed_id)?.trim();
+  const datatypeRaw = fields.datatype?.trim().toLowerCase();
+  if (!feedId || !datatypeRaw || !FEED_DATATYPES.has(datatypeRaw as LiquidFeedDatatype)) {
+    return null;
+  }
+  const feed: LiquidFeedProps = {
+    feedId,
+    datatype: datatypeRaw as LiquidFeedDatatype,
+  };
+  if (fields.title?.trim()) feed.title = fields.title.trim();
+  if (fields.empty?.trim()) feed.empty = fields.empty.trim();
+  const refresh = fields.refresh?.trim().toLowerCase();
+  if (refresh === "manual" || refresh === "load") feed.refresh = refresh;
+  return feed;
 }
 
 function parseCiteBody(body: string): LiquidCiteProps | null {
@@ -1096,6 +1116,7 @@ function parsePlanBody(body: string): LiquidPlanProps | null {
     };
     if (segFields.time) seg.time = segFields.time;
     if (segFields.emoji) seg.emoji = segFields.emoji;
+    if (segFields.icon) seg.icon = segFields.icon;
     if (segFields.image) seg.image = segFields.image;
     if (segFields.subtitle) seg.subtitle = segFields.subtitle;
     if (segFields.body) seg.body = segFields.body;
@@ -1114,6 +1135,7 @@ function parsePlanBody(body: string): LiquidPlanProps | null {
 }
 
 const TIMELINE_GRANULARITIES = new Set(["day", "hour", "event"]);
+const TIMELINE_LAYOUTS = new Set<LiquidTimelineLayout>(["rail", "snapshot"]);
 
 function parseTimelineBody(body: string): LiquidTimelineProps | null {
   const seenIds = new Map<string, number>();
@@ -1138,9 +1160,16 @@ function parseTimelineBody(body: string): LiquidTimelineProps | null {
     if (evFields.ts) ev.ts = evFields.ts;
     else if (evFields.time) ev.ts = evFields.time;
     if (evFields.detail) ev.detail = evFields.detail;
-    else if (evFields.body) ev.detail = evFields.body;
+    if (evFields.body) {
+      ev.body = evFields.body;
+      if (!ev.detail) ev.detail = evFields.body;
+    }
     if (evFields.lane) ev.lane = evFields.lane;
     if (evFields.emoji) ev.emoji = evFields.emoji;
+    if (evFields.icon) ev.icon = evFields.icon;
+    if (evFields.meta) ev.meta = evFields.meta;
+    if (evFields.image) ev.image = evFields.image;
+    else if (evFields.media) ev.media = evFields.media;
     events.push(ev);
   }
 
@@ -1151,6 +1180,8 @@ function parseTimelineBody(body: string): LiquidTimelineProps | null {
   if (fields.subtitle) timeline.subtitle = fields.subtitle;
   const granularity = fields.granularity?.trim().toLowerCase();
   if (granularity && TIMELINE_GRANULARITIES.has(granularity)) timeline.granularity = granularity;
+  const layout = fields.layout?.trim().toLowerCase() as LiquidTimelineLayout | undefined;
+  if (layout && TIMELINE_LAYOUTS.has(layout)) timeline.layout = layout;
   return timeline;
 }
 
@@ -1181,6 +1212,7 @@ function parseShortlistBody(body: string): LiquidShortlistProps | null {
     if (itemFields.score) item.score = itemFields.score;
     if (itemFields.meta) item.meta = itemFields.meta;
     if (itemFields.emoji) item.emoji = itemFields.emoji;
+    if (itemFields.icon) item.icon = itemFields.icon;
     if (itemFields.image) item.image = itemFields.image;
     items.push(item);
   }
@@ -1522,6 +1554,7 @@ function parseDashboardBody(body: string): LiquidDashboardProps | null {
     };
     if (tileFields.delta) tile.delta = tileFields.delta;
     if (tileFields.emoji) tile.emoji = tileFields.emoji;
+    if (tileFields.icon) tile.icon = tileFields.icon;
     if (tileFields.hint) tile.hint = tileFields.hint;
     else if (tileFields.body) tile.hint = tileFields.body;
     if (tileFields.unit) tile.unit = tileFields.unit;
@@ -1645,6 +1678,7 @@ function parseTabsBody(body: string): LiquidTabsProps | null {
       body: panelBody,
     };
     if (block.emoji) panel.emoji = block.emoji;
+    if (block.icon) panel.icon = block.icon;
     panels.push(panel);
   }
   if (panels.length < 2) return null;
@@ -1673,6 +1707,7 @@ function parseStepsBody(body: string): LiquidStepsProps | null {
     const stepBody = (block.body ?? block.summary)?.trim();
     if (stepBody) step.body = stepBody;
     if (block.emoji) step.emoji = block.emoji;
+    if (block.icon) step.icon = block.icon;
     const status = block.status?.trim().toLowerCase();
     if (status && STEP_STATUSES.has(status)) step.status = status as LiquidStepStatus;
     steps.push(step);
@@ -1709,6 +1744,7 @@ function parseAccordionBody(body: string): LiquidAccordionProps | null {
       body: itemBody,
     };
     if (block.emoji) item.emoji = block.emoji;
+    if (block.icon) item.icon = block.icon;
     const open =
       parseBoolLoose(block.open) ??
       parseBoolLoose(block.default) ??
@@ -2197,12 +2233,7 @@ function applyChartKvFields(
 }
 
 function normalizeIconId(raw: string): string | null {
-  const id = raw.trim().toLowerCase().replace(/_/g, "-");
-  if (!id || !LIQUID_ICON_ALLOWLIST.has(id)) return null;
-  // Canonical kebab form for data attribute
-  return id.replace(/messagecircle/, "message-circle")
-    .replace(/filecode/, "file-code")
-    .replace(/alerttriangle/, "alert-triangle");
+  return normalizeLiquidIconId(raw);
 }
 
 const PROSE_MISTAKEN_FENCE_LANGS = new Set([
@@ -2365,6 +2396,12 @@ function replaceLiquidFenceMatch(
     const media = parseMediaBody(body);
     if (!media) return match;
     return `\n${placeholder("media", media)}\n`;
+  }
+
+  if (lang === "feed") {
+    const feed = parseFeedBody(body);
+    if (!feed) return match;
+    return `\n${placeholder("feed", feed)}\n`;
   }
 
   if (lang === "cite") {

@@ -49,6 +49,6 @@
       onClose={() => layout.setSessionDrawerOpen(false)}
       variant="inline"
     />
-    <ChatPanel visible={true} showPopout={false} />
+    <ChatPanel visible={true} />
   </div>
 </div>

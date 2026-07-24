@@ -10,15 +10,23 @@ import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
 import { vault } from "$lib/stores/vault.svelte";
 import {
   isShellSurfaceTabId,
+  MAX_SHELL_DESKTOPS,
   MAX_SHELL_PANES,
   type EditorGroup,
+  type ShellDesktop,
+  type ShellDesktopLayout,
   type ShellTab,
   type SplitDirection,
   type SplitNode,
 } from "$lib/types/shellTabs";
 import type { Surface } from "$lib/types/ui";
 import { tabDisplayLabel } from "$lib/utils/browserFavicon";
-import { formatSessionLabel } from "$lib/utils/formatSession";
+import {
+  chatPresenceOrSessionLabel,
+  formatSessionLabel,
+  presenceRoomTitle,
+} from "$lib/utils/formatSession";
+import { isChatLaneMessage } from "$lib/utils/askThreads";
 import {
   clampRatio,
   collectGroupIds,
@@ -35,15 +43,16 @@ import {
 
 const MAX_TABS = 16;
 const MAIN_GROUP_ID = "main";
+const DEFAULT_DESKTOP_NAME = "Main";
 const PERSIST_KEY_V1 = "medousa-home-shell-tabs-v1";
-const PERSIST_KEY = "medousa-home-shell-tabs-v2";
+const PERSIST_KEY_V2 = "medousa-home-shell-tabs-v2";
+const PERSIST_KEY = "medousa-home-shell-tabs-v3";
 
-type PersistedV2 = {
-  tabs: ShellTab[];
-  groups: EditorGroup[];
-  splitRoot: SplitNode;
-  activeGroupId: string;
-  zoomedGroupId?: string | null;
+type PersistedV2 = ShellDesktopLayout;
+
+type PersistedV3 = {
+  desktops: ShellDesktop[];
+  activeDesktopId: string;
 };
 
 type PersistedV1 = {
@@ -88,37 +97,105 @@ function surfaceTitle(surfaceId: string): string {
 function focusSurfaceHint(tab: ShellTab | null): string | null {
   if (!tab) return null;
   if (tab.kind === "chat") return "chat";
-  if (tab.kind === "lme") return "library";
+  if (tab.kind === "lme") {
+    // Prefer the open tab’s family — explorerMode is intentionally not synced on activate.
+    // Inline map (avoid importing lmeExplorerModes → circular init with lmeWorkspace).
+    const lme = lmeWorkspace.tabs.find((entry) => entry.tabId === tab.lmeTabId);
+    switch (lme?.kind) {
+      case "script":
+      case "manuscript":
+      case "flow":
+      case "schedule":
+        return "automations";
+      case "note":
+      case "file":
+      case "deck":
+        return "library";
+      default:
+        return "library";
+    }
+  }
   if (tab.kind === "web") return "web";
   return tab.surfaceId;
 }
 
-function loadPersisted(): PersistedV2 | null {
+function newDesktopId(): string {
+  return `desktop-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+}
+
+function emptyLayout(): ShellDesktopLayout {
+  return {
+    tabs: [],
+    groups: [{ id: MAIN_GROUP_ID, tabIds: [], activeTabId: null }],
+    splitRoot: { type: "group", id: MAIN_GROUP_ID },
+    activeGroupId: MAIN_GROUP_ID,
+    zoomedGroupId: null,
+  };
+}
+
+function isValidLayout(parsed: Partial<ShellDesktopLayout> | null | undefined): parsed is ShellDesktopLayout {
+  return Boolean(
+    parsed?.tabs &&
+      parsed?.groups?.length &&
+      parsed?.splitRoot &&
+      parsed?.activeGroupId,
+  );
+}
+
+function layoutFromV1(v1: PersistedV1): ShellDesktopLayout | null {
+  if (!v1?.tabs || !v1?.group) return null;
+  const group = v1.group.id ? v1.group : { ...v1.group, id: MAIN_GROUP_ID };
+  return {
+    tabs: v1.tabs,
+    groups: [group],
+    splitRoot: migrateV1ToSplitRoot(group.id),
+    activeGroupId: group.id,
+    zoomedGroupId: null,
+  };
+}
+
+function loadPersisted(): PersistedV3 | null {
   if (typeof localStorage === "undefined") return null;
   try {
-    const rawV2 = localStorage.getItem(PERSIST_KEY);
-    if (rawV2) {
-      const parsed = JSON.parse(rawV2) as PersistedV2;
+    const rawV3 = localStorage.getItem(PERSIST_KEY);
+    if (rawV3) {
+      const parsed = JSON.parse(rawV3) as PersistedV3;
       if (
-        parsed?.tabs &&
-        parsed?.groups?.length &&
-        parsed?.splitRoot &&
-        parsed?.activeGroupId
+        Array.isArray(parsed?.desktops) &&
+        parsed.desktops.length > 0 &&
+        parsed.activeDesktopId &&
+        parsed.desktops.every(
+          (desktop) =>
+            desktop?.id &&
+            desktop?.name &&
+            isValidLayout(desktop.layout),
+        )
       ) {
         return parsed;
       }
     }
+
+    const rawV2 = localStorage.getItem(PERSIST_KEY_V2);
+    if (rawV2) {
+      const layout = JSON.parse(rawV2) as PersistedV2;
+      if (isValidLayout(layout)) {
+        const id = newDesktopId();
+        return {
+          desktops: [{ id, name: DEFAULT_DESKTOP_NAME, layout }],
+          activeDesktopId: id,
+        };
+      }
+    }
+
     const rawV1 = localStorage.getItem(PERSIST_KEY_V1);
     if (!rawV1) return null;
     const v1 = JSON.parse(rawV1) as PersistedV1;
-    if (!v1?.tabs || !v1?.group) return null;
-    const group = v1.group.id ? v1.group : { ...v1.group, id: MAIN_GROUP_ID };
+    const layout = layoutFromV1(v1);
+    if (!layout) return null;
+    const id = newDesktopId();
     return {
-      tabs: v1.tabs,
-      groups: [group],
-      splitRoot: migrateV1ToSplitRoot(group.id),
-      activeGroupId: group.id,
-      zoomedGroupId: null,
+      desktops: [{ id, name: DEFAULT_DESKTOP_NAME, layout }],
+      activeDesktopId: id,
     };
   } catch {
     return null;
@@ -133,6 +210,8 @@ export class ShellTabsStore {
   splitRoot = $state<SplitNode>({ type: "group", id: MAIN_GROUP_ID });
   activeGroupId = $state(MAIN_GROUP_ID);
   zoomedGroupId = $state<string | null>(null);
+  desktops = $state<ShellDesktop[]>([]);
+  activeDesktopId = $state<string>("");
   /** Pane under an in-progress shell-tab drag (highlight). */
   tabDropTargetGroupId = $state<string | null>(null);
   /** Spotlight / commands request the pane cheat sheet. */
@@ -141,8 +220,13 @@ export class ShellTabsStore {
   forceShowTabsUntil = $state(0);
   forceShowTabsGroupId = $state<string | null>(null);
 
+  /** Cursor-style tab visit history for rail back/forward. */
+  navBackStack = $state<string[]>([]);
+  navForwardStack = $state<string[]>([]);
+
   private bootstrapped = false;
   private suppressMirrorDepth = 0;
+  private navQuiet = false;
 
   private get suppressMirror() {
     return this.suppressMirrorDepth > 0;
@@ -170,23 +254,98 @@ export class ShellTabsStore {
     return this.tabs.find((tab) => tab.id === id) ?? null;
   });
 
+  canGoNavBack = $derived(this.navBackStack.length > 0);
+  canGoNavForward = $derived(this.navForwardStack.length > 0);
+
   orderedTabs = $derived.by(() => this.tabsForGroup(this.activeGroupId));
 
   paneCount = $derived(countLeaves(this.splitRoot));
 
+  activeDesktop = $derived(
+    this.desktops.find((desktop) => desktop.id === this.activeDesktopId) ??
+      this.desktops[0] ??
+      null,
+  );
+
+  activeDesktopName = $derived(this.activeDesktop?.name ?? DEFAULT_DESKTOP_NAME);
+  canCreateDesktop = $derived(this.desktops.length < MAX_SHELL_DESKTOPS);
+
+  private captureLayout(): ShellDesktopLayout {
+    return {
+      tabs: this.tabs,
+      groups: this.groups,
+      splitRoot: this.splitRoot,
+      activeGroupId: this.activeGroupId,
+      zoomedGroupId: this.zoomedGroupId,
+    };
+  }
+
+  private applyLayout(layout: ShellDesktopLayout) {
+    this.tabs = layout.tabs;
+    this.groups = layout.groups.length
+      ? layout.groups
+      : [{ id: MAIN_GROUP_ID, tabIds: [], activeTabId: null }];
+    this.splitRoot = layout.splitRoot;
+    this.activeGroupId = layout.activeGroupId || this.groups[0]!.id;
+    this.zoomedGroupId = layout.zoomedGroupId ?? null;
+  }
+
+  /**
+   * Write the live layout into the active desktop slot.
+   * Only call when switching / renaming / removing — not on every persist.
+   * Reassigning `desktops` from ShellTabHost `$effect` sync paths would
+   * re-trigger those effects and freeze the UI main thread.
+   */
+  private flushActiveDesktop() {
+    if (!this.activeDesktopId || this.desktops.length === 0) return;
+    const layout = this.captureLayout();
+    this.desktops = this.desktops.map((desktop) =>
+      desktop.id === this.activeDesktopId ? { ...desktop, layout } : desktop,
+    );
+  }
+
+  private ensureDesktopCatalog() {
+    if (this.desktops.length > 0 && this.activeDesktopId) return;
+    const id = newDesktopId();
+    this.desktops = [{ id, name: DEFAULT_DESKTOP_NAME, layout: this.captureLayout() }];
+    this.activeDesktopId = id;
+  }
+
+  /** Persist v3 without mutating reactive `desktops` (active layout is live state). */
   private persist() {
     if (typeof localStorage === "undefined") return;
     try {
-      const payload: PersistedV2 = {
-        tabs: this.tabs,
-        groups: this.groups,
-        splitRoot: this.splitRoot,
-        activeGroupId: this.activeGroupId,
-        zoomedGroupId: this.zoomedGroupId,
+      this.ensureDesktopCatalog();
+      const layout = this.captureLayout();
+      const desktops = this.desktops.map((desktop) =>
+        desktop.id === this.activeDesktopId ? { ...desktop, layout } : desktop,
+      );
+      const payload: PersistedV3 = {
+        desktops,
+        activeDesktopId: this.activeDesktopId,
       };
       localStorage.setItem(PERSIST_KEY, JSON.stringify(payload));
     } catch {
       /* ignore */
+    }
+  }
+
+  private async resyncLiveStreams(previousIds: string[]) {
+    const nextIds = this.chatSessionIdsForLiveRestore();
+    const nextSet = new Set(nextIds);
+    for (const sessionId of previousIds) {
+      if (!nextSet.has(sessionId)) {
+        chatStreamPool.release(sessionId);
+      }
+    }
+    for (const sessionId of nextIds) {
+      chatStreamPool.acquire(sessionId);
+    }
+    const principal = chat.sessionId?.trim() ?? "";
+    for (const sessionId of nextIds) {
+      if (sessionId !== principal) {
+        void chat.warmBackgroundSession(sessionId);
+      }
     }
   }
 
@@ -293,17 +452,23 @@ export class ShellTabsStore {
     this.bootstrapped = true;
 
     const persisted = loadPersisted();
-    if (persisted && persisted.tabs.length > 0) {
-      this.tabs = persisted.tabs;
-      this.groups = persisted.groups;
-      this.splitRoot = persisted.splitRoot;
-      this.activeGroupId = persisted.activeGroupId;
-      this.zoomedGroupId = persisted.zoomedGroupId ?? null;
-      const active = this.activeTab;
-      if (active) {
-        void this.activate(active.id, { skipOpen: true });
+    if (persisted) {
+      this.desktops = persisted.desktops;
+      this.activeDesktopId = persisted.activeDesktopId;
+      const activeDesktop =
+        persisted.desktops.find((desktop) => desktop.id === persisted.activeDesktopId) ??
+        persisted.desktops[0]!;
+      this.applyLayout(activeDesktop.layout);
+      if (this.tabs.length > 0) {
+        const active = this.activeTab;
+        if (active) {
+          void this.activate(active.id, { skipOpen: true });
+        }
+        this.persist();
+        return;
       }
-      return;
+    } else {
+      this.ensureDesktopCatalog();
     }
 
     const surface = layout.desktopSurface;
@@ -365,10 +530,15 @@ export class ShellTabsStore {
     }
 
     const session = chat.sessions.find((row) => row.session_id === trimmed);
+    const messages = chat.messagesFor(trimmed);
+    const hasChatOrWorkerMessages = messages.some(
+      (message) => isChatLaneMessage(message) || message.lane === "worker",
+    );
     const title =
       options?.title?.trim() ||
-      (session ? formatSessionLabel(session) : null) ||
-      "Chat";
+      (session
+        ? chatPresenceOrSessionLabel(session, { hasChatOrWorkerMessages })
+        : presenceRoomTitle());
     const tab: ShellTab = {
       id: newTabId("chat"),
       kind: "chat",
@@ -552,6 +722,55 @@ export class ShellTabsStore {
     this.openSurface(surfaceId, { activate: true });
   }
 
+  private recordNavVisit(nextTabId: string) {
+    if (this.navQuiet) return;
+    const current = this.activeTabId;
+    if (!current || current === nextTabId) return;
+    if (!this.tabs.some((tab) => tab.id === current)) return;
+    this.navBackStack = [...this.navBackStack, current].slice(-40);
+    this.navForwardStack = [];
+  }
+
+  private pruneNavStacks() {
+    const alive = new Set(this.tabs.map((tab) => tab.id));
+    this.navBackStack = this.navBackStack.filter((id) => alive.has(id));
+    this.navForwardStack = this.navForwardStack.filter((id) => alive.has(id));
+  }
+
+  async goNavBack() {
+    while (this.navBackStack.length > 0) {
+      const prev = this.navBackStack[this.navBackStack.length - 1]!;
+      this.navBackStack = this.navBackStack.slice(0, -1);
+      if (!this.tabs.some((tab) => tab.id === prev)) continue;
+      const current = this.activeTabId;
+      if (current) this.navForwardStack = [...this.navForwardStack, current];
+      this.navQuiet = true;
+      try {
+        await this.activate(prev);
+      } finally {
+        this.navQuiet = false;
+      }
+      return;
+    }
+  }
+
+  async goNavForward() {
+    while (this.navForwardStack.length > 0) {
+      const next = this.navForwardStack[this.navForwardStack.length - 1]!;
+      this.navForwardStack = this.navForwardStack.slice(0, -1);
+      if (!this.tabs.some((tab) => tab.id === next)) continue;
+      const current = this.activeTabId;
+      if (current) this.navBackStack = [...this.navBackStack, current];
+      this.navQuiet = true;
+      try {
+        await this.activate(next);
+      } finally {
+        this.navQuiet = false;
+      }
+      return;
+    }
+  }
+
   async activate(tabId: string, options?: { skipOpen?: boolean }) {
     const tab = this.tabs.find((entry) => entry.id === tabId);
     if (!tab) return;
@@ -566,6 +785,10 @@ export class ShellTabsStore {
       // Flush vault drafts before shell remounts / swaps the active host.
       const ok = await vault.flushBeforeLeave();
       if (!ok) return;
+    }
+
+    if (tabId !== this.activeTabId) {
+      this.recordNavVisit(tabId);
     }
 
     const host = this.groupForTab(tabId);
@@ -630,6 +853,7 @@ export class ShellTabsStore {
     const host = this.groupForTab(tabId);
     const wasActive = this.activeTabId === tabId && host?.id === this.activeGroupId;
     this.removeTabFromAllGroups(tabId);
+    this.pruneNavStacks();
 
     this.beginSuppressMirror();
     try {
@@ -872,7 +1096,18 @@ export class ShellTabsStore {
       if (tab.kind === "chat") {
         const session = chat.sessions.find((row) => row.session_id === tab.sessionId);
         if (!session) return tab;
-        const title = formatSessionLabel(session);
+        const messages = chat.messagesFor(tab.sessionId);
+        const hasChatOrWorkerMessages = messages.some(
+          (message) => isChatLaneMessage(message) || message.lane === "worker",
+        );
+        // While hydrating an empty buffer, keep the existing tab title so we
+        // don't flash a Presence label over a session that still has turns.
+        if (!hasChatOrWorkerMessages && chat.historyLoadingFor(tab.sessionId)) {
+          return tab;
+        }
+        const title = chatPresenceOrSessionLabel(session, {
+          hasChatOrWorkerMessages,
+        });
         if (title !== tab.title) {
           changed = true;
           return { ...tab, title };
@@ -967,6 +1202,112 @@ export class ShellTabsStore {
     if (!group?.activeTabId) return null;
     const tab = this.tabs.find((entry) => entry.id === group.activeTabId);
     return tab?.kind === "chat" ? tab.sessionId : null;
+  }
+
+  createDesktop(name?: string): string {
+    this.ensureDesktopCatalog();
+    if (this.desktops.length >= MAX_SHELL_DESKTOPS) return "";
+    this.flushActiveDesktop();
+    const trimmed = name?.trim() || `Desktop ${this.desktops.length + 1}`;
+    const id = newDesktopId();
+    this.desktops = [
+      ...this.desktops,
+      { id, name: trimmed, layout: emptyLayout() },
+    ];
+    this.persist();
+    void this.switchDesktop(id);
+    return id;
+  }
+
+  /** Switch by 0-based catalog index (Ctrl+; 1–4). No-op if index is empty. */
+  async switchDesktopAt(index: number): Promise<boolean> {
+    this.ensureDesktopCatalog();
+    if (!Number.isInteger(index) || index < 0 || index >= this.desktops.length) {
+      return false;
+    }
+    const target = this.desktops[index];
+    if (!target) return false;
+    return this.switchDesktop(target.id);
+  }
+
+  async switchDesktop(desktopId: string): Promise<boolean> {
+    this.ensureDesktopCatalog();
+    const trimmed = desktopId.trim();
+    if (!trimmed || trimmed === this.activeDesktopId) return false;
+    const target = this.desktops.find((desktop) => desktop.id === trimmed);
+    if (!target) return false;
+
+    const previousIds = this.chatSessionIdsForLiveRestore();
+    this.flushActiveDesktop();
+    this.applyLayout(target.layout);
+    this.activeDesktopId = trimmed;
+    this.persist();
+
+    const active = this.activeTab;
+    if (active) {
+      await this.activate(active.id, { skipOpen: true });
+    } else {
+      this.syncLayoutHint(null);
+    }
+    await this.resyncLiveStreams(previousIds);
+    return true;
+  }
+
+  renameDesktop(desktopId: string, name: string): boolean {
+    const trimmedName = name.trim();
+    if (!trimmedName) return false;
+    const trimmedId = desktopId.trim() || this.activeDesktopId;
+    if (!this.desktops.some((desktop) => desktop.id === trimmedId)) return false;
+    this.flushActiveDesktop();
+    this.desktops = this.desktops.map((desktop) =>
+      desktop.id === trimmedId ? { ...desktop, name: trimmedName } : desktop,
+    );
+    this.persist();
+    return true;
+  }
+
+  async removeDesktop(desktopId?: string): Promise<boolean> {
+    this.ensureDesktopCatalog();
+    if (this.desktops.length <= 1) return false;
+    const trimmed = (desktopId ?? this.activeDesktopId).trim();
+    const index = this.desktops.findIndex((desktop) => desktop.id === trimmed);
+    if (index < 0) return false;
+
+    const removingActive = trimmed === this.activeDesktopId;
+    const previousIds = removingActive ? this.chatSessionIdsForLiveRestore() : [];
+    this.flushActiveDesktop();
+    const nextDesktops = this.desktops.filter((desktop) => desktop.id !== trimmed);
+    const fallback =
+      nextDesktops[Math.max(0, index - 1)] ?? nextDesktops[0]!;
+    this.desktops = nextDesktops;
+
+    if (removingActive) {
+      this.applyLayout(fallback.layout);
+      this.activeDesktopId = fallback.id;
+      this.persist();
+      const active = this.activeTab;
+      if (active) {
+        await this.activate(active.id, { skipOpen: true });
+      } else {
+        this.syncLayoutHint(null);
+      }
+      await this.resyncLiveStreams(previousIds);
+    } else {
+      this.persist();
+    }
+    return true;
+  }
+
+  cycleDesktop(delta = 1): void {
+    this.ensureDesktopCatalog();
+    if (this.desktops.length < 2) return;
+    const index = this.desktops.findIndex(
+      (desktop) => desktop.id === this.activeDesktopId,
+    );
+    const from = index < 0 ? 0 : index;
+    const next =
+      this.desktops[(from + delta + this.desktops.length) % this.desktops.length];
+    if (next) void this.switchDesktop(next.id);
   }
 }
 

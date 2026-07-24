@@ -4,6 +4,8 @@
   import { exportIdentityMarkdown } from "$lib/daemon";
   import { userProfiles } from "$lib/stores/userProfiles.svelte";
   import { isTauriMobilePlatform } from "$lib/platform";
+  import { PROFILES_ADD_PROFILE_EVENT } from "$lib/utils/profilesChromeEvents";
+  import { onMount } from "svelte";
 
   interface Props {
     mobile?: boolean;
@@ -13,6 +15,15 @@
 
   let open = $state(false);
   let sheetOpen = $state(false);
+
+  onMount(() => {
+    const onAddProfile = () => {
+      open = false;
+      sheetOpen = true;
+    };
+    window.addEventListener(PROFILES_ADD_PROFILE_EVENT, onAddProfile);
+    return () => window.removeEventListener(PROFILES_ADD_PROFILE_EVENT, onAddProfile);
+  });
   let exportBusy = $state(false);
   let createSlug = $state("");
   let createName = $state("");

@@ -34,7 +34,7 @@ function defaultSurfaces() {
     { id: "calendar", label: "Calendar", icon: "calendar-days", builtinId: "calendar" },
     { id: "web", label: "Web", icon: "globe", builtinId: "web", mobileTab: "web" },
     { id: "context", label: "Context", icon: "orbit", builtinId: "context" },
-    { id: "automations", label: "Automations", icon: "calendar", builtinId: "automations" },
+    { id: "automations", label: "Automations", icon: "zap", builtinId: "automations" },
     { id: "messaging", label: "Messaging", icon: "radio", builtinId: "messaging" },
     {
       id: SAFETY_SURFACE_RUNTIME,

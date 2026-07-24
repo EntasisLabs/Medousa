@@ -18,7 +18,12 @@
     humanDigestLines,
   } from "$lib/utils/profileShelf";
   import ShellSidebarExpandButton from "$lib/components/layout/ShellSidebarExpandButton.svelte";
+  import {
+    PROFILES_ADD_PERSON_EVENT,
+    PROFILES_FOCUS_TEACH_EVENT,
+  } from "$lib/utils/profilesChromeEvents";
   import { UserPlus } from "@lucide/svelte";
+  import { onMount } from "svelte";
 
   interface Props {
     visible: boolean;
@@ -124,6 +129,21 @@
     selectedBlob = null;
     await refreshField();
   }
+
+  onMount(() => {
+    const onAddPerson = () => {
+      personSheetOpen = true;
+    };
+    const onFocusTeach = () => {
+      teachFocusNonce += 1;
+    };
+    window.addEventListener(PROFILES_ADD_PERSON_EVENT, onAddPerson);
+    window.addEventListener(PROFILES_FOCUS_TEACH_EVENT, onFocusTeach);
+    return () => {
+      window.removeEventListener(PROFILES_ADD_PERSON_EVENT, onAddPerson);
+      window.removeEventListener(PROFILES_FOCUS_TEACH_EVENT, onFocusTeach);
+    };
+  });
 </script>
 
 <section

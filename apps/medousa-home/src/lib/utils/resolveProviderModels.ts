@@ -19,7 +19,7 @@ import {
 
 export type ResolveProviderModelsOptions = {
   /** Filter daemon catalog by capability (e.g. "vision"). */
-  capability?: string;
+  capability?: "vision" | "text";
   /** Inline API key (onboarding) — passed to live listing when set. */
   apiKey?: string;
   /** Override base URL (onboarding / unsaved draft). */
@@ -39,9 +39,14 @@ export async function resolveModelsForProvider(
 
   if (entry.id !== CUSTOM_PROVIDER_CATALOG_ID) {
     try {
+      const capabilityRaw = options?.capability?.trim();
+      const capability =
+        capabilityRaw === "vision" || capabilityRaw === "text"
+          ? capabilityRaw
+          : undefined;
       const response = await listModelCatalog({
         provider: entry.id,
-        capability: options?.capability?.trim() || undefined,
+        capability,
       });
       const fromCatalog = response.models.filter(
         (record) =>

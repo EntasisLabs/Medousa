@@ -44,6 +44,46 @@ export function vaultBreadcrumb(path: string): string {
   return folderParts.join(" › ");
 }
 
+/** VS Code–style path crumbs (folders + current file). */
+export interface VaultPathCrumb {
+  label: string;
+  /** Accumulated vault path (folders without trailing slash; file = full path). */
+  key: string;
+  kind: "folder" | "file";
+}
+
+export function vaultPathCrumbs(
+  path: string,
+  fileTitle?: string | null,
+): VaultPathCrumb[] {
+  const cleaned = vaultDisplayPath(path.trim());
+  const raw = cleaned.split("/").filter(Boolean);
+  if (raw.length === 0) return [];
+
+  const crumbs: VaultPathCrumb[] = [];
+  let acc = "";
+  for (let i = 0; i < raw.length; i++) {
+    const part = raw[i]!;
+    acc = acc ? `${acc}/${part}` : part;
+    const isFile = i === raw.length - 1;
+    const stem = humanizeStem(part.replace(/\.md$/i, ""));
+    const label =
+      isFile && fileTitle?.trim()
+        ? vaultDisplayTitle(fileTitle, path)
+        : stem;
+    if (
+      !isFile &&
+      crumbs.length > 0 &&
+      crumbs[crumbs.length - 1]!.label.toLowerCase() === label.toLowerCase()
+    ) {
+      crumbs[crumbs.length - 1] = { label, key: acc, kind: "folder" };
+      continue;
+    }
+    crumbs.push({ label, key: acc, kind: isFile ? "file" : "folder" });
+  }
+  return crumbs;
+}
+
 /** Disambiguate duplicate display titles in the vault tree. */
 export function buildVaultLabelMap(notes: VaultNote[]): Map<string, string> {
   const baseByPath = new Map<string, string>();

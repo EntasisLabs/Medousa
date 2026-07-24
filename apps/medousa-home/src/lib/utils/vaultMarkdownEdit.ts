@@ -17,6 +17,7 @@ import {
   LIQUID_COMPARE_TEMPLATE,
   LIQUID_DASHBOARD_TEMPLATE,
   LIQUID_DECISION_TEMPLATE,
+  LIQUID_FEED_TEMPLATE,
   LIQUID_KANBAN_TEMPLATE,
   LIQUID_MEDIA_TEMPLATE,
   LIQUID_PLAN_TEMPLATE,
@@ -84,6 +85,7 @@ export type SlashBlockId =
   | "liquid_shortlist"
   | "liquid_decision"
   | "liquid_brief"
+  | "liquid_feed"
   | "liquid_chart"
   | "liquid_dashboard"
   | "liquid_report"
@@ -482,6 +484,7 @@ export function insertSlashBlock(
     liquid_shortlist: LIQUID_SHORTLIST_TEMPLATE,
     liquid_decision: LIQUID_DECISION_TEMPLATE,
     liquid_brief: LIQUID_BRIEF_TEMPLATE,
+    liquid_feed: LIQUID_FEED_TEMPLATE,
     liquid_chart: LIQUID_CHART_TEMPLATE,
     liquid_dashboard: LIQUID_DASHBOARD_TEMPLATE,
     liquid_report: LIQUID_REPORT_TEMPLATE,
@@ -834,6 +837,7 @@ export const SLASH_BLOCK_IDS: SlashBlockId[] = [
   "liquid_shortlist",
   "liquid_decision",
   "liquid_brief",
+  "liquid_feed",
   "liquid_chart",
   "liquid_dashboard",
   "liquid_report",

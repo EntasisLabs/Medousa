@@ -10,7 +10,7 @@ const shellTabs = {
   nextTabInActiveGroup: vi.fn(),
   prevTabInActiveGroup: vi.fn(),
   flashTabs: vi.fn(),
-  focusPaneIndex: vi.fn(),
+  switchDesktopAt: vi.fn(async () => true),
   clearZoom: vi.fn(),
   activeTab: null as { kind: string; sessionId: string } | null,
   zoomedGroupId: null as string | null,
@@ -52,5 +52,13 @@ describe("dispatchPrefixCommand", () => {
     const onCheatSheet = vi.fn();
     expect(dispatchPrefixCommand("?", "?", { onCheatSheet })).toBe(true);
     expect(onCheatSheet).toHaveBeenCalled();
+  });
+
+  it("switches virtual desktop on 1–4", async () => {
+    const { dispatchPrefixCommand } = await import("./shellPaneHotkeys");
+    expect(dispatchPrefixCommand("2", "2")).toBe(true);
+    expect(shellTabs.switchDesktopAt).toHaveBeenCalledWith(1);
+    expect(dispatchPrefixCommand("5", "5")).toBe(false);
+    expect(shellTabs.switchDesktopAt).toHaveBeenCalledTimes(1);
   });
 });

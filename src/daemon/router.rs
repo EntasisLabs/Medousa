@@ -176,6 +176,56 @@ pub fn build_feature_routers(
             axum::routing::get(crate::vault_handlers::get_vault_note)
                 .put(crate::vault_handlers::put_vault_note)
                 .delete(crate::vault_handlers::delete_vault_note),
+        )
+        .route(
+            "/v1/vault/trash",
+            axum::routing::get(crate::vault_handlers::list_vault_trash),
+        )
+        .route(
+            "/v1/vault/trash/restore",
+            axum::routing::post(crate::vault_handlers::restore_vault_trash),
+        )
+        .route(
+            "/v1/vault/git/detect",
+            axum::routing::get(crate::vault_git_handlers::vault_git_detect),
+        )
+        .route(
+            "/v1/vault/git/status",
+            axum::routing::get(crate::vault_git_handlers::vault_git_status),
+        )
+        .route(
+            "/v1/vault/git/enable",
+            axum::routing::post(crate::vault_git_handlers::vault_git_enable),
+        )
+        .route(
+            "/v1/vault/git/init",
+            axum::routing::post(crate::vault_git_handlers::vault_git_init),
+        )
+        .route(
+            "/v1/vault/git/install",
+            axum::routing::post(crate::vault_git_handlers::vault_git_install),
+        )
+        .route(
+            "/v1/vault/git/log",
+            axum::routing::get(crate::vault_git_handlers::vault_git_log),
+        )
+        .route(
+            "/v1/vault/git/commit",
+            axum::routing::post(crate::vault_git_handlers::vault_git_commit),
+        )
+        .route(
+            "/v1/vault/git/restore",
+            axum::routing::post(crate::vault_git_handlers::vault_git_restore),
+        )
+        .route(
+            "/v1/vault/git/diff",
+            axum::routing::get(crate::vault_git_handlers::vault_git_diff),
+        )
+        .route(
+            "/v1/vault/git/worktrees",
+            axum::routing::get(crate::vault_git_handlers::vault_git_worktrees_list)
+                .post(crate::vault_git_handlers::vault_git_worktrees_add)
+                .delete(crate::vault_git_handlers::vault_git_worktrees_remove),
         );
 
     let workspace_router = Router::new()

@@ -5,7 +5,6 @@
     Code2,
     Columns3,
     Search,
-    StickyNote,
     Table2,
   } from "@lucide/svelte";
   import ShellSidebarExpandButton from "$lib/components/layout/ShellSidebarExpandButton.svelte";
@@ -21,7 +20,6 @@
     prepareTalkAboutNote,
   } from "$lib/utils/vaultNoteBridge";
   import { launchVaultNoteWorkshop } from "$lib/utils/vaultNoteWorkshop";
-  import { iconForSpace } from "$lib/utils/vaultSpaceIcons";
   import { findLedgerTable } from "$lib/utils/markdownTable";
   import { findKanbanBoard, noteHasKanbanBoard } from "$lib/utils/markdownKanban";
   import { noteHasSlidesDeck } from "$lib/utils/markdownSlides";
@@ -37,18 +35,19 @@
   import VaultNoteLinksPanel from "./VaultNoteLinksPanel.svelte";
   import VaultConflictBar from "./VaultConflictBar.svelte";
   import VaultProposalBar from "./VaultProposalBar.svelte";
+  import VaultVersionsPanel from "./VaultVersionsPanel.svelte";
   import VaultMarkdownEditor from "./VaultMarkdownEditor.svelte";
   import VaultNoteActionsMenu from "./VaultNoteActionsMenu.svelte";
   import VaultViewBuilderSheet from "./VaultViewBuilderSheet.svelte";
   import VaultEditorOverflowMenu from "./VaultEditorOverflowMenu.svelte";
   import VaultLinkedFilesMenu from "./VaultLinkedFilesMenu.svelte";
+  import VaultPathBar from "./VaultPathBar.svelte";
   import {
     supportsLinksPanel,
     supportsPreviewSplit,
   } from "$lib/utils/vaultNoteKind";
   import VaultNoteChatFab from "./VaultNoteChatFab.svelte";
   import VaultFindBar from "./VaultFindBar.svelte";
-  import VaultNoteStatusBar from "./VaultNoteStatusBar.svelte";
   import { vaultFind } from "$lib/stores/vaultFind.svelte";
   import { noteEditorRuntimes } from "$lib/stores/noteEditorRuntimes.svelte";
   import { registerVaultLeaveFlush } from "$lib/stores/vaultLeaveFlush";
@@ -141,19 +140,6 @@
         ? vaultBreadcrumb(notePath)
         : null,
   );
-
-  const activeSpace = $derived(vault.activeSpace);
-  const SpaceIcon = $derived(
-    activeSpace ? iconForSpace(activeSpace.id) : null,
-  );
-
-  const showBreadcrumb = $derived.by(() => {
-    if (!breadcrumb) return false;
-    if (activeSpace && breadcrumb.toLowerCase() === activeSpace.label.toLowerCase()) {
-      return false;
-    }
-    return true;
-  });
 
   const labelByPath = $derived(vault.labelByPathMap);
   /** Content frontmatter wins so chrome kind can't snap sheet → note after buffer restore. */
@@ -341,15 +327,6 @@
 
   const findMode = $derived<"edit" | "preview">(
     showMarkdownEditor && vault.editorMode === "edit" ? "edit" : "preview",
-  );
-
-  const showNoteStatus = $derived(
-    Boolean(vault.selectedPath) &&
-      !vault.noteLoading &&
-      !showLedgerTable &&
-      !showWorkbookManifest &&
-      !showKanbanBoard &&
-      !showSlidesDeck,
   );
 
   $effect(() => {
@@ -652,37 +629,22 @@
   data-note-kind={noteKind}
 >
   {#if !mobile && !stickyNote}
-    <header class="vault-editor-header workshop-header flex items-center justify-between gap-3 py-3">
-      <div class="min-w-0" title={notePath ?? undefined}>
-        {#if bound && activeSpace && SpaceIcon}
-          <p class="mb-1 flex items-center gap-1.5 text-xs font-medium text-primary-300">
-            <SpaceIcon size={13} strokeWidth={2} />
-            {activeSpace.label}
-          </p>
-        {/if}
-        {#if showBreadcrumb}
-          <p class="workshop-faint truncate">{breadcrumb}</p>
-        {/if}
-        <div class="flex min-w-0 items-center gap-2">
-          <h1 class="truncate text-base font-semibold">{displayTitle}</h1>
-          {#if bound && vault.isLooseFile}
-            <span
-              class="badge variant-soft-warning shrink-0 text-xs font-medium"
-              title="Editing a single file outside the vault"
-            >
-              Loose file
-            </span>
-          {/if}
-        </div>
-        {#if bound && vault.selectedPath && vault.editorMode === "preview"}
-          <p class="mt-1 text-[11px] text-surface-500">
-            Press <kbd class="vault-kbd">E</kbd> to edit · <kbd class="vault-kbd">{formatShortcut("F")}</kbd> to find
-            · type <kbd class="vault-kbd">/</kbd> on a new line for blocks
-          </p>
-        {/if}
-      </div>
+    <header
+      class="vault-editor-header workshop-header flex items-center gap-2 px-3 py-1"
+      title={notePath ? `${displayTitle} — ${notePath}` : displayTitle}
+    >
+      {#if bound && vault.isLooseFile}
+        <span
+          class="badge variant-soft-warning shrink-0 text-xs font-medium"
+          title="Editing a single file outside the vault"
+        >
+          Loose file
+        </span>
+      {:else if bound && notePath}
+        <VaultPathBar path={notePath} title={displayTitle} />
+      {/if}
 
-      <div class="vault-editor-tools flex shrink-0 flex-wrap items-center justify-end gap-0.5">
+      <div class="vault-editor-tools ml-auto flex shrink-0 items-center justify-end gap-0.5">
         {#if bound}
         <ShellSidebarExpandButton label="Show workspace browser" />
 
@@ -820,21 +782,8 @@
           </div>
         {/if}
 
-        {#if vault.selectedPath}
+        {#if vault.selectedPath && vault.attachments.length > 0}
           <VaultLinkedFilesMenu disabled={vault.noteLoading || vault.saving} />
-        {/if}
-
-        {#if canFloatSticky}
-          <button
-            type="button"
-            class="vault-editor-icon-btn"
-            title="Float note"
-            aria-label="Float note"
-            disabled={vault.noteLoading || vault.saving}
-            onclick={() => void handleFloatSticky()}
-          >
-            <StickyNote size={15} strokeWidth={1.75} />
-          </button>
         {/if}
 
         <button
@@ -935,7 +884,7 @@
           onFloatNote={canFloatSticky ? handleFloatSticky : undefined}
         />
 
-        {#if !vault.isLooseFile && vault.selectedPath}
+        {#if !vault.isLooseFile && vault.selectedPath && noteKind !== "note"}
           <VaultKindBadge
             kind={noteKind}
             path={vault.selectedPath}
@@ -996,6 +945,9 @@
         {labelByPath}
         onWikilink={undefined}
       />
+      {#if interactive && bound}
+        <VaultVersionsPanel />
+      {/if}
     </div>
   {:else}
     <div class="relative flex min-h-0 min-w-0 max-w-full flex-1 overflow-hidden">
@@ -1088,16 +1040,10 @@
           onOpenNote={(path) => vault.openNote(path)}
         />
       {/if}
+      {#if interactive && bound}
+        <VaultVersionsPanel />
+      {/if}
     </div>
-  {/if}
-
-  {#if showNoteStatus && bound}
-    <VaultNoteStatusBar
-      content={displayContent}
-      tags={vault.noteTags}
-      editorMode={vault.editorMode}
-      dense={isLivePlane}
-    />
   {/if}
 
   {#if interactive && bound && vault.selectedPath && !mobile && !noteWorkshop.open && !vault.isLooseFile && environment.desktopShellChrome.vaultChatFab}

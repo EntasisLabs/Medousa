@@ -13,10 +13,16 @@
   interface Props {
     open: boolean;
     onClose?: () => void;
+    /** Fired after a session is opened/created (e.g. close a rail popover). */
+    onPick?: () => void;
     variant?: "drawer" | "inline" | "sheet";
+    /** `rail-list` hides the built-in toolbar (actions live in the rail popover strip). */
+    chrome?: "default" | "rail-list";
   }
 
-  let { open, onClose, variant = "drawer" }: Props = $props();
+  let { open, onClose, onPick, variant = "drawer", chrome = "default" }: Props = $props();
+
+  const showBuiltInToolbar = $derived(chrome !== "rail-list");
 
   let query = $state("");
   let searchTimer: ReturnType<typeof setTimeout> | null = null;
@@ -39,13 +45,25 @@
       query = chat.sessionListQuery;
       void chat.refreshSessions({ force: true, q: query });
       // Autofocus so the drawer feels interactive immediately.
-      queueMicrotask(() => searchInputEl?.focus());
+      if (showBuiltInToolbar) {
+        queueMicrotask(() => searchInputEl?.focus());
+      }
     }
+  });
+
+  // Keep list filter in sync when rail toolbar owns the search field.
+  $effect(() => {
+    if (!open || chrome !== "rail-list") return;
+    query = chat.sessionListQuery;
   });
 
   $effect(() => {
     const needle = query;
     if (!open) return;
+    if (chrome === "rail-list") {
+      // Rail toolbar drives refreshSessions; only mirror query for filtering.
+      return;
+    }
     if (searchTimer) clearTimeout(searchTimer);
     searchTimer = setTimeout(() => {
       searchTimer = null;
@@ -113,6 +131,7 @@
 
   async function selectSession(sessionId: string) {
     await chat.switchSession(sessionId);
+    onPick?.();
     if (variant === "drawer" || variant === "sheet") {
       layout.setSessionDrawerOpen(false);
       onClose?.();
@@ -121,6 +140,7 @@
 
   async function createSession() {
     await chat.newSession();
+    onPick?.();
     if (variant === "drawer" || variant === "sheet") {
       layout.setSessionDrawerOpen(false);
       onClose?.();
@@ -257,28 +277,30 @@
 
 {#snippet sessionPanelBody()}
   <div class="flex min-h-0 flex-1 flex-col">
-    <div class="session-sidebar-toolbar {variant === 'sheet' ? 'session-sidebar-toolbar--sheet' : ''}">
-      <label class="session-sidebar-search">
-        <Search size={14} strokeWidth={1.75} class="session-sidebar-search-icon" aria-hidden="true" />
-        <input
-          bind:this={searchInputEl}
-          class="session-sidebar-search-input"
-          type="search"
-          placeholder="Search titles…"
-          bind:value={query}
-        />
-      </label>
-      <button
-        type="button"
-        class="session-sidebar-new"
-        title="New chat"
-        aria-label="New chat"
-        onclick={createSession}
-      >
-        <Plus size={15} strokeWidth={2} />
-        <span class="session-sidebar-new-label">New</span>
-      </button>
-    </div>
+    {#if showBuiltInToolbar}
+      <div class="session-sidebar-toolbar {variant === 'sheet' ? 'session-sidebar-toolbar--sheet' : ''}">
+        <label class="session-sidebar-search">
+          <Search size={14} strokeWidth={1.75} class="session-sidebar-search-icon" aria-hidden="true" />
+          <input
+            bind:this={searchInputEl}
+            class="session-sidebar-search-input"
+            type="search"
+            placeholder="Search titles…"
+            bind:value={query}
+          />
+        </label>
+        <button
+          type="button"
+          class="session-sidebar-new"
+          title="New chat"
+          aria-label="New chat"
+          onclick={createSession}
+        >
+          <Plus size={15} strokeWidth={2} />
+          <span class="session-sidebar-new-label">New</span>
+        </button>
+      </div>
+    {/if}
 
     {#if chat.sessionsError}
       <p class="px-3 py-2 text-xs text-error-400">{chat.sessionsError}</p>

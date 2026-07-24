@@ -16,6 +16,7 @@
   import {
     createBrowserCompositor,
     registerBrowserCompositor,
+    unregisterBrowserCompositor,
     type BrowserCompositor,
     type BrowserCompositorState,
   } from "$lib/utils/browserCompositor";
@@ -121,8 +122,9 @@
       if (useNative) {
         window.removeEventListener("medousa-browser-url-focus", onUrlFocus);
         window.removeEventListener("medousa-browser-url-blur", onUrlBlur);
-        compositor?.detach();
-        registerBrowserCompositor(null);
+        const active = compositor;
+        active?.detach();
+        if (active) unregisterBrowserCompositor(active);
         compositor = null;
       }
     };

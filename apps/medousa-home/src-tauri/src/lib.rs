@@ -117,6 +117,30 @@ pub fn run() {
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             setup_desktop_tray(app)?;
 
+            // Unified title bar: macOS Overlay traffic lights over content; Win/Linux
+            // frameless so HTML window controls own the chrome (see AppTitlebar).
+            // Platform tauri.*.conf.json must also set these — those files replace the
+            // windows[] list and previously dropped Overlay/hiddenTitle (double chrome).
+            #[cfg(target_os = "macos")]
+            {
+                if let Some(main) = app.get_webview_window("main") {
+                    if let Err(err) = main.set_title_bar_style(tauri::TitleBarStyle::Overlay) {
+                        eprintln!("[medousa-home] set_title_bar_style(Overlay): {err}");
+                    }
+                }
+            }
+            #[cfg(all(
+                not(any(target_os = "ios", target_os = "android")),
+                not(target_os = "macos")
+            ))]
+            {
+                if let Some(main) = app.get_webview_window("main") {
+                    if let Err(err) = main.set_decorations(false) {
+                        eprintln!("[medousa-home] set_decorations(false): {err}");
+                    }
+                }
+            }
+
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             {
                 human_browser::init_app_handle(app.handle().clone());
@@ -335,6 +359,8 @@ pub fn run() {
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             human_browser::human_browser_set_mobile_shell_active,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            human_browser::human_browser_report_location,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
             human_browser::human_browser_report_title,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             human_browser::human_browser_report_snapshot,
@@ -471,6 +497,7 @@ pub fn run() {
             daemon::environment::environment_apply_pending,
             daemon::environment::environment_dismiss_pending,
             daemon::feeds::feed_tail,
+            daemon::feeds::feed_latest_good,
             daemon::component_store::component_store_get,
             daemon::component_store::component_store_set,
             daemon::component_store::component_store_delete,
@@ -496,6 +523,18 @@ pub fn run() {
             daemon::vault::vault_delete_note,
             daemon::vault::vault_search,
             daemon::vault::vault_backlinks,
+            daemon::vault::vault_list_trash,
+            daemon::vault::vault_restore_trash,
+            daemon::vault_git::vault_git_detect,
+            daemon::vault_git::vault_git_status,
+            daemon::vault_git::vault_git_enable,
+            daemon::vault_git::vault_git_init,
+            daemon::vault_git::vault_git_install,
+            daemon::vault_git::vault_git_log,
+            daemon::vault_git::vault_git_commit,
+            daemon::vault_git::vault_git_restore,
+            daemon::vault_git::vault_git_diff,
+            daemon::vault_git::vault_git_worktrees,
             daemon::calendar::calendar_list_events,
             daemon::calendar::calendar_create_event,
             daemon::calendar::calendar_update_event,

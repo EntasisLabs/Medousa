@@ -154,6 +154,28 @@ impl VaultService {
         })
     }
 
+    pub fn list_trash(limit: usize) -> Result<crate::daemon_api::VaultTrashListResponse> {
+        let entries = vault_store()
+            .list_trash(limit)?
+            .into_iter()
+            .map(|(path, trashed_at)| crate::daemon_api::VaultTrashEntry {
+                path,
+                trashed_at: trashed_at.map(|ts| ts.to_rfc3339()),
+            })
+            .collect();
+        Ok(crate::daemon_api::VaultTrashListResponse { entries })
+    }
+
+    pub fn restore_from_trash(
+        path: &str,
+    ) -> Result<crate::daemon_api::VaultTrashRestoreResponse> {
+        let restored_path = vault_store().restore_from_trash(path)?;
+        Ok(crate::daemon_api::VaultTrashRestoreResponse {
+            path: restored_path,
+            restored: true,
+        })
+    }
+
     pub fn relocate_note(from_path: &str, to_path: &str) -> Result<VaultWriteResponse> {
         let from = from_path.trim();
         let to = to_path.trim();

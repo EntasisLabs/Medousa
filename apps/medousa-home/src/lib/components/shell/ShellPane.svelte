@@ -3,6 +3,7 @@
   import CalendarPanel from "$lib/components/calendar/CalendarPanel.svelte";
   import ChatSessionView from "$lib/components/chat/ChatSessionView.svelte";
   import ChatPaneIdle from "$lib/components/shell/ChatPaneIdle.svelte";
+  import WebPaneIdle from "$lib/components/shell/WebPaneIdle.svelte";
   import { chatStreamPool } from "$lib/stores/chatStreamPool.svelte";
   import ContextPanel from "$lib/components/context/ContextPanel.svelte";
   import EnvironmentRenderer from "$lib/components/environment/EnvironmentRenderer.svelte";
@@ -15,9 +16,9 @@
   import ShellTabStrip from "$lib/components/shell/ShellTabStrip.svelte";
   import WorkPanel from "$lib/components/work/WorkPanel.svelte";
   import { chat } from "$lib/stores/chat.svelte";
-  import { layout } from "$lib/stores/layout.svelte";
   import { shellTabs } from "$lib/stores/shellTabs.svelte";
   import { workspace } from "$lib/stores/workspace.svelte";
+  import { usesUnifiedTitlebar } from "$lib/platform";
   import type { DaemonHealth } from "$lib/daemon";
   import { refreshDaemonHealth } from "$lib/workshopConnection";
 
@@ -65,22 +66,18 @@
       shellTabs.tabDropTargetGroupId === groupId,
   );
 
-  /** Tabs only when the pointer is near the top of this pane (or drag/force). */
+  /**
+   * Desktop Tauri hosts tabs in AppTitlebar — no in-pane strip (avoids double rows,
+   * including webview panes). Browser / mobile keep hover or in-flow tabs.
+   */
+  const unifiedTitlebar = $derived(usesUnifiedTitlebar());
+  const webChrome = $derived(activeTab?.kind === "web");
   const showTabs = $derived(
-    tabs.length > 0 && (nearTop || overStrip || forceTabs),
+    !unifiedTitlebar &&
+      tabs.length > 0 &&
+      (webChrome || nearTop || overStrip || forceTabs),
   );
-  /**
-   * When the master rail is collapsed, views show a left expand control in the
-   * top chrome. Inset the hover tab strip so it never covers that icon.
-   */
-  const tabStripOffsetLeft = $derived(
-    !layout.isMobile && !layout.shellSidebarExpanded ? "2.25rem" : "0px",
-  );
-  /**
-   * Reserve the titlebar action cluster (Save / Run / Tools / Schedule, etc.)
-   * so hover tabs never cover clickable chrome on the right.
-   */
-  /** Room for flow/agent titlebar actions (add / plan / run / schedule / discard). */
+  /** Room for flow/agent titlebar actions when hover tabs are still in-pane. */
   const tabStripOffsetRight = "11.5rem";
   const tabActionReservePx = 184;
   const dropTarget = $derived(shellTabs.tabDropTargetGroupId === groupId);
@@ -106,6 +103,7 @@
   }
 
   function handlePanePointerMove(event: PointerEvent) {
+    if (unifiedTitlebar) return;
     const target = event.currentTarget as HTMLElement;
     const rect = target.getBoundingClientRect();
     const y = event.clientY - rect.top;
@@ -129,16 +127,20 @@
   data-group-id={groupId}
   role="group"
   aria-label="Editor pane"
-  onpointermove={handlePanePointerMove}
-  onpointerleave={handlePanePointerLeave}
+  onpointermove={unifiedTitlebar ? undefined : handlePanePointerMove}
+  onpointerleave={unifiedTitlebar ? undefined : handlePanePointerLeave}
   onpointerdown={focusPane}
 >
-  {#if showTabs}
+  {#if showTabs && webChrome}
+    <!-- In-flow strip: native webview/chrome would otherwise hide hover tabs. -->
+    <div class="shell-pane-tabs shell-pane-tabs-web shrink-0">
+      <ShellTabStrip {groupId} />
+    </div>
+  {:else if showTabs}
     <!-- Overlay is pointer-events-none so view chrome stays clickable; only the
-         bounded tab strip captures pointer. Left/right insets clear expand + actions. -->
+         bounded tab strip captures pointer. Right inset clears action clusters. -->
     <div
       class="shell-pane-tabs pointer-events-none absolute inset-x-0 top-0 z-30"
-      style:padding-left={tabStripOffsetLeft}
       style:padding-right={tabStripOffsetRight}
     >
       <div
@@ -227,11 +229,7 @@
         {/snippet}
       </EnvironmentRenderer>
     {:else if activeTab?.kind === "web"}
-      <div class="flex h-full items-center justify-center px-6 text-center">
-        <p class="workshop-faint text-xs leading-relaxed">
-          Browser is open in another pane — focus that pane or open it here.
-        </p>
-      </div>
+      <WebPaneIdle {groupId} />
     {:else}
       <div class="flex h-full items-center justify-center p-8 text-sm text-surface-500">
         Open something from the rail.
@@ -253,6 +251,15 @@
   }
   .shell-pane-tabs {
     animation: shell-tabs-in 120ms ease-out;
+  }
+  .shell-pane-tabs-web {
+    border-bottom: 1px solid
+      color-mix(in oklab, var(--color-surface-500, #78716c) 35%, transparent);
+    background: color-mix(
+      in oklab,
+      var(--color-surface-900, #1c1917) 55%,
+      transparent
+    );
   }
   @keyframes shell-tabs-in {
     from {

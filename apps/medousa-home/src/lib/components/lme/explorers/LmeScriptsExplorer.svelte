@@ -19,6 +19,8 @@
   import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
   import { scriptRenameUi } from "$lib/stores/scriptRenameUi.svelte";
   import { workshop } from "$lib/stores/workshop.svelte";
+  import { portLmeDock } from "$lib/utils/lmeDockHost";
+  import { ensureRailPopoverOpen } from "$lib/utils/railPopoverChrome";
   import type { GraphemeScriptEntry } from "$lib/types/grapheme";
   import {
     bindScriptLongPress,
@@ -73,6 +75,7 @@
 
   async function openSearch() {
     closeMenus();
+    await ensureRailPopoverOpen();
     searchExpanded = true;
     await tick();
     searchInputEl?.focus();
@@ -294,24 +297,32 @@
     {/if}
   </div>
 
-  <footer class="lme-side-rail-dock">
+  <footer class="lme-side-rail-dock" use:portLmeDock>
     {#if searchExpanded}
-      <div class="lme-dock-search-expand min-w-0 flex-1">
-        <Search size={14} strokeWidth={1.75} class="lme-dock-search-glyph" />
+      <div class="lme-dock-search-expand flex min-w-0 flex-1 items-center gap-1">
+        <Search size={14} strokeWidth={1.75} class="shrink-0 text-surface-500" aria-hidden="true" />
         <input
           bind:this={searchInputEl}
-          class="lme-dock-search-input"
+          class="min-w-0 flex-1 border-0 bg-transparent text-[12px] text-surface-100 placeholder:text-surface-500 focus:outline-none focus:ring-0"
           type="search"
           placeholder="Search scripts…"
           bind:value={search}
           onkeydown={handleSearchKeydown}
         />
+        <button
+          type="button"
+          class="vault-dock-icon-btn"
+          aria-label="Close search"
+          title="Close search"
+          onclick={closeSearch}
+        >
+          <X size={14} strokeWidth={1.75} />
+        </button>
       </div>
     {:else}
-      <div class="min-w-0 flex-1"></div>
-    {/if}
+      <!-- Push action cluster to the right (matches Agents / Notes rail docks). -->
+      <div class="lme-dock-leading-ghost min-w-0 flex-1" aria-hidden="true"></div>
 
-    {#if !searchExpanded}
       <button
         type="button"
         class="vault-dock-icon-btn"
@@ -322,252 +333,245 @@
         <Plus size={16} strokeWidth={1.75} />
       </button>
 
-      <button
-        type="button"
-        class="vault-dock-icon-btn"
-        aria-label="Refresh"
-        title="Refresh"
-        disabled={refreshing}
-        onclick={refreshLibrary}
-      >
-        <RefreshCw size={15} strokeWidth={1.75} class={refreshing ? "animate-spin" : ""} />
-      </button>
-    {/if}
-
-    {#if !searchExpanded}
-    <div class="relative shrink-0">
-      <button
-        type="button"
-        class="vault-dock-icon-btn {dockMenu === 'templates'
-          ? 'bg-surface-800 text-primary-300'
-          : ''}"
-        aria-haspopup="dialog"
-        aria-expanded={dockMenu === "templates"}
-        aria-label="Templates"
-        title="Templates"
-        onclick={(event) => toggleMenu("templates", event)}
-      >
-        <LayoutTemplate size={15} strokeWidth={1.75} />
-      </button>
-      {#if dockMenu === "templates"}
-        <div
-          class="lme-scripts-popover absolute bottom-full right-0 z-30 mb-1.5 w-[min(19rem,calc(100vw-2rem))]"
-          role="dialog"
-          aria-label="Templates"
-          tabindex="-1"
-          onclick={(event) => event.stopPropagation()}
-          onkeydown={handleMenuKeydown}
+      <div class="lme-dock-chrome-secondary flex shrink-0 items-center gap-0.5">
+        <button
+          type="button"
+          class="vault-dock-icon-btn"
+          aria-label="Refresh"
+          title="Refresh"
+          disabled={refreshing}
+          onclick={refreshLibrary}
         >
-          <div class="lme-scripts-popover-search">
-            <Search size={13} class="shrink-0 text-surface-500" />
-            <input
-              bind:this={templateSearchEl}
-              class="lme-scripts-popover-search-input"
-              type="search"
-              placeholder="Search templates…"
-              bind:value={templateSearch}
-            />
-          </div>
-          <ul class="lme-scripts-popover-list" role="listbox" aria-label="Templates">
-            {#if filteredRecipes.length === 0}
-              <li class="lme-scripts-popover-empty">No matches.</li>
-            {:else}
-              {#each filteredRecipes as recipe, index (recipe.id)}
-                <li class="lme-scripts-popover-item" style="--i: {index}">
-                  <button
-                    type="button"
-                    class="lme-scripts-popover-row"
-                    role="option"
-                    onclick={() => applyTemplate(recipe)}
-                  >
-                    <span class="min-w-0 flex-1">
-                      <span class="lme-scripts-popover-row-title">{recipe.title}</span>
-                      <span class="lme-scripts-popover-row-meta">{recipe.subtitle}</span>
-                    </span>
-                    <span class="lme-scripts-popover-row-action">Use</span>
-                  </button>
-                </li>
-              {/each}
-            {/if}
-          </ul>
-        </div>
-      {/if}
-    </div>
+          <RefreshCw size={15} strokeWidth={1.75} class={refreshing ? "animate-spin" : ""} />
+        </button>
 
-    <div class="relative shrink-0">
-      <button
-        type="button"
-        class="vault-dock-icon-btn {dockMenu === 'wasm' ? 'bg-surface-800 text-primary-300' : ''}"
-        aria-haspopup="dialog"
-        aria-expanded={dockMenu === "wasm"}
-        aria-label="WASM modules"
-        title="WASM"
-        onclick={(event) => toggleMenu("wasm", event)}
-      >
-        <Package size={15} strokeWidth={1.75} />
-      </button>
-      {#if dockMenu === "wasm"}
-        <div
-          class="lme-scripts-popover lme-scripts-popover-wasm absolute bottom-full right-0 z-30 mb-1.5 w-[min(19rem,calc(100vw-2rem))]"
-          role="dialog"
-          aria-label="Load WASM"
-          tabindex="-1"
-          onclick={(event) => event.stopPropagation()}
-          onkeydown={handleMenuKeydown}
-        >
-          <div class="lme-scripts-popover-head">
-            <div class="min-w-0">
-              <p class="lme-scripts-popover-title">WASM</p>
-              <p class="lme-scripts-popover-blurb">Drop a module into the runtime</p>
-            </div>
-            <Package size={16} strokeWidth={1.75} class="lme-scripts-popover-head-icon" />
-          </div>
-
-          <div class="lme-scripts-popover-fields">
-            <div class="relative">
-              <button
-                type="button"
-                class="lme-scripts-popover-field-btn"
-                aria-haspopup="listbox"
-                aria-expanded={wasmModuleOpen}
-                onclick={() => (wasmModuleOpen = !wasmModuleOpen)}
-              >
-                <span class="lme-scripts-popover-field-label">Module</span>
-                <span class="lme-scripts-popover-field-value {wasmModuleId ? '' : 'is-placeholder'}">
-                  {selectedWasmLabel}
-                </span>
-                <ChevronDown
-                  size={13}
-                  strokeWidth={2}
-                  class="shrink-0 text-surface-500 transition {wasmModuleOpen ? 'rotate-180' : ''}"
+        <div class="relative shrink-0">
+          <button
+            type="button"
+            class="vault-dock-icon-btn {dockMenu === 'templates'
+              ? 'bg-surface-800 text-primary-300'
+              : ''}"
+            aria-haspopup="dialog"
+            aria-expanded={dockMenu === "templates"}
+            aria-label="Templates"
+            title="Templates"
+            onclick={(event) => toggleMenu("templates", event)}
+          >
+            <LayoutTemplate size={15} strokeWidth={1.75} />
+          </button>
+          {#if dockMenu === "templates"}
+            <div
+              class="lme-scripts-popover absolute bottom-full right-0 z-30 mb-1.5 w-[min(19rem,calc(100vw-2rem))]"
+              role="dialog"
+              aria-label="Templates"
+              tabindex="-1"
+              onclick={(event) => event.stopPropagation()}
+              onkeydown={handleMenuKeydown}
+            >
+              <div class="lme-scripts-popover-search">
+                <Search size={13} class="shrink-0 text-surface-500" />
+                <input
+                  bind:this={templateSearchEl}
+                  class="lme-scripts-popover-search-input"
+                  type="search"
+                  placeholder="Search templates…"
+                  bind:value={templateSearch}
                 />
-              </button>
-              {#if wasmModuleOpen}
-                <ul
-                  class="lme-scripts-popover-module-menu"
-                  role="listbox"
-                  aria-label="Module id"
-                >
-                  {#each workshop.modules as entry (entry.module_id)}
-                    <li>
+              </div>
+              <ul class="lme-scripts-popover-list" role="listbox" aria-label="Templates">
+                {#if filteredRecipes.length === 0}
+                  <li class="lme-scripts-popover-empty">No matches.</li>
+                {:else}
+                  {#each filteredRecipes as recipe, index (recipe.id)}
+                    <li class="lme-scripts-popover-item" style="--i: {index}">
                       <button
                         type="button"
-                        class="lme-scripts-popover-module-option {wasmModuleId === entry.module_id
-                          ? 'is-active'
-                          : ''}"
+                        class="lme-scripts-popover-row"
                         role="option"
-                        aria-selected={wasmModuleId === entry.module_id}
-                        onclick={() => pickWasmModule(entry.module_id)}
+                        onclick={() => applyTemplate(recipe)}
                       >
-                        {entry.module_id}
+                        <span class="min-w-0 flex-1">
+                          <span class="lme-scripts-popover-row-title">{recipe.title}</span>
+                          <span class="lme-scripts-popover-row-meta">{recipe.subtitle}</span>
+                        </span>
+                        <span class="lme-scripts-popover-row-action">Use</span>
                       </button>
                     </li>
-                  {:else}
-                    <li class="lme-scripts-popover-empty">No modules yet.</li>
                   {/each}
-                </ul>
-              {/if}
+                {/if}
+              </ul>
             </div>
-
-            <label class="lme-scripts-popover-field">
-              <span class="lme-scripts-popover-field-label">Path</span>
-              <input
-                class="lme-scripts-popover-field-input font-mono"
-                type="text"
-                placeholder="/path/to/module.wasm"
-                spellcheck="false"
-                bind:value={wasmPath}
-              />
-            </label>
-
-            <label class="lme-scripts-popover-field">
-              <span class="lme-scripts-popover-field-label">Version</span>
-              <input
-                class="lme-scripts-popover-field-input"
-                type="text"
-                placeholder="optional · 1.0.0"
-                bind:value={wasmVersion}
-              />
-            </label>
-          </div>
-
-          {#if workshop.moduleLoadError}
-            <p class="lme-scripts-popover-status is-error">{workshop.moduleLoadError}</p>
-          {:else if workshop.moduleLoadResult}
-            <p class="lme-scripts-popover-status">
-              Loaded gen {workshop.moduleLoadResult.generation_id} ·
-              {workshop.moduleLoadResult.version}
-            </p>
           {/if}
+        </div>
 
-          <div class="lme-scripts-popover-footer">
-            <button
-              type="button"
-              class="lme-scripts-popover-footer-quiet"
-              aria-expanded={wasmLifecycleOpen}
-              onclick={() => (wasmLifecycleOpen = !wasmLifecycleOpen)}
+        <div class="relative shrink-0">
+          <button
+            type="button"
+            class="vault-dock-icon-btn {dockMenu === 'wasm' ? 'bg-surface-800 text-primary-300' : ''}"
+            aria-haspopup="dialog"
+            aria-expanded={dockMenu === "wasm"}
+            aria-label="WASM modules"
+            title="WASM"
+            onclick={(event) => toggleMenu("wasm", event)}
+          >
+            <Package size={15} strokeWidth={1.75} />
+          </button>
+          {#if dockMenu === "wasm"}
+            <div
+              class="lme-scripts-popover lme-scripts-popover-wasm absolute bottom-full right-0 z-30 mb-1.5 w-[min(19rem,calc(100vw-2rem))]"
+              role="dialog"
+              aria-label="Load WASM"
+              tabindex="-1"
+              onclick={(event) => event.stopPropagation()}
+              onkeydown={handleMenuKeydown}
             >
-              Lifecycle
-              <ChevronDown
-                size={12}
-                strokeWidth={2}
-                class="transition {wasmLifecycleOpen ? 'rotate-180' : ''}"
-              />
-            </button>
-            <button
-              type="button"
-              class="lme-scripts-popover-load"
-              disabled={!canLoadWasm}
-              onclick={() => void loadWasm()}
-            >
-              {workshop.moduleLoadBusy ? "Loading…" : "Load"}
-            </button>
-          </div>
+              <div class="lme-scripts-popover-head">
+                <div class="min-w-0">
+                  <p class="lme-scripts-popover-title">WASM</p>
+                  <p class="lme-scripts-popover-blurb">Drop a module into the runtime</p>
+                </div>
+                <Package size={16} strokeWidth={1.75} class="lme-scripts-popover-head-icon" />
+              </div>
 
-          {#if wasmLifecycleOpen}
-            <div class="lme-scripts-popover-lifecycle">
-              <button
-                type="button"
-                class="lme-scripts-popover-footer-quiet"
-                disabled={workshop.lifecycleLoading}
-                onclick={() => void workshop.refreshLifecycle()}
-              >
-                Refresh events
-              </button>
-              {#if workshop.lifecycleError}
-                <p class="lme-scripts-popover-status is-error">{workshop.lifecycleError}</p>
-              {:else if wasmLifecycleEvents.length === 0}
-                <p class="lme-scripts-popover-empty px-0">No events yet.</p>
-              {:else}
-                <ul class="max-h-28 space-y-1 overflow-y-auto">
-                  {#each wasmLifecycleEvents as event (`${event.kind}-${event.generation_id}`)}
-                    <li class="truncate font-mono text-[10px] text-surface-400">
-                      <span class="text-surface-200">{event.kind}</span>
-                      {#if event.message}
-                        <span class="text-surface-600"> · {event.message}</span>
-                      {/if}
-                    </li>
-                  {/each}
-                </ul>
+              <div class="lme-scripts-popover-fields">
+                <div class="relative">
+                  <button
+                    type="button"
+                    class="lme-scripts-popover-field-btn"
+                    aria-haspopup="listbox"
+                    aria-expanded={wasmModuleOpen}
+                    onclick={() => (wasmModuleOpen = !wasmModuleOpen)}
+                  >
+                    <span class="lme-scripts-popover-field-label">Module</span>
+                    <span
+                      class="lme-scripts-popover-field-value {wasmModuleId ? '' : 'is-placeholder'}"
+                    >
+                      {selectedWasmLabel}
+                    </span>
+                    <ChevronDown
+                      size={13}
+                      strokeWidth={2}
+                      class="shrink-0 text-surface-500 transition {wasmModuleOpen
+                        ? 'rotate-180'
+                        : ''}"
+                    />
+                  </button>
+                  {#if wasmModuleOpen}
+                    <ul
+                      class="lme-scripts-popover-module-menu"
+                      role="listbox"
+                      aria-label="Module id"
+                    >
+                      {#each workshop.modules as entry (entry.module_id)}
+                        <li>
+                          <button
+                            type="button"
+                            class="lme-scripts-popover-module-option {wasmModuleId ===
+                            entry.module_id
+                              ? 'is-active'
+                              : ''}"
+                            role="option"
+                            aria-selected={wasmModuleId === entry.module_id}
+                            onclick={() => pickWasmModule(entry.module_id)}
+                          >
+                            {entry.module_id}
+                          </button>
+                        </li>
+                      {:else}
+                        <li class="lme-scripts-popover-empty">No modules yet.</li>
+                      {/each}
+                    </ul>
+                  {/if}
+                </div>
+
+                <label class="lme-scripts-popover-field">
+                  <span class="lme-scripts-popover-field-label">Path</span>
+                  <input
+                    class="lme-scripts-popover-field-input font-mono"
+                    type="text"
+                    placeholder="/path/to/module.wasm"
+                    spellcheck="false"
+                    bind:value={wasmPath}
+                  />
+                </label>
+
+                <label class="lme-scripts-popover-field">
+                  <span class="lme-scripts-popover-field-label">Version</span>
+                  <input
+                    class="lme-scripts-popover-field-input"
+                    type="text"
+                    placeholder="optional · 1.0.0"
+                    bind:value={wasmVersion}
+                  />
+                </label>
+              </div>
+
+              {#if workshop.moduleLoadError}
+                <p class="lme-scripts-popover-status is-error">{workshop.moduleLoadError}</p>
+              {:else if workshop.moduleLoadResult}
+                <p class="lme-scripts-popover-status">
+                  Loaded gen {workshop.moduleLoadResult.generation_id} ·
+                  {workshop.moduleLoadResult.version}
+                </p>
+              {/if}
+
+              <div class="lme-scripts-popover-footer">
+                <button
+                  type="button"
+                  class="lme-scripts-popover-footer-quiet"
+                  aria-expanded={wasmLifecycleOpen}
+                  onclick={() => (wasmLifecycleOpen = !wasmLifecycleOpen)}
+                >
+                  Lifecycle
+                  <ChevronDown
+                    size={12}
+                    strokeWidth={2}
+                    class="transition {wasmLifecycleOpen ? 'rotate-180' : ''}"
+                  />
+                </button>
+                <button
+                  type="button"
+                  class="lme-scripts-popover-load"
+                  disabled={!canLoadWasm}
+                  onclick={() => void loadWasm()}
+                >
+                  {workshop.moduleLoadBusy ? "Loading…" : "Load"}
+                </button>
+              </div>
+
+              {#if wasmLifecycleOpen}
+                <div class="lme-scripts-popover-lifecycle">
+                  <button
+                    type="button"
+                    class="lme-scripts-popover-footer-quiet"
+                    disabled={workshop.lifecycleLoading}
+                    onclick={() => void workshop.refreshLifecycle()}
+                  >
+                    Refresh events
+                  </button>
+                  {#if workshop.lifecycleError}
+                    <p class="lme-scripts-popover-status is-error">{workshop.lifecycleError}</p>
+                  {:else if wasmLifecycleEvents.length === 0}
+                    <p class="lme-scripts-popover-empty px-0">No events yet.</p>
+                  {:else}
+                    <ul class="max-h-28 space-y-1 overflow-y-auto">
+                      {#each wasmLifecycleEvents as event (`${event.kind}-${event.generation_id}`)}
+                        <li class="truncate font-mono text-[10px] text-surface-400">
+                          <span class="text-surface-200">{event.kind}</span>
+                          {#if event.message}
+                            <span class="text-surface-600"> · {event.message}</span>
+                          {/if}
+                        </li>
+                      {/each}
+                    </ul>
+                  {/if}
+                </div>
               {/if}
             </div>
           {/if}
         </div>
-      {/if}
-    </div>
-    {/if}
+      </div>
 
-    {#if searchExpanded}
-      <button
-        type="button"
-        class="vault-dock-icon-btn"
-        aria-label="Close search"
-        title="Close search"
-        onclick={closeSearch}
-      >
-        <X size={15} strokeWidth={1.75} />
-      </button>
-    {:else}
       <button
         type="button"
         class="vault-dock-icon-btn"

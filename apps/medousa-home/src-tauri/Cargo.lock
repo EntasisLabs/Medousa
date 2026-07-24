@@ -3439,7 +3439,7 @@ checksum = "47e1ffaa40ddd1f3ed91f717a33c8c0ee23fff369e3aa8772b9605cc1d22f4c3"
 
 [[package]]
 name = "medousa-browser-bridge"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "medousa-browser-lite",
  "once_cell",
@@ -3450,7 +3450,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-browser-lite"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "chrono",
  "once_cell",
@@ -3465,7 +3465,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-home"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "axum",
  "base64 0.22.1",
@@ -3520,7 +3520,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-host"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "dirs 5.0.1",
  "libc",
@@ -3530,7 +3530,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-install-support"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "chrono",
  "dirs 6.0.0",
@@ -3548,7 +3548,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-iroh-http"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "httparse",
@@ -3559,7 +3559,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-sdk"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "bytes",
  "eventsource-stream",
@@ -3575,7 +3575,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-sdk-iroh"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "bytes",
  "futures-util",
@@ -3589,11 +3589,15 @@ dependencies = [
 
 [[package]]
 name = "medousa-types"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
+ "anyhow",
+ "base64 0.22.1",
  "chrono",
+ "hmac",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
 ]
 
 [[package]]

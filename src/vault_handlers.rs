@@ -9,8 +9,8 @@ use crate::daemon_api::{
     VaultBacklinksQuery, VaultBacklinksResponse, VaultAddRootRequest, VaultDeleteResponse,
     VaultFileContentResponse, VaultNoteContentResponse, VaultNotesListResponse, VaultNotesQuery,
     VaultPutQuery, VaultRootsResponse, VaultSearchQuery, VaultSearchResponse,
-    VaultSetActiveRootRequest, VaultTagsListResponse, VaultTagsQuery, VaultWriteRequest,
-    VaultWriteResponse,
+    VaultSetActiveRootRequest, VaultTagsListResponse, VaultTagsQuery, VaultTrashListResponse,
+    VaultTrashRestoreRequest, VaultTrashRestoreResponse, VaultWriteRequest, VaultWriteResponse,
 };
 use crate::vault::VaultService;
 use crate::vault::roots::{add_vault_root, list_vault_root_views, set_active_vault_root};
@@ -155,4 +155,26 @@ pub async fn add_vault_root_handler(
     )
     .map(Json)
     .map_err(map_vault_error)
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct VaultTrashListQuery {
+    pub limit: Option<usize>,
+}
+
+pub async fn list_vault_trash(
+    Query(query): Query<VaultTrashListQuery>,
+) -> Result<Json<VaultTrashListResponse>, (StatusCode, String)> {
+    let limit = query.limit.unwrap_or(100);
+    VaultService::list_trash(limit)
+        .map(Json)
+        .map_err(map_vault_error)
+}
+
+pub async fn restore_vault_trash(
+    Json(request): Json<VaultTrashRestoreRequest>,
+) -> Result<Json<VaultTrashRestoreResponse>, (StatusCode, String)> {
+    VaultService::restore_from_trash(&request.path)
+        .map(Json)
+        .map_err(map_vault_error)
 }

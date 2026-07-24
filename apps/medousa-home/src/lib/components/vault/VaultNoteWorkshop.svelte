@@ -302,7 +302,6 @@
           embedded={true}
           workshop={true}
           workshopSticky={true}
-          showPopout={false}
         />
       </div>
     </div>
@@ -392,7 +391,6 @@
           visible={true}
           embedded={true}
           workshop={true}
-          showPopout={false}
           onOpenContext={handleOpenFullChat}
         />
       </div>

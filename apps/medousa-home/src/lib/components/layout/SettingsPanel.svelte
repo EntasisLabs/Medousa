@@ -10,6 +10,7 @@
   import SettingsVoiceSection from "$lib/components/settings/SettingsVoiceSection.svelte";
   import SettingsReachSection from "$lib/components/settings/SettingsReachSection.svelte";
   import SettingsShellSection from "$lib/components/settings/SettingsShellSection.svelte";
+  import SettingsVersionsSection from "$lib/components/settings/SettingsVersionsSection.svelte";
   import SettingsEngineSection from "$lib/components/settings/SettingsEngineSection.svelte";
   import SettingsPhoneSection from "$lib/components/settings/SettingsPhoneSection.svelte";
   import SettingsLanShareSection from "$lib/components/settings/SettingsLanShareSection.svelte";
@@ -144,6 +145,8 @@
         <SettingsReachSection {mobile} />
       {:else if activeSection === "shell"}
         <SettingsShellSection {mobile} />
+      {:else if activeSection === "versions"}
+        <SettingsVersionsSection {mobile} />
       {:else if activeSection === "engine"}
         <SettingsEngineSection {mobile} />
       {:else if activeSection === "phone"}

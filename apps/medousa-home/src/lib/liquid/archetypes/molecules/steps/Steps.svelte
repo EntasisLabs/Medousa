@@ -6,6 +6,7 @@
   import { getLiquidContext } from "$lib/liquid/render/context";
   import { createSceneEvent } from "$lib/liquid/core";
   import type { ArchetypeProps } from "$lib/liquid/render/types";
+  import LiquidGlyph from "$lib/liquid/icons/LiquidGlyph.svelte";
   import { renderInlineMarkdown } from "$lib/markdown";
 
   type StepStatus = "done" | "current" | "pending";
@@ -16,6 +17,7 @@
     body?: string;
     status?: StepStatus;
     emoji?: string;
+    icon?: string;
   }
 
   const STATUSES = new Set<StepStatus>(["done", "current", "pending"]);
@@ -41,6 +43,7 @@
         const step: StepItem = { id, label };
         if (typeof row.body === "string" && row.body.trim()) step.body = row.body.trim();
         if (typeof row.emoji === "string" && row.emoji.trim()) step.emoji = row.emoji.trim();
+        if (typeof row.icon === "string" && row.icon.trim()) step.icon = row.icon.trim();
         const status = typeof row.status === "string" ? row.status.trim().toLowerCase() : "";
         if (STATUSES.has(status as StepStatus)) step.status = status as StepStatus;
         return step;
@@ -86,8 +89,10 @@
           </div>
           <button type="button" class="liquid-steps-card" onclick={() => selectStep(step)}>
             <span class="liquid-steps-label-row">
-              {#if step.emoji}
-                <span class="liquid-steps-emoji" aria-hidden="true">{step.emoji}</span>
+              {#if step.emoji || step.icon}
+                <span class="liquid-steps-emoji" aria-hidden="true">
+                  <LiquidGlyph icon={step.icon} emoji={step.emoji} size={14} />
+                </span>
               {/if}
               <span class="liquid-steps-label">{@html renderInlineMarkdown(step.label)}</span>
             </span>

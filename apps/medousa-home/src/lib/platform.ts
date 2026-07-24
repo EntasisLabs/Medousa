@@ -24,6 +24,30 @@ export function isTauriMacDesktop(): boolean {
   return /Mac/i.test(navigator.platform) || /Mac OS X/i.test(navigator.userAgent);
 }
 
+/** Tauri desktop (not iOS/Android). */
+export function isTauriDesktop(): boolean {
+  return isTauri() && !isTauriMobilePlatform();
+}
+
+export type TitlebarMode = "overlay-mac" | "custom-winlinux" | "none";
+
+/**
+ * How the main window hosts shell tabs in the OS chrome.
+ * - overlay-mac: native traffic lights + Overlay title bar
+ * - custom-winlinux: frameless + HTML window controls
+ * - none: browser / mobile — keep in-content hover tabs
+ */
+export function titlebarMode(): TitlebarMode {
+  if (!isTauriDesktop()) return "none";
+  if (isTauriMacDesktop()) return "overlay-mac";
+  return "custom-winlinux";
+}
+
+/** True when shell tabs live in the unified AppTitlebar. */
+export function usesUnifiedTitlebar(): boolean {
+  return titlebarMode() !== "none";
+}
+
 /** Channel surface tag sent to the daemon for interactive turns from Medousa. */
 export function homeChannelSurface(): string {
   if (!isTauri() || typeof navigator === "undefined") return "home-desktop";

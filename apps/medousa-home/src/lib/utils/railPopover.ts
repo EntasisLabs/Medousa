@@ -21,46 +21,214 @@ function viewportBox(): { left: number; top: number; width: number; height: numb
   };
 }
 
+/** Grow drawer down (toolbar on top) or up (toolbar on bottom). */
+export type RailPopoverExpand = "up" | "down";
+
+/** Click / caret point — selection-bubble style anchoring. */
+export type RailPopoverCursor = { x: number; y: number };
+
+/** ~16rem — prefer down when this much room exists below the anchor. */
+const USEFUL_DRAWER_PX = 16 * 16;
+const DEFAULT_OPEN_MAX_PX = 32 * 16;
+const BAR_MIN_PX = 48;
+/** Gap between cursor and the toolbar strip (matches selection format bubble feel). */
+const CURSOR_GAP_PX = 12;
+
+function anchorYFromTriggerOrCursor(
+  trigger: HTMLElement,
+  cursor?: RailPopoverCursor | null,
+): { top: number; bottom: number } {
+  if (cursor) {
+    return { top: cursor.y, bottom: cursor.y };
+  }
+  const tr = trigger.getBoundingClientRect();
+  return { top: tr.top, bottom: tr.bottom };
+}
+
 /**
- * Place a fixed popover beside a rail trigger.
- * Caps the menu to the viewport and clamps left/top so it never paints out of bounds.
+ * Pick expand direction from cursor/trigger geometry.
+ * Prefer down when there is a useful drawer below, otherwise the side with more room.
+ */
+export function resolveRailPopoverExpand(
+  trigger: HTMLElement,
+  options?: { pad?: number; prefer?: RailPopoverExpand; cursor?: RailPopoverCursor | null },
+): RailPopoverExpand {
+  if (options?.prefer) return options.prefer;
+  const pad = options?.pad ?? 8;
+  const view = viewportBox();
+  const anchor = anchorYFromTriggerOrCursor(trigger, options?.cursor);
+  // Down: toolbar above/at anchor, body fills toward viewport bottom.
+  const spaceDown = Math.max(0, view.top + view.height - pad - anchor.top);
+  // Up: toolbar at/below anchor, body fills toward viewport top.
+  const spaceUp = Math.max(0, anchor.bottom - (view.top + pad));
+  if (spaceDown >= USEFUL_DRAWER_PX || spaceDown >= spaceUp) return "down";
+  return "up";
+}
+
+/**
+ * Max open height that fits on the expand side (scroll inside instead of cropping).
+ */
+export function railPopoverOpenHeightCap(
+  trigger: HTMLElement,
+  expand: RailPopoverExpand,
+  options?: { pad?: number; maxHeight?: number; cursor?: RailPopoverCursor | null },
+): number {
+  const pad = options?.pad ?? 8;
+  const maxHeight = options?.maxHeight ?? DEFAULT_OPEN_MAX_PX;
+  const view = viewportBox();
+  const anchor = anchorYFromTriggerOrCursor(trigger, options?.cursor);
+  const available =
+    expand === "down"
+      ? view.top + view.height - pad - anchor.top
+      : anchor.bottom - (view.top + pad);
+  return Math.max(BAR_MIN_PX, Math.min(maxHeight, Math.floor(available)));
+}
+
+/**
+ * Place a fixed popover beside a rail trigger, or beside the mouse when `cursor` is set
+ * (selection-format-bubble style: centered on the point, above/below with a gap).
+ *
+ * `expand: "down"` pins the top (drawer grows downward).
+ * `expand: "up"` pins the bottom (drawer grows upward via `bottom`).
+ * Pass `lockEdge` during height animations to avoid jump-repositioning.
  */
 export function placeRailPopover(
   trigger: HTMLElement,
   menu: HTMLElement,
-  options?: { gap?: number; pad?: number },
+  options?: {
+    gap?: number;
+    pad?: number;
+    alignY?: "center" | "start";
+    /** @deprecated Prefer `lockEdge: "top"`. */
+    lockTop?: boolean;
+    /** Keep the trigger-adjacent edge fixed while height animates. */
+    lockEdge?: "top" | "bottom";
+    /** Drawer open direction. Defaults from {@link resolveRailPopoverExpand} when omitted with align start. */
+    expand?: RailPopoverExpand;
+    /** Preferred max height (px) for the open drawer; also written to maxHeight style. */
+    openHeight?: number;
+    /**
+     * When set, float next to the cursor like the live selection toolbar
+     * instead of docking to the right of the rail trigger.
+     */
+    cursor?: RailPopoverCursor | null;
+    /** Gap between cursor and toolbar when `cursor` is set. */
+    cursorGap?: number;
+  },
 ): void {
   const gap = options?.gap ?? 8;
   const pad = options?.pad ?? 8;
+  const cursorGap = options?.cursorGap ?? CURSOR_GAP_PX;
+  const alignY = options?.alignY ?? "center";
+  const cursor = options?.cursor ?? null;
+  const lockEdge =
+    options?.lockEdge ?? (options?.lockTop ? "top" : undefined);
   const view = viewportBox();
   const maxW = Math.max(0, view.width - pad * 2);
   const maxH = Math.max(0, view.height - pad * 2);
 
+  const expand =
+    options?.expand ??
+    (alignY === "start"
+      ? resolveRailPopoverExpand(trigger, { pad, cursor })
+      : undefined);
+
+  const openHeight =
+    options?.openHeight ??
+    (expand
+      ? railPopoverOpenHeightCap(trigger, expand, {
+          pad,
+          maxHeight: DEFAULT_OPEN_MAX_PX,
+          cursor,
+        })
+      : maxH);
+
   // Constrain before measuring so tall/wide menus shrink into the viewport.
   menu.style.maxWidth = `${Math.round(maxW)}px`;
-  menu.style.maxHeight = `${Math.round(maxH)}px`;
+  menu.style.maxHeight = `${Math.round(Math.min(maxH, openHeight))}px`;
 
   const tr = trigger.getBoundingClientRect();
   const measured = menu.getBoundingClientRect();
   const menuW = Math.min(menu.offsetWidth || measured.width, maxW);
-  const menuH = Math.min(menu.offsetHeight || measured.height, maxH);
+  const menuH = Math.min(menu.offsetHeight || measured.height, Math.min(maxH, openHeight));
+  // Toolbar strip height for cursor pinning (seed / chrome), not full open height.
+  const barH = Math.min(menuH, BAR_MIN_PX + 8);
 
   const minLeft = view.left + pad;
   const maxLeft = view.left + view.width - pad - menuW;
   const minTop = view.top + pad;
   const maxTop = view.top + view.height - pad - menuH;
 
-  // Prefer to the right of the trigger; flip left if that would overflow.
-  let left = tr.right + gap;
-  if (left > maxLeft) {
-    left = tr.left - gap - menuW;
+  let left: number;
+  if (cursor) {
+    // Float just to the right of the click (flip left if that would overflow).
+    left = cursor.x + cursorGap;
+    if (left > maxLeft) {
+      left = cursor.x - cursorGap - menuW;
+    }
+  } else {
+    // Prefer to the right of the trigger; flip left if that would overflow.
+    left = tr.right + gap;
+    if (left > maxLeft) {
+      left = tr.left - gap - menuW;
+    }
   }
   left = clamp(left, minLeft, maxLeft);
 
-  // Prefer vertically centered on the trigger, then clamp into the viewport.
-  let top = tr.top + tr.height / 2 - menuH / 2;
-  top = clamp(top, minTop, maxTop);
+  if (expand === "up") {
+    // Pin bottom — height growth expands upward.
+    // With cursor: vertically center the toolbar strip on the click.
+    let bottomInset: number;
+    if (lockEdge === "bottom") {
+      const currentBottom = Number.parseFloat(menu.style.bottom);
+      bottomInset = Number.isFinite(currentBottom)
+        ? currentBottom
+        : view.top + view.height - measured.bottom;
+    } else if (cursor) {
+      const menuBottom = cursor.y + barH / 2;
+      bottomInset = view.top + view.height - menuBottom;
+    } else if (lockEdge === "top") {
+      const currentTop = Number.parseFloat(menu.style.top);
+      if (Number.isFinite(currentTop)) {
+        bottomInset = view.top + view.height - (currentTop + menuH);
+      } else {
+        bottomInset = view.top + view.height - tr.bottom;
+      }
+    } else {
+      bottomInset = view.top + view.height - tr.bottom;
+    }
+    const maxBottomInset = view.height - pad - BAR_MIN_PX;
+    const minBottomInset = pad;
+    bottomInset = clamp(bottomInset, minBottomInset, maxBottomInset);
 
+    menu.style.top = "auto";
+    menu.style.bottom = `${Math.round(bottomInset)}px`;
+    menu.style.left = `${Math.round(left)}px`;
+    return;
+  }
+
+  let top: number;
+  if (lockEdge === "top" || options?.lockTop) {
+    const current = Number.parseFloat(menu.style.top);
+    top = Number.isFinite(current) ? current : measured.top;
+    // Don't re-clamp against the tall menu height — that yanks the card upward mid-collapse.
+    const toolbarFloor = view.top + view.height - pad - BAR_MIN_PX;
+    top = clamp(top, minTop, toolbarFloor);
+  } else if (cursor && (expand === "down" || alignY === "start")) {
+    // To the right of the click; vertically center the toolbar on the cursor.
+    top = cursor.y - barH / 2;
+    top = clamp(top, minTop, maxTop);
+  } else if (expand === "down" || alignY === "start") {
+    // Grow/shrink downward from the trigger — no vertical jump on height changes.
+    top = tr.top;
+    top = clamp(top, minTop, maxTop);
+  } else {
+    // Prefer vertically centered on the trigger, then clamp into the viewport.
+    top = tr.top + tr.height / 2 - menuH / 2;
+    top = clamp(top, minTop, maxTop);
+  }
+
+  menu.style.bottom = "auto";
   menu.style.top = `${Math.round(top)}px`;
   menu.style.left = `${Math.round(left)}px`;
 }
@@ -174,12 +342,20 @@ export function placeToolbarPopover(
   );
   menuH = Math.min(naturalH || cappedH, cappedH);
 
-  const minTop = view.top + pad;
-  const maxTop = view.top + view.height - pad - menuH;
-  let top = openAbove ? tr.top - gap - menuH : tr.bottom + gap;
-  top = clamp(top, minTop, maxTop);
-
-  menu.style.top = `${Math.round(top)}px`;
   menu.style.left = `${Math.round(left)}px`;
   menu.style.overflow = "hidden";
+
+  if (openAbove) {
+    // Pin the bottom edge to the trigger so shrink/clear settles onto the bar
+    // instead of leaving a stuck `top` floating mid-viewport.
+    const bottomPx = Math.max(0, window.innerHeight - (tr.top - gap));
+    menu.style.top = "auto";
+    menu.style.bottom = `${Math.round(bottomPx)}px`;
+  } else {
+    const minTop = view.top + pad;
+    const maxTop = view.top + view.height - pad - menuH;
+    const top = clamp(tr.bottom + gap, minTop, maxTop);
+    menu.style.bottom = "auto";
+    menu.style.top = `${Math.round(top)}px`;
+  }
 }

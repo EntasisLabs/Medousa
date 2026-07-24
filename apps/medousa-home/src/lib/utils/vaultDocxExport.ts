@@ -1006,7 +1006,6 @@ function buildDocument(
           name: "Title",
           basedOn: "Normal",
           next: "Normal",
-          quickStyle: true,
           run: {
             font,
             size: halfPoints(options.baseFontPx * 1.6),
@@ -1024,7 +1023,6 @@ function buildDocument(
           name: h.name,
           basedOn: "Normal",
           next: "Normal",
-          quickStyle: true,
           run: {
             font,
             size: halfPoints(options.baseFontPx * h.scale),

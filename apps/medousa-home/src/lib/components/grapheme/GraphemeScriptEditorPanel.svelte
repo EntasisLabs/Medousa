@@ -1,10 +1,16 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import ScriptEditorTabStrip from "$lib/components/automations/ScriptEditorTabStrip.svelte";
-  import GraphemeCodeMirror from "$lib/components/grapheme/GraphemeCodeMirror.svelte";
+  import CodeEditorShell from "$lib/components/code/CodeEditorShell.svelte";
+  import CodeMirrorHost from "$lib/components/code/CodeMirrorHost.svelte";
   import GraphemeRecipeCards from "$lib/components/grapheme/GraphemeRecipeCards.svelte";
   import GraphemeRunResultCard from "$lib/components/grapheme/GraphemeRunResultCard.svelte";
   import WorkshopJourneyBanner from "$lib/components/workshop/WorkshopJourneyBanner.svelte";
+  import {
+    getCodeEditorLanguage,
+    languageSupportsCompile,
+    languageSupportsLsp,
+    languageSupportsRun,
+  } from "$lib/code/codeEditorLanguageRegistry";
   import { connectGraphemeLspClient } from "$lib/grapheme/lspClient";
   import { promoteScriptToFlow } from "$lib/grapheme/graphemeFlowBridge";
   import {
@@ -31,11 +37,20 @@
 
   let lspClient = $state<LSPClient | null>(null);
   let lspError = $state<string | null>(null);
-  let codeMirror = $state<GraphemeCodeMirror | undefined>();
+  let codeMirror = $state<CodeMirrorHost | undefined>();
   let flowError = $state<string | null>(null);
   let showAdvancedActions = $state(false);
   let pieceLanded = $state(false);
   let pieceLandTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const activeLanguage = $derived(
+    getCodeEditorLanguage(graphemeScriptEditor.activeTab?.languageId ?? "grapheme"),
+  );
+  const canUseLsp = $derived(languageSupportsLsp(activeLanguage.id));
+  const canCompile = $derived(languageSupportsCompile(activeLanguage.id));
+  const canRun = $derived(languageSupportsRun(activeLanguage.id));
+  const canSave = $derived(activeLanguage.capabilities.saveToLibrary);
+  const canAddToFlow = $derived(activeLanguage.capabilities.addToFlow);
 
   function flashPieceLanded() {
     pieceLanded = true;
@@ -85,7 +100,8 @@
 
   const showRecipePicker = $derived(
     Boolean(
-      graphemeScriptEditor.activeTab &&
+      canCompile &&
+        graphemeScriptEditor.activeTab &&
         !graphemeScriptEditor.activeTab.body.trim(),
     ),
   );
@@ -113,7 +129,7 @@
 
   async function saveActive() {
     const tab = graphemeScriptEditor.activeTab;
-    if (!tab) return;
+    if (!tab || !canSave) return;
     graphemeScriptEditor.saveBusy = true;
     graphemeScriptEditor.saveError = null;
     try {
@@ -136,7 +152,7 @@
 
   async function compileActive(mode: "check" | "aot") {
     const tab = graphemeScriptEditor.activeTab;
-    if (!tab?.body.trim()) return;
+    if (!tab?.body.trim() || !canCompile) return;
     graphemeScriptEditor.compileBusy = true;
     graphemeScriptEditor.compileError = null;
     graphemeScriptEditor.compileResult = null;
@@ -156,78 +172,92 @@
 
   async function runActive() {
     const tab = graphemeScriptEditor.activeTab;
-    if (!tab?.body.trim()) return;
+    if (!tab?.body.trim() || !canRun) return;
     graphemeScriptEditor.sidePane = "diagnostics";
     await workshop.runScriptSource(tab.body);
     graphemeScriptEditor.runError = workshop.runError;
   }
 </script>
 
-<div
-  class="grapheme-script-editor flex min-h-0 flex-1 flex-col overflow-hidden {pieceLanded
-    ? 'scripts-piece-landed'
-    : ''}"
->
-  {#if !workbenchMode}
-  <header class="workshop-header shrink-0 border-b border-surface-500/40 px-4 py-3">
+<CodeEditorShell {workbenchMode} {pieceLanded}>
+  {#snippet header()}
     <div class="flex flex-wrap items-start justify-between gap-3">
       <div class="min-w-0">
         <p class="text-sm font-semibold text-surface-50">Script editor</p>
-        <p class="workshop-header-line mt-0.5">Grapheme · run, save, add to flow</p>
+        <p class="workshop-header-line mt-0.5">
+          {activeLanguage.label}
+          {#if canRun}
+            · run, save, add to flow
+          {:else if activeLanguage.tier === "highlight"}
+            · highlight only
+          {:else if activeLanguage.tier === "stub"}
+            · preview stub
+          {/if}
+        </p>
       </div>
       <div class="flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          class="btn btn-sm variant-soft-surface"
-          disabled={!graphemeScriptEditor.activeTab?.body.trim()}
-          onclick={addActiveScriptToFlow}
-        >
-          Add to flow
-        </button>
-        <button
-          type="button"
-          class="btn btn-sm variant-filled-primary"
-          disabled={graphemeScriptEditor.saveBusy || !graphemeScriptEditor.activeTab}
-          onclick={() => void saveActive()}
-        >
-          {graphemeScriptEditor.saveBusy ? "Saving…" : "Save"}
-        </button>
-        <button
-          type="button"
-          class="btn btn-sm variant-soft-surface"
-          disabled={workshop.runBusy || !graphemeScriptEditor.activeTab?.body.trim()}
-          onclick={() => void runActive()}
-        >
-          {workshop.runBusy ? "Running…" : "Run"}
-        </button>
-        <button
-          type="button"
-          class="btn btn-sm variant-soft-surface"
-          disabled={graphemeScriptEditor.compileBusy || !graphemeScriptEditor.activeTab?.body.trim()}
-          onclick={() => void compileActive("check")}
-        >
-          Compile
-        </button>
-        <button
-          type="button"
-          class="workshop-text-action btn btn-sm variant-ghost-surface text-[11px]"
-          onclick={() => (showAdvancedActions = !showAdvancedActions)}
-        >
-          {showAdvancedActions ? "Less" : "Advanced"}
-        </button>
-        {#if showAdvancedActions}
+        {#if canAddToFlow}
           <button
             type="button"
-            class="btn btn-sm variant-ghost-surface"
-            disabled={graphemeScriptEditor.compileBusy || !graphemeScriptEditor.activeTab?.body.trim()}
-            onclick={() => void compileActive("aot")}
+            class="btn btn-sm variant-soft-surface"
+            disabled={!graphemeScriptEditor.activeTab?.body.trim()}
+            onclick={addActiveScriptToFlow}
           >
-            Optimize (AOT)
+            Add to flow
           </button>
+        {/if}
+        {#if canSave}
+          <button
+            type="button"
+            class="btn btn-sm variant-filled-primary"
+            disabled={graphemeScriptEditor.saveBusy || !graphemeScriptEditor.activeTab}
+            onclick={() => void saveActive()}
+          >
+            {graphemeScriptEditor.saveBusy ? "Saving…" : "Save"}
+          </button>
+        {/if}
+        {#if canRun}
+          <button
+            type="button"
+            class="btn btn-sm variant-soft-surface"
+            disabled={workshop.runBusy || !graphemeScriptEditor.activeTab?.body.trim()}
+            onclick={() => void runActive()}
+          >
+            {workshop.runBusy ? "Running…" : "Run"}
+          </button>
+        {/if}
+        {#if canCompile}
+          <button
+            type="button"
+            class="btn btn-sm variant-soft-surface"
+            disabled={graphemeScriptEditor.compileBusy || !graphemeScriptEditor.activeTab?.body.trim()}
+            onclick={() => void compileActive("check")}
+          >
+            Compile
+          </button>
+          <button
+            type="button"
+            class="workshop-text-action btn btn-sm variant-ghost-surface text-[11px]"
+            onclick={() => (showAdvancedActions = !showAdvancedActions)}
+          >
+            {showAdvancedActions ? "Less" : "Advanced"}
+          </button>
+          {#if showAdvancedActions}
+            <button
+              type="button"
+              class="btn btn-sm variant-ghost-surface"
+              disabled={graphemeScriptEditor.compileBusy || !graphemeScriptEditor.activeTab?.body.trim()}
+              onclick={() => void compileActive("aot")}
+            >
+              Optimize (AOT)
+            </button>
+          {/if}
         {/if}
       </div>
     </div>
+  {/snippet}
 
+  {#snippet toolbar()}
     {#if flowError}
       <p class="mt-2 text-xs text-error-400">{flowError}</p>
     {/if}
@@ -235,76 +265,78 @@
     <div class="mt-3 px-1">
       <WorkshopJourneyBanner compact />
     </div>
+  {/snippet}
 
-    <div class="mt-3 border-b border-surface-600/50 pb-px">
-      <ScriptEditorTabStrip />
-    </div>
-  </header>
-  {/if}
-
-  <div class="flex min-h-0 flex-1 overflow-hidden">
-    <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-      {#if showRecipePicker && settings.showWorkshopGuidance && !workbenchMode}
-        <div class="shrink-0 border-b border-surface-500/35 px-4 py-3">
-          <GraphemeRecipeCards
-            compact
-            title="Starter recipes"
-            hint="Optional — or type in the editor below."
-            onselect={startFromRecipe}
-          />
-        </div>
-      {/if}
-      {#if graphemeScriptEditor.activeTab && graphemeScriptEditor.activeDocumentUri}
-        {#key `${graphemeScriptEditor.activeTab.tabId}:${graphemeScriptEditor.activeDocumentUri}:${lspClient ? "lsp" : "plain"}`}
-          <GraphemeCodeMirror
-            bind:this={codeMirror}
-            value={graphemeScriptEditor.activeTab.body}
-            documentUri={graphemeScriptEditor.activeDocumentUri}
-            client={lspClient}
-            onchange={(body) => graphemeScriptEditor.patchActiveTab({ body })}
-          />
-        {/key}
-      {:else}
-        <p class="workshop-muted p-4 text-sm">Open or create a script tab.</p>
-      {/if}
-    </div>
-
-    {#if !workbenchMode}
-    <aside class="grapheme-script-side-pane w-[min(360px,34%)] shrink-0 overflow-y-auto border-l border-surface-500/40 px-4 py-4">
-      <div class="flex flex-wrap gap-2">
-        <button
-          type="button"
-          class="rounded-md px-2 py-1 text-[11px] {graphemeScriptEditor.sidePane === 'info'
-            ? 'bg-surface-800 text-primary-300'
-            : 'text-surface-400'}"
-          onclick={() => (graphemeScriptEditor.sidePane = "info")}
-        >
-          Info
-        </button>
-        <button
-          type="button"
-          class="rounded-md px-2 py-1 text-[11px] {graphemeScriptEditor.sidePane === 'diagnostics'
-            ? 'bg-surface-800 text-primary-300'
-            : 'text-surface-400'}"
-          onclick={() => (graphemeScriptEditor.sidePane = "diagnostics")}
-        >
-          Diagnostics
-        </button>
+  {#snippet beforeEditor()}
+    {#if showRecipePicker && settings.showWorkshopGuidance && !workbenchMode}
+      <div class="shrink-0 border-b border-surface-500/35 px-4 py-3">
+        <GraphemeRecipeCards
+          compact
+          title="Starter recipes"
+          hint="Optional — or type in the editor below."
+          onselect={startFromRecipe}
+        />
       </div>
+    {/if}
+  {/snippet}
 
-      {#if graphemeScriptEditor.sidePane === "info"}
-        {#if graphemeScriptEditor.activeTab}
-          <label class="mt-4 block">
-            <span class="workshop-label">Name</span>
-            <input
-              class="input mt-1 w-full text-sm"
-              value={graphemeScriptEditor.activeTab.name}
-              oninput={(event) =>
-                graphemeScriptEditor.patchActiveTab({
-                  name: (event.currentTarget as HTMLInputElement).value,
-                })}
-            />
-          </label>
+  {#snippet editor()}
+    {#if graphemeScriptEditor.activeTab}
+      {#key `${graphemeScriptEditor.activeTab.tabId}:${graphemeScriptEditor.activeDocumentUri ?? "none"}:${activeLanguage.id}:${lspClient && canUseLsp ? "lsp" : "plain"}`}
+        <CodeMirrorHost
+          bind:this={codeMirror}
+          value={graphemeScriptEditor.activeTab.body}
+          languageId={activeLanguage.id}
+          documentUri={graphemeScriptEditor.activeDocumentUri}
+          client={canUseLsp ? lspClient : null}
+          onchange={(body) => graphemeScriptEditor.patchActiveTab({ body })}
+        />
+      {/key}
+    {:else}
+      <p class="workshop-muted p-4 text-sm">Open or create a script tab.</p>
+    {/if}
+  {/snippet}
+
+  {#snippet sidePane()}
+    <div class="flex flex-wrap gap-2">
+      <button
+        type="button"
+        class="rounded-md px-2 py-1 text-[11px] {graphemeScriptEditor.sidePane === 'info'
+          ? 'bg-surface-800 text-primary-300'
+          : 'text-surface-400'}"
+        onclick={() => (graphemeScriptEditor.sidePane = "info")}
+      >
+        Info
+      </button>
+      <button
+        type="button"
+        class="rounded-md px-2 py-1 text-[11px] {graphemeScriptEditor.sidePane === 'diagnostics'
+          ? 'bg-surface-800 text-primary-300'
+          : 'text-surface-400'}"
+        onclick={() => (graphemeScriptEditor.sidePane = "diagnostics")}
+      >
+        Diagnostics
+      </button>
+    </div>
+
+    {#if graphemeScriptEditor.sidePane === "info"}
+      {#if graphemeScriptEditor.activeTab}
+        <label class="mt-4 block">
+          <span class="workshop-label">Name</span>
+          <input
+            class="input mt-1 w-full text-sm"
+            value={graphemeScriptEditor.activeTab.name}
+            oninput={(event) =>
+              graphemeScriptEditor.patchActiveTab({
+                name: (event.currentTarget as HTMLInputElement).value,
+              })}
+          />
+        </label>
+        <div class="mt-3 block">
+          <span class="workshop-label">Language</span>
+          <p class="workshop-muted mt-1 text-sm">{activeLanguage.label}</p>
+        </div>
+        {#if canSave}
           <label class="mt-3 block">
             <span class="workshop-label">Intent</span>
             <input
@@ -335,56 +367,65 @@
               {graphemeScriptEditor.activeTab.scriptId} · v{graphemeScriptEditor.activeTab.version}
             </p>
           {/if}
-        {/if}
-      {:else if graphemeScriptEditor.compileError}
-        <p class="mt-4 text-sm text-error-400">{graphemeScriptEditor.compileError}</p>
-      {:else if graphemeScriptEditor.compileResult}
-        <div class="mt-4 space-y-2 text-xs">
-          <p class="font-medium text-surface-100">
-            {graphemeScriptEditor.compileResult.mode} ·
-            {graphemeScriptEditor.compileResult.validated ? "valid" : "invalid"}
+        {:else}
+          <p class="workshop-muted mt-3 text-xs">
+            Snippet tabs are local to the workbench — not saved to the script library.
           </p>
-          {#each graphemeScriptEditor.compileResult.compile_hints as hint (hint)}
-            <p class="text-surface-300">{hint}</p>
-          {/each}
-          {#each graphemeScriptEditor.compileResult.lint_warnings as warning (warning)}
-            <p class="text-warning-400">{warning}</p>
-          {/each}
-        </div>
-      {:else if lspError}
-        <p class="mt-4 text-sm text-warning-400">Smart editing unavailable: {lspError}</p>
-      {:else if graphemeScriptEditor.lspReady}
-        <p class="workshop-muted mt-4 text-sm">
-          Tips and completions appear as you type.
+        {/if}
+      {/if}
+    {:else if graphemeScriptEditor.compileError}
+      <p class="mt-4 text-sm text-error-400">{graphemeScriptEditor.compileError}</p>
+    {:else if graphemeScriptEditor.compileResult}
+      <div class="mt-4 space-y-2 text-xs">
+        <p class="font-medium text-surface-100">
+          {graphemeScriptEditor.compileResult.mode} ·
+          {graphemeScriptEditor.compileResult.validated ? "valid" : "invalid"}
         </p>
-      {:else}
-        <p class="workshop-muted mt-4 text-sm">Loading editor helpers…</p>
-      {/if}
-
-      {#if workshop.runResult || workshop.runError || (!graphemeScriptEditor.compileResult && !graphemeScriptEditor.compileError)}
-        <GraphemeRunResultCard
-          result={workshop.runResult?.result}
-          error={workshop.runError}
-          emptyMessage={showRecipePicker
-            ? "Pick a recipe, then hit Try it."
-            : "Hit Try it to see results here."}
-        />
-      {/if}
-      {#if graphemeScriptEditor.saveError}
-        <p class="mt-4 text-xs text-error-400">{graphemeScriptEditor.saveError}</p>
-      {/if}
-    </aside>
+        {#each graphemeScriptEditor.compileResult.compile_hints as hint (hint)}
+          <p class="text-surface-300">{hint}</p>
+        {/each}
+        {#each graphemeScriptEditor.compileResult.lint_warnings as warning (warning)}
+          <p class="text-warning-400">{warning}</p>
+        {/each}
+      </div>
+    {:else if canUseLsp && lspError}
+      <p class="mt-4 text-sm text-warning-400">Smart editing unavailable: {lspError}</p>
+    {:else if canUseLsp && graphemeScriptEditor.lspReady}
+      <p class="workshop-muted mt-4 text-sm">
+        Tips and completions appear as you type.
+      </p>
+    {:else if canUseLsp}
+      <p class="workshop-muted mt-4 text-sm">Loading editor helpers…</p>
+    {:else}
+      <p class="workshop-muted mt-4 text-sm">
+        {activeLanguage.tier === "stub"
+          ? `${activeLanguage.label} syntax plug-in is not wired yet — editing as plain text.`
+          : `${activeLanguage.label} — syntax highlighting only.`}
+      </p>
     {/if}
-  </div>
 
-  {#if !workbenchMode}
-  <footer class="workshop-status shrink-0 border-t border-surface-500/40 px-4 py-2">
+    {#if canRun && (workshop.runResult || workshop.runError || (!graphemeScriptEditor.compileResult && !graphemeScriptEditor.compileError))}
+      <GraphemeRunResultCard
+        result={workshop.runResult?.result}
+        error={workshop.runError}
+        emptyMessage={showRecipePicker
+          ? "Pick a recipe, then hit Try it."
+          : "Hit Try it to see results here."}
+      />
+    {/if}
+    {#if graphemeScriptEditor.saveError}
+      <p class="mt-4 text-xs text-error-400">{graphemeScriptEditor.saveError}</p>
+    {/if}
+  {/snippet}
+
+  {#snippet statusBar()}
     <div class="flex flex-wrap items-center justify-between gap-2 text-[11px]">
       <span class="text-surface-400">
         {#if graphemeScriptEditor.activeTab}
           {graphemeScriptEditor.activeTab.dirty ? "Modified · " : ""}
           {graphemeScriptEditor.activeTab.body.split("\n").length} lines
-          {#if graphemeScriptEditor.lspReady}
+          · {activeLanguage.label}
+          {#if canUseLsp && graphemeScriptEditor.lspReady}
             · completions on
           {/if}
         {:else}
@@ -392,10 +433,13 @@
         {/if}
       </span>
       <span class="text-surface-500">
-        <kbd class="vault-kbd">{formatShortcut("S")}</kbd> save ·
-        <kbd class="vault-kbd">F12</kbd> go to definition
+        {#if canSave}
+          <kbd class="vault-kbd">{formatShortcut("S")}</kbd> save ·
+        {/if}
+        {#if canUseLsp}
+          <kbd class="vault-kbd">F12</kbd> go to definition
+        {/if}
       </span>
     </div>
-  </footer>
-  {/if}
-</div>
+  {/snippet}
+</CodeEditorShell>

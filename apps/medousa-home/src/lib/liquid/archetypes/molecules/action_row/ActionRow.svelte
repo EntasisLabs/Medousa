@@ -7,12 +7,14 @@
   import { getLiquidContext } from "$lib/liquid/render/context";
   import { createSceneEvent } from "$lib/liquid/core";
   import type { ArchetypeProps } from "$lib/liquid/render/types";
+  import LiquidGlyph from "$lib/liquid/icons/LiquidGlyph.svelte";
 
   let { node }: ArchetypeProps = $props();
   const ctx = getLiquidContext();
 
   const label = $derived(typeof node.props.label === "string" ? node.props.label : "");
   const emoji = $derived(typeof node.props.emoji === "string" ? node.props.emoji : "");
+  const icon = $derived(typeof node.props.icon === "string" ? node.props.icon : "");
   const chevron = $derived(node.props.chevron !== false);
 
   function submit() {
@@ -22,7 +24,11 @@
 </script>
 
 <button type="button" class="liquid-action-row" onclick={submit}>
-  {#if emoji}<span class="liquid-action-emoji" aria-hidden="true">{emoji}</span>{/if}
+  {#if emoji || icon}
+    <span class="liquid-action-emoji" aria-hidden="true">
+      <LiquidGlyph {icon} {emoji} size={16} />
+    </span>
+  {/if}
   <span class="liquid-action-label">{label}</span>
   {#if chevron}
     <ChevronRight class="liquid-action-chevron" size={15} aria-hidden="true" />

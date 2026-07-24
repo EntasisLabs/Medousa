@@ -700,34 +700,7 @@
   }
 
   .workshop-status-whisper {
-    @apply inline-flex min-w-0 items-center gap-1.5 truncate;
-  }
-
-  .workshop-status-dot {
-    @apply h-1.5 w-1.5 shrink-0 rounded-full;
-  }
-
-  .workshop-status-dot-live {
-    background-color: rgb(var(--color-primary-400) / 0.85);
-    animation: workshop-status-pulse 3.2s ease-in-out infinite;
-  }
-
-  .workshop-status-dot-warning {
-    background-color: rgb(var(--color-warning-400) / 0.85);
-  }
-
-  .workshop-status-dot-muted {
-    @apply bg-surface-600;
-  }
-
-  @keyframes workshop-status-pulse {
-    0%,
-    100% {
-      box-shadow: 0 0 0 0 rgb(var(--color-primary-500) / 0.22);
-    }
-    50% {
-      box-shadow: 0 0 0 3px rgb(var(--color-primary-500) / 0);
-    }
+    @apply inline-flex min-w-0 items-center gap-2 truncate;
   }
 
   .workshop-status--quiet {
@@ -751,6 +724,35 @@
     color: rgb(var(--color-surface-200));
   }
 
+  .workshop-status-workshop {
+    display: inline-flex;
+    max-width: 9rem;
+    min-width: 0;
+    align-items: center;
+    gap: 0.4rem;
+    border: 0;
+    border-radius: 0.3rem;
+    background: transparent;
+    padding: 0.15rem 0.3rem;
+    margin: 0;
+    color: rgb(var(--color-surface-500));
+    font: inherit;
+    line-height: 1.2;
+    transition:
+      color 140ms ease,
+      background-color 140ms ease;
+  }
+
+  .workshop-status-workshop:hover,
+  .workshop-status-workshop--open {
+    background: rgb(var(--color-surface-800) / 0.55);
+    color: rgb(var(--color-surface-200));
+  }
+
+  .workshop-status-workshop:disabled {
+    opacity: 0.55;
+  }
+
   .workshop-status-spotlight {
     border: 1px solid rgb(var(--color-surface-700) / 0.45);
     border-radius: 0.3rem;
@@ -764,6 +766,51 @@
   .workshop-status-spotlight:hover {
     border-color: rgb(var(--color-surface-600) / 0.7);
     color: rgb(var(--color-surface-300));
+  }
+
+  /* Virtual desktops — soft index marks, not loud Omarchy pills. */
+  .status-desktop-strip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.15rem;
+  }
+
+  .status-desktop-mark {
+    display: inline-flex;
+    min-width: 1.1rem;
+    height: 1.2rem;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    border-radius: 0.25rem;
+    background: transparent;
+    padding: 0 0.2rem;
+    color: rgb(var(--color-surface-600));
+    font: inherit;
+    font-size: 0.625rem;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+    transition:
+      color 140ms ease,
+      background-color 140ms ease;
+  }
+
+  .status-desktop-mark:hover {
+    background: rgb(var(--color-surface-800) / 0.5);
+    color: rgb(var(--color-surface-300));
+  }
+
+  .status-desktop-mark--active {
+    background: rgb(var(--color-surface-800) / 0.72);
+    color: rgb(var(--color-surface-100));
+  }
+
+  .status-desktop-mark--active:hover {
+    color: rgb(var(--color-surface-50));
+  }
+
+  .status-desktop-mark-index {
+    opacity: 0.92;
   }
 
   .work-motion-control {
@@ -1060,9 +1107,19 @@
     @apply bg-transparent text-surface-100;
   }
 
-  /* Match StatusBar (`workshop-status` h-8) across all LME side-rail docks. */
+  /* Side-rail dock footers (h-8 matches workshop status bar height). */
   .lme-side-rail-dock {
     @apply relative flex h-8 shrink-0 items-center gap-0.5 overflow-visible border-t border-surface-500/25 px-1;
+  }
+
+  /* Keep secondary chrome in a single row (avoids stacked buttons overflowing the bar). */
+  .lme-side-rail-dock .lme-dock-chrome-secondary {
+    @apply flex shrink-0 items-center gap-0.5;
+  }
+
+  /* Compact chrome when the dock is temporarily hosted in a rail popover toolbar. */
+  .lme-side-rail-dock--status {
+    @apply flex h-full w-full min-w-0 items-center gap-0.5 border-t-0 bg-transparent px-0.5;
   }
 
   .vault-dock-icon-btn {
@@ -1073,10 +1130,11 @@
     @apply text-primary-300;
   }
 
-  /* Cursor-style dock popover — portaled, soft rounded card. */
+  /* Cursor-style dock popover — portaled, soft rounded card.
+     Above nav-rail view popover (120) so menus aren’t trapped underneath. */
   .vault-dock-popover {
     position: fixed;
-    z-index: 80;
+    z-index: 130;
     display: flex;
     flex-direction: column;
     gap: 0.05rem;
@@ -2877,6 +2935,11 @@
     scrollbar-gutter: stable;
   }
 
+  .chat-scroll--presence {
+    display: flex;
+    flex-direction: column;
+  }
+
   .chat-scroll-fade {
     @apply pointer-events-none absolute inset-x-0 bottom-0 z-[1] h-12;
     background: linear-gradient(
@@ -2931,18 +2994,36 @@
     @apply max-w-full;
   }
 
-  /* Quiet promote — visible on hover/focus within the assistant beat */
-  .chat-save-to-library {
-    @apply absolute right-0 top-0 z-[1] text-[10px] opacity-0 transition-opacity duration-200;
+  /* Quiet turn actions — bottom of assistant beat, hover/focus reveal */
+  .chat-turn-actions {
+    @apply mt-2 flex items-center justify-end gap-1 opacity-0 transition-opacity duration-200;
   }
 
-  .group:hover .chat-save-to-library,
-  .group:focus-within .chat-save-to-library {
+  .chat-turn-actions--mobile {
+    opacity: 0.4;
+  }
+
+  .group:hover .chat-turn-actions,
+  .group:focus-within .chat-turn-actions,
+  .chat-turn-actions--mobile:hover,
+  .chat-turn-actions--mobile:focus-within {
     @apply opacity-100;
   }
 
-  .chat-save-to-library:focus-visible {
-    @apply opacity-100 outline-none;
+  .chat-turn-actions:focus-within {
+    @apply opacity-100;
+  }
+
+  .chat-turn-action {
+    @apply inline-flex h-7 w-7 items-center justify-center rounded-md text-surface-400 transition-colors;
+  }
+
+  .chat-turn-action:hover {
+    @apply bg-surface-800/70 text-surface-100;
+  }
+
+  .chat-turn-action:focus-visible {
+    @apply opacity-100 outline-none ring-1 ring-surface-500/50;
   }
 
   .chat-ask-rail {
@@ -2970,7 +3051,7 @@
   }
 
   .chat-composer {
-    @apply relative z-10 shrink-0 px-8 pb-6 pt-2;
+    @apply relative z-10 mx-auto w-full max-w-[40rem] shrink-0 px-4 pb-2 pt-1.5;
   }
 
   .chat-composer-bar {
@@ -3000,22 +3081,6 @@
     @apply flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-surface-400 transition hover:bg-surface-700/60 hover:text-surface-200 disabled:pointer-events-none disabled:opacity-40;
   }
 
-  .composer-model-trigger--quiet {
-    @apply max-w-[11rem] border-transparent bg-transparent px-1.5 py-1;
-  }
-
-  .composer-model-trigger--quiet:hover:not(:disabled) {
-    border-color: transparent;
-    background: rgb(var(--color-surface-800) / 0.35);
-  }
-
-  .composer-model-trigger--quiet .composer-model-trigger-name {
-    @apply text-[12px] font-normal text-surface-400;
-  }
-
-  .composer-model-trigger--quiet.composer-model-trigger-open .composer-model-trigger-name {
-    @apply text-surface-200;
-  }
 
   .composer-footer-chip-wrap {
     @apply inline-flex max-w-[9rem] shrink-0 items-center gap-0.5;
@@ -3301,20 +3366,36 @@
     @apply relative shrink-0;
   }
 
+  /* Blended into composer chrome — text + chevron, no chip. */
   .composer-model-trigger {
-    @apply inline-flex max-w-[12rem] items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-left transition-colors duration-150 disabled:pointer-events-none disabled:opacity-45;
-    border: 1px solid rgb(var(--color-surface-600) / 0.22);
-    background: rgb(var(--color-surface-900) / 0.35);
+    @apply inline-flex max-w-[12rem] items-center gap-1.5 rounded-md px-1.5 py-1 text-left transition-colors duration-150 disabled:pointer-events-none disabled:opacity-45;
+    border: 1px solid transparent;
+    background: transparent;
   }
 
   .composer-model-trigger:hover:not(:disabled) {
-    border-color: rgb(var(--color-surface-600) / 0.38);
-    background: rgb(var(--color-surface-800) / 0.45);
+    border-color: transparent;
+    background: transparent;
   }
 
   .composer-model-trigger-open {
-    border-color: rgb(var(--color-surface-600) / 0.45);
-    background: rgb(var(--color-surface-800) / 0.55);
+    border-color: transparent;
+    background: transparent;
+  }
+
+  .composer-model-trigger--quiet {
+    @apply max-w-[11rem];
+  }
+
+  .composer-model-trigger--quiet .composer-model-trigger-name {
+    @apply text-[12px] font-normal text-surface-400;
+  }
+
+  .composer-model-trigger:hover:not(:disabled) .composer-model-trigger-name,
+  .composer-model-trigger-open .composer-model-trigger-name,
+  .composer-model-trigger--quiet:hover:not(:disabled) .composer-model-trigger-name,
+  .composer-model-trigger--quiet.composer-model-trigger-open .composer-model-trigger-name {
+    @apply text-surface-200;
   }
 
   .composer-model-trigger-readonly {
@@ -6822,6 +6903,50 @@
     @apply w-full min-w-0 px-1.5 pt-0.5;
   }
 
+  /* Quiet under-composer runtime row (Cursor-style meta). */
+  .chat-runtime-under {
+    @apply mt-1 flex min-h-0 items-center px-1;
+  }
+
+  .chat-runtime-picker {
+    @apply relative inline-flex min-w-0 max-w-full;
+  }
+
+  .chat-runtime-trigger {
+    @apply inline-flex max-w-full items-center gap-1.5 rounded-md px-1 py-0.5 text-[11px] text-surface-500 transition-colors duration-150;
+    border: 1px solid transparent;
+    background: transparent;
+  }
+
+  .chat-runtime-trigger:hover:not(:disabled),
+  .chat-runtime-trigger-open {
+    @apply text-surface-300;
+  }
+
+  .chat-runtime-trigger:disabled {
+    @apply pointer-events-none opacity-45;
+  }
+
+  .chat-runtime-trigger-label {
+    @apply truncate font-medium;
+  }
+
+  .chat-runtime-trigger-chevron {
+    @apply opacity-50 transition-transform duration-150;
+  }
+
+  .chat-runtime-trigger-open .chat-runtime-trigger-chevron {
+    transform: rotate(180deg);
+  }
+
+  .chat-runtime-option {
+    @apply flex w-full items-start gap-2.5 rounded-lg px-2.5 py-2 text-left transition hover:bg-surface-800/70;
+  }
+
+  .chat-runtime-option-active {
+    @apply bg-surface-800/55;
+  }
+
   .composer-bar-footer {
     @apply flex min-w-0 items-center gap-1;
   }
@@ -9915,23 +10040,28 @@
     overflow-anchor: none;
   }
 
-  /* Live / Preview paper column (overflow menu cycles data-paper-width). */
+  /* Live / Preview paper column (overflow menu cycles data-paper-width).
+     Properties share the same column as prose so they track paper width. */
   .vault-paper-width[data-paper-width="narrow"] .vault-live-prose,
+  .vault-paper-width[data-paper-width="narrow"] .vault-live-properties,
   .vault-paper-width[data-paper-width="narrow"].markdown-content {
     max-width: 36rem;
     margin-inline: auto;
   }
   .vault-paper-width[data-paper-width="medium"] .vault-live-prose,
+  .vault-paper-width[data-paper-width="medium"] .vault-live-properties,
   .vault-paper-width[data-paper-width="medium"].markdown-content {
     max-width: 48rem;
     margin-inline: auto;
   }
   .vault-paper-width[data-paper-width="wide"] .vault-live-prose,
+  .vault-paper-width[data-paper-width="wide"] .vault-live-properties,
   .vault-paper-width[data-paper-width="wide"].markdown-content {
     max-width: 64rem;
     margin-inline: auto;
   }
   .vault-paper-width[data-paper-width="full"] .vault-live-prose,
+  .vault-paper-width[data-paper-width="full"] .vault-live-properties,
   .vault-paper-width[data-paper-width="full"].markdown-content {
     max-width: none;
     margin-inline: 0;
@@ -9975,6 +10105,7 @@
   }
   .vault-live-section-folded {
     display: none !important;
+    pointer-events: none !important;
   }
 
   .vault-live-collapsible-host {
@@ -10610,7 +10741,8 @@
     --vlp-ink: rgb(var(--shell-fg, var(--color-surface-100)));
     --vlp-mute: rgb(var(--shell-muted, var(--color-surface-400)));
     --vlp-faint: rgb(var(--shell-muted, var(--color-surface-500)));
-    margin: 0 0 1.35rem;
+    width: 100%;
+    margin-block: 0 1.35rem;
     padding: 0;
   }
 
@@ -10736,6 +10868,102 @@
   }
 
   .vault-live-properties__key:disabled {
+    cursor: default;
+  }
+
+  .vault-live-properties__key--static {
+    cursor: default;
+  }
+
+  .vault-live-properties__key-input {
+    width: 100%;
+    min-width: 0;
+    margin: 0;
+    padding: 0.15rem 0;
+    border: none;
+    border-radius: 0.25rem;
+    background: transparent;
+    color: var(--vlp-mute);
+    font: inherit;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    letter-spacing: -0.01em;
+    outline: none;
+  }
+
+  .vault-live-properties__key-input::placeholder {
+    color: var(--vlp-faint);
+    opacity: 0.7;
+  }
+
+  .vault-live-properties__value-row {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 0.15rem;
+  }
+
+  .vault-live-properties__value-row .vault-live-properties__value {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .vault-live-properties__field-remove {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    width: 1.25rem;
+    height: 1.25rem;
+    margin: 0;
+    padding: 0;
+    border: none;
+    border-radius: 0.25rem;
+    background: transparent;
+    color: var(--vlp-faint);
+    opacity: 0;
+    cursor: pointer;
+    transition: opacity 120ms ease, color 120ms ease, background-color 120ms ease;
+  }
+
+  .vault-live-properties__row:hover .vault-live-properties__field-remove,
+  .vault-live-properties__row:focus-within .vault-live-properties__field-remove,
+  .vault-live-properties__field-remove:focus-visible {
+    opacity: 1;
+  }
+
+  .vault-live-properties__field-remove:hover {
+    color: rgb(var(--color-error-300));
+    background: rgb(var(--color-error-500) / 0.12);
+  }
+
+  .vault-live-properties__add-field {
+    appearance: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    align-self: flex-start;
+    margin: 0.2rem 0 0;
+    padding: 0.28rem 0.45rem;
+    border: none;
+    border-radius: 0.35rem;
+    background: transparent;
+    color: var(--vlp-faint);
+    cursor: pointer;
+    font: inherit;
+    font-size: 0.75rem;
+    font-weight: 500;
+    letter-spacing: -0.005em;
+    transition: color 140ms ease, background-color 140ms ease;
+  }
+
+  .vault-live-properties__add-field:hover:not(:disabled) {
+    color: var(--vlp-ink);
+    background: rgb(var(--color-surface-800) / 0.35);
+  }
+
+  .vault-live-properties__add-field:disabled {
+    opacity: 0.45;
     cursor: default;
   }
 
@@ -11816,6 +12044,8 @@
   .vault-live-tabs:focus-within .vault-live-quiet-chrome,
   .vault-live-steps:hover .vault-live-quiet-chrome,
   .vault-live-steps:focus-within .vault-live-quiet-chrome,
+  .vault-live-timeline:hover .vault-live-quiet-chrome,
+  .vault-live-timeline:focus-within .vault-live-quiet-chrome,
   .vault-live-accordion:hover .vault-live-quiet-chrome,
   .vault-live-accordion:focus-within .vault-live-quiet-chrome,
   .vault-live-code:hover .vault-live-quiet-chrome,
@@ -12548,6 +12778,7 @@
   .vault-live-dashboard__configure,
   .vault-live-tabs__configure,
   .vault-live-steps__configure,
+  .vault-live-timeline__configure,
   .vault-live-accordion__configure,
   .vault-live-code__configure,
   .vault-live-code__lang,
@@ -12570,6 +12801,7 @@
   .vault-live-dashboard__configure,
   .vault-live-tabs__configure,
   .vault-live-steps__configure,
+  .vault-live-timeline__configure,
   .vault-live-accordion__configure,
   .vault-live-code__configure,
   .vault-live-code__lang,
@@ -12584,6 +12816,7 @@
   .vault-live-dashboard__configure:hover,
   .vault-live-tabs__configure:hover,
   .vault-live-steps__configure:hover,
+  .vault-live-timeline__configure:hover,
   .vault-live-accordion__configure:hover,
   .vault-live-code__configure:hover,
   .vault-live-code__lang:hover,
@@ -12598,6 +12831,7 @@
   .vault-live-dashboard__title,
   .vault-live-tabs__title,
   .vault-live-steps__title,
+  .vault-live-timeline__title,
   .vault-live-accordion__title,
   .vault-live-code__title,
   .vault-live-tree__title,
@@ -12611,6 +12845,7 @@
   .vault-live-dashboard__title,
   .vault-live-tabs__title,
   .vault-live-steps__title,
+  .vault-live-timeline__title,
   .vault-live-accordion__title,
   .vault-live-code__title,
   .vault-live-tree__title,
@@ -12638,6 +12873,7 @@
   .vault-live-dashboard__title:empty::before,
   .vault-live-tabs__title:empty::before,
   .vault-live-steps__title:empty::before,
+  .vault-live-timeline__title:empty::before,
   .vault-live-accordion__title:empty::before,
   .vault-live-code__title:empty::before,
   .vault-live-tree__title:empty::before,
@@ -12649,6 +12885,7 @@
   .vault-live-dashboard__head,
   .vault-live-tabs__head,
   .vault-live-steps__head,
+  .vault-live-timeline__head,
   .vault-live-accordion__head,
   .vault-live-code__head,
   .vault-live-tree__head,
@@ -12662,6 +12899,7 @@
   .vault-live-dashboard__meta,
   .vault-live-tabs__meta,
   .vault-live-steps__meta,
+  .vault-live-timeline__meta,
   .vault-live-accordion__meta,
   .vault-live-code__meta,
   .vault-live-tree__meta,
@@ -12674,7 +12912,8 @@
 
   .vault-live-dashboard__cols,
   .vault-live-tabs__strip,
-  .vault-live-compare__modes {
+  .vault-live-compare__modes,
+  .vault-live-timeline__layouts {
     display: flex;
     flex-wrap: wrap;
     gap: 0.25rem;
@@ -12682,7 +12921,8 @@
 
   .vault-live-dashboard__col,
   .vault-live-tabs__tab,
-  .vault-live-compare__mode {
+  .vault-live-compare__mode,
+  .vault-live-timeline__layout {
     font-size: 0.625rem;
     letter-spacing: 0.02em;
     color: rgb(var(--shell-muted, var(--color-surface-400)));
@@ -12695,7 +12935,8 @@
 
   .vault-live-dashboard__col[aria-pressed="true"],
   .vault-live-tabs__tab[aria-selected="true"],
-  .vault-live-compare__mode[aria-pressed="true"] {
+  .vault-live-compare__mode[aria-pressed="true"],
+  .vault-live-timeline__layout[aria-pressed="true"] {
     color: rgb(var(--shell-fg, var(--color-surface-50)));
     border-color: rgb(var(--shell-border, var(--color-surface-300)) / 0.55);
   }
@@ -12703,6 +12944,8 @@
   .vault-live-dashboard__stage .liquid-dashboard,
   .vault-live-tabs__stage .liquid-tabs,
   .vault-live-steps__stage .liquid-steps,
+  .vault-live-timeline__stage .liquid-timeline,
+  .vault-live-timeline__stage .liquid-timeline-snapshot,
   .vault-live-accordion__stage .liquid-accordion,
   .vault-live-code__stage .liquid-code,
   .vault-live-tree__stage .liquid-tree,

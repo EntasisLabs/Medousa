@@ -1611,11 +1611,16 @@ async fn run_ask(runtime: &RuntimeComposition, prompt: &str) -> Result<()> {
         initial_user_prompt: compile_lane_prompt(EngineExecutionLane::Interactive, prompt),
         participants: vec![AgentSessionParticipantPayload {
             agent_id: "medousa.researcher".to_string(),
+            kind: Default::default(),
             system_prompt: Some(
                 medousa::agent_runtime::LIGHTWEIGHT_CHANNEL_SYSTEM_PROMPT.to_string(),
             ),
             tool_name: "stasis.web.search.mock".to_string(),
             tool_input: Some(json!({ "query": prompt })),
+            endpoint_ref: None,
+            mcp_gateway_ref: None,
+            timeout_seconds: None,
+            poll_interval_seconds: None,
         }],
         policy_profile: Some(
             default_policy_profile_for_lane(EngineExecutionLane::Interactive).to_string(),

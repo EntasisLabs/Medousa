@@ -231,4 +231,177 @@ impl VaultApi<'_> {
             .await?;
         decode(value).await
     }
+
+    pub async fn list_trash(
+        &self,
+        limit: Option<usize>,
+    ) -> Result<serde_json::Value, crate::SdkError> {
+        let mut params = Vec::new();
+        if let Some(limit) = limit {
+            params.push(("limit", limit.to_string()));
+        }
+        let route = path_with_query("/v1/vault/trash", &params);
+        let value = self
+            .client
+            .transport()
+            .get_json(self.client.base_url(), &route)
+            .await?;
+        decode(value).await
+    }
+
+    pub async fn restore_trash(
+        &self,
+        path: &str,
+    ) -> Result<serde_json::Value, crate::SdkError> {
+        let body = serde_json::json!({ "path": path });
+        let value = self
+            .client
+            .transport()
+            .post_json(self.client.base_url(), "/v1/vault/trash/restore", body)
+            .await?;
+        decode(value).await
+    }
+
+    pub async fn git_detect(&self) -> Result<serde_json::Value, crate::SdkError> {
+        let value = self
+            .client
+            .transport()
+            .get_json(self.client.base_url(), "/v1/vault/git/detect")
+            .await?;
+        decode(value).await
+    }
+
+    pub async fn git_status(&self) -> Result<serde_json::Value, crate::SdkError> {
+        let value = self
+            .client
+            .transport()
+            .get_json(self.client.base_url(), "/v1/vault/git/status")
+            .await?;
+        decode(value).await
+    }
+
+    pub async fn git_enable(
+        &self,
+        enabled: bool,
+        init_if_needed: bool,
+    ) -> Result<serde_json::Value, crate::SdkError> {
+        let body = serde_json::json!({
+            "enabled": enabled,
+            "initIfNeeded": init_if_needed,
+        });
+        let value = self
+            .client
+            .transport()
+            .post_json(self.client.base_url(), "/v1/vault/git/enable", body)
+            .await?;
+        decode(value).await
+    }
+
+    pub async fn git_init(&self) -> Result<serde_json::Value, crate::SdkError> {
+        let value = self
+            .client
+            .transport()
+            .post_json(
+                self.client.base_url(),
+                "/v1/vault/git/init",
+                serde_json::json!({}),
+            )
+            .await?;
+        decode(value).await
+    }
+
+    pub async fn git_install(&self) -> Result<serde_json::Value, crate::SdkError> {
+        let value = self
+            .client
+            .transport()
+            .post_json(
+                self.client.base_url(),
+                "/v1/vault/git/install",
+                serde_json::json!({}),
+            )
+            .await?;
+        decode(value).await
+    }
+
+    pub async fn git_log(
+        &self,
+        path: Option<&str>,
+        limit: Option<usize>,
+    ) -> Result<serde_json::Value, crate::SdkError> {
+        let mut params = Vec::new();
+        if let Some(path) = path.filter(|p| !p.is_empty()) {
+            params.push(("path", path.to_string()));
+        }
+        if let Some(limit) = limit {
+            params.push(("limit", limit.to_string()));
+        }
+        let route = path_with_query("/v1/vault/git/log", &params);
+        let value = self
+            .client
+            .transport()
+            .get_json(self.client.base_url(), &route)
+            .await?;
+        decode(value).await
+    }
+
+    pub async fn git_commit(
+        &self,
+        message: &str,
+        paths: &[String],
+    ) -> Result<serde_json::Value, crate::SdkError> {
+        let body = serde_json::json!({
+            "message": message,
+            "paths": paths,
+        });
+        let value = self
+            .client
+            .transport()
+            .post_json(self.client.base_url(), "/v1/vault/git/commit", body)
+            .await?;
+        decode(value).await
+    }
+
+    pub async fn git_restore(
+        &self,
+        commit: &str,
+        path: &str,
+    ) -> Result<(), crate::SdkError> {
+        let body = serde_json::json!({
+            "commit": commit,
+            "path": path,
+        });
+        let _ = self
+            .client
+            .transport()
+            .post_json(self.client.base_url(), "/v1/vault/git/restore", body)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn git_diff(
+        &self,
+        path: &str,
+        commit: Option<&str>,
+    ) -> Result<serde_json::Value, crate::SdkError> {
+        let mut params = vec![("path", path.to_string())];
+        if let Some(commit) = commit.filter(|c| !c.is_empty()) {
+            params.push(("commit", commit.to_string()));
+        }
+        let route = path_with_query("/v1/vault/git/diff", &params);
+        let value = self
+            .client
+            .transport()
+            .get_json(self.client.base_url(), &route)
+            .await?;
+        decode(value).await
+    }
+
+    pub async fn git_worktrees(&self) -> Result<serde_json::Value, crate::SdkError> {
+        let value = self
+            .client
+            .transport()
+            .get_json(self.client.base_url(), "/v1/vault/git/worktrees")
+            .await?;
+        decode(value).await
+    }
 }

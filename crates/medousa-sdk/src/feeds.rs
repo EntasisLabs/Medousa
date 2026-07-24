@@ -1,6 +1,7 @@
 #[cfg(feature = "async")]
 use medousa_types::{
-    FeedListResponse, FeedReadRequest, FeedStreamEvent, FeedTailQuery, FeedTailResponse,
+    FeedLatestGoodQuery, FeedLatestGoodResponse, FeedListResponse, FeedReadRequest,
+    FeedStreamEvent, FeedTailQuery, FeedTailResponse,
 };
 
 #[cfg(all(feature = "async", feature = "sse"))]
@@ -40,6 +41,10 @@ fn feed_profile_query(profile_id: Option<&str>) -> Vec<(&'static str, String)> {
         .unwrap_or_default()
 }
 
+fn feed_latest_good_query_params(query: &FeedLatestGoodQuery) -> Vec<(&'static str, String)> {
+    feed_profile_query(query.profile_id.as_deref())
+}
+
 #[cfg(feature = "async")]
 impl FeedsApi<'_> {
     pub async fn list(&self, profile_id: Option<&str>) -> Result<FeedListResponse, crate::SdkError> {
@@ -55,6 +60,18 @@ impl FeedsApi<'_> {
         let path = path_with_query(
             &format!("/v1/feeds/{}/tail", feed_id.trim()),
             &feed_tail_query_params(query),
+        );
+        self.client.http().get(&path).await
+    }
+
+    pub async fn latest_good(
+        &self,
+        feed_id: &str,
+        query: &FeedLatestGoodQuery,
+    ) -> Result<FeedLatestGoodResponse, crate::SdkError> {
+        let path = path_with_query(
+            &format!("/v1/feeds/{}/latest-good", feed_id.trim()),
+            &feed_latest_good_query_params(query),
         );
         self.client.http().get(&path).await
     }

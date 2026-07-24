@@ -14,6 +14,7 @@
   import { flows } from "$lib/stores/flows.svelte";
   import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
   import type { RecurringDefinitionEntry } from "$lib/types/recurring";
+  import { portLmeDock } from "$lib/utils/lmeDockHost";
 
   interface Props {
     visible: boolean;
@@ -373,14 +374,15 @@
   {#if embedded && !mobileDetailOpen}
     <footer
       class="lme-side-rail-dock"
+      use:portLmeDock
     >
-      <div class="min-w-0 flex-1">
+      <div class="lme-dock-leading-ghost min-w-0 flex-1">
         <span class="workshop-faint truncate text-[11px]">
           {counts.enabled}/{counts.total} active
         </span>
       </div>
       <ScheduleCreatePopover {mobile} {lmeHosted} trigger="dock" />
-      <div class="relative shrink-0">
+      <div class="lme-dock-chrome-secondary relative shrink-0">
         <button
           type="button"
           class="vault-dock-icon-btn {filterActive ? 'vault-dock-icon-btn-active' : ''}"

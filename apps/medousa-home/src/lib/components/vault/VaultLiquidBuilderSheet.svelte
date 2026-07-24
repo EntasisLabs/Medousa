@@ -7,6 +7,7 @@
     summarizeCompareTable,
     summarizeDashboardTiles,
     summarizeSteps,
+    summarizeTimeline,
     summarizeTabsPanels,
     summarizeTreeText,
     type LiquidAccordionDraft,
@@ -19,6 +20,7 @@
     type LiquidFenceLang,
     type LiquidStepsDraft,
     type LiquidTabsDraft,
+    type LiquidTimelineDraft,
     type LiquidTreeDraft,
   } from "$lib/utils/vaultLiquidFence";
   import ChartPipeTableEditor from "./ChartPipeTableEditor.svelte";
@@ -82,6 +84,13 @@
     panels: [],
   });
   let steps = $state<LiquidStepsDraft>({ title: "", steps: [] });
+  let timeline = $state<LiquidTimelineDraft>({
+    title: "",
+    subtitle: "",
+    granularity: "",
+    layout: "rail",
+    events: [],
+  });
   let accordion = $state<LiquidAccordionDraft>({
     title: "",
     multiple: false,
@@ -139,6 +148,12 @@
         steps = {
           ...initial.draft,
           steps: initial.draft.steps.map((s) => ({ ...s })),
+        };
+        break;
+      case "timeline":
+        timeline = {
+          ...initial.draft,
+          events: initial.draft.events.map((e) => ({ ...e })),
         };
         break;
       case "accordion":
@@ -211,6 +226,25 @@
       onSave({ lang: "steps", draft: { ...steps, steps: next } });
       return;
     }
+    if (lang === "timeline") {
+      const events = timeline.events.filter((e) => e.label.trim());
+      while (events.length < 2) {
+        events.push({
+          label: events.length === 0 ? "Kickoff" : "Shipped",
+          ts: events.length === 0 ? "Day 1" : "Day 2",
+          detail: "…",
+          lane: "",
+          emoji: "",
+          icon: "",
+          meta: "",
+          body: "",
+          image: "",
+          media: "",
+        });
+      }
+      onSave({ lang: "timeline", draft: { ...timeline, events } });
+      return;
+    }
     if (lang === "accordion") {
       const items = accordion.items.filter(
         (i) => i.label.trim() || i.body.trim(),
@@ -274,7 +308,7 @@
   }
 
   const quietListLang = $derived(
-    lang === "accordion" || lang === "tabs" || lang === "steps",
+    lang === "accordion" || lang === "tabs" || lang === "steps" || lang === "timeline",
   );
 
   const quietRows = $derived.by(() => {
@@ -287,13 +321,19 @@
     if (lang === "steps") {
       return steps.steps.map((s) => ({ title: s.label, body: s.body }));
     }
+    if (lang === "timeline") {
+      return timeline.events.map((e) => ({
+        title: e.label,
+        body: e.body.trim() || e.detail.trim(),
+      }));
+    }
     return [];
   });
 
   const quietMinRows = $derived(lang === "accordion" ? 1 : 2);
 
   const quietAddLabel = $derived(
-    lang === "tabs" ? "Add panel" : lang === "steps" ? "Add step" : "Add item",
+    lang === "tabs" ? "Add panel" : lang === "steps" ? "Add step" : lang === "timeline" ? "Add event" : "Add item",
   );
 
   function openQuietEdit(index: number) {
@@ -304,6 +344,7 @@
     if (lang === "accordion") removeItem(index);
     else if (lang === "tabs") removePanel(index);
     else if (lang === "steps") removeStep(index);
+    else if (lang === "timeline") removeEvent(index);
     if (itemEditIndex === index) itemEditIndex = null;
     else if (itemEditIndex != null && itemEditIndex > index) {
       itemEditIndex -= 1;
@@ -314,6 +355,7 @@
     if (lang === "accordion") addItem();
     else if (lang === "tabs") addPanel();
     else if (lang === "steps") addStep();
+    else if (lang === "timeline") addEvent();
   }
 
   function setQuietTitle(value: string) {
@@ -338,6 +380,13 @@
         ...steps,
         steps: steps.steps.map((step, idx) =>
           idx === i ? { ...step, label: value } : step,
+        ),
+      };
+    } else if (lang === "timeline") {
+      timeline = {
+        ...timeline,
+        events: timeline.events.map((event, idx) =>
+          idx === i ? { ...event, label: value } : event,
         ),
       };
     }
@@ -365,6 +414,13 @@
         ...steps,
         steps: steps.steps.map((step, idx) =>
           idx === i ? { ...step, body: value } : step,
+        ),
+      };
+    } else if (lang === "timeline") {
+      timeline = {
+        ...timeline,
+        events: timeline.events.map((event, idx) =>
+          idx === i ? { ...event, body: value, detail: value } : event,
         ),
       };
     }
@@ -427,6 +483,42 @@
     if (steps.steps.length <= 2) return;
     steps = { ...steps, steps: steps.steps.filter((_, i) => i !== index) };
   }
+  function addEvent() {
+    timeline = {
+      ...timeline,
+      events: [
+        ...timeline.events,
+        {
+          label: "",
+          ts: "",
+          detail: "",
+          lane: "",
+          emoji: "",
+          icon: "",
+          meta: "",
+          body: "",
+          image: "",
+          media: "",
+        },
+      ],
+    };
+  }
+  function removeEvent(index: number) {
+    if (timeline.events.length <= 2) return;
+    timeline = { ...timeline, events: timeline.events.filter((_, i) => i !== index) };
+  }
+  function setTimelineEventField(
+    index: number,
+    field: keyof LiquidTimelineDraft["events"][number],
+    value: string,
+  ) {
+    timeline = {
+      ...timeline,
+      events: timeline.events.map((event, idx) =>
+        idx === index ? { ...event, [field]: value } : event,
+      ),
+    };
+  }
   function addItem() {
     accordion = {
       ...accordion,
@@ -448,7 +540,9 @@
         ? "Panels"
         : lang === "steps"
           ? "Steps"
-          : lang === "accordion"
+          : lang === "timeline"
+            ? "Events"
+            : lang === "accordion"
             ? "Items"
             : lang === "code"
               ? "Source"
@@ -467,7 +561,9 @@
         ? "Edit panel"
         : lang === "steps"
           ? "Edit step"
-          : "Edit item"
+          : lang === "timeline"
+            ? "Edit event"
+            : "Edit item"
       : listLabel,
   );
 </script>
@@ -515,6 +611,116 @@
         </header>
 
         {#if quietListLang && itemEditIndex != null && quietRows[itemEditIndex]}
+          {@const editIdx = itemEditIndex}
+          {#if lang === "timeline"}
+            <div class="vault-liquid-quiet-item">
+              <label class="vault-liquid-quiet-item__field">
+                <span class="vault-liquid-quiet-item__label">Title</span>
+                <input
+                  class="vault-liquid-quiet-item__input"
+                  type="text"
+                  placeholder="Event title"
+                  aria-label="Event title"
+                  value={timeline.events[editIdx]?.label ?? ""}
+                  oninput={(event) =>
+                    setQuietTitle((event.currentTarget as HTMLInputElement).value)}
+                />
+              </label>
+              <label class="vault-liquid-quiet-item__field">
+                <span class="vault-liquid-quiet-item__label">Timestamp</span>
+                <input
+                  class="vault-liquid-quiet-item__input"
+                  type="text"
+                  placeholder="Jul 12"
+                  aria-label="Timestamp"
+                  value={timeline.events[editIdx]?.ts ?? ""}
+                  oninput={(event) =>
+                    setTimelineEventField(
+                      editIdx,
+                      "ts",
+                      (event.currentTarget as HTMLInputElement).value,
+                    )}
+                />
+              </label>
+              <label class="vault-liquid-quiet-item__field">
+                <span class="vault-liquid-quiet-item__label">Meta</span>
+                <input
+                  class="vault-liquid-quiet-item__input"
+                  type="text"
+                  placeholder="travel"
+                  aria-label="Meta"
+                  value={timeline.events[editIdx]?.meta ?? ""}
+                  oninput={(event) =>
+                    setTimelineEventField(
+                      editIdx,
+                      "meta",
+                      (event.currentTarget as HTMLInputElement).value,
+                    )}
+                />
+              </label>
+              <label class="vault-liquid-quiet-item__field">
+                <span class="vault-liquid-quiet-item__label">Emoji</span>
+                <input
+                  class="vault-liquid-quiet-item__input"
+                  type="text"
+                  maxlength="8"
+                  placeholder="✈️"
+                  aria-label="Emoji"
+                  value={timeline.events[editIdx]?.emoji ?? ""}
+                  oninput={(event) =>
+                    setTimelineEventField(
+                      editIdx,
+                      "emoji",
+                      (event.currentTarget as HTMLInputElement).value,
+                    )}
+                />
+              </label>
+              <label class="vault-liquid-quiet-item__field">
+                <span class="vault-liquid-quiet-item__label">Icon</span>
+                <input
+                  class="vault-liquid-quiet-item__input"
+                  type="text"
+                  placeholder="plane"
+                  aria-label="Lucide icon"
+                  value={timeline.events[editIdx]?.icon ?? ""}
+                  oninput={(event) =>
+                    setTimelineEventField(
+                      editIdx,
+                      "icon",
+                      (event.currentTarget as HTMLInputElement).value,
+                    )}
+                />
+              </label>
+              <label class="vault-liquid-quiet-item__field">
+                <span class="vault-liquid-quiet-item__label">Image URL</span>
+                <input
+                  class="vault-liquid-quiet-item__input"
+                  type="text"
+                  placeholder="https://…"
+                  aria-label="Image URL"
+                  value={timeline.events[editIdx]?.image ?? ""}
+                  oninput={(event) =>
+                    setTimelineEventField(
+                      editIdx,
+                      "image",
+                      (event.currentTarget as HTMLInputElement).value,
+                    )}
+                />
+              </label>
+              <label class="vault-liquid-quiet-item__field">
+                <span class="vault-liquid-quiet-item__label">Body</span>
+                <textarea
+                  class="vault-liquid-quiet-item__area"
+                  rows="6"
+                  placeholder="What happened"
+                  aria-label="Body"
+                  value={timeline.events[editIdx]?.body || timeline.events[editIdx]?.detail || ""}
+                  oninput={(event) =>
+                    setQuietBody((event.currentTarget as HTMLTextAreaElement).value)}
+                ></textarea>
+              </label>
+            </div>
+          {:else}
           <VaultLiquidQuietItemEdit
             titleLabel={lang === "accordion" ? "Question" : "Title"}
             bodyLabel={lang === "accordion" ? "Answer" : "Body"}
@@ -525,6 +731,7 @@
             onTitleChange={setQuietTitle}
             onBodyChange={setQuietBody}
           />
+          {/if}
         {:else if quietListLang && lang === "tabs"}
           <VaultLiquidQuietList
             rows={quietRows}
@@ -583,6 +790,15 @@
               </select>
             {/snippet}
           </VaultLiquidQuietList>
+        {:else if quietListLang && lang === "timeline"}
+          <VaultLiquidQuietList
+            rows={quietRows}
+            addLabel={quietAddLabel}
+            minRows={quietMinRows}
+            onEdit={openQuietEdit}
+            onRemove={quietRemove}
+            onAdd={quietAdd}
+          />
         {:else if lang === "dashboard"}
           <div class="vault-liquid-list">
             {#each dashboard.tiles as tile, index (index)}
@@ -653,6 +869,9 @@
               <input id="liquid-builder-title" class="vault-chart-builder-title-input" type="text" placeholder="Untitled tabs" aria-label="Tabs title" bind:value={tabs.title} />
             {:else if lang === "steps"}
               <input id="liquid-builder-title" class="vault-chart-builder-title-input" type="text" placeholder="Untitled steps" aria-label="Steps title" bind:value={steps.title} />
+            {:else if lang === "timeline"}
+              <input id="liquid-builder-title" class="vault-chart-builder-title-input" type="text" placeholder="Untitled timeline" aria-label="Timeline title" bind:value={timeline.title} />
+              <input class="vault-chart-builder-desc-input" type="text" placeholder="Subtitle" aria-label="Subtitle" bind:value={timeline.subtitle} />
             {:else if lang === "accordion"}
               <input id="liquid-builder-title" class="vault-chart-builder-title-input" type="text" placeholder="Untitled accordion" aria-label="Accordion title" bind:value={accordion.title} />
             {:else if lang === "code"}
@@ -820,6 +1039,40 @@
               <div class="vault-chart-fact__row">
                 <span class="vault-chart-fact__label">Steps</span>
                 <button type="button" class="vault-chart-fact__value" onclick={() => (listView = true)}>{summarizeSteps(steps)}</button>
+              </div>
+            </div>
+          {:else if lang === "timeline"}
+            <div class="vault-chart-fact" data-chart-fact-row>
+              <div class="vault-chart-fact__row">
+                <span class="vault-chart-fact__label">Events</span>
+                <button type="button" class="vault-chart-fact__value" onclick={() => (listView = true)}>{summarizeTimeline(timeline)}</button>
+              </div>
+            </div>
+            <div class="vault-chart-fact" data-chart-fact-row>
+              <div class="vault-chart-fact__row">
+                <span class="vault-chart-fact__label">Layout</span>
+                <div class="vault-chart-builder-seg" role="listbox" aria-label="Timeline layout">
+                  <button
+                    type="button"
+                    class="vault-chart-builder-seg__btn"
+                    class:vault-chart-builder-seg__btn--on={timeline.layout === "rail"}
+                    role="option"
+                    aria-selected={timeline.layout === "rail"}
+                    onclick={() => (timeline = { ...timeline, layout: "rail" })}
+                  >
+                    rail
+                  </button>
+                  <button
+                    type="button"
+                    class="vault-chart-builder-seg__btn"
+                    class:vault-chart-builder-seg__btn--on={timeline.layout === "snapshot"}
+                    role="option"
+                    aria-selected={timeline.layout === "snapshot"}
+                    onclick={() => (timeline = { ...timeline, layout: "snapshot" })}
+                  >
+                    snapshot
+                  </button>
+                </div>
               </div>
             </div>
           {:else if lang === "accordion"}

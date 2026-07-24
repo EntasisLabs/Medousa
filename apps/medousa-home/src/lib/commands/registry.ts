@@ -18,12 +18,18 @@ import {
   dispatchBrowserFocusUrl,
   dispatchBrowserOpenBookmarks,
 } from "$lib/utils/browserChromeEvents";
+import { summonViewToolbar } from "$lib/utils/railPopoverSummon";
+import {
+  isMouseShakeToolbarEnabled,
+  toggleMouseShakeToolbarEnabled,
+} from "$lib/utils/mouseShake";
 import { reconnectWorkshop } from "$lib/workshopConnection";
 import { buildInteractiveTurnOptions } from "$lib/interactiveTurnOptions";
 import { createTurnTicket } from "$lib/daemon";
 import { connection } from "$lib/stores/connection.svelte";
 import { layout } from "$lib/stores/layout.svelte";
 import { shellTabs } from "$lib/stores/shellTabs.svelte";
+import { toast } from "$lib/stores/toast.svelte";
 import type { Surface } from "$lib/types/ui";
 import type { DepthMode } from "$lib/types/runtime";
 import type { WorkshopCommand, WorkshopCommandContext } from "./types";
@@ -68,6 +74,105 @@ export function buildGoCommands(): WorkshopCommand[] {
         ctx.callbacks.close();
       },
     },
+  ];
+}
+
+export function buildWorkspaceCommands(): WorkshopCommand[] {
+  const switchCommands = shellTabs.desktops.map((desktop, index) => ({
+    id: `workspace-switch-${desktop.id}`,
+    section: "go" as const,
+    label: `Switch workspace: ${desktop.name}`,
+    subtitle:
+      desktop.id === shellTabs.activeDesktopId
+        ? `Current · ${formatShortcut(`Ctrl+; ${index + 1}`)}`
+        : `${formatShortcut(`Ctrl+; ${index + 1}`)} — layout only; vault and chat stay shared`,
+    keywords: `workspace desktop virtual switch ${desktop.name} ${index + 1}`,
+    run: async (ctx: WorkshopCommandContext) => {
+      await shellTabs.switchDesktop(desktop.id);
+      ctx.callbacks.close();
+      ctx.notice(`Workspace: ${desktop.name}`);
+    },
+  }));
+
+  const atCap = !shellTabs.canCreateDesktop;
+
+  return [
+    {
+      id: "workspace-new",
+      section: "go",
+      label: "New workspace",
+      subtitle: atCap
+        ? "Maximum 4 virtual desktops"
+        : "Create a named virtual desktop (pane layout snapshot)",
+      keywords: "workspace desktop virtual new create hyprland",
+      prompt: atCap
+        ? undefined
+        : {
+            placeholder: "Workspace name",
+            submitLabel: "Create",
+          },
+      run: (ctx, args) => {
+        if (!shellTabs.canCreateDesktop) {
+          ctx.error("You already have 4 workspaces.");
+          return;
+        }
+        const id = shellTabs.createDesktop(args);
+        if (!id) {
+          ctx.error("You already have 4 workspaces.");
+          return;
+        }
+        const name =
+          shellTabs.desktops.find((desktop) => desktop.id === id)?.name ?? "Workspace";
+        ctx.callbacks.close();
+        ctx.notice(`Created workspace: ${name}`);
+      },
+    },
+    {
+      id: "workspace-rename",
+      section: "go",
+      label: "Rename workspace",
+      subtitle: `Rename “${shellTabs.activeDesktopName}”`,
+      keywords: "workspace desktop virtual rename",
+      prompt: {
+        placeholder: "New workspace name",
+        submitLabel: "Rename",
+      },
+      run: (ctx, args) => {
+        const ok = shellTabs.renameDesktop(shellTabs.activeDesktopId, args ?? "");
+        if (!ok) {
+          ctx.error("Enter a workspace name.");
+          return;
+        }
+        ctx.callbacks.close();
+        ctx.notice(`Renamed workspace: ${shellTabs.activeDesktopName}`);
+      },
+    },
+    {
+      id: "workspace-remove",
+      section: "go",
+      label: "Remove workspace",
+      subtitle:
+        shellTabs.desktops.length <= 1
+          ? "Keep at least one workspace"
+          : `Delete “${shellTabs.activeDesktopName}” (layout only)`,
+      keywords: "workspace desktop virtual remove delete close",
+      risk: shellTabs.desktops.length > 1 ? "attention" : "safe",
+      run: async (ctx) => {
+        if (shellTabs.desktops.length <= 1) {
+          ctx.error("Keep at least one workspace.");
+          return;
+        }
+        const name = shellTabs.activeDesktopName;
+        const ok = await shellTabs.removeDesktop();
+        if (!ok) {
+          ctx.error("Could not remove workspace.");
+          return;
+        }
+        ctx.callbacks.close();
+        ctx.notice(`Removed workspace: ${name}`);
+      },
+    },
+    ...switchCommands,
   ];
 }
 
@@ -274,6 +379,36 @@ export function buildPaneCommands(): WorkshopCommand[] {
       advanced: true,
       run: (ctx) => {
         layout.toggleShellSidebarExpanded();
+        ctx.callbacks.close();
+      },
+    },
+    {
+      id: "pane-summon-view-toolbar",
+      section: "advanced",
+      label: "Summon view toolbar",
+      subtitle: `${formatShortcut("Ctrl+Shift+.")} — compact toolbar at the cursor (or shake the mouse)`,
+      keywords: "toolbar summon shake mouse hud library automations chat rail popover",
+      advanced: true,
+      run: (ctx) => {
+        summonViewToolbar();
+        ctx.callbacks.close();
+      },
+    },
+    {
+      id: "pane-toggle-mouse-shake-toolbar",
+      section: "advanced",
+      label: isMouseShakeToolbarEnabled()
+        ? "Disable shake to summon toolbar"
+        : "Enable shake to summon toolbar",
+      subtitle: "Mouse-shake gesture for the view toolbar HUD",
+      keywords: "shake mouse toolbar gesture preference disable enable",
+      advanced: true,
+      run: (ctx) => {
+        const enabled = toggleMouseShakeToolbarEnabled();
+        toast.show(
+          enabled ? "Shake to summon toolbar on" : "Shake to summon toolbar off",
+          { durationMs: 1600 },
+        );
         ctx.callbacks.close();
       },
     },

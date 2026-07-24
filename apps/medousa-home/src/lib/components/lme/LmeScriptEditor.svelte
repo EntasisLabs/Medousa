@@ -1,11 +1,12 @@
 <script lang="ts">
   import ScriptWorkbenchChatPanel from "$lib/components/automations/ScriptWorkbenchChatPanel.svelte";
   import ScriptWorkbenchConsole from "$lib/components/automations/ScriptWorkbenchConsole.svelte";
-  import ScriptWorkbenchStatusBar from "$lib/components/automations/ScriptWorkbenchStatusBar.svelte";
   import ScriptWorkbenchTitlebar from "$lib/components/automations/ScriptWorkbenchTitlebar.svelte";
   import GraphemeScriptEditorPanel from "$lib/components/grapheme/GraphemeScriptEditorPanel.svelte";
   import { environment } from "$lib/stores/environment.svelte";
   import { layout } from "$lib/stores/layout.svelte";
+  import { usesUnifiedTitlebar } from "$lib/platform";
+  import { SCRIPT_WORKBENCH_OPEN_CONSOLE_EVENT } from "$lib/utils/scriptWorkbenchChromeEvents";
 
   interface Props {
     visible?: boolean;
@@ -16,10 +17,21 @@
   let consoleOpen = $state(true);
   let chatOpen = $state(false);
 
+  /** Unified titlebar owns master-rail expand — pretend rail is open so titlebar hides it. */
+  const shellLeftOpen = $derived(usesUnifiedTitlebar() || layout.shellSidebarExpanded);
+
   function showWorkspaceBrowser() {
     layout.openShellSidebarView(layout.desktopSurface);
     void environment.patchShellChromeDesktop({ navStyle: "rail" }).catch(() => {});
   }
+
+  $effect(() => {
+    const onOpen = () => {
+      consoleOpen = true;
+    };
+    window.addEventListener(SCRIPT_WORKBENCH_OPEN_CONSOLE_EVENT, onOpen);
+    return () => window.removeEventListener(SCRIPT_WORKBENCH_OPEN_CONSOLE_EVENT, onOpen);
+  });
 </script>
 
 <div
@@ -27,7 +39,7 @@
   data-debug-label="lme-script-editor"
 >
   <ScriptWorkbenchTitlebar
-    leftOpen={layout.shellSidebarExpanded}
+    leftOpen={shellLeftOpen}
     {consoleOpen}
     {chatOpen}
     hideTabStrip={true}
@@ -51,6 +63,4 @@
       />
     {/if}
   </div>
-
-  <ScriptWorkbenchStatusBar onToggleConsole={() => (consoleOpen = true)} />
 </div>

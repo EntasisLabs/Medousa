@@ -2,6 +2,7 @@
   import { vaultNoteStats, formatVaultNoteStats } from "$lib/utils/vaultNoteStats";
   import { sortVaultTagsForDisplay } from "$lib/utils/vaultFrontmatter";
   import { formatShortcut } from "$lib/platform";
+  import { vaultVersions } from "$lib/stores/vaultVersions.svelte";
 
   interface Props {
     content: string;
@@ -27,6 +28,20 @@
     const base = displayTags.join(" · ");
     return extraTagCount > 0 ? `${base} · +${extraTagCount}` : base;
   });
+  const versionsLabel = $derived.by(() => {
+    if (!vaultVersions.enabled || !vaultVersions.status?.isRepo) return "";
+    const branch = vaultVersions.status.branch ?? "main";
+    const dirty =
+      vaultVersions.status.dirtyCount > 0
+        ? ` · ${vaultVersions.status.dirtyCount} changed`
+        : "";
+    return `${branch}${dirty}`;
+  });
+
+  $effect(() => {
+    if (!vaultVersions.enabled) return;
+    void vaultVersions.refresh();
+  });
 </script>
 
 <footer class="vault-note-status" aria-label="Note statistics">
@@ -39,6 +54,17 @@
     {#if !dense}
       <span class="vault-note-status-sep" aria-hidden="true">·</span>
       <span class="tabular-nums">{stats.characters.toLocaleString()} chars</span>
+    {/if}
+    {#if versionsLabel}
+      <span class="vault-note-status-sep" aria-hidden="true">·</span>
+      <button
+        type="button"
+        class="vault-note-status-versions truncate text-left hover:text-surface-100"
+        title="Open Versions"
+        onclick={() => vaultVersions.openPanel()}
+      >
+        {versionsLabel}
+      </button>
     {/if}
   </p>
   {#if !dense}

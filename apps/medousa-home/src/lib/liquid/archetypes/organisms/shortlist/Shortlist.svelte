@@ -6,6 +6,7 @@
   import { getLiquidContext } from "$lib/liquid/render/context";
   import { createSceneEvent } from "$lib/liquid/core";
   import type { ArchetypeProps } from "$lib/liquid/render/types";
+  import LiquidGlyph from "$lib/liquid/icons/LiquidGlyph.svelte";
   import { isHttpUrl } from "$lib/utils/openInBrowser";
 
   interface ShortlistItem {
@@ -15,6 +16,7 @@
     score?: string;
     meta?: string;
     emoji?: string;
+    icon?: string;
     image?: string;
   }
 
@@ -45,6 +47,7 @@
         if (typeof row.score === "string" && row.score.trim()) out.score = row.score.trim();
         if (typeof row.meta === "string" && row.meta.trim()) out.meta = row.meta.trim();
         if (typeof row.emoji === "string" && row.emoji.trim()) out.emoji = row.emoji.trim();
+        if (typeof row.icon === "string" && row.icon.trim()) out.icon = row.icon.trim();
         if (typeof row.image === "string" && row.image.trim()) out.image = row.image.trim();
         return out;
       })
@@ -109,8 +112,10 @@
             <span class="liquid-shortlist-rank" aria-hidden="true">{rankLabel(i)}</span>
             {#if item.image && isHttpUrl(item.image)}
               <img class="liquid-shortlist-thumb" src={item.image} alt="" loading="lazy" />
-            {:else if item.emoji}
-              <span class="liquid-shortlist-emoji" aria-hidden="true">{item.emoji}</span>
+            {:else if item.emoji || item.icon}
+              <span class="liquid-shortlist-emoji" aria-hidden="true">
+                <LiquidGlyph icon={item.icon} emoji={item.emoji} size={16} />
+              </span>
             {/if}
             <span class="liquid-shortlist-main">
               <span class="liquid-shortlist-label">{item.label}</span>

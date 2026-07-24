@@ -78,10 +78,35 @@ import { MAX_SHELL_PANES } from "$lib/types/shellTabs";
 const SESSION_KEY = "medousa-home-session-id";
 const PINS_KEY = "medousa-home-pinned-sessions";
 const DRAFTS_KEY = "medousa-home-chat-drafts";
+const PROMOTED_ASKS_KEY = "medousa-home-promoted-asks-v1";
 const DRAFT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 const DRAFT_PERSIST_DEBOUNCE_MS = 300;
 const SESSIONS_STALE_MS = 30_000;
 const SESSIONS_REFRESH_DEBOUNCE_MS = 1_500;
+const PROMOTED_ASKS_MAX = 200;
+
+function loadPromotedAskIds(): Set<string> {
+  if (typeof localStorage === "undefined") return new Set();
+  try {
+    const raw = localStorage.getItem(PROMOTED_ASKS_KEY);
+    if (!raw) return new Set();
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return new Set();
+    return new Set(
+      parsed.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0),
+    );
+  } catch {
+    return new Set();
+  }
+}
+
+function savePromotedAskIds(ids: Set<string>) {
+  if (typeof localStorage === "undefined") return;
+  const list = [...ids];
+  const trimmed =
+    list.length > PROMOTED_ASKS_MAX ? list.slice(list.length - PROMOTED_ASKS_MAX) : list;
+  localStorage.setItem(PROMOTED_ASKS_KEY, JSON.stringify(trimmed));
+}
 /** Delay before fetching daemon history to backfill a settled turn. */
 const TERMINAL_RECONCILE_DELAY_MS = 2_000;
 /** Accept late SSE frames for recently settled turns (ordering / dual-window). */
@@ -126,11 +151,19 @@ export class ChatStore {
   /** True while revalidating the session list without clearing cached rows. */
   sessionsRefreshing = $state(false);
   pinnedIds = $state<string[]>(loadPinnedIds());
-  historyLoading = $state(false);
+  /**
+   * Start true so cold restore doesn't flash Presence (centered composer) before
+   * the first history fetch finishes. Cleared in reloadCurrentSession / newSession.
+   */
+  historyLoading = $state(true);
   /** Skip daemon history fetch until the first turn is sent (newSession). */
   sessionPristine = $state(false);
   /** Brief banner after reloading turns from the engine (e.g. after WebView refresh). */
   historyNotice = $state<string | null>(null);
+  /** Quiet handoff when Chat spawns a background ask (Open in Work). */
+  askHandoffNotice = $state<string | null>(null);
+  /** Ask job ids promoted into chat — skip re-hydrate so they don't ghost back. */
+  private promotedAskIds = loadPromotedAskIds();
   /** Desktop in-app alert when a turn pauses for budget approval. */
   budgetAlert = $state<PendingBudgetApproval | null>(null);
   /** Agent Browser CAPTCHA / verification handoff. */
@@ -783,6 +816,7 @@ export class ChatStore {
     localStorage.setItem(SESSION_KEY, id);
     this.loadRuntimeIntoFocused(emptySessionRuntime(id, loadDraftForSession(id)));
     this.sessionPristine = true;
+    this.historyLoading = false;
     this.transcriptEpoch += 1;
     chatScenes.reset();
     chatInteractions.reset();
@@ -791,6 +825,12 @@ export class ChatStore {
     chatStreamPool.acquire(id);
     this.stashFocusedRuntime();
     await this.refreshSessions({ force: true });
+    // Shell tab host mounts ChatSessionView by shell tab sessionId — without
+    // opening a tab here the previous chat (often full of worker history) stays on screen.
+    const { shellTabs } = await import("$lib/stores/shellTabs.svelte");
+    shellTabs.openChat(id, { activate: true });
+    const { workshops } = await import("$lib/stores/workshops.svelte");
+    void workshops.saveActiveSession(id);
   }
 
   /** Pull transcript from the daemon when the UI remounted empty (startup / reconnect). */
@@ -991,6 +1031,10 @@ export class ChatStore {
     this.historyNotice = null;
   }
 
+  clearAskHandoffNotice() {
+    this.askHandoffNotice = null;
+  }
+
   noteTurnStarted(turnId: string) {
     this.activeTurnId = turnId;
   }
@@ -1020,6 +1064,7 @@ export class ChatStore {
     this.sessionPristine = false;
     this.transcriptEpoch += 1;
     this.historyNotice = null;
+    this.askHandoffNotice = null;
     const assistantId = crypto.randomUUID();
     const isAsk = ticket.mode === "background";
     const askJobId = ticket.workspace_card_id ?? ticket.turn_id;
@@ -1056,6 +1101,7 @@ export class ChatStore {
       this.activeTurnId = ticket.turn_id;
     } else {
       this.backgroundActivity += 1;
+      this.askHandoffNotice = "Ask started";
     }
     this.streamError = null;
   }
@@ -1122,6 +1168,7 @@ export class ChatStore {
 
       for (const card of cards) {
         if (!isAskJobId(card.id)) continue;
+        if (this.promotedAskIds.has(card.id)) continue;
         if (card.column === "done" || card.column === "blocked") continue;
         try {
           const askResponse = await listSessionTurns(askSessionId(card.id), true);
@@ -1367,13 +1414,16 @@ export class ChatStore {
           : message,
       ),
     );
+    this.promotedAskIds.add(trimmed);
+    savePromotedAskIds(this.promotedAskIds);
   }
 
-  /** Load isolated ask session transcripts into the Asks rail. */
+  /** Load isolated ask session transcripts into the Work Asks view. */
   async hydrateAskThreads(cards: WorkCard[]) {
     const epoch = this.transcriptEpoch;
     const targets = cards.filter((card) => {
       if (!isAskJobId(card.id)) return false;
+      if (this.promotedAskIds.has(card.id)) return false;
       if (this.askHydrationInFlight.has(card.id)) return false;
       return !this.messages.some((message) => message.askJobId === card.id);
     });
@@ -1413,9 +1463,13 @@ export class ChatStore {
           .map((message) => message.askJobId)
           .filter((jobId): jobId is string => Boolean(jobId?.trim())),
       );
-      const fresh = hydrated.filter(
-        (message) => !message.askJobId || !jobsAlreadyHydrated.has(message.askJobId),
-      );
+      const fresh = hydrated.filter((message) => {
+        const jobId = message.askJobId?.trim();
+        if (!jobId) return true;
+        if (this.promotedAskIds.has(jobId)) return false;
+        if (jobsAlreadyHydrated.has(jobId)) return false;
+        return true;
+      });
       if (fresh.length === 0) return;
 
       this.messages = dedupeMessagesById([...this.messages, ...fresh]);

@@ -22,6 +22,17 @@
   } from "$lib/utils/contextThreads";
   import { Map as MapIcon, X } from "@lucide/svelte";
 
+  interface Props {
+    /** Fired after a recall/thread/posture pick (e.g. open context from a rail popover). */
+    onPick?: () => void;
+    /** `rail-list` hides the mode bar (it lives in the rail popover strip). */
+    chrome?: "default" | "rail-list";
+  }
+
+  let { onPick, chrome = "default" }: Props = $props();
+
+  const showModeBar = $derived(chrome !== "rail-list");
+
   const activeTab = $derived(contextShell.activeTab);
   const search = $derived(contextShell.search);
 
@@ -72,7 +83,9 @@
   class="context-side-panel flex h-full min-h-0 w-full flex-col"
   data-debug-label="context-side-panel"
 >
-  <ContextModeBar />
+  {#if showModeBar}
+    <ContextModeBar />
+  {/if}
 
   <div class="shrink-0 space-y-1.5 border-b border-surface-500/25 px-1.5 py-1.5">
     <label class="block">
@@ -113,7 +126,10 @@
         selectedId={contextShell.selectedRecallId}
         loading={identity.loading}
         error={identity.error}
-        onSelect={(id) => contextShell.selectRecall(id)}
+        onSelect={(id) => {
+          contextShell.selectRecall(id);
+          onPick?.();
+        }}
       />
     {:else if activeTab === "threads"}
       <ContextThreadsList
@@ -123,7 +139,10 @@
         loading={contextThreads.loading}
         error={contextThreads.error}
         retrieved={contextThreads.nodes.length}
-        onSelect={(id) => contextShell.selectThread(id)}
+        onSelect={(id) => {
+          contextShell.selectThread(id);
+          onPick?.();
+        }}
       />
     {:else if activeTab === "posture"}
       <ContextPostureList
@@ -132,7 +151,10 @@
         selectedId={contextShell.selectedPostureId}
         loading={contextPosture.loading}
         error={contextPosture.error}
-        onSelect={(id) => contextShell.selectPosture(id)}
+        onSelect={(id) => {
+          contextShell.selectPosture(id);
+          onPick?.();
+        }}
       />
     {:else}
       <div class="flex flex-col items-center gap-2 px-3 py-8 text-center">

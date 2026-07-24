@@ -226,3 +226,27 @@ pub async fn vault_add_root(
         .await
         .map_err(sdk_error)
 }
+
+#[tauri::command]
+pub async fn vault_list_trash(
+    state: State<'_, DaemonState>,
+    limit: Option<usize>,
+) -> Result<serde_json::Value, String> {
+    client(&state)
+        .vault()
+        .list_trash(limit)
+        .await
+        .map_err(sdk_error)
+}
+
+#[tauri::command]
+pub async fn vault_restore_trash(
+    state: State<'_, DaemonState>,
+    path: String,
+) -> Result<serde_json::Value, String> {
+    client(&state)
+        .vault()
+        .restore_trash(path.trim())
+        .await
+        .map_err(sdk_error)
+}

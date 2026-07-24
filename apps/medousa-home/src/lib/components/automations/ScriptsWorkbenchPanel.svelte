@@ -25,6 +25,7 @@
     handleScriptContextMenuEvent,
     shouldSuppressScriptContextMenuClick,
   } from "$lib/utils/scriptContextMenuEvents";
+  import { SCRIPT_WORKBENCH_OPEN_CONSOLE_EVENT } from "$lib/utils/scriptWorkbenchChromeEvents";
   import { tick } from "svelte";
 
   interface Props {
@@ -73,6 +74,15 @@
     if (!visible) return;
     void workshop.refreshModulesAndScripts();
     graphemeScriptEditor.ensureInitialTab();
+  });
+
+  $effect(() => {
+    if (mobile || !visible) return;
+    const onOpen = () => {
+      consoleOpen = true;
+    };
+    window.addEventListener(SCRIPT_WORKBENCH_OPEN_CONSOLE_EVENT, onOpen);
+    return () => window.removeEventListener(SCRIPT_WORKBENCH_OPEN_CONSOLE_EVENT, onOpen);
   });
 
   const filteredScripts = $derived(
@@ -453,11 +463,8 @@
         {/if}
       </div>
 
-      <ScriptWorkbenchStatusBar
-        onToggleConsole={() => (mobile ? openOutput() : (consoleOpen = true))}
-      />
-
       {#if mobile}
+        <ScriptWorkbenchStatusBar onToggleConsole={openOutput} />
         <ScriptWorkbenchToolsSheet
           open={toolsSheetOpen}
           {visible}

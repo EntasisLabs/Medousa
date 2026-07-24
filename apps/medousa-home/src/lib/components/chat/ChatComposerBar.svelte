@@ -14,10 +14,6 @@
   import { chat } from "$lib/stores/chat.svelte";
   import { settings } from "$lib/stores/settings.svelte";
   import { isTauriMobilePlatform } from "$lib/platform";
-  import {
-    MAX_MEDIA_REFS_PER_TURN,
-    MAX_MEDIA_UPLOAD_MB,
-  } from "$lib/utils/normieErrors";
   import { haptic } from "$lib/haptics";
   import {
     idleVoiceWaveform,
@@ -39,6 +35,8 @@
     mobile?: boolean;
     disabled?: boolean;
     composerBlocked?: boolean;
+    /** Hide attachment hint + model picker (Presence empty landing). */
+    quietChrome?: boolean;
     onkeydown?: (event: KeyboardEvent) => void;
     onfocus?: () => void;
     onblur?: () => void;
@@ -48,10 +46,20 @@
     mobile = false,
     disabled = false,
     composerBlocked = false,
+    quietChrome = false,
     onkeydown,
     onfocus,
     onblur,
   }: Props = $props();
+
+  const showModelPicker = $derived(settings.showChatModelPicker && !quietChrome);
+  const placeholder = $derived(
+    chat.hasWorkshopHandoff()
+      ? "Steer the handoff…"
+      : quietChrome
+        ? "Ask anything"
+        : "Message Medousa…",
+  );
 
   let voiceActive = $state(false);
   let voiceError = $state<string | null>(null);
@@ -217,11 +225,6 @@
 </script>
 
 <ChatAttachmentChips {disabled} />
-{#if settings.showChatAttachmentHint && chat.pendingMediaRefs.length === 0 && !voiceActive}
-  <p class="composer-attachment-hint text-[11px] text-surface-500">
-    Up to {MAX_MEDIA_REFS_PER_TURN} files, {MAX_MEDIA_UPLOAD_MB} MB each — PDF, images, spreadsheets, text
-  </p>
-{/if}
 
 {#if voiceError}
   <p class="composer-voice-status composer-voice-status-error" role="alert">{voiceError}</p>
@@ -295,7 +298,7 @@
           bind:sheetOpen={workshopOpen}
         />
 
-        {#if settings.showChatModelPicker}
+        {#if showModelPicker}
           {#if isTauriMobilePlatform()}
             <MobileComposerTurnSettings disabled={blocked} quiet />
           {:else}
@@ -353,9 +356,7 @@
   {:else}
     <GrowingTextarea
       bind:value={chat.draft}
-      placeholder={chat.hasWorkshopHandoff()
-        ? "Steer the handoff…"
-        : "Message Medousa…"}
+      placeholder={placeholder}
       disabled={blocked}
       maxHeight={128}
       minHeight={36}
@@ -388,7 +389,7 @@
       />
       <ComposerAgentChip showChip bind:open={agentOpen} anchorEl={plusAnchorEl} />
 
-      {#if settings.showChatModelPicker}
+      {#if showModelPicker}
         <ChatModelPicker {disabled} quiet />
       {/if}
 

@@ -17,7 +17,7 @@
     { keys: "Ctrl+; c", action: "Chat tab here" },
     { keys: "Ctrl+; n/p", action: "Next / prev tab" },
     { keys: "Ctrl+; w", action: "Show tabs" },
-    { keys: "Ctrl+; 1–9", action: "Focus pane by index" },
+    { keys: "Ctrl+; 1–4", action: "Switch virtual desktop" },
     { keys: "Drag tab", action: "Move tab to another pane" },
   ];
 </script>

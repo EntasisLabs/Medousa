@@ -93,9 +93,16 @@ export class LayoutStore {
    * Kept in sync with vaultSidebarCollapsed (inverted) and legacy navExpanded.
    */
   shellSidebarExpanded = $state(loadShellSidebarExpanded());
-  /** nav = destinations in the rail; view = active surface list in the same rail. */
+  /** nav = destinations in the rail; view = a list surface hosted in the same rail. */
   shellSidebarMode = $state<ShellSidebarMode>(
     surfaceHasShellSidebarView(loadLastSurface()) ? "view" : "nav",
+  );
+  /**
+   * Which list the rail shows in view mode. Can differ from {@link desktopSurface}
+   * so docking a popover doesn't remount / activate main content.
+   */
+  shellSidebarViewSurface = $state<string | null>(
+    surfaceHasShellSidebarView(loadLastSurface()) ? loadLastSurface() : null,
   );
   /** Per-surface rail mode — survive chat ↔ Workspace switches. */
   private sidebarModeBySurface: Record<string, ShellSidebarMode> = {};
@@ -217,6 +224,9 @@ export class LayoutStore {
   setShellSidebarMode(mode: ShellSidebarMode) {
     this.shellSidebarMode = mode;
     this.sidebarModeBySurface[this.desktopSurface] = mode;
+    if (mode === "nav") {
+      this.shellSidebarViewSurface = null;
+    }
   }
 
   /** Leave view list → destination nav in the same expanded rail. */
@@ -227,13 +237,18 @@ export class LayoutStore {
     }
   }
 
-  /** Expand the master rail into the active view’s list (Peers, Settings, …). */
+  /**
+   * Host a list surface in the master rail (view mode).
+   * Does not change {@link desktopSurface} / main content — callers that need a
+   * tab switch should navigate separately.
+   */
   openShellSidebarView(surfaceId: string) {
     if (!surfaceHasShellSidebarView(surfaceId)) {
       this.setShellSidebarMode("nav");
       this.setShellSidebarExpanded(true);
       return;
     }
+    this.shellSidebarViewSurface = surfaceId;
     this.setShellSidebarMode("view");
     this.setShellSidebarExpanded(true);
   }
@@ -241,7 +256,13 @@ export class LayoutStore {
   private restoreSidebarModeFor(surface: string): ShellSidebarMode {
     const remembered = this.sidebarModeBySurface[surface];
     if (remembered === "nav" || remembered === "view") return remembered;
-    return surfaceHasShellSidebarView(surface) ? "view" : "nav";
+    // View mode is opt-in via openShellSidebarView / dock-to-rail — never default.
+    return "nav";
+  }
+
+  private syncViewSurfaceForMode(surface: string, mode: ShellSidebarMode) {
+    this.shellSidebarViewSurface =
+      mode === "view" && surfaceHasShellSidebarView(surface) ? surface : null;
   }
 
   setVaultSidebarCollapsed(collapsed: boolean) {
@@ -271,6 +292,8 @@ export class LayoutStore {
   /**
    * Update rail / last-surface hint without remounting the center column.
    * Used by the shell tab host when activating tabs.
+   * Does not change sidebar nav/view mode — that only flips via
+   * {@link openShellSidebarView} (dock-to-rail) or explicit back-to-nav.
    */
   focusDesktopSurface(surface: string) {
     let next = surface === "home" ? "chat" : surface;
@@ -279,25 +302,30 @@ export class LayoutStore {
     this.sidebarModeBySurface[this.desktopSurface] = this.shellSidebarMode;
     this.desktopSurface = next as Surface;
     saveLastSurface(next);
-    this.shellSidebarMode = this.restoreSidebarModeFor(next);
   }
 
   navigateDesktop(surface: string, options?: { bump?: boolean }) {
-    // Legacy Automations surface → LME workspace (library). Callers that need a
-    // specific explorer mode should set `lmeWorkspace` before navigating.
+    // Automations still hosts in the LME workspace (library tabs), but keeps its
+    // own explorer family. Callers that need a specific mode should set
+    // `lmeWorkspace` before navigating.
     let next = surface === "home" ? "chat" : surface;
-    if (next === "automations") {
-      next = "library";
+    if (next === "automations" || next === "library") {
+      const requested = next;
+      if (next === "automations") next = "library";
       void import("$lib/stores/lmeWorkspace.svelte").then(({ lmeWorkspace }) => {
-        const mode = lmeWorkspace.explorerMode;
-        if (
-          mode !== "scripts" &&
-          mode !== "flows" &&
-          mode !== "schedules" &&
-          mode !== "history"
-        ) {
-          lmeWorkspace.setExplorerMode("scripts");
-        }
+        void import("$lib/utils/lmeExplorerModes").then(
+          ({
+            isLmeAutomationsMode,
+            isLmeLibraryMode,
+            defaultModeForLmeFamily,
+          }) => {
+            if (requested === "automations" && !isLmeAutomationsMode(lmeWorkspace.explorerMode)) {
+              lmeWorkspace.setExplorerMode(defaultModeForLmeFamily("automations"));
+            } else if (requested === "library" && !isLmeLibraryMode(lmeWorkspace.explorerMode)) {
+              lmeWorkspace.setExplorerMode(defaultModeForLmeFamily("library"));
+            }
+          },
+        );
       });
     }
     if (next !== "chat") {
@@ -313,7 +341,9 @@ export class LayoutStore {
     }
     this.desktopSurface = next;
     saveLastSurface(next);
-    this.shellSidebarMode = this.restoreSidebarModeFor(next);
+    const mode = this.restoreSidebarModeFor(next);
+    this.shellSidebarMode = mode;
+    this.syncViewSurfaceForMode(next, mode);
     if (changed || options?.bump) {
       this.bumpNavigation();
     }

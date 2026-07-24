@@ -8,8 +8,8 @@ use axum::{Json, Router};
 use chrono::Utc;
 use futures_util::stream::{self, Stream};
 use medousa_types::feed::{
-    FeedListResponse, FeedReadRequest, FeedStreamEvent, FeedStreamQuery, FeedTailQuery,
-    FeedTailResponse,
+    FeedLatestGoodQuery, FeedLatestGoodResponse, FeedListResponse, FeedReadRequest,
+    FeedStreamEvent, FeedStreamQuery, FeedTailQuery, FeedTailResponse,
 };
 use std::convert::Infallible;
 use std::time::Duration;
@@ -27,6 +27,7 @@ pub fn feed_router() -> Router {
         .route("/v1/feeds", get(list_feeds_handler))
         .route("/v1/feeds/stream", get(stream_feeds))
         .route("/v1/feeds/{feed_id}/tail", get(tail_feed))
+        .route("/v1/feeds/{feed_id}/latest-good", get(latest_good_feed))
         .route("/v1/feeds/{feed_id}/read", post(mark_feed_read))
         .with_state(FeedApiState)
 }
@@ -48,6 +49,19 @@ async fn tail_feed(
         feed_id: feed_id.trim().to_string(),
         events,
     }))
+}
+
+async fn latest_good_feed(
+    Path(feed_id): Path<String>,
+    Query(query): Query<FeedLatestGoodQuery>,
+) -> Result<Json<FeedLatestGoodResponse>, (StatusCode, String)> {
+    let profile_id = resolve_profile_id(query.profile_id.as_deref());
+    let feed_id = feed_id.trim();
+    let result = feed_store().latest_good(&profile_id, feed_id).await;
+    match result {
+        Some(response) => Ok(Json(response)),
+        None => Err((StatusCode::NOT_FOUND, format!("no latest good result for feed '{feed_id}'"))),
+    }
 }
 
 async fn mark_feed_read(

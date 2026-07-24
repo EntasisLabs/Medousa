@@ -408,6 +408,7 @@ pub async fn wizard_apply_screen1(
                 custom_voice_presets: existing.custom_voice_presets,
                 inference_profiles: existing.inference_profiles,
                 shell_agent_tools_enabled: existing.shell_agent_tools_enabled,
+                vault_git_enabled: existing.vault_git_enabled,
                 shell_network_default: existing.shell_network_default,
                 shell_timeout_ms: existing.shell_timeout_ms,
                 shell_max_output_bytes: existing.shell_max_output_bytes,

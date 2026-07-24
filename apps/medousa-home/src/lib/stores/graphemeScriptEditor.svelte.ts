@@ -1,3 +1,8 @@
+import {
+  getCodeEditorLanguage,
+  resolveCodeEditorLanguage,
+  type CodeEditorLanguageId,
+} from "$lib/code/codeEditorLanguageRegistry";
 import { getGraphemeScript } from "$lib/daemon";
 
 export interface GraphemeLspWorkspaceResponse {
@@ -15,6 +20,8 @@ export interface ScriptEditorTab {
   tags: string[];
   dirty: boolean;
   version: number;
+  /** Editor language plug-in id (default grapheme script). */
+  languageId: CodeEditorLanguageId;
 }
 
 function newTabId(): string {
@@ -55,10 +62,12 @@ export class GraphemeScriptEditorStore {
   );
 
   documentUriForTab(tab: ScriptEditorTab): string | null {
+    if (!getCodeEditorLanguage(tab.languageId).capabilities.lsp) return null;
     if (!this.lspWorkspace) return null;
+    const ext = getCodeEditorLanguage(tab.languageId).fileExtension ?? "grapheme";
     const fileName = tab.scriptId
-      ? `${tab.scriptId}.grapheme`
-      : `${tab.tabId}.grapheme`;
+      ? `${tab.scriptId}.${ext}`
+      : `${tab.tabId}.${ext}`;
     const path = `${this.lspWorkspace.scripts_dir}/${fileName}`.replace(/\\/g, "/");
     if (path.startsWith("/")) {
       return `file://${path}`;
@@ -76,7 +85,7 @@ export class GraphemeScriptEditorStore {
     }
   }
 
-  openNewTab() {
+  openNewTab(languageId: CodeEditorLanguageId = "grapheme") {
     const tab: ScriptEditorTab = {
       tabId: newTabId(),
       scriptId: null,
@@ -86,6 +95,7 @@ export class GraphemeScriptEditorStore {
       tags: [],
       dirty: false,
       version: 0,
+      languageId: resolveCodeEditorLanguage(languageId),
     };
     this.tabs = [...this.tabs, tab];
     this.activeTabId = tab.tabId;
@@ -127,6 +137,7 @@ export class GraphemeScriptEditorStore {
           tags: entry.tags ?? [],
           dirty: false,
           version: entry.version,
+          languageId: "grapheme",
         },
       ];
       this.activeTabId = tab.tabId;
@@ -144,6 +155,7 @@ export class GraphemeScriptEditorStore {
       tags: entry.tags ?? [],
       dirty: false,
       version: entry.version,
+      languageId: "grapheme",
     };
     this.tabs = [...this.tabs, tab];
     this.activeTabId = tab.tabId;
@@ -212,6 +224,43 @@ export class GraphemeScriptEditorStore {
         : tab,
     );
     this.statusMessage = `Saved ${entry.name}`;
+  }
+
+  /**
+   * Open a highlight-only or stub snippet tab (no vault/git, no fake LSP).
+   * Grapheme scripts should use openScript / openNewTab instead.
+   */
+  openLanguageSnippet(input: {
+    languageId: CodeEditorLanguageId | string;
+    name?: string;
+    body?: string;
+  }) {
+    const languageId = resolveCodeEditorLanguage(input.languageId);
+    const def = getCodeEditorLanguage(languageId);
+    const tab: ScriptEditorTab = {
+      tabId: newTabId(),
+      scriptId: null,
+      name: input.name?.trim() || `${def.label} snippet`,
+      body: input.body ?? "",
+      intent: "",
+      tags: [],
+      dirty: Boolean(input.body),
+      version: 0,
+      languageId,
+    };
+    this.tabs = [...this.tabs, tab];
+    this.activeTabId = tab.tabId;
+    this.compileResult = null;
+    this.compileError = null;
+    this.saveError = null;
+    this.runError = null;
+    if (def.tier === "stub") {
+      this.statusMessage = `${def.label} preview — syntax plug-in not wired yet`;
+    } else if (def.tier === "highlight") {
+      this.statusMessage = `${def.label} — highlight only`;
+    } else {
+      this.statusMessage = null;
+    }
   }
 
   async openScriptById(scriptId: string) {

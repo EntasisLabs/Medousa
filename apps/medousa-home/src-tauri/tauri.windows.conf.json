@@ -7,7 +7,8 @@
         "width": 1440,
         "height": 900,
         "minWidth": 960,
-        "minHeight": 640
+        "minHeight": 640,
+        "decorations": false
       },
       {
         "label": "chat-popout",

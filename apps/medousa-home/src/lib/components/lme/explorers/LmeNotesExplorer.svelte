@@ -10,6 +10,7 @@
     X,
   } from "@lucide/svelte";
   import { onMount, tick, untrack } from "svelte";
+  import BodyPortal from "$lib/components/ui/BodyPortal.svelte";
   import VaultGroupPicker from "$lib/components/vault/VaultGroupPicker.svelte";
   import VaultKindBadge from "$lib/components/vault/VaultKindBadge.svelte";
   import VaultLibraryBrowseLists from "$lib/components/vault/VaultLibraryBrowseLists.svelte";
@@ -21,9 +22,18 @@
   import { vault } from "$lib/stores/vault.svelte";
   import { vaultDisplayTitle } from "$lib/utils/formatVault";
   import { formatShortcut } from "$lib/platform";
+  import {
+    placeDockPopover,
+    type DockPopoverPlacement,
+  } from "$lib/utils/dockPopoverPlace";
+  import { portLmeDock } from "$lib/utils/lmeDockHost";
+  import { ensureRailPopoverOpen } from "$lib/utils/railPopoverChrome";
   import { canUseLocalVaultFilesystem } from "$lib/utils/vaultFilesystem";
 
   let createOpen = $state(false);
+  let createBtnEl = $state<HTMLButtonElement | null>(null);
+  let createMenuEl = $state<HTMLDivElement | null>(null);
+  let createPlacement = $state<DockPopoverPlacement | null>(null);
   let searchExpanded = $state(false);
   let searchInputEl = $state<HTMLInputElement | null>(null);
   let listScrollEl = $state<HTMLElement | null>(null);
@@ -57,8 +67,30 @@
     }
   });
 
+  function placeCreateMenu() {
+    if (!createBtnEl) return;
+    // Prefer below when docked in the rail popover toolbar; above in the status bar.
+    const inPopover = Boolean(createBtnEl.closest(".nav-rail-view-popover-dock-slot"));
+    createPlacement = placeDockPopover(createBtnEl, {
+      preferUp: !inPopover,
+      width: 196,
+      maxHeight: 320,
+    });
+  }
+
   function closeMenus() {
     createOpen = false;
+    createPlacement = null;
+  }
+
+  function toggleCreateMenu(event: MouseEvent) {
+    event.stopPropagation();
+    if (createOpen) {
+      closeMenus();
+      return;
+    }
+    createOpen = true;
+    requestAnimationFrame(placeCreateMenu);
   }
 
   function handleMenuKeydown(event: KeyboardEvent) {
@@ -68,8 +100,26 @@
     }
   }
 
+  function onCreatePointerDown(event: PointerEvent) {
+    if (!createOpen) return;
+    const target = event.target as Node;
+    if (createBtnEl?.contains(target) || createMenuEl?.contains(target)) return;
+    closeMenus();
+  }
+
+  $effect(() => {
+    if (!createOpen) return;
+    window.addEventListener("pointerdown", onCreatePointerDown);
+    window.addEventListener("resize", placeCreateMenu);
+    return () => {
+      window.removeEventListener("pointerdown", onCreatePointerDown);
+      window.removeEventListener("resize", placeCreateMenu);
+    };
+  });
+
   async function openSearch() {
     closeMenus();
+    await ensureRailPopoverOpen();
     searchExpanded = true;
     await tick();
     searchInputEl?.focus();
@@ -163,13 +213,13 @@
     {/if}
   </div>
 
-  <footer class="lme-side-rail-dock">
+  <footer class="lme-side-rail-dock" use:portLmeDock>
     {#if searchExpanded}
-      <div class="lme-dock-search-expand min-w-0 flex-1">
-        <Search size={14} strokeWidth={1.75} class="lme-dock-search-glyph" />
+      <div class="lme-dock-search-expand flex min-w-0 flex-1 items-center gap-1">
+        <Search size={14} strokeWidth={1.75} class="shrink-0 text-surface-500" aria-hidden="true" />
         <input
           bind:this={searchInputEl}
-          class="lme-dock-search-input"
+          class="min-w-0 flex-1 border-0 bg-transparent text-[12px] text-surface-100 placeholder:text-surface-500 focus:outline-none focus:ring-0"
           type="search"
           placeholder="Search notes…"
           value={vault.searchQuery}
@@ -177,36 +227,60 @@
             onNotesSearch((event.currentTarget as HTMLInputElement).value)}
           onkeydown={handleSearchKeydown}
         />
+        <button
+          type="button"
+          class="vault-dock-icon-btn"
+          aria-label="Close search"
+          title="Close search"
+          onclick={closeSearch}
+        >
+          <X size={14} strokeWidth={1.75} />
+        </button>
       </div>
     {:else}
-      <div class="flex min-w-0 items-center gap-0.5">
+      <div
+        class="lme-dock-chrome-secondary lme-dock-chrome-secondary--crumb flex min-w-0 items-center gap-0.5"
+      >
         <VaultRootPicker compact quiet dropUp />
+        <span
+          class="nav-rail-dock-crumb-sep shrink-0 px-px text-[11px] font-medium leading-none text-surface-500"
+          aria-hidden="true"
+        >
+          /
+        </span>
         <VaultGroupPicker dropUp />
       </div>
-      <div class="min-w-1 flex-1"></div>
-    {/if}
+      <!-- Push action cluster toward `>` once the bar extends. -->
+      <div
+        class="lme-dock-chrome-secondary lme-dock-chrome-secondary--spacer min-w-1 flex-1"
+      ></div>
 
-    {#if !searchExpanded}
       <div class="relative shrink-0">
         <button
+          bind:this={createBtnEl}
           type="button"
           class="vault-dock-icon-btn"
           aria-haspopup="menu"
           aria-expanded={createOpen}
           aria-label="New note"
           title="New"
-          onclick={(event) => {
-            event.stopPropagation();
-            createOpen = !createOpen;
-          }}
+          onclick={toggleCreateMenu}
         >
           <Plus size={16} strokeWidth={1.75} />
         </button>
-        {#if createOpen}
+      </div>
+      {#if createOpen && createPlacement}
+        <BodyPortal>
           <div
-            class="absolute bottom-full right-0 z-30 mb-1 min-w-[11rem] rounded-lg border border-surface-500/50 bg-surface-900 py-1 shadow-xl"
+            bind:this={createMenuEl}
+            class="vault-dock-popover"
             role="menu"
             tabindex="-1"
+            style:left="{createPlacement.left}px"
+            style:top="{createPlacement.top}px"
+            style:width="{createPlacement.width}px"
+            style:max-height="{createPlacement.maxHeight}px"
+            style:transform={createPlacement.transform}
             onclick={(event) => event.stopPropagation()}
             onkeydown={handleMenuKeydown}
           >
@@ -264,7 +338,7 @@
               New group
             </button>
             {#if canUseLocalVaultFilesystem()}
-              <div class="my-1 border-t border-surface-500/35"></div>
+              <div class="vault-dock-popover__sep"></div>
               <button
                 type="button"
                 role="menuitem"
@@ -279,22 +353,12 @@
               </button>
             {/if}
           </div>
-        {/if}
+        </BodyPortal>
+      {/if}
+      <div class="lme-dock-chrome-secondary shrink-0">
+        <VaultLibraryBrowseModeBar icons flush rail />
       </div>
-      <VaultLibraryBrowseModeBar icons flush />
-    {/if}
 
-    {#if searchExpanded}
-      <button
-        type="button"
-        class="vault-dock-icon-btn"
-        aria-label="Close search"
-        title="Close search"
-        onclick={closeSearch}
-      >
-        <X size={15} strokeWidth={1.75} />
-      </button>
-    {:else}
       <button
         type="button"
         class="vault-dock-icon-btn {searching ? 'vault-dock-icon-btn-active' : ''}"

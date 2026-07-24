@@ -13,7 +13,7 @@ Accepted
 1. **Binary split tree** (`SplitNode`: leaf group | row/column branch + ratio) over `EditorGroup` leaves. Soft cap **4 panes** in v1.
 2. **Tabs are chrome:** per-pane strip hidden until hover, focus, or `Ctrl+; w`.
 3. **Keyboard:**
-   - `Ctrl+;` prefix → pane ops (`%`/`"` split, hjkl focus, `z` zoom, `x` close, …)
+   - `Ctrl+;` prefix → pane ops (`%`/`"` split, hjkl focus, `z` zoom, `x` close, …) and `1–4` → switch virtual desktop ([ADR-010](adr-010-virtual-shell-workspaces.md))
    - `Ctrl+B` → toggle left master rail (VS Code/Cursor); never pane ops
 4. **`ChatStreamPool`:** slots keyed by `sessionId` with `acquire` / `release` / `setMaxLive`. **`maxLiveStreams = MAX_SHELL_PANES` (4)** — every chat pane can be live; pool LRU-evicts when a 5th session acquires. Demoted sessions stop owned SSE but keep cached transcripts (`ChatPaneIdle` only when `!isLive`).
 5. **Compose:** only the focused pane’s chat accepts send/input; background live panes still stream and update transcripts (`ChatSessionView` with `interactive={focused}`).
@@ -22,7 +22,7 @@ Accepted
 
 ## Consequences
 
-- Persistence key `medousa-home-shell-tabs-v2` stores tabs, groups, splitRoot, activeGroupId, zoom.
+- Persistence key `medousa-home-shell-tabs-v3` stores named virtual desktops (each holding the former v2 layout blob). See [ADR-010](adr-010-virtual-shell-workspaces.md).
 - **Restart restore:** shell chrome hydrates from that key; open chat panes are re-acquired into `ChatStreamPool` (active first, up to `maxLiveStreams`); background sessions warm history via `warmBackgroundSession`. Main window size/position/maximized persist via `tauri-plugin-window-state` (desktop, label `main` only).
 - Spotlight exposes pane commands under Advanced.
 - Session-scoped chat runtimes (`chat.svelte.ts` + `chatSessionRuntime.ts`) keep messages/drafts across focus swaps; stream events route by owned `turnId` → `sessionId`.

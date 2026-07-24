@@ -12,8 +12,10 @@ type MountOptions = {
   props: MountHostProps;
 };
 
-const mountMock = vi.fn((_component: unknown, _options: MountOptions) => ({}));
-const unmountMock = vi.fn(async (_instance: unknown) => {});
+const { mountMock, unmountMock } = vi.hoisted(() => ({
+  mountMock: vi.fn((_component: unknown, _options: MountOptions) => ({})),
+  unmountMock: vi.fn(async (_instance: unknown) => {}),
+}));
 
 vi.mock("svelte", async () => {
   const actual = await vi.importActual<typeof import("svelte")>("svelte");

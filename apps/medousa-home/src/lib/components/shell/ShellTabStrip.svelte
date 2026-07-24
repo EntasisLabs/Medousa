@@ -21,13 +21,16 @@
 
   interface Props {
     groupId: string;
+    /** titlebar = always-on unified chrome; default = hover/web strip. */
+    variant?: "default" | "titlebar";
   }
 
-  let { groupId }: Props = $props();
+  let { groupId, variant = "default" }: Props = $props();
 
   const tabs = $derived(shellTabs.tabsForGroup(groupId));
   const group = $derived(shellTabs.groups.find((entry) => entry.id === groupId));
   const activeTabId = $derived(group?.activeTabId ?? null);
+  const isTitlebar = $derived(variant === "titlebar");
 
   let scrollerEl: HTMLDivElement | undefined = $state();
   let canScrollLeft = $state(false);
@@ -73,7 +76,6 @@
   }
 
   $effect(() => {
-    // Recompute overflow when the tab set or active tab changes.
     void tabs.length;
     void activeTabId;
     requestAnimationFrame(() => {
@@ -93,8 +95,10 @@
 
 {#if tabs.length > 0}
   <div
-    class="shell-tab-strip flex h-7 w-full min-w-0 items-center gap-0.5 rounded-b-md px-0.5
-      bg-surface-950/90 backdrop-blur-sm"
+    class="shell-tab-strip flex min-w-0 items-center gap-0.5"
+    class:w-full={!isTitlebar}
+    class:shell-tab-strip--default={!isTitlebar}
+    class:shell-tab-strip--titlebar={isTitlebar}
     role="tablist"
     aria-label="Open tabs"
     data-debug-label="shell-tab-strip"
@@ -114,7 +118,8 @@
 
     <div
       bind:this={scrollerEl}
-      class="shell-tab-strip-scroll flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto px-1"
+      class="shell-tab-strip-scroll flex min-w-0 items-center gap-0.5 overflow-x-auto px-0.5
+        {isTitlebar ? 'max-w-full' : 'flex-1'}"
       onscroll={updateScrollState}
     >
       {#each tabs as tab (tab.id)}
@@ -122,10 +127,8 @@
         {@const Icon = iconFor(tab)}
         <div
           data-tab-id={tab.id}
-          class="group flex h-5 max-w-[180px] shrink-0 cursor-grab items-center gap-1 px-1.5 text-[11px] leading-none active:cursor-grabbing
-            {active
-            ? 'rounded-md bg-surface-700/90 text-surface-100'
-            : 'rounded-md text-surface-400 hover:bg-surface-800/60 hover:text-surface-200'}"
+          class="shell-tab-chip group flex shrink-0 cursor-grab items-center gap-1 leading-none active:cursor-grabbing
+            {active ? 'shell-tab-chip--active' : 'shell-tab-chip--idle'}"
           role="presentation"
           onpointerdown={(event) => beginShellTabDrag(event, tab.id, groupId)}
         >
@@ -137,12 +140,16 @@
             title="{tab.title} — drag to another pane"
             tabindex={-1}
           >
-            <Icon size={11} strokeWidth={1.75} class="shrink-0 opacity-65" />
+            <Icon
+              size={isTitlebar ? 12 : 11}
+              strokeWidth={1.75}
+              class="shrink-0 opacity-65"
+            />
             <span class="truncate">{tab.title}</span>
           </button>
           <button
             type="button"
-            class="rounded p-0.5 opacity-0 transition-opacity hover:bg-surface-600/80 group-hover:opacity-100 focus:opacity-100"
+            class="shell-tab-close rounded p-0.5 opacity-0 transition-opacity hover:bg-surface-600/80 group-hover:opacity-100 focus:opacity-100"
             aria-label="Close {tab.title}"
             onclick={(event) => {
               event.stopPropagation();
@@ -171,6 +178,72 @@
 {/if}
 
 <style>
+  .shell-tab-strip--default {
+    height: 1.75rem;
+    border-radius: 0 0 0.375rem 0.375rem;
+    padding: 0 0.125rem;
+    background: rgb(var(--color-surface-950) / 0.9);
+    backdrop-filter: blur(8px);
+  }
+
+  .shell-tab-strip--titlebar {
+    height: 100%;
+    max-width: min(100%, 70vw);
+    flex: 0 1 auto;
+    align-items: center;
+    background: transparent;
+  }
+
+  .shell-tab-strip--titlebar .shell-tab-strip-scroll {
+    flex: 0 1 auto;
+    height: 100%;
+    align-items: center;
+    gap: 1px;
+    padding: 0;
+  }
+
+  .shell-tab-chip {
+    max-width: 180px;
+    height: 1.25rem;
+    padding: 0 0.375rem;
+    font-size: 0.6875rem;
+    border-radius: 0.375rem;
+  }
+
+  /* Cursor-flat title tabs: slim chips in a ~30px bar. */
+  .shell-tab-strip--titlebar .shell-tab-chip {
+    height: 22px;
+    max-width: 200px;
+    padding: 0 8px;
+    gap: 5px;
+    font-size: 12px;
+    line-height: 1;
+    border-radius: 5px;
+  }
+
+  .shell-tab-chip--active {
+    background: rgb(var(--color-surface-700) / 0.85);
+    color: rgb(var(--color-surface-100));
+  }
+
+  .shell-tab-strip--titlebar .shell-tab-chip--idle {
+    background: transparent;
+    color: rgb(var(--color-surface-400));
+  }
+
+  .shell-tab-chip--idle {
+    color: rgb(var(--color-surface-400));
+  }
+
+  .shell-tab-chip--idle:hover {
+    background: rgb(var(--color-surface-800) / 0.55);
+    color: rgb(var(--color-surface-200));
+  }
+
+  .shell-tab-strip--titlebar .shell-tab-chip--idle:hover {
+    background: rgb(var(--color-surface-800) / 0.45);
+  }
+
   .shell-tab-strip-scroll {
     scrollbar-width: none;
   }

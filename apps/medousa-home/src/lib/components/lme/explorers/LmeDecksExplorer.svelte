@@ -4,6 +4,8 @@
   import ArtifactLibraryList from "$lib/components/artifacts/ArtifactLibraryList.svelte";
   import { artifacts } from "$lib/stores/artifacts.svelte";
   import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
+  import { portLmeDock } from "$lib/utils/lmeDockHost";
+  import { ensureRailPopoverOpen } from "$lib/utils/railPopoverChrome";
 
   interface Props {
     onOpenChat: () => void;
@@ -29,6 +31,7 @@
   });
 
   async function openSearch() {
+    await ensureRailPopoverOpen();
     searchExpanded = true;
     await tick();
     searchInputEl?.focus();
@@ -72,46 +75,43 @@
     {/if}
   </div>
 
-  <footer class="lme-side-rail-dock">
+  <footer class="lme-side-rail-dock" use:portLmeDock>
     {#if searchExpanded}
-      <div class="lme-dock-search-expand min-w-0 flex-1">
-        <Search size={14} strokeWidth={1.75} class="lme-dock-search-glyph" />
+      <div class="lme-dock-search-expand flex min-w-0 flex-1 items-center gap-1">
+        <Search size={14} strokeWidth={1.75} class="shrink-0 text-surface-500" aria-hidden="true" />
         <input
           bind:this={searchInputEl}
-          class="lme-dock-search-input"
+          class="min-w-0 flex-1 border-0 bg-transparent text-[12px] text-surface-100 placeholder:text-surface-500 focus:outline-none focus:ring-0"
           type="search"
           placeholder="Search presentations…"
           value={query}
           oninput={(event) => artifacts.setSearchQuery(event.currentTarget.value)}
           onkeydown={handleSearchKeydown}
         />
+        <button
+          type="button"
+          class="vault-dock-icon-btn"
+          aria-label="Close search"
+          title="Close search"
+          onclick={closeSearch}
+        >
+          <X size={14} strokeWidth={1.75} />
+        </button>
       </div>
     {:else}
-      <div class="min-w-0 flex-1"></div>
-    {/if}
+      <div class="lme-dock-chrome-secondary shrink-0">
+        <button
+          type="button"
+          class="vault-dock-icon-btn"
+          aria-label="Refresh presentations"
+          title="Refresh"
+          disabled={refreshing}
+          onclick={() => void artifacts.refresh()}
+        >
+          <RefreshCw size={15} strokeWidth={1.75} class={refreshing ? "animate-spin" : ""} />
+        </button>
+      </div>
 
-    <button
-      type="button"
-      class="vault-dock-icon-btn"
-      aria-label="Refresh presentations"
-      title="Refresh"
-      disabled={refreshing}
-      onclick={() => void artifacts.refresh()}
-    >
-      <RefreshCw size={15} strokeWidth={1.75} class={refreshing ? "animate-spin" : ""} />
-    </button>
-
-    {#if searchExpanded}
-      <button
-        type="button"
-        class="vault-dock-icon-btn"
-        aria-label="Close search"
-        title="Close search"
-        onclick={closeSearch}
-      >
-        <X size={15} strokeWidth={1.75} />
-      </button>
-    {:else}
       <button
         type="button"
         class="vault-dock-icon-btn"

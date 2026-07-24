@@ -9,6 +9,7 @@
   import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
   import { settings } from "$lib/stores/settings.svelte";
   import type { WorkflowListEntry } from "$lib/types/workflow";
+  import { portLmeDock } from "$lib/utils/lmeDockHost";
   import { onMount } from "svelte";
 
   let search = $state("");
@@ -177,8 +178,8 @@
     {/if}
   </div>
 
-  <footer class="lme-side-rail-dock">
-    <div class="min-w-0 flex-1">
+  <footer class="lme-side-rail-dock" use:portLmeDock>
+    <div class="lme-dock-leading-ghost min-w-0 flex-1">
       {#if filterActive}
         <span class="workshop-faint truncate text-[11px]">Filtered</span>
       {/if}
@@ -194,7 +195,7 @@
       <Plus size={16} strokeWidth={1.75} />
     </button>
 
-    <div class="relative shrink-0">
+    <div class="lme-dock-chrome-secondary relative shrink-0">
       <button
         type="button"
         class="vault-dock-icon-btn {filterActive ? 'vault-dock-icon-btn-active' : ''}"
