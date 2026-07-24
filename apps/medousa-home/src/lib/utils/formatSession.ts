@@ -45,6 +45,28 @@ export function presenceRoomTitle(now = new Date()): string {
   }
 }
 
+/**
+ * Tab/header label for a chat session: Presence room title when the thread is
+ * empty of chat/worker turns (asks live under Work and don't own the name).
+ */
+export function chatPresenceOrSessionLabel(
+  session: SessionSummary,
+  options?: {
+    hasChatOrWorkerMessages?: boolean;
+  },
+): string {
+  if (options?.hasChatOrWorkerMessages === false) return presenceRoomTitle();
+  if (
+    options?.hasChatOrWorkerMessages == null &&
+    session.turns <= 0 &&
+    !session.preview.trim() &&
+    !session.display_name?.trim()
+  ) {
+    return presenceRoomTitle();
+  }
+  return formatSessionLabel(session);
+}
+
 /** The only empty-state ask — aligned with {@link presenceRoomTitle}. */
 export function presenceSubline(now = new Date()): string {
   switch (presenceSlot(now)) {

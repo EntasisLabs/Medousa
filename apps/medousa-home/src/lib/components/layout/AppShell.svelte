@@ -45,7 +45,7 @@
     if (layout.isMobile) {
       layout.setMobileTab("home");
     } else {
-      workspace.workView = "kanban";
+      workspace.workView = "hub";
     }
     await workspace.selectCard(cardId);
   }

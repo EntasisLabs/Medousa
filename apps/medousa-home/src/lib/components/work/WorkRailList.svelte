@@ -15,6 +15,7 @@
   const living = $derived(partitionWorkHub(workspace.visibleCards()).living);
 
   async function pick(card: WorkCard) {
+    workspace.openHubView();
     await workspace.selectCard(card.id);
     onPickCard?.(card.id);
   }
@@ -29,6 +30,7 @@
         type="button"
         class="btn btn-sm btn-primary"
         onclick={() => {
+          workspace.openHubView();
           dispatchWorkFocusAsk();
           onPickCard?.("");
         }}

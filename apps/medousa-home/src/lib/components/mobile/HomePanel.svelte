@@ -6,6 +6,7 @@
   import PeerHomeStrip from "$lib/components/mobile/PeerHomeStrip.svelte";
   import WorkManifestCard from "$lib/components/work/WorkManifestCard.svelte";
   import WorkHubTrays from "$lib/components/work/WorkHubTrays.svelte";
+  import WorkAsksPanel from "$lib/components/work/WorkAsksPanel.svelte";
   import { ArrowUp, Bell, BookOpen, Calendar, FileText, Users } from "@lucide/svelte";
   import { automations } from "$lib/stores/automations.svelte";
   import { haptic } from "$lib/haptics";
@@ -300,6 +301,9 @@
   }
 </script>
 
+{#if workspace.workView === "asks"}
+  <WorkAsksPanel {onOpenChat} />
+{:else}
 <section class="mobile-home relative flex h-full min-h-0 flex-col">
   <div
     bind:this={scrollEl}
@@ -437,3 +441,4 @@
     onDismiss={dismissToast}
   />
 </section>
+{/if}

@@ -23,7 +23,6 @@ const WORK_HIDE_HOURS_KEY = "medousa-home-work-hide-hours";
 const WORK_WIPE_DAYS_KEY = "medousa-home-work-wipe-days";
 const LIQUID_CHAT_KEY = "medousa-home-liquid-chat";
 const CHAT_MODEL_PICKER_KEY = "medousa-home-chat-model-picker";
-const CHAT_ATTACHMENT_HINT_KEY = "medousa-home-chat-attachment-hint";
 
 const DEFAULT_WORK_HIDE_HOURS = 24;
 const DEFAULT_WORK_WIPE_DAYS = 7;
@@ -47,8 +46,6 @@ export class SettingsStore {
   liquidChat = $state(loadLiquidChat());
   /** Show model/depth/reasoning picker in the chat composer (hidden by default). */
   showChatModelPicker = $state(loadChatModelPicker());
-  /** Show the “Up to N files…” attachment tip above the composer (hidden by default). */
-  showChatAttachmentHint = $state(loadChatAttachmentHint());
   diagnosticsOpen = $state(false);
   daemonUrl = $state("");
   daemonMessage = $state<string | null>(null);
@@ -149,11 +146,6 @@ export class SettingsStore {
     localStorage.setItem(CHAT_MODEL_PICKER_KEY, enabled ? "1" : "0");
   }
 
-  setShowChatAttachmentHint(enabled: boolean) {
-    this.showChatAttachmentHint = enabled;
-    localStorage.setItem(CHAT_ATTACHMENT_HINT_KEY, enabled ? "1" : "0");
-  }
-
   setWorkCardHideAfterHours(hours: number) {
     const normalized = clampWorkHideHours(hours);
     this.workCardHideAfterHours = normalized;
@@ -240,11 +232,6 @@ function loadLiquidChat(): boolean {
 function loadChatModelPicker(): boolean {
   if (typeof localStorage === "undefined") return false;
   return localStorage.getItem(CHAT_MODEL_PICKER_KEY) === "1";
-}
-
-function loadChatAttachmentHint(): boolean {
-  if (typeof localStorage === "undefined") return false;
-  return localStorage.getItem(CHAT_ATTACHMENT_HINT_KEY) === "1";
 }
 
 function loadWorkCardHideAfterHours(): number {

@@ -76,7 +76,19 @@ export class WorkspaceStore {
   cardDetailsCache = $state<Map<string, WorkCardDetail>>(new Map());
   swimlane = $state<SwimlaneMode>("none");
   showDone = $state(false);
-  workView = $state<WorkView>("kanban");
+  workView = $state<WorkView>("hub");
+
+  setWorkView(view: WorkView) {
+    this.workView = view;
+  }
+
+  openAsksView() {
+    this.workView = "asks";
+  }
+
+  openHubView() {
+    this.workView = "hub";
+  }
   private previousColumns = new Map<string, string>();
   private reconcilingCards = false;
   private recoveringWorkerResults = false;

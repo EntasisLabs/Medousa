@@ -59,6 +59,10 @@ export function tryMobileBackNavigation(): boolean {
   for (let index = mobileBackHandlers.length - 1; index >= 0; index -= 1) {
     if (mobileBackHandlers[index]()) return true;
   }
+  if (layout.mobileTab === "home" && workspace.workView === "asks") {
+    workspace.openHubView();
+    return true;
+  }
   if (layout.mobileTab === "home" && workspace.selectedCardId) {
     workspace.clearSelection();
     return true;

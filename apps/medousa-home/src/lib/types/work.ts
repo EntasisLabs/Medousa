@@ -3,7 +3,8 @@ import type { WorkCardDetail } from "$lib/types/card";
 
 export type SwimlaneMode = "none" | "intent" | "manuscript" | "job_family" | "session";
 
-export type WorkView = "kanban" | "inspector";
+/** Main Work pane mode — Hub board vs dedicated Asks list. */
+export type WorkView = "hub" | "asks";
 
 export interface WorkspaceCardActionResponse {
   workspace_revision: number;

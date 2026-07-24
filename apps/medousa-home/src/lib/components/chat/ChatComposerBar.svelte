@@ -14,10 +14,6 @@
   import { chat } from "$lib/stores/chat.svelte";
   import { settings } from "$lib/stores/settings.svelte";
   import { isTauriMobilePlatform } from "$lib/platform";
-  import {
-    MAX_MEDIA_REFS_PER_TURN,
-    MAX_MEDIA_UPLOAD_MB,
-  } from "$lib/utils/normieErrors";
   import { haptic } from "$lib/haptics";
   import {
     idleVoiceWaveform,
@@ -57,9 +53,6 @@
   }: Props = $props();
 
   const showModelPicker = $derived(settings.showChatModelPicker && !quietChrome);
-  const showAttachmentHint = $derived(
-    settings.showChatAttachmentHint && !quietChrome && chat.pendingMediaRefs.length === 0,
-  );
   const placeholder = $derived(
     chat.hasWorkshopHandoff()
       ? "Steer the handoff…"
@@ -232,11 +225,6 @@
 </script>
 
 <ChatAttachmentChips {disabled} />
-{#if showAttachmentHint && !voiceActive}
-  <p class="composer-attachment-hint text-[11px] text-surface-500">
-    Up to {MAX_MEDIA_REFS_PER_TURN} files, {MAX_MEDIA_UPLOAD_MB} MB each — PDF, images, spreadsheets, text
-  </p>
-{/if}
 
 {#if voiceError}
   <p class="composer-voice-status composer-voice-status-error" role="alert">{voiceError}</p>

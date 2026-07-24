@@ -61,6 +61,9 @@
 
   $effect(() => {
     void chat.sessions;
+    void chat.messages;
+    void chat.historyLoading;
+    void chat.focusedSessionId;
     void lmeWorkspace.tabs;
     void humanBrowser.tabs;
     // Do not subscribe to shellTabs writes inside sync (avoids effect storms).

@@ -17,17 +17,20 @@
   const primary = $derived(workspace.primaryInMotionCard());
 
   function focusAsk() {
+    workspace.openHubView();
     onAction?.();
     dispatchWorkFocusAsk();
   }
 
   async function jumpPrimary() {
     if (!primary) return;
+    workspace.openHubView();
     await workspace.selectCard(primary.id);
     onAction?.();
   }
 
   function openTray(tray: "settled" | "failed" | "stuck") {
+    workspace.openHubView();
     onAction?.();
     dispatchWorkOpenTray(tray);
   }

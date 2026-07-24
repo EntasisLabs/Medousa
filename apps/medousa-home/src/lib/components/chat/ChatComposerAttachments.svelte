@@ -1,10 +1,6 @@
 <script lang="ts">
   import { Paperclip, X } from "@lucide/svelte";
   import { chat } from "$lib/stores/chat.svelte";
-  import {
-    MAX_MEDIA_REFS_PER_TURN,
-    MAX_MEDIA_UPLOAD_MB,
-  } from "$lib/utils/normieErrors";
 
   interface Props {
     disabled?: boolean;
@@ -24,26 +20,20 @@
     {chat.pendingMediaUploading ? "Uploading…" : "Attach"}
   </button>
 
-  {#if chat.pendingMediaRefs.length === 0}
-    <span class="text-xs text-surface-500">
-      Up to {MAX_MEDIA_REFS_PER_TURN} files, {MAX_MEDIA_UPLOAD_MB} MB each — PDF, images, spreadsheets, text
-    </span>
-  {:else}
-    {#each chat.pendingMediaRefs as attachment (attachment.media_id)}
-      <div class="inline-flex max-w-full items-center gap-1 rounded-full border border-surface-500/45 bg-surface-800/80 pl-2.5 pr-1">
-        <span class="truncate text-xs text-primary-200" title={attachment.media_id}>
-          {attachment.label?.trim() || attachment.media_id}
-        </span>
-        <button
-          type="button"
-          class="inline-flex h-6 w-6 items-center justify-center rounded-full text-surface-500 hover:bg-surface-700 hover:text-surface-200"
-          aria-label="Remove attachment"
-          {disabled}
-          onclick={() => chat.removePendingMedia(attachment.media_id)}
-        >
-          <X size={12} strokeWidth={2} />
-        </button>
-      </div>
-    {/each}
-  {/if}
+  {#each chat.pendingMediaRefs as attachment (attachment.media_id)}
+    <div class="inline-flex max-w-full items-center gap-1 rounded-full border border-surface-500/45 bg-surface-800/80 pl-2.5 pr-1">
+      <span class="truncate text-xs text-primary-200" title={attachment.media_id}>
+        {attachment.label?.trim() || attachment.media_id}
+      </span>
+      <button
+        type="button"
+        class="inline-flex h-6 w-6 items-center justify-center rounded-full text-surface-500 hover:bg-surface-700 hover:text-surface-200"
+        aria-label="Remove attachment"
+        {disabled}
+        onclick={() => chat.removePendingMedia(attachment.media_id)}
+      >
+        <X size={12} strokeWidth={2} />
+      </button>
+    </div>
+  {/each}
 </div>

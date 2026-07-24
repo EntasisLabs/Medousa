@@ -20,7 +20,12 @@ import {
 } from "$lib/types/shellTabs";
 import type { Surface } from "$lib/types/ui";
 import { tabDisplayLabel } from "$lib/utils/browserFavicon";
-import { formatSessionLabel } from "$lib/utils/formatSession";
+import {
+  chatPresenceOrSessionLabel,
+  formatSessionLabel,
+  presenceRoomTitle,
+} from "$lib/utils/formatSession";
+import { isChatLaneMessage } from "$lib/utils/askThreads";
 import {
   clampRatio,
   collectGroupIds,
@@ -523,10 +528,15 @@ export class ShellTabsStore {
     }
 
     const session = chat.sessions.find((row) => row.session_id === trimmed);
+    const messages = chat.messagesFor(trimmed);
+    const hasChatOrWorkerMessages = messages.some(
+      (message) => isChatLaneMessage(message) || message.lane === "worker",
+    );
     const title =
       options?.title?.trim() ||
-      (session ? formatSessionLabel(session) : null) ||
-      "Chat";
+      (session
+        ? chatPresenceOrSessionLabel(session, { hasChatOrWorkerMessages })
+        : presenceRoomTitle());
     const tab: ShellTab = {
       id: newTabId("chat"),
       kind: "chat",
@@ -1084,7 +1094,18 @@ export class ShellTabsStore {
       if (tab.kind === "chat") {
         const session = chat.sessions.find((row) => row.session_id === tab.sessionId);
         if (!session) return tab;
-        const title = formatSessionLabel(session);
+        const messages = chat.messagesFor(tab.sessionId);
+        const hasChatOrWorkerMessages = messages.some(
+          (message) => isChatLaneMessage(message) || message.lane === "worker",
+        );
+        // While hydrating an empty buffer, keep the existing tab title so we
+        // don't flash a Presence label over a session that still has turns.
+        if (!hasChatOrWorkerMessages && chat.historyLoadingFor(tab.sessionId)) {
+          return tab;
+        }
+        const title = chatPresenceOrSessionLabel(session, {
+          hasChatOrWorkerMessages,
+        });
         if (title !== tab.title) {
           changed = true;
           return { ...tab, title };

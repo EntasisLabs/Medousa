@@ -9,17 +9,23 @@ import {
 import { peersShell } from "$lib/stores/peersShell.svelte";
 import { shellTabs } from "$lib/stores/shellTabs.svelte";
 import { vault } from "$lib/stores/vault.svelte";
+import { workspace } from "$lib/stores/workspace.svelte";
 import { hostnameFromUrl, tabDisplayLabel } from "$lib/utils/browserFavicon";
 import { formatSessionLabel, formatSessionWhen } from "$lib/utils/formatSession";
 
 export const NAV_RAIL_NEST_LIMIT = 5;
 export const LME_NOTE_NEST_PATH_PREFIX = "note-path:";
 
+/** Static Work nest destinations (Board / Asks). */
+export const WORK_NEST_BOARD = "board";
+export const WORK_NEST_ASKS = "asks";
+
 /** Surfaces that can show Cursor-style nested recent items in nav mode. */
 export const NAV_RAIL_NEST_SURFACES = new Set([
   "chat",
   "peers",
   "web",
+  "work",
 ]);
 
 /** Explorer mode → open LME tab kind for rail nests. */
@@ -137,6 +143,11 @@ export function nestItemsForSurface(surfaceId: string): NavRailNestItem[] {
           host && !label.toLowerCase().includes(host.toLowerCase()) ? host : undefined;
         return { id: tab.id, label, meta };
       });
+    case "work":
+      return [
+        { id: WORK_NEST_BOARD, label: "Board" },
+        { id: WORK_NEST_ASKS, label: "Asks" },
+      ];
     default:
       return [];
   }
@@ -154,6 +165,10 @@ export function nestItemIsActive(surfaceId: string, itemId: string): boolean {
       return peersShell.selectedPeerId === itemId;
     case "web":
       return humanBrowser.activeTab?.id === itemId;
+    case "work":
+      if (itemId === WORK_NEST_ASKS) return workspace.workView === "asks";
+      if (itemId === WORK_NEST_BOARD) return workspace.workView === "hub";
+      return false;
     default:
       return false;
   }
@@ -175,6 +190,14 @@ export async function activateNestItem(
       return;
     case "web":
       await humanBrowser.activateTab(itemId);
+      return;
+    case "work":
+      shellTabs.openSurface("work", { activate: true });
+      if (itemId === WORK_NEST_ASKS) {
+        workspace.openAsksView();
+      } else {
+        workspace.openHubView();
+      }
       return;
     default:
       return;

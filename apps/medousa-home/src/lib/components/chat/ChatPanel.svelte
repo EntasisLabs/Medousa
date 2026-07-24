@@ -42,6 +42,7 @@
   } from "$lib/utils/vaultNoteBridge";
   import { formatToolName, formatTurnPhase } from "$lib/utils/formatTurn";
   import { groupAskThreads, isChatLaneMessage } from "$lib/utils/askThreads";
+  import { openWorkAsks } from "$lib/utils/workChromeEvents";
   import { groupWorkerThreads } from "$lib/utils/workerThreads";
   import {
     saveChatTurnToVault,
@@ -121,21 +122,34 @@
   const workerThreads = $derived(groupWorkerThreads(panelMessages));
   const showInlineComposer = $derived(!mobile || (embedded && scriptWorkbench));
   const useMobileChatLayout = $derived(mobile);
+  /** Asks live under Work — they no longer block Chat empty / Presence. */
   const showChatEmptyState = $derived(
-    chatMessages.length === 0 && askThreads.length === 0 && workerThreads.length === 0,
+    chatMessages.length === 0 && workerThreads.length === 0,
+  );
+
+  /** Don't treat "history still loading" as empty Presence — that centers the dock on cold start. */
+  const historyPending = $derived(
+    chat.historyLoadingFor(panelSessionId) && panelMessages.length === 0,
   );
 
   /** Presence — the quiet, centered landing for a genuinely empty main chat. */
   const showPresenceEmpty = $derived(
-    showChatEmptyState && !workshop && !scriptWorkbench && !embedded,
+    showChatEmptyState &&
+      !historyPending &&
+      !workshop &&
+      !scriptWorkbench &&
+      !embedded,
   );
   const presenceAsk = $derived(presenceSubline());
 
   let presenceDockMode = $state<"center" | "docking" | "docked">("docked");
   let presenceDockEl = $state<HTMLDivElement | undefined>(undefined);
+  let presenceEmptyEl = $state<HTMLDivElement | undefined>(undefined);
+  let presenceAskEl = $state<HTMLParagraphElement | undefined>(undefined);
+  let presenceContinueEl = $state<HTMLButtonElement | undefined>(undefined);
   let presenceBlurpToken = 0;
   let presenceDockLocked = $state(false);
-  /** translateY offset that parks the bottom-anchored dock in visual center. */
+  /** translateY offset that parks the bottom-anchored dock on the 2/3 seam. */
   let presenceCenterOffset = $state(0);
   let presenceCenterPlaced = $state(false);
 
@@ -144,6 +158,17 @@
       showInlineComposer &&
       (presenceDockMode === "center" || presenceDockMode === "docking"),
   );
+
+  function clearPresenceDockInlineStyles() {
+    const el = presenceDockEl;
+    if (!el) return;
+    el.getAnimations().forEach((animation) => animation.cancel());
+    el.style.transition = "";
+    el.style.transform = "";
+    el.style.transformOrigin = "";
+    el.style.willChange = "";
+    el.style.backfaceVisibility = "";
+  }
 
   function handlePromoteToFlow(ref: ToolHistorySliceRef) {
     flowDraft.queuePromotion([ref]);
@@ -161,8 +186,10 @@
     showChatTurnSaveFeedback(result);
   }
   const sessionLabel = $derived.by(() => {
+    // Presence empty: always the time-of-day room title — don't keep a stale preview.
+    if (showPresenceEmpty) return presenceRoomTitle();
     const session = chat.sessions.find((entry) => entry.session_id === panelSessionId);
-    const label = session
+    return session
       ? formatSessionLabel(session)
       : formatSessionLabel({
           session_id: panelSessionId,
@@ -170,8 +197,6 @@
           turns: 0,
           verification_runs: 0,
         });
-    if (showChatEmptyState && label === "New conversation") return presenceRoomTitle();
-    return label;
   });
   /** Most recently active other session — surfaced as "continue where you left off". */
   const continueSession = $derived.by(() => {
@@ -235,7 +260,7 @@
   const showScrollFab = $derived(
     mobile &&
       !atBottom &&
-      (chatMessages.length > 0 || askThreads.length > 0 || workerThreads.length > 0),
+      (chatMessages.length > 0 || workerThreads.length > 0),
   );
 
   $effect(() => {
@@ -246,9 +271,6 @@
   $effect(() => {
     if (!scrollEl) return;
     void chatMessages.map((message) => message.content).join("\0");
-    void askThreads
-      .flatMap((thread) => thread.messages.map((message) => message.content))
-      .join("\0");
     void workerThreads
       .flatMap((thread) => thread.messages.map((message) => message.content))
       .join("\0");
@@ -298,38 +320,89 @@
 
   $effect(() => {
     if (showPresenceEmpty && showInlineComposer) return;
+    // History arrived / session not empty — hard-dock and scrub center transform.
+    // Cold start used to leave translateY inline after hydrate → composer mid-pane.
+    presenceBlurpToken += 1;
     presenceDockLocked = false;
     presenceCenterOffset = 0;
     presenceCenterPlaced = false;
-    if (presenceDockMode !== "docking") {
-      presenceDockMode = "docked";
-    }
+    presenceDockMode = "docked";
+    clearPresenceDockInlineStyles();
   });
 
-  /** Bottom-anchored dock + translateY to visual center (no layout FLIP). */
-  async function placePresenceCentered() {
+  /**
+   * Presence seams (thirds of the chat panel):
+   * - 1/3 line → center of the ask title (continue sits under it)
+   * - 2/3 line → center of the composer dock
+   */
+  async function placePresenceSeams() {
     presenceCenterPlaced = false;
     await tick();
-    const el = presenceDockEl;
-    const parent = el?.parentElement;
-    if (!el || !parent || presenceDockMode !== "center") return;
-
-    el.style.transition = "none";
-    el.style.transform = "translate3d(0, 0, 0)";
-    void el.offsetHeight;
+    await tick();
+    const dock = presenceDockEl;
+    const parent = dock?.parentElement ?? presenceEmptyEl?.parentElement;
+    if (!parent || presenceDockMode !== "center") return;
 
     const parentRect = parent.getBoundingClientRect();
-    const elRect = el.getBoundingClientRect();
-    const centeredTop = parentRect.top + (parentRect.height - elRect.height) / 2;
-    const offset = centeredTop - elRect.top;
-    presenceCenterOffset = offset;
-    el.style.transform = `translate3d(0, ${offset}px, 0)`;
+    const seam2 = parentRect.top + (parentRect.height * 2) / 3;
+
+    // Ask title: center on the 1/3 seam.
+    // Continue: slightly above the midpoint between title (1/3) and input (2/3).
+    const empty = presenceEmptyEl;
+    const ask = presenceAskEl;
+    const cont = presenceContinueEl;
+    if (empty && ask) {
+      empty.style.left = "50%";
+      empty.style.transform = "translateX(-50%)";
+      const askHeight = ask.offsetHeight;
+      const emptyTop = parentRect.height / 3 - askHeight / 2;
+      empty.style.top = `${Math.max(0, emptyTop)}px`;
+
+      if (cont) {
+        const titleCenterY = parentRect.height / 3;
+        const inputCenterY = (parentRect.height * 2) / 3;
+        const midY = (titleCenterY + inputCenterY) / 2;
+        const continueCenterY = midY - parentRect.height * 0.08;
+        const contHeight = cont.offsetHeight || 18;
+        const margin = continueCenterY - emptyTop - askHeight - contHeight / 2;
+        cont.style.marginTop = `${Math.max(10, margin)}px`;
+      }
+    }
+
+    // Composer dock: bottom-anchored, translate so its center hits the 2/3 seam.
+    if (dock) {
+      dock.style.transition = "none";
+      dock.style.transform = "translate3d(0, 0, 0)";
+      void dock.offsetHeight;
+
+      const dockRect = dock.getBoundingClientRect();
+      const dockCenter = dockRect.top + dockRect.height / 2;
+      const offset = seam2 - dockCenter;
+      presenceCenterOffset = offset;
+      dock.style.transform = `translate3d(0, ${offset}px, 0)`;
+    }
     presenceCenterPlaced = true;
   }
 
   $effect(() => {
     if (presenceDockMode !== "center" || presenceDockLocked) return;
-    void placePresenceCentered();
+    void presenceDockEl;
+    void presenceEmptyEl;
+    void presenceAskEl;
+    void presenceContinueEl;
+    void placePresenceSeams();
+  });
+
+  $effect(() => {
+    if (presenceDockMode !== "center" || presenceDockLocked) return;
+    const parent = presenceDockEl?.parentElement ?? presenceEmptyEl?.parentElement;
+    if (!parent || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => {
+      void placePresenceSeams();
+    });
+    ro.observe(parent);
+    if (presenceDockEl) ro.observe(presenceDockEl);
+    return () => ro.disconnect();
   });
 
   function prefersReducedMotion(): boolean {
@@ -352,12 +425,8 @@
     if (!el || prefersReducedMotion()) {
       presenceDockMode = "docked";
       presenceCenterOffset = 0;
-      if (el) {
-        el.getAnimations().forEach((animation) => animation.cancel());
-        el.style.transition = "";
-        el.style.transform = "";
-        el.style.transformOrigin = "";
-      }
+      presenceCenterPlaced = false;
+      clearPresenceDockInlineStyles();
       return;
     }
 
@@ -762,6 +831,35 @@
     </div>
   {/if}
 
+  {#if chat.askHandoffNotice && visible && !embedded}
+    <div
+      class="chat-restore-toast {mobile ? 'chat-restore-toast-mobile' : ''}"
+      role="status"
+    >
+      <span class="min-w-0 truncate">{chat.askHandoffNotice}</span>
+      <div class="flex shrink-0 items-center gap-2">
+        <button
+          type="button"
+          class="chat-restore-toast-dismiss text-primary-300"
+          onclick={() => {
+            chat.clearAskHandoffNotice();
+            openWorkAsks();
+          }}
+        >
+          Open in Work
+        </button>
+        <button
+          type="button"
+          class="chat-restore-toast-dismiss"
+          aria-label="Dismiss"
+          onclick={() => chat.clearAskHandoffNotice()}
+        >
+          ✕
+        </button>
+      </div>
+    </div>
+  {/if}
+
   <div class="chat-panel-main">
   <div
     class="{embedded && !useMobileChatLayout
@@ -780,70 +878,17 @@
           : 'chat-scroll space-y-4'} {showPresenceEmpty ? 'chat-scroll--presence' : ''}"
     >
       <ChatAsyncToolsHint {mobile} />
-      {#if askThreads.length > 0 && !embedded}
-        {#if mobile}
-          <button
-            type="button"
-            class="mobile-chat-rail-chip"
-            onclick={() => switchMobileTab("home")}
-          >
-            <span>
-              {askThreads.length} background ask{askThreads.length === 1 ? "" : "s"} in Work
-            </span>
-            <span class="text-surface-500">→</span>
-          </button>
-        {:else}
-        <section class="chat-ask-rail space-y-3">
-          <div class="chat-ask-rail-header">
-            <p class="text-[11px] font-medium uppercase tracking-[0.14em] text-surface-500">
-              Asks
-            </p>
-            <p class="mt-0.5 text-[11px] text-surface-500">
-              Scoped work — separate from this conversation
-            </p>
-          </div>
-          {#each askThreads as thread (thread.jobId)}
-            <article class="chat-ask-thread">
-              <header class="chat-ask-thread-header">
-                <div class="min-w-0">
-                  <p class="truncate text-sm font-medium text-surface-100">
-                    {thread.promptPreview}
-                  </p>
-                  <p class="mt-0.5 text-[10px] text-surface-500">
-                    {#if thread.active}
-                      In progress
-                    {:else}
-                      Settled
-                    {/if}
-                  </p>
-                </div>
-                {#if !thread.active}
-                  <button
-                    type="button"
-                    class="workshop-text-action shrink-0 text-[11px]"
-                    onclick={() => chat.promoteAskToChat(thread.jobId)}
-                  >
-                    Move to chat
-                  </button>
-                {/if}
-              </header>
-              <div class="chat-ask-thread-body space-y-3">
-                <ChatMessageList
-                  messages={thread.messages}
-                  sessionId={panelSessionId}
-                  {mobile}
-                  compact={true}
-                  scrollRoot={scrollEl}
-                  onPromoteToFlow={handlePromoteToFlow}
-                  onSubmitIntent={submitChatIntent}
-                  onSaveToVault={handleSaveToVault}
-                  onOpenCardDetail={openCardDetail}
-                />
-              </div>
-            </article>
-          {/each}
-        </section>
-        {/if}
+      {#if askThreads.length > 0 && !embedded && mobile}
+        <button
+          type="button"
+          class="mobile-chat-rail-chip"
+          onclick={() => openWorkAsks()}
+        >
+          <span>
+            {askThreads.length} background ask{askThreads.length === 1 ? "" : "s"} in Work
+          </span>
+          <span class="text-surface-500">→</span>
+        </button>
       {/if}
 
       {#if workerThreads.length > 0 && !embedded}
@@ -979,6 +1024,29 @@
     {/if}
   </div>
 
+  {#if showPresenceEmpty && (presenceDockMode === "center" || presenceDockMode === "docking")}
+    <div
+      bind:this={presenceEmptyEl}
+      class="chat-presence-empty {presenceDockMode === 'docking'
+        ? 'chat-presence-empty--exiting'
+        : ''} {presenceCenterPlaced || presenceDockMode === 'docking'
+        ? 'chat-presence-empty--placed'
+        : ''}"
+    >
+      <p bind:this={presenceAskEl} class="chat-presence-ask">{presenceAsk}</p>
+      {#if continueSession}
+        <button
+          bind:this={presenceContinueEl}
+          type="button"
+          class="chat-presence-continue"
+          onclick={() => void continueWhereLeftOff()}
+        >
+          Continue where we left off
+        </button>
+      {/if}
+    </div>
+  {/if}
+
   {#if showInlineComposer}
   <div
     bind:this={presenceDockEl}
@@ -987,24 +1055,10 @@
       presenceDockMode === "docking" ||
       presenceDockMode === "docked"}
   >
-    {#if showPresenceEmpty && (presenceDockMode === "center" || presenceDockMode === "docking")}
-      <div class="chat-presence-empty {presenceDockMode === 'docking' ? 'chat-presence-empty--exiting' : ''}">
-        <p class="chat-presence-ask">{presenceAsk}</p>
-        {#if continueSession}
-          <button
-            type="button"
-            class="chat-presence-continue"
-            onclick={() => void continueWhereLeftOff()}
-          >
-            Continue where we left off
-          </button>
-        {/if}
-      </div>
-    {/if}
     {#if !embedded && presenceDockMode === "docked"}
     <BudgetApprovalBar
       onOpenWork={() => {
-        workspace.workView = "kanban";
+        workspace.workView = "hub";
         const pending = chat.budgetAlert ?? chat.pendingBudgetApprovals[0];
         if (pending) void workspace.selectCard(pending.workCardId);
       }}
@@ -1050,10 +1104,9 @@
         mobile={workshop || useMobileChatLayout}
         disabled={connection.offline}
         composerBlocked={chat.composerBlocked}
-        quietChrome={showPresenceEmpty || presenceDockMode === "docking"}
         onkeydown={handleKeydown}
       />
-      {#if !workshop && !embedded && !showChatEmptyState}
+      {#if !workshop && !embedded}
         <div class="chat-runtime-under">
           <ChatRuntimePicker
             value={sessionRuntime}
@@ -1139,26 +1192,33 @@
 
   .chat-presence-empty {
     position: absolute;
-    bottom: calc(100% + 0.75rem);
     left: 50%;
+    top: 0;
+    z-index: 7;
     display: flex;
     width: max-content;
-    max-width: min(24rem, 100%);
+    max-width: calc(100% - 2rem);
     flex-direction: column;
     align-items: center;
-    gap: 0.375rem;
+    gap: 0;
     text-align: center;
     transform: translateX(-50%);
+    pointer-events: auto;
+  }
+
+  .chat-presence-empty:not(.chat-presence-empty--placed):not(.chat-presence-empty--exiting) {
+    visibility: hidden;
   }
 
   .chat-presence-ask {
     margin: 0;
-    max-width: 24rem;
-    font-size: clamp(1.15rem, 2vw, 1.4rem);
-    font-weight: 500;
-    line-height: 1.35;
-    letter-spacing: -0.015em;
-    color: rgb(var(--color-surface-100));
+    flex-shrink: 0;
+    font-size: clamp(1.4rem, 2.6vw, 1.75rem);
+    font-weight: 600;
+    line-height: 1.3;
+    letter-spacing: -0.02em;
+    white-space: nowrap;
+    color: rgb(var(--color-surface-50));
   }
 
   .chat-presence-continue {
@@ -1182,10 +1242,8 @@
 
   .chat-presence-empty--exiting {
     opacity: 0;
-    transform: translateX(-50%) translateY(-0.5rem);
     transition:
-      opacity 420ms cubic-bezier(0.22, 1, 0.36, 1),
-      transform 420ms cubic-bezier(0.22, 1, 0.36, 1);
+      opacity 420ms cubic-bezier(0.22, 1, 0.36, 1);
     pointer-events: none;
   }
 </style>
