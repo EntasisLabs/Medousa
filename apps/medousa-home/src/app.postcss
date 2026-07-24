@@ -768,6 +768,51 @@
     color: rgb(var(--color-surface-300));
   }
 
+  /* Virtual desktops — soft index marks, not loud Omarchy pills. */
+  .status-desktop-strip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.15rem;
+  }
+
+  .status-desktop-mark {
+    display: inline-flex;
+    min-width: 1.1rem;
+    height: 1.2rem;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    border-radius: 0.25rem;
+    background: transparent;
+    padding: 0 0.2rem;
+    color: rgb(var(--color-surface-600));
+    font: inherit;
+    font-size: 0.625rem;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+    transition:
+      color 140ms ease,
+      background-color 140ms ease;
+  }
+
+  .status-desktop-mark:hover {
+    background: rgb(var(--color-surface-800) / 0.5);
+    color: rgb(var(--color-surface-300));
+  }
+
+  .status-desktop-mark--active {
+    background: rgb(var(--color-surface-800) / 0.72);
+    color: rgb(var(--color-surface-100));
+  }
+
+  .status-desktop-mark--active:hover {
+    color: rgb(var(--color-surface-50));
+  }
+
+  .status-desktop-mark-index {
+    opacity: 0.92;
+  }
+
   .work-motion-control {
     position: relative;
     z-index: 45;

@@ -15,7 +15,6 @@
   import { browserContext } from "$lib/stores/browserContext.svelte";
   import { chat } from "$lib/stores/chat.svelte";
   import { automations } from "$lib/stores/automations.svelte";
-  import { runtime } from "$lib/stores/runtime.svelte";
   import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
   import { shellTabs } from "$lib/stores/shellTabs.svelte";
   import { isTauri } from "$lib/platform";
@@ -211,8 +210,6 @@
         needsAttentionCount={workspace.needsAttentionCount()}
         cronActiveCount={automations.activeCount().enabled}
         cronTotalCount={automations.activeCount().total}
-        pendingDeliveries={runtime.delivery?.pending_job_deliveries ?? null}
-        lastTickAt={runtime.stats?.last_tick_at_utc ?? null}
         motionCards={workspace.railCards()}
         selectedMotionId={workspace.selectedCardId}
         onSelectMotion={handleCardSelect}

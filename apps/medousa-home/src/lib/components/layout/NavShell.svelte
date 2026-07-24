@@ -46,25 +46,13 @@
     surfaceHasShellSidebarView,
   } from "$lib/utils/navSurfaces";
   import {
-    activateNestItem,
-    NAV_RAIL_NEST_LIMIT,
-    nestItemIsActive,
-    nestItemsForSurface,
-    prefetchRailNestData,
-    surfaceSupportsRailNest,
-    type NavRailNestItem,
-  } from "$lib/utils/navRailNest";
-  import {
     registerRailPopoverSummon,
     setLastPointer,
     type RailPopoverCursor,
   } from "$lib/utils/railPopoverSummon";
   import { resolveSummonToolbarSurface } from "$lib/utils/resolveSummonToolbarSurface";
   import { toast } from "$lib/stores/toast.svelte";
-  import {
-    ChevronRight,
-    Settings,
-  } from "@lucide/svelte";
+  import { Settings } from "@lucide/svelte";
   import { SAFETY_SURFACE_SETTINGS } from "$lib/types/environment";
   import type { DaemonHealth } from "$lib/daemon";
   import { fade, fly } from "svelte/transition";
@@ -74,21 +62,6 @@
   type RailPopoverTarget =
     | { kind: "lme"; mode: LmeExplorerMode }
     | { kind: "surface"; surfaceId: string };
-
-  const NEST_OPEN_KEY = "medousa-home-rail-nest-open";
-
-  function loadNestOpen(): Record<string, boolean> {
-    if (typeof localStorage === "undefined") return {};
-    try {
-      const raw = localStorage.getItem(NEST_OPEN_KEY);
-      if (!raw) return {};
-      const parsed = JSON.parse(raw) as Record<string, boolean>;
-      return parsed && typeof parsed === "object" ? parsed : {};
-    } catch {
-      return {};
-    }
-  }
-
 
   interface Props {
     active: string;
@@ -133,8 +106,6 @@
   const treeIconProps = { size: 14, strokeWidth: 1.5 };
   const heroIconProps = { size: 17, strokeWidth: 1.85 };
   const utilityIconProps = { size: 14, strokeWidth: 1.5 };
-  /** Explicit open map; missing key = collapsed by default. */
-  let nestOpen = $state<Record<string, boolean>>(loadNestOpen());
   /** In-place flyout — replaces rail view-mode swaps for list surfaces. */
   let railPopover = $state<RailPopoverTarget | null>(null);
   let railPopoverTriggerEl = $state<HTMLElement | null>(null);
@@ -199,10 +170,6 @@
     const tierClass =
       tier === "life" ? "workshop-rail-btn-tier-life" : "workshop-rail-btn-tier-utility";
     return `workshop-rail-btn relative ${tierClass} ${activeClass}`;
-  }
-
-  function nestHasActiveItem(surfaceId: string, nest: NavRailNestItem[]): boolean {
-    return nest.some((item) => nestItemIsActive(surfaceId, item.id));
   }
 
   function libraryIsActive(): boolean {
@@ -384,42 +351,7 @@
     layout.openShellSidebarView(surfaceId);
   }
 
-  function nestFor(surfaceId: string): NavRailNestItem[] {
-    if (!surfaceSupportsRailNest(surfaceId)) return [];
-    return nestItemsForSurface(surfaceId);
-  }
-
-  function isNestExpanded(nestKey: string): boolean {
-    return nestOpen[nestKey] === true;
-  }
-
-  function persistNestOpen() {
-    if (typeof localStorage === "undefined") return;
-    localStorage.setItem(NEST_OPEN_KEY, JSON.stringify(nestOpen));
-  }
-
-  function toggleNest(nestKey: string, event: Event) {
-    event.preventDefault();
-    event.stopPropagation();
-    nestOpen = { ...nestOpen, [nestKey]: !isNestExpanded(nestKey) };
-    persistNestOpen();
-  }
-
-
-  async function openNestItem(surfaceId: string, item: NavRailNestItem) {
-    // Do not call onSelect(surface) — for chat that re-opens the *current* session
-    // and races ensureSessionHydrated against the nest target (transcript bleed).
-    closeRailPopover();
-    layout.setShellSidebarMode("nav");
-    if (!isNestExpanded(surfaceId)) {
-      nestOpen = { ...nestOpen, [surfaceId]: true };
-      persistNestOpen();
-    }
-    await activateNestItem(surfaceId, item.id);
-  }
-
   onMount(() => {
-    prefetchRailNestData();
     registerRailPopoverSummon(handleSummonViewToolbar);
     const onPointerMove = (event: PointerEvent) => {
       setLastPointer({ x: event.clientX, y: event.clientY });
@@ -544,9 +476,6 @@
               {@const Icon = environmentIcon(surface.icon)}
               {@const badge = activityFor(surface.id)}
               {@const feedBadge = feedBadgeForSurface(surface)}
-              {@const nest = nestFor(surface.id)}
-              {@const leafActive = nestHasActiveItem(surface.id, nest)}
-              {@const nestExpanded = nest.length > 0 && isNestExpanded(surface.id)}
               {@const isLibrary = surface.id === "library"}
               {@const isAutomations = surface.id === "automations"}
               {@const doorActive = isLibrary
@@ -557,35 +486,8 @@
               <div
                 class="workshop-rail-dest"
                 class:workshop-rail-dest-hero={hero}
-                class:workshop-rail-dest-has-nest={nest.length > 0}
-                class:workshop-rail-dest-expanded={nestExpanded}
               >
                 <div class="workshop-rail-dest-row">
-                  {#if nest.length > 0}
-                    <button
-                      type="button"
-                      class="workshop-rail-dest-twist-btn"
-                      title={nestExpanded ? "Collapse" : "Expand"}
-                      aria-label={nestExpanded
-                        ? `Collapse ${navLabel(surface)}`
-                        : `Expand ${navLabel(surface)}`}
-                      aria-expanded={nestExpanded}
-                      onclick={(event) => toggleNest(surface.id, event)}
-                    >
-                      <ChevronRight
-                        size={12}
-                        strokeWidth={2}
-                        class="workshop-rail-dest-chevron {nestExpanded
-                          ? 'workshop-rail-dest-chevron-open'
-                          : ''}"
-                      />
-                    </button>
-                  {:else}
-                    <span
-                      class="workshop-rail-dest-twist workshop-rail-dest-twist-empty"
-                      aria-hidden="true"
-                    ></span>
-                  {/if}
                   <button
                     type="button"
                     data-rail-surface={surface.id}
@@ -593,11 +495,10 @@
                       quietActive: true,
                       active: doorActive,
                     })} workshop-rail-dest-btn"
-                    class:workshop-rail-dest-btn-dimmed={leafActive && nestExpanded}
                     class:workshop-rail-library-btn={isLibrary || isAutomations}
                     title={navTitle(surface)}
                     aria-label={badge > 0 ? `${navTitle(surface)} (${badge} active)` : navTitle(surface)}
-                    aria-current={doorActive && !leafActive ? "page" : undefined}
+                    aria-current={doorActive ? "page" : undefined}
                     aria-expanded={isLibrary
                       ? surfacePopoverOpen("library") ||
                         (railPopover?.kind === "lme" && isLmeLibraryMode(railPopover.mode))
@@ -629,46 +530,6 @@
                     <span class="workshop-rail-btn-label">{navLabel(surface)}</span>
                   </button>
                 </div>
-                {#if nestExpanded}
-                  <ul class="workshop-rail-nest" aria-label="{navLabel(surface)} recent">
-                    {#each nest as nestItem (nestItem.id)}
-                      <li>
-                        <button
-                          type="button"
-                          class="workshop-rail-nest-btn"
-                          class:workshop-rail-nest-btn-active={nestItemIsActive(
-                            surface.id,
-                            nestItem.id,
-                          )}
-                          class:workshop-rail-nest-btn-accent={nestItem.accent}
-                          title={nestItem.meta
-                            ? `${nestItem.label} · ${nestItem.meta}`
-                            : nestItem.label}
-                          onclick={() => void openNestItem(surface.id, nestItem)}
-                        >
-                          {#if nestItem.accent}
-                            <span class="workshop-rail-nest-dot" aria-hidden="true"></span>
-                          {/if}
-                          <span class="workshop-rail-nest-label">{nestItem.label}</span>
-                          {#if nestItem.meta}
-                            <span class="workshop-rail-nest-meta">{nestItem.meta}</span>
-                          {/if}
-                        </button>
-                      </li>
-                    {/each}
-                    {#if nest.length >= NAV_RAIL_NEST_LIMIT}
-                      <li>
-                        <button
-                          type="button"
-                          class="workshop-rail-nest-more"
-                          onclick={(event) => selectDestination(surface.id, event)}
-                        >
-                          More
-                        </button>
-                      </li>
-                    {/if}
-                  </ul>
-                {/if}
               </div>
             {/if}
           {/snippet}

@@ -182,8 +182,9 @@ export function dispatchPrefixCommand(
     handlers.onCheatSheet?.();
     return true;
   }
-  if (/^[1-9]$/.test(lower)) {
-    shellTabs.focusPaneIndex(Number(lower) - 1);
+  // Virtual desktops 1–4 (occupied slots only — no-op if index empty).
+  if (/^[1-4]$/.test(lower)) {
+    void shellTabs.switchDesktopAt(Number(lower) - 1);
     return true;
   }
   if (rawKey === "Escape") {

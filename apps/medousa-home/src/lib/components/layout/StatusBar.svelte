@@ -4,21 +4,19 @@
   import WorkMotionPeek from "$lib/components/layout/WorkMotionPeek.svelte";
   import StatusActivityPulse from "$lib/components/layout/StatusActivityPulse.svelte";
   import StatusContextualSlot from "$lib/components/layout/StatusContextualSlot.svelte";
+  import StatusDesktopStrip from "$lib/components/layout/StatusDesktopStrip.svelte";
   import EnvironmentPresetSwitcher from "$lib/components/environment/EnvironmentPresetSwitcher.svelte";
   import WorkshopSwitcherCompact from "$lib/components/workshops/WorkshopSwitcherCompact.svelte";
   import { formatShortcut } from "$lib/platform";
   import { environment } from "$lib/stores/environment.svelte";
-  import { shellTabs } from "$lib/stores/shellTabs.svelte";
   import { workshops } from "$lib/stores/workshops.svelte";
-  import { placeToolbarPopover } from "$lib/utils/railPopover";
   import {
     Activity,
     LoaderCircle,
-    MoreHorizontal,
     Radio,
     Unplug,
+    Workflow,
   } from "@lucide/svelte";
-  import { tick } from "svelte";
 
   interface Props {
     health: DaemonHealth | null;
@@ -26,8 +24,6 @@
     needsAttentionCount: number;
     cronActiveCount?: number;
     cronTotalCount?: number;
-    pendingDeliveries?: number | null;
-    lastTickAt?: string | null;
     /** Whisper connection styling — for Chat tab focus. */
     minimal?: boolean;
     /** Library continuity — connection + brain name styling. */
@@ -46,8 +42,6 @@
     needsAttentionCount,
     cronActiveCount = 0,
     cronTotalCount = 0,
-    pendingDeliveries = null,
-    lastTickAt = null,
     minimal = false,
     continuity = false,
     motionCards = [],
@@ -70,9 +64,6 @@
   );
 
   let motionPeekOpen = $state(false);
-  let overflowOpen = $state(false);
-  let overflowTriggerEl = $state<HTMLButtonElement | null>(null);
-  let overflowMenuEl = $state<HTMLDivElement | null>(null);
 
   const quiet = $derived(minimal || continuity);
 
@@ -90,79 +81,20 @@
         : "text-surface-500",
   );
 
-  const deliveryLabel = $derived.by(() => {
-    if (pendingDeliveries === null) return null;
-    if (pendingDeliveries > 0) return `${pendingDeliveries} pending`;
-    return "delivery ok";
-  });
-
-  const tickLabel = $derived.by(() => {
-    if (!lastTickAt) return null;
-    const date = new Date(lastTickAt);
-    if (Number.isNaN(date.getTime())) return null;
-    return `tick ${date.toLocaleTimeString()}`;
-  });
-
   const showMotion = $derived(inMotionCount > 0 && Boolean(onSelectMotion));
 
-  const hasOverflowItems = $derived(
-    Boolean(onOpenCron) ||
-      cronTotalCount > 0 ||
-      deliveryLabel !== null ||
-      tickLabel !== null ||
-      Boolean(onOpenRuntime) ||
-      shellTabs.desktops.length > 0,
+  /** enabled / total — same ratio as Automations panel. */
+  const automationsRatio = $derived(`${cronActiveCount}/${cronTotalCount}`);
+  const automationsTitle = $derived(
+    `${automationsRatio} automations enabled`,
   );
 
-  $effect(() => {
-    if (!overflowOpen || !overflowTriggerEl || !overflowMenuEl) return;
-    let frame = 0;
-    const place = () => {
-      if (!overflowTriggerEl || !overflowMenuEl) return;
-      placeToolbarPopover(overflowTriggerEl, overflowMenuEl, {
-        prefer: "above",
-        width: 220,
-        gap: 8,
-        pad: 10,
-      });
-      frame = window.requestAnimationFrame(() => {
-        if (!overflowTriggerEl || !overflowMenuEl) return;
-        placeToolbarPopover(overflowTriggerEl, overflowMenuEl, {
-          prefer: "above",
-          width: 220,
-          gap: 8,
-          pad: 10,
-        });
-      });
-    };
-    void tick().then(place);
-    window.addEventListener("resize", place);
-    window.visualViewport?.addEventListener("resize", place);
-    window.visualViewport?.addEventListener("scroll", place);
-    return () => {
-      window.cancelAnimationFrame(frame);
-      window.removeEventListener("resize", place);
-      window.visualViewport?.removeEventListener("resize", place);
-      window.visualViewport?.removeEventListener("scroll", place);
-    };
-  });
-
   function toggleMotionPeek() {
-    overflowOpen = false;
     motionPeekOpen = !motionPeekOpen;
   }
 
   function closeMotionPeek() {
     motionPeekOpen = false;
-  }
-
-  function toggleOverflow() {
-    motionPeekOpen = false;
-    overflowOpen = !overflowOpen;
-  }
-
-  function closeOverflow() {
-    overflowOpen = false;
   }
 
   async function handleSelectMotion(id: string) {
@@ -171,14 +103,9 @@
   }
 
   function onFooterKeydown(event: KeyboardEvent) {
-    if (event.key === "Escape") {
-      if (motionPeekOpen) {
-        event.preventDefault();
-        closeMotionPeek();
-      } else if (overflowOpen) {
-        event.preventDefault();
-        closeOverflow();
-      }
+    if (event.key === "Escape" && motionPeekOpen) {
+      event.preventDefault();
+      closeMotionPeek();
     }
   }
 </script>
@@ -187,7 +114,7 @@
 <footer
   class="workshop-status relative flex h-8 shrink-0 items-center gap-3.5 px-3.5 text-[11px]"
   class:workshop-status--quiet={quiet}
-  class:workshop-status--peek-open={motionPeekOpen || overflowOpen}
+  class:workshop-status--peek-open={motionPeekOpen}
   aria-label="Medousa status"
   data-debug-label="status-bar"
   onkeydown={onFooterKeydown}
@@ -250,7 +177,7 @@
 
   <StatusActivityPulse />
 
-  <!-- Keeps connection/activity left and contextual + ⌘K pinned right. -->
+  <!-- Keeps connection/activity left and contextual + desktops + ⌘K pinned right. -->
   <div class="status-bar-mid min-w-0 flex-1" aria-hidden="true"></div>
 
   <div class="status-bar-trailing flex min-w-0 shrink-0 items-center gap-3 text-surface-500">
@@ -301,99 +228,21 @@
       <span class="text-warning-400/85">{needsAttentionCount} need attention</span>
     {/if}
 
-    {#if !quiet && hasOverflowItems}
-      <div class="status-overflow">
-        <button
-          bind:this={overflowTriggerEl}
-          type="button"
-          class="status-overflow-trigger"
-          class:status-overflow-trigger--open={overflowOpen}
-          title="More status"
-          aria-label="More status"
-          aria-expanded={overflowOpen}
-          aria-haspopup="menu"
-          onclick={toggleOverflow}
-        >
-          <MoreHorizontal size={14} strokeWidth={2} />
-        </button>
+    {#if !quiet}
+      <StatusDesktopStrip />
+    {/if}
 
-        {#if overflowOpen}
-          <!-- svelte-ignore a11y_no_static_element_interactions -->
-          <div
-            class="status-overflow-scrim"
-            role="presentation"
-            onclick={closeOverflow}
-          ></div>
-          <div
-            bind:this={overflowMenuEl}
-            class="status-overflow-menu workshop-rail-sheet"
-            role="menu"
-            aria-label="More status"
-          >
-            {#if onOpenCron}
-              <button
-                type="button"
-                class="status-overflow-item"
-                role="menuitem"
-                onclick={() => {
-                  closeOverflow();
-                  onOpenCron();
-                }}
-              >
-                {cronActiveCount} automations
-              </button>
-            {:else if cronTotalCount > 0}
-              <span class="status-overflow-item status-overflow-item--static">
-                {cronActiveCount} cron
-              </span>
-            {/if}
-            {#if deliveryLabel}
-              <span
-                class="status-overflow-item status-overflow-item--static"
-                class:text-warning-400={pendingDeliveries && pendingDeliveries > 0}
-              >
-                {deliveryLabel}
-              </span>
-            {/if}
-            {#if tickLabel}
-              <span class="status-overflow-item status-overflow-item--static text-surface-500">
-                {tickLabel}
-              </span>
-            {/if}
-            {#if onOpenRuntime}
-              <button
-                type="button"
-                class="status-overflow-item"
-                role="menuitem"
-                onclick={() => {
-                  closeOverflow();
-                  onOpenRuntime();
-                }}
-              >
-                Runtime
-              </button>
-            {/if}
-            {#if shellTabs.desktops.length > 0}
-              <button
-                type="button"
-                class="status-overflow-item"
-                role="menuitem"
-                title={
-                  shellTabs.desktops.length > 1
-                    ? `Workspace: ${shellTabs.activeDesktopName} (click to cycle)`
-                    : `Workspace: ${shellTabs.activeDesktopName}`
-                }
-                onclick={() => {
-                  shellTabs.cycleDesktop(1);
-                  closeOverflow();
-                }}
-              >
-                {shellTabs.activeDesktopName}
-              </button>
-            {/if}
-          </div>
-        {/if}
-      </div>
+    {#if !quiet && onOpenCron}
+      <button
+        type="button"
+        class="status-automations-btn"
+        title={automationsTitle}
+        aria-label={automationsTitle}
+        onclick={onOpenCron}
+      >
+        <Workflow size={12} strokeWidth={1.85} class="shrink-0 opacity-80" aria-hidden="true" />
+        <span class="tabular-nums">{automationsRatio}</span>
+      </button>
     {/if}
 
     {#if onOpenSpotlight}
@@ -438,66 +287,25 @@
     pointer-events: none;
   }
 
-  .status-overflow {
-    position: relative;
+  .status-automations-btn {
     display: inline-flex;
-  }
-
-  .status-overflow-trigger {
-    display: inline-flex;
+    max-width: 9rem;
+    min-width: 0;
     align-items: center;
-    justify-content: center;
+    gap: 0.35rem;
     border: 0;
+    border-radius: 0.3rem;
     background: transparent;
-    padding: 0.1rem;
-    color: rgb(var(--color-surface-500));
-    transition: color 140ms ease;
-  }
-
-  .status-overflow-trigger:hover,
-  .status-overflow-trigger--open {
-    color: rgb(var(--color-surface-200));
-  }
-
-  .status-overflow-scrim {
-    position: fixed;
-    inset: 0;
-    z-index: 70;
-  }
-
-  .status-overflow-menu {
-    z-index: 71;
-    display: flex;
-    flex-direction: column;
-    gap: 0.15rem;
-    padding: 0.4rem;
-    min-width: 10rem;
-    pointer-events: auto;
-  }
-
-  .status-overflow-item {
-    display: block;
-    width: 100%;
-    border: 0;
-    border-radius: 0.4rem;
-    background: transparent;
-    padding: 0.4rem 0.55rem;
-    color: rgb(var(--color-surface-200));
+    padding: 0.15rem 0.35rem;
+    color: inherit;
     font: inherit;
-    text-align: left;
-    transition: background 120ms ease;
+    transition:
+      color 140ms ease,
+      background-color 140ms ease;
   }
 
-  .status-overflow-item:hover {
+  .status-automations-btn:hover {
     background: rgb(var(--color-surface-800) / 0.55);
-  }
-
-  .status-overflow-item--static {
-    color: rgb(var(--color-surface-400));
-    cursor: default;
-  }
-
-  .status-overflow-item--static:hover {
-    background: transparent;
+    color: rgb(var(--color-surface-200));
   }
 </style>

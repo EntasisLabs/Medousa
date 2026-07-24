@@ -10,6 +10,7 @@ import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
 import { vault } from "$lib/stores/vault.svelte";
 import {
   isShellSurfaceTabId,
+  MAX_SHELL_DESKTOPS,
   MAX_SHELL_PANES,
   type EditorGroup,
   type ShellDesktop,
@@ -267,6 +268,7 @@ export class ShellTabsStore {
   );
 
   activeDesktopName = $derived(this.activeDesktop?.name ?? DEFAULT_DESKTOP_NAME);
+  canCreateDesktop = $derived(this.desktops.length < MAX_SHELL_DESKTOPS);
 
   private captureLayout(): ShellDesktopLayout {
     return {
@@ -1204,6 +1206,7 @@ export class ShellTabsStore {
 
   createDesktop(name?: string): string {
     this.ensureDesktopCatalog();
+    if (this.desktops.length >= MAX_SHELL_DESKTOPS) return "";
     this.flushActiveDesktop();
     const trimmed = name?.trim() || `Desktop ${this.desktops.length + 1}`;
     const id = newDesktopId();
@@ -1214,6 +1217,17 @@ export class ShellTabsStore {
     this.persist();
     void this.switchDesktop(id);
     return id;
+  }
+
+  /** Switch by 0-based catalog index (Ctrl+; 1–4). No-op if index is empty. */
+  async switchDesktopAt(index: number): Promise<boolean> {
+    this.ensureDesktopCatalog();
+    if (!Number.isInteger(index) || index < 0 || index >= this.desktops.length) {
+      return false;
+    }
+    const target = this.desktops[index];
+    if (!target) return false;
+    return this.switchDesktop(target.id);
   }
 
   async switchDesktop(desktopId: string): Promise<boolean> {

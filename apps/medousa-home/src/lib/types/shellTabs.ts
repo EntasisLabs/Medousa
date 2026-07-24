@@ -53,6 +53,9 @@ export type SplitDirection = "right" | "down";
 /** Soft cap on leaf panes per virtual desktop (v1). */
 export const MAX_SHELL_PANES = 4;
 
+/** Virtual desktops (layout snapshots) — hard cap for status strip + hotkeys. */
+export const MAX_SHELL_DESKTOPS = 4;
+
 /** Pane layout snapshot stored inside a virtual shell desktop. */
 export type ShellDesktopLayout = {
   tabs: ShellTab[];

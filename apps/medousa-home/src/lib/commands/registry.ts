@@ -78,15 +78,15 @@ export function buildGoCommands(): WorkshopCommand[] {
 }
 
 export function buildWorkspaceCommands(): WorkshopCommand[] {
-  const switchCommands = shellTabs.desktops.map((desktop) => ({
+  const switchCommands = shellTabs.desktops.map((desktop, index) => ({
     id: `workspace-switch-${desktop.id}`,
     section: "go" as const,
     label: `Switch workspace: ${desktop.name}`,
     subtitle:
       desktop.id === shellTabs.activeDesktopId
-        ? "Current virtual desktop"
-        : "Swap pane layout only — vault and chat stay shared",
-    keywords: `workspace desktop virtual switch ${desktop.name}`,
+        ? `Current · ${formatShortcut(`Ctrl+; ${index + 1}`)}`
+        : `${formatShortcut(`Ctrl+; ${index + 1}`)} — layout only; vault and chat stay shared`,
+    keywords: `workspace desktop virtual switch ${desktop.name} ${index + 1}`,
     run: async (ctx: WorkshopCommandContext) => {
       await shellTabs.switchDesktop(desktop.id);
       ctx.callbacks.close();
@@ -94,19 +94,33 @@ export function buildWorkspaceCommands(): WorkshopCommand[] {
     },
   }));
 
+  const atCap = !shellTabs.canCreateDesktop;
+
   return [
     {
       id: "workspace-new",
       section: "go",
       label: "New workspace",
-      subtitle: "Create a named virtual desktop (pane layout snapshot)",
+      subtitle: atCap
+        ? "Maximum 4 virtual desktops"
+        : "Create a named virtual desktop (pane layout snapshot)",
       keywords: "workspace desktop virtual new create hyprland",
-      prompt: {
-        placeholder: "Workspace name",
-        submitLabel: "Create",
-      },
+      prompt: atCap
+        ? undefined
+        : {
+            placeholder: "Workspace name",
+            submitLabel: "Create",
+          },
       run: (ctx, args) => {
+        if (!shellTabs.canCreateDesktop) {
+          ctx.error("You already have 4 workspaces.");
+          return;
+        }
         const id = shellTabs.createDesktop(args);
+        if (!id) {
+          ctx.error("You already have 4 workspaces.");
+          return;
+        }
         const name =
           shellTabs.desktops.find((desktop) => desktop.id === id)?.name ?? "Workspace";
         ctx.callbacks.close();
