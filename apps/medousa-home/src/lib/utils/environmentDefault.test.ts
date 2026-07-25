@@ -30,15 +30,14 @@ describe("ensurePeersSurfaceInSpec", () => {
     expect(peersAt).toBe(chatAt + 1);
   });
 
-  it("moves buried peers next to chat", () => {
+  it("preserves a custom peers position once present", () => {
     const spec = defaultEnvironmentSpec();
     const preset = spec.layoutPresets![0]!;
     preset.surfaces = preset.surfaces.filter((id) => id !== "peers");
     preset.surfaces.push("peers");
 
     const next = ensurePeersSurfaceInSpec(spec);
-    const chatAt = next.layoutPresets![0]!.surfaces.indexOf("chat");
-    const peersAt = next.layoutPresets![0]!.surfaces.indexOf("peers");
-    expect(peersAt).toBe(chatAt + 1);
+    expect(next).toBe(spec);
+    expect(next.layoutPresets![0]!.surfaces.at(-1)).toBe("peers");
   });
 });

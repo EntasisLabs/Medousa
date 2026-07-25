@@ -28,6 +28,7 @@ pub fn default_environment_spec(profile_id: impl Into<String>) -> EnvironmentSpe
                 active: true,
                 surfaces: default_surface_ids(),
                 shell_chrome: Some(default_shell_chrome()),
+                theme: None,
             },
             LayoutPreset {
                 id: FOCUS_PRESET_ID.to_string(),
@@ -42,6 +43,7 @@ pub fn default_environment_spec(profile_id: impl Into<String>) -> EnvironmentSpe
                     SAFETY_SURFACE_RUNTIME.to_string(),
                 ],
                 shell_chrome: Some(default_shell_chrome()),
+                theme: None,
             },
         ]),
         active_preset_id: Some(DEFAULT_PRESET_ID.to_string()),

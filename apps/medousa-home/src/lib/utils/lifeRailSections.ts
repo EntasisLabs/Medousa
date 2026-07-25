@@ -36,19 +36,10 @@ export type RailSectionId =
   | "vault"
   | "automations";
 
-const PRIMARY_ORDER = [
-  "chat",
-  "peers",
-  "calendar",
-  "work",
-  "web",
-] as const;
-
 const FOCUS_IDS = new Set(["calendar", "work", "web"]);
 
-const RAIL_SKIP_IDS = new Set([
-  "library",
-  "automations",
+/** Dock / chrome / folded doors — never appear in the primary strip. */
+const RAIL_PRIMARY_SKIP_IDS = new Set([
   "workshop",
   "home",
   "context",
@@ -101,33 +92,51 @@ export function profilesRailSurface(): SurfaceDef {
 
 /**
  * Compact life-rail layout. Runtime / Settings stay off this list.
+ * Primary order follows the given `surfaces` sequence (active layout preset).
  */
 export function buildLifeRailLayout(surfaces: SurfaceDef[]): LifeRailLayout {
   const byId = new Map(surfaces.map((surface) => [surface.id, surface]));
   const primary: LifeRailItem[] = [];
+  let sawLibrary = false;
+  let sawAutomations = false;
 
-  for (const id of PRIMARY_ORDER) {
-    const surface = byId.get(id);
-    if (!surface || RAIL_SKIP_IDS.has(surface.id)) continue;
+  for (const surface of surfaces) {
+    if (RAIL_PRIMARY_SKIP_IDS.has(surface.id)) continue;
+
+    if (surface.id === "library") {
+      sawLibrary = true;
+      primary.push({ kind: "surface", id: "library", surface: libraryRailSurface() });
+      continue;
+    }
+    if (surface.id === "automations") {
+      sawAutomations = true;
+      primary.push({
+        kind: "surface",
+        id: "automations",
+        surface: automationsRailSurface(),
+      });
+      continue;
+    }
+
     primary.push({ kind: "surface", id: surface.id, surface });
   }
 
-  const focusStartIndex = primary.findIndex((item) => FOCUS_IDS.has(item.id));
-  const showLibrary = surfaces.some((surface) => surface.id === "library");
-  // Twin door to Library — don't require Automations in the preset list.
-  // Existing environments often dropped it when modes lived under Library.
-  const showAutomations =
-    showLibrary || surfaces.some((surface) => surface.id === "automations");
-
-  const custom: LifeRailItem[] = [];
-  for (const surface of surfaces) {
-    if (RAIL_SKIP_IDS.has(surface.id)) continue;
-    if (surface.kind !== "custom") continue;
-    custom.push({ kind: "surface", id: surface.id, surface });
+  // Twin door: Library implies Automations even when older presets dropped it.
+  if (sawLibrary && !sawAutomations) {
+    const libraryAt = primary.findIndex((item) => item.id === "library");
+    if (libraryAt >= 0) {
+      primary.splice(libraryAt + 1, 0, {
+        kind: "surface",
+        id: "automations",
+        surface: automationsRailSurface(),
+      });
+    }
   }
 
-  const customStartIndex = custom.length > 0 ? primary.length : -1;
-  primary.push(...custom);
+  const focusStartIndex = primary.findIndex((item) => FOCUS_IDS.has(item.id));
+  const customStartIndex = primary.findIndex(
+    (item) => item.kind === "surface" && item.surface.kind === "custom",
+  );
 
   const contextSurface = byId.get("context") ?? null;
   const profilesExisting = byId.get("profiles");
@@ -146,8 +155,8 @@ export function buildLifeRailLayout(surfaces: SurfaceDef[]): LifeRailLayout {
     primary,
     focusStartIndex,
     customStartIndex,
-    showLibrary,
-    showAutomations,
+    showLibrary: sawLibrary,
+    showAutomations: sawLibrary || sawAutomations,
     you,
     context: contextSurface
       ? { kind: "surface", id: "context", surface: contextSurface }
@@ -165,6 +174,8 @@ export function buildLifeRailSections(surfaces: SurfaceDef[]): {
   const talk = layout.primary.filter(
     (item) =>
       !FOCUS_IDS.has(item.id) &&
+      item.id !== "library" &&
+      item.id !== "automations" &&
       !(item.kind === "surface" && item.surface.kind === "custom"),
   );
   const focus = layout.primary.filter((item) => FOCUS_IDS.has(item.id));
@@ -175,17 +186,9 @@ export function buildLifeRailSections(surfaces: SurfaceDef[]): {
   if (talk.length) sections.push({ id: "channels", label: "Channels", items: talk });
   if (focus.length) sections.push({ id: "focus", label: "Focus", items: focus });
   if (layout.showLibrary || layout.showAutomations) {
-    const items: LifeRailItem[] = [];
-    if (layout.showLibrary) {
-      items.push({ kind: "surface", id: "library", surface: libraryRailSurface() });
-    }
-    if (layout.showAutomations) {
-      items.push({
-        kind: "surface",
-        id: "automations",
-        surface: automationsRailSurface(),
-      });
-    }
+    const items = layout.primary.filter(
+      (item) => item.id === "library" || item.id === "automations",
+    );
     sections.push({
       id: layout.showLibrary ? "library" : "automations",
       label: layout.showLibrary ? "Library" : "Automations",

@@ -3,6 +3,7 @@ import { connection } from "$lib/stores/connection.svelte";
 import { layout } from "$lib/stores/layout.svelte";
 import { runtime } from "$lib/stores/runtime.svelte";
 import { settingsNav } from "$lib/stores/settingsNav.svelte";
+import { shellTabs } from "$lib/stores/shellTabs.svelte";
 import { vault } from "$lib/stores/vault.svelte";
 import { workspace } from "$lib/stores/workspace.svelte";
 import type { SettingsSectionId } from "$lib/types/settings";
@@ -38,7 +39,8 @@ export function buildWorkshopCommandContext(
     },
     openSettingsSection(section: SettingsSectionId) {
       settingsNav.openSection(section);
-      layout.navigateDesktop("settings", { bump: true });
+      shellTabs.openDestination("settings");
+      layout.openShellSidebarView("settings");
     },
     notice(message: string) {
       chat.historyNotice = message;

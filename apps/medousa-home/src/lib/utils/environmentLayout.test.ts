@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { defaultEnvironmentSpec } from "$lib/utils/environmentDefault";
 import {
+  activeLayoutPreset,
   activePresetSurfaceIds,
   addLayoutPresetFromActive,
   activateLayoutPreset,
   isSurfaceNavVisible,
+  moveSurfaceInActivePreset,
   removeLayoutPreset,
+  setActiveLayoutTheme,
   setSurfaceNavVisible,
 } from "$lib/utils/environmentLayout";
 
@@ -34,6 +37,68 @@ describe("environmentLayout nav visibility", () => {
   it("rejects toggling safety surfaces", () => {
     const spec = defaultEnvironmentSpec();
     expect(() => setSurfaceNavVisible(spec, "settings", false)).toThrow(/cannot be hidden/i);
+  });
+});
+
+describe("environmentLayout reorder", () => {
+  it("moves a destination up and down inside the active preset", () => {
+    const spec = defaultEnvironmentSpec();
+    const before = activePresetSurfaceIds(spec);
+    const webAt = before.indexOf("web");
+    expect(webAt).toBeGreaterThan(0);
+
+    moveSurfaceInActivePreset(spec, "web", -1);
+    const afterUp = activePresetSurfaceIds(spec);
+    expect(afterUp.indexOf("web")).toBe(webAt - 1);
+    expect(afterUp).toContain("settings");
+    expect(afterUp).toContain("runtime");
+
+    moveSurfaceInActivePreset(spec, "web", 1);
+    expect(activePresetSurfaceIds(spec).indexOf("web")).toBe(webAt);
+  });
+
+  it("no-ops at the ends of the movable range", () => {
+    const spec = defaultEnvironmentSpec();
+    const movable = activePresetSurfaceIds(spec).filter(
+      (id) => id !== "settings" && id !== "runtime" && id !== "home",
+    );
+    const first = movable[0]!;
+    const last = movable[movable.length - 1]!;
+    const before = activePresetSurfaceIds(spec);
+
+    moveSurfaceInActivePreset(spec, first, -1);
+    expect(activePresetSurfaceIds(spec)).toEqual(before);
+
+    moveSurfaceInActivePreset(spec, last, 1);
+    expect(activePresetSurfaceIds(spec)).toEqual(before);
+  });
+});
+
+describe("environmentLayout theme", () => {
+  it("stamps theme on the env and active layout", () => {
+    const spec = defaultEnvironmentSpec();
+    setActiveLayoutTheme(spec, { colorThemeId: "ember" });
+    expect(spec.theme?.colorThemeId).toBe("ember");
+    expect(activeLayoutPreset(spec)?.theme?.colorThemeId).toBe("ember");
+  });
+
+  it("applies a layout theme when activating", () => {
+    const spec = defaultEnvironmentSpec();
+    setActiveLayoutTheme(spec, { colorThemeId: "ember" });
+    const writingId = addLayoutPresetFromActive(spec, { label: "Writing" });
+    expect(activeLayoutPreset(spec)?.theme?.colorThemeId).toBe("ember");
+
+    activateLayoutPreset(spec, "default");
+    expect(spec.theme?.colorThemeId).toBe("ember");
+
+    const focus = spec.layoutPresets?.find((preset) => preset.id === "focus");
+    expect(focus).toBeTruthy();
+    focus!.theme = { colorThemeId: "nord" };
+    activateLayoutPreset(spec, "focus");
+    expect(spec.theme?.colorThemeId).toBe("nord");
+
+    activateLayoutPreset(spec, writingId);
+    expect(spec.theme?.colorThemeId).toBe("ember");
   });
 });
 

@@ -22,15 +22,16 @@
 
 <div class="models-stages">
   <p class="settings-subsection-lead">
-    Which model handles each pipeline stage. Stance and answer depth live in Voice; live routes show
-    in Runtime → Routing.
+    A stage is one step in how a turn is built (lead, read, verify, final voice). Pick a stage to
+    set its model. Stance and answer depth live in Voice; live routes show in Runtime → Routing.
+    Changes here need Save.
   </p>
 
   <div class="settings-toggle-list">
     <label class="settings-toggle-row settings-metric-row">
       <span class="min-w-0 flex-1">
         <span class="block text-sm font-medium text-surface-100">Stage</span>
-        <span class="workshop-faint mt-0.5 block text-xs">Pick a role to edit its model</span>
+        <span class="workshop-faint mt-0.5 block text-xs">Which step of the turn to edit</span>
       </span>
       <select
         class="models-stages-select"

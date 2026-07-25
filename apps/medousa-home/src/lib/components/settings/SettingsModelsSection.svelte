@@ -51,7 +51,9 @@
 <section class="settings-section settings-section-models">
   <header class="settings-section-header">
     <h2 class="text-base font-semibold text-surface-50">Models</h2>
-    <p class="workshop-faint mt-1 text-sm">Who answers, sees, listens — and which model owns each stage.</p>
+    <p class="workshop-faint mt-1 text-sm">
+      Who answers, sees, and listens. Model picks apply immediately; Stages need Save.
+    </p>
   </header>
 
   <div class="settings-segmented mt-4" role="tablist" aria-label="Models settings">

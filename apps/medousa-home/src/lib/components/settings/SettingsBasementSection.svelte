@@ -133,6 +133,10 @@
 
   async function restartWorkshopEngine() {
     if (!isTauri() || mobile) return;
+    const ok = window.confirm(
+      "Restart the workshop engine? Active chats and tools will pause until it comes back.",
+    );
+    if (!ok) return;
     restartingEngine = true;
     restartMessage = null;
     try {

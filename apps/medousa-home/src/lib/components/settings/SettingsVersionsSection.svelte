@@ -1,5 +1,4 @@
 <script lang="ts">
-  import SettingsCharterSaveBar from "$lib/components/settings/SettingsCharterSaveBar.svelte";
   import { vaultVersions } from "$lib/stores/vaultVersions.svelte";
   import { workshopDefaults } from "$lib/stores/workshopDefaults.svelte";
   import { isTauriMobilePlatform } from "$lib/platform";
@@ -29,6 +28,7 @@
     setVersions(enabled);
     try {
       await vaultVersions.setEnabled(enabled, true);
+      workshopDefaults.acknowledgeClean();
     } catch {
       /* error surfaced on store */
     }
@@ -151,7 +151,7 @@
     <p class="mt-3 text-sm text-rose-300/90" role="alert">{vaultVersions.error}</p>
   {/if}
 
-  <div class="mt-6">
-    <SettingsCharterSaveBar {mobile} />
-  </div>
+  <p class="workshop-faint mt-6 text-xs leading-relaxed">
+    On and Off apply immediately — no separate Save on this page.
+  </p>
 </section>

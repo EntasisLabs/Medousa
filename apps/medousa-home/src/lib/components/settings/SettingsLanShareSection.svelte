@@ -197,7 +197,21 @@
     }
   }
 
+  function selectConflictStrategy(next: ShareConflictStrategy) {
+    if (next === "overwrite" && conflictStrategy !== "overwrite") {
+      const ok = window.confirm(
+        "Overwrite replaces matching canvas views on import or send. Continue with Overwrite?",
+      );
+      if (!ok) return;
+    }
+    conflictStrategy = next;
+  }
+
   async function revokeTrust(workshopId: string) {
+    const ok = window.confirm(
+      "Revoke trust for this peer? They will need to reconnect from Peers.",
+    );
+    if (!ok) return;
     busy = true;
     error = null;
     try {
@@ -256,8 +270,9 @@
         <Handshake size={14} strokeWidth={2} class="inline" /> Meet via this workshop
       </h3>
       <p class="settings-subsection-lead">
-        Grant <code>client.rendezvous</code> so paired clients can introduce each other through
-        this brain. Endpoints stay private until both consent.
+        Let paired clients introduce each other through this workshop. Addresses stay private until
+        both sides consent.
+        <span class="mt-1 block font-mono text-[11px] opacity-70">client.rendezvous</span>
       </p>
       <ul class="mt-3 space-y-2">
         {#each meshPeers as peer (peer.deviceId)}
@@ -386,7 +401,7 @@
             : ''}"
           disabled={busy}
           aria-pressed={conflictStrategy === option.id}
-          onclick={() => (conflictStrategy = option.id)}
+          onclick={() => selectConflictStrategy(option.id)}
         >
           <span class="block text-sm font-medium text-surface-100">{option.label}</span>
           <span class="workshop-faint mt-1 block text-xs leading-snug">{option.hint}</span>

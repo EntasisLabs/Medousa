@@ -1,6 +1,5 @@
 export type SettingsSectionId =
   | "room"
-  | "canvas"
   | "rhythm"
   | "memory"
   | "models"
@@ -16,28 +15,86 @@ export type SettingsSectionId =
   | "packages"
   | "basement";
 
-export const SETTINGS_SECTIONS: {
+/** Quiet TOC chapters — not separate product surfaces. */
+export type SettingsSectionGroupId =
+  | "space"
+  | "her"
+  | "tools"
+  | "people"
+  | "machine";
+
+export const SETTINGS_SECTION_GROUPS: {
+  id: SettingsSectionGroupId;
+  label: string;
+}[] = [
+  { id: "space", label: "Space" },
+  { id: "her", label: "Her" },
+  { id: "tools", label: "Tools" },
+  { id: "people", label: "People" },
+  { id: "machine", label: "Machine" },
+];
+
+export type SettingsSectionDef = {
   id: SettingsSectionId;
   label: string;
   hint: string;
-}[] = [
-  { id: "room", label: "Room", hint: "Theme & atmosphere" },
-  { id: "canvas", label: "Canvas", hint: "Layout presets & agent proposals" },
-  { id: "rhythm", label: "Rhythm", hint: "How she interrupts you" },
-  { id: "memory", label: "Memory", hint: "How long chats stay vivid" },
-  { id: "models", label: "Models", hint: "Chat & dictation" },
-  { id: "voice", label: "Voice", hint: "Stance & answer depth" },
-  { id: "reach", label: "Reach", hint: "What she may touch" },
-  { id: "shell", label: "Shell", hint: "Process sandbox & agent tools" },
-  { id: "versions", label: "Versions", hint: "Vault history (optional)" },
-  { id: "engine", label: "Engine", hint: "Budgets, quality & diagnostics" },
-  { id: "shared", label: "Shared", hint: "Team seats on this brain" },
-  { id: "phone", label: "Phone", hint: "Pair your pocket portal" },
-  { id: "nearby", label: "Nearby", hint: "Peers rail, bundles & trust" },
-  { id: "channels", label: "Channels", hint: "Telegram, Discord, Slack & more" },
-  { id: "packages", label: "Packages", hint: "Offline brain, adapters & MCP" },
-  { id: "basement", label: "Connection", hint: "This device, engine & advanced files" },
+  group: SettingsSectionGroupId;
+};
+
+export const SETTINGS_SECTIONS: SettingsSectionDef[] = [
+  { id: "room", label: "Room", hint: "Theme per layout, light & chrome", group: "space" },
+  { id: "rhythm", label: "Rhythm", hint: "Notifications & display", group: "space" },
+  { id: "memory", label: "Memory", hint: "How long chats stay vivid", group: "her" },
+  { id: "models", label: "Models", hint: "Chat, dictation & stages", group: "her" },
+  { id: "voice", label: "Voice", hint: "Stance & answer depth", group: "her" },
+  { id: "reach", label: "Reach", hint: "Tools she may use", group: "tools" },
+  { id: "shell", label: "Shell", hint: "Process sandbox & commands", group: "tools" },
+  { id: "engine", label: "Engine", hint: "Speed, budgets & diagnostics", group: "tools" },
+  { id: "shared", label: "Shared", hint: "Team seats on this brain", group: "people" },
+  { id: "phone", label: "Phone", hint: "Pair your phone", group: "people" },
+  { id: "nearby", label: "Nearby", hint: "Peers, bundles & trust", group: "people" },
+  { id: "channels", label: "Channels", hint: "Telegram, Discord, Slack & more", group: "people" },
+  { id: "versions", label: "Versions", hint: "Vault history (optional)", group: "machine" },
+  { id: "packages", label: "Packages", hint: "Offline brain, adapters & MCP", group: "machine" },
+  {
+    id: "basement",
+    label: "Connection",
+    hint: "This device, engine & advanced files",
+    group: "machine",
+  },
 ];
+
+export function settingsSectionById(id: SettingsSectionId): SettingsSectionDef | undefined {
+  return SETTINGS_SECTIONS.find((section) => section.id === id);
+}
+
+export function settingsGroupLabel(groupId: SettingsSectionGroupId): string {
+  return SETTINGS_SECTION_GROUPS.find((group) => group.id === groupId)?.label ?? groupId;
+}
+
+/** Sections in TOC order, with a group header whenever the chapter changes. */
+export function settingsNavEntries(): Array<
+  | { kind: "group"; id: SettingsSectionGroupId; label: string }
+  | { kind: "section"; section: SettingsSectionDef }
+> {
+  const entries: Array<
+    | { kind: "group"; id: SettingsSectionGroupId; label: string }
+    | { kind: "section"; section: SettingsSectionDef }
+  > = [];
+  let lastGroup: SettingsSectionGroupId | null = null;
+  for (const section of SETTINGS_SECTIONS) {
+    if (section.group !== lastGroup) {
+      entries.push({
+        kind: "group",
+        id: section.group,
+        label: settingsGroupLabel(section.group),
+      });
+      lastGroup = section.group;
+    }
+    entries.push({ kind: "section", section });
+  }
+  return entries;
+}
 
 export const DEPTH_CHARTER_OPTIONS = [
   {

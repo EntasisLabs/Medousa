@@ -171,6 +171,19 @@ pub fn apply_patch_ops(spec: &mut EnvironmentSpec, ops: &[EnvironmentPatchOp]) -
                         Some(tagline.to_string())
                     };
                 }
+                // Keep the active layout's theme in sync (same dual-write as shell chrome).
+                let theme_snapshot = spec.theme.clone();
+                if let Some(presets) = spec.layout_presets.as_mut() {
+                    let active_id = spec.active_preset_id.clone();
+                    if let Some(active) = presets.iter_mut().find(|preset| {
+                        preset.active
+                            || active_id
+                                .as_deref()
+                                .is_some_and(|id| preset.id == id)
+                    }) {
+                        active.theme = theme_snapshot;
+                    }
+                }
                 applied.push("set_environment_theme".to_string());
             }
             EnvironmentPatchOp::RemoveCustomSurface { id } => {

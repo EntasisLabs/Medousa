@@ -12,11 +12,26 @@
 
   const readOnly = $derived(mobile && isTauriMobilePlatform());
 
+  const BACKEND_LABELS: Record<(typeof BACKEND_OPTIONS)[number], { label: string; hint: string }> = {
+    "surreal-mem": {
+      label: "Surreal (memory)",
+      hint: "Default — fast in-process store",
+    },
+    "in-memory": {
+      label: "In-memory",
+      hint: "Ephemeral — cleared when the engine stops",
+    },
+    "surreal-kv": {
+      label: "Surreal (disk)",
+      hint: "Persists across restarts",
+    },
+  };
+
   const toolBudgetFields = [
     {
       key: "hostBusMaxToolRounds" as const,
       label: "Specialist rounds",
-      hint: "Tool calls allowed when specialists handle a turn",
+      hint: "How many tool calls helpers may make in one turn",
       unit: "rounds",
       min: 1,
       max: 48,
@@ -24,7 +39,7 @@
     {
       key: "activationToolIntentMaxRounds" as const,
       label: "Heavy-turn budget",
-      hint: "Extra room when a turn clearly needs tools",
+      hint: "Extra tool room when a turn clearly needs tools",
       unit: "rounds",
       min: 1,
       max: 48,
@@ -32,7 +47,7 @@
     {
       key: "activationShortTurnMaxToolRounds" as const,
       label: "Short-turn budget",
-      hint: "Cap when the turn looks light",
+      hint: "Fewer tool calls when the turn looks light",
       unit: "rounds",
       min: 1,
       max: 24,
@@ -40,7 +55,7 @@
     {
       key: "continuationMaxToolRounds" as const,
       label: "Follow-up budget",
-      hint: "Tool calls on continuation turns",
+      hint: "Tool calls allowed on continuation turns",
       unit: "rounds",
       min: 1,
       max: 48,
@@ -48,7 +63,7 @@
     {
       key: "maxTextOnlyStuckContinues" as const,
       label: "Stuck-turn retries",
-      hint: "How many times to nudge a text-only stuck turn",
+      hint: "How many times to nudge a stuck text-only turn",
       unit: "tries",
       min: 0,
       max: 12,
@@ -56,7 +71,7 @@
     {
       key: "classifierRestrictedMaxToolRounds" as const,
       label: "Restricted budget",
-      hint: "Tool calls when the classifier tightens reach",
+      hint: "Tool calls when reach is tightened for safety",
       unit: "rounds",
       min: 0,
       max: 24,
@@ -163,15 +178,16 @@
   <header class="settings-section-header">
     <h2 class="text-base font-semibold text-surface-50">Engine</h2>
     <p class="workshop-faint mt-1 text-sm">
-      Tool budgets, quality gates, diagnostics, and host plumbing. Stage models and reasoning
-      effort live in Models; answer depth lives in Voice.
+      How fast and careful the engine runs. Which tools she may use lives in Reach; process sandbox
+      in Shell; stance and depth in Voice.
     </p>
   </header>
 
   <div class="mt-5">
     <h3 class="settings-subsection-heading">Tool budgets</h3>
     <p class="settings-subsection-lead">
-      Per-turn cap lives in Reach. These tighten budgets for specialists, follow-ups, and restricted turns.
+      Overall per-turn tool cap is in Reach. These knobs refine budgets for helper turns, follow-ups,
+      and restricted mode.
     </p>
     <div class="settings-toggle-list">
       {#each toolBudgetFields as field (field.key)}
@@ -250,8 +266,10 @@
       </label>
       <label class="settings-toggle-row">
         <span class="min-w-0 flex-1">
-          <span class="block text-sm font-medium text-surface-100">Stasis OTEL</span>
-          <span class="workshop-faint mt-0.5 block text-xs">Export OpenTelemetry from the Stasis runtime</span>
+          <span class="block text-sm font-medium text-surface-100">Telemetry export</span>
+          <span class="workshop-faint mt-0.5 block text-xs">
+            OpenTelemetry from the Stasis runtime (for debugging stacks)
+          </span>
         </span>
         <input
           type="checkbox"
@@ -287,12 +305,11 @@
 
   <div class="mt-6">
     <h3 class="settings-subsection-heading">Host</h3>
-    <p class="settings-subsection-lead">
-      Storage backend and environment overrides for the workshop daemon.
-    </p>
+    <p class="settings-subsection-lead">Where the engine keeps working memory for this workshop.</p>
 
     <div class="mt-1 grid gap-2 sm:grid-cols-3">
       {#each BACKEND_OPTIONS as option (option)}
+        {@const meta = BACKEND_LABELS[option]}
         <button
           type="button"
           class="settings-depth-card {(workshopDefaults.draft.backend ?? 'surreal-mem') === option
@@ -302,14 +319,19 @@
           aria-pressed={(workshopDefaults.draft.backend ?? "surreal-mem") === option}
           onclick={() => setBackend(option)}
         >
-          <span class="block text-sm font-medium text-surface-100">{option}</span>
+          <span class="block text-sm font-medium text-surface-100">{meta.label}</span>
+          <span class="workshop-faint mt-1 block text-xs leading-snug">{meta.hint}</span>
+          <span class="workshop-faint mt-1 block font-mono text-[10px] opacity-70">{option}</span>
         </button>
       {/each}
     </div>
 
-    <label class="mt-3 block">
-      <span class="settings-subsection-heading mb-0">Env overrides</span>
-      <span class="settings-subsection-lead">KEY=value per line — applied when the daemon starts a turn.</span>
+    <details class="engine-advanced mt-4">
+      <summary class="settings-subsection-heading cursor-pointer select-none">Advanced</summary>
+      <p class="settings-subsection-lead mt-2">
+        Environment overrides for the daemon — <span class="font-mono text-surface-300">KEY=value</span>
+        per line, applied when a turn starts.
+      </p>
       <textarea
         class="engine-env-input"
         rows="4"
@@ -319,7 +341,7 @@
         disabled={readOnly}
         oninput={setEnvOverrides}
       ></textarea>
-    </label>
+    </details>
   </div>
 
   <div class="mt-6">
@@ -346,6 +368,21 @@
 
   .engine-env-input::placeholder {
     color: rgb(var(--shell-muted, var(--color-surface-500)));
+  }
+
+  .engine-advanced {
+    border-radius: 0.5rem;
+    border: 1px solid rgb(var(--color-surface-500) / 0.28);
+    background: rgb(var(--color-surface-900) / 0.35);
+    padding: 0.65rem 0.75rem;
+  }
+
+  .engine-advanced summary {
+    list-style: none;
+  }
+
+  .engine-advanced summary::-webkit-details-marker {
+    display: none;
   }
 
   .engine-env-input:focus {

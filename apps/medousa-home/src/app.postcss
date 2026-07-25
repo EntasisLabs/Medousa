@@ -7961,6 +7961,18 @@
     @apply flex flex-col gap-1;
   }
 
+  .settings-nav-group {
+    @apply px-3 pb-0.5 pt-3 text-[10px] font-semibold uppercase tracking-[0.08em] text-surface-500;
+  }
+
+  .settings-nav-group:first-child {
+    @apply pt-0.5;
+  }
+
+  .settings-nav-group--active {
+    @apply text-surface-300;
+  }
+
   .settings-nav-item {
     @apply rounded-container-token px-3 py-2.5 text-left transition hover:bg-surface-800/80;
   }
@@ -7973,6 +7985,14 @@
     @apply -mx-1;
   }
 
+  .settings-nav-chip-group {
+    @apply shrink-0 self-center px-1.5 text-[10px] font-semibold uppercase tracking-[0.06em] text-surface-600;
+  }
+
+  .settings-nav-chip-group--active {
+    @apply text-surface-400;
+  }
+
   .settings-nav-chip {
     @apply shrink-0 rounded-full border border-surface-500/40 px-3 py-1.5 text-xs font-medium text-surface-300;
   }
@@ -7983,6 +8003,22 @@
 
   .settings-section-header {
     @apply max-w-2xl;
+  }
+
+  .settings-save-bar {
+    @apply flex flex-wrap items-center gap-3;
+  }
+
+  .settings-save-dirty {
+    @apply text-xs font-medium text-warning-400/90;
+  }
+
+  .settings-danger-callout {
+    border-radius: 0.5rem;
+    border: 1px solid rgb(var(--color-warning-500) / 0.35);
+    background: rgb(var(--color-warning-500) / 0.08);
+    padding: 0.55rem 0.7rem;
+    color: rgb(var(--color-warning-300, var(--color-warning-400)));
   }
 
   .settings-toggle-list {

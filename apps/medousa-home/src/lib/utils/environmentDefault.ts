@@ -77,23 +77,25 @@ function peersSurfaceDef(): SurfaceDef {
   );
 }
 
-function placePeersAfterChat(surfaceIds: string[]): string[] {
-  const withoutPeers = surfaceIds.filter((id) => id !== "peers");
-  const chatAt = withoutPeers.indexOf("chat");
+/** Insert peers next to chat when missing from a preset surface list. */
+function ensurePeersInPresetSurfaces(surfaceIds: string[]): string[] {
+  if (surfaceIds.includes("peers")) return surfaceIds;
+  const next = [...surfaceIds];
+  const chatAt = next.indexOf("chat");
   if (chatAt >= 0) {
-    withoutPeers.splice(chatAt + 1, 0, "peers");
-    return withoutPeers;
+    next.splice(chatAt + 1, 0, "peers");
+    return next;
   }
-  const messagingIndex = withoutPeers.indexOf("messaging");
+  const messagingIndex = next.indexOf("messaging");
   if (messagingIndex >= 0) {
-    withoutPeers.splice(messagingIndex, 0, "peers");
-    return withoutPeers;
+    next.splice(messagingIndex, 0, "peers");
+    return next;
   }
-  withoutPeers.push("peers");
-  return withoutPeers;
+  next.push("peers");
+  return next;
 }
 
-/** Ensure Peers exists and sits next to Chat in the rail. */
+/** Ensure Peers exists on older specs. Preserves operator-chosen rail order. */
 export function ensurePeersSurfaceInSpec(spec: EnvironmentSpec): EnvironmentSpec {
   const hasPeers = spec.surfaces.some((surface) => surface.id === "peers");
   let surfaces = [...spec.surfaces];
@@ -102,19 +104,11 @@ export function ensurePeersSurfaceInSpec(spec: EnvironmentSpec): EnvironmentSpec
     const chatIndex = surfaces.findIndex((surface) => surface.id === "chat");
     const insertAt = chatIndex >= 0 ? chatIndex + 1 : surfaces.length;
     surfaces.splice(insertAt, 0, peersSurfaceDef());
-  } else {
-    // Keep surface list order aligned with rail preference.
-    const peers = surfaces.find((surface) => surface.id === "peers")!;
-    const withoutPeers = surfaces.filter((surface) => surface.id !== "peers");
-    const chatIndex = withoutPeers.findIndex((surface) => surface.id === "chat");
-    const insertAt = chatIndex >= 0 ? chatIndex + 1 : withoutPeers.length;
-    withoutPeers.splice(insertAt, 0, peers);
-    surfaces = withoutPeers;
   }
 
   const layoutPresets = (spec.layoutPresets ?? []).map((preset) => ({
     ...preset,
-    surfaces: placePeersAfterChat(preset.surfaces),
+    surfaces: ensurePeersInPresetSurfaces(preset.surfaces),
   }));
 
   const surfacesChanged =

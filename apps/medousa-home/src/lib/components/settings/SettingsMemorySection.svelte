@@ -16,7 +16,7 @@
     {
       key: "sliceHotWindowTurns" as const,
       label: "Hot memory",
-      hint: "Recent turns she holds closest",
+      hint: "How many recent turns stay in the active prompt window",
       unit: "turns",
       min: 2,
       max: 32,
@@ -25,7 +25,7 @@
     {
       key: "sliceColdWindowTurns" as const,
       label: "Cold recall",
-      hint: "Older turns that can still surface in a long thread",
+      hint: "How far back older turns can still be pulled into a long thread",
       unit: "turns",
       min: 4,
       max: 64,
@@ -34,7 +34,7 @@
     {
       key: "activationDirectAnswerMaxPromptChars" as const,
       label: "Direct-answer budget",
-      hint: "Character room when she answers without a long dig",
+      hint: "Max prompt size for a quick answer without a long dig",
       unit: "chars",
       min: 200,
       max: 20000,
@@ -44,7 +44,7 @@
     {
       key: "activationLongSessionTurnThreshold" as const,
       label: "Long chat after",
-      hint: "Past this many turns, context rules tighten",
+      hint: "After this many turns, long-thread rules apply",
       unit: "turns",
       min: 8,
       max: 80,
@@ -53,7 +53,7 @@
     {
       key: "activationLongSessionMaxPromptChars" as const,
       label: "Long-chat budget",
-      hint: "Extra character room once a thread goes long",
+      hint: "Max prompt size once a thread is considered long",
       unit: "chars",
       min: 200,
       max: 20000,
@@ -75,7 +75,8 @@
   <header class="settings-section-header">
     <h2 class="text-base font-semibold text-surface-50">Memory</h2>
     <p class="workshop-faint mt-1 text-sm">
-      How much conversation stays close — and when a long thread starts to fade.
+      How many turns stay in the prompt — hot = recent, cold = older recall — and when a long thread
+      tightens context.
     </p>
     <p class="workshop-faint mt-2 text-xs">
       To teach who you are or switch work/home profiles, open

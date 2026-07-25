@@ -49,6 +49,16 @@
     };
   }
 
+  function beforeSaveShell(): boolean {
+    syncListsIntoDraft();
+    if (agentToolsOn && binariesEmpty) {
+      return window.confirm(
+        "Agent shell tools are on with an empty binary allowlist. Any command basename inside the jail can run. Save anyway?",
+      );
+    }
+    return true;
+  }
+
   function setAgentTools(enabled: boolean) {
     workshopDefaults.draft = {
       ...workshopDefaults.draft,
@@ -86,7 +96,8 @@
   <header class="settings-section-header">
     <h2 class="text-base font-semibold text-surface-50">Shell</h2>
     <p class="workshop-faint mt-1 text-sm">
-      Process sandbox for agents and Grapheme scripts. Locked down until you open it.
+      How processes run — sandbox ceilings and allowed commands. Which tools she may call lives in
+      Reach. Locked down until you open it.
     </p>
   </header>
 
@@ -122,9 +133,9 @@
       </button>
     </div>
     {#if agentToolsOn && binariesEmpty}
-      <p class="shell-soft-warn mt-3 text-xs leading-relaxed">
-        Agents are unlocked with an empty binary allowlist — any basename inside the jail can run.
-        Prefer listing tools you trust below.
+      <p class="settings-danger-callout mt-3 text-xs leading-relaxed" role="status">
+        Agents are unlocked with an empty binary allowlist — any command name inside the jail can
+        run. List the tools you trust below before saving.
       </p>
     {/if}
   </div>
@@ -286,7 +297,7 @@
   </div>
 
   <div class="mt-6">
-    <SettingsCharterSaveBar {mobile} beforeSave={syncListsIntoDraft} />
+    <SettingsCharterSaveBar {mobile} beforeSave={beforeSaveShell} />
   </div>
 </section>
 
@@ -321,13 +332,5 @@
   .shell-list-input:read-only {
     opacity: 0.55;
     cursor: not-allowed;
-  }
-
-  .shell-soft-warn {
-    border-radius: 0.55rem;
-    border: 1px solid rgb(var(--color-warning-500) / 0.35);
-    background: rgb(var(--color-warning-500) / 0.08);
-    color: rgb(var(--color-warning-300, var(--color-warning-400)));
-    padding: 0.65rem 0.75rem;
   }
 </style>

@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { SettingsSectionId } from "$lib/types/settings";
-  import { SETTINGS_SECTIONS } from "$lib/types/settings";
+  import { settingsNavEntries, settingsSectionById } from "$lib/types/settings";
 
   interface Props {
     active: SettingsSectionId;
@@ -10,40 +10,62 @@
   }
 
   let { active, mobile = false, badges = {}, onSelect }: Props = $props();
+
+  const entries = $derived(settingsNavEntries());
+  const activeGroup = $derived(settingsSectionById(active)?.group ?? null);
 </script>
 
 {#if mobile}
   <div class="settings-nav-mobile flex gap-1 overflow-x-auto pb-1">
-    {#each SETTINGS_SECTIONS as section (section.id)}
-      <button
-        type="button"
-        class="settings-nav-chip {active === section.id ? 'settings-nav-chip-active' : ''}"
-        onclick={() => onSelect(section.id)}
-      >
-        {section.label}
-        {#if (badges[section.id] ?? 0) > 0}
-          <span class="settings-nav-badge">{badges[section.id]}</span>
-        {/if}
-      </button>
+    {#each entries as entry (entry.kind === "group" ? `g-${entry.id}` : entry.section.id)}
+      {#if entry.kind === "group"}
+        <span
+          class="settings-nav-chip-group"
+          class:settings-nav-chip-group--active={entry.id === activeGroup}
+          aria-hidden="true"
+        >
+          {entry.label}
+        </span>
+      {:else}
+        <button
+          type="button"
+          class="settings-nav-chip {active === entry.section.id ? 'settings-nav-chip-active' : ''}"
+          onclick={() => onSelect(entry.section.id)}
+        >
+          {entry.section.label}
+          {#if (badges[entry.section.id] ?? 0) > 0}
+            <span class="settings-nav-badge">{badges[entry.section.id]}</span>
+          {/if}
+        </button>
+      {/if}
     {/each}
   </div>
 {:else}
   <nav class="settings-nav" aria-label="Settings sections">
-    {#each SETTINGS_SECTIONS as section (section.id)}
-      <button
-        type="button"
-        class="settings-nav-item {active === section.id ? 'settings-nav-item-active' : ''}"
-        aria-current={active === section.id ? "page" : undefined}
-        onclick={() => onSelect(section.id)}
-      >
-        <span class="flex items-center gap-2 text-sm font-medium">
-          {section.label}
-          {#if (badges[section.id] ?? 0) > 0}
-            <span class="settings-nav-badge">{badges[section.id]}</span>
-          {/if}
-        </span>
-        <span class="workshop-faint mt-0.5 block text-xs leading-snug">{section.hint}</span>
-      </button>
+    {#each entries as entry (entry.kind === "group" ? `g-${entry.id}` : entry.section.id)}
+      {#if entry.kind === "group"}
+        <div
+          class="settings-nav-group"
+          class:settings-nav-group--active={entry.id === activeGroup}
+        >
+          {entry.label}
+        </div>
+      {:else}
+        <button
+          type="button"
+          class="settings-nav-item {active === entry.section.id ? 'settings-nav-item-active' : ''}"
+          aria-current={active === entry.section.id ? "page" : undefined}
+          onclick={() => onSelect(entry.section.id)}
+        >
+          <span class="flex items-center gap-2 text-sm font-medium">
+            {entry.section.label}
+            {#if (badges[entry.section.id] ?? 0) > 0}
+              <span class="settings-nav-badge">{badges[entry.section.id]}</span>
+            {/if}
+          </span>
+          <span class="workshop-faint mt-0.5 block text-xs leading-snug">{entry.section.hint}</span>
+        </button>
+      {/if}
     {/each}
   </nav>
 {/if}

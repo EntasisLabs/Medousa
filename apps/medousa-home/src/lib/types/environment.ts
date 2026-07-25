@@ -125,6 +125,8 @@ export interface LayoutPreset {
   active: boolean;
   surfaces: string[];
   shellChrome?: ShellChromeDef | null;
+  /** Color theme for this layout — applied to the shell when the layout activates. */
+  theme?: EnvironmentTheme | null;
 }
 
 export interface EnvironmentSpec {

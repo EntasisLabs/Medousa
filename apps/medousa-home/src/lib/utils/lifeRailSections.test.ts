@@ -24,7 +24,7 @@ function surface(
 }
 
 describe("buildLifeRailLayout", () => {
-  it("keeps a flat primary strip with Library and Automations as doors", () => {
+  it("follows preset order and keeps Library / Automations in the primary strip", () => {
     const layout = buildLifeRailLayout([
       surface("chat", "Chat"),
       surface("peers", "Peers"),
@@ -45,6 +45,8 @@ describe("buildLifeRailLayout", () => {
       "calendar",
       "work",
       "web",
+      "library",
+      "automations",
     ]);
     expect(layout.focusStartIndex).toBe(2);
     expect(layout.showLibrary).toBe(true);
@@ -54,6 +56,23 @@ describe("buildLifeRailLayout", () => {
     expect(layout.context?.id).toBe("context");
   });
 
+  it("respects a reordered preset sequence", () => {
+    const layout = buildLifeRailLayout([
+      surface("web", "Web"),
+      surface("chat", "Chat"),
+      surface("calendar", "Calendar"),
+      surface("library", "Library"),
+    ]);
+    expect(layout.primary.map((item) => item.id)).toEqual([
+      "web",
+      "chat",
+      "calendar",
+      "library",
+      "automations",
+    ]);
+    expect(layout.focusStartIndex).toBe(0);
+  });
+
   it("shows Automations whenever Library is present, even if Automations was dropped from the preset", () => {
     const layout = buildLifeRailLayout([
       surface("chat", "Chat"),
@@ -61,20 +80,25 @@ describe("buildLifeRailLayout", () => {
     ]);
     expect(layout.showLibrary).toBe(true);
     expect(layout.showAutomations).toBe(true);
+    expect(layout.primary.map((item) => item.id)).toEqual([
+      "chat",
+      "library",
+      "automations",
+    ]);
   });
 
-  it("promotes custom surfaces as primary peers", () => {
+  it("promotes custom surfaces as primary peers in place", () => {
     const layout = buildLifeRailLayout([
       surface("chat", "Chat"),
-      surface("web", "Web"),
       surface("bug-tracker", "Bug Tracker", "custom"),
+      surface("web", "Web"),
     ]);
     expect(layout.primary.map((item) => item.id)).toEqual([
       "chat",
-      "web",
       "bug-tracker",
+      "web",
     ]);
-    expect(layout.customStartIndex).toBe(2);
+    expect(layout.customStartIndex).toBe(1);
   });
 
   it("keeps Context as a dock sibling next to You (not nested, not primary)", () => {

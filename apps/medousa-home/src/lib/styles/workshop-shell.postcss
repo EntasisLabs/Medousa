@@ -711,6 +711,136 @@
     opacity: 1;
   }
 
+  .workshop-rail-layout-editing .workshop-rail-dest-actions {
+    opacity: 1;
+  }
+
+  .workshop-rail-layout-editing .workshop-rail-dest-actions .workshop-rail-row-action:disabled {
+    opacity: 0.28;
+    cursor: default;
+  }
+
+  .workshop-rail-layout-edit-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.4rem;
+    margin: 0.2rem 0.35rem 0.45rem;
+    padding: 0.35rem 0.4rem;
+    border-radius: 0.5rem;
+    border: 1px solid rgb(var(--shell-border, var(--color-surface-500)) / 0.35);
+    background: rgb(var(--shell-pane-bg, var(--color-surface-900)) / 0.45);
+  }
+
+  .workshop-rail-layout-edit-label {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    color: rgb(var(--shell-label, var(--color-surface-200)));
+  }
+
+  .workshop-rail-layout-edit-done {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    border: 0;
+    border-radius: 999px;
+    padding: 0.2rem 0.5rem;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    color: rgb(var(--color-surface-50));
+    background: rgb(var(--color-primary-600) / 0.45);
+    cursor: pointer;
+  }
+
+  .workshop-rail-layout-edit-done:hover {
+    background: rgb(var(--color-primary-600) / 0.6);
+  }
+
+  .workshop-rail-layout-library {
+    margin: 0.35rem 0.25rem 0.5rem;
+    padding: 0.4rem 0.2rem 0.25rem;
+    border-top: 1px solid rgb(var(--shell-border, var(--color-surface-500)) / 0.28);
+  }
+
+  .workshop-rail-layout-library-label {
+    margin: 0 0.35rem 0.35rem;
+    font-size: 0.625rem;
+    font-weight: 650;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: rgb(var(--shell-muted, var(--color-surface-500)));
+  }
+
+  .workshop-rail-layout-library-empty {
+    margin: 0 0.35rem;
+    font-size: 0.6875rem;
+    color: rgb(var(--shell-muted, var(--color-surface-500)));
+  }
+
+  .workshop-rail-layout-library-row {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .workshop-rail-layout-library-plus {
+    margin-left: auto;
+    opacity: 0.65;
+  }
+
+  .workshop-rail-layout-add-view {
+    margin: 0.35rem 0.35rem 0;
+  }
+
+  .workshop-rail-layout-add-view :global(.canvas-add-view) {
+    margin-top: 0;
+  }
+
+  .workshop-rail-layout-edit-sheet {
+    margin: 0.45rem 0.35rem 0;
+    padding: 0.45rem 0.5rem 0.55rem;
+    border-radius: 0.5rem;
+    border: 1px solid rgb(var(--shell-border, var(--color-surface-500)) / 0.35);
+    background: rgb(var(--shell-pane-bg, var(--color-surface-900)) / 0.5);
+  }
+
+  .workshop-rail-layout-edit-sheet-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.35rem;
+    margin-bottom: 0.35rem;
+  }
+
+  .workshop-rail-layout-edit-sheet-title {
+    margin: 0;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: rgb(var(--shell-label, var(--color-surface-100)));
+  }
+
+  .workshop-rail-layout-delete {
+    margin-top: 0.45rem;
+    padding-top: 0.4rem;
+    border-top: 1px solid rgb(var(--shell-border, var(--color-surface-500)) / 0.28);
+  }
+
+  .workshop-rail-layout-delete-copy {
+    margin: 0 0 0.35rem;
+    font-size: 0.6875rem;
+    color: rgb(var(--shell-muted, var(--color-surface-400)));
+  }
+
+  .workshop-rail-layout-delete-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+  }
+
+  .workshop-rail-layout-delete-trigger {
+    margin-top: 0.45rem;
+    opacity: 0.75;
+  }
+
   .workshop-rail-dest-actions .workshop-rail-row-action,
   .workshop-rail-dest-actions :global(.vault-dock-icon-btn) {
     width: 1.45rem;

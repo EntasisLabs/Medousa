@@ -129,7 +129,8 @@
   <header class="settings-section-header">
     <h2 class="text-base font-semibold text-surface-50">Voice</h2>
     <p class="workshop-faint mt-1 text-sm">
-      How she speaks and how much reasoning lands — not who powers chat or dictation.
+      How she speaks and how much reasoning shows — stance and depth. Who powers chat or dictation
+      lives in Models.
     </p>
   </header>
 

@@ -97,6 +97,8 @@ export class LayoutStore {
    * Kept in sync with vaultSidebarCollapsed (inverted) and legacy navExpanded.
    */
   shellSidebarExpanded = $state(loadShellSidebarExpanded());
+  /** When true, the master rail shows hide/add controls for the active layout. */
+  railLayoutEditing = $state(false);
   /** nav = destinations in the rail; view = a list surface hosted in the same rail. */
   shellSidebarMode = $state<ShellSidebarMode>(
     surfaceHasShellSidebarView(loadLastSurface()) ? "view" : "nav",
@@ -238,6 +240,17 @@ export class LayoutStore {
     if (mode === "nav") {
       this.shellSidebarViewSurface = null;
     }
+  }
+
+  /** Edit which destinations belong to the active layout — on the live rail. */
+  startRailLayoutEditing() {
+    this.railLayoutEditing = true;
+    this.setShellSidebarExpanded(true);
+    this.setShellSidebarMode("nav");
+  }
+
+  stopRailLayoutEditing() {
+    this.railLayoutEditing = false;
   }
 
   /** Leave view list → destination nav in the same expanded rail. */

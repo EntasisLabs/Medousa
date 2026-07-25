@@ -17,6 +17,7 @@
   const readOnly = $derived(mobile && isTauriMobilePlatform());
 
   const preferredProvider = $derived(workshopDefaults.draft.webSearchPreferredProvider ?? "");
+  const modulesEmpty = $derived(workshopDefaults.allowedModulesText.trim().length === 0);
 
   function numField(key: "maxToolRounds", event: Event) {
     const value = Number((event.currentTarget as HTMLInputElement).value);
@@ -45,15 +46,16 @@
   <header class="settings-section-header">
     <h2 class="text-base font-semibold text-surface-50">Reach</h2>
     <p class="workshop-faint mt-1 text-sm">
-      What she may touch — and how she delegates when work gets heavy.
+      Which tools she may use. Process sandbox and command jail live in Shell; turn budgets in
+      Engine.
     </p>
   </header>
 
   <div class="mt-5">
     <h3 class="settings-subsection-heading">Allowed tools</h3>
     <p class="settings-subsection-lead">
-      Module names she can call. Leave empty for the full catalog — messaging and delivery live
-      elsewhere.
+      Module names she can call (for example <span class="font-mono text-surface-300">websearch.search</span>).
+      Messaging and delivery live elsewhere.
     </p>
     <textarea
       class="reach-tools-input"
@@ -63,6 +65,11 @@
       readonly={readOnly}
       disabled={readOnly}
     ></textarea>
+    {#if modulesEmpty}
+      <p class="settings-danger-callout mt-3 text-xs leading-relaxed" role="status">
+        Empty list means the full tool catalog is allowed — every module she knows how to call.
+      </p>
+    {/if}
   </div>
 
   <div class="mt-6">

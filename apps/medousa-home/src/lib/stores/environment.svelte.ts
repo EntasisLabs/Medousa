@@ -104,16 +104,12 @@ export class EnvironmentStore {
       .map((id) => byId.get(id))
       .filter((surface): surface is SurfaceDef => Boolean(surface));
 
-    // Peers is a Life destination — always surface it next to Chat when present on the spec.
+    // Peers is a Life destination — surface it when present on the spec but missing
+    // from the preset. Do not force its index so operators can reorder the rail.
     const peers = byId.get("peers");
     if (peers && !ordered.some((surface) => surface.id === "peers")) {
       const chatAt = ordered.findIndex((surface) => surface.id === "chat");
       ordered.splice(chatAt >= 0 ? chatAt + 1 : 0, 0, peers);
-    } else if (peers) {
-      const withoutPeers = ordered.filter((surface) => surface.id !== "peers");
-      const chatAt = withoutPeers.findIndex((surface) => surface.id === "chat");
-      withoutPeers.splice(chatAt >= 0 ? chatAt + 1 : 0, 0, peers);
-      ordered.splice(0, ordered.length, ...withoutPeers);
     }
 
     // Automations is Library's twin door — keep it available even when older
@@ -176,6 +172,7 @@ export class EnvironmentStore {
       await this.persistPeersMigrationIfNeeded(response.spec);
       await this.seedDesktopChromeFromPreferredModeIfNeeded(profileId);
       this.syncDesktopChromeToLayout();
+      await this.syncShellThemeFromSpec();
       await this.refreshPending(profileId);
       this.streamError = null;
     } catch (err) {
@@ -256,7 +253,7 @@ export class EnvironmentStore {
     }
   }
 
-  /** Persist Peers into the daemon so rail + Canvas settings stay in sync after reload. */
+  /** Persist Peers into the daemon so rail destinations stay in sync after reload. */
   private async persistPeersMigrationIfNeeded(original: EnvironmentSpec): Promise<void> {
     if (this.peersMigrationPersisted || !this.spec) return;
     if (!peersNavMigrationNeeded(original, this.spec)) {
@@ -321,6 +318,44 @@ export class EnvironmentStore {
     activateLayoutPreset(spec, presetId);
     const response = await putEnvironmentSpec({ spec });
     this.applySpec(response.spec, response.revision);
+    await this.syncShellThemeFromSpec();
+  }
+
+  /** Persist a palette on the active layout so switching layouts restores it. */
+  async setActiveLayoutColorTheme(
+    colorThemeId: string,
+    profileId?: string,
+  ): Promise<void> {
+    const { setActiveLayoutTheme } = await import("$lib/utils/environmentLayout");
+    const { isColorThemeId } = await import("$lib/types/colorThemes");
+    if (!isColorThemeId(colorThemeId)) {
+      throw new Error(`Unknown color theme '${colorThemeId}'`);
+    }
+    const spec = await this.cloneCurrentSpec(profileId);
+    setActiveLayoutTheme(spec, { colorThemeId });
+    await this.saveSpec(spec);
+    const { settings } = await import("$lib/stores/settings.svelte");
+    settings.setColorTheme(colorThemeId, { persistWorkshop: false });
+  }
+
+  /** Apply the active layout / env theme to the shell chrome. */
+  async syncShellThemeFromSpec(): Promise<void> {
+    const { layoutThemeFromSpec } = await import("$lib/utils/environmentTheme");
+    const { isColorThemeId } = await import("$lib/types/colorThemes");
+    const { settings } = await import("$lib/stores/settings.svelte");
+    const { workshops } = await import("$lib/stores/workshops.svelte");
+    const explicit = layoutThemeFromSpec(this.spec)?.colorThemeId;
+    if (explicit && isColorThemeId(explicit)) {
+      if (explicit !== settings.colorTheme) {
+        settings.setColorTheme(explicit, { persistWorkshop: false });
+      }
+      return;
+    }
+    // Unthemed layout — fall back to workshop palette so the last layout doesn't stick.
+    const workshopTheme = workshops.activeColorThemeId;
+    if (workshopTheme && isColorThemeId(workshopTheme) && workshopTheme !== settings.colorTheme) {
+      settings.setColorTheme(workshopTheme, { persistWorkshop: false });
+    }
   }
 
   async setSurfaceNavVisible(
@@ -335,6 +370,17 @@ export class EnvironmentStore {
     applyNavVisibility(spec, surfaceId, visible);
     await this.saveSpec(spec);
     await this.refreshCanvasStatus(profileId);
+  }
+
+  async moveSurfaceInNav(
+    surfaceId: string,
+    direction: -1 | 1,
+    profileId?: string,
+  ): Promise<void> {
+    const { moveSurfaceInActivePreset } = await import("$lib/utils/environmentLayout");
+    const spec = await this.cloneCurrentSpec(profileId);
+    moveSurfaceInActivePreset(spec, surfaceId, direction);
+    await this.saveSpec(spec);
   }
 
   async setMobileDefaultHome(surfaceId: string, profileId?: string): Promise<void> {

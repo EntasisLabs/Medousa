@@ -19,6 +19,8 @@
   import YouCreateMenu from "$lib/components/profiles/YouCreateMenu.svelte";
   import WorkRailToolbar from "$lib/components/work/WorkRailToolbar.svelte";
   import WorkRailList from "$lib/components/work/WorkRailList.svelte";
+  import CanvasAddViewForm from "$lib/components/settings/CanvasAddViewForm.svelte";
+  import CanvasEditViewForm from "$lib/components/settings/CanvasEditViewForm.svelte";
   import { environment } from "$lib/stores/environment.svelte";
   import { layout } from "$lib/stores/layout.svelte";
   import { lmeWorkspace, type LmeExplorerMode } from "$lib/stores/lmeWorkspace.svelte";
@@ -28,17 +30,18 @@
   import { feedBadgeForComponents } from "$lib/utils/customViewStatus";
   import { environmentIcon } from "$lib/utils/environmentIcons";
   import {
+    isNavDestinationToggleable,
+    NAV_DESTINATION_GROUPS,
+  } from "$lib/utils/environmentLayout";
+  import type { SurfaceDef } from "$lib/types/environment";
+  import {
     defaultModeForLmeFamily,
     isLmeAutomationsMode,
     isLmeLibraryMode,
     labelForLmeExplorerMode,
     type LmeExplorerFamily,
   } from "$lib/utils/lmeExplorerModes";
-  import {
-    automationsRailSurface,
-    buildLifeRailLayout,
-    libraryRailSurface,
-  } from "$lib/utils/lifeRailSections";
+  import { buildLifeRailLayout } from "$lib/utils/lifeRailSections";
   import type { LifeRailItem } from "$lib/utils/lifeRailItems";
   import {
     navLabel,
@@ -53,7 +56,7 @@
   } from "$lib/utils/railPopoverSummon";
   import { resolveSummonToolbarSurface } from "$lib/utils/resolveSummonToolbarSurface";
   import { toast } from "$lib/stores/toast.svelte";
-  import { Plus, Settings } from "@lucide/svelte";
+  import { Check, ChevronDown, ChevronUp, Minus, Pencil, Plus, Settings, X } from "@lucide/svelte";
   import { SAFETY_SURFACE_SETTINGS } from "$lib/types/environment";
   import type { DaemonHealth } from "$lib/daemon";
   import { fade, fly } from "svelte/transition";
@@ -107,6 +110,78 @@
 
   const surfaces = $derived(environment.navSurfaces());
   const lifeRail = $derived(buildLifeRailLayout(surfaces));
+  const railLayoutEditing = $derived(layout.railLayoutEditing);
+  const navIdSet = $derived(new Set(surfaces.map((surface) => surface.id)));
+  const librarySurfaces = $derived.by(() => {
+    const spec = environment.spec;
+    if (!spec) return [] as SurfaceDef[];
+    const byId = new Map(spec.surfaces.map((surface) => [surface.id, surface]));
+    const ordered: string[] = [];
+    const seen = new Set<string>();
+    for (const group of NAV_DESTINATION_GROUPS) {
+      for (const id of group.surfaceIds) {
+        if (seen.has(id)) continue;
+        seen.add(id);
+        ordered.push(id);
+      }
+    }
+    for (const surface of spec.surfaces) {
+      if (!isNavDestinationToggleable(surface.id) || seen.has(surface.id)) continue;
+      seen.add(surface.id);
+      ordered.push(surface.id);
+    }
+    return ordered
+      .filter((id) => !navIdSet.has(id) && byId.has(id))
+      .map((id) => byId.get(id)!)
+      .filter((surface) => isNavDestinationToggleable(surface.id));
+  });
+
+  let railLayoutBusy = $state(false);
+  let editingCustomSurfaceId = $state<string | null>(null);
+  let confirmDeleteCustomId = $state<string | null>(null);
+
+  const editingCustomSurface = $derived(
+    editingCustomSurfaceId
+      ? (environment.spec?.surfaces.find((surface) => surface.id === editingCustomSurfaceId) ??
+        null)
+      : null,
+  );
+
+  $effect(() => {
+    if (!railLayoutEditing) {
+      editingCustomSurfaceId = null;
+      confirmDeleteCustomId = null;
+    }
+  });
+
+  async function setRailNavVisible(surfaceId: string, visible: boolean) {
+    if (railLayoutBusy) return;
+    railLayoutBusy = true;
+    try {
+      await environment.setSurfaceNavVisible(surfaceId, visible);
+      if (!visible && layout.desktopSurface === surfaceId) {
+        const fallback =
+          environment.navSurfaces().find((surface) => surface.id !== surfaceId)?.id ?? "chat";
+        onSelect(fallback);
+      }
+    } catch (err) {
+      toast.show(err instanceof Error ? err.message : String(err), { durationMs: 2400 });
+    } finally {
+      railLayoutBusy = false;
+    }
+  }
+
+  async function moveRailDestination(surfaceId: string, direction: -1 | 1) {
+    if (railLayoutBusy) return;
+    railLayoutBusy = true;
+    try {
+      await environment.moveSurfaceInNav(surfaceId, direction);
+    } catch (err) {
+      toast.show(err instanceof Error ? err.message : String(err), { durationMs: 2400 });
+    } finally {
+      railLayoutBusy = false;
+    }
+  }
 
   /** Quieter tree parents — closer to Cursor folder icons. */
   const treeIconProps = { size: 14, strokeWidth: 1.5 };
@@ -320,6 +395,8 @@
   /**
    * Row click — host the list in the master rail when available; otherwise open
    * the main surface (custom destinations without a rail view).
+   * Settings also opens its center tab immediately — sections live in the rail,
+   * but SettingsPanel only mounts as a shell surface.
    */
   function selectDestination(surfaceId: string, event?: MouseEvent) {
     event?.preventDefault();
@@ -328,6 +405,9 @@
     ensureFamilyForSurface(surfaceId);
     if (surfaceHasShellSidebarView(surfaceId)) {
       layout.openShellSidebarView(surfaceId);
+      if (surfaceId === SAFETY_SURFACE_SETTINGS) {
+        onSelect(surfaceId);
+      }
       return;
     }
     onSelect(surfaceId);
@@ -403,7 +483,10 @@
             <div class="min-h-0 flex-1 overflow-y-auto px-1.5 py-1">
               <SettingsNav
                 active={settingsNav.activeSection}
-                onSelect={(section) => settingsNav.setActiveSection(section)}
+                onSelect={(section) => {
+                  settingsNav.setActiveSection(section);
+                  onSelect(SAFETY_SURFACE_SETTINGS);
+                }}
               />
             </div>
           {:else if viewSurface === "chat"}
@@ -481,8 +564,23 @@
       {:else}
         <div
           class="workshop-icon-rail-items workshop-rail-tree workshop-rail-tree-jobs flex min-h-0 flex-1 flex-col overflow-y-auto"
+          class:workshop-rail-layout-editing={railLayoutEditing}
         >
-          {#snippet railDest(item: LifeRailItem, hero = false)}
+          {#if railLayoutEditing}
+            <div class="workshop-rail-layout-edit-bar">
+              <span class="workshop-rail-layout-edit-label">Adjust rail</span>
+              <button
+                type="button"
+                class="workshop-rail-layout-edit-done"
+                onclick={() => layout.stopRailLayoutEditing()}
+              >
+                <Check size={14} strokeWidth={2.25} aria-hidden="true" />
+                Done
+              </button>
+            </div>
+          {/if}
+
+          {#snippet railDest(item: LifeRailItem, hero = false, orderIndex = -1)}
             {#if item.kind === "surface"}
               {@const surface = item.surface}
               {@const Icon = environmentIcon(surface.icon)}
@@ -495,10 +593,16 @@
                 : isAutomations
                   ? automationsIsActive()
                   : active === surface.id || surfacePopoverOpen(surface.id)}
-              {@const showQuickCreate = surfaceShowsRailQuickCreate(
-                surface.id,
-                surface.kind,
-              )}
+              {@const showQuickCreate =
+                !railLayoutEditing &&
+                surfaceShowsRailQuickCreate(surface.id, surface.kind)}
+              {@const canHide =
+                railLayoutEditing && isNavDestinationToggleable(surface.id)}
+              {@const canEditCustom = canHide && surface.kind === "custom"}
+              {@const canReorder = canHide && orderIndex >= 0}
+              {@const canMoveUp = canReorder && orderIndex > 0}
+              {@const canMoveDown =
+                canReorder && orderIndex < lifeRail.primary.length - 1}
               <div
                 class="workshop-rail-dest"
                 class:workshop-rail-dest-hero={hero}
@@ -533,7 +637,65 @@
                     </span>
                     <span class="workshop-rail-btn-label">{navLabel(surface)}</span>
                   </button>
-                  {#if showQuickCreate}
+                  {#if canHide}
+                    <div class="workshop-rail-dest-actions">
+                      <button
+                        type="button"
+                        class="vault-dock-icon-btn workshop-rail-row-action"
+                        title="Move up"
+                        aria-label="Move {navLabel(surface)} up"
+                        disabled={railLayoutBusy || !canMoveUp}
+                        onclick={(event) => {
+                          event.stopPropagation();
+                          void moveRailDestination(surface.id, -1);
+                        }}
+                      >
+                        <ChevronUp size={14} strokeWidth={2.25} />
+                      </button>
+                      <button
+                        type="button"
+                        class="vault-dock-icon-btn workshop-rail-row-action"
+                        title="Move down"
+                        aria-label="Move {navLabel(surface)} down"
+                        disabled={railLayoutBusy || !canMoveDown}
+                        onclick={(event) => {
+                          event.stopPropagation();
+                          void moveRailDestination(surface.id, 1);
+                        }}
+                      >
+                        <ChevronDown size={14} strokeWidth={2.25} />
+                      </button>
+                      {#if canEditCustom}
+                        <button
+                          type="button"
+                          class="vault-dock-icon-btn workshop-rail-row-action"
+                          title="Edit view"
+                          aria-label="Edit {navLabel(surface)}"
+                          disabled={railLayoutBusy}
+                          onclick={(event) => {
+                            event.stopPropagation();
+                            confirmDeleteCustomId = null;
+                            editingCustomSurfaceId = surface.id;
+                          }}
+                        >
+                          <Pencil size={13} strokeWidth={2} />
+                        </button>
+                      {/if}
+                      <button
+                        type="button"
+                        class="vault-dock-icon-btn workshop-rail-row-action"
+                        title="Remove from layout"
+                        aria-label="Remove {navLabel(surface)} from layout"
+                        disabled={railLayoutBusy}
+                        onclick={(event) => {
+                          event.stopPropagation();
+                          void setRailNavVisible(surface.id, false);
+                        }}
+                      >
+                        <Minus size={14} strokeWidth={2} />
+                      </button>
+                    </div>
+                  {:else if showQuickCreate}
                     <div class="workshop-rail-dest-actions">
                       <button
                         type="button"
@@ -555,47 +717,126 @@
             {#each lifeRail.primary as item, index (item.id)}
               {#if lifeRail.focusStartIndex > 0 && index === lifeRail.focusStartIndex}
                 <div class="workshop-rail-breath" aria-hidden="true"></div>
-              {/if}
-              {#if lifeRail.customStartIndex >= 0 && index === lifeRail.customStartIndex}
-                {#if lifeRail.showLibrary}
-                  {@render railDest(
-                    { kind: "surface", id: "library", surface: libraryRailSurface() },
-                    false,
-                  )}
-                {/if}
-                {#if lifeRail.showAutomations}
-                  {@render railDest(
-                    {
-                      kind: "surface",
-                      id: "automations",
-                      surface: automationsRailSurface(),
-                    },
-                    false,
-                  )}
-                {/if}
+              {:else if item.id === "library" && index > 0}
+                <div class="workshop-rail-breath" aria-hidden="true"></div>
+              {:else if lifeRail.customStartIndex >= 0 && index === lifeRail.customStartIndex}
                 <div class="workshop-rail-breath" aria-hidden="true"></div>
               {/if}
-              {@render railDest(item, item.id === "chat")}
+              {@render railDest(item, item.id === "chat", index)}
             {/each}
-            {#if (lifeRail.showLibrary || lifeRail.showAutomations) && lifeRail.customStartIndex < 0}
-              {#if lifeRail.showLibrary}
-                {@render railDest(
-                  { kind: "surface", id: "library", surface: libraryRailSurface() },
-                  false,
-                )}
-              {/if}
-              {#if lifeRail.showAutomations}
-                {@render railDest(
-                  {
-                    kind: "surface",
-                    id: "automations",
-                    surface: automationsRailSurface(),
-                  },
-                  false,
-                )}
-              {/if}
-            {/if}
           </div>
+
+          {#if railLayoutEditing}
+            <div class="workshop-rail-layout-library">
+              <p class="workshop-rail-layout-library-label">Available</p>
+              {#if librarySurfaces.length === 0}
+                <p class="workshop-rail-layout-library-empty">Nothing left to add</p>
+              {:else}
+                {#each librarySurfaces as surface (surface.id)}
+                  {@const Icon = environmentIcon(surface.icon)}
+                  <button
+                    type="button"
+                    class="workshop-rail-btn workshop-rail-btn-tier-life workshop-rail-layout-library-row"
+                    disabled={railLayoutBusy}
+                    title="Add {surface.label} to layout"
+                    onclick={() => void setRailNavVisible(surface.id, true)}
+                  >
+                    <span class="workshop-rail-btn-icon" aria-hidden="true">
+                      <Icon {...treeIconProps} />
+                    </span>
+                    <span class="workshop-rail-btn-label">{surface.label}</span>
+                    <Plus size={14} strokeWidth={2} class="workshop-rail-layout-library-plus" aria-hidden="true" />
+                  </button>
+                {/each}
+              {/if}
+              <div class="workshop-rail-layout-add-view">
+                <CanvasAddViewForm />
+              </div>
+              {#if editingCustomSurface}
+                <div class="workshop-rail-layout-edit-sheet">
+                  <div class="workshop-rail-layout-edit-sheet-head">
+                    <p class="workshop-rail-layout-edit-sheet-title">
+                      Edit “{editingCustomSurface.label}”
+                    </p>
+                    <button
+                      type="button"
+                      class="vault-dock-icon-btn workshop-rail-row-action"
+                      title="Close"
+                      aria-label="Close edit"
+                      onclick={() => {
+                        editingCustomSurfaceId = null;
+                        confirmDeleteCustomId = null;
+                      }}
+                    >
+                      <X size={14} strokeWidth={2} />
+                    </button>
+                  </div>
+                  <CanvasEditViewForm
+                    surface={editingCustomSurface}
+                    onSaved={() => {
+                      editingCustomSurfaceId = null;
+                    }}
+                    onCancel={() => {
+                      editingCustomSurfaceId = null;
+                      confirmDeleteCustomId = null;
+                    }}
+                  />
+                  {#if confirmDeleteCustomId === editingCustomSurface.id}
+                    <div class="workshop-rail-layout-delete">
+                      <p class="workshop-rail-layout-delete-copy">
+                        Delete this custom view permanently?
+                      </p>
+                      <div class="workshop-rail-layout-delete-actions">
+                        <button
+                          type="button"
+                          class="btn btn-xs btn-ghost"
+                          disabled={railLayoutBusy}
+                          onclick={() => (confirmDeleteCustomId = null)}
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          class="btn btn-xs btn-error"
+                          disabled={railLayoutBusy}
+                          onclick={() => {
+                            const surfaceId = editingCustomSurface.id;
+                            railLayoutBusy = true;
+                            void environment
+                              .removeCustomSurface(surfaceId)
+                              .then(() => {
+                                editingCustomSurfaceId = null;
+                                confirmDeleteCustomId = null;
+                              })
+                              .catch((err) => {
+                                toast.show(
+                                  err instanceof Error ? err.message : String(err),
+                                  { durationMs: 2400 },
+                                );
+                              })
+                              .finally(() => {
+                                railLayoutBusy = false;
+                              });
+                          }}
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                  {:else}
+                    <button
+                      type="button"
+                      class="btn btn-xs btn-ghost workshop-rail-layout-delete-trigger"
+                      disabled={railLayoutBusy}
+                      onclick={() => (confirmDeleteCustomId = editingCustomSurface.id)}
+                    >
+                      Delete view…
+                    </button>
+                  {/if}
+                </div>
+              {/if}
+            </div>
+          {/if}
         </div>
 
         <div class="workshop-rail-dock">

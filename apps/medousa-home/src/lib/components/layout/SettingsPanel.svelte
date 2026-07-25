@@ -16,7 +16,6 @@
   import SettingsPhoneSection from "$lib/components/settings/SettingsPhoneSection.svelte";
   import SettingsLanShareSection from "$lib/components/settings/SettingsLanShareSection.svelte";
   import SettingsBasementSection from "$lib/components/settings/SettingsBasementSection.svelte";
-  import SettingsCanvasSection from "$lib/components/settings/SettingsCanvasSection.svelte";
   import SettingsPackagesSection from "$lib/components/settings/SettingsPackagesSection.svelte";
   import MessagingPanel from "$lib/components/messaging/MessagingPanel.svelte";
   import type { DaemonHealth } from "$lib/daemon";
@@ -86,6 +85,17 @@
     }
   });
 
+  $effect(() => {
+    if (!visible) return;
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!workshopDefaults.dirty) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  });
+
   onDestroy(() => {
     if (unreadTimer) clearInterval(unreadTimer);
   });
@@ -135,8 +145,6 @@
     <div class="mobile-you-scroll min-h-0 flex-1 overflow-y-auto px-4 py-4">
       {#if activeSection === "room"}
         <SettingsRoomSection />
-      {:else if activeSection === "canvas"}
-        <SettingsCanvasSection />
       {:else if activeSection === "rhythm"}
         <SettingsRhythmSection {mobile} />
       {:else if activeSection === "memory"}
