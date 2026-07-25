@@ -893,6 +893,97 @@
     min-height: 7.5rem;
   }
 
+  .shell-tab-notch-drawer--search {
+    display: flex;
+    min-height: 8rem;
+    max-height: inherit;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .shell-tab-notch-search {
+    display: flex;
+    min-height: 0;
+    flex: 1 1 auto;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .shell-tab-notch-search-list {
+    display: flex;
+    min-height: 0;
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: 0.1rem;
+    overflow-x: hidden;
+    overflow-y: auto;
+    padding: 0.3rem;
+    scrollbar-width: thin;
+  }
+
+  .shell-tab-notch-search-empty {
+    padding: 1.1rem 0.75rem;
+    color: rgb(var(--color-surface-500));
+    font-size: 0.75rem;
+    text-align: center;
+  }
+
+  .shell-tab-notch-search-row {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.4rem;
+    border: 0;
+    border-radius: 0.35rem;
+    background: transparent;
+    padding: 0.35rem 0.4rem;
+    color: rgb(var(--color-surface-200));
+    text-align: left;
+    cursor: pointer;
+    transition: background-color 120ms ease;
+  }
+
+  .shell-tab-notch-search-row:hover,
+  .shell-tab-notch-search-row--hl {
+    background: rgb(var(--color-surface-800) / 0.65);
+  }
+
+  .shell-tab-notch-search-row--active .shell-tab-notch-search-title {
+    color: rgb(var(--color-surface-50));
+  }
+
+  .shell-tab-notch-search-icon {
+    flex-shrink: 0;
+    color: rgb(var(--color-surface-400));
+  }
+
+  .shell-tab-notch-search-row--hl .shell-tab-notch-search-icon,
+  .shell-tab-notch-search-row--active .shell-tab-notch-search-icon {
+    color: rgb(var(--color-surface-200));
+  }
+
+  .shell-tab-notch-search-title {
+    min-width: 0;
+    overflow: hidden;
+    color: rgb(var(--color-surface-100));
+    font-size: 0.75rem;
+    font-weight: 550;
+    letter-spacing: -0.01em;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .shell-tab-notch-search-meta {
+    min-width: 0;
+    overflow: hidden;
+    color: rgb(var(--color-surface-500));
+    font-size: 0.625rem;
+    font-weight: 450;
+    letter-spacing: 0.01em;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
   .shell-tab-notch-branch {
     display: flex;
     min-height: 100%;
@@ -9685,6 +9776,11 @@
 
   .vault-context-menu {
     @apply fixed z-[120] min-w-[12rem] overflow-hidden rounded-container-token border border-surface-500/45 bg-surface-900 py-1 shadow-xl;
+  }
+
+  /* Above notch chrome (notch 146 / drawer 145) when opened from the tab map. */
+  .shell-context-menu {
+    z-index: 160;
   }
 
   .vault-context-menu--icons {

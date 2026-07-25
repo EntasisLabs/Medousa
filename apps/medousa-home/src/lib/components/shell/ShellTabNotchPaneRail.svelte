@@ -16,6 +16,7 @@
     X,
   } from "@lucide/svelte";
   import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
+  import { shellContextMenu } from "$lib/stores/shellContextMenu.svelte";
   import { shellTabs } from "$lib/stores/shellTabs.svelte";
   import type { ShellTab } from "$lib/types/shellTabs";
   import { beginShellTabDrag } from "$lib/utils/shellTabDrag";
@@ -68,6 +69,11 @@
                 onTabSettled?.({ tabId: tab.id, didMove });
               },
             })}
+          oncontextmenu={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            shellContextMenu.showTab(event.clientX, event.clientY, tab.id, groupId, tab.title);
+          }}
         >
           <button
             type="button"

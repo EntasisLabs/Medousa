@@ -1,6 +1,7 @@
 <script lang="ts">
   import ShellTabNotchMiniLayout from "$lib/components/shell/ShellTabNotchMiniLayout.svelte";
   import ShellTabNotchPaneRail from "$lib/components/shell/ShellTabNotchPaneRail.svelte";
+  import { shellContextMenu } from "$lib/stores/shellContextMenu.svelte";
   import { shellTabs } from "$lib/stores/shellTabs.svelte";
   import type { SplitNode } from "$lib/types/shellTabs";
 
@@ -38,6 +39,14 @@
       const target = event.target as HTMLElement | null;
       if (target?.closest(".shell-tab-notch-rail-row, button")) return;
       shellTabs.focusGroup(node.id);
+    }}
+    oncontextmenu={(event) => {
+      const hit = event.target as HTMLElement | null;
+      if (hit?.closest(".shell-tab-notch-rail-row, button")) return;
+      event.preventDefault();
+      event.stopPropagation();
+      shellTabs.focusGroup(node.id);
+      shellContextMenu.showPane(event.clientX, event.clientY, node.id);
     }}
   >
     <ShellTabNotchPaneRail groupId={node.id} {onTabSettled} />
