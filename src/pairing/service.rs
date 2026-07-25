@@ -82,6 +82,8 @@ pub struct PairedDeviceSummary {
     pub paired_at: DateTime<Utc>,
     pub last_seen: DateTime<Utc>,
     pub role: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub profile_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -165,6 +167,8 @@ struct ActiveQrSession {
     short_code_raw: String,
     expires_at: DateTime<Utc>,
     used: bool,
+    /// When set, successful verify binds the device to this Shared-mode profile.
+    bound_profile_id: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -173,6 +177,7 @@ struct PendingPairSession {
     phone_name: String,
     phone_public_key: VerifyingKey,
     role: PairingRole,
+    bound_profile_id: Option<String>,
     server_nonce: [u8; 32],
     created_at: Instant,
 }
@@ -299,6 +304,7 @@ impl PairingService {
                     paired_at: record.paired_at,
                     last_seen: record.last_seen,
                     role: record.role.as_str().to_string(),
+                    profile_id: record.profile_id,
                 })
                 .collect(),
             qr_active,
@@ -323,7 +329,7 @@ impl PairingService {
             session.used || session.expires_at <= Utc::now()
         });
         if needs_refresh {
-            *guard = Some(self.build_qr_session()?);
+            *guard = Some(self.build_qr_session(None)?);
         }
         let session = guard.as_ref().expect("qr session");
         Ok(QrResponse {
@@ -335,8 +341,17 @@ impl PairingService {
 
     /// Invalidate the current invite and mint a fresh QR (M4 invite rotation).
     pub async fn rotate_qr(&self) -> Result<QrResponse> {
+        self.rotate_qr_for_profile(None).await
+    }
+
+    /// Mint a QR that binds the pairing device to `profile_id` (Shared-mode seat invite).
+    pub async fn rotate_qr_for_profile(&self, profile_id: Option<&str>) -> Result<QrResponse> {
+        let bound = profile_id
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string);
         let mut guard = self.active_qr.write().await;
-        *guard = Some(self.build_qr_session()?);
+        *guard = Some(self.build_qr_session(bound)?);
         let session = guard.as_ref().expect("qr session");
         Ok(QrResponse {
             url: self.build_qr_url(session, false)?,
@@ -396,6 +411,7 @@ impl PairingService {
             return Ok(rejected_init("invalid_token"));
         }
         session.used = true;
+        let bound_profile_id = session.bound_profile_id.clone();
 
         let mut server_nonce = [0u8; 32];
         OsRng.fill_bytes(&mut server_nonce);
@@ -407,6 +423,7 @@ impl PairingService {
                 phone_name: request.phone_name.clone(),
                 phone_public_key: phone_key,
                 role: PairingRole::parse(request.role.as_deref()),
+                bound_profile_id,
                 server_nonce,
                 created_at: Instant::now(),
             },
@@ -464,6 +481,7 @@ impl PairingService {
             session_token_hash: hash_session_token(&session_token),
             session_token_expiry: now + SESSION_TOKEN_TTL,
             role: pending.role,
+            profile_id: pending.bound_profile_id,
             apns_device_token: None,
             push_platform: None,
             push_updated_at: None,
@@ -600,13 +618,15 @@ impl PairingService {
         Ok(out)
     }
 
+    /// Revoke a pairing. `trusted_local` must be true only for genuine loopback
+    /// that is not Iroh-proxied (see [`crate::remote_trust::is_trusted_local`]).
     pub async fn revoke_pairing(
         &self,
         pairing_id: &str,
         bearer_token: Option<&str>,
-        source_ip: &str,
+        trusted_local: bool,
     ) -> Result<RevokePairingResult> {
-        if !authorize_pairing_revoke(self, pairing_id, bearer_token, source_ip)? {
+        if !authorize_pairing_revoke(self, pairing_id, bearer_token, trusted_local)? {
             return Ok(RevokePairingResult::Unauthorized);
         }
         let paired = self.store.list_paired()?;
@@ -635,7 +655,7 @@ impl PairingService {
         Ok(buffer)
     }
 
-    fn build_qr_session(&self) -> Result<ActiveQrSession> {
+    fn build_qr_session(&self, bound_profile_id: Option<String>) -> Result<ActiveQrSession> {
         let session_key = SigningKey::generate(&mut OsRng);
         let token_b64 = base64url_encode(session_key.verifying_key().as_bytes());
         let challenge = Sha256::digest(format!(
@@ -651,12 +671,19 @@ impl PairingService {
             short_code_raw,
             expires_at: Utc::now() + QR_TTL,
             used: false,
+            bound_profile_id,
         })
     }
 
     fn build_qr_url(&self, session: &ActiveQrSession, full: bool) -> Result<String> {
         let name = urlencoding::encode(&self.peer_name);
         let address = urlencoding::encode(&self.advertise_address);
+        let profile_param = session
+            .bound_profile_id
+            .as_deref()
+            .map(|profile_id| format!("&p={}", urlencoding::encode(profile_id)))
+            .unwrap_or_default();
+        let profile_for_sig = session.bound_profile_id.as_deref();
 
         // Compact v1 is the default for camera / Messages. Full v2 embeds the Iroh ticket
         // (large) and is only for explicit paste/share when off-LAN bootstrap is required.
@@ -670,12 +697,13 @@ impl PairingService {
                 &self.identity.device_id,
                 &session.token_b64,
                 &iroh.ticket,
+                profile_for_sig,
             );
             let signature = sign_message(self.identity.signing_key(), &message);
             let ticket = urlencoding::encode(&iroh.ticket);
             let endpoint_id = urlencoding::encode(&iroh.endpoint_id);
             return Ok(format!(
-                "{QR_SCHEME_V2}?a={address}&d={}&t={}&s={signature}&n={name}&k={ticket}&e={endpoint_id}",
+                "{QR_SCHEME_V2}?a={address}&d={}&t={}&s={signature}&n={name}&k={ticket}&e={endpoint_id}{profile_param}",
                 self.identity.device_id, session.token_b64,
             ));
         }
@@ -684,10 +712,11 @@ impl PairingService {
             &self.advertise_address,
             &self.identity.device_id,
             &session.token_b64,
+            profile_for_sig,
         );
         let signature = sign_message(self.identity.signing_key(), &message);
         Ok(format!(
-            "{QR_SCHEME}?a={address}&d={}&t={}&s={signature}&n={name}",
+            "{QR_SCHEME}?a={address}&d={}&t={}&s={signature}&n={name}{profile_param}",
             self.identity.device_id, session.token_b64,
         ))
     }
@@ -825,20 +854,13 @@ fn format_short_code(raw: &str) -> String {
     format!("{}-{}-{}", &raw[0..3], &raw[3..5], &raw[5..6])
 }
 
-fn is_loopback_ip(source_ip: &str) -> bool {
-    source_ip
-        .parse::<std::net::IpAddr>()
-        .map(|addr| addr.is_loopback())
-        .unwrap_or(false)
-}
-
 fn authorize_pairing_revoke(
     service: &PairingService,
     pairing_id: &str,
     bearer_token: Option<&str>,
-    source_ip: &str,
+    trusted_local: bool,
 ) -> Result<bool> {
-    if is_loopback_ip(source_ip) {
+    if trusted_local {
         return Ok(true);
     }
     let Some(token) = bearer_token else {
@@ -1066,7 +1088,7 @@ mod tests {
 
         assert_eq!(
             service
-                .revoke_pairing(&pairing_id, None, "10.0.0.5")
+                .revoke_pairing(&pairing_id, None, false)
                 .await
                 .expect("revoke"),
             RevokePairingResult::Unauthorized
@@ -1074,18 +1096,11 @@ mod tests {
 
         assert_eq!(
             service
-                .revoke_pairing(&pairing_id, Some(&session_token), "10.0.0.5")
+                .revoke_pairing(&pairing_id, Some(&session_token), false)
                 .await
                 .expect("revoke"),
             RevokePairingResult::Removed
         );
-    }
-
-    #[test]
-    fn loopback_ip_detection() {
-        assert!(is_loopback_ip("127.0.0.1"));
-        assert!(is_loopback_ip("::1"));
-        assert!(!is_loopback_ip("10.0.0.5"));
     }
 
     fn extract_query_param(url: &str, key: &str) -> Option<String> {

@@ -62,6 +62,9 @@ pub struct PairedDeviceRecord {
     /// Defaults to portal for records written before role split.
     #[serde(default)]
     pub role: PairingRole,
+    /// Shared-mode seat this device is bound to (`user:alice`, …). Absent on personal installs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub apns_device_token: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -278,6 +281,7 @@ mod tests {
             session_token_hash: "deadbeef".to_string(),
             session_token_expiry: Utc::now(),
             role: PairingRole::Portal,
+            profile_id: None,
             apns_device_token: None,
             push_platform: None,
             push_updated_at: None,

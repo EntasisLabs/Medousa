@@ -1,6 +1,5 @@
 //! HTTP handlers for peer conversations (`/v1/peer/messages*`).
 
-use std::net::IpAddr;
 use std::sync::Arc;
 
 use axum::extract::{ConnectInfo, Path, Query, State};
@@ -54,7 +53,7 @@ async fn list_peer_messages(
         .map(str::trim)
         .filter(|value| !value.is_empty());
 
-    let messages = if is_local_request(addr.ip()) {
+    let messages = if crate::remote_trust::is_trusted_local(addr.ip(), &headers) {
         list_messages_filtered(unread_only, device_filter)
             .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?
     } else {
@@ -81,7 +80,7 @@ async fn peer_unread_count(
     ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
     headers: HeaderMap,
 ) -> Result<Json<PeerUnreadCountResponse>, (StatusCode, String)> {
-    let unread = if is_local_request(addr.ip()) {
+    let unread = if crate::remote_trust::is_trusted_local(addr.ip(), &headers) {
         unread_count().map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?
     } else {
         let record = authorize_remote_record(&state, &headers)?;
@@ -101,7 +100,7 @@ async fn post_peer_message(
     headers: HeaderMap,
     Json(body): Json<PeerMessagePostRequest>,
 ) -> Result<Json<PeerMessage>, (StatusCode, String)> {
-    let local = is_local_request(addr.ip());
+    let local = crate::remote_trust::is_trusted_local(addr.ip(), &headers);
     let remote_record = if local {
         None
     } else {
@@ -260,7 +259,7 @@ async fn read_peer_message(
     headers: HeaderMap,
     Path(message_id): Path<String>,
 ) -> Result<Json<PeerMessage>, (StatusCode, String)> {
-    if !is_local_request(addr.ip()) {
+    if !crate::remote_trust::is_trusted_local(addr.ip(), &headers) {
         let record = authorize_remote_record(&state, &headers)?;
         if !record.role.allows_full_portal() {
             let message = get_message(&message_id)
@@ -330,13 +329,6 @@ fn bearer_token(headers: &HeaderMap) -> Option<&str> {
         .and_then(|value| value.strip_prefix("Bearer "))
         .map(str::trim)
         .filter(|value| !value.is_empty())
-}
-
-fn is_local_request(ip: IpAddr) -> bool {
-    match ip {
-        IpAddr::V4(v4) => v4.is_loopback(),
-        IpAddr::V6(v6) => v6.is_loopback(),
-    }
 }
 
 fn is_paired_peer_device(

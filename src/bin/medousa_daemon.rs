@@ -280,6 +280,7 @@ async fn main() -> Result<()> {
     let identity_service = platform.identity_service();
     let profile_registry = Arc::new(std::sync::RwLock::new(UserProfileRegistry::load_or_bootstrap()));
     medousa::user_profiles::init_workshop_profile_registry(profile_registry.clone());
+    medousa::shared_mode::init_shared_mode();
 
     if once {
         let report = tick_runtime(platform.composition(), &worker_id, heartbeat_policy, None).await?;

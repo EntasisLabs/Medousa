@@ -1,6 +1,5 @@
 //! HTTP handlers for workshop sharing (`/v1/share/*`).
 
-use std::net::IpAddr;
 use std::sync::Arc;
 
 use axum::extract::{ConnectInfo, State};
@@ -58,7 +57,7 @@ async fn share_import(
     headers: HeaderMap,
     Json(body): Json<ShareImportRequest>,
 ) -> Result<Json<ShareImportResult>, (StatusCode, String)> {
-    if !is_local_request(addr.ip()) {
+    if !crate::remote_trust::is_trusted_local(addr.ip(), &headers) {
         authorize_remote_share(&state, &headers).await?;
     }
     let errors = body.bundle.validate();
@@ -77,7 +76,7 @@ async fn share_push(
     headers: HeaderMap,
     Json(body): Json<ShareImportRequest>,
 ) -> Result<Json<ShareImportResult>, (StatusCode, String)> {
-    if !is_local_request(addr.ip()) {
+    if !crate::remote_trust::is_trusted_local(addr.ip(), &headers) {
         authorize_remote_share(&state, &headers).await?;
     }
     share_import(
@@ -124,11 +123,4 @@ fn bearer_token(headers: &HeaderMap) -> Option<&str> {
         .and_then(|value| value.strip_prefix("Bearer "))
         .map(str::trim)
         .filter(|value| !value.is_empty())
-}
-
-fn is_local_request(ip: IpAddr) -> bool {
-    match ip {
-        IpAddr::V4(v4) => v4.is_loopback(),
-        IpAddr::V6(v6) => v6.is_loopback(),
-    }
 }

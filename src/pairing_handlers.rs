@@ -58,6 +58,16 @@ struct QrQuery {
     /// When true, embed Iroh ticket (v2). Default is compact v1 for camera/Messages.
     #[serde(default)]
     full: Option<bool>,
+    /// Shared-mode seat invite: bind the pairing to this profile id.
+    #[serde(default)]
+    profile_id: Option<String>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RotateQrBody {
+    #[serde(default)]
+    profile_id: Option<String>,
 }
 
 fn wants_full_qr(query: &QrQuery) -> bool {
@@ -78,10 +88,15 @@ async fn get_qr(
 
 async fn rotate_qr(
     State(state): State<PairingApiState>,
+    Query(query): Query<QrQuery>,
+    body: Option<Json<RotateQrBody>>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
+    let profile_id = body
+        .and_then(|Json(body)| body.profile_id)
+        .or(query.profile_id);
     state
         .service
-        .rotate_qr()
+        .rotate_qr_for_profile(profile_id.as_deref())
         .await
         .map(|response| Json(serde_json::to_value(response).unwrap_or_default()))
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
@@ -205,9 +220,10 @@ async fn revoke_pairing(
     Path(pairing_id): Path<String>,
 ) -> Result<StatusCode, StatusCode> {
     let token = bearer_token(&headers);
+    let trusted_local = crate::remote_trust::is_trusted_local(addr.ip(), &headers);
     match state
         .service
-        .revoke_pairing(&pairing_id, token, &addr.ip().to_string())
+        .revoke_pairing(&pairing_id, token, trusted_local)
         .await
     {
         Ok(RevokePairingResult::Removed) => Ok(StatusCode::NO_CONTENT),

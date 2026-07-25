@@ -3,15 +3,30 @@
 > **Status:** Living document (updated 2026-07)  
 > **Historical plans:** [archive/README.md](archive/README.md)
 
-First-run UX, Home shell milestones, turn-loop FSM, user profiles (Phases 0–6), and **centralized agent runtime + host/worker bus + Specialists** are **shipped**. See [turn-runtime-and-lanes.md](turn-runtime-and-lanes.md), [identity-manuscripts-and-recall-plan.md](identity-manuscripts-and-recall-plan.md), [ADR-002](../docs/architecture/decisions/adr-002-user-profiles.md).
+First-run UX, Home shell milestones, turn-loop FSM, user profiles (Phases 0–6), **centralized agent runtime**, and **0.5.0 Vault / Versions / Liquid** are **shipped**. See [turn-runtime-and-lanes.md](turn-runtime-and-lanes.md), [ADR-002](../docs/architecture/decisions/adr-002-user-profiles.md), [v0.5.0-vault-versions-plan.md](v0.5.0-vault-versions-plan.md).
 
-Remaining focus: **0.5.0 Vault / Versions / Liquid feeds**, **Workshop + Automations**, **polish & package**, **attachments**, **Iroh pairing**, and **distribution**.
+**Active focus: 0.6.0** — Shared mode (profiles as members), Peer mesh (personal↔team), Dynamic (ACP/MCP finish), plus polish.
 
-Full plans: **[v0.5.0-vault-versions-plan.md](v0.5.0-vault-versions-plan.md)** · **[workshop-and-automations-plan.md](workshop-and-automations-plan.md)** · **[scripts-workbench-plan.md](scripts-workbench-plan.md)** · **[polish-and-package-plan.md](polish-and-package-plan.md)**
+Full plans: **[v0.6.0-shared-mode-plan.md](v0.6.0-shared-mode-plan.md)** · **[v0.6.0-peer-mesh-plan.md](v0.6.0-peer-mesh-plan.md)** · [ADR-011](../docs/architecture/decisions/adr-011-shared-mode-portal-and-mesh.md) · **[workshop-and-automations-plan.md](workshop-and-automations-plan.md)** · **[polish-and-package-plan.md](polish-and-package-plan.md)**
 
 ---
 
-## 0.5.0 Vault, Versions, Liquid feeds (active)
+## 0.6.0 Shared, Peer mesh, Dynamic (active)
+
+**Goal:** Org-brain seats via Shared mode (no login); capability-scoped personal↔team mesh; finish hot-swappable ACP/MCP; Home polish (editor menus, nav, spotlight, wiki).
+
+| Pillar | Plan | Status |
+|--------|------|--------|
+| Shared mode | [v0.6.0-shared-mode-plan.md](v0.6.0-shared-mode-plan.md) | 🔄 S0–S3 scaffold |
+| Peer mesh | [v0.6.0-peer-mesh-plan.md](v0.6.0-peer-mesh-plan.md) | 🔄 M0–M1 (Iroh trust) |
+| Dynamic | [ADR-008](../docs/architecture/decisions/adr-008-hot-swappable-agent-runtime.md) | ⬜ |
+| Polish | [polish-and-package-plan.md](polish-and-package-plan.md) P5+ | ⬜ |
+
+**P0 first:** Iroh must not look like loopback (`X-Medousa-Transport`); pairing binds `profile_id`; dual session catalogs.
+
+---
+
+## 0.5.0 Vault, Versions, Liquid feeds (shipped)
 
 **Goal:** Optional Git-backed **Versions** (off by default), liquid snapshot timeline+carousel, ```feed``` last-good Stasis results, Scripts `CodeEditorShell`, trash restore.
 
