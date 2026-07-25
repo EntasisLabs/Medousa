@@ -12,14 +12,12 @@
   import { environment } from "$lib/stores/environment.svelte";
   import { vault } from "$lib/stores/vault.svelte";
   import { workspace } from "$lib/stores/workspace.svelte";
-  import { chat } from "$lib/stores/chat.svelte";
   import { noteWorkshop } from "$lib/stores/noteWorkshop.svelte";
   import { vaultBreadcrumb, vaultDisplayTitle } from "$lib/utils/formatVault";
   import {
-    buildWorkAskFromNote,
-    prepareTalkAboutNote,
-  } from "$lib/utils/vaultNoteBridge";
-  import { launchVaultNoteWorkshop } from "$lib/utils/vaultNoteWorkshop";
+    sendVaultNoteToWork,
+    talkAboutVaultNote,
+  } from "$lib/utils/vaultNoteWorkshop";
   import { findLedgerTable } from "$lib/utils/markdownTable";
   import { findKanbanBoard, noteHasKanbanBoard } from "$lib/utils/markdownKanban";
   import { noteHasSlidesDeck } from "$lib/utils/markdownSlides";
@@ -406,50 +404,15 @@
 
   async function handleAskInChatTab() {
     if (!vault.selectedPath) return;
-
-    // Mobile: no floating workshop yet — jump to the chat tab with note context.
-    if (mobile) {
-      if (!onOpenChat) return;
-      if (vault.dirty) await vault.flushSave();
-      const { scope, draft } = prepareTalkAboutNote(
-        vault.selectedPath,
-        vault.title,
-        vault.content,
-        vault.wikilinksOut,
-        vault.backlinks,
-      );
-      chat.prefillFromVaultNote(scope, draft, { pin: true });
-      onOpenChat();
-      return;
-    }
-
-    // Desktop: stay in the note with the floating IM-style workshop.
-    await launchVaultNoteWorkshop({
-      path: vault.selectedPath,
-      title: vault.title,
-      content: vault.content,
-      wikilinksOut: vault.wikilinksOut,
-      backlinks: vault.backlinks,
-      session: "fresh",
-      flushSave: vault.dirty
-        ? async () => {
-            await vault.flushSave();
-          }
-        : undefined,
-    });
+    if (mobile && !onOpenChat) return;
+    await talkAboutVaultNote(vault.selectedPath);
+    if (mobile) onOpenChat?.();
   }
 
   async function handleSendToWork() {
     if (!vault.selectedPath || !onOpenWork) return;
-    if (vault.dirty) await vault.flushSave();
     try {
-      await workspace.submitAsk({
-        prompt: buildWorkAskFromNote(
-          vault.selectedPath,
-          vault.title,
-          vault.content,
-        ),
-      });
+      await sendVaultNoteToWork(vault.selectedPath);
       onOpenWork();
     } catch {
       // workspace.submitAsk surfaces askError on Work surface.

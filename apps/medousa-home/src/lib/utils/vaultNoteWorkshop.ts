@@ -1,15 +1,107 @@
 /** Launch the floating vault note workshop with scoped chat context. */
 
+import { getVaultNote } from "$lib/daemon";
 import { chat } from "$lib/stores/chat.svelte";
 import { layout } from "$lib/stores/layout.svelte";
 import { noteWorkshop } from "$lib/stores/noteWorkshop.svelte";
+import { vault } from "$lib/stores/vault.svelte";
+import { workspace } from "$lib/stores/workspace.svelte";
 import { shouldUseMobileShell } from "$lib/platform";
 import {
+  buildWorkAskFromNote,
   prepareAddSelectionToChat,
   prepareTalkAboutNote,
   type VaultNoteSelection,
 } from "$lib/utils/vaultNoteBridge";
 import { vaultDisplayTitle } from "$lib/utils/formatVault";
+
+async function resolveNotePayload(path: string): Promise<{
+  path: string;
+  title: string;
+  content: string;
+  wikilinksOut: string[];
+  backlinks: string[];
+  flushSave?: () => Promise<void | boolean>;
+}> {
+  if (vault.selectedPath === path) {
+    return {
+      path,
+      title: vault.title,
+      content: vault.content,
+      wikilinksOut: vault.wikilinksOut,
+      backlinks: vault.backlinks,
+      flushSave: vault.dirty
+        ? async () => {
+            await vault.flushSave();
+          }
+        : undefined,
+    };
+  }
+  const response = await getVaultNote(path);
+  const title =
+    vault.labelByPath().get(path) ??
+    vaultDisplayTitle(response.note.title, path);
+  return {
+    path,
+    title,
+    content: response.content,
+    wikilinksOut: [],
+    backlinks: [],
+  };
+}
+
+/** Talk about a note — desktop workshop or mobile chat tab. */
+export async function talkAboutVaultNote(path: string): Promise<void> {
+  const trimmed = path.trim();
+  if (!trimmed) return;
+  if (vault.isLooseFile && vault.selectedPath === trimmed) return;
+
+  const note = await resolveNotePayload(trimmed);
+
+  if (shouldUseMobileShell()) {
+    if (note.flushSave) await note.flushSave();
+    const { scope, draft } = prepareTalkAboutNote(
+      note.path,
+      note.title,
+      note.content,
+      note.wikilinksOut,
+      note.backlinks,
+    );
+    chat.prefillFromVaultNote(scope, draft, { pin: true });
+    void chat.ensureSessionHydrated();
+    layout.setMobileTab("home", { bump: true });
+    return;
+  }
+
+  await launchVaultNoteWorkshop({
+    path: note.path,
+    title: note.title,
+    content: note.content,
+    wikilinksOut: note.wikilinksOut,
+    backlinks: note.backlinks,
+    session: "fresh",
+    flushSave: note.flushSave,
+  });
+}
+
+/** Queue a Work ask seeded from a vault note. */
+export async function sendVaultNoteToWork(path: string): Promise<void> {
+  const trimmed = path.trim();
+  if (!trimmed) return;
+  if (vault.isLooseFile && vault.selectedPath === trimmed) return;
+
+  const note = await resolveNotePayload(trimmed);
+  if (note.flushSave) await note.flushSave();
+
+  await workspace.submitAsk({
+    prompt: buildWorkAskFromNote(note.path, note.title, note.content),
+  });
+  if (shouldUseMobileShell()) {
+    layout.setMobileTab("work", { bump: true });
+  } else {
+    layout.navigateDesktop("work", { bump: true });
+  }
+}
 
 export async function launchVaultNoteWorkshop(input: {
   path: string;

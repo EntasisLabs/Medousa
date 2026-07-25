@@ -20,9 +20,9 @@ Full plans: **[v0.6.0-shared-mode-plan.md](v0.6.0-shared-mode-plan.md)** · **[v
 | Shared mode | [v0.6.0-shared-mode-plan.md](v0.6.0-shared-mode-plan.md) | ✅ S0–S6 |
 | Peer mesh | [v0.6.0-peer-mesh-plan.md](v0.6.0-peer-mesh-plan.md) | 🔄 M0–M4 ✅; M4+ introducer ✅; next optional `client.relay` |
 | Dynamic | [ADR-008](../docs/architecture/decisions/adr-008-hot-swappable-agent-runtime.md) | ✅ MCP space reads + ACP pump/permissions/Home bar; polish optional |
-| Polish | [polish-and-package-plan.md](polish-and-package-plan.md) P5+ | ⬜ |
+| Polish | [polish-and-package-plan.md](polish-and-package-plan.md) P5+ | ✅ P5 app affordances (share/export/backup); P0–P3 / P6–P7 still open |
 
-**P0 done for Shared:** Iroh ≠ loopback; pairing `profile_id`; dual catalogs. **Mesh M0–M4 + introducer shipped.** **Dynamic shipped** for 0.6 cut: MCP space reads, ACP real stream pump, permission UI + timeout.
+**P0 done for Shared:** Iroh ≠ loopback; pairing `profile_id`; dual catalogs. **Mesh M0–M4 + introducer shipped.** **Dynamic shipped** for 0.6 cut: MCP space reads, ACP real stream pump, permission UI + timeout. **Polish P5 shipped:** vault/chat share, transcript MD/PDF, profile bundle backup.
 
 ---
 
@@ -65,7 +65,7 @@ Full plan: [workshop-and-automations-plan.md](workshop-and-automations-plan.md) 
 | P2 Teach Medousa | Identity from Home | ⬜ |
 | P3 Continuity surfaces | Unified search, provenance | ⬜ |
 | P4 Workshop exposure | Superseded by [workshop-and-automations-plan.md](workshop-and-automations-plan.md) W1–W2 | ⬜ |
-| P5 App affordances | Share, context menus, P5 attach | ⬜ |
+| P5 App affordances | Share, context menus, P5 attach | ✅ |
 | P6 Package & ship | Signed bundles, updates | ⬜ |
 | P7 Promise & copy | README / empty states | ⬜ |
 

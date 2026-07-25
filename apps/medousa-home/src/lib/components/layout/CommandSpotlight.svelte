@@ -2,9 +2,11 @@
   import { buildWorkshopCommandContext } from "$lib/commands/context";
   import { collectWorkshopCommands, flattenGroups } from "$lib/commands/collectCommands";
   import { executeWorkshopCommand } from "$lib/commands/runWorkshopCommand";
+  import VaultExportPreviewModal from "$lib/components/vault/VaultExportPreviewModal.svelte";
   import { chat } from "$lib/stores/chat.svelte";
   import { connection } from "$lib/stores/connection.svelte";
   import { commandSpotlight } from "$lib/stores/commandSpotlight.svelte";
+  import { sessionExportPreview } from "$lib/stores/sessionExportPreview.svelte";
   import { vault } from "$lib/stores/vault.svelte";
   import { workspace } from "$lib/stores/workspace.svelte";
   import type { GroupedCommands, WorkshopCommand } from "$lib/commands/types";
@@ -287,3 +289,13 @@
     </div>
   </div>
 {/if}
+
+<VaultExportPreviewModal
+  open={sessionExportPreview.open}
+  title={sessionExportPreview.title}
+  content={sessionExportPreview.content}
+  labelByPath={new Map()}
+  notePath={null}
+  initialFormat="pdf"
+  onClose={() => sessionExportPreview.close()}
+/>

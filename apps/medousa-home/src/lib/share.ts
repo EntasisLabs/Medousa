@@ -1,4 +1,4 @@
-import { workDeepLinkUrl } from "$lib/deepLinks";
+import { vaultDeepLinkUrl, workDeepLinkUrl } from "$lib/deepLinks";
 
 export async function shareText(
   title: string,
@@ -35,5 +35,15 @@ export async function shareWorkResult(
 ): Promise<"shared" | "copied" | "failed"> {
   const link = workDeepLinkUrl(cardId);
   const body = `${outputText.trim()}\n\n—\n${title}\n${link}`;
+  return shareText(title, body);
+}
+
+export async function shareVaultNote(
+  title: string,
+  markdownBody: string,
+  notePath: string,
+): Promise<"shared" | "copied" | "failed"> {
+  const link = vaultDeepLinkUrl(notePath);
+  const body = `${markdownBody.trim()}\n\n—\n${title}\n${link}`;
   return shareText(title, body);
 }

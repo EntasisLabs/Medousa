@@ -1433,6 +1433,33 @@ export async function exportIdentityMarkdown(request?: {
   });
 }
 
+export async function exportUserProfileBundle(request: {
+  profileId: string;
+  sessionLimit?: number;
+  nodeLimitPerSession?: number;
+}): Promise<{ bundle: unknown }> {
+  return invoke("identity_export_profile", {
+    profileId: request.profileId,
+    sessionLimit: request.sessionLimit ?? null,
+    nodeLimitPerSession: request.nodeLimitPerSession ?? null,
+  });
+}
+
+export async function importUserProfileBundle(request: {
+  bundle: unknown;
+  dryRun?: boolean;
+}): Promise<{
+  dry_run: boolean;
+  profile_id: string;
+  created_profile: boolean;
+  message: string;
+}> {
+  return invoke("identity_import_profile", {
+    bundle: request.bundle,
+    dryRun: request.dryRun ?? false,
+  });
+}
+
 export async function listUserProfiles(): Promise<
   import("$lib/types/userProfile").ListUserProfilesResponse
 > {

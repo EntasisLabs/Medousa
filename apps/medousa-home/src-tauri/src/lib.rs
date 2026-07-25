@@ -638,6 +638,8 @@ pub fn run() {
             daemon::identity::identity_remember,
             daemon::identity::identity_digest_preview,
             daemon::identity::identity_export_markdown,
+            daemon::identity::identity_export_profile,
+            daemon::identity::identity_import_profile,
             daemon::locus::locus_list_nodes,
             daemon::locus::locus_list_tags,
             daemon::locus::locus_get_node,

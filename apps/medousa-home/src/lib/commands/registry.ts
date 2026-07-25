@@ -7,7 +7,7 @@ import {
   listManuscripts,
   listTurnBudgetRequests,
 } from "$lib/daemon";
-  import {
+import {
   resetContentZoom,
   stepContentZoom,
 } from "$lib/config/contentZoom";
@@ -30,6 +30,12 @@ import { connection } from "$lib/stores/connection.svelte";
 import { layout } from "$lib/stores/layout.svelte";
 import { shellTabs } from "$lib/stores/shellTabs.svelte";
 import { toast } from "$lib/stores/toast.svelte";
+import { sessionExportPreview } from "$lib/stores/sessionExportPreview.svelte";
+import {
+  downloadTextFile,
+  sessionExportBasename,
+  sessionTranscriptMarkdown,
+} from "$lib/utils/sessionTranscript";
 import type { Surface } from "$lib/types/ui";
 import type { DepthMode } from "$lib/types/runtime";
 import type { WorkshopCommand, WorkshopCommandContext } from "./types";
@@ -827,21 +833,61 @@ export function buildAdvancedCommands(): WorkshopCommand[] {
       id: "advanced-export-session",
       section: "advanced",
       label: "Export this conversation",
-      subtitle: "Download session history as JSON",
+      subtitle: "Download session history as Markdown",
+      keywords: "export session history markdown md transcript",
+      advanced: true,
+      run: async (ctx) => {
+        const history = await getSessionHistory(ctx.chat.sessionId);
+        const label =
+          ctx.chat.sessions.find((s) => s.session_id === ctx.chat.sessionId)
+            ?.display_name ||
+          ctx.chat.sessions.find((s) => s.session_id === ctx.chat.sessionId)
+            ?.preview ||
+          undefined;
+        const markdown = sessionTranscriptMarkdown(history, { title: label });
+        downloadTextFile(
+          `${sessionExportBasename(ctx.chat.sessionId)}.md`,
+          markdown,
+        );
+        ctx.notice("Conversation exported as Markdown.");
+        ctx.callbacks.close();
+      },
+    },
+    {
+      id: "advanced-export-session-pdf",
+      section: "advanced",
+      label: "Export conversation as PDF…",
+      subtitle: "Preview and save a PDF of this chat",
+      keywords: "export session history pdf transcript",
+      advanced: true,
+      run: async (ctx) => {
+        const history = await getSessionHistory(ctx.chat.sessionId);
+        const label =
+          ctx.chat.sessions.find((s) => s.session_id === ctx.chat.sessionId)
+            ?.display_name ||
+          ctx.chat.sessions.find((s) => s.session_id === ctx.chat.sessionId)
+            ?.preview ||
+          `Conversation ${ctx.chat.sessionId.slice(0, 8)}`;
+        const markdown = sessionTranscriptMarkdown(history, { title: label });
+        sessionExportPreview.show(label, markdown);
+        ctx.callbacks.close();
+      },
+    },
+    {
+      id: "advanced-export-session-json",
+      section: "advanced",
+      label: "Export conversation as JSON",
+      subtitle: "Raw session history for debugging",
       keywords: "export session history json",
       advanced: true,
       run: async (ctx) => {
         const history = await getSessionHistory(ctx.chat.sessionId);
-        const blob = new Blob([JSON.stringify(history, null, 2)], {
-          type: "application/json",
-        });
-        const url = URL.createObjectURL(blob);
-        const anchor = document.createElement("a");
-        anchor.href = url;
-        anchor.download = `medousa-session-${ctx.chat.sessionId.slice(0, 8)}.json`;
-        anchor.click();
-        URL.revokeObjectURL(url);
-        ctx.notice("Session exported.");
+        downloadTextFile(
+          `${sessionExportBasename(ctx.chat.sessionId)}.json`,
+          JSON.stringify(history, null, 2),
+          "application/json",
+        );
+        ctx.notice("Session exported as JSON.");
         ctx.callbacks.close();
       },
     },

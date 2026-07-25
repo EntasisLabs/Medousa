@@ -169,16 +169,18 @@ flowchart LR
 
 **Goal:** Normie expectations — share, export, context actions — without changing core architecture.
 
-| ID | Deliverable | Type | Acceptance |
-|----|-------------|------|------------|
-| P5.0 | **Chat attachments** | Net-new | [media-and-attachments-plan.md](media-and-attachments-plan.md) P5a — composer attach, local media |
-| P5.1 | Vault context menu | Polish | Right-click / long-press: Share, Export PDF, Move, Ask Medousa, Send to Work |
-| P5.2 | Chat message actions | Polish | Copy, Share, “Save to vault” on assistant turns |
-| P5.3 | Transcript export | Exposure | Session → Markdown/PDF export |
-| P5.4 | Profile backup | Exposure | Home → Export profile bundle (existing API); import on new machine |
-| P5.5 | Note share sheet | Polish | Extend `share.ts` beyond work results to vault notes |
+**Status:** ✅ Shipped (0.6 Polish closeout)
 
-**Code anchors:** `VaultEditor.svelte`, `VaultNoteActionsMenu.svelte`, `vaultPdfExport.ts`, `profile_portability.rs`, `share.ts`.
+| ID | Deliverable | Type | Acceptance | Status |
+|----|-------------|------|------------|--------|
+| P5.0 | **Chat attachments** | Net-new | [media-and-attachments-plan.md](media-and-attachments-plan.md) P5a — composer attach, local media | ✅ |
+| P5.1 | Vault context menu | Polish | Right-click / long-press: Share, Export PDF, Move, Ask Medousa, Send to Work | ✅ |
+| P5.2 | Chat message actions | Polish | Copy, Share, “Save to vault” on assistant turns | ✅ |
+| P5.3 | Transcript export | Exposure | Session → Markdown/PDF export | ✅ |
+| P5.4 | Profile backup | Exposure | Home → Export profile bundle (existing API); import on new machine | ✅ |
+| P5.5 | Note share sheet | Polish | Extend `share.ts` beyond work results to vault notes | ✅ |
+
+**Code anchors:** `VaultEditor.svelte`, `VaultNoteActionsMenu.svelte`, `VaultContextMenu.svelte`, `vaultPdfExport.ts`, `profile_portability.rs`, `share.ts`, `sessionTranscript.ts`.
 
 **Exit:** No “I wish Obsidian/Notes could …” for basic share/export.
 

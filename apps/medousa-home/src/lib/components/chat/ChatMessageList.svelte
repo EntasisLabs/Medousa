@@ -3,11 +3,12 @@
    * Chat message list — runtime-governed Liquid is the sole paint path.
    * User→assistant pairs render as timeline beats (whisper + full-width voice).
    */
-  import { Copy, Library } from "@lucide/svelte";
+  import { Copy, Library, Share2 } from "@lucide/svelte";
   import ChatUserWhisper from "$lib/components/chat/ChatUserWhisper.svelte";
   import LiquidChatMessage from "$lib/components/chat/LiquidChatMessage.svelte";
   import { chat } from "$lib/stores/chat.svelte";
   import { toast } from "$lib/stores/toast.svelte";
+  import { shareText } from "$lib/share";
   import type { ChatMessage } from "$lib/types/chat";
   import {
     groupChatTurnBeats,
@@ -87,12 +88,26 @@
     const ok = await copyTextToClipboard(raw);
     toast.show(ok ? "Copied" : "Couldn’t copy", { durationMs: 1400 });
   }
+
+  async function shareAssistant(assistant: ChatMessage) {
+    const raw = assistant.content ?? "";
+    if (!raw.trim()) return;
+    const outcome = await shareText("Medousa reply", raw);
+    if (outcome === "shared") {
+      toast.show("Shared", { durationMs: 1400 });
+    } else if (outcome === "copied") {
+      toast.show("Copied to clipboard", { durationMs: 1600 });
+    } else {
+      toast.show("Couldn’t share", { durationMs: 1600 });
+    }
+  }
 </script>
 
 {#snippet turnActions(assistant: ChatMessage, user: ChatMessage | null = null)}
   {@const showCopy = canCopyAssistantTurn(assistant)}
+  {@const showShare = canCopyAssistantTurn(assistant)}
   {@const showSave = onSaveToVault && canSaveAssistantTurn(assistant)}
-  {#if showCopy || showSave}
+  {#if showCopy || showShare || showSave}
     <div class="chat-turn-actions" class:chat-turn-actions--mobile={mobile}>
       {#if showCopy}
         <button
@@ -103,6 +118,17 @@
           onclick={() => void copyAssistant(assistant)}
         >
           <Copy size={14} strokeWidth={1.75} />
+        </button>
+      {/if}
+      {#if showShare}
+        <button
+          type="button"
+          class="chat-turn-action"
+          title="Share"
+          aria-label="Share"
+          onclick={() => void shareAssistant(assistant)}
+        >
+          <Share2 size={14} strokeWidth={1.75} />
         </button>
       {/if}
       {#if showSave}
