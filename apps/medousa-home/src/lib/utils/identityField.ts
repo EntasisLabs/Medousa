@@ -1,6 +1,29 @@
 import type { IdentityContextResponse } from "$lib/types/identity";
 import type { IdentityFieldBlob, IdentityFieldLayout } from "$lib/types/identityField";
+import type { ProfileShelfEntry } from "$lib/types/profileShelf";
 import { buildProfileShelfEntries } from "$lib/utils/profileShelf";
+
+/** Focus-card blob when the entry isn't currently placed on the field. */
+export function blobForShelfEntry(entry: ProfileShelfEntry): IdentityFieldBlob {
+  const kind =
+    entry.kind === "contact" || entry.kind === "relationship"
+      ? "person"
+      : entry.kind === "preference"
+        ? "preference"
+        : "cluster";
+  return {
+    id: entry.id,
+    kind,
+    label: entry.title,
+    subtitle: entry.subtitle,
+    x: 0,
+    y: 0,
+    radius: 40,
+    opacity: 1,
+    fill: "transparent",
+    entry,
+  };
+}
 
 const FIELD_W = 1200;
 const FIELD_H = 820;

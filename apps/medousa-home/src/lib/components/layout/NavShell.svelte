@@ -16,6 +16,7 @@
   import CalendarRailList from "$lib/components/calendar/CalendarRailList.svelte";
   import YouRailToolbar from "$lib/components/profiles/YouRailToolbar.svelte";
   import YouRailList from "$lib/components/profiles/YouRailList.svelte";
+  import YouCreateMenu from "$lib/components/profiles/YouCreateMenu.svelte";
   import WorkRailToolbar from "$lib/components/work/WorkRailToolbar.svelte";
   import WorkRailList from "$lib/components/work/WorkRailList.svelte";
   import { environment } from "$lib/stores/environment.svelte";
@@ -52,12 +53,17 @@
   } from "$lib/utils/railPopoverSummon";
   import { resolveSummonToolbarSurface } from "$lib/utils/resolveSummonToolbarSurface";
   import { toast } from "$lib/stores/toast.svelte";
-  import { Settings } from "@lucide/svelte";
+  import { Plus, Settings } from "@lucide/svelte";
   import { SAFETY_SURFACE_SETTINGS } from "$lib/types/environment";
   import type { DaemonHealth } from "$lib/daemon";
   import { fade, fly } from "svelte/transition";
   import { cubicOut } from "svelte/easing";
   import { onMount } from "svelte";
+  import {
+    railRowQuickCreateLabel,
+    runRailRowQuickCreate,
+    surfaceShowsRailQuickCreate,
+  } from "$lib/utils/railRowQuickCreate";
 
   type RailPopoverTarget =
     | { kind: "lme"; mode: LmeExplorerMode }
@@ -111,8 +117,8 @@
   let railPopoverTriggerEl = $state<HTMLElement | null>(null);
   /** Click point so the toolbar floats next to the mouse (not rail-docked). */
   let railPopoverCursor = $state<{ x: number; y: number } | null>(null);
-  /** Landing phase — summon uses toolbar; rail clicks use seed. */
-  let railPopoverPreferPhase = $state<"seed" | "toolbar">("seed");
+  /** Landing phase — shake / keybind summon only (no rail hover). */
+  let railPopoverPreferPhase = $state<"seed" | "toolbar">("toolbar");
   /** Invisible 1×1 anchor when the rail button isn’t in the DOM. */
   let syntheticTriggerEl: HTMLElement | null = null;
 
@@ -233,7 +239,7 @@
     railPopover = null;
     railPopoverTriggerEl = null;
     railPopoverCursor = null;
-    railPopoverPreferPhase = "seed";
+    railPopoverPreferPhase = "toolbar";
     disposeSyntheticTrigger();
   }
 
@@ -252,13 +258,16 @@
     target: RailPopoverTarget,
     trigger: HTMLElement,
     event?: MouseEvent,
-    options?: { cursor?: RailPopoverCursor; preferPhase?: "seed" | "toolbar" },
+    options?: {
+      cursor?: RailPopoverCursor;
+      preferPhase?: "seed" | "toolbar";
+    },
   ) {
     if (sameRailPopover(target)) {
       closeRailPopover();
       return;
     }
-    railPopoverPreferPhase = options?.preferPhase ?? "seed";
+    railPopoverPreferPhase = options?.preferPhase ?? "toolbar";
     railPopoverTriggerEl = trigger;
     if (options?.cursor) {
       railPopoverCursor = options.cursor;
@@ -267,7 +276,7 @@
     } else {
       const rect = trigger.getBoundingClientRect();
       railPopoverCursor = {
-        x: rect.left + rect.width / 2,
+        x: rect.right + 8,
         y: rect.top + rect.height / 2,
       };
     }
@@ -308,22 +317,19 @@
     return true;
   }
 
+  /**
+   * Row click — host the list in the master rail when available; otherwise open
+   * the main surface (custom destinations without a rail view).
+   */
   function selectDestination(surfaceId: string, event?: MouseEvent) {
-    if (surfaceHasShellSidebarView(surfaceId) && event) {
-      event.preventDefault();
-      event.stopPropagation();
-      // Popover only — don't open a shell tab until the user picks something.
-      ensureFamilyForSurface(surfaceId);
-      layout.setShellSidebarMode("nav");
-      openRailPopover(
-        { kind: "surface", surfaceId },
-        event.currentTarget as HTMLElement,
-        event,
-      );
-      return;
-    }
+    event?.preventDefault();
+    event?.stopPropagation();
     closeRailPopover();
     ensureFamilyForSurface(surfaceId);
+    if (surfaceHasShellSidebarView(surfaceId)) {
+      layout.openShellSidebarView(surfaceId);
+      return;
+    }
     onSelect(surfaceId);
     layout.setShellSidebarMode("nav");
   }
@@ -333,6 +339,18 @@
     closeRailPopover();
     onSelect(surfaceId);
     layout.setShellSidebarMode("nav");
+  }
+
+  async function onRailQuickCreate(surfaceId: string, event?: MouseEvent) {
+    event?.preventDefault();
+    event?.stopPropagation();
+    closeRailPopover();
+    const result = await runRailRowQuickCreate(surfaceId);
+    if (result.navigateTo) {
+      ensureFamilyForSurface(result.navigateTo);
+      onSelect(result.navigateTo);
+      layout.setShellSidebarMode("nav");
+    }
   }
 
   /** Popover → full side-rail view only (no main-content / tab activation). */
@@ -452,16 +470,10 @@
           {:else if viewSurface === "profiles"}
             <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
               <div class="min-h-0 flex-1 overflow-hidden">
-                <YouRailList
-                  onPickProfile={() => onSelect("profiles")}
-                  onOpenContext={() => selectDestination("context")}
-                />
+                <YouRailList onPickProfile={() => onSelect("profiles")} />
               </div>
               <div class="lme-side-rail-dock">
-                <YouRailToolbar
-                  onAction={() => onSelect("profiles")}
-                  onOpenContext={() => selectDestination("context")}
-                />
+                <YouRailToolbar onAction={() => onSelect("profiles")} />
               </div>
             </div>
           {/if}
@@ -483,6 +495,10 @@
                 : isAutomations
                   ? automationsIsActive()
                   : active === surface.id || surfacePopoverOpen(surface.id)}
+              {@const showQuickCreate = surfaceShowsRailQuickCreate(
+                surface.id,
+                surface.kind,
+              )}
               <div
                 class="workshop-rail-dest"
                 class:workshop-rail-dest-hero={hero}
@@ -499,19 +515,7 @@
                     title={navTitle(surface)}
                     aria-label={badge > 0 ? `${navTitle(surface)} (${badge} active)` : navTitle(surface)}
                     aria-current={doorActive ? "page" : undefined}
-                    aria-expanded={isLibrary
-                      ? surfacePopoverOpen("library") ||
-                        (railPopover?.kind === "lme" && isLmeLibraryMode(railPopover.mode))
-                      : isAutomations
-                        ? surfacePopoverOpen("automations") ||
-                          (railPopover?.kind === "lme" &&
-                            isLmeAutomationsMode(railPopover.mode))
-                        : surfacePopoverOpen(surface.id)}
-                    aria-haspopup={surfaceHasShellSidebarView(surface.id) ||
-                    isLibrary ||
-                    isAutomations
-                      ? "dialog"
-                      : undefined}
+                    aria-expanded={showView && viewSurface === surface.id}
                     onclick={(event) => selectDestination(surface.id, event)}
                   >
                     <span class="workshop-rail-btn-icon" aria-hidden="true">
@@ -529,6 +533,19 @@
                     </span>
                     <span class="workshop-rail-btn-label">{navLabel(surface)}</span>
                   </button>
+                  {#if showQuickCreate}
+                    <div class="workshop-rail-dest-actions">
+                      <button
+                        type="button"
+                        class="vault-dock-icon-btn workshop-rail-row-action"
+                        title={railRowQuickCreateLabel(surface.id)}
+                        aria-label={railRowQuickCreateLabel(surface.id)}
+                        onclick={(event) => void onRailQuickCreate(surface.id, event)}
+                      >
+                        <Plus size={14} strokeWidth={2} />
+                      </button>
+                    </div>
+                  {/if}
                 </div>
               </div>
             {/if}
@@ -582,6 +599,40 @@
         </div>
 
         <div class="workshop-rail-dock">
+          {#if lifeRail.you.kind === "surface"}
+            {@const YouIcon = environmentIcon(lifeRail.you.surface.icon)}
+            <div class="workshop-rail-dest-row workshop-rail-dock-row">
+              <button
+                type="button"
+                data-rail-surface="profiles"
+                class="{railBtnClass('profiles', 'utility', {
+                  quietActive: true,
+                  active: active === 'profiles' || surfacePopoverOpen('profiles'),
+                })} workshop-rail-dock-btn"
+                title="You — {activeProfileLabel}"
+                aria-label="You ({activeProfileLabel})"
+                aria-current={active === "profiles" ? "page" : undefined}
+                aria-expanded={showView && viewSurface === "profiles"}
+                onclick={(event) => selectDestination("profiles", event)}
+              >
+                <span class="workshop-rail-btn-icon" aria-hidden="true">
+                  <YouIcon {...utilityIconProps} />
+                </span>
+                <span class="workshop-rail-btn-label">You</span>
+              </button>
+              <div class="workshop-rail-dest-actions">
+                <YouCreateMenu
+                  onReady={async () => {
+                    closeRailPopover();
+                    ensureFamilyForSurface("profiles");
+                    onSelect("profiles");
+                    layout.openShellSidebarView("profiles");
+                  }}
+                />
+              </div>
+            </div>
+          {/if}
+
           {#if lifeRail.context?.kind === "surface"}
             {@const contextSurface = lifeRail.context.surface}
             {@const ContextIcon = environmentIcon(contextSurface.icon)}
@@ -599,38 +650,13 @@
               title={navTitle(contextSurface)}
               aria-label={navLabel(contextSurface)}
               aria-current={contextDoorActive ? "page" : undefined}
-              aria-expanded={surfacePopoverOpen("context")}
-              aria-haspopup="dialog"
+              aria-expanded={showView && viewSurface === "context"}
               onclick={(event) => selectDestination("context", event)}
             >
               <span class="workshop-rail-btn-icon" aria-hidden="true">
                 <ContextIcon {...utilityIconProps} />
               </span>
               <span class="workshop-rail-btn-label">{navLabel(contextSurface)}</span>
-            </button>
-          {/if}
-
-          {#if lifeRail.you.kind === "surface"}
-            {@const youSurface = lifeRail.you.surface}
-            {@const YouIcon = environmentIcon(youSurface.icon)}
-            <button
-              type="button"
-              data-rail-surface="profiles"
-              class="{railBtnClass('profiles', 'utility', {
-                quietActive: true,
-                active: active === 'profiles' || surfacePopoverOpen('profiles'),
-              })} workshop-rail-dock-btn"
-              title="You — {activeProfileLabel}"
-              aria-label="You ({activeProfileLabel})"
-              aria-current={active === "profiles" ? "page" : undefined}
-              aria-expanded={surfacePopoverOpen("profiles")}
-              aria-haspopup="dialog"
-              onclick={(event) => selectDestination("profiles", event)}
-            >
-              <span class="workshop-rail-btn-icon" aria-hidden="true">
-                <YouIcon {...utilityIconProps} />
-              </span>
-              <span class="workshop-rail-btn-label">You</span>
             </button>
           {/if}
 
@@ -646,8 +672,7 @@
             title="Settings"
             aria-label="Settings"
             aria-current={active === SAFETY_SURFACE_SETTINGS ? "page" : undefined}
-            aria-expanded={surfacePopoverOpen(SAFETY_SURFACE_SETTINGS)}
-            aria-haspopup="dialog"
+            aria-expanded={showView && viewSurface === SAFETY_SURFACE_SETTINGS}
             onclick={(event) => selectDestination(SAFETY_SURFACE_SETTINGS, event)}
           >
             <span class="workshop-rail-btn-icon" aria-hidden="true">
@@ -696,13 +721,7 @@
       {:else if popover.surfaceId === "work"}
         <WorkRailToolbar onAction={() => commitPopoverSurface("work")} />
       {:else if popover.surfaceId === "profiles"}
-        <YouRailToolbar
-          onAction={() => commitPopoverSurface("profiles")}
-          onOpenContext={() => {
-            closeRailPopover();
-            selectDestination("context");
-          }}
-        />
+        <YouRailToolbar onAction={() => commitPopoverSurface("profiles")} />
       {:else if popover.surfaceId === SAFETY_SURFACE_SETTINGS}
         <span class="nav-rail-popover-toolbar-label">Settings</span>
       {/if}
@@ -764,13 +783,7 @@
     {:else if popover.surfaceId === "work"}
       <WorkRailList onPickCard={() => commitPopoverSurface("work")} />
     {:else if popover.surfaceId === "profiles"}
-      <YouRailList
-        onPickProfile={() => commitPopoverSurface("profiles")}
-        onOpenContext={() => {
-          closeRailPopover();
-          selectDestination("context");
-        }}
-      />
+      <YouRailList onPickProfile={() => commitPopoverSurface("profiles")} />
     {/if}
   </NavRailViewPopover>
 {/if}

@@ -19,7 +19,6 @@ export const NON_TOGGLEABLE_NAV_SURFACE_IDS = new Set([
 export const NAV_DESTINATION_GROUPS: Array<{ label: string; surfaceIds: string[] }> = [
   { label: "Life", surfaceIds: ["chat", "peers", "work", "library", "web", "context", "calendar"] },
   { label: "Workshop", surfaceIds: ["workshop", "automations"] },
-  { label: "Connect", surfaceIds: ["messaging"] },
 ];
 
 /** Switch active layout preset on an in-memory spec (mirrors daemon helper). */

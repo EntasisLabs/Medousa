@@ -13843,10 +13843,67 @@
     @apply min-h-0;
   }
 
-  .profiles-teach-dock {
-    @apply shrink-0 border-t border-surface-500/35 px-4 py-3;
-    background-color: rgb(var(--color-surface-950) / 0.92);
-    backdrop-filter: blur(8px);
+  .profiles-create-sheet {
+    max-width: 22rem;
+  }
+
+  .profiles-create-sentence {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.35rem 0.4rem;
+  }
+
+  .profiles-create-inline {
+    min-width: 8rem;
+    flex: 1 1 8rem;
+    border: 0;
+    border-bottom: 1px solid rgb(var(--color-surface-500) / 0.35);
+    border-radius: 0;
+    background: transparent;
+    padding: 0.1rem 0.05rem 0.2rem;
+    color: rgb(var(--color-surface-50));
+    font: inherit;
+    font-weight: 650;
+    outline: none;
+  }
+
+  .profiles-create-inline::placeholder {
+    color: rgb(var(--color-surface-500) / 0.85);
+    font-weight: 450;
+  }
+
+  .profiles-create-inline:focus {
+    border-bottom-color: rgb(var(--color-primary-400) / 0.55);
+  }
+
+  .profiles-create-inline--mono {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.8rem;
+    font-weight: 550;
+    letter-spacing: 0.01em;
+  }
+
+  .profiles-create-body {
+    width: 100%;
+    min-height: 6.5rem;
+    resize: vertical;
+    border: 1px solid rgb(var(--color-surface-500) / 0.35);
+    border-radius: 0.75rem;
+    background: rgb(var(--color-surface-950) / 0.4);
+    padding: 0.75rem 0.85rem;
+    color: rgb(var(--color-surface-50));
+    font-size: 0.9rem;
+    line-height: 1.45;
+    outline: none;
+  }
+
+  .profiles-create-body::placeholder {
+    color: rgb(var(--color-surface-500) / 0.9);
+  }
+
+  .profiles-create-body:focus {
+    border-color: rgb(var(--color-primary-400) / 0.45);
   }
 
   .profiles-quick-chip {

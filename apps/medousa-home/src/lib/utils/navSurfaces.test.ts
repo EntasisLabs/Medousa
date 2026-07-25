@@ -20,9 +20,9 @@ function surface(id: string): SurfaceDef {
 }
 
 describe("navSurfaces shell sidebar views", () => {
-  it("hides runtime from the rail and keeps messaging in life", () => {
+  it("hides runtime and messaging from the life rail", () => {
     expect(navTier(surface("runtime"))).toBe("hidden");
-    expect(navTier(surface("messaging"))).toBe("life");
+    expect(navTier(surface("messaging"))).toBe("hidden");
   });
 
   it("marks list / HUD surfaces as having a sidebar view", () => {

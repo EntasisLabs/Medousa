@@ -39,7 +39,6 @@ export type RailSectionId =
 const PRIMARY_ORDER = [
   "chat",
   "peers",
-  "messaging",
   "calendar",
   "work",
   "web",
@@ -54,6 +53,7 @@ const RAIL_SKIP_IDS = new Set([
   "home",
   "context",
   "profiles",
+  "messaging",
   SAFETY_SURFACE_SETTINGS,
   SAFETY_SURFACE_RUNTIME,
 ]);

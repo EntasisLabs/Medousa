@@ -69,7 +69,7 @@
           {
             id: "product",
             label: "product_config.json",
-            hint: "Product policy — channels live in Messaging",
+            hint: "Product policy — channels live in Settings → Channels",
             path: configPaths.productConfig,
           },
           {

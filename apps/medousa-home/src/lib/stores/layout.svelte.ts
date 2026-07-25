@@ -45,6 +45,10 @@ export type LibraryView = "list" | "reader";
 /** Master rail content: destination nav, or the active view’s list in the same rail. */
 export type ShellSidebarMode = "nav" | "view";
 
+type RailViewHistoryEntry = { surfaceId: string };
+
+const RAIL_VIEW_HISTORY_CAP = 20;
+
 function loadShellSidebarExpanded(): boolean {
   if (typeof localStorage === "undefined") return true;
   const shell = localStorage.getItem(SHELL_SIDEBAR_EXPANDED_KEY);
@@ -106,6 +110,13 @@ export class LayoutStore {
   );
   /** Per-surface rail mode — survive chat ↔ Workspace switches. */
   private sidebarModeBySurface: Record<string, ShellSidebarMode> = {};
+  /** Docked rail-view history (titlebar arrows) — not tab visit history. */
+  private railViewBackStack: RailViewHistoryEntry[] = [];
+  private railViewForwardStack: RailViewHistoryEntry[] = [];
+  /** Bumped so titlebar `$derived` re-evaluates canGo* after stack mutations. */
+  railViewHistoryEpoch = $state(0);
+  /** When true, openShellSidebarView restores without clobbering forward stack. */
+  private railViewHistoryQuiet = false;
   /** @deprecated Use !shellSidebarExpanded — kept for LME call sites. */
   vaultSidebarCollapsed = $state(!loadShellSidebarExpanded());
   /** @deprecated Alias of shellSidebarExpanded (navStyle rail=visible / compact=hidden). */
@@ -237,6 +248,83 @@ export class LayoutStore {
     }
   }
 
+  canGoRailViewBack = $derived.by(() => {
+    void this.railViewHistoryEpoch;
+    return (
+      this.railViewBackStack.length > 0 || this.shellSidebarMode === "view"
+    );
+  });
+
+  canGoRailViewForward = $derived.by(() => {
+    void this.railViewHistoryEpoch;
+    return this.railViewForwardStack.length > 0;
+  });
+
+  goRailViewBack() {
+    if (this.shellSidebarMode === "view" && this.shellSidebarViewSurface) {
+      const current = this.shellSidebarViewSurface;
+      const prev = this.railViewBackStack.pop();
+      this.railViewHistoryEpoch += 1;
+      if (prev) {
+        this.railViewForwardStack.push({ surfaceId: current });
+        this.trimRailViewStacks();
+        this.railViewHistoryQuiet = true;
+        this.openShellSidebarView(prev.surfaceId);
+        this.railViewHistoryQuiet = false;
+        return;
+      }
+      this.railViewForwardStack.push({ surfaceId: current });
+      this.trimRailViewStacks();
+      this.setShellSidebarMode("nav");
+      if (!this.shellSidebarExpanded) {
+        this.setShellSidebarExpanded(true);
+      }
+      return;
+    }
+    const prev = this.railViewBackStack.pop();
+    this.railViewHistoryEpoch += 1;
+    if (!prev) return;
+    this.railViewHistoryQuiet = true;
+    this.openShellSidebarView(prev.surfaceId);
+    this.railViewHistoryQuiet = false;
+  }
+
+  goRailViewForward() {
+    const next = this.railViewForwardStack.pop();
+    this.railViewHistoryEpoch += 1;
+    if (!next) return;
+    if (this.shellSidebarMode === "view" && this.shellSidebarViewSurface) {
+      this.railViewBackStack.push({ surfaceId: this.shellSidebarViewSurface });
+      this.trimRailViewStacks();
+    }
+    this.railViewHistoryQuiet = true;
+    this.openShellSidebarView(next.surfaceId);
+    this.railViewHistoryQuiet = false;
+  }
+
+  private pushRailViewHistory(surfaceId: string) {
+    const last = this.railViewBackStack[this.railViewBackStack.length - 1];
+    if (last?.surfaceId === surfaceId) return;
+    this.railViewBackStack.push({ surfaceId });
+    this.trimRailViewStacks();
+    this.railViewHistoryEpoch += 1;
+  }
+
+  private trimRailViewStacks() {
+    if (this.railViewBackStack.length > RAIL_VIEW_HISTORY_CAP) {
+      this.railViewBackStack.splice(
+        0,
+        this.railViewBackStack.length - RAIL_VIEW_HISTORY_CAP,
+      );
+    }
+    if (this.railViewForwardStack.length > RAIL_VIEW_HISTORY_CAP) {
+      this.railViewForwardStack.splice(
+        0,
+        this.railViewForwardStack.length - RAIL_VIEW_HISTORY_CAP,
+      );
+    }
+  }
+
   /**
    * Host a list surface in the master rail (view mode).
    * Does not change {@link desktopSurface} / main content — callers that need a
@@ -247,6 +335,24 @@ export class LayoutStore {
       this.setShellSidebarMode("nav");
       this.setShellSidebarExpanded(true);
       return;
+    }
+    if (
+      !this.railViewHistoryQuiet &&
+      this.shellSidebarMode === "view" &&
+      this.shellSidebarViewSurface &&
+      this.shellSidebarViewSurface !== surfaceId
+    ) {
+      this.pushRailViewHistory(this.shellSidebarViewSurface);
+      this.railViewForwardStack = [];
+      this.railViewHistoryEpoch += 1;
+    } else if (
+      !this.railViewHistoryQuiet &&
+      this.shellSidebarMode === "nav" &&
+      this.shellSidebarViewSurface !== surfaceId
+    ) {
+      // Entering view from nav — clear forward; keep back for leaving view.
+      this.railViewForwardStack = [];
+      this.railViewHistoryEpoch += 1;
     }
     this.shellSidebarViewSurface = surfaceId;
     this.setShellSidebarMode("view");

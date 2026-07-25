@@ -7,6 +7,20 @@
     "core:default",
     "dialog:default",
     "opener:default",
+    {
+      "identifier": "opener:allow-open-path",
+      "allow": [
+        { "path": "$HOME/**" },
+        { "path": "$APPDATA/**" },
+        { "path": "$APPCONFIG/**" },
+        { "path": "$CONFIG/**" },
+        { "path": "$DOCUMENT/**" },
+        { "path": "$DOWNLOAD/**" },
+        { "path": "$DESKTOP/**" },
+        { "path": "$TEMP/**" },
+        { "path": "/tmp/**" }
+      ]
+    },
     "notification:default",
     "mobile-push:default",
     "deep-link:default"

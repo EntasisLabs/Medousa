@@ -50,7 +50,6 @@ const GO_DESTINATIONS: { surface: Surface; label: string; subtitle: string; keyw
   { surface: "context", label: "Context map", subtitle: "Memory and threads", keywords: "memory locus context" },
   { surface: "peers", label: "Peers", subtitle: "Nearby workshops and inbox", keywords: "peers nearby share trust lan inbox" },
   { surface: "profiles", label: "Profiles", subtitle: "People and identity", keywords: "profiles identity people" },
-  { surface: "messaging", label: "Messaging", subtitle: "WhatsApp, Telegram, and more", keywords: "channels telegram whatsapp" },
   { surface: "runtime", label: "Engine status", subtitle: "Jobs, delivery, health", keywords: "runtime engine daemon health" },
   { surface: "settings", label: "Settings", subtitle: "Preferences and connection", keywords: "settings preferences config" },
 ];
@@ -69,6 +68,17 @@ export function buildGoCommands(): WorkshopCommand[] {
   }));
   return [
     ...destinations,
+    {
+      id: "go-channels",
+      section: "go",
+      label: "Channels",
+      subtitle: "Telegram, Discord, Slack — Settings → Channels",
+      keywords: "channels messaging telegram discord slack whatsapp",
+      run: (ctx) => {
+        ctx.openSettingsSection("channels");
+        ctx.callbacks.close();
+      },
+    },
     {
       id: "go-mcp-connections",
       section: "go",

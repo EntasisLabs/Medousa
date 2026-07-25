@@ -9,9 +9,10 @@
   interface Props {
     /** Fired after creating a session. */
     onCreated?: () => void;
+    variant?: "popover" | "rail-row";
   }
 
-  let { onCreated }: Props = $props();
+  let { onCreated, variant = "popover" }: Props = $props();
 
   onMount(() => {
     void sharedMode.load();
@@ -98,7 +99,7 @@
   >
     <Plus size={16} strokeWidth={1.75} />
   </button>
-  {#if sharedMode.isShared}
+  {#if variant === "popover" && sharedMode.isShared}
     <button
       type="button"
       class="vault-dock-icon-btn"

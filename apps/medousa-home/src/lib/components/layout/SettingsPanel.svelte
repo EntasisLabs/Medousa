@@ -18,6 +18,7 @@
   import SettingsBasementSection from "$lib/components/settings/SettingsBasementSection.svelte";
   import SettingsCanvasSection from "$lib/components/settings/SettingsCanvasSection.svelte";
   import SettingsPackagesSection from "$lib/components/settings/SettingsPackagesSection.svelte";
+  import MessagingPanel from "$lib/components/messaging/MessagingPanel.svelte";
   import type { DaemonHealth } from "$lib/daemon";
   import { workshopDefaults } from "$lib/stores/workshopDefaults.svelte";
   import { settingsNav } from "$lib/stores/settingsNav.svelte";
@@ -158,6 +159,8 @@
         <SettingsPhoneSection {mobile} />
       {:else if activeSection === "nearby"}
         <SettingsLanShareSection {mobile} />
+      {:else if activeSection === "channels"}
+        <MessagingPanel visible={visible} {health} {mobile} embedded />
       {:else if activeSection === "packages"}
         <SettingsPackagesSection {mobile} />
       {:else}

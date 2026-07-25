@@ -135,14 +135,17 @@ flowchart LR
 
 **Goal:** Daily paths feel deliberate — focus, selection, menus, save/status, handoff.
 
-| ID | Deliverable | Acceptance |
-|----|-------------|------------|
-| F3.1 | Chat | Composer, turn actions, permission/budget bars, ambient status |
-| F3.2 | Vault / Library | Editor menus, save whisper, context menu, workshop fab coherence |
-| F3.3 | Scripts Workbench | Tabs, run feedback, library ↔ flow links readable |
-| F3.4 | Settings | Basement health, Packages, Diagnostics — calm density |
+| ID | Deliverable | Acceptance | Status |
+|----|-------------|------------|--------|
+| F3.0 | **Rail chrome micro** | Titlebar arrows = rail-view history; row `+` / `>` (dock list); Messaging → Settings → Channels; floating toolbar = shake/keybind only | ✅ |
+| F3.1 | Chat | Composer, turn actions, permission/budget bars, ambient status | ⬜ |
+| F3.2 | Vault / Library | Editor menus, save whisper, context menu, workshop fab coherence | ⬜ |
+| F3.3 | Scripts Workbench | Tabs, run feedback, library ↔ flow links readable | ⬜ |
+| F3.4 | Settings | Basement health, Packages, Diagnostics — calm density | ⬜ |
 
 Burn down known friction as discovered; prefer small PRs per surface.
+
+**F3.0 anchors:** `layout.svelte.ts` (rail view stacks), `AppTitlebar.svelte`, `NavShell.svelte`, `NavRailViewPopover.svelte`, `*RailToolbar.svelte`.
 
 ---
 
@@ -150,12 +153,12 @@ Burn down known friction as discovered; prefer small PRs per surface.
 
 **Goal:** Command Spotlight and shell chrome are reliable discovery, not a second Settings maze.
 
-| ID | Deliverable | Acceptance |
-|----|-------------|------------|
-| F4.1 | Spotlight query relevance | Notes / go / export / settings hits ranked sanely |
-| F4.2 | Spotlight copy | Labels match F1–F2 tone |
-| F4.3 | Keyboard / focus | Open, run, escape; no stuck busy states |
-| F4.4 | Shell chrome | Rail, tabs, drawers don’t steal focus mid-turn |
+| ID | Deliverable | Acceptance | Status |
+|----|-------------|------------|--------|
+| F4.1 | Spotlight query relevance | Notes / go / export / settings hits ranked sanely | ⬜ |
+| F4.2 | Spotlight copy | Labels match F1–F2 tone | ⬜ |
+| F4.3 | Keyboard / focus | Open, run, escape; no stuck busy states | ⬜ |
+| F4.4 | Shell chrome | Rail history arrows + compact hover (see F3.0); tabs/drawers don’t steal focus mid-turn | 🔄 F3.0 rail slice ✅ |
 
 **Code anchors:** `CommandSpotlight.svelte`, `commands/registry.ts`, shell layout stores.
 

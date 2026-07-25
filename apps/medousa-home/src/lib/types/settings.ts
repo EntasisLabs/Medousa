@@ -12,6 +12,7 @@ export type SettingsSectionId =
   | "shared"
   | "phone"
   | "nearby"
+  | "channels"
   | "packages"
   | "basement";
 
@@ -33,6 +34,7 @@ export const SETTINGS_SECTIONS: {
   { id: "shared", label: "Shared", hint: "Team seats on this brain" },
   { id: "phone", label: "Phone", hint: "Pair your pocket portal" },
   { id: "nearby", label: "Nearby", hint: "Peers rail, bundles & trust" },
+  { id: "channels", label: "Channels", hint: "Telegram, Discord, Slack & more" },
   { id: "packages", label: "Packages", hint: "Offline brain, adapters & MCP" },
   { id: "basement", label: "Connection", hint: "This device, engine & advanced files" },
 ];

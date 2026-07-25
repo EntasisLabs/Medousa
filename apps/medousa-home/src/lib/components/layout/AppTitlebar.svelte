@@ -22,10 +22,8 @@
   const groupId = $derived(shellTabs.activeGroupId);
   const railExpanded = $derived(layout.shellSidebarExpanded);
   const railWidth = $derived(layout.shellSidebarWidth);
-  const canNavBack = $derived(
-    shellTabs.canGoNavBack || layout.shellSidebarMode === "view",
-  );
-  const canNavForward = $derived(shellTabs.canGoNavForward);
+  const canNavBack = $derived(layout.canGoRailViewBack);
+  const canNavForward = $derived(layout.canGoRailViewForward);
   const showChatPopoutBtn = $derived(
     isTauri() && shellTabs.activeTab?.kind === "chat",
   );
@@ -41,17 +39,11 @@
   }
 
   function goNavBack() {
-    if (shellTabs.canGoNavBack) {
-      void shellTabs.goNavBack();
-      return;
-    }
-    if (layout.shellSidebarMode === "view") {
-      layout.shellSidebarBackToNav();
-    }
+    layout.goRailViewBack();
   }
 
   function goNavForward() {
-    void shellTabs.goNavForward();
+    layout.goRailViewForward();
   }
 
   function splitRight() {
@@ -100,12 +92,12 @@
       </button>
 
       {#if railExpanded}
-        <div class="app-titlebar-rail-nav" role="group" aria-label="Tab history">
+        <div class="app-titlebar-rail-nav" role="group" aria-label="Side rail history">
           <button
             type="button"
             class="app-titlebar-btn"
-            title="Go back"
-            aria-label="Go back"
+            title="Side rail back"
+            aria-label="Side rail back"
             disabled={!canNavBack}
             onclick={goNavBack}
           >
@@ -114,8 +106,8 @@
           <button
             type="button"
             class="app-titlebar-btn"
-            title="Go forward"
-            aria-label="Go forward"
+            title="Side rail forward"
+            aria-label="Side rail forward"
             disabled={!canNavForward}
             onclick={goNavForward}
           >

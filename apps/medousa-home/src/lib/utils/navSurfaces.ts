@@ -12,11 +12,10 @@ const LIFE_IDS = new Set([
   "web",
   "context",
   "peers",
-  "messaging",
 ]);
 const WORKSHOP_IDS = new Set(["workshop"]);
-/** Runtime lives in Settings / status bar — never the life rail. */
-const HIDDEN_IDS = new Set([SAFETY_SURFACE_RUNTIME]);
+/** Runtime + Messaging live under Settings — never the life rail. */
+const HIDDEN_IDS = new Set([SAFETY_SURFACE_RUNTIME, "messaging"]);
 
 /** Surfaces whose list chrome lives in the master left rail (view mode). */
 export const SHELL_SIDEBAR_VIEW_SURFACES = new Set([

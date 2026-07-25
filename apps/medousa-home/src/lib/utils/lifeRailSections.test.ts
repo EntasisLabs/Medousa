@@ -42,12 +42,11 @@ describe("buildLifeRailLayout", () => {
     expect(layout.primary.map((item) => item.id)).toEqual([
       "chat",
       "peers",
-      "messaging",
       "calendar",
       "work",
       "web",
     ]);
-    expect(layout.focusStartIndex).toBe(3);
+    expect(layout.focusStartIndex).toBe(2);
     expect(layout.showLibrary).toBe(true);
     expect(layout.showAutomations).toBe(true);
     expect(layout.customStartIndex).toBe(-1);
