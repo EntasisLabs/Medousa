@@ -566,7 +566,7 @@ pub async fn send_message(
         resolve_send_target(state, &ctx, &request.workshop_id).await?;
 
     if inbound {
-        let body = serde_json::json!({
+        let payload = serde_json::json!({
             "body": request.body,
             "toDeviceId": to_device_id,
             "toName": to_name,
@@ -578,7 +578,7 @@ pub async fn send_message(
                 let client = daemon_http_client()?;
                 let response = client
                     .post(format!("{base}/v1/peer/messages"))
-                    .json(&body)
+                    .json(&payload)
                     .send()
                     .await
                     .map_err(|err| format!("failed to record sent message: {err}"))?;
@@ -590,6 +590,11 @@ pub async fn send_message(
                 return response.json().await.map_err(|err| err.to_string());
             }
         } else if let Some(portal) = &ctx.portal {
+            let body = crate::mesh_envelope::wrap_json_for_workshop(
+                &portal.config,
+                crate::mesh_envelope::CAP_MESH_MESSAGE,
+                payload,
+            )?;
             return crate::workshop_transport::workshop_post_json::<serde_json::Value, _>(
                 &portal.config,
                 "/v1/peer/messages",
@@ -600,7 +605,7 @@ pub async fn send_message(
         return Err("Messaging requires a workshop inbox connection".to_string());
     }
 
-    let deliver_body = serde_json::json!({
+    let deliver_payload = serde_json::json!({
         "body": request.body,
         "fromDeviceId": from_device_id,
         "fromName": from_name,
@@ -608,6 +613,11 @@ pub async fn send_message(
     });
 
     if let Some(config) = remote_config {
+        let deliver_body = crate::mesh_envelope::wrap_json_for_workshop(
+            &config,
+            crate::mesh_envelope::CAP_MESH_MESSAGE,
+            deliver_payload,
+        )?;
         crate::workshop_transport::workshop_post_json::<serde_json::Value, _>(
             &config,
             "/v1/peer/messages",

@@ -201,6 +201,7 @@ mod tests {
             session_token_expiry: Utc::now(),
             role,
             profile_id: profile_id.map(str::to_string),
+            mesh_grants: Vec::new(),
             apns_device_token: None,
             push_platform: None,
             push_updated_at: None,

@@ -13,6 +13,7 @@ mod medousa_paths;
 mod packages;
 mod pairing;
 mod pairing_client;
+mod mesh_envelope;
 mod lan_share;
 mod peer_inbox_sink;
 mod push;

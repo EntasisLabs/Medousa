@@ -65,6 +65,9 @@ pub struct PairedDeviceRecord {
     /// Shared-mode seat this device is bound to (`user:alice`, …). Absent on personal installs.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub profile_id: Option<String>,
+    /// Mesh capability grants (`mesh.message`, `mesh.bundle.push`, …). Empty = role defaults.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub mesh_grants: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub apns_device_token: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -282,6 +285,7 @@ mod tests {
             session_token_expiry: Utc::now(),
             role: PairingRole::Portal,
             profile_id: None,
+            mesh_grants: Vec::new(),
             apns_device_token: None,
             push_platform: None,
             push_updated_at: None,

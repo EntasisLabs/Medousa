@@ -73,7 +73,7 @@ pub struct ShareExportRequest {
     pub profile_id: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, Deserialize, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum ShareConflictStrategy {
     #[default]
@@ -82,13 +82,13 @@ pub enum ShareConflictStrategy {
     Overwrite,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ShareImportRequest {
     pub bundle: ShareBundle,
     #[serde(default)]
     pub conflict_strategy: ShareConflictStrategy,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub profile_id: Option<String>,
 }
 

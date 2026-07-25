@@ -65,22 +65,22 @@ struct PeerInboxFile {
     messages: Vec<PeerMessage>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PeerMessagePostRequest {
     pub body: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub from_device_id: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub from_name: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub to_device_id: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub to_name: Option<String>,
     /// Only honored for local (loopback) posts. Remote posts are always inbound.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub direction: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub attachment: Option<ShareBundle>,
 }
 

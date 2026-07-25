@@ -30,6 +30,10 @@ pub struct WorkshopTransportConfig {
     pub lan_base: String,
     pub iroh_ticket: Option<String>,
     pub session_token: Option<String>,
+    /// Local pairing identity (sender for mesh envelopes).
+    pub phone_id: String,
+    /// Remote workshop device id (recipient for mesh envelopes).
+    pub workshop_device_id: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -285,6 +289,8 @@ fn build_transport_config(file: &PairingCredentialsFile, lan_base: &str) -> Opti
             .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty()),
         session_token: read_session_token(&file.workshop_device_id),
+        phone_id: file.phone_id.clone(),
+        workshop_device_id: file.workshop_device_id.clone(),
     })
 }
 
@@ -536,6 +542,11 @@ fn normalize_daemon_url(raw: &str) -> Result<String, String> {
 pub fn client_surface_identity() -> Result<(String, String), String> {
     let identity = PhoneIdentity::load_or_create()?;
     Ok((identity.phone_id, "Medousa".to_string()))
+}
+
+/// Signing key for mesh envelopes (same long-term phone identity used at pair time).
+pub fn load_phone_signing_key() -> Result<SigningKey, String> {
+    Ok(PhoneIdentity::load_or_create()?.signing_key)
 }
 
 impl PhoneIdentity {

@@ -189,11 +189,16 @@ pub async fn share_push_to_workshop(
     )
     .ok_or_else(|| "Trusted workshop credentials are missing or expired".to_string())?;
 
-    let body = serde_json::json!({
+    let payload = serde_json::json!({
         "bundle": request.bundle,
         "conflictStrategy": request.conflict_strategy,
         "profileId": request.profile_id,
     });
+    let body = crate::mesh_envelope::wrap_json_for_workshop(
+        &config,
+        crate::mesh_envelope::CAP_MESH_BUNDLE_PUSH,
+        payload,
+    )?;
 
     crate::workshop_transport::workshop_post_json::<serde_json::Value, _>(
         &config,

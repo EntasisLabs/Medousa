@@ -198,16 +198,36 @@ fn run_send(args: &[String]) -> Result<()> {
         bail!("connection role cannot send messages");
     }
 
-    let sender = sender_identity()?;
+    let identity = load_or_create_identity()?;
+    let display_name = connection.label.clone();
+    let payload = medousa::peer_messages::PeerMessagePostRequest {
+        body: message.clone(),
+        from_device_id: Some(identity.phone_id.clone()),
+        from_name: Some(display_name.clone()),
+        to_device_id: Some(connection.workshop_device_id.clone()),
+        to_name: Some(connection.label.clone()),
+        direction: None,
+        attachment: None,
+    };
+    let payload_hash = medousa::mesh::payload_hash_hex(&payload)
+        .map_err(|err| anyhow::anyhow!(err))?;
+    let seq = chrono::Utc::now().timestamp_millis().max(0) as u64;
+    let envelope = medousa::mesh::sign_envelope(
+        &identity.signing_key,
+        &identity.phone_id,
+        &connection.workshop_device_id,
+        seq,
+        medousa::mesh::MeshCapability::Message,
+        &payload_hash,
+        chrono::Duration::seconds(medousa::mesh::DEFAULT_ENVELOPE_TTL_SECS),
+    );
+    let wrapped = medousa::mesh::MeshEnvelopedRequest { envelope, payload };
+
     let client = http_client()?;
     let response = client
         .post(format!("{}/v1/peer/messages", connection.daemon_url))
         .bearer_auth(&connection.session_token)
-        .json(&serde_json::json!({
-            "body": message,
-            "fromDeviceId": sender.device_id,
-            "fromName": sender.peer_name,
-        }))
+        .json(&wrapped)
         .send()
         .context("POST /v1/peer/messages")?;
     if !response.status().is_success() {
@@ -222,8 +242,8 @@ fn run_send(args: &[String]) -> Result<()> {
         .post(format!("{local_url}/v1/peer/messages"))
         .json(&serde_json::json!({
             "body": message,
-            "fromDeviceId": sender.device_id,
-            "fromName": sender.peer_name,
+            "fromDeviceId": identity.phone_id,
+            "fromName": display_name,
             "toDeviceId": connection.workshop_device_id,
             "toName": connection.label,
             "direction": "out",

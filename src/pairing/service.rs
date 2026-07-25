@@ -483,6 +483,7 @@ impl PairingService {
             session_token_expiry: now + SESSION_TOKEN_TTL,
             role: pending.role,
             profile_id: pending.bound_profile_id,
+            mesh_grants: crate::mesh::default_mesh_grants_for_role(pending.role),
             apns_device_token: None,
             push_platform: None,
             push_updated_at: None,

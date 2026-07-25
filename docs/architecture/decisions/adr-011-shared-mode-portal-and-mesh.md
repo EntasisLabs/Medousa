@@ -37,5 +37,5 @@ Operators want an org “team brain” without true multi-tenant SSO. We already
 ## Code anchors
 
 - `src/user_profiles.rs`, `src/pairing/`, `src/session_catalog.rs`, `src/shared_session_catalog.rs`, `src/shared_mode.rs`
-- `src/iroh_transport/gateway.rs`, `src/remote_trust.rs`, `src/portal_acl.rs`, `src/peer_scope.rs`
+- `src/iroh_transport/gateway.rs`, `src/remote_trust.rs`, `src/portal_acl.rs`, `src/peer_scope.rs`, `src/mesh/`
 - `architecture/v0.6.0-shared-mode-plan.md`, `architecture/v0.6.0-peer-mesh-plan.md`

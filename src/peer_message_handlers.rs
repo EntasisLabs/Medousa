@@ -8,6 +8,10 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 
 use crate::environment_store::environment_hub;
+use crate::mesh::{
+    MeshCapability, MeshInboundBody, record_has_capability, require_remote_envelope,
+    CAP_MESH_MESSAGE,
+};
 use crate::pairing::{PairedDeviceRecord, PairingRole, PairingService};
 use crate::peer_messages::{
     append_message, build_message, get_message, involves_device,
@@ -98,13 +102,31 @@ async fn post_peer_message(
     State(state): State<PeerMessageApiState>,
     ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
     headers: HeaderMap,
-    Json(body): Json<PeerMessagePostRequest>,
+    Json(body): Json<MeshInboundBody<serde_json::Value>>,
 ) -> Result<Json<PeerMessage>, (StatusCode, String)> {
     let local = crate::remote_trust::is_trusted_local(addr.ip(), &headers);
     let remote_record = if local {
         None
     } else {
         Some(authorize_remote_record(&state, &headers)?)
+    };
+
+    let body: PeerMessagePostRequest = if let Some(record) = remote_record.as_ref() {
+        require_remote_envelope(
+            body,
+            true,
+            &record.phone_public_key,
+            &record.phone_id,
+            &state.local_device_id,
+            MeshCapability::Message,
+            record_has_capability(record, CAP_MESH_MESSAGE),
+        )
+        .map_err(mesh_status)?
+    } else {
+        // Trusted local host UI may post bare payloads.
+        let (_envelope, payload) = body.into_parts();
+        serde_json::from_value(payload)
+            .map_err(|err| (StatusCode::BAD_REQUEST, err.to_string()))?
     };
 
     let portal_host_reply = remote_record.as_ref().is_some_and(|record| {
@@ -353,6 +375,17 @@ fn involves_device_id(left: &str, right: &str) -> bool {
     left == right
         || left.starts_with(&right[..right.len().min(8)])
         || right.starts_with(&left[..left.len().min(8)])
+}
+
+fn mesh_status(err: crate::mesh::MeshEnvelopeError) -> (StatusCode, String) {
+    use crate::mesh::MeshEnvelopeError::*;
+    let status = match &err {
+        MissingEnvelope | BadSignature(_) | BadPublicKey(_) | Expired | NotYetValid
+        | PayloadHashMismatch | SenderMismatch | UnsupportedVersion(_) => StatusCode::UNAUTHORIZED,
+        CapabilityNotGranted(_) | UnknownCapability | RecipientMismatch => StatusCode::FORBIDDEN,
+        Serialize(_) => StatusCode::BAD_REQUEST,
+    };
+    (status, err.to_string())
 }
 
 #[cfg(test)]
