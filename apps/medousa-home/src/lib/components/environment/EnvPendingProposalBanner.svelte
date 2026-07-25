@@ -14,7 +14,7 @@
   });
 
   function reviewInSettings() {
-    settingsNav.openSection("room");
+    settingsNav.openSection("preferences");
     layout.navigateDesktop(SAFETY_SURFACE_SETTINGS, { bump: true });
   }
 </script>
@@ -22,7 +22,7 @@
 {#if pending && !dismissed}
   <div class="env-global-pending-banner" role="status">
     <p class="text-sm text-surface-100">
-      Medousa proposed a layout change — Review in Settings → Room
+      Medousa proposed a layout change — Review in Settings → Preferences
     </p>
     <div class="mt-2 flex flex-wrap gap-2">
       <button type="button" class="btn btn-xs btn-primary" onclick={reviewInSettings}>

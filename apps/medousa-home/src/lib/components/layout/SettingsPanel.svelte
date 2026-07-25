@@ -2,9 +2,7 @@
   import { onDestroy } from "svelte";
   import ShellSidebarExpandButton from "$lib/components/layout/ShellSidebarExpandButton.svelte";
   import SettingsNav from "$lib/components/settings/SettingsNav.svelte";
-  import SettingsRoomSection from "$lib/components/settings/SettingsRoomSection.svelte";
-  import { layout } from "$lib/stores/layout.svelte";
-  import SettingsRhythmSection from "$lib/components/settings/SettingsRhythmSection.svelte";
+  import SettingsPreferencesSection from "$lib/components/settings/SettingsPreferencesSection.svelte";
   import SettingsMemorySection from "$lib/components/settings/SettingsMemorySection.svelte";
   import SettingsModelsSection from "$lib/components/settings/SettingsModelsSection.svelte";
   import SettingsVoiceSection from "$lib/components/settings/SettingsVoiceSection.svelte";
@@ -63,7 +61,7 @@
 
   $effect(() => {
     if (mobile) {
-      settingsNav.setActiveSection("room");
+      settingsNav.setActiveSection("preferences");
     }
   });
 
@@ -143,10 +141,8 @@
     {/if}
 
     <div class="mobile-you-scroll min-h-0 flex-1 overflow-y-auto px-4 py-4">
-      {#if activeSection === "room"}
-        <SettingsRoomSection />
-      {:else if activeSection === "rhythm"}
-        <SettingsRhythmSection {mobile} />
+      {#if activeSection === "preferences"}
+        <SettingsPreferencesSection {mobile} />
       {:else if activeSection === "memory"}
         <SettingsMemorySection {mobile} />
       {:else if activeSection === "models"}

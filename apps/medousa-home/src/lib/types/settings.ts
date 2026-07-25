@@ -1,6 +1,5 @@
 export type SettingsSectionId =
-  | "room"
-  | "rhythm"
+  | "preferences"
   | "memory"
   | "models"
   | "voice"
@@ -42,8 +41,12 @@ export type SettingsSectionDef = {
 };
 
 export const SETTINGS_SECTIONS: SettingsSectionDef[] = [
-  { id: "room", label: "Room", hint: "Theme per layout, light & chrome", group: "space" },
-  { id: "rhythm", label: "Rhythm", hint: "Notifications & display", group: "space" },
+  {
+    id: "preferences",
+    label: "Preferences",
+    hint: "Look, notifications & chrome",
+    group: "space",
+  },
   { id: "memory", label: "Memory", hint: "How long chats stay vivid", group: "her" },
   { id: "models", label: "Models", hint: "Chat, dictation & stages", group: "her" },
   { id: "voice", label: "Voice", hint: "Stance & answer depth", group: "her" },

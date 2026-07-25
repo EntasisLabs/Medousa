@@ -349,7 +349,7 @@
                 />
               </label>
               <p class="workshop-faint text-xs">
-                Room theme is set in Settings → Room while this workshop is active.
+                Layout theme is set in Settings → Preferences while this workshop is active.
               </p>
               {#if brandingError}
                 <p class="text-xs text-error-400">{brandingError}</p>

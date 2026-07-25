@@ -25,4 +25,10 @@ describe("settings nav chapters", () => {
     expect(settingsSectionById("basement")?.group).toBe("machine");
     expect(settingsSectionById("basement")?.label).toBe("Connection");
   });
+
+  it("keeps a single Preferences entry under space", () => {
+    expect(settingsSectionById("preferences")?.label).toBe("Preferences");
+    expect(settingsSectionById("preferences")?.group).toBe("space");
+    expect(SETTINGS_SECTIONS.filter((section) => section.group === "space")).toHaveLength(1);
+  });
 });

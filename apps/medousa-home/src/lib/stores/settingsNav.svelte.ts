@@ -4,12 +4,19 @@ import { workshopDefaults } from "$lib/stores/workshopDefaults.svelte";
 const LAST_SECTION_KEY = "medousa-home-settings-last-section";
 const SECTION_IDS = new Set(SETTINGS_SECTIONS.map((section) => section.id));
 
+function migrateSectionId(raw: string): SettingsSectionId | null {
+  // Room + Rhythm merged into Preferences.
+  if (raw === "room" || raw === "rhythm") return "preferences";
+  if (!SECTION_IDS.has(raw as SettingsSectionId)) return null;
+  return raw as SettingsSectionId;
+}
+
 function readStoredSection(): SettingsSectionId | null {
   if (typeof localStorage === "undefined") return null;
   try {
     const raw = localStorage.getItem(LAST_SECTION_KEY)?.trim();
-    if (!raw || !SECTION_IDS.has(raw as SettingsSectionId)) return null;
-    return raw as SettingsSectionId;
+    if (!raw) return null;
+    return migrateSectionId(raw);
   } catch {
     return null;
   }
@@ -32,7 +39,7 @@ function confirmDiscardUnsaved(): boolean {
 
 /** Settings section selection + jump-from-elsewhere. */
 export class SettingsNavStore {
-  activeSection = $state<SettingsSectionId>(readStoredSection() ?? "room");
+  activeSection = $state<SettingsSectionId>(readStoredSection() ?? "preferences");
   pendingSection = $state<SettingsSectionId | null>(null);
 
   openSection(section: SettingsSectionId) {
