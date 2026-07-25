@@ -45,7 +45,7 @@ describe("keyboardShortcutsCatalog", () => {
       'panes:split-down:prefix:":Split down',
       "panes:focus-panes:prefix:h/j/k/l:Focus pane",
       "panes:zoom-pane:prefix:z:Zoom pane",
-      "panes:close-pane:prefix:x:Close pane",
+      "panes:close-pane:prefix:x:Close pane (merge tabs)",
       "panes:chat-tab:prefix:c:Chat tab here",
       "panes:next-prev-tab:prefix:n/p:Next / prev tab",
       "panes:show-tabs:prefix:w:Show tabs",

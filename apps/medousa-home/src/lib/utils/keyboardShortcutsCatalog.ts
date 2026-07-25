@@ -52,7 +52,7 @@ export const KEYBOARD_SHORTCUTS_CATALOG: ShortcutCatalogGroup[] = [
       { id: "split-down", keys: 'prefix:"', action: "Split down" },
       { id: "focus-panes", keys: "prefix:h/j/k/l", action: "Focus pane" },
       { id: "zoom-pane", keys: "prefix:z", action: "Zoom pane" },
-      { id: "close-pane", keys: "prefix:x", action: "Close pane" },
+      { id: "close-pane", keys: "prefix:x", action: "Close pane (merge tabs)" },
       { id: "chat-tab", keys: "prefix:c", action: "Chat tab here" },
       { id: "next-prev-tab", keys: "prefix:n/p", action: "Next / prev tab" },
       { id: "show-tabs", keys: "prefix:w", action: "Show tabs" },

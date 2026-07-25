@@ -318,8 +318,8 @@ export function buildPaneCommands(): WorkshopCommand[] {
       id: "pane-close",
       section: "advanced",
       label: "Close pane",
-      subtitle: `${formatShortcut("Ctrl+; x")} — close active pane`,
-      keywords: "close pane split window",
+      subtitle: `${formatShortcut("Ctrl+; x")} — merge tabs into the nearest pane`,
+      keywords: "close pane merge split window tabs",
       advanced: true,
       run: (ctx) => {
         shellTabs.closeActiveGroup();

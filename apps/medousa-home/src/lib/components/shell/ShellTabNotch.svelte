@@ -8,7 +8,8 @@
   import ShellTabStrip from "$lib/components/shell/ShellTabStrip.svelte";
   import BodyPortal from "$lib/components/ui/BodyPortal.svelte";
   import { shellTabs } from "$lib/stores/shellTabs.svelte";
-  import { ChevronDown } from "@lucide/svelte";
+  import { MAX_SHELL_PANES } from "$lib/types/shellTabs";
+  import { ChevronDown, Columns2, Rows2, SquareX } from "@lucide/svelte";
   import { tick } from "svelte";
 
   let open = $state(false);
@@ -18,6 +19,8 @@
   const groupId = $derived(shellTabs.activeGroupId);
   const activeTabs = $derived(shellTabs.tabsForGroup(groupId));
   const paneCount = $derived(shellTabs.paneCount);
+  const canSplit = $derived(paneCount < MAX_SHELL_PANES);
+  const canMergePane = $derived(paneCount > 1);
   const activeDesktopName = $derived(
     shellTabs.desktops.find((d) => d.id === shellTabs.activeDesktopId)?.name ?? "Main",
   );
@@ -117,7 +120,41 @@
   </div>
 
   <div class="shell-tab-notch-trailing shrink-0">
-    <span class="shell-tab-notch-rule" aria-hidden="true"></span>
+    {#if open}
+      <button
+        type="button"
+        class="shell-tab-notch-expand"
+        title="Split right"
+        aria-label="Split pane right"
+        disabled={!canSplit}
+        onclick={() => shellTabs.splitActive("right")}
+      >
+        <Columns2 size={13} strokeWidth={1.85} />
+      </button>
+      <button
+        type="button"
+        class="shell-tab-notch-expand"
+        title="Split down"
+        aria-label="Split pane down"
+        disabled={!canSplit}
+        onclick={() => shellTabs.splitActive("down")}
+      >
+        <Rows2 size={13} strokeWidth={1.85} />
+      </button>
+      <button
+        type="button"
+        class="shell-tab-notch-expand"
+        title="Close pane · merge tabs"
+        aria-label="Close pane and merge tabs"
+        disabled={!canMergePane}
+        onclick={() => shellTabs.closeActiveGroup()}
+      >
+        <SquareX size={13} strokeWidth={1.85} />
+      </button>
+      <span class="shell-tab-notch-rule" aria-hidden="true"></span>
+    {:else}
+      <span class="shell-tab-notch-rule" aria-hidden="true"></span>
+    {/if}
     <DesktopMarks density="notch" />
     <button
       type="button"
@@ -255,9 +292,14 @@
       color 120ms ease;
   }
 
-  .shell-tab-notch-expand:hover {
+  .shell-tab-notch-expand:hover:not(:disabled) {
     background: rgb(var(--color-surface-800) / 0.55);
     color: rgb(var(--color-surface-100));
+  }
+
+  .shell-tab-notch-expand:disabled {
+    opacity: 0.3;
+    cursor: default;
   }
 
   .shell-tab-notch--open .shell-tab-notch-expand {

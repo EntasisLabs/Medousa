@@ -50,6 +50,9 @@ export type SplitNode =
 export type ShellTabKind = ShellTab["kind"];
 export type SplitDirection = "right" | "down";
 
+/** Drop-to-split edge on a pane (maps to branch orientation + child order). */
+export type SplitEdge = "left" | "right" | "top" | "bottom";
+
 /** Soft cap on leaf panes per virtual desktop (v1). */
 export const MAX_SHELL_PANES = 4;
 

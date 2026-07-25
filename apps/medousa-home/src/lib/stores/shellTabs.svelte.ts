@@ -17,6 +17,7 @@ import {
   type ShellDesktopLayout,
   type ShellTab,
   type SplitDirection,
+  type SplitEdge,
   type SplitNode,
 } from "$lib/types/shellTabs";
 import type { Surface } from "$lib/types/ui";
@@ -32,12 +33,14 @@ import {
   collectGroupIds,
   countLeaves,
   leafOrder,
+  mergeTargetForLeaf,
   migrateV1ToSplitRoot,
   neighborInDirection,
   newSplitId,
   removeLeaf,
   setBranchRatio,
   splitLeaf,
+  splitLeafAtEdge,
   type FocusDir,
 } from "$lib/utils/shellSplitTree";
 
@@ -214,6 +217,8 @@ export class ShellTabsStore {
   activeDesktopId = $state<string>("");
   /** Pane under an in-progress shell-tab drag (highlight). */
   tabDropTargetGroupId = $state<string | null>(null);
+  /** Edge highlight while dragging a tab to split. */
+  tabDropSplitEdge = $state<{ groupId: string; edge: SplitEdge } | null>(null);
   /** Spotlight / commands request the pane cheat sheet. */
   cheatSheetOpenRequest = $state(0);
   /** Force-show tabs in a pane until timestamp (Ctrl+; w). */
@@ -946,6 +951,24 @@ export class ShellTabsStore {
     return true;
   }
 
+  /** Split `hostGroupId` toward `edge` and move `tabId` into the new pane. */
+  splitGroupWithTab(hostGroupId: string, tabId: string, edge: SplitEdge): boolean {
+    if (countLeaves(this.splitRoot) >= MAX_SHELL_PANES) return false;
+    if (!this.tabs.some((tab) => tab.id === tabId)) return false;
+    if (!this.groups.some((group) => group.id === hostGroupId)) return false;
+
+    const newGroupId = newSplitId("group");
+    const result = splitLeafAtEdge(this.splitRoot, hostGroupId, edge, newGroupId);
+    if (!result) return false;
+
+    this.splitRoot = result.root;
+    this.groups = [...this.groups, { id: newGroupId, tabIds: [], activeTabId: null }];
+    this.moveTab(tabId, newGroupId);
+    void this.activate(tabId);
+    this.persist();
+    return true;
+  }
+
   focusGroup(groupId: string) {
     if (!this.groups.some((group) => group.id === groupId)) return;
     this.activeGroupId = groupId;
@@ -969,66 +992,39 @@ export class ShellTabsStore {
     if (id) this.focusGroup(id);
   }
 
+  /** Close the active pane and merge its tabs into the sash-adjacent sibling. */
   closeActiveGroup(): boolean {
     if (countLeaves(this.splitRoot) <= 1) return false;
     const closingId = this.activeGroupId;
-    const result = removeLeaf(this.splitRoot, closingId);
-    if (!result.removed) return false;
+    const targetId = mergeTargetForLeaf(this.splitRoot, closingId);
+    if (!targetId) return false;
 
     const closing = this.groups.find((group) => group.id === closingId);
-    const tabIds = closing?.tabIds ?? [];
+    const tabIds = [...(closing?.tabIds ?? [])];
+    const focusTabId = closing?.activeTabId ?? tabIds[tabIds.length - 1] ?? null;
+
     for (const tabId of tabIds) {
-      const tab = this.tabs.find((entry) => entry.id === tabId);
-      if (!tab) continue;
-      this.beginSuppressMirror();
-      try {
-        if (tab.kind === "lme") {
-          const stillOpen = this.tabs.some(
-            (entry) =>
-              entry.id !== tabId &&
-              entry.kind === "lme" &&
-              entry.lmeTabId === tab.lmeTabId,
-          );
-          if (!stillOpen) {
-            void lmeWorkspace.closeTab(tab.lmeTabId, { activateNext: false });
-          }
-        } else if (tab.kind === "web") {
-          const stillOpen = this.tabs.some(
-            (entry) =>
-              entry.id !== tabId &&
-              entry.kind === "web" &&
-              entry.browserTabId === tab.browserTabId,
-          );
-          if (!stillOpen) {
-            void humanBrowser.closeTab(tab.browserTabId);
-          }
-        } else if (tab.kind === "chat") {
-          const stillOpen = this.tabs.some(
-            (entry) =>
-              entry.id !== tabId &&
-              entry.kind === "chat" &&
-              entry.sessionId === tab.sessionId,
-          );
-          if (!stillOpen) {
-            chatStreamPool.release(tab.sessionId);
-          }
-        }
-      } finally {
-        this.endSuppressMirror();
-      }
-      this.tabs = this.tabs.filter((entry) => entry.id !== tabId);
+      this.moveTab(tabId, targetId);
     }
+
+    const result = removeLeaf(this.splitRoot, closingId);
+    if (!result.removed) return false;
 
     this.groups = this.groups.filter((group) => group.id !== closingId);
     this.splitRoot = result.root;
     if (this.zoomedGroupId === closingId) {
       this.zoomedGroupId = null;
     }
-    const remaining = collectGroupIds(this.splitRoot);
-    this.activeGroupId = remaining[remaining.length - 1] ?? MAIN_GROUP_ID;
-    const active = this.activeGroup;
-    if (active.activeTabId) {
-      void this.activate(active.activeTabId);
+    this.activeGroupId = targetId;
+    if (focusTabId && this.tabs.some((tab) => tab.id === focusTabId)) {
+      void this.activate(focusTabId);
+    } else {
+      const active = this.activeGroup;
+      if (active.activeTabId) {
+        void this.activate(active.activeTabId);
+      } else {
+        this.syncLayoutHint(null);
+      }
     }
     this.persist();
     return true;

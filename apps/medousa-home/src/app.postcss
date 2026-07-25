@@ -882,15 +882,15 @@
 
   .shell-tab-notch-drawer-stage {
     display: flex;
-    min-height: 8.5rem;
+    min-height: 9.5rem;
     flex: 1 1 auto;
     flex-direction: column;
     overflow: hidden;
-    padding: 0.4rem;
+    padding: 0.35rem;
   }
 
   .shell-tab-notch-drawer--single .shell-tab-notch-drawer-stage {
-    min-height: 6.5rem;
+    min-height: 7.5rem;
   }
 
   .shell-tab-notch-branch {
@@ -938,7 +938,7 @@
     overflow: hidden;
     border: 1px solid rgb(var(--color-surface-500) / 0.22);
     border-radius: 0.4rem;
-    background: rgb(var(--color-surface-950) / 0.4);
+    background: rgb(var(--color-surface-950) / 0.45);
     cursor: pointer;
     transition:
       border-color 140ms ease,
@@ -960,59 +960,176 @@
     background: rgb(var(--color-primary-500) / 0.1);
   }
 
+  .shell-tab-notch-pane--split-left {
+    border-color: rgb(var(--color-primary-300) / 0.55);
+    background: linear-gradient(
+      to right,
+      rgb(var(--color-primary-500) / 0.22) 0%,
+      rgb(var(--color-primary-500) / 0.22) 32%,
+      rgb(var(--color-surface-950) / 0.45) 32%
+    );
+    box-shadow: inset 2px 0 0 0 rgb(var(--color-primary-400) / 0.75);
+  }
+
+  .shell-tab-notch-pane--split-right {
+    border-color: rgb(var(--color-primary-300) / 0.55);
+    background: linear-gradient(
+      to left,
+      rgb(var(--color-primary-500) / 0.22) 0%,
+      rgb(var(--color-primary-500) / 0.22) 32%,
+      rgb(var(--color-surface-950) / 0.45) 32%
+    );
+    box-shadow: inset -2px 0 0 0 rgb(var(--color-primary-400) / 0.75);
+  }
+
+  .shell-tab-notch-pane--split-top {
+    border-color: rgb(var(--color-primary-300) / 0.55);
+    background: linear-gradient(
+      to bottom,
+      rgb(var(--color-primary-500) / 0.22) 0%,
+      rgb(var(--color-primary-500) / 0.22) 32%,
+      rgb(var(--color-surface-950) / 0.45) 32%
+    );
+    box-shadow: inset 0 2px 0 0 rgb(var(--color-primary-400) / 0.75);
+  }
+
+  .shell-tab-notch-pane--split-bottom {
+    border-color: rgb(var(--color-primary-300) / 0.55);
+    background: linear-gradient(
+      to top,
+      rgb(var(--color-primary-500) / 0.22) 0%,
+      rgb(var(--color-primary-500) / 0.22) 32%,
+      rgb(var(--color-surface-950) / 0.45) 32%
+    );
+    box-shadow: inset 0 -2px 0 0 rgb(var(--color-primary-400) / 0.75);
+  }
+
   .shell-tab-notch-pane--vacant {
     border-style: dashed;
     border-color: rgb(var(--color-surface-500) / 0.3);
   }
 
-  .shell-tab-notch-pane-chrome {
+  /* Arc/Zen vertical tab rail filling each map pane. */
+  .shell-tab-notch-rail {
     display: flex;
-    min-height: 1.75rem;
+    min-height: 0;
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: 0.1rem;
+    margin: 0;
+    list-style: none;
+    overflow-x: hidden;
+    overflow-y: auto;
+    padding: 0.3rem;
+    scrollbar-width: thin;
+  }
+
+  .shell-tab-notch-rail-item {
+    min-width: 0;
+  }
+
+  .shell-tab-notch-rail-row {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 0.15rem;
+    border-radius: 0.35rem;
+    cursor: grab;
+    transition: background-color 120ms ease;
+  }
+
+  .shell-tab-notch-rail-row:hover {
+    background: rgb(var(--color-surface-800) / 0.55);
+  }
+
+  .shell-tab-notch-rail-row:hover .shell-tab-notch-rail-close {
+    opacity: 1;
+  }
+
+  .shell-tab-notch-rail-row--active {
+    background: rgb(var(--color-surface-700) / 0.72);
+  }
+
+  .shell-tab-notch-rail-row--active:hover {
+    background: rgb(var(--color-surface-700) / 0.85);
+  }
+
+  .shell-tab-notch-rail-main {
+    display: flex;
+    min-width: 0;
+    flex: 1 1 auto;
+    align-items: center;
+    gap: 0.4rem;
+    border: 0;
+    background: transparent;
+    padding: 0.35rem 0.3rem 0.35rem 0.4rem;
+    color: inherit;
+    text-align: left;
+    cursor: inherit;
+  }
+
+  .shell-tab-notch-rail-icon {
+    flex-shrink: 0;
+    color: rgb(var(--color-surface-400));
+    opacity: 0.85;
+  }
+
+  .shell-tab-notch-rail-row--active .shell-tab-notch-rail-icon {
+    color: rgb(var(--color-surface-200));
+    opacity: 1;
+  }
+
+  .shell-tab-notch-rail-title {
+    min-width: 0;
+    flex: 1 1 auto;
+    overflow: hidden;
+    color: rgb(var(--color-surface-300));
+    font-size: 0.72rem;
+    font-weight: 500;
+    line-height: 1.2;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .shell-tab-notch-rail-row--active .shell-tab-notch-rail-title {
+    color: rgb(var(--color-surface-50));
+  }
+
+  .shell-tab-notch-rail-close {
+    display: inline-flex;
+    width: 1.15rem;
+    height: 1.15rem;
     flex-shrink: 0;
     align-items: center;
-    border-bottom: 1px solid rgb(var(--color-surface-500) / 0.18);
-    background: rgb(var(--color-surface-900) / 0.5);
-    padding: 0.2rem 0.35rem;
-  }
-
-  .shell-tab-notch-pane-chrome :global(.shell-tab-strip--titlebar) {
-    max-width: 100%;
-    height: auto;
-  }
-
-  .shell-tab-notch-pane-chrome :global(.shell-tab-chip) {
-    max-width: 8rem;
-  }
-
-  .shell-tab-notch-pane-surface {
-    min-height: 3.75rem;
-    flex: 1 1 auto;
-    background:
-      radial-gradient(
-        ellipse 70% 55% at 50% 40%,
-        rgb(var(--color-surface-700) / 0.14),
-        transparent 70%
-      ),
-      rgb(var(--color-surface-950) / 0.28);
-  }
-
-  .shell-tab-notch-drawer--single .shell-tab-notch-pane-surface {
-    min-height: 3rem;
-  }
-
-  .shell-tab-notch-pane:not(.shell-tab-notch-pane--active) .shell-tab-notch-pane-surface {
-    opacity: 0.78;
-  }
-
-  .shell-tab-notch-pane-empty-label {
-    padding: 0 0.2rem;
+    justify-content: center;
+    border: 0;
+    border-radius: 0.25rem;
+    background: transparent;
+    margin-right: 0.2rem;
     color: rgb(var(--color-surface-400));
+    opacity: 0;
+    transition:
+      opacity 120ms ease,
+      background-color 120ms ease,
+      color 120ms ease;
+  }
+
+  .shell-tab-notch-rail-close:hover {
+    background: rgb(var(--color-surface-600) / 0.55);
+    color: rgb(var(--color-surface-100));
+  }
+
+  .shell-tab-notch-rail-vacant {
+    display: flex;
+    min-height: 5rem;
+    flex: 1 1 auto;
+    align-items: center;
+    justify-content: center;
+    padding: 0.75rem;
+    color: rgb(var(--color-surface-500));
     font-size: 0.7rem;
     font-weight: 450;
-  }
-
-  .shell-tab-notch-pane--vacant .shell-tab-notch-pane-empty-label {
-    color: rgb(var(--color-surface-500));
+    text-align: center;
   }
 
   .work-motion-control {

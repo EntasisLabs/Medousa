@@ -149,6 +149,23 @@ describe("shellTabs store", () => {
     expect(to?.tabIds).toContain(shellId);
   });
 
+  it("splits a host pane with a dragged tab on an edge", async () => {
+    const { shellTabs } = await import("./shellTabs.svelte");
+    const hostId = shellTabs.openChat("session-a", { activate: true });
+    expect(hostId).toBeTruthy();
+    const guestId = shellTabs.openChat("session-b", { activate: true });
+    expect(guestId).toBeTruthy();
+    const hostGroupId = shellTabs.activeGroupId;
+    expect(shellTabs.splitGroupWithTab(hostGroupId, guestId!, "bottom")).toBe(true);
+    expect(shellTabs.paneCount).toBe(2);
+    expect(shellTabs.activeTab?.id).toBe(guestId);
+    expect(shellTabs.splitRoot.type).toBe("branch");
+    if (shellTabs.splitRoot.type === "branch") {
+      expect(shellTabs.splitRoot.direction).toBe("row");
+      expect(shellTabs.splitRoot.b.type).toBe("group");
+    }
+  });
+
   it("refuses a fifth pane", async () => {
     const { shellTabs } = await import("./shellTabs.svelte");
     shellTabs.openChat("session-a", { activate: true });
@@ -159,12 +176,17 @@ describe("shellTabs store", () => {
     expect(shellTabs.paneCount).toBe(4);
   });
 
-  it("closes a pane and keeps at least one", async () => {
+  it("closes a pane by merging tabs into the sibling", async () => {
     const { shellTabs } = await import("./shellTabs.svelte");
-    shellTabs.openChat("session-a", { activate: true });
-    shellTabs.splitActive("right");
+    const tabId = shellTabs.openChat("session-a", { activate: true });
+    expect(tabId).toBeTruthy();
+    expect(shellTabs.splitActive("right")).toBe(true);
+    expect(shellTabs.paneCount).toBe(2);
+    expect(shellTabs.activeTab?.id).toBe(tabId);
     expect(shellTabs.closeActiveGroup()).toBe(true);
     expect(shellTabs.paneCount).toBe(1);
+    expect(shellTabs.tabs.some((tab) => tab.id === tabId)).toBe(true);
+    expect(shellTabs.activeTab?.id).toBe(tabId);
     expect(shellTabs.closeActiveGroup()).toBe(false);
   });
 

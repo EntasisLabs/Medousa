@@ -1,4 +1,4 @@
-import type { SplitDirection, SplitNode } from "$lib/types/shellTabs";
+import type { SplitDirection, SplitEdge, SplitNode } from "$lib/types/shellTabs";
 
 export const RATIO_MIN = 0.2;
 export const RATIO_MAX = 0.8;
@@ -28,14 +28,16 @@ export function findGroupLeaf(node: SplitNode, groupId: string): boolean {
   return findGroupLeaf(node.a, groupId) || findGroupLeaf(node.b, groupId);
 }
 
-/** Split the leaf `groupId` into a branch; returns new root + new group id. */
-export function splitLeaf(
+/** Split the leaf so the new group lands on `edge` of the host. */
+export function splitLeafAtEdge(
   root: SplitNode,
   groupId: string,
-  direction: SplitDirection,
+  edge: SplitEdge,
   newGroupId: string,
 ): { root: SplitNode; newGroupId: string } | null {
-  const branchDirection = direction === "right" ? "column" : "row";
+  const branchDirection = edge === "left" || edge === "right" ? "column" : "row";
+  const newFirst = edge === "left" || edge === "top";
+  const newLeaf: SplitNode = { type: "group", id: newGroupId };
 
   function walk(node: SplitNode): SplitNode | null {
     if (node.type === "group") {
@@ -45,8 +47,8 @@ export function splitLeaf(
         id: newSplitId("branch"),
         direction: branchDirection,
         ratio: RATIO_DEFAULT,
-        a: node,
-        b: { type: "group", id: newGroupId },
+        a: newFirst ? newLeaf : node,
+        b: newFirst ? node : newLeaf,
       };
     }
     const nextA = walk(node.a);
@@ -59,6 +61,40 @@ export function splitLeaf(
   const next = walk(root);
   if (!next) return null;
   return { root: next, newGroupId };
+}
+
+/** Split the leaf `groupId` into a branch; returns new root + new group id. */
+export function splitLeaf(
+  root: SplitNode,
+  groupId: string,
+  direction: SplitDirection,
+  newGroupId: string,
+): { root: SplitNode; newGroupId: string } | null {
+  return splitLeafAtEdge(
+    root,
+    groupId,
+    direction === "right" ? "right" : "bottom",
+    newGroupId,
+  );
+}
+
+/**
+ * Leaf group that should receive tabs when `groupId` is closed/merged —
+ * the sash-adjacent leaf in the immediate sibling subtree.
+ */
+export function mergeTargetForLeaf(root: SplitNode, groupId: string): string | null {
+  function walk(node: SplitNode): string | null {
+    if (node.type === "group") return null;
+    if (node.a.type === "group" && node.a.id === groupId) {
+      return collectGroupIds(node.b)[0] ?? null;
+    }
+    if (node.b.type === "group" && node.b.id === groupId) {
+      const ids = collectGroupIds(node.a);
+      return ids[ids.length - 1] ?? null;
+    }
+    return walk(node.a) ?? walk(node.b);
+  }
+  return walk(root);
 }
 
 /**

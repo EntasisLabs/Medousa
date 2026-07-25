@@ -7,6 +7,8 @@
     PanelLeft,
     PanelLeftClose,
     Plus,
+    Rows2,
+    SquareX,
   } from "@lucide/svelte";
   import ShellTabNotch from "$lib/components/shell/ShellTabNotch.svelte";
   import NewTabMenu from "$lib/components/layout/NewTabMenu.svelte";
@@ -14,6 +16,7 @@
   import { layout } from "$lib/stores/layout.svelte";
   import { environment } from "$lib/stores/environment.svelte";
   import { shellTabs } from "$lib/stores/shellTabs.svelte";
+  import { MAX_SHELL_PANES } from "$lib/types/shellTabs";
   import { titlebarMode, usesUnifiedTitlebar } from "$lib/platform";
   import { isTauri, showChatPopout } from "$lib/window";
 
@@ -23,6 +26,8 @@
   const railWidth = $derived(layout.shellSidebarWidth);
   const canNavBack = $derived(layout.canGoRailViewBack);
   const canNavForward = $derived(layout.canGoRailViewForward);
+  const canSplit = $derived(shellTabs.paneCount < MAX_SHELL_PANES);
+  const canMergePane = $derived(shellTabs.paneCount > 1);
   const showChatPopoutBtn = $derived(
     isTauri() && shellTabs.activeTab?.kind === "chat",
   );
@@ -47,6 +52,14 @@
 
   function splitRight() {
     shellTabs.splitActive("right");
+  }
+
+  function splitDown() {
+    shellTabs.splitActive("down");
+  }
+
+  function closePane() {
+    shellTabs.closeActiveGroup();
   }
 
   async function onDragDblClick(event: MouseEvent) {
@@ -152,9 +165,30 @@
         class="app-titlebar-btn"
         title="Split pane right"
         aria-label="Split pane right"
+        disabled={!canSplit}
         onclick={splitRight}
       >
         <Columns2 size={14} strokeWidth={1.75} />
+      </button>
+      <button
+        type="button"
+        class="app-titlebar-btn"
+        title="Split pane down"
+        aria-label="Split pane down"
+        disabled={!canSplit}
+        onclick={splitDown}
+      >
+        <Rows2 size={14} strokeWidth={1.75} />
+      </button>
+      <button
+        type="button"
+        class="app-titlebar-btn"
+        title="Close pane · merge tabs"
+        aria-label="Close pane and merge tabs"
+        disabled={!canMergePane}
+        onclick={closePane}
+      >
+        <SquareX size={14} strokeWidth={1.75} />
       </button>
     </div>
 

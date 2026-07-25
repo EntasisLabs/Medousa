@@ -3,9 +3,11 @@ import {
   countLeaves,
   leafOrder,
   neighborInDirection,
+  mergeTargetForLeaf,
   removeLeaf,
   setBranchRatio,
   splitLeaf,
+  splitLeafAtEdge,
 } from "./shellSplitTree";
 import type { SplitNode } from "$lib/types/shellTabs";
 
@@ -23,6 +25,34 @@ describe("shellSplitTree", () => {
     }
   });
 
+  it("places the new leaf on the requested edge", () => {
+    const root: SplitNode = { type: "group", id: "main" };
+
+    const left = splitLeafAtEdge(root, "main", "left", "g2");
+    expect(left?.root.type).toBe("branch");
+    if (left?.root.type === "branch") {
+      expect(left.root.direction).toBe("column");
+      expect(left.root.a).toEqual({ type: "group", id: "g2" });
+      expect(left.root.b).toEqual({ type: "group", id: "main" });
+    }
+
+    const top = splitLeafAtEdge(root, "main", "top", "g3");
+    expect(top?.root.type).toBe("branch");
+    if (top?.root.type === "branch") {
+      expect(top.root.direction).toBe("row");
+      expect(top.root.a).toEqual({ type: "group", id: "g3" });
+      expect(top.root.b).toEqual({ type: "group", id: "main" });
+    }
+
+    const bottom = splitLeafAtEdge(root, "main", "bottom", "g4");
+    expect(bottom?.root.type).toBe("branch");
+    if (bottom?.root.type === "branch") {
+      expect(bottom.root.direction).toBe("row");
+      expect(bottom.root.a).toEqual({ type: "group", id: "main" });
+      expect(bottom.root.b).toEqual({ type: "group", id: "g4" });
+    }
+  });
+
   it("removes a leaf and promotes sibling", () => {
     const root: SplitNode = {
       type: "branch",
@@ -35,6 +65,27 @@ describe("shellSplitTree", () => {
     const result = removeLeaf(root, "g2");
     expect(result.removed).toBe(true);
     expect(result.root).toEqual({ type: "group", id: "main" });
+  });
+
+  it("picks the sash-adjacent leaf as the merge target", () => {
+    const root: SplitNode = {
+      type: "branch",
+      id: "b1",
+      direction: "column",
+      ratio: 0.5,
+      a: { type: "group", id: "main" },
+      b: {
+        type: "branch",
+        id: "b2",
+        direction: "row",
+        ratio: 0.5,
+        a: { type: "group", id: "g2" },
+        b: { type: "group", id: "g3" },
+      },
+    };
+    expect(mergeTargetForLeaf(root, "main")).toBe("g2");
+    expect(mergeTargetForLeaf(root, "g3")).toBe("g2");
+    expect(mergeTargetForLeaf(root, "g2")).toBe("g3");
   });
 
   it("refuses removing the last leaf", () => {
