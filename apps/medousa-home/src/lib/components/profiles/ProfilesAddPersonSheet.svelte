@@ -78,7 +78,7 @@
           <span class="workshop-label">Name</span>
           <input
             class="input mt-1 w-full text-sm"
-            placeholder="Mario"
+            placeholder="Name"
             bind:value={name}
             disabled={readOnly || busy}
           />
@@ -87,7 +87,7 @@
           <span class="workshop-label">Relationship</span>
           <input
             class="input mt-1 w-full text-sm"
-            placeholder="partner, colleague, mom…"
+            placeholder="Role — colleague, collaborator, family…"
             bind:value={role}
             disabled={readOnly || busy}
           />

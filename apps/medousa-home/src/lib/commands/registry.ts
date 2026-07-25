@@ -365,11 +365,12 @@ export function buildPaneCommands(): WorkshopCommand[] {
       },
     },
     {
-      id: "pane-cheat-sheet",
+      id: "keyboard-shortcuts",
       section: "advanced",
-      label: "Pane keyboard shortcuts",
-      subtitle: `${formatShortcut("Ctrl+; ?")} — cheat sheet for splits and focus`,
-      keywords: "cheat sheet help shortcuts pane tmux window keyboard binds",
+      label: "Keyboard shortcuts",
+      subtitle: `${formatShortcut("Ctrl+; ?")} — panes, vault, global binds`,
+      keywords:
+        "cheat sheet help shortcuts pane tmux window keyboard binds hotkeys keymap bindings",
       advanced: true,
       run: (ctx) => {
         shellTabs.requestCheatSheet();

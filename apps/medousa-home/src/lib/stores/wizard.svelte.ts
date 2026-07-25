@@ -10,6 +10,11 @@ import {
   startEngine,
   type WizardApplyScreen1Request,
 } from "$lib/utils/providersApi";
+import {
+  ensureLocalModelReady,
+  loadLocalEngine,
+  type ModelDownloadProgress,
+} from "$lib/utils/localInferenceApi";
 import { isTauriMobilePlatform } from "$lib/platform";
 import { isTauri } from "$lib/window";
 import { completeGarageOnboarding } from "$lib/utils/garageOnboarding";
@@ -65,6 +70,13 @@ class WizardStore {
   preferredMode = $state<PreferredMode | null>(loadPreferredMode());
   /** Engine warms in the background — never surface status in the wizard. */
   private engineWarmStarted = false;
+
+  /** Offline brain model download — non-blocking across brain → Ready. */
+  brainModelId = $state<string | null>(null);
+  brainDownloadProgress = $state<ModelDownloadProgress | null>(null);
+  brainDownloadError = $state<string | null>(null);
+  brainEngineReady = $state(false);
+  private brainPrepGeneration = 0;
 
   async bootstrap() {
     this.loading = true;
@@ -231,6 +243,114 @@ class WizardStore {
     await this.skipCurrent();
     this.markPathComplete();
     this.uiPhase = "ready";
+  }
+
+  /**
+   * Start (or switch) offline model download + engine load without blocking Continue.
+   * Safe to call repeatedly when the operator changes model size.
+   */
+  beginBrainModelPrep(modelId: string) {
+    const trimmed = modelId.trim();
+    if (!trimmed || !isTauri() || isTauriMobilePlatform()) return;
+    if (
+      this.brainModelId === trimmed &&
+      (this.brainEngineReady ||
+        (this.brainDownloadProgress &&
+          this.brainDownloadProgress.phase !== "failed" &&
+          !this.brainDownloadError))
+    ) {
+      return;
+    }
+
+    this.brainModelId = trimmed;
+    this.brainDownloadError = null;
+    this.brainEngineReady = false;
+    this.brainDownloadProgress = {
+      jobId: "starting",
+      modelId: trimmed,
+      phase: "queued",
+      bytesDone: 0,
+      bytesTotal: 0,
+      percent: 0,
+      message: "Starting download…",
+    };
+
+    const generation = ++this.brainPrepGeneration;
+    void this.runBrainModelPrep(trimmed, generation);
+  }
+
+  retryBrainModelPrep() {
+    const modelId = this.brainModelId;
+    if (!modelId) return;
+    // Clear so beginBrainModelPrep does not early-return on the failed job.
+    this.brainDownloadError = null;
+    this.brainEngineReady = false;
+    this.brainDownloadProgress = null;
+    this.brainModelId = null;
+    this.beginBrainModelPrep(modelId);
+  }
+
+  private async runBrainModelPrep(modelId: string, generation: number) {
+    try {
+      await ensureLocalModelReady(modelId, (progress) => {
+        if (generation !== this.brainPrepGeneration) return;
+        this.brainDownloadProgress = progress;
+        if (progress.phase === "failed") {
+          this.brainDownloadError = progress.error ?? progress.message;
+        }
+      });
+      if (generation !== this.brainPrepGeneration) return;
+
+      this.brainDownloadProgress = {
+        jobId: "loading",
+        modelId,
+        phase: "loading",
+        bytesDone: 0,
+        bytesTotal: 0,
+        percent: 100,
+        message: "Loading local engine…",
+      };
+      const engine = await loadLocalEngine(modelId);
+      if (generation !== this.brainPrepGeneration) return;
+      if (!engine.loaded) {
+        this.brainDownloadError = engine.message;
+        this.brainDownloadProgress = {
+          jobId: "failed",
+          modelId,
+          phase: "failed",
+          bytesDone: 0,
+          bytesTotal: 0,
+          percent: 0,
+          message: engine.message,
+          error: engine.message,
+        };
+        return;
+      }
+      this.brainEngineReady = true;
+      this.brainDownloadProgress = {
+        jobId: "ready",
+        modelId,
+        phase: "ready",
+        bytesDone: 0,
+        bytesTotal: 0,
+        percent: 100,
+        message: "Offline brain ready",
+      };
+    } catch (err) {
+      if (generation !== this.brainPrepGeneration) return;
+      const message = err instanceof Error ? err.message : String(err);
+      this.brainDownloadError = message;
+      this.brainDownloadProgress = {
+        jobId: "failed",
+        modelId,
+        phase: "failed",
+        bytesDone: 0,
+        bytesTotal: 0,
+        percent: 0,
+        message,
+        error: message,
+      };
+    }
   }
 
   private async seedDesktopChrome(mode: PreferredMode) {

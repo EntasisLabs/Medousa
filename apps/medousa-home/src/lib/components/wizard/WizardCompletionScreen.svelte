@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { LoaderCircle } from "@lucide/svelte";
   import { wizard } from "$lib/stores/wizard.svelte";
   import { workshops } from "$lib/stores/workshops.svelte";
   import { settings } from "$lib/stores/settings.svelte";
@@ -17,6 +18,24 @@
     COLOR_THEME_OPTIONS.find((t) => t.id === settings.colorTheme)?.swatches[1] ??
       "rgb(var(--color-primary-400))",
   );
+
+  const brainProgress = $derived(wizard.brainDownloadProgress);
+  const showBrainStatus = $derived(
+    !workspaceOnly &&
+      !isTauriMobilePlatform() &&
+      Boolean(wizard.brainModelId) &&
+      !wizard.brainEngineReady,
+  );
+  const brainStatusLabel = $derived.by(() => {
+    if (wizard.brainDownloadError) return wizard.brainDownloadError;
+    if (!brainProgress) return "Preparing offline brain…";
+    if (brainProgress.phase === "loading") return "Loading offline brain…";
+    const pct = Math.round(brainProgress.percent);
+    if (pct > 0 && pct < 100) {
+      return `Downloading ${brainProgress.modelId}… ${pct}%`;
+    }
+    return brainProgress.message || "Downloading offline brain…";
+  });
 </script>
 
 <div class="wizard-step wizard-stagger items-center justify-center text-center">
@@ -59,6 +78,29 @@
       Open Notes — or talk to {assistant} when a thought shows up.
     {/if}
   </p>
+
+  {#if showBrainStatus}
+    <div class="wizard-beat mt-6 max-w-md text-sm text-surface-400" role="status">
+      {#if wizard.brainDownloadError}
+        <p class="text-warning-200">{brainStatusLabel}</p>
+        <button
+          type="button"
+          class="workshop-text-action mt-2 text-xs"
+          onclick={() => wizard.retryBrainModelPrep()}
+        >
+          Retry download
+        </button>
+      {:else}
+        <p class="inline-flex items-center justify-center gap-2">
+          <LoaderCircle class="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+          {brainStatusLabel}
+        </p>
+        <p class="mt-1 text-xs text-surface-500">
+          You can open your desk — the download finishes in the background.
+        </p>
+      {/if}
+    </div>
+  {/if}
 
   <div class="wizard-beat mt-12">
     <button

@@ -46,7 +46,7 @@
       flashOk = result.committed || !result.requires_confirmation;
       if (result.committed) {
         text = "";
-        flash = "She'll remember that.";
+        flash = "Saved to your profile.";
       } else {
         flash = result.message;
       }
@@ -78,7 +78,7 @@
       bind:this={inputEl}
       class="composer-bar-input min-h-[2.5rem] w-full flex-1 resize-none bg-transparent py-1 text-sm leading-relaxed text-surface-100 placeholder:text-surface-500 focus:outline-none"
       rows="1"
-      placeholder="Tell her something she should remember…"
+      placeholder="Add a fact about you or a preference…"
       bind:value={text}
       disabled={readOnly || busy}
       onkeydown={onKeydown}
@@ -94,6 +94,6 @@
     </button>
   </div>
   <p class="workshop-faint mt-2 text-[11px]">
-    Plain language works — “Mario is my partner”, “I prefer matcha”, your timezone.
+    Timezone, how you like answers, people’s names and roles at work.
   </p>
 </div>

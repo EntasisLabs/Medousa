@@ -72,16 +72,18 @@ flowchart LR
 
 ## F0 — Onboarding brain path (non-blocking download)
 
+**Status:** ✅ Done (2026-07)
+
 **Goal:** Offline / recommended brain setup never says “go to Settings” as the primary path, and never traps Continue on a long download.
 
-| ID | Deliverable | Acceptance |
-|----|-------------|------------|
-| F0.1 | In-wizard **install Offline brain** when `!engineAvailable` | Calls package install API; progress in wizard; no Settings bounce as happy path |
-| F0.2 | **Background model download** | Selecting recommended model starts download; Continue / Skip / Ready remain available |
-| F0.3 | Progress without trap | Ready (or discreet chip) shows download/load status; failure offers retry without trapping |
-| F0.4 | Copy pass on brain step | “Install & download” language; Settings Packages only as Advanced/fallback |
+| ID | Deliverable | Acceptance | Status |
+|----|-------------|------------|--------|
+| F0.1 | In-wizard **install Offline brain** when `!engineAvailable` | Calls package install API; progress in wizard; no Settings bounce as happy path | ✅ |
+| F0.2 | **Background model download** | Selecting recommended model starts download; Continue / Skip / Ready remain available | ✅ |
+| F0.3 | Progress without trap | Ready (or discreet chip) shows download/load status; failure offers retry without trapping | ✅ |
+| F0.4 | Copy pass on brain step | “Install & download” language; Settings Packages only as Advanced/fallback | ✅ |
 
-**Code anchors:** `WizardWelcomeScreen.svelte`, `packagesApi.ts`, `localInferenceApi.ts` (`ensureLocalModelReady`), `wizard.svelte.ts`.
+**Code anchors:** `WizardWelcomeScreen.svelte`, `packagesApi.ts`, `localInferenceApi.ts` (`ensureLocalModelReady`), `wizard.svelte.ts`, `WizardCompletionScreen.svelte`.
 
 **Exit:** Clean machine → Recommended path → brain installs + weights download → operator can reach Ready without opening Settings.
 
@@ -89,35 +91,43 @@ flowchart LR
 
 ## F1 — First-run tone (earn intimacy)
 
-**Goal:** Day-one copy is clear and respectful; familiar examples wait until Profiles / later use.
+**Status:** ✅ Profiles teach slice done (2026-07) — wizard ownership + Presence “we” **kept** by product decision
 
-| ID | Deliverable | Acceptance |
-|----|-------------|------------|
-| F1.1 | Retire overly familiar teach examples | No “Mario is my partner” / “I prefer matcha” as first teach hints |
-| F1.2 | Neutral placeholders | Add-person / teach placeholders stay generic (name, role, preference) |
-| F1.3 | Wizard restraint | Soften “This feels right”, “The desk is yours”, over-familiar completion lines |
-| F1.4 | Presence empty state | Replace “What are we doing…?” with invitation that doesn’t assume “we” yet |
-| F1.5 | Profiles / Context “she” pass | Prefer Medousa / you language on first surfaces; keep warmth where relationship is chosen |
+**Goal:** Day-one Profiles teach copy is identity + preferences — not invasive intimacy fishing.
 
-**Code anchors:** `ProfilesTeachComposer.svelte`, `ProfilesAddPersonSheet.svelte`, `WizardPersonalizeScreen.svelte`, `WizardCompletionScreen.svelte`, `formatSession.ts` (`presenceSubline`), identity empty-state helpers.
+| ID | Deliverable | Acceptance | Status |
+|----|-------------|------------|--------|
+| F1.1 | Retire overly familiar teach examples | No “Mario is my partner” / “I prefer matcha” as first teach hints | ✅ |
+| F1.2 | Neutral placeholders | Add-person / teach placeholders stay generic (name, role, preference) | ✅ |
+| F1.3 | Wizard restraint | Soften “This feels right”, “The desk is yours”, over-familiar completion lines | ⏸ **kept** — ownership voice is intentional |
+| F1.4 | Presence empty state | Replace “What are we doing…?” with invitation that doesn’t assume “we” yet | ⏸ **kept** — collaborative “we” is intentional |
+| F1.5 | Profiles / Context “she” pass | Prefer Medousa / you language on first surfaces; keep warmth where relationship is chosen | ⬜ later (teach/success flash already neutralized) |
 
-**Exit:** First ten minutes feel professional-warm, not prematurely intimate.
+**Code anchors:** `ProfilesTeachComposer.svelte`, `ProfilesAddPersonSheet.svelte` (this slice).
+
+**Exit (this slice):** Teach / add-person examples read as identity + prefs without oversharing pressure.
 
 ---
 
 ## F2 — Wayfinding (lost soul finds a place)
 
-**Goal:** Empty states and nav answer orientation in one glance.
+**Status:** ✅ Bindings discoverability done (2026-07) — empty-state UI wayfinding next
 
-| ID | Deliverable | Acceptance |
-|----|-------------|------------|
-| F2.1 | Chat empty / Presence | One clear next action (type, or open Notes) |
-| F2.2 | Vault / Library empty | Bring files / start a note — no garage poetry that confuses |
-| F2.3 | Scripts / Automations empty | What this surface is + one CTA |
-| F2.4 | Settings IA labels | Plain nouns; Advanced stays advanced |
-| F2.5 | Mobile More hub | Destinations describe place, not intimacy thesis |
+**Goal (this round):** One discoverable keyboard-shortcuts reference that matches real binds; light conflict hygiene. **Next round:** empty states + surface reordering.
 
-**Exit:** New user can name Chat, Notes, Scripts, Settings without hunting.
+| ID | Deliverable | Acceptance | Status |
+|----|-------------|------------|--------|
+| F2.0 | **Keyboard shortcuts catalog + sheet** | `keyboardShortcutsCatalog.ts`; `Ctrl+; ?` / Spotlight / Basement open multi-section sheet; labels via `formatShortcut` | ✅ |
+| F2.0b | Hotkey conflict hygiene | Skip zoom / toolbar summon on editable targets; Ctrl+B still global; unit + catalog snapshot tests | ✅ |
+| F2.1 | Chat empty / Presence | One clear next action (type, or open Notes) | ⬜ next |
+| F2.2 | Vault / Library empty | Bring files / start a note — no garage poetry that confuses | ⬜ |
+| F2.3 | Scripts / Automations empty | What this surface is + one CTA | ⬜ |
+| F2.4 | Settings IA labels | Plain nouns; Advanced stays advanced | ⬜ |
+| F2.5 | Mobile More hub | Destinations describe place, not intimacy thesis | ⬜ |
+
+**Exit (this round):** Lost souls can answer “what can I press?” in one place; binds match handlers.
+
+**Exit (full F2):** New user can name Chat, Notes, Scripts, Settings without hunting.
 
 ---
 
@@ -178,9 +188,9 @@ Not the main 0.6 polish story. Keep only if still product-blocking:
 
 ## Suggested order
 
-1. **F0** — brain install + non-blocking download (highest first-run pain)  
-2. **F1** — tone restraint (cheap, high felt impact)  
-3. **F2** — wayfinding empty states  
+1. ~~**F0** — brain install + non-blocking download~~ ✅  
+2. ~~**F1** — Profiles teach examples (ownership / “we” kept)~~ ✅  
+3. ~~**F2** — bindings discoverability~~ ✅ → next: empty-state wayfinding  
 4. **F3 + F4** — surface + Spotlight interactions (parallel)  
 5. **F5** — motion pass once interactions settle  
 6. **F6** — only as needed for ship

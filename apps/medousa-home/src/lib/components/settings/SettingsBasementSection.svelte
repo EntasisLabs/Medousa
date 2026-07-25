@@ -18,8 +18,10 @@
   import { restartEngine, waitForEngine } from "$lib/utils/providersApi";
   import { vault } from "$lib/stores/vault.svelte";
   import { settings } from "$lib/stores/settings.svelte";
+  import { shellTabs } from "$lib/stores/shellTabs.svelte";
   import { resetGarageOnboarding } from "$lib/utils/garageOnboarding";
   import { wizard } from "$lib/stores/wizard.svelte";
+  import { formatCatalogKeys } from "$lib/utils/keyboardShortcutsCatalog";
   import SettingsLocalBrainPanel from "$lib/components/settings/SettingsLocalBrainPanel.svelte";
   import { fetchPackageStatus, type PackageStatusSummary } from "$lib/utils/packagesApi";
   import SettingsWorkshopsSection from "$lib/components/settings/SettingsWorkshopsSection.svelte";
@@ -262,6 +264,16 @@
     <p class="workshop-faint mt-1 text-sm">
       Pick which workshop you’re in — then how this Mac runs it.
     </p>
+    {#if !mobile}
+      <button
+        type="button"
+        class="workshop-text-action mt-2 text-xs"
+        onclick={() => shellTabs.requestCheatSheet()}
+      >
+        Keyboard shortcuts
+        <span class="text-surface-500"> · {formatCatalogKeys("prefix:?")}</span>
+      </button>
+    {/if}
   </header>
 
   <!-- 1. Story lead: your workshops -->
