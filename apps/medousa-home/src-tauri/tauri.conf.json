@@ -39,6 +39,9 @@
     "active": true,
     "targets": "all",
     "externalBin": ["binaries/medousa_daemon"],
+    "resources": [
+      "resources/docs/runbooks/connection-reliability.md"
+    ],
     "iOS": {
       "minimumSystemVersion": "16.2",
       "developmentTeam": "K5SZ28RN9P",

@@ -33,6 +33,7 @@ Living component docs remain at `architecture/` root. Decisions: [../../docs/arc
 | [medousa-home-context-view-plan.md](medousa-home-context-view-plan.md) | Context view |
 | [medousa-home-messaging-polish-plan.md](medousa-home-messaging-polish-plan.md) | Messaging polish |
 | [home-ui-polish-plan.md](home-ui-polish-plan.md) | Streaming, thinking, work hygiene |
+| [polish-and-package-plan-capability-era.md](polish-and-package-plan-capability-era.md) | Pre-0.6 P0–P7 expose-the-engine polish (superseded) |
 | [presentation-and-envelope-plan.md](presentation-and-envelope-plan.md) | Chat presentation |
 | [continuity-first-redesign.md](continuity-first-redesign.md) | Continuity redesign |
 | [composer-voice-presets-plan.md](composer-voice-presets-plan.md) | Voice presets |

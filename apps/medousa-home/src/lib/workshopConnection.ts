@@ -25,6 +25,7 @@ import {
 import { isTauriMobilePlatform } from "$lib/platform";
 import { sendPairingHeartbeat } from "$lib/utils/pairingClient";
 import { haptic } from "$lib/haptics";
+import { ensureWorkshopEngineHealthy } from "$lib/utils/ensureWorkshopEngine";
 import {
   checkDaemonHealth,
   getDaemonUrl,
@@ -295,24 +296,23 @@ export async function resumeWorkshopObserver(
   resumeWorkshopInFlight = true;
   lastResumeWorkshopAt = now;
 
-  await invalidateRouteCaches().catch(() => {});
-
-  let health: DaemonHealth;
   try {
-    health = await checkDaemonHealth();
+    await invalidateRouteCaches().catch(() => {});
+    // Observer does not own spawn — main window / connectWorkshop does.
+    const health = await checkDaemonHealth();
+    connection.setHealth(health);
+    onHealthChange(health);
+    if (!health.ok) return;
+
+    await workspace.reconcileCardsFromSnapshot();
+    await Promise.all([
+      chat.reconcileOnResume({ notice: false }, workspace.cards),
+      chat.hydrateAskThreads(workspace.cards),
+    ]);
+    await workspace.recoverPendingWorkerResults();
   } finally {
     resumeWorkshopInFlight = false;
   }
-  connection.setHealth(health);
-  onHealthChange(health);
-  if (!health.ok) return;
-
-  await workspace.reconcileCardsFromSnapshot();
-  await Promise.all([
-    chat.reconcileOnResume({ notice: false }, workspace.cards),
-    chat.hydrateAskThreads(workspace.cards),
-  ]);
-  await workspace.recoverPendingWorkerResults();
 }
 
 export function attachWorkshopObserverForegroundResume(
@@ -339,77 +339,77 @@ export async function resumeWorkshop(
   resumeWorkshopInFlight = true;
   lastResumeWorkshopAt = now;
 
-  if (isTauriMobilePlatform()) {
-    void sendPairingHeartbeat().catch(() => {});
-  }
-
-  // A network handoff (WiFi↔LTE, Mac sleep/DHCP) may have happened while we were
-  // backgrounded. Flush both route caches so the health probe below re-picks
-  // LAN vs Iroh instead of riding a stale cached route for the rest of its TTL.
-  await invalidateRouteCaches().catch(() => {});
-
-  let health: DaemonHealth;
   try {
-    health = await checkDaemonHealth();
+    if (isTauriMobilePlatform()) {
+      void sendPairingHeartbeat().catch(() => {});
+    }
+
+    // A network handoff (WiFi↔LTE, Mac sleep/DHCP) may have happened while we were
+    // backgrounded. Flush both route caches so the health probe below re-picks
+    // LAN vs Iroh instead of riding a stale cached route for the rest of its TTL.
+    await invalidateRouteCaches().catch(() => {});
+
+    // P0.3 — if the sidecar died over sleep, spawn again before giving up.
+    const health = await ensureWorkshopEngineHealthy({ allowSpawn: true });
+    connection.setHealth(health);
+    onHealthChange(health);
+    if (!health.ok) return;
+
+    void registerBrowserHostClient(health);
+
+    // Cards first so handoff synthesis recovery has an authoritative board.
+    await workspace.reconcileCardsFromSnapshot();
+
+    await Promise.all([
+      chat.reconcileOnResume({ notice: false }, workspace.cards),
+      chat.hydrateAskThreads(workspace.cards),
+      userProfiles.syncOnResume(health),
+      // If the WebView was evicted while backgrounded, the open note's path
+      // survives but its body does not. Re-fetch so the reader is not blank.
+      vault.selectedPath && !vault.content
+        ? vault.reloadFromServer()
+        : Promise.resolve(),
+    ]);
+
+    // History merge may link workers missed while SSE was detached.
+    await workspace.recoverPendingWorkerResults();
+
+    try {
+      await restartWorkshopStreamsLite();
+    } catch {
+      scheduleWorkspaceStreamReconnect();
+    }
+
+    // Glance surfaces (Live Activity / home widget) need a forced quiet/working sync
+    // after cards refresh — otherwise they stay stuck on the pre-background snapshot.
+    if (isTauriMobilePlatform()) {
+      try {
+        const { isTauriIos } = await import("$lib/platform");
+        if (isTauriIos()) {
+          const { bumpLiveActivitySync, syncLiveActivity, buildLiveActivityPayload } =
+            await import("$lib/liveActivity");
+          const { bumpHomeWidgetSync, syncHomeWidget } = await import("$lib/homeWidget");
+          const payload = buildLiveActivityPayload({
+            health,
+            cards: workspace.cards,
+            blocked: workspace.blockedCount(),
+            inMotion: workspace.inMotionCount(),
+            primaryCard: workspace.primaryInMotionCard(),
+            workshopName: workshops.activeLabel,
+          });
+          bumpLiveActivitySync();
+          bumpHomeWidgetSync();
+          if (settings.liveActivityEnabled) {
+            void syncLiveActivity(payload, { force: true });
+          }
+          void syncHomeWidget(payload, { force: true });
+        }
+      } catch {
+        // Glance sync is best-effort on resume.
+      }
+    }
   } finally {
     resumeWorkshopInFlight = false;
-  }
-  connection.setHealth(health);
-  onHealthChange(health);
-  if (!health.ok) return;
-
-  void registerBrowserHostClient(health);
-
-  // Cards first so handoff synthesis recovery has an authoritative board.
-  await workspace.reconcileCardsFromSnapshot();
-
-  await Promise.all([
-    chat.reconcileOnResume({ notice: false }, workspace.cards),
-    chat.hydrateAskThreads(workspace.cards),
-    userProfiles.syncOnResume(health),
-    // If the WebView was evicted while backgrounded, the open note's path
-    // survives but its body does not. Re-fetch so the reader is not blank.
-    vault.selectedPath && !vault.content
-      ? vault.reloadFromServer()
-      : Promise.resolve(),
-  ]);
-
-  // History merge may link workers missed while SSE was detached.
-  await workspace.recoverPendingWorkerResults();
-
-  try {
-    await restartWorkshopStreamsLite();
-  } catch {
-    scheduleWorkspaceStreamReconnect();
-  }
-
-  // Glance surfaces (Live Activity / home widget) need a forced quiet/working sync
-  // after cards refresh — otherwise they stay stuck on the pre-background snapshot.
-  if (isTauriMobilePlatform()) {
-    try {
-      const { isTauriIos } = await import("$lib/platform");
-      if (isTauriIos()) {
-        const { bumpLiveActivitySync, syncLiveActivity, buildLiveActivityPayload } =
-          await import("$lib/liveActivity");
-        const { bumpHomeWidgetSync, syncHomeWidget } = await import("$lib/homeWidget");
-        const payload = buildLiveActivityPayload({
-          health,
-          cards: workspace.cards,
-          blocked: workspace.blockedCount(),
-          inMotion: workspace.inMotionCount(),
-          primaryCard: workspace.primaryInMotionCard(),
-          workshopName: workshops.activeLabel,
-        });
-        bumpLiveActivitySync();
-        bumpHomeWidgetSync();
-        if (settings.liveActivityEnabled) {
-          void syncLiveActivity(payload, { force: true });
-        }
-        void syncHomeWidget(payload, { force: true });
-      }
-    } catch {
-      // Glance sync is best-effort on resume.
-    }
   }
 }
 
@@ -433,7 +433,7 @@ export async function reconnectWorkshop(
   cancelScheduledStreamRecovery();
   await ensureMobileDaemonUrl();
   await invalidateRouteCaches().catch(() => {});
-  const health = await checkDaemonHealth();
+  const health = await ensureWorkshopEngineHealthy({ allowSpawn: true });
   connection.setHealth(health);
   onHealthChange(health);
 
@@ -487,7 +487,11 @@ export function connectWorkshop(options: {
       connection.setHealth(null);
       options.onHealthChange(null);
       await ensureMobileDaemonUrl();
-      const health = await checkDaemonHealth();
+      // P0.1 — day-2+ launch: spawn local engine when health is down (wizard warm
+      // only runs while the first-run sheet is visible).
+      const health = await ensureWorkshopEngineHealthy({
+        allowSpawn: mode === "full",
+      });
       connection.setHealth(health);
       options.onHealthChange(health);
 

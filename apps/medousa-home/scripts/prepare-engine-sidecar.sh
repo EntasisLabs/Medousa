@@ -195,3 +195,12 @@ if [[ "${WITH_LOCAL_BRAIN}" -eq 1 ]]; then
   chmod +x "${BINARIES_DIR}/${LOCAL_SIDECAR_NAME}"
   echo "prepare-engine-sidecar: ${BINARIES_DIR}/${LOCAL_SIDECAR_NAME}"
 fi
+
+# P0.5 — keep packaged Diagnostics runbook in sync with docs/
+RUNBOOK_SRC="${MEDOUSA_ROOT}/docs/runbooks/connection-reliability.md"
+RUNBOOK_DST="${HOME_DIR}/src-tauri/resources/docs/runbooks/connection-reliability.md"
+if [[ -f "${RUNBOOK_SRC}" ]]; then
+  mkdir -p "$(dirname "${RUNBOOK_DST}")"
+  cp -f "${RUNBOOK_SRC}" "${RUNBOOK_DST}"
+  echo "prepare-engine-sidecar: ${RUNBOOK_DST}"
+fi
