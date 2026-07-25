@@ -84,6 +84,8 @@ function surfaceTitle(surfaceId: string): string {
       return "Channels";
     case "context":
       return "Context";
+    case "map":
+      return "Map";
     case "work":
       return "Work";
     case "calendar":

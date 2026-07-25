@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Activity, Brain, Map, MessagesSquare } from "@lucide/svelte";
+  import { Activity, Brain, MessagesSquare } from "@lucide/svelte";
   import { contextShell } from "$lib/stores/contextShell.svelte";
   import { CONTEXT_TABS, type ContextTabId } from "$lib/types/context";
 
@@ -12,7 +12,6 @@
     { id: "recall", label: "Recall", hint: "Facts and people she remembers", icon: Brain },
     { id: "threads", label: "Threads", hint: "Moments from your sessions", icon: MessagesSquare },
     { id: "posture", label: "Posture", hint: "How you showed up", icon: Activity },
-    { id: "map", label: "Map", hint: "See how sessions connect", icon: Map },
   ];
 
   const activeTab = $derived(contextShell.activeTab);

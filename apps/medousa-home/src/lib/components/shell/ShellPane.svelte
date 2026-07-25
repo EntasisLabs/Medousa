@@ -6,6 +6,7 @@
   import WebPaneIdle from "$lib/components/shell/WebPaneIdle.svelte";
   import { chatStreamPool } from "$lib/stores/chatStreamPool.svelte";
   import ContextPanel from "$lib/components/context/ContextPanel.svelte";
+  import MapPanel from "$lib/components/context/MapPanel.svelte";
   import EnvironmentRenderer from "$lib/components/environment/EnvironmentRenderer.svelte";
   import SettingsPanel from "$lib/components/layout/SettingsPanel.svelte";
   import LmePanel from "$lib/components/lme/LmePanel.svelte";
@@ -209,6 +210,8 @@
                 await chat.switchSession(sessionId);
               }}
             />
+          {:else if showSurface === "map"}
+            <MapPanel visible={true} />
           {:else if showSurface === "profiles"}
             <ProfilesPanel visible={true} onOpenChat={onOpenChat} />
           {:else if showSurface === "peers"}

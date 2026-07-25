@@ -1,6 +1,4 @@
 <script lang="ts">
-  import ContextMapMomentDetail from "$lib/components/context/ContextMapMomentDetail.svelte";
-  import ContextMapView from "$lib/components/context/ContextMapView.svelte";
   import ContextModeBar from "$lib/components/context/ContextModeBar.svelte";
   import ContextPostureDetail from "$lib/components/context/ContextPostureDetail.svelte";
   import ContextPostureList from "$lib/components/context/ContextPostureList.svelte";
@@ -31,7 +29,6 @@
     findRelatedThreadsForClaim,
     hasKnownChatSession,
   } from "$lib/utils/contextCrossLinks";
-  import type { ContextMapNode } from "$lib/utils/contextMap";
   import { ChevronLeft, X } from "@lucide/svelte";
   import { registerMobileBackHandler } from "$lib/mobileNavigation";
 
@@ -52,7 +49,6 @@
   const selectedRecallId = $derived(contextShell.selectedRecallId);
   const selectedThreadId = $derived(contextShell.selectedThreadId);
   const selectedPostureId = $derived(contextShell.selectedPostureId);
-  const selectedMapNodeId = $derived(contextShell.selectedMapNodeId);
   let mobileDetailOpen = $state(false);
 
   const sessionLabels = $derived(
@@ -131,46 +127,20 @@
       : false,
   );
 
-  const mapThreadSyncKey = $derived(
-    selectedMapNodeId?.startsWith("thread:")
-      ? selectedMapNodeId.slice("thread:".length)
-      : null,
-  );
-  const mapThreadSessionId = $derived(
-    mapThreadSyncKey
-      ? (contextThreads.detail?.node.session_id ??
-        contextThreads.nodes.find((node) => node.sync_key === mapThreadSyncKey)?.session_id ??
-        null)
-      : null,
-  );
-  const mapThreadChatAvailable = $derived(
-    mapThreadSessionId ? hasKnownChatSession(mapThreadSessionId, chatSessionIds) : false,
-  );
-  const mapThreadPostureAvailable = $derived(
-    mapThreadSessionId
-      ? postureEntries.some((entry) => entry.sessionId === mapThreadSessionId)
-      : false,
-  );
-
   const searchPlaceholder = $derived.by(() => {
-    if (activeTab === "map") return "Search sessions and moments…";
     if (activeTab === "threads") return "Search session moments…";
     if (activeTab === "posture") return "Search sessions or mood…";
     return "Search what she remembers…";
   });
 
   const mobileDetailLabel = $derived.by(() => {
-    if (activeTab === "map") return "Map detail";
     if (activeTab === "threads") return "Thread detail";
     if (activeTab === "posture") return "Posture detail";
     return "Recall detail";
   });
 
   const showRefresh = $derived(
-    activeTab === "recall" ||
-      activeTab === "threads" ||
-      activeTab === "posture" ||
-      activeTab === "map",
+    activeTab === "recall" || activeTab === "threads" || activeTab === "posture",
   );
 
   $effect(() => {
@@ -205,18 +175,6 @@
     if (!visible || activeTab !== "posture") return;
     void chat.refreshSessions();
     void contextPosture.refresh();
-  });
-
-  $effect(() => {
-    if (!visible || activeTab !== "map") return;
-    void contextThreads.refresh();
-    void chat.refreshSessions();
-    void contextPosture.refresh();
-  });
-
-  $effect(() => {
-    if (activeTab !== "map" || !mapThreadSyncKey) return;
-    void contextThreads.loadDetail(mapThreadSyncKey);
   });
 
   $effect(() => {
@@ -295,22 +253,6 @@
     if (mobile) mobileDetailOpen = true;
   }
 
-  function clearMapFocus() {
-    contextShell.selectMapNode(null);
-    contextThreads.clearDetail();
-    mobileDetailOpen = false;
-  }
-
-  function focusMapNode(node: ContextMapNode) {
-    contextShell.selectMapNode(node.id);
-    if (node.kind === "thread" && node.syncKey) {
-      void contextThreads.loadDetail(node.syncKey);
-      if (mobile) mobileDetailOpen = true;
-      return;
-    }
-    contextThreads.clearDetail();
-  }
-
   function clearThreadSessionFilter() {
     contextShell.clearThreadSessionFilter();
     mobileDetailOpen = false;
@@ -377,19 +319,13 @@
     if (activeTab === "posture") {
       void chat.refreshSessions();
       void contextPosture.refresh();
-      return;
-    }
-    if (activeTab === "map") {
-      void contextThreads.refresh();
-      void chat.refreshSessions();
-      void contextPosture.refresh();
     }
   }
 
   const refreshLoading = $derived(
     activeTab === "recall"
       ? identity.loading
-      : activeTab === "threads" || activeTab === "map"
+      : activeTab === "threads"
         ? contextThreads.loading
         : contextPosture.loading,
   );
@@ -628,75 +564,6 @@
                       selectedPostureEntry.sessionId,
                       selectedPostureEntry.latestSyncKey,
                     )
-                : undefined
-            }
-          />
-        </div>
-      {/if}
-    </div>
-  {:else if activeTab === "map"}
-    <div class="flex min-h-0 flex-1 overflow-hidden">
-      {#if !mobile || !mobileDetailOpen}
-        <div
-          class="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden {mobile
-            ? 'w-full'
-            : mapThreadSyncKey
-              ? 'border-r border-surface-500/40'
-              : ''}"
-        >
-          <ContextMapView
-            nodes={contextThreads.nodes}
-            {sessionLabels}
-            {search}
-            loading={contextThreads.loading}
-            error={contextThreads.error}
-            selectedNodeId={selectedMapNodeId}
-            onFocusNode={focusMapNode}
-            onClearSelection={clearMapFocus}
-          />
-        </div>
-      {/if}
-
-      {#if mobile && mobileDetailOpen && mapThreadSyncKey}
-        <div
-          class="workshop-detail-pane mobile-you-scroll min-w-0 flex-1 overflow-y-auto px-4 py-4"
-        >
-          <ContextMapMomentDetail
-            detail={contextThreads.detail}
-            loading={contextThreads.detailLoading}
-            error={contextThreads.detailError}
-            chatSessionAvailable={mapThreadChatAvailable}
-            postureAvailable={mapThreadPostureAvailable}
-            onOpenChat={
-              mapThreadSessionId && onOpenChat
-                ? () => openChatForSession(mapThreadSessionId)
-                : undefined
-            }
-            onOpenPosture={
-              mapThreadSessionId
-                ? () => openPostureForSession(mapThreadSessionId)
-                : undefined
-            }
-          />
-        </div>
-      {:else if !mobile && mapThreadSyncKey}
-        <div
-          class="workshop-detail-pane mobile-you-scroll min-w-0 w-[min(380px,38%)] shrink-0 overflow-y-auto border-l border-surface-500/40 px-4 py-4"
-        >
-          <ContextMapMomentDetail
-            detail={contextThreads.detail}
-            loading={contextThreads.detailLoading}
-            error={contextThreads.detailError}
-            chatSessionAvailable={mapThreadChatAvailable}
-            postureAvailable={mapThreadPostureAvailable}
-            onOpenChat={
-              mapThreadSessionId && onOpenChat
-                ? () => openChatForSession(mapThreadSessionId)
-                : undefined
-            }
-            onOpenPosture={
-              mapThreadSessionId
-                ? () => openPostureForSession(mapThreadSessionId)
                 : undefined
             }
           />

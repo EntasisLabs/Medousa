@@ -1,6 +1,7 @@
 <script lang="ts">
   import SessionSidebar from "$lib/components/chat/SessionSidebar.svelte";
   import ContextSidePanel from "$lib/components/context/ContextSidePanel.svelte";
+  import MapSidePanel from "$lib/components/context/MapSidePanel.svelte";
   import SessionRailToolbar from "$lib/components/chat/SessionRailToolbar.svelte";
   import ContextModeBar from "$lib/components/context/ContextModeBar.svelte";
   import NavRailViewPopover from "$lib/components/layout/NavRailViewPopover.svelte";
@@ -483,10 +484,9 @@
   }
 
   /**
-   * Row click — host the list in the master rail when available; otherwise open
-   * the main surface (custom destinations without a rail view).
-   * Settings also opens its center tab immediately — sections live in the rail,
-   * but SettingsPanel only mounts as a shell surface.
+   * Row click — host the list in the master rail when available, and open the
+   * matching center tab/surface so switching doors actually changes context.
+   * Custom destinations without a rail view just navigate.
    */
   function selectDestination(surfaceId: string, event?: MouseEvent) {
     event?.preventDefault();
@@ -495,9 +495,7 @@
     ensureFamilyForSurface(surfaceId);
     if (surfaceHasShellSidebarView(surfaceId)) {
       layout.openShellSidebarView(surfaceId);
-      if (surfaceId === SAFETY_SURFACE_SETTINGS) {
-        onSelect(surfaceId);
-      }
+      onSelect(surfaceId);
       return;
     }
     onSelect(surfaceId);
@@ -612,7 +610,9 @@
           {:else if viewSurface === "peers"}
             <PeersShellList />
           {:else if viewSurface === "context"}
-            <ContextSidePanel />
+            <ContextSidePanel onRedirectMap={() => onSelect("map")} />
+          {:else if viewSurface === "map"}
+            <MapSidePanel onPick={() => onSelect("map")} />
           {:else if viewSurface === "web"}
             <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
               <div class="min-h-0 flex-1 overflow-hidden">
@@ -1048,7 +1048,10 @@
       <ContextSidePanel
         chrome="rail-list"
         onPick={() => commitPopoverSurface("context")}
+        onRedirectMap={() => commitPopoverSurface("map")}
       />
+    {:else if popover.surfaceId === "map"}
+      <MapSidePanel onPick={() => commitPopoverSurface("map")} />
     {:else if popover.surfaceId === "web"}
       <WebRailList onPickTab={() => commitPopoverSurface("web")} />
     {:else if popover.surfaceId === "calendar"}

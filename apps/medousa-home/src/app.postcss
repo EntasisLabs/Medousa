@@ -229,11 +229,18 @@
 
   .context-map-view {
     @apply flex h-full min-h-0 flex-1 flex-col;
-    background-color: rgb(var(--color-surface-950) / 0.4);
+    background:
+      radial-gradient(ellipse at 30% 20%, rgb(var(--color-primary-500) / 0.06), transparent 48%),
+      radial-gradient(ellipse at 70% 80%, rgb(var(--color-tertiary-500) / 0.05), transparent 52%),
+      rgb(var(--color-surface-950) / 0.42);
+  }
+
+  .context-map-view-rail .context-map-whisper {
+    @apply px-2 py-1.5 text-[10px];
   }
 
   .context-map-whisper {
-    @apply shrink-0 border-b border-surface-500/35 px-4 py-2 text-[11px] leading-relaxed text-surface-400;
+    @apply shrink-0 border-b border-surface-500/25 px-4 py-2 text-[11px] leading-relaxed text-surface-500;
   }
 
   .context-map-stage {
@@ -249,12 +256,24 @@
     cursor: grabbing;
   }
 
+  .context-map-viewport-dragging-node {
+    cursor: grabbing;
+  }
+
   .context-map-viewport-pinching {
     cursor: zoom-in;
   }
 
   .context-map-controls {
     @apply absolute right-3 top-3 z-10 flex flex-col gap-1;
+  }
+
+  .context-map-viewport-rail .context-map-controls {
+    @apply right-2 top-2 gap-0.5;
+  }
+
+  .context-map-viewport-rail .context-map-control-btn {
+    @apply h-6 w-6 text-xs;
   }
 
   .context-map-control-btn {
@@ -278,8 +297,20 @@
   }
 
   .context-map-legend {
-    @apply absolute bottom-3 left-3 z-10 flex flex-wrap gap-x-3 gap-y-1 rounded-lg border border-surface-500/40 px-3 py-2;
-    background-color: rgb(var(--color-surface-900) / 0.88);
+    @apply absolute bottom-3 left-3 z-10 flex flex-wrap gap-x-3 gap-y-1 rounded-lg border border-surface-500/30 px-3 py-2;
+    background-color: rgb(var(--color-surface-900) / 0.78);
+  }
+
+  .context-map-viewport-rail .context-map-legend {
+    @apply bottom-2 left-2 max-w-[calc(100%-1rem)] gap-x-2 px-2 py-1;
+  }
+
+  .context-map-viewport-rail .context-map-legend-item {
+    @apply text-[9px] gap-1;
+  }
+
+  .context-map-viewport-rail .context-map-hover-card {
+    @apply left-2 top-2 max-w-[11.5rem] px-2 py-1.5;
   }
 
   .context-map-legend-item {
@@ -323,42 +354,43 @@
   }
 
   .context-map-backdrop {
-    fill: rgb(var(--color-surface-900) / 0.32);
+    fill: rgb(var(--color-surface-900) / 0.18);
     pointer-events: none;
   }
 
   .context-map-edge {
     pointer-events: none;
+    stroke-linecap: round;
   }
 
   .context-map-edge-session_chain {
-    stroke: rgb(var(--color-surface-400) / 0.38);
-    stroke-width: 1.15;
+    stroke: rgb(var(--color-surface-400) / 0.22);
+    stroke-width: 0.95;
   }
 
   .context-map-edge-membership {
-    stroke: rgb(var(--color-tertiary-400, var(--color-tertiary-500)) / 0.58);
-    stroke-width: 1.35;
+    stroke: rgb(var(--color-tertiary-400, var(--color-tertiary-500)) / 0.28);
+    stroke-width: 0.9;
   }
 
   .context-map-edge-sequence {
-    stroke: rgb(var(--color-primary-300) / 0.62);
-    stroke-dasharray: 5 4;
-    stroke-width: 1.25;
+    stroke: rgb(var(--color-primary-300) / 0.32);
+    stroke-dasharray: 3 5;
+    stroke-width: 0.95;
   }
 
   .context-map-edge-highlight {
-    stroke: rgb(var(--color-primary-200) / 0.95) !important;
-    stroke-width: 2.1 !important;
+    stroke: rgb(var(--color-primary-200) / 0.85) !important;
+    stroke-width: 1.6 !important;
   }
 
   .context-map-edge-ghost {
-    stroke-width: 1;
-    opacity: 0.28;
+    stroke-width: 0.75;
+    opacity: 0.18;
   }
 
   .context-map-edge-dimmed {
-    opacity: 0.12;
+    opacity: 0.08;
   }
 
   .context-map-edge-neighbor {
@@ -366,18 +398,18 @@
   }
 
   .context-map-viewport-focused .context-map-edge-neighbor.context-map-edge-membership {
-    stroke: rgb(var(--color-tertiary-300) / 0.82);
-    stroke-width: 1.55;
+    stroke: rgb(var(--color-tertiary-300) / 0.55);
+    stroke-width: 1.15;
   }
 
   .context-map-viewport-focused .context-map-edge-neighbor.context-map-edge-sequence {
-    stroke: rgb(var(--color-primary-200) / 0.88);
-    stroke-width: 1.5;
+    stroke: rgb(var(--color-primary-200) / 0.62);
+    stroke-width: 1.1;
   }
 
   .context-map-viewport-focused .context-map-edge-neighbor.context-map-edge-session_chain {
-    stroke: rgb(var(--color-surface-300) / 0.72);
-    stroke-width: 1.35;
+    stroke: rgb(var(--color-surface-300) / 0.48);
+    stroke-width: 1.05;
   }
 
   .context-map-hover-card {
@@ -398,8 +430,12 @@
   }
 
   .context-map-node {
-    cursor: pointer;
+    cursor: grab;
     transition: opacity 160ms ease;
+  }
+
+  .context-map-node-dragging {
+    cursor: grabbing;
   }
 
   .context-map-node-dimmed .context-map-node-dot {
@@ -441,11 +477,11 @@
   }
 
   .context-map-node-glow-session {
-    fill: rgb(var(--color-primary-400) / 0.22);
+    fill: rgb(var(--color-primary-400) / 0.14);
   }
 
   .context-map-node-glow-thread {
-    fill: rgb(var(--color-tertiary-400) / 0.2);
+    fill: rgb(var(--color-tertiary-400) / 0.12);
   }
 
   .context-map-node-glow-selected {
@@ -482,9 +518,9 @@
   }
 
   .context-map-node-dot-session {
-    fill: rgb(var(--color-primary-400) / 0.96);
-    stroke: rgb(var(--color-primary-300) / 0.92);
-    stroke-width: 2.25;
+    fill: rgb(var(--color-primary-400) / 0.78);
+    stroke: rgb(var(--color-primary-300) / 0.55);
+    stroke-width: 1.5;
   }
 
   .context-map-node-kind-session[data-accent="1"] .context-map-node-dot-session {
@@ -629,9 +665,13 @@
     stroke-width: 2px;
   }
 
+  .context-map-viewport-rail .context-map-node-label {
+    @apply text-[9px];
+  }
+
   .context-map-node-label-whisper {
-    @apply fill-surface-300;
-    opacity: 0.86;
+    @apply fill-surface-400;
+    opacity: 0.72;
   }
 
   .context-map-node-label-neighbor {

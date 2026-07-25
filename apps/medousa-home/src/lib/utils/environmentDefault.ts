@@ -34,6 +34,7 @@ function defaultSurfaces() {
     { id: "calendar", label: "Calendar", icon: "calendar-days", builtinId: "calendar" },
     { id: "web", label: "Web", icon: "globe", builtinId: "web", mobileTab: "web" },
     { id: "context", label: "Context", icon: "orbit", builtinId: "context" },
+    { id: "map", label: "Map", icon: "compass", builtinId: "map" },
     { id: "automations", label: "Automations", icon: "zap", builtinId: "automations" },
     { id: "messaging", label: "Messaging", icon: "radio", builtinId: "messaging" },
     {
@@ -201,6 +202,75 @@ export function ensureCalendarSurfaceInSpec(spec: EnvironmentSpec): EnvironmentS
   };
 }
 
+function mapSurfaceDef(): SurfaceDef {
+  return (
+    defaultSurfaces().find((surface) => surface.id === "map") ?? {
+      id: "map",
+      label: "Map",
+      icon: "compass",
+      kind: "builtin",
+      builtinId: "map",
+      layout: "single",
+      slots: [],
+      mobileTab: null,
+    }
+  );
+}
+
+function placeMapAfterContext(surfaceIds: string[]): string[] {
+  if (surfaceIds.includes("map")) return surfaceIds;
+  const next = [...surfaceIds];
+  const contextAt = next.indexOf("context");
+  if (contextAt >= 0) {
+    next.splice(contextAt + 1, 0, "map");
+    return next;
+  }
+  const libraryAt = next.indexOf("library");
+  if (libraryAt >= 0) {
+    next.splice(libraryAt + 1, 0, "map");
+    return next;
+  }
+  next.push("map");
+  return next;
+}
+
+/** Ensure Map exists after Context in the rail. */
+export function ensureMapSurfaceInSpec(spec: EnvironmentSpec): EnvironmentSpec {
+  const hasMap = spec.surfaces.some((surface) => surface.id === "map");
+  let surfaces = [...spec.surfaces];
+
+  if (!hasMap) {
+    const contextIndex = surfaces.findIndex((surface) => surface.id === "context");
+    const insertAt = contextIndex >= 0 ? contextIndex + 1 : surfaces.length;
+    surfaces.splice(insertAt, 0, mapSurfaceDef());
+  }
+
+  const layoutPresets = (spec.layoutPresets ?? []).map((preset) => ({
+    ...preset,
+    surfaces: placeMapAfterContext(preset.surfaces),
+  }));
+
+  const surfacesChanged =
+    surfaces.length !== spec.surfaces.length ||
+    surfaces.some((surface, index) => surface.id !== spec.surfaces[index]?.id);
+  const presetsChanged = (spec.layoutPresets ?? []).some((preset, index) => {
+    const next = layoutPresets[index];
+    if (!next) return true;
+    if (preset.surfaces.length !== next.surfaces.length) return true;
+    return preset.surfaces.some((id, i) => id !== next.surfaces[i]);
+  });
+
+  if (!surfacesChanged && !presetsChanged) {
+    return spec;
+  }
+
+  return {
+    ...spec,
+    surfaces,
+    layoutPresets: layoutPresets.length > 0 ? layoutPresets : spec.layoutPresets,
+  };
+}
+
 export function defaultEnvironmentSpec(
   profileId = DEFAULT_PROFILE_ID,
 ): EnvironmentSpec {
@@ -223,7 +293,15 @@ export function defaultEnvironmentSpec(
         id: "focus",
         label: "Focus",
         active: false,
-        surfaces: ["chat", "peers", "work", "library", SAFETY_SURFACE_SETTINGS, SAFETY_SURFACE_RUNTIME],
+        surfaces: [
+          "chat",
+          "peers",
+          "work",
+          "library",
+          "map",
+          SAFETY_SURFACE_SETTINGS,
+          SAFETY_SURFACE_RUNTIME,
+        ],
         shellChrome: defaultShellChrome(),
       },
     ],

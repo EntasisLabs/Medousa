@@ -8,6 +8,7 @@
   import { contextShell } from "$lib/stores/contextShell.svelte";
   import { contextThreads } from "$lib/stores/contextThreads.svelte";
   import { identity } from "$lib/stores/identity.svelte";
+  import { layout } from "$lib/stores/layout.svelte";
   import {
     buildContextPostureEntries,
     filterContextPostureEntries,
@@ -20,21 +21,31 @@
     buildContextThreadEntries,
     filterContextThreadEntries,
   } from "$lib/utils/contextThreads";
-  import { Map as MapIcon, X } from "@lucide/svelte";
+  import { X } from "@lucide/svelte";
 
   interface Props {
     /** Fired after a recall/thread/posture pick (e.g. open context from a rail popover). */
     onPick?: () => void;
+    /** Fired when a stale Context "map" tab is redirected to the Map surface. */
+    onRedirectMap?: () => void;
     /** `rail-list` hides the mode bar (it lives in the rail popover strip). */
     chrome?: "default" | "rail-list";
   }
 
-  let { onPick, chrome = "default" }: Props = $props();
+  let { onPick, onRedirectMap, chrome = "default" }: Props = $props();
 
   const showModeBar = $derived(chrome !== "rail-list");
 
   const activeTab = $derived(contextShell.activeTab);
   const search = $derived(contextShell.search);
+
+  /** Old builds stored Map under Context tabs — promote to the Map rail surface. */
+  $effect(() => {
+    if ((contextShell.activeTab as string) !== "map") return;
+    contextShell.setTab("recall");
+    layout.openShellSidebarView("map");
+    onRedirectMap?.();
+  });
 
   const sessionLabels = $derived(
     Object.fromEntries(
@@ -72,7 +83,6 @@
   );
 
   const searchPlaceholder = $derived.by(() => {
-    if (activeTab === "map") return "Search sessions and moments…";
     if (activeTab === "threads") return "Search session moments…";
     if (activeTab === "posture") return "Search sessions or mood…";
     return "Search what she remembers…";
@@ -144,7 +154,7 @@
           onPick?.();
         }}
       />
-    {:else if activeTab === "posture"}
+    {:else}
       <ContextPostureList
         {search}
         entries={filteredPostureEntries}
@@ -156,19 +166,6 @@
           onPick?.();
         }}
       />
-    {:else}
-      <div class="flex flex-col items-center gap-2 px-3 py-8 text-center">
-        <span
-          class="inline-flex size-9 items-center justify-center rounded-lg bg-surface-800/70 text-surface-400"
-          aria-hidden="true"
-        >
-          <MapIcon size={16} strokeWidth={1.75} />
-        </span>
-        <p class="text-sm font-medium text-surface-200">Map in the main view</p>
-        <p class="workshop-faint text-xs leading-relaxed">
-          Search filters the graph beside this rail.
-        </p>
-      </div>
     {/if}
   </div>
 </div>

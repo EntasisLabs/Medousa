@@ -19,9 +19,9 @@ export const MAP_KIND_VISUALS: Record<ContextMapNodeKind, MapKindVisual> = {
     label: "Session",
     shortLabel: "Session",
     hue: 265,
-    saturation: 72,
-    light: 58,
-    strokeLight: 82,
+    saturation: 48,
+    light: 54,
+    strokeLight: 72,
     shape: "circle",
   },
   thread: {
@@ -29,9 +29,9 @@ export const MAP_KIND_VISUALS: Record<ContextMapNodeKind, MapKindVisual> = {
     label: "Moment",
     shortLabel: "Moment",
     hue: 168,
-    saturation: 64,
-    light: 48,
-    strokeLight: 72,
+    saturation: 42,
+    light: 46,
+    strokeLight: 64,
     shape: "rounded-square",
   },
   claim: {
@@ -102,7 +102,7 @@ export function mapDisplayLabel(
   if (mode === "neighbor") {
     return truncateMapLabel(base, kind === "session" ? 22 : 16);
   }
-  return truncateMapLabel(base, 13);
+  return truncateMapLabel(base, 11);
 }
 
 export function resolveMapLabelMode(options: {

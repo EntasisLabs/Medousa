@@ -6,6 +6,7 @@ export type BuiltinSurface =
   | "calendar"
   | "web"
   | "context"
+  | "map"
   | "profiles"
   | "workshop"
   | "automations"

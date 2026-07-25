@@ -28,6 +28,7 @@ export const NAV_DESTINATION_GROUPS: Array<{ label: string; surfaceIds: string[]
       "automations",
       "web",
       "context",
+      "map",
       "calendar",
     ],
   },

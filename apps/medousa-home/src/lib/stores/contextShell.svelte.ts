@@ -9,6 +9,7 @@ export class ContextShellStore {
   selectedRecallId = $state<string | null>(null);
   selectedThreadId = $state<string | null>(null);
   selectedPostureId = $state<string | null>(null);
+  /** Shared with the Map surface (rail graph + center detail). */
   selectedMapNodeId = $state<string | null>(null);
 
   setTab(tab: ContextTabId) {
@@ -18,7 +19,6 @@ export class ContextShellStore {
     this.selectedRecallId = null;
     this.selectedThreadId = null;
     this.selectedPostureId = null;
-    this.selectedMapNodeId = null;
     if (tab !== "threads") {
       this.threadSessionFilter = null;
     }
