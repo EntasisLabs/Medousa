@@ -1,10 +1,8 @@
 export type SettingsSectionId =
   | "preferences"
   | "agent"
-  | "reach"
-  | "shell"
+  | "runtime"
   | "versions"
-  | "engine"
   | "shared"
   | "phone"
   | "nearby"
@@ -51,9 +49,12 @@ export const SETTINGS_SECTIONS: SettingsSectionDef[] = [
     hint: "Stance, memory & models",
     group: "her",
   },
-  { id: "reach", label: "Reach", hint: "Tools she may use", group: "tools" },
-  { id: "shell", label: "Shell", hint: "Process sandbox & commands", group: "tools" },
-  { id: "engine", label: "Engine", hint: "Speed, budgets & diagnostics", group: "tools" },
+  {
+    id: "runtime",
+    label: "Runtime Controls",
+    hint: "Reach, shell & engine",
+    group: "tools",
+  },
   { id: "shared", label: "Shared", hint: "Team seats on this brain", group: "people" },
   { id: "phone", label: "Phone", hint: "Pair your phone", group: "people" },
   { id: "nearby", label: "Nearby", hint: "Peers, bundles & trust", group: "people" },

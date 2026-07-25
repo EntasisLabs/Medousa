@@ -705,11 +705,11 @@ export function buildTuneCommands(): WorkshopCommand[] {
     {
       id: "tune-engine-settings",
       section: "tune",
-      label: "Engine settings",
-      subtitle: "Tool budgets, quality & diagnostics",
-      keywords: "engine budgets quality diagnostics verifier",
+      label: "Runtime controls",
+      subtitle: "Reach, shell, budgets & diagnostics",
+      keywords: "engine budgets quality diagnostics verifier reach shell runtime",
       run: (ctx) => {
-        ctx.openSettingsSection("engine");
+        ctx.openSettingsSection("runtime");
         ctx.callbacks.close();
       },
     },

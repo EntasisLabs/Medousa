@@ -9,6 +9,8 @@ function migrateSectionId(raw: string): SettingsSectionId | null {
   if (raw === "room" || raw === "rhythm") return "preferences";
   // Memory + Models + Voice merged into Medousa Agent.
   if (raw === "memory" || raw === "models" || raw === "voice") return "agent";
+  // Reach + Shell + Engine merged into Runtime Controls.
+  if (raw === "reach" || raw === "shell" || raw === "engine") return "runtime";
   if (!SECTION_IDS.has(raw as SettingsSectionId)) return null;
   return raw as SettingsSectionId;
 }

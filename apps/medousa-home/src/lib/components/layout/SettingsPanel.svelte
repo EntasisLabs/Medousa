@@ -4,10 +4,8 @@
   import SettingsNav from "$lib/components/settings/SettingsNav.svelte";
   import SettingsPreferencesSection from "$lib/components/settings/SettingsPreferencesSection.svelte";
   import SettingsAgentSection from "$lib/components/settings/SettingsAgentSection.svelte";
-  import SettingsReachSection from "$lib/components/settings/SettingsReachSection.svelte";
-  import SettingsShellSection from "$lib/components/settings/SettingsShellSection.svelte";
+  import SettingsRuntimeSection from "$lib/components/settings/SettingsRuntimeSection.svelte";
   import SettingsVersionsSection from "$lib/components/settings/SettingsVersionsSection.svelte";
-  import SettingsEngineSection from "$lib/components/settings/SettingsEngineSection.svelte";
   import SettingsSharedModeSection from "$lib/components/settings/SettingsSharedModeSection.svelte";
   import SettingsPhoneSection from "$lib/components/settings/SettingsPhoneSection.svelte";
   import SettingsLanShareSection from "$lib/components/settings/SettingsLanShareSection.svelte";
@@ -143,14 +141,10 @@
         <SettingsPreferencesSection {mobile} />
       {:else if activeSection === "agent"}
         <SettingsAgentSection {mobile} />
-      {:else if activeSection === "reach"}
-        <SettingsReachSection {mobile} />
-      {:else if activeSection === "shell"}
-        <SettingsShellSection {mobile} />
+      {:else if activeSection === "runtime"}
+        <SettingsRuntimeSection {mobile} />
       {:else if activeSection === "versions"}
         <SettingsVersionsSection {mobile} />
-      {:else if activeSection === "engine"}
-        <SettingsEngineSection {mobile} />
       {:else if activeSection === "shared"}
         <SettingsSharedModeSection {mobile} />
       {:else if activeSection === "phone"}

@@ -20,8 +20,10 @@ describe("settings nav chapters", () => {
     expect(groups).toEqual(["space", "her", "tools", "people", "machine"]);
   });
 
-  it("places engine under tools and connection under machine", () => {
-    expect(settingsSectionById("engine")?.group).toBe("tools");
+  it("places runtime under tools and connection under machine", () => {
+    expect(settingsSectionById("runtime")?.group).toBe("tools");
+    expect(settingsSectionById("runtime")?.label).toBe("Runtime Controls");
+    expect(SETTINGS_SECTIONS.filter((section) => section.group === "tools")).toHaveLength(1);
     expect(settingsSectionById("basement")?.group).toBe("machine");
     expect(settingsSectionById("basement")?.label).toBe("Connection");
   });
