@@ -332,6 +332,55 @@ pub struct SessionHistoryListRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct CreateSessionRequest {
+    /// Optional client-supplied id; daemon mints a uuid when omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
+    /// `single` (default) or `shared`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub catalog: Option<String>,
+    /// Required for `catalog: shared` — member seat profile ids.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub member_profile_ids: Option<Vec<String>>,
+    /// Agent persona for shared rooms (defaults to `user:general` in Shared mode).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_profile_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct CreateSessionResponse {
+    pub session_id: String,
+    pub catalog: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub member_profile_ids: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_profile_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct SharedModeStatusResponse {
+    pub mode: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enabled_at: Option<DateTime<Utc>>,
+    pub root_profile_id: String,
+    pub general_profile_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct SetSharedModeRequest {
+    /// `shared` or `personal`.
+    pub mode: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct SessionHistoryListResponse {
     pub sessions: Vec<SessionHistorySummary>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

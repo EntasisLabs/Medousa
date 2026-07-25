@@ -1,15 +1,18 @@
 use axum::extract::{Path as AxumPath, Query, State};
-use axum::http::StatusCode;
+use axum::http::{HeaderMap, StatusCode};
 use axum::Json;
 use std::sync::Arc;
+use uuid::Uuid;
 
 use stasis::ports::outbound::memory::memory_operations::MemoryOperations;
 
 use crate::daemon_api::{
-    SessionAppendTurnRequest, SessionAppendTurnResponse, SessionDeleteQuery, SessionDeleteResponse,
-    SessionHistoryListRequest, SessionHistoryListResponse, SessionHistoryResponse,
-    SessionSetDisplayNameRequest, SessionSetDisplayNameResponse,
+    CreateSessionRequest, CreateSessionResponse, SessionAppendTurnRequest,
+    SessionAppendTurnResponse, SessionDeleteQuery, SessionDeleteResponse, SessionHistoryListRequest,
+    SessionHistoryListResponse, SessionHistoryResponse, SessionSetDisplayNameRequest,
+    SessionSetDisplayNameResponse,
 };
+use crate::shared_session_catalog::SessionCatalogKind;
 use crate::turn_ticket::TurnTicketRegistry;
 
 #[derive(Clone)]
@@ -20,6 +23,7 @@ pub struct SessionDeleteState {
 
 /// Session history HTTP handlers extracted to library so they can be tested.
 pub async fn list_session_history(
+    headers: HeaderMap,
     Query(request): Query<SessionHistoryListRequest>,
 ) -> Result<Json<SessionHistoryListResponse>, (StatusCode, String)> {
     let limit = request.limit.unwrap_or(200).clamp(1, 1000);
@@ -33,7 +37,13 @@ pub async fn list_session_history(
         .as_deref()
         .map(str::trim)
         .filter(|value| !value.is_empty());
-    let mut page = crate::session::list_history_sessions_page(limit, query, cursor);
+    let profile_id = crate::pairing::resolve_request_profile_id(&headers);
+    let mut page = crate::session::list_history_sessions_page_for_profile(
+        profile_id.as_deref(),
+        limit,
+        query,
+        cursor,
+    );
     if request.include_verification == Some(false) {
         page.sessions = page
             .sessions
@@ -45,6 +55,72 @@ pub async fn list_session_history(
         sessions: page.sessions,
         next_cursor: page.next_cursor,
     }))
+}
+
+pub async fn create_session(
+    headers: HeaderMap,
+    Json(request): Json<CreateSessionRequest>,
+) -> Result<Json<CreateSessionResponse>, (StatusCode, String)> {
+    let catalog = SessionCatalogKind::parse(request.catalog.as_deref());
+    let session_id = request
+        .session_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| format!("session-{}", Uuid::new_v4().simple()));
+    let display_name = request
+        .display_name
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+
+    match catalog {
+        SessionCatalogKind::Single => {
+            crate::session_catalog::ensure_named_session(&session_id, display_name.clone());
+            Ok(Json(CreateSessionResponse {
+                session_id,
+                catalog: catalog.as_str().to_string(),
+                display_name,
+                member_profile_ids: Vec::new(),
+                agent_profile_id: None,
+            }))
+        }
+        SessionCatalogKind::Shared => {
+            if !crate::shared_mode::is_shared_mode() {
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    "shared sessions require Shared mode".to_string(),
+                ));
+            }
+            let mut members = request.member_profile_ids.unwrap_or_default();
+            if members.is_empty() {
+                if let Some(bound) = crate::pairing::resolve_request_profile_id(&headers) {
+                    members.push(bound);
+                } else {
+                    members.push(crate::user_profiles::resolve_workshop_identity_user_id());
+                }
+            }
+            let row = crate::shared_session_catalog::create_shared_session(
+                &session_id,
+                members,
+                request.agent_profile_id.clone(),
+                display_name.clone(),
+            )
+            .map_err(|err| (StatusCode::BAD_REQUEST, err.to_string()))?;
+            if let Some(name) = display_name.as_deref() {
+                let _ = crate::session_meta_store::set_session_display_name(&session_id, name);
+            }
+            Ok(Json(CreateSessionResponse {
+                session_id: row.session_id,
+                catalog: catalog.as_str().to_string(),
+                display_name: row.display_name,
+                member_profile_ids: row.member_profile_ids,
+                agent_profile_id: row.agent_profile_id,
+            }))
+        }
+    }
 }
 
 pub async fn get_session_history(

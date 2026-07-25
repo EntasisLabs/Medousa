@@ -804,6 +804,25 @@ pub fn record_turn_appended(session_id: &str, turn: &ConversationTurn) {
         return;
     }
 
+    // Shared rooms live in a separate index — never create a conflicting single-catalog row.
+    if crate::shared_session_catalog::get_shared_row(session_id).is_some() {
+        let preview = preview_from_turn(turn);
+        let title = if turn.role == "user" {
+            auto_title_from_turn(turn)
+        } else {
+            None
+        };
+        let _ = crate::shared_session_catalog::touch_shared_session(
+            session_id,
+            preview.as_deref(),
+            title.as_deref(),
+        );
+        if let Some(title) = title.as_deref() {
+            let _ = crate::session_meta_store::set_session_display_name(session_id, title);
+        }
+        return;
+    }
+
     let mut row = catalog_store()
         .get_row(session_id)
         .unwrap_or_else(|| SessionCatalogRow::empty_session(session_id));

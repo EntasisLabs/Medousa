@@ -117,6 +117,13 @@ pub fn is_shared_mode() -> bool {
     current_mode().is_shared()
 }
 
+pub fn enabled_at() -> Option<chrono::DateTime<Utc>> {
+    config_slot()
+        .read()
+        .expect("shared mode lock")
+        .enabled_at
+}
+
 pub fn root_profile_id() -> String {
     format_profile_id(ROOT_PROFILE_SLUG)
 }

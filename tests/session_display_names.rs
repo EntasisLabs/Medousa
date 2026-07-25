@@ -40,12 +40,15 @@ async fn set_and_list_session_display_name_via_handlers() {
         Some("Research Sprint")
     );
 
-    let list_res = list_session_history(axum::extract::Query(SessionHistoryListRequest {
-        limit: Some(50),
-        include_verification: None,
-        q: None,
-        cursor: None,
-    }))
+    let list_res = list_session_history(
+        axum::http::HeaderMap::new(),
+        axum::extract::Query(SessionHistoryListRequest {
+            limit: Some(50),
+            include_verification: None,
+            q: None,
+            cursor: None,
+        }),
+    )
     .await;
     assert!(list_res.is_ok());
     let Json(list) = list_res.unwrap();

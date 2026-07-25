@@ -390,7 +390,11 @@ pub fn build_core_router(state: AppState) -> Router {
         .route("/health", get(health))
         .route("/v1/stats", get(stats))
         .route("/v1/runtime/defaults", get(runtime_defaults))
-        .route("/v1/sessions", get(crate::daemon_handlers::list_session_history))
+        .route(
+            "/v1/sessions",
+            get(crate::daemon_handlers::list_session_history)
+                .post(crate::daemon_handlers::create_session),
+        )
         .route(
             "/v1/sessions/{session_id}/history",
             get(crate::daemon_handlers::get_session_history),
@@ -499,6 +503,11 @@ pub fn build_core_router(state: AppState) -> Router {
         .route("/v1/identity/profiles/active", put(set_active_user_profile))
         .route("/v1/identity/profiles/export", post(export_user_profile))
         .route("/v1/identity/profiles/import", post(import_user_profile))
+        .route(
+            "/v1/shared-mode",
+            get(crate::daemon::shared_mode::shared_mode_status)
+                .put(crate::daemon::shared_mode::set_shared_mode),
+        )
         .route("/v1/identity/update/propose", post(identity_propose_update))
         .route("/v1/identity/update/commit", post(identity_commit_update))
         .route("/v1/identity/history", post(identity_list_history))

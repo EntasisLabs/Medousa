@@ -321,6 +321,18 @@ pub fn touch_shared_session(
     upsert_shared_row(&row)
 }
 
+pub fn set_shared_display_name(session_id: &str, display_name: &str) -> Result<()> {
+    let Some(mut row) = get_shared_row(session_id) else {
+        bail!("shared session not found: {session_id}");
+    };
+    let name = display_name.trim();
+    if name.is_empty() {
+        bail!("display_name must not be empty");
+    }
+    row.display_name = Some(name.chars().take(AUTO_TITLE_MAX_CHARS).collect());
+    upsert_shared_row(&row)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

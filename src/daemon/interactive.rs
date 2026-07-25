@@ -5,7 +5,7 @@ use std::sync::Arc;
 use medousa_engine::{Principal, TurnEnvelope, TurnLifecyclePorts, TurnStreamRegistryPort, run_turn};
 
 use axum::extract::{Path as AxumPath, Query, State};
-use axum::http::StatusCode;
+use axum::http::{HeaderMap, StatusCode};
 use axum::Json;
 use chrono::Utc;
 use serde::Deserialize;
@@ -269,9 +269,20 @@ pub async fn spawn_turn_ticket(
     })
 }
 
+fn apply_bearer_identity(
+    headers: &HeaderMap,
+    request_identity: &mut Option<String>,
+) {
+    // Portal/shared seats: bound pairing profile wins over client-supplied identity.
+    if let Some(bound) = crate::pairing::resolve_request_profile_id(headers) {
+        *request_identity = Some(bound);
+    }
+}
+
 pub async fn create_turn_ticket(
     State(state): State<AppState>,
-    Json(request): Json<CreateTurnTicketRequest>,
+    headers: HeaderMap,
+    Json(mut request): Json<CreateTurnTicketRequest>,
 ) -> Result<Json<TurnTicketResponse>, (StatusCode, String)> {
     let session_id = request.session_id.trim().to_string();
     if session_id.is_empty() {
@@ -280,6 +291,7 @@ pub async fn create_turn_ticket(
     if request.prompt.trim().is_empty() && request.media_refs.is_empty() {
         return Err((StatusCode::BAD_REQUEST, "prompt is required".to_string()));
     }
+    apply_bearer_identity(&headers, &mut request.identity_user_id);
 
     let (provider, model) = if request.provider.trim().is_empty() || request.model.trim().is_empty()
     {
@@ -371,8 +383,11 @@ pub async fn list_session_turns(
 
 pub async fn start_interactive_turn(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(request): Json<InteractiveTurnRequest>,
 ) -> Result<Json<InteractiveTurnResponse>, (StatusCode, String)> {
+    let mut identity_user_id = request.identity_user_id.clone();
+    apply_bearer_identity(&headers, &mut identity_user_id);
     let ticket_request = CreateTurnTicketRequest {
         session_id: request.session_id.clone(),
         prompt: request.prompt.clone(),
@@ -391,7 +406,7 @@ pub async fn start_interactive_turn(
         voice_preset_id: request.voice_preset_id.clone(),
         voice_appendix: request.voice_appendix.clone(),
         media_refs: request.media_refs.clone(),
-        identity_user_id: request.identity_user_id.clone(),
+        identity_user_id,
     };
 
     let (provider, model) = (ticket_request.provider.clone(), ticket_request.model.clone());
