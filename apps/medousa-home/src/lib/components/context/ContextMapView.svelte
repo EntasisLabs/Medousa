@@ -1,7 +1,9 @@
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
   import ContextMapCanvas from "$lib/components/context/ContextMapCanvas.svelte";
+  import { contextShell } from "$lib/stores/contextShell.svelte";
   import type { LocusNodeSummary } from "$lib/types/locus";
+  import type { VaultNote } from "$lib/types/vault";
   import {
     applySimulationPositions,
     buildContextMapGraph,
@@ -13,6 +15,7 @@
 
   interface Props {
     nodes: LocusNodeSummary[];
+    vaultNotes?: VaultNote[];
     sessionLabels: Record<string, string>;
     search: string;
     loading: boolean;
@@ -25,6 +28,7 @@
 
   let {
     nodes,
+    vaultNotes = [],
     sessionLabels,
     search,
     loading,
@@ -75,6 +79,15 @@
     expandedBootstrapped = true;
   });
 
+  $effect(() => {
+    const nonce = contextShell.mapExpandNonce;
+    const sessionId = contextShell.mapExpandSessionId;
+    if (!nonce || !sessionId) return;
+    const next = new Set(expandedSessionIds);
+    next.add(sessionId);
+    expandedSessionIds = next;
+  });
+
   /** Topology only — positions come from the settle simulation, not this rebuild. */
   const baseGraph = $derived(
     buildContextMapGraph(nodes, sessionLabels, {
@@ -83,6 +96,7 @@
       expandedSessionIds,
       searchQuery: search,
       density,
+      vaultNotes,
     }),
   );
 
@@ -120,7 +134,7 @@
 
   $effect(() => {
     const graph = baseGraph;
-    if (graph.sessionCount === 0) {
+    if (graph.nodes.length === 0) {
       lastTopologyKey = "";
       return;
     }
@@ -163,8 +177,9 @@
 
   const graph = $derived(applySimulationPositions(baseGraph, livePositions));
 
-  const isEmpty = $derived(!loading && graph.sessionCount === 0);
+  const isEmpty = $derived(!loading && graph.nodes.length === 0);
   const totalMoments = $derived(new Set(nodes.map((node) => node.sync_key)).size);
+  const noteCount = $derived(graph.nodes.filter((node) => node.kind === "note").length);
 
   function toggleExpandSession(sessionId: string) {
     const next = new Set(expandedSessionIds);
@@ -213,9 +228,10 @@
     {#if loading && nodes.length === 0}
       Loading link map…
     {:else if isEmpty}
-      Nothing to link yet — Locus moments appear here when she stores session memory.
+      Nothing to link yet — Locus moments and vault notes appear here as they accumulate.
     {:else}
-      {graph.sessionCount} session{graph.sessionCount === 1 ? "" : "s"} · {totalMoments} moment{totalMoments === 1 ? "" : "s"}
+      {graph.sessionCount} session{graph.sessionCount === 1 ? "" : "s"} · {totalMoments} moment{totalMoments === 1 ? "" : "s"}{#if noteCount > 0}
+        · {noteCount} note{noteCount === 1 ? "" : "s"}{/if}
     {/if}
   </p>
 

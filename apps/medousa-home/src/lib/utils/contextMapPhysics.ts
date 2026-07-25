@@ -85,6 +85,9 @@ function linkDistance(
   ghost: boolean,
 ): number {
   if (kind === "session_chain") return 220 + (fromR + toR) * 1.5;
+  if (kind === "note_tag") return 160 + (fromR + toR) * 1.2;
+  if (kind === "note_link") return 90 + (fromR + toR) * 0.8;
+  if (kind === "note_session") return 96 + fromR + toR * 0.5;
   if (kind === "membership") {
     const base = 72 + fromR + toR * 0.35;
     return ghost ? base * 0.78 : base;
@@ -94,11 +97,19 @@ function linkDistance(
 
 function linkStrength(kind: ContextMapEdgeKind, strength?: number): number {
   if (strength != null) {
-    const scaled = strength * (kind === "session_chain" ? 1.1 : 2.2);
-    return Math.min(0.55, Math.max(0.01, scaled));
+    const scale =
+      kind === "session_chain" || kind === "note_tag"
+        ? 1.1
+        : kind === "note_link" || kind === "note_session"
+          ? 2.8
+          : 2.2;
+    return Math.min(0.55, Math.max(0.01, strength * scale));
   }
   if (kind === "membership") return 0.38;
   if (kind === "sequence") return 0.16;
+  if (kind === "note_session") return 0.32;
+  if (kind === "note_link") return 0.4;
+  if (kind === "note_tag") return 0.02;
   // Proximity hints — not hard tethers.
   return 0.018;
 }
@@ -281,11 +292,14 @@ export function createContextMapSimulation(): ContextMapSimulation {
       const from = bodies.get(link.from);
       const to = bodies.get(link.to);
       if (!from || !to) continue;
-      // While dragging, drop session↔session tethers so the graph doesn't re-bunch.
-      // Keep membership/sequence so moments still follow their session.
+      // While dragging, drop loose tethers so the graph doesn't re-bunch.
+      // Keep membership / note_session / note_link so satellites still follow.
       let strengthScale = 1;
-      if (dragging && link.kind === "session_chain") strengthScale = 0;
-      else if (dragging && link.kind === "sequence") strengthScale = 0.35;
+      if (dragging && (link.kind === "session_chain" || link.kind === "note_tag")) {
+        strengthScale = 0;
+      } else if (dragging && link.kind === "sequence") {
+        strengthScale = 0.35;
+      }
       if (strengthScale <= 0) continue;
 
       let dx = to.x - from.x;

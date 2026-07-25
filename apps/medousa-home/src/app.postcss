@@ -343,10 +343,12 @@
     box-shadow: 0 0 0 1px rgb(var(--color-warning-300) / 0.45);
   }
 
+  /* Pointy-top hexagon — matches ContextMapCanvas noteHexPoints. */
   .context-map-legend-swatch-note {
-    @apply h-2 w-2 rounded-[2px];
-    background: rgb(var(--color-secondary-400) / 0.72);
-    box-shadow: 0 0 0 1px rgb(var(--color-secondary-300) / 0.45);
+    @apply h-2.5 w-2.5;
+    background: rgb(var(--color-secondary-400) / 0.85);
+    clip-path: polygon(50% 0%, 93% 25%, 93% 75%, 50% 100%, 7% 75%, 7% 25%);
+    box-shadow: none;
   }
 
   .context-map-svg {
@@ -377,6 +379,22 @@
     stroke: rgb(var(--color-primary-300) / 0.32);
     stroke-dasharray: 3 5;
     stroke-width: 0.95;
+  }
+
+  .context-map-edge-note_session {
+    stroke: rgb(var(--color-secondary-400, var(--color-secondary-500)) / 0.42);
+    stroke-width: 1;
+  }
+
+  .context-map-edge-note_link {
+    stroke: rgb(var(--color-secondary-300, var(--color-secondary-400)) / 0.55);
+    stroke-width: 1.15;
+  }
+
+  .context-map-edge-note_tag {
+    stroke: rgb(var(--color-surface-400) / 0.2);
+    stroke-dasharray: 2 6;
+    stroke-width: 0.85;
   }
 
   .context-map-edge-highlight {
@@ -410,6 +428,17 @@
   .context-map-viewport-focused .context-map-edge-neighbor.context-map-edge-session_chain {
     stroke: rgb(var(--color-surface-300) / 0.48);
     stroke-width: 1.05;
+  }
+
+  .context-map-viewport-focused .context-map-edge-neighbor.context-map-edge-note_session,
+  .context-map-viewport-focused .context-map-edge-neighbor.context-map-edge-note_link {
+    stroke: rgb(var(--color-secondary-200, var(--color-secondary-300)) / 0.72);
+    stroke-width: 1.25;
+  }
+
+  .context-map-viewport-focused .context-map-edge-neighbor.context-map-edge-note_tag {
+    stroke: rgb(var(--color-surface-300) / 0.4);
+    stroke-width: 1;
   }
 
   .context-map-hover-card {
@@ -484,6 +513,10 @@
     fill: rgb(var(--color-tertiary-400) / 0.12);
   }
 
+  .context-map-node-glow-note {
+    fill: rgb(var(--color-secondary-400, var(--color-secondary-500)) / 0.14);
+  }
+
   .context-map-node-glow-selected {
     stroke: rgb(var(--color-primary-300) / 0.55);
     stroke-width: 1.5;
@@ -493,6 +526,11 @@
   .context-map-node-kind-thread .context-map-node-glow-selected {
     stroke: rgb(var(--color-tertiary-300) / 0.55);
     fill: rgb(var(--color-tertiary-500) / 0.22);
+  }
+
+  .context-map-node-kind-note .context-map-node-glow-selected {
+    stroke: rgb(var(--color-secondary-300, var(--color-secondary-400)) / 0.55);
+    fill: rgb(var(--color-secondary-500) / 0.22);
   }
 
   .context-map-node-glow-hover {
@@ -624,6 +662,16 @@
     stroke-width: 1.5;
   }
 
+  .context-map-node-dot-note {
+    fill: color-mix(
+      in srgb,
+      rgb(var(--color-secondary-400, var(--color-secondary-500))) 72%,
+      rgb(var(--color-surface-50)) 28%
+    );
+    stroke: rgb(var(--color-secondary-200, var(--color-secondary-400)) / 0.85);
+    stroke-width: 1.4;
+  }
+
   .context-map-node-dot-selected.context-map-node-dot-session {
     fill: rgb(var(--color-primary-300) / 0.98);
     stroke: rgb(var(--color-primary-100) / 0.95);
@@ -632,6 +680,11 @@
   .context-map-node-dot-selected.context-map-node-dot-thread {
     fill: rgb(var(--color-tertiary-300) / 0.98);
     stroke: rgb(var(--color-tertiary-100) / 0.92);
+  }
+
+  .context-map-node-dot-selected.context-map-node-dot-note {
+    fill: rgb(var(--color-secondary-300) / 0.98);
+    stroke: rgb(var(--color-secondary-100) / 0.92);
   }
 
   .context-map-node-dot-hover {

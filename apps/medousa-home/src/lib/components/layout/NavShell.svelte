@@ -2,6 +2,7 @@
   import SessionSidebar from "$lib/components/chat/SessionSidebar.svelte";
   import ContextSidePanel from "$lib/components/context/ContextSidePanel.svelte";
   import MapSidePanel from "$lib/components/context/MapSidePanel.svelte";
+  import MapRailToolbar from "$lib/components/context/MapRailToolbar.svelte";
   import SessionRailToolbar from "$lib/components/chat/SessionRailToolbar.svelte";
   import ContextModeBar from "$lib/components/context/ContextModeBar.svelte";
   import NavRailViewPopover from "$lib/components/layout/NavRailViewPopover.svelte";
@@ -612,7 +613,14 @@
           {:else if viewSurface === "context"}
             <ContextSidePanel onRedirectMap={() => onSelect("map")} />
           {:else if viewSurface === "map"}
-            <MapSidePanel onPick={() => onSelect("map")} />
+            <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
+              <div class="min-h-0 flex-1 overflow-hidden">
+                <MapSidePanel onPick={() => onSelect("map")} />
+              </div>
+              <div class="lme-side-rail-dock">
+                <MapRailToolbar />
+              </div>
+            </div>
           {:else if viewSurface === "web"}
             <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
               <div class="min-h-0 flex-1 overflow-hidden">
@@ -987,6 +995,8 @@
         <div class="nav-rail-context-toolbar">
           <ContextModeBar />
         </div>
+      {:else if popover.surfaceId === "map"}
+        <MapRailToolbar />
       {:else if popover.surfaceId === "web"}
         <WebRailToolbar onNavigated={() => commitPopoverSurface("web")} />
       {:else if popover.surfaceId === "calendar"}

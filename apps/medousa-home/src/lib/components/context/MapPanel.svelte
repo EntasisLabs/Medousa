@@ -1,8 +1,10 @@
 <script lang="ts">
   import ContextMapView from "$lib/components/context/ContextMapView.svelte";
+  import { listVaultNotes } from "$lib/daemon";
   import { chat } from "$lib/stores/chat.svelte";
   import { contextShell } from "$lib/stores/contextShell.svelte";
   import { contextThreads } from "$lib/stores/contextThreads.svelte";
+  import type { VaultNote } from "$lib/types/vault";
   import type { ContextMapNode } from "$lib/utils/contextMap";
 
   interface Props {
@@ -13,6 +15,9 @@
 
   const search = $derived(contextShell.search);
   const selectedMapNodeId = $derived(contextShell.selectedMapNodeId);
+
+  let vaultNotes = $state<VaultNote[]>([]);
+  let vaultError = $state<string | null>(null);
 
   const sessionLabels = $derived(
     Object.fromEntries(
@@ -27,6 +32,16 @@
     if (!visible) return;
     void contextThreads.refresh({ limit: 200 });
     void chat.refreshSessions();
+    void (async () => {
+      try {
+        vaultError = null;
+        const response = await listVaultNotes({ limit: 200 });
+        vaultNotes = response.notes;
+      } catch (err) {
+        vaultError = err instanceof Error ? err.message : String(err);
+        vaultNotes = [];
+      }
+    })();
   });
 
   function focusMapNode(node: ContextMapNode) {
@@ -42,6 +57,8 @@
     contextShell.selectMapNode(null);
     contextThreads.clearDetail();
   }
+
+  const mapError = $derived(contextThreads.error ?? vaultError);
 </script>
 
 <section
@@ -53,10 +70,11 @@
     {#if visible}
       <ContextMapView
         nodes={contextThreads.nodes}
+        {vaultNotes}
         {sessionLabels}
         {search}
         loading={contextThreads.loading}
-        error={contextThreads.error}
+        error={mapError}
         selectedNodeId={selectedMapNodeId}
         density="default"
         onFocusNode={focusMapNode}

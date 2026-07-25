@@ -12,7 +12,7 @@ export interface MapKindVisual {
   planned?: boolean;
 }
 
-/** Canonical palette — extend when M13b (claim) and M13c (note) land. */
+/** Canonical palette — Memory/claim reserved for a later pass. */
 export const MAP_KIND_VISUALS: Record<ContextMapNodeKind, MapKindVisual> = {
   session: {
     kind: "session",
@@ -50,18 +50,17 @@ export const MAP_KIND_VISUALS: Record<ContextMapNodeKind, MapKindVisual> = {
     label: "Note",
     shortLabel: "Note",
     hue: 210,
-    saturation: 58,
-    light: 62,
-    strokeLight: 80,
+    saturation: 48,
+    light: 58,
+    strokeLight: 76,
     shape: "hexagon",
-    planned: true,
   },
 };
 
+/** Live legend — Memory held back until the claims pass. */
 export const MAP_KIND_LEGEND: MapKindVisual[] = [
   MAP_KIND_VISUALS.session,
   MAP_KIND_VISUALS.thread,
-  MAP_KIND_VISUALS.claim,
   MAP_KIND_VISUALS.note,
 ];
 

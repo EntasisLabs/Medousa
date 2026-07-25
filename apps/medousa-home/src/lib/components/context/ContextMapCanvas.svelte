@@ -81,9 +81,17 @@
   );
 
   function edgeSort(kind: string): number {
-    if (kind === "session_chain") return 0;
-    if (kind === "membership") return 1;
-    return 2;
+    if (kind === "session_chain" || kind === "note_tag") return 0;
+    if (kind === "note_session" || kind === "membership") return 1;
+    if (kind === "note_link") return 2;
+    return 3;
+  }
+
+  function kindLabel(kind: ContextMapNode["kind"]): string {
+    if (kind === "session") return "Session";
+    if (kind === "note") return "Note";
+    if (kind === "claim") return "Memory";
+    return "Moment";
   }
 
   function viewportForBounds(
@@ -409,7 +417,19 @@
   function edgeKindClass(kind: string): string {
     if (kind === "membership") return "context-map-edge-membership";
     if (kind === "sequence") return "context-map-edge-sequence";
+    if (kind === "note_session") return "context-map-edge-note_session";
+    if (kind === "note_link") return "context-map-edge-note_link";
+    if (kind === "note_tag") return "context-map-edge-note_tag";
     return "context-map-edge-session_chain";
+  }
+
+  function noteHexPoints(cx: number, cy: number, r: number): string {
+    const pts: string[] = [];
+    for (let i = 0; i < 6; i += 1) {
+      const angle = (Math.PI / 180) * (60 * i - 30);
+      pts.push(`${cx + r * Math.cos(angle)},${cy + r * Math.sin(angle)}`);
+    }
+    return pts.join(" ");
   }
 
   function labelKindClass(kind: ContextMapNode["kind"]): string {
@@ -550,7 +570,7 @@
       aria-live="polite"
       onpointerdown={(event) => event.stopPropagation()}
     >
-      <p class="context-map-hover-kind">{hoverPreview.kind === "session" ? "Session" : "Moment"}</p>
+      <p class="context-map-hover-kind">{kindLabel(hoverPreview.kind)}</p>
       <p class="context-map-hover-title">{hoverPreview.label}</p>
       <p class="context-map-hover-meta">{neighborSummary(graph, hoverPreview.id)}</p>
       {#if hoverPreview.kind === "session"}
@@ -564,7 +584,7 @@
       aria-live="polite"
       onpointerdown={(event) => event.stopPropagation()}
     >
-      <p class="context-map-hover-kind">{selectedPreview.kind === "session" ? "Session" : "Moment"} · focused</p>
+      <p class="context-map-hover-kind">{kindLabel(selectedPreview.kind)} · focused</p>
       <p class="context-map-hover-title">{selectedPreview.label}</p>
       <button type="button" class="context-map-clear-link" onclick={handleClearClick}>
         Clear focus
@@ -619,7 +639,7 @@
           style={node.kind === "session" ? nodeStyle(node) : undefined}
           role="button"
           tabindex="0"
-          aria-label="{node.kind === 'session' ? 'Session' : 'Moment'}: {node.label}"
+          aria-label="{kindLabel(node.kind)}: {node.label}"
           onclick={(event) => handleNodeClick(node, event)}
           onpointerdown={(event) => handleNodePointerDown(node, event)}
           onpointermove={handleNodePointerMove}
@@ -655,6 +675,11 @@
               cx={node.x}
               cy={node.y}
               r={node.radius}
+              class={dotClass(node, selected, hovered)}
+            />
+          {:else if node.kind === "note"}
+            <polygon
+              points={noteHexPoints(node.x, node.y, node.radius)}
               class={dotClass(node, selected, hovered)}
             />
           {:else}

@@ -11,6 +11,9 @@ export class ContextShellStore {
   selectedPostureId = $state<string | null>(null);
   /** Shared with the Map surface (rail graph + center detail). */
   selectedMapNodeId = $state<string | null>(null);
+  /** Rail → canvas: bump nonce + session id to force-expand moments. */
+  mapExpandSessionId = $state<string | null>(null);
+  mapExpandNonce = $state(0);
 
   setTab(tab: ContextTabId) {
     if (this.activeTab === tab) return;
@@ -40,6 +43,13 @@ export class ContextShellStore {
 
   selectMapNode(id: string | null) {
     this.selectedMapNodeId = id;
+  }
+
+  requestExpandMapSession(sessionId: string) {
+    const id = sessionId.trim();
+    if (!id) return;
+    this.mapExpandSessionId = id;
+    this.mapExpandNonce += 1;
   }
 
   clearThreadSessionFilter() {

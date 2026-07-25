@@ -75,7 +75,7 @@ export function humanMomentTitle(node: {
   if (summary && !looksLikeOpaqueId(summary) && summary !== node.sync_key?.trim()) {
     return summary;
   }
-  return `Untitled moment · ${formatContextWhen(node.timestamp)}`;
+  return "Untitled moment";
 }
 
 function humanizeSessionId(sessionId: string): string {
