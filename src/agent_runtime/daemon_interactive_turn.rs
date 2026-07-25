@@ -22,8 +22,8 @@ use crate::session_active_turn::{self, TurnTicketRegistry};
 use crate::media_store::{merge_media_refs_into_prompt, validate_media_refs};
 use crate::media_vision;
 use crate::turn_parts::{
-    artifact_refs_from_stream, user_conversation_turn, user_conversation_turn_with_media,
-    TurnPartsAccumulator,
+    artifact_refs_from_stream, user_conversation_turn,
+    user_conversation_turn_with_media_and_speaker, TurnPartsAccumulator,
 };
 use crate::workspace::ask_job_store::{self, AskJobStore};
 
@@ -1067,9 +1067,18 @@ async fn run_agent_turn_inner(
         .await;
     }
 
+    let speaker_profile_id =
+        crate::user_profiles::resolve_workshop_identity_user_id_for_turn(
+            request.identity_user_id.as_deref(),
+        );
+
     let mut conversation = load_history(&session_id);
     if request.persist_user_turn {
-        let user_turn = user_conversation_turn_with_media(prompt.clone(), &request.media_refs);
+        let user_turn = user_conversation_turn_with_media_and_speaker(
+            prompt.clone(),
+            &request.media_refs,
+            Some(speaker_profile_id.as_str()),
+        );
         // The in-memory transcript already carries this turn for the rest of the run;
         // persist off the hot path so the user message write (and its catalog cascade)
         // doesn't block prompt prep / first token on a SurrealKV fsync.
@@ -1122,10 +1131,7 @@ async fn run_agent_turn_inner(
         .as_deref()
         .filter(|ids| !ids.is_empty());
 
-    let identity_user_id =
-        crate::user_profiles::resolve_workshop_identity_user_id_for_turn(
-            request.identity_user_id.as_deref(),
-        );
+    let identity_user_id = speaker_profile_id.clone();
 
     let prepared = turn_orchestrator::prepare_turn_prompt(PrepareTurnPromptParams {
         session_id: &session_id,

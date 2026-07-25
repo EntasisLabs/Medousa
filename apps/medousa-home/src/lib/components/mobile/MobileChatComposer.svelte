@@ -54,7 +54,12 @@
       voiceAppendix: voice.voiceAppendix,
       identityUserId: opts.identityUserId,
     });
-    chat.beginTurn(userContent, accepted, mediaRefs);
+    chat.beginTurn(
+      userContent,
+      accepted,
+      mediaRefs,
+      opts.identityUserId,
+    );
     chat.clearPendingMedia();
     window.dispatchEvent(
       new CustomEvent("medousa-chat-scroll-to-bottom", { detail: { force: true } }),
@@ -104,6 +109,12 @@
       if (chat.hasWorkshopHandoff()) {
         const { steerBoundWorkshop } = await import("$lib/daemon");
         await steerBoundWorkshop(chat.sessionId, prompt);
+        await chat.reloadCurrentSession();
+        window.dispatchEvent(
+          new CustomEvent("medousa-chat-scroll-to-bottom", {
+            detail: { force: true },
+          }),
+        );
         return;
       }
 

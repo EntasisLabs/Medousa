@@ -27,6 +27,8 @@
   } from "$lib/utils/pairingApi";
   import { waitForEngine } from "$lib/utils/providersApi";
   import { workshops } from "$lib/stores/workshops.svelte";
+  import { sharedMode } from "$lib/stores/sharedMode.svelte";
+  import { userProfiles } from "$lib/stores/userProfiles.svelte";
   import { isTauri } from "$lib/window";
 
   interface Props {
@@ -50,14 +52,23 @@
   let coreOnline = $state(false);
   let copyFlash = $state(false);
   let copyHint = $state<string | null>(null);
+  let inviteProfileId = $state("");
 
   let countdownTimer: ReturnType<typeof setInterval> | null = null;
   let pollTimer: ReturnType<typeof setInterval> | null = null;
   let qrRefreshTimer: ReturnType<typeof setInterval> | null = null;
 
   onMount(() => {
+    void sharedMode.load();
+    void userProfiles.load({ suppressRemoteNotice: true });
     void bootstrap();
     return () => cleanupTimers();
+  });
+
+  $effect(() => {
+    if (!inviteProfileId && userProfiles.profiles.length > 0) {
+      inviteProfileId = userProfiles.activeProfileId ?? userProfiles.profiles[0]?.profile_id ?? "";
+    }
   });
 
   function cleanupTimers() {
@@ -130,18 +141,29 @@
     }, 25_000);
   }
 
-  async function rotateInvite() {
+  async function rotateInvite(profileId?: string) {
     if (refreshing || qrLoading) return;
     refreshing = true;
     error = null;
     try {
-      await rotatePairingInvite();
+      await rotatePairingInvite(
+        profileId ? { profileId } : undefined,
+      );
       await loadPairingBundle(15);
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
     } finally {
       refreshing = false;
     }
+  }
+
+  async function inviteSeat() {
+    const profileId = inviteProfileId.trim();
+    if (!profileId) {
+      error = "Choose a seat profile to invite.";
+      return;
+    }
+    await rotateInvite(profileId);
   }
 
   async function refreshAll() {
@@ -358,6 +380,39 @@
     </div>
   {/if}
 
+  {#if mode === "settings" && sharedMode.isShared}
+    <div class="mt-6 rounded-xl border border-surface-500/35 bg-surface-950/40 px-4 py-4">
+      <h3 class="settings-subsection-heading">Invite a seat</h3>
+      <p class="settings-subsection-lead">
+        Bind the next phone scan to a member profile. Root administers; others work as that seat.
+      </p>
+      <div class="mt-3 flex flex-wrap items-center gap-2">
+        <select
+          class="input min-w-[12rem] flex-1 text-sm"
+          bind:value={inviteProfileId}
+          aria-label="Seat profile for invite"
+        >
+          {#each userProfiles.profiles as profile (profile.profile_id)}
+            <option value={profile.profile_id}>
+              {profile.display_name}
+              {#if profile.profile_id === sharedMode.rootProfileId}
+                (root)
+              {/if}
+            </option>
+          {/each}
+        </select>
+        <button
+          type="button"
+          class="btn btn-sm btn-primary"
+          disabled={refreshing || !coreOnline || !inviteProfileId}
+          onclick={() => void inviteSeat()}
+        >
+          Mint seat QR
+        </button>
+      </div>
+    </div>
+  {/if}
+
   {#if mode === "settings" && devices.length > 0}
     <div class="mt-6">
       <h3 class="text-sm font-semibold text-surface-100">Paired phones</h3>
@@ -368,7 +423,12 @@
           >
             <div class="min-w-0">
               <p class="truncate text-sm font-medium text-surface-50">{device.phoneName}</p>
-              <p class="workshop-faint truncate font-mono text-[11px]">{device.phoneId}</p>
+              <p class="workshop-faint truncate font-mono text-[11px]">
+                {device.phoneId}
+                {#if device.profileId}
+                  · {device.profileId}
+                {/if}
+              </p>
             </div>
             <button
               type="button"

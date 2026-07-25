@@ -36,7 +36,12 @@
 >
   <button type="button" class="session-row-main" onclick={onSelect}>
     <div class="flex min-w-0 items-baseline justify-between gap-2">
-      <span class="session-row-title truncate">{formatSessionLabel(session)}</span>
+      <span class="session-row-title truncate">
+        {#if session.catalog === "shared"}
+          <span class="session-row-shared-mark" title="Shared room">Room</span>
+        {/if}
+        {formatSessionLabel(session)}
+      </span>
       {#if when}
         <span class="session-row-when shrink-0">{when}</span>
       {/if}
@@ -82,3 +87,19 @@
     </button>
   </div>
 </div>
+
+<style>
+  .session-row-shared-mark {
+    display: inline-block;
+    margin-right: 0.35rem;
+    padding: 0.05rem 0.35rem;
+    border-radius: 0.25rem;
+    border: 1px solid color-mix(in oklab, var(--color-surface-400, #94a3b8) 45%, transparent);
+    font-size: 0.65rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: var(--color-surface-300, #cbd5e1);
+    vertical-align: 0.05em;
+  }
+</style>

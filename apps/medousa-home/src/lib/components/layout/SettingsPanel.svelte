@@ -12,6 +12,7 @@
   import SettingsShellSection from "$lib/components/settings/SettingsShellSection.svelte";
   import SettingsVersionsSection from "$lib/components/settings/SettingsVersionsSection.svelte";
   import SettingsEngineSection from "$lib/components/settings/SettingsEngineSection.svelte";
+  import SettingsSharedModeSection from "$lib/components/settings/SettingsSharedModeSection.svelte";
   import SettingsPhoneSection from "$lib/components/settings/SettingsPhoneSection.svelte";
   import SettingsLanShareSection from "$lib/components/settings/SettingsLanShareSection.svelte";
   import SettingsBasementSection from "$lib/components/settings/SettingsBasementSection.svelte";
@@ -20,6 +21,7 @@
   import type { DaemonHealth } from "$lib/daemon";
   import { workshopDefaults } from "$lib/stores/workshopDefaults.svelte";
   import { settingsNav } from "$lib/stores/settingsNav.svelte";
+  import { sharedMode } from "$lib/stores/sharedMode.svelte";
   import { userProfiles } from "$lib/stores/userProfiles.svelte";
   import { depthModeLabel } from "$lib/utils/chatModelPicker";
   import { formatModelDisplayName } from "$lib/utils/formatModelDisplay";
@@ -70,6 +72,7 @@
       settingsNav.takePending();
       void workshopDefaults.load();
       void userProfiles.load();
+      void sharedMode.load();
       void refreshNearbyUnread();
       if (!unreadTimer) {
         unreadTimer = setInterval(() => {
@@ -149,6 +152,8 @@
         <SettingsVersionsSection {mobile} />
       {:else if activeSection === "engine"}
         <SettingsEngineSection {mobile} />
+      {:else if activeSection === "shared"}
+        <SettingsSharedModeSection {mobile} />
       {:else if activeSection === "phone"}
         <SettingsPhoneSection {mobile} />
       {:else if activeSection === "nearby"}

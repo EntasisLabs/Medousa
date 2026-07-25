@@ -636,7 +636,7 @@ export function buildAskCommands(): WorkshopCommand[] {
           channelSurface: opts.channelSurface,
           identityUserId: opts.identityUserId,
         });
-        ctx.chat.beginTurn(text, accepted, []);
+        ctx.chat.beginTurn(text, accepted, [], opts.identityUserId);
         await ctx.chat.startTurnStream(
           accepted.turn_id,
           accepted.session_id,

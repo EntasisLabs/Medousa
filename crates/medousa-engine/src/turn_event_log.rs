@@ -234,6 +234,7 @@ fn history_turn(
         answer_state,
         parts: Some(parts),
         slice_summary: None,
+        speaker_profile_id: None,
     }
 }
 

@@ -45,6 +45,8 @@ pub enum TurnWorkDisposition {
 pub struct WorkshopSteerMessage {
     pub text: String,
     pub at: DateTime<Utc>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub speaker_profile_id: Option<String>,
 }
 
 fn default_worker_max_tool_rounds() -> usize {
@@ -340,15 +342,24 @@ impl TurnWorkerStore {
             .cloned()
     }
 
-    pub fn push_steer(&self, work_id: &str, text: String) -> Option<TurnWorkRecord> {
+    pub fn push_steer(
+        &self,
+        work_id: &str,
+        text: String,
+        speaker_profile_id: Option<String>,
+    ) -> Option<TurnWorkRecord> {
         let trimmed = text.trim();
         if trimmed.is_empty() {
             return None;
         }
+        let speaker = speaker_profile_id
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty());
         self.update(work_id, |record| {
             record.steer_messages.push(WorkshopSteerMessage {
                 text: trimmed.to_string(),
                 at: Utc::now(),
+                speaker_profile_id: speaker,
             });
         })
     }

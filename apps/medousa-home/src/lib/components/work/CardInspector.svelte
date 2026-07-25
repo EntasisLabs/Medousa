@@ -277,7 +277,7 @@
         voiceAppendix: voice.voiceAppendix,
         identityUserId: opts.identityUserId,
       });
-      chat.beginTurn(prompt, accepted);
+      chat.beginTurn(prompt, accepted, [], opts.identityUserId);
       await chat.startTurnStream(
         accepted.turn_id,
         accepted.session_id,

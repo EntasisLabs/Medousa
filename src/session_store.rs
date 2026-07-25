@@ -26,6 +26,7 @@ const SESSION_SCHEMA_STATEMENTS: &[&str] = &[
     // JSON-serialized TurnPart[] — kept as string so SCHEMAFULL does not reject nested arrays.
     "DEFINE FIELD parts ON TABLE session_turn TYPE option<string>",
     "DEFINE FIELD slice_summary ON TABLE session_turn TYPE option<string>",
+    "DEFINE FIELD speaker_profile_id ON TABLE session_turn TYPE option<string>",
     "DEFINE INDEX idx_session_turn_session_id ON TABLE session_turn COLUMNS session_id",
     "DEFINE INDEX idx_session_turn_timestamp ON TABLE session_turn COLUMNS timestamp",
 ];
@@ -33,6 +34,7 @@ const SESSION_SCHEMA_STATEMENTS: &[&str] = &[
 const SESSION_SCHEMA_MIGRATIONS: &[&str] = &[
     "DEFINE FIELD OVERWRITE parts ON TABLE session_turn TYPE option<string>",
     "DEFINE FIELD OVERWRITE slice_summary ON TABLE session_turn TYPE option<string>",
+    "DEFINE FIELD OVERWRITE speaker_profile_id ON TABLE session_turn TYPE option<string>",
 ];
 
 /// Initialize the session store based on the runtime composition.
@@ -69,6 +71,8 @@ struct SessionTurnRecord {
     parts: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     slice_summary: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    speaker_profile_id: Option<String>,
 }
 
 fn parts_to_json(parts: Option<&[TurnPart]>) -> Option<String> {
@@ -107,6 +111,7 @@ impl From<SessionTurnRecord> for ConversationTurn {
             answer_state: record.answer_state,
             parts: parts_from_json(record.parts),
             slice_summary: slice_summary_from_json(record.slice_summary),
+            speaker_profile_id: record.speaker_profile_id,
         }
     }
 }
@@ -122,6 +127,7 @@ impl From<&ConversationTurn> for SessionTurnRecord {
             answer_state: turn.answer_state.clone(),
             parts: parts_to_json(turn.parts.as_deref()),
             slice_summary: slice_summary_to_json(turn.slice_summary.as_ref()),
+            speaker_profile_id: turn.speaker_profile_id.clone(),
         }
     }
 }
@@ -231,7 +237,8 @@ impl SurrealSessionStore {
 
 impl SessionStore for SurrealSessionStore {
     fn load_history(&self, session_id: &str) -> Vec<ConversationTurn> {
-        let sql = "SELECT session_id, role, content, timestamp, tool_names, answer_state, parts \
+        let sql = "SELECT session_id, role, content, timestamp, tool_names, answer_state, parts, \
+                    slice_summary, speaker_profile_id \
                     FROM type::table($table) \
                     WHERE session_id = $session_id \
                     ORDER BY timestamp ASC";
@@ -353,6 +360,7 @@ impl SessionStore for SurrealSessionStore {
                     last_verification_coverage: None,
                     last_verification_verified: None,
                     preview,
+                    catalog: None,
                 }
             })
             .collect()
@@ -413,7 +421,8 @@ impl SurrealSessionStore {
                 answer_state: None,
                 parts: parts_from_json(row.parts),
                 slice_summary: None,
-            };
+            speaker_profile_id: None,
+        };
             if let Some(preview) = crate::session_catalog::preview_from_turn(&turn) {
                 return Some(preview);
             }

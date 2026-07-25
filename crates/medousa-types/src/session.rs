@@ -19,6 +19,9 @@ pub struct ConversationTurn {
     pub parts: Option<Vec<TurnPart>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub slice_summary: Option<TurnSliceSummary>,
+    /// Shared-room human speaker (`user:alice`). Absent on assistant turns / personal chats.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub speaker_profile_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -111,6 +114,9 @@ pub struct SessionHistorySummary {
     pub last_verification_coverage: Option<f32>,
     pub last_verification_verified: Option<bool>,
     pub preview: String,
+    /// `shared` when indexed in the multi-member catalog; omitted for single-seat chats.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub catalog: Option<String>,
 }
 
 impl SessionHistorySummary {
@@ -140,6 +146,14 @@ impl ConversationTurn {
             answer_state,
             parts: None,
             slice_summary: None,
+            speaker_profile_id: None,
         }
+    }
+
+    pub fn with_speaker_profile_id(mut self, profile_id: impl Into<String>) -> Self {
+        let trimmed = profile_id.into();
+        let trimmed = trimmed.trim();
+        self.speaker_profile_id = (!trimmed.is_empty()).then(|| trimmed.to_string());
+        self
     }
 }

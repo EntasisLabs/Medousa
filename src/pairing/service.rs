@@ -884,14 +884,12 @@ fn authorize_pairing_revoke(
     let Some(token) = bearer_token else {
         return Ok(false);
     };
-    let Some(record) = service.find_by_session_token(token)? else {
+    let Some(record) = service.resolve_bearer_record(token)? else {
         return Ok(false);
     };
-    if service.store.is_revoked(&record.pairing_id)? {
-        return Ok(false);
-    }
-    if record.session_token_expiry < Utc::now() {
-        return Ok(false);
+    // Shared-mode root may revoke any seat; others may only revoke themselves.
+    if crate::portal_acl::is_root_portal(&record) {
+        return Ok(true);
     }
     Ok(record.pairing_id == pairing_id)
 }

@@ -20,6 +20,10 @@ pub struct PairedDeviceSummary {
     pub phone_name: String,
     pub paired_at: String,
     pub last_seen: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub role: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -209,14 +213,28 @@ pub async fn pairing_fetch_status(
         .map_err(|err| err.to_string())
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RotateInviteBody {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    profile_id: Option<String>,
+}
+
 #[tauri::command]
 pub async fn pairing_rotate_invite(
     state: State<'_, DaemonState>,
+    profile_id: Option<String>,
 ) -> Result<PairingQrResponse, String> {
     let base = daemon_base(&state)?;
     let client = pairing_http_client()?;
+    let body = RotateInviteBody {
+        profile_id: profile_id
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty()),
+    };
     let response = client
         .post(format!("{base}/qr/rotate"))
+        .json(&body)
         .send()
         .await
         .map_err(|err| format!("cannot reach Medousa Engine at {base}: {err}"))?;

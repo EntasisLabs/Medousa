@@ -305,7 +305,8 @@ mod tests {
                 answer_state: None,
                 parts: None,
                 slice_summary: None,
-            })
+            speaker_profile_id: None,
+        })
             .collect::<Vec<_>>();
 
         let excerpts = select_handoff_conversation_excerpts(&conversation);
@@ -325,7 +326,8 @@ mod tests {
                 answer_state: None,
                 parts: None,
                 slice_summary: None,
-            }],
+            speaker_profile_id: None,
+        }],
             Some("turn-abc".to_string()),
         );
         let block = bundle.format_user_block();

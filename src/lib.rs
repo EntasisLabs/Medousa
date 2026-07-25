@@ -154,6 +154,7 @@ pub mod share_handlers;
 pub mod peer_messages;
 pub mod peer_message_handlers;
 pub mod peer_scope;
+pub mod portal_acl;
 pub mod remote_trust;
 pub mod iroh_transport;
 pub mod payload_receipt;

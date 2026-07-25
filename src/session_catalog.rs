@@ -139,6 +139,7 @@ impl From<SessionCatalogRow> for SessionHistorySummary {
             last_verification_coverage: row.last_verification_coverage,
             last_verification_verified: row.last_verification_verified,
             preview: row.preview,
+            catalog: None,
         }
     }
 }
@@ -1195,6 +1196,7 @@ mod tests {
                 markdown: "From parts timeline".into(),
             }]),
             slice_summary: None,
+            speaker_profile_id: None,
         };
         assert_eq!(
             preview_from_turn(&turn).as_deref(),

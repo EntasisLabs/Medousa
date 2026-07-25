@@ -9,6 +9,7 @@ export type SettingsSectionId =
   | "shell"
   | "versions"
   | "engine"
+  | "shared"
   | "phone"
   | "nearby"
   | "packages"
@@ -29,6 +30,7 @@ export const SETTINGS_SECTIONS: {
   { id: "shell", label: "Shell", hint: "Process sandbox & agent tools" },
   { id: "versions", label: "Versions", hint: "Vault history (optional)" },
   { id: "engine", label: "Engine", hint: "Budgets, quality & diagnostics" },
+  { id: "shared", label: "Shared", hint: "Team seats on this brain" },
   { id: "phone", label: "Phone", hint: "Pair your pocket portal" },
   { id: "nearby", label: "Nearby", hint: "Peers rail, bundles & trust" },
   { id: "packages", label: "Packages", hint: "Offline brain, adapters & MCP" },

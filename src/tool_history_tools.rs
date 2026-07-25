@@ -197,7 +197,8 @@ mod tests {
                     finished_at: None,
                 }]),
                 slice_summary: None,
-            },
+            speaker_profile_id: None,
+        },
         ];
         let rows = tool_history_summary_rows(&turns, 5, None, None);
         assert_eq!(rows.len(), 1);

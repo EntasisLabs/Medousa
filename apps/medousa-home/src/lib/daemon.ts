@@ -171,6 +171,51 @@ export async function listSessions(
   });
 }
 
+export interface CreateSessionOptions {
+  catalog?: "single" | "shared";
+  memberProfileIds?: string[];
+  agentProfileId?: string;
+  displayName?: string;
+  sessionId?: string;
+}
+
+export interface CreateSessionResponse {
+  session_id: string;
+  catalog: string;
+  display_name?: string | null;
+  member_profile_ids?: string[];
+  agent_profile_id?: string | null;
+}
+
+export async function createSession(
+  options?: CreateSessionOptions,
+): Promise<CreateSessionResponse> {
+  return invoke<CreateSessionResponse>("session_create", {
+    catalog: options?.catalog,
+    memberProfileIds: options?.memberProfileIds,
+    agentProfileId: options?.agentProfileId,
+    displayName: options?.displayName,
+    sessionId: options?.sessionId,
+  });
+}
+
+export interface SharedModeStatus {
+  mode: "personal" | "shared" | string;
+  enabled_at?: string | null;
+  root_profile_id: string;
+  general_profile_id: string;
+}
+
+export async function getSharedMode(): Promise<SharedModeStatus> {
+  return invoke<SharedModeStatus>("shared_mode_status");
+}
+
+export async function setSharedMode(
+  mode: "personal" | "shared",
+): Promise<SharedModeStatus> {
+  return invoke<SharedModeStatus>("shared_mode_set", { mode });
+}
+
 export async function getSessionHistory(
   sessionId: string,
 ): Promise<SessionHistoryResponse> {

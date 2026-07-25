@@ -73,6 +73,8 @@ export interface ChatMessage {
   errorDetail?: string | null;
   /** Turn index in session history (1-based, matches slice_id turn:N). */
   turnIndex?: number | null;
+  /** Shared-room speaker profile id (`user:alice`) for human turns. */
+  speakerProfileId?: string | null;
 }
 
 export interface PendingBrowserChallenge {

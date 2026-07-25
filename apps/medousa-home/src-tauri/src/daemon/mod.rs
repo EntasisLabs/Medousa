@@ -15,6 +15,7 @@ pub mod runtime;
 pub mod sdk;
 pub mod iroh_hook;
 pub mod session;
+pub mod shared_mode;
 pub mod sse;
 pub mod stt;
 pub mod types;

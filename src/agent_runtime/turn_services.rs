@@ -673,7 +673,8 @@ mod tests {
                 answer_state: None,
                 parts: None,
                 slice_summary: None,
-            });
+            speaker_profile_id: None,
+        });
         }
 
         let built = build_prior_messages(
@@ -701,7 +702,8 @@ mod tests {
                 answer_state: None,
                 parts: None,
                 slice_summary: None,
-            },
+            speaker_profile_id: None,
+        },
             ConversationTurn {
                 role: "agent".to_string(),
                 content: "hi there".to_string(),
@@ -710,7 +712,8 @@ mod tests {
                 answer_state: None,
                 parts: None,
                 slice_summary: None,
-            },
+            speaker_profile_id: None,
+        },
         ];
 
         let built = build_prior_messages("test-session", &turns, "new prompt", false, 8, 24, sample_limits());
@@ -732,7 +735,8 @@ mod tests {
                 answer_state: None,
                 parts: None,
                 slice_summary: None,
-            },
+            speaker_profile_id: None,
+        },
             ConversationTurn {
                 role: "agent".to_string(),
                 content: "earlier answer".to_string(),
@@ -741,7 +745,8 @@ mod tests {
                 answer_state: None,
                 parts: None,
                 slice_summary: None,
-            },
+            speaker_profile_id: None,
+        },
             ConversationTurn {
                 role: "user".to_string(),
                 content: "thanks".to_string(),
@@ -750,7 +755,8 @@ mod tests {
                 answer_state: None,
                 parts: None,
                 slice_summary: None,
-            },
+            speaker_profile_id: None,
+        },
         ];
 
         let context = build_intent_classifier_recent_context(
@@ -782,7 +788,8 @@ mod tests {
                 answer_state: None,
                 parts: None,
                 slice_summary: None,
-            },
+            speaker_profile_id: None,
+        },
             ConversationTurn {
                 role: "assistant".to_string(),
                 content: "resolved base-researcher".to_string(),
@@ -807,7 +814,8 @@ mod tests {
                     outcomes: vec!["base-researcher".to_string()],
                     ..Default::default()
                 }),
-            },
+            speaker_profile_id: None,
+        },
         ];
 
         let built = build_prior_messages("test-session", &turns, "spin them up", false, 8, 24, sample_limits());
@@ -826,7 +834,8 @@ mod tests {
                 answer_state: None,
                 parts: None,
                 slice_summary: None,
-            },
+            speaker_profile_id: None,
+        },
             ConversationTurn {
                 role: "user".to_string(),
                 content: "ok".to_string(),
@@ -835,7 +844,8 @@ mod tests {
                 answer_state: None,
                 parts: None,
                 slice_summary: None,
-            },
+            speaker_profile_id: None,
+        },
         ];
 
         let context = build_intent_classifier_recent_context(

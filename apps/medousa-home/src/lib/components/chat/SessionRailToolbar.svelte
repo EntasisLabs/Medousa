@@ -1,6 +1,8 @@
 <script lang="ts">
-  import { Plus, Search, X } from "@lucide/svelte";
+  import { onMount } from "svelte";
+  import { Plus, Search, Users, X } from "@lucide/svelte";
   import { chat } from "$lib/stores/chat.svelte";
+  import { sharedMode } from "$lib/stores/sharedMode.svelte";
   import { ensureRailPopoverOpen } from "$lib/utils/railPopoverChrome";
   import { tick } from "svelte";
 
@@ -10,6 +12,10 @@
   }
 
   let { onCreated }: Props = $props();
+
+  onMount(() => {
+    void sharedMode.load();
+  });
 
   let searchOpen = $state(false);
   let searchInputEl = $state<HTMLInputElement | null>(null);
@@ -51,6 +57,15 @@
     await chat.newSession();
     onCreated?.();
   }
+
+  async function createSharedRoom() {
+    try {
+      await chat.newSharedRoom();
+      onCreated?.();
+    } catch (err) {
+      console.error(err);
+    }
+  }
 </script>
 
 {#if searchOpen}
@@ -83,6 +98,17 @@
   >
     <Plus size={16} strokeWidth={1.75} />
   </button>
+  {#if sharedMode.isShared}
+    <button
+      type="button"
+      class="vault-dock-icon-btn"
+      title="New shared room"
+      aria-label="New shared room"
+      onclick={() => void createSharedRoom()}
+    >
+      <Users size={15} strokeWidth={1.75} />
+    </button>
+  {/if}
   <button
     type="button"
     class="vault-dock-icon-btn"

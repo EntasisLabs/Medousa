@@ -833,6 +833,52 @@ export class ChatStore {
     void workshops.saveActiveSession(id);
   }
 
+  /** Create a multi-member Shared-mode room (requires Shared mode on the engine). */
+  async newSharedRoom(options?: {
+    displayName?: string;
+    memberProfileIds?: string[];
+  }) {
+    const { createSession } = await import("$lib/daemon");
+    const { userProfiles } = await import("$lib/stores/userProfiles.svelte");
+    const { sharedMode } = await import("$lib/stores/sharedMode.svelte");
+    await sharedMode.load();
+    if (!sharedMode.isShared) {
+      throw new Error("Enable Shared mode in Settings before creating a shared room");
+    }
+    if (userProfiles.profiles.length === 0) {
+      await userProfiles.load({ suppressRemoteNotice: true });
+    }
+    const members =
+      options?.memberProfileIds?.filter((id) => id.trim().length > 0) ??
+      userProfiles.profiles.map((profile) => profile.profile_id);
+    const created = await createSession({
+      catalog: "shared",
+      memberProfileIds: members.length > 0 ? members : undefined,
+      agentProfileId: sharedMode.generalProfileId,
+      displayName: options?.displayName?.trim() || "Shared room",
+    });
+
+    this.flushDraftPersist();
+    this.stashFocusedRuntime();
+    const id = created.session_id;
+    localStorage.setItem(SESSION_KEY, id);
+    this.loadRuntimeIntoFocused(emptySessionRuntime(id, loadDraftForSession(id)));
+    this.sessionPristine = true;
+    this.historyLoading = false;
+    this.transcriptEpoch += 1;
+    chatScenes.reset();
+    chatInteractions.reset();
+    this.contextUsage = null;
+    this.contextUsagePanelOpen = false;
+    chatStreamPool.acquire(id);
+    this.stashFocusedRuntime();
+    await this.refreshSessions({ force: true });
+    const { shellTabs } = await import("$lib/stores/shellTabs.svelte");
+    shellTabs.openChat(id, { activate: true });
+    const { workshops } = await import("$lib/stores/workshops.svelte");
+    void workshops.saveActiveSession(id);
+  }
+
   /** Pull transcript from the daemon when the UI remounted empty (startup / reconnect). */
   async ensureSessionHydrated(options?: { notice?: boolean }) {
     if (this.historyLoading) return;
@@ -1060,6 +1106,7 @@ export class ChatStore {
     userContent: string,
     ticket: TurnTicketResponse,
     mediaRefs: MediaRef[] = [],
+    speakerProfileId?: string | null,
   ) {
     this.sessionPristine = false;
     this.transcriptEpoch += 1;
@@ -1069,6 +1116,10 @@ export class ChatStore {
     const isAsk = ticket.mode === "background";
     const askJobId = ticket.workspace_card_id ?? ticket.turn_id;
     const lane = isAsk ? ("ask" as const) : ("chat" as const);
+    const speaker =
+      typeof speakerProfileId === "string" && speakerProfileId.trim()
+        ? speakerProfileId.trim()
+        : null;
     this.messages = [
       ...this.messages,
       {
@@ -1078,6 +1129,7 @@ export class ChatStore {
         turnId: ticket.turn_id,
         lane,
         askJobId: isAsk ? askJobId : null,
+        speakerProfileId: speaker,
         mediaAttachments:
           mediaRefs.length > 0
             ? chatMediaAttachmentsFromRefs(mediaRefs)
@@ -3316,6 +3368,7 @@ function mapTurns(
     statusLine:
       turn.role === "assistant" ? progressFromParts(turn.parts ?? null) : null,
     mediaAttachments: userMediaFromParts(turn.parts ?? null),
+    speakerProfileId: turn.speaker_profile_id?.trim() || null,
   }));
 }
 

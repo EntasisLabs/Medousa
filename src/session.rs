@@ -698,6 +698,7 @@ pub(crate) fn file_build_history_summaries_from_files(limit: usize) -> Vec<Sessi
                 last_verification_coverage,
                 last_verification_verified,
                 preview,
+                catalog: None,
             }
         })
         .collect()
@@ -803,6 +804,7 @@ pub fn list_history_sessions_page_for_profile(
             last_verification_coverage: None,
             last_verification_verified: None,
             preview: "(named session)".to_string(),
+            catalog: None,
         });
     }
 

@@ -106,6 +106,7 @@ impl SharedSessionCatalogRow {
             last_verification_coverage: None,
             last_verification_verified: None,
             preview: self.preview.clone(),
+            catalog: Some("shared".to_string()),
         }
     }
 }

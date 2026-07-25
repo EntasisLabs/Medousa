@@ -536,7 +536,12 @@
         stream_url: acceptedAgent.stream_url,
         stream_ready: acceptedAgent.stream_ready,
       };
-      chat.beginTurn(userContent, ticket, []);
+      chat.beginTurn(
+        userContent,
+        ticket,
+        [],
+        userProfiles.activeProfileId,
+      );
       chat.clearPendingMedia();
       scrollToLatest(true);
       await chat.startTurnStream(
@@ -565,7 +570,12 @@
       voiceAppendix: voice.voiceAppendix,
       identityUserId: opts.identityUserId,
     });
-    chat.beginTurn(userContent, accepted, mediaRefs);
+    chat.beginTurn(
+      userContent,
+      accepted,
+      mediaRefs,
+      opts.identityUserId ?? userProfiles.activeProfileId,
+    );
     chat.clearPendingMedia();
     scrollToLatest(true);
     await chat.startTurnStream(
@@ -632,6 +642,8 @@
 
       if (chat.hasWorkshopHandoff()) {
         await steerBoundWorkshop(chat.sessionId, prompt);
+        await chat.reloadCurrentSession();
+        scrollToLatest(true);
         return;
       }
 
