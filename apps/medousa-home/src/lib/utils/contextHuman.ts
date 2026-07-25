@@ -231,3 +231,47 @@ export function postureListWhisper(avec: LocusAvecSnapshot, threadCount: number)
   const feel = postureHumanFeel(avec).replace(/\.$/, "");
   return `${feel} · ${threadCount} moment${threadCount === 1 ? "" : "s"}`;
 }
+
+const PLACEHOLDER_MOMENT_MEMORY = "A moment she kept from this session.";
+
+function clampMomentProse(value: string, maxLen: number): string {
+  const raw = value.replace(/\s+/g, " ").trim();
+  if (raw.length <= maxLen) return raw;
+  const cut = raw.slice(0, maxLen);
+  const at = cut.lastIndexOf(" ");
+  return `${(at > Math.floor(maxLen * 0.5) ? cut.slice(0, at) : cut).trimEnd()}…`;
+}
+
+/** Kept prose for a selected moment — map overlay + side rail. */
+export function momentKeptProse(
+  rawPayload: string,
+  contextSummary: string | null | undefined,
+  _nodeTitle: string,
+  maxLen = 160,
+): string | null {
+  const raw = extractThreadMemory(rawPayload, contextSummary ?? "").trim();
+  if (!raw || raw === PLACEHOLDER_MOMENT_MEMORY) return null;
+  return clampMomentProse(raw, maxLen);
+}
+
+/** Lead with feeling — never a technical dump as the headline. */
+export function momentHeadline(
+  avec: LocusAvecSnapshot | null | undefined,
+  kept: string | null,
+  nodeTitle: string,
+): string {
+  const feel = avec ? postureHumanFeel(avec).replace(/\.$/, "").trim() : "";
+  if (feel) return feel;
+  if (kept) {
+    const first = kept.split(/[.!?\n]/)[0]?.trim();
+    if (first && first.length <= 72) return first;
+    return clampMomentProse(kept, 68);
+  }
+  const title = nodeTitle.trim();
+  if (!title || title === "Untitled moment") return "A moment she kept";
+  // Titles often are the full summary — keep the rail/overlay scannable.
+  if (title.length > 72 || title.includes(",") || title.includes("/")) {
+    return clampMomentProse(title, 72);
+  }
+  return title;
+}

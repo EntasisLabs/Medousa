@@ -5,14 +5,14 @@
     CalendarDays,
     ChevronLeft,
     ChevronRight,
-    Orbit,
+    Compass,
     Radio,
     Settings,
     Sparkles,
     UserRound,
     Users,
   } from "@lucide/svelte";
-  import ContextPanel from "$lib/components/context/ContextPanel.svelte";
+  import MapPanel from "$lib/components/context/MapPanel.svelte";
   import ProfilesPanel from "$lib/components/profiles/ProfilesPanel.svelte";
   import AutomationsPanel from "$lib/components/automations/AutomationsPanel.svelte";
   import CalendarPanel from "$lib/components/calendar/CalendarPanel.svelte";
@@ -48,7 +48,7 @@
 
   const destinationIcons: Record<Exclude<MoreDestination, "hub">, Component> = {
     profiles: UserRound,
-    context: Orbit,
+    map: Compass,
     workshop: Sparkles,
     automations: Calendar,
     calendar: CalendarDays,
@@ -177,15 +177,8 @@
             await onOpenChat();
           }}
         />
-      {:else if layout.moreDestination === "context"}
-        <ContextPanel
-          visible={true}
-          embedded={true}
-          mobile={true}
-          onOpenChat={async (sessionId) => {
-            await onOpenChat(sessionId);
-          }}
-        />
+      {:else if layout.moreDestination === "map"}
+        <MapPanel visible={true} />
       {:else if layout.moreDestination === "workshop"}
         <SkillsPanel
           visible={true}

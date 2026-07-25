@@ -30,7 +30,7 @@ export function surfaceShowsRailQuickCreate(
   if (
     surfaceId === SAFETY_SURFACE_SETTINGS ||
     surfaceId === "settings" ||
-    surfaceId === "context" ||
+    surfaceId === "map" ||
     surfaceId === "profiles"
   ) {
     return false;

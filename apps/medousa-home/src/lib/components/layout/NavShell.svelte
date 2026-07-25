@@ -1,10 +1,8 @@
 <script lang="ts">
   import SessionSidebar from "$lib/components/chat/SessionSidebar.svelte";
-  import ContextSidePanel from "$lib/components/context/ContextSidePanel.svelte";
   import MapSidePanel from "$lib/components/context/MapSidePanel.svelte";
   import MapRailToolbar from "$lib/components/context/MapRailToolbar.svelte";
   import SessionRailToolbar from "$lib/components/chat/SessionRailToolbar.svelte";
-  import ContextModeBar from "$lib/components/context/ContextModeBar.svelte";
   import NavRailViewPopover from "$lib/components/layout/NavRailViewPopover.svelte";
   import LmeSidePanel from "$lib/components/lme/LmeSidePanel.svelte";
   import MessagingChannelList from "$lib/components/messaging/MessagingChannelList.svelte";
@@ -610,15 +608,13 @@
             </div>
           {:else if viewSurface === "peers"}
             <PeersShellList />
-          {:else if viewSurface === "context"}
-            <ContextSidePanel onRedirectMap={() => onSelect("map")} />
           {:else if viewSurface === "map"}
             <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
               <div class="min-h-0 flex-1 overflow-hidden">
                 <MapSidePanel onPick={() => onSelect("map")} />
               </div>
               <div class="lme-side-rail-dock">
-                <MapRailToolbar />
+                <MapRailToolbar onPick={() => onSelect("map")} />
               </div>
             </div>
           {:else if viewSurface === "web"}
@@ -914,33 +910,6 @@
             </div>
           {/if}
 
-          {#if lifeRail.context?.kind === "surface"}
-            {@const contextSurface = lifeRail.context.surface}
-            {@const ContextIcon = environmentIcon(contextSurface.icon)}
-            {@const contextDoorActive =
-              active === "context" ||
-              surfacePopoverOpen("context") ||
-              (showView && viewSurface === "context")}
-            <button
-              type="button"
-              data-rail-surface="context"
-              class="{railBtnClass('context', 'utility', {
-                quietActive: true,
-                active: contextDoorActive,
-              })} workshop-rail-dock-btn"
-              title={navTitle(contextSurface)}
-              aria-label={navLabel(contextSurface)}
-              aria-current={contextDoorActive ? "page" : undefined}
-              aria-expanded={showView && viewSurface === "context"}
-              onclick={(event) => selectDestination("context", event)}
-            >
-              <span class="workshop-rail-btn-icon" aria-hidden="true">
-                <ContextIcon {...utilityIconProps} />
-              </span>
-              <span class="workshop-rail-btn-label">{navLabel(contextSurface)}</span>
-            </button>
-          {/if}
-
           <button
             type="button"
             data-rail-surface={SAFETY_SURFACE_SETTINGS}
@@ -991,12 +960,8 @@
         <PeersRailToolbar />
       {:else if popover.surfaceId === "messaging"}
         <MessagingRailToolbar />
-      {:else if popover.surfaceId === "context"}
-        <div class="nav-rail-context-toolbar">
-          <ContextModeBar />
-        </div>
       {:else if popover.surfaceId === "map"}
-        <MapRailToolbar />
+        <MapRailToolbar onPick={() => commitPopoverSurface("map")} />
       {:else if popover.surfaceId === "web"}
         <WebRailToolbar onNavigated={() => commitPopoverSurface("web")} />
       {:else if popover.surfaceId === "calendar"}
@@ -1054,12 +1019,6 @@
         chrome="rail-list"
         onPickPeer={() => commitPopoverSurface("peers")}
       />
-    {:else if popover.surfaceId === "context"}
-      <ContextSidePanel
-        chrome="rail-list"
-        onPick={() => commitPopoverSurface("context")}
-        onRedirectMap={() => commitPopoverSurface("map")}
-      />
     {:else if popover.surfaceId === "map"}
       <MapSidePanel onPick={() => commitPopoverSurface("map")} />
     {:else if popover.surfaceId === "web"}
@@ -1075,24 +1034,6 @@
 {/if}
 
 <style>
-  :global(.nav-rail-context-toolbar) {
-    display: flex;
-    min-width: 0;
-    flex: 1;
-    align-items: center;
-    justify-content: flex-start;
-  }
-
-  :global(.nav-rail-context-toolbar .lme-side-mode-bar) {
-    width: auto;
-    border-bottom: 0;
-    padding: 0;
-  }
-
-  :global(.nav-rail-context-toolbar .lme-side-mode-bar > .flex-1) {
-    flex: 0 1 auto;
-  }
-
   :global(.nav-rail-popover-toolbar-label) {
     padding: 0 0.35rem;
     font-size: 0.72rem;

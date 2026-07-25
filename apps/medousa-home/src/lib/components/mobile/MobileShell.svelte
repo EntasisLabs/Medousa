@@ -243,7 +243,7 @@
           mobile={true}
           onOpenContext={() => {
             layout.setIdentityDrawerOpen(false);
-            layout.openMore("context");
+            layout.openMore("map");
           }}
           onOpenConnection={() => layout.openMore("settings")}
         />
@@ -290,7 +290,7 @@
     onClose={() => layout.setIdentityDrawerOpen(false)}
     onOpenFullContext={() => {
       layout.setIdentityDrawerOpen(false);
-      layout.openMore("context");
+      layout.openMore("profiles");
     }}
   />
 

@@ -301,6 +301,16 @@
     background-color: rgb(var(--color-surface-900) / 0.78);
   }
 
+  .context-map-moment-overlay {
+    @apply absolute bottom-4 right-4 z-10;
+    width: min(18.5rem, calc(100% - 2rem));
+  }
+
+  .context-map-viewport-rail .context-map-moment-overlay {
+    @apply bottom-2 right-2;
+    width: min(15rem, calc(100% - 1rem));
+  }
+
   .context-map-viewport-rail .context-map-legend {
     @apply bottom-2 left-2 max-w-[calc(100%-1rem)] gap-x-2 px-2 py-1;
   }

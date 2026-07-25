@@ -235,7 +235,7 @@
               onOpenFullContext();
             }}
           >
-            Open in Context →
+            Open in You →
           </button>
         {/if}
         <button

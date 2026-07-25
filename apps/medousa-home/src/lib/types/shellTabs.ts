@@ -80,7 +80,6 @@ export const SHELL_SURFACE_TAB_IDS = new Set<string>([
   "library",
   "peers",
   "messaging",
-  "context",
   "map",
   "work",
   "calendar",

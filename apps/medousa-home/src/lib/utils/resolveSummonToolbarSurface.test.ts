@@ -6,7 +6,7 @@ describe("resolveSummonToolbarSurface", () => {
     expect(resolveSummonToolbarSurface("chat", "notes")).toBe("chat");
     expect(resolveSummonToolbarSurface("peers", "scripts")).toBe("peers");
     expect(resolveSummonToolbarSurface("messaging", "history")).toBe("messaging");
-    expect(resolveSummonToolbarSurface("context", "notes")).toBe("context");
+    expect(resolveSummonToolbarSurface("map", "notes")).toBe("map");
     expect(resolveSummonToolbarSurface("settings", "agents")).toBe("settings");
     expect(resolveSummonToolbarSurface("web", "notes")).toBe("web");
     expect(resolveSummonToolbarSurface("calendar", "scripts")).toBe("calendar");

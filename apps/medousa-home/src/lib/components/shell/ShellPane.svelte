@@ -5,7 +5,6 @@
   import ChatPaneIdle from "$lib/components/shell/ChatPaneIdle.svelte";
   import WebPaneIdle from "$lib/components/shell/WebPaneIdle.svelte";
   import { chatStreamPool } from "$lib/stores/chatStreamPool.svelte";
-  import ContextPanel from "$lib/components/context/ContextPanel.svelte";
   import MapPanel from "$lib/components/context/MapPanel.svelte";
   import EnvironmentRenderer from "$lib/components/environment/EnvironmentRenderer.svelte";
   import SettingsPanel from "$lib/components/layout/SettingsPanel.svelte";
@@ -202,15 +201,7 @@
         {#snippet builtin()}
           {#if showSurface === "calendar"}
             <CalendarPanel visible={true} />
-          {:else if showSurface === "context"}
-            <ContextPanel
-              visible={true}
-              onOpenChat={async (sessionId) => {
-                shellTabs.openChat(sessionId, { activate: true, groupId });
-                await chat.switchSession(sessionId);
-              }}
-            />
-          {:else if showSurface === "map"}
+          {:else if showSurface === "context" || showSurface === "map"}
             <MapPanel visible={true} />
           {:else if showSurface === "profiles"}
             <ProfilesPanel visible={true} onOpenChat={onOpenChat} />

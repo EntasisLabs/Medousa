@@ -16,9 +16,7 @@
     loading: boolean;
     error: string | null;
     chatSessionAvailable?: boolean;
-    postureAvailable?: boolean;
     onOpenChat?: () => void;
-    onOpenPosture?: () => void;
   }
 
   let {
@@ -26,9 +24,7 @@
     loading,
     error,
     chatSessionAvailable = false,
-    postureAvailable = false,
     onOpenChat,
-    onOpenPosture,
   }: Props = $props();
 
   let rawOpen = $state(false);
@@ -78,9 +74,6 @@
       links={[
         ...(chatSessionAvailable && onOpenChat
           ? [{ label: "Open in Chat", onClick: onOpenChat }]
-          : []),
-        ...(postureAvailable && onOpenPosture
-          ? [{ label: "How you showed up", onClick: onOpenPosture }]
           : []),
       ]}
     />

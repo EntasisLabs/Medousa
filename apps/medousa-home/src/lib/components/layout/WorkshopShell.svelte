@@ -81,6 +81,10 @@
   });
 
   function navigateToSurface(surface: string) {
+    if (surface === "context") {
+      shellTabs.openSurface("map", { activate: true });
+      return;
+    }
     // Automations + Capabilities fold into the LME workspace (library surface).
     if (surface === "automations") {
       const mode = lmeWorkspace.explorerMode;
@@ -170,7 +174,7 @@
             onOpenWork={() => goToSurface("work")}
             onOpenContext={() => {
               layout.setIdentityDrawerOpen(false);
-              goToSurface("context");
+              goToSurface("map");
             }}
             onOpenConnection={() => {
               settingsNav.openSection("agent");
@@ -197,7 +201,7 @@
           onClose={() => layout.setIdentityDrawerOpen(false)}
           onOpenFullContext={() => {
             layout.setIdentityDrawerOpen(false);
-            goToSurface("context");
+            goToSurface("profiles");
           }}
         />
       {/if}

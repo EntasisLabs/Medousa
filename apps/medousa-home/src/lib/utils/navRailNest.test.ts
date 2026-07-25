@@ -12,7 +12,7 @@ describe("navRailNest", () => {
     expect(surfaceSupportsRailNest("chat")).toBe(true);
     expect(surfaceSupportsRailNest("peers")).toBe(true);
     expect(surfaceSupportsRailNest("web")).toBe(true);
-    expect(surfaceSupportsRailNest("context")).toBe(false);
+    expect(surfaceSupportsRailNest("map")).toBe(false);
   });
 
   it("supports Work nest (Board / Asks) and leaves other utilities alone", () => {

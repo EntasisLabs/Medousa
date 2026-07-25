@@ -8,7 +8,7 @@ import type { LifeRailItem } from "$lib/utils/lifeRailItems";
 /**
  * Jobs rail — open doors, not a table of contents.
  * Library and Automations are independent destinations (order follows the preset).
- * Context and You are sibling dock doors at the bottom (not nested).
+ * You is a dock door at the bottom (not nested).
  */
 export type LifeRailLayout = {
   primary: LifeRailItem[];
@@ -21,8 +21,6 @@ export type LifeRailLayout = {
   /** Automations is present in the primary strip. */
   showAutomations: boolean;
   you: LifeRailItem;
-  /** Dock sibling next to You (own door, not nested). */
-  context: LifeRailItem | null;
 };
 
 /** @deprecated Diagnostics / legacy mapping only. */
@@ -42,7 +40,7 @@ const FOCUS_IDS = new Set(["calendar", "work", "web"]);
 export const RAIL_PRIMARY_SKIP_IDS = new Set([
   "workshop",
   "home",
-  "context",
+  "context", // retired — stripped from specs; keep skip for stale ids
   "profiles",
   "messaging",
   SAFETY_SURFACE_SETTINGS,
@@ -131,7 +129,6 @@ export function buildLifeRailLayout(surfaces: SurfaceDef[]): LifeRailLayout {
     (item) => item.kind === "surface" && item.surface.kind === "custom",
   );
 
-  const contextSurface = byId.get("context") ?? null;
   const profilesExisting = byId.get("profiles");
   const you: LifeRailItem = {
     kind: "surface",
@@ -151,9 +148,6 @@ export function buildLifeRailLayout(surfaces: SurfaceDef[]): LifeRailLayout {
     showLibrary: sawLibrary,
     showAutomations: sawAutomations,
     you,
-    context: contextSurface
-      ? { kind: "surface", id: "context", surface: contextSurface }
-      : null,
   };
 }
 
@@ -188,10 +182,7 @@ export function buildLifeRailSections(surfaces: SurfaceDef[]): {
       items,
     });
   }
-  const memory: LifeRailItem[] = [];
-  if (layout.context) memory.push(layout.context);
-  memory.push(layout.you);
-  sections.push({ id: "memory", label: "Memory", items: memory });
+  sections.push({ id: "memory", label: "Memory", items: [layout.you] });
   if (custom.length) sections.push({ id: "custom", label: "Custom", items: custom });
   return sections;
 }
@@ -203,6 +194,7 @@ export function railSectionForItemId(itemId: string): RailSectionId | null {
     return "channels";
   }
   if (FOCUS_IDS.has(itemId)) return "focus";
-  if (itemId === "context" || itemId === "profiles") return "memory";
+  if (itemId === "map") return "channels";
+  if (itemId === "profiles") return "memory";
   return null;
 }

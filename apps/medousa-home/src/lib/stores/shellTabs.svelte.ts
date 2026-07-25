@@ -83,7 +83,6 @@ function surfaceTitle(surfaceId: string): string {
     case "messaging":
       return "Channels";
     case "context":
-      return "Context";
     case "map":
       return "Map";
     case "work":
@@ -699,6 +698,7 @@ export class ShellTabsStore {
     options?: { activate?: boolean; groupId?: string },
   ): string | null {
     let next = surfaceId === "home" ? "chat" : surfaceId;
+    if (next === "context") next = "map";
     if (next === "automations" || next === "workshop") next = "library";
     const groupId = options?.groupId ?? this.activeGroupId;
     if (next === "chat") {

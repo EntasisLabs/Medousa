@@ -33,7 +33,6 @@ function defaultSurfaces() {
     { id: "library", label: "Workspace", icon: "panels-top-left", builtinId: "library", mobileTab: "notes" },
     { id: "calendar", label: "Calendar", icon: "calendar-days", builtinId: "calendar" },
     { id: "web", label: "Web", icon: "globe", builtinId: "web", mobileTab: "web" },
-    { id: "context", label: "Context", icon: "orbit", builtinId: "context" },
     { id: "map", label: "Map", icon: "compass", builtinId: "map" },
     { id: "automations", label: "Automations", icon: "zap", builtinId: "automations" },
     { id: "messaging", label: "Messaging", icon: "radio", builtinId: "messaging" },
@@ -217,37 +216,39 @@ function mapSurfaceDef(): SurfaceDef {
   );
 }
 
-function placeMapAfterContext(surfaceIds: string[]): string[] {
-  if (surfaceIds.includes("map")) return surfaceIds;
-  const next = [...surfaceIds];
-  const contextAt = next.indexOf("context");
-  if (contextAt >= 0) {
-    next.splice(contextAt + 1, 0, "map");
-    return next;
-  }
+function stripRetiredContextSurface(surfaceIds: string[]): string[] {
+  const withoutContext = surfaceIds.filter((id) => id !== "context");
+  if (withoutContext.includes("map")) return withoutContext;
+  const next = [...withoutContext];
   const libraryAt = next.indexOf("library");
   if (libraryAt >= 0) {
     next.splice(libraryAt + 1, 0, "map");
+    return next;
+  }
+  const webAt = next.indexOf("web");
+  if (webAt >= 0) {
+    next.splice(webAt + 1, 0, "map");
     return next;
   }
   next.push("map");
   return next;
 }
 
-/** Ensure Map exists after Context in the rail. */
+/** Ensure Map exists; strip retired Context surface from specs/presets. */
 export function ensureMapSurfaceInSpec(spec: EnvironmentSpec): EnvironmentSpec {
-  const hasMap = spec.surfaces.some((surface) => surface.id === "map");
-  let surfaces = [...spec.surfaces];
+  let surfaces = spec.surfaces.filter((surface) => surface.id !== "context");
+  const hasMap = surfaces.some((surface) => surface.id === "map");
 
   if (!hasMap) {
-    const contextIndex = surfaces.findIndex((surface) => surface.id === "context");
-    const insertAt = contextIndex >= 0 ? contextIndex + 1 : surfaces.length;
+    const libraryIndex = surfaces.findIndex((surface) => surface.id === "library");
+    const insertAt = libraryIndex >= 0 ? libraryIndex + 1 : surfaces.length;
+    surfaces = [...surfaces];
     surfaces.splice(insertAt, 0, mapSurfaceDef());
   }
 
   const layoutPresets = (spec.layoutPresets ?? []).map((preset) => ({
     ...preset,
-    surfaces: placeMapAfterContext(preset.surfaces),
+    surfaces: stripRetiredContextSurface(preset.surfaces),
   }));
 
   const surfacesChanged =

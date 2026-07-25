@@ -1,8 +1,10 @@
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
   import ContextMapCanvas from "$lib/components/context/ContextMapCanvas.svelte";
+  import MapMomentOverlay from "$lib/components/context/MapMomentOverlay.svelte";
   import { contextShell } from "$lib/stores/contextShell.svelte";
-  import type { LocusNodeSummary } from "$lib/types/locus";
+  import { contextThreads } from "$lib/stores/contextThreads.svelte";
+  import type { LocusNodeDetailResponse, LocusNodeSummary } from "$lib/types/locus";
   import type { VaultNote } from "$lib/types/vault";
   import {
     applySimulationPositions,
@@ -22,8 +24,12 @@
     error: string | null;
     selectedNodeId?: string | null;
     density?: ContextMapDensity;
+    momentDetail?: LocusNodeDetailResponse | null;
+    momentDetailLoading?: boolean;
+    chatSessionAvailable?: boolean;
     onFocusNode?: (node: ContextMapNode) => void;
     onClearSelection?: () => void;
+    onOpenChat?: () => void;
   }
 
   let {
@@ -35,8 +41,12 @@
     error,
     selectedNodeId = null,
     density = "default",
+    momentDetail = null,
+    momentDetailLoading = false,
+    chatSessionAvailable = false,
     onFocusNode,
     onClearSelection,
+    onOpenChat,
   }: Props = $props();
 
   let stageEl: HTMLDivElement | undefined = $state();
@@ -97,6 +107,7 @@
       searchQuery: search,
       density,
       vaultNotes,
+      avecMins: contextShell.mapAvecMins,
     }),
   );
 
@@ -181,6 +192,17 @@
   const totalMoments = $derived(new Set(nodes.map((node) => node.sync_key)).size);
   const noteCount = $derived(graph.nodes.filter((node) => node.kind === "note").length);
 
+  const selectedSyncKey = $derived(
+    selectedNodeId?.startsWith("thread:")
+      ? selectedNodeId.slice("thread:".length)
+      : null,
+  );
+  const overlayDetail = $derived.by(() => {
+    if (!selectedSyncKey) return null;
+    if (momentDetail?.node.sync_key === selectedSyncKey) return momentDetail;
+    return null;
+  });
+
   function toggleExpandSession(sessionId: string) {
     const next = new Set(expandedSessionIds);
     if (next.has(sessionId)) {
@@ -253,6 +275,21 @@
         onDragMove={handleDragMove}
         onDragEnd={handleDragEnd}
       />
+    {/if}
+
+    {#if selectedSyncKey && overlayDetail}
+      <div class="context-map-moment-overlay">
+        <MapMomentOverlay
+          detail={overlayDetail}
+          {chatSessionAvailable}
+          onOpenChat={onOpenChat}
+          onClear={onClearSelection}
+        />
+      </div>
+    {:else if selectedSyncKey && momentDetailLoading}
+      <div class="context-map-moment-overlay">
+        <p class="workshop-muted px-3 py-4 text-sm">Loading this moment…</p>
+      </div>
     {/if}
   </div>
 </div>

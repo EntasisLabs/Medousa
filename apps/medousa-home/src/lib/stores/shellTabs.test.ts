@@ -256,7 +256,7 @@ describe("shellTabs store", () => {
 
   it("keeps editor groups shaped for splits", async () => {
     const { shellTabs } = await import("./shellTabs.svelte");
-    shellTabs.openSurface("context", { activate: true });
+    shellTabs.openSurface("map", { activate: true });
     expect(shellTabs.groups.length).toBeGreaterThanOrEqual(1);
     expect(shellTabs.splitRoot.type).toBe("group");
   });

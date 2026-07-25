@@ -27,7 +27,6 @@ export const NAV_DESTINATION_GROUPS: Array<{ label: string; surfaceIds: string[]
       "library",
       "automations",
       "web",
-      "context",
       "map",
       "calendar",
     ],
@@ -223,7 +222,7 @@ export function reorderSurfaceInActivePreset(
 
 /**
  * Move a primary-rail destination to `toPrimaryIndex` (0-based among primary doors).
- * Non-primary surfaces (context, messaging, safety, …) keep their relative slots.
+ * Non-primary surfaces (messaging, safety, …) keep their relative slots.
  */
 export function reorderPrimarySurfaceInActivePreset(
   spec: EnvironmentSpec,

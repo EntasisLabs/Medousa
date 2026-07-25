@@ -14,7 +14,7 @@ const LANDING_SURFACES: Surface[] = [
   "messaging",
   "settings",
   "calendar",
-  "context",
+  "map",
   "runtime",
   "profiles",
 ];
@@ -344,7 +344,8 @@ export class LayoutStore {
    * tab switch should navigate separately.
    */
   openShellSidebarView(surfaceId: string) {
-    if (!surfaceHasShellSidebarView(surfaceId)) {
+    const resolved = surfaceId === "context" ? "map" : surfaceId;
+    if (!surfaceHasShellSidebarView(resolved)) {
       this.setShellSidebarMode("nav");
       this.setShellSidebarExpanded(true);
       return;
@@ -353,7 +354,7 @@ export class LayoutStore {
       !this.railViewHistoryQuiet &&
       this.shellSidebarMode === "view" &&
       this.shellSidebarViewSurface &&
-      this.shellSidebarViewSurface !== surfaceId
+      this.shellSidebarViewSurface !== resolved
     ) {
       this.pushRailViewHistory(this.shellSidebarViewSurface);
       this.railViewForwardStack = [];
@@ -361,13 +362,13 @@ export class LayoutStore {
     } else if (
       !this.railViewHistoryQuiet &&
       this.shellSidebarMode === "nav" &&
-      this.shellSidebarViewSurface !== surfaceId
+      this.shellSidebarViewSurface !== resolved
     ) {
       // Entering view from nav — clear forward; keep back for leaving view.
       this.railViewForwardStack = [];
       this.railViewHistoryEpoch += 1;
     }
-    this.shellSidebarViewSurface = surfaceId;
+    this.shellSidebarViewSurface = resolved;
     this.setShellSidebarMode("view");
     this.setShellSidebarExpanded(true);
   }
@@ -491,7 +492,7 @@ export class LayoutStore {
   }
 
   openMore(destination: MoreDestination) {
-    this.moreDestination = destination;
+    this.moreDestination = destination === ("context" as MoreDestination) ? "map" : destination;
     this.mobileTab = "more";
     if (typeof localStorage !== "undefined") {
       localStorage.setItem(MOBILE_TAB_KEY, "more");
@@ -571,7 +572,7 @@ function loadMoreDestination(): MoreDestination {
   const valid: MoreDestination[] = [
     "hub",
     "profiles",
-    "context",
+    "map",
     "workshop",
     "automations",
     "calendar",
@@ -582,6 +583,7 @@ function loadMoreDestination(): MoreDestination {
   ];
   if (stored === "library") return "hub";
   if (stored === "web") return "hub";
+  if (stored === "context") return "map";
   if (stored && valid.includes(stored as MoreDestination)) {
     return stored as MoreDestination;
   }

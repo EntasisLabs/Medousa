@@ -3,7 +3,7 @@ export type MobileTab = "home" | "chat" | "notes" | "web" | "more";
 export type MoreDestination =
   | "hub"
   | "profiles"
-  | "context"
+  | "map"
   | "workshop"
   | "automations"
   | "calendar"
@@ -25,8 +25,8 @@ export const MORE_DESTINATIONS: {
   label: string;
   hint: string;
 }[] = [
-  { id: "profiles", label: "Profiles", hint: "Who you are — teach her facts" },
-  { id: "context", label: "Context", hint: "What she remembers about you" },
+  { id: "profiles", label: "You", hint: "Who you are — teach her facts" },
+  { id: "map", label: "Map", hint: "Sessions, moments, and notes linked" },
   { id: "workshop", label: "Agents", hint: "Specialist agents you can run" },
   { id: "calendar", label: "Calendar", hint: "Meetings, reminders & .ics" },
   { id: "messaging", label: "Channels", hint: "Telegram, Discord, Slack & more" },
@@ -44,7 +44,7 @@ export const MORE_HUB_SECTIONS: {
   {
     title: "Stay in touch",
     subtitle: "Memory, agents, and channels",
-    destinations: ["profiles", "context", "workshop", "calendar", "messaging", "peers"],
+    destinations: ["profiles", "map", "workshop", "calendar", "messaging", "peers"],
   },
   {
     title: "Preferences",

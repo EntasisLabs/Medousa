@@ -111,7 +111,7 @@ describe("environmentLayout reorder", () => {
     preset!.surfaces = [
       "chat",
       "peers",
-      "context",
+      "map",
       "work",
       "library",
       "automations",
@@ -124,10 +124,11 @@ describe("environmentLayout reorder", () => {
       "work",
       "chat",
       "peers",
+      "map",
       "library",
       "automations",
     ]);
-    expect(activePresetSurfaceIds(spec).indexOf("context")).toBeGreaterThan(
+    expect(activePresetSurfaceIds(spec).indexOf("map")).toBeGreaterThan(
       activePresetSurfaceIds(spec).indexOf("peers"),
     );
 
@@ -135,9 +136,10 @@ describe("environmentLayout reorder", () => {
     expect(primaryRailSurfaceIds(activePresetSurfaceIds(spec))).toEqual([
       "chat",
       "peers",
+      "map",
       "library",
-      "automations",
       "work",
+      "automations",
     ]);
   });
 });

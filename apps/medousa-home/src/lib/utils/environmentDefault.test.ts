@@ -6,13 +6,11 @@ import {
 } from "$lib/utils/environmentDefault";
 
 describe("ensureMapSurfaceInSpec", () => {
-  it("keeps a single map surface on the default spec", () => {
+  it("keeps a single map surface and no context on the default spec", () => {
     const spec = defaultEnvironmentSpec();
     const next = ensureMapSurfaceInSpec(spec);
     expect(next.surfaces.filter((surface) => surface.id === "map")).toHaveLength(1);
-    const contextAt = next.surfaces.findIndex((surface) => surface.id === "context");
-    const mapAt = next.surfaces.findIndex((surface) => surface.id === "map");
-    expect(mapAt).toBe(contextAt + 1);
+    expect(next.surfaces.some((surface) => surface.id === "context")).toBe(false);
   });
 
   it("inserts map into older specs missing the surface", () => {
@@ -27,10 +25,31 @@ describe("ensureMapSurfaceInSpec", () => {
     const map = next.surfaces.find((surface) => surface.id === "map");
     expect(map?.label).toBe("Map");
     expect(map?.icon).toBe("compass");
-    const contextAt = next.surfaces.findIndex((surface) => surface.id === "context");
-    const mapAt = next.surfaces.findIndex((surface) => surface.id === "map");
-    expect(mapAt).toBe(contextAt + 1);
     expect(next.layoutPresets?.[0]?.surfaces).toContain("map");
+  });
+
+  it("strips retired context from older specs", () => {
+    const spec = defaultEnvironmentSpec();
+    const webAt = spec.surfaces.findIndex((surface) => surface.id === "web");
+    spec.surfaces.splice(webAt + 1, 0, {
+      id: "context",
+      label: "Context",
+      icon: "orbit",
+      kind: "builtin",
+      builtinId: "context",
+      layout: "single",
+      slots: [],
+      mobileTab: null,
+    });
+    for (const preset of spec.layoutPresets ?? []) {
+      const idx = preset.surfaces.indexOf("web");
+      if (idx >= 0) preset.surfaces.splice(idx + 1, 0, "context");
+    }
+
+    const next = ensureMapSurfaceInSpec(spec);
+    expect(next.surfaces.some((surface) => surface.id === "context")).toBe(false);
+    expect(next.layoutPresets?.[0]?.surfaces).not.toContain("context");
+    expect(next.surfaces.some((surface) => surface.id === "map")).toBe(true);
   });
 });
 

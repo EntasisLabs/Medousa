@@ -1,15 +1,12 @@
 <script lang="ts">
-  import ContextMapMomentDetail from "$lib/components/context/ContextMapMomentDetail.svelte";
   import { listVaultNotes } from "$lib/daemon";
   import { chat } from "$lib/stores/chat.svelte";
-  import { contextPosture } from "$lib/stores/contextPosture.svelte";
   import { contextShell } from "$lib/stores/contextShell.svelte";
   import { contextThreads } from "$lib/stores/contextThreads.svelte";
   import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
   import { shellTabs } from "$lib/stores/shellTabs.svelte";
   import type { VaultNote } from "$lib/types/vault";
   import { hasKnownChatSession } from "$lib/utils/contextCrossLinks";
-  import { buildContextPostureEntries } from "$lib/utils/contextPosture";
   import {
     buildContextMapGraph,
     defaultExpandedSessionIds,
@@ -24,6 +21,12 @@
     sessionIdForNoteChatTag,
   } from "$lib/utils/contextMapNotes";
   import { isWorkshopVaultTag } from "$lib/utils/vaultFrontmatter";
+  import {
+    formatContextWhen,
+    humanMomentTitle,
+    momentHeadline,
+    momentKeptProse,
+  } from "$lib/utils/contextHuman";
   import { FileText, Map as MapIcon, Square, X } from "@lucide/svelte";
 
   interface Props {
@@ -47,9 +50,6 @@
     ),
   );
   const chatSessionIds = $derived(new Set(chat.sessions.map((session) => session.session_id)));
-  const postureEntries = $derived(
-    buildContextPostureEntries(contextPosture.nodes, sessionLabels),
-  );
 
   const mapThreadSyncKey = $derived(
     selectedMapNodeId?.startsWith("thread:")
@@ -89,11 +89,6 @@
   const mapThreadChatAvailable = $derived(
     mapSessionId ? hasKnownChatSession(mapSessionId, chatSessionIds) : false,
   );
-  const mapThreadPostureAvailable = $derived(
-    mapSessionId
-      ? postureEntries.some((entry) => entry.sessionId === mapSessionId)
-      : false,
-  );
   const sessionLabel = $derived(
     mapSessionId ? (sessionLabels[mapSessionId] ?? mapSessionId) : null,
   );
@@ -108,6 +103,7 @@
       searchQuery: search,
       density: "rail",
       vaultNotes,
+      avecMins: contextShell.mapAvecMins,
     });
   });
 
@@ -184,7 +180,6 @@
   $effect(() => {
     void contextThreads.refresh({ limit: 200 });
     void chat.refreshSessions();
-    void contextPosture.refresh();
     void (async () => {
       try {
         const response = await listVaultNotes({ limit: 200 });
@@ -220,11 +215,6 @@
     await chat.switchSession(sessionId);
   }
 
-  function openPostureForSession(sessionId: string) {
-    contextShell.openPostureForSession(sessionId);
-    onPick?.();
-  }
-
   async function openSelectedNote() {
     if (!selectedNotePath) return;
     shellTabs.openSurface("library", { activate: true });
@@ -242,36 +232,86 @@
     if (kind === "thread") return Square;
     return MapIcon;
   }
+
+  const focusedMomentDetail = $derived(
+    mapThreadSyncKey && contextThreads.detail?.node.sync_key === mapThreadSyncKey
+      ? contextThreads.detail
+      : null,
+  );
+  const focusedMomentTitle = $derived(
+    focusedMomentDetail ? humanMomentTitle(focusedMomentDetail.node) : "",
+  );
+  const focusedMomentKept = $derived(
+    focusedMomentDetail
+      ? momentKeptProse(
+          focusedMomentDetail.raw,
+          focusedMomentDetail.node.context_summary,
+          focusedMomentTitle,
+          180,
+        )
+      : null,
+  );
+  const focusedMomentHeadline = $derived(
+    focusedMomentDetail
+      ? momentHeadline(
+          focusedMomentDetail.node.user_avec,
+          focusedMomentKept,
+          focusedMomentTitle,
+        )
+      : null,
+  );
+  const focusedMomentWhen = $derived(
+    focusedMomentDetail ? formatContextWhen(focusedMomentDetail.node.timestamp) : null,
+  );
+  const showFocusedKept = $derived(
+    Boolean(
+      focusedMomentKept &&
+        focusedMomentHeadline &&
+        focusedMomentKept !== focusedMomentHeadline &&
+        !focusedMomentHeadline.startsWith(focusedMomentKept.slice(0, 24)),
+    ),
+  );
 </script>
 
 <div class="map-side-panel flex h-full min-h-0 w-full flex-col" data-debug-label="map-side-panel">
   <div class="workshop-detail-pane mobile-you-scroll min-h-0 flex-1 overflow-y-auto px-2 py-3">
     {#if mapThreadSyncKey}
-      <div class="mb-2 flex items-center justify-end px-0.5">
+      <div class="map-rail-moment relative px-0.5 pr-7">
         <button
           type="button"
-          class="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-surface-500 transition hover:bg-surface-800/80 hover:text-surface-200"
+          class="map-rail-moment-dismiss"
+          aria-label="Clear focus"
           onclick={clearFocus}
         >
-          Clear
-          <X size={12} strokeWidth={2} />
+          <X size={14} strokeWidth={1.75} />
         </button>
+
+        {#if focusedMomentDetail && focusedMomentHeadline}
+          {#if focusedMomentWhen}
+            <p class="map-rail-moment-when">{focusedMomentWhen}</p>
+          {/if}
+          <h3 class="map-rail-moment-headline">{focusedMomentHeadline}</h3>
+          {#if showFocusedKept}
+            <p class="map-rail-moment-kept">{focusedMomentKept}</p>
+          {/if}
+        {:else if contextThreads.detailLoading}
+          <p class="map-rail-moment-when">Loading…</p>
+          <h3 class="map-rail-moment-headline">A moment</h3>
+        {:else}
+          <p class="map-rail-moment-when">On the map</p>
+          <h3 class="map-rail-moment-headline">Focused</h3>
+        {/if}
+
+        {#if mapSessionId && mapThreadChatAvailable}
+          <button
+            type="button"
+            class="map-rail-moment-chat"
+            onclick={() => openChatForSession(mapSessionId)}
+          >
+            Open chat
+          </button>
+        {/if}
       </div>
-      <ContextMapMomentDetail
-        detail={contextThreads.detail}
-        loading={contextThreads.detailLoading}
-        error={contextThreads.detailError}
-        chatSessionAvailable={mapThreadChatAvailable}
-        postureAvailable={mapThreadPostureAvailable}
-        onOpenChat={
-          mapSessionId && mapThreadChatAvailable
-            ? () => openChatForSession(mapSessionId)
-            : undefined
-        }
-        onOpenPosture={
-          mapSessionId ? () => openPostureForSession(mapSessionId) : undefined
-        }
-      />
     {:else if selectedNote}
       <div class="space-y-3 px-0.5">
         <div class="flex items-start justify-between gap-2">
@@ -458,3 +498,71 @@
     {/if}
   </div>
 </div>
+
+<style>
+  .map-rail-moment-dismiss {
+    position: absolute;
+    top: -0.15rem;
+    right: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.6rem;
+    height: 1.6rem;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: rgb(var(--color-surface-500));
+    cursor: pointer;
+  }
+
+  .map-rail-moment-dismiss:hover {
+    color: rgb(var(--color-surface-200));
+    background: rgb(var(--color-surface-800) / 0.65);
+  }
+
+  .map-rail-moment-when {
+    margin: 0;
+    font-size: 11px;
+    letter-spacing: 0.02em;
+    color: rgb(var(--color-surface-500));
+  }
+
+  .map-rail-moment-headline {
+    margin: 0.4rem 0 0;
+    font-size: 1.05rem;
+    font-weight: 560;
+    letter-spacing: -0.025em;
+    line-height: 1.28;
+    color: rgb(var(--color-surface-50));
+  }
+
+  .map-rail-moment-kept {
+    margin: 0.65rem 0 0;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 5;
+    overflow: hidden;
+    font-size: 0.8125rem;
+    line-height: 1.45;
+    color: rgb(var(--color-surface-300) / 0.92);
+  }
+
+  .map-rail-moment-chat {
+    margin-top: 0.9rem;
+    border: 0;
+    background: transparent;
+    padding: 0;
+    font-size: 12px;
+    color: rgb(var(--color-surface-400));
+    cursor: pointer;
+    text-decoration: underline;
+    text-underline-offset: 0.18em;
+    text-decoration-color: rgb(var(--color-surface-600));
+  }
+
+  .map-rail-moment-chat:hover {
+    color: rgb(var(--color-surface-100));
+    text-decoration-color: rgb(var(--color-surface-400));
+  }
+</style>

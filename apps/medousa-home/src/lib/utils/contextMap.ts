@@ -1,10 +1,43 @@
-import type { LocusNodeSummary } from "$lib/types/locus";
+import type { LocusAvecSnapshot, LocusNodeSummary } from "$lib/types/locus";
 import type { VaultNote } from "$lib/types/vault";
 import { humanMomentTitle, sessionMapLabel } from "$lib/utils/contextHuman";
 import {
   buildNoteGraphSlice,
   sessionIdForNoteChatTag,
 } from "$lib/utils/contextMapNotes";
+import { AVEC_DIMENSIONS } from "$lib/utils/contextPosture";
+
+export type MapAvecMins = {
+  stability: number;
+  friction: number;
+  logic: number;
+  autonomy: number;
+};
+
+export function avecMinsActive(mins?: MapAvecMins | null): boolean {
+  if (!mins) return false;
+  return (
+    mins.stability > 0 ||
+    mins.friction > 0 ||
+    mins.logic > 0 ||
+    mins.autonomy > 0
+  );
+}
+
+/** Moment passes when every dim with min > 0 has user_avec[dim] >= min. */
+export function momentPassesAvecMins(
+  thread: { user_avec?: LocusAvecSnapshot | null },
+  mins?: MapAvecMins | null,
+): boolean {
+  if (!avecMinsActive(mins) || !mins) return true;
+  const avec = thread.user_avec;
+  if (!avec) return false;
+  for (const dim of AVEC_DIMENSIONS) {
+    const min = mins[dim.key];
+    if (min > 0 && avec[dim.key] < min) return false;
+  }
+  return true;
+}
 
 export type ContextMapNodeKind = "session" | "thread" | "claim" | "note";
 
@@ -405,6 +438,8 @@ export function buildContextMapGraph(
     /** Preserve settled coords across expand/search rebuilds. */
     priorPositions?: Map<string, { x: number; y: number }>;
     vaultNotes?: VaultNote[];
+    /** Per-dimension AVEC minimums (0 = off). */
+    avecMins?: MapAvecMins | null;
   },
 ): ContextMapGraph {
   const {
@@ -415,8 +450,10 @@ export function buildContextMapGraph(
     density = "default",
     priorPositions,
     vaultNotes = [],
+    avecMins = null,
   } = options;
   const needle = searchQuery.trim().toLowerCase();
+  const avecFilterOn = avecMinsActive(avecMins);
   const buckets = buildSessionBuckets(locusNodes, sessionLabels);
   const allBucketSessionIds = buckets.map((bucket) => bucket.sessionId);
   const noteRevealSessions = new Set<string>();
@@ -446,7 +483,12 @@ export function buildContextMapGraph(
       !needle ||
       bucket.label.toLowerCase().includes(needle) ||
       bucket.sessionId.toLowerCase().includes(needle);
-    const visibleThreads = bucket.threads.slice(0, MAX_THREADS_PER_SESSION);
+    const avecThreads = bucket.threads.filter((thread) =>
+      momentPassesAvecMins(thread, avecMins),
+    );
+    if (avecFilterOn && avecThreads.length === 0) continue;
+
+    const visibleThreads = avecThreads.slice(0, MAX_THREADS_PER_SESSION);
     const expanded = expandedSessionIds.has(bucket.sessionId);
 
     const matchingThreads = visibleThreads.filter((thread) => {

@@ -8,7 +8,7 @@
     label?: string;
   }
 
-  let { avec, compact = false, label = "Your posture" }: Props = $props();
+  let { avec, compact = false, label = "How you showed up" }: Props = $props();
 </script>
 
 <div class="context-posture-fingerprint {compact ? 'context-posture-fingerprint-compact' : ''}">
@@ -23,7 +23,10 @@
       <div class="context-posture-dim">
         <span class="context-posture-dim-label">{dim.label}</span>
         <span class="context-posture-dim-track" aria-hidden="true">
-          <span class="context-posture-dim-fill" style="width: {Math.min(100, Math.max(0, value * 100))}%"></span>
+          <span
+            class="context-posture-dim-fill"
+            style="width: {Math.min(100, Math.max(0, value * 100))}%"
+          ></span>
         </span>
         <span class="context-posture-dim-value">{value.toFixed(2)}</span>
       </div>

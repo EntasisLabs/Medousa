@@ -4,7 +4,9 @@
   import { chat } from "$lib/stores/chat.svelte";
   import { contextShell } from "$lib/stores/contextShell.svelte";
   import { contextThreads } from "$lib/stores/contextThreads.svelte";
+  import { shellTabs } from "$lib/stores/shellTabs.svelte";
   import type { VaultNote } from "$lib/types/vault";
+  import { hasKnownChatSession } from "$lib/utils/contextCrossLinks";
   import type { ContextMapNode } from "$lib/utils/contextMap";
 
   interface Props {
@@ -27,6 +29,27 @@
       ]),
     ),
   );
+  const chatSessionIds = $derived(new Set(chat.sessions.map((session) => session.session_id)));
+  const selectedThreadSessionId = $derived.by(() => {
+    if (!selectedMapNodeId?.startsWith("thread:")) return null;
+    const syncKey = selectedMapNodeId.slice("thread:".length);
+    return (
+      contextThreads.detail?.node.session_id ??
+      contextThreads.nodes.find((node) => node.sync_key === syncKey)?.session_id ??
+      null
+    );
+  });
+  const momentChatAvailable = $derived(
+    selectedThreadSessionId
+      ? hasKnownChatSession(selectedThreadSessionId, chatSessionIds)
+      : false,
+  );
+
+  async function openChatForSelectedMoment() {
+    if (!selectedThreadSessionId) return;
+    shellTabs.openChat(selectedThreadSessionId, { activate: true });
+    await chat.switchSession(selectedThreadSessionId);
+  }
 
   $effect(() => {
     if (!visible) return;
@@ -77,8 +100,14 @@
         error={mapError}
         selectedNodeId={selectedMapNodeId}
         density="default"
+        momentDetail={contextThreads.detail}
+        momentDetailLoading={contextThreads.detailLoading}
+        chatSessionAvailable={momentChatAvailable}
         onFocusNode={focusMapNode}
         onClearSelection={clearMapFocus}
+        onOpenChat={
+          momentChatAvailable ? () => void openChatForSelectedMoment() : undefined
+        }
       />
     {/if}
   </div>
