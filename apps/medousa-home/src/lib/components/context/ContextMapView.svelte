@@ -1,14 +1,15 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onDestroy, onMount } from "svelte";
   import ContextMapCanvas from "$lib/components/context/ContextMapCanvas.svelte";
   import type { LocusNodeSummary } from "$lib/types/locus";
   import {
-    applyPinnedPositions,
+    applySimulationPositions,
     buildContextMapGraph,
     defaultExpandedSessionIds,
     type ContextMapDensity,
     type ContextMapNode,
   } from "$lib/utils/contextMap";
+  import { createContextMapSimulation } from "$lib/utils/contextMapPhysics";
 
   interface Props {
     nodes: LocusNodeSummary[];
@@ -39,7 +40,11 @@
   let stageHeight = $state(density === "rail" ? 480 : 640);
   let expandedSessionIds = $state<Set<string>>(new Set());
   let expandedBootstrapped = $state(false);
-  let pinnedPositions = $state(new Map<string, { x: number; y: number }>());
+
+  const simulation = createContextMapSimulation();
+  let livePositions = $state(new Map<string, { x: number; y: number }>());
+  let simRaf = 0;
+  let lastTopologyKey = "";
 
   onMount(() => {
     if (!stageEl) return;
@@ -57,6 +62,11 @@
     return () => observer.disconnect();
   });
 
+  onDestroy(() => {
+    if (simRaf) cancelAnimationFrame(simRaf);
+    simulation.dispose();
+  });
+
   $effect(() => {
     nodes;
     search;
@@ -65,7 +75,7 @@
     expandedBootstrapped = true;
   });
 
-  /** Layout only — never depends on pins, so drags don't re-run force simulation. */
+  /** Topology only — positions come from the settle simulation, not this rebuild. */
   const baseGraph = $derived(
     buildContextMapGraph(nodes, sessionLabels, {
       width: stageWidth,
@@ -76,7 +86,82 @@
     }),
   );
 
-  const graph = $derived(applyPinnedPositions(baseGraph, pinnedPositions));
+  function topologyKey(graph: typeof baseGraph): string {
+    const nodeIds = graph.nodes
+      .filter((node) => node.visible)
+      .map((node) => node.id)
+      .sort()
+      .join("|");
+    const edgeIds = graph.edges
+      .filter((edge) => edge.visible)
+      .map((edge) => edge.id)
+      .sort()
+      .join("|");
+    return `${graph.width}x${graph.height}:${nodeIds}#${edgeIds}`;
+  }
+
+  function publishPositions() {
+    livePositions = simulation.getPositions();
+  }
+
+  function ensureSimLoop() {
+    if (simRaf) return;
+    const step = () => {
+      const awake = simulation.tick();
+      publishPositions();
+      if (awake) {
+        simRaf = requestAnimationFrame(step);
+      } else {
+        simRaf = 0;
+      }
+    };
+    simRaf = requestAnimationFrame(step);
+  }
+
+  $effect(() => {
+    const graph = baseGraph;
+    if (graph.sessionCount === 0) {
+      lastTopologyKey = "";
+      return;
+    }
+
+    const key = topologyKey(graph);
+    if (key === lastTopologyKey) return;
+    lastTopologyKey = key;
+
+    const prior = simulation.getPositions();
+    simulation.setTopology(
+      graph.nodes
+        .filter((node) => node.visible)
+        .map((node) => {
+          const kept = prior.get(node.id);
+          return {
+            id: node.id,
+            kind: node.kind,
+            radius: node.radius,
+            weight: node.weight,
+            x: kept?.x ?? node.x,
+            y: kept?.y ?? node.y,
+          };
+        }),
+      graph.edges
+        .filter((edge) => edge.visible)
+        .map((edge) => ({
+          id: edge.id,
+          from: edge.from,
+          to: edge.to,
+          kind: edge.kind,
+          strength: edge.strength,
+          ghost: edge.renderMode === "ghost",
+        })),
+      graph.width,
+      graph.height,
+    );
+    publishPositions();
+    ensureSimLoop();
+  });
+
+  const graph = $derived(applySimulationPositions(baseGraph, livePositions));
 
   const isEmpty = $derived(!loading && graph.sessionCount === 0);
   const totalMoments = $derived(new Set(nodes.map((node) => node.sync_key)).size);
@@ -95,10 +180,25 @@
     onFocusNode?.(node);
   }
 
-  function handlePinNode(nodeId: string, x: number, y: number) {
-    const next = new Map(pinnedPositions);
-    next.set(nodeId, { x, y });
-    pinnedPositions = next;
+  function handleDragBegin(nodeId: string, x: number, y: number) {
+    simulation.pin(nodeId, x, y);
+    simulation.restart({ alpha: 0.22 });
+    publishPositions();
+    ensureSimLoop();
+  }
+
+  function handleDragMove(nodeId: string, x: number, y: number) {
+    simulation.pin(nodeId, x, y);
+    publishPositions();
+    ensureSimLoop();
+  }
+
+  function handleDragEnd(nodeId: string) {
+    simulation.unpin(nodeId);
+    // Gentle settle — a hard kick re-collapses the layout you just made.
+    simulation.restart({ alpha: 0.2 });
+    publishPositions();
+    ensureSimLoop();
   }
 </script>
 
@@ -133,7 +233,9 @@
         onFocusNode={handleFocusNode}
         onClearSelection={onClearSelection}
         onToggleExpandSession={toggleExpandSession}
-        onPinNode={handlePinNode}
+        onDragBegin={handleDragBegin}
+        onDragMove={handleDragMove}
+        onDragEnd={handleDragEnd}
       />
     {/if}
   </div>

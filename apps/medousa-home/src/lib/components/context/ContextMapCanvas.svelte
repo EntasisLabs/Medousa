@@ -19,7 +19,9 @@
     onFocusNode?: (node: ContextMapNode) => void;
     onClearSelection?: () => void;
     onToggleExpandSession?: (sessionId: string) => void;
-    onPinNode?: (nodeId: string, x: number, y: number) => void;
+    onDragBegin?: (nodeId: string, x: number, y: number) => void;
+    onDragMove?: (nodeId: string, x: number, y: number) => void;
+    onDragEnd?: (nodeId: string) => void;
   }
 
   let {
@@ -30,7 +32,9 @@
     onFocusNode,
     onClearSelection,
     onToggleExpandSession,
-    onPinNode,
+    onDragBegin,
+    onDragMove,
+    onDragEnd,
   }: Props = $props();
 
   let viewportEl: HTMLDivElement | undefined = $state();
@@ -41,8 +45,8 @@
   let dragging = $state(false);
   let nodeDragging = $state(false);
   let dragNodeId = $state<string | null>(null);
-  /** Live drag position — updated locally so parent layout never re-runs mid-drag. */
-  let dragLive = $state<{ id: string; x: number; y: number } | null>(null);
+  /** True once pointer moved past threshold — wakes settle physics. */
+  let dragCommitted = false;
   let suppressClick = $state(false);
   let dragOrigin = { x: 0, y: 0, panX: 0, panY: 0 };
   let nodeDragOrigin = { x: 0, y: 0, nodeX: 0, nodeY: 0 };
@@ -304,19 +308,12 @@
     flyToNeighborhood(node.id);
   }
 
-  function positioned(node: ContextMapNode): { x: number; y: number } {
-    if (dragLive && dragLive.id === node.id) {
-      return dragLive;
-    }
-    return node;
-  }
-
   function handleNodePointerDown(node: ContextMapNode, event: PointerEvent) {
     event.stopPropagation();
     if (event.button !== 0 || pinching) return;
     nodeDragging = true;
     dragNodeId = node.id;
-    dragLive = null;
+    dragCommitted = false;
     pendingDrag = null;
     dragging = false;
     suppressClick = false;
@@ -333,7 +330,8 @@
     if (!nodeDragging || !dragNodeId) return;
     const screenDx = event.clientX - nodeDragOrigin.x;
     const screenDy = event.clientY - nodeDragOrigin.y;
-    if (Math.hypot(screenDx, screenDy) > 4) suppressClick = true;
+    if (Math.hypot(screenDx, screenDy) <= 4) return;
+    suppressClick = true;
     pendingDrag = {
       id: dragNodeId,
       x: nodeDragOrigin.nodeX + screenDx / zoom,
@@ -342,23 +340,29 @@
     if (dragRaf) return;
     dragRaf = requestAnimationFrame(() => {
       dragRaf = 0;
-      if (pendingDrag) dragLive = pendingDrag;
+      if (!pendingDrag) return;
+      if (!dragCommitted) {
+        dragCommitted = true;
+        onDragBegin?.(pendingDrag.id, pendingDrag.x, pendingDrag.y);
+      }
+      onDragMove?.(pendingDrag.id, pendingDrag.x, pendingDrag.y);
     });
   }
 
   function handleNodePointerUp(event: PointerEvent) {
-    if (!nodeDragging) return;
+    if (!nodeDragging || !dragNodeId) return;
     if (dragRaf) {
       cancelAnimationFrame(dragRaf);
       dragRaf = 0;
     }
-    const finalPos = pendingDrag ?? dragLive;
-    if (finalPos && suppressClick) {
-      onPinNode?.(finalPos.id, finalPos.x, finalPos.y);
+    const id = dragNodeId;
+    if (dragCommitted) {
+      if (pendingDrag) onDragMove?.(pendingDrag.id, pendingDrag.x, pendingDrag.y);
+      onDragEnd?.(id);
     }
     nodeDragging = false;
     dragNodeId = null;
-    dragLive = null;
+    dragCommitted = false;
     pendingDrag = null;
     try {
       (event.currentTarget as Element).releasePointerCapture?.(event.pointerId);
@@ -594,7 +598,7 @@
         {@const to = nodeById[edge.to]}
         {#if from && to}
           <path
-            d={edgePath(positioned(from), positioned(to), edge.kind)}
+            d={edgePath(from, to, edge.kind)}
             fill="none"
             class={edgeClass(edge)}
           />
@@ -606,7 +610,6 @@
         {@const hovered = hoveredNodeId === node.id}
         {@const mode = labelMode(node, selected, hovered)}
         {@const labelText = mapDisplayLabel(node.label, mode, node.kind)}
-        {@const pos = positioned(node)}
         <g
           data-map-node
           data-accent={node.kind === "session" ? node.hue % 8 : undefined}
@@ -636,8 +639,8 @@
           }}
         >
           <circle
-            cx={pos.x}
-            cy={pos.y}
+            cx={node.x}
+            cy={node.y}
             r={glowRadius(node, selected, hovered)}
             class="context-map-node-glow {glowKindClass(node.kind)} {selected
               ? 'context-map-node-glow-selected'
@@ -649,15 +652,15 @@
           />
           {#if node.kind === "session"}
             <circle
-              cx={pos.x}
-              cy={pos.y}
+              cx={node.x}
+              cy={node.y}
               r={node.radius}
               class={dotClass(node, selected, hovered)}
             />
           {:else}
             <rect
-              x={pos.x - node.radius * 0.82}
-              y={pos.y - node.radius * 0.82}
+              x={node.x - node.radius * 0.82}
+              y={node.y - node.radius * 0.82}
               width={node.radius * 1.64}
               height={node.radius * 1.64}
               rx={node.radius * 0.38}
@@ -666,8 +669,8 @@
           {/if}
           {#if mode !== "hidden"}
             <text
-              x={pos.x}
-              y={pos.y + node.radius + (density === "rail" ? 11 : 14)}
+              x={node.x}
+              y={node.y + node.radius + (density === "rail" ? 11 : 14)}
               text-anchor="middle"
               class={labelClass(node, selected, hovered, mode)}
             >

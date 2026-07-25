@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { LocusNodeSummary } from "$lib/types/locus";
 import {
-  applyPinnedPositions,
+  applySimulationPositions,
   buildContextMapGraph,
 } from "$lib/utils/contextMap";
 
@@ -66,19 +66,32 @@ describe("buildContextMapGraph", () => {
     expect(rail.height).toBeLessThan(full.height);
   });
 
-  it("re-applies pinned positions after layout", () => {
+  it("applies simulation positions onto the topology graph", () => {
     const nodes = [moment("a", "a1", "2026-07-20T12:00:00Z")];
     const graph = buildContextMapGraph(nodes, {}, {
       width: 800,
       height: 600,
       expandedSessionIds: new Set(),
     });
-    const pinned = applyPinnedPositions(
+    const settled = applySimulationPositions(
       graph,
       new Map([["session:a", { x: 42, y: 77 }]]),
     );
-    const session = pinned.nodes.find((node) => node.id === "session:a");
+    const session = settled.nodes.find((node) => node.id === "session:a");
     expect(session?.x).toBe(42);
     expect(session?.y).toBe(77);
+  });
+
+  it("preserves prior positions when reseeding", () => {
+    const nodes = [moment("a", "a1", "2026-07-20T12:00:00Z")];
+    const graph = buildContextMapGraph(nodes, {}, {
+      width: 800,
+      height: 600,
+      expandedSessionIds: new Set(),
+      priorPositions: new Map([["session:a", { x: 111, y: 222 }]]),
+    });
+    const session = graph.nodes.find((node) => node.id === "session:a");
+    expect(session?.x).toBe(111);
+    expect(session?.y).toBe(222);
   });
 });

@@ -139,89 +139,54 @@ function buildSessionBuckets(
     .slice(0, MAX_SESSIONS);
 }
 
-function layoutForceDirected(
+/** Cheap ring seed only — settle physics owns the real layout. */
+function seedNodePositions(
   nodes: ContextMapNode[],
-  edges: ContextMapEdge[],
   width: number,
   height: number,
+  priorPositions?: Map<string, { x: number; y: number }>,
 ): void {
   const visibleNodes = nodes.filter((node) => node.visible);
   if (visibleNodes.length === 0) return;
 
   const cx = width / 2;
   const cy = height / 2;
+  const bySession = new Map<string, { x: number; y: number }>();
 
   visibleNodes.forEach((node, index) => {
-    if (node.x !== 0 || node.y !== 0) return;
+    const prior = priorPositions?.get(node.id);
+    if (prior) {
+      node.x = prior.x;
+      node.y = prior.y;
+      if (node.kind === "session") {
+        bySession.set(node.sessionId, { x: node.x, y: node.y });
+      }
+      return;
+    }
+
+    if (node.kind === "session") {
+      const angle = (Math.PI * 2 * index) / visibleNodes.length - Math.PI / 2;
+      const spread = Math.min(width, height) * 0.38;
+      node.x = cx + Math.cos(angle) * spread * (0.75 + (node.weight / 12) * 0.35);
+      node.y = cy + Math.sin(angle) * spread * (0.75 + (node.weight / 12) * 0.35);
+      bySession.set(node.sessionId, { x: node.x, y: node.y });
+      return;
+    }
+
+    const parent = bySession.get(node.sessionId);
+    if (parent) {
+      const angle = index * 2.399;
+      const radius = 30 + (index % 6) * 7;
+      node.x = parent.x + Math.cos(angle) * radius;
+      node.y = parent.y + Math.sin(angle) * radius;
+      return;
+    }
+
     const angle = (Math.PI * 2 * index) / visibleNodes.length - Math.PI / 2;
     const spread = Math.min(width, height) * 0.38;
-    node.x = cx + Math.cos(angle) * spread * (0.75 + (node.weight / 12) * 0.35);
-    node.y = cy + Math.sin(angle) * spread * (0.75 + (node.weight / 12) * 0.35);
+    node.x = cx + Math.cos(angle) * spread * 0.8;
+    node.y = cy + Math.sin(angle) * spread * 0.8;
   });
-
-  const nodeById = Object.fromEntries(visibleNodes.map((node) => [node.id, node]));
-  const visibleEdges = edges.filter(
-    (edge) => edge.visible && nodeById[edge.from] && nodeById[edge.to],
-  );
-
-  const iterations = Math.min(240, 100 + visibleNodes.length * 4);
-
-  for (let step = 0; step < iterations; step += 1) {
-    const cooling = 1 - step / iterations;
-
-    for (let i = 0; i < visibleNodes.length; i += 1) {
-      for (let j = i + 1; j < visibleNodes.length; j += 1) {
-        const a = visibleNodes[i];
-        const b = visibleNodes[j];
-        let dx = b.x - a.x;
-        let dy = b.y - a.y;
-        let dist = Math.hypot(dx, dy);
-        if (dist < 1) {
-          dist = 1;
-          dx = 1;
-          dy = 0;
-        }
-        const mass = (node: ContextMapNode) =>
-          node.kind === "session" ? 5200 + node.weight * 420 : 2400 + node.weight * 180;
-        const repulse = ((mass(a) + mass(b)) / 2 / (dist * dist)) * cooling;
-        const fx = (dx / dist) * repulse;
-        const fy = (dy / dist) * repulse;
-        a.x -= fx;
-        a.y -= fy;
-        b.x += fx;
-        b.y += fy;
-      }
-    }
-
-    for (const edge of visibleEdges) {
-      const from = nodeById[edge.from];
-      const to = nodeById[edge.to];
-      if (!from || !to) continue;
-      const dx = to.x - from.x;
-      const dy = to.y - from.y;
-      const dist = Math.hypot(dx, dy) || 1;
-      const strength = edge.strength ?? (edge.kind === "session_chain" ? 0.06 : 0.1);
-      const ghostPull = edge.renderMode === "ghost" ? 1.35 : 1;
-      const target =
-        edge.kind === "session_chain"
-          ? 140 + (from.radius + to.radius) * 1.4
-          : edge.kind === "membership"
-            ? (72 + from.radius + to.radius * 0.35) / ghostPull
-            : 52 + (from.radius + to.radius) * 0.45;
-      const offset = (dist - target) * strength * cooling;
-      const fx = (dx / dist) * offset;
-      const fy = (dy / dist) * offset;
-      from.x += fx;
-      from.y += fy;
-      to.x -= fx;
-      to.y -= fy;
-    }
-
-    for (const node of visibleNodes) {
-      node.x += (cx - node.x) * 0.008 * cooling;
-      node.y += (cy - node.y) * 0.008 * cooling;
-    }
-  }
 }
 
 export function graphBounds(graph: ContextMapGraph): ContextMapBounds | null {
@@ -379,18 +344,26 @@ function buildSessionProximityEdges(
   return edges;
 }
 
+export function applySimulationPositions(
+  graph: ContextMapGraph,
+  positions: Map<string, { x: number; y: number }>,
+): ContextMapGraph {
+  if (positions.size === 0) return graph;
+  return {
+    ...graph,
+    nodes: graph.nodes.map((node) => {
+      const pos = positions.get(node.id);
+      return pos ? { ...node, x: pos.x, y: pos.y } : node;
+    }),
+  };
+}
+
+/** @deprecated Prefer applySimulationPositions — kept for callers during migration. */
 export function applyPinnedPositions(
   graph: ContextMapGraph,
   pins: Map<string, { x: number; y: number }>,
 ): ContextMapGraph {
-  if (pins.size === 0) return graph;
-  return {
-    ...graph,
-    nodes: graph.nodes.map((node) => {
-      const pin = pins.get(node.id);
-      return pin ? { ...node, x: pin.x, y: pin.y } : node;
-    }),
-  };
+  return applySimulationPositions(graph, pins);
 }
 
 export function buildContextMapGraph(
@@ -402,6 +375,8 @@ export function buildContextMapGraph(
     expandedSessionIds: Set<string>;
     searchQuery?: string;
     density?: ContextMapDensity;
+    /** Preserve settled coords across expand/search rebuilds. */
+    priorPositions?: Map<string, { x: number; y: number }>;
   },
 ): ContextMapGraph {
   const {
@@ -410,6 +385,7 @@ export function buildContextMapGraph(
     expandedSessionIds,
     searchQuery = "",
     density = "default",
+    priorPositions,
   } = options;
   const needle = searchQuery.trim().toLowerCase();
   const buckets = buildSessionBuckets(locusNodes, sessionLabels);
@@ -527,7 +503,7 @@ export function buildContextMapGraph(
 
   edges.push(...buildSessionProximityEdges(sessionNodeIds, sessionTimestamps));
 
-  layoutForceDirected(nodes, edges, layoutWidth, layoutHeight);
+  seedNodePositions(nodes, layoutWidth, layoutHeight, priorPositions);
 
   return {
     nodes,
