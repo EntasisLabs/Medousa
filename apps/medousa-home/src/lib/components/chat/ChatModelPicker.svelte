@@ -251,7 +251,7 @@
   }
 
   function openModelsSettings() {
-    settingsNav.openSection("models");
+    settingsNav.openSection("agent");
     if (layout.isMobile) {
       layout.openMore("settings");
       return;

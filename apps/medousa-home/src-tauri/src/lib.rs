@@ -108,6 +108,8 @@ pub fn run() {
             ) {
                 eprintln!("workshop registry sync: {err}");
             }
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            connection_prefs::refresh_autostart_if_enabled();
             eprintln!("[medousa-home] setup complete");
 
             #[cfg(any(windows, target_os = "linux"))]

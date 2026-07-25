@@ -49,6 +49,17 @@ pub fn connection_prefs_summary() -> ConnectionPrefsSummary {
     }
 }
 
+/// Rewrite an existing login autostart so it never pulls the offline brain.
+pub fn refresh_autostart_if_enabled() {
+    let prefs = load_connection_prefs();
+    if !prefs.autostart_enabled || !crate::autostart::autostart_supported() {
+        return;
+    }
+    if let Err(err) = crate::autostart::install_autostart() {
+        eprintln!("[medousa-home] refresh autostart (daemon-only): {err}");
+    }
+}
+
 #[tauri::command]
 pub fn connection_load_prefs() -> ConnectionPrefsSummary {
     connection_prefs_summary()

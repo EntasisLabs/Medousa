@@ -44,7 +44,8 @@
     localBusy = true;
     localMessage = null;
     try {
-      await startEngine({ privateBrain: true });
+      // Probe only — never auto-spawn the offline brain (Load does that).
+      await startEngine({ privateBrain: false });
       const health = await waitForEngine(20);
       if (!health.ok) {
         localMessage = health.message;

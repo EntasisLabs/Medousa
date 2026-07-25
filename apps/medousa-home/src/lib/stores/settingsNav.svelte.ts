@@ -7,6 +7,8 @@ const SECTION_IDS = new Set(SETTINGS_SECTIONS.map((section) => section.id));
 function migrateSectionId(raw: string): SettingsSectionId | null {
   // Room + Rhythm merged into Preferences.
   if (raw === "room" || raw === "rhythm") return "preferences";
+  // Memory + Models + Voice merged into Medousa Agent.
+  if (raw === "memory" || raw === "models" || raw === "voice") return "agent";
   if (!SECTION_IDS.has(raw as SettingsSectionId)) return null;
   return raw as SettingsSectionId;
 }

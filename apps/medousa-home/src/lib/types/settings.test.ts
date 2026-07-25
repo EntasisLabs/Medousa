@@ -31,4 +31,10 @@ describe("settings nav chapters", () => {
     expect(settingsSectionById("preferences")?.group).toBe("space");
     expect(SETTINGS_SECTIONS.filter((section) => section.group === "space")).toHaveLength(1);
   });
+
+  it("keeps a single Medousa Agent entry under her", () => {
+    expect(settingsSectionById("agent")?.label).toBe("Medousa Agent");
+    expect(settingsSectionById("agent")?.group).toBe("her");
+    expect(SETTINGS_SECTIONS.filter((section) => section.group === "her")).toHaveLength(1);
+  });
 });

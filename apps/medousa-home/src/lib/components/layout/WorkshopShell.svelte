@@ -173,7 +173,7 @@
               goToSurface("context");
             }}
             onOpenConnection={() => {
-              settingsNav.openSection("models");
+              settingsNav.openSection("agent");
               goToSurface("settings");
             }}
             onOpenNote={handleOpenNote}

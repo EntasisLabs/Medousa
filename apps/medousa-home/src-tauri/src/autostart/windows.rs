@@ -145,6 +145,7 @@ mod tests {
                 "127.0.0.1:7419".to_string(),
             ],
             log_path: PathBuf::from(r"C:\Users\me\AppData\Local\medousa\logs\daemon.log"),
+            local_brain: None,
         };
 
         let script = render_start_script(&spec, &spec.log_path);

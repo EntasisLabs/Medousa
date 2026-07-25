@@ -1,8 +1,6 @@
 export type SettingsSectionId =
   | "preferences"
-  | "memory"
-  | "models"
-  | "voice"
+  | "agent"
   | "reach"
   | "shell"
   | "versions"
@@ -47,9 +45,12 @@ export const SETTINGS_SECTIONS: SettingsSectionDef[] = [
     hint: "Look, notifications & chrome",
     group: "space",
   },
-  { id: "memory", label: "Memory", hint: "How long chats stay vivid", group: "her" },
-  { id: "models", label: "Models", hint: "Chat, dictation & stages", group: "her" },
-  { id: "voice", label: "Voice", hint: "Stance & answer depth", group: "her" },
+  {
+    id: "agent",
+    label: "Medousa Agent",
+    hint: "Stance, memory & models",
+    group: "her",
+  },
   { id: "reach", label: "Reach", hint: "Tools she may use", group: "tools" },
   { id: "shell", label: "Shell", hint: "Process sandbox & commands", group: "tools" },
   { id: "engine", label: "Engine", hint: "Speed, budgets & diagnostics", group: "tools" },

@@ -695,10 +695,10 @@ export function buildTuneCommands(): WorkshopCommand[] {
       id: "tune-models-settings",
       section: "tune",
       label: "Change model",
-      subtitle: "Models, stages & reasoning effort",
-      keywords: "model provider settings reasoning effort stages",
+      subtitle: "Medousa Agent — models & stages",
+      keywords: "model provider settings reasoning effort stages agent",
       run: (ctx) => {
-        ctx.openSettingsSection("models");
+        ctx.openSettingsSection("agent");
         ctx.callbacks.close();
       },
     },
@@ -717,10 +717,10 @@ export function buildTuneCommands(): WorkshopCommand[] {
       id: "tune-voice-settings",
       section: "tune",
       label: "Voice and stance",
-      subtitle: "Open Voice in Settings",
-      keywords: "voice stance depth charter",
+      subtitle: "Medousa Agent — stance & depth",
+      keywords: "voice stance depth charter agent memory",
       run: (ctx) => {
-        ctx.openSettingsSection("voice");
+        ctx.openSettingsSection("agent");
         ctx.callbacks.close();
       },
     },
@@ -832,11 +832,11 @@ export function buildAdvancedCommands(): WorkshopCommand[] {
       id: "advanced-stage-routes",
       section: "advanced",
       label: "Edit stage routes",
-      subtitle: "Stage models in Settings → Models",
-      keywords: "stage routes routing matrix specialists models",
+      subtitle: "Stage models in Settings → Medousa Agent",
+      keywords: "stage routes routing matrix specialists models agent",
       advanced: true,
       run: (ctx) => {
-        ctx.openSettingsSection("models");
+        ctx.openSettingsSection("agent");
         ctx.callbacks.close();
       },
     },

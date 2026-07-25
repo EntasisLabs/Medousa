@@ -3,9 +3,7 @@
   import ShellSidebarExpandButton from "$lib/components/layout/ShellSidebarExpandButton.svelte";
   import SettingsNav from "$lib/components/settings/SettingsNav.svelte";
   import SettingsPreferencesSection from "$lib/components/settings/SettingsPreferencesSection.svelte";
-  import SettingsMemorySection from "$lib/components/settings/SettingsMemorySection.svelte";
-  import SettingsModelsSection from "$lib/components/settings/SettingsModelsSection.svelte";
-  import SettingsVoiceSection from "$lib/components/settings/SettingsVoiceSection.svelte";
+  import SettingsAgentSection from "$lib/components/settings/SettingsAgentSection.svelte";
   import SettingsReachSection from "$lib/components/settings/SettingsReachSection.svelte";
   import SettingsShellSection from "$lib/components/settings/SettingsShellSection.svelte";
   import SettingsVersionsSection from "$lib/components/settings/SettingsVersionsSection.svelte";
@@ -143,12 +141,8 @@
     <div class="mobile-you-scroll min-h-0 flex-1 overflow-y-auto px-4 py-4">
       {#if activeSection === "preferences"}
         <SettingsPreferencesSection {mobile} />
-      {:else if activeSection === "memory"}
-        <SettingsMemorySection {mobile} />
-      {:else if activeSection === "models"}
-        <SettingsModelsSection {mobile} />
-      {:else if activeSection === "voice"}
-        <SettingsVoiceSection {mobile} />
+      {:else if activeSection === "agent"}
+        <SettingsAgentSection {mobile} />
       {:else if activeSection === "reach"}
         <SettingsReachSection {mobile} />
       {:else if activeSection === "shell"}

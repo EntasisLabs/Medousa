@@ -416,7 +416,7 @@
               <span class="min-w-0 flex-1">
                 <span class="block text-sm font-medium text-surface-100">Start Medousa when I log in</span>
                 <span class="workshop-faint mt-0.5 block text-xs">
-                  Keeps the engine ready in the background.
+                  Starts the engine only — never the offline brain.
                 </span>
               </span>
               <input
