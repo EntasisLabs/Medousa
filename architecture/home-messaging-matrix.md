@@ -92,8 +92,24 @@ Mobile is still a surface: it opens doors; it does not become a sync hub.
 
 | Product phrase | Matrix row |
 |----------------|------------|
-| Share a note to a team brain | Peer/mesh share push → recipient import |
-| Ask for review | Mesh/task-style handoff (capability) + peer or work card on recipient |
-| Bring result home | Recipient → sender mesh/share back into **sender** daemon only |
+| Share a note to a team brain | ✅ Peer message + attachment → recipient Peers inbox + auto-import |
+| Ask for review | ✅ Same pipe + `kind: review_request` → labeled Peers card + auto-import (work board later) |
+| Bring result home | ✅ Same pipe + `kind: bring_home` → labeled Peers card + auto-import (reverse peer door) |
 
-Until M4 UX ships, the pipes above are the contract; Home must not invent a fourth “global inbox” store.
+Home must not invent a fourth “global inbox” store; Share/Ask/Bring-home ride the per-door peer inbox.
+
+---
+
+## M4+ — Client rendezvous / relay
+
+**Daemon as meeting point** for two Homes that already have a door into it (portal/peer). Closer to a **relay / introducer** than classic STUN.
+
+| User intent | Active doors | Who stores what | Must not |
+|-------------|--------------|-----------------|----------|
+| “Introduce me to the other seat/peer on this workshop” | A and B both paired to daemon D | D holds presence/endpoint hints + consent; A/B keep their own brains | Auto-list every paired client |
+| “Relay so we can talk when direct path fails” | Same | D may forward signaling (then optionally scoped bytes) under a relay capability | Become ambient sync or vault bridge |
+| Direct A↔B after intro | A↔B (Iroh/LAN) | Not D’s session catalogs | Treat intro as mesh grant between daemons |
+
+Home UI: per-workshop “people / nearby on this brain” — still tagged by `workshopId`. No cross-workshop people merge.
+
+Pipes to reuse: pairing identity, heartbeat endpoint hints, M3 registry projection. New: consent + `client.rendezvous` / `client.relay` capability + Home introduce UX.

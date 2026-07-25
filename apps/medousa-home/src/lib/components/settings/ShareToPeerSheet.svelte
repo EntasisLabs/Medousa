@@ -1,15 +1,20 @@
 <script lang="ts">
   import {
+    askArtifactForReview,
+    askNoteForReview,
+    bringArtifactHome,
+    bringNoteHome,
     listTrustedWorkshops,
     shareArtifactToPeer,
     shareNoteToPeer,
-    type ShareConflictStrategy,
+    type PeerShareMode,
     type TrustedWorkshopSummary,
   } from "$lib/utils/lanShareApi";
   import { onMount } from "svelte";
 
   interface Props {
     open: boolean;
+    mode?: PeerShareMode;
     artifactId?: string | null;
     vaultPath?: string | null;
     label?: string | null;
@@ -20,6 +25,7 @@
 
   let {
     open,
+    mode = "share",
     artifactId = null,
     vaultPath = null,
     label = null,
@@ -30,16 +36,23 @@
 
   let trusted = $state<TrustedWorkshopSummary[]>([]);
   let workshopId = $state("");
-  let conflictStrategy = $state<ShareConflictStrategy>("rename");
   let busy = $state(false);
   let loading = $state(false);
 
+  const isAsk = $derived(mode === "ask");
+  const isBring = $derived(mode === "bring");
   const itemLabel = $derived(
     label?.trim() ||
       (artifactId ? `Artifact ${artifactId.slice(0, 12)}…` : null) ||
       vaultPath ||
       "Item",
   );
+  const dialogLabel = $derived(
+    isAsk ? "Ask for review" : isBring ? "Bring home" : "Share to peer",
+  );
+  const commitLabel = $derived(isAsk ? "Ask" : isBring ? "Bring home" : "Share");
+  const busyLabel = $derived(isAsk ? "Asking…" : isBring ? "Sending…" : "Sharing…");
+  const emptyVerb = $derived(isAsk ? "asking" : isBring ? "bringing home" : "sharing");
 
   async function loadTrusted() {
     loading = true;
@@ -74,14 +87,39 @@
     busy = true;
     try {
       if (artifactId) {
-        await shareArtifactToPeer(workshopId, artifactId, conflictStrategy);
+        if (isAsk) {
+          await askArtifactForReview(workshopId, artifactId);
+        } else if (isBring) {
+          await bringArtifactHome(workshopId, artifactId);
+        } else {
+          await shareArtifactToPeer(workshopId, artifactId);
+        }
       } else if (vaultPath) {
-        await shareNoteToPeer(workshopId, vaultPath, conflictStrategy);
+        if (isAsk) {
+          await askNoteForReview(workshopId, vaultPath);
+        } else if (isBring) {
+          await bringNoteHome(workshopId, vaultPath);
+        } else {
+          await shareNoteToPeer(workshopId, vaultPath);
+        }
       } else {
-        throw new Error("Nothing to share.");
+        throw new Error(
+          isAsk
+            ? "Nothing to ask about."
+            : isBring
+              ? "Nothing to bring home."
+              : "Nothing to share.",
+        );
       }
       const peer = trusted.find((entry) => entry.workshopId === workshopId);
-      onShared?.(`Shared “${itemLabel}” with ${peer?.label ?? "peer"}.`);
+      const peerLabel = peer?.label ?? "peer";
+      onShared?.(
+        isAsk
+          ? `Asked ${peerLabel} to review “${itemLabel}” — it will show in their Peers inbox.`
+          : isBring
+            ? `Brought “${itemLabel}” home to ${peerLabel} — it will show in their Peers inbox.`
+            : `Shared “${itemLabel}” with ${peerLabel} — it will show in their Peers inbox.`,
+      );
       onClose?.();
     } catch (err) {
       onError?.(err instanceof Error ? err.message : String(err));
@@ -99,18 +137,29 @@
       if (event.target === event.currentTarget) onClose?.();
     }}
   >
-    <div class="share-peer-sheet" role="dialog" aria-modal="true" aria-label="Share to peer">
+    <div class="share-peer-sheet" role="dialog" aria-modal="true" aria-label={dialogLabel}>
       <header class="share-peer-header">
-        <h3>Share to peer</h3>
+        <h3>{dialogLabel}</h3>
         <button type="button" class="btn btn-sm btn-ghost" onclick={() => onClose?.()}>Close</button>
       </header>
-      <p class="share-peer-lead">Send <strong>{itemLabel}</strong> to a trusted workshop.</p>
+      <p class="share-peer-lead">
+        {#if isAsk}
+          Ask a trusted peer to review <strong>{itemLabel}</strong>. They’ll get a Peers
+          inbox card; the note/artifact imports automatically.
+        {:else if isBring}
+          Send <strong>{itemLabel}</strong> back to a trusted peer’s workshop. They’ll get a
+          Peers inbox card; it imports automatically.
+        {:else}
+          Send <strong>{itemLabel}</strong> to a trusted workshop. They’ll get a Peers
+          inbox card and the note/artifact will import automatically.
+        {/if}
+      </p>
 
       {#if loading}
         <p class="share-peer-muted">Loading trusted workshops…</p>
       {:else if trusted.length === 0}
         <p class="share-peer-muted">
-          Trust a workshop in Settings → Nearby before sharing.
+          Trust a workshop in Settings → Nearby before {emptyVerb}.
         </p>
       {:else}
         <label class="share-peer-field">
@@ -123,14 +172,6 @@
             {/each}
           </select>
         </label>
-        <label class="share-peer-field">
-          <span>If it already exists</span>
-          <select bind:value={conflictStrategy} disabled={busy}>
-            <option value="rename">Rename</option>
-            <option value="skip">Skip</option>
-            <option value="overwrite">Overwrite</option>
-          </select>
-        </label>
         <div class="share-peer-actions">
           <button
             type="button"
@@ -138,7 +179,7 @@
             disabled={busy || !workshopId}
             onclick={() => void submit()}
           >
-            {busy ? "Sharing…" : "Share"}
+            {busy ? busyLabel : commitLabel}
           </button>
         </div>
       {/if}

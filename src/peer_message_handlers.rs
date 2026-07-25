@@ -167,6 +167,7 @@ async fn post_peer_message(
                         to_name: Some(state.local_peer_name.clone()),
                         attachment: None,
                         attachment_result: None,
+                        kind: payload.kind.clone(),
                     },
                     mesh_receipt,
                 ));

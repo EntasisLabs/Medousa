@@ -10,10 +10,13 @@
     Bookmark,
     FilePen,
     FolderInput,
+    House,
+    MessageSquareQuote,
     Share2,
     Trash2,
     X,
   } from "@lucide/svelte";
+  import type { PeerShareMode } from "$lib/utils/lanShareApi";
 
   type Panel = "menu" | "rename" | "move" | "template" | "delete";
 
@@ -23,6 +26,7 @@
   let templateName = $state("");
   let templateMessage = $state<string | null>(null);
   let peerShareOpen = $state(false);
+  let peerSheetMode = $state<PeerShareMode>("share");
   let hasTrustedPeers = $state(false);
   let peerStatus = $state<string | null>(null);
 
@@ -189,11 +193,38 @@
               disabled={vault.saving}
               onclick={() => {
                 peerStatus = null;
+                peerSheetMode = "share";
                 peerShareOpen = true;
               }}
             >
               <span class="vault-verb-icon"><Share2 size={15} strokeWidth={1.75} /></span>
               <span class="vault-verb-label">Share to peer</span>
+            </button>
+            <button
+              type="button"
+              class="vault-verb"
+              disabled={vault.saving}
+              onclick={() => {
+                peerStatus = null;
+                peerSheetMode = "ask";
+                peerShareOpen = true;
+              }}
+            >
+              <span class="vault-verb-icon"><MessageSquareQuote size={15} strokeWidth={1.75} /></span>
+              <span class="vault-verb-label">Ask for review</span>
+            </button>
+            <button
+              type="button"
+              class="vault-verb"
+              disabled={vault.saving}
+              onclick={() => {
+                peerStatus = null;
+                peerSheetMode = "bring";
+                peerShareOpen = true;
+              }}
+            >
+              <span class="vault-verb-icon"><House size={15} strokeWidth={1.75} /></span>
+              <span class="vault-verb-label">Bring home</span>
             </button>
           {/if}
           {#if peerStatus}
@@ -329,6 +360,7 @@
 
 <ShareToPeerSheet
   open={peerShareOpen}
+  mode={peerSheetMode}
   vaultPath={vault.selectedPath}
   label={vault.title}
   onClose={() => {

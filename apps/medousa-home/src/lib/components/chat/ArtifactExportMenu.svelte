@@ -5,6 +5,8 @@
     FileDown,
     FileImage,
     FileText,
+    House,
+    MessageSquareQuote,
     MoreHorizontal,
     Share2,
     Users,
@@ -20,7 +22,7 @@
     shareArtifact,
   } from "$lib/utils/artifactExport";
   import { isTauri } from "$lib/window";
-  import { listTrustedWorkshops } from "$lib/utils/lanShareApi";
+  import { listTrustedWorkshops, type PeerShareMode } from "$lib/utils/lanShareApi";
 
   interface Props {
     sessionId: string;
@@ -42,6 +44,7 @@
   let busy = $state(false);
   let menuEl = $state<HTMLDivElement | null>(null);
   let peerShareOpen = $state(false);
+  let peerSheetMode = $state<PeerShareMode>("share");
   let hasTrustedPeers = $state(false);
 
   function setStatus(message: string | null) {
@@ -160,11 +163,38 @@
           role="menuitem"
           onclick={() => {
             closeMenu();
+            peerSheetMode = "share";
             peerShareOpen = true;
           }}
         >
           <Users size={14} strokeWidth={2} aria-hidden="true" />
           Share to peer…
+        </button>
+        <button
+          type="button"
+          class="artifact-export-item"
+          role="menuitem"
+          onclick={() => {
+            closeMenu();
+            peerSheetMode = "ask";
+            peerShareOpen = true;
+          }}
+        >
+          <MessageSquareQuote size={14} strokeWidth={2} aria-hidden="true" />
+          Ask for review…
+        </button>
+        <button
+          type="button"
+          class="artifact-export-item"
+          role="menuitem"
+          onclick={() => {
+            closeMenu();
+            peerSheetMode = "bring";
+            peerShareOpen = true;
+          }}
+        >
+          <House size={14} strokeWidth={2} aria-hidden="true" />
+          Bring home…
         </button>
       {/if}
       <button
@@ -236,6 +266,7 @@
 
 <ShareToPeerSheet
   open={peerShareOpen}
+  mode={peerSheetMode}
   {artifactId}
   {label}
   onClose={() => {

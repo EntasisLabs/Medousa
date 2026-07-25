@@ -76,6 +76,13 @@ export interface PeerMessageAttachmentResult {
   vaultNotesImported?: number | null;
 }
 
+/** M4 Ask — peer message asks the recipient to review an attached item. */
+export const PEER_KIND_REVIEW_REQUEST = "review_request";
+/** M4 Bring-home — send a result back over the peer door. */
+export const PEER_KIND_BRING_HOME = "bring_home";
+
+export type PeerShareMode = "share" | "ask" | "bring";
+
 export interface PeerMessage {
   id: string;
   fromDeviceId: string;
@@ -89,9 +96,19 @@ export interface PeerMessage {
   toName?: string | null;
   attachment?: Record<string, unknown> | null;
   attachmentResult?: PeerMessageAttachmentResult | null;
+  /** Product kind — e.g. `review_request`, `bring_home`. */
+  kind?: string | null;
   /** Which inbox sink this message came from (host / portal / peer). */
   sinkKind?: "host" | "portal" | "peer" | string;
   workshopId?: string | null;
+}
+
+export function isReviewRequest(message: Pick<PeerMessage, "kind">): boolean {
+  return message.kind === PEER_KIND_REVIEW_REQUEST;
+}
+
+export function isBringHome(message: Pick<PeerMessage, "kind">): boolean {
+  return message.kind === PEER_KIND_BRING_HOME;
 }
 
 export interface PeerComposeIdentity {
@@ -198,40 +215,83 @@ export async function pushShareBundleToWorkshop(input: {
   });
 }
 
+/** Share via peer-message attachment (recipient inbox card + auto-import). */
 export async function shareArtifactToPeer(
   workshopId: string,
   artifactId: string,
   conflictStrategy: ShareConflictStrategy = "rename",
-): Promise<ShareImportResult> {
+  mode: PeerShareMode = "share",
+): Promise<PeerMessage> {
   requireTauri();
-  return invoke<ShareImportResult>("share_item_to_peer", {
+  return invoke<PeerMessage>("share_item_to_peer", {
     request: {
       workshopId,
       artifactId,
       conflictStrategy,
+      mode,
     },
   });
 }
 
+/** Share via peer-message attachment (recipient inbox card + auto-import). */
 export async function shareNoteToPeer(
   workshopId: string,
   vaultPath: string,
   conflictStrategy: ShareConflictStrategy = "rename",
-): Promise<ShareImportResult> {
+  mode: PeerShareMode = "share",
+): Promise<PeerMessage> {
   requireTauri();
-  return invoke<ShareImportResult>("share_item_to_peer", {
+  return invoke<PeerMessage>("share_item_to_peer", {
     request: {
       workshopId,
       vaultPath,
       conflictStrategy,
+      mode,
     },
   });
+}
+
+/** M4 Ask: same pipe as Share with kind=review_request. */
+export async function askArtifactForReview(
+  workshopId: string,
+  artifactId: string,
+  conflictStrategy: ShareConflictStrategy = "rename",
+): Promise<PeerMessage> {
+  return shareArtifactToPeer(workshopId, artifactId, conflictStrategy, "ask");
+}
+
+/** M4 Ask: same pipe as Share with kind=review_request. */
+export async function askNoteForReview(
+  workshopId: string,
+  vaultPath: string,
+  conflictStrategy: ShareConflictStrategy = "rename",
+): Promise<PeerMessage> {
+  return shareNoteToPeer(workshopId, vaultPath, conflictStrategy, "ask");
+}
+
+/** M4 Bring-home: same pipe as Share with kind=bring_home. */
+export async function bringArtifactHome(
+  workshopId: string,
+  artifactId: string,
+  conflictStrategy: ShareConflictStrategy = "rename",
+): Promise<PeerMessage> {
+  return shareArtifactToPeer(workshopId, artifactId, conflictStrategy, "bring");
+}
+
+/** M4 Bring-home: same pipe as Share with kind=bring_home. */
+export async function bringNoteHome(
+  workshopId: string,
+  vaultPath: string,
+  conflictStrategy: ShareConflictStrategy = "rename",
+): Promise<PeerMessage> {
+  return shareNoteToPeer(workshopId, vaultPath, conflictStrategy, "bring");
 }
 
 export async function peerSendMessage(input: {
   workshopId: string;
   body: string;
   attachment?: Record<string, unknown> | null;
+  kind?: string | null;
 }): Promise<PeerMessage> {
   requireTauri();
   return invoke<PeerMessage>("peer_send_message", {
@@ -239,6 +299,7 @@ export async function peerSendMessage(input: {
       workshopId: input.workshopId,
       body: input.body,
       attachment: input.attachment ?? null,
+      kind: input.kind ?? null,
     },
   });
 }

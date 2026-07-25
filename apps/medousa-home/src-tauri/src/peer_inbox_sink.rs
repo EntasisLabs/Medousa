@@ -29,6 +29,9 @@ pub struct PeerSendMessageRequest {
     pub body: String,
     #[serde(default)]
     pub attachment: Option<serde_json::Value>,
+    /// Product kind — e.g. `review_request` (Ask), `bring_home`.
+    #[serde(default)]
+    pub kind: Option<String>,
 }
 
 const SINK_HOST: &str = "host";
@@ -572,6 +575,7 @@ pub async fn send_message(
             "toName": to_name,
             "direction": "out",
             "attachment": request.attachment,
+            "kind": request.kind,
         });
         if ctx.is_host {
             if let Some(base) = &ctx.host_base {
@@ -610,6 +614,7 @@ pub async fn send_message(
         "fromDeviceId": from_device_id,
         "fromName": from_name,
         "attachment": request.attachment,
+        "kind": request.kind,
     });
 
     if let Some(config) = remote_config {
@@ -637,6 +642,7 @@ pub async fn send_message(
             "toName": to_name,
             "direction": "out",
             "attachment": request.attachment,
+            "kind": request.kind,
         });
         if let Some(base) = &ctx.host_base {
             let client = daemon_http_client()?;
@@ -666,6 +672,7 @@ pub async fn send_message(
         "sentAt": chrono::Utc::now().to_rfc3339(),
         "readAt": null,
         "attachment": request.attachment,
+        "kind": request.kind,
         "sinkKind": SINK_PEER,
         "workshopId": request.workshop_id,
     }))

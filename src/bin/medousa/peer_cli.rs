@@ -208,6 +208,7 @@ fn run_send(args: &[String]) -> Result<()> {
         to_name: Some(connection.label.clone()),
         direction: None,
         attachment: None,
+        kind: None,
     };
     let payload_hash = medousa::mesh::payload_hash_hex(&payload)
         .map_err(|err| anyhow::anyhow!(err))?;
