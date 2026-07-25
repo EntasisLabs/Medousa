@@ -13,6 +13,7 @@ import type {
   ChatMessage,
   ContextUsageReport,
   InteractiveTurnStreamEvent,
+  PendingAgentPermission,
   PendingBudgetApproval,
   PendingBrowserChallenge,
   ToolRunState,
@@ -58,6 +59,7 @@ import { settings } from "$lib/stores/settings.svelte";
 import {
   isBudgetApprovalStreamEvent,
   isBrowserChallengeStreamEvent,
+  isPermissionRequestStreamEvent,
   isTerminalContentCommit,
   isWorkerHandoffStreamEvent,
   isWorkerSynthesisStreamEvent,
@@ -166,6 +168,7 @@ export class ChatStore {
   private promotedAskIds = loadPromotedAskIds();
   /** Desktop in-app alert when a turn pauses for budget approval. */
   budgetAlert = $state<PendingBudgetApproval | null>(null);
+  permissionAlert = $state<PendingAgentPermission | null>(null);
   /** Agent Browser CAPTCHA / verification handoff. */
   browserChallenge = $state<PendingBrowserChallenge | null>(null);
   /** Daemon turn id for the live interactive stream, if any. */
@@ -517,6 +520,32 @@ export class ChatStore {
 
   clearBudgetAlert() {
     this.budgetAlert = null;
+  }
+
+  clearPermissionAlert() {
+    this.permissionAlert = null;
+  }
+
+  notePermissionResolved(requestId: string) {
+    if (this.permissionAlert?.requestId === requestId) {
+      this.permissionAlert = null;
+    }
+  }
+
+  handlePermissionRequest(event: InteractiveTurnStreamEvent) {
+    const requestId = event.permission_request_id?.trim();
+    if (!requestId) return;
+    this.permissionAlert = {
+      turnId: event.turn_id,
+      messageId: this.messageIdForTurn(event.turn_id),
+      requestId,
+      agentSessionId: event.agent_session_id?.trim() || null,
+      agentRuntime: event.agent_runtime?.trim() || null,
+      message:
+        event.operator_message?.trim() ||
+        event.message?.trim() ||
+        "Agent needs permission to continue",
+    };
   }
 
   clearBrowserChallenge(sessionId?: string) {
@@ -2270,6 +2299,19 @@ export class ChatStore {
     if (isBrowserChallengeStreamEvent(event)) {
       this.handleBrowserChallenge(event);
       return;
+    }
+
+    if (isPermissionRequestStreamEvent(event)) {
+      this.handlePermissionRequest(event);
+      return;
+    }
+
+    if (
+      event.event_type === "status" &&
+      event.phase === "permission_resolved" &&
+      this.permissionAlert?.turnId === event.turn_id
+    ) {
+      this.clearPermissionAlert();
     }
 
     if (event.event_type === "browser_navigated") {

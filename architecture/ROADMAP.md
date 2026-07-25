@@ -19,10 +19,10 @@ Full plans: **[v0.6.0-shared-mode-plan.md](v0.6.0-shared-mode-plan.md)** · **[v
 |--------|------|--------|
 | Shared mode | [v0.6.0-shared-mode-plan.md](v0.6.0-shared-mode-plan.md) | ✅ S0–S6 |
 | Peer mesh | [v0.6.0-peer-mesh-plan.md](v0.6.0-peer-mesh-plan.md) | 🔄 M0–M4 ✅; M4+ introducer ✅; next optional `client.relay` |
-| Dynamic | [ADR-008](../docs/architecture/decisions/adr-008-hot-swappable-agent-runtime.md) | ⬜ |
+| Dynamic | [ADR-008](../docs/architecture/decisions/adr-008-hot-swappable-agent-runtime.md) | ✅ MCP space reads + ACP pump/permissions/Home bar; polish optional |
 | Polish | [polish-and-package-plan.md](polish-and-package-plan.md) P5+ | ⬜ |
 
-**P0 done for Shared:** Iroh ≠ loopback; pairing `profile_id`; dual catalogs. Mesh still needs signed envelopes (M2).
+**P0 done for Shared:** Iroh ≠ loopback; pairing `profile_id`; dual catalogs. **Mesh M0–M4 + introducer shipped.** **Dynamic shipped** for 0.6 cut: MCP space reads, ACP real stream pump, permission UI + timeout.
 
 ---
 

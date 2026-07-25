@@ -1,5 +1,6 @@
 <script lang="ts">
   import BudgetApprovalBar from "$lib/components/chat/BudgetApprovalBar.svelte";
+  import AgentPermissionBar from "$lib/components/chat/AgentPermissionBar.svelte";
   import AgentBrowserPanel from "$lib/components/chat/AgentBrowserPanel.svelte";
   import ChatComposerBar from "$lib/components/chat/ChatComposerBar.svelte";
   import VaultChatContextChip from "$lib/components/vault/VaultChatContextChip.svelte";
@@ -173,6 +174,7 @@
       if (pending) void workspace.selectCard(pending.workCardId);
     }}
   />
+  <AgentPermissionBar mobile />
   <AgentBrowserPanel mobile />
   <ChatComposerBar
     mobile

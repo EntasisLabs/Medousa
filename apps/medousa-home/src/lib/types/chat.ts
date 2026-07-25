@@ -96,6 +96,16 @@ export interface PendingBudgetApproval {
   message: string;
 }
 
+export interface PendingAgentPermission {
+  turnId: string;
+  messageId: string | null;
+  /** Daemon ACP permission request id (approve/deny API). */
+  requestId: string;
+  agentSessionId: string | null;
+  agentRuntime: string | null;
+  message: string;
+}
+
 export interface TurnTicketState {
   turnId: string;
   mode: "interactive" | "background";
@@ -152,6 +162,10 @@ export interface InteractiveTurnStreamEvent {
   browser_challenge_url?: string | null;
   /** Turn-start context budget breakdown (Cursor-style telemetry). */
   context_usage?: ContextUsageReport | null;
+  /** ACP permission pause — approve/deny via agents permission API. */
+  permission_request_id?: string | null;
+  agent_session_id?: string | null;
+  agent_runtime?: string | null;
 }
 
 /**

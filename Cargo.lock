@@ -7432,6 +7432,7 @@ name = "medousa-mcp-server"
 version = "0.5.0"
 dependencies = [
  "anyhow",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
  "tokio",

@@ -29,6 +29,14 @@ export function isBudgetApprovalStreamEvent(
   );
 }
 
+export function isPermissionRequestStreamEvent(
+  event: InteractiveTurnStreamEvent,
+): boolean {
+  return (
+    event.event_type === "permission_request" || event.phase === "permission"
+  );
+}
+
 export function isBrowserChallengeStreamEvent(
   event: InteractiveTurnStreamEvent,
 ): boolean {

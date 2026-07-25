@@ -5,6 +5,7 @@
   import ChatMessageList from "$lib/components/chat/ChatMessageList.svelte";
   import ChatComposerBar from "$lib/components/chat/ChatComposerBar.svelte";
   import BudgetApprovalBar from "$lib/components/chat/BudgetApprovalBar.svelte";
+  import AgentPermissionBar from "$lib/components/chat/AgentPermissionBar.svelte";
   import AgentBrowserPanel from "$lib/components/chat/AgentBrowserPanel.svelte";
   import ShellSidebarExpandButton from "$lib/components/layout/ShellSidebarExpandButton.svelte";
   import VaultChatContextChip from "$lib/components/vault/VaultChatContextChip.svelte";
@@ -19,13 +20,19 @@
   import { userProfiles } from "$lib/stores/userProfiles.svelte";
   import { settings } from "$lib/stores/settings.svelte";
   import {
+    cancelAgentSession,
     createAgentSession,
     createTurnTicket,
+    promptAgentSession,
     steerBoundWorkshop,
   } from "$lib/daemon";
   import {
+    agentSessionStreamUrl,
+    clearSessionAgentSessionId,
     getSessionAgentRuntime,
+    getSessionAgentSessionId,
     setSessionAgentRuntime,
+    setSessionAgentSessionId,
     type ChatAgentRuntime,
   } from "$lib/utils/sessionAgentRuntime";
   import type { TurnTicketResponse } from "$lib/types/session";
@@ -522,19 +529,46 @@
   async function submitTurn(userContent: string, prompt: string, mode: "interactive" | "background") {
     const runtime = getSessionAgentRuntime(chat.sessionId);
     if (runtime !== "medousa" && mode === "interactive") {
-      const acceptedAgent = await createAgentSession({
-        session_id: chat.sessionId,
-        runtime,
-        prompt,
-      });
+      let agentSessionId = getSessionAgentSessionId(chat.sessionId);
+      let streamUrl = agentSessionId ? agentSessionStreamUrl(agentSessionId) : "";
+      let streamReady = true;
+      let acceptedAt = new Date().toISOString();
+
+      if (agentSessionId) {
+        try {
+          await promptAgentSession(agentSessionId, prompt);
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          // Stale local id (daemon restart / cancel) — recreate once.
+          if (!/unknown agent session|not found|404/i.test(message)) {
+            throw err;
+          }
+          clearSessionAgentSessionId(chat.sessionId);
+          agentSessionId = null;
+        }
+      }
+
+      if (!agentSessionId) {
+        const acceptedAgent = await createAgentSession({
+          session_id: chat.sessionId,
+          runtime,
+          prompt,
+        });
+        agentSessionId = acceptedAgent.agent_session_id;
+        setSessionAgentSessionId(chat.sessionId, agentSessionId);
+        streamUrl = acceptedAgent.stream_url;
+        streamReady = acceptedAgent.stream_ready;
+        acceptedAt = acceptedAgent.accepted_at_utc ?? acceptedAt;
+      }
+
       const ticket: TurnTicketResponse = {
-        turn_id: acceptedAgent.agent_session_id,
-        session_id: acceptedAgent.session_id,
+        turn_id: agentSessionId,
+        session_id: chat.sessionId,
         mode: "interactive",
         phase: "accepted" as TurnTicketResponse["phase"],
-        accepted_at_utc: acceptedAgent.accepted_at_utc ?? new Date().toISOString(),
-        stream_url: acceptedAgent.stream_url,
-        stream_ready: acceptedAgent.stream_ready,
+        accepted_at_utc: acceptedAt,
+        stream_url: streamUrl || agentSessionStreamUrl(agentSessionId),
+        stream_ready: streamReady,
       };
       chat.beginTurn(
         userContent,
@@ -594,8 +628,14 @@
   });
 
   function onRuntimeChange(value: ChatAgentRuntime) {
+    const previousId = getSessionAgentSessionId(chat.sessionId);
     sessionRuntime = value;
     setSessionAgentRuntime(chat.sessionId, value);
+    if (previousId) {
+      void cancelAgentSession(previousId).catch(() => {
+        // Best-effort — local id already cleared by setSessionAgentRuntime.
+      });
+    }
   }
 
   async function submit(event: Event) {
@@ -1075,6 +1115,7 @@
         if (pending) void workspace.selectCard(pending.workCardId);
       }}
     />
+    <AgentPermissionBar />
     <AgentBrowserPanel />
     {/if}
     <form

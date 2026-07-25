@@ -104,6 +104,14 @@ impl AgentPermissionRequestStore {
         rows
     }
 
+    fn permission_timeout_secs() -> u64 {
+        std::env::var("MEDOUSA_ACP_PERMISSION_TIMEOUT_SECS")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok())
+            .filter(|v| *v > 0)
+            .unwrap_or(300)
+    }
+
     pub async fn wait_for_resolution(
         &self,
         request_id: &str,
@@ -116,7 +124,18 @@ impl AgentPermissionRequestStore {
                 WaiterState { tx: Some(tx) },
             );
         }
-        rx.await.map_err(|_| "permission waiter dropped".to_string())
+        let timeout = std::time::Duration::from_secs(Self::permission_timeout_secs());
+        match tokio::time::timeout(timeout, rx).await {
+            Ok(Ok(resolution)) => Ok(resolution),
+            Ok(Err(_)) => {
+                let _ = self.expire(request_id, Some("waiter_dropped".into()));
+                Ok(PermissionResolution::Denied)
+            }
+            Err(_) => {
+                let _ = self.expire(request_id, Some("timeout".into()));
+                Ok(PermissionResolution::Denied)
+            }
+        }
     }
 
     pub fn approve(
@@ -133,6 +152,14 @@ impl AgentPermissionRequestStore {
         resolved_by: Option<String>,
     ) -> Result<AgentPermissionRequestRecord, String> {
         self.resolve(request_id, AgentPermissionRequestStatus::Denied, resolved_by)
+    }
+
+    pub fn expire(
+        &self,
+        request_id: &str,
+        resolved_by: Option<String>,
+    ) -> Result<AgentPermissionRequestRecord, String> {
+        self.resolve(request_id, AgentPermissionRequestStatus::Expired, resolved_by)
     }
 
     fn resolve(
