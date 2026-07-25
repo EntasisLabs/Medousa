@@ -7,7 +7,7 @@ First-run UX, Home shell milestones, turn-loop FSM, user profiles (Phases 0–6)
 
 **Active focus: 0.6.0** — Shared mode (profiles as members), Peer mesh (personal↔team), Dynamic (ACP/MCP finish), plus polish.
 
-Full plans: **[v0.6.0-shared-mode-plan.md](v0.6.0-shared-mode-plan.md)** · **[v0.6.0-peer-mesh-plan.md](v0.6.0-peer-mesh-plan.md)** · [ADR-011](../docs/architecture/decisions/adr-011-shared-mode-portal-and-mesh.md) · **[workshop-and-automations-plan.md](workshop-and-automations-plan.md)** · **[polish-and-package-plan.md](polish-and-package-plan.md)**
+Full plans: **[v0.6.0-shared-mode-plan.md](v0.6.0-shared-mode-plan.md)** · **[v0.6.0-peer-mesh-plan.md](v0.6.0-peer-mesh-plan.md)** · **[home-messaging-matrix.md](home-messaging-matrix.md)** · [ADR-011](../docs/architecture/decisions/adr-011-shared-mode-portal-and-mesh.md) · **[workshop-and-automations-plan.md](workshop-and-automations-plan.md)** · **[polish-and-package-plan.md](polish-and-package-plan.md)**
 
 ---
 
@@ -18,7 +18,7 @@ Full plans: **[v0.6.0-shared-mode-plan.md](v0.6.0-shared-mode-plan.md)** · **[v
 | Pillar | Plan | Status |
 |--------|------|--------|
 | Shared mode | [v0.6.0-shared-mode-plan.md](v0.6.0-shared-mode-plan.md) | ✅ S0–S6 |
-| Peer mesh | [v0.6.0-peer-mesh-plan.md](v0.6.0-peer-mesh-plan.md) | 🔄 M0–M2; next M3 registry/outbox |
+| Peer mesh | [v0.6.0-peer-mesh-plan.md](v0.6.0-peer-mesh-plan.md) | 🔄 M0–M3; next M4 share/ask/bring-home |
 | Dynamic | [ADR-008](../docs/architecture/decisions/adr-008-hot-swappable-agent-runtime.md) | ⬜ |
 | Polish | [polish-and-package-plan.md](polish-and-package-plan.md) P5+ | ⬜ |
 

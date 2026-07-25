@@ -3,14 +3,18 @@
 use std::sync::Arc;
 
 use axum::extract::{ConnectInfo, Path, Query, State};
-use axum::http::{HeaderMap, StatusCode, header::AUTHORIZATION};
+use axum::http::{HeaderMap, HeaderValue, StatusCode, header::AUTHORIZATION};
+use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 
 use crate::environment_store::environment_hub;
+use crate::mesh::delivery::{
+    accept_inbound_delivery, bind_delivery_local_ref, receipt_header_value,
+};
 use crate::mesh::{
-    MeshCapability, MeshInboundBody, record_has_capability, require_remote_envelope,
-    CAP_MESH_MESSAGE,
+    MeshCapability, MeshEnvelope, MeshInboundBody, MeshReceipt, record_has_capability,
+    require_remote_envelope, CAP_MESH_MESSAGE,
 };
 use crate::pairing::{PairedDeviceRecord, PairingRole, PairingService};
 use crate::peer_messages::{
@@ -103,7 +107,7 @@ async fn post_peer_message(
     ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
     headers: HeaderMap,
     Json(body): Json<MeshInboundBody<serde_json::Value>>,
-) -> Result<Json<PeerMessage>, (StatusCode, String)> {
+) -> Result<Response, (StatusCode, String)> {
     let local = crate::remote_trust::is_trusted_local(addr.ip(), &headers);
     let remote_record = if local {
         None
@@ -111,17 +115,64 @@ async fn post_peer_message(
         Some(authorize_remote_record(&state, &headers)?)
     };
 
+    let mut mesh_receipt: Option<MeshReceipt> = None;
+    let mut mesh_inbox_id: Option<String> = None;
+
     let body: PeerMessagePostRequest = if let Some(record) = remote_record.as_ref() {
-        require_remote_envelope(
-            body,
-            true,
-            &record.phone_public_key,
-            &record.phone_id,
-            &state.local_device_id,
-            MeshCapability::Message,
-            record_has_capability(record, CAP_MESH_MESSAGE),
-        )
-        .map_err(mesh_status)?
+        let (payload, envelope): (PeerMessagePostRequest, Option<MeshEnvelope>) =
+            require_remote_envelope(
+                body,
+                true,
+                &record.phone_public_key,
+                &record.phone_id,
+                &state.local_device_id,
+                MeshCapability::Message,
+                record_has_capability(record, CAP_MESH_MESSAGE),
+            )
+            .map_err(mesh_status)?;
+        if let Some(envelope) = envelope {
+            let pairing = state.pairing.as_ref().ok_or_else(|| {
+                (
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "LAN pairing is not enabled on this workshop".to_string(),
+                )
+            })?;
+            let accepted = accept_inbound_delivery(
+                pairing.identity().signing_key(),
+                &state.local_device_id,
+                &envelope,
+                &envelope.payload_hash,
+            )
+            .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
+            mesh_receipt = Some(accepted.receipt.clone());
+            mesh_inbox_id = Some(accepted.inbox_id.clone());
+            if accepted.duplicate {
+                if let Some(local_ref) = accepted.local_ref.as_deref().filter(|v| !v.is_empty()) {
+                    if let Some(existing) = get_message(local_ref)
+                        .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?
+                    {
+                        return Ok(with_mesh_receipt(existing, mesh_receipt));
+                    }
+                }
+                return Ok(with_mesh_receipt(
+                    PeerMessage {
+                        id: format!("dup_{}_{}", envelope.sender_device_id, envelope.seq),
+                        from_device_id: envelope.sender_device_id.clone(),
+                        from_name: record.phone_name.clone(),
+                        body: payload.body.clone(),
+                        sent_at: chrono::Utc::now(),
+                        read_at: None,
+                        direction: "in".to_string(),
+                        to_device_id: Some(state.local_device_id.clone()),
+                        to_name: Some(state.local_peer_name.clone()),
+                        attachment: None,
+                        attachment_result: None,
+                    },
+                    mesh_receipt,
+                ));
+            }
+        }
+        payload
     } else {
         // Trusted local host UI may post bare payloads.
         let (_envelope, payload) = body.into_parts();
@@ -272,7 +323,24 @@ async fn post_peer_message(
 
     let stored = append_message(message)
         .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
-    Ok(Json(stored))
+    if let (Some(inbox_id), Some(receipt)) = (mesh_inbox_id.as_deref(), mesh_receipt.as_ref()) {
+        let _ = bind_delivery_local_ref(inbox_id, &stored.id, &receipt.id);
+    }
+    Ok(with_mesh_receipt(stored, mesh_receipt))
+}
+
+fn with_mesh_receipt(message: PeerMessage, receipt: Option<MeshReceipt>) -> Response {
+    let mut response = Json(message).into_response();
+    if let Some(receipt) = receipt {
+        if let Ok(value) = receipt_header_value(&receipt) {
+            if let Ok(header) = HeaderValue::from_str(&value) {
+                response
+                    .headers_mut()
+                    .insert("x-medousa-mesh-receipt", header);
+            }
+        }
+    }
+    response
 }
 
 async fn read_peer_message(

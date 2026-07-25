@@ -258,13 +258,13 @@ pub fn require_remote_envelope_json(
     expected_recipient_device_id: &str,
     required_capability: MeshCapability,
     capability_granted: bool,
-) -> Result<serde_json::Value, MeshEnvelopeError> {
+) -> Result<(serde_json::Value, Option<MeshEnvelope>), MeshEnvelopeError> {
     match body {
         MeshInboundBody::Bare(payload) => {
             if require_envelope {
                 return Err(MeshEnvelopeError::MissingEnvelope);
             }
-            Ok(payload)
+            Ok((payload, None))
         }
         MeshInboundBody::Enveloped(wrapped) => {
             // Hash the wire JSON value (not a re-typed struct) so clients and
@@ -277,7 +277,7 @@ pub fn require_remote_envelope_json(
                 required_capability,
                 capability_granted,
             )?;
-            Ok(wrapped.payload)
+            Ok((wrapped.payload, Some(wrapped.envelope)))
         }
     }
 }
@@ -290,8 +290,8 @@ pub fn require_remote_envelope<T: DeserializeOwned>(
     expected_recipient_device_id: &str,
     required_capability: MeshCapability,
     capability_granted: bool,
-) -> Result<T, MeshEnvelopeError> {
-    let payload = require_remote_envelope_json(
+) -> Result<(T, Option<MeshEnvelope>), MeshEnvelopeError> {
+    let (payload, envelope) = require_remote_envelope_json(
         body,
         require_envelope,
         sender_public_key_b64,
@@ -300,7 +300,9 @@ pub fn require_remote_envelope<T: DeserializeOwned>(
         required_capability,
         capability_granted,
     )?;
-    serde_json::from_value(payload).map_err(|err| MeshEnvelopeError::Serialize(err.to_string()))
+    let typed = serde_json::from_value(payload)
+        .map_err(|err| MeshEnvelopeError::Serialize(err.to_string()))?;
+    Ok((typed, envelope))
 }
 
 fn device_ids_match(left: &str, right: &str) -> bool {
@@ -467,5 +469,38 @@ mod tests {
         )
         .expect_err("remote bare");
         assert!(matches!(err, MeshEnvelopeError::MissingEnvelope));
+    }
+
+    #[test]
+    fn require_remote_returns_envelope() {
+        let (signing, verifying) = keypair();
+        let payload = json!({"body": "hello"});
+        let hash = payload_hash_hex(&payload).expect("hash");
+        let envelope = sign_envelope(
+            &signing,
+            "aaaa1111",
+            "bbbb2222",
+            3,
+            MeshCapability::Message,
+            &hash,
+            Duration::minutes(10),
+        );
+        let pk = crate::pairing::crypto::verifying_key_to_b64(&verifying);
+        let body = MeshInboundBody::Enveloped(MeshEnvelopedRequest {
+            envelope: envelope.clone(),
+            payload: payload.clone(),
+        });
+        let (got, got_env) = require_remote_envelope_json(
+            body,
+            true,
+            &pk,
+            "aaaa1111",
+            "bbbb2222",
+            MeshCapability::Message,
+            true,
+        )
+        .expect("ok");
+        assert_eq!(got, payload);
+        assert_eq!(got_env.as_ref().map(|e| e.seq), Some(3));
     }
 }

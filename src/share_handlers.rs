@@ -93,7 +93,7 @@ fn authorize_and_unwrap_share(
             .map_err(|err| (StatusCode::BAD_REQUEST, err.to_string()));
     }
     let record = authorize_remote_share_record(state, headers)?;
-    require_remote_envelope(
+    let (payload, _envelope) = require_remote_envelope(
         body,
         true,
         &record.phone_public_key,
@@ -102,7 +102,8 @@ fn authorize_and_unwrap_share(
         MeshCapability::BundlePush,
         record_has_capability(&record, CAP_MESH_BUNDLE_PUSH),
     )
-    .map_err(mesh_status)
+    .map_err(mesh_status)?;
+    Ok(payload)
 }
 
 fn authorize_remote_share_record(

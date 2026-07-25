@@ -152,6 +152,13 @@ pub struct PairHeartbeatRequest {
     pub push_platform: Option<String>,
     #[serde(default)]
     pub live_activity_push_token: Option<String>,
+    /// Optional dial-back endpoint for mesh reverse delivery (M3 registry).
+    #[serde(default)]
+    pub mesh_lan_base_url: Option<String>,
+    #[serde(default)]
+    pub mesh_iroh_ticket: Option<String>,
+    #[serde(default)]
+    pub mesh_iroh_endpoint_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -245,6 +252,10 @@ impl PairingService {
 
     pub fn device_id(&self) -> &str {
         &self.identity.device_id
+    }
+
+    pub fn identity(&self) -> &DeviceIdentity {
+        &self.identity
     }
 
     pub fn peer_name(&self) -> &str {
@@ -491,6 +502,7 @@ impl PairingService {
             live_activity_push_updated_at: None,
         };
         self.store.save_record(&record)?;
+        let _ = crate::mesh::registry::upsert_from_pairing(&record);
 
         Ok(PairVerifyResponse {
             status: "paired".to_string(),
@@ -537,6 +549,7 @@ impl PairingService {
         }
 
         let mut updated = record.clone();
+        let mut mesh_endpoints = None;
         if let Some(body) = body {
             if let Some(push_token) = body
                 .apns_device_token
@@ -564,9 +577,38 @@ impl PairingService {
                     updated.live_activity_push_updated_at = Some(Utc::now());
                 }
             }
+            let lan = body
+                .mesh_lan_base_url
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string);
+            let ticket = body
+                .mesh_iroh_ticket
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string);
+            let endpoint = body
+                .mesh_iroh_endpoint_id
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string);
+            if lan.is_some() || ticket.is_some() || endpoint.is_some() {
+                mesh_endpoints = Some(crate::mesh::MeshPeerEndpoints {
+                    lan_base_url: lan,
+                    iroh_ticket: ticket,
+                    iroh_endpoint_id: endpoint,
+                });
+            }
         }
         updated.last_seen = Utc::now();
         self.store.save_record(&updated)?;
+        let _ = crate::mesh::registry::upsert_from_pairing(&updated);
+        if let Some(endpoints) = mesh_endpoints {
+            let _ = crate::mesh::registry::set_endpoints(&updated.phone_id, endpoints);
+        }
 
         Ok(PairHeartbeatResponse {
             status: "ok".to_string(),
@@ -815,6 +857,7 @@ pub fn path_allowed_for_peer(path: &str) -> bool {
     let path = path.split('?').next().unwrap_or(path);
     path.starts_with("/v1/peer/")
         || path.starts_with("/v1/share/")
+        || path.starts_with("/v1/mesh/")
         || path == "/pair/heartbeat"
         || path == "/pair/status"
         || path == "/pair/iroh-ticket"
@@ -835,6 +878,7 @@ mod peer_role_tests {
     fn peer_paths_are_allowlisted() {
         assert!(path_allowed_for_peer("/v1/peer/messages"));
         assert!(path_allowed_for_peer("/v1/share/push"));
+        assert!(path_allowed_for_peer("/v1/mesh/peers"));
         assert!(path_allowed_for_peer("/pair/heartbeat"));
         assert!(!path_allowed_for_peer("/v1/vault/notes"));
         assert!(!path_allowed_for_peer("/v1/interactive/turn"));
