@@ -329,10 +329,35 @@ pub async fn send_pair_heartbeat(
         }
     };
 
-    if apns_token.is_some()
+    let mesh_lan = body
+        .and_then(|body| body.mesh_lan_base_url.as_deref())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .or_else(|| {
+            crate::workshop_runtime::lan_pairing_status()
+                .ok()
+                .filter(|status| status.enabled)
+                .map(|status| status.url.trim().trim_end_matches('/').to_string())
+                .filter(|value| !value.is_empty())
+        });
+    let mesh_ticket = body
+        .and_then(|body| body.mesh_iroh_ticket.as_deref())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+    let mesh_endpoint = body
+        .and_then(|body| body.mesh_iroh_endpoint_id.as_deref())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+
+    let has_push = apns_token.is_some()
         || body.and_then(|body| body.push_platform.as_deref()).is_some()
-        || live_activity_token.is_some()
-    {
+        || live_activity_token.is_some();
+    let has_mesh = mesh_lan.is_some() || mesh_ticket.is_some() || mesh_endpoint.is_some();
+
+    if has_push || has_mesh {
         let mut payload = serde_json::Map::new();
         if let Some(token) = apns_token {
             payload.insert("apnsDeviceToken".into(), serde_json::Value::String(token));
@@ -351,6 +376,18 @@ pub async fn send_pair_heartbeat(
             payload.insert(
                 "liveActivityPushToken".into(),
                 serde_json::Value::String(token),
+            );
+        }
+        if let Some(url) = mesh_lan {
+            payload.insert("meshLanBaseUrl".into(), serde_json::Value::String(url));
+        }
+        if let Some(ticket) = mesh_ticket {
+            payload.insert("meshIrohTicket".into(), serde_json::Value::String(ticket));
+        }
+        if let Some(endpoint) = mesh_endpoint {
+            payload.insert(
+                "meshIrohEndpointId".into(),
+                serde_json::Value::String(endpoint),
             );
         }
         crate::workshop_transport::workshop_post_json::<serde_json::Value, _>(

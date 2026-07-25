@@ -3,6 +3,7 @@
   import PeerComposer from "$lib/components/peers/PeerComposer.svelte";
   import PeerListRow from "$lib/components/peers/PeerListRow.svelte";
   import PeerThread from "$lib/components/peers/PeerThread.svelte";
+  import IntroduceViaWorkshopSheet from "$lib/components/peers/IntroduceViaWorkshopSheet.svelte";
   import ShellSidebarExpandButton from "$lib/components/layout/ShellSidebarExpandButton.svelte";
   import { artifacts } from "$lib/stores/artifacts.svelte";
   import { peersShell } from "$lib/stores/peersShell.svelte";
@@ -50,6 +51,7 @@
   import { isTauri } from "$lib/window";
   import {
     Copy,
+    Handshake,
     Link2,
     Plus,
     RefreshCw,
@@ -86,6 +88,7 @@
   let renaming = $state(false);
   let renameDraft = $state("");
   let addPeerOpen = $state(false);
+  let introOpen = $state(false);
   let fallbackOpen = $state(false);
   let fallbackUrlInputEl = $state<HTMLInputElement | null>(null);
   let fallbackDaemonUrl = $state("");
@@ -609,16 +612,30 @@
           <p class="peers-app-sub">Connect and message other workshops</p>
         </div>
       {/if}
-      <button
-        type="button"
-        class="peers-add-btn"
-        title="Add peer"
-        aria-label="Add peer"
-        disabled={busy}
-        onclick={openAddPeer}
-      >
-        <Plus size={18} strokeWidth={2} />
-      </button>
+      <div class="peers-head-actions">
+        <button
+          type="button"
+          class="peers-add-btn"
+          title="Meet via workshop"
+          aria-label="Meet via workshop"
+          disabled={busy}
+          onclick={() => {
+            introOpen = true;
+          }}
+        >
+          <Handshake size={18} strokeWidth={2} />
+        </button>
+        <button
+          type="button"
+          class="peers-add-btn"
+          title="Add peer"
+          aria-label="Add peer"
+          disabled={busy}
+          onclick={openAddPeer}
+        >
+          <Plus size={18} strokeWidth={2} />
+        </button>
+      </div>
     </header>
 
     {#if nearbyUntrusted.length > 0}
@@ -954,3 +971,18 @@
     </div>
   </div>
 {/if}
+
+<IntroduceViaWorkshopSheet
+  open={introOpen}
+  onClose={() => {
+    introOpen = false;
+  }}
+  onStatus={(message) => {
+    success = message;
+    error = null;
+  }}
+  onError={(message) => {
+    error = message;
+    success = null;
+  }}
+/>

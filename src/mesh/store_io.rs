@@ -34,6 +34,10 @@ pub fn receipts_path() -> PathBuf {
     mesh_dir().join("receipts.json")
 }
 
+pub fn intros_path() -> PathBuf {
+    mesh_dir().join("intros.json")
+}
+
 pub fn read_json_default<T: Default + DeserializeOwned>(path: &PathBuf) -> Result<T> {
     if !path.is_file() {
         return Ok(T::default());

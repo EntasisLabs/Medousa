@@ -5,6 +5,10 @@ use crate::pairing::{PairedDeviceRecord, PairingRole};
 pub const CAP_MESH_MESSAGE: &str = "mesh.message";
 pub const CAP_MESH_BUNDLE_PUSH: &str = "mesh.bundle.push";
 pub const CAP_TASK_REQUEST: &str = "task.request";
+/// Client↔client introduce via this workshop (endpoint-hint exchange). Not implied by portal.
+pub const CAP_CLIENT_RENDEZVOUS: &str = "client.rendezvous";
+/// Reserved — scoped signaling/byte relay. Not issued in M4+ v1.
+pub const CAP_CLIENT_RELAY: &str = "client.relay";
 
 /// Default grants issued at peer/portal verify for mesh surfaces.
 pub fn default_mesh_grants_for_role(role: PairingRole) -> Vec<String> {
@@ -71,6 +75,7 @@ mod tests {
         assert!(record_has_capability(&peer, CAP_MESH_MESSAGE));
         assert!(record_has_capability(&peer, CAP_MESH_BUNDLE_PUSH));
         assert!(!record_has_capability(&peer, CAP_TASK_REQUEST));
+        assert!(!record_has_capability(&peer, CAP_CLIENT_RENDEZVOUS));
     }
 
     #[test]

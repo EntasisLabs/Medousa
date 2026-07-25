@@ -68,6 +68,13 @@ pub struct PairHeartbeatInvokeRequest {
     pub push_platform: Option<String>,
     #[serde(default)]
     pub live_activity_push_token: Option<String>,
+    /// Optional mesh dial-back hints (M4+ rendezvous).
+    #[serde(default)]
+    pub mesh_lan_base_url: Option<String>,
+    #[serde(default)]
+    pub mesh_iroh_ticket: Option<String>,
+    #[serde(default)]
+    pub mesh_iroh_endpoint_id: Option<String>,
 }
 
 fn pairing_http_client() -> Result<Client, String> {

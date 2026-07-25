@@ -106,10 +106,8 @@ Home must not invent a fourth “global inbox” store; Share/Ask/Bring-home rid
 
 | User intent | Active doors | Who stores what | Must not |
 |-------------|--------------|-----------------|----------|
-| “Introduce me to the other seat/peer on this workshop” | A and B both paired to daemon D | D holds presence/endpoint hints + consent; A/B keep their own brains | Auto-list every paired client |
-| “Relay so we can talk when direct path fails” | Same | D may forward signaling (then optionally scoped bytes) under a relay capability | Become ambient sync or vault bridge |
+| “Introduce me to the other seat/peer on this workshop” | ✅ A and B both paired to D + `client.rendezvous` | D: `mesh/intros.json` consent; endpoints after accept | Auto-list every paired client |
+| “Relay so we can talk when direct path fails” | Same | Deferred (`client.relay`) | Become ambient sync or vault bridge |
 | Direct A↔B after intro | A↔B (Iroh/LAN) | Not D’s session catalogs | Treat intro as mesh grant between daemons |
 
-Home UI: per-workshop “people / nearby on this brain” — still tagged by `workshopId`. No cross-workshop people merge.
-
-Pipes to reuse: pairing identity, heartbeat endpoint hints, M3 registry projection. New: consent + `client.rendezvous` / `client.relay` capability + Home introduce UX.
+Home UI: Peers **Meet via workshop** (per `workshopId` door). Host grants rendezvous in Settings → Nearby. Candidates = other clients that already have the grant (no endpoints until accept).

@@ -9,10 +9,14 @@ use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 
 use crate::mesh::envelope::MeshCapability;
+use crate::mesh::intros::{self, MeshIntroCandidate, MeshIntroRecord, MeshIntroStatus};
 use crate::mesh::outbox::{self, MeshOutboxItem, MeshOutboxStatus};
 use crate::mesh::receipts::{self, MeshReceipt};
 use crate::mesh::registry::{self, MeshPeerEndpoints, MeshPeerRecord};
-use crate::mesh::{inbox, CAP_MESH_BUNDLE_PUSH, CAP_MESH_MESSAGE, CAP_TASK_REQUEST};
+use crate::mesh::{
+    inbox, record_has_capability, CAP_CLIENT_RENDEZVOUS, CAP_MESH_BUNDLE_PUSH, CAP_MESH_MESSAGE,
+    CAP_TASK_REQUEST,
+};
 use crate::pairing::{PairedDeviceRecord, PairingRole, PairingService};
 
 #[derive(Clone)]
@@ -77,6 +81,41 @@ struct MeshReceiptsListResponse {
     receipts: Vec<MeshReceipt>,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MeshIntrosResponse {
+    intros: Vec<MeshIntroRecord>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MeshIntroCandidatesResponse {
+    candidates: Vec<MeshIntroCandidate>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct MeshIntroListQuery {
+    status: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MeshIntroRequestBody {
+    target_device_id: String,
+    #[serde(default)]
+    note: Option<String>,
+    #[serde(default)]
+    endpoints: Option<MeshPeerEndpoints>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct MeshIntroDecisionBody {
+    #[serde(default)]
+    endpoints: Option<MeshPeerEndpoints>,
+}
+
 pub fn mesh_router(state: MeshApiState) -> Router {
     Router::new()
         .route("/v1/mesh/peers", get(list_mesh_peers))
@@ -85,6 +124,13 @@ pub fn mesh_router(state: MeshApiState) -> Router {
         .route("/v1/mesh/outbox/{item_id}/flush", post(flush_mesh_outbox_item))
         .route("/v1/mesh/inbox", get(list_mesh_inbox))
         .route("/v1/mesh/receipts", get(list_mesh_receipts).post(post_mesh_receipt))
+        .route(
+            "/v1/mesh/intros/candidates",
+            get(list_mesh_intro_candidates),
+        )
+        .route("/v1/mesh/intros", get(list_mesh_intros).post(request_mesh_intro))
+        .route("/v1/mesh/intros/{intro_id}/accept", post(accept_mesh_intro))
+        .route("/v1/mesh/intros/{intro_id}/decline", post(decline_mesh_intro))
         .with_state(state)
 }
 
@@ -119,12 +165,151 @@ async fn patch_mesh_peer(
         peer = registry::set_mesh_enabled(&device_id, enabled).map_err(internal)?;
     }
     if let Some(grants) = body.mesh_grants {
+        if let Some(pairing) = state.pairing.as_ref() {
+            let _ = pairing
+                .set_mesh_grants(&device_id, grants.clone())
+                .map_err(internal)?;
+        }
         peer = registry::set_grants(&device_id, grants).map_err(internal)?;
     }
     if let Some(endpoints) = body.endpoints {
         peer = registry::set_endpoints(&device_id, endpoints).map_err(internal)?;
     }
     Ok(Json(peer))
+}
+
+async fn list_mesh_intro_candidates(
+    State(state): State<MeshApiState>,
+    ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
+    headers: HeaderMap,
+) -> Result<Json<MeshIntroCandidatesResponse>, (StatusCode, String)> {
+    let caller = require_rendezvous_caller(&state, addr.ip(), &headers)?;
+    let pairing = state.pairing.as_ref().ok_or_else(|| {
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "LAN pairing is not enabled on this workshop".to_string(),
+        )
+    })?;
+    let candidates = intros::list_candidates(&caller.phone_id, |device_id| {
+        pairing
+            .find_by_phone_id(device_id)
+            .ok()
+            .flatten()
+            .is_some_and(|record| record_has_capability(&record, CAP_CLIENT_RENDEZVOUS))
+    })
+    .map_err(internal)?;
+    Ok(Json(MeshIntroCandidatesResponse { candidates }))
+}
+
+async fn list_mesh_intros(
+    State(state): State<MeshApiState>,
+    ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
+    headers: HeaderMap,
+    Query(query): Query<MeshIntroListQuery>,
+) -> Result<Json<MeshIntrosResponse>, (StatusCode, String)> {
+    let caller = require_rendezvous_caller(&state, addr.ip(), &headers)?;
+    let status = match query.status.as_deref().map(str::trim) {
+        None | Some("") | Some("all") => None,
+        Some(raw) => Some(MeshIntroStatus::parse(raw).ok_or_else(|| {
+            (
+                StatusCode::BAD_REQUEST,
+                format!("unknown intro status filter: {raw}"),
+            )
+        })?),
+    };
+    let intros = intros::list_for_caller(&caller.phone_id, status).map_err(internal)?;
+    Ok(Json(MeshIntrosResponse { intros }))
+}
+
+async fn request_mesh_intro(
+    State(state): State<MeshApiState>,
+    ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
+    headers: HeaderMap,
+    Json(body): Json<MeshIntroRequestBody>,
+) -> Result<Json<MeshIntroRecord>, (StatusCode, String)> {
+    let caller = require_rendezvous_caller(&state, addr.ip(), &headers)?;
+    let pairing = state.pairing.as_ref().ok_or_else(|| {
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "LAN pairing is not enabled on this workshop".to_string(),
+        )
+    })?;
+    let target_id = body.target_device_id.trim();
+    if target_id.is_empty() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "targetDeviceId is required".to_string(),
+        ));
+    }
+    let target = pairing
+        .find_by_phone_id(target_id)
+        .map_err(internal)?
+        .ok_or_else(|| {
+            (
+                StatusCode::NOT_FOUND,
+                format!("target device not paired: {target_id}"),
+            )
+        })?;
+    if !record_has_capability(&target, CAP_CLIENT_RENDEZVOUS) {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "target does not have client.rendezvous".to_string(),
+        ));
+    }
+    if let Some(endpoints) = body.endpoints.as_ref() {
+        let _ = registry::set_endpoints(&caller.phone_id, endpoints.clone());
+    }
+    let intro = intros::request_intro(
+        &caller.phone_id,
+        &caller.phone_name,
+        &target.phone_id,
+        &target.phone_name,
+        body.note,
+        body.endpoints,
+    )
+    .map_err(|err| (StatusCode::BAD_REQUEST, err.to_string()))?;
+    Ok(Json(intro))
+}
+
+async fn accept_mesh_intro(
+    State(state): State<MeshApiState>,
+    ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
+    headers: HeaderMap,
+    Path(intro_id): Path<String>,
+    Json(body): Json<MeshIntroDecisionBody>,
+) -> Result<Json<MeshIntroRecord>, (StatusCode, String)> {
+    let caller = require_rendezvous_caller(&state, addr.ip(), &headers)?;
+    if let Some(endpoints) = body.endpoints.as_ref() {
+        let _ = registry::set_endpoints(&caller.phone_id, endpoints.clone());
+    }
+    let intro = intros::accept_intro(&intro_id, &caller.phone_id, body.endpoints)
+        .map_err(|err| {
+            let msg = err.to_string();
+            if msg.contains("not found") {
+                (StatusCode::NOT_FOUND, msg)
+            } else {
+                (StatusCode::BAD_REQUEST, msg)
+            }
+        })?;
+    Ok(Json(intro))
+}
+
+async fn decline_mesh_intro(
+    State(state): State<MeshApiState>,
+    ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
+    headers: HeaderMap,
+    Path(intro_id): Path<String>,
+) -> Result<Json<MeshIntroRecord>, (StatusCode, String)> {
+    let caller = require_rendezvous_caller(&state, addr.ip(), &headers)?;
+    let intro = intros::decline_intro(&intro_id, &caller.phone_id).map_err(|err| {
+        let msg = err.to_string();
+        if msg.contains("not found") {
+            (StatusCode::NOT_FOUND, msg)
+        } else {
+            (StatusCode::BAD_REQUEST, msg)
+        }
+    })?;
+    Ok(Json(intro))
 }
 
 async fn list_mesh_outbox(
@@ -350,6 +535,23 @@ fn require_local_or_portal(
         StatusCode::FORBIDDEN,
         "peer credentials cannot list mesh registry".to_string(),
     ))
+}
+
+/// Bearer (or trusted local acting only via bearer) must have `client.rendezvous`.
+fn require_rendezvous_caller(
+    state: &MeshApiState,
+    ip: std::net::IpAddr,
+    headers: &HeaderMap,
+) -> Result<PairedDeviceRecord, (StatusCode, String)> {
+    let _ = ip;
+    let record = authorize_remote_peer(state, headers)?;
+    if !record_has_capability(&record, CAP_CLIENT_RENDEZVOUS) {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "client.rendezvous grant required".to_string(),
+        ));
+    }
+    Ok(record)
 }
 
 fn authorize_remote_peer(

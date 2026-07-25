@@ -15,6 +15,7 @@ mod pairing;
 mod pairing_client;
 mod mesh_envelope;
 mod lan_share;
+mod mesh_intros;
 mod peer_inbox_sink;
 mod push;
 mod workshop_registry;
@@ -263,6 +264,14 @@ pub fn run() {
             lan_share::peer_mark_read,
             lan_share::peer_mark_thread_read,
             lan_share::peer_compose_identity,
+            mesh_intros::list_intro_workshops,
+            mesh_intros::mesh_list_intros,
+            mesh_intros::mesh_list_intro_candidates,
+            mesh_intros::mesh_request_intro,
+            mesh_intros::mesh_accept_intro,
+            mesh_intros::mesh_decline_intro,
+            mesh_intros::mesh_list_local_peers,
+            mesh_intros::mesh_set_peer_rendezvous,
             workshop_registry::workshops_load,
             workshop_registry::workshops_set_active,
             workshop_registry::workshops_add_local,

@@ -809,6 +809,30 @@ impl PairingService {
         Ok(None)
     }
 
+    pub fn find_by_phone_id(&self, phone_id: &str) -> Result<Option<PairedDeviceRecord>> {
+        self.store.get_by_phone_id(phone_id)
+    }
+
+    /// Persist mesh grants on the pairing record and refresh the mesh registry projection.
+    pub fn set_mesh_grants(
+        &self,
+        phone_id: &str,
+        grants: Vec<String>,
+    ) -> Result<PairedDeviceRecord> {
+        let mut record = self
+            .store
+            .get_by_phone_id(phone_id)?
+            .ok_or_else(|| anyhow::anyhow!("paired device not found: {phone_id}"))?;
+        record.mesh_grants = grants
+            .into_iter()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+            .collect();
+        self.store.save_record(&record)?;
+        let _ = crate::mesh::registry::upsert_from_pairing(&record);
+        Ok(record)
+    }
+
     pub fn authorize_bearer_token(&self, token: &str) -> Result<bool> {
         Ok(self.resolve_bearer_role(token)?.is_some())
     }

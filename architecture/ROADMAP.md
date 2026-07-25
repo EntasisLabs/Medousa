@@ -18,7 +18,7 @@ Full plans: **[v0.6.0-shared-mode-plan.md](v0.6.0-shared-mode-plan.md)** · **[v
 | Pillar | Plan | Status |
 |--------|------|--------|
 | Shared mode | [v0.6.0-shared-mode-plan.md](v0.6.0-shared-mode-plan.md) | ✅ S0–S6 |
-| Peer mesh | [v0.6.0-peer-mesh-plan.md](v0.6.0-peer-mesh-plan.md) | 🔄 M0–M3; M4 Share/Ask/Bring-home ✅; next M4+ relay |
+| Peer mesh | [v0.6.0-peer-mesh-plan.md](v0.6.0-peer-mesh-plan.md) | 🔄 M0–M4 ✅; M4+ introducer ✅; next optional `client.relay` |
 | Dynamic | [ADR-008](../docs/architecture/decisions/adr-008-hot-swappable-agent-runtime.md) | ⬜ |
 | Polish | [polish-and-package-plan.md](polish-and-package-plan.md) P5+ | ⬜ |
 

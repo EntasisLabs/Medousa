@@ -18,8 +18,13 @@
     type ShareImportResult,
     type TrustedWorkshopSummary,
   } from "$lib/utils/lanShareApi";
+  import {
+    meshListLocalPeers,
+    meshSetPeerRendezvous,
+    type MeshPeerGrantRow,
+  } from "$lib/utils/meshIntroApi";
   import { isTauri } from "$lib/window";
-  import { Share2, Upload, Users } from "@lucide/svelte";
+  import { Handshake, Share2, Upload, Users } from "@lucide/svelte";
 
   interface Props {
     mobile?: boolean;
@@ -28,8 +33,10 @@
   let { mobile = false }: Props = $props();
 
   let trusted = $state<TrustedWorkshopSummary[]>([]);
+  let meshPeers = $state<MeshPeerGrantRow[]>([]);
   let lanPairing = $state<LanPairingStatus | null>(null);
   let lanBusy = $state(false);
+  let meshBusy = $state(false);
   let busy = $state(false);
   let error = $state<string | null>(null);
   let success = $state<string | null>(null);
@@ -74,6 +81,35 @@
     }
   }
 
+  async function refreshMeshPeers() {
+    if (!isTauri()) return;
+    try {
+      meshPeers = await meshListLocalPeers();
+    } catch {
+      // Host-only route — ignore when not on the workshop engine.
+      meshPeers = [];
+    }
+  }
+
+  async function toggleRendezvous(peer: MeshPeerGrantRow, enabled: boolean) {
+    meshBusy = true;
+    error = null;
+    success = null;
+    try {
+      const updated = await meshSetPeerRendezvous(peer.deviceId, enabled);
+      meshPeers = meshPeers.map((entry) =>
+        entry.deviceId === updated.deviceId ? updated : entry,
+      );
+      success = enabled
+        ? `Rendezvous on for ${updated.displayName}.`
+        : `Rendezvous off for ${updated.displayName}.`;
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+    } finally {
+      meshBusy = false;
+    }
+  }
+
   async function toggleLanPairing(enabled: boolean) {
     lanBusy = true;
     error = null;
@@ -92,6 +128,7 @@
   onMount(() => {
     void refreshTrusted();
     void refreshLanPairing();
+    void refreshMeshPeers();
   });
 
   async function handleExport() {
@@ -212,6 +249,41 @@
       Open Peers
     </button>
   </div>
+
+  {#if meshPeers.length > 0}
+    <div class="mt-6">
+      <h3 class="settings-subsection-heading">
+        <Handshake size={14} strokeWidth={2} class="inline" /> Meet via this workshop
+      </h3>
+      <p class="settings-subsection-lead">
+        Grant <code>client.rendezvous</code> so paired clients can introduce each other through
+        this brain. Endpoints stay private until both consent.
+      </p>
+      <ul class="mt-3 space-y-2">
+        {#each meshPeers as peer (peer.deviceId)}
+          <li class="flex items-center justify-between gap-3 rounded-lg px-3 py-2 bg-surface-800/50">
+            <div class="min-w-0">
+              <p class="text-sm text-surface-100 truncate">{peer.displayName}</p>
+              <p class="text-xs text-surface-400">{peer.role}</p>
+            </div>
+            <label class="inline-flex items-center gap-2 text-xs text-surface-300">
+              <span>Rendezvous</span>
+              <input
+                type="checkbox"
+                checked={peer.rendezvous}
+                disabled={meshBusy}
+                onchange={(event) =>
+                  void toggleRendezvous(
+                    peer,
+                    (event.currentTarget as HTMLInputElement).checked,
+                  )}
+              />
+            </label>
+          </li>
+        {/each}
+      </ul>
+    </div>
+  {/if}
 
   <div class="mt-6">
     <h3 class="settings-subsection-heading">Pairing window</h3>
