@@ -594,6 +594,58 @@
     border-top: 1px solid rgb(var(--shell-border) / 0.14);
   }
 
+  .workshop-rail-drag-handle {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    width: 1.1rem;
+    margin-left: 0.1rem;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: rgb(var(--shell-muted, var(--color-surface-500)));
+    cursor: grab;
+    touch-action: none;
+  }
+
+  .workshop-rail-drag-handle:disabled {
+    opacity: 0.35;
+    cursor: default;
+  }
+
+  :global(body.workshop-rail-dragging) {
+    cursor: grabbing !important;
+    user-select: none;
+  }
+
+  .workshop-rail-dest-dragging {
+    opacity: 0.45;
+  }
+
+  .workshop-rail-dest-dragging .workshop-rail-drag-handle {
+    cursor: grabbing;
+  }
+
+  .workshop-rail-dest-drop-before {
+    box-shadow: inset 0 2px 0 0 rgb(var(--color-primary-400) / 0.85);
+  }
+
+  .workshop-rail-drop-end {
+    min-height: 0.7rem;
+    margin: 0.1rem 0.45rem 0.2rem;
+    border-radius: 0.35rem;
+  }
+
+  .workshop-rail-drop-end.workshop-rail-dest-drop-before {
+    box-shadow: none;
+    border-top: 2px solid rgb(var(--color-primary-400) / 0.85);
+  }
+
+  .workshop-rail-primary-dragging {
+    cursor: grabbing;
+  }
+
   .workshop-rail-dest-hero .workshop-rail-dest-btn {
     min-height: 2.15rem;
   }
@@ -728,7 +780,7 @@
     margin: 0.2rem 0.35rem 0.45rem;
     padding: 0.35rem 0.4rem;
     border-radius: 0.5rem;
-    border: 1px solid rgb(var(--shell-border, var(--color-surface-500)) / 0.35);
+    border: 0;
     background: rgb(var(--shell-pane-bg, var(--color-surface-900)) / 0.45);
   }
 
@@ -793,52 +845,6 @@
 
   .workshop-rail-layout-add-view :global(.canvas-add-view) {
     margin-top: 0;
-  }
-
-  .workshop-rail-layout-edit-sheet {
-    margin: 0.45rem 0.35rem 0;
-    padding: 0.45rem 0.5rem 0.55rem;
-    border-radius: 0.5rem;
-    border: 1px solid rgb(var(--shell-border, var(--color-surface-500)) / 0.35);
-    background: rgb(var(--shell-pane-bg, var(--color-surface-900)) / 0.5);
-  }
-
-  .workshop-rail-layout-edit-sheet-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.35rem;
-    margin-bottom: 0.35rem;
-  }
-
-  .workshop-rail-layout-edit-sheet-title {
-    margin: 0;
-    font-size: 0.75rem;
-    font-weight: 600;
-    color: rgb(var(--shell-label, var(--color-surface-100)));
-  }
-
-  .workshop-rail-layout-delete {
-    margin-top: 0.45rem;
-    padding-top: 0.4rem;
-    border-top: 1px solid rgb(var(--shell-border, var(--color-surface-500)) / 0.28);
-  }
-
-  .workshop-rail-layout-delete-copy {
-    margin: 0 0 0.35rem;
-    font-size: 0.6875rem;
-    color: rgb(var(--shell-muted, var(--color-surface-400)));
-  }
-
-  .workshop-rail-layout-delete-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.35rem;
-  }
-
-  .workshop-rail-layout-delete-trigger {
-    margin-top: 0.45rem;
-    opacity: 0.75;
   }
 
   .workshop-rail-dest-actions .workshop-rail-row-action,

@@ -81,7 +81,6 @@ export const SURFACE_ICON_GROUPS: Record<string, readonly AllowedSurfaceIcon[]> 
     "globe",
     "orbit",
     "zap",
-    "calendar",
     "radio",
     "activity",
     "settings",

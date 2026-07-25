@@ -112,14 +112,6 @@ export class EnvironmentStore {
       ordered.splice(chatAt >= 0 ? chatAt + 1 : 0, 0, peers);
     }
 
-    // Automations is Library's twin door — keep it available even when older
-    // presets dropped it after modes were folded under Library.
-    const automations = byId.get("automations");
-    const libraryAt = ordered.findIndex((surface) => surface.id === "library");
-    if (automations && libraryAt >= 0 && !ordered.some((surface) => surface.id === "automations")) {
-      ordered.splice(libraryAt + 1, 0, automations);
-    }
-
     for (const safetyId of [SAFETY_SURFACE_SETTINGS, SAFETY_SURFACE_RUNTIME]) {
       if (!ordered.some((surface) => surface.id === safetyId)) {
         const safety = byId.get(safetyId);
@@ -380,6 +372,28 @@ export class EnvironmentStore {
     const { moveSurfaceInActivePreset } = await import("$lib/utils/environmentLayout");
     const spec = await this.cloneCurrentSpec(profileId);
     moveSurfaceInActivePreset(spec, surfaceId, direction);
+    await this.saveSpec(spec);
+  }
+
+  async reorderSurfaceInNav(
+    surfaceId: string,
+    beforeSurfaceId: string | null,
+    profileId?: string,
+  ): Promise<void> {
+    const { reorderSurfaceInActivePreset } = await import("$lib/utils/environmentLayout");
+    const spec = await this.cloneCurrentSpec(profileId);
+    reorderSurfaceInActivePreset(spec, surfaceId, beforeSurfaceId);
+    await this.saveSpec(spec);
+  }
+
+  async reorderPrimarySurfaceInNav(
+    surfaceId: string,
+    toPrimaryIndex: number,
+    profileId?: string,
+  ): Promise<void> {
+    const { reorderPrimarySurfaceInActivePreset } = await import("$lib/utils/environmentLayout");
+    const spec = await this.cloneCurrentSpec(profileId);
+    reorderPrimarySurfaceInActivePreset(spec, surfaceId, toPrimaryIndex);
     await this.saveSpec(spec);
   }
 

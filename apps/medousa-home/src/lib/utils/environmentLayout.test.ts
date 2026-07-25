@@ -8,9 +8,12 @@ import {
   isSurfaceNavVisible,
   moveSurfaceInActivePreset,
   removeLayoutPreset,
+  reorderPrimarySurfaceInActivePreset,
+  reorderSurfaceInActivePreset,
   setActiveLayoutTheme,
   setSurfaceNavVisible,
 } from "$lib/utils/environmentLayout";
+import { primaryRailSurfaceIds } from "$lib/utils/lifeRailSections";
 
 describe("environmentLayout nav visibility", () => {
   it("hides and restores a builtin surface on the active preset", () => {
@@ -71,6 +74,71 @@ describe("environmentLayout reorder", () => {
 
     moveSurfaceInActivePreset(spec, last, 1);
     expect(activePresetSurfaceIds(spec)).toEqual(before);
+  });
+
+  it("reorders a destination before another (or to the end)", () => {
+    const spec = defaultEnvironmentSpec();
+    const before = activePresetSurfaceIds(spec);
+    expect(before.indexOf("library")).toBeGreaterThan(before.indexOf("chat"));
+
+    reorderSurfaceInActivePreset(spec, "library", "chat");
+    const after = activePresetSurfaceIds(spec);
+    expect(after.indexOf("library")).toBeLessThan(after.indexOf("chat"));
+    expect(after).toContain("settings");
+    expect(after).toContain("runtime");
+
+    reorderSurfaceInActivePreset(spec, "library", null);
+    const atEnd = activePresetSurfaceIds(spec);
+    const libraryAt = atEnd.indexOf("library");
+    const settingsAt = atEnd.indexOf("settings");
+    expect(libraryAt).toBeGreaterThan(-1);
+    expect(libraryAt).toBeLessThan(settingsAt);
+  });
+
+  it("lets Automations reorder independently of Library", () => {
+    const spec = defaultEnvironmentSpec();
+    reorderSurfaceInActivePreset(spec, "automations", "chat");
+    const ids = activePresetSurfaceIds(spec);
+    expect(ids.indexOf("automations")).toBeLessThan(ids.indexOf("chat"));
+    expect(ids.indexOf("automations")).not.toBe(ids.indexOf("library") + 1);
+  });
+
+  it("reorders by primary-rail index without collapsing dock surfaces", () => {
+    const spec = defaultEnvironmentSpec();
+    const preset = activeLayoutPreset(spec);
+    expect(preset).toBeTruthy();
+    // Interleave a dock surface between primary doors.
+    preset!.surfaces = [
+      "chat",
+      "peers",
+      "context",
+      "work",
+      "library",
+      "automations",
+      "settings",
+      "runtime",
+    ];
+
+    reorderPrimarySurfaceInActivePreset(spec, "work", 0);
+    expect(primaryRailSurfaceIds(activePresetSurfaceIds(spec))).toEqual([
+      "work",
+      "chat",
+      "peers",
+      "library",
+      "automations",
+    ]);
+    expect(activePresetSurfaceIds(spec).indexOf("context")).toBeGreaterThan(
+      activePresetSurfaceIds(spec).indexOf("peers"),
+    );
+
+    reorderPrimarySurfaceInActivePreset(spec, "work", 4);
+    expect(primaryRailSurfaceIds(activePresetSurfaceIds(spec))).toEqual([
+      "chat",
+      "peers",
+      "library",
+      "automations",
+      "work",
+    ]);
   });
 });
 

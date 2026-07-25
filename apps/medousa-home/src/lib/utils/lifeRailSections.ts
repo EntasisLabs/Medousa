@@ -7,7 +7,7 @@ import type { LifeRailItem } from "$lib/utils/lifeRailItems";
 
 /**
  * Jobs rail — open doors, not a table of contents.
- * Library (vault) and Automations are separate destinations; modes live inside.
+ * Library and Automations are independent destinations (order follows the preset).
  * Context and You are sibling dock doors at the bottom (not nested).
  */
 export type LifeRailLayout = {
@@ -16,9 +16,9 @@ export type LifeRailLayout = {
   focusStartIndex: number;
   /** First custom surface index in `primary`; -1 if none. */
   customStartIndex: number;
-  /** Show Library door after the focus strip (before custom). */
+  /** Library is present in the primary strip. */
   showLibrary: boolean;
-  /** Show Automations door next to Library. */
+  /** Automations is present in the primary strip. */
   showAutomations: boolean;
   you: LifeRailItem;
   /** Dock sibling next to You (own door, not nested). */
@@ -39,7 +39,7 @@ export type RailSectionId =
 const FOCUS_IDS = new Set(["calendar", "work", "web"]);
 
 /** Dock / chrome / folded doors — never appear in the primary strip. */
-const RAIL_PRIMARY_SKIP_IDS = new Set([
+export const RAIL_PRIMARY_SKIP_IDS = new Set([
   "workshop",
   "home",
   "context",
@@ -48,6 +48,11 @@ const RAIL_PRIMARY_SKIP_IDS = new Set([
   SAFETY_SURFACE_SETTINGS,
   SAFETY_SURFACE_RUNTIME,
 ]);
+
+/** Preset surface ids that render in the primary rail strip. */
+export function primaryRailSurfaceIds(surfaceIds: readonly string[]): string[] {
+  return surfaceIds.filter((id) => !RAIL_PRIMARY_SKIP_IDS.has(id));
+}
 
 /** Synthetic Library row — vault modes switch inside the surface, not on the rail. */
 export function libraryRailSurface(): SurfaceDef {
@@ -121,18 +126,6 @@ export function buildLifeRailLayout(surfaces: SurfaceDef[]): LifeRailLayout {
     primary.push({ kind: "surface", id: surface.id, surface });
   }
 
-  // Twin door: Library implies Automations even when older presets dropped it.
-  if (sawLibrary && !sawAutomations) {
-    const libraryAt = primary.findIndex((item) => item.id === "library");
-    if (libraryAt >= 0) {
-      primary.splice(libraryAt + 1, 0, {
-        kind: "surface",
-        id: "automations",
-        surface: automationsRailSurface(),
-      });
-    }
-  }
-
   const focusStartIndex = primary.findIndex((item) => FOCUS_IDS.has(item.id));
   const customStartIndex = primary.findIndex(
     (item) => item.kind === "surface" && item.surface.kind === "custom",
@@ -156,7 +149,7 @@ export function buildLifeRailLayout(surfaces: SurfaceDef[]): LifeRailLayout {
     focusStartIndex,
     customStartIndex,
     showLibrary: sawLibrary,
-    showAutomations: sawLibrary || sawAutomations,
+    showAutomations: sawAutomations,
     you,
     context: contextSurface
       ? { kind: "surface", id: "context", surface: contextSurface }

@@ -68,23 +68,30 @@ describe("buildLifeRailLayout", () => {
       "chat",
       "calendar",
       "library",
-      "automations",
     ]);
     expect(layout.focusStartIndex).toBe(0);
   });
 
-  it("shows Automations whenever Library is present, even if Automations was dropped from the preset", () => {
-    const layout = buildLifeRailLayout([
+  it("keeps Library and Automations independent in the primary strip", () => {
+    const libraryOnly = buildLifeRailLayout([
       surface("chat", "Chat"),
       surface("library", "Workspace"),
     ]);
-    expect(layout.showLibrary).toBe(true);
-    expect(layout.showAutomations).toBe(true);
-    expect(layout.primary.map((item) => item.id)).toEqual([
+    expect(libraryOnly.showLibrary).toBe(true);
+    expect(libraryOnly.showAutomations).toBe(false);
+    expect(libraryOnly.primary.map((item) => item.id)).toEqual(["chat", "library"]);
+
+    const automationsFirst = buildLifeRailLayout([
+      surface("automations", "Automations"),
+      surface("chat", "Chat"),
+      surface("library", "Workspace"),
+    ]);
+    expect(automationsFirst.primary.map((item) => item.id)).toEqual([
+      "automations",
       "chat",
       "library",
-      "automations",
     ]);
+    expect(automationsFirst.showAutomations).toBe(true);
   });
 
   it("promotes custom surfaces as primary peers in place", () => {

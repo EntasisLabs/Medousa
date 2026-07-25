@@ -20,7 +20,7 @@
   import WorkRailToolbar from "$lib/components/work/WorkRailToolbar.svelte";
   import WorkRailList from "$lib/components/work/WorkRailList.svelte";
   import CanvasAddViewForm from "$lib/components/settings/CanvasAddViewForm.svelte";
-  import CanvasEditViewForm from "$lib/components/settings/CanvasEditViewForm.svelte";
+  import CanvasEditViewPopover from "$lib/components/settings/CanvasEditViewPopover.svelte";
   import { environment } from "$lib/stores/environment.svelte";
   import { layout } from "$lib/stores/layout.svelte";
   import { lmeWorkspace, type LmeExplorerMode } from "$lib/stores/lmeWorkspace.svelte";
@@ -56,7 +56,7 @@
   } from "$lib/utils/railPopoverSummon";
   import { resolveSummonToolbarSurface } from "$lib/utils/resolveSummonToolbarSurface";
   import { toast } from "$lib/stores/toast.svelte";
-  import { Check, ChevronDown, ChevronUp, Minus, Pencil, Plus, Settings, X } from "@lucide/svelte";
+  import { Check, GripVertical, Minus, Pencil, Plus, Settings } from "@lucide/svelte";
   import { SAFETY_SURFACE_SETTINGS } from "$lib/types/environment";
   import type { DaemonHealth } from "$lib/daemon";
   import { fade, fly } from "svelte/transition";
@@ -138,7 +138,18 @@
 
   let railLayoutBusy = $state(false);
   let editingCustomSurfaceId = $state<string | null>(null);
-  let confirmDeleteCustomId = $state<string | null>(null);
+  let editingCustomAnchorEl = $state<HTMLElement | null>(null);
+  let railDragId = $state<string | null>(null);
+  /** Insertion index in the primary strip while dragging (0…length). */
+  let railInsertIndex = $state<number | null>(null);
+  let railPrimaryEl = $state<HTMLElement | null>(null);
+
+  /** Non-reactive drag session — pointer handlers must not depend on Svelte batching. */
+  let railDragSession: {
+    surfaceId: string;
+    fromIndex: number;
+    pointerId: number;
+  } | null = null;
 
   const editingCustomSurface = $derived(
     editingCustomSurfaceId
@@ -150,9 +161,15 @@
   $effect(() => {
     if (!railLayoutEditing) {
       editingCustomSurfaceId = null;
-      confirmDeleteCustomId = null;
+      editingCustomAnchorEl = null;
+      clearRailDrag();
     }
   });
+
+  function closeCustomViewEdit() {
+    editingCustomSurfaceId = null;
+    editingCustomAnchorEl = null;
+  }
 
   async function setRailNavVisible(surfaceId: string, visible: boolean) {
     if (railLayoutBusy) return;
@@ -171,15 +188,88 @@
     }
   }
 
-  async function moveRailDestination(surfaceId: string, direction: -1 | 1) {
-    if (railLayoutBusy) return;
+  function clearRailDrag() {
+    railDragSession = null;
+    railDragId = null;
+    railInsertIndex = null;
+    document.body.classList.remove("workshop-rail-dragging");
+  }
+
+  function primaryRowEls(): HTMLElement[] {
+    if (!railPrimaryEl) return [];
+    return Array.from(
+      railPrimaryEl.querySelectorAll<HTMLElement>("[data-rail-reorder-id]"),
+    );
+  }
+
+  function insertIndexAtY(clientY: number): number {
+    const rows = primaryRowEls();
+    if (rows.length === 0) return 0;
+    for (let i = 0; i < rows.length; i++) {
+      const rect = rows[i]!.getBoundingClientRect();
+      const mid = rect.top + rect.height / 2;
+      if (clientY < mid) return i;
+    }
+    return rows.length;
+  }
+
+  function onRailReorderPointerMove(event: PointerEvent) {
+    const session = railDragSession;
+    if (!session || event.pointerId !== session.pointerId) return;
+    railInsertIndex = insertIndexAtY(event.clientY);
+  }
+
+  function onRailReorderPointerUp(event: PointerEvent) {
+    const session = railDragSession;
+    if (!session || event.pointerId !== session.pointerId) return;
+    const from = session.fromIndex;
+    const surfaceId = session.surfaceId;
+    // Insert index is among current rows; convert to final primary index.
+    const insertAt = railInsertIndex ?? insertIndexAtY(event.clientY);
+    document.removeEventListener("pointermove", onRailReorderPointerMove);
+    document.removeEventListener("pointerup", onRailReorderPointerUp);
+    document.removeEventListener("pointercancel", onRailReorderPointerUp);
+    clearRailDrag();
+
+    // When dragging downward, the slot after removal shifts left by one.
+    let to = insertAt;
+    if (to > from) to -= 1;
+    if (to === from || railLayoutBusy) return;
+
     railLayoutBusy = true;
+    void environment
+      .reorderPrimarySurfaceInNav(surfaceId, to)
+      .catch((err) => {
+        toast.show(err instanceof Error ? err.message : String(err), { durationMs: 2400 });
+      })
+      .finally(() => {
+        railLayoutBusy = false;
+      });
+  }
+
+  function onRailReorderPointerDown(
+    surfaceId: string,
+    fromIndex: number,
+    event: PointerEvent,
+  ) {
+    if (!railLayoutEditing || railLayoutBusy || event.button !== 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    railDragSession = {
+      surfaceId,
+      fromIndex,
+      pointerId: event.pointerId,
+    };
+    railDragId = surfaceId;
+    railInsertIndex = fromIndex;
+    document.body.classList.add("workshop-rail-dragging");
+    document.addEventListener("pointermove", onRailReorderPointerMove);
+    document.addEventListener("pointerup", onRailReorderPointerUp);
+    document.addEventListener("pointercancel", onRailReorderPointerUp);
     try {
-      await environment.moveSurfaceInNav(surfaceId, direction);
-    } catch (err) {
-      toast.show(err instanceof Error ? err.message : String(err), { durationMs: 2400 });
-    } finally {
-      railLayoutBusy = false;
+      (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+    } catch {
+      /* capture is best-effort */
     }
   }
 
@@ -600,14 +690,33 @@
                 railLayoutEditing && isNavDestinationToggleable(surface.id)}
               {@const canEditCustom = canHide && surface.kind === "custom"}
               {@const canReorder = canHide && orderIndex >= 0}
-              {@const canMoveUp = canReorder && orderIndex > 0}
-              {@const canMoveDown =
-                canReorder && orderIndex < lifeRail.primary.length - 1}
+              {@const isDragging = railDragId === surface.id}
+              {@const showDropBefore =
+                canReorder &&
+                railDragId !== null &&
+                railDragId !== surface.id &&
+                railInsertIndex === orderIndex}
               <div
                 class="workshop-rail-dest"
                 class:workshop-rail-dest-hero={hero}
+                class:workshop-rail-dest-dragging={isDragging}
+                class:workshop-rail-dest-drop-before={showDropBefore}
+                data-rail-reorder-id={canReorder ? surface.id : undefined}
               >
                 <div class="workshop-rail-dest-row">
+                  {#if canReorder}
+                    <button
+                      type="button"
+                      class="workshop-rail-drag-handle"
+                      title="Drag to reorder"
+                      aria-label="Drag to reorder {navLabel(surface)}"
+                      disabled={railLayoutBusy}
+                      onpointerdown={(event) =>
+                        onRailReorderPointerDown(surface.id, orderIndex, event)}
+                    >
+                      <GripVertical size={14} strokeWidth={2} />
+                    </button>
+                  {/if}
                   <button
                     type="button"
                     data-rail-surface={surface.id}
@@ -620,7 +729,13 @@
                     aria-label={badge > 0 ? `${navTitle(surface)} (${badge} active)` : navTitle(surface)}
                     aria-current={doorActive ? "page" : undefined}
                     aria-expanded={showView && viewSurface === surface.id}
-                    onclick={(event) => selectDestination(surface.id, event)}
+                    onclick={(event) => {
+                      if (railLayoutEditing) {
+                        event.preventDefault();
+                        return;
+                      }
+                      selectDestination(surface.id, event);
+                    }}
                   >
                     <span class="workshop-rail-btn-icon" aria-hidden="true">
                       <Icon {...(hero ? heroIconProps : treeIconProps)} />
@@ -639,43 +754,24 @@
                   </button>
                   {#if canHide}
                     <div class="workshop-rail-dest-actions">
-                      <button
-                        type="button"
-                        class="vault-dock-icon-btn workshop-rail-row-action"
-                        title="Move up"
-                        aria-label="Move {navLabel(surface)} up"
-                        disabled={railLayoutBusy || !canMoveUp}
-                        onclick={(event) => {
-                          event.stopPropagation();
-                          void moveRailDestination(surface.id, -1);
-                        }}
-                      >
-                        <ChevronUp size={14} strokeWidth={2.25} />
-                      </button>
-                      <button
-                        type="button"
-                        class="vault-dock-icon-btn workshop-rail-row-action"
-                        title="Move down"
-                        aria-label="Move {navLabel(surface)} down"
-                        disabled={railLayoutBusy || !canMoveDown}
-                        onclick={(event) => {
-                          event.stopPropagation();
-                          void moveRailDestination(surface.id, 1);
-                        }}
-                      >
-                        <ChevronDown size={14} strokeWidth={2.25} />
-                      </button>
                       {#if canEditCustom}
                         <button
                           type="button"
                           class="vault-dock-icon-btn workshop-rail-row-action"
+                          class:workshop-rail-row-action-open={editingCustomSurfaceId === surface.id}
                           title="Edit view"
                           aria-label="Edit {navLabel(surface)}"
+                          aria-expanded={editingCustomSurfaceId === surface.id}
                           disabled={railLayoutBusy}
                           onclick={(event) => {
                             event.stopPropagation();
-                            confirmDeleteCustomId = null;
+                            const button = event.currentTarget as HTMLElement;
+                            if (editingCustomSurfaceId === surface.id) {
+                              closeCustomViewEdit();
+                              return;
+                            }
                             editingCustomSurfaceId = surface.id;
+                            editingCustomAnchorEl = button;
                           }}
                         >
                           <Pencil size={13} strokeWidth={2} />
@@ -713,17 +809,26 @@
             {/if}
           {/snippet}
 
-          <div class="workshop-rail-primary">
+          <div
+            class="workshop-rail-primary"
+            class:workshop-rail-primary-dragging={railDragId !== null}
+            bind:this={railPrimaryEl}
+          >
             {#each lifeRail.primary as item, index (item.id)}
               {#if lifeRail.focusStartIndex > 0 && index === lifeRail.focusStartIndex}
-                <div class="workshop-rail-breath" aria-hidden="true"></div>
-              {:else if item.id === "library" && index > 0}
                 <div class="workshop-rail-breath" aria-hidden="true"></div>
               {:else if lifeRail.customStartIndex >= 0 && index === lifeRail.customStartIndex}
                 <div class="workshop-rail-breath" aria-hidden="true"></div>
               {/if}
               {@render railDest(item, item.id === "chat", index)}
             {/each}
+            {#if railLayoutEditing && railDragId !== null}
+              <div
+                class="workshop-rail-drop-end"
+                class:workshop-rail-dest-drop-before={railInsertIndex === lifeRail.primary.length}
+                aria-hidden="true"
+              ></div>
+            {/if}
           </div>
 
           {#if railLayoutEditing}
@@ -752,90 +857,17 @@
               <div class="workshop-rail-layout-add-view">
                 <CanvasAddViewForm />
               </div>
-              {#if editingCustomSurface}
-                <div class="workshop-rail-layout-edit-sheet">
-                  <div class="workshop-rail-layout-edit-sheet-head">
-                    <p class="workshop-rail-layout-edit-sheet-title">
-                      Edit “{editingCustomSurface.label}”
-                    </p>
-                    <button
-                      type="button"
-                      class="vault-dock-icon-btn workshop-rail-row-action"
-                      title="Close"
-                      aria-label="Close edit"
-                      onclick={() => {
-                        editingCustomSurfaceId = null;
-                        confirmDeleteCustomId = null;
-                      }}
-                    >
-                      <X size={14} strokeWidth={2} />
-                    </button>
-                  </div>
-                  <CanvasEditViewForm
-                    surface={editingCustomSurface}
-                    onSaved={() => {
-                      editingCustomSurfaceId = null;
-                    }}
-                    onCancel={() => {
-                      editingCustomSurfaceId = null;
-                      confirmDeleteCustomId = null;
-                    }}
-                  />
-                  {#if confirmDeleteCustomId === editingCustomSurface.id}
-                    <div class="workshop-rail-layout-delete">
-                      <p class="workshop-rail-layout-delete-copy">
-                        Delete this custom view permanently?
-                      </p>
-                      <div class="workshop-rail-layout-delete-actions">
-                        <button
-                          type="button"
-                          class="btn btn-xs btn-ghost"
-                          disabled={railLayoutBusy}
-                          onclick={() => (confirmDeleteCustomId = null)}
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          type="button"
-                          class="btn btn-xs btn-error"
-                          disabled={railLayoutBusy}
-                          onclick={() => {
-                            const surfaceId = editingCustomSurface.id;
-                            railLayoutBusy = true;
-                            void environment
-                              .removeCustomSurface(surfaceId)
-                              .then(() => {
-                                editingCustomSurfaceId = null;
-                                confirmDeleteCustomId = null;
-                              })
-                              .catch((err) => {
-                                toast.show(
-                                  err instanceof Error ? err.message : String(err),
-                                  { durationMs: 2400 },
-                                );
-                              })
-                              .finally(() => {
-                                railLayoutBusy = false;
-                              });
-                          }}
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    </div>
-                  {:else}
-                    <button
-                      type="button"
-                      class="btn btn-xs btn-ghost workshop-rail-layout-delete-trigger"
-                      disabled={railLayoutBusy}
-                      onclick={() => (confirmDeleteCustomId = editingCustomSurface.id)}
-                    >
-                      Delete view…
-                    </button>
-                  {/if}
-                </div>
-              {/if}
             </div>
+          {/if}
+
+          {#if railLayoutEditing && editingCustomSurface}
+            <CanvasEditViewPopover
+              surface={editingCustomSurface}
+              anchorEl={editingCustomAnchorEl}
+              onClose={closeCustomViewEdit}
+              onSaved={closeCustomViewEdit}
+              onDeleted={closeCustomViewEdit}
+            />
           {/if}
         </div>
 

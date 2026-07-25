@@ -3,6 +3,7 @@ import {
   SAFETY_SURFACE_RUNTIME,
   SAFETY_SURFACE_SETTINGS,
 } from "$lib/types/environment";
+import { primaryRailSurfaceIds } from "$lib/utils/lifeRailSections";
 
 export const SAFETY_PRESET_SURFACE_IDS = [
   SAFETY_SURFACE_SETTINGS,
@@ -17,8 +18,20 @@ export const NON_TOGGLEABLE_NAV_SURFACE_IDS = new Set([
 ]);
 
 export const NAV_DESTINATION_GROUPS: Array<{ label: string; surfaceIds: string[] }> = [
-  { label: "Life", surfaceIds: ["chat", "peers", "work", "library", "web", "context", "calendar"] },
-  { label: "Workshop", surfaceIds: ["workshop", "automations"] },
+  {
+    label: "Life",
+    surfaceIds: [
+      "chat",
+      "peers",
+      "work",
+      "library",
+      "automations",
+      "web",
+      "context",
+      "calendar",
+    ],
+  },
+  { label: "Workshop", surfaceIds: ["workshop"] },
 ];
 
 /** Switch active layout preset on an in-memory spec (mirrors daemon helper). */
@@ -98,15 +111,7 @@ export function setSurfaceNavVisible(
   preset.surfaces = next;
 }
 
-/**
- * Move a destination within the active layout preset.
- * Only toggleable rail destinations move; home / safety stay pinned in place.
- */
-export function moveSurfaceInActivePreset(
-  spec: EnvironmentSpec,
-  surfaceId: string,
-  direction: -1 | 1,
-): void {
+function ensureSurfaceInActivePreset(spec: EnvironmentSpec, surfaceId: string): string[] {
   if (!isNavDestinationToggleable(surfaceId)) {
     throw new Error(`Surface '${surfaceId}' cannot be reordered in nav.`);
   }
@@ -123,16 +128,30 @@ export function moveSurfaceInActivePreset(
   const next = [...preset.surfaces];
 
   if (!next.includes(surfaceId)) {
-    // Not in the active layout yet (e.g. Automations twin door) — place sensibly.
-    const libraryAt = next.indexOf("library");
-    if (surfaceId === "automations" && libraryAt >= 0) {
-      next.splice(libraryAt + 1, 0, surfaceId);
-    } else {
-      const firstSafety = next.findIndex((id) => safety.has(id));
-      if (firstSafety === -1) next.push(surfaceId);
-      else next.splice(firstSafety, 0, surfaceId);
-    }
+    const firstSafety = next.findIndex((id) => safety.has(id));
+    if (firstSafety === -1) next.push(surfaceId);
+    else next.splice(firstSafety, 0, surfaceId);
   }
+
+  return next;
+}
+
+/**
+ * Move a destination within the active layout preset.
+ * Only toggleable rail destinations move; home / safety stay pinned in place.
+ */
+export function moveSurfaceInActivePreset(
+  spec: EnvironmentSpec,
+  surfaceId: string,
+  direction: -1 | 1,
+): void {
+  const preset = activeLayoutPreset(spec);
+  if (!preset) {
+    throw new Error("No active layout preset.");
+  }
+
+  const safety = new Set<string>(SAFETY_PRESET_SURFACE_IDS);
+  const next = ensureSurfaceInActivePreset(spec, surfaceId);
 
   const movableIndices: number[] = [];
   for (let i = 0; i < next.length; i++) {
@@ -155,6 +174,91 @@ export function moveSurfaceInActivePreset(
   const tmp = next[from]!;
   next[from] = next[to]!;
   next[to] = tmp;
+  preset.surfaces = next;
+}
+
+/**
+ * Place `surfaceId` before `beforeSurfaceId` in the active preset.
+ * Pass `beforeSurfaceId: null` to move it to the end of the movable range
+ * (just before safety surfaces).
+ */
+export function reorderSurfaceInActivePreset(
+  spec: EnvironmentSpec,
+  surfaceId: string,
+  beforeSurfaceId: string | null,
+): void {
+  const preset = activeLayoutPreset(spec);
+  if (!preset) {
+    throw new Error("No active layout preset.");
+  }
+  if (beforeSurfaceId === surfaceId) return;
+
+  const safety = new Set<string>(SAFETY_PRESET_SURFACE_IDS);
+  const next = ensureSurfaceInActivePreset(spec, surfaceId);
+  const from = next.indexOf(surfaceId);
+  if (from === -1) return;
+  next.splice(from, 1);
+
+  if (beforeSurfaceId == null) {
+    const firstSafety = next.findIndex((id) => safety.has(id));
+    if (firstSafety === -1) next.push(surfaceId);
+    else next.splice(firstSafety, 0, surfaceId);
+  } else {
+    if (!isNavDestinationToggleable(beforeSurfaceId)) {
+      throw new Error(`Surface '${beforeSurfaceId}' cannot be a reorder target.`);
+    }
+    const to = next.indexOf(beforeSurfaceId);
+    if (to === -1) {
+      const firstSafety = next.findIndex((id) => safety.has(id));
+      if (firstSafety === -1) next.push(surfaceId);
+      else next.splice(firstSafety, 0, surfaceId);
+    } else {
+      next.splice(to, 0, surfaceId);
+    }
+  }
+
+  preset.surfaces = next;
+}
+
+/**
+ * Move a primary-rail destination to `toPrimaryIndex` (0-based among primary doors).
+ * Non-primary surfaces (context, messaging, safety, …) keep their relative slots.
+ */
+export function reorderPrimarySurfaceInActivePreset(
+  spec: EnvironmentSpec,
+  surfaceId: string,
+  toPrimaryIndex: number,
+): void {
+  const preset = activeLayoutPreset(spec);
+  if (!preset) {
+    throw new Error("No active layout preset.");
+  }
+
+  const next = ensureSurfaceInActivePreset(spec, surfaceId);
+  const primary = primaryRailSurfaceIds(next);
+  const from = primary.indexOf(surfaceId);
+  if (from === -1) return;
+
+  const to = Math.max(0, Math.min(Math.floor(toPrimaryIndex), primary.length - 1));
+  if (from === to) {
+    preset.surfaces = next;
+    return;
+  }
+
+  const without = primary.filter((id) => id !== surfaceId);
+  const fromIdx = next.indexOf(surfaceId);
+  next.splice(fromIdx, 1);
+
+  if (to >= without.length) {
+    const lastPrimary = without[without.length - 1]!;
+    const lastIdx = next.indexOf(lastPrimary);
+    next.splice(lastIdx + 1, 0, surfaceId);
+  } else {
+    const beforeId = without[to]!;
+    const beforeIdx = next.indexOf(beforeId);
+    next.splice(beforeIdx, 0, surfaceId);
+  }
+
   preset.surfaces = next;
 }
 
