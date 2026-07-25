@@ -813,6 +813,208 @@
     opacity: 0.92;
   }
 
+  .status-desktop-strip--compact {
+    gap: 0.05rem;
+  }
+
+  .status-desktop-strip--compact .status-desktop-mark {
+    min-width: 1rem;
+    height: 1.1rem;
+    padding: 0 0.15rem;
+    font-size: 0.6rem;
+  }
+
+  /* Type-in-the-metal desktop marks (notch handle). */
+  .status-desktop-strip--notch {
+    gap: 0.05rem;
+  }
+
+  .status-desktop-strip--notch .status-desktop-mark {
+    min-width: 0.85rem;
+    height: auto;
+    border-radius: 0;
+    background: transparent;
+    padding: 0 0.2rem;
+    color: rgb(var(--color-surface-550, var(--color-surface-500)));
+    font-size: 0.68rem;
+    font-weight: 550;
+  }
+
+  .status-desktop-strip--notch .status-desktop-mark:hover {
+    background: transparent;
+    color: rgb(var(--color-surface-200));
+  }
+
+  .status-desktop-strip--notch .status-desktop-mark--active {
+    background: transparent;
+    color: rgb(var(--color-surface-50));
+  }
+
+  .status-desktop-strip--notch .status-desktop-mark--active:hover {
+    color: rgb(var(--color-surface-50));
+  }
+
+  /* Quiet fused extension under the notch (same width — not full-shell). */
+  .shell-tab-notch-drawer {
+    z-index: 145;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border: 1px solid rgb(var(--color-surface-500) / 0.28);
+    border-top: 0;
+    border-radius: 0 0 0.4rem 0.4rem;
+    background: rgb(var(--color-surface-900) / 0.94);
+    backdrop-filter: blur(14px);
+    box-shadow: 0 14px 32px rgb(0 0 0 / 0.28);
+    animation: shell-tab-notch-open 150ms ease-out;
+  }
+
+  @keyframes shell-tab-notch-open {
+    from {
+      opacity: 0.75;
+      transform: translateY(-3px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .shell-tab-notch-drawer-stage {
+    display: flex;
+    min-height: 8.5rem;
+    flex: 1 1 auto;
+    flex-direction: column;
+    overflow: hidden;
+    padding: 0.4rem;
+  }
+
+  .shell-tab-notch-drawer--single .shell-tab-notch-drawer-stage {
+    min-height: 6.5rem;
+  }
+
+  .shell-tab-notch-branch {
+    display: flex;
+    min-height: 100%;
+    min-width: 0;
+    flex: 1 1 auto;
+    gap: 0;
+    overflow: hidden;
+  }
+
+  .shell-tab-notch-branch--row {
+    flex-direction: row;
+  }
+
+  .shell-tab-notch-branch--col {
+    flex-direction: column;
+  }
+
+  .shell-tab-notch-branch-child {
+    display: flex;
+    min-height: 0;
+    min-width: 0;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .shell-tab-notch-branch-sash {
+    flex: 0 0 1px;
+    background: rgb(var(--color-surface-500) / 0.28);
+  }
+
+  .shell-tab-notch-branch--col > .shell-tab-notch-branch-sash {
+    flex-basis: 1px;
+    width: auto;
+    min-height: 1px;
+  }
+
+  .shell-tab-notch-pane {
+    display: flex;
+    min-height: 0;
+    min-width: 0;
+    flex: 1 1 auto;
+    flex-direction: column;
+    overflow: hidden;
+    border: 1px solid rgb(var(--color-surface-500) / 0.22);
+    border-radius: 0.4rem;
+    background: rgb(var(--color-surface-950) / 0.4);
+    cursor: pointer;
+    transition:
+      border-color 140ms ease,
+      background-color 140ms ease,
+      box-shadow 140ms ease;
+  }
+
+  .shell-tab-notch-pane:hover {
+    border-color: rgb(var(--color-surface-500) / 0.38);
+  }
+
+  .shell-tab-notch-pane--active {
+    border-color: rgb(var(--color-primary-400) / 0.45);
+    box-shadow: 0 0 0 1px rgb(var(--color-primary-500) / 0.18);
+  }
+
+  .shell-tab-notch-pane--drop {
+    border-color: rgb(var(--color-primary-300) / 0.65);
+    background: rgb(var(--color-primary-500) / 0.1);
+  }
+
+  .shell-tab-notch-pane--vacant {
+    border-style: dashed;
+    border-color: rgb(var(--color-surface-500) / 0.3);
+  }
+
+  .shell-tab-notch-pane-chrome {
+    display: flex;
+    min-height: 1.75rem;
+    flex-shrink: 0;
+    align-items: center;
+    border-bottom: 1px solid rgb(var(--color-surface-500) / 0.18);
+    background: rgb(var(--color-surface-900) / 0.5);
+    padding: 0.2rem 0.35rem;
+  }
+
+  .shell-tab-notch-pane-chrome :global(.shell-tab-strip--titlebar) {
+    max-width: 100%;
+    height: auto;
+  }
+
+  .shell-tab-notch-pane-chrome :global(.shell-tab-chip) {
+    max-width: 8rem;
+  }
+
+  .shell-tab-notch-pane-surface {
+    min-height: 3.75rem;
+    flex: 1 1 auto;
+    background:
+      radial-gradient(
+        ellipse 70% 55% at 50% 40%,
+        rgb(var(--color-surface-700) / 0.14),
+        transparent 70%
+      ),
+      rgb(var(--color-surface-950) / 0.28);
+  }
+
+  .shell-tab-notch-drawer--single .shell-tab-notch-pane-surface {
+    min-height: 3rem;
+  }
+
+  .shell-tab-notch-pane:not(.shell-tab-notch-pane--active) .shell-tab-notch-pane-surface {
+    opacity: 0.78;
+  }
+
+  .shell-tab-notch-pane-empty-label {
+    padding: 0 0.2rem;
+    color: rgb(var(--color-surface-400));
+    font-size: 0.7rem;
+    font-weight: 450;
+  }
+
+  .shell-tab-notch-pane--vacant .shell-tab-notch-pane-empty-label {
+    color: rgb(var(--color-surface-500));
+  }
+
   .work-motion-control {
     position: relative;
     z-index: 45;

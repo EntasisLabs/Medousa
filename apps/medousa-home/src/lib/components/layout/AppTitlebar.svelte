@@ -8,7 +8,7 @@
     PanelLeftClose,
     Plus,
   } from "@lucide/svelte";
-  import ShellTabStrip from "$lib/components/shell/ShellTabStrip.svelte";
+  import ShellTabNotch from "$lib/components/shell/ShellTabNotch.svelte";
   import NewTabMenu from "$lib/components/layout/NewTabMenu.svelte";
   import WindowControls from "$lib/components/layout/WindowControls.svelte";
   import { layout } from "$lib/stores/layout.svelte";
@@ -19,7 +19,6 @@
 
   const mode = $derived(titlebarMode());
   const show = $derived(usesUnifiedTitlebar());
-  const groupId = $derived(shellTabs.activeGroupId);
   const railExpanded = $derived(layout.shellSidebarExpanded);
   const railWidth = $derived(layout.shellSidebarWidth);
   const canNavBack = $derived(layout.canGoRailViewBack);
@@ -118,7 +117,13 @@
     </div>
 
     <div class="app-titlebar-tabs min-w-0 flex-1">
-      <ShellTabStrip {groupId} variant="titlebar" />
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div
+        class="app-titlebar-drag"
+        data-tauri-drag-region
+        ondblclick={onDragDblClick}
+      ></div>
+      <ShellTabNotch />
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div
         class="app-titlebar-drag"
@@ -177,6 +182,12 @@
     user-select: none;
   }
 
+  /* Keep notch above the fused drawer while open (drawer lives in BodyPortal). */
+  :global(.app-titlebar.app-titlebar--notch-open) {
+    position: relative;
+    z-index: 146;
+  }
+
   .app-titlebar--mac {
     --titlebar-left-inset: 80px;
   }
@@ -218,14 +229,16 @@
     min-width: 0;
     height: 100%;
     align-items: center;
+    justify-content: center;
+    gap: 0.35rem;
     margin-left: 1px;
-    padding-left: 2px;
+    padding: 4px 2px;
   }
 
   .app-titlebar-drag {
-    flex: 1 1 auto;
+    flex: 1 1 0;
     align-self: stretch;
-    min-width: 1.25rem;
+    min-width: 0.75rem;
   }
 
   .app-titlebar-actions {

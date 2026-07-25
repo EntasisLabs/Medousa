@@ -292,6 +292,8 @@ export function placeToolbarPopover(
     /** Dock triggers usually prefer above; titlebars prefer below. */
     prefer?: "below" | "above";
     maxHeightRatio?: number;
+    /** End-align (default) or center under the trigger. */
+    align?: "end" | "center";
   },
 ): void {
   const gap = options?.gap ?? 6;
@@ -299,6 +301,7 @@ export function placeToolbarPopover(
   const prefer = options?.prefer ?? "below";
   const preferredWidth = options?.width ?? 22 * 16;
   const maxHeightRatio = options?.maxHeightRatio ?? 0.82;
+  const align = options?.align ?? "end";
   const view = viewportBox();
 
   const maxW = Math.max(0, Math.min(preferredWidth, view.width - pad * 2));
@@ -316,7 +319,8 @@ export function placeToolbarPopover(
 
   const minLeft = view.left + pad;
   const maxLeft = view.left + view.width - pad - menuW;
-  let left = tr.right - menuW;
+  let left =
+    align === "center" ? tr.left + tr.width / 2 - menuW / 2 : tr.right - menuW;
   left = clamp(left, minLeft, maxLeft);
 
   const spaceBelow = view.top + view.height - pad - (tr.bottom + gap);
