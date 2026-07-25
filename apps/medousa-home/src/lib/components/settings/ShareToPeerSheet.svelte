@@ -159,7 +159,7 @@
         <p class="share-peer-muted">Loading trusted workshops…</p>
       {:else if trusted.length === 0}
         <p class="share-peer-muted">
-          Trust a workshop in Settings → Nearby before {emptyVerb}.
+          Trust a workshop in Settings → Sharing before {emptyVerb}.
         </p>
       {:else}
         <label class="share-peer-field">

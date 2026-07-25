@@ -11,9 +11,6 @@
     type HomePackagesCatalog,
     type PackageProgressEvent,
   } from "$lib/utils/packagesApi";
-  import McpServersPanel from "$lib/components/skills/McpServersPanel.svelte";
-  import { settingsNav } from "$lib/stores/settingsNav.svelte";
-  import { layout } from "$lib/stores/layout.svelte";
   import { isTauri } from "$lib/window";
 
   interface Props {
@@ -30,6 +27,9 @@
   let unlisten: (() => void) | null = null;
 
   const desktop = $derived(isTauri() && !mobile);
+  const packageRows = $derived(
+    (catalog?.packages ?? []).filter((row) => row.id !== "mcp-gateway"),
+  );
 
   async function refresh() {
     loading = true;
@@ -107,10 +107,6 @@
     }
   }
 
-  function openOfflineModels() {
-    settingsNav.openSection("basement");
-    layout.navigateDesktop("settings", { bump: true });
-  }
 </script>
 
 {#if !desktop}
@@ -125,15 +121,15 @@
   <div>
     <h2 class="text-sm font-semibold text-surface-100">Packages</h2>
     <p class="workshop-faint mt-1 text-xs">
-      Home already has the engine. Add what you need here — offline brain, channel adapters, CLI,
-      and MCP servers.
+      Home already has the engine. Add what you need here — offline brain and channel adapters.
+      MCP lives under Settings → MCP.
     </p>
 
     {#if loading}
       <p class="workshop-faint mt-6 text-xs">Loading catalog…</p>
     {:else if catalog}
       <div class="settings-toggle-list mt-6">
-        {#each catalog.packages as row (row.id)}
+        {#each packageRows as row (row.id)}
           {@const active = busyId === row.id}
           {@const sizeLabel = formatPackageBytes(row.sizeBytes)}
           <div class="settings-toggle-row items-start gap-3">
@@ -192,26 +188,6 @@
         {/each}
       </div>
 
-      <div class="mt-8">
-        <h3 class="settings-subsection-heading">Offline models</h3>
-        <p class="settings-subsection-lead">
-          Gemma weights download separately once the offline brain binary is installed.
-        </p>
-        <button
-          type="button"
-          class="settings-toggle-row mt-2 w-full text-left"
-          onclick={openOfflineModels}
-        >
-          <span class="min-w-0 flex-1">
-            <span class="block text-sm font-medium text-surface-100">Open Connection → Extras</span>
-            <span class="workshop-faint mt-0.5 block text-xs">
-              Private brain panel for model download and load
-            </span>
-          </span>
-          <span class="workshop-text-action shrink-0 text-xs">Open…</span>
-        </button>
-      </div>
-
       {#if catalog.installerAvailable}
         <div class="mt-8 border-t border-surface-500/30 pt-6">
           <p class="workshop-faint text-xs">
@@ -228,16 +204,6 @@
         </div>
       {/if}
     {/if}
-
-    <div class="mt-10 border-t border-surface-500/30 pt-6">
-      <h3 class="settings-subsection-heading">MCP servers</h3>
-      <p class="settings-subsection-lead">
-        External tools connected through the MCP gateway — what’s live right now.
-      </p>
-      <div class="mt-4">
-        <McpServersPanel />
-      </div>
-    </div>
 
     {#if error}
       <p class="mt-4 text-xs text-warning-400">{error}</p>

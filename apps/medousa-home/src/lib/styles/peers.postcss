@@ -771,14 +771,17 @@
   color: rgb(var(--color-surface-300));
 }
 
-.peers-lan-toggle {
+.peers-network-status {
   display: flex;
-  align-items: center;
-  gap: 0.45rem;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.65rem;
   margin: 0.65rem 0 0.35rem;
-  font-size: 0.75rem;
-  color: rgb(var(--color-surface-200));
-  cursor: pointer;
+}
+
+.peers-network-status .peers-sheet-lead {
+  margin: 0;
+  flex: 1 1 auto;
 }
 
 .peers-field input {

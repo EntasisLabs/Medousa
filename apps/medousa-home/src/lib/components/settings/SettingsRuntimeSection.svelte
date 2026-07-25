@@ -1,5 +1,6 @@
 <script lang="ts">
   import SettingsCharterSaveBar from "$lib/components/settings/SettingsCharterSaveBar.svelte";
+  import SettingsVersionsSection from "$lib/components/settings/SettingsVersionsSection.svelte";
   import { workshop } from "$lib/stores/workshop.svelte";
   import { workshopDefaults } from "$lib/stores/workshopDefaults.svelte";
   import { isTauriMobilePlatform } from "$lib/platform";
@@ -198,7 +199,8 @@
   const runtimeSummary = $derived.by(() => {
     const shell = agentToolsOn ? "Shell on" : "Shell off";
     const rounds = workshopDefaults.draft.maxToolRounds ?? 10;
-    return `${activePosture.label} · ${activeSpecialists.label} · ${shell} · ${rounds} rounds`;
+    const versions = workshopDefaults.draft.vaultGitEnabled ? "Versions on" : "Versions off";
+    return `${activePosture.label} · ${activeSpecialists.label} · ${shell} · ${versions} · ${rounds} rounds`;
   });
 
   $effect(() => {
@@ -862,6 +864,8 @@
       </div>
     </details>
   </div>
+
+  <SettingsVersionsSection {mobile} embedded />
 
   <div class="rt-save mt-6 border-t border-surface-500/35 pt-5">
     <SettingsCharterSaveBar {mobile} beforeSave={beforeSave} />

@@ -5,17 +5,13 @@
   import SettingsPreferencesSection from "$lib/components/settings/SettingsPreferencesSection.svelte";
   import SettingsAgentSection from "$lib/components/settings/SettingsAgentSection.svelte";
   import SettingsRuntimeSection from "$lib/components/settings/SettingsRuntimeSection.svelte";
-  import SettingsVersionsSection from "$lib/components/settings/SettingsVersionsSection.svelte";
-  import SettingsSharedModeSection from "$lib/components/settings/SettingsSharedModeSection.svelte";
-  import SettingsPhoneSection from "$lib/components/settings/SettingsPhoneSection.svelte";
-  import SettingsLanShareSection from "$lib/components/settings/SettingsLanShareSection.svelte";
+  import SettingsNetworkSection from "$lib/components/settings/SettingsNetworkSection.svelte";
   import SettingsBasementSection from "$lib/components/settings/SettingsBasementSection.svelte";
   import SettingsPackagesSection from "$lib/components/settings/SettingsPackagesSection.svelte";
-  import MessagingPanel from "$lib/components/messaging/MessagingPanel.svelte";
+  import SettingsMcpSection from "$lib/components/settings/SettingsMcpSection.svelte";
   import type { DaemonHealth } from "$lib/daemon";
   import { workshopDefaults } from "$lib/stores/workshopDefaults.svelte";
   import { settingsNav } from "$lib/stores/settingsNav.svelte";
-  import { sharedMode } from "$lib/stores/sharedMode.svelte";
   import { userProfiles } from "$lib/stores/userProfiles.svelte";
   import { depthModeLabel } from "$lib/utils/chatModelPicker";
   import { formatModelDisplayName } from "$lib/utils/formatModelDisplay";
@@ -65,8 +61,8 @@
     if (visible) {
       settingsNav.takePending();
       void workshopDefaults.load();
-      void userProfiles.load();
-      void sharedMode.load();
+      void userProfiles.load({ suppressRemoteNotice: true });
+      // Shared mode is probed from Sharing / chat — not on every Settings open.
       void refreshNearbyUnread();
       if (!unreadTimer) {
         unreadTimer = setInterval(() => {
@@ -101,7 +97,9 @@
   );
 
   const navBadges = $derived(
-    nearbyUnread > 0 ? ({ nearby: nearbyUnread } as Partial<Record<SettingsSectionId, number>>) : {},
+    nearbyUnread > 0
+      ? ({ network: nearbyUnread } as Partial<Record<SettingsSectionId, number>>)
+      : {},
   );
 </script>
 
@@ -143,18 +141,12 @@
         <SettingsAgentSection {mobile} />
       {:else if activeSection === "runtime"}
         <SettingsRuntimeSection {mobile} />
-      {:else if activeSection === "versions"}
-        <SettingsVersionsSection {mobile} />
-      {:else if activeSection === "shared"}
-        <SettingsSharedModeSection {mobile} />
-      {:else if activeSection === "phone"}
-        <SettingsPhoneSection {mobile} />
-      {:else if activeSection === "nearby"}
-        <SettingsLanShareSection {mobile} />
-      {:else if activeSection === "channels"}
-        <MessagingPanel visible={visible} {health} {mobile} embedded />
+      {:else if activeSection === "network"}
+        <SettingsNetworkSection {mobile} {visible} {health} />
       {:else if activeSection === "packages"}
         <SettingsPackagesSection {mobile} />
+      {:else if activeSection === "mcp"}
+        <SettingsMcpSection {mobile} />
       {:else}
         <SettingsBasementSection {revision} {health} {onDaemonHealth} {mobile} />
       {/if}

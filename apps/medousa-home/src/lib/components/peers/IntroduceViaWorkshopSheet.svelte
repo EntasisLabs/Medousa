@@ -166,7 +166,7 @@
       {#if sendableWorkshops.length === 0}
         <p class="intro-muted">
           Connect a portal or peer door to a workshop first. The host must also grant
-          <code>client.rendezvous</code> in Settings → Nearby.
+          <code>client.rendezvous</code> in Settings → Sharing.
         </p>
       {:else}
         <label class="intro-field">

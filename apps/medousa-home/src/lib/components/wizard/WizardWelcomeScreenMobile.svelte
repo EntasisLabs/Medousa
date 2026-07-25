@@ -306,7 +306,7 @@
         {workshopPairingStepsHint()}
         if needed.
       </li>
-      <li>You can change this address later in Settings → Connection.</li>
+      <li>You can change this address later in Settings → Workshop.</li>
     </ul>
   {/if}
 

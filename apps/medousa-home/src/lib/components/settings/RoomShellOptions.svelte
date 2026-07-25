@@ -296,6 +296,8 @@
     --room-tile-min-h: var(--prefs-tile-min-h, 3.25rem);
     --room-tile-border: var(--prefs-tile-border, rgb(var(--color-surface-500) / 0.32));
     --room-tile-bg: var(--prefs-tile-bg, rgb(var(--color-surface-900) / 0.28));
+    display: grid;
+    gap: var(--room-gap);
   }
 
   .room-shell-grid {
@@ -402,7 +404,7 @@
   }
 
   .room-shell-note {
-    margin: 0.45rem 0 0;
+    margin: 0;
     font-size: 0.75rem;
   }
 
@@ -412,7 +414,7 @@
   }
 
   .room-shell-chrome-more {
-    margin-top: 0;
+    margin: 0;
     border-radius: var(--room-tile-radius);
     border: 1px solid var(--room-tile-border);
     background: var(--room-tile-bg);
@@ -453,7 +455,7 @@
   }
 
   .room-shell-pending {
-    margin-top: 0.55rem;
+    margin: 0;
     padding: 0.7rem 0.8rem;
   }
 

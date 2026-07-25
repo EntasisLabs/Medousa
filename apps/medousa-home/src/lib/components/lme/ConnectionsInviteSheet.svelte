@@ -107,7 +107,7 @@
     await refresh();
     installing = false;
     if (failures.length > 0) {
-      statusLine = `Couldn't install ${failures.join(", ")} — try Settings → Packages.`;
+      statusLine = `Couldn't install ${failures.join(", ")} — try Settings → Packages or MCP.`;
       return;
     }
     close();
@@ -131,7 +131,7 @@
             Reach you elsewhere?
           </h2>
           <p class="mt-1 text-sm text-surface-400">
-            Optional — Discord, Telegram, WhatsApp, or MCP tools. Anytime in Settings → Packages.
+            Optional — Discord, Telegram, WhatsApp in Packages, or MCP tools in Settings → MCP.
           </p>
         </div>
         <button

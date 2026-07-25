@@ -72,10 +72,10 @@ export function buildGoCommands(): WorkshopCommand[] {
       id: "go-channels",
       section: "go",
       label: "Channels",
-      subtitle: "Telegram, Discord, Slack — Settings → Channels",
-      keywords: "channels messaging telegram discord slack whatsapp",
+      subtitle: "Telegram, Discord, Slack — Settings → Sharing",
+      keywords: "channels messaging telegram discord slack whatsapp sharing network",
       run: (ctx) => {
-        ctx.openSettingsSection("channels");
+        ctx.openSettingsSection("network");
         ctx.callbacks.close();
       },
     },
@@ -83,10 +83,10 @@ export function buildGoCommands(): WorkshopCommand[] {
       id: "go-mcp-connections",
       section: "go",
       label: "MCP connections",
-      subtitle: "Manage MCP servers in Settings → Packages",
-      keywords: "mcp connections gateway servers packages tools",
+      subtitle: "Manage MCP servers in Settings → MCP",
+      keywords: "mcp connections gateway servers tools",
       run: (ctx) => {
-        ctx.openSettingsSection("packages");
+        ctx.openSettingsSection("mcp");
         ctx.callbacks.close();
       },
     },

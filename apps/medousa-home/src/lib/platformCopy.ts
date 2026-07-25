@@ -93,7 +93,7 @@ export function workshopPairingStepsHint(): string {
 }
 
 export function workshopPairingManagedHint(): string {
-  return `Pairing is managed on ${workshopHostPhrase()}. Open Medousa → Settings → Phone to show the QR code.`;
+  return `Pairing is managed on ${workshopHostPhrase()}. Open Medousa → Settings → Sharing to show the QR code.`;
 }
 
 export function workshopRetentionReadHint(): string {

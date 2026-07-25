@@ -6,7 +6,9 @@
   import IntroduceViaWorkshopSheet from "$lib/components/peers/IntroduceViaWorkshopSheet.svelte";
   import ShellSidebarExpandButton from "$lib/components/layout/ShellSidebarExpandButton.svelte";
   import { artifacts } from "$lib/stores/artifacts.svelte";
+  import { layout } from "$lib/stores/layout.svelte";
   import { peersShell } from "$lib/stores/peersShell.svelte";
+  import { settingsNav } from "$lib/stores/settingsNav.svelte";
   import { toast } from "$lib/stores/toast.svelte";
   import { vault } from "$lib/stores/vault.svelte";
   import { workshops } from "$lib/stores/workshops.svelte";
@@ -22,7 +24,6 @@
     peerSendMessage,
     peerUnreadCount,
     revokeTrustedWorkshop,
-    setLanPairingEnabled,
     trustWorkshopFromQr,
     type DiscoveredWorkshop,
     type LanPairingStatus,
@@ -100,7 +101,6 @@
   let success = $state<string | null>(null);
   let copyFlash = $state(false);
   let lanPairing = $state<LanPairingStatus | null>(null);
-  let lanBusy = $state(false);
   let composeIdentity = $state<PeerComposeIdentity | null>(null);
   let pollTimer: ReturnType<typeof setInterval> | null = null;
   let countdownTimer: ReturnType<typeof setInterval> | null = null;
@@ -277,20 +277,14 @@
     }
   }
 
-  async function toggleLanPairing(enabled: boolean) {
-    lanBusy = true;
-    error = null;
-    try {
-      lanPairing = await setLanPairingEnabled(enabled);
-      success = lanPairing.message;
-      await refreshInvite();
-      await refreshNearby();
-    } catch (err) {
-      error = err instanceof Error ? err.message : String(err);
-      await refreshLanPairing();
-    } finally {
-      lanBusy = false;
+  function openNetworkSettings() {
+    addPeerOpen = false;
+    settingsNav.openSection("network");
+    if (mobile || layout.isMobile) {
+      layout.openMore("settings");
+      return;
     }
+    layout.navigateDesktop("settings", { bump: true });
   }
 
   async function refreshAll() {
@@ -838,19 +832,18 @@
           Others on your Wi‑Fi can tap Connect on your name — or scan this invite.
         </p>
 
-        <label class="peers-lan-toggle">
-          <input
-            type="checkbox"
-            checked={lanPairing?.enabled ?? false}
-            disabled={lanBusy}
-            onchange={(event) =>
-              void toggleLanPairing((event.currentTarget as HTMLInputElement).checked)}
-          />
-          <span>LAN pairing window (restarts engine)</span>
-        </label>
-        {#if lanPairing}
-          <p class="peers-sheet-lead">{lanPairing.message}</p>
-        {/if}
+        <div class="peers-network-status">
+          <p class="peers-sheet-lead">
+            {#if lanPairing?.enabled}
+              Pairing window open — others on this Wi‑Fi can connect.
+            {:else}
+              Pairing window managed in Settings → Sharing.
+            {/if}
+          </p>
+          <button type="button" class="btn btn-sm btn-ghost" onclick={openNetworkSettings}>
+            Sharing
+          </button>
+        </div>
 
         {#if bonjour?.likelyAdvertising}
           <span class="peers-visible-pill">Visible on network</span>

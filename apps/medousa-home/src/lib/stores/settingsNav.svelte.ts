@@ -9,8 +9,19 @@ function migrateSectionId(raw: string): SettingsSectionId | null {
   if (raw === "room" || raw === "rhythm") return "preferences";
   // Memory + Models + Voice merged into Medousa Agent.
   if (raw === "memory" || raw === "models" || raw === "voice") return "agent";
-  // Reach + Shell + Engine merged into Runtime Controls.
-  if (raw === "reach" || raw === "shell" || raw === "engine") return "runtime";
+  // Reach + Shell + Engine + Versions merged into Runtime Controls.
+  if (raw === "reach" || raw === "shell" || raw === "engine" || raw === "versions") {
+    return "runtime";
+  }
+  // Shared + Phone + Nearby + Channels merged into Sharing.
+  if (
+    raw === "shared" ||
+    raw === "phone" ||
+    raw === "nearby" ||
+    raw === "channels"
+  ) {
+    return "network";
+  }
   if (!SECTION_IDS.has(raw as SettingsSectionId)) return null;
   return raw as SettingsSectionId;
 }

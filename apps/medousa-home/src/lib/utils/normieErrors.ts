@@ -157,3 +157,53 @@ export function friendlyTurnError(raw: string): string {
 
   return GENERIC_TURN;
 }
+
+/** Optional-route / older-engine probes — hide or soften, don't show raw HTTP. */
+export function isMissingCapabilityError(raw: string): boolean {
+  const lower = raw.trim().toLowerCase();
+  if (!lower) return false;
+  return (
+    lower.includes("404") ||
+    lower.includes("not found") ||
+    lower.includes("unknown route") ||
+    lower.includes("no route") ||
+    lower.includes("unsupported") ||
+    lower.includes("not implemented")
+  );
+}
+
+/** Strip SDK/transport wrappers for settings surfaces. */
+export function friendlySettingsError(raw: string, feature: string): string {
+  const text = raw.trim();
+  if (!text) return `Couldn't update ${feature}.`;
+  if (isMissingCapabilityError(text)) {
+    return `${feature} isn't available on this workshop yet.`;
+  }
+  const lower = text.toLowerCase();
+  if (lower.includes("versions is off")) {
+    return "Turn on vault versioning first.";
+  }
+  if (
+    lower.includes("connection refused") ||
+    lower.includes("failed to fetch") ||
+    lower.includes("cannot reach") ||
+    lower.includes("engine did not become ready") ||
+    lower.includes("transport error")
+  ) {
+    return "Medousa isn't connected right now. Check Connection, then try again.";
+  }
+  // Prefer the human body after "http error: 404 Not Found: …"
+  const stripped = text
+    .replace(/^http error:\s*/i, "")
+    .replace(/^\d{3}\s+[a-z ]+:\s*/i, "")
+    .trim();
+  if (
+    stripped &&
+    stripped.length < 200 &&
+    !stripped.toLowerCase().startsWith("http") &&
+    !/\b0x[0-9a-f]+\b/i.test(stripped)
+  ) {
+    return stripped;
+  }
+  return `Couldn't update ${feature}.`;
+}

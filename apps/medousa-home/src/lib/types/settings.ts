@@ -2,31 +2,21 @@ export type SettingsSectionId =
   | "preferences"
   | "agent"
   | "runtime"
-  | "versions"
-  | "shared"
-  | "phone"
-  | "nearby"
-  | "channels"
+  | "network"
   | "packages"
+  | "mcp"
   | "basement";
 
-/** Quiet TOC chapters — not separate product surfaces. */
-export type SettingsSectionGroupId =
-  | "space"
-  | "her"
-  | "tools"
-  | "people"
-  | "machine";
+/** Quiet TOC groups — unlabeled app block, then This Mac. */
+export type SettingsSectionGroupId = "app" | "machine";
 
 export const SETTINGS_SECTION_GROUPS: {
   id: SettingsSectionGroupId;
+  /** Empty = no header in the rail (top app block). */
   label: string;
 }[] = [
-  { id: "space", label: "Space" },
-  { id: "her", label: "Her" },
-  { id: "tools", label: "Tools" },
-  { id: "people", label: "People" },
-  { id: "machine", label: "Machine" },
+  { id: "app", label: "" },
+  { id: "machine", label: "This Mac" },
 ];
 
 export type SettingsSectionDef = {
@@ -41,30 +31,42 @@ export const SETTINGS_SECTIONS: SettingsSectionDef[] = [
     id: "preferences",
     label: "Preferences",
     hint: "Look, notifications & chrome",
-    group: "space",
+    group: "app",
   },
   {
     id: "agent",
     label: "Medousa Agent",
     hint: "Stance, memory & models",
-    group: "her",
+    group: "app",
   },
   {
     id: "runtime",
     label: "Runtime Controls",
-    hint: "Reach, shell & engine",
-    group: "tools",
+    hint: "Reach, shell, engine & versions",
+    group: "app",
   },
-  { id: "shared", label: "Shared", hint: "Team seats on this brain", group: "people" },
-  { id: "phone", label: "Phone", hint: "Pair your phone", group: "people" },
-  { id: "nearby", label: "Nearby", hint: "Peers, bundles & trust", group: "people" },
-  { id: "channels", label: "Channels", hint: "Telegram, Discord, Slack & more", group: "people" },
-  { id: "versions", label: "Versions", hint: "Vault history (optional)", group: "machine" },
-  { id: "packages", label: "Packages", hint: "Offline brain, adapters & MCP", group: "machine" },
+  {
+    id: "network",
+    label: "Sharing",
+    hint: "Seats, phone, peers & channels",
+    group: "app",
+  },
+  {
+    id: "packages",
+    label: "Packages",
+    hint: "Channel adapters & installs",
+    group: "machine",
+  },
+  {
+    id: "mcp",
+    label: "MCP",
+    hint: "Gateway & tool servers",
+    group: "machine",
+  },
   {
     id: "basement",
-    label: "Connection",
-    hint: "This device, engine & advanced files",
+    label: "Workshop",
+    hint: "Active workshop, engine & files",
     group: "machine",
   },
 ];
@@ -77,7 +79,7 @@ export function settingsGroupLabel(groupId: SettingsSectionGroupId): string {
   return SETTINGS_SECTION_GROUPS.find((group) => group.id === groupId)?.label ?? groupId;
 }
 
-/** Sections in TOC order, with a group header whenever the chapter changes. */
+/** Sections in TOC order; group headers only when the group has a label. */
 export function settingsNavEntries(): Array<
   | { kind: "group"; id: SettingsSectionGroupId; label: string }
   | { kind: "section"; section: SettingsSectionDef }
@@ -89,11 +91,14 @@ export function settingsNavEntries(): Array<
   let lastGroup: SettingsSectionGroupId | null = null;
   for (const section of SETTINGS_SECTIONS) {
     if (section.group !== lastGroup) {
-      entries.push({
-        kind: "group",
-        id: section.group,
-        label: settingsGroupLabel(section.group),
-      });
+      const label = settingsGroupLabel(section.group);
+      if (label) {
+        entries.push({
+          kind: "group",
+          id: section.group,
+          label,
+        });
+      }
       lastGroup = section.group;
     }
     entries.push({ kind: "section", section });
