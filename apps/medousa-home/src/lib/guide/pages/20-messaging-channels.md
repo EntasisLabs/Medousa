@@ -32,4 +32,4 @@ body: An empty or overly broad allowlist can let strangers drive the workshop. S
 
 Schedules can deliver to **Stay in Medousa** or **Telegram** (when that adapter is ready). Failed deliveries show under Runtime → **Delivery** and Automations **History**.
 
-Next: [Grapheme and automations](guide:grapheme-automations) · [Runtime telemetry](guide:runtime-telemetry).
+Next: [Automations and scripts](guide:grapheme-automations) · [Writing scripts](guide:writing-scripts) · [Runtime telemetry](guide:runtime-telemetry).

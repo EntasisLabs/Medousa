@@ -48,6 +48,14 @@ body: |-
 
   → [How Medousa fits together](guide:architecture)
 ---
+label: Write or schedule a script
+body: |-
+  Open **Automations → Scripts**. Pick a **Template** (Say hello, Search the web, …), **Save**, then **Run**.
+
+  To learn the language (Grapheme), pipes, and full example source → [Writing scripts](guide:writing-scripts).
+
+  To put a script on a clock → [Automations](guide:grapheme-automations) (Flows and Schedules).
+---
 label: Every shortcut
 body: |-
   → [Commands and keyboard reference](guide:commands-reference)

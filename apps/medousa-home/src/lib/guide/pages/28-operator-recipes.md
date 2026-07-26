@@ -54,7 +54,7 @@ icon: clock
 body: **New schedule** — when it runs, where results go. Run once by hand; confirm it fired.
 ```
 
-→ [Automations](guide:grapheme-automations)
+→ [Automations](guide:grapheme-automations) · [Writing scripts](guide:writing-scripts)
 
 ## Pin a live feed on a custom view
 

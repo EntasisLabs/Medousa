@@ -115,6 +115,13 @@ export const GUIDE_CHAPTERS: GuideChapter[] = [
     summary: "Scripts, flows, and schedules",
   },
   {
+    id: "writing-scripts",
+    title: "Writing scripts",
+    file: "08b-writing-scripts.md",
+    group: "create",
+    summary: "Grapheme language, pipes, and starter examples",
+  },
+  {
     id: "specialist-agents",
     title: "Agents",
     file: "18-specialist-agents.md",

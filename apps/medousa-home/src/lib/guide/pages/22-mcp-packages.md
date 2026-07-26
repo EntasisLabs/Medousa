@@ -2,7 +2,7 @@
 
 **Advanced.** Optional installs on the **desktop app** — Offline brain, helpers, and external tool servers (MCP). The phone usually asks you to manage these on the computer.
 
-Related: [Permissions, budgets, and tool safety](guide:permissions-budgets) · [Grapheme and automations](guide:grapheme-automations) · [Troubleshooting](guide:troubleshooting#mcp-unavailable)
+Related: [Permissions, budgets, and tool safety](guide:permissions-budgets) · [Automations and scripts](guide:grapheme-automations) · [Writing scripts](guide:writing-scripts) · [Troubleshooting](guide:troubleshooting#mcp-unavailable)
 
 ## Packages
 

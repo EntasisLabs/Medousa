@@ -2,7 +2,9 @@
 
 **Automations** is where you write scripts, build flows, and schedule work. Open it from the rail (modes: Scripts, Agents, Flows, Schedules, History). Skip this until you need repeating jobs.
 
-Related: [Agents](guide:specialist-agents) · [Work](guide:work-jobs) · [Troubleshooting](guide:troubleshooting)
+To learn the script language (Grapheme), pipes, and copy-paste starters, see [Writing scripts](guide:writing-scripts).
+
+Related: [Writing scripts](guide:writing-scripts) · [Agents](guide:specialist-agents) · [Work](guide:work-jobs) · [Troubleshooting](guide:troubleshooting)
 
 ## Scripts workbench
 
@@ -22,6 +24,8 @@ Left rail: **Scripts**, **Templates**, and **WASM** (advanced modules).
 ### Templates
 
 Starters such as **Say hello**, **Search the web**, **Chain steps together**, and **Run a sandboxed command**. They’re starting points — rewrite freely.
+
+Full source for each starter lives in [Writing scripts](guide:writing-scripts#starter-examples).
 
 Read the run output if something fails before assuming the editor is broken.
 
@@ -66,4 +70,4 @@ body: Scheduled work fails quietly if the engine is offline. Check Workshops and
 
 Operator tips: keep scripts small and named after the job; run by hand once before scheduling; comment intent for future-you and agents.
 
-Next: [Specialist agents](guide:specialist-agents).
+Next: [Writing scripts](guide:writing-scripts) · [Specialist agents](guide:specialist-agents).

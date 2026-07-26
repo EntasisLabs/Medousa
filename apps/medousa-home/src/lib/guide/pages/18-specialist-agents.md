@@ -38,4 +38,4 @@ title: Profile vs specialist
 body: You / Profiles is who you are. Agents are optional skills with their own tools. Do not import a skill to “fix” identity memory — teach from You instead.
 ```
 
-Next: [Grapheme and automations](guide:grapheme-automations) · [Permissions, budgets, and tool safety](guide:permissions-budgets).
+Next: [Automations and scripts](guide:grapheme-automations) · [Writing scripts](guide:writing-scripts) · [Permissions, budgets, and tool safety](guide:permissions-budgets).
