@@ -361,3 +361,16 @@
     <p class="workshop-faint text-sm">Nothing to preview yet.</p>
   {/if}
 </article>
+
+<style>
+  .vault-markdown-preview {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .vault-markdown-preview::-webkit-scrollbar {
+    display: none;
+    width: 0;
+    height: 0;
+  }
+</style>

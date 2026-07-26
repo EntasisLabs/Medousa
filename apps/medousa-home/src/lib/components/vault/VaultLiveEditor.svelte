@@ -1001,6 +1001,17 @@
 </div>
 
 <style>
+  .vault-live-editor {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .vault-live-editor::-webkit-scrollbar {
+    display: none;
+    width: 0;
+    height: 0;
+  }
+
   :global(.vault-live-prose img.vault-live-image) {
     display: block;
     max-width: 100%;

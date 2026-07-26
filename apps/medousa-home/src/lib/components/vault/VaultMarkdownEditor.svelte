@@ -702,11 +702,15 @@
     return flushed;
   }
 
-  export function getScrollTop(): number {
+  export function getScrollEl(): HTMLElement | null {
     if (isLivePlane) {
-      return liveEl?.getScrollEl?.()?.scrollTop ?? 0;
+      return liveEl?.getScrollEl?.() ?? null;
     }
-    return cmEl?.getScrollEl?.()?.scrollTop ?? 0;
+    return cmEl?.getScrollEl?.() ?? null;
+  }
+
+  export function getScrollTop(): number {
+    return getScrollEl()?.scrollTop ?? 0;
   }
 
   export function setScrollTop(top: number) {

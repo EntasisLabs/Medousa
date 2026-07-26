@@ -3,6 +3,7 @@
   import { ChevronLeft, CircleHelp, X } from "@lucide/svelte";
   import LiquidCardDetailSheet from "$lib/components/chat/LiquidCardDetailSheet.svelte";
   import MarkdownContent from "$lib/components/ui/MarkdownContent.svelte";
+  import MarkdownHeadingOutline from "$lib/components/ui/MarkdownHeadingOutline.svelte";
   import { chaptersByGroup, getGuideChapter } from "$lib/guide/catalog";
   import { loadGuideMarkdown } from "$lib/guide/loadGuide";
   import {
@@ -13,6 +14,7 @@
     writeGuideHandoff,
   } from "$lib/guide/openGuide";
   import type { CardDetailPayload } from "$lib/markdown/liquidEmbeds";
+  import { observeActiveMarkdownHeading } from "$lib/utils/headingSlug";
   import { isTauri } from "$lib/window";
 
   interface OutlineItem {
@@ -26,6 +28,7 @@
   let chapterId = $state(readGuideHandoff().chapterId);
   let pendingAnchor = $state<string | null>(readGuideHandoff().anchor ?? null);
   let outline = $state<OutlineItem[]>([]);
+  let activeOutlineId = $state<string | null>(null);
   let tocOpen = $state(true);
   let readerEl = $state<HTMLElement | null>(null);
   let markdownHost = $state<HTMLElement | null>(null);
@@ -134,6 +137,23 @@
   });
 
   $effect(() => {
+    const scrollRoot = readerEl;
+    const contentRoot = markdownHost;
+    outline;
+    if (!scrollRoot || !contentRoot) {
+      activeOutlineId = null;
+      return;
+    }
+    return observeActiveMarkdownHeading(
+      scrollRoot,
+      (id) => {
+        activeOutlineId = id;
+      },
+      contentRoot,
+    );
+  });
+
+  $effect(() => {
     const onHandoff = () => applyHandoff();
     const onStorage = (event: StorageEvent) => {
       if (event.key === "medousa.guide.chapter" || event.key === "medousa.guide.anchor") {
@@ -227,28 +247,15 @@
       onClose={closeCardDetail}
     />
 
-    {#if outline.length > 0}
-      <aside class="guide-outline" aria-label="On this page">
-        <p class="guide-outline-label">On this page</p>
-        <ul class="guide-outline-list">
-          {#each outline as item (item.id)}
-            <li>
-              <button
-                type="button"
-                class="guide-outline-item"
-                class:guide-outline-item-h3={item.depth === 3}
-                onclick={() => {
-                  pendingAnchor = item.id;
-                  void scrollToPendingAnchor();
-                }}
-              >
-                {item.text}
-              </button>
-            </li>
-          {/each}
-        </ul>
-      </aside>
-    {/if}
+    <MarkdownHeadingOutline
+      items={outline}
+      activeId={activeOutlineId}
+      mode="panel"
+      onSelect={(id) => {
+        pendingAnchor = id;
+        void scrollToPendingAnchor();
+      }}
+    />
   </div>
 </div>
 
@@ -324,11 +331,11 @@
     display: grid;
     min-height: 0;
     flex: 1;
-    grid-template-columns: 13.5rem minmax(0, 1fr) 11rem;
+    grid-template-columns: 13.5rem minmax(0, 1fr) 15rem;
   }
 
   .guide-body-toc-collapsed {
-    grid-template-columns: 0 minmax(0, 1fr) 11rem;
+    grid-template-columns: 0 minmax(0, 1fr) 15rem;
   }
 
   .guide-body-toc-collapsed .guide-toc {
@@ -399,50 +406,6 @@
     margin: 0 auto;
   }
 
-  .guide-outline {
-    min-height: 0;
-    overflow-y: auto;
-    border-left: 1px solid rgb(var(--color-surface-600) / 0.22);
-    padding: 0.85rem 0.65rem 1.25rem;
-  }
-
-  .guide-outline-label {
-    margin: 0 0 0.4rem 0.35rem;
-    font-size: 0.62rem;
-    font-weight: 600;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    color: rgb(var(--color-surface-600));
-  }
-
-  .guide-outline-list {
-    margin: 0;
-    padding: 0;
-    list-style: none;
-  }
-
-  .guide-outline-item {
-    display: block;
-    width: 100%;
-    border: 0;
-    border-radius: 0.35rem;
-    background: transparent;
-    padding: 0.28rem 0.35rem;
-    text-align: left;
-    font-size: 0.7rem;
-    line-height: 1.35;
-    color: rgb(var(--color-surface-500));
-    cursor: pointer;
-  }
-
-  .guide-outline-item-h3 {
-    padding-left: 0.85rem;
-  }
-
-  .guide-outline-item:hover {
-    color: rgb(var(--color-surface-200));
-  }
-
   @media (max-width: 900px) {
     .guide-body,
     .guide-body-toc-collapsed {
@@ -453,7 +416,7 @@
       grid-template-columns: 0 minmax(0, 1fr);
     }
 
-    .guide-outline {
+    .guide-body :global(.md-outline-panel) {
       display: none;
     }
   }

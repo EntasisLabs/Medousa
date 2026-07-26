@@ -13,6 +13,7 @@ import type { AnyExtension } from "@tiptap/core";
 import { FenceBlock, type FenceBlockOptions } from "./fenceBlockExtension";
 import { EmbedBlock, type EmbedBlockOptions } from "./embedBlockExtension";
 import { HeadingMarks } from "./headingMarksExtension";
+import { HeadingOutlineStamp } from "./headingOutlineStamp";
 import { LiveHorizontalRule } from "./liveHorizontalRule";
 import { LiveHighlight } from "./liveHighlightMark";
 import { LiveTextColor } from "./liveTextColorMark";
@@ -98,6 +99,7 @@ export function createLiveExtensions(
     HeadingMarks.configure({
       hideSyntax: options.hideMarkdownSyntax,
     }),
+    HeadingOutlineStamp,
     LiveSectionFold,
     FenceBlock.configure(options.fence ?? {}),
     EmbedBlock.configure(options.embed ?? {}),
