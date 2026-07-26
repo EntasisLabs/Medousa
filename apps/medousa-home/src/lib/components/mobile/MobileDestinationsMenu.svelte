@@ -24,6 +24,10 @@
     mobileDestinationSections,
     type MobileDestinationItem,
   } from "$lib/utils/mobileDestinations";
+  import {
+    popBrowserPopoverOverlay,
+    pushBrowserPopoverOverlay,
+  } from "$lib/utils/browserPopoverOverlay";
   import type { Component } from "svelte";
 
   interface Props {
@@ -78,6 +82,15 @@
       onClose();
       return true;
     });
+  });
+
+  /** Native WKWebView paints above DOM — hide the embed while the menu is open. */
+  $effect(() => {
+    if (!open) return;
+    void pushBrowserPopoverOverlay();
+    return () => {
+      void popBrowserPopoverOverlay();
+    };
   });
 </script>
 

@@ -110,6 +110,8 @@ export type MobileBrowserEmbedMetrics = {
 
 /**
  * Native embed slot — panel top through browser chrome top (viewport coords for UIKit).
+ * Chrome is DOM in the shell webview and cannot paint above the native embed; reserve
+ * space below the embed and style the dock as a floating pill in that tray.
  */
 export function measureNativeBrowserEmbedBounds(
   panel: HTMLElement | null | undefined,

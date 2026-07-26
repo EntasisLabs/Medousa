@@ -155,7 +155,9 @@
 >
   <header class="calendar-chrome">
     <div class="calendar-chrome-left">
-      <ShellSidebarExpandButton label="Show rail" />
+      {#if !mobile}
+        <ShellSidebarExpandButton label="Show rail" />
+      {/if}
       <h1 class="calendar-month-title">{rangeTitle}</h1>
     </div>
 

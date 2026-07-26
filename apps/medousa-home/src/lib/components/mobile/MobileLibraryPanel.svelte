@@ -1,6 +1,5 @@
 <script lang="ts">
   import { onMount, tick } from "svelte";
-  import { ChevronLeft, MessageCircle, MoreHorizontal } from "@lucide/svelte";
   import ArtifactFullscreen from "$lib/components/chat/ArtifactFullscreen.svelte";
   import ArtifactLibraryList from "$lib/components/artifacts/ArtifactLibraryList.svelte";
   import VaultTree from "$lib/components/vault/VaultTree.svelte";
@@ -14,8 +13,6 @@
   import { vault } from "$lib/stores/vault.svelte";
   import { artifacts } from "$lib/stores/artifacts.svelte";
   import { chat } from "$lib/stores/chat.svelte";
-  import { vaultDisplayTitle } from "$lib/utils/formatVault";
-  import { prepareTalkAboutNote } from "$lib/utils/vaultNoteBridge";
   import {
     bindVaultLongPress,
     handleVaultNoteContextMenuEvent,
@@ -36,6 +33,7 @@
   let { visible, onOpenChat }: Props = $props();
 
   let listScrollEl = $state<HTMLDivElement | null>(null);
+  let notesSearchEl = $state<HTMLInputElement | null>(null);
   let libraryTab = $state<LibraryTab>("notes");
   let presentationArtifact = $state<ArtifactSummary | null>(null);
   let presentationFullscreenOpen = $state(false);
@@ -46,6 +44,12 @@
   );
 
   onMount(() => {
+    const onSearchFocus = () => {
+      notesSearchEl?.focus();
+      notesSearchEl?.select();
+    };
+    window.addEventListener("medousa-mobile-notes-search-focus", onSearchFocus);
+
     void (async () => {
       await vault.refreshNotes();
       // After a cold start / background eviction only `selectedPath` is
@@ -58,6 +62,10 @@
         }
       }
     })();
+
+    return () => {
+      window.removeEventListener("medousa-mobile-notes-search-focus", onSearchFocus);
+    };
   });
 
   $effect(() => {
@@ -111,28 +119,7 @@
     });
   });
 
-  const readerTitle = $derived(
-    vault.selectedPath
-      ? (vault.labelByPath().get(vault.selectedPath) ??
-        vaultDisplayTitle(vault.title, vault.selectedPath))
-      : "Note",
-  );
-
   const saveWhisper = $derived(vault.saveWhisper());
-
-  async function handleTalkAboutNote() {
-    if (!vault.selectedPath || !onOpenChat) return;
-    if (vault.dirty) await vault.flushSave();
-    const { scope, draft } = prepareTalkAboutNote(
-      vault.selectedPath,
-      vault.title,
-      vault.content,
-      vault.wikilinksOut,
-      vault.backlinks,
-    );
-    chat.prefillFromVaultNote(scope, draft, { pin: true });
-    await onOpenChat();
-  }
 
   function openPresentation(artifact: ArtifactSummary) {
     presentationArtifact = artifact;
@@ -147,57 +134,12 @@
 
 <section class="flex h-full min-h-0 min-w-0 flex-1 flex-col {visible ? '' : 'hidden'}">
   {#if view === "reader" && libraryTab === "notes"}
-    <header class="mobile-notes-subheader flex items-center gap-2">
-      <button
-        type="button"
-        class="mobile-icon-btn shrink-0"
-        aria-label="Back to notes"
-        onclick={backToList}
-      >
-        <ChevronLeft size={20} strokeWidth={1.75} />
-      </button>
-      <p class="min-w-0 flex-1 truncate text-sm font-medium text-surface-100">{readerTitle}</p>
-      {#if saveWhisper}
-        <span class="shrink-0 text-xs text-surface-400">{saveWhisper}</span>
-      {/if}
-      {#if vault.selectedPath}
-        {#if onOpenChat}
-          <button
-            type="button"
-            class="mobile-icon-btn shrink-0 text-primary-300"
-            aria-label="Talk about this note"
-            title="Talk about this note"
-            disabled={vault.noteLoading}
-            onclick={() => void handleTalkAboutNote()}
-          >
-            <MessageCircle size={18} strokeWidth={1.75} />
-          </button>
-        {/if}
-        <button
-          type="button"
-          class="btn btn-sm shrink-0 {vault.editorMode === 'edit'
-            ? 'variant-soft-primary'
-            : 'variant-ghost-surface'}"
-          onclick={() =>
-            vault.editorMode === "edit"
-              ? vault.enterPreviewMode()
-              : vault.enterEditMode()}
-        >
-          {vault.editorMode === "edit" ? "Preview" : "Edit"}
-        </button>
-        <button
-          type="button"
-          class="mobile-icon-btn shrink-0"
-          aria-label="Note actions"
-          onclick={() => vault.openNoteActions()}
-        >
-          <MoreHorizontal size={18} strokeWidth={1.75} />
-        </button>
-      {/if}
-    </header>
+    {#if saveWhisper}
+      <p class="px-4 py-1 text-xs text-surface-400">{saveWhisper}</p>
+    {/if}
     <VaultEditor visible={true} mobile={true} />
   {:else}
-    <header class="mobile-notes-header px-4 pb-2 pt-3">
+    <header class="mobile-notes-header px-4 pb-2">
       <h1 class="text-lg font-semibold tracking-tight text-surface-50">Notes</h1>
     </header>
     <div
@@ -239,28 +181,13 @@
     >
       <div class="space-y-2 border-b border-surface-500/40 p-3">
         <input
+          bind:this={notesSearchEl}
           class="input w-full text-sm"
           type="search"
           placeholder="Search notes…"
           value={vault.searchQuery}
           oninput={handleSearchInput}
         />
-        <div class="flex gap-2">
-          <button
-            type="button"
-            class="btn btn-sm flex-1 variant-filled-primary"
-            onclick={() => void vault.createDailyNote()}
-          >
-            Daily
-          </button>
-          <button
-            type="button"
-            class="btn btn-sm flex-1 variant-soft-surface"
-            onclick={() => vault.openNewNoteDialog()}
-          >
-            New
-          </button>
-        </div>
         <VaultSpaceChips compact />
         <VaultLibraryBrowseModeBar flush />
       </div>

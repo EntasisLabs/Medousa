@@ -199,7 +199,7 @@
   <button
     bind:this={menuAnchorEl}
     type="button"
-    class="btn btn-icon btn-sm shrink-0"
+    class="mobile-chrome-icon shrink-0"
     aria-label="Page actions"
     title="Page actions"
     data-browser-popover-trigger
@@ -207,7 +207,7 @@
     aria-expanded={menuOpen || savedOpen}
     onclick={toggleMenu}
   >
-    <Ellipsis size={18} />
+    <Ellipsis size={18} strokeWidth={1.75} />
   </button>
 
   <BrowserPopover

@@ -1,11 +1,8 @@
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
   import "$lib/styles/mobile-home-convergence.postcss";
-  import WorkshopSwitcherCompact from "$lib/components/workshops/WorkshopSwitcherCompact.svelte";
   import MobileToast from "$lib/components/mobile/MobileToast.svelte";
   import WorkAsksPanel from "$lib/components/work/WorkAsksPanel.svelte";
-  import { Menu } from "@lucide/svelte";
-  import { haptic } from "$lib/haptics";
   import { vault } from "$lib/stores/vault.svelte";
   import { workspace } from "$lib/stores/workspace.svelte";
   import { chat } from "$lib/stores/chat.svelte";
@@ -35,6 +32,7 @@
   } from "$lib/utils/homeContinue";
   import { isTauri } from "$lib/window";
   import type { WorkCard } from "$lib/types/workspace";
+  import { haptic } from "$lib/haptics";
 
   interface Props {
     health: DaemonHealth | null;
@@ -234,11 +232,6 @@
     peerPreview = await fetchPeerHomePreview();
   }
 
-  function openMenu() {
-    haptic("light");
-    layout.openMobileDestinationsMenu();
-  }
-
   function onStatusTap() {
     if (isOffline) {
       onOpenSettings();
@@ -365,18 +358,6 @@
     {/if}
 
     <div class="px-5 pb-8 pt-3">
-      <div class="mobile-home-topbar">
-        <button
-          type="button"
-          class="mobile-home-menu-btn"
-          aria-label="Open menu"
-          onclick={openMenu}
-        >
-          <Menu size={18} strokeWidth={1.75} />
-        </button>
-        <WorkshopSwitcherCompact />
-      </div>
-
       <div class="mobile-home-brand">
         <h1 class="mobile-home-wordmark">Medousa</h1>
         <p class="mobile-home-greeting-quiet">{greeting}</p>

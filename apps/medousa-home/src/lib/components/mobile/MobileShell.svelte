@@ -5,6 +5,7 @@
   import ActivitySheet from "$lib/components/mobile/ActivitySheet.svelte";
   import AskSheet from "$lib/components/mobile/AskSheet.svelte";
   import MobileBottomChrome from "$lib/components/mobile/MobileBottomChrome.svelte";
+  import MobileTopChrome from "$lib/components/mobile/MobileTopChrome.svelte";
   import HomePanel from "$lib/components/mobile/HomePanel.svelte";
   import WorkStory from "$lib/components/mobile/WorkStory.svelte";
   import MoreHub from "$lib/components/mobile/MoreHub.svelte";
@@ -17,8 +18,6 @@
   import EnvironmentRenderer from "$lib/components/environment/EnvironmentRenderer.svelte";
   import EnvPendingProposalBanner from "$lib/components/environment/EnvPendingProposalBanner.svelte";
   import ShellAskFab from "$lib/components/environment/ShellAskFab.svelte";
-  import WorkshopSwitcherCompact from "$lib/components/workshops/WorkshopSwitcherCompact.svelte";
-  import { Menu } from "@lucide/svelte";
   import { environment } from "$lib/stores/environment.svelte";
   import { layout } from "$lib/stores/layout.svelte";
   import { chat } from "$lib/stores/chat.svelte";
@@ -56,7 +55,6 @@
     shellAskFabVisible,
     visibleMobileTabs,
   } from "$lib/utils/mobileEnvironmentChrome";
-  import { haptic } from "$lib/haptics";
   import "$lib/styles/mobile-home-convergence.postcss";
 
   // Destinations menu pulls extra switchers + Lucide icons — keep it off the cold path.
@@ -222,11 +220,6 @@
   function closeWorkStory() {
     workspace.clearSelection();
   }
-
-  function openDestinationsMenu() {
-    haptic("light");
-    layout.openMobileDestinationsMenu();
-  }
 </script>
 
 <div
@@ -234,19 +227,7 @@
   data-mobile-tab={layout.mobileTab}
 >
   <EnvPendingProposalBanner />
-  {#if layout.mobileTab !== "home" || customMobileHome}
-    <header class="mobile-shell-topbar">
-      <button
-        type="button"
-        class="mobile-home-menu-btn"
-        aria-label="Open menu"
-        onclick={openDestinationsMenu}
-      >
-        <Menu size={18} strokeWidth={1.75} />
-      </button>
-      <WorkshopSwitcherCompact />
-    </header>
-  {/if}
+  <MobileTopChrome />
   <main bind:this={mainEl} class="flex min-h-0 flex-1 flex-col overflow-hidden">
     {#key layout.navigationEpoch}
       {#if layout.mobileTab === "home"}

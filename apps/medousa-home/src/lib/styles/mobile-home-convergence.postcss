@@ -139,17 +139,37 @@
   @apply mt-1.5 line-clamp-2 text-[13px] leading-snug text-surface-500;
 }
 
-.mobile-home-topbar {
-  @apply flex items-center justify-between gap-2;
-}
-
-.mobile-home-menu-btn {
+.mobile-home-menu-btn,
+.mobile-chrome-icon {
   @apply inline-flex h-10 w-10 items-center justify-center rounded-full border border-surface-500/40 bg-surface-900/70 text-surface-100 transition active:bg-surface-800;
 }
 
-.mobile-shell-topbar {
-  @apply flex items-center justify-between gap-2 px-4 pb-1 pt-2;
+.mobile-chrome-icon:disabled {
+  @apply pointer-events-none opacity-35;
+}
+
+.mobile-top-chrome {
+  @apply flex shrink-0 items-center justify-between gap-2 px-4 pb-1;
+  /* Sole owner of top safe-area — shell no longer pads, so icons sit under the notch once. */
   padding-top: max(0.5rem, env(safe-area-inset-top, 0px));
+  background-color: rgb(var(--color-surface-950));
+}
+
+.mobile-chrome-actions {
+  @apply flex items-center gap-2;
+}
+
+.mobile-chrome-workshop {
+  @apply overflow-hidden p-0;
+}
+
+.mobile-chrome-workshop[style*="--workshop-brand"] {
+  background-color: color-mix(in srgb, var(--workshop-brand) 28%, transparent);
+  border-color: color-mix(in srgb, var(--workshop-brand) 45%, transparent);
+}
+
+.mobile-chrome-workshop-mono {
+  @apply text-[11px] font-semibold tracking-wide text-surface-50;
 }
 
 .mobile-dest-menu-backdrop {

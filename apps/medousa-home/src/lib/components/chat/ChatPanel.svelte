@@ -1,6 +1,6 @@
 <script lang="ts">
   import { tick } from "svelte";
-  import { ArrowDown, LoaderCircle, PanelLeft } from "@lucide/svelte";
+  import { ArrowDown, LoaderCircle } from "@lucide/svelte";
   import ChatAsyncToolsHint from "$lib/components/chat/ChatAsyncToolsHint.svelte";
   import ChatMessageList from "$lib/components/chat/ChatMessageList.svelte";
   import ChatComposerBar from "$lib/components/chat/ChatComposerBar.svelte";
@@ -897,53 +897,40 @@
   {#if !embedded}
   <header class="{mobile ? 'mobile-chat-header' : 'workshop-header'}">
     <div class="flex min-w-0 items-center gap-2">
-      {#if mobile}
+      {#if !mobile}
+        <ShellSidebarExpandButton label="Show sessions" />
         <button
           type="button"
-          class="mobile-icon-btn shrink-0"
-          aria-label="Open sessions"
-          onclick={() => layout.toggleSessionDrawer()}
+          class="min-w-0 text-left"
+          onclick={() => {
+            if (!layout.shellSidebarExpanded) {
+              layout.openShellSidebarView("chat");
+            }
+          }}
         >
-          <PanelLeft size={20} strokeWidth={1.75} />
+          <h1 class="truncate text-sm font-semibold text-surface-50">{sessionLabel}</h1>
         </button>
       {:else}
-        <ShellSidebarExpandButton label="Show sessions" />
-      {/if}
-      <button
-        type="button"
-        class="min-w-0 text-left {mobile ? 'py-1' : ''}"
-        onclick={() => {
-          if (mobile) {
-            layout.toggleSessionDrawer();
-            return;
-          }
-          if (!layout.shellSidebarExpanded) {
-            layout.openShellSidebarView("chat");
-          }
-        }}
-      >
-        {#if mobile}
+        <div class="min-w-0 py-1">
           <h1 class="truncate text-sm font-semibold text-surface-50">
             {mobileChatTitle}
           </h1>
           <p class="truncate text-[11px] text-surface-400">{mobileChatSubtitle}</p>
-        {:else}
-          <h1 class="truncate text-sm font-semibold text-surface-50">{sessionLabel}</h1>
+        </div>
+        {#if chat.hasTurnActivity}
+          <span
+            class="badge shrink-0 variant-soft-primary text-[10px] font-medium normal-case"
+            title={chat.liveStreamActive
+              ? "Live turn streaming"
+              : `${chat.backgroundActivity} background turn(s)`}
+          >
+            {#if chat.liveStreamActive}
+              Live
+            {:else}
+              {chat.backgroundActivity} active
+            {/if}
+          </span>
         {/if}
-      </button>
-      {#if chat.hasTurnActivity && mobile}
-        <span
-          class="badge shrink-0 variant-soft-primary text-[10px] font-medium normal-case"
-          title={chat.liveStreamActive
-            ? "Live turn streaming"
-            : `${chat.backgroundActivity} background turn(s)`}
-        >
-          {#if chat.liveStreamActive}
-            Live
-          {:else}
-            {chat.backgroundActivity} active
-          {/if}
-        </span>
       {/if}
     </div>
     {#if chat.streamErrorFor(panelSessionId)}

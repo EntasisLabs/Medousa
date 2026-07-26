@@ -3,7 +3,6 @@
     Activity,
     Calendar,
     CalendarDays,
-    ChevronLeft,
     ChevronRight,
     Compass,
     Radio,
@@ -83,6 +82,14 @@
       layout.moreDestination,
   );
 
+  /** Destinations without their own embedded page title. */
+  const showDestTitle = $derived(
+    layout.moreDestination === "map" ||
+      layout.moreDestination === "settings" ||
+      layout.moreDestination === "profiles" ||
+      layout.moreDestination === "messaging",
+  );
+
   const myCustomViews = $derived(
     environment.navSurfaces().filter((surface) => surface.kind === "custom"),
   );
@@ -94,11 +101,11 @@
 
 <div class="flex h-full min-h-0 flex-col {visible ? '' : 'hidden'}">
   {#if layout.moreDestination === "hub"}
-    <header class="mobile-you-header">
-      <h1 class="text-lg font-semibold tracking-tight text-surface-50">More</h1>
-      <p class="workshop-faint mt-1 text-sm">Settings & tools — when you need them</p>
-    </header>
-    <div class="mobile-you-scroll flex-1 overflow-y-auto px-4 pb-4">
+    <div class="mobile-you-scroll flex-1 overflow-y-auto px-4 pb-4 pt-3">
+      <header class="mb-5">
+        <h1 class="text-lg font-semibold tracking-tight text-surface-50">More</h1>
+        <p class="workshop-faint mt-1 text-sm">Settings & tools — when you need them</p>
+      </header>
       {#if myCustomViews.length > 0}
         <section class="mb-6">
           <h2 class="mobile-you-section-title">My views</h2>
@@ -156,17 +163,11 @@
       {/each}
     </div>
   {:else}
-    <header class="mobile-you-subheader gap-2">
-      <button
-        type="button"
-        class="mobile-icon-btn shrink-0"
-        aria-label="Back to More hub"
-        onclick={() => layout.backToMoreHub()}
-      >
-        <ChevronLeft size={20} strokeWidth={1.75} />
-      </button>
-      <h1 class="min-w-0 truncate text-sm font-semibold">{activeLabel}</h1>
-    </header>
+    {#if showDestTitle}
+      <header class="shrink-0 px-4 pb-2 pt-3">
+        <h1 class="text-lg font-semibold tracking-tight text-surface-50">{activeLabel}</h1>
+      </header>
+    {/if}
     <div class="min-h-0 flex-1 overflow-hidden">
       {#if layout.moreDestination === "profiles"}
         <ProfilesPanel

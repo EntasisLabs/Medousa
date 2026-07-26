@@ -160,6 +160,14 @@ pub fn run() {
             {
                 human_browser_ios::init_app_handle(app.handle().clone());
                 ios_push_setup::install_ios_push_background_handler();
+                // Match medousa-theme surface-950 so the status-bar / Dynamic Island
+                // backdrop is not pure black against the charcoal shell.
+                if let Some(main) = app.get_webview_window("main") {
+                    let canvas = tauri::webview::Color(16, 16, 24, 255);
+                    if let Err(err) = main.set_background_color(Some(canvas)) {
+                        eprintln!("[medousa-home] set_background_color(ios canvas): {err}");
+                    }
+                }
             }
 
             Ok(())

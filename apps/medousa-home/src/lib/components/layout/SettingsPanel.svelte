@@ -118,10 +118,6 @@
         </div>
       </div>
     </header>
-  {:else if mobile}
-    <p class="settings-charter-line border-b border-surface-500/35 px-4 py-2 text-xs text-surface-400">
-      {charterLine}
-    </p>
   {/if}
 
   <div class="settings-shell min-h-0 flex-1 {mobile ? 'flex flex-col' : 'flex'}">
