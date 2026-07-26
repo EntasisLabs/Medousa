@@ -3941,13 +3941,12 @@
   }
 
   .composer-model-panel {
-    @apply absolute bottom-full left-0 z-50 mb-2 w-[18.5rem] overflow-hidden rounded-xl;
+    @apply absolute bottom-full left-0 z-50 mb-2 w-[21rem] rounded-xl;
     border: 1px solid rgb(var(--color-surface-600) / 0.32);
-    background: rgb(var(--color-surface-900) / 0.98);
+    background: rgb(var(--color-surface-900));
     box-shadow:
       0 12px 32px rgb(0 0 0 / 0.32),
       0 0 0 1px rgb(0 0 0 / 0.12);
-    backdrop-filter: blur(16px);
   }
 
   .composer-model-panel-search {
@@ -3967,11 +3966,11 @@
   }
 
   .composer-model-list {
-    @apply max-h-52 overflow-y-auto py-1;
+    @apply max-h-64 overflow-y-auto py-1;
   }
 
   .composer-model-list-item {
-    @apply flex w-full items-center gap-3 px-3 py-2 text-left transition-colors;
+    @apply flex w-full items-center gap-2 px-3 py-1.5 text-left transition-colors;
   }
 
   .composer-model-list-item:hover {
@@ -3984,6 +3983,23 @@
 
   .composer-model-list-name {
     @apply min-w-0 flex-1 truncate text-[13px] text-surface-100;
+  }
+
+  .composer-model-row-copy {
+    @apply flex min-w-0 flex-1 flex-col gap-0.5;
+  }
+
+  .composer-model-row-name {
+    @apply truncate text-[13px] text-surface-100;
+  }
+
+  .composer-model-row-meta {
+    @apply truncate text-[11px] leading-tight text-surface-500;
+  }
+
+  .composer-model-row-cap {
+    @apply shrink-0 rounded-full px-1.5 py-0.5 text-[10px] text-surface-400;
+    background: rgb(var(--color-surface-800) / 0.6);
   }
 
   .model-cap-badges {
@@ -4026,37 +4042,6 @@
     @apply flex flex-col items-center justify-center gap-2 px-4 py-8 text-center text-xs text-surface-500;
   }
 
-  .composer-model-turn-settings {
-    @apply space-y-2 border-t border-surface-700/35 px-3 py-2.5;
-  }
-
-  .composer-model-turn-row {
-    @apply flex items-center gap-2;
-  }
-
-  .composer-model-turn-label {
-    @apply w-16 shrink-0 text-[11px] text-surface-500;
-  }
-
-  .composer-model-turn-pills {
-    @apply flex min-w-0 flex-1 flex-wrap gap-1;
-  }
-
-  .composer-model-turn-pill {
-    @apply rounded-md px-2 py-1 text-[11px] text-surface-400 transition hover:text-surface-200 disabled:opacity-45;
-    background: rgb(var(--color-surface-800) / 0.45);
-  }
-
-  .composer-model-turn-pill-active {
-    @apply text-surface-100;
-    background: rgb(var(--color-surface-700) / 0.75);
-  }
-
-  .composer-model-turn-select {
-    @apply min-w-0 flex-1 rounded-md border-0 px-2 py-1 text-[11px] text-surface-200 focus:outline-none focus:ring-1 focus:ring-surface-600 disabled:opacity-45;
-    background: rgb(var(--color-surface-800) / 0.55);
-  }
-
   .composer-model-mobile-note {
     @apply border-b border-surface-700/40 px-3.5 py-3.5;
   }
@@ -4070,7 +4055,7 @@
   }
 
   .composer-model-panel-footer {
-    @apply flex w-full items-center justify-between gap-2 border-t border-surface-700/35 px-3 py-2.5 text-left text-[12px] text-surface-500 transition hover:bg-surface-800/45 hover:text-surface-300;
+    @apply flex w-full items-center justify-between gap-2 rounded-b-xl border-t border-surface-700/35 px-3 py-2.5 text-left text-[12px] text-surface-500 transition hover:bg-surface-800/45 hover:text-surface-300;
   }
 
   .chat-tool-footnote > summary {
@@ -7418,7 +7403,7 @@
 
   /* Quiet under-composer runtime row (Cursor-style meta). */
   .chat-runtime-under {
-    @apply mt-1 flex min-h-0 items-center px-1;
+    @apply mt-1 flex min-h-0 items-center gap-4 px-1;
   }
 
   .chat-runtime-picker {
@@ -7466,6 +7451,68 @@
 
   .composer-bar-footer-spacer {
     @apply min-w-0 flex-1;
+  }
+
+  /* Satellites under the box — quieter than the runtime lead. */
+  .composer-turn-controls {
+    @apply relative flex min-w-0 items-center gap-2;
+  }
+
+  .composer-turn-trigger {
+    @apply inline-flex max-w-full items-center gap-1 rounded-md px-1 py-0.5 text-[11px] text-surface-600 transition-colors duration-150;
+    border: 1px solid transparent;
+    background: transparent;
+  }
+
+  .composer-turn-trigger:hover:not(:disabled),
+  .composer-turn-trigger-open {
+    @apply text-surface-400;
+  }
+
+  .composer-turn-trigger:disabled {
+    @apply pointer-events-none opacity-45;
+  }
+
+  .composer-turn-trigger-icon {
+    @apply shrink-0 opacity-60;
+  }
+
+  .composer-turn-trigger-label {
+    @apply max-w-[4.5rem] truncate font-medium;
+  }
+
+  /* Chevron reserved in layout; only peeks on hover / open. */
+  .composer-turn-trigger-chevron {
+    @apply shrink-0 opacity-0 transition-[opacity,transform] duration-150;
+  }
+
+  .composer-turn-trigger:hover:not(:disabled) .composer-turn-trigger-chevron,
+  .composer-turn-trigger-open .composer-turn-trigger-chevron {
+    @apply opacity-50;
+  }
+
+  .composer-turn-trigger-open .composer-turn-trigger-chevron {
+    transform: rotate(180deg);
+  }
+
+  .composer-turn-menu {
+    @apply min-w-[11rem] max-w-[14rem];
+  }
+
+  .composer-turn-option {
+    @apply flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[13px] text-surface-300 transition hover:bg-surface-800/70 hover:text-surface-100;
+  }
+
+  .composer-turn-option-active {
+    @apply bg-surface-800/55 text-surface-100;
+  }
+
+  .composer-turn-option-label {
+    @apply min-w-0 flex-1 truncate;
+  }
+
+  .composer-turn-option-check {
+    @apply shrink-0 text-primary-300;
   }
 
   .composer-bar:focus-within {

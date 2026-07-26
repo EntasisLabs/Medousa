@@ -4,6 +4,7 @@
   import ChatAsyncToolsHint from "$lib/components/chat/ChatAsyncToolsHint.svelte";
   import ChatMessageList from "$lib/components/chat/ChatMessageList.svelte";
   import ChatComposerBar from "$lib/components/chat/ChatComposerBar.svelte";
+  import ComposerTurnControls from "$lib/components/chat/ComposerTurnControls.svelte";
   import BudgetApprovalBar from "$lib/components/chat/BudgetApprovalBar.svelte";
   import AgentPermissionBar from "$lib/components/chat/AgentPermissionBar.svelte";
   import AgentBrowserPanel from "$lib/components/chat/AgentBrowserPanel.svelte";
@@ -1166,6 +1167,9 @@
             disabled={connection.offline || chat.composerBlocked}
             onChange={onRuntimeChange}
           />
+          <ComposerTurnControls
+            disabled={connection.offline || chat.composerBlocked}
+          />
         </div>
       {/if}
     </form>
@@ -1247,7 +1251,8 @@
     position: absolute;
     left: 50%;
     top: 0;
-    z-index: 7;
+    /* Below the centered composer dock (6) so the model panel can rise over it. */
+    z-index: 5;
     display: flex;
     width: max-content;
     max-width: calc(100% - 2rem);
