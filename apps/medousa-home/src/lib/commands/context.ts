@@ -1,6 +1,7 @@
 import { chat } from "$lib/stores/chat.svelte";
 import { connection } from "$lib/stores/connection.svelte";
 import { layout } from "$lib/stores/layout.svelte";
+import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
 import { runtime } from "$lib/stores/runtime.svelte";
 import { settingsNav } from "$lib/stores/settingsNav.svelte";
 import { shellTabs } from "$lib/stores/shellTabs.svelte";
@@ -24,18 +25,50 @@ export function buildWorkshopCommandContext(
     settingsNav,
     callbacks,
     navigate(surface: Surface) {
-      layout.navigateDesktop(surface, { bump: true });
+      // Same path as WorkshopShell: open/activate a real shell tab.
+      // layout.navigateDesktop alone changes the rail hint without a tab.
+      if (surface === "context") {
+        shellTabs.openSurface("map", { activate: true });
+        return;
+      }
+      if (surface === "automations") {
+        const mode = lmeWorkspace.explorerMode;
+        if (
+          mode !== "scripts" &&
+          mode !== "flows" &&
+          mode !== "schedules" &&
+          mode !== "history" &&
+          mode !== "agents"
+        ) {
+          lmeWorkspace.setExplorerMode("scripts");
+        }
+        shellTabs.openSurface("library", { activate: true });
+        return;
+      }
+      if (surface === "workshop") {
+        lmeWorkspace.setExplorerMode("agents");
+        shellTabs.openSurface("library", { activate: true });
+        return;
+      }
       if (surface === "chat") {
         void chat.refreshSessions();
         void chat.ensureSessionHydrated();
+        const sessionId = chat.sessionId?.trim();
+        if (sessionId) {
+          shellTabs.openChat(sessionId, { activate: true });
+        } else {
+          shellTabs.openSurface("chat", { activate: true });
+        }
+        return;
       }
       if (surface === "work") {
         void workspace.prefetchCardDetails();
       }
+      shellTabs.openDestination(surface);
     },
     openRuntimeTab(tab: RuntimeTab) {
       runtime.activeTab = tab;
-      layout.navigateDesktop("runtime", { bump: true });
+      shellTabs.openDestination("runtime");
     },
     openSettingsSection(section: SettingsSectionId) {
       settingsNav.openSection(section);

@@ -10117,6 +10117,65 @@
     border-color: rgb(var(--color-surface-300) / 0.85);
   }
 
+  .command-spotlight-panel-wide {
+    width: min(100%, 48rem);
+  }
+
+  .command-spotlight-mode-chip {
+    margin: 0;
+    padding: 0.2rem 1rem 0.45rem;
+    font-size: 0.625rem;
+    font-weight: 650;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: rgb(var(--color-surface-400));
+  }
+
+  .command-spotlight-body {
+    display: flex;
+    min-height: 0;
+    max-height: 22rem;
+  }
+
+  .command-spotlight-preview {
+    flex: 0 0 14rem;
+    overflow: hidden;
+    border-left: 1px solid rgb(var(--color-surface-700) / 0.55);
+    padding: 0.55rem 0.65rem 0.75rem;
+    background: color-mix(in srgb, var(--color-surface-950) 55%, transparent);
+  }
+
+  html:not(.dark) .command-spotlight-preview {
+    border-left-color: rgb(var(--color-surface-300) / 0.7);
+    background: rgb(var(--color-surface-100) / 0.65);
+  }
+
+  .command-spotlight-preview-title {
+    margin: 0 0 0.35rem;
+    font-size: 0.68rem;
+    font-weight: 600;
+    color: rgb(var(--color-surface-400));
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .command-spotlight-preview-body {
+    margin: 0;
+    max-height: 18rem;
+    overflow: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.68rem;
+    line-height: 1.35;
+    color: rgb(var(--color-surface-300));
+  }
+
+  html:not(.dark) .command-spotlight-preview-body {
+    color: rgb(var(--color-surface-700));
+  }
+
   .command-spotlight-input {
     display: block;
     width: 100%;
@@ -10150,7 +10209,9 @@
   }
 
   .command-spotlight-results {
-    max-height: 20rem;
+    flex: 1 1 auto;
+    min-width: 0;
+    max-height: 22rem;
     overflow-y: auto;
     padding-block: 0.25rem;
   }

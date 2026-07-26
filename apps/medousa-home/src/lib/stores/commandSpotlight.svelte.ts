@@ -14,15 +14,44 @@ class CommandSpotlightStore {
   /** Command waiting for prompt input (not always in filtered list). */
   pendingCommand = $state<import("$lib/commands/types").WorkshopCommand | null>(null);
 
+  /** Telescope-style resume: last query + mode before close. */
+  lastQuery = $state("");
+  lastMode = $state<CommandSpotlightMode>("default");
+  resumeAvailable = $state(false);
+  /** When set, CommandSpotlight hydrates the input once. */
+  seedQuery = $state<string | null>(null);
+
   openSpotlight(mode: CommandSpotlightMode = "default") {
     this.mode = mode;
     this.promptStep = null;
     this.pendingCommand = null;
+    this.seedQuery = null;
     this.open = true;
+  }
+
+  /** Reopen with previous query/mode (Telescope resume). */
+  resumeSpotlight() {
+    this.mode = this.lastMode;
+    this.promptStep = null;
+    this.pendingCommand = null;
+    this.seedQuery = this.lastQuery;
+    this.open = true;
+  }
+
+  /** Restore last query while already open. */
+  restoreLastQuery() {
+    this.seedQuery = this.lastQuery;
+    this.mode = this.lastMode;
   }
 
   openNotes() {
     this.openSpotlight("notes");
+  }
+
+  rememberQuery(query: string, mode: CommandSpotlightMode) {
+    this.lastQuery = query;
+    this.lastMode = mode;
+    this.resumeAvailable = query.trim().length > 0 || mode === "notes";
   }
 
   closeSpotlight() {
@@ -30,6 +59,7 @@ class CommandSpotlightStore {
     this.promptStep = null;
     this.pendingCommand = null;
     this.mode = "default";
+    this.seedQuery = null;
   }
 
   toggleSpotlight() {

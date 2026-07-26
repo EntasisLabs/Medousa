@@ -125,7 +125,6 @@ Contextual commands (rename desktop, per-desktop switch, etc.) appear when relev
 | Write a new message | Jump to chat composer |
 | Start fresh conversation | New chat session |
 | Background task | Medousa works while you keep chatting |
-| Morning brief | Run the morning-brief manuscript |
 | Change model | Medousa Agent — models & stages |
 | Runtime controls | Reach, shell, budgets & diagnostics |
 | Voice and stance | Medousa Agent — stance & depth |
@@ -139,6 +138,20 @@ Contextual commands (rename desktop, per-desktop switch, etc.) appear when relev
 | Export conversation as PDF… | Preview and save a PDF of this chat |
 | Export conversation as JSON | Raw session history for debugging |
 | See context usage | Token breakdown for the last turn |
+| New note | Create a note in the Library |
+| New chat | Start a fresh conversation |
+| New blank script | Open Scripts workbench |
+| Run script… | Pick a saved script by name |
+| Morning brief | Queue the morning-brief manuscript |
+| Toggle Live / Build | Switch note plane |
+| Toggle Preview / Edit | Note editor mode |
+| Toggle split preview | Build pane beside source |
+| Toggle links panel | Wikilinks and backlinks |
+| Zoom in | Whole UI larger |
+| Zoom out | Whole UI smaller |
+| Reset zoom | Back to 100% |
+| Resume last Spotlight | Restore previous search (Telescope-style) |
+| Clear all pins | Empty the working set |
 
 ---
 

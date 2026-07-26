@@ -5,6 +5,14 @@ import {
   runReconnect,
 } from "./registry";
 import { buildRecentSessionCommands } from "./searchProviders";
+import { graphemeScriptEditor } from "$lib/stores/graphemeScriptEditor.svelte";
+import { spotlightPins } from "$lib/stores/spotlightPins.svelte";
+import { talkAboutVaultNote } from "$lib/utils/vaultNoteWorkshop";
+import { vaultDisplayTitle } from "$lib/utils/formatVault";
+import { isTauri, showVaultSticky } from "$lib/window";
+import { writeVaultStickyPath } from "$lib/utils/vaultSticky";
+import { workshop } from "$lib/stores/workshop.svelte";
+import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
 
 export function buildSuggestedCommands(ctx: WorkshopCommandContext): WorkshopCommand[] {
   const commands: WorkshopCommand[] = [];
@@ -107,6 +115,127 @@ export function buildSuggestedCommands(ctx: WorkshopCommandContext): WorkshopCom
         runCtx.callbacks.close();
       },
     });
+  }
+
+  const scriptTab = graphemeScriptEditor.activeTab;
+  if (scriptTab?.scriptId || (scriptTab?.body.trim() && ctx.layout.desktopSurface === "automations")) {
+    if (scriptTab.scriptId || scriptTab.body.trim()) {
+      commands.push({
+        id: "suggested-run-script",
+        section: "suggested",
+        label: scriptTab.scriptId
+          ? `Run script · ${scriptTab.name}`
+          : "Run open script",
+        subtitle: "Execute the active Scripts workbench buffer",
+        keywords: "run script grapheme suggested",
+        verb: "run",
+        preview: scriptTab.scriptId
+          ? { kind: "script", scriptId: scriptTab.scriptId, body: scriptTab.body }
+          : { kind: "text", text: scriptTab.body },
+        run: async (runCtx) => {
+          const source = scriptTab.body.trim();
+          if (!source) {
+            runCtx.error("Script is empty.");
+            return;
+          }
+          if (scriptTab.scriptId) {
+            spotlightPins.setLastScriptId(scriptTab.scriptId);
+          }
+          await workshop.runScriptSource(source);
+          runCtx.navigate("automations");
+          runCtx.callbacks.close();
+          runCtx.notice(
+            workshop.runError
+              ? `Script failed: ${workshop.runError}`
+              : `Ran ${scriptTab.name}.`,
+          );
+        },
+      });
+    }
+    if (scriptTab.scriptId) {
+      commands.push({
+        id: "suggested-pin-script",
+        section: "suggested",
+        label: `Pin script · ${scriptTab.name}`,
+        subtitle: "Add to working set (1–4)",
+        keywords: "pin script harpoon",
+        verb: "pin",
+        run: (runCtx) => {
+          const slot = spotlightPins.pin({
+            kind: "script",
+            target: scriptTab.scriptId!,
+            label: scriptTab.name,
+          });
+          runCtx.callbacks.close();
+          runCtx.notice(`Pinned in slot ${slot + 1}.`);
+        },
+      });
+      commands.push({
+        id: "suggested-open-script",
+        section: "suggested",
+        label: `Focus script · ${scriptTab.name}`,
+        subtitle: "Open in Automations",
+        keywords: "open script automations",
+        run: async (runCtx) => {
+          runCtx.navigate("automations");
+          await lmeWorkspace.openScriptById(scriptTab.scriptId!);
+          runCtx.callbacks.close();
+        },
+      });
+    }
+  }
+
+  if (ctx.vault.selectedPath) {
+    const path = ctx.vault.selectedPath;
+    const title =
+      vaultDisplayTitle(ctx.vault.title, path) || path;
+    commands.push({
+      id: "suggested-talk-note",
+      section: "suggested",
+      label: `Talk about note · ${title}`,
+      subtitle: "Attach this note in Chat",
+      keywords: "talk about note chat context",
+      preview: { kind: "note", path },
+      run: async (runCtx) => {
+        await talkAboutVaultNote(path);
+        runCtx.navigate("chat");
+        runCtx.callbacks.focusChat();
+        runCtx.callbacks.close();
+      },
+    });
+    commands.push({
+      id: "suggested-pin-note",
+      section: "suggested",
+      label: `Pin note · ${title}`,
+      subtitle: "Add to working set (1–4)",
+      keywords: "pin note harpoon",
+      verb: "pin",
+      preview: { kind: "note", path },
+      run: (runCtx) => {
+        const slot = spotlightPins.pin({
+          kind: "note",
+          target: path,
+          label: title,
+        });
+        runCtx.callbacks.close();
+        runCtx.notice(`Pinned in slot ${slot + 1}.`);
+      },
+    });
+    if (isTauri()) {
+      commands.push({
+        id: "suggested-float-note",
+        section: "suggested",
+        label: `Float sticky · ${title}`,
+        subtitle: "Pop the note into a companion window",
+        keywords: "float sticky note popout",
+        run: async (runCtx) => {
+          writeVaultStickyPath(path);
+          await showVaultSticky();
+          runCtx.callbacks.close();
+          runCtx.notice("Sticky note opened.");
+        },
+      });
+    }
   }
 
   if (commands.length === 0) {

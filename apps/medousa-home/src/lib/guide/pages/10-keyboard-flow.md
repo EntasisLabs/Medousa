@@ -14,7 +14,17 @@ You don’t need every shortcut — learn a small set that matches how you work.
 
 ## Spotlight
 
-Search for a place (Chat, Library, Settings) or a verb (split pane, export session, Operator’s Guide). Prefer Spotlight when you already know the name.
+Spotlight is a tool surface, not only search. Open with ⌘K / Ctrl+K, then:
+
+| Type… | What you get |
+|-------|----------------|
+| (plain text) | Go somewhere, open a note/chat, or run a verb |
+| `+` | **Create** — new note, chat, script, templates |
+| `!` | **Run** — scripts, morning brief |
+| `>` | **Advanced** — rarer / power actions |
+| `1`–`4` (empty query) | Jump **Pinned** working-set slots (Harpoon-style) |
+
+Pin the notes/scripts you’re juggling (**Pin current**), then return with digit keys — no fuzzy thinking. **Resume last Spotlight** restores your previous query. Prefer Spotlight when you already know the name *or* the next verb.
 
 ## Panes and desktops
 

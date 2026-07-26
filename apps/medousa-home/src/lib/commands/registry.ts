@@ -2,7 +2,6 @@ import {
   approveTurnBudgetRequest,
   checkDaemonHealth,
   denyTurnBudgetRequest,
-  enqueueDaemonAsk,
   getSessionHistory,
   listManuscripts,
   listTurnBudgetRequests,
@@ -698,22 +697,6 @@ export function buildAskCommands(): WorkshopCommand[] {
         ctx.navigate("chat");
         ctx.callbacks.close();
         ctx.notice("Background task started.");
-      },
-    },
-    {
-      id: "ask-morning-brief",
-      section: "ask",
-      label: "Morning brief",
-      subtitle: "Run the morning-brief manuscript",
-      keywords: "brief morning digest summary",
-      run: async (ctx) => {
-        await enqueueDaemonAsk({
-          prompt: "Run the morning brief.",
-          manuscriptId: "morning-brief",
-        });
-        ctx.navigate("work");
-        ctx.callbacks.close();
-        ctx.notice("Morning brief queued.");
       },
     },
   ];

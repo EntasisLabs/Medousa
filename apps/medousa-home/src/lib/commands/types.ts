@@ -11,13 +11,24 @@ import type { Surface } from "$lib/types/ui";
 
 export type CommandSection =
   | "suggested"
+  | "pinned"
   | "go"
   | "open"
+  | "do"
   | "ask"
   | "tune"
   | "advanced";
 
 export type CommandRisk = "safe" | "attention";
+
+/** Verb family for Spotlight prefixes (+ create, ! run). */
+export type CommandVerb = "create" | "run" | "toggle" | "pin";
+
+export type CommandPreview =
+  | { kind: "note"; path: string }
+  | { kind: "script"; scriptId: string; body?: string }
+  | { kind: "chat"; sessionId: string; text?: string }
+  | { kind: "text"; text: string };
 
 export interface CommandSpotlightCallbacks {
   close: () => void;
@@ -50,6 +61,8 @@ export interface WorkshopCommand {
   aliases?: string[];
   risk?: CommandRisk;
   advanced?: boolean;
+  verb?: CommandVerb;
+  preview?: CommandPreview;
   /** When set, selecting opens a second-step prompt instead of running immediately. */
   prompt?: {
     placeholder: string;
@@ -66,8 +79,10 @@ export interface GroupedCommands {
 
 export const SECTION_LABELS: Record<CommandSection, string> = {
   suggested: "Suggested",
+  pinned: "Pinned",
   go: "Go to",
   open: "Open",
+  do: "Do",
   ask: "Ask Medousa",
   tune: "Tune",
   advanced: "Advanced",
@@ -75,8 +90,10 @@ export const SECTION_LABELS: Record<CommandSection, string> = {
 
 export const SECTION_ORDER: CommandSection[] = [
   "suggested",
+  "pinned",
   "go",
   "open",
+  "do",
   "ask",
   "tune",
   "advanced",

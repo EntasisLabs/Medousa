@@ -100,13 +100,15 @@ function parseGoDestinations(src) {
 function parseSpotlightCommands(src) {
   const rows = [];
   const re =
-    /id:\s*"([a-z0-9-]+)",\s*\n(?:\s*(?:kind|group|section|when|disabled|icon)[^\n]*\n)*\s*label:\s*"([^"]+)",\s*\n(?:\s*(?:kind|group|section|when|disabled|icon)[^\n]*\n)*\s*subtitle:\s*(?:"([^"]*)"|`([^`]*)`)/g;
+    /id:\s*"([a-z0-9-.:]+)",\s*\n(?:\s*(?:kind|group|section|when|disabled|icon|verb|risk|advanced|aliases|keywords|hint)[^\n]*\n)*\s*label:\s*(?:"([^"]+)"|`([^`]+)`),\s*\n(?:\s*(?:kind|group|section|when|disabled|icon|verb|risk|advanced|aliases|keywords|hint)[^\n]*\n)*\s*subtitle:\s*(?:"([^"]*)"|`([^`]*)`)/g;
   let match;
   while ((match = re.exec(src))) {
     const id = match[1];
     if (id.startsWith("go-") || id.startsWith("workspace-switch-")) continue;
-    const label = match[2];
-    const subtitle = (match[3] ?? match[4] ?? "").replace(/\$\{[^}]+\}/g, "…");
+    if (id.includes("${")) continue;
+    const label = (match[2] ?? match[3] ?? "").replace(/\$\{[^}]+\}/g, "…");
+    const subtitle = (match[4] ?? match[5] ?? "").replace(/\$\{[^}]+\}/g, "…");
+    if (!label) continue;
     rows.push({ id, label, subtitle });
   }
   // Dedupe by id
@@ -121,11 +123,25 @@ function parseSpotlightCommands(src) {
 const catalogSrc = readRel("src/lib/utils/keyboardShortcutsCatalog.ts");
 const slashSrc = readRel("src/lib/utils/slashCommands.ts");
 const registrySrc = readRel("src/lib/commands/registry.ts");
+const doCommandsSrc = readRel("src/lib/commands/doCommands.ts");
+const pinCommandsSrc = readRel("src/lib/commands/pinCommands.ts");
 
 const groups = parseKeyboardCatalog(catalogSrc);
 const slashHints = parseSlashHints(slashSrc);
 const goDests = parseGoDestinations(registrySrc);
-const spotlight = parseSpotlightCommands(registrySrc);
+const spotlight = [
+  ...parseSpotlightCommands(registrySrc),
+  ...parseSpotlightCommands(doCommandsSrc),
+  ...parseSpotlightCommands(pinCommandsSrc),
+];
+// Dedupe across files
+{
+  const seen = new Set();
+  for (let i = spotlight.length - 1; i >= 0; i -= 1) {
+    if (seen.has(spotlight[i].id)) spotlight.splice(i, 1);
+    else seen.add(spotlight[i].id);
+  }
+}
 
 const lines = [];
 const push = (s = "") => lines.push(s);
