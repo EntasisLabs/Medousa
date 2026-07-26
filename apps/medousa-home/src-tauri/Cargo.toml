@@ -15,7 +15,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["protocol-asset", "tray-icon", "unstable"] }
+tauri = { version = "2", features = ["protocol-asset", "tray-icon", "unstable", "macos-private-api"] }
 tauri-plugin-deep-link = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
@@ -94,6 +94,7 @@ objc2-foundation = { version = "0.3", features = ["NSGeometry", "NSObjCRuntime",
 objc2-app-kit = { version = "0.3", features = [
   "NSView",
   "NSWindow",
+  "NSColor",
   "NSGraphics",
   "NSScrollView",
   "NSClipView",

@@ -18,7 +18,7 @@
   import { shellTabs } from "$lib/stores/shellTabs.svelte";
   import { MAX_SHELL_PANES } from "$lib/types/shellTabs";
   import { titlebarMode, usesUnifiedTitlebar } from "$lib/platform";
-  import { isTauri, showChatPopout } from "$lib/window";
+  import { isTauri, showBrowser, showChatPopout } from "$lib/window";
 
   const mode = $derived(titlebarMode());
   const show = $derived(usesUnifiedTitlebar());
@@ -30,6 +30,9 @@
   const canMergePane = $derived(shellTabs.paneCount > 1);
   const showChatPopoutBtn = $derived(
     isTauri() && shellTabs.activeTab?.kind === "chat",
+  );
+  const showWebPopoutBtn = $derived(
+    isTauri() && shellTabs.activeTab?.kind === "web",
   );
 
   function toggleRail() {
@@ -156,6 +159,17 @@
           title="Pop out chat"
           aria-label="Pop out chat"
           onclick={() => void showChatPopout()}
+        >
+          <ExternalLink size={14} strokeWidth={1.75} />
+        </button>
+      {/if}
+      {#if showWebPopoutBtn}
+        <button
+          type="button"
+          class="app-titlebar-btn"
+          title="Open web window"
+          aria-label="Open web window"
+          onclick={() => void showBrowser()}
         >
           <ExternalLink size={14} strokeWidth={1.75} />
         </button>

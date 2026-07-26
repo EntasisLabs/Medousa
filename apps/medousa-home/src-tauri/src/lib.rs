@@ -201,6 +201,14 @@ pub fn run() {
                         let _ = window.set_always_on_top(false);
                         let _ = window.hide();
                     }
+                    "desktop-toolbar" => {
+                        api.prevent_close();
+                        let _ = window.hide();
+                    }
+                    "view-popout" => {
+                        api.prevent_close();
+                        let _ = window.hide();
+                    }
                     _ => {}
                 }
             }
@@ -668,6 +676,18 @@ pub fn run() {
             window::window_focus_browser,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             window::browser_window_present,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            window::window_show_desktop_toolbar,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            window::window_hide_desktop_toolbar,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            window::window_toggle_desktop_toolbar,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            window::window_show_view_popout,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            window::window_hide_view_popout,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            window::window_show_main,
             tray::tray_update_blocked_count,
             #[cfg(target_os = "ios")]
             live_activity::live_activity_is_available,
@@ -729,12 +749,13 @@ pub fn run() {
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 fn setup_desktop_tray(app: &tauri::App) -> tauri::Result<()> {
     let show = MenuItem::with_id(app, "show", "Show Medousa", true, None::<&str>)?;
+    let toolbar = MenuItem::with_id(app, "toolbar", "Desktop toolbar", true, None::<&str>)?;
     let chat = MenuItem::with_id(app, "chat", "Open Chat", true, None::<&str>)?;
     let note = MenuItem::with_id(app, "note", "Open Note", true, None::<&str>)?;
     let web = MenuItem::with_id(app, "web", "Open Web", true, None::<&str>)?;
     let hide = MenuItem::with_id(app, "hide", "Hide", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&show, &chat, &note, &web, &hide, &quit])?;
+    let menu = Menu::with_items(app, &[&show, &toolbar, &chat, &note, &web, &hide, &quit])?;
 
     if let Some(icon) = app.default_window_icon().cloned() {
         TrayIconBuilder::with_id("main-tray")
@@ -743,6 +764,9 @@ fn setup_desktop_tray(app: &tauri::App) -> tauri::Result<()> {
             .tooltip("Medousa")
             .on_menu_event(|app, event| match event.id.as_ref() {
                 "show" => show_main_window(app),
+                "toolbar" => {
+                    let _ = window::window_toggle_desktop_toolbar(app.clone());
+                }
                 "chat" => {
                     let _ = window::window_show_chat_popout(app.clone());
                 }

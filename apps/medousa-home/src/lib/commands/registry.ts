@@ -12,6 +12,7 @@ import {
   stepContentZoom,
 } from "$lib/config/contentZoom";
 import { homeChannelSurface, formatShortcut } from "$lib/platform";
+import { isTauri, toggleDesktopToolbar } from "$lib/window";
 import { humanBrowser } from "$lib/stores/humanBrowser.svelte";
 import { copyBrowserUrl, openUrlInDefaultBrowser } from "$lib/utils/browserActions";
 import {
@@ -408,6 +409,26 @@ export function buildPaneCommands(): WorkshopCommand[] {
       advanced: true,
       run: (ctx) => {
         summonViewToolbar();
+        ctx.callbacks.close();
+      },
+    },
+    {
+      id: "desktop-flow-toolbar",
+      section: "advanced",
+      label: "Toggle desktop toolbar",
+      subtitle: "Floating chat / note / web / views strip",
+      keywords: "desktop toolbar floating popout widget flow chat note web views",
+      advanced: true,
+      run: async (ctx) => {
+        if (!isTauri()) {
+          toast.show("Desktop toolbar needs the Medousa app", { durationMs: 1600 });
+          ctx.callbacks.close();
+          return;
+        }
+        const visible = await toggleDesktopToolbar();
+        toast.show(visible ? "Desktop toolbar on" : "Desktop toolbar off", {
+          durationMs: 1400,
+        });
         ctx.callbacks.close();
       },
     },

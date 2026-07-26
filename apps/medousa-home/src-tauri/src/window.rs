@@ -82,6 +82,88 @@ pub fn window_focus_browser(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+pub fn window_show_desktop_toolbar(app: AppHandle) -> Result<(), String> {
+    let window = desktop_toolbar_window(&app)?;
+    prepare_desktop_toolbar(&window)?;
+    window.show().map_err(|err| err.to_string())?;
+    window.set_focus().map_err(|err| err.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn window_hide_desktop_toolbar(app: AppHandle) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window("desktop-toolbar") {
+        window.hide().map_err(|err| err.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn window_toggle_desktop_toolbar(app: AppHandle) -> Result<bool, String> {
+    let window = desktop_toolbar_window(&app)?;
+    let visible = window.is_visible().map_err(|err| err.to_string())?;
+    if visible {
+        window.hide().map_err(|err| err.to_string())?;
+        Ok(false)
+    } else {
+        prepare_desktop_toolbar(&window)?;
+        window.show().map_err(|err| err.to_string())?;
+        window.set_focus().map_err(|err| err.to_string())?;
+        Ok(true)
+    }
+}
+
+fn prepare_desktop_toolbar(window: &WebviewWindow) -> Result<(), String> {
+    window
+        .set_always_on_top(true)
+        .map_err(|err| err.to_string())?;
+    clear_desktop_toolbar_native_background(window);
+    Ok(())
+}
+
+/// Kill the default opaque WKWebView / NSWindow fill so CSS transparency can show through.
+fn clear_desktop_toolbar_native_background(window: &WebviewWindow) {
+    #[cfg(target_os = "macos")]
+    {
+        use objc2_app_kit::{NSColor, NSWindow};
+
+        if let Ok(ptr) = window.ns_window() {
+            let ns_window = unsafe { &*(ptr as *const NSWindow) };
+            ns_window.setOpaque(false);
+            ns_window.setBackgroundColor(Some(&NSColor::clearColor()));
+        }
+    }
+    let _ = window;
+}
+
+#[tauri::command]
+pub fn window_show_view_popout(app: AppHandle) -> Result<(), String> {
+    let window = view_popout_window(&app)?;
+    window.show().map_err(|err| err.to_string())?;
+    window.set_focus().map_err(|err| err.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn window_hide_view_popout(app: AppHandle) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window("view-popout") {
+        window.hide().map_err(|err| err.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn window_show_main(app: AppHandle) -> Result<(), String> {
+    let Some(window) = app.get_webview_window("main") else {
+        return Err("main window is not configured".to_string());
+    };
+    window.unminimize().map_err(|err| err.to_string())?;
+    window.show().map_err(|err| err.to_string())?;
+    window.set_focus().map_err(|err| err.to_string())?;
+    Ok(())
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BrowserPresentOptions {
@@ -136,6 +218,16 @@ fn browser_webview_window(app: &AppHandle) -> Result<WebviewWindow, String> {
 
 fn browser_window(app: &AppHandle) -> Result<WebviewWindow, String> {
     browser_webview_window(app)
+}
+
+fn desktop_toolbar_window(app: &AppHandle) -> Result<WebviewWindow, String> {
+    app.get_webview_window("desktop-toolbar")
+        .ok_or_else(|| "desktop toolbar window is not configured".to_string())
+}
+
+fn view_popout_window(app: &AppHandle) -> Result<WebviewWindow, String> {
+    app.get_webview_window("view-popout")
+        .ok_or_else(|| "view popout window is not configured".to_string())
 }
 
 /// Place the browser window to the right of main on first show (when still at default position).
