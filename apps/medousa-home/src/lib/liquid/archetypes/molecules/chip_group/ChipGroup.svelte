@@ -23,7 +23,6 @@
     -webkit-overflow-scrolling: touch;
     touch-action: pan-x pinch-zoom;
     overscroll-behavior-x: contain;
-    padding-bottom: 0.15rem;
   }
 
   .liquid-chip-group :global(.liquid-chip) {

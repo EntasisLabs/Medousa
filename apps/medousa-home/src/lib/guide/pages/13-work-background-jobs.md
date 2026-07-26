@@ -63,20 +63,19 @@ If an interactive turn is already live, new `/ask` traffic still goes to backgro
 ```timeline
 title: Operate a card
 subtitle: Typical loop
-granularity: day
 
 ---
-ts: 1
+ts: Open
 label: Open inspector
 detail: Click a card for timeline, result, chat/note links, and budget actions.
 icon: search
 ---
-ts: 2
+ts: Cancel
 label: Cancel if needed
 detail: Drag an in-flight card to the cancel drop zone.
 icon: x
 ---
-ts: 3
+ts: Group
 label: Group with swimlanes
 detail: none · By intent · By manuscript · By job family · By session.
 icon: layers

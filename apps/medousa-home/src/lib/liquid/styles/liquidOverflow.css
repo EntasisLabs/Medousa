@@ -1,0 +1,66 @@
+/**
+ * Liquid horizontal overflow — keep pan/scroll, drop chunky native scrollbars.
+ * Strip UIs (chips, plan, carousel, tabs, timeline) hide the bar entirely;
+ * data panes (code, compare) keep a thin muted thumb so overflow stays discoverable.
+ */
+
+.liquid-chip-group,
+.liquid-plan-scrubber,
+.liquid-plan-strip,
+.liquid-carousel,
+.liquid-tabs-list,
+.liquid-timeline-snapshot-track,
+.liquid-timeline-snapshot-carousel {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.liquid-chip-group::-webkit-scrollbar,
+.liquid-plan-scrubber::-webkit-scrollbar,
+.liquid-plan-strip::-webkit-scrollbar,
+.liquid-carousel::-webkit-scrollbar,
+.liquid-tabs-list::-webkit-scrollbar,
+.liquid-timeline-snapshot-track::-webkit-scrollbar,
+.liquid-timeline-snapshot-carousel::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+.liquid-code-pre,
+.liquid-compare-scroll,
+.liquid-dashboard-grid,
+.liquid-tree {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--color-surface-500) 55%, transparent) transparent;
+}
+
+.liquid-code-pre::-webkit-scrollbar,
+.liquid-compare-scroll::-webkit-scrollbar,
+.liquid-dashboard-grid::-webkit-scrollbar,
+.liquid-tree::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+.liquid-code-pre::-webkit-scrollbar-track,
+.liquid-compare-scroll::-webkit-scrollbar-track,
+.liquid-dashboard-grid::-webkit-scrollbar-track,
+.liquid-tree::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.liquid-code-pre::-webkit-scrollbar-thumb,
+.liquid-compare-scroll::-webkit-scrollbar-thumb,
+.liquid-dashboard-grid::-webkit-scrollbar-thumb,
+.liquid-tree::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-surface-500) 50%, transparent);
+}
+
+.liquid-code-pre::-webkit-scrollbar-thumb:hover,
+.liquid-compare-scroll::-webkit-scrollbar-thumb:hover,
+.liquid-dashboard-grid::-webkit-scrollbar-thumb:hover,
+.liquid-tree::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--color-surface-400) 60%, transparent);
+}

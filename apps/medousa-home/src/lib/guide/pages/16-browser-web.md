@@ -23,20 +23,19 @@ Pop Web into its own window from the desktop toolbar when research should sit be
 ```timeline
 title: Who has the wheel?
 subtitle: Banner order
-granularity: day
 
 ---
-ts: 1
+ts: Agent
 label: Medousa is exploring
 detail: Agent controls the page — **Take control** when you need the wheel.
 icon: sparkles
 ---
-ts: 2
+ts: You
 label: You are browsing
 detail: You own the scoped session — **Hand back** when done.
 icon: users
 ---
-ts: 3
+ts: Check
 label: Verification needed
 detail: CAPTCHA or similar — complete in Web, then **Continue agent**.
 icon: shield

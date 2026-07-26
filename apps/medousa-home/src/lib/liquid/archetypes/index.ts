@@ -4,6 +4,8 @@
  * at import). Consumers import this once before rendering a scene.
  */
 
+import "$lib/liquid/styles/liquidOverflow.css";
+
 // atoms
 export { prose } from "./atoms/prose/prose";
 export { statusPill } from "./atoms/status_pill/statusPill";

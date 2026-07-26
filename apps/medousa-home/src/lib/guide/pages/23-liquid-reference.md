@@ -270,20 +270,19 @@ body: Library → Notes — keep something worth remembering.
 
 ### Timeline
 
-Chronological events (day rail). See also Timeline layouts below for `snapshot`.
+Chronological events on a vertical rail. See also Timeline layouts below for `snapshot`.
 
 ```timeline
 title: Operate a Work card
 subtitle: Typical loop
-granularity: day
 
 ---
-ts: 1
+ts: Open
 label: Open inspector
 detail: Click a card for timeline, result, and links.
 icon: search
 ---
-ts: 2
+ts: Act
 label: Act or cancel
 detail: Drag in-flight to cancel, or finish what’s blocked.
 icon: zap
@@ -293,15 +292,14 @@ icon: zap
 ```timeline
 title: Operate a Work card
 subtitle: Typical loop
-granularity: day
 
 ---
-ts: 1
+ts: Open
 label: Open inspector
 detail: Click a card for timeline, result, and links.
 icon: search
 ---
-ts: 2
+ts: Act
 label: Act or cancel
 detail: Drag in-flight to cancel, or finish what’s blocked.
 icon: zap
@@ -818,7 +816,7 @@ Start from slash **Blocks → Chart** so the table skeleton matches the type.
 
 ## Timeline layouts
 
-Default timeline is a vertical day rail (see **Timeline** in the catalog). Use `layout: snapshot` for a horizontal track with peek cards:
+Default timeline is a vertical rail with a time gutter (see **Timeline** in the catalog). Use `layout: snapshot` for a horizontal track with peek cards:
 
 ```timeline
 title: Research day
