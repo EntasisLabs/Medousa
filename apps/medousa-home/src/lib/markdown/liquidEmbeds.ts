@@ -1738,8 +1738,17 @@ function parseAccordionBody(body: string): LiquidAccordionProps | null {
     const label = (block.label ?? block.title)?.trim();
     const itemBody = (block.body ?? block.summary)?.trim();
     if (!label || !itemBody) continue;
+    const explicitId = block.id?.trim().replace(/^#/, "") ?? "";
+    let id: string;
+    if (explicitId && /^[a-zA-Z][\w:-]*$/.test(explicitId)) {
+      const n = seenIds.get(explicitId) ?? 0;
+      seenIds.set(explicitId, n + 1);
+      id = n === 0 ? explicitId : `${explicitId}-${n}`;
+    } else {
+      id = slugCompareId(label, "item", items.length, seenIds);
+    }
     const item: LiquidAccordionItem = {
-      id: slugCompareId(label, "item", items.length, seenIds),
+      id,
       label,
       body: itemBody,
     };

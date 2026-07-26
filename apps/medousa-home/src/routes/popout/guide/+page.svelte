@@ -1,6 +1,7 @@
 <script lang="ts">
   import { tick } from "svelte";
   import { ChevronLeft, CircleHelp, X } from "@lucide/svelte";
+  import LiquidCardDetailSheet from "$lib/components/chat/LiquidCardDetailSheet.svelte";
   import MarkdownContent from "$lib/components/ui/MarkdownContent.svelte";
   import { chaptersByGroup, getGuideChapter } from "$lib/guide/catalog";
   import { loadGuideMarkdown } from "$lib/guide/loadGuide";
@@ -11,6 +12,7 @@
     readGuideHandoff,
     writeGuideHandoff,
   } from "$lib/guide/openGuide";
+  import type { CardDetailPayload } from "$lib/markdown/liquidEmbeds";
   import { isTauri } from "$lib/window";
 
   interface OutlineItem {
@@ -27,9 +29,21 @@
   let tocOpen = $state(true);
   let readerEl = $state<HTMLElement | null>(null);
   let markdownHost = $state<HTMLElement | null>(null);
+  let cardDetailOpen = $state(false);
+  let cardDetail = $state<CardDetailPayload | null>(null);
 
   const chapter = $derived(getGuideChapter(chapterId));
   const markdown = $derived(loadGuideMarkdown(chapterId) ?? "_Chapter missing._");
+
+  function openCardDetail(detail: CardDetailPayload) {
+    cardDetail = detail;
+    cardDetailOpen = true;
+  }
+
+  function closeCardDetail() {
+    cardDetailOpen = false;
+    cardDetail = null;
+  }
 
   function openChapter(nextId: string, anchor?: string | null) {
     const next = getGuideChapter(nextId);
@@ -37,6 +51,7 @@
     const sameChapter = next.id === chapterId;
     chapterId = next.id;
     pendingAnchor = anchor?.trim() || null;
+    closeCardDetail();
     writeGuideHandoff(next.id, pendingAnchor);
     if (sameChapter && pendingAnchor) {
       void scrollToPendingAnchor();
@@ -72,6 +87,14 @@
         `[data-heading-slug="${CSS.escape(pendingAnchor)}"]`,
       );
     if (target) {
+      const accordionItem = target.closest(".liquid-accordion-item");
+      const trigger = accordionItem?.querySelector<HTMLButtonElement>(
+        ".liquid-accordion-trigger",
+      );
+      if (trigger?.getAttribute("aria-expanded") === "false") {
+        trigger.click();
+        await tick();
+      }
       target.scrollIntoView({ block: "start", behavior: "smooth" });
     }
     pendingAnchor = null;
@@ -191,9 +214,18 @@
       onclick={onReaderClick}
     >
       <div bind:this={markdownHost} class="guide-reader-measure">
-        <MarkdownContent content={markdown} />
+        <MarkdownContent
+          content={markdown}
+          liquidContext={{ onOpenCardDetail: openCardDetail }}
+        />
       </div>
     </main>
+
+    <LiquidCardDetailSheet
+      open={cardDetailOpen}
+      detail={cardDetail}
+      onClose={closeCardDetail}
+    />
 
     {#if outline.length > 0}
       <aside class="guide-outline" aria-label="On this page">

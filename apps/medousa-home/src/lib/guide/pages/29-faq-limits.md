@@ -18,31 +18,56 @@ Short answers. For step-by-step recovery, see [Troubleshooting](guide:troublesho
 
 ## FAQ
 
-**Why is chat empty / notes missing?**  
-Wrong **workshop** — check the name in the status bar. [Getting started](guide:getting-started).
+```accordion
+title: Common questions
+multiple: true
 
-**Why can’t I install Packages on my phone?**  
-Install optional pieces on the **desktop app**. [Desktop, web, and phone](guide:platform-matrix).
+---
+label: Why is chat empty / notes missing?
+body: |-
+  Wrong **workshop** — check the name in the status bar.
 
-**Why does Allow keep asking?**  
-Each request is a new decision — there’s no “always allow” switch. [Permissions](guide:permissions-budgets).
+  → [Getting started](guide:getting-started)
+open: true
+---
+label: Why can’t I install Packages on my phone?
+body: |-
+  Install optional pieces on the **desktop app**.
 
-**What does an empty tool list mean?**  
-In advanced Runtime settings, empty can mean **all tools allowed**. Tighten the list when experimenting.
+  → [Desktop, web, and phone](guide:platform-matrix)
+---
+label: Why does Allow keep asking?
+body: |-
+  Each request is a new decision — there’s no “always allow” switch.
 
-**Can I remap shortcuts?**  
-No. See [Commands reference](guide:commands-reference).
+  → [Permissions](guide:permissions-budgets)
+---
+label: What does an empty tool list mean?
+body: In advanced Runtime settings, empty can mean **all tools allowed**. Tighten the list when experimenting.
+---
+label: Can I remap shortcuts?
+body: |-
+  No.
 
-**Month calendar feels tiny on phone?**  
-Phones often open **Day** view. [Calendar](guide:calendar).
+  → [Commands reference](guide:commands-reference)
+---
+label: Month calendar feels tiny on phone?
+body: |-
+  Phones often open **Day** view.
 
-**Shared rooms missing?**  
-Turn on Shared mode under Settings → Sharing on a computer that supports it.
+  → [Calendar](guide:calendar)
+---
+label: Shared rooms missing?
+body: Turn on Shared mode under Settings → Sharing on a computer that supports it.
+---
+label: Is the browser version the same as the desktop app?
+body: |-
+  No — the desktop app can install packages and open pop-out windows.
 
-**Is the browser version the same as the desktop app?**  
-No — the desktop app can install packages and open pop-out windows. [Platform matrix](guide:platform-matrix).
-
-**Where did Rhythm settings go?**  
-They’re under **Preferences**.
+  → [Platform matrix](guide:platform-matrix)
+---
+label: Where did Rhythm settings go?
+body: They’re under **Preferences**.
+```
 
 Next: [What’s new](guide:whats-new) · [Find answers](guide:find-answers).

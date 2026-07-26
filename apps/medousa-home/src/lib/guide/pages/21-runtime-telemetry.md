@@ -15,7 +15,40 @@ Related: [Work and background jobs](guide:work-jobs) · [Troubleshooting](guide:
 
 Use **Refresh** when numbers look stale.
 
+## Jobs at a glance
+
+```dashboard
+title: Jobs counters
+columns: 2
+
+---
+label: Enqueued
+value: Waiting
+tone: default
+---
+label: Running
+value: In motion
+tone: accent
+---
+label: Failed
+value: Errored
+tone: warn
+---
+label: Dead letter
+value: Stuck
+tone: warn
+```
+
+Open **Jobs** for succeeded, outbox, recurring, and last tick as well.
+
 ## When to open Runtime
+
+```chips
+- Is anything running? → Now | tone: accent
+Job failed / dead letter → Jobs | tone: warn
+Schedule didn’t notify → Delivery | tone: default
+Wrong model stage → Routing | tone: default
+```
 
 | Symptom | Tab |
 |---------|-----|

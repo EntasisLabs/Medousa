@@ -4,41 +4,91 @@ A few names show up everywhere. Knowing them avoids most confusion.
 
 ## The three pieces
 
-| Name | Plain meaning |
-|------|----------------|
-| **Home** | The Medousa app you see — rails, chat, notes, settings |
-| **Workshop** | The place your notes, chats, and settings live — often *this computer* |
-| **Engine** | The behind-the-scenes process that powers the workshop. You can restart it from Settings → Workshop |
+```card
+title: Home
+subtitle: What you see
+icon: home
+summary: The Medousa app — rails, chat, notes, and settings.
+```
 
-If Home can’t reach the workshop, chat shows Offline until the connection is healthy again.
+```card
+title: Workshop
+subtitle: Where your stuff lives
+icon: layers
+summary: Notes, chats, and settings for this space — often *this computer*.
+```
+
+```card
+title: Engine
+subtitle: Behind the scenes
+icon: cpu
+summary: The process that powers the workshop. Restart it from Settings → Workshop if things feel stuck.
+```
+
+```callout
+tone: tip
+title: Offline means the link is down
+body: If Home can’t reach the workshop, chat shows Offline until the connection is healthy again.
+```
 
 ## Workshop vs phone vs peer
 
-| Relationship | Meaning |
-|--------------|---------|
-| **Your workshop** | *Your* notes and chats |
-| **Phone** | Another screen into *your* workshop (same Wi‑Fi / invite) |
-| **Peer** | Someone else’s workshop on the network you chose to trust — separate notes |
+```tabs
+title: Three relationships
+default: Your workshop
 
-Pairing a phone does **not** create a peer. Switching workshops changes which notes and chats you see.
+---
+label: Your workshop
+body: Your notes and chats. Switching workshops changes which notes and conversations you see.
+---
+label: Phone
+body: Another screen into *your* workshop (same Wi‑Fi / invite). Pairing a phone does **not** create a peer.
+---
+label: Peer
+body: Someone else’s workshop on the network you chose to trust — separate notes from yours.
+```
 
 ## You, agents, and models
 
-| Term | Meaning |
-|------|---------|
-| **You / Profile** | Who you are — preferences and people Medousa should remember |
-| **Agent** | An optional specialist skill you can import and run |
-| **Stance / Voice** | How answers should feel (under the chat box) |
-| **Models** | Which AI answers, sees images, or listens to the mic — Settings → Medousa Agent → Models |
+```accordion
+title: People, skills, and answers
+multiple: true
+
+---
+label: You / Profile
+body: Who you are — preferences and people Medousa should remember.
+open: true
+---
+label: Agent
+body: An optional specialist skill you can import and run.
+---
+label: Stance / Voice
+body: How answers should feel — controls under the chat box.
+---
+label: Models
+body: Which AI answers, sees images, or listens to the mic — Settings → Medousa Agent → Models.
+```
 
 ## Where settings live
 
-| Kind | Examples |
-|------|----------|
-| **This device** | Look & feel preferences, some notification toggles |
-| **This workshop** | Models, notes, pairing, tool safety |
-| **This layout** | Which icons appear on the rail, theme for that layout |
-| **This chat** | The conversation you’re in right now |
+```accordion
+title: Ask “which layer?” when something disappears
+multiple: true
+
+---
+label: This device
+body: Look & feel preferences, some notification toggles.
+open: true
+---
+label: This workshop
+body: Models, notes, pairing, tool safety.
+---
+label: This layout
+body: Which icons appear on the rail, theme for that layout.
+---
+label: This chat
+body: The conversation you’re in right now.
+```
 
 When something “disappears,” ask: did I switch workshop, profile, or layout?
 
@@ -48,13 +98,28 @@ Settings → Sharing → **Shared** lets several people use seats on one shared 
 
 ## Quick glossary
 
-| Word | Short meaning |
-|------|----------------|
-| **Library** | Your notes and files |
-| **Work** | Board of background jobs |
-| **Web** | Built-in browser |
-| **Map** | Picture of recent chats and linked notes |
-| **Runtime** | Live “what’s running” status (power users) |
-| **Spotlight** | Quick search for places and commands (`⌘K` / `Ctrl+K`) |
+```accordion
+title: Words you’ll see in the app
+multiple: true
+
+---
+label: Library
+body: Your notes and files.
+---
+label: Work
+body: Board of background jobs.
+---
+label: Web
+body: Built-in browser.
+---
+label: Map
+body: Picture of recent chats and linked notes.
+---
+label: Runtime
+body: Live “what’s running” status (power users).
+---
+label: Spotlight
+body: Quick search for places and commands (`⌘K` / `Ctrl+K`).
+```
 
 Next: [Find answers](guide:find-answers) · [Getting started](guide:getting-started).

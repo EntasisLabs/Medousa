@@ -19,13 +19,33 @@ Views on the surface:
 
 ## Columns
 
-| Column | Meaning |
-|--------|---------|
-| **backlog** | Queued, not running yet |
-| **in flight** | Running — header hint: drag to cancel |
-| **wrapping up** | Finishing / consolidating |
-| **blocked** | Waiting on you (often budget or similar) |
-| **done** | Finished — shown when **Show done** is checked |
+```dashboard
+title: Work board columns
+columns: 2
+
+---
+label: Backlog
+value: Queued
+tone: default
+---
+label: In flight
+value: Running
+tone: accent
+---
+label: Wrapping up
+value: Finishing
+tone: default
+---
+label: Blocked
+value: Needs you
+tone: warn
+---
+label: Done
+value: Finished
+tone: success
+```
+
+**Done** shows when **Show done** is checked. In flight’s header hint: drag to cancel.
 
 ## How cards appear
 
@@ -40,9 +60,27 @@ If an interactive turn is already live, new `/ask` traffic still goes to backgro
 
 ## Operate a card
 
-1. **Click** a card → inspector (timeline, result, links to chat/note, budget actions when relevant).
-2. **Drag in-flight** to the cancel drop zone → “Release to cancel this card”.
-3. Use **Swimlanes** to group: none, By intent, By manuscript, By job family, By session.
+```timeline
+title: Operate a card
+subtitle: Typical loop
+granularity: day
+
+---
+ts: 1
+label: Open inspector
+detail: Click a card for timeline, result, chat/note links, and budget actions.
+icon: search
+---
+ts: 2
+label: Cancel if needed
+detail: Drag an in-flight card to the cancel drop zone.
+icon: x
+---
+ts: 3
+label: Group with swimlanes
+detail: none · By intent · By manuscript · By job family · By session.
+icon: layers
+```
 
 ```callout
 tone: tip

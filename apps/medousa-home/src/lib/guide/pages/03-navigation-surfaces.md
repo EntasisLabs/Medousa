@@ -17,6 +17,43 @@ Medousa is a set of **places** you switch between — Chat, Library, Web, and mo
 
 Labels are what operators see. Availability depends on the active layout preset (Default includes nearly everything; **Focus** trims to a smaller set).
 
+```card
+title: Chat
+subtitle: Sessions and replies
+icon: message-circle
+summary: Where you ask Medousa — composer, turns, and artifacts.
+```
+
+```card
+title: Library
+subtitle: Notes and files
+icon: book
+summary: Notes, Local Files, and Presentations for what should stick around.
+```
+
+```card
+title: Work
+subtitle: Background jobs
+icon: zap
+summary: Kanban of background asks and agent jobs waiting on you or finishing up.
+```
+
+```chips
+- Home | tone: default
+Chat | tone: accent
+Work | tone: default
+Library | tone: default
+Calendar | tone: default
+Web | tone: default
+Map | tone: default
+You | tone: default
+Automations | tone: default
+Peers | tone: default
+Channels | tone: warn
+Runtime | tone: warn
+Settings | tone: default
+```
+
 | Surface | Role |
 |---------|------|
 | **Home** | Landing / presence; often not a primary rail icon |
@@ -125,6 +162,19 @@ Automations may open from deep links or More rather than a permanent tab. Compan
 Library, Automations, and similar explorers can grow a contextual toolbar. Mouse-shake may summon it if enabled. Prefer keyboard when you know the binding — [Keyboard and flow](guide:keyboard-flow).
 
 ## Quick “where is X?”
+
+```chips
+- Sessions / ask → Chat | tone: accent
+Background jobs → Work | tone: default
+Notes → Library | tone: default
+Scripts / flows → Automations | tone: default
+Identity → You | tone: default
+LAN trust → Peers | tone: default
+Messaging → Channels | tone: warn
+Job failures → Runtime | tone: warn
+Pair phone → Settings · Sharing | tone: default
+Engine restart → Settings · Workshop | tone: default
+```
 
 | I need… | Go to |
 |---------|--------|

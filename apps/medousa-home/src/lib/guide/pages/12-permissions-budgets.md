@@ -8,6 +8,13 @@ Related: [Chat](guide:chat) · [Work and background jobs](guide:work-jobs) · [F
 
 When a turn needs an elevated capability, chat shows **Agent needs permission**:
 
+```card
+title: Allow / Deny
+subtitle: Tool permission
+icon: shield
+summary: **Allow** grants this request so the turn can continue. **Deny** refuses it — the turn proceeds without that capability (or stops, depending on the agent). There is no “always allow” toggle.
+```
+
 | Control | Meaning |
 |---------|---------|
 | **Allow** | Grant this request so the turn can continue |
@@ -20,6 +27,13 @@ If you Deny by accident, send a clearer follow-up or start a new turn with a nar
 ## Tool-round budgets
 
 Long tool loops pause with **Needs your approval**:
+
+```card
+title: Approve / Deny
+subtitle: More tool rounds
+icon: clock
+summary: **Approve** grants the requested +N tool rounds. **Deny** stops extending the turn. **Work** jumps to the linked Work card when present.
+```
 
 | Control | Meaning |
 |---------|---------|
@@ -45,11 +59,27 @@ body: Approving more rounds lets the agent keep calling tools. Deny when the goa
 
 If the agent hits a CAPTCHA or similar check:
 
-1. Chat or the Web tab shows **Medousa needs help with a verification**.
-2. Choose **Open in Web** (if needed), complete the check yourself.
-3. Choose **Continue agent** so the turn resumes.
+```steps
+title: Finish verification
 
-Do not paste passwords into chat to “help” — use the human browser surface. Deeper browser docs land in a later chapter; for stuck turns see [Troubleshooting](guide:troubleshooting#browser-captcha--verification).
+---
+label: Notice the prompt
+body: Chat or Web shows **Medousa needs help with a verification**
+status: current
+icon: alert-triangle
+---
+label: Complete it in Web
+body: **Open in Web** if needed; finish the check yourself
+status: pending
+icon: globe
+---
+label: Continue the agent
+body: Choose **Continue agent** so the turn resumes
+status: pending
+icon: check
+```
+
+Do not paste passwords into chat to “help” — use the human browser surface. Deeper browser docs: [Browser](guide:browser); for stuck turns see [Troubleshooting](guide:troubleshooting#browser-captcha--verification).
 
 ## Runtime Controls (day-one)
 

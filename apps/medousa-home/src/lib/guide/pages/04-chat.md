@@ -33,6 +33,12 @@ Unsupported types get a plain hint to try PDF, images, spreadsheets, or text.
 
 When a vault note, passage, or script is attached as context, a chip appears above the composer. Clear it when the turn should not see that note. Context also affects the usage meter after a turn.
 
+```chips
+- Note context | tone: accent
+Passage | tone: default
+Script | tone: warn
+```
+
 ## Model picker
 
 Open the model control to search and pick. Rows show name, quiet meta (provider · pricing · context when known), and a **Vision** mark when relevant. Favorites sort first. **Add models** / **Open Models** jumps to Settings.
@@ -53,6 +59,13 @@ Preferences → **Model picker** toggles whether the chin control appears at all
 
 Below the composer (main Chat surface — not embedded vault chat):
 
+```chips
+- Runtime | tone: accent | value: runtime
+Voice | tone: default | value: voice
+Stance | tone: default | value: stance
+Reasoning | tone: warn | value: reasoning
+```
+
 1. **Runtime** — who runs the turn:
    - **Medousa** — native turns
    - **Cursor** — external Cursor agent
@@ -72,6 +85,13 @@ body: Pick a Voice and Stance for a stretch of work. Revisit Reasoning when the 
 ## Slash commands
 
 Type `/` in the composer for hints. Spotlight mirrors several of these.
+
+```chips
+- /ask | tone: accent
+/budget | tone: warn
+/usage | tone: default
+/help | tone: default
+```
 
 | Command | Effect |
 |---------|--------|
