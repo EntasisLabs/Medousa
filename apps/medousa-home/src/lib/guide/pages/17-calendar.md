@@ -1,8 +1,8 @@
 # Calendar
 
-**Calendar** is the workshop daybook — Day, Week, and Month — with `.ics` import/export for interoperability.
+**Calendar** is the workshop daybook — Day, Week, and Month — with `.ics` import/export for interoperability. Rich notes and reminders live in the **vault**; timed events stay in `.ics`.
 
-Related: [Work and background jobs](guide:work-jobs) · [Grapheme and automations](guide:grapheme-automations) (scheduled automations are separate)
+Related: [Work and background jobs](guide:work-jobs) · [Grapheme and automations](guide:grapheme-automations) (scheduled automations are separate) · [Vault notes](guide:vault-notes)
 
 ## Views
 
@@ -10,7 +10,8 @@ Related: [Work and background jobs](guide:work-jobs) · [Grapheme and automation
 |---------|----------|
 | **Day** / **Week** / **Month** | Segmented view modes |
 | **Today** · Previous / Next | Move the anchor date |
-| Create | Double-click (desktop) or double-tap (mobile) a day → **New event** |
+| Create (**+**) | **New Event** or **New Reminder** |
+| Side rail | Mini-month navigator + upcoming agenda |
 
 On phone, the first open often switches **Month → Day** so the grid is usable.
 
@@ -21,14 +22,21 @@ On phone, the first open often switches **Month → Day** so the grid is usable.
 - Title (placeholder **New Event**)
 - **All day** toggle
 - Start / end date and time
-- **Add Location**, **Add Notes**
+- **Repeats** (daily / weekly / monthly / yearly)
+- **Alerts** (minutes/days before start → local notification)
+- **Add Location**, short summary notes
+- **Vault note** — create/open a linked markdown note for attachments and depth
 - Submit with ⌘Enter; delete when editing
+
+## Reminders
+
+Reminders are vault checkboxes in `calendar/reminders.md` with `@due(YYYY-MM-DD)`. They overlay on Day / Week / Month (distinct from timed events). Tap a reminder chip to mark it complete.
 
 ## Import / export
 
 | Action | Result |
 |--------|--------|
-| **Import .ics** | Accepts `.ics` / `text/calendar` |
+| **Import .ics** | Accepts `.ics` / `text/calendar` (VEVENT; VTODO skipped) |
 | **Export .ics** | Downloads `personal.ics` |
 
 This is file interchange with other calendars — not a live two-way sync with Apple/Google Calendar.
@@ -36,7 +44,7 @@ This is file interchange with other calendars — not a live two-way sync with A
 ```callout
 tone: note
 title: Calendar vs Schedules
-body: Calendar holds human events. Automations → Schedules run scripts, prompts, and deliveries on cron. Use both; do not confuse them.
+body: Calendar holds human events and due reminders. Automations → Schedules run scripts, prompts, and deliveries on cron. Use both; do not confuse them.
 ```
 
 Next: [Navigation and surfaces](guide:navigation-surfaces).

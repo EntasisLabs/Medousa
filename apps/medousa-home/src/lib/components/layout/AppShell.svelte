@@ -70,6 +70,18 @@
     }
   }
 
+  async function openCalendarEvent(uid: string) {
+    const { calendar } = await import("$lib/stores/calendar.svelte");
+    if (layout.isMobile) {
+      layout.openMore("calendar");
+    } else {
+      layout.navigateDesktop("calendar", { bump: true });
+    }
+    await calendar.refresh();
+    const match = calendar.events.find((event) => event.uid === uid);
+    if (match) calendar.openEdit(match);
+  }
+
   onMount(() => {
     commandSpotlight.closeSpotlight();
     document.querySelectorAll(".command-spotlight-backdrop").forEach((node) => {
@@ -111,6 +123,7 @@
           });
       },
       onOpenPeer: openPeerThread,
+      onOpenCalendar: openCalendarEvent,
     });
     const stopPeerNotifications = startPeerMessageNotificationPolling();
     const stopAgentBrowserCoord = attachAgentBrowserCoord();

@@ -4,6 +4,7 @@
     ChevronLeft,
     ChevronRight,
     Download,
+    ListTodo,
     Plus,
     RefreshCw,
     Upload,
@@ -27,6 +28,11 @@
 
   function newEvent() {
     calendar.openCreate();
+    onAction?.();
+  }
+
+  function newReminder() {
+    calendar.openCreateReminder();
     onAction?.();
   }
 
@@ -103,6 +109,15 @@
 {#if variant === "popover"}
   <!-- Expanded chrome only (hidden in seed via .lme-dock-chrome-secondary). -->
   <div class="lme-dock-chrome-secondary flex shrink-0 items-center gap-0.5">
+    <button
+      type="button"
+      class="vault-dock-icon-btn"
+      title="New reminder"
+      aria-label="New reminder"
+      onclick={newReminder}
+    >
+      <ListTodo size={15} strokeWidth={1.75} />
+    </button>
     <button
       type="button"
       class="vault-dock-icon-btn"

@@ -5,10 +5,14 @@ use std::str::FromStr;
 
 use anyhow::{Context, Result, bail};
 use chrono::{DateTime, Datelike, Duration, NaiveDate, NaiveTime, TimeZone, Utc, Weekday};
-use icalendar::{Calendar, CalendarComponent, CalendarDateTime, Component, DatePerhapsTime, Event, EventLike};
+use icalendar::{
+    Alarm, Calendar, CalendarComponent, CalendarDateTime, Component, DatePerhapsTime, Event,
+    EventLike,
+};
 use medousa_types::{
-    CalendarDeleteResponse, CalendarEvent, CalendarExportResponse, CalendarImportRequest,
-    CalendarImportResponse, CalendarListResponse, CalendarWriteRequest, CalendarWriteResponse,
+    CalendarAlarm, CalendarDeleteResponse, CalendarEvent, CalendarExportResponse,
+    CalendarImportRequest, CalendarImportResponse, CalendarListResponse, CalendarWriteRequest,
+    CalendarWriteResponse,
 };
 use uuid::Uuid;
 
@@ -298,6 +302,27 @@ fn build_event(request: &CalendarWriteRequest, uid: &str) -> Result<Event> {
         event.add_property("RRULE", &value);
     }
 
+    if let Some(note_path) = request
+        .note_path
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        event.add_property("X-MEDOUSA-NOTE", note_path);
+    }
+
+    let alarm_description = summary;
+    for alarm in &request.alarms {
+        let minutes = alarm.trigger_minutes_before.max(0);
+        if minutes == 0 {
+            continue;
+        }
+        event.alarm(Alarm::display(
+            alarm_description,
+            -Duration::minutes(minutes as i64),
+        ));
+    }
+
     Ok(event.done())
 }
 
@@ -312,6 +337,12 @@ fn event_to_dto(event: &Event, calendar_path: &str) -> Option<CalendarEvent> {
     let (dtstart, all_day) = start_to_utc(event.get_start()?)?;
     let dtend = event.get_end().and_then(end_to_utc);
     let rrule = event.property_value("RRULE").map(str::to_string);
+    let note_path = event
+        .property_value("X-MEDOUSA-NOTE")
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+    let alarms = extract_alarms(event);
 
     Some(CalendarEvent {
         uid,
@@ -324,7 +355,80 @@ fn event_to_dto(event: &Event, calendar_path: &str) -> Option<CalendarEvent> {
         rrule,
         calendar_path: calendar_path.to_string(),
         recurrence_id: None,
+        note_path,
+        alarms,
     })
+}
+
+fn extract_alarms(event: &Event) -> Vec<CalendarAlarm> {
+    let mut out = Vec::new();
+    for component in event.components() {
+        if !component.component_kind().eq_ignore_ascii_case("VALARM") {
+            continue;
+        }
+        let Some(trigger) = component.property_value("TRIGGER") else {
+            continue;
+        };
+        let Some(minutes) = parse_trigger_minutes_before(trigger) else {
+            continue;
+        };
+        if minutes <= 0 {
+            continue;
+        }
+        out.push(CalendarAlarm {
+            trigger_minutes_before: minutes,
+            action: component
+                .property_value("ACTION")
+                .unwrap_or("DISPLAY")
+                .to_ascii_lowercase(),
+        });
+    }
+    out.sort_by_key(|alarm| alarm.trigger_minutes_before);
+    out.dedup_by_key(|alarm| alarm.trigger_minutes_before);
+    out
+}
+
+/// Parse common RFC 5545 duration TRIGGERs relative to start into minutes-before.
+fn parse_trigger_minutes_before(raw: &str) -> Option<i32> {
+    let trimmed = raw.trim();
+    let negative = trimmed.starts_with('-');
+    let body = trimmed.trim_start_matches(['+', '-']);
+    if !body.starts_with('P') {
+        return None;
+    }
+    let mut total_minutes: i64 = 0;
+    let mut num = String::new();
+    let mut in_time = false;
+    for ch in body.chars().skip(1) {
+        if ch == 'T' {
+            in_time = true;
+            continue;
+        }
+        if ch.is_ascii_digit() {
+            num.push(ch);
+            continue;
+        }
+        let value: i64 = num.parse().ok()?;
+        num.clear();
+        match (ch, in_time) {
+            ('D', false) => total_minutes += value * 24 * 60,
+            ('W', false) => total_minutes += value * 7 * 24 * 60,
+            ('H', true) => total_minutes += value * 60,
+            ('M', true) => total_minutes += value,
+            ('S', true) => total_minutes += (value + 59) / 60,
+            _ => return None,
+        }
+    }
+    if !num.is_empty() {
+        return None;
+    }
+    let minutes = total_minutes.min(i32::MAX as i64) as i32;
+    if negative {
+        Some(minutes)
+    } else {
+        // Absolute / after-start triggers are not used for our display alerts.
+        None
+    }
 }
 
 fn start_to_utc(value: DatePerhapsTime) -> Option<(DateTime<Utc>, bool)> {
@@ -599,10 +703,25 @@ mod tests {
                 all_day: false,
                 rrule: None,
                 calendar_path: None,
+                note_path: Some("projects/meetings/standup.md".into()),
+                alarms: vec![CalendarAlarm {
+                    trigger_minutes_before: 15,
+                    action: "display".into(),
+                }],
             })
             .expect("create");
             assert!(created.created);
             assert_eq!(created.event.summary, "Standup");
+            assert_eq!(
+                created.event.note_path.as_deref(),
+                Some("projects/meetings/standup.md")
+            );
+            assert_eq!(created.event.alarms.len(), 1);
+            assert_eq!(created.event.alarms[0].trigger_minutes_before, 15);
+
+            let exported = CalendarService::export(None).expect("export early");
+            assert!(exported.ics.contains("X-MEDOUSA-NOTE"));
+            assert!(exported.ics.contains("BEGIN:VALARM"));
 
             let listed = CalendarService::list_events(
                 None,

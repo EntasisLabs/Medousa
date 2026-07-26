@@ -6,9 +6,20 @@ import {
   listCalendarEvents,
   updateCalendarEvent,
 } from "$lib/daemon";
-import type { CalendarEvent, CalendarWriteRequest } from "$lib/types/calendar";
+import type {
+  CalendarEvent,
+  CalendarReminder,
+  CalendarWriteRequest,
+} from "$lib/types/calendar";
+import { pollCalendarAlarms } from "$lib/utils/calendarAlarms";
+import {
+  appendCalendarReminder,
+  loadCalendarReminders,
+  toggleCalendarReminder,
+} from "$lib/utils/calendarReminders";
 
 export type CalendarViewMode = "month" | "week" | "day";
+export type CalendarCreateKind = "event" | "reminder";
 
 function startOfDay(date: Date): Date {
   const next = new Date(date);
@@ -22,11 +33,10 @@ function addDays(date: Date, days: number): Date {
   return next;
 }
 
+/** Week starts Sunday (Sun → Sat), matching common US calendar chrome. */
 function startOfWeek(date: Date): Date {
   const next = startOfDay(date);
-  const day = next.getDay();
-  const mondayOffset = day === 0 ? -6 : 1 - day;
-  return addDays(next, mondayOffset);
+  return addDays(next, -next.getDay());
 }
 
 function startOfMonth(date: Date): Date {
@@ -72,12 +82,16 @@ class CalendarStore {
   anchor = $state<Date>(startOfDay(new Date()));
   selectedDay = $state<Date>(startOfDay(new Date()));
   events = $state<CalendarEvent[]>([]);
+  reminders = $state<CalendarReminder[]>([]);
   calendarPath = $state("calendar/personal.ics");
   loading = $state(false);
   error = $state<string | null>(null);
   notice = $state<string | null>(null);
   editorOpen = $state(false);
   editing = $state<CalendarEvent | null>(null);
+  createKind = $state<CalendarCreateKind>("event");
+  createMenuOpen = $state(false);
+  reminderComposerOpen = $state(false);
 
   rangeForView(): { from: Date; to: Date } {
     if (this.viewMode === "day") {
@@ -108,6 +122,8 @@ class CalendarStore {
       });
       this.events = response.events;
       this.calendarPath = response.calendar_path;
+      this.reminders = await loadCalendarReminders();
+      void pollCalendarAlarms(this.events);
     } catch (err) {
       this.error = err instanceof Error ? err.message : String(err);
     } finally {
@@ -173,14 +189,47 @@ class CalendarStore {
     });
   }
 
+  remindersForDay(date: Date): CalendarReminder[] {
+    const day = isoDay(date);
+    return this.reminders.filter((item) => !item.completed && item.dueDay === day);
+  }
+
   openCreate(day?: Date) {
     this.editing = null;
+    this.createKind = "event";
     if (day) this.selectedDay = startOfDay(day);
+    this.createMenuOpen = false;
+    this.reminderComposerOpen = false;
     this.editorOpen = true;
+  }
+
+  openCreateMenu() {
+    this.createMenuOpen = !this.createMenuOpen;
+  }
+
+  closeCreateMenu() {
+    this.createMenuOpen = false;
+  }
+
+  openCreateReminder(day?: Date) {
+    if (day) this.selectedDay = startOfDay(day);
+    this.createMenuOpen = false;
+    this.editorOpen = false;
+    this.editing = null;
+    this.createKind = "reminder";
+    this.reminderComposerOpen = true;
+  }
+
+  closeReminderComposer() {
+    this.reminderComposerOpen = false;
+    this.createKind = "event";
   }
 
   openEdit(event: CalendarEvent) {
     this.editing = event;
+    this.createKind = "event";
+    this.reminderComposerOpen = false;
+    this.createMenuOpen = false;
     this.editorOpen = true;
   }
 
@@ -206,6 +255,18 @@ class CalendarStore {
   async removeEvent(uid: string) {
     await deleteCalendarEvent(uid, this.calendarPath);
     this.closeEditor();
+    await this.refresh();
+  }
+
+  async createReminder(title: string, dueDay?: string) {
+    const day = dueDay ?? isoDay(this.selectedDay);
+    await appendCalendarReminder(title, day);
+    this.closeReminderComposer();
+    await this.refresh();
+  }
+
+  async completeReminder(reminder: CalendarReminder, completed = true) {
+    await toggleCalendarReminder(reminder, completed);
     await this.refresh();
   }
 

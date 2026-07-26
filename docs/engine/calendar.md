@@ -32,6 +32,16 @@ SDK: `client().calendar()` — list, create, update, delete, `import_ics`, expor
 
 All-day contract: calendar-date UTC midnights (`YYYY-MM-DDT00:00:00Z`) with `all_day: true`; exclusive `dtend` for multi-day spans.
 
+Optional fields on create/update/list:
+
+| Field | ICS | Purpose |
+|-------|-----|---------|
+| `note_path` | `X-MEDOUSA-NOTE` | Vault-relative markdown note for rich body/attachments |
+| `alarms[]` | `VALARM` (`TRIGGER:-PTnM`) | Display alerts: `trigger_minutes_before` before `dtstart` |
+| `rrule` | `RRULE` | Recurrence (expanded on list) |
+
+Home overlays vault reminders from `calendar/reminders.md` (`- [ ] … @due(YYYY-MM-DD)`); those are not VEVENT/VTODO.
+
 ---
 
 ## Agent tools

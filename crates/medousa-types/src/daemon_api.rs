@@ -2598,6 +2598,21 @@ pub struct LocusNodeDetailResponse {
     pub raw: String,
 }
 
+/// Display alarm relative to event start (VALARM projection).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct CalendarAlarm {
+    /// Minutes before `dtstart` when the alert should fire (e.g. 30, 1440).
+    pub trigger_minutes_before: i32,
+    /// RFC 5545 ACTION — currently always `display`.
+    #[serde(default = "default_calendar_alarm_action")]
+    pub action: String,
+}
+
+fn default_calendar_alarm_action() -> String {
+    "display".to_string()
+}
+
 /// Personal calendar event (RFC 5545 VEVENT projection).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
@@ -2619,6 +2634,12 @@ pub struct CalendarEvent {
     /// For expanded recurrence instances: original master UID (same as uid when not expanded).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub recurrence_id: Option<DateTime<Utc>>,
+    /// Optional vault-relative markdown note linked to this event (`X-MEDOUSA-NOTE`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note_path: Option<String>,
+    /// VALARM display triggers before start.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub alarms: Vec<CalendarAlarm>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -2658,6 +2679,12 @@ pub struct CalendarWriteRequest {
     pub rrule: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub calendar_path: Option<String>,
+    /// Optional vault-relative markdown note (`X-MEDOUSA-NOTE`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note_path: Option<String>,
+    /// Replace VALARM set on write (omit/empty clears).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub alarms: Vec<CalendarAlarm>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
