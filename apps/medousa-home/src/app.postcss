@@ -4200,6 +4200,80 @@
     border-color: rgb(var(--color-surface-700) / 0.2);
   }
 
+  .composer-skill-pills {
+    @apply flex flex-wrap items-center gap-1.5;
+  }
+
+  .composer-skill-pill {
+    @apply inline-flex max-w-[14rem] items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-medium shadow-sm backdrop-blur-sm;
+  }
+
+  .composer-skill-pill-skill {
+    @apply border-primary-500/35 bg-surface-900/90 text-primary-100;
+  }
+
+  .composer-skill-pill-tool {
+    @apply border-secondary-500/35 bg-surface-900/90 text-secondary-100;
+  }
+
+  .composer-skill-pill-remove {
+    @apply -mr-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-surface-400 transition hover:bg-surface-700/80 hover:text-surface-50 disabled:opacity-40;
+  }
+
+  .composer-skill-slash-menu {
+    @apply fixed z-[220] flex w-[min(calc(100vw-1rem),20rem)] flex-col gap-0.5 overflow-x-hidden overflow-y-auto rounded-xl border border-surface-600/40 bg-surface-900/95 p-1.5 shadow-2xl backdrop-blur-md;
+    overscroll-behavior: contain;
+  }
+
+  .composer-skill-slash-section {
+    @apply px-2 pb-1 pt-2 text-[11px] font-medium tracking-[-0.01em] text-surface-500 first:pt-1;
+  }
+
+  .composer-skill-slash-row {
+    @apply flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition;
+  }
+
+  .composer-skill-slash-row:hover,
+  .composer-skill-slash-row-active {
+    @apply bg-surface-800/85;
+  }
+
+  .composer-skill-slash-icon {
+    @apply flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-surface-800/80 text-surface-400;
+  }
+
+  .composer-skill-slash-row-active .composer-skill-slash-icon {
+    @apply bg-surface-700/90 text-surface-200;
+  }
+
+  .composer-skill-slash-copy {
+    @apply flex min-w-0 flex-1 flex-col gap-0.5;
+  }
+
+  .composer-skill-slash-label {
+    @apply truncate text-[13px] font-medium tracking-[-0.01em] text-surface-100;
+  }
+
+  .composer-skill-slash-hint {
+    @apply truncate text-[11px] leading-snug text-surface-500;
+  }
+
+  .work-ask-dock-popover {
+    @apply fixed z-[210] flex flex-col gap-2 overflow-hidden rounded-2xl border border-surface-600/45 bg-surface-900/95 p-3 shadow-2xl backdrop-blur-md;
+  }
+
+  .work-ask-dock-header {
+    @apply flex items-center justify-between gap-2;
+  }
+
+  .work-ask-dock-title {
+    @apply text-sm font-semibold text-surface-50;
+  }
+
+  .work-ask-dock-close {
+    @apply rounded-md px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-surface-500 transition hover:bg-surface-800 hover:text-surface-200;
+  }
+
   .work-manifest-backdrop {
     @apply absolute inset-0 z-40 backdrop-blur-[2px];
     background-color: rgb(var(--color-surface-950) / 0.55);

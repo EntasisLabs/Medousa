@@ -8,7 +8,6 @@ import { humanBrowser } from "$lib/stores/humanBrowser.svelte";
 import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
 import { peersShell } from "$lib/stores/peersShell.svelte";
 import { vault } from "$lib/stores/vault.svelte";
-import { workspace } from "$lib/stores/workspace.svelte";
 import { dispatchBrowserFocusUrl } from "$lib/utils/browserChromeEvents";
 import { dispatchWorkFocusAsk } from "$lib/utils/workChromeEvents";
 import { SAFETY_SURFACE_SETTINGS } from "$lib/types/environment";
@@ -56,9 +55,9 @@ export async function runRailRowQuickCreate(
       calendar.openCreate();
       return { navigateTo: "calendar" };
     case "work":
-      workspace.openHubView();
+      // Opens the ask dock popover; board stays put.
       dispatchWorkFocusAsk();
-      return { navigateTo: "work" };
+      return {};
     case "library":
       lmeWorkspace.setExplorerMode("notes");
       vault.openNewNoteDialog();

@@ -3,6 +3,7 @@
   import WorkshopShell from "$lib/components/layout/WorkshopShell.svelte";
   import MobileShell from "$lib/components/mobile/MobileShell.svelte";
   import CommandSpotlight from "$lib/components/layout/CommandSpotlight.svelte";
+  import WorkAskDockPopover from "$lib/components/work/WorkAskDockPopover.svelte";
   import WizardContainer from "$lib/components/wizard/WizardContainer.svelte";
   import VaultGarageImportWizard from "$lib/components/vault/VaultGarageImportWizard.svelte";
   import ScriptContextMenu from "$lib/components/automations/ScriptContextMenu.svelte";
@@ -161,6 +162,9 @@
 {/if}
 
 <CommandSpotlight onFocusChat={focusChatComposer} />
+{#if !layout.isMobile}
+  <WorkAskDockPopover />
+{/if}
 
 <VaultGarageImportWizard />
 <VaultContextMenu />

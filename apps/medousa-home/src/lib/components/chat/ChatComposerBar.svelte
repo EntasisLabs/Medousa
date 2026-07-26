@@ -40,6 +40,9 @@
     onkeydown?: (event: KeyboardEvent) => void;
     onfocus?: () => void;
     onblur?: () => void;
+    onCursorChange?: (cursor: number) => void;
+    /** Bound textarea for slash-menu placement. */
+    element?: HTMLTextAreaElement | null;
   }
 
   let {
@@ -50,6 +53,8 @@
     onkeydown,
     onfocus,
     onblur,
+    onCursorChange,
+    element = $bindable<HTMLTextAreaElement | null>(null),
   }: Props = $props();
 
   const showModelPicker = $derived(settings.showChatModelPicker && !quietChrome);
@@ -58,8 +63,12 @@
       ? "Steer the handoff…"
       : quietChrome
         ? "Ask anything"
-        : "Message Medousa…",
+        : "Message Medousa… Type / for skills",
   );
+
+  function syncCursor() {
+    onCursorChange?.(element?.selectionStart ?? chat.draft.length);
+  }
 
   let voiceActive = $state(false);
   let voiceError = $state<string | null>(null);
@@ -253,7 +262,8 @@
     {:else}
       <GrowingTextarea
         bind:value={chat.draft}
-        placeholder="Message"
+        bind:element
+        placeholder="Message… / for skills"
         disabled={blocked}
         maxHeight={144}
         minHeight={34}
@@ -261,6 +271,10 @@
         {onkeydown}
         {onfocus}
         {onblur}
+        oninput={syncCursor}
+        onclick={syncCursor}
+        onkeyup={syncCursor}
+        onselect={syncCursor}
         aria-label="Message"
       />
 
@@ -356,6 +370,7 @@
   {:else}
     <GrowingTextarea
       bind:value={chat.draft}
+      bind:element
       placeholder={placeholder}
       disabled={blocked}
       maxHeight={128}
@@ -364,6 +379,10 @@
       {onkeydown}
       {onfocus}
       {onblur}
+      oninput={syncCursor}
+      onclick={syncCursor}
+      onkeyup={syncCursor}
+      onselect={syncCursor}
       aria-label={chat.hasWorkshopHandoff() ? "Steer handoff" : "Message"}
     />
 

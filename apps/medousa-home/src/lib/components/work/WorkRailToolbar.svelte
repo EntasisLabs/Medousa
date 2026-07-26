@@ -1,11 +1,9 @@
 <script lang="ts">
   import { AlertTriangle, CheckCircle2, MessageSquarePlus, RefreshCw, Zap } from "@lucide/svelte";
   import { workspace } from "$lib/stores/workspace.svelte";
+  import { workAskDock } from "$lib/stores/workAskDock.svelte";
   import { partitionWorkHub } from "$lib/utils/workHub";
-  import {
-    dispatchWorkFocusAsk,
-    dispatchWorkOpenTray,
-  } from "$lib/utils/workChromeEvents";
+  import { dispatchWorkOpenTray } from "$lib/utils/workChromeEvents";
 
   interface Props {
     onAction?: () => void;
@@ -17,10 +15,10 @@
   const partition = $derived(partitionWorkHub(workspace.visibleCards()));
   const primary = $derived(workspace.primaryInMotionCard());
 
-  function focusAsk() {
-    workspace.openHubView();
+  function openAsk(event: MouseEvent) {
+    const trigger = event.currentTarget as HTMLElement;
+    workAskDock.openDock(trigger);
     onAction?.();
-    dispatchWorkFocusAsk();
   }
 
   async function jumpPrimary() {
@@ -44,9 +42,11 @@
 <button
   type="button"
   class="vault-dock-icon-btn"
+  data-work-ask-trigger="true"
   title="New ask"
-  aria-label="Focus ask composer"
-  onclick={focusAsk}
+  aria-label="New ask"
+  aria-expanded={workAskDock.open}
+  onclick={openAsk}
 >
   <MessageSquarePlus size={15} strokeWidth={1.75} />
 </button>
