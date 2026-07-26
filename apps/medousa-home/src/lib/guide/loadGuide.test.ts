@@ -1,3 +1,7 @@
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { GUIDE_CHAPTERS } from "./catalog";
 import { loadGuideMarkdown, missingGuidePages } from "./loadGuide";
@@ -14,6 +18,21 @@ describe("guide pages", () => {
       expect(md, chapter.id).toBeTruthy();
       expect(md!.length).toBeGreaterThan(40);
     }
+  });
+
+  it("keeps the generated commands appendix in sync", () => {
+    const appRoot = join(process.cwd());
+    const appendixPath = join(appRoot, "src/lib/guide/pages/24-commands-reference.md");
+    const committed = readFileSync(appendixPath, "utf8");
+    const tmp = join(mkdtempSync(join(tmpdir(), "medousa-guide-")), "out.md");
+    execFileSync(process.execPath, ["scripts/generate-guide-appendix.mjs", tmp], {
+      cwd: appRoot,
+      stdio: "pipe",
+    });
+    const fresh = readFileSync(tmp, "utf8");
+    const stripDate = (s: string) =>
+      s.replace(/\*Generated \d{4}-\d{2}-\d{2}\./, "*Generated DATE.");
+    expect(stripDate(committed)).toBe(stripDate(fresh));
   });
 });
 

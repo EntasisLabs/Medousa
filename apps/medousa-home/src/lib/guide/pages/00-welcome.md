@@ -20,27 +20,24 @@ This is the **Operator's Guide**: a digital manual for how to hold the tool, wha
 
 | Area | Start here |
 |------|------------|
-| Home vs workshop, peers, profiles, scopes | [Architecture and terminology](guide:architecture) |
-| Wizard, first connection, daily loop | [Getting started](guide:getting-started) |
-| Every surface, panes, desktops, mobile More | [Navigation and surfaces](guide:navigation-surfaces) |
-| Chat, permissions, Work | [Chat](guide:chat) · [Permissions](guide:permissions-budgets) · [Work](guide:work-jobs) |
-| Web browser + Calendar | [Browser](guide:browser) · [Calendar](guide:calendar) |
-| You / Map | [Profiles, identity, and Locus](guide:profiles-locus) |
-| Vault, trash/versions, Liquid | [Vault](guide:vault-notes) · [Recovery](guide:vault-recovery) · [Liquid](guide:liquid-reference) |
-| Views, automations, agents | [Views](guide:views-environments) · [Automations](guide:grapheme-automations) · [Agents](guide:specialist-agents) |
-| Phone, peers, channels | [Sharing](guide:sharing-phone) · [Messaging](guide:messaging-channels) |
-| Runtime, MCP, packages | [Runtime](guide:runtime-telemetry) · [MCP and packages](guide:mcp-packages) |
-| Workshops + troubleshooting | [Workshops](guide:workshops-connections) · [Troubleshooting](guide:troubleshooting) |
+| Mental model + first run | [Architecture](guide:architecture) · [Getting started](guide:getting-started) |
+| Surfaces + chat loop | [Navigation](guide:navigation-surfaces) · [Chat](guide:chat) · [Work](guide:work-jobs) |
+| Safety + browser | [Permissions](guide:permissions-budgets) · [Browser](guide:browser) |
+| Library + Liquid | [Vault](guide:vault-notes) · [Liquid](guide:liquid-reference) · [Recovery](guide:vault-recovery) |
+| Automations + agents | [Automations](guide:grapheme-automations) · [Agents](guide:specialist-agents) |
+| Collab + channels | [Sharing](guide:sharing-phone) · [Messaging](guide:messaging-channels) |
+| Reference | [Commands](guide:commands-reference) · [Settings](guide:settings-reference) · [Platform](guide:platform-matrix) |
+| Recipes + FAQ | [Recipes](guide:operator-recipes) · [Limits](guide:faq-limits) · [Troubleshooting](guide:troubleshooting) |
 
 ## Operator habits that pay off
 
 1. Keep one **active workshop** — switch deliberately, don't leave ghosts.
 2. Prefer **panes and pop-outs** over stacking everything in one crowded surface.
 3. Treat the under-composer row (runtime + turn controls) as flight instruments — glance, don't reconfigure every message.
-4. When something feels loud, check [Themes and customization](guide:themes-customization) before blaming the feature.
+4. When something feels loud, check [Themes](guide:themes-customization) before blaming the feature.
 
 ```callout
 tone: note
 title: This guide ships with the app
-body: Chapters are markdown in the Medousa repo and render with the same Liquid markdown engine as vault notes. If a chapter is wrong, fix the file — not a separate CMS.
+body: Chapters are markdown in the Medousa repo and render with the same Liquid markdown engine as vault notes. If a chapter is wrong, fix the file — not a separate CMS. Regenerated command tables use npm run guide:generate.
 ```

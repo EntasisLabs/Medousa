@@ -1,26 +1,56 @@
-# Themes and customization
+# Themes, accessibility, and quiet chrome
 
 Medousa should feel like *your* bench. Customize carefully — loud chrome fights flow.
 
-## Themes
+Related: [Settings reference](guide:settings-reference) · [Keyboard and flow](guide:keyboard-flow) · [Platform matrix](guide:platform-matrix)
 
-Open Settings → Preferences (or your theme entry) and pick a theme. Themes recolor surfaces, rails, and chat. Prefer one theme per desk; thrashing themes mid-task costs more than it gives.
+## Light / dark vs named theme
+
+| Control | Where | Scope |
+|---------|-------|--------|
+| **Light / dark** | Preferences header toggle | This device (`document` class + localStorage) |
+| **Named color theme** | Preferences → **Look** | **Active layout preset** — switching presets can change theme |
+
+Pick one theme per desk. Thrashing themes mid-task costs more than it gives.
+
+## Shell chrome (Look)
+
+Room / shell options under Look can show or hide:
+
+- Left rail
+- Vault chat FAB
+- Vault sidebar
+- Mobile Home tab behavior
+- Layout preset advanced controls
+
+Layout presets also carry destination order — [Navigation](guide:navigation-surfaces) and [Views](guide:views-environments).
 
 ## Zoom
 
-Whole-UI zoom (Spotlight: **Zoom in / out / Reset zoom**, or the matching shortcuts) scales the webview like a browser — not just font size. Use it when text is small on a dense display; reset when panes feel cramped.
+| Kind | How | Notes |
+|------|-----|--------|
+| **Content zoom** | Spotlight Zoom in/out/reset, or ⌘+/−/0 (desktop) | Scales whole UI like a browser (about 70–160%); no-op on web/phone |
+| **Pane zoom** | ⌘; z / Spotlight **Zoom pane** | Maximizes one pane, not UI scale |
 
-## Status bar and quiet chrome
+## Everyday and display prefs
 
-The status bar shows connection, activity, desktops, and Spotlight. Contextual slots appear when a note or script owns focus.
+Preferences → **Everyday** / **More display**:
 
-Preferences can hide pieces that feel noisy (for example the chat model picker). Quiet chrome on empty chat is intentional — the hero asks a question; the composer still works.
+- Work-done alerts, workshop guidance, open Web when the agent browses
+- Mobile: **Remote push**, **Live Activity**
+- Technical activity, engine details in chat, model picker visibility, **Liquid chat**
 
-## Composer preferences
+Work card retention (hide / wipe) is under Preferences → **Work cards** — [Data and recovery](guide:data-lifecycle).
 
-- Show / hide the model picker in the chin
-- Keyboard shortcut habits
-- Voice input availability depends on platform support
+## Accessibility
+
+| Concern | Behavior |
+|---------|----------|
+| **Reduced motion** | Honors OS `prefers-reduced-motion` — wizard, chat, shell, Liquid. No in-app toggle. |
+| **Keyboard** | Spotlight + pane prefix chords — [Commands reference](guide:commands-reference). No remapping UI. |
+| **Focus** | Prefer keyboard for pane geometry; mouse for precise editing. |
+| **Contrast / theme** | Choose a named theme that reads clearly; pair with light/dark. |
+| **Drag alternatives** | Many drag actions have Spotlight or menu equivalents (cancel Work via drop zone still pointer-first — use card inspector when needed). |
 
 ## What not to customize first
 
@@ -29,7 +59,8 @@ Preferences can hide pieces that feel noisy (for example the chat model picker).
 | Per-message model hopping | Breaks continuity; prefer favorites |
 | Maximal panes on day one | Learn one desk, then split |
 | Turning every badge on | Status noise trains you to ignore status |
+| Shell tools on with empty allowlists | Security — [Permissions](guide:permissions-budgets) |
 
 When something feels wrong visually, check zoom and theme before filing a bug.
 
-Related: [Navigation and surfaces](guide:navigation-surfaces), [Keyboard and flow](guide:keyboard-flow).
+Next: [Commands reference](guide:commands-reference) · [Settings reference](guide:settings-reference).

@@ -1,8 +1,7 @@
 # Operator’s Guide — docs epic
 
-> **Status:** Active (2026-07) — **D0–D2 shipped**; next **D3 Reference polish**  
+> **Status:** Active (2026-07) — **D0–D3 shipped** (epic complete for first full pass)  
 > **Audience:** Operators using Medousa Home (desktop, web, phone companion)  
-
 > **Thesis:** The in-app Operator’s Guide ships as **orientation**. The gap is **operator reference depth** — procedures, state models, failure modes, security implications, and platform differences — so a new operator can run the product without rediscovering UI by accident.  
 > **Product content:** [`apps/medousa-home/src/lib/guide/`](../apps/medousa-home/src/lib/guide/) (`catalog.ts` + `pages/*.md`)  
 > **Gap audit canvas:** [operators-guide-gap-audit](file:///Users/theelevators/.cursor/projects/Users-theelevators-medousa/canvases/operators-guide-gap-audit.canvas.tsx) (Cursor canvas; open beside chat)
@@ -13,14 +12,14 @@
 
 ## Reality check
 
-The guide window, TOC, Spotlight entry, status-bar entry, and Settings “Learn more” links are **shipped**. **Twenty-four** chapters exist after D2 — major surfaces now have operator homes. Remaining gap is mostly **D3** polish: generated catalogs, settings reference matrix, recipes collection, What’s new, a11y depth, and governance.
+The guide window, TOC, Spotlight entry, status-bar entry, and Settings “Learn more” links are **shipped**. **Thirty-two** chapters after D3 — concepts, task manuals, and reference appendices. Ongoing work is drift control (`npm run guide:generate`), deepening thin spots (e.g. workshops), and release-tied What’s new notes.
 
 | Group | Chapters today |
 |-------|----------------|
 | Start | Welcome, Architecture, Getting started |
-| Workspace | Navigation, Chat, Permissions, Work, Browser, Calendar, Profiles/Locus, Themes |
+| Workspace | Navigation, Chat, Permissions, Work, Browser, Calendar, Profiles/Locus, Themes/a11y |
 | Craft | Vault, Recovery, Liquid, Views, Automations, Specialist agents |
-| System | Workshops, Keyboard, Sharing/phone, Messaging, Runtime, MCP/packages, Troubleshooting |
+| System | Workshops, Keyboard, Commands (generated), Settings ref, Platform matrix, Data lifecycle, Sharing, Messaging, Runtime, MCP/packages, Recipes, FAQ, What’s new, Governance, Troubleshooting |
 
 Integrator / engine docs stay under [`docs/`](../docs/). Do **not** invent a parallel operator-UI tree there.
 
@@ -39,8 +38,8 @@ Integrator / engine docs stay under [`docs/`](../docs/). Do **not** invent a par
 2. **Operator-manual voice** — Procedures, controls, state, failure modes, platform differences. Prefer “how / when / what happens if” over metaphor-only orientation.
 3. **Truth to the UI** — Document what Home actually exposes (surfaces, settings, commands). When UI and docs drift, fix docs in the same train or flag the epic.
 4. **Cross-links** — Use `[Label](guide:chapter-id)` and `#anchors`. Callouts use fenced ` ```callout ` blocks (not Liquid fences).
-5. **Generated appendices** — Keyboard, Spotlight, and slash inventories should eventually be generated from `keyboardShortcutsCatalog.ts` and `commands/registry.ts`, not hand-copied forever.
-6. **Ship D0 → D1 first** — Foundations and core loop unblock every later chapter. Prefer those packages when context is short.
+5. **Generated appendices** — `npm run guide:generate` rebuilds `24-commands-reference.md` from catalogs; do not hand-edit tables.
+6. **Prefer epic order when extending** — deepen existing chapters before inventing parallel trees.
 7. **Update this epic** — When a chapter or package ships, tick checkboxes and add a working-log line in the same change set.
 
 ---
@@ -62,7 +61,7 @@ flowchart LR
 | D0 | Foundations — mental model, first-run, surface inventory, glossary | ✅ |
 | D1 | Core loop — chat, permissions/budgets, Work, troubleshooting | ✅ |
 | D2 | Capability depth — vault, browser, automations, identity, peers, views, runtime, MCP, Liquid | ✅ |
-| D3 | Reference polish — generated catalogs, settings ref, matrix, recipes, governance | ⬜ |
+| D3 | Reference polish — generated catalogs, settings ref, matrix, recipes, governance | ✅ |
 
 ---
 
@@ -135,18 +134,18 @@ flowchart LR
 
 ### Packages
 
-- [ ] **D3.1** Generated keyboard + Spotlight + slash appendix
-- [ ] **D3.2** Settings reference (scope / default / platform / restart / risk)
-- [ ] **D3.3** Desktop / web / phone capability matrix
-- [ ] **D3.4** Data locations, backup, migration, retention
-- [ ] **D3.5** Themes, accessibility, reduced motion
-- [ ] **D3.6** Operator recipes / runbooks
-- [ ] **D3.7** FAQ, known limits, What’s new / compatibility
-- [ ] **D3.8** Documentation governance (feature → doc checklist, release gating)
+- [x] **D3.1** Generated keyboard + Spotlight + slash appendix — `guide:commands-reference` (`npm run guide:generate`)
+- [x] **D3.2** Settings reference — `guide:settings-reference`
+- [x] **D3.3** Desktop / web / phone capability matrix — `guide:platform-matrix`
+- [x] **D3.4** Data locations, backup, migration, retention — `guide:data-lifecycle`
+- [x] **D3.5** Themes, accessibility, reduced motion — expanded `guide:themes-customization`
+- [x] **D3.6** Operator recipes / runbooks — `guide:operator-recipes`
+- [x] **D3.7** FAQ, known limits, What’s new — `guide:faq-limits` · `guide:whats-new`
+- [x] **D3.8** Documentation governance — `guide:docs-governance`
 
 ---
 
-## Capability index (D0–D2)
+## Capability index (D0–D3)
 
 | Capability | Home |
 |------------|------|
@@ -158,7 +157,7 @@ flowchart LR
 | Messaging channels | D2.8 ✅ `messaging-channels` |
 | Runtime telemetry | D2.10 ✅ `runtime-telemetry` |
 | Tool permissions + budgets | D1.2 ✅ `permissions-budgets` |
-| Runtime Controls (day-one) | D1.2 ✅; full settings matrix → D3.2 |
+| Runtime Controls (day-one) | D1.2 ✅; settings matrix D3.2 ✅ |
 | MCP + Packages | D2.11 ✅ `mcp-packages` |
 | Specialist skills | D2.5 ✅ `specialist-agents` |
 | Vault versioning + trash | D2.2 ✅ `vault-recovery` |
@@ -176,9 +175,9 @@ flowchart LR
 | `views-environments` | D2.9 ✅ |
 | `grapheme-automations` / `specialist-agents` | D2.4–D2.5 ✅ |
 | `sharing-phone` / `messaging-channels` | D2.7–D2.8 ✅ |
-| `workshops-connections` | Still thinner than D2 peers — deepen in D3 recipes or a follow-up |
-| `keyboard-flow` | D3.1 (generate from catalog) |
-| `themes-customization` | D3.5 |
+| `workshops-connections` | Still thinner — deepen opportunistically; recipes cover multi-engine habits lightly |
+| `keyboard-flow` / `commands-reference` | D3.1 ✅ |
+| `themes-customization` | D3.5 ✅ |
 
 ---
 
@@ -223,3 +222,4 @@ Not a commitment to ship all at once. Prefer phased delivery above.
 - **2026-07-26** — **D0 shipped:** new `architecture` chapter (mental model + glossary seed); rewritten getting-started (wizard/migration/rerun/phone/reconnect); rewritten navigation (surface matrix, Library/Automations modes, desktops, mobile More). Catalog renumbered `00`–`11`.
 - **2026-07-26** — **D1 shipped:** expanded `chat`; new `permissions-budgets`, `work-jobs`, `troubleshooting` (`12`–`14`).
 - **2026-07-26** — **D2 shipped:** expanded vault/views/automations/sharing; new `vault-recovery`, `browser`, `calendar`, `specialist-agents`, `profiles-locus`, `messaging-channels`, `runtime-telemetry`, `mcp-packages`, `liquid-reference` (`15`–`23`). Catalog at 24 chapters.
+- **2026-07-26** — **D3 shipped:** `guide:generate` appendix (`commands-reference`); settings/platform/data chapters; themes/a11y; recipes; FAQ; What’s new; docs-governance. Catalog at 32 chapters. First full epic pass complete.

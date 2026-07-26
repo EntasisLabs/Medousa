@@ -1,41 +1,40 @@
 # Keyboard and flow
 
-Medousa rewards keyboard habits. You do not need every binding — learn a small set that matches how you work.
+Medousa rewards a small keyboard set. Full tables (macOS + Windows/Linux, Spotlight inventory, slash commands) are generated in [Commands and keyboard reference](guide:commands-reference) — regenerate with `npm run guide:generate` when catalogs change.
+
+## Essentials
+
+| Habit | Binding (macOS) |
+|-------|-----------------|
+| Spotlight | ⌘K |
+| Pane prefix | ⌘; then %, ", h/j/k/l, z, … |
+| Shortcuts sheet | ⌘; ? |
+| Content zoom | ⌘+ / ⌘− / ⌘0 |
+| Toggle rail | ⌘B |
+
+On Windows/Linux, ⌘ becomes Ctrl (prefix is `Ctrl+;`).
 
 ## Spotlight
 
-`⌘K` / `Ctrl+K` opens Spotlight. Jump to surfaces, run advanced pane commands, toggle the desktop toolbar, open this guide. Prefer Spotlight over digging through menus when you know the verb.
+Jump to surfaces, split panes, toggle the desktop toolbar, open this guide, export sessions, list budgets, check health. Prefer Spotlight over menus when you know the verb. Contextual rows (rename desktop, etc.) appear when relevant.
 
-## Panes
+## Panes and desktops
 
-Useful pane commands (also in Spotlight):
-
-- Split right / down
-- Focus left / down / up / right
-- Zoom pane
-- Close pane
-- Next / previous tab
-- New chat in pane
-
-The pane cheat sheet (`?` in the shell pane context, where enabled) lists bindings without leaving the desk.
-
-## Content zoom
-
-Zoom in / out / reset scales the whole UI via the webview. Handy on retina panels; reset when layouts feel clipped.
+Split, focus, zoom, and close panes from the prefix chord or Spotlight. Up to four desktops and four panes — [Known limits](guide:faq-limits). Drag tabs between panes when you need a precise move.
 
 ## Desktop flow toolbar
 
-Toggle a floating vertical strip for Chat / Note / Web / Views / Main. Use it when Medousa should sit beside other apps instead of owning the screen. See [Navigation and surfaces](guide:navigation-surfaces).
+Toggle a floating strip for Chat / Note / Web / Views / Main when Medousa should sit beside other apps. See [Navigation](guide:navigation-surfaces).
 
 ## Mouse shake
 
-Optionally shake the mouse to summon a surface toolbar. Disable it from Spotlight if it fires by accident.
+Optionally shake the mouse to summon a surface toolbar. Disable from Spotlight if it fires by accident.
 
 ## Flow checklist
 
 1. One desk per job.
-2. Pop-outs for sustained side tasks.
+2. Pop-outs for sustained side tasks (desktop).
 3. Keyboard for pane geometry; mouse for precise editing.
-4. Keep Spotlight as the universal "I know the name" door.
+4. Keep Spotlight as the universal “I know the name” door.
 
-Related: [Themes and customization](guide:themes-customization), [Chat](guide:chat).
+Related: [Commands reference](guide:commands-reference) · [Themes](guide:themes-customization) · [Chat](guide:chat).
