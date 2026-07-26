@@ -59,6 +59,14 @@ export async function showMainWindow(): Promise<void> {
   return invoke("window_show_main");
 }
 
+export async function showGuide(): Promise<void> {
+  return invoke("window_show_guide");
+}
+
+export async function hideGuide(): Promise<void> {
+  return invoke("window_hide_guide");
+}
+
 export function isTauri(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }

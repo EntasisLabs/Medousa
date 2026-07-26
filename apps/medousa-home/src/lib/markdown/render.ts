@@ -99,6 +99,10 @@ function configureMarked(): void {
         }
         const safeHref = escapeAttr(href ?? "#");
         const titleAttr = title ? ` title="${escapeAttr(title)}"` : "";
+        const guideLink = href?.startsWith("guide:");
+        if (guideLink) {
+          return `<a href="${safeHref}" class="markdown-guide-link" data-guide-href="${safeHref}"${titleAttr}>${escapeHtml(text)}</a>`;
+        }
         const external =
           href?.startsWith("http://") || href?.startsWith("https://");
         const internalHash = href?.startsWith("#");
@@ -178,6 +182,7 @@ function sanitizeHtml(html: string): string {
       "data-wikilink-unresolved",
       "data-heading-slug",
       "data-heading-link",
+      "data-guide-href",
       "data-open-vault-note",
       "data-view-source",
       "id",
@@ -222,6 +227,9 @@ function sanitizeHtml(html: string): string {
       "sup",
       "section",
     ],
+    // Keep Operator's Guide deep-links (`guide:chat`, `guide:chat#panes`).
+    ALLOWED_URI_REGEXP:
+      /^(?:(?:(?:f|ht)tps?|mailto|tel|callto|sms|cid|xmpp|guide):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i,
   });
 }
 

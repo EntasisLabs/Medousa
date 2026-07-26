@@ -211,6 +211,10 @@ pub fn run() {
                         api.prevent_close();
                         let _ = window.hide();
                     }
+                    "guide" => {
+                        api.prevent_close();
+                        let _ = window.hide();
+                    }
                     _ => {}
                 }
             }
@@ -690,6 +694,10 @@ pub fn run() {
             window::window_hide_view_popout,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             window::window_show_main,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            window::window_show_guide,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            window::window_hide_guide,
             tray::tray_update_blocked_count,
             #[cfg(target_os = "ios")]
             live_activity::live_activity_is_available,

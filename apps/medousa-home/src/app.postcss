@@ -4387,13 +4387,14 @@
     /* color from workshop-shell --shell-muted */
   }
 
-  /* 2-col key/value: tidy label column. 3+ cols stay content-shared. */
+  /* 2-col tables: give the label column a share of the grid, but always wrap.
+     nowrap made long checklist / operator rows overflow into column 2. */
   .markdown-content table:has(tr > :nth-child(2):last-child) :is(th, td):first-child {
-    width: 28%;
-    max-width: 12rem;
-    white-space: nowrap;
-    overflow-wrap: normal;
-    word-break: normal;
+    width: 38%;
+    max-width: none;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
   }
 
   .markdown-content table:not(:has(tr > :nth-child(2):last-child)) td:first-child {
@@ -8245,6 +8246,23 @@
     font-size: 0.75rem;
     line-height: 1.45;
     color: rgb(var(--shell-muted, var(--color-surface-400)));
+  }
+
+  .settings-learn-more {
+    display: inline-flex;
+    align-items: center;
+    margin: -0.35rem 0 0.65rem;
+    border: 0;
+    background: transparent;
+    padding: 0;
+    font-size: 0.68rem;
+    font-weight: 550;
+    color: rgb(var(--color-surface-500));
+    cursor: pointer;
+  }
+
+  .settings-learn-more:hover {
+    color: rgb(var(--color-surface-300));
   }
 
   .settings-charter-line {

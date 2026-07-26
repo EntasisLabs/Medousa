@@ -17,6 +17,7 @@
   } from "$lib/types/workshopRegistry";
   import { COLOR_THEME_OPTIONS, isColorThemeId } from "$lib/types/colorThemes";
   import { pickExternalFolder } from "$lib/utils/externalDeskApi";
+  import { openGuide } from "$lib/guide/openGuide";
   import { isTauri } from "$lib/window";
 
   const ICON_OPTIONS: { id: WorkshopIcon; label: string }[] = [
@@ -192,6 +193,13 @@
         <p class="settings-subsection-lead">
           One active connection — switch, or add another.
         </p>
+        <button
+          type="button"
+          class="settings-learn-more"
+          onclick={() => void openGuide("workshops-connections")}
+        >
+          Learn more
+        </button>
       </div>
       <div class="ws-band-actions">
         <button

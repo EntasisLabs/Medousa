@@ -12,11 +12,14 @@
   import { workshops } from "$lib/stores/workshops.svelte";
   import {
     Activity,
+    CircleHelp,
     LoaderCircle,
     Radio,
     Unplug,
     Workflow,
   } from "@lucide/svelte";
+  import { openGuide } from "$lib/guide/openGuide";
+  import { isTauri } from "$lib/window";
 
   interface Props {
     health: DaemonHealth | null;
@@ -242,6 +245,18 @@
       >
         <Workflow size={12} strokeWidth={1.85} class="shrink-0 opacity-80" aria-hidden="true" />
         <span class="tabular-nums">{automationsRatio}</span>
+      </button>
+    {/if}
+
+    {#if isTauri()}
+      <button
+        type="button"
+        class="workshop-status-spotlight"
+        title="Operator's Guide"
+        aria-label="Open Operator's Guide"
+        onclick={() => void openGuide()}
+      >
+        <CircleHelp size={12} strokeWidth={1.85} />
       </button>
     {/if}
 

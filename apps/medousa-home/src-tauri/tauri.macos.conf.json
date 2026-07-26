@@ -76,6 +76,17 @@
         "minHeight": 360,
         "visible": false,
         "resizable": true
+      },
+      {
+        "label": "guide",
+        "title": "Operator's Guide",
+        "url": "/popout/guide",
+        "width": 860,
+        "height": 920,
+        "minWidth": 640,
+        "minHeight": 480,
+        "visible": false,
+        "resizable": true
       }
     ]
   }

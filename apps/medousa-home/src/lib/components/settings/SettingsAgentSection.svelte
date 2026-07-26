@@ -21,6 +21,7 @@
   import { formatModelDisplayName } from "$lib/utils/formatModelDisplay";
   import { listProviders, type ProvidersListResult } from "$lib/utils/providersApi";
   import { composerSttStatus } from "$lib/utils/composerStt";
+  import { openGuide } from "$lib/guide/openGuide";
   import { ChevronDown } from "@lucide/svelte";
 
   interface Props {
@@ -378,6 +379,13 @@
       <p class="settings-subsection-lead">
         Who answers, sees, and listens — changes apply immediately.
       </p>
+      <button
+        type="button"
+        class="settings-learn-more"
+        onclick={() => void openGuide("chat")}
+      >
+        Learn more
+      </button>
     </div>
 
     <div class="agent-models">

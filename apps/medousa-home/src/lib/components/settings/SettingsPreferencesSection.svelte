@@ -6,6 +6,7 @@
   import { workshops } from "$lib/stores/workshops.svelte";
   import type { ColorThemeId } from "$lib/types/colorThemes";
   import { presetDisplayLabel } from "$lib/utils/customViewStatus";
+  import { openGuide } from "$lib/guide/openGuide";
   import { isTauri } from "$lib/window";
   import { isTauriMobilePlatform } from "$lib/platform";
   import {
@@ -123,6 +124,13 @@
       <p class="settings-subsection-lead">
         Theme for <span class="prefs-layout-name">{activeLayoutLabel}</span>
       </p>
+      <button
+        type="button"
+        class="settings-learn-more"
+        onclick={() => void openGuide("themes-customization")}
+      >
+        Learn more
+      </button>
     </div>
 
     <div class="prefs-stack">
@@ -252,6 +260,13 @@
     <div class="prefs-band-head">
       <h3 class="settings-subsection-heading">Everyday</h3>
       <p class="settings-subsection-lead">Saved on this device.</p>
+      <button
+        type="button"
+        class="settings-learn-more"
+        onclick={() => void openGuide("keyboard-flow")}
+      >
+        Learn more
+      </button>
     </div>
 
     <div class="prefs-grid">

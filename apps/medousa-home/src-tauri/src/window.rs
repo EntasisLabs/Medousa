@@ -164,6 +164,22 @@ pub fn window_show_main(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+pub fn window_show_guide(app: AppHandle) -> Result<(), String> {
+    let window = guide_window(&app)?;
+    window.show().map_err(|err| err.to_string())?;
+    window.set_focus().map_err(|err| err.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn window_hide_guide(app: AppHandle) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window("guide") {
+        window.hide().map_err(|err| err.to_string())?;
+    }
+    Ok(())
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BrowserPresentOptions {
@@ -228,6 +244,11 @@ fn desktop_toolbar_window(app: &AppHandle) -> Result<WebviewWindow, String> {
 fn view_popout_window(app: &AppHandle) -> Result<WebviewWindow, String> {
     app.get_webview_window("view-popout")
         .ok_or_else(|| "view popout window is not configured".to_string())
+}
+
+fn guide_window(app: &AppHandle) -> Result<WebviewWindow, String> {
+    app.get_webview_window("guide")
+        .ok_or_else(|| "guide window is not configured".to_string())
 }
 
 /// Place the browser window to the right of main on first show (when still at default position).

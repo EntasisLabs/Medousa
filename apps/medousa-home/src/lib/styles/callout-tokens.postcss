@@ -40,10 +40,17 @@
     width: 1rem;
     height: 1rem;
     margin: 0;
-    /* Cap-height optical center sits above the flex midpoint for bold UI text. */
-    transform: translateY(-0.35rem);
     color: inherit;
     line-height: 0;
+  }
+
+  /*
+   * Live contenteditable titles sit a hair high vs SVG icons; Preview uses the
+   * same flex header with a plain span — keep the optical nudge Live-only so
+   * markdown preview doesn't drop the title below the icon.
+   */
+  .vault-live-callout .liquid-callout-icon {
+    transform: translateY(-0.35rem);
   }
 
   .liquid-callout-icon svg,

@@ -264,7 +264,9 @@
 
   <SettingsWorkshopsSection {onDaemonHealth} lead />
 
-  <SettingsAppUpdateCard />
+  <div class="prefs-band">
+    <SettingsAppUpdateCard />
+  </div>
 
   <div class="prefs-band">
     <div class="prefs-band-head">

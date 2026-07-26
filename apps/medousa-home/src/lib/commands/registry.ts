@@ -14,6 +14,7 @@ import {
 import { homeChannelSurface, formatShortcut } from "$lib/platform";
 import { appUpdate } from "$lib/stores/appUpdate.svelte";
 import { openAppUpdateDownload } from "$lib/utils/appUpdate";
+import { openGuide } from "$lib/guide/openGuide";
 import { isTauri, toggleDesktopToolbar } from "$lib/window";
 import { humanBrowser } from "$lib/stores/humanBrowser.svelte";
 import { copyBrowserUrl, openUrlInDefaultBrowser } from "$lib/utils/browserActions";
@@ -431,6 +432,18 @@ export function buildPaneCommands(): WorkshopCommand[] {
         toast.show(visible ? "Desktop toolbar on" : "Desktop toolbar off", {
           durationMs: 1400,
         });
+        ctx.callbacks.close();
+      },
+    },
+    {
+      id: "open-operators-guide",
+      section: "advanced",
+      label: "Open Operator's Guide",
+      subtitle: "In-app manual for navigation, chat, themes, and more",
+      keywords: "help wiki docs manual guide operators handbook documentation ?",
+      advanced: false,
+      run: async (ctx) => {
+        await openGuide();
         ctx.callbacks.close();
       },
     },

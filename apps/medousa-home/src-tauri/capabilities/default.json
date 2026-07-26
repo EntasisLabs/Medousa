@@ -10,7 +10,8 @@
     "vault-sticky",
     "browser",
     "desktop-toolbar",
-    "view-popout"
+    "view-popout",
+    "guide"
   ],
   "permissions": [
     "core:default",
