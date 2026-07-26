@@ -1,8 +1,6 @@
-# Liquid reference
+# Liquid blocks
 
-Liquid fences are interactive document blocks in vault notes (and optionally chat). Insert from the Live slash menu **Blocks** section, or type a fence in Build.
-
-Guide authors: callouts in *this* manual also use ` ```callout ` fences — same syntax, guide pipeline. In the vault, callout is one Liquid kind among many.
+**Advanced.** Liquid blocks are interactive pieces inside notes (cards, charts, feeds, and more). Insert them from the Live slash menu under **Blocks**, or type them in Build.
 
 Related: [Vault and notes](guide:vault-notes) · [Views and environments](guide:views-environments)
 
@@ -40,7 +38,7 @@ legend: bottom
 
 ### Feed (last-good)
 
-`feed` blocks hydrate the latest good automation / Stasis output. Empty: “No feed output yet.” Custom views may badge **Live feed** / **Stale feed**.
+`feed` blocks show the latest good automation output. Empty: “No feed output yet.” Custom views may badge **Live feed** / **Stale feed**.
 
 Prefer configuring living blocks in **Live** (builders/sheets) rather than bouncing to Build to fix a slash mistake.
 

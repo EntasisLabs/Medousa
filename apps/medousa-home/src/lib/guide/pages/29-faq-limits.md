@@ -1,6 +1,6 @@
-# Known limits and FAQ
+# FAQ and limits
 
-Hard caps from the product, plus short answers. Troubleshooting tree: [Troubleshooting](guide:troubleshooting).
+Short answers. For step-by-step recovery, see [Troubleshooting](guide:troubleshooting).
 
 ## Limits
 
@@ -10,45 +10,39 @@ Hard caps from the product, plus short answers. Troubleshooting tree: [Troublesh
 | Panes per desktop | 4 |
 | Tabs per desktop | 16 |
 | Browser tabs | 12 |
-| Workshops in registry | 10 |
-| Custom voice presets | 8 (+ builtin Default / Direct) |
-| Attachments per message | 5 |
-| Attachment size | 25 MB each |
-| Content zoom | ~70–160% (desktop) |
-| Work card hide / wipe | 1–168 hours / 1–90 days |
-| Trash list UI | ~80 entries |
-| Versions history UI | ~40 commits |
+| Workshops you can save | 10 |
+| Custom voice presets | 8 (+ Default and Direct) |
+| Files per chat message | 5 |
+| File size | 25 MB each |
+| Window zoom (desktop) | About 70–160% |
 
 ## FAQ
 
 **Why is chat empty / notes missing?**  
-Wrong **active workshop** — status bar switcher. [Getting started](guide:getting-started).
+Wrong **workshop** — check the name in the status bar. [Getting started](guide:getting-started).
 
 **Why can’t I install Packages on my phone?**  
-Packages and MCP install on the **desktop host** only. [Platform matrix](guide:platform-matrix).
+Install optional pieces on the **desktop app**. [Desktop, web, and phone](guide:platform-matrix).
 
 **Why does Allow keep asking?**  
-Permission UI is per request (no always-allow toggle). [Permissions](guide:permissions-budgets).
+Each request is a new decision — there’s no “always allow” switch. [Permissions](guide:permissions-budgets).
 
-**Empty module allowlist?**  
-Means the **full** tool catalog is allowed — tighten for experiments.
-
-**Shell on + empty binary allowlist?**  
-Warned as unsafe — set an allowlist before trusting schedules.
+**What does an empty tool list mean?**  
+In advanced Runtime settings, empty can mean **all tools allowed**. Tighten the list when experimenting.
 
 **Can I remap shortcuts?**  
-No remapping UI. [Commands reference](guide:commands-reference).
+No. See [Commands reference](guide:commands-reference).
 
-**Month calendar unusable on phone?**  
-Defaults toward **Day** view. [Calendar](guide:calendar).
+**Month calendar feels tiny on phone?**  
+Phones often open **Day** view. [Calendar](guide:calendar).
 
 **Shared rooms missing?**  
-Enable Shared mode on a capable host workshop.
+Turn on Shared mode under Settings → Sharing on a computer that supports it.
 
-**Is web the same as desktop?**  
-No — no local packages/MCP install, no pop-outs, limited charter save. [Platform matrix](guide:platform-matrix).
+**Is the browser version the same as the desktop app?**  
+No — the desktop app can install packages and open pop-out windows. [Platform matrix](guide:platform-matrix).
 
-**Where is Rhythm settings?**  
-Merged into **Preferences**.
+**Where did Rhythm settings go?**  
+They’re under **Preferences**.
 
-Next: [What’s new](guide:whats-new) · [Documentation governance](guide:docs-governance).
+Next: [What’s new](guide:whats-new) · [Find answers](guide:find-answers).

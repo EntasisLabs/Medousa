@@ -20,7 +20,7 @@ Pinned folders stay on this Mac; remote workshops show that Your files are local
 | **Build** | Raw markdown — format bar, split preview, **Links** panel |
 | **Preview** | Read-only rendered note |
 
-Switch via overflow (**Edit source** / **Back to Live**, often ⇧E). Live is the note; Build is the escape hatch for raw source — see the Liquid Live product rule in the repo if you contribute UI.
+Switch via overflow (**Edit source** / **Back to Live**, often ⇧E). **Live** is the normal editing view; **Build** shows the raw text when you need it.
 
 Autosave runs on a short debounce (about 4.5s) when enabled; header shows **Saving…** / **Saved**. Manual **Save now** (⇧S) is available from Build habits. Autosave pauses during conflicts, agent proposals, or slash composition.
 

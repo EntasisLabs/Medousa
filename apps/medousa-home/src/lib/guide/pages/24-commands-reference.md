@@ -1,6 +1,6 @@
 # Commands and keyboard reference
 
-Generated from `keyboardShortcutsCatalog.ts`, `slashCommands.ts`, and `commands/registry.ts`. Regenerate with `npm run guide:generate`. There is **no remapping UI** — bindings are fixed.
+Full list of keyboard shortcuts and Spotlight commands. Shortcuts can’t be remapped in Settings — these bindings are fixed.
 
 Related: [Keyboard and flow](guide:keyboard-flow) · [Chat](guide:chat) · [Browser and web research](guide:browser)
 
@@ -142,4 +142,4 @@ Contextual commands (rename desktop, per-desktop switch, etc.) appear when relev
 
 ---
 
-*Generated 2026-07-26. Do not hand-edit tables — change source catalogs and re-run `npm run guide:generate`.*
+*This list matches the current app. When something is missing from Spotlight, search by name — contextual commands appear only when they apply.*

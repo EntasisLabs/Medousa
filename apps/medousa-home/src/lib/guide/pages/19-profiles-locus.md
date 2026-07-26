@@ -1,6 +1,6 @@
-# Profiles, identity, and Locus
+# You and the Map
 
-**You** is the identity field — who the workshop knows you (and others) as. **Map** is the session link graph (Locus moments and notes). Neither is a specialist agent.
+**You** is who Medousa knows you (and other people) as. **Map** shows recent chats and linked notes. Neither is the same as an imported Agent.
 
 Related: [Architecture and terminology](guide:architecture) · [Sharing and phone](guide:sharing-phone) (Shared seats)
 

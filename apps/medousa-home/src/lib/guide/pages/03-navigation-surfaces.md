@@ -1,13 +1,13 @@
 # Navigation and surfaces
 
-Medousa is organized as **surfaces** you switch between — not as a stack of unrelated apps. This chapter is the inventory: what exists, where it lives on desktop vs phone, and how panes/desktops behave.
+Medousa is a set of **places** you switch between — Chat, Library, Web, and more — not a pile of separate apps. Here’s where things live on computer and phone.
 
 ## The rail and the dock
 
 **Desktop**
 
 - **Primary rail** — destinations from the active **layout preset**, in order. Use it for big context changes.
-- **Folded / dock** — not in the primary strip: **Settings**, **Runtime**, **You** (always a bottom dock door), **Messaging (Channels)**, and internal hosts like **workshop** / retired **context**.
+- **Dock** — usually **Settings**, **Runtime**, **You**, and **Channels** live here rather than in the main strip.
 - **Spotlight** (`⌘K` / `Ctrl+K`) — jump to a surface by name when you already know the destination.
 - **Edit destinations** — status bar layout menu; show/hide and reorder surfaces for the current preset (Settings and Runtime stay available as safety surfaces).
 
@@ -25,7 +25,7 @@ Labels are what operators see. Availability depends on the active layout preset 
 | **Library** | Notes, Local Files, Presentations |
 | **Calendar** | Day / week / month; phones often default to Day |
 | **Web** | Human browser (tabs, history, bookmarks) |
-| **Map** | Session link map (Locus) — rail label **Map**, full title *Session link map* |
+| **Map** | Picture of recent chats and linked notes |
 | **You** | Profiles / identity field (dock door) |
 | **Automations** | Scripts, Agents, Flows, Schedules, History |
 | **Peers** | Nearby workshops, trust, inbox |

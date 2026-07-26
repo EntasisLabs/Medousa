@@ -1,121 +1,80 @@
 # Troubleshooting
 
-Start from what you **see**, not from a guess about the daemon. For mental model and connection basics, see [Architecture](guide:architecture) and [Getting started](guide:getting-started).
+Start from what you **see** on screen. Basics: [Getting started](guide:getting-started) · [Find answers](guide:find-answers).
 
-## Offline / reconnect
+## Offline / can’t connect
 
-| You see | Do this |
-|---------|---------|
-| Status **Offline** / **Connecting…** | Settings → **Workshop** → address → **Save & test** |
-| Chat offline gate | Desktop: **Start** / **Restart Medousa**, **Connection settings**, engine log |
-| Phone cannot reach host | Same Wi‑Fi; host **Sharing** exposure; fresh QR / pairing link |
-| Browser preview only | Run the Medousa desktop app to chat |
+| You see | Try |
+|---------|-----|
+| Status **Offline** or **Connecting…** | Settings → **Workshop** → **Save & test** |
+| Chat blocked by Offline | Desktop: **Start** / **Restart**; check Connection settings |
+| Phone can’t reach the computer | Same Wi‑Fi; computer awake; fresh QR under Sharing → Phone |
+| Browser-only preview | Install and run the desktop app to chat |
 
-Spotlight **Check daemon health** when available. Deep runbook: connection reliability (bundled under Workshop resources).
+Spotlight may offer **Check daemon health** — that checks whether Medousa on this computer is running.
 
 ## Wrong workshop
 
-Sessions and vault belong to the **active workshop**. If notes or chat look alien: status bar workshop switcher, or Settings → Workshop → switch active workshop. See [Getting started](guide:getting-started#first-connection-checklist).
+Notes and chats belong to the **active workshop**. If things look alien, switch workshops in the status bar or Settings → Workshop.
 
-## Cannot send chat
+## Can’t send a message
 
-1. Offline gate? Fix connection first.
-2. Empty draft with no attachments?
-3. Sending an **image** without a Vision model → Settings → Models.
-4. API key rejected → Settings → Medousa Agent → Providers / Models (exact error often says so).
+1. Offline? Fix connection first.
+2. Empty message with no attachments?
+3. Sending a **picture**? Set a Vision model under Settings → Medousa Agent → Models.
+4. API key error? Check Models / Providers on the computer.
 
-## Stalled or silent turn
+## Stuck or silent reply
 
-1. Connection still Connected?
-2. [Work](guide:work-jobs) — card **blocked** or stuck **in flight**?
-3. Chat — pending **permission** or **budget** bar?
-4. **Browser verification** banner — complete check → **Continue agent**.
-5. External runtime (Cursor/Codex) — confirm that agent is still alive outside Home.
-6. Last resort: Settings → Workshop → **Restart** engine (pauses active chats).
+1. Still Connected?
+2. Open **Work** — is a card **blocked**?
+3. Chat — waiting for **Allow** or **Approve**?
+4. Browser — verification / CAPTCHA banner? Finish it, then **Continue agent**.
+5. Last resort: Settings → Workshop → **Restart** (chats pause briefly).
 
-There may be no single Cancel button for every runtime; Work drag-to-cancel helps for in-flight cards.
+## Allow / Approve prompts
 
-## Budget blocked
+- **Allow / Deny** — permission for a tool.
+- **Approve / Deny** — more tool rounds for a long task; `/budget list` lists pending ones.
 
-- Chat: **Needs your approval** → Approve / Deny / Work
-- `/budget list` then `/budget approve` or `deny`
-- Work inspector on the blocked card
+→ [Permissions](guide:permissions-budgets)
 
-Details: [Permissions, budgets, and tool safety](guide:permissions-budgets).
+## Browser verification
 
-## Permission denied / waiting
+Complete the check in **Web**, then **Continue agent**. Don’t paste website passwords into chat.
 
-- Chat: **Agent needs permission** → **Allow** or **Deny**
-- Note which Runtime is asking
-- If tools seem missing after Allow, check Runtime Controls allowlists and MCP
+## Note conflict
 
-## Browser CAPTCHA / verification
+“This note changed elsewhere…”
 
-1. **Open in Web** if the challenge is not already focused.
-2. Complete the check as a human in the browser.
-3. **Continue agent**.
-
-Do not put site passwords into the chat composer.
-
-## Vault conflict
-
-Bar: **This note changed elsewhere…**
-
-| Action | When |
+| Choice | When |
 |--------|------|
-| **Reload** | Accept the other version |
-| **Keep mine** | Keep local buffer |
-| **History** | If Git versions are enabled — compare / restore |
+| **Reload** | Keep the other version |
+| **Keep mine** | Keep what you’re editing |
+| **History** | Versions is on — compare older copies |
 
-Versions and trash get a fuller chapter later; for day-one, pick Reload vs Keep mine deliberately.
+→ [Trash and versions](guide:vault-recovery)
 
-## Schedule or delivery failed
+## Schedule didn’t run / message didn’t send
 
-1. Automations → **Schedules** / **History** — failed styling, last run.
-2. Runtime → **Delivery** — pending deliveries, last delivery.
-3. Runtime → **Jobs** — failed / dead letter counts.
-4. Confirm the workshop was online at the scheduled time.
+1. Automations → Schedules / History — is it paused?
+2. **Runtime** → Delivery / Jobs (advanced).
+3. Was the computer awake at the scheduled time?
 
-## Phone discovery
+## Phone / peers / channels
 
-- Host: Settings → **Sharing** → Phone; prefer **Always reachable on Wi‑Fi** when you need companions often.
-- Guest / captive Wi‑Fi: use QR or short code, not discovery alone.
-- Re-run pairing if the invite expired.
+- Phone: Sharing exposure, same network, fresh invite — [Sharing and phone](guide:sharing-phone).
+- Peers: Connect, trust, or revoke on the Peers surface.
+- Messaging: channel status **needs_setup** until Save & connect — [Messaging channels](guide:messaging-channels).
 
-## Peer trust
+## Packages / MCP / models
 
-- **Peers** surface: Connect nearby untrusted; review trusted list; revoke when done.
-- Manual URL fallback if discovery fails.
-- Peers are not the same as phone portals — [Architecture](guide:architecture#workshop-vs-peer-vs-phone).
+- Packages and MCP install on the **desktop app**.
+- Missing tools after setup → Runtime allowlists may be too tight.
+- Dictation needs the desktop app, a dictation model, and mic permission.
 
-## MCP unavailable
+## Still stuck?
 
-- Settings → **MCP** (desktop app). Companion/web may say to connect MCP from desktop.
-- Check gateway/package install errors on that page.
-- Missing tools after config → Runtime Controls module allowlist may be excluding them.
+Write down the **exact sentence** on screen, your **workshop name**, and whether Work shows a blocked card. Then Workshop → Restart, or revisit the chapter for that screen.
 
-## Model / provider errors
-
-| Message theme | Check |
-|---------------|--------|
-| API key rejected | Settings → Models / Providers |
-| Vision required | Assign Vision model before image send |
-| Dictation / mic | Desktop app + Dictation model + mic OS permission |
-| Offline brain download | Settings → Packages; chat can still use BYOK |
-
-## Shared rooms missing
-
-Enable **Shared mode** in Settings → Sharing before **New shared room**. Older workshops may not support it.
-
-## Custom view / feed looks broken
-
-Layout preset may hide the surface; feed/runtime mismatch is covered under [Views and environments](guide:views-environments). Try Default preset, then reopen the view.
-
-## Still stuck
-
-1. Note the **exact UI sentence** (offline gate, budget bar, conflict bar).
-2. Note **workshop name**, **runtime**, and whether Work shows a blocked card.
-3. Workshop → Engine version / Restart.
-4. Open this guide’s chapter for that surface once D2 docs land — until then, Settings section names above are the map.
-
-Next: [Workshops and connections](guide:workshops-connections) for multi-engine and updates.
+Next: [Workshops and connections](guide:workshops-connections) · [Find answers](guide:find-answers).

@@ -33,7 +33,7 @@ Status lines describe Off / On · branch · clean or changed.
 | **History** → **Restore** | Confirm overwrite of current file |
 | **Advanced Git** | Branch, dirty count, worktrees |
 
-Status-bar branch whisper can **Open Versions**. Conflict bar **History** opens this panel when a repo exists.
+The status bar may offer **Open Versions**. Conflict **History** opens this panel when versioning is on.
 
 ```callout
 tone: warning

@@ -133,7 +133,7 @@ const push = (s = "") => lines.push(s);
 push("# Commands and keyboard reference");
 push("");
 push(
-  "Generated from `keyboardShortcutsCatalog.ts`, `slashCommands.ts`, and `commands/registry.ts`. Regenerate with `npm run guide:generate`. There is **no remapping UI** — bindings are fixed.",
+  "Full list of keyboard shortcuts and Spotlight commands. Shortcuts can’t be remapped in Settings — these bindings are fixed.",
 );
 push("");
 push(
@@ -200,7 +200,7 @@ push("");
 push("---");
 push("");
 push(
-  `*Generated ${new Date().toISOString().slice(0, 10)}. Do not hand-edit tables — change source catalogs and re-run \`npm run guide:generate\`.*`,
+  "*This list matches the current app. When something is missing from Spotlight, search by name — contextual commands appear only when they apply.*",
 );
 push("");
 

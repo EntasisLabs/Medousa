@@ -1,42 +1,34 @@
-# What’s new and compatibility
+# What’s new
 
-This guide ships **inside the app** and tracks the Home build you are running. It is not a substitute for release notes on GitHub/downloads, but it records guide-structure milestones and compatibility expectations.
+Notes about recent Medousa changes and what still works together. Check **Settings → Workshop → App** for your installed version and updates.
 
-Related: [Workshops and connections](guide:workshops-connections) (App update card) · [Platform matrix](guide:platform-matrix)
+Related: [Workshops and connections](guide:workshops-connections) · [Desktop, web, and phone](guide:platform-matrix)
 
-## Guide milestones (2026-07)
+## In this guide era
 
-| Train | What landed in the Operator’s Guide |
-|-------|-------------------------------------|
-| **D0** | Architecture, first-run/wizard truth, surface inventory |
-| **D1** | Chat manual, permissions/budgets, Work board, troubleshooting |
-| **D2** | Vault/recovery, browser, calendar, automations, agents, You/Map, peers/channels, views, runtime, MCP/packages, Liquid |
-| **D3** | Generated commands appendix, settings reference, platform matrix, data lifecycle, a11y/themes, recipes, FAQ, governance |
+The Operator’s Guide now covers everyday use (chat, notes, phone, troubleshooting) plus optional power topics (automations, packages, advanced settings). Start with [Find answers](guide:find-answers) if you’re new.
 
-App version in Settings → Workshop → **App** may be ahead of or behind a specific chapter — when UI and guide disagree, trust the UI and file a doc fix.
+## Compatibility
 
-## Compatibility expectations
+| Situation | What to expect |
+|-----------|----------------|
+| App and workshop | A newer app may need a newer workshop engine for features like dictation, Shared mode, or Versions |
+| Phone and computer | Pair again after a major computer rebuild; keep them on a similar generation |
+| Themes and layouts | Switching a layout can change colors — themes follow the active layout |
 
-| Pairing | Expectation |
-|---------|-------------|
-| Home ↔ engine | Newer Home may need a newer daemon for dictation, Shared mode, MCP, Versions |
-| Phone ↔ host | Pair with a host on the same major train; re-pair after host rebuilds |
-| Guide ↔ UI | Chapter ids are stable; file numbers may change when chapters insert |
-| Themes / layouts | Named themes are layout-scoped — switching presets can change colors |
+## Names that changed
 
-## Deprecated / renamed labels
+| Older wording | Current |
+|---------------|---------|
+| Settings → Rhythm | **Preferences** (Look, Everyday, Work cards) |
+| Workspace (sometimes) | Often **Library** on the rail |
+| Recipes (scripts) | **Templates** in Automations |
+| Specialists (surface) | **Agents** |
 
-| Old copy | Current |
-|----------|---------|
-| Settings → Rhythm | Preferences (Work cards, Everyday, Look) |
-| Workspace (rail) | Often **Library** in nav (Spotlight may still say Workspace) |
-| Recipes (scripts) | UI **Templates** |
-| Specialists (surface) | UI **Agents** |
-
-## How to check your build
+## Check your build
 
 1. Settings → Workshop → App version / Check for updates.
-2. Workshop → Engine tile — version and tool count.
-3. Spotlight → Operator’s Guide — you are reading the bundled chapters for this build.
+2. Workshop status — engine version when shown.
+3. Spotlight → Operator’s Guide — you’re reading the guide bundled with this app.
 
-When you ship a user-visible feature, update the guide in the same change set — [Documentation governance](guide:docs-governance).
+Next: [FAQ and limits](guide:faq-limits) · [Welcome](guide:welcome).

@@ -1,183 +1,77 @@
 # Operator’s Guide — docs epic
 
-> **Status:** Active (2026-07) — **D0–D3 shipped** (epic complete for first full pass)  
-> **Audience:** Operators using Medousa Home (desktop, web, phone companion)  
-> **Thesis:** The in-app Operator’s Guide ships as **orientation**. The gap is **operator reference depth** — procedures, state models, failure modes, security implications, and platform differences — so a new operator can run the product without rediscovering UI by accident.  
-> **Product content:** [`apps/medousa-home/src/lib/guide/`](../apps/medousa-home/src/lib/guide/) (`catalog.ts` + `pages/*.md`)  
-> **Gap audit canvas:** [operators-guide-gap-audit](file:///Users/theelevators/.cursor/projects/Users-theelevators-medousa/canvases/operators-guide-gap-audit.canvas.tsx) (Cursor canvas; open beside chat)
+> **Status:** Active (2026-07) — **D0–D3 coverage shipped**; **P0 Product voice / mom path** in progress/complete this pass  
+> **Audience:** End users of Medousa Home (product), not contributors  
+> **Thesis:** The in-app guide is a **product manual**. Coverage is broad; voice and TOC must stay everyday-first. Project hygiene lives in the repo, not in the reader TOC.  
+> **Product content:** [`apps/medousa-home/src/lib/guide/`](../apps/medousa-home/src/lib/guide/)  
+> **Project maintenance:** [operators-guide-maintenance.md](operators-guide-maintenance.md) · `.cursor/rules/operators-guide.mdc`
 
-**Related:** [polish-and-package-plan.md](polish-and-package-plan.md) (felt polish F-phases — parallel, not a substitute) · [ROADMAP.md](ROADMAP.md)
+**Related:** [polish-and-package-plan.md](polish-and-package-plan.md) · [ROADMAP.md](ROADMAP.md)
 
 ---
 
 ## Reality check
 
-The guide window, TOC, Spotlight entry, status-bar entry, and Settings “Learn more” links are **shipped**. **Thirty-two** chapters after D3 — concepts, task manuals, and reference appendices. Ongoing work is drift control (`npm run guide:generate`), deepening thin spots (e.g. workshops), and release-tied What’s new notes.
+In-app guide: **Start / Everyday / Create / Connect / More** (~32 chapters including Find answers; governance removed from TOC).  
+Mom lives in **Start + Everyday**. Power topics stay under **More** / advanced Create chapters.
 
-| Group | Chapters today |
-|-------|----------------|
-| Start | Welcome, Architecture, Getting started |
-| Workspace | Navigation, Chat, Permissions, Work, Browser, Calendar, Profiles/Locus, Themes/a11y |
-| Craft | Vault, Recovery, Liquid, Views, Automations, Specialist agents |
-| System | Workshops, Keyboard, Commands (generated), Settings ref, Platform matrix, Data lifecycle, Sharing, Messaging, Runtime, MCP/packages, Recipes, FAQ, What’s new, Governance, Troubleshooting |
-
-Integrator / engine docs stay under [`docs/`](../docs/). Do **not** invent a parallel operator-UI tree there.
+Integrator / engine docs stay under [`docs/`](../docs/).
 
 ---
 
 ## North star
 
-> A layered documentation system inside Home: concepts → task how-tos → complete UI references → security guidance → troubleshooting → generated catalogs.  
-> Microsoft Learn–grade for operators — not a longer welcome pamphlet.
+> Product docs a non-technical reader can use to answer real questions — chat, notes, phone, offline — without seeing repo, npm, epics, or contributor process.
 
 ---
 
-## Principles
+## Principles (product)
 
-1. **Structure over length** — Do not lengthen every chapter uniformly. Add chapters and split sets when a topic needs a mini-manual.
-2. **Operator-manual voice** — Procedures, controls, state, failure modes, platform differences. Prefer “how / when / what happens if” over metaphor-only orientation.
-3. **Truth to the UI** — Document what Home actually exposes (surfaces, settings, commands). When UI and docs drift, fix docs in the same train or flag the epic.
-4. **Cross-links** — Use `[Label](guide:chapter-id)` and `#anchors`. Callouts use fenced ` ```callout ` blocks (not Liquid fences).
-5. **Generated appendices** — `npm run guide:generate` rebuilds `24-commands-reference.md` from catalogs; do not hand-edit tables.
-6. **Prefer epic order when extending** — deepen existing chapters before inventing parallel trees.
-7. **Update this epic** — When a chapter or package ships, tick checkboxes and add a working-log line in the same change set.
+1. **Everyday first** — Welcome → Find answers → Getting started → Everyday group.
+2. **UI labels over internals** — workshop, Library, Allow; not daemon/Tauri/Stasis unless quoting UI.
+3. **No project leakage** in chapter bodies — see ban list in maintenance doc / Cursor rule.
+4. **Advanced framing** on power chapters.
+5. **Generated appendix** — `npm run guide:generate` (project); emitted markdown must stay product-safe.
+6. **Update this epic** when docs packages ship.
+
+---
+
+## Mom success test
+
+Using only **Start + Everyday**, a non-technical reader can:
+
+1. Send a chat and find Voice / Stance under the box.
+2. Create or open a Library note.
+3. Pair a phone (or know QR is on the desktop).
+4. Recover from Offline via Workshop status.
+5. Understand Allow vs Deny without Runtime Controls.
 
 ---
 
 ## Phase map
 
-```mermaid
-flowchart LR
-    D0[D0 Foundations]
-    D1[D1 Core loop]
-    D2[D2 Capability depth]
-    D3[D3 Reference polish]
-
-    D0 --> D1 --> D2 --> D3
-```
-
 | Phase | Theme | Status |
 |-------|--------|--------|
-| D0 | Foundations — mental model, first-run, surface inventory, glossary | ✅ |
-| D1 | Core loop — chat, permissions/budgets, Work, troubleshooting | ✅ |
-| D2 | Capability depth — vault, browser, automations, identity, peers, views, runtime, MCP, Liquid | ✅ |
-| D3 | Reference polish — generated catalogs, settings ref, matrix, recipes, governance | ✅ |
+| D0–D3 | Coverage (concepts → reference) | ✅ |
+| **P0** | Product voice / mom path / leak scrub | ✅ this pass |
+
+### P0 packages
+
+- [x] Remove in-app governance; move to [operators-guide-maintenance.md](operators-guide-maintenance.md)
+- [x] Find answers + Welcome front door
+- [x] TOC groups Start / Everyday / Create / Connect / More
+- [x] Soften Getting started + Architecture glossary
+- [x] Productize `guide:generate` output
+- [x] Scrub project leaks; advanced framing on power chapters
+- [x] Product What’s new / FAQ; Cursor rule + epic ban list
 
 ---
 
-## D0 — Foundations
+## D0–D3 (coverage — done)
 
-**Goal:** Operators share one mental model and can find every first-class surface.
+See working log. Chapter homes remain; titles/groups may change for product clarity.
 
-**Done when:**
-- Architecture / terminology chapter exists (workshop vs peer vs phone portal; profile vs specialist; state scopes).
-- Getting started matches the real wizard / first-run / reconnect paths (and how to rerun).
-- Navigation chapter includes a real surface inventory (incl. Library and Automations modes, panes/tabs/desktops, mobile More hub).
-- Glossary covers the terms operators hit in the shell.
-
-### Packages
-
-- [x] **D0.1** Platform mental model and terminology — `guide:architecture` (`01-architecture-terminology.md`)
-- [x] **D0.2** Complete first-run and connection guide — expanded `guide:getting-started`
-- [x] **D0.3** Navigation and surface inventory rewrite — expanded `guide:navigation-surfaces`
-
----
-
-## D1 — Core loop
-
-**Goal:** Day-one chat and background work are operable and safe.
-
-**Done when:**
-- Chat documents composer, attachments, models/routing, context, sessions/export, offline, long-running turns.
-- Permissions, tool posture, budgets (`/budget`), and browser verification have an operator home.
-- Work board lifecycle (`/ask`, cancel, blocked, retention) is documented.
-- Troubleshooting decision tree covers connection, chat, tools, browser challenge, schedules, vault, pairing.
-
-### Packages
-
-- [x] **D1.1** Chat operating manual — expanded `guide:chat`
-- [x] **D1.2** Permissions, budgets, and safe tool use — `guide:permissions-budgets`
-- [x] **D1.3** Work and background jobs — `guide:work-jobs`
-- [x] **D1.4** Troubleshooting decision tree — `guide:troubleshooting`
-
----
-
-## D2 — Capability depth
-
-**Goal:** Major missing surfaces and systems have task-based chapters, not one-liners.
-
-**Done when:** Each package below has a dedicated chapter (or mini-set) with procedures and failure modes.
-
-### Packages
-
-- [x] **D2.1** Vault documentation set — expanded `guide:vault-notes`
-- [x] **D2.2** Vault recovery and versions — `guide:vault-recovery`
-- [x] **D2.3** Browser and web research — `guide:browser`
-- [x] **D2.4** Automations set — expanded `guide:grapheme-automations`
-- [x] **D2.5** Specialist agents and skills — `guide:specialist-agents`
-- [x] **D2.6** Profiles, identity, and Locus — `guide:profiles-locus`
-- [x] **D2.7** Phone, peers, and shared mode — expanded `guide:sharing-phone`
-- [x] **D2.8** Messaging channels — `guide:messaging-channels`
-- [x] **D2.9** Views, canvas, and environments — expanded `guide:views-environments`
-- [x] **D2.10** Runtime telemetry — `guide:runtime-telemetry`
-- [x] **D2.11** MCP and packages — `guide:mcp-packages`
-- [x] **D2.12** Liquid authoring reference — `guide:liquid-reference`
-- [x] **D2.13** Calendar and `.ics` — `guide:calendar`
-
----
-
-## D3 — Reference polish
-
-**Goal:** Drift-resistant catalogs and cross-cutting ops docs.
-
-**Done when:** Appendices are maintainable; settings and platform matrices exist; governance checklist is written.
-
-### Packages
-
-- [x] **D3.1** Generated keyboard + Spotlight + slash appendix — `guide:commands-reference` (`npm run guide:generate`)
-- [x] **D3.2** Settings reference — `guide:settings-reference`
-- [x] **D3.3** Desktop / web / phone capability matrix — `guide:platform-matrix`
-- [x] **D3.4** Data locations, backup, migration, retention — `guide:data-lifecycle`
-- [x] **D3.5** Themes, accessibility, reduced motion — expanded `guide:themes-customization`
-- [x] **D3.6** Operator recipes / runbooks — `guide:operator-recipes`
-- [x] **D3.7** FAQ, known limits, What’s new — `guide:faq-limits` · `guide:whats-new`
-- [x] **D3.8** Documentation governance — `guide:docs-governance`
-
----
-
-## Capability index (D0–D3)
-
-| Capability | Home |
-|------------|------|
-| Work board | D1.3 ✅ `work-jobs` |
-| Calendar | D2.13 ✅ `calendar` |
-| Human Browser + agent handoff / CAPTCHA | D2.3 ✅ `browser` |
-| You / Profiles + Locus | D2.6 ✅ `profiles-locus` |
-| Peers + shared mode / seats | D2.7 ✅ `sharing-phone` |
-| Messaging channels | D2.8 ✅ `messaging-channels` |
-| Runtime telemetry | D2.10 ✅ `runtime-telemetry` |
-| Tool permissions + budgets | D1.2 ✅ `permissions-budgets` |
-| Runtime Controls (day-one) | D1.2 ✅; settings matrix D3.2 ✅ |
-| MCP + Packages | D2.11 ✅ `mcp-packages` |
-| Specialist skills | D2.5 ✅ `specialist-agents` |
-| Vault versioning + trash | D2.2 ✅ `vault-recovery` |
-| Welcome wizard | D0.2 ✅; Garage onboarding depth still light |
-
----
-
-## Thin chapters today (expand in place or split)
-
-| Chapter id | Status |
-|------------|--------|
-| `navigation-surfaces` | D0.3 ✅ |
-| `chat` | D1.1 ✅ |
-| `vault-notes` / `vault-recovery` | D2.1–D2.2 ✅ |
-| `views-environments` | D2.9 ✅ |
-| `grapheme-automations` / `specialist-agents` | D2.4–D2.5 ✅ |
-| `sharing-phone` / `messaging-channels` | D2.7–D2.8 ✅ |
-| `workshops-connections` | Still thinner — deepen opportunistically; recipes cover multi-engine habits lightly |
-| `keyboard-flow` / `commands-reference` | D3.1 ✅ |
-| `themes-customization` | D3.5 ✅ |
+Maintenance checklist (feature → doc, generate, tests): [operators-guide-maintenance.md](operators-guide-maintenance.md).
 
 ---
 
@@ -185,41 +79,15 @@ flowchart LR
 
 | Concern | Rule |
 |---------|------|
-| Content files | `apps/medousa-home/src/lib/guide/pages/*.md` (Vite `?raw`) |
-| TOC | Register every chapter in `catalog.ts` (`GUIDE_CHAPTERS` + `GUIDE_GROUPS`) |
-| Entry points | Status bar help, Spotlight `open-operators-guide`, Settings Learn more — already wired |
-| Guide window | Tauri `guide` / `/popout/guide` |
-| Cross-links | `guide:chapter-id` (DOMPurify allowlist) |
-| Callouts | Fenced ` ```callout ` — not ` ```liquid ` |
-| Integrator docs | Stay in `docs/`; this epic is Home operator wiki only |
-| Cursor agents | See `.cursor/rules/operators-guide.mdc` when editing `guide/**` |
-
----
-
-## Suggested TOC evolution (target shape)
-
-Not a commitment to ship all at once. Prefer phased delivery above.
-
-**Start:** Welcome · Architecture & terminology · Install / first run · Getting started · Connect a workshop · First chat / note / Work card · Platform matrix  
-
-**Workspace:** Navigation · Panes/tabs/desktops · Spotlight · Chat set · Work · Browser · Calendar · Profiles · Locus · Themes/a11y · Keyboard ref  
-
-**Library:** Vault fundamentals · Organization · Live/Build/Preview · Formatting · Wikilinks · Boards/sheets · Charts/slides · Liquid ref · Export/recovery · Versions  
-
-**Custom workspace:** Views · Create/edit · Widgets/tiling · Feeds · Backup/share  
-
-**Automation:** Grapheme · Host modules · Recipes · Flows · Schedules · History/delivery · Specialists · MCP  
-
-**Collaboration:** Phone · LAN pairing · Peers · Shared mode · Channels  
-
-**System:** Workshops · Runtime · Runtime Controls · Packages · Updates · Data lifecycle · Troubleshooting · Limits · Glossary · What’s new · Recipes  
+| Product pages | `apps/medousa-home/src/lib/guide/pages/*.md` |
+| TOC | `catalog.ts` — groups start/everyday/create/connect/more |
+| Generate | `npm run guide:generate` — project only; product-safe emit |
+| Callouts | ` ```callout ` |
+| Never in-app | Epic status, npm, PR checklists, source paths, D0–D3 |
 
 ---
 
 ## Working log
 
-- **2026-07-26** — Epic created from platform-vs-guide gap audit. Eleven orientation chapters shipped; D0–D3 backlog opened.
-- **2026-07-26** — **D0 shipped:** new `architecture` chapter (mental model + glossary seed); rewritten getting-started (wizard/migration/rerun/phone/reconnect); rewritten navigation (surface matrix, Library/Automations modes, desktops, mobile More). Catalog renumbered `00`–`11`.
-- **2026-07-26** — **D1 shipped:** expanded `chat`; new `permissions-budgets`, `work-jobs`, `troubleshooting` (`12`–`14`).
-- **2026-07-26** — **D2 shipped:** expanded vault/views/automations/sharing; new `vault-recovery`, `browser`, `calendar`, `specialist-agents`, `profiles-locus`, `messaging-channels`, `runtime-telemetry`, `mcp-packages`, `liquid-reference` (`15`–`23`). Catalog at 24 chapters.
-- **2026-07-26** — **D3 shipped:** `guide:generate` appendix (`commands-reference`); settings/platform/data chapters; themes/a11y; recipes; FAQ; What’s new; docs-governance. Catalog at 32 chapters. First full epic pass complete.
+- **2026-07-26** — Epic created; D0–D3 coverage shipped (orientation → reference).
+- **2026-07-26** — **P0 Product voice:** Find answers; TOC regroup; governance → architecture only; generator product copy; leak scrub; mom success test; Cursor rule ban list.

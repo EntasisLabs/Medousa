@@ -1,66 +1,58 @@
-# Themes, accessibility, and quiet chrome
+# Themes and look
 
-Medousa should feel like *your* bench. Customize carefully — loud chrome fights flow.
+Make Medousa comfortable to look at — then leave it alone while you work.
 
-Related: [Settings reference](guide:settings-reference) · [Keyboard and flow](guide:keyboard-flow) · [Platform matrix](guide:platform-matrix)
+Related: [Settings reference](guide:settings-reference) · [Keyboard and flow](guide:keyboard-flow)
 
-## Light / dark vs named theme
+## Light, dark, and color
 
-| Control | Where | Scope |
-|---------|-------|--------|
-| **Light / dark** | Preferences header toggle | This device (`document` class + localStorage) |
-| **Named color theme** | Preferences → **Look** | **Active layout preset** — switching presets can change theme |
+| Control | Where |
+|---------|--------|
+| **Light / dark** | Settings → Preferences (top toggle) |
+| **Color theme** | Preferences → **Look** |
 
-Pick one theme per desk. Thrashing themes mid-task costs more than it gives.
+Themes follow your **active layout**. Switching layouts can change colors.
 
-## Shell chrome (Look)
+## What to show or hide
 
-Room / shell options under Look can show or hide:
-
-- Left rail
-- Vault chat FAB
-- Vault sidebar
-- Mobile Home tab behavior
-- Layout preset advanced controls
-
-Layout presets also carry destination order — [Navigation](guide:navigation-surfaces) and [Views](guide:views-environments).
+Under **Look** you can show or hide things like the left rail, vault chat button, and vault sidebar. Layout presets also control which destinations appear — [Navigation](guide:navigation-surfaces).
 
 ## Zoom
 
-| Kind | How | Notes |
-|------|-----|--------|
-| **Content zoom** | Spotlight Zoom in/out/reset, or ⌘+/−/0 (desktop) | Scales whole UI like a browser (about 70–160%); no-op on web/phone |
-| **Pane zoom** | ⌘; z / Spotlight **Zoom pane** | Maximizes one pane, not UI scale |
+| Kind | How |
+|------|-----|
+| Whole window | Spotlight **Zoom in / out / Reset**, or ⌘+/−/0 on desktop |
+| One pane | Spotlight **Zoom pane** or the pane shortcut |
 
-## Everyday and display prefs
+Whole-window zoom works in the desktop app (roughly 70–160%).
+
+## Everyday preferences
 
 Preferences → **Everyday** / **More display**:
 
-- Work-done alerts, workshop guidance, open Web when the agent browses
-- Mobile: **Remote push**, **Live Activity**
-- Technical activity, engine details in chat, model picker visibility, **Liquid chat**
+- Alerts when work finishes, workshop guidance, open Web when browsing
+- On phone: remote push and Live Activity when available
+- Model picker visibility, Liquid chat, technical detail in chat
 
-Work card retention (hide / wipe) is under Preferences → **Work cards** — [Data and recovery](guide:data-lifecycle).
+Work card cleanup: Preferences → **Work cards** — [Where your data lives](guide:data-lifecycle).
 
-## Accessibility
+## Comfort and accessibility
 
-| Concern | Behavior |
-|---------|----------|
-| **Reduced motion** | Honors OS `prefers-reduced-motion` — wizard, chat, shell, Liquid. No in-app toggle. |
-| **Keyboard** | Spotlight + pane prefix chords — [Commands reference](guide:commands-reference). No remapping UI. |
-| **Focus** | Prefer keyboard for pane geometry; mouse for precise editing. |
-| **Contrast / theme** | Choose a named theme that reads clearly; pair with light/dark. |
-| **Drag alternatives** | Many drag actions have Spotlight or menu equivalents (cancel Work via drop zone still pointer-first — use card inspector when needed). |
+| Need | What Medousa does |
+|------|-------------------|
+| Less motion | Follows your system “reduce motion” setting |
+| Keyboard | Spotlight and shortcuts — [Commands reference](guide:commands-reference) |
+| Clearer colors | Try another named theme with light or dark |
+| Harder drag actions | Many have a menu or Spotlight alternative |
 
-## What not to customize first
+## Don’t over-tune on day one
 
 | Resist | Why |
 |--------|-----|
-| Per-message model hopping | Breaks continuity; prefer favorites |
-| Maximal panes on day one | Learn one desk, then split |
-| Turning every badge on | Status noise trains you to ignore status |
-| Shell tools on with empty allowlists | Security — [Permissions](guide:permissions-budgets) |
+| Changing model every message | Prefer favorites |
+| Too many panes at once | Learn one desk first |
+| Turning every badge on | Noise trains you to ignore status |
 
-When something feels wrong visually, check zoom and theme before filing a bug.
+If something feels wrong visually, try zoom and theme before assuming a bug.
 
-Next: [Commands reference](guide:commands-reference) · [Settings reference](guide:settings-reference).
+Next: [Find answers](guide:find-answers) · [Chat](guide:chat).

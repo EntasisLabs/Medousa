@@ -1,43 +1,41 @@
 # Welcome
 
-Medousa is a workshop for thinking with an agent — chat, vault notes, custom views, scripts, and the desktop around them — wired to a local engine you control.
+Medousa is your workshop for thinking with an AI helper — chat, notes, and the tools around them — running on a computer you control. No account required.
 
-This is the **Operator's Guide**: a digital manual for how to hold the tool, what each control does, and how the pieces fit.
+This **Operator’s Guide** is the product manual. Use it when you want to know what a control does, or how to fix something that feels stuck.
 
-## How to use this guide
+## I want to…
 
-- The left sidebar is the table of contents. Chapters are grouped: **Start**, **Workspace**, **Craft**, **System**.
-- The right pane is the reader. Long chapters also show an in-page outline of headings.
-- Links that look like they jump inside the guide use `guide:` addresses — for example [Architecture and terminology](guide:architecture) or [Chat](guide:chat).
+| Goal | Go here |
+|------|---------|
+| Ask Medousa something | [Chat](guide:chat) |
+| Save a note or find my files | [Vault and notes](guide:vault-notes) (Library) |
+| Change colors or quiet the screen | [Themes](guide:themes-customization) |
+| Use Medousa on my phone | [Sharing and phone](guide:sharing-phone) |
+| See every place in the app | [Navigation](guide:navigation-surfaces) |
+| Get set up the first time | [Getting started](guide:getting-started) |
 
-## How to open this window again
+## Something’s wrong…
 
-- Status bar: the **?** control next to Spotlight
-- Spotlight (`⌘K` / `Ctrl+K`): search **Operator's Guide**, **help**, or **manual**
-- Settings: **Learn more** links on relevant bands jump straight into a chapter
+| Problem | Go here |
+|---------|---------|
+| It says Offline / I can’t send | [Find answers](guide:find-answers#offline) · [Troubleshooting](guide:troubleshooting) |
+| It asked me to Allow or Approve | [Find answers](guide:find-answers#allow-or-approve) |
+| My notes look wrong or empty | Wrong workshop? [Getting started](guide:getting-started) · [Find answers](guide:find-answers) |
+| I need a keyboard shortcut | [Commands and keyboard reference](guide:commands-reference) |
 
-## What you will learn
+## How this guide works
 
-| Area | Start here |
-|------|------------|
-| Mental model + first run | [Architecture](guide:architecture) · [Getting started](guide:getting-started) |
-| Surfaces + chat loop | [Navigation](guide:navigation-surfaces) · [Chat](guide:chat) · [Work](guide:work-jobs) |
-| Safety + browser | [Permissions](guide:permissions-budgets) · [Browser](guide:browser) |
-| Library + Liquid | [Vault](guide:vault-notes) · [Liquid](guide:liquid-reference) · [Recovery](guide:vault-recovery) |
-| Automations + agents | [Automations](guide:grapheme-automations) · [Agents](guide:specialist-agents) |
-| Collab + channels | [Sharing](guide:sharing-phone) · [Messaging](guide:messaging-channels) |
-| Reference | [Commands](guide:commands-reference) · [Settings](guide:settings-reference) · [Platform](guide:platform-matrix) |
-| Recipes + FAQ | [Recipes](guide:operator-recipes) · [Limits](guide:faq-limits) · [Troubleshooting](guide:troubleshooting) |
+- Left side: table of contents, grouped **Start**, **Everyday**, **Create**, **Connect**, and **More**.
+- Right side: the chapter. Long chapters show an outline of headings.
+- Blue guide links jump between chapters.
 
-## Operator habits that pay off
-
-1. Keep one **active workshop** — switch deliberately, don't leave ghosts.
-2. Prefer **panes and pop-outs** over stacking everything in one crowded surface.
-3. Treat the under-composer row (runtime + turn controls) as flight instruments — glance, don't reconfigure every message.
-4. When something feels loud, check [Themes](guide:themes-customization) before blaming the feature.
+Open this window anytime from the **?** next to Spotlight, or search **Operator’s Guide** in Spotlight (`⌘K` / `Ctrl+K`).
 
 ```callout
-tone: note
-title: This guide ships with the app
-body: Chapters are markdown in the Medousa repo and render with the same Liquid markdown engine as vault notes. If a chapter is wrong, fix the file — not a separate CMS. Regenerated command tables use npm run guide:generate.
+tone: tip
+title: Start simple
+body: Most days you only need Chat, Library, and a healthy connection. The More section is for power features — skip it until you need it.
 ```
+
+Next: [Find answers](guide:find-answers) or [Getting started](guide:getting-started).

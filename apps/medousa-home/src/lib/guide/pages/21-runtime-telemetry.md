@@ -1,6 +1,6 @@
-# Runtime telemetry
+# Runtime status
 
-**Runtime** is live workshop diagnostics — “what is the engine doing?” Open from the dock / More / Spotlight, or the status connection control when wired.
+**Advanced.** **Runtime** shows what the workshop is doing right now — useful when a job seems stuck. Open from the dock, phone More menu, or Spotlight.
 
 Related: [Work and background jobs](guide:work-jobs) · [Troubleshooting](guide:troubleshooting)
 

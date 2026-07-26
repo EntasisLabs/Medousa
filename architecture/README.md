@@ -61,7 +61,8 @@ Shipped product features: [artifacts](../docs/engine/artifacts.md), [mobile shel
 | [workshop-and-automations-plan.md](workshop-and-automations-plan.md) | **Workshop + Automations** — W0–W5 (shipped); see [scripts-workbench-plan.md](scripts-workbench-plan.md) for W6 IA |
 | [scripts-workbench-plan.md](scripts-workbench-plan.md) | **Scripts Workbench** — Automations authoring IDE, Capabilities rename, module/WASM split |
 | [polish-and-package-plan.md](polish-and-package-plan.md) | **0.6 felt polish** — tone, wayfinding, interactions (capability era archived) |
-| [operators-guide-docs-epic.md](operators-guide-docs-epic.md) | **Operator’s Guide** — in-app wiki (D0–D3 ✅, 32 chapters); `npm run guide:generate` for command appendix |
+| [operators-guide-docs-epic.md](operators-guide-docs-epic.md) | **Operator’s Guide** epic — product wiki in Home; P0 mom/product voice |
+| [operators-guide-maintenance.md](operators-guide-maintenance.md) | **Guide maintenance** (contributors) — checklist, generate, ban list |
 | [vault-editing-and-structured-notes-plan.md](vault-editing-and-structured-notes-plan.md) | **Library** — editing UX, kanban + database views in markdown |
 | [ROADMAP.md](ROADMAP.md) | Current priorities (attachments, Iroh, distribution, …) |
 | [iroh-p2p-pairing-plan.md](iroh-p2p-pairing-plan.md) | Encrypted phone ↔ desktop transport |

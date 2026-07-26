@@ -1,6 +1,6 @@
 # Work and background jobs
 
-**Work** is the operator-facing board for jobs that outlive a single interactive reply — background asks, long agent turns, and items waiting on you.
+**Work** is a board of jobs that keep going after a normal chat reply — background asks, long tasks, and items waiting on you.
 
 Related: [Chat](guide:chat) · [Permissions, budgets, and tool safety](guide:permissions-budgets) · [Navigation and surfaces](guide:navigation-surfaces)
 

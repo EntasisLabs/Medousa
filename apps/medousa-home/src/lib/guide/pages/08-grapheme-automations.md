@@ -1,8 +1,8 @@
-# Grapheme and automations
+# Automations and scripts
 
-**Automations** is the workbench for scripts, flows, schedules, and history. Open it from the rail (or Library explorer modes: Scripts / Agents / Flows / Schedules / History).
+**Automations** is where you write scripts, build flows, and schedule work. Open it from the rail (modes: Scripts, Agents, Flows, Schedules, History). Skip this until you need repeating jobs.
 
-Related: [Specialist agents](guide:specialist-agents) · [Work and background jobs](guide:work-jobs) · [Troubleshooting](guide:troubleshooting#schedule-or-delivery-failed)
+Related: [Agents](guide:specialist-agents) · [Work](guide:work-jobs) · [Troubleshooting](guide:troubleshooting)
 
 ## Scripts workbench
 
@@ -13,17 +13,17 @@ Header: “Scripts workbench · write, run, add to flow.”
 | **Save** | ⌘/Ctrl+S |
 | **Run** | ⌘/Ctrl+Enter |
 | **Compile** | ⌘/Ctrl+B |
-| **Optimize (AOT)** | When available |
-| **Add to flow** | Graduate into a Flow step |
+| **Optimize (AOT)** | Speeds some scripts when the button is available |
+| **Add to flow** | Use this script inside a Flow |
 | Output / chat panes | Toggle show/hide |
 
-Left rail tools: **Scripts**, **Templates**, **WASM**.
+Left rail: **Scripts**, **Templates**, and **WASM** (advanced modules).
 
-### Templates (recipes)
+### Templates
 
-Starter templates (UI label **Templates**): **Say hello**, **Search the web**, **Chain steps together**, **Run a sandboxed command**. They are opinionated starters — rewrite freely.
+Starters such as **Say hello**, **Search the web**, **Chain steps together**, and **Run a sandboxed command**. They’re starting points — rewrite freely.
 
-Prefer documented host modules over raw shell when a first-class op exists. Read run output before blaming the editor.
+Read the run output if something fails before assuming the editor is broken.
 
 ## Flows
 

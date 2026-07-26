@@ -1,6 +1,6 @@
 # Chat
 
-Chat is the primary loop: you ask, the workshop runs a turn, you steer. This chapter is the operating manual — composer through sessions. Approvals and background jobs have their own chapters: [Permissions, budgets, and tool safety](guide:permissions-budgets) and [Work and background jobs](guide:work-jobs).
+Type at the bottom, press Enter, and Medousa answers. This chapter covers sending messages, models, conversations, and what happens during a long reply. Approvals: [Permissions](guide:permissions-budgets). Background work: [Work](guide:work-jobs).
 
 ## Composer
 
@@ -27,7 +27,7 @@ Unsupported types get a plain hint to try PDF, images, spreadsheets, or text.
 - Requires the **Medousa desktop app** (not browser-only preview).
 - Needs a working **Dictation model** (STT) on the workshop and mic permission.
 - Flow: mic → record → transcript appended to the draft; cancel restores the previous draft.
-- Common failures: newer daemon required, mic unavailable, no speech detected, empty recording.
+- Common failures: workshop software too old for dictation, mic unavailable, no speech detected, empty recording.
 
 ### Context chips
 
@@ -136,7 +136,7 @@ Use panes or pop-outs when two threads need to stay visible — [Navigation and 
 
 | Topic | Where |
 |-------|--------|
-| Models, stance charter, presentations | Settings → Medousa Agent |
+| Models, stance, presentations | Settings → Medousa Agent |
 | Model picker visibility, Liquid chat | Settings → Preferences |
 | Tool posture, shell, allowlists | Settings → Runtime Controls — [Permissions chapter](guide:permissions-budgets) |
 | Themes | [Themes and customization](guide:themes-customization) |

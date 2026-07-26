@@ -1,4 +1,4 @@
-export type GuideGroupId = "start" | "workspace" | "craft" | "system";
+export type GuideGroupId = "start" | "everyday" | "create" | "connect" | "more";
 
 export interface GuideChapter {
   id: string;

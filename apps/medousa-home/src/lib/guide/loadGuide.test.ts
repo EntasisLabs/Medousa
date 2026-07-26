@@ -30,9 +30,7 @@ describe("guide pages", () => {
       stdio: "pipe",
     });
     const fresh = readFileSync(tmp, "utf8");
-    const stripDate = (s: string) =>
-      s.replace(/\*Generated \d{4}-\d{2}-\d{2}\./, "*Generated DATE.");
-    expect(stripDate(committed)).toBe(stripDate(fresh));
+    expect(committed).toBe(fresh);
   });
 });
 

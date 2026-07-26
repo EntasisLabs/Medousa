@@ -1,70 +1,51 @@
 # Settings reference
 
-Operator map of Settings sections: what they control, where state lives, and who can edit them. Day-one safety detail for Runtime lives in [Permissions, budgets, and tool safety](guide:permissions-budgets).
+What each Settings area is for. Everyday look-and-feel lives under Preferences; power and safety knobs live under Medousa Agent and Runtime Controls.
 
-Related: [Architecture and terminology](guide:architecture) · [Platform matrix](guide:platform-matrix) · [Data and recovery](guide:data-lifecycle)
+Related: [How Medousa fits together](guide:architecture) · [Desktop, web, and phone](guide:platform-matrix) · [Where your data lives](guide:data-lifecycle)
 
-## Sections
+## At a glance
 
-| Section | Scope | Platform | Restart? | Risk |
-|---------|-------|----------|----------|------|
-| **Preferences** | Mostly **this device**; theme/chrome also **layout preset**; Work card retention writes **workshop** on desktop | All (some bands mobile-only) | No | Low |
-| **Medousa Agent** | **Workshop** charter (`tui_defaults.json`) | Editable on desktop host; **read-only** on phone companion | Save hot-applies | Medium — models/keys/stance affect all turns |
-| **Runtime Controls** | **Workshop** charter + Versions | Same read-only rule on phone | Save hot-applies; Versions toggle immediate; engine restart is under Workshop | **High** — shell, allowlists, tool posture |
-| **Sharing** | Workshop + seats | QR mint / Shared host toggle: **desktop**; companion mostly read-only | Reachability may reconnect | Trust / seats / LAN exposure |
-| **Packages** | **This machine** binaries | Desktop Tauri only | Install-driven | Disk / optional brain |
-| **MCP** | Machine gateway + servers | Desktop for install/config | Gateway install | External tool trust |
-| **Workshop** | Active workshop + device paths/autostart | Paths UI desktop; address all platforms | **Engine Restart** pauses chats | Wrong workshop / restart mid-turn |
+| Section | Who it affects | Where you can change it |
+|---------|----------------|-------------------------|
+| **Preferences** | Mostly this device (theme also follows layout) | All apps; some items phone-only |
+| **Medousa Agent** | This workshop’s answers and models | Editable on the desktop host; often read-only on phone |
+| **Runtime Controls** | Tool safety and advanced engine options | Same as Agent |
+| **Sharing** | Phone, peers, Shared seats, channels | QR and Shared host controls on desktop |
+| **Packages** | Optional software on this computer | Desktop app only |
+| **MCP** | External tool servers | Desktop app only |
+| **Workshop** | Which workshop you’re in, restart, updates | Address everywhere; file paths on desktop |
 
 ## Preferences
 
-| Band | Controls | Notes |
-|------|----------|--------|
-| **Look** | Light/dark, named color theme (per layout), shell chrome (rail, vault chat FAB, sidebar, mobile Home, layouts) | Theme follows active layout preset |
-| **Work cards** | Hide-from-board (hours), clear archives (days) | Host-persisted on desktop; defaults 24h / 7d |
-| **Everyday** | Work-done alerts, workshop guidance, open Web on browse; mobile: remote push, Live Activity | Device-local |
-| **More display** | Technical activity, engine details in chat, model picker, Liquid chat | Device-local |
+| Band | Controls |
+|------|----------|
+| **Look** | Light/dark, color theme, what chrome to show |
+| **Work cards** | How long finished Work stays on the board |
+| **Everyday** | Alerts and guidance; on phone, push / Live Activity |
+| **More display** | Model picker, Liquid chat, technical detail in chat |
 
-Reduced motion follows the **OS** preference (`prefers-reduced-motion`) — no Settings toggle.
+Motion calming follows your **system** reduced-motion setting — there’s no separate Medousa toggle.
 
 ## Medousa Agent
 
-| Band | Controls |
-|------|----------|
-| **Answers** | Stance (builtin + up to 8 custom voices), depth |
-| **Models** | Chat / Vision / Dictation; favorites; fallbacks — apply immediately |
-| **Stages & providers** | Stage routes, API keys (expandable) |
-| **Memory** | Hot/cold turns, prompt budgets |
-| **Presentations cleanup** | Age / max per session (desktop engine) |
-
-Copy that says “Runtime → Routing” for stages means the **Runtime surface** diagnostics tab, not Settings → Runtime Controls.
+Models (chat, vision, dictation), stance/voices, memory depth, and presentation cleanup. Changes apply to the workshop. Stages and provider keys are under expandable details.
 
 ## Runtime Controls
 
-| Band | Controls |
-|------|----------|
-| **Reach** | Tool posture, specialists, web search, tool rounds, module allowlist (empty = full catalog) |
-| **Shell** | Agent shell tools, network ceiling, timeouts, output caps, binary / writable-root allowlists |
-| **Engine** | Thinking traces, OTel, store backend, retries / quality |
-| **Versions** | Optional Git vault versioning — [Vault trash and versions](guide:vault-recovery) |
+Advanced: which tools are allowed, shell access, network limits, and optional note **Versions**. Empty tool lists can mean everything is allowed — be careful. Day-one safety tips: [Permissions](guide:permissions-budgets).
 
-## Sharing
+## Sharing / Packages / MCP / Workshop
 
-| Band | Controls |
-|------|----------|
-| **Shared** | Shared mode / seats |
-| **Phone** | Pairing QR / Forget |
-| **Nearby** | Wi‑Fi reachability, peers, canvas backup conflict policy |
-| **Channels** | Messaging adapters — [Messaging channels](guide:messaging-channels) |
-
-## Packages / MCP / Workshop
-
-See [MCP and packages](guide:mcp-packages) and [Workshops and connections](guide:workshops-connections). Workshop → **Files & diagnostics** lists resolved Engine data, Vault, and config paths on desktop.
+- **Sharing** — phone QR, peers, Shared mode, messaging channels.
+- **Packages** — optional Offline brain and helpers (desktop).
+- **MCP** — connect external tools (desktop).
+- **Workshop** — switch workshop, restart engine, app updates, **Files & diagnostics** paths on desktop.
 
 ```callout
 tone: tip
-title: Stale labels
-body: Older copy may say Settings → Rhythm — that band merged into Preferences. Work card retention lives under Preferences → Work cards.
+title: Older name
+body: If you remember Settings → Rhythm, that content now lives under Preferences.
 ```
 
-Next: [Platform matrix](guide:platform-matrix).
+Next: [Desktop, web, and phone](guide:platform-matrix).

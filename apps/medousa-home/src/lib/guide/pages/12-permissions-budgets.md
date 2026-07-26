@@ -1,8 +1,8 @@
-# Permissions, budgets, and tool safety
+# Permissions and approvals
 
-Agents ask before risky tools and before burning extra tool rounds. Your job is to approve with intent — not to click Allow on everything.
+**For when Medousa asks before acting.** Most days you only need Allow / Deny and Approve / Deny. Deeper Runtime Controls are optional power settings.
 
-Related: [Chat](guide:chat) · [Work and background jobs](guide:work-jobs) · [Troubleshooting](guide:troubleshooting)
+Related: [Chat](guide:chat) · [Work and background jobs](guide:work-jobs) · [Find answers](guide:find-answers#allow-or-approve)
 
 ## Tool permissions
 

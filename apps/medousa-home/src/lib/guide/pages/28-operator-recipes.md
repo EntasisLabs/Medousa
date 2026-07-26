@@ -1,60 +1,66 @@
-# Operator recipes
+# How-to recipes
 
-Short runbooks. Each assumes a healthy workshop — [Getting started](guide:getting-started) if not.
+Short recipes. Assumes you’re Connected — see [Getting started](guide:getting-started) if not.
 
-## Research → cited brief
+## Research → a written brief
 
-1. Open **Web**; research with tabs; **Save to Library** for keepers.
-2. **Take control** for logins/CAPTCHA; **Continue agent** / **Hand back** as needed — [Browser](guide:browser).
-3. In Chat, ask for a cited **Brief** (Liquid) grounded on those notes — [Liquid](guide:liquid-reference).
-4. Keep the brief in Library; optional **Send to Work** for follow-ups.
+1. Open **Web**; save useful pages to the Library.
+2. Take control for logins or CAPTCHA; hand back when Medousa should continue — [Browser](guide:browser).
+3. In Chat, ask for a short cited brief based on those notes.
+4. Keep the result in Library.
 
-## Recurring chat task → Schedule
+## Turn a repeated chat into a schedule
 
-1. Prove the prompt once in Chat.
-2. Automations → **Flows** — **Ask Medousa** and/or **Script** steps — [Automations](guide:grapheme-automations).
-3. **+ New schedule** — When, delivery (Stay in Medousa or Telegram), Quick prompt vs Agent turn.
-4. Run manually once; confirm Runtime → **Delivery** after the first fire.
+1. Get the prompt working once in Chat.
+2. Automations → **Flows** — add Ask Medousa and/or Script steps.
+3. **New schedule** — when it runs, where results go.
+4. Run once by hand; confirm it fired.
 
-## Dashboard view from a feed
+→ [Automations](guide:grapheme-automations)
 
-1. Automations produce last-good output into a Liquid `feed` (or Stasis feed id).
-2. **+ New view** — pin vault/widgets — [Views](guide:views-environments).
-3. Watch **Live feed** / **Stale feed** badges; fix the schedule if stale.
+## Pin a live feed on a custom view
 
-## Share a note with a peer
+1. Let an automation produce output into a feed block in a note.
+2. Create a **view** and pin that note or widget — [Views](guide:views-environments).
+3. If the badge says stale, fix or resume the schedule.
 
-1. **Peers** → Connect / trust on LAN — [Sharing](guide:sharing-phone).
-2. Send via peer inbox (attachments when offered), or export canvas/views via Sharing backup.
-3. **Revoke** when the collaboration ends.
+## Share with a peer on your network
 
-## Safe shell-enabled specialist
+1. **Peers** → Connect / trust — [Sharing](guide:sharing-phone).
+2. Message or send a backup of views if needed.
+3. **Revoke** when you’re done.
 
-1. Import under Agents — prefer **sandbox** skills — [Specialist agents](guide:specialist-agents).
-2. Runtime Controls: enable shell only if required; set **binary allowlist** (never leave empty with shell on) — [Permissions](guide:permissions-budgets).
-3. **Run** once interactively; then **Schedule…** if needed.
+## Try an Agent safely
 
-## Pair a phone for one profile
+1. Import under Automations → **Agents**.
+2. Prefer sandboxed skills; keep shell tools off until you need them — [Permissions](guide:permissions-budgets).
+3. **Run** once in chat before scheduling.
 
-1. Host Settings → Sharing → Phone → **Show pairing QR** (Shared mode: **Invite a seat**).
-2. Companion scans / opens link — [Getting started](guide:getting-started#phone--companion-first-run).
-3. Confirm paired list; **Forget** to revoke.
+## Pair a phone for one person
+
+1. On the computer: Sharing → Phone → show QR (Shared mode: seat invite).
+2. Scan on the phone.
+3. **Forget** in the paired list to revoke.
 
 ## Recover a note
 
-1. Deleted? Library → **Trash** → **Restore**.
-2. Overwritten? Versions **History** → **Restore** (if Git versions on), or conflict **Reload** / **Keep mine** — [Vault recovery](guide:vault-recovery).
+1. Deleted → Library → **Trash** → **Restore**.
+2. Overwritten → Versions history (if on), or conflict **Reload** / **Keep mine**.
 
-## Diagnose a failed schedule
+→ [Trash and versions](guide:vault-recovery)
 
-1. Automations → History / schedule detail (paused?).
-2. Runtime → **Jobs** / **Delivery**.
-3. Workshop online at fire time? Channel allowlist OK? — [Troubleshooting](guide:troubleshooting#schedule-or-delivery-failed).
+## Fix a failed schedule
 
-## Model fallbacks
+1. Schedule paused?
+2. Runtime → Jobs / Delivery.
+3. Computer online? Channel connected?
 
-1. Settings → Medousa Agent → Models — set Chat / Vision / Dictation.
-2. Add fallback 1 & 2 per profile.
-3. Stages & providers for API keys — [Chat](guide:chat#model-picker).
+→ [Troubleshooting](guide:troubleshooting)
 
-Next: [Known limits and FAQ](guide:faq-limits) · [What’s new](guide:whats-new).
+## Set backup models
+
+Settings → Medousa Agent → Models — set Chat / Vision / Dictation, then optional fallbacks.
+
+→ [Chat](guide:chat)
+
+Next: [FAQ and limits](guide:faq-limits) · [Find answers](guide:find-answers).

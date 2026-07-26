@@ -1,6 +1,6 @@
-# MCP and packages
+# Packages and MCP
 
-Optional local components and external tool servers. Both are primarily **desktop** concerns — companions usually show a “use the desktop app” note.
+**Advanced.** Optional installs on the **desktop app** — Offline brain, helpers, and external tool servers (MCP). The phone usually asks you to manage these on the computer.
 
 Related: [Permissions, budgets, and tool safety](guide:permissions-budgets) · [Grapheme and automations](guide:grapheme-automations) · [Troubleshooting](guide:troubleshooting#mcp-unavailable)
 
