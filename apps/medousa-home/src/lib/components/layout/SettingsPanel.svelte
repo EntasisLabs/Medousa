@@ -16,6 +16,7 @@
   import { depthModeLabel } from "$lib/utils/chatModelPicker";
   import { formatModelDisplayName } from "$lib/utils/formatModelDisplay";
   import { peerUnreadCount } from "$lib/utils/lanShareApi";
+  import { appUpdate } from "$lib/stores/appUpdate.svelte";
   import { isTauri } from "$lib/window";
   import type { SettingsSectionId } from "$lib/types/settings";
 
@@ -96,11 +97,12 @@
       : `${depthModeLabel(workshopDefaults.draft.responseDepthMode ?? "standard")} answers · ${formatModelDisplayName(workshopDefaults.draft.model ?? "model")} in chat`,
   );
 
-  const navBadges = $derived(
-    nearbyUnread > 0
-      ? ({ network: nearbyUnread } as Partial<Record<SettingsSectionId, number>>)
-      : {},
-  );
+  const navBadges = $derived.by(() => {
+    const badges: Partial<Record<SettingsSectionId, number>> = {};
+    if (nearbyUnread > 0) badges.network = nearbyUnread;
+    if (appUpdate.updateAvailable) badges.basement = 1;
+    return badges;
+  });
 </script>
 
 <section class="settings-panel flex h-full min-h-0 min-w-0 flex-1 flex-col {visible ? '' : 'hidden'}">

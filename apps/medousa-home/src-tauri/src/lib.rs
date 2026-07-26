@@ -11,6 +11,8 @@ mod daemon;
 mod messaging;
 mod medousa_paths;
 mod packages;
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
+mod app_update;
 mod pairing;
 mod pairing_client;
 mod mesh_envelope;
@@ -726,6 +728,10 @@ pub fn run() {
             packages::packages_install,
             packages::packages_remove,
             packages::packages_open_installer,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            app_update::app_update_status,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            app_update::app_update_open_download,
             daemon::local_inference::local_inference_hardware,
             daemon::local_inference::local_inference_catalog,
             daemon::local_inference::local_inference_models,

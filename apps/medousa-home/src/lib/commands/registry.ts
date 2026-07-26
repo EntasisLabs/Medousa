@@ -12,6 +12,8 @@ import {
   stepContentZoom,
 } from "$lib/config/contentZoom";
 import { homeChannelSurface, formatShortcut } from "$lib/platform";
+import { appUpdate } from "$lib/stores/appUpdate.svelte";
+import { openAppUpdateDownload } from "$lib/utils/appUpdate";
 import { isTauri, toggleDesktopToolbar } from "$lib/window";
 import { humanBrowser } from "$lib/stores/humanBrowser.svelte";
 import { copyBrowserUrl, openUrlInDefaultBrowser } from "$lib/utils/browserActions";
@@ -822,6 +824,44 @@ export function buildAdvancedCommands(): WorkshopCommand[] {
         } catch (err) {
           ctx.error(err instanceof Error ? err.message : String(err));
         }
+      },
+    },
+    {
+      id: "advanced-app-update",
+      section: "advanced",
+      label: "Check for updates",
+      subtitle: "Desktop app vs release channel",
+      keywords: "update upgrade download version release app",
+      advanced: true,
+      run: async (ctx) => {
+        if (!isTauri()) {
+          ctx.notice("Updates are available in the Medousa desktop app.");
+          ctx.callbacks.close();
+          return;
+        }
+        const status = await appUpdate.check();
+        ctx.openSettingsSection("basement");
+        if (!status) {
+          ctx.error("Could not reach the release channel.");
+          ctx.callbacks.close();
+          return;
+        }
+        if (status.error && !status.latestVersion) {
+          ctx.error(status.error);
+          ctx.callbacks.close();
+          return;
+        }
+        if (status.updateAvailable && status.latestVersion) {
+          ctx.notice(`Update available · ${status.latestVersion}`);
+          try {
+            await openAppUpdateDownload();
+          } catch {
+            /* Settings card still shows Download */
+          }
+        } else {
+          ctx.notice(`You’re up to date · ${status.currentVersion}`);
+        }
+        ctx.callbacks.close();
       },
     },
     {

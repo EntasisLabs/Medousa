@@ -19,6 +19,7 @@
   import { settings } from "$lib/stores/settings.svelte";
   import { resetGarageOnboarding } from "$lib/utils/garageOnboarding";
   import { wizard } from "$lib/stores/wizard.svelte";
+  import SettingsAppUpdateCard from "$lib/components/settings/SettingsAppUpdateCard.svelte";
   import SettingsLocalBrainPanel from "$lib/components/settings/SettingsLocalBrainPanel.svelte";
   import SettingsWorkshopsSection from "$lib/components/settings/SettingsWorkshopsSection.svelte";
   import { isTauri } from "$lib/window";
@@ -262,6 +263,8 @@
   </header>
 
   <SettingsWorkshopsSection {onDaemonHealth} lead />
+
+  <SettingsAppUpdateCard />
 
   <div class="prefs-band">
     <div class="prefs-band-head">

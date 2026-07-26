@@ -18,6 +18,8 @@
   import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
   import { shellTabs } from "$lib/stores/shellTabs.svelte";
   import { isTauri } from "$lib/platform";
+  import { appUpdate } from "$lib/stores/appUpdate.svelte";
+  import { toast } from "$lib/stores/toast.svelte";
   import { updateTrayBlockedCount } from "$lib/window";
   import ShellLayoutDebug from "$lib/components/debug/ShellLayoutDebug.svelte";
   import EnvPendingProposalBanner from "$lib/components/environment/EnvPendingProposalBanner.svelte";
@@ -65,6 +67,15 @@
     peersUnreadTimer = setInterval(() => {
       void refreshPeersUnread();
     }, 8000);
+    if (isTauri()) {
+      void appUpdate.bootProbe().then((status) => {
+        if (status?.updateAvailable && status.latestVersion) {
+          toast.show(`Update available · Medousa ${status.latestVersion}`, {
+            durationMs: 2800,
+          });
+        }
+      });
+    }
     const detachViewport = layout.attachViewportTracking();
     const detachWorkshop = connectWorkshop({
       onHealthChange: (health) => {

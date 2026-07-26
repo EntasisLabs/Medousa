@@ -26,7 +26,9 @@
   import { lmeWorkspace, type LmeExplorerMode } from "$lib/stores/lmeWorkspace.svelte";
   import { messaging } from "$lib/stores/messaging.svelte";
   import { messagingShell } from "$lib/stores/messagingShell.svelte";
+  import { appUpdate } from "$lib/stores/appUpdate.svelte";
   import { settingsNav } from "$lib/stores/settingsNav.svelte";
+  import type { SettingsSectionId } from "$lib/types/settings";
   import { feedBadgeForComponents } from "$lib/utils/customViewStatus";
   import { environmentIcon } from "$lib/utils/environmentIcons";
   import {
@@ -107,6 +109,11 @@
       : shellSidebarViewTitle(viewSurface),
   );
   const daemonOk = $derived(health?.ok ?? false);
+  const settingsNavBadges = $derived.by(() => {
+    const badges: Partial<Record<SettingsSectionId, number>> = {};
+    if (appUpdate.updateAvailable) badges.basement = 1;
+    return badges;
+  });
 
   const surfaces = $derived(environment.navSurfaces());
   const lifeRail = $derived(buildLifeRailLayout(surfaces));
@@ -570,6 +577,7 @@
             <div class="min-h-0 flex-1 overflow-y-auto px-1.5 py-1">
               <SettingsNav
                 active={settingsNav.activeSection}
+                badges={settingsNavBadges}
                 onSelect={(section) => {
                   settingsNav.setActiveSection(section);
                   onSelect(SAFETY_SURFACE_SETTINGS);
@@ -986,6 +994,7 @@
       <div class="min-h-0 flex-1 overflow-y-auto px-1.5 py-1">
         <SettingsNav
           active={settingsNav.activeSection}
+          badges={settingsNavBadges}
           onSelect={(section) => {
             settingsNav.setActiveSection(section);
             commitPopoverSurface(SAFETY_SURFACE_SETTINGS);
