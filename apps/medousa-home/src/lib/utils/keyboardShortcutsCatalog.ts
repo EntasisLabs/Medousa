@@ -34,9 +34,9 @@ export const KEYBOARD_SHORTCUTS_CATALOG: ShortcutCatalogGroup[] = [
       {
         id: "content-zoom",
         keys: "mod:+ / −",
-        action: "Content zoom in / out",
+        action: "Zoom in / out",
       },
-      { id: "content-zoom-reset", keys: "mod:0", action: "Reset content zoom" },
+      { id: "content-zoom-reset", keys: "mod:0", action: "Reset zoom" },
       {
         id: "keyboard-shortcuts",
         keys: "prefix:?",

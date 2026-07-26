@@ -23,8 +23,8 @@
   html {
     --mobile-keyboard-inset: 0px;
     --mobile-bottom-chrome-height: 5.5rem;
-    /* Cmd/Ctrl +/- content zoom — multiply into surface font-sizes (never CSS `zoom`
-       on scroll hosts: that reflowed Live coords every keystroke). */
+    /* Legacy font multipliers stay at 1; real UI zoom is Tauri webview setZoom
+       (see contentZoom.ts). Never put CSS zoom on individual scroll hosts. */
     --content-zoom: 1;
   }
 

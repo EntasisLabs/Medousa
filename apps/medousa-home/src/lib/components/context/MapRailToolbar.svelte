@@ -77,8 +77,8 @@
     if (!momentsBtnEl) return;
     momentsPlacement = placeDockPopover(momentsBtnEl, {
       preferUp: true,
-      width: 280,
-      maxHeight: 360,
+      width: 300,
+      maxHeight: 380,
     });
   }
 
@@ -252,33 +252,29 @@
         <Search size={13} strokeWidth={1.75} class="shrink-0 text-surface-500" aria-hidden="true" />
         <input
           bind:this={momentsSearchEl}
-          class="min-w-0 flex-1 border-0 bg-transparent text-[12px] text-surface-100 placeholder:text-surface-500 focus:outline-none focus:ring-0"
+          class="map-dock-moments-input"
           type="search"
-          placeholder="Search moments…"
+          placeholder="Find a moment…"
           bind:value={momentsQuery}
         />
       </div>
       <div class="map-dock-popover-scroll">
         {#if contextThreads.loading && momentEntries.length === 0}
-          <p class="workshop-faint px-2.5 py-3 text-[11px]">Loading moments…</p>
+          <p class="map-dock-moments-empty">Loading…</p>
         {:else if momentEntries.length === 0}
-          <p class="workshop-faint px-2.5 py-3 text-[11px] leading-relaxed">
-            {momentsQuery.trim()
-              ? "Nothing matches."
-              : "No moments on the shelf yet."}
+          <p class="map-dock-moments-empty">
+            {momentsQuery.trim() ? "Nothing matches." : "No moments yet."}
           </p>
         {:else}
           {#each momentEntries as entry (entry.id)}
             <button
               type="button"
               role="option"
-              class="vault-dock-branch-option"
+              class="map-dock-moment-row"
               onclick={() => pickMoment(entry.syncKey, entry.sessionId)}
             >
-              <span class="vault-dock-branch-option__main min-w-0">
-                <span class="vault-dock-branch-option__label line-clamp-2">{entry.title}</span>
-                <span class="vault-dock-branch-option__meta truncate">{entry.subtitle}</span>
-              </span>
+              <span class="map-dock-moment-row-title">{entry.title}</span>
+              <span class="map-dock-moment-row-meta">{entry.subtitle}</span>
             </button>
           {/each}
         {/if}
@@ -350,35 +346,86 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    padding: 0.25rem 0;
+    padding: 0.35rem 0 0.4rem;
   }
 
   .map-dock-popover-search {
     display: flex;
     align-items: center;
-    gap: 0.35rem;
-    margin: 0.25rem 0.5rem 0.35rem;
-    padding: 0.3rem 0.45rem;
-    border-radius: 0.4rem;
-    border: 1px solid rgb(var(--color-surface-500) / 0.35);
-    background: rgb(var(--color-surface-800) / 0.55);
+    gap: 0.4rem;
+    margin: 0.15rem 0.7rem 0.45rem;
+    padding: 0.2rem 0 0.45rem;
+    border-bottom: 1px solid rgb(var(--color-surface-500) / 0.28);
+    background: transparent;
+  }
+
+  .map-dock-moments-input {
+    min-width: 0;
+    flex: 1;
+    border: 0;
+    background: transparent;
+    font-size: 12px;
+    color: rgb(var(--color-surface-100));
+    outline: none;
+  }
+
+  .map-dock-moments-input::placeholder {
+    color: rgb(var(--color-surface-500));
   }
 
   .map-dock-popover-scroll {
     min-height: 0;
     flex: 1;
     overflow-y: auto;
+    padding: 0.1rem 0.35rem 0.15rem;
   }
 
-  :global(.map-dock-moments-popover .vault-dock-branch-option__main) {
+  .map-dock-moments-empty {
+    margin: 0;
+    padding: 1rem 0.85rem;
+    font-size: 11px;
+    line-height: 1.45;
+    color: rgb(var(--color-surface-500));
+  }
+
+  .map-dock-moment-row {
     display: flex;
+    width: 100%;
     flex-direction: column;
-    gap: 0.15rem;
     align-items: flex-start;
+    gap: 0.2rem;
+    border: 0;
+    border-radius: 0.55rem;
+    background: transparent;
+    padding: 0.55rem 0.65rem;
+    text-align: left;
+    cursor: pointer;
   }
 
-  :global(.map-dock-moments-popover .vault-dock-branch-option__meta) {
+  .map-dock-moment-row:hover {
+    background: rgb(var(--color-surface-800) / 0.72);
+  }
+
+  .map-dock-moment-row-title {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    overflow: hidden;
+    max-width: 100%;
+    font-size: 0.8125rem;
+    font-weight: 520;
+    letter-spacing: -0.015em;
+    line-height: 1.3;
+    color: rgb(var(--color-surface-50));
+  }
+
+  .map-dock-moment-row-meta {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     font-size: 10px;
+    letter-spacing: 0.01em;
     color: rgb(var(--color-surface-500));
   }
 

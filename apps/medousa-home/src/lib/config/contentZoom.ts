@@ -1,8 +1,14 @@
 /**
- * VS Code–style content zoom for notes / chats / scripts.
- * Sets `--content-zoom` on <html>; surfaces multiply it into font-size.
- * Do not apply CSS `zoom` to scroll hosts — that breaks Live typing/scroll.
+ * VS Code–style UI zoom via Tauri's native webview zoom
+ * (`getCurrentWebview().setZoom`). That scales the page correctly inside the
+ * window — unlike CSS `zoom`, which crops or leaves empty bands.
+ *
+ * Persist factor in localStorage; re-apply on shell mount.
+ * Keep `--content-zoom` at 1 so legacy font multipliers don't double-scale.
+ * Mobile / non-Tauri: no-op (API unsupported).
  */
+
+import { isTauri } from "$lib/platform";
 
 const STORAGE_KEY = "medousa-home-content-zoom";
 export const CONTENT_ZOOM_MIN = 0.7;
@@ -32,11 +38,35 @@ export function writeContentZoom(value: number): void {
   localStorage.setItem(STORAGE_KEY, String(clampContentZoom(value)));
 }
 
+/** Strip any leftover CSS zoom hacks from earlier experiments. */
+function clearCssZoomHacks(root: HTMLElement): void {
+  root.style.zoom = "";
+  root.style.width = "";
+  root.style.height = "";
+  root.style.removeProperty("--ui-zoom");
+  root.style.setProperty("--content-zoom", "1");
+}
+
+async function applyNativeWebviewZoom(zoom: number): Promise<void> {
+  if (!isTauri()) return;
+  try {
+    const { getCurrentWebview } = await import("@tauri-apps/api/webview");
+    await getCurrentWebview().setZoom(zoom);
+  } catch {
+    // Unsupported on mobile / missing ACL — leave layout alone.
+  }
+}
+
+/**
+ * Persist-applied zoom factor. Clears CSS hacks and asks Tauri to set webview zoom.
+ * Returns the clamped factor synchronously (native apply is async).
+ */
 export function applyContentZoomCss(value: number = readContentZoom()): number {
   const zoom = clampContentZoom(value);
   if (typeof document !== "undefined") {
-    document.documentElement.style.setProperty("--content-zoom", String(zoom));
+    clearCssZoomHacks(document.documentElement);
   }
+  void applyNativeWebviewZoom(zoom);
   return zoom;
 }
 
@@ -44,7 +74,7 @@ export function contentZoomPercent(value: number = readContentZoom()): string {
   return `${Math.round(clampContentZoom(value) * 100)}%`;
 }
 
-/** Step zoom; persists + applies CSS. Returns the new factor. */
+/** Step zoom; persists + applies. Returns the new factor. */
 export function stepContentZoom(deltaSteps: number): number {
   const next = clampContentZoom(readContentZoom() + deltaSteps * CONTENT_ZOOM_STEP);
   writeContentZoom(next);

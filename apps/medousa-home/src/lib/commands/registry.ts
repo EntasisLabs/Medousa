@@ -281,9 +281,9 @@ export function buildPaneCommands(): WorkshopCommand[] {
     {
       id: "content-zoom-in",
       section: "advanced",
-      label: "Zoom content in",
-      subtitle: `${formatShortcut("+")} — notes, chats, scripts`,
-      keywords: "zoom content font size larger scale editor",
+      label: "Zoom in",
+      subtitle: `${formatShortcut("+")} — whole UI, like the browser`,
+      keywords: "zoom content font size larger scale editor ui",
       advanced: true,
       run: (ctx) => {
         stepContentZoom(1);
@@ -293,9 +293,9 @@ export function buildPaneCommands(): WorkshopCommand[] {
     {
       id: "content-zoom-out",
       section: "advanced",
-      label: "Zoom content out",
-      subtitle: `${formatShortcut("−")} — notes, chats, scripts`,
-      keywords: "zoom content font size smaller scale editor",
+      label: "Zoom out",
+      subtitle: `${formatShortcut("−")} — whole UI, like the browser`,
+      keywords: "zoom content font size smaller scale editor ui",
       advanced: true,
       run: (ctx) => {
         stepContentZoom(-1);
@@ -305,9 +305,9 @@ export function buildPaneCommands(): WorkshopCommand[] {
     {
       id: "content-zoom-reset",
       section: "advanced",
-      label: "Reset content zoom",
+      label: "Reset zoom",
       subtitle: `${formatShortcut("0")} — back to 100%`,
-      keywords: "zoom content reset default 100",
+      keywords: "zoom content reset default 100 ui",
       advanced: true,
       run: (ctx) => {
         resetContentZoom();

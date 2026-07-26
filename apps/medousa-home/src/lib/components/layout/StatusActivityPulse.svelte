@@ -1,5 +1,6 @@
 <script lang="ts">
   import ActivityHistoryPopover from "$lib/components/layout/ActivityHistoryPopover.svelte";
+  import AudioLinesMark from "$lib/components/ui/AudioLinesMark.svelte";
   import { activityView } from "$lib/stores/activityView.svelte";
   import { graphemeScriptEditor } from "$lib/stores/graphemeScriptEditor.svelte";
   import { settings } from "$lib/stores/settings.svelte";
@@ -12,13 +13,9 @@
     truncateActivityLabel,
   } from "$lib/utils/activityPulse";
 
-  /** Lucide audio-lines height ratios (normalized). */
-  const AUDIO_BAR_HEIGHTS = [17, 61, 100, 39, 72, 17] as const;
-
   let open = $state(false);
   let triggerEl = $state<HTMLButtonElement | null>(null);
   let nowTick = $state(Date.now());
-  let reduceMotion = $state(false);
 
   const visibleEvents = $derived(
     visibleActivityFeed(workspace.feed, {
@@ -50,17 +47,6 @@
   );
 
   $effect(() => {
-    if (typeof window === "undefined" || !window.matchMedia) return;
-    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const sync = () => {
-      reduceMotion = mq.matches;
-    };
-    sync();
-    mq.addEventListener("change", sync);
-    return () => mq.removeEventListener("change", sync);
-  });
-
-  $effect(() => {
     const timer = window.setInterval(() => {
       nowTick = Date.now();
     }, 1000);
@@ -90,19 +76,7 @@
     aria-haspopup="dialog"
     onclick={toggle}
   >
-    <span
-      class="status-audio-lines"
-      class:status-audio-lines--hot={hot && !reduceMotion}
-      class:status-audio-lines--lit={hot}
-      aria-hidden="true"
-    >
-      {#each AUDIO_BAR_HEIGHTS as height, index (index)}
-        <span
-          class="status-audio-bar"
-          style="--bar-h: {height}%; --bar-i: {index}"
-        ></span>
-      {/each}
-    </span>
+    <AudioLinesMark hot={hot} lit={hot} size={13} />
     <span class="status-activity-pulse-label truncate">{displayLabel}</span>
   </button>
 
@@ -160,71 +134,6 @@
   .status-activity-pulse-btn--hot {
     color: rgb(var(--color-surface-100));
     opacity: 1;
-  }
-
-  /* Lucide audio-lines silhouette — 6 rounded bars, optically matched to 13px status icons. */
-  .status-audio-lines {
-    display: flex;
-    flex-shrink: 0;
-    align-items: center;
-    justify-content: space-between;
-    gap: 1.5px;
-    width: 13px;
-    height: 13px;
-    line-height: 0;
-  }
-
-  .status-audio-bar {
-    display: block;
-    width: 1.5px;
-    height: var(--bar-h);
-    min-height: 2px;
-    border-radius: 999px;
-    background: currentColor;
-    opacity: 0.72;
-    transform-origin: center center;
-    will-change: transform, opacity;
-  }
-
-  .status-audio-lines--lit .status-audio-bar {
-    opacity: 1;
-  }
-
-  /*
-    Hot: L→R reveal once, then rolling scaleY wave.
-    Wave delay = reveal duration + per-bar stagger so it doesn’t restart mid-reveal.
-  */
-  .status-audio-lines--hot .status-audio-bar {
-    animation:
-      status-audio-reveal 0.28s ease-out both,
-      status-audio-wave 0.95s ease-in-out infinite;
-    animation-delay:
-      calc(var(--bar-i) * 70ms),
-      calc(0.28s + var(--bar-i) * 70ms);
-  }
-
-  @keyframes status-audio-reveal {
-    0% {
-      opacity: 0;
-      transform: scaleY(0.25) scaleX(0.85);
-    }
-    100% {
-      opacity: 1;
-      transform: scaleY(1) scaleX(1);
-    }
-  }
-
-  @keyframes status-audio-wave {
-    0%,
-    100% {
-      transform: scaleY(1) scaleX(1);
-    }
-    35% {
-      transform: scaleY(1.14) scaleX(1.05);
-    }
-    70% {
-      transform: scaleY(0.86) scaleX(0.95);
-    }
   }
 
   .status-activity-pulse-label {

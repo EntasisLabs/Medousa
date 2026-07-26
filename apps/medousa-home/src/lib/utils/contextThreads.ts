@@ -2,19 +2,32 @@ import type { ContextThreadEntry, LocusNodeSummary } from "$lib/types/locus";
 import {
   formatContextWhen,
   humanMomentTitle,
+  momentHeadline,
+  momentKeptProse,
   sessionDisplayName,
   tierHumanLabel,
 } from "$lib/utils/contextHuman";
 
+function shortSessionLabel(label: string, maxLen = 32): string {
+  const value = label.trim();
+  if (value.length <= maxLen) return value;
+  const cut = value.slice(0, maxLen);
+  const at = cut.lastIndexOf(" ");
+  return `${(at > 16 ? cut.slice(0, at) : cut).trimEnd()}…`;
+}
+
+/** Scannable list title — feel first, never a tech dump. */
 export function threadTitle(node: LocusNodeSummary): string {
-  return humanMomentTitle(node);
+  const title = humanMomentTitle(node);
+  const kept = momentKeptProse("", node.context_summary, title, 96);
+  return momentHeadline(node.user_avec, kept, title);
 }
 
 export function threadSubtitle(
   node: LocusNodeSummary,
   sessionLabels: Record<string, string> = {},
 ): string {
-  const session = sessionDisplayName(node.session_id, sessionLabels);
+  const session = shortSessionLabel(sessionDisplayName(node.session_id, sessionLabels));
   const when = formatContextWhen(node.timestamp);
   return `${when} · ${session}`;
 }
@@ -27,24 +40,29 @@ export function buildContextThreadEntries(
   nodes: LocusNodeSummary[],
   sessionLabels: Record<string, string> = {},
 ): ContextThreadEntry[] {
-  return nodes.map((node) => ({
-    id: node.sync_key,
-    title: threadTitle(node),
-    subtitle: threadSubtitle(node, sessionLabels),
-    searchText: [
-      node.sync_key,
-      node.session_id,
-      sessionDisplayName(node.session_id, sessionLabels),
-      node.tier,
-      tierHumanLabel(node.tier),
-      node.context_summary,
-      node.timestamp,
-    ].join(" "),
-    sessionId: node.session_id,
-    tier: node.tier,
-    timestamp: node.timestamp,
-    syncKey: node.sync_key,
-  }));
+  return nodes.map((node) => {
+    const title = threadTitle(node);
+    const session = sessionDisplayName(node.session_id, sessionLabels);
+    return {
+      id: node.sync_key,
+      title,
+      subtitle: threadSubtitle(node, sessionLabels),
+      searchText: [
+        node.sync_key,
+        node.session_id,
+        session,
+        node.tier,
+        tierHumanLabel(node.tier),
+        node.context_summary,
+        node.timestamp,
+        title,
+      ].join(" "),
+      sessionId: node.session_id,
+      tier: node.tier,
+      timestamp: node.timestamp,
+      syncKey: node.sync_key,
+    };
+  });
 }
 
 export function filterContextThreadEntries(
