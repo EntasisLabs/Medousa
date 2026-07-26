@@ -6,7 +6,7 @@
     Globe,
     Home,
     MessageCircle,
-    PanelsTopLeft,
+    NotebookText,
     Radio,
     Settings,
     Sparkles,
@@ -41,7 +41,7 @@
   const icons: Record<string, Component> = {
     "tab-home": Home,
     "tab-chat": MessageCircle,
-    "tab-notes": PanelsTopLeft,
+    "tab-notes": NotebookText,
     "tab-web": Globe,
     "more-calendar": CalendarDays,
     "more-profiles": UserRound,

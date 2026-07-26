@@ -10,12 +10,21 @@
     selectedPath: string | null;
     labelByPath: Map<string, string>;
     activeSpaceFilter?: string | null;
+    /** Expand ancestors when selection changes. Off on mobile list so nothing stays forced open. */
+    revealSelected?: boolean;
     onSelect: (path: string) => void;
     onMoveNote?: (sourcePath: string, targetFolderPrefix: string) => void | Promise<void>;
   }
 
-  let { tree, selectedPath, labelByPath, activeSpaceFilter = null, onSelect, onMoveNote }: Props =
-    $props();
+  let {
+    tree,
+    selectedPath,
+    labelByPath,
+    activeSpaceFilter = null,
+    revealSelected = true,
+    onSelect,
+    onMoveNote,
+  }: Props = $props();
 
   /** When a space is selected, skip the redundant space root row. */
   const displayNodes = $derived.by(() => {
@@ -57,6 +66,7 @@
       {selectedPath}
       {labelByPath}
       {activeSpaceFilter}
+      {revealSelected}
       {onSelect}
       {onMoveNote}
     />

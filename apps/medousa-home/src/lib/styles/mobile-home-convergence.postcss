@@ -155,6 +155,26 @@
   background-color: rgb(var(--color-surface-950));
 }
 
+/*
+ * Chat: one continuous room — title + thread + composer share the shell canvas.
+ * Do not restyle message content; only dissolve chrome banding.
+ */
+.mobile-shell[data-mobile-tab="chat"] .mobile-chat-header {
+  background-color: transparent;
+  border-bottom-color: transparent;
+  padding-left: 1rem;
+  padding-right: 1rem;
+}
+
+.mobile-shell[data-mobile-tab="chat"] .mobile-bottom-chrome {
+  background-color: rgb(var(--color-surface-950) / 0.94);
+  border-top-color: rgb(var(--color-surface-500) / 0.18);
+}
+
+.mobile-shell[data-mobile-tab="chat"] .mobile-chat-composer {
+  border-bottom-color: transparent;
+}
+
 .mobile-chrome-actions {
   @apply flex items-center gap-2;
 }
@@ -217,6 +237,34 @@
 
 .mobile-dest-menu-icon {
   @apply shrink-0 text-surface-400;
+}
+
+.mobile-notes-active-filter {
+  @apply mt-1.5 inline-flex max-w-full truncate rounded-full border border-surface-500/40 bg-surface-900/70 px-2.5 py-1 text-[11px] font-medium text-surface-300 transition active:bg-surface-800;
+}
+
+.mobile-notes-filter-seg {
+  @apply min-w-0 flex-1 rounded-lg px-3 py-2 text-sm font-medium text-surface-400 transition;
+}
+
+.mobile-notes-filter-seg-active {
+  @apply bg-surface-800 text-surface-50;
+}
+
+.mobile-notes-filter-chip {
+  @apply inline-flex shrink-0 items-center gap-1 rounded-full border border-surface-500/40 bg-surface-800/60 px-2.5 py-1 text-xs font-medium text-surface-300 transition;
+}
+
+.mobile-notes-filter-chip-active {
+  @apply border-primary-500/50 bg-primary-500/15 text-primary-200;
+}
+
+.mobile-notes-filter-row {
+  @apply flex w-full items-center gap-3 rounded-xl px-2.5 py-2.5 text-left transition active:bg-surface-800/80;
+}
+
+.mobile-notes-filter-row-active {
+  @apply bg-surface-800/90;
 }
 
 /* Tab bar removed — collapse chrome without display:none so ResizeObserver

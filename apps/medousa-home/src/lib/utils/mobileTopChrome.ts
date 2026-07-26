@@ -8,7 +8,9 @@ export type MobileChromeActionId =
   | "sessions"
   | "identity"
   | "search"
+  | "notesFilter"
   | "newNote"
+  | "noteEdit"
   | "noteChat"
   | "noteMore"
   | "browserTabs"
@@ -57,9 +59,9 @@ export function mobileChromeTrailing(
     case "chat":
       return ["sessions", "identity"];
     case "notes":
-      return ["search", "newNote"];
+      return ["search", "notesFilter", "newNote"];
     case "notes-reader":
-      return ["noteChat", "noteMore"];
+      return ["noteEdit", "noteChat", "noteMore"];
     case "web":
       return ["browserBack", "browserForward", "browserReload", "browserTabs"];
     case "more":

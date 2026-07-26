@@ -4,11 +4,14 @@
     ArrowLeft,
     ArrowRight,
     ChevronLeft,
+    Eye,
+    History,
     Layers,
+    ListFilter,
     Menu,
     MessageCircle,
     MoreHorizontal,
-    PanelLeft,
+    Pencil,
     Plus,
     RefreshCw,
     Search,
@@ -44,14 +47,19 @@
   const leading = $derived(mobileChromeLeading(surface));
   const trailing = $derived(mobileChromeTrailing(surface));
   const brandStyle = $derived(workshopBrandCssVars(workshops.activeWorkshop?.brandColor));
+  const notesFilterActive = $derived(
+    vault.activeSpaceFilter !== null || vault.libraryBrowseMode !== "folders",
+  );
 
   const icons: Partial<Record<MobileChromeActionId, Component>> = {
     menu: Menu,
     back: ChevronLeft,
-    sessions: PanelLeft,
+    sessions: History,
     identity: UserRound,
     search: Search,
+    notesFilter: ListFilter,
     newNote: Plus,
+    noteEdit: Pencil,
     noteChat: MessageCircle,
     noteMore: MoreHorizontal,
     browserTabs: Layers,
@@ -93,8 +101,18 @@
       case "search":
         window.dispatchEvent(new CustomEvent("medousa-mobile-notes-search-focus"));
         return;
+      case "notesFilter":
+        window.dispatchEvent(new CustomEvent("medousa-mobile-notes-filter"));
+        return;
       case "newNote":
         vault.openNewNoteDialog();
+        return;
+      case "noteEdit":
+        if (vault.editorMode === "preview") {
+          vault.enterEditMode();
+        } else {
+          vault.enterPreviewMode();
+        }
         return;
       case "noteChat": {
         if (!vault.selectedPath) return;
@@ -150,13 +168,17 @@
       case "workshop":
         return `Workshop — ${workshops.activeLabel}`;
       case "sessions":
-        return "Open sessions";
+        return "Session history";
       case "identity":
         return "Open identity";
       case "search":
         return "Search notes";
+      case "notesFilter":
+        return "Browse filters";
       case "newNote":
         return "New note";
+      case "noteEdit":
+        return vault.editorMode === "preview" ? "Edit note" : "Preview note";
       case "noteChat":
         return "Talk about this note";
       case "noteMore":
@@ -176,6 +198,7 @@
 
   function isDisabled(id: MobileChromeActionId): boolean {
     switch (id) {
+      case "noteEdit":
       case "noteChat":
         return vault.noteLoading || !vault.selectedPath;
       case "browserBack":
@@ -215,12 +238,20 @@
           <span class="mobile-chrome-workshop-mono">{workshops.activeMonogram}</span>
         </button>
       {:else}
-        {@const Icon = action === "browserReload" && humanBrowser.loading ? Square : icons[action]}
+        {@const Icon =
+          action === "browserReload" && humanBrowser.loading
+            ? Square
+            : action === "noteEdit" && vault.editorMode === "edit"
+              ? Eye
+              : icons[action]}
         <button
           type="button"
           class="mobile-chrome-icon"
-          class:text-primary-300={action === "noteChat"}
+          class:text-primary-300={action === "noteChat" ||
+            (action === "noteEdit" && vault.editorMode === "edit") ||
+            (action === "notesFilter" && notesFilterActive)}
           aria-label={labelFor(action)}
+          aria-pressed={action === "noteEdit" ? vault.editorMode === "edit" : undefined}
           disabled={isDisabled(action)}
           data-browser-popover-trigger={action === "browserTabs" ? "" : undefined}
           onclick={(event) => void run(action, event.currentTarget)}
