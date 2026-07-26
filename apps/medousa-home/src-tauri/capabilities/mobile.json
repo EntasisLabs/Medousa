@@ -2,6 +2,7 @@
   "$schema": "../gen/schemas/mobile-schema.json",
   "identifier": "mobile",
   "description": "iOS/Android — single main webview window",
+  "platforms": ["iOS", "android"],
   "windows": ["main"],
   "permissions": [
     "core:default",

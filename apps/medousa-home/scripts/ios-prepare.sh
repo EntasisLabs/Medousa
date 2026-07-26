@@ -75,6 +75,8 @@ for stale in (
 
 text = re.sub(r"iOS: 16\.1", "iOS: 16.2", text)
 text = re.sub(r"iOS: 15\.0", "iOS: 16.2", text)
+# Stale typo from older patches / hand edits — drop it (correct key is NSSupportsLiveActivities).
+text = text.replace("        NSSSupportsLiveActivities: true\n", "")
 text = re.sub(
     r"(deploymentTarget:\s*\n\s*iOS: )(\d+\.\d+)",
     lambda m: m.group(1) + ("16.2" if float(m.group(2)) < 16.2 else m.group(2)),
@@ -264,6 +266,8 @@ if "com.apple.Push" not in text and "medousa-home_iOS:" in text:
     )
 
 # Widget Info.plist is rewritten by xcodegen — stamp versions into its info.properties too.
+# Replace the entire properties block (must be greedy up to entitlements) so repeated
+# ios-prepare runs do not append duplicate CFBundle* / NSExtension keys.
 if "MedousaWorkWidget:" in text:
     widget_props = (
         "      properties:\n"
@@ -277,7 +281,8 @@ if "MedousaWorkWidget:" in text:
         r"(  MedousaWorkWidget:.*?info:\n"
         r"      path: ../../ios-live-activity/Widget/Info.plist\n)"
         r"      properties:\n"
-        r"(?:        .*\n)*?",
+        r"(?:        .*\n)*"
+        r"(?=    entitlements:)",
         r"\1" + widget_props,
         text,
         count=1,
