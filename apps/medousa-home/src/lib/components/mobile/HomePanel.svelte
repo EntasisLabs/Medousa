@@ -5,9 +5,19 @@
   import MobileToast from "$lib/components/mobile/MobileToast.svelte";
   import PeerHomeStrip from "$lib/components/mobile/PeerHomeStrip.svelte";
   import WorkManifestCard from "$lib/components/work/WorkManifestCard.svelte";
-  import WorkHubTrays from "$lib/components/work/WorkHubTrays.svelte";
+  import WorkRailList from "$lib/components/work/WorkRailList.svelte";
   import WorkAsksPanel from "$lib/components/work/WorkAsksPanel.svelte";
-  import { ArrowUp, Bell, BookOpen, Calendar, FileText, Users } from "@lucide/svelte";
+  import {
+    AlertTriangle,
+    ArrowUp,
+    Bell,
+    BookOpen,
+    Calendar,
+    CheckCircle2,
+    CircleOff,
+    FileText,
+    Users,
+  } from "@lucide/svelte";
   import { automations } from "$lib/stores/automations.svelte";
   import { haptic } from "$lib/haptics";
   import { recurring } from "$lib/stores/recurring.svelte";
@@ -420,7 +430,91 @@
           {/each}
         </div>
 
-        <WorkHubTrays onSelectCard={onSelectCard} />
+        <div class="mt-3 flex flex-wrap items-center gap-1.5">
+          {#if partition.settled.length > 0}
+            <button
+              type="button"
+              class="inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] transition {workspace.workRailFilter ===
+              'settled'
+                ? 'border-primary-500/40 bg-primary-500/15 text-primary-100'
+                : 'border-surface-600/50 bg-surface-800/60 text-surface-300'}"
+              aria-pressed={workspace.workRailFilter === "settled"}
+              onclick={() =>
+                workspace.setWorkRailFilter(
+                  workspace.workRailFilter === "settled" ? "living" : "settled",
+                )}
+            >
+              <CheckCircle2 size={12} strokeWidth={1.75} />
+              Settled
+              <span class="tabular-nums text-surface-500">{partition.settled.length}</span>
+            </button>
+          {/if}
+          {#if partition.failed.length > 0}
+            <button
+              type="button"
+              class="inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] transition {workspace.workRailFilter ===
+              'failed'
+                ? 'border-primary-500/40 bg-primary-500/15 text-primary-100'
+                : 'border-surface-600/50 bg-surface-800/60 text-surface-300'}"
+              aria-pressed={workspace.workRailFilter === "failed"}
+              onclick={() =>
+                workspace.setWorkRailFilter(
+                  workspace.workRailFilter === "failed" ? "living" : "failed",
+                )}
+            >
+              <AlertTriangle size={12} strokeWidth={1.75} />
+              Failed
+              <span class="tabular-nums text-surface-500">{partition.failed.length}</span>
+            </button>
+          {/if}
+          {#if partition.stuck.length > 0}
+            <button
+              type="button"
+              class="inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] transition {workspace.workRailFilter ===
+              'stuck'
+                ? 'border-primary-500/40 bg-primary-500/15 text-primary-100'
+                : 'border-surface-600/50 bg-surface-800/60 text-surface-300'}"
+              aria-pressed={workspace.workRailFilter === "stuck"}
+              onclick={() =>
+                workspace.setWorkRailFilter(
+                  workspace.workRailFilter === "stuck" ? "living" : "stuck",
+                )}
+            >
+              <span class="text-[10px] font-bold">!</span>
+              Stuck
+              <span class="tabular-nums text-surface-500">{partition.stuck.length}</span>
+            </button>
+          {/if}
+          {#if partition.stopped.length > 0}
+            <button
+              type="button"
+              class="inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] transition {workspace.workRailFilter ===
+              'stopped'
+                ? 'border-primary-500/40 bg-primary-500/15 text-primary-100'
+                : 'border-surface-600/50 bg-surface-800/60 text-surface-300'}"
+              aria-pressed={workspace.workRailFilter === "stopped"}
+              onclick={() =>
+                workspace.setWorkRailFilter(
+                  workspace.workRailFilter === "stopped" ? "living" : "stopped",
+                )}
+            >
+              <CircleOff size={12} strokeWidth={1.75} />
+              Stopped
+              <span class="tabular-nums text-surface-500">{partition.stopped.length}</span>
+            </button>
+          {/if}
+        </div>
+
+        {#if workspace.workRailFilter !== "living"}
+          <div class="mt-2 max-h-64 min-h-0 overflow-hidden rounded-xl border border-surface-600/40">
+            <WorkRailList
+              chrome="default"
+              onPickCard={(id) => {
+                if (id) void onSelectCard(id);
+              }}
+            />
+          </div>
+        {/if}
 
         {#if nextSchedule}
           <footer class="mt-6">
