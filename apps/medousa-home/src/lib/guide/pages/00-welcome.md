@@ -8,7 +8,7 @@ This is the **Operator's Guide**: a digital manual for how to hold the tool, wha
 
 - The left sidebar is the table of contents. Chapters are grouped: **Start**, **Workspace**, **Craft**, **System**.
 - The right pane is the reader. Long chapters also show an in-page outline of headings.
-- Links that look like they jump inside the guide use `guide:` addresses — for example [Getting started](guide:getting-started) or [Chat](guide:chat).
+- Links that look like they jump inside the guide use `guide:` addresses — for example [Architecture and terminology](guide:architecture) or [Chat](guide:chat).
 
 ## How to open this window again
 
@@ -20,13 +20,17 @@ This is the **Operator's Guide**: a digital manual for how to hold the tool, wha
 
 | Area | Start here |
 |------|------------|
-| First connection and the daily loop | [Getting started](guide:getting-started) |
-| Rails, surfaces, panes, pop-outs | [Navigation and surfaces](guide:navigation-surfaces) |
-| Models, runtime, voice / stance / reasoning | [Chat](guide:chat) |
-| Look and feel | [Themes and customization](guide:themes-customization) |
-| Notes and the vault | [Vault and notes](guide:vault-notes) |
-| Scripts and automations | [Grapheme and automations](guide:grapheme-automations) |
-| Workshops, engine, updates | [Workshops and connections](guide:workshops-connections) |
+| Home vs workshop, peers, profiles, scopes | [Architecture and terminology](guide:architecture) |
+| Wizard, first connection, daily loop | [Getting started](guide:getting-started) |
+| Every surface, panes, desktops, mobile More | [Navigation and surfaces](guide:navigation-surfaces) |
+| Chat, permissions, Work | [Chat](guide:chat) · [Permissions](guide:permissions-budgets) · [Work](guide:work-jobs) |
+| Web browser + Calendar | [Browser](guide:browser) · [Calendar](guide:calendar) |
+| You / Map | [Profiles, identity, and Locus](guide:profiles-locus) |
+| Vault, trash/versions, Liquid | [Vault](guide:vault-notes) · [Recovery](guide:vault-recovery) · [Liquid](guide:liquid-reference) |
+| Views, automations, agents | [Views](guide:views-environments) · [Automations](guide:grapheme-automations) · [Agents](guide:specialist-agents) |
+| Phone, peers, channels | [Sharing](guide:sharing-phone) · [Messaging](guide:messaging-channels) |
+| Runtime, MCP, packages | [Runtime](guide:runtime-telemetry) · [MCP and packages](guide:mcp-packages) |
+| Workshops + troubleshooting | [Workshops](guide:workshops-connections) · [Troubleshooting](guide:troubleshooting) |
 
 ## Operator habits that pay off
 

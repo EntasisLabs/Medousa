@@ -3,7 +3,8 @@
 > **Status:** Active (2026-07) — rewritten for the 0.6.0 train  
 > **Audience:** Operators who already have a working workshop  
 > **Thesis:** Capability exposure is largely **done**. The gap is **felt quality** — language, wayfinding, micro-interactions, and first-run restraint — so a lost soul can find their place without the app oversharing intimacy on day one.  
-> **Supersedes:** [archive/polish-and-package-plan-capability-era.md](archive/polish-and-package-plan-capability-era.md) (P0–P7 “expose the engine” era — mostly shipped)
+> **Supersedes:** [archive/polish-and-package-plan-capability-era.md](archive/polish-and-package-plan-capability-era.md) (P0–P7 “expose the engine” era — mostly shipped)  
+> **Parallel track:** In-app Operator’s Guide depth is tracked in [operators-guide-docs-epic.md](operators-guide-docs-epic.md) (D0–D3). Felt polish F-phases do not replace wiki coverage — and wiki depth does not replace tone/wayfinding work here.
 
 ---
 
