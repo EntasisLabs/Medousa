@@ -17,6 +17,8 @@
   import EnvironmentRenderer from "$lib/components/environment/EnvironmentRenderer.svelte";
   import EnvPendingProposalBanner from "$lib/components/environment/EnvPendingProposalBanner.svelte";
   import ShellAskFab from "$lib/components/environment/ShellAskFab.svelte";
+  import WorkshopSwitcherCompact from "$lib/components/workshops/WorkshopSwitcherCompact.svelte";
+  import { Menu } from "@lucide/svelte";
   import { environment } from "$lib/stores/environment.svelte";
   import { layout } from "$lib/stores/layout.svelte";
   import { chat } from "$lib/stores/chat.svelte";
@@ -52,9 +54,14 @@
   import { vaultDisplayTitle } from "$lib/utils/formatVault";
   import {
     shellAskFabVisible,
-    showBuiltinHomeInlineAsk,
     visibleMobileTabs,
   } from "$lib/utils/mobileEnvironmentChrome";
+  import { haptic } from "$lib/haptics";
+  import "$lib/styles/mobile-home-convergence.postcss";
+
+  // Destinations menu pulls extra switchers + Lucide icons — keep it off the cold path.
+  const destinationsMenuMod = () =>
+    import("$lib/components/mobile/MobileDestinationsMenu.svelte");
 
   const mobileHomeSurfaceId = $derived(
     layout.effectiveMobileHomeSurface(environment.mobileDefaultHome),
@@ -73,7 +80,6 @@
       fabChromeActionCount: fabChromeOnHome,
     }),
   );
-  const showBuiltinInlineAsk = $derived(showBuiltinHomeInlineAsk(mobileAskEntry));
   let daemonHealth = $state<DaemonHealth | null>(null);
   let mainEl: HTMLElement | undefined = $state();
 
@@ -157,9 +163,13 @@
 
   $effect(() => {
     const order = visibleMobileTabs(environment.spec);
-    if (order.length > 0 && !order.includes(layout.mobileTab)) {
-      switchMobileTab(order[0]);
-    }
+    const tab = layout.mobileTab;
+    if (order.length === 0) return;
+    if (order.includes(tab)) return;
+    // Prefer home when correcting invalid/legacy tabs (e.g. stored "work").
+    const next = order.includes("home") ? "home" : order[0];
+    if (next === tab) return;
+    switchMobileTab(next);
   });
 
   onMount(() => {
@@ -212,6 +222,11 @@
   function closeWorkStory() {
     workspace.clearSelection();
   }
+
+  function openDestinationsMenu() {
+    haptic("light");
+    layout.openMobileDestinationsMenu();
+  }
 </script>
 
 <div
@@ -219,6 +234,19 @@
   data-mobile-tab={layout.mobileTab}
 >
   <EnvPendingProposalBanner />
+  {#if layout.mobileTab !== "home" || customMobileHome}
+    <header class="mobile-shell-topbar">
+      <button
+        type="button"
+        class="mobile-home-menu-btn"
+        aria-label="Open menu"
+        onclick={openDestinationsMenu}
+      >
+        <Menu size={18} strokeWidth={1.75} />
+      </button>
+      <WorkshopSwitcherCompact />
+    </header>
+  {/if}
   <main bind:this={mainEl} class="flex min-h-0 flex-1 flex-col overflow-hidden">
     {#key layout.navigationEpoch}
       {#if layout.mobileTab === "home"}
@@ -233,8 +261,6 @@
           onOpenChat={handleOpenChat}
           onOpenNote={handleOpenNote}
           onOpenSettings={() => layout.openMore("settings")}
-          onToggleActivity={() => layout.toggleActivitySheet()}
-          showInlineAsk={showBuiltinInlineAsk}
         />
         {/if}
       {:else if layout.mobileTab === "chat"}
@@ -271,6 +297,16 @@
 
   {#if showShellAskFab}
     <ShellAskFab />
+  {/if}
+
+  {#if layout.mobileDestinationsMenuOpen}
+    {#await destinationsMenuMod() then { default: MobileDestinationsMenu }}
+      <MobileDestinationsMenu
+        open={true}
+        onClose={() => layout.setMobileDestinationsMenuOpen(false)}
+        onToggleActivity={() => layout.toggleActivitySheet()}
+      />
+    {/await}
   {/if}
 
   <MobileToast

@@ -147,11 +147,15 @@ export function attachMobileBottomChromeLayout(
 
   const root = document.documentElement;
   let raf = 0;
+  let lastHeight = -1;
 
   const update = () => {
     cancelAnimationFrame(raf);
     raf = requestAnimationFrame(() => {
-      root.style.setProperty("--mobile-bottom-chrome-height", `${chromeEl.offsetHeight}px`);
+      const height = chromeEl.offsetHeight;
+      if (height === lastHeight) return;
+      lastHeight = height;
+      root.style.setProperty("--mobile-bottom-chrome-height", `${height}px`);
     });
   };
 

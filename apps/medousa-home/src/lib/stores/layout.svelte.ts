@@ -79,6 +79,7 @@ export class LayoutStore {
   libraryListScrollTop = $state(0);
   activitySheetOpen = $state(false);
   askSheetOpen = $state(false);
+  mobileDestinationsMenuOpen = $state(false);
   activityWidth = $state(loadWidth(ACTIVITY_WIDTH_KEY, 288));
   /** Master left rail width when visible (px). */
   shellSidebarWidth = $state(
@@ -542,6 +543,14 @@ export class LayoutStore {
 
   openAskSheet() {
     this.askSheetOpen = true;
+  }
+
+  setMobileDestinationsMenuOpen(open: boolean) {
+    this.mobileDestinationsMenuOpen = open;
+  }
+
+  openMobileDestinationsMenu() {
+    this.mobileDestinationsMenuOpen = true;
   }
 }
 

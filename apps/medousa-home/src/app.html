@@ -16,5 +16,41 @@
     class="h-full overflow-hidden"
   >
     <div style="display: contents">%sveltekit.body%</div>
+    <script>
+      // iOS mid loads as tauri://localhost and proxies Vite. SvelteKit's
+      // dynamic imports (/node_modules/..., /@fs/...) fail under that proxy —
+      // bounce once onto the real Vite HTTP origin when available.
+      (function () {
+        if (location.protocol !== "tauri:") {
+          try {
+            sessionStorage.removeItem("medousa-vite-http-bypass");
+          } catch (_) {}
+          return;
+        }
+        var key = "medousa-vite-http-bypass";
+        try {
+          if (sessionStorage.getItem(key) === "1") return;
+        } catch (_) {}
+        function go(origin) {
+          if (!origin) return;
+          try {
+            sessionStorage.setItem(key, "1");
+          } catch (_) {}
+          location.replace(origin + "/");
+        }
+        if (typeof window.__MEDOUSA_VITE_ORIGIN === "string" && window.__MEDOUSA_VITE_ORIGIN) {
+          go(window.__MEDOUSA_VITE_ORIGIN);
+          return;
+        }
+        fetch("/__medousa_boot_info")
+          .then(function (res) {
+            return res.json();
+          })
+          .then(function (info) {
+            go(info && info.viteOrigin);
+          })
+          .catch(function () {});
+      })();
+    </script>
   </body>
 </html>

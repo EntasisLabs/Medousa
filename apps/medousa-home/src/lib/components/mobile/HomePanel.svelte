@@ -1,26 +1,11 @@
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
-  import ProfileSwitcherCompact from "$lib/components/mobile/ProfileSwitcherCompact.svelte";
+  import "$lib/styles/mobile-home-convergence.postcss";
   import WorkshopSwitcherCompact from "$lib/components/workshops/WorkshopSwitcherCompact.svelte";
   import MobileToast from "$lib/components/mobile/MobileToast.svelte";
-  import PeerHomeStrip from "$lib/components/mobile/PeerHomeStrip.svelte";
-  import WorkManifestCard from "$lib/components/work/WorkManifestCard.svelte";
-  import WorkRailList from "$lib/components/work/WorkRailList.svelte";
   import WorkAsksPanel from "$lib/components/work/WorkAsksPanel.svelte";
-  import {
-    AlertTriangle,
-    ArrowUp,
-    Bell,
-    BookOpen,
-    Calendar,
-    CheckCircle2,
-    CircleOff,
-    FileText,
-    Users,
-  } from "@lucide/svelte";
-  import { automations } from "$lib/stores/automations.svelte";
+  import { Menu } from "@lucide/svelte";
   import { haptic } from "$lib/haptics";
-  import { recurring } from "$lib/stores/recurring.svelte";
   import { vault } from "$lib/stores/vault.svelte";
   import { workspace } from "$lib/stores/workspace.svelte";
   import { chat } from "$lib/stores/chat.svelte";
@@ -34,23 +19,29 @@
     resolveJournalDailyHeroPath,
     resolveLastEditedNote,
   } from "$lib/utils/vaultNoteBridge";
-  import type { ProvenanceChip } from "$lib/utils/workHub";
   import { partitionWorkHub } from "$lib/utils/workHub";
   import {
     fetchPeerHomePreview,
-    peerHomeCardHint,
     type PeerHomePreview,
   } from "$lib/utils/peerHomePreview";
+  import {
+    formatCardSubtitle,
+    formatCardTitle,
+  } from "$lib/utils/formatWork";
+  import {
+    homeContinueRows,
+    homeNotesDateParts,
+    peerInitials,
+  } from "$lib/utils/homeContinue";
   import { isTauri } from "$lib/window";
+  import type { WorkCard } from "$lib/types/workspace";
 
   interface Props {
     health: DaemonHealth | null;
     onSelectCard: (id: string) => void | Promise<void>;
-    onOpenChat: () => void;
+    onOpenChat: (sessionId?: string) => void | Promise<void>;
     onOpenNote: (path: string) => void | Promise<void>;
     onOpenSettings: () => void;
-    onToggleActivity: () => void;
-    showInlineAsk?: boolean;
   }
 
   let {
@@ -59,24 +50,24 @@
     onOpenChat,
     onOpenNote,
     onOpenSettings,
-    onToggleActivity,
-    showInlineAsk = true,
   }: Props = $props();
 
   const blocked = $derived(workspace.needsAttentionCount());
   const inMotion = $derived(workspace.inMotionCount());
-  const nextSchedule = $derived(recurring.soonestEnabled());
   const journalDailyPath = $derived(resolveJournalDailyHeroPath(vault.notes));
   const todayDailyPath = $derived(dailyNotePath());
   const lastEditedNote = $derived(resolveLastEditedNote(vault.notes));
-  const automationCounts = $derived(automations.activeCount());
   const partition = $derived(partitionWorkHub(workspace.cards));
   const living = $derived(partition.living);
 
-  // Work only earns space on Home when there is something live, waiting, or stuck.
-  const hasMotion = $derived(
-    living.length > 0 || blocked > 0 || partition.stuck.length > 0,
-  );
+  let peerPreview = $state<PeerHomePreview>({
+    unreadTotal: 0,
+    peerCount: 0,
+    stripThreads: [],
+    latestThread: null,
+  });
+  let peerPollTimer: ReturnType<typeof setInterval> | undefined;
+  let sessionsHydrated = $state(false);
 
   const isOffline = $derived(health !== null && !health.ok);
   const isConnecting = $derived(health === null);
@@ -93,7 +84,6 @@
     return "Good evening";
   });
 
-  // One calm line instead of a competing hero + status pill + banner.
   const statusLine = $derived.by(() => {
     if (isOffline) return "Not connected";
     if (isConnecting) return "Connecting…";
@@ -115,8 +105,81 @@
     health?.ok ? "bg-success-400" : health ? "bg-warning-400" : "bg-surface-500",
   );
 
+  const notesDate = $derived(homeNotesDateParts());
+  const notesWhisper = $derived.by(() => {
+    if (lastEditedNote) {
+      return vaultDisplayTitle(lastEditedNote.title ?? "", lastEditedNote.path);
+    }
+    if (vault.notes.some((note) => note.path === todayDailyPath)) return "Today’s journal";
+    if (journalDailyPath) return "Recent journal";
+    return "Start today";
+  });
+
+  const continueRows = $derived(homeContinueRows(chat.sessions, 3));
+  const continueLead = $derived(continueRows[0] ?? null);
+  const continueWhispers = $derived(continueRows.slice(1));
+
+  const peerAvatarLabels = $derived(
+    peerPreview.stripThreads.slice(0, 3).map((thread) => thread.label),
+  );
+
+  type HomeActivityBeat = {
+    cardId: string | null;
+    status: "done" | "need" | "motion";
+    statusLabel: string;
+    title: string;
+    line: string;
+  };
+
+  const lastActivity = $derived.by((): HomeActivityBeat | null => {
+    const pending = workspace.pendingAskCompletion;
+    if (pending) {
+      return {
+        cardId: pending.jobId,
+        status: "done",
+        statusLabel: "Done",
+        title: (pending.title ?? "").trim() || "Ask ready",
+        line: "Tap to open the result",
+      };
+    }
+
+    const blockedCard =
+      workspace.cards.find((card) => card.column === "blocked") ??
+      partition.stuck[0] ??
+      null;
+    if (blockedCard) {
+      return beatFromCard(blockedCard, "need", "Needs you");
+    }
+
+    const motionCard = workspace.primaryInMotionCard();
+    if (motionCard) {
+      return beatFromCard(motionCard, "motion", "In motion");
+    }
+
+    const settled = partition.settled[0];
+    if (settled) {
+      return beatFromCard(settled, "done", "Done");
+    }
+
+    return null;
+  });
+
+  function beatFromCard(
+    card: WorkCard,
+    status: HomeActivityBeat["status"],
+    statusLabel: string,
+  ): HomeActivityBeat {
+    return {
+      cardId: card.id,
+      status,
+      statusLabel,
+      title: formatCardTitle(card),
+      line: formatCardSubtitle(card),
+    };
+  }
+
   let scrollEl: HTMLDivElement | undefined = $state();
-  let inMotionEl: HTMLElement | undefined = $state();
+  let activityEl: HTMLElement | undefined = $state();
   let pullY = $state(0);
   let refreshing = $state(false);
   let touchStartY = 0;
@@ -126,61 +189,41 @@
   let toastCardId = $state<string | null>(null);
   let toastTimer: ReturnType<typeof setTimeout> | undefined;
 
-  const dailyShortcutHint = $derived.by(() => {
-    if (vault.notes.some((note) => note.path === todayDailyPath)) return "Today";
-    if (journalDailyPath) return "Recent journal";
-    return "Start today";
+  $effect(() => {
+    if (sessionsHydrated) return;
+    if (!health?.ok) return;
+    sessionsHydrated = true;
+    void chat.refreshSessions();
   });
-
-  const lastEditedTitle = $derived(
-    lastEditedNote
-      ? vaultDisplayTitle(lastEditedNote.title, lastEditedNote.path)
-      : "Last edited",
-  );
-
-  const lastEditedHint = $derived.by(() => {
-    if (!lastEditedNote) return "No notes yet";
-    try {
-      const date = new Date(lastEditedNote.modified_at_utc);
-      const diffMs = Date.now() - date.getTime();
-      const mins = Math.floor(diffMs / 60_000);
-      if (mins < 1) return "Just now";
-      if (mins < 60) return `${mins}m ago`;
-      const hours = Math.floor(mins / 60);
-      if (hours < 48) return `${hours}h ago`;
-      return date.toLocaleDateString([], { month: "short", day: "numeric" });
-    } catch {
-      return "Recent";
-    }
-  });
-
-  const automationsHint = $derived(
-    automationCounts.total === 0
-      ? "Scripts & schedules"
-      : `${automationCounts.enabled}/${automationCounts.total} active`,
-  );
-
-  let peerPreview = $state<PeerHomePreview>({
-    unreadTotal: 0,
-    peerCount: 0,
-    stripThreads: [],
-    latestThread: null,
-  });
-  let peerPollTimer: ReturnType<typeof setInterval> | undefined;
-
-  const peersHint = $derived(peerHomeCardHint(peerPreview));
-  const showPeerStrip = $derived(peerPreview.stripThreads.length > 0);
 
   $effect(() => {
-    void workspace.prefetchCardDetails();
+    // Optional work detail — never contend with first paint.
+    const run = () => void workspace.prefetchCardDetails();
+    let idleId: number | undefined;
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    if (typeof requestIdleCallback === "function") {
+      idleId = requestIdleCallback(run, { timeout: 4000 });
+    } else {
+      timeoutId = setTimeout(run, 2000);
+    }
+    return () => {
+      if (idleId !== undefined && typeof cancelIdleCallback === "function") {
+        cancelIdleCallback(idleId);
+      }
+      if (timeoutId) clearTimeout(timeoutId);
+    };
   });
 
   onMount(() => {
-    if (!isTauri()) return;
+    if (!isTauri()) {
+      void chat.refreshSessions();
+      return;
+    }
     void refreshPeerPreview();
     peerPollTimer = setInterval(() => {
+      if (document.visibilityState !== "visible") return;
       void refreshPeerPreview();
-    }, 8000);
+    }, 30_000);
   });
 
   onDestroy(() => {
@@ -191,13 +234,9 @@
     peerPreview = await fetchPeerHomePreview();
   }
 
-  function scrollToInMotion() {
-    inMotionEl?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }
-
-  function openAsk() {
+  function openMenu() {
     haptic("light");
-    layout.openAskSheet();
+    layout.openMobileDestinationsMenu();
   }
 
   function onStatusTap() {
@@ -205,8 +244,8 @@
       onOpenSettings();
       return;
     }
-    if (hasMotion) {
-      scrollToInMotion();
+    if (lastActivity) {
+      activityEl?.scrollIntoView({ behavior: "smooth", block: "start" });
       return;
     }
     if (peerPreview.unreadTotal > 0) {
@@ -224,24 +263,31 @@
     await onOpenNote(path);
   }
 
-  async function openLastEditedNote() {
-    if (!lastEditedNote) return;
-    haptic("light");
-    await onOpenNote(lastEditedNote.path);
-  }
-
-  function openAutomations() {
-    haptic("light");
-    layout.openMore("automations");
-  }
-
   function openPeers() {
     haptic("light");
     layout.openMore("peers");
   }
 
+  async function openContinue(sessionId: string) {
+    haptic("light");
+    await onOpenChat(sessionId);
+  }
+
+  async function openActivity() {
+    if (!lastActivity?.cardId) return;
+    haptic("light");
+    // AskCompletionModal is hosted by MobileShell when pending — don't select a fake card id.
+    if (workspace.pendingAskCompletion) return;
+    await onSelectCard(lastActivity.cardId);
+  }
+
   async function refresh() {
-    await Promise.all([workspace.prefetchCardDetails(), refreshPeerPreview()]);
+    await Promise.all([
+      workspace.prefetchCardDetails(),
+      refreshPeerPreview(),
+      chat.refreshSessions(),
+      vault.notes.length === 0 ? vault.refreshNotes() : Promise.resolve(),
+    ]);
   }
 
   function onTouchStart(event: TouchEvent) {
@@ -292,23 +338,6 @@
       toastTimer = setTimeout(dismissToast, 4000);
     }
   }
-
-  async function handleProvenance(chip: ProvenanceChip, cardId: string) {
-    if (chip.kind === "vault" && chip.href) {
-      onOpenNote(chip.href);
-      return;
-    }
-    if (chip.kind === "chat") {
-      const detail = workspace.cardDetailsCache.get(cardId);
-      const sessionId = detail?.session_id?.trim();
-      if (sessionId && sessionId !== chat.sessionId) {
-        await chat.switchSession(sessionId);
-      }
-      onOpenChat();
-      return;
-    }
-    void onSelectCard(cardId);
-  }
 </script>
 
 {#if workspace.workView === "asks"}
@@ -319,7 +348,7 @@
     bind:this={scrollEl}
     class="mobile-pull-scroll min-h-0 flex-1 overflow-y-auto"
     role="region"
-    aria-label="Home command center"
+    aria-label="Home"
     ontouchstart={onTouchStart}
     ontouchmove={onTouchMove}
     ontouchend={onTouchEnd}
@@ -335,197 +364,129 @@
       </div>
     {/if}
 
-    <div class="px-5 pb-4 pt-3">
-      <div class="flex items-center justify-end gap-2">
+    <div class="px-5 pb-8 pt-3">
+      <div class="mobile-home-topbar">
+        <button
+          type="button"
+          class="mobile-home-menu-btn"
+          aria-label="Open menu"
+          onclick={openMenu}
+        >
+          <Menu size={18} strokeWidth={1.75} />
+        </button>
         <WorkshopSwitcherCompact />
-        <ProfileSwitcherCompact />
+      </div>
+
+      <div class="mobile-home-brand">
+        <h1 class="mobile-home-wordmark">Medousa</h1>
+        <p class="mobile-home-greeting-quiet">{greeting}</p>
         <button
           type="button"
-          class="mobile-icon-btn shrink-0"
-          aria-label="Activity"
-          onclick={onToggleActivity}
+          class="mobile-home-status-breath"
+          onclick={onStatusTap}
         >
-          <Bell size={20} strokeWidth={1.75} />
+          <span
+            class="mobile-alive-dot {living.length > 0
+              ? 'mobile-alive-dot-active'
+              : ''} {statusDotClass}"
+            aria-hidden="true"
+          ></span>
+          <span class="truncate">{statusLine}</span>
         </button>
       </div>
 
-      <h1 class="mobile-home-greeting mt-6">{greeting}</h1>
+      <div class="mobile-home-glance">
+        <button type="button" class="mobile-home-glance-tile" onclick={openPeers}>
+          <span class="mobile-home-glance-kicker">Peers</span>
+          {#if peerPreview.unreadTotal > 0}
+            <span class="mobile-home-glance-hero">{peerPreview.unreadTotal}</span>
+            <span class="mobile-home-glance-sub">unread</span>
+          {:else}
+            <span class="mobile-home-glance-hero">
+              {peerPreview.peerCount > 0 ? peerPreview.peerCount : "—"}
+            </span>
+            <span class="mobile-home-glance-sub">
+              {peerPreview.peerCount > 0 ? "quiet" : "none yet"}
+            </span>
+          {/if}
+          {#if peerAvatarLabels.length > 0}
+            <div class="mobile-home-peer-avatars">
+              {#each peerAvatarLabels as label (label)}
+                <span class="mobile-home-peer-avatar-chip">{peerInitials(label)}</span>
+              {/each}
+            </div>
+          {/if}
+        </button>
 
-      {#if showInlineAsk}
         <button
           type="button"
-          class="mobile-home-ask mt-4"
-          aria-label="Ask Medousa"
-          onclick={openAsk}
+          class="mobile-home-glance-tile"
+          onclick={() => void openDailyNote()}
         >
-          <span class="mobile-home-ask-placeholder">Ask Medousa anything…</span>
-          <span class="mobile-home-ask-send" aria-hidden="true">
-            <ArrowUp size={18} strokeWidth={2.25} />
+          <span class="mobile-home-glance-kicker mobile-home-glance-kicker-accent">
+            {notesDate.weekday}
           </span>
-        </button>
-      {/if}
-
-      <button
-        type="button"
-        class="mobile-home-statusline"
-        onclick={onStatusTap}
-      >
-        <span
-          class="mobile-alive-dot {living.length > 0
-            ? 'mobile-alive-dot-active'
-            : ''} {statusDotClass}"
-          aria-hidden="true"
-        ></span>
-        <span class="truncate">{statusLine}</span>
-      </button>
-
-      <div class="mobile-home-cards mt-5">
-        <button type="button" class="mobile-home-card" onclick={() => void openDailyNote()}>
-          <BookOpen size={17} strokeWidth={1.75} class="mobile-home-card-icon" />
-          <span class="mobile-home-card-label">Daily note</span>
-          <span class="mobile-home-card-hint">{dailyShortcutHint}</span>
-        </button>
-        <button
-          type="button"
-          class="mobile-home-card"
-          disabled={!lastEditedNote}
-          onclick={() => void openLastEditedNote()}
-        >
-          <FileText size={17} strokeWidth={1.75} class="mobile-home-card-icon" />
-          <span class="mobile-home-card-label">{lastEditedTitle}</span>
-          <span class="mobile-home-card-hint">{lastEditedHint}</span>
-        </button>
-        <button type="button" class="mobile-home-card" onclick={openAutomations}>
-          <Calendar size={17} strokeWidth={1.75} class="mobile-home-card-icon" />
-          <span class="mobile-home-card-label">Automations</span>
-          <span class="mobile-home-card-hint">{automationsHint}</span>
-        </button>
-        <button type="button" class="mobile-home-card" onclick={openPeers}>
-          <Users size={17} strokeWidth={1.75} class="mobile-home-card-icon" />
-          <span class="mobile-home-card-label">Peers</span>
-          <span class="mobile-home-card-hint">{peersHint}</span>
+          <span class="mobile-home-glance-hero">{notesDate.day}</span>
+          <span class="mobile-home-glance-title">Daily note</span>
+          <span class="mobile-home-glance-whisper">{notesWhisper}</span>
         </button>
       </div>
 
-      {#if showPeerStrip}
-        <PeerHomeStrip threads={peerPreview.stripThreads} />
-      {/if}
-    </div>
-
-    {#if hasMotion}
-      <div
-        bind:this={inMotionEl}
-        id="home-in-motion"
-        class="border-t border-surface-500/25 px-4 pb-8 pt-5"
-      >
-        <div class="work-hub-grid pb-2">
-          {#each living as card (card.id)}
-            <WorkManifestCard
-              {card}
-              detail={workspace.cardDetailsCache.get(card.id)}
-              selected={workspace.selectedCardId === card.id}
-              onSelect={(id) => void onSelectCard(id)}
-              onProvenance={handleProvenance}
-            />
+      {#if continueLead}
+        <div class="mobile-home-continue">
+          <p class="mobile-home-continue-kicker">Continue</p>
+          <button
+            type="button"
+            class="mobile-home-continue-lead"
+            onclick={() => void openContinue(continueLead.sessionId)}
+          >
+            <div class="mobile-home-continue-lead-top">
+              <span class="mobile-home-continue-lead-title">{continueLead.title}</span>
+              {#if continueLead.relativeTime}
+                <span class="mobile-home-continue-time">{continueLead.relativeTime}</span>
+              {/if}
+            </div>
+            {#if continueLead.preview}
+              <span class="mobile-home-continue-preview">{continueLead.preview}</span>
+            {/if}
+          </button>
+          {#each continueWhispers as row (row.sessionId)}
+            <button
+              type="button"
+              class="mobile-home-continue-whisper"
+              onclick={() => void openContinue(row.sessionId)}
+            >
+              <span class="mobile-home-continue-whisper-title">{row.title}</span>
+              {#if row.relativeTime}
+                <span class="mobile-home-continue-time">{row.relativeTime}</span>
+              {/if}
+            </button>
           {/each}
         </div>
+      {/if}
 
-        <div class="mt-3 flex flex-wrap items-center gap-1.5">
-          {#if partition.settled.length > 0}
-            <button
-              type="button"
-              class="inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] transition {workspace.workRailFilter ===
-              'settled'
-                ? 'border-primary-500/40 bg-primary-500/15 text-primary-100'
-                : 'border-surface-600/50 bg-surface-800/60 text-surface-300'}"
-              aria-pressed={workspace.workRailFilter === "settled"}
-              onclick={() =>
-                workspace.setWorkRailFilter(
-                  workspace.workRailFilter === "settled" ? "living" : "settled",
-                )}
-            >
-              <CheckCircle2 size={12} strokeWidth={1.75} />
-              Settled
-              <span class="tabular-nums text-surface-500">{partition.settled.length}</span>
-            </button>
-          {/if}
-          {#if partition.failed.length > 0}
-            <button
-              type="button"
-              class="inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] transition {workspace.workRailFilter ===
-              'failed'
-                ? 'border-primary-500/40 bg-primary-500/15 text-primary-100'
-                : 'border-surface-600/50 bg-surface-800/60 text-surface-300'}"
-              aria-pressed={workspace.workRailFilter === "failed"}
-              onclick={() =>
-                workspace.setWorkRailFilter(
-                  workspace.workRailFilter === "failed" ? "living" : "failed",
-                )}
-            >
-              <AlertTriangle size={12} strokeWidth={1.75} />
-              Failed
-              <span class="tabular-nums text-surface-500">{partition.failed.length}</span>
-            </button>
-          {/if}
-          {#if partition.stuck.length > 0}
-            <button
-              type="button"
-              class="inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] transition {workspace.workRailFilter ===
-              'stuck'
-                ? 'border-primary-500/40 bg-primary-500/15 text-primary-100'
-                : 'border-surface-600/50 bg-surface-800/60 text-surface-300'}"
-              aria-pressed={workspace.workRailFilter === "stuck"}
-              onclick={() =>
-                workspace.setWorkRailFilter(
-                  workspace.workRailFilter === "stuck" ? "living" : "stuck",
-                )}
-            >
-              <span class="text-[10px] font-bold">!</span>
-              Stuck
-              <span class="tabular-nums text-surface-500">{partition.stuck.length}</span>
-            </button>
-          {/if}
-          {#if partition.stopped.length > 0}
-            <button
-              type="button"
-              class="inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] transition {workspace.workRailFilter ===
-              'stopped'
-                ? 'border-primary-500/40 bg-primary-500/15 text-primary-100'
-                : 'border-surface-600/50 bg-surface-800/60 text-surface-300'}"
-              aria-pressed={workspace.workRailFilter === "stopped"}
-              onclick={() =>
-                workspace.setWorkRailFilter(
-                  workspace.workRailFilter === "stopped" ? "living" : "stopped",
-                )}
-            >
-              <CircleOff size={12} strokeWidth={1.75} />
-              Stopped
-              <span class="tabular-nums text-surface-500">{partition.stopped.length}</span>
-            </button>
-          {/if}
-        </div>
-
-        {#if workspace.workRailFilter !== "living"}
-          <div class="mt-2 max-h-64 min-h-0 overflow-hidden rounded-xl border border-surface-600/40">
-            <WorkRailList
-              chrome="default"
-              onPickCard={(id) => {
-                if (id) void onSelectCard(id);
-              }}
-            />
-          </div>
-        {/if}
-
-        {#if nextSchedule}
-          <footer class="mt-6">
-            <p class="mobile-pulse-whisper text-center">
-              Next · {recurring.labelFor(nextSchedule)} ·
-              {recurring.formatNextRun(nextSchedule.next_run_at_utc)}
-            </p>
-          </footer>
-        {/if}
-      </div>
-    {/if}
+      {#if lastActivity}
+        <button
+          bind:this={activityEl}
+          type="button"
+          id="home-last-activity"
+          class="mobile-home-activity"
+          onclick={() => void openActivity()}
+        >
+          <p class="mobile-home-activity-kicker">Last activity</p>
+          <p
+            class="mobile-home-activity-status"
+            class:mobile-home-activity-status-done={lastActivity.status === "done"}
+            class:mobile-home-activity-status-need={lastActivity.status === "need"}
+            class:mobile-home-activity-status-motion={lastActivity.status === "motion"}
+          >
+            {lastActivity.statusLabel}
+          </p>
+          <p class="mobile-home-activity-title">{lastActivity.title}</p>
+          <p class="mobile-home-activity-line">{lastActivity.line}</p>
+        </button>
+      {/if}
+    </div>
   </div>
 
   <MobileToast

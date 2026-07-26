@@ -10,21 +10,27 @@ export type MobileBrowserBounds = {
 
 type PaddingPx = { top: number; bottom: number; left: number; right: number };
 
-export function readMobileBottomChromeHeight(): number {
-  if (typeof document === "undefined") return MOBILE_BOTTOM_CHROME_DEFAULT;
+/**
+ * Published height in px, or null while only the stylesheet fallback (5.5rem) is set.
+ * `0px` is a real value — the chrome collapses to nothing on tabs without a composer.
+ */
+function readPublishedBottomChromeHeight(): number | null {
+  if (typeof document === "undefined") return null;
   const raw = getComputedStyle(document.documentElement)
     .getPropertyValue("--mobile-bottom-chrome-height")
     .trim();
-  if (raw.endsWith("px")) {
-    const parsed = parseFloat(raw);
-    if (Number.isFinite(parsed) && parsed > 0) return parsed;
-  }
-  return MOBILE_BOTTOM_CHROME_DEFAULT;
+  if (!raw.endsWith("px")) return null;
+  const parsed = parseFloat(raw);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+}
+
+export function readMobileBottomChromeHeight(): number {
+  return readPublishedBottomChromeHeight() ?? MOBILE_BOTTOM_CHROME_DEFAULT;
 }
 
 /** True once MobileBottomChrome has published a measured height (not 5.5rem fallback). */
 export function isMobileBottomChromeMeasured(): boolean {
-  return readMobileBottomChromeHeight() < MOBILE_BOTTOM_CHROME_DEFAULT;
+  return readPublishedBottomChromeHeight() !== null;
 }
 
 function rect(el: Element | null | undefined): DOMRect | null {

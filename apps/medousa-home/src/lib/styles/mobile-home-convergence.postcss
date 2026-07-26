@@ -1,0 +1,213 @@
+/**
+ * Home AVEC convergence widgets — kept out of app.postcss to avoid
+ * invalidating the ~14k-line god sheet on every Home tweak.
+ */
+
+.mobile-home-brand {
+  @apply mt-5;
+}
+
+.mobile-home-wordmark {
+  @apply text-[2rem] font-semibold tracking-tight text-surface-50;
+}
+
+.mobile-home-greeting-quiet {
+  @apply mt-1 text-base text-surface-400;
+}
+
+.mobile-home-status-breath {
+  @apply mt-2 inline-flex max-w-full items-center gap-2 text-sm text-surface-500 transition active:text-surface-300;
+}
+
+.mobile-home-ask-quiet {
+  @apply mt-5 flex w-full items-center gap-3 rounded-[22px] border border-surface-500/35 bg-surface-900/70 px-4 py-3.5 text-left transition active:bg-surface-800/80;
+}
+
+.mobile-home-ask-quiet-label {
+  @apply min-w-0 flex-1 truncate text-[15px] text-surface-500;
+}
+
+.mobile-home-ask-quiet-chevron {
+  @apply shrink-0 text-surface-500;
+}
+
+.mobile-home-glance {
+  @apply mt-4 grid grid-cols-2 gap-3;
+}
+
+.mobile-home-glance-tile {
+  @apply flex min-h-[9.5rem] flex-col rounded-[22px] border border-surface-500/30 bg-surface-900/55 p-3.5 text-left transition active:bg-surface-800/70;
+}
+
+.mobile-home-glance-kicker {
+  @apply text-[10px] font-semibold uppercase tracking-[0.08em] text-surface-500;
+}
+
+.mobile-home-glance-kicker-accent {
+  @apply text-warning-400/90;
+}
+
+.mobile-home-glance-hero {
+  @apply mt-2 text-4xl font-semibold tabular-nums leading-none tracking-tight text-surface-50;
+}
+
+.mobile-home-glance-sub {
+  @apply mt-1 text-xs text-surface-500;
+}
+
+.mobile-home-glance-title {
+  @apply mt-auto pt-3 text-sm font-semibold text-surface-100;
+}
+
+.mobile-home-glance-whisper {
+  @apply mt-0.5 line-clamp-1 text-[11px] text-surface-500;
+}
+
+.mobile-home-peer-avatars {
+  @apply mt-3 flex items-center gap-1.5;
+}
+
+.mobile-home-peer-avatar-chip {
+  @apply inline-flex h-7 w-7 items-center justify-center rounded-full border border-surface-600/50 bg-surface-800 text-[9px] font-semibold text-surface-300;
+}
+
+.mobile-home-continue {
+  @apply mt-4 rounded-[22px] border border-surface-500/30 bg-surface-900/55 px-3.5 py-3 text-left;
+}
+
+.mobile-home-continue-kicker {
+  @apply mb-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-surface-500;
+}
+
+.mobile-home-continue-lead {
+  @apply flex w-full flex-col gap-1 rounded-xl px-1 py-1.5 text-left transition active:bg-surface-800/60;
+}
+
+.mobile-home-continue-lead-top {
+  @apply flex items-baseline justify-between gap-3;
+}
+
+.mobile-home-continue-lead-title {
+  @apply min-w-0 flex-1 text-[17px] font-semibold leading-snug text-surface-50;
+}
+
+.mobile-home-continue-time {
+  @apply shrink-0 text-[11px] tabular-nums text-surface-500;
+}
+
+.mobile-home-continue-preview {
+  @apply line-clamp-2 text-[12px] leading-snug text-surface-500;
+}
+
+.mobile-home-continue-whisper {
+  @apply mt-1 flex w-full items-baseline justify-between gap-3 border-t border-surface-700/40 px-1 py-2.5 text-left transition active:bg-surface-800/50;
+}
+
+.mobile-home-continue-whisper-title {
+  @apply min-w-0 flex-1 truncate text-sm text-surface-300;
+}
+
+.mobile-home-activity {
+  @apply mt-4 mb-2 w-full rounded-[22px] border border-surface-500/30 bg-surface-900/55 px-3.5 py-3.5 text-left transition active:bg-surface-800/70;
+}
+
+.mobile-home-activity-kicker {
+  @apply text-[10px] font-semibold uppercase tracking-[0.08em] text-surface-500;
+}
+
+.mobile-home-activity-status {
+  @apply mt-2 text-sm font-semibold;
+}
+
+.mobile-home-activity-status-done {
+  @apply text-success-400;
+}
+
+.mobile-home-activity-status-need {
+  @apply text-warning-400;
+}
+
+.mobile-home-activity-status-motion {
+  @apply text-primary-300;
+}
+
+.mobile-home-activity-title {
+  @apply mt-1 text-xl font-semibold leading-snug tracking-tight text-surface-50;
+}
+
+.mobile-home-activity-line {
+  @apply mt-1.5 line-clamp-2 text-[13px] leading-snug text-surface-500;
+}
+
+.mobile-home-topbar {
+  @apply flex items-center justify-between gap-2;
+}
+
+.mobile-home-menu-btn {
+  @apply inline-flex h-10 w-10 items-center justify-center rounded-full border border-surface-500/40 bg-surface-900/70 text-surface-100 transition active:bg-surface-800;
+}
+
+.mobile-shell-topbar {
+  @apply flex items-center justify-between gap-2 px-4 pb-1 pt-2;
+  padding-top: max(0.5rem, env(safe-area-inset-top, 0px));
+}
+
+.mobile-dest-menu-backdrop {
+  @apply fixed inset-0 z-[60] flex items-start justify-start p-3;
+  padding-top: max(0.75rem, env(safe-area-inset-top, 0px));
+  background-color: rgb(var(--color-surface-950) / 0.55);
+}
+
+.mobile-dest-menu {
+  @apply flex max-h-[min(88dvh,36rem)] w-[min(100%,20.5rem)] flex-col overflow-hidden rounded-3xl border border-surface-500/40 shadow-2xl;
+  background-color: rgb(var(--color-surface-900) / 0.98);
+}
+
+.mobile-dest-menu-head {
+  @apply flex items-center justify-between gap-2 border-b border-surface-700/40 px-3 py-2.5;
+}
+
+.mobile-dest-menu-title {
+  @apply text-base font-semibold text-surface-50;
+}
+
+.mobile-dest-menu-switchers {
+  @apply flex flex-wrap items-center gap-2 border-b border-surface-700/30 px-3 py-2.5;
+}
+
+.mobile-dest-menu-activity {
+  @apply rounded-full border border-surface-600/50 px-2.5 py-1 text-[11px] font-medium text-surface-300;
+}
+
+.mobile-dest-menu-scroll {
+  @apply min-h-0 flex-1 overflow-y-auto px-2 pb-3 pt-1;
+}
+
+.mobile-dest-menu-section {
+  @apply px-2 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-wide text-surface-500;
+}
+
+.mobile-dest-menu-list {
+  @apply m-0 list-none p-0;
+}
+
+.mobile-dest-menu-row {
+  @apply flex w-full items-center gap-3 rounded-xl px-2 py-2.5 text-left transition active:bg-surface-800/80;
+}
+
+.mobile-dest-menu-icon {
+  @apply shrink-0 text-surface-400;
+}
+
+/* Tab bar removed — collapse chrome without display:none so ResizeObserver
+   / --mobile-bottom-chrome-height stay stable (display:none caused 0↔layout thrash). */
+.mobile-bottom-chrome.mobile-bottom-chrome-collapsed {
+  height: 0 !important;
+  min-height: 0 !important;
+  max-height: 0 !important;
+  overflow: hidden !important;
+  padding: 0 !important;
+  border: none !important;
+  pointer-events: none;
+  visibility: hidden;
+}

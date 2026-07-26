@@ -35,11 +35,16 @@ export function mobileOverlaysOpen(): boolean {
     layout.activitySheetOpen ||
     layout.askSheetOpen ||
     layout.sessionDrawerOpen ||
-    layout.identityDrawerOpen
+    layout.identityDrawerOpen ||
+    layout.mobileDestinationsMenuOpen
   );
 }
 
 export function tryMobileBackNavigation(): boolean {
+  if (layout.mobileDestinationsMenuOpen) {
+    layout.setMobileDestinationsMenuOpen(false);
+    return true;
+  }
   if (layout.activitySheetOpen) {
     layout.setActivitySheetOpen(false);
     return true;
@@ -92,6 +97,7 @@ export function switchMobileTab(tab: MobileTab): void {
   haptic("light");
   layout.setActivitySheetOpen(false);
   layout.setAskSheetOpen(false);
+  layout.setMobileDestinationsMenuOpen(false);
   if (tab !== "chat") {
     layout.setSessionDrawerOpen(false);
     layout.setIdentityDrawerOpen(false);

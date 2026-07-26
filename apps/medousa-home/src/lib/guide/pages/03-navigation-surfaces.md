@@ -145,9 +145,11 @@ Spotlight: **Toggle desktop toolbar**. Closing a pop-out usually **hides** it so
 
 ## Mobile navigation
 
-**Tab bar:** Home · Chat · Notes · Web · **More**
+**Home header:** menu (left) · workshop switcher (right). Destinations open from the menu — there is no bottom tab bar.
 
-**More hub**
+**Home** is a calm landing: brand + status, Peers / Daily note glance tiles, a **Continue** strip (one lead chat + up to two quieter sessions), and a single **Last activity** beat when something is live or just finished. Heat only appears when earned — no equal-weight dashboard.
+
+**More hub** (also reachable from the destinations menu)
 
 | Section | Destinations (examples) |
 |---------|-------------------------|

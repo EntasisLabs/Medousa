@@ -14,8 +14,8 @@ export function stripEmbeddedHashes(text: string): string {
     .trim();
 }
 
-export function vaultDisplayTitle(title: string, path?: string | null): string {
-  const trimmed = stripEmbeddedHashes(title.trim());
+export function vaultDisplayTitle(title: string | null | undefined, path?: string | null): string {
+  const trimmed = stripEmbeddedHashes((title ?? "").trim());
   if (trimmed && !looksLikeHashSlug(trimmed) && !PURE_HEX.test(trimmed)) {
     return trimmed;
   }

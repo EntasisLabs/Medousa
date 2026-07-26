@@ -97,9 +97,11 @@ export async function sendVaultNoteToWork(path: string): Promise<void> {
     prompt: buildWorkAskFromNote(note.path, note.title, note.content),
   });
   if (shouldUseMobileShell()) {
-    layout.setMobileTab("work", { bump: true });
+    layout.setMobileTab("home", { bump: true });
+    workspace.openAsksView();
   } else {
     layout.navigateDesktop("work", { bump: true });
+    workspace.openAsksView();
   }
 }
 

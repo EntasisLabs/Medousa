@@ -3,7 +3,7 @@ import { columnLabel } from "$lib/types/workspace";
 
 /** Operator-facing card labels — not raw job status strings. */
 export function formatCardTitle(card: WorkCard): string {
-  const title = card.title.trim();
+  const title = (card.title ?? "").trim();
   if (title && !isGenericWorkflowTitle(title)) {
     return humanizeTitle(title);
   }
@@ -52,8 +52,9 @@ export function formatCardSubtitle(card: WorkCard): string {
   }
 }
 
-export function formatStatusLabel(status: string): string {
-  switch (status) {
+export function formatStatusLabel(status: string | null | undefined): string {
+  const value = status ?? "";
+  switch (value) {
     case "dead_letter":
       return "Stuck";
     case "running":
@@ -65,7 +66,7 @@ export function formatStatusLabel(status: string): string {
     case "synthesis pending":
       return "Finishing up";
     default:
-      return status.replaceAll("_", " ");
+      return value.replaceAll("_", " ") || "Unknown";
   }
 }
 
