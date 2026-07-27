@@ -187,10 +187,10 @@ fn list_all_shared_rows() -> Vec<SharedSessionCatalogRow> {
         if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
             continue;
         }
-        if let Ok(raw) = fs::read_to_string(&path) {
-            if let Ok(row) = serde_json::from_str::<SharedSessionCatalogRow>(&raw) {
-                rows.push(row);
-            }
+        if let Ok(raw) = fs::read_to_string(&path)
+            && let Ok(row) = serde_json::from_str::<SharedSessionCatalogRow>(&raw)
+        {
+            rows.push(row);
         }
     }
     rows.sort_by(|a, b| {

@@ -1,5 +1,6 @@
 //! ACP permission requests — operator approve/deny while the agent session waits.
 
+use std::cmp::Reverse;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
@@ -86,7 +87,7 @@ impl AgentPermissionRequestStore {
             .filter(|r| r.status == AgentPermissionRequestStatus::Pending)
             .cloned()
             .collect();
-        rows.sort_by(|a, b| b.created_at_utc.cmp(&a.created_at_utc));
+        rows.sort_by_key(|row| Reverse(row.created_at_utc));
         rows.truncate(limit.max(1));
         rows
     }
@@ -99,7 +100,7 @@ impl AgentPermissionRequestStore {
             .values()
             .cloned()
             .collect();
-        rows.sort_by(|a, b| b.created_at_utc.cmp(&a.created_at_utc));
+        rows.sort_by_key(|row| Reverse(row.created_at_utc));
         rows.truncate(limit.max(1));
         rows
     }
@@ -193,10 +194,10 @@ impl AgentPermissionRequestStore {
         let request_id = request_id.to_string();
         tokio::spawn(async move {
             let mut waiters = STORE.waiters.lock().await;
-            if let Some(mut waiter) = waiters.remove(&request_id) {
-                if let Some(tx) = waiter.tx.take() {
-                    let _ = tx.send(resolution);
-                }
+            if let Some(mut waiter) = waiters.remove(&request_id)
+                && let Some(tx) = waiter.tx.take()
+            {
+                let _ = tx.send(resolution);
             }
         });
         Ok(out)

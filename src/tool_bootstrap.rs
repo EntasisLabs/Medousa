@@ -387,6 +387,19 @@ pub fn worker_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
                 tools: ENVIRONMENT_DOMAIN_TOOLS,
             },
             ToolDomainCatalogEntry {
+                domain: "presentation",
+                summary: "Liquid chat embeds (markdown) first; ui_build for streaming scenes; legacy ui_scene + HTML artifacts",
+                tools: &[
+                    "cognition_ui_build",
+                    "cognition_ui_scene",
+                    "cognition_ui_present",
+                    "cognition_artifact_list",
+                    "cognition_artifact_read",
+                    "cognition_artifact_grep",
+                    "cognition_artifact_write",
+                ],
+            },
+            ToolDomainCatalogEntry {
                 domain: BROWSER_HOST_AUTO_UNLOCK_DOMAIN,
                 summary: "Agent Browser fetch for known URLs (requires supports_browser_host client)",
                 tools: &["cognition_browser_fetch", "cognition_browser_snapshot"],
@@ -884,7 +897,7 @@ mod tests {
         static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
         LOCK.get_or_init(|| Mutex::new(()))
             .lock()
-            .expect("tool surface test lock")
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
     #[test]
@@ -898,11 +911,18 @@ mod tests {
     }
 
     #[test]
-    fn host_bootstrap_includes_environment_on_bus_allowlist() {
-        let allow = host_bus_tool_names();
-        assert!(allow.contains("cognition_environment_propose"));
-        assert!(allow.contains("cognition_component_create"));
-        assert!(allow.contains("cognition_context_follow_pointer"));
+    fn environment_tools_are_worker_scoped() {
+        let host = host_bus_tool_names();
+        assert!(!host.contains("cognition_environment_propose"));
+        assert!(!host.contains("cognition_component_create"));
+        assert!(!host.contains("cognition_context_follow_pointer"));
+
+        let worker = crate::agent_runtime::turn_worker::allowed_tool_names_for_intent(
+            crate::agent_runtime::turn_worker::TurnWorkerIntent::General,
+        );
+        assert!(worker.contains("cognition_environment_propose"));
+        assert!(worker.contains("cognition_component_create"));
+        assert!(worker.contains("cognition_context_follow_pointer"));
     }
 
     #[test]
@@ -914,19 +934,32 @@ mod tests {
         assert!(!before.contains("cognition_environment_get"));
 
         ensure_environment_domain_for_ui_clients(&session_id, true);
+        let surface = load_session_tool_surface(&session_id);
+        assert!(
+            surface
+                .unlocked_domains
+                .iter()
+                .any(|domain| domain == ENVIRONMENT_HOST_AUTO_UNLOCK_DOMAIN)
+        );
         let after = effective_tool_names(&session_id, ToolSurfaceLane::Host, &allow);
-        assert!(after.contains("cognition_environment_get"));
-        assert!(after.contains("cognition_environment_wiki"));
-        assert!(after.contains("cognition_component_create"));
+        assert!(!after.contains("cognition_environment_get"));
+        assert!(!after.contains("cognition_environment_wiki"));
+        assert!(!after.contains("cognition_component_create"));
 
         let _ = fs::remove_file(session_surface_path(&session_id));
     }
 
     #[test]
-    fn host_bootstrap_includes_ui_present_on_bus_allowlist() {
-        let allow = host_bus_tool_names();
-        let names = effective_tool_names("sess-ui-present", ToolSurfaceLane::Host, &allow);
-        assert!(names.contains("cognition_ui_present"));
+    fn ui_present_is_worker_scoped() {
+        let host_allow = host_bus_tool_names();
+        let host = effective_tool_names("sess-ui-present", ToolSurfaceLane::Host, &host_allow);
+        assert!(!host.contains("cognition_ui_present"));
+
+        let worker_allow = crate::agent_runtime::turn_worker::allowed_tool_names_for_intent(
+            crate::agent_runtime::turn_worker::TurnWorkerIntent::General,
+        );
+        let worker = effective_tool_names("sess-ui-present", ToolSurfaceLane::Worker, &worker_allow);
+        assert!(worker.contains("cognition_ui_present"));
     }
 
     #[test]
@@ -960,7 +993,8 @@ mod tests {
 
         ensure_host_session_tool_defaults(&session_id);
         let after = effective_tool_names(&session_id, ToolSurfaceLane::Host, &allow);
-        assert!(after.contains("cognition_vault_write"));
+        assert!(after.contains("cognition_vault_read"));
+        assert!(!after.contains("cognition_vault_write"));
         assert!(after.contains("cognition_memory_calibrate"));
 
         let _ = fs::remove_file(session_surface_path(&session_id));

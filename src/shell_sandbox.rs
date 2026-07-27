@@ -5,7 +5,7 @@
 //! - macOS: Seatbelt via `sandbox-exec`
 //! - Windows: AppContainer (preferred) or Job Object fallback
 
-use std::io::{Read, Write};
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};

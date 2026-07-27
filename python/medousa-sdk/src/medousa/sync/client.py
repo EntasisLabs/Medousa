@@ -5,7 +5,9 @@ from typing import TYPE_CHECKING
 from medousa.sync.transport import SyncTransport
 
 if TYPE_CHECKING:
+    from medousa.sync.agents import AgentsApiSync
     from medousa.sync.budget import BudgetApiSync
+    from medousa.sync.calendar import CalendarApiSync
     from medousa.sync.capabilities import CapabilitiesApiSync
     from medousa.sync.components import ComponentsApiSync
     from medousa.sync.environment import EnvironmentApiSync
@@ -13,7 +15,6 @@ if TYPE_CHECKING:
     from medousa.sync.health import HealthApiSync
     from medousa.sync.ingest import IngestApiSync
     from medousa.sync.interactive import InteractiveApiSync
-    from medousa.sync.agents import AgentsApiSync
     from medousa.sync.jobs import JobsApiSync
     from medousa.sync.local_models import LocalModelsApiSync
     from medousa.sync.mcp_gateway import McpGatewayApiSync
@@ -21,7 +22,6 @@ if TYPE_CHECKING:
     from medousa.sync.runtime import RuntimeApiSync
     from medousa.sync.sessions import SessionsApiSync
     from medousa.sync.vault import VaultApiSync
-    from medousa.sync.calendar import CalendarApiSync
     from medousa.sync.workspace import WorkspaceApiSync
 
 

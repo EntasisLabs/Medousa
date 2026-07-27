@@ -161,9 +161,13 @@ CI asserts all package stamps equal the tag, builds the full matrix, and **repla
 
 1. Bump only the packages you changed in `package-versions.toml` (and matching app/crate version if needed).
 2. Actions → **Release** → **Run workflow**.
-3. Check the `ship_*` boxes you need (e.g. `ship_desktop` only). Leave `ship_all` off.
+3. Check the `ship_*` boxes you need (e.g. `ship_desktop` + `ship_engine`). Leave `ship_all` off unless you want every package already stamped at the channel head.
 4. Keep **Upload R2** on. GitHub Release is optional for partial ships.
 5. Publish **merges** into the existing channel `release-manifest.json` — adapters you did not rebuild keep their old version/URL.
+
+`ship_all` on workflow_dispatch:
+- If **every** `package-versions.toml` stamp equals the channel head → true full train (same as a `v*` tag).
+- If stamps are **mixed** (normal for Home/engine-only ships) → auto-selects component groups whose stamps already match the channel head, merges into the channel, and warns. It does **not** fail on leftover 0.4.1 adapter stamps.
 
 | Goal | Checkboxes | Bump |
 |------|------------|------|
@@ -172,7 +176,8 @@ CI asserts all package stamps equal the tag, builds the full matrix, and **repla
 | Engine / CLI / TUI | `ship_engine` | `engine` |
 | MCP only | `ship_mcp` | `mcp-gateway` |
 | Offline brain | `ship_local_brain` | `local-brain` |
-| Everything | `ship_all` or push a `v*` tag | all ids |
+| Everything at one version | bump **all** ids, then `ship_all` **or** push a `v*` tag | all ids equal |
+| Channel-head packages only (mixed stamps) | `ship_all` with mixed `package-versions.toml` | auto-ships packages already at the channel head (e.g. 0.6.0 engine+desktop while adapters stay 0.4.1) |
 
 ### First run (recommended)
 
@@ -219,7 +224,7 @@ If you still have `dist/final` from the publish job on a runner, skip the downlo
 
 ## What the workflow does
 
-1. **prepare** — resolve `ship_*` selection (`v*` / `ship_all` = full train)
+1. **prepare** — resolve `ship_*` selection (`v*` tag = full train; `ship_all` = full train only when stamps lockstep, otherwise channel-head packages)
 2. **build-daemon** — `medousa` + `medousa_daemon` once per OS (when engine/desktop selected)
 3. **build-engine** — packages `engine` (launcher + daemon + CLI + TUI); **reuses** prebuilt daemon (no second compile). Never builds the retired `medousa-v*` suite.
 4. **build-adapters** / **build-mcp** / **build-local-brain** — independent legs (slim adapter crates; never rebuild engine)

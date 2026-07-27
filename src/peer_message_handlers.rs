@@ -147,12 +147,11 @@ async fn post_peer_message(
             mesh_receipt = Some(accepted.receipt.clone());
             mesh_inbox_id = Some(accepted.inbox_id.clone());
             if accepted.duplicate {
-                if let Some(local_ref) = accepted.local_ref.as_deref().filter(|v| !v.is_empty()) {
-                    if let Some(existing) = get_message(local_ref)
+                if let Some(local_ref) = accepted.local_ref.as_deref().filter(|v| !v.is_empty())
+                    && let Some(existing) = get_message(local_ref)
                         .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?
-                    {
-                        return Ok(with_mesh_receipt(existing, mesh_receipt));
-                    }
+                {
+                    return Ok(with_mesh_receipt(existing, mesh_receipt));
                 }
                 return Ok(with_mesh_receipt(
                     PeerMessage {
@@ -274,42 +273,42 @@ async fn post_peer_message(
     .map_err(|err| (StatusCode::BAD_REQUEST, err.to_string()))?;
 
     // Auto-import attachments only for inbound deliveries.
-    if message.direction == "in" {
-        if let Some(bundle) = message.attachment.clone() {
-            match import_bundle(
-                environment_hub(),
-                ShareImportRequest {
-                    bundle,
-                    conflict_strategy: ShareConflictStrategy::Rename,
-                    profile_id: None,
-                },
-            )
-            .await
-            {
-                Ok(result) => {
-                    let summary = format!(
-                        "Imported {} artifact(s), {} note(s)",
-                        result.artifacts_imported, result.vault_notes_imported
-                    );
-                    message.attachment_result = Some(PeerMessageAttachmentSummary {
-                        imported: true,
-                        summary: Some(summary),
-                        artifacts_imported: Some(result.artifacts_imported),
-                        vault_notes_imported: Some(result.vault_notes_imported),
-                    });
-                    message.attachment = None;
-                }
-                Err(err) => {
-                    message.attachment_result = Some(PeerMessageAttachmentSummary {
-                        imported: false,
-                        summary: Some(err.to_string()),
-                        artifacts_imported: None,
-                        vault_notes_imported: None,
-                    });
-                }
+    if message.direction == "in"
+        && let Some(bundle) = message.attachment.clone()
+    {
+        match import_bundle(
+            environment_hub(),
+            ShareImportRequest {
+                bundle,
+                conflict_strategy: ShareConflictStrategy::Rename,
+                profile_id: None,
+            },
+        )
+        .await
+        {
+            Ok(result) => {
+                let summary = format!(
+                    "Imported {} artifact(s), {} note(s)",
+                    result.artifacts_imported, result.vault_notes_imported
+                );
+                message.attachment_result = Some(PeerMessageAttachmentSummary {
+                    imported: true,
+                    summary: Some(summary),
+                    artifacts_imported: Some(result.artifacts_imported),
+                    vault_notes_imported: Some(result.vault_notes_imported),
+                });
+                message.attachment = None;
+            }
+            Err(err) => {
+                message.attachment_result = Some(PeerMessageAttachmentSummary {
+                    imported: false,
+                    summary: Some(err.to_string()),
+                    artifacts_imported: None,
+                    vault_notes_imported: None,
+                });
             }
         }
-    } else {
+    } else if message.direction != "in" {
         // Outbound copies keep a light attachment summary only.
         if message.attachment.is_some() {
             message.attachment_result = Some(PeerMessageAttachmentSummary {
@@ -332,14 +331,13 @@ async fn post_peer_message(
 
 fn with_mesh_receipt(message: PeerMessage, receipt: Option<MeshReceipt>) -> Response {
     let mut response = Json(message).into_response();
-    if let Some(receipt) = receipt {
-        if let Ok(value) = receipt_header_value(&receipt) {
-            if let Ok(header) = HeaderValue::from_str(&value) {
-                response
-                    .headers_mut()
-                    .insert("x-medousa-mesh-receipt", header);
-            }
-        }
+    if let Some(receipt) = receipt
+        && let Ok(value) = receipt_header_value(&receipt)
+        && let Ok(header) = HeaderValue::from_str(&value)
+    {
+        response
+            .headers_mut()
+            .insert("x-medousa-mesh-receipt", header);
     }
     response
 }

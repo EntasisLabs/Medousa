@@ -91,47 +91,48 @@ async fn share_push(
     }
 
     // Duplicate mesh delivery — ack without re-importing.
-    if let Some(existing) = receipt.as_ref() {
-        if matches!(
+    if let Some(existing) = receipt.as_ref()
+        && matches!(
             existing.status,
             crate::mesh::MeshReceiptStatus::Duplicate
-        ) {
-            return Ok(with_mesh_receipt(
-                ShareImportResult::default(),
-                receipt.take(),
-            ));
-        }
+        )
+    {
+        return Ok(with_mesh_receipt(
+            ShareImportResult::default(),
+            receipt.take(),
+        ));
     }
 
     let result = import_bundle(environment_hub(), request)
         .await
         .map_err(|err| (StatusCode::BAD_REQUEST, err.to_string()))?;
 
-    if let (Some(env), Some(rcpt)) = (envelope.as_ref(), receipt.as_ref()) {
-        if let Ok(Some(item)) =
+    if let (Some(env), Some(rcpt)) = (envelope.as_ref(), receipt.as_ref())
+        && let Ok(Some(item)) =
             crate::mesh::inbox::find_by_sender_seq(&env.sender_device_id, env.seq)
-        {
-            let local_ref = format!("share_{}_{}", env.sender_device_id, env.seq);
-            let _ = bind_delivery_local_ref(&item.id, &local_ref, &rcpt.id);
-        }
+    {
+        let local_ref = format!("share_{}_{}", env.sender_device_id, env.seq);
+        let _ = bind_delivery_local_ref(&item.id, &local_ref, &rcpt.id);
     }
 
     Ok(with_mesh_receipt(result, receipt))
 }
 
-fn authorize_and_unwrap_share(
-    state: &ShareApiState,
-    ip: std::net::IpAddr,
-    headers: &HeaderMap,
-    body: MeshInboundBody<serde_json::Value>,
-) -> Result<
+type ShareUnwrapResult = Result<
     (
         ShareImportRequest,
         Option<MeshEnvelope>,
         Option<MeshReceipt>,
     ),
     (StatusCode, String),
-> {
+>;
+
+fn authorize_and_unwrap_share(
+    state: &ShareApiState,
+    ip: std::net::IpAddr,
+    headers: &HeaderMap,
+    body: MeshInboundBody<serde_json::Value>,
+) -> ShareUnwrapResult {
     if crate::remote_trust::is_trusted_local(ip, headers) {
         let (_envelope, payload) = body.into_parts();
         let request = serde_json::from_value(payload)
@@ -235,14 +236,13 @@ fn mesh_status(err: crate::mesh::MeshEnvelopeError) -> (StatusCode, String) {
 
 fn with_mesh_receipt(result: ShareImportResult, receipt: Option<MeshReceipt>) -> Response {
     let mut response = Json(result).into_response();
-    if let Some(receipt) = receipt {
-        if let Ok(value) = receipt_header_value(&receipt) {
-            if let Ok(header) = HeaderValue::from_str(&value) {
-                response
-                    .headers_mut()
-                    .insert("x-medousa-mesh-receipt", header);
-            }
-        }
+    if let Some(receipt) = receipt
+        && let Ok(value) = receipt_header_value(&receipt)
+        && let Ok(header) = HeaderValue::from_str(&value)
+    {
+        response
+            .headers_mut()
+            .insert("x-medousa-mesh-receipt", header);
     }
     response
 }

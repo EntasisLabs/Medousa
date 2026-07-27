@@ -1,5 +1,6 @@
 # Per-package release versions (channel artifact stamps).
-# Bump only the packages you ship. Full `v*` tags should keep these equal to the tag.
+# Bump only the packages you ship. Full `v*` tags require every stamp equal to the tag.
+# workflow_dispatch ship_all with mixed stamps auto-ships packages at the channel head.
 #
 # Archive names: {id}-v{version}-{target}.tar.gz
 # Channel head (top-level release-manifest.version) is computed at publish time.

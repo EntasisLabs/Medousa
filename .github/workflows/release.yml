@@ -11,7 +11,7 @@ on:
         required: false
         type: string
       ship_all:
-        description: Ship every component group (same as a v* tag)
+        description: "Ship packages at the channel head (auto-selects from package-versions.toml). True full train = push a v* tag with all stamps equal."
         required: true
         type: boolean
         default: false
@@ -127,40 +127,58 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          source scripts/release/common.sh
+
           if [[ "${{ github.event_name }}" == "push" ]]; then
+            # Tag pushes are always true full trains — every package stamp must match.
             FULL=1
             VERSION="${GITHUB_REF_NAME#v}"
             TAG="${GITHUB_REF_NAME}"
+            medousa_assert_full_train_versions "${VERSION}"
+            E=true; A=true; M=true; D=true; I=true; L=true
           else
             FULL=0
-            [[ "${{ github.event.inputs.ship_all }}" == "true" ]] && FULL=1
             if [[ -n "${{ github.event.inputs.version }}" ]]; then
               VERSION="${{ github.event.inputs.version }}"
               VERSION="${VERSION#v}"
             else
               VERSION="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
             fi
-            TAG="v${VERSION}"
-          fi
-
-          source scripts/release/common.sh
-          if [[ "${FULL}" -eq 1 ]]; then
-            medousa_assert_full_train_versions "${VERSION}"
-            E=true; A=true; M=true; D=true; I=true; L=true
-          else
-            E="${{ github.event.inputs.ship_engine }}"
-            A="${{ github.event.inputs.ship_adapters }}"
-            M="${{ github.event.inputs.ship_mcp }}"
-            D="${{ github.event.inputs.ship_desktop }}"
-            I="${{ github.event.inputs.ship_installer }}"
-            L="${{ github.event.inputs.ship_local_brain }}"
-            if [[ "${E}" != "true" && "${A}" != "true" && "${M}" != "true" && "${D}" != "true" && "${I}" != "true" && "${L}" != "true" ]]; then
-              echo "::error::Select at least one ship_* component (or ship_all)"
-              exit 1
-            fi
-            # Channel head for targeted ships: max(input/cargo, package-versions).
+            # Channel head for dispatch: max(input/cargo, package-versions).
             VERSION="$(medousa_semver_max "${VERSION}" "$(medousa_max_package_version)")"
             TAG="v${VERSION}"
+
+            if [[ "${{ github.event.inputs.ship_all }}" == "true" ]]; then
+              if medousa_package_versions_lockstep "${VERSION}"; then
+                medousa_assert_full_train_versions "${VERSION}"
+                FULL=1
+                E=true; A=true; M=true; D=true; I=true; L=true
+                echo "ship_all: package stamps lockstep at ${VERSION} — full train"
+              else
+                # Mixed stamps (e.g. 0.6.0 engine/desktop + 0.4.1 adapters): ship only
+                # packages already stamped at the channel head. Do not require a full train.
+                eval "$(medousa_ship_flags_for_channel_head "${VERSION}")"
+                E="${ship_engine}"
+                A="${ship_adapters}"
+                M="${ship_mcp}"
+                D="${ship_desktop}"
+                I="${ship_installer}"
+                L="${ship_local_brain}"
+                echo "::warning::ship_all with mixed package-versions.toml stamps — shipping channel-head ${VERSION} packages only (engine=${E} adapters=${A} mcp=${M} desktop=${D} installer=${I} local-brain=${L}). Push a v${VERSION} tag after bumping every stamp for a true full train."
+              fi
+            else
+              E="${{ github.event.inputs.ship_engine }}"
+              A="${{ github.event.inputs.ship_adapters }}"
+              M="${{ github.event.inputs.ship_mcp }}"
+              D="${{ github.event.inputs.ship_desktop }}"
+              I="${{ github.event.inputs.ship_installer }}"
+              L="${{ github.event.inputs.ship_local_brain }}"
+            fi
+
+            if [[ "${E}" != "true" && "${A}" != "true" && "${M}" != "true" && "${D}" != "true" && "${I}" != "true" && "${L}" != "true" ]]; then
+              echo "::error::Select at least one ship_* component (or ship_all). For ship_all, bump package-versions.toml so at least one package matches the channel head."
+              exit 1
+            fi
           fi
 
           {

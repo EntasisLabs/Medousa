@@ -33,6 +33,7 @@ impl AcpAgentMessageCodec {
     }
 
     /// Build a canonical envelope from an ACP session terminal (or progress) outcome.
+    #[allow(clippy::too_many_arguments)]
     pub fn envelope_from_acp(
         &self,
         kind: AcpTerminalKind,

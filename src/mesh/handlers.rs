@@ -439,12 +439,11 @@ async fn flush_mesh_outbox_item(
         .headers()
         .get("x-medousa-mesh-receipt")
         .and_then(|value| value.to_str().ok())
+        && let Ok(receipt) = serde_json::from_str::<MeshReceipt>(raw)
     {
-        if let Ok(receipt) = serde_json::from_str::<MeshReceipt>(raw) {
-            let _ = receipts::store_received(&receipt);
-            let item = outbox::mark_acked(&item.id, &receipt).map_err(internal)?;
-            return Ok(Json(item));
-        }
+        let _ = receipts::store_received(&receipt);
+        let item = outbox::mark_acked(&item.id, &receipt).map_err(internal)?;
+        return Ok(Json(item));
     }
 
     // Soft-ack when the peer accepted the POST but did not return a receipt header.

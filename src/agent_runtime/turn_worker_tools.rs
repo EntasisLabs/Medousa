@@ -389,15 +389,14 @@ pub fn steer_bound_workshop_for_session(
     let speaker = speaker_profile_id
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty());
-    if let Some(profile_id) = speaker.as_deref() {
-        if let Some(row) = crate::shared_session_catalog::get_shared_row(session_id) {
-            if !row.includes_member(profile_id) {
-                return Ok(json!({
-                    "ok": false,
-                    "error": "speaker is not a member of this shared room",
-                }));
-            }
-        }
+    if let Some(profile_id) = speaker.as_deref()
+        && let Some(row) = crate::shared_session_catalog::get_shared_row(session_id)
+        && !row.includes_member(profile_id)
+    {
+        return Ok(json!({
+            "ok": false,
+            "error": "speaker is not a member of this shared room",
+        }));
     }
 
     let updated = store
