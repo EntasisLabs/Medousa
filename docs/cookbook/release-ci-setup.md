@@ -206,13 +206,13 @@ export MEDOUSA_R2_BUCKET=medousa
 export MEDOUSA_R2_ENDPOINT=https://….r2.cloudflarestorage.com
 export AWS_ACCESS_KEY_ID=…
 export AWS_SECRET_ACCESS_KEY=…
-./scripts/release/republish-manifests.sh --from-r2 --upload --version 0.1.0
+./scripts/release/republish-manifests.sh --from-r2 --upload
 ```
 
 If you still have `dist/final` from the publish job on a runner, skip the download:
 
 ```bash
-./scripts/release/republish-manifests.sh --staging dist/final --upload --version 0.1.0
+./scripts/release/republish-manifests.sh --staging dist/final --upload
 ```
 
 ---
@@ -241,6 +241,7 @@ All matrix jobs set **`shell: bash`**. Windows runners default to PowerShell; re
 | Mac desktop build fails on secrets | Check **Environment** `MEDOUSA`, not just repo secrets |
 | `curl` 404 on manifest | Custom domain not wired, or prefix mismatch — check `MEDOUSA_R2_PREFIX` |
 | `installer-bootstrap.json` has empty `platforms` | Installer bundles are named `Medousa Installer_*` (Tauri productName) but an old script only matched `MedousaInstaller*` — merge latest release scripts, then run **Republish manifests** workflow (no rebuild) |
+| Bootstrap points at ancient `Medousa_0.1.0_*` / wrong arch / empty `sha256` | Old finders took the first `Medousa_*` in a full R2 dump with no version/arch filter. Merge latest `scripts/release/common.sh`, then **Republish manifests** (syncs only current `package-versions.toml` stamps) |
 | SmartScreen on Windows | Set Azure variables/secrets per [azure-windows-signing.md](azure-windows-signing.md) |
 | GitHub Release “tag exists” | Bump version or delete old tag |
 

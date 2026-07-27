@@ -64,13 +64,15 @@ url_for_file() {
 
 sha_for() {
   local file="$1"
-  local name
+  local name sha=""
   name="$(basename "${file}")"
   if [[ -f "${DIST_DIR}/SHA256SUMS" ]]; then
-    awk -v f="${name}" '$2 == f {print $1; exit}' "${DIST_DIR}/SHA256SUMS"
-  elif [[ -f "${file}" ]]; then
-    medousa_sha256_file "${file}"
+    sha="$(awk -v f="${name}" '$2 == f {print $1; exit}' "${DIST_DIR}/SHA256SUMS")"
   fi
+  if [[ -z "${sha}" && -f "${file}" ]]; then
+    sha="$(medousa_sha256_file "${file}")"
+  fi
+  echo "${sha}"
 }
 
 size_for() {
@@ -86,6 +88,9 @@ artifact_kind_for_platform() {
   # Express path is always Home (desktop). Installer is only installerUrl.
   echo "desktop"
 }
+
+DESKTOP_VERSION="$(medousa_package_version desktop)"
+INSTALLER_VERSION="$(medousa_package_version installer)"
 
 append_platform_json() {
   local platform="$1"
@@ -103,7 +108,7 @@ append_platform_json() {
     "${platform}": {
       "platform": "${platform}",
       "artifactKind": "${kind}",
-      "version": "${VERSION}",
+      "version": "${DESKTOP_VERSION}",
       "fileName": "${name}",
       "url": "${url}",
       "sha256": "${sha}",
@@ -133,9 +138,12 @@ PUBLISHED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 
   first=1
   for platform in macos-aarch64 macos-x64 windows-x64 linux-x64; do
-    path="$(medousa_bootstrap_bundle_for_platform "${DIST_DIR}" "${platform}" || true)"
-    [[ -n "${path}" ]] || continue
-    installer_extra="$(medousa_installer_bundle_for_platform "${DIST_DIR}" "${platform}" || true)"
+    path="$(medousa_bootstrap_bundle_for_platform "${DIST_DIR}" "${platform}" "${DESKTOP_VERSION}" || true)"
+    if [[ -z "${path}" ]]; then
+      medousa_log "warning: no desktop ${platform} bundle for v${DESKTOP_VERSION} in ${DIST_DIR}"
+      continue
+    fi
+    installer_extra="$(medousa_installer_bundle_for_platform "${DIST_DIR}" "${platform}" "${INSTALLER_VERSION}" || true)"
     [[ "${first}" -eq 1 ]] || echo ","
     first=0
     append_platform_json "${platform}" "${path}" "${installer_extra}"

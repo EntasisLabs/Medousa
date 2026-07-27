@@ -216,18 +216,20 @@ PUBLISHED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 
   desktop_v="$(medousa_package_version desktop)"
   for name in macos-aarch64 macos-x64 windows-x64 linux-x64; do
-    found="$(medousa_desktop_bundle_for_platform "${DIST_DIR}" "${name}" || true)"
+    found="$(medousa_desktop_bundle_for_platform "${DIST_DIR}" "${name}" "${desktop_v}" || true)"
     if [[ -n "${found}" ]]; then
       archive="$(basename "${found}")"
       [[ "${first}" -eq 1 ]] || echo ","
       first=0
       append_package_json "desktop" "Medousa Desktop (${name})" "${name}" "${archive}" "" "" "core" "${desktop_v}"
+    else
+      medousa_log "warning: no desktop ${name} bundle for v${desktop_v}"
     fi
   done
 
   installer_v="$(medousa_package_version installer)"
   for name in macos-aarch64 macos-x64 windows-x64 linux-x64; do
-    found="$(medousa_installer_bundle_for_platform "${DIST_DIR}" "${name}" || true)"
+    found="$(medousa_installer_bundle_for_platform "${DIST_DIR}" "${name}" "${installer_v}" || true)"
     if [[ -n "${found}" ]]; then
       archive="$(basename "${found}")"
       [[ "${first}" -eq 1 ]] || echo ","

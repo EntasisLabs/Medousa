@@ -38,12 +38,12 @@ Required for --from-r2 / --upload:
   MEDOUSA_R2_ENDPOINT (or AWS_ENDPOINT_URL)
   MEDOUSA_R2_PREFIX (default: medousa/<channel>)
 
-Typical CI recovery (after merging the installer filename fix):
+Typical CI recovery (after fixing registry finders / bootstrap paths):
   export MEDOUSA_RELEASE_BASE_URL=https://releases.entasislabs.com/medousa
-  ./scripts/release/republish-manifests.sh --from-r2 --upload --version 0.1.0
+  ./scripts/release/republish-manifests.sh --from-r2 --upload
 
 Local recovery when you already have dist/final from a prior publish:
-  ./scripts/release/republish-manifests.sh --staging dist/final --upload --version 0.1.0
+  ./scripts/release/republish-manifests.sh --staging dist/final --upload
 EOF
 }
 
@@ -88,14 +88,31 @@ if [[ "${FROM_R2}" -eq 1 && "${SKIP_DOWNLOAD}" -eq 0 ]]; then
   medousa_require_cmd aws
 
   S3_URI="s3://${BUCKET}/${PREFIX%/}/"
+  # Only pull current package stamps — a full channel history dump made the
+  # old "first Medousa_* wins" finders latch onto 0.1.0 forever.
+  DESKTOP_V="$(medousa_package_version desktop)"
+  INSTALLER_V="$(medousa_package_version installer)"
+  BRAIN_V="$(medousa_package_version local-brain)"
   AWS_ARGS=(s3 sync "${S3_URI}" "${STAGING_DIR}/"
-    --exclude "release-manifest.json"
-    --exclude "installer-bootstrap.json")
+    --exclude "*"
+    --include "SHA256SUMS"
+    --include "Medousa_${DESKTOP_V}_*"
+    --include "Medousa Installer_${INSTALLER_V}_*"
+    --include "MedousaInstaller_${INSTALLER_V}_*"
+    --include "medousa_local-*-v${BRAIN_V}-*"
+    --include "model-*-v${BRAIN_V}.manifest.json")
+  pkg_id=""
+  pkg_ver=""
+  for pkg_id in "${MEDOUSA_PACKAGE_VERSION_IDS[@]}"; do
+    [[ "${pkg_id}" == desktop || "${pkg_id}" == local-brain ]] && continue
+    pkg_ver="$(medousa_package_version "${pkg_id}")"
+    AWS_ARGS+=(--include "${pkg_id}-v${pkg_ver}-*")
+  done
   if [[ -n "${ENDPOINT}" ]]; then
     AWS_ARGS+=(--endpoint-url "${ENDPOINT}")
   fi
 
-  medousa_log "downloading release artifacts from ${S3_URI}"
+  medousa_log "downloading current-stamp artifacts from ${S3_URI} (desktop=${DESKTOP_V} installer=${INSTALLER_V})"
   aws "${AWS_ARGS[@]}"
 fi
 
