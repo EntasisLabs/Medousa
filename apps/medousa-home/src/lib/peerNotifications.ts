@@ -49,6 +49,9 @@ async function resolveWorkshopId(
 
 export async function pollPeerMessageNotifications(): Promise<void> {
   if (!isTauri() || polling) return;
+  if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+    return;
+  }
   polling = true;
   try {
     if (!(await ensureNotificationPermission())) return;
@@ -98,5 +101,14 @@ export function startPeerMessageNotificationPolling(
   const timer = setInterval(() => {
     void pollPeerMessageNotifications();
   }, intervalMs);
-  return () => clearInterval(timer);
+  const onVisibility = () => {
+    if (document.visibilityState === "visible") {
+      void pollPeerMessageNotifications();
+    }
+  };
+  document.addEventListener("visibilitychange", onVisibility);
+  return () => {
+    clearInterval(timer);
+    document.removeEventListener("visibilitychange", onVisibility);
+  };
 }

@@ -21,6 +21,7 @@
     setVaultStickyWindowTitle,
   } from "$lib/window";
   import { connectWorkshop } from "$lib/workshopConnection";
+  import { whenDocumentVisible } from "$lib/utils/whenDocumentVisible";
   import { formatShortcut } from "$lib/platform";
 
   let alwaysOnTop = $state(true);
@@ -55,11 +56,6 @@
   });
 
   onMount(() => {
-    const detachWorkshop = connectWorkshop({
-      onHealthChange: () => {},
-      mode: "observer",
-    });
-
     async function openStickyPath(path: string | null) {
       vault.applyStickyLivePlane();
       if (!path) {
@@ -79,10 +75,17 @@
       }
     }
 
-    void openStickyPath(resolveVaultStickyOpenPath());
+    const detachWorkshop = whenDocumentVisible(() => {
+      void openStickyPath(resolveVaultStickyOpenPath());
+      return connectWorkshop({
+        onHealthChange: () => {},
+        mode: "observer",
+      });
+    });
 
     const onStorage = (event: StorageEvent) => {
       if (event.key !== VAULT_STICKY_PATH_KEY) return;
+      if (document.visibilityState !== "visible") return;
       const next = event.newValue?.trim() || resolveVaultStickyOpenPath();
       void openStickyPath(next);
     };

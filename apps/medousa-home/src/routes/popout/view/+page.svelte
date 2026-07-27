@@ -12,6 +12,7 @@
     setViewPopoutWindowTitle,
   } from "$lib/window";
   import { connectWorkshop } from "$lib/workshopConnection";
+  import { whenDocumentVisible } from "$lib/utils/whenDocumentVisible";
   import { X } from "@lucide/svelte";
 
   let surfaceId = $state<string | null>(null);
@@ -25,15 +26,17 @@
   });
 
   onMount(() => {
-    const detachWorkshop = connectWorkshop({
-      onHealthChange: () => {},
-      mode: "observer",
+    const detachWorkshop = whenDocumentVisible(() => {
+      surfaceId = readViewPopoutSurface();
+      return connectWorkshop({
+        onHealthChange: () => {},
+        mode: "observer",
+      });
     });
-
-    surfaceId = readViewPopoutSurface();
 
     function onStorage(event: StorageEvent) {
       if (event.key !== VIEW_POPOUT_SURFACE_KEY) return;
+      if (document.visibilityState !== "visible") return;
       surfaceId = readViewPopoutSurface();
     }
     window.addEventListener("storage", onStorage);

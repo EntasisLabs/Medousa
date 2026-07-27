@@ -21,6 +21,7 @@
   let dragOrigin = { x: 0, y: 0, panX: 0, panY: 0 };
   let tick = $state(0);
   let animFrame = 0;
+  let reduceMotion = $state(false);
 
   const driftById = $derived.by(() => {
     tick;
@@ -53,16 +54,37 @@
 
   onMount(() => {
     fitView();
-    const loop = () => {
-      tick = performance.now();
+    let lastPaint = 0;
+    const TARGET_MS = 1000 / 12; // ~12fps is enough for gentle drift
+    const loop = (now: number) => {
       animFrame = requestAnimationFrame(loop);
+      if (reduceMotion) return;
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+        return;
+      }
+      if (viewportEl && typeof viewportEl.checkVisibility === "function") {
+        if (!viewportEl.checkVisibility()) return;
+      }
+      if (now - lastPaint < TARGET_MS) return;
+      lastPaint = now;
+      tick = now;
     };
     animFrame = requestAnimationFrame(loop);
     const onResize = () => fitView();
     window.addEventListener("resize", onResize);
+    let mq: MediaQueryList | null = null;
+    const syncMotion = () => {
+      reduceMotion = mq?.matches ?? false;
+    };
+    if (typeof window !== "undefined" && window.matchMedia) {
+      mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+      syncMotion();
+      mq.addEventListener("change", syncMotion);
+    }
     return () => {
       cancelAnimationFrame(animFrame);
       window.removeEventListener("resize", onResize);
+      mq?.removeEventListener("change", syncMotion);
     };
   });
 

@@ -5,16 +5,15 @@
   import { layout } from "$lib/stores/layout.svelte";
   import { hideChatPopout, isTauri } from "$lib/window";
   import { connectWorkshop } from "$lib/workshopConnection";
+  import { whenDocumentVisible } from "$lib/utils/whenDocumentVisible";
 
   onMount(() => {
-    const detachWorkshop = connectWorkshop({
-      onHealthChange: () => {},
-      mode: "observer",
-    });
-
-    return () => {
-      detachWorkshop();
-    };
+    return whenDocumentVisible(() =>
+      connectWorkshop({
+        onHealthChange: () => {},
+        mode: "observer",
+      }),
+    );
   });
 
   async function handleClose() {
