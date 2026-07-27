@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader, Write};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::sync::RwLock;
 
 use anyhow::{Context, Result, bail};
@@ -102,6 +102,7 @@ impl GraphemeScriptStore {
 
     pub fn read_body(&self, entry: &GraphemeScriptEntry) -> Result<String> {
         let path = Self::root_dir().join(&entry.body_path);
+        ensure_within_root(&Self::root_dir(), &path)?;
         fs::read_to_string(&path).with_context(|| format!("read script body {}", path.display()))
     }
 
@@ -235,11 +236,109 @@ pub fn content_hash(body: &str) -> String {
     format!("sha256:{digest:x}")
 }
 
-fn ensure_within_root(root: &Path, absolute: &Path) -> Result<()> {
-    let root = fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
-    let absolute = fs::canonicalize(absolute).unwrap_or_else(|_| absolute.to_path_buf());
-    if !absolute.starts_with(&root) {
+/// Containment check that works when the leaf file does not exist yet.
+/// Matches vault path handling so Windows `\\?\` / case / separator mismatches
+/// do not block first save.
+fn ensure_within_root(root: &Path, candidate: &Path) -> Result<()> {
+    for component in candidate.components() {
+        if matches!(component, Component::ParentDir) {
+            bail!("script path escapes library root");
+        }
+    }
+
+    let root_abs = absolutize_path_for_check(root);
+    let enclosed = candidate
+        .parent()
+        .map(absolutize_path_for_check)
+        .unwrap_or_else(|| absolutize_path_for_check(candidate));
+
+    if !path_starts_with(&enclosed, &root_abs) {
         bail!("script path escapes library root");
     }
     Ok(())
+}
+
+fn absolutize_path_for_check(path: &Path) -> PathBuf {
+    let absolute = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
+    strip_verbatim_prefix(absolute)
+}
+
+#[cfg(windows)]
+fn strip_verbatim_prefix(path: PathBuf) -> PathBuf {
+    let display = path.display().to_string();
+    if let Some(rest) = display.strip_prefix(r"\\?\") {
+        PathBuf::from(rest)
+    } else {
+        path
+    }
+}
+
+#[cfg(not(windows))]
+fn strip_verbatim_prefix(path: PathBuf) -> PathBuf {
+    path
+}
+
+fn path_starts_with(path: &Path, prefix: &Path) -> bool {
+    let mut path_components = path.components();
+    let mut prefix_components = prefix.components();
+
+    loop {
+        match (prefix_components.next(), path_components.next()) {
+            (None, _) => return true,
+            (Some(prefix_component), Some(path_component)) => {
+                if !path_component_eq(path_component, prefix_component) {
+                    return false;
+                }
+            }
+            (Some(_), None) => return false,
+        }
+    }
+}
+
+fn path_component_eq(left: Component<'_>, right: Component<'_>) -> bool {
+    match (left, right) {
+        (Component::Prefix(left), Component::Prefix(right)) => {
+            left.as_os_str().eq_ignore_ascii_case(right.as_os_str())
+        }
+        (Component::RootDir, Component::RootDir) => true,
+        (Component::CurDir, Component::CurDir) => true,
+        (Component::Normal(left), Component::Normal(right)) => left.eq_ignore_ascii_case(right),
+        (left, right) => left.as_os_str() == right.as_os_str(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ensure_within_root_allows_new_script_body_before_file_exists() {
+        let base = std::env::temp_dir().join(format!(
+            "medousa-grapheme-path-{}",
+            uuid::Uuid::new_v4().simple()
+        ));
+        let root = base.join("grapheme-scripts");
+        let scripts = root.join("scripts");
+        fs::create_dir_all(&scripts).expect("scripts dir");
+        let body = scripts.join("hello-world.grapheme");
+
+        ensure_within_root(&root, &body).expect("new script body should stay inside root");
+
+        let _ = fs::remove_dir_all(base);
+    }
+
+    #[test]
+    fn ensure_within_root_rejects_paths_outside_root() {
+        let base = std::env::temp_dir().join(format!(
+            "medousa-grapheme-path-{}",
+            uuid::Uuid::new_v4().simple()
+        ));
+        let root = base.join("grapheme-scripts");
+        fs::create_dir_all(&root).expect("root");
+        let outside = base.join("outside.grapheme");
+
+        assert!(ensure_within_root(&root, &outside).is_err());
+
+        let _ = fs::remove_dir_all(base);
+    }
 }

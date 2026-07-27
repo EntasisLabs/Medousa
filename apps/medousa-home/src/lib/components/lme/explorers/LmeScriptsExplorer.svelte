@@ -3,6 +3,7 @@
     ChevronDown,
     LayoutTemplate,
     Package,
+    Pencil,
     Plus,
     RefreshCw,
     Search,
@@ -274,22 +275,38 @@
                 <span class="workshop-faint truncate font-mono text-[10px]">{entry.id}</span>
               </div>
             {:else}
-              <button
-                type="button"
-                class="flex w-full flex-col px-3 py-2 text-left transition hover:bg-surface-800/70 {graphemeScriptEditor.activeTab?.scriptId ===
+              <div
+                class="lme-script-row group flex w-full items-stretch transition hover:bg-surface-800/70 {graphemeScriptEditor.activeTab?.scriptId ===
                 entry.id
                   ? 'workshop-list-row-active'
                   : ''}"
-                onclick={() => void openScript(entry)}
-                oncontextmenu={(event) =>
-                  handleScriptContextMenuEvent(entry.id, entry.name, event)}
-                use:bindScriptLongPress={() => ({ scriptId: entry.id, name: entry.name })}
               >
-                <span class="truncate text-sm font-medium text-surface-100">{entry.name}</span>
-                <span class="workshop-faint mt-0.5 truncate font-mono text-[10px]">
-                  {entry.id}
-                </span>
-              </button>
+                <button
+                  type="button"
+                  class="flex min-w-0 flex-1 flex-col px-3 py-2 text-left"
+                  onclick={() => void openScript(entry)}
+                  oncontextmenu={(event) =>
+                    handleScriptContextMenuEvent(entry.id, entry.name, event)}
+                  use:bindScriptLongPress={() => ({ scriptId: entry.id, name: entry.name })}
+                >
+                  <span class="truncate text-sm font-medium text-surface-100">{entry.name}</span>
+                  <span class="workshop-faint mt-0.5 truncate font-mono text-[10px]">
+                    {entry.id}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  class="lme-script-rename-btn mr-1.5 self-center"
+                  title="Rename script"
+                  aria-label="Rename {entry.name}"
+                  onclick={(event) => {
+                    event.stopPropagation();
+                    scriptRenameUi.startLibraryRename(entry.id);
+                  }}
+                >
+                  <Pencil size={13} strokeWidth={1.75} />
+                </button>
+              </div>
             {/if}
           </li>
         {/each}
@@ -584,3 +601,40 @@
     {/if}
   </footer>
 </aside>
+
+<style>
+  .lme-script-rename-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.65rem;
+    height: 1.65rem;
+    border: 0;
+    border-radius: 0.35rem;
+    background: transparent;
+    color: rgb(var(--color-surface-500));
+    opacity: 0;
+    transition:
+      opacity 120ms ease,
+      color 120ms ease,
+      background-color 120ms ease;
+  }
+
+  .lme-script-row:hover .lme-script-rename-btn,
+  .lme-script-row:focus-within .lme-script-rename-btn,
+  .lme-script-rename-btn:focus-visible {
+    opacity: 1;
+  }
+
+  .lme-script-rename-btn:hover,
+  .lme-script-rename-btn:focus-visible {
+    background: rgb(var(--color-surface-700) / 0.7);
+    color: rgb(var(--color-surface-100));
+  }
+
+  @media (pointer: coarse) {
+    .lme-script-rename-btn {
+      opacity: 0.85;
+    }
+  }
+</style>
