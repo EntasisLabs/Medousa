@@ -23,7 +23,8 @@ Options:
   -h, --help            Show this help
 
 Writes dist/installer-bootstrap.json with per-platform download URLs.
-Windows points at the signed desktop NSIS setup; Mac/Linux use Medousa Installer.
+All platforms point at the Medousa Home desktop app; installerUrl is optional
+advanced Medousa Installer when that bundle is present.
 EOF
 }
 
@@ -82,11 +83,8 @@ size_for() {
 }
 
 artifact_kind_for_platform() {
-  local platform="$1"
-  case "${platform}" in
-    windows-x64) echo "desktop" ;;
-    *) echo "installer" ;;
-  esac
+  # Express path is always Home (desktop). Installer is only installerUrl.
+  echo "desktop"
 }
 
 append_platform_json() {
@@ -123,8 +121,6 @@ EOF
 OUT="${DIST_DIR}/installer-bootstrap.json"
 PUBLISHED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 
-WIN_INSTALLER="$(medousa_installer_bundle_for_platform "${DIST_DIR}" windows-x64 || true)"
-
 {
   echo "{"
   echo '  "schemaVersion": 1,'
@@ -139,10 +135,7 @@ WIN_INSTALLER="$(medousa_installer_bundle_for_platform "${DIST_DIR}" windows-x64
   for platform in macos-aarch64 macos-x64 windows-x64 linux-x64; do
     path="$(medousa_bootstrap_bundle_for_platform "${DIST_DIR}" "${platform}" || true)"
     [[ -n "${path}" ]] || continue
-    installer_extra=""
-    if [[ "${platform}" == "windows-x64" && -n "${WIN_INSTALLER}" ]]; then
-      installer_extra="${WIN_INSTALLER}"
-    fi
+    installer_extra="$(medousa_installer_bundle_for_platform "${DIST_DIR}" "${platform}" || true)"
     [[ "${first}" -eq 1 ]] || echo ","
     first=0
     append_platform_json "${platform}" "${path}" "${installer_extra}"

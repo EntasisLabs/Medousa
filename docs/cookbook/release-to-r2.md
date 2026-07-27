@@ -35,9 +35,11 @@ medousa/stable/
   release-manifest.json
   installer-bootstrap.json
   SHA256SUMS
-  Medousa_0.1.0_x64-setup.exe          # Windows default download (signed desktop)
-  MedousaInstaller_0.1.0_x64-setup.exe # Windows add-ons / customize (optional)
-  Medousa Installer_0.1.0_aarch64.dmg    # macOS default download
+  Medousa_0.1.0_x64-setup.exe            # Windows default download (Home)
+  Medousa_0.1.0_aarch64.dmg              # macOS default download (Home)
+  Medousa_0.1.0_amd64.AppImage           # Linux default download (Home)
+  MedousaInstaller_0.1.0_x64-setup.exe   # optional advanced / add-ons
+  Medousa Installer_0.1.0_aarch64.dmg    # optional advanced / add-ons
   engine-v0.1.0-….tar.gz               # launcher + daemon + CLI + TUI
   adapter-telegram-v0.1.0-….tar.gz
   mcp-gateway-v0.1.0-….tar.gz
@@ -51,7 +53,7 @@ Public URLs:
 - `{MEDOUSA_RELEASE_BASE_URL}/stable/installer-bootstrap.json`
 - `{MEDOUSA_RELEASE_BASE_URL}/stable/release-manifest.json`
 
-**Windows express path:** `installer-bootstrap.json` → `platforms.windows-x64.url` is the signed desktop NSIS setup (`Medousa_*_x64-setup.exe`), not the Medousa Installer MSI. The nested installer flow is avoided — one download, one install, then open Medousa. `platforms.windows-x64.installerUrl` points at Medousa Installer for users who want the component picker or add-ons later.
+**Express download path:** `installer-bootstrap.json` → `platforms.<os>.url` is the Medousa Home desktop app (Mac DMG / Windows NSIS / Linux AppImage or deb), not Medousa Installer. One download, one install, then open Medousa. `platforms.<os>.installerUrl` points at Medousa Installer when published, for users who want the component picker or add-ons later.
 
 ### 2. Landing page
 
@@ -62,7 +64,7 @@ VITE_MEDOUSA_RELEASE_BASE_URL=https://releases.entasislabs.com/medousa
 VITE_MEDOUSA_RELEASE_CHANNEL=stable
 ```
 
-Rebuild and deploy the landing site. Download buttons fetch `installer-bootstrap.json` and pick the right artifact for Mac / Windows / Linux. On Windows, use `platforms.windows-x64.url` (desktop setup); offer `installerUrl` only as an “Advanced / add gadgets” link if you expose it.
+Rebuild and deploy the landing site. Download buttons fetch `installer-bootstrap.json` and pick `platforms.<os>.url` (desktop Home). Offer `installerUrl` only as an “Advanced / add gadgets” link if you expose it.
 
 ### 3. Windows signing (Azure Artifact Signing)
 
@@ -145,7 +147,7 @@ curl -s "$MEDOUSA_RELEASE_BASE_URL/stable/installer-bootstrap.json" | head
 curl -s "$MEDOUSA_RELEASE_BASE_URL/stable/release-manifest.json" | head
 ```
 
-On a clean VM: download from medousa.app → **Windows:** one desktop setup → launch Medousa → express wizard. **Mac/Linux:** installer → express install → launch Medousa.
+On a clean VM: download from medousa.app → one Home desktop setup → launch Medousa → express wizard. Use `installerUrl` / Medousa Installer only for advanced packages or repair.
 
 ---
 

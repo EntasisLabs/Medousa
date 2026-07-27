@@ -134,7 +134,7 @@ Your signed-in `az` user needs **Artifact Signing Certificate Profile Signer** o
 
 Sign **before** `publish-local.sh` so manifest SHA256s match signed files.
 
-**Windows default download** is the signed desktop NSIS setup (`Medousa_*_x64-setup.exe`) published via `installer-bootstrap.json`. Sign desktop bundles in CI before the publish job; sign Medousa Installer separately if you ship it for add-ons (`installerUrl` in bootstrap).
+**Windows default download** is the signed desktop NSIS setup (`Medousa_*_x64-setup.exe`) published via `installer-bootstrap.json`. Mac/Linux default downloads are the Home DMG / AppImage (also `artifactKind: desktop`). Sign desktop bundles in CI before the publish job; sign Medousa Installer separately if you ship it for add-ons (`installerUrl` in bootstrap).
 
 ---
 
