@@ -192,32 +192,29 @@ pub fn build_recurring_tick_slice(ctx: &RecurringTickContext) -> Value {
         FeedPayloadMode::RawExcerpt => 960,
     };
 
-    let excerpt = ctx
-        .output_excerpt
-        .as_deref()
-        .map(|text| truncate(text, excerpt_cap))
-        .or_else(|| {
-            ctx.parsed_poll
-                .as_ref()
-                .and_then(|parsed| parsed.get("bodyExcerpt"))
-                .and_then(|v| v.as_str())
-                .map(|text| truncate(text, excerpt_cap))
-        });
+    let parsed_body_excerpt = ctx
+        .parsed_poll
+        .as_ref()
+        .and_then(|parsed| parsed.get("bodyExcerpt"))
+        .and_then(|v| v.as_str());
+    let raw_excerpt = ctx.output_excerpt.as_deref();
+
+    let excerpt_source = match ctx.payload_mode {
+        FeedPayloadMode::ParsedPoll => parsed_body_excerpt.or(raw_excerpt),
+        FeedPayloadMode::Summary | FeedPayloadMode::RawExcerpt => raw_excerpt.or(parsed_body_excerpt),
+    };
+    let excerpt = excerpt_source.map(|text| truncate(text, excerpt_cap));
 
     let body_cap = match ctx.payload_mode {
         FeedPayloadMode::Summary => 480,
         FeedPayloadMode::ParsedPoll => 1600,
         FeedPayloadMode::RawExcerpt => 1800,
     };
-    let body = ctx
-        .output_excerpt
-        .as_deref()
-        .or_else(|| {
-            ctx.parsed_poll
-                .as_ref()
-                .and_then(|parsed| parsed.get("bodyExcerpt"))
-                .and_then(|v| v.as_str())
-        })
+    let body_source = match ctx.payload_mode {
+        FeedPayloadMode::ParsedPoll => parsed_body_excerpt.or(raw_excerpt),
+        FeedPayloadMode::Summary | FeedPayloadMode::RawExcerpt => raw_excerpt.or(parsed_body_excerpt),
+    };
+    let body = body_source
         .map(|text| truncate(text, body_cap))
         .filter(|value| !value.is_empty());
 

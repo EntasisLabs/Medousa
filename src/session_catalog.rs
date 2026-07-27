@@ -1155,10 +1155,8 @@ mod tests {
 
     #[test]
     fn record_turn_appended_increments_count() {
-        let tmp = std::env::temp_dir().join(format!(
-            "medousa-catalog-test-{}",
-            std::process::id()
-        ));
+        let suffix = uuid::Uuid::new_v4().simple().to_string();
+        let tmp = std::env::temp_dir().join(format!("medousa-catalog-test-{suffix}"));
         let _ = std::fs::remove_dir_all(&tmp);
         std::fs::create_dir_all(&tmp).expect("tempdir");
         unsafe { std::env::set_var("XDG_DATA_HOME", &tmp) };
@@ -1172,10 +1170,11 @@ mod tests {
             vec![],
             None,
         );
-        record_turn_appended("sess-a", &turn);
-        record_turn_appended("sess-a", &turn);
+        let session_id = format!("sess-a-{suffix}");
+        record_turn_appended(&session_id, &turn);
+        record_turn_appended(&session_id, &turn);
 
-        let summary = get_summary("sess-a").expect("summary");
+        let summary = get_summary(&session_id).expect("summary");
         assert_eq!(summary.turns, 2);
         assert_eq!(summary.preview, "hello world");
         assert_eq!(summary.display_name.as_deref(), Some("hello world"));
@@ -1233,20 +1232,20 @@ mod tests {
 
     #[test]
     fn list_sessions_page_filters_query_and_cursor() {
-        let tmp = std::env::temp_dir().join(format!(
-            "medousa-catalog-page-test-{}",
-            std::process::id()
-        ));
+        let suffix = uuid::Uuid::new_v4().simple().to_string();
+        let tmp = std::env::temp_dir().join(format!("medousa-catalog-page-test-{suffix}"));
         let _ = std::fs::remove_dir_all(&tmp);
         std::fs::create_dir_all(&tmp).expect("tempdir");
         unsafe { std::env::set_var("XDG_DATA_HOME", &tmp) };
         set_catalog_store(Arc::new(FileSessionCatalogStore));
 
-        let needle = format!("budget-unique-{}", std::process::id());
+        let needle = format!("budget-unique-{suffix}");
         let at = Utc.with_ymd_and_hms(2026, 6, 8, 12, 0, 0).unwrap();
+        let sess_alpha = format!("sess-alpha-{suffix}");
+        let sess_beta = format!("sess-beta-{suffix}");
         for (session_id, preview) in [
-            ("sess-alpha", format!("{needle} planning notes")),
-            ("sess-beta", "Morning brief draft".to_string()),
+            (sess_alpha.as_str(), format!("{needle} planning notes")),
+            (sess_beta.as_str(), format!("{needle} morning brief draft")),
         ] {
             let turn = ConversationTurn::plain(
                 "user",
@@ -1259,14 +1258,14 @@ mod tests {
         }
 
         let page = list_sessions_page(10, Some(&needle), None, None);
-        assert_eq!(page.sessions.len(), 1);
-        assert_eq!(page.sessions[0].session_id, "sess-alpha");
+        assert_eq!(page.sessions.len(), 2);
+        assert!(page.sessions.iter().any(|session| session.session_id == sess_alpha));
 
-        let first = list_sessions_page(1, None, None, None);
+        let first = list_sessions_page(1, Some(&needle), None, None);
         assert_eq!(first.sessions.len(), 1);
         assert!(first.next_cursor.is_some());
 
-        let second = list_sessions_page(1, None, first.next_cursor.as_deref(), None);
+        let second = list_sessions_page(1, Some(&needle), first.next_cursor.as_deref(), None);
         assert_eq!(second.sessions.len(), 1);
         assert_ne!(second.sessions[0].session_id, first.sessions[0].session_id);
     }

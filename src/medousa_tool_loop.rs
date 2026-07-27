@@ -1641,13 +1641,20 @@ mod tests {
     }
 
     #[test]
-    fn prose_requires_finish_substitutes_stub_for_terminal_body() {
+    fn prose_requires_finish_preserves_interim_terminal_body() {
         use crate::turn_control_tools::{terminal_text_for_fsm_end, PROSE_REQUIRES_FINISH_STUB};
         let text = terminal_text_for_fsm_end(
             "prose_requires_finish",
             "I'll summarize everything next.".to_string(),
         );
-        assert_eq!(text, PROSE_REQUIRES_FINISH_STUB);
+        assert_eq!(text, "I'll summarize everything next.");
+        assert_eq!(
+            terminal_text_for_fsm_end(
+                "prose_requires_finish",
+                "Here is the complete answer after tool work.".to_string(),
+            ),
+            PROSE_REQUIRES_FINISH_STUB
+        );
         assert_eq!(
             terminal_text_for_fsm_end("clarifying_question", "Which repo?".to_string()),
             "Which repo?"

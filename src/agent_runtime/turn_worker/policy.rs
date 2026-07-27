@@ -321,6 +321,15 @@ pub fn host_bus_tool_names() -> HashSet<String> {
         ],
     );
 
+    push(
+        &mut names,
+        &[
+            "cognition_skill_discover",
+            "cognition_skill_propose",
+            "cognition_openshell_status",
+        ],
+    );
+
     names
 }
 

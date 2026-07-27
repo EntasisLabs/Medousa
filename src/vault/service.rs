@@ -271,7 +271,7 @@ pub(crate) fn vault_integration_test_lock() -> std::sync::MutexGuard<'static, ()
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
     LOCK.get_or_init(|| Mutex::new(()))
         .lock()
-        .expect("vault test lock")
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 fn mime_guess_from_path(path: &std::path::Path) -> String {
