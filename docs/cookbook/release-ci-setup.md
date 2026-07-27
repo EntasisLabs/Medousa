@@ -138,7 +138,7 @@ VITE_MEDOUSA_RELEASE_BASE_URL=https://releases.entasislabs.com/medousa
 VITE_MEDOUSA_RELEASE_CHANNEL=stable
 ```
 
-Redeploy landing after first R2 upload. **Get Medousa** should use `platforms.<os>.url` from bootstrap. On Windows that is the signed desktop `Medousa_*_x64-setup.exe` (`artifactKind: desktop`). Optional footer link: `platforms.windows-x64.installerUrl` for Medousa Installer (add-ons).
+Redeploy landing after first R2 upload. **Get Medousa** should use `platforms.<os>.url` from bootstrap with `artifactKind: desktop` (Home DMG / NSIS / AppImage). Optional footer link: `platforms.<os>.installerUrl` for Medousa Installer (add-ons).
 
 ---
 
@@ -183,8 +183,8 @@ CI asserts all package stamps equal the tag, builds the full matrix, and **repla
 
 ```bash
 curl -s https://releases.entasislabs.com/medousa/stable/installer-bootstrap.json | head
-curl -s https://releases.entasislabs.com/medousa/stable/installer-bootstrap.json | jq '.platforms["windows-x64"]'
-# Expect artifactKind "desktop" and fileName Medousa_*_x64-setup.exe
+curl -s https://releases.entasislabs.com/medousa/stable/installer-bootstrap.json | jq '.platforms["windows-x64","macos-aarch64","linux-x64"] | {platform, artifactKind, fileName}'
+# Expect artifactKind "desktop" on every platform (Home app, not Medousa Installer)
 curl -s https://releases.entasislabs.com/medousa/stable/release-manifest.json | jq '.packages | keys'
 # Expect engine-* keys; no medousa-v* / engine-suite / cli-* after a full train
 curl -s https://releases.entasislabs.com/medousa/stable/release-manifest.json \

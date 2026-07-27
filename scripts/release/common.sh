@@ -656,16 +656,13 @@ medousa_installer_bundle_for_platform() {
 }
 
 # Default download artifact per platform for installer-bootstrap.json.
-# Windows express path ships the signed desktop NSIS setup (daemon sidecar bundled).
-# Mac/Linux still use Medousa Installer for first-run component selection.
+# Express path ships the Home desktop app (daemon sidecar bundled).
+# Medousa Installer stays on installerUrl for advanced/repair / add-ons.
 medousa_bootstrap_bundle_for_platform() {
   local dist_dir="$1"
   local platform="$2"
   case "${platform}" in
-    macos-aarch64|macos-x64|linux-x64)
-      medousa_installer_bundle_for_platform "${dist_dir}" "${platform}"
-      ;;
-    windows-x64)
+    macos-aarch64|macos-x64|windows-x64|linux-x64)
       medousa_desktop_bundle_for_platform "${dist_dir}" "${platform}"
       ;;
     *)
