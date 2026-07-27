@@ -143,9 +143,11 @@ End users do not need env vars — the installer fetches `release-manifest.json`
 ## Verify
 
 ```bash
-curl -s "$MEDOUSA_RELEASE_BASE_URL/stable/installer-bootstrap.json" | head
+curl -s "$MEDOUSA_RELEASE_BASE_URL/stable/installer-bootstrap.json" | jq '.platforms[] | {platform, version, fileName, sha256: .sha256[0:12]}'
 curl -s "$MEDOUSA_RELEASE_BASE_URL/stable/release-manifest.json" | head
 ```
+
+`fileName` must match the current `desktop` / `installer` stamps in `scripts/release/package-versions.toml` (and the right arch). If bootstrap still points at an older `Medousa_0.x.y_*`, merge the version/arch-aware finders and run `republish-manifests.sh --from-r2 --upload` — that syncs only current stamps and rewrites the two JSON files.
 
 On a clean VM: download from medousa.app → one Home desktop setup → launch Medousa → express wizard. Use `installerUrl` / Medousa Installer only for advanced packages or repair.
 

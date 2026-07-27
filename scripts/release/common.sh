@@ -592,6 +592,131 @@ medousa_find_release_file() {
   return 1
 }
 
+# Semver stamped in Tauri bundle names: Medousa_0.6.0_aarch64.dmg
+medousa_bundle_semver_from_name() {
+  local name="$1"
+  if [[ "${name}" =~ _([0-9]+\.[0-9]+\.[0-9]+)_ ]]; then
+    echo "${BASH_REMATCH[1]}"
+    return 0
+  fi
+  return 1
+}
+
+# Arch token embedded in Tauri artifact filenames for a release platform id.
+medousa_platform_arch_token() {
+  case "$1" in
+    macos-aarch64) echo "aarch64" ;;
+    macos-x64 | windows-x64) echo "x64" ;;
+    linux-x64) echo "amd64" ;;
+    *) return 1 ;;
+  esac
+}
+
+# True when basename matches the platform arch (x64 must not match aarch64).
+medousa_bundle_matches_arch() {
+  local name="$1"
+  local arch="$2"
+  case "${arch}" in
+    aarch64)
+      [[ "${name}" == *_aarch64.* || "${name}" == *_aarch64-* ]]
+      ;;
+    x64)
+      [[ "${name}" != *_aarch64* ]] &&
+        [[ "${name}" == *_x64.* || "${name}" == *_x64-* ]]
+      ;;
+    amd64)
+      [[ "${name}" == *_amd64.* || "${name}" == *_amd64-* ||
+        "${name}" == *_x86_64.* || "${name}" == *_x86_64-* ]]
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+# Prefer NSIS setup.exe over other same-version windows artifacts.
+medousa_bundle_rank() {
+  local name="$1"
+  if [[ "${name}" == *-setup.exe ]]; then
+    echo 2
+  elif [[ "${name}" == *.exe ]]; then
+    echo 1
+  else
+    echo 0
+  fi
+}
+
+# Pick desktop|installer bundle for platform, requiring preferred semver when set.
+# Never returns a wrong-arch or Installer-as-Home match. When preferred is set and
+# missing, returns failure (caller skips the platform) instead of an older build.
+medousa_pick_versioned_bundle() {
+  local dist_dir="$1"
+  local kind="$2" # desktop | installer
+  local platform="$3"
+  local preferred="${4:-}"
+  local arch
+  arch="$(medousa_platform_arch_token "${platform}")" || return 1
+
+  local -a exts=()
+  case "${platform}" in
+    macos-aarch64 | macos-x64) exts=(dmg) ;;
+    windows-x64) exts=(exe msi) ;;
+    linux-x64) exts=(AppImage deb) ;;
+    *) return 1 ;;
+  esac
+
+  local best="" best_ver="" best_rank=0
+  local found base ver rank newer
+
+  while IFS= read -r found; do
+    [[ -n "${found}" && -f "${found}" ]] || continue
+    base="$(basename "${found}")"
+    if [[ "${kind}" == desktop ]]; then
+      medousa_is_installer_bundle_name "${base}" && continue
+      [[ "${base}" == Medousa_* ]] || continue
+    else
+      medousa_is_installer_bundle_name "${base}" || continue
+    fi
+    medousa_bundle_matches_arch "${base}" "${arch}" || continue
+    ver="$(medousa_bundle_semver_from_name "${base}" || true)"
+    [[ -n "${ver}" ]] || continue
+    if [[ -n "${preferred}" && "${ver}" != "${preferred}" ]]; then
+      continue
+    fi
+    rank="$(medousa_bundle_rank "${base}")"
+    if [[ -z "${best}" ]]; then
+      best="${found}"
+      best_ver="${ver}"
+      best_rank="${rank}"
+      continue
+    fi
+    newer="$(medousa_semver_max "${best_ver}" "${ver}")"
+    if [[ "${newer}" == "${ver}" && "${ver}" != "${best_ver}" ]]; then
+      best="${found}"
+      best_ver="${ver}"
+      best_rank="${rank}"
+    elif [[ "${ver}" == "${best_ver}" && "${rank}" -gt "${best_rank}" ]]; then
+      best="${found}"
+      best_rank="${rank}"
+    fi
+  done < <(
+    for ext in "${exts[@]}"; do
+      find "${dist_dir}" -maxdepth 3 -type f \( \
+        -name "Medousa_*.${ext}" -o \
+        -name "Medousa Installer*.${ext}" -o \
+        -name "MedousaInstaller*.${ext}" \
+        \) 2>/dev/null || true
+    done
+  )
+
+  if [[ -n "${best}" ]]; then
+    echo "${best}"
+    return 0
+  fi
+  return 1
+}
+
+# Legacy helpers — prefer medousa_*_bundle_for_platform (version + arch aware).
 medousa_find_installer_bundle() {
   local dist_dir="$1"
   local ext="$2"
@@ -616,43 +741,15 @@ medousa_find_desktop_bundle() {
 medousa_desktop_bundle_for_platform() {
   local dist_dir="$1"
   local platform="$2"
-  case "${platform}" in
-    macos-aarch64|macos-x64)
-      medousa_find_desktop_bundle "${dist_dir}" dmg
-      ;;
-    windows-x64)
-      medousa_find_desktop_bundle "${dist_dir}" exe \
-        || medousa_find_desktop_bundle "${dist_dir}" msi
-      ;;
-    linux-x64)
-      medousa_find_desktop_bundle "${dist_dir}" AppImage \
-        || medousa_find_desktop_bundle "${dist_dir}" deb
-      ;;
-    *)
-      return 1
-      ;;
-  esac
+  local preferred="${3:-$(medousa_package_version desktop)}"
+  medousa_pick_versioned_bundle "${dist_dir}" desktop "${platform}" "${preferred}"
 }
 
 medousa_installer_bundle_for_platform() {
   local dist_dir="$1"
   local platform="$2"
-  case "${platform}" in
-    macos-aarch64|macos-x64)
-      medousa_find_installer_bundle "${dist_dir}" dmg
-      ;;
-    windows-x64)
-      medousa_find_installer_bundle "${dist_dir}" exe \
-        || medousa_find_installer_bundle "${dist_dir}" msi
-      ;;
-    linux-x64)
-      medousa_find_installer_bundle "${dist_dir}" AppImage \
-        || medousa_find_installer_bundle "${dist_dir}" deb
-      ;;
-    *)
-      return 1
-      ;;
-  esac
+  local preferred="${3:-$(medousa_package_version installer)}"
+  medousa_pick_versioned_bundle "${dist_dir}" installer "${platform}" "${preferred}"
 }
 
 # Default download artifact per platform for installer-bootstrap.json.
@@ -661,9 +758,10 @@ medousa_installer_bundle_for_platform() {
 medousa_bootstrap_bundle_for_platform() {
   local dist_dir="$1"
   local platform="$2"
+  local preferred="${3:-$(medousa_package_version desktop)}"
   case "${platform}" in
-    macos-aarch64|macos-x64|windows-x64|linux-x64)
-      medousa_desktop_bundle_for_platform "${dist_dir}" "${platform}"
+    macos-aarch64 | macos-x64 | windows-x64 | linux-x64)
+      medousa_desktop_bundle_for_platform "${dist_dir}" "${platform}" "${preferred}"
       ;;
     *)
       return 1
