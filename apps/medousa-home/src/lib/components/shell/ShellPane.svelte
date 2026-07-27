@@ -67,15 +67,15 @@
   );
 
   /**
-   * Desktop Tauri hosts tabs in AppTitlebar — no in-pane strip (avoids double rows).
-   * Web panes keep an in-flow strip: the native webview hides / fights the titlebar notch.
+   * Desktop Tauri hosts tabs in AppTitlebar — no in-pane strip (avoids double rows,
+   * including webview panes). Browser / mobile keep hover or in-flow tabs.
    */
   const unifiedTitlebar = $derived(usesUnifiedTitlebar());
   const webChrome = $derived(activeTab?.kind === "web");
   const showTabs = $derived(
-    tabs.length > 0 &&
-      (webChrome ||
-        (!unifiedTitlebar && (nearTop || overStrip || forceTabs))),
+    !unifiedTitlebar &&
+      tabs.length > 0 &&
+      (webChrome || nearTop || overStrip || forceTabs),
   );
   /** Room for flow/agent titlebar actions when hover tabs are still in-pane. */
   const tabStripOffsetRight = "11.5rem";

@@ -11,7 +11,7 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 - **Windows script save** — grapheme script path containment no longer fails on first save when the body file does not exist yet (`\\?\` / case / separator mismatches)
 - **Script rename** — add Rename action in the scripts library and script workbench toolbar (notch tabs no longer host script rename)
-- **Browser + notch** — hide the titlebar shell-tab notch on web tabs and keep an in-pane tab strip so native webview chrome does not overlap tabs
+- **Browser + notch** — when the shell-tab notch expands, hide the native browser embed (same overlay stack as Spotlight / rail popovers) so the fused drawer isn’t buried under the webview
 
 ## [0.6.1] — 2026-07-27
 

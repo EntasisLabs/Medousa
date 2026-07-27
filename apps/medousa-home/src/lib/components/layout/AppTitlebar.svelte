@@ -34,8 +34,6 @@
   const showWebPopoutBtn = $derived(
     isTauri() && shellTabs.activeTab?.kind === "web",
   );
-  /** Native webview owns the pane chrome — titlebar notch overlaps / misrenders. */
-  const showShellTabNotch = $derived(shellTabs.activeTab?.kind !== "web");
 
   function toggleRail() {
     if (railExpanded) {
@@ -141,9 +139,7 @@
         data-tauri-drag-region
         ondblclick={onDragDblClick}
       ></div>
-      {#if showShellTabNotch}
-        <ShellTabNotch />
-      {/if}
+      <ShellTabNotch />
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div
         class="app-titlebar-drag"
