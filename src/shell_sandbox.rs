@@ -6,6 +6,8 @@
 //! - Windows: AppContainer (preferred) or Job Object fallback
 
 use std::io::Read;
+#[cfg(target_os = "macos")]
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
