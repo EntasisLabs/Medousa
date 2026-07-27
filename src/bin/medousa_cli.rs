@@ -1193,7 +1193,7 @@ fn print_identity_context_summary(payload: &GetIdentityContextResponse) {
         for relationship in &payload.relationships {
             increment_count(
                 &mut relationship_status_counts,
-                format!("{:?}", &relationship.status).to_ascii_lowercase(),
+                format!("{:?}", relationship.status).to_ascii_lowercase(),
             );
             if relationship.derived_from_relationship_id.is_some() {
                 continuity_links += 1;
@@ -1215,7 +1215,7 @@ fn print_identity_context_summary(payload: &GetIdentityContextResponse) {
                 "  - id={} kind={} status={:?} trust={:.2} confidence={:.2} source={}:{} target={}:{}",
                 relationship.relationship_id,
                 relationship.relationship_kind.as_str(),
-                &relationship.status,
+                relationship.status,
                 relationship.trust_level,
                 relationship.confidence,
                 relationship.source_entity_ref.entity_type,
@@ -1413,7 +1413,7 @@ fn print_identity_history_review(
                 transition.event_id,
                 transition.relationship_id,
                 from_status,
-                &transition.to_status,
+                transition.to_status,
                 transition.actor,
                 transition.occurred_at,
                 single_line_summary(&transition.reason, 120),
@@ -1506,7 +1506,7 @@ fn print_identity_history_explain(
             latest.event_id,
             latest.relationship_id,
             from_status,
-            &latest.to_status,
+            latest.to_status,
             latest.actor,
             latest.occurred_at,
             single_line_summary(&latest.reason, 180),

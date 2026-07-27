@@ -751,35 +751,6 @@ fn base64url_decode(raw: &str) -> Result<Vec<u8>> {
         .context("base64url decode")
 }
 
-struct SenderIdentity {
-    device_id: String,
-    peer_name: String,
-}
-
-fn sender_identity() -> Result<SenderIdentity> {
-    let daemon_url = resolve_daemon_url(None);
-    if let Ok(client) = http_client()
-        && let Ok(response) = client.get(format!("{daemon_url}/pair/status")).send()
-        && response.status().is_success()
-        && let Ok(body) = response.json::<Value>()
-        && let Some(device_id) = body.get("deviceId").and_then(Value::as_str) {
-            let peer_name = body
-                .get("peerName")
-                .and_then(Value::as_str)
-                .unwrap_or("CLI")
-                .to_string();
-            return Ok(SenderIdentity {
-                device_id: device_id.to_string(),
-                peer_name,
-            });
-        }
-    let identity = load_or_create_identity()?;
-    Ok(SenderIdentity {
-        device_id: identity.phone_id,
-        peer_name: "CLI".to_string(),
-    })
-}
-
 fn find_connection<'a>(store: &'a CliConnectionStore, id: &str) -> Option<&'a CliConnection> {
     store.connections.iter().find(|entry| {
         entry.id == id

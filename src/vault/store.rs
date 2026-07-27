@@ -1,5 +1,6 @@
 //! Vault filesystem store + on-disk index.
 
+use std::cmp::Reverse;
 use std::collections::{HashMap, HashSet};
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader, Write};
@@ -454,8 +455,8 @@ impl VaultStore {
             Ok(())
         }
         walk(&root, "", &mut entries)?;
-        entries.sort_by(|a, b| b.1.cmp(&a.1));
-        entries.truncate(limit.max(1).min(500));
+        entries.sort_by_key(|entry| Reverse(entry.1));
+        entries.truncate(limit.clamp(1, 500));
         Ok(entries)
     }
 

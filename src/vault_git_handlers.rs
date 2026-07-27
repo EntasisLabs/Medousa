@@ -165,14 +165,14 @@ pub async fn vault_git_worktrees_list(
             current_head = Some(rest.to_string());
         } else if let Some(rest) = line.strip_prefix("branch ") {
             current_branch = Some(rest.trim_start_matches("refs/heads/").to_string());
-        } else if line.is_empty() {
-            if let (Some(path), Some(head)) = (current_path.take(), current_head.take()) {
-                entries.push(WorktreeEntry {
-                    path,
-                    head,
-                    branch: current_branch.take(),
-                });
-            }
+        } else if line.is_empty()
+            && let (Some(path), Some(head)) = (current_path.take(), current_head.take())
+        {
+            entries.push(WorktreeEntry {
+                path,
+                head,
+                branch: current_branch.take(),
+            });
         }
     }
     if let (Some(path), Some(head)) = (current_path, current_head) {

@@ -238,8 +238,8 @@ pub fn run_packages(args: &[String]) -> Result<()> {
                 );
             } else {
                 println!(
-                    "{:<22} {:<10} {:<12} {:<12} {}",
-                    "PACKAGE", "STATUS", "LOCAL", "REMOTE", "UPDATE"
+                    "{:<22} {:<10} {:<12} {:<12} UPDATE",
+                    "PACKAGE", "STATUS", "LOCAL", "REMOTE"
                 );
                 for row in rows {
                     println!(
