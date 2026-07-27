@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { SessionSummary } from "$lib/types/session";
 import {
+  homeActivityWhisper,
   homeContinueRows,
   homeNotesDateParts,
   peerInitials,
   relativeSessionTime,
+  stripMarkdownPreview,
 } from "$lib/utils/homeContinue";
 
 function session(
@@ -23,6 +25,20 @@ function session(
   };
 }
 
+describe("stripMarkdownPreview", () => {
+  it("strips bold markers from previews", () => {
+    expect(
+      stripMarkdownPreview("Claude Opus 5 just landed **yesterday** — great timing."),
+    ).toBe("Claude Opus 5 just landed yesterday — great timing.");
+  });
+
+  it("strips links and inline code", () => {
+    expect(stripMarkdownPreview("See [docs](https://x.test) and `code`")).toBe(
+      "See docs and code",
+    );
+  });
+});
+
 describe("homeContinueRows", () => {
   it("returns lead plus up to two whispers", () => {
     const rows = homeContinueRows([
@@ -38,6 +54,13 @@ describe("homeContinueRows", () => {
     expect(rows[2].sessionId).toBe("c");
   });
 
+  it("strips markdown in previews", () => {
+    const rows = homeContinueRows([
+      session("a", "Research", "Landed **yesterday** on Opus"),
+    ]);
+    expect(rows[0].preview).toBe("Landed yesterday on Opus");
+  });
+
   it("returns empty when there are no sessions", () => {
     expect(homeContinueRows([])).toEqual([]);
   });
@@ -51,9 +74,9 @@ describe("relativeSessionTime", () => {
 });
 
 describe("homeNotesDateParts", () => {
-  it("returns uppercase weekday and day number", () => {
+  it("returns weekday and day number", () => {
     const parts = homeNotesDateParts(new Date("2026-07-26T12:00:00"));
-    expect(parts.weekday).toBe("SUNDAY");
+    expect(parts.weekday).toBe("Sunday");
     expect(parts.day).toBe("26");
   });
 });
@@ -62,5 +85,19 @@ describe("peerInitials", () => {
   it("builds two-letter initials", () => {
     expect(peerInitials("Alex Morgan")).toBe("AM");
     expect(peerInitials("Sam")).toBe("SA");
+  });
+});
+
+describe("homeActivityWhisper", () => {
+  it("drops redundant Needs you · Stuck lines", () => {
+    expect(
+      homeActivityWhisper("Needs you", "Stuck — needs a look", "Needs you · Stuck"),
+    ).toBeNull();
+  });
+
+  it("keeps distinct whispers", () => {
+    expect(
+      homeActivityWhisper("Needs you", "Vault sync", "Waiting on your approval"),
+    ).toBe("Waiting on your approval");
   });
 });

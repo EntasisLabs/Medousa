@@ -62,6 +62,6 @@ export const MORE_HUB_SECTIONS: {
   {
     title: "Preferences",
     subtitle: "Tuning and workshop pulse",
-    destinations: ["settings", "runtime"],
+    destinations: ["runtime", "settings"],
   },
 ];

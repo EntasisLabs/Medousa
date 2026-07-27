@@ -7,38 +7,70 @@
   @apply mt-5;
 }
 
-.mobile-home-workshop-hero {
-  @apply flex max-w-full items-center gap-3 text-left transition active:opacity-80;
+.mobile-home-greeting {
+  @apply text-[1.85rem] font-semibold leading-tight tracking-[-0.03em] text-surface-50;
 }
 
-.mobile-home-workshop-mark {
-  @apply inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-surface-500/40 bg-surface-900/80 text-surface-100;
+.mobile-home-meta {
+  @apply mt-4 flex flex-wrap items-center gap-x-3 gap-y-1.5;
 }
 
-.mobile-home-workshop-hero[style*="--workshop-brand"] .mobile-home-workshop-mark {
-  color: color-mix(in srgb, var(--workshop-brand) 88%, white);
-  border-color: color-mix(in srgb, var(--workshop-brand) 42%, transparent);
-  background: color-mix(in srgb, var(--workshop-brand) 22%, rgb(var(--color-surface-900)));
+.mobile-home-meta-row {
+  @apply inline-flex max-w-full items-center gap-2 text-left transition active:opacity-80;
 }
 
-.mobile-home-workshop-copy {
-  @apply min-w-0 flex-1;
+.mobile-home-meta-lead {
+  @apply inline-flex h-5 w-5 shrink-0 items-center justify-center;
 }
 
-.mobile-home-workshop-kicker {
-  @apply block text-[10px] font-semibold uppercase tracking-[0.1em] text-surface-500;
+.mobile-home-meta-mark {
+  @apply inline-flex h-5 w-5 items-center justify-center rounded-md border border-surface-600/40 bg-surface-900/60 text-surface-500;
 }
 
-.mobile-home-wordmark {
-  @apply truncate text-[2rem] font-semibold tracking-tight text-surface-50;
+.mobile-home-meta-row[style*="--workshop-brand"] .mobile-home-meta-mark {
+  color: color-mix(in srgb, var(--workshop-brand) 62%, rgb(var(--color-surface-400)));
+  border-color: color-mix(in srgb, var(--workshop-brand) 24%, transparent);
+  background: color-mix(in srgb, var(--workshop-brand) 10%, rgb(var(--color-surface-900)));
 }
 
-.mobile-home-greeting-quiet {
-  @apply mt-1 text-base text-surface-400;
+.mobile-home-meta-mark--status {
+  transition:
+    color 180ms ease,
+    border-color 180ms ease,
+    background-color 180ms ease;
 }
 
-.mobile-home-status-breath {
-  @apply mt-2 inline-flex max-w-full items-center gap-2 text-sm text-surface-500 transition active:text-surface-300;
+.mobile-home-meta-mark--alive {
+  color: rgb(var(--color-success-400));
+  border-color: color-mix(in srgb, rgb(var(--color-success-400)) 38%, transparent);
+  background: color-mix(in srgb, rgb(var(--color-success-400)) 12%, rgb(var(--color-surface-900)));
+  animation: mobile-home-status-breathe 3.6s ease-in-out infinite;
+}
+
+.mobile-home-meta-mark--warn {
+  color: rgb(var(--color-warning-400));
+  border-color: color-mix(in srgb, rgb(var(--color-warning-400)) 38%, transparent);
+  background: color-mix(in srgb, rgb(var(--color-warning-400)) 12%, rgb(var(--color-surface-900)));
+  animation: mobile-home-status-breathe 2.8s ease-in-out infinite;
+}
+
+.mobile-home-meta-mark--idle {
+  color: rgb(var(--color-surface-500));
+  opacity: 0.9;
+}
+
+.mobile-home-meta-label {
+  @apply min-w-0 truncate text-[13px] font-medium leading-none text-surface-400;
+}
+
+@keyframes mobile-home-status-breathe {
+  0%,
+  100% {
+    filter: brightness(1);
+  }
+  50% {
+    filter: brightness(1.18);
+  }
 }
 
 .mobile-home-ask-quiet {
@@ -54,23 +86,27 @@
 }
 
 .mobile-home-glance {
-  @apply mt-4 grid grid-cols-2 gap-3;
+  @apply mt-5 grid grid-cols-2 gap-2.5;
 }
 
 .mobile-home-glance-tile {
-  @apply flex min-h-[9.5rem] flex-col rounded-[22px] border border-surface-500/30 bg-surface-900/55 p-3.5 text-left transition active:bg-surface-800/70;
+  @apply flex min-h-[8.75rem] flex-col rounded-[20px] border border-surface-500/30 bg-surface-900/55 p-3.5 text-left transition active:bg-surface-800/70;
+}
+
+.mobile-home-glance-tile--daily {
+  @apply mt-5 min-h-0 w-full;
 }
 
 .mobile-home-glance-kicker {
-  @apply text-[10px] font-semibold uppercase tracking-[0.08em] text-surface-500;
+  @apply text-[10px] font-medium uppercase tracking-[0.12em] text-surface-600;
 }
 
 .mobile-home-glance-kicker-accent {
-  @apply text-warning-400/90;
+  @apply text-warning-400/85;
 }
 
 .mobile-home-glance-hero {
-  @apply mt-2 text-4xl font-semibold tabular-nums leading-none tracking-tight text-surface-50;
+  @apply mt-2 text-[2.35rem] font-semibold tabular-nums leading-none tracking-[-0.04em] text-surface-50;
 }
 
 .mobile-home-glance-sub {
@@ -78,11 +114,27 @@
 }
 
 .mobile-home-glance-title {
-  @apply mt-auto pt-3 text-sm font-semibold text-surface-100;
+  @apply mt-2.5 text-[15px] font-semibold leading-snug tracking-tight text-surface-100;
+}
+
+.mobile-home-glance-day {
+  @apply mt-0.5 text-[1.65rem] font-semibold tabular-nums leading-none tracking-[-0.03em] text-surface-50;
+}
+
+.mobile-home-glance-daily-row {
+  @apply mt-2.5 flex items-baseline justify-between gap-3;
+}
+
+.mobile-home-glance-daily-row .mobile-home-glance-title {
+  @apply mt-0;
+}
+
+.mobile-home-glance-daily-row .mobile-home-glance-day {
+  @apply mt-0;
 }
 
 .mobile-home-glance-whisper {
-  @apply mt-0.5 line-clamp-1 text-[11px] text-surface-500;
+  @apply mt-auto pt-3 line-clamp-1 text-[11px] text-surface-500;
 }
 
 .mobile-home-peer-avatars {
@@ -94,11 +146,11 @@
 }
 
 .mobile-home-continue {
-  @apply mt-4 rounded-[22px] border border-surface-500/30 bg-surface-900/55 px-3.5 py-3 text-left;
+  @apply mt-4 rounded-[20px] border border-surface-500/30 bg-surface-900/55 px-3.5 py-3 text-left;
 }
 
 .mobile-home-continue-kicker {
-  @apply mb-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-surface-500;
+  @apply mb-2 text-[10px] font-medium uppercase tracking-[0.12em] text-surface-600;
 }
 
 .mobile-home-continue-lead {
@@ -110,11 +162,11 @@
 }
 
 .mobile-home-continue-lead-title {
-  @apply min-w-0 flex-1 text-[17px] font-semibold leading-snug text-surface-50;
+  @apply min-w-0 flex-1 text-[16px] font-semibold leading-snug tracking-[-0.015em] text-surface-50;
 }
 
 .mobile-home-continue-time {
-  @apply shrink-0 text-[11px] tabular-nums text-surface-500;
+  @apply shrink-0 text-[11px] tabular-nums text-surface-600;
 }
 
 .mobile-home-continue-preview {
@@ -122,23 +174,23 @@
 }
 
 .mobile-home-continue-whisper {
-  @apply mt-1 flex w-full items-baseline justify-between gap-3 border-t border-surface-700/40 px-1 py-2.5 text-left transition active:bg-surface-800/50;
+  @apply mt-0.5 flex w-full items-baseline justify-between gap-3 border-t border-surface-700/35 px-1 py-2.5 text-left transition active:bg-surface-800/50;
 }
 
 .mobile-home-continue-whisper-title {
-  @apply min-w-0 flex-1 truncate text-sm text-surface-300;
+  @apply min-w-0 flex-1 truncate text-[13px] text-surface-400;
 }
 
 .mobile-home-activity {
-  @apply mt-4 mb-2 w-full rounded-[22px] border border-surface-500/30 bg-surface-900/55 px-3.5 py-3.5 text-left transition active:bg-surface-800/70;
+  @apply mt-4 mb-2 w-full rounded-[20px] border border-surface-500/30 bg-surface-900/55 px-3.5 py-3.5 text-left transition active:bg-surface-800/70;
 }
 
 .mobile-home-activity-kicker {
-  @apply text-[10px] font-semibold uppercase tracking-[0.08em] text-surface-500;
+  @apply text-[10px] font-medium uppercase tracking-[0.12em] text-surface-600;
 }
 
 .mobile-home-activity-status {
-  @apply mt-2 text-sm font-semibold;
+  @apply mt-2 text-[13px] font-semibold;
 }
 
 .mobile-home-activity-status-done {
@@ -154,11 +206,11 @@
 }
 
 .mobile-home-activity-title {
-  @apply mt-1 text-xl font-semibold leading-snug tracking-tight text-surface-50;
+  @apply mt-1 text-[1.15rem] font-semibold leading-snug tracking-[-0.02em] text-surface-50;
 }
 
 .mobile-home-activity-line {
-  @apply mt-1.5 line-clamp-2 text-[13px] leading-snug text-surface-500;
+  @apply mt-1.5 line-clamp-2 text-[12px] leading-snug text-surface-500;
 }
 
 .mobile-home-menu-btn,
@@ -268,6 +320,10 @@
 
 .mobile-dest-menu-list {
   @apply m-0 list-none p-0;
+}
+
+.mobile-dest-menu-list--tail {
+  @apply mt-2 border-t border-surface-700/35 pt-2;
 }
 
 .mobile-dest-menu-row {

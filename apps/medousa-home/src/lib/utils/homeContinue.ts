@@ -8,6 +8,20 @@ export type HomeContinueRow = {
   relativeTime: string;
 };
 
+/** Strip common markdown so Home previews never leak raw `**` / `` ` ``. */
+export function stripMarkdownPreview(text: string): string {
+  return text
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/__([^_]+)__/g, "$1")
+    .replace(/\*([^*]+)\*/g, "$1")
+    .replace(/_([^_]+)_/g, "$1")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 /** Lead chat + up to two quieter whispers for Home Continue. */
 export function homeContinueRows(
   sessions: SessionSummary[],
@@ -19,7 +33,7 @@ export function homeContinueRows(
     return {
       sessionId: session.session_id,
       title: session.display_name?.trim() || formatSessionLabel(session),
-      preview: firstLine,
+      preview: stripMarkdownPreview(firstLine),
       relativeTime: relativeSessionTime(session.last_timestamp),
     };
   });
@@ -49,9 +63,7 @@ export function homeNotesDateParts(now = new Date()): {
   day: string;
 } {
   return {
-    weekday: now
-      .toLocaleDateString([], { weekday: "long" })
-      .toUpperCase(),
+    weekday: now.toLocaleDateString([], { weekday: "long" }),
     day: String(now.getDate()),
   };
 }
@@ -64,4 +76,28 @@ export function peerInitials(label: string | null | undefined): string {
   if (parts.length === 0) return "?";
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
   return `${parts[0][0] ?? ""}${parts[1][0] ?? ""}`.toUpperCase();
+}
+
+/** Drop activity whispers that only repeat the status / title. */
+export function homeActivityWhisper(
+  statusLabel: string,
+  title: string,
+  line: string,
+): string | null {
+  const whisper = line.trim();
+  if (!whisper) return null;
+  const norm = (value: string) =>
+    value
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, " ")
+      .trim();
+  const nWhisper = norm(whisper);
+  const nStatus = norm(statusLabel);
+  const nTitle = norm(title);
+  if (!nWhisper || nWhisper === nStatus || nWhisper === nTitle) return null;
+  const tokens = nWhisper.split(" ").filter(Boolean);
+  const covered = tokens.every(
+    (token) => nStatus.includes(token) || nTitle.includes(token),
+  );
+  return covered ? null : whisper;
 }

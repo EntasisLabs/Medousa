@@ -26,6 +26,7 @@
     formatCardTitle,
   } from "$lib/utils/formatWork";
   import {
+    homeActivityWhisper,
     homeContinueRows,
     homeNotesDateParts,
     peerInitials,
@@ -35,7 +36,7 @@
   import { haptic } from "$lib/haptics";
   import { workshops } from "$lib/stores/workshops.svelte";
   import WorkshopSwitcherCompact from "$lib/components/workshops/WorkshopSwitcherCompact.svelte";
-  import { Building2, Home, Users } from "@lucide/svelte";
+  import { Building2, Home, Radio, Users } from "@lucide/svelte";
   import {
     workshopBrandCssVars,
   } from "$lib/types/workshopRegistry";
@@ -124,9 +125,11 @@
     return "All clear";
   });
 
-  const statusDotClass = $derived(
-    health?.ok ? "bg-success-400" : health ? "bg-warning-400" : "bg-surface-500",
-  );
+  const statusTone = $derived.by((): "alive" | "warn" | "idle" => {
+    if (!health) return "idle";
+    if (!health.ok) return "warn";
+    return "alive";
+  });
 
   const notesDate = $derived(homeNotesDateParts());
   const notesWhisper = $derived.by(() => {
@@ -151,9 +154,10 @@
     status: "done" | "need" | "motion";
     statusLabel: string;
     title: string;
-    line: string;
+    line: string | null;
   };
 
+  /** Only live / actionable beats — never a settled "Done" under All clear. */
   const lastActivity = $derived.by((): HomeActivityBeat | null => {
     const pending = workspace.pendingAskCompletion;
     if (pending) {
@@ -179,11 +183,6 @@
       return beatFromCard(motionCard, "motion", "In motion");
     }
 
-    const settled = partition.settled[0];
-    if (settled) {
-      return beatFromCard(settled, "done", "Done");
-    }
-
     return null;
   });
 
@@ -192,14 +191,23 @@
     status: HomeActivityBeat["status"],
     statusLabel: string,
   ): HomeActivityBeat {
+    const title = formatCardTitle(card);
     return {
       cardId: card.id,
       status,
       statusLabel,
-      title: formatCardTitle(card),
-      line: formatCardSubtitle(card),
+      title,
+      line: homeActivityWhisper(statusLabel, title, formatCardSubtitle(card)),
     };
   }
+
+  const peersHaveSignal = $derived(peerPreview.unreadTotal > 0);
+  const peersQuietLabel = $derived.by(() => {
+    if (peerPreview.peerCount <= 0) return null;
+    return peerPreview.peerCount === 1
+      ? "1 peer · quiet"
+      : `${peerPreview.peerCount} peers · quiet`;
+  });
 
   let scrollEl: HTMLDivElement | undefined = $state();
   let activityEl: HTMLElement | undefined = $state();
@@ -384,40 +392,59 @@
 
     <div class="px-5 pb-8 pt-3">
       <div class="mobile-home-brand">
-        <button
-          type="button"
-          class="mobile-home-workshop-hero"
-          style={workshopBrandStyle}
-          aria-label="Workshop — {workshops.activeLabel}"
-          aria-haspopup="menu"
-          aria-expanded={workshopSheetOpen}
-          onclick={() => {
-            haptic("light");
-            workshopSheetOpen = true;
-          }}
-        >
-          <span class="mobile-home-workshop-mark" aria-hidden="true">
-            <WorkshopMarkIcon size={22} strokeWidth={1.75} />
-          </span>
-          <span class="mobile-home-workshop-copy">
-            <span class="mobile-home-workshop-kicker">Workshop</span>
-            <h1 class="mobile-home-wordmark">{workshops.activeLabel}</h1>
-          </span>
-        </button>
-        <p class="mobile-home-greeting-quiet">{greeting}</p>
-        <button
-          type="button"
-          class="mobile-home-status-breath"
-          onclick={onStatusTap}
-        >
-          <span
-            class="mobile-alive-dot {living.length > 0
-              ? 'mobile-alive-dot-active'
-              : ''} {statusDotClass}"
-            aria-hidden="true"
-          ></span>
-          <span class="truncate">{statusLine}</span>
-        </button>
+        <h1 class="mobile-home-greeting">{greeting}</h1>
+        <div class="mobile-home-meta">
+          <button
+            type="button"
+            class="mobile-home-meta-row"
+            onclick={onStatusTap}
+          >
+            <span class="mobile-home-meta-lead" aria-hidden="true">
+              <span
+                class="mobile-home-meta-mark mobile-home-meta-mark--status"
+                class:mobile-home-meta-mark--alive={statusTone === "alive"}
+                class:mobile-home-meta-mark--warn={statusTone === "warn"}
+                class:mobile-home-meta-mark--idle={statusTone === "idle"}
+              >
+                <Radio size={13} strokeWidth={1.75} />
+              </span>
+            </span>
+            <span class="mobile-home-meta-label">{statusLine}</span>
+          </button>
+          <button
+            type="button"
+            class="mobile-home-meta-row"
+            style={workshopBrandStyle}
+            aria-label="Workshop — {workshops.activeLabel}"
+            aria-haspopup="menu"
+            aria-expanded={workshopSheetOpen}
+            onclick={() => {
+              haptic("light");
+              workshopSheetOpen = true;
+            }}
+          >
+            <span class="mobile-home-meta-lead" aria-hidden="true">
+              <span class="mobile-home-meta-mark">
+                <WorkshopMarkIcon size={13} strokeWidth={1.75} />
+              </span>
+            </span>
+            <span class="mobile-home-meta-label">{workshops.activeLabel}</span>
+          </button>
+          {#if !peersHaveSignal && peersQuietLabel}
+            <button
+              type="button"
+              class="mobile-home-meta-row"
+              onclick={openPeers}
+            >
+              <span class="mobile-home-meta-lead" aria-hidden="true">
+                <span class="mobile-home-meta-mark">
+                  <Users size={13} strokeWidth={1.75} />
+                </span>
+              </span>
+              <span class="mobile-home-meta-label">{peersQuietLabel}</span>
+            </button>
+          {/if}
+        </div>
       </div>
 
       <WorkshopSwitcherCompact
@@ -426,42 +453,50 @@
         bind:sheetOpen={workshopSheetOpen}
       />
 
-      <div class="mobile-home-glance">
-        <button type="button" class="mobile-home-glance-tile" onclick={openPeers}>
-          <span class="mobile-home-glance-kicker">Peers</span>
-          {#if peerPreview.unreadTotal > 0}
+      {#if peersHaveSignal}
+        <div class="mobile-home-glance">
+          <button type="button" class="mobile-home-glance-tile" onclick={openPeers}>
+            <span class="mobile-home-glance-kicker">Peers</span>
             <span class="mobile-home-glance-hero">{peerPreview.unreadTotal}</span>
             <span class="mobile-home-glance-sub">unread</span>
-          {:else}
-            <span class="mobile-home-glance-hero">
-              {peerPreview.peerCount > 0 ? peerPreview.peerCount : "—"}
-            </span>
-            <span class="mobile-home-glance-sub">
-              {peerPreview.peerCount > 0 ? "quiet" : "none yet"}
-            </span>
-          {/if}
-          {#if peerAvatarLabels.length > 0}
-            <div class="mobile-home-peer-avatars">
-              {#each peerAvatarLabels as label (label)}
-                <span class="mobile-home-peer-avatar-chip">{peerInitials(label)}</span>
-              {/each}
-            </div>
-          {/if}
-        </button>
+            {#if peerAvatarLabels.length > 0}
+              <div class="mobile-home-peer-avatars">
+                {#each peerAvatarLabels as label (label)}
+                  <span class="mobile-home-peer-avatar-chip">{peerInitials(label)}</span>
+                {/each}
+              </div>
+            {/if}
+          </button>
 
+          <button
+            type="button"
+            class="mobile-home-glance-tile"
+            onclick={() => void openDailyNote()}
+          >
+            <span class="mobile-home-glance-kicker mobile-home-glance-kicker-accent">
+              Daily note
+            </span>
+            <span class="mobile-home-glance-title">{notesDate.weekday}</span>
+            <span class="mobile-home-glance-day">{notesDate.day}</span>
+            <span class="mobile-home-glance-whisper">{notesWhisper}</span>
+          </button>
+        </div>
+      {:else}
         <button
           type="button"
-          class="mobile-home-glance-tile"
+          class="mobile-home-glance-tile mobile-home-glance-tile--daily"
           onclick={() => void openDailyNote()}
         >
           <span class="mobile-home-glance-kicker mobile-home-glance-kicker-accent">
-            {notesDate.weekday}
+            Daily note
           </span>
-          <span class="mobile-home-glance-hero">{notesDate.day}</span>
-          <span class="mobile-home-glance-title">Daily note</span>
+          <span class="mobile-home-glance-daily-row">
+            <span class="mobile-home-glance-title">{notesDate.weekday}</span>
+            <span class="mobile-home-glance-day">{notesDate.day}</span>
+          </span>
           <span class="mobile-home-glance-whisper">{notesWhisper}</span>
         </button>
-      </div>
+      {/if}
 
       {#if continueLead}
         <div class="mobile-home-continue">
@@ -514,7 +549,9 @@
             {lastActivity.statusLabel}
           </p>
           <p class="mobile-home-activity-title">{lastActivity.title}</p>
-          <p class="mobile-home-activity-line">{lastActivity.line}</p>
+          {#if lastActivity.line}
+            <p class="mobile-home-activity-line">{lastActivity.line}</p>
+          {/if}
         </button>
       {/if}
     </div>

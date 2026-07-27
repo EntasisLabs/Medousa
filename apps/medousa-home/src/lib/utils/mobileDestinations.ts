@@ -34,7 +34,7 @@ export const MOBILE_PRIMARY_DESTINATIONS: MobileDestinationItem[] = [
 export function moreDestinationItems(): MobileDestinationItem[] {
   return MORE_HUB_SECTIONS.flatMap((section) =>
     section.destinations
-      .filter((id) => id !== "calendar")
+      .filter((id) => id !== "calendar" && id !== "settings")
       .map((id) => {
         const meta = MORE_DESTINATIONS.find((row) => row.id === id);
         return {
@@ -46,6 +46,18 @@ export function moreDestinationItems(): MobileDestinationItem[] {
         };
       }),
   );
+}
+
+/** Always rendered last in the destinations menu (after custom views). */
+export function settingsDestinationItem(): MobileDestinationItem {
+  const meta = MORE_DESTINATIONS.find((row) => row.id === "settings");
+  return {
+    id: "more-settings",
+    label: meta?.label ?? "Preferences",
+    hint: meta?.hint,
+    kind: "more",
+    more: "settings",
+  };
 }
 
 export function mobileDestinationSections(): {

@@ -23,6 +23,7 @@
   import { haptic } from "$lib/haptics";
   import {
     mobileDestinationSections,
+    settingsDestinationItem,
     type MobileDestinationItem,
   } from "$lib/utils/mobileDestinations";
   import {
@@ -58,6 +59,9 @@
   };
 
   const sections = $derived(mobileDestinationSections());
+  const goToSection = $derived(sections.find((section) => section.title === "Go to"));
+  const moreSection = $derived(sections.find((section) => section.title === "More"));
+  const settingsItem = settingsDestinationItem();
   const customViews = $derived(
     environment.navSurfaces().filter((surface) => surface.kind === "custom"),
   );
@@ -142,10 +146,10 @@
       </div>
 
       <div class="mobile-dest-menu-scroll">
-        {#each sections as section (section.title)}
-          <p class="mobile-dest-menu-section">{section.title}</p>
+        {#if goToSection}
+          <p class="mobile-dest-menu-section">{goToSection.title}</p>
           <ul class="mobile-dest-menu-list">
-            {#each section.items as item (item.id)}
+            {#each goToSection.items as item (item.id)}
               {@const Icon = icons[item.id] ?? Sparkles}
               <li>
                 <button type="button" class="mobile-dest-menu-row" onclick={() => pick(item)}>
@@ -160,7 +164,7 @@
               </li>
             {/each}
           </ul>
-        {/each}
+        {/if}
 
         {#if customViews.length > 0}
           <p class="mobile-dest-menu-section">My views</p>
@@ -179,6 +183,48 @@
             {/each}
           </ul>
         {/if}
+
+        {#if moreSection}
+          <p class="mobile-dest-menu-section">{moreSection.title}</p>
+          <ul class="mobile-dest-menu-list">
+            {#each moreSection.items as item (item.id)}
+              {@const Icon = icons[item.id] ?? Sparkles}
+              <li>
+                <button type="button" class="mobile-dest-menu-row" onclick={() => pick(item)}>
+                  <Icon size={18} strokeWidth={1.75} class="mobile-dest-menu-icon" />
+                  <span class="min-w-0 flex-1 text-left">
+                    <span class="block text-[15px] font-medium text-surface-50">{item.label}</span>
+                    {#if item.hint}
+                      <span class="block truncate text-[11px] text-surface-500">{item.hint}</span>
+                    {/if}
+                  </span>
+                </button>
+              </li>
+            {/each}
+          </ul>
+        {/if}
+
+        <ul class="mobile-dest-menu-list mobile-dest-menu-list--tail">
+          <li>
+            <button
+              type="button"
+              class="mobile-dest-menu-row"
+              onclick={() => pick(settingsItem)}
+            >
+              <Settings size={18} strokeWidth={1.75} class="mobile-dest-menu-icon" />
+              <span class="min-w-0 flex-1 text-left">
+                <span class="block text-[15px] font-medium text-surface-50">
+                  {settingsItem.label}
+                </span>
+                {#if settingsItem.hint}
+                  <span class="block truncate text-[11px] text-surface-500">
+                    {settingsItem.hint}
+                  </span>
+                {/if}
+              </span>
+            </button>
+          </li>
+        </ul>
       </div>
     </div>
   </div>
