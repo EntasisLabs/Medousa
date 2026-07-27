@@ -4,9 +4,16 @@ Notes about recent Medousa changes and what still works together. Check **Settin
 
 Related: [Workshops and connections](guide:workshops-connections) · [Desktop, web, and phone](guide:platform-matrix)
 
+## 0.6.0 highlights
+
+- **Shared mode** and **peer mesh** — seats without login; nearby / team messaging with receipts and intros
+- **Mobile Home** — greeting-first hero; quiet workshop / status / peers line; Settings last in the menu
+- **Calendar reminders**, in-app desktop updates, Spotlight + shell tab polish
+- Operator’s Guide expanded with everyday product voice
+
 ## In this guide era
 
-The Operator’s Guide now covers everyday use (chat, notes, phone, troubleshooting) plus optional power topics (automations, packages, advanced settings). Start with [Find answers](guide:find-answers) if you’re new.
+The Operator’s Guide covers everyday use (chat, notes, phone, troubleshooting) plus optional power topics (automations, packages, advanced settings). Start with [Find answers](guide:find-answers) if you’re new.
 
 ## Compatibility
 

@@ -3,27 +3,25 @@
 > **Status:** Living document (updated 2026-07)  
 > **Historical plans:** [archive/README.md](archive/README.md)
 
-First-run UX, Home shell milestones, turn-loop FSM, user profiles (Phases 0–6), **centralized agent runtime**, and **0.5.0 Vault / Versions / Liquid** are **shipped**. See [turn-runtime-and-lanes.md](turn-runtime-and-lanes.md), [ADR-002](../docs/architecture/decisions/adr-002-user-profiles.md), [v0.5.0-vault-versions-plan.md](v0.5.0-vault-versions-plan.md).
+First-run UX, Home shell milestones, turn-loop FSM, user profiles (Phases 0–6), **centralized agent runtime**, **0.5.0 Vault / Versions / Liquid**, and **0.6.0 Shared / Peer mesh / Dynamic + Home polish** are **shipped**. See [turn-runtime-and-lanes.md](turn-runtime-and-lanes.md), [ADR-002](../docs/architecture/decisions/adr-002-user-profiles.md), [v0.5.0-vault-versions-plan.md](v0.5.0-vault-versions-plan.md), [v0.6.0-shared-mode-plan.md](v0.6.0-shared-mode-plan.md), [v0.6.0-peer-mesh-plan.md](v0.6.0-peer-mesh-plan.md).
 
-**Active focus: 0.6.0** — Shared mode (profiles as members), Peer mesh (personal↔team), Dynamic (ACP/MCP finish), plus polish.
+**Next focus:** felt polish residual (empty states, F3–F5), optional mesh `client.relay`, inference profiles — see below.
 
 Full plans: **[v0.6.0-shared-mode-plan.md](v0.6.0-shared-mode-plan.md)** · **[v0.6.0-peer-mesh-plan.md](v0.6.0-peer-mesh-plan.md)** · **[home-messaging-matrix.md](home-messaging-matrix.md)** · [ADR-011](../docs/architecture/decisions/adr-011-shared-mode-portal-and-mesh.md) · **[workshop-and-automations-plan.md](workshop-and-automations-plan.md)** · **[polish-and-package-plan.md](polish-and-package-plan.md)** · **[operators-guide-docs-epic.md](operators-guide-docs-epic.md)**
 
 ---
 
-## 0.6.0 Shared, Peer mesh, Dynamic (active)
+## 0.6.0 Shared, Peer mesh, Dynamic (shipped)
 
-**Goal:** Org-brain seats via Shared mode (no login); capability-scoped personal↔team mesh; finish hot-swappable ACP/MCP; Home polish (editor menus, nav, spotlight, wiki).
+**Goal:** Org-brain seats via Shared mode (no login); capability-scoped personal↔team mesh; finish hot-swappable ACP/MCP; Home polish (mobile, settings, spotlight, calendar).
 
 | Pillar | Plan | Status |
 |--------|------|--------|
 | Shared mode | [v0.6.0-shared-mode-plan.md](v0.6.0-shared-mode-plan.md) | ✅ S0–S6 |
-| Peer mesh | [v0.6.0-peer-mesh-plan.md](v0.6.0-peer-mesh-plan.md) | 🔄 M0–M4 ✅; M4+ introducer ✅; next optional `client.relay` |
-| Dynamic | [ADR-008](../docs/architecture/decisions/adr-008-hot-swappable-agent-runtime.md) | ✅ MCP space reads + ACP pump/permissions/Home bar; polish optional |
-| Polish | [polish-and-package-plan.md](polish-and-package-plan.md) | 🔄 **Felt polish** F0–F2 ✅ + F3.0 rail chrome ✅; next empty states / F3–F5 |
+| Peer mesh | [v0.6.0-peer-mesh-plan.md](v0.6.0-peer-mesh-plan.md) | ✅ M0–M4 + introducer; optional next `client.relay` |
+| Dynamic | [ADR-008](../docs/architecture/decisions/adr-008-hot-swappable-agent-runtime.md) | ✅ MCP space reads + ACP pump/permissions/Home bar |
+| Polish | [polish-and-package-plan.md](polish-and-package-plan.md) | ✅ Mobile Home / nav / settings craft for 0.6; residual F3–F5 next |
 | Docs / Operator’s Guide | [operators-guide-docs-epic.md](operators-guide-docs-epic.md) | ✅ Coverage + **P0 product voice**; [maintenance](operators-guide-maintenance.md) for contributors |
-
-**P0 done for Shared:** Iroh ≠ loopback; pairing `profile_id`; dual catalogs. **Mesh M0–M4 + introducer shipped.** **Dynamic shipped** for 0.6 cut. Capability polish (attachments, share/export, ensure-on-launch) is behind us — active polish is **language, onboarding brain path, interactions, Spotlight**.
 
 ---
 
