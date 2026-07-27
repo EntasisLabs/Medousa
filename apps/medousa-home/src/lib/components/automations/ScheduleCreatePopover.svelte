@@ -15,8 +15,8 @@
     mobile?: boolean;
     /** Open the new schedule in an LME tab after create. */
     lmeHosted?: boolean;
-    /** Dock Plus (rail) vs primary header button. */
-    trigger?: "dock" | "primary";
+    /** Dock Plus (rail) vs primary header button vs chrome-owned (visually hidden). */
+    trigger?: "dock" | "primary" | "hidden";
   }
 
   let {
@@ -160,6 +160,18 @@
       onclick={toggleOpen}
     >
       + New schedule
+    </button>
+  {:else if trigger === "hidden"}
+    <button
+      bind:this={triggerEl}
+      type="button"
+      class="pointer-events-none absolute h-px w-px overflow-hidden opacity-0"
+      tabindex="-1"
+      aria-hidden="true"
+      aria-haspopup="dialog"
+      aria-expanded={open}
+    >
+      New schedule
     </button>
   {:else}
     <button

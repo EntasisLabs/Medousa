@@ -9,14 +9,12 @@
   } from "@lucide/svelte";
   import ScriptWorkbenchChatPanel from "$lib/components/automations/ScriptWorkbenchChatPanel.svelte";
   import {
-    applyRecipeToEditor,
     GRAPHEME_STARTER_RECIPES,
     type GraphemeRecipe,
   } from "$lib/grapheme/graphemeRecipes";
   import { haptic } from "$lib/haptics";
   import { registerMobileBackHandler } from "$lib/mobileNavigation";
   import { attachMobileSheetGestures } from "$lib/utils/mobileSheetGestures";
-  import { graphemeScriptEditor } from "$lib/stores/graphemeScriptEditor.svelte";
   import { layout } from "$lib/stores/layout.svelte";
   import { workshop } from "$lib/stores/workshop.svelte";
   import type { GraphemeScriptEntry } from "$lib/types/grapheme";
@@ -25,8 +23,12 @@
     open: boolean;
     visible: boolean;
     initialView?: ToolsView;
+    hideFab?: boolean;
     onOpen: () => void;
     onClose: () => void;
+    onApplyTemplate: (recipe: GraphemeRecipe) => void;
+    onOpenScript: (entry: GraphemeScriptEntry) => void | Promise<void>;
+    onNewScript: () => void;
     onInserted?: () => void;
   }
 
@@ -36,8 +38,12 @@
     open,
     visible,
     initialView = "root",
+    hideFab = false,
     onOpen,
     onClose,
+    onApplyTemplate,
+    onOpenScript,
+    onNewScript,
   }: Props = $props();
 
   let view = $state<ToolsView>("root");
@@ -107,25 +113,24 @@
   }
 
   function applyTemplate(recipe: GraphemeRecipe) {
-    graphemeScriptEditor.ensureInitialTab();
-    if (!graphemeScriptEditor.activeTab?.body.trim()) {
-      graphemeScriptEditor.patchActiveTab(applyRecipeToEditor(recipe));
-    } else {
-      graphemeScriptEditor.openNewTab();
-      graphemeScriptEditor.patchActiveTab(applyRecipeToEditor(recipe));
-    }
+    onApplyTemplate(recipe);
     haptic("success");
     closeAll();
   }
 
   async function openScript(entry: GraphemeScriptEntry) {
-    await graphemeScriptEditor.openScriptById(entry.id);
-    haptic("light");
-    closeAll();
+    try {
+      await onOpenScript(entry);
+      haptic("light");
+      closeAll();
+    } catch (err) {
+      console.error("Failed to open script", err);
+      haptic("warning");
+    }
   }
 
   function startNewScript() {
-    graphemeScriptEditor.openNewTab();
+    onNewScript();
     haptic("light");
     closeAll();
   }
@@ -150,9 +155,10 @@
 
   $effect(() => {
     if (!open || !sheetEl) return;
+    // No horizontal swipe-back: list taps often include sideways drift on iOS.
     return attachMobileSheetGestures(sheetEl, headerEl, {
       onDismiss: closeAll,
-      onSwipeBack: handleSheetSwipeBack,
+      swipeBack: false,
     });
   });
 </script>
@@ -268,6 +274,7 @@
                   <button
                     type="button"
                     class="flex w-full flex-col px-4 py-3 text-left active:bg-surface-800/70"
+                    style="touch-action: manipulation"
                     onclick={() => applyTemplate(recipe)}
                   >
                     <span class="text-sm font-medium text-surface-100">{recipe.title}</span>
@@ -292,6 +299,7 @@
                   <button
                     type="button"
                     class="flex w-full flex-col px-4 py-3 text-left active:bg-surface-800/70"
+                    style="touch-action: manipulation"
                     onclick={() => void openScript(entry)}
                   >
                     <span class="truncate text-sm font-medium text-surface-100">{entry.name}</span>
@@ -310,7 +318,7 @@
   </div>
 {/if}
 
-{#if !open}
+{#if !open && !hideFab}
   <button
     type="button"
     class="mobile-fab scripts-workbench-fab"

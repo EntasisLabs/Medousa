@@ -17,6 +17,7 @@
   } from "$lib/utils/toolHistorySummary";
   import { portLmeDock } from "$lib/utils/lmeDockHost";
   import { ensureRailPopoverOpen } from "$lib/utils/railPopoverChrome";
+  import { onMount } from "svelte";
 
   interface Props {
     visible: boolean;
@@ -40,7 +41,12 @@
   let searchOpen = $state(false);
   let searchExpanded = $state(false);
   let searchInputEl = $state<HTMLInputElement | null>(null);
+  let mobileSearchOpen = $state(false);
+  let mobileSearchEl = $state<HTMLInputElement | null>(null);
   const filterActive = $derived(search.trim().length > 0);
+  const showMobileSearch = $derived(
+    mobile && (mobileSearchOpen || Boolean(search.trim())),
+  );
 
   $effect(() => {
     if (filterActive && !searchExpanded) searchExpanded = true;
@@ -205,6 +211,27 @@
     flows.composerOpen = true;
     onOpenFlows?.();
   }
+
+  function clearMobileSearch() {
+    search = "";
+    mobileSearchOpen = false;
+  }
+
+  onMount(() => {
+    if (!mobile) return;
+    const onSearchFocus = () => {
+      if (!visible) return;
+      mobileSearchOpen = true;
+      void tick().then(() => {
+        mobileSearchEl?.focus();
+        mobileSearchEl?.select();
+      });
+    };
+    window.addEventListener("medousa-mobile-automations-search-focus", onSearchFocus);
+    return () => {
+      window.removeEventListener("medousa-mobile-automations-search-focus", onSearchFocus);
+    };
+  });
 </script>
 
 <section
@@ -258,6 +285,33 @@
         </label>
       {/if}
     </header>
+  {/if}
+
+  {#if showMobileSearch}
+    <div class="shrink-0 border-b border-surface-500/30 px-3 pb-3">
+      <div class="flex items-center gap-2">
+        <input
+          bind:this={mobileSearchEl}
+          class="input min-w-0 flex-1 text-sm"
+          type="search"
+          placeholder="Search moments…"
+          bind:value={search}
+          autocapitalize="off"
+          autocorrect="off"
+          spellcheck="false"
+          onkeydown={(event) => {
+            if (event.key === "Escape") clearMobileSearch();
+          }}
+        />
+        <button
+          type="button"
+          class="btn btn-sm variant-ghost-surface shrink-0"
+          onclick={clearMobileSearch}
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
   {/if}
 
   <div
@@ -375,7 +429,7 @@
     {/if}
   </div>
 
-  {#if embedded}
+  {#if embedded && !mobile}
     <footer
       class="lme-side-rail-dock"
       use:portLmeDock

@@ -25,7 +25,14 @@ export interface ScriptEditorTab {
 }
 
 function newTabId(): string {
-  return `tab-${crypto.randomUUID()}`;
+  try {
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+      return `tab-${crypto.randomUUID()}`;
+    }
+  } catch {
+    // fall through
+  }
+  return `tab-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
 function untitledName(existing: ScriptEditorTab[]): string {
@@ -54,12 +61,18 @@ export class GraphemeScriptEditorStore {
   runBusy = $state(false);
   runError = $state<string | null>(null);
   statusMessage = $state<string | null>(null);
+  /** Bumped when body is replaced from outside the editor (templates, library open). */
+  contentEpoch = $state(0);
 
-  activeTab = $derived(
-    this.activeTabId
-      ? (this.tabs.find((tab) => tab.tabId === this.activeTabId) ?? null)
-      : null,
-  );
+  /**
+   * Prefer getters over class-field `$derived` — the latter can freeze after the
+   * effect that owned construction is destroyed (mobile More → Automations remounts).
+   */
+  get activeTab(): ScriptEditorTab | null {
+    const id = this.activeTabId;
+    if (!id) return null;
+    return this.tabs.find((tab) => tab.tabId === id) ?? null;
+  }
 
   documentUriForTab(tab: ScriptEditorTab): string | null {
     if (!getCodeEditorLanguage(tab.languageId).capabilities.lsp) return null;
@@ -75,13 +88,19 @@ export class GraphemeScriptEditorStore {
     return `file:///${path}`;
   }
 
-  activeDocumentUri = $derived(
-    this.activeTab ? this.documentUriForTab(this.activeTab) : null,
-  );
+  get activeDocumentUri(): string | null {
+    const tab = this.activeTab;
+    return tab ? this.documentUriForTab(tab) : null;
+  }
 
   ensureInitialTab() {
     if (this.tabs.length === 0) {
       this.openNewTab();
+      return;
+    }
+    const id = this.activeTabId;
+    if (!id || !this.tabs.some((tab) => tab.tabId === id)) {
+      this.activeTabId = this.tabs[0].tabId;
     }
   }
 
@@ -103,6 +122,7 @@ export class GraphemeScriptEditorStore {
     this.compileError = null;
     this.saveError = null;
     this.runError = null;
+    this.contentEpoch += 1;
   }
 
   openScript(entry: {
@@ -115,7 +135,24 @@ export class GraphemeScriptEditorStore {
   }) {
     const existing = this.tabs.find((tab) => tab.scriptId === entry.id);
     if (existing) {
+      this.tabs = this.tabs.map((tab) =>
+        tab.tabId === existing.tabId
+          ? {
+              ...tab,
+              name: entry.name,
+              body: entry.body,
+              intent: entry.intent ?? "",
+              tags: entry.tags ?? [],
+              dirty: false,
+              version: entry.version,
+              languageId: "grapheme" as const,
+            }
+          : tab,
+      );
       this.activeTabId = existing.tabId;
+      this.compileResult = null;
+      this.compileError = null;
+      this.contentEpoch += 1;
       return;
     }
 
@@ -143,6 +180,7 @@ export class GraphemeScriptEditorStore {
       this.activeTabId = tab.tabId;
       this.compileResult = null;
       this.compileError = null;
+      this.contentEpoch += 1;
       return;
     }
 
@@ -161,6 +199,7 @@ export class GraphemeScriptEditorStore {
     this.activeTabId = tab.tabId;
     this.compileResult = null;
     this.compileError = null;
+    this.contentEpoch += 1;
   }
 
   closeTab(tabId: string) {
@@ -178,9 +217,23 @@ export class GraphemeScriptEditorStore {
   }
 
   patchActiveTab(patch: Partial<Pick<ScriptEditorTab, "name" | "body" | "intent" | "tags">>) {
-    const active = this.activeTab;
-    if (!active) return;
-    this.patchTab(active.tabId, patch);
+    this.ensureInitialTab();
+    const id = this.activeTabId;
+    if (!id) return;
+    this.patchTab(id, patch);
+  }
+
+  /** Replace active tab content from a template / external source (forces editor remount). */
+  loadExternalContent(patch: Partial<Pick<ScriptEditorTab, "name" | "body" | "intent" | "tags">>) {
+    this.ensureInitialTab();
+    let id = this.activeTabId;
+    if (!id) {
+      this.openNewTab();
+      id = this.activeTabId;
+    }
+    if (!id) return;
+    this.patchTab(id, patch);
+    this.contentEpoch += 1;
   }
 
   patchTab(

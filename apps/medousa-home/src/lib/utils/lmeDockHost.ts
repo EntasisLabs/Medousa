@@ -76,15 +76,17 @@ export function portLmeDock(node: HTMLElement) {
 
   return {
     destroy() {
-      if (activeDock === node) {
+      const wasActive = activeDock === node;
+      if (wasActive) {
         activeDock = null;
       }
       node.classList.remove(HOSTED_CLASS);
-      // If still sitting in an overlay host, put it back so Svelte can unmount.
-      if (homeParent && node.parentElement !== homeParent) {
+      // Only reparent the dock that owned this home — otherwise a race between
+      // Schedules/History docks can append a dying node next to the live one.
+      if (wasActive && homeParent && node.parentElement !== homeParent) {
         homeParent.appendChild(node);
       }
-      if (homeParent === node.parentElement) {
+      if (wasActive && homeParent === node.parentElement) {
         homeParent = null;
       }
     },

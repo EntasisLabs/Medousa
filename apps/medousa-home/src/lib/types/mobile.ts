@@ -28,6 +28,11 @@ export const MORE_DESTINATIONS: {
   { id: "profiles", label: "You", hint: "Who you are — teach her facts" },
   { id: "map", label: "Map", hint: "Sessions, moments, and notes linked" },
   { id: "workshop", label: "Agents", hint: "Specialist agents you can run" },
+  {
+    id: "automations",
+    label: "Automations",
+    hint: "Scripts, flows, schedules & history",
+  },
   { id: "calendar", label: "Calendar", hint: "Meetings, reminders & .ics" },
   { id: "messaging", label: "Channels", hint: "Telegram, Discord, Slack & more" },
   { id: "peers", label: "Peers", hint: "Nearby workshops & inbox" },
@@ -35,16 +40,24 @@ export const MORE_DESTINATIONS: {
   { id: "runtime", label: "Workshop", hint: "Live pulse, jobs & delivery" },
 ];
 
-/** Destinations listed on the More hub home (automations is deep-link only). */
+/** Destinations listed on the More hub home. */
 export const MORE_HUB_SECTIONS: {
   title: string;
   subtitle: string;
-  destinations: Exclude<MoreDestination, "hub" | "automations">[];
+  destinations: Exclude<MoreDestination, "hub">[];
 }[] = [
   {
     title: "Stay in touch",
-    subtitle: "Memory, agents, and channels",
-    destinations: ["profiles", "map", "workshop", "calendar", "messaging", "peers"],
+    subtitle: "Memory, agents, scripts, and channels",
+    destinations: [
+      "profiles",
+      "map",
+      "workshop",
+      "automations",
+      "calendar",
+      "messaging",
+      "peers",
+    ],
   },
   {
     title: "Preferences",

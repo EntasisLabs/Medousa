@@ -4,10 +4,12 @@
   import MarkdownContent from "$lib/components/ui/MarkdownContent.svelte";
   import WorkshopLivelinessChip from "$lib/components/ui/WorkshopLivelinessChip.svelte";
   import { flows } from "$lib/stores/flows.svelte";
+  import { automationsNav } from "$lib/stores/automationsNav.svelte";
   import { registerMobileBackHandler } from "$lib/mobileNavigation";
   import { settings } from "$lib/stores/settings.svelte";
   import type { GraphemeRecipe } from "$lib/grapheme/graphemeRecipes";
   import type { WorkflowListEntry } from "$lib/types/workflow";
+  import { onMount, tick } from "svelte";
 
   interface Props {
     visible: boolean;
@@ -20,6 +22,11 @@
   let search = $state("");
   let selectedId = $state<string | null>(null);
   let detailTab = $state<"steps" | "runs">("steps");
+  let searchOpen = $state(false);
+  let flowsSearchEl = $state<HTMLInputElement | null>(null);
+
+  const calmMobile = $derived(mobile && embedded);
+  const showSearchField = $derived(calmMobile && (searchOpen || Boolean(search.trim())));
 
   const mobileDetailOpen = $derived(
     mobile && (selectedId !== null || flows.composerOpen),
@@ -75,8 +82,20 @@
 
   function selectEntry(entry: WorkflowListEntry) {
     selectedId = entry.workflow_id;
-    flows.closeComposer();
     detailTab = "steps";
+    if (mobile) {
+      void (async () => {
+        await flows.loadDetail(entry.workflow_id);
+        const detail = flows.detailById[entry.workflow_id];
+        if (!detail) return;
+        flows.openComposer({
+          name: detail.name ?? flows.labelFor(entry),
+          steps: detail.steps,
+        });
+      })();
+      return;
+    }
+    flows.closeComposer();
   }
 
   function statusChipVariant(entry: WorkflowListEntry): "scheduled" | "paused" | "running" {
@@ -107,6 +126,38 @@
     flows.closeComposer();
   }
 
+  function clearSearch() {
+    search = "";
+    searchOpen = false;
+  }
+
+  onMount(() => {
+    if (!mobile) return;
+    const onSearchFocus = () => {
+      if (!visible) return;
+      searchOpen = true;
+      void tick().then(() => {
+        flowsSearchEl?.focus();
+        flowsSearchEl?.select();
+      });
+    };
+    window.addEventListener("medousa-mobile-automations-search-focus", onSearchFocus);
+    return () => {
+      window.removeEventListener("medousa-mobile-automations-search-focus", onSearchFocus);
+    };
+  });
+
+  $effect(() => {
+    if (!mobile || !visible) return;
+    if (flows.composerOpen) {
+      automationsNav.setMobileChromeMode("flow-editor");
+      return;
+    }
+    if (automationsNav.mobileChromeMode === "flow-editor") {
+      automationsNav.setMobileChromeMode("browse");
+    }
+  });
+
   $effect(() => {
     if (!mobile || !visible) return;
     return registerMobileBackHandler(() => {
@@ -122,7 +173,7 @@
     ? 'cron-panel-mobile'
     : ''} {visible ? '' : 'hidden'}"
 >
-  {#if !mobileDetailOpen}
+  {#if !mobileDetailOpen && !calmMobile}
     <header class="{embedded ? 'border-b border-surface-500/40 px-4 py-3' : 'workshop-header'}">
       {#if !embedded}
         <div class="flex flex-wrap items-center justify-between gap-3">
@@ -169,6 +220,33 @@
     </header>
   {/if}
 
+  {#if !mobileDetailOpen && showSearchField}
+    <div class="shrink-0 border-b border-surface-500/30 px-3 pb-3">
+      <div class="flex items-center gap-2">
+        <input
+          bind:this={flowsSearchEl}
+          class="input min-w-0 flex-1 text-sm"
+          type="search"
+          placeholder="Search flows…"
+          bind:value={search}
+          autocapitalize="off"
+          autocorrect="off"
+          spellcheck="false"
+          onkeydown={(event) => {
+            if (event.key === "Escape") clearSearch();
+          }}
+        />
+        <button
+          type="button"
+          class="btn btn-sm variant-ghost-surface shrink-0"
+          onclick={clearSearch}
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  {/if}
+
   <div class="flex min-h-0 flex-1 overflow-hidden">
     <div
       class="workshop-list-pane mobile-you-scroll min-w-0 flex-1 overflow-y-auto px-4 py-3 {mobileDetailOpen
@@ -188,14 +266,16 @@
           </p>
           {#if !search.trim() && settings.showWorkshopGuidance}
             <GraphemeRecipeCards compact onselect={startFlowFromRecipe} />
-            <button
-              type="button"
-              class="btn btn-sm variant-soft-primary"
-              onclick={() => flows.openComposer()}
-            >
-              New flow
-            </button>
-          {:else if !search.trim()}
+            {#if !calmMobile}
+              <button
+                type="button"
+                class="btn btn-sm variant-soft-primary"
+                onclick={() => flows.openComposer()}
+              >
+                New flow
+              </button>
+            {/if}
+          {:else if !search.trim() && !calmMobile}
             <button
               type="button"
               class="btn btn-sm variant-soft-primary"

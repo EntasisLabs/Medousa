@@ -1,20 +1,23 @@
 <script lang="ts">
-  import { SlidersHorizontal } from "@lucide/svelte";
+  import { AUTOMATIONS_SECTIONS } from "$lib/automationsSections";
   import FlowsPanel from "$lib/components/automations/FlowsPanel.svelte";
   import HistoryPanel from "$lib/components/automations/HistoryPanel.svelte";
   import ScheduleCreatePopover from "$lib/components/automations/ScheduleCreatePopover.svelte";
   import ScheduleDetailEditor from "$lib/components/automations/ScheduleDetailEditor.svelte";
   import ScriptsWorkbenchPanel from "$lib/components/automations/ScriptsWorkbenchPanel.svelte";
-  import { AUTOMATIONS_SECTIONS } from "$lib/automationsSections";
+  import AutomationsFilterSheet from "$lib/components/mobile/AutomationsFilterSheet.svelte";
   import { registerMobileBackHandler } from "$lib/mobileNavigation";
   import { automationDraft } from "$lib/stores/automationDraft.svelte";
   import { automationsNav, type AutomationsSection } from "$lib/stores/automationsNav.svelte";
   import { automations } from "$lib/stores/automations.svelte";
   import { flowDraft } from "$lib/stores/flowDraft.svelte";
   import { flows } from "$lib/stores/flows.svelte";
+  import { graphemeScriptEditor } from "$lib/stores/graphemeScriptEditor.svelte";
   import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
   import type { RecurringDefinitionEntry } from "$lib/types/recurring";
   import { portLmeDock } from "$lib/utils/lmeDockHost";
+  import { SlidersHorizontal } from "@lucide/svelte";
+  import { onMount, tick } from "svelte";
 
   interface Props {
     visible: boolean;
@@ -35,11 +38,24 @@
   }: Props = $props();
 
   let section = $state<AutomationsSection>("scripts");
-
   let search = $state("");
   let filterOpen = $state(false);
   let selectedId = $state<string | null>(null);
+  let searchOpen = $state(false);
+  let filterSheetOpen = $state(false);
+  let schedulesSearchEl = $state<HTMLInputElement | null>(null);
+
   const filterActive = $derived(search.trim().length > 0);
+  const calmMobile = $derived(mobile && !lmeHosted);
+
+  const sectionLabel = $derived(
+    AUTOMATIONS_SECTIONS.find((tab) => tab.id === section)?.label ?? section,
+  );
+
+  const showSchedulesSearch = $derived(
+    section === "schedules" &&
+      (searchOpen || Boolean(search.trim())),
+  );
 
   /** LME: highlight from the open schedule tab; standalone: local selection. */
   const activeRecurringId = $derived.by(() => {
@@ -52,6 +68,13 @@
 
   /** Standalone mobile only — create is a popover, not a detail takeover. */
   const mobileDetailOpen = $derived(mobile && !lmeHosted && selectedId !== null);
+
+  const hideCalmHeader = $derived(
+    calmMobile &&
+      (mobileDetailOpen ||
+        flows.composerOpen ||
+        (section === "scripts" && Boolean(graphemeScriptEditor.activeTabId))),
+  );
 
   const counts = $derived(automations.activeCount());
 
@@ -86,14 +109,25 @@
       : null,
   );
 
+  function setSection(next: AutomationsSection) {
+    section = next;
+    automationsNav.setCurrentSection(next);
+    searchOpen = false;
+  }
+
   $effect(() => {
     if (!visible) return;
     if (forcedSection) {
-      if (section !== forcedSection) section = forcedSection;
+      if (section !== forcedSection) setSection(forcedSection);
       return;
     }
     const pending = automationsNav.consumeSection();
-    if (pending && section !== pending) section = pending;
+    if (pending && section !== pending) setSection(pending);
+  });
+
+  $effect(() => {
+    if (!visible || !calmMobile) return;
+    automationsNav.setCurrentSection(section);
   });
 
   $effect(() => {
@@ -101,7 +135,7 @@
     void flows
       .applyFromSliceRefs(flowDraft.pendingRefs, flowDraft.seedDraft.name)
       .finally(() => {
-        section = "flows";
+        setSection("flows");
         const title = flows.composerDraft.name.trim() || "New flow";
         flowDraft.clear();
         lmeWorkspace.focusFlowComposerTab(title);
@@ -136,6 +170,43 @@
     automationDraft.clearCreate();
   }
 
+  function clearSchedulesSearch() {
+    search = "";
+    searchOpen = false;
+  }
+
+  onMount(() => {
+    if (!mobile) return;
+    const onSearchFocus = () => {
+      if (section !== "schedules") return;
+      searchOpen = true;
+      void tick().then(() => {
+        schedulesSearchEl?.focus();
+        schedulesSearchEl?.select();
+      });
+    };
+    const onFilter = () => {
+      filterSheetOpen = true;
+    };
+    const onNew = () => {
+      if (section === "flows") {
+        flows.openComposer();
+        return;
+      }
+      if (section === "schedules") {
+        automationDraft.openCreate();
+      }
+    };
+    window.addEventListener("medousa-mobile-automations-search-focus", onSearchFocus);
+    window.addEventListener("medousa-mobile-automations-filter", onFilter);
+    window.addEventListener("medousa-mobile-automations-new", onNew);
+    return () => {
+      window.removeEventListener("medousa-mobile-automations-search-focus", onSearchFocus);
+      window.removeEventListener("medousa-mobile-automations-filter", onFilter);
+      window.removeEventListener("medousa-mobile-automations-new", onNew);
+    };
+  });
+
   $effect(() => {
     if (!mobile || !visible || section !== "schedules") return;
     return registerMobileBackHandler(() => {
@@ -151,8 +222,61 @@
     ? 'cron-panel-mobile'
     : ''} {visible ? '' : 'hidden'}"
 >
+  {#if calmMobile && !hideCalmHeader}
+    <header class="mobile-notes-header px-4 pb-2">
+      <h1 class="text-lg font-semibold tracking-tight text-surface-50">Automations</h1>
+      <button
+        type="button"
+        class="mobile-notes-active-filter"
+        onclick={() => (filterSheetOpen = true)}
+      >
+        {sectionLabel}
+        {#if section === "schedules"}
+          <span class="workshop-faint"> · {counts.enabled}/{counts.total}</span>
+        {/if}
+      </button>
+    </header>
+
+    {#if showSchedulesSearch}
+      <div class="shrink-0 border-b border-surface-500/30 px-3 pb-3">
+        <div class="flex items-center gap-2">
+          <input
+            bind:this={schedulesSearchEl}
+            class="input min-w-0 flex-1 text-sm"
+            type="search"
+            placeholder="Search schedules…"
+            bind:value={search}
+            autocapitalize="off"
+            autocorrect="off"
+            spellcheck="false"
+            onkeydown={(event) => {
+              if (event.key === "Escape") clearSchedulesSearch();
+            }}
+          />
+          <button
+            type="button"
+            class="btn btn-sm variant-ghost-surface shrink-0"
+            onclick={clearSchedulesSearch}
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    {/if}
+  {/if}
+
+  {#if calmMobile}
+    <ScheduleCreatePopover {mobile} {lmeHosted} trigger="hidden" />
+    <AutomationsFilterSheet
+      open={filterSheetOpen}
+      {section}
+      onClose={() => (filterSheetOpen = false)}
+      onSection={setSection}
+    />
+  {/if}
+
   {#if section === "scripts"}
-    {#if !lmeHosted}
+    {#if !lmeHosted && !calmMobile}
     <header class="{embedded ? 'border-b border-surface-500/40 px-4 py-3' : 'workshop-header'}">
       <div class="flex flex-wrap items-center justify-between gap-3">
         {#if !embedded}
@@ -167,7 +291,7 @@
           <button
             type="button"
             class="workshop-tab {section === tab.id ? 'workshop-tab-active' : ''}"
-            onclick={() => (section = tab.id)}
+            onclick={() => setSection(tab.id)}
           >
             {tab.label}
           </button>
@@ -175,9 +299,11 @@
       </div>
     </header>
     {/if}
-    <ScriptsWorkbenchPanel visible={true} {mobile} {embedded} />
+    <div class="flex min-h-0 min-w-0 flex-1 flex-col">
+      <ScriptsWorkbenchPanel visible={true} {mobile} {embedded} />
+    </div>
   {:else if section === "flows"}
-    {#if !lmeHosted}
+    {#if !lmeHosted && !calmMobile}
     <header class="{embedded ? 'border-b border-surface-500/40 px-4 py-3' : 'workshop-header'}">
       <div class="flex flex-wrap items-center justify-between gap-3">
         {#if !embedded}
@@ -192,7 +318,7 @@
           <button
             type="button"
             class="workshop-tab {section === tab.id ? 'workshop-tab-active' : ''}"
-            onclick={() => (section = tab.id)}
+            onclick={() => setSection(tab.id)}
           >
             {tab.label}
           </button>
@@ -200,9 +326,11 @@
       </div>
     </header>
     {/if}
-    <FlowsPanel visible={true} {mobile} {embedded} />
+    <div class="flex min-h-0 min-w-0 flex-1 flex-col">
+      <FlowsPanel visible={true} {mobile} {embedded} />
+    </div>
   {:else if section === "history"}
-    {#if !lmeHosted}
+    {#if !lmeHosted && !calmMobile}
     <header class="{embedded ? 'border-b border-surface-500/40 px-4 py-3' : 'workshop-header'}">
       <div class="flex flex-wrap items-center justify-between gap-3">
         {#if !embedded}
@@ -217,7 +345,7 @@
           <button
             type="button"
             class="workshop-tab {section === tab.id ? 'workshop-tab-active' : ''}"
-            onclick={() => (section = tab.id)}
+            onclick={() => setSection(tab.id)}
           >
             {tab.label}
           </button>
@@ -229,10 +357,10 @@
       visible={true}
       {mobile}
       {embedded}
-      onOpenFlows={() => (section = "flows")}
+      onOpenFlows={() => setSection("flows")}
     />
   {:else}
-  {#if !mobileDetailOpen && !(embedded && lmeHosted)}
+  {#if !mobileDetailOpen && !(embedded && lmeHosted) && !calmMobile}
     <header class="{embedded ? 'px-3 py-2' : 'workshop-header'}">
       {#if !embedded && !lmeHosted}
         <div class="flex flex-wrap items-center justify-between gap-3">
@@ -251,7 +379,7 @@
           <button
             type="button"
             class="workshop-tab {section === tab.id ? 'workshop-tab-active' : ''}"
-            onclick={() => (section = tab.id)}
+            onclick={() => setSection(tab.id)}
           >
             {tab.label}
           </button>
@@ -287,9 +415,11 @@
 
   <div class="flex min-h-0 flex-1 overflow-hidden">
     <div
-      class="workshop-list-pane min-w-0 flex-1 overflow-y-auto {embedded
-        ? 'px-2 py-1'
-        : 'mobile-you-scroll px-4 py-3'} {mobileDetailOpen ? 'hidden' : ''}"
+      class="workshop-list-pane min-w-0 flex-1 overflow-y-auto {calmMobile
+        ? 'mobile-you-scroll px-4 py-3'
+        : embedded
+          ? 'px-2 py-1'
+          : 'mobile-you-scroll px-4 py-3'} {mobileDetailOpen ? 'hidden' : ''}"
     >
       {#if automations.loading && automations.definitions.length === 0}
         <p class="workshop-muted">Loading schedules…</p>
@@ -371,7 +501,7 @@
     {/if}
   </div>
 
-  {#if embedded && !mobileDetailOpen}
+  {#if embedded && !mobile && !mobileDetailOpen}
     <footer
       class="lme-side-rail-dock"
       use:portLmeDock

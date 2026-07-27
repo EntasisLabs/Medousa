@@ -13,6 +13,7 @@
     UserRound,
     Users,
     X,
+    Zap,
   } from "@lucide/svelte";
   import WorkshopSwitcherCompact from "$lib/components/workshops/WorkshopSwitcherCompact.svelte";
   import ProfileSwitcherCompact from "$lib/components/mobile/ProfileSwitcherCompact.svelte";
@@ -47,6 +48,7 @@
     "more-profiles": UserRound,
     "more-map": Compass,
     "more-workshop": Sparkles,
+    "more-automations": Zap,
     "more-messaging": Radio,
     "more-peers": Users,
     "more-settings": Settings,

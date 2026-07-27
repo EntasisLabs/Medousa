@@ -5,7 +5,9 @@ not just chat.
 
 Medousa can run durable jobs, specialist packs, and scheduled check-ins. On
 desktop you’ll see **Workshop** and **Automations** in the nav (wording may
-evolve as Scripts Workbench lands).
+evolve as Scripts Workbench lands). On mobile, open **More → Automations** for
+scripts, flows, schedules, and run history (or **More → Agents** for
+specialists).
 
 ---
 
@@ -27,7 +29,7 @@ work that should survive sleep and reconnects.
 
 ### Run or schedule a flow
 
-1. Open **Automations** (or Workshop → Flows, depending on your build).
+1. Open **Automations** (desktop nav, or on mobile **More → Automations**).
 2. Pick a flow or ask Medousa in chat to *create a flow that…*
 3. Run it now, or attach a **schedule** so it lands while you’re away.
 4. Delivery can go to chat, a channel, or vault — pick what you configured.

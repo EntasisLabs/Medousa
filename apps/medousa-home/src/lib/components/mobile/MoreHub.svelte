@@ -1,7 +1,6 @@
 <script lang="ts">
   import {
     Activity,
-    Calendar,
     CalendarDays,
     ChevronRight,
     Compass,
@@ -10,6 +9,7 @@
     Sparkles,
     UserRound,
     Users,
+    Zap,
   } from "@lucide/svelte";
   import MapPanel from "$lib/components/context/MapPanel.svelte";
   import ProfilesPanel from "$lib/components/profiles/ProfilesPanel.svelte";
@@ -49,7 +49,7 @@
     profiles: UserRound,
     map: Compass,
     workshop: Sparkles,
-    automations: Calendar,
+    automations: Zap,
     calendar: CalendarDays,
     messaging: Radio,
     peers: Users,
@@ -58,16 +58,7 @@
   };
 
   const destinationById = $derived(
-    Object.fromEntries(
-      [
-        ...MORE_DESTINATIONS,
-        {
-          id: "automations" as const,
-          label: "Automations",
-          hint: "Scripts, flows, schedules & history",
-        },
-      ].map((dest) => [dest.id, dest]),
-    ) as Record<
+    Object.fromEntries(MORE_DESTINATIONS.map((dest) => [dest.id, dest])) as Record<
       Exclude<MoreDestination, "hub">,
       { id: Exclude<MoreDestination, "hub">; label: string; hint: string }
     >,

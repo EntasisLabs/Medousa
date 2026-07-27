@@ -1,5 +1,11 @@
 import type { MobileTab, MoreDestination } from "$lib/types/mobile";
 import type { LibraryView } from "$lib/stores/layout.svelte";
+import type {
+  AutomationsChromeMode,
+  AutomationsSection,
+} from "$lib/stores/automationsNav.svelte";
+
+export type { AutomationsChromeMode };
 
 export type MobileChromeActionId =
   | "menu"
@@ -13,6 +19,19 @@ export type MobileChromeActionId =
   | "noteEdit"
   | "noteChat"
   | "noteMore"
+  | "automationsFilter"
+  | "newAutomation"
+  | "scriptTools"
+  | "scriptSave"
+  | "scriptRun"
+  | "scriptCompile"
+  | "flowAddStep"
+  | "flowPlan"
+  | "flowRun"
+  | "flowSchedule"
+  | "flowClose"
+  | "agentsFilter"
+  | "agentsImport"
   | "browserTabs"
   | "browserBack"
   | "browserForward"
@@ -26,7 +45,9 @@ export type MobileChromeSurface =
   | "notes-reader"
   | "web"
   | "more"
-  | "more-nested";
+  | "more-nested"
+  | "automations"
+  | "agents";
 
 export function resolveMobileChromeSurface(
   tab: MobileTab,
@@ -39,6 +60,8 @@ export function resolveMobileChromeSurface(
   if (tab === "notes") return "notes";
   if (tab === "web") return "web";
   if (tab === "more") {
+    if (moreDestination === "automations") return "automations";
+    if (moreDestination === "workshop") return "agents";
     return moreDestination !== "hub" ? "more-nested" : "more";
   }
   return "more";
@@ -47,11 +70,18 @@ export function resolveMobileChromeSurface(
 export function mobileChromeLeading(
   surface: MobileChromeSurface,
 ): MobileChromeActionId {
-  return surface === "notes-reader" || surface === "more-nested" ? "back" : "menu";
+  return surface === "notes-reader" ||
+    surface === "more-nested" ||
+    surface === "automations" ||
+    surface === "agents"
+    ? "back"
+    : "menu";
 }
 
 export function mobileChromeTrailing(
   surface: MobileChromeSurface,
+  automationsSection: AutomationsSection = "scripts",
+  automationsMode: AutomationsChromeMode = "browse",
 ): MobileChromeActionId[] {
   switch (surface) {
     case "home":
@@ -64,6 +94,31 @@ export function mobileChromeTrailing(
       return ["noteEdit", "noteChat", "noteMore"];
     case "web":
       return ["browserBack", "browserForward", "browserReload", "browserTabs"];
+    case "automations":
+      if (automationsMode === "flow-editor") {
+        return ["flowAddStep", "flowPlan", "flowRun", "flowSchedule", "flowClose"];
+      }
+      if (automationsMode === "script-editor") {
+        return [
+          "automationsFilter",
+          "scriptSave",
+          "scriptRun",
+          "scriptCompile",
+          "scriptTools",
+        ];
+      }
+      switch (automationsSection) {
+        case "scripts":
+          return ["search", "automationsFilter", "scriptTools"];
+        case "flows":
+        case "schedules":
+          return ["search", "automationsFilter", "newAutomation"];
+        case "history":
+          return ["search", "automationsFilter"];
+      }
+      return ["search", "automationsFilter"];
+    case "agents":
+      return ["search", "agentsFilter", "agentsImport"];
     case "more":
     case "more-nested":
       return ["activity"];

@@ -176,7 +176,12 @@
 }
 
 .mobile-chrome-actions {
-  @apply flex items-center gap-2;
+  @apply flex max-w-[min(100%,20rem)] items-center justify-end gap-1.5 overflow-x-auto;
+}
+
+.mobile-top-chrome[data-automations-mode="flow-editor"] .mobile-chrome-icon,
+.mobile-top-chrome[data-automations-mode="script-editor"] .mobile-chrome-icon {
+  @apply h-9 w-9;
 }
 
 .mobile-chrome-workshop {
