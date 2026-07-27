@@ -7,6 +7,17 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.6.1] — 2026-07-27
+
+### Fixed
+
+- **Windows idle CPU** — stop pre-creating hidden Home popout WebViews; sync WebView2 `IsVisible` on show/hide so Manager / Network / GPU processes stay quiet when popouts are closed
+- Popout windows only attach workshop observers while visible; status pulse and peer polls no longer tick forever while idle / hidden
+
+### Notes
+
+- **Desktop-only cut** — bumps `desktop` to **0.6.1**; engine stays **0.6.0**. Ship with Actions → **Release** → `ship_desktop` only and leave **`reuse_r2_daemon`** on (default) so CI pulls `medousa_daemon` from the published `engine-v0.6.0-…` artifacts and skips the daemon compile matrix.
+
 ## [0.6.0] — 2026-07-26
 
 ### Added

@@ -4,6 +4,11 @@ Notes about recent Medousa changes and what still works together. Check **Settin
 
 Related: [Workshops and connections](guide:workshops-connections) · [Desktop, web, and phone](guide:platform-matrix)
 
+## 0.6.1
+
+- **Windows idle** — popout windows no longer keep WebView2 busy when closed; open them only when you need them
+- Quieter background polls while the app is hidden
+
 ## 0.6.0 highlights
 
 - **Shared mode** and **peer mesh** — seats without login; nearby / team messaging with receipts and intros
