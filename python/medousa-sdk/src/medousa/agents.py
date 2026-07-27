@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
+
 from medousa._decode import decode
 from medousa.client import MedousaClient
+from medousa.interactive import InteractiveStream
 from medousa.transport import path_with_query
 from medousa.types import (
     AgentPermissionRequestListResponse,
@@ -35,6 +38,18 @@ class AgentsApi:
             request.model_dump(mode="json", exclude_none=True),
         )
         return decode(CreateAgentSessionResponse, value)
+
+    def stream(self, stream_url: str) -> InteractiveStream:
+        """Open SSE for an existing agent session stream URL from create_session."""
+        return InteractiveStream(self._client, stream_url)
+
+    @asynccontextmanager
+    async def stream_session(self, request: CreateAgentSessionRequest):
+        """Create an agent session and yield an async iterator of SSE events."""
+        response = await self.create_session(request)
+        stream = self.stream(response.stream_url)
+        async with stream:
+            yield stream
 
     async def prompt(
         self, agent_session_id: str, request: AgentSessionPromptRequest

@@ -189,10 +189,24 @@ medousa_assert_versions_match() {
   medousa_assert_whatsapp_package_version
 }
 
+# True when every package-versions.toml stamp equals TRAIN_VERSION.
+medousa_package_versions_lockstep() {
+  local train="${1:-}"
+  local id v
+  [[ -n "${train}" ]] || return 1
+  for id in "${MEDOUSA_PACKAGE_VERSION_IDS[@]}"; do
+    v="$(medousa_package_version "${id}")"
+    [[ "${v}" == "${train}" ]] || return 1
+  done
+  return 0
+}
+
 # For `v*` full trains: every package-versions.toml entry must equal TRAIN_VERSION.
+# Prints every mismatch (not just the first) plus a remediation hint.
 medousa_assert_full_train_versions() {
   local train="${1:-}"
   local id v
+  local -a mismatches=()
   if [[ -z "${train}" ]]; then
     echo "error: medousa_assert_full_train_versions requires a version" >&2
     exit 1
@@ -200,10 +214,18 @@ medousa_assert_full_train_versions() {
   for id in "${MEDOUSA_PACKAGE_VERSION_IDS[@]}"; do
     v="$(medousa_package_version "${id}")"
     if [[ "${v}" != "${train}" ]]; then
-      echo "error: full-train release v${train} requires package-versions.toml ${id}=\"${train}\" (found \"${v}\")" >&2
-      exit 1
+      mismatches+=("${id}=\"${v}\" (need \"${train}\")")
     fi
   done
+  if ((${#mismatches[@]} > 0)); then
+    echo "error: full-train release v${train} requires every package-versions.toml stamp to be \"${train}\"." >&2
+    echo "error: mismatched stamps:" >&2
+    for id in "${mismatches[@]}"; do
+      echo "error:   - ${id}" >&2
+    done
+    echo "error: either bump those stamps to ${train}, or run workflow_dispatch with ship_all (auto-ships packages already at the channel head) / individual ship_* boxes." >&2
+    exit 1
+  fi
   medousa_assert_whatsapp_package_version
   local root_v
   root_v="$(medousa_version)"
@@ -211,6 +233,42 @@ medousa_assert_full_train_versions() {
     echo "error: full-train release v${train} requires root Cargo.toml version \"${train}\" (found \"${root_v}\")" >&2
     exit 1
   fi
+}
+
+# Emit true/false for each component group whose package stamp(s) equal HEAD.
+# Usage: eval "$(medousa_ship_flags_for_channel_head 0.6.0)"
+# Sets: ship_engine ship_adapters ship_mcp ship_desktop ship_installer ship_local_brain
+medousa_ship_flags_for_channel_head() {
+  local head="${1:-}"
+  local v
+  [[ -n "${head}" ]] || {
+    echo "error: medousa_ship_flags_for_channel_head requires a version" >&2
+    return 1
+  }
+
+  v="$(medousa_package_version engine)"
+  echo "ship_engine=$([[ "${v}" == "${head}" ]] && echo true || echo false)"
+
+  if [[ "$(medousa_package_version adapter-telegram)" == "${head}" ]] \
+    || [[ "$(medousa_package_version adapter-discord)" == "${head}" ]] \
+    || [[ "$(medousa_package_version adapter-slack)" == "${head}" ]] \
+    || [[ "$(medousa_package_version adapter-whatsapp)" == "${head}" ]]; then
+    echo "ship_adapters=true"
+  else
+    echo "ship_adapters=false"
+  fi
+
+  v="$(medousa_package_version mcp-gateway)"
+  echo "ship_mcp=$([[ "${v}" == "${head}" ]] && echo true || echo false)"
+
+  v="$(medousa_package_version desktop)"
+  echo "ship_desktop=$([[ "${v}" == "${head}" ]] && echo true || echo false)"
+
+  v="$(medousa_package_version installer)"
+  echo "ship_installer=$([[ "${v}" == "${head}" ]] && echo true || echo false)"
+
+  v="$(medousa_package_version local-brain)"
+  echo "ship_local_brain=$([[ "${v}" == "${head}" ]] && echo true || echo false)"
 }
 
 medousa_tag_for_version() {

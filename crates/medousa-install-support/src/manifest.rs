@@ -144,7 +144,7 @@ pub fn desktop_artifact_url_matches_host(url: &str) -> bool {
     let url_lower = url.to_lowercase();
     #[cfg(windows)]
     {
-        return url_lower.ends_with(".msi") || url_lower.ends_with(".exe");
+        url_lower.ends_with(".msi") || url_lower.ends_with(".exe")
     }
     #[cfg(target_os = "macos")]
     {
@@ -152,7 +152,7 @@ pub fn desktop_artifact_url_matches_host(url: &str) -> bool {
     }
     #[cfg(target_os = "linux")]
     {
-        return url_lower.ends_with(".appimage") || url_lower.ends_with(".deb");
+        url_lower.ends_with(".appimage") || url_lower.ends_with(".deb")
     }
     #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
     {
@@ -248,5 +248,10 @@ mod tests {
 
         #[cfg(target_os = "macos")]
         assert!(resolve_release_package(&manifest, "desktop").is_ok());
+
+        // On Linux the windows-x64 target key does not match the host, so resolve
+        // fails before artifact-extension guards run.
+        #[cfg(target_os = "linux")]
+        assert!(resolve_release_package(&manifest, "desktop").is_err());
     }
 }
