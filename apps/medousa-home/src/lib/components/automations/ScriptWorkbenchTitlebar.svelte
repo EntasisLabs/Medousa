@@ -5,6 +5,7 @@
     MessageSquare,
     PanelLeftOpen,
     PanelRightClose,
+    Pencil,
     Play,
     Save,
     Terminal,
@@ -203,6 +204,16 @@
     class="scripts-workbench-titlebar-actions flex shrink-0 items-center gap-0.5 pl-1
       {hideTabStrip ? 'ml-auto' : ''}"
   >
+    <button
+      type="button"
+      class="scripts-workbench-toolbar-btn"
+      title="Rename script (F2)"
+      aria-label="Rename script"
+      disabled={!graphemeScriptEditor.activeTab}
+      onclick={() => scriptRenameUi.startActiveRename()}
+    >
+      <Pencil size={15} strokeWidth={1.75} />
+    </button>
     <button
       type="button"
       class="scripts-workbench-toolbar-btn"

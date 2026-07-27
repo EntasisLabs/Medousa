@@ -10,6 +10,10 @@
   import BodyPortal from "$lib/components/ui/BodyPortal.svelte";
   import { shellTabs } from "$lib/stores/shellTabs.svelte";
   import { MAX_SHELL_PANES } from "$lib/types/shellTabs";
+  import {
+    popBrowserPopoverOverlay,
+    pushBrowserPopoverOverlay,
+  } from "$lib/utils/browserPopoverOverlay";
   import { ChevronDown, Columns2, Rows2, Search, SquareX } from "@lucide/svelte";
   import { tick } from "svelte";
 
@@ -166,6 +170,16 @@
     if (!bar) return;
     bar.classList.toggle("app-titlebar--notch-open", open);
     return () => bar.classList.remove("app-titlebar--notch-open");
+  });
+
+  // Native browser embed paints above DOM — hide it while the fused drawer is open
+  // (same pattern as CommandSpotlight / NavRailViewPopover).
+  $effect(() => {
+    if (!open) return;
+    void pushBrowserPopoverOverlay();
+    return () => {
+      void popBrowserPopoverOverlay();
+    };
   });
 
   $effect(() => {

@@ -16,11 +16,25 @@ export class ScriptRenameUiStore {
     this.clear();
     const lme = lmeWorkspace.activeTab;
     if (lme?.kind === "script") {
+      const editor =
+        graphemeScriptEditor.tabs.find((tab) => tab.tabId === lme.scriptTabId) ??
+        graphemeScriptEditor.activeTab;
+      // Library explorer owns rename UI now that shell notch tabs don't.
+      if (editor?.scriptId) {
+        this.libraryScriptId = editor.scriptId;
+        this.token += 1;
+        return;
+      }
       this.lmeTabId = lme.tabId;
       this.token += 1;
       return;
     }
     const tab = graphemeScriptEditor.activeTab;
+    if (tab?.scriptId) {
+      this.libraryScriptId = tab.scriptId;
+      this.token += 1;
+      return;
+    }
     if (tab) {
       this.editorTabId = tab.tabId;
       this.token += 1;
