@@ -171,13 +171,24 @@ CI asserts all package stamps equal the tag, builds the full matrix, and **repla
 
 | Goal | Checkboxes | Bump |
 |------|------------|------|
-| Home polish | `ship_desktop` (+ `ship_engine` if daemon API changed) | `desktop` (+ `engine`) |
+| Home polish (reuse published daemon) | `ship_desktop` only — leave **reuse_r2_daemon** on | `desktop` |
+| Home + daemon API change | `ship_desktop` + `ship_engine` (rebuilds daemon) | `desktop` + `engine` |
 | Adapter fix | `ship_adapters` | that adapter id |
 | Engine / CLI / TUI | `ship_engine` | `engine` |
 | MCP only | `ship_mcp` | `mcp-gateway` |
 | Offline brain | `ship_local_brain` | `local-brain` |
 | Everything at one version | bump **all** ids, then `ship_all` **or** push a `v*` tag | all ids equal |
 | Channel-head packages only (mixed stamps) | `ship_all` with mixed `package-versions.toml` | auto-ships packages already at the channel head (e.g. 0.6.0 engine+desktop while adapters stay 0.4.1) |
+
+### Desktop-only without rebuilding the daemon
+
+When Home changes but the engine API does not, turn on **`ship_desktop`** and leave **`reuse_r2_daemon`** checked (default). Release:
+
+1. Skips the `build-daemon` matrix (no macOS/Windows/Linux daemon compiles).
+2. Pulls `medousa_daemon` from the published channel `engine-v*-<target>.tar.gz` on R2/CDN (`scripts/release/fetch-daemon-from-r2.sh`).
+3. Builds/signs Home only, then merges desktop into the channel manifests.
+
+Optional: set **`daemon_engine_version`** to pin which engine stamp to pull (otherwise `package-versions.toml` `engine`, falling back to the channel `release-manifest.json` entry). Turn **reuse_r2_daemon** off only if you need a freshly compiled sidecar without shipping a new engine package.
 
 ### First run (recommended)
 
@@ -224,14 +235,15 @@ If you still have `dist/final` from the publish job on a runner, skip the downlo
 
 ## What the workflow does
 
-1. **prepare** — resolve `ship_*` selection (`v*` tag = full train; `ship_all` = full train only when stamps lockstep, otherwise channel-head packages)
-2. **build-daemon** — `medousa` + `medousa_daemon` once per OS (when engine/desktop selected)
-3. **build-engine** — packages `engine` (launcher + daemon + CLI + TUI); **reuses** prebuilt daemon (no second compile). Never builds the retired `medousa-v*` suite.
-4. **build-adapters** / **build-mcp** / **build-local-brain** — independent legs (slim adapter crates; never rebuild engine)
-5. **build-desktop** / **build-installer** — only when selected (desktop reuses daemon sidecar)
-6. **release** — stage artifacts → generate delta manifests → **merge** into channel (or replace on full train) → **upload R2** → optional **GitHub Release**
+1. **prepare** — resolve `ship_*` selection (`v*` tag = full train; `ship_all` = full train only when stamps lockstep, otherwise channel-head packages). Sets `reuse_r2_daemon` when desktop-only + input enabled.
+2. **build-daemon** — `medousa` + `medousa_daemon` once per OS when engine ships, or desktop ships with reuse off
+3. **fetch-daemon-r2** — desktop-only + reuse on: download published engine tarball per desktop target and stage `medousa_daemon` (no compile)
+4. **build-engine** — packages `engine` (launcher + daemon + CLI + TUI); **reuses** prebuilt daemon (no second compile). Never builds the retired `medousa-v*` suite.
+5. **build-adapters** / **build-mcp** / **build-local-brain** — independent legs (slim adapter crates; never rebuild engine)
+6. **build-desktop** / **build-installer** — only when selected (desktop reuses daemon sidecar from build-daemon **or** fetch-daemon-r2)
+7. **release** — stage artifacts → generate delta manifests → **merge** into channel (or replace on full train) → **upload R2** → optional **GitHub Release**
 
-Skipped legs do not block publish. Daemon is compiled once per OS and shared by desktop + engine packaging.
+Skipped legs do not block publish. Daemon is compiled once per OS when needed; desktop-only Home ships can skip that matrix entirely by reusing the channel engine package.
 
 All matrix jobs set **`shell: bash`**. Windows runners default to PowerShell; release scripts require bash (Git Bash on `windows-latest`).
 
@@ -244,6 +256,8 @@ All matrix jobs set **`shell: bash`**. Windows runners default to PowerShell; re
 | Windows `ParserError` / `Missing '(' after 'if'` | Job must use `shell: bash` — merge latest `release.yml` |
 | R2 upload fails “secrets missing” | Add `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` |
 | Mac desktop build fails on secrets | Check **Environment** `MEDOUSA`, not just repo secrets |
+| Desktop-only still compiles daemon | Ensure **reuse_r2_daemon** is on and **ship_engine** is off; check prepare log for `reuse_r2_daemon=1` |
+| `fetch-daemon-r2` 404 | Engine for that target is not on the channel yet — ship `engine` once, or set `daemon_engine_version` to a published stamp |
 | `curl` 404 on manifest | Custom domain not wired, or prefix mismatch — check `MEDOUSA_R2_PREFIX` |
 | `installer-bootstrap.json` has empty `platforms` | Installer bundles are named `Medousa Installer_*` (Tauri productName) but an old script only matched `MedousaInstaller*` — merge latest release scripts, then run **Republish manifests** workflow (no rebuild) |
 | Bootstrap points at ancient `Medousa_0.1.0_*` / wrong arch / empty `sha256` | Old finders took the first `Medousa_*` in a full R2 dump with no version/arch filter. Merge latest `scripts/release/common.sh`, then **Republish manifests** (syncs only current `package-versions.toml` stamps) |

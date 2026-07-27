@@ -117,6 +117,8 @@ Run on each platform, then merge artifacts into one `dist/` folder on the machin
 | Sign installer (Win) | `.\scripts\release\sign-windows.ps1 …` |
 | Re-publish + upload | `./scripts/release/publish-local.sh --upload` |
 
+**CI shortcut — Home only:** Actions → **Release** → `ship_desktop` with **reuse_r2_daemon** on. That pulls `medousa_daemon` from the published `engine-v*-…` on R2 and skips the daemon compile matrix. See [release-ci-setup.md](./release-ci-setup.md#desktop-only-without-rebuilding-the-daemon).
+
 **Order matters:** sign → publish → upload. If you change binaries after publish, re-run publish and upload.
 
 ### Quick publish (artifacts already in `dist/`)

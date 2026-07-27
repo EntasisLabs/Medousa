@@ -45,6 +45,15 @@ on:
         required: true
         type: boolean
         default: false
+      reuse_r2_daemon:
+        description: "Desktop-only — reuse medousa_daemon from published R2 engine (skip daemon rebuild). Ignored when ship_engine is on."
+        required: true
+        type: boolean
+        default: true
+      daemon_engine_version:
+        description: "Engine stamp to pull daemon from when reuse_r2_daemon is on (default — package-versions.toml engine / channel manifest)"
+        required: false
+        type: string
       upload_r2:
         description: Upload artifacts to Cloudflare R2
         required: true
@@ -118,6 +127,8 @@ jobs:
       ship_desktop: ${{ steps.sel.outputs.ship_desktop }}
       ship_installer: ${{ steps.sel.outputs.ship_installer }}
       ship_local_brain: ${{ steps.sel.outputs.ship_local_brain }}
+      reuse_r2_daemon: ${{ steps.sel.outputs.reuse_r2_daemon }}
+      daemon_engine_version: ${{ steps.sel.outputs.daemon_engine_version }}
       full_train: ${{ steps.sel.outputs.full_train }}
       version: ${{ steps.sel.outputs.version }}
       tag: ${{ steps.sel.outputs.tag }}
@@ -128,6 +139,9 @@ jobs:
         run: |
           set -euo pipefail
           source scripts/release/common.sh
+
+          REUSE_R2=0
+          DAEMON_ENGINE_V="$(medousa_package_version engine)"
 
           if [[ "${{ github.event_name }}" == "push" ]]; then
             # Tag pushes are always true full trains — every package stamp must match.
@@ -147,6 +161,11 @@ jobs:
             # Channel head for dispatch: max(input/cargo, package-versions).
             VERSION="$(medousa_semver_max "${VERSION}" "$(medousa_max_package_version)")"
             TAG="v${VERSION}"
+
+            if [[ -n "${{ github.event.inputs.daemon_engine_version }}" ]]; then
+              DAEMON_ENGINE_V="${{ github.event.inputs.daemon_engine_version }}"
+              DAEMON_ENGINE_V="${DAEMON_ENGINE_V#v}"
+            fi
 
             if [[ "${{ github.event.inputs.ship_all }}" == "true" ]]; then
               if medousa_package_versions_lockstep "${VERSION}"; then
@@ -179,6 +198,11 @@ jobs:
               echo "::error::Select at least one ship_* component (or ship_all). For ship_all, bump package-versions.toml so at least one package matches the channel head."
               exit 1
             fi
+
+            # Desktop-only: reuse published engine daemon from R2/CDN (skip rebuild).
+            if [[ "${D}" == "true" && "${E}" != "true" && "${{ github.event.inputs.reuse_r2_daemon }}" == "true" ]]; then
+              REUSE_R2=1
+            fi
           fi
 
           {
@@ -188,18 +212,22 @@ jobs:
             echo "ship_desktop=${D}"
             echo "ship_installer=${I}"
             echo "ship_local_brain=${L}"
+            echo "reuse_r2_daemon=${REUSE_R2}"
+            echo "daemon_engine_version=${DAEMON_ENGINE_V}"
             echo "full_train=${FULL}"
             echo "version=${VERSION}"
             echo "tag=${TAG}"
           } >> "${GITHUB_OUTPUT}"
-          echo "Release selection: engine=${E} adapters=${A} mcp=${M} desktop=${D} installer=${I} local-brain=${L} full=${FULL} v=${VERSION}"
+          echo "Release selection: engine=${E} adapters=${A} mcp=${M} desktop=${D} installer=${I} local-brain=${L} full=${FULL} reuse_r2_daemon=${REUSE_R2} daemon_engine=${DAEMON_ENGINE_V} v=${VERSION}"
 
   # Daemon (+ launcher) build. Feeds desktop sidecar and engine packaging so
   # other jobs do not recompile medousa_daemon.
   build-daemon:
     name: daemon (${{ matrix.name }})
     needs: prepare
-    if: needs.prepare.outputs.ship_engine == 'true' || needs.prepare.outputs.ship_desktop == 'true'
+    if: |
+      needs.prepare.outputs.ship_engine == 'true' ||
+      (needs.prepare.outputs.ship_desktop == 'true' && needs.prepare.outputs.reuse_r2_daemon != '1')
     runs-on: ${{ vars.MEDOUSA_SELF_HOSTED == 'true' && matrix.runner || matrix.os }}
     defaults:
       run:
@@ -259,6 +287,65 @@ jobs:
           mkdir -p dist/daemon
           cp -f "${REL}/medousa_daemon${EXT}" "dist/daemon/medousa_daemon-${{ matrix.target }}${EXT}"
           cp -f "${REL}/medousa${EXT}" "dist/daemon/medousa-${{ matrix.target }}${EXT}"
+
+      - name: Upload daemon artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: medousa-daemon-${{ matrix.target }}
+          path: dist/daemon/*
+          if-no-files-found: error
+
+  # Desktop-only path: pull medousa_daemon from the published engine package on
+  # R2/CDN instead of compiling the daemon matrix.
+  fetch-daemon-r2:
+    name: daemon-from-r2 (${{ matrix.name }})
+    needs: prepare
+    if: |
+      needs.prepare.outputs.ship_desktop == 'true' &&
+      needs.prepare.outputs.reuse_r2_daemon == '1'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Match build-desktop targets only (Home does not ship linux-aarch64).
+          - name: macos-aarch64
+            target: aarch64-apple-darwin
+          - name: macos-x64
+            target: x86_64-apple-darwin
+          - name: windows-x64
+            target: x86_64-pc-windows-msvc
+          - name: linux-x64
+            target: x86_64-unknown-linux-gnu
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch daemon from published engine
+        env:
+          MEDOUSA_RELEASE_BASE_URL: ${{ env.MEDOUSA_RELEASE_BASE_URL }}
+          MEDOUSA_RELEASE_CHANNEL: ${{ env.MEDOUSA_RELEASE_CHANNEL }}
+          # Optional authenticated fallback if the public CDN misses an object.
+          MEDOUSA_R2_BUCKET: ${{ env.MEDOUSA_R2_BUCKET }}
+          MEDOUSA_R2_ENDPOINT: ${{ env.MEDOUSA_R2_ENDPOINT }}
+          MEDOUSA_R2_PREFIX: ${{ env.MEDOUSA_R2_PREFIX }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        run: |
+          chmod +x scripts/release/fetch-daemon-from-r2.sh
+          mkdir -p dist/daemon
+          ARGS=(
+            --target "${{ matrix.target }}"
+            --out-dir dist/daemon
+            --channel "${MEDOUSA_RELEASE_CHANNEL}"
+            --base-url "${MEDOUSA_RELEASE_BASE_URL}"
+          )
+          if [[ -n "${{ needs.prepare.outputs.daemon_engine_version }}" ]]; then
+            ARGS+=(--engine-version "${{ needs.prepare.outputs.daemon_engine_version }}")
+          fi
+          ./scripts/release/fetch-daemon-from-r2.sh "${ARGS[@]}"
 
       - name: Upload daemon artifact
         uses: actions/upload-artifact@v4
@@ -481,11 +568,14 @@ jobs:
 
   build-desktop:
     name: app (${{ matrix.name }})
-    needs: [prepare, build-daemon]
+    needs: [prepare, build-daemon, fetch-daemon-r2]
     if: |
       always() && !cancelled() &&
       needs.prepare.outputs.ship_desktop == 'true' &&
-      needs.build-daemon.result == 'success'
+      (
+        needs.build-daemon.result == 'success' ||
+        needs.fetch-daemon-r2.result == 'success'
+      )
     runs-on: ${{ vars.MEDOUSA_SELF_HOSTED == 'true' && matrix.runner || matrix.os }}
     permissions:
       contents: read
