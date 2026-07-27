@@ -215,8 +215,7 @@ PUBLISHED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
   done
 
   desktop_v="$(medousa_package_version desktop)"
-  # Match release.yml build-desktop matrix (no macos-x64 app job today).
-  for name in macos-aarch64 windows-x64 linux-x64; do
+  for name in macos-aarch64 macos-x64 windows-x64 linux-x64; do
     found="$(medousa_desktop_bundle_for_platform "${DIST_DIR}" "${name}" "${desktop_v}" || true)"
     if [[ -n "${found}" ]]; then
       archive="$(basename "${found}")"
@@ -230,7 +229,7 @@ PUBLISHED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
   done
 
   installer_v="$(medousa_package_version installer)"
-  for name in macos-aarch64 windows-x64 linux-x64; do
+  for name in macos-aarch64 macos-x64 windows-x64 linux-x64; do
     found="$(medousa_installer_bundle_for_platform "${DIST_DIR}" "${name}" "${installer_v}" || true)"
     if [[ -n "${found}" ]]; then
       archive="$(basename "${found}")"
