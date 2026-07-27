@@ -67,7 +67,6 @@
     background: currentColor;
     opacity: 0.72;
     transform-origin: center center;
-    will-change: transform, opacity;
   }
 
   .audio-lines-mark--lit .audio-lines-mark-bar {
@@ -79,6 +78,7 @@
     Wave delay = reveal duration + per-bar stagger so it doesn’t restart mid-reveal.
   */
   .audio-lines-mark--hot .audio-lines-mark-bar {
+    will-change: transform, opacity;
     animation:
       audio-lines-reveal 0.28s ease-out both,
       audio-lines-wave 0.95s ease-in-out infinite;

@@ -112,6 +112,11 @@ pub fn run() {
             }
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             connection_prefs::refresh_autostart_if_enabled();
+            // macOS/Linux still pre-create hidden popouts; suspend their WebView
+            // controllers so they do not composite while invisible. Windows creates
+            // popouts lazily (see tauri.windows.conf.json + window.rs).
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            window::suspend_hidden_popouts(app.handle());
             eprintln!("[medousa-home] setup complete");
 
             #[cfg(any(windows, target_os = "linux"))]
@@ -198,30 +203,48 @@ pub fn run() {
                     "browser" => {
                         // Hide instead of destroy so Web nav can reopen the window.
                         api.prevent_close();
-                        let app = window.app_handle();
-                        let _ = window.hide();
+                        let app = window.app_handle().clone();
+                        if let Some(webview) = app.get_webview_window("browser") {
+                            let _ = window::hide_and_suspend(&webview);
+                        }
+                        let _ = human_browser::on_browser_popout_closed(&app);
                         let _ = app.emit("browser-window-visibility", false);
                     }
                     "chat-popout" => {
                         api.prevent_close();
-                        let _ = window.hide();
+                        if let Some(webview) = window.app_handle().get_webview_window("chat-popout")
+                        {
+                            let _ = window::hide_and_suspend(&webview);
+                        }
                     }
                     "vault-sticky" => {
                         api.prevent_close();
-                        let _ = window.set_always_on_top(false);
-                        let _ = window.hide();
+                        if let Some(webview) = window.app_handle().get_webview_window("vault-sticky")
+                        {
+                            let _ = webview.set_always_on_top(false);
+                            let _ = window::hide_and_suspend(&webview);
+                        }
                     }
                     "desktop-toolbar" => {
                         api.prevent_close();
-                        let _ = window.hide();
+                        if let Some(webview) =
+                            window.app_handle().get_webview_window("desktop-toolbar")
+                        {
+                            let _ = window::hide_and_suspend(&webview);
+                        }
                     }
                     "view-popout" => {
                         api.prevent_close();
-                        let _ = window.hide();
+                        if let Some(webview) = window.app_handle().get_webview_window("view-popout")
+                        {
+                            let _ = window::hide_and_suspend(&webview);
+                        }
                     }
                     "guide" => {
                         api.prevent_close();
-                        let _ = window.hide();
+                        if let Some(webview) = window.app_handle().get_webview_window("guide") {
+                            let _ = window::hide_and_suspend(&webview);
+                        }
                     }
                     _ => {}
                 }
@@ -787,16 +810,28 @@ fn setup_desktop_tray(app: &tauri::App) -> tauri::Result<()> {
             .on_menu_event(|app, event| match event.id.as_ref() {
                 "show" => show_main_window(app),
                 "toolbar" => {
-                    let _ = window::window_toggle_desktop_toolbar(app.clone());
+                    let app = app.clone();
+                    tauri::async_runtime::spawn(async move {
+                        let _ = window::window_toggle_desktop_toolbar(app).await;
+                    });
                 }
                 "chat" => {
-                    let _ = window::window_show_chat_popout(app.clone());
+                    let app = app.clone();
+                    tauri::async_runtime::spawn(async move {
+                        let _ = window::window_show_chat_popout(app).await;
+                    });
                 }
                 "note" => {
-                    let _ = window::window_show_vault_sticky(app.clone());
+                    let app = app.clone();
+                    tauri::async_runtime::spawn(async move {
+                        let _ = window::window_show_vault_sticky(app).await;
+                    });
                 }
                 "web" => {
-                    let _ = window::window_show_browser(app.clone());
+                    let app = app.clone();
+                    tauri::async_runtime::spawn(async move {
+                        let _ = window::window_show_browser(app).await;
+                    });
                 }
                 "hide" => hide_main_window(app),
                 "quit" => app.exit(0),
@@ -823,14 +858,13 @@ fn setup_desktop_tray(app: &tauri::App) -> tauri::Result<()> {
 fn show_main_window(app: &tauri::AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.unminimize();
-        let _ = window.show();
-        let _ = window.set_focus();
+        let _ = window::show_and_resume(&window);
     }
 }
 
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 fn hide_main_window(app: &tauri::AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
-        let _ = window.hide();
+        let _ = window::hide_and_suspend(&window);
     }
 }

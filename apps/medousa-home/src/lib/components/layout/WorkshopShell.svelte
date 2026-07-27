@@ -43,6 +43,9 @@
 
   async function refreshPeersUnread() {
     if (!isTauri()) return;
+    if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+      return;
+    }
     try {
       peersUnread = await peerUnreadCount();
     } catch {
@@ -67,6 +70,12 @@
     peersUnreadTimer = setInterval(() => {
       void refreshPeersUnread();
     }, 8000);
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") {
+        void refreshPeersUnread();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
     if (isTauri()) {
       void appUpdate.bootProbe().then((status) => {
         if (status?.updateAvailable && status.latestVersion) {
@@ -85,6 +94,7 @@
     const detachBrowserContext = browserContext.attachListeners();
     return () => {
       if (peersUnreadTimer) clearInterval(peersUnreadTimer);
+      document.removeEventListener("visibilitychange", onVisibility);
       detachViewport();
       detachWorkshop();
       detachBrowserContext();

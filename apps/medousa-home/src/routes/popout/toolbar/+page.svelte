@@ -21,6 +21,7 @@
     showViewPopout,
   } from "$lib/window";
   import { connectWorkshop } from "$lib/workshopConnection";
+  import { whenDocumentVisible } from "$lib/utils/whenDocumentVisible";
 
   const RAIL_SIZE = { width: 64, height: 340 };
   const PICKER_SIZE = { width: 260, height: 340 };
@@ -36,10 +37,12 @@
     document.body.classList.add("desktop-toolbar-shell");
     void syncToolbarWindowSize(false);
 
-    const detachWorkshop = connectWorkshop({
-      onHealthChange: () => {},
-      mode: "observer",
-    });
+    const detachWorkshop = whenDocumentVisible(() =>
+      connectWorkshop({
+        onHealthChange: () => {},
+        mode: "observer",
+      }),
+    );
     return () => {
       document.documentElement.classList.remove("desktop-toolbar-shell");
       document.body.classList.remove("desktop-toolbar-shell");

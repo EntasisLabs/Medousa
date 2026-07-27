@@ -9,6 +9,7 @@
   import { visibleActivityFeed } from "$lib/utils/activityFilter";
   import { buildActivityStory } from "$lib/utils/activityStory";
   import {
+    ACTIVITY_HOT_MS,
     isActivityFeedHot,
     truncateActivityLabel,
   } from "$lib/utils/activityPulse";
@@ -47,10 +48,18 @@
   );
 
   $effect(() => {
-    const timer = window.setInterval(() => {
+    // Only tick while the pulse can expire — no forever 1s interval at idle.
+    if (!latestAt || workshop.runBusy || graphemeScriptEditor.compileBusy) {
+      return;
+    }
+    const expiresAt = Date.parse(latestAt) + ACTIVITY_HOT_MS;
+    if (Number.isNaN(expiresAt)) return;
+    const delay = Math.max(0, expiresAt - Date.now());
+    if (delay === 0) return;
+    const timer = window.setTimeout(() => {
       nowTick = Date.now();
-    }, 1000);
-    return () => window.clearInterval(timer);
+    }, delay);
+    return () => window.clearTimeout(timer);
   });
 
   function toggle() {
