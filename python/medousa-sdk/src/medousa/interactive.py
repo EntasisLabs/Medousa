@@ -5,9 +5,8 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Any
 
-from medousa.reconnect import ReconnectPolicy, ReconnectingInteractiveStream
-
 from medousa._decode import decode
+from medousa.reconnect import ReconnectingInteractiveStream, ReconnectPolicy
 from medousa.streaming import iter_sse_events
 from medousa.types import (
     InteractiveTurnRequest,

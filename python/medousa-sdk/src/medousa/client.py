@@ -5,7 +5,9 @@ from typing import TYPE_CHECKING
 from medousa.transport import HttpTransport, Transport
 
 if TYPE_CHECKING:
+    from medousa.agents import AgentsApi
     from medousa.budget import BudgetApi
+    from medousa.calendar import CalendarApi
     from medousa.capabilities import CapabilitiesApi
     from medousa.components import ComponentsApi
     from medousa.environment import EnvironmentApi
@@ -14,7 +16,6 @@ if TYPE_CHECKING:
     from medousa.http import HttpApi
     from medousa.ingest import IngestApi
     from medousa.interactive import InteractiveApi
-    from medousa.agents import AgentsApi
     from medousa.jobs import JobsApi
     from medousa.local_models import LocalModelsApi
     from medousa.mcp_gateway import McpGatewayApi
@@ -22,7 +23,6 @@ if TYPE_CHECKING:
     from medousa.runtime import RuntimeApi
     from medousa.sessions import SessionsApi
     from medousa.vault import VaultApi
-    from medousa.calendar import CalendarApi
     from medousa.workspace import WorkspaceApi
 
 
