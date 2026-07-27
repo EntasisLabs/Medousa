@@ -472,7 +472,7 @@ jobs:
     permissions:
       contents: read
       id-token: write
-    environment: ${{ (matrix.name == 'macos-aarch64' || matrix.name == 'windows-x64') && 'MEDOUSA' || '' }}
+    environment: ${{ (startsWith(matrix.name, 'macos-') || matrix.name == 'windows-x64') && 'MEDOUSA' || '' }}
     strategy:
       fail-fast: false
       matrix:
@@ -482,6 +482,11 @@ jobs:
             native_build: true
             os: macos-14
             runner: [self-hosted, macOS, ARM64]
+          - target: x86_64-apple-darwin
+            name: macos-x64
+            native_build: true
+            os: macos-15-intel
+            runner: [self-hosted, macOS, X64]
           - target: x86_64-pc-windows-msvc
             name: windows-x64
             native_build: true
@@ -560,7 +565,7 @@ jobs:
           echo "prepare-engine-sidecar will reuse: ${DAEMON}"
 
       - name: Validate Apple signing secrets
-        if: matrix.name == 'macos-aarch64'
+        if: startsWith(matrix.name, 'macos-')
         working-directory: .
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
@@ -588,7 +593,7 @@ jobs:
       # keychain (skip this import + drop the APPLE_CERTIFICATE secret) — leave
       # the identity available to codesign and set APPLE_SIGNING_IDENTITY only.
       - name: Import Apple Developer certificate
-        if: matrix.name == 'macos-aarch64'
+        if: startsWith(matrix.name, 'macos-')
         working-directory: .
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
@@ -700,7 +705,7 @@ jobs:
     permissions:
       contents: read
       id-token: write
-    environment: ${{ (matrix.name == 'macos-aarch64' || matrix.name == 'windows-x64') && 'MEDOUSA' || '' }}
+    environment: ${{ (startsWith(matrix.name, 'macos-') || matrix.name == 'windows-x64') && 'MEDOUSA' || '' }}
     strategy:
       fail-fast: false
       matrix:
@@ -710,6 +715,11 @@ jobs:
             native_build: true
             os: macos-14
             runner: [self-hosted, macOS, ARM64]
+          - target: x86_64-apple-darwin
+            name: macos-x64
+            native_build: true
+            os: macos-15-intel
+            runner: [self-hosted, macOS, X64]
           - target: x86_64-pc-windows-msvc
             name: windows-x64
             native_build: true
@@ -764,7 +774,7 @@ jobs:
           shared-key: release-installer-${{ matrix.name }}
 
       - name: Validate Apple signing secrets
-        if: matrix.name == 'macos-aarch64'
+        if: startsWith(matrix.name, 'macos-')
         working-directory: .
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
@@ -788,7 +798,7 @@ jobs:
           echo "Apple signing secrets are present."
 
       - name: Import Apple Developer certificate
-        if: matrix.name == 'macos-aarch64'
+        if: startsWith(matrix.name, 'macos-')
         working-directory: .
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
