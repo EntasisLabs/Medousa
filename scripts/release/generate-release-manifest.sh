@@ -215,26 +215,29 @@ PUBLISHED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
   done
 
   desktop_v="$(medousa_package_version desktop)"
-  for name in macos-aarch64 macos-x64 windows-x64 linux-x64; do
+  # Match release.yml build-desktop matrix (no macos-x64 app job today).
+  for name in macos-aarch64 windows-x64 linux-x64; do
     found="$(medousa_desktop_bundle_for_platform "${DIST_DIR}" "${name}" "${desktop_v}" || true)"
     if [[ -n "${found}" ]]; then
       archive="$(basename "${found}")"
+      file_v="$(medousa_bundle_semver_from_name "${archive}" || echo "${desktop_v}")"
       [[ "${first}" -eq 1 ]] || echo ","
       first=0
-      append_package_json "desktop" "Medousa Desktop (${name})" "${name}" "${archive}" "" "" "core" "${desktop_v}"
+      append_package_json "desktop" "Medousa Desktop (${name})" "${name}" "${archive}" "" "" "core" "${file_v}"
     else
-      medousa_log "warning: no desktop ${name} bundle for v${desktop_v}"
+      medousa_log "warning: no desktop ${name} bundle (wanted v${desktop_v})"
     fi
   done
 
   installer_v="$(medousa_package_version installer)"
-  for name in macos-aarch64 macos-x64 windows-x64 linux-x64; do
+  for name in macos-aarch64 windows-x64 linux-x64; do
     found="$(medousa_installer_bundle_for_platform "${DIST_DIR}" "${name}" "${installer_v}" || true)"
     if [[ -n "${found}" ]]; then
       archive="$(basename "${found}")"
+      file_v="$(medousa_bundle_semver_from_name "${archive}" || echo "${installer_v}")"
       [[ "${first}" -eq 1 ]] || echo ","
       first=0
-      append_package_json "installer" "Medousa Installer (${name})" "${name}" "${archive}" "" "" "core" "${installer_v}"
+      append_package_json "installer" "Medousa Installer (${name})" "${name}" "${archive}" "" "" "core" "${file_v}"
     fi
   done
 

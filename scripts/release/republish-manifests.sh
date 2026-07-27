@@ -88,17 +88,18 @@ if [[ "${FROM_R2}" -eq 1 && "${SKIP_DOWNLOAD}" -eq 0 ]]; then
   medousa_require_cmd aws
 
   S3_URI="s3://${BUCKET}/${PREFIX%/}/"
-  # Only pull current package stamps — a full channel history dump made the
-  # old "first Medousa_* wins" finders latch onto 0.1.0 forever.
+  # Pull current package archives + all Home/Installer bundles. Arch/version-aware
+  # finders pick the right file; syncing history is safe and required when the
+  # desktop stamp is ahead of what has actually been uploaded.
   DESKTOP_V="$(medousa_package_version desktop)"
   INSTALLER_V="$(medousa_package_version installer)"
   BRAIN_V="$(medousa_package_version local-brain)"
   AWS_ARGS=(s3 sync "${S3_URI}" "${STAGING_DIR}/"
     --exclude "*"
     --include "SHA256SUMS"
-    --include "Medousa_${DESKTOP_V}_*"
-    --include "Medousa Installer_${INSTALLER_V}_*"
-    --include "MedousaInstaller_${INSTALLER_V}_*"
+    --include "Medousa_*"
+    --include "Medousa Installer*"
+    --include "MedousaInstaller*"
     --include "medousa_local-*-v${BRAIN_V}-*"
     --include "model-*-v${BRAIN_V}.manifest.json")
   pkg_id=""
@@ -112,7 +113,7 @@ if [[ "${FROM_R2}" -eq 1 && "${SKIP_DOWNLOAD}" -eq 0 ]]; then
     AWS_ARGS+=(--endpoint-url "${ENDPOINT}")
   fi
 
-  medousa_log "downloading current-stamp artifacts from ${S3_URI} (desktop=${DESKTOP_V} installer=${INSTALLER_V})"
+  medousa_log "downloading release artifacts from ${S3_URI} (prefer desktop=${DESKTOP_V} installer=${INSTALLER_V})"
   aws "${AWS_ARGS[@]}"
 fi
 

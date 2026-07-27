@@ -483,7 +483,7 @@ medousa_install_target_from_uname() {
 }
 
 medousa_log() {
-  echo "[medousa-release] $*"
+  echo "[medousa-release] $*" >&2
 }
 
 medousa_require_cmd() {
@@ -646,9 +646,9 @@ medousa_bundle_rank() {
   fi
 }
 
-# Pick desktop|installer bundle for platform, requiring preferred semver when set.
-# Never returns a wrong-arch or Installer-as-Home match. When preferred is set and
-# missing, returns failure (caller skips the platform) instead of an older build.
+# Pick desktop|installer bundle for platform.
+# Prefers exact package stamp when present; otherwise highest matching arch.
+# Never returns wrong-arch or Installer-as-Home. Logs fall back to stderr only.
 medousa_pick_versioned_bundle() {
   local dist_dir="$1"
   local kind="$2" # desktop | installer
@@ -665,7 +665,8 @@ medousa_pick_versioned_bundle() {
     *) return 1 ;;
   esac
 
-  local best="" best_ver="" best_rank=0
+  local exact="" exact_ver="" exact_rank=-1
+  local any="" any_ver="" any_rank=-1
   local found base ver rank newer
 
   while IFS= read -r found; do
@@ -680,24 +681,30 @@ medousa_pick_versioned_bundle() {
     medousa_bundle_matches_arch "${base}" "${arch}" || continue
     ver="$(medousa_bundle_semver_from_name "${base}" || true)"
     [[ -n "${ver}" ]] || continue
-    if [[ -n "${preferred}" && "${ver}" != "${preferred}" ]]; then
-      continue
-    fi
     rank="$(medousa_bundle_rank "${base}")"
-    if [[ -z "${best}" ]]; then
-      best="${found}"
-      best_ver="${ver}"
-      best_rank="${rank}"
-      continue
+
+    if [[ -n "${preferred}" && "${ver}" == "${preferred}" ]]; then
+      if [[ -z "${exact}" || "${rank}" -gt "${exact_rank}" ]]; then
+        exact="${found}"
+        exact_ver="${ver}"
+        exact_rank="${rank}"
+      fi
     fi
-    newer="$(medousa_semver_max "${best_ver}" "${ver}")"
-    if [[ "${newer}" == "${ver}" && "${ver}" != "${best_ver}" ]]; then
-      best="${found}"
-      best_ver="${ver}"
-      best_rank="${rank}"
-    elif [[ "${ver}" == "${best_ver}" && "${rank}" -gt "${best_rank}" ]]; then
-      best="${found}"
-      best_rank="${rank}"
+
+    if [[ -z "${any}" ]]; then
+      any="${found}"
+      any_ver="${ver}"
+      any_rank="${rank}"
+    else
+      newer="$(medousa_semver_max "${any_ver}" "${ver}")"
+      if [[ "${newer}" == "${ver}" && "${ver}" != "${any_ver}" ]]; then
+        any="${found}"
+        any_ver="${ver}"
+        any_rank="${rank}"
+      elif [[ "${ver}" == "${any_ver}" && "${rank}" -gt "${any_rank}" ]]; then
+        any="${found}"
+        any_rank="${rank}"
+      fi
     fi
   done < <(
     for ext in "${exts[@]}"; do
@@ -709,8 +716,15 @@ medousa_pick_versioned_bundle() {
     done
   )
 
-  if [[ -n "${best}" ]]; then
-    echo "${best}"
+  if [[ -n "${exact}" ]]; then
+    echo "${exact}"
+    return 0
+  fi
+  if [[ -n "${any}" ]]; then
+    if [[ -n "${preferred}" ]]; then
+      medousa_log "warning: no ${kind} ${platform} v${preferred}; using v${any_ver} ($(basename "${any}"))"
+    fi
+    echo "${any}"
     return 0
   fi
   return 1

@@ -96,19 +96,19 @@ append_platform_json() {
   local platform="$1"
   local path="$2"
   local installer_path="${3:-}"
-  local url sha size kind installer_url
+  local url sha size kind installer_url name file_v
   url="$(url_for_file "${path}")"
   sha="$(sha_for "${path}")"
   size="$(size_for "${path}")"
   kind="$(artifact_kind_for_platform "${platform}")"
   installer_url="$(url_for_file "${installer_path}")"
-  local name
   name="$(basename "${path:-}")"
+  file_v="$(medousa_bundle_semver_from_name "${name}" || echo "${DESKTOP_VERSION}")"
   cat <<EOF
     "${platform}": {
       "platform": "${platform}",
       "artifactKind": "${kind}",
-      "version": "${DESKTOP_VERSION}",
+      "version": "${file_v}",
       "fileName": "${name}",
       "url": "${url}",
       "sha256": "${sha}",
@@ -137,10 +137,11 @@ PUBLISHED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
   echo '  "platforms": {'
 
   first=1
-  for platform in macos-aarch64 macos-x64 windows-x64 linux-x64; do
+  # Match release.yml build-desktop matrix (macos-aarch64 / windows-x64 / linux-x64).
+  for platform in macos-aarch64 windows-x64 linux-x64; do
     path="$(medousa_bootstrap_bundle_for_platform "${DIST_DIR}" "${platform}" "${DESKTOP_VERSION}" || true)"
     if [[ -z "${path}" ]]; then
-      medousa_log "warning: no desktop ${platform} bundle for v${DESKTOP_VERSION} in ${DIST_DIR}"
+      medousa_log "warning: no desktop ${platform} bundle (wanted v${DESKTOP_VERSION}) in ${DIST_DIR}"
       continue
     fi
     installer_extra="$(medousa_installer_bundle_for_platform "${DIST_DIR}" "${platform}" "${INSTALLER_VERSION}" || true)"
