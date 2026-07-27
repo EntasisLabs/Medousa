@@ -23,14 +23,13 @@ FETCH_RESPONSE = {
 
 WRITE_RESPONSE = {
     "artifact_id": "art-1",
-    "mime": "text/html",
+    "supersedes_artifact_id": "",
+    "hash64": "abc123",
     "label": "Chart",
-    "byte_size": 13,
 }
 
 DELETE_RESPONSE = {
-    "artifact_id": "art-1",
-    "deleted": True,
+    "deleted_artifact_ids": ["art-1"],
 }
 
 LIST_RESPONSE = {
@@ -67,17 +66,17 @@ async def test_runtime_artifacts():
         ArtifactWriteRequest(
             session_id="sess-1",
             artifact_id="art-1",
-            mime="text/html",
-            label="Chart",
-            body="<html></html>",
+            title="Chart",
+            html="<html></html>",
         ),
     )
     assert written.artifact_id == "art-1"
+    assert written.label == "Chart"
 
     deleted = await client.runtime().artifact_delete(
         ArtifactDeleteRequest(session_id="sess-1", artifact_id="art-1"),
     )
-    assert deleted.deleted is True
+    assert deleted.deleted_artifact_ids == ["art-1"]
 
     listed = await client.runtime().artifact_list_ui(ArtifactListUiRequest(session_id="sess-1"))
     assert len(listed.artifacts) == 1
