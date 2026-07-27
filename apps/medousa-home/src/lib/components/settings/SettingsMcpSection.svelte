@@ -11,6 +11,7 @@
     type PackageProgressEvent,
   } from "$lib/utils/packagesApi";
   import { isTauri } from "$lib/window";
+  import { onThisHostPhrase } from "$lib/platformCopy";
 
   interface Props {
     mobile?: boolean;
@@ -121,7 +122,7 @@
         <div class="prefs-band-head">
           <h3 class="settings-subsection-heading">Gateway</h3>
           <p class="settings-subsection-lead">
-            Binary that hosts MCP servers on this Mac.
+            Binary that hosts MCP servers {onThisHostPhrase()}.
           </p>
         </div>
         <div class="prefs-stack">

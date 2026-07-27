@@ -24,7 +24,7 @@
   import SettingsWorkshopsSection from "$lib/components/settings/SettingsWorkshopsSection.svelte";
   import { isTauri } from "$lib/window";
   import { settingsNav } from "$lib/stores/settingsNav.svelte";
-  import { workshopBasementConnectionLabel } from "$lib/platformCopy";
+  import { workshopBasementConnectionLabel, thisHostLabel } from "$lib/platformCopy";
 
   const isDevBuild = import.meta.env.DEV;
 
@@ -390,7 +390,7 @@
   {#if isTauri() && !mobile}
     <div class="prefs-band">
       <div class="prefs-band-head">
-        <h3 class="settings-subsection-heading">This Mac</h3>
+        <h3 class="settings-subsection-heading">{thisHostLabel()}</h3>
         <p class="settings-subsection-lead">
           Login start. Phone & LAN reachability live in Sharing.
         </p>

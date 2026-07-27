@@ -19,6 +19,7 @@
   import { pickExternalFolder } from "$lib/utils/externalDeskApi";
   import { openGuide } from "$lib/guide/openGuide";
   import { isTauri } from "$lib/window";
+  import { onThisHostPhrase } from "$lib/platformCopy";
 
   const ICON_OPTIONS: { id: WorkshopIcon; label: string }[] = [
     { id: "home", label: "Home" },
@@ -403,7 +404,7 @@
       <header>
         <h3 class="text-base font-semibold text-surface-50">Add local engine</h3>
         <p class="workshop-faint mt-1 text-sm">
-          A second Medousa brain on this Mac with its own storage folder and port.
+          A second Medousa brain {onThisHostPhrase()} with its own storage folder and port.
         </p>
       </header>
       <label class="block space-y-1 text-sm">

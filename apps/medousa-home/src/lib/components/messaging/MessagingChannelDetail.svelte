@@ -8,6 +8,7 @@
   import { channelStatus, statusLabel } from "$lib/utils/channelStatus";
   import { Hash, Layers, Phone, Send } from "@lucide/svelte";
   import type { Component } from "svelte";
+  import { onThisHostPhrase } from "$lib/platformCopy";
 
   interface Props {
     channelId: ChannelId;
@@ -93,7 +94,9 @@
   });
 
   function secretHint(configured: boolean | undefined): string {
-    return configured ? "Kept on this Mac — paste again only to replace" : "Waiting for a token";
+    return configured
+      ? `Kept ${onThisHostPhrase()} — paste again only to replace`
+      : "Waiting for a token";
   }
 </script>
 

@@ -10,7 +10,7 @@ This guide is for **app users** who talk to Medousa. You do not need JSON, tools
 
 | | **Custom view (canvas)** | **Library / chat artifact** |
 |---|--------------------------|-----------------------------|
-| Where it lives | Sidebar (desktop) or **More → My views** (mobile) | Chat thread or Library tab |
+| Where it lives | Sidebar (desktop) or destinations menu / custom views (mobile) | Chat thread or Library tab |
 | Persists? | Yes — pinned to your layout | Browse history; not a nav destination |
 | Interactive state | Widgets can save data across refresh (engine-backed store) | Usually one-off or session-scoped |
 | Who builds it | Medousa, from your description | Medousa, often inline in chat |

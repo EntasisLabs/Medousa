@@ -7,7 +7,7 @@
   import type { ExternalFileEntry, PinnedRoot } from "$lib/types/externalDesk";
   import ExternalFileRow from "./ExternalFileRow.svelte";
   import { isCoLocatedWorkshop, vaultPinFolderRemoteHint } from "$lib/utils/workshopLocality";
-  import { hostComputerPhrase } from "$lib/platformCopy";
+  import { hostComputerPhrase, onThisHostPhrase } from "$lib/platformCopy";
 
   interface Props {
     compact?: boolean;
@@ -93,7 +93,7 @@
     <div class="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
       <FolderOpen size={28} strokeWidth={1.5} class="text-surface-500" />
       <div class="max-w-xs space-y-1">
-        <p class="text-sm font-medium text-surface-100">Your files stay on this Mac</p>
+        <p class="text-sm font-medium text-surface-100">Your files stay {onThisHostPhrase()}</p>
         <p class="text-xs leading-relaxed text-surface-500">
           {vaultPinFolderRemoteHint()}
         </p>

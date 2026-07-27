@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { thisHostLabel } from "$lib/platformCopy";
 import {
+  SETTINGS_MOBILE_SECTIONS,
   SETTINGS_SECTIONS,
   settingsNavEntries,
   settingsSectionById,
@@ -13,15 +15,15 @@ describe("settings nav groups", () => {
     }
   });
 
-  it("shows only the This Mac header", () => {
+  it("shows only the this-host header", () => {
     const entries = settingsNavEntries();
     expect(entries[0]).toMatchObject({ kind: "section", section: { id: "preferences" } });
     const groups = entries.filter((entry) => entry.kind === "group");
     expect(groups.map((entry) => entry.id)).toEqual(["machine"]);
-    expect(groups.map((entry) => entry.label)).toEqual(["This Mac"]);
+    expect(groups.map((entry) => entry.label)).toEqual([thisHostLabel()]);
   });
 
-  it("clusters app and this-mac sections with Sharing / Workshop labels", () => {
+  it("clusters app and this-host sections with Sharing / Workshop labels", () => {
     expect(settingsSectionById("preferences")?.group).toBe("app");
     expect(settingsSectionById("agent")?.group).toBe("app");
     expect(settingsSectionById("runtime")?.group).toBe("app");
@@ -37,5 +39,9 @@ describe("settings nav groups", () => {
     expect(settingsSectionById("basement")?.label).toBe("Workshop");
     expect(settingsSectionById("basement")?.hint).toBe("Active workshop, engine & files");
     expect(SETTINGS_SECTIONS.filter((section) => section.group === "machine")).toHaveLength(3);
+  });
+
+  it("rotates the mobile pager through every settings section", () => {
+    expect(SETTINGS_MOBILE_SECTIONS).toEqual(SETTINGS_SECTIONS.map((section) => section.id));
   });
 });

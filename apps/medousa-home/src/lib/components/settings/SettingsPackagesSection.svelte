@@ -12,6 +12,7 @@
     type PackageProgressEvent,
   } from "$lib/utils/packagesApi";
   import { isTauri } from "$lib/window";
+  import { onThisHostPhrase } from "$lib/platformCopy";
 
   interface Props {
     mobile?: boolean;
@@ -113,7 +114,7 @@
   <div>
     <h2 class="text-sm font-semibold text-surface-100">Packages</h2>
     <p class="workshop-faint mt-1 text-xs">
-      Optional binaries install on the desktop app. Use this Mac’s Medousa Home to add offline
+      Optional binaries install on the desktop app. Use Medousa {onThisHostPhrase()} to add offline
       brain, adapters, or tools.
     </p>
   </div>

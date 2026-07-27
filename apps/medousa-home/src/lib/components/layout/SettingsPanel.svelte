@@ -53,12 +53,6 @@
   }
 
   $effect(() => {
-    if (mobile) {
-      settingsNav.setActiveSection("preferences");
-    }
-  });
-
-  $effect(() => {
     if (visible) {
       settingsNav.takePending();
       void workshopDefaults.load();

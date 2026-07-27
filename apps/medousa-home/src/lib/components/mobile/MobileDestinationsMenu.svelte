@@ -35,9 +35,11 @@
     open: boolean;
     onClose: () => void;
     onToggleActivity?: () => void;
+    /** Align sheet under the menu trigger (home puts menu on the right). */
+    align?: "start" | "end";
   }
 
-  let { open, onClose, onToggleActivity }: Props = $props();
+  let { open, onClose, onToggleActivity, align = "start" }: Props = $props();
 
   const icons: Record<string, Component> = {
     "tab-home": Home,
@@ -99,7 +101,7 @@
 {#if open}
   <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
   <div
-    class="mobile-dest-menu-backdrop"
+    class="mobile-dest-menu-backdrop mobile-dest-menu-backdrop--{align}"
     role="presentation"
     onclick={onClose}
     onkeydown={(e) => {

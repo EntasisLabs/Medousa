@@ -97,7 +97,9 @@ export function switchMobileTab(tab: MobileTab): void {
   haptic("light");
   layout.setActivitySheetOpen(false);
   layout.setAskSheetOpen(false);
-  layout.setMobileDestinationsMenuOpen(false);
+  if (tab !== "more") {
+    layout.setMobileDestinationsMenuOpen(false);
+  }
   if (tab !== "chat") {
     layout.setSessionDrawerOpen(false);
     layout.setIdentityDrawerOpen(false);
@@ -105,6 +107,11 @@ export function switchMobileTab(tab: MobileTab): void {
   const order = mobileTabOrder();
   if (!order.includes(tab)) {
     layout.setMobileTab(order[0] ?? "home", { bump: true });
+    return;
+  }
+  // More tab no longer shows a hub list — open the destinations menu instead.
+  if (tab === "more") {
+    layout.openMobileDestinationsMenu();
     return;
   }
   // Home tab exits a temporary custom view (e.g. arcade opened from More).

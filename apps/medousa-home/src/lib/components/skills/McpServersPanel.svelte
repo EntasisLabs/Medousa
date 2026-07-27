@@ -23,11 +23,12 @@
     upsertMcpServer,
   } from "$lib/utils/mcpGatewayApi";
   import { isTauri } from "$lib/window";
+  import { onThisHostPhrase } from "$lib/platformCopy";
 
   type FormTransport = "stdio" | "http" | "sse" | "mock";
 
   const TRANSPORTS: { id: FormTransport; label: string; hint: string }[] = [
-    { id: "stdio", label: "Local command", hint: "npx, uvx, or a binary on this Mac" },
+    { id: "stdio", label: "Local command", hint: `npx, uvx, or a binary ${onThisHostPhrase()}` },
     { id: "http", label: "Remote HTTP", hint: "Hosted MCP over streamable HTTP" },
     { id: "sse", label: "Remote SSE", hint: "Legacy SSE gateways" },
     { id: "mock", label: "Mock", hint: "Synthetic tools only" },
@@ -556,7 +557,7 @@
         >
           <div>
             <h3 class="settings-subsection-heading mb-0">Advanced</h3>
-            <p class="settings-subsection-lead mb-0 mt-1">Gateway config file on this Mac</p>
+            <p class="settings-subsection-lead mb-0 mt-1">Gateway config file {onThisHostPhrase()}</p>
           </div>
           <span class="workshop-faint shrink-0">{advancedOpen ? "▾" : "▸"}</span>
         </button>

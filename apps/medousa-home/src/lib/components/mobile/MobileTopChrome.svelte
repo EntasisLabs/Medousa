@@ -347,18 +347,22 @@
 </script>
 
 <header class="mobile-top-chrome" data-chrome-surface={surface} data-automations-mode={automationsMode}>
-  <button
-    type="button"
-    class="mobile-chrome-icon"
-    aria-label={labelFor(leading)}
-    onclick={() => void run(leading)}
-  >
-    {#if leading === "back"}
-      <ChevronLeft size={20} strokeWidth={1.75} />
-    {:else}
-      <Menu size={18} strokeWidth={1.75} />
-    {/if}
-  </button>
+  {#if leading}
+    <button
+      type="button"
+      class="mobile-chrome-icon"
+      aria-label={labelFor(leading)}
+      onclick={() => void run(leading)}
+    >
+      {#if leading === "back"}
+        <ChevronLeft size={20} strokeWidth={1.75} />
+      {:else}
+        <Menu size={18} strokeWidth={1.75} />
+      {/if}
+    </button>
+  {:else}
+    <span class="mobile-chrome-leading-spacer" aria-hidden="true"></span>
+  {/if}
 
   <div class="mobile-chrome-actions">
     {#each trailing as action (action)}

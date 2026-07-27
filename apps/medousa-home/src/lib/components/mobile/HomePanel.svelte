@@ -33,6 +33,12 @@
   import { isTauri } from "$lib/window";
   import type { WorkCard } from "$lib/types/workspace";
   import { haptic } from "$lib/haptics";
+  import { workshops } from "$lib/stores/workshops.svelte";
+  import WorkshopSwitcherCompact from "$lib/components/workshops/WorkshopSwitcherCompact.svelte";
+  import { Building2, Home, Users } from "@lucide/svelte";
+  import {
+    workshopBrandCssVars,
+  } from "$lib/types/workshopRegistry";
 
   interface Props {
     health: DaemonHealth | null;
@@ -49,6 +55,25 @@
     onOpenNote,
     onOpenSettings,
   }: Props = $props();
+
+  let workshopSheetOpen = $state(false);
+
+  const workshopBrandStyle = $derived(
+    workshopBrandCssVars(workshops.activeWorkshop?.brandColor),
+  );
+
+  const WorkshopMarkIcon = $derived.by(() => {
+    const icon = workshops.activeWorkshop?.icon;
+    if (icon === "building") return Building2;
+    if (icon === "team") return Users;
+    if (
+      workshops.activeWorkshop?.kind === "portal" ||
+      workshops.activeWorkshop?.kind === "paired"
+    ) {
+      return Building2;
+    }
+    return Home;
+  });
 
   const blocked = $derived(workspace.needsAttentionCount());
   const inMotion = $derived(workspace.inMotionCount());
@@ -359,7 +384,26 @@
 
     <div class="px-5 pb-8 pt-3">
       <div class="mobile-home-brand">
-        <h1 class="mobile-home-wordmark">Medousa</h1>
+        <button
+          type="button"
+          class="mobile-home-workshop-hero"
+          style={workshopBrandStyle}
+          aria-label="Workshop — {workshops.activeLabel}"
+          aria-haspopup="menu"
+          aria-expanded={workshopSheetOpen}
+          onclick={() => {
+            haptic("light");
+            workshopSheetOpen = true;
+          }}
+        >
+          <span class="mobile-home-workshop-mark" aria-hidden="true">
+            <WorkshopMarkIcon size={22} strokeWidth={1.75} />
+          </span>
+          <span class="mobile-home-workshop-copy">
+            <span class="mobile-home-workshop-kicker">Workshop</span>
+            <h1 class="mobile-home-wordmark">{workshops.activeLabel}</h1>
+          </span>
+        </button>
         <p class="mobile-home-greeting-quiet">{greeting}</p>
         <button
           type="button"
@@ -375,6 +419,12 @@
           <span class="truncate">{statusLine}</span>
         </button>
       </div>
+
+      <WorkshopSwitcherCompact
+        showTrigger={false}
+        hideWhenSingle={false}
+        bind:sheetOpen={workshopSheetOpen}
+      />
 
       <div class="mobile-home-glance">
         <button type="button" class="mobile-home-glance-tile" onclick={openPeers}>

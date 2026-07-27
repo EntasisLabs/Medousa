@@ -7,8 +7,30 @@
   @apply mt-5;
 }
 
+.mobile-home-workshop-hero {
+  @apply flex max-w-full items-center gap-3 text-left transition active:opacity-80;
+}
+
+.mobile-home-workshop-mark {
+  @apply inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-surface-500/40 bg-surface-900/80 text-surface-100;
+}
+
+.mobile-home-workshop-hero[style*="--workshop-brand"] .mobile-home-workshop-mark {
+  color: color-mix(in srgb, var(--workshop-brand) 88%, white);
+  border-color: color-mix(in srgb, var(--workshop-brand) 42%, transparent);
+  background: color-mix(in srgb, var(--workshop-brand) 22%, rgb(var(--color-surface-900)));
+}
+
+.mobile-home-workshop-copy {
+  @apply min-w-0 flex-1;
+}
+
+.mobile-home-workshop-kicker {
+  @apply block text-[10px] font-semibold uppercase tracking-[0.1em] text-surface-500;
+}
+
 .mobile-home-wordmark {
-  @apply text-[2rem] font-semibold tracking-tight text-surface-50;
+  @apply truncate text-[2rem] font-semibold tracking-tight text-surface-50;
 }
 
 .mobile-home-greeting-quiet {
@@ -179,6 +201,10 @@
   @apply flex max-w-[min(100%,20rem)] items-center justify-end gap-1.5 overflow-x-auto;
 }
 
+.mobile-chrome-leading-spacer {
+  @apply h-10 w-10 shrink-0;
+}
+
 .mobile-top-chrome[data-automations-mode="flow-editor"] .mobile-chrome-icon,
 .mobile-top-chrome[data-automations-mode="script-editor"] .mobile-chrome-icon {
   @apply h-9 w-9;
@@ -198,9 +224,17 @@
 }
 
 .mobile-dest-menu-backdrop {
-  @apply fixed inset-0 z-[60] flex items-start justify-start p-3;
+  @apply fixed inset-0 z-[60] flex items-start p-3;
   padding-top: max(0.75rem, env(safe-area-inset-top, 0px));
   background-color: rgb(var(--color-surface-950) / 0.55);
+}
+
+.mobile-dest-menu-backdrop--start {
+  @apply justify-start;
+}
+
+.mobile-dest-menu-backdrop--end {
+  @apply justify-end;
 }
 
 .mobile-dest-menu {

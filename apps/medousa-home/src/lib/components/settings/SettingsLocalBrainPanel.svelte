@@ -17,7 +17,7 @@
     type ModelDownloadProgress,
   } from "$lib/utils/localInferenceApi";
   import { startEngine, waitForEngine } from "$lib/utils/providersApi";
-  import { localBrainOnDeviceHint } from "$lib/platformCopy";
+  import { localBrainOnDeviceHint, onThisHostPhrase } from "$lib/platformCopy";
 
   interface Props {
     disabled?: boolean;
@@ -46,7 +46,7 @@
     if (localHardware) {
       return `Idle · ${localHardware.profile.tierLabel} · ${localHardware.profile.recommendedDisplayName}`;
     }
-    return "Optional offline Gemma on this Mac";
+    return `Optional offline Gemma ${onThisHostPhrase()}`;
   });
 
   onMount(() => {

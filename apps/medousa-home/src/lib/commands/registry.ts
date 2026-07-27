@@ -11,6 +11,7 @@ import {
   stepContentZoom,
 } from "$lib/config/contentZoom";
 import { homeChannelSurface, formatShortcut } from "$lib/platform";
+import { onThisHostPhrase } from "$lib/platformCopy";
 import { appUpdate } from "$lib/stores/appUpdate.svelte";
 import { openAppUpdateDownload } from "$lib/utils/appUpdate";
 import { openGuide } from "$lib/guide/openGuide";
@@ -620,7 +621,7 @@ export function buildLibraryCommands(): WorkshopCommand[] {
       run: async (ctx) => {
         const { canUseLocalVaultFilesystem } = await import("$lib/utils/vaultFilesystem");
         if (!canUseLocalVaultFilesystem()) {
-          ctx.error("Open markdown file needs the desktop app on this Mac.");
+          ctx.error(`Open markdown file needs the desktop app ${onThisHostPhrase()}.`);
           return;
         }
         ctx.navigate("library");

@@ -284,6 +284,7 @@
     {#await destinationsMenuMod() then { default: MobileDestinationsMenu }}
       <MobileDestinationsMenu
         open={true}
+        align={layout.mobileTab === "home" ? "end" : "start"}
         onClose={() => layout.setMobileDestinationsMenuOpen(false)}
         onToggleActivity={() => layout.toggleActivitySheet()}
       />

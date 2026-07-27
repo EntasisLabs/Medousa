@@ -1,3 +1,5 @@
+import { thisHostLabel } from "$lib/platformCopy";
+
 export type SettingsSectionId =
   | "preferences"
   | "agent"
@@ -7,16 +9,27 @@ export type SettingsSectionId =
   | "mcp"
   | "basement";
 
-/** Quiet TOC groups — unlabeled app block, then This Mac. */
+/** Quiet TOC groups — unlabeled app block, then this host. */
 export type SettingsSectionGroupId = "app" | "machine";
+
+/** Mobile settings pager order — every section, one at a time with arrows. */
+export const SETTINGS_MOBILE_SECTIONS: SettingsSectionId[] = [
+  "preferences",
+  "agent",
+  "runtime",
+  "network",
+  "packages",
+  "mcp",
+  "basement",
+];
 
 export const SETTINGS_SECTION_GROUPS: {
   id: SettingsSectionGroupId;
-  /** Empty = no header in the rail (top app block). */
+  /** Empty = no header in the rail (top app block). Machine label is dynamic. */
   label: string;
 }[] = [
   { id: "app", label: "" },
-  { id: "machine", label: "This Mac" },
+  { id: "machine", label: "" },
 ];
 
 export type SettingsSectionDef = {
@@ -76,6 +89,7 @@ export function settingsSectionById(id: SettingsSectionId): SettingsSectionDef |
 }
 
 export function settingsGroupLabel(groupId: SettingsSectionGroupId): string {
+  if (groupId === "machine") return thisHostLabel();
   return SETTINGS_SECTION_GROUPS.find((group) => group.id === groupId)?.label ?? groupId;
 }
 

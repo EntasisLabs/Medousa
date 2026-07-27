@@ -12,6 +12,7 @@
   import { loadSpreadsheetPreview } from "$lib/utils/spreadsheetPreviewLoader";
   import type { SpreadsheetPreviewData } from "$lib/utils/spreadsheetPreview";
   import { isCoLocatedWorkshop } from "$lib/utils/workshopLocality";
+  import { hostComputerNoun, onThisHostPhrase } from "$lib/platformCopy";
   import VaultSpreadsheetPreview from "./VaultSpreadsheetPreview.svelte";
 
   interface Props {
@@ -49,8 +50,8 @@
         previewUrl = await attachmentPreviewUrl(current.path);
         if (!previewUrl) {
           previewError = isCoLocatedWorkshop()
-            ? "Preview needs a readable file path on this Mac."
-            : "Preview for linked files is available on the workshop Mac.";
+            ? `Preview needs a readable file path ${onThisHostPhrase()}.`
+            : `Preview for linked files is available on the workshop ${hostComputerNoun()}.`;
         }
       } catch (err) {
         previewError = err instanceof Error ? err.message : String(err);

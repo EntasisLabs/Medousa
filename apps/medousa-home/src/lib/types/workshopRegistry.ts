@@ -3,6 +3,8 @@
  * Design lock for M1; persisted by Tauri as workshops.json (ADR-003).
  */
 
+import { thisHostLabel } from "$lib/platformCopy";
+
 export const WORKSHOP_REGISTRY_VERSION = 1 as const;
 
 /** Reserved id for the default local engine — never removed. */
@@ -279,12 +281,12 @@ export function workshopRemoteAccessNote(
 }
 
 export function workshopHostLabel(url: string, kind: WorkshopKind): string {
-  if (kind === "local") return "This Mac";
+  if (kind === "local") return thisHostLabel();
   if (kind === "peer") return "Peer";
   try {
     const host = new URL(url).hostname.replace(/^www\./, "");
     if (host === "127.0.0.1" || host === "localhost" || host === "::1") {
-      return "This Mac";
+      return thisHostLabel();
     }
     return host;
   } catch {

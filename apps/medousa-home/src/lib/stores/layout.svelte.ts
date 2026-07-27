@@ -493,12 +493,21 @@ export class LayoutStore {
   }
 
   openMore(destination: MoreDestination) {
-    this.moreDestination = destination === ("context" as MoreDestination) ? "map" : destination;
+    const next =
+      destination === ("context" as MoreDestination) ? "map" : destination;
+    // Hub list is gone — "more" is only a host for nested destinations.
+    if (next === "hub") {
+      this.moreDestination = "hub";
+      saveMoreDestination("hub");
+      this.setMobileTab("home", { bump: true });
+      return;
+    }
+    this.moreDestination = next;
     this.mobileTab = "more";
     if (typeof localStorage !== "undefined") {
       localStorage.setItem(MOBILE_TAB_KEY, "more");
     }
-    saveMoreDestination(destination);
+    saveMoreDestination(next);
     this.bumpNavigation();
   }
 
@@ -515,9 +524,11 @@ export class LayoutStore {
     return this.mobileSurfaceOverride ?? defaultHome;
   }
 
+  /** Leave a More destination and return to Home (hub list removed). */
   backToMoreHub() {
     this.moreDestination = "hub";
     saveMoreDestination("hub");
+    this.setMobileTab("home", { bump: true });
   }
 
   setLibraryView(view: LibraryView) {
