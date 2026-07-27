@@ -56,6 +56,12 @@
   padding: 0 0.35rem;
 }
 
+.peers-head-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
 .peers-app-title {
   margin: 0;
   font-size: 1.125rem;
@@ -450,6 +456,31 @@
     inset 0 0 0 1px color-mix(in srgb, rgb(var(--color-primary-400)) 45%, transparent);
 }
 
+.peers-bubble-review {
+  box-shadow:
+    0 1px 0 rgb(0 0 0 / 0.12),
+    inset 0 0 0 1px color-mix(in srgb, rgb(var(--color-warning-400, 251 191 36)) 55%, transparent);
+}
+
+.peers-bubble-bring {
+  box-shadow:
+    0 1px 0 rgb(0 0 0 / 0.12),
+    inset 0 0 0 1px color-mix(in srgb, rgb(var(--color-success-400, 74 222 128)) 50%, transparent);
+}
+
+.peers-bubble-kind {
+  margin: 0 0 0.2rem;
+  font-size: 0.625rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgb(var(--color-warning-300, 253 224 71));
+}
+
+.peers-bubble-kind--bring {
+  color: rgb(var(--color-success-300, 134 239 172));
+}
+
 .peers-bubble-body {
   margin: 0;
   font-size: 0.9rem;
@@ -740,14 +771,17 @@
   color: rgb(var(--color-surface-300));
 }
 
-.peers-lan-toggle {
+.peers-network-status {
   display: flex;
-  align-items: center;
-  gap: 0.45rem;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.65rem;
   margin: 0.65rem 0 0.35rem;
-  font-size: 0.75rem;
-  color: rgb(var(--color-surface-200));
-  cursor: pointer;
+}
+
+.peers-network-status .peers-sheet-lead {
+  margin: 0;
+  flex: 1 1 auto;
 }
 
 .peers-field input {

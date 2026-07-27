@@ -1,10 +1,20 @@
 <script lang="ts">
-  import { ChevronLeft, ChevronRight, Download, Plus, Upload } from "@lucide/svelte";
+  import {
+    CalendarDays,
+    ChevronLeft,
+    ChevronRight,
+    Download,
+    ListTodo,
+    Plus,
+    Upload,
+  } from "@lucide/svelte";
   import EventEditor from "$lib/components/calendar/EventEditor.svelte";
+  import ReminderComposer from "$lib/components/calendar/ReminderComposer.svelte";
   import ShellSidebarExpandButton from "$lib/components/layout/ShellSidebarExpandButton.svelte";
   import { registerMobileBackHandler } from "$lib/mobileNavigation";
   import { calendar, calendarDateUtils } from "$lib/stores/calendar.svelte";
   import type { CalendarEvent } from "$lib/types/calendar";
+  import { pollCalendarAlarms } from "$lib/utils/calendarAlarms";
   import { onMount } from "svelte";
 
   interface Props {
@@ -21,6 +31,10 @@
 
   onMount(() => {
     void calendar.refresh();
+    const timer = setInterval(() => {
+      void pollCalendarAlarms(calendar.events);
+    }, 60_000);
+    return () => clearInterval(timer);
   });
 
   $effect(() => {
@@ -47,8 +61,8 @@
 
   const weekdayLabels = $derived(
     mobile
-      ? ["M", "T", "W", "T", "F", "S", "S"]
-      : ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+      ? ["S", "M", "T", "W", "T", "F", "S"]
+      : ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
   );
 
   const monthCells = $derived.by(() => {
@@ -63,6 +77,7 @@
   });
 
   const dayEvents = $derived(calendar.eventsForDay(calendar.selectedDay));
+  const dayReminders = $derived(calendar.remindersForDay(calendar.selectedDay));
 
   const monthTitle = $derived(
     calendar.anchor.toLocaleDateString(undefined, { month: "long", year: "numeric" }),
@@ -140,7 +155,9 @@
 >
   <header class="calendar-chrome">
     <div class="calendar-chrome-left">
-      <ShellSidebarExpandButton label="Show rail" />
+      {#if !mobile}
+        <ShellSidebarExpandButton label="Show rail" />
+      {/if}
       <h1 class="calendar-month-title">{rangeTitle}</h1>
     </div>
 
@@ -200,15 +217,40 @@
       >
         <Download size={15} strokeWidth={1.75} />
       </button>
-      <button
-        type="button"
-        class="calendar-icon-btn calendar-icon-btn-accent"
-        onclick={() => calendar.openCreate(calendar.selectedDay)}
-        aria-label="New event"
-        title="New event"
-      >
-        <Plus size={16} strokeWidth={2} />
-      </button>
+      <div class="calendar-create-wrap">
+        <button
+          type="button"
+          class="calendar-icon-btn calendar-icon-btn-accent"
+          onclick={() => calendar.openCreateMenu()}
+          aria-label="Create"
+          title="Create"
+          aria-expanded={calendar.createMenuOpen}
+        >
+          <Plus size={16} strokeWidth={2} />
+        </button>
+        {#if calendar.createMenuOpen}
+          <div class="calendar-create-menu" role="menu">
+            <button
+              type="button"
+              role="menuitem"
+              class="calendar-create-item"
+              onclick={() => calendar.openCreate(calendar.selectedDay)}
+            >
+              <CalendarDays size={15} strokeWidth={1.75} />
+              New Event
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              class="calendar-create-item"
+              onclick={() => calendar.openCreateReminder(calendar.selectedDay)}
+            >
+              <ListTodo size={15} strokeWidth={1.75} />
+              New Reminder
+            </button>
+          </div>
+        {/if}
+      </div>
     </div>
 
     <input
@@ -246,6 +288,8 @@
             {@const selected = isSameDay(day, calendar.selectedDay)}
             {@const today = isToday(day)}
             {@const events = calendar.eventsForDay(day)}
+            {@const reminders = calendar.remindersForDay(day)}
+            {@const visibleCount = events.length + reminders.length}
             <div
               class="calendar-cell"
               class:calendar-cell-out={!inMonth}
@@ -255,7 +299,8 @@
               onclick={() => {
                 const already = isSameDay(day, calendar.selectedDay);
                 calendar.selectDay(day);
-                if (mobile && already) calendar.openCreate(day);
+                calendar.closeCreateMenu();
+                if (mobile && already) calendar.openCreateMenu();
               }}
               ondblclick={() => {
                 if (!mobile) calendar.openCreate(day);
@@ -272,13 +317,30 @@
               </span>
               {#if mobile}
                 <div class="calendar-cell-dots" aria-hidden="true">
-                  {#each events.slice(0, 3) as event (eventKey(event))}
+                  {#each reminders.slice(0, 1) as reminder (reminder.id)}
+                    <i class="calendar-cell-dot calendar-cell-dot-reminder"></i>
+                  {/each}
+                  {#each events.slice(0, 3 - Math.min(1, reminders.length)) as event (eventKey(event))}
                     <i class="calendar-cell-dot" class:calendar-cell-dot-allday={event.all_day}></i>
                   {/each}
                 </div>
               {:else}
                 <div class="calendar-cell-events">
-                  {#each events.slice(0, 3) as event (eventKey(event))}
+                  {#each reminders.slice(0, 2) as reminder (reminder.id)}
+                    <button
+                      type="button"
+                      class="calendar-dot-event calendar-reminder-chip"
+                      title={`Reminder · ${reminder.title}`}
+                      onclick={(e) => {
+                        e.stopPropagation();
+                        void calendar.completeReminder(reminder, true);
+                      }}
+                    >
+                      <i class="calendar-reminder-check" aria-hidden="true"></i>
+                      <span class="calendar-dot-label">{reminder.title}</span>
+                    </button>
+                  {/each}
+                  {#each events.slice(0, Math.max(0, 3 - Math.min(2, reminders.length))) as event (eventKey(event))}
                     <button
                       type="button"
                       class="calendar-dot-event"
@@ -295,8 +357,8 @@
                       <span class="calendar-dot-label">{event.summary}</span>
                     </button>
                   {/each}
-                  {#if events.length > 3}
-                    <span class="calendar-cell-more">{events.length - 3} more</span>
+                  {#if visibleCount > 3}
+                    <span class="calendar-cell-more">{visibleCount - 3} more</span>
                   {/if}
                 </div>
               {/if}
@@ -305,7 +367,7 @@
         </div>
       </div>
 
-      {#if mobile || dayEvents.length > 0}
+      {#if mobile || dayEvents.length > 0 || dayReminders.length > 0}
         <section class="calendar-day-strip">
           <div class="calendar-day-strip-head">
             <h2 class="calendar-day-strip-title">
@@ -319,17 +381,30 @@
               <button
                 type="button"
                 class="calendar-day-strip-add"
-                onclick={() => calendar.openCreate(calendar.selectedDay)}
+                onclick={() => calendar.openCreateMenu()}
               >
                 <Plus size={14} strokeWidth={2} />
                 Add
               </button>
             {/if}
           </div>
-          {#if dayEvents.length === 0}
+          {#if dayEvents.length === 0 && dayReminders.length === 0}
             <p class="calendar-day-strip-empty">Nothing scheduled</p>
           {:else}
             <ul class="calendar-agenda">
+              {#each dayReminders as reminder (reminder.id)}
+                <li>
+                  <button
+                    type="button"
+                    class="calendar-agenda-row calendar-agenda-reminder"
+                    onclick={() => void calendar.completeReminder(reminder, true)}
+                  >
+                    <span class="calendar-agenda-time">Due</span>
+                    <i class="calendar-reminder-check" aria-hidden="true"></i>
+                    <span class="calendar-agenda-title">{reminder.title}</span>
+                  </button>
+                </li>
+              {/each}
               {#each dayEvents as event (eventKey(event))}
                 <li>
                   <button
@@ -351,6 +426,7 @@
       <div class="calendar-week">
         {#each weekDays as day (isoDay(day))}
           {@const events = calendar.eventsForDay(day)}
+          {@const reminders = calendar.remindersForDay(day)}
           {@const today = isToday(day)}
           {@const selected = isSameDay(day, calendar.selectedDay)}
           <div
@@ -363,7 +439,7 @@
               onclick={() => {
                 const already = isSameDay(day, calendar.selectedDay);
                 calendar.selectDay(day);
-                if (mobile && already) calendar.openCreate(day);
+                if (mobile && already) calendar.openCreateMenu();
               }}
               ondblclick={() => {
                 if (!mobile) calendar.openCreate(day);
@@ -377,6 +453,17 @@
               >
             </button>
             <div class="calendar-week-body">
+              {#each reminders as reminder (reminder.id)}
+                <button
+                  type="button"
+                  class="calendar-dot-event calendar-dot-event-block calendar-reminder-chip"
+                  onclick={() => void calendar.completeReminder(reminder, true)}
+                >
+                  <i class="calendar-reminder-check" aria-hidden="true"></i>
+                  <span class="calendar-dot-meta">Due</span>
+                  <span class="calendar-dot-label">{reminder.title}</span>
+                </button>
+              {/each}
               {#each events as event (eventKey(event))}
                 <button
                   type="button"
@@ -397,21 +484,37 @@
       </div>
     {:else}
       <div class="calendar-day-view">
-        {#if dayEvents.length === 0}
+        {#if dayEvents.length === 0 && dayReminders.length === 0}
           <div class="calendar-day-empty">
             <p class="calendar-day-empty-title">Nothing today</p>
-            <p class="calendar-day-empty-copy">Tap + to add something.</p>
+            <p class="calendar-day-empty-copy">Tap + for an event or reminder.</p>
             <button
               type="button"
               class="calendar-ghost-add"
-              onclick={() => calendar.openCreate(calendar.selectedDay)}
+              onclick={() => calendar.openCreateMenu()}
             >
               <Plus size={14} strokeWidth={2} />
-              New event
+              Add
             </button>
           </div>
         {:else}
           <ul class="calendar-agenda calendar-agenda-spacious">
+            {#each dayReminders as reminder (reminder.id)}
+              <li>
+                <button
+                  type="button"
+                  class="calendar-agenda-row calendar-agenda-reminder"
+                  onclick={() => void calendar.completeReminder(reminder, true)}
+                >
+                  <span class="calendar-agenda-time">Due</span>
+                  <i class="calendar-reminder-check" aria-hidden="true"></i>
+                  <div class="min-w-0 flex-1 text-left">
+                    <div class="calendar-agenda-title">{reminder.title}</div>
+                    <div class="calendar-agenda-sub">Tap to complete</div>
+                  </div>
+                </button>
+              </li>
+            {/each}
             {#each dayEvents as event (eventKey(event))}
               <li>
                 <button
@@ -436,6 +539,15 @@
     {/if}
   </div>
 
+  {#if calendar.createMenuOpen}
+    <button
+      type="button"
+      class="calendar-create-scrim"
+      aria-label="Dismiss create menu"
+      onclick={() => calendar.closeCreateMenu()}
+    ></button>
+  {/if}
+
   {#if calendar.editorOpen}
     <EventEditor
       event={calendar.editing}
@@ -450,6 +562,9 @@
           dtstart: payload.dtstart,
           dtend: payload.dtend,
           all_day: payload.all_day,
+          rrule: payload.rrule,
+          note_path: payload.note_path,
+          alarms: payload.alarms,
         });
       }}
       onDelete={calendar.editing
@@ -457,6 +572,13 @@
             if (calendar.editing) await calendar.removeEvent(calendar.editing.uid);
           }
         : undefined}
+    />
+  {/if}
+
+  {#if calendar.reminderComposerOpen}
+    <ReminderComposer
+      {mobile}
+      onClose={() => calendar.closeReminderComposer()}
     />
   {/if}
 </div>
@@ -529,6 +651,51 @@
     align-items: center;
     gap: 0.2rem;
     margin-left: auto;
+  }
+
+  .calendar-create-wrap {
+    position: relative;
+  }
+
+  .calendar-create-menu {
+    position: absolute;
+    top: calc(100% + 0.35rem);
+    right: 0;
+    z-index: 45;
+    display: flex;
+    min-width: 11.5rem;
+    flex-direction: column;
+    gap: 0.15rem;
+    border-radius: 0.7rem;
+    border: 1px solid rgb(var(--shell-border) / 0.65);
+    background: color-mix(in srgb, rgb(var(--shell-pane-bg)) 92%, transparent);
+    padding: 0.35rem;
+    box-shadow: 0 16px 40px rgb(0 0 0 / 0.4);
+    backdrop-filter: blur(18px);
+  }
+
+  .calendar-create-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    border-radius: 0.45rem;
+    padding: 0.45rem 0.55rem;
+    font-size: 0.8125rem;
+    font-weight: 550;
+    color: rgb(var(--color-surface-100));
+    text-align: left;
+  }
+
+  .calendar-create-item:hover {
+    background: rgb(var(--color-surface-800) / 0.75);
+  }
+
+  .calendar-create-scrim {
+    position: absolute;
+    inset: 0;
+    z-index: 35;
+    border: 0;
+    background: transparent;
   }
 
   .calendar-nav-group {
@@ -631,12 +798,12 @@
 
   .calendar-cell {
     position: relative;
-    min-height: 6.25rem;
+    min-height: 7rem;
     display: flex;
     flex-direction: column;
     align-items: stretch;
-    gap: 0.2rem;
-    padding: 0.35rem 0.35rem 0.4rem;
+    gap: 0.15rem;
+    padding: 0.3rem 0.3rem 0.35rem;
     text-align: left;
     border-right: 1px solid rgb(var(--shell-border) / 0.55);
     border-bottom: 1px solid rgb(var(--shell-border) / 0.55);
@@ -713,12 +880,40 @@
   }
 
   .calendar-pill-event {
-    background: rgb(var(--color-primary-500) / 0.22);
-    color: rgb(var(--color-primary-100));
+    background: rgb(var(--color-primary-500) / 0.28);
+    color: rgb(var(--color-primary-50));
+    border-radius: 0.35rem;
   }
 
   .calendar-pill-event:hover {
-    background: rgb(var(--color-primary-500) / 0.3);
+    background: rgb(var(--color-primary-500) / 0.38);
+  }
+
+  .calendar-reminder-chip {
+    background: rgb(var(--color-secondary-500) / 0.18);
+    color: rgb(var(--color-secondary-100));
+  }
+
+  .calendar-reminder-chip:hover {
+    background: rgb(var(--color-secondary-500) / 0.28);
+  }
+
+  .calendar-reminder-check {
+    display: inline-block;
+    width: 0.65rem;
+    height: 0.65rem;
+    flex-shrink: 0;
+    border-radius: 0.2rem;
+    border: 1.5px solid rgb(var(--color-secondary-300) / 0.85);
+    background: transparent;
+  }
+
+  .calendar-cell-dot-reminder {
+    background: rgb(var(--color-secondary-400)) !important;
+  }
+
+  .calendar-agenda-reminder .calendar-agenda-title {
+    color: rgb(var(--color-secondary-100));
   }
 
   .calendar-dot-bar,

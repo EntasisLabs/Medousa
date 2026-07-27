@@ -1,6 +1,7 @@
 import { chat } from "$lib/stores/chat.svelte";
 import { browserHistory } from "$lib/stores/browserHistory.svelte";
 import { humanBrowser } from "$lib/stores/humanBrowser.svelte";
+import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
 import { vault } from "$lib/stores/vault.svelte";
 import { workspace } from "$lib/stores/workspace.svelte";
 import { fuzzyMatchVaultNotes } from "$lib/utils/vaultFuzzyMatch";
@@ -43,8 +44,7 @@ export function buildNoteOpenCommands(
       subtitle: note.path,
       keywords: `note vault ${note.path} ${title}`,
       run: async (runCtx) => {
-        runCtx.navigate("library");
-        await runCtx.vault.openNote(note.path);
+        await lmeWorkspace.openNote(note.path);
         runCtx.callbacks.close();
       },
     };

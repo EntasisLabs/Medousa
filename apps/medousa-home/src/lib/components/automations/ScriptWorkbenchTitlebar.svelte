@@ -93,16 +93,15 @@
     graphemeScriptEditor.compileBusy = true;
     graphemeScriptEditor.compileError = null;
     graphemeScriptEditor.compileResult = null;
+    onOpenOutput?.();
     try {
       graphemeScriptEditor.compileResult = await compileGraphemeSource(
         tab.body,
         mode,
       );
-      onOpenOutput?.();
     } catch (err) {
       graphemeScriptEditor.compileError =
         err instanceof Error ? err.message : String(err);
-      onOpenOutput?.();
     } finally {
       graphemeScriptEditor.compileBusy = false;
     }
@@ -111,9 +110,9 @@
   async function runActive() {
     const tab = graphemeScriptEditor.activeTab;
     if (!tab?.body.trim()) return;
+    onOpenOutput?.();
     await workshop.runScriptSource(tab.body);
     graphemeScriptEditor.runError = workshop.runError;
-    onOpenOutput?.();
   }
 
   function handleWorkbenchKeydown(event: KeyboardEvent) {
@@ -154,12 +153,34 @@
       void closeActiveScriptTab();
     }
   }
+
+  $effect(() => {
+    if (!mobile) return;
+    const onSave = () => void saveActive();
+    const onRun = () => void runActive();
+    const onCompile = () => void compileActive("check");
+    const onFlow = () => addActiveScriptToFlow();
+    const onOutput = () => onToggleConsole();
+    window.addEventListener("medousa-mobile-script-save", onSave);
+    window.addEventListener("medousa-mobile-script-run", onRun);
+    window.addEventListener("medousa-mobile-script-compile", onCompile);
+    window.addEventListener("medousa-mobile-script-add-flow", onFlow);
+    window.addEventListener("medousa-mobile-script-output", onOutput);
+    return () => {
+      window.removeEventListener("medousa-mobile-script-save", onSave);
+      window.removeEventListener("medousa-mobile-script-run", onRun);
+      window.removeEventListener("medousa-mobile-script-compile", onCompile);
+      window.removeEventListener("medousa-mobile-script-add-flow", onFlow);
+      window.removeEventListener("medousa-mobile-script-output", onOutput);
+    };
+  });
 </script>
 
 <svelte:window onkeydown={handleWorkbenchKeydown} />
 
+{#if !mobile}
 <div class="scripts-workbench-titlebar relative z-40 flex shrink-0 items-center gap-1 border-b border-surface-500/35 px-1 py-0.5">
-  {#if !mobile && !leftOpen}
+  {#if !leftOpen}
     <button
       type="button"
       class="scripts-workbench-toolbar-btn shrink-0"
@@ -237,43 +258,31 @@
 
     <GraphemeModuleLibraryPicker />
 
-    {#if mobile}
-      <button
-        type="button"
-        class="scripts-workbench-toolbar-btn {consoleOpen ? 'scripts-workbench-toolbar-btn-active' : ''}"
-        title="Output"
-        aria-label="Show output"
-        onclick={onToggleConsole}
-      >
-        <Terminal size={15} strokeWidth={1.75} />
-      </button>
-    {:else}
-      <span class="mx-0.5 h-4 w-px shrink-0 bg-surface-500/40" aria-hidden="true"></span>
-      <button
-        type="button"
-        class="scripts-workbench-toolbar-btn {consoleOpen ? 'scripts-workbench-toolbar-btn-active' : ''}"
-        title="{consoleOpen ? 'Hide' : 'Show'} output"
-        aria-label="{consoleOpen ? 'Hide' : 'Show'} output panel"
-        aria-pressed={consoleOpen}
-        onclick={onToggleConsole}
-      >
-        <Terminal size={15} strokeWidth={1.75} />
-      </button>
-      <button
-        type="button"
-        class="scripts-workbench-toolbar-btn {chatOpen ? 'scripts-workbench-toolbar-btn-active' : ''}"
-        title="{chatOpen ? 'Hide' : 'Show'} chat"
-        aria-label="{chatOpen ? 'Hide' : 'Show'} script chat"
-        aria-pressed={chatOpen}
-        onclick={onToggleChat}
-      >
-        {#if chatOpen}
-          <PanelRightClose size={15} strokeWidth={1.75} />
-        {:else}
-          <MessageSquare size={15} strokeWidth={1.75} />
-        {/if}
-      </button>
-    {/if}
+    <span class="mx-0.5 h-4 w-px shrink-0 bg-surface-500/40" aria-hidden="true"></span>
+    <button
+      type="button"
+      class="scripts-workbench-toolbar-btn {consoleOpen ? 'scripts-workbench-toolbar-btn-active' : ''}"
+      title="{consoleOpen ? 'Hide' : 'Show'} output"
+      aria-label="{consoleOpen ? 'Hide' : 'Show'} output panel"
+      aria-pressed={consoleOpen}
+      onclick={onToggleConsole}
+    >
+      <Terminal size={15} strokeWidth={1.75} />
+    </button>
+    <button
+      type="button"
+      class="scripts-workbench-toolbar-btn {chatOpen ? 'scripts-workbench-toolbar-btn-active' : ''}"
+      title="{chatOpen ? 'Hide' : 'Show'} chat"
+      aria-label="{chatOpen ? 'Hide' : 'Show'} script chat"
+      aria-pressed={chatOpen}
+      onclick={onToggleChat}
+    >
+      {#if chatOpen}
+        <PanelRightClose size={15} strokeWidth={1.75} />
+      {:else}
+        <MessageSquare size={15} strokeWidth={1.75} />
+      {/if}
+    </button>
   </div>
 </div>
 
@@ -281,4 +290,5 @@
   <p class="shrink-0 border-b border-surface-500/35 px-3 py-1 text-[10px] text-error-400">
     {flowError}
   </p>
+{/if}
 {/if}

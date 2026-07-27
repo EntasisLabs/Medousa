@@ -137,7 +137,7 @@
         <p class="flow-liquid-whisper">Steps</p>
 
         {#if draft.steps.length === 0}
-          <p class="flow-spine-empty">Add a step from the toolbar, or choose a recipe.</p>
+          <p class="flow-spine-empty">Add a step from the top bar, or choose a recipe.</p>
         {:else}
           <ol class="flow-spine">
             {#each draft.steps as step, index (step.id)}

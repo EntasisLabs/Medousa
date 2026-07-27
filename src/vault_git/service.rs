@@ -21,7 +21,7 @@ pub fn ensure_enabled() -> Result<()> {
     if vault_git_enabled() {
         Ok(())
     } else {
-        bail!("Versions is off — enable it in Settings → Versions")
+        bail!("Versions is off — enable it in Settings → Runtime Controls")
     }
 }
 

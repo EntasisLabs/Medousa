@@ -2,7 +2,17 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Capability for the main window",
-  "windows": ["main", "main-browser-content", "chat-popout", "vault-sticky", "browser"],
+  "platforms": ["linux", "macOS", "windows"],
+  "windows": [
+    "main",
+    "main-browser-content",
+    "chat-popout",
+    "vault-sticky",
+    "browser",
+    "desktop-toolbar",
+    "view-popout",
+    "guide"
+  ],
   "permissions": [
     "core:default",
     "core:window:allow-close",
@@ -10,8 +20,24 @@
     "core:window:allow-toggle-maximize",
     "core:window:allow-start-dragging",
     "core:window:allow-is-maximized",
+    "core:window:allow-set-size",
+    "core:webview:allow-set-webview-zoom",
     "dialog:default",
     "opener:default",
+    {
+      "identifier": "opener:allow-open-path",
+      "allow": [
+        { "path": "$HOME/**" },
+        { "path": "$APPDATA/**" },
+        { "path": "$APPCONFIG/**" },
+        { "path": "$CONFIG/**" },
+        { "path": "$DOCUMENT/**" },
+        { "path": "$DOWNLOAD/**" },
+        { "path": "$DESKTOP/**" },
+        { "path": "$TEMP/**" },
+        { "path": "/tmp/**" }
+      ]
+    },
     "notification:default",
     "mobile-push:default",
     "deep-link:default",

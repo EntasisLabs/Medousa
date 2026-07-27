@@ -13,7 +13,7 @@
     quiet?: boolean;
     /** Icon buttons with tooltips (dock / chrome). */
     icons?: boolean;
-    /** Rail popover dock: only the short verb set (Recent + Tags). */
+    /** Rail popover dock: Recent + Folders + Tags (Kind stays on full library chrome). */
     rail?: boolean;
   }
 
@@ -32,7 +32,12 @@
 
   const modes = $derived(
     rail
-      ? allModes.filter((mode) => mode.id === "recent" || mode.id === "tags")
+      ? allModes.filter(
+          (mode) =>
+            mode.id === "recent" ||
+            mode.id === "folders" ||
+            mode.id === "tags",
+        )
       : allModes,
   );
 

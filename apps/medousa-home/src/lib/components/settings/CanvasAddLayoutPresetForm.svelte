@@ -16,7 +16,9 @@
       presets.find((preset) => preset.id === environment.spec?.activePresetId) ??
       null,
   );
-  const customPresets = $derived(presets.filter((preset) => !isBuiltinLayoutPreset(preset.id)));
+  const canDeleteActive = $derived(
+    Boolean(activePreset && !isBuiltinLayoutPreset(activePreset.id)),
+  );
 
   async function submit() {
     error = null;
@@ -32,11 +34,12 @@
     }
   }
 
-  async function removePreset(presetId: string) {
+  async function removeActive() {
+    if (!activePreset || !canDeleteActive) return;
     error = null;
     deleteBusy = true;
     try {
-      await environment.removeLayoutPreset(presetId);
+      await environment.removeLayoutPreset(activePreset.id);
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
     } finally {
@@ -46,9 +49,23 @@
 </script>
 
 <div class="canvas-add-layout">
-  <button type="button" class="canvas-add-layout-toggle" onclick={() => (open = !open)}>
-    {open ? "Cancel" : "+ New layout"}
-  </button>
+  <div class="canvas-add-layout-bar">
+    <button type="button" class="canvas-add-layout-toggle" onclick={() => (open = !open)}>
+      {open ? "Cancel" : "+ New"}
+    </button>
+    {#if canDeleteActive}
+      <button
+        type="button"
+        class="canvas-add-layout-delete"
+        title="Delete this layout"
+        aria-label="Delete {activePreset?.label ?? "layout"}"
+        disabled={busy || deleteBusy}
+        onclick={() => void removeActive()}
+      >
+        <Trash2 size={13} strokeWidth={2} aria-hidden="true" />
+      </button>
+    {/if}
+  </div>
 
   {#if open}
     <form
@@ -59,7 +76,7 @@
       }}
     >
       <p class="canvas-add-layout-lead">
-        Saves the current nav destinations as a new layout and switches to it. Start from
+        Saves the current rail destinations as a new layout from
         {presetDisplayLabel(activePreset?.id ?? "default", activePreset?.label)}.
       </p>
 
@@ -86,66 +103,72 @@
         {busy ? "Creating…" : "Create layout"}
       </button>
     </form>
-  {/if}
-
-  {#if customPresets.length > 0}
-    <ul class="canvas-custom-layout-list">
-      {#each customPresets as preset (preset.id)}
-        {@const isActive = preset.id === activePreset?.id}
-        <li class="canvas-custom-layout-row">
-          <span class="canvas-custom-layout-label">
-            {presetDisplayLabel(preset.id, preset.label)}
-            {#if isActive}
-              <span class="canvas-custom-layout-active">Active</span>
-            {/if}
-          </span>
-          {#if !isActive}
-            <button
-              type="button"
-              class="canvas-custom-layout-delete"
-              title="Delete layout"
-              aria-label="Delete {preset.label}"
-              disabled={busy || deleteBusy}
-              onclick={() => void removePreset(preset.id)}
-            >
-              <Trash2 size={14} strokeWidth={2} />
-            </button>
-          {/if}
-        </li>
-      {/each}
-    </ul>
+  {:else if error}
+    <p class="canvas-form-error">{error}</p>
   {/if}
 </div>
 
 <style>
   .canvas-add-layout {
-    margin-top: 0.75rem;
+    margin-top: 0;
+  }
+
+  .canvas-add-layout-bar {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
   }
 
   .canvas-add-layout-toggle {
-    border: 1px solid color-mix(in srgb, var(--color-primary-500) 40%, transparent);
-    border-radius: 0.5rem;
-    padding: 0.4rem 0.65rem;
+    border: 0;
+    padding: 0.15rem 0;
     font-size: 0.75rem;
-    color: rgb(var(--color-primary-100));
-    background: color-mix(in srgb, var(--color-primary-500) 10%, transparent);
+    font-weight: 550;
+    color: rgb(var(--color-primary-400));
+    background: transparent;
     cursor: pointer;
+  }
+
+  .canvas-add-layout-toggle:hover {
+    color: rgb(var(--color-primary-300));
+  }
+
+  .canvas-add-layout-delete {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    border-radius: 0.3rem;
+    padding: 0.2rem;
+    color: rgb(var(--color-surface-500));
+    background: transparent;
+    cursor: pointer;
+  }
+
+  .canvas-add-layout-delete:hover:not(:disabled) {
+    color: rgb(var(--color-error-300));
+    background: color-mix(in srgb, var(--color-error-600) 10%, transparent);
+  }
+
+  .canvas-add-layout-delete:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
   }
 
   .canvas-add-layout-form {
     display: grid;
-    gap: 0.65rem;
-    margin-top: 0.75rem;
-    padding: 0.85rem;
-    border-radius: 0.75rem;
+    gap: 0.5rem;
+    margin-top: 0.55rem;
+    padding: 0.65rem;
+    border-radius: 0.55rem;
     border: 1px solid color-mix(in srgb, var(--color-surface-600) 45%, transparent);
     background: color-mix(in srgb, var(--color-surface-900) 35%, transparent);
   }
 
   .canvas-add-layout-lead {
     margin: 0;
-    font-size: 0.75rem;
-    line-height: 1.45;
+    font-size: 0.6875rem;
+    line-height: 1.35;
     color: rgb(var(--color-surface-400));
   }
 
@@ -169,64 +192,8 @@
   }
 
   .canvas-form-error {
-    margin: 0;
+    margin: 0.35rem 0 0;
     font-size: 0.75rem;
     color: rgb(var(--color-error-300));
-  }
-
-  .canvas-custom-layout-list {
-    list-style: none;
-    margin: 0.65rem 0 0;
-    padding: 0;
-    display: grid;
-    gap: 0.35rem;
-  }
-
-  .canvas-custom-layout-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.5rem;
-    padding: 0.35rem 0.45rem;
-    border-radius: 0.45rem;
-    background: color-mix(in srgb, var(--color-surface-900) 35%, transparent);
-  }
-
-  .canvas-custom-layout-label {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.4rem;
-    font-size: 0.75rem;
-    color: rgb(var(--color-surface-300));
-  }
-
-  .canvas-custom-layout-active {
-    font-size: 0.625rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: rgb(var(--color-primary-300));
-  }
-
-  .canvas-custom-layout-delete {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    border: 0;
-    border-radius: 0.35rem;
-    padding: 0.25rem;
-    color: rgb(var(--color-surface-500));
-    background: transparent;
-    cursor: pointer;
-  }
-
-  .canvas-custom-layout-delete:hover:not(:disabled) {
-    color: rgb(var(--color-error-300));
-    background: color-mix(in srgb, var(--color-error-600) 10%, transparent);
-  }
-
-  .canvas-custom-layout-delete:disabled {
-    opacity: 0.45;
-    cursor: not-allowed;
   }
 </style>

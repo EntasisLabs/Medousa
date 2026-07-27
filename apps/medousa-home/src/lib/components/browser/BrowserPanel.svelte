@@ -1,6 +1,5 @@
 <script lang="ts">
   import { onMount, tick } from "svelte";
-  import { ArrowLeft, ArrowRight, Layers, RefreshCw, Square } from "@lucide/svelte";
   import HumanBrowserUrlBar from "$lib/components/browser/HumanBrowserUrlBar.svelte";
   import BrowserChromeActions from "$lib/components/browser/BrowserChromeActions.svelte";
   import BrowserControlHandoff from "$lib/components/browser/BrowserControlHandoff.svelte";
@@ -112,13 +111,20 @@
     const onUrlBlur = () => {
       void refreshEmbedAfterUrlBlur();
     };
+    const onChromeTabs = (event: Event) => {
+      const detail = (event as CustomEvent<{ anchorRect?: DOMRect | null }>).detail;
+      tabsAnchorRect = detail?.anchorRect ?? null;
+      tabsOpen = true;
+    };
 
+    window.addEventListener("medousa-mobile-browser-tabs", onChromeTabs);
     if (useNative) {
       window.addEventListener("medousa-browser-url-focus", onUrlFocus);
       window.addEventListener("medousa-browser-url-blur", onUrlBlur);
     }
 
     return () => {
+      window.removeEventListener("medousa-mobile-browser-tabs", onChromeTabs);
       if (useNative) {
         window.removeEventListener("medousa-browser-url-focus", onUrlFocus);
         window.removeEventListener("medousa-browser-url-blur", onUrlBlur);
@@ -152,7 +158,6 @@
 
   let tabsOpen = $state(false);
   let tabsAnchorRect = $state<DOMRect | null>(null);
-  let tabsAnchorEl = $state<HTMLButtonElement | null>(null);
   let toastMessage = $state<string | null>(null);
   let toastActionLabel = $state<string | undefined>(undefined);
   let toastAction = $state<(() => void) | undefined>(undefined);
@@ -213,78 +218,19 @@
     <div
       bind:this={bottomChromeEl}
       data-browser-bottom-chrome
-      class="mobile-browser-bottom-chrome {useNative
-        ? 'inset-x-0 border-t-0'
-        : 'shrink-0 border-t border-surface-800/80'} bg-surface-950/95 backdrop-blur-md"
+      class="mobile-browser-bottom-chrome"
     >
       <BrowserCaptchaBanner compact={true} />
       <BrowserControlHandoff />
       <BrowserFindBar />
-      <div data-browser-controls class="flex items-center gap-1 overflow-x-auto">
-        <button
-          bind:this={tabsAnchorEl}
-          type="button"
-          class="btn btn-icon btn-sm shrink-0"
-          aria-label="Tabs"
-          title="Tabs"
-          data-browser-popover-trigger
-          aria-expanded={tabsOpen}
-          onclick={(event) => {
-            event.stopPropagation();
-            if (!tabsOpen) {
-              tabsAnchorRect = tabsAnchorEl?.getBoundingClientRect() ?? null;
-            }
-            tabsOpen = !tabsOpen;
-          }}
-        >
-          <Layers size={18} />
-        </button>
-        <button
-          type="button"
-          class="btn btn-icon btn-sm shrink-0"
-          aria-label="Back"
-          disabled={!humanBrowser.canGoBack}
-          onclick={() => void humanBrowser.goBack()}
-        >
-          <ArrowLeft size={18} />
-        </button>
-        <button
-          type="button"
-          class="btn btn-icon btn-sm shrink-0"
-          aria-label="Forward"
-          disabled={!humanBrowser.canGoForward}
-          onclick={() => void humanBrowser.goForward()}
-        >
-          <ArrowRight size={18} />
-        </button>
-        {#if humanBrowser.loading}
-          <button
-            type="button"
-            class="btn btn-icon btn-sm shrink-0"
-            aria-label="Stop loading"
-            onclick={() => void humanBrowser.stop()}
-          >
-            <Square size={12} strokeWidth={2.25} />
-          </button>
-        {:else}
-          <button
-            type="button"
-            class="btn btn-icon btn-sm shrink-0"
-            aria-label="Reload"
-            onclick={() => void reloadView()}
-          >
-            <RefreshCw size={18} />
-          </button>
-        {/if}
-        <div class="flex min-w-0 flex-1 items-center gap-1">
-          <HumanBrowserUrlBar mobile />
-          <BrowserChromeActions
-            mobile
-            onReload={() => reloadView()}
-            onMobileToast={(message, actionLabel, onAction) =>
-              showMobileToast(message, actionLabel, onAction)}
-          />
-        </div>
+      <div data-browser-controls class="mobile-browser-url-row">
+        <HumanBrowserUrlBar mobile />
+        <BrowserChromeActions
+          mobile
+          onReload={() => reloadView()}
+          onMobileToast={(message, actionLabel, onAction) =>
+            showMobileToast(message, actionLabel, onAction)}
+        />
       </div>
     </div>
 

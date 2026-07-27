@@ -17,6 +17,7 @@ import {
   type ShellDesktopLayout,
   type ShellTab,
   type SplitDirection,
+  type SplitEdge,
   type SplitNode,
 } from "$lib/types/shellTabs";
 import type { Surface } from "$lib/types/ui";
@@ -32,14 +33,20 @@ import {
   collectGroupIds,
   countLeaves,
   leafOrder,
+  mergeTargetForLeaf,
   migrateV1ToSplitRoot,
   neighborInDirection,
   newSplitId,
   removeLeaf,
   setBranchRatio,
   splitLeaf,
+  splitLeafAtEdge,
   type FocusDir,
 } from "$lib/utils/shellSplitTree";
+import {
+  titleOfTab,
+  type ShellTabSearchHit,
+} from "$lib/utils/shellTabSearch";
 
 const MAX_TABS = 16;
 const MAIN_GROUP_ID = "main";
@@ -76,7 +83,8 @@ function surfaceTitle(surfaceId: string): string {
     case "messaging":
       return "Channels";
     case "context":
-      return "Context";
+    case "map":
+      return "Map";
     case "work":
       return "Work";
     case "calendar":
@@ -130,6 +138,36 @@ function emptyLayout(): ShellDesktopLayout {
     splitRoot: { type: "group", id: MAIN_GROUP_ID },
     activeGroupId: MAIN_GROUP_ID,
     zoomedGroupId: null,
+  };
+}
+
+/** Append shell tabs onto a desktop layout's focused (or first) pane. */
+function appendTabsToLayout(
+  layout: ShellDesktopLayout,
+  incoming: ShellTab[],
+): ShellDesktopLayout {
+  if (incoming.length === 0) return layout;
+  const destGroupId =
+    layout.groups.some((group) => group.id === layout.activeGroupId)
+      ? layout.activeGroupId
+      : layout.groups[0]?.id ?? MAIN_GROUP_ID;
+  const existingIds = new Set(layout.tabs.map((tab) => tab.id));
+  const fresh = incoming.filter((tab) => !existingIds.has(tab.id));
+  if (fresh.length === 0) return layout;
+  const freshIds = fresh.map((tab) => tab.id);
+  return {
+    ...layout,
+    tabs: [...layout.tabs, ...fresh],
+    groups: layout.groups.map((group) =>
+      group.id === destGroupId
+        ? {
+            ...group,
+            tabIds: [...group.tabIds, ...freshIds],
+            activeTabId: freshIds[freshIds.length - 1] ?? group.activeTabId,
+          }
+        : group,
+    ),
+    activeGroupId: destGroupId,
   };
 }
 
@@ -214,6 +252,8 @@ export class ShellTabsStore {
   activeDesktopId = $state<string>("");
   /** Pane under an in-progress shell-tab drag (highlight). */
   tabDropTargetGroupId = $state<string | null>(null);
+  /** Edge highlight while dragging a tab to split. */
+  tabDropSplitEdge = $state<{ groupId: string; edge: SplitEdge } | null>(null);
   /** Spotlight / commands request the pane cheat sheet. */
   cheatSheetOpenRequest = $state(0);
   /** Force-show tabs in a pane until timestamp (Ctrl+; w). */
@@ -658,6 +698,7 @@ export class ShellTabsStore {
     options?: { activate?: boolean; groupId?: string },
   ): string | null {
     let next = surfaceId === "home" ? "chat" : surfaceId;
+    if (next === "context") next = "map";
     if (next === "automations" || next === "workshop") next = "library";
     const groupId = options?.groupId ?? this.activeGroupId;
     if (next === "chat") {
@@ -946,6 +987,24 @@ export class ShellTabsStore {
     return true;
   }
 
+  /** Split `hostGroupId` toward `edge` and move `tabId` into the new pane. */
+  splitGroupWithTab(hostGroupId: string, tabId: string, edge: SplitEdge): boolean {
+    if (countLeaves(this.splitRoot) >= MAX_SHELL_PANES) return false;
+    if (!this.tabs.some((tab) => tab.id === tabId)) return false;
+    if (!this.groups.some((group) => group.id === hostGroupId)) return false;
+
+    const newGroupId = newSplitId("group");
+    const result = splitLeafAtEdge(this.splitRoot, hostGroupId, edge, newGroupId);
+    if (!result) return false;
+
+    this.splitRoot = result.root;
+    this.groups = [...this.groups, { id: newGroupId, tabIds: [], activeTabId: null }];
+    this.moveTab(tabId, newGroupId);
+    void this.activate(tabId);
+    this.persist();
+    return true;
+  }
+
   focusGroup(groupId: string) {
     if (!this.groups.some((group) => group.id === groupId)) return;
     this.activeGroupId = groupId;
@@ -969,66 +1028,39 @@ export class ShellTabsStore {
     if (id) this.focusGroup(id);
   }
 
+  /** Close the active pane and merge its tabs into the sash-adjacent sibling. */
   closeActiveGroup(): boolean {
     if (countLeaves(this.splitRoot) <= 1) return false;
     const closingId = this.activeGroupId;
-    const result = removeLeaf(this.splitRoot, closingId);
-    if (!result.removed) return false;
+    const targetId = mergeTargetForLeaf(this.splitRoot, closingId);
+    if (!targetId) return false;
 
     const closing = this.groups.find((group) => group.id === closingId);
-    const tabIds = closing?.tabIds ?? [];
+    const tabIds = [...(closing?.tabIds ?? [])];
+    const focusTabId = closing?.activeTabId ?? tabIds[tabIds.length - 1] ?? null;
+
     for (const tabId of tabIds) {
-      const tab = this.tabs.find((entry) => entry.id === tabId);
-      if (!tab) continue;
-      this.beginSuppressMirror();
-      try {
-        if (tab.kind === "lme") {
-          const stillOpen = this.tabs.some(
-            (entry) =>
-              entry.id !== tabId &&
-              entry.kind === "lme" &&
-              entry.lmeTabId === tab.lmeTabId,
-          );
-          if (!stillOpen) {
-            void lmeWorkspace.closeTab(tab.lmeTabId, { activateNext: false });
-          }
-        } else if (tab.kind === "web") {
-          const stillOpen = this.tabs.some(
-            (entry) =>
-              entry.id !== tabId &&
-              entry.kind === "web" &&
-              entry.browserTabId === tab.browserTabId,
-          );
-          if (!stillOpen) {
-            void humanBrowser.closeTab(tab.browserTabId);
-          }
-        } else if (tab.kind === "chat") {
-          const stillOpen = this.tabs.some(
-            (entry) =>
-              entry.id !== tabId &&
-              entry.kind === "chat" &&
-              entry.sessionId === tab.sessionId,
-          );
-          if (!stillOpen) {
-            chatStreamPool.release(tab.sessionId);
-          }
-        }
-      } finally {
-        this.endSuppressMirror();
-      }
-      this.tabs = this.tabs.filter((entry) => entry.id !== tabId);
+      this.moveTab(tabId, targetId);
     }
+
+    const result = removeLeaf(this.splitRoot, closingId);
+    if (!result.removed) return false;
 
     this.groups = this.groups.filter((group) => group.id !== closingId);
     this.splitRoot = result.root;
     if (this.zoomedGroupId === closingId) {
       this.zoomedGroupId = null;
     }
-    const remaining = collectGroupIds(this.splitRoot);
-    this.activeGroupId = remaining[remaining.length - 1] ?? MAIN_GROUP_ID;
-    const active = this.activeGroup;
-    if (active.activeTabId) {
-      void this.activate(active.activeTabId);
+    this.activeGroupId = targetId;
+    if (focusTabId && this.tabs.some((tab) => tab.id === focusTabId)) {
+      void this.activate(focusTabId);
+    } else {
+      const active = this.activeGroup;
+      if (active.activeTabId) {
+        void this.activate(active.activeTabId);
+      } else {
+        this.syncLayoutHint(null);
+      }
     }
     this.persist();
     return true;
@@ -1204,7 +1236,7 @@ export class ShellTabsStore {
     return tab?.kind === "chat" ? tab.sessionId : null;
   }
 
-  createDesktop(name?: string): string {
+  createDesktop(name?: string, options?: { activate?: boolean }): string {
     this.ensureDesktopCatalog();
     if (this.desktops.length >= MAX_SHELL_DESKTOPS) return "";
     this.flushActiveDesktop();
@@ -1215,8 +1247,82 @@ export class ShellTabsStore {
       { id, name: trimmed, layout: emptyLayout() },
     ];
     this.persist();
-    void this.switchDesktop(id);
+    if (options?.activate !== false) {
+      void this.switchDesktop(id);
+    }
     return id;
+  }
+
+  /** Move a live tab onto another virtual desktop's focused pane. */
+  moveTabToDesktop(tabId: string, desktopId: string): boolean {
+    this.ensureDesktopCatalog();
+    const trimmedDesktop = desktopId.trim();
+    if (!trimmedDesktop || trimmedDesktop === this.activeDesktopId) return false;
+    const tab = this.tabs.find((entry) => entry.id === tabId);
+    if (!tab) return false;
+    if (!this.desktops.some((desktop) => desktop.id === trimmedDesktop)) return false;
+
+    this.removeTabFromAllGroups(tabId);
+    this.tabs = this.tabs.filter((entry) => entry.id !== tabId);
+    this.pruneNavStacks();
+
+    this.desktops = this.desktops.map((desktop) =>
+      desktop.id === trimmedDesktop
+        ? { ...desktop, layout: appendTabsToLayout(desktop.layout, [tab]) }
+        : desktop,
+    );
+    this.persist();
+    return true;
+  }
+
+  /** Move every tab in a pane onto another desktop, then drop the empty pane. */
+  movePaneToDesktop(groupId: string, desktopId: string): boolean {
+    this.ensureDesktopCatalog();
+    const trimmedDesktop = desktopId.trim();
+    if (!trimmedDesktop || trimmedDesktop === this.activeDesktopId) return false;
+    if (!this.desktops.some((desktop) => desktop.id === trimmedDesktop)) return false;
+
+    const group = this.groups.find((entry) => entry.id === groupId);
+    if (!group) return false;
+
+    const moved = group.tabIds
+      .map((id) => this.tabs.find((tab) => tab.id === id))
+      .filter((tab): tab is ShellTab => Boolean(tab));
+
+    for (const tab of moved) {
+      this.removeTabFromAllGroups(tab.id);
+    }
+    const movedIds = new Set(moved.map((tab) => tab.id));
+    this.tabs = this.tabs.filter((tab) => !movedIds.has(tab.id));
+    this.pruneNavStacks();
+
+    this.desktops = this.desktops.map((desktop) =>
+      desktop.id === trimmedDesktop
+        ? { ...desktop, layout: appendTabsToLayout(desktop.layout, moved) }
+        : desktop,
+    );
+
+    if (countLeaves(this.splitRoot) > 1) {
+      const result = removeLeaf(this.splitRoot, groupId);
+      if (result.removed) {
+        this.splitRoot = result.root;
+        this.groups = this.groups.filter((entry) => entry.id !== groupId);
+        if (this.zoomedGroupId === groupId) this.zoomedGroupId = null;
+        if (this.activeGroupId === groupId) {
+          const remaining = collectGroupIds(this.splitRoot);
+          this.activeGroupId = remaining[remaining.length - 1] ?? MAIN_GROUP_ID;
+        }
+      }
+    }
+
+    const active = this.activeGroup;
+    if (active.activeTabId) {
+      void this.activate(active.activeTabId);
+    } else {
+      this.syncLayoutHint(null);
+    }
+    this.persist();
+    return true;
   }
 
   /** Switch by 0-based catalog index (Ctrl+; 1–4). No-op if index is empty. */
@@ -1308,6 +1414,59 @@ export class ShellTabsStore {
     const next =
       this.desktops[(from + delta + this.desktops.length) % this.desktops.length];
     if (next) void this.switchDesktop(next.id);
+  }
+
+  /** Every open tab across virtual desktops (active desktop uses live state). */
+  collectSearchHits(): ShellTabSearchHit[] {
+    this.ensureDesktopCatalog();
+    const hits: ShellTabSearchHit[] = [];
+    const liveActiveId = this.activeTabId;
+
+    for (const desktop of this.desktops) {
+      const isActiveDesktop = desktop.id === this.activeDesktopId;
+      const tabs = isActiveDesktop ? this.tabs : desktop.layout.tabs;
+      const groups = isActiveDesktop ? this.groups : desktop.layout.groups;
+      const splitRoot = isActiveDesktop ? this.splitRoot : desktop.layout.splitRoot;
+      const order = leafOrder(splitRoot);
+      const byId = new Map(tabs.map((tab) => [tab.id, tab]));
+
+      for (const groupId of order) {
+        const group = groups.find((entry) => entry.id === groupId);
+        if (!group) continue;
+        const paneIndex = order.indexOf(groupId) + 1;
+        for (const tabId of group.tabIds) {
+          const tab = byId.get(tabId);
+          if (!tab) continue;
+          hits.push({
+            tabId: tab.id,
+            title: titleOfTab(tab),
+            kind: tab.kind,
+            desktopId: desktop.id,
+            desktopName: desktop.name,
+            groupId,
+            paneIndex,
+            isActive: isActiveDesktop && tab.id === liveActiveId,
+            isActiveDesktop,
+          });
+        }
+      }
+    }
+    return hits;
+  }
+
+  /** Switch desktop if needed, then focus the tab's pane. */
+  async revealSearchHit(desktopId: string, tabId: string): Promise<boolean> {
+    const trimmedDesktop = desktopId.trim();
+    const trimmedTab = tabId.trim();
+    if (!trimmedDesktop || !trimmedTab) return false;
+
+    if (trimmedDesktop !== this.activeDesktopId) {
+      const switched = await this.switchDesktop(trimmedDesktop);
+      if (!switched) return false;
+    }
+    if (!this.tabs.some((tab) => tab.id === trimmedTab)) return false;
+    await this.activate(trimmedTab);
+    return true;
   }
 }
 

@@ -183,7 +183,7 @@
         disabled={saving || (!enabled && maxAgeDays < 1)}
         onclick={() => void save()}
       >
-        {saving ? "Saving…" : "Save cleanup"}
+        {saving ? "Saving…" : "Save"}
       </button>
     </div>
   {/if}

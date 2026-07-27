@@ -75,7 +75,7 @@ async fn list_history_sessions_handler() {
         q: None,
         cursor: None,
     });
-    let res = list_session_history(query).await;
+    let res = list_session_history(axum::http::HeaderMap::new(), query).await;
     assert!(res.is_ok());
     let Json(list) = res.unwrap();
     assert!(list.sessions.len() >= 2);
@@ -86,7 +86,7 @@ async fn list_history_sessions_handler() {
         q: None,
         cursor: None,
     });
-    let slim_res = list_session_history(slim_query).await;
+    let slim_res = list_session_history(axum::http::HeaderMap::new(), slim_query).await;
     assert!(slim_res.is_ok());
     let Json(slim_list) = slim_res.unwrap();
     assert!(slim_list.sessions.iter().all(|session| {
@@ -122,7 +122,7 @@ async fn list_history_sessions_search_via_handlers() {
         q: Some("budget".to_string()),
         cursor: None,
     });
-    let res = list_session_history(search).await;
+    let res = list_session_history(axum::http::HeaderMap::new(), search).await;
     assert!(res.is_ok());
     let Json(list) = res.unwrap();
     assert_eq!(list.sessions.len(), 1);

@@ -35,11 +35,16 @@ export function mobileOverlaysOpen(): boolean {
     layout.activitySheetOpen ||
     layout.askSheetOpen ||
     layout.sessionDrawerOpen ||
-    layout.identityDrawerOpen
+    layout.identityDrawerOpen ||
+    layout.mobileDestinationsMenuOpen
   );
 }
 
 export function tryMobileBackNavigation(): boolean {
+  if (layout.mobileDestinationsMenuOpen) {
+    layout.setMobileDestinationsMenuOpen(false);
+    return true;
+  }
   if (layout.activitySheetOpen) {
     layout.setActivitySheetOpen(false);
     return true;
@@ -92,6 +97,9 @@ export function switchMobileTab(tab: MobileTab): void {
   haptic("light");
   layout.setActivitySheetOpen(false);
   layout.setAskSheetOpen(false);
+  if (tab !== "more") {
+    layout.setMobileDestinationsMenuOpen(false);
+  }
   if (tab !== "chat") {
     layout.setSessionDrawerOpen(false);
     layout.setIdentityDrawerOpen(false);
@@ -99,6 +107,11 @@ export function switchMobileTab(tab: MobileTab): void {
   const order = mobileTabOrder();
   if (!order.includes(tab)) {
     layout.setMobileTab(order[0] ?? "home", { bump: true });
+    return;
+  }
+  // More tab no longer shows a hub list — open the destinations menu instead.
+  if (tab === "more") {
+    layout.openMobileDestinationsMenu();
     return;
   }
   // Home tab exits a temporary custom view (e.g. arcade opened from More).

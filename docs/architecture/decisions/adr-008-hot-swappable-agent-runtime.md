@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Accepted — **0.6 Dynamic largely shipped:** MCP space reads (`vault_*`, `calendar_list`, `artifacts_list` / `artifacts_fetch`; writes denied). Real ACP event pump + permission UI (default-deny timeout via `MEDOUSA_ACP_PERMISSION_TIMEOUT_SECS`). Home create-once / prompt-thereafter.
 
 ## Context
 

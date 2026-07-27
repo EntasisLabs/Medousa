@@ -255,10 +255,17 @@ impl MedousaToolLoopPipeline {
                         let steers = crate::agent_runtime::turn_worker::turn_worker_store()
                             .drain_steer_messages(work_id);
                         for steer in steers {
+                            let speaker = steer
+                                .speaker_profile_id
+                                .as_deref()
+                                .map(str::trim)
+                                .filter(|value| !value.is_empty())
+                                .map(|value| format!(" speaker={value}"))
+                                .unwrap_or_default();
                             push_turn_control_message(
                                 &mut turn_ctx.tool_lane.messages,
                                 &format!(
-                                    "[MEDOUSA_WORKSHOP_STEER]\n{}",
+                                    "[MEDOUSA_WORKSHOP_STEER{speaker}]\n{}",
                                     steer.text.trim()
                                 ),
                             );

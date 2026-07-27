@@ -12,6 +12,7 @@
     vaultAddRootRemoteHint,
   } from "$lib/utils/workshopLocality";
   import { isTauri } from "$lib/window";
+  import { onThisHostPhrase } from "$lib/platformCopy";
 
   interface Props {
     compact?: boolean;
@@ -377,7 +378,7 @@
       <header>
         <h3 class="text-base font-semibold text-surface-50">Add vault folder</h3>
         <p class="workshop-faint mt-1 text-sm">
-          Point this engine at another markdown folder on this Mac — including an Obsidian vault
+          Point this engine at another markdown folder {onThisHostPhrase()} — including an Obsidian vault
           (folder with <code class="font-mono text-[11px]">.obsidian</code>). Switch vaults anytime from the library sidebar.
         </p>
       </header>

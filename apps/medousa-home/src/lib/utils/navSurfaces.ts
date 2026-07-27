@@ -10,13 +10,12 @@ const LIFE_IDS = new Set([
   "library",
   "calendar",
   "web",
-  "context",
+  "map",
   "peers",
-  "messaging",
 ]);
 const WORKSHOP_IDS = new Set(["workshop"]);
-/** Runtime lives in Settings / status bar — never the life rail. */
-const HIDDEN_IDS = new Set([SAFETY_SURFACE_RUNTIME]);
+/** Runtime + Messaging live under Settings — never the life rail. */
+const HIDDEN_IDS = new Set([SAFETY_SURFACE_RUNTIME, "messaging"]);
 
 /** Surfaces whose list chrome lives in the master left rail (view mode). */
 export const SHELL_SIDEBAR_VIEW_SURFACES = new Set([
@@ -25,7 +24,7 @@ export const SHELL_SIDEBAR_VIEW_SURFACES = new Set([
   "automations",
   "peers",
   "messaging",
-  "context",
+  "map",
   "calendar",
   "work",
   "web",
@@ -58,7 +57,7 @@ export function navTier(surface: SurfaceDef): "life" | "workshop" | "utility" | 
 export function navTitle(surface: SurfaceDef): string {
   if (surface.id === "library") return "Library";
   if (surface.id === "automations") return "Automations";
-  if (surface.id === "context") return "Threads & memory";
+  if (surface.id === "map") return "Session link map";
   if (surface.id === "peers") return "Peers";
   if (surface.id === "profiles") return "You";
   return surface.label;
@@ -67,7 +66,7 @@ export function navTitle(surface: SurfaceDef): string {
 export function navLabel(surface: SurfaceDef): string {
   if (surface.id === "library") return "Library";
   if (surface.id === "automations") return "Automations";
-  if (surface.id === "context") return "Context";
+  if (surface.id === "map") return "Map";
   if (surface.id === "profiles") return "You";
   return surface.label;
 }
@@ -84,8 +83,8 @@ export function shellSidebarViewTitle(surfaceId: string): string {
       return "Peers";
     case "messaging":
       return "Channels";
-    case "context":
-      return "Context";
+    case "map":
+      return "Map";
     case "calendar":
       return "Calendar";
     case "work":

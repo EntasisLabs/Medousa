@@ -698,6 +698,7 @@ pub(crate) fn file_build_history_summaries_from_files(limit: usize) -> Vec<Sessi
                 last_verification_coverage,
                 last_verification_verified,
                 preview,
+                catalog: None,
             }
         })
         .collect()
@@ -730,20 +731,44 @@ pub fn list_history_sessions_page(
     query: Option<&str>,
     cursor: Option<&str>,
 ) -> crate::session_catalog::SessionListPage {
+    list_history_sessions_page_for_profile(None, limit, query, cursor)
+}
+
+/// List sessions for a seat. When `profile_id` is `None`, uses the active workshop profile.
+/// In Shared mode, merges single + shared catalogs for that seat.
+pub fn list_history_sessions_page_for_profile(
+    profile_id: Option<&str>,
+    limit: usize,
+    query: Option<&str>,
+    cursor: Option<&str>,
+) -> crate::session_catalog::SessionListPage {
     let limit = limit.max(1);
     let searching = query.is_some() || cursor.is_some();
+    let active_profile = profile_id
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(crate::user_profiles::resolve_workshop_identity_user_id);
 
     crate::session_catalog::ensure_catalog_populated(limit.max(500));
-    let active_profile = crate::user_profiles::resolve_workshop_identity_user_id();
-    let mut page =
-        crate::session_catalog::list_sessions_page(limit, query, cursor, Some(&active_profile));
+
+    let mut page = if crate::shared_mode::is_shared_mode() {
+        crate::shared_session_catalog::list_merged_sessions_for_profile(
+            &active_profile,
+            limit,
+            query,
+            cursor,
+        )
+    } else {
+        crate::session_catalog::list_sessions_page(limit, query, cursor, Some(&active_profile))
+    };
 
     if searching {
         enrich_session_summaries(&mut page.sessions);
         return page;
     }
 
-    if page.sessions.is_empty() {
+    if page.sessions.is_empty() && !crate::shared_mode::is_shared_mode() {
         page.sessions = crate::session_catalog::list_sessions(limit);
     }
 
@@ -764,6 +789,9 @@ pub fn list_history_sessions_page(
         if crate::session_catalog::get_summary(&session_id).is_some() {
             continue;
         }
+        if crate::shared_session_catalog::get_shared_row(&session_id).is_some() {
+            continue;
+        }
         crate::session_catalog::ensure_named_session(&session_id, Some(display_name.clone()));
         page.sessions.push(SessionHistorySummary {
             session_id,
@@ -776,6 +804,7 @@ pub fn list_history_sessions_page(
             last_verification_coverage: None,
             last_verification_verified: None,
             preview: "(named session)".to_string(),
+            catalog: None,
         });
     }
 
@@ -788,7 +817,11 @@ pub fn list_history_sessions_page(
 pub fn set_session_display_name(session_id: &str, display_name: &str) -> Result<(), String> {
     let result = crate::session_meta_store::set_session_display_name(session_id, display_name);
     if result.is_ok() {
-        crate::session_catalog::set_display_name(session_id, display_name);
+        if crate::shared_session_catalog::get_shared_row(session_id).is_some() {
+            let _ = crate::shared_session_catalog::set_shared_display_name(session_id, display_name);
+        } else {
+            crate::session_catalog::set_display_name(session_id, display_name);
+        }
     }
     result
 }

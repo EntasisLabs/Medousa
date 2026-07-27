@@ -3,9 +3,11 @@
   import WorkshopShell from "$lib/components/layout/WorkshopShell.svelte";
   import MobileShell from "$lib/components/mobile/MobileShell.svelte";
   import CommandSpotlight from "$lib/components/layout/CommandSpotlight.svelte";
+  import WorkAskDockPopover from "$lib/components/work/WorkAskDockPopover.svelte";
   import WizardContainer from "$lib/components/wizard/WizardContainer.svelte";
   import VaultGarageImportWizard from "$lib/components/vault/VaultGarageImportWizard.svelte";
   import ScriptContextMenu from "$lib/components/automations/ScriptContextMenu.svelte";
+  import ShellContextMenu from "$lib/components/shell/ShellContextMenu.svelte";
   import VaultContextMenu from "$lib/components/vault/VaultContextMenu.svelte";
   import VaultNoteWorkshop from "$lib/components/vault/VaultNoteWorkshop.svelte";
   import VaultAttachmentPanel from "$lib/components/vault/VaultAttachmentPanel.svelte";
@@ -68,6 +70,18 @@
     }
   }
 
+  async function openCalendarEvent(uid: string) {
+    const { calendar } = await import("$lib/stores/calendar.svelte");
+    if (layout.isMobile) {
+      layout.openMore("calendar");
+    } else {
+      layout.navigateDesktop("calendar", { bump: true });
+    }
+    await calendar.refresh();
+    const match = calendar.events.find((event) => event.uid === uid);
+    if (match) calendar.openEdit(match);
+  }
+
   onMount(() => {
     commandSpotlight.closeSpotlight();
     document.querySelectorAll(".command-spotlight-backdrop").forEach((node) => {
@@ -109,6 +123,7 @@
           });
       },
       onOpenPeer: openPeerThread,
+      onOpenCalendar: openCalendarEvent,
     });
     const stopPeerNotifications = startPeerMessageNotificationPolling();
     const stopAgentBrowserCoord = attachAgentBrowserCoord();
@@ -160,10 +175,14 @@
 {/if}
 
 <CommandSpotlight onFocusChat={focusChatComposer} />
+{#if !layout.isMobile}
+  <WorkAskDockPopover />
+{/if}
 
 <VaultGarageImportWizard />
 <VaultContextMenu />
 <ScriptContextMenu />
+<ShellContextMenu />
 <VaultAttachmentPanel />
 {#if !layout.isMobile}
   <VaultNoteWorkshop

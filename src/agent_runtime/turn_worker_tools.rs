@@ -368,13 +368,15 @@ impl StasisTool for CognitionWorkshopSteerTool {
                     "cognition_workshop_steer: no active host turn session".to_string(),
                 )
             })?;
-        steer_bound_workshop_for_session(&session_id, message)
+        let speaker = crate::user_profiles::resolve_workshop_identity_user_id();
+        steer_bound_workshop_for_session(&session_id, message, Some(speaker))
     }
 }
 
 pub fn steer_bound_workshop_for_session(
     session_id: &str,
     message: &str,
+    speaker_profile_id: Option<String>,
 ) -> stasis::prelude::Result<Value> {
     let store = turn_worker_store();
     let Some(record) = store.active_bound_workshop(session_id) else {
@@ -383,12 +385,37 @@ pub fn steer_bound_workshop_for_session(
             "error": "no active bound workshop for session",
         }));
     };
+
+    let speaker = speaker_profile_id
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    if let Some(profile_id) = speaker.as_deref() {
+        if let Some(row) = crate::shared_session_catalog::get_shared_row(session_id) {
+            if !row.includes_member(profile_id) {
+                return Ok(json!({
+                    "ok": false,
+                    "error": "speaker is not a member of this shared room",
+                }));
+            }
+        }
+    }
+
     let updated = store
-        .push_steer(&record.work_id, message.to_string())
+        .push_steer(&record.work_id, message.to_string(), speaker.clone())
         .ok_or_else(|| StasisError::PortFailure("failed to queue steer message".to_string()))?;
+
+    // Surface the steer in the shared transcript so Home can attribute the speaker.
+    let turn = crate::turn_parts::user_conversation_turn_with_media_and_speaker(
+        message,
+        &[],
+        speaker.as_deref(),
+    );
+    crate::session_writer::persist_turn(session_id, turn, None);
+
     Ok(json!({
         "ok": true,
         "work_id": updated.work_id,
         "queued": updated.steer_messages.len(),
+        "speaker_profile_id": speaker,
     }))
 }

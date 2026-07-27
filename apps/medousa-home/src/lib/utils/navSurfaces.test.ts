@@ -20,9 +20,9 @@ function surface(id: string): SurfaceDef {
 }
 
 describe("navSurfaces shell sidebar views", () => {
-  it("hides runtime from the rail and keeps messaging in life", () => {
+  it("hides runtime and messaging from the life rail", () => {
     expect(navTier(surface("runtime"))).toBe("hidden");
-    expect(navTier(surface("messaging"))).toBe("life");
+    expect(navTier(surface("messaging"))).toBe("hidden");
   });
 
   it("marks list / HUD surfaces as having a sidebar view", () => {
@@ -30,7 +30,7 @@ describe("navSurfaces shell sidebar views", () => {
     expect(surfaceHasShellSidebarView("chat")).toBe(true);
     expect(surfaceHasShellSidebarView("messaging")).toBe(true);
     expect(surfaceHasShellSidebarView("library")).toBe(true);
-    expect(surfaceHasShellSidebarView("context")).toBe(true);
+    expect(surfaceHasShellSidebarView("map")).toBe(true);
     expect(surfaceHasShellSidebarView("settings")).toBe(true);
     expect(surfaceHasShellSidebarView("work")).toBe(true);
     expect(surfaceHasShellSidebarView("calendar")).toBe(true);
@@ -47,7 +47,7 @@ describe("navSurfaces shell sidebar views", () => {
     expect(shellSidebarViewTitle("chat")).toBe("Sessions");
     expect(shellSidebarViewTitle("messaging")).toBe("Channels");
     expect(shellSidebarViewTitle("library")).toBe("Library");
-    expect(shellSidebarViewTitle("context")).toBe("Context");
+    expect(shellSidebarViewTitle("map")).toBe("Map");
     expect(shellSidebarViewTitle("settings")).toBe("Settings");
     expect(shellSidebarViewTitle("calendar")).toBe("Calendar");
     expect(shellSidebarViewTitle("work")).toBe("Work");

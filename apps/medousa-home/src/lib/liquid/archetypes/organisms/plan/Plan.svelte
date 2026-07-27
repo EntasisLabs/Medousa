@@ -215,7 +215,7 @@
     display: flex;
     gap: 0.35rem;
     overflow-x: auto;
-    padding: 0.1rem 0 0.65rem;
+    padding: 0.1rem 0 0.55rem;
     margin-bottom: 0.15rem;
     -webkit-overflow-scrolling: touch;
     touch-action: pan-x pinch-zoom;
@@ -271,7 +271,7 @@
     display: flex;
     gap: 0.75rem;
     overflow-x: auto;
-    padding: 0.1rem 0.05rem 0.35rem;
+    padding: 0.1rem 0.05rem 0.2rem;
     scroll-snap-type: x proximity;
     -webkit-overflow-scrolling: touch;
     touch-action: pan-x pinch-zoom;

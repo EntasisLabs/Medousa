@@ -17,6 +17,16 @@ describe("graphemeScriptEditor", () => {
     expect(store.activeTabId).toBeNull();
   });
 
+  it("ensureInitialTab repairs a missing activeTabId", () => {
+    store.openNewTab();
+    const tabId = store.activeTabId!;
+    store.activeTabId = null;
+    expect(store.activeTab).toBeNull();
+    store.ensureInitialTab();
+    expect(store.activeTabId).toBe(tabId);
+    expect(store.activeTab?.tabId).toBe(tabId);
+  });
+
   it("opens highlight-only snippet tabs with languageId", () => {
     store.openLanguageSnippet({
       languageId: "markdown",

@@ -1,5 +1,6 @@
 <script lang="ts">
   import BudgetApprovalBar from "$lib/components/chat/BudgetApprovalBar.svelte";
+  import AgentPermissionBar from "$lib/components/chat/AgentPermissionBar.svelte";
   import AgentBrowserPanel from "$lib/components/chat/AgentBrowserPanel.svelte";
   import ChatComposerBar from "$lib/components/chat/ChatComposerBar.svelte";
   import VaultChatContextChip from "$lib/components/vault/VaultChatContextChip.svelte";
@@ -54,7 +55,12 @@
       voiceAppendix: voice.voiceAppendix,
       identityUserId: opts.identityUserId,
     });
-    chat.beginTurn(userContent, accepted, mediaRefs);
+    chat.beginTurn(
+      userContent,
+      accepted,
+      mediaRefs,
+      opts.identityUserId,
+    );
     chat.clearPendingMedia();
     window.dispatchEvent(
       new CustomEvent("medousa-chat-scroll-to-bottom", { detail: { force: true } }),
@@ -104,6 +110,12 @@
       if (chat.hasWorkshopHandoff()) {
         const { steerBoundWorkshop } = await import("$lib/daemon");
         await steerBoundWorkshop(chat.sessionId, prompt);
+        await chat.reloadCurrentSession();
+        window.dispatchEvent(
+          new CustomEvent("medousa-chat-scroll-to-bottom", {
+            detail: { force: true },
+          }),
+        );
         return;
       }
 
@@ -162,6 +174,7 @@
       if (pending) void workspace.selectCard(pending.workCardId);
     }}
   />
+  <AgentPermissionBar mobile />
   <AgentBrowserPanel mobile />
   <ChatComposerBar
     mobile

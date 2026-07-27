@@ -3,15 +3,29 @@
 > **Status:** Living document (updated 2026-07)  
 > **Historical plans:** [archive/README.md](archive/README.md)
 
-First-run UX, Home shell milestones, turn-loop FSM, user profiles (Phases 0–6), and **centralized agent runtime + host/worker bus + Specialists** are **shipped**. See [turn-runtime-and-lanes.md](turn-runtime-and-lanes.md), [identity-manuscripts-and-recall-plan.md](identity-manuscripts-and-recall-plan.md), [ADR-002](../docs/architecture/decisions/adr-002-user-profiles.md).
+First-run UX, Home shell milestones, turn-loop FSM, user profiles (Phases 0–6), **centralized agent runtime**, **0.5.0 Vault / Versions / Liquid**, and **0.6.0 Shared / Peer mesh / Dynamic + Home polish** are **shipped**. See [turn-runtime-and-lanes.md](turn-runtime-and-lanes.md), [ADR-002](../docs/architecture/decisions/adr-002-user-profiles.md), [v0.5.0-vault-versions-plan.md](v0.5.0-vault-versions-plan.md), [v0.6.0-shared-mode-plan.md](v0.6.0-shared-mode-plan.md), [v0.6.0-peer-mesh-plan.md](v0.6.0-peer-mesh-plan.md).
 
-Remaining focus: **0.5.0 Vault / Versions / Liquid feeds**, **Workshop + Automations**, **polish & package**, **attachments**, **Iroh pairing**, and **distribution**.
+**Next focus:** felt polish residual (empty states, F3–F5), optional mesh `client.relay`, inference profiles — see below.
 
-Full plans: **[v0.5.0-vault-versions-plan.md](v0.5.0-vault-versions-plan.md)** · **[workshop-and-automations-plan.md](workshop-and-automations-plan.md)** · **[scripts-workbench-plan.md](scripts-workbench-plan.md)** · **[polish-and-package-plan.md](polish-and-package-plan.md)**
+Full plans: **[v0.6.0-shared-mode-plan.md](v0.6.0-shared-mode-plan.md)** · **[v0.6.0-peer-mesh-plan.md](v0.6.0-peer-mesh-plan.md)** · **[home-messaging-matrix.md](home-messaging-matrix.md)** · [ADR-011](../docs/architecture/decisions/adr-011-shared-mode-portal-and-mesh.md) · **[workshop-and-automations-plan.md](workshop-and-automations-plan.md)** · **[polish-and-package-plan.md](polish-and-package-plan.md)** · **[operators-guide-docs-epic.md](operators-guide-docs-epic.md)**
 
 ---
 
-## 0.5.0 Vault, Versions, Liquid feeds (active)
+## 0.6.0 Shared, Peer mesh, Dynamic (shipped)
+
+**Goal:** Org-brain seats via Shared mode (no login); capability-scoped personal↔team mesh; finish hot-swappable ACP/MCP; Home polish (mobile, settings, spotlight, calendar).
+
+| Pillar | Plan | Status |
+|--------|------|--------|
+| Shared mode | [v0.6.0-shared-mode-plan.md](v0.6.0-shared-mode-plan.md) | ✅ S0–S6 |
+| Peer mesh | [v0.6.0-peer-mesh-plan.md](v0.6.0-peer-mesh-plan.md) | ✅ M0–M4 + introducer; optional next `client.relay` |
+| Dynamic | [ADR-008](../docs/architecture/decisions/adr-008-hot-swappable-agent-runtime.md) | ✅ MCP space reads + ACP pump/permissions/Home bar |
+| Polish | [polish-and-package-plan.md](polish-and-package-plan.md) | ✅ Mobile Home / nav / settings craft for 0.6; residual F3–F5 next |
+| Docs / Operator’s Guide | [operators-guide-docs-epic.md](operators-guide-docs-epic.md) | ✅ Coverage + **P0 product voice**; [maintenance](operators-guide-maintenance.md) for contributors |
+
+---
+
+## 0.5.0 Vault, Versions, Liquid feeds (shipped)
 
 **Goal:** Optional Git-backed **Versions** (off by default), liquid snapshot timeline+carousel, ```feed``` last-good Stasis results, Scripts `CodeEditorShell`, trash restore.
 
@@ -39,20 +53,19 @@ Living plan: [v0.5.0-vault-versions-plan.md](v0.5.0-vault-versions-plan.md)
 
 Full plan: [workshop-and-automations-plan.md](workshop-and-automations-plan.md) (W0–W5) · [scripts-workbench-plan.md](scripts-workbench-plan.md) (W6+)
 
-## 1. Polish & package (normie continuity)
+## 1. Polish & package (0.6 felt polish)
 
-**Goal:** Expose shipped engine (memory, vault, plugins, AVEC) — install, trust, teach, provenance — without new runtime work.
+**Goal:** Language, wayfinding, micro-interactions — not more capability exposure. Living plan: [polish-and-package-plan.md](polish-and-package-plan.md). Historical: [archive/polish-and-package-plan-capability-era.md](archive/polish-and-package-plan-capability-era.md).
 
 | Phase | Theme | Status |
 |-------|--------|--------|
-| P0 Trust baseline | Sidecar, Iroh smoke, health | ⬜ |
-| P1 First ten minutes | Wizard epilogue, guided win | ⬜ |
-| P2 Teach Medousa | Identity from Home | ⬜ |
-| P3 Continuity surfaces | Unified search, provenance | ⬜ |
-| P4 Workshop exposure | Superseded by [workshop-and-automations-plan.md](workshop-and-automations-plan.md) W1–W2 | ⬜ |
-| P5 App affordances | Share, context menus, P5 attach | ⬜ |
-| P6 Package & ship | Signed bundles, updates | ⬜ |
-| P7 Promise & copy | README / empty states | ⬜ |
+| F0 Onboarding brain path | In-wizard install + non-blocking model download | ✅ |
+| F1 First-run tone | Profiles teach examples (identity/prefs); wizard ownership + Presence “we” kept | ✅ |
+| F2 Wayfinding | Bindings discoverability ✅; empty-state UI next | 🔄 |
+| F3 Surface interactions | F3.0 rail chrome ✅ (+/>, rail history, Channels in Settings); Chat/Vault/Scripts next | 🔄 |
+| F4 Spotlight + chrome | Relevance, focus, discovery (rail chrome slice in F3.0) | 🔄 |
+| F5 Motion + micro | Intentional presence; reduced-motion | ⬜ |
+| F6 Package residual | Signed updates / Iroh smoke if still ship-blocking | optional |
 
 ---
 

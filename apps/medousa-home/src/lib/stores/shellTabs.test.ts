@@ -149,6 +149,23 @@ describe("shellTabs store", () => {
     expect(to?.tabIds).toContain(shellId);
   });
 
+  it("splits a host pane with a dragged tab on an edge", async () => {
+    const { shellTabs } = await import("./shellTabs.svelte");
+    const hostId = shellTabs.openChat("session-a", { activate: true });
+    expect(hostId).toBeTruthy();
+    const guestId = shellTabs.openChat("session-b", { activate: true });
+    expect(guestId).toBeTruthy();
+    const hostGroupId = shellTabs.activeGroupId;
+    expect(shellTabs.splitGroupWithTab(hostGroupId, guestId!, "bottom")).toBe(true);
+    expect(shellTabs.paneCount).toBe(2);
+    expect(shellTabs.activeTab?.id).toBe(guestId);
+    expect(shellTabs.splitRoot.type).toBe("branch");
+    if (shellTabs.splitRoot.type === "branch") {
+      expect(shellTabs.splitRoot.direction).toBe("row");
+      expect(shellTabs.splitRoot.b.type).toBe("group");
+    }
+  });
+
   it("refuses a fifth pane", async () => {
     const { shellTabs } = await import("./shellTabs.svelte");
     shellTabs.openChat("session-a", { activate: true });
@@ -159,12 +176,73 @@ describe("shellTabs store", () => {
     expect(shellTabs.paneCount).toBe(4);
   });
 
-  it("closes a pane and keeps at least one", async () => {
+  it("moves a tab to another desktop", async () => {
     const { shellTabs } = await import("./shellTabs.svelte");
-    shellTabs.openChat("session-a", { activate: true });
-    shellTabs.splitActive("right");
+    const tabId = shellTabs.openChat("session-a", { activate: true });
+    expect(tabId).toBeTruthy();
+    const otherId = shellTabs.createDesktop("Staging", { activate: false });
+    expect(otherId).toBeTruthy();
+    expect(shellTabs.moveTabToDesktop(tabId!, otherId)).toBe(true);
+    expect(shellTabs.tabs.some((tab) => tab.id === tabId)).toBe(false);
+    const staging = shellTabs.desktops.find((desktop) => desktop.id === otherId);
+    expect(staging?.layout.tabs.some((tab) => tab.id === tabId)).toBe(true);
+  });
+
+  it("moves a pane's tabs to another desktop and drops the pane", async () => {
+    const { shellTabs } = await import("./shellTabs.svelte");
+    const stayId = shellTabs.openChat("session-a", { activate: true });
+    const moveId = shellTabs.openChat("session-b", { activate: true });
+    expect(stayId).toBeTruthy();
+    expect(moveId).toBeTruthy();
+    // splitActive moves the focused tab into the new pane
+    expect(shellTabs.splitActive("right")).toBe(true);
+    const rightGroup = shellTabs.activeGroupId;
+    expect(shellTabs.paneCount).toBe(2);
+    expect(shellTabs.activeTab?.id).toBe(moveId);
+
+    const otherId = shellTabs.createDesktop("Park", { activate: false });
+    expect(shellTabs.movePaneToDesktop(rightGroup, otherId)).toBe(true);
+    expect(shellTabs.paneCount).toBe(1);
+    expect(shellTabs.tabs.some((tab) => tab.id === moveId)).toBe(false);
+    expect(shellTabs.tabs.some((tab) => tab.id === stayId)).toBe(true);
+    const park = shellTabs.desktops.find((desktop) => desktop.id === otherId);
+    expect(park?.layout.tabs.some((tab) => tab.id === moveId)).toBe(true);
+  });
+
+  it("collects search hits across desktops and reveals them", async () => {
+    const { shellTabs } = await import("./shellTabs.svelte");
+    const mainTab = shellTabs.openChat("session-a", { activate: true });
+    expect(mainTab).toBeTruthy();
+    const otherDesktop = shellTabs.createDesktop("Research");
+    expect(otherDesktop).toBeTruthy();
+    const researchTab = shellTabs.openChat("session-b", { activate: true });
+    expect(researchTab).toBeTruthy();
+
+    const hits = shellTabs.collectSearchHits();
+    expect(hits.some((hit) => hit.tabId === mainTab && hit.desktopName === "Main")).toBe(true);
+    expect(
+      hits.some((hit) => hit.tabId === researchTab && hit.desktopName === "Research"),
+    ).toBe(true);
+
+    expect(await shellTabs.revealSearchHit(
+      hits.find((hit) => hit.tabId === mainTab)!.desktopId,
+      mainTab!,
+    )).toBe(true);
+    expect(shellTabs.activeTab?.id).toBe(mainTab);
+    expect(shellTabs.activeDesktopName).toBe("Main");
+  });
+
+  it("closes a pane by merging tabs into the sibling", async () => {
+    const { shellTabs } = await import("./shellTabs.svelte");
+    const tabId = shellTabs.openChat("session-a", { activate: true });
+    expect(tabId).toBeTruthy();
+    expect(shellTabs.splitActive("right")).toBe(true);
+    expect(shellTabs.paneCount).toBe(2);
+    expect(shellTabs.activeTab?.id).toBe(tabId);
     expect(shellTabs.closeActiveGroup()).toBe(true);
     expect(shellTabs.paneCount).toBe(1);
+    expect(shellTabs.tabs.some((tab) => tab.id === tabId)).toBe(true);
+    expect(shellTabs.activeTab?.id).toBe(tabId);
     expect(shellTabs.closeActiveGroup()).toBe(false);
   });
 
@@ -178,7 +256,7 @@ describe("shellTabs store", () => {
 
   it("keeps editor groups shaped for splits", async () => {
     const { shellTabs } = await import("./shellTabs.svelte");
-    shellTabs.openSurface("context", { activate: true });
+    shellTabs.openSurface("map", { activate: true });
     expect(shellTabs.groups.length).toBeGreaterThanOrEqual(1);
     expect(shellTabs.splitRoot.type).toBe("group");
   });

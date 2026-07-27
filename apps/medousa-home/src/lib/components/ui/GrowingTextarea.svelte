@@ -6,9 +6,14 @@
     class?: string;
     maxHeight?: number;
     minHeight?: number;
+    element?: HTMLTextAreaElement | null;
     onkeydown?: (event: KeyboardEvent) => void;
     onblur?: (event: FocusEvent) => void;
     onfocus?: (event: FocusEvent) => void;
+    oninput?: (event: Event) => void;
+    onclick?: (event: MouseEvent) => void;
+    onkeyup?: (event: KeyboardEvent) => void;
+    onselect?: (event: Event) => void;
     "aria-label"?: string;
   }
 
@@ -19,22 +24,30 @@
     class: className = "",
     maxHeight = 128,
     minHeight = 36,
+    element = $bindable<HTMLTextAreaElement | null>(null),
     onkeydown,
     onblur,
     onfocus,
+    oninput,
+    onclick,
+    onkeyup,
+    onselect,
     "aria-label": ariaLabel,
   }: Props = $props();
 
-  let el: HTMLTextAreaElement | undefined = $state();
-
   function resize() {
-    if (!el) return;
-    el.style.height = "0px";
-    const scroll = el.scrollHeight;
+    if (!element) return;
+    element.style.height = "0px";
+    const scroll = element.scrollHeight;
     const height = Math.min(Math.max(scroll, minHeight), maxHeight);
-    el.style.height = `${height}px`;
-    el.style.overflowY = scroll > maxHeight ? "auto" : "hidden";
-    el.dataset.expanded = scroll > minHeight + 6 ? "true" : "false";
+    element.style.height = `${height}px`;
+    element.style.overflowY = scroll > maxHeight ? "auto" : "hidden";
+    element.dataset.expanded = scroll > minHeight + 6 ? "true" : "false";
+  }
+
+  function handleInput(event: Event) {
+    resize();
+    oninput?.(event);
   }
 
   $effect(() => {
@@ -44,15 +57,18 @@
 </script>
 
 <textarea
-  bind:this={el}
+  bind:this={element}
   bind:value
   {placeholder}
   {disabled}
   {onkeydown}
   {onblur}
   {onfocus}
+  {onclick}
+  {onkeyup}
+  {onselect}
   aria-label={ariaLabel}
   rows="1"
   class="composer-bar-input {className}"
-  oninput={resize}
+  oninput={handleInput}
 ></textarea>

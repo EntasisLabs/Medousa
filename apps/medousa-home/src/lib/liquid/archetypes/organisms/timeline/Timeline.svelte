@@ -62,8 +62,14 @@
       .filter((e): e is TimelineEvent => e !== null);
   });
 
+  const hasTimeGutter = $derived(events.some((ev) => Boolean(ev.ts)));
+
   function selectEvent(ev: TimelineEvent) {
     ctx.sink?.emit(createSceneEvent(node.id, "select", { eventId: ev.id, label: ev.label }));
+  }
+
+  function hasGlyph(ev: TimelineEvent): boolean {
+    return Boolean(ev.icon?.trim() || ev.emoji?.trim());
   }
 </script>
 
@@ -86,25 +92,30 @@
         </header>
       {/if}
 
-      <ol class="liquid-timeline-rail">
+      <ol
+        class="liquid-timeline-rail"
+        class:liquid-timeline-rail-with-ts={hasTimeGutter}
+      >
         {#each events as ev, i (ev.id)}
-          <li class="liquid-timeline-item" class:liquid-timeline-item-last={i === events.length - 1}>
+          <li
+            class="liquid-timeline-item"
+            class:liquid-timeline-item-last={i === events.length - 1}
+          >
+            {#if hasTimeGutter}
+              <span class="liquid-timeline-ts">{ev.ts ?? ""}</span>
+            {/if}
             <div class="liquid-timeline-spine" aria-hidden="true">
-              <span class="liquid-timeline-dot"></span>
-              {#if i < events.length - 1}
-                <span class="liquid-timeline-line"></span>
-              {/if}
+              <span
+                class="liquid-timeline-dot"
+                class:liquid-timeline-dot-glyph={hasGlyph(ev)}
+              >
+                {#if hasGlyph(ev)}
+                  <LiquidGlyph icon={ev.icon} emoji={ev.emoji} fallback="•" size={12} />
+                {/if}
+              </span>
             </div>
             <button type="button" class="liquid-timeline-card" onclick={() => selectEvent(ev)}>
-              {#if ev.ts}
-                <span class="liquid-timeline-ts">{ev.ts}</span>
-              {/if}
               <span class="liquid-timeline-label-row">
-                {#if ev.emoji || ev.icon}
-                  <span class="liquid-timeline-emoji" aria-hidden="true">
-                    <LiquidGlyph icon={ev.icon} emoji={ev.emoji} size={14} />
-                  </span>
-                {/if}
                 <span class="liquid-timeline-label">{ev.label}</span>
                 {#if ev.meta || ev.lane}
                   <span class="liquid-timeline-lane">{ev.meta || ev.lane}</span>
@@ -161,19 +172,41 @@
   }
 
   .liquid-timeline-rail {
+    --timeline-spine-col: 1.5rem;
+    --timeline-gap: 0.55rem;
+    --timeline-node: 1.15rem;
     list-style: none;
     margin: 0;
     padding: 0;
     display: flex;
     flex-direction: column;
-    gap: 0;
+    gap: var(--timeline-gap);
   }
 
   .liquid-timeline-item {
     display: grid;
-    grid-template-columns: 1.1rem minmax(0, 1fr);
-    gap: 0.65rem;
+    grid-template-columns: var(--timeline-spine-col) minmax(0, 1fr);
+    gap: 0.7rem;
     align-items: stretch;
+    min-width: 0;
+  }
+
+  .liquid-timeline-rail-with-ts .liquid-timeline-item {
+    grid-template-columns: minmax(2.6rem, auto) var(--timeline-spine-col) minmax(0, 1fr);
+  }
+
+  .liquid-timeline-ts {
+    display: flex;
+    align-items: flex-start;
+    justify-content: flex-end;
+    padding-top: 0.55rem;
+    font-size: 0.68rem;
+    font-weight: 650;
+    letter-spacing: 0.02em;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    line-height: 1.2;
+    color: rgb(var(--color-surface-400));
   }
 
   .liquid-timeline-spine {
@@ -181,55 +214,70 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    padding-top: 0.45rem;
+    width: var(--timeline-spine-col);
+    padding-top: 0.4rem;
+  }
+
+  /* Connector from this node through the gap to the next item's node. */
+  .liquid-timeline-item:not(.liquid-timeline-item-last) .liquid-timeline-spine::after {
+    content: "";
+    position: absolute;
+    top: calc(0.4rem + var(--timeline-node));
+    bottom: calc(-1 * var(--timeline-gap));
+    left: 50%;
+    width: 2px;
+    margin-left: -1px;
+    z-index: 0;
+    background: linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--color-primary-400) 55%, transparent) 0%,
+      color-mix(in srgb, var(--color-primary-500) 28%, var(--color-surface-500)) 55%,
+      color-mix(in srgb, var(--color-surface-500) 50%, transparent) 100%
+    );
   }
 
   .liquid-timeline-dot {
-    width: 0.55rem;
-    height: 0.55rem;
+    position: relative;
+    z-index: 1;
+    display: grid;
+    place-items: center;
+    width: var(--timeline-node);
+    height: var(--timeline-node);
     border-radius: 999px;
     flex-shrink: 0;
     background: rgb(var(--color-primary-400));
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary-500) 18%, transparent);
+    border: 1px solid color-mix(in srgb, var(--color-primary-300) 45%, transparent);
+    box-shadow:
+      0 0 0 3px color-mix(in srgb, var(--color-primary-500) 22%, transparent),
+      0 1px 4px rgb(0 0 0 / 0.2);
+    color: rgb(var(--color-surface-50));
   }
 
-  .liquid-timeline-line {
-    flex: 1 1 auto;
-    width: 1px;
-    margin-top: 0.35rem;
-    min-height: 1.25rem;
-    background: color-mix(in srgb, var(--color-surface-500) 45%, transparent);
+  .liquid-timeline-dot-glyph {
+    background: color-mix(in srgb, var(--color-primary-500) 28%, var(--color-surface-900));
+    border-color: color-mix(in srgb, var(--color-primary-400) 50%, transparent);
   }
 
   .liquid-timeline-card {
     display: flex;
     flex-direction: column;
     align-items: flex-start;
-    gap: 0.25rem;
+    gap: 0.3rem;
     width: 100%;
-    margin: 0 0 0.85rem;
-    padding: 0.15rem 0.2rem 0.35rem;
-    border: 0;
-    border-radius: 0.5rem;
-    background: transparent;
+    margin: 0;
+    padding: 0.55rem 0.7rem 0.6rem;
+    border-radius: 0.65rem;
+    border: 1px solid color-mix(in srgb, var(--color-surface-500) 26%, transparent);
+    background: color-mix(in srgb, var(--color-surface-950) 42%, transparent);
+    box-shadow: inset 0 1px 0 color-mix(in srgb, var(--color-surface-50) 3%, transparent);
     color: inherit;
     text-align: left;
     cursor: pointer;
   }
 
-  .liquid-timeline-item-last .liquid-timeline-card {
-    margin-bottom: 0;
-  }
-
   .liquid-timeline-card:hover {
-    background: color-mix(in srgb, var(--color-surface-50) 4%, transparent);
-  }
-
-  .liquid-timeline-ts {
-    font-size: 0.68rem;
-    font-weight: 600;
-    letter-spacing: 0.02em;
-    color: rgb(var(--color-surface-400));
+    background: color-mix(in srgb, var(--color-surface-700) 22%, transparent);
+    border-color: color-mix(in srgb, var(--color-primary-500) 28%, var(--color-surface-500));
   }
 
   .liquid-timeline-label-row {
@@ -237,11 +285,6 @@
     flex-wrap: wrap;
     align-items: baseline;
     gap: 0.35rem 0.5rem;
-  }
-
-  .liquid-timeline-emoji {
-    font-size: 0.95rem;
-    line-height: 1;
   }
 
   .liquid-timeline-label {

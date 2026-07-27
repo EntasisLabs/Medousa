@@ -36,7 +36,16 @@ function commandHaystack(command: WorkshopCommand): string {
 export function scoreCommand(command: WorkshopCommand, query: string): number {
   const trimmed = query.trim().toLowerCase();
   if (!trimmed) {
-    let base = command.section === "suggested" ? 300 : command.section === "go" ? 100 : 50;
+    let base =
+      command.section === "suggested"
+        ? 300
+        : command.section === "pinned"
+          ? 280
+          : command.section === "go"
+            ? 100
+            : command.section === "do"
+              ? 80
+              : 50;
     base += usageScoreBoost(command.id);
     return base;
   }
@@ -44,8 +53,18 @@ export function scoreCommand(command: WorkshopCommand, query: string): number {
   const haystack = commandHaystack(command);
   const labelScore = fuzzyScore(trimmed, command.label.toLowerCase());
   const bodyScore = fuzzyScore(trimmed, haystack);
-  const score = Math.max(labelScore, bodyScore * 0.92);
+  let score = Math.max(labelScore, bodyScore * 0.92);
   if (score <= 0) return 0;
+
+  // Verb-ish queries prefer Do / pins over long Open lists.
+  if (
+    (command.section === "do" || command.section === "pinned") &&
+    /^(new|create|run|pin|preview|split|live|build|toggle|note|script|chat|zoom)/.test(
+      trimmed,
+    )
+  ) {
+    score += 40;
+  }
   return score + usageScoreBoost(command.id);
 }
 
@@ -55,10 +74,6 @@ export function filterAndSortCommands(
   limit = 48,
 ): WorkshopCommand[] {
   const trimmed = query.trim().toLowerCase();
-  if (!trimmed) {
-    return commands.slice(0, limit);
-  }
-
   return commands
     .map((command) => ({ command, score: scoreCommand(command, trimmed) }))
     .filter((row) => row.score > 0)

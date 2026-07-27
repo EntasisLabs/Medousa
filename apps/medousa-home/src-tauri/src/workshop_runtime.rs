@@ -179,15 +179,10 @@ pub(crate) fn is_bind_reachable(bind: &str) -> bool {
     }
 }
 
+/// Offline / local brain is opt-in only. Never infer from provider — Gemma
+/// kills desktop performance if login/engine ensure auto-spawns it.
 pub(crate) fn should_load_private_brain(explicit: bool) -> bool {
-    if explicit {
-        return true;
-    }
-    load_tui_defaults_summary()
-        .provider
-        .as_deref()
-        .map(str::trim)
-        .is_some_and(|provider| provider.eq_ignore_ascii_case("medousa-local"))
+    explicit
 }
 
 fn apply_daemon_messaging_env(command: &mut Command) {

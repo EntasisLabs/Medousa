@@ -30,6 +30,16 @@ export function hostComputerPhrase(): string {
   return `your ${hostComputerNoun()}`;
 }
 
+/** Short TOC / badge label for the local machine ("This Mac" / "This PC" / …). */
+export function thisHostLabel(): string {
+  return `This ${hostComputerNoun()}`;
+}
+
+/** "on this Mac" / "on this PC" / "on this computer". */
+export function onThisHostPhrase(): string {
+  return `on this ${hostComputerNoun()}`;
+}
+
 /** File manager name for reveal/pin copy. */
 export function hostFileManagerNoun(): string {
   if (isTauriMacDesktop()) return "Finder";
@@ -93,7 +103,7 @@ export function workshopPairingStepsHint(): string {
 }
 
 export function workshopPairingManagedHint(): string {
-  return `Pairing is managed on ${workshopHostPhrase()}. Open Medousa → Settings → Phone to show the QR code.`;
+  return `Pairing is managed on ${workshopHostPhrase()}. Open Medousa → Settings → Sharing to show the QR code.`;
 }
 
 export function workshopRetentionReadHint(): string {

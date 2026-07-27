@@ -1,5 +1,5 @@
 <script lang="ts">
-  import NewWorkAsk from "$lib/components/work/NewWorkAsk.svelte";
+  import AskComposer from "$lib/components/work/AskComposer.svelte";
   import { haptic } from "$lib/haptics";
   import { layout } from "$lib/stores/layout.svelte";
   import { attachMobileSheetGestures } from "$lib/utils/mobileSheetGestures";
@@ -41,9 +41,9 @@
         </div>
       </header>
       <div class="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
-        <NewWorkAsk
-          visible={true}
+        <AskComposer
           sheet={true}
+          autofocus={true}
           onQueued={() => layout.setAskSheetOpen(false)}
         />
       </div>

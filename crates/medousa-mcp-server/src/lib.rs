@@ -1,11 +1,13 @@
-//! Medousa MCP server bones.
+//! Medousa MCP server — expose workshop *space* to external agent runtimes.
 //!
-//! Exposes Medousa *space* (vault / calendar / artifacts) to external agentic
-//! runtimes. Does **not** expose spawn/turn/worker orchestration.
-//!
-//! Full workshop I/O lands later; this crate ships the protocol surface + allowlist.
+//! Read-oriented vault / calendar / artifacts tools talk to the local daemon.
+//! Writes and orchestration tools are denied.
 
+mod daemon;
+
+use daemon::DaemonClient;
 use serde_json::{Value, json};
+use std::sync::OnceLock;
 
 /// Tools that must never be registered on this server.
 pub const DENIED_TOOL_PREFIXES: &[&str] = &[
@@ -24,7 +26,7 @@ pub struct ToolSpec {
     pub input_schema: Value,
 }
 
-/// Allowlisted space tools for 0.4.0 bones.
+/// Allowlisted space tools (aligned with `mcp_export_allowlist` — no vault_write).
 pub fn space_tools() -> Vec<ToolSpec> {
     vec![
         ToolSpec {
@@ -48,19 +50,6 @@ pub fn space_tools() -> Vec<ToolSpec> {
                     "path": { "type": "string" }
                 },
                 "required": ["path"]
-            }),
-        },
-        ToolSpec {
-            name: "vault_write",
-            title: "Write vault note",
-            description: "Write or create a vault markdown note by relative path.",
-            input_schema: json!({
-                "type": "object",
-                "properties": {
-                    "path": { "type": "string" },
-                    "content": { "type": "string" }
-                },
-                "required": ["path", "content"]
             }),
         },
         ToolSpec {
@@ -93,17 +82,22 @@ pub fn space_tools() -> Vec<ToolSpec> {
             description: "List workshop artifacts.",
             input_schema: json!({
                 "type": "object",
-                "properties": {}
+                "properties": {
+                    "session_id": { "type": "string" },
+                    "limit": { "type": "integer" },
+                    "query": { "type": "string" }
+                }
             }),
         },
         ToolSpec {
             name: "artifacts_fetch",
             title: "Fetch artifact",
-            description: "Fetch an artifact by id.",
+            description: "Fetch an artifact by id (optional session_id).",
             input_schema: json!({
                 "type": "object",
                 "properties": {
-                    "id": { "type": "string" }
+                    "id": { "type": "string" },
+                    "session_id": { "type": "string" }
                 },
                 "required": ["id"]
             }),
@@ -113,6 +107,9 @@ pub fn space_tools() -> Vec<ToolSpec> {
 
 pub fn is_denied_tool(name: &str) -> bool {
     let lower = name.to_ascii_lowercase();
+    if lower == "vault_write" {
+        return true;
+    }
     DENIED_TOOL_PREFIXES
         .iter()
         .any(|p| lower.starts_with(p) || lower.contains(p))
@@ -133,23 +130,106 @@ pub fn tools_list_result() -> Value {
     json!({ "tools": tools })
 }
 
-/// Stub call handler — real vault/calendar I/O wires to daemon services later.
-pub fn call_tool_stub(name: &str, _arguments: &Value) -> Result<Value, String> {
+fn tool_text(text: impl Into<String>, is_error: bool) -> Value {
+    json!({
+        "content": [{ "type": "text", "text": text.into() }],
+        "isError": is_error
+    })
+}
+
+fn daemon() -> Result<&'static DaemonClient, String> {
+    static CLIENT: OnceLock<Result<DaemonClient, String>> = OnceLock::new();
+    match CLIENT.get_or_init(DaemonClient::from_env) {
+        Ok(client) => Ok(client),
+        Err(err) => Err(err.clone()),
+    }
+}
+
+/// Dispatch an allowlisted tool against the local daemon (or fail closed).
+pub fn call_tool(name: &str, arguments: &Value) -> Result<Value, String> {
     if is_denied_tool(name) {
         return Err(format!("tool '{name}' is denied on medousa_mcp_server"));
     }
     if space_tools().iter().all(|t| t.name != name) {
         return Err(format!("unknown tool '{name}'"));
     }
-    Ok(json!({
-        "content": [{
-            "type": "text",
-            "text": format!(
-                "medousa_mcp_server bones: '{name}' is registered. Workshop I/O not wired yet."
-            )
-        }],
-        "isError": false
-    }))
+
+    match name {
+        "vault_list" => {
+            let prefix = arguments.get("prefix").and_then(|v| v.as_str());
+            let payload = daemon()?.vault_list(prefix)?;
+            let text = serde_json::to_string_pretty(&payload).unwrap_or_else(|_| payload.to_string());
+            Ok(tool_text(text, false))
+        }
+        "vault_read" => {
+            let path = arguments
+                .get("path")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| "path is required".to_string())?;
+            let payload = daemon()?.vault_read(path)?;
+            let body = payload
+                .get("content")
+                .and_then(|v| v.as_str())
+                .or_else(|| payload.get("body").and_then(|v| v.as_str()))
+                .or_else(|| payload.get("markdown").and_then(|v| v.as_str()));
+            if let Some(body) = body {
+                Ok(tool_text(body.to_string(), false))
+            } else {
+                let text =
+                    serde_json::to_string_pretty(&payload).unwrap_or_else(|_| payload.to_string());
+                Ok(tool_text(text, false))
+            }
+        }
+        "vault_search" => {
+            let query = arguments
+                .get("query")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| "query is required".to_string())?;
+            let payload = daemon()?.vault_search(query)?;
+            let text = serde_json::to_string_pretty(&payload).unwrap_or_else(|_| payload.to_string());
+            Ok(tool_text(text, false))
+        }
+        "calendar_list" => {
+            let from = arguments.get("from").and_then(|v| v.as_str());
+            let to = arguments.get("to").and_then(|v| v.as_str());
+            let payload = daemon()?.calendar_list(from, to)?;
+            let text = serde_json::to_string_pretty(&payload).unwrap_or_else(|_| payload.to_string());
+            Ok(tool_text(text, false))
+        }
+        "artifacts_list" => {
+            let session_id = arguments.get("session_id").and_then(|v| v.as_str());
+            let query = arguments.get("query").and_then(|v| v.as_str());
+            let limit = arguments
+                .get("limit")
+                .and_then(|v| v.as_u64())
+                .map(|n| n as usize);
+            let payload = daemon()?.artifacts_list(session_id, limit, query)?;
+            let text = serde_json::to_string_pretty(&payload).unwrap_or_else(|_| payload.to_string());
+            Ok(tool_text(text, false))
+        }
+        "artifacts_fetch" => {
+            let id = arguments
+                .get("id")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| "id is required".to_string())?;
+            let session_id = arguments.get("session_id").and_then(|v| v.as_str());
+            let payload = daemon()?.artifacts_fetch(id, session_id)?;
+            let body = payload.get("body").and_then(|v| v.as_str());
+            if let Some(body) = body {
+                Ok(tool_text(body.to_string(), false))
+            } else {
+                let text =
+                    serde_json::to_string_pretty(&payload).unwrap_or_else(|_| payload.to_string());
+                Ok(tool_text(text, false))
+            }
+        }
+        _ => Err(format!("unknown tool '{name}'")),
+    }
+}
+
+/// Backward-compatible name used by older tests/call sites.
+pub fn call_tool_stub(name: &str, arguments: &Value) -> Result<Value, String> {
+    call_tool(name, arguments)
 }
 
 pub fn handle_jsonrpc(request: &Value) -> Option<Value> {
@@ -182,7 +262,7 @@ pub fn handle_jsonrpc(request: &Value) -> Option<Value> {
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
             let args = params.get("arguments").cloned().unwrap_or(json!({}));
-            match call_tool_stub(name, &args) {
+            match call_tool(name, &args) {
                 Ok(result) => Some(json!({
                     "jsonrpc": "2.0",
                     "id": id,
@@ -216,7 +296,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn lists_space_tools_and_denies_spawn() {
+    fn lists_space_tools_without_write_or_spawn() {
         let listed = tools_list_result();
         let names: Vec<&str> = listed["tools"]
             .as_array()
@@ -225,10 +305,14 @@ mod tests {
             .map(|t| t["name"].as_str().unwrap())
             .collect();
         assert!(names.contains(&"vault_read"));
+        assert!(names.contains(&"vault_search"));
         assert!(names.contains(&"calendar_list"));
+        assert!(!names.contains(&"vault_write"));
         assert!(!names.iter().any(|n| n.contains("spawn")));
         assert!(is_denied_tool("cognition_spawn_turn_worker"));
-        assert!(call_tool_stub("cognition_spawn_turn_worker", &json!({})).is_err());
+        assert!(is_denied_tool("vault_write"));
+        assert!(call_tool("cognition_spawn_turn_worker", &json!({})).is_err());
+        assert!(call_tool("vault_write", &json!({"path":"x","content":"y"})).is_err());
     }
 
     #[test]
@@ -241,5 +325,19 @@ mod tests {
         });
         let res = handle_jsonrpc(&req).unwrap();
         assert_eq!(res["result"]["serverInfo"]["name"], "medousa-mcp-server");
+    }
+
+    #[test]
+    fn calendar_and_artifacts_tools_are_registered() {
+        let listed = tools_list_result();
+        let names: Vec<&str> = listed["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|t| t["name"].as_str().unwrap())
+            .collect();
+        assert!(names.contains(&"calendar_list"));
+        assert!(names.contains(&"artifacts_list"));
+        assert!(names.contains(&"artifacts_fetch"));
     }
 }

@@ -20,13 +20,18 @@
     SURFACE_ICON_GROUPS,
     type AllowedSurfaceIcon,
   } from "$lib/utils/environmentIconCatalog";
-  import { addVaultSelectionToChat } from "$lib/utils/vaultNoteWorkshop";
+  import {
+    addVaultSelectionToChat,
+    sendVaultNoteToWork,
+    talkAboutVaultNote,
+  } from "$lib/utils/vaultNoteWorkshop";
   import { canUseLocalVaultFilesystem } from "$lib/utils/vaultFilesystem";
   import { vaultHostSideHint } from "$lib/utils/workshopLocality";
   import { revealInFileManagerLabel } from "$lib/platformCopy";
   import type { VaultExportFormat } from "$lib/utils/vaultExportOptions";
   import BodyPortal from "$lib/components/ui/BodyPortal.svelte";
   import { toast } from "$lib/stores/toast.svelte";
+  import { shareVaultNote } from "$lib/share";
   import VaultExportPreviewModal from "./VaultExportPreviewModal.svelte";
 
   const MENU_ACTION_TIMEOUT_MS = 8000;
@@ -248,8 +253,58 @@
           },
         },
         {
+          id: "talk-about",
+          label: "Talk about this note",
+          separatorBefore: true,
+          onClick: async () => {
+            await talkAboutVaultNote(path);
+          },
+        },
+        {
+          id: "send-to-work",
+          label: "Send to Work",
+          onClick: async () => {
+            try {
+              await sendVaultNoteToWork(path);
+              toast.show("Sent to Work", { durationMs: 1600 });
+            } catch (err) {
+              toast.show(
+                err instanceof Error ? err.message : "Couldn’t send to Work",
+                { durationMs: 2200 },
+              );
+            }
+          },
+        },
+        {
+          id: "share-note",
+          label: "Share…",
+          onClick: async () => {
+            try {
+              const response = await getVaultNote(path);
+              const title =
+                vault.labelByPath().get(path) ??
+                vaultDisplayTitle(response.note.title, path);
+              const outcome = await shareVaultNote(
+                title,
+                response.content,
+                path,
+              );
+              if (outcome === "shared") {
+                toast.show("Shared", { durationMs: 1400 });
+              } else if (outcome === "copied") {
+                toast.show("Copied to clipboard", { durationMs: 1600 });
+              } else {
+                toast.show("Couldn’t share", { durationMs: 1600 });
+              }
+            } catch (err) {
+              vault.error = err instanceof Error ? err.message : String(err);
+            }
+          },
+        },
+        {
           id: "copy-path",
           label: "Copy path",
+          separatorBefore: true,
           onClick: async () => {
             await copyTextToClipboard(path);
           },

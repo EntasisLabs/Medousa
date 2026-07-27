@@ -1,9 +1,53 @@
-import type { LocusNodeSummary } from "$lib/types/locus";
+import type { LocusAvecSnapshot, LocusNodeSummary } from "$lib/types/locus";
+import type { VaultNote } from "$lib/types/vault";
 import { humanMomentTitle, sessionMapLabel } from "$lib/utils/contextHuman";
+import {
+  buildNoteGraphSlice,
+  sessionIdForNoteChatTag,
+} from "$lib/utils/contextMapNotes";
+import { AVEC_DIMENSIONS } from "$lib/utils/contextPosture";
+
+export type MapAvecMins = {
+  stability: number;
+  friction: number;
+  logic: number;
+  autonomy: number;
+};
+
+export function avecMinsActive(mins?: MapAvecMins | null): boolean {
+  if (!mins) return false;
+  return (
+    mins.stability > 0 ||
+    mins.friction > 0 ||
+    mins.logic > 0 ||
+    mins.autonomy > 0
+  );
+}
+
+/** Moment passes when every dim with min > 0 has user_avec[dim] >= min. */
+export function momentPassesAvecMins(
+  thread: { user_avec?: LocusAvecSnapshot | null },
+  mins?: MapAvecMins | null,
+): boolean {
+  if (!avecMinsActive(mins) || !mins) return true;
+  const avec = thread.user_avec;
+  if (!avec) return false;
+  for (const dim of AVEC_DIMENSIONS) {
+    const min = mins[dim.key];
+    if (min > 0 && avec[dim.key] < min) return false;
+  }
+  return true;
+}
 
 export type ContextMapNodeKind = "session" | "thread" | "claim" | "note";
 
-export type ContextMapEdgeKind = "membership" | "sequence" | "session_chain";
+export type ContextMapEdgeKind =
+  | "membership"
+  | "sequence"
+  | "session_chain"
+  | "note_session"
+  | "note_link"
+  | "note_tag";
 
 export type ContextMapRenderMode = "full" | "ghost";
 
@@ -13,6 +57,8 @@ export interface ContextMapNode {
   label: string;
   sessionId: string;
   syncKey?: string;
+  /** Vault-relative path when kind === "note". */
+  notePath?: string;
   x: number;
   y: number;
   radius: number;
@@ -51,10 +97,15 @@ export interface ContextMapBounds {
   maxY: number;
 }
 
-const MAX_SESSIONS = 48;
-const MAX_THREADS_PER_SESSION = 20;
-const MAX_GHOST_MOMENTS = 8;
+const MAX_SESSIONS = 120;
+const MAX_THREADS_PER_SESSION = 30;
+const MAX_GHOST_MOMENTS = 12;
 const DEFAULT_AUTO_EXPAND = 5;
+/** Link sessions that share a recent time neighborhood (Obsidian-like). */
+const SESSION_PROXIMITY_MS = 7 * 24 * 60 * 60 * 1000;
+const MAX_PROXIMITY_LINKS_PER_SESSION = 3;
+
+export type ContextMapDensity = "default" | "rail";
 
 const TIER_WEIGHT: Record<string, number> = {
   raw: 1,
@@ -84,14 +135,16 @@ function sessionHue(sessionId: string): number {
   return hash % 8;
 }
 
-function sessionRadius(momentCount: number): number {
-  return Math.min(26, Math.max(9, 7 + Math.sqrt(Math.max(momentCount, 1)) * 3.2));
+function sessionRadius(momentCount: number, density: ContextMapDensity): number {
+  const base = Math.min(26, Math.max(9, 7 + Math.sqrt(Math.max(momentCount, 1)) * 3.2));
+  return density === "rail" ? base * 0.82 : base;
 }
 
-function threadRadius(thread: LocusNodeSummary): number {
+function threadRadius(thread: LocusNodeSummary, density: ContextMapDensity): number {
   const tier = TIER_WEIGHT[thread.tier.trim().toLowerCase()] ?? 1;
   const signal = Math.min(1.4, 0.85 + thread.rho * 0.35 + thread.kappa * 0.2);
-  return Math.min(11, Math.max(4.5, 4 + tier * 2.2 * signal));
+  const base = Math.min(11, Math.max(4.5, 4 + tier * 2.2 * signal));
+  return density === "rail" ? base * 0.85 : base;
 }
 
 function threadWeight(thread: LocusNodeSummary): number {
@@ -132,89 +185,60 @@ function buildSessionBuckets(
     .slice(0, MAX_SESSIONS);
 }
 
-function layoutForceDirected(
+/** Cheap ring seed only — settle physics owns the real layout. */
+function seedNodePositions(
   nodes: ContextMapNode[],
-  edges: ContextMapEdge[],
   width: number,
   height: number,
+  priorPositions?: Map<string, { x: number; y: number }>,
 ): void {
   const visibleNodes = nodes.filter((node) => node.visible);
   if (visibleNodes.length === 0) return;
 
   const cx = width / 2;
   const cy = height / 2;
+  const bySession = new Map<string, { x: number; y: number }>();
 
-  visibleNodes.forEach((node, index) => {
-    if (node.x !== 0 || node.y !== 0) return;
-    const angle = (Math.PI * 2 * index) / visibleNodes.length - Math.PI / 2;
-    const spread = Math.min(width, height) * 0.38;
-    node.x = cx + Math.cos(angle) * spread * (0.75 + (node.weight / 12) * 0.35);
-    node.y = cy + Math.sin(angle) * spread * (0.75 + (node.weight / 12) * 0.35);
-  });
+  // Sessions first so moments/notes can seed nearby.
+  const ordered = [
+    ...visibleNodes.filter((node) => node.kind === "session"),
+    ...visibleNodes.filter((node) => node.kind !== "session"),
+  ];
 
-  const nodeById = Object.fromEntries(visibleNodes.map((node) => [node.id, node]));
-  const visibleEdges = edges.filter(
-    (edge) => edge.visible && nodeById[edge.from] && nodeById[edge.to],
-  );
-
-  const iterations = Math.min(240, 100 + visibleNodes.length * 4);
-
-  for (let step = 0; step < iterations; step += 1) {
-    const cooling = 1 - step / iterations;
-
-    for (let i = 0; i < visibleNodes.length; i += 1) {
-      for (let j = i + 1; j < visibleNodes.length; j += 1) {
-        const a = visibleNodes[i];
-        const b = visibleNodes[j];
-        let dx = b.x - a.x;
-        let dy = b.y - a.y;
-        let dist = Math.hypot(dx, dy);
-        if (dist < 1) {
-          dist = 1;
-          dx = 1;
-          dy = 0;
-        }
-        const mass = (node: ContextMapNode) =>
-          node.kind === "session" ? 5200 + node.weight * 420 : 2400 + node.weight * 180;
-        const repulse = ((mass(a) + mass(b)) / 2 / (dist * dist)) * cooling;
-        const fx = (dx / dist) * repulse;
-        const fy = (dy / dist) * repulse;
-        a.x -= fx;
-        a.y -= fy;
-        b.x += fx;
-        b.y += fy;
+  ordered.forEach((node, index) => {
+    const prior = priorPositions?.get(node.id);
+    if (prior) {
+      node.x = prior.x;
+      node.y = prior.y;
+      if (node.kind === "session") {
+        bySession.set(node.sessionId, { x: node.x, y: node.y });
       }
+      return;
     }
 
-    for (const edge of visibleEdges) {
-      const from = nodeById[edge.from];
-      const to = nodeById[edge.to];
-      if (!from || !to) continue;
-      const dx = to.x - from.x;
-      const dy = to.y - from.y;
-      const dist = Math.hypot(dx, dy) || 1;
-      const strength = edge.strength ?? (edge.kind === "session_chain" ? 0.06 : 0.1);
-      const ghostPull = edge.renderMode === "ghost" ? 1.35 : 1;
-      const target =
-        edge.kind === "session_chain"
-          ? 140 + (from.radius + to.radius) * 1.4
-          : edge.kind === "membership"
-            ? (72 + from.radius + to.radius * 0.35) / ghostPull
-            : 52 + (from.radius + to.radius) * 0.45;
-      const offset = (dist - target) * strength * cooling;
-      const fx = (dx / dist) * offset;
-      const fy = (dy / dist) * offset;
-      from.x += fx;
-      from.y += fy;
-      to.x -= fx;
-      to.y -= fy;
+    if (node.kind === "session") {
+      const angle = (Math.PI * 2 * index) / Math.max(visibleNodes.length, 1) - Math.PI / 2;
+      const spread = Math.min(width, height) * 0.38;
+      node.x = cx + Math.cos(angle) * spread * (0.75 + (node.weight / 12) * 0.35);
+      node.y = cy + Math.sin(angle) * spread * (0.75 + (node.weight / 12) * 0.35);
+      bySession.set(node.sessionId, { x: node.x, y: node.y });
+      return;
     }
 
-    for (const node of visibleNodes) {
-      node.x += (cx - node.x) * 0.008 * cooling;
-      node.y += (cy - node.y) * 0.008 * cooling;
+    const parent = node.sessionId ? bySession.get(node.sessionId) : undefined;
+    if (parent) {
+      const angle = index * 2.399 + (node.kind === "note" ? 0.7 : 0);
+      const radius = (node.kind === "note" ? 48 : 30) + (index % 6) * 7;
+      node.x = parent.x + Math.cos(angle) * radius;
+      node.y = parent.y + Math.sin(angle) * radius;
+      return;
     }
-  }
+
+    const angle = (Math.PI * 2 * index) / Math.max(visibleNodes.length, 1) - Math.PI / 2;
+    const spread = Math.min(width, height) * 0.38;
+    node.x = cx + Math.cos(angle) * spread * 0.8;
+    node.y = cy + Math.sin(angle) * spread * 0.8;
+  });
 }
 
 export function graphBounds(graph: ContextMapGraph): ContextMapBounds | null {
@@ -310,12 +334,96 @@ export function neighborSummary(graph: ContextMapGraph, nodeId: string): string 
   const neighborhood = mapNeighborhood(graph, nodeId);
   const moments = [...neighborhood].filter((id) => id.startsWith("thread:")).length;
   const sessions = [...neighborhood].filter((id) => id.startsWith("session:")).length;
+  const notes = [...neighborhood].filter((id) => id.startsWith("note:")).length;
 
   if (node.kind === "session") {
     const total = node.momentCount ?? moments;
-    return `${total} moment${total === 1 ? "" : "s"} in this session`;
+    const noteBit =
+      notes > 0 ? ` · ${notes} note${notes === 1 ? "" : "s"}` : "";
+    return `${total} moment${total === 1 ? "" : "s"} in this session${noteBit}`;
+  }
+  if (node.kind === "note") {
+    return `${notes - 1 > 0 ? `${notes - 1} linked note${notes - 1 === 1 ? "" : "s"}` : "Vault note"}${
+      sessions > 0 ? ` · ${sessions} session${sessions === 1 ? "" : "s"}` : ""
+    }`;
   }
   return `${moments} linked moment${moments === 1 ? "" : "s"} · ${sessions} session${sessions === 1 ? "" : "s"}`;
+}
+
+function buildSessionProximityEdges(
+  sessionNodeIds: string[],
+  sessionTimestamps: Map<string, number>,
+): ContextMapEdge[] {
+  const sessions = sessionNodeIds
+    .map((id) => ({ id, ts: sessionTimestamps.get(id) ?? 0 }))
+    .sort((left, right) => right.ts - left.ts);
+
+  const edges: ContextMapEdge[] = [];
+  const seen = new Set<string>();
+
+  for (let i = 0; i < sessions.length; i += 1) {
+    const candidates: Array<{ j: number; dt: number }> = [];
+    for (let j = 0; j < sessions.length; j += 1) {
+      if (i === j) continue;
+      const dt = Math.abs(sessions[i].ts - sessions[j].ts);
+      if (dt <= SESSION_PROXIMITY_MS) {
+        candidates.push({ j, dt });
+      }
+    }
+    candidates.sort((left, right) => left.dt - right.dt);
+    const picks = candidates.slice(0, MAX_PROXIMITY_LINKS_PER_SESSION);
+    // Sparse fallback: keep a chronological neighbor so the graph doesn't fragment.
+    if (picks.length === 0 && i < sessions.length - 1) {
+      picks.push({
+        j: i + 1,
+        dt: Math.abs(sessions[i].ts - sessions[i + 1].ts),
+      });
+    }
+
+    for (const { j, dt } of picks) {
+      const from = sessions[i].id;
+      const to = sessions[j].id;
+      const key = from < to ? `${from}|${to}` : `${to}|${from}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const closeness =
+        SESSION_PROXIMITY_MS > 0
+          ? 1 - Math.min(dt, SESSION_PROXIMITY_MS) / SESSION_PROXIMITY_MS
+          : 0.5;
+      edges.push({
+        id: `session_chain:${key}`,
+        from,
+        to,
+        kind: "session_chain",
+        visible: true,
+        strength: 0.032 + closeness * 0.04,
+      });
+    }
+  }
+
+  return edges;
+}
+
+export function applySimulationPositions(
+  graph: ContextMapGraph,
+  positions: Map<string, { x: number; y: number }>,
+): ContextMapGraph {
+  if (positions.size === 0) return graph;
+  return {
+    ...graph,
+    nodes: graph.nodes.map((node) => {
+      const pos = positions.get(node.id);
+      return pos ? { ...node, x: pos.x, y: pos.y } : node;
+    }),
+  };
+}
+
+/** @deprecated Prefer applySimulationPositions — kept for callers during migration. */
+export function applyPinnedPositions(
+  graph: ContextMapGraph,
+  pins: Map<string, { x: number; y: number }>,
+): ContextMapGraph {
+  return applySimulationPositions(graph, pins);
 }
 
 export function buildContextMapGraph(
@@ -326,25 +434,61 @@ export function buildContextMapGraph(
     height: number;
     expandedSessionIds: Set<string>;
     searchQuery?: string;
+    density?: ContextMapDensity;
+    /** Preserve settled coords across expand/search rebuilds. */
+    priorPositions?: Map<string, { x: number; y: number }>;
+    vaultNotes?: VaultNote[];
+    /** Per-dimension AVEC minimums (0 = off). */
+    avecMins?: MapAvecMins | null;
   },
 ): ContextMapGraph {
-  const { width, height, expandedSessionIds, searchQuery = "" } = options;
+  const {
+    width,
+    height,
+    expandedSessionIds,
+    searchQuery = "",
+    density = "default",
+    priorPositions,
+    vaultNotes = [],
+    avecMins = null,
+  } = options;
   const needle = searchQuery.trim().toLowerCase();
+  const avecFilterOn = avecMinsActive(avecMins);
   const buckets = buildSessionBuckets(locusNodes, sessionLabels);
+  const allBucketSessionIds = buckets.map((bucket) => bucket.sessionId);
+  const noteRevealSessions = new Set<string>();
+  if (needle && vaultNotes.length > 0) {
+    for (const note of vaultNotes) {
+      const hay = [note.title, note.path, ...note.tags].join(" ").toLowerCase();
+      if (!hay.includes(needle)) continue;
+      const linked = sessionIdForNoteChatTag(note.tags, allBucketSessionIds);
+      if (linked) noteRevealSessions.add(linked);
+    }
+  }
 
-  const layoutWidth = Math.max(width, 720 + buckets.length * 52);
-  const layoutHeight = Math.max(height, 520 + buckets.length * 34);
+  const floorW = density === "rail" ? 280 : 720;
+  const floorH = density === "rail" ? 360 : 520;
+  const growW = density === "rail" ? 28 : 52;
+  const growH = density === "rail" ? 20 : 34;
+  const layoutWidth = Math.max(width, floorW + buckets.length * growW);
+  const layoutHeight = Math.max(height, floorH + buckets.length * growH);
 
   const nodes: ContextMapNode[] = [];
   const edges: ContextMapEdge[] = [];
   const sessionNodeIds: string[] = [];
+  const sessionTimestamps = new Map<string, number>();
 
   for (const bucket of buckets) {
     const sessionMatches =
       !needle ||
       bucket.label.toLowerCase().includes(needle) ||
       bucket.sessionId.toLowerCase().includes(needle);
-    const visibleThreads = bucket.threads.slice(0, MAX_THREADS_PER_SESSION);
+    const avecThreads = bucket.threads.filter((thread) =>
+      momentPassesAvecMins(thread, avecMins),
+    );
+    if (avecFilterOn && avecThreads.length === 0) continue;
+
+    const visibleThreads = avecThreads.slice(0, MAX_THREADS_PER_SESSION);
     const expanded = expandedSessionIds.has(bucket.sessionId);
 
     const matchingThreads = visibleThreads.filter((thread) => {
@@ -360,7 +504,11 @@ export function buildContextMapGraph(
     const searchReveal = Boolean(needle && matchingThreads.length > 0);
     const showMomentsFull = expanded || searchReveal;
 
-    const showSession = !needle || sessionMatches || matchingThreads.length > 0;
+    const showSession =
+      !needle ||
+      sessionMatches ||
+      matchingThreads.length > 0 ||
+      noteRevealSessions.has(bucket.sessionId);
     if (!showSession) continue;
 
     const sessionId = `session:${bucket.sessionId}`;
@@ -370,14 +518,16 @@ export function buildContextMapGraph(
       momentCount > 0 ? `${bucket.label} · ${momentCount}` : bucket.label;
 
     sessionNodeIds.push(sessionId);
+    sessionTimestamps.set(sessionId, parseTimestamp(bucket.threads[0]?.timestamp ?? ""));
+    const labelMax = density === "rail" ? 22 : 34;
     nodes.push({
       id: sessionId,
       kind: "session",
-      label: truncateLabel(showMomentsFull ? bucket.label : collapsedLabel, 34),
+      label: truncateLabel(showMomentsFull ? bucket.label : collapsedLabel, labelMax),
       sessionId: bucket.sessionId,
       x: 0,
       y: 0,
-      radius: sessionRadius(momentCount),
+      radius: sessionRadius(momentCount, density),
       weight,
       hue: sessionHue(bucket.sessionId),
       visible: true,
@@ -394,11 +544,11 @@ export function buildContextMapGraph(
     threadsToShow.slice(0, ghostLimit).forEach((thread, index) => {
       const isGhost = !showMomentsFull;
       const threadId = `thread:${thread.sync_key}`;
-      const baseRadius = threadRadius(thread);
+      const baseRadius = threadRadius(thread, density);
       nodes.push({
         id: threadId,
         kind: "thread",
-        label: truncateLabel(humanMomentTitle(thread), 30),
+        label: truncateLabel(humanMomentTitle(thread), density === "rail" ? 18 : 30),
         sessionId: bucket.sessionId,
         syncKey: thread.sync_key,
         x: 0,
@@ -407,7 +557,7 @@ export function buildContextMapGraph(
         weight: threadWeight(thread),
         hue: sessionHue(bucket.sessionId),
         visible: true,
-        showLabel: !isGhost && index < 4,
+        showLabel: !isGhost && index < (density === "rail" ? 2 : 4),
         renderMode: isGhost ? "ghost" : "full",
       });
 
@@ -417,7 +567,7 @@ export function buildContextMapGraph(
         to: threadId,
         kind: "membership",
         visible: true,
-        strength: isGhost ? 0.18 : 0.14,
+        strength: isGhost ? 0.16 : 0.11,
         renderMode: isGhost ? "ghost" : "full",
       });
 
@@ -429,25 +579,31 @@ export function buildContextMapGraph(
           to: threadId,
           kind: "sequence",
           visible: true,
-          strength: 0.08,
+          strength: 0.06,
           renderMode: "full",
         });
       }
     });
   }
 
-  for (let index = 0; index < sessionNodeIds.length - 1; index += 1) {
-    edges.push({
-      id: `session_chain:${sessionNodeIds[index]}:${sessionNodeIds[index + 1]}`,
-      from: sessionNodeIds[index],
-      to: sessionNodeIds[index + 1],
-      kind: "session_chain",
-      visible: true,
-      strength: 0.055,
+  edges.push(...buildSessionProximityEdges(sessionNodeIds, sessionTimestamps));
+
+  const visibleSessionIds = nodes
+    .filter((node) => node.kind === "session")
+    .map((node) => node.sessionId);
+  const sessionIdSet = new Set(visibleSessionIds);
+
+  if (vaultNotes.length > 0) {
+    const noteSlice = buildNoteGraphSlice(vaultNotes, visibleSessionIds, {
+      searchQuery: needle,
+      labelMax: density === "rail" ? 18 : 28,
+      sessionNodeExists: (sessionId) => sessionIdSet.has(sessionId),
     });
+    nodes.push(...noteSlice.nodes);
+    edges.push(...noteSlice.edges);
   }
 
-  layoutForceDirected(nodes, edges, layoutWidth, layoutHeight);
+  seedNodePositions(nodes, layoutWidth, layoutHeight, priorPositions);
 
   return {
     nodes,

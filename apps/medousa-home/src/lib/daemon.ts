@@ -171,6 +171,51 @@ export async function listSessions(
   });
 }
 
+export interface CreateSessionOptions {
+  catalog?: "single" | "shared";
+  memberProfileIds?: string[];
+  agentProfileId?: string;
+  displayName?: string;
+  sessionId?: string;
+}
+
+export interface CreateSessionResponse {
+  session_id: string;
+  catalog: string;
+  display_name?: string | null;
+  member_profile_ids?: string[];
+  agent_profile_id?: string | null;
+}
+
+export async function createSession(
+  options?: CreateSessionOptions,
+): Promise<CreateSessionResponse> {
+  return invoke<CreateSessionResponse>("session_create", {
+    catalog: options?.catalog,
+    memberProfileIds: options?.memberProfileIds,
+    agentProfileId: options?.agentProfileId,
+    displayName: options?.displayName,
+    sessionId: options?.sessionId,
+  });
+}
+
+export interface SharedModeStatus {
+  mode: "personal" | "shared" | string;
+  enabled_at?: string | null;
+  root_profile_id: string;
+  general_profile_id: string;
+}
+
+export async function getSharedMode(): Promise<SharedModeStatus> {
+  return invoke<SharedModeStatus>("shared_mode_status");
+}
+
+export async function setSharedMode(
+  mode: "personal" | "shared",
+): Promise<SharedModeStatus> {
+  return invoke<SharedModeStatus>("shared_mode_set", { mode });
+}
+
 export async function getSessionHistory(
   sessionId: string,
 ): Promise<SessionHistoryResponse> {
@@ -1385,6 +1430,33 @@ export async function exportIdentityMarkdown(request?: {
       user_id: request?.user_id ?? null,
       dir: request?.dir ?? null,
     },
+  });
+}
+
+export async function exportUserProfileBundle(request: {
+  profileId: string;
+  sessionLimit?: number;
+  nodeLimitPerSession?: number;
+}): Promise<{ bundle: unknown }> {
+  return invoke("identity_export_profile", {
+    profileId: request.profileId,
+    sessionLimit: request.sessionLimit ?? null,
+    nodeLimitPerSession: request.nodeLimitPerSession ?? null,
+  });
+}
+
+export async function importUserProfileBundle(request: {
+  bundle: unknown;
+  dryRun?: boolean;
+}): Promise<{
+  dry_run: boolean;
+  profile_id: string;
+  created_profile: boolean;
+  message: string;
+}> {
+  return invoke("identity_import_profile", {
+    bundle: request.bundle,
+    dryRun: request.dryRun ?? false,
   });
 }
 

@@ -148,8 +148,8 @@
             bind:value={correction}
             disabled={correcting}
             placeholder={entry.kind === "contact" || entry.kind === "relationship"
-              ? "partner, colleague, mom…"
-              : "What should she remember instead?"}
+              ? "Role — colleague, collaborator, family…"
+              : "What should be remembered instead?"}
           ></textarea>
           <div class="flex justify-end border-t border-surface-500/25 pt-2">
             <button

@@ -24,7 +24,7 @@ import type { SwimlaneMode, WorkView } from "$lib/types/work";
 import type { EnqueueAskJobRequest } from "$lib/utils/askPrompt";
 import { collectActivityCardIds } from "$lib/utils/activityEnrichment";
 import { friendlyUserError } from "$lib/utils/normieErrors";
-import { hubCardsForPrefetch } from "$lib/utils/workHub";
+import { hubCardsForPrefetch, type WorkHubLayer } from "$lib/utils/workHub";
 import {
   isActionableBlockedCard,
   visibleWorkCards,
@@ -77,6 +77,8 @@ export class WorkspaceStore {
   swimlane = $state<SwimlaneMode>("none");
   showDone = $state(false);
   workView = $state<WorkView>("hub");
+  /** Side-rail list filter (vault-style dock modes). */
+  workRailFilter = $state<WorkHubLayer>("living");
 
   setWorkView(view: WorkView) {
     this.workView = view;
@@ -87,6 +89,11 @@ export class WorkspaceStore {
   }
 
   openHubView() {
+    this.workView = "hub";
+  }
+
+  setWorkRailFilter(layer: WorkHubLayer) {
+    this.workRailFilter = layer;
     this.workView = "hub";
   }
   private previousColumns = new Map<string, string>();

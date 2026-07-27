@@ -280,6 +280,7 @@ async fn main() -> Result<()> {
     let identity_service = platform.identity_service();
     let profile_registry = Arc::new(std::sync::RwLock::new(UserProfileRegistry::load_or_bootstrap()));
     medousa::user_profiles::init_workshop_profile_registry(profile_registry.clone());
+    medousa::shared_mode::init_shared_mode();
 
     if once {
         let report = tick_runtime(platform.composition(), &worker_id, heartbeat_policy, None).await?;
@@ -453,6 +454,7 @@ async fn main() -> Result<()> {
             model.map(|value| value.to_string()),
             iroh_info,
         ));
+        medousa::pairing::init_workshop_pairing(pairing_service.clone());
         if medousa::pairing::mdns_should_advertise(bind) {
             let mut txt = std::collections::HashMap::new();
             txt.insert("dv".to_string(), pairing_service.device_id().to_string());
@@ -530,9 +532,14 @@ async fn main() -> Result<()> {
         local_peer_name: share_api_state.local_peer_name.clone(),
     };
     let peer_scope_pairing = peer_message_state.pairing.clone();
+    let mesh_api_state = medousa::mesh::MeshApiState {
+        pairing: peer_message_state.pairing.clone(),
+        local_device_id: peer_message_state.local_device_id.clone(),
+    };
     app = app
         .merge(medousa::share_handlers::share_router(share_api_state))
-        .merge(medousa::peer_message_handlers::peer_message_router(peer_message_state));
+        .merge(medousa::peer_message_handlers::peer_message_router(peer_message_state))
+        .merge(medousa::mesh::mesh_router(mesh_api_state));
     if let Some(pairing) = peer_scope_pairing {
         app = app.layer(axum::middleware::from_fn_with_state(
             pairing,

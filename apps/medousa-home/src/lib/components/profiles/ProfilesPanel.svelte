@@ -3,15 +3,15 @@
   import ProfilesFocusCard from "$lib/components/profiles/ProfilesFocusCard.svelte";
   import ProfilesIdentityField from "$lib/components/profiles/ProfilesIdentityField.svelte";
   import ProfilesOverflowMenu from "$lib/components/profiles/ProfilesOverflowMenu.svelte";
-  import ProfilesTeachComposer from "$lib/components/profiles/ProfilesTeachComposer.svelte";
+  import ProfilesTeachDialog from "$lib/components/profiles/ProfilesTeachDialog.svelte";
   import { getIdentityDigestPreview } from "$lib/daemon";
   import { identity } from "$lib/stores/identity.svelte";
+  import { profilesSelection } from "$lib/stores/profilesSelection.svelte";
   import { userProfiles } from "$lib/stores/userProfiles.svelte";
   import type { IdentityRememberRequest, IdentityRememberResponse } from "$lib/types/identity";
-  import type { IdentityFieldBlob } from "$lib/types/identityField";
   import { registerMobileBackHandler } from "$lib/mobileNavigation";
   import { isTauriMobilePlatform } from "$lib/platform";
-  import { buildIdentityFieldLayout } from "$lib/utils/identityField";
+  import { blobForShelfEntry, buildIdentityFieldLayout } from "$lib/utils/identityField";
   import {
     buildProfileShelfEntries,
     findShelfEntryAfterRemember,
@@ -22,7 +22,6 @@
     PROFILES_ADD_PERSON_EVENT,
     PROFILES_FOCUS_TEACH_EVENT,
   } from "$lib/utils/profilesChromeEvents";
-  import { UserPlus } from "@lucide/svelte";
   import { onMount } from "svelte";
 
   interface Props {
@@ -34,12 +33,11 @@
 
   let { visible, mobile = false, embedded = false, onOpenChat }: Props = $props();
 
-  let selectedBlob = $state<IdentityFieldBlob | null>(null);
   let digestLines = $state<string[]>([]);
   let personSheetOpen = $state(false);
+  let teachDialogOpen = $state(false);
   let shelfNotice = $state<string | null>(null);
   let teachPrefill = $state("");
-  let teachFocusNonce = $state(0);
 
   const readOnly = $derived(mobile && isTauriMobilePlatform());
 
@@ -50,6 +48,19 @@
       digestLines,
     ),
   );
+
+  const shelfEntries = $derived(
+    identity.context ? buildProfileShelfEntries(identity.context) : [],
+  );
+
+  const selectedBlob = $derived.by(() => {
+    const id = profilesSelection.selectedId;
+    if (!id) return null;
+    const fromField = fieldLayout.blobs.find((blob) => blob.id === id);
+    if (fromField) return fromField;
+    const entry = shelfEntries.find((row) => row.id === id);
+    return entry ? blobForShelfEntry(entry) : null;
+  });
 
   $effect(() => {
     if (visible) {
@@ -63,8 +74,16 @@
   $effect(() => {
     if (!mobile || !visible) return;
     return registerMobileBackHandler(() => {
-      if (!selectedBlob) return false;
-      selectedBlob = null;
+      if (teachDialogOpen) {
+        teachDialogOpen = false;
+        return true;
+      }
+      if (personSheetOpen) {
+        personSheetOpen = false;
+        return true;
+      }
+      if (!profilesSelection.selectedId) return false;
+      profilesSelection.select(null);
       return true;
     });
   });
@@ -95,14 +114,7 @@
     shelfNotice = null;
     const entries = identity.context ? buildProfileShelfEntries(identity.context) : [];
     const entry = findShelfEntryAfterRemember(entries, parsed);
-    if (entry) {
-      const layout = buildIdentityFieldLayout(
-        identity.context,
-        userProfiles.activeDisplayName,
-        digestLines,
-      );
-      selectedBlob = layout.blobs.find((b) => b.id === entry.id) ?? null;
-    }
+    profilesSelection.select(entry?.id ?? null);
   }
 
   async function handleRemembered(
@@ -112,21 +124,26 @@
     await focusAfterRemember(parsed, result);
   }
 
+  function openTeach(prefill = "") {
+    teachPrefill = prefill;
+    teachDialogOpen = true;
+  }
+
   function handleCorrect() {
-    if (!selectedBlob) return;
-    if (selectedBlob.kind === "person") {
-      teachPrefill = `${selectedBlob.label} is my ${selectedBlob.subtitle}`;
-    } else if (selectedBlob.kind === "preference") {
-      teachPrefill = `My ${selectedBlob.label.toLowerCase()} is ${selectedBlob.subtitle}`;
+    const blob = selectedBlob;
+    if (!blob) return;
+    if (blob.kind === "person") {
+      openTeach(`${blob.label} is my ${blob.subtitle}`);
+    } else if (blob.kind === "preference") {
+      openTeach(`My ${blob.label.toLowerCase()} is ${blob.subtitle}`);
     } else {
-      teachPrefill = selectedBlob.subtitle || selectedBlob.label;
+      openTeach(blob.subtitle || blob.label);
     }
-    teachFocusNonce += 1;
   }
 
   async function switchProfile(profileId: string) {
     await userProfiles.setActive(profileId);
-    selectedBlob = null;
+    profilesSelection.select(null);
     await refreshField();
   }
 
@@ -135,7 +152,7 @@
       personSheetOpen = true;
     };
     const onFocusTeach = () => {
-      teachFocusNonce += 1;
+      openTeach("");
     };
     window.addEventListener(PROFILES_ADD_PERSON_EVENT, onAddPerson);
     window.addEventListener(PROFILES_FOCUS_TEACH_EVENT, onFocusTeach);
@@ -163,20 +180,7 @@
             </p>
           </div>
         </div>
-        <div class="flex shrink-0 items-center gap-1">
-          <button
-            type="button"
-            class="btn btn-sm variant-soft-surface"
-            disabled={readOnly}
-            onclick={() => {
-              personSheetOpen = true;
-            }}
-          >
-            <UserPlus size={14} class="mr-1" aria-hidden="true" />
-            Person
-          </button>
-          <ProfilesOverflowMenu {mobile} />
-        </div>
+        <ProfilesOverflowMenu {mobile} />
       </div>
 
       {#if userProfiles.profiles.length > 1}
@@ -211,10 +215,10 @@
   <div class="relative min-h-0 flex-1">
     <ProfilesIdentityField
       layout={fieldLayout}
-      selectedId={selectedBlob?.id ?? null}
+      selectedId={profilesSelection.selectedId}
       loading={identity.loading}
       onSelect={(blob) => {
-        selectedBlob = blob;
+        profilesSelection.select(blob?.id ?? null);
       }}
     />
 
@@ -222,17 +226,21 @@
       blob={selectedBlob}
       portrait={fieldLayout.portrait}
       onClose={() => {
-        selectedBlob = null;
+        profilesSelection.select(null);
       }}
       onOpenChat={onOpenChat}
       onCorrect={selectedBlob ? handleCorrect : undefined}
     />
   </div>
 
-  <ProfilesTeachComposer
+  <ProfilesTeachDialog
+    open={teachDialogOpen}
     {readOnly}
     prefill={teachPrefill}
-    focusNonce={teachFocusNonce}
+    onClose={() => {
+      teachDialogOpen = false;
+      teachPrefill = "";
+    }}
     onRemembered={handleRemembered}
   />
 

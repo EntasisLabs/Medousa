@@ -5,7 +5,7 @@
   import ChatPaneIdle from "$lib/components/shell/ChatPaneIdle.svelte";
   import WebPaneIdle from "$lib/components/shell/WebPaneIdle.svelte";
   import { chatStreamPool } from "$lib/stores/chatStreamPool.svelte";
-  import ContextPanel from "$lib/components/context/ContextPanel.svelte";
+  import MapPanel from "$lib/components/context/MapPanel.svelte";
   import EnvironmentRenderer from "$lib/components/environment/EnvironmentRenderer.svelte";
   import SettingsPanel from "$lib/components/layout/SettingsPanel.svelte";
   import LmePanel from "$lib/components/lme/LmePanel.svelte";
@@ -81,6 +81,11 @@
   const tabStripOffsetRight = "11.5rem";
   const tabActionReservePx = 184;
   const dropTarget = $derived(shellTabs.tabDropTargetGroupId === groupId);
+  const splitEdge = $derived(
+    shellTabs.tabDropSplitEdge?.groupId === groupId
+      ? shellTabs.tabDropSplitEdge.edge
+      : null,
+  );
 
   /** Live pool slot — not merely focused (multi-live transcripts). */
   const showLiveChat = $derived(
@@ -122,7 +127,11 @@
 <section
   class="shell-pane relative flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden
     {focused ? 'shell-pane-focused' : 'shell-pane-idle'}
-    {dropTarget ? 'shell-pane-drop-target' : ''}"
+    {dropTarget ? 'shell-pane-drop-target' : ''}
+    {splitEdge === 'left' ? 'shell-pane-split-left' : ''}
+    {splitEdge === 'right' ? 'shell-pane-split-right' : ''}
+    {splitEdge === 'top' ? 'shell-pane-split-top' : ''}
+    {splitEdge === 'bottom' ? 'shell-pane-split-bottom' : ''}"
   data-debug-label="shell-pane"
   data-group-id={groupId}
   role="group"
@@ -192,14 +201,8 @@
         {#snippet builtin()}
           {#if showSurface === "calendar"}
             <CalendarPanel visible={true} />
-          {:else if showSurface === "context"}
-            <ContextPanel
-              visible={true}
-              onOpenChat={async (sessionId) => {
-                shellTabs.openChat(sessionId, { activate: true, groupId });
-                await chat.switchSession(sessionId);
-              }}
-            />
+          {:else if showSurface === "context" || showSurface === "map"}
+            <MapPanel visible={true} />
           {:else if showSurface === "profiles"}
             <ProfilesPanel visible={true} onOpenChat={onOpenChat} />
           {:else if showSurface === "peers"}
@@ -248,6 +251,42 @@
   .shell-pane-drop-target {
     box-shadow: inset 0 0 0 2px color-mix(in oklab, var(--color-primary-400, #a78bfa) 80%, transparent);
     background: color-mix(in oklab, var(--color-primary-500, #8b5cf6) 8%, transparent);
+  }
+  .shell-pane-split-left {
+    background: linear-gradient(
+      to right,
+      color-mix(in oklab, var(--color-primary-500, #8b5cf6) 22%, transparent) 0%,
+      color-mix(in oklab, var(--color-primary-500, #8b5cf6) 22%, transparent) 28%,
+      transparent 28%
+    );
+    box-shadow: inset 3px 0 0 0 color-mix(in oklab, var(--color-primary-400, #a78bfa) 85%, transparent);
+  }
+  .shell-pane-split-right {
+    background: linear-gradient(
+      to left,
+      color-mix(in oklab, var(--color-primary-500, #8b5cf6) 22%, transparent) 0%,
+      color-mix(in oklab, var(--color-primary-500, #8b5cf6) 22%, transparent) 28%,
+      transparent 28%
+    );
+    box-shadow: inset -3px 0 0 0 color-mix(in oklab, var(--color-primary-400, #a78bfa) 85%, transparent);
+  }
+  .shell-pane-split-top {
+    background: linear-gradient(
+      to bottom,
+      color-mix(in oklab, var(--color-primary-500, #8b5cf6) 22%, transparent) 0%,
+      color-mix(in oklab, var(--color-primary-500, #8b5cf6) 22%, transparent) 28%,
+      transparent 28%
+    );
+    box-shadow: inset 0 3px 0 0 color-mix(in oklab, var(--color-primary-400, #a78bfa) 85%, transparent);
+  }
+  .shell-pane-split-bottom {
+    background: linear-gradient(
+      to top,
+      color-mix(in oklab, var(--color-primary-500, #8b5cf6) 22%, transparent) 0%,
+      color-mix(in oklab, var(--color-primary-500, #8b5cf6) 22%, transparent) 28%,
+      transparent 28%
+    );
+    box-shadow: inset 0 -3px 0 0 color-mix(in oklab, var(--color-primary-400, #a78bfa) 85%, transparent);
   }
   .shell-pane-tabs {
     animation: shell-tabs-in 120ms ease-out;

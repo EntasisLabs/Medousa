@@ -12,14 +12,12 @@
   import { environment } from "$lib/stores/environment.svelte";
   import { vault } from "$lib/stores/vault.svelte";
   import { workspace } from "$lib/stores/workspace.svelte";
-  import { chat } from "$lib/stores/chat.svelte";
   import { noteWorkshop } from "$lib/stores/noteWorkshop.svelte";
   import { vaultBreadcrumb, vaultDisplayTitle } from "$lib/utils/formatVault";
   import {
-    buildWorkAskFromNote,
-    prepareTalkAboutNote,
-  } from "$lib/utils/vaultNoteBridge";
-  import { launchVaultNoteWorkshop } from "$lib/utils/vaultNoteWorkshop";
+    sendVaultNoteToWork,
+    talkAboutVaultNote,
+  } from "$lib/utils/vaultNoteWorkshop";
   import { findLedgerTable } from "$lib/utils/markdownTable";
   import { findKanbanBoard, noteHasKanbanBoard } from "$lib/utils/markdownKanban";
   import { noteHasSlidesDeck } from "$lib/utils/markdownSlides";
@@ -65,6 +63,13 @@
   import VaultChartBuilderSheet from "./VaultChartBuilderSheet.svelte";
   import VaultLiquidBuilderSheet from "./VaultLiquidBuilderSheet.svelte";
   import LiquidCardDetailSheet from "$lib/components/chat/LiquidCardDetailSheet.svelte";
+  import MarkdownHeadingOutline from "$lib/components/ui/MarkdownHeadingOutline.svelte";
+  import {
+    extractMarkdownHeadings,
+    observeActiveMarkdownHeading,
+    scrollElementWithinContainer,
+    scrollToHeadingInContainer,
+  } from "$lib/utils/headingSlug";
 
   interface Props {
     visible: boolean;
@@ -115,9 +120,37 @@
   let exportPreviewLabels = $state<Map<string, string>>(new Map());
   let exportPreviewPath = $state<string | null>(null);
   let lastFindNotePath = $state<string | null>(null);
+  const VAULT_OUTLINE_MODE_KEY = "medousa.vault.outlineMode";
+
+  function readVaultOutlineMode(): "panel" | "rail" {
+    if (typeof sessionStorage === "undefined") return "rail";
+    try {
+      return sessionStorage.getItem(VAULT_OUTLINE_MODE_KEY) === "panel"
+        ? "panel"
+        : "rail";
+    } catch {
+      return "rail";
+    }
+  }
+
   let previewScrollEl = $state<HTMLElement | null>(null);
   let markdownEditorEl = $state<ReturnType<typeof VaultMarkdownEditor> | null>(null);
   let slidesDeckEl = $state<ReturnType<typeof SlidesDeckEditor> | null>(null);
+  let outlineActiveId = $state<string | null>(null);
+  let outlineMode = $state<"panel" | "rail">(readVaultOutlineMode());
+
+  function setOutlineMode(mode: "panel" | "rail") {
+    outlineMode = mode;
+    try {
+      sessionStorage.setItem(VAULT_OUTLINE_MODE_KEY, mode);
+    } catch {
+      // ignore quota / private mode
+    }
+  }
+
+  function toggleOutlineMode() {
+    setOutlineMode(outlineMode === "rail" ? "panel" : "rail");
+  }
 
   const displayTitle = $derived(
     bound && vault.isLooseFile && vault.looseFilePath
@@ -224,6 +257,119 @@
       !showWorkbookManifest &&
       !showSlidesDeck,
   );
+
+  /** Preview surface is mounted (preview-only or Build split). */
+  const showPreviewSurface = $derived(
+    Boolean(notePath) && liveHost && (showPreviewOnly || showSplitEditor),
+  );
+
+  /** Live TipTap note surface (outline jumps against stamped headings). */
+  const showLiveOutlineSurface = $derived(
+    Boolean(notePath) &&
+      bound &&
+      liveHost &&
+      showMarkdownEditor &&
+      isLivePlane &&
+      !mobile &&
+      !stickyNote,
+  );
+
+  const showOutlineSurface = $derived(showPreviewSurface || showLiveOutlineSurface);
+
+  const outlineItems = $derived.by(() => {
+    if (!showOutlineSurface) return [];
+    const body = stripFrontmatter(displayContent).content;
+    return extractMarkdownHeadings(body)
+      .filter((h) => h.depth <= 3)
+      .map((h) => ({ id: h.slug, text: h.text, depth: h.depth }));
+  });
+
+  const showHeadingOutline = $derived(
+    showOutlineSurface && outlineItems.length > 0 && !mobile && !stickyNote,
+  );
+
+  function resolveOutlineScrollEl(): HTMLElement | null {
+    if (showPreviewSurface) return previewScrollEl;
+    if (showLiveOutlineSurface) return markdownEditorEl?.getScrollEl?.() ?? null;
+    return null;
+  }
+
+  function jumpToOutlineHeading(id: string) {
+    const scrollRoot = resolveOutlineScrollEl();
+    if (!scrollRoot) return;
+    if (scrollToHeadingInContainer(scrollRoot, id)) return;
+    const item = outlineItems.find((entry) => entry.id === id);
+    if (item && scrollToHeadingInContainer(scrollRoot, item.text)) return;
+
+    // Last resort: same ordinal among visible h1–h3 (slug mismatches in Live).
+    const index = outlineItems.findIndex((entry) => entry.id === id);
+    if (index < 0) return;
+    const headings = scrollRoot.querySelectorAll<HTMLElement>(
+      "h1.markdown-heading, h2.markdown-heading, h3.markdown-heading, h1, h2, h3",
+    );
+    const unique: HTMLElement[] = [];
+    const seen = new Set<HTMLElement>();
+    for (const heading of headings) {
+      if (seen.has(heading)) continue;
+      seen.add(heading);
+      unique.push(heading);
+    }
+    const target = unique[index];
+    if (target) scrollElementWithinContainer(scrollRoot, target);
+  }
+
+  $effect(() => {
+    if (!showHeadingOutline) {
+      outlineActiveId = null;
+      return;
+    }
+    // Bind once per surface/host — do NOT rebind on every draft keystroke.
+    // MutationObserver (debounced) picks up heading DOM changes.
+    const previewHost = showPreviewSurface;
+    const liveHostOutline = showLiveOutlineSurface;
+    const previewEl = previewScrollEl;
+    const editor = markdownEditorEl;
+    notePath;
+
+    let cancelled = false;
+    let cleanup: (() => void) | undefined;
+    let attempts = 0;
+
+    const bind = () => {
+      if (cancelled) return;
+      const scrollRoot = previewHost
+        ? previewEl
+        : liveHostOutline
+          ? (editor?.getScrollEl?.() ?? null)
+          : null;
+      if (!scrollRoot) {
+        if (attempts++ < 12) {
+          void tick().then(bind);
+        } else {
+          outlineActiveId = null;
+        }
+        return;
+      }
+      const contentRoot = liveHostOutline
+        ? (scrollRoot.querySelector<HTMLElement>(".vault-live-prose") ??
+          scrollRoot)
+        : scrollRoot;
+      cleanup?.();
+      cleanup = observeActiveMarkdownHeading(
+        scrollRoot,
+        (id) => {
+          outlineActiveId = id;
+        },
+        contentRoot,
+      );
+    };
+
+    void tick().then(bind);
+    return () => {
+      cancelled = true;
+      cleanup?.();
+    };
+  });
 
   const noteKind = $derived(
     contentKind !== "note" ? contentKind : vault.selectedKind,
@@ -406,50 +552,15 @@
 
   async function handleAskInChatTab() {
     if (!vault.selectedPath) return;
-
-    // Mobile: no floating workshop yet — jump to the chat tab with note context.
-    if (mobile) {
-      if (!onOpenChat) return;
-      if (vault.dirty) await vault.flushSave();
-      const { scope, draft } = prepareTalkAboutNote(
-        vault.selectedPath,
-        vault.title,
-        vault.content,
-        vault.wikilinksOut,
-        vault.backlinks,
-      );
-      chat.prefillFromVaultNote(scope, draft, { pin: true });
-      onOpenChat();
-      return;
-    }
-
-    // Desktop: stay in the note with the floating IM-style workshop.
-    await launchVaultNoteWorkshop({
-      path: vault.selectedPath,
-      title: vault.title,
-      content: vault.content,
-      wikilinksOut: vault.wikilinksOut,
-      backlinks: vault.backlinks,
-      session: "fresh",
-      flushSave: vault.dirty
-        ? async () => {
-            await vault.flushSave();
-          }
-        : undefined,
-    });
+    if (mobile && !onOpenChat) return;
+    await talkAboutVaultNote(vault.selectedPath);
+    if (mobile) onOpenChat?.();
   }
 
   async function handleSendToWork() {
     if (!vault.selectedPath || !onOpenWork) return;
-    if (vault.dirty) await vault.flushSave();
     try {
-      await workspace.submitAsk({
-        prompt: buildWorkAskFromNote(
-          vault.selectedPath,
-          vault.title,
-          vault.content,
-        ),
-      });
+      await sendVaultNoteToWork(vault.selectedPath);
       onOpenWork();
     } catch {
       // workspace.submitAsk surfaces askError on Work surface.
@@ -1023,6 +1134,7 @@
           <VaultMarkdownPreview
             content={displayContent}
             {labelByPath}
+            bind:scrollEl={previewScrollEl}
             onWikilink={vault.isLooseFile ? undefined : handleWikilink}
           />
         {/if}
@@ -1030,7 +1142,28 @@
         {#if findSupported && vaultFind.open}
           <VaultFindBar />
         {/if}
+        {#if showHeadingOutline && outlineMode === "rail"}
+          <MarkdownHeadingOutline
+            items={outlineItems}
+            activeId={outlineActiveId}
+            mode="rail"
+            showModeToggle
+            onSelect={jumpToOutlineHeading}
+            onToggleMode={toggleOutlineMode}
+          />
+        {/if}
       </div>
+
+      {#if showHeadingOutline && outlineMode === "panel"}
+        <MarkdownHeadingOutline
+          items={outlineItems}
+          activeId={outlineActiveId}
+          mode="panel"
+          showModeToggle
+          onSelect={jumpToOutlineHeading}
+          onToggleMode={toggleOutlineMode}
+        />
+      {/if}
 
       {#if showLinksPanel}
         <VaultNoteLinksPanel

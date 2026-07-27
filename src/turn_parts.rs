@@ -297,7 +297,23 @@ pub fn conversation_turn_from_parts_at(
             Some(parts)
         },
         slice_summary: None,
+        speaker_profile_id: None,
     }
+}
+
+pub fn user_conversation_turn_with_media_and_speaker(
+    content: impl Into<String>,
+    media_refs: &[crate::daemon_api::MediaRef],
+    speaker_profile_id: Option<&str>,
+) -> ConversationTurn {
+    let mut turn = user_conversation_turn_with_media(content, media_refs);
+    if let Some(profile_id) = speaker_profile_id
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        turn.speaker_profile_id = Some(profile_id.to_string());
+    }
+    turn
 }
 
 pub fn artifact_refs_from_stream(refs: &[StreamToolArtifactRef]) -> Vec<TurnArtifactRef> {

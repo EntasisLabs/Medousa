@@ -1,5 +1,7 @@
 import { ensureNotificationPermission, notifyPeerMessage } from "$lib/notifications";
 import {
+  isBringHome,
+  isReviewRequest,
   listTrustedWorkshops,
   peerListMessages,
   type PeerMessage,
@@ -70,7 +72,11 @@ export async function pollPeerMessageNotifications(): Promise<void> {
       if (!workshopId) continue;
       await notifyPeerMessage({
         fromName: message.fromName,
-        body: previewBody(message.body),
+        body: isReviewRequest(message)
+          ? "Ask for review"
+          : isBringHome(message)
+            ? "Brought home"
+            : previewBody(message.body),
         workshopId,
         peerDeviceId: message.fromDeviceId,
         messageId: message.id,

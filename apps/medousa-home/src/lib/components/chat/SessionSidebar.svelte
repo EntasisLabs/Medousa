@@ -1,10 +1,12 @@
 <script lang="ts">
-  import { Plus, Search, X } from "@lucide/svelte";
+  import { onMount } from "svelte";
+  import { Plus, Search, Users, X } from "@lucide/svelte";
   import SessionRow from "$lib/components/chat/SessionRow.svelte";
   import { haptic } from "$lib/haptics";
   import { registerMobileBackHandler } from "$lib/mobileNavigation";
   import { chat } from "$lib/stores/chat.svelte";
   import { layout } from "$lib/stores/layout.svelte";
+  import { sharedMode } from "$lib/stores/sharedMode.svelte";
   import { userProfiles } from "$lib/stores/userProfiles.svelte";
   import type { SessionSummary } from "$lib/types/session";
   import { formatSessionLabel } from "$lib/utils/formatSession";
@@ -138,12 +140,29 @@
     }
   }
 
+  onMount(() => {
+    void sharedMode.load();
+  });
+
   async function createSession() {
     await chat.newSession();
     onPick?.();
     if (variant === "drawer" || variant === "sheet") {
       layout.setSessionDrawerOpen(false);
       onClose?.();
+    }
+  }
+
+  async function createSharedRoom() {
+    try {
+      await chat.newSharedRoom();
+      onPick?.();
+      if (variant === "drawer" || variant === "sheet") {
+        layout.setSessionDrawerOpen(false);
+        onClose?.();
+      }
+    } catch (err) {
+      chat.sessionsError = err instanceof Error ? err.message : String(err);
     }
   }
 
@@ -299,6 +318,18 @@
           <Plus size={15} strokeWidth={2} />
           <span class="session-sidebar-new-label">New</span>
         </button>
+        {#if sharedMode.isShared}
+          <button
+            type="button"
+            class="session-sidebar-new"
+            title="New shared room"
+            aria-label="New shared room"
+            onclick={() => void createSharedRoom()}
+          >
+            <Users size={15} strokeWidth={2} />
+            <span class="session-sidebar-new-label">Room</span>
+          </button>
+        {/if}
       </div>
     {/if}
 

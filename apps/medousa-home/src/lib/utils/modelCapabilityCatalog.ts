@@ -237,19 +237,55 @@ export function formatVisionBadge(supportsVision: boolean): string | null {
   return supportsVision ? "Vision" : null;
 }
 
+function formatPerTokenPrice(perTokenUsd: number | null | undefined, suffix: string): string | null {
+  if (perTokenUsd == null || !Number.isFinite(perTokenUsd) || perTokenUsd <= 0) return null;
+  const perMillion = perTokenUsd * 1_000_000;
+  if (perMillion >= 10) return `$${perMillion.toFixed(0)}/M ${suffix}`;
+  // Cheap models live below $1/M — cents still read fine, exponentials do not.
+  if (perMillion >= 0.01) return `$${perMillion.toFixed(2)}/M ${suffix}`;
+  return `$${perTokenUsd.toExponential(1)} ${suffix}`;
+}
+
 export function formatPricingBadge(
   pricing?: ModelCapabilityRecord["pricing"],
 ): string | null {
-  const prompt = pricing?.promptPerTokenUsd;
-  if (prompt == null || !Number.isFinite(prompt) || prompt <= 0) return null;
-  const perMillion = prompt * 1_000_000;
-  if (perMillion >= 1) {
-    return `$${perMillion.toFixed(perMillion >= 10 ? 0 : 2)}/M in`;
+  return formatPerTokenPrice(pricing?.promptPerTokenUsd, "in");
+}
+
+export function formatOutputPricingBadge(
+  pricing?: ModelCapabilityRecord["pricing"],
+): string | null {
+  return formatPerTokenPrice(pricing?.completionPerTokenUsd, "out");
+}
+
+/**
+ * Quiet one-line capability summary: "venice · $4.31/M in · $8.63/M out · 128K ctx".
+ * Same facts as the badge pills, without the boxes.
+ */
+export function modelMetaLine(
+  record: ModelCapabilityRecord | undefined | null,
+  providerLabel?: string | null,
+): string | null {
+  const parts: string[] = [];
+  const provider = readString(providerLabel);
+  if (provider) parts.push(provider);
+  if (record) {
+    const promptPrice = formatPricingBadge(record.pricing);
+    if (promptPrice) parts.push(promptPrice);
+    const outputPrice = formatOutputPricingBadge(record.pricing);
+    if (outputPrice) parts.push(outputPrice);
+    const context = formatContextBadge(record.maxInputTokens);
+    if (context) parts.push(context);
   }
-  if (prompt >= 0.001) {
-    return `$${(prompt * 1000).toFixed(2)}/K in`;
-  }
-  return `$${prompt.toExponential(1)} in`;
+  return parts.length > 0 ? parts.join(" · ") : null;
+}
+
+export function modelHasVision(
+  map: Map<string, ModelCapabilityRecord>,
+  provider: string,
+  model: string,
+): boolean {
+  return Boolean(map.get(modelPickKey(provider, model))?.supportsVision);
 }
 
 export function badgesForCapability(record: ModelCapabilityRecord): string[] {

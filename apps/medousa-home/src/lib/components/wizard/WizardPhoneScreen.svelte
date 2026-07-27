@@ -26,7 +26,7 @@
   <h2 class="mt-2 text-2xl font-semibold text-surface-50">Optional — link a mobile device</h2>
   <p class="mt-3 text-sm leading-relaxed text-surface-300">
     Scan this code from Medousa on your phone to talk from anywhere on your home network. You can
-    skip and do this later in Settings → Phone.
+    skip and do this later in Settings → Sharing.
   </p>
 
   <div class="mt-5 min-h-0 flex-1 overflow-y-auto">

@@ -1,3 +1,5 @@
+import { workshop } from "$lib/stores/workshop.svelte";
+import { spotlightPins } from "$lib/stores/spotlightPins.svelte";
 import {
   buildAdvancedCommands,
   buildAskCommands,
@@ -9,6 +11,11 @@ import {
   buildWorkspaceCommands,
 } from "./registry";
 import { buildSuggestedCommands, buildBudgetListCommand } from "./contextCommands";
+import { buildDoCommands, buildScriptRunOpenCommands } from "./doCommands";
+import {
+  buildPinManageCommands,
+  buildPinnedJumpCommands,
+} from "./pinCommands";
 import {
   buildNoteOpenCommands,
   buildBrowserHistoryCommands,
@@ -17,12 +24,27 @@ import {
   buildRecentSessionCommands,
 } from "./searchProviders";
 import { filterAndSortCommands } from "./score";
-import type { CommandSection, GroupedCommands, WorkshopCommand, WorkshopCommandContext } from "./types";
+import type {
+  CommandSection,
+  CommandVerb,
+  GroupedCommands,
+  WorkshopCommand,
+  WorkshopCommandContext,
+} from "./types";
 import { SECTION_LABELS as LABELS, SECTION_ORDER as ORDER } from "./types";
+
+export type SpotlightPrefixMode = "default" | "advanced" | "create" | "run";
 
 export interface CollectCommandsOptions {
   query: string;
   notesMode?: boolean;
+}
+
+export interface ParsedSpotlightQuery {
+  mode: SpotlightPrefixMode;
+  rawQuery: string;
+  /** Original trimmed input (with prefix). */
+  input: string;
 }
 
 function dedupeCommandsById(commands: WorkshopCommand[]): WorkshopCommand[] {
@@ -50,24 +72,80 @@ function groupCommands(commands: WorkshopCommand[]): GroupedCommands[] {
   }));
 }
 
+export function parseSpotlightQuery(query: string): ParsedSpotlightQuery {
+  const input = query.trim();
+  if (input.startsWith(">")) {
+    return { mode: "advanced", rawQuery: input.slice(1).trim(), input };
+  }
+  if (input.startsWith("+")) {
+    return { mode: "create", rawQuery: input.slice(1).trim(), input };
+  }
+  if (input.startsWith("!")) {
+    return { mode: "run", rawQuery: input.slice(1).trim(), input };
+  }
+  return { mode: "default", rawQuery: input, input };
+}
+
+function filterByVerb(
+  commands: WorkshopCommand[],
+  verbs: CommandVerb[],
+): WorkshopCommand[] {
+  const allowed = new Set(verbs);
+  return commands.filter((c) => c.verb && allowed.has(c.verb));
+}
+
+function withNotePreviews(commands: WorkshopCommand[]): WorkshopCommand[] {
+  return commands.map((command) => {
+    if (command.preview || !command.id.startsWith("open-note:")) return command;
+    const path = command.id.slice("open-note:".length);
+    return {
+      ...command,
+      preview: { kind: "note", path },
+    };
+  });
+}
+
 export function collectWorkshopCommands(
   ctx: WorkshopCommandContext,
   options: CollectCommandsOptions,
 ): GroupedCommands[] {
-  let rawQuery = options.query.trim();
-  const showAdvanced = rawQuery.startsWith(">");
-  if (showAdvanced) {
-    rawQuery = rawQuery.slice(1).trim();
-  }
+  const parsed = parseSpotlightQuery(options.query);
+  const { mode, rawQuery } = parsed;
+  const showAdvanced = mode === "advanced" || rawQuery.length > 0;
 
   const suggested = buildSuggestedCommands(ctx);
   const budgetList = buildBudgetListCommand(ctx);
   if (budgetList) suggested.push(budgetList);
 
+  const doCommands = [
+    ...buildDoCommands(),
+    ...buildPinManageCommands(ctx),
+  ];
+  const pinned = buildPinnedJumpCommands();
+
+  if (mode === "create") {
+    const pool = filterByVerb(doCommands, ["create"]);
+    const filtered = filterAndSortCommands(dedupeCommandsById(pool), rawQuery, 64);
+    return groupCommands(filtered);
+  }
+
+  if (mode === "run") {
+    // Sync run verbs + async script hits are merged by caller when needed;
+    // collect stays sync — script fuzzy commands built below via cached workshop.scripts.
+    const runPool = [
+      ...filterByVerb(doCommands, ["run"]),
+      ...buildRunScriptHitsFromCache(rawQuery),
+    ];
+    const filtered = filterAndSortCommands(dedupeCommandsById(runPool), rawQuery, 64);
+    return groupCommands(filtered);
+  }
+
   const staticPool: WorkshopCommand[] = [
     ...suggested,
+    ...pinned,
     ...buildGoCommands(),
     ...buildWorkspaceCommands(),
+    ...doCommands,
     ...buildAskCommands(),
     ...buildTuneCommands(),
     ...buildBrowserCommands(),
@@ -75,34 +153,91 @@ export function collectWorkshopCommands(
     ...buildPaneCommands(),
   ];
 
-  if (showAdvanced || rawQuery.length > 0) {
+  if (showAdvanced) {
     staticPool.push(...buildAdvancedCommands());
   }
 
-  const searchPool: WorkshopCommand[] = [
+  const searchPool: WorkshopCommand[] = withNotePreviews([
     ...buildNoteOpenCommands(ctx, rawQuery),
     ...buildSessionOpenCommands(ctx, rawQuery),
     ...buildWorkCardOpenCommands(ctx, rawQuery),
     ...buildBrowserHistoryCommands(rawQuery),
-  ];
+  ]);
 
   let pool: WorkshopCommand[];
 
   if (options.notesMode && !rawQuery) {
-    pool = [
+    pool = withNotePreviews([
       ...buildNoteOpenCommands(ctx, ""),
       ...buildGoCommands().filter((c) => c.id === "go-library"),
-    ];
+    ]);
   } else if (!rawQuery && suggested.some((c) => !c.id.startsWith("open-session:"))) {
-    pool = [...staticPool, ...buildNoteOpenCommands(ctx, "").slice(0, 8)];
+    pool = [
+      ...pinned,
+      ...staticPool,
+      ...withNotePreviews(buildNoteOpenCommands(ctx, "").slice(0, 8)),
+    ];
   } else if (!rawQuery) {
-    pool = [...buildGoCommands(), ...buildRecentSessionCommands(ctx), ...buildAskCommands().slice(0, 2), ...buildBrowserHistoryCommands("")];
+    pool = [
+      ...pinned,
+      ...buildGoCommands(),
+      ...buildRecentSessionCommands(ctx),
+      ...doCommands.slice(0, 6),
+      ...buildAskCommands().slice(0, 2),
+      ...buildBrowserHistoryCommands(""),
+    ];
   } else {
     pool = [...staticPool, ...searchPool];
   }
 
   const filtered = filterAndSortCommands(dedupeCommandsById(pool), rawQuery, 64);
   return groupCommands(filtered);
+}
+
+function buildRunScriptHitsFromCache(query: string): WorkshopCommand[] {
+  const trimmed = query.trim().toLowerCase();
+  if (!trimmed) return [];
+  const scripts = workshop.scripts ?? [];
+  return scripts
+    .filter((script) => {
+      const hay = `${script.name} ${script.tags?.join(" ") ?? ""}`.toLowerCase();
+      return hay.includes(trimmed) || script.id.toLowerCase().includes(trimmed);
+    })
+    .slice(0, 12)
+    .map((script) => ({
+      id: `do-run-script:${script.id}`,
+      section: "do" as const,
+      verb: "run" as const,
+      label: `Run ${script.name}`,
+      subtitle: script.tags?.length ? script.tags.join(" · ") : "Saved script",
+      keywords: `run script ${script.name}`,
+      aliases: [script.name.toLowerCase()],
+      preview: {
+        kind: "script" as const,
+        scriptId: script.id,
+        ...(script.body_preview
+          ? { body: script.body_preview }
+          : {}),
+      },
+      run: async (runCtx: WorkshopCommandContext) => {
+        const { getGraphemeScript } = await import("$lib/daemon");
+        const detail = await getGraphemeScript(script.id);
+        const source = detail.body_preview?.trim() ?? "";
+        if (!source) {
+          runCtx.error("Couldn’t load that script’s source.");
+          return;
+        }
+        spotlightPins.setLastScriptId(script.id);
+        await workshop.runScriptSource(source);
+        runCtx.navigate("automations");
+        runCtx.callbacks.close();
+        runCtx.notice(
+          workshop.runError
+            ? `Script failed: ${workshop.runError}`
+            : `Ran ${detail.script.name}.`,
+        );
+      },
+    }));
 }
 
 export function flattenGroups(groups: GroupedCommands[]): WorkshopCommand[] {
@@ -118,3 +253,5 @@ export function findWorkshopCommandById(
     (command) => command.id === commandId,
   );
 }
+
+export { buildScriptRunOpenCommands };

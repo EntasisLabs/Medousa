@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onDestroy, onMount } from "svelte";
   import {
     Brain,
     ChevronDown,
@@ -18,23 +18,27 @@
     type ProvidersProbeResult,
   } from "$lib/utils/providersApi";
   import {
-    ensureLocalModelReady,
     fetchLocalCatalog,
     fetchLocalHardware,
     formatBytes,
-    loadLocalEngine,
     type LocalCatalogModel,
     type LocalCatalogResponse,
     type LocalHardwareResponse,
-    type ModelDownloadProgress,
   } from "$lib/utils/localInferenceApi";
+  import {
+    installPackage,
+    listenPackageProgress,
+    type PackageProgressEvent,
+  } from "$lib/utils/packagesApi";
   import { layout } from "$lib/stores/layout.svelte";
   import { hostComputerPhrase } from "$lib/platformCopy";
   import { settingsNav } from "$lib/stores/settingsNav.svelte";
+  import { isTauri } from "$lib/window";
 
   type WizardPath = "byok" | "offline";
 
   const hostPhrase = hostComputerPhrase();
+  const LOCAL_BRAIN_PACKAGE = "local-brain";
 
   let showAdvanced = $state(false);
   let selectedPath = $state<WizardPath | null>("offline");
@@ -52,7 +56,9 @@
   let localCatalog = $state<LocalCatalogResponse | null>(null);
   let offlineModelId = $state<string | null>(null);
   let localLoading = $state(false);
-  let downloadProgress = $state<ModelDownloadProgress | null>(null);
+  let installingBrain = $state(false);
+  let packageProgress = $state<PackageProgressEvent | null>(null);
+  let unlistenPackage: (() => void) | null = null;
 
   const ollamaReady = $derived(probe?.ollamaDetected ?? false);
   const recommendedOfflineModel = $derived.by(() => {
@@ -69,6 +75,18 @@
   onMount(() => {
     void refreshProbe();
     void refreshLocalInference();
+    if (isTauri()) {
+      void listenPackageProgress((event) => {
+        if (event.packageId !== LOCAL_BRAIN_PACKAGE) return;
+        packageProgress = event;
+      }).then((fn) => {
+        unlistenPackage = fn;
+      });
+    }
+  });
+
+  onDestroy(() => {
+    unlistenPackage?.();
   });
 
   async function refreshProbe() {
@@ -86,7 +104,7 @@
     }
   }
 
-  async function refreshLocalInference() {
+  async function refreshLocalInference(options?: { startDownload?: boolean }) {
     localLoading = true;
     statusMessage = null;
     try {
@@ -99,6 +117,13 @@
       localHardware = await fetchLocalHardware();
       localCatalog = await fetchLocalCatalog();
       offlineModelId = localCatalog.recommendedModelId;
+      if (
+        options?.startDownload !== false &&
+        localHardware.engineAvailable &&
+        offlineModelId
+      ) {
+        wizard.beginBrainModelPrep(offlineModelId);
+      }
     } catch (err) {
       statusMessage = err instanceof Error ? err.message : String(err);
     } finally {
@@ -109,7 +134,6 @@
   function selectPath(path: WizardPath) {
     selectedPath = path;
     statusMessage = null;
-    downloadProgress = null;
     if (path === "byok") {
       showAdvanced = true;
       if (byokProvider === "ollama") {
@@ -123,6 +147,40 @@
 
   function selectOfflineModel(entry: LocalCatalogModel) {
     offlineModelId = entry.id;
+    if (localHardware?.engineAvailable) {
+      wizard.beginBrainModelPrep(entry.id);
+    }
+  }
+
+  async function installOfflineBrain() {
+    if (!isTauri() || installingBrain) return;
+    installingBrain = true;
+    statusMessage = null;
+    packageProgress = {
+      packageId: LOCAL_BRAIN_PACKAGE,
+      displayName: "Offline brain",
+      phase: "downloading",
+      phaseLabel: "Downloading",
+      percent: 0,
+      message: "Starting Offline brain install…",
+    };
+    try {
+      await installPackage(LOCAL_BRAIN_PACKAGE);
+      await refreshLocalInference({ startDownload: true });
+      if (localHardware?.engineAvailable) {
+        statusMessage = null;
+      } else {
+        statusMessage =
+          "Offline brain installed — if models don’t appear, try again or open Settings → Packages.";
+      }
+    } catch (err) {
+      statusMessage =
+        err instanceof Error
+          ? err.message
+          : "Couldn’t install Offline brain — try again or Settings → Packages.";
+    } finally {
+      installingBrain = false;
+    }
   }
 
   function onByokProviderChange(id: string, entry: ProviderCatalogEntry) {
@@ -166,13 +224,12 @@
     }
 
     if (localHardware && !localHardware.engineAvailable) {
-      statusMessage =
-        "Install the Offline brain package to use local Gemma on this computer.";
+      statusMessage = "Install Offline brain first — download can finish in the background.";
       return;
     }
 
     validating = true;
-    statusMessage = "Starting the engine…";
+    statusMessage = null;
     wizard.error = null;
 
     try {
@@ -183,30 +240,19 @@
         return;
       }
 
-      statusMessage = "Downloading Gemma 4 — this may take a while on first setup…";
-      downloadProgress = await ensureLocalModelReady(modelId, (progress) => {
-        downloadProgress = progress;
-      });
-
-      statusMessage = "Loading…";
-      const engine = await loadLocalEngine(modelId);
-      if (!engine.loaded) {
-        statusMessage = engine.message;
-        return;
-      }
-
+      // Persist choice + advance; model download / engine load continue in the store.
+      wizard.beginBrainModelPrep(modelId);
       await wizard.applyScreen1Setup({
         path: "offline",
         provider: "medousa-local",
         model: modelId,
-        baseUrl: engine.baseUrl,
+        baseUrl: null,
         startCore: false,
       });
     } catch (err) {
       statusMessage = err instanceof Error ? err.message : String(err);
     } finally {
       validating = false;
-      downloadProgress = null;
     }
   }
 
@@ -252,10 +298,11 @@
   }
 
   const canContinue = $derived.by(() => {
-    if (wizard.busy || validating) return false;
+    if (wizard.busy || validating || installingBrain) return false;
     if (!selectedPath) return false;
     if (selectedPath === "offline") {
       if (localLoading || probing) return false;
+      if (!localHardware?.engineAvailable) return false;
       return Boolean(
         localCatalog &&
           (offlineModelId ?? localCatalog.recommendedModelId),
@@ -272,15 +319,12 @@
   });
 
   const continueLabel = $derived.by(() => {
-    if (validating || wizard.busy) {
-      if (selectedPath === "offline" && downloadProgress) {
-        return `Downloading ${Math.round(downloadProgress.percent)}%`;
-      }
-      return "Working…";
-    }
-    if (selectedPath === "offline") return "Download Gemma 4 & continue";
+    if (validating || wizard.busy) return "Working…";
+    if (selectedPath === "offline") return "Continue";
     return "Continue";
   });
+
+  const brainProgress = $derived(wizard.brainDownloadProgress);
 </script>
 
 <div class="flex h-full flex-col">
@@ -333,9 +377,9 @@
               (~{formatBytes(recommendedOfflineModel.sizeBytes)} download). Nothing leaves this
               device unless you choose cloud later.
             {:else if localHardware && !localHardware.engineAvailable}
-              Offline brain is not installed — add it from Settings → Packages, or pick Advanced below.
+              Install Offline brain here — then pick a model size. Download keeps going if you Continue.
             {:else}
-              Download a local model once — chat without sending data to the cloud.
+              Download a local model once — chat without sending data to the cloud. You can Continue while it finishes.
             {/if}
           </p>
         </div>
@@ -343,17 +387,41 @@
     </button>
 
     {#if selectedPath === "offline" && localHardware && !localHardware.engineAvailable}
-      <div class="mt-4 border-t border-surface-500/30 px-4 pb-4 pt-4">
+      <div class="mt-4 space-y-3 border-t border-surface-500/30 px-4 pb-4 pt-4">
         <button
           type="button"
-          class="btn preset-filled-primary-500 w-full"
-          disabled={wizard.busy || validating}
+          class="btn preset-filled-primary-500 inline-flex w-full items-center justify-center gap-2"
+          disabled={wizard.busy || validating || installingBrain}
+          onclick={() => void installOfflineBrain()}
+        >
+          {#if installingBrain}
+            <LoaderCircle class="h-4 w-4 animate-spin" aria-hidden="true" />
+            {packageProgress
+              ? `${packageProgress.phaseLabel} ${Math.round(packageProgress.percent)}%`
+              : "Installing Offline brain…"}
+          {:else}
+            Install Offline brain
+          {/if}
+        </button>
+        {#if packageProgress && installingBrain}
+          <div class="h-2 overflow-hidden rounded-full bg-surface-800">
+            <div
+              class="h-full rounded-full bg-primary-500 transition-all duration-300"
+              style:width="{Math.max(4, Math.round(packageProgress.percent))}%"
+            ></div>
+          </div>
+          <p class="workshop-faint text-xs">{packageProgress.message}</p>
+        {/if}
+        <button
+          type="button"
+          class="workshop-text-action text-xs"
+          disabled={wizard.busy || installingBrain}
           onclick={() => {
             settingsNav.openSection("packages");
             layout.navigateDesktop("settings", { bump: true });
           }}
         >
-          Open Settings → Packages
+          Advanced — Settings → Packages
         </button>
       </div>
     {:else if selectedPath === "offline" && localCatalog}
@@ -364,7 +432,7 @@
             class="settings-depth-card w-full text-left {(offlineModelId ?? localCatalog.recommendedModelId) === entry.id
               ? 'settings-depth-card-active'
               : ''}"
-            disabled={wizard.busy || validating}
+            disabled={wizard.busy || validating || installingBrain}
             onclick={() => selectOfflineModel(entry)}
           >
             <span class="block text-sm font-medium text-surface-100">{entry.displayName}</span>
@@ -379,15 +447,20 @@
       </div>
     {/if}
 
-    {#if downloadProgress && selectedPath === "offline"}
+    {#if selectedPath === "offline" && brainProgress && brainProgress.phase !== "ready"}
       <div class="px-4 pb-4">
         <div class="h-2 overflow-hidden rounded-full bg-surface-800">
           <div
             class="h-full rounded-full bg-primary-500 transition-all duration-300"
-            style:width="{Math.max(4, Math.round(downloadProgress.percent))}%"
+            style:width="{Math.max(4, Math.round(brainProgress.percent))}%"
           ></div>
         </div>
-        <p class="workshop-faint mt-2 text-xs">{downloadProgress.message}</p>
+        <p class="workshop-faint mt-2 text-xs">
+          {brainProgress.message}
+          {#if brainProgress.phase !== "failed"}
+            · continues in the background if you Continue
+          {/if}
+        </p>
       </div>
     {/if}
   </div>
@@ -475,7 +548,7 @@
       <button
         type="button"
         class="btn variant-ghost min-h-11"
-        disabled={wizard.busy || probing || localLoading || validating}
+        disabled={wizard.busy || probing || localLoading || validating || installingBrain}
         onclick={() => {
           void refreshProbe();
           if (selectedPath === "offline") void refreshLocalInference();

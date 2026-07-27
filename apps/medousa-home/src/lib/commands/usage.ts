@@ -2,25 +2,37 @@ const STORAGE_KEY = "medousa-home-command-usage";
 
 type UsageMap = Record<string, number>;
 
+let cachedMap: UsageMap | null = null;
+
 function readMap(): UsageMap {
-  if (typeof localStorage === "undefined") return {};
+  if (cachedMap) return cachedMap;
+  if (typeof localStorage === "undefined") {
+    cachedMap = {};
+    return cachedMap;
+  }
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return {};
+    if (!raw) {
+      cachedMap = {};
+      return cachedMap;
+    }
     const parsed = JSON.parse(raw) as UsageMap;
-    return parsed && typeof parsed === "object" ? parsed : {};
+    cachedMap = parsed && typeof parsed === "object" ? parsed : {};
+    return cachedMap;
   } catch {
-    return {};
+    cachedMap = {};
+    return cachedMap;
   }
 }
 
 function writeMap(map: UsageMap) {
+  cachedMap = map;
   if (typeof localStorage === "undefined") return;
   localStorage.setItem(STORAGE_KEY, JSON.stringify(map));
 }
 
 export function recordCommandUsage(commandId: string) {
-  const map = readMap();
+  const map = { ...readMap() };
   map[commandId] = (map[commandId] ?? 0) + 1;
   writeMap(map);
 }

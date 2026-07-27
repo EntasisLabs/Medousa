@@ -1,235 +1,203 @@
-# Polish & Package — phased plan
+# Polish & Package — 0.6 felt polish
 
-> **Status:** Active (2026-06)  
-> **Audience:** Non-dev, non-tech operators — *install, trust, feel held*  
-> **Thesis:** Medousa’s **engine is shipped** (runtime, memory, vault, plugins, AVEC/STTP). The gap is **exposure, polish, and promise alignment** — not capability.  
-> **Related:** [turn-runtime-and-lanes.md](turn-runtime-and-lanes.md), [identity-manuscripts-and-recall-plan.md](identity-manuscripts-and-recall-plan.md), [iroh-p2p-pairing-plan.md](iroh-p2p-pairing-plan.md), [media-and-attachments-plan.md](media-and-attachments-plan.md), [desktop-distribution-plan.md](desktop-distribution-plan.md), [archive/continuity-first-redesign.md](archive/continuity-first-redesign.md)
+> **Status:** Active (2026-07) — rewritten for the 0.6.0 train  
+> **Audience:** Operators who already have a working workshop  
+> **Thesis:** Capability exposure is largely **done**. The gap is **felt quality** — language, wayfinding, micro-interactions, and first-run restraint — so a lost soul can find their place without the app oversharing intimacy on day one.  
+> **Supersedes:** [archive/polish-and-package-plan-capability-era.md](archive/polish-and-package-plan-capability-era.md) (P0–P7 “expose the engine” era — mostly shipped)  
+> **Parallel track:** In-app Operator’s Guide depth is tracked in [operators-guide-docs-epic.md](operators-guide-docs-epic.md) (D0–D3). Felt polish F-phases do not replace wiki coverage — and wiki depth does not replace tone/wayfinding work here.
 
 ---
 
-## Problem statement
+## Reality check (why the old plan is obsolete)
 
-Competitive review (OpenClaw, Hermes, Claude Cowork, Pi) surfaced a pattern:
+The capability-era plan assumed Home still needed to *surface* vault, identity, workshop, attachments, health, share/export. On the **0.6.0** train those surfaces exist:
 
-| Category | Meaning | Example |
-|----------|---------|---------|
-| **Exposure** | Built in Rust/daemon; Home doesn’t surface it | Identity teach, Grapheme workshop, context provenance |
-| **Polish** | Built; wiring or reliability rough | Sidecar auto-start, Iroh pairing, bundle updates |
-| **Promise** | Marketing/README overshoots felt experience | “Remembers everything” vs ranked digest + recall |
-| **Net-new** | Genuinely missing slice | Chat attachments (P5), optional managed adapter channel |
+| Old theme | 0.6 reality |
+|-----------|-------------|
+| Trust / sidecar | Ensure-on-launch + resume recover + health chip + packaged runbook |
+| First-run / teach / continuity | Wizard, Profiles, Context, Presence shipped |
+| Workshop exposure | W0–W6 Scripts Workbench / Automations / Capabilities |
+| App affordances | Attachments, menus, share, transcript, profile backup |
+| Dynamic / mesh / shared | Separate 0.6 pillars — shipped or cut-ready |
 
-**Do not** treat MCP, OpenShell, Grapheme VM, Locus, identity graph, vault, or daemon-hosted runtime as backlog items — they are **product strengths to package**.
+What remains is not “add the feature” — it is **tone, friction, and motion**.
 
 ---
 
 ## North star
 
-> **Anxiety → actionable structure, emotional resonance intact.**  
-> Install in ~60 seconds. Brain runs invisibly. First real task leaves **stone** in the vault with **visible provenance** (work → note → thread). Operator never needs “daemon,” “host bus,” or “manuscript YAML.”
-
-**Demo artifact (internal):** couples financial toolkit run — work cards → research workers → vault guides with human tone (`feed.jsonl` + `vault/finance/`).
+> A stranger can download Medousa, get a brain without being bounced to Settings, land in Chat/Library without embarrassment, and discover Scripts/Settings/Spotlight without reading a manifesto.  
+> The app is warm **after** trust is earned — not on the first screen.
 
 ---
 
 ## Principles
 
-1. **Expose, don’t rebuild** — prefer Home Settings / Context / Vault UX over new subsystems.
-2. **Continuity over capability** — every phase must improve *felt* thread (trust, recall, artifacts), not tool count.
-3. **Normie language** — Specialists, Services, Memory, Workshop; hide lane/bus jargon in Advanced.
-4. **Local-first unchanged** — polish must not imply cloud sync; pairing/Iroh is the multi-device story.
-5. **Ship vertical slices** — each phase has a user-visible “done” moment, not a quarter of invisible refactors.
+1. **Restraint before intimacy** — no “we / she / partner / matcha” until the operator has chosen closeness (Profiles teach, later sessions).
+2. **Never trap onboarding** — downloads and package installs run without blocking Ready; Skip always works.
+3. **Do the work in place** — wizard installs Offline brain + starts model download; “Open Settings → Packages” is a fallback, not the happy path.
+4. **Lost-soul wayfinding** — empty states, Presence, Spotlight, and rail labels answer “where am I?” in plain language.
+5. **Polish the places people live** — Chat, Vault/Library, Scripts, Settings — micro-interactions and animations with intent, not noise.
+6. **Ship vertical slices** — each F-phase has a user-visible “feels better” moment.
 
 ---
 
-## Phase map
+## Phase map (0.6 felt polish)
 
 ```mermaid
 flowchart LR
-    P0[P0 Trust baseline]
-    P1[P1 First ten minutes]
-    P2[P2 Teach Medousa]
-    P3[P3 Continuity surfaces]
-    P4[P4 Workshop exposure]
-    P5[P5 App affordances]
-    P6[P6 Package and ship]
-    P7[P7 Promise and copy]
+    F0[F0 Onboarding brain path]
+    F1[F1 First-run tone]
+    F2[F2 Wayfinding]
+    F3[F3 Surface interactions]
+    F4[F4 Spotlight and chrome]
+    F5[F5 Motion and micro]
+    F6[F6 Package residual]
 
-    P0 --> P1 --> P2 --> P3
-    P3 --> P4 --> P5 --> P6
-    P6 --> P7
+    F0 --> F1 --> F2
+    F2 --> F3 --> F4 --> F5
+    F5 --> F6
 ```
 
 | Phase | Theme | Operator outcome |
 |-------|--------|------------------|
-| **P0** | Trust baseline | “It’s running; I’m not guessing.” |
-| **P1** | First ten minutes | “I see why this is different from ChatGPT.” |
-| **P2** | Teach Medousa | “She knows me; I can correct her.” |
-| **P3** | Continuity surfaces | “I see where memory came from.” |
-| **P4** | Workshop exposure | “I can extend her without terminal.” |
-| **P5** | App affordances | “This feels like a real app.” |
-| **P6** | Package & ship | “Download, update, phone just works.” |
-| **P7** | Promise & copy | “Marketing matches what I feel.” |
+| **F0** | Onboarding brain path | “It downloads for me; I can keep going.” |
+| **F1** | First-run tone | “Helpful, not presumptuous.” |
+| **F2** | Wayfinding | “I know where Chat / Notes / Scripts / Settings live.” |
+| **F3** | Surface interactions | Chat, Vault, Scripts, Settings feel intentional. |
+| **F4** | Spotlight + chrome | Spotlight finds the right thing; chrome doesn’t fight you. |
+| **F5** | Motion + micro | Presence from motion; no fidget noise. |
+| **F6** | Package residual | Signed updates / Iroh smoke only if still open — not the main story. |
 
 ---
 
-## P0 — Trust baseline (engine invisible)
+## F0 — Onboarding brain path (non-blocking download)
 
-**Goal:** Sidecar bundle + daemon health feel **boringly reliable** before any feature polish.
+**Status:** ✅ Done (2026-07)
 
-| ID | Deliverable | Type | Acceptance |
-|----|-------------|------|------------|
-| P0.1 | Engine auto-start after wizard | Polish | Fresh `.app` install → chat works with **zero terminal**; doctor green |
-| P0.2 | Home **Workshop health** chip | Exposure | Settings shows engine version, last turn, restart affordance |
-| P0.3 | Fix known sidecar wiring bugs | Polish | Track in issues; smoke: sleep/wake, force-quit, relaunch |
-| P0.4 | Iroh Phase 0 smoke + Phase 2 mobile | Polish | [iroh-p2p-pairing-plan.md](iroh-p2p-pairing-plan.md) — QR → `/health` over tunnel |
-| P0.5 | Connection runbook in product | Exposure | Link Settings Diagnostics → [connection-reliability](../docs/runbooks/connection-reliability.md) |
+**Goal:** Offline / recommended brain setup never says “go to Settings” as the primary path, and never traps Continue on a long download.
 
-**Code anchors:** `apps/medousa-home/src-tauri/` sidecar scripts, `prepare-engine-sidecar.sh`, `src/iroh_transport/`, Settings Diagnostics panels.
+| ID | Deliverable | Acceptance | Status |
+|----|-------------|------------|--------|
+| F0.1 | In-wizard **install Offline brain** when `!engineAvailable` | Calls package install API; progress in wizard; no Settings bounce as happy path | ✅ |
+| F0.2 | **Background model download** | Selecting recommended model starts download; Continue / Skip / Ready remain available | ✅ |
+| F0.3 | Progress without trap | Ready (or discreet chip) shows download/load status; failure offers retry without trapping | ✅ |
+| F0.4 | Copy pass on brain step | “Install & download” language; Settings Packages only as Advanced/fallback | ✅ |
 
-**Exit:** Operator never asks “is the daemon running?” after day one.
+**Code anchors:** `WizardWelcomeScreen.svelte`, `packagesApi.ts`, `localInferenceApi.ts` (`ensureLocalModelReady`), `wizard.svelte.ts`, `WizardCompletionScreen.svelte`.
 
----
-
-## P1 — First ten minutes (the differentiator moment)
-
-**Goal:** Post-wizard path shows **continuity**, not Settings taxonomy.
-
-| ID | Deliverable | Type | Acceptance |
-|----|-------------|------|------------|
-| P1.1 | Wizard epilogue screen | Exposure | After BYOK/offline: “Your workshop is ready” + **one** suggested first action (chat or quick capture) |
-| P1.2 | **Guided first win** (optional skip) | Exposure | 3-step micro-flow: say something personal → see Context populate → save a vault note |
-| P1.3 | Surface **Context map** entry | Exposure | Home nav hint: “Threads & memory” within first session |
-| P1.4 | Hide Advanced jargon | Polish | Host bus charter → “When to bring in Specialists” with plain hints only |
-| P1.5 | Profile switcher discoverability | Exposure | Work/home chip visible after second profile exists |
-
-**Exit:** New user can articulate “it remembers and leaves notes” within 10 minutes (user test).
-
-**Not in scope:** Rebuilding wizard state machine (shipped in archive first-run plan).
+**Exit:** Clean machine → Recommended path → brain installs + weights download → operator can reach Ready without opening Settings.
 
 ---
 
-## P2 — Teach Medousa (identity exposure)
+## F1 — First-run tone (earn intimacy)
 
-**Goal:** Everything `medousa identity-*` and `identity-remember` does — **from Home**, for normies.
+**Status:** ✅ Profiles teach slice done (2026-07) — wizard ownership + Presence “we” **kept** by product decision
 
-| ID | Deliverable | Type | Acceptance |
-|----|-------------|------|------------|
-| P2.1 | **Memory & You** settings section | Exposure | View ranked digest preview; edit key prefs inline |
-| P2.2 | **Teach Medousa** composer | Exposure | Free-text → `cognition_identity_remember` or daemon API; confirmation toast |
-| P2.3 | People & relationships light editor | Exposure | List contacts/edges from identity drawer; add nickname/fact |
-| P2.4 | Export identity markdown | Exposure | Button → same output as `medousa identity-export` to chosen folder |
-| P2.5 | Import / hand-edit loop | Exposure | “Open export folder” + regenerate digest hint |
+**Goal:** Day-one Profiles teach copy is identity + preferences — not invasive intimacy fishing.
 
-**Code anchors:** `src/identity_tools.rs`, `src/cognitive_identity.rs`, `src/identity_markdown.rs`, `IdentityDrawer.svelte`, `SettingsMemorySection.svelte`.
+| ID | Deliverable | Acceptance | Status |
+|----|-------------|------------|--------|
+| F1.1 | Retire overly familiar teach examples | No “Mario is my partner” / “I prefer matcha” as first teach hints | ✅ |
+| F1.2 | Neutral placeholders | Add-person / teach placeholders stay generic (name, role, preference) | ✅ |
+| F1.3 | Wizard restraint | Soften “This feels right”, “The desk is yours”, over-familiar completion lines | ⏸ **kept** — ownership voice is intentional |
+| F1.4 | Presence empty state | Replace “What are we doing…?” with invitation that doesn’t assume “we” yet | ⏸ **kept** — collaborative “we” is intentional |
+| F1.5 | Profiles / Context “she” pass | Prefer Medousa / you language on first surfaces; keep warmth where relationship is chosen | ⬜ later (teach/success flash already neutralized) |
 
-**Exit:** Operator never needs CLI to teach “Mario is my partner” or “timezone is …”.
+**Code anchors:** `ProfilesTeachComposer.svelte`, `ProfilesAddPersonSheet.svelte` (this slice).
 
----
-
-## P3 — Continuity surfaces (provenance & recall)
-
-**Goal:** Make the **top-tier memory stack** obvious — graph, vault links, session origin.
-
-| ID | Deliverable | Type | Acceptance |
-|----|-------------|------|------------|
-| P3.1 | Context as **primary** nav tier | Exposure | Same weight as Chat/Work/Vault on desktop; Pulse links on mobile |
-| P3.2 | **Unified search** | Exposure | One search: sessions (catalog) + vault + identity recall hits |
-| P3.3 | Provenance on every artifact | Polish | Work card → vault → session; vault note → originating work/chat |
-| P3.4 | “What Medousa used this turn” | Exposure | Optional chat inspector: digest + slices + active profile (read-only, plain language) |
-| P3.5 | Thread ↔ chat deep links | Polish | Context recall “Echoes in your sessions” → open chat at session |
-
-**Code anchors:** `ContextPanel.svelte`, `ContextMapView.svelte`, `ContextRecallDetail.svelte`, `session_catalog`, `turn_slice.rs`, `workHub.ts` provenance chips.
-
-**Exit:** Operator answers “where did she get that?” without reading logs.
+**Exit (this slice):** Teach / add-person examples read as identity + prefs without oversharing pressure.
 
 ---
 
-## P4 — Workshop exposure (plugins without terminal)
+## F2 — Wayfinding (lost soul finds a place)
 
-**Goal:** MCP + OpenShell + Grapheme + skills import — **discoverable**, not TUI-only.
+**Status:** ✅ Bindings discoverability done (2026-07) — empty-state UI wayfinding next
 
-> **Superseded in detail by** [workshop-and-automations-plan.md](workshop-and-automations-plan.md) (W1–W5). Keep this section as a polish-plan crosswalk.
+**Goal (this round):** One discoverable keyboard-shortcuts reference that matches real binds; light conflict hygiene. **Next round:** empty states + surface reordering.
 
-| ID | Deliverable | Type | Acceptance |
-|----|-------------|------|------------|
-| P4.1 | **Services** tab polish | Exposure | → W1 Connections |
-| P4.2 | **Skills import wizard** | Exposure | → W2.1 |
-| P4.3 | Specialist gallery | Exposure | → W2 Specialists tab |
-| P4.4 | Grapheme **Workshop** (lite) | Exposure | → W1 Modules + W5 |
-| P4.5 | OpenShell policy visibility | Exposure | → W2.4 Advanced |
-| P4.6 | WASM modules | Deferred | → W5.3 |
+| ID | Deliverable | Acceptance | Status |
+|----|-------------|------------|--------|
+| F2.0 | **Keyboard shortcuts catalog + sheet** | `keyboardShortcutsCatalog.ts`; `Ctrl+; ?` / Spotlight / Basement open multi-section sheet; labels via `formatShortcut` | ✅ |
+| F2.0b | Hotkey conflict hygiene | Skip zoom / toolbar summon on editable targets; Ctrl+B still global; unit + catalog snapshot tests | ✅ |
+| F2.1 | Chat empty / Presence | One clear next action (type, or open Notes) | ⬜ next |
+| F2.2 | Vault / Library empty | Bring files / start a note — no garage poetry that confuses | ⬜ |
+| F2.3 | Scripts / Automations empty | What this surface is + one CTA | ⬜ |
+| F2.4 | Settings IA labels | Plain nouns; Advanced stays advanced | ⬜ |
+| F2.5 | Mobile More hub | Destinations describe place, not intimacy thesis | ⬜ |
 
-**Code anchors:** `WorkshopPanel.svelte` (was `SkillsPanel`), `McpServersPanel.svelte`, `src/identity_manuscript.rs`, `src/skill_ingest.rs`, `src/grapheme_*`.
+**Exit (this round):** Lost souls can answer “what can I press?” in one place; binds match handlers.
 
-**Exit:** README “bring your skills” is one Home gesture — see W2 exit in workshop-and-automations-plan.
-
----
-
-## P5 — App affordances (feels like a proper app)
-
-**Goal:** Normie expectations — share, export, context actions — without changing core architecture.
-
-| ID | Deliverable | Type | Acceptance |
-|----|-------------|------|------------|
-| P5.0 | **Chat attachments** | Net-new | [media-and-attachments-plan.md](media-and-attachments-plan.md) P5a — composer attach, local media |
-| P5.1 | Vault context menu | Polish | Right-click / long-press: Share, Export PDF, Move, Ask Medousa, Send to Work |
-| P5.2 | Chat message actions | Polish | Copy, Share, “Save to vault” on assistant turns |
-| P5.3 | Transcript export | Exposure | Session → Markdown/PDF export |
-| P5.4 | Profile backup | Exposure | Home → Export profile bundle (existing API); import on new machine |
-| P5.5 | Note share sheet | Polish | Extend `share.ts` beyond work results to vault notes |
-
-**Code anchors:** `VaultEditor.svelte`, `VaultNoteActionsMenu.svelte`, `vaultPdfExport.ts`, `profile_portability.rs`, `share.ts`.
-
-**Exit:** No “I wish Obsidian/Notes could …” for basic share/export.
+**Exit (full F2):** New user can name Chat, Notes, Scripts, Settings without hunting.
 
 ---
 
-## P6 — Package & ship (distribution)
+## F3 — Surface interactions (Chat, Vault, Scripts, Settings)
 
-**Goal:** Download → install → update → phone, without engineering literacy.
+**Goal:** Daily paths feel deliberate — focus, selection, menus, save/status, handoff.
 
-| ID | Deliverable | Type | Acceptance |
-|----|-------------|------|------------|
-| P6.1 | Signed desktop CI | Polish | [desktop-distribution-plan.md](desktop-distribution-plan.md) — `.dmg` / `.msi` / AppImage on Releases |
-| P6.2 | In-app **Check for updates** | Polish | Tauri updater or clear “new version” nudge + link |
-| P6.3 | Engine + app version lockstep | Polish | Sidecar version matches app; doctor warns on mismatch |
-| P6.4 | Optional **channel adapters** bundle | Polish | One-click enable Telegram/Discord docs + deep link to Settings (not separate downloads) |
-| P6.5 | Iroh Phase 3–4 | Polish | Phone transport + relay hardening — primary multi-device path |
+| ID | Deliverable | Acceptance | Status |
+|----|-------------|------------|--------|
+| F3.0 | **Rail chrome micro** | Titlebar arrows = rail-view history; row `+` / `>` (dock list); Messaging → Settings → Channels; floating toolbar = shake/keybind only | ✅ |
+| F3.1 | Chat | Composer, turn actions, permission/budget bars, ambient status | ⬜ |
+| F3.2 | Vault / Library | Editor menus, save whisper, context menu, workshop fab coherence | ⬜ |
+| F3.3 | Scripts Workbench | Tabs, run feedback, library ↔ flow links readable | ⬜ |
+| F3.4 | Settings | Basement health, Packages, Diagnostics — calm density | ⬜ |
 
-**Exit:** README “Download Medousa” → double-click → working brain (no GitHub tarball confusion).
+Burn down known friction as discovered; prefer small PRs per surface.
 
----
-
-## P7 — Promise & copy alignment
-
-**Goal:** Marketing, wizard, and empty states match **ranked memory + recall + stone**, not omniscient chatbot.
-
-| ID | Deliverable | Type | Acceptance |
-|----|-------------|------|------------|
-| P7.1 | README pass | Copy | “Remembers what matters; recalls the rest on demand” vs “everything” |
-| P7.2 | Wizard privacy copy | Copy | Local-first accurate; no implied cloud sync |
-| P7.3 | Empty states | Copy | Context, Vault, Work — continuity voice (garage, threads, Specialists) |
-| P7.4 | Competitive one-pager | Exposure | Internal: capability vs exposure table (this plan §Problem) |
-| P7.5 | Landing / store screenshots | Copy | Show vault + context provenance, not terminal |
-
-**Exit:** Support questions shift from “what is a daemon?” to “how do I teach her X?”.
+**F3.0 anchors:** `layout.svelte.ts` (rail view stacks), `AppTitlebar.svelte`, `NavShell.svelte`, `NavRailViewPopover.svelte`, `*RailToolbar.svelte`.
 
 ---
 
-## Suggested implementation order
+## F4 — Spotlight and shell chrome
 
-Strict priority for **normie continuity**:
+**Goal:** Command Spotlight and shell chrome are reliable discovery, not a second Settings maze.
 
-1. **P0** — trust baseline (bundle + Iroh smoke)  
-2. **P1 + P2** — first ten minutes + teach Medousa (parallel UI)  
-3. **P3** — continuity surfaces (unified search is highest ROI)  
-4. **P5.0** — chat attachments (life continuity gap)  
-5. **P4** — workshop exposure (skills import before Grapheme lite editor)  
-6. **P5.1–P5.5** — app affordances  
-7. **P6** — distribution  
-8. **P7** — copy (can start early, ship with P6)
+| ID | Deliverable | Acceptance | Status |
+|----|-------------|------------|--------|
+| F4.1 | Spotlight query relevance | Notes / go / export / settings hits ranked sanely | ⬜ |
+| F4.2 | Spotlight copy | Labels match F1–F2 tone | ⬜ |
+| F4.3 | Keyboard / focus | Open, run, escape; no stuck busy states | ⬜ |
+| F4.4 | Shell chrome | Rail history arrows + compact hover (see F3.0); tabs/drawers don’t steal focus mid-turn | 🔄 F3.0 rail slice ✅ |
 
-**Parallel tracks:** Iroh (P0/P6) and P5 attachments can run beside P1–P3 without blocking.
+**Code anchors:** `CommandSpotlight.svelte`, `commands/registry.ts`, shell layout stores.
+
+---
+
+## F5 — Motion and micro-interactions
+
+**Goal:** 2–3 intentional motions per primary surface; reduce decorative noise.
+
+| ID | Deliverable | Acceptance |
+|----|-------------|------------|
+| F5.1 | Presence / dock | Purposeful enter/dock; no snap cancel |
+| F5.2 | Chat stream | Content reveal and status whispers feel continuous |
+| F5.3 | Vault / Scripts | Save, tab switch, panel open — short and readable |
+| F5.4 | Reduced-motion | Respect `prefers-reduced-motion` |
+
+---
+
+## F6 — Package residual (optional track)
+
+Not the main 0.6 polish story. Keep only if still product-blocking:
+
+| ID | Note |
+|----|------|
+| F6.1 | Signed desktop CI / in-app updates — [desktop-distribution-plan.md](desktop-distribution-plan.md) |
+| F6.2 | Iroh smoke (old P0.4) — [iroh-p2p-pairing-plan.md](iroh-p2p-pairing-plan.md) |
+| F6.3 | README / store screenshots if marketing still overclaims |
+
+---
+
+## Suggested order
+
+1. ~~**F0** — brain install + non-blocking download~~ ✅  
+2. ~~**F1** — Profiles teach examples (ownership / “we” kept)~~ ✅  
+3. ~~**F2** — bindings discoverability~~ ✅ → next: empty-state wayfinding  
+4. **F3 + F4** — surface + Spotlight interactions (parallel)  
+5. **F5** — motion pass once interactions settle  
+6. **F6** — only as needed for ship
 
 ---
 
@@ -237,90 +205,51 @@ Strict priority for **normie continuity**:
 
 | Item | Why |
 |------|-----|
-| Rebuild agent runtime / host bus | Shipped — [turn-runtime-and-lanes.md](turn-runtime-and-lanes.md) |
-| Ranked digest / manuscripts / recall tool | Shipped — [identity-manuscripts-and-recall-plan.md](identity-manuscripts-and-recall-plan.md) |
-| Cloud sync / Medousa Cloud | Out of product thesis (local-first) |
-| Multi-role orchestrator catalogs | Deferred — [durable-turn-worker-plan.md](durable-turn-worker-plan.md) Phase 4 |
-| Worker continuity Ph B–E | Separate track — [worker-continuity-plan.md](worker-continuity-plan.md); polish P3.3 helps narrative |
+| Rebuilding ACP / MCP / mesh / shared mode | Separate 0.6 pillars — largely shipped |
+| Re-exposing vault / identity / workshop as “new” features | Already in product |
+| Capability-era P0–P7 checklist | Archived — [polish-and-package-plan-capability-era.md](archive/polish-and-package-plan-capability-era.md) |
+| Cloud sync | Out of thesis |
 
 ---
 
 ## Checklist
 
-### P0 Trust baseline
-- [ ] P0.1 Sidecar smoke on clean install
-- [ ] P0.2 Workshop health chip
-- [ ] P0.3 Sidecar bug burn-down
-- [ ] P0.4 Iroh smoke + mobile handshake
-- [ ] P0.5 Diagnostics → runbook link
+### F0 Onboarding brain
+- [ ] F0.1 In-wizard Offline brain install
+- [ ] F0.2 Background model download
+- [ ] F0.3 Non-blocking Ready progress
+- [ ] F0.4 Brain-step copy
 
-### P1 First ten minutes
-- [ ] P1.1 Wizard epilogue
-- [ ] P1.2 Guided first win
-- [ ] P1.3 Context nav discoverability
-- [ ] P1.4 Plain-language Advanced labels
-- [ ] P1.5 Profile switcher UX
+### F1 First-run tone
+- [ ] F1.1 Teach examples
+- [ ] F1.2 Placeholders
+- [ ] F1.3 Wizard completion / personalize
+- [ ] F1.4 Presence sublines
+- [ ] F1.5 Profiles / Context restraint pass
 
-### P2 Teach Medousa
-- [ ] P2.1 Memory & You section
-- [ ] P2.2 Teach composer
-- [ ] P2.3 People editor
-- [ ] P2.4 Identity export button
-- [ ] P2.5 Hand-edit loop
+### F2 Wayfinding
+- [ ] F2.1–F2.5 Empty states + labels
 
-### P3 Continuity surfaces
-- [ ] P3.1 Context nav tier
-- [ ] P3.2 Unified search
-- [ ] P3.3 Provenance everywhere
-- [ ] P3.4 Turn context inspector
-- [ ] P3.5 Thread ↔ chat links
+### F3 Surfaces
+- [ ] F3.1 Chat
+- [ ] F3.2 Vault
+- [ ] F3.3 Scripts
+- [ ] F3.4 Settings
 
-### P4 Workshop exposure
-- [ ] P4.1 Services polish
-- [ ] P4.2 Skills import wizard
-- [ ] P4.3 Specialist gallery
-- [ ] P4.4 Grapheme lite
-- [ ] P4.5 OpenShell visibility
+### F4 Spotlight
+- [ ] F4.1–F4.4 Relevance, copy, focus, chrome
 
-### P5 App affordances
-- [ ] P5.0 Chat attachments (P5a)
-- [ ] P5.1 Vault context menu
-- [ ] P5.2 Chat actions
-- [ ] P5.3 Transcript export
-- [ ] P5.4 Profile backup UI
-- [ ] P5.5 Note share
+### F5 Motion
+- [ ] F5.1–F5.4 Intentional motion + reduced-motion
 
-### P6 Package & ship
-- [ ] P6.1 Signed desktop CI
-- [ ] P6.2 In-app updates
-- [ ] P6.3 Version lockstep
-- [ ] P6.4 Adapter bundle UX
-- [ ] P6.5 Iroh Ph 3–4
-
-### P7 Promise & copy
-- [ ] P7.1 README pass
-- [ ] P7.2 Wizard copy
-- [ ] P7.3 Empty states
-- [ ] P7.4 Internal competitive one-pager
-- [ ] P7.5 Screenshot refresh
+### F6 Residual
+- [ ] F6.x only if ship-blocking
 
 ---
 
 ## Success metrics (qualitative)
 
-| Signal | Target |
-|--------|--------|
-| Time to first vault artifact | < 15 min post-install (guided) |
-| “Is it running?” support | Rare after P0 |
-| CLI for identity teach | Optional, not required |
-| Skills import | > 50% of power users use Home, not `manuscript-install` |
-| Felt continuity (user interview) | “Same person in chat, work, and notes” |
-
----
-
-## References
-
-- Runtime (shipped): [turn-runtime-and-lanes.md](turn-runtime-and-lanes.md)
-- Competitive / exposure analysis: conversation 2026-06 (internal)
-- Continuity thesis: [archive/continuity-first-redesign.md](archive/continuity-first-redesign.md)
-- Demo data: `~/Library/Application Support/medousa/workspace/feed.jsonl` (couples financial run)
+- First-run tester never says “it told me to go to Settings to get a brain.”
+- First-run tester never winces at teach examples or Presence “we.”
+- Lost-soul test: from cold open, find Chat, write a note, open Scripts, open Settings in under two minutes without help.
+- Spotlight finds export / notes / settings without memorizing Advanced.

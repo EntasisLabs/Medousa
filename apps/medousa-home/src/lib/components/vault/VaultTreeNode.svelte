@@ -31,6 +31,8 @@
     selectedPath: string | null;
     labelByPath: Map<string, string>;
     activeSpaceFilter?: string | null;
+    /** When true, expand ancestors once when `selectedPath` changes (desktop reveal). */
+    revealSelected?: boolean;
     depth?: number;
     onSelect: (path: string) => void;
     onMoveNote?: (sourcePath: string, targetFolderPrefix: string) => void | Promise<void>;
@@ -41,6 +43,7 @@
     selectedPath,
     labelByPath,
     activeSpaceFilter = null,
+    revealSelected = true,
     depth = 0,
     onSelect,
     onMoveNote,
@@ -54,25 +57,22 @@
 
   const expandKey = $derived(vault.treeExpandKeyFor(node));
 
-  const startsExpanded = $derived(
-    node.defaultCollapsed
-      ? false
-      : treeNodeContainsPath(node, selectedPath) ||
-          (activeSpaceFilter != null && node.spaceId === activeSpaceFilter),
-  );
-
+  /** Default collapsed; only the session expand map and explicit reveal open folders. */
   const expanded = $derived.by(() => {
     void vault.treeExpandedByKey;
-    const stored = vault.isTreeExpanded(expandKey);
-    if (stored !== undefined) return stored;
-    return startsExpanded;
+    return vault.isTreeExpanded(expandKey) === true;
   });
 
+  /** Expand ancestors when selection changes — not continuously (allows full collapse). */
+  let lastRevealedPath: string | null = null;
   $effect(() => {
-    if (selectedPath && treeNodeContainsPath(node, selectedPath)) {
-      if (vault.isTreeExpanded(expandKey) !== true) {
-        vault.setTreeExpanded(expandKey, true);
-      }
+    if (!revealSelected) return;
+    const path = selectedPath;
+    if (!path || !treeNodeContainsPath(node, path)) return;
+    if (path === lastRevealedPath) return;
+    lastRevealedPath = path;
+    if (vault.isTreeExpanded(expandKey) !== true) {
+      vault.setTreeExpanded(expandKey, true);
     }
   });
 
@@ -279,6 +279,7 @@
           {selectedPath}
           {labelByPath}
           {activeSpaceFilter}
+          {revealSelected}
           depth={depth + 1}
           {onSelect}
           {onMoveNote}

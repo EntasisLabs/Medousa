@@ -1,4 +1,4 @@
-export type ContextTabId = "recall" | "threads" | "posture" | "map";
+export type ContextTabId = "recall" | "threads" | "posture";
 
 export type ContextRecallKind =
   | "claim"
@@ -40,12 +40,6 @@ export const CONTEXT_TABS: {
     id: "posture",
     label: "Posture",
     hint: "How you showed up",
-    available: true,
-  },
-  {
-    id: "map",
-    label: "Map",
-    hint: "See how sessions connect",
     available: true,
   },
 ];

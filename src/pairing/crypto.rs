@@ -40,8 +40,16 @@ pub fn verify_message(verifying_key: &VerifyingKey, message: &str, signature_b64
         .map_err(|err| anyhow::anyhow!("signature verification failed: {err}"))
 }
 
-pub fn qr_signing_message(address: &str, device_id: &str, token_b64: &str) -> String {
-    format!("{address}|{device_id}|{token_b64}")
+pub fn qr_signing_message(
+    address: &str,
+    device_id: &str,
+    token_b64: &str,
+    profile_id: Option<&str>,
+) -> String {
+    match profile_id.map(str::trim).filter(|value| !value.is_empty()) {
+        Some(profile_id) => format!("{address}|{device_id}|{token_b64}|p:{profile_id}"),
+        None => format!("{address}|{device_id}|{token_b64}"),
+    }
 }
 
 pub fn qr_signing_message_v2(
@@ -49,8 +57,14 @@ pub fn qr_signing_message_v2(
     device_id: &str,
     token_b64: &str,
     iroh_ticket: &str,
+    profile_id: Option<&str>,
 ) -> String {
-    format!("{address}|{device_id}|{token_b64}|{iroh_ticket}")
+    match profile_id.map(str::trim).filter(|value| !value.is_empty()) {
+        Some(profile_id) => {
+            format!("{address}|{device_id}|{token_b64}|{iroh_ticket}|p:{profile_id}")
+        }
+        None => format!("{address}|{device_id}|{token_b64}|{iroh_ticket}"),
+    }
 }
 
 pub fn verify_qr_url_signature(
@@ -60,7 +74,25 @@ pub fn verify_qr_url_signature(
     token_b64: &str,
     signature_b64: &str,
 ) -> Result<()> {
-    let message = qr_signing_message(address, device_id, token_b64);
+    verify_qr_url_signature_with_profile(
+        verifying_key,
+        address,
+        device_id,
+        token_b64,
+        None,
+        signature_b64,
+    )
+}
+
+pub fn verify_qr_url_signature_with_profile(
+    verifying_key: &VerifyingKey,
+    address: &str,
+    device_id: &str,
+    token_b64: &str,
+    profile_id: Option<&str>,
+    signature_b64: &str,
+) -> Result<()> {
+    let message = qr_signing_message(address, device_id, token_b64, profile_id);
     verify_message(verifying_key, &message, signature_b64)
 }
 
@@ -72,7 +104,27 @@ pub fn verify_qr_url_signature_v2(
     iroh_ticket: &str,
     signature_b64: &str,
 ) -> Result<()> {
-    let message = qr_signing_message_v2(address, device_id, token_b64, iroh_ticket);
+    verify_qr_url_signature_v2_with_profile(
+        verifying_key,
+        address,
+        device_id,
+        token_b64,
+        iroh_ticket,
+        None,
+        signature_b64,
+    )
+}
+
+pub fn verify_qr_url_signature_v2_with_profile(
+    verifying_key: &VerifyingKey,
+    address: &str,
+    device_id: &str,
+    token_b64: &str,
+    iroh_ticket: &str,
+    profile_id: Option<&str>,
+    signature_b64: &str,
+) -> Result<()> {
+    let message = qr_signing_message_v2(address, device_id, token_b64, iroh_ticket, profile_id);
     verify_message(verifying_key, &message, signature_b64)
 }
 
@@ -106,15 +158,32 @@ mod tests {
 
     #[test]
     fn v2_signing_message_includes_ticket() {
-        let message = qr_signing_message_v2("192.168.1.2:7419", "abcd1234", "token", "ticket");
+        let message =
+            qr_signing_message_v2("192.168.1.2:7419", "abcd1234", "token", "ticket", None);
         assert_eq!(message, "192.168.1.2:7419|abcd1234|token|ticket");
+    }
+
+    #[test]
+    fn v2_signing_message_includes_profile_when_bound() {
+        let message = qr_signing_message_v2(
+            "192.168.1.2:7419",
+            "abcd1234",
+            "token",
+            "ticket",
+            Some("user:alice"),
+        );
+        assert_eq!(
+            message,
+            "192.168.1.2:7419|abcd1234|token|ticket|p:user:alice"
+        );
     }
 
     #[test]
     fn v2_qr_signature_verifies() {
         let signing_key = SigningKey::generate(&mut OsRng);
         let verifying_key = signing_key.verifying_key();
-        let message = qr_signing_message_v2("host:7419", "deadbeef", "qr-token", "iroh-ticket");
+        let message =
+            qr_signing_message_v2("host:7419", "deadbeef", "qr-token", "iroh-ticket", None);
         let signature = sign_message(&signing_key, &message);
         verify_qr_url_signature_v2(
             &verifying_key,

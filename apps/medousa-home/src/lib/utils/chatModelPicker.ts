@@ -16,6 +16,9 @@ export interface ChatModelPickOption {
   hint?: string;
   favorite?: boolean;
   badges?: string[];
+  /** Quiet dot-separated capability line shown under the name. */
+  meta?: string;
+  vision?: boolean;
 }
 
 export interface ChatModelPickGroup {
@@ -206,6 +209,7 @@ export function filterChatModelOptions(
       option.model.toLowerCase().includes(needle) ||
       option.provider.toLowerCase().includes(needle) ||
       (option.hint?.toLowerCase().includes(needle) ?? false) ||
+      (option.meta?.toLowerCase().includes(needle) ?? false) ||
       (option.badges?.some((badge) => badge.toLowerCase().includes(needle)) ?? false),
   );
 }

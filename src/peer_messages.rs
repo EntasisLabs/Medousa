@@ -52,6 +52,9 @@ pub struct PeerMessage {
     pub attachment: Option<ShareBundle>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub attachment_result: Option<PeerMessageAttachmentSummary>,
+    /// Product kind — e.g. `review_request` (Ask), `bring_home`. Absent = ordinary chat/share.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
 }
 
 fn default_direction_in() -> String {
@@ -65,23 +68,26 @@ struct PeerInboxFile {
     messages: Vec<PeerMessage>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PeerMessagePostRequest {
     pub body: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub from_device_id: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub from_name: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub to_device_id: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub to_name: Option<String>,
     /// Only honored for local (loopback) posts. Remote posts are always inbound.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub direction: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub attachment: Option<ShareBundle>,
+    /// Product kind — e.g. `review_request` (Ask), `bring_home`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -280,6 +286,12 @@ pub fn build_message(
         to_name,
         attachment: request.attachment,
         attachment_result: None,
+        kind: request
+            .kind
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string),
     })
 }
 
@@ -307,6 +319,7 @@ mod tests {
                 to_name: None,
                 direction: None,
                 attachment: None,
+                kind: None,
             },
             "dev",
             "Peer",
@@ -326,6 +339,7 @@ mod tests {
                 to_name: Some("Peer".to_string()),
                 direction: Some("out".to_string()),
                 attachment: None,
+                kind: Some("review_request".to_string()),
             },
             "host",
             "Host",
@@ -337,6 +351,7 @@ mod tests {
         assert_eq!(message.direction, "out");
         assert_eq!(message.to_device_id.as_deref(), Some("peer"));
         assert!(message.read_at.is_none());
+        assert_eq!(message.kind.as_deref(), Some("review_request"));
     }
 
     #[test]
@@ -353,6 +368,7 @@ mod tests {
             to_name: Some("B".into()),
             attachment: None,
             attachment_result: None,
+            kind: None,
         };
         assert!(involves_device(&message, "bbb"));
         assert!(involves_device(&message, "aaa"));

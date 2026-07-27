@@ -8,9 +8,10 @@
 
   interface Props {
     onNavigated?: () => void;
+    variant?: "popover" | "rail-row";
   }
 
-  let { onNavigated }: Props = $props();
+  let { onNavigated, variant = "popover" }: Props = $props();
 
   const loading = $derived(humanBrowser.loading);
 
@@ -44,7 +45,9 @@
   }
 </script>
 
-<div class="lme-dock-leading-ghost min-w-0 flex-1" aria-hidden="true"></div>
+{#if variant === "popover"}
+  <div class="lme-dock-leading-ghost min-w-0 flex-1" aria-hidden="true"></div>
+{/if}
 
 <button
   type="button"
@@ -56,39 +59,41 @@
   <Plus size={15} strokeWidth={1.75} />
 </button>
 
-<div class="lme-dock-chrome-secondary flex shrink-0 items-center gap-0.5">
-  <button
-    type="button"
-    class="vault-dock-icon-btn"
-    title="Focus URL"
-    aria-label="Focus URL"
-    onclick={focusUrl}
-  >
-    <span class="text-[11px] font-semibold tracking-tight">URL</span>
-  </button>
-  <button
-    type="button"
-    class="vault-dock-icon-btn"
-    title={loading ? "Stop" : "Reload"}
-    aria-label={loading ? "Stop" : "Reload"}
-    onclick={() => void reloadOrStop()}
-  >
-    {#if loading}
-      <Square size={12} strokeWidth={2.25} />
-    {:else}
-      <RefreshCw size={15} strokeWidth={1.75} />
-    {/if}
-  </button>
-  <button
-    type="button"
-    class="vault-dock-icon-btn"
-    title="Bookmarks"
-    aria-label="Bookmarks"
-    onclick={openBookmarks}
-  >
-    <Bookmark size={15} strokeWidth={1.75} />
-  </button>
-</div>
+{#if variant === "popover"}
+  <div class="lme-dock-chrome-secondary flex shrink-0 items-center gap-0.5">
+    <button
+      type="button"
+      class="vault-dock-icon-btn"
+      title="Focus URL"
+      aria-label="Focus URL"
+      onclick={focusUrl}
+    >
+      <span class="text-[11px] font-semibold tracking-tight">URL</span>
+    </button>
+    <button
+      type="button"
+      class="vault-dock-icon-btn"
+      title={loading ? "Stop" : "Reload"}
+      aria-label={loading ? "Stop" : "Reload"}
+      onclick={() => void reloadOrStop()}
+    >
+      {#if loading}
+        <Square size={12} strokeWidth={2.25} />
+      {:else}
+        <RefreshCw size={15} strokeWidth={1.75} />
+      {/if}
+    </button>
+    <button
+      type="button"
+      class="vault-dock-icon-btn"
+      title="Bookmarks"
+      aria-label="Bookmarks"
+      onclick={openBookmarks}
+    >
+      <Bookmark size={15} strokeWidth={1.75} />
+    </button>
+  </div>
+{/if}
 
 <button
   type="button"

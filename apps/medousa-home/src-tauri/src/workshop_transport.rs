@@ -215,6 +215,8 @@ pub fn config_from_lan_base(lan_base: &str) -> WorkshopTransportConfig {
             lan_base: lan_base.trim().trim_end_matches('/').to_string(),
             iroh_ticket: None,
             session_token: None,
+            phone_id: String::new(),
+            workshop_device_id: String::new(),
         }
     })
 }

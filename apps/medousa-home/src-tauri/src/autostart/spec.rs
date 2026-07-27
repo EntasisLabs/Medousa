@@ -1,10 +1,7 @@
 use std::path::PathBuf;
 
 use crate::connection_prefs::load_connection_prefs;
-use crate::workshop_runtime::{
-    local_brain_installed, resolve_backend, resolve_daemon_binary, resolve_local_binary,
-    should_load_private_brain, DEFAULT_LOCAL_BIND, DEFAULT_LOCAL_BRAIN_BIND,
-};
+use crate::workshop_runtime::{resolve_backend, resolve_daemon_binary, DEFAULT_LOCAL_BIND};
 
 pub const SERVICE_NAME: &str = "medousa-engine";
 
@@ -12,6 +9,7 @@ pub struct AutostartSpec {
     pub program: String,
     pub args: Vec<String>,
     pub log_path: PathBuf,
+    /// Always `None` — login must never spawn the offline brain.
     pub local_brain: Option<LocalBrainAutostart>,
 }
 
@@ -23,7 +21,6 @@ pub struct LocalBrainAutostart {
 pub fn build_autostart_spec() -> Result<AutostartSpec, String> {
     let daemon = resolve_daemon_binary()?;
     let backend = resolve_backend();
-    let private_brain = should_load_private_brain(false);
     let prefs = load_connection_prefs();
     let bind = if prefs.public_bind {
         "0.0.0.0:7419"
@@ -39,25 +36,12 @@ pub fn build_autostart_spec() -> Result<AutostartSpec, String> {
     ];
     args.extend(daemon.pre_args);
 
-    let local_brain = if private_brain && local_brain_installed() {
-        let local = resolve_local_binary()?;
-        Some(LocalBrainAutostart {
-            program: local.program,
-            args: vec![
-                "--bind".to_string(),
-                DEFAULT_LOCAL_BRAIN_BIND.to_string(),
-                "--load-recommended".to_string(),
-            ],
-        })
-    } else {
-        None
-    };
-
     Ok(AutostartSpec {
         program: daemon.program,
         args,
         log_path: daemon_log_path(),
-        local_brain,
+        // Daemon only. Offline brain is started manually from Settings.
+        local_brain: None,
     })
 }
 
@@ -105,5 +89,30 @@ fn shell_quote(value: &str) -> String {
         value.to_string()
     } else {
         format!("'{}'", value.replace('\'', "'\\''"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    #[test]
+    fn shell_start_command_is_daemon_only() {
+        let spec = AutostartSpec {
+            program: "/opt/medousa/medousa_daemon".to_string(),
+            args: vec![
+                "--backend".to_string(),
+                "surreal-mem".to_string(),
+                "--bind".to_string(),
+                "127.0.0.1:7419".to_string(),
+            ],
+            log_path: PathBuf::from("/tmp/daemon.log"),
+            local_brain: None,
+        };
+        let cmd = shell_start_command(&spec);
+        assert!(cmd.contains("medousa_daemon"));
+        assert!(!cmd.contains("medousa_local"));
+        assert!(!cmd.contains("--load-recommended"));
     }
 }

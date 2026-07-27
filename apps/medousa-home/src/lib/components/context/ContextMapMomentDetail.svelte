@@ -16,9 +16,7 @@
     loading: boolean;
     error: string | null;
     chatSessionAvailable?: boolean;
-    postureAvailable?: boolean;
     onOpenChat?: () => void;
-    onOpenPosture?: () => void;
   }
 
   let {
@@ -26,9 +24,7 @@
     loading,
     error,
     chatSessionAvailable = false,
-    postureAvailable = false,
     onOpenChat,
-    onOpenPosture,
   }: Props = $props();
 
   let rawOpen = $state(false);
@@ -38,13 +34,18 @@
     rawOpen = false;
   });
 
+  const PLACEHOLDER_MEMORY = "A moment she kept from this session.";
+
   const title = $derived(detail ? humanMomentTitle(detail.node) : "");
   const memory = $derived(
     detail ? extractThreadMemory(detail.raw, detail.node.context_summary) : null,
   );
-  const showMemoryBody = $derived(
-    Boolean(memory?.trim()) && memory!.trim() !== title.trim(),
-  );
+  const showMemoryBody = $derived.by(() => {
+    const body = memory?.trim() ?? "";
+    if (!body || body === title.trim()) return false;
+    if (body === PLACEHOLDER_MEMORY) return false;
+    return true;
+  });
   const atmosphere = $derived(
     detail?.node.user_avec ? postureHumanFeel(detail.node.user_avec) : null,
   );
@@ -73,9 +74,6 @@
       links={[
         ...(chatSessionAvailable && onOpenChat
           ? [{ label: "Open in Chat", onClick: onOpenChat }]
-          : []),
-        ...(postureAvailable && onOpenPosture
-          ? [{ label: "How you showed up", onClick: onOpenPosture }]
           : []),
       ]}
     />

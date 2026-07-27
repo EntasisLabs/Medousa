@@ -7,27 +7,32 @@
     PanelLeft,
     PanelLeftClose,
     Plus,
+    Rows2,
+    SquareX,
   } from "@lucide/svelte";
-  import ShellTabStrip from "$lib/components/shell/ShellTabStrip.svelte";
+  import ShellTabNotch from "$lib/components/shell/ShellTabNotch.svelte";
   import NewTabMenu from "$lib/components/layout/NewTabMenu.svelte";
   import WindowControls from "$lib/components/layout/WindowControls.svelte";
   import { layout } from "$lib/stores/layout.svelte";
   import { environment } from "$lib/stores/environment.svelte";
   import { shellTabs } from "$lib/stores/shellTabs.svelte";
+  import { MAX_SHELL_PANES } from "$lib/types/shellTabs";
   import { titlebarMode, usesUnifiedTitlebar } from "$lib/platform";
-  import { isTauri, showChatPopout } from "$lib/window";
+  import { isTauri, showBrowser, showChatPopout } from "$lib/window";
 
   const mode = $derived(titlebarMode());
   const show = $derived(usesUnifiedTitlebar());
-  const groupId = $derived(shellTabs.activeGroupId);
   const railExpanded = $derived(layout.shellSidebarExpanded);
   const railWidth = $derived(layout.shellSidebarWidth);
-  const canNavBack = $derived(
-    shellTabs.canGoNavBack || layout.shellSidebarMode === "view",
-  );
-  const canNavForward = $derived(shellTabs.canGoNavForward);
+  const canNavBack = $derived(layout.canGoRailViewBack);
+  const canNavForward = $derived(layout.canGoRailViewForward);
+  const canSplit = $derived(shellTabs.paneCount < MAX_SHELL_PANES);
+  const canMergePane = $derived(shellTabs.paneCount > 1);
   const showChatPopoutBtn = $derived(
     isTauri() && shellTabs.activeTab?.kind === "chat",
+  );
+  const showWebPopoutBtn = $derived(
+    isTauri() && shellTabs.activeTab?.kind === "web",
   );
 
   function toggleRail() {
@@ -41,21 +46,23 @@
   }
 
   function goNavBack() {
-    if (shellTabs.canGoNavBack) {
-      void shellTabs.goNavBack();
-      return;
-    }
-    if (layout.shellSidebarMode === "view") {
-      layout.shellSidebarBackToNav();
-    }
+    layout.goRailViewBack();
   }
 
   function goNavForward() {
-    void shellTabs.goNavForward();
+    layout.goRailViewForward();
   }
 
   function splitRight() {
     shellTabs.splitActive("right");
+  }
+
+  function splitDown() {
+    shellTabs.splitActive("down");
+  }
+
+  function closePane() {
+    shellTabs.closeActiveGroup();
   }
 
   async function onDragDblClick(event: MouseEvent) {
@@ -100,12 +107,12 @@
       </button>
 
       {#if railExpanded}
-        <div class="app-titlebar-rail-nav" role="group" aria-label="Tab history">
+        <div class="app-titlebar-rail-nav" role="group" aria-label="Side rail history">
           <button
             type="button"
             class="app-titlebar-btn"
-            title="Go back"
-            aria-label="Go back"
+            title="Side rail back"
+            aria-label="Side rail back"
             disabled={!canNavBack}
             onclick={goNavBack}
           >
@@ -114,8 +121,8 @@
           <button
             type="button"
             class="app-titlebar-btn"
-            title="Go forward"
-            aria-label="Go forward"
+            title="Side rail forward"
+            aria-label="Side rail forward"
             disabled={!canNavForward}
             onclick={goNavForward}
           >
@@ -126,7 +133,13 @@
     </div>
 
     <div class="app-titlebar-tabs min-w-0 flex-1">
-      <ShellTabStrip {groupId} variant="titlebar" />
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div
+        class="app-titlebar-drag"
+        data-tauri-drag-region
+        ondblclick={onDragDblClick}
+      ></div>
+      <ShellTabNotch />
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div
         class="app-titlebar-drag"
@@ -150,14 +163,46 @@
           <ExternalLink size={14} strokeWidth={1.75} />
         </button>
       {/if}
+      {#if showWebPopoutBtn}
+        <button
+          type="button"
+          class="app-titlebar-btn"
+          title="Open web window"
+          aria-label="Open web window"
+          onclick={() => void showBrowser()}
+        >
+          <ExternalLink size={14} strokeWidth={1.75} />
+        </button>
+      {/if}
       <button
         type="button"
         class="app-titlebar-btn"
         title="Split pane right"
         aria-label="Split pane right"
+        disabled={!canSplit}
         onclick={splitRight}
       >
         <Columns2 size={14} strokeWidth={1.75} />
+      </button>
+      <button
+        type="button"
+        class="app-titlebar-btn"
+        title="Split pane down"
+        aria-label="Split pane down"
+        disabled={!canSplit}
+        onclick={splitDown}
+      >
+        <Rows2 size={14} strokeWidth={1.75} />
+      </button>
+      <button
+        type="button"
+        class="app-titlebar-btn"
+        title="Close pane · merge tabs"
+        aria-label="Close pane and merge tabs"
+        disabled={!canMergePane}
+        onclick={closePane}
+      >
+        <SquareX size={14} strokeWidth={1.75} />
       </button>
     </div>
 
@@ -183,6 +228,12 @@
     border-bottom: 1px solid rgb(var(--color-surface-500) / 0.18);
     background: rgb(var(--color-surface-950));
     user-select: none;
+  }
+
+  /* Keep notch above the fused drawer while open (drawer lives in BodyPortal). */
+  :global(.app-titlebar.app-titlebar--notch-open) {
+    position: relative;
+    z-index: 146;
   }
 
   .app-titlebar--mac {
@@ -226,14 +277,16 @@
     min-width: 0;
     height: 100%;
     align-items: center;
+    justify-content: center;
+    gap: 0.35rem;
     margin-left: 1px;
-    padding-left: 2px;
+    padding: 4px 2px;
   }
 
   .app-titlebar-drag {
-    flex: 1 1 auto;
+    flex: 1 1 0;
     align-self: stretch;
-    min-width: 1.25rem;
+    min-width: 0.75rem;
   }
 
   .app-titlebar-actions {

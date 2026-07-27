@@ -1,4 +1,6 @@
 import {
+  isBringHome,
+  isReviewRequest,
   listTrustedWorkshops,
   peerListMessages,
   type PeerMessage,
@@ -20,6 +22,7 @@ export interface PeerThreadPreview {
     sentAt: string;
     direction: "in" | "out" | string;
     fromName: string;
+    kind?: string | null;
   } | null;
 }
 
@@ -105,6 +108,7 @@ export function buildThreadPreview(
           sentAt: latest.sentAt,
           direction: latest.direction ?? "in",
           fromName: latest.fromName,
+          kind: latest.kind ?? null,
         }
       : null,
   };
@@ -156,6 +160,16 @@ export function formatPeerRelativeTime(sentAt: string): string {
 
 export function peerThreadPreviewLine(thread: PeerThreadPreview): string {
   if (!thread.lastMessage) return "No messages yet";
+  if (isReviewRequest(thread.lastMessage)) {
+    const label = "Ask for review";
+    if (thread.lastMessage.direction === "out") return `You: ${label}`;
+    return label;
+  }
+  if (isBringHome(thread.lastMessage)) {
+    const label = "Brought home";
+    if (thread.lastMessage.direction === "out") return `You: ${label}`;
+    return label;
+  }
   const body = previewBody(thread.lastMessage.body);
   if (thread.lastMessage.direction === "out") return `You: ${body}`;
   return body;

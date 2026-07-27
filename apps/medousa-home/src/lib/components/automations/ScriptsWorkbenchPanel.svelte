@@ -8,13 +8,14 @@
   import ScriptWorkbenchChatPanel from "$lib/components/automations/ScriptWorkbenchChatPanel.svelte";
   import ScriptWorkbenchConsole from "$lib/components/automations/ScriptWorkbenchConsole.svelte";
   import ScriptWorkbenchOutputSheet from "$lib/components/automations/ScriptWorkbenchOutputSheet.svelte";
-  import ScriptWorkbenchStatusBar from "$lib/components/automations/ScriptWorkbenchStatusBar.svelte";
   import ScriptWorkbenchTitlebar from "$lib/components/automations/ScriptWorkbenchTitlebar.svelte";
   import ScriptWorkbenchToolsSheet from "$lib/components/automations/ScriptWorkbenchToolsSheet.svelte";
+  import CodeMirrorHost from "$lib/components/code/CodeMirrorHost.svelte";
   import GraphemeScriptEditorPanel from "$lib/components/grapheme/GraphemeScriptEditorPanel.svelte";
   import { applyRecipeToEditor, GRAPHEME_STARTER_RECIPES, type GraphemeRecipe } from "$lib/grapheme/graphemeRecipes";
   import { renameScriptById } from "$lib/grapheme/scriptWorkbenchActions";
   import { graphemeScriptEditor } from "$lib/stores/graphemeScriptEditor.svelte";
+  import { automationsNav } from "$lib/stores/automationsNav.svelte";
   import { layout } from "$lib/stores/layout.svelte";
   import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
   import { scriptRenameUi } from "$lib/stores/scriptRenameUi.svelte";
@@ -26,7 +27,7 @@
     shouldSuppressScriptContextMenuClick,
   } from "$lib/utils/scriptContextMenuEvents";
   import { SCRIPT_WORKBENCH_OPEN_CONSOLE_EVENT } from "$lib/utils/scriptWorkbenchChromeEvents";
-  import { tick } from "svelte";
+  import { onMount, tick } from "svelte";
 
   interface Props {
     visible: boolean;
@@ -54,11 +55,19 @@
   let libraryRenameBusy = $state(false);
   let handledLibraryRenameToken = $state(-1);
 
+  /** Mobile More uses embedded=true but never mounts LME — keep opens on grapheme editor. */
+  const useLmeScriptChrome = $derived(embedded && !mobile);
+
+  const mobileActiveTab = $derived(
+    graphemeScriptEditor.activeTabId
+      ? (graphemeScriptEditor.tabs.find(
+          (tab) => tab.tabId === graphemeScriptEditor.activeTabId,
+        ) ?? null)
+      : null,
+  );
+
   const showMobileEmptyHint = $derived(
-    mobile &&
-      Boolean(
-        graphemeScriptEditor.activeTab && !graphemeScriptEditor.activeTab.body.trim(),
-      ),
+    mobile && Boolean(mobileActiveTab && !mobileActiveTab.body.trim()),
   );
 
   function openTools(view: typeof toolsInitialView = "root") {
@@ -70,10 +79,24 @@
     outputSheetOpen = true;
   }
 
+  onMount(() => {
+    graphemeScriptEditor.ensureInitialTab();
+  });
+
   $effect(() => {
     if (!visible) return;
     void workshop.refreshModulesAndScripts();
     graphemeScriptEditor.ensureInitialTab();
+  });
+
+  $effect(() => {
+    if (!mobile || !visible) return;
+    automationsNav.setMobileChromeMode("script-editor");
+    return () => {
+      if (automationsNav.mobileChromeMode === "script-editor") {
+        automationsNav.setMobileChromeMode("browse");
+      }
+    };
   });
 
   $effect(() => {
@@ -83,6 +106,18 @@
     };
     window.addEventListener(SCRIPT_WORKBENCH_OPEN_CONSOLE_EVENT, onOpen);
     return () => window.removeEventListener(SCRIPT_WORKBENCH_OPEN_CONSOLE_EVENT, onOpen);
+  });
+
+  $effect(() => {
+    if (!mobile || !visible) return;
+    const onTools = () => openTools("root");
+    const onSearch = () => openTools("library");
+    window.addEventListener("medousa-mobile-automations-tools", onTools);
+    window.addEventListener("medousa-mobile-automations-search-focus", onSearch);
+    return () => {
+      window.removeEventListener("medousa-mobile-automations-tools", onTools);
+      window.removeEventListener("medousa-mobile-automations-search-focus", onSearch);
+    };
   });
 
   const filteredScripts = $derived(
@@ -119,12 +154,14 @@
   );
 
   function applyTemplate(recipe: GraphemeRecipe) {
-    if (!graphemeScriptEditor.activeTab?.body.trim()) {
-      graphemeScriptEditor.ensureInitialTab();
-      graphemeScriptEditor.patchActiveTab(applyRecipeToEditor(recipe));
-      return;
+    graphemeScriptEditor.ensureInitialTab();
+    const current = mobileActiveTab ?? graphemeScriptEditor.activeTab;
+    if (current?.body.trim()) {
+      if (useLmeScriptChrome) lmeWorkspace.openNewScript();
+      else graphemeScriptEditor.openNewTab();
     }
-    startFromRecipe(recipe);
+    graphemeScriptEditor.loadExternalContent(applyRecipeToEditor(recipe));
+    if (useLmeScriptChrome) lmeWorkspace.syncScriptTabFromEditor({ activate: true });
   }
 
   const railItems: { id: RailSection; label: string; icon: typeof FileCode2 }[] = [
@@ -135,7 +172,7 @@
 
   async function openScript(entry: GraphemeScriptEntry) {
     if (shouldSuppressScriptContextMenuClick()) return;
-    if (embedded) {
+    if (useLmeScriptChrome) {
       await lmeWorkspace.openScriptById(entry.id);
       return;
     }
@@ -174,7 +211,7 @@
   }
 
   function startNewScript() {
-    if (embedded) {
+    if (useLmeScriptChrome) {
       lmeWorkspace.openNewScript();
       return;
     }
@@ -182,13 +219,13 @@
   }
 
   function startFromRecipe(recipe: GraphemeRecipe) {
-    if (embedded) {
+    if (useLmeScriptChrome) {
       lmeWorkspace.openNewScript();
     } else {
       graphemeScriptEditor.openNewTab();
     }
-    graphemeScriptEditor.patchActiveTab(applyRecipeToEditor(recipe));
-    if (embedded) lmeWorkspace.syncScriptTabFromEditor();
+    graphemeScriptEditor.loadExternalContent(applyRecipeToEditor(recipe));
+    if (useLmeScriptChrome) lmeWorkspace.syncScriptTabFromEditor({ activate: true });
   }
 </script>
 
@@ -436,17 +473,59 @@
         onOpenOutput={mobile ? openOutput : undefined}
       />
 
+      {#if mobile && mobileActiveTab}
+        <div
+          class="scripts-workbench-mobile-title shrink-0 border-b border-surface-500/30 px-3 py-2"
+        >
+          <p class="truncate text-sm font-medium text-surface-100">
+            {mobileActiveTab.name}
+          </p>
+          {#if mobileActiveTab.body.trim()}
+            <p class="workshop-faint mt-0.5 truncate font-mono text-[10px] leading-snug">
+              {mobileActiveTab.body.trim().split("\n")[0]}
+            </p>
+          {:else}
+            <p class="workshop-faint mt-0.5 text-[10px]">Empty script</p>
+          {/if}
+        </div>
+      {/if}
+
       <div class="flex min-h-0 flex-1 overflow-hidden">
         <div class="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-          <GraphemeScriptEditorPanel {visible} workbenchMode />
+          {#if mobile}
+            {#if mobileActiveTab}
+              {#key `${mobileActiveTab.tabId}:${graphemeScriptEditor.contentEpoch}`}
+                <CodeMirrorHost
+                  value={mobileActiveTab.body}
+                  languageId="grapheme"
+                  contentSyncKey={graphemeScriptEditor.contentEpoch}
+                  onchange={(body) => {
+                    const id = graphemeScriptEditor.activeTabId;
+                    if (id) graphemeScriptEditor.patchTab(id, { body });
+                  }}
+                />
+              {/key}
+            {:else}
+              <div class="flex flex-1 flex-col items-center justify-center gap-3 px-6">
+                <p class="workshop-muted text-center text-sm">No script tab yet.</p>
+                <button
+                  type="button"
+                  class="btn btn-sm variant-filled-primary"
+                  onclick={() => graphemeScriptEditor.openNewTab()}
+                >
+                  New script
+                </button>
+              </div>
+            {/if}
+          {:else}
+            <GraphemeScriptEditorPanel {visible} workbenchMode />
+          {/if}
           {#if showMobileEmptyHint}
             <div
               class="scripts-workbench-mobile-empty pointer-events-none absolute inset-x-0 top-8 flex justify-center px-6"
             >
               <p class="rounded-lg border border-surface-500/30 bg-surface-900/90 px-3 py-2 text-center text-[11px] text-surface-400">
-                Tap
-                <span class="text-surface-200"> + </span>
-                for templates, or start typing
+                Open Script tools in the top bar for templates, or start typing
               </p>
             </div>
           {/if}
@@ -464,13 +543,16 @@
       </div>
 
       {#if mobile}
-        <ScriptWorkbenchStatusBar onToggleConsole={openOutput} />
         <ScriptWorkbenchToolsSheet
           open={toolsSheetOpen}
           {visible}
           initialView={toolsInitialView}
+          hideFab={true}
           onOpen={() => (toolsSheetOpen = true)}
           onClose={() => (toolsSheetOpen = false)}
+          onApplyTemplate={applyTemplate}
+          onOpenScript={openScript}
+          onNewScript={startNewScript}
         />
         <ScriptWorkbenchOutputSheet
           open={outputSheetOpen}

@@ -44,11 +44,40 @@ export class WorkshopDefaultsStore {
   message = $state<string | null>(null);
   modelsNotice = $state<string | null>(null);
   loaded = $state(false);
+  /** Serialized snapshot after last load/save — for dirty detection. */
+  private baseline = $state<string | null>(null);
 
   selectedRouteRole = $state("orchestrator");
 
+  get dirty(): boolean {
+    if (!this.loaded || this.baseline == null) return false;
+    return this.captureSnapshot() !== this.baseline;
+  }
+
+  private captureSnapshot(): string {
+    return JSON.stringify({
+      draft: this.draft,
+      allowedModulesText: this.allowedModulesText,
+      apiKeyDraft: this.apiKeyDraft,
+      clearApiKey: this.clearApiKey,
+      sttApiKeyDraft: this.sttApiKeyDraft,
+      clearSttApiKey: this.clearSttApiKey,
+    });
+  }
+
+  private markClean() {
+    this.baseline = this.captureSnapshot();
+  }
+
+  /** Call when draft was persisted outside `save()` (e.g. Versions On/Off). */
+  acknowledgeClean() {
+    if (!this.loaded) return;
+    this.markClean();
+  }
+
   resetForReconnect() {
     this.loaded = false;
+    this.baseline = null;
     this.message = null;
   }
 
@@ -70,6 +99,7 @@ export class WorkshopDefaultsStore {
         this.clearApiKey = false;
         voicePresets.applyFromDraft(this.draft);
         this.loaded = true;
+        this.markClean();
         return;
       }
 
@@ -91,9 +121,11 @@ export class WorkshopDefaultsStore {
       this.clearSttApiKey = false;
       voicePresets.applyFromDraft(this.draft);
       this.loaded = true;
+      this.markClean();
     } catch (err) {
       this.message = err instanceof Error ? err.message : String(err);
       this.loaded = false;
+      this.baseline = null;
     } finally {
       this.loading = false;
     }
@@ -197,6 +229,7 @@ export class WorkshopDefaultsStore {
       );
       runtime.defaultsLoaded = true;
       this.flashModelsNotice("Saved");
+      this.markClean();
     } catch (err) {
       this.flashModelsNotice(err instanceof Error ? err.message : String(err));
     } finally {
@@ -283,7 +316,8 @@ export class WorkshopDefaultsStore {
       );
       runtime.defaultsLoaded = true;
 
-      this.message = "Workshop defaults saved to engine";
+      this.message = "Saved";
+      this.markClean();
     } catch (err) {
       this.message = err instanceof Error ? err.message : String(err);
     } finally {

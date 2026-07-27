@@ -3,7 +3,6 @@
   import { ArrowUpRight, Check, ChevronDown, LoaderCircle, Search } from "@lucide/svelte";
   import { layout } from "$lib/stores/layout.svelte";
   import { runtime } from "$lib/stores/runtime.svelte";
-  import { voicePresets } from "$lib/stores/voicePresets.svelte";
   import { settingsNav } from "$lib/stores/settingsNav.svelte";
   import { workshopDefaults } from "$lib/stores/workshopDefaults.svelte";
   import { isTauriMobilePlatform } from "$lib/platform";
@@ -12,7 +11,6 @@
   import { modelPickKey } from "$lib/utils/formatModelDisplay";
   import {
     buildChatModelOptions,
-    depthModeLabel,
     filterChatModelOptions,
     groupNonFavoriteChatModelOptions,
     mergeLiveProviderModels,
@@ -24,26 +22,20 @@
     badgesForModel,
     capabilityMapFromCatalog,
     listModelCatalog,
+    modelHasVision,
+    modelMetaLine,
   } from "$lib/utils/modelCapabilityCatalog";
   import type { ModelCapabilityRecord } from "$lib/types/modelCapability";
-  import ModelCapabilityBadges from "$lib/components/settings/ModelCapabilityBadges.svelte";
   import {
     normalizeFavoriteModels,
     resolveModelDisplayLabel,
     type FavoriteModel,
   } from "$lib/utils/modelCatalog";
-  import { DEPTH_CHARTER_OPTIONS } from "$lib/types/settings";
-  import {
-    REASONING_EFFORT_OPTIONS,
-    reasoningEffortLabel,
-  } from "$lib/types/reasoningEffort";
-  import { allVoicePresets } from "$lib/types/voicePresets";
-  import type { DepthMode, ReasoningEffortMode } from "$lib/types/runtime";
 
   interface Props {
     disabled?: boolean;
     readonly?: boolean;
-    /** Cursor-quiet trigger: name + chevron only (no Voice/Stance/Reasoning meta). */
+    /** Cursor-quiet trigger: name + chevron only. */
     quiet?: boolean;
   }
 
@@ -88,20 +80,14 @@
     return merged;
   });
   const nativeMobileReadonly = $derived(readonly || isTauriMobilePlatform());
-  const depthLabel = $derived(depthModeLabel(runtime.depthMode));
-  const reasoningLabel = $derived(reasoningEffortLabel(runtime.reasoningEffort));
-  const voiceLabel = $derived(voicePresets.activePreset.name);
-  const voiceOptions = $derived(allVoicePresets(workshopDefaults.draft.customVoicePresets));
 
-  function optionProviderLabel(option: ChatModelPickOption): string | null {
-    const provider = option.provider.trim().toLowerCase();
-    if (provider === runtime.provider.trim().toLowerCase()) return null;
-    return resolveProviderLabel(catalogSnapshot, provider);
+  function optionTier(option: ChatModelPickOption): string | null {
+    if (!option.hint || option.hint === "Active") return null;
+    return option.hint;
   }
 
   onMount(() => {
     void bootstrap();
-    void voicePresets.load();
     const onDocClick = (event: MouseEvent) => {
       if (!open) return;
       const target = event.target as Node | null;
@@ -119,19 +105,25 @@
     };
   });
 
-  function applyCapabilityBadges(nextOptions: ChatModelPickOption[]): ChatModelPickOption[] {
-    if (capabilityMap.size === 0) return nextOptions;
-    return nextOptions.map((option) => ({
-      ...option,
-      badges: badgesForModel(capabilityMap, option.provider, option.model),
-    }));
+  function applyCapabilityData(nextOptions: ChatModelPickOption[]): ChatModelPickOption[] {
+    return nextOptions.map((option) => {
+      const record = capabilityMap.get(modelPickKey(option.provider, option.model));
+      return {
+        ...option,
+        badges: badgesForModel(capabilityMap, option.provider, option.model),
+        meta:
+          modelMetaLine(record, resolveProviderLabel(catalogSnapshot, option.provider)) ??
+          undefined,
+        vision: modelHasVision(capabilityMap, option.provider, option.model),
+      };
+    });
   }
 
   async function loadCapabilityCatalog() {
     try {
       const response = await listModelCatalog();
       capabilityMap = capabilityMapFromCatalog(response.models);
-      options = applyCapabilityBadges(options);
+      options = applyCapabilityData(options);
     } catch {
       // Curated picks still work without registry data.
     }
@@ -190,7 +182,7 @@
     options = liveModels.length
       ? mergeLiveProviderModels(base, runtime.provider, liveModels, catalog)
       : base;
-    options = applyCapabilityBadges(options);
+    options = applyCapabilityData(options);
   }
 
   async function refreshLiveModelsForActiveProvider() {
@@ -226,21 +218,6 @@
     await runtime.applyModel(option.provider, option.model);
   }
 
-  async function selectDepth(mode: DepthMode) {
-    if (mode === runtime.depthMode || runtime.savingControls) return;
-    await runtime.setDepthMode(mode);
-  }
-
-  async function selectReasoning(mode: ReasoningEffortMode) {
-    if (mode === runtime.reasoningEffort || runtime.savingControls) return;
-    await runtime.setReasoningEffort(mode);
-  }
-
-  async function selectVoice(voiceId: string) {
-    if (voiceId === voicePresets.activeVoiceId || voicePresets.saving) return;
-    await voicePresets.setActiveVoiceId(voiceId);
-  }
-
   function openMenu() {
     if (disabled || runtime.savingControls) return;
     open = !open;
@@ -251,7 +228,7 @@
   }
 
   function openModelsSettings() {
-    settingsNav.openSection("models");
+    settingsNav.openSection("agent");
     if (layout.isMobile) {
       layout.openMore("settings");
       return;
@@ -271,16 +248,11 @@
     disabled={disabled || runtime.savingControls}
     aria-haspopup="listbox"
     aria-expanded={open}
-    title="{displayName} · {voiceLabel} · {depthLabel} · {reasoningLabel}"
+    title={displayName}
     onclick={nativeMobileReadonly ? openMenu : toggleMenu}
   >
     <span class="composer-model-trigger-copy">
       <span class="composer-model-trigger-name">{displayName}</span>
-      {#if !quiet}
-        <span class="composer-model-trigger-meta"
-          >{voiceLabel} · {depthLabel} · {reasoningLabel}</span
-        >
-      {/if}
     </span>
     {#if runtime.savingControls}
       <LoaderCircle size={13} class="composer-model-trigger-spinner animate-spin" />
@@ -314,7 +286,7 @@
             <li class="composer-model-list-empty">No matches</li>
           {:else}
             {#each visibleOptions as option (option.key)}
-              {@const providerLabel = optionProviderLabel(option)}
+              {@const tier = optionTier(option)}
               <li>
                 <button
                   type="button"
@@ -325,15 +297,20 @@
                   aria-selected={option.key === activeKey}
                   onclick={() => void selectOption(option)}
                 >
-                  <span class="composer-model-list-name">
-                    {option.label}
-                    {#if providerLabel}
-                      <span class="composer-model-list-tier">{providerLabel}</span>
-                    {:else if option.hint && option.hint !== "Active"}
-                      <span class="composer-model-list-tier">{option.hint}</span>
+                  <span class="composer-model-row-copy">
+                    <span class="composer-model-row-name">
+                      {option.label}
+                      {#if tier}
+                        <span class="composer-model-list-tier">{tier}</span>
+                      {/if}
+                    </span>
+                    {#if option.meta}
+                      <span class="composer-model-row-meta">{option.meta}</span>
                     {/if}
-                    <ModelCapabilityBadges badges={option.badges ?? []} compact />
                   </span>
+                  {#if option.vision}
+                    <span class="composer-model-row-cap">Vision</span>
+                  {/if}
                   {#if option.key === activeKey}
                     <Check size={15} strokeWidth={2.5} class="composer-model-list-check" />
                   {/if}
@@ -342,66 +319,6 @@
             {/each}
           {/if}
         </ul>
-
-        <div class="composer-model-turn-settings" aria-label="Turn settings">
-          <div class="composer-model-turn-row">
-            <span class="composer-model-turn-label">Voice</span>
-            <div class="composer-model-turn-pills" role="group" aria-label="Voice">
-              {#each voiceOptions as option (option.id)}
-                <button
-                  type="button"
-                  class="composer-model-turn-pill {voicePresets.activeVoiceId === option.id
-                    ? 'composer-model-turn-pill-active'
-                    : ''}"
-                  disabled={voicePresets.saving}
-                  aria-pressed={voicePresets.activeVoiceId === option.id}
-                  title={option.description}
-                  onclick={() => void selectVoice(option.id)}
-                >
-                  {option.name}
-                </button>
-              {/each}
-            </div>
-          </div>
-
-          <div class="composer-model-turn-row">
-            <span class="composer-model-turn-label">Stance</span>
-            <div class="composer-model-turn-pills" role="group" aria-label="Answer depth">
-              {#each DEPTH_CHARTER_OPTIONS as option (option.id)}
-                <button
-                  type="button"
-                  class="composer-model-turn-pill {runtime.depthMode === option.id
-                    ? 'composer-model-turn-pill-active'
-                    : ''}"
-                  disabled={runtime.savingControls}
-                  aria-pressed={runtime.depthMode === option.id}
-                  title={option.hint}
-                  onclick={() => void selectDepth(option.id)}
-                >
-                  {option.label}
-                </button>
-              {/each}
-            </div>
-          </div>
-
-          <div class="composer-model-turn-row">
-            <span class="composer-model-turn-label">Reasoning</span>
-            <select
-              class="composer-model-turn-select"
-              value={runtime.reasoningEffort}
-              disabled={runtime.savingControls}
-              aria-label="Reasoning effort"
-              onchange={(event) =>
-                void selectReasoning(
-                  (event.currentTarget as HTMLSelectElement).value as ReasoningEffortMode,
-                )}
-            >
-              {#each REASONING_EFFORT_OPTIONS as option (option.id)}
-                <option value={option.id} title={option.hint}>{option.label}</option>
-              {/each}
-            </select>
-          </div>
-        </div>
       {:else}
         <div class="composer-model-mobile-note">
           <p class="composer-model-mobile-title">{runtime.modelLabel()}</p>

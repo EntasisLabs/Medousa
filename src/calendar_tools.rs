@@ -59,6 +59,37 @@ fn write_request_from_input(input: &Value, require_summary: bool) -> StasisResul
     if require_summary && summary.is_empty() {
         return Err(StasisError::PortFailure("summary is required".to_string()));
     }
+    let alarms = input
+        .get("alarms")
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| {
+                    let minutes = item
+                        .get("trigger_minutes_before")
+                        .and_then(Value::as_i64)
+                        .or_else(|| {
+                            item.get("trigger_minutes_before")
+                                .and_then(Value::as_u64)
+                                .map(|v| v as i64)
+                        })?;
+                    if minutes <= 0 {
+                        return None;
+                    }
+                    Some(medousa_types::CalendarAlarm {
+                        trigger_minutes_before: minutes.min(i32::MAX as i64) as i32,
+                        action: item
+                            .get("action")
+                            .and_then(Value::as_str)
+                            .unwrap_or("display")
+                            .to_string(),
+                    })
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+
     Ok(CalendarWriteRequest {
         uid: optional_string(input, "uid"),
         summary,
@@ -72,6 +103,8 @@ fn write_request_from_input(input: &Value, require_summary: bool) -> StasisResul
             .unwrap_or(false),
         rrule: optional_string(input, "rrule"),
         calendar_path: optional_string(input, "path").or_else(|| optional_string(input, "calendar_path")),
+        note_path: optional_string(input, "note_path"),
+        alarms,
     })
 }
 
@@ -83,6 +116,19 @@ const WRITE_SCHEMA_PROPERTIES: &str = r#"{
   "dtend": { "type": "string", "description": "RFC3339 end. All-day: exclusive next-day YYYY-MM-DDT00:00:00Z." },
   "all_day": { "type": "boolean", "description": "True for DATE (calendar-day) events; use UTC midnights for dtstart/dtend." },
   "rrule": { "type": "string", "description": "Optional RRULE body (without RRULE: prefix)" },
+  "note_path": { "type": "string", "description": "Optional vault-relative markdown note linked to this event" },
+  "alarms": {
+    "type": "array",
+    "description": "Display alerts before start",
+    "items": {
+      "type": "object",
+      "properties": {
+        "trigger_minutes_before": { "type": "integer", "description": "Minutes before dtstart" },
+        "action": { "type": "string", "description": "VALARM action (display)" }
+      },
+      "required": ["trigger_minutes_before"]
+    }
+  },
   "path": { "type": "string", "description": "Vault-relative .ics path (default calendar/personal.ics)" },
   "calendar_path": { "type": "string", "description": "Alias for path" }
 }"#;

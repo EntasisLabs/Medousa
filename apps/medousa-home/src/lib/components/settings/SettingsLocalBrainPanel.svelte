@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { LoaderCircle, Trash2 } from "@lucide/svelte";
+  import { Download, LoaderCircle, RefreshCw, Trash2 } from "@lucide/svelte";
   import {
     ensureLocalModelReady,
     fetchLocalCatalog,
@@ -17,7 +17,7 @@
     type ModelDownloadProgress,
   } from "$lib/utils/localInferenceApi";
   import { startEngine, waitForEngine } from "$lib/utils/providersApi";
-  import { localBrainOnDeviceHint } from "$lib/platformCopy";
+  import { localBrainOnDeviceHint, onThisHostPhrase } from "$lib/platformCopy";
 
   interface Props {
     disabled?: boolean;
@@ -36,6 +36,19 @@
   const recommendedModelId = $derived(localCatalog?.recommendedModelId ?? null);
   const engineReady = $derived(Boolean(engineStatus?.loaded));
 
+  const statusMeta = $derived.by(() => {
+    if (localBusy && !engineStatus && !localHardware) return "Checking hardware…";
+    if (engineReady) {
+      return engineStatus?.modelAlias
+        ? `Ready · ${engineStatus.modelAlias}`
+        : "Ready · offline Gemma loaded";
+    }
+    if (localHardware) {
+      return `Idle · ${localHardware.profile.tierLabel} · ${localHardware.profile.recommendedDisplayName}`;
+    }
+    return `Optional offline Gemma ${onThisHostPhrase()}`;
+  });
+
   onMount(() => {
     void refreshLocalPanel();
   });
@@ -44,7 +57,8 @@
     localBusy = true;
     localMessage = null;
     try {
-      await startEngine({ privateBrain: true });
+      // Probe only — never auto-spawn the offline brain (Load does that).
+      await startEngine({ privateBrain: false });
       const health = await waitForEngine(20);
       if (!health.ok) {
         localMessage = health.message;
@@ -106,108 +120,261 @@
   }
 </script>
 
-<article class="settings-profile-card mt-6">
-  <header class="settings-profile-header">
-    <div class="min-w-0">
-      <h3 class="settings-profile-title">Private brain</h3>
-      <p class="settings-profile-subtitle">
-        {localBrainOnDeviceHint()}
-      </p>
-    </div>
-    <span
-      class="settings-profile-status {engineReady
-        ? 'settings-profile-status-ok'
-        : 'settings-profile-status-warn'}"
-    >
-      {engineReady ? "Ready" : "Idle"}
-    </span>
-  </header>
-
-  {#if localHardware}
-    <p class="settings-profile-detail">
-      Tier {localHardware.profile.tierLabel} · recommended {localHardware.profile.recommendedDisplayName}
-    </p>
-  {/if}
-
-  {#if engineStatus}
-    <p class="settings-profile-detail">
-      Engine {engineStatus.loaded ? "running" : "idle"}
-      {#if engineStatus.modelAlias}
-        · {engineStatus.modelAlias}
-      {/if}
-    </p>
-  {/if}
-
-  {#if downloadProgress}
-    <div class="mt-4">
-      <div class="settings-profile-progress-track">
-        <div
-          class="settings-profile-progress-fill"
-          style:width="{Math.max(4, Math.round(downloadProgress.percent))}%"
-        ></div>
-      </div>
-      <p class="settings-profile-detail mt-2">{downloadProgress.message}</p>
-    </div>
-  {/if}
-
-  <div class="settings-profile-actions mt-4 flex flex-wrap gap-2">
-    <button
-      type="button"
-      class="btn variant-soft-primary min-h-9 text-sm"
-      disabled={disabled || localBusy || !recommendedModelId}
-      onclick={() => void downloadRecommended()}
-    >
-      Download recommended Gemma 4
-    </button>
-    <button
-      type="button"
-      class="btn variant-ghost min-h-9 text-sm"
-      disabled={disabled || localBusy}
-      onclick={() => void refreshLocalPanel()}
-    >
-      {#if localBusy}
-        <LoaderCircle class="mr-2 inline h-4 w-4 animate-spin" aria-hidden="true" />
-      {/if}
-      Re-probe hardware
-    </button>
+<div class="brain-band">
+  <div class="brain-band-head">
+    <h3 class="settings-subsection-heading">Private brain</h3>
+    <p class="settings-subsection-lead">{localBrainOnDeviceHint()}</p>
   </div>
 
-  {#if installedModels.length > 0}
-    <ul class="mt-4 space-y-2">
-      {#each installedModels as entry (entry.modelId)}
-        <li class="settings-profile-list-row">
-          <div class="min-w-0">
-            <p class="text-sm font-medium text-surface-100">{entry.modelId}</p>
-            <p class="settings-profile-detail">
-              {formatBytes(entry.bytesOnDisk)} on disk · {entry.verified ? "verified" : "pending"}
-            </p>
-          </div>
-          <div class="flex gap-2">
-            <button
-              type="button"
-              class="btn variant-ghost min-h-9 text-sm"
-              disabled={disabled || localBusy}
-              onclick={() => void loadEngine(entry.modelId)}
-            >
-              Load
-            </button>
-            <button
-              type="button"
-              class="btn variant-ghost min-h-9 text-sm text-warning-200"
-              disabled={disabled || localBusy}
-              onclick={() => void removeModel(entry.modelId)}
-            >
-              <Trash2 class="h-4 w-4" aria-hidden="true" />
-            </button>
-          </div>
-        </li>
-      {/each}
-    </ul>
-  {:else if localHardware?.engineAvailable}
-    <p class="settings-profile-detail mt-4">No local models installed yet.</p>
-  {/if}
+  <div class="brain-stack">
+    <div class="brain-tile">
+      <span class="brain-copy">
+        <span class="brain-title">Offline Gemma</span>
+        <span class="brain-meta">{statusMeta}</span>
+      </span>
+      <span class="brain-pill" class:brain-pill-ok={engineReady}>
+        {engineReady ? "Ready" : "Idle"}
+      </span>
+      <span class="brain-actions">
+        <button
+          type="button"
+          class="brain-icon-btn"
+          disabled={disabled || localBusy || !recommendedModelId}
+          title="Download recommended Gemma 4"
+          aria-label="Download recommended Gemma 4"
+          onclick={() => void downloadRecommended()}
+        >
+          {#if localBusy && downloadProgress}
+            <LoaderCircle size={15} strokeWidth={1.75} class="brain-spin" aria-hidden="true" />
+          {:else}
+            <Download size={15} strokeWidth={1.75} />
+          {/if}
+        </button>
+        <button
+          type="button"
+          class="brain-icon-btn"
+          disabled={disabled || localBusy}
+          title="Re-probe hardware"
+          aria-label="Re-probe hardware"
+          onclick={() => void refreshLocalPanel()}
+        >
+          {#if localBusy && !downloadProgress}
+            <LoaderCircle size={15} strokeWidth={1.75} class="brain-spin" aria-hidden="true" />
+          {:else}
+            <RefreshCw size={15} strokeWidth={1.75} />
+          {/if}
+        </button>
+      </span>
+    </div>
 
-  {#if localMessage}
-    <p class="settings-inline-status mt-4">{localMessage}</p>
-  {/if}
-</article>
+    {#if downloadProgress}
+      <div class="brain-tile brain-tile-col">
+        <div class="brain-progress-track">
+          <div
+            class="brain-progress-fill"
+            style:width="{Math.max(4, Math.round(downloadProgress.percent))}%"
+          ></div>
+        </div>
+        <span class="brain-meta">{downloadProgress.message}</span>
+      </div>
+    {/if}
+
+    {#each installedModels as entry (entry.modelId)}
+      <div class="brain-tile">
+        <span class="brain-copy">
+          <span class="brain-title">{entry.modelId}</span>
+          <span class="brain-meta">
+            {formatBytes(entry.bytesOnDisk)} · {entry.verified ? "verified" : "pending"}
+          </span>
+        </span>
+        <button
+          type="button"
+          class="brain-cta"
+          disabled={disabled || localBusy}
+          onclick={() => void loadEngine(entry.modelId)}
+        >
+          Load
+        </button>
+        <button
+          type="button"
+          class="brain-cta brain-cta-danger"
+          disabled={disabled || localBusy}
+          aria-label="Remove {entry.modelId}"
+          onclick={() => void removeModel(entry.modelId)}
+        >
+          <Trash2 size={14} strokeWidth={1.75} />
+        </button>
+      </div>
+    {/each}
+
+    {#if installedModels.length === 0 && localHardware?.engineAvailable}
+      <p class="brain-footnote">No local models installed yet.</p>
+    {/if}
+
+    {#if localMessage}
+      <p class="brain-footnote brain-footnote-status">{localMessage}</p>
+    {/if}
+  </div>
+</div>
+
+<style>
+  .brain-band {
+    margin-top: 1.25rem;
+  }
+
+  .brain-band-head .settings-subsection-heading {
+    margin-bottom: 0.15rem;
+  }
+
+  .brain-band-head .settings-subsection-lead {
+    margin-bottom: 0.6rem;
+  }
+
+  .brain-stack {
+    display: grid;
+    gap: 0.5rem;
+  }
+
+  .brain-tile {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    min-height: 3.25rem;
+    padding: 0.55rem 0.75rem;
+    border-radius: 0.65rem;
+    border: 1px solid rgb(var(--color-surface-500) / 0.32);
+    background: rgb(var(--color-surface-900) / 0.28);
+  }
+
+  .brain-tile-col {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.45rem;
+    min-height: 0;
+  }
+
+  .brain-copy {
+    display: flex;
+    min-width: 0;
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: 0.1rem;
+  }
+
+  .brain-title {
+    font-size: 0.8rem;
+    font-weight: 550;
+    color: rgb(var(--color-surface-100));
+  }
+
+  .brain-meta {
+    font-size: 0.68rem;
+    line-height: 1.3;
+    color: rgb(var(--color-surface-500));
+  }
+
+  .brain-pill {
+    flex-shrink: 0;
+    font-size: 0.65rem;
+    font-weight: 600;
+    color: rgb(var(--color-warning-400));
+  }
+
+  .brain-pill-ok {
+    color: rgb(var(--color-success-400));
+  }
+
+  .brain-actions {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 0.35rem;
+  }
+
+  .brain-icon-btn {
+    display: inline-flex;
+    height: 1.85rem;
+    width: 1.85rem;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid rgb(var(--color-surface-500) / 0.32);
+    border-radius: 0.5rem;
+    background: rgb(var(--color-surface-900) / 0.28);
+    color: rgb(var(--color-surface-300));
+    cursor: pointer;
+    transition:
+      border-color 120ms ease,
+      background 120ms ease,
+      color 120ms ease;
+  }
+
+  .brain-icon-btn:hover:not(:disabled) {
+    border-color: rgb(var(--color-surface-500) / 0.5);
+    background: rgb(var(--color-surface-800) / 0.35);
+    color: rgb(var(--color-surface-100));
+  }
+
+  .brain-icon-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  .brain-cta {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 0.3rem;
+    border: 0;
+    background: transparent;
+    padding: 0;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: rgb(var(--color-surface-400));
+    cursor: pointer;
+  }
+
+  .brain-cta:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  .brain-cta-danger {
+    color: rgb(var(--color-error-300) / 0.9);
+  }
+
+  .brain-progress-track {
+    height: 0.35rem;
+    overflow: hidden;
+    border-radius: 999px;
+    background: rgb(var(--color-surface-800) / 0.8);
+  }
+
+  .brain-progress-fill {
+    height: 100%;
+    border-radius: inherit;
+    background: rgb(var(--color-primary-500) / 0.85);
+    transition: width 160ms ease;
+  }
+
+  .brain-footnote {
+    margin: 0;
+    padding: 0 0.15rem;
+    font-size: 0.7rem;
+    line-height: 1.4;
+    color: rgb(var(--color-surface-500));
+  }
+
+  .brain-footnote-status {
+    color: rgb(var(--color-surface-400));
+  }
+
+  :global(.brain-spin) {
+    animation: brain-spin 0.8s linear infinite;
+  }
+
+  @keyframes brain-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+</style>

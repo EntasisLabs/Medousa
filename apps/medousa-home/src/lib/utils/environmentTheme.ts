@@ -4,7 +4,7 @@ import {
   DEFAULT_COLOR_THEME,
   isColorThemeId,
 } from "$lib/types/colorThemes";
-import type { EnvironmentSpec } from "$lib/types/environment";
+import type { EnvironmentSpec, EnvironmentTheme } from "$lib/types/environment";
 
 export interface HostThemeTokens {
   fg: string;
@@ -27,13 +27,25 @@ const DEFAULT_FG_LIGHT = "#18181b";
 const DEFAULT_MUTED_DARK = "#a1a1aa";
 const DEFAULT_MUTED_LIGHT = "#52525b";
 
+/** Active layout theme wins, then env-level theme, then workshop fallback. */
+export function layoutThemeFromSpec(
+  spec: EnvironmentSpec | null | undefined,
+): EnvironmentTheme | null {
+  if (!spec) return null;
+  const active =
+    spec.layoutPresets?.find((preset) => preset.active) ??
+    spec.layoutPresets?.find((preset) => preset.id === spec.activePresetId) ??
+    null;
+  return active?.theme ?? spec.theme ?? null;
+}
+
 export function resolveEnvironmentTheme(
   spec: EnvironmentSpec | null | undefined,
   workshopColorThemeId: string | null | undefined,
   workshopBrandColor: string | null | undefined,
   isDark: boolean,
 ): ResolvedEnvironmentTheme {
-  const envTheme = spec?.theme;
+  const envTheme = layoutThemeFromSpec(spec);
   const colorThemeId = pickColorThemeId(
     envTheme?.colorThemeId,
     workshopColorThemeId,

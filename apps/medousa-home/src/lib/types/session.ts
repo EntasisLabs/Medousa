@@ -18,6 +18,8 @@ export interface SessionSummary {
   verification_runs: number;
   last_timestamp?: string | null;
   preview: string;
+  /** Present as `"shared"` for multi-member rooms. */
+  catalog?: string | null;
 }
 
 export interface SessionHistoryResponse {
@@ -32,6 +34,8 @@ export interface SessionTurn {
   tool_names?: string[];
   answer_state?: string | null;
   parts?: import("$lib/types/turnParts").TurnPart[] | null;
+  /** Shared-room human speaker (`user:alice`). Absent on assistant / personal turns. */
+  speaker_profile_id?: string | null;
 }
 
 export interface ActiveSessionTurn {

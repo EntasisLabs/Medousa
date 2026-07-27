@@ -69,6 +69,7 @@ export function initMobileNative(
   options?: {
     onPairLink?: OpenPairHandler;
     onOpenPeer?: import("$lib/notifications").OpenPeerHandler;
+    onOpenCalendar?: import("$lib/notifications").OpenCalendarHandler;
   },
 ): () => void {
   setWorkDeepLinkHandler(handler);
@@ -103,6 +104,7 @@ export function initMobileNative(
         const stop = await initNotificationRouting(
           (cardId) => handler(cardId),
           options?.onOpenPeer,
+          options?.onOpenCalendar,
         );
         if (stop) cleanups.push(stop);
       } catch {

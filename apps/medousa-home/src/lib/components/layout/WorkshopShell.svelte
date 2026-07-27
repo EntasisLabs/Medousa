@@ -18,6 +18,8 @@
   import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
   import { shellTabs } from "$lib/stores/shellTabs.svelte";
   import { isTauri } from "$lib/platform";
+  import { appUpdate } from "$lib/stores/appUpdate.svelte";
+  import { toast } from "$lib/stores/toast.svelte";
   import { updateTrayBlockedCount } from "$lib/window";
   import ShellLayoutDebug from "$lib/components/debug/ShellLayoutDebug.svelte";
   import EnvPendingProposalBanner from "$lib/components/environment/EnvPendingProposalBanner.svelte";
@@ -65,6 +67,15 @@
     peersUnreadTimer = setInterval(() => {
       void refreshPeersUnread();
     }, 8000);
+    if (isTauri()) {
+      void appUpdate.bootProbe().then((status) => {
+        if (status?.updateAvailable && status.latestVersion) {
+          toast.show(`Update available · Medousa ${status.latestVersion}`, {
+            durationMs: 2800,
+          });
+        }
+      });
+    }
     const detachViewport = layout.attachViewportTracking();
     const detachWorkshop = connectWorkshop({
       onHealthChange: (health) => {
@@ -81,6 +92,10 @@
   });
 
   function navigateToSurface(surface: string) {
+    if (surface === "context") {
+      shellTabs.openSurface("map", { activate: true });
+      return;
+    }
     // Automations + Capabilities fold into the LME workspace (library surface).
     if (surface === "automations") {
       const mode = lmeWorkspace.explorerMode;
@@ -170,10 +185,10 @@
             onOpenWork={() => goToSurface("work")}
             onOpenContext={() => {
               layout.setIdentityDrawerOpen(false);
-              goToSurface("context");
+              goToSurface("map");
             }}
             onOpenConnection={() => {
-              settingsNav.openSection("models");
+              settingsNav.openSection("agent");
               goToSurface("settings");
             }}
             onOpenNote={handleOpenNote}
@@ -197,7 +212,7 @@
           onClose={() => layout.setIdentityDrawerOpen(false)}
           onOpenFullContext={() => {
             layout.setIdentityDrawerOpen(false);
-            goToSurface("context");
+            goToSurface("profiles");
           }}
         />
       {/if}

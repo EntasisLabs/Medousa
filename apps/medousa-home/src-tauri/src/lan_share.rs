@@ -189,11 +189,16 @@ pub async fn share_push_to_workshop(
     )
     .ok_or_else(|| "Trusted workshop credentials are missing or expired".to_string())?;
 
-    let body = serde_json::json!({
+    let payload = serde_json::json!({
         "bundle": request.bundle,
         "conflictStrategy": request.conflict_strategy,
         "profileId": request.profile_id,
     });
+    let body = crate::mesh_envelope::wrap_json_for_workshop(
+        &config,
+        crate::mesh_envelope::CAP_MESH_BUNDLE_PUSH,
+        payload,
+    )?;
 
     crate::workshop_transport::workshop_post_json::<serde_json::Value, _>(
         &config,
@@ -415,7 +420,13 @@ pub struct ShareItemToPeerRequest {
     pub vault_path: Option<String>,
     #[serde(default)]
     pub conflict_strategy: String,
+    /// `share` (default), `ask` (→ review_request), or `bring` (→ bring_home).
+    #[serde(default)]
+    pub mode: Option<String>,
 }
+
+const PEER_KIND_REVIEW_REQUEST: &str = "review_request";
+const PEER_KIND_BRING_HOME: &str = "bring_home";
 
 #[tauri::command]
 pub async fn share_item_to_peer(
@@ -439,22 +450,65 @@ pub async fn share_item_to_peer(
         return Err("Share one item at a time (artifact or note)".to_string());
     }
 
+    let mode = request
+        .mode
+        .as_deref()
+        .map(str::trim)
+        .unwrap_or("share")
+        .to_ascii_lowercase();
+    let ask = mode == "ask";
+    let bring = mode == "bring";
+
+    // M4 Share / Ask / Bring-home: peer-message + attachment → inbox card + auto-import.
     let export_request = ShareExportInvokeRequest {
         artifact_ids: artifact_id.map(|id| vec![id.to_string()]).unwrap_or_default(),
         vault_paths: vault_path.map(|path| vec![path.to_string()]).unwrap_or_default(),
         ..Default::default()
     };
-    let bundle = share_export_bundle(state, export_request).await?;
-    share_push_to_workshop(SharePushInvokeRequest {
-        workshop_id: request.workshop_id,
-        bundle,
-        conflict_strategy: if request.conflict_strategy.trim().is_empty() {
-            "rename".to_string()
+    let bundle = share_export_bundle(state.clone(), export_request).await?;
+    let body = if ask {
+        if let Some(path) = vault_path {
+            format!("Ask for review: note `{path}`")
+        } else if let Some(id) = artifact_id {
+            let short = if id.len() > 12 { &id[..12] } else { id };
+            format!("Ask for review: artifact `{short}`")
         } else {
-            request.conflict_strategy
+            "Ask for review".to_string()
+        }
+    } else if bring {
+        if let Some(path) = vault_path {
+            format!("Bring home: note `{path}`")
+        } else if let Some(id) = artifact_id {
+            let short = if id.len() > 12 { &id[..12] } else { id };
+            format!("Bring home: artifact `{short}`")
+        } else {
+            "Bring home".to_string()
+        }
+    } else if let Some(path) = vault_path {
+        format!("Shared note `{path}`")
+    } else if let Some(id) = artifact_id {
+        let short = if id.len() > 12 { &id[..12] } else { id };
+        format!("Shared artifact `{short}`")
+    } else {
+        "Shared an attachment.".to_string()
+    };
+    let kind = if ask {
+        Some(PEER_KIND_REVIEW_REQUEST.to_string())
+    } else if bring {
+        Some(PEER_KIND_BRING_HOME.to_string())
+    } else {
+        None
+    };
+    let _ = request.conflict_strategy; // message-attach import uses rename on recipient
+    peer_inbox_sink::send_message(
+        &state,
+        PeerSendMessageRequest {
+            workshop_id: request.workshop_id,
+            body,
+            attachment: Some(bundle),
+            kind,
         },
-        profile_id: None,
-    })
+    )
     .await
 }
 

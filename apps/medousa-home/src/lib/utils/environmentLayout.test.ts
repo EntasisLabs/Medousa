@@ -1,13 +1,19 @@
 import { describe, expect, it } from "vitest";
 import { defaultEnvironmentSpec } from "$lib/utils/environmentDefault";
 import {
+  activeLayoutPreset,
   activePresetSurfaceIds,
   addLayoutPresetFromActive,
   activateLayoutPreset,
   isSurfaceNavVisible,
+  moveSurfaceInActivePreset,
   removeLayoutPreset,
+  reorderPrimarySurfaceInActivePreset,
+  reorderSurfaceInActivePreset,
+  setActiveLayoutTheme,
   setSurfaceNavVisible,
 } from "$lib/utils/environmentLayout";
+import { primaryRailSurfaceIds } from "$lib/utils/lifeRailSections";
 
 describe("environmentLayout nav visibility", () => {
   it("hides and restores a builtin surface on the active preset", () => {
@@ -34,6 +40,135 @@ describe("environmentLayout nav visibility", () => {
   it("rejects toggling safety surfaces", () => {
     const spec = defaultEnvironmentSpec();
     expect(() => setSurfaceNavVisible(spec, "settings", false)).toThrow(/cannot be hidden/i);
+  });
+});
+
+describe("environmentLayout reorder", () => {
+  it("moves a destination up and down inside the active preset", () => {
+    const spec = defaultEnvironmentSpec();
+    const before = activePresetSurfaceIds(spec);
+    const webAt = before.indexOf("web");
+    expect(webAt).toBeGreaterThan(0);
+
+    moveSurfaceInActivePreset(spec, "web", -1);
+    const afterUp = activePresetSurfaceIds(spec);
+    expect(afterUp.indexOf("web")).toBe(webAt - 1);
+    expect(afterUp).toContain("settings");
+    expect(afterUp).toContain("runtime");
+
+    moveSurfaceInActivePreset(spec, "web", 1);
+    expect(activePresetSurfaceIds(spec).indexOf("web")).toBe(webAt);
+  });
+
+  it("no-ops at the ends of the movable range", () => {
+    const spec = defaultEnvironmentSpec();
+    const movable = activePresetSurfaceIds(spec).filter(
+      (id) => id !== "settings" && id !== "runtime" && id !== "home",
+    );
+    const first = movable[0]!;
+    const last = movable[movable.length - 1]!;
+    const before = activePresetSurfaceIds(spec);
+
+    moveSurfaceInActivePreset(spec, first, -1);
+    expect(activePresetSurfaceIds(spec)).toEqual(before);
+
+    moveSurfaceInActivePreset(spec, last, 1);
+    expect(activePresetSurfaceIds(spec)).toEqual(before);
+  });
+
+  it("reorders a destination before another (or to the end)", () => {
+    const spec = defaultEnvironmentSpec();
+    const before = activePresetSurfaceIds(spec);
+    expect(before.indexOf("library")).toBeGreaterThan(before.indexOf("chat"));
+
+    reorderSurfaceInActivePreset(spec, "library", "chat");
+    const after = activePresetSurfaceIds(spec);
+    expect(after.indexOf("library")).toBeLessThan(after.indexOf("chat"));
+    expect(after).toContain("settings");
+    expect(after).toContain("runtime");
+
+    reorderSurfaceInActivePreset(spec, "library", null);
+    const atEnd = activePresetSurfaceIds(spec);
+    const libraryAt = atEnd.indexOf("library");
+    const settingsAt = atEnd.indexOf("settings");
+    expect(libraryAt).toBeGreaterThan(-1);
+    expect(libraryAt).toBeLessThan(settingsAt);
+  });
+
+  it("lets Automations reorder independently of Library", () => {
+    const spec = defaultEnvironmentSpec();
+    reorderSurfaceInActivePreset(spec, "automations", "chat");
+    const ids = activePresetSurfaceIds(spec);
+    expect(ids.indexOf("automations")).toBeLessThan(ids.indexOf("chat"));
+    expect(ids.indexOf("automations")).not.toBe(ids.indexOf("library") + 1);
+  });
+
+  it("reorders by primary-rail index without collapsing dock surfaces", () => {
+    const spec = defaultEnvironmentSpec();
+    const preset = activeLayoutPreset(spec);
+    expect(preset).toBeTruthy();
+    // Interleave a dock surface between primary doors.
+    preset!.surfaces = [
+      "chat",
+      "peers",
+      "map",
+      "work",
+      "library",
+      "automations",
+      "settings",
+      "runtime",
+    ];
+
+    reorderPrimarySurfaceInActivePreset(spec, "work", 0);
+    expect(primaryRailSurfaceIds(activePresetSurfaceIds(spec))).toEqual([
+      "work",
+      "chat",
+      "peers",
+      "map",
+      "library",
+      "automations",
+    ]);
+    expect(activePresetSurfaceIds(spec).indexOf("map")).toBeGreaterThan(
+      activePresetSurfaceIds(spec).indexOf("peers"),
+    );
+
+    reorderPrimarySurfaceInActivePreset(spec, "work", 4);
+    expect(primaryRailSurfaceIds(activePresetSurfaceIds(spec))).toEqual([
+      "chat",
+      "peers",
+      "map",
+      "library",
+      "work",
+      "automations",
+    ]);
+  });
+});
+
+describe("environmentLayout theme", () => {
+  it("stamps theme on the env and active layout", () => {
+    const spec = defaultEnvironmentSpec();
+    setActiveLayoutTheme(spec, { colorThemeId: "ember" });
+    expect(spec.theme?.colorThemeId).toBe("ember");
+    expect(activeLayoutPreset(spec)?.theme?.colorThemeId).toBe("ember");
+  });
+
+  it("applies a layout theme when activating", () => {
+    const spec = defaultEnvironmentSpec();
+    setActiveLayoutTheme(spec, { colorThemeId: "ember" });
+    const writingId = addLayoutPresetFromActive(spec, { label: "Writing" });
+    expect(activeLayoutPreset(spec)?.theme?.colorThemeId).toBe("ember");
+
+    activateLayoutPreset(spec, "default");
+    expect(spec.theme?.colorThemeId).toBe("ember");
+
+    const focus = spec.layoutPresets?.find((preset) => preset.id === "focus");
+    expect(focus).toBeTruthy();
+    focus!.theme = { colorThemeId: "nord" };
+    activateLayoutPreset(spec, "focus");
+    expect(spec.theme?.colorThemeId).toBe("nord");
+
+    activateLayoutPreset(spec, writingId);
+    expect(spec.theme?.colorThemeId).toBe("ember");
   });
 });
 

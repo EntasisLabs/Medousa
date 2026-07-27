@@ -1,7 +1,12 @@
 <script lang="ts">
   import { MoreHorizontal, Paperclip } from "@lucide/svelte";
   import PeerAvatar from "$lib/components/peers/PeerAvatar.svelte";
-  import type { PeerMessage, TrustedWorkshopSummary } from "$lib/utils/lanShareApi";
+  import {
+    isBringHome,
+    isReviewRequest,
+    type PeerMessage,
+    type TrustedWorkshopSummary,
+  } from "$lib/utils/lanShareApi";
   import {
     formatPeerDateSeparator,
     formatPeerMessageTime,
@@ -200,13 +205,28 @@
         class="peers-bubble"
         class:peers-bubble-out={isOutbound(message)}
         class:peers-bubble-unread={!isOutbound(message) && !message.readAt}
+        class:peers-bubble-review={isReviewRequest(message)}
+        class:peers-bubble-bring={isBringHome(message)}
       >
+        {#if isReviewRequest(message)}
+          <p class="peers-bubble-kind">Ask for review</p>
+        {:else if isBringHome(message)}
+          <p class="peers-bubble-kind peers-bubble-kind--bring">Brought home</p>
+        {/if}
         <p class="peers-bubble-body">{message.body}</p>
         {#if message.attachmentResult}
           <p class="peers-bubble-attach">
             <Paperclip size={10} strokeWidth={2} />
             {message.attachmentResult.summary ??
-              (message.attachmentResult.imported ? "Attachment imported" : "Attachment")}
+              (message.attachmentResult.imported
+                ? isReviewRequest(message)
+                  ? "Review item imported"
+                  : isBringHome(message)
+                    ? "Brought-home item imported"
+                    : message.body?.startsWith("Shared ")
+                      ? "Shared item imported"
+                      : "Attachment imported"
+                : "Attachment")}
           </p>
         {/if}
         <span class="peers-bubble-time">

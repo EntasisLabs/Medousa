@@ -1099,6 +1099,13 @@
       "uid"
     ],
     "properties": {
+      "alarms": {
+        "description": "VALARM display triggers before start.",
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/CalendarAlarm"
+        }
+      },
       "all_day": {
         "default": false,
         "type": "boolean"
@@ -1129,6 +1136,13 @@
           "null"
         ]
       },
+      "note_path": {
+        "description": "Optional vault-relative markdown note linked to this event (`X-MEDOUSA-NOTE`).",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
       "recurrence_id": {
         "description": "For expanded recurrence instances: original master UID (same as uid when not expanded).",
         "type": [
@@ -1148,6 +1162,27 @@
       },
       "uid": {
         "type": "string"
+      }
+    },
+    "definitions": {
+      "CalendarAlarm": {
+        "description": "Display alarm relative to event start (VALARM projection).",
+        "type": "object",
+        "required": [
+          "trigger_minutes_before"
+        ],
+        "properties": {
+          "action": {
+            "description": "RFC 5545 ACTION — currently always `display`.",
+            "default": "display",
+            "type": "string"
+          },
+          "trigger_minutes_before": {
+            "description": "Minutes before `dtstart` when the alert should fire (e.g. 30, 1440).",
+            "type": "integer",
+            "format": "int32"
+          }
+        }
       }
     }
   },
@@ -1252,6 +1287,25 @@
       }
     },
     "definitions": {
+      "CalendarAlarm": {
+        "description": "Display alarm relative to event start (VALARM projection).",
+        "type": "object",
+        "required": [
+          "trigger_minutes_before"
+        ],
+        "properties": {
+          "action": {
+            "description": "RFC 5545 ACTION — currently always `display`.",
+            "default": "display",
+            "type": "string"
+          },
+          "trigger_minutes_before": {
+            "description": "Minutes before `dtstart` when the alert should fire (e.g. 30, 1440).",
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
       "CalendarEvent": {
         "description": "Personal calendar event (RFC 5545 VEVENT projection).",
         "type": "object",
@@ -1262,6 +1316,13 @@
           "uid"
         ],
         "properties": {
+          "alarms": {
+            "description": "VALARM display triggers before start.",
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/CalendarAlarm"
+            }
+          },
           "all_day": {
             "default": false,
             "type": "boolean"
@@ -1287,6 +1348,13 @@
             "format": "date-time"
           },
           "location": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "note_path": {
+            "description": "Optional vault-relative markdown note linked to this event (`X-MEDOUSA-NOTE`).",
             "type": [
               "string",
               "null"
@@ -1325,6 +1393,13 @@
       "summary"
     ],
     "properties": {
+      "alarms": {
+        "description": "Replace VALARM set on write (omit/empty clears).",
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/CalendarAlarm"
+        }
+      },
       "all_day": {
         "default": false,
         "type": "boolean"
@@ -1358,6 +1433,13 @@
           "null"
         ]
       },
+      "note_path": {
+        "description": "Optional vault-relative markdown note (`X-MEDOUSA-NOTE`).",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
       "rrule": {
         "type": [
           "string",
@@ -1372,6 +1454,27 @@
           "string",
           "null"
         ]
+      }
+    },
+    "definitions": {
+      "CalendarAlarm": {
+        "description": "Display alarm relative to event start (VALARM projection).",
+        "type": "object",
+        "required": [
+          "trigger_minutes_before"
+        ],
+        "properties": {
+          "action": {
+            "description": "RFC 5545 ACTION — currently always `display`.",
+            "default": "display",
+            "type": "string"
+          },
+          "trigger_minutes_before": {
+            "description": "Minutes before `dtstart` when the alert should fire (e.g. 30, 1440).",
+            "type": "integer",
+            "format": "int32"
+          }
+        }
       }
     }
   },
@@ -1392,6 +1495,25 @@
       }
     },
     "definitions": {
+      "CalendarAlarm": {
+        "description": "Display alarm relative to event start (VALARM projection).",
+        "type": "object",
+        "required": [
+          "trigger_minutes_before"
+        ],
+        "properties": {
+          "action": {
+            "description": "RFC 5545 ACTION — currently always `display`.",
+            "default": "display",
+            "type": "string"
+          },
+          "trigger_minutes_before": {
+            "description": "Minutes before `dtstart` when the alert should fire (e.g. 30, 1440).",
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
       "CalendarEvent": {
         "description": "Personal calendar event (RFC 5545 VEVENT projection).",
         "type": "object",
@@ -1402,6 +1524,13 @@
           "uid"
         ],
         "properties": {
+          "alarms": {
+            "description": "VALARM display triggers before start.",
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/CalendarAlarm"
+            }
+          },
           "all_day": {
             "default": false,
             "type": "boolean"
@@ -1427,6 +1556,13 @@
             "format": "date-time"
           },
           "location": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "note_path": {
+            "description": "Optional vault-relative markdown note linked to this event (`X-MEDOUSA-NOTE`).",
             "type": [
               "string",
               "null"
@@ -2848,6 +2984,17 @@
             "items": {
               "type": "string"
             }
+          },
+          "theme": {
+            "description": "Color theme for this layout — copied onto `EnvironmentSpec.theme` on activate.",
+            "anyOf": [
+              {
+                "$ref": "#/definitions/EnvironmentTheme"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         }
       },
@@ -3529,6 +3676,17 @@
             "items": {
               "type": "string"
             }
+          },
+          "theme": {
+            "description": "Color theme for this layout — copied onto `EnvironmentSpec.theme` on activate.",
+            "anyOf": [
+              {
+                "$ref": "#/definitions/EnvironmentTheme"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         }
       },
@@ -4184,6 +4342,17 @@
             "items": {
               "type": "string"
             }
+          },
+          "theme": {
+            "description": "Color theme for this layout — copied onto `EnvironmentSpec.theme` on activate.",
+            "anyOf": [
+              {
+                "$ref": "#/definitions/EnvironmentTheme"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         }
       },
@@ -4850,6 +5019,17 @@
             "items": {
               "type": "string"
             }
+          },
+          "theme": {
+            "description": "Color theme for this layout — copied onto `EnvironmentSpec.theme` on activate.",
+            "anyOf": [
+              {
+                "$ref": "#/definitions/EnvironmentTheme"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         }
       },
@@ -5522,6 +5702,17 @@
             "items": {
               "type": "string"
             }
+          },
+          "theme": {
+            "description": "Color theme for this layout — copied onto `EnvironmentSpec.theme` on activate.",
+            "anyOf": [
+              {
+                "$ref": "#/definitions/EnvironmentTheme"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         }
       },
@@ -7051,6 +7242,17 @@
             "items": {
               "type": "string"
             }
+          },
+          "theme": {
+            "description": "Color theme for this layout — copied onto `EnvironmentSpec.theme` on activate.",
+            "anyOf": [
+              {
+                "$ref": "#/definitions/EnvironmentTheme"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         }
       },
@@ -7738,6 +7940,17 @@
             "items": {
               "type": "string"
             }
+          },
+          "theme": {
+            "description": "Color theme for this layout — copied onto `EnvironmentSpec.theme` on activate.",
+            "anyOf": [
+              {
+                "$ref": "#/definitions/EnvironmentTheme"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         }
       },
@@ -10705,6 +10918,13 @@
               }
             ]
           },
+          "speaker_profile_id": {
+            "description": "Shared-room human speaker (`user:alice`). Absent on assistant turns / personal chats.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "timestamp": {
             "type": "string",
             "format": "date-time"
@@ -11157,6 +11377,13 @@
           "verification_runs"
         ],
         "properties": {
+          "catalog": {
+            "description": "`shared` when indexed in the multi-member catalog; omitted for single-seat chats.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "display_name": {
             "type": [
               "string",
@@ -11275,6 +11502,13 @@
               {
                 "type": "null"
               }
+            ]
+          },
+          "speaker_profile_id": {
+            "description": "Shared-room human speaker (`user:alice`). Absent on assistant turns / personal chats.",
+            "type": [
+              "string",
+              "null"
             ]
           },
           "timestamp": {

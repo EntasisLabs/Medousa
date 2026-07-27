@@ -1,5 +1,8 @@
-import { describe, expect, it } from "vitest";
-import { placeSlashMenuAnchor } from "./slashMenuPlacement";
+import { describe, expect, it, vi, afterEach } from "vitest";
+import {
+  placeComposerSlashMenuAnchor,
+  placeSlashMenuAnchor,
+} from "./slashMenuPlacement";
 
 function fakeShell(box: {
   top: number;
@@ -51,5 +54,45 @@ describe("placeSlashMenuAnchor", () => {
     );
     expect(anchor.left).toBeLessThan(280);
     expect(anchor.left).toBeGreaterThanOrEqual(8);
+  });
+
+  it("never sizes taller than available space below", () => {
+    const shell = fakeShell({ top: 0, left: 0, width: 600, height: 200 });
+    const anchor = placeSlashMenuAnchor(
+      { top: 150, bottom: 168, left: 40 },
+      shell,
+    );
+    expect(anchor.top + anchor.maxHeight).toBeLessThanOrEqual(200 - 8 + 1);
+  });
+});
+
+describe("placeComposerSlashMenuAnchor", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("opens above when the input is near the bottom of the viewport", () => {
+    vi.stubGlobal("innerHeight", 800);
+    vi.stubGlobal("innerWidth", 1200);
+    const anchor = placeComposerSlashMenuAnchor({
+      top: 700,
+      bottom: 740,
+      left: 120,
+    });
+    expect(anchor.placement).toBe("above");
+    expect(anchor.top + anchor.maxHeight).toBeLessThanOrEqual(700);
+    expect(anchor.maxHeight).toBeGreaterThan(100);
+  });
+
+  it("keeps the menu inside the viewport when opening below", () => {
+    vi.stubGlobal("innerHeight", 800);
+    vi.stubGlobal("innerWidth", 1200);
+    const anchor = placeComposerSlashMenuAnchor({
+      top: 80,
+      bottom: 120,
+      left: 40,
+    });
+    expect(anchor.placement).toBe("below");
+    expect(anchor.top + anchor.maxHeight).toBeLessThanOrEqual(800 - 8);
   });
 });

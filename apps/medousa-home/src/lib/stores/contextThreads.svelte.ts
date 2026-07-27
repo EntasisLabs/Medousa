@@ -21,7 +21,7 @@ export class ContextThreadsStore {
       const response = await listLocusNodes({
         sessionId: options?.sessionId,
         q: options?.q,
-        limit: options?.limit ?? 80,
+        limit: options?.limit ?? 200,
       });
       this.nodes = response.nodes;
     } catch (err) {

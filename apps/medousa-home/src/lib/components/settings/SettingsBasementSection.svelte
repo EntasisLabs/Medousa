@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { Wifi, WifiOff } from "@lucide/svelte";
+  import { ChevronDown, Wifi, WifiOff } from "@lucide/svelte";
   import {
     getMedousaConfigPaths,
     openConfigPath,
@@ -11,7 +11,6 @@
   import {
     loadConnectionPrefs,
     setAutostart,
-    setPublicBind,
     type ConnectionPrefsSummary,
   } from "$lib/connection";
   import { reconnectWorkshop } from "$lib/workshopConnection";
@@ -20,15 +19,12 @@
   import { settings } from "$lib/stores/settings.svelte";
   import { resetGarageOnboarding } from "$lib/utils/garageOnboarding";
   import { wizard } from "$lib/stores/wizard.svelte";
+  import SettingsAppUpdateCard from "$lib/components/settings/SettingsAppUpdateCard.svelte";
   import SettingsLocalBrainPanel from "$lib/components/settings/SettingsLocalBrainPanel.svelte";
-  import { fetchPackageStatus, type PackageStatusSummary } from "$lib/utils/packagesApi";
   import SettingsWorkshopsSection from "$lib/components/settings/SettingsWorkshopsSection.svelte";
   import { isTauri } from "$lib/window";
   import { settingsNav } from "$lib/stores/settingsNav.svelte";
-  import {
-    workshopBasementConnectionLabel,
-    workshopBasementRestartHint,
-  } from "$lib/platformCopy";
+  import { workshopBasementConnectionLabel, thisHostLabel } from "$lib/platformCopy";
 
   const isDevBuild = import.meta.env.DEV;
 
@@ -48,7 +44,7 @@
   let prefsMessage = $state<string | null>(null);
   let restartingEngine = $state(false);
   let restartMessage = $state<string | null>(null);
-  let packageStatus = $state<PackageStatusSummary | null>(null);
+  let moreOpen = $state(false);
   let advancedOpen = $state(false);
   let runbookError = $state<string | null>(null);
 
@@ -60,6 +56,23 @@
     health?.tool_registry_count != null ? String(health.tool_registry_count) : "—",
   );
   const engineVersionLabel = $derived(health?.agent_runtime_version ?? "—");
+  const statusMeta = $derived(
+    connected
+      ? `${connectionLabel} · ${backendLabel}`
+      : connectionLabel === "Not configured"
+        ? "No workshop address yet"
+        : `${connectionLabel} · offline`,
+  );
+  const engineMeta = $derived(
+    [
+      engineVersionLabel,
+      `${toolsReadyLabel} tools`,
+      lastTurnLabel,
+      health?.active_profile_display_name,
+    ]
+      .filter(Boolean)
+      .join(" · "),
+  );
 
   const workshopFiles = $derived(
     configPaths
@@ -67,13 +80,13 @@
           {
             id: "product",
             label: "product_config.json",
-            hint: "Product policy — channels live in Messaging",
+            hint: "Product policy — channels live in Sharing",
             path: configPaths.productConfig,
           },
           {
             id: "workspace",
             label: "tui_defaults.json",
-            hint: "Full charter — Models & Voice edit the human fields above",
+            hint: "Full charter — Agent settings edit the human fields",
             path: configPaths.tuiDefaults,
           },
           {
@@ -85,7 +98,7 @@
           {
             id: "gateway",
             label: "mcp-gateway.toml",
-            hint: "Connected MCP servers",
+            hint: "MCP gateway — manage servers in Settings → MCP",
             path: configPaths.mcpGateway,
           },
         ]
@@ -131,6 +144,10 @@
 
   async function restartWorkshopEngine() {
     if (!isTauri() || mobile) return;
+    const ok = window.confirm(
+      "Restart the workshop engine? Active chats and tools will pause until it comes back.",
+    );
+    if (!ok) return;
     restartingEngine = true;
     restartMessage = null;
     try {
@@ -182,9 +199,6 @@
   onMount(() => {
     if (isTauri() && !mobile) {
       void loadConnectionPrefsState();
-      void fetchPackageStatus().then((status) => {
-        packageStatus = status;
-      });
     }
   });
 
@@ -193,22 +207,6 @@
       connectionPrefs = await loadConnectionPrefs();
     } catch {
       connectionPrefs = null;
-    }
-  }
-
-  async function togglePublicBind(enabled: boolean) {
-    if (!isTauri()) return;
-    prefsBusy = true;
-    prefsMessage = null;
-    try {
-      const result = await setPublicBind(enabled);
-      prefsMessage = result.message;
-      await loadConnectionPrefsState();
-      await reconnectWorkshop(onDaemonHealth);
-    } catch (err) {
-      prefsMessage = err instanceof Error ? err.message : String(err);
-    } finally {
-      prefsBusy = false;
     }
   }
 
@@ -256,71 +254,62 @@
   }
 </script>
 
-<section class="settings-section">
+<section class="settings-section prefs connection">
   <header class="settings-section-header">
-    <h2 class="text-base font-semibold text-surface-50">Connection</h2>
+    <h2 class="text-base font-semibold text-surface-50">Workshop</h2>
     <p class="workshop-faint mt-1 text-sm">
-      Pick which workshop you’re in — then how this Mac runs it.
+      Which workshop you’re in — and how this machine runs it.
     </p>
   </header>
 
-  <!-- 1. Story lead: your workshops -->
   <SettingsWorkshopsSection {onDaemonHealth} lead />
 
-  <!-- 2. Live link to that workshop -->
-  <div class="mt-8">
-    <h3 class="settings-subsection-heading">This connection</h3>
-    <p class="settings-subsection-lead">
-      Live status for the active workshop. Change the address only when something’s wrong.
-    </p>
+  <div class="prefs-band">
+    <SettingsAppUpdateCard />
+  </div>
 
-    <div class="settings-connection-card">
-      <div class="flex items-start gap-3">
+  <div class="prefs-band">
+    <div class="prefs-band-head">
+      <h3 class="settings-subsection-heading">Status</h3>
+      <p class="settings-subsection-lead">
+        Live link to the active workshop.
+      </p>
+    </div>
+
+    <div class="prefs-stack">
+      <div class="prefs-tile">
         <span
-          class="settings-connection-icon {connected
-            ? 'settings-connection-icon-ok'
-            : 'settings-connection-icon-off'}"
+          class="conn-status-icon"
+          class:conn-status-ok={connected}
+          class:conn-status-off={!connected}
           aria-hidden="true"
         >
           {#if connected}
-            <Wifi size={18} strokeWidth={2} />
+            <Wifi size={16} strokeWidth={2} />
           {:else}
-            <WifiOff size={18} strokeWidth={2} />
+            <WifiOff size={16} strokeWidth={2} />
           {/if}
         </span>
-        <div class="min-w-0 flex-1">
-          <p class="text-sm font-semibold text-surface-50">
-            {connected ? "Connected" : "Offline"}
-          </p>
-          <p class="mt-0.5 text-sm text-surface-200">{connectionLabel}</p>
-          <p class="workshop-faint mt-1 text-xs">{backendLabel}</p>
-          {#if settings.daemonMessage && !connectionEditing}
-            <p
-              class="mt-2 text-xs {settings.daemonMessage === 'Connected' ||
-              settings.daemonMessage.toLowerCase().includes('connected')
-                ? 'text-success-400'
-                : 'text-warning-400'}"
-            >
-              {settings.daemonMessage}
-            </p>
-          {/if}
-        </div>
+        <span class="prefs-tile-copy">
+          <span class="prefs-tile-title">{connected ? "Connected" : "Offline"}</span>
+          <span class="prefs-tile-meta">{statusMeta}</span>
+        </span>
         {#if !connectionEditing}
           <button
             type="button"
-            class="btn btn-sm variant-soft-surface shrink-0"
+            class="prefs-tile-cta"
             onclick={() => {
               connectionEditing = true;
               settings.daemonMessage = null;
             }}
           >
-            Address…
+            Address
           </button>
         {/if}
       </div>
 
       {#if connectionEditing}
-        <div class="mt-4 space-y-3 border-t border-surface-500/35 pt-4">
+        <div class="conn-edit">
           <label class="block" for="daemon-url">
             <span class="workshop-label">Workshop address</span>
             <input
@@ -330,7 +319,7 @@
               placeholder={mobile ? "http://192.168.1.42:7419" : "http://127.0.0.1:7419"}
             />
           </label>
-          <div class="flex flex-wrap items-center gap-2">
+          <div class="mt-3 flex flex-wrap items-center gap-2">
             <button
               type="button"
               class="btn btn-sm variant-filled-primary"
@@ -350,377 +339,493 @@
             >
               Cancel
             </button>
-            {#if settings.daemonMessage}
-              <p
-                class="text-xs {settings.daemonMessage === 'Connected' ||
-                settings.daemonMessage.toLowerCase().includes('connected')
-                  ? 'text-success-400'
-                  : 'text-warning-400'}"
-              >
-                {settings.daemonMessage}
-              </p>
-            {/if}
           </div>
+          {#if settings.daemonMessage}
+            <p
+              class="mt-2 text-xs {settings.daemonMessage === 'Connected' ||
+              settings.daemonMessage.toLowerCase().includes('connected')
+                ? 'text-success-400'
+                : 'text-warning-400'}"
+            >
+              {settings.daemonMessage}
+            </p>
+          {/if}
         </div>
+      {:else if settings.daemonMessage}
+        <p
+          class="prefs-footnote {settings.daemonMessage === 'Connected' ||
+          settings.daemonMessage.toLowerCase().includes('connected')
+            ? 'text-success-400'
+            : 'text-warning-400'}"
+        >
+          {settings.daemonMessage}
+        </p>
+      {/if}
+
+      {#if isTauri() && !mobile}
+        <div class="prefs-tile">
+          <span class="prefs-tile-copy">
+            <span class="prefs-tile-title">Engine</span>
+            <span class="prefs-tile-meta">{engineMeta}</span>
+          </span>
+          <span class="conn-pill" class:conn-pill-ok={connected}>
+            {connected ? "Running" : "Offline"}
+          </span>
+          <button
+            type="button"
+            class="prefs-tile-cta"
+            disabled={restartingEngine}
+            onclick={() => void restartWorkshopEngine()}
+          >
+            {restartingEngine ? "…" : "Restart"}
+          </button>
+        </div>
+        {#if restartMessage}
+          <p class="prefs-footnote text-surface-400">{restartMessage}</p>
+        {/if}
       {/if}
     </div>
   </div>
 
-  <!-- 3. How this Mac behaves -->
   {#if isTauri() && !mobile}
-    <div class="mt-8">
-      <h3 class="settings-subsection-heading">This Mac</h3>
-      <p class="settings-subsection-lead">
-        Engine on this device — who can reach it, and whether it starts with login.
-      </p>
+    <div class="prefs-band">
+      <div class="prefs-band-head">
+        <h3 class="settings-subsection-heading">{thisHostLabel()}</h3>
+        <p class="settings-subsection-lead">
+          Login start. Phone & LAN reachability live in Sharing.
+        </p>
+      </div>
 
-      {#if connectionPrefs}
-        <div class="settings-toggle-list">
-          <label class="settings-toggle-row">
-            <span class="min-w-0 flex-1">
-              <span class="block text-sm font-medium text-surface-100">
-                Let phones on your Wi‑Fi connect
-              </span>
-              <span class="workshop-faint mt-0.5 block text-xs leading-relaxed">
-                {workshopBasementRestartHint()}
-                without typing an IP address.
-              </span>
+      <div class="prefs-stack">
+        {#if connectionPrefs?.autostartSupported}
+          <label class="prefs-tile">
+            <span class="prefs-tile-copy">
+              <span class="prefs-tile-title">Start Medousa when I log in</span>
+              <span class="prefs-tile-meta">Engine only — never the offline brain</span>
             </span>
             <input
               type="checkbox"
-              class="checkbox shrink-0"
-              checked={connectionPrefs.publicBind}
+              class="prefs-switch"
+              checked={connectionPrefs.autostartEnabled}
               disabled={prefsBusy}
               onchange={(event) =>
-                void togglePublicBind((event.currentTarget as HTMLInputElement).checked)}
+                void toggleAutostart((event.currentTarget as HTMLInputElement).checked)}
             />
           </label>
-          {#if connectionPrefs.autostartSupported}
-            <label class="settings-toggle-row">
-              <span class="min-w-0 flex-1">
-                <span class="block text-sm font-medium text-surface-100">Start Medousa when I log in</span>
-                <span class="workshop-faint mt-0.5 block text-xs">
-                  Keeps the engine ready in the background.
-                </span>
-              </span>
-              <input
-                type="checkbox"
-                class="checkbox shrink-0"
-                checked={connectionPrefs.autostartEnabled}
-                disabled={prefsBusy}
-                onchange={(event) =>
-                  void toggleAutostart((event.currentTarget as HTMLInputElement).checked)}
-              />
-            </label>
-          {/if}
-        </div>
-        {#if prefsMessage}
-          <p class="mt-2 text-xs text-surface-300">{prefsMessage}</p>
-        {/if}
-      {/if}
-
-      <div class="settings-connection-card mt-4">
-        <div class="flex items-center justify-between gap-3">
-          <div class="min-w-0">
-            <p class="text-sm font-medium text-surface-100">Engine</p>
-            <p class="workshop-faint mt-0.5 text-xs">
-              {engineVersionLabel}
-              · {toolsReadyLabel} tools
-              · {lastTurnLabel}
-              {#if health?.active_profile_display_name}
-                · {health.active_profile_display_name}
-              {/if}
-            </p>
-          </div>
-          <span
-            class="shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium {connected
-              ? 'bg-success-500/15 text-success-400'
-              : 'bg-warning-500/15 text-warning-400'}"
-          >
-            {connected ? "Running" : "Offline"}
-          </span>
-        </div>
-        <button
-          type="button"
-          class="btn btn-sm variant-soft-surface mt-3"
-          disabled={restartingEngine}
-          onclick={() => void restartWorkshopEngine()}
-        >
-          {restartingEngine ? "Restarting…" : "Restart engine"}
-        </button>
-        {#if restartMessage}
-          <p
-            class="mt-2 text-xs {restartMessage.toLowerCase().includes('restart') ||
-            restartMessage.toLowerCase().includes('ready') ||
-            restartMessage.toLowerCase().includes('running')
-              ? 'text-success-400'
-              : 'text-warning-400'}"
-          >
-            {restartMessage}
-          </p>
-        {/if}
-      </div>
-    </div>
-  {/if}
-
-  <!-- 4. Optional extras -->
-  {#if isTauri() && !mobile}
-    <div class="mt-8">
-      <h3 class="settings-subsection-heading">Extras</h3>
-      <p class="settings-subsection-lead">Packages, private brain, and welcome setup.</p>
-      <div class="settings-toggle-list">
-        <button
-          type="button"
-          class="settings-toggle-row w-full text-left"
-          onclick={() => settingsNav.openSection("packages")}
-        >
-          <span class="min-w-0 flex-1">
-            <span class="block text-sm font-medium text-surface-100">Packages</span>
-            <span class="workshop-faint mt-0.5 block text-xs">
-              Offline brain, adapters, CLI & MCP
-              {#if packageStatus && !packageStatus.localBrainInstalled}
-                · brain not installed
-              {/if}
-            </span>
-          </span>
-          <span class="workshop-text-action shrink-0 text-xs">Open…</span>
-        </button>
-        <button
-          type="button"
-          class="settings-toggle-row w-full text-left"
-          onclick={() => void wizard.beginRerun()}
-        >
-          <span class="min-w-0 flex-1">
-            <span class="block text-sm font-medium text-surface-100">Welcome wizard</span>
-            <span class="workshop-faint mt-0.5 block text-xs">
-              Re-run model choice and optional phone pairing
-            </span>
-          </span>
-          <span class="workshop-text-action shrink-0 text-xs">Re-run…</span>
-        </button>
-        <label class="settings-toggle-row">
-          <span class="min-w-0 flex-1">
-            <span class="block text-sm font-medium text-surface-100">Stamp completion inline</span>
-            <span class="workshop-faint mt-0.5 block text-xs">
-              Append (done YYYY-MM-DD) when checking a to-do in preview
-            </span>
-          </span>
-          <input
-            type="checkbox"
-            class="checkbox shrink-0"
-            checked={vault.stampCompletionInline}
-            onchange={(event) =>
-              vault.setStampCompletionInline((event.currentTarget as HTMLInputElement).checked)}
-          />
-        </label>
-      </div>
-      <div class="mt-4">
-        <SettingsLocalBrainPanel />
-      </div>
-    </div>
-  {:else}
-    <div class="mt-8">
-      <h3 class="settings-subsection-heading">Extras</h3>
-      <div class="settings-toggle-list">
-        <button
-          type="button"
-          class="settings-toggle-row w-full text-left"
-          onclick={() => void wizard.beginRerun()}
-        >
-          <span class="min-w-0 flex-1">
-            <span class="block text-sm font-medium text-surface-100">Welcome wizard</span>
-            <span class="workshop-faint mt-0.5 block text-xs">
-              Re-run model choice and optional phone pairing
-            </span>
-          </span>
-          <span class="workshop-text-action shrink-0 text-xs">Re-run…</span>
-        </button>
-        <label class="settings-toggle-row">
-          <span class="min-w-0 flex-1">
-            <span class="block text-sm font-medium text-surface-100">Stamp completion inline</span>
-            <span class="workshop-faint mt-0.5 block text-xs">
-              Append (done YYYY-MM-DD) when checking a to-do in preview
-            </span>
-          </span>
-          <input
-            type="checkbox"
-            class="checkbox shrink-0"
-            checked={vault.stampCompletionInline}
-            onchange={(event) =>
-              vault.setStampCompletionInline((event.currentTarget as HTMLInputElement).checked)}
-          />
-        </label>
-      </div>
-    </div>
-  {/if}
-
-  <!-- 5. Advanced — one door -->
-  {#if !mobile}
-    <div class="mt-8">
-      <button
-        type="button"
-        class="flex w-full items-center justify-between gap-3 text-left"
-        onclick={() => (advancedOpen = !advancedOpen)}
-        aria-expanded={advancedOpen}
-      >
-        <div>
-          <h3 class="settings-subsection-heading mb-0">Advanced</h3>
-          <p class="settings-subsection-lead mb-0 mt-1">
-            Paths, config files, diagnostics{#if isDevBuild}, developer toggles{/if}
-          </p>
-        </div>
-        <span class="workshop-faint shrink-0">{advancedOpen ? "▾" : "▸"}</span>
-      </button>
-
-      {#if advancedOpen}
-        {#if configPaths}
-          <div class="mt-4">
-            <h4 class="settings-subsection-heading">Storage</h4>
-            <dl class="settings-connection-meta">
-              <div class="settings-connection-meta-row">
-                <dt>Engine data</dt>
-                <dd>
-                  <span class="font-mono text-[11px]">{configPaths.dataDir}</span>
-                  <span class="mt-0.5 block text-[10px] text-surface-500"
-                    >via {configPaths.dataDirSource}</span
-                  >
-                </dd>
-              </div>
-              <div class="settings-connection-meta-row">
-                <dt>Vault</dt>
-                <dd class="font-mono text-[11px]">{configPaths.vaultDir}</dd>
-              </div>
-            </dl>
-          </div>
         {/if}
 
-        {#if workshopFiles.length > 0}
-          <div class="mt-5">
-            <h4 class="settings-subsection-heading">Workshop files</h4>
-            <p class="settings-subsection-lead">
-              Host config for operators — day-to-day charter stays in Settings; Engine has the rest.
-            </p>
-            <div class="settings-toggle-list">
-              {#each workshopFiles as file (file.id)}
-                <div class="settings-toggle-row settings-metric-row">
-                  <span class="min-w-0 flex-1">
-                    <span class="block font-mono text-[11px] font-medium text-surface-100"
-                      >{file.label}</span
-                    >
-                    <span class="workshop-faint mt-0.5 block text-xs">{file.hint}</span>
-                  </span>
-                  <button
-                    type="button"
-                    class="btn btn-sm variant-soft-surface shrink-0"
-                    onclick={() => openConfigPath(file.path)}
-                  >
-                    Open
-                  </button>
-                </div>
-              {/each}
-            </div>
-          </div>
-        {/if}
-
-        <div class="mt-5">
+        {#if connectionPrefs}
           <button
             type="button"
-            class="flex w-full items-center justify-between text-left"
-            onclick={() => (settings.diagnosticsOpen = !settings.diagnosticsOpen)}
+            class="prefs-tile prefs-tile-action"
+            onclick={() => settingsNav.openSection("network")}
           >
-            <div>
-              <h4 class="settings-subsection-heading mb-0">Diagnostics</h4>
-              <p class="settings-subsection-lead mb-0 mt-1">Connection detail for support</p>
-            </div>
-            <span class="workshop-faint shrink-0">
-              {settings.diagnosticsOpen ? "▾" : "▸"}
+            <span class="prefs-tile-copy">
+              <span class="prefs-tile-title">Phone & LAN reachability</span>
+              <span class="prefs-tile-meta">
+                {#if connectionPrefs.publicBind}
+                  Always reachable on Wi‑Fi · Sharing
+                {:else}
+                  Pairing window and Wi‑Fi · Sharing
+                {/if}
+              </span>
             </span>
+            <span class="prefs-tile-cta">Open</span>
           </button>
-          {#if settings.diagnosticsOpen}
-            <dl
-              class="settings-connection-meta mt-3 rounded-container-token border border-surface-500/35 bg-surface-900/40 p-3"
-            >
-              <div class="settings-connection-meta-row">
-                <dt>Status</dt>
-                <dd class="font-mono">{health?.ok ? "connected" : "offline"}</dd>
+        {/if}
+      </div>
+
+      {#if prefsMessage}
+        <p class="prefs-footnote mt-2">{prefsMessage}</p>
+      {/if}
+    </div>
+  {/if}
+
+  {#if isTauri() && !mobile}
+    <SettingsLocalBrainPanel />
+  {/if}
+
+  <details class="prefs-more" bind:open={moreOpen}>
+    <summary class="prefs-more-summary">
+      <span>More on this device</span>
+      <ChevronDown size={14} strokeWidth={2} class="prefs-more-chevron" aria-hidden="true" />
+    </summary>
+    <div class="prefs-more-body prefs-stack">
+      <button
+        type="button"
+        class="prefs-tile prefs-tile-action"
+        onclick={() => void wizard.beginRerun()}
+      >
+        <span class="prefs-tile-copy">
+          <span class="prefs-tile-title">Welcome wizard</span>
+          <span class="prefs-tile-meta">Re-run model choice and optional phone pairing</span>
+        </span>
+        <span class="prefs-tile-cta">Re-run</span>
+      </button>
+
+      <label class="prefs-tile">
+        <span class="prefs-tile-copy">
+          <span class="prefs-tile-title">Stamp completion inline</span>
+          <span class="prefs-tile-meta">Append (done YYYY-MM-DD) on to-do check</span>
+        </span>
+        <input
+          type="checkbox"
+          class="prefs-switch"
+          checked={vault.stampCompletionInline}
+          onchange={(event) =>
+            vault.setStampCompletionInline((event.currentTarget as HTMLInputElement).checked)}
+        />
+      </label>
+
+      {#if !mobile}
+        <details class="prefs-nested" bind:open={advancedOpen}>
+          <summary class="prefs-nested-summary">
+            <span>Files & diagnostics</span>
+            <ChevronDown size={14} strokeWidth={2} class="prefs-more-chevron" aria-hidden="true" />
+          </summary>
+          <div class="prefs-nested-body prefs-stack">
+            {#if configPaths}
+              <div class="conn-kv">
+                <p class="prefs-footnote mb-1">Storage</p>
+                <p class="conn-kv-row">
+                  <span>Engine data</span>
+                  <span class="font-mono text-[10px]">{configPaths.dataDir}</span>
+                </p>
+                <p class="conn-kv-row">
+                  <span>Vault</span>
+                  <span class="font-mono text-[10px]">{configPaths.vaultDir}</span>
+                </p>
               </div>
-              <div class="settings-connection-meta-row">
-                <dt>Base URL</dt>
-                <dd class="font-mono">{settings.daemonUrl || "—"}</dd>
+            {/if}
+
+            {#each workshopFiles as file (file.id)}
+              <div class="prefs-tile">
+                <span class="prefs-tile-copy">
+                  <span class="prefs-tile-title font-mono text-[0.72rem]">{file.label}</span>
+                  <span class="prefs-tile-meta">{file.hint}</span>
+                </span>
+                <button
+                  type="button"
+                  class="prefs-tile-cta"
+                  onclick={() => openConfigPath(file.path)}
+                >
+                  Open
+                </button>
               </div>
-              <div class="settings-connection-meta-row">
-                <dt>Backend</dt>
-                <dd class="font-mono">{health?.backend ?? "—"}</dd>
-              </div>
-              <div class="settings-connection-meta-row">
-                <dt>Revision</dt>
-                <dd class="font-mono">{revision}</dd>
-              </div>
-              <div class="settings-connection-meta-row">
-                <dt>Worker</dt>
-                <dd class="font-mono">{health?.worker_id ?? "—"}</dd>
-              </div>
-              <div class="settings-connection-meta-row">
-                <dt>Tools</dt>
-                <dd class="font-mono">{health?.tool_registry_count ?? "—"}</dd>
-              </div>
-              {#if health && !health.ok}
-                <div class="settings-connection-meta-row">
-                  <dt>Detail</dt>
-                  <dd class="font-mono text-warning-400">{health.message}</dd>
-                </div>
-              {/if}
-            </dl>
-            <p class="workshop-faint mt-3 text-xs leading-relaxed">
-              If chat freezes while status stays green, restart the engine above or open the
-              connection guide.
-            </p>
+            {/each}
+
+            <div class="conn-kv">
+              <p class="prefs-footnote mb-1">Diagnostics</p>
+              <p class="conn-kv-row">
+                <span>Status</span>
+                <span class="font-mono">{health?.ok ? "connected" : "offline"}</span>
+              </p>
+              <p class="conn-kv-row">
+                <span>Base URL</span>
+                <span class="font-mono">{settings.daemonUrl || "—"}</span>
+              </p>
+              <p class="conn-kv-row">
+                <span>Backend</span>
+                <span class="font-mono">{health?.backend ?? "—"}</span>
+              </p>
+              <p class="conn-kv-row">
+                <span>Revision</span>
+                <span class="font-mono">{revision}</span>
+              </p>
+              <p class="conn-kv-row">
+                <span>Worker</span>
+                <span class="font-mono">{health?.worker_id ?? "—"}</span>
+              </p>
+            </div>
+
             <button
               type="button"
-              class="workshop-text-action mt-2 text-xs"
+              class="prefs-tile prefs-tile-action"
               onclick={() => void openRunbook()}
             >
-              Open connection troubleshooting guide →
+              <span class="prefs-tile-copy">
+                <span class="prefs-tile-title">Troubleshooting guide</span>
+                <span class="prefs-tile-meta">Connection runbook for support</span>
+              </span>
+              <span class="prefs-tile-cta">Open</span>
             </button>
             {#if runbookError}
-              <p class="mt-2 text-xs text-warning-400">{runbookError}</p>
+              <p class="prefs-footnote text-warning-300">{runbookError}</p>
             {/if}
-          {/if}
-        </div>
 
-        {#if isDevBuild}
-          <div class="mt-5">
-            <h4 class="settings-subsection-heading">Developer</h4>
-            <div class="settings-toggle-list">
-              <label class="settings-toggle-row">
-                <span class="min-w-0 flex-1">
-                  <span class="block text-sm font-medium text-surface-100">Developer vault notes</span>
-                  <span class="workshop-faint mt-0.5 block text-xs">
-                    Show bugs/ and system paths in Library
-                  </span>
+            {#if isDevBuild}
+              <label class="prefs-tile">
+                <span class="prefs-tile-copy">
+                  <span class="prefs-tile-title">Developer vault notes</span>
+                  <span class="prefs-tile-meta">Show bugs/ and system paths in Library</span>
                 </span>
                 <input
                   type="checkbox"
-                  class="checkbox shrink-0"
+                  class="prefs-switch"
                   checked={vault.showSystemNotes}
                   onchange={(event) =>
                     vault.setShowSystemNotes((event.currentTarget as HTMLInputElement).checked)}
                 />
               </label>
-            </div>
-            <button
-              type="button"
-              class="workshop-text-action mt-3 text-sm"
-              onclick={() => {
-                resetGarageOnboarding();
-                vault.openGarageWizard();
-              }}
-            >
-              Reset garage onboarding wizard
-            </button>
+              <button
+                type="button"
+                class="prefs-tile prefs-tile-action"
+                onclick={() => {
+                  resetGarageOnboarding();
+                  vault.openGarageWizard();
+                }}
+              >
+                <span class="prefs-tile-copy">
+                  <span class="prefs-tile-title">Reset garage onboarding</span>
+                  <span class="prefs-tile-meta">Developer only</span>
+                </span>
+                <span class="prefs-tile-cta">Reset</span>
+              </button>
+            {/if}
           </div>
-        {/if}
+        </details>
       {/if}
     </div>
-  {/if}
+  </details>
 </section>
+
+<style>
+  .prefs {
+    --prefs-gap: 0.5rem;
+    --prefs-tile-radius: 0.65rem;
+    --prefs-tile-pad: 0.55rem 0.75rem;
+    --prefs-tile-min-h: 3.25rem;
+    --prefs-tile-border: rgb(var(--color-surface-500) / 0.32);
+    --prefs-tile-bg: rgb(var(--color-surface-900) / 0.28);
+  }
+
+  .prefs-band {
+    margin-top: 1.25rem;
+  }
+
+  .prefs-band-head .settings-subsection-heading {
+    margin-bottom: 0.15rem;
+  }
+
+  .prefs-band-head .settings-subsection-lead {
+    margin-bottom: 0.6rem;
+  }
+
+  .prefs-stack {
+    display: grid;
+    gap: var(--prefs-gap);
+  }
+
+  .prefs-tile {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    min-height: var(--prefs-tile-min-h);
+    padding: var(--prefs-tile-pad);
+    border-radius: var(--prefs-tile-radius);
+    border: 1px solid var(--prefs-tile-border);
+    background: var(--prefs-tile-bg);
+  }
+
+  .prefs-tile-action {
+    width: 100%;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .prefs-tile-action:hover {
+    border-color: rgb(var(--color-surface-500) / 0.48);
+    background: rgb(var(--color-surface-800) / 0.28);
+  }
+
+  .prefs-tile-copy {
+    display: flex;
+    min-width: 0;
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: 0.1rem;
+  }
+
+  .prefs-tile-title {
+    font-size: 0.8rem;
+    font-weight: 550;
+    color: rgb(var(--color-surface-100));
+  }
+
+  .prefs-tile-meta {
+    font-size: 0.68rem;
+    line-height: 1.3;
+    color: rgb(var(--color-surface-500));
+  }
+
+  .prefs-tile-cta {
+    flex-shrink: 0;
+    border: 0;
+    background: transparent;
+    padding: 0;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: rgb(var(--color-surface-400));
+    cursor: pointer;
+  }
+
+  .prefs-tile-cta:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  .prefs-switch {
+    position: relative;
+    flex-shrink: 0;
+    width: 2.35rem;
+    height: 1.3rem;
+    margin: 0;
+    appearance: none;
+    border: 0;
+    border-radius: 999px;
+    background: rgb(var(--color-surface-600) / 0.55);
+    cursor: pointer;
+    transition: background 140ms ease;
+  }
+
+  .prefs-switch::after {
+    content: "";
+    position: absolute;
+    top: 0.15rem;
+    left: 0.15rem;
+    width: 1rem;
+    height: 1rem;
+    border-radius: 999px;
+    background: rgb(var(--color-surface-100));
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.25);
+    transition: transform 140ms ease;
+  }
+
+  .prefs-switch:checked {
+    background: rgb(var(--color-primary-500) / 0.85);
+  }
+
+  .prefs-switch:checked::after {
+    transform: translateX(1.05rem);
+  }
+
+  .prefs-switch:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  .prefs-footnote {
+    margin: 0;
+    font-size: 0.7rem;
+    line-height: 1.4;
+    color: rgb(var(--color-surface-500));
+  }
+
+  .conn-status-icon {
+    display: flex;
+    height: 1.75rem;
+    width: 1.75rem;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    border-radius: 0.45rem;
+  }
+
+  .conn-status-ok {
+    background: rgb(var(--color-success-500) / 0.15);
+    color: rgb(var(--color-success-400));
+  }
+
+  .conn-status-off {
+    background: rgb(var(--color-warning-500) / 0.12);
+    color: rgb(var(--color-warning-400));
+  }
+
+  .conn-pill {
+    flex-shrink: 0;
+    font-size: 0.65rem;
+    font-weight: 600;
+    color: rgb(var(--color-warning-400));
+  }
+
+  .conn-pill-ok {
+    color: rgb(var(--color-success-400));
+  }
+
+  .conn-edit {
+    padding: 0.65rem 0.75rem;
+    border-radius: var(--prefs-tile-radius);
+    border: 1px solid var(--prefs-tile-border);
+    background: rgb(var(--color-surface-950) / 0.35);
+  }
+
+  .prefs-more,
+  .prefs-nested {
+    margin-top: 1.25rem;
+    border-radius: var(--prefs-tile-radius);
+    border: 1px solid var(--prefs-tile-border);
+    background: rgb(var(--color-surface-950) / 0.35);
+  }
+
+  .prefs-nested {
+    margin-top: 0;
+  }
+
+  .prefs-more-summary,
+  .prefs-nested-summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    min-height: var(--prefs-tile-min-h);
+    padding: var(--prefs-tile-pad);
+    font-size: 0.75rem;
+    font-weight: 550;
+    color: rgb(var(--color-surface-200));
+    cursor: pointer;
+    list-style: none;
+  }
+
+  .prefs-more-summary::-webkit-details-marker,
+  .prefs-nested-summary::-webkit-details-marker {
+    display: none;
+  }
+
+  :global(.prefs-more-chevron) {
+    flex-shrink: 0;
+    color: rgb(var(--color-surface-500));
+    transition: transform 140ms ease;
+  }
+
+  .prefs-more[open] :global(.prefs-more-chevron),
+  .prefs-nested[open] :global(.prefs-more-chevron) {
+    transform: rotate(180deg);
+  }
+
+  .prefs-more-body,
+  .prefs-nested-body {
+    padding: 0 0.75rem 0.75rem;
+  }
+
+  .conn-kv {
+    padding: 0.55rem 0.15rem;
+  }
+
+  .conn-kv-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin: 0.2rem 0 0;
+    font-size: 0.68rem;
+    color: rgb(var(--color-surface-400));
+  }
+
+  .conn-kv-row span:last-child {
+    min-width: 0;
+    text-align: right;
+    color: rgb(var(--color-surface-300));
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+</style>

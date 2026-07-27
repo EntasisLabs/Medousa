@@ -2,16 +2,20 @@ import {
   approveTurnBudgetRequest,
   checkDaemonHealth,
   denyTurnBudgetRequest,
-  enqueueDaemonAsk,
   getSessionHistory,
   listManuscripts,
   listTurnBudgetRequests,
 } from "$lib/daemon";
-  import {
+import {
   resetContentZoom,
   stepContentZoom,
 } from "$lib/config/contentZoom";
 import { homeChannelSurface, formatShortcut } from "$lib/platform";
+import { onThisHostPhrase } from "$lib/platformCopy";
+import { appUpdate } from "$lib/stores/appUpdate.svelte";
+import { openAppUpdateDownload } from "$lib/utils/appUpdate";
+import { openGuide } from "$lib/guide/openGuide";
+import { isTauri, toggleDesktopToolbar } from "$lib/window";
 import { humanBrowser } from "$lib/stores/humanBrowser.svelte";
 import { copyBrowserUrl, openUrlInDefaultBrowser } from "$lib/utils/browserActions";
 import {
@@ -30,6 +34,12 @@ import { connection } from "$lib/stores/connection.svelte";
 import { layout } from "$lib/stores/layout.svelte";
 import { shellTabs } from "$lib/stores/shellTabs.svelte";
 import { toast } from "$lib/stores/toast.svelte";
+import { sessionExportPreview } from "$lib/stores/sessionExportPreview.svelte";
+import {
+  downloadTextFile,
+  sessionExportBasename,
+  sessionTranscriptMarkdown,
+} from "$lib/utils/sessionTranscript";
 import type { Surface } from "$lib/types/ui";
 import type { DepthMode } from "$lib/types/runtime";
 import type { WorkshopCommand, WorkshopCommandContext } from "./types";
@@ -41,10 +51,9 @@ const GO_DESTINATIONS: { surface: Surface; label: string; subtitle: string; keyw
   { surface: "web", label: "Browser", subtitle: "Built-in web workshop", keywords: "browser web surf" },
   { surface: "automations", label: "Automations", subtitle: "Scripts and schedules", keywords: "cron scripts grapheme" },
   { surface: "workshop", label: "Agents", subtitle: "Specialist agents in Workspace", keywords: "skills manuscripts workshop capabilities specialist agents" },
-  { surface: "context", label: "Context map", subtitle: "Memory and threads", keywords: "memory locus context" },
+  { surface: "map", label: "Map", subtitle: "Sessions, moments, and notes", keywords: "memory locus context map moments" },
   { surface: "peers", label: "Peers", subtitle: "Nearby workshops and inbox", keywords: "peers nearby share trust lan inbox" },
   { surface: "profiles", label: "Profiles", subtitle: "People and identity", keywords: "profiles identity people" },
-  { surface: "messaging", label: "Messaging", subtitle: "WhatsApp, Telegram, and more", keywords: "channels telegram whatsapp" },
   { surface: "runtime", label: "Engine status", subtitle: "Jobs, delivery, health", keywords: "runtime engine daemon health" },
   { surface: "settings", label: "Settings", subtitle: "Preferences and connection", keywords: "settings preferences config" },
 ];
@@ -64,13 +73,24 @@ export function buildGoCommands(): WorkshopCommand[] {
   return [
     ...destinations,
     {
+      id: "go-channels",
+      section: "go",
+      label: "Channels",
+      subtitle: "Telegram, Discord, Slack — Settings → Sharing",
+      keywords: "channels messaging telegram discord slack whatsapp sharing network",
+      run: (ctx) => {
+        ctx.openSettingsSection("network");
+        ctx.callbacks.close();
+      },
+    },
+    {
       id: "go-mcp-connections",
       section: "go",
       label: "MCP connections",
-      subtitle: "Manage MCP servers in Settings → Packages",
-      keywords: "mcp connections gateway servers packages tools",
+      subtitle: "Manage MCP servers in Settings → MCP",
+      keywords: "mcp connections gateway servers tools",
       run: (ctx) => {
-        ctx.openSettingsSection("packages");
+        ctx.openSettingsSection("mcp");
         ctx.callbacks.close();
       },
     },
@@ -265,9 +285,9 @@ export function buildPaneCommands(): WorkshopCommand[] {
     {
       id: "content-zoom-in",
       section: "advanced",
-      label: "Zoom content in",
-      subtitle: `${formatShortcut("+")} — notes, chats, scripts`,
-      keywords: "zoom content font size larger scale editor",
+      label: "Zoom in",
+      subtitle: `${formatShortcut("+")} — whole UI, like the browser`,
+      keywords: "zoom content font size larger scale editor ui",
       advanced: true,
       run: (ctx) => {
         stepContentZoom(1);
@@ -277,9 +297,9 @@ export function buildPaneCommands(): WorkshopCommand[] {
     {
       id: "content-zoom-out",
       section: "advanced",
-      label: "Zoom content out",
-      subtitle: `${formatShortcut("−")} — notes, chats, scripts`,
-      keywords: "zoom content font size smaller scale editor",
+      label: "Zoom out",
+      subtitle: `${formatShortcut("−")} — whole UI, like the browser`,
+      keywords: "zoom content font size smaller scale editor ui",
       advanced: true,
       run: (ctx) => {
         stepContentZoom(-1);
@@ -289,9 +309,9 @@ export function buildPaneCommands(): WorkshopCommand[] {
     {
       id: "content-zoom-reset",
       section: "advanced",
-      label: "Reset content zoom",
+      label: "Reset zoom",
       subtitle: `${formatShortcut("0")} — back to 100%`,
-      keywords: "zoom content reset default 100",
+      keywords: "zoom content reset default 100 ui",
       advanced: true,
       run: (ctx) => {
         resetContentZoom();
@@ -302,8 +322,8 @@ export function buildPaneCommands(): WorkshopCommand[] {
       id: "pane-close",
       section: "advanced",
       label: "Close pane",
-      subtitle: `${formatShortcut("Ctrl+; x")} — close active pane`,
-      keywords: "close pane split window",
+      subtitle: `${formatShortcut("Ctrl+; x")} — merge tabs into the nearest pane`,
+      keywords: "close pane merge split window tabs",
       advanced: true,
       run: (ctx) => {
         shellTabs.closeActiveGroup();
@@ -359,11 +379,12 @@ export function buildPaneCommands(): WorkshopCommand[] {
       },
     },
     {
-      id: "pane-cheat-sheet",
+      id: "keyboard-shortcuts",
       section: "advanced",
-      label: "Pane keyboard shortcuts",
-      subtitle: `${formatShortcut("Ctrl+; ?")} — cheat sheet for splits and focus`,
-      keywords: "cheat sheet help shortcuts pane tmux window keyboard binds",
+      label: "Keyboard shortcuts",
+      subtitle: `${formatShortcut("Ctrl+; ?")} — panes, vault, global binds`,
+      keywords:
+        "cheat sheet help shortcuts pane tmux window keyboard binds hotkeys keymap bindings",
       advanced: true,
       run: (ctx) => {
         shellTabs.requestCheatSheet();
@@ -391,6 +412,38 @@ export function buildPaneCommands(): WorkshopCommand[] {
       advanced: true,
       run: (ctx) => {
         summonViewToolbar();
+        ctx.callbacks.close();
+      },
+    },
+    {
+      id: "desktop-flow-toolbar",
+      section: "advanced",
+      label: "Toggle desktop toolbar",
+      subtitle: "Floating chat / note / web / views strip",
+      keywords: "desktop toolbar floating popout widget flow chat note web views",
+      advanced: true,
+      run: async (ctx) => {
+        if (!isTauri()) {
+          toast.show("Desktop toolbar needs the Medousa app", { durationMs: 1600 });
+          ctx.callbacks.close();
+          return;
+        }
+        const visible = await toggleDesktopToolbar();
+        toast.show(visible ? "Desktop toolbar on" : "Desktop toolbar off", {
+          durationMs: 1400,
+        });
+        ctx.callbacks.close();
+      },
+    },
+    {
+      id: "open-operators-guide",
+      section: "advanced",
+      label: "Open Operator's Guide",
+      subtitle: "In-app manual for navigation, chat, themes, and more",
+      keywords: "help wiki docs manual guide operators handbook documentation ?",
+      advanced: false,
+      run: async (ctx) => {
+        await openGuide();
         ctx.callbacks.close();
       },
     },
@@ -568,7 +621,7 @@ export function buildLibraryCommands(): WorkshopCommand[] {
       run: async (ctx) => {
         const { canUseLocalVaultFilesystem } = await import("$lib/utils/vaultFilesystem");
         if (!canUseLocalVaultFilesystem()) {
-          ctx.error("Open markdown file needs the desktop app on this Mac.");
+          ctx.error(`Open markdown file needs the desktop app ${onThisHostPhrase()}.`);
           return;
         }
         ctx.navigate("library");
@@ -636,7 +689,7 @@ export function buildAskCommands(): WorkshopCommand[] {
           channelSurface: opts.channelSurface,
           identityUserId: opts.identityUserId,
         });
-        ctx.chat.beginTurn(text, accepted, []);
+        ctx.chat.beginTurn(text, accepted, [], opts.identityUserId);
         await ctx.chat.startTurnStream(
           accepted.turn_id,
           accepted.session_id,
@@ -645,22 +698,6 @@ export function buildAskCommands(): WorkshopCommand[] {
         ctx.navigate("chat");
         ctx.callbacks.close();
         ctx.notice("Background task started.");
-      },
-    },
-    {
-      id: "ask-morning-brief",
-      section: "ask",
-      label: "Morning brief",
-      subtitle: "Run the morning-brief manuscript",
-      keywords: "brief morning digest summary",
-      run: async (ctx) => {
-        await enqueueDaemonAsk({
-          prompt: "Run the morning brief.",
-          manuscriptId: "morning-brief",
-        });
-        ctx.navigate("work");
-        ctx.callbacks.close();
-        ctx.notice("Morning brief queued.");
       },
     },
   ];
@@ -678,21 +715,21 @@ export function buildTuneCommands(): WorkshopCommand[] {
       id: "tune-models-settings",
       section: "tune",
       label: "Change model",
-      subtitle: "Models, stages & reasoning effort",
-      keywords: "model provider settings reasoning effort stages",
+      subtitle: "Medousa Agent — models & stages",
+      keywords: "model provider settings reasoning effort stages agent",
       run: (ctx) => {
-        ctx.openSettingsSection("models");
+        ctx.openSettingsSection("agent");
         ctx.callbacks.close();
       },
     },
     {
       id: "tune-engine-settings",
       section: "tune",
-      label: "Engine settings",
-      subtitle: "Tool budgets, quality & diagnostics",
-      keywords: "engine budgets quality diagnostics verifier",
+      label: "Runtime controls",
+      subtitle: "Reach, shell, budgets & diagnostics",
+      keywords: "engine budgets quality diagnostics verifier reach shell runtime",
       run: (ctx) => {
-        ctx.openSettingsSection("engine");
+        ctx.openSettingsSection("runtime");
         ctx.callbacks.close();
       },
     },
@@ -700,10 +737,10 @@ export function buildTuneCommands(): WorkshopCommand[] {
       id: "tune-voice-settings",
       section: "tune",
       label: "Voice and stance",
-      subtitle: "Open Voice in Settings",
-      keywords: "voice stance depth charter",
+      subtitle: "Medousa Agent — stance & depth",
+      keywords: "voice stance depth charter agent memory",
       run: (ctx) => {
-        ctx.openSettingsSection("voice");
+        ctx.openSettingsSection("agent");
         ctx.callbacks.close();
       },
     },
@@ -787,6 +824,44 @@ export function buildAdvancedCommands(): WorkshopCommand[] {
       },
     },
     {
+      id: "advanced-app-update",
+      section: "advanced",
+      label: "Check for updates",
+      subtitle: "Desktop app vs release channel",
+      keywords: "update upgrade download version release app",
+      advanced: true,
+      run: async (ctx) => {
+        if (!isTauri()) {
+          ctx.notice("Updates are available in the Medousa desktop app.");
+          ctx.callbacks.close();
+          return;
+        }
+        const status = await appUpdate.check();
+        ctx.openSettingsSection("basement");
+        if (!status) {
+          ctx.error("Could not reach the release channel.");
+          ctx.callbacks.close();
+          return;
+        }
+        if (status.error && !status.latestVersion) {
+          ctx.error(status.error);
+          ctx.callbacks.close();
+          return;
+        }
+        if (status.updateAvailable && status.latestVersion) {
+          ctx.notice(`Update available · ${status.latestVersion}`);
+          try {
+            await openAppUpdateDownload();
+          } catch {
+            /* Settings card still shows Download */
+          }
+        } else {
+          ctx.notice(`You’re up to date · ${status.currentVersion}`);
+        }
+        ctx.callbacks.close();
+      },
+    },
+    {
       id: "advanced-skills",
       section: "advanced",
       label: "List skills",
@@ -815,11 +890,11 @@ export function buildAdvancedCommands(): WorkshopCommand[] {
       id: "advanced-stage-routes",
       section: "advanced",
       label: "Edit stage routes",
-      subtitle: "Stage models in Settings → Models",
-      keywords: "stage routes routing matrix specialists models",
+      subtitle: "Stage models in Settings → Medousa Agent",
+      keywords: "stage routes routing matrix specialists models agent",
       advanced: true,
       run: (ctx) => {
-        ctx.openSettingsSection("models");
+        ctx.openSettingsSection("agent");
         ctx.callbacks.close();
       },
     },
@@ -827,21 +902,61 @@ export function buildAdvancedCommands(): WorkshopCommand[] {
       id: "advanced-export-session",
       section: "advanced",
       label: "Export this conversation",
-      subtitle: "Download session history as JSON",
+      subtitle: "Download session history as Markdown",
+      keywords: "export session history markdown md transcript",
+      advanced: true,
+      run: async (ctx) => {
+        const history = await getSessionHistory(ctx.chat.sessionId);
+        const label =
+          ctx.chat.sessions.find((s) => s.session_id === ctx.chat.sessionId)
+            ?.display_name ||
+          ctx.chat.sessions.find((s) => s.session_id === ctx.chat.sessionId)
+            ?.preview ||
+          undefined;
+        const markdown = sessionTranscriptMarkdown(history, { title: label });
+        downloadTextFile(
+          `${sessionExportBasename(ctx.chat.sessionId)}.md`,
+          markdown,
+        );
+        ctx.notice("Conversation exported as Markdown.");
+        ctx.callbacks.close();
+      },
+    },
+    {
+      id: "advanced-export-session-pdf",
+      section: "advanced",
+      label: "Export conversation as PDF…",
+      subtitle: "Preview and save a PDF of this chat",
+      keywords: "export session history pdf transcript",
+      advanced: true,
+      run: async (ctx) => {
+        const history = await getSessionHistory(ctx.chat.sessionId);
+        const label =
+          ctx.chat.sessions.find((s) => s.session_id === ctx.chat.sessionId)
+            ?.display_name ||
+          ctx.chat.sessions.find((s) => s.session_id === ctx.chat.sessionId)
+            ?.preview ||
+          `Conversation ${ctx.chat.sessionId.slice(0, 8)}`;
+        const markdown = sessionTranscriptMarkdown(history, { title: label });
+        sessionExportPreview.show(label, markdown);
+        ctx.callbacks.close();
+      },
+    },
+    {
+      id: "advanced-export-session-json",
+      section: "advanced",
+      label: "Export conversation as JSON",
+      subtitle: "Raw session history for debugging",
       keywords: "export session history json",
       advanced: true,
       run: async (ctx) => {
         const history = await getSessionHistory(ctx.chat.sessionId);
-        const blob = new Blob([JSON.stringify(history, null, 2)], {
-          type: "application/json",
-        });
-        const url = URL.createObjectURL(blob);
-        const anchor = document.createElement("a");
-        anchor.href = url;
-        anchor.download = `medousa-session-${ctx.chat.sessionId.slice(0, 8)}.json`;
-        anchor.click();
-        URL.revokeObjectURL(url);
-        ctx.notice("Session exported.");
+        downloadTextFile(
+          `${sessionExportBasename(ctx.chat.sessionId)}.json`,
+          JSON.stringify(history, null, 2),
+          "application/json",
+        );
+        ctx.notice("Session exported as JSON.");
         ctx.callbacks.close();
       },
     },

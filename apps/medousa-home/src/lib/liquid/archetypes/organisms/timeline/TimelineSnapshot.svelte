@@ -31,7 +31,9 @@
   let activeIndex = $state(0);
   let trackEl = $state<HTMLElement | null>(null);
   let carouselEl = $state<HTMLElement | null>(null);
-  let syncingFromTrack = false;
+  /** Ignore carousel scroll while we programmatically focus a stop. */
+  let programmaticScroll = false;
+  let releaseProgrammaticTimer: ReturnType<typeof setTimeout> | null = null;
 
   function eventBody(ev: TimelineEvent): string {
     return ev.body?.trim() || ev.detail?.trim() || "";
@@ -46,6 +48,30 @@
     return src && isHttpUrl(src) ? src : undefined;
   }
 
+  function trackNodes(): HTMLElement[] {
+    if (!trackEl) return [];
+    return [...trackEl.querySelectorAll<HTMLElement>(".liquid-timeline-snapshot-node")];
+  }
+
+  /** Scroll a child to the center of its overflow container (not the page). */
+  function scrollChildCentered(
+    container: HTMLElement,
+    child: HTMLElement,
+    behavior: ScrollBehavior,
+  ) {
+    const left = child.offsetLeft - (container.clientWidth - child.offsetWidth) / 2;
+    container.scrollTo({ left: Math.max(0, left), behavior });
+  }
+
+  function beginProgrammaticScroll() {
+    programmaticScroll = true;
+    if (releaseProgrammaticTimer) clearTimeout(releaseProgrammaticTimer);
+    releaseProgrammaticTimer = setTimeout(() => {
+      programmaticScroll = false;
+      releaseProgrammaticTimer = null;
+    }, 450);
+  }
+
   function selectEvent(ev: TimelineEvent, index: number) {
     activeIndex = index;
     ctx.sink?.emit(createSceneEvent(node.id, "select", { eventId: ev.id, label: ev.label, index }));
@@ -54,22 +80,22 @@
   function focusIndex(index: number, behavior: ScrollBehavior = "smooth") {
     if (index < 0 || index >= events.length) return;
     activeIndex = index;
+    beginProgrammaticScroll();
     const card = carouselEl?.children[index] as HTMLElement | undefined;
-    card?.scrollIntoView({ behavior, inline: "center", block: "nearest" });
-    const nodeBtn = trackEl?.children[index] as HTMLElement | undefined;
-    nodeBtn?.scrollIntoView({ behavior, inline: "center", block: "nearest" });
+    if (carouselEl && card) scrollChildCentered(carouselEl, card, behavior);
+    const nodeBtn = trackNodes()[index];
+    if (trackEl && nodeBtn) scrollChildCentered(trackEl, nodeBtn, behavior);
   }
 
   function onTrackSelect(index: number) {
-    syncingFromTrack = true;
+    const ev = events[index];
+    if (!ev) return;
     focusIndex(index);
-    queueMicrotask(() => {
-      syncingFromTrack = false;
-    });
+    selectEvent(ev, index);
   }
 
   function onCarouselScroll() {
-    if (syncingFromTrack || !carouselEl) return;
+    if (programmaticScroll || !carouselEl) return;
     const center = carouselEl.scrollLeft + carouselEl.clientWidth / 2;
     let best = 0;
     let bestDist = Infinity;
@@ -84,8 +110,8 @@
     }
     if (best !== activeIndex) {
       activeIndex = best;
-      const nodeBtn = trackEl?.children[best] as HTMLElement | undefined;
-      nodeBtn?.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+      const nodeBtn = trackNodes()[best];
+      if (trackEl && nodeBtn) scrollChildCentered(trackEl, nodeBtn, "smooth");
     }
   }
 </script>

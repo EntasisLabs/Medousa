@@ -60,7 +60,7 @@
       <div class="work-hub-empty">
         <EmptyState
           title="Nothing in motion"
-          description="Describe an ask below — manifestations land here while Medousa works."
+          description="New ask from the dock (or /ask in Chat). Browse settled, failed, and stuck work in the side rail."
         />
       </div>
     {:else}

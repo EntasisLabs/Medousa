@@ -1722,6 +1722,35 @@ describe("preprocessLiquidEmbeds", () => {
     expect(props?.items[0].open).toBe(true);
   });
 
+  it("honors explicit accordion item ids for deep links", () => {
+    const src = [
+      "```accordion",
+      "title: Find answers",
+      "",
+      "---",
+      "label: Offline",
+      "id: offline",
+      "body: |-",
+      "  Check the status bar.",
+      "  → [Troubleshooting](guide:troubleshooting)",
+      "open: true",
+      "---",
+      "label: Allow",
+      "id: allow-or-approve",
+      "body: Deny if you are unsure.",
+      "```",
+    ].join("\n");
+    const out = preprocessLiquidEmbeds(src);
+    const match = out.match(/data-liquid-props="([^"]+)"/);
+    const props = decodeLiquidProps<{
+      items: { id: string; label: string; body: string; open?: boolean }[];
+    }>(match![1]);
+    expect(props?.items[0]?.id).toBe("offline");
+    expect(props?.items[0]?.open).toBe(true);
+    expect(props?.items[0]?.body).toContain("guide:troubleshooting");
+    expect(props?.items[1]?.id).toBe("allow-or-approve");
+  });
+
   it("turns a structured code fence into an enhanced snippet", () => {
     const src = [
       "```code",

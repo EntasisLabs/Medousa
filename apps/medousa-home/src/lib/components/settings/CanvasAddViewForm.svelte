@@ -154,13 +154,13 @@
 
 <style>
   .canvas-add-view {
-    margin-top: 0.75rem;
+    margin-top: 0.45rem;
   }
 
   .canvas-add-view-toggle {
     border: 0;
-    padding: 0.15rem 0;
-    font-size: 0.8125rem;
+    padding: 0.1rem 0;
+    font-size: 0.75rem;
     font-weight: 550;
     color: rgb(var(--color-primary-400));
     background: transparent;
@@ -181,10 +181,10 @@
 
   .canvas-add-view-form {
     display: grid;
-    gap: 0.65rem;
-    margin-top: 0.75rem;
-    padding: 0.85rem;
-    border-radius: 0.75rem;
+    gap: 0.5rem;
+    margin-top: 0.55rem;
+    padding: 0.65rem;
+    border-radius: 0.55rem;
     border: 1px solid rgb(var(--shell-border, var(--color-surface-600)) / 0.45);
     background: rgb(var(--shell-pane-muted-bg, var(--color-surface-900)) / 0.35);
   }

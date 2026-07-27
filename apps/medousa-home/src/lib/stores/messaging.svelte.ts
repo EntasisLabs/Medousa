@@ -8,6 +8,10 @@ import {
   saveWhatsAppConfig,
 } from "$lib/messaging";
 import type { ProductConfigSummary } from "$lib/types/messaging";
+import {
+  friendlySettingsError,
+  isMissingCapabilityError,
+} from "$lib/utils/normieErrors";
 
 export class MessagingStore {
   summary = $state<ProductConfigSummary | null>(null);
@@ -22,7 +26,11 @@ export class MessagingStore {
     try {
       this.summary = await loadProductConfigSummary();
     } catch (err) {
-      this.error = err instanceof Error ? err.message : String(err);
+      const message = err instanceof Error ? err.message : String(err);
+      // Quiet when the workshop hasn't exposed product config yet.
+      this.error = isMissingCapabilityError(message)
+        ? null
+        : friendlySettingsError(message, "Channels");
     } finally {
       this.loading = false;
     }

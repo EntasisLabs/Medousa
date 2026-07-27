@@ -17,7 +17,7 @@
   import type { Snippet } from "svelte";
   import { tick } from "svelte";
 
-  type PopoverPhase = "seed" | "toolbar" | "open";
+  type PopoverPhase = "seed" | "compact" | "toolbar" | "open";
 
   interface Props {
     open: boolean;
@@ -39,9 +39,12 @@
     dockHost?: boolean;
     /**
      * Landing phase when the popover opens / retargets.
-     * Rail clicks use seed; summon-at-cursor uses toolbar (compact chrome, no list).
+     * Rail hover uses compact; summon-at-cursor uses toolbar (full chrome, no list).
      */
-    preferPhase?: "seed" | "toolbar";
+    preferPhase?: "seed" | "compact" | "toolbar";
+    /** Keep hover-open popovers alive while the pointer is over chrome. */
+    onPointerEnterChrome?: () => void;
+    onPointerLeaveChrome?: () => void;
     children: Snippet;
   }
 
@@ -56,6 +59,8 @@
     toolbar,
     dockHost = false,
     preferPhase = "seed",
+    onPointerEnterChrome,
+    onPointerLeaveChrome,
     children,
   }: Props = $props();
 
@@ -71,8 +76,17 @@
   let openHeightPx = $state(32 * 16);
 
   const listOpen = $derived(phase === "open");
-  const chromeExpanded = $derived(phase === "toolbar" || phase === "open");
+  const chromeExpanded = $derived(
+    phase === "compact" || phase === "toolbar" || phase === "open",
+  );
+  const isCompact = $derived(phase === "compact");
   const expandUp = $derived(expandDir === "up");
+
+  function landingPhase(): PopoverPhase {
+    if (preferPhase === "toolbar") return "toolbar";
+    if (preferPhase === "compact") return "compact";
+    return "seed";
+  }
 
   /** Match CSS transition durations in this component. */
   const WIDTH_MS = 320;
@@ -169,20 +183,23 @@
     const gen = ++sequenceGen;
     anchorLocked = true;
     placeMenu({ lockEdge: true });
-    // 1) Tuck the drawer first (full width bar stays).
-    phase = "toolbar";
+    // 1) Tuck the drawer first (chrome bar stays).
+    phase = preferPhase === "compact" ? "compact" : "toolbar";
     await tick();
     placeMenu({ lockEdge: true });
     if (gen !== sequenceGen) return;
     if (!prefersReducedMotion()) await sleep(HEIGHT_MS);
     if (gen !== sequenceGen) return;
-    // 2) Then retract the bar to super-compact.
-    phase = "seed";
-    await tick();
-    placeMenu({ lockEdge: true });
-    if (gen !== sequenceGen) return;
-    if (!prefersReducedMotion()) await sleep(WIDTH_MS);
-    if (gen !== sequenceGen) return;
+    // 2) Then retract to the landing phase when it wasn't already chrome-sized.
+    const land = landingPhase();
+    if (phase !== land) {
+      phase = land;
+      await tick();
+      placeMenu({ lockEdge: true });
+      if (gen !== sequenceGen) return;
+      if (!prefersReducedMotion()) await sleep(WIDTH_MS);
+      if (gen !== sequenceGen) return;
+    }
     anchorLocked = false;
     placeMenu({ lockEdge: false });
   }
@@ -190,7 +207,7 @@
   function resetPhase() {
     sequenceGen += 1;
     anchorLocked = false;
-    phase = preferPhase === "toolbar" ? "toolbar" : "seed";
+    phase = landingPhase();
   }
 
   $effect(() => {
@@ -209,7 +226,11 @@
   $effect(() => {
     if (!open || !triggerEl) return;
     // Initial geometry when first opened (or trigger becomes available).
-    if ((phase === "seed" || phase === "toolbar") && !anchorLocked && !listOpen) {
+    if (
+      (phase === "seed" || phase === "compact" || phase === "toolbar") &&
+      !anchorLocked &&
+      !listOpen
+    ) {
       syncGeometryFromTrigger();
     }
   });
@@ -306,6 +327,7 @@
       bind:this={menuEl}
       class="nav-rail-view-popover"
       class:nav-rail-view-popover--chrome={chromeExpanded}
+      class:nav-rail-view-popover--compact={isCompact}
       class:nav-rail-view-popover--open={listOpen}
       class:nav-rail-view-popover--up={expandUp}
       data-phase={phase}
@@ -315,6 +337,11 @@
       data-debug-label="nav-rail-view-popover"
       style:--nav-rail-popover-open-height="{openHeightPx}px"
       onclick={(event) => event.stopPropagation()}
+      onpointerenter={() => onPointerEnterChrome?.()}
+      onpointerleave={() => {
+        // Only hover-compact dismisses on leave; summon/open stay until Esc/click-out.
+        if (phase === "compact") onPointerLeaveChrome?.();
+      }}
     >
       <div class="nav-rail-view-popover-toolbar">
         <div class="nav-rail-view-popover-actions">
@@ -370,6 +397,7 @@
 <style>
   .nav-rail-view-popover {
     --nav-rail-popover-seed-width: 7.1rem;
+    --nav-rail-popover-compact-width: min(13.5rem, calc(100vw - 2rem));
     --nav-rail-popover-full-width: min(22rem, calc(100vw - 2rem));
     /* Match icon btn (1.75rem) + equal vertical padding — keeps seed optically centered. */
     --nav-rail-popover-bar-height: 2.35rem;
@@ -404,7 +432,12 @@
     flex-direction: column-reverse;
   }
 
-  .nav-rail-view-popover--chrome,
+  /* Hover compact: secondary chrome visible, narrower than shake toolbar. */
+  .nav-rail-view-popover--compact {
+    width: var(--nav-rail-popover-compact-width);
+  }
+
+  .nav-rail-view-popover--chrome:not(.nav-rail-view-popover--compact),
   .nav-rail-view-popover--open,
   .nav-rail-view-popover:has(.lme-dock-search-expand),
   .nav-rail-view-popover:has(.nav-rail-context-toolbar) {
@@ -416,7 +449,9 @@
     min-width: var(--nav-rail-popover-seed-width);
   }
 
-  .nav-rail-view-popover--chrome:has(.nav-rail-popover-toolbar-label),
+  .nav-rail-view-popover--chrome:not(.nav-rail-view-popover--compact):has(
+      .nav-rail-popover-toolbar-label
+    ),
   .nav-rail-view-popover--open:has(.nav-rail-popover-toolbar-label) {
     width: var(--nav-rail-popover-full-width);
   }

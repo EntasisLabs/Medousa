@@ -10,6 +10,7 @@ pub mod agents;
 pub mod jobs;
 pub mod router;
 pub mod runtime_tui_defaults;
+pub mod shared_mode;
 pub mod state;
 pub mod turn_event_channel;
 pub mod turn_stream_registry;

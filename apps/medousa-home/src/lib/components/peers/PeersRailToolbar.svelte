@@ -4,6 +4,12 @@
   import { ensureRailPopoverOpen } from "$lib/utils/railPopoverChrome";
   import { tick } from "svelte";
 
+  interface Props {
+    variant?: "popover" | "rail-row";
+  }
+
+  let { variant = "popover" }: Props = $props();
+
   let searchOpen = $state(false);
   let searchInputEl = $state<HTMLInputElement | null>(null);
 

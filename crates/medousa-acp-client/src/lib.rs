@@ -3,8 +3,8 @@
 //! The **daemon** owns this library and exposes `/v1/agents` via the Medousa SDK.
 //! Clients never speak ACP directly.
 //!
-//! 0.4.0: stub session + Cursor/Codex process adapters (spawn when binary exists;
-//! fall back to stub bridge events when ACP wire is unavailable).
+//! Stub session + Cursor/Codex process adapters (spawn when binary exists;
+//! real `session/new` → `session/prompt` → `session/update` pump; stub fallback).
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -124,6 +124,13 @@ pub trait AcpClient: Send + Sync {
     async fn prompt(&self, session: &AcpSessionId, text: &str) -> Result<()>;
     async fn cancel(&self, session: &AcpSessionId) -> Result<()>;
     async fn next_event(&self, session: &AcpSessionId) -> Result<Option<AcpEvent>>;
+    /// Reply to an inbound `session/request_permission` JSON-RPC id.
+    async fn respond_permission(
+        &self,
+        session: &AcpSessionId,
+        request_id: &str,
+        approved: bool,
+    ) -> Result<()>;
 }
 
 struct StubSessionState {
@@ -228,6 +235,15 @@ impl AcpClient for StubAcpClient {
             Some(state.queue.remove(0))
         })
     }
+
+    async fn respond_permission(
+        &self,
+        _session: &AcpSessionId,
+        _request_id: &str,
+        _approved: bool,
+    ) -> Result<()> {
+        Ok(())
+    }
 }
 
 fn uuid_v4_lite() -> String {
@@ -303,6 +319,13 @@ struct ProcessSession {
     next_id: u64,
     queue: Vec<AcpEvent>,
     cancelled: bool,
+    /// ACP wire session id from `session/new`.
+    acp_session_id: Option<String>,
+    cwd: Option<String>,
+    /// Outstanding `session/prompt` JSON-RPC id waiting for stopReason.
+    pending_prompt_id: Option<u64>,
+    /// Permission JSON-RPC id → allow option ids (first is preferred).
+    permission_allow_options: HashMap<String, Vec<String>>,
 }
 
 /// Spawns Cursor/Codex ACP stdio when the binary exists; otherwise behaves like [`StubAcpClient`].
@@ -346,16 +369,13 @@ impl AcpClient for ExternalAcpClient {
                         config.kind.as_str(),
                         uuid_v4_lite()
                     ));
-                    // Best-effort initialize; queue bridge note either way.
-                    let _ = send_initialize(&mut proc).await;
-                    proc.queue.push(AcpEvent::MessageDone {
-                        text: format!(
-                            "[medousa-acp-client] spawned {} ({}) — ACP session ready (bones)",
-                            config.command, config.kind.as_str()
-                        ),
-                    });
-                    self.processes.lock().await.insert(id.0.clone(), proc);
-                    return Ok(id);
+                    if let Err(err) = handshake_session(&mut proc).await {
+                        tracing::warn!(error = %err, "ACP handshake failed; using stub");
+                        let _ = proc.child.kill().await;
+                    } else {
+                        self.processes.lock().await.insert(id.0.clone(), proc);
+                        return Ok(id);
+                    }
                 }
                 Err(err) => {
                     tracing::warn!(error = %err, "ACP process spawn failed; using stub");
@@ -372,25 +392,13 @@ impl AcpClient for ExternalAcpClient {
                 if proc.cancelled {
                     bail!("session cancelled");
                 }
-                match send_prompt(proc, text).await {
-                    Ok(()) => {
-                        proc.queue.push(AcpEvent::MessageDone {
-                            text: format!(
-                                "[medousa-acp-client] prompt delivered to process ({} chars)",
-                                text.len()
-                            ),
-                        });
-                        proc.queue.push(AcpEvent::Done);
-                        return Ok(());
-                    }
-                    Err(err) => {
-                        proc.queue.push(AcpEvent::Error {
-                            message: format!("ACP prompt failed: {err}"),
-                        });
-                        proc.queue.push(AcpEvent::Done);
-                        return Ok(());
-                    }
+                if let Err(err) = send_prompt(proc, text).await {
+                    proc.queue.push(AcpEvent::Error {
+                        message: format!("ACP prompt failed: {err}"),
+                    });
+                    proc.queue.push(AcpEvent::Done);
                 }
+                return Ok(());
             }
         }
         self.stub.prompt(session, text).await
@@ -401,6 +409,17 @@ impl AcpClient for ExternalAcpClient {
             let mut guard = self.processes.lock().await;
             if let Some(mut proc) = guard.remove(&session.0) {
                 proc.cancelled = true;
+                if let Some(acp_id) = proc.acp_session_id.clone() {
+                    let _ = write_line(
+                        &mut proc,
+                        &json!({
+                            "jsonrpc": "2.0",
+                            "method": "session/cancel",
+                            "params": { "sessionId": acp_id }
+                        }),
+                    )
+                    .await;
+                }
                 let _ = proc.child.kill().await;
                 return Ok(());
             }
@@ -415,14 +434,27 @@ impl AcpClient for ExternalAcpClient {
                 if !proc.queue.is_empty() {
                     return Ok(Some(proc.queue.remove(0)));
                 }
-                // Non-blocking poll of stdout for notifications
-                if let Ok(Some(ev)) = try_read_notification(proc).await {
-                    return Ok(Some(ev));
-                }
-                return Ok(None);
+                return drain_stdout(proc).await;
             }
         }
         self.stub.next_event(session).await
+    }
+
+    async fn respond_permission(
+        &self,
+        session: &AcpSessionId,
+        request_id: &str,
+        approved: bool,
+    ) -> Result<()> {
+        {
+            let mut guard = self.processes.lock().await;
+            if let Some(proc) = guard.get_mut(&session.0) {
+                return send_permission_response(proc, request_id, approved).await;
+            }
+        }
+        self.stub
+            .respond_permission(session, request_id, approved)
+            .await
     }
 }
 
@@ -449,40 +481,160 @@ async fn spawn_acp_process(config: &AcpAgentConfig) -> Result<ProcessSession> {
         next_id: 1,
         queue: Vec::new(),
         cancelled: false,
+        acp_session_id: None,
+        cwd: config.cwd.clone(),
+        pending_prompt_id: None,
+        permission_allow_options: HashMap::new(),
     })
 }
 
+async fn handshake_session(proc: &mut ProcessSession) -> Result<()> {
+    send_initialize(proc).await?;
+    send_session_new(proc).await?;
+    Ok(())
+}
+
 async fn send_initialize(proc: &mut ProcessSession) -> Result<()> {
-    let id = proc.next_id;
-    proc.next_id += 1;
+    let id = alloc_id(proc);
     let req = json!({
         "jsonrpc": "2.0",
         "id": id,
         "method": "initialize",
         "params": {
-            "protocolVersion": "0.1.0",
+            "protocolVersion": 1,
             "clientInfo": {
                 "name": "medousa-acp-client",
                 "version": env!("CARGO_PKG_VERSION")
+            },
+            "clientCapabilities": {
+                "fs": { "readTextFile": true },
+                "permission": true
             }
         }
     });
     write_line(proc, &req).await?;
-    let _ = read_line_timeout(proc, 2).await;
+    // Drain until we see the initialize response (or timeout).
+    for _ in 0..20 {
+        let Some(line) = read_line_timeout(proc, 2).await? else {
+            break;
+        };
+        if let Ok(value) = serde_json::from_str::<Value>(&line) {
+            if value.get("id").and_then(|v| v.as_u64()) == Some(id) {
+                return Ok(());
+            }
+            // Buffer early notifications while waiting.
+            if let Some(ev) = map_inbound_line(proc, &value) {
+                proc.queue.push(ev);
+            }
+        }
+    }
     Ok(())
 }
 
+async fn send_session_new(proc: &mut ProcessSession) -> Result<()> {
+    let id = alloc_id(proc);
+    let cwd = proc
+        .cwd
+        .clone()
+        .or_else(|| std::env::current_dir().ok().map(|p| p.display().to_string()))
+        .unwrap_or_else(|| ".".into());
+    let req = json!({
+        "jsonrpc": "2.0",
+        "id": id,
+        "method": "session/new",
+        "params": {
+            "cwd": cwd,
+            "mcpServers": []
+        }
+    });
+    write_line(proc, &req).await?;
+    for _ in 0..20 {
+        let Some(line) = read_line_timeout(proc, 3).await? else {
+            break;
+        };
+        let Ok(value) = serde_json::from_str::<Value>(&line) else {
+            continue;
+        };
+        if value.get("id").and_then(|v| v.as_u64()) == Some(id) {
+            let session_id = value
+                .pointer("/result/sessionId")
+                .and_then(|v| v.as_str())
+                .map(str::to_string);
+            proc.acp_session_id = session_id;
+            if proc.acp_session_id.is_none() {
+                bail!("session/new response missing sessionId");
+            }
+            return Ok(());
+        }
+        if let Some(ev) = map_inbound_line(proc, &value) {
+            proc.queue.push(ev);
+        }
+    }
+    bail!("timed out waiting for session/new")
+}
+
 async fn send_prompt(proc: &mut ProcessSession, text: &str) -> Result<()> {
-    let id = proc.next_id;
-    proc.next_id += 1;
-    // Prefer session/prompt; also try prompt for looser adapters.
+    let Some(session_id) = proc.acp_session_id.clone() else {
+        bail!("ACP session has no sessionId — handshake incomplete");
+    };
+    let id = alloc_id(proc);
+    proc.pending_prompt_id = Some(id);
     let req = json!({
         "jsonrpc": "2.0",
         "id": id,
         "method": "session/prompt",
-        "params": { "prompt": text }
+        "params": {
+            "sessionId": session_id,
+            "prompt": [{ "type": "text", "text": text }]
+        }
     });
     write_line(proc, &req).await
+}
+
+async fn send_permission_response(
+    proc: &mut ProcessSession,
+    request_id: &str,
+    approved: bool,
+) -> Result<()> {
+    let rpc_id: Value = if let Ok(n) = request_id.parse::<u64>() {
+        json!(n)
+    } else if let Ok(n) = request_id.parse::<i64>() {
+        json!(n)
+    } else {
+        json!(request_id)
+    };
+    let result = if approved {
+        let option_id = proc
+            .permission_allow_options
+            .get(request_id)
+            .and_then(|opts| opts.first())
+            .cloned()
+            .unwrap_or_else(|| "allow-once".to_string());
+        json!({
+            "outcome": {
+                "outcome": "selected",
+                "optionId": option_id
+            }
+        })
+    } else {
+        json!({ "outcome": { "outcome": "cancelled" } })
+    };
+    proc.permission_allow_options.remove(request_id);
+    write_line(
+        proc,
+        &json!({
+            "jsonrpc": "2.0",
+            "id": rpc_id,
+            "result": result
+        }),
+    )
+    .await
+}
+
+fn alloc_id(proc: &mut ProcessSession) -> u64 {
+    let id = proc.next_id;
+    proc.next_id = proc.next_id.saturating_add(1);
+    id
 }
 
 async fn write_line(proc: &mut ProcessSession, value: &Value) -> Result<()> {
@@ -506,44 +658,133 @@ async fn read_line_timeout(proc: &mut ProcessSession, secs: u64) -> Result<Optio
     }
 }
 
-async fn try_read_notification(proc: &mut ProcessSession) -> Result<Option<AcpEvent>> {
+async fn drain_stdout(proc: &mut ProcessSession) -> Result<Option<AcpEvent>> {
     let result = tokio::time::timeout(
-        std::time::Duration::from_millis(50),
+        std::time::Duration::from_millis(80),
         proc.lines.next_line(),
     )
     .await;
     let Ok(Ok(Some(line))) = result else {
         return Ok(None);
     };
-    let value: Value = serde_json::from_str(&line)?;
-    if let Some(method) = value.get("method").and_then(|m| m.as_str()) {
-        if method.contains("permission") {
-            let id = value
-                .pointer("/params/id")
-                .and_then(|v| v.as_str())
-                .unwrap_or("permission")
-                .to_string();
-            let summary = value
-                .pointer("/params/summary")
-                .or_else(|| value.pointer("/params/message"))
-                .and_then(|v| v.as_str())
-                .unwrap_or("ACP permission requested")
-                .to_string();
-            return Ok(Some(AcpEvent::PermissionRequest { id, summary }));
-        }
-        if method.contains("message") || method.contains("update") {
-            if let Some(text) = value
-                .pointer("/params/text")
-                .or_else(|| value.pointer("/params/content"))
-                .and_then(|v| v.as_str())
-            {
-                return Ok(Some(AcpEvent::MessageDelta {
-                    text: text.to_string(),
-                }));
+    let value: Value = match serde_json::from_str(&line) {
+        Ok(v) => v,
+        Err(_) => return Ok(None),
+    };
+    Ok(map_inbound_line(proc, &value))
+}
+
+fn map_inbound_line(proc: &mut ProcessSession, value: &Value) -> Option<AcpEvent> {
+    // JSON-RPC response to session/prompt → turn complete.
+    if let Some(id) = value.get("id").and_then(|v| v.as_u64()) {
+        if proc.pending_prompt_id == Some(id) {
+            proc.pending_prompt_id = None;
+            if let Some(err) = value.get("error") {
+                let message = err
+                    .get("message")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("ACP prompt error")
+                    .to_string();
+                // Emit Error first; Done follows on the next poll.
+                proc.queue.push(AcpEvent::Done);
+                return Some(AcpEvent::Error { message });
             }
+            // Terminal: session/prompt completed (stopReason present or implied).
+            let _stop = value
+                .pointer("/result/stopReason")
+                .and_then(|v| v.as_str())
+                .unwrap_or("end_turn");
+            return Some(AcpEvent::Done);
+        }
+        // Other RPC responses (initialize/session/new) — ignore here.
+        return None;
+    }
+
+    let method = value.get("method").and_then(|m| m.as_str())?;
+    if method == "session/request_permission" || method.ends_with("request_permission") {
+        let rpc_id = value
+            .get("id")
+            .map(|v| match v {
+                Value::Number(n) => n.to_string(),
+                Value::String(s) => s.clone(),
+                other => other.to_string(),
+            })
+            .unwrap_or_else(|| format!("perm-{}", uuid_v4_lite()));
+        let allow_ids: Vec<String> = value
+            .pointer("/params/options")
+            .and_then(|v| v.as_array())
+            .into_iter()
+            .flatten()
+            .filter_map(|opt| {
+                let kind = opt.get("kind").and_then(|v| v.as_str()).unwrap_or("");
+                let id = opt.get("optionId").and_then(|v| v.as_str())?;
+                if kind.starts_with("allow") || id.contains("allow") {
+                    Some(id.to_string())
+                } else {
+                    None
+                }
+            })
+            .collect();
+        proc.permission_allow_options
+            .insert(rpc_id.clone(), allow_ids);
+        let title = value
+            .pointer("/params/toolCall/title")
+            .or_else(|| value.pointer("/params/toolCall/toolCallId"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("tool call");
+        let summary = format!("Allow ACP action: {title}?");
+        return Some(AcpEvent::PermissionRequest {
+            id: rpc_id,
+            summary,
+        });
+    }
+
+    if method == "session/update" {
+        let update = value.pointer("/params/update")?;
+        let kind = update
+            .get("sessionUpdate")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        match kind {
+            "agent_message_chunk" | "agent_thought_chunk" | "user_message_chunk" => {
+                let text = update
+                    .pointer("/content/text")
+                    .or_else(|| update.pointer("/content/content/text"))
+                    .and_then(|v| v.as_str())
+                    .map(str::to_string)?;
+                if text.is_empty() {
+                    return None;
+                }
+                return Some(AcpEvent::MessageDelta { text });
+            }
+            "tool_call" | "tool_call_update" => {
+                let id = update
+                    .get("toolCallId")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("tool")
+                    .to_string();
+                let name = update
+                    .get("title")
+                    .or_else(|| update.get("kind"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("tool")
+                    .to_string();
+                return Some(AcpEvent::ToolCall {
+                    id,
+                    name,
+                    input: update.clone(),
+                });
+            }
+            "state_update" => {
+                let state = update.get("state").and_then(|v| v.as_str()).unwrap_or("");
+                if state == "idle" {
+                    return Some(AcpEvent::Done);
+                }
+            }
+            _ => {}
         }
     }
-    Ok(None)
+    None
 }
 
 #[cfg(test)]

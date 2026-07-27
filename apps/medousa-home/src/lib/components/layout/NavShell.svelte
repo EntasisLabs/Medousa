@@ -1,8 +1,8 @@
 <script lang="ts">
   import SessionSidebar from "$lib/components/chat/SessionSidebar.svelte";
-  import ContextSidePanel from "$lib/components/context/ContextSidePanel.svelte";
+  import MapSidePanel from "$lib/components/context/MapSidePanel.svelte";
+  import MapRailToolbar from "$lib/components/context/MapRailToolbar.svelte";
   import SessionRailToolbar from "$lib/components/chat/SessionRailToolbar.svelte";
-  import ContextModeBar from "$lib/components/context/ContextModeBar.svelte";
   import NavRailViewPopover from "$lib/components/layout/NavRailViewPopover.svelte";
   import LmeSidePanel from "$lib/components/lme/LmeSidePanel.svelte";
   import MessagingChannelList from "$lib/components/messaging/MessagingChannelList.svelte";
@@ -16,16 +16,26 @@
   import CalendarRailList from "$lib/components/calendar/CalendarRailList.svelte";
   import YouRailToolbar from "$lib/components/profiles/YouRailToolbar.svelte";
   import YouRailList from "$lib/components/profiles/YouRailList.svelte";
+  import YouCreateMenu from "$lib/components/profiles/YouCreateMenu.svelte";
   import WorkRailToolbar from "$lib/components/work/WorkRailToolbar.svelte";
   import WorkRailList from "$lib/components/work/WorkRailList.svelte";
+  import CanvasAddViewForm from "$lib/components/settings/CanvasAddViewForm.svelte";
+  import CanvasEditViewPopover from "$lib/components/settings/CanvasEditViewPopover.svelte";
   import { environment } from "$lib/stores/environment.svelte";
   import { layout } from "$lib/stores/layout.svelte";
   import { lmeWorkspace, type LmeExplorerMode } from "$lib/stores/lmeWorkspace.svelte";
   import { messaging } from "$lib/stores/messaging.svelte";
   import { messagingShell } from "$lib/stores/messagingShell.svelte";
+  import { appUpdate } from "$lib/stores/appUpdate.svelte";
   import { settingsNav } from "$lib/stores/settingsNav.svelte";
+  import type { SettingsSectionId } from "$lib/types/settings";
   import { feedBadgeForComponents } from "$lib/utils/customViewStatus";
   import { environmentIcon } from "$lib/utils/environmentIcons";
+  import {
+    isNavDestinationToggleable,
+    NAV_DESTINATION_GROUPS,
+  } from "$lib/utils/environmentLayout";
+  import type { SurfaceDef } from "$lib/types/environment";
   import {
     defaultModeForLmeFamily,
     isLmeAutomationsMode,
@@ -33,11 +43,7 @@
     labelForLmeExplorerMode,
     type LmeExplorerFamily,
   } from "$lib/utils/lmeExplorerModes";
-  import {
-    automationsRailSurface,
-    buildLifeRailLayout,
-    libraryRailSurface,
-  } from "$lib/utils/lifeRailSections";
+  import { buildLifeRailLayout } from "$lib/utils/lifeRailSections";
   import type { LifeRailItem } from "$lib/utils/lifeRailItems";
   import {
     navLabel,
@@ -52,12 +58,17 @@
   } from "$lib/utils/railPopoverSummon";
   import { resolveSummonToolbarSurface } from "$lib/utils/resolveSummonToolbarSurface";
   import { toast } from "$lib/stores/toast.svelte";
-  import { Settings } from "@lucide/svelte";
+  import { Check, GripVertical, Minus, Pencil, Plus, Settings } from "@lucide/svelte";
   import { SAFETY_SURFACE_SETTINGS } from "$lib/types/environment";
   import type { DaemonHealth } from "$lib/daemon";
   import { fade, fly } from "svelte/transition";
   import { cubicOut } from "svelte/easing";
   import { onMount } from "svelte";
+  import {
+    railRowQuickCreateLabel,
+    runRailRowQuickCreate,
+    surfaceShowsRailQuickCreate,
+  } from "$lib/utils/railRowQuickCreate";
 
   type RailPopoverTarget =
     | { kind: "lme"; mode: LmeExplorerMode }
@@ -98,9 +109,176 @@
       : shellSidebarViewTitle(viewSurface),
   );
   const daemonOk = $derived(health?.ok ?? false);
+  const settingsNavBadges = $derived.by(() => {
+    const badges: Partial<Record<SettingsSectionId, number>> = {};
+    if (appUpdate.updateAvailable) badges.basement = 1;
+    return badges;
+  });
 
   const surfaces = $derived(environment.navSurfaces());
   const lifeRail = $derived(buildLifeRailLayout(surfaces));
+  const railLayoutEditing = $derived(layout.railLayoutEditing);
+  const navIdSet = $derived(new Set(surfaces.map((surface) => surface.id)));
+  const librarySurfaces = $derived.by(() => {
+    const spec = environment.spec;
+    if (!spec) return [] as SurfaceDef[];
+    const byId = new Map(spec.surfaces.map((surface) => [surface.id, surface]));
+    const ordered: string[] = [];
+    const seen = new Set<string>();
+    for (const group of NAV_DESTINATION_GROUPS) {
+      for (const id of group.surfaceIds) {
+        if (seen.has(id)) continue;
+        seen.add(id);
+        ordered.push(id);
+      }
+    }
+    for (const surface of spec.surfaces) {
+      if (!isNavDestinationToggleable(surface.id) || seen.has(surface.id)) continue;
+      seen.add(surface.id);
+      ordered.push(surface.id);
+    }
+    return ordered
+      .filter((id) => !navIdSet.has(id) && byId.has(id))
+      .map((id) => byId.get(id)!)
+      .filter((surface) => isNavDestinationToggleable(surface.id));
+  });
+
+  let railLayoutBusy = $state(false);
+  let editingCustomSurfaceId = $state<string | null>(null);
+  let editingCustomAnchorEl = $state<HTMLElement | null>(null);
+  let railDragId = $state<string | null>(null);
+  /** Insertion index in the primary strip while dragging (0…length). */
+  let railInsertIndex = $state<number | null>(null);
+  let railPrimaryEl = $state<HTMLElement | null>(null);
+
+  /** Non-reactive drag session — pointer handlers must not depend on Svelte batching. */
+  let railDragSession: {
+    surfaceId: string;
+    fromIndex: number;
+    pointerId: number;
+  } | null = null;
+
+  const editingCustomSurface = $derived(
+    editingCustomSurfaceId
+      ? (environment.spec?.surfaces.find((surface) => surface.id === editingCustomSurfaceId) ??
+        null)
+      : null,
+  );
+
+  $effect(() => {
+    if (!railLayoutEditing) {
+      editingCustomSurfaceId = null;
+      editingCustomAnchorEl = null;
+      clearRailDrag();
+    }
+  });
+
+  function closeCustomViewEdit() {
+    editingCustomSurfaceId = null;
+    editingCustomAnchorEl = null;
+  }
+
+  async function setRailNavVisible(surfaceId: string, visible: boolean) {
+    if (railLayoutBusy) return;
+    railLayoutBusy = true;
+    try {
+      await environment.setSurfaceNavVisible(surfaceId, visible);
+      if (!visible && layout.desktopSurface === surfaceId) {
+        const fallback =
+          environment.navSurfaces().find((surface) => surface.id !== surfaceId)?.id ?? "chat";
+        onSelect(fallback);
+      }
+    } catch (err) {
+      toast.show(err instanceof Error ? err.message : String(err), { durationMs: 2400 });
+    } finally {
+      railLayoutBusy = false;
+    }
+  }
+
+  function clearRailDrag() {
+    railDragSession = null;
+    railDragId = null;
+    railInsertIndex = null;
+    document.body.classList.remove("workshop-rail-dragging");
+  }
+
+  function primaryRowEls(): HTMLElement[] {
+    if (!railPrimaryEl) return [];
+    return Array.from(
+      railPrimaryEl.querySelectorAll<HTMLElement>("[data-rail-reorder-id]"),
+    );
+  }
+
+  function insertIndexAtY(clientY: number): number {
+    const rows = primaryRowEls();
+    if (rows.length === 0) return 0;
+    for (let i = 0; i < rows.length; i++) {
+      const rect = rows[i]!.getBoundingClientRect();
+      const mid = rect.top + rect.height / 2;
+      if (clientY < mid) return i;
+    }
+    return rows.length;
+  }
+
+  function onRailReorderPointerMove(event: PointerEvent) {
+    const session = railDragSession;
+    if (!session || event.pointerId !== session.pointerId) return;
+    railInsertIndex = insertIndexAtY(event.clientY);
+  }
+
+  function onRailReorderPointerUp(event: PointerEvent) {
+    const session = railDragSession;
+    if (!session || event.pointerId !== session.pointerId) return;
+    const from = session.fromIndex;
+    const surfaceId = session.surfaceId;
+    // Insert index is among current rows; convert to final primary index.
+    const insertAt = railInsertIndex ?? insertIndexAtY(event.clientY);
+    document.removeEventListener("pointermove", onRailReorderPointerMove);
+    document.removeEventListener("pointerup", onRailReorderPointerUp);
+    document.removeEventListener("pointercancel", onRailReorderPointerUp);
+    clearRailDrag();
+
+    // When dragging downward, the slot after removal shifts left by one.
+    let to = insertAt;
+    if (to > from) to -= 1;
+    if (to === from || railLayoutBusy) return;
+
+    railLayoutBusy = true;
+    void environment
+      .reorderPrimarySurfaceInNav(surfaceId, to)
+      .catch((err) => {
+        toast.show(err instanceof Error ? err.message : String(err), { durationMs: 2400 });
+      })
+      .finally(() => {
+        railLayoutBusy = false;
+      });
+  }
+
+  function onRailReorderPointerDown(
+    surfaceId: string,
+    fromIndex: number,
+    event: PointerEvent,
+  ) {
+    if (!railLayoutEditing || railLayoutBusy || event.button !== 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    railDragSession = {
+      surfaceId,
+      fromIndex,
+      pointerId: event.pointerId,
+    };
+    railDragId = surfaceId;
+    railInsertIndex = fromIndex;
+    document.body.classList.add("workshop-rail-dragging");
+    document.addEventListener("pointermove", onRailReorderPointerMove);
+    document.addEventListener("pointerup", onRailReorderPointerUp);
+    document.addEventListener("pointercancel", onRailReorderPointerUp);
+    try {
+      (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+    } catch {
+      /* capture is best-effort */
+    }
+  }
 
   /** Quieter tree parents — closer to Cursor folder icons. */
   const treeIconProps = { size: 14, strokeWidth: 1.5 };
@@ -111,8 +289,8 @@
   let railPopoverTriggerEl = $state<HTMLElement | null>(null);
   /** Click point so the toolbar floats next to the mouse (not rail-docked). */
   let railPopoverCursor = $state<{ x: number; y: number } | null>(null);
-  /** Landing phase — summon uses toolbar; rail clicks use seed. */
-  let railPopoverPreferPhase = $state<"seed" | "toolbar">("seed");
+  /** Landing phase — shake / keybind summon only (no rail hover). */
+  let railPopoverPreferPhase = $state<"seed" | "toolbar">("toolbar");
   /** Invisible 1×1 anchor when the rail button isn’t in the DOM. */
   let syntheticTriggerEl: HTMLElement | null = null;
 
@@ -233,7 +411,7 @@
     railPopover = null;
     railPopoverTriggerEl = null;
     railPopoverCursor = null;
-    railPopoverPreferPhase = "seed";
+    railPopoverPreferPhase = "toolbar";
     disposeSyntheticTrigger();
   }
 
@@ -252,13 +430,16 @@
     target: RailPopoverTarget,
     trigger: HTMLElement,
     event?: MouseEvent,
-    options?: { cursor?: RailPopoverCursor; preferPhase?: "seed" | "toolbar" },
+    options?: {
+      cursor?: RailPopoverCursor;
+      preferPhase?: "seed" | "toolbar";
+    },
   ) {
     if (sameRailPopover(target)) {
       closeRailPopover();
       return;
     }
-    railPopoverPreferPhase = options?.preferPhase ?? "seed";
+    railPopoverPreferPhase = options?.preferPhase ?? "toolbar";
     railPopoverTriggerEl = trigger;
     if (options?.cursor) {
       railPopoverCursor = options.cursor;
@@ -267,7 +448,7 @@
     } else {
       const rect = trigger.getBoundingClientRect();
       railPopoverCursor = {
-        x: rect.left + rect.width / 2,
+        x: rect.right + 8,
         y: rect.top + rect.height / 2,
       };
     }
@@ -308,22 +489,21 @@
     return true;
   }
 
+  /**
+   * Row click — host the list in the master rail when available, and open the
+   * matching center tab/surface so switching doors actually changes context.
+   * Custom destinations without a rail view just navigate.
+   */
   function selectDestination(surfaceId: string, event?: MouseEvent) {
-    if (surfaceHasShellSidebarView(surfaceId) && event) {
-      event.preventDefault();
-      event.stopPropagation();
-      // Popover only — don't open a shell tab until the user picks something.
-      ensureFamilyForSurface(surfaceId);
-      layout.setShellSidebarMode("nav");
-      openRailPopover(
-        { kind: "surface", surfaceId },
-        event.currentTarget as HTMLElement,
-        event,
-      );
-      return;
-    }
+    event?.preventDefault();
+    event?.stopPropagation();
     closeRailPopover();
     ensureFamilyForSurface(surfaceId);
+    if (surfaceHasShellSidebarView(surfaceId)) {
+      layout.openShellSidebarView(surfaceId);
+      onSelect(surfaceId);
+      return;
+    }
     onSelect(surfaceId);
     layout.setShellSidebarMode("nav");
   }
@@ -333,6 +513,18 @@
     closeRailPopover();
     onSelect(surfaceId);
     layout.setShellSidebarMode("nav");
+  }
+
+  async function onRailQuickCreate(surfaceId: string, event?: MouseEvent) {
+    event?.preventDefault();
+    event?.stopPropagation();
+    closeRailPopover();
+    const result = await runRailRowQuickCreate(surfaceId);
+    if (result.navigateTo) {
+      ensureFamilyForSurface(result.navigateTo);
+      onSelect(result.navigateTo);
+      layout.setShellSidebarMode("nav");
+    }
   }
 
   /** Popover → full side-rail view only (no main-content / tab activation). */
@@ -385,7 +577,11 @@
             <div class="min-h-0 flex-1 overflow-y-auto px-1.5 py-1">
               <SettingsNav
                 active={settingsNav.activeSection}
-                onSelect={(section) => settingsNav.setActiveSection(section)}
+                badges={settingsNavBadges}
+                onSelect={(section) => {
+                  settingsNav.setActiveSection(section);
+                  onSelect(SAFETY_SURFACE_SETTINGS);
+                }}
               />
             </div>
           {:else if viewSurface === "chat"}
@@ -420,8 +616,15 @@
             </div>
           {:else if viewSurface === "peers"}
             <PeersShellList />
-          {:else if viewSurface === "context"}
-            <ContextSidePanel />
+          {:else if viewSurface === "map"}
+            <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
+              <div class="min-h-0 flex-1 overflow-hidden">
+                <MapSidePanel onPick={() => onSelect("map")} />
+              </div>
+              <div class="lme-side-rail-dock">
+                <MapRailToolbar onPick={() => onSelect("map")} />
+              </div>
+            </div>
           {:else if viewSurface === "web"}
             <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
               <div class="min-h-0 flex-1 overflow-hidden">
@@ -452,16 +655,10 @@
           {:else if viewSurface === "profiles"}
             <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
               <div class="min-h-0 flex-1 overflow-hidden">
-                <YouRailList
-                  onPickProfile={() => onSelect("profiles")}
-                  onOpenContext={() => selectDestination("context")}
-                />
+                <YouRailList onPickProfile={() => onSelect("profiles")} />
               </div>
               <div class="lme-side-rail-dock">
-                <YouRailToolbar
-                  onAction={() => onSelect("profiles")}
-                  onOpenContext={() => selectDestination("context")}
-                />
+                <YouRailToolbar onAction={() => onSelect("profiles")} />
               </div>
             </div>
           {/if}
@@ -469,8 +666,23 @@
       {:else}
         <div
           class="workshop-icon-rail-items workshop-rail-tree workshop-rail-tree-jobs flex min-h-0 flex-1 flex-col overflow-y-auto"
+          class:workshop-rail-layout-editing={railLayoutEditing}
         >
-          {#snippet railDest(item: LifeRailItem, hero = false)}
+          {#if railLayoutEditing}
+            <div class="workshop-rail-layout-edit-bar">
+              <span class="workshop-rail-layout-edit-label">Adjust rail</span>
+              <button
+                type="button"
+                class="workshop-rail-layout-edit-done"
+                onclick={() => layout.stopRailLayoutEditing()}
+              >
+                <Check size={14} strokeWidth={2.25} aria-hidden="true" />
+                Done
+              </button>
+            </div>
+          {/if}
+
+          {#snippet railDest(item: LifeRailItem, hero = false, orderIndex = -1)}
             {#if item.kind === "surface"}
               {@const surface = item.surface}
               {@const Icon = environmentIcon(surface.icon)}
@@ -483,11 +695,40 @@
                 : isAutomations
                   ? automationsIsActive()
                   : active === surface.id || surfacePopoverOpen(surface.id)}
+              {@const showQuickCreate =
+                !railLayoutEditing &&
+                surfaceShowsRailQuickCreate(surface.id, surface.kind)}
+              {@const canHide =
+                railLayoutEditing && isNavDestinationToggleable(surface.id)}
+              {@const canEditCustom = canHide && surface.kind === "custom"}
+              {@const canReorder = canHide && orderIndex >= 0}
+              {@const isDragging = railDragId === surface.id}
+              {@const showDropBefore =
+                canReorder &&
+                railDragId !== null &&
+                railDragId !== surface.id &&
+                railInsertIndex === orderIndex}
               <div
                 class="workshop-rail-dest"
                 class:workshop-rail-dest-hero={hero}
+                class:workshop-rail-dest-dragging={isDragging}
+                class:workshop-rail-dest-drop-before={showDropBefore}
+                data-rail-reorder-id={canReorder ? surface.id : undefined}
               >
                 <div class="workshop-rail-dest-row">
+                  {#if canReorder}
+                    <button
+                      type="button"
+                      class="workshop-rail-drag-handle"
+                      title="Drag to reorder"
+                      aria-label="Drag to reorder {navLabel(surface)}"
+                      disabled={railLayoutBusy}
+                      onpointerdown={(event) =>
+                        onRailReorderPointerDown(surface.id, orderIndex, event)}
+                    >
+                      <GripVertical size={14} strokeWidth={2} />
+                    </button>
+                  {/if}
                   <button
                     type="button"
                     data-rail-surface={surface.id}
@@ -499,20 +740,14 @@
                     title={navTitle(surface)}
                     aria-label={badge > 0 ? `${navTitle(surface)} (${badge} active)` : navTitle(surface)}
                     aria-current={doorActive ? "page" : undefined}
-                    aria-expanded={isLibrary
-                      ? surfacePopoverOpen("library") ||
-                        (railPopover?.kind === "lme" && isLmeLibraryMode(railPopover.mode))
-                      : isAutomations
-                        ? surfacePopoverOpen("automations") ||
-                          (railPopover?.kind === "lme" &&
-                            isLmeAutomationsMode(railPopover.mode))
-                        : surfacePopoverOpen(surface.id)}
-                    aria-haspopup={surfaceHasShellSidebarView(surface.id) ||
-                    isLibrary ||
-                    isAutomations
-                      ? "dialog"
-                      : undefined}
-                    onclick={(event) => selectDestination(surface.id, event)}
+                    aria-expanded={showView && viewSurface === surface.id}
+                    onclick={(event) => {
+                      if (railLayoutEditing) {
+                        event.preventDefault();
+                        return;
+                      }
+                      selectDestination(surface.id, event);
+                    }}
                   >
                     <span class="workshop-rail-btn-icon" aria-hidden="true">
                       <Icon {...(hero ? heroIconProps : treeIconProps)} />
@@ -529,109 +764,158 @@
                     </span>
                     <span class="workshop-rail-btn-label">{navLabel(surface)}</span>
                   </button>
+                  {#if canHide}
+                    <div class="workshop-rail-dest-actions">
+                      {#if canEditCustom}
+                        <button
+                          type="button"
+                          class="vault-dock-icon-btn workshop-rail-row-action"
+                          class:workshop-rail-row-action-open={editingCustomSurfaceId === surface.id}
+                          title="Edit view"
+                          aria-label="Edit {navLabel(surface)}"
+                          aria-expanded={editingCustomSurfaceId === surface.id}
+                          disabled={railLayoutBusy}
+                          onclick={(event) => {
+                            event.stopPropagation();
+                            const button = event.currentTarget as HTMLElement;
+                            if (editingCustomSurfaceId === surface.id) {
+                              closeCustomViewEdit();
+                              return;
+                            }
+                            editingCustomSurfaceId = surface.id;
+                            editingCustomAnchorEl = button;
+                          }}
+                        >
+                          <Pencil size={13} strokeWidth={2} />
+                        </button>
+                      {/if}
+                      <button
+                        type="button"
+                        class="vault-dock-icon-btn workshop-rail-row-action"
+                        title="Remove from layout"
+                        aria-label="Remove {navLabel(surface)} from layout"
+                        disabled={railLayoutBusy}
+                        onclick={(event) => {
+                          event.stopPropagation();
+                          void setRailNavVisible(surface.id, false);
+                        }}
+                      >
+                        <Minus size={14} strokeWidth={2} />
+                      </button>
+                    </div>
+                  {:else if showQuickCreate}
+                    <div class="workshop-rail-dest-actions">
+                      <button
+                        type="button"
+                        class="vault-dock-icon-btn workshop-rail-row-action"
+                        title={railRowQuickCreateLabel(surface.id)}
+                        aria-label={railRowQuickCreateLabel(surface.id)}
+                        onclick={(event) => void onRailQuickCreate(surface.id, event)}
+                      >
+                        <Plus size={14} strokeWidth={2} />
+                      </button>
+                    </div>
+                  {/if}
                 </div>
               </div>
             {/if}
           {/snippet}
 
-          <div class="workshop-rail-primary">
+          <div
+            class="workshop-rail-primary"
+            class:workshop-rail-primary-dragging={railDragId !== null}
+            bind:this={railPrimaryEl}
+          >
             {#each lifeRail.primary as item, index (item.id)}
               {#if lifeRail.focusStartIndex > 0 && index === lifeRail.focusStartIndex}
                 <div class="workshop-rail-breath" aria-hidden="true"></div>
-              {/if}
-              {#if lifeRail.customStartIndex >= 0 && index === lifeRail.customStartIndex}
-                {#if lifeRail.showLibrary}
-                  {@render railDest(
-                    { kind: "surface", id: "library", surface: libraryRailSurface() },
-                    false,
-                  )}
-                {/if}
-                {#if lifeRail.showAutomations}
-                  {@render railDest(
-                    {
-                      kind: "surface",
-                      id: "automations",
-                      surface: automationsRailSurface(),
-                    },
-                    false,
-                  )}
-                {/if}
+              {:else if lifeRail.customStartIndex >= 0 && index === lifeRail.customStartIndex}
                 <div class="workshop-rail-breath" aria-hidden="true"></div>
               {/if}
-              {@render railDest(item, item.id === "chat")}
+              {@render railDest(item, item.id === "chat", index)}
             {/each}
-            {#if (lifeRail.showLibrary || lifeRail.showAutomations) && lifeRail.customStartIndex < 0}
-              {#if lifeRail.showLibrary}
-                {@render railDest(
-                  { kind: "surface", id: "library", surface: libraryRailSurface() },
-                  false,
-                )}
-              {/if}
-              {#if lifeRail.showAutomations}
-                {@render railDest(
-                  {
-                    kind: "surface",
-                    id: "automations",
-                    surface: automationsRailSurface(),
-                  },
-                  false,
-                )}
-              {/if}
+            {#if railLayoutEditing && railDragId !== null}
+              <div
+                class="workshop-rail-drop-end"
+                class:workshop-rail-dest-drop-before={railInsertIndex === lifeRail.primary.length}
+                aria-hidden="true"
+              ></div>
             {/if}
           </div>
+
+          {#if railLayoutEditing}
+            <div class="workshop-rail-layout-library">
+              <p class="workshop-rail-layout-library-label">Available</p>
+              {#if librarySurfaces.length === 0}
+                <p class="workshop-rail-layout-library-empty">Nothing left to add</p>
+              {:else}
+                {#each librarySurfaces as surface (surface.id)}
+                  {@const Icon = environmentIcon(surface.icon)}
+                  <button
+                    type="button"
+                    class="workshop-rail-btn workshop-rail-btn-tier-life workshop-rail-layout-library-row"
+                    disabled={railLayoutBusy}
+                    title="Add {surface.label} to layout"
+                    onclick={() => void setRailNavVisible(surface.id, true)}
+                  >
+                    <span class="workshop-rail-btn-icon" aria-hidden="true">
+                      <Icon {...treeIconProps} />
+                    </span>
+                    <span class="workshop-rail-btn-label">{surface.label}</span>
+                    <Plus size={14} strokeWidth={2} class="workshop-rail-layout-library-plus" aria-hidden="true" />
+                  </button>
+                {/each}
+              {/if}
+              <div class="workshop-rail-layout-add-view">
+                <CanvasAddViewForm />
+              </div>
+            </div>
+          {/if}
+
+          {#if railLayoutEditing && editingCustomSurface}
+            <CanvasEditViewPopover
+              surface={editingCustomSurface}
+              anchorEl={editingCustomAnchorEl}
+              onClose={closeCustomViewEdit}
+              onSaved={closeCustomViewEdit}
+              onDeleted={closeCustomViewEdit}
+            />
+          {/if}
         </div>
 
         <div class="workshop-rail-dock">
-          {#if lifeRail.context?.kind === "surface"}
-            {@const contextSurface = lifeRail.context.surface}
-            {@const ContextIcon = environmentIcon(contextSurface.icon)}
-            {@const contextDoorActive =
-              active === "context" ||
-              surfacePopoverOpen("context") ||
-              (showView && viewSurface === "context")}
-            <button
-              type="button"
-              data-rail-surface="context"
-              class="{railBtnClass('context', 'utility', {
-                quietActive: true,
-                active: contextDoorActive,
-              })} workshop-rail-dock-btn"
-              title={navTitle(contextSurface)}
-              aria-label={navLabel(contextSurface)}
-              aria-current={contextDoorActive ? "page" : undefined}
-              aria-expanded={surfacePopoverOpen("context")}
-              aria-haspopup="dialog"
-              onclick={(event) => selectDestination("context", event)}
-            >
-              <span class="workshop-rail-btn-icon" aria-hidden="true">
-                <ContextIcon {...utilityIconProps} />
-              </span>
-              <span class="workshop-rail-btn-label">{navLabel(contextSurface)}</span>
-            </button>
-          {/if}
-
           {#if lifeRail.you.kind === "surface"}
-            {@const youSurface = lifeRail.you.surface}
-            {@const YouIcon = environmentIcon(youSurface.icon)}
-            <button
-              type="button"
-              data-rail-surface="profiles"
-              class="{railBtnClass('profiles', 'utility', {
-                quietActive: true,
-                active: active === 'profiles' || surfacePopoverOpen('profiles'),
-              })} workshop-rail-dock-btn"
-              title="You — {activeProfileLabel}"
-              aria-label="You ({activeProfileLabel})"
-              aria-current={active === "profiles" ? "page" : undefined}
-              aria-expanded={surfacePopoverOpen("profiles")}
-              aria-haspopup="dialog"
-              onclick={(event) => selectDestination("profiles", event)}
-            >
-              <span class="workshop-rail-btn-icon" aria-hidden="true">
-                <YouIcon {...utilityIconProps} />
-              </span>
-              <span class="workshop-rail-btn-label">You</span>
-            </button>
+            {@const YouIcon = environmentIcon(lifeRail.you.surface.icon)}
+            <div class="workshop-rail-dest-row workshop-rail-dock-row">
+              <button
+                type="button"
+                data-rail-surface="profiles"
+                class="{railBtnClass('profiles', 'utility', {
+                  quietActive: true,
+                  active: active === 'profiles' || surfacePopoverOpen('profiles'),
+                })} workshop-rail-dock-btn"
+                title="You — {activeProfileLabel}"
+                aria-label="You ({activeProfileLabel})"
+                aria-current={active === "profiles" ? "page" : undefined}
+                aria-expanded={showView && viewSurface === "profiles"}
+                onclick={(event) => selectDestination("profiles", event)}
+              >
+                <span class="workshop-rail-btn-icon" aria-hidden="true">
+                  <YouIcon {...utilityIconProps} />
+                </span>
+                <span class="workshop-rail-btn-label">You</span>
+              </button>
+              <div class="workshop-rail-dest-actions">
+                <YouCreateMenu
+                  onReady={async () => {
+                    closeRailPopover();
+                    ensureFamilyForSurface("profiles");
+                    onSelect("profiles");
+                    layout.openShellSidebarView("profiles");
+                  }}
+                />
+              </div>
+            </div>
           {/if}
 
           <button
@@ -646,8 +930,7 @@
             title="Settings"
             aria-label="Settings"
             aria-current={active === SAFETY_SURFACE_SETTINGS ? "page" : undefined}
-            aria-expanded={surfacePopoverOpen(SAFETY_SURFACE_SETTINGS)}
-            aria-haspopup="dialog"
+            aria-expanded={showView && viewSurface === SAFETY_SURFACE_SETTINGS}
             onclick={(event) => selectDestination(SAFETY_SURFACE_SETTINGS, event)}
           >
             <span class="workshop-rail-btn-icon" aria-hidden="true">
@@ -685,10 +968,8 @@
         <PeersRailToolbar />
       {:else if popover.surfaceId === "messaging"}
         <MessagingRailToolbar />
-      {:else if popover.surfaceId === "context"}
-        <div class="nav-rail-context-toolbar">
-          <ContextModeBar />
-        </div>
+      {:else if popover.surfaceId === "map"}
+        <MapRailToolbar onPick={() => commitPopoverSurface("map")} />
       {:else if popover.surfaceId === "web"}
         <WebRailToolbar onNavigated={() => commitPopoverSurface("web")} />
       {:else if popover.surfaceId === "calendar"}
@@ -696,13 +977,7 @@
       {:else if popover.surfaceId === "work"}
         <WorkRailToolbar onAction={() => commitPopoverSurface("work")} />
       {:else if popover.surfaceId === "profiles"}
-        <YouRailToolbar
-          onAction={() => commitPopoverSurface("profiles")}
-          onOpenContext={() => {
-            closeRailPopover();
-            selectDestination("context");
-          }}
-        />
+        <YouRailToolbar onAction={() => commitPopoverSurface("profiles")} />
       {:else if popover.surfaceId === SAFETY_SURFACE_SETTINGS}
         <span class="nav-rail-popover-toolbar-label">Settings</span>
       {/if}
@@ -719,6 +994,7 @@
       <div class="min-h-0 flex-1 overflow-y-auto px-1.5 py-1">
         <SettingsNav
           active={settingsNav.activeSection}
+          badges={settingsNavBadges}
           onSelect={(section) => {
             settingsNav.setActiveSection(section);
             commitPopoverSurface(SAFETY_SURFACE_SETTINGS);
@@ -752,11 +1028,8 @@
         chrome="rail-list"
         onPickPeer={() => commitPopoverSurface("peers")}
       />
-    {:else if popover.surfaceId === "context"}
-      <ContextSidePanel
-        chrome="rail-list"
-        onPick={() => commitPopoverSurface("context")}
-      />
+    {:else if popover.surfaceId === "map"}
+      <MapSidePanel onPick={() => commitPopoverSurface("map")} />
     {:else if popover.surfaceId === "web"}
       <WebRailList onPickTab={() => commitPopoverSurface("web")} />
     {:else if popover.surfaceId === "calendar"}
@@ -764,36 +1037,12 @@
     {:else if popover.surfaceId === "work"}
       <WorkRailList onPickCard={() => commitPopoverSurface("work")} />
     {:else if popover.surfaceId === "profiles"}
-      <YouRailList
-        onPickProfile={() => commitPopoverSurface("profiles")}
-        onOpenContext={() => {
-          closeRailPopover();
-          selectDestination("context");
-        }}
-      />
+      <YouRailList onPickProfile={() => commitPopoverSurface("profiles")} />
     {/if}
   </NavRailViewPopover>
 {/if}
 
 <style>
-  :global(.nav-rail-context-toolbar) {
-    display: flex;
-    min-width: 0;
-    flex: 1;
-    align-items: center;
-    justify-content: flex-start;
-  }
-
-  :global(.nav-rail-context-toolbar .lme-side-mode-bar) {
-    width: auto;
-    border-bottom: 0;
-    padding: 0;
-  }
-
-  :global(.nav-rail-context-toolbar .lme-side-mode-bar > .flex-1) {
-    flex: 0 1 auto;
-  }
-
   :global(.nav-rail-popover-toolbar-label) {
     padding: 0 0.35rem;
     font-size: 0.72rem;

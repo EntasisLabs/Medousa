@@ -24,7 +24,7 @@ function surface(
 }
 
 describe("buildLifeRailLayout", () => {
-  it("keeps a flat primary strip with Library and Automations as doors", () => {
+  it("follows preset order and keeps Library / Automations in the primary strip", () => {
     const layout = buildLifeRailLayout([
       surface("chat", "Chat"),
       surface("peers", "Peers"),
@@ -34,7 +34,7 @@ describe("buildLifeRailLayout", () => {
       surface("web", "Web"),
       surface("library", "Workspace"),
       surface("automations", "Automations"),
-      surface("context", "Context"),
+      surface("map", "Map"),
       surface("runtime", "Runtime"),
       surface("settings", "Settings"),
     ]);
@@ -42,51 +42,81 @@ describe("buildLifeRailLayout", () => {
     expect(layout.primary.map((item) => item.id)).toEqual([
       "chat",
       "peers",
-      "messaging",
       "calendar",
       "work",
       "web",
+      "library",
+      "automations",
+      "map",
     ]);
-    expect(layout.focusStartIndex).toBe(3);
+    expect(layout.focusStartIndex).toBe(2);
     expect(layout.showLibrary).toBe(true);
     expect(layout.showAutomations).toBe(true);
     expect(layout.customStartIndex).toBe(-1);
     expect(layout.you.id).toBe("profiles");
-    expect(layout.context?.id).toBe("context");
   });
 
-  it("shows Automations whenever Library is present, even if Automations was dropped from the preset", () => {
+  it("respects a reordered preset sequence", () => {
     const layout = buildLifeRailLayout([
+      surface("web", "Web"),
+      surface("chat", "Chat"),
+      surface("calendar", "Calendar"),
+      surface("library", "Library"),
+    ]);
+    expect(layout.primary.map((item) => item.id)).toEqual([
+      "web",
+      "chat",
+      "calendar",
+      "library",
+    ]);
+    expect(layout.focusStartIndex).toBe(0);
+  });
+
+  it("keeps Library and Automations independent in the primary strip", () => {
+    const libraryOnly = buildLifeRailLayout([
       surface("chat", "Chat"),
       surface("library", "Workspace"),
     ]);
-    expect(layout.showLibrary).toBe(true);
-    expect(layout.showAutomations).toBe(true);
+    expect(libraryOnly.showLibrary).toBe(true);
+    expect(libraryOnly.showAutomations).toBe(false);
+    expect(libraryOnly.primary.map((item) => item.id)).toEqual(["chat", "library"]);
+
+    const automationsFirst = buildLifeRailLayout([
+      surface("automations", "Automations"),
+      surface("chat", "Chat"),
+      surface("library", "Workspace"),
+    ]);
+    expect(automationsFirst.primary.map((item) => item.id)).toEqual([
+      "automations",
+      "chat",
+      "library",
+    ]);
+    expect(automationsFirst.showAutomations).toBe(true);
   });
 
-  it("promotes custom surfaces as primary peers", () => {
+  it("promotes custom surfaces as primary peers in place", () => {
     const layout = buildLifeRailLayout([
       surface("chat", "Chat"),
-      surface("web", "Web"),
       surface("bug-tracker", "Bug Tracker", "custom"),
+      surface("web", "Web"),
     ]);
     expect(layout.primary.map((item) => item.id)).toEqual([
       "chat",
-      "web",
       "bug-tracker",
+      "web",
     ]);
-    expect(layout.customStartIndex).toBe(2);
+    expect(layout.customStartIndex).toBe(1);
   });
 
-  it("keeps Context as a dock sibling next to You (not nested, not primary)", () => {
+  it("keeps You as a dock door (not nested, not primary) and Map in the primary strip", () => {
     const layout = buildLifeRailLayout([
       surface("chat", "Chat"),
+      surface("map", "Map"),
       surface("context", "Context"),
     ]);
     expect(layout.you.kind === "surface" && layout.you.surface.label).toBe("You");
-    expect(layout.primary.map((item) => item.id)).toEqual(["chat"]);
-    expect(layout.context?.id).toBe("context");
-    expect(railSectionForItemId("context")).toBe("memory");
+    expect(layout.primary.map((item) => item.id)).toEqual(["chat", "map"]);
+    expect(railSectionForItemId("map")).toBe("channels");
     expect(railSectionForItemId("profiles")).toBe("memory");
     expect(railSectionForItemId("library")).toBe("library");
   });
@@ -111,7 +141,7 @@ describe("buildLifeRailSections (legacy mapping)", () => {
       surface("chat", "Chat"),
       surface("library", "Workspace"),
       surface("automations", "Automations"),
-      surface("context", "Context"),
+      surface("map", "Map"),
     ]);
     const library = sections.find((section) => section.id === "library");
     expect(library?.items.map((item) => item.id)).toEqual(["library", "automations"]);

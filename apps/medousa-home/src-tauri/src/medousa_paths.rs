@@ -442,9 +442,27 @@ fn apply_dto_to_file(file: &mut TuiDefaultsFile, dto: &TuiDefaultsDto) {
 }
 
 #[tauri::command]
-pub fn connection_runbook_path() -> Result<String, String> {
+pub fn connection_runbook_path(app: tauri::AppHandle) -> Result<String, String> {
+    use tauri::Manager;
+
+    // Packaged `.app` / installers: file is listed under bundle.resources.
+    if let Ok(resource_dir) = app.path().resource_dir() {
+        let packaged = [
+            resource_dir.join("resources/docs/runbooks/connection-reliability.md"),
+            resource_dir.join("docs/runbooks/connection-reliability.md"),
+            resource_dir.join("connection-reliability.md"),
+        ];
+        for path in packaged {
+            if path.is_file() {
+                return Ok(path.display().to_string());
+            }
+        }
+    }
+
+    // `tauri dev` / contributor checkout: resolve against the repo + local resources copy.
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let candidates = [
+        manifest.join("resources/docs/runbooks/connection-reliability.md"),
         manifest.join("../../docs/runbooks/connection-reliability.md"),
         manifest.join("../../../docs/runbooks/connection-reliability.md"),
     ];

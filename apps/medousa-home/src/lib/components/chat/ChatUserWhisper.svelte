@@ -6,6 +6,7 @@
   import { onDestroy, onMount } from "svelte";
   import { userWhisperHook } from "$lib/utils/chatTurnBeats";
   import LiquidChatMessage from "$lib/components/chat/LiquidChatMessage.svelte";
+  import { userProfiles } from "$lib/stores/userProfiles.svelte";
   import type { ChatMessage } from "$lib/types/chat";
 
   interface Props {
@@ -37,6 +38,20 @@
   const trimmed = $derived(message.content?.trim() ?? "");
   const hook = $derived(userWhisperHook(trimmed));
   const expanded = $derived(forceExpand || stickyOpen || nearViewport);
+  const speakerLabel = $derived.by(() => {
+    const speaker = message.speakerProfileId?.trim();
+    if (!speaker) return "You";
+    if (
+      speaker === userProfiles.activeProfileId ||
+      speaker === userProfiles.resolvedUserId
+    ) {
+      return "You";
+    }
+    const profile = userProfiles.profiles.find(
+      (entry) => entry.profile_id === speaker,
+    );
+    return profile?.display_name?.trim() || speaker.replace(/^user:/, "");
+  });
 
   let observer: IntersectionObserver | null = null;
 
@@ -106,7 +121,7 @@
       onclick={toggleSticky}
       onkeydown={onKeydown}
     >
-      <span class="chat-user-whisper-label">You</span>
+      <span class="chat-user-whisper-label">{speakerLabel}</span>
       {#if !expanded && hook}
         <span class="chat-user-whisper-dot" aria-hidden="true">·</span>
         <span class="chat-user-whisper-hook">{hook}</span>

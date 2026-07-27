@@ -5,6 +5,7 @@
     graphBounds,
     mapNeighborhood,
     neighborSummary,
+    type ContextMapDensity,
     type ContextMapGraph,
     type ContextMapNode,
   } from "$lib/utils/contextMap";
@@ -14,18 +15,26 @@
     graph: ContextMapGraph;
     search?: string;
     selectedNodeId?: string | null;
+    density?: ContextMapDensity;
     onFocusNode?: (node: ContextMapNode) => void;
     onClearSelection?: () => void;
     onToggleExpandSession?: (sessionId: string) => void;
+    onDragBegin?: (nodeId: string, x: number, y: number) => void;
+    onDragMove?: (nodeId: string, x: number, y: number) => void;
+    onDragEnd?: (nodeId: string) => void;
   }
 
   let {
     graph,
     search = "",
     selectedNodeId = null,
+    density = "default",
     onFocusNode,
     onClearSelection,
     onToggleExpandSession,
+    onDragBegin,
+    onDragMove,
+    onDragEnd,
   }: Props = $props();
 
   let viewportEl: HTMLDivElement | undefined = $state();
@@ -34,8 +43,15 @@
   let zoom = $state(1);
   let hoveredNodeId = $state<string | null>(null);
   let dragging = $state(false);
+  let nodeDragging = $state(false);
+  let dragNodeId = $state<string | null>(null);
+  /** True once pointer moved past threshold — wakes settle physics. */
+  let dragCommitted = false;
   let suppressClick = $state(false);
   let dragOrigin = { x: 0, y: 0, panX: 0, panY: 0 };
+  let nodeDragOrigin = { x: 0, y: 0, nodeX: 0, nodeY: 0 };
+  let dragRaf = 0;
+  let pendingDrag: { id: string; x: number; y: number } | null = null;
   let lastFitKey = $state("");
   let lastClick = { id: "", time: 0 };
   let animFrame = 0;
@@ -65,9 +81,17 @@
   );
 
   function edgeSort(kind: string): number {
-    if (kind === "session_chain") return 0;
-    if (kind === "membership") return 1;
-    return 2;
+    if (kind === "session_chain" || kind === "note_tag") return 0;
+    if (kind === "note_session" || kind === "membership") return 1;
+    if (kind === "note_link") return 2;
+    return 3;
+  }
+
+  function kindLabel(kind: ContextMapNode["kind"]): string {
+    if (kind === "session") return "Session";
+    if (kind === "note") return "Note";
+    if (kind === "claim") return "Memory";
+    return "Moment";
   }
 
   function viewportForBounds(
@@ -292,8 +316,82 @@
     flyToNeighborhood(node.id);
   }
 
-  function handleNodePointerDown(event: PointerEvent) {
+  function handleNodePointerDown(node: ContextMapNode, event: PointerEvent) {
     event.stopPropagation();
+    if (event.button !== 0 || pinching) return;
+    nodeDragging = true;
+    dragNodeId = node.id;
+    dragCommitted = false;
+    pendingDrag = null;
+    dragging = false;
+    suppressClick = false;
+    nodeDragOrigin = {
+      x: event.clientX,
+      y: event.clientY,
+      nodeX: node.x,
+      nodeY: node.y,
+    };
+    (event.currentTarget as Element).setPointerCapture?.(event.pointerId);
+  }
+
+  function handleNodePointerMove(event: PointerEvent) {
+    if (!nodeDragging || !dragNodeId) return;
+    const screenDx = event.clientX - nodeDragOrigin.x;
+    const screenDy = event.clientY - nodeDragOrigin.y;
+    if (Math.hypot(screenDx, screenDy) <= 4) return;
+    suppressClick = true;
+    pendingDrag = {
+      id: dragNodeId,
+      x: nodeDragOrigin.nodeX + screenDx / zoom,
+      y: nodeDragOrigin.nodeY + screenDy / zoom,
+    };
+    if (dragRaf) return;
+    dragRaf = requestAnimationFrame(() => {
+      dragRaf = 0;
+      if (!pendingDrag) return;
+      if (!dragCommitted) {
+        dragCommitted = true;
+        onDragBegin?.(pendingDrag.id, pendingDrag.x, pendingDrag.y);
+      }
+      onDragMove?.(pendingDrag.id, pendingDrag.x, pendingDrag.y);
+    });
+  }
+
+  function handleNodePointerUp(event: PointerEvent) {
+    if (!nodeDragging || !dragNodeId) return;
+    if (dragRaf) {
+      cancelAnimationFrame(dragRaf);
+      dragRaf = 0;
+    }
+    const id = dragNodeId;
+    if (dragCommitted) {
+      if (pendingDrag) onDragMove?.(pendingDrag.id, pendingDrag.x, pendingDrag.y);
+      onDragEnd?.(id);
+    }
+    nodeDragging = false;
+    dragNodeId = null;
+    dragCommitted = false;
+    pendingDrag = null;
+    try {
+      (event.currentTarget as Element).releasePointerCapture?.(event.pointerId);
+    } catch {
+      /* already released */
+    }
+  }
+
+  function edgePath(
+    from: { x: number; y: number },
+    to: { x: number; y: number },
+    kind: string,
+  ): string {
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+    const len = Math.hypot(dx, dy) || 1;
+    const curve =
+      kind === "session_chain" ? Math.min(36, len * 0.18) : kind === "sequence" ? 16 : 8;
+    const mx = (from.x + to.x) / 2 + (-dy / len) * curve;
+    const my = (from.y + to.y) / 2 + (dx / len) * curve;
+    return `M ${from.x} ${from.y} Q ${mx} ${my} ${to.x} ${to.y}`;
   }
 
   function glowRadius(node: ContextMapNode, selected: boolean, hovered: boolean): number {
@@ -319,7 +417,19 @@
   function edgeKindClass(kind: string): string {
     if (kind === "membership") return "context-map-edge-membership";
     if (kind === "sequence") return "context-map-edge-sequence";
+    if (kind === "note_session") return "context-map-edge-note_session";
+    if (kind === "note_link") return "context-map-edge-note_link";
+    if (kind === "note_tag") return "context-map-edge-note_tag";
     return "context-map-edge-session_chain";
+  }
+
+  function noteHexPoints(cx: number, cy: number, r: number): string {
+    const pts: string[] = [];
+    for (let i = 0; i < 6; i += 1) {
+      const angle = (Math.PI / 180) * (60 * i - 30);
+      pts.push(`${cx + r * Math.cos(angle)},${cy + r * Math.sin(angle)}`);
+    }
+    return pts.join(" ");
   }
 
   function labelKindClass(kind: ContextMapNode["kind"]): string {
@@ -410,11 +520,15 @@
 
 <div
   bind:this={viewportEl}
-  class="context-map-viewport {dragging ? 'context-map-viewport-dragging' : ''} {pinching
+  class="context-map-viewport {dragging ? 'context-map-viewport-dragging' : ''} {nodeDragging
+    ? 'context-map-viewport-dragging-node'
+    : ''} {pinching
     ? 'context-map-viewport-pinching'
     : ''} {focusActive
     ? 'context-map-viewport-focused'
-    : ''} {selectionActive ? 'context-map-viewport-selected' : ''}"
+    : ''} {selectionActive ? 'context-map-viewport-selected' : ''} {density === 'rail'
+    ? 'context-map-viewport-rail'
+    : ''}"
   role="application"
   aria-label="Context map canvas"
   onpointerdown={onPointerDown}
@@ -456,7 +570,7 @@
       aria-live="polite"
       onpointerdown={(event) => event.stopPropagation()}
     >
-      <p class="context-map-hover-kind">{hoverPreview.kind === "session" ? "Session" : "Moment"}</p>
+      <p class="context-map-hover-kind">{kindLabel(hoverPreview.kind)}</p>
       <p class="context-map-hover-title">{hoverPreview.label}</p>
       <p class="context-map-hover-meta">{neighborSummary(graph, hoverPreview.id)}</p>
       {#if hoverPreview.kind === "session"}
@@ -470,7 +584,7 @@
       aria-live="polite"
       onpointerdown={(event) => event.stopPropagation()}
     >
-      <p class="context-map-hover-kind">{selectedPreview.kind === "session" ? "Session" : "Moment"} · focused</p>
+      <p class="context-map-hover-kind">{kindLabel(selectedPreview.kind)} · focused</p>
       <p class="context-map-hover-title">{selectedPreview.label}</p>
       <button type="button" class="context-map-clear-link" onclick={handleClearClick}>
         Clear focus
@@ -503,11 +617,9 @@
         {@const from = nodeById[edge.from]}
         {@const to = nodeById[edge.to]}
         {#if from && to}
-          <line
-            x1={from.x}
-            y1={from.y}
-            x2={to.x}
-            y2={to.y}
+          <path
+            d={edgePath(from, to, edge.kind)}
+            fill="none"
             class={edgeClass(edge)}
           />
         {/if}
@@ -521,13 +633,18 @@
         <g
           data-map-node
           data-accent={node.kind === "session" ? node.hue % 8 : undefined}
-          class={nodeClass(node, selected, hovered)}
+          class="{nodeClass(node, selected, hovered)} {dragNodeId === node.id
+            ? 'context-map-node-dragging'
+            : ''}"
           style={node.kind === "session" ? nodeStyle(node) : undefined}
           role="button"
           tabindex="0"
-          aria-label="{node.kind === 'session' ? 'Session' : 'Moment'}: {node.label}"
+          aria-label="{kindLabel(node.kind)}: {node.label}"
           onclick={(event) => handleNodeClick(node, event)}
-          onpointerdown={handleNodePointerDown}
+          onpointerdown={(event) => handleNodePointerDown(node, event)}
+          onpointermove={handleNodePointerMove}
+          onpointerup={handleNodePointerUp}
+          onpointercancel={handleNodePointerUp}
           onmouseenter={() => {
             hoveredNodeId = node.id;
           }}
@@ -560,6 +677,11 @@
               r={node.radius}
               class={dotClass(node, selected, hovered)}
             />
+          {:else if node.kind === "note"}
+            <polygon
+              points={noteHexPoints(node.x, node.y, node.radius)}
+              class={dotClass(node, selected, hovered)}
+            />
           {:else}
             <rect
               x={node.x - node.radius * 0.82}
@@ -573,7 +695,7 @@
           {#if mode !== "hidden"}
             <text
               x={node.x}
-              y={node.y + node.radius + 14}
+              y={node.y + node.radius + (density === "rail" ? 11 : 14)}
               text-anchor="middle"
               class={labelClass(node, selected, hovered, mode)}
             >

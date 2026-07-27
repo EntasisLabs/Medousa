@@ -7,9 +7,15 @@ const BACK_MAX_VERTICAL_PX = 64;
 const DIRECTION_LOCK_PX = 10;
 
 const INTERACTIVE_SELECTOR = [
+  "a",
+  "button",
   "input",
   "textarea",
   "select",
+  "label",
+  "[role='button']",
+  "[role='option']",
+  "[role='menuitem']",
   "[contenteditable='true']",
   ".cm-editor",
   ".cm-scroller",
@@ -20,11 +26,20 @@ export interface MobileSheetGestureOptions {
   onDismiss: () => void;
   /** Return true when a nested screen handled swipe-back. False dismisses the sheet. */
   onSwipeBack?: () => boolean;
+  /** When false, only header swipe-down dismiss is attached. Default true. */
+  swipeBack?: boolean;
+}
+
+function eventTargetElement(target: EventTarget | null): Element | null {
+  if (target instanceof Element) return target;
+  if (target instanceof Node) return target.parentElement;
+  return null;
 }
 
 function shouldIgnoreGestureTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof Element)) return false;
-  return Boolean(target.closest(INTERACTIVE_SELECTOR));
+  const el = eventTargetElement(target);
+  if (!el) return false;
+  return Boolean(el.closest(INTERACTIVE_SELECTOR));
 }
 
 function prefersReducedMotion(): boolean {
@@ -104,6 +119,9 @@ function attachSwipeDownDismiss(
   };
 }
 
+/** Only treat edge swipes as back — avoids killing taps in list sheets. */
+const SWIPE_BACK_EDGE_PX = 28;
+
 function attachSwipeRightNavigation(
   sheetEl: HTMLElement,
   options: MobileSheetGestureOptions,
@@ -120,8 +138,12 @@ function attachSwipeRightNavigation(
       return;
     }
     if (shouldIgnoreGestureTarget(event.target)) return;
-    startX = event.touches[0].clientX;
-    startY = event.touches[0].clientY;
+    const touch = event.touches[0];
+    const sheetLeft = sheetEl.getBoundingClientRect().left;
+    // Full-sheet horizontal tracking races list taps on iOS (preventDefault cancels click).
+    if (touch.clientX - sheetLeft > SWIPE_BACK_EDGE_PX) return;
+    startX = touch.clientX;
+    startY = touch.clientY;
     tracking = true;
     horizontal = false;
   }
@@ -138,7 +160,8 @@ function attachSwipeRightNavigation(
       }
       horizontal = true;
     }
-    if (horizontal && dx > DIRECTION_LOCK_PX) {
+    // Only cancel the default once the gesture is clearly a back swipe.
+    if (horizontal && dx >= BACK_THRESHOLD_PX) {
       event.preventDefault();
     }
   }
@@ -184,7 +207,10 @@ export function attachMobileSheetGestures(
   headerEl: HTMLElement | null,
   options: MobileSheetGestureOptions,
 ): () => void {
-  const cleanups = [attachSwipeRightNavigation(sheetEl, options)];
+  const cleanups: Array<() => void> = [];
+  if (options.swipeBack !== false) {
+    cleanups.push(attachSwipeRightNavigation(sheetEl, options));
+  }
   if (headerEl) {
     cleanups.push(attachSwipeDownDismiss(headerEl, sheetEl, options.onDismiss));
   }

@@ -1,0 +1,115 @@
+# Permissions and approvals
+
+**For when Medousa asks before acting.** Most days you only need Allow / Deny and Approve / Deny. Deeper Runtime Controls are optional power settings.
+
+Related: [Chat](guide:chat) · [Work and background jobs](guide:work-jobs) · [Find answers](guide:find-answers#allow-or-approve)
+
+## Tool permissions
+
+When a turn needs an elevated capability, chat shows **Agent needs permission**:
+
+```card
+title: Allow / Deny
+subtitle: Tool permission
+icon: shield
+summary: **Allow** grants this request so the turn can continue. **Deny** refuses it — the turn proceeds without that capability (or stops, depending on the agent). There is no “always allow” toggle.
+```
+
+| Control | Meaning |
+|---------|---------|
+| **Allow** | Grant this request so the turn can continue |
+| **Deny** | Refuse; the turn proceeds without that capability (or stops, depending on the agent) |
+
+The bar may show which **Runtime** asked (Medousa, Cursor, Codex). Home does **not** expose a separate “always allow” toggle — treat each prompt as a decision for this request.
+
+If you Deny by accident, send a clearer follow-up or start a new turn with a narrower ask.
+
+## Tool-round budgets
+
+Long tool loops pause with **Needs your approval**:
+
+```card
+title: Approve / Deny
+subtitle: More tool rounds
+icon: clock
+summary: **Approve** grants the requested +N tool rounds. **Deny** stops extending the turn. **Work** jumps to the linked Work card when present.
+```
+
+| Control | Meaning |
+|---------|---------|
+| **Approve** | Grant the requested **+N tool round(s)** |
+| **Deny** | Stop extending the turn |
+| **Work** | Jump to the linked Work card (when present) |
+
+Slash shortcuts (also in Spotlight):
+
+- `/budget` or `/budget list` — pending approvals
+- `/budget approve [id]` — grant
+- `/budget deny [id]` — refuse
+
+Budget pressure often appears as a **blocked** card on the [Work](guide:work-jobs) board. Inspect the card to approve or deny from there as well.
+
+```callout
+tone: warning
+title: Budgets are cost and blast-radius
+body: Approving more rounds lets the agent keep calling tools. Deny when the goal is done, the path looks wrong, or you need to redirect in chat.
+```
+
+## Browser verification
+
+If the agent hits a CAPTCHA or similar check:
+
+```steps
+title: Finish verification
+
+---
+label: Notice the prompt
+body: Chat or Web shows **Medousa needs help with a verification**
+status: current
+icon: alert-triangle
+---
+label: Complete it in Web
+body: **Open in Web** if needed; finish the check yourself
+status: pending
+icon: globe
+---
+label: Continue the agent
+body: Choose **Continue agent** so the turn resumes
+status: pending
+icon: check
+```
+
+Do not paste passwords into chat to “help” — use the human browser surface. Deeper browser docs: [Browser](guide:browser); for stuck turns see [Troubleshooting](guide:troubleshooting#browser-captcha--verification).
+
+## Runtime Controls (day-one)
+
+**Settings → Runtime Controls** shapes what tools can do on this workshop. Spotlight: **Runtime controls**.
+
+| Band | What to know |
+|------|----------------|
+| **Reach** | **Tool posture**, **Specialists**, web search provider, **Tool rounds** defaults |
+| **Shell** | **Agent shell tools** on/off, **Network ceiling**, timeouts, max output |
+| **Allowed tools** | Module allowlist — **empty means the full catalog is allowed** |
+| **Allowlists** | Binary allowlist for shell commands — empty + shell on is a warning sign |
+| **Engine** | Memory backend and diagnostics |
+
+Day-one safe defaults:
+
+1. Leave shell **off** until you need it.
+2. If you enable shell, set a **binary allowlist** — do not leave it empty.
+3. Prefer a tight **module allowlist** when experimenting with new specialists or MCP.
+4. Raise tool rounds only when you understand the task; prefer budget prompts over a huge default.
+
+MCP servers and packages have their own Settings sections (desktop). Misconfigured MCP shows up as missing tools — [Troubleshooting](guide:troubleshooting#mcp-unavailable).
+
+## Where safety settings live
+
+| Concern | Settings section |
+|---------|------------------|
+| Models / API keys | Medousa Agent → Models / Providers |
+| Tool posture, shell, allowlists | Runtime Controls |
+| Shared seats / pairing exposure | Sharing |
+| Optional binaries / offline brain | Packages |
+| External tool servers | MCP |
+
+Next: [Work and background jobs](guide:work-jobs) · [Troubleshooting](guide:troubleshooting)

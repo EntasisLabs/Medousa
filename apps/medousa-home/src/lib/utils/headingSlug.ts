@@ -172,3 +172,98 @@ export function extractMarkdownHeadings(source: string): MarkdownHeadingEntry[] 
 
   return headings;
 }
+
+const OUTLINE_HEADING_SELECTOR =
+  "h1.markdown-heading[id], h2.markdown-heading[id], h3.markdown-heading[id]";
+
+/** Heading id currently “in view” near the top of a scroll container. */
+export function activeMarkdownHeadingId(
+  scrollRoot: HTMLElement,
+  contentRoot: HTMLElement = scrollRoot,
+): string | null {
+  const headings = [
+    ...contentRoot.querySelectorAll<HTMLElement>(OUTLINE_HEADING_SELECTOR),
+  ];
+  if (headings.length === 0) return null;
+  const rootTop = scrollRoot.getBoundingClientRect().top;
+  const threshold = rootTop + 56;
+  let active: string | null = headings[0]?.id ?? null;
+  for (const heading of headings) {
+    if (heading.getBoundingClientRect().top <= threshold) {
+      active = heading.id || null;
+    } else {
+      break;
+    }
+  }
+  return active;
+}
+
+/**
+ * Keep an outline `activeId` in sync while `scrollRoot` scrolls.
+ * Scroll-driven by default; debounced MutationObserver only rebinds targets
+ * when heading nodes appear/disappear (preview hydrate / Live edits).
+ */
+export function observeActiveMarkdownHeading(
+  scrollRoot: HTMLElement,
+  onActive: (id: string | null) => void,
+  contentRoot: HTMLElement = scrollRoot,
+): () => void {
+  let last: string | null | undefined;
+  let observedSignature = "";
+  let moTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const publish = () => {
+    const next = activeMarkdownHeadingId(scrollRoot, contentRoot);
+    if (next !== last) {
+      last = next;
+      onActive(next);
+    }
+  };
+
+  const io = new IntersectionObserver(publish, {
+    root: scrollRoot,
+    rootMargin: "-10% 0px -55% 0px",
+    threshold: [0, 0.25, 0.6, 1],
+  });
+
+  const headingSignature = () => {
+    const headings = contentRoot.querySelectorAll(OUTLINE_HEADING_SELECTOR);
+    let sig = `${headings.length}`;
+    for (const heading of headings) {
+      sig += `|${(heading as HTMLElement).id}`;
+    }
+    return sig;
+  };
+
+  const watchHeadings = () => {
+    const nextSig = headingSignature();
+    if (nextSig === observedSignature) {
+      publish();
+      return;
+    }
+    observedSignature = nextSig;
+    io.disconnect();
+    for (const heading of contentRoot.querySelectorAll(OUTLINE_HEADING_SELECTOR)) {
+      io.observe(heading);
+    }
+    publish();
+  };
+
+  watchHeadings();
+  scrollRoot.addEventListener("scroll", publish, { passive: true });
+  const mo = new MutationObserver(() => {
+    if (moTimer != null) clearTimeout(moTimer);
+    moTimer = setTimeout(() => {
+      moTimer = null;
+      watchHeadings();
+    }, 120);
+  });
+  mo.observe(contentRoot, { childList: true, subtree: true });
+
+  return () => {
+    scrollRoot.removeEventListener("scroll", publish);
+    io.disconnect();
+    mo.disconnect();
+    if (moTimer != null) clearTimeout(moTimer);
+  };
+}

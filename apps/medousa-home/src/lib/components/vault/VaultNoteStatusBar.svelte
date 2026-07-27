@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import { vaultNoteStats, formatVaultNoteStats } from "$lib/utils/vaultNoteStats";
   import { sortVaultTagsForDisplay } from "$lib/utils/vaultFrontmatter";
   import { formatShortcut } from "$lib/platform";
@@ -40,7 +41,10 @@
 
   $effect(() => {
     if (!vaultVersions.enabled) return;
-    void vaultVersions.refresh();
+    // Don't subscribe to status writes inside refresh.
+    untrack(() => {
+      void vaultVersions.refresh();
+    });
   });
 </script>
 

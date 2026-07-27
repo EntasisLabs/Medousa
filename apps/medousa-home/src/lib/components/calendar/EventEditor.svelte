@@ -1,8 +1,15 @@
 <script lang="ts">
-  import { MapPin, X } from "@lucide/svelte";
-  import type { CalendarEvent } from "$lib/types/calendar";
+  import { Bell, FileText, MapPin, Plus, Repeat, X } from "@lucide/svelte";
+  import type { CalendarAlarm, CalendarEvent } from "$lib/types/calendar";
   import { registerMobileBackHandler } from "$lib/mobileNavigation";
   import { calendarDateUtils } from "$lib/stores/calendar.svelte";
+  import { createVaultNote, getVaultNote } from "$lib/daemon";
+  import {
+    meetingNoteContent,
+    meetingNotePath,
+  } from "$lib/utils/calendarReminders";
+  import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
+  import { layout } from "$lib/stores/layout.svelte";
 
   interface Props {
     event: CalendarEvent | null;
@@ -16,6 +23,9 @@
       dtstart: string;
       dtend: string;
       all_day: boolean;
+      rrule: string | null;
+      note_path: string | null;
+      alarms: CalendarAlarm[];
     }) => Promise<void>;
     onDelete?: () => Promise<void>;
   }
@@ -23,6 +33,25 @@
   let { event, defaultDay, mobile = false, onClose, onSave, onDelete }: Props = $props();
 
   const { isoDay, allDayKey, nextAllDayKey, allDayBoundIso } = calendarDateUtils;
+
+  const ALARM_PRESETS: { label: string; minutes: number }[] = [
+    { label: "At time of event", minutes: 0 },
+    { label: "5 minutes before", minutes: 5 },
+    { label: "15 minutes before", minutes: 15 },
+    { label: "30 minutes before", minutes: 30 },
+    { label: "1 hour before", minutes: 60 },
+    { label: "1 day before", minutes: 1440 },
+    { label: "2 days before", minutes: 2880 },
+    { label: "1 week before", minutes: 10080 },
+  ];
+
+  const RRULE_PRESETS: { label: string; value: string | null }[] = [
+    { label: "Does not repeat", value: null },
+    { label: "Every day", value: "FREQ=DAILY" },
+    { label: "Every week", value: "FREQ=WEEKLY" },
+    { label: "Every month", value: "FREQ=MONTHLY" },
+    { label: "Every year", value: "FREQ=YEARLY" },
+  ];
 
   function toDateInput(value: Date): string {
     return isoDay(value);
@@ -45,6 +74,11 @@
       start.setHours(9, 0, 0, 0);
     }
     return start;
+  }
+
+  function normalizeRrule(raw: string | null | undefined): string | null {
+    if (!raw?.trim()) return null;
+    return raw.replace(/^RRULE:/i, "").trim() || null;
   }
 
   const initialStart = event
@@ -71,7 +105,16 @@
       ? toTimeInput(initialStart)
       : toTimeInput(initialEnd),
   );
+  let rrule = $state<string | null>(normalizeRrule(event?.rrule));
+  let notePath = $state(event?.note_path ?? "");
+  let alarms = $state<CalendarAlarm[]>(
+    (event?.alarms ?? []).map((alarm) => ({
+      trigger_minutes_before: alarm.trigger_minutes_before,
+      action: alarm.action ?? "display",
+    })),
+  );
   let saving = $state(false);
+  let linking = $state(false);
   let error = $state<string | null>(null);
   let titleEl: HTMLInputElement | undefined = $state();
 
@@ -95,6 +138,71 @@
     return `${dayLabel}  ${fmt(start)} – ${fmt(end)}`;
   });
 
+  const rruleLabel = $derived(
+    RRULE_PRESETS.find((row) => row.value === rrule)?.label ??
+      (rrule ? `Custom · ${rrule}` : "Does not repeat"),
+  );
+
+  function alarmLabel(minutes: number): string {
+    return (
+      ALARM_PRESETS.find((row) => row.minutes === minutes)?.label ??
+      `${minutes} minutes before`
+    );
+  }
+
+  function addAlarm(minutes: number) {
+    if (minutes <= 0) return;
+    if (alarms.some((alarm) => alarm.trigger_minutes_before === minutes)) return;
+    alarms = [
+      ...alarms,
+      { trigger_minutes_before: minutes, action: "display" },
+    ].sort((a, b) => a.trigger_minutes_before - b.trigger_minutes_before);
+  }
+
+  function removeAlarm(minutes: number) {
+    alarms = alarms.filter((alarm) => alarm.trigger_minutes_before !== minutes);
+  }
+
+  async function openLinkedNote() {
+    const path = notePath.trim();
+    if (!path) return;
+    linking = true;
+    error = null;
+    try {
+      layout.navigateDesktop("library");
+      await lmeWorkspace.openNote(path);
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+    } finally {
+      linking = false;
+    }
+  }
+
+  async function createLinkedNote() {
+    linking = true;
+    error = null;
+    try {
+      const title = summary.trim() || "Meeting";
+      const path = meetingNotePath(title, date);
+      try {
+        await getVaultNote(path);
+        notePath = path;
+      } catch {
+        await createVaultNote(
+          path,
+          meetingNoteContent(title, date, event?.uid),
+        );
+        notePath = path;
+      }
+      layout.navigateDesktop("library");
+      await lmeWorkspace.openNote(path);
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+    } finally {
+      linking = false;
+    }
+  }
+
   async function submit() {
     const title = summary.trim() || "New Event";
     saving = true;
@@ -103,11 +211,9 @@
       let dtstart: string;
       let dtend: string;
       if (allDay) {
-        // DATE values: store UTC midnight of the chosen calendar day (not local midnight).
         dtstart = allDayBoundIso(date);
         dtend = allDayBoundIso(nextAllDayKey(date));
       } else {
-        // Timed events: interpret in local timezone, persist as UTC.
         dtstart = new Date(`${date}T${startTime}:00`).toISOString();
         dtend = new Date(`${date}T${endTime}:00`).toISOString();
       }
@@ -118,6 +224,9 @@
         dtstart,
         dtend,
         all_day: allDay,
+        rrule,
+        note_path: notePath.trim() || null,
+        alarms: alarms.filter((alarm) => alarm.trigger_minutes_before > 0),
       });
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
@@ -211,6 +320,64 @@
       </div>
 
       <div class="cal-pop-card cal-pop-row">
+        <Repeat size={14} strokeWidth={1.75} class="cal-pop-row-icon" />
+        <select
+          class="cal-pop-inline cal-pop-select"
+          aria-label="Repeats"
+          value={rrule ?? ""}
+          onchange={(e) => {
+            const value = e.currentTarget.value;
+            rrule = value ? value : null;
+          }}
+        >
+          {#each RRULE_PRESETS as preset (preset.label)}
+            <option value={preset.value ?? ""}>{preset.label}</option>
+          {/each}
+        </select>
+        <span class="sr-only">{rruleLabel}</span>
+      </div>
+
+      <div class="cal-pop-card">
+        <div class="cal-pop-section-label">
+          <Bell size={13} strokeWidth={1.75} />
+          Alerts
+        </div>
+        {#if alarms.length === 0}
+          <p class="cal-pop-hint" style="margin-top: 0.35rem">No alerts</p>
+        {:else}
+          <ul class="cal-pop-alarm-list">
+            {#each alarms as alarm (alarm.trigger_minutes_before)}
+              <li>
+                <span>{alarmLabel(alarm.trigger_minutes_before)}</span>
+                <button
+                  type="button"
+                  class="cal-pop-text"
+                  onclick={() => removeAlarm(alarm.trigger_minutes_before)}
+                >
+                  Remove
+                </button>
+              </li>
+            {/each}
+          </ul>
+        {/if}
+        <select
+          class="cal-pop-field cal-pop-alarm-add"
+          aria-label="Add alert"
+          value=""
+          onchange={(e) => {
+            const minutes = Number(e.currentTarget.value);
+            if (Number.isFinite(minutes) && minutes > 0) addAlarm(minutes);
+            e.currentTarget.value = "";
+          }}
+        >
+          <option value="" disabled selected>Add alert…</option>
+          {#each ALARM_PRESETS.filter((row) => row.minutes > 0) as preset (preset.minutes)}
+            <option value={preset.minutes}>{preset.label}</option>
+          {/each}
+        </select>
+      </div>
+
+      <div class="cal-pop-card cal-pop-row">
         <MapPin size={14} strokeWidth={1.75} class="cal-pop-row-icon" />
         <input
           class="cal-pop-inline"
@@ -220,11 +387,49 @@
       </div>
 
       <div class="cal-pop-card">
+        <div class="cal-pop-section-label">
+          <FileText size={13} strokeWidth={1.75} />
+          Vault note
+        </div>
+        {#if notePath.trim()}
+          <p class="cal-pop-note-path">{notePath}</p>
+          <div class="cal-pop-note-actions">
+            <button
+              type="button"
+              class="cal-pop-text"
+              disabled={linking}
+              onclick={() => void openLinkedNote()}
+            >
+              Open note
+            </button>
+            <button
+              type="button"
+              class="cal-pop-text"
+              onclick={() => (notePath = "")}
+            >
+              Unlink
+            </button>
+          </div>
+        {:else}
+          <button
+            type="button"
+            class="cal-pop-link-btn"
+            disabled={linking}
+            onclick={() => void createLinkedNote()}
+          >
+            <Plus size={13} strokeWidth={2} />
+            {linking ? "Creating…" : "Create linked note"}
+          </button>
+          <p class="cal-pop-hint">Rich notes & attachments stay in the vault.</p>
+        {/if}
+      </div>
+
+      <div class="cal-pop-card">
         <textarea
           class="cal-pop-notes"
           rows="3"
           bind:value={description}
-          placeholder="Add Notes"
+          placeholder="Short summary (optional)"
         ></textarea>
       </div>
 
@@ -254,7 +459,7 @@
           disabled={saving}
           onclick={() => void submit()}
         >
-          {saving ? "Saving…" : "Add"}
+          {saving ? "Saving…" : event ? "Save" : "Add"}
         </button>
       </div>
     </footer>
@@ -275,7 +480,6 @@
   }
 
   .cal-pop-backdrop-mobile {
-    /* Above .mobile-bottom-chrome (z-40) — same stack as .mobile-sheet-backdrop */
     position: fixed;
     z-index: 50;
     align-items: flex-end;
@@ -543,6 +747,71 @@
 
   .cal-pop-inline::placeholder {
     color: rgb(var(--shell-muted));
+  }
+
+  .cal-pop-select {
+    appearance: none;
+    cursor: pointer;
+  }
+
+  .cal-pop-section-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: rgb(var(--shell-muted));
+  }
+
+  .cal-pop-alarm-list {
+    list-style: none;
+    margin: 0.4rem 0 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .cal-pop-alarm-list li {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    font-size: 0.8125rem;
+    color: rgb(var(--color-surface-100));
+  }
+
+  .cal-pop-alarm-add {
+    width: 100%;
+    margin-top: 0.45rem;
+  }
+
+  .cal-pop-note-path {
+    margin: 0.4rem 0 0;
+    font-size: 0.75rem;
+    color: rgb(var(--color-surface-200));
+    word-break: break-all;
+  }
+
+  .cal-pop-note-actions {
+    display: flex;
+    gap: 0.75rem;
+    margin-top: 0.35rem;
+  }
+
+  .cal-pop-link-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    margin-top: 0.4rem;
+    border: 0;
+    background: transparent;
+    padding: 0;
+    font-size: 0.8125rem;
+    font-weight: 550;
+    color: rgb(var(--color-primary-300));
   }
 
   .cal-pop-notes {

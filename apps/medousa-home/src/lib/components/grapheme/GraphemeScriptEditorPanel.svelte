@@ -43,8 +43,19 @@
   let pieceLanded = $state(false);
   let pieceLandTimer: ReturnType<typeof setTimeout> | null = null;
 
+  /** Local derived from $state fields — avoids stale class-field `$derived`. */
+  const activeTab = $derived(
+    graphemeScriptEditor.activeTabId
+      ? (graphemeScriptEditor.tabs.find(
+          (tab) => tab.tabId === graphemeScriptEditor.activeTabId,
+        ) ?? null)
+      : null,
+  );
+  const activeDocumentUri = $derived(
+    activeTab ? graphemeScriptEditor.documentUriForTab(activeTab) : null,
+  );
   const activeLanguage = $derived(
-    getCodeEditorLanguage(graphemeScriptEditor.activeTab?.languageId ?? "grapheme"),
+    getCodeEditorLanguage(activeTab?.languageId ?? "grapheme"),
   );
   const canUseLsp = $derived(languageSupportsLsp(activeLanguage.id));
   const canCompile = $derived(languageSupportsCompile(activeLanguage.id));
@@ -99,11 +110,7 @@
   });
 
   const showRecipePicker = $derived(
-    Boolean(
-      canCompile &&
-        graphemeScriptEditor.activeTab &&
-        !graphemeScriptEditor.activeTab.body.trim(),
-    ),
+    Boolean(canCompile && activeTab && !activeTab.body.trim()),
   );
 
   function startFromRecipe(recipe: GraphemeRecipe) {
@@ -115,7 +122,7 @@
 
   function addActiveScriptToFlow() {
     flowError = null;
-    const tab = graphemeScriptEditor.activeTab;
+    const tab = activeTab;
     if (!tab?.body.trim()) {
       flowError = "Write script source before adding to a flow.";
       return;
@@ -128,7 +135,7 @@
   }
 
   async function saveActive() {
-    const tab = graphemeScriptEditor.activeTab;
+    const tab = activeTab;
     if (!tab || !canSave) return;
     graphemeScriptEditor.saveBusy = true;
     graphemeScriptEditor.saveError = null;
@@ -151,7 +158,7 @@
   }
 
   async function compileActive(mode: "check" | "aot") {
-    const tab = graphemeScriptEditor.activeTab;
+    const tab = activeTab;
     if (!tab?.body.trim() || !canCompile) return;
     graphemeScriptEditor.compileBusy = true;
     graphemeScriptEditor.compileError = null;
@@ -171,7 +178,7 @@
   }
 
   async function runActive() {
-    const tab = graphemeScriptEditor.activeTab;
+    const tab = activeTab;
     if (!tab?.body.trim() || !canRun) return;
     graphemeScriptEditor.sidePane = "diagnostics";
     await workshop.runScriptSource(tab.body);
@@ -200,7 +207,7 @@
           <button
             type="button"
             class="btn btn-sm variant-soft-surface"
-            disabled={!graphemeScriptEditor.activeTab?.body.trim()}
+            disabled={!activeTab?.body.trim()}
             onclick={addActiveScriptToFlow}
           >
             Add to flow
@@ -210,7 +217,7 @@
           <button
             type="button"
             class="btn btn-sm variant-filled-primary"
-            disabled={graphemeScriptEditor.saveBusy || !graphemeScriptEditor.activeTab}
+            disabled={graphemeScriptEditor.saveBusy || !activeTab}
             onclick={() => void saveActive()}
           >
             {graphemeScriptEditor.saveBusy ? "Saving…" : "Save"}
@@ -220,7 +227,7 @@
           <button
             type="button"
             class="btn btn-sm variant-soft-surface"
-            disabled={workshop.runBusy || !graphemeScriptEditor.activeTab?.body.trim()}
+            disabled={workshop.runBusy || !activeTab?.body.trim()}
             onclick={() => void runActive()}
           >
             {workshop.runBusy ? "Running…" : "Run"}
@@ -230,7 +237,7 @@
           <button
             type="button"
             class="btn btn-sm variant-soft-surface"
-            disabled={graphemeScriptEditor.compileBusy || !graphemeScriptEditor.activeTab?.body.trim()}
+            disabled={graphemeScriptEditor.compileBusy || !activeTab?.body.trim()}
             onclick={() => void compileActive("check")}
           >
             Compile
@@ -246,7 +253,7 @@
             <button
               type="button"
               class="btn btn-sm variant-ghost-surface"
-              disabled={graphemeScriptEditor.compileBusy || !graphemeScriptEditor.activeTab?.body.trim()}
+              disabled={graphemeScriptEditor.compileBusy || !activeTab?.body.trim()}
               onclick={() => void compileActive("aot")}
             >
               Optimize (AOT)
@@ -281,14 +288,15 @@
   {/snippet}
 
   {#snippet editor()}
-    {#if graphemeScriptEditor.activeTab}
-      {#key `${graphemeScriptEditor.activeTab.tabId}:${graphemeScriptEditor.activeDocumentUri ?? "none"}:${activeLanguage.id}:${lspClient && canUseLsp ? "lsp" : "plain"}`}
+    {#if activeTab}
+      {#key `${activeTab.tabId}:${graphemeScriptEditor.contentEpoch}:${activeLanguage.id}:${lspClient && canUseLsp ? "lsp" : "plain"}`}
         <CodeMirrorHost
           bind:this={codeMirror}
-          value={graphemeScriptEditor.activeTab.body}
+          value={activeTab.body}
           languageId={activeLanguage.id}
-          documentUri={graphemeScriptEditor.activeDocumentUri}
+          documentUri={activeDocumentUri}
           client={canUseLsp ? lspClient : null}
+          contentSyncKey={graphemeScriptEditor.contentEpoch}
           onchange={(body) => graphemeScriptEditor.patchActiveTab({ body })}
         />
       {/key}
@@ -320,12 +328,12 @@
     </div>
 
     {#if graphemeScriptEditor.sidePane === "info"}
-      {#if graphemeScriptEditor.activeTab}
+      {#if activeTab}
         <label class="mt-4 block">
           <span class="workshop-label">Name</span>
           <input
             class="input mt-1 w-full text-sm"
-            value={graphemeScriptEditor.activeTab.name}
+            value={activeTab.name}
             oninput={(event) =>
               graphemeScriptEditor.patchActiveTab({
                 name: (event.currentTarget as HTMLInputElement).value,
@@ -341,7 +349,7 @@
             <span class="workshop-label">Intent</span>
             <input
               class="input mt-1 w-full text-sm"
-              value={graphemeScriptEditor.activeTab.intent}
+              value={activeTab.intent}
               oninput={(event) =>
                 graphemeScriptEditor.patchActiveTab({
                   intent: (event.currentTarget as HTMLInputElement).value,
@@ -352,7 +360,7 @@
             <span class="workshop-label">Tags</span>
             <input
               class="input mt-1 w-full text-sm"
-              value={graphemeScriptEditor.activeTab.tags.join(", ")}
+              value={activeTab.tags.join(", ")}
               oninput={(event) =>
                 graphemeScriptEditor.patchActiveTab({
                   tags: (event.currentTarget as HTMLInputElement).value
@@ -362,9 +370,9 @@
                 })}
             />
           </label>
-          {#if graphemeScriptEditor.activeTab.scriptId}
+          {#if activeTab.scriptId}
             <p class="workshop-faint mt-3 font-mono text-[11px]">
-              {graphemeScriptEditor.activeTab.scriptId} · v{graphemeScriptEditor.activeTab.version}
+              {activeTab.scriptId} · v{activeTab.version}
             </p>
           {/if}
         {:else}
@@ -421,9 +429,9 @@
   {#snippet statusBar()}
     <div class="flex flex-wrap items-center justify-between gap-2 text-[11px]">
       <span class="text-surface-400">
-        {#if graphemeScriptEditor.activeTab}
-          {graphemeScriptEditor.activeTab.dirty ? "Modified · " : ""}
-          {graphemeScriptEditor.activeTab.body.split("\n").length} lines
+        {#if activeTab}
+          {activeTab.dirty ? "Modified · " : ""}
+          {activeTab.body.split("\n").length} lines
           · {activeLanguage.label}
           {#if canUseLsp && graphemeScriptEditor.lspReady}
             · completions on

@@ -14,7 +14,8 @@ export type ShellPaneHotkeyHandlers = {
   onCheatSheet?: () => void;
 };
 
-function isEditableTarget(target: EventTarget | null): boolean {
+/** Exported for tests — inputs / contenteditable should skip most global binds. */
+export function isEditableTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
   if (target.isContentEditable) return true;
   const tag = target.tagName;
@@ -46,8 +47,9 @@ export function attachShellPaneHotkeys(handlers: ShellPaneHotkeyHandlers = {}): 
     const ctrl = event.ctrlKey || event.metaKey;
     const key = event.key;
     const lower = key.length === 1 ? key.toLowerCase() : key;
+    const editable = isEditableTarget(event.target);
 
-    // Ctrl+B — left rail (VS Code / Cursor). Not a pane prefix.
+    // Ctrl+B — left rail (VS Code / Cursor). Intentional even in inputs.
     if (ctrl && !event.altKey && !event.shiftKey && lower === "b") {
       event.preventDefault();
       layout.toggleShellSidebarExpanded();
@@ -55,7 +57,13 @@ export function attachShellPaneHotkeys(handlers: ShellPaneHotkeyHandlers = {}): 
     }
 
     // Ctrl/Cmd+Shift+. — summon compact view toolbar at the cursor.
-    if (ctrl && event.shiftKey && !event.altKey && (key === "." || key === ">")) {
+    if (
+      !editable &&
+      ctrl &&
+      event.shiftKey &&
+      !event.altKey &&
+      (key === "." || key === ">")
+    ) {
       event.preventDefault();
       summonViewToolbar();
       return;
@@ -63,14 +71,14 @@ export function attachShellPaneHotkeys(handlers: ShellPaneHotkeyHandlers = {}): 
 
     // Esc clears pane zoom outside the prefix chord.
     if (key === "Escape" && shellTabs.zoomedGroupId && Date.now() > prefixArmedUntil) {
-      if (!isEditableTarget(event.target)) {
+      if (!editable) {
         event.preventDefault();
         shellTabs.clearZoom();
         return;
       }
     }
 
-    // Arm prefix: Ctrl+;
+    // Arm prefix: Ctrl+; (chord second key may land in an input — intentional).
     if (ctrl && !event.altKey && (key === ";" || key === ":")) {
       event.preventDefault();
       prefixArmedUntil = Date.now() + PREFIX_TIMEOUT_MS;
@@ -79,7 +87,9 @@ export function attachShellPaneHotkeys(handlers: ShellPaneHotkeyHandlers = {}): 
 
     // Content zoom (notes / chats / scripts) — VS Code style. Not pane maximize.
     // Skip while Ctrl+; chord is armed so Ctrl+; - keeps "split down".
+    // Skip in editables so typing / native zoom aren't stolen.
     if (
+      !editable &&
       ctrl &&
       !event.altKey &&
       !event.shiftKey &&

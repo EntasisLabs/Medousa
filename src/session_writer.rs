@@ -210,6 +210,7 @@ mod tests {
             answer_state: None,
             parts: None,
             slice_summary: None,
+            speaker_profile_id: None,
         }
     }
 

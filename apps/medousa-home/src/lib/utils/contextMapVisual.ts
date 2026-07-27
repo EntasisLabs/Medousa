@@ -12,16 +12,16 @@ export interface MapKindVisual {
   planned?: boolean;
 }
 
-/** Canonical palette — extend when M13b (claim) and M13c (note) land. */
+/** Canonical palette — Memory/claim reserved for a later pass. */
 export const MAP_KIND_VISUALS: Record<ContextMapNodeKind, MapKindVisual> = {
   session: {
     kind: "session",
     label: "Session",
     shortLabel: "Session",
     hue: 265,
-    saturation: 72,
-    light: 58,
-    strokeLight: 82,
+    saturation: 48,
+    light: 54,
+    strokeLight: 72,
     shape: "circle",
   },
   thread: {
@@ -29,9 +29,9 @@ export const MAP_KIND_VISUALS: Record<ContextMapNodeKind, MapKindVisual> = {
     label: "Moment",
     shortLabel: "Moment",
     hue: 168,
-    saturation: 64,
-    light: 48,
-    strokeLight: 72,
+    saturation: 42,
+    light: 46,
+    strokeLight: 64,
     shape: "rounded-square",
   },
   claim: {
@@ -50,18 +50,17 @@ export const MAP_KIND_VISUALS: Record<ContextMapNodeKind, MapKindVisual> = {
     label: "Note",
     shortLabel: "Note",
     hue: 210,
-    saturation: 58,
-    light: 62,
-    strokeLight: 80,
+    saturation: 48,
+    light: 58,
+    strokeLight: 76,
     shape: "hexagon",
-    planned: true,
   },
 };
 
+/** Live legend — Memory held back until the claims pass. */
 export const MAP_KIND_LEGEND: MapKindVisual[] = [
   MAP_KIND_VISUALS.session,
   MAP_KIND_VISUALS.thread,
-  MAP_KIND_VISUALS.claim,
   MAP_KIND_VISUALS.note,
 ];
 
@@ -102,7 +101,7 @@ export function mapDisplayLabel(
   if (mode === "neighbor") {
     return truncateMapLabel(base, kind === "session" ? 22 : 16);
   }
-  return truncateMapLabel(base, 13);
+  return truncateMapLabel(base, 11);
 }
 
 export function resolveMapLabelMode(options: {

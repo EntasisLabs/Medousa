@@ -1,9 +1,10 @@
 <script lang="ts">
-  import { ChevronDown, Sparkles } from "@lucide/svelte";
+  import AudioLinesMark from "$lib/components/ui/AudioLinesMark.svelte";
+  import { ChevronDown } from "@lucide/svelte";
 
   interface Props {
     reasoning: string;
-    /** Keep open while the model is still thinking. */
+    /** Live cue while the model is still thinking (does not force expand). */
     streaming?: boolean;
     compact?: boolean;
   }
@@ -33,20 +34,19 @@
     class="thinking-trace group/thinking overflow-hidden transition-[color,opacity] duration-200"
     class:thinking-live={!done}
     class:thinking-done={done}
-    open={streaming}
   >
     <summary
       class="flex cursor-pointer list-none items-center gap-1.5 marker:content-none {done
         ? 'py-0.5'
         : 'px-0 py-1'}"
     >
-      <Sparkles
-        class="h-3 w-3 shrink-0 {done
+      <span
+        class="thinking-audio-mark shrink-0 {done
           ? 'text-surface-700'
-          : 'text-primary-400/55 animate-pulse'}"
-        strokeWidth={2}
-        aria-hidden="true"
-      />
+          : 'text-surface-400'}"
+      >
+        <AudioLinesMark hot={!done} lit={!done} size={12} />
+      </span>
       <span
         class="min-w-0 flex-1 truncate text-[10px] {done
           ? 'font-normal text-surface-600'
@@ -93,5 +93,10 @@
   .thinking-done:hover,
   .thinking-done[open] {
     opacity: 0.85;
+  }
+
+  .thinking-audio-mark {
+    display: inline-flex;
+    line-height: 0;
   }
 </style>

@@ -447,7 +447,7 @@ async fn run_prompt_pump(
                 );
                 let _ = input;
             }
-            AcpEvent::PermissionRequest { id: _, summary } => {
+            AcpEvent::PermissionRequest { id, summary } => {
                 let record = agent_permission_request_store().create(CreateAgentPermissionRequest {
                     agent_session_id: live.agent_session_id.clone(),
                     session_id: live.session_id.clone(),
@@ -459,9 +459,21 @@ async fn run_prompt_pump(
                     .wait_for_resolution(&record.request_id)
                     .await
                     .unwrap_or(PermissionResolution::Denied);
-                let msg = match resolution {
-                    PermissionResolution::Approved => "permission approved",
-                    PermissionResolution::Denied => "permission denied",
+                let approved = matches!(resolution, PermissionResolution::Approved);
+                if let Err(err) = ACP_CLIENT
+                    .respond_permission(&live.acp_session_id, &id, approved)
+                    .await
+                {
+                    tracing::warn!(
+                        error = %err,
+                        acp_permission_id = %id,
+                        "failed to reply to ACP permission request"
+                    );
+                }
+                let msg = if approved {
+                    "permission approved"
+                } else {
+                    "permission denied"
                 };
                 publish_agent_event(
                     &entry,

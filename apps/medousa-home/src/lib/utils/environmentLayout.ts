@@ -1,8 +1,9 @@
-import type { EnvironmentSpec } from "$lib/types/environment";
+import type { EnvironmentSpec, EnvironmentTheme } from "$lib/types/environment";
 import {
   SAFETY_SURFACE_RUNTIME,
   SAFETY_SURFACE_SETTINGS,
 } from "$lib/types/environment";
+import { primaryRailSurfaceIds } from "$lib/utils/lifeRailSections";
 
 export const SAFETY_PRESET_SURFACE_IDS = [
   SAFETY_SURFACE_SETTINGS,
@@ -17,9 +18,20 @@ export const NON_TOGGLEABLE_NAV_SURFACE_IDS = new Set([
 ]);
 
 export const NAV_DESTINATION_GROUPS: Array<{ label: string; surfaceIds: string[] }> = [
-  { label: "Life", surfaceIds: ["chat", "peers", "work", "library", "web", "context", "calendar"] },
-  { label: "Workshop", surfaceIds: ["workshop", "automations"] },
-  { label: "Connect", surfaceIds: ["messaging"] },
+  {
+    label: "Life",
+    surfaceIds: [
+      "chat",
+      "peers",
+      "work",
+      "library",
+      "automations",
+      "web",
+      "map",
+      "calendar",
+    ],
+  },
+  { label: "Workshop", surfaceIds: ["workshop"] },
 ];
 
 /** Switch active layout preset on an in-memory spec (mirrors daemon helper). */
@@ -36,6 +48,8 @@ export function activateLayoutPreset(spec: EnvironmentSpec, presetId: string): v
   if (preset.shellChrome) {
     spec.shellChrome = preset.shellChrome;
   }
+  // Promote (or clear) so the previous layout's palette does not stick.
+  spec.theme = preset.theme ? structuredClone(preset.theme) : null;
 }
 
 export function activeLayoutPreset(spec: EnvironmentSpec) {
@@ -97,6 +111,157 @@ export function setSurfaceNavVisible(
   preset.surfaces = next;
 }
 
+function ensureSurfaceInActivePreset(spec: EnvironmentSpec, surfaceId: string): string[] {
+  if (!isNavDestinationToggleable(surfaceId)) {
+    throw new Error(`Surface '${surfaceId}' cannot be reordered in nav.`);
+  }
+  if (!spec.surfaces.some((surface) => surface.id === surfaceId)) {
+    throw new Error(`Unknown surface '${surfaceId}'.`);
+  }
+
+  const preset = activeLayoutPreset(spec);
+  if (!preset) {
+    throw new Error("No active layout preset.");
+  }
+
+  const safety = new Set<string>(SAFETY_PRESET_SURFACE_IDS);
+  const next = [...preset.surfaces];
+
+  if (!next.includes(surfaceId)) {
+    const firstSafety = next.findIndex((id) => safety.has(id));
+    if (firstSafety === -1) next.push(surfaceId);
+    else next.splice(firstSafety, 0, surfaceId);
+  }
+
+  return next;
+}
+
+/**
+ * Move a destination within the active layout preset.
+ * Only toggleable rail destinations move; home / safety stay pinned in place.
+ */
+export function moveSurfaceInActivePreset(
+  spec: EnvironmentSpec,
+  surfaceId: string,
+  direction: -1 | 1,
+): void {
+  const preset = activeLayoutPreset(spec);
+  if (!preset) {
+    throw new Error("No active layout preset.");
+  }
+
+  const safety = new Set<string>(SAFETY_PRESET_SURFACE_IDS);
+  const next = ensureSurfaceInActivePreset(spec, surfaceId);
+
+  const movableIndices: number[] = [];
+  for (let i = 0; i < next.length; i++) {
+    const id = next[i]!;
+    if (safety.has(id) || !isNavDestinationToggleable(id)) continue;
+    movableIndices.push(i);
+  }
+
+  const movablePos = movableIndices.findIndex((i) => next[i] === surfaceId);
+  if (movablePos === -1) return;
+
+  const targetPos = movablePos + direction;
+  if (targetPos < 0 || targetPos >= movableIndices.length) {
+    preset.surfaces = next;
+    return;
+  }
+
+  const from = movableIndices[movablePos]!;
+  const to = movableIndices[targetPos]!;
+  const tmp = next[from]!;
+  next[from] = next[to]!;
+  next[to] = tmp;
+  preset.surfaces = next;
+}
+
+/**
+ * Place `surfaceId` before `beforeSurfaceId` in the active preset.
+ * Pass `beforeSurfaceId: null` to move it to the end of the movable range
+ * (just before safety surfaces).
+ */
+export function reorderSurfaceInActivePreset(
+  spec: EnvironmentSpec,
+  surfaceId: string,
+  beforeSurfaceId: string | null,
+): void {
+  const preset = activeLayoutPreset(spec);
+  if (!preset) {
+    throw new Error("No active layout preset.");
+  }
+  if (beforeSurfaceId === surfaceId) return;
+
+  const safety = new Set<string>(SAFETY_PRESET_SURFACE_IDS);
+  const next = ensureSurfaceInActivePreset(spec, surfaceId);
+  const from = next.indexOf(surfaceId);
+  if (from === -1) return;
+  next.splice(from, 1);
+
+  if (beforeSurfaceId == null) {
+    const firstSafety = next.findIndex((id) => safety.has(id));
+    if (firstSafety === -1) next.push(surfaceId);
+    else next.splice(firstSafety, 0, surfaceId);
+  } else {
+    if (!isNavDestinationToggleable(beforeSurfaceId)) {
+      throw new Error(`Surface '${beforeSurfaceId}' cannot be a reorder target.`);
+    }
+    const to = next.indexOf(beforeSurfaceId);
+    if (to === -1) {
+      const firstSafety = next.findIndex((id) => safety.has(id));
+      if (firstSafety === -1) next.push(surfaceId);
+      else next.splice(firstSafety, 0, surfaceId);
+    } else {
+      next.splice(to, 0, surfaceId);
+    }
+  }
+
+  preset.surfaces = next;
+}
+
+/**
+ * Move a primary-rail destination to `toPrimaryIndex` (0-based among primary doors).
+ * Non-primary surfaces (messaging, safety, …) keep their relative slots.
+ */
+export function reorderPrimarySurfaceInActivePreset(
+  spec: EnvironmentSpec,
+  surfaceId: string,
+  toPrimaryIndex: number,
+): void {
+  const preset = activeLayoutPreset(spec);
+  if (!preset) {
+    throw new Error("No active layout preset.");
+  }
+
+  const next = ensureSurfaceInActivePreset(spec, surfaceId);
+  const primary = primaryRailSurfaceIds(next);
+  const from = primary.indexOf(surfaceId);
+  if (from === -1) return;
+
+  const to = Math.max(0, Math.min(Math.floor(toPrimaryIndex), primary.length - 1));
+  if (from === to) {
+    preset.surfaces = next;
+    return;
+  }
+
+  const without = primary.filter((id) => id !== surfaceId);
+  const fromIdx = next.indexOf(surfaceId);
+  next.splice(fromIdx, 1);
+
+  if (to >= without.length) {
+    const lastPrimary = without[without.length - 1]!;
+    const lastIdx = next.indexOf(lastPrimary);
+    next.splice(lastIdx + 1, 0, surfaceId);
+  } else {
+    const beforeId = without[to]!;
+    const beforeIdx = next.indexOf(beforeId);
+    next.splice(beforeIdx, 0, surfaceId);
+  }
+
+  preset.surfaces = next;
+}
+
 export const BUILTIN_LAYOUT_PRESET_IDS = new Set(["default", "focus"]);
 
 export function isBuiltinLayoutPreset(presetId: string): boolean {
@@ -145,12 +310,38 @@ export function addLayoutPresetFromActive(
     active: true,
     surfaces: [...active.surfaces],
     shellChrome: active.shellChrome ? structuredClone(active.shellChrome) : null,
+    theme: active.theme ? structuredClone(active.theme) : spec.theme ? structuredClone(spec.theme) : null,
   });
   spec.activePresetId = id;
   if (active.shellChrome) {
     spec.shellChrome = structuredClone(active.shellChrome);
   }
+  const created = spec.layoutPresets.find((preset) => preset.id === id);
+  if (created?.theme) {
+    spec.theme = structuredClone(created.theme);
+  }
   return id;
+}
+
+/** Stamp color theme onto the env + active layout (mirrors shell chrome dual-write). */
+export function setActiveLayoutTheme(
+  spec: EnvironmentSpec,
+  theme: EnvironmentTheme,
+): void {
+  const next: EnvironmentTheme = {
+    ...(spec.theme ?? {}),
+    ...theme,
+  };
+  spec.theme = next;
+  const active = activeLayoutPreset(spec);
+  if (active) {
+    active.theme = {
+      ...(active.theme ?? {}),
+      ...theme,
+    };
+  }
+  spec.updatedAt = new Date().toISOString();
+  spec.updatedBy = "operator";
 }
 
 export function removeLayoutPreset(spec: EnvironmentSpec, presetId: string): void {

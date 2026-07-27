@@ -10,6 +10,55 @@ use super::sdk::{client, sdk_error};
 use super::workshop_http;
 use super::DaemonState;
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateSessionRequest {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub catalog: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub member_profile_ids: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_profile_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateSessionResponse {
+    pub session_id: String,
+    pub catalog: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
+    #[serde(default)]
+    pub member_profile_ids: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_profile_id: Option<String>,
+}
+
+#[tauri::command]
+pub async fn session_create(
+    state: State<'_, DaemonState>,
+    catalog: Option<String>,
+    member_profile_ids: Option<Vec<String>>,
+    agent_profile_id: Option<String>,
+    display_name: Option<String>,
+    session_id: Option<String>,
+) -> Result<CreateSessionResponse, String> {
+    workshop_http::post_json(
+        &state,
+        "/v1/sessions",
+        &CreateSessionRequest {
+            session_id,
+            catalog,
+            member_profile_ids,
+            agent_profile_id,
+            display_name,
+        },
+    )
+    .await
+}
+
 #[tauri::command]
 pub async fn session_list(
     state: State<'_, DaemonState>,

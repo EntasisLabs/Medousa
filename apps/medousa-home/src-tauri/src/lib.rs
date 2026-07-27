@@ -11,9 +11,13 @@ mod daemon;
 mod messaging;
 mod medousa_paths;
 mod packages;
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
+mod app_update;
 mod pairing;
 mod pairing_client;
+mod mesh_envelope;
 mod lan_share;
+mod mesh_intros;
 mod peer_inbox_sink;
 mod push;
 mod workshop_registry;
@@ -106,6 +110,8 @@ pub fn run() {
             ) {
                 eprintln!("workshop registry sync: {err}");
             }
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            connection_prefs::refresh_autostart_if_enabled();
             eprintln!("[medousa-home] setup complete");
 
             #[cfg(any(windows, target_os = "linux"))]
@@ -154,6 +160,14 @@ pub fn run() {
             {
                 human_browser_ios::init_app_handle(app.handle().clone());
                 ios_push_setup::install_ios_push_background_handler();
+                // Match medousa-theme surface-950 so the status-bar / Dynamic Island
+                // backdrop is not pure black against the charcoal shell.
+                if let Some(main) = app.get_webview_window("main") {
+                    let canvas = tauri::webview::Color(16, 16, 24, 255);
+                    if let Err(err) = main.set_background_color(Some(canvas)) {
+                        eprintln!("[medousa-home] set_background_color(ios canvas): {err}");
+                    }
+                }
             }
 
             Ok(())
@@ -195,6 +209,18 @@ pub fn run() {
                     "vault-sticky" => {
                         api.prevent_close();
                         let _ = window.set_always_on_top(false);
+                        let _ = window.hide();
+                    }
+                    "desktop-toolbar" => {
+                        api.prevent_close();
+                        let _ = window.hide();
+                    }
+                    "view-popout" => {
+                        api.prevent_close();
+                        let _ = window.hide();
+                    }
+                    "guide" => {
+                        api.prevent_close();
                         let _ = window.hide();
                     }
                     _ => {}
@@ -262,6 +288,14 @@ pub fn run() {
             lan_share::peer_mark_read,
             lan_share::peer_mark_thread_read,
             lan_share::peer_compose_identity,
+            mesh_intros::list_intro_workshops,
+            mesh_intros::mesh_list_intros,
+            mesh_intros::mesh_list_intro_candidates,
+            mesh_intros::mesh_request_intro,
+            mesh_intros::mesh_accept_intro,
+            mesh_intros::mesh_decline_intro,
+            mesh_intros::mesh_list_local_peers,
+            mesh_intros::mesh_set_peer_rendezvous,
             workshop_registry::workshops_load,
             workshop_registry::workshops_set_active,
             workshop_registry::workshops_add_local,
@@ -557,6 +591,9 @@ pub fn run() {
             daemon::turn_budget::turn_budget_deny,
             daemon::turn_budget::turn_budget_list,
             daemon::session::session_list,
+            daemon::session::session_create,
+            daemon::shared_mode::shared_mode_status,
+            daemon::shared_mode::shared_mode_set,
             daemon::session::session_set_display_name,
             daemon::session::session_delete,
             daemon::session::session_get_history,
@@ -625,6 +662,8 @@ pub fn run() {
             daemon::identity::identity_remember,
             daemon::identity::identity_digest_preview,
             daemon::identity::identity_export_markdown,
+            daemon::identity::identity_export_profile,
+            daemon::identity::identity_import_profile,
             daemon::locus::locus_list_nodes,
             daemon::locus::locus_list_tags,
             daemon::locus::locus_get_node,
@@ -651,6 +690,22 @@ pub fn run() {
             window::window_focus_browser,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             window::browser_window_present,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            window::window_show_desktop_toolbar,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            window::window_hide_desktop_toolbar,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            window::window_toggle_desktop_toolbar,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            window::window_show_view_popout,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            window::window_hide_view_popout,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            window::window_show_main,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            window::window_show_guide,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            window::window_hide_guide,
             tray::tray_update_blocked_count,
             #[cfg(target_os = "ios")]
             live_activity::live_activity_is_available,
@@ -689,6 +744,10 @@ pub fn run() {
             packages::packages_install,
             packages::packages_remove,
             packages::packages_open_installer,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            app_update::app_update_status,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            app_update::app_update_open_download,
             daemon::local_inference::local_inference_hardware,
             daemon::local_inference::local_inference_catalog,
             daemon::local_inference::local_inference_models,
@@ -712,12 +771,13 @@ pub fn run() {
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 fn setup_desktop_tray(app: &tauri::App) -> tauri::Result<()> {
     let show = MenuItem::with_id(app, "show", "Show Medousa", true, None::<&str>)?;
+    let toolbar = MenuItem::with_id(app, "toolbar", "Desktop toolbar", true, None::<&str>)?;
     let chat = MenuItem::with_id(app, "chat", "Open Chat", true, None::<&str>)?;
     let note = MenuItem::with_id(app, "note", "Open Note", true, None::<&str>)?;
     let web = MenuItem::with_id(app, "web", "Open Web", true, None::<&str>)?;
     let hide = MenuItem::with_id(app, "hide", "Hide", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&show, &chat, &note, &web, &hide, &quit])?;
+    let menu = Menu::with_items(app, &[&show, &toolbar, &chat, &note, &web, &hide, &quit])?;
 
     if let Some(icon) = app.default_window_icon().cloned() {
         TrayIconBuilder::with_id("main-tray")
@@ -726,6 +786,9 @@ fn setup_desktop_tray(app: &tauri::App) -> tauri::Result<()> {
             .tooltip("Medousa")
             .on_menu_event(|app, event| match event.id.as_ref() {
                 "show" => show_main_window(app),
+                "toolbar" => {
+                    let _ = window::window_toggle_desktop_toolbar(app.clone());
+                }
                 "chat" => {
                     let _ = window::window_show_chat_popout(app.clone());
                 }

@@ -15,7 +15,8 @@
   let { open = false, onClose, anchorRect = null, mobile = false }: Props = $props();
 
   const tabCount = $derived(humanBrowser.tabs.length);
-  const placement = $derived<PopoverPlacement>(mobile ? "above" : "panel");
+  /** Top chrome opens tabs — drop the sheet below the anchor when possible. */
+  const placement = $derived<PopoverPlacement>(mobile ? "below" : "panel");
 </script>
 
 <BrowserPopover

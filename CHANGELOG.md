@@ -7,6 +7,42 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-07-26
+
+### Added
+
+- **Shared mode** — profiles as workshop seats (no login); pairing carries `profile_id`; dual session catalogs for personal vs shared
+- **Peer mesh** — capability-scoped personal↔team messaging, inbox/outbox, receipts, grants, intros, and daemon introducer wiring (ADR-011)
+- **Calendar reminders** — reminder composer, alarm helpers, and richer calendar actions / `.ics` flows
+- **In-app updates** — check / download desktop shell updates from Settings → Workshop → App
+- Standalone toolbar + pop-out window support; zoom / content-scale capabilities for mobile and desktop
+- Vault **outline** navigation; Operator’s Guide expanded (product voice + Liquid examples)
+- Context map absorbs actions and session metrics; improved physics / rendering / side rail
+- Interactive canvas layout editing for custom surfaces / environments
+- Work surface: reworked Ask flow; side rail filtered views
+- Spotlight pass inspired by Harpoon / Telescope (relevance + discovery)
+- ACP/MCP finish: remaining handlers, stream events, permission / pump polish
+
+### Changed
+
+- **Mobile shell rework** — quieter Home (greeting hero, workshop/status/peers meta row), destinations menu (custom views before More; Settings pinned last), settings pager with arrows through all sections, platform-aware host copy (no hardcoded “This Mac”)
+- Mobile Notes, Automations / Scripts, and chrome interactions (top chrome actions, sheets, back-to-Home from More)
+- Settings IA reorganized into Preferences / Medousa Agent / Runtime Controls / Sharing + machine group
+- Shell tabs: notch orientation, drag-to-split, rename / search workspace tabs
+- You / profiles language, keybindings, and wizard path polish
+- Chat model picker and presence / routing copy for companion shells
+
+### Fixed
+
+- Timeline scroll rendering issues
+- Markdown preview / Operator’s Guide raw rendering edge cases
+- Mobile Home Vite loading via redirect; workshop open crash from missing Home date state
+- Mobile settings section switching (no longer forced back to Preferences)
+
+### Notes
+
+- **0.6.0 ships `engine` + `desktop` only** — adapters / installer / mcp-gateway / local-brain remain on **0.4.1** channel artifacts (same pattern as 0.5.0). Do not push a full-train `v0.6.0` tag unless every package stamp is raised together.
+
 ## [0.5.0] — 2026-07-24
 
 ### Added
@@ -201,6 +237,7 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 - Product path is **Home-first**: download the app, chat, then add packages from Settings; Installer remains an advanced/repair escape hatch
 - Connection → Extras and welcome-wizard offline CTAs open Settings → Packages instead of launching the Installer by default
 
+[0.6.0]: https://github.com/EntasisLabs/Medousa/releases/tag/v0.6.0
 [0.5.0]: https://github.com/EntasisLabs/Medousa/releases/tag/v0.5.0
 [0.4.1]: https://github.com/EntasisLabs/Medousa/releases/tag/v0.4.1
 [0.4.0]: https://github.com/EntasisLabs/Medousa/releases/tag/v0.4.0

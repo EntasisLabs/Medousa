@@ -43,7 +43,7 @@ Home: Tauri commands → `client().agents()` only (`daemon/agents.rs`).
 
 ## ACP crate
 
-`crates/medousa-acp-client` — `ExternalAcpClient` spawns Cursor/Codex when the binary is on PATH; otherwise stub bridge events. Force stub: `MEDOUSA_ACP_FORCE_STUB=1`. Demo permissions: `MEDOUSA_ACP_STUB_PERMISSION=1`.
+`crates/medousa-acp-client` — `ExternalAcpClient` spawns Cursor/Codex when the binary is on PATH; otherwise stub bridge events. Handshake: `initialize` → `session/new` → `session/prompt`; streams `session/update` chunks and replies to `session/request_permission`. Force stub: `MEDOUSA_ACP_FORCE_STUB=1`. Demo permissions: `MEDOUSA_ACP_STUB_PERMISSION=1`. Permission wait timeout (default-deny): `MEDOUSA_ACP_PERMISSION_TIMEOUT_SECS` (default `300`).
 
 ## Stasis waitable turns (0.8)
 
@@ -67,9 +67,9 @@ MCP: external agents reach vault/context via [Medousa MCP server](mcp-server-set
 
 ## Cut line
 
-| In 0.4.0 bones | Later |
+| In 0.6 Dynamic | Later |
 |----------------|--------|
-| SDK + daemon + thin Home Runtime select | Polished pickers on every channel |
-| Cursor + Codex spawn/stub | Full ACP wire parity |
-| Permission approve/deny | UX parity with native tool cards |
+| SDK + daemon + Home Runtime select | Polished pickers on every channel |
+| Cursor + Codex ACP pump (`session/*`) | Broader ACP vendor quirks |
+| Permission approve/deny + Home bar + timeout | UX parity with native tool cards |
 | Stasis 0.8 ingress + waitable correlation | Durable turn wait store |

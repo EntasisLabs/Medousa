@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import { graphemeScriptEditor } from "$lib/stores/graphemeScriptEditor.svelte";
   import { layout } from "$lib/stores/layout.svelte";
   import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
@@ -84,7 +85,9 @@
 
   $effect(() => {
     if (!showVault || !vaultVersions.enabled) return;
-    void vaultVersions.refresh();
+    untrack(() => {
+      void vaultVersions.refresh();
+    });
   });
 </script>
 

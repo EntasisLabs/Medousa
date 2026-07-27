@@ -4,6 +4,7 @@
     ChevronLeft,
     ChevronRight,
     Download,
+    ListTodo,
     Plus,
     RefreshCw,
     Upload,
@@ -12,9 +13,11 @@
 
   interface Props {
     onAction?: () => void;
+    /** popover = full seed+secondary; rail-row = two seed actions only. */
+    variant?: "popover" | "rail-row";
   }
 
-  let { onAction }: Props = $props();
+  let { onAction, variant = "popover" }: Props = $props();
   let importInput: HTMLInputElement | undefined = $state();
 
   const modes: { id: CalendarViewMode; label: string }[] = [
@@ -25,6 +28,11 @@
 
   function newEvent() {
     calendar.openCreate();
+    onAction?.();
+  }
+
+  function newReminder() {
+    calendar.openCreateReminder();
     onAction?.();
   }
 
@@ -98,76 +106,87 @@
   <CalendarDays size={15} strokeWidth={1.75} />
 </button>
 
-<!-- Expanded chrome only (hidden in seed via .lme-dock-chrome-secondary). -->
-<div class="lme-dock-chrome-secondary flex shrink-0 items-center gap-0.5">
-  <button
-    type="button"
-    class="vault-dock-icon-btn"
-    title="Previous"
-    aria-label="Previous period"
-    onclick={() => shift(-1)}
-  >
-    <ChevronLeft size={15} strokeWidth={2} />
-  </button>
-  <button
-    type="button"
-    class="vault-dock-icon-btn"
-    title="Next"
-    aria-label="Next period"
-    onclick={() => shift(1)}
-  >
-    <ChevronRight size={15} strokeWidth={2} />
-  </button>
-  <div
-    class="inline-flex h-7 items-center rounded-md border border-surface-600/40 p-px"
-    role="group"
-    aria-label="View mode"
-  >
-    {#each modes as mode (mode.id)}
-      <button
-        type="button"
-        class="inline-flex h-6 min-w-6 items-center justify-center rounded px-1 text-[10px] font-semibold tracking-wide transition {calendar.viewMode ===
-        mode.id
-          ? 'bg-surface-700 text-surface-50'
-          : 'text-surface-500 hover:text-surface-200'}"
-        aria-pressed={calendar.viewMode === mode.id}
-        title={mode.id}
-        onclick={() => setMode(mode.id)}
-      >
-        {mode.label}
-      </button>
-    {/each}
+{#if variant === "popover"}
+  <!-- Expanded chrome only (hidden in seed via .lme-dock-chrome-secondary). -->
+  <div class="lme-dock-chrome-secondary flex shrink-0 items-center gap-0.5">
+    <button
+      type="button"
+      class="vault-dock-icon-btn"
+      title="New reminder"
+      aria-label="New reminder"
+      onclick={newReminder}
+    >
+      <ListTodo size={15} strokeWidth={1.75} />
+    </button>
+    <button
+      type="button"
+      class="vault-dock-icon-btn"
+      title="Previous"
+      aria-label="Previous period"
+      onclick={() => shift(-1)}
+    >
+      <ChevronLeft size={15} strokeWidth={2} />
+    </button>
+    <button
+      type="button"
+      class="vault-dock-icon-btn"
+      title="Next"
+      aria-label="Next period"
+      onclick={() => shift(1)}
+    >
+      <ChevronRight size={15} strokeWidth={2} />
+    </button>
+    <div
+      class="inline-flex h-7 items-center rounded-md border border-surface-600/40 p-px"
+      role="group"
+      aria-label="View mode"
+    >
+      {#each modes as mode (mode.id)}
+        <button
+          type="button"
+          class="inline-flex h-6 min-w-6 items-center justify-center rounded px-1 text-[10px] font-semibold tracking-wide transition {calendar.viewMode ===
+          mode.id
+            ? 'bg-surface-700 text-surface-50'
+            : 'text-surface-500 hover:text-surface-200'}"
+          aria-pressed={calendar.viewMode === mode.id}
+          title={mode.id}
+          onclick={() => setMode(mode.id)}
+        >
+          {mode.label}
+        </button>
+      {/each}
+    </div>
+    <button
+      type="button"
+      class="vault-dock-icon-btn"
+      title="Import .ics"
+      aria-label="Import calendar"
+      onclick={() => importInput?.click()}
+    >
+      <Upload size={14} strokeWidth={1.75} />
+    </button>
+    <button
+      type="button"
+      class="vault-dock-icon-btn"
+      title="Export .ics"
+      aria-label="Export calendar"
+      onclick={() => void exportIcs()}
+    >
+      <Download size={14} strokeWidth={1.75} />
+    </button>
+    <button
+      type="button"
+      class="vault-dock-icon-btn"
+      title="Refresh"
+      aria-label="Refresh calendar"
+      disabled={calendar.loading}
+      onclick={() => void calendar.refresh()}
+    >
+      <RefreshCw
+        size={15}
+        strokeWidth={1.75}
+        class={calendar.loading ? "animate-spin" : ""}
+      />
+    </button>
   </div>
-  <button
-    type="button"
-    class="vault-dock-icon-btn"
-    title="Import .ics"
-    aria-label="Import calendar"
-    onclick={() => importInput?.click()}
-  >
-    <Upload size={14} strokeWidth={1.75} />
-  </button>
-  <button
-    type="button"
-    class="vault-dock-icon-btn"
-    title="Export .ics"
-    aria-label="Export calendar"
-    onclick={() => void exportIcs()}
-  >
-    <Download size={14} strokeWidth={1.75} />
-  </button>
-  <button
-    type="button"
-    class="vault-dock-icon-btn"
-    title="Refresh"
-    aria-label="Refresh calendar"
-    disabled={calendar.loading}
-    onclick={() => void calendar.refresh()}
-  >
-    <RefreshCw
-      size={15}
-      strokeWidth={1.75}
-      class={calendar.loading ? "animate-spin" : ""}
-    />
-  </button>
-</div>
+{/if}

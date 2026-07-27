@@ -1,10 +1,14 @@
 <script lang="ts">
   import { tick } from "svelte";
-  import { ArrowDown, LoaderCircle, PanelLeft } from "@lucide/svelte";
+  import { ArrowDown, LoaderCircle } from "@lucide/svelte";
   import ChatAsyncToolsHint from "$lib/components/chat/ChatAsyncToolsHint.svelte";
   import ChatMessageList from "$lib/components/chat/ChatMessageList.svelte";
   import ChatComposerBar from "$lib/components/chat/ChatComposerBar.svelte";
+  import ComposerSkillPills from "$lib/components/chat/ComposerSkillPills.svelte";
+  import ComposerSkillSlashMenu from "$lib/components/chat/ComposerSkillSlashMenu.svelte";
+  import ComposerTurnControls from "$lib/components/chat/ComposerTurnControls.svelte";
   import BudgetApprovalBar from "$lib/components/chat/BudgetApprovalBar.svelte";
+  import AgentPermissionBar from "$lib/components/chat/AgentPermissionBar.svelte";
   import AgentBrowserPanel from "$lib/components/chat/AgentBrowserPanel.svelte";
   import ShellSidebarExpandButton from "$lib/components/layout/ShellSidebarExpandButton.svelte";
   import VaultChatContextChip from "$lib/components/vault/VaultChatContextChip.svelte";
@@ -18,14 +22,24 @@
   import { layout } from "$lib/stores/layout.svelte";
   import { userProfiles } from "$lib/stores/userProfiles.svelte";
   import { settings } from "$lib/stores/settings.svelte";
+  import { catalog } from "$lib/stores/catalog.svelte";
+  import { composerAttachments } from "$lib/stores/composerAttachments.svelte";
+  import { activeAgent } from "$lib/stores/activeAgent.svelte";
+  import { runtime } from "$lib/stores/runtime.svelte";
   import {
+    cancelAgentSession,
     createAgentSession,
     createTurnTicket,
+    promptAgentSession,
     steerBoundWorkshop,
   } from "$lib/daemon";
   import {
+    agentSessionStreamUrl,
+    clearSessionAgentSessionId,
     getSessionAgentRuntime,
+    getSessionAgentSessionId,
     setSessionAgentRuntime,
+    setSessionAgentSessionId,
     type ChatAgentRuntime,
   } from "$lib/utils/sessionAgentRuntime";
   import type { TurnTicketResponse } from "$lib/types/session";
@@ -53,7 +67,19 @@
     parseChatSlashInput,
     runSlashCommand,
   } from "$lib/utils/runSlashCommand";
-  import { SLASH_COMMAND_HINTS } from "$lib/utils/slashCommands";
+  import {
+    buildAskJobRequest,
+  } from "$lib/utils/askPrompt";
+  import {
+    buildComposerSlashItems,
+    composerSlashToken,
+    stripComposerSlashToken,
+    type ComposerSlashItem,
+  } from "$lib/utils/composerSkillSlash";
+  import {
+    placeComposerSlashMenuAnchor,
+    type SlashMenuAnchor,
+  } from "$lib/utils/slashMenuPlacement";
   import OfflineChatGate from "$lib/components/chat/OfflineChatGate.svelte";
   import LiquidCardDetailSheet from "$lib/components/chat/LiquidCardDetailSheet.svelte";
   import ChatRuntimePicker from "$lib/components/chat/ChatRuntimePicker.svelte";
@@ -152,6 +178,77 @@
   /** translateY offset that parks the bottom-anchored dock on the 2/3 seam. */
   let presenceCenterOffset = $state(0);
   let presenceCenterPlaced = $state(false);
+
+  const chatAttachments = composerAttachments.chat;
+  let draftCursor = $state(0);
+  let slashHighlight = $state(0);
+  let slashAnchor = $state<SlashMenuAnchor | null>(null);
+  let composerFormEl = $state<HTMLElement | null>(null);
+  let composerTextareaEl = $state<HTMLTextAreaElement | null>(null);
+
+  const slashToken = $derived(composerSlashToken(chat.draft, draftCursor));
+  const slashItems = $derived(
+    slashToken
+      ? buildComposerSlashItems({
+          filter: slashToken.filter,
+          manuscripts: catalog.manuscripts,
+          capabilities: catalog.capabilities,
+          attachedSkillIds: chatAttachments.skillIds,
+          attachedToolIds: chatAttachments.toolIds,
+          includeCommands: true,
+        })
+      : [],
+  );
+  const slashMenuOpen = $derived(Boolean(slashToken && slashItems.length > 0));
+
+  $effect(() => {
+    void slashToken;
+    void slashItems.length;
+    slashHighlight = 0;
+    if (!slashMenuOpen || !composerTextareaEl) {
+      slashAnchor = null;
+      return;
+    }
+    const rect = composerTextareaEl.getBoundingClientRect();
+    slashAnchor = placeComposerSlashMenuAnchor({
+      top: rect.top,
+      bottom: rect.bottom,
+      left: rect.left,
+    });
+  });
+
+  $effect(() => {
+    if (slashMenuOpen && catalog.manuscripts.length === 0 && !catalog.loading) {
+      void catalog.refresh();
+    }
+  });
+
+  function applyChatSlashItem(item: ComposerSlashItem) {
+    const token = slashToken;
+    if (!token) return;
+    if (item.kind === "skill") {
+      chatAttachments.attachSkill(item.id);
+      if (chatAttachments.skillIds.length === 1) {
+        activeAgent.setActive(item.id);
+      }
+      const next = stripComposerSlashToken(chat.draft, token, "");
+      chat.draft = next.value;
+      draftCursor = next.cursor;
+    } else if (item.kind === "tool") {
+      chatAttachments.attachTool(item.id);
+      const next = stripComposerSlashToken(chat.draft, token, "");
+      chat.draft = next.value;
+      draftCursor = next.cursor;
+    } else {
+      const next = stripComposerSlashToken(chat.draft, token, item.insert);
+      chat.draft = next.value;
+      draftCursor = next.cursor;
+    }
+    void tick().then(() => {
+      composerTextareaEl?.focus();
+      composerTextareaEl?.setSelectionRange(draftCursor, draftCursor);
+    });
+  }
 
   const presenceComposerCentered = $derived(
     showPresenceEmpty &&
@@ -511,32 +608,56 @@
     return null;
   }
 
-  const slashHint = $derived.by(() => {
-    const draft = chat.draft.trim();
-    if (!draft.startsWith("/")) return null;
-    return SLASH_COMMAND_HINTS.filter((hint) =>
-      hint.toLowerCase().startsWith(draft.toLowerCase()),
-    ).slice(0, 4);
-  });
-
   async function submitTurn(userContent: string, prompt: string, mode: "interactive" | "background") {
     const runtime = getSessionAgentRuntime(chat.sessionId);
     if (runtime !== "medousa" && mode === "interactive") {
-      const acceptedAgent = await createAgentSession({
-        session_id: chat.sessionId,
-        runtime,
-        prompt,
-      });
+      let agentSessionId = getSessionAgentSessionId(chat.sessionId);
+      let streamUrl = agentSessionId ? agentSessionStreamUrl(agentSessionId) : "";
+      let streamReady = true;
+      let acceptedAt = new Date().toISOString();
+
+      if (agentSessionId) {
+        try {
+          await promptAgentSession(agentSessionId, prompt);
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          // Stale local id (daemon restart / cancel) — recreate once.
+          if (!/unknown agent session|not found|404/i.test(message)) {
+            throw err;
+          }
+          clearSessionAgentSessionId(chat.sessionId);
+          agentSessionId = null;
+        }
+      }
+
+      if (!agentSessionId) {
+        const acceptedAgent = await createAgentSession({
+          session_id: chat.sessionId,
+          runtime,
+          prompt,
+        });
+        agentSessionId = acceptedAgent.agent_session_id;
+        setSessionAgentSessionId(chat.sessionId, agentSessionId);
+        streamUrl = acceptedAgent.stream_url;
+        streamReady = acceptedAgent.stream_ready;
+        acceptedAt = acceptedAgent.accepted_at_utc ?? acceptedAt;
+      }
+
       const ticket: TurnTicketResponse = {
-        turn_id: acceptedAgent.agent_session_id,
-        session_id: acceptedAgent.session_id,
+        turn_id: agentSessionId,
+        session_id: chat.sessionId,
         mode: "interactive",
         phase: "accepted" as TurnTicketResponse["phase"],
-        accepted_at_utc: acceptedAgent.accepted_at_utc ?? new Date().toISOString(),
-        stream_url: acceptedAgent.stream_url,
-        stream_ready: acceptedAgent.stream_ready,
+        accepted_at_utc: acceptedAt,
+        stream_url: streamUrl || agentSessionStreamUrl(agentSessionId),
+        stream_ready: streamReady,
       };
-      chat.beginTurn(userContent, ticket, []);
+      chat.beginTurn(
+        userContent,
+        ticket,
+        [],
+        userProfiles.activeProfileId,
+      );
       chat.clearPendingMedia();
       scrollToLatest(true);
       await chat.startTurnStream(
@@ -565,7 +686,12 @@
       voiceAppendix: voice.voiceAppendix,
       identityUserId: opts.identityUserId,
     });
-    chat.beginTurn(userContent, accepted, mediaRefs);
+    chat.beginTurn(
+      userContent,
+      accepted,
+      mediaRefs,
+      opts.identityUserId ?? userProfiles.activeProfileId,
+    );
     chat.clearPendingMedia();
     scrollToLatest(true);
     await chat.startTurnStream(
@@ -584,8 +710,14 @@
   });
 
   function onRuntimeChange(value: ChatAgentRuntime) {
+    const previousId = getSessionAgentSessionId(chat.sessionId);
     sessionRuntime = value;
     setSessionAgentRuntime(chat.sessionId, value);
+    if (previousId) {
+      void cancelAgentSession(previousId).catch(() => {
+        // Best-effort — local id already cleared by setSessionAgentRuntime.
+      });
+    }
   }
 
   async function submit(event: Event) {
@@ -626,13 +758,29 @@
       }
 
       if (askPrompt) {
-        await submitTurn(prompt || pendingMediaLabels(chat.pendingMediaRefs), askPrompt, "background");
+        await workspace.submitAsk({
+          ...buildAskJobRequest(
+            askPrompt,
+            chatAttachments.skillIds,
+            chatAttachments.toolIds,
+          ),
+          modelHint: runtime.model,
+        });
+        chatAttachments.clear();
+        chat.historyNotice = "Ask queued — watch Work for progress.";
         return;
       }
 
       if (chat.hasWorkshopHandoff()) {
         await steerBoundWorkshop(chat.sessionId, prompt);
+        await chat.reloadCurrentSession();
+        scrollToLatest(true);
         return;
+      }
+
+      const primarySkill = chatAttachments.primarySkillId;
+      if (primarySkill) {
+        activeAgent.setActive(primarySkill);
       }
 
       const mode = chat.hasLiveInteractiveTurn() ? "background" : "interactive";
@@ -646,6 +794,37 @@
   }
 
   function handleKeydown(event: KeyboardEvent) {
+    if (slashMenuOpen && slashItems.length > 0) {
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        slashHighlight = (slashHighlight + 1) % slashItems.length;
+        return;
+      }
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        slashHighlight =
+          (slashHighlight - 1 + slashItems.length) % slashItems.length;
+        return;
+      }
+      if (event.key === "Enter" || event.key === "Tab") {
+        event.preventDefault();
+        const item = slashItems[slashHighlight];
+        if (item) applyChatSlashItem(item);
+        return;
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        const token = slashToken;
+        if (token) {
+          const next = stripComposerSlashToken(chat.draft, token, "");
+          chat.draft = next.value;
+          draftCursor = next.cursor;
+        }
+        return;
+      }
+    }
+
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       void submit(event);
@@ -718,53 +897,40 @@
   {#if !embedded}
   <header class="{mobile ? 'mobile-chat-header' : 'workshop-header'}">
     <div class="flex min-w-0 items-center gap-2">
-      {#if mobile}
+      {#if !mobile}
+        <ShellSidebarExpandButton label="Show sessions" />
         <button
           type="button"
-          class="mobile-icon-btn shrink-0"
-          aria-label="Open sessions"
-          onclick={() => layout.toggleSessionDrawer()}
+          class="min-w-0 text-left"
+          onclick={() => {
+            if (!layout.shellSidebarExpanded) {
+              layout.openShellSidebarView("chat");
+            }
+          }}
         >
-          <PanelLeft size={20} strokeWidth={1.75} />
+          <h1 class="truncate text-sm font-semibold text-surface-50">{sessionLabel}</h1>
         </button>
       {:else}
-        <ShellSidebarExpandButton label="Show sessions" />
-      {/if}
-      <button
-        type="button"
-        class="min-w-0 text-left {mobile ? 'py-1' : ''}"
-        onclick={() => {
-          if (mobile) {
-            layout.toggleSessionDrawer();
-            return;
-          }
-          if (!layout.shellSidebarExpanded) {
-            layout.openShellSidebarView("chat");
-          }
-        }}
-      >
-        {#if mobile}
+        <div class="min-w-0 py-1">
           <h1 class="truncate text-sm font-semibold text-surface-50">
             {mobileChatTitle}
           </h1>
           <p class="truncate text-[11px] text-surface-400">{mobileChatSubtitle}</p>
-        {:else}
-          <h1 class="truncate text-sm font-semibold text-surface-50">{sessionLabel}</h1>
+        </div>
+        {#if chat.hasTurnActivity}
+          <span
+            class="badge shrink-0 variant-soft-primary text-[10px] font-medium normal-case"
+            title={chat.liveStreamActive
+              ? "Live turn streaming"
+              : `${chat.backgroundActivity} background turn(s)`}
+          >
+            {#if chat.liveStreamActive}
+              Live
+            {:else}
+              {chat.backgroundActivity} active
+            {/if}
+          </span>
         {/if}
-      </button>
-      {#if chat.hasTurnActivity && mobile}
-        <span
-          class="badge shrink-0 variant-soft-primary text-[10px] font-medium normal-case"
-          title={chat.liveStreamActive
-            ? "Live turn streaming"
-            : `${chat.backgroundActivity} background turn(s)`}
-        >
-          {#if chat.liveStreamActive}
-            Live
-          {:else}
-            {chat.backgroundActivity} active
-          {/if}
-        </span>
       {/if}
     </div>
     {#if chat.streamErrorFor(panelSessionId)}
@@ -1063,9 +1229,11 @@
         if (pending) void workspace.selectCard(pending.workCardId);
       }}
     />
+    <AgentPermissionBar />
     <AgentBrowserPanel />
     {/if}
     <form
+      bind:this={composerFormEl}
       class="{embedded
         ? useMobileChatLayout
           ? 'mobile-chat-composer script-workbench-chat-composer'
@@ -1084,15 +1252,11 @@
           class={workshop ? "mb-1.5" : "mx-4 mb-2"}
         />
       {/if}
-      {#if slashHint?.length}
-        <ul
-          class="{workshop ? 'mb-1' : 'mx-4 mb-1'} space-y-0.5 text-[11px] text-surface-500"
-        >
-          {#each slashHint as hint (hint)}
-            <li>{hint}</li>
-          {/each}
-        </ul>
-      {/if}
+      <ComposerSkillPills
+        host="chat"
+        disabled={connection.offline || chat.composerBlocked}
+        class={workshop ? "mb-1.5" : "mx-4 mb-2"}
+      />
       {#if chat.hasWorkshopHandoff()}
         <p
           class="{workshop ? 'mb-1.5' : 'mx-4 mb-1.5'} text-[11px] font-medium text-primary-300/90"
@@ -1104,7 +1268,9 @@
         mobile={workshop || useMobileChatLayout}
         disabled={connection.offline}
         composerBlocked={chat.composerBlocked}
+        bind:element={composerTextareaEl}
         onkeydown={handleKeydown}
+        onCursorChange={(cursor) => (draftCursor = cursor)}
       />
       {#if !workshop && !embedded}
         <div class="chat-runtime-under">
@@ -1113,8 +1279,26 @@
             disabled={connection.offline || chat.composerBlocked}
             onChange={onRuntimeChange}
           />
+          <ComposerTurnControls
+            disabled={connection.offline || chat.composerBlocked}
+          />
         </div>
       {/if}
+      <ComposerSkillSlashMenu
+        open={slashMenuOpen}
+        items={slashItems}
+        anchor={slashAnchor}
+        highlightIndex={slashHighlight}
+        onSelect={applyChatSlashItem}
+        onClose={() => {
+          const token = slashToken;
+          if (!token) return;
+          const next = stripComposerSlashToken(chat.draft, token, "");
+          chat.draft = next.value;
+          draftCursor = next.cursor;
+        }}
+        onHighlight={(index) => (slashHighlight = index)}
+      />
     </form>
   </div>
   {/if}
@@ -1194,7 +1378,8 @@
     position: absolute;
     left: 50%;
     top: 0;
-    z-index: 7;
+    /* Below the centered composer dock (6) so the model panel can rise over it. */
+    z-index: 5;
     display: flex;
     width: max-content;
     max-width: calc(100% - 2rem);

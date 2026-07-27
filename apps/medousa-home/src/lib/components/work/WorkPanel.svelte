@@ -4,7 +4,6 @@
   import WorkAsksPanel from "$lib/components/work/WorkAsksPanel.svelte";
   import WorkManifestPopover from "$lib/components/work/WorkManifestPopover.svelte";
   import AskCompletionModal from "$lib/components/work/AskCompletionModal.svelte";
-  import NewWorkAsk from "$lib/components/work/NewWorkAsk.svelte";
   import { workspace } from "$lib/stores/workspace.svelte";
 
   interface Props {
@@ -29,7 +28,6 @@
   {:else}
     <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
       <WorkHub {onSelectCard} {onOpenNote} {onOpenChat} />
-      <NewWorkAsk {visible} />
     </div>
   {/if}
 

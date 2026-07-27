@@ -1,6 +1,11 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import PeerAvatar from "$lib/components/peers/PeerAvatar.svelte";
+  import {
+    loadConnectionPrefs,
+    setPublicBind,
+    type ConnectionPrefsSummary,
+  } from "$lib/connection";
   import { environment } from "$lib/stores/environment.svelte";
   import { layout } from "$lib/stores/layout.svelte";
   import { workshops } from "$lib/stores/workshops.svelte";
@@ -18,18 +23,37 @@
     type ShareImportResult,
     type TrustedWorkshopSummary,
   } from "$lib/utils/lanShareApi";
+  import {
+    meshListLocalPeers,
+    meshSetPeerRendezvous,
+    type MeshPeerGrantRow,
+  } from "$lib/utils/meshIntroApi";
+  import { workshopBasementRestartHint } from "$lib/platformCopy";
+  import {
+    friendlySettingsError,
+    isMissingCapabilityError,
+  } from "$lib/utils/normieErrors";
+  import { reconnectWorkshop } from "$lib/workshopConnection";
   import { isTauri } from "$lib/window";
-  import { Share2, Upload, Users } from "@lucide/svelte";
+  import { ChevronDown, Share2, Upload } from "@lucide/svelte";
 
   interface Props {
     mobile?: boolean;
+    /** Omit page chrome when nested under Sharing. */
+    embedded?: boolean;
   }
 
-  let { mobile = false }: Props = $props();
+  let { mobile = false, embedded = false }: Props = $props();
+
+  let backupOpen = $state(false);
 
   let trusted = $state<TrustedWorkshopSummary[]>([]);
+  let meshPeers = $state<MeshPeerGrantRow[]>([]);
   let lanPairing = $state<LanPairingStatus | null>(null);
+  let connectionPrefs = $state<ConnectionPrefsSummary | null>(null);
   let lanBusy = $state(false);
+  let reachBusy = $state(false);
+  let meshBusy = $state(false);
   let busy = $state(false);
   let error = $state<string | null>(null);
   let success = $state<string | null>(null);
@@ -61,7 +85,11 @@
     try {
       trusted = await listTrustedWorkshops();
     } catch (err) {
-      error = err instanceof Error ? err.message : String(err);
+      const message = err instanceof Error ? err.message : String(err);
+      // Local registry probe — stay quiet when the host isn't ready yet.
+      if (!isMissingCapabilityError(message)) {
+        error = friendlySettingsError(message, "Peers");
+      }
     }
   }
 
@@ -70,7 +98,69 @@
     try {
       lanPairing = await getLanPairingStatus();
     } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (!isMissingCapabilityError(message)) {
+        error = friendlySettingsError(message, "Pairing window");
+      }
+    }
+  }
+
+  async function refreshConnectionPrefs() {
+    if (!isTauri() || mobile) return;
+    try {
+      connectionPrefs = await loadConnectionPrefs();
+    } catch {
+      connectionPrefs = null;
+    }
+  }
+
+  async function refreshMeshPeers() {
+    if (!isTauri()) return;
+    try {
+      meshPeers = await meshListLocalPeers();
+    } catch {
+      // Host-only route — ignore when not on the workshop engine.
+      meshPeers = [];
+    }
+  }
+
+  async function toggleRendezvous(peer: MeshPeerGrantRow, enabled: boolean) {
+    meshBusy = true;
+    error = null;
+    success = null;
+    try {
+      const updated = await meshSetPeerRendezvous(peer.deviceId, enabled);
+      meshPeers = meshPeers.map((entry) =>
+        entry.deviceId === updated.deviceId ? updated : entry,
+      );
+      success = enabled
+        ? `Rendezvous on for ${updated.displayName}.`
+        : `Rendezvous off for ${updated.displayName}.`;
+    } catch (err) {
       error = err instanceof Error ? err.message : String(err);
+    } finally {
+      meshBusy = false;
+    }
+  }
+
+  async function togglePublicBind(enabled: boolean) {
+    if (!isTauri() || mobile) return;
+    reachBusy = true;
+    error = null;
+    success = null;
+    try {
+      const result = await setPublicBind(enabled);
+      success = result.message;
+      await refreshConnectionPrefs();
+      await reconnectWorkshop(() => {});
+    } catch (err) {
+      error = friendlySettingsError(
+        err instanceof Error ? err.message : String(err),
+        "Wi‑Fi reachability",
+      );
+      await refreshConnectionPrefs();
+    } finally {
+      reachBusy = false;
     }
   }
 
@@ -82,7 +172,10 @@
       lanPairing = await setLanPairingEnabled(enabled);
       success = lanPairing.message;
     } catch (err) {
-      error = err instanceof Error ? err.message : String(err);
+      error = friendlySettingsError(
+        err instanceof Error ? err.message : String(err),
+        "Pairing window",
+      );
       await refreshLanPairing();
     } finally {
       lanBusy = false;
@@ -92,6 +185,8 @@
   onMount(() => {
     void refreshTrusted();
     void refreshLanPairing();
+    void refreshConnectionPrefs();
+    void refreshMeshPeers();
   });
 
   async function handleExport() {
@@ -160,7 +255,21 @@
     }
   }
 
+  function selectConflictStrategy(next: ShareConflictStrategy) {
+    if (next === "overwrite" && conflictStrategy !== "overwrite") {
+      const ok = window.confirm(
+        "Overwrite replaces matching canvas views on import or send. Continue with Overwrite?",
+      );
+      if (!ok) return;
+    }
+    conflictStrategy = next;
+  }
+
   async function revokeTrust(workshopId: string) {
+    const ok = window.confirm(
+      "Revoke trust for this peer? They will need to reconnect from Peers.",
+    );
+    if (!ok) return;
     busy = true;
     error = null;
     try {
@@ -190,270 +299,467 @@
   }
 </script>
 
-<section class="settings-section">
-  <header class="settings-section-header">
-    <h2 class="text-base font-semibold text-surface-50">Nearby</h2>
-    <p class="workshop-faint mt-1 text-sm">
-      Peers rail for inbox and connect — this page for pairing, trust, and canvas backups.
-    </p>
-  </header>
-
-  <div class="nearby-callout mt-5">
-    <span class="nearby-callout-icon" aria-hidden="true">
-      <Users size={16} strokeWidth={1.75} />
-    </span>
-    <div class="min-w-0 flex-1">
-      <p class="nearby-callout-title">Peers</p>
-      <p class="nearby-callout-body">
-        Inbox and share only — peers never appear in the workshop switcher.
+<section class="nearby-calm" class:nearby-calm-spaced={!embedded}>
+  {#if !embedded}
+    <header class="settings-section-header mb-4">
+      <h2 class="text-base font-semibold text-surface-50">Nearby</h2>
+      <p class="workshop-faint mt-1 text-sm">
+        Reachability, peers, and canvas backups.
       </p>
-    </div>
-    <button type="button" class="btn btn-sm variant-filled-primary shrink-0" onclick={openPeers}>
-      Open Peers
-    </button>
-  </div>
+    </header>
+  {/if}
 
-  <div class="mt-6">
-    <h3 class="settings-subsection-heading">Pairing window</h3>
-    <p class="settings-subsection-lead">
-      Open briefly on Wi‑Fi to pair phones and peers. The engine restarts, then returns to
-      loopback-only — already-paired clients keep working.
-    </p>
-    <div class="settings-toggle-list">
-      <label class="settings-toggle-row">
-        <span class="min-w-0 flex-1">
-          <span class="block text-sm font-medium text-surface-100">Allow LAN pairing</span>
-          <span class="workshop-faint mt-0.5 block text-xs">
-            {#if !isTauri()}
-              Connect to the workshop host to change pairing.
-            {:else if lanPairing?.enabled}
-              On — engine is listening on the network
+  <div class="nearby-stack">
+    {#if isTauri() && !mobile}
+      <label class="nearby-tile">
+        <span class="nearby-tile-copy">
+          <span class="nearby-tile-title">Always reachable on Wi‑Fi</span>
+          <span class="nearby-tile-meta">
+            {#if connectionPrefs?.publicBind}
+              Phones and peers can find this workshop without typing an IP
             {:else}
-              Off — engine is loopback-only
+              {workshopBasementRestartHint()} without typing an IP
             {/if}
           </span>
         </span>
         <input
           type="checkbox"
-          class="checkbox shrink-0"
-          checked={lanPairing?.enabled ?? false}
-          disabled={lanBusy || !isTauri()}
+          class="nearby-switch"
+          checked={connectionPrefs?.publicBind ?? false}
+          disabled={reachBusy || !connectionPrefs}
           onchange={(event) =>
-            void toggleLanPairing((event.currentTarget as HTMLInputElement).checked)}
+            void togglePublicBind((event.currentTarget as HTMLInputElement).checked)}
         />
       </label>
-    </div>
-    {#if lanPairing?.bind}
-      <p class="nearby-footnote">
-        {lanPairing.message}
-        <span class="nearby-footnote-mono">{lanPairing.bind}</span>
-      </p>
     {/if}
-  </div>
 
-  <div class="mt-6">
-    <h3 class="settings-subsection-heading">Trusted peers</h3>
-    <p class="settings-subsection-lead">
-      Revoke removes trust. Reconnect from Peers if a session goes stale.
-    </p>
-    {#if trusted.length === 0}
-      <p class="workshop-faint text-sm">No peers yet — open Peers to connect.</p>
+    <label class="nearby-tile">
+      <span class="nearby-tile-copy">
+        <span class="nearby-tile-title">Open pairing window</span>
+        <span class="nearby-tile-meta">
+          {#if !isTauri()}
+            Managed on the workshop host
+          {:else if lanPairing?.enabled}
+            Open briefly — engine is listening on the network
+          {:else}
+            Temporary — private loopback when off
+          {/if}
+        </span>
+      </span>
+      <input
+        type="checkbox"
+        class="nearby-switch"
+        checked={lanPairing?.enabled ?? false}
+        disabled={lanBusy || !isTauri()}
+        onchange={(event) =>
+          void toggleLanPairing((event.currentTarget as HTMLInputElement).checked)}
+      />
+    </label>
+
+    <button type="button" class="nearby-tile nearby-tile-action" onclick={openPeers}>
+      <span class="nearby-tile-copy">
+        <span class="nearby-tile-title">Open Peers</span>
+        <span class="nearby-tile-meta">Inbox and connect — never in the workshop switcher</span>
+      </span>
+      <span class="nearby-tile-cta">Open</span>
+    </button>
+
+    {#if trusted.length > 0}
+      {#each trusted as workshop (workshop.workshopId)}
+        <div class="nearby-tile">
+          <PeerAvatar label={workshop.label} status={peerStatus(workshop)} />
+          <span class="nearby-tile-copy">
+            <span class="nearby-tile-title">{workshop.label}</span>
+            <span class="nearby-tile-meta">{peerMeta(workshop)}</span>
+          </span>
+          <button
+            type="button"
+            class="nearby-tile-cta nearby-tile-cta-danger"
+            disabled={busy}
+            onclick={() => void revokeTrust(workshop.workshopId)}
+          >
+            Revoke
+          </button>
+        </div>
+      {/each}
     {:else}
-      <div class="settings-toggle-list">
-        {#each trusted as workshop (workshop.workshopId)}
-          <div class="settings-toggle-row settings-metric-row nearby-peer-row">
-            <PeerAvatar label={workshop.label} status={peerStatus(workshop)} />
-            <span class="min-w-0 flex-1">
-              <span class="block text-sm font-medium text-surface-100">{workshop.label}</span>
-              <span class="workshop-faint mt-0.5 block text-xs">{peerMeta(workshop)}</span>
-            </span>
-            <button
-              type="button"
-              class="btn btn-sm btn-ghost shrink-0 text-error-400"
-              disabled={busy}
-              onclick={() => void revokeTrust(workshop.workshopId)}
-            >
-              Revoke
-            </button>
-          </div>
-        {/each}
-      </div>
+      <p class="nearby-empty">No trusted peers yet — open Peers to connect.</p>
     {/if}
-  </div>
 
-  <div class="mt-6">
-    <h3 class="settings-subsection-heading">Canvas backup</h3>
-    <p class="settings-subsection-lead">
-      Export custom views as a file, import one, or send the last export to a trusted peer.
-    </p>
+    {#if meshPeers.length > 0}
+      <details class="nearby-more">
+        <summary class="nearby-more-summary">
+          <span class="nearby-more-summary-copy">
+            <span>Meet via this workshop</span>
+            <span class="nearby-more-summary-meta">{meshPeers.length} clients</span>
+          </span>
+          <ChevronDown size={14} strokeWidth={2} class="nearby-more-chevron" aria-hidden="true" />
+        </summary>
+        <div class="nearby-more-body nearby-stack">
+          <p class="nearby-footnote">
+            Let paired clients introduce each other. Addresses stay private until both consent.
+          </p>
+          {#each meshPeers as peer (peer.deviceId)}
+            <label class="nearby-tile">
+              <span class="nearby-tile-copy">
+                <span class="nearby-tile-title">{peer.displayName}</span>
+                <span class="nearby-tile-meta">{peer.role}</span>
+              </span>
+              <input
+                type="checkbox"
+                class="nearby-switch"
+                checked={peer.rendezvous}
+                disabled={meshBusy}
+                aria-label="Rendezvous for {peer.displayName}"
+                onchange={(event) =>
+                  void toggleRendezvous(
+                    peer,
+                    (event.currentTarget as HTMLInputElement).checked,
+                  )}
+              />
+            </label>
+          {/each}
+        </div>
+      </details>
+    {/if}
 
-    <div class="settings-toggle-list">
-      <label class="settings-toggle-row">
-        <span class="min-w-0 flex-1">
-          <span class="block text-sm font-medium text-surface-100">Include views</span>
-          <span class="workshop-faint mt-0.5 block text-xs">
-            Custom canvas rooms and widgets in the bundle
+    <details class="nearby-more" bind:open={backupOpen}>
+      <summary class="nearby-more-summary">
+        <span class="nearby-more-summary-copy">
+          <span>Canvas backup & send</span>
+          <span class="nearby-more-summary-meta">
+            {lastBundle ? "Bundle ready" : "Export, import, or send views"}
           </span>
         </span>
-        <input
-          type="checkbox"
-          class="checkbox shrink-0"
-          bind:checked={includeEnvironment}
-          disabled={busy}
-        />
-      </label>
-    </div>
-
-    <p class="settings-subsection-lead mt-4 mb-2">If names collide</p>
-    <div class="grid gap-2 sm:grid-cols-3">
-      {#each CONFLICT_OPTIONS as option (option.id)}
-        <button
-          type="button"
-          class="settings-depth-card {conflictStrategy === option.id
-            ? 'settings-depth-card-active'
-            : ''}"
-          disabled={busy}
-          aria-pressed={conflictStrategy === option.id}
-          onclick={() => (conflictStrategy = option.id)}
-        >
-          <span class="block text-sm font-medium text-surface-100">{option.label}</span>
-          <span class="workshop-faint mt-1 block text-xs leading-snug">{option.hint}</span>
-        </button>
-      {/each}
-    </div>
-
-    <div class="nearby-actions mt-4">
-      <button
-        type="button"
-        class="btn btn-sm variant-filled-primary"
-        disabled={busy}
-        onclick={() => void handleExport()}
-      >
-        <Share2 size={14} />
-        Export
-      </button>
-      <button
-        type="button"
-        class="btn btn-sm variant-soft"
-        disabled={busy}
-        onclick={() => importInput?.click()}
-      >
-        <Upload size={14} />
-        Import file
-      </button>
-      <input
-        bind:this={importInput}
-        type="file"
-        accept="application/json,.json"
-        class="hidden"
-        onchange={handleImportFile}
-      />
-      {#if lastBundle}
-        <span class="nearby-ready-pill">Ready to send</span>
-      {/if}
-    </div>
-  </div>
-
-  {#if trusted.length > 0}
-    <div class="mt-6">
-      <h3 class="settings-subsection-heading">Send to peer</h3>
-      <p class="settings-subsection-lead">
-        {#if lastBundle}
-          Sends the last exported or imported bundle.
-        {:else}
-          Export a bundle first, then pick a peer below.
-        {/if}
-      </p>
-      <div class="settings-toggle-list">
-        {#each trusted as workshop (workshop.workshopId)}
-          <div class="settings-toggle-row settings-metric-row nearby-peer-row">
-            <PeerAvatar label={workshop.label} status={peerStatus(workshop)} />
-            <span class="min-w-0 flex-1">
-              <span class="block text-sm font-medium text-surface-100">{workshop.label}</span>
-              <span class="workshop-faint mt-0.5 block text-xs">
-                {#if !workshop.hasSessionToken}
-                  Needs reconnect before send
-                {:else}
-                  {peerMeta(workshop)}
-                {/if}
-              </span>
+        <ChevronDown size={14} strokeWidth={2} class="nearby-more-chevron" aria-hidden="true" />
+      </summary>
+      <div class="nearby-more-body">
+        <div class="nearby-stack">
+          <label class="nearby-tile">
+            <span class="nearby-tile-copy">
+              <span class="nearby-tile-title">Include views</span>
+              <span class="nearby-tile-meta">Custom canvas rooms and widgets</span>
             </span>
+            <input
+              type="checkbox"
+              class="nearby-switch"
+              bind:checked={includeEnvironment}
+              disabled={busy}
+            />
+          </label>
+        </div>
+
+        <p class="nearby-footnote mt-3 mb-2">If names collide</p>
+        <div class="nearby-choice-grid">
+          {#each CONFLICT_OPTIONS as option (option.id)}
             <button
               type="button"
-              class="btn btn-sm variant-filled-primary shrink-0"
-              disabled={busy || !lastBundle || !workshop.hasSessionToken}
-              onclick={() => void handlePush(workshop.workshopId)}
+              class="nearby-choice"
+              class:nearby-choice-active={conflictStrategy === option.id}
+              disabled={busy}
+              aria-pressed={conflictStrategy === option.id}
+              onclick={() => selectConflictStrategy(option.id)}
             >
-              Send
+              <span class="nearby-choice-label">{option.label}</span>
+              <span class="nearby-choice-hint">{option.hint}</span>
             </button>
-          </div>
-        {/each}
-      </div>
-    </div>
-  {/if}
+          {/each}
+        </div>
 
-  {#if error}
-    <p class="nearby-feedback nearby-feedback-error">{error}</p>
-  {/if}
-  {#if success}
-    <p class="nearby-feedback nearby-feedback-ok">{success}</p>
-  {/if}
+        <div class="nearby-actions mt-3">
+          <button
+            type="button"
+            class="btn btn-sm variant-soft"
+            disabled={busy}
+            onclick={() => void handleExport()}
+          >
+            <Share2 size={14} />
+            Export
+          </button>
+          <button
+            type="button"
+            class="btn btn-sm variant-soft"
+            disabled={busy}
+            onclick={() => importInput?.click()}
+          >
+            <Upload size={14} />
+            Import
+          </button>
+          <input
+            bind:this={importInput}
+            type="file"
+            accept="application/json,.json"
+            class="hidden"
+            onchange={handleImportFile}
+          />
+          {#if lastBundle}
+            <span class="nearby-ready-pill">Ready to send</span>
+          {/if}
+        </div>
+
+        {#if trusted.length > 0}
+          <div class="nearby-stack mt-4">
+            {#each trusted as workshop (workshop.workshopId)}
+              <div class="nearby-tile">
+                <PeerAvatar label={workshop.label} status={peerStatus(workshop)} />
+                <span class="nearby-tile-copy">
+                  <span class="nearby-tile-title">{workshop.label}</span>
+                  <span class="nearby-tile-meta">
+                    {#if !workshop.hasSessionToken}
+                      Needs reconnect before send
+                    {:else if lastBundle}
+                      Send last bundle
+                    {:else}
+                      Export a bundle first
+                    {/if}
+                  </span>
+                </span>
+                <button
+                  type="button"
+                  class="nearby-tile-cta"
+                  disabled={busy || !lastBundle || !workshop.hasSessionToken}
+                  onclick={() => void handlePush(workshop.workshopId)}
+                >
+                  Send
+                </button>
+              </div>
+            {/each}
+          </div>
+        {/if}
+      </div>
+    </details>
+
+    {#if error}
+      <p class="nearby-feedback nearby-feedback-error">{error}</p>
+    {/if}
+    {#if success}
+      <p class="nearby-feedback nearby-feedback-ok">{success}</p>
+    {/if}
+  </div>
 </section>
 
 <style>
-  .nearby-callout {
+  .nearby-calm-spaced {
+    margin-top: 0.25rem;
+  }
+
+  .nearby-stack {
+    display: grid;
+    gap: 0.5rem;
+  }
+
+  .nearby-tile {
     display: flex;
     align-items: center;
     gap: 0.75rem;
-    padding: 0.85rem 0.9rem;
+    width: 100%;
+    min-height: 3.25rem;
+    padding: 0.55rem 0.75rem;
     border-radius: 0.65rem;
-    border: 1px solid rgb(var(--shell-border, var(--color-surface-500)) / 0.4);
-    background: rgb(var(--shell-pane-bg, var(--color-surface-900)) / 0.35);
+    border: 1px solid rgb(var(--color-surface-500) / 0.32);
+    background: rgb(var(--color-surface-900) / 0.28);
   }
 
-  .nearby-callout-icon {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 2.25rem;
-    height: 2.25rem;
+  .nearby-tile-action {
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+    transition:
+      border-color 120ms ease,
+      background 120ms ease;
+  }
+
+  .nearby-tile-action:hover {
+    border-color: rgb(var(--color-surface-500) / 0.48);
+    background: rgb(var(--color-surface-800) / 0.28);
+  }
+
+  .nearby-tile-copy {
+    display: flex;
+    min-width: 0;
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: 0.08rem;
+  }
+
+  .nearby-tile-title {
+    font-size: 0.8rem;
+    font-weight: 550;
+    color: rgb(var(--color-surface-100));
+  }
+
+  .nearby-tile-meta {
+    font-size: 0.68rem;
+    line-height: 1.3;
+    color: rgb(var(--color-surface-500));
+  }
+
+  .nearby-tile-cta {
     flex-shrink: 0;
-    border-radius: 0.5rem;
-    color: rgb(var(--color-primary-200));
-    background: rgb(var(--color-primary-500) / 0.12);
-  }
-
-  .nearby-callout-title {
-    margin: 0;
-    font-size: 0.8125rem;
+    border: 0;
+    background: transparent;
+    padding: 0;
+    font-size: 0.72rem;
     font-weight: 600;
-    color: rgb(var(--shell-label, var(--color-surface-100)));
+    color: rgb(var(--color-surface-400));
+    cursor: pointer;
   }
 
-  .nearby-callout-body {
-    margin: 0.2rem 0 0;
-    font-size: 0.75rem;
-    line-height: 1.45;
-    color: rgb(var(--shell-muted, var(--color-surface-400)));
+  .nearby-tile-cta:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  .nearby-tile-cta-danger {
+    color: rgb(var(--color-error-300) / 0.9);
+  }
+
+  .nearby-empty {
+    margin: 0;
+    padding: 0.1rem 0.15rem 0;
+    font-size: 0.72rem;
+    color: rgb(var(--color-surface-500));
   }
 
   .nearby-footnote {
-    margin: 0.55rem 0 0;
+    margin: 0;
+    font-size: 0.7rem;
+    line-height: 1.4;
+    color: rgb(var(--color-surface-500));
+  }
+
+  .nearby-more {
+    border-radius: 0.65rem;
+    border: 1px solid rgb(var(--color-surface-500) / 0.32);
+    background: rgb(var(--color-surface-900) / 0.28);
+  }
+
+  .nearby-more-summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    min-height: 3.25rem;
+    padding: 0.55rem 0.75rem;
     font-size: 0.75rem;
-    line-height: 1.45;
-    color: rgb(var(--shell-muted, var(--color-surface-400)));
+    font-weight: 600;
+    color: rgb(var(--color-surface-300));
+    cursor: pointer;
+    list-style: none;
   }
 
-  .nearby-footnote-mono {
-    display: block;
-    margin-top: 0.15rem;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-    font-size: 0.6875rem;
-    color: rgb(var(--shell-muted, var(--color-surface-500)));
+  .nearby-more-summary::-webkit-details-marker {
+    display: none;
   }
 
-  .nearby-peer-row {
-    cursor: default;
+  .nearby-more-summary-copy {
+    display: flex;
+    min-width: 0;
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: 0.1rem;
+  }
+
+  .nearby-more-summary-meta {
+    font-size: 0.68rem;
+    font-weight: 500;
+    color: rgb(var(--color-surface-500));
+  }
+
+  :global(.nearby-more-chevron) {
+    transition: transform 160ms ease;
+  }
+
+  .nearby-more[open] :global(.nearby-more-chevron) {
+    transform: rotate(180deg);
+  }
+
+  .nearby-more-body {
+    padding: 0.65rem 0.75rem 0.75rem;
+    border-top: 1px solid rgb(var(--color-surface-500) / 0.22);
+  }
+
+  .nearby-switch {
+    position: relative;
+    flex-shrink: 0;
+    width: 2.35rem;
+    height: 1.3rem;
+    margin: 0;
+    appearance: none;
+    border: 0;
+    border-radius: 999px;
+    background: rgb(var(--color-surface-600) / 0.55);
+    cursor: pointer;
+    transition: background 140ms ease;
+  }
+
+  .nearby-switch::after {
+    content: "";
+    position: absolute;
+    top: 0.15rem;
+    left: 0.15rem;
+    width: 1rem;
+    height: 1rem;
+    border-radius: 999px;
+    background: rgb(var(--color-surface-100));
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.25);
+    transition: transform 140ms ease;
+  }
+
+  .nearby-switch:checked {
+    background: rgb(var(--color-primary-500) / 0.85);
+  }
+
+  .nearby-switch:checked::after {
+    transform: translateX(1.05rem);
+  }
+
+  .nearby-switch:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  .nearby-choice-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0.5rem;
+  }
+
+  @media (min-width: 720px) {
+    .nearby-choice-grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+  }
+
+  .nearby-choice {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    min-height: 3.25rem;
+    padding: 0.55rem 0.75rem;
+    border-radius: 0.65rem;
+    border: 1px solid rgb(var(--color-surface-500) / 0.32);
+    background: rgb(var(--color-surface-950) / 0.35);
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .nearby-choice-active {
+    border-color: rgb(var(--color-primary-500) / 0.4);
+    background: rgb(var(--color-primary-500) / 0.1);
+  }
+
+  .nearby-choice-label {
+    font-size: 0.8rem;
+    font-weight: 550;
+    color: rgb(var(--color-surface-100));
+  }
+
+  .nearby-choice-hint {
+    font-size: 0.68rem;
+    line-height: 1.3;
+    color: rgb(var(--color-surface-500));
   }
 
   .nearby-actions {
@@ -473,7 +779,7 @@
   }
 
   .nearby-feedback {
-    margin: 0.85rem 0 0;
+    margin: 0.25rem 0 0;
     font-size: 0.75rem;
   }
 

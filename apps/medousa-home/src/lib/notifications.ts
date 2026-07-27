@@ -331,16 +331,27 @@ function peerTargetFromNotification(extra: unknown): PeerNotificationExtra | nul
   };
 }
 
+function calendarUidFromNotification(extra: unknown): string | null {
+  if (!extra || typeof extra !== "object") return null;
+  const record = extra as Record<string, unknown>;
+  if (record.kind !== "calendar") return null;
+  const uid = record.uid;
+  return typeof uid === "string" && uid.trim() ? uid.trim() : null;
+}
+
 export type OpenPeerHandler = (input: {
   workshopId: string;
   peerDeviceId?: string;
   messageId?: string;
 }) => void | Promise<void>;
 
-/** Wire notification taps to work-card and peer-thread navigation. */
+export type OpenCalendarHandler = (uid: string) => void | Promise<void>;
+
+/** Wire notification taps to work-card, peer-thread, and calendar navigation. */
 export async function initNotificationRouting(
   onOpenWork: OpenWorkHandler,
   onOpenPeer?: OpenPeerHandler,
+  onOpenCalendar?: OpenCalendarHandler,
 ): Promise<(() => void) | null> {
   try {
     const { registerActionTypes, onAction } = await notificationApi();
@@ -365,6 +376,16 @@ export async function initNotificationRouting(
           },
         ],
       },
+      {
+        id: "medousa-calendar",
+        actions: [
+          {
+            id: "open",
+            title: "Open",
+            foreground: true,
+          },
+        ],
+      },
     ]);
 
     const listener = await onAction((notification) => {
@@ -376,6 +397,11 @@ export async function initNotificationRouting(
       const peer = peerTargetFromNotification(notification.extra);
       if (peer && onOpenPeer) {
         void onOpenPeer(peer);
+        return;
+      }
+      const calendarUid = calendarUidFromNotification(notification.extra);
+      if (calendarUid && onOpenCalendar) {
+        void onOpenCalendar(calendarUid);
       }
     });
     return () => {

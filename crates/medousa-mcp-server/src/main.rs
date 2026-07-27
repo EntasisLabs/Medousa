@@ -16,8 +16,12 @@ async fn main() -> Result<()> {
         )
         .init();
 
+    let daemon_url = std::env::var("MEDOUSA_DAEMON_URL")
+        .or_else(|_| std::env::var("MEDOUSA_URL"))
+        .unwrap_or_else(|_| "http://127.0.0.1:7419".to_string());
     tracing::info!(
-        "medousa_mcp_server {} — space tools only (vault/calendar/artifacts)",
+        daemon_url = %daemon_url.trim().trim_end_matches('/'),
+        "medousa_mcp_server {} — vault reads live; calendar/artifacts deferred; writes denied",
         env!("CARGO_PKG_VERSION")
     );
 

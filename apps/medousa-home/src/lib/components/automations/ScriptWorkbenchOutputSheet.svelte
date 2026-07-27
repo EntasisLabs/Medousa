@@ -58,6 +58,11 @@
         </button>
       </header>
       <div class="mobile-you-scroll min-h-0 flex-1 overflow-y-auto px-3 pb-4 pt-2">
+        {#if workshop.runBusy}
+          <p class="mb-3 text-xs text-surface-400">Running…</p>
+        {:else if graphemeScriptEditor.compileBusy}
+          <p class="mb-3 text-xs text-surface-400">Compiling…</p>
+        {/if}
         {#if graphemeScriptEditor.compileError}
           <p class="text-xs text-error-400">{graphemeScriptEditor.compileError}</p>
         {:else if graphemeScriptEditor.compileResult}
@@ -77,7 +82,9 @@
         <GraphemeRunResultCard
           result={workshop.runResult?.result}
           error={workshop.runError}
-          emptyMessage="Run or compile to see output here."
+          emptyMessage={workshop.runBusy || graphemeScriptEditor.compileBusy
+            ? ""
+            : "Run or compile to see output here."}
         />
       </div>
     </div>

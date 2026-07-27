@@ -14,7 +14,7 @@ const LANDING_SURFACES: Surface[] = [
   "messaging",
   "settings",
   "calendar",
-  "context",
+  "map",
   "runtime",
   "profiles",
 ];
@@ -44,6 +44,10 @@ const LIBRARY_VIEW_KEY = "medousa-home-library-view";
 export type LibraryView = "list" | "reader";
 /** Master rail content: destination nav, or the active view’s list in the same rail. */
 export type ShellSidebarMode = "nav" | "view";
+
+type RailViewHistoryEntry = { surfaceId: string };
+
+const RAIL_VIEW_HISTORY_CAP = 20;
 
 function loadShellSidebarExpanded(): boolean {
   if (typeof localStorage === "undefined") return true;
@@ -75,6 +79,7 @@ export class LayoutStore {
   libraryListScrollTop = $state(0);
   activitySheetOpen = $state(false);
   askSheetOpen = $state(false);
+  mobileDestinationsMenuOpen = $state(false);
   activityWidth = $state(loadWidth(ACTIVITY_WIDTH_KEY, 288));
   /** Master left rail width when visible (px). */
   shellSidebarWidth = $state(
@@ -93,6 +98,8 @@ export class LayoutStore {
    * Kept in sync with vaultSidebarCollapsed (inverted) and legacy navExpanded.
    */
   shellSidebarExpanded = $state(loadShellSidebarExpanded());
+  /** When true, the master rail shows hide/add controls for the active layout. */
+  railLayoutEditing = $state(false);
   /** nav = destinations in the rail; view = a list surface hosted in the same rail. */
   shellSidebarMode = $state<ShellSidebarMode>(
     surfaceHasShellSidebarView(loadLastSurface()) ? "view" : "nav",
@@ -106,6 +113,13 @@ export class LayoutStore {
   );
   /** Per-surface rail mode — survive chat ↔ Workspace switches. */
   private sidebarModeBySurface: Record<string, ShellSidebarMode> = {};
+  /** Docked rail-view history (titlebar arrows) — not tab visit history. */
+  private railViewBackStack: RailViewHistoryEntry[] = [];
+  private railViewForwardStack: RailViewHistoryEntry[] = [];
+  /** Bumped so titlebar `$derived` re-evaluates canGo* after stack mutations. */
+  railViewHistoryEpoch = $state(0);
+  /** When true, openShellSidebarView restores without clobbering forward stack. */
+  private railViewHistoryQuiet = false;
   /** @deprecated Use !shellSidebarExpanded — kept for LME call sites. */
   vaultSidebarCollapsed = $state(!loadShellSidebarExpanded());
   /** @deprecated Alias of shellSidebarExpanded (navStyle rail=visible / compact=hidden). */
@@ -229,11 +243,99 @@ export class LayoutStore {
     }
   }
 
+  /** Edit which destinations belong to the active layout — on the live rail. */
+  startRailLayoutEditing() {
+    this.railLayoutEditing = true;
+    this.setShellSidebarExpanded(true);
+    this.setShellSidebarMode("nav");
+  }
+
+  stopRailLayoutEditing() {
+    this.railLayoutEditing = false;
+  }
+
   /** Leave view list → destination nav in the same expanded rail. */
   shellSidebarBackToNav() {
     this.setShellSidebarMode("nav");
     if (!this.shellSidebarExpanded) {
       this.setShellSidebarExpanded(true);
+    }
+  }
+
+  canGoRailViewBack = $derived.by(() => {
+    void this.railViewHistoryEpoch;
+    return (
+      this.railViewBackStack.length > 0 || this.shellSidebarMode === "view"
+    );
+  });
+
+  canGoRailViewForward = $derived.by(() => {
+    void this.railViewHistoryEpoch;
+    return this.railViewForwardStack.length > 0;
+  });
+
+  goRailViewBack() {
+    if (this.shellSidebarMode === "view" && this.shellSidebarViewSurface) {
+      const current = this.shellSidebarViewSurface;
+      const prev = this.railViewBackStack.pop();
+      this.railViewHistoryEpoch += 1;
+      if (prev) {
+        this.railViewForwardStack.push({ surfaceId: current });
+        this.trimRailViewStacks();
+        this.railViewHistoryQuiet = true;
+        this.openShellSidebarView(prev.surfaceId);
+        this.railViewHistoryQuiet = false;
+        return;
+      }
+      this.railViewForwardStack.push({ surfaceId: current });
+      this.trimRailViewStacks();
+      this.setShellSidebarMode("nav");
+      if (!this.shellSidebarExpanded) {
+        this.setShellSidebarExpanded(true);
+      }
+      return;
+    }
+    const prev = this.railViewBackStack.pop();
+    this.railViewHistoryEpoch += 1;
+    if (!prev) return;
+    this.railViewHistoryQuiet = true;
+    this.openShellSidebarView(prev.surfaceId);
+    this.railViewHistoryQuiet = false;
+  }
+
+  goRailViewForward() {
+    const next = this.railViewForwardStack.pop();
+    this.railViewHistoryEpoch += 1;
+    if (!next) return;
+    if (this.shellSidebarMode === "view" && this.shellSidebarViewSurface) {
+      this.railViewBackStack.push({ surfaceId: this.shellSidebarViewSurface });
+      this.trimRailViewStacks();
+    }
+    this.railViewHistoryQuiet = true;
+    this.openShellSidebarView(next.surfaceId);
+    this.railViewHistoryQuiet = false;
+  }
+
+  private pushRailViewHistory(surfaceId: string) {
+    const last = this.railViewBackStack[this.railViewBackStack.length - 1];
+    if (last?.surfaceId === surfaceId) return;
+    this.railViewBackStack.push({ surfaceId });
+    this.trimRailViewStacks();
+    this.railViewHistoryEpoch += 1;
+  }
+
+  private trimRailViewStacks() {
+    if (this.railViewBackStack.length > RAIL_VIEW_HISTORY_CAP) {
+      this.railViewBackStack.splice(
+        0,
+        this.railViewBackStack.length - RAIL_VIEW_HISTORY_CAP,
+      );
+    }
+    if (this.railViewForwardStack.length > RAIL_VIEW_HISTORY_CAP) {
+      this.railViewForwardStack.splice(
+        0,
+        this.railViewForwardStack.length - RAIL_VIEW_HISTORY_CAP,
+      );
     }
   }
 
@@ -243,12 +345,31 @@ export class LayoutStore {
    * tab switch should navigate separately.
    */
   openShellSidebarView(surfaceId: string) {
-    if (!surfaceHasShellSidebarView(surfaceId)) {
+    const resolved = surfaceId === "context" ? "map" : surfaceId;
+    if (!surfaceHasShellSidebarView(resolved)) {
       this.setShellSidebarMode("nav");
       this.setShellSidebarExpanded(true);
       return;
     }
-    this.shellSidebarViewSurface = surfaceId;
+    if (
+      !this.railViewHistoryQuiet &&
+      this.shellSidebarMode === "view" &&
+      this.shellSidebarViewSurface &&
+      this.shellSidebarViewSurface !== resolved
+    ) {
+      this.pushRailViewHistory(this.shellSidebarViewSurface);
+      this.railViewForwardStack = [];
+      this.railViewHistoryEpoch += 1;
+    } else if (
+      !this.railViewHistoryQuiet &&
+      this.shellSidebarMode === "nav" &&
+      this.shellSidebarViewSurface !== resolved
+    ) {
+      // Entering view from nav — clear forward; keep back for leaving view.
+      this.railViewForwardStack = [];
+      this.railViewHistoryEpoch += 1;
+    }
+    this.shellSidebarViewSurface = resolved;
     this.setShellSidebarMode("view");
     this.setShellSidebarExpanded(true);
   }
@@ -372,12 +493,21 @@ export class LayoutStore {
   }
 
   openMore(destination: MoreDestination) {
-    this.moreDestination = destination;
+    const next =
+      destination === ("context" as MoreDestination) ? "map" : destination;
+    // Hub list is gone — "more" is only a host for nested destinations.
+    if (next === "hub") {
+      this.moreDestination = "hub";
+      saveMoreDestination("hub");
+      this.setMobileTab("home", { bump: true });
+      return;
+    }
+    this.moreDestination = next;
     this.mobileTab = "more";
     if (typeof localStorage !== "undefined") {
       localStorage.setItem(MOBILE_TAB_KEY, "more");
     }
-    saveMoreDestination(destination);
+    saveMoreDestination(next);
     this.bumpNavigation();
   }
 
@@ -394,9 +524,11 @@ export class LayoutStore {
     return this.mobileSurfaceOverride ?? defaultHome;
   }
 
+  /** Leave a More destination and return to Home (hub list removed). */
   backToMoreHub() {
     this.moreDestination = "hub";
     saveMoreDestination("hub");
+    this.setMobileTab("home", { bump: true });
   }
 
   setLibraryView(view: LibraryView) {
@@ -422,6 +554,14 @@ export class LayoutStore {
 
   openAskSheet() {
     this.askSheetOpen = true;
+  }
+
+  setMobileDestinationsMenuOpen(open: boolean) {
+    this.mobileDestinationsMenuOpen = open;
+  }
+
+  openMobileDestinationsMenu() {
+    this.mobileDestinationsMenuOpen = true;
   }
 }
 
@@ -452,7 +592,7 @@ function loadMoreDestination(): MoreDestination {
   const valid: MoreDestination[] = [
     "hub",
     "profiles",
-    "context",
+    "map",
     "workshop",
     "automations",
     "calendar",
@@ -463,6 +603,7 @@ function loadMoreDestination(): MoreDestination {
   ];
   if (stored === "library") return "hub";
   if (stored === "web") return "hub";
+  if (stored === "context") return "map";
   if (stored && valid.includes(stored as MoreDestination)) {
     return stored as MoreDestination;
   }

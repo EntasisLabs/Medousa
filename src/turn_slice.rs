@@ -571,6 +571,7 @@ mod tests {
                 },
             ]),
             slice_summary: None,
+            speaker_profile_id: None,
         }
     }
 
@@ -596,6 +597,7 @@ mod tests {
             answer_state: None,
             parts: None,
             slice_summary: None,
+            speaker_profile_id: None,
         };
         let assistant = assistant_with_tools();
         let turns = vec![user.clone(), assistant.clone()];

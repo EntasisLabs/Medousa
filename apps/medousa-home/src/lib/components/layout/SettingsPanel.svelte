@@ -2,21 +2,13 @@
   import { onDestroy } from "svelte";
   import ShellSidebarExpandButton from "$lib/components/layout/ShellSidebarExpandButton.svelte";
   import SettingsNav from "$lib/components/settings/SettingsNav.svelte";
-  import SettingsRoomSection from "$lib/components/settings/SettingsRoomSection.svelte";
-  import { layout } from "$lib/stores/layout.svelte";
-  import SettingsRhythmSection from "$lib/components/settings/SettingsRhythmSection.svelte";
-  import SettingsMemorySection from "$lib/components/settings/SettingsMemorySection.svelte";
-  import SettingsModelsSection from "$lib/components/settings/SettingsModelsSection.svelte";
-  import SettingsVoiceSection from "$lib/components/settings/SettingsVoiceSection.svelte";
-  import SettingsReachSection from "$lib/components/settings/SettingsReachSection.svelte";
-  import SettingsShellSection from "$lib/components/settings/SettingsShellSection.svelte";
-  import SettingsVersionsSection from "$lib/components/settings/SettingsVersionsSection.svelte";
-  import SettingsEngineSection from "$lib/components/settings/SettingsEngineSection.svelte";
-  import SettingsPhoneSection from "$lib/components/settings/SettingsPhoneSection.svelte";
-  import SettingsLanShareSection from "$lib/components/settings/SettingsLanShareSection.svelte";
+  import SettingsPreferencesSection from "$lib/components/settings/SettingsPreferencesSection.svelte";
+  import SettingsAgentSection from "$lib/components/settings/SettingsAgentSection.svelte";
+  import SettingsRuntimeSection from "$lib/components/settings/SettingsRuntimeSection.svelte";
+  import SettingsNetworkSection from "$lib/components/settings/SettingsNetworkSection.svelte";
   import SettingsBasementSection from "$lib/components/settings/SettingsBasementSection.svelte";
-  import SettingsCanvasSection from "$lib/components/settings/SettingsCanvasSection.svelte";
   import SettingsPackagesSection from "$lib/components/settings/SettingsPackagesSection.svelte";
+  import SettingsMcpSection from "$lib/components/settings/SettingsMcpSection.svelte";
   import type { DaemonHealth } from "$lib/daemon";
   import { workshopDefaults } from "$lib/stores/workshopDefaults.svelte";
   import { settingsNav } from "$lib/stores/settingsNav.svelte";
@@ -24,6 +16,7 @@
   import { depthModeLabel } from "$lib/utils/chatModelPicker";
   import { formatModelDisplayName } from "$lib/utils/formatModelDisplay";
   import { peerUnreadCount } from "$lib/utils/lanShareApi";
+  import { appUpdate } from "$lib/stores/appUpdate.svelte";
   import { isTauri } from "$lib/window";
   import type { SettingsSectionId } from "$lib/types/settings";
 
@@ -60,16 +53,11 @@
   }
 
   $effect(() => {
-    if (mobile) {
-      settingsNav.setActiveSection("room");
-    }
-  });
-
-  $effect(() => {
     if (visible) {
       settingsNav.takePending();
       void workshopDefaults.load();
-      void userProfiles.load();
+      void userProfiles.load({ suppressRemoteNotice: true });
+      // Shared mode is probed from Sharing / chat — not on every Settings open.
       void refreshNearbyUnread();
       if (!unreadTimer) {
         unreadTimer = setInterval(() => {
@@ -82,6 +70,17 @@
     }
   });
 
+  $effect(() => {
+    if (!visible) return;
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!workshopDefaults.dirty) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  });
+
   onDestroy(() => {
     if (unreadTimer) clearInterval(unreadTimer);
   });
@@ -92,9 +91,12 @@
       : `${depthModeLabel(workshopDefaults.draft.responseDepthMode ?? "standard")} answers · ${formatModelDisplayName(workshopDefaults.draft.model ?? "model")} in chat`,
   );
 
-  const navBadges = $derived(
-    nearbyUnread > 0 ? ({ nearby: nearbyUnread } as Partial<Record<SettingsSectionId, number>>) : {},
-  );
+  const navBadges = $derived.by(() => {
+    const badges: Partial<Record<SettingsSectionId, number>> = {};
+    if (nearbyUnread > 0) badges.network = nearbyUnread;
+    if (appUpdate.updateAvailable) badges.basement = 1;
+    return badges;
+  });
 </script>
 
 <section class="settings-panel flex h-full min-h-0 min-w-0 flex-1 flex-col {visible ? '' : 'hidden'}">
@@ -110,10 +112,6 @@
         </div>
       </div>
     </header>
-  {:else if mobile}
-    <p class="settings-charter-line border-b border-surface-500/35 px-4 py-2 text-xs text-surface-400">
-      {charterLine}
-    </p>
   {/if}
 
   <div class="settings-shell min-h-0 flex-1 {mobile ? 'flex flex-col' : 'flex'}">
@@ -129,32 +127,18 @@
     {/if}
 
     <div class="mobile-you-scroll min-h-0 flex-1 overflow-y-auto px-4 py-4">
-      {#if activeSection === "room"}
-        <SettingsRoomSection />
-      {:else if activeSection === "canvas"}
-        <SettingsCanvasSection />
-      {:else if activeSection === "rhythm"}
-        <SettingsRhythmSection {mobile} />
-      {:else if activeSection === "memory"}
-        <SettingsMemorySection {mobile} />
-      {:else if activeSection === "models"}
-        <SettingsModelsSection {mobile} />
-      {:else if activeSection === "voice"}
-        <SettingsVoiceSection {mobile} />
-      {:else if activeSection === "reach"}
-        <SettingsReachSection {mobile} />
-      {:else if activeSection === "shell"}
-        <SettingsShellSection {mobile} />
-      {:else if activeSection === "versions"}
-        <SettingsVersionsSection {mobile} />
-      {:else if activeSection === "engine"}
-        <SettingsEngineSection {mobile} />
-      {:else if activeSection === "phone"}
-        <SettingsPhoneSection {mobile} />
-      {:else if activeSection === "nearby"}
-        <SettingsLanShareSection {mobile} />
+      {#if activeSection === "preferences"}
+        <SettingsPreferencesSection {mobile} />
+      {:else if activeSection === "agent"}
+        <SettingsAgentSection {mobile} />
+      {:else if activeSection === "runtime"}
+        <SettingsRuntimeSection {mobile} />
+      {:else if activeSection === "network"}
+        <SettingsNetworkSection {mobile} {visible} {health} />
       {:else if activeSection === "packages"}
         <SettingsPackagesSection {mobile} />
+      {:else if activeSection === "mcp"}
+        <SettingsMcpSection {mobile} />
       {:else}
         <SettingsBasementSection {revision} {health} {onDaemonHealth} {mobile} />
       {/if}

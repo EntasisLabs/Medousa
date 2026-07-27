@@ -1,6 +1,8 @@
 <script lang="ts">
   import ShareToPeerSheet from "$lib/components/settings/ShareToPeerSheet.svelte";
   import { vault } from "$lib/stores/vault.svelte";
+  import { toast } from "$lib/stores/toast.svelte";
+  import { shareVaultNote } from "$lib/share";
   import { listTrustedWorkshops } from "$lib/utils/lanShareApi";
   import { saveVaultUserTemplate } from "$lib/utils/vaultUserTemplates";
   import { isTauri } from "$lib/window";
@@ -10,10 +12,13 @@
     Bookmark,
     FilePen,
     FolderInput,
+    House,
+    MessageSquareQuote,
     Share2,
     Trash2,
     X,
   } from "@lucide/svelte";
+  import type { PeerShareMode } from "$lib/utils/lanShareApi";
 
   type Panel = "menu" | "rename" | "move" | "template" | "delete";
 
@@ -23,6 +28,7 @@
   let templateName = $state("");
   let templateMessage = $state<string | null>(null);
   let peerShareOpen = $state(false);
+  let peerSheetMode = $state<PeerShareMode>("share");
   let hasTrustedPeers = $state(false);
   let peerStatus = $state<string | null>(null);
 
@@ -110,6 +116,23 @@
     await vault.archiveNote(path);
   }
 
+  async function shareNoteOs() {
+    if (!vault.selectedPath) return;
+    if (vault.dirty) await vault.flushSave();
+    const outcome = await shareVaultNote(
+      vault.title || "Untitled",
+      vault.content,
+      vault.selectedPath,
+    );
+    if (outcome === "shared") {
+      toast.show("Shared", { durationMs: 1400 });
+    } else if (outcome === "copied") {
+      toast.show("Copied to clipboard", { durationMs: 1600 });
+    } else {
+      toast.show("Couldn’t share", { durationMs: 1600 });
+    }
+  }
+
   function onSheetKeydown(event: KeyboardEvent) {
     if (event.key === "Escape") {
       event.preventDefault();
@@ -182,6 +205,15 @@
             <span class="vault-verb-icon"><Bookmark size={15} strokeWidth={1.75} /></span>
             <span class="vault-verb-label">Save as template</span>
           </button>
+          <button
+            type="button"
+            class="vault-verb"
+            disabled={vault.saving || !vault.content.trim()}
+            onclick={() => void shareNoteOs()}
+          >
+            <span class="vault-verb-icon"><Share2 size={15} strokeWidth={1.75} /></span>
+            <span class="vault-verb-label">Share note…</span>
+          </button>
           {#if hasTrustedPeers}
             <button
               type="button"
@@ -189,11 +221,38 @@
               disabled={vault.saving}
               onclick={() => {
                 peerStatus = null;
+                peerSheetMode = "share";
                 peerShareOpen = true;
               }}
             >
               <span class="vault-verb-icon"><Share2 size={15} strokeWidth={1.75} /></span>
               <span class="vault-verb-label">Share to peer</span>
+            </button>
+            <button
+              type="button"
+              class="vault-verb"
+              disabled={vault.saving}
+              onclick={() => {
+                peerStatus = null;
+                peerSheetMode = "ask";
+                peerShareOpen = true;
+              }}
+            >
+              <span class="vault-verb-icon"><MessageSquareQuote size={15} strokeWidth={1.75} /></span>
+              <span class="vault-verb-label">Ask for review</span>
+            </button>
+            <button
+              type="button"
+              class="vault-verb"
+              disabled={vault.saving}
+              onclick={() => {
+                peerStatus = null;
+                peerSheetMode = "bring";
+                peerShareOpen = true;
+              }}
+            >
+              <span class="vault-verb-icon"><House size={15} strokeWidth={1.75} /></span>
+              <span class="vault-verb-label">Bring home</span>
             </button>
           {/if}
           {#if peerStatus}
@@ -329,6 +388,7 @@
 
 <ShareToPeerSheet
   open={peerShareOpen}
+  mode={peerSheetMode}
   vaultPath={vault.selectedPath}
   label={vault.title}
   onClose={() => {

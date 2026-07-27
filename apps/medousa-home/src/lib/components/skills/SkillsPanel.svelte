@@ -9,9 +9,11 @@
     groupSkills,
     type SkillFilterChip,
   } from "$lib/utils/skillCatalog";
+  import AgentsFilterSheet from "$lib/components/mobile/AgentsFilterSheet.svelte";
   import SpecialistDetailEditor from "$lib/components/skills/SpecialistDetailEditor.svelte";
   import SpecialistImportWizard from "$lib/components/skills/SpecialistImportWizard.svelte";
   import { registerMobileBackHandler } from "$lib/mobileNavigation";
+  import { onMount, tick } from "svelte";
 
   interface Props {
     visible: boolean;
@@ -35,8 +37,19 @@
   let search = $state("");
   let skillFilter = $state<SkillFilterChip>("all");
   let selectedSkillId = $state<string | null>(null);
+  let searchOpen = $state(false);
+  let filterSheetOpen = $state(false);
+  let agentsSearchEl = $state<HTMLInputElement | null>(null);
 
+  const calmMobile = $derived(mobile && embedded);
   const mobileDetailOpen = $derived(mobile && selectedSkillId !== null);
+  const showSearchField = $derived(
+    calmMobile && (searchOpen || Boolean(search.trim())),
+  );
+  const filterChipLabel = $derived.by(() => {
+    if (skillFilter === "all") return null;
+    return SKILL_FILTER_CHIPS.find((chip) => chip.id === skillFilter)?.label ?? null;
+  });
 
   $effect(() => {
     if (visible) {
@@ -72,6 +85,36 @@
     catalog.clearManuscriptDetail();
   }
 
+  function clearSearch() {
+    search = "";
+    searchOpen = false;
+  }
+
+  onMount(() => {
+    if (!mobile) return;
+    const onSearchFocus = () => {
+      searchOpen = true;
+      void tick().then(() => {
+        agentsSearchEl?.focus();
+        agentsSearchEl?.select();
+      });
+    };
+    const onFilter = () => {
+      filterSheetOpen = true;
+    };
+    const onImport = () => {
+      importWizardOpen = true;
+    };
+    window.addEventListener("medousa-mobile-agents-search-focus", onSearchFocus);
+    window.addEventListener("medousa-mobile-agents-filter", onFilter);
+    window.addEventListener("medousa-mobile-agents-import", onImport);
+    return () => {
+      window.removeEventListener("medousa-mobile-agents-search-focus", onSearchFocus);
+      window.removeEventListener("medousa-mobile-agents-filter", onFilter);
+      window.removeEventListener("medousa-mobile-agents-import", onImport);
+    };
+  });
+
   $effect(() => {
     if (!mobile || !visible) return;
     return registerMobileBackHandler(() => {
@@ -83,7 +126,52 @@
 </script>
 
 <section class="flex h-full min-h-0 min-w-0 flex-1 flex-col {visible ? '' : 'hidden'}">
-  {#if !mobileDetailOpen}
+  {#if !mobileDetailOpen && calmMobile}
+    <header class="mobile-notes-header px-4 pb-2">
+      <h1 class="text-lg font-semibold tracking-tight text-surface-50">Agents</h1>
+      {#if filterChipLabel}
+        <button
+          type="button"
+          class="mobile-notes-active-filter"
+          onclick={() => (filterSheetOpen = true)}
+        >
+          {filterChipLabel}
+        </button>
+      {/if}
+    </header>
+
+    {#if showSearchField}
+      <div class="shrink-0 border-b border-surface-500/30 px-3 pb-3">
+        <div class="flex items-center gap-2">
+          <input
+            bind:this={agentsSearchEl}
+            class="input min-w-0 flex-1 text-sm"
+            type="search"
+            placeholder="Search agents…"
+            bind:value={search}
+            onkeydown={(event) => {
+              if (event.key === "Escape") clearSearch();
+            }}
+          />
+          <button
+            type="button"
+            class="btn btn-sm variant-ghost-surface shrink-0"
+            onclick={clearSearch}
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    {/if}
+
+    <AgentsFilterSheet
+      open={filterSheetOpen}
+      {skillFilter}
+      onClose={() => (filterSheetOpen = false)}
+      onFilter={(next) => (skillFilter = next)}
+      onRefresh={() => void catalog.refresh()}
+    />
+  {:else if !mobileDetailOpen}
     <header class="{embedded ? 'border-b border-surface-500/40 px-4 py-3' : 'workshop-header'}">
       {#if !embedded}
         <div class="flex flex-wrap items-center justify-between gap-3">
@@ -134,30 +222,30 @@
         </div>
       {/if}
 
-    {#if catalog.manuscripts.length > 0 || search.trim() || skillFilter !== "all"}
-      <label class="mt-3 block">
-        <span class="sr-only">Search agents</span>
-        <input
-          class="input w-full max-w-md text-sm"
-          type="search"
-          placeholder="Search agents…"
-          bind:value={search}
-        />
-      </label>
-      <div class="mt-2 flex flex-wrap gap-1.5">
-        {#each SKILL_FILTER_CHIPS as chip (chip.id)}
-          <button
-            type="button"
-            class="rounded-md px-2 py-1 text-[11px] transition {skillFilter === chip.id
-              ? 'bg-surface-700 text-primary-300 ring-1 ring-inset ring-primary-500/35'
-              : 'text-surface-400 hover:bg-surface-800 hover:text-surface-200'}"
-            onclick={() => (skillFilter = chip.id)}
-          >
-            {chip.label}
-          </button>
-        {/each}
-      </div>
-    {/if}
+      {#if catalog.manuscripts.length > 0 || search.trim() || skillFilter !== "all"}
+        <label class="mt-3 block">
+          <span class="sr-only">Search agents</span>
+          <input
+            class="input w-full max-w-md text-sm"
+            type="search"
+            placeholder="Search agents…"
+            bind:value={search}
+          />
+        </label>
+        <div class="mt-2 flex flex-wrap gap-1.5">
+          {#each SKILL_FILTER_CHIPS as chip (chip.id)}
+            <button
+              type="button"
+              class="rounded-md px-2 py-1 text-[11px] transition {skillFilter === chip.id
+                ? 'bg-surface-700 text-primary-300 ring-1 ring-inset ring-primary-500/35'
+                : 'text-surface-400 hover:bg-surface-800 hover:text-surface-200'}"
+              onclick={() => (skillFilter = chip.id)}
+            >
+              {chip.label}
+            </button>
+          {/each}
+        </div>
+      {/if}
     </header>
   {/if}
 

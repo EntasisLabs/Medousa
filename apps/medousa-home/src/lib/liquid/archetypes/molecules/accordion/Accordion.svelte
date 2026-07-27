@@ -7,7 +7,7 @@
   import { createSceneEvent } from "$lib/liquid/core";
   import type { ArchetypeProps } from "$lib/liquid/render/types";
   import LiquidGlyph from "$lib/liquid/icons/LiquidGlyph.svelte";
-  import { renderInlineMarkdown } from "$lib/markdown";
+  import { renderInlineMarkdown, renderMarkdown } from "$lib/markdown";
 
   interface AccordionItem {
     id: string;
@@ -113,7 +113,7 @@
 
     <div class="liquid-accordion-list">
       {#each items as item, i (item.id)}
-        <div class="liquid-accordion-item" style="--stagger: {i}">
+        <div class="liquid-accordion-item" id={item.id} style="--stagger: {i}">
           <button
             type="button"
             class="liquid-accordion-trigger"
@@ -132,8 +132,8 @@
             <span class="liquid-accordion-chevron" aria-hidden="true">▾</span>
           </button>
           {#if isOpen(item.id)}
-            <div class="liquid-accordion-panel">
-              {@html renderInlineMarkdown(item.body)}
+            <div class="liquid-accordion-panel liquid-accordion-body">
+              {@html renderMarkdown(item.body)}
             </div>
           {/if}
         </div>
@@ -230,6 +230,28 @@
     font-size: 0.78rem;
     line-height: 1.5;
     color: rgb(var(--color-surface-300));
+  }
+
+  .liquid-accordion-body :global(p) {
+    margin: 0 0 0.45rem;
+  }
+
+  .liquid-accordion-body :global(p:last-child) {
+    margin-bottom: 0;
+  }
+
+  .liquid-accordion-body :global(ul),
+  .liquid-accordion-body :global(ol) {
+    margin: 0.2rem 0 0.45rem;
+    padding-left: 1.15rem;
+  }
+
+  .liquid-accordion-body :global(li + li) {
+    margin-top: 0.2rem;
+  }
+
+  .liquid-accordion-body :global(a) {
+    color: color-mix(in srgb, var(--color-primary-400) 88%, white);
   }
 
   @media (prefers-reduced-motion: reduce) {

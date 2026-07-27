@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
@@ -82,6 +83,8 @@ pub struct PairedDeviceSummary {
     pub paired_at: DateTime<Utc>,
     pub last_seen: DateTime<Utc>,
     pub role: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub profile_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -149,6 +152,13 @@ pub struct PairHeartbeatRequest {
     pub push_platform: Option<String>,
     #[serde(default)]
     pub live_activity_push_token: Option<String>,
+    /// Optional dial-back endpoint for mesh reverse delivery (M3 registry).
+    #[serde(default)]
+    pub mesh_lan_base_url: Option<String>,
+    #[serde(default)]
+    pub mesh_iroh_ticket: Option<String>,
+    #[serde(default)]
+    pub mesh_iroh_endpoint_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -165,6 +175,8 @@ struct ActiveQrSession {
     short_code_raw: String,
     expires_at: DateTime<Utc>,
     used: bool,
+    /// When set, successful verify binds the device to this Shared-mode profile.
+    bound_profile_id: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -173,6 +185,7 @@ struct PendingPairSession {
     phone_name: String,
     phone_public_key: VerifyingKey,
     role: PairingRole,
+    bound_profile_id: Option<String>,
     server_nonce: [u8; 32],
     created_at: Instant,
 }
@@ -241,6 +254,10 @@ impl PairingService {
         &self.identity.device_id
     }
 
+    pub fn identity(&self) -> &DeviceIdentity {
+        &self.identity
+    }
+
     pub fn peer_name(&self) -> &str {
         &self.peer_name
     }
@@ -299,6 +316,7 @@ impl PairingService {
                     paired_at: record.paired_at,
                     last_seen: record.last_seen,
                     role: record.role.as_str().to_string(),
+                    profile_id: record.profile_id,
                 })
                 .collect(),
             qr_active,
@@ -323,7 +341,7 @@ impl PairingService {
             session.used || session.expires_at <= Utc::now()
         });
         if needs_refresh {
-            *guard = Some(self.build_qr_session()?);
+            *guard = Some(self.build_qr_session(None)?);
         }
         let session = guard.as_ref().expect("qr session");
         Ok(QrResponse {
@@ -335,8 +353,17 @@ impl PairingService {
 
     /// Invalidate the current invite and mint a fresh QR (M4 invite rotation).
     pub async fn rotate_qr(&self) -> Result<QrResponse> {
+        self.rotate_qr_for_profile(None).await
+    }
+
+    /// Mint a QR that binds the pairing device to `profile_id` (Shared-mode seat invite).
+    pub async fn rotate_qr_for_profile(&self, profile_id: Option<&str>) -> Result<QrResponse> {
+        let bound = profile_id
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string);
         let mut guard = self.active_qr.write().await;
-        *guard = Some(self.build_qr_session()?);
+        *guard = Some(self.build_qr_session(bound)?);
         let session = guard.as_ref().expect("qr session");
         Ok(QrResponse {
             url: self.build_qr_url(session, false)?,
@@ -396,6 +423,7 @@ impl PairingService {
             return Ok(rejected_init("invalid_token"));
         }
         session.used = true;
+        let bound_profile_id = session.bound_profile_id.clone();
 
         let mut server_nonce = [0u8; 32];
         OsRng.fill_bytes(&mut server_nonce);
@@ -407,6 +435,7 @@ impl PairingService {
                 phone_name: request.phone_name.clone(),
                 phone_public_key: phone_key,
                 role: PairingRole::parse(request.role.as_deref()),
+                bound_profile_id,
                 server_nonce,
                 created_at: Instant::now(),
             },
@@ -464,6 +493,8 @@ impl PairingService {
             session_token_hash: hash_session_token(&session_token),
             session_token_expiry: now + SESSION_TOKEN_TTL,
             role: pending.role,
+            profile_id: pending.bound_profile_id,
+            mesh_grants: crate::mesh::default_mesh_grants_for_role(pending.role),
             apns_device_token: None,
             push_platform: None,
             push_updated_at: None,
@@ -471,6 +502,7 @@ impl PairingService {
             live_activity_push_updated_at: None,
         };
         self.store.save_record(&record)?;
+        let _ = crate::mesh::registry::upsert_from_pairing(&record);
 
         Ok(PairVerifyResponse {
             status: "paired".to_string(),
@@ -517,6 +549,7 @@ impl PairingService {
         }
 
         let mut updated = record.clone();
+        let mut mesh_endpoints = None;
         if let Some(body) = body {
             if let Some(push_token) = body
                 .apns_device_token
@@ -544,9 +577,38 @@ impl PairingService {
                     updated.live_activity_push_updated_at = Some(Utc::now());
                 }
             }
+            let lan = body
+                .mesh_lan_base_url
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string);
+            let ticket = body
+                .mesh_iroh_ticket
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string);
+            let endpoint = body
+                .mesh_iroh_endpoint_id
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string);
+            if lan.is_some() || ticket.is_some() || endpoint.is_some() {
+                mesh_endpoints = Some(crate::mesh::MeshPeerEndpoints {
+                    lan_base_url: lan,
+                    iroh_ticket: ticket,
+                    iroh_endpoint_id: endpoint,
+                });
+            }
         }
         updated.last_seen = Utc::now();
         self.store.save_record(&updated)?;
+        let _ = crate::mesh::registry::upsert_from_pairing(&updated);
+        if let Some(endpoints) = mesh_endpoints {
+            let _ = crate::mesh::registry::set_endpoints(&updated.phone_id, endpoints);
+        }
 
         Ok(PairHeartbeatResponse {
             status: "ok".to_string(),
@@ -600,13 +662,15 @@ impl PairingService {
         Ok(out)
     }
 
+    /// Revoke a pairing. `trusted_local` must be true only for genuine loopback
+    /// that is not Iroh-proxied (see [`crate::remote_trust::is_trusted_local`]).
     pub async fn revoke_pairing(
         &self,
         pairing_id: &str,
         bearer_token: Option<&str>,
-        source_ip: &str,
+        trusted_local: bool,
     ) -> Result<RevokePairingResult> {
-        if !authorize_pairing_revoke(self, pairing_id, bearer_token, source_ip)? {
+        if !authorize_pairing_revoke(self, pairing_id, bearer_token, trusted_local)? {
             return Ok(RevokePairingResult::Unauthorized);
         }
         let paired = self.store.list_paired()?;
@@ -635,7 +699,7 @@ impl PairingService {
         Ok(buffer)
     }
 
-    fn build_qr_session(&self) -> Result<ActiveQrSession> {
+    fn build_qr_session(&self, bound_profile_id: Option<String>) -> Result<ActiveQrSession> {
         let session_key = SigningKey::generate(&mut OsRng);
         let token_b64 = base64url_encode(session_key.verifying_key().as_bytes());
         let challenge = Sha256::digest(format!(
@@ -651,12 +715,19 @@ impl PairingService {
             short_code_raw,
             expires_at: Utc::now() + QR_TTL,
             used: false,
+            bound_profile_id,
         })
     }
 
     fn build_qr_url(&self, session: &ActiveQrSession, full: bool) -> Result<String> {
         let name = urlencoding::encode(&self.peer_name);
         let address = urlencoding::encode(&self.advertise_address);
+        let profile_param = session
+            .bound_profile_id
+            .as_deref()
+            .map(|profile_id| format!("&p={}", urlencoding::encode(profile_id)))
+            .unwrap_or_default();
+        let profile_for_sig = session.bound_profile_id.as_deref();
 
         // Compact v1 is the default for camera / Messages. Full v2 embeds the Iroh ticket
         // (large) and is only for explicit paste/share when off-LAN bootstrap is required.
@@ -670,12 +741,13 @@ impl PairingService {
                 &self.identity.device_id,
                 &session.token_b64,
                 &iroh.ticket,
+                profile_for_sig,
             );
             let signature = sign_message(self.identity.signing_key(), &message);
             let ticket = urlencoding::encode(&iroh.ticket);
             let endpoint_id = urlencoding::encode(&iroh.endpoint_id);
             return Ok(format!(
-                "{QR_SCHEME_V2}?a={address}&d={}&t={}&s={signature}&n={name}&k={ticket}&e={endpoint_id}",
+                "{QR_SCHEME_V2}?a={address}&d={}&t={}&s={signature}&n={name}&k={ticket}&e={endpoint_id}{profile_param}",
                 self.identity.device_id, session.token_b64,
             ));
         }
@@ -684,10 +756,11 @@ impl PairingService {
             &self.advertise_address,
             &self.identity.device_id,
             &session.token_b64,
+            profile_for_sig,
         );
         let signature = sign_message(self.identity.signing_key(), &message);
         Ok(format!(
-            "{QR_SCHEME}?a={address}&d={}&t={}&s={signature}&n={name}",
+            "{QR_SCHEME}?a={address}&d={}&t={}&s={signature}&n={name}{profile_param}",
             self.identity.device_id, session.token_b64,
         ))
     }
@@ -736,19 +809,60 @@ impl PairingService {
         Ok(None)
     }
 
+    pub fn find_by_phone_id(&self, phone_id: &str) -> Result<Option<PairedDeviceRecord>> {
+        self.store.get_by_phone_id(phone_id)
+    }
+
+    /// Persist mesh grants on the pairing record and refresh the mesh registry projection.
+    pub fn set_mesh_grants(
+        &self,
+        phone_id: &str,
+        grants: Vec<String>,
+    ) -> Result<PairedDeviceRecord> {
+        let mut record = self
+            .store
+            .get_by_phone_id(phone_id)?
+            .ok_or_else(|| anyhow::anyhow!("paired device not found: {phone_id}"))?;
+        record.mesh_grants = grants
+            .into_iter()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+            .collect();
+        self.store.save_record(&record)?;
+        let _ = crate::mesh::registry::upsert_from_pairing(&record);
+        Ok(record)
+    }
+
     pub fn authorize_bearer_token(&self, token: &str) -> Result<bool> {
         Ok(self.resolve_bearer_role(token)?.is_some())
     }
 
     /// Returns the pairing role when the bearer is valid and unexpired.
     pub fn resolve_bearer_role(&self, token: &str) -> Result<Option<PairingRole>> {
+        Ok(self.resolve_bearer_record(token)?.map(|record| record.role))
+    }
+
+    /// Returns the paired device when the bearer is valid and unexpired.
+    pub fn resolve_bearer_record(&self, token: &str) -> Result<Option<PairedDeviceRecord>> {
         let Some(record) = self.find_by_session_token(token)? else {
             return Ok(None);
         };
         if record.session_token_expiry < Utc::now() {
             return Ok(None);
         }
-        Ok(Some(record.role))
+        if self.store.is_revoked(&record.pairing_id)? {
+            return Ok(None);
+        }
+        Ok(Some(record))
+    }
+
+    /// Shared-mode seat bound to this bearer, when present.
+    pub fn resolve_bearer_profile_id(&self, token: &str) -> Result<Option<String>> {
+        Ok(self
+            .resolve_bearer_record(token)?
+            .and_then(|record| record.profile_id)
+            .map(|id| id.trim().to_string())
+            .filter(|id| !id.is_empty()))
     }
 
     /// Peer-scoped tokens may only use inbox/share surfaces (and pairing heartbeat).
@@ -767,6 +881,7 @@ pub fn path_allowed_for_peer(path: &str) -> bool {
     let path = path.split('?').next().unwrap_or(path);
     path.starts_with("/v1/peer/")
         || path.starts_with("/v1/share/")
+        || path.starts_with("/v1/mesh/")
         || path == "/pair/heartbeat"
         || path == "/pair/status"
         || path == "/pair/iroh-ticket"
@@ -787,6 +902,7 @@ mod peer_role_tests {
     fn peer_paths_are_allowlisted() {
         assert!(path_allowed_for_peer("/v1/peer/messages"));
         assert!(path_allowed_for_peer("/v1/share/push"));
+        assert!(path_allowed_for_peer("/v1/mesh/peers"));
         assert!(path_allowed_for_peer("/pair/heartbeat"));
         assert!(!path_allowed_for_peer("/v1/vault/notes"));
         assert!(!path_allowed_for_peer("/v1/interactive/turn"));
@@ -825,33 +941,24 @@ fn format_short_code(raw: &str) -> String {
     format!("{}-{}-{}", &raw[0..3], &raw[3..5], &raw[5..6])
 }
 
-fn is_loopback_ip(source_ip: &str) -> bool {
-    source_ip
-        .parse::<std::net::IpAddr>()
-        .map(|addr| addr.is_loopback())
-        .unwrap_or(false)
-}
-
 fn authorize_pairing_revoke(
     service: &PairingService,
     pairing_id: &str,
     bearer_token: Option<&str>,
-    source_ip: &str,
+    trusted_local: bool,
 ) -> Result<bool> {
-    if is_loopback_ip(source_ip) {
+    if trusted_local {
         return Ok(true);
     }
     let Some(token) = bearer_token else {
         return Ok(false);
     };
-    let Some(record) = service.find_by_session_token(token)? else {
+    let Some(record) = service.resolve_bearer_record(token)? else {
         return Ok(false);
     };
-    if service.store.is_revoked(&record.pairing_id)? {
-        return Ok(false);
-    }
-    if record.session_token_expiry < Utc::now() {
-        return Ok(false);
+    // Shared-mode root may revoke any seat; others may only revoke themselves.
+    if crate::portal_acl::is_root_portal(&record) {
+        return Ok(true);
     }
     Ok(record.pairing_id == pairing_id)
 }
@@ -877,6 +984,31 @@ pub fn resolve_advertise_address(bind: &str) -> String {
 
 pub fn pairing_enabled_from_env() -> bool {
     !truthy_env("MEDOUSA_PAIRING_DISABLE")
+}
+
+static WORKSHOP_PAIRING: OnceLock<Arc<PairingService>> = OnceLock::new();
+
+/// Register the process pairing service so turn/session handlers can resolve bearer→profile.
+pub fn init_workshop_pairing(service: Arc<PairingService>) {
+    let _ = WORKSHOP_PAIRING.set(service);
+}
+
+pub fn workshop_pairing() -> Option<Arc<PairingService>> {
+    WORKSHOP_PAIRING.get().cloned()
+}
+
+/// Bound Shared-mode profile for a request bearer, if any.
+pub fn resolve_request_profile_id(headers: &axum::http::HeaderMap) -> Option<String> {
+    let token = headers
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.strip_prefix("Bearer "))
+        .map(str::trim)
+        .filter(|value| !value.is_empty())?;
+    workshop_pairing()?
+        .resolve_bearer_profile_id(token)
+        .ok()
+        .flatten()
 }
 
 pub fn pairing_qr_v1_from_env() -> bool {
@@ -1066,7 +1198,7 @@ mod tests {
 
         assert_eq!(
             service
-                .revoke_pairing(&pairing_id, None, "10.0.0.5")
+                .revoke_pairing(&pairing_id, None, false)
                 .await
                 .expect("revoke"),
             RevokePairingResult::Unauthorized
@@ -1074,18 +1206,11 @@ mod tests {
 
         assert_eq!(
             service
-                .revoke_pairing(&pairing_id, Some(&session_token), "10.0.0.5")
+                .revoke_pairing(&pairing_id, Some(&session_token), false)
                 .await
                 .expect("revoke"),
             RevokePairingResult::Removed
         );
-    }
-
-    #[test]
-    fn loopback_ip_detection() {
-        assert!(is_loopback_ip("127.0.0.1"));
-        assert!(is_loopback_ip("::1"));
-        assert!(!is_loopback_ip("10.0.0.5"));
     }
 
     fn extract_query_param(url: &str, key: &str) -> Option<String> {

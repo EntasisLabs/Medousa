@@ -1,3 +1,4 @@
+/** @vitest-environment happy-dom */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const shellTabs = {
@@ -60,5 +61,21 @@ describe("dispatchPrefixCommand", () => {
     expect(shellTabs.switchDesktopAt).toHaveBeenCalledWith(1);
     expect(dispatchPrefixCommand("5", "5")).toBe(false);
     expect(shellTabs.switchDesktopAt).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("isEditableTarget", () => {
+  it("treats inputs and contenteditable as editable", async () => {
+    const { isEditableTarget } = await import("./shellPaneHotkeys");
+    const input = document.createElement("input");
+    const area = document.createElement("textarea");
+    const div = document.createElement("div");
+    div.contentEditable = "true";
+    const plain = document.createElement("button");
+    expect(isEditableTarget(input)).toBe(true);
+    expect(isEditableTarget(area)).toBe(true);
+    expect(isEditableTarget(div)).toBe(true);
+    expect(isEditableTarget(plain)).toBe(false);
+    expect(isEditableTarget(null)).toBe(false);
   });
 });

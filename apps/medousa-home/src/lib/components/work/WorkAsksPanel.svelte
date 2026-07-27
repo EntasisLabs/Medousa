@@ -100,14 +100,14 @@
       <div class="work-asks-empty">
         <p class="text-sm text-surface-400">No asks yet</p>
         <p class="mt-1 text-[12px] text-surface-500">
-          Start one from the Board, or use /ask in Chat.
+          Start one from the dock (New ask), or use /ask in Chat.
         </p>
         <button
           type="button"
           class="workshop-text-action mt-3 text-[12px]"
           onclick={goNewAsk}
         >
-          New ask on Board
+          New ask
         </button>
       </div>
     {:else}

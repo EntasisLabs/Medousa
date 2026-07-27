@@ -222,6 +222,9 @@ pub struct LayoutPreset {
     pub surfaces: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shell_chrome: Option<ShellChromeDef>,
+    /// Color theme for this layout — copied onto `EnvironmentSpec.theme` on activate.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub theme: Option<EnvironmentTheme>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -561,11 +564,21 @@ pub fn activate_layout_preset(spec: &mut EnvironmentSpec, preset_id: &str) -> Re
     }
     for preset in presets.iter_mut() {
         preset.active = preset.id == preset_id;
-        if preset.active
-            && let Some(chrome) = preset.shell_chrome.clone() {
-                spec.shell_chrome = Some(chrome);
-            }
     }
+    let chrome = presets
+        .iter()
+        .find(|preset| preset.id == preset_id)
+        .and_then(|preset| preset.shell_chrome.clone());
+    let theme = presets
+        .iter()
+        .find(|preset| preset.id == preset_id)
+        .and_then(|preset| preset.theme.clone());
+    if let Some(chrome) = chrome {
+        spec.shell_chrome = Some(chrome);
+    }
+    // Always promote the preset theme (including clearing when unset) so layout
+    // switches don't leave the previous layout's palette sticky.
+    spec.theme = theme;
     spec.active_preset_id = Some(preset_id.to_string());
     Ok(())
 }

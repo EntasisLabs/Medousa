@@ -13,6 +13,8 @@ export interface PairedDeviceSummary {
   phoneName: string;
   pairedAt: string;
   lastSeen: string;
+  role?: string | null;
+  profileId?: string | null;
 }
 
 export interface PairingStatusResponse {
@@ -48,11 +50,15 @@ export interface BonjourStatus {
   message: string;
 }
 
-export async function rotatePairingInvite(): Promise<PairingQrResponse> {
+export async function rotatePairingInvite(options?: {
+  profileId?: string;
+}): Promise<PairingQrResponse> {
   if (!isTauri()) {
     throw new Error("Pairing requires the Medousa desktop app");
   }
-  return invoke<PairingQrResponse>("pairing_rotate_invite");
+  return invoke<PairingQrResponse>("pairing_rotate_invite", {
+    profileId: options?.profileId?.trim() || undefined,
+  });
 }
 
 export async function fetchPairingQr(options?: {

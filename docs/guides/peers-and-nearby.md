@@ -16,7 +16,7 @@ Same pairing crypto. Different scope.
 
 ## Quick path — add a peer
 
-1. Open **Peers** (Users icon under Chat on desktop; **More → Peers** on mobile).
+1. Open **Peers** (Users icon under Chat on desktop; destinations menu → Peers on mobile).
 2. Tap **+** / **Add peer**.
 3. Show the QR on the host; scan from the other device (same Wi‑Fi for first pair).
 4. Prefer turning **LAN pairing** on only while pairing (**Settings → Nearby**),

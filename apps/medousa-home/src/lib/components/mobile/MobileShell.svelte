@@ -5,6 +5,7 @@
   import ActivitySheet from "$lib/components/mobile/ActivitySheet.svelte";
   import AskSheet from "$lib/components/mobile/AskSheet.svelte";
   import MobileBottomChrome from "$lib/components/mobile/MobileBottomChrome.svelte";
+  import MobileTopChrome from "$lib/components/mobile/MobileTopChrome.svelte";
   import HomePanel from "$lib/components/mobile/HomePanel.svelte";
   import WorkStory from "$lib/components/mobile/WorkStory.svelte";
   import MoreHub from "$lib/components/mobile/MoreHub.svelte";
@@ -52,9 +53,13 @@
   import { vaultDisplayTitle } from "$lib/utils/formatVault";
   import {
     shellAskFabVisible,
-    showBuiltinHomeInlineAsk,
     visibleMobileTabs,
   } from "$lib/utils/mobileEnvironmentChrome";
+  import "$lib/styles/mobile-home-convergence.postcss";
+
+  // Destinations menu pulls extra switchers + Lucide icons — keep it off the cold path.
+  const destinationsMenuMod = () =>
+    import("$lib/components/mobile/MobileDestinationsMenu.svelte");
 
   const mobileHomeSurfaceId = $derived(
     layout.effectiveMobileHomeSurface(environment.mobileDefaultHome),
@@ -73,7 +78,6 @@
       fabChromeActionCount: fabChromeOnHome,
     }),
   );
-  const showBuiltinInlineAsk = $derived(showBuiltinHomeInlineAsk(mobileAskEntry));
   let daemonHealth = $state<DaemonHealth | null>(null);
   let mainEl: HTMLElement | undefined = $state();
 
@@ -157,9 +161,13 @@
 
   $effect(() => {
     const order = visibleMobileTabs(environment.spec);
-    if (order.length > 0 && !order.includes(layout.mobileTab)) {
-      switchMobileTab(order[0]);
-    }
+    const tab = layout.mobileTab;
+    if (order.length === 0) return;
+    if (order.includes(tab)) return;
+    // Prefer home when correcting invalid/legacy tabs (e.g. stored "work").
+    const next = order.includes("home") ? "home" : order[0];
+    if (next === tab) return;
+    switchMobileTab(next);
   });
 
   onMount(() => {
@@ -219,6 +227,7 @@
   data-mobile-tab={layout.mobileTab}
 >
   <EnvPendingProposalBanner />
+  <MobileTopChrome />
   <main bind:this={mainEl} class="flex min-h-0 flex-1 flex-col overflow-hidden">
     {#key layout.navigationEpoch}
       {#if layout.mobileTab === "home"}
@@ -233,8 +242,6 @@
           onOpenChat={handleOpenChat}
           onOpenNote={handleOpenNote}
           onOpenSettings={() => layout.openMore("settings")}
-          onToggleActivity={() => layout.toggleActivitySheet()}
-          showInlineAsk={showBuiltinInlineAsk}
         />
         {/if}
       {:else if layout.mobileTab === "chat"}
@@ -243,7 +250,7 @@
           mobile={true}
           onOpenContext={() => {
             layout.setIdentityDrawerOpen(false);
-            layout.openMore("context");
+            layout.openMore("map");
           }}
           onOpenConnection={() => layout.openMore("settings")}
         />
@@ -273,6 +280,17 @@
     <ShellAskFab />
   {/if}
 
+  {#if layout.mobileDestinationsMenuOpen}
+    {#await destinationsMenuMod() then { default: MobileDestinationsMenu }}
+      <MobileDestinationsMenu
+        open={true}
+        align={layout.mobileTab === "home" ? "end" : "start"}
+        onClose={() => layout.setMobileDestinationsMenuOpen(false)}
+        onToggleActivity={() => layout.toggleActivitySheet()}
+      />
+    {/await}
+  {/if}
+
   <MobileToast
     message={userProfiles.remoteChangeNotice}
     onDismiss={() => userProfiles.dismissRemoteChangeNotice()}
@@ -290,7 +308,7 @@
     onClose={() => layout.setIdentityDrawerOpen(false)}
     onOpenFullContext={() => {
       layout.setIdentityDrawerOpen(false);
-      layout.openMore("context");
+      layout.openMore("profiles");
     }}
   />
 

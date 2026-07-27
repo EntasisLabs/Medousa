@@ -20,6 +20,7 @@ const LANG_ALIASES: Record<string, string> = {
   proto: "protobuf",
   pb: "protobuf",
   gql: "graphql",
+  grapheme: "graphql",
   ps1: "powershell",
   ps: "powershell",
   make: "makefile",

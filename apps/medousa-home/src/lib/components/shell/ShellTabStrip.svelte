@@ -15,6 +15,7 @@
     X,
   } from "@lucide/svelte";
   import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
+  import { shellContextMenu } from "$lib/stores/shellContextMenu.svelte";
   import { shellTabs } from "$lib/stores/shellTabs.svelte";
   import type { ShellTab } from "$lib/types/shellTabs";
   import { beginShellTabDrag } from "$lib/utils/shellTabDrag";
@@ -23,9 +24,11 @@
     groupId: string;
     /** titlebar = always-on unified chrome; default = hover/web strip. */
     variant?: "default" | "titlebar";
+    /** Fires after a click-activate or completed drag (notch drawer dismiss). */
+    onTabSettled?: (info: { tabId: string; didMove: boolean }) => void;
   }
 
-  let { groupId, variant = "default" }: Props = $props();
+  let { groupId, variant = "default", onTabSettled }: Props = $props();
 
   const tabs = $derived(shellTabs.tabsForGroup(groupId));
   const group = $derived(shellTabs.groups.find((entry) => entry.id === groupId));
@@ -130,7 +133,17 @@
           class="shell-tab-chip group flex shrink-0 cursor-grab items-center gap-1 leading-none active:cursor-grabbing
             {active ? 'shell-tab-chip--active' : 'shell-tab-chip--idle'}"
           role="presentation"
-          onpointerdown={(event) => beginShellTabDrag(event, tab.id, groupId)}
+          onpointerdown={(event) =>
+            beginShellTabDrag(event, tab.id, groupId, {
+              onDragEnd: (didMove) => {
+                onTabSettled?.({ tabId: tab.id, didMove });
+              },
+            })}
+          oncontextmenu={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            shellContextMenu.showTab(event.clientX, event.clientY, tab.id, groupId, tab.title);
+          }}
         >
           <button
             type="button"

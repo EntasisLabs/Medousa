@@ -239,11 +239,18 @@ async fn forward_request_stream(
         if name.eq_ignore_ascii_case("host")
             || name.eq_ignore_ascii_case("connection")
             || name.eq_ignore_ascii_case("content-length")
+            // Clients must not spoof transport; gateway is the sole authority.
+            || name.eq_ignore_ascii_case(crate::remote_trust::TRANSPORT_HEADER)
         {
             continue;
         }
         builder = builder.header(name.as_str(), value.as_str());
     }
+    // Mark proxied traffic so daemon handlers never treat Iroh as loopback trust.
+    builder = builder.header(
+        crate::remote_trust::TRANSPORT_HEADER,
+        crate::remote_trust::TRANSPORT_IROH,
+    );
     if !body.is_empty() {
         builder = builder.body(body.to_vec());
     }

@@ -594,6 +594,58 @@
     border-top: 1px solid rgb(var(--shell-border) / 0.14);
   }
 
+  .workshop-rail-drag-handle {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    width: 1.1rem;
+    margin-left: 0.1rem;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: rgb(var(--shell-muted, var(--color-surface-500)));
+    cursor: grab;
+    touch-action: none;
+  }
+
+  .workshop-rail-drag-handle:disabled {
+    opacity: 0.35;
+    cursor: default;
+  }
+
+  :global(body.workshop-rail-dragging) {
+    cursor: grabbing !important;
+    user-select: none;
+  }
+
+  .workshop-rail-dest-dragging {
+    opacity: 0.45;
+  }
+
+  .workshop-rail-dest-dragging .workshop-rail-drag-handle {
+    cursor: grabbing;
+  }
+
+  .workshop-rail-dest-drop-before {
+    box-shadow: inset 0 2px 0 0 rgb(var(--color-primary-400) / 0.85);
+  }
+
+  .workshop-rail-drop-end {
+    min-height: 0.7rem;
+    margin: 0.1rem 0.45rem 0.2rem;
+    border-radius: 0.35rem;
+  }
+
+  .workshop-rail-drop-end.workshop-rail-dest-drop-before {
+    box-shadow: none;
+    border-top: 2px solid rgb(var(--color-primary-400) / 0.85);
+  }
+
+  .workshop-rail-primary-dragging {
+    cursor: grabbing;
+  }
+
   .workshop-rail-dest-hero .workshop-rail-dest-btn {
     min-height: 2.15rem;
   }
@@ -692,6 +744,121 @@
   }
 
   .workshop-rail-dest-btn {
+    min-width: 0;
+    flex: 1;
+  }
+
+  .workshop-rail-dest-actions {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 0.05rem;
+    opacity: 0.55;
+    transition: opacity 120ms ease;
+  }
+
+  .workshop-rail-dest:hover .workshop-rail-dest-actions,
+  .workshop-rail-dest-row:hover .workshop-rail-dest-actions,
+  .workshop-rail-dest-actions:focus-within {
+    opacity: 1;
+  }
+
+  .workshop-rail-layout-editing .workshop-rail-dest-actions {
+    opacity: 1;
+  }
+
+  .workshop-rail-layout-editing .workshop-rail-dest-actions .workshop-rail-row-action:disabled {
+    opacity: 0.28;
+    cursor: default;
+  }
+
+  .workshop-rail-layout-edit-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.4rem;
+    margin: 0.2rem 0.35rem 0.45rem;
+    padding: 0.35rem 0.4rem;
+    border-radius: 0.5rem;
+    border: 0;
+    background: rgb(var(--shell-pane-bg, var(--color-surface-900)) / 0.45);
+  }
+
+  .workshop-rail-layout-edit-label {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    color: rgb(var(--shell-label, var(--color-surface-200)));
+  }
+
+  .workshop-rail-layout-edit-done {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    border: 0;
+    border-radius: 999px;
+    padding: 0.2rem 0.5rem;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    color: rgb(var(--color-surface-50));
+    background: rgb(var(--color-primary-600) / 0.45);
+    cursor: pointer;
+  }
+
+  .workshop-rail-layout-edit-done:hover {
+    background: rgb(var(--color-primary-600) / 0.6);
+  }
+
+  .workshop-rail-layout-library {
+    margin: 0.35rem 0.25rem 0.5rem;
+    padding: 0.4rem 0.2rem 0.25rem;
+    border-top: 1px solid rgb(var(--shell-border, var(--color-surface-500)) / 0.28);
+  }
+
+  .workshop-rail-layout-library-label {
+    margin: 0 0.35rem 0.35rem;
+    font-size: 0.625rem;
+    font-weight: 650;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: rgb(var(--shell-muted, var(--color-surface-500)));
+  }
+
+  .workshop-rail-layout-library-empty {
+    margin: 0 0.35rem;
+    font-size: 0.6875rem;
+    color: rgb(var(--shell-muted, var(--color-surface-500)));
+  }
+
+  .workshop-rail-layout-library-row {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .workshop-rail-layout-library-plus {
+    margin-left: auto;
+    opacity: 0.65;
+  }
+
+  .workshop-rail-layout-add-view {
+    margin: 0.35rem 0.35rem 0;
+  }
+
+  .workshop-rail-layout-add-view :global(.canvas-add-view) {
+    margin-top: 0;
+  }
+
+  .workshop-rail-dest-actions .workshop-rail-row-action,
+  .workshop-rail-dest-actions :global(.vault-dock-icon-btn) {
+    width: 1.45rem;
+    height: 1.45rem;
+  }
+
+  .workshop-rail-dock-row {
+    width: 100%;
+    padding-inline: 0.25rem 0.15rem;
+  }
+
+  .workshop-rail-dock-row .workshop-rail-dock-btn {
     min-width: 0;
     flex: 1;
   }
