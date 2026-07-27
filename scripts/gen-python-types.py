@@ -100,6 +100,15 @@ class MedousaModel(BaseModel):
         if not body.startswith("# DO NOT EDIT"):
             body = header + body
 
+    # Strip non-deterministic datamodel-codegen metadata (temp filenames, timestamps)
+    # so CI `git diff --exit-code` is stable across machines.
+    cleaned: list[str] = []
+    for line in body.splitlines():
+        if line.startswith("#   filename:") or line.startswith("#   timestamp:"):
+            continue
+        cleaned.append(line)
+    body = "\n".join(cleaned) + "\n"
+
     OUT_FILE.write_text(body)
     init = OUT_DIR / "__init__.py"
     init.write_text('"""Auto-generated medousa-types mirrors."""\nfrom medousa.types._generated.models import *  # noqa: F403\n')
