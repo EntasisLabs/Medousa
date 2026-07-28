@@ -12,6 +12,7 @@ Related: [How Medousa fits together](guide:architecture) · [Desktop, web, and p
 | **Medousa Agent** | This workshop’s answers and models | Editable on the desktop host; often read-only on phone |
 | **Runtime Controls** | Tool safety and advanced engine options | Same as Agent |
 | **Sharing** | Phone, peers, Shared seats, channels | QR and Shared host controls on desktop |
+| **Connections** | ChatGPT / Cursor account sign-in for coding agents | Desktop app only |
 | **Packages** | Optional software on this computer | Desktop app only |
 | **MCP** | External tool servers | Desktop app only |
 | **Connection** | Which workshop you’re in, restart, updates | Address everywhere; file paths on desktop |
@@ -35,9 +36,10 @@ Models (chat, vision, dictation), stance/voices, memory depth, and presentation 
 
 Advanced: which tools are allowed, shell access, network limits, and optional note **Versions**. Empty tool lists can mean everything is allowed — be careful. Day-one safety tips: [Permissions](guide:permissions-budgets).
 
-## Sharing / Packages / MCP / Connection
+## Sharing / Connections / Packages / MCP / Connection
 
 - **Sharing** — phone QR, peers, Shared mode, messaging channels.
+- **Connections** — sign into **ChatGPT** and **Cursor** to unlock the coding agents. Missing CLIs install from the same screen (vendor official installers). Sign-in keeps credentials with the vendor, never in Medousa; ChatGPT also lights up a **ChatGPT / Codex** chat path. Signed-out runtimes show a sign-in prompt in the chat runtime picker.
 - **Packages** — optional Offline brain and helpers (desktop).
 - **MCP** — connect external tools (desktop).
 - **Connection** — switch workshop, restart engine, app updates, **Files & diagnostics** paths on desktop.

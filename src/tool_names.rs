@@ -85,6 +85,7 @@ pub const REGISTERED_COGNITION_TOOLS: &[&str] = &[
     "cognition_calendar_delete",
     "cognition_calendar_import",
     "cognition_calendar_export",
+    "cognition_browser_act",
     "cognition_tool_history_summary",
     "cognition_tool_history_detail",
     "cognition_grapheme_script_save",

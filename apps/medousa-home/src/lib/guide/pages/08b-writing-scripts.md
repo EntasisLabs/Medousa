@@ -140,6 +140,10 @@ Operator tips:
 - Run by hand once before scheduling.
 - Comment intent for future-you and for agents that see the script as context.
 
+## Editor languages
+
+The Scripts editor highlights **Grapheme** plus the common markup languages you reach for alongside scripts — **HTML, CSS, JavaScript, XML, and JSON** — so config blocks, payloads, and embedded templates read cleanly. Highlighting is syntax-only; Grapheme remains the language that runs.
+
 ## Next
 
 - [Automations and scripts](guide:grapheme-automations) — Flows, Schedules, History

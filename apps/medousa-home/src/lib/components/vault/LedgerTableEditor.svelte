@@ -8,6 +8,7 @@
     Filter,
     Plus,
     SlidersHorizontal,
+    Upload,
     X,
   } from "@lucide/svelte";
   import {
@@ -17,6 +18,13 @@
     ledgerRowsFromContent,
     replaceLedgerTable,
   } from "$lib/utils/markdownTable";
+  import {
+    clipboardHasSpreadsheet,
+    spreadsheetDataFromClipboard,
+    spreadsheetDataFromFile,
+    isSpreadsheetFile,
+    type SpreadsheetTableData,
+  } from "$lib/utils/spreadsheetPaste";
   import {
     mergeColumnMeta,
     parseLedgerColumns,
@@ -76,6 +84,7 @@
   let renamingCol = $state<number | null>(null);
   let metaCol = $state<number | null>(null);
   let headerSortTimer: ReturnType<typeof setTimeout> | null = null;
+  let importInput = $state<HTMLInputElement | null>(null);
 
   const protectedColumns = $derived(
     ledgerProtectedColumnIndexes(columns.map((column) => column.label)),
@@ -615,6 +624,41 @@
       // Clipboard may be unavailable in Tauri webview.
     }
   }
+
+  function applySpreadsheetData(data: SpreadsheetTableData) {
+    const nextColumns: LedgerColumn[] = data.headers.map((label) => ({
+      label,
+      meta: { type: "text", align: "left" },
+    }));
+    persistMarkdown(nextColumns, data.rows, emptyMedousaSheetConfig());
+  }
+
+  async function handleSheetPaste(event: ClipboardEvent) {
+    if (disabled) return;
+    const data = event.clipboardData;
+    if (!data || !clipboardHasSpreadsheet(data)) return;
+    const target = event.target as HTMLElement | null;
+    if (target instanceof HTMLInputElement && !clipboardHasSpreadsheet(data)) {
+      return;
+    }
+    const parsed = spreadsheetDataFromClipboard(data);
+    if (!parsed) return;
+    event.preventDefault();
+    applySpreadsheetData(parsed);
+  }
+
+  async function importSpreadsheetFile(file: File) {
+    if (!isSpreadsheetFile(file)) return;
+    const parsed = await spreadsheetDataFromFile(file);
+    if (parsed) applySpreadsheetData(parsed);
+  }
+
+  async function handleFilePick(event: Event) {
+    const input = event.currentTarget as HTMLInputElement;
+    const file = input.files?.[0];
+    if (file) await importSpreadsheetFile(file);
+    input.value = "";
+  }
 </script>
 
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
@@ -624,6 +668,7 @@
   role="application"
   aria-label="Ledger table"
   onkeydown={handleSheetKeydown}
+  onpaste={handleSheetPaste}
 >
   <div class="ledger-toolbar flex shrink-0 flex-wrap items-center gap-2 border-b border-surface-500/40 px-4 py-2">
     <div class="ledger-sheet-controls min-w-0 flex-1">
@@ -748,21 +793,43 @@
       {/if}
     </div>
 
-    <button
-      type="button"
-      class="ledger-copy-csv"
-      {disabled}
-      onclick={copyCsv}
-    >
-      {#if copied}
-        <Check size={13} strokeWidth={2} />
-        Copied
-      {:else}
-        <Copy size={13} strokeWidth={2} />
-        Copy CSV
-      {/if}
-    </button>
+    <div class="ledger-toolbar-actions flex items-center gap-2">
+      <button
+        type="button"
+        class="ledger-copy-csv"
+        {disabled}
+        title="Import CSV or Excel (.csv, .tsv, .xlsx) — replaces the table"
+        onclick={() => importInput?.click()}
+      >
+        <Upload size={13} strokeWidth={2} />
+        Import
+      </button>
+      <button
+        type="button"
+        class="ledger-copy-csv"
+        {disabled}
+        onclick={copyCsv}
+      >
+        {#if copied}
+          <Check size={13} strokeWidth={2} />
+          Copied
+        {:else}
+          <Copy size={13} strokeWidth={2} />
+          Copy CSV
+        {/if}
+      </button>
+    </div>
   </div>
+
+  <input
+    bind:this={importInput}
+    type="file"
+    class="hidden"
+    accept=".csv,.tsv,.xlsx,.xls,.xlsm"
+    onchange={handleFilePick}
+    aria-hidden="true"
+    tabindex="-1"
+  />
 
   {#if sheetActive}
     <p class="ledger-view-status">

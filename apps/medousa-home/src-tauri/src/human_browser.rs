@@ -2632,6 +2632,112 @@ try{
 }catch(e){}
 })();"#;
 
+const ACT_REPORT_TIMEOUT: Duration = Duration::from_secs(8);
+static ACT_TX: Mutex<Option<oneshot::Sender<BrowserActReport>>> = Mutex::new(None);
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowserActReport {
+    pub ok: bool,
+    #[serde(default)]
+    pub url: String,
+    #[serde(default)]
+    pub error: Option<String>,
+}
+
+fn browser_act_js(request: &BrowserActRequest) -> Result<String, String> {
+    let payload = serde_json::to_string(request).map_err(|err| err.to_string())?;
+    Ok(format!(
+        r#"(function(){{
+try{{
+  var req={payload};
+  function done(ok,error){{
+    var i=window.__TAURI_INTERNALS__||window.__TAURI__;
+    if(!i||!i.invoke)return;
+    i.invoke("human_browser_report_act",{{payload:{{ok:ok,url:window.location.href||"",error:error||null}}}});
+  }}
+  function visible(el){{
+    if(!el)return false;
+    var r=el.getBoundingClientRect();
+    return r.width>0&&r.height>0;
+  }}
+  var el=req.selector?document.querySelector(req.selector):null;
+  if(req.selector&&!el){{done(false,"no element matches selector: "+req.selector);return;}}
+  if(req.selector&&!visible(el)){{done(false,"target element is not visible: "+req.selector);return;}}
+  switch(req.action){{
+    case "click": el.click(); done(true); return;
+    case "type":
+      el.focus();
+      if("value" in el){{el.value=req.text||"";el.dispatchEvent(new Event("input",{{bubbles:true}}));el.dispatchEvent(new Event("change",{{bubbles:true}}));done(true);return;}}
+      if(el.isContentEditable){{el.textContent=req.text||"";el.dispatchEvent(new Event("input",{{bubbles:true}}));done(true);return;}}
+      done(false,"target does not accept text input"); return;
+    case "press":
+      var key=req.key||"Enter";
+      ["keydown","keypress","keyup"].forEach(function(t){{el.dispatchEvent(new KeyboardEvent(t,{{key:key,bubbles:true}}));}});
+      if(key==="Enter"&&el.form&&el.tagName!=="TEXTAREA"){{el.form.requestSubmit?el.form.requestSubmit():el.form.submit();}}
+      done(true); return;
+    case "scroll":
+      if(el){{el.scrollIntoView({{block:"center",behavior:"instant"}});}}
+      else{{window.scrollBy(0,req.delta_y||400);}}
+      done(true); return;
+    case "select":
+      if(el.tagName!=="SELECT"){{done(false,"target is not a <select>");return;}}
+      el.value=req.value||"";
+      el.dispatchEvent(new Event("change",{{bubbles:true}}));
+      done(true); return;
+    case "wait":
+      setTimeout(function(){{done(true);}},Math.min(Math.max(req.ms||1000,0),15000));
+      return;
+    default: done(false,"unsupported action: "+req.action); return;
+  }}
+}}catch(e){{try{{var i=window.__TAURI_INTERNALS__||window.__TAURI__;if(i&&i.invoke)i.invoke("human_browser_report_act",{{payload:{{ok:false,url:"",error:String(e)}}}});}}catch(_err){{}}}}
+}})();"#
+    ))
+}
+
+#[tauri::command]
+pub fn human_browser_report_act(payload: BrowserActReport) -> Result<(), String> {
+    if let Some(tx) = ACT_TX.lock().expect("browser act").take() {
+        let _ = tx.send(payload);
+    }
+    Ok(())
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct BrowserActRequest {
+    pub action: String,
+    #[serde(default)]
+    pub selector: Option<String>,
+    #[serde(default)]
+    pub text: Option<String>,
+    #[serde(default)]
+    pub key: Option<String>,
+    #[serde(default)]
+    pub value: Option<String>,
+    #[serde(default)]
+    pub delta_y: Option<i64>,
+    #[serde(default)]
+    pub ms: Option<u64>,
+}
+
+pub async fn browser_act_embed(
+    app: &AppHandle,
+    request: &BrowserActRequest,
+) -> Result<BrowserActReport, String> {
+    let content = embedded_content_webview(app)
+        .ok_or_else(|| "browser content webview not ready".to_string())?;
+    let (tx, rx) = oneshot::channel();
+    *ACT_TX.lock().expect("browser act") = Some(tx);
+    content
+        .eval(&browser_act_js(request)?)
+        .map_err(|err| err.to_string())?;
+    tokio::time::timeout(ACT_REPORT_TIMEOUT, rx)
+        .await
+        .map_err(|_| "browser act timed out waiting for page".to_string())?
+        .map_err(|_| "browser act channel closed".to_string())
+}
+
 #[tauri::command]
 pub fn human_browser_report_snapshot(payload: SnapshotReport) -> Result<(), String> {
     if let Some(tx) = SNAPSHOT_TX.lock().expect("snapshot").take() {

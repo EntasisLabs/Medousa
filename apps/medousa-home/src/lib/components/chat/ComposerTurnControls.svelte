@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, tick } from "svelte";
   import { AudioLines, Brain, Check, ChevronDown, Compass } from "@lucide/svelte";
+  import BodyPortal from "$lib/components/ui/BodyPortal.svelte";
   import { runtime } from "$lib/stores/runtime.svelte";
   import { voicePresets } from "$lib/stores/voicePresets.svelte";
   import { workshopDefaults } from "$lib/stores/workshopDefaults.svelte";
@@ -67,7 +68,8 @@
     window.visualViewport?.addEventListener("scroll", place);
 
     const detachDismiss = attachComposerMenuDismiss({
-      isInside: (target) => Boolean(rootEl?.contains(target)),
+      isInside: (target) =>
+        Boolean(rootEl?.contains(target) || menuEl?.contains(target)),
       onDismiss: () => {
         openMenu = null;
       },
@@ -168,94 +170,100 @@
   </button>
 
   {#if openMenu === "voice"}
-    <div
-      bind:this={menuEl}
-      class="composer-anchored-menu composer-turn-menu"
-      role="listbox"
-      aria-label="Choose voice"
-    >
-      <header class="composer-anchored-menu-header">
-        <h2 class="text-sm font-semibold text-surface-50">Voice</h2>
-      </header>
-      <div class="composer-anchored-menu-body space-y-0.5">
-        {#each voiceOptions as option (option.id)}
-          {@const active = voicePresets.activeVoiceId === option.id}
-          <button
-            type="button"
-            class="composer-turn-option"
-            class:composer-turn-option-active={active}
-            role="option"
-            aria-selected={active}
-            title={option.description}
-            onclick={() => void selectVoice(option.id)}
-          >
-            <span class="composer-turn-option-label">{option.name}</span>
-            {#if active}
-              <Check size={14} strokeWidth={2} class="composer-turn-option-check" />
-            {/if}
-          </button>
-        {/each}
+    <BodyPortal>
+      <div
+        bind:this={menuEl}
+        class="composer-anchored-menu composer-turn-menu"
+        role="listbox"
+        aria-label="Choose voice"
+      >
+        <header class="composer-anchored-menu-header">
+          <h2 class="text-sm font-semibold text-surface-50">Voice</h2>
+        </header>
+        <div class="composer-anchored-menu-body space-y-0.5">
+          {#each voiceOptions as option (option.id)}
+            {@const active = voicePresets.activeVoiceId === option.id}
+            <button
+              type="button"
+              class="composer-turn-option"
+              class:composer-turn-option-active={active}
+              role="option"
+              aria-selected={active}
+              title={option.description}
+              onclick={() => void selectVoice(option.id)}
+            >
+              <span class="composer-turn-option-label">{option.name}</span>
+              {#if active}
+                <Check size={14} strokeWidth={2} class="composer-turn-option-check" />
+              {/if}
+            </button>
+          {/each}
+        </div>
       </div>
-    </div>
+    </BodyPortal>
   {:else if openMenu === "stance"}
-    <div
-      bind:this={menuEl}
-      class="composer-anchored-menu composer-turn-menu"
-      role="listbox"
-      aria-label="Choose stance"
-    >
-      <header class="composer-anchored-menu-header">
-        <h2 class="text-sm font-semibold text-surface-50">Stance</h2>
-      </header>
-      <div class="composer-anchored-menu-body space-y-0.5">
-        {#each DEPTH_CHARTER_OPTIONS as option (option.id)}
-          {@const active = runtime.depthMode === option.id}
-          <button
-            type="button"
-            class="composer-turn-option"
-            class:composer-turn-option-active={active}
-            role="option"
-            aria-selected={active}
-            title={option.hint}
-            onclick={() => void selectDepth(option.id)}
-          >
-            <span class="composer-turn-option-label">{option.label}</span>
-            {#if active}
-              <Check size={14} strokeWidth={2} class="composer-turn-option-check" />
-            {/if}
-          </button>
-        {/each}
+    <BodyPortal>
+      <div
+        bind:this={menuEl}
+        class="composer-anchored-menu composer-turn-menu"
+        role="listbox"
+        aria-label="Choose stance"
+      >
+        <header class="composer-anchored-menu-header">
+          <h2 class="text-sm font-semibold text-surface-50">Stance</h2>
+        </header>
+        <div class="composer-anchored-menu-body space-y-0.5">
+          {#each DEPTH_CHARTER_OPTIONS as option (option.id)}
+            {@const active = runtime.depthMode === option.id}
+            <button
+              type="button"
+              class="composer-turn-option"
+              class:composer-turn-option-active={active}
+              role="option"
+              aria-selected={active}
+              title={option.hint}
+              onclick={() => void selectDepth(option.id)}
+            >
+              <span class="composer-turn-option-label">{option.label}</span>
+              {#if active}
+                <Check size={14} strokeWidth={2} class="composer-turn-option-check" />
+              {/if}
+            </button>
+          {/each}
+        </div>
       </div>
-    </div>
+    </BodyPortal>
   {:else if openMenu === "reasoning"}
-    <div
-      bind:this={menuEl}
-      class="composer-anchored-menu composer-turn-menu"
-      role="listbox"
-      aria-label="Choose reasoning"
-    >
-      <header class="composer-anchored-menu-header">
-        <h2 class="text-sm font-semibold text-surface-50">Reasoning</h2>
-      </header>
-      <div class="composer-anchored-menu-body space-y-0.5">
-        {#each REASONING_EFFORT_OPTIONS as option (option.id)}
-          {@const active = runtime.reasoningEffort === option.id}
-          <button
-            type="button"
-            class="composer-turn-option"
-            class:composer-turn-option-active={active}
-            role="option"
-            aria-selected={active}
-            title={option.hint}
-            onclick={() => void selectReasoning(option.id)}
-          >
-            <span class="composer-turn-option-label">{option.label}</span>
-            {#if active}
-              <Check size={14} strokeWidth={2} class="composer-turn-option-check" />
-            {/if}
-          </button>
-        {/each}
+    <BodyPortal>
+      <div
+        bind:this={menuEl}
+        class="composer-anchored-menu composer-turn-menu"
+        role="listbox"
+        aria-label="Choose reasoning"
+      >
+        <header class="composer-anchored-menu-header">
+          <h2 class="text-sm font-semibold text-surface-50">Reasoning</h2>
+        </header>
+        <div class="composer-anchored-menu-body space-y-0.5">
+          {#each REASONING_EFFORT_OPTIONS as option (option.id)}
+            {@const active = runtime.reasoningEffort === option.id}
+            <button
+              type="button"
+              class="composer-turn-option"
+              class:composer-turn-option-active={active}
+              role="option"
+              aria-selected={active}
+              title={option.hint}
+              onclick={() => void selectReasoning(option.id)}
+            >
+              <span class="composer-turn-option-label">{option.label}</span>
+              {#if active}
+                <Check size={14} strokeWidth={2} class="composer-turn-option-check" />
+              {/if}
+            </button>
+          {/each}
+        </div>
       </div>
-    </div>
+    </BodyPortal>
   {/if}
 </div>

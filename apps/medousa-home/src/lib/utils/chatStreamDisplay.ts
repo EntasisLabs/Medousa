@@ -7,6 +7,32 @@ export function isEngineTelemetryText(message: string | null | undefined): boole
   if (trimmed.startsWith("◈")) return true;
   if (/orchestrator=|fallback=/i.test(trimmed)) return true;
   if (/^tool=/i.test(trimmed)) return true;
+  if (/^\[(medousa-)?acp/i.test(trimmed)) return true;
+  if (/^\[stub[\s\]]/i.test(trimmed)) return true;
+  return false;
+}
+
+/** ACP external-agent turn (Cursor / Codex via `/v1/agents`). */
+export function isAgentStreamEvent(event: InteractiveTurnStreamEvent): boolean {
+  return Boolean(event.agent_runtime || event.agent_session_id);
+}
+
+/** Quiet ACP plumbing so external agents read like a normal chat turn. */
+function isAcpQuietEvent(event: InteractiveTurnStreamEvent): boolean {
+  if (!isAgentStreamEvent(event)) return false;
+  const phase = (event.phase ?? "").toLowerCase();
+  const message = event.message?.toLowerCase() ?? "";
+  if (phase === "accepted" || phase === "running" || phase === "permission_resolved") {
+    return true;
+  }
+  if (
+    message === "connected" ||
+    message === "working" ||
+    message === "prompt accepted" ||
+    message.startsWith("agent session started")
+  ) {
+    return true;
+  }
   return false;
 }
 
@@ -30,6 +56,7 @@ function streamOperatorMessage(event: InteractiveTurnStreamEvent): string | null
 
 /** Engine/TUI telemetry — hidden from chat unless the operator enables engine details. */
 export function isEngineTelemetryEvent(event: InteractiveTurnStreamEvent): boolean {
+  if (isAcpQuietEvent(event)) return true;
   if (event.event_type === "status" && event.phase === "orchestration") {
     return streamOperatorMessage(event) == null;
   }
@@ -50,6 +77,7 @@ export function operatorStreamStatusLine(
   event: InteractiveTurnStreamEvent,
   showEngineDetails: boolean,
 ): string | null {
+  if (isAcpQuietEvent(event)) return null;
   const operator = streamOperatorMessage(event);
   if (operator) return operator;
   if (showEngineDetails) {

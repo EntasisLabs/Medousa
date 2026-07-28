@@ -181,6 +181,7 @@ pub mod settings_guard;
 pub mod stage_route_command_runtime;
 pub mod stage_routing;
 pub mod bridge_tools;
+pub mod browser_act_tools;
 pub mod browser_fetch_tools;
 pub mod browser_handlers;
 pub mod browser_host_client;

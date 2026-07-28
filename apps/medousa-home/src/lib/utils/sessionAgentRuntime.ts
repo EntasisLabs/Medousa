@@ -119,7 +119,7 @@ export function agentRuntimeLabel(runtime: ChatAgentRuntime): string {
     case "cursor":
       return "Cursor";
     case "codex":
-      return "Codex";
+      return "ChatGPT / Codex";
     default:
       return "Medousa";
   }

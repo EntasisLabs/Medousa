@@ -8,7 +8,7 @@ import { isTauri } from "$lib/window";
 
 const EXPORT_OPTIONS_KEY = "medousa-vault-export-options";
 
-export type VaultExportFormat = "pdf" | "docx";
+export type VaultExportFormat = "pdf" | "docx" | "html" | "markdown";
 export type VaultExportFontFamily = "system" | "serif" | "mono";
 export type VaultExportPageSize = "letter" | "a4";
 export type VaultExportOrientation = "portrait" | "landscape";
@@ -178,12 +178,29 @@ export function slugifyExportFilename(title: string): string {
   return slug || "note";
 }
 
+const FORMAT_EXTENSIONS: Record<VaultExportFormat, string> = {
+  pdf: "pdf",
+  docx: "docx",
+  html: "html",
+  markdown: "md",
+};
+
+const FORMAT_LABELS: Record<VaultExportFormat, string> = {
+  pdf: "PDF",
+  docx: "Word",
+  html: "HTML",
+  markdown: "Markdown",
+};
+
+export function vaultExportFormatLabel(format: VaultExportFormat): string {
+  return FORMAT_LABELS[format] ?? "PDF";
+}
+
 export function vaultExportFilename(
   title: string,
   format: VaultExportFormat,
 ): string {
-  const ext = format === "docx" ? "docx" : "pdf";
-  return `${slugifyExportFilename(title)}.${ext}`;
+  return `${slugifyExportFilename(title)}.${FORMAT_EXTENSIONS[format] ?? "pdf"}`;
 }
 
 /** Persist a rendered blob (Tauri save dialog or browser download). Returns false if cancelled. */
@@ -196,11 +213,13 @@ export async function saveExportBlob(
     const { save } = await import("@tauri-apps/plugin-dialog");
     const path = await save({
       defaultPath: filename,
-      filters:
-        format === "docx"
-          ? [{ name: "Word", extensions: ["docx"] }]
-          : [{ name: "PDF", extensions: ["pdf"] }],
-      title: format === "docx" ? "Export note as Word" : "Export note as PDF",
+      filters: [
+        {
+          name: vaultExportFormatLabel(format),
+          extensions: [FORMAT_EXTENSIONS[format] ?? "pdf"],
+        },
+      ],
+      title: `Export note as ${vaultExportFormatLabel(format)}`,
     });
     if (!path) return false;
     const bytes = new Uint8Array(await blob.arrayBuffer());

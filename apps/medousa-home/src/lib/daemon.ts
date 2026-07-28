@@ -1245,11 +1245,46 @@ export async function completeBrowserSession(
   return response.json() as Promise<Record<string, unknown>>;
 }
 
+export interface BrowserActRequestPayload {
+  action: string;
+  selector?: string | null;
+  text?: string | null;
+  key?: string | null;
+  value?: string | null;
+  delta_y?: number | null;
+  ms?: number | null;
+}
+
 export interface BrowserSessionRecord {
   session_id: string;
   query: string;
   max_results: number;
   status: string;
+  act_request?: BrowserActRequestPayload | null;
+}
+
+export async function completeBrowserActSession(
+  sessionId: string,
+  outcome: { ok: boolean; url?: string; error?: string | null },
+): Promise<Record<string, unknown>> {
+  const base = (await getDaemonUrl()).replace(/\/$/, "");
+  const response = await fetch(
+    `${base}/v1/browser/sessions/${encodeURIComponent(sessionId)}/complete-act`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ok: outcome.ok,
+        url: outcome.url ?? "",
+        error: outcome.error ?? null,
+      }),
+    },
+  );
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    throw new Error(text || `HTTP ${response.status}`);
+  }
+  return response.json() as Promise<Record<string, unknown>>;
 }
 
 export async function fetchBrowserSession(

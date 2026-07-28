@@ -4,13 +4,21 @@
   import {
     renderVaultNotePdfBlob,
     saveVaultNotePdfBlob,
-    vaultPdfFilename,
   } from "$lib/utils/vaultPdfExport";
   import {
     renderVaultNoteDocxBlob,
     saveVaultNoteDocxBlob,
-    vaultDocxFilename,
   } from "$lib/utils/vaultDocxExport";
+  import {
+    renderVaultNoteHtmlBlob,
+    renderVaultNoteMarkdownBlob,
+    saveVaultNoteHtmlBlob,
+    saveVaultNoteMarkdownBlob,
+  } from "$lib/utils/vaultHtmlExport";
+  import {
+    vaultExportFilename,
+    vaultExportFormatLabel,
+  } from "$lib/utils/vaultExportOptions";
   import {
     DEFAULT_VAULT_EXPORT_OPTIONS,
     normalizeVaultExportOptions,
@@ -55,6 +63,7 @@
 
   let format = $state<VaultExportFormat>("pdf");
   let options = $state<VaultExportOptions>({ ...DEFAULT_VAULT_EXPORT_OPTIONS });
+  const formatLabel = $derived(vaultExportFormatLabel(format));
   const hasAuthor = $derived(
     Boolean(parseFrontmatterAuthor(stripFrontmatter(content).frontmatter).trim()),
   );
@@ -131,7 +140,7 @@
         if (gen !== renderGen) return;
         blob = next;
         blobUrl = URL.createObjectURL(next);
-      } else {
+      } else if (fmt === "docx") {
         const next = await renderVaultNoteDocxBlob({
           title: noteTitle,
           content: noteContent,
@@ -141,7 +150,22 @@
         });
         if (gen !== renderGen) return;
         blob = next;
-        // Word: no iframe preview — keep blob for save only
+        blobUrl = null;
+      } else if (fmt === "html") {
+        const next = await renderVaultNoteHtmlBlob({
+          title: noteTitle,
+          content: noteContent,
+          labelByPath: labels,
+          notePath: path,
+          exportOptions: opts,
+        });
+        if (gen !== renderGen) return;
+        blob = next;
+        blobUrl = URL.createObjectURL(next);
+      } else {
+        const next = renderVaultNoteMarkdownBlob({ content: noteContent });
+        if (gen !== renderGen) return;
+        blob = next;
         blobUrl = null;
       }
     } catch (err) {
@@ -226,12 +250,15 @@
     saving = true;
     error = null;
     try {
-      const filename =
-        format === "pdf" ? vaultPdfFilename(title) : vaultDocxFilename(title);
+      const filename = vaultExportFilename(title, format);
       const saved =
         format === "pdf"
           ? await saveVaultNotePdfBlob(blob, filename)
-          : await saveVaultNoteDocxBlob(blob, filename);
+          : format === "docx"
+            ? await saveVaultNoteDocxBlob(blob, filename)
+            : format === "html"
+              ? await saveVaultNoteHtmlBlob(blob, filename)
+              : await saveVaultNoteMarkdownBlob(blob, filename);
       if (saved) close();
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
@@ -306,6 +333,26 @@
                 }}
               >
                 Word
+              </button>
+              <button
+                type="button"
+                class="vault-export-seg__btn"
+                class:vault-export-seg__btn--on={format === "html"}
+                onclick={() => {
+                  format = "html";
+                }}
+              >
+                HTML
+              </button>
+              <button
+                type="button"
+                class="vault-export-seg__btn"
+                class:vault-export-seg__btn--on={format === "markdown"}
+                onclick={() => {
+                  format = "markdown";
+                }}
+              >
+                Markdown
               </button>
             </div>
           </div>
@@ -434,22 +481,25 @@
         <div class="vault-export-preview-body">
           {#if loading}
             <p class="vault-export-preview-status">
-              Preparing {format === "pdf" ? "PDF" : "Word"}…
+              Preparing {formatLabel}…
             </p>
           {:else if error}
             <p class="vault-export-preview-error">{error}</p>
-          {:else if format === "pdf" && blobUrl}
+          {:else if (format === "pdf" || format === "html") && blobUrl}
             <iframe
               class="vault-export-preview-frame"
-              title="PDF preview for {title}"
+              title="{formatLabel} preview for {title}"
               src={blobUrl}
             ></iframe>
-          {:else if format === "docx" && blob}
+          {:else if (format === "docx" || format === "markdown") && blob}
             <div class="vault-export-docx-ready">
-              <p class="vault-export-docx-ready__title">Word document ready</p>
+              <p class="vault-export-docx-ready__title">
+                {format === "docx" ? "Word document ready" : "Markdown file ready"}
+              </p>
               <p class="vault-export-docx-ready__hint">
-                Preview isn’t shown for .docx — settings above are applied. Save to
-                download.
+                {format === "docx"
+                  ? "Preview isn’t shown for .docx — settings above are applied. Save to download."
+                  : "Clean markdown with the same fences you see in Build. Save to download."}
               </p>
             </div>
           {/if}
@@ -470,11 +520,7 @@
           disabled={!blob || loading || saving}
           onclick={() => void handleSave()}
         >
-          {saving
-            ? "Saving…"
-            : format === "pdf"
-              ? "Save PDF…"
-              : "Save Word…"}
+          {saving ? "Saving…" : `Save ${formatLabel}…`}
         </button>
       </footer>
     </div>

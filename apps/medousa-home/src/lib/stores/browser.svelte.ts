@@ -54,8 +54,22 @@ export class BrowserStore {
   workCardId = $state<string | null>(null);
   urlDraft = $state("");
   loading = $state(false);
+  /** Transient note about the latest agent act (click/type) for handoff chrome feedback. */
+  agentActivity = $state<string | null>(null);
+  private activityTimer: ReturnType<typeof setTimeout> | null = null;
   private historyBack = $state<string[]>([]);
   private historyForward = $state<string[]>([]);
+
+  noteAgentActivity(summary: string) {
+    const trimmed = summary.trim();
+    if (!trimmed) return;
+    this.agentActivity = trimmed;
+    if (this.activityTimer) clearTimeout(this.activityTimer);
+    this.activityTimer = setTimeout(() => {
+      this.agentActivity = null;
+      this.activityTimer = null;
+    }, 6000);
+  }
 
   activeTab = $derived(this.tabs.find((tab) => tab.active) ?? this.tabs[0] ?? null);
 

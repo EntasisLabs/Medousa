@@ -318,6 +318,7 @@ pub fn host_bus_tool_names() -> HashSet<String> {
             "cognition_web_search",
             "cognition_browser_fetch",
             "cognition_browser_snapshot",
+            "cognition_browser_act",
         ],
     );
 

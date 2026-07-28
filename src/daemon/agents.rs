@@ -11,8 +11,8 @@ use axum::Json;
 use chrono::Utc;
 use futures_util::Stream;
 use medousa_acp_client::{
-    AcpClient, AcpEvent, AgentRuntimeKind, ExternalAcpClient, external_runtime_config,
-    runtime_availability,
+    AcpClient, AcpEvent, AgentRuntimeKind, ExternalAcpClient, RuntimeAuthStatus,
+    external_runtime_config, runtime_auth_probe, runtime_availability,
 };
 use medousa_types::{
     AgentPermissionRequestListQuery, AgentPermissionRequestListResponse,
@@ -66,12 +66,21 @@ pub async fn list_agent_runtimes() -> Json<AgentRuntimeListResponse> {
         .into_iter()
         .map(|kind| {
             let (available, command, detail) = runtime_availability(kind);
+            let probe = runtime_auth_probe(kind);
+            let auth_status = match probe.status {
+                RuntimeAuthStatus::SignedIn => Some("signed_in".to_string()),
+                RuntimeAuthStatus::SignedOut => Some("signed_out".to_string()),
+                RuntimeAuthStatus::Unknown => Some("unknown".to_string()),
+            };
             AgentRuntimeInfo {
                 runtime: kind.as_str().to_string(),
                 available,
                 command,
                 detail,
                 uses_native_turns: matches!(kind, AgentRuntimeKind::Medousa),
+                auth_status,
+                binary_present: probe.binary_present,
+                auth_detail: probe.detail,
             }
         })
         .collect();
@@ -122,7 +131,35 @@ pub async fn create_agent_session(
         config.args = args;
     }
 
+    // Fail loudly on auth problems instead of looking "healthy" on the stub
+    // bridge — the Connections UI keys off these distinct states.
+    let probe = runtime_auth_probe(kind);
+    if probe.binary_present && matches!(probe.status, RuntimeAuthStatus::SignedOut) {
+        let hint = probe
+            .detail
+            .unwrap_or_else(|| "vendor CLI not signed in".into());
+        return Err((
+            StatusCode::UNAUTHORIZED,
+            format!("{hint} — sign in from Settings → Connections"),
+        ));
+    }
+
     let acp_session = ACP_CLIENT.create_session(&config).await.map_err(|e| {
+        let message = e.to_string();
+        let lower = message.to_lowercase();
+        if lower.contains("auth")
+            || lower.contains("login")
+            || lower.contains("unauthorized")
+            || lower.contains("401")
+        {
+            return (
+                StatusCode::UNAUTHORIZED,
+                format!(
+                    "{} sign-in expired or missing — sign in from Settings → Connections",
+                    kind.as_str()
+                ),
+            );
+        }
         (StatusCode::BAD_GATEWAY, format!("ACP create_session failed: {e}"))
     })?;
 
@@ -165,7 +202,7 @@ pub async fn create_agent_session(
             kind.as_str(),
             "status",
             "accepted",
-            &format!("agent session started ({})", kind.as_str()),
+            "connected",
             false,
             None,
             None,
@@ -328,10 +365,49 @@ pub async fn deny_agent_permission_request(
 
 fn spawn_prompt_pump(state: AppState, live: LiveAgentSession, prompt: String) {
     tokio::spawn(async move {
-        if let Err(err) = run_prompt_pump(state, live, prompt).await {
+        if let Err(err) = run_prompt_pump(state.clone(), live.clone(), prompt).await {
             tracing::warn!(error = %err, "agent prompt pump failed");
+            // Surface the failure into the chat stream so the turn fails loudly
+            // instead of dying silently (or looking like a stub/no-op).
+            publish_agent_pump_error(&state, &live, &err.to_string()).await;
         }
     });
+}
+
+async fn publish_agent_pump_error(state: &AppState, live: &LiveAgentSession, message: &str) {
+    let entry = {
+        state
+            .interactive_turn_streams
+            .read()
+            .await
+            .get(&live.agent_session_id)
+            .cloned()
+    };
+    if let Some(entry) = entry {
+        publish_agent_event(
+            &entry,
+            &live.agent_session_id,
+            &live.session_id,
+            &live.runtime,
+            "error",
+            "error",
+            message,
+            true,
+            None,
+            None,
+        );
+        entry.channel.mark_closed();
+    }
+    publish_acp_terminal(
+        AcpTerminalKind::Failed,
+        &live.session_id,
+        Some(&live.agent_session_id),
+        &live.agent_session_id,
+        &live.runtime,
+        message,
+        json!({ "error": message }),
+    )
+    .await;
 }
 
 async fn run_prompt_pump(
@@ -354,7 +430,7 @@ async fn run_prompt_pump(
         &live.runtime,
         "status",
         "running",
-        "prompt accepted",
+        "working",
         false,
         None,
         None,
@@ -416,6 +492,14 @@ async fn run_prompt_pump(
                     false,
                     Some(text),
                     None,
+                );
+            }
+            AcpEvent::ReasoningDelta { text } => {
+                publish_agent_reasoning_event(
+                    &entry,
+                    &live.agent_session_id,
+                    &live.runtime,
+                    text,
                 );
             }
             AcpEvent::MessageDone { text } => {
@@ -610,6 +694,52 @@ fn publish_agent_event(
         final_text,
         tool_names: None,
         terminal,
+        emitted_at_utc: Utc::now(),
+        budget_request_id: None,
+        requested_rounds: None,
+        work_id: None,
+        tool_run_id: None,
+        tool_name: None,
+        tool_status: None,
+        tool_input_summary: None,
+        tool_output_summary: None,
+        tool_round: None,
+        tool_artifact_refs: None,
+        ui_artifact: None,
+        previous_artifact_id: None,
+        root_artifact_id: None,
+        ui_scene: None,
+        operator_message: None,
+        debug_message: None,
+        browser_session_id: None,
+        browser_challenge_url: None,
+        context_usage: None,
+        permission_request_id: None,
+        agent_session_id: Some(agent_session_id.to_string()),
+        agent_runtime: Some(runtime.to_string()),
+    };
+    publish_interactive_turn_event(entry, Ok(event));
+}
+
+/// Forward an ACP thinking/reasoning trace chunk into the chat stream's
+/// `reasoning_delta` channel so Home renders it in the collapsed thinking tray.
+fn publish_agent_reasoning_event(
+    entry: &TurnStreamEntry,
+    agent_session_id: &str,
+    runtime: &str,
+    text: String,
+) {
+    let event = InteractiveTurnStreamEvent {
+        turn_id: agent_session_id.to_string(),
+        seq: 0,
+        event_type: "reasoning_delta".into(),
+        phase: "thinking".into(),
+        message: String::new(),
+        content_delta: None,
+        reasoning_delta: Some(text),
+        final_text: None,
+        tool_names: None,
+        terminal: false,
         emitted_at_utc: Utc::now(),
         budget_request_id: None,
         requested_rounds: None,

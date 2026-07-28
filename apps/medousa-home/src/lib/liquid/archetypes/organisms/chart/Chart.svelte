@@ -15,11 +15,71 @@
   import RadialMark from "./RadialMark.svelte";
   import ScatterMark from "./ScatterMark.svelte";
   import HeatmapMark from "./HeatmapMark.svelte";
-  import { TrendingUp, TrendingDown, Minus } from "@lucide/svelte";
+  import {
+    TrendingUp,
+    TrendingDown,
+    Minus,
+    Download,
+    FileImage,
+    FileCode,
+    FileSpreadsheet,
+  } from "@lucide/svelte";
+  import {
+    chartSupportsSvgExport,
+    exportChartCsv,
+    exportChartPng,
+    exportChartSvg,
+  } from "$lib/utils/chartExport";
 
   let { node }: ArchetypeProps = $props();
   const ctx = getLiquidContext();
-  void ctx;
+  const showExportMenu = $derived(!ctx.exportPaper);
+
+  let rootEl = $state<HTMLElement | null>(null);
+  let menuOpen = $state(false);
+  let exportBusy = $state(false);
+  let exportNote = $state<string | null>(null);
+  let noteTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function flashNote(message: string) {
+    exportNote = message;
+    if (noteTimer) clearTimeout(noteTimer);
+    noteTimer = setTimeout(() => {
+      exportNote = null;
+    }, 2400);
+  }
+
+  async function runExport(format: "png" | "svg" | "csv") {
+    if (exportBusy || !model) return;
+    menuOpen = false;
+    exportBusy = true;
+    try {
+      if (format === "csv") {
+        if (exportChartCsv(model)) flashNote("CSV saved");
+      } else if (format === "svg") {
+        if (!rootEl) return;
+        const ok = await exportChartSvg(rootEl, model);
+        flashNote(ok ? "SVG saved" : "SVG export supports pie / donut / radar / radial — try PNG");
+      } else {
+        if (!rootEl) return;
+        const ok = await exportChartPng(rootEl, model);
+        flashNote(ok ? "PNG saved" : "Couldn’t capture PNG");
+      }
+    } finally {
+      exportBusy = false;
+    }
+  }
+
+  function toggleMenu() {
+    menuOpen = !menuOpen;
+  }
+
+  function closeMenu(event: MouseEvent) {
+    if (!menuOpen) return;
+    const target = event.target as HTMLElement | null;
+    if (target?.closest(".liquid-chart-export")) return;
+    menuOpen = false;
+  }
 
   const model = $derived(chartViewModel(node.props as Record<string, unknown>));
   const legendPos = $derived(
@@ -47,23 +107,69 @@
   );
 </script>
 
+<svelte:window onclick={closeMenu} />
+
 {#if model}
   <div
     class="liquid-chart"
     class:liquid-chart--sized={Boolean(model.width)}
     role="img"
     aria-label={aria}
+    bind:this={rootEl}
     style:width={model.width || undefined}
     style:--liquid-chart-height={model.height || undefined}
     style:--chart-plot={model.surface || undefined}
   >
-    {#if model.title || model.description}
+    {#if model.title || model.description || showExportMenu}
       <header class="liquid-chart-header">
-        {#if model.title}
-          <p class="liquid-chart-title" role="heading" aria-level="3">{model.title}</p>
-        {/if}
-        {#if model.description}
-          <p class="liquid-chart-description">{model.description}</p>
+        <div class="liquid-chart-header-text">
+          {#if model.title}
+            <p class="liquid-chart-title" role="heading" aria-level="3">{model.title}</p>
+          {/if}
+          {#if model.description}
+            <p class="liquid-chart-description">{model.description}</p>
+          {/if}
+        </div>
+        {#if showExportMenu}
+          <div class="liquid-chart-export">
+            <button
+              type="button"
+              class="liquid-chart-export-btn"
+              title="Export chart"
+              aria-label="Export chart"
+              aria-expanded={menuOpen}
+              aria-busy={exportBusy}
+              onclick={(event) => {
+                event.stopPropagation();
+                toggleMenu();
+              }}
+            >
+              <Download size={14} strokeWidth={2} />
+            </button>
+            {#if menuOpen}
+              <div class="liquid-chart-export-menu" role="menu">
+                <button type="button" role="menuitem" onclick={() => runExport("png")}>
+                  <FileImage size={13} strokeWidth={2} /> PNG
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onclick={() => runExport("svg")}
+                  title={chartSupportsSvgExport(model)
+                    ? "Vector export"
+                    : "Vector export available for pie, donut, radar, radial"}
+                >
+                  <FileCode size={13} strokeWidth={2} /> SVG
+                </button>
+                <button type="button" role="menuitem" onclick={() => runExport("csv")}>
+                  <FileSpreadsheet size={13} strokeWidth={2} /> CSV
+                </button>
+              </div>
+            {/if}
+            {#if exportNote}
+              <p class="liquid-chart-export-note" role="status">{exportNote}</p>
+            {/if}
+          </div>
         {/if}
       </header>
     {/if}
@@ -166,6 +272,89 @@
 
   .liquid-chart-header {
     margin-bottom: 0.45rem;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+
+  .liquid-chart-header-text {
+    min-width: 0;
+  }
+
+  .liquid-chart-export {
+    position: relative;
+    flex-shrink: 0;
+  }
+
+  .liquid-chart-export-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.75rem;
+    height: 1.75rem;
+    border-radius: 0.5rem;
+    border: 1px solid color-mix(in srgb, var(--color-surface-500) 30%, transparent);
+    background: transparent;
+    color: rgb(var(--chart-fg-muted));
+    cursor: pointer;
+    opacity: 0.65;
+    transition: opacity 120ms ease, background 120ms ease;
+  }
+
+  .liquid-chart:hover .liquid-chart-export-btn,
+  .liquid-chart-export-btn[aria-expanded="true"] {
+    opacity: 1;
+    background: color-mix(in srgb, var(--color-surface-500) 12%, transparent);
+  }
+
+  .liquid-chart-export-menu {
+    position: absolute;
+    right: 0;
+    top: calc(100% + 0.25rem);
+    z-index: 30;
+    display: flex;
+    flex-direction: column;
+    min-width: 7.5rem;
+    padding: 0.25rem;
+    border-radius: 0.6rem;
+    border: 1px solid color-mix(in srgb, var(--color-surface-500) 35%, transparent);
+    background: rgb(var(--color-surface-800));
+    box-shadow: 0 8px 24px rgb(0 0 0 / 0.28);
+  }
+
+  .liquid-chart-export-menu button {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.35rem 0.55rem;
+    border: none;
+    border-radius: 0.4rem;
+    background: transparent;
+    color: rgb(var(--chart-fg));
+    font-size: 0.8125rem;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .liquid-chart-export-menu button:hover {
+    background: color-mix(in srgb, var(--color-surface-500) 16%, transparent);
+  }
+
+  .liquid-chart-export-note {
+    position: absolute;
+    right: 0;
+    top: calc(100% + 0.35rem);
+    z-index: 31;
+    margin: 0;
+    padding: 0.3rem 0.55rem;
+    white-space: nowrap;
+    border-radius: 0.5rem;
+    background: rgb(var(--color-surface-800));
+    border: 1px solid color-mix(in srgb, var(--color-surface-500) 35%, transparent);
+    color: rgb(var(--chart-fg-muted));
+    font-size: 0.75rem;
+    box-shadow: 0 6px 18px rgb(0 0 0 / 0.25);
   }
 
   .liquid-chart-title {

@@ -570,26 +570,77 @@ export class ChatStore {
   handleBrowserChallenge(event: InteractiveTurnStreamEvent) {
     const sessionId = event.browser_session_id?.trim();
     if (!sessionId) return;
+    const challengeUrl = event.browser_challenge_url?.trim() || null;
+    const isClientAct = !challengeUrl;
     const messageId = this.messageIdForTurn(event.turn_id);
+
+    if (isClientAct) {
+      // Agent-driven act on the shared webview — execute directly on mobile, no CAPTCHA chrome.
+      void this.executeClientBrowserAct(sessionId);
+      return;
+    }
+
     this.browserChallenge = {
       turnId: event.turn_id,
       messageId,
       sessionId,
-      challengeUrl: event.browser_challenge_url ?? null,
+      challengeUrl,
       message: event.message || event.operator_message || "",
     };
     const workCardId = this.workCardIdForTurn(event.turn_id);
     void import("$lib/stores/browser.svelte").then(({ browser }) =>
       browser.setControl("awaiting_operator"),
     );
-    if (event.browser_challenge_url) {
+    if (challengeUrl) {
       void import("$lib/utils/openInBrowser").then(({ openInBrowser }) =>
-        openInBrowser(event.browser_challenge_url!, {
+        openInBrowser(challengeUrl, {
           openedBy: "agent",
           sessionId: this.sessionId,
           workCardId,
         }),
       );
+    }
+  }
+
+  private async executeClientBrowserAct(sessionId: string) {
+    try {
+      const { fetchBrowserSession, completeBrowserActSession } = await import("$lib/daemon");
+      const session = await fetchBrowserSession(sessionId);
+      const request = session.act_request;
+      if (!request) {
+        await completeBrowserActSession(sessionId, {
+          ok: false,
+          error: "act session missing request payload",
+        });
+        return;
+      }
+      const { humanBrowserAct } = await import("$lib/humanBrowser");
+      const report = await humanBrowserAct(request);
+      const actionSummary = [request.action, request.selector]
+        .filter((part): part is string => Boolean(part?.trim()))
+        .join(" ");
+      void import("$lib/stores/browser.svelte").then(({ browser }) =>
+        browser.noteAgentActivity(
+          report.ok
+            ? `Medousa ${actionSummary}`.trim()
+            : `Act failed: ${report.error ?? actionSummary}`.trim(),
+        ),
+      );
+      await completeBrowserActSession(sessionId, {
+        ok: report.ok,
+        url: report.url,
+        error: report.error ?? null,
+      });
+    } catch (err) {
+      try {
+        const { completeBrowserActSession } = await import("$lib/daemon");
+        await completeBrowserActSession(sessionId, {
+          ok: false,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      } catch {
+        // Session may have expired — nothing else to do.
+      }
     }
   }
 
@@ -2615,6 +2666,24 @@ export class ChatStore {
 
     const current = this.messages[idx];
     let content = current.content;
+
+    // ACP external agents (Cursor / Codex) emit "assistant_message" as a
+    // cumulative snapshot. Swap content instead of appending so replies read
+    // like a normal chat answer, not a duplicated transcript.
+    if (event.event_type === "assistant_message" && event.final_text?.trim()) {
+      const next: ChatMessage = {
+        ...current,
+        content: event.final_text.trim(),
+        phase: null,
+        statusLine: null,
+      };
+      this.messages = [
+        ...this.messages.slice(0, idx),
+        next,
+        ...this.messages.slice(idx + 1),
+      ];
+      return;
+    }
 
     if (event.event_type === "turn_progress") {
       const next: ChatMessage = {

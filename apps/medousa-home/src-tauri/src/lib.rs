@@ -36,6 +36,8 @@ mod human_browser_android;
 mod human_browser_ios;
 mod provider_catalog;
 mod providers;
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
+mod account_connections;
 mod tray;
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 mod window;
@@ -282,6 +284,16 @@ pub fn run() {
             providers::providers_probe,
             providers::providers_validate_key,
             providers::providers_list_models,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            account_connections::account_connections_probe,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            account_connections::account_chatgpt_begin_device_login,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            account_connections::account_begin_terminal_login,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            account_connections::account_sign_out,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            account_connections::account_cli_install,
             pairing::pairing_fetch_qr,
             pairing::pairing_rotate_invite,
             pairing::pairing_fetch_qr_image,
@@ -529,6 +541,8 @@ pub fn run() {
             human_browser_ios::human_browser_snapshot_markdown,
             #[cfg(target_os = "ios")]
             human_browser_ios::human_browser_snapshot_search,
+            #[cfg(target_os = "ios")]
+            human_browser_ios::human_browser_act,
             #[cfg(target_os = "ios")]
             human_browser_ios::human_browser_stop,
             #[cfg(target_os = "ios")]

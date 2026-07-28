@@ -19,6 +19,11 @@
     workshopRetentionReadHint,
   } from "$lib/platformCopy";
   import { Check, ChevronDown, Moon, Sun } from "@lucide/svelte";
+  import {
+    readGrammarSettings,
+    writeGrammarSettings,
+    type GrammarSettings,
+  } from "$lib/utils/grammarCheck";
 
   interface Props {
     mobile?: boolean;
@@ -52,6 +57,12 @@
   let themePickerOpen = $state(false);
   let moreOpen = $state(false);
   let liveActivityStatus = $state<LiveActivityStatus | null>(null);
+  let grammar = $state<GrammarSettings>(readGrammarSettings());
+
+  function patchGrammar(partial: Partial<GrammarSettings>) {
+    grammar = { ...grammar, ...partial };
+    writeGrammarSettings(grammar);
+  }
 
   const retentionReadOnly = $derived(mobile || isTauriMobilePlatform());
 
@@ -252,6 +263,80 @@
           />
           <span class="prefs-metric-unit">days</span>
         </span>
+      </label>
+    </div>
+  </div>
+
+  <div class="prefs-band">
+    <div class="prefs-band-head">
+      <h3 class="settings-subsection-heading">Notes proofread</h3>
+      <p class="settings-subsection-lead">
+        Grammar underlines in the editor, via a LanguageTool server. Only note
+        text leaves this device — never paths. Off by default; browser
+        spellcheck stays on either way.
+      </p>
+    </div>
+
+    <div class="prefs-grid">
+      <label class="prefs-tile">
+        <span class="prefs-tile-copy">
+          <span class="prefs-tile-title">Grammar check</span>
+          <span class="prefs-tile-meta">Underline + fixes in Build</span>
+        </span>
+        <input
+          type="checkbox"
+          class="prefs-switch"
+          checked={grammar.enabled}
+          onchange={(event) =>
+            patchGrammar({
+              enabled: (event.currentTarget as HTMLInputElement).checked,
+            })}
+        />
+      </label>
+
+      <label class="prefs-tile">
+        <span class="prefs-tile-copy">
+          <span class="prefs-tile-title">LanguageTool endpoint</span>
+          <span class="prefs-tile-meta">Local server (languagetool.org)</span>
+        </span>
+        <input
+          type="text"
+          class="prefs-endpoint-input"
+          spellcheck="false"
+          placeholder="http://localhost:8081"
+          value={grammar.endpoint}
+          disabled={!grammar.enabled}
+          aria-label="LanguageTool endpoint"
+          onchange={(event) =>
+            patchGrammar({
+              endpoint: (event.currentTarget as HTMLInputElement).value,
+            })}
+        />
+      </label>
+
+      <label class="prefs-tile">
+        <span class="prefs-tile-copy">
+          <span class="prefs-tile-title">Language</span>
+          <span class="prefs-tile-meta">Auto-detect or force</span>
+        </span>
+        <select
+          class="prefs-endpoint-input"
+          value={grammar.language}
+          disabled={!grammar.enabled}
+          aria-label="Grammar check language"
+          onchange={(event) =>
+            patchGrammar({
+              language: (event.currentTarget as HTMLSelectElement).value,
+            })}
+        >
+          <option value="auto">Auto</option>
+          <option value="en-US">English (US)</option>
+          <option value="en-GB">English (UK)</option>
+          <option value="es">Español</option>
+          <option value="fr">Français</option>
+          <option value="de">Deutsch</option>
+          <option value="pt-BR">Português</option>
+        </select>
       </label>
     </div>
   </div>
@@ -718,6 +803,22 @@
   .prefs-metric-unit {
     font-size: 0.68rem;
     color: rgb(var(--color-surface-500));
+  }
+
+  .prefs-endpoint-input {
+    flex-shrink: 0;
+    width: 11rem;
+    max-width: 100%;
+    border-radius: 0.4rem;
+    border: 1px solid rgb(var(--color-surface-500) / 0.4);
+    background: rgb(var(--color-surface-950) / 0.45);
+    padding: 0.25rem 0.45rem;
+    font-size: 0.75rem;
+    color: rgb(var(--color-surface-100));
+  }
+
+  .prefs-endpoint-input:disabled {
+    opacity: 0.5;
   }
 
   .prefs-switch {

@@ -31,6 +31,8 @@
   import { vault } from "$lib/stores/vault.svelte";
   import { toast } from "$lib/stores/toast.svelte";
   import type { FindMatch } from "$lib/utils/vaultFindInNote";
+  import { grammarLintExtensions } from "$lib/utils/grammarLint";
+  import { readGrammarSettings } from "$lib/utils/grammarCheck";
   import {
     dataTransferHasImage,
     imageFileFromDataTransfer,
@@ -72,7 +74,12 @@
   const slashKeymapCompartment = new Compartment();
   const wrapCompartment = new Compartment();
   const lineNumbersCompartment = new Compartment();
+  const grammarCompartment = new Compartment();
   let findDecorationsEpoch = $state(0);
+
+  function grammarExt(enabled: boolean) {
+    return enabled ? grammarLintExtensions() : [];
+  }
 
   function wrapExt(enabled: boolean) {
     return enabled ? EditorView.lineWrapping : [];
@@ -387,6 +394,7 @@
           vaultEditorBaseTheme,
           wrapCompartment.of(wrapExt(vault.buildWordWrap)),
           lineNumbersCompartment.of(lineNumbersExt(vault.buildLineNumbers)),
+          grammarCompartment.of(grammarExt(readGrammarSettings().enabled)),
           placeholder("Write…"),
           readOnlyCompartment.of(EditorState.readOnly.of(disabled)),
           slashKeymapCompartment.of(slashKeymapExt(slashOpen)),
@@ -489,6 +497,34 @@
     view.dispatch({
       effects: lineNumbersCompartment.reconfigure(lineNumbersExt(numbers)),
     });
+  });
+
+  $effect(() => {
+    if (!view) return;
+    const enabled = readGrammarSettings().enabled;
+    view.dispatch({
+      effects: grammarCompartment.reconfigure(grammarExt(enabled)),
+    });
+  });
+
+  /** Live toggle from Settings (same-tab) — reconfigure without remount. */
+  function handleGrammarSettingsChanged() {
+    if (!view) return;
+    view.dispatch({
+      effects: grammarCompartment.reconfigure(
+        grammarExt(readGrammarSettings().enabled),
+      ),
+    });
+  }
+
+  onMount(() => {
+    window.addEventListener("medousa-grammar-settings", handleGrammarSettingsChanged);
+    return () => {
+      window.removeEventListener(
+        "medousa-grammar-settings",
+        handleGrammarSettingsChanged,
+      );
+    };
   });
 
   /**

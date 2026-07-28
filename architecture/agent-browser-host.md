@@ -14,6 +14,8 @@ Browser is a **provider backend + client UX**, not a parallel tool ecosystem:
 |------|------------|
 | `cognition_web_search` | All surfaces (binding chain differs) |
 | `cognition_browser_fetch` | `supports_browser_host=true` only |
+| `cognition_browser_snapshot` | `supports_browser_host=true` only |
+| `cognition_browser_act` | `supports_browser_host=true` only (0.7.0) |
 | CAPTCHA handoff | SSE `browser_challenge` + UI panel (not a tool) |
 
 Gating mirrors `TurnSurfaceContext.supports_ui_artifacts`: clients advertise `supports_browser_host`; the daemon never infers from channel name.
@@ -55,7 +57,22 @@ Home desktop now uses the **embedded human browser webview** as the operator-fac
 | CAPTCHA complete | [`resumeBrowserChallenge.ts`](Medousa/apps/medousa-home/src/lib/utils/resumeBrowserChallenge.ts) + `human_browser_snapshot_*` |
 | Fetch/snapshot tools | BrowserHost `/v1/fetch` + `browser_bridge_snapshot` prefer human webview when URL matches |
 
-Read-only DOM snapshot shares session cookies with the visible tab. Click/type automation (`cognition_browser_act`) remains out of scope.
+Read-only DOM snapshot shares session cookies with the visible tab.
+
+## Agent act (`cognition_browser_act`, 0.7.0)
+
+Agents can click/type/scroll/select/wait in the **shared human webview** — same cookie jar as today.
+
+|||
+|---|---|
+| Daemon tool | `src/browser_act_tools.rs` (`cognition_browser_act`) |
+| Desktop exec | BrowserHost `POST /v1/tab-groups/{id}/act` → `human_browser::browser_act_embed` (eval JS in embed webview) |
+| iOS exec | Client-executed session (mirrors search): daemon session + SSE → `human_browser_ios::human_browser_act` → `POST /v1/browser/sessions/{id}/complete-act` |
+
+Safety:
+- Act is **blocked unless `control === agent`** on the tab group; `awaiting_operator` (CAPTCHA/verification) blocks act until the operator hands control back.
+- High-risk targets (submit/password/checkout/delete-like selectors) require `allow_high_risk=true` at the tool layer.
+- Human navigation while the agent has control flips control back to `user` (`agentBrowserCoord.ts`), so the human always wins.
 
 ## Surfaces
 
@@ -69,8 +86,7 @@ Read-only DOM snapshot shares session cookies with the visible tab. Click/type a
 ## Out of scope (v1)
 
 - Separate browser sidecar binary
-- `cognition_browser_act` / form automation
-- Playwright/CDP, SearXNG, Google-first SERP
+- Playwright/CDP, SearXNG, Google-first SERP, full form-recording macros
 
 ## References
 

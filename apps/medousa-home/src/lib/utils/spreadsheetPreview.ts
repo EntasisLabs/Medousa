@@ -40,7 +40,7 @@ function stripBom(text: string): string {
   return text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
 }
 
-function parseDelimitedRecords(text: string, delimiter: string): string[][] {
+export function parseDelimitedRecords(text: string, delimiter: string): string[][] {
   const input = stripBom(text);
   const records: string[][] = [];
   let row: string[] = [];

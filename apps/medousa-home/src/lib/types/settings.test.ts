@@ -31,7 +31,9 @@ describe("settings nav groups", () => {
     expect(settingsSectionById("network")?.label).toBe("Sharing");
     expect(settingsSectionById("network")?.hint).toBe("Seats, phone, peers & channels");
     expect(settingsSectionById("network")?.group).toBe("app");
-    expect(SETTINGS_SECTIONS.filter((section) => section.group === "app")).toHaveLength(4);
+    expect(settingsSectionById("connections")?.group).toBe("app");
+    expect(settingsSectionById("connections")?.label).toBe("Connections");
+    expect(SETTINGS_SECTIONS.filter((section) => section.group === "app")).toHaveLength(5);
 
     expect(settingsSectionById("packages")?.group).toBe("machine");
     expect(settingsSectionById("mcp")?.group).toBe("machine");

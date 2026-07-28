@@ -12,6 +12,15 @@ use medousa_browser_lite::SearchResponse;
 
 const SESSION_TTL: Duration = Duration::from_secs(15 * 60);
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BrowserActOutcome {
+    pub ok: bool,
+    #[serde(default)]
+    pub url: String,
+    #[serde(default)]
+    pub error: Option<String>,
+}
+
 fn default_max_results() -> usize {
     8
 }
@@ -33,10 +42,14 @@ pub struct BrowserSession {
     pub query: String,
     #[serde(default = "default_max_results")]
     pub max_results: usize,
+    #[serde(default)]
+    pub act_request: Option<serde_json::Value>,
     pub status: BrowserSessionStatus,
     pub challenge_url: Option<String>,
     pub challenge_reason: Option<String>,
     pub search_response: Option<SearchResponse>,
+    #[serde(default)]
+    pub act_result: Option<BrowserActOutcome>,
     pub error: Option<String>,
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
@@ -77,7 +90,9 @@ pub fn create_browser_session(request: BrowserSessionCreateRequest) -> BrowserSe
         status,
         challenge_url: None,
         challenge_reason: None,
+        act_request: None,
         search_response: None,
+        act_result: None,
         error: None,
         created_at: chrono::Utc::now(),
     };
@@ -113,6 +128,16 @@ pub fn mark_browser_challenge(
     Some(record.session.clone())
 }
 
+pub fn attach_browser_act_request(
+    session_id: &str,
+    act_request: serde_json::Value,
+) -> Option<BrowserSession> {
+    let mut guard = SESSIONS.lock().expect("browser sessions");
+    let record = guard.get_mut(session_id)?;
+    record.session.act_request = Some(act_request);
+    Some(record.session.clone())
+}
+
 pub fn complete_browser_session(
     session_id: &str,
     request: BrowserSessionCompleteRequest,
@@ -126,6 +151,18 @@ pub fn complete_browser_session(
         record.session.error = request.error.or(Some("browser session failed".to_string()));
         record.session.status = BrowserSessionStatus::Failed;
     }
+    Some(record.session.clone())
+}
+
+/// Client-executed act completion — used by Home mobile after running the act in its overlay webview.
+pub fn complete_browser_act_session(
+    session_id: &str,
+    outcome: BrowserActOutcome,
+) -> Option<BrowserSession> {
+    let mut guard = SESSIONS.lock().expect("browser sessions");
+    let record = guard.get_mut(session_id)?;
+    record.session.act_result = Some(outcome);
+    record.session.status = BrowserSessionStatus::Completed;
     Some(record.session.clone())
 }
 

@@ -611,6 +611,7 @@
     el.style.transform = "";
     el.style.transformOrigin = "";
     el.style.willChange = "";
+    el.style.backfaceVisibility = "";
     presenceCenterOffset = 0;
     presenceDockMode = "docked";
   }
@@ -647,7 +648,9 @@
         const acceptedAgent = await createAgentSession({
           session_id: chat.sessionId,
           runtime,
-          prompt,
+          // Prompt is sent separately after we attach the stream, so no ACP
+          // events are emitted before Home is listening.
+          prompt: undefined,
         });
         agentSessionId = acceptedAgent.agent_session_id;
         setSessionAgentSessionId(chat.sessionId, agentSessionId);
@@ -678,6 +681,7 @@
         ticket.session_id,
         ticket.stream_url,
       );
+      await promptAgentSession(agentSessionId, prompt);
       return;
     }
 

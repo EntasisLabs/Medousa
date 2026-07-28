@@ -271,8 +271,12 @@ pub fn host_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
             },
             ToolDomainCatalogEntry {
                 domain: "browser",
-                summary: "Agent Browser fetch for known URLs (requires supports_browser_host client)",
-                tools: &["cognition_browser_fetch", "cognition_browser_snapshot"],
+                summary: "Agent Browser fetch/snapshot/act on shared Web tab (requires supports_browser_host client)",
+                tools: &[
+                    "cognition_browser_fetch",
+                    "cognition_browser_snapshot",
+                    "cognition_browser_act",
+                ],
             },
             ToolDomainCatalogEntry {
                 domain: ENVIRONMENT_HOST_AUTO_UNLOCK_DOMAIN,
@@ -401,8 +405,12 @@ pub fn worker_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
             },
             ToolDomainCatalogEntry {
                 domain: BROWSER_HOST_AUTO_UNLOCK_DOMAIN,
-                summary: "Agent Browser fetch for known URLs (requires supports_browser_host client)",
-                tools: &["cognition_browser_fetch", "cognition_browser_snapshot"],
+                summary: "Agent Browser fetch/snapshot/act on shared Web tab (requires supports_browser_host client)",
+                tools: &[
+                    "cognition_browser_fetch",
+                    "cognition_browser_snapshot",
+                    "cognition_browser_act",
+                ],
             },
         ]
     })
@@ -444,6 +452,7 @@ pub fn tool_one_liner(name: &str) -> &'static str {
         "cognition_web_search" => "Search the public web (provider fallback from config)",
         "cognition_browser_fetch" => "Fetch a URL via Agent Browser and return markdown excerpt",
         "cognition_browser_snapshot" => "Snapshot a URL via Agent Browser for synthesis",
+        "cognition_browser_act" => "Click/type/scroll on the shared Web tab (agent control required)",
         "cognition_turn_begin_work" => "Signal heavy/long-running tool work starting (workers, big crawls)",
         "cognition_turn_update_user" => "Short status to the principal mid-turn (retries, course-corrections) — call with your next tool",
         "cognition_turn_checkpoint" => "Mid-task update; hand turn to principal",

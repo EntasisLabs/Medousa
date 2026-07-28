@@ -28,8 +28,18 @@ describe("codeEditorLanguageRegistry", () => {
     }
   });
 
+  it("registers markup languages as highlight-only", () => {
+    for (const id of ["javascript", "json", "html", "css", "xml"] as const) {
+      const def = getCodeEditorLanguage(id);
+      expect(def.tier).toBe("highlight");
+      expect(def.capabilities.lsp).toBe(false);
+      expect(def.capabilities.compile).toBe(false);
+      expect(def.capabilities.run).toBe(false);
+    }
+  });
+
   it("registers stub languages without editor plug-ins", () => {
-    for (const id of ["python", "rust", "typescript"] as const) {
+    for (const id of ["python", "rust", "typescript", "yaml"] as const) {
       const def = getCodeEditorLanguage(id);
       expect(def.tier).toBe("stub");
       expect(def.capabilities.lsp).toBe(false);

@@ -43,7 +43,34 @@ Home: Tauri commands → `client().agents()` only (`daemon/agents.rs`).
 
 ## ACP crate
 
-`crates/medousa-acp-client` — `ExternalAcpClient` spawns Cursor/Codex when the binary is on PATH; otherwise stub bridge events. Handshake: `initialize` → `session/new` → `session/prompt`; streams `session/update` chunks and replies to `session/request_permission`. Force stub: `MEDOUSA_ACP_FORCE_STUB=1`. Demo permissions: `MEDOUSA_ACP_STUB_PERMISSION=1`. Permission wait timeout (default-deny): `MEDOUSA_ACP_PERMISSION_TIMEOUT_SECS` (default `300`).
+`crates/medousa-acp-client` — `ExternalAcpClient` spawns Cursor (`agent acp`) or the Codex ACP adapter (`codex-acp`, or `npx -y @agentclientprotocol/codex-acp` — stock `codex` has no `acp` subcommand). Missing CLI → stub bridge. Spawn/handshake failures return errors (no silent stub). Handshake: `initialize` → `session/new` → `session/prompt`; streams `session/update` chunks and replies to `session/request_permission`. Force stub: `MEDOUSA_ACP_FORCE_STUB=1`. Demo permissions: `MEDOUSA_ACP_STUB_PERMISSION=1`. Permission wait timeout (default-deny): `MEDOUSA_ACP_PERMISSION_TIMEOUT_SECS` (default `300`).
+
+## Account sign-in (0.7.0)
+
+External runtimes need the vendor CLI signed in **before** `create_session`. Medousa orchestrates the official login — credentials stay in the vendor's own store (`~/.codex/…`, Cursor's store), never in Medousa.
+
+| Runtime | Install | Sign-in | Sign-out |
+|---------|---------|---------|----------|
+| **ChatGPT / Codex** | Connections → **Install** (official Codex installer). ACP uses `codex-acp` / `npx -y @agentclientprotocol/codex-acp` | `codex login` (browser) or `codex login --device-auth` | `codex logout` |
+| **Cursor** | Connections → **Install** (official Cursor Agent installer) | Prefer `cursor agent login` (falls back to `agent login`); same auth store | `cursor agent logout` / `agent logout` |
+
+Home: **Settings → Connections** installs missing CLIs via the vendor installers, runs login via Tauri (`account_connections.rs`), and probes status without reading tokens. The daemon surfaces it on each runtime:
+
+```jsonc
+// GET /v1/agents/runtimes → AgentRuntimeInfo
+{
+  "kind": "codex",
+  "binary_present": true,
+  "auth_status": "signed_in",   // signed_out | signed_in | unknown
+  "auth_detail": null
+}
+```
+
+`POST /v1/agents/sessions` returns **401** when the binary is present but signed out — surface a sign-in CTA rather than a generic spawn error. Cursor auth is probed via `agent status --format json` (tokens live in the OS keychain, not a file Medousa can read); Codex still uses `~/.codex` file presence only. Raw tokens are never read into Medousa logs.
+
+## Thinking / reasoning traces
+
+`agent_thought_chunk` updates are routed to the chat stream's `reasoning_delta` channel (event_type `reasoning_delta`, phase `thinking`), separate from `content_delta`. Home accumulates them into `ChatMessage.reasoning` and renders the collapsed **thinking tray** (`AssistantThinking.svelte`) above the answer — same treatment as native Medousa reasoning. Missing CLI → `create_session` errors loudly (no stub fallback).
 
 ## Stasis waitable turns (0.8)
 

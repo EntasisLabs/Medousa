@@ -49,6 +49,14 @@ icon: shield
 
 Same verification flow can appear from chat (“Medousa needs help with a verification”). Do not paste site passwords into the composer — use this surface.
 
+## Agent click and type
+
+When the agent has the wheel, it can **click, type, scroll, and select** right in the shared Web tab — same logins and cookies you see. The banner narrates each action (for example “Medousa click #search-button”), so you always know what just happened.
+
+- You stay in charge: navigating or pressing **Take control** instantly hands the page back to you.
+- Verification (CAPTCHA / sign-in) pauses the agent until you finish the check — it cannot click through those.
+- Sensitive steps (submit buttons, password fields, checkout) need an explicit go-ahead from you first.
+
 ## Research habits
 
 1. Save durable sources to the **Library** (Save / Library saves).

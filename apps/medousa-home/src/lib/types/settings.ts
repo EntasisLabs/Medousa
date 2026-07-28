@@ -5,6 +5,7 @@ export type SettingsSectionId =
   | "agent"
   | "runtime"
   | "network"
+  | "connections"
   | "packages"
   | "mcp"
   | "basement";
@@ -18,6 +19,7 @@ export const SETTINGS_MOBILE_SECTIONS: SettingsSectionId[] = [
   "agent",
   "runtime",
   "network",
+  "connections",
   "packages",
   "mcp",
   "basement",
@@ -73,6 +75,12 @@ export const SETTINGS_SECTIONS: SettingsSectionDef[] = [
     id: "network",
     label: "Sharing",
     hint: "Seats, phone, peers & channels",
+    group: "app",
+  },
+  {
+    id: "connections",
+    label: "Connections",
+    hint: "ChatGPT & Cursor sign-in",
     group: "app",
   },
   {
