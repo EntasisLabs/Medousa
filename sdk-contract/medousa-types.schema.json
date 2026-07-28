@@ -247,7 +247,25 @@
       "runtime"
     ],
     "properties": {
+      "auth_detail": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "auth_status": {
+        "description": "Vendor account sign-in: `signed_in` | `signed_out` | `unknown`.",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
       "available": {
+        "type": "boolean"
+      },
+      "binary_present": {
+        "description": "Vendor CLI binary present on PATH.",
+        "default": false,
         "type": "boolean"
       },
       "command": {
@@ -295,7 +313,25 @@
           "runtime"
         ],
         "properties": {
+          "auth_detail": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "auth_status": {
+            "description": "Vendor account sign-in: `signed_in` | `signed_out` | `unknown`.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "available": {
+            "type": "boolean"
+          },
+          "binary_present": {
+            "description": "Vendor CLI binary present on PATH.",
+            "default": false,
             "type": "boolean"
           },
           "command": {
@@ -2215,6 +2251,13 @@
           "null"
         ]
       },
+      "resume_provider_token": {
+        "description": "Optional ACP wire `sessionId` to resume (from a prior `RecoveryDisposition::ResumeSupported`). When omitted but `work_id` is set, the daemon looks up the latest resume token on that work item.",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
       "runtime": {
         "description": "External runtime: `cursor` or `codex` (not `medousa`).",
         "type": "string"
@@ -2230,6 +2273,13 @@
           {
             "type": "null"
           }
+        ]
+      },
+      "work_id": {
+        "description": "Optional Forge undertaking binding (`/v1/forge/items/{id}`). When set, the ACP session runs inside the governed worktree and reports leases.",
+        "type": [
+          "string",
+          "null"
         ]
       }
     },
@@ -2297,6 +2347,13 @@
       "phase": {
         "type": "string"
       },
+      "resumed": {
+        "description": "True when the session was attached via ACP `session/resume` (or load).",
+        "type": [
+          "boolean",
+          "null"
+        ]
+      },
       "runtime": {
         "type": "string"
       },
@@ -2308,6 +2365,12 @@
       },
       "stream_url": {
         "type": "string"
+      },
+      "work_id": {
+        "type": [
+          "string",
+          "null"
+        ]
       }
     }
   },

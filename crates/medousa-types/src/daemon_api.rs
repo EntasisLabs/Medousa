@@ -2813,6 +2813,15 @@ pub struct CreateAgentSessionRequest {
     pub args: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub surface: Option<TurnSurfaceContext>,
+    /// Optional Forge undertaking binding (`/v1/forge/items/{id}`). When set,
+    /// the ACP session runs inside the governed worktree and reports leases.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub work_id: Option<String>,
+    /// Optional ACP wire `sessionId` to resume (from a prior
+    /// `RecoveryDisposition::ResumeSupported`). When omitted but `work_id` is
+    /// set, the daemon looks up the latest resume token on that work item.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resume_provider_token: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -2825,6 +2834,11 @@ pub struct CreateAgentSessionResponse {
     pub stream_url: String,
     pub stream_ready: bool,
     pub accepted_at_utc: DateTime<Utc>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub work_id: Option<String>,
+    /// True when the session was attached via ACP `session/resume` (or load).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resumed: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

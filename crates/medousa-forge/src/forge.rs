@@ -393,6 +393,57 @@ impl Forge {
         Ok(())
     }
 
+    /// Lease-fenced append of one JSONL line under
+    /// `attempts/{seq}/evidence/commands.jsonl`. Holds the item lock so a
+    /// concurrent seal cannot read a torn file. Adapters own the schema;
+    /// Forge only guarantees the file exists and is digestable at seal.
+    pub fn append_command_log(
+        &self,
+        lease: &ExecutionLease,
+        line: &serde_json::Value,
+    ) -> Result<()> {
+        let _item_lock = self.store.lock_item(&lease.work_id)?;
+        let item = self.load(&lease.work_id)?;
+        self.fence(&item, lease)?;
+        let attempt = item
+            .attempt(&lease.attempt_id)
+            .ok_or_else(|| ForgeError::AttemptNotFound(lease.attempt_id.clone()))?;
+        let evidence_dir = self
+            .store
+            .item_dir(&lease.work_id)
+            .join("attempts")
+            .join(attempt.seq.to_string())
+            .join("evidence");
+        std::fs::create_dir_all(&evidence_dir)?;
+        let path = evidence_dir.join("commands.jsonl");
+        let mut bytes = serde_json::to_vec(line)?;
+        bytes.push(b'\n');
+        use std::io::Write;
+        let mut file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)?;
+        file.write_all(&bytes)?;
+        file.sync_all()?;
+        Ok(())
+    }
+
+    /// Latest `ResumeSupported` provider token on this work item (most recent
+    /// interrupted attempt wins). Adapters use this to reattach; Forge never
+    /// resumes providers itself.
+    pub fn latest_resume_token(&self, work_id: &WorkId) -> Result<Option<String>> {
+        let item = self.load(work_id)?;
+        for attempt in item.attempts.iter().rev() {
+            if let Some(RecoveryDisposition::ResumeSupported { provider_token }) =
+                &attempt.recovery
+                && !provider_token.trim().is_empty()
+            {
+                return Ok(Some(provider_token.clone()));
+            }
+        }
+        Ok(None)
+    }
+
     /// Interrupt a running attempt (crash, cancel, operator stop). The work
     /// environment and any uncommitted work are preserved untouched; the item
     /// returns to Ready for a future attempt. `recovery` records what a later
@@ -1708,6 +1759,99 @@ mod tests {
             .unwrap()
             .heartbeat_at;
         assert!(hb >= lease.heartbeat_at);
+    }
+
+    #[test]
+    fn append_command_log_is_lease_fenced_and_digestable() {
+        let fx = fixture();
+        let forge = Forge::open(&fx.forge_root).unwrap();
+        let item = forge
+            .register("t", "b", &fx.repo, "main", "user-1", &actor())
+            .unwrap();
+        forge.provision(&item.id, &actor()).unwrap();
+        let (item, lease) = forge
+            .begin_attempt(&item.id, script_executor(), None, &actor())
+            .unwrap();
+        let seq = item.attempt(&lease.attempt_id).unwrap().seq;
+
+        forge
+            .append_command_log(
+                &lease,
+                &serde_json::json!({"kind": "prompt", "chars": 12}),
+            )
+            .unwrap();
+        forge
+            .append_command_log(
+                &lease,
+                &serde_json::json!({"kind": "tool", "name": "read"}),
+            )
+            .unwrap();
+
+        let path = forge
+            .store()
+            .item_dir(&item.id)
+            .join("attempts")
+            .join(seq.to_string())
+            .join("evidence/commands.jsonl");
+        let raw = fs::read_to_string(&path).unwrap();
+        let lines: Vec<_> = raw.lines().filter(|l| !l.is_empty()).collect();
+        assert_eq!(lines.len(), 2);
+        assert!(lines[0].contains("\"prompt\""));
+        assert!(lines[1].contains("\"tool\""));
+
+        // Stale lease cannot append.
+        let stale = ExecutionLease {
+            generation: lease.generation + 99,
+            ..lease.clone()
+        };
+        assert!(forge
+            .append_command_log(&stale, &serde_json::json!({"kind": "x"}))
+            .is_err());
+    }
+
+    #[test]
+    fn latest_resume_token_returns_most_recent_resume_supported() {
+        let fx = fixture();
+        let forge = Forge::open(&fx.forge_root).unwrap();
+        let item = forge
+            .register("t", "b", &fx.repo, "main", "user-1", &actor())
+            .unwrap();
+        forge.provision(&item.id, &actor()).unwrap();
+        assert!(forge.latest_resume_token(&item.id).unwrap().is_none());
+
+        let (_, lease) = forge
+            .begin_attempt(&item.id, script_executor(), None, &actor())
+            .unwrap();
+        forge
+            .interrupt_attempt(
+                &lease,
+                RecoveryDisposition::ResumeSupported {
+                    provider_token: "wire-abc".into(),
+                },
+                &actor(),
+            )
+            .unwrap();
+        assert_eq!(
+            forge.latest_resume_token(&item.id).unwrap().as_deref(),
+            Some("wire-abc")
+        );
+
+        let (_, lease2) = forge
+            .begin_attempt(&item.id, script_executor(), None, &actor())
+            .unwrap();
+        forge
+            .interrupt_attempt(
+                &lease2,
+                RecoveryDisposition::ResumeSupported {
+                    provider_token: "wire-xyz".into(),
+                },
+                &actor(),
+            )
+            .unwrap();
+        assert_eq!(
+            forge.latest_resume_token(&item.id).unwrap().as_deref(),
+            Some("wire-xyz")
+        );
     }
 
     #[test]

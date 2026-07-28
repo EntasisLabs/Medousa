@@ -92,6 +92,27 @@ Limits:
 
 MCP: external agents reach vault/context via [Medousa MCP server](mcp-server-setup.md). Stasis builder allowlists read-oriented export names (`vault_list`, `vault_read`, `vault_search`, …) to limit recursion.
 
+## Forge-bound sessions (0.8)
+
+Set `work_id` on `POST /v1/agents/sessions` to run the ACP session inside a
+Forge undertaking's governed worktree instead of a bare chat:
+
+```text
+register + provision via /v1/forge   →   work item Ready with a worktree
+POST /v1/agents/sessions { work_id, runtime: "cursor" | "codex" }
+        → cwd forced to the worktree, lease begins on first prompt
+prompt(s) → heartbeats + command-log staging beside the chat SSE stream
+POST /v1/forge/leases/{id}/complete → seal + evidence (explicit — never auto)
+cancel    → interrupt_attempt; ACP *wire* sessionId stashed as ResumeSupported
+resume    → POST /v1/agents/sessions { work_id } (or resume_provider_token)
+            → session/resume|load, fall back to session/new; response.resumed
+error     → fail_attempt; work returns to Ready
+```
+
+Undertaking-backed sessions are opt-in: plain chats (no `work_id`) never
+touch Forge. Seal is always an explicit caller decision — the adapter only
+makes the executor honest. See [Forge — ACP binding](../engine/forge.md#acp-binding-cursorcodex-executors).
+
 ## Cut line
 
 | In 0.6 Dynamic | Later |

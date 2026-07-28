@@ -310,6 +310,9 @@ export type CreateAgentSessionRequest = {
   cwd?: string | null;
   command?: string | null;
   args?: string[] | null;
+  work_id?: string | null;
+  /** ACP wire sessionId to resume (or omit to auto-lookup from work_id). */
+  resume_provider_token?: string | null;
 };
 
 export type CreateAgentSessionResponse = {
@@ -320,6 +323,8 @@ export type CreateAgentSessionResponse = {
   stream_url: string;
   stream_ready: boolean;
   accepted_at_utc?: string;
+  work_id?: string | null;
+  resumed?: boolean | null;
 };
 
 export type AgentSessionPromptRequest = {

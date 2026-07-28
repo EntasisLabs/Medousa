@@ -43,6 +43,8 @@ export interface StreamUiScene {
 }
 
 export interface InteractiveTurnStreamEvent {
+  agent_runtime?: string | null;
+  agent_session_id?: string | null;
   browser_challenge_url?: string | null;
   browser_session_id?: string | null;
   budget_request_id?: string | null;
@@ -54,6 +56,7 @@ export interface InteractiveTurnStreamEvent {
   final_text?: string | null;
   message: string;
   operator_message?: string | null;
+  permission_request_id?: string | null;
   phase: string;
   previous_artifact_id?: string | null;
   reasoning_delta?: string | null;

@@ -19,7 +19,7 @@ Full plans: **[v0.8.0-forge-plan.md](v0.8.0-forge-plan.md)** · **[v0.6.0-shared
 |--------|------|--------|
 | Forge core crate | [v0.8.0-plan](v0.8.0-forge-plan.md) | ✅ `crates/medousa-forge` F1–F11 — model/events, FS store + journal, git engine, lifecycle + leases, policy-governed sealing, evidence-bound review, three dispositions, boot reconciliation, script adapter |
 | Daemon integration | [v0.8.0-plan](v0.8.0-forge-plan.md) | ✅ `Forge` in `AppState`, `{dataDir}/forge`, `reconcile_on_boot`, `/v1/forge` HTTP + script executor |
-| ACP executors | [v0.8.0-plan](v0.8.0-forge-plan.md) | ⬜ Cursor/Codex adapters through the lease API; resume tokens |
+| ACP executors | [v0.8.0-plan](v0.8.0-forge-plan.md) | ✅ Cursor/Codex bind via `work_id`; wire-id resume + command-log staging; seal stays explicit |
 | Home review surface | [v0.8.0-plan](v0.8.0-forge-plan.md) | ⬜ work kanban projection + evidence-bound review UI |
 
 ---

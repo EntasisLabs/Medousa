@@ -14,6 +14,7 @@ use medousa_acp_client::{
     AcpClient, AcpEvent, AgentRuntimeKind, ExternalAcpClient, RuntimeAuthStatus,
     external_runtime_config, runtime_auth_probe, runtime_availability,
 };
+use medousa_forge::model::WorkId;
 use medousa_types::{
     AgentPermissionRequestListQuery, AgentPermissionRequestListResponse,
     AgentPermissionResolveRequest, AgentPermissionResolveResponse, AgentRuntimeInfo,
@@ -24,6 +25,7 @@ use medousa_types::{
 use tokio::sync::{Mutex, RwLock};
 use uuid::Uuid;
 
+use crate::daemon::acp_forge_adapter;
 use crate::agent_permission_request::{
     agent_permission_request_store, CreateAgentPermissionRequest, PermissionResolution,
 };
@@ -40,7 +42,13 @@ struct LiveAgentSession {
     session_id: String,
     runtime: String,
     acp_session_id: medousa_acp_client::AcpSessionId,
+    /// ACP wire `sessionId` (from session/new or session/resume) — stashed on
+    /// interrupt as `ResumeSupported`. Distinct from the Medousa handle above.
+    acp_wire_session_id: Option<String>,
     cancelled: Arc<Mutex<bool>>,
+    /// Forge undertaking this session is bound to (governed cwd + leases).
+    forge_work_id: Option<WorkId>,
+    forge_lease: Option<medousa_forge::model::ExecutionLease>,
 }
 
 #[derive(Default)]
@@ -131,6 +139,72 @@ pub async fn create_agent_session(
         config.args = args;
     }
 
+    // Forge undertaking binding: validate + force governed cwd before spawn.
+    let forge_work_id = if let Some(work_id_raw) = body.work_id.clone() {
+        let work_id = WorkId::from(work_id_raw.trim().to_string());
+        if work_id.as_str().is_empty() {
+            return Err((StatusCode::BAD_REQUEST, "work_id must not be empty".into()));
+        }
+        let item = state.forge.load(&work_id).map_err(|e| {
+            (
+                StatusCode::NOT_FOUND,
+                format!("forge work '{work_id_raw}' not found: {e}"),
+            )
+        })?;
+        if !matches!(item.state, medousa_forge::model::WorkState::Ready) {
+            return Err((
+                StatusCode::CONFLICT,
+                format!(
+                    "forge work '{work_id_raw}' is {} — provision and wait for Ready",
+                    item.state
+                ),
+            ));
+        }
+        if item.active_attempt.is_some() {
+            return Err((
+                StatusCode::CONFLICT,
+                format!("forge work '{work_id_raw}' already has an active attempt"),
+            ));
+        }
+        let env = item.environment.clone().ok_or_else(|| {
+            (
+                StatusCode::CONFLICT,
+                format!("forge work '{work_id_raw}' has no provisioned environment"),
+            )
+        })?;
+        if !env.worktree.exists() {
+            return Err((
+                StatusCode::CONFLICT,
+                format!(
+                    "forge worktree missing for '{work_id_raw}': {}",
+                    env.worktree.display()
+                ),
+            ));
+        }
+        config.cwd = Some(env.worktree.to_string_lossy().into_owned());
+        Some(work_id)
+    } else {
+        None
+    };
+
+    // Resume token: explicit request wins; otherwise look up the latest
+    // ResumeSupported token on the bound work item.
+    let resume_token = {
+        let explicit = body
+            .resume_provider_token
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string);
+        if explicit.is_some() {
+            explicit
+        } else if let Some(ref work_id) = forge_work_id {
+            state.forge.latest_resume_token(work_id).ok().flatten()
+        } else {
+            None
+        }
+    };
+
     // Fail loudly on auth problems instead of looking "healthy" on the stub
     // bridge — the Connections UI keys off these distinct states.
     let probe = runtime_auth_probe(kind);
@@ -144,24 +218,30 @@ pub async fn create_agent_session(
         ));
     }
 
-    let acp_session = ACP_CLIENT.create_session(&config).await.map_err(|e| {
-        let message = e.to_string();
-        let lower = message.to_lowercase();
-        if lower.contains("auth")
-            || lower.contains("login")
-            || lower.contains("unauthorized")
-            || lower.contains("401")
-        {
-            return (
-                StatusCode::UNAUTHORIZED,
-                format!(
-                    "{} sign-in expired or missing — sign in from Settings → Connections",
-                    kind.as_str()
-                ),
-            );
-        }
-        (StatusCode::BAD_GATEWAY, format!("ACP create_session failed: {e}"))
-    })?;
+    let (acp_session, acp_wire_session_id, resumed) = ACP_CLIENT
+        .create_or_resume_session(&config, resume_token.as_deref())
+        .await
+        .map_err(|e| {
+            let message = e.to_string();
+            let lower = message.to_lowercase();
+            if lower.contains("auth")
+                || lower.contains("login")
+                || lower.contains("unauthorized")
+                || lower.contains("401")
+            {
+                return (
+                    StatusCode::UNAUTHORIZED,
+                    format!(
+                        "{} sign-in expired or missing — sign in from Settings → Connections",
+                        kind.as_str()
+                    ),
+                );
+            }
+            (
+                StatusCode::BAD_GATEWAY,
+                format!("ACP create_or_resume_session failed: {e}"),
+            )
+        })?;
 
     let agent_session_id = format!("agent-{}", Uuid::new_v4());
     let adapter = TurnStreamRegistryPortAdapter::new(state.interactive_turn_streams.clone());
@@ -177,7 +257,10 @@ pub async fn create_agent_session(
         session_id: session_id.clone(),
         runtime: kind.as_str().to_string(),
         acp_session_id: acp_session.clone(),
+        acp_wire_session_id: acp_wire_session_id.clone(),
         cancelled: Arc::new(Mutex::new(false)),
+        forge_work_id: forge_work_id.clone(),
+        forge_lease: None,
     };
 
     {
@@ -225,6 +308,8 @@ pub async fn create_agent_session(
         stream_url,
         stream_ready: true,
         accepted_at_utc,
+        work_id: forge_work_id.map(|id| id.to_string()),
+        resumed: Some(resumed),
     }))
 }
 
@@ -281,6 +366,24 @@ pub async fn cancel_agent_session(
     };
     *live.cancelled.lock().await = true;
     let _ = ACP_CLIENT.cancel(&live.acp_session_id).await;
+
+    // Interrupt the Forge attempt (if bound) — stash the ACP *wire* session id
+    // so a future session/resume can reattach instead of restarting.
+    if let Some(lease) = live.forge_lease.clone() {
+        let adapter = acp_forge_adapter::AcpForgeAdapter::new(&state.forge);
+        let wire = live
+            .acp_wire_session_id
+            .as_deref()
+            .or(Some(live.acp_session_id.0.as_str()));
+        match adapter.interrupt_attempt(&lease, "agent session cancelled", wire) {
+            Ok(_) => {
+                update_registry_forge(&agent_session_id, live.forge_work_id.clone(), None).await;
+            }
+            Err(err) => {
+                tracing::warn!(error = %err, "forge interrupt_attempt on cancel");
+            }
+        }
+    }
 
     if let Some(entry) = state.interactive_turn_streams.read().await.get(&agent_session_id) {
         publish_agent_event(
@@ -365,13 +468,39 @@ pub async fn deny_agent_permission_request(
 
 fn spawn_prompt_pump(state: AppState, live: LiveAgentSession, prompt: String) {
     tokio::spawn(async move {
+        let fail_lease = live.forge_lease.clone();
         if let Err(err) = run_prompt_pump(state.clone(), live.clone(), prompt).await {
             tracing::warn!(error = %err, "agent prompt pump failed");
+            if let (Some(work_id), Some(lease)) = (live.forge_work_id.clone(), fail_lease) {
+                let adapter = acp_forge_adapter::AcpForgeAdapter::new(&state.forge);
+                match adapter.fail_attempt(&lease, &err.to_string()) {
+                    Ok(_) => {
+                        update_registry_forge(&live.agent_session_id, Some(work_id), None).await;
+                    }
+                    Err(ferr) => {
+                        tracing::warn!(error = %ferr, "forge fail_attempt after pump error");
+                    }
+                }
+            }
             // Surface the failure into the chat stream so the turn fails loudly
             // instead of dying silently (or looking like a stub/no-op).
             publish_agent_pump_error(&state, &live, &err.to_string()).await;
         }
     });
+}
+
+/// Clone the live session out of the registry, mutate its forge binding, and
+/// write it back under the write lock.
+async fn update_registry_forge(
+    agent_session_id: &str,
+    work_id: Option<medousa_forge::model::WorkId>,
+    lease: Option<medousa_forge::model::ExecutionLease>,
+) {
+    let mut guard = AGENT_SESSIONS.write().await;
+    if let Some(live) = guard.by_agent_session.get_mut(agent_session_id) {
+        live.forge_work_id = work_id;
+        live.forge_lease = lease;
+    }
 }
 
 async fn publish_agent_pump_error(state: &AppState, live: &LiveAgentSession, message: &str) {
@@ -436,6 +565,55 @@ async fn run_prompt_pump(
         None,
     );
 
+    // Forge lease begins on the first prompt of a bound session.
+    let mut live = live;
+    if let (Some(work_id), None) = (live.forge_work_id.clone(), live.forge_lease.clone()) {
+        let adapter = acp_forge_adapter::AcpForgeAdapter::new(&state.forge);
+        let wire = live
+            .acp_wire_session_id
+            .clone()
+            .unwrap_or_else(|| live.acp_session_id.0.clone());
+        let ctx = acp_forge_adapter::AcpForgeContext {
+            agent_session_id: &live.agent_session_id,
+            acp_session_id: &wire,
+            chat_session_id: &live.session_id,
+            runtime: &live.runtime,
+            pid: None,
+        };
+        match adapter.begin_attempt(&work_id, &ctx) {
+            Ok((_item, lease)) => {
+                live.forge_lease = Some(lease.clone());
+                update_registry_forge(&live.agent_session_id, Some(work_id), Some(lease)).await;
+            }
+            Err(err) => {
+                tracing::warn!(error = %err, work_id = %work_id, "forge begin_attempt failed");
+                publish_agent_event(
+                    &entry,
+                    &live.agent_session_id,
+                    &live.session_id,
+                    &live.runtime,
+                    "error",
+                    "error",
+                    &format!("forge lease begin failed: {err}"),
+                    true,
+                    None,
+                    None,
+                );
+                entry.channel.mark_closed();
+                return Err(anyhow::anyhow!("forge begin_attempt: {err}"));
+            }
+        }
+    }
+    let forge_adapter = live
+        .forge_work_id
+        .as_ref()
+        .map(|_| acp_forge_adapter::AcpForgeAdapter::new(&state.forge));
+    let mut last_heartbeat = std::time::Instant::now();
+
+    if let (Some(adapter), Some(lease)) = (forge_adapter.as_ref(), live.forge_lease.as_ref()) {
+        let _ = adapter.record_prompt(lease, prompt.len());
+    }
+
     ACP_CLIENT
         .prompt(&live.acp_session_id, &prompt)
         .await
@@ -445,6 +623,15 @@ async fn run_prompt_pump(
     loop {
         if *live.cancelled.lock().await {
             break;
+        }
+        if let (Some(adapter), Some(lease)) = (forge_adapter.as_ref(), live.forge_lease.as_ref())
+            && last_heartbeat.elapsed() >= std::time::Duration::from_secs(15)
+        {
+            if let Err(err) = adapter.heartbeat(lease) {
+                tracing::warn!(error = %err, "forge heartbeat failed");
+            } else {
+                last_heartbeat = std::time::Instant::now();
+            }
         }
         let event = ACP_CLIENT.next_event(&live.acp_session_id).await?;
         let Some(event) = event else {
@@ -517,6 +704,11 @@ async fn run_prompt_pump(
                 );
             }
             AcpEvent::ToolCall { id, name, input } => {
+                if let (Some(adapter), Some(lease)) =
+                    (forge_adapter.as_ref(), live.forge_lease.as_ref())
+                {
+                    let _ = adapter.record_tool(lease, &name, &id);
+                }
                 publish_agent_event(
                     &entry,
                     &live.agent_session_id,
@@ -573,6 +765,24 @@ async fn run_prompt_pump(
                 );
             }
             AcpEvent::Error { message } => {
+                if let (Some(adapter), Some(lease)) =
+                    (forge_adapter.as_ref(), live.forge_lease.as_ref())
+                {
+                    match adapter.fail_attempt(lease, &message) {
+                        Ok(_) => {
+                            update_registry_forge(
+                                &live.agent_session_id,
+                                live.forge_work_id.clone(),
+                                None,
+                            )
+                            .await;
+                            live.forge_lease = None;
+                        }
+                        Err(err) => {
+                            tracing::warn!(error = %err, "forge fail_attempt on ACP error");
+                        }
+                    }
+                }
                 publish_agent_event(
                     &entry,
                     &live.agent_session_id,
@@ -597,6 +807,13 @@ async fn run_prompt_pump(
                 .await;
             }
             AcpEvent::Done => {
+                // Done is *not* a seal — lease stays live; heartbeat only.
+                if let (Some(adapter), Some(lease)) =
+                    (forge_adapter.as_ref(), live.forge_lease.as_ref())
+                    && let Err(err) = adapter.heartbeat(lease)
+                {
+                    tracing::warn!(error = %err, "forge heartbeat on Done");
+                }
                 publish_agent_event(
                     &entry,
                     &live.agent_session_id,

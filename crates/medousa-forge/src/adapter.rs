@@ -57,10 +57,6 @@ impl<'a> ScriptAdapter<'a> {
             .environment
             .clone()
             .ok_or_else(|| ForgeError::EnvironmentDrift("no environment".into()))?;
-        let attempt_seq = item
-            .attempt(&lease.attempt_id)
-            .map(|a| a.seq)
-            .unwrap_or(1);
 
         let started = chrono::Utc::now();
         let mut child = Command::new(&argv[0])
@@ -102,17 +98,8 @@ impl<'a> ScriptAdapter<'a> {
         };
 
         // Stage the command log where capture_evidence will pick it up.
-        let evidence_dir = self
-            .forge
-            .store()
-            .item_dir(work_id)
-            .join("attempts")
-            .join(attempt_seq.to_string())
-            .join("evidence");
-        std::fs::create_dir_all(&evidence_dir)?;
-        let mut line = serde_json::to_vec(&record)?;
-        line.push(b'\n');
-        std::fs::write(evidence_dir.join("commands.jsonl"), &line)?;
+        let line = serde_json::to_value(&record)?;
+        self.forge.append_command_log(&lease, &line)?;
 
         if status.success() {
             self.forge

@@ -87,3 +87,35 @@ On daemon start, Forge opens `{dataDir}/forge` and runs `reconcile_on_boot`
 with a process-backed liveness probe before HTTP serves. Prior-boot leases are
 interrupted (dirty work preserved); open operations roll forward; orphaned
 worktrees are reported, never auto-deleted.
+
+## ACP binding (Cursor/Codex executors)
+
+An external agent chat session can opt in to Forge custody by setting
+`work_id` on `POST /v1/agents/sessions`:
+
+- The work item must exist, be `Ready`, have no active attempt, and have a
+  provisioned environment with a live worktree. Violations return `409`.
+- The ACP session's `cwd` is forced to the item's governed worktree,
+  overriding any client-supplied `cwd`.
+- The lease begins on the session's first prompt (not at create), so empty
+  sessions never leave a work item `Executing`. Executor kind is
+  `acp-cursor` / `acp-codex` with `agent_session_id`, `acp_session_id` (ACP
+  wire id), and `chat_session_id` recorded in the executor detail.
+- During the prompt pump the daemon heartbeats the lease every ~15s and
+  stages prompt/tool lines into `attempts/{seq}/evidence/commands.jsonl`
+  via lease-fenced `append_command_log` (so seal digests real executor
+  activity, not an empty log).
+- An ACP `Error` or pump failure calls `fail_attempt` — the work returns to
+  `Ready` with `RestartAllowed`. Cancelling the session calls
+  `interrupt_attempt` with `ResumeSupported { provider_token: <ACP wire
+  sessionId> }` (not the Medousa process handle).
+- **Resume:** on the next `POST /v1/agents/sessions` for that work, pass
+  `resume_provider_token` or omit it — the daemon looks up
+  `latest_resume_token` and tries ACP `session/resume` (then `session/load`),
+  falling back to `session/new` when the vendor rejects the token. The
+  response echoes `resumed: true|false`.
+- `AcpEvent::Done` is **not** a seal. Sealing stays explicit:
+  `POST /v1/forge/leases/{id}/complete`. Chat SSE streaming is untouched —
+  the adapter reports beside the stream, never instead of it.
+
+Plain chat sessions (no `work_id`) are unaffected and never touch Forge.
