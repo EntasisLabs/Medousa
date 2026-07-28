@@ -202,7 +202,7 @@ pub async fn create_agent_session(
             kind.as_str(),
             "status",
             "accepted",
-            &format!("agent session started ({})", kind.as_str()),
+            "connected",
             false,
             None,
             None,
@@ -365,10 +365,49 @@ pub async fn deny_agent_permission_request(
 
 fn spawn_prompt_pump(state: AppState, live: LiveAgentSession, prompt: String) {
     tokio::spawn(async move {
-        if let Err(err) = run_prompt_pump(state, live, prompt).await {
+        if let Err(err) = run_prompt_pump(state.clone(), live.clone(), prompt).await {
             tracing::warn!(error = %err, "agent prompt pump failed");
+            // Surface the failure into the chat stream so the turn fails loudly
+            // instead of dying silently (or looking like a stub/no-op).
+            publish_agent_pump_error(&state, &live, &err.to_string()).await;
         }
     });
+}
+
+async fn publish_agent_pump_error(state: &AppState, live: &LiveAgentSession, message: &str) {
+    let entry = {
+        state
+            .interactive_turn_streams
+            .read()
+            .await
+            .get(&live.agent_session_id)
+            .cloned()
+    };
+    if let Some(entry) = entry {
+        publish_agent_event(
+            &entry,
+            &live.agent_session_id,
+            &live.session_id,
+            &live.runtime,
+            "error",
+            "error",
+            message,
+            true,
+            None,
+            None,
+        );
+        entry.channel.mark_closed();
+    }
+    publish_acp_terminal(
+        AcpTerminalKind::Failed,
+        &live.session_id,
+        Some(&live.agent_session_id),
+        &live.agent_session_id,
+        &live.runtime,
+        message,
+        json!({ "error": message }),
+    )
+    .await;
 }
 
 async fn run_prompt_pump(
@@ -391,7 +430,7 @@ async fn run_prompt_pump(
         &live.runtime,
         "status",
         "running",
-        "prompt accepted",
+        "working",
         false,
         None,
         None,

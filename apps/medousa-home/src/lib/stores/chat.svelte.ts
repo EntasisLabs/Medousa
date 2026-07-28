@@ -2667,6 +2667,24 @@ export class ChatStore {
     const current = this.messages[idx];
     let content = current.content;
 
+    // ACP external agents (Cursor / Codex) emit "assistant_message" as a
+    // cumulative snapshot. Swap content instead of appending so replies read
+    // like a normal chat answer, not a duplicated transcript.
+    if (event.event_type === "assistant_message" && event.final_text?.trim()) {
+      const next: ChatMessage = {
+        ...current,
+        content: event.final_text.trim(),
+        phase: null,
+        statusLine: null,
+      };
+      this.messages = [
+        ...this.messages.slice(0, idx),
+        next,
+        ...this.messages.slice(idx + 1),
+      ];
+      return;
+    }
+
     if (event.event_type === "turn_progress") {
       const next: ChatMessage = {
         ...current,

@@ -810,8 +810,12 @@ impl AcpClient for ExternalAcpClient {
         if let Some(resolved) = resolve_command_path(&launch.command) {
             launch.command = resolved.display().to_string();
         } else if !PathBuf::from(&launch.command).is_file() {
-            // Dev/bones fallback when the vendor CLI isn't installed at all.
-            return self.stub.create_session(config).await;
+            // No silent stub: surface a clear setup error instead of fake output.
+            bail!(
+                "{} agent CLI not found (`{}`). Install/sign in from Settings → Connections, then try again.",
+                config.kind.as_str(),
+                launch.command
+            );
         }
 
         match spawn_acp_process(&launch).await {
@@ -1291,12 +1295,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn external_falls_back_to_stub() {
+    async fn external_missing_binary_errors_instead_of_stub() {
         let client = ExternalAcpClient::new();
         let mut cfg = AcpAgentConfig::cursor_default();
         cfg.command = "medousa-acp-missing-binary-xyz".into();
-        let session = client.create_session(&cfg).await.unwrap();
-        assert!(session.0.starts_with("stub-"));
+        let err = client
+            .create_session(&cfg)
+            .await
+            .expect_err("missing CLI should not fall back to stub");
+        assert!(err.to_string().contains("not found"));
     }
 
     #[test]
