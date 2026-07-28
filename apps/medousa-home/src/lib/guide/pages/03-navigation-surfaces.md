@@ -189,6 +189,6 @@ Engine restart → Settings · Workshop | tone: default
 | Telegram etc. | Channels (Settings / More) |
 | Job failures / delivery | Runtime |
 | Pair phone / Shared mode | Settings → Sharing |
-| Engine address / restart | Settings → Workshop |
+| Engine address / restart | Settings → Connection |
 
 Next: [Chat](guide:chat) for the surface most operators live in.

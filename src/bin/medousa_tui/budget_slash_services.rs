@@ -6,7 +6,7 @@ use medousa::daemon_api::{
 use super::daemon_commands::{
     daemon_approve_budget_request, daemon_deny_budget_request, daemon_list_budget_requests,
 };
-use super::{EventOutcome, TuiState, push_obs};
+use super::{EventOutcome, TuiState, push_obs_alert};
 
 fn default_tui_resolved_by() -> String {
     "tui".to_string()
@@ -28,7 +28,7 @@ pub(crate) async fn handle_budget_command(
     match sub {
         "" | "list" => match daemon_list_budget_requests(&state.daemon_url, true).await {
             Ok(TurnBudgetRequestListResponse { requests }) if requests.is_empty() => {
-                push_obs(state, "No pending budget approvals.".to_string());
+                push_obs_alert(state, "No pending budget approvals.".to_string());
             }
             Ok(TurnBudgetRequestListResponse { requests }) => {
                 for row in requests {
@@ -36,7 +36,7 @@ pub(crate) async fn handle_budget_command(
                         .progress_summary
                         .map(|value| format!(" — {value}"))
                         .unwrap_or_default();
-                    push_obs(
+                    push_obs_alert(
                         state,
                         format!(
                             "⏸ {}… +{} rounds at {}/{} — {}{progress} \
@@ -52,13 +52,13 @@ pub(crate) async fn handle_budget_command(
                     );
                 }
             }
-            Err(err) => push_obs(state, format!("⚠ budget list failed: {err}")),
+            Err(err) => push_obs_alert(state, format!("⚠ budget list failed: {err}")),
         },
         "approve" => {
             let request_id = match resolve_budget_request_id(state, rest) {
                 Some(value) => value,
                 None => {
-                    push_obs(
+                    push_obs_alert(
                         state,
                         "⚠ no pending budget approval — try /budget list".to_string(),
                     );
@@ -74,19 +74,19 @@ pub(crate) async fn handle_budget_command(
                 Ok(TurnBudgetRequestResponse { message, .. }) => {
                     state.pending_budget_request_id = None;
                     state.pending_budget_requested_rounds = None;
-                    push_obs(
+                    push_obs_alert(
                         state,
                         format!("✓ budget approved ({message}) — turn resuming"),
                     );
                 }
-                Err(err) => push_obs(state, format!("⚠ budget approve failed: {err}")),
+                Err(err) => push_obs_alert(state, format!("⚠ budget approve failed: {err}")),
             }
         }
         "deny" => {
             let request_id = match resolve_budget_request_id(state, rest) {
                 Some(value) => value,
                 None => {
-                    push_obs(
+                    push_obs_alert(
                         state,
                         "⚠ no pending budget approval — try /budget list".to_string(),
                     );
@@ -100,13 +100,13 @@ pub(crate) async fn handle_budget_command(
                 Ok(TurnBudgetRequestResponse { message, .. }) => {
                     state.pending_budget_request_id = None;
                     state.pending_budget_requested_rounds = None;
-                    push_obs(state, format!("✓ budget denied ({message})"));
+                    push_obs_alert(state, format!("✓ budget denied ({message})"));
                 }
-                Err(err) => push_obs(state, format!("⚠ budget deny failed: {err}")),
+                Err(err) => push_obs_alert(state, format!("⚠ budget deny failed: {err}")),
             }
         }
         _ => {
-            push_obs(
+            push_obs_alert(
                 state,
                 "⚠ usage: /budget list | /budget approve [id] | /budget deny [id]".to_string(),
             );

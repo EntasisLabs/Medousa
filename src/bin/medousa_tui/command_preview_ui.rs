@@ -602,7 +602,7 @@ pub(crate) fn handle_allowlist_preview_key_event(
         }
         KeyCode::Tab => {
             if !analysis.invalid_allowlist.is_empty() {
-                push_obs(
+                push_obs_alert(
                     state,
                     format!(
                         "⚠ invalid allowlist ids: {}",
@@ -612,11 +612,11 @@ pub(crate) fn handle_allowlist_preview_key_event(
                 return EventOutcome::Continue;
             }
             if analysis.referenced_ops.is_empty() {
-                push_obs(state, "no module calls found in source".to_string());
+                push_obs_alert(state, "no module calls found in source".to_string());
                 return EventOutcome::Continue;
             }
             if analysis.blocked_ops.is_empty() {
-                push_obs(
+                push_obs_alert(
                     state,
                     format!(
                         "✓ all referenced operations are allowed ({})",
@@ -624,7 +624,7 @@ pub(crate) fn handle_allowlist_preview_key_event(
                     ),
                 );
             } else {
-                push_obs(
+                push_obs_alert(
                     state,
                     format!("⚠ blocked operations: {}", analysis.blocked_ops.join(", ")),
                 );
@@ -632,13 +632,13 @@ pub(crate) fn handle_allowlist_preview_key_event(
         }
         KeyCode::F(5) => {
             if analysis.referenced_ops.is_empty() {
-                push_obs(
+                push_obs_alert(
                     state,
                     "⚠ replace skipped: no operations detected".to_string(),
                 );
             } else {
                 state.settings_draft.allowed_modules = analysis.referenced_ops.join(",");
-                push_obs(
+                push_obs_alert(
                     state,
                     format!(
                         "✓ allowlist replaced with {} operation(s)",
@@ -649,7 +649,7 @@ pub(crate) fn handle_allowlist_preview_key_event(
         }
         KeyCode::F(6) => {
             if analysis.referenced_ops.is_empty() {
-                push_obs(
+                push_obs_alert(
                     state,
                     "⚠ append skipped: no operations detected".to_string(),
                 );
@@ -666,7 +666,7 @@ pub(crate) fn handle_allowlist_preview_key_event(
                 }
 
                 state.settings_draft.allowed_modules = merged.join(",");
-                push_obs(
+                push_obs_alert(
                     state,
                     format!("✓ allowlist appended with {appended} operation(s)"),
                 );

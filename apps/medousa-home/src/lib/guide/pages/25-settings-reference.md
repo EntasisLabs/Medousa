@@ -14,7 +14,7 @@ Related: [How Medousa fits together](guide:architecture) · [Desktop, web, and p
 | **Sharing** | Phone, peers, Shared seats, channels | QR and Shared host controls on desktop |
 | **Packages** | Optional software on this computer | Desktop app only |
 | **MCP** | External tool servers | Desktop app only |
-| **Workshop** | Which workshop you’re in, restart, updates | Address everywhere; file paths on desktop |
+| **Connection** | Which workshop you’re in, restart, updates | Address everywhere; file paths on desktop |
 
 ## Preferences
 
@@ -35,12 +35,12 @@ Models (chat, vision, dictation), stance/voices, memory depth, and presentation 
 
 Advanced: which tools are allowed, shell access, network limits, and optional note **Versions**. Empty tool lists can mean everything is allowed — be careful. Day-one safety tips: [Permissions](guide:permissions-budgets).
 
-## Sharing / Packages / MCP / Workshop
+## Sharing / Packages / MCP / Connection
 
 - **Sharing** — phone QR, peers, Shared mode, messaging channels.
 - **Packages** — optional Offline brain and helpers (desktop).
 - **MCP** — connect external tools (desktop).
-- **Workshop** — switch workshop, restart engine, app updates, **Files & diagnostics** paths on desktop.
+- **Connection** — switch workshop, restart engine, app updates, **Files & diagnostics** paths on desktop.
 
 ```callout
 tone: tip

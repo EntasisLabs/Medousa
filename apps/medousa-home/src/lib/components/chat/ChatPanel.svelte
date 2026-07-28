@@ -199,12 +199,24 @@
         })
       : [],
   );
-  const slashMenuOpen = $derived(Boolean(slashToken && slashItems.length > 0));
+  /** Token start the operator dismissed with Escape — draft keeps the /token. */
+  let slashDismissedStart = $state<number | null>(null);
+  const slashMenuOpen = $derived(
+    Boolean(
+      slashToken &&
+        slashItems.length > 0 &&
+        slashDismissedStart !== slashToken.start,
+    ),
+  );
+
+  function dismissSlashMenu() {
+    slashDismissedStart = slashToken?.start ?? null;
+  }
 
   $effect(() => {
-    void slashToken;
     void slashItems.length;
     slashHighlight = 0;
+    if (!slashToken) slashDismissedStart = null;
     if (!slashMenuOpen || !composerTextareaEl) {
       slashAnchor = null;
       return;
@@ -226,6 +238,7 @@
   function applyChatSlashItem(item: ComposerSlashItem) {
     const token = slashToken;
     if (!token) return;
+    slashDismissedStart = null;
     if (item.kind === "skill") {
       chatAttachments.attachSkill(item.id);
       if (chatAttachments.skillIds.length === 1) {
@@ -720,6 +733,32 @@
     }
   }
 
+  type FailedSend = {
+    display: string;
+    prompt: string;
+    mode: "interactive" | "background";
+  };
+  /** Last turn that threw — kept so the error banner can offer Retry. */
+  let lastFailedSend = $state<FailedSend | null>(null);
+
+  async function retryLastSend() {
+    const payload = lastFailedSend;
+    if (!payload) return;
+    lastFailedSend = null;
+    chat.clearStreamError(panelSessionId);
+    try {
+      await submitTurn(payload.display, payload.prompt, payload.mode);
+    } catch (err) {
+      lastFailedSend = payload;
+      chat.setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  function dismissStreamError() {
+    lastFailedSend = null;
+    chat.clearStreamError(panelSessionId);
+  }
+
   async function submit(event: Event) {
     event.preventDefault();
     if (connection.offline) return;
@@ -734,7 +773,9 @@
         await workshopDefaults.load();
       }
       if (!visionProfileReady(workshopDefaults.draft.inferenceProfiles)) {
-        chat.setError("Configure a vision model in Settings → Models before sending images.");
+        chat.setError(
+          "Configure a vision model in Settings → Medousa Agent before sending images.",
+        );
         return;
       }
     }
@@ -742,6 +783,8 @@
 
     const askPrompt = parseDaemonAskPrompt(prompt);
     const slash = parseChatSlashInput(prompt);
+    let pendingSend: FailedSend | null = null;
+    lastFailedSend = null;
     chat.clearComposerDraft();
     if (!chat.pinVaultNoteContext) {
       chat.clearVaultNoteContext();
@@ -787,8 +830,10 @@
       const display =
         prompt ||
         (hasAttachments ? `[${pendingMediaLabels(chat.pendingMediaRefs)}]` : "");
+      pendingSend = { display, prompt, mode };
       await submitTurn(display, prompt, mode);
     } catch (err) {
+      lastFailedSend = pendingSend;
       chat.setError(err instanceof Error ? err.message : String(err));
     }
   }
@@ -815,12 +860,7 @@
       if (event.key === "Escape") {
         event.preventDefault();
         event.stopPropagation();
-        const token = slashToken;
-        if (token) {
-          const next = stripComposerSlashToken(chat.draft, token, "");
-          chat.draft = next.value;
-          draftCursor = next.cursor;
-        }
+        dismissSlashMenu();
         return;
       }
     }
@@ -866,11 +906,13 @@
   async function sendStarterPrompt(prompt: string) {
     if (connection.offline || chat.composerBlocked) return;
     if (mobile) haptic("light");
+    const mode = chat.hasLiveInteractiveTurn() ? "background" : "interactive";
+    const fullPrompt = ensureVaultSelectionInPrompt(prompt, chat.vaultNoteContext);
     try {
-      const mode = chat.hasLiveInteractiveTurn() ? "background" : "interactive";
-      const fullPrompt = ensureVaultSelectionInPrompt(prompt, chat.vaultNoteContext);
+      lastFailedSend = null;
       await submitTurn(fullPrompt, fullPrompt, mode);
     } catch (err) {
+      lastFailedSend = { display: fullPrompt, prompt: fullPrompt, mode };
       chat.setError(err instanceof Error ? err.message : String(err));
     }
   }
@@ -934,7 +976,23 @@
       {/if}
     </div>
     {#if chat.streamErrorFor(panelSessionId)}
-      <p class="mt-1 text-[11px] text-error-400" role="alert">{chat.streamErrorFor(panelSessionId)}</p>
+      <div class="mt-1 flex flex-wrap items-baseline gap-2">
+        <p class="min-w-0 flex-1 text-[11px] text-error-400" role="alert">
+          {chat.streamErrorFor(panelSessionId)}
+        </p>
+        {#if lastFailedSend}
+          <button
+            type="button"
+            class="chat-stream-error-action"
+            onclick={() => void retryLastSend()}
+          >
+            Retry
+          </button>
+        {/if}
+        <button type="button" class="chat-stream-error-action" onclick={dismissStreamError}>
+          Dismiss
+        </button>
+      </div>
     {:else if !mobile && chat.historyLoadingFor(panelSessionId) && panelMessages.length === 0}
       <p class="mt-1 text-[11px] text-surface-400">Loading conversation…</p>
     {/if}
@@ -1290,13 +1348,7 @@
         anchor={slashAnchor}
         highlightIndex={slashHighlight}
         onSelect={applyChatSlashItem}
-        onClose={() => {
-          const token = slashToken;
-          if (!token) return;
-          const next = stripComposerSlashToken(chat.draft, token, "");
-          chat.draft = next.value;
-          draftCursor = next.cursor;
-        }}
+        onClose={dismissSlashMenu}
         onHighlight={(index) => (slashHighlight = index)}
       />
     </form>
@@ -1334,6 +1386,21 @@
     flex-direction: column;
     min-height: 0;
     flex: 1;
+  }
+
+  .chat-stream-error-action {
+    flex-shrink: 0;
+    border: 0;
+    background: transparent;
+    padding: 0;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    color: rgb(var(--color-surface-300));
+    cursor: pointer;
+  }
+
+  .chat-stream-error-action:hover {
+    color: rgb(var(--color-surface-100));
   }
 
   /*

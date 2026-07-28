@@ -404,7 +404,7 @@ heading: Look first
 body: Status bar should say Connected — not Offline.
 ---
 heading: Then try
-body: Settings → Workshop → Save & test, or Start / Restart on desktop.
+body: Settings → Connection → Save & test, or Start / Restart on desktop.
 ```
 
 ````markdown
@@ -418,7 +418,7 @@ heading: Look first
 body: Status bar should say Connected — not Offline.
 ---
 heading: Then try
-body: Settings → Workshop → Save & test, or Start / Restart on desktop.
+body: Settings → Connection → Save & test, or Start / Restart on desktop.
 ```
 ````
 

@@ -130,7 +130,7 @@ pub(crate) async fn handle_settings_key_event(
                 }
                 SettingsRowId::ClearApiKey => {
                     state.settings_draft.api_key.clear();
-                    push_obs(
+                    push_obs_alert(
                         state,
                         "✓ API key will be removed when you save".to_string(),
                     );
@@ -138,12 +138,12 @@ pub(crate) async fn handle_settings_key_event(
                 SettingsRowId::UpdateApiKey => {
                     let key = state.settings_draft.api_key.trim().to_string();
                     if key.is_empty() {
-                        push_obs(state, "⚠ enter an API key before updating".to_string());
+                        push_obs_alert(state, "⚠ enter an API key before updating".to_string());
                     } else {
                         save_tui_api_key(Some(&key));
                         state.settings.api_key = key.clone();
                         state.settings_draft.api_key = key;
-                        push_obs(state, "✓ API key updated".to_string());
+                        push_obs_alert(state, "✓ API key updated".to_string());
                     }
                 }
                 SettingsRowId::SetAllRouteTargets => {
@@ -154,7 +154,7 @@ pub(crate) async fn handle_settings_key_event(
                     state.stage_routing_draft = state.stage_routing.clone();
                     state.routing_editor_role_idx = 0;
                     state.settings_editing = false;
-                    push_obs(state, "✓ changes discarded".to_string());
+                    push_obs_alert(state, "✓ changes discarded".to_string());
                 }
                 SettingsRowId::ApplyChanges => {
                     super::apply_settings(state, tui_rt, event_tx).await;
@@ -892,11 +892,11 @@ pub(crate) fn render_runtime_env_overlay(frame: &mut ratatui::Frame, state: &Tui
 pub(crate) fn emit_settings_validation_summary(state: &mut TuiState) -> bool {
     let errors = settings_validation_errors(&state.settings_draft);
     if errors.is_empty() {
-        push_obs(state, "✓ ready to save — nothing blocking you".to_string());
+        push_obs_alert(state, "✓ ready to save — nothing blocking you".to_string());
         true
     } else {
         for error in errors {
-            push_obs(state, format!("⚠ before saving: {error}"));
+            push_obs_alert(state, format!("⚠ before saving: {error}"));
         }
         false
     }
@@ -911,7 +911,7 @@ fn sync_all_route_targets_to_global(state: &mut TuiState) {
     let provider = state.settings_draft.provider.trim();
     let model = state.settings_draft.model.trim();
     if provider.is_empty() || model.is_empty() {
-        push_obs(
+        push_obs_alert(
             state,
             "⚠ set your main AI provider and model first".to_string(),
         );
@@ -925,7 +925,7 @@ fn sync_all_route_targets_to_global(state: &mut TuiState) {
         }
     }
 
-    push_obs(
+    push_obs_alert(
         state,
         format!(
             "✓ all task types now use {}:{}",

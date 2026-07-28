@@ -18,7 +18,7 @@ On an empty session you may see a quiet presence prompt above the composer. It i
 | Types | Images, PDF, CSV/TSV, text/Markdown, Excel, Word |
 | Limits | Up to **5** files per message; **25 MB** each |
 | Upload | Chips show while pending; **+** disabled during upload |
-| Images | Need a **Vision model** in Settings → Models — otherwise send is blocked |
+| Images | Need a **Vision model** in Settings → Medousa Agent — otherwise send is blocked |
 
 Unsupported types get a plain hint to try PDF, images, spreadsheets, or text.
 
@@ -116,7 +116,7 @@ You may be asked to **Allow** / **Deny** a tool permission, **Approve** / **Deny
 
 **Steer:** during a workshop handoff, the composer can say **Steer the handoff…** — your next message continues the worker.
 
-**Cancel:** there is no always-visible Cancel button on every runtime. If a turn feels stuck, check connection health, Work (blocked cards), pending budgets, and browser verification before rewriting the prompt. Restarting the engine (Settings → Workshop) pauses active chats.
+**Cancel:** there is no always-visible Cancel button on every runtime. If a turn feels stuck, check connection health, Work (blocked cards), pending budgets, and browser verification before rewriting the prompt. Restarting the engine (Settings → Connection) pauses active chats.
 
 ## Offline gate
 

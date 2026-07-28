@@ -18,7 +18,7 @@ use medousa::daemon_api::{
 };
 
 use super::{
-    EventOutcome, TuiState, WorkerCommand, next_worker_request_id, push_obs, queue_worker_command,
+    EventOutcome, TuiState, WorkerCommand, next_worker_request_id, push_obs_alert, queue_worker_command,
 };
 
 fn daemon_client(daemon_url: &str) -> MedousaClient {
@@ -36,7 +36,7 @@ pub(crate) fn handle_daemon_command(
     let sub = parts.next().unwrap_or("");
     match sub {
         "" => {
-            push_obs(
+            push_obs_alert(
                 state,
                 format!(
                     "daemon url={} | commands: /daemon health | /daemon ask <prompt> | /daemon url <url>",
@@ -47,10 +47,10 @@ pub(crate) fn handle_daemon_command(
         "url" => {
             let next = parts.collect::<Vec<_>>().join(" ");
             if next.trim().is_empty() {
-                push_obs(state, format!("daemon url={}", state.daemon_url));
+                push_obs_alert(state, format!("daemon url={}", state.daemon_url));
             } else {
                 state.daemon_url = next.trim().to_string();
-                push_obs(state, format!("✓ daemon url set to {}", state.daemon_url));
+                push_obs_alert(state, format!("✓ daemon url set to {}", state.daemon_url));
             }
         }
         "health" => {
@@ -66,7 +66,7 @@ pub(crate) fn handle_daemon_command(
                 true,
             );
             if queued {
-                push_obs(
+                push_obs_alert(
                     state,
                     format!("↻ daemon health check queued #{request_id}: {daemon_url}"),
                 );
@@ -75,7 +75,7 @@ pub(crate) fn handle_daemon_command(
         "ask" => {
             let prompt = parts.collect::<Vec<_>>().join(" ");
             if prompt.trim().is_empty() {
-                push_obs(state, "⚠ usage: /daemon ask <prompt>".to_string());
+                push_obs_alert(state, "⚠ usage: /daemon ask <prompt>".to_string());
             } else {
                 let request_id = next_worker_request_id(state);
                 state.latest_daemon_ask_request_id = request_id;
@@ -90,12 +90,12 @@ pub(crate) fn handle_daemon_command(
                     false,
                 );
                 if queued {
-                    push_obs(state, format!("↻ daemon ask queued #{request_id}"));
+                    push_obs_alert(state, format!("↻ daemon ask queued #{request_id}"));
                 }
             }
         }
         _ => {
-            push_obs(
+            push_obs_alert(
                 state,
                 "⚠ unknown /daemon command. try /daemon health | /daemon ask <prompt> | /daemon url <url>"
                     .to_string(),
@@ -112,7 +112,7 @@ pub(crate) fn handle_watch_command(
 ) -> EventOutcome {
     let sub = parts.next().unwrap_or("");
     if sub != "add" {
-        push_obs(
+        push_obs_alert(
             state,
             "⚠ usage: /watch add <cron_expr> <prompt...>".to_string(),
         );
@@ -122,7 +122,7 @@ pub(crate) fn handle_watch_command(
     let cron_expr = match parts.next() {
         Some(value) => value,
         None => {
-            push_obs(
+            push_obs_alert(
                 state,
                 "⚠ usage: /watch add <cron_expr> <prompt...>".to_string(),
             );
@@ -132,7 +132,7 @@ pub(crate) fn handle_watch_command(
 
     let prompt = parts.collect::<Vec<_>>().join(" ");
     if prompt.trim().is_empty() {
-        push_obs(
+        push_obs_alert(
             state,
             "⚠ usage: /watch add <cron_expr> <prompt...>".to_string(),
         );
@@ -154,7 +154,7 @@ pub(crate) fn handle_watch_command(
         false,
     );
     if queued {
-        push_obs(
+        push_obs_alert(
             state,
             format!("↻ watch add queued #{request_id} ({cron_expr})"),
         );

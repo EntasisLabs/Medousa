@@ -1,7 +1,7 @@
 use medousa::session::{get_session_display_name, set_session_display_name};
 
 use super::daemon_commands::daemon_set_session_display_name;
-use super::{TuiState, push_obs};
+use super::{TuiState, push_obs_alert};
 
 pub(crate) async fn set_session_display_name_daemon_first(
     state: &mut TuiState,
@@ -15,7 +15,7 @@ pub(crate) async fn set_session_display_name_daemon_first(
                 return Ok(());
             }
             Err(err) => {
-                push_obs(
+                push_obs_alert(
                     state,
                     format!(
                         "◈ session name daemon_error={} — trying local store",

@@ -11,7 +11,7 @@ Related: [Work and background jobs](guide:work-jobs) · [Troubleshooting](guide:
 | **Now** | In motion / running / queued; active turn phase and tools, or “No active turn”; model · depth · reasoning |
 | **Jobs** | Counters: enqueued, running, succeeded, failed, dead letter, outbox, recurring + last tick |
 | **Delivery** | **Outbox** (endpoint, target, pending, auth, last delivery) · **Continuations** (pending / resumed / consumed / DLQ) |
-| **Routing** | Stage routes — Role / Target / Policy / Fallback (edit in Settings → Models → Stages). Hidden on mobile. |
+| **Routing** | Stage routes — Role / Target / Policy / Fallback (edit in Settings → Medousa Agent → Stages). Hidden on mobile. |
 
 Use **Refresh** when numbers look stale.
 
@@ -55,7 +55,7 @@ Wrong model stage → Routing | tone: default
 | “Is anything running?” | **Now** |
 | Job failed / dead letter | **Jobs** |
 | Schedule didn’t notify | **Delivery** |
-| Wrong model stage | **Routing** + Settings → Models |
+| Wrong model stage | **Routing** + Settings → Medousa Agent |
 
 Work cards are the human board; Runtime is the engine pulse. Start on Work for “what am I waiting on?”, Runtime for “what did the queue do?”
 

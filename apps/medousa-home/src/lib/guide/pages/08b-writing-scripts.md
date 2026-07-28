@@ -88,7 +88,7 @@ query ShellEcho {
 ```callout
 tone: warn
 title: Shell and network need a healthy workshop
-body: Sandboxed commands and web ops fail quietly if the workshop is offline. Check the status bar and Settings → Workshop before debugging the script.
+body: Sandboxed commands and web ops fail quietly if the workshop is offline. Check the status bar and Settings → Connection before debugging the script.
 ```
 
 ## Useful modules

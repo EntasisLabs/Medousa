@@ -98,7 +98,7 @@
 
     {#if mobile && isTauriMobilePlatform()}
       <div class="network-callout text-sm leading-relaxed text-surface-300">
-        {workshopPairingManagedHint()} Then connect this app under Settings → Workshop using your
+        {workshopPairingManagedHint()} Then connect this app under Settings → Connection using your
         workshop's LAN address.
       </div>
     {:else}

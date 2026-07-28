@@ -1,6 +1,6 @@
 # What’s new
 
-Notes about recent Medousa changes and what still works together. Check **Settings → Workshop → App** for your installed version and updates.
+Notes about recent Medousa changes and what still works together. Check **Settings → Connection → App** for your installed version and updates.
 
 Related: [Workshops and connections](guide:workshops-connections) · [Desktop, web, and phone](guide:platform-matrix)
 
@@ -39,7 +39,7 @@ The Operator’s Guide covers everyday use (chat, notes, phone, troubleshooting)
 
 ## Check your build
 
-1. Settings → Workshop → App version / Check for updates.
+1. Settings → Connection → App version / Check for updates.
 2. Workshop status — engine version when shown.
 3. Spotlight → Operator’s Guide — you’re reading the guide bundled with this app.
 

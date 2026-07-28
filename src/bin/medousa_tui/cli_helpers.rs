@@ -1,8 +1,11 @@
+#[allow(dead_code)] // retained for docs / manual help dumps
 pub(crate) fn find_arg_value<'a>(args: &'a [String], key: &str) -> Option<&'a str> {
     let idx = args.iter().position(|a| a == key)?;
     args.get(idx + 1).map(|s| s.as_str())
 }
 
+/// Full help including keys and slash commands (clap `--help` covers options only).
+#[allow(dead_code)]
 pub(crate) fn print_help() {
     println!("medousa-tui — persistent cognitive terminal agent");
     println!();
@@ -53,7 +56,10 @@ pub(crate) fn print_help() {
     println!("  Ctrl+C       Quit");
     println!();
     println!("HISTORY:");
-    println!("  Conversations are persisted to ~/.local/share/medousa/history/<session_id>.jsonl");
+    println!(
+        "  Conversations are persisted to {}/history/<session_id>.jsonl",
+        medousa::paths::medousa_data_dir().display()
+    );
     println!();
     println!("SLASH COMMANDS:");
     println!("  /new                    Start fresh session");

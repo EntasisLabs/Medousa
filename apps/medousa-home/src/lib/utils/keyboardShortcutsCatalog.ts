@@ -37,9 +37,10 @@ export const KEYBOARD_SHORTCUTS_CATALOG: ShortcutCatalogGroup[] = [
         action: "Zoom in / out",
       },
       { id: "content-zoom-reset", keys: "mod:0", action: "Reset zoom" },
+      { id: "open-notes", keys: "mod:O", action: "Open notes" },
       {
         id: "keyboard-shortcuts",
-        keys: "prefix:?",
+        keys: "mod:/",
         action: "Open keyboard shortcuts",
       },
     ],
@@ -87,7 +88,7 @@ export const KEYBOARD_SHORTCUTS_CATALOG: ShortcutCatalogGroup[] = [
       { id: "chat-spotlight", keys: "mod:K", action: "Spotlight (commands & jumps)" },
       {
         id: "chat-open-shortcuts",
-        keys: "prefix:?",
+        keys: "mod:/",
         action: "Keyboard shortcuts sheet",
       },
     ],
@@ -100,9 +101,10 @@ export function formatCatalogKeys(keys: string): string {
     return keys.slice("literal:".length);
   }
   if (keys.startsWith("prefix:")) {
+    // Two-step chord — spell out the sequence so it doesn't read as one press.
     const suffix = keys.slice("prefix:".length);
     const mod = modKeyLabel();
-    return usesMetaModKey() ? `${mod}; ${suffix}` : `Ctrl+; ${suffix}`;
+    return usesMetaModKey() ? `${mod}; then ${suffix}` : `Ctrl+; then ${suffix}`;
   }
   if (keys.startsWith("mod:")) {
     const chord = keys.slice("mod:".length);
@@ -133,4 +135,5 @@ export const CHEAT_SHEET_GROUP_IDS: ShortcutCatalogGroupId[] = [
   "global",
   "panes",
   "vault",
+  "chat",
 ];

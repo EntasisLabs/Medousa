@@ -4,7 +4,7 @@ use medousa::SessionAppendTurnRequest;
 use super::daemon_commands::{
     daemon_append_session_turn, daemon_list_history_sessions, daemon_load_session_history,
 };
-use super::{TuiState, push_obs};
+use super::{TuiState, push_obs_alert};
 
 pub(crate) async fn list_history_sessions_daemon_first(
     state: &mut TuiState,
@@ -13,7 +13,7 @@ pub(crate) async fn list_history_sessions_daemon_first(
     match daemon_list_history_sessions(&state.daemon_url, limit).await {
         Ok(response) => response.sessions,
         Err(daemon_err) => {
-            push_obs(
+            push_obs_alert(
                 state,
                 format!(
                     "◈ history backend=local fallback daemon_error={}",
@@ -32,7 +32,7 @@ pub(crate) async fn load_history_daemon_first(
     match daemon_load_session_history(&state.daemon_url, session_id).await {
         Ok(response) => response.turns,
         Err(daemon_err) => {
-            push_obs(
+            push_obs_alert(
                 state,
                 format!(
                     "◈ session load backend=local fallback daemon_error={}",

@@ -456,7 +456,7 @@ async fn handle_startup_key_event(
                 let provider = state.settings_draft.provider.trim().to_string();
                 let model = state.settings_draft.model.trim().to_string();
                 if provider.is_empty() || model.is_empty() {
-                    super::push_obs(
+                    super::push_obs_alert(
                         state,
                         "⚠ startup requires a non-empty provider and model".to_string(),
                     );

@@ -30,12 +30,12 @@ pub(crate) async fn handle_new_session_command(
     state.auto_scroll = true;
     state.conv_scroll = 0;
     save_last_session_id(&state.session_id);
-    push_obs(state, format!("✓ new session {}", &state.session_id[..8]));
+    push_obs_alert(state, format!("✓ new session {}", &state.session_id[..8]));
 
     if let Ok(new_rt) = build_tui_platform(build_tui_platform_config(state), event_tx.clone()).await {
         *tui_rt = new_rt;
     } else {
-        push_obs(state, "⚠ new session runtime rebind failed".to_string());
+        push_obs_alert(state, "⚠ new session runtime rebind failed".to_string());
     }
 }
 
@@ -57,7 +57,7 @@ pub(crate) async fn handle_model_command(
             apply_runtime_config_response(response, state, tui_rt, event_tx).await;
         }
         Err(err) => {
-            push_obs(state, format!("⚠ model command failed: {err}"));
+            push_obs_alert(state, format!("⚠ model command failed: {err}"));
         }
     }
 
@@ -82,7 +82,7 @@ pub(crate) async fn handle_depth_command(
             apply_runtime_config_response(response, state, tui_rt, event_tx).await;
         }
         Err(err) => {
-            push_obs(state, format!("⚠ depth command failed: {err}"));
+            push_obs_alert(state, format!("⚠ depth command failed: {err}"));
         }
     }
 
@@ -130,7 +130,7 @@ pub(crate) async fn apply_runtime_config_response(
     }
 
     if let Some(rendered) = response.rendered_output {
-        push_obs(state, rendered);
+        push_obs_alert(state, rendered);
     }
 
     if response.should_apply_settings {
@@ -164,7 +164,7 @@ pub(crate) fn handle_perf_command(
             };
             let snapshot = capture_perf_snapshot(state, label.clone());
             state.perf_baseline = Some(snapshot.clone());
-            push_obs(
+            push_obs_alert(
                 state,
                 format!("✓ perf baseline set: {}", format_perf_snapshot(&snapshot)),
             );
@@ -172,7 +172,7 @@ pub(crate) fn handle_perf_command(
         "reset" => {
             state.perf = UiPerfStats::default();
             state.perf_baseline = None;
-            push_obs(state, "✓ perf counters and baseline reset".to_string());
+            push_obs_alert(state, "✓ perf counters and baseline reset".to_string());
         }
         _ => {
             let label = if sub == "report" {
@@ -186,7 +186,7 @@ pub(crate) fn handle_perf_command(
                 line.push_str(" | ");
                 line.push_str(&format_perf_delta(&current, baseline));
             }
-            push_obs(state, line);
+            push_obs_alert(state, line);
         }
     }
 

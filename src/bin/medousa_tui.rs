@@ -54,6 +54,8 @@ mod tui_stderr_guard;
 mod budget_slash_services;
 #[path = "medousa_tui/cli_helpers.rs"]
 mod cli_helpers;
+#[path = "medousa_tui/cli_args.rs"]
+mod cli_args;
 #[path = "medousa_tui/command_preview_ui.rs"]
 mod command_preview_ui;
 #[path = "medousa_tui/daemon_commands.rs"]
@@ -98,7 +100,6 @@ mod ui_render;
 mod workers;
 
 use agent_runtime::{start_prompt_run, stop_active_generation};
-use cli_helpers::{find_arg_value, print_help};
 use editor_runtime::{load_editor_file, run_editor_source_via_runtime, save_editor_buffer};
 #[cfg(test)]
 use editor_runtime::{resolve_editor_run_source, validate_editor_run_allowlist, write_editor_file};
@@ -328,30 +329,27 @@ enum UiMode {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let _stderr_guard = tui_stderr_guard::TuiStderrGuard::attach().ok();
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    use clap::Parser;
 
-    let provider = find_arg_value(&args, "--provider");
-    let model = find_arg_value(&args, "--model");
-    let base_url = find_arg_value(&args, "--base-url");
-    let backend = find_arg_value(&args, "--backend");
-    let tool_call_mode = find_arg_value(&args, "--tool-call-mode");
-    let max_tool_rounds = find_arg_value(&args, "--max-tool-rounds");
-    let thinking_capture = find_arg_value(&args, "--thinking-capture");
-    let thinking_max_lines = find_arg_value(&args, "--thinking-max-lines");
-    let daemon_url = find_arg_value(&args, "--daemon-url");
-    let explicit_session = find_arg_value(&args, "--session");
+    let _stderr_guard = tui_stderr_guard::TuiStderrGuard::attach().ok();
+    let cli = cli_args::TuiCli::parse();
+
+    let provider = cli.provider.as_deref();
+    let model = cli.model.as_deref();
+    let base_url = cli.base_url.as_deref();
+    let backend = cli.backend.as_deref();
+    let tool_call_mode = cli.tool_call_mode.as_deref();
+    let max_tool_rounds = cli.max_tool_rounds.as_deref();
+    let thinking_capture = cli.thinking_capture.as_deref();
+    let thinking_max_lines = cli.thinking_max_lines.as_deref();
+    let daemon_url = cli.daemon_url.as_deref();
+    let explicit_session = cli.session.as_deref();
     let defaults = load_tui_defaults();
 
     medousa::apply_workshop_llm_env();
     medousa::runtime::stasis_otel::apply_stasis_otel_from_defaults(&defaults);
 
-    if args.iter().any(|a| a == "--help" || a == "-h") {
-        print_help();
-        return Ok(());
-    }
-
-    let local_runtime_only = args.iter().any(|a| a == "--local-runtime-only")
+    let local_runtime_only = cli.local_runtime_only
         || std::env::var("MEDOUSA_TUI_LOCAL_RUNTIME")
             .ok()
             .is_some_and(|value| {
@@ -981,6 +979,17 @@ fn push_obs(state: &mut TuiState, text: String) {
         state.observability.pop_back();
     }
     invalidate_markdown_cache(state);
+}
+
+/// User-facing slash / error feedback: same buffer as [`push_obs`], but open the
+/// observability overlay when the user is on the main chat screen so `/help`
+/// and errors are not invisible behind Ctrl+O.
+fn push_obs_alert(state: &mut TuiState, text: String) {
+    push_obs(state, text);
+    if state.mode == UiMode::Chat {
+        state.mode = UiMode::ObservabilityPanel;
+        state.obs_scroll = 0;
+    }
 }
 
 fn push_grapheme_console_entry(

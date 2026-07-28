@@ -15,22 +15,22 @@ pub(crate) async fn handle_slash_command(
 
     match cmd {
         "/help" => {
-            push_obs(state, "◈ essential commands:".to_string());
-            push_obs(state, "  /new      start a fresh session".to_string());
-            push_obs(
+            push_obs_alert(state, "◈ essential commands:".to_string());
+            push_obs_alert(state, "  /new      start a fresh session".to_string());
+            push_obs_alert(
                 state,
                 "  /history  browse and resume past sessions".to_string(),
             );
-            push_obs(
+            push_obs_alert(
                 state,
                 "  /name     set or show this session's label".to_string(),
             );
-            push_obs(
+            push_obs_alert(
                 state,
                 "  /settings open provider, model, and routing".to_string(),
             );
-            push_obs(state, "  /usage    context window / token breakdown".to_string());
-            push_obs(state, "  /close    quit medousa_tui".to_string());
+            push_obs_alert(state, "  /usage    context window / token breakdown".to_string());
+            push_obs_alert(state, "  /close    quit medousa_tui".to_string());
         }
         "/new" => {
             slash_command_services::handle_new_session_command(state, tui_rt, event_tx).await;
@@ -40,7 +40,7 @@ pub(crate) async fn handle_slash_command(
             if label.is_empty() {
                 session_name_services::refresh_session_display_name(state);
                 match &state.session_display_name {
-                    Some(name) => push_obs(
+                    Some(name) => push_obs_alert(
                         state,
                         format!(
                             "◈ session name: {} ({})",
@@ -48,7 +48,7 @@ pub(crate) async fn handle_slash_command(
                             &state.session_id[..state.session_id.len().min(8)]
                         ),
                     ),
-                    None => push_obs(
+                    None => push_obs_alert(
                         state,
                         format!(
                             "◈ no display name for session {}",
@@ -60,7 +60,7 @@ pub(crate) async fn handle_slash_command(
                 match session_name_services::set_session_display_name_daemon_first(state, &label)
                     .await
                 {
-                    Ok(()) => push_obs(
+                    Ok(()) => push_obs_alert(
                         state,
                         format!(
                             "✓ session name set to \"{}\" (global)",
@@ -70,7 +70,7 @@ pub(crate) async fn handle_slash_command(
                                 .unwrap_or(label.as_str())
                         ),
                     ),
-                    Err(err) => push_obs(state, format!("⚠ could not set session name: {err}")),
+                    Err(err) => push_obs_alert(state, format!("⚠ could not set session name: {err}")),
                 }
             }
         }
@@ -99,7 +99,7 @@ pub(crate) async fn handle_slash_command(
         "/theme" => {
             let requested = parts.collect::<Vec<_>>().join(" ").trim().to_string();
             if requested.is_empty() {
-                push_obs(
+                push_obs_alert(
                     state,
                     format!(
                         "◈ current theme: {} ({}) | available: {}",
@@ -120,7 +120,7 @@ pub(crate) async fn handle_slash_command(
                 defaults.theme_id = Some(selected.clone());
                 save_tui_defaults(&defaults);
 
-                push_obs(
+                push_obs_alert(
                     state,
                     format!(
                         "✓ theme applied: {} ({selected})",
@@ -128,7 +128,7 @@ pub(crate) async fn handle_slash_command(
                     ),
                 );
             } else {
-                push_obs(
+                push_obs_alert(
                     state,
                     format!(
                         "⚠ unknown theme '{}'. available: {}",
@@ -178,7 +178,7 @@ pub(crate) async fn handle_slash_command(
                         state.mode = UiMode::Editor;
                     }
                     Err(err) => {
-                        push_obs(state, format!("⚠ open failed: {err}"));
+                        push_obs_alert(state, format!("⚠ open failed: {err}"));
                     }
                 }
             }
@@ -229,7 +229,7 @@ pub(crate) async fn handle_slash_command(
         }
         "/run-current" => {
             let Some(path) = state.editor_file_path.clone() else {
-                push_obs(
+                push_obs_alert(
                     state,
                     "⚠ run-current failed: no editor file path set. use /open <path> or /run <path>"
                         .to_string(),
@@ -241,19 +241,19 @@ pub(crate) async fn handle_slash_command(
             run_editor_source_via_runtime(state, tui_rt, event_tx, Some(path_value.as_str())).await;
         }
         "/close" => {
-            push_obs(state, "✓ closing medousa_tui".to_string());
+            push_obs_alert(state, "✓ closing medousa_tui".to_string());
             return EventOutcome::Break;
         }
         "/clear-key" => {
             state.settings.api_key.clear();
             state.settings_draft.api_key.clear();
             save_tui_api_key(None);
-            push_obs(state, "✓ api key cleared from secure storage".to_string());
+            push_obs_alert(state, "✓ api key cleared from secure storage".to_string());
         }
         "/rotate-key" => {
             let key = state.settings_draft.api_key.trim().to_string();
             if key.is_empty() {
-                push_obs(
+                push_obs_alert(
                     state,
                     "⚠ key rotation requires a non-empty draft API key".to_string(),
                 );
@@ -263,7 +263,7 @@ pub(crate) async fn handle_slash_command(
             save_tui_api_key(Some(&key));
             state.settings.api_key = key.clone();
             state.settings_draft.api_key = key;
-            push_obs(state, "✓ api key rotated in secure storage".to_string());
+            push_obs_alert(state, "✓ api key rotated in secure storage".to_string());
         }
         "/model" => {
             let args = parts.collect::<Vec<_>>();
@@ -280,7 +280,7 @@ pub(crate) async fn handle_slash_command(
         }
         "/regen" => {
             if state.is_processing {
-                push_obs(state, "⚠ cannot regenerate while processing".to_string());
+                push_obs_alert(state, "⚠ cannot regenerate while processing".to_string());
                 return EventOutcome::Continue;
             }
 
@@ -295,10 +295,10 @@ pub(crate) async fn handle_slash_command(
                 if matches!(state.conversation.last(), Some(turn) if turn.role == "agent") {
                     state.conversation.pop();
                 }
-                push_obs(state, "↻ regenerate last response".to_string());
+                push_obs_alert(state, "↻ regenerate last response".to_string());
                 start_prompt_run(state, tui_rt, event_tx, prompt, false).await;
             } else {
-                push_obs(
+                push_obs_alert(
                     state,
                     "⚠ no user prompt available to regenerate".to_string(),
                 );
@@ -307,8 +307,8 @@ pub(crate) async fn handle_slash_command(
         "/export" => {
             let format = parts.next().unwrap_or("md");
             match export_current_session(state, format) {
-                Ok(path) => push_obs(state, format!("✓ exported {}", path.display())),
-                Err(err) => push_obs(state, format!("⚠ export failed: {err}")),
+                Ok(path) => push_obs_alert(state, format!("✓ exported {}", path.display())),
+                Err(err) => push_obs_alert(state, format!("⚠ export failed: {err}")),
             }
         }
         "/perf" => {
@@ -323,13 +323,13 @@ pub(crate) async fn handle_slash_command(
                         .lines()
                     {
                         if line.is_empty() {
-                            push_obs(state, String::new());
+                            push_obs_alert(state, String::new());
                         } else {
-                            push_obs(state, line.to_string());
+                            push_obs_alert(state, line.to_string());
                         }
                     }
                 }
-                None => push_obs(
+                None => push_obs_alert(
                     state,
                     "No context usage snapshot yet — send a message first.".to_string(),
                 ),
@@ -348,8 +348,8 @@ pub(crate) async fn handle_slash_command(
         }
         "/skills" => {
             match medousa::skill_ingest::format_skill_manuscripts_list() {
-                Ok(list) => push_obs(state, list),
-                Err(err) => push_obs(state, format!("⚠ could not list skills: {err:#}")),
+                Ok(list) => push_obs_alert(state, list),
+                Err(err) => push_obs_alert(state, format!("⚠ could not list skills: {err:#}")),
             }
         }
         "/skill" => {
@@ -358,17 +358,17 @@ pub(crate) async fn handle_slash_command(
                 .and_then(|parsed| medousa::skill_ingest::build_skill_run_ingest_prompt(&parsed))
             {
                 Ok(prompt) => {
-                    push_obs(
+                    push_obs_alert(
                         state,
                         "◈ skill run queued via research worker".to_string(),
                     );
                     start_prompt_run(state, tui_rt, event_tx, prompt, true).await;
                 }
-                Err(err) => push_obs(state, format!("⚠ skill run failed: {err:#}")),
+                Err(err) => push_obs_alert(state, format!("⚠ skill run failed: {err:#}")),
             }
         }
         _ => {
-            push_obs(
+            push_obs_alert(
                 state,
                 "⚠ unknown command. try /help for essentials, or /history /settings /close"
                     .to_string(),

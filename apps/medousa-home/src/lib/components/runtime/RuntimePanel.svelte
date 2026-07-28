@@ -273,7 +273,8 @@
     {:else if runtime.activeTab === "routing"}
       <section>
         <p class="workshop-faint">
-          Live view of configured stage routing — edit stage models in Settings → Models → Stages.
+          Live view of configured stage routing — edit stage models in Settings → Medousa Agent →
+          Stages.
         </p>
         <div class="mt-4 overflow-x-auto">
           <table class="w-full min-w-[32rem] text-left text-xs">

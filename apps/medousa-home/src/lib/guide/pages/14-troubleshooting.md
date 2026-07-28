@@ -23,7 +23,7 @@ open: true
 label: Wrong workshop
 icon: layers
 body: |-
-  Notes and chats belong to the **active workshop**. If things look alien, switch workshops in the status bar or Settings → Workshop.
+  Notes and chats belong to the **active workshop**. If things look alien, switch workshops in the status bar or Settings → Connection.
 
   → [Getting started](guide:getting-started) · [Workshops and connections](guide:workshops-connections)
 ---
@@ -44,7 +44,7 @@ body: |-
   2. Open **Work** — is a card **blocked**?
   3. Chat — waiting for **Allow** or **Approve**?
   4. Browser — verification / CAPTCHA banner? Finish it, then **Continue agent**.
-  5. Last resort: Settings → Workshop → **Restart** (chats pause briefly).
+  5. Last resort: Settings → Connection → **Restart** (chats pause briefly).
 
   → [Work](guide:work-jobs) · [Permissions](guide:permissions-budgets)
 ---

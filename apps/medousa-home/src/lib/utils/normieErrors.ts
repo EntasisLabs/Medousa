@@ -85,7 +85,7 @@ export function friendlyTurnError(raw: string): string {
     lower.includes("authentication") ||
     lower.includes("unauthorized")
   ) {
-    return "The model provider rejected the API key. Check Settings → Models and try again.";
+    return "The model provider rejected the API key. Check Settings → Medousa Agent and try again.";
   }
   if (
     lower.includes("429") ||
@@ -132,7 +132,7 @@ export function friendlyTurnError(raw: string): string {
     return `You can attach up to ${MAX_MEDIA_REFS_PER_TURN} files per message. Remove one and try again.`;
   }
   if (lower.includes("vision") && (lower.includes("required") || lower.includes("profile"))) {
-    return "Configure a vision model in Settings → Models before sending images.";
+    return "Configure a vision model in Settings → Medousa Agent before sending images.";
   }
   if (
     lower.includes("sse stream ended unexpectedly") ||

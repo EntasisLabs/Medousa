@@ -2,12 +2,20 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listVaultRoots } from "$lib/daemon";
-import { isCoLocatedWorkshop } from "$lib/utils/workshopLocality";
+import { isCoLocatedWorkshop, vaultHostSideHint } from "$lib/utils/workshopLocality";
 import { isTauri } from "$lib/window";
 import { readExternalFile } from "$lib/utils/externalDeskApi";
+import { toast } from "$lib/stores/toast.svelte";
 
 let cachedVaultRoot: { path: string; fetchedAt: number } | null = null;
 const CACHE_MS = 5_000;
+
+/** Reveal / open-with need the daemon's disk — explain instead of no-op. */
+function warnHostSideOnly(): boolean {
+  if (isCoLocatedWorkshop()) return false;
+  toast.show(vaultHostSideHint());
+  return true;
+}
 
 export async function resolveVaultNoteAbsolutePath(
   vaultRelativePath: string,
@@ -61,7 +69,8 @@ export async function localFilePreviewUrl(absolutePath: string): Promise<string 
 }
 
 export async function revealVaultNoteInFinder(vaultRelativePath: string): Promise<void> {
-  if (!isTauri() || !isCoLocatedWorkshop()) return;
+  if (!isTauri()) return;
+  if (warnHostSideOnly()) return;
   const absolute = await resolveVaultNoteAbsolutePath(vaultRelativePath);
   if (!absolute) return;
   const { revealItemInDir } = await import("@tauri-apps/plugin-opener");
@@ -71,7 +80,8 @@ export async function revealVaultNoteInFinder(vaultRelativePath: string): Promis
 export async function openVaultNoteWithDefaultApp(
   vaultRelativePath: string,
 ): Promise<void> {
-  if (!isTauri() || !isCoLocatedWorkshop()) return;
+  if (!isTauri()) return;
+  if (warnHostSideOnly()) return;
   const absolute = await resolveVaultNoteAbsolutePath(vaultRelativePath);
   if (!absolute) return;
   const { openPath } = await import("@tauri-apps/plugin-opener");
@@ -79,7 +89,8 @@ export async function openVaultNoteWithDefaultApp(
 }
 
 export async function revealFileInFinder(absolutePath: string): Promise<void> {
-  if (!isTauri() || !isCoLocatedWorkshop() || !absolutePath.trim()) return;
+  if (!isTauri() || !absolutePath.trim()) return;
+  if (warnHostSideOnly()) return;
   const { revealItemInDir } = await import("@tauri-apps/plugin-opener");
   await revealItemInDir(absolutePath);
 }
@@ -90,7 +101,8 @@ export async function openFileWithDefaultApp(absolutePath: string): Promise<void
     window.open(absolutePath, "_blank", "noopener,noreferrer");
     return;
   }
-  if (!isTauri() || !isCoLocatedWorkshop()) return;
+  if (!isTauri()) return;
+  if (warnHostSideOnly()) return;
   const { openPath } = await import("@tauri-apps/plugin-opener");
   await openPath(absolutePath);
 }

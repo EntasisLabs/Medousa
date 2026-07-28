@@ -60,6 +60,7 @@ medousa-acp-client = { path = "crates/medousa-acp-client" }
 medousa-browser-lite = { path = "crates/medousa-browser-lite" }
 medousa-local-inference = { path = "crates/medousa-local-inference" }
 anyhow = "1"
+clap = { version = "4", features = ["derive"] }
 chrono = { version = "0.4", features = ["serde"] }
 chrono-tz = "0.10"
 icalendar = { version = "0.17", default-features = true, features = ["chrono-tz"] }

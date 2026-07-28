@@ -2,7 +2,7 @@
   import { ChevronLeft, ChevronRight } from "@lucide/svelte";
   import type { SettingsSectionId } from "$lib/types/settings";
   import {
-    SETTINGS_MOBILE_SECTIONS,
+    settingsMobileSections,
     settingsNavEntries,
     settingsSectionById,
   } from "$lib/types/settings";
@@ -21,14 +21,15 @@
   const activeLabel = $derived(settingsSectionById(active)?.label ?? "Settings");
   const activeBadge = $derived(badges[active] ?? 0);
 
+  const pagerSections = $derived(settingsMobileSections());
   const sectionIndex = $derived.by(() => {
-    const idx = SETTINGS_MOBILE_SECTIONS.indexOf(active);
+    const idx = pagerSections.indexOf(active);
     return idx >= 0 ? idx : 0;
   });
 
   function stepSection(delta: number) {
-    const len = SETTINGS_MOBILE_SECTIONS.length;
-    const next = SETTINGS_MOBILE_SECTIONS[(sectionIndex + delta + len) % len]!;
+    const len = pagerSections.length;
+    const next = pagerSections[(sectionIndex + delta + len) % len]!;
     onSelect(next);
   }
 </script>
@@ -56,7 +57,7 @@
         {/if}
       </span>
       <span class="settings-nav-pager-dots" aria-hidden="true">
-        {#each SETTINGS_MOBILE_SECTIONS as sectionId, i (sectionId)}
+        {#each pagerSections as sectionId, i (sectionId)}
           <span
             class="settings-nav-pager-dot"
             class:settings-nav-pager-dot--active={i === sectionIndex}

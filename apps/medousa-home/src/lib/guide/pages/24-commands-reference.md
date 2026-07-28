@@ -7,7 +7,7 @@ Related: [Keyboard and flow](guide:keyboard-flow) · [Chat](guide:chat) · [Brow
 ```callout
 tone: note
 title: Prefix chord
-body: Pane bindings use a prefix — ⌘; on macOS, Ctrl+; elsewhere — then the key (for example ⌘; % to split right). Spotlight always opens with ⌘K / Ctrl+K.
+body: Pane bindings use a prefix — ⌘; on macOS, Ctrl+; elsewhere — then the key (for example ⌘; then % to split right). Spotlight always opens with ⌘K / Ctrl+K.
 ```
 
 ## Keyboard shortcuts
@@ -21,21 +21,22 @@ body: Pane bindings use a prefix — ⌘; on macOS, Ctrl+; elsewhere — then th
 | Summon view toolbar | ⇧⌘. | Ctrl+Shift+. |
 | Zoom in / out | ⌘+ / ⌘− | Ctrl++ / Ctrl+− |
 | Reset zoom | ⌘0 | Ctrl+0 |
-| Open keyboard shortcuts | ⌘; ? | Ctrl+; ? |
+| Open notes | ⌘O | Ctrl+O |
+| Open keyboard shortcuts | ⌘/ | Ctrl+/ |
 
 ### Panes
 
 | Action | macOS | Windows / Linux |
 |--------|-------|-----------------|
-| Split right | ⌘; % | Ctrl+; % |
-| Split down | ⌘; " | Ctrl+; " |
-| Focus pane | ⌘; h/j/k/l | Ctrl+; h/j/k/l |
-| Zoom pane | ⌘; z | Ctrl+; z |
-| Close pane (merge tabs) | ⌘; x | Ctrl+; x |
-| Chat tab here | ⌘; c | Ctrl+; c |
-| Next / prev tab | ⌘; n/p | Ctrl+; n/p |
-| Show tabs | ⌘; w | Ctrl+; w |
-| Switch virtual desktop | ⌘; 1–4 | Ctrl+; 1–4 |
+| Split right | ⌘; then % | Ctrl+; then % |
+| Split down | ⌘; then " | Ctrl+; then " |
+| Focus pane | ⌘; then h/j/k/l | Ctrl+; then h/j/k/l |
+| Zoom pane | ⌘; then z | Ctrl+; then z |
+| Close pane (merge tabs) | ⌘; then x | Ctrl+; then x |
+| Chat tab here | ⌘; then c | Ctrl+; then c |
+| Next / prev tab | ⌘; then n/p | Ctrl+; then n/p |
+| Show tabs | ⌘; then w | Ctrl+; then w |
+| Switch virtual desktop | ⌘; then 1–4 | Ctrl+; then 1–4 |
 | Move tab to another pane | Drag tab | Drag tab |
 
 ### Vault
@@ -54,7 +55,7 @@ body: Pane bindings use a prefix — ⌘; on macOS, Ctrl+; elsewhere — then th
 | Action | macOS | Windows / Linux |
 |--------|-------|-----------------|
 | Spotlight (commands & jumps) | ⌘K | Ctrl+K |
-| Keyboard shortcuts sheet | ⌘; ? | Ctrl+; ? |
+| Keyboard shortcuts sheet | ⌘/ | Ctrl+/ |
 
 Browser chords (also in Spotlight when Web is focused) include address bar, new/close/reopen tab, bookmarks, find, and open external — see Spotlight list below and [Browser](guide:browser).
 

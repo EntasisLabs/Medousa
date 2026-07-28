@@ -47,6 +47,8 @@
   let moreOpen = $state(false);
   let advancedOpen = $state(false);
   let runbookError = $state<string | null>(null);
+  let connectionPrefsError = $state<string | null>(null);
+  let configPathsError = $state<string | null>(null);
 
   const connected = $derived(Boolean(health?.ok));
   const connectionLabel = $derived(connectionHumanLabel(settings.daemonUrl));
@@ -205,8 +207,10 @@
   async function loadConnectionPrefsState() {
     try {
       connectionPrefs = await loadConnectionPrefs();
-    } catch {
-      connectionPrefs = null;
+      connectionPrefsError = null;
+    } catch (err) {
+      // Keep the last good values on screen — the retry is inline.
+      connectionPrefsError = err instanceof Error ? err.message : String(err);
     }
   }
 
@@ -231,8 +235,9 @@
   async function loadConfigPaths() {
     try {
       configPaths = await getMedousaConfigPaths();
-    } catch {
-      configPaths = null;
+      configPathsError = null;
+    } catch (err) {
+      configPathsError = err instanceof Error ? err.message : String(err);
     }
   }
 
@@ -256,7 +261,7 @@
 
 <section class="settings-section prefs connection">
   <header class="settings-section-header">
-    <h2 class="text-base font-semibold text-surface-50">Workshop</h2>
+    <h2 class="text-base font-semibold text-surface-50">Connection</h2>
     <p class="workshop-faint mt-1 text-sm">
       Which workshop you’re in — and how this machine runs it.
     </p>
@@ -342,8 +347,7 @@
           </div>
           {#if settings.daemonMessage}
             <p
-              class="mt-2 text-xs {settings.daemonMessage === 'Connected' ||
-              settings.daemonMessage.toLowerCase().includes('connected')
+              class="mt-2 text-xs {settings.daemonMessage === 'Connected'
                 ? 'text-success-400'
                 : 'text-warning-400'}"
             >
@@ -353,8 +357,7 @@
         </div>
       {:else if settings.daemonMessage}
         <p
-          class="prefs-footnote {settings.daemonMessage === 'Connected' ||
-          settings.daemonMessage.toLowerCase().includes('connected')
+          class="prefs-footnote {settings.daemonMessage === 'Connected'
             ? 'text-success-400'
             : 'text-warning-400'}"
         >
@@ -433,6 +436,24 @@
             <span class="prefs-tile-cta">Open</span>
           </button>
         {/if}
+
+        {#if connectionPrefsError}
+          <div class="prefs-tile">
+            <span class="prefs-tile-copy">
+              <span class="prefs-tile-title text-warning-300">
+                Couldn’t read login start settings
+              </span>
+              <span class="prefs-tile-meta">{connectionPrefsError}</span>
+            </span>
+            <button
+              type="button"
+              class="prefs-tile-cta"
+              onclick={() => void loadConnectionPrefsState()}
+            >
+              Retry
+            </button>
+          </div>
+        {/if}
       </div>
 
       {#if prefsMessage}
@@ -484,6 +505,24 @@
             <ChevronDown size={14} strokeWidth={2} class="prefs-more-chevron" aria-hidden="true" />
           </summary>
           <div class="prefs-nested-body prefs-stack">
+            {#if configPathsError}
+              <div class="prefs-tile">
+                <span class="prefs-tile-copy">
+                  <span class="prefs-tile-title text-warning-300">
+                    Couldn’t read workshop file paths
+                  </span>
+                  <span class="prefs-tile-meta">{configPathsError}</span>
+                </span>
+                <button
+                  type="button"
+                  class="prefs-tile-cta"
+                  onclick={() => void loadConfigPaths()}
+                >
+                  Retry
+                </button>
+              </div>
+            {/if}
+
             {#if configPaths}
               <div class="conn-kv">
                 <p class="prefs-footnote mb-1">Storage</p>

@@ -48,7 +48,7 @@ You may see **Welcome back** instead of a blank wizard. Choose **Continue**.
 
 ### Run the wizard again
 
-**Settings → Workshop → More on this device → Welcome wizard → Re-run** (desktop). Useful to revisit model choice or phone pairing.
+**Settings → Connection → More on this device → Welcome wizard → Re-run** (desktop). Useful to revisit model choice or phone pairing.
 
 ## First time on a phone {#phone--companion-first-run}
 
@@ -65,7 +65,7 @@ title: Prove you’re connected
 
 ---
 label: Pick the workshop
-body: **Settings → Workshop** — confirm an active workshop
+body: **Settings → Connection** — confirm an active workshop
 status: current
 ---
 label: Check the status bar

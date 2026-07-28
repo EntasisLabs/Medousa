@@ -11,7 +11,7 @@ pub(crate) async fn handle_stage_route_family_command(
     let command = match build_stage_route_command_spec(cmd, &args) {
         Ok(command) => command,
         Err(err) => {
-            push_obs(state, err);
+            push_obs_alert(state, err);
             return EventOutcome::Continue;
         }
     };
@@ -27,13 +27,13 @@ pub(crate) async fn handle_stage_route_family_command(
         Ok(response) => {
             let did_change_routing = response.stage_routing != state.stage_routing;
             state.stage_routing = response.stage_routing;
-            push_obs(state, response.rendered_output);
+            push_obs_alert(state, response.rendered_output);
             if did_change_routing {
                 persist_stage_routing_defaults(state);
             }
         }
         Err(err) => {
-            push_obs(state, format!("⚠ stage route command failed: {err}"));
+            push_obs_alert(state, format!("⚠ stage route command failed: {err}"));
         }
     }
 

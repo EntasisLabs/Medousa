@@ -810,7 +810,7 @@ fn normalize_url(raw: &str) -> String {
 fn print_peer_help() {
     println!("Medousa peer/portal client (headless)");
     println!();
-    println!("Connect this machine as a surface to another Medousa:");
+    println!("Connect this machine as a device to another Medousa:");
     println!("  portal — full client (use --portal); remote inbox = entire workshop mailbox");
     println!("  peer  — inbox + share only; remote inbox = your thread with that host");
     println!();

@@ -167,6 +167,7 @@ import {
   writeAbsoluteTextFile,
 } from "$lib/utils/vaultFilesystem";
 import { loadVaultRecent, rememberVaultRecent } from "$lib/utils/vaultRecent";
+import { toast } from "$lib/stores/toast.svelte";
 import {
   formatDiffChip,
   lineDiffStats,
@@ -1477,10 +1478,15 @@ export class VaultStore {
 
   openAddVaultRootDialog() {
     // Folder pick posts a Home path — only valid when co-located with the daemon.
-    void import("$lib/utils/workshopLocality").then(({ isCoLocatedWorkshop }) => {
-      if (!isCoLocatedWorkshop()) return;
-      this.addVaultRootOpen = true;
-    });
+    void import("$lib/utils/workshopLocality").then(
+      ({ isCoLocatedWorkshop, vaultAddRootRemoteHint }) => {
+        if (!isCoLocatedWorkshop()) {
+          toast.show(vaultAddRootRemoteHint());
+          return;
+        }
+        this.addVaultRootOpen = true;
+      },
+    );
   }
 
   closeAddVaultRootDialog() {
