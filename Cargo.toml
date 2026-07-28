@@ -25,6 +25,7 @@ members = [
     "crates/medousa-mcp-server",
     "crates/medousa-acp-client",
     "crates/medousa-adapter-common",
+    "crates/medousa-forge",
     "adapters/medousa-telegram",
     "adapters/medousa-discord",
     "adapters/medousa-slack",

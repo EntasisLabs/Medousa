@@ -5,9 +5,22 @@
 
 First-run UX, Home shell milestones, turn-loop FSM, user profiles (Phases 0–6), **centralized agent runtime**, **0.5.0 Vault / Versions / Liquid**, **0.6.0 Shared / Peer mesh / Dynamic + Home polish**, and **0.7.0 Accounts / Liquid depth / Browser act + Languages** are **shipped**. See [turn-runtime-and-lanes.md](turn-runtime-and-lanes.md), [ADR-002](../docs/architecture/decisions/adr-002-user-profiles.md), [v0.5.0-vault-versions-plan.md](v0.5.0-vault-versions-plan.md), [v0.6.0-shared-mode-plan.md](v0.6.0-shared-mode-plan.md), [v0.6.0-peer-mesh-plan.md](v0.6.0-peer-mesh-plan.md), [v0.7.0-plan.md](v0.7.0-plan.md).
 
-**Next focus:** felt polish residual (empty states, F3–F5), optional mesh `client.relay`, inference profiles — see below.
+**Next focus:** felt polish residual (empty states, F3–F5), optional mesh `client.relay`, inference profiles, **Forge integration phases** (daemon routes, ACP executors, Home review surface) — see below.
 
-Full plans: **[v0.6.0-shared-mode-plan.md](v0.6.0-shared-mode-plan.md)** · **[v0.6.0-peer-mesh-plan.md](v0.6.0-peer-mesh-plan.md)** · **[home-messaging-matrix.md](home-messaging-matrix.md)** · [ADR-011](../docs/architecture/decisions/adr-011-shared-mode-portal-and-mesh.md) · **[workshop-and-automations-plan.md](workshop-and-automations-plan.md)** · **[polish-and-package-plan.md](polish-and-package-plan.md)** · **[operators-guide-docs-epic.md](operators-guide-docs-epic.md)**
+Full plans: **[v0.8.0-forge-plan.md](v0.8.0-forge-plan.md)** · **[v0.6.0-shared-mode-plan.md](v0.6.0-shared-mode-plan.md)** · **[v0.6.0-peer-mesh-plan.md](v0.6.0-peer-mesh-plan.md)** · **[home-messaging-matrix.md](home-messaging-matrix.md)** · [ADR-011](../docs/architecture/decisions/adr-011-shared-mode-portal-and-mesh.md) · **[workshop-and-automations-plan.md](workshop-and-automations-plan.md)** · **[polish-and-package-plan.md](polish-and-package-plan.md)** · **[operators-guide-docs-epic.md](operators-guide-docs-epic.md)**
+
+---
+
+## 0.8.0 Forge core (in progress)
+
+**Goal:** the durable work-lifecycle substrate — user-owned work items, governed git environments, lease-fenced executor attempts, sealed evidence, human review, recoverable dispositions. External agents become replaceable executors on top; Medousa owns the work.
+
+| Pillar | Plan | Status |
+|--------|------|--------|
+| Forge core crate | [v0.8.0-plan](v0.8.0-forge-plan.md) | ✅ `crates/medousa-forge` F1–F11 — model/events, FS store + journal, git engine, lifecycle + leases, policy-governed sealing, evidence-bound review, three dispositions, boot reconciliation, script adapter |
+| Daemon integration | [v0.8.0-plan](v0.8.0-forge-plan.md) | ⬜ `Forge` in `AppState`, HTTP routes, process-backed `LivenessProbe` |
+| ACP executors | [v0.8.0-plan](v0.8.0-forge-plan.md) | ⬜ Cursor/Codex adapters through the lease API; resume tokens |
+| Home review surface | [v0.8.0-plan](v0.8.0-forge-plan.md) | ⬜ work kanban projection + evidence-bound review UI |
 
 ---
 

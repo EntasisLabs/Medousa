@@ -7341,6 +7341,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "medousa-forge"
+version = "0.7.0"
+dependencies = [
+ "chrono",
+ "fs2",
+ "globset",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tempfile",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "medousa-host"
 version = "0.6.0"
 dependencies = [
