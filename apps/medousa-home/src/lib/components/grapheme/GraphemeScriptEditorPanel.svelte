@@ -1,5 +1,8 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import CodeEditorOutline from "$lib/components/code/CodeEditorOutline.svelte";
+  import CodeEditorProblems from "$lib/components/code/CodeEditorProblems.svelte";
+  import type { CodeEditorProblem } from "$lib/components/code/CodeEditorProblems.svelte";
   import CodeEditorShell from "$lib/components/code/CodeEditorShell.svelte";
   import CodeMirrorHost from "$lib/components/code/CodeMirrorHost.svelte";
   import GraphemeRecipeCards from "$lib/components/grapheme/GraphemeRecipeCards.svelte";
@@ -11,7 +14,17 @@
     languageSupportsLsp,
     languageSupportsRun,
   } from "$lib/code/codeEditorLanguageRegistry";
-  import { connectGraphemeLspClient } from "$lib/grapheme/lspClient";
+  import {
+    readCodeEditorOutlineOpen,
+    readCodeEditorProblemsOpen,
+    readCodeEditorTabSize,
+    readCodeEditorWordWrap,
+    writeCodeEditorOutlineOpen,
+    writeCodeEditorProblemsOpen,
+    writeCodeEditorTabSize,
+    writeCodeEditorWordWrap,
+  } from "$lib/config/codeEditorPreferences";
+  import { connectCodeLspClient } from "$lib/grapheme/lspClient";
   import { promoteScriptToFlow } from "$lib/grapheme/graphemeFlowBridge";
   import {
     applyRecipeToEditor,
@@ -27,6 +40,9 @@
   import { workshop } from "$lib/stores/workshop.svelte";
   import type { LSPClient } from "@codemirror/lsp-client";
   import { formatShortcut } from "$lib/platform";
+  import { forEachDiagnostic } from "@codemirror/lint";
+  import { EditorView } from "@codemirror/view";
+  import { EditorSelection } from "@codemirror/state";
 
   interface Props {
     visible: boolean;
@@ -37,11 +53,19 @@
 
   let lspClient = $state<LSPClient | null>(null);
   let lspError = $state<string | null>(null);
+  let lspVia = $state<"orchestrator" | "grapheme" | null>(null);
   let codeMirror = $state<CodeMirrorHost | undefined>();
   let flowError = $state<string | null>(null);
   let showAdvancedActions = $state(false);
   let pieceLanded = $state(false);
   let pieceLandTimer: ReturnType<typeof setTimeout> | null = null;
+  let outlineOpen = $state(readCodeEditorOutlineOpen());
+  let problemsOpen = $state(readCodeEditorProblemsOpen());
+  let wordWrap = $state(readCodeEditorWordWrap());
+  let tabSize = $state(readCodeEditorTabSize());
+  let outlineSymbols = $state<Array<{ name: string; kind: string; line: number }>>([]);
+  let problems = $state<CodeEditorProblem[]>([]);
+  let prefsEpoch = $state(0);
 
   /** Local derived from $state fields — avoids stale class-field `$derived`. */
   const activeTab = $derived(
@@ -72,19 +96,94 @@
     }, 480);
   }
 
+  function goToLine(line: number) {
+    const view = codeMirror?.getView();
+    if (!view) return;
+    const safe = Math.max(1, line);
+    const docLine = view.state.doc.line(Math.min(safe, view.state.doc.lines));
+    view.dispatch({
+      selection: EditorSelection.cursor(docLine.from),
+      effects: EditorView.scrollIntoView(docLine.from, { y: "center" }),
+    });
+    view.focus();
+  }
+
+  function refreshProblems() {
+    const view = codeMirror?.getView();
+    if (!view) {
+      problems = [];
+      return;
+    }
+    const next: CodeEditorProblem[] = [];
+    forEachDiagnostic(view.state, (diag, from) => {
+      const line = view.state.doc.lineAt(from).number;
+      const severity =
+        diag.severity === "error" ||
+        diag.severity === "warning" ||
+        diag.severity === "info" ||
+        diag.severity === "hint"
+          ? diag.severity
+          : "info";
+      next.push({
+        message: diag.message,
+        severity,
+        line,
+        source: diag.source ?? undefined,
+      });
+    });
+    problems = next;
+  }
+
+  function toggleOutline() {
+    outlineOpen = !outlineOpen;
+    writeCodeEditorOutlineOpen(outlineOpen);
+  }
+
+  function toggleProblems() {
+    problemsOpen = !problemsOpen;
+    writeCodeEditorProblemsOpen(problemsOpen);
+  }
+
+  function toggleWrap() {
+    wordWrap = !wordWrap;
+    writeCodeEditorWordWrap(wordWrap);
+    prefsEpoch += 1;
+  }
+
+  function cycleTabSize() {
+    tabSize = tabSize === 2 ? 4 : tabSize === 4 ? 8 : 2;
+    writeCodeEditorTabSize(tabSize);
+    prefsEpoch += 1;
+  }
+
   onMount(() => {
     void getGraphemeLspWorkspace().then((workspace) => {
       graphemeScriptEditor.lspWorkspace = workspace;
     });
-    void connectGraphemeLspClient()
-      .then(({ client, workspace }) => {
+  });
+
+  $effect(() => {
+    const lang = activeLanguage.id;
+    if (!languageSupportsLsp(lang)) {
+      return;
+    }
+    let cancelled = false;
+    void connectCodeLspClient(lang === "grapheme" ? "grapheme" : lang)
+      .then(({ client, workspace, via }) => {
+        if (cancelled) return;
         lspClient = client;
+        lspVia = via;
         graphemeScriptEditor.lspWorkspace = workspace;
         graphemeScriptEditor.lspReady = true;
+        lspError = null;
       })
       .catch((err) => {
+        if (cancelled) return;
         lspError = err instanceof Error ? err.message : String(err);
       });
+    return () => {
+      cancelled = true;
+    };
   });
 
   $effect(() => {
@@ -197,12 +296,48 @@
             · run, save, add to flow
           {:else if activeLanguage.tier === "highlight"}
             · highlight only
-          {:else if activeLanguage.tier === "stub"}
-            · preview stub
           {/if}
         </p>
       </div>
       <div class="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          class="btn btn-sm variant-ghost-surface"
+          onclick={() => codeMirror?.openFind()}
+          title={`Find (${formatShortcut("F")})`}
+        >
+          Find
+        </button>
+        <button
+          type="button"
+          class="btn btn-sm variant-ghost-surface"
+          onclick={toggleWrap}
+          title="Toggle word wrap"
+        >
+          Wrap {wordWrap ? "on" : "off"}
+        </button>
+        <button
+          type="button"
+          class="btn btn-sm variant-ghost-surface"
+          onclick={cycleTabSize}
+          title="Tab size"
+        >
+          Tab {tabSize}
+        </button>
+        <button
+          type="button"
+          class="btn btn-sm variant-ghost-surface"
+          onclick={toggleOutline}
+        >
+          Outline
+        </button>
+        <button
+          type="button"
+          class="btn btn-sm variant-ghost-surface"
+          onclick={toggleProblems}
+        >
+          Problems
+        </button>
         {#if canAddToFlow}
           <button
             type="button"
@@ -289,17 +424,43 @@
 
   {#snippet editor()}
     {#if activeTab}
-      {#key `${activeTab.tabId}:${graphemeScriptEditor.contentEpoch}:${activeLanguage.id}:${lspClient && canUseLsp ? "lsp" : "plain"}`}
-        <CodeMirrorHost
-          bind:this={codeMirror}
-          value={activeTab.body}
-          languageId={activeLanguage.id}
-          documentUri={activeDocumentUri}
-          client={canUseLsp ? lspClient : null}
-          contentSyncKey={graphemeScriptEditor.contentEpoch}
-          onchange={(body) => graphemeScriptEditor.patchActiveTab({ body })}
-        />
-      {/key}
+      <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        <div class="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+          {#key `${activeTab.tabId}:${graphemeScriptEditor.contentEpoch}:${activeLanguage.id}:${lspClient && canUseLsp ? "lsp" : "plain"}:${prefsEpoch}`}
+            <CodeMirrorHost
+              bind:this={codeMirror}
+              value={activeTab.body}
+              languageId={activeLanguage.id}
+              documentUri={activeDocumentUri}
+              lspLanguageId={activeLanguage.id}
+              client={canUseLsp ? lspClient : null}
+              contentSyncKey={graphemeScriptEditor.contentEpoch}
+              onchange={(body) => graphemeScriptEditor.patchActiveTab({ body })}
+              onProblemsChanged={refreshProblems}
+            />
+          {/key}
+          {#if outlineOpen}
+            <CodeEditorOutline
+              symbols={outlineSymbols}
+              onSelect={goToLine}
+              onClose={() => {
+                outlineOpen = false;
+                writeCodeEditorOutlineOpen(false);
+              }}
+            />
+          {/if}
+        </div>
+        {#if problemsOpen}
+          <CodeEditorProblems
+            {problems}
+            onSelect={goToLine}
+            onClose={() => {
+              problemsOpen = false;
+              writeCodeEditorProblemsOpen(false);
+            }}
+          />
+        {/if}
+      </div>
     {:else}
       <p class="workshop-muted p-4 text-sm">Open or create a script tab.</p>
     {/if}
@@ -406,9 +567,7 @@
       <p class="workshop-muted mt-4 text-sm">Loading editor helpers…</p>
     {:else}
       <p class="workshop-muted mt-4 text-sm">
-        {activeLanguage.tier === "stub"
-          ? `${activeLanguage.label} syntax plug-in is not wired yet — editing as plain text.`
-          : `${activeLanguage.label} — syntax highlighting only.`}
+        {activeLanguage.label} — syntax highlighting only.
       </p>
     {/if}
 
@@ -434,18 +593,19 @@
           {activeTab.body.split("\n").length} lines
           · {activeLanguage.label}
           {#if canUseLsp && graphemeScriptEditor.lspReady}
-            · completions on
+            · completions on{#if lspVia === "orchestrator"} (coding engine){/if}
           {/if}
         {:else}
           No active script
         {/if}
       </span>
       <span class="text-surface-500">
+        <kbd class="vault-kbd">{formatShortcut("F")}</kbd> find
         {#if canSave}
-          <kbd class="vault-kbd">{formatShortcut("S")}</kbd> save ·
+          · <kbd class="vault-kbd">{formatShortcut("S")}</kbd> save
         {/if}
         {#if canUseLsp}
-          <kbd class="vault-kbd">F12</kbd> go to definition
+          · <kbd class="vault-kbd">F12</kbd> go to definition
         {/if}
       </span>
     </div>

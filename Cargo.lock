@@ -7255,6 +7255,7 @@ dependencies = [
  "teloxide",
  "tempfile",
  "tokio",
+ "tokio-tungstenite 0.29.0",
  "toml 0.8.23",
  "tower 0.5.3",
  "tracing",
@@ -7314,6 +7315,28 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "tokio",
+]
+
+[[package]]
+name = "medousa-code"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "axum 0.8.9",
+ "clap",
+ "dirs 5.0.1",
+ "futures-util",
+ "grapheme-lsp",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "tower-http",
+ "tracing",
+ "tracing-subscriber",
+ "uuid 1.23.1",
 ]
 
 [[package]]
@@ -14777,6 +14800,7 @@ dependencies = [
  "tokio",
  "tokio-rustls 0.26.4",
  "tungstenite 0.29.0",
+ "webpki-roots 0.26.11",
 ]
 
 [[package]]

@@ -94,6 +94,8 @@ pub struct AppState {
     pub client_registry: ClientRegistry,
     /// Forge — durable version-controlled work custody (undertakings).
     pub forge: Arc<medousa_forge::forge::Forge>,
+    /// LSP Interoperability Orchestrator host (medousa-code sidecar).
+    pub coding_engine: Option<Arc<crate::daemon::coding_engine_host::CodingEngineHost>>,
 }
 
 impl AppState {

@@ -239,6 +239,30 @@ pub fn package_catalog() -> Vec<PackageCatalogEntry> {
             true,
             true,
         ),
+        entry(
+            "coding-engine",
+            "Coding engine",
+            &["engine"],
+            &["medousa-code"],
+            PackageCategory::Expansion,
+            "Code2",
+            &["developer"],
+            25 * 1024 * 1024,
+            true,
+            false,
+        ),
+        entry(
+            "langservers",
+            "Language servers",
+            &["coding-engine"],
+            &["pyright-langserver", "typescript-language-server"],
+            PackageCategory::Expansion,
+            "Braces",
+            &["developer"],
+            80 * 1024 * 1024,
+            true,
+            false,
+        ),
     ]
 }
 
@@ -360,6 +384,8 @@ pub fn is_home_packages_package(package_id: &str) -> bool {
             | "adapter-discord"
             | "adapter-slack"
             | "adapter-whatsapp"
+            | "coding-engine"
+            | "langservers"
     )
 }
 
@@ -387,6 +413,8 @@ pub fn package_short_hint(package_id: &str) -> &'static str {
         "adapter-discord" => "Discord channel adapter.",
         "adapter-slack" => "Slack channel adapter.",
         "adapter-whatsapp" => "WhatsApp channel adapter.",
+        "coding-engine" => "LSP Interoperability Orchestrator (medousa-code) for Scripts + agents.",
+        "langservers" => "Optional pyright + TypeScript language servers for the coding engine.",
         _ => "Optional Medousa component.",
     }
 }
@@ -400,6 +428,8 @@ pub fn resolve_package_alias(name: &str) -> Option<&'static str> {
         "discord" | "adapter-discord" => Some("adapter-discord"),
         "slack" | "adapter-slack" => Some("adapter-slack"),
         "whatsapp" | "adapter-whatsapp" => Some("adapter-whatsapp"),
+        "coding-engine" | "medousa-code" | "code" | "lsp" => Some("coding-engine"),
+        "langservers" | "pyright" | "tsserver" => Some("langservers"),
         "local-brain" | "brain" | "local_brain" => Some("local-brain"),
         "desktop" => Some("desktop"),
         other => catalog_entry(other).map(|entry| entry.id),

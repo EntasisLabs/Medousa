@@ -317,6 +317,10 @@ pub fn worker_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
                     "cognition_grapheme_template_run",
                     "cognition_shell_status",
                     "cognition_shell_run",
+                    "cognition_code_hover",
+                    "cognition_code_definition",
+                    "cognition_code_diagnostics",
+                    "cognition_code_symbols",
                 ],
             },
             ToolDomainCatalogEntry {

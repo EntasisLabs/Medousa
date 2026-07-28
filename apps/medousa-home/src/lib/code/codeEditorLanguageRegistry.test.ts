@@ -29,7 +29,7 @@ describe("codeEditorLanguageRegistry", () => {
   });
 
   it("registers markup languages as highlight-only", () => {
-    for (const id of ["javascript", "json", "html", "css", "xml"] as const) {
+    for (const id of ["json", "html", "css", "xml"] as const) {
       const def = getCodeEditorLanguage(id);
       expect(def.tier).toBe("highlight");
       expect(def.capabilities.lsp).toBe(false);
@@ -38,12 +38,19 @@ describe("codeEditorLanguageRegistry", () => {
     }
   });
 
-  it("registers stub languages without editor plug-ins", () => {
-    for (const id of ["python", "rust", "typescript", "yaml"] as const) {
+  it("registers python/typescript/rust/javascript as highlight with LSP capability", () => {
+    for (const id of ["python", "typescript", "rust", "javascript"] as const) {
       const def = getCodeEditorLanguage(id);
-      expect(def.tier).toBe("stub");
-      expect(def.capabilities.lsp).toBe(false);
+      expect(def.tier).toBe("highlight");
+      expect(def.capabilities.lsp).toBe(true);
+      expect(def.capabilities.compile).toBe(false);
     }
+  });
+
+  it("registers yaml as highlight-only", () => {
+    const def = getCodeEditorLanguage("yaml");
+    expect(def.tier).toBe("highlight");
+    expect(def.capabilities.lsp).toBe(false);
   });
 
   it("resolves common aliases", () => {
@@ -51,6 +58,8 @@ describe("codeEditorLanguageRegistry", () => {
     expect(resolveCodeEditorLanguage("bash")).toBe("shell");
     expect(resolveCodeEditorLanguage("txt")).toBe("plaintext");
     expect(resolveCodeEditorLanguage("py")).toBe("python");
+    expect(resolveCodeEditorLanguage("tsx")).toBe("typescript");
+    expect(resolveCodeEditorLanguage("yml")).toBe("yaml");
   });
 
   it("falls back unknown aliases to plaintext", () => {

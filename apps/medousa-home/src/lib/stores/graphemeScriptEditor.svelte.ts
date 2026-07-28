@@ -307,9 +307,7 @@ export class GraphemeScriptEditorStore {
     this.compileError = null;
     this.saveError = null;
     this.runError = null;
-    if (def.tier === "stub") {
-      this.statusMessage = `${def.label} preview — syntax plug-in not wired yet`;
-    } else if (def.tier === "highlight") {
+    if (def.tier === "highlight") {
       this.statusMessage = `${def.label} — highlight only`;
     } else {
       this.statusMessage = null;

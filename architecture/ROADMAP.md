@@ -5,11 +5,25 @@
 
 First-run UX, Home shell milestones, turn-loop FSM, user profiles (Phases 0–6), **centralized agent runtime**, **0.5.0 Vault / Versions / Liquid**, **0.6.0 Shared / Peer mesh / Dynamic + Home polish**, and **0.7.0 Accounts / Liquid depth / Browser act + Languages** are **shipped**. See [turn-runtime-and-lanes.md](turn-runtime-and-lanes.md), [ADR-002](../docs/architecture/decisions/adr-002-user-profiles.md), [v0.5.0-vault-versions-plan.md](v0.5.0-vault-versions-plan.md), [v0.6.0-shared-mode-plan.md](v0.6.0-shared-mode-plan.md), [v0.6.0-peer-mesh-plan.md](v0.6.0-peer-mesh-plan.md), [v0.7.0-plan.md](v0.7.0-plan.md).
 
-**Next focus:** felt polish residual (empty states, F3–F5), optional mesh `client.relay`, inference profiles, **Forge integration phases** (daemon routes, ACP executors, Home review surface) — see below.
+**Next focus:** felt polish residual (empty states, F3–F5), optional mesh `client.relay`, inference profiles, **Forge** Home review surface, **coding engine** package polish — see below.
 
-Full plans: **[v0.8.0-forge-plan.md](v0.8.0-forge-plan.md)** · **[v0.6.0-shared-mode-plan.md](v0.6.0-shared-mode-plan.md)** · **[v0.6.0-peer-mesh-plan.md](v0.6.0-peer-mesh-plan.md)** · **[home-messaging-matrix.md](home-messaging-matrix.md)** · [ADR-011](../docs/architecture/decisions/adr-011-shared-mode-portal-and-mesh.md) · **[workshop-and-automations-plan.md](workshop-and-automations-plan.md)** · **[polish-and-package-plan.md](polish-and-package-plan.md)** · **[operators-guide-docs-epic.md](operators-guide-docs-epic.md)**
+Full plans: **[v0.8.0-forge-plan.md](v0.8.0-forge-plan.md)** · **[coding-engine-orchestrator.md](coding-engine-orchestrator.md)** · **[v0.6.0-shared-mode-plan.md](v0.6.0-shared-mode-plan.md)** · **[v0.6.0-peer-mesh-plan.md](v0.6.0-peer-mesh-plan.md)** · **[home-messaging-matrix.md](home-messaging-matrix.md)** · [ADR-011](../docs/architecture/decisions/adr-011-shared-mode-portal-and-mesh.md) · **[workshop-and-automations-plan.md](workshop-and-automations-plan.md)** · **[polish-and-package-plan.md](polish-and-package-plan.md)** · **[operators-guide-docs-epic.md](operators-guide-docs-epic.md)**
 
 ---
+
+## Coding engine / LSP Orchestrator
+
+| Slice | Status |
+|-------|--------|
+| Home CM feel (find/prefs/outline/problems) | ✅ |
+| Language highlight packs (python/ts/rust/yaml) | ✅ |
+| `medousa-code` MVP + Grapheme backend | ✅ |
+| Home → Orchestrator via `/v1/code/lsp` | ✅ |
+| Daemon cognition tools (`cognition_code_*`) | ✅ |
+| External LSPs + Packages (`coding-engine`, `langservers`) | ✅ |
+| Multi-client fan-out + doc versions | ✅ |
+| Forge worktree `--allow-root` | ✅ |
+| Detamu bridge hooks | ✅ stub (`/v1/detamu/*`) |
 
 ## 0.8.0 Forge core (in progress)
 

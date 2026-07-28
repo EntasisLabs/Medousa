@@ -400,6 +400,7 @@ async fn main() -> Result<()> {
         last_context_usage_by_session: Arc::new(RwLock::new(HashMap::new())),
         client_registry: medousa::browser_handlers::ClientRegistry::new(),
         forge,
+        coding_engine: Some(medousa::daemon::coding_engine_host::CodingEngineHost::new()),
     };
 
     medousa::turn_worker_notify::register_ingest_channel_delivery_bridge(

@@ -1808,6 +1808,22 @@ export async function getGraphemeLspWorkspace(): Promise<GraphemeLspWorkspaceRes
   return invoke<GraphemeLspWorkspaceResponse>("grapheme_get_lsp_workspace");
 }
 
+export type CodingEngineInfoResponse = {
+  available: boolean;
+  url: string;
+  health_url: string;
+  lsp_url: string;
+  daemon_lsp_path: string;
+  workspace_root: string;
+  workspace_root_uri: string;
+  bind: string;
+  message: string;
+};
+
+export async function getCodingEngineInfo(): Promise<CodingEngineInfoResponse> {
+  return invoke<CodingEngineInfoResponse>("coding_engine_info");
+}
+
 export function daemonWebSocketUrl(path: string): Promise<string> {
   return getDaemonUrl().then((base) => {
     const normalized = base.replace(/\/$/, "");

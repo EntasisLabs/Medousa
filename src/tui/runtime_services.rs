@@ -220,6 +220,7 @@ pub(crate) async fn assemble_tui_runtime(
         turn_scope.clone(),
     )?;
     crate::shell_tools::register_shell_tools(&mut tool_registry, runtime.clone())?;
+    crate::code_intelligence_tools::register_code_intelligence_tools(&mut tool_registry)?;
     crate::ui_present_tools::register_ui_present_tools(
         &mut tool_registry,
         turn_scope.clone(),

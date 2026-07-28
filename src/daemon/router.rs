@@ -318,6 +318,9 @@ pub fn build_feature_routers(
         ))
         .merge(workspace_router)
         .merge(crate::daemon::forge_api::forge_router(state.clone()))
+        .merge(crate::daemon::coding_engine_host::coding_engine_router(
+            state.clone(),
+        ))
         .merge(environment_router)
         .merge(crate::feed_handlers::feed_router())
         .merge(crate::component_store_handlers::component_store_router())
