@@ -317,6 +317,7 @@ pub fn build_feature_routers(
             state.platform.agent_handle().memory_reader.clone(),
         ))
         .merge(workspace_router)
+        .merge(crate::daemon::forge_api::forge_router(state.clone()))
         .merge(environment_router)
         .merge(crate::feed_handlers::feed_router())
         .merge(crate::component_store_handlers::component_store_router())

@@ -92,6 +92,8 @@ pub struct AppState {
     /// Latest turn-start context budget per session (from `context_usage` stream events).
     pub last_context_usage_by_session: Arc<RwLock<HashMap<String, ContextUsageReport>>>,
     pub client_registry: ClientRegistry,
+    /// Forge — durable version-controlled work custody (undertakings).
+    pub forge: Arc<medousa_forge::forge::Forge>,
 }
 
 impl AppState {

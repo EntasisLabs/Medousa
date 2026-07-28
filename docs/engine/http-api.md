@@ -9,7 +9,7 @@ Types: [`medousa-types`](../../crates/medousa-types/) (`daemon_api`, `session`, 
 SDK: [`docs/sdk/api-reference.md`](../sdk/api-reference.md).  
 Component notes: [component-daemon.md](../../architecture/component-daemon.md).
 
-Subsystem guides: [interactive-streaming](interactive-streaming.md) · [artifacts](artifacts.md) · [vault](vault.md) · [calendar](calendar.md) · [workspace](workspace.md) · [agent-tools](agent-tools.md) · [runtime-config](runtime-config.md) · [extensions](extensions.md)
+Subsystem guides: [interactive-streaming](interactive-streaming.md) · [artifacts](artifacts.md) · [vault](vault.md) · [calendar](calendar.md) · [workspace](workspace.md) · [forge](forge.md) · [agent-tools](agent-tools.md) · [runtime-config](runtime-config.md) · [extensions](extensions.md)
 
 ---
 
@@ -220,7 +220,32 @@ See [ADR-008](../architecture/decisions/adr-008-hot-swappable-agent-runtime.md) 
 | POST | `/v1/workspace/rebuild` | Rebuild projector |
 | GET | `/v1/workspace/stream` | SSE feed |
 
-See [workspace.md](workspace.md).
+Guide: [workspace.md](workspace.md).
+
+---
+
+## Forge (undertakings)
+
+Custody of intentional work episodes over a git target (vault or any repo). Distinct from workspace cards and vault Versions.
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| POST | `/v1/forge/items` | Register |
+| GET | `/v1/forge/items` | List |
+| GET | `/v1/forge/items/{id}` | Get |
+| POST | `/v1/forge/items/{id}/provision` | Provision env |
+| POST | `/v1/forge/items/{id}/attempts` | Begin attempt → lease |
+| POST | `/v1/forge/leases/{lease_id}/heartbeat` | Heartbeat |
+| POST | `/v1/forge/leases/{lease_id}/complete` | Seal |
+| POST | `/v1/forge/leases/{lease_id}/interrupt` | Interrupt |
+| POST | `/v1/forge/leases/{lease_id}/fail` | Fail |
+| POST | `/v1/forge/items/{id}/decisions` | Review decision |
+| POST | `/v1/forge/items/{id}/apply` | Apply disposition |
+| POST | `/v1/forge/items/{id}/discard` | Discard |
+| POST | `/v1/forge/items/{id}/run-script` | Script adapter |
+| POST | `/v1/forge/items/{id}/export` | Export bundle |
+
+Guide: [forge.md](forge.md).
 
 ---
 
