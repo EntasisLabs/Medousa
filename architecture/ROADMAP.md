@@ -3,11 +3,23 @@
 > **Status:** Living document (updated 2026-07)  
 > **Historical plans:** [archive/README.md](archive/README.md)
 
-First-run UX, Home shell milestones, turn-loop FSM, user profiles (Phases 0–6), **centralized agent runtime**, **0.5.0 Vault / Versions / Liquid**, and **0.6.0 Shared / Peer mesh / Dynamic + Home polish** are **shipped**. See [turn-runtime-and-lanes.md](turn-runtime-and-lanes.md), [ADR-002](../docs/architecture/decisions/adr-002-user-profiles.md), [v0.5.0-vault-versions-plan.md](v0.5.0-vault-versions-plan.md), [v0.6.0-shared-mode-plan.md](v0.6.0-shared-mode-plan.md), [v0.6.0-peer-mesh-plan.md](v0.6.0-peer-mesh-plan.md).
+First-run UX, Home shell milestones, turn-loop FSM, user profiles (Phases 0–6), **centralized agent runtime**, **0.5.0 Vault / Versions / Liquid**, **0.6.0 Shared / Peer mesh / Dynamic + Home polish**, and **0.7.0 Accounts / Liquid depth / Browser act + Languages** are **shipped**. See [turn-runtime-and-lanes.md](turn-runtime-and-lanes.md), [ADR-002](../docs/architecture/decisions/adr-002-user-profiles.md), [v0.5.0-vault-versions-plan.md](v0.5.0-vault-versions-plan.md), [v0.6.0-shared-mode-plan.md](v0.6.0-shared-mode-plan.md), [v0.6.0-peer-mesh-plan.md](v0.6.0-peer-mesh-plan.md), [v0.7.0-plan.md](v0.7.0-plan.md).
 
 **Next focus:** felt polish residual (empty states, F3–F5), optional mesh `client.relay`, inference profiles — see below.
 
 Full plans: **[v0.6.0-shared-mode-plan.md](v0.6.0-shared-mode-plan.md)** · **[v0.6.0-peer-mesh-plan.md](v0.6.0-peer-mesh-plan.md)** · **[home-messaging-matrix.md](home-messaging-matrix.md)** · [ADR-011](../docs/architecture/decisions/adr-011-shared-mode-portal-and-mesh.md) · **[workshop-and-automations-plan.md](workshop-and-automations-plan.md)** · **[polish-and-package-plan.md](polish-and-package-plan.md)** · **[operators-guide-docs-epic.md](operators-guide-docs-epic.md)**
+
+---
+
+## 0.7.0 Accounts, Liquid depth, Browser + Languages (shipped)
+
+**Goal:** ChatGPT/Cursor account connections that unlock coding agents (and ChatGPT-backed chat via Codex ACP); richer Liquid notes surface (CSV/Excel paste, chart export, note HTML/MD export, grammar check); shared-browser click/type plus markup languages in the Scripts editor.
+
+| Pillar | Plan | Status |
+|--------|------|--------|
+| Accounts | [v0.7.0-plan.md](v0.7.0-plan.md) | ✅ Connections UI + vendor CLI login + ACP auth status |
+| Liquid depth | [v0.7.0-plan.md](v0.7.0-plan.md) | ✅ CSV/Excel paste, chart PNG/SVG/CSV, note HTML/MD, grammar check |
+| Browser + Languages | [v0.7.0-plan.md](v0.7.0-plan.md) | ✅ `cognition_browser_act` + handoff polish; HTML/CSS/JS/XML/JSON highlight |
 
 ---
 

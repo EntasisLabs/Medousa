@@ -53,11 +53,19 @@ Toolbar toggles when the note kind supports them:
 
 | Action | Where |
 |--------|--------|
-| **Export PDF…** / **Export Word…** | Overflow (⇧P for PDF) → preview → save |
+| **Export PDF…** / **Export Word…** / **HTML** / **Markdown** | Overflow (⇧P for PDF) → preview → save |
 | **Talk about this note** | Overflow / context menu → grounds chat |
 | **Send to Work** | Same menus → Work card |
 
-Disabled for **Loose file** notes outside the vault.
+Disabled for **Loose file** notes outside the vault. HTML export is self-contained (Liquid frozen where needed); Markdown export keeps the clean note plus fences.
+
+## Proofread and tables
+
+| Feature | How |
+|---------|-----|
+| **Grammar check** | Settings → Preferences → **Notes proofread** — off by default; underlines suggestions in Build with fixes you can accept. LanguageTool-compatible endpoint; only note text is sent, never paths |
+| **Paste CSV / Excel** | Copy from a spreadsheet and paste straight into a **Data table** or a chart's data editor — or use the table's **Import** for `.xlsx` / `.csv` / `.tsv` |
+| **Chart export** | Chart overflow → **PNG**, **SVG**, or **Copy CSV** of the underlying table |
 
 ## Agent updates and conflicts
 

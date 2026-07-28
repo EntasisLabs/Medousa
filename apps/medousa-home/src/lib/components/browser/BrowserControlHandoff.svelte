@@ -14,7 +14,7 @@
   const label = $derived.by(() => {
     switch (browser.control) {
       case "agent":
-        return "Medousa is exploring";
+        return browser.agentActivity ?? "Medousa is exploring";
       case "awaiting_operator":
         return "Verification needed";
       default:
@@ -52,7 +52,7 @@
   <div class="browser-agent-banner" role="status">
     <span class="browser-agent-banner-label">
       <span class="browser-agent-banner-dot" aria-hidden="true"></span>
-      Medousa is exploring
+      {browser.agentActivity ?? "Medousa is exploring"}
     </span>
     <button
       type="button"

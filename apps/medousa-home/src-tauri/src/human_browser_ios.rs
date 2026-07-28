@@ -30,6 +30,108 @@ const NEW_WINDOW_POLL_JS: &str = r#"(function(){var u=document.documentElement.g
 
 const SNAPSHOT_JS: &str = r#"(function(){try{var html=document.documentElement?document.documentElement.outerHTML:"";var url=window.location.href||"";return JSON.stringify({url:url,html:html});}catch(e){return JSON.stringify({url:"",html:""});}})();"#;
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct BrowserActRequest {
+    pub action: String,
+    #[serde(default)]
+    pub selector: Option<String>,
+    #[serde(default)]
+    pub text: Option<String>,
+    #[serde(default)]
+    pub key: Option<String>,
+    #[serde(default)]
+    pub value: Option<String>,
+    #[serde(default)]
+    pub delta_y: Option<i64>,
+    #[serde(default)]
+    pub ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowserActReportDto {
+    pub ok: bool,
+    pub url: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+fn browser_act_js(request: &BrowserActRequest) -> Result<String, String> {
+    let payload = serde_json::to_string(request).map_err(|err| err.to_string())?;
+    Ok(format!(
+        r#"(function(){{
+try{{
+  var req={payload};
+  function finish(ok,error){{return JSON.stringify({{ok:ok,url:window.location.href||"",error:error||null}});}}
+  function visible(el){{if(!el)return false;var r=el.getBoundingClientRect();return r.width>0&&r.height>0;}}
+  var el=req.selector?document.querySelector(req.selector):null;
+  if(req.selector&&!el)return finish(false,"no element matches selector: "+req.selector);
+  if(req.selector&&!visible(el))return finish(false,"target element is not visible: "+req.selector);
+  switch(req.action){{
+    case "click": el.click(); return finish(true);
+    case "type":
+      el.focus();
+      if("value" in el){{el.value=req.text||"";el.dispatchEvent(new Event("input",{{bubbles:true}}));el.dispatchEvent(new Event("change",{{bubbles:true}}));return finish(true);}}
+      if(el.isContentEditable){{el.textContent=req.text||"";el.dispatchEvent(new Event("input",{{bubbles:true}}));return finish(true);}}
+      return finish(false,"target does not accept text input");
+    case "press":
+      var key=req.key||"Enter";
+      ["keydown","keypress","keyup"].forEach(function(t){{el.dispatchEvent(new KeyboardEvent(t,{{key:key,bubbles:true}}));}});
+      if(key==="Enter"&&el.form&&el.tagName!=="TEXTAREA"){{el.form.requestSubmit?el.form.requestSubmit():el.form.submit();}}
+      return finish(true);
+    case "scroll":
+      if(el){{el.scrollIntoView(true);}}else{{window.scrollBy(0,req.delta_y||400);}}
+      return finish(true);
+    case "select":
+      if(el.tagName!=="SELECT")return finish(false,"target is not a <select>");
+      el.value=req.value||"";el.dispatchEvent(new Event("change",{{bubbles:true}}));
+      return finish(true);
+    default: return finish(false,"unsupported action: "+req.action);
+  }}
+}}catch(e){{return JSON.stringify({{ok:false,url:"",error:String(e)}});}}
+}})();"#
+    ))
+}
+
+/// Run a click/type/scroll/select action against the live overlay WKWebView.
+/// `wait` is handled by the caller (plain sleep) since it needs no DOM access.
+pub async fn browser_act_embed(
+    app: &AppHandle,
+    request: &BrowserActRequest,
+) -> Result<BrowserActReportDto, String> {
+    if request.action == "wait" {
+        let ms = request.ms.unwrap_or(1000).min(15_000);
+        tokio::time::sleep(Duration::from_millis(ms)).await;
+        return Ok(BrowserActReportDto {
+            ok: true,
+            url: String::new(),
+            error: None,
+        });
+    }
+    let js = browser_act_js(request)?;
+    let raw = tauri::async_runtime::spawn_blocking(move || eval_js_blocking(&js))
+        .await
+        .map_err(|err| err.to_string())??;
+    let parsed: serde_json::Value = serde_json::from_str(raw.trim()).map_err(|err| err.to_string())?;
+    let _ = app;
+    Ok(BrowserActReportDto {
+        ok: parsed
+            .get("ok")
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false),
+        url: parsed
+            .get("url")
+            .and_then(|value| value.as_str())
+            .unwrap_or("")
+            .to_string(),
+        error: parsed
+            .get("error")
+            .and_then(|value| value.as_str())
+            .map(str::to_string),
+    })
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct HumanBrowserNewWindowPayload {
@@ -834,6 +936,14 @@ pub async fn human_browser_snapshot_markdown(
         title: fetched.title,
         markdown: fetched.markdown,
     })
+}
+
+#[tauri::command]
+pub async fn human_browser_act(
+    app: AppHandle,
+    request: BrowserActRequest,
+) -> Result<BrowserActReportDto, String> {
+    browser_act_embed(&app, &request).await
 }
 
 #[tauri::command]

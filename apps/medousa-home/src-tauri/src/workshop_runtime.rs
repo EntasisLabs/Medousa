@@ -76,6 +76,48 @@ pub(crate) fn find_command_in_path(command: &str) -> Option<PathBuf> {
     })
 }
 
+/// Prepend common vendor / Node install dirs so the daemon can spawn ACP CLIs.
+fn enrich_daemon_path(command: &mut Command) {
+    let mut extras: Vec<PathBuf> = Vec::new();
+    if let Some(home) = std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("USERPROFILE").map(PathBuf::from))
+    {
+        extras.push(home.join(".local").join("bin"));
+        extras.push(home.join(".npm-global").join("bin"));
+        extras.push(home.join("bin"));
+        extras.push(home.join(".volta").join("bin"));
+        extras.push(home.join(".cargo").join("bin"));
+        let nvm_node = home.join(".nvm").join("versions").join("node");
+        if let Ok(entries) = fs::read_dir(&nvm_node) {
+            let mut versions: Vec<PathBuf> = entries
+                .filter_map(|e| e.ok().map(|e| e.path()))
+                .filter(|p| p.is_dir())
+                .collect();
+            versions.sort();
+            versions.reverse();
+            for version_dir in versions.into_iter().take(3) {
+                extras.push(version_dir.join("bin"));
+            }
+        }
+    }
+    if cfg!(target_os = "macos") {
+        extras.push(PathBuf::from("/opt/homebrew/bin"));
+        extras.push(PathBuf::from("/usr/local/bin"));
+    }
+    let mut parts: Vec<PathBuf> = extras.into_iter().filter(|d| d.is_dir()).collect();
+    if let Some(path_var) = std::env::var_os("PATH") {
+        for dir in std::env::split_paths(&path_var) {
+            if !parts.iter().any(|existing| existing == &dir) {
+                parts.push(dir);
+            }
+        }
+    }
+    if let Ok(joined) = std::env::join_paths(parts) {
+        command.env("PATH", joined);
+    }
+}
+
 /// Optional binaries installed via Settings → Packages / Installer land here.
 pub(crate) fn shared_bin_binary(name: &str) -> Option<PathBuf> {
     let candidate = crate::paths::medousa_data_dir()
@@ -484,6 +526,8 @@ pub fn spawn_local_engine(
         "MEDOUSA_DATA_DIR",
         data_dir.to_string_lossy().to_string(),
     );
+    // So ACP can find `agent` / `codex` / `npx` even when the GUI PATH is thin.
+    enrich_daemon_path(&mut command);
     apply_daemon_messaging_env(&mut command);
     apply_daemon_apns_env(&mut command);
     command.stdin(Stdio::null());

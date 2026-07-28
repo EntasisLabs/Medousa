@@ -814,6 +814,8 @@ Set `type:` on a `chart` fence. The catalog demo above uses **bar**. Other value
 
 Start from slash **Blocks → Chart** so the table skeleton matches the type.
 
+**Chart data + export.** Paste a CSV/Excel selection straight into the chart's data editor (or the table editor for Data tables) to replace the pipe table. From a rendered chart's overflow you can export **PNG** or **SVG**, or **Copy CSV** of the underlying table.
+
 ## Timeline layouts
 
 Default timeline is a vertical rail with a time gutter (see **Timeline** in the catalog). Use `layout: snapshot` for a horizontal track with peek cards:

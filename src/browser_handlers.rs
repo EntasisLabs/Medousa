@@ -12,7 +12,8 @@ use crate::browser_host_client::browser_host_healthy;
 use medousa_browser_lite::search_ddg_html_cached_async;
 
 use crate::browser_sessions::{
-    complete_browser_session, get_browser_session, BrowserSessionCompleteRequest,
+    complete_browser_act_session, complete_browser_session, get_browser_session,
+    BrowserActOutcome, BrowserSessionCompleteRequest,
 };
 use crate::daemon::state::AppState;
 
@@ -189,6 +190,39 @@ pub async fn resume_browser_session_handler(
     }
 }
 
+#[derive(Debug, Deserialize)]
+pub struct CompleteBrowserActRequest {
+    pub ok: bool,
+    #[serde(default)]
+    pub url: String,
+    #[serde(default)]
+    pub error: Option<String>,
+}
+
+pub async fn complete_browser_act_handler(
+    Path(session_id): Path<String>,
+    Json(request): Json<CompleteBrowserActRequest>,
+) -> Json<serde_json::Value> {
+    match complete_browser_act_session(
+        &session_id,
+        BrowserActOutcome {
+            ok: request.ok,
+            url: request.url,
+            error: request.error,
+        },
+    ) {
+        Some(session) => Json(serde_json::json!({
+            "ok": true,
+            "session_id": session.session_id,
+            "status": session.status,
+        })),
+        None => Json(serde_json::json!({
+            "ok": false,
+            "error": format!("session not found: {session_id}"),
+        })),
+    }
+}
+
 fn browser_routes() -> Router<AppState> {
     Router::new()
         .route("/clients/register", post(register_client))
@@ -200,6 +234,10 @@ fn browser_routes() -> Router<AppState> {
         .route(
             "/browser/sessions/{session_id}/complete",
             post(complete_browser_session_handler),
+        )
+        .route(
+            "/browser/sessions/{session_id}/complete-act",
+            post(complete_browser_act_handler),
         )
         .route(
             "/browser/sessions/{session_id}/resume",

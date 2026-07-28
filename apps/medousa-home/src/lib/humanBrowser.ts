@@ -185,6 +185,29 @@ export async function humanBrowserSnapshotMarkdown(
   return invoke("human_browser_snapshot_markdown", { maxChars });
 }
 
+export interface HumanBrowserActRequest {
+  action: string;
+  selector?: string | null;
+  text?: string | null;
+  key?: string | null;
+  value?: string | null;
+  delta_y?: number | null;
+  ms?: number | null;
+}
+
+export interface HumanBrowserActReport {
+  ok: boolean;
+  url: string;
+  error?: string | null;
+}
+
+/** Mobile (iOS/Android): run a click/type/scroll/select act in the overlay webview. */
+export async function humanBrowserAct(
+  request: HumanBrowserActRequest,
+): Promise<HumanBrowserActReport> {
+  return invoke("human_browser_act", { request });
+}
+
 export interface HumanBrowserNavigatedPayload {
   url: string;
   title?: string | null;

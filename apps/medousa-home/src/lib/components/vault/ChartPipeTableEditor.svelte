@@ -5,6 +5,10 @@
     findFirstPipeTable,
     serializePipeTable,
   } from "$lib/utils/markdownTable";
+  import {
+    clipboardHasSpreadsheet,
+    spreadsheetDataFromClipboard,
+  } from "$lib/utils/spreadsheetPaste";
   import { seedChartTableMarkdown } from "$lib/utils/vaultChartFence";
   import type { ChartFenceType } from "$lib/utils/liquidFenceTemplates";
 
@@ -262,6 +266,16 @@
     }
   }
 
+  function handleSheetPaste(event: ClipboardEvent) {
+    if (disabled) return;
+    const data = event.clipboardData;
+    if (!data || !clipboardHasSpreadsheet(data)) return;
+    const parsed = spreadsheetDataFromClipboard(data);
+    if (!parsed) return;
+    event.preventDefault();
+    emit(parsed.headers, parsed.rows);
+  }
+
 </script>
 
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
@@ -270,6 +284,7 @@
   role="group"
   aria-label="Chart data table"
   onkeydown={handleSheetKeydown}
+  onpaste={handleSheetPaste}
 >
   <div class="overflow-x-auto">
     <table class="ledger-table">

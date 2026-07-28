@@ -3627,7 +3627,8 @@
   }
 
   .composer-anchored-menu {
-    @apply z-[60] flex min-w-[16rem] max-w-[20rem] flex-col overflow-hidden rounded-xl;
+    /* Above shell chrome; matches slash menu so body-portaled menus stay selectable. */
+    @apply z-[220] flex min-w-[16rem] max-w-[20rem] flex-col overflow-hidden rounded-xl;
     position: fixed;
     top: 0;
     left: 0;

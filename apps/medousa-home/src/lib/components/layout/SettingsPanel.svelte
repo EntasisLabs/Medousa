@@ -6,6 +6,7 @@
   import SettingsAgentSection from "$lib/components/settings/SettingsAgentSection.svelte";
   import SettingsRuntimeSection from "$lib/components/settings/SettingsRuntimeSection.svelte";
   import SettingsNetworkSection from "$lib/components/settings/SettingsNetworkSection.svelte";
+  import SettingsConnectionsSection from "$lib/components/settings/SettingsConnectionsSection.svelte";
   import SettingsBasementSection from "$lib/components/settings/SettingsBasementSection.svelte";
   import SettingsPackagesSection from "$lib/components/settings/SettingsPackagesSection.svelte";
   import SettingsMcpSection from "$lib/components/settings/SettingsMcpSection.svelte";
@@ -135,6 +136,8 @@
         <SettingsRuntimeSection {mobile} />
       {:else if activeSection === "network"}
         <SettingsNetworkSection {mobile} {visible} {health} />
+      {:else if activeSection === "connections"}
+        <SettingsConnectionsSection />
       {:else if activeSection === "packages"}
         <SettingsPackagesSection {mobile} />
       {:else if activeSection === "mcp"}

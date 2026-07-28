@@ -293,6 +293,96 @@ struct LinkWorkCardRequest {
     work_card_id: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+struct TabActRequest {
+    action: String,
+    #[serde(default)]
+    selector: Option<String>,
+    #[serde(default)]
+    text: Option<String>,
+    #[serde(default)]
+    key: Option<String>,
+    #[serde(default)]
+    value: Option<String>,
+    #[serde(default)]
+    delta_y: Option<i64>,
+    #[serde(default)]
+    ms: Option<u64>,
+}
+
+fn act_blocked_json(control: BrowserControl) -> serde_json::Value {
+    let (code, error) = match control {
+        BrowserControl::AwaitingOperator => (
+            "awaiting_operator",
+            "tab is awaiting operator verification (CAPTCHA/login). Act is blocked until control returns to the agent.",
+        ),
+        _ => (
+            "control_required",
+            "agent does not control this tab. Hand control to the agent before acting.",
+        ),
+    };
+    serde_json::json!({
+        "ok": false,
+        "code": code,
+        "error": error,
+        "binding_used": "human_webview",
+    })
+}
+
+async fn act_tab_group(
+    Path(tab_group_id): Path<String>,
+    Json(request): Json<TabActRequest>,
+) -> Json<serde_json::Value> {
+    let Some(group) = TabGroupManager::get_group(&tab_group_id) else {
+        return Json(serde_json::json!({
+            "ok": false,
+            "code": "no_tab_group",
+            "error": format!("tab group not found: {tab_group_id}"),
+        }));
+    };
+    if group.control != BrowserControl::Agent {
+        return Json(act_blocked_json(group.control));
+    }
+    let Some(app) = crate::human_browser::app_handle() else {
+        return Json(serde_json::json!({
+            "ok": false,
+            "code": "no_human_webview",
+            "error": "human browser webview is not available",
+        }));
+    };
+    let act_request = crate::human_browser::BrowserActRequest {
+        action: request.action.clone(),
+        selector: request.selector.clone(),
+        text: request.text.clone(),
+        key: request.key.clone(),
+        value: request.value.clone(),
+        delta_y: request.delta_y,
+        ms: request.ms,
+    };
+    match crate::human_browser::browser_act_embed(&app, &act_request).await {
+        Ok(report) if report.ok => Json(serde_json::json!({
+            "ok": true,
+            "action": request.action,
+            "selector": request.selector,
+            "url": report.url,
+            "binding_used": "human_webview",
+            "decision": "allow",
+        })),
+        Ok(report) => Json(serde_json::json!({
+            "ok": false,
+            "code": "act_failed",
+            "error": report.error.unwrap_or_else(|| "browser act failed".to_string()),
+            "binding_used": "human_webview",
+        })),
+        Err(err) => Json(serde_json::json!({
+            "ok": false,
+            "code": "act_failed",
+            "error": err,
+            "binding_used": "human_webview",
+        })),
+    }
+}
+
 async fn link_work_card_handler(
     Path(tab_group_id): Path<String>,
     Json(request): Json<LinkWorkCardRequest>,
@@ -365,6 +455,7 @@ fn build_router(state: BrowserHostState) -> Router {
             post(link_work_card_handler),
         )
         .route("/v1/tab-groups/{tab_group_id}/snapshot", post(snapshot_tab_group))
+        .route("/v1/tab-groups/{tab_group_id}/act", post(act_tab_group))
         .with_state(state)
 }
 

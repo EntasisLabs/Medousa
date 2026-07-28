@@ -1,12 +1,15 @@
 <script lang="ts">
   import { tick } from "svelte";
-  import { Bot, Check, ChevronDown, MousePointer2, Terminal } from "@lucide/svelte";
+  import { Bot, Check, ChevronDown, LogIn, MousePointer2, Terminal } from "@lucide/svelte";
+  import BodyPortal from "$lib/components/ui/BodyPortal.svelte";
   import {
     agentRuntimeLabel,
     type ChatAgentRuntime,
   } from "$lib/utils/sessionAgentRuntime";
   import { attachComposerMenuDismiss } from "$lib/utils/composerMenuDismiss";
   import { placeComposerPopover } from "$lib/utils/railPopover";
+  import { accountConnections } from "$lib/stores/accountConnections.svelte";
+  import { settingsNav } from "$lib/stores/settingsNav.svelte";
 
   interface Props {
     value: ChatAgentRuntime;
@@ -22,8 +25,39 @@
   }[] = [
     { id: "medousa", hint: "Native Medousa turns" },
     { id: "cursor", hint: "External Cursor agent" },
-    { id: "codex", hint: "External Codex agent" },
+    { id: "codex", hint: "ChatGPT-backed agent + chat" },
   ];
+
+  $effect(() => {
+    void accountConnections.refresh();
+  });
+
+  /** Signed-out external runtimes stay visible but locked with a sign-in CTA. */
+  function lockedFor(runtime: ChatAgentRuntime): boolean {
+    if (runtime === "medousa") return false;
+    const account = runtime === "codex" ? "chatgpt" : "cursor";
+    const info = accountConnections.connection(account);
+    if (!info) return false;
+    if (!info.binaryPresent) return true;
+    return info.authStatus === "signed_out";
+  }
+
+  function lockHint(runtime: ChatAgentRuntime): string | null {
+    if (!lockedFor(runtime)) return null;
+    const account = runtime === "codex" ? "chatgpt" : "cursor";
+    const info = accountConnections.connection(account);
+    if (info && !info.binaryPresent) {
+      return runtime === "codex"
+        ? "Install Codex CLI — Settings → Connections"
+        : "Install Cursor CLI — Settings → Connections";
+    }
+    return "Sign in — Settings → Connections";
+  }
+
+  function openConnections() {
+    open = false;
+    settingsNav.setActiveSection("connections");
+  }
 
   let open = $state(false);
   let triggerEl = $state<HTMLButtonElement | null>(null);
@@ -105,41 +139,58 @@
   </button>
 
   {#if open}
-    <div
-      bind:this={menuEl}
-      class="composer-anchored-menu chat-runtime-menu"
-      role="listbox"
-      aria-label="Choose agent runtime"
-    >
-      <header class="composer-anchored-menu-header">
-        <div class="min-w-0">
-          <h2 class="text-sm font-semibold text-surface-50">Runtime</h2>
-          <p class="workshop-faint mt-0.5 text-xs">Who runs this turn</p>
+    <!-- Portal out of the presence-dock transform / overflow stack so fixed placement is viewport-true. -->
+    <BodyPortal>
+      <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+      <div
+        bind:this={menuEl}
+        class="composer-anchored-menu chat-runtime-menu"
+        role="listbox"
+        aria-label="Choose agent runtime"
+      >
+        <header class="composer-anchored-menu-header">
+          <div class="min-w-0">
+            <h2 class="text-sm font-semibold text-surface-50">Runtime</h2>
+            <p class="workshop-faint mt-0.5 text-xs">Who runs this turn</p>
+          </div>
+        </header>
+        <div class="composer-anchored-menu-body space-y-0.5">
+          {#each OPTIONS as option (option.id)}
+            {@const locked = lockedFor(option.id)}
+            <button
+              type="button"
+              class="chat-runtime-option"
+              class:chat-runtime-option-active={value === option.id}
+              class:chat-runtime-option-locked={locked}
+              role="option"
+              aria-selected={value === option.id}
+              aria-disabled={locked}
+              onclick={() => {
+                if (locked) {
+                  openConnections();
+                  return;
+                }
+                pick(option.id);
+              }}
+            >
+              {@render runtimeIcon(option.id, 14)}
+              <span class="min-w-0 flex-1 text-left">
+                <span class="block text-[13px] font-medium text-surface-100"
+                  >{agentRuntimeLabel(option.id)}</span
+                >
+                <span class="workshop-faint mt-0.5 block text-[11px]">
+                  {locked ? lockHint(option.id) : option.hint}
+                </span>
+              </span>
+              {#if locked}
+                <LogIn size={13} strokeWidth={2} class="shrink-0 text-primary-300" />
+              {:else if value === option.id}
+                <Check size={14} strokeWidth={2} class="shrink-0 text-primary-300" />
+              {/if}
+            </button>
+          {/each}
         </div>
-      </header>
-      <div class="composer-anchored-menu-body space-y-0.5">
-        {#each OPTIONS as option (option.id)}
-          <button
-            type="button"
-            class="chat-runtime-option"
-            class:chat-runtime-option-active={value === option.id}
-            role="option"
-            aria-selected={value === option.id}
-            onclick={() => pick(option.id)}
-          >
-            {@render runtimeIcon(option.id, 14)}
-            <span class="min-w-0 flex-1 text-left">
-              <span class="block text-[13px] font-medium text-surface-100"
-                >{agentRuntimeLabel(option.id)}</span
-              >
-              <span class="workshop-faint mt-0.5 block text-[11px]">{option.hint}</span>
-            </span>
-            {#if value === option.id}
-              <Check size={14} strokeWidth={2} class="shrink-0 text-primary-300" />
-            {/if}
-          </button>
-        {/each}
       </div>
-    </div>
+    </BodyPortal>
   {/if}
 </div>

@@ -43,11 +43,12 @@ impl TabGroupManager {
     }
 
     pub fn get_group(tab_group_id: &str) -> Option<TabGroup> {
-        GROUPS
-            .lock()
-            .expect("tab groups")
-            .get(tab_group_id)
-            .cloned()
+        let guard = GROUPS.lock().expect("tab groups");
+        if tab_group_id == "current" {
+            // Daemon callers don't track group ids — resolve to the most recent group.
+            return guard.values().last().cloned();
+        }
+        guard.get(tab_group_id).cloned()
     }
 
     pub fn ensure_group(tab_group_id: &str) -> TabGroup {

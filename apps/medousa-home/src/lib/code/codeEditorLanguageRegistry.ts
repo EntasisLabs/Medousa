@@ -1,6 +1,11 @@
 import type { Extension } from "@codemirror/state";
 import { LanguageSupport } from "@codemirror/language";
 import { markdown } from "@codemirror/lang-markdown";
+import { javascript } from "@codemirror/lang-javascript";
+import { json } from "@codemirror/lang-json";
+import { html } from "@codemirror/lang-html";
+import { css } from "@codemirror/lang-css";
+import { xml } from "@codemirror/lang-xml";
 import {
   graphemeEditorTheme,
   graphemeLanguageSupport,
@@ -22,6 +27,9 @@ export type CodeEditorLanguageId =
   | "rust"
   | "javascript"
   | "json"
+  | "html"
+  | "css"
+  | "xml"
   | "yaml";
 
 export interface CodeEditorLanguageCapabilities {
@@ -136,17 +144,39 @@ export const CODE_EDITOR_LANGUAGES: Record<
   javascript: {
     id: "javascript",
     label: "JavaScript",
-    tier: "stub",
-    capabilities: STUB,
+    tier: "highlight",
+    capabilities: HIGHLIGHT_ONLY,
     fileExtension: "js",
-    aliases: ["js"],
+    aliases: ["js", "jsx", "mjs"],
   },
   json: {
     id: "json",
     label: "JSON",
-    tier: "stub",
-    capabilities: STUB,
+    tier: "highlight",
+    capabilities: HIGHLIGHT_ONLY,
     fileExtension: "json",
+  },
+  html: {
+    id: "html",
+    label: "HTML",
+    tier: "highlight",
+    capabilities: HIGHLIGHT_ONLY,
+    fileExtension: "html",
+    aliases: ["htm"],
+  },
+  css: {
+    id: "css",
+    label: "CSS",
+    tier: "highlight",
+    capabilities: HIGHLIGHT_ONLY,
+    fileExtension: "css",
+  },
+  xml: {
+    id: "xml",
+    label: "XML",
+    tier: "highlight",
+    capabilities: HIGHLIGHT_ONLY,
+    fileExtension: "xml",
   },
   yaml: {
     id: "yaml",
@@ -215,6 +245,16 @@ export function buildCodeEditorLanguageExtensions(
       ];
     case "shell":
       return [graphemeEditorTheme, shellLanguageSupport];
+    case "javascript":
+      return [graphemeEditorTheme, javascript()];
+    case "json":
+      return [graphemeEditorTheme, json()];
+    case "html":
+      return [graphemeEditorTheme, html()];
+    case "css":
+      return [graphemeEditorTheme, css()];
+    case "xml":
+      return [graphemeEditorTheme, xml()];
     case "plaintext":
       return [graphemeEditorTheme, medousaSyntaxHighlighting];
     default:

@@ -2781,6 +2781,14 @@ pub struct AgentRuntimeInfo {
     /// Native Medousa turns use `/v1/turns` — not `/v1/agents/sessions`.
     #[serde(default)]
     pub uses_native_turns: bool,
+    /// Vendor account sign-in: `signed_in` | `signed_out` | `unknown`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auth_status: Option<String>,
+    /// Vendor CLI binary present on PATH.
+    #[serde(default)]
+    pub binary_present: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auth_detail: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -4,6 +4,12 @@ Notes about recent Medousa changes and what still works together. Check **Settin
 
 Related: [Workshops and connections](guide:workshops-connections) · [Desktop, web, and phone](guide:platform-matrix)
 
+## 0.7.0 highlights
+
+- **Sign in to ChatGPT and Cursor** — Settings → Connections unlocks the coding agents; ChatGPT doubles as a chat path via Codex
+- **Richer notes** — paste CSV/Excel straight into tables and charts, export charts as PNG/SVG/CSV, export notes as HTML or Markdown, and proofread with an optional grammar check
+- **Agent click and type** — Medousa can act in the shared Web tab (with you always able to take the wheel), and the Scripts editor highlights HTML, CSS, JS, XML, and JSON
+
 ## 0.6.1
 
 - **Windows idle** — popout windows no longer keep WebView2 busy when closed; open them only when you need them

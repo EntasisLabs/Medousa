@@ -40,6 +40,10 @@ pub async fn browser_host_search(query: &str, max_results: usize) -> Result<Sear
     .await
 }
 
+pub async fn browser_host_act(body: serde_json::Value) -> Result<serde_json::Value, String> {
+    post_json("/v1/tab-groups/current/act", body).await
+}
+
 pub async fn browser_host_fetch(url: &str, max_chars: usize) -> Result<FetchResult, String> {
     post_json(
         "/v1/fetch",

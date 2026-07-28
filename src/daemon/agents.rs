@@ -11,8 +11,8 @@ use axum::Json;
 use chrono::Utc;
 use futures_util::Stream;
 use medousa_acp_client::{
-    AcpClient, AcpEvent, AgentRuntimeKind, ExternalAcpClient, external_runtime_config,
-    runtime_availability,
+    AcpClient, AcpEvent, AgentRuntimeKind, ExternalAcpClient, RuntimeAuthStatus,
+    external_runtime_config, runtime_auth_probe, runtime_availability,
 };
 use medousa_types::{
     AgentPermissionRequestListQuery, AgentPermissionRequestListResponse,
@@ -66,12 +66,21 @@ pub async fn list_agent_runtimes() -> Json<AgentRuntimeListResponse> {
         .into_iter()
         .map(|kind| {
             let (available, command, detail) = runtime_availability(kind);
+            let probe = runtime_auth_probe(kind);
+            let auth_status = match probe.status {
+                RuntimeAuthStatus::SignedIn => Some("signed_in".to_string()),
+                RuntimeAuthStatus::SignedOut => Some("signed_out".to_string()),
+                RuntimeAuthStatus::Unknown => Some("unknown".to_string()),
+            };
             AgentRuntimeInfo {
                 runtime: kind.as_str().to_string(),
                 available,
                 command,
                 detail,
                 uses_native_turns: matches!(kind, AgentRuntimeKind::Medousa),
+                auth_status,
+                binary_present: probe.binary_present,
+                auth_detail: probe.detail,
             }
         })
         .collect();
@@ -122,7 +131,35 @@ pub async fn create_agent_session(
         config.args = args;
     }
 
+    // Fail loudly on auth problems instead of looking "healthy" on the stub
+    // bridge — the Connections UI keys off these distinct states.
+    let probe = runtime_auth_probe(kind);
+    if probe.binary_present && matches!(probe.status, RuntimeAuthStatus::SignedOut) {
+        let hint = probe
+            .detail
+            .unwrap_or_else(|| "vendor CLI not signed in".into());
+        return Err((
+            StatusCode::UNAUTHORIZED,
+            format!("{hint} — sign in from Settings → Connections"),
+        ));
+    }
+
     let acp_session = ACP_CLIENT.create_session(&config).await.map_err(|e| {
+        let message = e.to_string();
+        let lower = message.to_lowercase();
+        if lower.contains("auth")
+            || lower.contains("login")
+            || lower.contains("unauthorized")
+            || lower.contains("401")
+        {
+            return (
+                StatusCode::UNAUTHORIZED,
+                format!(
+                    "{} sign-in expired or missing — sign in from Settings → Connections",
+                    kind.as_str()
+                ),
+            );
+        }
         (StatusCode::BAD_GATEWAY, format!("ACP create_session failed: {e}"))
     })?;
 

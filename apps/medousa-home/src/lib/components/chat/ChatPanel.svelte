@@ -611,6 +611,7 @@
     el.style.transform = "";
     el.style.transformOrigin = "";
     el.style.willChange = "";
+    el.style.backfaceVisibility = "";
     presenceCenterOffset = 0;
     presenceDockMode = "docked";
   }
