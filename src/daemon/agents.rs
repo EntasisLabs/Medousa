@@ -494,6 +494,14 @@ async fn run_prompt_pump(
                     None,
                 );
             }
+            AcpEvent::ReasoningDelta { text } => {
+                publish_agent_reasoning_event(
+                    &entry,
+                    &live.agent_session_id,
+                    &live.runtime,
+                    text,
+                );
+            }
             AcpEvent::MessageDone { text } => {
                 publish_agent_event(
                     &entry,
@@ -686,6 +694,52 @@ fn publish_agent_event(
         final_text,
         tool_names: None,
         terminal,
+        emitted_at_utc: Utc::now(),
+        budget_request_id: None,
+        requested_rounds: None,
+        work_id: None,
+        tool_run_id: None,
+        tool_name: None,
+        tool_status: None,
+        tool_input_summary: None,
+        tool_output_summary: None,
+        tool_round: None,
+        tool_artifact_refs: None,
+        ui_artifact: None,
+        previous_artifact_id: None,
+        root_artifact_id: None,
+        ui_scene: None,
+        operator_message: None,
+        debug_message: None,
+        browser_session_id: None,
+        browser_challenge_url: None,
+        context_usage: None,
+        permission_request_id: None,
+        agent_session_id: Some(agent_session_id.to_string()),
+        agent_runtime: Some(runtime.to_string()),
+    };
+    publish_interactive_turn_event(entry, Ok(event));
+}
+
+/// Forward an ACP thinking/reasoning trace chunk into the chat stream's
+/// `reasoning_delta` channel so Home renders it in the collapsed thinking tray.
+fn publish_agent_reasoning_event(
+    entry: &TurnStreamEntry,
+    agent_session_id: &str,
+    runtime: &str,
+    text: String,
+) {
+    let event = InteractiveTurnStreamEvent {
+        turn_id: agent_session_id.to_string(),
+        seq: 0,
+        event_type: "reasoning_delta".into(),
+        phase: "thinking".into(),
+        message: String::new(),
+        content_delta: None,
+        reasoning_delta: Some(text),
+        final_text: None,
+        tool_names: None,
+        terminal: false,
         emitted_at_utc: Utc::now(),
         budget_request_id: None,
         requested_rounds: None,

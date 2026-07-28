@@ -68,6 +68,10 @@ Home: **Settings → Connections** installs missing CLIs via the vendor installe
 
 `POST /v1/agents/sessions` returns **401** when the binary is present but signed out — surface a sign-in CTA rather than a generic spawn error. Cursor auth is probed via `agent status --format json` (tokens live in the OS keychain, not a file Medousa can read); Codex still uses `~/.codex` file presence only. Raw tokens are never read into Medousa logs.
 
+## Thinking / reasoning traces
+
+`agent_thought_chunk` updates are routed to the chat stream's `reasoning_delta` channel (event_type `reasoning_delta`, phase `thinking`), separate from `content_delta`. Home accumulates them into `ChatMessage.reasoning` and renders the collapsed **thinking tray** (`AssistantThinking.svelte`) above the answer — same treatment as native Medousa reasoning. Missing CLI → `create_session` errors loudly (no stub fallback).
+
 ## Stasis waitable turns (0.8)
 
 External ACP sessions still enter through `/v1/agents` (SDK façade). When a Stasis job uses `workflow.stasis.agent_turn.waitable`, the daemon parks on a **process-local** `TurnWaitStore` until ACP completion feeds `AgentEventIngress`:

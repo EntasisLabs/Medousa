@@ -426,6 +426,9 @@ pub fn runtime_auth_probe(kind: AgentRuntimeKind) -> RuntimeAuthProbe {
 pub enum AcpEvent {
     MessageDelta { text: String },
     MessageDone { text: String },
+    /// Thinking/reasoning trace (`agent_thought_chunk`) — routed to the
+    /// collapsed "thinking" tray, not the answer body.
+    ReasoningDelta { text: String },
     ToolCall {
         id: String,
         name: String,
@@ -768,7 +771,11 @@ struct ProcessSession {
     permission_allow_options: HashMap<String, Vec<String>>,
 }
 
-/// Spawns Cursor/Codex ACP stdio when the binary exists; otherwise behaves like [`StubAcpClient`].
+/// Spawns Cursor/Codex ACP stdio when the binary exists; otherwise errors loudly.
+///
+/// The bundled [`StubAcpClient`] is only used when `MEDOUSA_ACP_FORCE_STUB` is
+/// set (dev/bones) — a missing CLI otherwise surfaces a clear setup error so the
+/// chat never shows fake stub output.
 pub struct ExternalAcpClient {
     stub: StubAcpClient,
     processes: AsyncMutex<HashMap<String, ProcessSession>>,
@@ -1223,7 +1230,18 @@ fn map_inbound_line(proc: &mut ProcessSession, value: &Value) -> Option<AcpEvent
             .and_then(|v| v.as_str())
             .unwrap_or("");
         match kind {
-            "agent_message_chunk" | "agent_thought_chunk" | "user_message_chunk" => {
+            "agent_thought_chunk" => {
+                let text = update
+                    .pointer("/content/text")
+                    .or_else(|| update.pointer("/content/content/text"))
+                    .and_then(|v| v.as_str())
+                    .map(str::to_string)?;
+                if text.is_empty() {
+                    return None;
+                }
+                return Some(AcpEvent::ReasoningDelta { text });
+            }
+            "agent_message_chunk" | "user_message_chunk" => {
                 let text = update
                     .pointer("/content/text")
                     .or_else(|| update.pointer("/content/content/text"))
