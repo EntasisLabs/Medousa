@@ -448,7 +448,9 @@ pub async fn providers_list_models(
         .unwrap_or_default();
     let needs_key = spec.map(|entry| entry.needs_api_key).unwrap_or(false);
     if needs_key && api_key.trim().is_empty() {
-        return Err("API key is required to list models — add one in Settings → Models".to_string());
+        return Err(
+            "API key is required to list models — add one in Settings → Medousa Agent".to_string(),
+        );
     }
 
     let base_url = resolve_base_url(spec, request.base_url.as_deref())

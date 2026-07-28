@@ -256,11 +256,23 @@ export class WorkshopsStore {
   }
 
   async addLocalEngine(label: string, dataDir: string) {
-    this.registry = await addLocalWorkshop(label, dataDir);
+    this.error = null;
+    try {
+      this.registry = await addLocalWorkshop(label, dataDir);
+    } catch (err) {
+      this.error = err instanceof Error ? err.message : String(err);
+      throw err;
+    }
   }
 
   async renameWorkshop(workshopId: string, label: string) {
-    this.registry = await renameWorkshop(workshopId, label);
+    this.error = null;
+    try {
+      this.registry = await renameWorkshop(workshopId, label);
+    } catch (err) {
+      this.error = err instanceof Error ? err.message : String(err);
+      throw err;
+    }
   }
 
   async removeWorkshop(
@@ -269,13 +281,18 @@ export class WorkshopsStore {
   ) {
     if (workshopId === PERSONAL_WORKSHOP_ID) return;
     const wasActive = workshopId === this.activeWorkshopId;
-    this.registry = await removeWorkshop(workshopId);
-    if (wasActive) {
-      const url = (await getDaemonUrl()).trim();
-      if (url) settings.daemonUrl = url;
-      await reconnectWorkshop((health) => {
-        options?.onHealthChange?.(health);
-      });
+    this.error = null;
+    try {
+      this.registry = await removeWorkshop(workshopId);
+      if (wasActive) {
+        const url = (await getDaemonUrl()).trim();
+        if (url) settings.daemonUrl = url;
+        await reconnectWorkshop((health) => {
+          options?.onHealthChange?.(health);
+        });
+      }
+    } catch (err) {
+      this.error = err instanceof Error ? err.message : String(err);
     }
   }
 

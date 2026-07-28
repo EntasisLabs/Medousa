@@ -3,17 +3,27 @@ import {
   guessMimeFromPath,
   type VaultAttachment,
 } from "$lib/utils/vaultAttachments";
+import { toast } from "$lib/stores/toast.svelte";
 
 function fileNameFromPath(path: string): string {
   return path.split("/").pop()?.split("\\").pop() ?? path;
+}
+
+/** Remote workshop can't see this device's disk — say so instead of no-op. */
+async function warnRemoteFilesystem(): Promise<boolean> {
+  const { isCoLocatedWorkshop, vaultHostSideHint } = await import(
+    "$lib/utils/workshopLocality"
+  );
+  if (isCoLocatedWorkshop()) return false;
+  toast.show(vaultHostSideHint());
+  return true;
 }
 
 export async function pickAttachmentFiles(): Promise<VaultAttachment[]> {
   if (!isTauri()) {
     return pickAttachmentFilesWeb();
   }
-  const { isCoLocatedWorkshop } = await import("$lib/utils/workshopLocality");
-  if (!isCoLocatedWorkshop()) return [];
+  if (await warnRemoteFilesystem()) return [];
   try {
     const { open } = await import("@tauri-apps/plugin-dialog");
     const selected = await open({
@@ -36,8 +46,7 @@ export async function pickSpreadsheetFiles(): Promise<VaultAttachment[]> {
   if (!isTauri()) {
     return pickAttachmentFilesWeb([".csv", ".tsv", ".xlsx", ".xls", ".xlsm"]);
   }
-  const { isCoLocatedWorkshop } = await import("$lib/utils/workshopLocality");
-  if (!isCoLocatedWorkshop()) return [];
+  if (await warnRemoteFilesystem()) return [];
   try {
     const { open } = await import("@tauri-apps/plugin-dialog");
     const selected = await open({
@@ -98,8 +107,7 @@ export async function openAttachmentPath(path: string): Promise<void> {
     return;
   }
   if (!isTauri()) return;
-  const { isCoLocatedWorkshop } = await import("$lib/utils/workshopLocality");
-  if (!isCoLocatedWorkshop()) return;
+  if (await warnRemoteFilesystem()) return;
   const { openPath } = await import("@tauri-apps/plugin-opener");
   await openPath(path);
 }

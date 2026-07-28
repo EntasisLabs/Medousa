@@ -34,6 +34,7 @@ function modalBlocksHotkeys(): boolean {
 /**
  * Attach window capture listeners for:
  * - Ctrl+B — toggle left rail
+ * - Ctrl/Cmd+/ — keyboard shortcuts sheet
  * - Ctrl/Cmd+Shift+. — summon current view toolbar at cursor
  * - Ctrl+; then command — pane ops
  */
@@ -53,6 +54,13 @@ export function attachShellPaneHotkeys(handlers: ShellPaneHotkeyHandlers = {}): 
     if (ctrl && !event.altKey && !event.shiftKey && lower === "b") {
       event.preventDefault();
       layout.toggleShellSidebarExpanded();
+      return;
+    }
+
+    // Ctrl/Cmd+/ — cheat sheet from anywhere, no pane prefix. Intentional in inputs.
+    if (ctrl && !event.altKey && (key === "/" || key === "?")) {
+      event.preventDefault();
+      handlers.onCheatSheet?.();
       return;
     }
 

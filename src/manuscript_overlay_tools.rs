@@ -129,7 +129,7 @@ impl StasisTool for CognitionManuscriptOverlayProposeTool {
     fn description(&self) -> Option<&'static str> {
         Some(
             "Propose a session-scoped manuscript overlay appendix for operator approval — never mutates kernel STTP. \
-             Writes a pending YAML under ~/.local/share/medousa/manuscript-overlays/pending/. \
+             Writes a pending YAML under the Medousa data dir at manuscript-overlays/pending/. \
              Operator approves by promoting the file to user manuscripts (manual for now).",
         )
     }

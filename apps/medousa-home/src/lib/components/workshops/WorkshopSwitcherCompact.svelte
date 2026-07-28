@@ -127,6 +127,7 @@
     haptic("light");
     sheetOpen = false;
     if (variant === "mobile") {
+      settingsNav.setActiveSection("basement");
       layout.openMore("settings");
     } else {
       settingsNav.openSection("basement");

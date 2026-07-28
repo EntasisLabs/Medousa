@@ -44,7 +44,7 @@ body: |-
 label: What do workshop and engine mean?
 body: |-
   - **Workshop** — the place your notes, chats, and settings live (often this computer).
-  - **Engine** — the process that runs Medousa behind the scenes. Restart it from Settings → Workshop if things are stuck (active chats pause briefly).
+  - **Engine** — the process that runs Medousa behind the scenes. Restart it from Settings → Connection if things are stuck (active chats pause briefly).
 
   → [How Medousa fits together](guide:architecture)
 ---
@@ -72,7 +72,7 @@ label: It says Offline / I can’t send
 id: offline
 body: |-
   1. Look at the status bar — **Offline** or **Connecting…**?
-  2. Open **Settings → Workshop**. Confirm the workshop is selected.
+  2. Open **Settings → Connection**. Confirm the workshop is selected.
   3. On desktop, try **Start** / **Restart**, or **Save & test** on the address.
   4. On phone, check Wi‑Fi and that the computer is on and reachable.
 

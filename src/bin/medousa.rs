@@ -8,6 +8,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, anyhow};
+use clap::Parser;
 use crossterm::style::Stylize;
 use medousa::session::{
     load_discord_bot_token, load_slack_app_token, load_slack_bot_token, load_telegram_bot_token,
@@ -28,6 +29,9 @@ const DEFAULT_OPENAI_MODEL: &str = "gpt-4o-mini";
 const DEFAULT_OLLAMA_MODEL: &str = "llama3.2";
 const DEFAULT_OLLAMA_BASE_URL: &str = "http://127.0.0.1:11434/v1/";
 
+#[path = "medousa/cli.rs"]
+mod cli;
+
 #[path = "medousa/onboard_wizard/mod.rs"]
 mod onboard_wizard;
 
@@ -37,6 +41,7 @@ mod pair_cli;
 #[path = "medousa/peer_cli.rs"]
 mod peer_cli;
 
+#[cfg(feature = "iroh-transport")]
 #[path = "medousa/iroh_cli.rs"]
 mod iroh_cli;
 
@@ -57,50 +62,51 @@ struct ComponentCommand {
 }
 
 fn main() -> Result<()> {
-    let args = env::args().skip(1).collect::<Vec<_>>();
-
-    if args.is_empty() {
-        print_help();
-        return Ok(());
-    }
-
-    match args[0].as_str() {
-        "onboard" | "setup" | "init" => run_onboard(&args[1..]),
-        "start" => run_start(&args[1..]),
-        "tui" => run_tui(&args[1..]),
-        "daemon" => run_daemon(&args[1..]),
-        "discord" => run_discord(&args[1..]),
-        "telegram" => run_telegram(&args[1..]),
-        "slack" => run_slack(&args[1..]),
-        "whatsapp" => run_whatsapp(&args[1..]),
-        "doctor" => run_doctor(&args[1..]),
-        "status" => run_status(&args[1..]),
-        "stop" => run_stop(&args[1..]),
-        "identity-export" => run_identity_export(&args[1..]),
-        "identity-remember" => run_identity_remember(&args[1..]),
-        "identity-profiles" => run_identity_profiles(&args[1..]),
-        "manuscript-list" => run_manuscript_list(),
-        "manuscript-validate" => run_manuscript_validate(&args[1..]),
-        "manuscript-install" => run_manuscript_install(&args[1..]),
-        "skill-import" => run_skill_import(&args[1..]),
-        "openshell-probe" => run_openshell_probe(&args[1..]),
-        "workspace" => run_workspace(&args[1..]),
-        "vault" => run_vault(&args[1..]),
-        "pair" => pair_cli::run_pair(&args[1..]),
-        "peer" => peer_cli::run_peer(&args[1..]),
-        "iroh" => iroh_cli::run_iroh(&args[1..]),
-        "models" => medousa::local_inference_cli::run_models_command(&args[1..]),
-        "pull" => packages_cli::run_pull(&args[1..]),
-        "update" => packages_cli::run_update(&args[1..]),
-        "packages" => packages_cli::run_packages(&args[1..]),
-        "help" | "--help" | "-h" => {
+    let cli = cli::Cli::parse();
+    match cli.command {
+        None => {
             print_help();
             Ok(())
         }
-        other => Err(anyhow!(
-            "unknown command '{}'. run 'medousa --help' for available commands",
-            other
-        )),
+        Some(cli::Commands::Onboard(args)) => run_onboard(&args.to_legacy()),
+        Some(cli::Commands::Start(args)) => run_start(&args.to_legacy()),
+        Some(cli::Commands::Tui(args)) => run_tui(&args.to_legacy()),
+        Some(cli::Commands::Daemon(args)) => run_daemon(&args.to_legacy()),
+        Some(cli::Commands::Discord(args)) => run_discord(&args.to_legacy()),
+        Some(cli::Commands::Telegram(args)) => run_telegram(&args.to_legacy()),
+        Some(cli::Commands::Slack(args)) => run_slack(&args.to_legacy()),
+        Some(cli::Commands::Whatsapp(args)) => run_whatsapp(&args.to_legacy()),
+        Some(cli::Commands::Doctor(args)) => run_doctor(&args.to_legacy()),
+        Some(cli::Commands::Status) => run_status(&[]),
+        Some(cli::Commands::Stop(args)) => run_stop(&args.to_legacy()),
+        Some(cli::Commands::IdentityExport(args)) => run_identity_export(&args.to_legacy()),
+        Some(cli::Commands::IdentityRemember(args)) => run_identity_remember(&args.to_legacy()),
+        Some(cli::Commands::IdentityProfiles(args)) => run_identity_profiles(&args.rest),
+        Some(cli::Commands::ManuscriptList) => run_manuscript_list(),
+        Some(cli::Commands::ManuscriptValidate { id }) => {
+            run_manuscript_validate(&[id])
+        }
+        Some(cli::Commands::ManuscriptInstall { path, project }) => {
+            let mut legacy = vec![path];
+            if project {
+                legacy.push("--project".into());
+            }
+            run_manuscript_install(&legacy)
+        }
+        Some(cli::Commands::SkillImport(args)) => run_skill_import(&args.to_legacy()),
+        Some(cli::Commands::OpenshellProbe(args)) => run_openshell_probe(&args.to_legacy()),
+        Some(cli::Commands::Workspace(args)) => run_workspace(&args.rest),
+        Some(cli::Commands::Vault(args)) => run_vault(&args.rest),
+        Some(cli::Commands::Pair(args)) => pair_cli::run_pair(&args.to_legacy()),
+        Some(cli::Commands::Peer(args)) => peer_cli::run_peer(&args.to_legacy()),
+        #[cfg(feature = "iroh-transport")]
+        Some(cli::Commands::Iroh(args)) => iroh_cli::run_iroh(&args.rest),
+        Some(cli::Commands::Models(args)) => {
+            medousa::local_inference_cli::run_models_command(&args.to_legacy())
+        }
+        Some(cli::Commands::Pull(args)) => packages_cli::run_pull(&args.to_legacy()),
+        Some(cli::Commands::Update(args)) => packages_cli::run_update(&args.to_legacy()),
+        Some(cli::Commands::Packages(args)) => packages_cli::run_packages(&args.to_legacy()),
     }
 }
 
@@ -525,8 +531,11 @@ fn run_onboard(args: &[String]) -> Result<()> {
     if selected.configure_whatsapp {
         println!(
             "{}",
-            "[ok] WhatsApp deliver bind saved in product_config (session db: ~/.local/share/medousa/whatsapp/session.db)."
-                .green()
+            format!(
+                "[ok] WhatsApp deliver bind saved in product_config (session db: {}/whatsapp/session.db).",
+                medousa_data_dir().display()
+            )
+            .green()
         );
     }
 
@@ -2652,7 +2661,8 @@ fn ensure_daemon_running(backend: &str, plan: &DaemonLaunchPlan) -> Result<()> {
     clear_stale_surrealkv_lock(&parsed_backend).with_context(|| {
         format!(
             "could not clear SurrealKV lock before starting daemon (backend={backend}). \
-             If no daemon is running, remove the LOCK file under ~/.local/share/medousa/runtime.surrealkv/"
+             If no daemon is running, remove the LOCK file under {}/runtime.surrealkv/",
+            medousa_data_dir().display()
         )
     })?;
 
@@ -3053,7 +3063,7 @@ fn start_daemon_service(backend: &str, plan: &DaemonLaunchPlan) -> Result<()> {
                 _ => {
                     println!(
                         "{}",
-                        "[info] Core is already running without a loaded brain.".blue()
+                        "[info] Engine is already running without a loaded brain.".blue()
                     );
                     println!(
                         "{}",
@@ -3164,19 +3174,22 @@ fn print_start_help() {
     println!();
     println!("FLAGS:");
     println!("  --inference   Spawn medousa_local for private Gemma brain (alias: --local-engine)");
-    println!("  --public      Bind Core to 0.0.0.0 for phone pairing on the same Wi‑Fi");
+    println!("  --public      Bind Engine to 0.0.0.0 for phone pairing on the same Wi‑Fi");
     println!();
     println!("SERVICES:");
     println!("  daemon          Medousa Engine (background)");
-    println!("  daemon-restart  Stop a stuck Core and start fresh");
+    println!("  daemon-restart  Stop a stuck Engine and start fresh");
     println!("  mcp-gateway     MCP tool broker (advanced)");
     println!("  discord         Discord adapter (needs bot token)");
     println!("  telegram        Telegram adapter (needs bot token)");
     println!("  slack           Slack adapter (needs bot + app tokens)");
     println!("  whatsapp        WhatsApp adapter");
-    println!("  all             Core + gateway + any configured adapters");
+    println!("  all             Engine + gateway + any configured adapters");
     println!();
-    println!("Logs: ~/.local/share/medousa/logs/<service>.log");
+    println!(
+        "Logs: {}/logs/<service>.log",
+        medousa_data_dir().display()
+    );
     println!();
     println!("EXAMPLES:");
     println!("  medousa start daemon --inference     # offline / private brain (power users)");
@@ -3623,7 +3636,7 @@ fn parse_workspace_sse_data(frame: &str) -> Option<String> {
 
 fn print_help() {
     println!("Medousa operator CLI — run and troubleshoot your engine.");
-    println!("Everyday chat → open the Medousa app. This surface is for operators and automation.");
+    println!("Everyday chat → open the Medousa app. This CLI is for operators and automation.");
     println!();
     println!("Lifecycle (run the engine):");
     println!("  medousa start <service>     daemon, mcp-gateway, discord, telegram, slack, whatsapp, all");
@@ -3646,6 +3659,7 @@ fn print_help() {
     println!("  medousa vault …");
     println!("  medousa pair status|list|qr|remove|lan …   host pairing + LAN window");
     println!("  medousa peer nearby|connect|list|send|inbox …  headless peer/portal client");
+    #[cfg(feature = "iroh-transport")]
     println!("  medousa iroh …");
     println!();
     println!("Configure:");
@@ -3658,6 +3672,8 @@ fn print_help() {
     println!();
     println!("Channels (adapters):");
     println!("  medousa discord|telegram|slack|whatsapp …");
+    println!();
+    println!("Data dir: {}", medousa_data_dir().display());
     println!();
     println!("EXAMPLES:");
     println!("  medousa status");

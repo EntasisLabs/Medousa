@@ -353,6 +353,19 @@ export class ChatStore {
     return this.sessionRuntimes.get(trimmed)?.streamError ?? null;
   }
 
+  /** Dismiss the error banner for one session (focused or stashed runtime). */
+  clearStreamError(sessionId?: string) {
+    const trimmed = sessionId?.trim();
+    if (!trimmed || trimmed === this.sessionId) {
+      this.streamError = null;
+    }
+    if (trimmed) {
+      const runtime = this.sessionRuntimes.get(trimmed);
+      if (runtime) runtime.streamError = null;
+    }
+    this.runtimeRevision += 1;
+  }
+
   historyLoadingFor(sessionId: string): boolean {
     void this.runtimeRevision;
     const trimmed = sessionId.trim();

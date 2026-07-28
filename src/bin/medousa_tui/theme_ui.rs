@@ -223,7 +223,7 @@ fn apply_selected_theme(state: &mut TuiState) {
         defaults.theme_id = Some(selected.clone());
         save_tui_defaults(&defaults);
 
-        push_obs(
+        push_obs_alert(
             state,
             format!(
                 "✓ theme applied: {} ({selected})",

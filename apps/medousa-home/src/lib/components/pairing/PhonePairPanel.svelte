@@ -412,7 +412,7 @@
     </div>
   {:else if !coreOnline}
     <div class="rounded-xl border border-warning-500/35 bg-warning-500/10 px-4 py-4 text-sm text-warning-100">
-      Medousa isn't running. Finish setup or open Settings → Workshop before pairing your phone.
+      Medousa isn't running. Finish setup or open Settings → Connection before pairing your phone.
     </div>
   {:else if connectedDevice && !settingsMode}
     <div

@@ -22,7 +22,7 @@ summary: Notes, chats, and settings for this space — often *this computer*.
 title: Engine
 subtitle: Behind the scenes
 icon: cpu
-summary: The process that powers the workshop. Restart it from Settings → Workshop if things feel stuck.
+summary: The process that powers the workshop. Restart it from Settings → Connection if things feel stuck.
 ```
 
 ```callout

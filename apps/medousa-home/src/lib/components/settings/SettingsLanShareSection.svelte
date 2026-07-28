@@ -302,7 +302,7 @@
 <section class="nearby-calm" class:nearby-calm-spaced={!embedded}>
   {#if !embedded}
     <header class="settings-section-header mb-4">
-      <h2 class="text-base font-semibold text-surface-50">Nearby</h2>
+      <h2 class="text-base font-semibold text-surface-50">Sharing</h2>
       <p class="workshop-faint mt-1 text-sm">
         Reachability, peers, and canvas backups.
       </p>

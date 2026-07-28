@@ -20,7 +20,7 @@ pub(crate) fn save_editor_buffer(state: &mut TuiState, path_override: Option<&st
 
     let Some(path) = state.editor_file_path.clone() else {
         state.editor_status = "Save failed: no path. Use /save <path>".to_string();
-        super::push_obs(
+        super::push_obs_alert(
             state,
             "⚠ save failed: no target path. use /save <path>".to_string(),
         );
@@ -31,11 +31,11 @@ pub(crate) fn save_editor_buffer(state: &mut TuiState, path_override: Option<&st
         Ok(_) => {
             state.editor_dirty = false;
             state.editor_status = format!("Saved {}", path.display());
-            super::push_obs(state, format!("✓ saved {}", path.display()));
+            super::push_obs_alert(state, format!("✓ saved {}", path.display()));
         }
         Err(err) => {
             state.editor_status = format!("Save failed: {err}");
-            super::push_obs(state, format!("⚠ save failed: {err}"));
+            super::push_obs_alert(state, format!("⚠ save failed: {err}"));
         }
     }
 }
@@ -114,13 +114,13 @@ pub(crate) async fn run_editor_source_via_runtime(
     ) {
         Ok(values) => values,
         Err(message) => {
-            super::push_obs(state, format!("⚠ {message}"));
+            super::push_obs_alert(state, format!("⚠ {message}"));
             return;
         }
     };
 
     if source.trim().is_empty() {
-        super::push_obs(state, "⚠ run failed: source is empty".to_string());
+        super::push_obs_alert(state, "⚠ run failed: source is empty".to_string());
         return;
     }
 
@@ -128,7 +128,7 @@ pub(crate) async fn run_editor_source_via_runtime(
         match validate_editor_run_allowlist(&source, &state.settings.allowed_modules) {
             Ok(ops) => ops,
             Err(message) => {
-                super::push_obs(state, format!("⚠ {message}"));
+                super::push_obs_alert(state, format!("⚠ {message}"));
                 return;
             }
         };
@@ -139,7 +139,7 @@ pub(crate) async fn run_editor_source_via_runtime(
     let queued_label = source_label.clone();
     let tx = event_tx.clone();
 
-    super::push_obs(state, format!("↻ run queued: {queued_label}"));
+    super::push_obs_alert(state, format!("↻ run queued: {queued_label}"));
 
     tokio::spawn(async move {
         if let Err(message) = execute_editor_run_task(

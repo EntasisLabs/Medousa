@@ -85,7 +85,7 @@
       !visionProfileReady(runtime.inferenceProfiles)
     ) {
       chat.setError(
-        "Configure a vision model on the host workshop (Settings → Models) before sending images.",
+        "Configure a vision model on the host workshop (Settings → Medousa Agent) before sending images.",
       );
       return;
     }

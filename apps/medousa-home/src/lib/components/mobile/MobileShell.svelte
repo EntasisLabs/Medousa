@@ -20,6 +20,7 @@
   import ShellAskFab from "$lib/components/environment/ShellAskFab.svelte";
   import { environment } from "$lib/stores/environment.svelte";
   import { layout } from "$lib/stores/layout.svelte";
+  import { settingsNav } from "$lib/stores/settingsNav.svelte";
   import { chat } from "$lib/stores/chat.svelte";
   import { workspace } from "$lib/stores/workspace.svelte";
   import { vault } from "$lib/stores/vault.svelte";
@@ -252,7 +253,10 @@
             layout.setIdentityDrawerOpen(false);
             layout.openMore("map");
           }}
-          onOpenConnection={() => layout.openMore("settings")}
+          onOpenConnection={() => {
+            settingsNav.setActiveSection("basement");
+            layout.openMore("settings");
+          }}
         />
       {:else if layout.mobileTab === "notes"}
         <MobileLibraryPanel visible={true} onOpenChat={handleOpenChat} />

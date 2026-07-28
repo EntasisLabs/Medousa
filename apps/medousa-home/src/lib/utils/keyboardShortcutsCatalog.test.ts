@@ -17,12 +17,12 @@ describe("keyboardShortcutsCatalog", () => {
     const panes = catalogGroup("panes");
     expect(panes?.entries.map((e) => e.id)).toContain("split-right");
     expect(panes?.entries.map((e) => e.id)).toContain("zoom-pane");
-    expect(CHEAT_SHEET_GROUP_IDS).toEqual(["global", "panes", "vault"]);
+    expect(CHEAT_SHEET_GROUP_IDS).toEqual(["global", "panes", "vault", "chat"]);
   });
 
-  it("formats prefix and mod chords", () => {
+  it("formats prefix chords as two-step sequences", () => {
     const prefix = formatCatalogKeys("prefix:?");
-    expect(prefix === "Ctrl+; ?" || prefix.endsWith("; ?")).toBe(true);
+    expect(prefix === "Ctrl+; then ?" || prefix.endsWith("; then ?")).toBe(true);
 
     const spotlight = formatCatalogKeys("mod:K");
     expect(spotlight === "Ctrl+K" || spotlight === "⌘K").toBe(true);
@@ -40,7 +40,8 @@ describe("keyboardShortcutsCatalog", () => {
       "global:summon-toolbar:mod:Shift+.:Summon view toolbar",
       "global:content-zoom:mod:+ / −:Zoom in / out",
       "global:content-zoom-reset:mod:0:Reset zoom",
-      "global:keyboard-shortcuts:prefix:?:Open keyboard shortcuts",
+      "global:open-notes:mod:O:Open notes",
+      "global:keyboard-shortcuts:mod:/:Open keyboard shortcuts",
       "panes:split-right:prefix:%:Split right",
       'panes:split-down:prefix:":Split down',
       "panes:focus-panes:prefix:h/j/k/l:Focus pane",
@@ -58,7 +59,7 @@ describe("keyboardShortcutsCatalog", () => {
       "vault:vault-pdf:mod:Shift+P:Export PDF",
       "vault:vault-board:mod:Shift+B:Toggle board",
       "chat:chat-spotlight:mod:K:Spotlight (commands & jumps)",
-      "chat:chat-open-shortcuts:prefix:?:Keyboard shortcuts sheet",
+      "chat:chat-open-shortcuts:mod:/:Keyboard shortcuts sheet",
     ]);
   });
 });

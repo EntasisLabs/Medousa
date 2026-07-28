@@ -49,7 +49,7 @@ fn run_pair_status(daemon_url: &str) -> Result<()> {
 
     if let Some(devices) = body.get("pairedDevices").and_then(Value::as_array) {
         if devices.is_empty() {
-            println!("No paired surfaces.");
+            println!("No paired devices.");
         } else {
             println!("ID\tROLE\tNAME\tLAST SEEN");
             for device in devices {

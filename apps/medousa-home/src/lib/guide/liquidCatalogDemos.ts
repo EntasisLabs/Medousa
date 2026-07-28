@@ -321,7 +321,7 @@ export const GUIDE_LIQUID_CATALOG: GuideLiquidDemo[] = [
         "body: Status bar should say Connected — not Offline.",
         "---",
         "heading: Then try",
-        "body: Settings → Workshop → Save & test, or Start / Restart on desktop.",
+        "body: Settings → Connection → Save & test, or Start / Restart on desktop.",
       ].join("\n"),
     ),
   },

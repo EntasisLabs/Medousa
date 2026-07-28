@@ -31,12 +31,12 @@ pub(crate) async fn handle_artifact_family_command(
         Ok((response, backend_notice)) => {
             state.selected_context_pack_query = response.selected_context_pack_query;
             if let Some(notice) = backend_notice {
-                push_obs(state, notice);
+                push_obs_alert(state, notice);
             }
-            push_obs(state, response.rendered_output);
+            push_obs_alert(state, response.rendered_output);
         }
         Err(err) => {
-            push_obs(state, format!("⚠ artifact command failed: {err}"));
+            push_obs_alert(state, format!("⚠ artifact command failed: {err}"));
         }
     }
 
@@ -75,7 +75,7 @@ pub(crate) async fn handle_verify_policy_command(
             .await;
         }
         Err(err) => {
-            push_obs(state, format!("⚠ verify policy command failed: {err}"));
+            push_obs_alert(state, format!("⚠ verify policy command failed: {err}"));
         }
     }
 

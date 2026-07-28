@@ -32,11 +32,14 @@ export function hostComputerPhrase(): string {
 
 /** Short TOC / badge label for the local machine ("This Mac" / "This PC" / …). */
 export function thisHostLabel(): string {
+  // Companion shell describes the workshop host, which isn't the phone in hand.
+  if (isCompanionShell()) return "Your computer";
   return `This ${hostComputerNoun()}`;
 }
 
-/** "on this Mac" / "on this PC" / "on this computer". */
+/** "on this Mac" / "on this PC" / "on your computer" (companion shell). */
 export function onThisHostPhrase(): string {
+  if (isCompanionShell()) return "on your computer";
   return `on this ${hostComputerNoun()}`;
 }
 

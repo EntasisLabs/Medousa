@@ -1,4 +1,4 @@
-import { thisHostLabel } from "$lib/platformCopy";
+import { isCompanionShell, thisHostLabel } from "$lib/platformCopy";
 
 export type SettingsSectionId =
   | "preferences"
@@ -22,6 +22,17 @@ export const SETTINGS_MOBILE_SECTIONS: SettingsSectionId[] = [
   "mcp",
   "basement",
 ];
+
+/** Host-only sections — the companion shell can't install or run these. */
+const COMPANION_HIDDEN_SECTIONS: SettingsSectionId[] = ["packages", "mcp"];
+
+/** Mobile pager order for the current shell. */
+export function settingsMobileSections(): SettingsSectionId[] {
+  if (!isCompanionShell()) return SETTINGS_MOBILE_SECTIONS;
+  return SETTINGS_MOBILE_SECTIONS.filter(
+    (section) => !COMPANION_HIDDEN_SECTIONS.includes(section),
+  );
+}
 
 export const SETTINGS_SECTION_GROUPS: {
   id: SettingsSectionGroupId;
@@ -78,7 +89,7 @@ export const SETTINGS_SECTIONS: SettingsSectionDef[] = [
   },
   {
     id: "basement",
-    label: "Workshop",
+    label: "Connection",
     hint: "Active workshop, engine & files",
     group: "machine",
   },

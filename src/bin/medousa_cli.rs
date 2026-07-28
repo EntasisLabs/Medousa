@@ -3,6 +3,10 @@ use std::collections::BTreeMap;
 
 use anyhow::{Result, anyhow};
 use chrono::{DateTime, Utc};
+use clap::Parser;
+
+#[path = "medousa_cli/cli.rs"]
+mod cli;
 use medousa::identity_memory::resolve_identity_user_id;
 use medousa::engine_context::{
     EngineExecutionLane, compile_default_lane_prompt,
@@ -36,127 +40,130 @@ use stasis::ports::outbound::memory::identity_memory_models::{
 use stasis::ports::outbound::runtime::job_attempt_store::JobAttemptStore;
 use stasis::prelude::RuntimeComposition;
 
+fn with_cmd(cmd: &str, rest: Vec<String>) -> Vec<String> {
+    let mut out = vec![cmd.to_string()];
+    out.extend(rest);
+    out
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
-    let args = std::env::args().skip(1).collect::<Vec<_>>();
-    if args.is_empty() {
-        print_usage();
-        return Ok(());
-    }
-
-    match args[0].as_str() {
-        "ask" => {
-            let backend = parse_backend(find_arg_value(&args, "--backend"));
-            let provider = find_arg_value(&args, "--provider");
-            let model = find_arg_value(&args, "--model");
-            let base_url = find_arg_value(&args, "--base-url");
-            let runtime = build_runtime(backend, provider, model, base_url).await?;
-            let prompt = args
-                .get(1)
-                .ok_or_else(|| anyhow!("missing prompt: medousa ask <prompt>"))?;
-            run_ask(&runtime, prompt).await
+    let parsed = cli::Cli::parse();
+    match parsed.command {
+        cli::Commands::Ask(args) => {
+            let backend = parse_backend(args.backend.as_deref());
+            let runtime = build_runtime(
+                backend,
+                args.provider.as_deref(),
+                args.model.as_deref(),
+                args.base_url.as_deref(),
+            )
+            .await?;
+            run_ask(&runtime, &args.prompt).await
         }
-        "llm" => {
-            let backend = parse_backend(find_arg_value(&args, "--backend"));
-            let provider = find_arg_value(&args, "--provider");
-            let base_url = find_arg_value(&args, "--base-url");
-            let prompt = args
-                .get(1)
-                .ok_or_else(|| anyhow!("missing prompt: medousa llm <prompt>"))?;
-            let model = find_arg_value(&args, "--model");
-            let runtime = build_runtime(backend, provider, model, base_url).await?;
-            run_llm(&runtime, prompt, provider, model, base_url).await
+        cli::Commands::Llm(args) => {
+            let backend = parse_backend(args.backend.as_deref());
+            let runtime = build_runtime(
+                backend,
+                args.provider.as_deref(),
+                args.model.as_deref(),
+                args.base_url.as_deref(),
+            )
+            .await?;
+            run_llm(
+                &runtime,
+                &args.prompt,
+                args.provider.as_deref(),
+                args.model.as_deref(),
+                args.base_url.as_deref(),
+            )
+            .await
         }
-        "daemon-health" => {
-            let daemon_url = resolve_daemon_url(find_arg_value(&args, "--daemon-url"));
+        cli::Commands::DaemonHealth(args) => {
+            let daemon_url = resolve_daemon_url(args.daemon_url.as_deref());
             run_daemon_health(&daemon_url).await
         }
-        "daemon-stats" => {
-            let daemon_url = resolve_daemon_url(find_arg_value(&args, "--daemon-url"));
+        cli::Commands::DaemonStats(args) => {
+            let daemon_url = resolve_daemon_url(args.daemon_url.as_deref());
             run_daemon_stats(&daemon_url).await
         }
-        "daemon-heartbeat-status" => {
-            let daemon_url = resolve_daemon_url(find_arg_value(&args, "--daemon-url"));
+        cli::Commands::DaemonHeartbeatStatus(args) => {
+            let daemon_url = resolve_daemon_url(args.daemon_url.as_deref());
             run_daemon_heartbeat_status(&daemon_url).await
         }
-        "daemon-first-run" => {
-            let daemon_url = resolve_daemon_url(find_arg_value(&args, "--daemon-url"));
-            run_daemon_first_run(&daemon_url, &args).await
+        cli::Commands::DaemonFirstRun(args) => {
+            let daemon_url = resolve_daemon_url(args.daemon_url.as_deref());
+            let legacy = with_cmd("daemon-first-run", args.to_legacy());
+            run_daemon_first_run(&daemon_url, &legacy).await
         }
-        "daemon-ask" => {
-            let daemon_url = resolve_daemon_url(find_arg_value(&args, "--daemon-url"));
-            run_daemon_ask(&daemon_url, &args).await
+        cli::Commands::DaemonAsk(args) => {
+            let daemon_url = resolve_daemon_url(args.daemon_url.as_deref());
+            let legacy = with_cmd("daemon-ask", args.to_legacy());
+            run_daemon_ask(&daemon_url, &legacy).await
         }
-        "daemon-report" => {
-            let daemon_url = resolve_daemon_url(find_arg_value(&args, "--daemon-url"));
-            run_daemon_report(&daemon_url, &args).await
+        cli::Commands::DaemonReport(args) => {
+            let daemon_url = resolve_daemon_url(args.daemon_url.as_deref());
+            let legacy = with_cmd("daemon-report", args.to_legacy());
+            run_daemon_report(&daemon_url, &legacy).await
         }
-        "daemon-job-report" => {
-            let daemon_url = resolve_daemon_url(find_arg_value(&args, "--daemon-url"));
-            let job_id = args
-                .get(1)
-                .ok_or_else(|| anyhow!("missing job id: medousa-cli daemon-job-report <job_id>"))?;
-            run_daemon_job_report(&daemon_url, job_id).await
+        cli::Commands::DaemonJobReport(args) => {
+            let daemon_url = resolve_daemon_url(args.daemon_url.as_deref());
+            run_daemon_job_report(&daemon_url, &args.job_id).await
         }
-        "daemon-watch-add" => {
-            let daemon_url = resolve_daemon_url(find_arg_value(&args, "--daemon-url"));
-            let timezone = find_arg_value(&args, "--tz").unwrap_or("UTC");
-            let cron_expr = args
-                .get(1)
-                .ok_or_else(|| anyhow!("missing cron expression: medousa-cli daemon-watch-add <cron_expr> <prompt> [--tz UTC]"))?;
-            let prompt_parts = args
-                .iter()
-                .skip(2)
-                .take_while(|arg| !arg.starts_with("--"))
-                .cloned()
-                .collect::<Vec<_>>();
-            if prompt_parts.is_empty() {
+        cli::Commands::DaemonWatchAdd(args) => {
+            let daemon_url = resolve_daemon_url(args.daemon_url.as_deref());
+            if args.prompt.is_empty() {
                 return Err(anyhow!(
-                    "missing prompt: medousa-cli daemon-watch-add <cron_expr> <prompt> [--tz UTC]"
+                    "missing prompt: medousa_cli daemon-watch-add <cron_expr> <prompt> [--tz UTC]"
                 ));
             }
-            let prompt = prompt_parts.join(" ");
-            run_daemon_watch_add(&daemon_url, cron_expr, timezone, &prompt).await
+            let prompt = args.prompt.join(" ");
+            run_daemon_watch_add(&daemon_url, &args.cron_expr, &args.tz, &prompt).await
         }
-        "daemon-identity-context" => {
-            let daemon_url = resolve_daemon_url(find_arg_value(&args, "--daemon-url"));
-            run_daemon_identity_context(&daemon_url, &args).await
+        cli::Commands::DaemonIdentityContext(args) => {
+            let daemon_url = resolve_daemon_url(args.daemon_url.as_deref());
+            let legacy = with_cmd("daemon-identity-context", args.to_legacy());
+            run_daemon_identity_context(&daemon_url, &legacy).await
         }
-        "daemon-identity-inspect" => {
-            let daemon_url = resolve_daemon_url(find_arg_value(&args, "--daemon-url"));
-            run_daemon_identity_inspect(&daemon_url, &args).await
+        cli::Commands::DaemonIdentityInspect(args) => {
+            let daemon_url = resolve_daemon_url(args.common.daemon_url.as_deref());
+            let legacy = with_cmd("daemon-identity-inspect", args.to_legacy());
+            run_daemon_identity_inspect(&daemon_url, &legacy).await
         }
-        "daemon-identity-propose" => {
-            let daemon_url = resolve_daemon_url(find_arg_value(&args, "--daemon-url"));
-            run_daemon_identity_propose(&daemon_url, &args).await
+        cli::Commands::DaemonIdentityPropose(args) => {
+            let daemon_url = resolve_daemon_url(args.daemon_url.as_deref());
+            let legacy = with_cmd("daemon-identity-propose", args.to_legacy());
+            run_daemon_identity_propose(&daemon_url, &legacy).await
         }
-        "daemon-identity-update" => {
-            let daemon_url = resolve_daemon_url(find_arg_value(&args, "--daemon-url"));
-            run_daemon_identity_update(&daemon_url, &args).await
+        cli::Commands::DaemonIdentityUpdate(args) => {
+            let daemon_url = resolve_daemon_url(args.propose.daemon_url.as_deref());
+            let legacy = with_cmd("daemon-identity-update", args.to_legacy());
+            run_daemon_identity_update(&daemon_url, &legacy).await
         }
-        "daemon-identity-commit" => {
-            let daemon_url = resolve_daemon_url(find_arg_value(&args, "--daemon-url"));
-            run_daemon_identity_commit(&daemon_url, &args).await
+        cli::Commands::DaemonIdentityCommit(args) => {
+            let daemon_url = resolve_daemon_url(args.daemon_url.as_deref());
+            let legacy = with_cmd("daemon-identity-commit", args.to_legacy());
+            run_daemon_identity_commit(&daemon_url, &legacy).await
         }
-        "daemon-identity-history" => {
-            let daemon_url = resolve_daemon_url(find_arg_value(&args, "--daemon-url"));
-            run_daemon_identity_history(&daemon_url, &args).await
+        cli::Commands::DaemonIdentityHistory(args) => {
+            let daemon_url = resolve_daemon_url(args.daemon_url.as_deref());
+            let legacy = with_cmd("daemon-identity-history", args.to_legacy());
+            run_daemon_identity_history(&daemon_url, &legacy).await
         }
-        "daemon-identity-review" => {
-            let daemon_url = resolve_daemon_url(find_arg_value(&args, "--daemon-url"));
-            run_daemon_identity_review(&daemon_url, &args).await
+        cli::Commands::DaemonIdentityReview(args) => {
+            let daemon_url = resolve_daemon_url(args.daemon_url.as_deref());
+            let legacy = with_cmd("daemon-identity-review", args.to_legacy());
+            run_daemon_identity_review(&daemon_url, &legacy).await
         }
-        "daemon-identity-explain" => {
-            let daemon_url = resolve_daemon_url(find_arg_value(&args, "--daemon-url"));
-            run_daemon_identity_explain(&daemon_url, &args).await
+        cli::Commands::DaemonIdentityExplain(args) => {
+            let daemon_url = resolve_daemon_url(args.daemon_url.as_deref());
+            let legacy = with_cmd("daemon-identity-explain", args.to_legacy());
+            run_daemon_identity_explain(&daemon_url, &legacy).await
         }
-        "daemon-identity-rollback" => {
-            let daemon_url = resolve_daemon_url(find_arg_value(&args, "--daemon-url"));
-            run_daemon_identity_rollback(&daemon_url, &args).await
-        }
-        _ => {
-            print_usage();
-            Ok(())
+        cli::Commands::DaemonIdentityRollback(args) => {
+            let daemon_url = resolve_daemon_url(args.daemon_url.as_deref());
+            let legacy = with_cmd("daemon-identity-rollback", args.to_legacy());
+            run_daemon_identity_rollback(&daemon_url, &legacy).await
         }
     }
 }
@@ -1665,6 +1672,7 @@ fn compile_lane_prompt(lane: EngineExecutionLane, prompt: &str) -> String {
     compile_default_lane_prompt(lane, prompt)
 }
 
+#[allow(dead_code)] // clap owns --help; kept as a human-oriented overview for docs
 fn print_usage() {
     println!("medousa-cli usage:");
     println!(

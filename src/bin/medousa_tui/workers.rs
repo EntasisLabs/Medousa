@@ -4,7 +4,7 @@ use tokio::sync::mpsc;
 use super::{
     TuiState,
     daemon_commands::{daemon_enqueue_ask, daemon_health, daemon_register_recurring_prompt},
-    push_obs,
+    push_obs_alert,
 };
 
 #[derive(Debug)]
@@ -75,13 +75,13 @@ pub(crate) fn queue_worker_command(
         Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
             state.perf.dropped_events = state.perf.dropped_events.saturating_add(1);
             if !low_priority {
-                push_obs(state, "⚠ worker queue busy: command dropped".to_string());
+                push_obs_alert(state, "⚠ worker queue busy: command dropped".to_string());
             }
             false
         }
         Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
             state.perf.dropped_events = state.perf.dropped_events.saturating_add(1);
-            push_obs(state, "⚠ worker queue unavailable".to_string());
+            push_obs_alert(state, "⚠ worker queue unavailable".to_string());
             false
         }
     }
@@ -106,12 +106,12 @@ pub(crate) fn handle_worker_result(result: WorkerResult, state: &mut TuiState) {
                 return;
             }
 
-            push_obs(state, text);
+            push_obs_alert(state, text);
         }
         WorkerResult::FormattedToolPayload { request_id, text } => {
             state.perf.worker_queue_depth = state.perf.worker_queue_depth.saturating_sub(1);
             let _ = request_id;
-            push_obs(state, text);
+            push_obs_alert(state, text);
         }
     }
 }

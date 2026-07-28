@@ -4,7 +4,7 @@ A **workshop** is a named connection to an engine — local on this Mac, or a pa
 
 ## Your workshops
 
-In Settings → Workshop you will see cards for each known workshop:
+In Settings → Connection you will see cards for each known workshop:
 
 - **This device** — local engine (often `127.0.0.1`)
 - **Paired portals** — other machines you've trusted

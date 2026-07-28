@@ -6,7 +6,7 @@ Related: [Trash and versions](guide:vault-recovery) · [Workshops and connection
 
 ## On the desktop
 
-**Settings → Workshop → More on this device → Files & diagnostics** shows the real folders on your computer. You’ll typically see:
+**Settings → Connection → More on this device → Files & diagnostics** shows the real folders on your computer. You’ll typically see:
 
 | What | Meaning |
 |------|---------|

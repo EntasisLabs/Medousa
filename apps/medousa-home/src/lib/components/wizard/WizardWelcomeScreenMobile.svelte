@@ -171,6 +171,13 @@
     }
   }
 
+  /** Linking is optional — let the shell open and connect later in Settings. */
+  async function skipSetup() {
+    wizard.error = null;
+    statusMessage = null;
+    await wizard.skipCurrent();
+  }
+
   const canContinue = $derived.by(() => {
     if (wizard.busy || testing) return false;
     if (connectMode === "pair") {
@@ -306,11 +313,19 @@
         {workshopPairingStepsHint()}
         if needed.
       </li>
-      <li>You can change this address later in Settings → Workshop.</li>
+      <li>You can change this address later in Settings → Connection.</li>
     </ul>
   {/if}
 
-  <div class="mt-auto flex justify-end pt-8">
+  <div class="mt-auto flex items-center justify-between gap-3 pt-8">
+    <button
+      type="button"
+      class="btn variant-ghost min-h-11"
+      disabled={wizard.busy || testing}
+      onclick={() => void skipSetup()}
+    >
+      Skip for now
+    </button>
     <button
       type="button"
       class="btn variant-filled-primary inline-flex min-h-11 items-center gap-2 px-6"

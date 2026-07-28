@@ -39,7 +39,7 @@ pub(crate) async fn apply_settings(
     let invalid_modules = super::invalid_module_ids(&allowed_modules);
     if !invalid_modules.is_empty() {
         let invalid_list = invalid_modules.join(", ");
-        super::push_obs(
+        super::push_obs_alert(
             state,
             format!(
                 "⚠ fix tool names first ({invalid_list}) — use dotted names like websearch.search"
@@ -236,7 +236,7 @@ pub(crate) async fn apply_settings(
 
     if let Some(previous) = state.pending_settings_apply.take() {
         previous.handle.abort();
-        super::push_obs(
+        super::push_obs_alert(
             state,
             format!(
                 "↻ settings apply request #{request_id} superseded request #{}",
@@ -278,7 +278,7 @@ pub(crate) async fn apply_settings(
         snapshot,
         handle,
     });
-    super::push_obs(
+    super::push_obs_alert(
         state,
         format!("↻ saving your settings (request #{request_id})…"),
     );
@@ -449,7 +449,7 @@ pub(crate) async fn finalize_settings_apply_if_ready(
             };
             super::save_tui_defaults(&defaults);
 
-            super::push_obs(
+            super::push_obs_alert(
                 state,
                 format!(
                     "✓ saved (request #{request_id}); secrets hidden in logs; {} custom env line(s) active",
@@ -457,22 +457,22 @@ pub(crate) async fn finalize_settings_apply_if_ready(
                 ),
             );
             if let Some(summary) = medousa::runtime::stasis_otel::stasis_otel_obs_summary() {
-                super::push_obs(state, summary);
+                super::push_obs_alert(state, summary);
             } else if !snapshot.stasis_otel_enabled {
-                super::push_obs(
+                super::push_obs_alert(
                     state,
                     "Diagnostic traces off (Settings → Diagnostics)".to_string(),
                 );
             }
         }
         Ok(Err(err)) => {
-            super::push_obs(
+            super::push_obs_alert(
                 state,
                 format!("⚠ settings apply failed (request #{request_id}): {err}"),
             );
         }
         Err(err) => {
-            super::push_obs(
+            super::push_obs_alert(
                 state,
                 format!("⚠ settings apply task failed (request #{request_id}): {err}"),
             );

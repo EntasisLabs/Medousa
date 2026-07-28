@@ -12,18 +12,19 @@ export function isCoLocatedWorkshop(): boolean {
     // Browser shell never has the daemon’s filesystem.
     return false;
   }
-  const kind = workshops.activeWorkshop?.kind;
-  return kind === "local" || kind == null;
+  // Unknown kind is treated as remote — assuming local hands Home paths to a
+  // daemon that may not share this disk.
+  return workshops.activeWorkshop?.kind === "local";
 }
 
 export function vaultHostSideHint(): string {
-  return "Available on the workshop Mac — open Medousa there to pin folders or preview local files.";
+  return "Available on the workshop machine — open Medousa there to pin folders or preview local files.";
 }
 
 export function vaultAddRootRemoteHint(): string {
-  return "Add vault folders on the workshop Mac. This connection can’t see folders on this device.";
+  return "Add vault folders on the workshop machine. This connection can’t see folders on this device.";
 }
 
 export function vaultPinFolderRemoteHint(): string {
-  return "Pin folders on the workshop Mac. Your files here stay on this device.";
+  return "Pin folders on the workshop machine. Your files here stay on this device.";
 }
