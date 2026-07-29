@@ -387,6 +387,35 @@ export type RepositoryInspection = {
   dirty: boolean;
   changed_files: number;
   remotes: string[];
+  existing_projects: Array<{
+    id: string;
+    title: string;
+    state: string;
+    human_phase: string;
+  }>;
+  state_explanation: string;
+  trust_explanation: string;
+};
+
+export type RepositoryCatalogEntry = RepositoryInspection & {
+  pinned: boolean;
+  last_used_at: string;
+  available: boolean;
+};
+
+export type RepositoryBrowseEntry = {
+  name: string;
+  path: string;
+  repository: boolean;
+};
+
+export type RepositoryBrowseResponse = {
+  path: string;
+  parent?: string | null;
+  repository: boolean;
+  places: RepositoryBrowseEntry[];
+  entries: RepositoryBrowseEntry[];
+  truncated: boolean;
 };
 
 export type ProjectTask = {
@@ -426,6 +455,27 @@ export async function inspectForgeRepository(path: string): Promise<RepositoryIn
     method: "POST",
     body: JSON.stringify({ path }),
   });
+}
+
+export async function listForgeRepositories(): Promise<RepositoryCatalogEntry[]> {
+  return forgeFetch("/v1/forge/repositories");
+}
+
+export async function setForgeRepositoryPinned(
+  path: string,
+  pinned: boolean,
+): Promise<RepositoryCatalogEntry[]> {
+  return forgeFetch("/v1/forge/repositories", {
+    method: "PUT",
+    body: JSON.stringify({ path, pinned }),
+  });
+}
+
+export async function browseForgeRepositories(
+  path?: string | null,
+): Promise<RepositoryBrowseResponse> {
+  const query = path ? `?path=${encodeURIComponent(path)}` : "";
+  return forgeFetch(`/v1/forge/repositories/browse${query}`);
 }
 
 export async function startUndertaking(input: {

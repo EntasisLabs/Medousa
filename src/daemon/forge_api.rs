@@ -5,7 +5,7 @@
 
 use std::path::{Component, Path as FsPath, PathBuf};
 use std::process::Command;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
@@ -18,6 +18,7 @@ use medousa_forge::git::{CheckpointAuthor, GitEngine};
 use medousa_forge::model::{
     ActorKind, ActorRef, EvidenceId, ExecutionLease, ExecutorDescriptor, IntegrationStrategy,
     LeaseId, RecoveryDisposition, ReviewDecision, ReviewDecisionId, WorkId, WorkItem, WorkPolicy,
+    WorkState, WorkTarget,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -44,6 +45,11 @@ pub fn forge_router(state: AppState) -> Router {
         .route("/v1/forge/items", get(list_items).post(register_item))
         .route("/v1/forge/items/start", post(start_item))
         .route("/v1/forge/repositories/inspect", post(inspect_repository))
+        .route(
+            "/v1/forge/repositories",
+            get(list_repositories).put(update_repository_pin),
+        )
+        .route("/v1/forge/repositories/browse", get(browse_repositories))
         .route("/v1/forge/items/{work_id}", get(get_item))
         .route(
             "/v1/forge/items/{work_id}/source",
@@ -338,7 +344,7 @@ struct InspectRepositoryRequest {
     path: PathBuf,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 struct RepositoryInspection {
     path: PathBuf,
     display_name: String,
@@ -347,16 +353,220 @@ struct RepositoryInspection {
     dirty: bool,
     changed_files: usize,
     remotes: Vec<String>,
+    existing_projects: Vec<ExistingRepositoryProject>,
+    state_explanation: String,
+    trust_explanation: String,
 }
+
+#[derive(Debug, Clone, Serialize)]
+struct ExistingRepositoryProject {
+    id: String,
+    title: String,
+    state: String,
+    human_phase: String,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+struct RepositoryCatalogStore {
+    #[serde(default)]
+    entries: Vec<RepositoryCatalogRecord>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct RepositoryCatalogRecord {
+    path: PathBuf,
+    #[serde(default)]
+    pinned: bool,
+    last_used_at: chrono::DateTime<chrono::Utc>,
+}
+
+#[derive(Debug, Serialize)]
+struct RepositoryCatalogEntry {
+    #[serde(flatten)]
+    repository: RepositoryInspection,
+    pinned: bool,
+    last_used_at: chrono::DateTime<chrono::Utc>,
+    available: bool,
+}
+
+#[derive(Debug, Deserialize)]
+struct UpdateRepositoryPinRequest {
+    path: PathBuf,
+    pinned: bool,
+}
+
+#[derive(Debug, Deserialize)]
+struct BrowseRepositoriesQuery {
+    #[serde(default)]
+    path: Option<PathBuf>,
+}
+
+#[derive(Debug, Serialize)]
+struct RepositoryBrowseEntry {
+    name: String,
+    path: PathBuf,
+    repository: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct RepositoryBrowseResponse {
+    path: PathBuf,
+    parent: Option<PathBuf>,
+    repository: bool,
+    places: Vec<RepositoryBrowseEntry>,
+    entries: Vec<RepositoryBrowseEntry>,
+    truncated: bool,
+}
+
+static REPOSITORY_CATALOG_LOCK: Mutex<()> = Mutex::new(());
 
 fn default_base_ref() -> String {
     "main".into()
+}
+
+fn repository_catalog_path() -> PathBuf {
+    crate::daemon::forge_host::forge_root().join("repositories.json")
+}
+
+fn read_repository_catalog_unlocked() -> RepositoryCatalogStore {
+    std::fs::read(repository_catalog_path())
+        .ok()
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+        .unwrap_or_default()
+}
+
+fn read_repository_catalog() -> RepositoryCatalogStore {
+    let Ok(_guard) = REPOSITORY_CATALOG_LOCK.lock() else {
+        return RepositoryCatalogStore::default();
+    };
+    read_repository_catalog_unlocked()
+}
+
+fn write_repository_catalog_unlocked(store: &RepositoryCatalogStore) -> ApiResult<()> {
+    let bytes = serde_json::to_vec_pretty(store).map_err(|err| {
+        request_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("could not encode repository catalog: {err}"),
+        )
+    })?;
+    crate::session::atomic_write(&repository_catalog_path(), &bytes).map_err(|err| {
+        request_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("could not save repository catalog: {err}"),
+        )
+    })
+}
+
+fn touch_repository(path: &FsPath, pinned: Option<bool>) -> ApiResult<()> {
+    let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+    let _guard = REPOSITORY_CATALOG_LOCK
+        .lock()
+        .map_err(|_| request_error(StatusCode::INTERNAL_SERVER_ERROR, "repository catalog lock failed"))?;
+    let mut store = read_repository_catalog_unlocked();
+    if let Some(entry) = store.entries.iter_mut().find(|entry| entry.path == canonical) {
+        entry.last_used_at = chrono::Utc::now();
+        if let Some(pinned) = pinned {
+            entry.pinned = pinned;
+        }
+    } else {
+        store.entries.push(RepositoryCatalogRecord {
+            path: canonical,
+            pinned: pinned.unwrap_or(false),
+            last_used_at: chrono::Utc::now(),
+        });
+    }
+    store.entries.sort_by(|left, right| {
+        right
+            .pinned
+            .cmp(&left.pinned)
+            .then_with(|| right.last_used_at.cmp(&left.last_used_at))
+    });
+    store.entries.truncate(50);
+    write_repository_catalog_unlocked(&store)
+}
+
+fn existing_projects_for_repository(
+    items: &[WorkItem],
+    path: &FsPath,
+) -> Vec<ExistingRepositoryProject> {
+    let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+    items
+        .iter()
+        .filter(|item| !matches!(item.state, WorkState::Discarded | WorkState::Accepted))
+        .filter(|item| match &item.target {
+            WorkTarget::Git(target) => target
+                .repo_path
+                .canonicalize()
+                .unwrap_or_else(|_| target.repo_path.clone())
+                == canonical,
+        })
+        .cloned()
+        .map(|item| {
+            let projection = project_item(item);
+            ExistingRepositoryProject {
+                id: projection.item.id.to_string(),
+                title: projection.item.title,
+                state: projection.item.state.to_string(),
+                human_phase: projection.human_phase,
+            }
+        })
+        .collect()
+}
+
+fn inspect_repository_path_from_items(
+    requested: &FsPath,
+    items: &[WorkItem],
+) -> ApiResult<RepositoryInspection> {
+    let git = GitEngine::detect().map_err(map_err)?;
+    if !requested.exists() {
+        return Err(request_error(
+            StatusCode::BAD_REQUEST,
+            format!("folder does not exist: {}", requested.display()),
+        ));
+    }
+    let path = git.worktree_root(requested).map_err(map_err)?;
+    let current_branch = git.current_branch(&path).map_err(map_err)?;
+    let suggested_base_ref = git.suggested_base_ref(&path).map_err(map_err)?;
+    let changed_files = git.status_porcelain(&path).map_err(map_err)?.len();
+    let identity = git.repo_identity(&path).map_err(map_err)?;
+    let display_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("Repository")
+        .to_string();
+    let existing_projects = existing_projects_for_repository(items, &path);
+    let state_explanation = if changed_files > 0 {
+        format!(
+            "{changed_files} uncommitted {} already exist in the repository. Medousa starts from the committed revision, so those outside changes stay separate.",
+            if changed_files == 1 { "change" } else { "changes" }
+        )
+    } else {
+        "The repository is clean. Medousa will create an isolated working copy from the selected branch.".into()
+    };
+    Ok(RepositoryInspection {
+        path,
+        display_name,
+        current_branch,
+        suggested_base_ref,
+        dirty: changed_files > 0,
+        changed_files,
+        remotes: identity.remotes,
+        existing_projects,
+        state_explanation,
+        trust_explanation: "Medousa may read this repository and create an isolated working copy. Project commands run only when you explicitly choose a check or Terminal action.".into(),
+    })
+}
+
+fn inspect_repository_path(state: &AppState, requested: &FsPath) -> ApiResult<RepositoryInspection> {
+    let items = forge(state).list().map_err(map_err)?;
+    inspect_repository_path_from_items(requested, &items)
 }
 
 async fn register_item(
     State(state): State<AppState>,
     Json(body): Json<RegisterRequest>,
 ) -> ApiResult<Json<ItemProjection>> {
+    let repository_path = body.repo_path.clone();
     let actor = actor_from_state(&state);
     let owner = body
         .owner
@@ -383,37 +593,201 @@ async fn register_item(
         )
     }
     .map_err(map_err)?;
+    touch_repository(&repository_path, None)?;
     Ok(ok_item(&state, item, "registered"))
 }
 
 async fn inspect_repository(
+    State(state): State<AppState>,
     Json(body): Json<InspectRepositoryRequest>,
 ) -> ApiResult<Json<RepositoryInspection>> {
-    let git = GitEngine::detect().map_err(map_err)?;
-    if !body.path.exists() {
+    let repository = inspect_repository_path(&state, &body.path)?;
+    touch_repository(&repository.path, None)?;
+    Ok(Json(repository))
+}
+
+async fn list_repositories(
+    State(state): State<AppState>,
+) -> ApiResult<Json<Vec<RepositoryCatalogEntry>>> {
+    let mut store = read_repository_catalog();
+    let items = forge(&state).list().map_err(map_err)?;
+    for item in &items {
+        let WorkTarget::Git(target) = &item.target;
+        let path = target
+            .repo_path
+            .canonicalize()
+            .unwrap_or_else(|_| target.repo_path.clone());
+        if store.entries.iter().all(|entry| entry.path != path) {
+            store.entries.push(RepositoryCatalogRecord {
+                path,
+                pinned: false,
+                last_used_at: item.updated_at,
+            });
+        }
+    }
+    store.entries.sort_by(|left, right| {
+        right
+            .pinned
+            .cmp(&left.pinned)
+            .then_with(|| right.last_used_at.cmp(&left.last_used_at))
+    });
+    let entries = store
+        .entries
+        .into_iter()
+        .take(20)
+        .map(|record| {
+            let available = record.path.is_dir();
+            let repository = inspect_repository_path_from_items(&record.path, &items).unwrap_or_else(|_| {
+                RepositoryInspection {
+                    display_name: record
+                        .path
+                        .file_name()
+                        .and_then(|name| name.to_str())
+                        .unwrap_or("Repository")
+                        .to_string(),
+                    path: record.path.clone(),
+                    current_branch: None,
+                    suggested_base_ref: "main".into(),
+                    dirty: false,
+                    changed_files: 0,
+                    remotes: Vec::new(),
+                    existing_projects: existing_projects_for_repository(&items, &record.path),
+                    state_explanation: "This repository is not currently available on the connected workshop.".into(),
+                    trust_explanation: "No files or commands can be accessed until this workshop repository is available again.".into(),
+                }
+            });
+            RepositoryCatalogEntry {
+                repository,
+                pinned: record.pinned,
+                last_used_at: record.last_used_at,
+                available,
+            }
+        })
+        .collect();
+    Ok(Json(entries))
+}
+
+async fn update_repository_pin(
+    State(state): State<AppState>,
+    Json(body): Json<UpdateRepositoryPinRequest>,
+) -> ApiResult<Json<Vec<RepositoryCatalogEntry>>> {
+    let repository = inspect_repository_path(&state, &body.path)?;
+    touch_repository(&repository.path, Some(body.pinned))?;
+    list_repositories(State(state)).await
+}
+
+fn repository_browse_roots(state: &AppState) -> Vec<PathBuf> {
+    let mut roots = Vec::new();
+    if let Some(home) = dirs::home_dir().and_then(|path| path.canonicalize().ok()) {
+        roots.push(home);
+    }
+    for common in ["/workspace", "/workspaces", "/Volumes", "/mnt", "/srv"] {
+        let path = PathBuf::from(common);
+        if let Ok(path) = path.canonicalize() {
+            roots.push(path);
+        }
+    }
+    for record in read_repository_catalog().entries {
+        if let Some(parent) = record.path.parent().and_then(|path| path.canonicalize().ok()) {
+            roots.push(parent);
+        }
+    }
+    if let Ok(items) = forge(state).list() {
+        for item in items {
+            let WorkTarget::Git(target) = item.target;
+            if let Some(parent) = target
+                .repo_path
+                .parent()
+                .and_then(|path| path.canonicalize().ok())
+            {
+                roots.push(parent);
+            }
+        }
+    }
+    roots.sort();
+    roots.dedup();
+    roots
+}
+
+fn browse_path_allowed(path: &FsPath, roots: &[PathBuf]) -> bool {
+    roots.iter().any(|root| path.starts_with(root))
+}
+
+fn browse_entry(path: PathBuf) -> RepositoryBrowseEntry {
+    RepositoryBrowseEntry {
+        name: path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or_else(|| path.to_str().unwrap_or("Folder"))
+            .to_string(),
+        repository: path.join(".git").exists(),
+        path,
+    }
+}
+
+async fn browse_repositories(
+    State(state): State<AppState>,
+    Query(query): Query<BrowseRepositoriesQuery>,
+) -> ApiResult<Json<RepositoryBrowseResponse>> {
+    let roots = repository_browse_roots(&state);
+    let requested = query
+        .path
+        .or_else(dirs::home_dir)
+        .ok_or_else(|| request_error(StatusCode::NOT_FOUND, "workshop home folder is unavailable"))?;
+    let path = requested.canonicalize().map_err(|err| {
+        request_error(
+            StatusCode::NOT_FOUND,
+            format!("folder is unavailable: {err}"),
+        )
+    })?;
+    if !path.is_dir() || !browse_path_allowed(&path, &roots) {
         return Err(request_error(
-            StatusCode::BAD_REQUEST,
-            format!("folder does not exist: {}", body.path.display()),
+            StatusCode::FORBIDDEN,
+            "folder is outside the repository browser's workshop places",
         ));
     }
-    let path = git.worktree_root(&body.path).map_err(map_err)?;
-    let current_branch = git.current_branch(&path).map_err(map_err)?;
-    let suggested_base_ref = git.suggested_base_ref(&path).map_err(map_err)?;
-    let changed_files = git.status_porcelain(&path).map_err(map_err)?.len();
-    let identity = git.repo_identity(&path).map_err(map_err)?;
-    let display_name = path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or("Repository")
-        .to_string();
-    Ok(Json(RepositoryInspection {
+    let parent = path
+        .parent()
+        .and_then(|parent| parent.canonicalize().ok())
+        .filter(|parent| browse_path_allowed(parent, &roots));
+    let mut entries = Vec::new();
+    let read_dir = std::fs::read_dir(&path).map_err(|err| {
+        request_error(
+            StatusCode::BAD_REQUEST,
+            format!("could not read folder: {err}"),
+        )
+    })?;
+    let mut truncated = false;
+    for entry in read_dir {
+        let Ok(entry) = entry else { continue };
+        let name = entry.file_name();
+        if name.to_string_lossy().starts_with('.') || !entry.path().is_dir() {
+            continue;
+        }
+        let Ok(candidate) = entry.path().canonicalize() else { continue };
+        if !browse_path_allowed(&candidate, &roots) {
+            continue;
+        }
+        if entries.len() == 500 {
+            truncated = true;
+            break;
+        }
+        entries.push(browse_entry(candidate));
+    }
+    entries.sort_by(|left, right| {
+        right
+            .repository
+            .cmp(&left.repository)
+            .then_with(|| left.name.to_ascii_lowercase().cmp(&right.name.to_ascii_lowercase()))
+    });
+    let places = roots.into_iter().map(browse_entry).collect();
+    Ok(Json(RepositoryBrowseResponse {
+        repository: path.join(".git").exists(),
         path,
-        display_name,
-        current_branch,
-        suggested_base_ref,
-        dirty: changed_files > 0,
-        changed_files,
-        remotes: identity.remotes,
+        parent,
+        places,
+        entries,
+        truncated,
     }))
 }
 
@@ -421,6 +795,7 @@ async fn start_item(
     State(state): State<AppState>,
     Json(body): Json<RegisterRequest>,
 ) -> ApiResult<Json<ItemProjection>> {
+    let repository_path = body.repo_path.clone();
     let actor = actor_from_state(&state);
     let owner = body
         .owner
@@ -447,6 +822,7 @@ async fn start_item(
         )
     }
     .map_err(map_err)?;
+    touch_repository(&repository_path, None)?;
     publish_item(&state, &registered, "registered");
     let item = forge.provision(&registered.id, &actor).map_err(map_err)?;
     if let Some(env) = item.environment.as_ref() {
@@ -2052,5 +2428,25 @@ mod source_tests {
         assert!(tasks.iter().any(|task| task.id == "npm-build"));
         assert!(!tasks.iter().any(|task| task.id == "npm-dev"));
         assert!(!tasks.iter().any(|task| task.id == "custom"));
+    }
+
+    #[test]
+    fn repository_browser_stays_inside_workshop_places() {
+        let roots = vec![PathBuf::from("/workspaces"), PathBuf::from("/srv/code")];
+        assert!(browse_path_allowed(FsPath::new("/workspaces/team/repo"), &roots));
+        assert!(browse_path_allowed(FsPath::new("/srv/code/project"), &roots));
+        assert!(!browse_path_allowed(FsPath::new("/etc"), &roots));
+        assert!(!browse_path_allowed(FsPath::new("/srv/other"), &roots));
+    }
+
+    #[test]
+    fn repository_browser_marks_git_worktrees() {
+        let root = tempfile::tempdir().unwrap();
+        let repo = root.path().join("project");
+        std::fs::create_dir_all(repo.join(".git")).unwrap();
+        let entry = browse_entry(repo.clone());
+        assert_eq!(entry.name, "project");
+        assert_eq!(entry.path, repo);
+        assert!(entry.repository);
     }
 }

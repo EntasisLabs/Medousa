@@ -1,10 +1,15 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { Code2, FolderOpen, Plus, RefreshCw } from "@lucide/svelte";
+  import { ChevronLeft, Code2, Folder, FolderOpen, Pin, Plus, RefreshCw } from "@lucide/svelte";
   import {
+    browseForgeRepositories,
     humanPhaseLabel,
     humanizeForgeMessage,
     inspectForgeRepository,
+    listForgeRepositories,
+    setForgeRepositoryPinned,
+    type RepositoryBrowseResponse,
+    type RepositoryCatalogEntry,
     type RepositoryInspection,
   } from "$lib/forge";
   import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
@@ -21,6 +26,11 @@
   let baseRef = $state("main");
   let repository = $state<RepositoryInspection | null>(null);
   let inspecting = $state(false);
+  let repositoryCatalog = $state<RepositoryCatalogEntry[]>([]);
+  let repositoryBrowser = $state<RepositoryBrowseResponse | null>(null);
+  let browserOpen = $state(false);
+  let browserLoading = $state(false);
+  let duplicateAcknowledged = $state(false);
   let error = $state<string | null>(null);
   const coLocated = $derived(isCoLocatedWorkshop());
   const currentFolder = $derived(
@@ -45,22 +55,23 @@
         item.state === "accepted",
     ),
   );
-  const recentRepositories = $derived.by(() => {
-    const seen = new Set<string>();
-    const paths: Array<{ path: string; label: string }> = [];
-    for (const item of undertakings.items) {
-      const target = item.target?.Git;
-      if (!target?.repo_path || seen.has(target.repo_path)) continue;
-      seen.add(target.repo_path);
-      paths.push({ path: target.repo_path, label: rootLabelFromPath(target.repo_path) });
-      if (paths.length === 5) break;
-    }
-    return paths;
-  });
+  const recentRepositories = $derived(repositoryCatalog.filter((entry) => entry.available));
+  const duplicateNeedsChoice = $derived(
+    Boolean(repository?.existing_projects.length && !duplicateAcknowledged),
+  );
 
   onMount(() => {
     void undertakings.refreshList();
+    void loadRepositoryCatalog();
   });
+
+  async function loadRepositoryCatalog() {
+    try {
+      repositoryCatalog = await listForgeRepositories();
+    } catch {
+      // Project history remains available even if catalog discovery is unavailable.
+    }
+  }
 
   async function openItem(id: string, label: string) {
     await lmeWorkspace.openCodeWorkspace(id, label);
@@ -80,7 +91,10 @@
       repository = await inspectForgeRepository(path.trim());
       repoPath = repository.path;
       baseRef = repository.suggested_base_ref;
+      duplicateAcknowledged = repository.existing_projects.length === 0;
+      browserOpen = false;
       creating = true;
+      await loadRepositoryCatalog();
     } catch (err) {
       repository = null;
       repoPath = path.trim();
@@ -94,6 +108,28 @@
     if (!coLocated) return;
     const path = await pickExternalFolder("Choose a code project");
     if (path) await chooseRepository(path);
+  }
+
+  async function browseRepositoryFolder(path?: string | null) {
+    browserOpen = true;
+    browserLoading = true;
+    error = null;
+    try {
+      repositoryBrowser = await browseForgeRepositories(path);
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+    } finally {
+      browserLoading = false;
+    }
+  }
+
+  async function togglePinned(entry: RepositoryCatalogEntry, event: MouseEvent) {
+    event.stopPropagation();
+    try {
+      repositoryCatalog = await setForgeRepositoryPinned(entry.path, !entry.pinned);
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+    }
   }
 
   async function create() {
@@ -111,6 +147,8 @@
       outcome = "";
       repository = null;
       repoPath = "";
+      duplicateAcknowledged = false;
+      await loadRepositoryCatalog();
       await lmeWorkspace.openCodeWorkspace(item.id, item.title);
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
@@ -154,14 +192,39 @@
     >
       {#if repository}
         <div class="rounded border border-surface-500/30 bg-surface-900/45 px-2 py-1.5">
-          <p class="truncate text-[11px] font-medium text-surface-200">{repository.display_name}</p>
-          <p class="truncate font-mono text-[9px] text-surface-500">{repository.path}</p>
-          {#if repository.dirty}
-            <p class="mt-1 text-[9px] leading-relaxed text-amber-200">
-              {repository.changed_files} uncommitted {repository.changed_files === 1 ? "file is" : "files are"} outside this project and won’t be included.
-            </p>
-          {/if}
+          <div class="flex items-start justify-between gap-2">
+            <div class="min-w-0">
+              <p class="truncate text-[11px] font-medium text-surface-200">{repository.display_name}</p>
+              <p class="truncate font-mono text-[9px] text-surface-500">{repository.path}</p>
+            </div>
+            <button type="button" class="shrink-0 rounded px-1.5 py-0.5 text-[9px] text-surface-400 hover:bg-surface-800" onclick={() => {
+              repository = null;
+              duplicateAcknowledged = false;
+            }}>Change</button>
+          </div>
+          <p class="mt-1 text-[9px] leading-relaxed {repository.dirty ? 'text-amber-200' : 'text-surface-500'}">
+            {repository.state_explanation}
+          </p>
+          <details class="mt-1 text-[9px] text-surface-600">
+            <summary class="cursor-pointer select-none hover:text-surface-400">What Medousa can do here</summary>
+            <p class="mt-1 leading-relaxed">{repository.trust_explanation}</p>
+          </details>
         </div>
+        {#if repository.existing_projects.length > 0 && !duplicateAcknowledged}
+          <div class="rounded border border-primary-500/30 bg-primary-950/15 p-2">
+            <p class="text-[10px] font-medium text-surface-200">You already have work here</p>
+            <p class="mt-0.5 text-[9px] leading-relaxed text-surface-500">Continue it, or deliberately start a separate change.</p>
+            <div class="mt-1.5 flex flex-col gap-1">
+              {#each repository.existing_projects.slice(0, 3) as existing (existing.id)}
+                <button type="button" class="flex items-center justify-between gap-2 rounded px-2 py-1 text-left text-[10px] text-surface-300 hover:bg-surface-800" onclick={() => void openItem(existing.id, existing.title)}>
+                  <span class="min-w-0 flex-1 truncate">{existing.title}</span>
+                  <span class="shrink-0 text-[8px] text-surface-500">{humanPhaseLabel(existing.human_phase)}</span>
+                </button>
+              {/each}
+              <button type="button" class="rounded px-2 py-1 text-left text-[9px] text-primary-200 hover:bg-primary-900/25" onclick={() => (duplicateAcknowledged = true)}>Start another change</button>
+            </div>
+          </div>
+        {/if}
       {:else}
         <div class="grid gap-1">
           {#if coLocated}
@@ -174,16 +237,75 @@
               </button>
             {/if}
           {:else}
-            <div class="flex gap-1">
-              <input class="code-field min-w-0 flex-1" placeholder="Folder on connected computer" bind:value={repoPath} />
-              <button type="button" class="rounded border border-surface-500/35 px-2 text-[10px] text-surface-300" disabled={!repoPath.trim() || inspecting} onclick={() => void chooseRepository(repoPath)}>Use</button>
-            </div>
-          {/if}
-          {#each recentRepositories as recent (recent.path)}
-            <button type="button" class="flex min-w-0 items-center gap-2 rounded px-2 py-1 text-left text-[10px] text-surface-400 hover:bg-surface-800 hover:text-surface-100" onclick={() => void chooseRepository(recent.path)}>
-              <Code2 size={11} class="shrink-0" /><span class="min-w-0 flex-1 truncate">{recent.label}</span>
+            <button type="button" class="flex items-center gap-2 rounded border border-surface-500/30 px-2 py-2 text-left text-[10px] text-surface-200 hover:bg-surface-800" onclick={() => void browseRepositoryFolder()}>
+              <FolderOpen size={13} class="text-primary-300" />Browse connected computer…
             </button>
+          {/if}
+          {#each recentRepositories.slice(0, 8) as recent (recent.path)}
+            <div class="group flex min-w-0 items-center rounded hover:bg-surface-800">
+              <button type="button" class="flex min-w-0 flex-1 items-center gap-2 px-2 py-1 text-left text-[10px] text-surface-400 hover:text-surface-100" onclick={() => void chooseRepository(recent.path)}>
+                <Code2 size={11} class="shrink-0" />
+                <span class="min-w-0 flex-1 truncate">{recent.display_name}</span>
+                <span class="truncate text-[8px] text-surface-600">{recent.current_branch ?? recent.suggested_base_ref}</span>
+              </button>
+              <button
+                type="button"
+                class="mr-1 shrink-0 rounded p-0.5 {recent.pinned ? 'text-primary-300' : 'text-surface-600 opacity-0 group-hover:opacity-100'}"
+                aria-label={recent.pinned ? `Unpin ${recent.display_name}` : `Pin ${recent.display_name}`}
+                onclick={(event) => void togglePinned(recent, event)}
+              ><Pin size={10} fill={recent.pinned ? "currentColor" : "none"} /></button>
+            </div>
           {/each}
+          {#if !coLocated}
+            <details class="px-1 text-[9px] text-surface-600">
+              <summary class="cursor-pointer select-none hover:text-surface-400">Enter a path instead</summary>
+              <div class="mt-1 flex gap-1">
+                <input class="code-field min-w-0 flex-1" placeholder="Folder on connected computer" bind:value={repoPath} />
+                <button type="button" class="rounded border border-surface-500/35 px-2 text-[10px] text-surface-300" disabled={!repoPath.trim() || inspecting} onclick={() => void chooseRepository(repoPath)}>Use</button>
+              </div>
+            </details>
+          {/if}
+        </div>
+      {/if}
+      {#if browserOpen && !repository}
+        <div class="overflow-hidden rounded border border-surface-500/35 bg-surface-950/80">
+          <div class="flex items-center gap-1 border-b border-surface-500/25 px-1.5 py-1">
+            <button type="button" class="rounded p-1 text-surface-500 hover:bg-surface-800 hover:text-surface-200 disabled:opacity-30" aria-label="Parent folder" disabled={!repositoryBrowser?.parent || browserLoading} onclick={() => void browseRepositoryFolder(repositoryBrowser?.parent)}><ChevronLeft size={12} /></button>
+            <p class="min-w-0 flex-1 truncate font-mono text-[9px] text-surface-400">{repositoryBrowser?.path ?? "Connected computer"}</p>
+            <button type="button" class="rounded p-1 text-surface-500 hover:bg-surface-800 hover:text-surface-200" aria-label="Close repository browser" onclick={() => (browserOpen = false)}>×</button>
+          </div>
+          {#if browserLoading}
+            <p class="px-2 py-3 text-[10px] text-surface-500">Looking for projects…</p>
+          {:else if repositoryBrowser}
+            {#if repositoryBrowser.repository}
+              <button type="button" class="flex w-full items-center gap-2 border-b border-primary-500/20 bg-primary-950/15 px-2 py-1.5 text-left text-[10px] text-primary-200" onclick={() => void chooseRepository(repositoryBrowser!.path)}>
+                <Code2 size={12} />Use this repository
+              </button>
+            {/if}
+            {#if repositoryBrowser.places.length > 1}
+              <div class="flex gap-1 overflow-x-auto border-b border-surface-500/20 px-1.5 py-1">
+                {#each repositoryBrowser.places as place (place.path)}
+                  <button type="button" class="shrink-0 rounded px-1.5 py-0.5 text-[8px] text-surface-500 hover:bg-surface-800 hover:text-surface-200" title={place.path} onclick={() => void browseRepositoryFolder(place.path)}>{place.name}</button>
+                {/each}
+              </div>
+            {/if}
+            <div class="max-h-48 overflow-y-auto py-1">
+              {#if repositoryBrowser.entries.length === 0}
+                <p class="px-2 py-3 text-[10px] text-surface-500">No folders here.</p>
+              {:else}
+                {#each repositoryBrowser.entries as entry (entry.path)}
+                  <button type="button" class="flex w-full items-center gap-2 px-2 py-1 text-left text-[10px] hover:bg-surface-800" onclick={() => entry.repository ? void chooseRepository(entry.path) : void browseRepositoryFolder(entry.path)}>
+                    {#if entry.repository}<Code2 size={11} class="shrink-0 text-primary-300" />{:else}<Folder size={11} class="shrink-0 text-surface-500" />{/if}
+                    <span class="min-w-0 flex-1 truncate {entry.repository ? 'text-surface-200' : 'text-surface-400'}">{entry.name}</span>
+                    {#if entry.repository}<span class="text-[8px] text-primary-300/70">Repository</span>{/if}
+                  </button>
+                {/each}
+              {/if}
+            </div>
+            {#if repositoryBrowser.truncated}
+              <p class="border-t border-surface-500/20 px-2 py-1 text-[8px] text-surface-600">Showing the first 500 folders.</p>
+            {/if}
+          {/if}
         </div>
       {/if}
       <label class="code-field-label">
@@ -202,7 +324,7 @@
       <button
         type="submit"
         class="rounded bg-primary-500/80 px-2 py-1 text-xs font-medium text-surface-50 disabled:opacity-40"
-        disabled={busy || inspecting || !outcome.trim() || !repository}
+        disabled={busy || inspecting || !outcome.trim() || !repository || duplicateNeedsChoice}
       >{busy ? "Preparing project…" : inspecting ? "Reading project…" : "Start"}</button>
     </form>
   {/if}

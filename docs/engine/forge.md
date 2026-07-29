@@ -37,6 +37,8 @@ Base path: `/v1/forge`. Types are `medousa-forge` serde models (`WorkItem`,
 | POST | `/v1/forge/items` | Register undertaking (`repo_path`, `base_ref`, optional `policy`) |
 | POST | `/v1/forge/items/start` | Register and provision a project in one operation |
 | POST | `/v1/forge/repositories/inspect` | Resolve a folder to its Git root and infer branch/status metadata |
+| GET, PUT | `/v1/forge/repositories` | List recent/pinned workshop repositories or update a pin |
+| GET | `/v1/forge/repositories/browse?path=…` | Browse directories inside daemon-owned workshop places |
 | GET | `/v1/forge/items` | List items |
 | GET | `/v1/forge/items/{id}` | Load item |
 | GET | `/v1/forge/items/{id}/source?path=…` | Read bounded UTF-8 source from the governed worktree |
@@ -65,6 +67,15 @@ Base path: `/v1/forge`. Types are `medousa-forge` serde models (`WorkItem`,
 Export writes on the daemon/workshop filesystem. `destination` must be absent
 or an empty directory; a non-empty destination returns `409` and is never
 overwritten.
+
+Repository discovery is daemon-owned. The catalog lives under the Forge data
+root, records at most 50 recent/pinned paths, and never treats a Home-local
+picker as authority for a remote workshop. Browsing canonicalizes every path,
+rejects paths outside the workshop home/common repository places, hides dot
+directories, and returns at most 500 folders per response. Inspection reports
+Git branch/remotes, clean or dirty state, and active Forge projects targeting
+the same canonical repository so clients can offer Continue existing / Start
+another change before provisioning.
 
 ### Register body
 

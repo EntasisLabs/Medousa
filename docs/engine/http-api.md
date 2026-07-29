@@ -239,6 +239,8 @@ Custody of intentional work episodes over a git target (vault or any repo). Dist
 | POST | `/v1/forge/items` | Register |
 | POST | `/v1/forge/items/start` | Register and provision in one operation |
 | POST | `/v1/forge/repositories/inspect` | Inspect a repository path and infer its starting branch |
+| GET, PUT | `/v1/forge/repositories` | Workshop repository recents and pins |
+| GET | `/v1/forge/repositories/browse?path=…` | Scoped workshop directory/repository browser |
 | GET | `/v1/forge/items` | List |
 | GET | `/v1/forge/items/{id}` | Get |
 | POST | `/v1/forge/items/{id}/provision` | Provision env |

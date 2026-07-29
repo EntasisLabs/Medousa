@@ -53,6 +53,9 @@ reconstructing what they were doing.
 
 ## Milestone 2 — Workshop-native repository discovery
 
+Status: complete (2026-07-29). Provider-backed clone remains capability-gated
+and ships with the optional provider adapters in Milestone 6.
+
 ### Goal
 
 Make first-use project selection equally effortless for local and remote

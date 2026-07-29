@@ -15,8 +15,8 @@ same projects with the project list and editor shown one level at a time.
 Intent → Set up → Work → Understand → Review → Finish
 ```
 
-1. Open **Code**, choose **New project**, then describe the change, the desired
-   outcome, the repository folder, and starting branch.
+1. Open **Code**, choose **New project**, select a recent or pinned repository,
+   or browse the connected workshop, then describe the outcome you want.
 2. **Set up project** creates a safe working copy.
 3. Edit files, ask Codex or Cursor to continue, or open Terminal. **Understand**
    explains code relationships without changing anything.
@@ -27,6 +27,24 @@ Chat and Terminal show the same compact project context. Open the context chip
 to move between the project, Review, Terminal, and a coding agent without
 rebuilding context. It shows the current stage and collaborator. Internal state
 is available under **Technical details** when troubleshooting requires it.
+
+## Choose a repository
+
+Repository discovery always follows the connected workshop. A local workshop
+uses the native folder picker; a remote workshop shows folders from the remote
+computer. Medousa never uploads a local folder or presents the Home device's
+filesystem as if it belonged to the workshop.
+
+- Recent and pinned repositories belong to the workshop and appear on every
+  client connected to it.
+- The remote browser starts from scoped workshop places and lists folders and
+  Git repositories without requiring a server path.
+- Inspection explains whether the repository is clean. Existing uncommitted
+  changes stay in the original checkout; the project starts from a committed
+  revision in an isolated working copy.
+- If active Medousa work already targets the repository, choose **Continue**
+  that project or explicitly **Start another change**.
+- Manual path entry remains under the advanced disclosure for unusual mounts.
 
 ## Source editor
 
@@ -131,8 +149,10 @@ concepts users must learn to work in Code.
 See `apps/medousa-home/src/lib/forge.ts` and daemon routes:
 
 - `GET /v1/forge/items`, `…/review`, `…/evidence/{id}/patch|commands`
-- `POST /v1/forge/repositories/inspect` and `POST /v1/forge/items/start` for
-  folder-first project setup with inferred Git context
+- `GET|PUT /v1/forge/repositories` for daemon-owned recents and pins,
+  `GET /v1/forge/repositories/browse` for scoped workshop browsing,
+  `POST /v1/forge/repositories/inspect` for Git state and duplicate detection,
+  and `POST /v1/forge/items/start` for inferred project setup
 - `GET|POST|PUT|PATCH|DELETE /v1/forge/items/{id}/source` for bounded,
   governed source editing
 - `GET|PUT /v1/forge/items/{id}/workspace-state` for durable editor recovery
