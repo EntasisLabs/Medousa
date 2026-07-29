@@ -4,6 +4,8 @@
   import { EditorState } from "@codemirror/state";
   import {
     EditorView,
+    GutterMarker,
+    gutter,
     keymap,
   } from "@codemirror/view";
   import { indentWithTab } from "@codemirror/commands";
@@ -26,6 +28,22 @@
   } from "$lib/config/codeEditorPreferences";
   import { codeEditorFind } from "$lib/stores/codeEditorFind.svelte";
 
+  class ReviewMarker extends GutterMarker {
+    kind: string;
+
+    constructor(kind: string) {
+      super();
+      this.kind = kind;
+    }
+
+    toDOM() {
+      const marker = document.createElement("span");
+      marker.className = `code-review-gutter-marker code-review-gutter-${this.kind}`;
+      marker.title = this.kind === "deleted" ? "Lines removed near here" : "Line changed in this project";
+      return marker;
+    }
+  }
+
   interface Props {
     value: string;
     languageId?: CodeEditorLanguageId | string | null;
@@ -47,6 +65,8 @@
     }) => void;
     /** Fired when CM diagnostics / LSP state may have changed. */
     onProblemsChanged?: () => void;
+    /** Baseline-to-reviewed lines shown as quiet source-control markers. */
+    changedLines?: Array<{ line: number; kind: string }>;
   }
 
   let {
@@ -61,6 +81,7 @@
     onCursorChanged,
     onSelectionChanged,
     onProblemsChanged,
+    changedLines = [],
   }: Props = $props();
 
   let host: HTMLDivElement | undefined = $state();
@@ -149,6 +170,18 @@
         }
       }),
     ];
+    if (changedLines.length > 0) {
+      const markers = new Map(changedLines.map((change) => [change.line, change.kind]));
+      extensions.push(
+        gutter({
+          class: "code-review-gutter",
+          lineMarker(view, line) {
+            const kind = markers.get(view.state.doc.lineAt(line.from).number);
+            return kind ? new ReviewMarker(kind) : null;
+          },
+        }),
+      );
+    }
     if (wrap) {
       extensions.push(EditorView.lineWrapping);
     }
@@ -280,3 +313,26 @@
     }
   }}
 ></div>
+
+<style>
+  :global(.code-review-gutter) {
+    width: 4px;
+    background: transparent;
+  }
+
+  :global(.code-review-gutter-marker) {
+    display: block;
+    width: 3px;
+    height: 100%;
+    min-height: 1.15rem;
+    border-radius: 999px;
+    background: rgb(var(--color-primary-400));
+  }
+
+  :global(.code-review-gutter-deleted) {
+    height: 3px;
+    min-height: 3px;
+    margin-top: 0.55rem;
+    background: rgb(251 113 133);
+  }
+</style>

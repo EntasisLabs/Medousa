@@ -264,6 +264,9 @@ Custody of intentional work episodes over a git target (vault or any repo). Dist
 | DELETE | `/v1/forge/items/{id}/source` | Delete with digest conflict fencing |
 | GET | `/v1/forge/items/{id}/workspace-state` | Restore editor tabs, drafts, and groups |
 | PUT | `/v1/forge/items/{id}/workspace-state` | Persist lease-bound editor recovery state |
+| GET | `/v1/forge/items/{id}/review` | Structured review synthesis, attribution, and timeline |
+| GET | `/v1/forge/items/{id}/review/file?path=…` | Compare one file between exact baseline and reviewed revisions |
+| POST | `/v1/forge/items/{id}/review/file` | Reopen and restore one baseline text file while preserving reviewed evidence |
 | GET | `/v1/forge/items/{id}/tasks` | Detect project commands |
 | POST | `/v1/forge/items/{id}/tasks/{task_id}/run` | Run a detected command and record its result |
 

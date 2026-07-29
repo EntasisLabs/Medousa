@@ -4,9 +4,11 @@
 
 use std::path::PathBuf;
 
+use chrono::{DateTime, Utc};
+use medousa_forge::events::{EventPayload, SideEffect};
 use medousa_forge::forge::Forge;
 use medousa_forge::model::{
-    AttemptState, EvidenceId, EvidenceManifest, WorkItem, WorkState,
+    ActorKind, AttemptState, EvidenceId, EvidenceManifest, WorkItem, WorkState,
 };
 use serde::Serialize;
 
@@ -127,6 +129,54 @@ pub struct ChangedFileSummary {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct ReviewVerification {
+    pub label: String,
+    pub command: Vec<String>,
+    pub success: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub exit_code: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub duration_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ReviewSynthesis {
+    pub outcome: String,
+    pub status: String,
+    pub status_summary: String,
+    pub risk: String,
+    pub risk_summary: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub verification: Option<ReviewVerification>,
+    pub unresolved_issues: Vec<String>,
+    pub recommended_next_action: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ReviewAttribution {
+    pub id: String,
+    pub kind: String,
+    pub label: String,
+    pub state: String,
+    pub started_at: DateTime<Utc>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ended_at: Option<DateTime<Utc>>,
+    pub files: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ReviewTimelineEntry {
+    pub id: String,
+    pub at: DateTime<Utc>,
+    pub kind: String,
+    pub label: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+    pub actor_kind: String,
+    pub actor_label: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct ReviewProjection {
     pub work_id: String,
     pub title: String,
@@ -146,6 +196,9 @@ pub struct ReviewProjection {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub attempt_seq: Option<u32>,
     pub changed_files: Vec<ChangedFileSummary>,
+    pub synthesis: ReviewSynthesis,
+    pub attribution: Vec<ReviewAttribution>,
+    pub timeline: Vec<ReviewTimelineEntry>,
     pub truncated: bool,
     pub base_advanced: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -203,6 +256,7 @@ pub fn build_review(forge: &Forge, item: &WorkItem) -> ReviewProjection {
     let mut policy = None;
     let mut command_log_lines = 0usize;
     let mut patch_byte_size = 0u64;
+    let mut verification = None;
 
     if let Some(eid) = evidence_id.as_ref()
         && let Some(dir) = evidence_dir(forge, item, eid)
@@ -241,6 +295,7 @@ pub fn build_review(forge: &Forge, item: &WorkItem) -> ReviewProjection {
         }
         if let Ok(commands) = std::fs::read_to_string(dir.join("commands.jsonl")) {
             command_log_lines = commands.lines().filter(|l| !l.trim().is_empty()).count();
+            verification = commands.lines().rev().find_map(parse_verification);
         }
         if let Ok(bytes) = std::fs::read(dir.join("policy.json")) {
             policy = serde_json::from_slice(&bytes).ok();
@@ -252,6 +307,140 @@ pub fn build_review(forge: &Forge, item: &WorkItem) -> ReviewProjection {
         .as_ref()
         .and_then(|id| item.attempt(id))
         .and_then(|a| a.lease.as_ref());
+
+    let policy_issues = policy
+        .as_ref()
+        .and_then(serde_json::Value::as_object)
+        .map(|report| {
+            report
+                .get("violations")
+                .and_then(serde_json::Value::as_array)
+                .map(Vec::len)
+                .unwrap_or(0)
+                + report
+                    .get("capture_risks")
+                    .and_then(serde_json::Value::as_array)
+                    .map(Vec::len)
+                    .unwrap_or(0)
+        })
+        .unwrap_or(0);
+    let mut unresolved_issues = Vec::new();
+    if base_advanced {
+        unresolved_issues.push("The starting branch changed while this work was in progress.".into());
+    }
+    if truncated {
+        unresolved_issues.push("Some evidence was shortened by the configured capture limits.".into());
+    }
+    if policy_issues > 0 {
+        unresolved_issues.push(format!(
+            "{policy_issues} policy or content risk{} need review.",
+            if policy_issues == 1 { "" } else { "s" }
+        ));
+    }
+    if verification.as_ref().is_some_and(|result| !result.success) {
+        unresolved_issues.push("The latest project check did not pass.".into());
+    } else if verification.is_none() {
+        unresolved_issues.push("No project check was recorded for this revision.".into());
+    }
+    let risk = if policy_issues > 0 || base_advanced {
+        "attention"
+    } else if verification.as_ref().is_some_and(|result| !result.success) {
+        "high"
+    } else {
+        "low"
+    };
+    let status = if unresolved_issues.is_empty() {
+        "ready"
+    } else if verification.as_ref().is_some_and(|result| !result.success) || policy_issues > 0 {
+        "needs_attention"
+    } else {
+        "review"
+    };
+    let synthesis = ReviewSynthesis {
+        outcome: item.brief.clone(),
+        status: status.into(),
+        status_summary: match status {
+            "ready" => "The intended change is ready for your decision.",
+            "needs_attention" => "A recorded result deserves your attention before finishing.",
+            _ => "The changes are ready to inspect; one confirmation remains.",
+        }
+        .into(),
+        risk: risk.into(),
+        risk_summary: match risk {
+            "high" => "Verification failed; inspect the affected code before continuing.",
+            "attention" => "Forge found a branch or policy condition that needs a human decision.",
+            _ => "Forge found no recorded policy or branch risks.",
+        }
+        .into(),
+        verification,
+        unresolved_issues,
+        recommended_next_action: match status {
+            "ready" => "Approve the revision or inspect any file that matters to you.",
+            "needs_attention" => "Open the highlighted evidence, then revise or approve explicitly.",
+            _ => "Inspect the changed files and decide whether to finish or revise.",
+        }
+        .into(),
+    };
+    let sealed_attempt_id = sealed_attempt.map(|attempt| attempt.id.as_str());
+    let changed_paths: Vec<String> = changed_files.iter().map(|file| file.path.clone()).collect();
+    let mut attribution: Vec<ReviewAttribution> = item
+        .attempts
+        .iter()
+        .map(|attempt| {
+            let executor = attempt.executor.kind.trim().to_ascii_lowercase();
+            let kind = match executor.as_str() {
+                "human" => "human",
+                "terminal" => "terminal",
+                "codex" | "cursor" | "agent" | "script" => "agent",
+                _ => "agent",
+            };
+            ReviewAttribution {
+                id: attempt.id.as_str().to_owned(),
+                kind: kind.into(),
+                label: match executor.as_str() {
+                    "human" => "You".into(),
+                    "terminal" => "Terminal".into(),
+                    "codex" => "Codex".into(),
+                    "cursor" => "Cursor".into(),
+                    "script" => "Automation".into(),
+                    _ => attempt.executor.kind.clone(),
+                },
+                state: match attempt.state {
+                    AttemptState::Running => "working",
+                    AttemptState::Completed => "finished",
+                    AttemptState::Interrupted => "paused",
+                    AttemptState::Failed => "needs attention",
+                }
+                .into(),
+                started_at: attempt.started_at,
+                ended_at: attempt.ended_at,
+                files: if sealed_attempt_id == Some(attempt.id.as_str()) {
+                    changed_paths.clone()
+                } else {
+                    Vec::new()
+                },
+            }
+        })
+        .collect();
+    if synthesis.verification.is_some() {
+        attribution.push(ReviewAttribution {
+            id: "verification".into(),
+            kind: "verification".into(),
+            label: "Project check".into(),
+            state: if synthesis.verification.as_ref().is_some_and(|result| result.success) {
+                "passed"
+            } else {
+                "failed"
+            }
+            .into(),
+            started_at: sealed_attempt
+                .and_then(|attempt| attempt.ended_at)
+                .unwrap_or(item.updated_at),
+            ended_at: None,
+            files: Vec::new(),
+        });
+    }
+    let timeline = build_timeline(forge, item);
 
     ReviewProjection {
         work_id: item.id.as_str().to_owned(),
@@ -266,6 +455,9 @@ pub fn build_review(forge: &Forge, item: &WorkItem) -> ReviewProjection {
         attempt_id: sealed_attempt.map(|a| a.id.as_str().to_owned()),
         attempt_seq: sealed_attempt.map(|a| a.seq),
         changed_files,
+        synthesis,
+        attribution,
+        timeline,
         truncated,
         base_advanced,
         policy,
@@ -280,6 +472,110 @@ pub fn build_review(forge: &Forge, item: &WorkItem) -> ReviewProjection {
         active_lease_id: active.map(|l| l.lease_id.as_str().to_owned()),
         active_lease_generation: active.map(|l| l.generation),
         world: None,
+    }
+}
+
+fn parse_verification(line: &str) -> Option<ReviewVerification> {
+    let value: serde_json::Value = serde_json::from_str(line).ok()?;
+    if value.get("kind")?.as_str()? != "project_task" {
+        return None;
+    }
+    let task = value.get("task")?;
+    Some(ReviewVerification {
+        label: task.get("label")?.as_str()?.to_owned(),
+        command: task
+            .get("argv")
+            .and_then(serde_json::Value::as_array)
+            .map(|parts| {
+                parts
+                    .iter()
+                    .filter_map(serde_json::Value::as_str)
+                    .map(str::to_owned)
+                    .collect()
+            })
+            .unwrap_or_default(),
+        success: value.get("success").and_then(serde_json::Value::as_bool).unwrap_or(false),
+        exit_code: value.get("exit_code").and_then(serde_json::Value::as_i64),
+        duration_ms: value.get("duration_ms").and_then(serde_json::Value::as_u64),
+    })
+}
+
+fn build_timeline(forge: &Forge, item: &WorkItem) -> Vec<ReviewTimelineEntry> {
+    forge
+        .store()
+        .replay(&item.id)
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|event| {
+            let (kind, label, detail) = match event.payload {
+                EventPayload::ItemRegistered { .. } => ("intent", "Project created", None),
+                EventPayload::EnvironmentProvisioned { .. } => {
+                    ("workspace", "Isolated working copy prepared", None)
+                }
+                EventPayload::AttemptStarted { attempt } => {
+                    let executor = attempt.executor.kind;
+                    (
+                        "attempt",
+                        "Work started",
+                        Some(format!("{} took the project", human_executor(&executor))),
+                    )
+                }
+                EventPayload::AttemptEnded { state, .. } => match state {
+                    AttemptState::Completed => ("attempt", "Work completed", None),
+                    AttemptState::Interrupted => ("attempt", "Work paused safely", None),
+                    AttemptState::Failed => ("attempt", "Work needs attention", None),
+                    AttemptState::Running => ("attempt", "Work continued", None),
+                },
+                EventPayload::OperationSideEffect {
+                    effect: SideEffect::CheckpointCommitCreated { oid, .. },
+                    ..
+                } => (
+                    "checkpoint",
+                    "Recovery point saved",
+                    Some(oid.as_str().chars().take(10).collect()),
+                ),
+                EventPayload::EvidenceSealed { .. } => {
+                    ("evidence", "Revision prepared for review", None)
+                }
+                EventPayload::ReviewDecided { .. } => ("decision", "Changes approved", None),
+                EventPayload::DecisionInvalidated { reason, .. } => {
+                    ("decision", "Approval set aside", Some(reason))
+                }
+                EventPayload::DispositionApplied { .. } => {
+                    ("outcome", "Project finished", None)
+                }
+                _ => return None,
+            };
+            Some(ReviewTimelineEntry {
+                id: format!("event-{}", event.seq),
+                at: event.at,
+                kind: kind.into(),
+                label: label.into(),
+                detail,
+                actor_kind: match event.actor.kind {
+                    ActorKind::User => "human",
+                    ActorKind::Profile => "agent",
+                    ActorKind::System => "system",
+                }
+                .into(),
+                actor_label: match event.actor.kind {
+                    ActorKind::User => "You".into(),
+                    ActorKind::Profile => "Agent".into(),
+                    ActorKind::System => "Medousa".into(),
+                },
+            })
+        })
+        .collect()
+}
+
+fn human_executor(kind: &str) -> String {
+    match kind.trim().to_ascii_lowercase().as_str() {
+        "human" => "You".into(),
+        "terminal" => "Terminal".into(),
+        "codex" => "Codex".into(),
+        "cursor" => "Cursor".into(),
+        "script" => "Automation".into(),
+        _ => kind.to_owned(),
     }
 }
 

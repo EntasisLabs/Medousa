@@ -79,6 +79,40 @@ export type ReviewProjection = {
     is_binary: boolean;
     byte_size?: number | null;
   }>;
+  synthesis: {
+    outcome: string;
+    status: "ready" | "review" | "needs_attention" | string;
+    status_summary: string;
+    risk: "low" | "attention" | "high" | string;
+    risk_summary: string;
+    verification?: {
+      label: string;
+      command: string[];
+      success: boolean;
+      exit_code?: number | null;
+      duration_ms?: number | null;
+    } | null;
+    unresolved_issues: string[];
+    recommended_next_action: string;
+  };
+  attribution: Array<{
+    id: string;
+    kind: "human" | "agent" | "terminal" | "verification" | string;
+    label: string;
+    state: string;
+    started_at: string;
+    ended_at?: string | null;
+    files: string[];
+  }>;
+  timeline: Array<{
+    id: string;
+    at: string;
+    kind: string;
+    label: string;
+    detail?: string | null;
+    actor_kind: string;
+    actor_label: string;
+  }>;
   truncated: boolean;
   base_advanced: boolean;
   policy?: PolicyReport | null;
@@ -90,6 +124,53 @@ export type ReviewProjection = {
   active_lease_id?: string | null;
   active_lease_generation?: number | null;
   world?: WorldBindingStatus | null;
+};
+
+export type ReviewFileDiff = {
+  work_id: string;
+  path: string;
+  status: string;
+  old_path?: string | null;
+  baseline_oid: string;
+  reviewed_oid: string;
+  binary: boolean;
+  baseline: ReviewFileVersion;
+  reviewed: ReviewFileVersion;
+  hunks: ReviewDiffHunk[];
+  changed_lines: Array<{ line: number; kind: "added" | "deleted" | string }>;
+  truncated: boolean;
+};
+
+export type ReviewFileVersion = {
+  exists: boolean;
+  binary: boolean;
+  byte_size: number;
+  digest?: string | null;
+  content?: string | null;
+};
+
+export type ReviewDiffHunk = {
+  old_start: number;
+  old_count: number;
+  new_start: number;
+  new_count: number;
+  lines: Array<{
+    kind: "context" | "addition" | "deletion" | string;
+    old_line?: number | null;
+    new_line?: number | null;
+    content: string;
+  }>;
+};
+
+export type RestoreReviewFileResponse = {
+  item: ItemProjection;
+  lease: {
+    lease_id: string;
+    generation: number;
+  };
+  path: string;
+  action: string;
+  preserved_revision: string;
 };
 
 export type PolicyReport = {
@@ -544,6 +625,23 @@ export async function heartbeatLease(leaseId: string, generation: number): Promi
 
 export async function getReview(workId: string): Promise<ReviewProjection> {
   return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/review`);
+}
+
+export async function getReviewFile(workId: string, path: string): Promise<ReviewFileDiff> {
+  const query = new URLSearchParams({ path });
+  return forgeFetch(
+    `/v1/forge/items/${encodeURIComponent(workId)}/review/file?${query.toString()}`,
+  );
+}
+
+export async function restoreReviewFile(
+  workId: string,
+  input: { path: string; expected_reviewed_oid: string },
+): Promise<RestoreReviewFileResponse> {
+  return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/review/file`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
 }
 
 export async function getEvidencePatch(

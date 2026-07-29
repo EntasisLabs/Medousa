@@ -49,6 +49,9 @@ Base path: `/v1/forge`. Types are `medousa-forge` serde models (`WorkItem`,
 | GET | `/v1/forge/items/{id}/tree` | List tracked and unignored repository files (bounded to 20,000) |
 | GET | `/v1/forge/items/{id}/search?query=…` | Fixed-string tracked-source search (bounded to 500 hits) |
 | GET, PUT | `/v1/forge/items/{id}/workspace-state` | Restore/preserve open files, editor groups, positions, and bounded dirty drafts |
+| GET | `/v1/forge/items/{id}/review` | Structured outcome, risk, verification, attribution, timeline, and changed-file summary |
+| GET | `/v1/forge/items/{id}/review/file?path=…` | Exact baseline-to-reviewed file comparison with structured hunks |
+| POST | `/v1/forge/items/{id}/review/file` | Reopen work and restore one text file to its baseline while retaining the reviewed checkpoint |
 | GET | `/v1/forge/items/{id}/tasks` | Detect safe project commands from repository manifests |
 | POST | `/v1/forge/items/{id}/tasks/{task_id}/run` | Run a detected command and stage its result into active evidence |
 | POST | `/v1/forge/items/{id}/provision` | Create governed worktree env |
@@ -105,6 +108,21 @@ metadata, Makefile targets, and .NET projects). The run endpoint accepts a task
 ID returned by the list endpoint, never arbitrary command text. Running is
 lease-fenced; the command, output, exit status, and duration are appended to
 the active attempt's evidence log for Review.
+
+Review comparisons are always between the evidence manifest's exact baseline
+and sealed OIDs, never a moving branch name. Text files return addressable
+hunks for inline or side-by-side presentation; binary files return existence
+and byte-size metadata instead of pretending to provide a meaningful text
+diff. The structured review projection derives its timeline from Forge's
+append-only event log and its attribution from governed attempts and recorded
+verification.
+
+Restoring from Review is an explicit recovery transition. Forge returns the
+item to Ready, invalidates any approval bound to the superseded review, begins
+a human attempt, and restores the selected baseline text. The sealed commit
+and evidence are not rewritten, so the newer reviewed version remains a Git
+recovery point until the user seals another revision. Binary baseline content
+remains recoverable in Git but is not written through the Home text API.
 
 ### Lease fencing
 

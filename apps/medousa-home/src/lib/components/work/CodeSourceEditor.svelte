@@ -36,6 +36,7 @@
     getUndertakingSourceTree,
     type ForgeSourceTreeFile,
     getProjectTasks,
+    getReviewFile,
     runProjectTask,
     type ProjectTask,
     type ProjectTaskResult,
@@ -96,6 +97,7 @@
   let taskResult = $state<ProjectTaskResult | null>(null);
   let externalVersions = $state<Record<string, ForgeSourceFile>>({});
   let comparingTabId = $state<string | null>(null);
+  let reviewChangedLines = $state<Array<{ line: number; kind: string }>>([]);
   let quickInput = $state<HTMLInputElement | null>(null);
 
   const context = $derived(undertakings.active);
@@ -110,6 +112,9 @@
   });
   const dirty = $derived(Boolean(activeTab && codeWorkspace.isDirty(activeTab)));
   const secondaryTab = $derived(codeWorkspace.secondaryFor(workId));
+  const reviewMarkerKey = $derived(
+    reviewChangedLines.map((change) => `${change.line}:${change.kind}`).join(","),
+  );
   const editable = $derived(
     Boolean(
       context?.workId === workId &&
@@ -520,6 +525,25 @@
   });
 
   $effect(() => {
+    const path = activeTab?.path;
+    if (!reviewAvailable || !workId || !path) {
+      reviewChangedLines = [];
+      return;
+    }
+    let cancelled = false;
+    void getReviewFile(workId, path)
+      .then((comparison) => {
+        if (!cancelled) reviewChangedLines = comparison.changed_lines;
+      })
+      .catch(() => {
+        if (!cancelled) reviewChangedLines = [];
+      });
+    return () => {
+      cancelled = true;
+    };
+  });
+
+  $effect(() => {
     const tab = activeTab;
     const root = context?.workId === workId ? context.worktree : null;
     if (!tab || !root || !languageSupportsLsp(tab.language)) {
@@ -712,7 +736,7 @@
           </div>
         {/if}
         {#if !activeTab.loading && activeTab.digest}
-          {#key `${activeTab.tabId}:${editable}:${lspClient ? "lsp" : "plain"}`}
+          {#key `${activeTab.tabId}:${editable}:${lspClient ? "lsp" : "plain"}:${reviewMarkerKey}`}
             <CodeMirrorHost
               bind:this={editor}
               value={activeTab.draft}
@@ -722,6 +746,7 @@
               client={lspClient}
               readOnly={!editable}
               contentSyncKey={activeTab.syncKey}
+              changedLines={reviewChangedLines}
               onchange={(value) => codeWorkspace.updateDraft(activeTab.tabId, value)}
               onCursorChanged={(line) => {
                 codeWorkspace.updateLine(activeTab.tabId, line);

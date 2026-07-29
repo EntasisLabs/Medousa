@@ -112,11 +112,25 @@ impact.”
 
 ## Review and Understand
 
-Review starts with changed files and compact code-understanding coverage.
-Patch and command evidence remain scrollable supporting detail. Policy
-exceptions and risky content are called out before approval; an exception must
-be explicitly acknowledged. Applying an approved checkpoint has its own
-confirmation boundary.
+Review starts by answering four questions: whether the intended outcome was
+reached, what risk deserves attention, what verification ran, and what should
+happen next. Choose any changed file for an inline or side-by-side comparison
+between the exact starting and reviewed revisions. Binary changes show honest
+file metadata instead of an unreadable patch. Raw patch and command records
+remain available under supporting detail.
+
+Code marks lines changed by the reviewed revision with quiet gutter indicators.
+**Who contributed** distinguishes human, coding-agent, Terminal, and verification
+work; **Project timeline** shows the durable Forge milestones and recovery
+points without exposing lease machinery.
+
+Choose **Restore starting version…** when one file should go back for another
+pass. Medousa reopens the project for editing and keeps the reviewed revision
+saved as a recovery point, so restoring never destroys the newer work before
+you decide. Binary versions remain safe in Git but must currently be restored
+outside the Home text editor. Policy exceptions and risky content are called
+out before approval; an exception must be explicitly acknowledged. Applying
+an approved revision has its own confirmation boundary.
 
 Understand can compare **Before** and **Current**. Search for a class, function,
 or other name, then inspect its possible impact or open its file and line in
@@ -156,6 +170,8 @@ See `apps/medousa-home/src/lib/forge.ts` and daemon routes:
 - `GET|POST|PUT|PATCH|DELETE /v1/forge/items/{id}/source` for bounded,
   governed source editing
 - `GET|PUT /v1/forge/items/{id}/workspace-state` for durable editor recovery
+- `GET /v1/forge/items/{id}/review[/file]` for synthesis and exact per-file
+  comparisons; `POST …/review/file` for checkpoint-preserving restoration
 - `GET|POST /v1/forge/items/{id}/tasks[/…/run]` for detected checks, tests, and
   builds whose results become review evidence
 - `POST …/decisions` with **review intent** (server builds the decision)

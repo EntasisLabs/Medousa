@@ -16,9 +16,9 @@ use medousa_forge::error::ForgeError;
 use medousa_forge::forge::{Forge, SealOptions};
 use medousa_forge::git::{CheckpointAuthor, GitEngine};
 use medousa_forge::model::{
-    ActorKind, ActorRef, EvidenceId, ExecutionLease, ExecutorDescriptor, IntegrationStrategy,
-    LeaseId, RecoveryDisposition, ReviewDecision, ReviewDecisionId, WorkId, WorkItem, WorkPolicy,
-    WorkState, WorkTarget,
+    ActorKind, ActorRef, EvidenceId, ExecutionLease, ExecutorDescriptor, GitOid,
+    IntegrationStrategy, LeaseId, RecoveryDisposition, ReviewDecision, ReviewDecisionId, WorkId,
+    WorkItem, WorkPolicy, WorkState, WorkTarget,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -66,6 +66,10 @@ pub fn forge_router(state: AppState) -> Router {
             get(read_workspace_state).put(save_workspace_state),
         )
         .route("/v1/forge/items/{work_id}/review", get(get_review))
+        .route(
+            "/v1/forge/items/{work_id}/review/file",
+            get(get_review_file).post(restore_review_file),
+        )
         .route("/v1/forge/items/{work_id}/tasks", get(list_project_tasks))
         .route(
             "/v1/forge/items/{work_id}/tasks/{task_id}/run",
@@ -1544,6 +1548,351 @@ async fn get_review(
     Ok(Json(review))
 }
 
+#[derive(Debug, Deserialize)]
+struct ReviewFileQuery {
+    path: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct ReviewFileVersion {
+    exists: bool,
+    binary: bool,
+    byte_size: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    digest: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    content: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct ReviewDiffLine {
+    kind: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    old_line: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    new_line: Option<usize>,
+    content: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct ReviewDiffHunk {
+    old_start: usize,
+    old_count: usize,
+    new_start: usize,
+    new_count: usize,
+    lines: Vec<ReviewDiffLine>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct ReviewFileDiff {
+    work_id: String,
+    path: String,
+    status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    old_path: Option<String>,
+    baseline_oid: String,
+    reviewed_oid: String,
+    binary: bool,
+    baseline: ReviewFileVersion,
+    reviewed: ReviewFileVersion,
+    hunks: Vec<ReviewDiffHunk>,
+    changed_lines: Vec<ReviewChangedLine>,
+    truncated: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct ReviewChangedLine {
+    line: usize,
+    kind: String,
+}
+
+fn review_file_diff(state: &AppState, id: &WorkId, raw_path: &str) -> ApiResult<ReviewFileDiff> {
+    const MAX_REVIEW_FILE_BYTES: usize = 1024 * 1024;
+    let (_, path) = normalize_source_relative(raw_path)?;
+    let forge = forge(state);
+    let item = forge.load(id).map_err(map_err)?;
+    let review = build_review(forge.as_ref(), &item);
+    let changed = review
+        .changed_files
+        .iter()
+        .find(|file| file.path == path)
+        .ok_or_else(|| request_error(StatusCode::NOT_FOUND, "file is not part of this review"))?;
+    let environment = item.environment.as_ref().ok_or_else(|| {
+        request_error(StatusCode::CONFLICT, "governed workspace is not prepared")
+    })?;
+    let baseline_oid = GitOid::new(
+        review
+            .baseline_oid
+            .clone()
+            .ok_or_else(|| request_error(StatusCode::CONFLICT, "review has no starting revision"))?,
+    );
+    let reviewed_oid = GitOid::new(
+        review
+            .sealed_head_oid
+            .clone()
+            .ok_or_else(|| request_error(StatusCode::CONFLICT, "review has no saved revision"))?,
+    );
+    let baseline_path = changed.old_path.as_deref().unwrap_or(&changed.path);
+    let baseline_bytes = forge
+        .git()
+        .show_bytes(&environment.worktree, &baseline_oid, baseline_path)
+        .ok();
+    let reviewed_bytes = forge
+        .git()
+        .show_bytes(&environment.worktree, &reviewed_oid, &changed.path)
+        .ok();
+    let binary = changed.is_binary
+        || baseline_bytes.as_ref().is_some_and(|bytes| std::str::from_utf8(bytes).is_err())
+        || reviewed_bytes.as_ref().is_some_and(|bytes| std::str::from_utf8(bytes).is_err());
+    let truncated = baseline_bytes
+        .as_ref()
+        .is_some_and(|bytes| bytes.len() > MAX_REVIEW_FILE_BYTES)
+        || reviewed_bytes
+            .as_ref()
+            .is_some_and(|bytes| bytes.len() > MAX_REVIEW_FILE_BYTES);
+    let version = |bytes: &Option<Vec<u8>>| ReviewFileVersion {
+        exists: bytes.is_some(),
+        binary,
+        byte_size: bytes.as_ref().map(|value| value.len() as u64).unwrap_or(0),
+        digest: bytes.as_ref().map(|value| source_digest(value)),
+        content: if binary || truncated {
+            None
+        } else {
+            bytes
+                .as_ref()
+                .and_then(|value| String::from_utf8(value.clone()).ok())
+        },
+    };
+    let patch = if binary {
+        Vec::new()
+    } else {
+        forge
+            .git()
+            .diff_path(
+                &environment.worktree,
+                &baseline_oid,
+                &reviewed_oid,
+                &changed.path,
+            )
+            .map_err(map_err)?
+    };
+    let hunks = parse_review_hunks(&String::from_utf8_lossy(&patch));
+    let mut changed_lines = Vec::new();
+    for hunk in &hunks {
+        for line in &hunk.lines {
+            if line.kind == "addition" {
+                if let Some(number) = line.new_line {
+                    changed_lines.push(ReviewChangedLine {
+                        line: number,
+                        kind: "added".into(),
+                    });
+                }
+            } else if line.kind == "deletion" {
+                changed_lines.push(ReviewChangedLine {
+                    line: line.new_line.unwrap_or(hunk.new_start.max(1)),
+                    kind: "deleted".into(),
+                });
+            }
+        }
+    }
+    changed_lines.sort_by_key(|line| (line.line, line.kind.clone()));
+    changed_lines.dedup_by(|left, right| left.line == right.line && left.kind == right.kind);
+    Ok(ReviewFileDiff {
+        work_id: id.as_str().to_owned(),
+        path: changed.path.clone(),
+        status: changed.status.clone(),
+        old_path: changed.old_path.clone(),
+        baseline_oid: baseline_oid.as_str().to_owned(),
+        reviewed_oid: reviewed_oid.as_str().to_owned(),
+        binary,
+        baseline: version(&baseline_bytes),
+        reviewed: version(&reviewed_bytes),
+        hunks,
+        changed_lines,
+        truncated,
+    })
+}
+
+fn parse_range(raw: &str) -> Option<(usize, usize)> {
+    let value = raw.trim_start_matches(['-', '+']);
+    let mut parts = value.split(',');
+    let start = parts.next()?.parse().ok()?;
+    let count = parts.next().and_then(|part| part.parse().ok()).unwrap_or(1);
+    Some((start, count))
+}
+
+fn parse_review_hunks(patch: &str) -> Vec<ReviewDiffHunk> {
+    let mut hunks = Vec::new();
+    let mut current: Option<ReviewDiffHunk> = None;
+    let mut old_line = 0usize;
+    let mut new_line = 0usize;
+    for raw in patch.lines() {
+        if let Some(header) = raw.strip_prefix("@@ ")
+            && let Some((ranges, _)) = header.split_once(" @@")
+        {
+            if let Some(hunk) = current.take() {
+                hunks.push(hunk);
+            }
+            let mut parts = ranges.split_whitespace();
+            let Some((old_start, old_count)) = parts.next().and_then(parse_range) else {
+                continue;
+            };
+            let Some((new_start, new_count)) = parts.next().and_then(parse_range) else {
+                continue;
+            };
+            old_line = old_start;
+            new_line = new_start;
+            current = Some(ReviewDiffHunk {
+                old_start,
+                old_count,
+                new_start,
+                new_count,
+                lines: Vec::new(),
+            });
+            continue;
+        }
+        let Some(hunk) = current.as_mut() else {
+            continue;
+        };
+        if raw.starts_with("\\ No newline") {
+            continue;
+        }
+        let (kind, old_number, new_number, content) = if let Some(content) = raw.strip_prefix('+') {
+            let number = new_line;
+            new_line += 1;
+            ("addition", None, Some(number), content)
+        } else if let Some(content) = raw.strip_prefix('-') {
+            let number = old_line;
+            old_line += 1;
+            ("deletion", Some(number), None, content)
+        } else {
+            let content = raw.strip_prefix(' ').unwrap_or(raw);
+            let old_number = old_line;
+            let new_number = new_line;
+            old_line += 1;
+            new_line += 1;
+            ("context", Some(old_number), Some(new_number), content)
+        };
+        hunk.lines.push(ReviewDiffLine {
+            kind: kind.into(),
+            old_line: old_number,
+            new_line: new_number,
+            content: content.into(),
+        });
+    }
+    if let Some(hunk) = current {
+        hunks.push(hunk);
+    }
+    hunks
+}
+
+async fn get_review_file(
+    State(state): State<AppState>,
+    Path(work_id): Path<String>,
+    Query(query): Query<ReviewFileQuery>,
+) -> ApiResult<Json<ReviewFileDiff>> {
+    let id = parse_work_id(&work_id)?;
+    Ok(Json(review_file_diff(&state, &id, &query.path)?))
+}
+
+#[derive(Debug, Deserialize)]
+struct RestoreReviewFileRequest {
+    path: String,
+    expected_reviewed_oid: String,
+}
+
+#[derive(Debug, Serialize)]
+struct RestoreReviewFileResponse {
+    item: ItemProjection,
+    lease: ExecutionLease,
+    path: String,
+    action: String,
+    preserved_revision: String,
+}
+
+async fn restore_review_file(
+    State(state): State<AppState>,
+    Path(work_id): Path<String>,
+    Json(body): Json<RestoreReviewFileRequest>,
+) -> ApiResult<Json<RestoreReviewFileResponse>> {
+    let id = parse_work_id(&work_id)?;
+    let comparison = review_file_diff(&state, &id, &body.path)?;
+    if comparison.reviewed_oid != body.expected_reviewed_oid {
+        return Err(request_error(
+            StatusCode::CONFLICT,
+            "the reviewed revision changed; reopen the comparison before restoring",
+        ));
+    }
+    if comparison.binary && comparison.baseline.exists {
+        return Err(request_error(
+            StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            "binary recovery is preserved in Git but cannot yet be restored from Home",
+        ));
+    }
+    let forge = forge(&state);
+    let actor = actor_from_state(&state);
+    forge
+        .reopen_for_changes(&id, "A reviewed file was restored for another pass", &actor)
+        .map_err(map_err)?;
+    let (mut item, lease) = forge
+        .begin_attempt(
+            &id,
+            ExecutorDescriptor {
+                kind: "human".into(),
+                detail: serde_json::json!({"reason": "restore_review_file"}),
+            },
+            None,
+            &actor,
+        )
+        .map_err(map_err)?;
+    let environment = item.environment.as_ref().ok_or_else(|| {
+        request_error(StatusCode::CONFLICT, "governed workspace is not prepared")
+    })?;
+    let restored_path = comparison
+        .old_path
+        .as_deref()
+        .unwrap_or(&comparison.path)
+        .to_owned();
+    if comparison.path != restored_path {
+        let (renamed, _) = resolve_source_path(&environment.worktree, &comparison.path)?;
+        std::fs::remove_file(renamed).map_err(|err| {
+            request_error(StatusCode::INTERNAL_SERVER_ERROR, format!("could not restore file: {err}"))
+        })?;
+    }
+    let action = if let Some(content) = comparison.baseline.content {
+        let candidate = environment.worktree.join(&restored_path);
+        let (destination, _) = if candidate.is_file() {
+            resolve_source_path(&environment.worktree, &restored_path)?
+        } else {
+            resolve_new_source_path(&environment.worktree, &restored_path)?
+        };
+        if let Some(parent) = destination.parent() {
+            std::fs::create_dir_all(parent).map_err(|err| {
+                request_error(StatusCode::INTERNAL_SERVER_ERROR, format!("could not restore folder: {err}"))
+            })?;
+        }
+        std::fs::write(destination, content.as_bytes()).map_err(|err| {
+            request_error(StatusCode::INTERNAL_SERVER_ERROR, format!("could not restore file: {err}"))
+        })?;
+        "restored"
+    } else {
+        let (destination, _) = resolve_source_path(&environment.worktree, &comparison.path)?;
+        std::fs::remove_file(destination).map_err(|err| {
+            request_error(StatusCode::INTERNAL_SERVER_ERROR, format!("could not restore file: {err}"))
+        })?;
+        "removed"
+    };
+    item = forge.load(&id).map_err(map_err)?;
+    publish_item(&state, &item, "review_file_restored");
+    Ok(Json(RestoreReviewFileResponse {
+        item: project_item(item),
+        lease,
+        path: restored_path,
+        action: action.into(),
+        preserved_revision: comparison.reviewed_oid,
+    }))
+}
+
 #[derive(Debug, Clone, Serialize)]
 struct ProjectTask {
     id: String,
@@ -2428,6 +2777,19 @@ mod source_tests {
         assert!(tasks.iter().any(|task| task.id == "npm-build"));
         assert!(!tasks.iter().any(|task| task.id == "npm-dev"));
         assert!(!tasks.iter().any(|task| task.id == "custom"));
+    }
+
+    #[test]
+    fn review_patch_is_parsed_into_addressable_hunks() {
+        let hunks = parse_review_hunks(
+            "diff --git a/app.txt b/app.txt\n--- a/app.txt\n+++ b/app.txt\n@@ -1,2 +1,3 @@\n first\n-old\n+new\n+third\n",
+        );
+        assert_eq!(hunks.len(), 1);
+        assert_eq!(hunks[0].old_start, 1);
+        assert_eq!(hunks[0].new_count, 3);
+        assert_eq!(hunks[0].lines[1].kind, "deletion");
+        assert_eq!(hunks[0].lines[2].new_line, Some(2));
+        assert_eq!(hunks[0].lines[3].new_line, Some(3));
     }
 
     #[test]

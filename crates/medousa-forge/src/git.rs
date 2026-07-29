@@ -310,6 +310,30 @@ impl GitEngine {
         )
     }
 
+    /// Unified text diff for one normalized Git path between two exact
+    /// revisions. Callers must validate the path before crossing this API.
+    pub fn diff_path(
+        &self,
+        cwd: &Path,
+        from: &GitOid,
+        to: &GitOid,
+        path: &str,
+    ) -> Result<Vec<u8>> {
+        self.run_bytes(
+            cwd,
+            &[
+                "diff",
+                "--no-ext-diff",
+                "--no-color",
+                "--unified=3",
+                from.as_str(),
+                to.as_str(),
+                "--",
+                path,
+            ],
+        )
+    }
+
     /// `git diff --binary <baseline>` against the *working tree* (uncommitted
     /// state), used for pre-checkpoint inspection.
     pub fn diff_binary_worktree(&self, cwd: &Path, baseline: &GitOid) -> Result<Vec<u8>> {

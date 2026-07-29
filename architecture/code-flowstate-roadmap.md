@@ -77,6 +77,8 @@ path, and Medousa never confuses the Home device filesystem with the workshop.
 
 ## Milestone 3 — Review, provenance, and recovery
 
+Status: complete (2026-07-29).
+
 ### Goal
 
 Turn Review into a concise decision surface rather than a raw Git report.

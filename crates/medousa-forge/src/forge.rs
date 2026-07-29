@@ -1144,6 +1144,37 @@ impl Forge {
         Ok(item)
     }
 
+    /// Return reviewed work to Ready so the user can make a follow-up change.
+    /// The sealed commit and evidence remain immutable and therefore provide a
+    /// recovery point for anything changed during the new attempt.
+    pub fn reopen_for_changes(
+        &self,
+        work_id: &WorkId,
+        reason: &str,
+        actor: &ActorRef,
+    ) -> Result<WorkItem> {
+        let _item_lock = self.store.lock_item(work_id)?;
+        let mut item = self.load(work_id)?;
+        expect_state(&item, WorkState::AwaitingReview, "request review changes")?;
+        for decision in std::mem::take(&mut item.review_decisions) {
+            self.store.append(
+                work_id,
+                actor,
+                EventPayload::DecisionInvalidated {
+                    decision_id: decision.id,
+                    reason: reason.to_string(),
+                },
+            )?;
+        }
+        self.transition(
+            &mut item,
+            WorkState::Ready,
+            Some(reason.to_string()),
+            actor,
+        )?;
+        Ok(item)
+    }
+
     /// Evidence-bound re-verification — the authorization boundary. Approval
     /// authorizes exactly one sealed state, never "whatever is there now".
     fn verify_decision(&self, item: &WorkItem, decision: &ReviewDecision) -> Result<()> {
@@ -1617,6 +1648,34 @@ mod tests {
         let text = String::from_utf8_lossy(&patch);
         assert!(text.contains("app.txt"));
         assert!(text.contains("notes.md"));
+    }
+
+    #[test]
+    fn reviewed_work_can_reopen_without_losing_its_checkpoint() {
+        let fx = fixture();
+        let forge = Forge::open(&fx.forge_root).unwrap();
+        let item = forge
+            .register("Revise app", "make app v2", &fx.repo, "main", "user-1", &actor())
+            .unwrap();
+        let item = forge.provision(&item.id, &actor()).unwrap();
+        let worktree = item.environment.as_ref().unwrap().worktree.clone();
+        let (item, lease) = forge
+            .begin_attempt(&item.id, script_executor(), None, &actor())
+            .unwrap();
+        fs::write(worktree.join("app.txt"), "v2\n").unwrap();
+        let reviewed = forge
+            .complete_attempt(&lease, &SealOptions::default(), &actor())
+            .unwrap();
+        let checkpoint = forge.git().head_oid(&worktree).unwrap();
+        assert_eq!(reviewed.state, WorkState::AwaitingReview);
+        assert!(reviewed.attempts.last().unwrap().evidence_id.is_some());
+
+        let reopened = forge
+            .reopen_for_changes(&item.id, "restore one file", &actor())
+            .unwrap();
+        assert_eq!(reopened.state, WorkState::Ready);
+        assert_eq!(forge.git().head_oid(&worktree).unwrap(), checkpoint);
+        assert!(reopened.attempts.last().unwrap().evidence_id.is_some());
     }
 
     #[test]
@@ -2398,4 +2457,3 @@ mod tests {
         let _ = Digest::sha256_hex(b"unused-import-guard");
     }
 }
-
