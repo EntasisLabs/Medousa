@@ -1,8 +1,10 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { ChevronLeft, Code2, Folder, FolderOpen, Pin, Plus, RefreshCw } from "@lucide/svelte";
+  import { ChevronLeft, Code2, Download, Folder, FolderOpen, Pin, Plus, RefreshCw } from "@lucide/svelte";
   import {
     browseForgeRepositories,
+    cloneProviderRepository,
+    getProviderRepositoryCapabilities,
     humanPhaseLabel,
     humanizeForgeMessage,
     inspectForgeRepository,
@@ -11,6 +13,7 @@
     type RepositoryBrowseResponse,
     type RepositoryCatalogEntry,
     type RepositoryInspection,
+    type ProviderRepositoryAdapter,
   } from "$lib/forge";
   import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
   import { undertakings } from "$lib/stores/undertakings.svelte";
@@ -29,7 +32,14 @@
   let repositoryCatalog = $state<RepositoryCatalogEntry[]>([]);
   let repositoryBrowser = $state<RepositoryBrowseResponse | null>(null);
   let browserOpen = $state(false);
+  let browserPurpose = $state<"repository" | "destination">("repository");
   let browserLoading = $state(false);
+  let hostedOpen = $state(false);
+  let hostedRepository = $state("");
+  let hostedProvider = $state("");
+  let hostedParent = $state("");
+  let hostedAdapters = $state<ProviderRepositoryAdapter[]>([]);
+  let hostedLoading = $state(false);
   let duplicateAcknowledged = $state(false);
   let error = $state<string | null>(null);
   const coLocated = $derived(isCoLocatedWorkshop());
@@ -110,7 +120,11 @@
     if (path) await chooseRepository(path);
   }
 
-  async function browseRepositoryFolder(path?: string | null) {
+  async function browseRepositoryFolder(
+    path?: string | null,
+    purpose: "repository" | "destination" = browserPurpose,
+  ) {
+    browserPurpose = purpose;
     browserOpen = true;
     browserLoading = true;
     error = null;
@@ -120,6 +134,52 @@
       error = err instanceof Error ? err.message : String(err);
     } finally {
       browserLoading = false;
+    }
+  }
+
+  async function openHostedRepository() {
+    hostedOpen = !hostedOpen;
+    if (!hostedOpen || hostedAdapters.length) return;
+    try {
+      hostedAdapters = (await getProviderRepositoryCapabilities()).adapters;
+      hostedProvider =
+        hostedAdapters.find((adapter) => adapter.available)?.provider ??
+        hostedAdapters[0]?.provider ??
+        "";
+      if (!hostedParent && currentFolder) hostedParent = currentFolder.path;
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+    }
+  }
+
+  async function pickHostedParent() {
+    if (!coLocated) return;
+    const path = await pickExternalFolder("Choose where to keep the repository");
+    if (path) hostedParent = path;
+  }
+
+  async function cloneHostedRepository() {
+    if (!hostedProvider || !hostedRepository.trim() || !hostedParent.trim() || hostedLoading) return;
+    hostedLoading = true;
+    error = null;
+    try {
+      const cloned = await cloneProviderRepository({
+        provider: hostedProvider,
+        repository: hostedRepository.trim(),
+        parent: hostedParent.trim(),
+      });
+      hostedRepository = "";
+      hostedOpen = false;
+      repository = cloned;
+      repoPath = cloned.path;
+      baseRef = cloned.suggested_base_ref;
+      duplicateAcknowledged = true;
+      browserOpen = false;
+      await loadRepositoryCatalog();
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+    } finally {
+      hostedLoading = false;
     }
   }
 
@@ -237,9 +297,56 @@
               </button>
             {/if}
           {:else}
-            <button type="button" class="flex items-center gap-2 rounded border border-surface-500/30 px-2 py-2 text-left text-[10px] text-surface-200 hover:bg-surface-800" onclick={() => void browseRepositoryFolder()}>
+            <button type="button" class="flex items-center gap-2 rounded border border-surface-500/30 px-2 py-2 text-left text-[10px] text-surface-200 hover:bg-surface-800" onclick={() => void browseRepositoryFolder(null, "repository")}>
               <FolderOpen size={13} class="text-primary-300" />Browse connected computer…
             </button>
+          {/if}
+          <button type="button" class="flex items-center gap-2 rounded px-2 py-1 text-left text-[10px] text-surface-400 hover:bg-surface-800 hover:text-surface-100" onclick={() => void openHostedRepository()}>
+            <Download size={11} class="shrink-0" />
+            <span>{hostedOpen ? "Hide hosted repositories" : "Clone from GitHub or GitLab…"}</span>
+          </button>
+          {#if hostedOpen}
+            <div class="grid gap-1.5 rounded border border-surface-500/25 bg-surface-900/35 p-2">
+              <div class="flex gap-1">
+                {#each hostedAdapters as adapter (adapter.provider)}
+                  <button
+                    type="button"
+                    class="rounded px-2 py-1 text-[9px] {hostedProvider === adapter.provider ? 'bg-surface-700 text-surface-100' : 'text-surface-500 hover:bg-surface-800'}"
+                    class:opacity-40={!adapter.available}
+                    title={adapter.message}
+                    disabled={!adapter.available}
+                    onclick={() => (hostedProvider = adapter.provider)}
+                  >{adapter.label}</button>
+                {/each}
+              </div>
+              <input
+                class="code-field"
+                aria-label="Hosted repository"
+                placeholder="owner/project or repository URL"
+                bind:value={hostedRepository}
+              />
+              <div class="flex min-w-0 items-center gap-1">
+                <span class="min-w-0 flex-1 truncate font-mono text-[8px] text-surface-600">
+                  {hostedParent || "Choose where to keep it"}
+                </span>
+                {#if coLocated}
+                  <button type="button" class="shrink-0 rounded px-1.5 py-0.5 text-[9px] text-surface-400 hover:bg-surface-800" onclick={() => void pickHostedParent()}>Choose…</button>
+                {:else}
+                  <button type="button" class="shrink-0 rounded px-1.5 py-0.5 text-[9px] text-surface-400 hover:bg-surface-800" onclick={() => void browseRepositoryFolder(hostedParent || null, "destination")}>Choose…</button>
+                {/if}
+              </div>
+              {#if hostedAdapters.length && !hostedAdapters.some((adapter) => adapter.available)}
+                <p class="text-[9px] leading-relaxed text-surface-500">
+                  Install and sign in to a provider CLI on the connected workshop to clone here.
+                </p>
+              {/if}
+              <button
+                type="button"
+                class="rounded bg-surface-700 px-2 py-1 text-[10px] text-surface-100 disabled:opacity-40"
+                disabled={hostedLoading || !hostedProvider || !hostedRepository.trim() || !hostedParent.trim()}
+                onclick={() => void cloneHostedRepository()}
+              >{hostedLoading ? "Cloning…" : "Clone repository"}</button>
+            </div>
           {/if}
           {#each recentRepositories.slice(0, 8) as recent (recent.path)}
             <div class="group flex min-w-0 items-center rounded hover:bg-surface-800">
@@ -277,7 +384,14 @@
           {#if browserLoading}
             <p class="px-2 py-3 text-[10px] text-surface-500">Looking for projects…</p>
           {:else if repositoryBrowser}
-            {#if repositoryBrowser.repository}
+            {#if browserPurpose === "destination"}
+              <button type="button" class="flex w-full items-center gap-2 border-b border-primary-500/20 bg-primary-950/15 px-2 py-1.5 text-left text-[10px] text-primary-200" onclick={() => {
+                hostedParent = repositoryBrowser!.path;
+                browserOpen = false;
+              }}>
+                <FolderOpen size={12} />Keep the repository here
+              </button>
+            {:else if repositoryBrowser.repository}
               <button type="button" class="flex w-full items-center gap-2 border-b border-primary-500/20 bg-primary-950/15 px-2 py-1.5 text-left text-[10px] text-primary-200" onclick={() => void chooseRepository(repositoryBrowser!.path)}>
                 <Code2 size={12} />Use this repository
               </button>
@@ -294,7 +408,7 @@
                 <p class="px-2 py-3 text-[10px] text-surface-500">No folders here.</p>
               {:else}
                 {#each repositoryBrowser.entries as entry (entry.path)}
-                  <button type="button" class="flex w-full items-center gap-2 px-2 py-1 text-left text-[10px] hover:bg-surface-800" onclick={() => entry.repository ? void chooseRepository(entry.path) : void browseRepositoryFolder(entry.path)}>
+                  <button type="button" class="flex w-full items-center gap-2 px-2 py-1 text-left text-[10px] hover:bg-surface-800" onclick={() => browserPurpose === "repository" && entry.repository ? void chooseRepository(entry.path) : void browseRepositoryFolder(entry.path, browserPurpose)}>
                     {#if entry.repository}<Code2 size={11} class="shrink-0 text-primary-300" />{:else}<Folder size={11} class="shrink-0 text-surface-500" />{/if}
                     <span class="min-w-0 flex-1 truncate {entry.repository ? 'text-surface-200' : 'text-surface-400'}">{entry.name}</span>
                     {#if entry.repository}<span class="text-[8px] text-primary-300/70">Repository</span>{/if}

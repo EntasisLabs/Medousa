@@ -45,6 +45,10 @@ filesystem as if it belonged to the workshop.
 - If active Medousa work already targets the repository, choose **Continue**
   that project or explicitly **Start another change**.
 - Manual path entry remains under the advanced disclosure for unusual mounts.
+- **Clone from GitHub or GitLab…** appears only when you need to bring hosted
+  work into the workshop. Medousa uses the provider CLI and its existing sign-in
+  on the connected workshop; credentials never move through Home. Choose the
+  destination on that same workshop, including when Home is remote.
 
 ## Source editor
 
@@ -185,6 +189,26 @@ what changed, how it was made, and the decisions you recorded.
   Home never presents a local folder picker or uploads a local folder for this
   operation.
 
+## Share completed work
+
+Review can hand completed work to the repository provider without turning Code
+into a provider dashboard.
+
+- **Share branch and open review** pushes the isolated Forge branch and creates
+  or updates its GitHub pull request or GitLab merge request.
+- The review description includes the intended outcome, status, risk,
+  verification result, changed-file count, and sealed Forge evidence digest.
+- Add HTTPS links for issues, pull requests, or tickets when they are part of
+  the project’s context. They remain attached to the project and are included
+  in the external review summary.
+- For GitHub reviews, **Review feedback** can read comments through the workshop
+  CLI. Turn a comment into a separate follow-up project when it represents new
+  intent; Medousa does not silently reopen or mutate completed work.
+
+These actions are optional. If no supported origin or signed-in provider CLI is
+available, the project, Review, portable record, and preserved branch continue
+to work normally.
+
 ## API (Home clients)
 
 The implementation retains the internal **Forge**, **undertaking**, **attempt**,
@@ -197,6 +221,8 @@ See `apps/medousa-home/src/lib/forge.ts` and daemon routes:
 - `GET|PUT /v1/forge/repositories` for daemon-owned recents and pins,
   `GET /v1/forge/repositories/browse` for scoped workshop browsing,
   `POST /v1/forge/repositories/inspect` for Git state and duplicate detection,
+  `GET|POST /v1/forge/repositories/provider` for optional provider capability
+  discovery and workshop-owned clone,
   and `POST /v1/forge/items/start` for inferred project setup
 - `GET|POST|PUT|PATCH|DELETE /v1/forge/items/{id}/source` for bounded,
   governed source editing
@@ -205,6 +231,8 @@ See `apps/medousa-home/src/lib/forge.ts` and daemon routes:
   comparisons; `POST …/review/file` for checkpoint-preserving restoration
 - `GET|POST /v1/forge/items/{id}/tasks[/…/run]` for detected checks, tests, and
   builds whose results become review evidence
+- `GET|POST /v1/forge/items/{id}/provider`, plus `…/context` and `…/comments`,
+  for optional external review handoff and follow-up intent
 - `POST …/decisions` with **review intent** (server builds the decision)
 - `GET /v1/forge/stream` for freshness
 - `GET /v1/world/bindings/{work_id}` for World status

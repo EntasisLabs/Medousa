@@ -39,6 +39,7 @@ Base path: `/v1/forge`. Types are `medousa-forge` serde models (`WorkItem`,
 | POST | `/v1/forge/repositories/inspect` | Resolve a folder to its Git root and infer branch/status metadata |
 | GET, PUT | `/v1/forge/repositories` | List recent/pinned workshop repositories or update a pin |
 | GET | `/v1/forge/repositories/browse?path=…` | Browse directories inside daemon-owned workshop places |
+| GET, POST | `/v1/forge/repositories/provider` | Discover optional GitHub/GitLab CLI adapters or clone into a daemon-scoped workshop folder |
 | GET | `/v1/forge/items` | List items |
 | GET | `/v1/forge/items/{id}` | Load item |
 | GET | `/v1/forge/items/{id}/source?path=…` | Read bounded UTF-8 source from the governed worktree |
@@ -61,6 +62,9 @@ Base path: `/v1/forge`. Types are `medousa-forge` serde models (`WorkItem`,
 | POST | `/v1/forge/items/{id}/provision` | Create governed worktree env |
 | POST | `/v1/forge/items/{id}/attempts` | Begin attempt (default executor `human`) → lease |
 | POST | `/v1/forge/items/{id}/handoff` | Preserve the worktree and release the current lease for another executor |
+| GET, POST | `/v1/forge/items/{id}/provider` | Discover repository handoff state or push and create/update an external review |
+| PUT | `/v1/forge/items/{id}/provider/context` | Save bounded HTTPS issue, PR, or ticket links |
+| GET, POST | `/v1/forge/items/{id}/provider/comments` | Read supported review feedback or turn one comment into a new Forge item |
 | POST | `/v1/forge/leases/{lease_id}/heartbeat` | Liveness (`generation` required) |
 | POST | `/v1/forge/leases/{lease_id}/complete` | Seal checkpoint + evidence |
 | POST | `/v1/forge/leases/{lease_id}/interrupt` | Interrupt; work preserved |
@@ -83,6 +87,21 @@ directories, and returns at most 500 folders per response. Inspection reports
 Git branch/remotes, clean or dirty state, and active Forge projects targeting
 the same canonical repository so clients can offer Continue existing / Start
 another change before provisioning.
+
+Provider adapters are optional daemon-side ports. Capability discovery checks
+for the GitHub (`gh`) and GitLab (`glab`) CLIs on the connected workshop.
+Clone accepts a validated provider namespace such as `owner/project`, derives
+the destination name, refuses an existing destination, and only writes beneath
+the same daemon-owned browse roots. Authentication remains with the provider
+CLI; the HTTP contract does not accept provider tokens.
+
+External handoff is available only after work reaches review or acceptance. It
+pushes the governed Forge branch, then creates or updates the pull/merge request.
+The body is generated from Forge’s outcome, risk, verification, changed-file
+summary, sealed evidence digest, and linked work context. Provider state is
+auxiliary item metadata: failure never changes Forge custody or completion
+state. GitHub review comments can be listed and explicitly registered as a new
+follow-up item; feedback never mutates completed work implicitly.
 
 ### Register body
 

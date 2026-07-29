@@ -46,6 +46,10 @@ pub fn forge_router(state: AppState) -> Router {
         .route("/v1/forge/items/start", post(start_item))
         .route("/v1/forge/repositories/inspect", post(inspect_repository))
         .route(
+            "/v1/forge/repositories/provider",
+            get(provider_repository_capabilities).post(clone_provider_repository),
+        )
+        .route(
             "/v1/forge/repositories",
             get(list_repositories).put(update_repository_pin),
         )
@@ -91,6 +95,18 @@ pub fn forge_router(state: AppState) -> Router {
         .route("/v1/forge/items/{work_id}/provision", post(provision_item))
         .route("/v1/forge/items/{work_id}/attempts", post(begin_attempt))
         .route("/v1/forge/items/{work_id}/handoff", post(prepare_handoff))
+        .route(
+            "/v1/forge/items/{work_id}/provider",
+            get(get_provider_handoff).post(share_provider_handoff),
+        )
+        .route(
+            "/v1/forge/items/{work_id}/provider/context",
+            put(save_provider_context),
+        )
+        .route(
+            "/v1/forge/items/{work_id}/provider/comments",
+            get(list_provider_comments).post(import_provider_comment),
+        )
         .route("/v1/forge/items/{work_id}/decisions", post(record_decision))
         .route("/v1/forge/items/{work_id}/apply", post(apply_decision))
         .route("/v1/forge/items/{work_id}/discard", post(discard_item))
@@ -433,6 +449,26 @@ struct RepositoryBrowseResponse {
     places: Vec<RepositoryBrowseEntry>,
     entries: Vec<RepositoryBrowseEntry>,
     truncated: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct ProviderRepositoryAdapter {
+    provider: &'static str,
+    label: &'static str,
+    available: bool,
+    message: String,
+}
+
+#[derive(Debug, Serialize)]
+struct ProviderRepositoryCapabilities {
+    adapters: Vec<ProviderRepositoryAdapter>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CloneProviderRepositoryRequest {
+    provider: String,
+    repository: String,
+    parent: PathBuf,
 }
 
 static REPOSITORY_CATALOG_LOCK: Mutex<()> = Mutex::new(());
@@ -806,6 +842,111 @@ async fn browse_repositories(
         entries,
         truncated,
     }))
+}
+
+fn provider_adapter(provider: &'static str, label: &'static str, command: &str) -> ProviderRepositoryAdapter {
+    let available = command_available(command);
+    ProviderRepositoryAdapter {
+        provider,
+        label,
+        available,
+        message: if available {
+            format!("{label} is ready on the connected workshop.")
+        } else {
+            format!("Install and sign in to the {label} CLI on the connected workshop.")
+        },
+    }
+}
+
+async fn provider_repository_capabilities() -> Json<ProviderRepositoryCapabilities> {
+    Json(ProviderRepositoryCapabilities {
+        adapters: vec![
+            provider_adapter("github", "GitHub", "gh"),
+            provider_adapter("gitlab", "GitLab", "glab"),
+        ],
+    })
+}
+
+fn normalize_provider_repository(value: &str) -> Option<String> {
+    let trimmed = value.trim().trim_end_matches('/').trim_end_matches(".git");
+    let repository = if let Some((_, repository)) = provider_repository(trimmed) {
+        repository
+    } else {
+        trimmed.to_string()
+    };
+    normalize_provider_repository_name(&repository).then_some(repository)
+}
+
+async fn clone_provider_repository(
+    State(state): State<AppState>,
+    Json(body): Json<CloneProviderRepositoryRequest>,
+) -> ApiResult<Json<RepositoryInspection>> {
+    let (provider, command, label) = match body.provider.trim().to_ascii_lowercase().as_str() {
+        "github" => ("github", "gh", "GitHub"),
+        "gitlab" => ("gitlab", "glab", "GitLab"),
+        _ => {
+            return Err(request_error(
+                StatusCode::BAD_REQUEST,
+                "Repository provider must be GitHub or GitLab",
+            ));
+        }
+    };
+    if !command_available(command) {
+        return Err(request_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            format!("Install and sign in to the {label} CLI on the connected workshop."),
+        ));
+    }
+    let repository = normalize_provider_repository(&body.repository).ok_or_else(|| {
+        request_error(
+            StatusCode::BAD_REQUEST,
+            "Repository must look like owner/project or a supported repository URL",
+        )
+    })?;
+    if let Some((remote_provider, _)) = provider_repository(body.repository.trim())
+        && remote_provider != provider
+    {
+        return Err(request_error(
+            StatusCode::BAD_REQUEST,
+            "The repository URL does not match the selected provider",
+        ));
+    }
+    let parent = body.parent.canonicalize().map_err(|err| {
+        request_error(
+            StatusCode::NOT_FOUND,
+            format!("Destination folder is unavailable: {err}"),
+        )
+    })?;
+    if !parent.is_dir() || !browse_path_allowed(&parent, &repository_browse_roots(&state)) {
+        return Err(request_error(
+            StatusCode::FORBIDDEN,
+            "Destination is outside the connected workshop's available places",
+        ));
+    }
+    let name = repository
+        .rsplit('/')
+        .next()
+        .ok_or_else(|| request_error(StatusCode::BAD_REQUEST, "Repository name is unavailable"))?;
+    let destination = parent.join(name);
+    if destination.exists() {
+        return Err(request_error(
+            StatusCode::CONFLICT,
+            format!("A folder named {name} already exists here"),
+        ));
+    }
+    let mut clone = Command::new(command);
+    clone.args(["repo", "clone", &repository]);
+    let output = clone
+        .arg(&destination)
+        .current_dir(&parent)
+        .output()
+        .map_err(|err| request_error(StatusCode::BAD_GATEWAY, err.to_string()))?;
+    if !output.status.success() {
+        return Err(provider_command_error("Cloning the repository", &output));
+    }
+    let inspection = inspect_repository_path(&state, &destination)?;
+    touch_repository(&inspection.path, None)?;
+    Ok(Json(inspection))
 }
 
 async fn start_item(
@@ -2456,6 +2597,466 @@ async fn run_project_task(
     Ok(Json(result))
 }
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+struct ProviderContext {
+    #[serde(default)]
+    links: Vec<String>,
+    #[serde(default)]
+    review_url: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct ProviderHandoff {
+    provider: String,
+    available: bool,
+    repository: Option<String>,
+    remote_url: Option<String>,
+    branch: Option<String>,
+    base_branch: Option<String>,
+    shared: bool,
+    review_url: Option<String>,
+    links: Vec<String>,
+    message: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct SaveProviderContextRequest {
+    links: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ShareProviderRequest {
+    #[serde(default)]
+    title: Option<String>,
+    #[serde(default)]
+    body: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct ProviderComment {
+    id: String,
+    author: String,
+    body: String,
+    url: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ImportProviderCommentRequest {
+    id: String,
+    body: String,
+    #[serde(default)]
+    url: Option<String>,
+}
+
+fn provider_context_path(forge: &Forge, id: &WorkId) -> PathBuf {
+    forge.store().item_dir(id).join("provider-context.json")
+}
+
+fn load_provider_context(forge: &Forge, id: &WorkId) -> ProviderContext {
+    std::fs::read(provider_context_path(forge, id))
+        .ok()
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+        .unwrap_or_default()
+}
+
+fn store_provider_context(forge: &Forge, id: &WorkId, context: &ProviderContext) -> ApiResult<()> {
+    let bytes = serde_json::to_vec_pretty(context)
+        .map_err(|err| request_error(StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
+    crate::session::atomic_write(&provider_context_path(forge, id), &bytes)
+        .map_err(|err| request_error(StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))
+}
+
+fn command_available(name: &str) -> bool {
+    Command::new(name)
+        .arg("--version")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .is_ok_and(|status| status.success())
+}
+
+fn repository_remote(worktree: &FsPath) -> Option<String> {
+    let output = Command::new("git")
+        .args(["remote", "get-url", "origin"])
+        .current_dir(worktree)
+        .output()
+        .ok()?;
+    output.status.success().then(|| String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
+fn provider_repository(remote: &str) -> Option<(&'static str, String)> {
+    for (provider, prefixes) in [
+        (
+            "github",
+            [
+                "git@github.com:",
+                "https://github.com/",
+                "http://github.com/",
+                "ssh://git@github.com/",
+            ],
+        ),
+        (
+            "gitlab",
+            [
+                "git@gitlab.com:",
+                "https://gitlab.com/",
+                "http://gitlab.com/",
+                "ssh://git@gitlab.com/",
+            ],
+        ),
+    ] {
+        if let Some(repository) = prefixes.iter().find_map(|prefix| remote.strip_prefix(prefix)) {
+            let repository = repository.trim_end_matches('/').trim_end_matches(".git");
+            if normalize_provider_repository_name(repository) {
+                return Some((provider, repository.to_string()));
+            }
+        }
+    }
+    None
+}
+
+fn normalize_provider_repository_name(repository: &str) -> bool {
+    let segments = repository.split('/').collect::<Vec<_>>();
+    segments.len() >= 2
+        && segments.iter().all(|segment| {
+            !segment.is_empty()
+                && *segment != "."
+                && *segment != ".."
+                && !segment.starts_with('-')
+                && segment
+                    .chars()
+                    .all(|character| character.is_ascii_alphanumeric() || matches!(character, '.' | '-' | '_'))
+        })
+}
+
+fn provider_handoff(forge: &Forge, item: &WorkItem) -> ProviderHandoff {
+    let context = load_provider_context(forge, &item.id);
+    let remote_url = item.environment.as_ref().and_then(|env| repository_remote(&env.worktree));
+    let parsed = remote_url.as_deref().and_then(provider_repository);
+    let provider = parsed.as_ref().map(|(provider, _)| *provider).unwrap_or("none");
+    let available = match provider {
+        "github" => command_available("gh"),
+        "gitlab" => command_available("glab"),
+        _ => false,
+    };
+    let branch = item.environment.as_ref().map(|env| env.branch.clone());
+    let WorkTarget::Git(target) = &item.target;
+    let base_branch = Some(target.base_ref.clone());
+    let shared = item.environment.as_ref().is_some_and(|env| {
+        Command::new("git")
+            .args(["show-ref", "--verify", &format!("refs/remotes/origin/{}", env.branch)])
+            .current_dir(&env.worktree)
+            .output()
+            .is_ok_and(|output| output.status.success())
+    });
+    ProviderHandoff {
+        provider: provider.into(),
+        available,
+        repository: parsed.map(|(_, repository)| repository),
+        remote_url,
+        branch,
+        base_branch,
+        shared,
+        review_url: context.review_url,
+        links: context.links,
+        message: match (provider, available) {
+            ("none", _) => "No supported repository provider was found for origin.".into(),
+            (_, false) => format!("Install and sign in to the {provider} CLI on the workshop machine."),
+            _ => "Ready to share from the connected workshop.".into(),
+        },
+    }
+}
+
+async fn get_provider_handoff(
+    State(state): State<AppState>,
+    Path(work_id): Path<String>,
+) -> ApiResult<Json<ProviderHandoff>> {
+    let id = parse_work_id(&work_id)?;
+    let forge = forge(&state);
+    let item = forge.load(&id).map_err(map_err)?;
+    Ok(Json(provider_handoff(forge.as_ref(), &item)))
+}
+
+async fn save_provider_context(
+    State(state): State<AppState>,
+    Path(work_id): Path<String>,
+    Json(body): Json<SaveProviderContextRequest>,
+) -> ApiResult<Json<ProviderHandoff>> {
+    let id = parse_work_id(&work_id)?;
+    let forge = forge(&state);
+    let item = forge.load(&id).map_err(map_err)?;
+    if body.links.len() > 20 {
+        return Err(request_error(StatusCode::BAD_REQUEST, "Too many linked items"));
+    }
+    let mut context = load_provider_context(forge.as_ref(), &id);
+    let mut links = body
+        .links
+        .into_iter()
+        .map(|link| link.trim().to_string())
+        .collect::<Vec<_>>();
+    if links
+        .iter()
+        .any(|link| !link.starts_with("https://") || link.len() > 2_048)
+    {
+        return Err(request_error(
+            StatusCode::BAD_REQUEST,
+            "Linked work must use a valid HTTPS URL",
+        ));
+    }
+    links.dedup();
+    context.links = links;
+    store_provider_context(forge.as_ref(), &id, &context)?;
+    Ok(Json(provider_handoff(forge.as_ref(), &item)))
+}
+
+fn provider_command_error(label: &str, output: &std::process::Output) -> ApiError {
+    let detail = String::from_utf8_lossy(&output.stderr).trim().chars().take(500).collect::<String>();
+    request_error(StatusCode::BAD_GATEWAY, format!("{label} failed{}", if detail.is_empty() { String::new() } else { format!(": {detail}") }))
+}
+
+fn provider_review_body(forge: &Forge, item: &WorkItem, requested: Option<&str>) -> String {
+    let review = build_review(forge, item);
+    let introduction = requested
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or(&item.brief);
+    let verification = review
+        .synthesis
+        .verification
+        .as_ref()
+        .map(|verification| {
+            format!(
+                "- {}: {} (`{}`)",
+                verification.label,
+                if verification.success { "passed" } else { "failed" },
+                verification.command.join(" ")
+            )
+        })
+        .unwrap_or_else(|| "- No recorded verification command".into());
+    let evidence = review
+        .evidence_digest
+        .as_deref()
+        .map(|digest| format!("`{digest}`"))
+        .unwrap_or_else(|| "No sealed evidence digest".into());
+    let linked = load_provider_context(forge, &item.id);
+    let links = if linked.links.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "\n\n## Related work\n{}",
+            linked
+                .links
+                .iter()
+                .map(|link| format!("- {link}"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        )
+    };
+    format!(
+        "{introduction}\n\n## Medousa outcome\n{}\n\n- Status: {}\n- Risk: {}\n- Changed files: {}\n{verification}\n- Forge evidence: {evidence}{links}",
+        review.synthesis.outcome,
+        review.synthesis.status_summary,
+        review.synthesis.risk_summary,
+        review.changed_files.len(),
+    )
+    .chars()
+    .take(60_000)
+    .collect()
+}
+
+fn existing_provider_review_url(
+    provider: &str,
+    repository: &str,
+    branch: &str,
+    worktree: &FsPath,
+) -> ApiResult<Option<String>> {
+    let output = if provider == "github" {
+        Command::new("gh")
+            .args(["pr", "view", branch, "--repo", repository, "--json", "url", "--jq", ".url"])
+            .current_dir(worktree)
+            .output()
+    } else {
+        Command::new("glab")
+            .args(["mr", "view", branch, "--output", "json"])
+            .current_dir(worktree)
+            .output()
+    }
+    .map_err(|err| request_error(StatusCode::BAD_GATEWAY, err.to_string()))?;
+    if !output.status.success() {
+        return Err(provider_command_error("Opening the review", &output));
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let url = if provider == "github" {
+        let url = stdout.trim();
+        (!url.is_empty()).then(|| url.to_string())
+    } else {
+        serde_json::from_str::<serde_json::Value>(&stdout)
+            .ok()
+            .and_then(|value| value.get("web_url").and_then(|url| url.as_str()).map(str::to_string))
+    };
+    Ok(url)
+}
+
+async fn share_provider_handoff(
+    State(state): State<AppState>,
+    Path(work_id): Path<String>,
+    Json(body): Json<ShareProviderRequest>,
+) -> ApiResult<Json<ProviderHandoff>> {
+    let id = parse_work_id(&work_id)?;
+    let forge = forge(&state);
+    let item = forge.load(&id).map_err(map_err)?;
+    if !matches!(item.state, WorkState::AwaitingReview | WorkState::Accepted) {
+        return Err(request_error(StatusCode::CONFLICT, "Finish and review the project before sharing it"));
+    }
+    let handoff = provider_handoff(forge.as_ref(), &item);
+    if !handoff.available {
+        return Err(request_error(StatusCode::SERVICE_UNAVAILABLE, handoff.message));
+    }
+    let environment = item.environment.as_ref().ok_or_else(|| request_error(StatusCode::CONFLICT, "Project workspace is unavailable"))?;
+    let push = Command::new("git")
+        .args(["push", "--set-upstream", "origin", &environment.branch])
+        .current_dir(&environment.worktree)
+        .output()
+        .map_err(|err| request_error(StatusCode::BAD_GATEWAY, err.to_string()))?;
+    if !push.status.success() {
+        return Err(provider_command_error("Sharing the branch", &push));
+    }
+    let repository = handoff.repository.as_deref().ok_or_else(|| request_error(StatusCode::BAD_REQUEST, "Repository identity is unavailable"))?;
+    let base = handoff.base_branch.as_deref().unwrap_or("main");
+    let title = body
+        .title
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or(&item.title)
+        .chars()
+        .take(256)
+        .collect::<String>();
+    let description = provider_review_body(forge.as_ref(), &item, body.body.as_deref());
+    let output = if handoff.provider == "github" {
+        Command::new("gh")
+            .args(["pr", "create", "--repo", repository, "--head", &environment.branch, "--base", base, "--title", &title, "--body", &description])
+            .current_dir(&environment.worktree).output()
+    } else {
+        Command::new("glab")
+            .args(["mr", "create", "--source-branch", &environment.branch, "--target-branch", base, "--title", &title, "--description", &description, "--yes"])
+            .current_dir(&environment.worktree).output()
+    }
+    .map_err(|err| request_error(StatusCode::BAD_GATEWAY, err.to_string()))?;
+    let created_url = output
+        .status
+        .success()
+        .then(|| {
+            String::from_utf8_lossy(&output.stdout)
+            .split_whitespace()
+            .find(|value| value.starts_with("http"))
+            .map(|value| value.trim().to_string())
+        })
+        .flatten();
+    let review_url = if output.status.success() {
+        if created_url.is_some() {
+            created_url
+        } else {
+            existing_provider_review_url(
+                &handoff.provider,
+                repository,
+                &environment.branch,
+                &environment.worktree,
+            )?
+        }
+    } else {
+        let update = if handoff.provider == "github" {
+            Command::new("gh").args(["pr", "edit", &environment.branch, "--repo", repository, "--title", &title, "--body", &description]).current_dir(&environment.worktree).output()
+        } else {
+            Command::new("glab").args(["mr", "update", &environment.branch, "--title", &title, "--description", &description]).current_dir(&environment.worktree).output()
+        }
+        .map_err(|err| request_error(StatusCode::BAD_GATEWAY, err.to_string()))?;
+        if !update.status.success() {
+            return Err(provider_command_error("Updating the review", &update));
+        }
+        existing_provider_review_url(
+            &handoff.provider,
+            repository,
+            &environment.branch,
+            &environment.worktree,
+        )?
+    };
+    let mut context = load_provider_context(forge.as_ref(), &id);
+    context.review_url = review_url;
+    store_provider_context(forge.as_ref(), &id, &context)?;
+    publish_item(&state, &item, "provider_shared");
+    Ok(Json(provider_handoff(forge.as_ref(), &item)))
+}
+
+async fn list_provider_comments(
+    State(state): State<AppState>,
+    Path(work_id): Path<String>,
+) -> ApiResult<Json<Vec<ProviderComment>>> {
+    let id = parse_work_id(&work_id)?;
+    let forge = forge(&state);
+    let item = forge.load(&id).map_err(map_err)?;
+    let handoff = provider_handoff(forge.as_ref(), &item);
+    if handoff.provider != "github" || handoff.review_url.is_none() {
+        return Ok(Json(Vec::new()));
+    }
+    let repository = handoff.repository.ok_or_else(|| request_error(StatusCode::BAD_REQUEST, "Repository identity is unavailable"))?;
+    let branch = handoff.branch.ok_or_else(|| request_error(StatusCode::BAD_REQUEST, "Project branch is unavailable"))?;
+    let output = Command::new("gh").args(["pr", "view", &branch, "--repo", &repository, "--json", "comments,reviews"]).output()
+        .map_err(|err| request_error(StatusCode::BAD_GATEWAY, err.to_string()))?;
+    if !output.status.success() { return Err(provider_command_error("Reading review comments", &output)); }
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout)
+        .map_err(|err| request_error(StatusCode::BAD_GATEWAY, err.to_string()))?;
+    let mut comments = Vec::new();
+    for (kind, entries) in [("comment", value.get("comments")), ("review", value.get("reviews"))] {
+        for (index, entry) in entries.and_then(|entries| entries.as_array()).into_iter().flatten().enumerate() {
+            let body = entry.get("body").and_then(|body| body.as_str()).unwrap_or("").trim();
+            if body.is_empty() { continue; }
+            comments.push(ProviderComment {
+                id: format!("{kind}-{index}"),
+                author: entry.pointer("/author/login").and_then(|author| author.as_str()).unwrap_or("Reviewer").into(),
+                body: body.chars().take(8_000).collect(),
+                url: entry.get("url").and_then(|url| url.as_str()).map(str::to_string),
+            });
+        }
+    }
+    Ok(Json(comments))
+}
+
+async fn import_provider_comment(
+    State(state): State<AppState>,
+    Path(work_id): Path<String>,
+    Json(body): Json<ImportProviderCommentRequest>,
+) -> ApiResult<Json<ItemProjection>> {
+    let id = parse_work_id(&work_id)?;
+    let forge = forge(&state);
+    let source = forge.load(&id).map_err(map_err)?;
+    let WorkTarget::Git(target) = &source.target;
+    let body_text = body.body.trim();
+    if body.id.trim().is_empty() || body_text.is_empty() || body_text.len() > 8_000 {
+        return Err(request_error(StatusCode::BAD_REQUEST, "Review comment is invalid"));
+    }
+    let brief = format!(
+        "Follow up on review feedback for {}:\n\n{}{}",
+        source.title,
+        body_text,
+        body.url.as_deref().map(|url| format!("\n\nSource: {url}")).unwrap_or_default()
+    );
+    let actor = actor_from_state(&state);
+    let item = forge
+        .register(
+            format!("Follow up: {}", source.title),
+            brief,
+            &target.repo_path,
+            target.base_ref.clone(),
+            state.workshop_identity_user_id(),
+            &actor,
+        )
+        .map_err(map_err)?;
+    publish_item(&state, &item, "provider_follow_up_created");
+    Ok(Json(project_item(item)))
+}
+
 async fn provision_item(
     State(state): State<AppState>,
     Path(work_id): Path<String>,
@@ -3200,5 +3801,30 @@ mod source_tests {
         assert_eq!(entry.name, "project");
         assert_eq!(entry.path, repo);
         assert!(entry.repository);
+    }
+
+    #[test]
+    fn provider_repositories_accept_supported_urls_and_nested_namespaces() {
+        assert_eq!(
+            provider_repository("git@github.com:EntasisLabs/Medousa.git"),
+            Some(("github", "EntasisLabs/Medousa".into()))
+        );
+        assert_eq!(
+            provider_repository("https://gitlab.com/team/platform/service.git"),
+            Some(("gitlab", "team/platform/service".into()))
+        );
+        assert_eq!(
+            normalize_provider_repository("team/platform/service"),
+            Some("team/platform/service".into())
+        );
+    }
+
+    #[test]
+    fn provider_repositories_reject_options_and_path_traversal() {
+        assert!(normalize_provider_repository("--upload-pack=malicious").is_none());
+        assert!(normalize_provider_repository("team/../service").is_none());
+        assert!(normalize_provider_repository("lonely-project").is_none());
+        assert!(provider_repository("ssh://example.com/team/service.git").is_none());
+        assert!(provider_repository("https://evilgithub.com/team/service.git").is_none());
     }
 }

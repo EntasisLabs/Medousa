@@ -241,11 +241,15 @@ Custody of intentional work episodes over a git target (vault or any repo). Dist
 | POST | `/v1/forge/repositories/inspect` | Inspect a repository path and infer its starting branch |
 | GET, PUT | `/v1/forge/repositories` | Workshop repository recents and pins |
 | GET | `/v1/forge/repositories/browse?path=…` | Scoped workshop directory/repository browser |
+| GET, POST | `/v1/forge/repositories/provider` | Discover optional provider adapters or clone on the workshop |
 | GET | `/v1/forge/items` | List |
 | GET | `/v1/forge/items/{id}` | Get |
 | POST | `/v1/forge/items/{id}/provision` | Provision env |
 | POST | `/v1/forge/items/{id}/attempts` | Begin attempt → lease |
 | POST | `/v1/forge/items/{id}/handoff` | Release the current executor while preserving its worktree |
+| GET, POST | `/v1/forge/items/{id}/provider` | Discover or perform external repository review handoff |
+| PUT | `/v1/forge/items/{id}/provider/context` | Attach HTTPS issue, PR, or ticket context |
+| GET, POST | `/v1/forge/items/{id}/provider/comments` | Read review feedback or register a follow-up item |
 | POST | `/v1/forge/leases/{lease_id}/heartbeat` | Heartbeat |
 | POST | `/v1/forge/leases/{lease_id}/complete` | Seal |
 | POST | `/v1/forge/leases/{lease_id}/interrupt` | Interrupt |

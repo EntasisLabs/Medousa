@@ -21,6 +21,11 @@
     humanPhaseGuidance,
     humanPhaseLabel,
     humanizeForgeMessage,
+    getProviderHandoff,
+    shareProviderHandoff,
+    saveProviderContext,
+    getProviderComments,
+    importProviderComment,
     type EvidencePage,
     type ReviewFileDiff,
     type WorldBindingStatus,
@@ -29,6 +34,8 @@
     type WorldFindResult,
     type WorldImpactResult,
     type WorldSnapshotRef,
+    type ProviderHandoff,
+    type ProviderComment,
   } from "$lib/forge";
   import {
     openTrackedTerminal,
@@ -78,6 +85,10 @@
   let reviewEl = $state<HTMLDivElement | null>(null);
   let worldEl = $state<HTMLDivElement | null>(null);
   let preferredCodeAgent = $state<"codex" | "cursor">("codex");
+  let providerHandoff = $state<ProviderHandoff | null>(null);
+  let providerComments = $state<ProviderComment[]>([]);
+  let providerLink = $state("");
+  let providerOpen = $state(false);
 
   const detail = $derived(undertakings.detail);
   const review = $derived(undertakings.review);
@@ -423,6 +434,56 @@
     });
   }
 
+  async function loadProviderHandoff() {
+    if (!detail) return;
+    try {
+      providerHandoff = await getProviderHandoff(detail.id);
+    } catch {
+      providerHandoff = null;
+    }
+  }
+
+  async function shareProject() {
+    if (!detail) return;
+    await run(async () => {
+      providerHandoff = await shareProviderHandoff(detail!.id, {
+        title: detail!.title,
+      });
+      if (providerHandoff.review_url) {
+        window.open(providerHandoff.review_url, "_blank", "noopener,noreferrer");
+      }
+    });
+  }
+
+  async function addProviderLink() {
+    if (!detail || !providerHandoff || !providerLink.trim()) return;
+    await run(async () => {
+      providerHandoff = await saveProviderContext(detail!.id, [
+        ...providerHandoff!.links,
+        providerLink.trim(),
+      ]);
+      providerLink = "";
+    });
+  }
+
+  async function loadProviderComments() {
+    if (!detail) return;
+    providerOpen = !providerOpen;
+    if (!providerOpen) return;
+    await run(async () => {
+      providerComments = await getProviderComments(detail!.id);
+    });
+  }
+
+  async function createFollowUp(comment: ProviderComment) {
+    if (!detail) return;
+    await run(async () => {
+      const item = await importProviderComment(detail!.id, comment);
+      await undertakings.refreshList();
+      await undertakings.select(item.id);
+    });
+  }
+
   async function discardWithConfirmation() {
     if (!detail) return;
     if (!window.confirm(`Discard “${detail.title}”? Its working copy will be removed.`)) {
@@ -439,6 +500,7 @@
   $effect(() => {
     if (review?.evidence_id) {
       void loadReviewExtras();
+      void loadProviderHandoff();
     }
   });
 
@@ -768,6 +830,60 @@
               onOpenFile={(path, line) => revealLocation({ path, line })}
               onRestore={restoreReviewedFile}
             />
+            {#if providerHandoff}
+              <div class="mt-2 rounded-md border border-surface-500/25 bg-surface-950/30 p-2">
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p class="text-[11px] font-medium text-surface-200">Share this work</p>
+                    <p class="text-[10px] text-surface-500">
+                      {#if providerHandoff.provider === "github"}GitHub{:else if providerHandoff.provider === "gitlab"}GitLab{:else}Repository provider{/if}
+                      {#if providerHandoff.repository} · {providerHandoff.repository}{/if}
+                    </p>
+                  </div>
+                  <div class="flex items-center gap-1">
+                    {#if providerHandoff.review_url}
+                      <button type="button" class="rounded px-2 py-1 text-[10px] text-primary-300 hover:bg-surface-800" onclick={() => window.open(providerHandoff?.review_url ?? "", "_blank", "noopener,noreferrer")}>Open review</button>
+                    {/if}
+                    {#if providerHandoff.available && (detail.state === "awaiting_review" || detail.state === "accepted")}
+                      <button type="button" class="rounded bg-primary-500/80 px-2 py-1 text-[10px] font-medium text-white disabled:opacity-40" disabled={busy} onclick={() => void shareProject()}>
+                        {providerHandoff.review_url ? "Update review" : "Share branch and open review"}
+                      </button>
+                    {/if}
+                  </div>
+                  {#if !providerHandoff.available}
+                    <p class="max-w-sm text-right text-[9px] text-surface-500">{providerHandoff.message}</p>
+                  {/if}
+                </div>
+                {#if providerHandoff.links.length}
+                  <div class="mt-2 flex flex-wrap gap-1">
+                    {#each providerHandoff.links as link (link)}
+                      <button type="button" class="max-w-full truncate rounded bg-surface-800 px-1.5 py-0.5 text-[9px] text-surface-300 hover:text-white" onclick={() => window.open(link, "_blank", "noopener,noreferrer")}>{link}</button>
+                    {/each}
+                  </div>
+                {/if}
+                <div class="mt-2 flex gap-1">
+                  <input class="min-w-0 flex-1 rounded border border-surface-500/30 bg-surface-950 px-2 py-1 text-[10px] text-surface-200" type="url" placeholder="Link an issue, PR, or ticket" bind:value={providerLink} onkeydown={(event) => { if (event.key === "Enter") { event.preventDefault(); void addProviderLink(); } }} />
+                  <button type="button" class="rounded px-2 py-1 text-[10px] text-surface-400 hover:bg-surface-800 disabled:opacity-40" disabled={!providerLink.trim() || busy} onclick={() => void addProviderLink()}>Link</button>
+                </div>
+                {#if providerHandoff.review_url && providerHandoff.provider === "github"}
+                  <button type="button" class="mt-2 text-[10px] text-surface-400 hover:text-surface-200" onclick={() => void loadProviderComments()}>{providerOpen ? "Hide review feedback" : "Review feedback"}</button>
+                  {#if providerOpen}
+                    <div class="mt-1 divide-y divide-surface-500/15 rounded border border-surface-500/20">
+                      {#if providerComments.length === 0}
+                        <p class="px-2 py-2 text-[10px] text-surface-500">No review feedback yet.</p>
+                      {/if}
+                      {#each providerComments as comment (comment.id)}
+                        <div class="p-2">
+                          <p class="text-[9px] text-surface-500">{comment.author}</p>
+                          <p class="mt-0.5 whitespace-pre-wrap text-[10px] text-surface-300">{comment.body}</p>
+                          <button type="button" class="mt-1 text-[9px] text-primary-300 hover:underline" disabled={busy} onclick={() => void createFollowUp(comment)}>Make this a follow-up project</button>
+                        </div>
+                      {/each}
+                    </div>
+                  {/if}
+                {/if}
+              </div>
+            {/if}
             {#if review.policy && (review.policy.violations.length || review.policy.capture_risks.length)}
               <div class="mt-2 rounded-md border border-amber-500/35 bg-amber-950/25 p-2">
                 <p class="text-[11px] font-medium text-amber-100">Needs your attention</p>

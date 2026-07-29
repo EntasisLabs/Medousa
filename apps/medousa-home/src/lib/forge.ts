@@ -516,6 +516,17 @@ export type RepositoryBrowseResponse = {
   truncated: boolean;
 };
 
+export type ProviderRepositoryAdapter = {
+  provider: "github" | "gitlab" | string;
+  label: string;
+  available: boolean;
+  message: string;
+};
+
+export type ProviderRepositoryCapabilities = {
+  adapters: ProviderRepositoryAdapter[];
+};
+
 export type ProjectTask = {
   id: string;
   label: string;
@@ -592,6 +603,64 @@ export async function getProjectTests(workId: string): Promise<ProjectTest[]> {
   return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/tests`);
 }
 
+export type ProviderHandoff = {
+  provider: "github" | "gitlab" | "none" | string;
+  available: boolean;
+  repository?: string | null;
+  remote_url?: string | null;
+  branch?: string | null;
+  base_branch?: string | null;
+  shared: boolean;
+  review_url?: string | null;
+  links: string[];
+  message: string;
+};
+
+export type ProviderComment = {
+  id: string;
+  author: string;
+  body: string;
+  url?: string | null;
+};
+
+export async function getProviderHandoff(workId: string): Promise<ProviderHandoff> {
+  return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/provider`);
+}
+
+export async function shareProviderHandoff(
+  workId: string,
+  input: { title?: string; body?: string },
+): Promise<ProviderHandoff> {
+  return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/provider`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function saveProviderContext(
+  workId: string,
+  links: string[],
+): Promise<ProviderHandoff> {
+  return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/provider/context`, {
+    method: "PUT",
+    body: JSON.stringify({ links }),
+  });
+}
+
+export async function getProviderComments(workId: string): Promise<ProviderComment[]> {
+  return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/provider/comments`);
+}
+
+export async function importProviderComment(
+  workId: string,
+  comment: ProviderComment,
+): Promise<ItemProjection> {
+  return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/provider/comments`, {
+    method: "POST",
+    body: JSON.stringify(comment),
+  });
+}
+
 export async function inspectForgeRepository(path: string): Promise<RepositoryInspection> {
   return forgeFetch("/v1/forge/repositories/inspect", {
     method: "POST",
@@ -618,6 +687,21 @@ export async function browseForgeRepositories(
 ): Promise<RepositoryBrowseResponse> {
   const query = path ? `?path=${encodeURIComponent(path)}` : "";
   return forgeFetch(`/v1/forge/repositories/browse${query}`);
+}
+
+export async function getProviderRepositoryCapabilities(): Promise<ProviderRepositoryCapabilities> {
+  return forgeFetch("/v1/forge/repositories/provider");
+}
+
+export async function cloneProviderRepository(input: {
+  provider: string;
+  repository: string;
+  parent: string;
+}): Promise<RepositoryInspection> {
+  return forgeFetch("/v1/forge/repositories/provider", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
 }
 
 export async function startUndertaking(input: {

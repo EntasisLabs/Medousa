@@ -146,6 +146,8 @@ failure takes the engineer directly to the relevant code.
 
 ## Milestone 6 — Optional provider handoff
 
+**Status: complete.**
+
 ### Goal
 
 Deliver governed work to repository and ticket providers without making those
