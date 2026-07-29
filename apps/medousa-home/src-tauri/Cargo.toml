@@ -46,6 +46,10 @@ medousa-sdk-iroh = { path = "../../../crates/medousa-sdk-iroh", default-features
 medousa-iroh-http = { path = "../../../crates/medousa-iroh-http" }
 medousa-browser-lite = { path = "../../../crates/medousa-browser-lite" }
 medousa-install-support = { path = "../../../crates/medousa-install-support" }
+tungstenite = { version = "0.26", features = ["rustls-tls-webpki-roots"] }
+# Client-side VT parse on a dedicated thread (see terminal.rs). libghostty-vt
+# is the target parser; vte is the buildable stand-in until Zig toolchain lands.
+vte = "0.15"
 
 [target.'cfg(not(any(target_os = "ios", target_os = "android")))'.dependencies]
 medousa-host = { path = "../../../crates/medousa-host" }

@@ -21,6 +21,7 @@ mod mesh_intros;
 mod peer_inbox_sink;
 mod push;
 mod workshop_registry;
+mod terminal;
 mod workshop_transport;
 mod capabilities;
 mod mcp_gateway;
@@ -50,6 +51,7 @@ mod home_widget;
 mod ios_push_setup;
 
 use daemon::DaemonState;
+use terminal::TerminalRegistry;
 use tauri::Manager;
 
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
@@ -266,7 +268,18 @@ pub fn run() {
     }
 
     builder
+        .manage(TerminalRegistry::default())
         .invoke_handler(tauri::generate_handler![
+            terminal::terminal_info,
+            terminal::terminal_sessions,
+            terminal::terminal_create,
+            terminal::terminal_attach,
+            terminal::terminal_feed,
+            terminal::terminal_key,
+            terminal::terminal_resize,
+            terminal::terminal_interrupt,
+            terminal::terminal_detach,
+            terminal::terminal_snapshot,
             daemon::daemon_url,
             daemon::set_daemon_url,
             daemon::daemon_health,

@@ -263,6 +263,18 @@ pub fn package_catalog() -> Vec<PackageCatalogEntry> {
             true,
             false,
         ),
+        entry(
+            "shell-session",
+            "Shell session host",
+            &["engine"],
+            &["medousa-session"],
+            PackageCategory::Expansion,
+            "Terminal",
+            &["developer"],
+            8 * 1024 * 1024,
+            true,
+            false,
+        ),
     ]
 }
 
@@ -386,6 +398,7 @@ pub fn is_home_packages_package(package_id: &str) -> bool {
             | "adapter-whatsapp"
             | "coding-engine"
             | "langservers"
+            | "shell-session"
     )
 }
 
@@ -415,6 +428,7 @@ pub fn package_short_hint(package_id: &str) -> &'static str {
         "adapter-whatsapp" => "WhatsApp channel adapter.",
         "coding-engine" => "LSP Interoperability Orchestrator (medousa-code) for Scripts + agents.",
         "langservers" => "Optional pyright + TypeScript language servers for the coding engine.",
+        "shell-session" => "Workshop shell session host (medousa-session) — shared PTY for Terminal tabs and coding agents.",
         _ => "Optional Medousa component.",
     }
 }
@@ -430,6 +444,7 @@ pub fn resolve_package_alias(name: &str) -> Option<&'static str> {
         "whatsapp" | "adapter-whatsapp" => Some("adapter-whatsapp"),
         "coding-engine" | "medousa-code" | "code" | "lsp" => Some("coding-engine"),
         "langservers" | "pyright" | "tsserver" => Some("langservers"),
+        "shell-session" | "medousa-session" | "session" | "terminal" => Some("shell-session"),
         "local-brain" | "brain" | "local_brain" => Some("local-brain"),
         "desktop" => Some("desktop"),
         other => catalog_entry(other).map(|entry| entry.id),

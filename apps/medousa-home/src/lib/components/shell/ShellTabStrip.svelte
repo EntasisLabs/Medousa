@@ -12,6 +12,7 @@
     LayoutGrid,
     MessageSquare,
     Presentation,
+    SquareTerminal,
     X,
   } from "@lucide/svelte";
   import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
@@ -43,6 +44,7 @@
     if (tab.kind === "chat") return MessageSquare;
     if (tab.kind === "web") return Globe;
     if (tab.kind === "surface") return LayoutGrid;
+    if (tab.kind === "terminal") return SquareTerminal;
     const lme = lmeWorkspace.tabs.find((entry) => entry.tabId === tab.lmeTabId);
     if (!lme) return FileText;
     if (lme.kind === "script") return FileCode2;

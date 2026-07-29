@@ -124,6 +124,7 @@ function focusSurfaceHint(tab: ShellTab | null): string | null {
     }
   }
   if (tab.kind === "web") return "web";
+  if (tab.kind === "terminal") return null;
   return tab.surfaceId;
 }
 
@@ -686,6 +687,36 @@ export class ShellTabsStore {
       kind: "web",
       browserTabId: trimmed,
       title,
+    };
+    this.insertTabIntoGroup(tab, groupId, false);
+    if (activate) void this.activate(tab.id);
+    else this.persist();
+    return tab.id;
+  }
+
+  openTerminal(
+    sessionId: string,
+    options?: { activate?: boolean; groupId?: string; title?: string },
+  ): string | null {
+    const trimmed = sessionId.trim();
+    if (!trimmed) return null;
+    const groupId = options?.groupId ?? this.activeGroupId;
+    const activate = options?.activate !== false;
+    const existingInGroup = this.tabs.find(
+      (tab) =>
+        tab.kind === "terminal" &&
+        tab.sessionId === trimmed &&
+        this.groupForTab(tab.id)?.id === groupId,
+    );
+    if (existingInGroup) {
+      if (activate) void this.activate(existingInGroup.id);
+      return existingInGroup.id;
+    }
+    const tab: ShellTab = {
+      id: newTabId("terminal"),
+      kind: "terminal",
+      sessionId: trimmed,
+      title: options?.title?.trim() || "Terminal",
     };
     this.insertTabIntoGroup(tab, groupId, false);
     if (activate) void this.activate(tab.id);

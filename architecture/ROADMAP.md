@@ -25,6 +25,18 @@ Full plans: **[v0.8.0-forge-plan.md](v0.8.0-forge-plan.md)** · **[coding-engine
 | Forge worktree `--allow-root` | ✅ |
 | Detamu bridge hooks | ✅ stub (`/v1/detamu/*`) |
 
+## Coding session terminal (Home as WM)
+
+> Architecture: [coding-session-terminal.md](coding-session-terminal.md). Workshop owns one PTY per session; Home is the window manager; agents are peers. VT parse in Tauri via `vte` (libghostty-vt pivot — Zig toolchain constraint).
+
+| Slice | Status |
+|-------|--------|
+| `medousa-session` sidecar + daemon spawn/proxy (`/v1/sessions/shell*`) | ✅ |
+| Coding domain tools (read/search/patch + `shell_session_*`, opt-in) | ✅ |
+| Forge `work_id` → worktree cwd + command-log staging | ✅ |
+| Home `terminal` tab kind + Tauri VT bridge + splits = sessions | ✅ |
+| Packages entry `shell-session` | ✅ |
+
 ## 0.8.0 Forge core (in progress)
 
 **Goal:** the durable work-lifecycle substrate — user-owned work items, governed git environments, lease-fenced executor attempts, sealed evidence, human review, recoverable dispositions. External agents become replaceable executors on top; Medousa owns the work.

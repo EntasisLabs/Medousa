@@ -25,6 +25,13 @@ export type ShellTab =
       kind: "surface";
       surfaceId: Surface;
       title: string;
+    }
+  | {
+      id: string;
+      kind: "terminal";
+      /** Workshop shell session id (one PTY per session; splits = new sessions). */
+      sessionId: string;
+      title: string;
     };
 
 /** Leaf pane — ordered tabs + focused tab. */

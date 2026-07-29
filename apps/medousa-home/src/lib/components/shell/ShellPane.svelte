@@ -14,6 +14,7 @@
   import ProfilesPanel from "$lib/components/profiles/ProfilesPanel.svelte";
   import RuntimePanel from "$lib/components/runtime/RuntimePanel.svelte";
   import ShellTabStrip from "$lib/components/shell/ShellTabStrip.svelte";
+  import TerminalPane from "$lib/components/terminal/TerminalPane.svelte";
   import WorkPanel from "$lib/components/work/WorkPanel.svelte";
   import { chat } from "$lib/stores/chat.svelte";
   import { shellTabs } from "$lib/stores/shellTabs.svelte";
@@ -97,6 +98,7 @@
       (activeTab?.kind === "surface" && activeTab.surfaceId === "library"),
   );
   const showWeb = $derived(ownsWebHost && activeTab?.kind === "web");
+  const showTerminal = $derived(activeTab?.kind === "terminal");
   const showSurface = $derived(
     activeTab?.kind === "surface" && activeTab.surfaceId !== "library"
       ? activeTab.surfaceId
@@ -185,6 +187,10 @@
           title={activeTab.title}
         />
       {/if}
+    {:else if activeTab?.kind === "terminal"}
+      {#key activeTab.sessionId}
+        <TerminalPane sessionId={activeTab.sessionId} title={activeTab.title} />
+      {/key}
     {:else if showLme}
       <LmePanel
         visible={true}

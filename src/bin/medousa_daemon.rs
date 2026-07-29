@@ -401,6 +401,7 @@ async fn main() -> Result<()> {
         client_registry: medousa::browser_handlers::ClientRegistry::new(),
         forge,
         coding_engine: Some(medousa::daemon::coding_engine_host::CodingEngineHost::new()),
+        shell_sessions: Some(medousa::daemon::shell_session_host::ShellSessionHost::new()),
     };
 
     medousa::turn_worker_notify::register_ingest_channel_delivery_bridge(

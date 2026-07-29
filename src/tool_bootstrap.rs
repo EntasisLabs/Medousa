@@ -306,6 +306,11 @@ pub fn worker_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
     WORKER.get_or_init(|| {
         vec![
             ToolDomainCatalogEntry {
+                domain: "coding",
+                summary: "Workshop coding toolkit — read/patch under scripts/Forge roots, shared shell sessions (opt-in)",
+                tools: crate::coding_tools::CODING_COGNITION_TOOLS,
+            },
+            ToolDomainCatalogEntry {
                 domain: "execute",
                 summary: "Run resolved capabilities, Grapheme scripts, MCP invokes",
                 tools: &[
@@ -578,6 +583,12 @@ pub fn ensure_bound_workshop_session_tool_defaults(session_id: &str) {
         ToolSurfaceLane::Worker,
         BOUND_WORKSHOP_AUTO_UNLOCK_DOMAINS,
     );
+}
+
+/// Unlock the opt-in coding domain (read/patch/session shell) for a session.
+/// Callers gate this on manuscript / Forge `work_id` / Settings — never default.
+pub fn ensure_coding_domain_for_session(session_id: &str) {
+    let _ = unlock_session_domains(session_id, ToolSurfaceLane::Worker, &["coding"]);
 }
 
 pub fn load_session_tool_surface(session_id: &str) -> SessionToolSurface {

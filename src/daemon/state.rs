@@ -96,6 +96,8 @@ pub struct AppState {
     pub forge: Arc<medousa_forge::forge::Forge>,
     /// LSP Interoperability Orchestrator host (medousa-code sidecar).
     pub coding_engine: Option<Arc<crate::daemon::coding_engine_host::CodingEngineHost>>,
+    /// Workshop shell session host (medousa-session sidecar).
+    pub shell_sessions: Option<Arc<crate::daemon::shell_session_host::ShellSessionHost>>,
 }
 
 impl AppState {

@@ -2,6 +2,7 @@ pub mod agents;
 pub mod acp_forge_adapter;
 pub mod bounded_set;
 pub mod coding_engine_host;
+pub mod shell_session_host;
 pub mod continuations;
 pub mod core;
 pub mod forge_api;
