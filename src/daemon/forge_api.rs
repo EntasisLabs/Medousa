@@ -631,6 +631,20 @@ async fn export_item(
     let id = parse_work_id(&work_id)?;
     let forge = forge(&state);
     let destination = body.destination;
+    if destination.exists() {
+        let mut entries = std::fs::read_dir(&destination)
+            .map_err(ForgeError::from)
+            .map_err(map_err)?;
+        if entries.next().is_some() {
+            return Err((
+                StatusCode::CONFLICT,
+                Json(ErrorBody {
+                    error: "export destination already exists and is not empty".into(),
+                    kind: Some("destination_not_empty"),
+                }),
+            ));
+        }
+    }
     export_bundle(forge.as_ref(), &id, &destination).map_err(map_err)?;
     Ok(Json(ExportResponse { destination }))
 }

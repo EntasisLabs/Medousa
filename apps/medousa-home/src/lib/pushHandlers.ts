@@ -74,6 +74,12 @@ function openFromNotification(
       void onOpenVault(link.notePath);
       return;
     }
+    if (link?.kind === "undertaking_location") {
+      void import("$lib/utils/undertakingLocation").then(({ openUndertakingLocation }) =>
+        openUndertakingLocation(link),
+      );
+      return;
+    }
   }
 
   const cardId = readString(data, "cardId") ?? readString(data, "card_id");

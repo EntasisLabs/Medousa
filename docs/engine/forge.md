@@ -49,6 +49,10 @@ Base path: `/v1/forge`. Types are `medousa-forge` serde models (`WorkItem`,
 | POST | `/v1/forge/items/{id}/run-script` | Reference script executor (`argv`) |
 | POST | `/v1/forge/items/{id}/export` | Portable bundle to `destination` |
 
+Export writes on the daemon/workshop filesystem. `destination` must be absent
+or an empty directory; a non-empty destination returns `409` and is never
+overwritten.
+
 ### Register body
 
 ```json

@@ -387,6 +387,28 @@ export async function getWorldImpact(
   return forgeFetch(`/v1/world/impact?${q}`);
 }
 
+export async function getWorldAtLocation(
+  workId: string,
+  path: string,
+  line: number,
+  snapshot?: WorldSnapshotRef | null,
+): Promise<{ ok: boolean; entity?: WorldEntity | null }> {
+  const q = worldQuery(workId, snapshot);
+  q.set("path", path);
+  q.set("line", String(Math.max(1, Math.floor(line))));
+  return forgeFetch(`/v1/world/at_location?${q}`);
+}
+
+export async function exportUndertakingBundle(
+  workId: string,
+  destination: string,
+): Promise<{ destination: string }> {
+  return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/export`, {
+    method: "POST",
+    body: JSON.stringify({ destination }),
+  });
+}
+
 export async function queueWorldIndex(
   workId: string,
   kind: "baseline" | "sealed" = "sealed",

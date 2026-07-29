@@ -47,6 +47,12 @@ function handleUrls(urls: string[]) {
       void dispatchVaultLink(link.notePath);
       return;
     }
+    if (link?.kind === "undertaking_location") {
+      void import("$lib/utils/undertakingLocation").then(({ openUndertakingLocation }) =>
+        openUndertakingLocation(link),
+      );
+      return;
+    }
   }
 }
 

@@ -12,8 +12,10 @@
     getWorldFiles,
     getWorldFind,
     getWorldImpact,
+    getWorldAtLocation,
     getWorldBinding,
     queueWorldIndex,
+    exportUndertakingBundle,
     humanPhaseLabel,
     type EvidencePage,
     type WorldBindingStatus,
@@ -29,6 +31,9 @@
   } from "$lib/utils/undertakingWorkspace";
   import { isCoLocatedWorkshop } from "$lib/utils/workshopLocality";
   import { vault } from "$lib/stores/vault.svelte";
+  import { openUndertakingLocation } from "$lib/utils/undertakingLocation";
+  import { undertakingLocationDeepLinkUrl } from "$lib/deepLinks";
+  import { shareText } from "$lib/share";
 
   let title = $state("");
   let brief = $state("");
@@ -51,6 +56,9 @@
   let creating = $state(false);
   let reviewRationale = $state("");
   let acknowledgePolicy = $state(false);
+  let exportOpen = $state(false);
+  let exportDestination = $state("");
+  let exportedDestination = $state<string | null>(null);
 
   const detail = $derived(undertakings.detail);
   const review = $derived(undertakings.review);
@@ -220,6 +228,87 @@
       worldFiles = await getWorldFiles(detail!.id, undefined, snapshot);
       worldInsight = await getWorldCodeAvec(detail!.id, snapshot);
       worldError = null;
+    });
+  }
+
+  async function revealLocation(input: {
+    path: string;
+    line?: number | null;
+    entityId?: string | null;
+  }) {
+    if (!detail) return;
+    await openUndertakingLocation({ workId: detail.id, ...input });
+    worldMode = true;
+    impactEntity = input.entityId ?? "";
+    if (input.entityId) {
+      worldImpact = await getWorldImpact(
+        detail.id,
+        input.entityId,
+        selectedWorldSnapshot(),
+      );
+    } else if (input.line) {
+      const located = await getWorldAtLocation(
+        detail.id,
+        input.path,
+        input.line,
+        selectedWorldSnapshot(),
+      );
+      const entity = located.entity;
+      if (entity) {
+        impactEntity = entity.id;
+        undertakings.setSelection({ entityId: entity.id });
+      }
+    }
+  }
+
+  async function copyLocationLink() {
+    const active = undertakings.active;
+    if (!active?.selectedPath) return;
+    const url = undertakingLocationDeepLinkUrl({
+      workId: active.workId,
+      path: active.selectedPath,
+      line: active.selectedLine,
+      entityId: active.selectedEntityId,
+    });
+    const result = await shareText("Undertaking location", url);
+    if (result === "failed") actionError = "Could not copy the undertaking location";
+  }
+
+  function exportFolderName(value: string): string {
+    const slug = value
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 60);
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    return `${slug || "undertaking"}-forge-${stamp}`;
+  }
+
+  async function beginExport() {
+    if (!detail) return;
+    exportedDestination = null;
+    if (isCoLocatedWorkshop()) {
+      const { open } = await import("@tauri-apps/plugin-dialog");
+      const parent = await open({
+        directory: true,
+        multiple: false,
+        canCreateDirectories: true,
+        title: "Choose where to preserve this undertaking",
+      });
+      if (typeof parent !== "string") return;
+      exportDestination = `${parent.replace(/[\\/]$/, "")}/${exportFolderName(detail.title)}`;
+    } else {
+      exportDestination = "";
+    }
+    exportOpen = true;
+  }
+
+  async function confirmExport() {
+    if (!detail || !exportDestination.trim()) return;
+    await run(async () => {
+      const result = await exportUndertakingBundle(detail!.id, exportDestination.trim());
+      exportedDestination = result.destination;
+      exportOpen = false;
     });
   }
 
@@ -513,9 +602,47 @@
           </details>
         {/if}
 
+        {#if undertakings.active?.workId === detail.id && undertakings.active.selectedPath}
+          <div
+            class="flex flex-wrap items-center justify-between gap-2 rounded-md border border-primary-500/20 bg-primary-950/10 px-2.5 py-2"
+          >
+            <div class="min-w-0">
+              <p class="truncate font-mono text-[11px] text-surface-200">
+                {undertakings.active.selectedPath}{undertakings.active.selectedLine
+                  ? `:${undertakings.active.selectedLine}`
+                  : ""}
+              </p>
+              <p class="text-[9px] text-surface-500">
+                Current undertaking location{undertakings.active.selectedEntityId
+                  ? " · entity resolved"
+                  : ""}
+              </p>
+            </div>
+            <div class="flex items-center gap-1">
+              <button
+                type="button"
+                class="rounded px-2 py-1 text-[10px] text-surface-400 hover:bg-surface-800 hover:text-surface-100"
+                onclick={() => void copyLocationLink()}
+              >Copy link</button>
+              <button
+                type="button"
+                class="rounded px-2 py-1 text-[10px] text-surface-400 hover:bg-surface-800 hover:text-surface-100"
+                onclick={() => undertakings.setSelection({ path: null, line: null, entityId: null })}
+              >Clear</button>
+            </div>
+          </div>
+        {/if}
+
         {#if review && (detail.human_phase === "review" || review.evidence_id)}
           <div class="mt-2 rounded-lg border border-primary-500/30 bg-surface-900/50 p-3">
-            <h4 class="text-sm font-semibold text-surface-50">ForgeLens</h4>
+            <div class="flex items-center justify-between gap-2">
+              <h4 class="text-sm font-semibold text-surface-50">ForgeLens</h4>
+              <button
+                type="button"
+                class="rounded px-2 py-1 text-[10px] text-surface-400 hover:bg-surface-800 hover:text-surface-100"
+                onclick={() => void beginExport()}
+              >Export evidence…</button>
+            </div>
             <p class="mt-1 text-[11px] text-surface-400">
               baseline {review.baseline_oid?.slice(0, 10)}… → sealed
               {review.sealed_head_oid?.slice(0, 10)}…
@@ -533,7 +660,11 @@
               {#each review.changed_files as f (f.path)}
                 <li class="flex items-center gap-2 py-0.5">
                   <span class="w-14 shrink-0 text-surface-500">{f.status}</span>
-                  <span class="min-w-0 flex-1 truncate">{f.path}</span>
+                  <button
+                    type="button"
+                    class="min-w-0 flex-1 truncate text-left hover:text-primary-200 hover:underline"
+                    onclick={() => void revealLocation({ path: f.path, line: 1 })}
+                  >{f.path}</button>
                   {#if f.is_binary}
                     <span class="rounded bg-surface-700 px-1 py-0.5 text-[9px] text-surface-300">
                       binary{f.byte_size ? ` · ${Math.ceil(f.byte_size / 1024)} KB` : ""}
@@ -648,6 +779,58 @@
                 </button>
               </div>
             {/if}
+            {#if exportedDestination}
+              <p class="mt-2 text-[10px] text-primary-200">
+                Evidence preserved at <span class="font-mono">{exportedDestination}</span>
+              </p>
+            {/if}
+          </div>
+        {/if}
+
+        {#if exportOpen}
+          <div
+            class="rounded-lg border border-surface-500/35 bg-surface-900/60 p-3"
+            role="dialog"
+            aria-label="Export undertaking evidence"
+            tabindex="-1"
+          >
+            <h4 class="text-sm font-medium text-surface-100">Preserve a portable copy</h4>
+            <p class="mt-1 text-[10px] leading-relaxed text-surface-400">
+              This creates a folder containing the undertaking record, event history, sealed
+              evidence, and dispositions.
+            </p>
+            {#if !isCoLocatedWorkshop()}
+              <label class="mt-3 block text-[10px] text-surface-400" for="export-destination">
+                Destination on the workshop machine
+              </label>
+              <input
+                id="export-destination"
+                class="mt-1 w-full rounded-md border border-surface-500/40 bg-surface-950/60 px-2 py-1.5 font-mono text-xs text-surface-100"
+                placeholder="/path/on/workshop/undertaking-forge"
+                bind:value={exportDestination}
+              />
+              <p class="mt-1 text-[9px] text-surface-500">
+                The connected workshop owns this filesystem. No folder from this device is
+                uploaded.
+              </p>
+            {:else}
+              <p class="mt-3 break-all font-mono text-[10px] text-surface-300">
+                {exportDestination}
+              </p>
+            {/if}
+            <div class="mt-3 flex justify-end gap-1.5">
+              <button
+                type="button"
+                class="rounded px-2.5 py-1.5 text-xs text-surface-400 hover:bg-surface-800"
+                onclick={() => (exportOpen = false)}
+              >Cancel</button>
+              <button
+                type="button"
+                class="rounded bg-primary-500/80 px-2.5 py-1.5 text-xs font-medium text-surface-50 disabled:opacity-40"
+                disabled={busy || !exportDestination.trim()}
+                onclick={() => void confirmExport()}
+              >Preserve copy</button>
+            </div>
           </div>
         {/if}
 
@@ -782,8 +965,11 @@
                       type="button"
                       class="flex w-full items-center justify-between gap-2 border-b border-surface-500/20 px-2 py-1.5 text-left last:border-0 hover:bg-surface-800/60"
                       onclick={() => {
-                        impactEntity = entity.id;
-                        undertakings.setSelection({ entityId: entity.id, path: entity.path });
+                        void revealLocation({
+                          path: entity.path,
+                          line: entity.line_start,
+                          entityId: entity.id,
+                        });
                       }}
                     >
                       <span class="min-w-0">
@@ -845,7 +1031,8 @@
                       <button
                         type="button"
                         class="w-full truncate text-left font-mono text-[10px] text-surface-400 hover:text-surface-100"
-                        onclick={() => undertakings.setSelection({ entityId: file.id, path: file.path })}
+                        onclick={() =>
+                          void revealLocation({ path: file.path, line: 1, entityId: file.id })}
                       >{file.path}</button>
                     </li>
                   {/each}

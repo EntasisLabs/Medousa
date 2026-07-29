@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { parseDeepLink, vaultDeepLinkUrl, workDeepLinkUrl } from "./deepLinks";
+import {
+  parseDeepLink,
+  undertakingLocationDeepLinkUrl,
+  vaultDeepLinkUrl,
+  workDeepLinkUrl,
+} from "./deepLinks";
 
 describe("deepLinks", () => {
   it("builds work and vault urls", () => {
@@ -24,5 +29,25 @@ describe("deepLinks", () => {
       kind: "work",
       cardId: "card-1",
     });
+  });
+
+  it("round-trips undertaking locations", () => {
+    const url = undertakingLocationDeepLinkUrl({
+      workId: "work-1",
+      path: "src/lib.rs",
+      line: 42,
+      entityId: "function:run",
+    });
+    expect(parseDeepLink(url)).toEqual({
+      kind: "undertaking_location",
+      workId: "work-1",
+      path: "src/lib.rs",
+      line: 42,
+      entityId: "function:run",
+    });
+    expect(parseDeepLink("medousa://undertaking/work-1/location?path=../secret"))
+      .toBe(null);
+    expect(parseDeepLink("medousa://undertaking/work-1/location?path=%2Fetc%2Fpasswd"))
+      .toBe(null);
   });
 });

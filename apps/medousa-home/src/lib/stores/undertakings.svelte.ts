@@ -29,6 +29,7 @@ export type ActiveUndertakingContext = {
   boundTerminalSessionIds: string[];
   selectedEntityId: string | null;
   selectedPath: string | null;
+  selectedLine: number | null;
 };
 
 function groupKey(): string {
@@ -70,6 +71,7 @@ function createUndertakingsStore() {
       boundTerminalSessionIds: [],
       selectedEntityId: null,
       selectedPath: null,
+      selectedLine: null,
       ...merge,
     };
     const prev = contexts[groupKey()];
@@ -78,6 +80,7 @@ function createUndertakingsStore() {
       next.boundTerminalSessionIds = prev.boundTerminalSessionIds;
       next.selectedEntityId = prev.selectedEntityId;
       next.selectedPath = prev.selectedPath;
+      next.selectedLine = prev.selectedLine;
       next.sealedOid = prev.sealedOid;
     }
     contexts = { ...contexts, [groupKey()]: next };
@@ -126,7 +129,11 @@ function createUndertakingsStore() {
     };
   }
 
-  function setSelection(selection: { entityId?: string | null; path?: string | null }) {
+  function setSelection(selection: {
+    entityId?: string | null;
+    path?: string | null;
+    line?: number | null;
+  }) {
     const cur = contexts[groupKey()];
     if (!cur) return;
     contexts = {
@@ -136,6 +143,7 @@ function createUndertakingsStore() {
         selectedEntityId:
           selection.entityId === undefined ? cur.selectedEntityId : selection.entityId,
         selectedPath: selection.path === undefined ? cur.selectedPath : selection.path,
+        selectedLine: selection.line === undefined ? cur.selectedLine : selection.line,
       },
     };
   }

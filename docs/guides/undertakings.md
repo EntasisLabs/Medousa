@@ -59,6 +59,23 @@ select one to inspect impact. Analyzer capabilities marked unavailable are
 missing evidence, not a zero score. World is always observe-only; repository
 changes still go through Forge actions.
 
+File and entity rows share one undertaking-location contract: undertaking,
+repository-relative path, optional line, and optional entity. Selecting one
+keeps that location attached to the undertaking while moving between World and
+ForgeLens. **Copy link** produces a `medousa://undertaking/…/location` link that
+can restore the same location without making Home a source-code editor.
+
+## Preserve a portable copy
+
+Choose **Export evidence…** in ForgeLens to create a portable folder containing
+the undertaking record, event history, sealed attempts, and dispositions.
+
+- For a local workshop, Medousa asks for a folder on this device and creates a
+  named export directory inside it.
+- For a remote workshop, enter a destination path on the workshop machine.
+  Home never presents a local folder picker or uploads a local folder for this
+  operation.
+
 ## API (Home clients)
 
 See `apps/medousa-home/src/lib/forge.ts` and daemon routes:
