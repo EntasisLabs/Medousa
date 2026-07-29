@@ -614,6 +614,10 @@ async fn run_prompt_pump(
         let _ = adapter.record_prompt(lease, prompt.len());
     }
 
+    // Durable transcript (Synara/T3 reopen gap). SSE path unchanged.
+    crate::daemon::acp_turn_persist::persist_user_prompt(&live.session_id, &prompt);
+    let mut persist = crate::daemon::acp_turn_persist::AcpPromptPersistState::new();
+
     ACP_CLIENT
         .prompt(&live.acp_session_id, &prompt)
         .await
@@ -638,6 +642,11 @@ async fn run_prompt_pump(
             idle_empty = idle_empty.saturating_add(1);
             if idle_empty > 250 {
                 // ~10s of idle emptiness — treat as complete
+                crate::daemon::acp_turn_persist::persist_assistant_if_needed(
+                    &live.session_id,
+                    &mut persist,
+                    None,
+                );
                 publish_agent_event(
                     &entry,
                     &live.agent_session_id,
@@ -666,6 +675,7 @@ async fn run_prompt_pump(
             continue;
         };
         idle_empty = 0;
+        persist.observe(&event);
         match event {
             AcpEvent::MessageDelta { text } => {
                 publish_agent_event(
@@ -765,6 +775,11 @@ async fn run_prompt_pump(
                 );
             }
             AcpEvent::Error { message } => {
+                crate::daemon::acp_turn_persist::persist_assistant_if_needed(
+                    &live.session_id,
+                    &mut persist,
+                    Some("error"),
+                );
                 if let (Some(adapter), Some(lease)) =
                     (forge_adapter.as_ref(), live.forge_lease.as_ref())
                 {
@@ -808,6 +823,11 @@ async fn run_prompt_pump(
             }
             AcpEvent::Done => {
                 // Done is *not* a seal — lease stays live; heartbeat only.
+                crate::daemon::acp_turn_persist::persist_assistant_if_needed(
+                    &live.session_id,
+                    &mut persist,
+                    None,
+                );
                 if let (Some(adapter), Some(lease)) =
                     (forge_adapter.as_ref(), live.forge_lease.as_ref())
                     && let Err(err) = adapter.heartbeat(lease)

@@ -227,7 +227,7 @@ Bottom-up order: **SDK publish → daemon host → Forge lifecycle hooks → too
 | **Tools** | ✅ `cognition_detamu_status` / `files` / `impact` / `code_avec` / `find`; domain `detamu` + `ensure_detamu_domain_for_session` |
 | **Rust pack** | ✅ path-dep `detamu-language-rust`; Tree-sitter symbols enrich `index_source` (hollow-graph queries return `ok:true` with zero dependents / coverage note) |
 | **Evidence** | ✅ SnapshotId pointers in `{dataDir}/detamu/bindings/{work_id}.json` |
-| **Observer** | ⬜ `NullDetamuObserver` until live-doc enrichment is needed; keep off keystroke path |
+| **Observer** | ⬜ optional / deferred — `NullDetamuObserver` until live-doc enrichment is needed; **not blocking Home**; keep off keystroke path |
 | **crates.io** | ⬜ switch path deps to published versions when Detamu publish lands |
 
 Dirty-worktree rule for examples: mid-attempt agent queries either (a) last

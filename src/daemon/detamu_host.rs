@@ -32,11 +32,25 @@ use crate::paths::medousa_data_dir;
 pub struct WorkDetamuBinding {
     pub work_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub baseline: Option<SnapshotRef>,
+    pub baseline: Option<SnapshotSlot>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub sealed: Option<SnapshotRef>,
+    pub sealed: Option<SnapshotSlot>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_index: Option<IndexSummary>,
+    #[serde(default)]
+    pub diagnostics: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SnapshotSlot {
+    /// queued | indexing | ready | failed
+    pub state: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub world: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -124,6 +138,7 @@ impl DetamuHost {
             "available": true,
             "root": self.root.display().to_string(),
             "message": "Detamu world-model host ready (inventory + Code AVEC scoring)",
+            "capabilities": self.capabilities_json(),
         })
     }
 
@@ -153,19 +168,86 @@ impl DetamuHost {
         oid: &str,
         kind: BindingKind,
     ) -> Result<IndexReport, String> {
-        let report = self.index_path(worktree, Some(oid)).await?;
+        self.mark_slot(work_id, kind, "indexing", Some(oid), None)?;
+        let report = match self.index_path(worktree, Some(oid)).await {
+            Ok(r) => r,
+            Err(err) => {
+                let _ = self.mark_slot(work_id, kind, "failed", Some(oid), Some(&err));
+                return Err(err);
+            }
+        };
         let mut binding = self.load_binding(work_id).unwrap_or_else(|| WorkDetamuBinding {
             work_id: work_id.to_owned(),
             ..Default::default()
         });
         let snap = SnapshotRef::from(&report.snapshot);
+        let slot = SnapshotSlot {
+            state: "ready".into(),
+            world: Some(snap.world),
+            version: Some(snap.version),
+            error: None,
+        };
         match kind {
-            BindingKind::Baseline => binding.baseline = Some(snap),
-            BindingKind::Sealed => binding.sealed = Some(snap),
+            BindingKind::Baseline => binding.baseline = Some(slot),
+            BindingKind::Sealed => binding.sealed = Some(slot),
         }
         binding.last_index = Some(IndexSummary::from(&report));
+        binding.diagnostics.clear();
         self.save_binding(&binding)?;
         Ok(report)
+    }
+
+    pub fn mark_slot(
+        &self,
+        work_id: &str,
+        kind: BindingKind,
+        state: &str,
+        version: Option<&str>,
+        error: Option<&str>,
+    ) -> Result<(), String> {
+        let mut binding = self.load_binding(work_id).unwrap_or_else(|| WorkDetamuBinding {
+            work_id: work_id.to_owned(),
+            ..Default::default()
+        });
+        let slot = SnapshotSlot {
+            state: state.to_owned(),
+            world: None,
+            version: version.map(str::to_owned),
+            error: error.map(str::to_owned),
+        };
+        match kind {
+            BindingKind::Baseline => binding.baseline = Some(slot),
+            BindingKind::Sealed => binding.sealed = Some(slot),
+        }
+        if let Some(err) = error {
+            binding.diagnostics.push(err.to_owned());
+        }
+        self.save_binding(&binding)
+    }
+
+    pub async fn binding_status_json(&self, work_id: &str) -> Value {
+        let binding = self.load_binding(work_id).unwrap_or_else(|| WorkDetamuBinding {
+            work_id: work_id.to_owned(),
+            ..Default::default()
+        });
+        json!({
+            "work_id": binding.work_id,
+            "baseline": binding.baseline,
+            "sealed": binding.sealed,
+            "last_index": binding.last_index,
+            "diagnostics": binding.diagnostics,
+            "capabilities": self.capabilities_json(),
+        })
+    }
+
+    pub fn capabilities_json(&self) -> Value {
+        json!({
+            "git_inventory": true,
+            "rust_syntax": true,
+            "lizard": false,
+            "rust_analyzer": false,
+            "note": "Optional Lizard / rust-analyzer adapters not wired in this host"
+        })
     }
 
     pub fn load_binding(&self, work_id: &str) -> Option<WorkDetamuBinding> {
@@ -401,6 +483,23 @@ pub async fn maybe_index_forge_item(
     }
 }
 
+/// Fire-and-forget index so Forge mutations return immediately.
+pub fn spawn_index_forge_item(
+    host: Option<Arc<DetamuHost>>,
+    work_id: String,
+    worktree: PathBuf,
+    oid: String,
+    kind: BindingKind,
+) {
+    let Some(host) = host else {
+        return;
+    };
+    let _ = host.mark_slot(&work_id, kind, "queued", Some(&oid), None);
+    tokio::spawn(async move {
+        maybe_index_forge_item(&Some(host), &work_id, &worktree, &oid, kind).await;
+    });
+}
+
 // ---------------------------------------------------------------------------
 // HTTP — /v1/world/* (distinct from medousa-code /v1/detamu/* stubs)
 // ---------------------------------------------------------------------------
@@ -457,6 +556,7 @@ async fn world_index(
         "Detamu host unavailable".into(),
     ))?;
 
+    // Prefer work-scoped reindex from undertaking UI (no arbitrary paths).
     if let Some(work_id) = body.work_id.as_deref().filter(|s| !s.trim().is_empty()) {
         let item = state
             .forge
@@ -474,14 +574,18 @@ async fn world_index(
             Some("sealed") => BindingKind::Sealed,
             _ => BindingKind::Baseline,
         };
-        let report = host
-            .index_forge_work(work_id, &env.worktree, &oid, kind)
-            .await
-            .map_err(|e| (axum::http::StatusCode::BAD_GATEWAY, e))?;
+        spawn_index_forge_item(
+            state.detamu.clone(),
+            work_id.to_owned(),
+            env.worktree.clone(),
+            oid,
+            kind,
+        );
         return Ok(Json(json!({
             "ok": true,
             "work_id": work_id,
-            "report": IndexSummary::from(&report),
+            "queued": true,
+            "binding": host.binding_status_json(work_id).await,
         })));
     }
 
@@ -678,14 +782,23 @@ fn resolve_snapshot(
             axum::http::StatusCode::NOT_FOUND,
             format!("no Detamu binding for work {work_id}"),
         ))?;
-        let snap = binding
+        let slot = binding
             .sealed
-            .or(binding.baseline)
+            .filter(|s| s.state == "ready")
+            .or_else(|| binding.baseline.filter(|s| s.state == "ready"))
             .ok_or((
                 axum::http::StatusCode::NOT_FOUND,
-                format!("work {work_id} has no indexed snapshot yet"),
+                format!("work {work_id} has no ready indexed snapshot yet"),
             ))?;
-        return Ok(SnapshotId::new(snap.world, snap.version));
+        let world = slot.world.as_deref().ok_or((
+            axum::http::StatusCode::NOT_FOUND,
+            format!("work {work_id} snapshot missing world"),
+        ))?;
+        let version = slot.version.as_deref().ok_or((
+            axum::http::StatusCode::NOT_FOUND,
+            format!("work {work_id} snapshot missing version"),
+        ))?;
+        return Ok(SnapshotId::new(world, version));
     }
     Err((
         axum::http::StatusCode::BAD_REQUEST,

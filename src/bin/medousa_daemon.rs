@@ -400,6 +400,7 @@ async fn main() -> Result<()> {
         last_context_usage_by_session: Arc::new(RwLock::new(HashMap::new())),
         client_registry: medousa::browser_handlers::ClientRegistry::new(),
         forge,
+        forge_events: medousa::daemon::forge_events::ForgeEventBus::new(),
         coding_engine: Some(medousa::daemon::coding_engine_host::CodingEngineHost::new()),
         shell_sessions: Some(medousa::daemon::shell_session_host::ShellSessionHost::new()),
         detamu: match medousa::daemon::detamu_host::DetamuHost::open(

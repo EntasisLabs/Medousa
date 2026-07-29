@@ -13,6 +13,7 @@ Integrator / self-host cookbooks: [../cookbook/README.md](../cookbook/README.md)
 | [Peers & Nearby](peers-and-nearby.md) | LAN / tunnel workshops (deep dive linked) |
 | [Memory & identity](memory-and-identity.md) | Teach who you are; profiles |
 | [Channels](channels.md) | Telegram, Discord, Slack, WhatsApp from the app |
+| [Undertakings & ForgeLens](undertakings.md) | Governed work, seal, review, World observe |
 
 Also useful from the cookbook (app-user tagged):
 [Custom views & canvas](../cookbook/custom-views-and-canvas.md) ·

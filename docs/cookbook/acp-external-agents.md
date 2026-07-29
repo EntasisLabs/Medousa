@@ -72,6 +72,12 @@ Home: **Settings → Connections** installs missing CLIs via the vendor installe
 
 `agent_thought_chunk` updates are routed to the chat stream's `reasoning_delta` channel (event_type `reasoning_delta`, phase `thinking`), separate from `content_delta`. Home accumulates them into `ChatMessage.reasoning` and renders the collapsed **thinking tray** (`AssistantThinking.svelte`) above the answer — same treatment as native Medousa reasoning. Missing CLI → `create_session` errors loudly (no stub fallback).
 
+## Session history (transcript)
+
+Each ACP prompt also writes durable Medousa session turns (user at pump start; assistant on `Done` / idle complete / `Error`) via `session_writer` — same store as native `/v1/turns`. Reopen or daemon restart → `GET /v1/sessions/{id}/history` restores the transcript. Live SSE is unchanged.
+
+**Forge resume ≠ transcript.** `session/resume` / `session/load` reattaches the vendor wire session inside a governed worktree; command-log staging is audit metadata. Chat text lives in Medousa session history only.
+
 ## Stasis waitable turns (0.8)
 
 External ACP sessions still enter through `/v1/agents` (SDK façade). When a Stasis job uses `workflow.stasis.agent_turn.waitable`, the daemon parks on a **process-local** `TurnWaitStore` until ACP completion feeds `AgentEventIngress`:

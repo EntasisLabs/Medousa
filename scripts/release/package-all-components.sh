@@ -25,7 +25,8 @@ Options:
   --skip-suite          Deprecated no-op (suite archives are no longer built)
   -h, --help            Show this help
 
-Packages engine (launcher+daemon+cli+tui), each adapter, and mcp-gateway.
+Packages engine (launcher+daemon+cli+tui), each adapter, mcp-gateway,
+coding-engine (medousa-code), and shell-session (medousa-session).
 There is no medousa-v* / engine-suite archive.
 EOF
 }

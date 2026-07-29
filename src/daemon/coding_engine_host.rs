@@ -100,14 +100,20 @@ fn binary_name() -> &'static str {
 }
 
 fn which_bin(name: &str) -> Option<PathBuf> {
-    let path = std::env::var_os("PATH")?;
-    for dir in std::env::split_paths(&path) {
-        let candidate = dir.join(name);
-        if candidate.is_file() {
-            return Some(candidate);
+    let mut candidates = Vec::new();
+    if cfg!(target_os = "macos") {
+        candidates.push(PathBuf::from("/usr/local/bin").join(name));
+        candidates.push(PathBuf::from("/opt/homebrew/bin").join(name));
+    }
+    if cfg!(target_os = "linux") {
+        candidates.push(PathBuf::from("/usr/local/bin").join(name));
+    }
+    if let Some(path) = std::env::var_os("PATH") {
+        for dir in std::env::split_paths(&path) {
+            candidates.push(dir.join(name));
         }
     }
-    None
+    candidates.into_iter().find(|p| p.is_file())
 }
 
 fn forge_worktree_roots() -> Vec<PathBuf> {

@@ -27,7 +27,9 @@ $script:MedousaComponentIds = @(
     "adapter-discord",
     "adapter-slack",
     "adapter-whatsapp",
-    "mcp-gateway"
+    "mcp-gateway",
+    "coding-engine",
+    "shell-session"
 )
 
 function Get-MedousaRepoRoot {
@@ -95,13 +97,15 @@ function Get-MedousaAssetArchiveName([string]$Version, [string]$Target) {
 
 function Get-MedousaComponentBinaries([string]$PackageId) {
     switch ($PackageId) {
-        "engine" { return @("medousa", "medousa_daemon") }
-        "cli" { return @("medousa_cli", "medousa_tui") }
+        "engine" { return @("medousa", "medousa_daemon", "medousa_cli", "medousa_tui") }
+        "cli" { return @("medousa", "medousa_daemon", "medousa_cli", "medousa_tui") }
         "adapter-telegram" { return @("medousa_telegram") }
         "adapter-discord" { return @("medousa_discord") }
         "adapter-slack" { return @("medousa_slack") }
         "adapter-whatsapp" { return @("medousa_whatsapp") }
         "mcp-gateway" { return @("medousa_mcp_gateway") }
+        "coding-engine" { return @("medousa-code") }
+        "shell-session" { return @("medousa-session") }
         default { throw "unknown component package: $PackageId" }
     }
 }
