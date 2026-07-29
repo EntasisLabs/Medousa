@@ -51,6 +51,7 @@ Base path: `/v1/forge`. Types are `medousa-forge` serde models (`WorkItem`,
 | POST | `/v1/forge/items/{id}/tasks/{task_id}/run` | Run a detected command and stage its result into active evidence |
 | POST | `/v1/forge/items/{id}/provision` | Create governed worktree env |
 | POST | `/v1/forge/items/{id}/attempts` | Begin attempt (default executor `human`) → lease |
+| POST | `/v1/forge/items/{id}/handoff` | Preserve the worktree and release the current lease for another executor |
 | POST | `/v1/forge/leases/{lease_id}/heartbeat` | Liveness (`generation` required) |
 | POST | `/v1/forge/leases/{lease_id}/complete` | Seal checkpoint + evidence |
 | POST | `/v1/forge/leases/{lease_id}/interrupt` | Interrupt; work preserved |
@@ -166,3 +167,10 @@ An external agent chat session can opt in to Forge custody by setting
   the adapter reports beside the stream, never instead of it.
 
 Plain chat sessions (no `work_id`) are unaffected and never touch Forge.
+
+Home uses `/v1/forge/items/{id}/handoff` before moving from a human editing
+lease to Codex or Cursor. The request includes `lease_id`, `generation`, and
+`to_executor`. Forge records the transition, interrupts the current attempt,
+and leaves the same worktree Ready. Starting the provider is a separate,
+retryable operation: if provider startup fails, the user's files remain safe
+and no executor owns a stale lease.

@@ -459,6 +459,22 @@ export async function beginHumanAttempt(workId: string): Promise<BeginAttemptRes
   });
 }
 
+export async function prepareExecutorHandoff(input: {
+  work_id: string;
+  lease_id: string;
+  generation: number;
+  to_executor: "codex" | "cursor" | "human";
+}): Promise<ItemProjection> {
+  return forgeFetch(`/v1/forge/items/${encodeURIComponent(input.work_id)}/handoff`, {
+    method: "POST",
+    body: JSON.stringify({
+      lease_id: input.lease_id,
+      generation: input.generation,
+      to_executor: input.to_executor,
+    }),
+  });
+}
+
 export async function sealLease(
   leaseId: string,
   generation: number,

@@ -24,6 +24,8 @@ Terminal sessions.
 
 ## Milestone 1 — Seamless human and agent handoff
 
+Status: complete (2026-07-29).
+
 ### Goal
 
 Move between direct editing and coding-agent execution without losing drafts,

@@ -303,6 +303,21 @@ export type AgentRuntimeListResponse = {
   runtimes: AgentRuntimeInfo[];
 };
 
+export type CodeIntentContext = {
+  work_id?: string | null;
+  project_title?: string | null;
+  outcome?: string | null;
+  active_path?: string | null;
+  cursor_line?: number | null;
+  selection_start_line?: number | null;
+  selection_end_line?: number | null;
+  selected_text?: string | null;
+  containing_symbol?: string | null;
+  open_files?: string[];
+  diagnostics?: string[];
+  last_verification?: string | null;
+};
+
 export type CreateAgentSessionRequest = {
   session_id: string;
   runtime: string;
@@ -313,6 +328,7 @@ export type CreateAgentSessionRequest = {
   work_id?: string | null;
   /** ACP wire sessionId to resume (or omit to auto-lookup from work_id). */
   resume_provider_token?: string | null;
+  code_context?: CodeIntentContext | null;
 };
 
 export type CreateAgentSessionResponse = {
@@ -329,6 +345,7 @@ export type CreateAgentSessionResponse = {
 
 export type AgentSessionPromptRequest = {
   prompt: string;
+  code_context?: CodeIntentContext | null;
 };
 
 export async function listAgentRuntimes(): Promise<AgentRuntimeListResponse> {
@@ -346,10 +363,11 @@ export async function createAgentSession(
 export async function promptAgentSession(
   agentSessionId: string,
   prompt: string,
+  codeContext?: CodeIntentContext | null,
 ): Promise<{ accepted: boolean; agent_session_id: string }> {
   return invoke("agents_prompt", {
     agentSessionId,
-    request: { prompt },
+    request: { prompt, code_context: codeContext ?? undefined },
   });
 }
 

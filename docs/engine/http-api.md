@@ -189,6 +189,12 @@ External ACP agents (Cursor / Codex). Clients use the Medousa SDK `agents()` acc
 | POST | `/v1/agents/permission-requests/{id}/approve` | Approve |
 | POST | `/v1/agents/permission-requests/{id}/deny` | Deny |
 
+Session creation and prompt requests may include `code_context`, a typed,
+bounded snapshot of the user's active Code workspace (outcome, file,
+cursor/selection, open files, diagnostics, and last verification). The daemon
+formats this for the selected ACP provider; clients should not construct
+provider-specific prompt wrappers.
+
 See [ADR-008](../architecture/decisions/adr-008-hot-swappable-agent-runtime.md) and [acp-external-agents](../cookbook/acp-external-agents.md).
 
 ---
@@ -237,6 +243,7 @@ Custody of intentional work episodes over a git target (vault or any repo). Dist
 | GET | `/v1/forge/items/{id}` | Get |
 | POST | `/v1/forge/items/{id}/provision` | Provision env |
 | POST | `/v1/forge/items/{id}/attempts` | Begin attempt → lease |
+| POST | `/v1/forge/items/{id}/handoff` | Release the current executor while preserving its worktree |
 | POST | `/v1/forge/leases/{lease_id}/heartbeat` | Heartbeat |
 | POST | `/v1/forge/leases/{lease_id}/complete` | Seal |
 | POST | `/v1/forge/leases/{lease_id}/interrupt` | Interrupt |

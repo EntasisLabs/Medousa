@@ -91,6 +91,12 @@ function createUndertakingsStore() {
       next.selectionEndLine = prev.selectionEndLine;
       next.selectedText = prev.selectedText;
       next.sealedOid = prev.sealedOid;
+      if (
+        !next.executorKind &&
+        (prev.executorKind === "codex" || prev.executorKind === "cursor")
+      ) {
+        next.executorKind = prev.executorKind;
+      }
     }
     contexts = { ...contexts, [groupKey()]: next };
     void ensureEventStream();

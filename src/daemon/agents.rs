@@ -19,7 +19,8 @@ use medousa_types::{
     AgentPermissionRequestListQuery, AgentPermissionRequestListResponse,
     AgentPermissionResolveRequest, AgentPermissionResolveResponse, AgentRuntimeInfo,
     AgentRuntimeListResponse, AgentSessionPromptRequest, AgentSessionPromptResponse,
-    CancelAgentSessionResponse, CreateAgentSessionRequest, CreateAgentSessionResponse,
+    CancelAgentSessionResponse, CodeIntentContext, CreateAgentSessionRequest,
+    CreateAgentSessionResponse,
     InteractiveTurnStreamEvent,
 };
 use tokio::sync::{Mutex, RwLock};
@@ -296,7 +297,7 @@ pub async fn create_agent_session(
         spawn_prompt_pump(
             state.clone(),
             live.clone(),
-            prompt,
+            prompt_with_code_context(prompt, body.code_context.as_ref()),
         );
     }
 
@@ -338,7 +339,11 @@ pub async fn prompt_agent_session(
     if *live.cancelled.lock().await {
         return Err((StatusCode::CONFLICT, "agent session cancelled".into()));
     }
-    spawn_prompt_pump(state, live.clone(), prompt);
+    spawn_prompt_pump(
+        state,
+        live.clone(),
+        prompt_with_code_context(prompt, body.code_context.as_ref()),
+    );
     Ok(Json(AgentSessionPromptResponse {
         accepted: true,
         agent_session_id: live.agent_session_id,
@@ -487,6 +492,54 @@ fn spawn_prompt_pump(state: AppState, live: LiveAgentSession, prompt: String) {
             publish_agent_pump_error(&state, &live, &err.to_string()).await;
         }
     });
+}
+
+fn prompt_with_code_context(prompt: String, context: Option<&CodeIntentContext>) -> String {
+    let Some(context) = context else { return prompt };
+    let mut lines = Vec::new();
+    if let Some(value) = context.project_title.as_deref().filter(|v| !v.trim().is_empty()) {
+        lines.push(format!("Project: {}", bounded_trimmed(value, 500)));
+    }
+    if let Some(value) = context.outcome.as_deref().filter(|v| !v.trim().is_empty()) {
+        lines.push(format!("Intended outcome: {}", bounded_trimmed(value, 4_000)));
+    }
+    if let Some(path) = context.active_path.as_deref().filter(|v| !v.trim().is_empty()) {
+        let path = bounded_trimmed(path, 1_000);
+        let line = context.selection_start_line.or(context.cursor_line);
+        let end = context.selection_end_line.filter(|end| Some(*end) != line);
+        let location = match (line, end) {
+            (Some(start), Some(end)) => format!("{path}:{start}-{end}"),
+            (Some(start), None) => format!("{path}:{start}"),
+            _ => path,
+        };
+        lines.push(format!("Current location: {location}"));
+    }
+    if let Some(value) = context.containing_symbol.as_deref().filter(|v| !v.trim().is_empty()) {
+        lines.push(format!("Containing symbol: {}", bounded_trimmed(value, 500)));
+    }
+    let open_files = context.open_files.iter().filter(|v| !v.trim().is_empty()).take(12)
+        .map(|v| bounded_trimmed(v, 1_000)).collect::<Vec<_>>();
+    if !open_files.is_empty() {
+        lines.push(format!("Open files: {}", open_files.join(", ")));
+    }
+    let diagnostics = context.diagnostics.iter().filter(|v| !v.trim().is_empty()).take(20)
+        .map(|v| bounded_trimmed(v, 1_000)).collect::<Vec<_>>();
+    if !diagnostics.is_empty() {
+        lines.push(format!("Relevant issues:\n- {}", diagnostics.join("\n- ")));
+    }
+    if let Some(value) = context.last_verification.as_deref().filter(|v| !v.trim().is_empty()) {
+        lines.push(format!("Last project check: {}", bounded_trimmed(value, 2_000)));
+    }
+    if let Some(value) = context.selected_text.as_deref().filter(|v| !v.is_empty()) {
+        let bounded: String = value.chars().take(16_000).collect();
+        lines.push(format!("Selected code:\n```\n{bounded}\n```"));
+    }
+    if lines.is_empty() { return prompt; }
+    format!("{prompt}\n\n<medousa_code_context>\n{}\n</medousa_code_context>", lines.join("\n"))
+}
+
+fn bounded_trimmed(value: &str, max_chars: usize) -> String {
+    value.trim().chars().take(max_chars).collect()
 }
 
 /// Clone the live session out of the registry, mutate its forge binding, and
@@ -1002,4 +1055,40 @@ fn publish_agent_reasoning_event(
         agent_runtime: Some(runtime.to_string()),
     };
     publish_interactive_turn_event(entry, Ok(event));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn code_context_is_structured_and_bounded() {
+        let context = CodeIntentContext {
+            project_title: Some("Keep the engineer in flow".into()),
+            outcome: Some("Preserve intent across handoff".into()),
+            active_path: Some("src/flow.rs".into()),
+            cursor_line: Some(14),
+            selection_start_line: Some(12),
+            selection_end_line: Some(15),
+            selected_text: Some("fn handoff() {}".into()),
+            open_files: vec!["src/flow.rs".into(), "src/lib.rs".into()],
+            diagnostics: vec!["line 14: unused result".into()],
+            ..CodeIntentContext::default()
+        };
+
+        let prompt = prompt_with_code_context("Fix this".into(), Some(&context));
+        assert!(prompt.starts_with("Fix this\n\n<medousa_code_context>"));
+        assert!(prompt.contains("Current location: src/flow.rs:12-15"));
+        assert!(prompt.contains("Open files: src/flow.rs, src/lib.rs"));
+        assert!(prompt.contains("Relevant issues:\n- line 14: unused result"));
+        assert!(prompt.ends_with("</medousa_code_context>"));
+    }
+
+    #[test]
+    fn empty_code_context_does_not_change_prompt() {
+        assert_eq!(
+            prompt_with_code_context("Keep going".into(), Some(&CodeIntentContext::default())),
+            "Keep going"
+        );
+    }
 }

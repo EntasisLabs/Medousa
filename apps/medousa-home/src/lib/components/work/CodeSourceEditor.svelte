@@ -13,6 +13,7 @@
     SquareTerminal,
     GitPullRequestArrow,
     Orbit,
+    Sparkles,
     X,
     Search,
   } from "@lucide/svelte";
@@ -45,6 +46,7 @@
   import { settingsNav } from "$lib/stores/settingsNav.svelte";
   import { shellTabs } from "$lib/stores/shellTabs.svelte";
   import { layout } from "$lib/stores/layout.svelte";
+  import { setActiveCodeInsights } from "$lib/utils/undertakingWorkspace";
 
   interface Props {
     fill?: boolean;
@@ -54,6 +56,9 @@
     onToggleWorld?: () => void;
     onOpenReview?: () => void;
     onOpenTerminal?: () => void;
+    preferredAgent?: "codex" | "cursor";
+    onHandoffToAgent?: (runtime: "codex" | "cursor", draft?: string) => Promise<void>;
+    onReclaimHuman?: () => Promise<void>;
   }
 
   let {
@@ -64,6 +69,9 @@
     onToggleWorld,
     onOpenReview,
     onOpenTerminal,
+    preferredAgent = "codex",
+    onHandoffToAgent,
+    onReclaimHuman,
   }: Props = $props();
 
   let saving = $state(false);
@@ -108,6 +116,9 @@
       context.leaseId &&
       context.leaseGeneration != null,
     ),
+  );
+  const agentHasControl = $derived(
+    Boolean(context?.executorKind && context.executorKind !== "human"),
   );
   const documentUri = $derived.by(() => {
     if (!activeTab || !context?.worktree) return null;
@@ -310,7 +321,7 @@
     }
   }
 
-  async function saveTab(tab: CodeDocumentTab | null) {
+  async function saveTab(tab: CodeDocumentTab | null): Promise<boolean> {
     const active = context;
     if (
       !tab ||
@@ -318,7 +329,7 @@
       active.leaseGeneration == null ||
       !codeWorkspace.isDirty(tab) ||
       saving
-    ) return;
+    ) return !tab || !codeWorkspace.isDirty(tab);
     saving = true;
     surfaceError = null;
     codeWorkspace.setError(tab.tabId, null);
@@ -331,11 +342,13 @@
         expected_digest: tab.digest,
       });
       codeWorkspace.acceptSaved(tab.tabId, next);
+      return true;
     } catch (err) {
       codeWorkspace.setError(
         tab.tabId,
         err instanceof Error ? err.message : String(err),
       );
+      return false;
     } finally {
       saving = false;
     }
@@ -345,9 +358,40 @@
     await saveTab(activeTab);
   }
 
-  async function saveAll() {
+  async function saveAll(): Promise<boolean> {
     for (const tab of tabs) {
-      if (codeWorkspace.isDirty(tab)) await saveTab(tab);
+      if (codeWorkspace.isDirty(tab) && !(await saveTab(tab))) return false;
+    }
+    return true;
+  }
+
+  async function handoffToAgent(draft?: string) {
+    if (!onHandoffToAgent || saving) return;
+    surfaceError = null;
+    if (!(await saveAll())) {
+      surfaceError = "Resolve the unsaved file before asking an agent to continue.";
+      return;
+    }
+    saving = true;
+    try {
+      await onHandoffToAgent(preferredAgent, draft);
+    } catch (err) {
+      surfaceError = err instanceof Error ? err.message : String(err);
+    } finally {
+      saving = false;
+    }
+  }
+
+  async function reclaimHuman() {
+    if (!onReclaimHuman || saving) return;
+    saving = true;
+    surfaceError = null;
+    try {
+      await onReclaimHuman();
+    } catch (err) {
+      surfaceError = err instanceof Error ? err.message : String(err);
+    } finally {
+      saving = false;
     }
   }
 
@@ -403,6 +447,28 @@
       symbol.selectionRange?.start?.line ?? symbol.range?.start?.line ?? 0
     ) + 1;
   }
+
+  function containingSymbol(): string | null {
+    const line = context?.selectionStartLine ?? context?.selectedLine;
+    if (!line) return null;
+    const containing = symbols
+      .filter((symbol) => line >= symbolLine(symbol))
+      .sort((a, b) => symbolLine(b) - symbolLine(a))[0];
+    return containing?.name ?? null;
+  }
+
+  $effect(() => {
+    if (!workId) return;
+    setActiveCodeInsights(workId, {
+      containing_symbol: containingSymbol(),
+      diagnostics: problems.slice(0, 20).map((problem) =>
+        `${activeTab?.path ?? "current file"}:${problem.line} ${problem.message}`
+      ),
+      last_verification: taskResult
+        ? `${taskResult.task.label}: ${taskResult.success ? "passed" : "failed"}${taskResult.exit_code != null ? ` (exit ${taskResult.exit_code})` : ""}`
+        : null,
+    });
+  });
 
   $effect(() => {
     void context?.workId;
@@ -582,7 +648,17 @@
           onclick={() => void reload()}
           aria-label="Reload file"
         ><RotateCcw size={11} class="sm:mr-1 sm:inline" /><span class="hidden sm:inline">Reload</span></button>
-        {#if !editable && detail?.allowed_actions.begin_attempt.allowed}
+        {#if agentHasControl}
+          <span class="hidden text-[9px] text-primary-200 sm:inline">
+            {context?.executorKind === "cursor" ? "Cursor" : "Codex"} has the project
+          </span>
+          <button
+            type="button"
+            class="rounded bg-primary-500/80 px-2 py-1 text-[10px] font-medium text-surface-50 disabled:opacity-40"
+            disabled={saving}
+            onclick={() => void reclaimHuman()}
+          >Resume editing</button>
+        {:else if !editable && detail?.allowed_actions.begin_attempt.allowed}
           <button
             type="button"
             class="rounded bg-primary-500/80 px-2 py-1 text-[10px] font-medium text-surface-50 disabled:opacity-40"
@@ -606,6 +682,18 @@
       <p class="shrink-0 border-b border-amber-500/30 bg-amber-950/25 px-2.5 py-1.5 text-[10px] text-amber-100">
         {humanizeForgeMessage(surfaceError || activeTab.error || codeWorkspace.workspaceErrorByWorkId[workId] || "")}
       </p>
+    {/if}
+    {#if context?.selectedText && onHandoffToAgent && !agentHasControl}
+      <div class="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-primary-500/20 bg-primary-950/15 px-2 py-1" aria-label="Selected code actions">
+        <span class="mr-1 flex shrink-0 items-center gap-1 text-[9px] text-primary-200/80"><Sparkles size={10} />Selection</span>
+        <button type="button" class="code-intent-action" disabled={saving} onclick={() => void handoffToAgent("Help me understand the selected code and answer my questions about it.")}>Ask</button>
+        <button type="button" class="code-intent-action" disabled={saving} onclick={() => void handoffToAgent("Change the selected code. Ask only if the intended change is ambiguous.")}>Change</button>
+        {#if problems.length > 0}
+          <button type="button" class="code-intent-action" disabled={saving} onclick={() => void handoffToAgent("Fix the relevant issue in the selected code and verify the result.")}>Fix</button>
+        {/if}
+        <button type="button" class="code-intent-action" disabled={saving} onclick={() => void handoffToAgent("Explain the selected code clearly, including its role and important behavior.")}>Explain</button>
+        <button type="button" class="code-intent-action" disabled={saving} onclick={() => void handoffToAgent("Add the most valuable focused test for the selected code and run the relevant check.")}>Add test</button>
+      </div>
     {/if}
     {#if externalVersions[activeTab.tabId]}
       <div class="flex shrink-0 flex-wrap items-center gap-2 border-b border-amber-500/30 bg-amber-950/20 px-2.5 py-1.5 text-[10px] text-amber-100">
@@ -749,6 +837,17 @@
         {/if}
       </div>
       <div class="flex shrink-0 items-center gap-0.5">
+        <span class="mr-1 text-[9px] text-surface-500">
+          {#if agentHasControl}
+            {context?.executorKind === "cursor" ? "Cursor" : "Codex"} is working
+          {:else if editable && context?.boundTerminalSessionIds.length}
+            You + Terminal
+          {:else if editable}
+            You are editing
+          {:else}
+            Ready
+          {/if}
+        </span>
         <button
         type="button"
         class="flex items-center gap-1 rounded px-1.5 py-0.5 text-[9px] text-surface-500 hover:bg-surface-800 hover:text-surface-200"
@@ -782,6 +881,25 @@
     </div>
   {/if}
 </section>
+
+<style>
+  .code-intent-action {
+    border-radius: 0.25rem;
+    padding: 0.2rem 0.45rem;
+    color: rgb(var(--color-surface-300));
+    font-size: 0.625rem;
+    white-space: nowrap;
+  }
+
+  .code-intent-action:hover:not(:disabled) {
+    background: rgb(var(--color-surface-800));
+    color: rgb(var(--color-surface-50));
+  }
+
+  .code-intent-action:disabled {
+    opacity: 0.4;
+  }
+</style>
 
 {#if quickOpen}
   <div class="fixed inset-0 z-[120] flex items-start justify-center px-4 pt-[12vh]">

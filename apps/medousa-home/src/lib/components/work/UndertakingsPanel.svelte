@@ -3,6 +3,7 @@
   import { undertakings } from "$lib/stores/undertakings.svelte";
   import {
     sealLease,
+    prepareExecutorHandoff,
     recordReviewIntent,
     applyDecision,
     discardUndertaking,
@@ -29,6 +30,7 @@
   } from "$lib/forge";
   import {
     openTrackedTerminal,
+    reclaimTrackedHuman,
     startTrackedAgent,
   } from "$lib/utils/undertakingWorkspace";
   import { isCoLocatedWorkshop } from "$lib/utils/workshopLocality";
@@ -194,6 +196,41 @@
     localStorage.setItem("medousa-code-agent-runtime", runtime);
     await run(async () => {
       await startTrackedAgent(d, runtime);
+      await undertakings.refreshDetail();
+    });
+  }
+
+  async function handoffToAgent(runtime: "codex" | "cursor", draft?: string) {
+    const d = detail;
+    if (!d) return;
+    preferredCodeAgent = runtime;
+    localStorage.setItem("medousa-code-agent-runtime", runtime);
+    await run(async () => {
+      const active = undertakings.active;
+      let ready = d;
+      if (
+        active?.workId === d.id &&
+        active.leaseId &&
+        active.leaseGeneration != null
+      ) {
+        ready = await prepareExecutorHandoff({
+          work_id: d.id,
+          lease_id: active.leaseId,
+          generation: active.leaseGeneration,
+          to_executor: runtime,
+        });
+        undertakings.setActiveFromItem(ready);
+      }
+      await startTrackedAgent(ready, runtime, { draft });
+      await undertakings.refreshDetail();
+    });
+  }
+
+  async function reclaimHuman() {
+    const d = detail;
+    if (!d) return;
+    await run(async () => {
+      await reclaimTrackedHuman(d);
       await undertakings.refreshDetail();
     });
   }
@@ -701,9 +738,12 @@
             worldOpen={worldMode}
             reviewAvailable={Boolean(review && (detail.human_phase === "review" || review.evidence_id))}
             terminalAvailable={Boolean(actions?.open_terminal.allowed)}
+            preferredAgent={preferredCodeAgent}
             onToggleWorld={() => void toggleWorldFromEditor()}
             onOpenReview={() => void openReviewFromEditor()}
             onOpenTerminal={() => void openTerminalTracked()}
+            onHandoffToAgent={handoffToAgent}
+            onReclaimHuman={reclaimHuman}
           />
         {/if}
 

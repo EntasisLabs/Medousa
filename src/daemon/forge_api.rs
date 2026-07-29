@@ -67,6 +67,7 @@ pub fn forge_router(state: AppState) -> Router {
         )
         .route("/v1/forge/items/{work_id}/provision", post(provision_item))
         .route("/v1/forge/items/{work_id}/attempts", post(begin_attempt))
+        .route("/v1/forge/items/{work_id}/handoff", post(prepare_handoff))
         .route("/v1/forge/items/{work_id}/decisions", post(record_decision))
         .route("/v1/forge/items/{work_id}/apply", post(apply_decision))
         .route("/v1/forge/items/{work_id}/discard", post(discard_item))
@@ -1415,6 +1416,61 @@ async fn begin_attempt(
         item: project_item(item),
         lease,
     }))
+}
+
+#[derive(Debug, Deserialize)]
+struct PrepareHandoffRequest {
+    lease_id: String,
+    generation: u64,
+    to_executor: String,
+}
+
+/// End the current executor's custody while preserving its worktree for the
+/// next executor. Starting the external provider remains a separate retryable
+/// operation, so a provider failure leaves the item safely Ready.
+async fn prepare_handoff(
+    State(state): State<AppState>,
+    Path(work_id): Path<String>,
+    Json(body): Json<PrepareHandoffRequest>,
+) -> ApiResult<Json<ItemProjection>> {
+    let id = parse_work_id(&work_id)?;
+    let target = body.to_executor.trim().to_ascii_lowercase();
+    if !matches!(target.as_str(), "codex" | "cursor" | "human") {
+        return Err(request_error(
+            StatusCode::BAD_REQUEST,
+            "handoff target must be codex, cursor, or human",
+        ));
+    }
+    let lease = resolve_lease(forge(&state).as_ref(), &body.lease_id, body.generation)?;
+    if lease.work_id != id {
+        return Err(request_error(
+            StatusCode::CONFLICT,
+            "the active editor belongs to a different project",
+        ));
+    }
+    let item = forge(&state).load(&id).map_err(map_err)?;
+    let from = item
+        .active_attempt
+        .as_ref()
+        .and_then(|attempt_id| item.attempt(attempt_id))
+        .map(|attempt| attempt.executor.kind.as_str())
+        .unwrap_or("unknown");
+    forge(&state)
+        .append_command_log(
+            &lease,
+            &serde_json::json!({
+                "kind": "executor_handoff",
+                "from": from,
+                "to": target,
+                "at": chrono::Utc::now(),
+            }),
+        )
+        .map_err(map_err)?;
+    let actor = actor_from_state(&state);
+    let item = forge(&state)
+        .interrupt_attempt(&lease, RecoveryDisposition::RestartAllowed, &actor)
+        .map_err(map_err)?;
+    Ok(ok_item(&state, item, "handoff_prepared"))
 }
 
 #[derive(Debug, Deserialize)]

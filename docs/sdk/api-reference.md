@@ -138,6 +138,10 @@ Hot-swappable external agent runtimes (Cursor / Codex via ACP). Native Medousa t
 | `approve_permission(id, request)` | `POST …/approve` | `AgentPermissionResolveResponse` |
 | `deny_permission(id, request)` | `POST …/deny` | `AgentPermissionResolveResponse` |
 
+`CreateAgentSessionRequest` and `AgentSessionPromptRequest` accept an optional
+`CodeIntentContext`. Prefer it over embedding workspace paths, selections, or
+diagnostics into provider-specific prompt text.
+
 ---
 
 ## `runtime()`
