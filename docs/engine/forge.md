@@ -50,6 +50,10 @@ Base path: `/v1/forge`. Types are `medousa-forge` serde models (`WorkItem`,
 | GET | `/v1/forge/items/{id}/search?query=…` | Fixed-string tracked-source search (bounded to 500 hits) |
 | GET, PUT | `/v1/forge/items/{id}/workspace-state` | Restore/preserve open files, editor groups, positions, and bounded dirty drafts |
 | GET | `/v1/forge/items/{id}/review` | Structured outcome, risk, verification, attribution, timeline, and changed-file summary |
+| GET | `/v1/forge/items/{id}/tasks` | Manifest-derived checks, tests, builds, and run commands |
+| POST | `/v1/forge/items/{id}/tasks/{task_id}/runs` | Start a named, cancellable project run |
+| GET/DELETE | `/v1/forge/items/{id}/task-runs/{run_id}` | Poll or cancel a project run |
+| GET | `/v1/forge/items/{id}/tests` | Discover addressable project tests |
 | GET | `/v1/forge/items/{id}/review/file?path=…` | Exact baseline-to-reviewed file comparison with structured hunks |
 | POST | `/v1/forge/items/{id}/review/file` | Reopen work and restore one text file to its baseline while retaining the reviewed checkpoint |
 | GET | `/v1/forge/items/{id}/tasks` | Detect safe project commands from repository manifests |

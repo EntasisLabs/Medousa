@@ -44,10 +44,15 @@
     getUndertakingSourceTree,
     type ForgeSourceTreeFile,
     getProjectTasks,
+    getProjectTests,
+    startProjectTaskRun,
+    getProjectTaskRun,
+    cancelProjectTaskRun,
     getReviewFile,
-    runProjectTask,
     type ProjectTask,
     type ProjectTaskResult,
+    type ProjectTaskRun,
+    type ProjectTest,
     type ForgeSourceFile,
   } from "$lib/forge";
   import { codeWorkspace, type CodeDocumentTab } from "$lib/stores/codeWorkspace.svelte";
@@ -107,6 +112,9 @@
   let selectedTaskId = $state("");
   let runningTask = $state(false);
   let taskResult = $state<ProjectTaskResult | null>(null);
+  let taskRun = $state<ProjectTaskRun | null>(null);
+  let projectTests = $state<ProjectTest[]>([]);
+  let testsOpen = $state(false);
   let externalVersions = $state<Record<string, ForgeSourceFile>>({});
   let comparingTabId = $state<string | null>(null);
   let reviewChangedLines = $state<Array<{ line: number; kind: string }>>([]);
@@ -196,7 +204,7 @@
   const canFormat = $derived(Boolean(languageCapabilities.documentFormattingProvider));
   const canCodeAction = $derived(Boolean(languageCapabilities.codeActionProvider));
 
-  async function runDetectedTask() {
+  async function runDetectedTask(test?: ProjectTest) {
     if (!selectedTask || runningTask) {
       onOpenTerminal?.();
       return;
@@ -217,16 +225,48 @@
         });
       }
       if (!leaseId || generation == null) throw new Error("This project is not ready to run checks");
-      taskResult = await runProjectTask(workId, selectedTask.id, {
+      taskRun = await startProjectTaskRun(workId, test?.task_id ?? selectedTask.id, {
         lease_id: leaseId,
         generation,
+        test_id: test?.id,
       });
+      while (taskRun.state === "running") {
+        await new Promise((resolve) => setTimeout(resolve, 350));
+        taskRun = await getProjectTaskRun(workId, taskRun.run_id);
+      }
+      taskResult = taskRun.result ?? null;
       await undertakings.refreshDetail();
     } catch (err) {
       surfaceError = err instanceof Error ? err.message : String(err);
     } finally {
       runningTask = false;
     }
+  }
+
+  async function stopDetectedTask() {
+    if (!taskRun || taskRun.state !== "running") return;
+    try {
+      taskRun = await cancelProjectTaskRun(workId, taskRun.run_id);
+    } catch (err) {
+      surfaceError = err instanceof Error ? err.message : String(err);
+    }
+  }
+
+  async function toggleTests() {
+    testsOpen = !testsOpen;
+    if (!testsOpen || projectTests.length || !workId) return;
+    try {
+      projectTests = await getProjectTests(workId);
+    } catch (err) {
+      surfaceError = err instanceof Error ? err.message : String(err);
+    }
+  }
+
+  async function openTaskLocation(path: string, line: number) {
+    await codeWorkspace.open(workId, path, line);
+    undertakings.setSelection({ path, line, entityId: null });
+    await tick();
+    editor?.revealLine(line);
   }
 
   async function showQuickOpen() {
@@ -1198,9 +1238,12 @@
           type="button"
           class="flex items-center gap-1 rounded px-1.5 py-0.5 text-[9px] text-surface-500 hover:bg-surface-800 hover:text-surface-200 disabled:opacity-35"
           disabled={!terminalAvailable && !selectedTask}
-          onclick={() => void runDetectedTask()}
+          onclick={() => runningTask ? void stopDetectedTask() : void runDetectedTask()}
           title={selectedTask ? selectedTask.argv.join(" ") : "Open Terminal"}
-        >{#if runningTask}<LoaderCircle size={10} class="animate-spin" />{:else}<SquareTerminal size={10} />{/if}{selectedTask?.label ?? "Terminal"}</button>
+        >{#if runningTask}<X size={10} />Stop {selectedTask?.label}{:else}<SquareTerminal size={10} />{selectedTask?.label ?? "Terminal"}{/if}</button>
+        {#if projectTasks.some((task) => task.kind === "test")}
+          <button type="button" class="rounded px-1.5 py-0.5 text-[9px] text-surface-500 hover:bg-surface-800 hover:text-surface-200" class:bg-surface-800={testsOpen} onclick={() => void toggleTests()}>Tests</button>
+        {/if}
         {#if projectTasks.length > 1}
           <select class="max-w-24 rounded bg-transparent py-0.5 text-[9px] text-surface-500 outline-none" aria-label="Project command" bind:value={selectedTaskId}>
             {#each projectTasks as task (task.id)}
@@ -1253,10 +1296,33 @@
       </div>
     </footer>
     {#if taskResult}
-      <button type="button" class="flex shrink-0 items-center justify-between gap-2 border-t px-2.5 py-1 text-left text-[9px] {taskResult.success ? 'border-emerald-500/25 bg-emerald-950/20 text-emerald-200' : 'border-rose-500/30 bg-rose-950/25 text-rose-200'}" title="Open Terminal for detailed investigation" onclick={onOpenTerminal}>
+      <div class="shrink-0 border-t {taskResult.success ? 'border-emerald-500/25 bg-emerald-950/20 text-emerald-200' : 'border-rose-500/30 bg-rose-950/25 text-rose-200'}">
+      <button type="button" class="flex w-full items-center justify-between gap-2 px-2.5 py-1 text-left text-[9px]" title="Run this check again" onclick={() => void runDetectedTask()}>
         <span>{taskResult.success ? "Passed" : "Needs attention"} · {taskResult.task.label}</span>
-        <span class="text-current opacity-60">{(taskResult.duration_ms / 1000).toFixed(1)}s{taskResult.exit_code != null ? ` · exit ${taskResult.exit_code}` : ""}</span>
+        <span class="text-current opacity-60">Rerun · {(taskResult.duration_ms / 1000).toFixed(1)}s{taskResult.exit_code != null ? ` · exit ${taskResult.exit_code}` : ""}</span>
       </button>
+      {#each taskResult.locations.slice(0, 5) as location (`${location.path}:${location.line}:${location.column}`)}
+        <button type="button" class="flex w-full items-center gap-2 border-t border-current/10 px-2.5 py-1 text-left text-[9px] hover:bg-white/5" onclick={() => void openTaskLocation(location.path, location.line)}>
+          <span class="min-w-0 flex-1 truncate">{location.message || location.path}</span>
+          <span class="shrink-0 font-mono opacity-60">{location.path}:{location.line}</span>
+        </button>
+      {/each}
+      </div>
+    {/if}
+    {#if testsOpen}
+      <div class="max-h-44 shrink-0 overflow-y-auto border-t border-surface-500/25 bg-surface-950/90">
+        <div class="sticky top-0 flex items-center justify-between bg-surface-950 px-2.5 py-1 text-[9px] uppercase tracking-wider text-surface-500"><span>Project tests</span><span>{projectTests.length}</span></div>
+        {#if projectTests.length === 0}
+          <p class="px-3 py-3 text-[10px] text-surface-500">No individual tests were discovered. The project test command still works.</p>
+        {:else}
+          {#each projectTests as test (test.id)}
+            <div class="flex items-center border-t border-surface-500/15">
+              <button type="button" class="min-w-0 flex-1 truncate px-3 py-1.5 text-left text-[10px] text-surface-300 hover:bg-surface-800/60" onclick={() => void openTaskLocation(test.path, test.line)}>{test.label}<span class="ml-2 font-mono text-[9px] text-surface-600">{test.path}:{test.line}</span></button>
+              <button type="button" class="mr-2 rounded px-1.5 py-0.5 text-[9px] text-primary-300 hover:bg-surface-800 disabled:opacity-40" disabled={runningTask} onclick={() => void runDetectedTask(test)}>Run</button>
+            </div>
+          {/each}
+        {/if}
+      </div>
     {/if}
   {:else}
     <div class="flex min-h-72 flex-1 items-center justify-center p-8 text-center">

@@ -521,6 +521,8 @@ export type ProjectTask = {
   label: string;
   kind: "verify" | "test" | "build" | "run" | string;
   argv: string[];
+  provider: string;
+  long_running?: boolean;
 };
 
 export type ProjectTaskResult = {
@@ -531,6 +533,23 @@ export type ProjectTaskResult = {
   stderr: string;
   truncated: boolean;
   duration_ms: number;
+  locations: Array<{ path: string; line: number; column?: number | null; message: string }>;
+};
+
+export type ProjectTaskRun = {
+  run_id: string;
+  work_id: string;
+  state: "running" | "passed" | "failed" | "cancelled" | string;
+  task: ProjectTask;
+  result?: ProjectTaskResult | null;
+};
+
+export type ProjectTest = {
+  id: string;
+  label: string;
+  path: string;
+  line: number;
+  task_id: string;
 };
 
 export async function getProjectTasks(workId: string): Promise<ProjectTask[]> {
@@ -540,12 +559,37 @@ export async function getProjectTasks(workId: string): Promise<ProjectTask[]> {
 export async function runProjectTask(
   workId: string,
   taskId: string,
-  lease: { lease_id: string; generation: number },
+  lease: { lease_id: string; generation: number; test_id?: string },
 ): Promise<ProjectTaskResult> {
   return forgeFetch(
     `/v1/forge/items/${encodeURIComponent(workId)}/tasks/${encodeURIComponent(taskId)}/run`,
     { method: "POST", body: JSON.stringify(lease) },
   );
+}
+
+export async function startProjectTaskRun(
+  workId: string,
+  taskId: string,
+  lease: { lease_id: string; generation: number; test_id?: string },
+): Promise<ProjectTaskRun> {
+  return forgeFetch(
+    `/v1/forge/items/${encodeURIComponent(workId)}/tasks/${encodeURIComponent(taskId)}/runs`,
+    { method: "POST", body: JSON.stringify(lease) },
+  );
+}
+
+export async function getProjectTaskRun(workId: string, runId: string): Promise<ProjectTaskRun> {
+  return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/task-runs/${encodeURIComponent(runId)}`);
+}
+
+export async function cancelProjectTaskRun(workId: string, runId: string): Promise<ProjectTaskRun> {
+  return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/task-runs/${encodeURIComponent(runId)}`, {
+    method: "DELETE",
+  });
+}
+
+export async function getProjectTests(workId: string): Promise<ProjectTest[]> {
+  return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/tests`);
 }
 
 export async function inspectForgeRepository(path: string): Promise<RepositoryInspection> {

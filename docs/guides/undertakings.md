@@ -100,6 +100,25 @@ Terminal executes, Understand explains, and Review helps the user decide what
 to keep. They do not become permanent chrome when they have nothing relevant to
 say.
 
+## Run and test
+
+Medousa derives safe project commands from repository manifests instead of
+asking you to type or approve arbitrary command lines. Rust, Go, JavaScript,
+Python, Make, and .NET projects can contribute checks, tests, builds, and
+development processes at the same time, including in mixed repositories.
+
+- Run, Test, and Build start named project runs. A running command becomes a
+  **Stop** action and can be cancelled without closing the project or Terminal.
+- **Tests** progressively lists individual Rust, Python, JavaScript/TypeScript,
+  and Go tests. Open one at its definition or run only that test.
+- The latest result stays beside Code with a one-click rerun. Compiler, test,
+  and stack-trace locations open the referenced project file and line.
+- Completed checks are written into Forge command evidence. Review uses the
+  latest completed result to say whether verification passed; cancelled runs
+  are preserved as activity but do not pretend the revision failed.
+- Long-running development commands are project runs, while Terminal remains
+  the interactive escape hatch and keeps its own named, stoppable sessions.
+
 ## What each surface does
 
 | Surface | Role |

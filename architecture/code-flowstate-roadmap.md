@@ -123,6 +123,8 @@ editable and understandable at the best supported layer.
 
 ## Milestone 5 — Interactive run and test loop
 
+Status: complete (2026-07-29).
+
 ### Goal
 
 Let engineers validate intent without remembering project-specific commands or
