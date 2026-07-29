@@ -38,7 +38,8 @@ export async function terminalSessions(): Promise<TerminalSessionSummary[]> {
 export async function terminalCreate(input: {
   work_id?: string | null;
   cwd?: string | null;
-}): Promise<unknown> {
+  lease_id?: string | null;
+}): Promise<{ session_id?: string } & Record<string, unknown>> {
   return invoke("terminal_create", { input });
 }
 

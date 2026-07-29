@@ -71,6 +71,7 @@ pub struct TerminalAttachResponse {
 pub struct TerminalCreateInput {
     pub work_id: Option<String>,
     pub cwd: Option<String>,
+    pub lease_id: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -358,7 +359,11 @@ pub async fn terminal_create(
     daemon_post(
         &state,
         "/v1/sessions/shell",
-        &serde_json::json!({ "work_id": input.work_id, "cwd": input.cwd }),
+        &serde_json::json!({
+            "work_id": input.work_id,
+            "cwd": input.cwd,
+            "lease_id": input.lease_id,
+        }),
     )
     .await
 }
