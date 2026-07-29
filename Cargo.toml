@@ -100,8 +100,8 @@ teloxide = "0.17.0"
 serenity = "0.12.5"
 slack-morphism = { version = "2.22", default-features = false, features = ["hyper"] }
 once_cell = "1"
-surrealdb-types = { version = "3" }
-surrealdb = { version = "3", default-features = false, features = ["kv-surrealkv", "rustls", "kv-mem", "protocol-ws"] }
+surrealdb-types = { version = "3.1.5" }
+surrealdb = { version = "3.1.5", default-features = false, features = ["kv-surrealkv", "rustls", "kv-mem", "protocol-ws"] }
 toml = "0.8"
 serde_yaml = "0.9"
 libc = "0.2"
@@ -119,7 +119,7 @@ urlencoding = "2"
 sysinfo = "0.33"
 fs2 = "0.4"
 calamine = "0.26"
-pdf-extract = "0.7"
+pdf-extract = "0.12"
 iroh = { version = "1.0", optional = true }
 iroh-tickets = { version = "1.0", optional = true }
 httparse = { version = "1", optional = true }
@@ -153,8 +153,8 @@ otel-export = [
 iroh-transport = ["dep:iroh", "dep:iroh-tickets", "dep:httparse", "dep:medousa-iroh-http"]
 
 [dev-dependencies]
-surrealdb-types = { version = "3" }
-surrealdb = { version = "3", default-features = false, features = ["kv-mem"] }
+surrealdb-types = { version = "3.1.5" }
+surrealdb = { version = "3.1.5", default-features = false, features = ["kv-mem"] }
 tempfile = "3"
 
 # --- Local iteration speed -------------------------------------------------
