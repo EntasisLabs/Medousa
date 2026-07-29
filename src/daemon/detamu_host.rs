@@ -523,7 +523,7 @@ async fn world_status(State(state): State<AppState>) -> Json<Value> {
         return Json(json!({
             "ok": false,
             "available": false,
-            "message": "Detamu host not opened (check daemon logs / path dep)",
+            "message": "Detamu host not opened (check daemon logs / storage initialization)",
         }));
     };
     let mut body = host.status_json();

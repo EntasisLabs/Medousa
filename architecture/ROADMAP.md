@@ -25,14 +25,14 @@ Full plans: **[v0.8.0-forge-plan.md](v0.8.0-forge-plan.md)** · **[detamu-medous
 | Forge worktree `--allow-root` | ✅ |
 | Detamu bridge hooks | ✅ stub (`/v1/detamu/*`) |
 
-## Detamu × Medousa (path-dep spike)
+## Detamu × Medousa
 
-> Architecture: [detamu-medousa-fit.md](detamu-medousa-fit.md). Detamu = world at commit OID; Forge = work custody. **Code AVEC ≠ Locus AVEC.** Path-deps `../../detamu` until crates.io publish; host opens on daemon boot.
+> Architecture: [detamu-medousa-fit.md](detamu-medousa-fit.md). Detamu = world at commit OID; Forge = work custody. **Code AVEC ≠ Locus AVEC.** Published Detamu crates are hosted by the daemon on boot.
 
 | Slice | Status |
 |-------|--------|
 | Fit map (authority, seams, dual AVEC, route collision) | ✅ [detamu-medousa-fit.md](detamu-medousa-fit.md) |
-| Detamu publish (`detamu` crate on crates.io) | ⬜ path-dep for now |
+| Detamu 0.1.0 release and Medousa registry migration | ✅ |
 | Daemon `DetamuHost` + SurrealKV at `{dataDir}/detamu` | ✅ |
 | `/v1/world/*` (vs orchestrator `/v1/detamu/*` stubs) | ✅ |
 | Forge provision/seal → `index_source` + SnapshotId bindings | ✅ |

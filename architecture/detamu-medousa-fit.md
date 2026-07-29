@@ -39,9 +39,9 @@ Medousa daemon          host: AppState, HTTP, tools, ACP pump
 | **Agents** | Execution (edits, tools, prompts) | Durable custody (Forge) and durable world truth (Detamu) |
 
 **Packaging (locked):** Detamu stays its own repo. Medousa depends on the
-umbrella `detamu` crate (`features = ["code", "surreal"]` or `"full"`) via path
-during spike, then published crates — same pattern as other external SDKs, **not**
-a Forge submodule.
+published umbrella `detamu` crate (`features = ["code", "surreal"]` or `"full"`)
+and focused adapter crates — the same pattern as other external SDKs, **not** a
+Forge submodule.
 
 ## Shared mental model
 
@@ -221,14 +221,14 @@ Bottom-up order: **SDK publish → daemon host → Forge lifecycle hooks → too
 
 | Spike | Status |
 |-------|--------|
-| **Host** | ✅ path-dep `detamu` + `DetamuHost` in `AppState` (`src/daemon/detamu_host.rs`); SurrealKV at `{dataDir}/detamu` |
+| **Host** | ✅ crates.io `detamu` + `DetamuHost` in `AppState` (`src/daemon/detamu_host.rs`); SurrealKV at `{dataDir}/detamu` |
 | **HTTP** | ✅ `/v1/world`, `/v1/world/index`, `/v1/world/files`, `/v1/world/bindings/{work_id}` (orchestrator `/v1/detamu/*` stubs untouched) |
 | **Forge hooks** | ✅ provision → baseline index; `complete_attempt` → sealed index; bindings sidecar JSON (not on EvidenceManifest) |
 | **Tools** | ✅ `cognition_detamu_status` / `files` / `impact` / `code_avec` / `find`; domain `detamu` + `ensure_detamu_domain_for_session` |
-| **Rust pack** | ✅ path-dep `detamu-language-rust`; Tree-sitter symbols enrich `index_source` (hollow-graph queries return `ok:true` with zero dependents / coverage note) |
+| **Rust pack** | ✅ crates.io `detamu-language-rust`; Tree-sitter symbols enrich `index_source` (hollow-graph queries return `ok:true` with zero dependents / coverage note) |
 | **Evidence** | ✅ SnapshotId pointers in `{dataDir}/detamu/bindings/{work_id}.json` |
 | **Observer** | ⬜ optional / deferred — `NullDetamuObserver` until live-doc enrichment is needed; **not blocking Home**; keep off keystroke path |
-| **crates.io** | ⬜ switch path deps to published versions when Detamu publish lands |
+| **crates.io** | ✅ Detamu 0.1.0 family published; Medousa resolves the SDK and adapters from the registry |
 
 Dirty-worktree rule for examples: mid-attempt agent queries either (a) last
 indexed OID, or (b) an explicit experimental “worktree observation” that never

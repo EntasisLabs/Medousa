@@ -3107,6 +3107,8 @@ dependencies = [
 [[package]]
 name = "detamu"
 version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4a969cce82de33de9e5903d2e576b041493e1db04ff68700e22288a86c7381fc"
 dependencies = [
  "detamu-core",
  "detamu-model",
@@ -3121,6 +3123,8 @@ dependencies = [
 [[package]]
 name = "detamu-core"
 version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d02f7befac986a4357085d5a64a1fb98918689ee56edc53916c0b26e22e3764c"
 dependencies = [
  "serde",
  "serde_json",
@@ -3129,6 +3133,8 @@ dependencies = [
 [[package]]
 name = "detamu-language"
 version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2ed45cbf26b33eeceb6ff6e234980d427d61d245c8359b5ecf41a92cf0b830e4"
 dependencies = [
  "detamu-model",
  "detamu-model-code",
@@ -3137,6 +3143,8 @@ dependencies = [
 [[package]]
 name = "detamu-language-rust"
 version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7176ae7e99c3ed762064e4ebb2a8d9fd65208e379a7c23e658b9b9b6d92faad4"
 dependencies = [
  "detamu-core",
  "detamu-language",
@@ -3151,6 +3159,8 @@ dependencies = [
 [[package]]
 name = "detamu-language-tree-sitter"
 version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cdaae91ee59fabeb9b229e4a7c26904bed95287e95b644473cbbc8ec69d71cc6"
 dependencies = [
  "async-trait",
  "detamu-core",
@@ -3164,6 +3174,8 @@ dependencies = [
 [[package]]
 name = "detamu-model"
 version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2577c32c7db6983a8beaa6fa3e14a5569b2530c356bcade0af36f08c90f8cef6"
 dependencies = [
  "async-trait",
  "detamu-core",
@@ -3174,6 +3186,8 @@ dependencies = [
 [[package]]
 name = "detamu-model-code"
 version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "de1c05b4cc8ef7675e30fcb4492c56bb484ce8542bca60de8412b41c1e8c9d24"
 dependencies = [
  "detamu-core",
  "detamu-model",
@@ -3185,6 +3199,8 @@ dependencies = [
 [[package]]
 name = "detamu-query"
 version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7bf7b6615357a70c872c70e8da73b5ffb77e50887c73d472be4d6f93272045db"
 dependencies = [
  "detamu-core",
  "detamu-store",
@@ -3196,6 +3212,8 @@ dependencies = [
 [[package]]
 name = "detamu-query-code"
 version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "64c678f17507ca2cd69d605faf79d36cebe0ba2996976f8951855fd70865bd48"
 dependencies = [
  "detamu-core",
  "detamu-model-code",
@@ -3208,6 +3226,8 @@ dependencies = [
 [[package]]
 name = "detamu-sdk"
 version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aaa402beb038b2c5281b055d513363defe471db6ceb651c5adda1ad5e0a6832d"
 dependencies = [
  "detamu-core",
  "detamu-model",
@@ -3218,6 +3238,8 @@ dependencies = [
 [[package]]
 name = "detamu-source-git"
 version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "73740004d4466d2c80ac3bd247ebd2e5eef9c0f6af4c05f88f0c13f234e877a3"
 dependencies = [
  "async-trait",
  "detamu-core",
@@ -3231,6 +3253,8 @@ dependencies = [
 [[package]]
 name = "detamu-store"
 version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "91627eca49a701a01845b9466f7e600da3d8d47c89bf14c5d523b5bc4d9c8354"
 dependencies = [
  "async-trait",
  "detamu-core",
@@ -3242,6 +3266,8 @@ dependencies = [
 [[package]]
 name = "detamu-surreal"
 version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "23c7b0339b20d90061626506f212304adabaac65947d2c6dafe666301134a2df"
 dependencies = [
  "async-trait",
  "detamu-core",
