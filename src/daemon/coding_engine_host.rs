@@ -118,23 +118,7 @@ fn which_bin(name: &str) -> Option<PathBuf> {
 
 fn forge_worktree_roots() -> Vec<PathBuf> {
     let forge_root = medousa_data_dir().join("forge").join("worktrees");
-    let mut roots = Vec::new();
-    if let Ok(entries) = std::fs::read_dir(&forge_root) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir()
-                && let Ok(inner) = std::fs::read_dir(&path)
-            {
-                for work in inner.flatten() {
-                    let wp = work.path();
-                    if wp.is_dir() {
-                        roots.push(wp);
-                    }
-                }
-            }
-        }
-    }
-    roots
+    vec![forge_root]
 }
 
 async fn probe_health(health_url: &str) -> bool {
@@ -248,6 +232,8 @@ pub async fn coding_engine_info(State(state): State<AppState>) -> Json<CodingEng
 pub struct CodeLspQuery {
     #[serde(default = "default_language")]
     pub language: String,
+    #[serde(default)]
+    pub work_id: Option<String>,
 }
 
 fn default_language() -> String {
@@ -259,10 +245,15 @@ pub async fn code_lsp_ws(
     State(state): State<AppState>,
     Query(q): Query<CodeLspQuery>,
 ) -> impl IntoResponse {
-    ws.on_upgrade(move |socket| proxy_lsp_socket(socket, state, q.language))
+    ws.on_upgrade(move |socket| proxy_lsp_socket(socket, state, q.language, q.work_id))
 }
 
-async fn proxy_lsp_socket(client: WebSocket, state: AppState, language: String) {
+async fn proxy_lsp_socket(
+    client: WebSocket,
+    state: AppState,
+    language: String,
+    work_id: Option<String>,
+) {
     let host = state
         .coding_engine
         .clone()
@@ -272,17 +263,35 @@ async fn proxy_lsp_socket(client: WebSocket, state: AppState, language: String) 
         tracing::warn!(message = %info.message, "coding engine unavailable for LSP proxy");
         return;
     }
+    let workspace_root = work_id.as_deref().and_then(|raw| {
+        let id = medousa_forge::model::WorkId::from(raw.trim().to_owned());
+        state
+            .forge
+            .load(&id)
+            .ok()
+            .and_then(|item| item.environment.map(|env| env.worktree))
+    });
+    if work_id.is_some() && workspace_root.is_none() {
+        tracing::warn!(work_id, "rejected LSP request for unknown or unprepared undertaking");
+        return;
+    }
+    let root_query = workspace_root
+        .as_ref()
+        .map(|root| format!("&workspace_root={}", urlencoding::encode(&root.to_string_lossy())))
+        .unwrap_or_default();
     let upstream = format!(
-        "{}/v1/lsp?language={}",
+        "{}/v1/lsp?language={}{}",
         info.lsp_url.trim_end_matches('/'),
-        urlencoding::encode(&language)
+        urlencoding::encode(&language),
+        root_query,
     );
     // lsp_url is already ws://host/v1/lsp — avoid double path
     let upstream = if info.lsp_url.contains("/v1/lsp") {
         format!(
-            "{}?language={}",
+            "{}?language={}{}",
             info.lsp_url,
-            urlencoding::encode(&language)
+            urlencoding::encode(&language),
+            root_query,
         )
     } else {
         upstream
@@ -374,11 +383,25 @@ async fn proxy_agent_get(
             info.message,
         ));
     }
+    let mut forwarded = q.clone();
+    if let Some(work_id) = forwarded.remove("work_id") {
+        let id = medousa_forge::model::WorkId::from(work_id.trim().to_owned());
+        let root = state
+            .forge
+            .load(&id)
+            .ok()
+            .and_then(|item| item.environment.map(|env| env.worktree))
+            .ok_or((
+                axum::http::StatusCode::CONFLICT,
+                "unknown or unprepared undertaking".to_string(),
+            ))?;
+        forwarded.insert("workspace_root".into(), root.to_string_lossy().into_owned());
+    }
     let mut url = reqwest::Url::parse(&format!("{}{path}", info.url))
         .map_err(|e| (axum::http::StatusCode::BAD_GATEWAY, e.to_string()))?;
     {
         let mut pairs = url.query_pairs_mut();
-        for (k, v) in q {
+        for (k, v) in &forwarded {
             pairs.append_pair(k, v);
         }
     }

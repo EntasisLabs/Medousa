@@ -10,6 +10,7 @@
   } from "@codemirror/view";
   import { indentWithTab } from "@codemirror/commands";
   import { searchKeymap, highlightSelectionMatches } from "@codemirror/search";
+  import { forEachDiagnostic } from "@codemirror/lint";
   import { indentUnit } from "@codemirror/language";
   import type { LSPClient } from "@codemirror/lsp-client";
   import {
@@ -37,6 +38,8 @@
     /** Bumped by parent when body is replaced externally (templates / library). */
     contentSyncKey?: string | number;
     onchange?: (value: string) => void;
+    /** Reports the current 1-based cursor line for workspace restoration. */
+    onCursorChanged?: (line: number) => void;
     /** Fired when CM diagnostics / LSP state may have changed. */
     onProblemsChanged?: () => void;
   }
@@ -50,6 +53,7 @@
     readOnly = false,
     contentSyncKey = 0,
     onchange,
+    onCursorChanged,
     onProblemsChanged,
   }: Props = $props();
 
@@ -112,6 +116,9 @@
         }
         if (update.docChanged || update.selectionSet) {
           codeEditorFind.syncFromView(update.view);
+          onCursorChanged?.(
+            update.state.doc.lineAt(update.state.selection.main.head).number,
+          );
         }
         if (update.transactions.some((tr) => tr.effects.length > 0)) {
           onProblemsChanged?.();
@@ -179,6 +186,45 @@
 
   export function openFind() {
     codeEditorFind.show(view);
+  }
+
+  export function revealLine(lineNumber: number) {
+    if (!view) return;
+    const line = view.state.doc.line(
+      Math.max(1, Math.min(Math.floor(lineNumber), view.state.doc.lines)),
+    );
+    view.dispatch({
+      selection: { anchor: line.from },
+      effects: EditorView.scrollIntoView(line.from, { y: "center", yMargin: 48 }),
+    });
+    view.focus();
+  }
+
+  export function getProblems(): Array<{
+    from: number;
+    to: number;
+    line: number;
+    severity: string;
+    message: string;
+  }> {
+    if (!view) return [];
+    const problems: Array<{
+      from: number;
+      to: number;
+      line: number;
+      severity: string;
+      message: string;
+    }> = [];
+    forEachDiagnostic(view.state, (diagnostic, from, to) => {
+      problems.push({
+        from,
+        to,
+        line: view!.state.doc.lineAt(from).number,
+        severity: diagnostic.severity,
+        message: diagnostic.message,
+      });
+    });
+    return problems;
   }
 
   /**

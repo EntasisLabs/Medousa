@@ -244,6 +244,15 @@ Custody of intentional work episodes over a git target (vault or any repo). Dist
 | POST | `/v1/forge/items/{id}/discard` | Discard |
 | POST | `/v1/forge/items/{id}/run-script` | Script adapter |
 | POST | `/v1/forge/items/{id}/export` | Export bundle |
+| GET | `/v1/forge/items/{id}/tree` | Browse governed source tree |
+| GET | `/v1/forge/items/{id}/search` | Search governed source contents |
+| GET | `/v1/forge/items/{id}/source?path=…` | Read a governed source file |
+| POST | `/v1/forge/items/{id}/source` | Create a governed source file |
+| PUT | `/v1/forge/items/{id}/source` | Save with digest conflict fencing |
+| PATCH | `/v1/forge/items/{id}/source` | Rename with digest conflict fencing |
+| DELETE | `/v1/forge/items/{id}/source` | Delete with digest conflict fencing |
+| GET | `/v1/forge/items/{id}/workspace-state` | Restore editor tabs, drafts, and groups |
+| PUT | `/v1/forge/items/{id}/workspace-state` | Persist lease-bound editor recovery state |
 
 Guide: [forge.md](forge.md).
 

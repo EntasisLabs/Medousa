@@ -168,6 +168,38 @@ export type BeginAttemptResponse = {
   lease: { lease_id: string; generation: number };
 };
 
+export type ForgeSourceFile = {
+  work_id: string;
+  path: string;
+  content: string;
+  digest: string;
+  byte_size: number;
+};
+
+export type ForgeSourceTree = {
+  work_id: string;
+  files: Array<{ path: string; byte_size: number; status?: string | null }>;
+  truncated: boolean;
+};
+
+export type ForgeSourceSearch = {
+  work_id: string;
+  hits: Array<{ path: string; line: number; preview: string }>;
+  truncated: boolean;
+};
+
+export type ForgeCodeWorkspaceState = {
+  tabs: Array<{
+    path: string;
+    draft?: string | null;
+    source_digest: string;
+    line?: number | null;
+  }>;
+  active_path?: string | null;
+  secondary_path?: string | null;
+  updated_at?: string | null;
+};
+
 async function forgeUrl(path: string): Promise<string> {
   const base = (await getDaemonUrl()).replace(/\/$/, "");
   return `${base}${path.startsWith("/") ? path : `/${path}`}`;
@@ -212,6 +244,120 @@ export async function listUndertakings(): Promise<ItemProjection[]> {
 
 export async function getUndertaking(workId: string): Promise<ItemProjection> {
   return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}`);
+}
+
+export async function getUndertakingSource(
+  workId: string,
+  path: string,
+): Promise<ForgeSourceFile> {
+  const query = new URLSearchParams({ path });
+  return forgeFetch(
+    `/v1/forge/items/${encodeURIComponent(workId)}/source?${query}`,
+  );
+}
+
+export async function getUndertakingSourceTree(
+  workId: string,
+): Promise<ForgeSourceTree> {
+  return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/tree`);
+}
+
+export async function searchUndertakingSource(
+  workId: string,
+  query: string,
+): Promise<ForgeSourceSearch> {
+  const params = new URLSearchParams({ query });
+  return forgeFetch(
+    `/v1/forge/items/${encodeURIComponent(workId)}/search?${params}`,
+  );
+}
+
+export async function getCodeWorkspaceState(
+  workId: string,
+): Promise<ForgeCodeWorkspaceState> {
+  return forgeFetch(
+    `/v1/forge/items/${encodeURIComponent(workId)}/workspace-state`,
+  );
+}
+
+export async function saveCodeWorkspaceState(
+  workId: string,
+  state: ForgeCodeWorkspaceState,
+  lease?: { lease_id: string; generation: number } | null,
+): Promise<ForgeCodeWorkspaceState> {
+  return forgeFetch(
+    `/v1/forge/items/${encodeURIComponent(workId)}/workspace-state`,
+    {
+      method: "PUT",
+      body: JSON.stringify({
+        ...state,
+        lease_id: lease?.lease_id ?? null,
+        generation: lease?.generation ?? null,
+      }),
+    },
+  );
+}
+
+export async function saveUndertakingSource(
+  workId: string,
+  input: {
+    path: string;
+    content: string;
+    lease_id: string;
+    generation: number;
+    expected_digest: string;
+  },
+): Promise<ForgeSourceFile> {
+  return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/source`, {
+    method: "PUT",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function createUndertakingSource(
+  workId: string,
+  input: {
+    path: string;
+    content?: string;
+    lease_id: string;
+    generation: number;
+  },
+): Promise<ForgeSourceFile> {
+  return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/source`, {
+    method: "POST",
+    body: JSON.stringify({ content: "", ...input }),
+  });
+}
+
+export async function renameUndertakingSource(
+  workId: string,
+  input: {
+    path: string;
+    destination: string;
+    lease_id: string;
+    generation: number;
+    expected_digest: string;
+  },
+): Promise<ForgeSourceFile> {
+  return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/source`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function deleteUndertakingSource(
+  workId: string,
+  input: {
+    path: string;
+    lease_id: string;
+    generation: number;
+    expected_digest: string;
+  },
+): Promise<{ work_id: string; path: string; deleted: boolean }> {
+  return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/source`, {
+    method: "DELETE",
+    body: JSON.stringify(input),
+  });
 }
 
 export async function createUndertaking(input: {
@@ -422,16 +568,63 @@ export async function queueWorldIndex(
 export function humanPhaseLabel(phase: string): string {
   switch (phase) {
     case "prepare":
-      return "Prepare";
+      return "Ready to set up";
     case "work":
-      return "Working";
+      return "In progress";
     case "review":
-      return "Review";
+      return "Ready to review";
     case "complete":
-      return "Complete";
+      return "Finished";
     case "needs_attention":
       return "Needs attention";
     default:
-      return phase;
+      return "In progress";
   }
+}
+
+/** User-facing orientation for Forge phases. Internal state names stay behind details. */
+export function humanPhaseGuidance(phase: string): string {
+  switch (phase) {
+    case "prepare":
+      return "Medousa will make a safe place for this change.";
+    case "work":
+      return "Your files, tools, and agents stay together here.";
+    case "review":
+      return "See what changed, then decide what to keep.";
+    case "complete":
+      return "This work is preserved and ready whenever you need it.";
+    case "needs_attention":
+      return "Medousa kept your work safe and needs your decision.";
+    default:
+      return "Your work stays together while you decide what happens next.";
+  }
+}
+
+export function humanExecutorLabel(executor: string | null | undefined): string | null {
+  if (!executor) return null;
+  if (executor === "human") return "You";
+  if (executor === "codex") return "Codex";
+  if (executor === "cursor") return "Cursor";
+  return "Agent";
+}
+
+/** Keep daemon diagnostics useful without making users learn Forge's machinery. */
+export function humanizeForgeMessage(message: string): string {
+  return message
+    .replace(/\bgoverned workspaces\b/gi, "projects")
+    .replace(/\bgoverned workspace\b/gi, "project")
+    .replace(/\bworktrees\b/gi, "working copies")
+    .replace(/\bworktree\b/gi, "working copy")
+    .replace(/\bactive leases\b/gi, "active editing sessions")
+    .replace(/\bactive lease\b/gi, "active editing session")
+    .replace(/\bleases\b/gi, "editing sessions")
+    .replace(/\blease\b/gi, "editing session")
+    .replace(/\bsource files\b/gi, "files")
+    .replace(/\bsource file\b/gi, "file")
+    .replace(/\bsource changes\b/gi, "file changes")
+    .replace(/\bundertakings\b/gi, "projects")
+    .replace(/\bundertaking\b/gi, "project")
+    .replace(/\bcheckpoints\b/gi, "sets of changes")
+    .replace(/\bcheckpoint\b/gi, "set of changes")
+    .replace(/\bsealed\b/gi, "ready for review");
 }

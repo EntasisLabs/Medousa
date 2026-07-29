@@ -24,12 +24,15 @@ export async function connectGraphemeLspClient(): Promise<{
   return { client: result.client, workspace: result.workspace };
 }
 
-export async function connectCodeLspClient(language = "grapheme"): Promise<{
+export async function connectCodeLspClient(
+  language = "grapheme",
+  options?: { workId?: string; workspaceRoot?: string },
+): Promise<{
   client: LSPClient;
   workspace: GraphemeLspWorkspaceResponse;
   via: "orchestrator" | "grapheme";
 }> {
-  return connectOrchestratorLspClient({ language });
+  return connectOrchestratorLspClient({ language, ...options });
 }
 
 export async function connectLegacyGraphemeOnly(): Promise<{

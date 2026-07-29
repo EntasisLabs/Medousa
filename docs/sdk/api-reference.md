@@ -32,6 +32,11 @@ Generic JSON escape hatch when no typed wrapper exists.
 | `patch<T, B>(path, body)` | PATCH |
 | `delete<T>(path)` | DELETE |
 
+Forge undertaking custody and governed source/workspace operations currently use
+this generic HTTP client rather than a dedicated typed SDK accessor. See the
+[Forge engine guide](../engine/forge.md) and the
+[HTTP route index](../engine/http-api.md#forge-undertakings).
+
 ---
 
 ## `ingest()`

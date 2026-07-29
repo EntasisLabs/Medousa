@@ -33,7 +33,17 @@ export type CodeEditorLanguageId =
   | "html"
   | "css"
   | "xml"
-  | "yaml";
+  | "yaml"
+  | "go"
+  | "c"
+  | "cpp"
+  | "csharp"
+  | "java"
+  | "kotlin"
+  | "ruby"
+  | "php"
+  | "swift"
+  | "lua";
 
 export interface CodeEditorLanguageCapabilities {
   lsp: boolean;
@@ -152,6 +162,82 @@ export const CODE_EDITOR_LANGUAGES: Record<
     capabilities: HIGHLIGHT_LSP,
     fileExtension: "js",
     aliases: ["js", "jsx", "mjs"],
+  },
+  go: {
+    id: "go",
+    label: "Go",
+    tier: "highlight",
+    capabilities: HIGHLIGHT_LSP,
+    fileExtension: "go",
+    aliases: ["golang"],
+  },
+  c: {
+    id: "c",
+    label: "C",
+    tier: "highlight",
+    capabilities: HIGHLIGHT_LSP,
+    fileExtension: "c",
+    aliases: ["h"],
+  },
+  cpp: {
+    id: "cpp",
+    label: "C++",
+    tier: "highlight",
+    capabilities: HIGHLIGHT_LSP,
+    fileExtension: "cpp",
+    aliases: ["cc", "cxx", "hpp", "hh", "hxx"],
+  },
+  csharp: {
+    id: "csharp",
+    label: "C#",
+    tier: "highlight",
+    capabilities: HIGHLIGHT_LSP,
+    fileExtension: "cs",
+    aliases: ["cs", "c#"],
+  },
+  java: {
+    id: "java",
+    label: "Java",
+    tier: "highlight",
+    capabilities: HIGHLIGHT_LSP,
+    fileExtension: "java",
+  },
+  kotlin: {
+    id: "kotlin",
+    label: "Kotlin",
+    tier: "highlight",
+    capabilities: HIGHLIGHT_LSP,
+    fileExtension: "kt",
+    aliases: ["kt", "kts"],
+  },
+  ruby: {
+    id: "ruby",
+    label: "Ruby",
+    tier: "highlight",
+    capabilities: HIGHLIGHT_LSP,
+    fileExtension: "rb",
+    aliases: ["rb"],
+  },
+  php: {
+    id: "php",
+    label: "PHP",
+    tier: "highlight",
+    capabilities: HIGHLIGHT_LSP,
+    fileExtension: "php",
+  },
+  swift: {
+    id: "swift",
+    label: "Swift",
+    tier: "highlight",
+    capabilities: HIGHLIGHT_LSP,
+    fileExtension: "swift",
+  },
+  lua: {
+    id: "lua",
+    label: "Lua",
+    tier: "highlight",
+    capabilities: HIGHLIGHT_LSP,
+    fileExtension: "lua",
   },
   json: {
     id: "json",

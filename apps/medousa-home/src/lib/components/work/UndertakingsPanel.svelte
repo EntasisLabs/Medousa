@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy, onMount } from "svelte";
+  import { onDestroy, onMount, tick } from "svelte";
   import { undertakings } from "$lib/stores/undertakings.svelte";
   import {
     sealLease,
@@ -16,7 +16,9 @@
     getWorldBinding,
     queueWorldIndex,
     exportUndertakingBundle,
+    humanPhaseGuidance,
     humanPhaseLabel,
+    humanizeForgeMessage,
     type EvidencePage,
     type WorldBindingStatus,
     type WorldAvecResult,
@@ -34,6 +36,14 @@
   import { openUndertakingLocation } from "$lib/utils/undertakingLocation";
   import { undertakingLocationDeepLinkUrl } from "$lib/deepLinks";
   import { shareText } from "$lib/share";
+  import CodeSourceEditor from "$lib/components/work/CodeSourceEditor.svelte";
+
+  interface Props {
+    /** The Workspace Code explorer owns creation and undertaking selection. */
+    showBrowser?: boolean;
+  }
+
+  let { showBrowser = true }: Props = $props();
 
   let title = $state("");
   let brief = $state("");
@@ -59,6 +69,8 @@
   let exportOpen = $state(false);
   let exportDestination = $state("");
   let exportedDestination = $state<string | null>(null);
+  let reviewEl = $state<HTMLDivElement | null>(null);
+  let worldEl = $state<HTMLDivElement | null>(null);
 
   const detail = $derived(undertakings.detail);
   const review = $derived(undertakings.review);
@@ -135,6 +147,18 @@
     });
   }
 
+  async function toggleWorldFromEditor() {
+    worldMode = !worldMode;
+    if (!worldMode) return;
+    await tick();
+    worldEl?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+
+  async function openReviewFromEditor() {
+    await tick();
+    reviewEl?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+
   async function startAgent(runtime: "codex" | "cursor") {
     const d = detail;
     if (!d) return;
@@ -148,7 +172,7 @@
     const leaseId = undertakings.active?.leaseId;
     const generation = undertakings.active?.leaseGeneration;
     if (!leaseId || generation == null) {
-      actionError = "No active lease to seal";
+      actionError = "Editing is not active yet. Open a file or ask an agent to begin.";
       return;
     }
     await run(async () => {
@@ -270,8 +294,8 @@
       line: active.selectedLine,
       entityId: active.selectedEntityId,
     });
-    const result = await shareText("Undertaking location", url);
-    if (result === "failed") actionError = "Could not copy the undertaking location";
+    const result = await shareText("Project location", url);
+    if (result === "failed") actionError = "Could not copy this location";
   }
 
   function exportFolderName(value: string): string {
@@ -281,7 +305,7 @@
       .replace(/^-+|-+$/g, "")
       .slice(0, 60);
     const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-    return `${slug || "undertaking"}-forge-${stamp}`;
+    return `${slug || "project"}-medousa-record-${stamp}`;
   }
 
   async function beginExport() {
@@ -293,7 +317,7 @@
         directory: true,
         multiple: false,
         canCreateDirectories: true,
-        title: "Choose where to preserve this undertaking",
+        title: "Choose where to save this project record",
       });
       if (typeof parent !== "string") return;
       exportDestination = `${parent.replace(/[\\/]$/, "")}/${exportFolderName(detail.title)}`;
@@ -319,7 +343,7 @@
         evidence_id: review.evidence_id!,
         evidence_digest: review.evidence_digest!,
         strategy: "preserve_branch",
-        rationale: reviewRationale.trim() || "Reviewed in ForgeLens",
+        rationale: reviewRationale.trim() || "Reviewed in Medousa",
         acknowledged_violations: acknowledgePolicy
           ? (review.policy?.violations.map((violation) => violation.id) ?? [])
           : [],
@@ -332,7 +356,7 @@
     if (!detail) return;
     const decisionId = review?.decision?.id ?? detail.review_decisions?.at(-1)?.id;
     if (!decisionId) return;
-    if (!window.confirm("Apply this reviewed checkpoint and preserve its branch?")) return;
+    if (!window.confirm("Finish this project and keep its branch?")) return;
     await run(async () => {
       await applyDecision(detail!.id, decisionId);
       await undertakings.refreshDetail();
@@ -342,7 +366,7 @@
 
   async function discardWithConfirmation() {
     if (!detail) return;
-    if (!window.confirm(`Discard “${detail.title}”? The governed worktree will be released.`)) {
+    if (!window.confirm(`Discard “${detail.title}”? Its working copy will be removed.`)) {
       return;
     }
     await run(async () => {
@@ -365,11 +389,11 @@
 </script>
 
 <div class="flex h-full min-h-0 flex-col gap-3 p-3 text-sm text-surface-100">
-  <header class="flex flex-wrap items-center justify-between gap-2 border-b border-surface-500/40 pb-2">
+  {#if showBrowser}<header class="flex flex-wrap items-center justify-between gap-2 border-b border-surface-500/40 pb-2">
     <div>
-      <h2 class="text-base font-semibold text-surface-50">Undertakings</h2>
+      <h2 class="text-base font-semibold text-surface-50">Code projects</h2>
       <p class="text-xs text-surface-400">
-        Governed work · custody, not activity cards
+        One goal, its files, and everyone helping
       </p>
     </div>
     <div class="flex items-center gap-1.5">
@@ -385,19 +409,19 @@
         class="rounded-md bg-primary-500/80 px-2.5 py-1 text-xs font-medium text-surface-50"
         onclick={() => (creating = !creating)}
       >
-        {creating ? "Cancel" : "New undertaking"}
+        {creating ? "Cancel" : "New project"}
       </button>
     </div>
-  </header>
+  </header>{/if}
 
   {#if actionError || undertakings.error}
     <p class="rounded-md border border-amber-500/40 bg-amber-950/40 px-2 py-1 text-xs text-amber-100">
-      {actionError || undertakings.error}
+      {humanizeForgeMessage(actionError || undertakings.error || "")}
     </p>
   {/if}
 
-  <div class="grid min-h-0 flex-1 gap-3 lg:grid-cols-[240px_1fr]">
-    <aside class="flex min-h-0 flex-col gap-2 overflow-auto border-r border-surface-500/25 pr-3">
+  <div class="grid min-h-0 flex-1 gap-3 {showBrowser ? 'lg:grid-cols-[240px_1fr]' : 'grid-cols-1'}">
+    {#if showBrowser}<aside class="flex min-h-0 flex-col gap-2 overflow-auto border-r border-surface-500/25 pr-3">
       {#if creating}
         <form
           class="flex flex-col gap-1.5 rounded-lg border border-surface-500/35 bg-surface-900/35 p-2"
@@ -407,28 +431,32 @@
           }}
         >
           <p class="px-0.5 text-[10px] font-medium uppercase tracking-wide text-surface-400">
-            New undertaking
+            New project
           </p>
         <input
           class="rounded border border-surface-500/40 bg-surface-900 px-2 py-1 text-xs"
-          placeholder="Title"
+          placeholder="What are you changing?"
+          aria-label="Project name"
           bind:value={title}
         />
         <input
           class="rounded border border-surface-500/40 bg-surface-900 px-2 py-1 text-xs"
-          placeholder="Brief"
+          placeholder="What should be true when it’s done?"
+          aria-label="Goal"
           bind:value={brief}
         />
         <input
           class="rounded border border-surface-500/40 bg-surface-900 px-2 py-1 text-xs"
           placeholder={isCoLocatedWorkshop()
-            ? "Repo path (git root)"
-            : "Repo path on workshop machine"}
+            ? "Repository folder"
+            : "Repository folder on connected computer"}
+          aria-label="Repository folder"
           bind:value={repoPath}
         />
         <input
           class="rounded border border-surface-500/40 bg-surface-900 px-2 py-1 text-xs"
-          placeholder="Base ref"
+          placeholder="Starting branch"
+          aria-label="Starting branch"
           bind:value={baseRef}
         />
           <button
@@ -436,7 +464,7 @@
             class="rounded bg-primary-500/80 px-2 py-1 text-xs font-medium text-surface-50 disabled:opacity-40"
             disabled={busy || !title.trim() || !repoPath.trim()}
           >
-            Create undertaking
+            Start project
           </button>
         </form>
       {/if}
@@ -444,13 +472,13 @@
         <p class="text-xs text-surface-500">Loading…</p>
       {:else if undertakings.items.length === 0 && !creating}
         <p class="px-1 py-3 text-xs leading-relaxed text-surface-500">
-          No undertakings yet. Create one when a change deserves its own governed workspace.
+          No code projects yet. Start with a repository and the change you want to make.
         </p>
       {/if}
       <ul class="flex flex-col gap-1">
         {#if activeItems.length}
           <li class="px-1 pt-1 text-[10px] uppercase tracking-wide text-surface-500">
-            Active
+            In progress
           </li>
           {#each activeItems as item (item.id)}
             <li>
@@ -464,7 +492,7 @@
               >
                 <span class="block truncate font-medium text-surface-50">{item.title}</span>
                 <span class="text-[10px] text-surface-400">
-                  {humanPhaseLabel(item.human_phase)} · {item.state}
+                  {humanPhaseLabel(item.human_phase)}
                 </span>
               </button>
             </li>
@@ -472,7 +500,7 @@
         {/if}
         {#if completedItems.length}
           <li class="px-1 pt-2 text-[10px] uppercase tracking-wide text-surface-500">
-            Complete
+            Finished
           </li>
           {#each completedItems as item (item.id)}
             <li>
@@ -486,23 +514,22 @@
               >
                 <span class="block truncate font-medium text-surface-50">{item.title}</span>
                 <span class="text-[10px] text-surface-400">
-                  {humanPhaseLabel(item.human_phase)} · {item.state}
+                  {humanPhaseLabel(item.human_phase)}
                 </span>
               </button>
             </li>
           {/each}
         {/if}
       </ul>
-    </aside>
+    </aside>{/if}
 
-    <section class="flex min-h-0 flex-col gap-2 overflow-auto px-1 py-2">
+    <section class="flex min-h-0 flex-col gap-2 px-1 py-2 {showBrowser ? 'overflow-auto' : 'overflow-hidden'}">
       {#if !detail}
         <div class="flex min-h-48 flex-1 items-center justify-center">
           <div class="max-w-sm text-center">
-            <p class="text-sm font-medium text-surface-300">A place for intentional work</p>
+            <p class="text-sm font-medium text-surface-300">Choose what you want to change</p>
             <p class="mt-1 text-xs leading-relaxed text-surface-500">
-              Prepare a workspace, stay with it across Chat and Terminal, then preserve what
-              matters through ForgeLens.
+              Medousa keeps the files, conversations, tools, and agents together so you can stay focused on the outcome.
             </p>
           </div>
         </div>
@@ -512,7 +539,8 @@
             <h3 class="text-lg font-semibold text-surface-50">{detail.title}</h3>
             <p class="text-xs text-surface-400">{detail.brief}</p>
             <p class="mt-1 text-[11px] text-surface-400">
-              {humanPhaseLabel(detail.human_phase)}
+              <span class="font-medium text-surface-300">{humanPhaseLabel(detail.human_phase)}</span>
+              · {humanPhaseGuidance(detail.human_phase)}
             </p>
           </div>
           <div class="flex items-center gap-1.5">
@@ -523,7 +551,7 @@
                 disabled={busy}
                 onclick={() => void undertakings.provision(detail.id)}
               >
-                Prepare workspace
+                Set up project
               </button>
             {:else if actions?.seal.allowed}
               <button
@@ -541,7 +569,7 @@
                 disabled={busy}
                 onclick={() => void openTerminalTracked()}
               >
-                Continue in Terminal
+                Open Terminal
               </button>
             {/if}
 
@@ -560,31 +588,26 @@
                   disabled={busy || !actions?.start_agent.allowed}
                   title={actions?.start_agent.reason ?? ""}
                   onclick={() => void startAgent("codex")}
-                >Continue with Codex</button>
+                >Ask Codex to continue</button>
                 <button
                   type="button"
                   class="secondary-action"
                   disabled={busy || !actions?.start_agent.allowed}
                   onclick={() => void startAgent("cursor")}
-                >Continue with Cursor</button>
+                >Ask Cursor to continue</button>
                 <button
                   type="button"
                   class="secondary-action"
                   disabled={busy || !actions?.open_terminal.allowed}
                   onclick={() => void openTerminalTracked()}
                 >Open another Terminal</button>
-                <button
-                  type="button"
-                  class="secondary-action"
-                  onclick={() => (worldMode = !worldMode)}
-                >{worldMode ? "Hide World" : "Explore World"}</button>
                 <div class="my-1 border-t border-surface-500/25"></div>
                 <button
                   type="button"
                   class="secondary-action text-rose-200"
                   disabled={busy || !actions?.discard.allowed}
                   onclick={() => void discardWithConfirmation()}
-                >Discard undertaking…</button>
+                >Discard project…</button>
               </div>
             </details>
           </div>
@@ -593,11 +616,11 @@
         {#if detail.environment}
           <details class="text-[10px] text-surface-500">
             <summary class="w-fit cursor-pointer select-none hover:text-surface-300">
-              Workspace details
+              Technical details
             </summary>
             <p class="mt-1 break-all font-mono">
-              {detail.environment.worktree}<br />baseline
-              {detail.environment.baseline_oid.slice(0, 12)} · {detail.state}
+              Working copy: {detail.environment.worktree}<br />Starting revision:
+              {detail.environment.baseline_oid.slice(0, 12)} · internal state: {detail.state}
             </p>
           </details>
         {/if}
@@ -613,8 +636,8 @@
                   : ""}
               </p>
               <p class="text-[9px] text-surface-500">
-                Current undertaking location{undertakings.active.selectedEntityId
-                  ? " · entity resolved"
+                Current focus{undertakings.active.selectedEntityId
+                  ? " · code relationship found"
                   : ""}
               </p>
             </div>
@@ -633,29 +656,41 @@
           </div>
         {/if}
 
+        {#if detail.environment}
+          <CodeSourceEditor
+            fill={!showBrowser}
+            worldOpen={worldMode}
+            reviewAvailable={Boolean(review && (detail.human_phase === "review" || review.evidence_id))}
+            terminalAvailable={Boolean(actions?.open_terminal.allowed)}
+            onToggleWorld={() => void toggleWorldFromEditor()}
+            onOpenReview={() => void openReviewFromEditor()}
+            onOpenTerminal={() => void openTerminalTracked()}
+          />
+        {/if}
+
         {#if review && (detail.human_phase === "review" || review.evidence_id)}
-          <div class="mt-2 rounded-lg border border-primary-500/30 bg-surface-900/50 p-3">
+          <div bind:this={reviewEl} class="mt-2 rounded-lg border border-primary-500/30 bg-surface-900/50 p-3 {showBrowser ? '' : 'max-h-[45%] shrink-0 overflow-auto'}">
             <div class="flex items-center justify-between gap-2">
-              <h4 class="text-sm font-semibold text-surface-50">ForgeLens</h4>
+              <div>
+                <h4 class="text-sm font-semibold text-surface-50">Review changes</h4>
+                <p class="text-[10px] text-surface-500">Everything that changed, in one place</p>
+              </div>
               <button
                 type="button"
                 class="rounded px-2 py-1 text-[10px] text-surface-400 hover:bg-surface-800 hover:text-surface-100"
                 onclick={() => void beginExport()}
-              >Export evidence…</button>
+              >Save project record…</button>
             </div>
-            <p class="mt-1 text-[11px] text-surface-400">
-              baseline {review.baseline_oid?.slice(0, 10)}… → sealed
-              {review.sealed_head_oid?.slice(0, 10)}…
-              {#if review.evidence_digest}
-                · digest {review.evidence_digest.slice(0, 16)}…
-              {/if}
-              {#if review.truncated}
-                · truncated
-              {/if}
-              {#if review.base_advanced}
-                · base advanced
-              {/if}
-            </p>
+            <details class="mt-1 text-[10px] text-surface-500">
+              <summary class="w-fit cursor-pointer hover:text-surface-300">Technical details</summary>
+              <p class="mt-1 font-mono">
+                Starting revision {review.baseline_oid?.slice(0, 10)}… → reviewed revision
+                {review.sealed_head_oid?.slice(0, 10)}…
+                {#if review.evidence_digest} · record {review.evidence_digest.slice(0, 16)}…{/if}
+                {#if review.truncated} · preview shortened{/if}
+                {#if review.base_advanced} · starting branch changed{/if}
+              </p>
+            </details>
             <ul class="mt-2 max-h-32 overflow-auto text-[11px] font-mono text-surface-300">
               {#each review.changed_files as f (f.path)}
                 <li class="flex items-center gap-2 py-0.5">
@@ -687,7 +722,7 @@
                       {:else if risk.kind === "oversize_file"}
                         Large file <span class="font-mono">{risk.path}</span>
                       {:else}
-                        Checkpoint exceeds the configured size limit
+                        These changes exceed the configured size limit
                       {/if}
                     </li>
                   {/each}
@@ -695,7 +730,7 @@
                 {#if review.policy.violations.length}
                   <label class="mt-2 flex items-start gap-2 text-[10px] text-amber-50">
                     <input type="checkbox" class="mt-0.5" bind:checked={acknowledgePolicy} />
-                    I reviewed these policy exceptions and accept them for this checkpoint.
+                    I reviewed these exceptions and accept them for this change.
                   </label>
                 {/if}
               </div>
@@ -710,7 +745,7 @@
                   class="mt-1 text-[10px] text-primary-300 hover:underline disabled:opacity-40"
                   disabled={busy}
                   onclick={() => void loadMorePatch()}
-                >Load more patch · {patch.lines.length} of {patch.total_lines} lines</button>
+                >Show more changes · {patch.lines.length} of {patch.total_lines} lines</button>
               {/if}
             {/if}
             {#if commands && commands.lines.length}
@@ -724,7 +759,7 @@
                   class="mt-1 text-[10px] text-primary-300 hover:underline disabled:opacity-40"
                   disabled={busy}
                   onclick={() => void loadMoreCommands()}
-                >Load more commands · {commands.lines.length} of {commands.total_lines}</button>
+                >Show more commands · {commands.lines.length} of {commands.total_lines}</button>
               {/if}
             {/if}
             {#if worldInsight}
@@ -733,17 +768,10 @@
                 {#if worldInsight.code_avec}
                   <p class="mt-1 text-[10px] text-surface-400">
                     {worldInsight.code_avec.fully_scored_entities} of
-                    {worldInsight.code_avec.scoreable_entities} scoreable entities have complete
-                    analysis.
+                    {worldInsight.code_avec.scoreable_entities} known code elements are fully understood.
                   </p>
                 {/if}
               </div>
-            {/if}
-            {#if review.world}
-              <p class="mt-1 text-[10px] text-surface-500">
-                World baseline: {review.world.baseline?.state ?? "—"} · sealed:
-                {review.world.sealed?.state ?? "—"}
-              </p>
             {/if}
             {#if actions?.review.allowed}
               <label class="mt-3 block text-[10px] text-surface-400" for="review-rationale">
@@ -753,7 +781,7 @@
                 id="review-rationale"
                 rows="2"
                 class="mt-1 w-full resize-none rounded-md border border-surface-500/40 bg-surface-950/50 px-2 py-1.5 text-xs text-surface-100 placeholder:text-surface-600"
-                placeholder="What made this checkpoint ready?"
+                placeholder="Anything the next person should know?"
                 bind:value={reviewRationale}
               ></textarea>
               <button
@@ -762,12 +790,12 @@
                 disabled={busy || (!!review.policy?.violations.length && !acknowledgePolicy)}
                 onclick={() => void recordApproval()}
               >
-                Approve checkpoint
+                Approve changes
               </button>
             {:else if actions?.apply.allowed}
               <div class="mt-3 flex items-center justify-between gap-3 rounded-md border border-primary-500/25 bg-primary-950/15 p-2">
                 <p class="text-[11px] text-surface-300">
-                  Approved. The checkpoint is ready to be preserved.
+                  Approved. Finish when you are ready to keep this work.
                 </p>
                 <button
                   type="button"
@@ -775,13 +803,13 @@
                   disabled={busy}
                   onclick={() => void applyApproval()}
                 >
-                  Apply…
+                  Finish project…
                 </button>
               </div>
             {/if}
             {#if exportedDestination}
               <p class="mt-2 text-[10px] text-primary-200">
-                Evidence preserved at <span class="font-mono">{exportedDestination}</span>
+                Project record saved at <span class="font-mono">{exportedDestination}</span>
               </p>
             {/if}
           </div>
@@ -791,27 +819,25 @@
           <div
             class="rounded-lg border border-surface-500/35 bg-surface-900/60 p-3"
             role="dialog"
-            aria-label="Export undertaking evidence"
+            aria-label="Save project record"
             tabindex="-1"
           >
             <h4 class="text-sm font-medium text-surface-100">Preserve a portable copy</h4>
             <p class="mt-1 text-[10px] leading-relaxed text-surface-400">
-              This creates a folder containing the undertaking record, event history, sealed
-              evidence, and dispositions.
+              This creates a portable folder with what changed, how it was made, and the decisions you recorded.
             </p>
             {#if !isCoLocatedWorkshop()}
               <label class="mt-3 block text-[10px] text-surface-400" for="export-destination">
-                Destination on the workshop machine
+                Save on the connected computer
               </label>
               <input
                 id="export-destination"
                 class="mt-1 w-full rounded-md border border-surface-500/40 bg-surface-950/60 px-2 py-1.5 font-mono text-xs text-surface-100"
-                placeholder="/path/on/workshop/undertaking-forge"
+                placeholder="/path/on/connected-computer/project-record"
                 bind:value={exportDestination}
               />
               <p class="mt-1 text-[9px] text-surface-500">
-                The connected workshop owns this filesystem. No folder from this device is
-                uploaded.
+                Files stay on the connected computer. Nothing is uploaded from this device.
               </p>
             {:else}
               <p class="mt-3 break-all font-mono text-[10px] text-surface-300">
@@ -829,15 +855,18 @@
                 class="rounded bg-primary-500/80 px-2.5 py-1.5 text-xs font-medium text-surface-50 disabled:opacity-40"
                 disabled={busy || !exportDestination.trim()}
                 onclick={() => void confirmExport()}
-              >Preserve copy</button>
+              >Save copy</button>
             </div>
           </div>
         {/if}
 
         {#if worldMode}
-          <div class="rounded-lg border border-surface-500/40 p-3">
+          <div bind:this={worldEl} class="rounded-lg border border-surface-500/40 p-3 {showBrowser ? '' : 'max-h-[45%] shrink-0 overflow-auto'}">
             <div class="flex flex-wrap items-center justify-between gap-2">
-              <h4 class="text-sm font-semibold">World explorer</h4>
+              <div>
+                <h4 class="text-sm font-semibold">Understand this code</h4>
+                <p class="text-[10px] text-surface-500">See relationships and possible impact without leaving your work</p>
+              </div>
               <div class="flex gap-1 text-[10px]">
                 <button
                   type="button"
@@ -849,7 +878,7 @@
                     void loadWorldOverview();
                   }}
                 >
-                  Baseline
+                  Before
                 </button>
                 <button
                   type="button"
@@ -861,21 +890,18 @@
                     void loadWorldOverview();
                   }}
                 >
-                  Sealed
+                  Current
                 </button>
               </div>
             </div>
-            <p class="mt-1 text-[10px] text-surface-500">
-              Observe-only · snapshot preference: {worldSnapshot}. Mutate via Forge
-              actions above.
-            </p>
+            <p class="mt-1 text-[10px] text-surface-500">This view only explains the code; it never changes files.</p>
             <div class="mt-2 flex flex-wrap gap-1">
               <button
                 type="button"
                 class="rounded border border-surface-500/50 px-2 py-1 text-xs"
                 onclick={() => void loadWorldOverview()}
               >
-                Refresh coverage
+                Refresh understanding
               </button>
               <button
                 type="button"
@@ -886,16 +912,18 @@
                     worldBinding = await getWorldBinding(detail.id);
                   })}
               >
-                Reindex {worldSnapshot}
+                Rebuild code map
               </button>
             </div>
             {#if worldBinding}
-              <p class="mt-2 text-[10px] text-surface-400">
-                Binding baseline: {worldBinding.baseline?.state ?? "—"} · sealed:
-                {worldBinding.sealed?.state ?? "—"}
-              </p>
-              {#if worldBinding.capabilities}
-                <div class="mt-1 flex flex-wrap gap-1">
+              <details class="mt-2 text-[10px] text-surface-500">
+                <summary class="w-fit cursor-pointer hover:text-surface-300">Technical details</summary>
+                <p class="mt-1">
+                  Before: {worldBinding.baseline?.state ?? "not indexed"} · current:
+                  {worldBinding.sealed?.state ?? "not indexed"}
+                </p>
+                {#if worldBinding.capabilities}
+                  <div class="mt-1 flex flex-wrap gap-1">
                   {#each Object.entries(worldBinding.capabilities).filter(([key]) => key !== "note") as [capability, enabled]}
                     <span
                       class="rounded-full border border-surface-500/30 px-1.5 py-0.5 text-[9px] {enabled
@@ -903,20 +931,21 @@
                         : 'text-surface-600'}"
                     >{capability.replaceAll("_", " ")}{enabled ? "" : " · unavailable"}</span>
                   {/each}
-                </div>
-              {/if}
-              {#if worldBinding.diagnostics?.length}
-                <ul class="mt-1 text-[10px] text-amber-200/90">
+                  </div>
+                {/if}
+                {#if worldBinding.diagnostics?.length}
+                  <ul class="mt-1 text-[10px] text-amber-200/90">
                   {#each worldBinding.diagnostics as d}
                     <li>{d}</li>
                   {/each}
-                </ul>
-              {/if}
+                  </ul>
+                {/if}
+              </details>
             {/if}
             <div class="mt-2 flex flex-wrap items-center gap-1">
               <input
                 class="min-w-[120px] flex-1 rounded border border-surface-500/40 bg-surface-900 px-2 py-1 text-xs"
-                placeholder="Find name contains…"
+                placeholder="Find a class, function, or name…"
                 bind:value={findQuery}
               />
               <button
@@ -936,7 +965,7 @@
             <div class="mt-1 flex flex-wrap items-center gap-1">
               <input
                 class="min-w-[120px] flex-1 rounded border border-surface-500/40 bg-surface-900 px-2 py-1 text-xs"
-                placeholder="Entity id for impact"
+                placeholder="Class or function to check"
                 bind:value={impactEntity}
               />
               <button
@@ -952,13 +981,13 @@
                     );
                   })}
               >
-                Impact
+                See impact
               </button>
             </div>
             {#if worldFind}
               <div class="mt-2 max-h-44 overflow-auto rounded-md border border-surface-500/25">
                 {#if worldFind.entities.length === 0}
-                  <p class="p-2 text-[10px] text-surface-500">No matching entities.</p>
+                  <p class="p-2 text-[10px] text-surface-500">Nothing matched that name.</p>
                 {:else}
                   {#each worldFind.entities as entity (entity.id)}
                     <button
@@ -985,8 +1014,8 @@
             {#if worldImpact}
               <div class="mt-2 rounded-md border border-surface-500/25 p-2">
                 <p class="text-[11px] font-medium text-surface-200">
-                  Impact · {worldImpact.direct_dependents ?? 0} direct,
-                  {worldImpact.transitive_dependents ?? 0} transitive
+                  What depends on this · {worldImpact.direct_dependents ?? 0} directly,
+                  {worldImpact.transitive_dependents ?? 0} through other code
                 </p>
                 {#if worldImpact.message}
                   <p class="mt-1 text-[10px] text-surface-500">{worldImpact.message}</p>
@@ -1004,26 +1033,26 @@
                   <p class="text-lg font-semibold text-surface-100">
                     {worldInsight.code_avec?.fully_scored_entities ?? 0}
                   </p>
-                  <p class="text-[9px] text-surface-500">fully analyzed</p>
+                  <p class="text-[9px] text-surface-500">fully understood</p>
                 </div>
                 <div class="rounded-md bg-surface-900/60 p-2">
                   <p class="text-lg font-semibold text-surface-100">
                     {worldInsight.code_avec?.scoreable_entities ?? 0}
                   </p>
-                  <p class="text-[9px] text-surface-500">scoreable entities</p>
+                  <p class="text-[9px] text-surface-500">code elements found</p>
                 </div>
                 <div class="rounded-md bg-surface-900/60 p-2">
                   <p class="text-lg font-semibold text-surface-100">
                     {worldInsight.code_avec?.gaps.length ?? 0}
                   </p>
-                  <p class="text-[9px] text-surface-500">coverage gaps</p>
+                  <p class="text-[9px] text-surface-500">still unclear</p>
                 </div>
               </div>
             {/if}
             {#if worldFiles}
               <details class="mt-2">
                 <summary class="cursor-pointer text-[10px] text-surface-400">
-                  Files in this snapshot · {worldFiles.files.length}
+                  Files in this view · {worldFiles.files.length}
                 </summary>
                 <ul class="mt-1 max-h-48 overflow-auto rounded-md border border-surface-500/25">
                   {#each worldFiles.files as file (file.id)}
@@ -1041,7 +1070,7 @@
             {/if}
             {#if worldError}
               <p class="mt-2 rounded-md bg-amber-950/30 p-2 text-[10px] text-amber-100">
-                World is not ready yet. {worldError}
+                Code understanding is not ready yet. {humanizeForgeMessage(worldError)}
               </p>
             {/if}
           </div>

@@ -4,6 +4,7 @@
     CalendarClock,
     ChevronLeft,
     ChevronRight,
+    Code2,
     FileCode2,
     FileText,
     Files,
@@ -48,6 +49,7 @@
     const lme = lmeWorkspace.tabs.find((entry) => entry.tabId === tab.lmeTabId);
     if (!lme) return FileText;
     if (lme.kind === "script") return FileCode2;
+    if (lme.kind === "code") return Code2;
     if (lme.kind === "file") return Files;
     if (lme.kind === "deck") return Presentation;
     if (lme.kind === "manuscript") return Bot;

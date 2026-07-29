@@ -5,6 +5,7 @@
   import {
     Bot,
     CalendarClock,
+    Code2,
     FileCode2,
     FileText,
     Files,
@@ -42,6 +43,7 @@
     if (!lme) return FileText;
     if (lme.kind === "script") return FileCode2;
     if (lme.kind === "file") return Files;
+    if (lme.kind === "code") return Code2;
     if (lme.kind === "deck") return Presentation;
     if (lme.kind === "manuscript") return Bot;
     if (lme.kind === "flow") return GitBranch;

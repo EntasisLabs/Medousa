@@ -21,6 +21,13 @@ export const MOBILE_PRIMARY_DESTINATIONS: MobileDestinationItem[] = [
   { id: "tab-home", label: "Home", hint: "Glance & continue", kind: "tab", tab: "home" },
   { id: "tab-chat", label: "Chat", hint: "Sessions and replies", kind: "tab", tab: "chat" },
   { id: "tab-notes", label: "Notes", hint: "Vault library", kind: "tab", tab: "notes" },
+  {
+    id: "more-code",
+    label: "Code",
+    hint: "Projects, files, and agents",
+    kind: "more",
+    more: "code",
+  },
   { id: "tab-web", label: "Web", hint: "Browser", kind: "tab", tab: "web" },
   {
     id: "more-calendar",

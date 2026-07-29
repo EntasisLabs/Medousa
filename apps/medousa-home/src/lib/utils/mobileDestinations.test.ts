@@ -11,6 +11,7 @@ describe("mobileDestinationSections", () => {
     expect(sections[0]?.title).toBe("Go to");
     expect(sections[0]?.items.some((item) => item.id === "tab-home")).toBe(true);
     expect(sections[0]?.items.some((item) => item.id === "tab-chat")).toBe(true);
+    expect(sections[0]?.items.some((item) => item.more === "code")).toBe(true);
     expect(sections[1]?.title).toBe("More");
     expect(sections[1]?.items.some((item) => item.more === "automations")).toBe(true);
     expect(moreDestinationItems().some((item) => item.more === "settings")).toBe(false);

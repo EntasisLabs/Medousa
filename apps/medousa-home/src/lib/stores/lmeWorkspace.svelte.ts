@@ -13,6 +13,7 @@ import type { FlowComposerDraft } from "$lib/types/workflow";
 export type LmeExplorerMode =
   | "notes"
   | "files"
+  | "code"
   | "presentations"
   | "scripts"
   | "agents"
@@ -37,6 +38,12 @@ export type LmeTab =
       tabId: string;
       kind: "file";
       path: string;
+      title: string;
+    }
+  | {
+      tabId: string;
+      kind: "code";
+      workId: string;
       title: string;
     }
   | {
@@ -74,6 +81,7 @@ function loadExplorerMode(): LmeExplorerMode {
   if (
     raw === "notes" ||
     raw === "files" ||
+    raw === "code" ||
     raw === "presentations" ||
     raw === "scripts" ||
     raw === "agents" ||
@@ -254,6 +262,35 @@ export class LmeWorkspaceStore {
     }
     externalDesk.selectExternalPath(path);
     vault.previewAttachment(path, "pane");
+  }
+
+  /** Open governed coding work as a durable workspace tab. */
+  async openCodeWorkspace(workId: string, title?: string) {
+    const id = workId.trim();
+    if (!id) return;
+    this.setExplorerMode("code");
+    const existing = this.tabs.find(
+      (tab) => tab.kind === "code" && tab.workId === id,
+    );
+    if (existing) {
+      this.activeTabId = existing.tabId;
+      mirrorActiveTabToShell(existing.tabId, existing.title);
+      const { undertakings } = await import("$lib/stores/undertakings.svelte");
+      await undertakings.select(id);
+      return;
+    }
+    const label = title?.trim() || "Code workspace";
+    const tab: LmeTab = {
+      tabId: newTabId("code"),
+      kind: "code",
+      workId: id,
+      title: label,
+    };
+    this.tabs = [...this.tabs, tab].slice(-MAX_TABS);
+    this.activeTabId = tab.tabId;
+    mirrorActiveTabToShell(tab.tabId, tab.title);
+    const { undertakings } = await import("$lib/stores/undertakings.svelte");
+    await undertakings.select(id);
   }
 
   openDeck(artifactId: string, title?: string) {
@@ -489,6 +526,11 @@ export class LmeWorkspaceStore {
     if (tab.kind === "file") {
       externalDesk.selectExternalPath(tab.path);
       vault.previewAttachment(tab.path, "pane");
+      return;
+    }
+    if (tab.kind === "code") {
+      const { undertakings } = await import("$lib/stores/undertakings.svelte");
+      await undertakings.select(tab.workId);
       return;
     }
     if (tab.kind === "manuscript") {

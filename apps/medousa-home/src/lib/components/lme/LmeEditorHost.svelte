@@ -1,6 +1,7 @@
 <script lang="ts">
   import ArtifactLibraryPreview from "$lib/components/artifacts/ArtifactLibraryPreview.svelte";
   import LmeAgentEditor from "$lib/components/lme/LmeAgentEditor.svelte";
+  import UndertakingsPanel from "$lib/components/work/UndertakingsPanel.svelte";
   import LmeFlowEditor from "$lib/components/lme/LmeFlowEditor.svelte";
   import LmeScheduleEditor from "$lib/components/lme/LmeScheduleEditor.svelte";
   import LmeScriptEditor from "$lib/components/lme/LmeScriptEditor.svelte";
@@ -189,6 +190,10 @@
             <VaultAttachmentPreviewContent attachment={fileAttachment} fill={true} />
           </div>
         {/if}
+      </div>
+    {:else if active.kind === "code"}
+      <div class="relative z-10 flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        <UndertakingsPanel showBrowser={false} />
       </div>
     {:else if active.kind === "deck"}
       <div class="relative z-10 flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">

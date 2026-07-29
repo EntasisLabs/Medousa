@@ -37,6 +37,14 @@ Base path: `/v1/forge`. Types are `medousa-forge` serde models (`WorkItem`,
 | POST | `/v1/forge/items` | Register undertaking (`repo_path`, `base_ref`, optional `policy`) |
 | GET | `/v1/forge/items` | List items |
 | GET | `/v1/forge/items/{id}` | Load item |
+| GET | `/v1/forge/items/{id}/source?path=…` | Read bounded UTF-8 source from the governed worktree |
+| POST | `/v1/forge/items/{id}/source` | Lease-fenced source-file creation |
+| PUT | `/v1/forge/items/{id}/source` | Lease-fenced source save with digest conflict detection |
+| PATCH | `/v1/forge/items/{id}/source` | Lease-fenced source rename with digest conflict detection |
+| DELETE | `/v1/forge/items/{id}/source` | Lease-fenced source deletion with digest conflict detection |
+| GET | `/v1/forge/items/{id}/tree` | List tracked and unignored repository files (bounded to 20,000) |
+| GET | `/v1/forge/items/{id}/search?query=…` | Fixed-string tracked-source search (bounded to 500 hits) |
+| GET, PUT | `/v1/forge/items/{id}/workspace-state` | Restore/preserve open files, editor groups, positions, and bounded dirty drafts |
 | POST | `/v1/forge/items/{id}/provision` | Create governed worktree env |
 | POST | `/v1/forge/items/{id}/attempts` | Begin attempt (default executor `human`) → lease |
 | POST | `/v1/forge/leases/{lease_id}/heartbeat` | Liveness (`generation` required) |
@@ -73,6 +81,24 @@ root. Forge does not enable Versions for you.
 
 `begin` returns `lease.lease_id` and `lease.generation`. Every lease mutation
 must present the same `generation`. Stale adapters get `409`.
+
+Source saves are also lease-fenced. The body includes `path`, `content`,
+`lease_id`, `generation`, and `expected_digest`. `path` is repository-relative;
+absolute paths, traversal, symlink escapes, directories, binary content, and
+files over 2 MiB are rejected. `expected_digest` is the `sha256:…` value from
+the preceding GET. If the on-disk content no longer matches, PUT returns `409`
+instead of overwriting concurrent work.
+
+Create, rename, and delete use the same lease fence. Rename and delete also
+require the digest last read by the client. New files use exclusive creation;
+existing files are never replaced. Repository metadata, missing/outside parent
+directories, and symlink escapes are rejected.
+
+Code workspace state is stored under Forge's data root, outside the governed
+worktree. Clean tab/group state does not require a lease. Persisting a dirty
+draft requires the undertaking's live lease and is bounded to 2 MiB per draft,
+8 MiB total, and 32 tabs. Drafts retain their source digest so clients can
+surface recovery conflicts instead of silently applying stale text.
 
 ### Errors
 

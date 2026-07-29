@@ -45,7 +45,6 @@ function createUndertakingsStore() {
   let review = $state<ReviewProjection | null>(null);
   /** Map shell group id → active context */
   let contexts = $state<Record<string, ActiveUndertakingContext | null>>({});
-  let workTab = $state<"activity" | "undertakings">("activity");
   let pollTimer: ReturnType<typeof setInterval> | null = null;
   let eventSource: EventSource | null = null;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -294,12 +293,6 @@ function createUndertakingsStore() {
     },
     get active() {
       return active;
-    },
-    get workTab() {
-      return workTab;
-    },
-    setWorkTab(tab: "activity" | "undertakings") {
-      workTab = tab;
     },
     refreshList,
     select,

@@ -215,7 +215,7 @@ impl SessionPool {
             .get(&language)
             .ok_or_else(|| anyhow::anyhow!("no language server registered for {language}"))?
             .clone();
-        let backend = spawn_backend(&spec).await?;
+        let backend = spawn_backend(&spec, &workspace_root).await?;
         let (outbound, _) = broadcast::channel(256);
         let session = Arc::new(LiveSession {
             key: key.clone(),

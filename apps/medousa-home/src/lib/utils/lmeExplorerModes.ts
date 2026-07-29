@@ -2,6 +2,7 @@ import {
   BookOpen,
   Bot,
   CalendarClock,
+  Code2,
   FileCode2,
   Files,
   GitBranch,
@@ -21,6 +22,7 @@ export type LmeExplorerFamily = "library" | "automations";
 export const LME_LIBRARY_MODES: LmeExplorerModeDef[] = [
   { id: "notes", label: "Notes", icon: BookOpen },
   { id: "files", label: "Local Files", icon: Files },
+  { id: "code", label: "Code", icon: Code2 },
   { id: "presentations", label: "Presentations", icon: Presentation },
 ];
 
@@ -82,6 +84,7 @@ export function familyForLmeTabKind(kind: string): LmeExplorerFamily | null {
       return "automations";
     case "note":
     case "file":
+    case "code":
     case "deck":
       return "library";
     default:

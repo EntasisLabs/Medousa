@@ -2,6 +2,7 @@
   import {
     Bot,
     CalendarClock,
+    Code2,
     FileCode2,
     FileText,
     Files,
@@ -167,6 +168,8 @@
           >
             {#if tab.kind === "script"}
               <FileCode2 size={12} strokeWidth={1.75} class="shrink-0 opacity-70" />
+            {:else if tab.kind === "code"}
+              <Code2 size={12} strokeWidth={1.75} class="shrink-0 opacity-70" />
             {:else if tab.kind === "file"}
               <Files size={12} strokeWidth={1.75} class="shrink-0 opacity-70" />
             {:else if tab.kind === "deck"}

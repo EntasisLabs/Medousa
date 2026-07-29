@@ -32,6 +32,7 @@ export const NAV_RAIL_NEST_SURFACES = new Set([
 export const LME_MODE_TAB_KIND: Partial<Record<LmeExplorerMode, LmeTab["kind"]>> = {
   notes: "note",
   files: "file",
+  code: "code",
   presentations: "deck",
   scripts: "script",
   agents: "manuscript",
@@ -229,6 +230,7 @@ function prettyKind(kind: LmeTab["kind"]): string {
   if (kind === "note") return "Note";
   if (kind === "script") return "Script";
   if (kind === "file") return "File";
+  if (kind === "code") return "Code workspace";
   if (kind === "deck") return "Deck";
   if (kind === "manuscript") return "Manuscript";
   if (kind === "flow") return "Flow";

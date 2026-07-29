@@ -114,6 +114,9 @@ pub struct LspQuery {
     /// Language id for this client connection (default grapheme).
     #[serde(default = "default_language")]
     pub language: String,
+    /// Requested repository root. Must be under an orchestrator allowed root.
+    #[serde(default)]
+    pub workspace_root: Option<PathBuf>,
 }
 
 fn default_language() -> String {
@@ -169,14 +172,40 @@ async fn lsp_ws(
     State(state): State<Arc<OrchestratorState>>,
     Query(query): Query<LspQuery>,
 ) -> impl IntoResponse {
-    ws.on_upgrade(move |socket| handle_client(socket, state, query.language))
+    ws.on_upgrade(move |socket| {
+        handle_client(socket, state, query.language, query.workspace_root)
+    })
 }
 
-async fn handle_client(socket: WebSocket, state: Arc<OrchestratorState>, language: String) {
+fn requested_workspace_root(
+    state: &OrchestratorState,
+    requested: Option<PathBuf>,
+) -> anyhow::Result<PathBuf> {
+    let root = requested.unwrap_or_else(|| state.config.workspace_root.clone());
+    let root = root.canonicalize()?;
+    if !state.path_allowed(&root) {
+        anyhow::bail!("workspace root is outside the coding engine allowlist");
+    }
+    Ok(root)
+}
+
+async fn handle_client(
+    socket: WebSocket,
+    state: Arc<OrchestratorState>,
+    language: String,
+    requested_root: Option<PathBuf>,
+) {
     let language = LanguageId::new(language);
+    let workspace_root = match requested_workspace_root(&state, requested_root) {
+        Ok(root) => root,
+        Err(err) => {
+            tracing::warn!(error = %err, "rejected coding workspace root");
+            return;
+        }
+    };
     let session = match state
         .pool
-        .get_or_spawn(state.config.workspace_root.clone(), language.clone())
+        .get_or_spawn(workspace_root.clone(), language.clone())
         .await
     {
         Ok(s) => s,
@@ -185,6 +214,11 @@ async fn handle_client(socket: WebSocket, state: Arc<OrchestratorState>, languag
             return;
         }
     };
+
+    if let Err(err) = session.ensure_initialized(&path_to_file_uri(&workspace_root)).await {
+        tracing::warn!(error = %err, %language, "failed to initialize language session");
+        return;
+    }
 
     let mut outbound_rx = session.outbound.subscribe();
     let (mut ws_tx, mut ws_rx) = socket.split();
@@ -286,6 +320,8 @@ pub struct AgentDocQuery {
     pub character: Option<u32>,
     #[serde(default)]
     pub language: Option<String>,
+    #[serde(default)]
+    pub workspace_root: Option<PathBuf>,
 }
 
 fn language_for_uri(uri: &str, override_lang: Option<&str>) -> LanguageId {
@@ -302,8 +338,18 @@ fn language_for_uri(uri: &str, override_lang: Option<&str>) -> LanguageId {
         "ts" | "tsx" => "typescript",
         "js" | "jsx" | "mjs" => "javascript",
         "rs" => "rust",
+        "go" => "go",
+        "c" | "h" => "c",
+        "cc" | "cpp" | "cxx" | "hh" | "hpp" | "hxx" => "cpp",
+        "cs" => "csharp",
+        "java" => "java",
+        "kt" | "kts" => "kotlin",
+        "rb" => "ruby",
+        "php" => "php",
+        "swift" => "swift",
+        "lua" => "lua",
         "grapheme" | "gr" => "grapheme",
-        _ => "grapheme",
+        _ => "plaintext",
     })
 }
 
@@ -312,11 +358,14 @@ async fn session_for_doc(
     q: &AgentDocQuery,
 ) -> anyhow::Result<Arc<crate::session::LiveSession>> {
     let language = language_for_uri(&q.uri, q.language.as_deref());
+    let workspace_root = requested_workspace_root(state, q.workspace_root.clone())?;
     let session = state
         .pool
-        .get_or_spawn(state.config.workspace_root.clone(), language)
+        .get_or_spawn(workspace_root.clone(), language)
         .await?;
-    session.ensure_initialized(&state.root_uri()).await?;
+    session
+        .ensure_initialized(&path_to_file_uri(&workspace_root))
+        .await?;
     // Sync open doc from orchestrator store if present (notification, not request).
     if let Some(doc) = state.documents.get(&q.uri).await {
         session
@@ -390,11 +439,13 @@ async fn agent_definition(
 async fn agent_diagnostics(
     State(state): State<Arc<OrchestratorState>>,
     Query(q): Query<AgentDocQuery>,
-) -> Json<Value> {
+) -> Result<Json<Value>, (axum::http::StatusCode, String)> {
     let language = language_for_uri(&q.uri, q.language.as_deref());
+    let workspace_root = requested_workspace_root(&state, q.workspace_root.clone())
+        .map_err(|e| (axum::http::StatusCode::BAD_REQUEST, e.to_string()))?;
     let diagnostics = if let Ok(session) = state
         .pool
-        .get_or_spawn(state.config.workspace_root.clone(), language)
+        .get_or_spawn(workspace_root, language)
         .await
     {
         session
@@ -408,13 +459,13 @@ async fn agent_diagnostics(
         json!({ "uri": q.uri, "diagnostics": [] })
     };
     let doc = state.documents.get(&q.uri).await;
-    Json(json!({
+    Ok(Json(json!({
         "ok": true,
         "uri": q.uri,
         "open": doc.is_some(),
         "version": doc.as_ref().map(|d| d.version),
         "diagnostics": diagnostics.get("diagnostics").cloned().unwrap_or(json!([])),
-    }))
+    })))
 }
 
 async fn agent_symbols(

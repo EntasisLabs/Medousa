@@ -4,9 +4,7 @@
   import WorkAsksPanel from "$lib/components/work/WorkAsksPanel.svelte";
   import WorkManifestPopover from "$lib/components/work/WorkManifestPopover.svelte";
   import AskCompletionModal from "$lib/components/work/AskCompletionModal.svelte";
-  import UndertakingsPanel from "$lib/components/work/UndertakingsPanel.svelte";
   import { workspace } from "$lib/stores/workspace.svelte";
-  import { undertakings } from "$lib/stores/undertakings.svelte";
 
   interface Props {
     visible: boolean;
@@ -18,40 +16,13 @@
   let { visible, onOpenNote, onOpenChat, onSelectCard }: Props = $props();
 
   const showAsks = $derived(workspace.workView === "asks");
-  const tab = $derived(undertakings.workTab);
-
   onMount(() => {
     void workspace.prefetchCardDetails();
   });
 </script>
 
 <div class="relative flex h-full min-h-0 min-w-0 flex-1 flex-col {visible ? '' : 'hidden'}">
-  <!-- Shell tabs float over the pane's top edge; keep Work-local navigation in
-       the content-safe zone so the two layers never compete for a click. -->
-  <div class="flex shrink-0 gap-1 border-b border-surface-500/40 px-3 pt-10">
-    <button
-      type="button"
-      class="rounded-t px-3 py-1.5 text-xs {tab === 'activity'
-        ? 'bg-surface-800 text-surface-50'
-        : 'text-surface-400 hover:text-surface-200'}"
-      onclick={() => undertakings.setWorkTab("activity")}
-    >
-      Activity
-    </button>
-    <button
-      type="button"
-      class="rounded-t px-3 py-1.5 text-xs {tab === 'undertakings'
-        ? 'bg-surface-800 text-surface-50'
-        : 'text-surface-400 hover:text-surface-200'}"
-      onclick={() => undertakings.setWorkTab("undertakings")}
-    >
-      Undertakings
-    </button>
-  </div>
-
-  {#if tab === "undertakings"}
-    <UndertakingsPanel />
-  {:else if showAsks}
+  {#if showAsks}
     <WorkAsksPanel {onOpenChat} />
   {:else}
     <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">

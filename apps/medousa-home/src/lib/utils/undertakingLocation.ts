@@ -1,7 +1,7 @@
 /** Canonical navigation intent for a location inside governed work. */
 
 import { undertakings } from "$lib/stores/undertakings.svelte";
-import { shellTabs } from "$lib/stores/shellTabs.svelte";
+import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
 
 export type UndertakingLocationIntent = {
   workId: string;
@@ -26,9 +26,8 @@ export async function openUndertakingLocation(
   }
   const path = rawPath.replace(/^\.\//, "");
 
-  undertakings.setWorkTab("undertakings");
-  shellTabs.openSurface("work", { activate: true });
-  await undertakings.select(workId);
+  const known = undertakings.items.find((item) => item.id === workId);
+  await lmeWorkspace.openCodeWorkspace(workId, known?.title);
   undertakings.setSelection({
     path,
     line: intent.line && intent.line > 0 ? Math.floor(intent.line) : null,

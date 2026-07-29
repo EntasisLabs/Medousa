@@ -37,7 +37,11 @@ async fn main() -> anyhow::Result<()> {
         .unwrap_or(args.workspace.clone());
     std::fs::create_dir_all(&workspace)?;
 
-    let mut allowed = args.allow_roots;
+    let mut allowed = args
+        .allow_roots
+        .into_iter()
+        .map(|root| root.canonicalize().unwrap_or(root))
+        .collect::<Vec<_>>();
     if allowed.is_empty() {
         allowed.push(workspace.clone());
     }

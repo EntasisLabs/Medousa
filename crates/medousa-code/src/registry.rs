@@ -102,6 +102,84 @@ impl ServerRegistry {
             root_markers: vec!["Cargo.toml".into()],
             args: vec![],
         });
+        reg.register(ServerLaunchSpec {
+            language: LanguageId::new("go"),
+            kind: ServerKind::Stdio {
+                command: "gopls".into(),
+            },
+            root_markers: vec!["go.work".into(), "go.mod".into()],
+            args: vec![],
+        });
+        for language in ["c", "cpp"] {
+            reg.register(ServerLaunchSpec {
+                language: LanguageId::new(language),
+                kind: ServerKind::Stdio {
+                    command: "clangd".into(),
+                },
+                root_markers: vec![
+                    "compile_commands.json".into(),
+                    "compile_flags.txt".into(),
+                    ".clangd".into(),
+                ],
+                args: vec![],
+            });
+        }
+        reg.register(ServerLaunchSpec {
+            language: LanguageId::new("csharp"),
+            kind: ServerKind::Stdio {
+                command: "omnisharp".into(),
+            },
+            root_markers: vec![".sln".into(), ".csproj".into()],
+            args: vec!["-lsp".into()],
+        });
+        reg.register(ServerLaunchSpec {
+            language: LanguageId::new("java"),
+            kind: ServerKind::Stdio {
+                command: "jdtls".into(),
+            },
+            root_markers: vec!["pom.xml".into(), "build.gradle".into(), "build.gradle.kts".into()],
+            args: vec![],
+        });
+        reg.register(ServerLaunchSpec {
+            language: LanguageId::new("kotlin"),
+            kind: ServerKind::Stdio {
+                command: "kotlin-language-server".into(),
+            },
+            root_markers: vec!["settings.gradle".into(), "settings.gradle.kts".into()],
+            args: vec![],
+        });
+        reg.register(ServerLaunchSpec {
+            language: LanguageId::new("ruby"),
+            kind: ServerKind::Stdio {
+                command: "solargraph".into(),
+            },
+            root_markers: vec!["Gemfile".into(), ".ruby-version".into()],
+            args: vec!["stdio".into()],
+        });
+        reg.register(ServerLaunchSpec {
+            language: LanguageId::new("php"),
+            kind: ServerKind::Stdio {
+                command: "intelephense".into(),
+            },
+            root_markers: vec!["composer.json".into()],
+            args: vec!["--stdio".into()],
+        });
+        reg.register(ServerLaunchSpec {
+            language: LanguageId::new("swift"),
+            kind: ServerKind::Stdio {
+                command: "sourcekit-lsp".into(),
+            },
+            root_markers: vec!["Package.swift".into()],
+            args: vec![],
+        });
+        reg.register(ServerLaunchSpec {
+            language: LanguageId::new("lua"),
+            kind: ServerKind::Stdio {
+                command: "lua-language-server".into(),
+            },
+            root_markers: vec![".luarc.json".into(), ".luarc.jsonc".into()],
+            args: vec![],
+        });
         reg
     }
 

@@ -31,11 +31,14 @@ pub trait LanguageServerBackend: Send + Sync {
 /// Spawn a backend for the given launch spec.
 pub async fn spawn_backend(
     spec: &ServerLaunchSpec,
+    workspace_root: &std::path::Path,
 ) -> Result<Arc<dyn LanguageServerBackend>, BackendError> {
     match &spec.kind {
         ServerKind::Grapheme => Ok(Arc::new(GraphemeBackend::spawn())),
         ServerKind::Stdio { command } => {
-            Ok(Arc::new(StdioBackend::spawn(command, &spec.args).await?))
+            Ok(Arc::new(
+                StdioBackend::spawn(command, &spec.args, workspace_root).await?,
+            ))
         }
     }
 }
@@ -153,10 +156,15 @@ pub struct StdioBackend {
 }
 
 impl StdioBackend {
-    pub async fn spawn(command: &str, args: &[String]) -> Result<Self, BackendError> {
+    pub async fn spawn(
+        command: &str,
+        args: &[String],
+        workspace_root: &std::path::Path,
+    ) -> Result<Self, BackendError> {
         let resolved = resolve_command(command);
         let mut child = Command::new(&resolved)
             .args(args)
+            .current_dir(workspace_root)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())

@@ -1,6 +1,7 @@
 <script lang="ts">
   import LmeAgentsExplorer from "$lib/components/lme/explorers/LmeAgentsExplorer.svelte";
   import LmeAutomationsExplorer from "$lib/components/lme/explorers/LmeAutomationsExplorer.svelte";
+  import LmeCodeExplorer from "$lib/components/lme/explorers/LmeCodeExplorer.svelte";
   import LmeFlowsExplorer from "$lib/components/lme/explorers/LmeFlowsExplorer.svelte";
   import LmeDecksExplorer from "$lib/components/lme/explorers/LmeDecksExplorer.svelte";
   import LmeFilesExplorer from "$lib/components/lme/explorers/LmeFilesExplorer.svelte";
@@ -36,6 +37,8 @@
       <LmeNotesExplorer />
     {:else if mode === "files"}
       <LmeFilesExplorer />
+    {:else if mode === "code"}
+      <LmeCodeExplorer />
     {:else if mode === "presentations"}
       <LmeDecksExplorer {onOpenChat} />
     {:else if mode === "scripts"}

@@ -12,6 +12,7 @@ import {
 import {
   daemonWebSocketUrl,
   getCodingEngineInfo,
+  getDaemonUrl,
   getGraphemeLspWorkspace,
 } from "$lib/daemon";
 import type { GraphemeLspWorkspaceResponse } from "$lib/types/grapheme";
@@ -59,6 +60,8 @@ export type CodingEngineInfo = {
 
 export async function connectOrchestratorLspClient(options?: {
   language?: string;
+  workId?: string;
+  workspaceRoot?: string;
 }): Promise<{
   client: LSPClient;
   workspace: GraphemeLspWorkspaceResponse;
@@ -70,10 +73,14 @@ export async function connectOrchestratorLspClient(options?: {
   try {
     const info = await getCodingEngineInfo();
     if (info.available) {
-      const path = `${info.daemon_lsp_path || "/v1/code/lsp"}?language=${encodeURIComponent(language)}`;
+      const query = new URLSearchParams({ language });
+      if (options?.workId) query.set("work_id", options.workId);
+      const path = `${info.daemon_lsp_path || "/v1/code/lsp"}?${query}`;
       const wsUrl = await daemonWebSocketUrl(path);
       const transport = await createWebSocketTransport(wsUrl);
-      const rootUri = info.workspace_root_uri || graphemeWorkspace.root_uri;
+      const rootUri = options?.workspaceRoot
+        ? pathToFileUri(options.workspaceRoot)
+        : info.workspace_root_uri || graphemeWorkspace.root_uri;
       const client = new LSPClient({
         rootUri,
         extensions: languageServerExtensions(),
@@ -89,7 +96,10 @@ export async function connectOrchestratorLspClient(options?: {
       };
     }
   } catch {
-    // Fall through to Grapheme daemon LSP.
+    if (language !== "grapheme") {
+      throw new Error(`Smart editing is unavailable for ${language}`);
+    }
+    // Grapheme has an in-daemon fallback.
   }
 
   const wsUrl = await daemonWebSocketUrl("/v1/grapheme/lsp");
@@ -99,4 +109,69 @@ export async function connectOrchestratorLspClient(options?: {
     extensions: languageServerExtensions(),
   }).connect(transport);
   return { client, workspace: graphemeWorkspace, via: "grapheme" };
+}
+
+export function pathToFileUri(path: string): string {
+  const normalized = path.replaceAll("\\", "/");
+  const prefixed = normalized.startsWith("/") ? normalized : `/${normalized}`;
+  return encodeURI(`file://${prefixed}`);
+}
+
+const workspaceClients = new Map<string, Promise<LSPClient>>();
+
+export async function getCodeWorkspaceLspClient(options: {
+  workId: string;
+  workspaceRoot: string;
+  language: string;
+}): Promise<LSPClient> {
+  const key = `${options.workId}:${options.language}`;
+  const existing = workspaceClients.get(key);
+  if (existing) return existing;
+  const pending = connectOrchestratorLspClient(options)
+    .then((result) => result.client)
+    .catch((err) => {
+      workspaceClients.delete(key);
+      throw err;
+    });
+  workspaceClients.set(key, pending);
+  return pending;
+}
+
+async function codeAgentGet<T>(
+  path: string,
+  query: Record<string, string>,
+): Promise<T> {
+  const base = (await getDaemonUrl()).replace(/\/$/, "");
+  const params = new URLSearchParams(query);
+  const response = await fetch(`${base}${path}?${params}`, {
+    headers: { Accept: "application/json" },
+  });
+  if (!response.ok) {
+    throw new Error((await response.text()) || response.statusText);
+  }
+  return (await response.json()) as T;
+}
+
+export type CodeDocumentSymbol = {
+  name: string;
+  kind?: number;
+  range?: { start?: { line?: number; character?: number } };
+  selectionRange?: { start?: { line?: number; character?: number } };
+  children?: CodeDocumentSymbol[];
+};
+
+export async function getCodeDocumentSymbols(options: {
+  workId: string;
+  uri: string;
+  language: string;
+}): Promise<CodeDocumentSymbol[]> {
+  const response = await codeAgentGet<{ ok: boolean; result?: CodeDocumentSymbol[] }>(
+    "/v1/code/symbols",
+    {
+      work_id: options.workId,
+      uri: options.uri,
+      language: options.language,
+    },
+  );
+  return Array.isArray(response.result) ? response.result : [];
 }

@@ -2,6 +2,7 @@
   import {
     Activity,
     CalendarDays,
+    Code2,
     Compass,
     Globe,
     Home,
@@ -46,6 +47,7 @@
     "tab-home": Home,
     "tab-chat": MessageCircle,
     "tab-notes": NotebookText,
+    "more-code": Code2,
     "tab-web": Globe,
     "more-calendar": CalendarDays,
     "more-profiles": UserRound,

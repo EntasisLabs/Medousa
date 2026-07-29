@@ -8,9 +8,15 @@
     Link2Off,
     SquareTerminal,
   } from "@lucide/svelte";
-  import { getUndertaking, humanPhaseLabel } from "$lib/forge";
+  import {
+    getUndertaking,
+    humanExecutorLabel,
+    humanPhaseGuidance,
+    humanPhaseLabel,
+    humanizeForgeMessage,
+  } from "$lib/forge";
   import { undertakings } from "$lib/stores/undertakings.svelte";
-  import { shellTabs } from "$lib/stores/shellTabs.svelte";
+  import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
   import { chat } from "$lib/stores/chat.svelte";
   import {
     openTrackedTerminal,
@@ -23,9 +29,7 @@
 
   function goDetail() {
     if (!active) return;
-    undertakings.setWorkTab("undertakings");
-    shellTabs.openSurface("work", { activate: true });
-    void undertakings.select(active.workId);
+    void lmeWorkspace.openCodeWorkspace(active.workId, active.title);
   }
 
   async function withItem(action: "terminal" | "codex" | "cursor") {
@@ -54,7 +58,7 @@
   <details class="group relative max-w-full">
     <summary
       class="flex max-w-full cursor-pointer list-none items-center gap-1.5 rounded-full border border-surface-500/35 bg-surface-900/75 px-2.5 py-1 text-[11px] text-surface-200 transition hover:border-surface-400/60 hover:bg-surface-800/90 [&::-webkit-details-marker]:hidden"
-      aria-label={`Undertaking context: ${active.title}`}
+      aria-label={`Current project: ${active.title}`}
     >
       <CircleDot
         size={12}
@@ -65,7 +69,7 @@
       <span class="shrink-0 text-surface-500">·</span>
       <span class="shrink-0 text-surface-400">{humanPhaseLabel(active.humanPhase)}</span>
       {#if active.executorKind}
-        <span class="hidden shrink-0 text-surface-500 sm:inline">{active.executorKind}</span>
+        <span class="hidden shrink-0 text-surface-500 sm:inline">{humanExecutorLabel(active.executorKind)}</span>
       {/if}
       <ChevronDown
         size={12}
@@ -80,19 +84,17 @@
       <div class="px-2 py-1.5">
         <p class="truncate font-medium text-surface-100">{active.title}</p>
         <p class="mt-0.5 text-[10px] text-surface-500">
-          {humanPhaseLabel(active.humanPhase)}
-          {#if active.attemptSeq} · attempt {active.attemptSeq}{/if}
-          {#if active.executorKind} · {active.executorKind}{/if}
+          {humanPhaseGuidance(active.humanPhase)}
         </p>
       </div>
 
       <button type="button" class="context-action" onclick={goDetail}>
         {#if active.humanPhase === "review"}
           <GitPullRequestArrow size={14} />
-          Open ForgeLens review
+          Review changes
         {:else}
           <ExternalLink size={14} />
-          Open undertaking
+          Open project
         {/if}
       </button>
       <button
@@ -102,7 +104,7 @@
         onclick={() => void withItem("terminal")}
       >
         <SquareTerminal size={14} />
-        Continue in Terminal
+        Open Terminal here
       </button>
 
       {#if active.humanPhase === "work" || active.humanPhase === "prepare"}
@@ -114,7 +116,7 @@
           onclick={() => void withItem("codex")}
         >
           <Bot size={14} />
-          Continue with Codex
+          Ask Codex to continue
         </button>
         <button
           type="button"
@@ -123,19 +125,19 @@
           onclick={() => void withItem("cursor")}
         >
           <Bot size={14} />
-          Continue with Cursor
+          Ask Cursor to continue
         </button>
       {/if}
 
       <div class="my-1 border-t border-surface-500/25"></div>
       <button type="button" class="context-action text-surface-400" onclick={detach}>
         <Link2Off size={14} />
-        Detach this pane
+        Stop following this project
       </button>
 
       {#if error}
         <p class="m-1.5 rounded-md bg-amber-950/60 px-2 py-1.5 text-[10px] text-amber-100">
-          {error}
+          {humanizeForgeMessage(error)}
         </p>
       {/if}
     </div>
