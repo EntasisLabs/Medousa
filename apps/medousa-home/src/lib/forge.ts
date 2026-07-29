@@ -397,6 +397,23 @@ export async function saveUndertakingSource(
   });
 }
 
+export async function saveUndertakingSources(
+  workId: string,
+  input: {
+    files: Array<{ path: string; content: string; expected_digest: string }>;
+    lease_id: string;
+    generation: number;
+  },
+): Promise<ForgeSourceFile[]> {
+  return forgeFetch(
+    `/v1/forge/items/${encodeURIComponent(workId)}/source/batch`,
+    {
+      method: "PUT",
+      body: JSON.stringify(input),
+    },
+  );
+}
+
 export async function createUndertakingSource(
   workId: string,
   input: {

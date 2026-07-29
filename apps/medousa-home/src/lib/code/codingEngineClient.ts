@@ -152,6 +152,22 @@ async function codeAgentGet<T>(
   return (await response.json()) as T;
 }
 
+async function codeAgentPost<T>(
+  path: string,
+  body: Record<string, unknown>,
+): Promise<T> {
+  const base = (await getDaemonUrl()).replace(/\/$/, "");
+  const response = await fetch(`${base}${path}`, {
+    method: "POST",
+    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    throw new Error((await response.text()) || response.statusText);
+  }
+  return (await response.json()) as T;
+}
+
 export type CodeDocumentSymbol = {
   name: string;
   kind?: number;
@@ -174,4 +190,125 @@ export async function getCodeDocumentSymbols(options: {
     },
   );
   return Array.isArray(response.result) ? response.result : [];
+}
+
+export type CodeWorkspaceSymbol = {
+  name: string;
+  kind?: number;
+  containerName?: string;
+  location?: {
+    uri?: string;
+    range?: { start?: { line?: number; character?: number } };
+  };
+};
+
+export async function getCodeWorkspaceSymbols(options: {
+  workId: string;
+  language: string;
+  query: string;
+}): Promise<CodeWorkspaceSymbol[]> {
+  const response = await codeAgentGet<{ ok: boolean; result?: CodeWorkspaceSymbol[] }>(
+    "/v1/code/workspace-symbols",
+    {
+      work_id: options.workId,
+      language: options.language,
+      query: options.query,
+    },
+  );
+  return Array.isArray(response.result) ? response.result : [];
+}
+
+export type CodeWorkspaceDiagnostic = {
+  uri?: string;
+  diagnostics?: Array<{
+    message?: string;
+    severity?: number;
+    range?: { start?: { line?: number; character?: number } };
+  }>;
+};
+
+export async function getCodeWorkspaceDiagnostics(options: {
+  workId: string;
+  language: string;
+}): Promise<CodeWorkspaceDiagnostic[]> {
+  const response = await codeAgentGet<{
+    ok: boolean;
+    documents?: CodeWorkspaceDiagnostic[];
+  }>("/v1/code/workspace-diagnostics", {
+    work_id: options.workId,
+    language: options.language,
+  });
+  return Array.isArray(response.documents) ? response.documents : [];
+}
+
+export type CodeLanguageCapabilities = Record<string, unknown>;
+
+export async function getCodeLanguageCapabilities(options: {
+  workId: string;
+  uri: string;
+  language: string;
+}): Promise<CodeLanguageCapabilities> {
+  const response = await codeAgentGet<{
+    ok: boolean;
+    capabilities?: CodeLanguageCapabilities;
+  }>("/v1/code/capabilities", {
+    work_id: options.workId,
+    uri: options.uri,
+    language: options.language,
+  });
+  return response.capabilities ?? {};
+}
+
+export type CodeEditorConventions = {
+  indent_style?: "space" | "tab";
+  indent_size?: string;
+  tab_width?: string;
+  end_of_line?: "lf" | "crlf" | "cr";
+  insert_final_newline?: string;
+};
+
+export async function getCodeEditorConventions(options: {
+  workId: string;
+  uri: string;
+  language: string;
+}): Promise<CodeEditorConventions> {
+  const response = await codeAgentGet<{
+    ok: boolean;
+    conventions?: CodeEditorConventions;
+  }>("/v1/code/conventions", {
+    work_id: options.workId,
+    uri: options.uri,
+    language: options.language,
+  });
+  return response.conventions ?? {};
+}
+
+export async function requestCodeLanguageAction(options: {
+  workId: string;
+  action: "references" | "rename" | "format" | "code_actions" | "organize_imports";
+  uri: string;
+  language: string;
+  line?: number;
+  character?: number;
+  newName?: string;
+  range?: unknown;
+  diagnostics?: unknown[];
+  editorOptions?: { tabSize: number; insertSpaces: boolean };
+}): Promise<unknown> {
+  const response = await codeAgentPost<{ ok: boolean; result?: unknown }>(
+    "/v1/code/request",
+    {
+      work_id: options.workId,
+      action: options.action,
+      uri: options.uri,
+      language: options.language,
+      line: options.line,
+      character: options.character,
+      new_name: options.newName,
+      range: options.range,
+      diagnostics: options.diagnostics ?? [],
+      options: options.editorOptions,
+    },
+  );
+  return response.result;
 }

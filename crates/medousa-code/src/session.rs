@@ -28,6 +28,8 @@ pub struct LiveSession {
     pub outbound: broadcast::Sender<String>,
     /// Latest publishDiagnostics payloads keyed by document URI.
     pub diagnostics: RwLock<HashMap<String, Value>>,
+    /// Capabilities advertised by the active language server.
+    pub capabilities: RwLock<Value>,
     initialized: AtomicBool,
     next_id: AtomicU64,
     write_lock: Mutex<()>,
@@ -80,8 +82,23 @@ impl LiveSession {
                     "textDocument": {
                         "hover": { "contentFormat": ["markdown", "plaintext"] },
                         "definition": {},
+                        "references": {},
+                        "rename": { "prepareSupport": true },
+                        "formatting": {},
+                        "rangeFormatting": {},
+                        "codeAction": {
+                            "codeActionLiteralSupport": {
+                                "codeActionKind": {
+                                    "valueSet": ["", "quickfix", "refactor", "source", "source.organizeImports"]
+                                }
+                            }
+                        },
                         "documentSymbol": {},
                         "publishDiagnostics": {}
+                    },
+                    "workspace": {
+                        "symbol": {},
+                        "diagnostics": {}
                     }
                 },
                 "clientInfo": { "name": "medousa-code", "version": env!("CARGO_PKG_VERSION") }
@@ -104,6 +121,11 @@ impl LiveSession {
                     if let Ok(v) = serde_json::from_str::<Value>(&msg)
                         && v.get("id").and_then(|x| x.as_u64()) == Some(id)
                     {
+                        let capabilities = v
+                            .pointer("/result/capabilities")
+                            .cloned()
+                            .unwrap_or(Value::Null);
+                        *self.capabilities.write().await = capabilities;
                         break;
                     }
                 }
@@ -222,6 +244,7 @@ impl SessionPool {
             backend,
             outbound,
             diagnostics: RwLock::new(HashMap::new()),
+            capabilities: RwLock::new(Value::Null),
             initialized: AtomicBool::new(false),
             next_id: AtomicU64::new(1),
             write_lock: Mutex::new(()),

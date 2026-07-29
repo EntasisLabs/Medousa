@@ -8,7 +8,7 @@ use std::time::Instant;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Query, State};
 use axum::response::IntoResponse;
-use axum::routing::get;
+use axum::routing::{get, post};
 use axum::{Json, Router};
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
@@ -130,7 +130,12 @@ pub fn app(state: OrchestratorState) -> Router {
         .route("/v1/code/hover", get(agent_hover))
         .route("/v1/code/definition", get(agent_definition))
         .route("/v1/code/diagnostics", get(agent_diagnostics))
+        .route("/v1/code/workspace-diagnostics", get(workspace_diagnostics))
         .route("/v1/code/symbols", get(agent_symbols))
+        .route("/v1/code/workspace-symbols", get(workspace_symbols))
+        .route("/v1/code/capabilities", get(agent_capabilities))
+        .route("/v1/code/conventions", get(agent_conventions))
+        .route("/v1/code/request", post(agent_request))
         .route("/v1/detamu/snapshot", get(detamu_snapshot))
         .route("/v1/detamu/handles", get(detamu_handles))
         .layer(CorsLayer::permissive())
@@ -324,6 +329,16 @@ pub struct AgentDocQuery {
     pub workspace_root: Option<PathBuf>,
 }
 
+#[derive(Deserialize)]
+pub struct AgentWorkspaceQuery {
+    #[serde(default)]
+    pub language: Option<String>,
+    #[serde(default)]
+    pub workspace_root: Option<PathBuf>,
+    #[serde(default)]
+    pub query: Option<String>,
+}
+
 fn language_for_uri(uri: &str, override_lang: Option<&str>) -> LanguageId {
     if let Some(lang) = override_lang.filter(|s| !s.is_empty()) {
         return LanguageId::new(lang);
@@ -468,6 +483,32 @@ async fn agent_diagnostics(
     })))
 }
 
+async fn workspace_diagnostics(
+    State(state): State<Arc<OrchestratorState>>,
+    Query(q): Query<AgentWorkspaceQuery>,
+) -> Result<Json<Value>, (axum::http::StatusCode, String)> {
+    let language = LanguageId::new(q.language.as_deref().unwrap_or("plaintext"));
+    let workspace_root = requested_workspace_root(&state, q.workspace_root)
+        .map_err(|e| (axum::http::StatusCode::BAD_REQUEST, e.to_string()))?;
+    let session = state
+        .pool
+        .get_or_spawn(workspace_root.clone(), language)
+        .await
+        .map_err(|e| (axum::http::StatusCode::BAD_GATEWAY, e.to_string()))?;
+    session
+        .ensure_initialized(&path_to_file_uri(&workspace_root))
+        .await
+        .map_err(|e| (axum::http::StatusCode::BAD_GATEWAY, e.to_string()))?;
+    let diagnostics = session
+        .diagnostics
+        .read()
+        .await
+        .values()
+        .cloned()
+        .collect::<Vec<_>>();
+    Ok(Json(json!({ "ok": true, "documents": diagnostics })))
+}
+
 async fn agent_symbols(
     State(state): State<Arc<OrchestratorState>>,
     Query(q): Query<AgentDocQuery>,
@@ -485,6 +526,243 @@ async fn agent_symbols(
     Ok(Json(json!({ "ok": true, "result": result })))
 }
 
+async fn workspace_symbols(
+    State(state): State<Arc<OrchestratorState>>,
+    Query(q): Query<AgentWorkspaceQuery>,
+) -> Result<Json<Value>, (axum::http::StatusCode, String)> {
+    let language = LanguageId::new(q.language.as_deref().unwrap_or("plaintext"));
+    let workspace_root = requested_workspace_root(&state, q.workspace_root)
+        .map_err(|e| (axum::http::StatusCode::BAD_REQUEST, e.to_string()))?;
+    let session = state
+        .pool
+        .get_or_spawn(workspace_root.clone(), language)
+        .await
+        .map_err(|e| (axum::http::StatusCode::BAD_GATEWAY, e.to_string()))?;
+    session
+        .ensure_initialized(&path_to_file_uri(&workspace_root))
+        .await
+        .map_err(|e| (axum::http::StatusCode::BAD_GATEWAY, e.to_string()))?;
+    let result = session
+        .request(
+            "workspace/symbol",
+            json!({ "query": q.query.unwrap_or_default() }),
+        )
+        .await
+        .map_err(|e| (axum::http::StatusCode::BAD_GATEWAY, e.to_string()))?;
+    Ok(Json(json!({ "ok": true, "result": result })))
+}
+
+async fn agent_capabilities(
+    State(state): State<Arc<OrchestratorState>>,
+    Query(q): Query<AgentDocQuery>,
+) -> Result<Json<Value>, (axum::http::StatusCode, String)> {
+    let session = session_for_doc(&state, &q)
+        .await
+        .map_err(|e| (axum::http::StatusCode::BAD_GATEWAY, e.to_string()))?;
+    let capabilities = session.capabilities.read().await.clone();
+    Ok(Json(json!({ "ok": true, "capabilities": capabilities })))
+}
+
+async fn agent_conventions(
+    State(state): State<Arc<OrchestratorState>>,
+    Query(q): Query<AgentDocQuery>,
+) -> Result<Json<Value>, (axum::http::StatusCode, String)> {
+    let workspace_root = requested_workspace_root(&state, q.workspace_root)
+        .map_err(|e| (axum::http::StatusCode::BAD_REQUEST, e.to_string()))?;
+    let path = q
+        .uri
+        .strip_prefix("file://")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(&q.uri));
+    if !path.starts_with(&workspace_root) {
+        return Err((
+            axum::http::StatusCode::BAD_REQUEST,
+            "document is outside the coding workspace".to_string(),
+        ));
+    }
+    let mut files = Vec::new();
+    let mut directory = path.parent();
+    while let Some(current) = directory {
+        if !current.starts_with(&workspace_root) {
+            break;
+        }
+        let candidate = current.join(".editorconfig");
+        if candidate.is_file() {
+            files.push(candidate);
+        }
+        if current == workspace_root {
+            break;
+        }
+        directory = current.parent();
+    }
+    files.reverse();
+    let mut resolved = serde_json::Map::new();
+    for file in files {
+        let Ok(content) = tokio::fs::read_to_string(&file).await else {
+            continue;
+        };
+        let relative = path
+            .strip_prefix(file.parent().unwrap_or(&workspace_root))
+            .unwrap_or(&path)
+            .to_string_lossy()
+            .replace('\\', "/");
+        apply_editorconfig(&content, &relative, &mut resolved);
+    }
+    Ok(Json(json!({ "ok": true, "conventions": resolved })))
+}
+
+fn apply_editorconfig(
+    content: &str,
+    relative_path: &str,
+    resolved: &mut serde_json::Map<String, Value>,
+) {
+    let mut active = true;
+    for raw in content.lines() {
+        let line = raw.trim();
+        if line.is_empty() || line.starts_with('#') || line.starts_with(';') {
+            continue;
+        }
+        if line.starts_with('[') && line.ends_with(']') {
+            active = editorconfig_pattern_matches(&line[1..line.len() - 1], relative_path);
+            continue;
+        }
+        if !active {
+            continue;
+        }
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+        let key = key.trim();
+        if matches!(
+            key,
+            "indent_style" | "indent_size" | "tab_width" | "end_of_line" | "insert_final_newline"
+        ) {
+            resolved.insert(key.to_string(), Value::String(value.trim().to_string()));
+        }
+    }
+}
+
+fn editorconfig_pattern_matches(pattern: &str, relative_path: &str) -> bool {
+    let name = relative_path.rsplit('/').next().unwrap_or(relative_path);
+    pattern == "*"
+        || pattern == relative_path
+        || pattern == name
+        || pattern
+            .strip_prefix("*.")
+            .is_some_and(|extension| name.ends_with(&format!(".{extension}")))
+        || pattern
+            .strip_prefix("**/*.")
+            .is_some_and(|extension| name.ends_with(&format!(".{extension}")))
+}
+
+#[derive(Deserialize)]
+pub struct AgentRequest {
+    pub action: String,
+    pub uri: String,
+    #[serde(default)]
+    pub line: Option<u32>,
+    #[serde(default)]
+    pub character: Option<u32>,
+    #[serde(default)]
+    pub language: Option<String>,
+    #[serde(default)]
+    pub workspace_root: Option<PathBuf>,
+    #[serde(default)]
+    pub new_name: Option<String>,
+    #[serde(default)]
+    pub range: Option<Value>,
+    #[serde(default)]
+    pub diagnostics: Vec<Value>,
+    #[serde(default)]
+    pub options: Option<Value>,
+}
+
+async fn agent_request(
+    State(state): State<Arc<OrchestratorState>>,
+    Json(request): Json<AgentRequest>,
+) -> Result<Json<Value>, (axum::http::StatusCode, String)> {
+    let query = AgentDocQuery {
+        uri: request.uri.clone(),
+        line: request.line,
+        character: request.character,
+        language: request.language,
+        workspace_root: request.workspace_root,
+    };
+    let session = session_for_doc(&state, &query)
+        .await
+        .map_err(|e| (axum::http::StatusCode::BAD_GATEWAY, e.to_string()))?;
+    let position = position(&query);
+    let (method, params) = match request.action.as_str() {
+        "references" => (
+            "textDocument/references",
+            json!({
+                "textDocument": { "uri": request.uri },
+                "position": position,
+                "context": { "includeDeclaration": true }
+            }),
+        ),
+        "rename" => {
+            let new_name = request
+                .new_name
+                .filter(|name| !name.trim().is_empty())
+                .ok_or((
+                    axum::http::StatusCode::BAD_REQUEST,
+                    "rename requires new_name".to_string(),
+                ))?;
+            (
+                "textDocument/rename",
+                json!({
+                    "textDocument": { "uri": request.uri },
+                    "position": position,
+                    "newName": new_name
+                }),
+            )
+        }
+        "format" => (
+            "textDocument/formatting",
+            json!({
+                "textDocument": { "uri": request.uri },
+                "options": request.options.unwrap_or_else(|| json!({
+                    "tabSize": 2,
+                    "insertSpaces": true
+                }))
+            }),
+        ),
+        "code_actions" | "organize_imports" => {
+            let only = if request.action == "organize_imports" {
+                json!(["source.organizeImports"])
+            } else {
+                Value::Null
+            };
+            (
+                "textDocument/codeAction",
+                json!({
+                    "textDocument": { "uri": request.uri },
+                    "range": request.range.unwrap_or_else(|| json!({
+                        "start": position,
+                        "end": position
+                    })),
+                    "context": {
+                        "diagnostics": request.diagnostics,
+                        "only": only
+                    }
+                }),
+            )
+        }
+        _ => {
+            return Err((
+                axum::http::StatusCode::BAD_REQUEST,
+                "unsupported language action".to_string(),
+            ));
+        }
+    };
+    let result = session
+        .request(method, params)
+        .await
+        .map_err(|e| (axum::http::StatusCode::BAD_GATEWAY, e.to_string()))?;
+    Ok(Json(json!({ "ok": true, "result": result })))
+}
+
 async fn detamu_snapshot(State(state): State<Arc<OrchestratorState>>) -> Json<Value> {
     let docs = state.detamu_document_snapshot().await;
     Json(json!({ "ok": true, "documents": docs }))
@@ -493,4 +771,22 @@ async fn detamu_snapshot(State(state): State<Arc<OrchestratorState>>) -> Json<Va
 async fn detamu_handles(State(state): State<Arc<OrchestratorState>>) -> Json<Value> {
     let handles = state.detamu_session_handles().await;
     Json(json!({ "ok": true, "handles": handles }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::apply_editorconfig;
+    use serde_json::{Map, Value};
+
+    #[test]
+    fn editorconfig_applies_matching_language_section() {
+        let mut resolved = Map::<String, Value>::new();
+        apply_editorconfig(
+            "indent_style = space\n[*]\nindent_size = 4\n[*.rs]\nindent_size = 2\n",
+            "src/main.rs",
+            &mut resolved,
+        );
+        assert_eq!(resolved["indent_style"], "space");
+        assert_eq!(resolved["indent_size"], "2");
+    }
 }

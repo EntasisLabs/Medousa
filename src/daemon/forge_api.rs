@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
-use axum::routing::{get, post};
+use axum::routing::{get, post, put};
 use axum::{Json, Router};
 use medousa_forge::adapter::{ScriptAdapter, export_bundle};
 use medousa_forge::error::ForgeError;
@@ -60,6 +60,10 @@ pub fn forge_router(state: AppState) -> Router {
                 .delete(delete_source),
         )
         .route("/v1/forge/items/{work_id}/tree", get(source_tree))
+        .route(
+            "/v1/forge/items/{work_id}/source/batch",
+            put(save_source_batch),
+        )
         .route("/v1/forge/items/{work_id}/search", get(search_source))
         .route(
             "/v1/forge/items/{work_id}/workspace-state",
@@ -879,6 +883,20 @@ struct SaveSourceRequest {
 }
 
 #[derive(Debug, Deserialize)]
+struct SaveSourceBatchRequest {
+    files: Vec<SaveSourceBatchFile>,
+    lease_id: String,
+    generation: u64,
+}
+
+#[derive(Debug, Deserialize)]
+struct SaveSourceBatchFile {
+    path: String,
+    content: String,
+    expected_digest: String,
+}
+
+#[derive(Debug, Deserialize)]
 struct CreateSourceRequest {
     path: String,
     #[serde(default)]
@@ -1456,6 +1474,75 @@ async fn save_source(
         &environment.worktree,
         &body.path,
     )?))
+}
+
+async fn save_source_batch(
+    State(state): State<AppState>,
+    Path(work_id): Path<String>,
+    Json(body): Json<SaveSourceBatchRequest>,
+) -> ApiResult<Json<Vec<SourceResponse>>> {
+    let id = parse_work_id(&work_id)?;
+    if body.files.is_empty() {
+        return Err(request_error(
+            StatusCode::BAD_REQUEST,
+            "no source edits supplied",
+        ));
+    }
+    let item = require_work_lease(&state, &id, &body.lease_id, body.generation)?;
+    let environment = item
+        .environment
+        .as_ref()
+        .ok_or_else(|| request_error(StatusCode::CONFLICT, "governed workspace is not prepared"))?;
+    let mut prepared = Vec::with_capacity(body.files.len());
+    let mut seen = std::collections::HashSet::new();
+    for file in &body.files {
+        if file.content.len() > MAX_SOURCE_BYTES {
+            return Err(request_error(
+                StatusCode::PAYLOAD_TOO_LARGE,
+                format!("{} exceeds the source editor limit", file.path),
+            ));
+        }
+        let (path, relative) = resolve_source_path(&environment.worktree, &file.path)?;
+        if !seen.insert(path.clone()) {
+            return Err(request_error(
+                StatusCode::BAD_REQUEST,
+                "duplicate source edit",
+            ));
+        }
+        let original = std::fs::read(&path).map_err(|err| {
+            request_error(
+                StatusCode::NOT_FOUND,
+                format!("could not read {}: {err}", file.path),
+            )
+        })?;
+        if source_digest(&original) != file.expected_digest {
+            return Err(request_error(
+                StatusCode::CONFLICT,
+                format!(
+                    "{} changed; reload before applying the language edit",
+                    file.path
+                ),
+            ));
+        }
+        prepared.push((path, relative, original, file.content.as_bytes().to_vec()));
+    }
+    for (written, (path, _, _, content)) in prepared.iter().enumerate() {
+        if let Err(err) = crate::session::atomic_write(path, content) {
+            for (rollback_path, _, original, _) in prepared.iter().take(written) {
+                let _ = crate::session::atomic_write(rollback_path, original);
+            }
+            return Err(request_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("could not apply language edit: {err}"),
+            ));
+        }
+    }
+    publish_item(&state, &item, "source_batch_saved");
+    let responses = prepared
+        .iter()
+        .map(|(_, relative, _, _)| read_source_response(&id, &environment.worktree, relative))
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(Json(responses))
 }
 
 async fn rename_source(

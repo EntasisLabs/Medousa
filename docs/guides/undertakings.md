@@ -64,7 +64,8 @@ automation surface.
 - `Cmd/Ctrl+S` saves the focused editor, `Cmd/Ctrl+Shift+S` saves all modified
   tabs, and `Cmd/Ctrl+W` closes the active tab with a discard guard.
 - The Code explorer lists tracked and unignored repository files. `Cmd/Ctrl+P`
-  focuses its quick filter.
+  opens Quick Open: type a file name, `@` plus a name for project symbols, or
+  `:` plus a number to jump to a line.
 - Open files become project-scoped editor tabs with independent unsaved drafts.
   Tabs, cursor targets, a secondary editor group, and protected draft
   draft recovery survive view changes and app restarts. If the file changed
@@ -81,7 +82,18 @@ automation surface.
 - When an installed language server is available, Code attaches it to the
   project repository root. Diagnostics, completion, hover, and navigation
   come from the real server; unavailable servers degrade honestly to basic
-  editing. `Cmd/Ctrl+Shift+O` opens **Structure**.
+  editing. `Cmd/Ctrl+Shift+O` opens **Structure**. The header keeps the
+  containing function or type visible, and Issues places the current file
+  before other project diagnostics.
+- Find uses, rename, formatting, and import organization appear only when the
+  active language server supports them. Multi-file renames are digest-checked
+  and applied as one governed edit; a conflict leaves every file unchanged.
+- Repository `.editorconfig` rules feed indentation before Medousa falls back
+  to the file’s existing style and language defaults. An explicit user
+  preference still wins.
+- A co-located Medousa app can repair missing coding packages from the editor.
+  A remote client links to Packages instead, because installation belongs on
+  the connected workshop machine.
 
 Terminal, Understand, and Review remain contextual tools around the editor:
 Terminal executes, Understand explains, and Review helps the user decide what

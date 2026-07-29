@@ -69,6 +69,7 @@ See [Integrate without the app](../cookbook/integrate-without-the-app.md) and [H
 | [vault.md](vault.md) | Notes API |
 | [calendar.md](calendar.md) | Personal `.ics` calendar API + agent tools |
 | [workspace.md](workspace.md) | Work board |
+| [coding-engine.md](coding-engine.md) | Language providers and governed code edits |
 | [agent-tools.md](agent-tools.md) | Cognition tools |
 | [runtime-config.md](runtime-config.md) | Profiles & routing |
 | [extensions.md](extensions.md) | Grapheme, Locus, media |

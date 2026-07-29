@@ -99,6 +99,8 @@ attention, and what can safely happen next.
 
 ## Milestone 4 — Project-wide intelligence
 
+Status: complete (2026-07-29).
+
 ### Goal
 
 Use Detamu and language servers to deepen the same workspace rather than build

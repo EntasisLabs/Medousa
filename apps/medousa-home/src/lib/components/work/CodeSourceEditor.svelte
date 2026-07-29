@@ -23,8 +23,15 @@
   import {
     getCodeWorkspaceLspClient,
     getCodeDocumentSymbols,
+    getCodeWorkspaceDiagnostics,
+    getCodeWorkspaceSymbols,
+    getCodeLanguageCapabilities,
+    getCodeEditorConventions,
+    requestCodeLanguageAction,
     pathToFileUri,
     type CodeDocumentSymbol,
+    type CodeWorkspaceDiagnostic,
+    type CodeWorkspaceSymbol,
   } from "$lib/code/codingEngineClient";
   import { languageSupportsLsp } from "$lib/code/codeEditorLanguageRegistry";
   import {
@@ -33,6 +40,7 @@
     heartbeatLease,
     humanizeForgeMessage,
     saveUndertakingSource,
+    saveUndertakingSources,
     getUndertakingSourceTree,
     type ForgeSourceTreeFile,
     getProjectTasks,
@@ -48,6 +56,8 @@
   import { shellTabs } from "$lib/stores/shellTabs.svelte";
   import { layout } from "$lib/stores/layout.svelte";
   import { setActiveCodeInsights } from "$lib/utils/undertakingWorkspace";
+  import { fetchPackagesCatalog, installPackage } from "$lib/utils/packagesApi";
+  import { isCoLocatedWorkshop } from "$lib/utils/workshopLocality";
 
   interface Props {
     fill?: boolean;
@@ -81,7 +91,7 @@
   let lspClient = $state<LSPClient | null>(null);
   let lspError = $state<string | null>(null);
   let lspConnecting = $state(false);
-  let contextPanel = $state<"problems" | "outline" | null>(null);
+  let contextPanel = $state<"problems" | "outline" | "references" | null>(null);
   let problems = $state<ReturnType<CodeMirrorHost["getProblems"]>>([]);
   let symbols = $state<CodeDocumentSymbol[]>([]);
   let symbolsLoading = $state(false);
@@ -89,6 +99,8 @@
   let quickOpen = $state(false);
   let quickQuery = $state("");
   let quickFiles = $state<ForgeSourceTreeFile[]>([]);
+  let quickSymbols = $state<CodeWorkspaceSymbol[]>([]);
+  let quickSymbolQuery = $state("");
   let quickLoading = $state(false);
   let quickIndex = $state(0);
   let projectTasks = $state<ProjectTask[]>([]);
@@ -99,6 +111,13 @@
   let comparingTabId = $state<string | null>(null);
   let reviewChangedLines = $state<Array<{ line: number; kind: string }>>([]);
   let quickInput = $state<HTMLInputElement | null>(null);
+  let workspaceDiagnostics = $state<CodeWorkspaceDiagnostic[]>([]);
+  let languageCapabilities = $state<Record<string, unknown>>({});
+  let editorConventions = $state<{ indent_style?: "space" | "tab"; indent_size?: string; tab_width?: string }>({});
+  let references = $state<Array<{ uri?: string; range?: { start?: { line?: number } } }>>([]);
+  let languageActionRunning = $state(false);
+  let repairingLanguage = $state(false);
+  let lspRetry = $state(0);
 
   const context = $derived(undertakings.active);
   const detail = $derived(undertakings.detail);
@@ -132,7 +151,7 @@
     );
   });
   const quickResults = $derived.by(() => {
-    const needle = quickQuery.trim().toLowerCase();
+    const needle = quickQuery.trim().replace(/^>/, "").toLowerCase();
     const scored = quickFiles.map((file, index) => {
       const path = file.path.toLowerCase();
       const name = path.split("/").pop() ?? path;
@@ -141,9 +160,41 @@
     });
     return scored.filter((row) => row.score < 99).sort((a, b) => a.score - b.score).slice(0, 80).map((row) => row.file);
   });
+  const quickMode = $derived(
+    quickQuery.startsWith("@") ? "symbol" : quickQuery.startsWith(":") ? "line" : "file",
+  );
+  const quickSymbolResults = $derived(
+    quickSymbols.slice(0, 80),
+  );
+  const quickResultCount = $derived(
+    quickMode === "symbol" ? quickSymbolResults.length : quickMode === "line" ? 1 : quickResults.length,
+  );
   const selectedTask = $derived(
     projectTasks.find((task) => task.id === selectedTaskId) ?? projectTasks[0] ?? null,
   );
+  const workspaceProblemRows = $derived.by(() => {
+    const rows = workspaceDiagnostics.flatMap((document) => {
+      const path = pathFromUri(document.uri) ?? document.uri ?? "Project";
+      return (document.diagnostics ?? []).map((diagnostic) => ({
+        path,
+        line: (diagnostic.range?.start?.line ?? 0) + 1,
+        message: diagnostic.message ?? "Language issue",
+        severity: diagnostic.severity ?? 2,
+      }));
+    });
+    return rows.length > 0
+      ? rows
+      : problems.map((problem) => ({
+          path: activeTab?.path ?? "Current file",
+          line: problem.line,
+          message: problem.message,
+          severity: problem.severity === "error" ? 1 : 2,
+        }));
+  });
+  const canReference = $derived(Boolean(languageCapabilities.referencesProvider));
+  const canRename = $derived(Boolean(languageCapabilities.renameProvider));
+  const canFormat = $derived(Boolean(languageCapabilities.documentFormattingProvider));
+  const canCodeAction = $derived(Boolean(languageCapabilities.codeActionProvider));
 
   async function runDetectedTask() {
     if (!selectedTask || runningTask) {
@@ -204,6 +255,58 @@
     if (tab) editor?.focusEditor();
   }
 
+  function pathFromUri(uri = ""): string | null {
+    if (!uri || !context?.worktree) return null;
+    const decoded = decodeURIComponent(uri.replace(/^file:\/\//, ""));
+    const root = context.worktree.replace(/[\\/]$/, "");
+    return decoded.startsWith(`${root}/`) ? decoded.slice(root.length + 1) : null;
+  }
+
+  async function refreshQuickSymbols() {
+    const tab = activeTab;
+    const query = quickQuery.startsWith("@") ? quickQuery.slice(1).trim() : "";
+    if (!tab || !workId || quickMode !== "symbol") return;
+    quickSymbolQuery = query;
+    try {
+      const result = await getCodeWorkspaceSymbols({
+        workId,
+        language: tab.language,
+        query,
+      });
+      if (quickSymbolQuery === query) quickSymbols = result;
+    } catch {
+      if (quickSymbolQuery === query) quickSymbols = [];
+    }
+  }
+
+  async function chooseQuickSymbol(symbol = quickSymbolResults[quickIndex]) {
+    const path = pathFromUri(symbol?.location?.uri);
+    if (!symbol || !path) return;
+    const line = (symbol.location?.range?.start?.line ?? 0) + 1;
+    quickOpen = false;
+    const tab = await codeWorkspace.open(workId, path, line);
+    undertakings.setSelection({ path, line, entityId: null });
+    await tick();
+    if (tab) editor?.revealLine(line);
+  }
+
+  function chooseQuickLine() {
+    const line = Number.parseInt(quickQuery.slice(1).trim(), 10);
+    if (!Number.isFinite(line) || line < 1) return;
+    quickOpen = false;
+    editor?.revealLine(line);
+    if (activeTab) {
+      codeWorkspace.updateLine(activeTab.tabId, line);
+      undertakings.setSelection({ path: activeTab.path, line, entityId: null });
+    }
+  }
+
+  function chooseQuickResult() {
+    if (quickMode === "symbol") void chooseQuickSymbol();
+    else if (quickMode === "line") chooseQuickLine();
+    else void chooseQuickFile();
+  }
+
   async function navigate(direction: -1 | 1) {
     const tab = await codeWorkspace.navigate(workId, direction);
     if (!tab) return;
@@ -224,6 +327,30 @@
     settingsNav.openSection("packages");
     shellTabs.openDestination("settings");
     layout.openShellSidebarView("settings");
+  }
+
+  async function repairLanguageSupport() {
+    if (!isCoLocatedWorkshop()) {
+      openLanguagePackages();
+      return;
+    }
+    repairingLanguage = true;
+    surfaceError = null;
+    try {
+      const catalog = await fetchPackagesCatalog();
+      if (!catalog) throw new Error("Package repair is unavailable here");
+      const wanted = ["coding-engine", "langservers"];
+      for (const packageId of wanted) {
+        const row = catalog?.packages.find((entry) => entry.id === packageId);
+        if (row && !row.installed) await installPackage(packageId);
+      }
+      lspRetry += 1;
+    } catch (err) {
+      surfaceError = err instanceof Error ? err.message : String(err);
+      openLanguagePackages();
+    } finally {
+      repairingLanguage = false;
+    }
   }
 
   async function openSelectedLocation() {
@@ -431,7 +558,14 @@
 
   async function showOutline() {
     contextPanel = contextPanel === "outline" ? null : "outline";
-    if (contextPanel !== "outline" || !activeTab || !documentUri || !lspClient) return;
+    if (contextPanel === "outline") await refreshSymbols();
+  }
+
+  async function refreshSymbols() {
+    if (!activeTab || !documentUri || !lspClient) {
+      symbols = [];
+      return;
+    }
     symbolsLoading = true;
     try {
       symbols = await getCodeDocumentSymbols({
@@ -444,6 +578,157 @@
       symbols = [];
     } finally {
       symbolsLoading = false;
+    }
+  }
+
+  async function showProblems() {
+    contextPanel = contextPanel === "problems" ? null : "problems";
+    if (contextPanel !== "problems" || !activeTab || !lspClient) return;
+    try {
+      workspaceDiagnostics = await getCodeWorkspaceDiagnostics({
+        workId,
+        language: activeTab.language,
+      });
+      workspaceDiagnostics.sort((a, b) =>
+        a.uri === documentUri ? -1 : b.uri === documentUri ? 1 : 0
+      );
+    } catch {
+      workspaceDiagnostics = [];
+    }
+  }
+
+  function activeLanguageEdits(result: unknown): Array<{
+    newText?: string;
+    range?: {
+      start?: { line?: number; character?: number };
+      end?: { line?: number; character?: number };
+    };
+  }> {
+    if (Array.isArray(result)) {
+      if (result.every((item) => item && typeof item === "object" && "range" in item)) {
+        return result;
+      }
+      for (const action of result) {
+        const edits = activeLanguageEdits(action);
+        if (edits.length) return edits;
+      }
+      return [];
+    }
+    if (!result || typeof result !== "object" || !documentUri) return [];
+    const value = result as {
+      edit?: unknown;
+      changes?: Record<string, unknown>;
+      documentChanges?: Array<{ textDocument?: { uri?: string }; edits?: unknown }>;
+    };
+    if (value.edit) return activeLanguageEdits(value.edit);
+    const direct = value.changes?.[documentUri];
+    if (Array.isArray(direct)) return activeLanguageEdits(direct);
+    const documentEdit = value.documentChanges?.find(
+      (change) => change.textDocument?.uri === documentUri,
+    );
+    return Array.isArray(documentEdit?.edits)
+      ? activeLanguageEdits(documentEdit.edits)
+      : [];
+  }
+
+  function applyTextEdits(
+    content: string,
+    edits: Array<{ newText?: string; range?: { start?: { line?: number; character?: number }; end?: { line?: number; character?: number } } }>,
+  ): string {
+    const lines = content.split("\n");
+    const offset = (position: { line?: number; character?: number } | undefined) => {
+      const line = Math.max(0, Math.min(position?.line ?? 0, lines.length - 1));
+      let total = 0;
+      for (let index = 0; index < line; index += 1) total += lines[index].length + 1;
+      return Math.min(content.length, total + Math.max(0, position?.character ?? 0));
+    };
+    let next = content;
+    const changes = edits.map((edit) => ({
+      from: offset(edit.range?.start),
+      to: offset(edit.range?.end),
+      text: edit.newText ?? "",
+    })).sort((a, b) => b.from - a.from);
+    for (const change of changes) {
+      next = `${next.slice(0, change.from)}${change.text}${next.slice(change.to)}`;
+    }
+    return next;
+  }
+
+  async function applyWorkspaceEdit(result: unknown): Promise<boolean> {
+    if (!result || typeof result !== "object" || !context?.leaseId || context.leaseGeneration == null) return false;
+    const edit = (result as { edit?: unknown }).edit ?? result;
+    const workspaceEdit = edit as {
+      changes?: Record<string, unknown>;
+      documentChanges?: Array<{ textDocument?: { uri?: string }; edits?: unknown }>;
+    };
+    const entries = workspaceEdit.changes
+      ? Object.entries(workspaceEdit.changes)
+      : (workspaceEdit.documentChanges ?? [])
+          .filter((change) => change.textDocument?.uri && Array.isArray(change.edits))
+          .map((change) => [change.textDocument!.uri!, change.edits] as const);
+    if (entries.length === 0) return false;
+    const files = [];
+    for (const [uri, rawEdits] of entries) {
+      const path = pathFromUri(uri);
+      if (!path || !Array.isArray(rawEdits)) return false;
+      const source = await getUndertakingSource(workId, path);
+      files.push({
+        path,
+        expected_digest: source.digest,
+        content: applyTextEdits(source.content, rawEdits),
+      });
+    }
+    if (files.length === 0) return false;
+    const saved = await saveUndertakingSources(workId, {
+      files,
+      lease_id: context.leaseId,
+      generation: context.leaseGeneration,
+    });
+    for (const source of saved) {
+      const tab = tabs.find((entry) => entry.path === source.path);
+      if (tab) codeWorkspace.acceptSaved(tab.tabId, source);
+    }
+    return true;
+  }
+
+  async function runLanguageAction(
+    action: "format" | "organize_imports" | "references" | "rename",
+  ) {
+    if (!activeTab || !documentUri || languageActionRunning) return;
+    const cursor = editor?.getCursorPosition() ?? { line: 0, character: 0 };
+    const newName = action === "rename"
+      ? window.prompt("Rename this symbol to")
+      : undefined;
+    if (action === "rename" && !newName?.trim()) return;
+    languageActionRunning = true;
+    surfaceError = null;
+    try {
+      if (action === "rename" && !(await saveAll())) {
+        throw new Error("Resolve unsaved files before renaming across the project");
+      }
+      const result = await requestCodeLanguageAction({
+        workId,
+        action,
+        uri: documentUri,
+        language: activeTab.language,
+        line: cursor.line,
+        character: cursor.character,
+        newName: newName?.trim(),
+      });
+      if (action === "references") {
+        references = Array.isArray(result) ? result : [];
+        contextPanel = "references";
+        return;
+      }
+      if (action === "rename" && await applyWorkspaceEdit(result)) return;
+      const edits = activeLanguageEdits(result);
+      if (edits.length) {
+        editor?.applyLanguageEdits(edits);
+      } else if (action === "rename") surfaceError = "The language server did not return an editable rename.";
+    } catch (err) {
+      surfaceError = err instanceof Error ? err.message : String(err);
+    } finally {
+      languageActionRunning = false;
     }
   }
 
@@ -544,6 +829,7 @@
   });
 
   $effect(() => {
+    void lspRetry;
     const tab = activeTab;
     const root = context?.workId === workId ? context.worktree : null;
     if (!tab || !root || !languageSupportsLsp(tab.language)) {
@@ -573,6 +859,36 @@
     return () => {
       cancelled = true;
     };
+  });
+
+  $effect(() => {
+    void activeTab?.tabId;
+    void documentUri;
+    void lspClient;
+    untrack(() => {
+      void refreshSymbols();
+      const tab = activeTab;
+      const uri = documentUri;
+      if (!tab || !uri || !lspClient) {
+        languageCapabilities = {};
+        editorConventions = {};
+        return;
+      }
+      void getCodeLanguageCapabilities({
+        workId,
+        uri,
+        language: tab.language,
+      })
+        .then((capabilities) => (languageCapabilities = capabilities))
+        .catch(() => (languageCapabilities = {}));
+      void getCodeEditorConventions({
+        workId,
+        uri,
+        language: tab.language,
+      })
+        .then((conventions) => (editorConventions = conventions))
+        .catch(() => (editorConventions = {}));
+    });
   });
 
   $effect(() => {
@@ -654,6 +970,11 @@
             {activeTab.language}{activeTab.line ? ` · line ${activeTab.line}` : ""}{dirty ? " · unsaved" : ""}
             {#if lspConnecting} · understanding code…{:else if lspError} · editing only{/if}
           </p>
+          {#if containingSymbol()}
+            <p class="truncate text-[9px] text-primary-300/65" title={`Inside ${containingSymbol()}`}>
+              Inside {containingSymbol()}
+            </p>
+          {/if}
         </div>
       </div>
       <div class="flex shrink-0 items-center gap-1">
@@ -717,6 +1038,12 @@
         {/if}
         <button type="button" class="code-intent-action" disabled={saving} onclick={() => void handoffToAgent("Explain the selected code clearly, including its role and important behavior.")}>Explain</button>
         <button type="button" class="code-intent-action" disabled={saving} onclick={() => void handoffToAgent("Add the most valuable focused test for the selected code and run the relevant check.")}>Add test</button>
+        {#if canReference}
+          <button type="button" class="code-intent-action" disabled={languageActionRunning} onclick={() => void runLanguageAction("references")}>Find uses</button>
+        {/if}
+        {#if canRename && editable}
+          <button type="button" class="code-intent-action" disabled={languageActionRunning} onclick={() => void runLanguageAction("rename")}>Rename</button>
+        {/if}
       </div>
     {/if}
     {#if externalVersions[activeTab.tabId]}
@@ -736,7 +1063,7 @@
           </div>
         {/if}
         {#if !activeTab.loading && activeTab.digest}
-          {#key `${activeTab.tabId}:${editable}:${lspClient ? "lsp" : "plain"}:${reviewMarkerKey}`}
+          {#key `${activeTab.tabId}:${editable}:${lspClient ? "lsp" : "plain"}:${reviewMarkerKey}:${editorConventions.indent_style}:${editorConventions.indent_size}:${editorConventions.tab_width}`}
             <CodeMirrorHost
               bind:this={editor}
               value={activeTab.draft}
@@ -747,6 +1074,8 @@
               readOnly={!editable}
               contentSyncKey={activeTab.syncKey}
               changedLines={reviewChangedLines}
+              conventionIndentStyle={editorConventions.indent_style ?? null}
+              conventionTabSize={Number.parseInt(editorConventions.indent_size ?? editorConventions.tab_width ?? "", 10) || null}
               onchange={(value) => codeWorkspace.updateDraft(activeTab.tabId, value)}
               onCursorChanged={(line) => {
                 codeWorkspace.updateLine(activeTab.tabId, line);
@@ -785,23 +1114,52 @@
       <div class="max-h-44 shrink-0 overflow-y-auto border-t border-surface-500/30 bg-surface-950/80">
         <div class="sticky top-0 z-10 flex items-center justify-between border-b border-surface-500/25 bg-surface-950 px-2 py-1">
           <span class="text-[9px] font-medium uppercase tracking-wider text-surface-400">
-            {contextPanel === "problems" ? "Issues" : "Structure"}
+            {contextPanel === "problems" ? "Issues" : contextPanel === "references" ? "Uses" : "Structure"}
           </span>
           <button type="button" class="rounded p-0.5 text-surface-500 hover:text-surface-200" aria-label="Close context panel" onclick={() => (contextPanel = null)}><X size={11} /></button>
         </div>
         {#if contextPanel === "problems"}
-          {#if problems.length === 0}
-            <p class="px-3 py-3 text-[10px] text-surface-500">No issues found in this file.</p>
+          {#if problems.length === 0 && workspaceProblemRows.length === 0}
+            <p class="px-3 py-3 text-[10px] text-surface-500">No issues found in this project.</p>
           {:else}
-            {#each problems as problem, index (`${problem.from}:${problem.message}:${index}`)}
+            {#each workspaceProblemRows as problem, index (`${problem.path}:${problem.line}:${problem.message}:${index}`)}
               <button
                 type="button"
                 class="flex w-full items-start gap-2 border-b border-surface-500/15 px-3 py-1.5 text-left hover:bg-surface-800/60"
-                onclick={() => editor?.revealLine(problem.line)}
+                onclick={() => {
+                  const file = quickFiles.find((entry) => entry.path === problem.path);
+                  if (file) void chooseQuickFile(file).then(() => editor?.revealLine(problem.line));
+                  else if (problem.path === activeTab?.path) editor?.revealLine(problem.line);
+                }}
               >
-                <CircleAlert size={11} class={problem.severity === "error" ? "mt-0.5 shrink-0 text-rose-300" : "mt-0.5 shrink-0 text-amber-300"} />
-                <span class="min-w-0 flex-1 text-[10px] text-surface-300">{problem.message}</span>
+                <CircleAlert size={11} class={problem.severity === 1 ? "mt-0.5 shrink-0 text-rose-300" : "mt-0.5 shrink-0 text-amber-300"} />
+                <span class="min-w-0 flex-1 text-[10px] text-surface-300"><span class="text-surface-500">{problem.path} · </span>{problem.message}</span>
                 <span class="shrink-0 font-mono text-[9px] text-surface-500">{problem.line}</span>
+              </button>
+            {/each}
+          {/if}
+        {:else if contextPanel === "references"}
+          {#if references.length === 0}
+            <p class="px-3 py-3 text-[10px] text-surface-500">No other uses found.</p>
+          {:else}
+            {#each references as reference, index (`${reference.uri}:${reference.range?.start?.line}:${index}`)}
+              {@const referencePath = pathFromUri(reference.uri)}
+              {@const referenceLine = (reference.range?.start?.line ?? 0) + 1}
+              <button
+                type="button"
+                class="flex w-full items-center gap-2 border-b border-surface-500/15 px-3 py-1.5 text-left hover:bg-surface-800/60"
+                onclick={async () => {
+                  if (!referencePath) return;
+                  contextPanel = null;
+                  await codeWorkspace.open(workId, referencePath, referenceLine);
+                  undertakings.setSelection({ path: referencePath, line: referenceLine, entityId: null });
+                  await tick();
+                  editor?.revealLine(referenceLine);
+                }}
+              >
+                <FileCode2 size={11} class="shrink-0 text-primary-300/70" />
+                <span class="min-w-0 flex-1 truncate text-[10px] text-surface-300">{referencePath ?? reference.uri}</span>
+                <span class="font-mono text-[9px] text-surface-500">{referenceLine}</span>
               </button>
             {/each}
           {/if}
@@ -828,7 +1186,13 @@
     <footer class="flex shrink-0 items-center justify-between gap-2 overflow-x-auto border-t border-surface-500/25 bg-surface-950/75 px-1.5 py-0.5">
       <div class="flex shrink-0 items-center gap-0.5">
         {#if lspError}
-          <button type="button" class="rounded px-1.5 py-0.5 text-[9px] text-amber-300/80 hover:bg-surface-800 hover:text-amber-200" title={lspError} onclick={openLanguagePackages}>Add language support</button>
+          <button type="button" class="rounded px-1.5 py-0.5 text-[9px] text-amber-300/80 hover:bg-surface-800 hover:text-amber-200 disabled:opacity-40" disabled={repairingLanguage} title={lspError} onclick={() => void repairLanguageSupport()}>{repairingLanguage ? "Repairing…" : isCoLocatedWorkshop() ? "Repair language support" : "Add language support"}</button>
+        {/if}
+        {#if canFormat && editable}
+          <button type="button" class="rounded px-1.5 py-0.5 text-[9px] text-surface-500 hover:bg-surface-800 hover:text-surface-200 disabled:opacity-35" disabled={languageActionRunning} onclick={() => void runLanguageAction("format")}>Format</button>
+        {/if}
+        {#if canCodeAction && editable}
+          <button type="button" class="rounded px-1.5 py-0.5 text-[9px] text-surface-500 hover:bg-surface-800 hover:text-surface-200 disabled:opacity-35" disabled={languageActionRunning} onclick={() => void runLanguageAction("organize_imports")}>Organize imports</button>
         {/if}
         <button
           type="button"
@@ -877,8 +1241,8 @@
         type="button"
         class="flex items-center gap-1 rounded px-1.5 py-0.5 text-[9px] text-surface-500 hover:bg-surface-800 hover:text-surface-200"
         class:bg-surface-800={contextPanel === "problems"}
-        onclick={() => (contextPanel = contextPanel === "problems" ? null : "problems")}
-      ><CircleAlert size={10} />{problems.length}</button>
+        onclick={() => void showProblems()}
+      ><CircleAlert size={10} />{Math.max(problems.length, workspaceProblemRows.length)}</button>
       <button
         type="button"
         class="flex items-center gap-1 rounded px-1.5 py-0.5 text-[9px] text-surface-500 hover:bg-surface-800 hover:text-surface-200 disabled:opacity-35"
@@ -932,15 +1296,30 @@
     <div class="relative w-full max-w-xl overflow-hidden rounded-lg border border-surface-500/50 bg-surface-950 shadow-2xl" role="dialog" aria-modal="true" aria-label="Open a file" tabindex="-1">
       <div class="flex items-center gap-2 border-b border-surface-500/30 px-3">
         <Search size={14} class="text-surface-500" />
-        <input bind:this={quickInput} class="min-w-0 flex-1 bg-transparent py-2.5 text-sm text-surface-100 outline-none" placeholder="Open a file" bind:value={quickQuery} oninput={() => (quickIndex = 0)} onkeydown={(event) => {
-          if (event.key === "ArrowDown") { event.preventDefault(); quickIndex = Math.min(quickIndex + 1, quickResults.length - 1); }
+        <input bind:this={quickInput} class="min-w-0 flex-1 bg-transparent py-2.5 text-sm text-surface-100 outline-none" placeholder="File, @symbol, or :line" bind:value={quickQuery} oninput={() => { quickIndex = 0; void refreshQuickSymbols(); }} onkeydown={(event) => {
+          if (event.key === "ArrowDown") { event.preventDefault(); quickIndex = Math.min(quickIndex + 1, quickResultCount - 1); }
           if (event.key === "ArrowUp") { event.preventDefault(); quickIndex = Math.max(quickIndex - 1, 0); }
-          if (event.key === "Enter") { event.preventDefault(); void chooseQuickFile(); }
+          if (event.key === "Enter") { event.preventDefault(); chooseQuickResult(); }
         }} />
         <span class="text-[9px] text-surface-600">⌘P</span>
       </div>
       <div class="max-h-[50vh] overflow-y-auto py-1">
-        {#if quickLoading}
+        {#if quickMode === "line"}
+          <button type="button" class="flex w-full items-center gap-2 px-3 py-2 text-left text-surface-300 hover:bg-surface-800" onclick={chooseQuickLine}>
+            <span class="font-mono text-xs text-primary-300">:{quickQuery.slice(1).trim() || "line"}</span>
+            <span class="text-[10px] text-surface-500">Go to a line in {activeTab?.title}</span>
+          </button>
+        {:else if quickMode === "symbol" && quickSymbolResults.length === 0}
+          <p class="px-3 py-3 text-xs text-surface-500">No matching project symbols.</p>
+        {:else if quickMode === "symbol"}
+          {#each quickSymbolResults as symbol, index (`${symbol.name}:${symbol.location?.uri}:${symbol.location?.range?.start?.line}`)}
+            <button type="button" class="flex w-full items-center gap-2 px-3 py-1.5 text-left {index === quickIndex ? 'bg-surface-800 text-surface-100' : 'text-surface-400 hover:bg-surface-900'}" onmouseenter={() => (quickIndex = index)} onclick={() => void chooseQuickSymbol(symbol)}>
+              <ListTree size={12} class="shrink-0 opacity-65" />
+              <span class="min-w-0 flex-1 truncate text-xs">{symbol.name}</span>
+              <span class="min-w-0 max-w-[60%] truncate font-mono text-[9px] text-surface-600">{symbol.containerName ?? pathFromUri(symbol.location?.uri) ?? ""}</span>
+            </button>
+          {/each}
+        {:else if quickLoading}
           <p class="px-3 py-3 text-xs text-surface-500">Reading project files…</p>
         {:else if quickResults.length === 0}
           <p class="px-3 py-3 text-xs text-surface-500">No matching files.</p>

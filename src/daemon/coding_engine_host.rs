@@ -12,7 +12,7 @@ use std::sync::Arc;
 use axum::extract::ws::{Message as AxumMessage, WebSocket, WebSocketUpgrade};
 use axum::extract::{Query, State};
 use axum::response::IntoResponse;
-use axum::routing::get;
+use axum::routing::{get, post};
 use axum::{Json, Router};
 use futures_util::{SinkExt, StreamExt};
 use serde::Serialize;
@@ -216,7 +216,15 @@ pub fn coding_engine_router(state: AppState) -> Router {
         .route("/v1/code/hover", get(code_hover))
         .route("/v1/code/definition", get(code_definition))
         .route("/v1/code/diagnostics", get(code_diagnostics))
+        .route(
+            "/v1/code/workspace-diagnostics",
+            get(code_workspace_diagnostics),
+        )
         .route("/v1/code/symbols", get(code_symbols))
+        .route("/v1/code/workspace-symbols", get(code_workspace_symbols))
+        .route("/v1/code/capabilities", get(code_capabilities))
+        .route("/v1/code/conventions", get(code_conventions))
+        .route("/v1/code/request", post(code_request))
         .with_state(state)
 }
 
@@ -367,21 +375,50 @@ pub async fn code_symbols(
     proxy_agent_get(&state, "/v1/code/symbols", &q).await
 }
 
+pub async fn code_workspace_diagnostics(
+    State(state): State<AppState>,
+    Query(q): Query<std::collections::HashMap<String, String>>,
+) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, String)> {
+    proxy_agent_get(&state, "/v1/code/workspace-diagnostics", &q).await
+}
+
+pub async fn code_workspace_symbols(
+    State(state): State<AppState>,
+    Query(q): Query<std::collections::HashMap<String, String>>,
+) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, String)> {
+    proxy_agent_get(&state, "/v1/code/workspace-symbols", &q).await
+}
+
+pub async fn code_capabilities(
+    State(state): State<AppState>,
+    Query(q): Query<std::collections::HashMap<String, String>>,
+) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, String)> {
+    proxy_agent_get(&state, "/v1/code/capabilities", &q).await
+}
+
+pub async fn code_conventions(
+    State(state): State<AppState>,
+    Query(q): Query<std::collections::HashMap<String, String>>,
+) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, String)> {
+    proxy_agent_get(&state, "/v1/code/conventions", &q).await
+}
+
+pub async fn code_request(
+    State(state): State<AppState>,
+    Json(body): Json<serde_json::Value>,
+) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, String)> {
+    proxy_agent_post(&state, "/v1/code/request", body).await
+}
+
 async fn proxy_agent_get(
     state: &AppState,
     path: &str,
     q: &std::collections::HashMap<String, String>,
 ) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, String)> {
-    let host = state
-        .coding_engine
-        .clone()
-        .unwrap_or_default();
+    let host = state.coding_engine.clone().unwrap_or_default();
     let info = ensure_coding_engine(&host).await;
     if !info.available {
-        return Err((
-            axum::http::StatusCode::SERVICE_UNAVAILABLE,
-            info.message,
-        ));
+        return Err((axum::http::StatusCode::SERVICE_UNAVAILABLE, info.message));
     }
     let mut forwarded = q.clone();
     if let Some(work_id) = forwarded.remove("work_id") {
@@ -423,6 +460,59 @@ async fn proxy_agent_get(
         ));
     }
     Ok(Json(body))
+}
+
+async fn proxy_agent_post(
+    state: &AppState,
+    path: &str,
+    mut body: serde_json::Value,
+) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, String)> {
+    let host = state.coding_engine.clone().unwrap_or_default();
+    let info = ensure_coding_engine(&host).await;
+    if !info.available {
+        return Err((axum::http::StatusCode::SERVICE_UNAVAILABLE, info.message));
+    }
+    if let Some(work_id) = body
+        .as_object_mut()
+        .and_then(|object| object.remove("work_id"))
+        .and_then(|value| value.as_str().map(str::to_owned))
+    {
+        let id = medousa_forge::model::WorkId::from(work_id.trim().to_owned());
+        let root = state
+            .forge
+            .load(&id)
+            .ok()
+            .and_then(|item| item.environment.map(|env| env.worktree))
+            .ok_or((
+                axum::http::StatusCode::CONFLICT,
+                "unknown or unprepared undertaking".to_string(),
+            ))?;
+        if let Some(object) = body.as_object_mut() {
+            object.insert(
+                "workspace_root".into(),
+                serde_json::Value::String(root.to_string_lossy().into_owned()),
+            );
+        }
+    }
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(format!("{}{path}", info.url))
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| (axum::http::StatusCode::BAD_GATEWAY, e.to_string()))?;
+    let status = resp.status();
+    let response_body = resp
+        .json::<serde_json::Value>()
+        .await
+        .map_err(|e| (axum::http::StatusCode::BAD_GATEWAY, e.to_string()))?;
+    if !status.is_success() {
+        return Err((
+            axum::http::StatusCode::BAD_GATEWAY,
+            format!("coding engine returned {status}"),
+        ));
+    }
+    Ok(Json(response_body))
 }
 
 #[allow(dead_code)]

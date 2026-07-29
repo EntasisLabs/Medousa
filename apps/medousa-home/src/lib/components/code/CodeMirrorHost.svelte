@@ -67,6 +67,8 @@
     onProblemsChanged?: () => void;
     /** Baseline-to-reviewed lines shown as quiet source-control markers. */
     changedLines?: Array<{ line: number; kind: string }>;
+    conventionIndentStyle?: "space" | "tab" | null;
+    conventionTabSize?: number | null;
   }
 
   let {
@@ -82,6 +84,8 @@
     onSelectionChanged,
     onProblemsChanged,
     changedLines = [],
+    conventionIndentStyle = null,
+    conventionTabSize = null,
   }: Props = $props();
 
   let host: HTMLDivElement | undefined = $state();
@@ -128,7 +132,9 @@
     const wrap = readCodeEditorWordWrap();
     const showLineNumbers = readCodeEditorLineNumbers();
     const leading = value.split("\n").slice(0, 400).map((line) => line.match(/^[\t ]+/)?.[0] ?? "").filter(Boolean);
-    const usesTabs = leading.some((indentation) => indentation.startsWith("\t"));
+    const usesTabs = conventionIndentStyle
+      ? conventionIndentStyle === "tab"
+      : leading.some((indentation) => indentation.startsWith("\t"));
     const observedSpaces = leading
       .filter((indentation) => !indentation.includes("\t"))
       .map((indentation) => indentation.length)
@@ -139,7 +145,9 @@
       : observedSpaces.some((size) => size % 2 !== 0)
         ? 4
         : observedSpaces.some((size) => size % 4 !== 0) ? 2 : 4;
-    const tabSize = hasCodeEditorTabSizePreference() ? readCodeEditorTabSize() : inferredSize;
+    const tabSize = hasCodeEditorTabSizePreference()
+      ? readCodeEditorTabSize()
+      : conventionTabSize ?? inferredSize;
     const indent = usesTabs ? "\t" : " ".repeat(tabSize);
     const extensions = [
       basicSetup,
@@ -233,6 +241,13 @@
     view?.focus();
   }
 
+  export function getCursorPosition(): { line: number; character: number } {
+    if (!view) return { line: 0, character: 0 };
+    const head = view.state.selection.main.head;
+    const line = view.state.doc.lineAt(head);
+    return { line: line.number - 1, character: head - line.from };
+  }
+
   export function getView(): EditorView | undefined {
     return view;
   }
@@ -249,6 +264,34 @@
     view.dispatch({
       selection: { anchor: line.from },
       effects: EditorView.scrollIntoView(line.from, { y: "center", yMargin: 48 }),
+    });
+    view.focus();
+  }
+
+  export function applyLanguageEdits(edits: Array<{
+    newText?: string;
+    range?: {
+      start?: { line?: number; character?: number };
+      end?: { line?: number; character?: number };
+    };
+  }>) {
+    if (!view || edits.length === 0) return;
+    const offset = (position: { line?: number; character?: number } | undefined) => {
+      const lineNumber = Math.max(
+        1,
+        Math.min((position?.line ?? 0) + 1, view!.state.doc.lines),
+      );
+      const line = view!.state.doc.line(lineNumber);
+      return Math.min(line.to, line.from + Math.max(0, position?.character ?? 0));
+    };
+    view.dispatch({
+      changes: edits
+        .map((edit) => ({
+          from: offset(edit.range?.start),
+          to: offset(edit.range?.end),
+          insert: edit.newText ?? "",
+        }))
+        .sort((a, b) => a.from - b.from),
     });
     view.focus();
   }
