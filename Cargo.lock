@@ -3127,6 +3127,41 @@ dependencies = [
 ]
 
 [[package]]
+name = "detamu-language"
+version = "0.1.0"
+dependencies = [
+ "detamu-model",
+ "detamu-model-code",
+]
+
+[[package]]
+name = "detamu-language-rust"
+version = "0.1.0"
+dependencies = [
+ "detamu-core",
+ "detamu-language",
+ "detamu-language-tree-sitter",
+ "detamu-model",
+ "detamu-model-code",
+ "serde_json",
+ "tree-sitter",
+ "tree-sitter-rust",
+]
+
+[[package]]
+name = "detamu-language-tree-sitter"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "detamu-core",
+ "detamu-model",
+ "detamu-model-code",
+ "serde_json",
+ "tokio",
+ "tree-sitter",
+]
+
+[[package]]
 name = "detamu-model"
 version = "0.1.0"
 dependencies = [
@@ -7324,6 +7359,8 @@ dependencies = [
  "clap",
  "crossterm 0.28.1",
  "detamu",
+ "detamu-language",
+ "detamu-language-rust",
  "detamu-source-git",
  "dirs 5.0.1",
  "ed25519-dalek 2.2.0",
@@ -15501,6 +15538,36 @@ checksum = "1ad61aed86bc3faea4300c7aee358b4c6d0c8d6ccc36524c96e4c92ccf26e77e"
 dependencies = [
  "num-integer",
  "strength_reduce",
+]
+
+[[package]]
+name = "tree-sitter"
+version = "0.26.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "af1c71c1c4cc0920b20d6b0f6572e7682cd07a6a2faec71067a31fa394c586df"
+dependencies = [
+ "cc",
+ "regex",
+ "regex-syntax",
+ "serde_json",
+ "streaming-iterator",
+ "tree-sitter-language",
+]
+
+[[package]]
+name = "tree-sitter-language"
+version = "0.1.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "009994f150cc0cd50ff54917d5bc8bffe8cad10ca10d81c34da2ec421ae61782"
+
+[[package]]
+name = "tree-sitter-rust"
+version = "0.24.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "439e577dbe07423ec2582ac62c7531120dbfccfa6e5f92406f93dd271a120e45"
+dependencies = [
+ "cc",
+ "tree-sitter-language",
 ]
 
 [[package]]

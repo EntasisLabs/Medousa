@@ -307,7 +307,7 @@ pub fn worker_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
         vec![
             ToolDomainCatalogEntry {
                 domain: "detamu",
-                summary: "Detamu world-model — repo snapshots at commit OIDs (status/files; Code AVEC later)",
+                summary: "Detamu world-model — repo snapshots at commit OIDs (status/files/impact/Code AVEC)",
                 tools: crate::detamu_tools::DETAMU_COGNITION_TOOLS,
             },
             ToolDomainCatalogEntry {

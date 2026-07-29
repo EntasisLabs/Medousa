@@ -16,6 +16,8 @@ use detamu::core::SnapshotId;
 use detamu::sdk::{Detamu, IndexReport};
 use detamu::store::DetamuStore;
 use detamu::surreal::SurrealStore;
+use detamu_language::LanguagePack;
+use detamu_language_rust::RustLanguagePack;
 use detamu_source_git::{GitRepositoryAnalyzer, GitRepositorySource};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -91,11 +93,15 @@ impl DetamuHost {
             .await
             .map_err(|e| e.to_string())?;
         let store: Arc<dyn DetamuStore> = Arc::new(surreal);
-        let detamu = Detamu::builder(Arc::clone(&store))
+        let rust_pack = RustLanguagePack::new(Arc::new(GitRepositorySource));
+        let mut builder = Detamu::builder(Arc::clone(&store))
             .analyzer(Arc::new(GitRepositoryAnalyzer))
             .deriver(Arc::new(GraphMetricsDeriver))
-            .scoring_model(Arc::new(AvecCodeScorer::default()))
-            .build();
+            .scoring_model(Arc::new(AvecCodeScorer::default()));
+        for analyzer in rust_pack.analyzers() {
+            builder = builder.analyzer(analyzer);
+        }
+        let detamu = builder.build();
         Ok(Arc::new(Self {
             detamu,
             store,
@@ -219,6 +225,148 @@ impl DetamuHost {
     pub async fn last_global_summary(&self) -> Option<IndexSummary> {
         self.last_global.read().await.clone()
     }
+
+    pub fn code_query(&self) -> CodeQuery {
+        CodeQuery::new(Arc::clone(&self.store))
+    }
+
+    pub async fn find_entities(
+        &self,
+        snapshot: &SnapshotId,
+        filter: &CodeEntityFilter,
+    ) -> Result<Value, String> {
+        let query = self.code_query();
+        let entities = query
+            .find(snapshot, filter)
+            .await
+            .map_err(|e| e.to_string())?;
+        let items: Vec<Value> = entities.iter().map(entity_summary_json).collect();
+        Ok(json!({
+            "ok": true,
+            "snapshot": snapshot_json(snapshot),
+            "entities": items,
+        }))
+    }
+
+    pub async fn impact(
+        &self,
+        snapshot: &SnapshotId,
+        entity_id: &str,
+        max_depth: u32,
+        max_nodes: usize,
+    ) -> Result<Value, String> {
+        let query = self.code_query();
+        match query
+            .impact(
+                snapshot,
+                &detamu::core::EntityId::new(entity_id),
+                max_depth,
+                max_nodes,
+            )
+            .await
+        {
+            Ok(impact) => {
+                let nodes: Vec<Value> = impact
+                    .graph
+                    .nodes
+                    .iter()
+                    .map(|node| {
+                        let mut v = entity_summary_json(&node.observation);
+                        if let Some(obj) = v.as_object_mut() {
+                            obj.insert("depth".into(), json!(node.depth));
+                        }
+                        v
+                    })
+                    .collect();
+                Ok(json!({
+                    "ok": true,
+                    "snapshot": snapshot_json(snapshot),
+                    "target": entity_summary_json(&impact.target),
+                    "direct_dependents": impact.direct_dependents,
+                    "transitive_dependents": impact.transitive_dependents,
+                    "nodes": nodes,
+                }))
+            }
+            Err(detamu::query::QueryError::EntityNotFound { .. }) => Ok(json!({
+                "ok": true,
+                "snapshot": snapshot_json(snapshot),
+                "entity_id": entity_id,
+                "direct_dependents": 0,
+                "transitive_dependents": 0,
+                "nodes": [],
+                "message": "entity not in snapshot graph (inventory-only or kind not indexed)",
+            })),
+            Err(err) => Err(err.to_string()),
+        }
+    }
+
+    pub async fn code_avec_gaps(&self, snapshot: &SnapshotId) -> Result<Value, String> {
+        let query = self.code_query();
+        let report = query.gaps(snapshot).await.map_err(|e| e.to_string())?;
+        let gaps: Vec<Value> = report
+            .gaps
+            .iter()
+            .map(|gap| {
+                let mut v = entity_summary_value(&gap.entity);
+                if let Some(obj) = v.as_object_mut() {
+                    obj.insert("missing_measurements".into(), json!(gap.missing_measurements));
+                    obj.insert("missing_scores".into(), json!(gap.missing_scores));
+                }
+                v
+            })
+            .collect();
+        Ok(json!({
+            "ok": true,
+            "snapshot": snapshot_json(snapshot),
+            "code_avec": {
+                "scoreable_entities": report.scoreable_entities,
+                "fully_scored_entities": report.fully_scored_entities,
+                "gaps": gaps,
+            },
+        }))
+    }
+
+    pub async fn at_location(
+        &self,
+        snapshot: &SnapshotId,
+        path: &str,
+        line: u32,
+    ) -> Result<Value, String> {
+        let query = self.code_query();
+        let entity = query
+            .at_location(snapshot, path, line)
+            .await
+            .map_err(|e| e.to_string())?;
+        Ok(json!({
+            "ok": true,
+            "snapshot": snapshot_json(snapshot),
+            "entity": entity.as_ref().map(entity_summary_json),
+        }))
+    }
+}
+
+fn snapshot_json(snapshot: &SnapshotId) -> Value {
+    json!({
+        "world": snapshot.world.as_str(),
+        "version": snapshot.version.as_str(),
+    })
+}
+
+fn entity_summary_json(obs: &detamu::core::EntityObservation) -> Value {
+    let summary = detamu::code_query::CodeEntitySummary::from(obs);
+    entity_summary_value(&summary)
+}
+
+fn entity_summary_value(summary: &detamu::code_query::CodeEntitySummary) -> Value {
+    json!({
+        "id": summary.id.as_str(),
+        "label": summary.label,
+        "kind": summary.kind,
+        "path": summary.path,
+        "language": serde_json::Value::Null,
+        "line_start": summary.line_start,
+        "line_end": summary.line_end,
+    })
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -263,6 +411,10 @@ pub fn world_router(state: AppState) -> Router {
         .route("/v1/world/status", get(world_status))
         .route("/v1/world/index", post(world_index))
         .route("/v1/world/files", get(world_files))
+        .route("/v1/world/impact", get(world_impact))
+        .route("/v1/world/code_avec", get(world_code_avec))
+        .route("/v1/world/find", get(world_find))
+        .route("/v1/world/at_location", get(world_at_location))
         .route("/v1/world/bindings/{work_id}", get(world_binding))
         .with_state(state)
 }
@@ -365,6 +517,26 @@ struct FilesQuery {
     limit: Option<usize>,
 }
 
+#[derive(Debug, Deserialize)]
+struct SnapshotQuery {
+    #[serde(default)]
+    work_id: Option<String>,
+    #[serde(default)]
+    world: Option<String>,
+    #[serde(default)]
+    version: Option<String>,
+}
+
+impl From<&FilesQuery> for SnapshotQuery {
+    fn from(q: &FilesQuery) -> Self {
+        Self {
+            work_id: q.work_id.clone(),
+            world: q.world.clone(),
+            version: q.version.clone(),
+        }
+    }
+}
+
 async fn world_files(
     State(state): State<AppState>,
     Query(q): Query<FilesQuery>,
@@ -374,7 +546,7 @@ async fn world_files(
         "Detamu host unavailable".into(),
     ))?;
 
-    let snapshot = resolve_snapshot(host, &q)?;
+    let snapshot = resolve_snapshot(host, &SnapshotQuery::from(&q))?;
     let value = host
         .find_files(&snapshot, q.path.as_deref(), q.limit)
         .await
@@ -382,9 +554,121 @@ async fn world_files(
     Ok(Json(value))
 }
 
+#[derive(Debug, Deserialize)]
+struct ImpactQuery {
+    #[serde(flatten)]
+    snapshot: SnapshotQuery,
+    entity_id: String,
+    #[serde(default = "default_impact_depth")]
+    max_depth: u32,
+    #[serde(default = "default_impact_nodes")]
+    max_nodes: usize,
+}
+
+fn default_impact_depth() -> u32 {
+    4
+}
+
+fn default_impact_nodes() -> usize {
+    200
+}
+
+async fn world_impact(
+    State(state): State<AppState>,
+    Query(q): Query<ImpactQuery>,
+) -> Result<Json<Value>, (axum::http::StatusCode, String)> {
+    let host = state.detamu.as_ref().ok_or((
+        axum::http::StatusCode::SERVICE_UNAVAILABLE,
+        "Detamu host unavailable".into(),
+    ))?;
+    let snapshot = resolve_snapshot(host, &q.snapshot)?;
+    let value = host
+        .impact(&snapshot, &q.entity_id, q.max_depth, q.max_nodes)
+        .await
+        .map_err(|e| (axum::http::StatusCode::BAD_GATEWAY, e))?;
+    Ok(Json(value))
+}
+
+async fn world_code_avec(
+    State(state): State<AppState>,
+    Query(q): Query<SnapshotQuery>,
+) -> Result<Json<Value>, (axum::http::StatusCode, String)> {
+    let host = state.detamu.as_ref().ok_or((
+        axum::http::StatusCode::SERVICE_UNAVAILABLE,
+        "Detamu host unavailable".into(),
+    ))?;
+    let snapshot = resolve_snapshot(host, &q)?;
+    let value = host
+        .code_avec_gaps(&snapshot)
+        .await
+        .map_err(|e| (axum::http::StatusCode::BAD_GATEWAY, e))?;
+    Ok(Json(value))
+}
+
+#[derive(Debug, Deserialize)]
+struct FindQuery {
+    #[serde(flatten)]
+    snapshot: SnapshotQuery,
+    #[serde(default)]
+    kind: Option<String>,
+    #[serde(default)]
+    path: Option<String>,
+    #[serde(default)]
+    name_contains: Option<String>,
+    #[serde(default)]
+    limit: Option<usize>,
+}
+
+async fn world_find(
+    State(state): State<AppState>,
+    Query(q): Query<FindQuery>,
+) -> Result<Json<Value>, (axum::http::StatusCode, String)> {
+    let host = state.detamu.as_ref().ok_or((
+        axum::http::StatusCode::SERVICE_UNAVAILABLE,
+        "Detamu host unavailable".into(),
+    ))?;
+    let snapshot = resolve_snapshot(host, &q.snapshot)?;
+    let filter = CodeEntityFilter {
+        path: q.path.clone(),
+        name_contains: q.name_contains.clone(),
+        kind: q.kind.clone(),
+        language: None,
+        limit: q.limit,
+    };
+    let value = host
+        .find_entities(&snapshot, &filter)
+        .await
+        .map_err(|e| (axum::http::StatusCode::BAD_GATEWAY, e))?;
+    Ok(Json(value))
+}
+
+#[derive(Debug, Deserialize)]
+struct AtLocationQuery {
+    #[serde(flatten)]
+    snapshot: SnapshotQuery,
+    path: String,
+    line: u32,
+}
+
+async fn world_at_location(
+    State(state): State<AppState>,
+    Query(q): Query<AtLocationQuery>,
+) -> Result<Json<Value>, (axum::http::StatusCode, String)> {
+    let host = state.detamu.as_ref().ok_or((
+        axum::http::StatusCode::SERVICE_UNAVAILABLE,
+        "Detamu host unavailable".into(),
+    ))?;
+    let snapshot = resolve_snapshot(host, &q.snapshot)?;
+    let value = host
+        .at_location(&snapshot, &q.path, q.line)
+        .await
+        .map_err(|e| (axum::http::StatusCode::BAD_GATEWAY, e))?;
+    Ok(Json(value))
+}
+
 fn resolve_snapshot(
     host: &DetamuHost,
-    q: &FilesQuery,
+    q: &SnapshotQuery,
 ) -> Result<SnapshotId, (axum::http::StatusCode, String)> {
     if let (Some(world), Some(version)) = (q.world.as_deref(), q.version.as_deref()) {
         return Ok(SnapshotId::new(world, version));

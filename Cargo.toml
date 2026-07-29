@@ -64,6 +64,8 @@ medousa-forge = { path = "crates/medousa-forge" }
 # Path-dep until Detamu is published to crates.io (sibling repo).
 detamu = { path = "../../detamu/crates/detamu", default-features = false, features = ["code", "surreal"] }
 detamu-source-git = { path = "../../detamu/crates/detamu-source-git" }
+detamu-language-rust = { path = "../../detamu/crates/detamu-language-rust" }
+detamu-language = { path = "../../detamu/crates/detamu-language" }
 medousa-browser-lite = { path = "crates/medousa-browser-lite" }
 medousa-local-inference = { path = "crates/medousa-local-inference" }
 anyhow = "1"

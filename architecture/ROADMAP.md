@@ -37,7 +37,7 @@ Full plans: **[v0.8.0-forge-plan.md](v0.8.0-forge-plan.md)** · **[detamu-medous
 | `/v1/world/*` (vs orchestrator `/v1/detamu/*` stubs) | ✅ |
 | Forge provision/seal → `index_source` + SnapshotId bindings | ✅ |
 | `cognition_detamu_status` / `files` (domain `detamu`, opt-in) | ✅ |
-| Impact / `code_avec` / symbols tools | ⬜ queued (analyzer-gated) |
+| Impact / `code_avec` / `find` depth tools + Rust Tree-sitter pack | ✅ |
 | medousa-code real DetamuObserver (off keystroke path) | ⬜ queued |
 
 ## Coding session terminal (Home as WM)

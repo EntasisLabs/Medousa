@@ -10,8 +10,17 @@ use stasis::prelude::{Result as StasisResult, StasisError};
 
 pub const COGNITION_DETAMU_STATUS: &str = "cognition_detamu_status";
 pub const COGNITION_DETAMU_FILES: &str = "cognition_detamu_files";
+pub const COGNITION_DETAMU_IMPACT: &str = "cognition_detamu_impact";
+pub const COGNITION_DETAMU_CODE_AVEC: &str = "cognition_detamu_code_avec";
+pub const COGNITION_DETAMU_FIND: &str = "cognition_detamu_find";
 
-pub const DETAMU_COGNITION_TOOLS: &[&str] = &[COGNITION_DETAMU_STATUS, COGNITION_DETAMU_FILES];
+pub const DETAMU_COGNITION_TOOLS: &[&str] = &[
+    COGNITION_DETAMU_STATUS,
+    COGNITION_DETAMU_FILES,
+    COGNITION_DETAMU_IMPACT,
+    COGNITION_DETAMU_CODE_AVEC,
+    COGNITION_DETAMU_FIND,
+];
 
 pub fn is_detamu_cognition_tool(name: &str) -> bool {
     DETAMU_COGNITION_TOOLS.contains(&name)
@@ -71,6 +80,53 @@ async fn daemon_get_query(path: &str, query: &[(&str, String)]) -> StasisResult<
 
 pub struct CognitionDetamuStatusTool;
 pub struct CognitionDetamuFilesTool;
+pub struct CognitionDetamuImpactTool;
+pub struct CognitionDetamuCodeAvecTool;
+pub struct CognitionDetamuFindTool;
+
+fn push_snapshot_query(input: &Value, query: &mut Vec<(String, String)>) {
+    if let Some(v) = input.get("work_id").and_then(|v| v.as_str()) {
+        query.push(("work_id".into(), v.to_owned()));
+    }
+    if let Some(v) = input.get("world").and_then(|v| v.as_str()) {
+        query.push(("world".into(), v.to_owned()));
+    }
+    if let Some(v) = input.get("version").and_then(|v| v.as_str()) {
+        query.push(("version".into(), v.to_owned()));
+    }
+}
+
+fn require_snapshot_selector(input: &Value) -> StasisResult<()> {
+    let has_work = input
+        .get("work_id")
+        .and_then(|v| v.as_str())
+        .map(|s| !s.trim().is_empty())
+        .unwrap_or(false);
+    let has_world = input
+        .get("world")
+        .and_then(|v| v.as_str())
+        .map(|s| !s.trim().is_empty())
+        .unwrap_or(false)
+        && input
+            .get("version")
+            .and_then(|v| v.as_str())
+            .map(|s| !s.trim().is_empty())
+            .unwrap_or(false);
+    if !has_work && !has_world {
+        return Err(StasisError::PortFailure(
+            "provide work_id or world+version".into(),
+        ));
+    }
+    Ok(())
+}
+
+async fn daemon_get_query_pairs(path: &str, query: &[(String, String)]) -> StasisResult<Value> {
+    let refs: Vec<(&str, String)> = query
+        .iter()
+        .map(|(k, v)| (k.as_str(), v.clone()))
+        .collect();
+    daemon_get_query(path, &refs).await
+}
 
 #[async_trait]
 impl StasisTool for CognitionDetamuStatusTool {
@@ -184,5 +240,146 @@ pub fn register_detamu_tools(
 ) -> stasis::prelude::Result<()> {
     registry.register_tool(CognitionDetamuStatusTool)?;
     registry.register_tool(CognitionDetamuFilesTool)?;
+    registry.register_tool(CognitionDetamuImpactTool)?;
+    registry.register_tool(CognitionDetamuCodeAvecTool)?;
+    registry.register_tool(CognitionDetamuFindTool)?;
     Ok(())
+}
+
+#[async_trait]
+impl StasisTool for CognitionDetamuImpactTool {
+    fn name(&self) -> &'static str {
+        COGNITION_DETAMU_IMPACT
+    }
+
+    fn description(&self) -> Option<&'static str> {
+        Some(
+            "Dependents of one code entity (callers/references/imports/types) from a Detamu \
+             snapshot. Prefer work_id when a Forge undertaking is bound. Empty graph returns \
+             ok:true with zero dependents. Detamu domain only — opt-in.",
+        )
+    }
+
+    fn input_schema(&self) -> Option<Value> {
+        Some(json!({
+            "type": "object",
+            "properties": {
+                "work_id": { "type": "string" },
+                "world": { "type": "string" },
+                "version": { "type": "string" },
+                "entity_id": { "type": "string", "description": "Detamu entity id (e.g. code:symbol:...)" },
+                "max_depth": { "type": "integer" },
+                "max_nodes": { "type": "integer" }
+            },
+            "required": ["entity_id"]
+        }))
+    }
+
+    async fn invoke(&self, input: Value) -> StasisResult<Value> {
+        require_snapshot_selector(&input)?;
+        let entity_id = input
+            .get("entity_id")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| StasisError::PortFailure("entity_id required".into()))?;
+        let mut query = Vec::new();
+        push_snapshot_query(&input, &mut query);
+        query.push(("entity_id".into(), entity_id.to_owned()));
+        if let Some(v) = input.get("max_depth").and_then(|v| v.as_u64()) {
+            query.push(("max_depth".into(), v.to_string()));
+        }
+        if let Some(v) = input.get("max_nodes").and_then(|v| v.as_u64()) {
+            query.push(("max_nodes".into(), v.to_string()));
+        }
+        daemon_get_query_pairs("/v1/world/impact", &query).await
+    }
+}
+
+#[async_trait]
+impl StasisTool for CognitionDetamuCodeAvecTool {
+    fn name(&self) -> &'static str {
+        COGNITION_DETAMU_CODE_AVEC
+    }
+
+    fn description(&self) -> Option<&'static str> {
+        Some(
+            "Code AVEC gap/score summary for a Detamu snapshot (which entities lack measurements \
+             or scores). Response field is `code_avec` — never bare `avec`. Detamu domain only.",
+        )
+    }
+
+    fn input_schema(&self) -> Option<Value> {
+        Some(json!({
+            "type": "object",
+            "properties": {
+                "work_id": { "type": "string" },
+                "world": { "type": "string" },
+                "version": { "type": "string" }
+            }
+        }))
+    }
+
+    async fn invoke(&self, input: Value) -> StasisResult<Value> {
+        require_snapshot_selector(&input)?;
+        let mut query = Vec::new();
+        push_snapshot_query(&input, &mut query);
+        daemon_get_query_pairs("/v1/world/code_avec", &query).await
+    }
+}
+
+#[async_trait]
+impl StasisTool for CognitionDetamuFindTool {
+    fn name(&self) -> &'static str {
+        COGNITION_DETAMU_FIND
+    }
+
+    fn description(&self) -> Option<&'static str> {
+        Some(
+            "Find Detamu code entities by kind/path/name (symbols, modules, files). Optional \
+             path+line resolves the narrowest entity at that location. Detamu domain only.",
+        )
+    }
+
+    fn input_schema(&self) -> Option<Value> {
+        Some(json!({
+            "type": "object",
+            "properties": {
+                "work_id": { "type": "string" },
+                "world": { "type": "string" },
+                "version": { "type": "string" },
+                "kind": { "type": "string", "description": "Entity kind (symbol, module, file, …)" },
+                "path": { "type": "string" },
+                "name_contains": { "type": "string" },
+                "line": { "type": "integer", "description": "With path: resolve entity at line" },
+                "limit": { "type": "integer" }
+            }
+        }))
+    }
+
+    async fn invoke(&self, input: Value) -> StasisResult<Value> {
+        require_snapshot_selector(&input)?;
+        let mut query = Vec::new();
+        push_snapshot_query(&input, &mut query);
+        if let Some(line) = input.get("line").and_then(|v| v.as_u64()) {
+            let path = input
+                .get("path")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| StasisError::PortFailure("path required with line".into()))?;
+            query.push(("path".into(), path.to_owned()));
+            query.push(("line".into(), line.to_string()));
+            return daemon_get_query_pairs("/v1/world/at_location", &query).await;
+        }
+        if let Some(v) = input.get("kind").and_then(|v| v.as_str()) {
+            query.push(("kind".into(), v.to_owned()));
+        }
+        if let Some(v) = input.get("path").and_then(|v| v.as_str()) {
+            query.push(("path".into(), v.to_owned()));
+        }
+        if let Some(v) = input.get("name_contains").and_then(|v| v.as_str()) {
+            query.push(("name_contains".into(), v.to_owned()));
+        }
+        if let Some(v) = input.get("limit").and_then(|v| v.as_u64()) {
+            query.push(("limit".into(), v.to_string()));
+        }
+        daemon_get_query_pairs("/v1/world/find", &query).await
+    }
 }

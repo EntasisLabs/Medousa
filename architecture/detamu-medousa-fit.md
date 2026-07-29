@@ -1,10 +1,12 @@
 # Detamu × Medousa — fit map
 
-> **Status:** Fit map ready; **path-dep host spike in progress** (2026-07).
+> **Status:** Depth epic landed (2026-07): Rust Tree-sitter pack enriches indexing;
+> impact / `code_avec` / `find` / `at_location` routes and `cognition_detamu_impact` /
+> `cognition_detamu_code_avec` / `cognition_detamu_find` tools live.
 > Detamu not yet on crates.io — Medousa depends on `../../detamu/crates/detamu`
-> (+ `detamu-source-git`). Daemon opens SurrealKV at `{dataDir}/detamu`, exposes
-> `/v1/world/*`, indexes on Forge provision/seal, and registers
-> `cognition_detamu_status` / `cognition_detamu_files` (domain `detamu`, opt-in).
+> (+ `detamu-source-git`, `detamu-language-rust`). Daemon opens SurrealKV at
+> `{dataDir}/detamu`, exposes `/v1/world/*`, indexes on Forge provision/seal, and
+> registers `cognition_detamu_*` (domain `detamu`, opt-in).
 >
 > Companion plans: [coding-engine-orchestrator.md](coding-engine-orchestrator.md),
 > [coding-session-terminal.md](coding-session-terminal.md),
@@ -222,7 +224,8 @@ Bottom-up order: **SDK publish → daemon host → Forge lifecycle hooks → too
 | **Host** | ✅ path-dep `detamu` + `DetamuHost` in `AppState` (`src/daemon/detamu_host.rs`); SurrealKV at `{dataDir}/detamu` |
 | **HTTP** | ✅ `/v1/world`, `/v1/world/index`, `/v1/world/files`, `/v1/world/bindings/{work_id}` (orchestrator `/v1/detamu/*` stubs untouched) |
 | **Forge hooks** | ✅ provision → baseline index; `complete_attempt` → sealed index; bindings sidecar JSON (not on EvidenceManifest) |
-| **Tools** | ✅ `cognition_detamu_status` / `cognition_detamu_files`; domain `detamu` + `ensure_detamu_domain_for_session` |
+| **Tools** | ✅ `cognition_detamu_status` / `files` / `impact` / `code_avec` / `find`; domain `detamu` + `ensure_detamu_domain_for_session` |
+| **Rust pack** | ✅ path-dep `detamu-language-rust`; Tree-sitter symbols enrich `index_source` (hollow-graph queries return `ok:true` with zero dependents / coverage note) |
 | **Evidence** | ✅ SnapshotId pointers in `{dataDir}/detamu/bindings/{work_id}.json` |
 | **Observer** | ⬜ `NullDetamuObserver` until live-doc enrichment is needed; keep off keystroke path |
 | **crates.io** | ⬜ switch path deps to published versions when Detamu publish lands |
