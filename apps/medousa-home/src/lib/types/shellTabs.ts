@@ -31,6 +31,8 @@ export type ShellTab =
       kind: "terminal";
       /** Workshop shell session id (one PTY per session; splits = new sessions). */
       sessionId: string;
+      /** Governed undertaking that owns this session, when tracked by Forge. */
+      workId?: string | null;
       title: string;
     };
 

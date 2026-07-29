@@ -121,6 +121,22 @@ describe("shellTabs store", () => {
     }
   });
 
+  it("keeps governed terminal ownership on the shell tab", async () => {
+    const { shellTabs } = await import("./shellTabs.svelte");
+    const tabId = shellTabs.openTerminal("pty-a", {
+      activate: true,
+      title: "Terminal · Refactor auth",
+      workId: "work-a",
+    });
+
+    expect(tabId).toBeTruthy();
+    expect(shellTabs.activeTab?.kind).toBe("terminal");
+    if (shellTabs.activeTab?.kind === "terminal") {
+      expect(shellTabs.activeTab.workId).toBe("work-a");
+      expect(shellTabs.activeTab.title).toBe("Terminal · Refactor auth");
+    }
+  });
+
   it("splits into a second pane", async () => {
     const { shellTabs } = await import("./shellTabs.svelte");
     shellTabs.openChat("session-a", { activate: true });

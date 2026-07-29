@@ -26,7 +26,9 @@
 </script>
 
 <div class="relative flex h-full min-h-0 min-w-0 flex-1 flex-col {visible ? '' : 'hidden'}">
-  <div class="flex shrink-0 gap-1 border-b border-surface-500/40 px-3 pt-2">
+  <!-- Shell tabs float over the pane's top edge; keep Work-local navigation in
+       the content-safe zone so the two layers never compete for a click. -->
+  <div class="flex shrink-0 gap-1 border-b border-surface-500/40 px-3 pt-10">
     <button
       type="button"
       class="rounded-t px-3 py-1.5 text-xs {tab === 'activity'

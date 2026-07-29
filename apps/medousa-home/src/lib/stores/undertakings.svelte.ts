@@ -9,6 +9,7 @@ import {
   createUndertaking,
   provisionUndertaking,
   getReview,
+  forgeStreamUrl,
 } from "$lib/forge";
 import { shellTabs } from "$lib/stores/shellTabs.svelte";
 
@@ -22,6 +23,8 @@ export type ActiveUndertakingContext = {
   sealedOid: string | null;
   leaseId: string | null;
   leaseGeneration: number | null;
+  executorKind: string | null;
+  attemptSeq: number | null;
   boundChatSessionIds: string[];
   boundTerminalSessionIds: string[];
   selectedEntityId: string | null;
@@ -43,13 +46,14 @@ function createUndertakingsStore() {
   let contexts = $state<Record<string, ActiveUndertakingContext | null>>({});
   let workTab = $state<"activity" | "undertakings">("activity");
   let pollTimer: ReturnType<typeof setInterval> | null = null;
+  let eventSource: EventSource | null = null;
+  let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
   const active = $derived(contexts[groupKey()] ?? null);
 
   function setActiveFromItem(item: ItemProjection, merge?: Partial<ActiveUndertakingContext>) {
-    const lease = item.attempts
-      ?.find((a) => a.id === item.active_attempt)
-      ?.lease;
+    const attempt = item.attempts?.find((a) => a.id === item.active_attempt);
+    const lease = attempt?.lease;
     const next: ActiveUndertakingContext = {
       workId: item.id,
       title: item.title,
@@ -60,6 +64,8 @@ function createUndertakingsStore() {
       sealedOid: null,
       leaseId: lease?.lease_id ?? null,
       leaseGeneration: lease?.generation ?? null,
+      executorKind: attempt?.executor?.kind ?? null,
+      attemptSeq: attempt?.seq ?? null,
       boundChatSessionIds: [],
       boundTerminalSessionIds: [],
       selectedEntityId: null,
@@ -75,6 +81,7 @@ function createUndertakingsStore() {
       next.sealedOid = prev.sealedOid;
     }
     contexts = { ...contexts, [groupKey()]: next };
+    void ensureEventStream();
   }
 
   function clearActive() {
@@ -115,6 +122,20 @@ function createUndertakingsStore() {
       [groupKey()]: {
         ...cur,
         boundTerminalSessionIds: [...cur.boundTerminalSessionIds, sessionId],
+      },
+    };
+  }
+
+  function setSelection(selection: { entityId?: string | null; path?: string | null }) {
+    const cur = contexts[groupKey()];
+    if (!cur) return;
+    contexts = {
+      ...contexts,
+      [groupKey()]: {
+        ...cur,
+        selectedEntityId:
+          selection.entityId === undefined ? cur.selectedEntityId : selection.entityId,
+        selectedPath: selection.path === undefined ? cur.selectedPath : selection.path,
       },
     };
   }
@@ -197,8 +218,40 @@ function createUndertakingsStore() {
     await select(selectedId);
   }
 
+  async function ensureEventStream() {
+    if (eventSource || typeof EventSource === "undefined") return;
+    try {
+      const source = new EventSource(await forgeStreamUrl());
+      eventSource = source;
+      source.addEventListener("forge", (event) => {
+        let workId = "";
+        try {
+          workId = (JSON.parse((event as MessageEvent<string>).data) as { work_id?: string })
+            .work_id ?? "";
+        } catch {
+          return;
+        }
+        void refreshList();
+        const currentActive = contexts[groupKey()];
+        if (workId && (selectedId === workId || currentActive?.workId === workId)) {
+          void select(workId);
+        }
+      });
+      source.onerror = () => {
+        source.close();
+        if (eventSource === source) eventSource = null;
+        if (reconnectTimer) clearTimeout(reconnectTimer);
+        reconnectTimer = setTimeout(() => void ensureEventStream(), 5000);
+      };
+    } catch {
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      reconnectTimer = setTimeout(() => void ensureEventStream(), 5000);
+    }
+  }
+
   function startPolling() {
     stopPolling();
+    void ensureEventStream();
     pollTimer = setInterval(() => {
       if (selectedId) void refreshDetail();
       else void refreshList();
@@ -250,6 +303,7 @@ function createUndertakingsStore() {
     bindChat,
     detachChat,
     bindTerminal,
+    setSelection,
     startPolling,
     stopPolling,
   };

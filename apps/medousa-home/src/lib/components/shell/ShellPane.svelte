@@ -189,7 +189,11 @@
       {/if}
     {:else if activeTab?.kind === "terminal"}
       {#key activeTab.sessionId}
-        <TerminalPane sessionId={activeTab.sessionId} title={activeTab.title} />
+        <TerminalPane
+          sessionId={activeTab.sessionId}
+          workId={activeTab.workId}
+          title={activeTab.title}
+        />
       {/key}
     {:else if showLme}
       <LmePanel

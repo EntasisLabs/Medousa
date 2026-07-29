@@ -19,6 +19,7 @@
   import { settingsNav } from "$lib/stores/settingsNav.svelte";
   import { shellTabs } from "$lib/stores/shellTabs.svelte";
   import { layout } from "$lib/stores/layout.svelte";
+  import { getUndertaking, heartbeatLease } from "$lib/forge";
 
   interface Props {
     /** Workshop shell session id. Empty string = create a fresh session on mount. */
@@ -38,13 +39,13 @@
   let connecting = $state(true);
   let inputEl = $state<HTMLInputElement | null>(null);
   let sessions = $state<TerminalSessionSummary[]>([]);
-  let diagnostic = $state(false);
   let sessionHostAvailable = $state(true);
   let hostMessage = $state("");
   let paneEl = $state<HTMLDivElement | null>(null);
 
   let unlisten: UnlistenFn | null = null;
   let poll: ReturnType<typeof setInterval> | null = null;
+  let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 
   function focusInput() {
     inputEl?.focus();
@@ -87,9 +88,7 @@
     try {
       let sid = (boundSessionId || sessionId).trim();
       if (!sid) {
-        const leaseId = diagnostic
-          ? null
-          : undertakings.active?.leaseId ?? null;
+        const leaseId = undertakings.active?.leaseId ?? null;
         const created = (await terminalCreate({
           work_id: workId ?? undertakings.active?.workId ?? null,
           cwd: null,
@@ -98,7 +97,7 @@
         sid = created.session_id?.trim() ?? "";
         if (!sid) throw new Error("workshop did not return a session id");
         boundSessionId = sid;
-        if (undertakings.active && !diagnostic) {
+        if (undertakings.active) {
           undertakings.bindTerminal(sid);
         }
       }
@@ -184,14 +183,50 @@
     }
   }
 
+  async function restoreUndertakingContext() {
+    if (!workId) return;
+    try {
+      const item = await getUndertaking(workId);
+      undertakings.setActiveFromItem(item);
+      const sid = (boundSessionId || sessionId).trim();
+      if (sid) undertakings.bindTerminal(sid);
+    } catch {
+      // A terminal remains usable even if its older undertaking no longer exists.
+    }
+  }
+
+  async function sendHeartbeat() {
+    const active = undertakings.active;
+    if (!active?.leaseId || active.leaseGeneration == null) return;
+    if (workId && active.workId !== workId) return;
+    try {
+      await heartbeatLease(active.leaseId, active.leaseGeneration);
+    } catch {
+      // Fresh projection polling will surface an expired or interrupted lease.
+    }
+  }
+
+  async function openDiagnosticSession() {
+    try {
+      const created = await terminalCreate({ work_id: null, cwd: null, lease_id: null });
+      const sid = created.session_id?.trim() ?? "";
+      if (sid) shellTabs.openTerminal(sid, { activate: true, title: "Diagnostic Terminal" });
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+    }
+  }
+
   onMount(() => {
-    void connect().then(() => focusInput());
+    void restoreUndertakingContext().then(connect).then(() => focusInput());
     poll = setInterval(() => void refreshSnapshot(), 1500);
+    heartbeatTimer = setInterval(() => void sendHeartbeat(), 30_000);
+    void sendHeartbeat();
   });
 
   onDestroy(() => {
     unlisten?.();
     if (poll) clearInterval(poll);
+    if (heartbeatTimer) clearInterval(heartbeatTimer);
     if (attachId != null) void terminalDetach(attachId);
   });
 </script>
@@ -212,18 +247,9 @@
           {boundSessionId.slice(0, 8)}
         </span>
       {/if}
-      {#if diagnostic}
-        <span class="rounded bg-amber-500/20 px-1.5 py-0.5 text-[10px] text-amber-200"
-          >untracked</span
-        >
-      {/if}
       <UndertakingContextChip />
     </div>
     <div class="flex items-center gap-1">
-      <label class="flex items-center gap-1 text-[10px] text-white/50">
-        <input type="checkbox" bind:checked={diagnostic} />
-        Diagnostic
-      </label>
       <select
         class="max-w-[140px] rounded bg-white/5 px-1 py-0.5 text-[10px] text-white/70"
         onchange={(e) => {
@@ -234,12 +260,29 @@
         }}
       >
         <option value="">Sessions…</option>
-        {#each sessions as s (s.session_id)}
-          <option value={s.session_id}>
-            {s.session_id.slice(0, 8)}{s.work_id ? ` · ${s.work_id.slice(0, 8)}` : ""}
-          </option>
-        {/each}
+        {#if workId && sessions.some((session) => session.work_id === workId)}
+          <optgroup label="This undertaking">
+            {#each sessions.filter((session) => session.work_id === workId) as s (s.session_id)}
+              <option value={s.session_id}>{s.session_id.slice(0, 8)} · {s.root_kind}</option>
+            {/each}
+          </optgroup>
+        {/if}
+        <optgroup label="Other sessions">
+          {#each sessions.filter((session) => !workId || session.work_id !== workId) as s (s.session_id)}
+            <option value={s.session_id}>
+              {s.session_id.slice(0, 8)}{s.work_id ? " · tracked" : " · diagnostic"}
+            </option>
+          {/each}
+        </optgroup>
       </select>
+      <button
+        type="button"
+        class="rounded px-2 py-0.5 text-[11px] text-white/60 hover:bg-white/10 hover:text-white"
+        onclick={() => void openDiagnosticSession()}
+        title="Open an untracked diagnostic terminal"
+      >
+        Diagnostic
+      </button>
       <button
         type="button"
         class="rounded px-2 py-0.5 text-[11px] text-white/60 hover:bg-white/10 hover:text-white"

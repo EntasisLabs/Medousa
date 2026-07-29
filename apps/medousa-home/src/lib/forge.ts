@@ -42,6 +42,7 @@ export type ForgeWorkItem = {
     id: string;
     seq: number;
     state: string;
+    executor?: { kind?: string; detail?: Record<string, unknown> } | null;
     evidence_id?: string | null;
     lease?: {
       lease_id: string;
@@ -80,7 +81,7 @@ export type ReviewProjection = {
   }>;
   truncated: boolean;
   base_advanced: boolean;
-  policy?: unknown;
+  policy?: PolicyReport | null;
   command_log_lines: number;
   patch_byte_size: number;
   decision?: { id?: string; strategy?: string } | null;
@@ -89,6 +90,18 @@ export type ReviewProjection = {
   active_lease_id?: string | null;
   active_lease_generation?: number | null;
   world?: WorldBindingStatus | null;
+};
+
+export type PolicyReport = {
+  violations: Array<{ id: string; path: string; rule: string; detail: string }>;
+  capture_risks: Array<
+    | { kind: "oversize_file"; path: string; bytes: number; limit: number }
+    | { kind: "oversize_total"; bytes: number; limit: number }
+    | { kind: "secret_pattern"; path: string; pattern: string }
+  >;
+  symlinks: string[];
+  submodules: string[];
+  nested_repos: string[];
 };
 
 export type WorldBindingStatus = {
@@ -107,6 +120,40 @@ export type SnapshotSlot = {
   error?: string | null;
 };
 
+export type WorldFile = {
+  id: string;
+  label: string;
+  kind: string;
+  path: string;
+  language?: string | null;
+};
+
+export type WorldEntity = WorldFile & {
+  line_start?: number | null;
+  line_end?: number | null;
+};
+
+export type WorldFilesResult = { ok: boolean; snapshot?: unknown; files: WorldFile[] };
+export type WorldFindResult = { ok: boolean; snapshot?: unknown; entities: WorldEntity[] };
+export type WorldImpactResult = {
+  ok: boolean;
+  target?: WorldEntity | null;
+  direct_dependents?: number;
+  transitive_dependents?: number;
+  nodes: Array<WorldEntity & { depth?: number }>;
+  message?: string | null;
+};
+export type WorldAvecResult = {
+  ok: boolean;
+  code_avec?: {
+    scoreable_entities: number;
+    fully_scored_entities: number;
+    gaps: Array<{ id?: string; label?: string; path?: string }>;
+  };
+};
+
+export type WorldSnapshotRef = Pick<SnapshotSlot, "world" | "version">;
+
 export type EvidencePage = {
   evidence_id: string;
   offset: number;
@@ -124,6 +171,10 @@ export type BeginAttemptResponse = {
 async function forgeUrl(path: string): Promise<string> {
   const base = (await getDaemonUrl()).replace(/\/$/, "");
   return `${base}${path.startsWith("/") ? path : `/${path}`}`;
+}
+
+export async function forgeStreamUrl(): Promise<string> {
+  return forgeUrl("/v1/forge/stream");
 }
 
 async function forgeFetch<T>(
@@ -204,6 +255,13 @@ export async function sealLease(
   });
 }
 
+export async function heartbeatLease(leaseId: string, generation: number): Promise<void> {
+  return forgeFetch(`/v1/forge/leases/${encodeURIComponent(leaseId)}/heartbeat`, {
+    method: "POST",
+    body: JSON.stringify({ generation }),
+  });
+}
+
 export async function getReview(workId: string): Promise<ReviewProjection> {
   return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/review`);
 }
@@ -243,6 +301,7 @@ export async function recordReviewIntent(
     evidence_digest: string;
     strategy?: string;
     rationale?: string;
+    acknowledged_violations?: string[];
   },
 ): Promise<ItemProjection> {
   return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/decisions`, {
@@ -252,7 +311,7 @@ export async function recordReviewIntent(
       evidence_digest: intent.evidence_digest,
       strategy: intent.strategy ?? "preserve_branch",
       rationale: intent.rationale ?? null,
-      acknowledged_violations: [],
+      acknowledged_violations: intent.acknowledged_violations ?? [],
     }),
   });
 }
@@ -278,24 +337,40 @@ export async function getWorldBinding(workId: string): Promise<WorldBindingStatu
   return forgeFetch(`/v1/world/bindings/${encodeURIComponent(workId)}`);
 }
 
-export async function getWorldCodeAvec(workId: string): Promise<unknown> {
-  return forgeFetch(`/v1/world/code_avec?work_id=${encodeURIComponent(workId)}`);
+function worldQuery(workId: string, snapshot?: WorldSnapshotRef | null): URLSearchParams {
+  if (snapshot?.world && snapshot.version) {
+    return new URLSearchParams({ world: snapshot.world, version: snapshot.version });
+  }
+  return new URLSearchParams({ work_id: workId });
+}
+
+export async function getWorldCodeAvec(
+  workId: string,
+  snapshot?: WorldSnapshotRef | null,
+): Promise<WorldAvecResult> {
+  return forgeFetch(`/v1/world/code_avec?${worldQuery(workId, snapshot)}`);
 }
 
 export async function getWorldFiles(
   workId: string,
   path?: string,
-): Promise<unknown> {
-  const q = new URLSearchParams({ work_id: workId });
+  snapshot?: WorldSnapshotRef | null,
+): Promise<WorldFilesResult> {
+  const q = worldQuery(workId, snapshot);
   if (path) q.set("path", path);
   return forgeFetch(`/v1/world/files?${q}`);
 }
 
 export async function getWorldFind(
   workId: string,
-  opts?: { kind?: string; name_contains?: string; path?: string },
-): Promise<unknown> {
-  const q = new URLSearchParams({ work_id: workId });
+  opts?: {
+    kind?: string;
+    name_contains?: string;
+    path?: string;
+    snapshot?: WorldSnapshotRef | null;
+  },
+): Promise<WorldFindResult> {
+  const q = worldQuery(workId, opts?.snapshot);
   if (opts?.kind) q.set("kind", opts.kind);
   if (opts?.name_contains) q.set("name_contains", opts.name_contains);
   if (opts?.path) q.set("path", opts.path);
@@ -305,8 +380,10 @@ export async function getWorldFind(
 export async function getWorldImpact(
   workId: string,
   entityId: string,
-): Promise<unknown> {
-  const q = new URLSearchParams({ work_id: workId, entity_id: entityId });
+  snapshot?: WorldSnapshotRef | null,
+): Promise<WorldImpactResult> {
+  const q = worldQuery(workId, snapshot);
+  q.set("entity_id", entityId);
   return forgeFetch(`/v1/world/impact?${q}`);
 }
 

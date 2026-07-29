@@ -696,7 +696,12 @@ export class ShellTabsStore {
 
   openTerminal(
     sessionId: string,
-    options?: { activate?: boolean; groupId?: string; title?: string },
+    options?: {
+      activate?: boolean;
+      groupId?: string;
+      title?: string;
+      workId?: string | null;
+    },
   ): string | null {
     const trimmed = sessionId.trim();
     if (!trimmed) return null;
@@ -709,13 +714,18 @@ export class ShellTabsStore {
         this.groupForTab(tab.id)?.id === groupId,
     );
     if (existingInGroup) {
+      if (options?.workId !== undefined && existingInGroup.kind === "terminal") {
+        existingInGroup.workId = options.workId;
+      }
       if (activate) void this.activate(existingInGroup.id);
+      else this.persist();
       return existingInGroup.id;
     }
     const tab: ShellTab = {
       id: newTabId("terminal"),
       kind: "terminal",
       sessionId: trimmed,
+      workId: options?.workId ?? null,
       title: options?.title?.trim() || "Terminal",
     };
     this.insertTabIntoGroup(tab, groupId, false);
