@@ -182,6 +182,8 @@ export type ForgeSourceTree = {
   truncated: boolean;
 };
 
+export type ForgeSourceTreeFile = ForgeSourceTree["files"][number];
+
 export type ForgeSourceSearch = {
   work_id: string;
   hits: Array<{ path: string; line: number; preview: string }>;
@@ -367,6 +369,72 @@ export async function createUndertaking(input: {
   base_ref?: string;
 }): Promise<ItemProjection> {
   return forgeFetch("/v1/forge/items", {
+    method: "POST",
+    body: JSON.stringify({
+      title: input.title,
+      brief: input.brief,
+      repo_path: input.repo_path,
+      base_ref: input.base_ref ?? "main",
+    }),
+  });
+}
+
+export type RepositoryInspection = {
+  path: string;
+  display_name: string;
+  current_branch?: string | null;
+  suggested_base_ref: string;
+  dirty: boolean;
+  changed_files: number;
+  remotes: string[];
+};
+
+export type ProjectTask = {
+  id: string;
+  label: string;
+  kind: "verify" | "test" | "build" | "run" | string;
+  argv: string[];
+};
+
+export type ProjectTaskResult = {
+  task: ProjectTask;
+  success: boolean;
+  exit_code?: number | null;
+  stdout: string;
+  stderr: string;
+  truncated: boolean;
+  duration_ms: number;
+};
+
+export async function getProjectTasks(workId: string): Promise<ProjectTask[]> {
+  return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/tasks`);
+}
+
+export async function runProjectTask(
+  workId: string,
+  taskId: string,
+  lease: { lease_id: string; generation: number },
+): Promise<ProjectTaskResult> {
+  return forgeFetch(
+    `/v1/forge/items/${encodeURIComponent(workId)}/tasks/${encodeURIComponent(taskId)}/run`,
+    { method: "POST", body: JSON.stringify(lease) },
+  );
+}
+
+export async function inspectForgeRepository(path: string): Promise<RepositoryInspection> {
+  return forgeFetch("/v1/forge/repositories/inspect", {
+    method: "POST",
+    body: JSON.stringify({ path }),
+  });
+}
+
+export async function startUndertaking(input: {
+  title: string;
+  brief: string;
+  repo_path: string;
+  base_ref?: string;
+}): Promise<ItemProjection> {
+  return forgeFetch("/v1/forge/items/start", {
     method: "POST",
     body: JSON.stringify({
       title: input.title,

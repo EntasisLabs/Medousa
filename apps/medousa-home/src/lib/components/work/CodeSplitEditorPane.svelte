@@ -13,6 +13,7 @@
     codeWorkspace,
     type CodeDocumentTab,
   } from "$lib/stores/codeWorkspace.svelte";
+  import { undertakings } from "$lib/stores/undertakings.svelte";
 
   interface Props {
     tab: CodeDocumentTab;
@@ -105,7 +106,7 @@
       <div class="min-w-0">
         <p class="truncate font-mono text-[10px] text-surface-200">{tab.path}</p>
         <p class="text-[9px] text-surface-500">
-          {tab.language}{dirty ? " · modified" : ""}{lspClient ? " · LSP" : lspConnecting ? " · connecting…" : lspError ? " · basic editing" : ""}
+          {tab.language}{dirty ? " · unsaved" : ""}{lspConnecting ? " · understanding code…" : lspError ? " · editing only" : ""}
         </p>
       </div>
     </div>
@@ -134,7 +135,7 @@
   <div class="relative min-h-0 flex-1">
     {#if tab.loading}
       <div class="absolute inset-0 z-10 flex items-center justify-center bg-surface-950/70 text-xs text-surface-400">
-        <LoaderCircle size={13} class="mr-2 animate-spin" />Opening source…
+        <LoaderCircle size={13} class="mr-2 animate-spin" />Opening file…
       </div>
     {:else if tab.digest}
       {#key `${tab.tabId}:${editable}:${lspClient ? "lsp" : "plain"}`}
@@ -148,11 +149,23 @@
           readOnly={!editable}
           contentSyncKey={tab.syncKey}
           onchange={(value) => codeWorkspace.updateDraft(tab.tabId, value)}
-          onCursorChanged={(line) => codeWorkspace.updateLine(tab.tabId, line)}
+          onCursorChanged={(line) => {
+            codeWorkspace.updateLine(tab.tabId, line);
+            undertakings.setSelection({ path: tab.path, line, entityId: null });
+          }}
+          onSelectionChanged={(selection) =>
+            undertakings.setSelection({
+              path: tab.path,
+              line: selection.startLine,
+              selectionStartLine: selection.startLine,
+              selectionEndLine: selection.endLine,
+              selectedText: selection.text || null,
+              entityId: null,
+            })}
         />
       {/key}
     {:else}
-      <div class="flex h-full items-center justify-center p-6 text-xs text-surface-500">This file cannot be opened as text.</div>
+      <div class="flex h-full items-center justify-center p-6 text-xs text-surface-500">This file is not plain text, so Medousa cannot edit it here.</div>
     {/if}
   </div>
 </section>

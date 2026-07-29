@@ -7,11 +7,32 @@ import { shellTabs } from "$lib/stores/shellTabs.svelte";
 import { chat } from "$lib/stores/chat.svelte";
 import { createAgentSession } from "$lib/daemon";
 import { setSessionAgentSessionId } from "$lib/utils/sessionAgentRuntime";
+import { codeWorkspace } from "$lib/stores/codeWorkspace.svelte";
 
 function terminalSessionId(created: { session_id?: string; id?: string }): string {
   return typeof created.session_id === "string"
     ? created.session_id
     : String(created.id ?? "");
+}
+
+export function trackedAgentPrompt(prompt: string, sessionId: string): string {
+  const active = undertakings.active;
+  if (!active || !active.boundChatSessionIds.includes(sessionId)) return prompt;
+  const detail = undertakings.detail?.id === active.workId ? undertakings.detail : null;
+  const openFiles = codeWorkspace.tabsFor(active.workId).map((tab) => tab.path).slice(0, 12);
+  const location = active.selectedPath
+    ? `${active.selectedPath}${active.selectionStartLine
+      ? `:${active.selectionStartLine}${active.selectionEndLine && active.selectionEndLine !== active.selectionStartLine ? `-${active.selectionEndLine}` : ""}`
+      : active.selectedLine ? `:${active.selectedLine}` : ""}`
+    : null;
+  const context = [
+    `Project: ${active.title}`,
+    detail?.brief ? `Outcome: ${detail.brief}` : null,
+    location ? `Current location: ${location}` : null,
+    openFiles.length ? `Open files: ${openFiles.join(", ")}` : null,
+    active.selectedText ? `Selected code:\n\`\`\`\n${active.selectedText}\n\`\`\`` : null,
+  ].filter(Boolean).join("\n");
+  return `${prompt}\n\n<medousa_workspace_context>\n${context}\n</medousa_workspace_context>`;
 }
 
 export async function openTrackedTerminal(item: ItemProjection): Promise<string | null> {

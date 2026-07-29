@@ -231,6 +231,8 @@ Custody of intentional work episodes over a git target (vault or any repo). Dist
 | Method | Path | Purpose |
 |--------|------|---------|
 | POST | `/v1/forge/items` | Register |
+| POST | `/v1/forge/items/start` | Register and provision in one operation |
+| POST | `/v1/forge/repositories/inspect` | Inspect a repository path and infer its starting branch |
 | GET | `/v1/forge/items` | List |
 | GET | `/v1/forge/items/{id}` | Get |
 | POST | `/v1/forge/items/{id}/provision` | Provision env |
@@ -253,6 +255,8 @@ Custody of intentional work episodes over a git target (vault or any repo). Dist
 | DELETE | `/v1/forge/items/{id}/source` | Delete with digest conflict fencing |
 | GET | `/v1/forge/items/{id}/workspace-state` | Restore editor tabs, drafts, and groups |
 | PUT | `/v1/forge/items/{id}/workspace-state` | Persist lease-bound editor recovery state |
+| GET | `/v1/forge/items/{id}/tasks` | Detect project commands |
+| POST | `/v1/forge/items/{id}/tasks/{task_id}/run` | Run a detected command and record its result |
 
 Guide: [forge.md](forge.md).
 

@@ -117,6 +117,50 @@ impl GitEngine {
             .unwrap_or(false)
     }
 
+    /// Canonical root of the working tree containing `path`.
+    pub fn worktree_root(&self, path: &Path) -> Result<PathBuf> {
+        let root = self.run(path, &["rev-parse", "--show-toplevel"])?;
+        Ok(PathBuf::from(root.trim()))
+    }
+
+    /// Checked-out branch, or `None` when HEAD is detached.
+    pub fn current_branch(&self, path: &Path) -> Result<Option<String>> {
+        let branch = self.run(path, &["branch", "--show-current"])?;
+        Ok(Some(branch.trim().to_string()).filter(|value| !value.is_empty()))
+    }
+
+    /// Best branch for new work: remote default, checked-out branch, then a
+    /// conventional local default. This is advisory; callers still resolve it
+    /// before creating a governed environment.
+    pub fn suggested_base_ref(&self, path: &Path) -> Result<String> {
+        if let Ok(remote) = self.run(
+            path,
+            &[
+                "symbolic-ref",
+                "--quiet",
+                "--short",
+                "refs/remotes/origin/HEAD",
+            ],
+        ) {
+            let branch = remote
+                .trim()
+                .strip_prefix("origin/")
+                .unwrap_or(remote.trim());
+            if !branch.is_empty() {
+                return Ok(branch.to_string());
+            }
+        }
+        if let Some(branch) = self.current_branch(path)? {
+            return Ok(branch);
+        }
+        for candidate in ["main", "master"] {
+            if self.resolve_oid(path, candidate).is_ok() {
+                return Ok(candidate.to_string());
+            }
+        }
+        Ok("HEAD".to_string())
+    }
+
     /// Canonical repository identity, stable across worktrees of the same
     /// repository: derived from `git rev-parse --git-common-dir`.
     pub fn repo_identity(&self, path: &Path) -> Result<RepoIdentity> {
@@ -160,7 +204,13 @@ impl GitEngine {
 
     /// Add a worktree at `path` on a *new* branch `branch` starting at
     /// `baseline`. `repo_cwd` is any directory inside the repository.
-    pub fn worktree_add(&self, repo_cwd: &Path, path: &Path, branch: &str, baseline: &GitOid) -> Result<()> {
+    pub fn worktree_add(
+        &self,
+        repo_cwd: &Path,
+        path: &Path,
+        branch: &str,
+        baseline: &GitOid,
+    ) -> Result<()> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
@@ -233,7 +283,10 @@ impl GitEngine {
 
     /// `git status --porcelain=v2 -z`, parsed. Includes untracked files.
     pub fn status_porcelain(&self, cwd: &Path) -> Result<Vec<PorcelainEntry>> {
-        let out = self.run_bytes(cwd, &["status", "--porcelain=v2", "-z", "--untracked-files=all"])?;
+        let out = self.run_bytes(
+            cwd,
+            &["status", "--porcelain=v2", "-z", "--untracked-files=all"],
+        )?;
         Ok(parse_porcelain_v2_z(&out))
     }
 
@@ -260,7 +313,10 @@ impl GitEngine {
     /// `git diff --binary <baseline>` against the *working tree* (uncommitted
     /// state), used for pre-checkpoint inspection.
     pub fn diff_binary_worktree(&self, cwd: &Path, baseline: &GitOid) -> Result<Vec<u8>> {
-        self.run_bytes(cwd, &["diff", "--binary", "--full-index", baseline.as_str()])
+        self.run_bytes(
+            cwd,
+            &["diff", "--binary", "--full-index", baseline.as_str()],
+        )
     }
 
     /// Commits between baseline and head, oldest first.
@@ -298,7 +354,12 @@ impl GitEngine {
 
     pub fn is_ancestor(&self, cwd: &Path, ancestor: &GitOid, descendant: &GitOid) -> Result<bool> {
         let status = Command::new(&self.git)
-            .args(["merge-base", "--is-ancestor", ancestor.as_str(), descendant.as_str()])
+            .args([
+                "merge-base",
+                "--is-ancestor",
+                ancestor.as_str(),
+                descendant.as_str(),
+            ])
             .current_dir(cwd)
             .env_remove("GIT_DIR")
             .env_remove("GIT_WORK_TREE")
@@ -590,6 +651,22 @@ mod tests {
     }
 
     #[test]
+    fn repository_inspection_resolves_nested_root_and_branch() {
+        let (tmp, git, _) = init_repo();
+        let nested = tmp.path().join("src/nested");
+        std::fs::create_dir_all(&nested).unwrap();
+        assert_eq!(
+            git.worktree_root(&nested).unwrap(),
+            std::fs::canonicalize(tmp.path()).unwrap()
+        );
+        assert_eq!(
+            git.current_branch(&nested).unwrap().as_deref(),
+            Some("main")
+        );
+        assert_eq!(git.suggested_base_ref(&nested).unwrap(), "main");
+    }
+
+    #[test]
     fn detects_git_and_reports_identity() {
         let (tmp, git, head) = init_repo();
         let identity = git.repo_identity(tmp.path()).unwrap();
@@ -616,25 +693,34 @@ mod tests {
             .find(|e| e.path == "hello.txt")
             .expect("modified entry");
         assert_eq!(modified.kind, PorcelainKind::Ordinary);
-        assert!(entries
-            .iter()
-            .any(|e| e.path == "new.txt" && e.kind == PorcelainKind::Untracked));
-        assert!(entries
-            .iter()
-            .any(|e| e.path == "deep/nested.txt" && e.kind == PorcelainKind::Untracked));
+        assert!(
+            entries
+                .iter()
+                .any(|e| e.path == "new.txt" && e.kind == PorcelainKind::Untracked)
+        );
+        assert!(
+            entries
+                .iter()
+                .any(|e| e.path == "deep/nested.txt" && e.kind == PorcelainKind::Untracked)
+        );
     }
 
     #[test]
     fn worktree_add_commit_and_remove() {
         let (tmp, git, base) = init_repo();
         let wt = tmp.path().join("wt-1");
-        git.worktree_add(tmp.path(), &wt, "medousa/work/test", &base).unwrap();
+        git.worktree_add(tmp.path(), &wt, "medousa/work/test", &base)
+            .unwrap();
         assert!(wt.join("hello.txt").is_file());
         assert!(git.branch_exists(tmp.path(), "medousa/work/test"));
 
         fs::write(wt.join("work.txt"), "worked\n").unwrap();
         let sealed = git
-            .commit_checkpoint(&wt, "forge: checkpoint test attempt 1", &CheckpointAuthor::default())
+            .commit_checkpoint(
+                &wt,
+                "forge: checkpoint test attempt 1",
+                &CheckpointAuthor::default(),
+            )
             .unwrap();
         assert_ne!(sealed, base);
         assert!(git.is_clean(&wt).unwrap());
@@ -693,11 +779,17 @@ mod tests {
             .unwrap();
         git.update_ref_cas(tmp.path(), "refs/heads/cas-test", &head, &base)
             .unwrap();
-        assert_eq!(git.ref_oid(tmp.path(), "refs/heads/cas-test").unwrap(), head);
+        assert_eq!(
+            git.ref_oid(tmp.path(), "refs/heads/cas-test").unwrap(),
+            head
+        );
         // Stale expectation fails and leaves the ref untouched.
         git.update_ref_cas(tmp.path(), "refs/heads/cas-test", &base, &base)
             .unwrap_err();
-        assert_eq!(git.ref_oid(tmp.path(), "refs/heads/cas-test").unwrap(), head);
+        assert_eq!(
+            git.ref_oid(tmp.path(), "refs/heads/cas-test").unwrap(),
+            head
+        );
     }
 
     #[test]

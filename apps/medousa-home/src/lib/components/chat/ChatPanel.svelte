@@ -15,6 +15,7 @@
   import ScriptChatContextChip from "$lib/components/grapheme/ScriptChatContextChip.svelte";
   import UndertakingContextChip from "$lib/components/work/UndertakingContextChip.svelte";
   import { undertakings } from "$lib/stores/undertakings.svelte";
+  import { trackedAgentPrompt } from "$lib/utils/undertakingWorkspace";
   import { buildInteractiveTurnOptions } from "$lib/interactiveTurnOptions";
   import { haptic } from "$lib/haptics";
   import { workspace } from "$lib/stores/workspace.svelte";
@@ -691,7 +692,7 @@
         ticket.session_id,
         ticket.stream_url,
       );
-      await promptAgentSession(agentSessionId, prompt);
+      await promptAgentSession(agentSessionId, trackedAgentPrompt(prompt, chat.sessionId));
       return;
     }
 

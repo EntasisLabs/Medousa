@@ -4,16 +4,17 @@
 //! (material memory). Forge owns custody of intentional work episodes.
 
 use std::path::{Component, Path as FsPath, PathBuf};
+use std::process::Command;
 use std::sync::Arc;
 
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use medousa_forge::adapter::{export_bundle, ScriptAdapter};
+use medousa_forge::adapter::{ScriptAdapter, export_bundle};
 use medousa_forge::error::ForgeError;
 use medousa_forge::forge::{Forge, SealOptions};
-use medousa_forge::git::CheckpointAuthor;
+use medousa_forge::git::{CheckpointAuthor, GitEngine};
 use medousa_forge::model::{
     ActorKind, ActorRef, EvidenceId, ExecutionLease, ExecutorDescriptor, IntegrationStrategy,
     LeaseId, RecoveryDisposition, ReviewDecision, ReviewDecisionId, WorkId, WorkItem, WorkPolicy,
@@ -22,8 +23,8 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::daemon::forge_projections::{
-    build_review, evidence_dir, project_item, project_items, read_lines_page, ItemProjection,
-    ReviewProjection,
+    ItemProjection, ReviewProjection, build_review, evidence_dir, project_item, project_items,
+    read_lines_page,
 };
 use crate::daemon::state::AppState;
 
@@ -41,6 +42,8 @@ fn ok_item(state: &AppState, item: WorkItem, kind: &str) -> Json<ItemProjection>
 pub fn forge_router(state: AppState) -> Router {
     Router::new()
         .route("/v1/forge/items", get(list_items).post(register_item))
+        .route("/v1/forge/items/start", post(start_item))
+        .route("/v1/forge/repositories/inspect", post(inspect_repository))
         .route("/v1/forge/items/{work_id}", get(get_item))
         .route(
             "/v1/forge/items/{work_id}/source",
@@ -57,24 +60,17 @@ pub fn forge_router(state: AppState) -> Router {
             get(read_workspace_state).put(save_workspace_state),
         )
         .route("/v1/forge/items/{work_id}/review", get(get_review))
+        .route("/v1/forge/items/{work_id}/tasks", get(list_project_tasks))
         .route(
-            "/v1/forge/items/{work_id}/provision",
-            post(provision_item),
+            "/v1/forge/items/{work_id}/tasks/{task_id}/run",
+            post(run_project_task),
         )
-        .route(
-            "/v1/forge/items/{work_id}/attempts",
-            post(begin_attempt),
-        )
-        .route(
-            "/v1/forge/items/{work_id}/decisions",
-            post(record_decision),
-        )
+        .route("/v1/forge/items/{work_id}/provision", post(provision_item))
+        .route("/v1/forge/items/{work_id}/attempts", post(begin_attempt))
+        .route("/v1/forge/items/{work_id}/decisions", post(record_decision))
         .route("/v1/forge/items/{work_id}/apply", post(apply_decision))
         .route("/v1/forge/items/{work_id}/discard", post(discard_item))
-        .route(
-            "/v1/forge/items/{work_id}/run-script",
-            post(run_script),
-        )
+        .route("/v1/forge/items/{work_id}/run-script", post(run_script))
         .route("/v1/forge/items/{work_id}/export", post(export_item))
         .route(
             "/v1/forge/evidence/{evidence_id}/patch",
@@ -89,10 +85,7 @@ pub fn forge_router(state: AppState) -> Router {
             "/v1/forge/leases/{lease_id}/heartbeat",
             post(heartbeat_lease),
         )
-        .route(
-            "/v1/forge/leases/{lease_id}/complete",
-            post(complete_lease),
-        )
+        .route("/v1/forge/leases/{lease_id}/complete", post(complete_lease))
         .route(
             "/v1/forge/leases/{lease_id}/interrupt",
             post(interrupt_lease),
@@ -273,9 +266,9 @@ fn resolve_new_source_path(root: &FsPath, raw: &str) -> ApiResult<(PathBuf, Stri
             "source path must stay inside the governed workspace",
         ));
     }
-    let file_name = relative.file_name().ok_or_else(|| {
-        request_error(StatusCode::BAD_REQUEST, "source file name is required")
-    })?;
+    let file_name = relative
+        .file_name()
+        .ok_or_else(|| request_error(StatusCode::BAD_REQUEST, "source file name is required"))?;
     let candidate = parent.join(file_name);
     if candidate.exists() {
         return Err(request_error(
@@ -292,11 +285,7 @@ fn forge(state: &AppState) -> Arc<Forge> {
 
 /// Resolve a presented lease by scanning active attempts for matching
 /// `lease_id` + fencing `generation`.
-fn resolve_lease(
-    forge: &Forge,
-    lease_id: &str,
-    generation: u64,
-) -> ApiResult<ExecutionLease> {
+fn resolve_lease(forge: &Forge, lease_id: &str, generation: u64) -> ApiResult<ExecutionLease> {
     let want = LeaseId::from(lease_id.to_string());
     let items = forge.list().map_err(map_err)?;
     for item in items {
@@ -343,6 +332,22 @@ struct RegisterRequest {
     policy: Option<WorkPolicy>,
 }
 
+#[derive(Debug, Deserialize)]
+struct InspectRepositoryRequest {
+    path: PathBuf,
+}
+
+#[derive(Debug, Serialize)]
+struct RepositoryInspection {
+    path: PathBuf,
+    display_name: String,
+    current_branch: Option<String>,
+    suggested_base_ref: String,
+    dirty: bool,
+    changed_files: usize,
+    remotes: Vec<String>,
+}
+
 fn default_base_ref() -> String {
     "main".into()
 }
@@ -378,6 +383,81 @@ async fn register_item(
     }
     .map_err(map_err)?;
     Ok(ok_item(&state, item, "registered"))
+}
+
+async fn inspect_repository(
+    Json(body): Json<InspectRepositoryRequest>,
+) -> ApiResult<Json<RepositoryInspection>> {
+    let git = GitEngine::detect().map_err(map_err)?;
+    if !body.path.exists() {
+        return Err(request_error(
+            StatusCode::BAD_REQUEST,
+            format!("folder does not exist: {}", body.path.display()),
+        ));
+    }
+    let path = git.worktree_root(&body.path).map_err(map_err)?;
+    let current_branch = git.current_branch(&path).map_err(map_err)?;
+    let suggested_base_ref = git.suggested_base_ref(&path).map_err(map_err)?;
+    let changed_files = git.status_porcelain(&path).map_err(map_err)?.len();
+    let identity = git.repo_identity(&path).map_err(map_err)?;
+    let display_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("Repository")
+        .to_string();
+    Ok(Json(RepositoryInspection {
+        path,
+        display_name,
+        current_branch,
+        suggested_base_ref,
+        dirty: changed_files > 0,
+        changed_files,
+        remotes: identity.remotes,
+    }))
+}
+
+async fn start_item(
+    State(state): State<AppState>,
+    Json(body): Json<RegisterRequest>,
+) -> ApiResult<Json<ItemProjection>> {
+    let actor = actor_from_state(&state);
+    let owner = body
+        .owner
+        .unwrap_or_else(|| state.workshop_identity_user_id());
+    let forge = forge(&state);
+    let registered = if let Some(policy) = body.policy {
+        forge.register_with_policy(
+            body.title,
+            body.brief,
+            &body.repo_path,
+            body.base_ref,
+            owner,
+            policy,
+            &actor,
+        )
+    } else {
+        forge.register(
+            body.title,
+            body.brief,
+            &body.repo_path,
+            body.base_ref,
+            owner,
+            &actor,
+        )
+    }
+    .map_err(map_err)?;
+    publish_item(&state, &registered, "registered");
+    let item = forge.provision(&registered.id, &actor).map_err(map_err)?;
+    if let Some(env) = item.environment.as_ref() {
+        crate::daemon::detamu_host::spawn_index_forge_item(
+            state.detamu.clone(),
+            item.id.as_str().to_owned(),
+            env.worktree.clone(),
+            env.baseline_oid.as_str().to_owned(),
+            crate::daemon::detamu_host::BindingKind::Baseline,
+        );
+    }
+    Ok(ok_item(&state, item, "started"))
 }
 
 async fn list_items(State(state): State<AppState>) -> ApiResult<Json<Vec<ItemProjection>>> {
@@ -526,7 +606,13 @@ fn list_source_tree(work_id: &WorkId, root: &FsPath) -> ApiResult<SourceTreeResp
         )
     })?;
     let output = std::process::Command::new("git")
-        .args(["ls-files", "--cached", "--others", "--exclude-standard", "-z"])
+        .args([
+            "ls-files",
+            "--cached",
+            "--others",
+            "--exclude-standard",
+            "-z",
+        ])
         .current_dir(&root)
         .output()
         .map_err(|err| {
@@ -544,7 +630,11 @@ fn list_source_tree(work_id: &WorkId, root: &FsPath) -> ApiResult<SourceTreeResp
     let statuses = repository_statuses(&root);
     let mut files = Vec::new();
     let mut truncated = false;
-    for raw in output.stdout.split(|byte| *byte == 0).filter(|raw| !raw.is_empty()) {
+    for raw in output
+        .stdout
+        .split(|byte| *byte == 0)
+        .filter(|raw| !raw.is_empty())
+    {
         if files.len() >= MAX_SOURCE_TREE_FILES {
             truncated = true;
             break;
@@ -673,9 +763,10 @@ async fn create_source(
         ));
     }
     let item = require_work_lease(&state, &id, &body.lease_id, body.generation)?;
-    let environment = item.environment.as_ref().ok_or_else(|| {
-        request_error(StatusCode::CONFLICT, "governed workspace is not prepared")
-    })?;
+    let environment = item
+        .environment
+        .as_ref()
+        .ok_or_else(|| request_error(StatusCode::CONFLICT, "governed workspace is not prepared"))?;
     let (path, _) = resolve_new_source_path(&environment.worktree, &body.path)?;
     use std::io::Write;
     let mut file = std::fs::OpenOptions::new()
@@ -755,11 +846,17 @@ async fn search_source(
             )
         })?;
     let stdout = child.stdout.take().ok_or_else(|| {
-        request_error(StatusCode::INTERNAL_SERVER_ERROR, "repository search had no output")
+        request_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "repository search had no output",
+        )
     })?;
     let mut hits = Vec::new();
     let mut truncated = false;
-    for line in std::io::BufReader::new(stdout).lines().map_while(Result::ok) {
+    for line in std::io::BufReader::new(stdout)
+        .lines()
+        .map_while(Result::ok)
+    {
         if hits.len() >= 500 {
             truncated = true;
             break;
@@ -827,9 +924,10 @@ async fn save_workspace_state(
 ) -> ApiResult<Json<CodeWorkspaceState>> {
     let id = parse_work_id(&work_id)?;
     let item = forge(&state).load(&id).map_err(map_err)?;
-    let environment = item.environment.as_ref().ok_or_else(|| {
-        request_error(StatusCode::CONFLICT, "governed workspace is not prepared")
-    })?;
+    let environment = item
+        .environment
+        .as_ref()
+        .ok_or_else(|| request_error(StatusCode::CONFLICT, "governed workspace is not prepared"))?;
     if body.state.tabs.len() > 32 {
         return Err(request_error(
             StatusCode::PAYLOAD_TOO_LARGE,
@@ -856,9 +954,9 @@ async fn save_workspace_state(
                 "an active lease is required to persist source drafts",
             )
         })?;
-        let generation = body.generation.ok_or_else(|| {
-            request_error(StatusCode::CONFLICT, "lease generation is required")
-        })?;
+        let generation = body
+            .generation
+            .ok_or_else(|| request_error(StatusCode::CONFLICT, "lease generation is required"))?;
         let lease = resolve_lease(forge(&state).as_ref(), lease_id, generation)?;
         if lease.work_id != id {
             return Err(request_error(
@@ -870,7 +968,11 @@ async fn save_workspace_state(
     for tab in &mut body.state.tabs {
         let (_, clean) = resolve_source_path(&environment.worktree, &tab.path)?;
         tab.path = clean;
-        if tab.draft.as_ref().is_some_and(|draft| draft.len() > MAX_SOURCE_BYTES) {
+        if tab
+            .draft
+            .as_ref()
+            .is_some_and(|draft| draft.len() > MAX_SOURCE_BYTES)
+        {
             return Err(request_error(
                 StatusCode::PAYLOAD_TOO_LARGE,
                 format!("draft for {} exceeds the editor limit", tab.path),
@@ -982,12 +1084,16 @@ async fn rename_source(
 ) -> ApiResult<Json<SourceResponse>> {
     let id = parse_work_id(&work_id)?;
     let item = require_work_lease(&state, &id, &body.lease_id, body.generation)?;
-    let environment = item.environment.as_ref().ok_or_else(|| {
-        request_error(StatusCode::CONFLICT, "governed workspace is not prepared")
-    })?;
+    let environment = item
+        .environment
+        .as_ref()
+        .ok_or_else(|| request_error(StatusCode::CONFLICT, "governed workspace is not prepared"))?;
     let (source, _) = resolve_source_path(&environment.worktree, &body.path)?;
     let current = std::fs::read(&source).map_err(|err| {
-        request_error(StatusCode::NOT_FOUND, format!("could not read source file: {err}"))
+        request_error(
+            StatusCode::NOT_FOUND,
+            format!("could not read source file: {err}"),
+        )
     })?;
     if source_digest(&current) != body.expected_digest {
         return Err(request_error(
@@ -1017,12 +1123,16 @@ async fn delete_source(
 ) -> ApiResult<Json<DeleteSourceResponse>> {
     let id = parse_work_id(&work_id)?;
     let item = require_work_lease(&state, &id, &body.lease_id, body.generation)?;
-    let environment = item.environment.as_ref().ok_or_else(|| {
-        request_error(StatusCode::CONFLICT, "governed workspace is not prepared")
-    })?;
+    let environment = item
+        .environment
+        .as_ref()
+        .ok_or_else(|| request_error(StatusCode::CONFLICT, "governed workspace is not prepared"))?;
     let (path, relative) = resolve_source_path(&environment.worktree, &body.path)?;
     let current = std::fs::read(&path).map_err(|err| {
-        request_error(StatusCode::NOT_FOUND, format!("could not read source file: {err}"))
+        request_error(
+            StatusCode::NOT_FOUND,
+            format!("could not read source file: {err}"),
+        )
     })?;
     if source_digest(&current) != body.expected_digest {
         return Err(request_error(
@@ -1055,6 +1165,202 @@ async fn get_review(
         review.world = Some(host.binding_status_json(item.id.as_str()).await);
     }
     Ok(Json(review))
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct ProjectTask {
+    id: String,
+    label: String,
+    kind: String,
+    argv: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct ProjectTaskResult {
+    task: ProjectTask,
+    success: bool,
+    exit_code: Option<i32>,
+    stdout: String,
+    stderr: String,
+    truncated: bool,
+    duration_ms: u128,
+}
+
+#[derive(Debug, Deserialize)]
+struct RunProjectTaskRequest {
+    lease_id: String,
+    generation: u64,
+}
+
+fn detected_project_tasks(root: &FsPath) -> Vec<ProjectTask> {
+    let mut tasks = Vec::new();
+    let mut add = |id: &str, label: &str, kind: &str, argv: &[&str]| {
+        tasks.push(ProjectTask {
+            id: id.into(),
+            label: label.into(),
+            kind: kind.into(),
+            argv: argv.iter().map(|part| (*part).to_string()).collect(),
+        });
+    };
+    if root.join("Cargo.toml").is_file() {
+        add("cargo-check", "Check", "verify", &["cargo", "check"]);
+        add("cargo-test", "Test", "test", &["cargo", "test"]);
+    } else if root.join("go.mod").is_file() {
+        add("go-test", "Test", "verify", &["go", "test", "./..."]);
+    } else if root.join("package.json").is_file() {
+        let scripts = std::fs::read(root.join("package.json"))
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+            .and_then(|value| {
+                value
+                    .get("scripts")
+                    .and_then(|scripts| scripts.as_object())
+                    .cloned()
+            })
+            .unwrap_or_default();
+        if scripts.contains_key("check") {
+            add("npm-check", "Check", "verify", &["npm", "run", "check"]);
+        }
+        if scripts.contains_key("test") {
+            add("npm-test", "Test", "test", &["npm", "test"]);
+        }
+        if scripts.contains_key("build") {
+            add("npm-build", "Build", "build", &["npm", "run", "build"]);
+        }
+    } else if root.join("pyproject.toml").is_file() || root.join("pytest.ini").is_file() {
+        add("python-test", "Test", "verify", &["python", "-m", "pytest"]);
+    } else if root.join("Makefile").is_file() {
+        let makefile = std::fs::read_to_string(root.join("Makefile")).unwrap_or_default();
+        for (target, label, kind) in [
+            ("check", "Check", "verify"),
+            ("test", "Test", "test"),
+            ("build", "Build", "build"),
+        ] {
+            if makefile
+                .lines()
+                .any(|line| line.starts_with(&format!("{target}:")))
+            {
+                add(&format!("make-{target}"), label, kind, &["make", target]);
+            }
+        }
+    } else if std::fs::read_dir(root)
+        .ok()
+        .into_iter()
+        .flatten()
+        .flatten()
+        .any(|entry| {
+            matches!(
+                entry.path().extension().and_then(|value| value.to_str()),
+                Some("sln" | "csproj")
+            )
+        })
+    {
+        add("dotnet-test", "Test", "verify", &["dotnet", "test"]);
+    }
+    tasks
+}
+
+async fn list_project_tasks(
+    State(state): State<AppState>,
+    Path(work_id): Path<String>,
+) -> ApiResult<Json<Vec<ProjectTask>>> {
+    let id = parse_work_id(&work_id)?;
+    let item = forge(&state).load(&id).map_err(map_err)?;
+    let root = item
+        .environment
+        .as_ref()
+        .ok_or_else(|| {
+            request_error(
+                StatusCode::CONFLICT,
+                "Set up this project before running it",
+            )
+        })?
+        .worktree
+        .clone();
+    Ok(Json(detected_project_tasks(&root)))
+}
+
+async fn run_project_task(
+    State(state): State<AppState>,
+    Path((work_id, task_id)): Path<(String, String)>,
+    Json(body): Json<RunProjectTaskRequest>,
+) -> ApiResult<Json<ProjectTaskResult>> {
+    let id = parse_work_id(&work_id)?;
+    let forge = forge(&state);
+    let item = require_work_lease(&state, &id, &body.lease_id, body.generation)?;
+    let lease = resolve_lease(forge.as_ref(), &body.lease_id, body.generation)?;
+    let root = item
+        .environment
+        .as_ref()
+        .ok_or_else(|| {
+            request_error(
+                StatusCode::CONFLICT,
+                "Set up this project before running it",
+            )
+        })?
+        .worktree
+        .clone();
+    let task = detected_project_tasks(&root)
+        .into_iter()
+        .find(|task| task.id == task_id)
+        .ok_or_else(|| {
+            request_error(
+                StatusCode::NOT_FOUND,
+                "Project command is no longer available",
+            )
+        })?;
+    let argv = task.argv.clone();
+    let root_for_command = root.clone();
+    let started = std::time::Instant::now();
+    let output = tokio::task::spawn_blocking(move || {
+        Command::new(&argv[0])
+            .args(&argv[1..])
+            .current_dir(root_for_command)
+            .output()
+    })
+    .await
+    .map_err(|err| {
+        request_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Project command stopped unexpectedly: {err}"),
+        )
+    })?
+    .map_err(|err| {
+        request_error(
+            StatusCode::BAD_REQUEST,
+            format!("Could not run {}: {err}", task.label),
+        )
+    })?;
+    const OUTPUT_CAP: usize = 64 * 1024;
+    let truncated = output.stdout.len() > OUTPUT_CAP || output.stderr.len() > OUTPUT_CAP;
+    let stdout =
+        String::from_utf8_lossy(&output.stdout[..output.stdout.len().min(OUTPUT_CAP)]).into_owned();
+    let stderr =
+        String::from_utf8_lossy(&output.stderr[..output.stderr.len().min(OUTPUT_CAP)]).into_owned();
+    let result = ProjectTaskResult {
+        task: task.clone(),
+        success: output.status.success(),
+        exit_code: output.status.code(),
+        stdout,
+        stderr,
+        truncated,
+        duration_ms: started.elapsed().as_millis(),
+    };
+    let _ = forge.append_command_log(
+        &lease,
+        &serde_json::json!({
+            "kind": "project_task",
+                "task": result.task,
+                "success": result.success,
+                "exit_code": result.exit_code,
+                "duration_ms": result.duration_ms,
+                "stdout": result.stdout,
+                "stderr": result.stderr,
+                "truncated": result.truncated,
+        }),
+    );
+    publish_item(&state, &item, "task_finished");
+    Ok(Json(result))
 }
 
 async fn provision_item(
@@ -1187,9 +1493,7 @@ async fn interrupt_lease(
 ) -> ApiResult<Json<ItemProjection>> {
     let lease = resolve_lease(forge(&state).as_ref(), &lease_id, body.generation)?;
     let actor = actor_from_state(&state);
-    let recovery = body
-        .recovery
-        .unwrap_or(RecoveryDisposition::RestartAllowed);
+    let recovery = body.recovery.unwrap_or(RecoveryDisposition::RestartAllowed);
     let item = forge(&state)
         .interrupt_attempt(&lease, recovery, &actor)
         .map_err(map_err)?;
@@ -1296,18 +1600,16 @@ async fn record_decision(
         .sealed_head_oid
         .clone()
         .unwrap_or_else(|| env.baseline_oid.as_str().to_owned());
-    let evidence_digest: medousa_forge::model::Digest = serde_json::from_value(
-        serde_json::Value::String(digest),
-    )
-    .map_err(|e| {
-        (
-            StatusCode::BAD_REQUEST,
-            Json(ErrorBody {
-                error: format!("invalid evidence_digest: {e}"),
-                kind: Some("bad_request"),
-            }),
-        )
-    })?;
+    let evidence_digest: medousa_forge::model::Digest =
+        serde_json::from_value(serde_json::Value::String(digest)).map_err(|e| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(ErrorBody {
+                    error: format!("invalid evidence_digest: {e}"),
+                    kind: Some("bad_request"),
+                }),
+            )
+        })?;
     let decision = ReviewDecision {
         id: ReviewDecisionId::new(),
         actor: actor.clone(),
@@ -1358,9 +1660,7 @@ async fn discard_item(
 ) -> ApiResult<Json<ItemProjection>> {
     let id = parse_work_id(&work_id)?;
     let actor = actor_from_state(&state);
-    let item = forge(&state)
-        .discard(&id, &actor)
-        .map_err(map_err)?;
+    let item = forge(&state).discard(&id, &actor).map_err(map_err)?;
     Ok(ok_item(&state, item, "discarded"))
 }
 
@@ -1491,15 +1791,11 @@ async fn evidence_patch(
     axum::extract::Query(q): axum::extract::Query<EvidencePageQuery>,
 ) -> ApiResult<Json<EvidencePage>> {
     let eid = EvidenceId::from(evidence_id);
-    let (_item, dir) = find_evidence_dir(
-        forge(&state).as_ref(),
-        &eid,
-        q.work_id.as_deref(),
-    )?;
+    let (_item, dir) = find_evidence_dir(forge(&state).as_ref(), &eid, q.work_id.as_deref())?;
     let offset = q.offset.unwrap_or(0);
     let limit = q.limit.unwrap_or(200).clamp(1, 2000);
-    let (lines, total, truncated) =
-        read_lines_page(&dir.join("patch.diff"), offset, limit).map_err(|e| {
+    let (lines, total, truncated) = read_lines_page(&dir.join("patch.diff"), offset, limit)
+        .map_err(|e| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(ErrorBody {
@@ -1524,15 +1820,11 @@ async fn evidence_commands(
     axum::extract::Query(q): axum::extract::Query<EvidencePageQuery>,
 ) -> ApiResult<Json<EvidencePage>> {
     let eid = EvidenceId::from(evidence_id);
-    let (_item, dir) = find_evidence_dir(
-        forge(&state).as_ref(),
-        &eid,
-        q.work_id.as_deref(),
-    )?;
+    let (_item, dir) = find_evidence_dir(forge(&state).as_ref(), &eid, q.work_id.as_deref())?;
     let offset = q.offset.unwrap_or(0);
     let limit = q.limit.unwrap_or(200).clamp(1, 2000);
-    let (lines, total, truncated) =
-        read_lines_page(&dir.join("commands.jsonl"), offset, limit).map_err(|e| {
+    let (lines, total, truncated) = read_lines_page(&dir.join("commands.jsonl"), offset, limit)
+        .map_err(|e| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(ErrorBody {
@@ -1592,7 +1884,10 @@ mod source_tests {
 
         let (path, relative) = resolve_source_path(root.path(), "./src/lib.rs").unwrap();
         assert_eq!(relative, "src/lib.rs");
-        assert_eq!(path, std::fs::canonicalize(root.path().join("src/lib.rs")).unwrap());
+        assert_eq!(
+            path,
+            std::fs::canonicalize(root.path().join("src/lib.rs")).unwrap()
+        );
     }
 
     #[test]
@@ -1613,7 +1908,12 @@ mod source_tests {
 
         let (path, relative) = resolve_new_source_path(root.path(), "./src/new.rs").unwrap();
         assert_eq!(relative, "src/new.rs");
-        assert_eq!(path, std::fs::canonicalize(root.path().join("src")).unwrap().join("new.rs"));
+        assert_eq!(
+            path,
+            std::fs::canonicalize(root.path().join("src"))
+                .unwrap()
+                .join("new.rs")
+        );
 
         assert!(resolve_new_source_path(root.path(), "missing/new.rs").is_err());
         assert!(resolve_new_source_path(root.path(), ".git/hooks/new-hook").is_err());
@@ -1665,14 +1965,36 @@ mod source_tests {
         git(&["add", "tracked.rs", ".gitignore"]);
 
         let tree = list_source_tree(&WorkId::from("work-1".to_string()), root.path()).unwrap();
-        let paths = tree.files.iter().map(|file| file.path.as_str()).collect::<Vec<_>>();
+        let paths = tree
+            .files
+            .iter()
+            .map(|file| file.path.as_str())
+            .collect::<Vec<_>>();
         assert!(paths.contains(&"tracked.rs"));
         assert!(paths.contains(&"new.rs"));
         assert!(!paths.contains(&"target/noise.rs"));
         assert_eq!(
-            tree.files.iter().find(|file| file.path == "new.rs").and_then(|file| file.status.as_deref()),
+            tree.files
+                .iter()
+                .find(|file| file.path == "new.rs")
+                .and_then(|file| file.status.as_deref()),
             Some("??"),
         );
         assert!(!tree.truncated);
+    }
+
+    #[test]
+    fn project_tasks_are_inferred_from_manifests_not_arbitrary_input() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(
+            root.path().join("package.json"),
+            r#"{"scripts":{"check":"svelte-check","build":"vite build","dev":"vite","custom":"danger"}}"#,
+        )
+        .unwrap();
+        let tasks = detected_project_tasks(root.path());
+        assert!(tasks.iter().any(|task| task.id == "npm-check"));
+        assert!(tasks.iter().any(|task| task.id == "npm-build"));
+        assert!(!tasks.iter().any(|task| task.id == "npm-dev"));
+        assert!(!tasks.iter().any(|task| task.id == "custom"));
     }
 }

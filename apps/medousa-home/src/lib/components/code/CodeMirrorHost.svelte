@@ -5,8 +5,6 @@
   import {
     EditorView,
     keymap,
-    lineNumbers,
-    highlightActiveLineGutter,
   } from "@codemirror/view";
   import { indentWithTab } from "@codemirror/commands";
   import { searchKeymap, highlightSelectionMatches } from "@codemirror/search";
@@ -24,6 +22,7 @@
     readCodeEditorLineNumbers,
     readCodeEditorTabSize,
     readCodeEditorWordWrap,
+    hasCodeEditorTabSizePreference,
   } from "$lib/config/codeEditorPreferences";
   import { codeEditorFind } from "$lib/stores/codeEditorFind.svelte";
 
@@ -40,6 +39,12 @@
     onchange?: (value: string) => void;
     /** Reports the current 1-based cursor line for workspace restoration. */
     onCursorChanged?: (line: number) => void;
+    /** Reports a compact selection so another workspace surface can continue here. */
+    onSelectionChanged?: (selection: {
+      startLine: number;
+      endLine: number;
+      text: string;
+    }) => void;
     /** Fired when CM diagnostics / LSP state may have changed. */
     onProblemsChanged?: () => void;
   }
@@ -54,6 +59,7 @@
     contentSyncKey = 0,
     onchange,
     onCursorChanged,
+    onSelectionChanged,
     onProblemsChanged,
   }: Props = $props();
 
@@ -100,8 +106,20 @@
   function buildExtensions() {
     const wrap = readCodeEditorWordWrap();
     const showLineNumbers = readCodeEditorLineNumbers();
-    const tabSize = readCodeEditorTabSize();
-    const indent = " ".repeat(tabSize);
+    const leading = value.split("\n").slice(0, 400).map((line) => line.match(/^[\t ]+/)?.[0] ?? "").filter(Boolean);
+    const usesTabs = leading.some((indentation) => indentation.startsWith("\t"));
+    const observedSpaces = leading
+      .filter((indentation) => !indentation.includes("\t"))
+      .map((indentation) => indentation.length)
+      .filter((size) => size > 0);
+    const languageDefault = ["javascript", "typescript", "json", "yaml", "markdown", "grapheme"].includes(resolvedLanguage) ? 2 : 4;
+    const inferredSize = observedSpaces.length === 0
+      ? languageDefault
+      : observedSpaces.some((size) => size % 2 !== 0)
+        ? 4
+        : observedSpaces.some((size) => size % 4 !== 0) ? 2 : 4;
+    const tabSize = hasCodeEditorTabSizePreference() ? readCodeEditorTabSize() : inferredSize;
+    const indent = usesTabs ? "\t" : " ".repeat(tabSize);
     const extensions = [
       basicSetup,
       ...buildCodeEditorLanguageExtensions(resolvedLanguage),
@@ -116,9 +134,15 @@
         }
         if (update.docChanged || update.selectionSet) {
           codeEditorFind.syncFromView(update.view);
+          const selection = update.state.selection.main;
           onCursorChanged?.(
-            update.state.doc.lineAt(update.state.selection.main.head).number,
+            update.state.doc.lineAt(selection.head).number,
           );
+          onSelectionChanged?.({
+            startLine: update.state.doc.lineAt(selection.from).number,
+            endLine: update.state.doc.lineAt(selection.to).number,
+            text: update.state.sliceDoc(selection.from, selection.to).slice(0, 4_000),
+          });
         }
         if (update.transactions.some((tr) => tr.effects.length > 0)) {
           onProblemsChanged?.();
@@ -129,11 +153,7 @@
       extensions.push(EditorView.lineWrapping);
     }
     if (!showLineNumbers) {
-      // basicSetup includes line numbers; override by not re-adding — CM doesn't
-      // easily remove them from basicSetup, so we leave them on when preferred off
-      // only via a future custom setup. Prefer documenting default-on.
-      void lineNumbers;
-      void highlightActiveLineGutter;
+      extensions.push(EditorView.theme({ ".cm-lineNumbers": { display: "none" } }));
     }
     if (lspEnabled && client && documentUri) {
       extensions.push(client.plugin(documentUri, lspLang));

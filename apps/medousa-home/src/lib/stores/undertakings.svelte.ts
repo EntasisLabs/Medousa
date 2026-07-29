@@ -7,6 +7,7 @@ import {
   listUndertakings,
   getUndertaking,
   createUndertaking,
+  startUndertaking,
   provisionUndertaking,
   getReview,
   forgeStreamUrl,
@@ -30,6 +31,9 @@ export type ActiveUndertakingContext = {
   selectedEntityId: string | null;
   selectedPath: string | null;
   selectedLine: number | null;
+  selectionStartLine: number | null;
+  selectionEndLine: number | null;
+  selectedText: string | null;
 };
 
 function groupKey(): string {
@@ -71,6 +75,9 @@ function createUndertakingsStore() {
       selectedEntityId: null,
       selectedPath: null,
       selectedLine: null,
+      selectionStartLine: null,
+      selectionEndLine: null,
+      selectedText: null,
       ...merge,
     };
     const prev = contexts[groupKey()];
@@ -80,6 +87,9 @@ function createUndertakingsStore() {
       next.selectedEntityId = prev.selectedEntityId;
       next.selectedPath = prev.selectedPath;
       next.selectedLine = prev.selectedLine;
+      next.selectionStartLine = prev.selectionStartLine;
+      next.selectionEndLine = prev.selectionEndLine;
+      next.selectedText = prev.selectedText;
       next.sealedOid = prev.sealedOid;
     }
     contexts = { ...contexts, [groupKey()]: next };
@@ -132,9 +142,15 @@ function createUndertakingsStore() {
     entityId?: string | null;
     path?: string | null;
     line?: number | null;
+    selectionStartLine?: number | null;
+    selectionEndLine?: number | null;
+    selectedText?: string | null;
   }) {
     const cur = contexts[groupKey()];
     if (!cur) return;
+    const movedWithoutSelection =
+      (selection.path !== undefined && selection.path !== cur.selectedPath) ||
+      (selection.line !== undefined && selection.selectedText === undefined);
     contexts = {
       ...contexts,
       [groupKey()]: {
@@ -143,6 +159,18 @@ function createUndertakingsStore() {
           selection.entityId === undefined ? cur.selectedEntityId : selection.entityId,
         selectedPath: selection.path === undefined ? cur.selectedPath : selection.path,
         selectedLine: selection.line === undefined ? cur.selectedLine : selection.line,
+        selectionStartLine:
+          selection.selectionStartLine === undefined
+            ? movedWithoutSelection ? null : cur.selectionStartLine
+            : selection.selectionStartLine,
+        selectionEndLine:
+          selection.selectionEndLine === undefined
+            ? movedWithoutSelection ? null : cur.selectionEndLine
+            : selection.selectionEndLine,
+        selectedText:
+          selection.selectedText === undefined
+            ? movedWithoutSelection ? null : cur.selectedText
+            : selection.selectedText,
       },
     };
   }
@@ -204,6 +232,25 @@ function createUndertakingsStore() {
     await refreshList();
     await select(item.id);
     return item;
+  }
+
+  async function start(input: {
+    title: string;
+    brief: string;
+    repo_path: string;
+    base_ref?: string;
+  }) {
+    try {
+      const item = await startUndertaking(input);
+      await refreshList();
+      selectedId = item.id;
+      detail = item;
+      setActiveFromItem(item);
+      return item;
+    } catch (err) {
+      await refreshList();
+      throw err;
+    }
   }
 
   async function provision(workId: string) {
@@ -297,6 +344,7 @@ function createUndertakingsStore() {
     refreshList,
     select,
     create,
+    start,
     provision,
     refreshDetail,
     clearActive,

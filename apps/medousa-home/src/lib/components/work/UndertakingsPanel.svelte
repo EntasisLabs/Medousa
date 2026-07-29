@@ -71,6 +71,7 @@
   let exportedDestination = $state<string | null>(null);
   let reviewEl = $state<HTMLDivElement | null>(null);
   let worldEl = $state<HTMLDivElement | null>(null);
+  let preferredCodeAgent = $state<"codex" | "cursor">("codex");
 
   const detail = $derived(undertakings.detail);
   const review = $derived(undertakings.review);
@@ -85,6 +86,31 @@
       (i) => i.human_phase === "complete" || i.state === "discarded" || i.state === "accepted",
     ),
   );
+  const latestVerification = $derived.by(() => {
+    for (const line of [...(commands?.lines ?? [])].reverse()) {
+      try {
+        const record = JSON.parse(line) as {
+          kind?: string;
+          task?: { label?: string; argv?: string[] };
+          success?: boolean;
+          exit_code?: number | null;
+          duration_ms?: number;
+        };
+        if (record.kind === "project_task") return record;
+      } catch {
+        // Older command records remain available under Technical details.
+      }
+    }
+    return null;
+  });
+
+  function changeStatusLabel(status: string): string {
+    if (status.startsWith("A")) return "Added";
+    if (status.startsWith("D")) return "Deleted";
+    if (status.startsWith("R")) return "Renamed";
+    if (status === "??") return "New";
+    return "Changed";
+  }
 
   function selectedWorldSnapshot(): WorldSnapshotRef | null {
     return worldBinding?.[worldSnapshot] ?? null;
@@ -98,6 +124,8 @@
       const root = vault.activeVaultRoot;
       if (root?.path) repoPath = root.path;
     }
+    const savedAgent = localStorage.getItem("medousa-code-agent-runtime");
+    if (savedAgent === "cursor" || savedAgent === "codex") preferredCodeAgent = savedAgent;
   });
 
   onDestroy(() => undertakings.stopPolling());
@@ -162,6 +190,8 @@
   async function startAgent(runtime: "codex" | "cursor") {
     const d = detail;
     if (!d) return;
+    preferredCodeAgent = runtime;
+    localStorage.setItem("medousa-code-agent-runtime", runtime);
     await run(async () => {
       await startTrackedAgent(d, runtime);
       await undertakings.refreshDetail();
@@ -562,6 +592,15 @@
               >
                 Review changes
               </button>
+            {:else if actions?.start_agent.allowed}
+              <button
+                type="button"
+                class="rounded-md bg-primary-500/80 px-3 py-1.5 text-xs font-medium text-surface-50 disabled:opacity-40"
+                disabled={busy}
+                onclick={() => void startAgent(preferredCodeAgent)}
+              >
+                Continue with {preferredCodeAgent === "codex" ? "Codex" : "Cursor"}
+              </button>
             {:else if actions?.open_terminal.allowed}
               <button
                 type="button"
@@ -691,10 +730,26 @@
                 {#if review.base_advanced} · starting branch changed{/if}
               </p>
             </details>
+            <div class="mt-3 grid gap-2 sm:grid-cols-2">
+              <div class="rounded-md border border-surface-500/25 bg-surface-950/30 p-2">
+                <p class="text-[9px] font-medium uppercase tracking-wider text-surface-500">Outcome</p>
+                <p class="mt-1 text-[11px] leading-relaxed text-surface-200">{detail.brief}</p>
+              </div>
+              <div class="rounded-md border p-2 {latestVerification?.success ? 'border-emerald-500/30 bg-emerald-950/20' : latestVerification ? 'border-rose-500/30 bg-rose-950/20' : 'border-surface-500/25 bg-surface-950/30'}">
+                <p class="text-[9px] font-medium uppercase tracking-wider text-surface-500">Verification</p>
+                {#if latestVerification}
+                  <p class="mt-1 text-[11px] {latestVerification.success ? 'text-emerald-200' : 'text-rose-200'}">{latestVerification.success ? "Passed" : "Needs attention"} · {latestVerification.task?.label ?? "Project check"}</p>
+                  <p class="mt-0.5 font-mono text-[9px] text-surface-500">{latestVerification.task?.argv?.join(" ")}{latestVerification.duration_ms != null ? ` · ${(latestVerification.duration_ms / 1000).toFixed(1)}s` : ""}</p>
+                {:else}
+                  <p class="mt-1 text-[11px] text-amber-200">No project check was recorded.</p>
+                {/if}
+              </div>
+            </div>
+            <p class="mt-3 text-[10px] text-surface-500">{review.changed_files.length} {review.changed_files.length === 1 ? "file" : "files"} changed</p>
             <ul class="mt-2 max-h-32 overflow-auto text-[11px] font-mono text-surface-300">
               {#each review.changed_files as f (f.path)}
                 <li class="flex items-center gap-2 py-0.5">
-                  <span class="w-14 shrink-0 text-surface-500">{f.status}</span>
+                  <span class="w-14 shrink-0 font-sans text-[9px] text-surface-500">{changeStatusLabel(f.status)}</span>
                   <button
                     type="button"
                     class="min-w-0 flex-1 truncate text-left hover:text-primary-200 hover:underline"

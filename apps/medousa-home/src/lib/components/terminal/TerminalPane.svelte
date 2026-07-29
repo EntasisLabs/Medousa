@@ -46,6 +46,7 @@
   let unlisten: UnlistenFn | null = null;
   let poll: ReturnType<typeof setInterval> | null = null;
   let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  let resizeObserver: ResizeObserver | null = null;
 
   function focusInput() {
     inputEl?.focus();
@@ -210,7 +211,7 @@
     try {
       const created = await terminalCreate({ work_id: null, cwd: null, lease_id: null });
       const sid = created.session_id?.trim() ?? "";
-      if (sid) shellTabs.openTerminal(sid, { activate: true, title: "Diagnostic Terminal" });
+      if (sid) shellTabs.openTerminal(sid, { activate: true, title: "Shell" });
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
     }
@@ -220,6 +221,10 @@
     void restoreUndertakingContext().then(connect).then(() => focusInput());
     poll = setInterval(() => void refreshSnapshot(), 1500);
     heartbeatTimer = setInterval(() => void sendHeartbeat(), 30_000);
+    if (paneEl && typeof ResizeObserver !== "undefined") {
+      resizeObserver = new ResizeObserver(() => void applyResize());
+      resizeObserver.observe(paneEl);
+    }
     void sendHeartbeat();
   });
 
@@ -227,6 +232,7 @@
     unlisten?.();
     if (poll) clearInterval(poll);
     if (heartbeatTimer) clearInterval(heartbeatTimer);
+    resizeObserver?.disconnect();
     if (attachId != null) void terminalDetach(attachId);
   });
 </script>
@@ -242,62 +248,36 @@
   >
     <div class="min-w-0 flex flex-wrap items-center gap-2 text-xs text-white/60">
       <span class="truncate">{title}</span>
-      {#if boundSessionId}
-        <span class="truncate font-mono text-[10px] text-white/35">
-          {boundSessionId.slice(0, 8)}
-        </span>
-      {/if}
       <UndertakingContextChip />
     </div>
     <div class="flex items-center gap-1">
-      <select
-        class="max-w-[140px] rounded bg-white/5 px-1 py-0.5 text-[10px] text-white/70"
-        onchange={(e) => {
-          const v = (e.currentTarget as HTMLSelectElement).value;
-          if (!v) return;
-          boundSessionId = v;
-          void connect();
-        }}
-      >
-        <option value="">Sessions…</option>
-        {#if workId && sessions.some((session) => session.work_id === workId)}
-          <optgroup label="This undertaking">
-            {#each sessions.filter((session) => session.work_id === workId) as s (s.session_id)}
-              <option value={s.session_id}>{s.session_id.slice(0, 8)} · {s.root_kind}</option>
-            {/each}
-          </optgroup>
-        {/if}
-        <optgroup label="Other sessions">
-          {#each sessions.filter((session) => !workId || session.work_id !== workId) as s (s.session_id)}
-            <option value={s.session_id}>
-              {s.session_id.slice(0, 8)}{s.work_id ? " · tracked" : " · diagnostic"}
-            </option>
+      <details class="relative">
+        <summary class="cursor-pointer list-none rounded px-2 py-0.5 text-[10px] text-white/55 hover:bg-white/10 hover:text-white [&::-webkit-details-marker]:hidden">Sessions</summary>
+        <div class="absolute right-0 top-full z-30 mt-1 w-56 rounded border border-white/15 bg-[#171312] p-1 shadow-xl">
+          {#each sessions as session (session.session_id)}
+            <button type="button" class="block w-full truncate rounded px-2 py-1 text-left text-[10px] text-white/60 hover:bg-white/10 hover:text-white" title={session.cwd} onclick={() => { boundSessionId = session.session_id; void connect(); }}>
+              {session.work_id === workId ? "Project shell" : session.work_id ? "Another project" : "Shell"} · {session.cwd.split(/[\\/]/).filter(Boolean).pop() ?? session.cwd}
+            </button>
           {/each}
-        </optgroup>
-      </select>
+          {#if sessions.length === 0}<p class="px-2 py-1 text-[10px] text-white/35">No other sessions</p>{/if}
+          <p class="mt-1 border-t border-white/10 px-2 pt-1 font-mono text-[8px] text-white/25">Current {boundSessionId.slice(0, 8)}</p>
+        </div>
+      </details>
       <button
         type="button"
         class="rounded px-2 py-0.5 text-[11px] text-white/60 hover:bg-white/10 hover:text-white"
         onclick={() => void openDiagnosticSession()}
-        title="Open an untracked diagnostic terminal"
+        title="Open a shell outside the current project"
       >
-        Diagnostic
-      </button>
-      <button
-        type="button"
-        class="rounded px-2 py-0.5 text-[11px] text-white/60 hover:bg-white/10 hover:text-white"
-        onclick={() => void applyResize()}
-        title="Resize PTY to pane"
-      >
-        Resize
+        New shell
       </button>
       <button
         type="button"
         class="rounded px-2 py-0.5 text-[11px] text-white/60 hover:bg-white/10 hover:text-white"
         onclick={interrupt}
-        title="Send SIGINT to the session"
+        title="Stop the running command"
       >
-        Interrupt
+        Stop
       </button>
     </div>
   </div>
@@ -344,8 +324,8 @@
     <div
       class="flex shrink-0 items-center gap-2 border-t border-white/10 px-3 py-1 text-[10px] text-white/40"
     >
-      <span>cursor {cursorRow}:{cursorCol}</span>
-      <span class="text-white/25">shared session — agents see the same PTY</span>
+      <span class="text-white/25">Shared with agents working in this project</span>
+      <details class="ml-auto"><summary class="cursor-pointer">Technical details</summary><span class="ml-2 font-mono">cursor {cursorRow}:{cursorCol} · {boundSessionId.slice(0, 8)}</span></details>
     </div>
   {/if}
 </div>

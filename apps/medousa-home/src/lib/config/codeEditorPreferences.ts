@@ -41,6 +41,10 @@ export function readCodeEditorTabSize(): number {
   return n === 4 || n === 8 ? n : 2;
 }
 
+export function hasCodeEditorTabSizePreference(): boolean {
+  return typeof localStorage !== "undefined" && localStorage.getItem(TAB_SIZE_KEY) !== null;
+}
+
 export function writeCodeEditorTabSize(size: number): void {
   if (typeof localStorage === "undefined") return;
   const next = size === 4 || size === 8 ? size : 2;

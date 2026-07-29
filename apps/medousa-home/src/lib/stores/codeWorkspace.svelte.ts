@@ -17,6 +17,8 @@ export type CodeDocumentTab = ForgeSourceFile & {
   line: number | null;
 };
 
+export type CodeLocation = { path: string; line: number | null };
+
 function tabId(workId: string, path: string): string {
   return `source:${encodeURIComponent(workId)}:${encodeURIComponent(path)}`;
 }
@@ -37,6 +39,9 @@ class CodeWorkspaceStore {
   leaseByWorkId = $state<
     Record<string, { lease_id: string; generation: number } | null>
   >({});
+  navigationByWorkId = $state<Record<string, CodeLocation[]>>({});
+  navigationIndexByWorkId = $state<Record<string, number>>({});
+  recentTabIdsByWorkId = $state<Record<string, string[]>>({});
   private hydrated = new Set<string>();
   private hydrating = new Map<string, Promise<void>>();
   private persistTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -69,7 +74,7 @@ class CodeWorkspaceStore {
     workId: string,
     path: string,
     line?: number | null,
-    options?: { persist?: boolean },
+    options?: { persist?: boolean; recordNavigation?: boolean },
   ) {
     const id = tabId(workId, path);
     const existing = this.tabs.find((tab) => tab.tabId === id);
@@ -78,6 +83,8 @@ class CodeWorkspaceStore {
       this.secondaryByWorkId = { ...this.secondaryByWorkId, [workId]: current };
     }
     this.activeByWorkId = { ...this.activeByWorkId, [workId]: id };
+    this.markRecent(workId, id);
+    if (options?.recordNavigation !== false) this.recordNavigation(workId, path, line ?? null);
     if (existing) {
       if (line && line > 0) this.patch(id, { line: Math.floor(line) });
       if (options?.persist !== false) this.schedulePersist(workId);
@@ -150,7 +157,58 @@ class CodeWorkspaceStore {
       ...this.activeByWorkId,
       [tab.work_id]: tabIdValue,
     };
+    this.markRecent(tab.work_id, tabIdValue);
+    this.recordNavigation(tab.work_id, tab.path, tab.line);
     this.schedulePersist(tab.work_id);
+  }
+
+  private markRecent(workId: string, tabIdValue: string) {
+    const recent = this.recentTabIdsByWorkId[workId] ?? [];
+    this.recentTabIdsByWorkId = {
+      ...this.recentTabIdsByWorkId,
+      [workId]: [tabIdValue, ...recent.filter((id) => id !== tabIdValue)].slice(0, 32),
+    };
+  }
+
+  recentTabsFor(workId: string): CodeDocumentTab[] {
+    const byId = new Map(this.tabsFor(workId).map((tab) => [tab.tabId, tab]));
+    const ordered = (this.recentTabIdsByWorkId[workId] ?? [])
+      .map((id) => byId.get(id))
+      .filter((tab): tab is CodeDocumentTab => Boolean(tab));
+    for (const tab of byId.values()) {
+      if (!ordered.some((entry) => entry.tabId === tab.tabId)) ordered.push(tab);
+    }
+    return ordered;
+  }
+
+  private recordNavigation(workId: string, path: string, line: number | null) {
+    const history = this.navigationByWorkId[workId] ?? [];
+    const index = this.navigationIndexByWorkId[workId] ?? history.length - 1;
+    const current = history[index];
+    const next = { path, line: line && line > 0 ? Math.floor(line) : null };
+    if (current?.path === next.path && current.line === next.line) return;
+    const entries = [...history.slice(0, index + 1), next].slice(-100);
+    this.navigationByWorkId = { ...this.navigationByWorkId, [workId]: entries };
+    this.navigationIndexByWorkId = {
+      ...this.navigationIndexByWorkId,
+      [workId]: entries.length - 1,
+    };
+  }
+
+  canNavigate(workId: string, direction: -1 | 1): boolean {
+    const entries = this.navigationByWorkId[workId] ?? [];
+    const index = this.navigationIndexByWorkId[workId] ?? entries.length - 1;
+    return direction < 0 ? index > 0 : index >= 0 && index < entries.length - 1;
+  }
+
+  async navigate(workId: string, direction: -1 | 1) {
+    if (!this.canNavigate(workId, direction)) return null;
+    const entries = this.navigationByWorkId[workId] ?? [];
+    const current = this.navigationIndexByWorkId[workId] ?? entries.length - 1;
+    const index = current + direction;
+    const location = entries[index];
+    this.navigationIndexByWorkId = { ...this.navigationIndexByWorkId, [workId]: index };
+    return this.open(workId, location.path, location.line, { recordNavigation: false });
   }
 
   openToSide(tabIdValue: string) {
@@ -196,6 +254,17 @@ class CodeWorkspaceStore {
     this.schedulePersist(tab.work_id);
   }
 
+  rebaseDraft(tabIdValue: string, source: ForgeSourceFile) {
+    const tab = this.tabs.find((entry) => entry.tabId === tabIdValue);
+    if (!tab) return;
+    this.patch(tabIdValue, {
+      ...source,
+      draft: tab.draft,
+      error: null,
+    });
+    this.schedulePersist(tab.work_id);
+  }
+
   setError(tabIdValue: string, error: string | null) {
     this.patch(tabIdValue, { error });
   }
@@ -237,6 +306,12 @@ class CodeWorkspaceStore {
     const workTabs = this.tabsFor(tab.work_id);
     const index = workTabs.findIndex((entry) => entry.tabId === tabIdValue);
     this.tabs = this.tabs.filter((entry) => entry.tabId !== tabIdValue);
+    this.recentTabIdsByWorkId = {
+      ...this.recentTabIdsByWorkId,
+      [tab.work_id]: (this.recentTabIdsByWorkId[tab.work_id] ?? []).filter(
+        (id) => id !== tabIdValue,
+      ),
+    };
     if (this.secondaryByWorkId[tab.work_id] === tabIdValue) {
       this.secondaryByWorkId = {
         ...this.secondaryByWorkId,

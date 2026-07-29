@@ -2,6 +2,8 @@
   import { tick, untrack } from "svelte";
   import {
     CircleAlert,
+    ArrowLeft,
+    ArrowRight,
     Columns2,
     FileCode2,
     ListTree,
@@ -12,6 +14,7 @@
     GitPullRequestArrow,
     Orbit,
     X,
+    Search,
   } from "@lucide/svelte";
   import CodeMirrorHost from "$lib/components/code/CodeMirrorHost.svelte";
   import CodeSplitEditorPane from "$lib/components/work/CodeSplitEditorPane.svelte";
@@ -29,9 +32,19 @@
     heartbeatLease,
     humanizeForgeMessage,
     saveUndertakingSource,
+    getUndertakingSourceTree,
+    type ForgeSourceTreeFile,
+    getProjectTasks,
+    runProjectTask,
+    type ProjectTask,
+    type ProjectTaskResult,
+    type ForgeSourceFile,
   } from "$lib/forge";
   import { codeWorkspace, type CodeDocumentTab } from "$lib/stores/codeWorkspace.svelte";
   import { undertakings } from "$lib/stores/undertakings.svelte";
+  import { settingsNav } from "$lib/stores/settingsNav.svelte";
+  import { shellTabs } from "$lib/stores/shellTabs.svelte";
+  import { layout } from "$lib/stores/layout.svelte";
 
   interface Props {
     fill?: boolean;
@@ -64,6 +77,18 @@
   let symbols = $state<CodeDocumentSymbol[]>([]);
   let symbolsLoading = $state(false);
   let focusedSide = $state(false);
+  let quickOpen = $state(false);
+  let quickQuery = $state("");
+  let quickFiles = $state<ForgeSourceTreeFile[]>([]);
+  let quickLoading = $state(false);
+  let quickIndex = $state(0);
+  let projectTasks = $state<ProjectTask[]>([]);
+  let selectedTaskId = $state("");
+  let runningTask = $state(false);
+  let taskResult = $state<ProjectTaskResult | null>(null);
+  let externalVersions = $state<Record<string, ForgeSourceFile>>({});
+  let comparingTabId = $state<string | null>(null);
+  let quickInput = $state<HTMLInputElement | null>(null);
 
   const context = $derived(undertakings.active);
   const detail = $derived(undertakings.detail);
@@ -90,6 +115,100 @@
       `${context.worktree.replace(/[\\/]$/, "")}/${activeTab.path}`,
     );
   });
+  const quickResults = $derived.by(() => {
+    const needle = quickQuery.trim().toLowerCase();
+    const scored = quickFiles.map((file, index) => {
+      const path = file.path.toLowerCase();
+      const name = path.split("/").pop() ?? path;
+      const score = !needle ? index : name.startsWith(needle) ? 0 : name.includes(needle) ? 1 : path.includes(needle) ? 2 : 99;
+      return { file, score };
+    });
+    return scored.filter((row) => row.score < 99).sort((a, b) => a.score - b.score).slice(0, 80).map((row) => row.file);
+  });
+  const selectedTask = $derived(
+    projectTasks.find((task) => task.id === selectedTaskId) ?? projectTasks[0] ?? null,
+  );
+
+  async function runDetectedTask() {
+    if (!selectedTask || runningTask) {
+      onOpenTerminal?.();
+      return;
+    }
+    runningTask = true;
+    surfaceError = null;
+    try {
+      let leaseId = context?.leaseId ?? null;
+      let generation = context?.leaseGeneration ?? null;
+      if ((!leaseId || generation == null) && detail?.allowed_actions.begin_attempt.allowed) {
+        const begun = await beginHumanAttempt(detail.id);
+        leaseId = begun.lease.lease_id;
+        generation = begun.lease.generation;
+        undertakings.setActiveFromItem(begun.item, {
+          leaseId,
+          leaseGeneration: generation,
+          executorKind: "human",
+        });
+      }
+      if (!leaseId || generation == null) throw new Error("This project is not ready to run checks");
+      taskResult = await runProjectTask(workId, selectedTask.id, {
+        lease_id: leaseId,
+        generation,
+      });
+      await undertakings.refreshDetail();
+    } catch (err) {
+      surfaceError = err instanceof Error ? err.message : String(err);
+    } finally {
+      runningTask = false;
+    }
+  }
+
+  async function showQuickOpen() {
+    quickOpen = true;
+    quickQuery = "";
+    quickIndex = 0;
+    await tick();
+    quickInput?.focus();
+    if (quickFiles.length || !workId) return;
+    quickLoading = true;
+    try {
+      quickFiles = (await getUndertakingSourceTree(workId)).files;
+    } catch (err) {
+      surfaceError = err instanceof Error ? err.message : String(err);
+    } finally {
+      quickLoading = false;
+    }
+  }
+
+  async function chooseQuickFile(file = quickResults[quickIndex]) {
+    if (!file) return;
+    quickOpen = false;
+    const tab = await codeWorkspace.open(workId, file.path, 1);
+    undertakings.setSelection({ path: file.path, line: 1, entityId: null });
+    await tick();
+    if (tab) editor?.focusEditor();
+  }
+
+  async function navigate(direction: -1 | 1) {
+    const tab = await codeWorkspace.navigate(workId, direction);
+    if (!tab) return;
+    undertakings.setSelection({ path: tab.path, line: tab.line, entityId: null });
+    await tick();
+    if (tab.line) editor?.revealLine(tab.line);
+  }
+
+  function onWindowKeydown(event: KeyboardEvent) {
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "p") {
+      event.preventDefault();
+      void showQuickOpen();
+    }
+    if (event.key === "Escape" && quickOpen) quickOpen = false;
+  }
+
+  function openLanguagePackages() {
+    settingsNav.openSection("packages");
+    shellTabs.openDestination("settings");
+    layout.openShellSidebarView("settings");
+  }
 
   async function openSelectedLocation() {
     const selectedPath = context?.workId === workId ? context.selectedPath : null;
@@ -139,9 +258,10 @@
       const current = codeWorkspace.tabs.find((entry) => entry.tabId === tab.tabId);
       if (!current || current.digest === source.digest) return;
       if (codeWorkspace.isDirty(current)) {
+        externalVersions = { ...externalVersions, [current.tabId]: source };
         codeWorkspace.setError(
           current.tabId,
-          "This file changed outside Medousa. Your draft is preserved; review it before reloading or saving.",
+          "The project version changed while you were editing. Your draft is safe.",
         );
       } else {
         codeWorkspace.acceptSaved(current.tabId, source);
@@ -149,6 +269,26 @@
     } catch {
       // Tree refresh and explicit reload surface durable errors. Polling stays quiet.
     }
+  }
+
+  function useProjectVersion(tab: CodeDocumentTab) {
+    const source = externalVersions[tab.tabId];
+    if (!source) return;
+    codeWorkspace.acceptSaved(tab.tabId, source);
+    const next = { ...externalVersions };
+    delete next[tab.tabId];
+    externalVersions = next;
+    comparingTabId = null;
+  }
+
+  function keepDraft(tab: CodeDocumentTab) {
+    const source = externalVersions[tab.tabId];
+    if (!source) return;
+    codeWorkspace.rebaseDraft(tab.tabId, source);
+    const next = { ...externalVersions };
+    delete next[tab.tabId];
+    externalVersions = next;
+    comparingTabId = null;
   }
 
   async function startEditing() {
@@ -213,9 +353,16 @@
 
   function cycleTab(direction: 1 | -1) {
     if (tabs.length < 2 || !activeTab) return;
-    const index = tabs.findIndex((tab) => tab.tabId === activeTab.tabId);
-    const next = tabs[(index + direction + tabs.length) % tabs.length];
+    const recent = codeWorkspace.recentTabsFor(workId);
+    const index = recent.findIndex((tab) => tab.tabId === activeTab.tabId);
+    const next = recent[(index + direction + recent.length) % recent.length];
     if (next) activate(next);
+  }
+
+  function tabLabel(tab: CodeDocumentTab): string {
+    if (tabs.filter((entry) => entry.title === tab.title).length < 2) return tab.title;
+    const parts = tab.path.split("/");
+    return parts.slice(-2).join("/");
   }
 
   function toggleSplit() {
@@ -285,6 +432,25 @@
         : null;
     codeWorkspace.setLease(workId, lease);
     void codeWorkspace.hydrate(workId);
+  });
+
+  $effect(() => {
+    const id = workId;
+    const prepared = Boolean(context?.worktree);
+    if (!id || !prepared) {
+      projectTasks = [];
+      selectedTaskId = "";
+      return;
+    }
+    let cancelled = false;
+    void getProjectTasks(id).then((tasks) => {
+      if (cancelled) return;
+      projectTasks = tasks;
+      selectedTaskId = tasks.find((task) => task.kind === "verify")?.id ?? tasks[0]?.id ?? "";
+    }).catch(() => {
+      if (!cancelled) projectTasks = [];
+    });
+    return () => { cancelled = true; };
   });
 
   $effect(() => {
@@ -359,7 +525,7 @@
             onclick={() => activate(tab)}
           >
             <FileCode2 size={11} class="shrink-0 opacity-70" />
-            <span class="truncate">{tab.title}</span>
+            <span class="truncate">{tabLabel(tab)}</span>
             {#if codeWorkspace.isDirty(tab)}
               <span class="size-1.5 shrink-0 rounded-full bg-primary-300" aria-label="Unsaved changes"></span>
             {/if}
@@ -387,6 +553,10 @@
   {#if activeTab}
     <header class="flex shrink-0 items-center justify-between gap-1.5 border-b border-surface-500/30 px-2 py-1.5 sm:gap-3 sm:px-2.5">
       <div class="flex min-w-0 items-center gap-2">
+        <div class="flex shrink-0 items-center">
+          <button type="button" class="rounded p-1 text-surface-500 hover:bg-surface-800 hover:text-surface-200 disabled:opacity-25" aria-label="Go back" title="Go back" disabled={!codeWorkspace.canNavigate(workId, -1)} onclick={() => void navigate(-1)}><ArrowLeft size={11} /></button>
+          <button type="button" class="rounded p-1 text-surface-500 hover:bg-surface-800 hover:text-surface-200 disabled:opacity-25" aria-label="Go forward" title="Go forward" disabled={!codeWorkspace.canNavigate(workId, 1)} onclick={() => void navigate(1)}><ArrowRight size={11} /></button>
+        </div>
         <FileCode2 size={14} class="shrink-0 text-primary-300" />
         <div class="min-w-0">
           <p class="truncate font-mono text-[11px] text-surface-200">{activeTab.path}</p>
@@ -437,6 +607,14 @@
         {humanizeForgeMessage(surfaceError || activeTab.error || codeWorkspace.workspaceErrorByWorkId[workId] || "")}
       </p>
     {/if}
+    {#if externalVersions[activeTab.tabId]}
+      <div class="flex shrink-0 flex-wrap items-center gap-2 border-b border-amber-500/30 bg-amber-950/20 px-2.5 py-1.5 text-[10px] text-amber-100">
+        <span class="min-w-40 flex-1">This file changed elsewhere. Your draft is safe.</span>
+        <button type="button" class="rounded px-1.5 py-0.5 hover:bg-white/10" onclick={() => (comparingTabId = activeTab.tabId)}>Compare</button>
+        <button type="button" class="rounded px-1.5 py-0.5 hover:bg-white/10" onclick={() => useProjectVersion(activeTab)}>Use project version</button>
+        <button type="button" class="rounded bg-amber-500/20 px-1.5 py-0.5" onclick={() => keepDraft(activeTab)}>Keep my draft</button>
+      </div>
+    {/if}
 
     <div class="min-h-0 flex-1 {secondaryTab ? 'grid grid-cols-1 overflow-y-auto md:grid-cols-2 md:overflow-hidden' : ''}">
       <div class="relative min-h-64 min-w-0 flex-1" onfocusin={() => (focusedSide = false)}>
@@ -457,7 +635,18 @@
               readOnly={!editable}
               contentSyncKey={activeTab.syncKey}
               onchange={(value) => codeWorkspace.updateDraft(activeTab.tabId, value)}
-              onCursorChanged={(line) => codeWorkspace.updateLine(activeTab.tabId, line)}
+              onCursorChanged={(line) => {
+                codeWorkspace.updateLine(activeTab.tabId, line);
+                undertakings.setSelection({ path: activeTab.path, line });
+              }}
+              onSelectionChanged={(selection) =>
+                undertakings.setSelection({
+                  path: activeTab.path,
+                  line: selection.startLine,
+                  selectionStartLine: selection.startLine,
+                  selectionEndLine: selection.endLine,
+                  selectedText: selection.text || null,
+                })}
               onProblemsChanged={syncProblems}
             />
           {/key}
@@ -525,12 +714,26 @@
 
     <footer class="flex shrink-0 items-center justify-between gap-2 overflow-x-auto border-t border-surface-500/25 bg-surface-950/75 px-1.5 py-0.5">
       <div class="flex shrink-0 items-center gap-0.5">
+        {#if lspError}
+          <button type="button" class="rounded px-1.5 py-0.5 text-[9px] text-amber-300/80 hover:bg-surface-800 hover:text-amber-200" title={lspError} onclick={openLanguagePackages}>Add language support</button>
+        {/if}
         <button
           type="button"
           class="flex items-center gap-1 rounded px-1.5 py-0.5 text-[9px] text-surface-500 hover:bg-surface-800 hover:text-surface-200 disabled:opacity-35"
-          disabled={!terminalAvailable}
-          onclick={onOpenTerminal}
-        ><SquareTerminal size={10} />Run</button>
+          disabled={!terminalAvailable && !selectedTask}
+          onclick={() => void runDetectedTask()}
+          title={selectedTask ? selectedTask.argv.join(" ") : "Open Terminal"}
+        >{#if runningTask}<LoaderCircle size={10} class="animate-spin" />{:else}<SquareTerminal size={10} />{/if}{selectedTask?.label ?? "Terminal"}</button>
+        {#if projectTasks.length > 1}
+          <select class="max-w-24 rounded bg-transparent py-0.5 text-[9px] text-surface-500 outline-none" aria-label="Project command" bind:value={selectedTaskId}>
+            {#each projectTasks as task (task.id)}
+              <option value={task.id}>{task.label}</option>
+            {/each}
+          </select>
+        {/if}
+        {#if selectedTask && terminalAvailable}
+          <button type="button" class="flex items-center gap-1 rounded px-1.5 py-0.5 text-[9px] text-surface-500 hover:bg-surface-800 hover:text-surface-200" onclick={onOpenTerminal} title="Open Terminal"><SquareTerminal size={10} />Terminal</button>
+        {/if}
         <button
           type="button"
           class="flex items-center gap-1 rounded px-1.5 py-0.5 text-[9px] text-surface-500 hover:bg-surface-800 hover:text-surface-200"
@@ -561,6 +764,12 @@
       ><ListTree size={10} />Structure</button>
       </div>
     </footer>
+    {#if taskResult}
+      <button type="button" class="flex shrink-0 items-center justify-between gap-2 border-t px-2.5 py-1 text-left text-[9px] {taskResult.success ? 'border-emerald-500/25 bg-emerald-950/20 text-emerald-200' : 'border-rose-500/30 bg-rose-950/25 text-rose-200'}" title="Open Terminal for detailed investigation" onclick={onOpenTerminal}>
+        <span>{taskResult.success ? "Passed" : "Needs attention"} · {taskResult.task.label}</span>
+        <span class="text-current opacity-60">{(taskResult.duration_ms / 1000).toFixed(1)}s{taskResult.exit_code != null ? ` · exit ${taskResult.exit_code}` : ""}</span>
+      </button>
+    {/if}
   {:else}
     <div class="flex min-h-72 flex-1 items-center justify-center p-8 text-center">
       <div class="max-w-xs">
@@ -574,8 +783,63 @@
   {/if}
 </section>
 
+{#if quickOpen}
+  <div class="fixed inset-0 z-[120] flex items-start justify-center px-4 pt-[12vh]">
+    <button type="button" class="absolute inset-0 bg-black/35" aria-label="Close file picker" onclick={() => (quickOpen = false)}></button>
+    <div class="relative w-full max-w-xl overflow-hidden rounded-lg border border-surface-500/50 bg-surface-950 shadow-2xl" role="dialog" aria-modal="true" aria-label="Open a file" tabindex="-1">
+      <div class="flex items-center gap-2 border-b border-surface-500/30 px-3">
+        <Search size={14} class="text-surface-500" />
+        <input bind:this={quickInput} class="min-w-0 flex-1 bg-transparent py-2.5 text-sm text-surface-100 outline-none" placeholder="Open a file" bind:value={quickQuery} oninput={() => (quickIndex = 0)} onkeydown={(event) => {
+          if (event.key === "ArrowDown") { event.preventDefault(); quickIndex = Math.min(quickIndex + 1, quickResults.length - 1); }
+          if (event.key === "ArrowUp") { event.preventDefault(); quickIndex = Math.max(quickIndex - 1, 0); }
+          if (event.key === "Enter") { event.preventDefault(); void chooseQuickFile(); }
+        }} />
+        <span class="text-[9px] text-surface-600">⌘P</span>
+      </div>
+      <div class="max-h-[50vh] overflow-y-auto py-1">
+        {#if quickLoading}
+          <p class="px-3 py-3 text-xs text-surface-500">Reading project files…</p>
+        {:else if quickResults.length === 0}
+          <p class="px-3 py-3 text-xs text-surface-500">No matching files.</p>
+        {:else}
+          {#each quickResults as file, index (file.path)}
+            <button type="button" class="flex w-full items-center gap-2 px-3 py-1.5 text-left {index === quickIndex ? 'bg-surface-800 text-surface-100' : 'text-surface-400 hover:bg-surface-900'}" onmouseenter={() => (quickIndex = index)} onclick={() => void chooseQuickFile(file)}>
+              <FileCode2 size={12} class="shrink-0 opacity-65" />
+              <span class="min-w-0 flex-1 truncate text-xs">{file.path.split("/").pop()}</span>
+              <span class="min-w-0 max-w-[60%] truncate font-mono text-[9px] text-surface-600">{file.path}</span>
+            </button>
+          {/each}
+        {/if}
+      </div>
+    </div>
+  </div>
+{/if}
+
+{#if comparingTabId}
+  {@const conflictTab = tabs.find((tab) => tab.tabId === comparingTabId)}
+  {@const projectVersion = externalVersions[comparingTabId]}
+  {#if conflictTab && projectVersion}
+    <div class="fixed inset-0 z-[125] flex items-center justify-center p-4">
+      <button type="button" class="absolute inset-0 bg-black/55" aria-label="Close comparison" onclick={() => (comparingTabId = null)}></button>
+      <div class="relative flex max-h-[85vh] w-full max-w-5xl flex-col overflow-hidden rounded-lg border border-surface-500/50 bg-surface-950 shadow-2xl" role="dialog" aria-modal="true" aria-label="Compare file versions" tabindex="-1">
+        <header class="flex items-center justify-between border-b border-surface-500/30 px-3 py-2">
+          <div><p class="text-xs font-medium text-surface-100">Choose the version to continue with</p><p class="font-mono text-[9px] text-surface-500">{conflictTab.path}</p></div>
+          <button type="button" class="rounded p-1 text-surface-500 hover:text-surface-100" aria-label="Close comparison" onclick={() => (comparingTabId = null)}><X size={13} /></button>
+        </header>
+        <div class="grid min-h-0 flex-1 grid-cols-1 md:grid-cols-2">
+          <section class="flex min-h-48 flex-col border-b border-surface-500/30 md:border-b-0 md:border-r"><p class="border-b border-surface-500/25 px-3 py-1.5 text-[10px] font-medium text-surface-300">My draft</p><pre class="min-h-0 flex-1 overflow-auto p-3 text-[10px] leading-relaxed text-surface-300">{conflictTab.draft}</pre></section>
+          <section class="flex min-h-48 flex-col"><p class="border-b border-surface-500/25 px-3 py-1.5 text-[10px] font-medium text-surface-300">Project version</p><pre class="min-h-0 flex-1 overflow-auto p-3 text-[10px] leading-relaxed text-surface-300">{projectVersion.content}</pre></section>
+        </div>
+        <footer class="flex justify-end gap-2 border-t border-surface-500/30 px-3 py-2"><button type="button" class="rounded px-2 py-1 text-[10px] text-surface-300 hover:bg-surface-800" onclick={() => useProjectVersion(conflictTab)}>Use project version</button><button type="button" class="rounded bg-primary-500/80 px-2 py-1 text-[10px] font-medium text-white" onclick={() => keepDraft(conflictTab)}>Keep my draft</button></footer>
+      </div>
+    </div>
+  {/if}
+{/if}
+
 <svelte:window
   onkeydown={(event) => {
+    onWindowKeydown(event);
+    if (event.defaultPrevented) return;
     const command = event.metaKey || event.ctrlKey;
     if (command && event.shiftKey && event.key.toLowerCase() === "s") {
       event.preventDefault();

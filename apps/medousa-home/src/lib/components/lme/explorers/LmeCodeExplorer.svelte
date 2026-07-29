@@ -1,20 +1,33 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { Code2, Plus, RefreshCw } from "@lucide/svelte";
-  import { humanPhaseLabel, humanizeForgeMessage } from "$lib/forge";
+  import { Code2, FolderOpen, Plus, RefreshCw } from "@lucide/svelte";
+  import {
+    humanPhaseLabel,
+    humanizeForgeMessage,
+    inspectForgeRepository,
+    type RepositoryInspection,
+  } from "$lib/forge";
   import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
   import { undertakings } from "$lib/stores/undertakings.svelte";
   import { vault } from "$lib/stores/vault.svelte";
   import { isCoLocatedWorkshop } from "$lib/utils/workshopLocality";
+  import { pickExternalFolder, rootLabelFromPath } from "$lib/utils/externalDeskApi";
   import CodeRepositoryTree from "$lib/components/lme/explorers/CodeRepositoryTree.svelte";
 
   let creating = $state(false);
   let busy = $state(false);
-  let title = $state("");
-  let brief = $state("");
+  let outcome = $state("");
   let repoPath = $state("");
   let baseRef = $state("main");
+  let repository = $state<RepositoryInspection | null>(null);
+  let inspecting = $state(false);
   let error = $state<string | null>(null);
+  const coLocated = $derived(isCoLocatedWorkshop());
+  const currentFolder = $derived(
+    coLocated && vault.activeVaultRoot?.path
+      ? { path: vault.activeVaultRoot.path, label: vault.activeVaultRoot.label }
+      : null,
+  );
 
   const activeItems = $derived(
     undertakings.items.filter(
@@ -32,30 +45,72 @@
         item.state === "accepted",
     ),
   );
+  const recentRepositories = $derived.by(() => {
+    const seen = new Set<string>();
+    const paths: Array<{ path: string; label: string }> = [];
+    for (const item of undertakings.items) {
+      const target = item.target?.Git;
+      if (!target?.repo_path || seen.has(target.repo_path)) continue;
+      seen.add(target.repo_path);
+      paths.push({ path: target.repo_path, label: rootLabelFromPath(target.repo_path) });
+      if (paths.length === 5) break;
+    }
+    return paths;
+  });
 
   onMount(() => {
     void undertakings.refreshList();
-    if (isCoLocatedWorkshop()) repoPath = vault.activeVaultRoot?.path ?? "";
   });
 
   async function openItem(id: string, label: string) {
     await lmeWorkspace.openCodeWorkspace(id, label);
   }
 
+  function inferredTitle(): string {
+    const goal = outcome.trim().replace(/[.!?]+$/, "");
+    if (goal) return goal.length > 72 ? `${goal.slice(0, 69)}…` : goal;
+    return repository?.display_name ?? rootLabelFromPath(repoPath);
+  }
+
+  async function chooseRepository(path: string) {
+    if (!path.trim() || inspecting) return;
+    inspecting = true;
+    error = null;
+    try {
+      repository = await inspectForgeRepository(path.trim());
+      repoPath = repository.path;
+      baseRef = repository.suggested_base_ref;
+      creating = true;
+    } catch (err) {
+      repository = null;
+      repoPath = path.trim();
+      error = err instanceof Error ? err.message : String(err);
+    } finally {
+      inspecting = false;
+    }
+  }
+
+  async function pickRepository() {
+    if (!coLocated) return;
+    const path = await pickExternalFolder("Choose a code project");
+    if (path) await chooseRepository(path);
+  }
+
   async function create() {
-    if (!title.trim() || !repoPath.trim() || busy) return;
+    if (!outcome.trim() || !repository || busy) return;
     busy = true;
     error = null;
     try {
-      const item = await undertakings.create({
-        title: title.trim(),
-        brief: brief.trim() || title.trim(),
-        repo_path: repoPath.trim(),
+      const item = await undertakings.start({
+        title: inferredTitle(),
+        brief: outcome.trim(),
+        repo_path: repository.path,
         base_ref: baseRef.trim() || "main",
       });
       creating = false;
-      title = "";
-      brief = "";
+      outcome = "";
+      repository = null;
+      repoPath = "";
       await lmeWorkspace.openCodeWorkspace(item.id, item.title);
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
@@ -84,7 +139,7 @@
         class="rounded p-1 text-surface-400 hover:bg-surface-800 hover:text-surface-100"
         aria-label="New code project"
         title="New code project"
-        onclick={() => (creating = !creating)}
+      onclick={() => (creating = !creating)}
       ><Plus size={14} /></button>
     </div>
   </div>
@@ -97,31 +152,58 @@
         void create();
       }}
     >
+      {#if repository}
+        <div class="rounded border border-surface-500/30 bg-surface-900/45 px-2 py-1.5">
+          <p class="truncate text-[11px] font-medium text-surface-200">{repository.display_name}</p>
+          <p class="truncate font-mono text-[9px] text-surface-500">{repository.path}</p>
+          {#if repository.dirty}
+            <p class="mt-1 text-[9px] leading-relaxed text-amber-200">
+              {repository.changed_files} uncommitted {repository.changed_files === 1 ? "file is" : "files are"} outside this project and won’t be included.
+            </p>
+          {/if}
+        </div>
+      {:else}
+        <div class="grid gap-1">
+          {#if coLocated}
+            <button type="button" class="flex items-center gap-2 rounded border border-surface-500/30 px-2 py-2 text-left text-[10px] text-surface-200 hover:bg-surface-800" onclick={() => void pickRepository()}>
+              <FolderOpen size={13} class="text-primary-300" />Choose a folder…
+            </button>
+            {#if currentFolder}
+              <button type="button" class="flex min-w-0 items-center gap-2 rounded px-2 py-1 text-left text-[10px] text-surface-400 hover:bg-surface-800 hover:text-surface-100" onclick={() => void chooseRepository(currentFolder.path)}>
+                <FolderOpen size={11} class="shrink-0" /><span class="min-w-0 flex-1 truncate">Current folder · {currentFolder.label}</span>
+              </button>
+            {/if}
+          {:else}
+            <div class="flex gap-1">
+              <input class="code-field min-w-0 flex-1" placeholder="Folder on connected computer" bind:value={repoPath} />
+              <button type="button" class="rounded border border-surface-500/35 px-2 text-[10px] text-surface-300" disabled={!repoPath.trim() || inspecting} onclick={() => void chooseRepository(repoPath)}>Use</button>
+            </div>
+          {/if}
+          {#each recentRepositories as recent (recent.path)}
+            <button type="button" class="flex min-w-0 items-center gap-2 rounded px-2 py-1 text-left text-[10px] text-surface-400 hover:bg-surface-800 hover:text-surface-100" onclick={() => void chooseRepository(recent.path)}>
+              <Code2 size={11} class="shrink-0" /><span class="min-w-0 flex-1 truncate">{recent.label}</span>
+            </button>
+          {/each}
+        </div>
+      {/if}
       <label class="code-field-label">
-        <span>Project</span>
-        <input class="code-field" placeholder="What are you changing?" bind:value={title} />
+        <span>What do you want to accomplish?</span>
+        <textarea class="code-field min-h-16 resize-none" placeholder="Make indexing cancellation-safe" bind:value={outcome}></textarea>
       </label>
-      <label class="code-field-label">
-        <span>Outcome</span>
-        <input class="code-field" placeholder="What should be true when it’s done?" bind:value={brief} />
-      </label>
-      <label class="code-field-label">
-        <span>Repository</span>
-        <input
-          class="code-field"
-          placeholder={isCoLocatedWorkshop() ? "Folder path" : "Folder on connected computer"}
-          bind:value={repoPath}
-        />
-      </label>
-      <label class="code-field-label">
-        <span>Start from</span>
-        <input class="code-field" placeholder="Branch" bind:value={baseRef} />
-      </label>
+      {#if repository}
+        <details class="text-[9px] text-surface-500">
+          <summary class="cursor-pointer select-none hover:text-surface-300">Starting point</summary>
+          <label class="mt-1 flex items-center gap-2">
+            <span class="shrink-0">Branch</span>
+            <input class="code-field min-w-0 flex-1" bind:value={baseRef} />
+          </label>
+        </details>
+      {/if}
       <button
         type="submit"
         class="rounded bg-primary-500/80 px-2 py-1 text-xs font-medium text-surface-50 disabled:opacity-40"
-        disabled={busy || !title.trim() || !repoPath.trim()}
-      >Start project</button>
+        disabled={busy || inspecting || !outcome.trim() || !repository}
+      >{busy ? "Preparing project…" : inspecting ? "Reading project…" : "Start"}</button>
     </form>
   {/if}
 

@@ -35,6 +35,8 @@ Base path: `/v1/forge`. Types are `medousa-forge` serde models (`WorkItem`,
 | Method | Path | Purpose |
 |--------|------|---------|
 | POST | `/v1/forge/items` | Register undertaking (`repo_path`, `base_ref`, optional `policy`) |
+| POST | `/v1/forge/items/start` | Register and provision a project in one operation |
+| POST | `/v1/forge/repositories/inspect` | Resolve a folder to its Git root and infer branch/status metadata |
 | GET | `/v1/forge/items` | List items |
 | GET | `/v1/forge/items/{id}` | Load item |
 | GET | `/v1/forge/items/{id}/source?path=…` | Read bounded UTF-8 source from the governed worktree |
@@ -45,6 +47,8 @@ Base path: `/v1/forge`. Types are `medousa-forge` serde models (`WorkItem`,
 | GET | `/v1/forge/items/{id}/tree` | List tracked and unignored repository files (bounded to 20,000) |
 | GET | `/v1/forge/items/{id}/search?query=…` | Fixed-string tracked-source search (bounded to 500 hits) |
 | GET, PUT | `/v1/forge/items/{id}/workspace-state` | Restore/preserve open files, editor groups, positions, and bounded dirty drafts |
+| GET | `/v1/forge/items/{id}/tasks` | Detect safe project commands from repository manifests |
+| POST | `/v1/forge/items/{id}/tasks/{task_id}/run` | Run a detected command and stage its result into active evidence |
 | POST | `/v1/forge/items/{id}/provision` | Create governed worktree env |
 | POST | `/v1/forge/items/{id}/attempts` | Begin attempt (default executor `human`) → lease |
 | POST | `/v1/forge/leases/{lease_id}/heartbeat` | Liveness (`generation` required) |
@@ -76,6 +80,19 @@ overwritten.
 
 `repo_path` may be the active vault root when Versions is on, or any other git
 root. Forge does not enable Versions for you.
+
+Home normally calls `repositories/inspect` before `items/start`. Inspection is
+read-only and returns the canonical worktree root, display name, current and
+suggested base branch, dirty-file count, and remotes. Paths always refer to the
+daemon/workshop filesystem. A co-located Home may obtain the input path from a
+native folder picker; a remote Home must obtain it from the workshop.
+
+Detected tasks are intentionally bounded to commands declared by common
+repository markers (`Cargo.toml`, `package.json`, `go.mod`, Python project
+metadata, Makefile targets, and .NET projects). The run endpoint accepts a task
+ID returned by the list endpoint, never arbitrary command text. Running is
+lease-fenced; the command, output, exit status, and duration are appended to
+the active attempt's evidence log for Review.
 
 ### Lease fencing
 

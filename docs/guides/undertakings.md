@@ -131,9 +131,13 @@ concepts users must learn to work in Code.
 See `apps/medousa-home/src/lib/forge.ts` and daemon routes:
 
 - `GET /v1/forge/items`, `…/review`, `…/evidence/{id}/patch|commands`
+- `POST /v1/forge/repositories/inspect` and `POST /v1/forge/items/start` for
+  folder-first project setup with inferred Git context
 - `GET|POST|PUT|PATCH|DELETE /v1/forge/items/{id}/source` for bounded,
   governed source editing
 - `GET|PUT /v1/forge/items/{id}/workspace-state` for durable editor recovery
+- `GET|POST /v1/forge/items/{id}/tasks[/…/run]` for detected checks, tests, and
+  builds whose results become review evidence
 - `POST …/decisions` with **review intent** (server builds the decision)
 - `GET /v1/forge/stream` for freshness
 - `GET /v1/world/bindings/{work_id}` for World status
