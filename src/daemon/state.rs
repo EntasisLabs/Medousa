@@ -98,6 +98,8 @@ pub struct AppState {
     pub coding_engine: Option<Arc<crate::daemon::coding_engine_host::CodingEngineHost>>,
     /// Workshop shell session host (medousa-session sidecar).
     pub shell_sessions: Option<Arc<crate::daemon::shell_session_host::ShellSessionHost>>,
+    /// Detamu world-model host (path-dep SDK; SurrealKV under `{dataDir}/detamu`).
+    pub detamu: Option<Arc<crate::daemon::detamu_host::DetamuHost>>,
 }
 
 impl AppState {

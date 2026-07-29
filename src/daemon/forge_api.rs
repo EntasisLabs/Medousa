@@ -236,6 +236,16 @@ async fn provision_item(
     let id = parse_work_id(&work_id)?;
     let actor = actor_from_state(&state);
     let item = forge(&state).provision(&id, &actor).map_err(map_err)?;
+    if let Some(env) = item.environment.as_ref() {
+        crate::daemon::detamu_host::maybe_index_forge_item(
+            &state.detamu,
+            item.id.as_str(),
+            &env.worktree,
+            env.baseline_oid.as_str(),
+            crate::daemon::detamu_host::BindingKind::Baseline,
+        )
+        .await;
+    }
     Ok(Json(item))
 }
 
@@ -314,6 +324,22 @@ async fn complete_lease(
     let item = forge(&state)
         .complete_attempt(&lease, &options, &actor)
         .map_err(map_err)?;
+    if let Some(env) = item.environment.as_ref() {
+        let sealed_oid = forge(&state)
+            .git()
+            .head_oid(&env.worktree)
+            .ok()
+            .map(|oid| oid.as_str().to_owned())
+            .unwrap_or_else(|| env.baseline_oid.as_str().to_owned());
+        crate::daemon::detamu_host::maybe_index_forge_item(
+            &state.detamu,
+            item.id.as_str(),
+            &env.worktree,
+            &sealed_oid,
+            crate::daemon::detamu_host::BindingKind::Sealed,
+        )
+        .await;
+    }
     Ok(Json(item))
 }
 

@@ -5,9 +5,9 @@
 
 First-run UX, Home shell milestones, turn-loop FSM, user profiles (Phases 0–6), **centralized agent runtime**, **0.5.0 Vault / Versions / Liquid**, **0.6.0 Shared / Peer mesh / Dynamic + Home polish**, and **0.7.0 Accounts / Liquid depth / Browser act + Languages** are **shipped**. See [turn-runtime-and-lanes.md](turn-runtime-and-lanes.md), [ADR-002](../docs/architecture/decisions/adr-002-user-profiles.md), [v0.5.0-vault-versions-plan.md](v0.5.0-vault-versions-plan.md), [v0.6.0-shared-mode-plan.md](v0.6.0-shared-mode-plan.md), [v0.6.0-peer-mesh-plan.md](v0.6.0-peer-mesh-plan.md), [v0.7.0-plan.md](v0.7.0-plan.md).
 
-**Next focus:** felt polish residual (empty states, F3–F5), optional mesh `client.relay`, inference profiles, **Forge** Home review surface, **coding engine** package polish — see below.
+**Next focus:** felt polish residual (empty states, F3–F5), optional mesh `client.relay`, inference profiles, **Forge** Home review surface, **Detamu** world-model host (after publish) — see below.
 
-Full plans: **[v0.8.0-forge-plan.md](v0.8.0-forge-plan.md)** · **[coding-engine-orchestrator.md](coding-engine-orchestrator.md)** · **[v0.6.0-shared-mode-plan.md](v0.6.0-shared-mode-plan.md)** · **[v0.6.0-peer-mesh-plan.md](v0.6.0-peer-mesh-plan.md)** · **[home-messaging-matrix.md](home-messaging-matrix.md)** · [ADR-011](../docs/architecture/decisions/adr-011-shared-mode-portal-and-mesh.md) · **[workshop-and-automations-plan.md](workshop-and-automations-plan.md)** · **[polish-and-package-plan.md](polish-and-package-plan.md)** · **[operators-guide-docs-epic.md](operators-guide-docs-epic.md)**
+Full plans: **[v0.8.0-forge-plan.md](v0.8.0-forge-plan.md)** · **[detamu-medousa-fit.md](detamu-medousa-fit.md)** · **[coding-engine-orchestrator.md](coding-engine-orchestrator.md)** · **[coding-session-terminal.md](coding-session-terminal.md)** · **[v0.6.0-shared-mode-plan.md](v0.6.0-shared-mode-plan.md)** · **[v0.6.0-peer-mesh-plan.md](v0.6.0-peer-mesh-plan.md)** · **[home-messaging-matrix.md](home-messaging-matrix.md)** · [ADR-011](../docs/architecture/decisions/adr-011-shared-mode-portal-and-mesh.md) · **[workshop-and-automations-plan.md](workshop-and-automations-plan.md)** · **[polish-and-package-plan.md](polish-and-package-plan.md)** · **[operators-guide-docs-epic.md](operators-guide-docs-epic.md)**
 
 ---
 
@@ -24,6 +24,21 @@ Full plans: **[v0.8.0-forge-plan.md](v0.8.0-forge-plan.md)** · **[coding-engine
 | Multi-client fan-out + doc versions | ✅ |
 | Forge worktree `--allow-root` | ✅ |
 | Detamu bridge hooks | ✅ stub (`/v1/detamu/*`) |
+
+## Detamu × Medousa (path-dep spike)
+
+> Architecture: [detamu-medousa-fit.md](detamu-medousa-fit.md). Detamu = world at commit OID; Forge = work custody. **Code AVEC ≠ Locus AVEC.** Path-deps `../../detamu` until crates.io publish; host opens on daemon boot.
+
+| Slice | Status |
+|-------|--------|
+| Fit map (authority, seams, dual AVEC, route collision) | ✅ [detamu-medousa-fit.md](detamu-medousa-fit.md) |
+| Detamu publish (`detamu` crate on crates.io) | ⬜ path-dep for now |
+| Daemon `DetamuHost` + SurrealKV at `{dataDir}/detamu` | ✅ |
+| `/v1/world/*` (vs orchestrator `/v1/detamu/*` stubs) | ✅ |
+| Forge provision/seal → `index_source` + SnapshotId bindings | ✅ |
+| `cognition_detamu_status` / `files` (domain `detamu`, opt-in) | ✅ |
+| Impact / `code_avec` / symbols tools | ⬜ queued (analyzer-gated) |
+| medousa-code real DetamuObserver (off keystroke path) | ⬜ queued |
 
 ## Coding session terminal (Home as WM)
 

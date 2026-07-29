@@ -3105,6 +3105,119 @@ dependencies = [
 ]
 
 [[package]]
+name = "detamu"
+version = "0.1.0"
+dependencies = [
+ "detamu-core",
+ "detamu-model",
+ "detamu-model-code",
+ "detamu-query",
+ "detamu-query-code",
+ "detamu-sdk",
+ "detamu-store",
+ "detamu-surreal",
+]
+
+[[package]]
+name = "detamu-core"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "detamu-model"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "detamu-core",
+ "serde",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "detamu-model-code"
+version = "0.1.0"
+dependencies = [
+ "detamu-core",
+ "detamu-model",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+]
+
+[[package]]
+name = "detamu-query"
+version = "0.1.0"
+dependencies = [
+ "detamu-core",
+ "detamu-store",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "detamu-query-code"
+version = "0.1.0"
+dependencies = [
+ "detamu-core",
+ "detamu-model-code",
+ "detamu-query",
+ "detamu-store",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "detamu-sdk"
+version = "0.1.0"
+dependencies = [
+ "detamu-core",
+ "detamu-model",
+ "detamu-store",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "detamu-source-git"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "detamu-core",
+ "detamu-model",
+ "detamu-model-code",
+ "serde_json",
+ "sha2 0.10.9",
+ "tokio",
+]
+
+[[package]]
+name = "detamu-store"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "detamu-core",
+ "serde",
+ "thiserror 2.0.18",
+ "tokio",
+]
+
+[[package]]
+name = "detamu-surreal"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "detamu-core",
+ "detamu-store",
+ "serde",
+ "serde_json",
+ "surrealdb",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "deunicode"
 version = "1.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7210,6 +7323,8 @@ dependencies = [
  "chrono-tz",
  "clap",
  "crossterm 0.28.1",
+ "detamu",
+ "detamu-source-git",
  "dirs 5.0.1",
  "ed25519-dalek 2.2.0",
  "fs2",

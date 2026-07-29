@@ -402,6 +402,20 @@ async fn main() -> Result<()> {
         forge,
         coding_engine: Some(medousa::daemon::coding_engine_host::CodingEngineHost::new()),
         shell_sessions: Some(medousa::daemon::shell_session_host::ShellSessionHost::new()),
+        detamu: match medousa::daemon::detamu_host::DetamuHost::open(
+            medousa::daemon::detamu_host::DetamuHost::default_root(),
+        )
+        .await
+        {
+            Ok(host) => {
+                tracing::info!("detamu host opened");
+                Some(host)
+            }
+            Err(err) => {
+                tracing::warn!(%err, "detamu host unavailable — world tools disabled");
+                None
+            }
+        },
     };
 
     medousa::turn_worker_notify::register_ingest_channel_delivery_bridge(

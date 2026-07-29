@@ -62,6 +62,7 @@ pub mod shell_sandbox;
 pub mod shell_grapheme;
 pub mod shell_tools;
 pub mod coding_tools;
+pub mod detamu_tools;
 pub mod code_intelligence_tools;
 pub mod observability;
 pub mod ui_present_tools;
