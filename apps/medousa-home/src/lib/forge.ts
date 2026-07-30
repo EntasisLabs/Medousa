@@ -1035,17 +1035,17 @@ export function humanPhaseLabel(phase: string): string {
 export function humanPhaseGuidance(phase: string): string {
   switch (phase) {
     case "prepare":
-      return "Medousa will make a safe place for this change.";
+      return "Set up the working copy to begin editing.";
     case "work":
-      return "Your files, tools, and agents stay together here.";
+      return "Edit, run, or hand off — same working copy.";
     case "review":
-      return "See what changed, then decide what to keep.";
+      return "Inspect the diff, then keep or discard.";
     case "complete":
-      return "This work is preserved and ready whenever you need it.";
+      return "Preserved; reopen anytime.";
     case "needs_attention":
-      return "Medousa kept your work safe and needs your decision.";
+      return "A decision is blocked — resolve to continue.";
     default:
-      return "Your work stays together while you decide what happens next.";
+      return "Edit in the working copy.";
   }
 }
 

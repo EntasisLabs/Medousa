@@ -65,6 +65,8 @@ $binDir = Join-Path $Output "bin"
 New-Item -ItemType Directory -Force -Path $binDir | Out-Null
 
 Write-MedousaLog "building medousa_local ($feature) for $Target"
+$env:CARGO_TARGET_DIR = Get-MedousaCargoTargetRoot
+Write-MedousaLog "CARGO_TARGET_DIR=$($env:CARGO_TARGET_DIR)"
 $localBuildArgs = @(
     "build", "--release", "-p", "medousa-local-inference", "--bin", "medousa_local",
     "--features", $feature

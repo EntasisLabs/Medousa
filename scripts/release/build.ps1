@@ -74,6 +74,10 @@ Write-MedousaLog "staging -> $binDir"
 Write-MedousaLog "phase 1/2: building CLI + daemon + channels ($($MedousaBinaries.Count) binaries)..."
 Write-MedousaLog "  bins: $($MedousaBinaries -join ' ')"
 
+# Align cargo output with Find-MedousaReleaseBinary (shared ../.cache/cargo-target by default).
+$env:CARGO_TARGET_DIR = Get-MedousaCargoTargetRoot
+Write-MedousaLog "CARGO_TARGET_DIR=$($env:CARGO_TARGET_DIR)"
+
 $cargoBuildArgs = @("build", "--release")
 $cargoFeatures = @()
 if ($WithIroh) {

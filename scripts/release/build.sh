@@ -37,6 +37,8 @@ Environment:
   MEDOUSA_PREBUILT_DAEMON   Path to a prebuilt medousa_daemon binary. When set,
                             engine packaging reuses it instead of compiling again.
   MEDOUSA_PREBUILT_LAUNCHER Path to a prebuilt medousa launcher (optional with daemon).
+  CARGO_TARGET_DIR          Cargo output dir (default: <repo-parent>/.cache/cargo-target).
+                            build.sh exports this so compile + staging stay aligned.
 
 Component groups → bins:
   engine         medousa, medousa_daemon, medousa_cli, medousa_tui
@@ -157,6 +159,12 @@ fi
 VERSION="$(medousa_version)"
 medousa_log "building medousa crate v${VERSION} for ${TARGET} (components: ${COMPONENTS})"
 medousa_log "staging → ${BIN_DIR}"
+
+# Keep cargo output and medousa_find_release_binary on the same tree. Without this,
+# cargo writes to ./target while staging prefers ../.cache/cargo-target and can
+# ship stale binaries from a previous release build.
+export CARGO_TARGET_DIR="$(medousa_cargo_target_root)"
+medousa_log "CARGO_TARGET_DIR=${CARGO_TARGET_DIR}"
 
 CARGO_BUILD_ARGS=(--release)
 CARGO_FEATURES=()

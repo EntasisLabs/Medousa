@@ -28,6 +28,71 @@
   } from "$lib/config/codeEditorPreferences";
   import { codeEditorFind } from "$lib/stores/codeEditorFind.svelte";
 
+  /** Medousa chrome for the coding host — Notes care, gutters kept for code. */
+  const codeEditorChromeTheme = EditorView.theme(
+    {
+      "&": {
+        height: "100%",
+        width: "100%",
+        maxWidth: "100%",
+        fontSize: "inherit",
+        color: "rgb(var(--color-surface-100))",
+        backgroundColor: "transparent",
+      },
+      ".cm-scroller": {
+        overflow: "auto",
+        maxWidth: "100%",
+        fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+        lineHeight: "1.55",
+      },
+      ".cm-content": {
+        padding: "0.35rem 0",
+        caretColor: "rgb(var(--color-primary-200))",
+        color: "rgb(var(--color-surface-100))",
+      },
+      ".cm-cursor, .cm-dropCursor": {
+        borderLeftColor: "rgb(var(--color-primary-200))",
+        borderLeftWidth: "2px",
+      },
+      "&.cm-focused .cm-cursor": {
+        borderLeftColor: "rgb(var(--color-primary-100))",
+      },
+      ".cm-selectionBackground, &.cm-focused .cm-selectionBackground": {
+        backgroundColor: "rgb(var(--color-primary-500) / 0.28) !important",
+      },
+      ".cm-gutters": {
+        backgroundColor: "transparent",
+        border: "none",
+        color: "rgb(var(--color-surface-600))",
+        minWidth: "2.25rem",
+      },
+      ".cm-lineNumbers .cm-gutterElement": {
+        padding: "0 0.5rem 0 0.2rem",
+        minWidth: "1.85rem",
+      },
+      ".cm-activeLine": {
+        backgroundColor: "rgb(var(--color-surface-900) / 0.45)",
+      },
+      ".cm-activeLineGutter": {
+        backgroundColor: "rgb(var(--color-surface-900) / 0.35)",
+        color: "rgb(var(--color-surface-400))",
+      },
+      ".cm-selectionMatch": {
+        backgroundColor: "rgb(var(--color-primary-500) / 0.18)",
+      },
+      ".cm-searchMatch": {
+        backgroundColor: "rgb(var(--color-warning-400) / 0.35)",
+      },
+      ".cm-searchMatch.cm-searchMatch-selected": {
+        backgroundColor: "rgb(var(--color-warning-300) / 0.55)",
+      },
+      "&.cm-focused": {
+        outline: "none",
+      },
+    },
+    { dark: true },
+  );
+
   class ReviewMarker extends GutterMarker {
     kind: string;
 
@@ -168,6 +233,7 @@
     const indent = usesTabs ? "\t" : " ".repeat(tabSize);
     const extensions = [
       basicSetup,
+      codeEditorChromeTheme,
       ...buildCodeEditorLanguageExtensions(resolvedLanguage),
       keymap.of([...searchKeymap, indentWithTab]),
       highlightSelectionMatches(),
@@ -471,6 +537,19 @@
     align-items: center;
     gap: 0.25rem;
     color: rgb(var(--color-surface-400));
+  }
+
+  :global(.code-codemirror-host .cm-panel.cm-search .cm-textfield) {
+    min-width: 8rem;
+  }
+
+  :global(.code-codemirror-host .cm-panel.cm-search [name="close"]) {
+    margin-left: auto;
+  }
+
+  /* Quiet confidence: match hits read as marks, not alarms */
+  :global(.code-codemirror-host .cm-searchMatch) {
+    outline: 1px solid rgb(var(--color-warning-400) / 0.35);
   }
 
   :global(.code-codemirror-host .cm-panel.cm-search .cm-button) {

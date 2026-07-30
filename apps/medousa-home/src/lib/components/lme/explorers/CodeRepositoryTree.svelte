@@ -113,7 +113,7 @@
     try {
       contentSearch = await searchUndertakingSource(workId, needle);
     } catch (err) {
-      error = err instanceof Error ? err.message : String(err);
+      error = humanizeForgeMessage(err instanceof Error ? err.message : String(err));
     } finally {
       contentSearching = false;
     }
@@ -446,7 +446,12 @@
             {/if}
             <span class="min-w-0 flex-1 truncate">{query ? row.path : row.name}</span>
             {#if row.kind === "file" && row.status}
-              <span class="shrink-0 text-[9px] {row.status === '??' ? 'text-emerald-300' : 'text-amber-300'}" title={row.status}>{statusLabel(row.status)}</span>
+              <span
+                class="ml-auto h-1.5 w-1.5 shrink-0 rounded-full {row.status === '??' ? 'bg-emerald-400' : 'bg-amber-400'}"
+                title={statusLabel(row.status)}
+                aria-label={statusLabel(row.status)}
+              ></span>
+              <span class="sr-only">{statusLabel(row.status)}</span>
             {/if}
           </button>
         {/each}

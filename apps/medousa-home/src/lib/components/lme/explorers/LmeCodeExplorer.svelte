@@ -84,18 +84,24 @@
   async function loadRepositoryCatalog() {
     try {
       repositoryCatalog = await listForgeRepositories();
-    } catch {
-      // Project history remains available even if catalog discovery is unavailable.
+      error = null;
+    } catch (err) {
+      repositoryCatalog = [];
+      error = humanizeForgeMessage(err instanceof Error ? err.message : String(err));
     }
   }
 
   async function openItem(id: string, label: string) {
+    creating = false;
     await lmeWorkspace.openCodeWorkspace(id, label);
   }
 
   function inferredTitle(): string {
     const goal = outcome.trim().replace(/[.!?]+$/, "");
-    if (goal) return goal.length > 72 ? `${goal.slice(0, 69)}…` : goal;
+    if (goal) {
+      // Outcome is the project identity (truncate only for chrome).
+      return goal.length > 96 ? `${goal.slice(0, 93)}…` : goal;
+    }
     return repository?.display_name ?? rootLabelFromPath(repoPath);
   }
 

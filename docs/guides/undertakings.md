@@ -1,8 +1,9 @@
 # Code projects
 
 Code projects keep a goal, its repository, open files, conversations, terminals,
-agents, and review together. You tell Medousa what you want to change; Medousa
-handles the working copy and recovery details needed to keep that work safe.
+agents, and review together. The durable center is the **editor**: after you
+start a project, Medousa lands you in a real working set (tree + buffer), not a
+waiting room. Agents, Terminal, run/verify, and Review attach around that host.
 
 They live behind **Code** in the side rail. **Work** remains the place to ask
 for, do, and track activity. Code is where software work stays available while
@@ -12,21 +13,30 @@ the same projects with the project list and editor shown one level at a time.
 ## Loop
 
 ```text
-Intent → Set up → Work → Understand → Review → Finish
+Intent → Set up → Edit → Verify → Review → Finish
 ```
 
 1. Open **Code**, choose **New project**, select a recent or pinned repository,
-   or browse the connected workshop, then describe the outcome you want.
-2. **Set up project** creates a safe working copy.
-3. Edit files, ask Codex or Cursor to continue, or open Terminal. **Understand**
-   explains code relationships without changing anything.
+   or browse the connected workshop, then describe the outcome you want. The
+   project title is that outcome.
+2. **Set up project** creates a safe working copy. Medousa then opens the tree
+   and a landing file (README or first source) so you can edit immediately.
+3. Edit in the buffer. Use the operator strip to see who holds the edit, dirty
+   files, issues, and last verify. Ask Codex or Cursor from **More** or from a
+   selection; **Stop** / **Resume editing** interrupt or reclaim the agent.
+   **Understand** explains relationships without changing anything.
 4. **Review changes** gathers what changed and how it was made.
-5. **Approve changes**, then **Finish project**. Discard remains under **More**.
+5. **Approve changes**, then **Finish project**. Discard, Terminal in the
+   working copy, and Reveal remain under **More**. Technical details stay
+   collapsed there too.
 
 Chat and Terminal show the same compact project context. Open the context chip
 to move between the project, Review, Terminal, and a coding agent without
-rebuilding context. It shows the current stage and collaborator. Internal state
-is available under **Technical details** when troubleshooting requires it.
+rebuilding context. It shows the current stage and collaborator.
+
+If repository or tree APIs return 404, Medousa reports that the workshop daemon
+is older than the project tools — rebuild and restart `medousa_daemon` from this
+checkout rather than showing a fake-ready empty editor.
 
 ## Choose a repository
 
@@ -79,9 +89,11 @@ automation surface.
   outside Medousa, the recovered draft remains visible with a conflict warning.
 - The editor header shows clickable path breadcrumbs and, when symbols are
   known, the containing type/function trail. Folder crumbs focus that path in
-  the explorer; symbol crumbs jump to the definition line. The status bar
-  shows `Ln`/`Col`, indentation, language id, and whether you, an agent, or
-  Terminal currently holds the edit session.
+  the explorer; symbol crumbs jump to the definition line. A slim operator
+  strip shows who edits, dirty count, issues, and last verification. The
+  status bar shows find/save/open hints, `Ln`/`Col`, indentation, language id,
+  and session ownership. **View** toggles word wrap and line numbers. Saves
+  whisper `Saving…` / timed `Saved`.
 - Use **Split** or **Open to side** to compare two source files. The editors sit
   side by side when space permits and stack on narrow screens; `Cmd/Ctrl+\\`
   toggles the secondary group and `Ctrl+Tab` cycles source tabs.

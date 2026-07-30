@@ -69,6 +69,14 @@
   import { setActiveCodeInsights } from "$lib/utils/undertakingWorkspace";
   import { fetchPackagesCatalog, installPackage } from "$lib/utils/packagesApi";
   import { isCoLocatedWorkshop } from "$lib/utils/workshopLocality";
+  import { formatShortcut } from "$lib/platform";
+  import {
+    readCodeEditorLineNumbers,
+    readCodeEditorWordWrap,
+    writeCodeEditorLineNumbers,
+    writeCodeEditorWordWrap,
+  } from "$lib/config/codeEditorPreferences";
+  import { codeEditorFind } from "$lib/stores/codeEditorFind.svelte";
 
   interface Props {
     fill?: boolean;
@@ -97,7 +105,13 @@
   }: Props = $props();
 
   let saving = $state(false);
+  let saveWhisper = $state<string | null>(null);
+  let saveWhisperTimer: ReturnType<typeof setTimeout> | null = null;
   let surfaceError = $state<string | null>(null);
+  let wordWrap = $state(readCodeEditorWordWrap());
+  let showLineNumbers = $state(readCodeEditorLineNumbers());
+  let findOpenByTabId = $state<Record<string, boolean>>({});
+  let editorChromeKey = $state(0);
   let editor = $state<CodeMirrorHost | undefined>();
   let lspClient = $state<LSPClient | null>(null);
   let lspError = $state<string | null>(null);
@@ -152,6 +166,7 @@
       : null;
   });
   const dirty = $derived(Boolean(activeTab && codeWorkspace.isDirty(activeTab)));
+  const dirtyCount = $derived(tabs.filter((tab) => codeWorkspace.isDirty(tab)).length);
   const secondaryTab = $derived(codeWorkspace.secondaryFor(workId));
   const reviewMarkerKey = $derived(
     reviewChangedLines.map((change) => `${change.line}:${change.kind}`).join(","),
@@ -166,6 +181,17 @@
   const agentHasControl = $derived(
     Boolean(context?.executorKind && context.executorKind !== "human"),
   );
+  const operatorLabel = $derived.by(() => {
+    if (agentHasControl) {
+      return context?.executorKind === "cursor" ? "Cursor editing" : "Codex editing";
+    }
+    if (editable) return "You editing";
+    return "Ready";
+  });
+  const lastVerifyLabel = $derived.by(() => {
+    if (!taskResult) return null;
+    return `${taskResult.success ? "Passed" : "Failed"} · ${taskResult.task.label}`;
+  });
   const documentUri = $derived.by(() => {
     if (!activeTab || !context?.worktree) return null;
     return pathToFileUri(
@@ -317,6 +343,18 @@
     } finally {
       quickLoading = false;
     }
+  }
+
+  function toggleWordWrap() {
+    wordWrap = !wordWrap;
+    writeCodeEditorWordWrap(wordWrap);
+    editorChromeKey += 1;
+  }
+
+  function toggleLineNumbers() {
+    showLineNumbers = !showLineNumbers;
+    writeCodeEditorLineNumbers(showLineNumbers);
+    editorChromeKey += 1;
   }
 
   async function chooseQuickFile(file = quickResults[quickIndex]) {
@@ -536,6 +574,8 @@
       saving
     ) return !tab || !codeWorkspace.isDirty(tab);
     saving = true;
+    saveWhisper = "Saving…";
+    if (saveWhisperTimer) clearTimeout(saveWhisperTimer);
     surfaceError = null;
     codeWorkspace.setError(tab.tabId, null);
     try {
@@ -547,8 +587,13 @@
         expected_digest: tab.digest,
       });
       codeWorkspace.acceptSaved(tab.tabId, next);
+      saveWhisper = "Saved";
+      saveWhisperTimer = setTimeout(() => {
+        saveWhisper = null;
+      }, 1600);
       return true;
     } catch (err) {
+      saveWhisper = null;
       codeWorkspace.setError(
         tab.tabId,
         err instanceof Error ? err.message : String(err),
@@ -1052,6 +1097,21 @@
   });
 
   $effect(() => {
+    const tabId = activeTab?.tabId;
+    void editorChromeKey;
+    if (!tabId) return;
+    const shouldOpen = findOpenByTabId[tabId] ?? false;
+    void tick().then(() => {
+      if (!editor) return;
+      if (shouldOpen) editor.openFind();
+      else codeEditorFind.hide(editor.getView());
+    });
+    return () => {
+      findOpenByTabId = { ...findOpenByTabId, [tabId]: codeEditorFind.open };
+    };
+  });
+
+  $effect(() => {
     const leaseId = context?.workId === workId ? context.leaseId : null;
     const generation = context?.workId === workId ? context.leaseGeneration : null;
     if (!leaseId || generation == null) return;
@@ -1099,7 +1159,9 @@
           onPathSegment={onBreadcrumbPath}
           onSymbol={(line) => editor?.revealLine(line)}
         />
-        {#if dirty}
+        {#if saveWhisper}
+          <span class="shrink-0 text-[9px] text-primary-200/90">{saveWhisper}</span>
+        {:else if dirty}
           <span class="shrink-0 text-[9px] text-primary-300/80">unsaved</span>
         {/if}
         {#if lspConnecting}
@@ -1109,6 +1171,25 @@
         {/if}
       </div>
       <div class="flex shrink-0 items-center gap-1">
+        <button
+          type="button"
+          class="rounded px-2 py-1 text-[10px] text-surface-400 hover:bg-surface-800 hover:text-surface-100"
+          title={`Find (${formatShortcut("F")})`}
+          onclick={() => editor?.openFind()}
+        >Find</button>
+        <details class="relative">
+          <summary class="cursor-pointer list-none rounded px-2 py-1 text-[10px] text-surface-400 hover:bg-surface-800 hover:text-surface-100 [&::-webkit-details-marker]:hidden" title="Editor options">View</summary>
+          <div class="absolute right-0 top-full z-20 mt-1 w-40 rounded-md border border-surface-500/40 bg-surface-900 p-1 shadow-xl">
+            <button type="button" class="flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-[10px] text-surface-300 hover:bg-surface-800" onclick={toggleWordWrap}>
+              <span>Word wrap</span>
+              <span class="text-surface-500">{wordWrap ? "On" : "Off"}</span>
+            </button>
+            <button type="button" class="flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-[10px] text-surface-300 hover:bg-surface-800" onclick={toggleLineNumbers}>
+              <span>Line numbers</span>
+              <span class="text-surface-500">{showLineNumbers ? "On" : "Off"}</span>
+            </button>
+          </div>
+        </details>
         <button
           type="button"
           class="rounded px-2 py-1 text-[10px] text-surface-400 hover:bg-surface-800 hover:text-surface-100 disabled:opacity-35"
@@ -1154,6 +1235,30 @@
       </div>
     </header>
 
+    <div class="flex shrink-0 items-center gap-2 overflow-x-auto border-b border-surface-500/20 bg-surface-950/50 px-2.5 py-0.5 text-[9px] text-surface-500" aria-label="Operator status">
+      <span class="font-medium text-surface-300">{operatorLabel}</span>
+      {#if dirtyCount > 0}
+        <span aria-hidden="true">·</span>
+        <span class="text-primary-300/90">{dirtyCount} dirty</span>
+      {/if}
+      <span aria-hidden="true">·</span>
+      <button type="button" class="hover:text-surface-200" onclick={() => void showProblems()}>
+        {Math.max(problems.length, workspaceProblemRows.length)} issues
+      </button>
+      {#if lastVerifyLabel}
+        <span aria-hidden="true">·</span>
+        <button
+          type="button"
+          class="{taskResult?.success ? 'text-emerald-300/90' : 'text-rose-300/90'} hover:underline"
+          title="Jump to last verification"
+          onclick={() => {
+            const location = taskResult?.locations[0];
+            if (location) void openTaskLocation(location.path, location.line);
+          }}
+        >{lastVerifyLabel}</button>
+      {/if}
+    </div>
+
     {#if surfaceError || activeTab.error || codeWorkspace.workspaceErrorByWorkId[workId]}
       <p class="shrink-0 border-b border-amber-500/30 bg-amber-950/25 px-2.5 py-1.5 text-[10px] text-amber-100">
         {humanizeForgeMessage(surfaceError || activeTab.error || codeWorkspace.workspaceErrorByWorkId[workId] || "")}
@@ -1194,7 +1299,7 @@
           </div>
         {/if}
         {#if !activeTab.loading && activeTab.digest}
-          {#key `${activeTab.tabId}:${editable}:${lspClient ? "lsp" : "plain"}:${reviewMarkerKey}:${editorConventions.indent_style}:${editorConventions.indent_size}:${editorConventions.tab_width}`}
+          {#key `${activeTab.tabId}:${editable}:${lspClient ? "lsp" : "plain"}:${reviewMarkerKey}:${editorConventions.indent_style}:${editorConventions.indent_size}:${editorConventions.tab_width}:${editorChromeKey}`}
             <CodeMirrorHost
               bind:this={editor}
               value={activeTab.draft}
@@ -1376,6 +1481,13 @@
         {/if}
       </div>
       <div class="flex shrink-0 items-center gap-1.5 text-[9px] text-surface-500">
+        <span class="hidden items-center gap-1 sm:inline-flex">
+          <kbd class="vault-kbd">{formatShortcut("F")}</kbd> find
+          <span class="text-surface-600" aria-hidden="true">·</span>
+          <kbd class="vault-kbd">{formatShortcut("S")}</kbd> save
+          <span class="text-surface-600" aria-hidden="true">·</span>
+          <kbd class="vault-kbd">{formatShortcut("P")}</kbd> open
+        </span>
         <span class="font-mono tabular-nums">Ln {cursorLine}, Col {cursorColumn}</span>
         <span class="text-surface-600" aria-hidden="true">·</span>
         <span>{indentStatusLabel}</span>
@@ -1428,10 +1540,15 @@
     <div class="flex min-h-72 flex-1 items-center justify-center p-8 text-center">
       <div class="max-w-xs">
         <FileCode2 size={24} class="mx-auto text-surface-600" />
-        <p class="mt-2 text-xs font-medium text-surface-300">Choose a file</p>
+        <p class="mt-2 text-xs font-medium text-surface-300">Open a file</p>
         <p class="mt-1 text-[10px] leading-relaxed text-surface-500">
-          Pick one from the project files. Medousa will remember your open files, drafts, and place while you move through the rest of your workspace.
+          Jump in with Quick Open, or pick a path from the project tree.
         </p>
+        <button
+          type="button"
+          class="mt-3 rounded bg-primary-500/80 px-3 py-1.5 text-[11px] font-medium text-surface-50"
+          onclick={() => void showQuickOpen()}
+        >Open file <kbd class="vault-kbd ml-1">{formatShortcut("P")}</kbd></button>
       </div>
     </div>
   {/if}

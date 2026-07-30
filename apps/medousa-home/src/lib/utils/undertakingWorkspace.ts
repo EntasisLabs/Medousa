@@ -1,6 +1,6 @@
 /** Shared transitions into an undertaking's permanent workspace surfaces. */
 
-import { beginHumanAttempt, type ItemProjection } from "$lib/forge";
+import { beginHumanAttempt, getUndertakingSourceTree, type ItemProjection } from "$lib/forge";
 import { terminalCreate } from "$lib/terminal";
 import { undertakings } from "$lib/stores/undertakings.svelte";
 import { shellTabs } from "$lib/stores/shellTabs.svelte";
@@ -30,6 +30,47 @@ type ActiveCodeInsights = Pick<
 >;
 
 const codeInsightsByWorkId = new Map<string, ActiveCodeInsights>();
+
+const LANDING_CANDIDATES = [
+  "README.md",
+  "README",
+  "readme.md",
+  "src/main.ts",
+  "src/main.rs",
+  "src/lib.rs",
+  "src/index.ts",
+  "src/index.js",
+  "main.go",
+  "Cargo.toml",
+  "package.json",
+];
+
+/** Open a real buffer after Start/open so Code never lands on an empty plaza. */
+export async function landCodeWorkingSet(workId: string): Promise<string | null> {
+  const id = workId.trim();
+  if (!id) return null;
+  try {
+    await codeWorkspace.hydrate(id);
+    const existing = codeWorkspace.activeFor(id);
+    if (existing && !existing.loading && existing.digest) {
+      undertakings.setSelection({ path: existing.path, line: existing.line ?? 1, entityId: null });
+      return existing.path;
+    }
+    const tree = await getUndertakingSourceTree(id);
+    const paths = tree.files.map((file) => file.path);
+    if (paths.length === 0) return null;
+    const preferred =
+      LANDING_CANDIDATES.find((candidate) => paths.includes(candidate)) ??
+      paths.find((path) => /\.(ts|tsx|js|jsx|rs|go|py|svelte|md)$/i.test(path)) ??
+      paths[0];
+    if (!preferred) return null;
+    await codeWorkspace.open(id, preferred, 1);
+    undertakings.setSelection({ path: preferred, line: 1, entityId: null });
+    return preferred;
+  } catch {
+    return null;
+  }
+}
 
 export function setActiveCodeInsights(workId: string, insights: ActiveCodeInsights) {
   if (!workId.trim()) return;
@@ -116,23 +157,28 @@ export async function startTrackedAgent(
   return accepted.agent_session_id;
 }
 
-export async function reclaimTrackedHuman(item: ItemProjection): Promise<ItemProjection> {
+/** Stop the bound agent process without taking the editing lease. */
+export async function interruptTrackedAgent(item: ItemProjection): Promise<void> {
   const active = undertakings.active;
-  if (active?.workId === item.id) {
-    for (const sessionId of [...active.boundChatSessionIds].reverse()) {
-      const agentSessionId = getSessionAgentSessionId(sessionId);
-      if (!agentSessionId) continue;
-      try {
-        await cancelAgentSession(agentSessionId);
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        if (!/unknown agent session|not found|404/i.test(message)) throw err;
-      }
-      clearSessionAgentSessionId(sessionId);
-      setSessionAgentRuntime(sessionId, "medousa");
-      break;
+  if (active?.workId !== item.id) return;
+  for (const sessionId of [...active.boundChatSessionIds].reverse()) {
+    const agentSessionId = getSessionAgentSessionId(sessionId);
+    if (!agentSessionId) continue;
+    try {
+      await cancelAgentSession(agentSessionId);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (!/unknown agent session|not found|404/i.test(message)) throw err;
     }
+    clearSessionAgentSessionId(sessionId);
+    setSessionAgentRuntime(sessionId, "medousa");
+    break;
   }
+  undertakings.setActiveFromItem(item, { executorKind: "human" });
+}
+
+export async function reclaimTrackedHuman(item: ItemProjection): Promise<ItemProjection> {
+  await interruptTrackedAgent(item);
   await undertakings.refreshDetail();
   const ready = undertakings.detail?.id === item.id ? undertakings.detail : item;
   const begun = await beginHumanAttempt(ready.id);

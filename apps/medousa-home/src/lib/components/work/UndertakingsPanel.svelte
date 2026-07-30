@@ -38,6 +38,8 @@
     type ProviderComment,
   } from "$lib/forge";
   import {
+    interruptTrackedAgent,
+    landCodeWorkingSet,
     openTrackedTerminal,
     reclaimTrackedHuman,
     startTrackedAgent,
@@ -50,6 +52,8 @@
   import CodeSourceEditor from "$lib/components/work/CodeSourceEditor.svelte";
   import ForgeReviewSurface from "$lib/components/work/ForgeReviewSurface.svelte";
   import { codeWorkspace } from "$lib/stores/codeWorkspace.svelte";
+  import { isTauri } from "$lib/window";
+  import { toast } from "$lib/stores/toast.svelte";
 
   interface Props {
     /** The Workspace Code explorer owns creation and undertaking selection. */
@@ -223,6 +227,53 @@
       await undertakings.refreshDetail();
     });
   }
+
+  async function interruptAgent() {
+    const d = detail;
+    if (!d) return;
+    await run(async () => {
+      await interruptTrackedAgent(d);
+      await undertakings.refreshDetail();
+    });
+  }
+
+  async function selectProject(id: string) {
+    await undertakings.select(id);
+    if (undertakings.detail?.environment) {
+      await landCodeWorkingSet(id);
+    }
+  }
+
+  async function revealWorktree() {
+    const worktree = detail?.environment?.worktree?.trim();
+    if (!worktree) return;
+    if (!isTauri() || !isCoLocatedWorkshop()) {
+      toast.show("Reveal needs a local workshop on this device.");
+      return;
+    }
+    try {
+      const { revealItemInDir } = await import("@tauri-apps/plugin-opener");
+      await revealItemInDir(worktree);
+    } catch (err) {
+      actionError = err instanceof Error ? err.message : String(err);
+    }
+  }
+
+  const agentRunning = $derived(
+    Boolean(
+      undertakings.active?.workId === detail?.id &&
+        undertakings.active?.executorKind &&
+        undertakings.active.executorKind !== "human",
+    ),
+  );
+  const agentLabel = $derived(
+    undertakings.active?.executorKind === "cursor" ? "Cursor" : "Codex",
+  );
+  const dirtyTabCount = $derived(
+    detail
+      ? codeWorkspace.tabsFor(detail.id).filter((tab) => codeWorkspace.isDirty(tab)).length
+      : 0,
+  );
 
   async function doSeal() {
     const leaseId = undertakings.active?.leaseId;
@@ -480,7 +531,7 @@
     await run(async () => {
       const item = await importProviderComment(detail!.id, comment);
       await undertakings.refreshList();
-      await undertakings.select(item.id);
+      await selectProject(item.id);
     });
   }
 
@@ -609,7 +660,7 @@
                 item.id
                   ? 'bg-surface-700/80'
                   : ''}"
-                onclick={() => void undertakings.select(item.id)}
+                onclick={() => void selectProject(item.id)}
               >
                 <span class="block truncate font-medium text-surface-50">{item.title}</span>
                 <span class="text-[10px] text-surface-400">
@@ -631,7 +682,7 @@
                 item.id
                   ? 'bg-surface-700/80 opacity-100'
                   : ''}"
-                onclick={() => void undertakings.select(item.id)}
+                onclick={() => void selectProject(item.id)}
               >
                 <span class="block truncate font-medium text-surface-50">{item.title}</span>
                 <span class="text-[10px] text-surface-400">
@@ -644,63 +695,70 @@
       </ul>
     </aside>{/if}
 
-    <section class="flex min-h-0 flex-col gap-2 px-1 py-2 {showBrowser ? 'overflow-auto' : 'overflow-hidden'}">
+    <section class="flex min-h-0 flex-col {showBrowser ? 'gap-2 overflow-auto px-1 py-2' : 'overflow-hidden'}">
       {#if !detail}
-        <div class="flex min-h-48 flex-1 items-center justify-center">
+        <div class="flex min-h-48 flex-1 items-center justify-center px-1 py-2">
           <div class="max-w-sm text-center">
-            <p class="text-sm font-medium text-surface-300">Choose what you want to change</p>
+            <p class="text-sm font-medium text-surface-300">Open or start a project</p>
             <p class="mt-1 text-xs leading-relaxed text-surface-500">
-              Medousa keeps the files, conversations, tools, and agents together so you can stay focused on the outcome.
+              Pick a project in the rail, or start one with the outcome you want.
             </p>
           </div>
         </div>
       {:else}
-        <div class="flex flex-wrap items-start justify-between gap-2">
-          <div>
-            <h3 class="text-lg font-semibold text-surface-50">{detail.title}</h3>
-            <p class="text-xs text-surface-400">{detail.brief}</p>
-            <p class="mt-1 text-[11px] text-surface-400">
+        <div class="flex shrink-0 flex-wrap items-center justify-between gap-2 {showBrowser ? 'px-0' : 'border-b border-surface-500/25 px-2 py-1.5'}">
+          <div class="min-w-0 flex-1">
+            <h3 class="truncate text-sm font-semibold text-surface-50" title={detail.brief || detail.title}>{detail.title}</h3>
+            {#if detail.brief && detail.brief.trim() !== detail.title.trim()}
+              <p class="truncate text-[10px] text-surface-500" title={detail.brief}>{detail.brief}</p>
+            {/if}
+            <p class="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-surface-500">
               <span class="font-medium text-surface-300">{humanPhaseLabel(detail.human_phase)}</span>
-              · {humanPhaseGuidance(detail.human_phase)}
+              <span aria-hidden="true">·</span>
+              <span>{agentRunning ? `${agentLabel} editing` : undertakings.active?.leaseId ? "You editing" : "Ready"}</span>
+              {#if dirtyTabCount > 0}
+                <span aria-hidden="true">·</span>
+                <span class="text-primary-300/90">{dirtyTabCount} unsaved</span>
+              {/if}
             </p>
           </div>
-          <div class="flex items-center gap-1.5">
-            {#if actions?.provision.allowed}
+          <div class="flex shrink-0 items-center gap-1.5">
+            {#if !detail.environment && actions?.provision.allowed}
               <button
                 type="button"
                 class="rounded-md bg-primary-500/80 px-3 py-1.5 text-xs font-medium text-surface-50 disabled:opacity-40"
                 disabled={busy}
-                onclick={() => void undertakings.provision(detail.id)}
+                onclick={() => void run(async () => {
+                  await undertakings.provision(detail.id);
+                  await landCodeWorkingSet(detail.id);
+                })}
               >
                 Set up project
               </button>
             {:else if actions?.seal.allowed}
               <button
                 type="button"
-                class="rounded-md bg-primary-500/80 px-3 py-1.5 text-xs font-medium text-surface-50 disabled:opacity-40"
+                class="rounded-md border border-surface-500/40 px-2.5 py-1 text-[10px] text-surface-200 hover:bg-surface-800 disabled:opacity-40"
                 disabled={busy}
                 onclick={() => void doSeal()}
               >
                 Review changes
               </button>
-            {:else if actions?.start_agent.allowed}
+            {/if}
+
+            {#if agentRunning}
               <button
                 type="button"
-                class="rounded-md bg-primary-500/80 px-3 py-1.5 text-xs font-medium text-surface-50 disabled:opacity-40"
+                class="rounded-md border border-amber-500/40 px-2.5 py-1 text-[10px] text-amber-100 hover:bg-amber-950/40 disabled:opacity-40"
                 disabled={busy}
-                onclick={() => void startAgent(preferredCodeAgent)}
-              >
-                Continue with {preferredCodeAgent === "codex" ? "Codex" : "Cursor"}
-              </button>
-            {:else if actions?.open_terminal.allowed}
+                onclick={() => void interruptAgent()}
+              >Stop {agentLabel}</button>
               <button
                 type="button"
-                class="rounded-md bg-primary-500/80 px-3 py-1.5 text-xs font-medium text-surface-50 disabled:opacity-40"
+                class="rounded-md bg-primary-500/80 px-2.5 py-1 text-[10px] font-medium text-surface-50 disabled:opacity-40"
                 disabled={busy}
-                onclick={() => void openTerminalTracked()}
-              >
-                Open Terminal
-              </button>
+                onclick={() => void reclaimHuman()}
+              >Resume editing</button>
             {/if}
 
             <details class="relative">
@@ -710,28 +768,55 @@
                 More ···
               </summary>
               <div
-                class="absolute right-0 top-full z-30 mt-1 w-48 rounded-lg border border-surface-500/40 bg-surface-900 p-1.5 shadow-xl"
+                class="absolute right-0 top-full z-30 mt-1 w-52 rounded-lg border border-surface-500/40 bg-surface-900 p-1.5 shadow-xl"
               >
-                <button
-                  type="button"
-                  class="secondary-action"
-                  disabled={busy || !actions?.start_agent.allowed}
-                  title={actions?.start_agent.reason ?? ""}
-                  onclick={() => void startAgent("codex")}
-                >Ask Codex to continue</button>
-                <button
-                  type="button"
-                  class="secondary-action"
-                  disabled={busy || !actions?.start_agent.allowed}
-                  onclick={() => void startAgent("cursor")}
-                >Ask Cursor to continue</button>
+                {#if !agentRunning && actions?.start_agent.allowed}
+                  <button
+                    type="button"
+                    class="secondary-action"
+                    disabled={busy}
+                    title={actions?.start_agent.reason ?? ""}
+                    onclick={() => void startAgent("codex")}
+                  >Ask Codex to continue</button>
+                  <button
+                    type="button"
+                    class="secondary-action"
+                    disabled={busy}
+                    onclick={() => void startAgent("cursor")}
+                  >Ask Cursor to continue</button>
+                {/if}
                 <button
                   type="button"
                   class="secondary-action"
                   disabled={busy || !actions?.open_terminal.allowed}
                   onclick={() => void openTerminalTracked()}
-                >Open another Terminal</button>
+                >Terminal in working copy</button>
+                {#if detail.environment?.worktree}
+                  <button
+                    type="button"
+                    class="secondary-action"
+                    disabled={busy}
+                    onclick={() => void revealWorktree()}
+                  >Reveal working copy</button>
+                {/if}
+                {#if undertakings.active?.workId === detail.id && undertakings.active.selectedPath}
+                  <button
+                    type="button"
+                    class="secondary-action"
+                    disabled={busy}
+                    onclick={() => void copyLocationLink()}
+                  >Copy location link</button>
+                {/if}
                 <div class="my-1 border-t border-surface-500/25"></div>
+                {#if detail.environment}
+                  <details class="px-2 py-1 text-[9px] text-surface-500">
+                    <summary class="cursor-pointer select-none hover:text-surface-300">Technical details</summary>
+                    <p class="mt-1 break-all font-mono leading-relaxed">
+                      Working copy: {detail.environment.worktree}<br />Starting revision:
+                      {detail.environment.baseline_oid.slice(0, 12)} · internal state: {detail.state}
+                    </p>
+                  </details>
+                {/if}
                 <button
                   type="button"
                   class="secondary-action text-rose-200"
@@ -742,49 +827,6 @@
             </details>
           </div>
         </div>
-
-        {#if detail.environment}
-          <details class="text-[10px] text-surface-500">
-            <summary class="w-fit cursor-pointer select-none hover:text-surface-300">
-              Technical details
-            </summary>
-            <p class="mt-1 break-all font-mono">
-              Working copy: {detail.environment.worktree}<br />Starting revision:
-              {detail.environment.baseline_oid.slice(0, 12)} · internal state: {detail.state}
-            </p>
-          </details>
-        {/if}
-
-        {#if undertakings.active?.workId === detail.id && undertakings.active.selectedPath}
-          <div
-            class="flex flex-wrap items-center justify-between gap-2 rounded-md border border-primary-500/20 bg-primary-950/10 px-2.5 py-2"
-          >
-            <div class="min-w-0">
-              <p class="truncate font-mono text-[11px] text-surface-200">
-                {undertakings.active.selectedPath}{undertakings.active.selectedLine
-                  ? `:${undertakings.active.selectedLine}`
-                  : ""}
-              </p>
-              <p class="text-[9px] text-surface-500">
-                Current focus{undertakings.active.selectedEntityId
-                  ? " · code relationship found"
-                  : ""}
-              </p>
-            </div>
-            <div class="flex items-center gap-1">
-              <button
-                type="button"
-                class="rounded px-2 py-1 text-[10px] text-surface-400 hover:bg-surface-800 hover:text-surface-100"
-                onclick={() => void copyLocationLink()}
-              >Copy link</button>
-              <button
-                type="button"
-                class="rounded px-2 py-1 text-[10px] text-surface-400 hover:bg-surface-800 hover:text-surface-100"
-                onclick={() => undertakings.setSelection({ path: null, line: null, entityId: null })}
-              >Clear</button>
-            </div>
-          </div>
-        {/if}
 
         {#if detail.environment}
           <CodeSourceEditor
@@ -799,6 +841,12 @@
             onHandoffToAgent={handoffToAgent}
             onReclaimHuman={reclaimHuman}
           />
+        {:else if !actions?.provision.allowed}
+          <div class="flex min-h-48 flex-1 items-center justify-center p-6 text-center">
+            <p class="max-w-sm text-xs text-surface-500">
+              {humanPhaseGuidance(detail.human_phase)}
+            </p>
+          </div>
         {/if}
 
         {#if review && (detail.human_phase === "review" || review.evidence_id)}

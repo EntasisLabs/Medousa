@@ -287,6 +287,8 @@ export class LmeWorkspaceStore {
       mirrorActiveTabToShell(existing.tabId, existing.title);
       const { undertakings } = await import("$lib/stores/undertakings.svelte");
       await undertakings.select(id);
+      const { landCodeWorkingSet } = await import("$lib/utils/undertakingWorkspace");
+      await landCodeWorkingSet(id);
       return;
     }
     const label = title?.trim() || "Code workspace";
@@ -301,6 +303,8 @@ export class LmeWorkspaceStore {
     mirrorActiveTabToShell(tab.tabId, tab.title);
     const { undertakings } = await import("$lib/stores/undertakings.svelte");
     await undertakings.select(id);
+    const { landCodeWorkingSet } = await import("$lib/utils/undertakingWorkspace");
+    await landCodeWorkingSet(id);
   }
 
   openDeck(artifactId: string, title?: string) {
