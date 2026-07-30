@@ -384,7 +384,63 @@ pub fn resolve_llm_provider(explicit_provider: Option<&str>) -> String {
 pub fn resolve_llm_target(explicit_provider: Option<&str>, explicit_model: Option<&str>) -> String {
     let provider = resolve_llm_provider(explicit_provider);
     let model = resolve_llm_model(explicit_model);
-    GenaiChatClient::build_model_target(Some(&provider), &model)
+    genai_model_target(&provider, &model, None)
+}
+
+/// Build the genai model target while preserving OpenAI-compatible endpoint behavior.
+///
+/// GenAI 0.6 routes GPT-5 models through the Responses adapter, but an explicit
+/// `openai::` namespace overrides that inference. Medousa historically namespaces
+/// every provider, so direct OpenAI GPT-5 requests need the Responses namespace
+/// explicitly. Custom base URLs are left on Chat Completions because compatibility
+/// proxies and local servers do not necessarily implement `/v1/responses`.
+pub fn genai_model_target(provider: &str, model: &str, base_url: Option<&str>) -> String {
+    if base_url.is_none()
+        && provider.eq_ignore_ascii_case("openai")
+        && model.trim().to_ascii_lowercase().starts_with("gpt-5")
+    {
+        return format!("openai_resp::{}", model.trim());
+    }
+
+    GenaiChatClient::build_model_target(Some(provider), model)
+}
+
+pub fn build_genai_chat_client(
+    provider: &str,
+    model: &str,
+    base_url: Option<&str>,
+) -> GenaiChatClient {
+    let target = genai_model_target(provider, model, base_url);
+    GenaiChatClient::from_provider_model_with_base_url(None, &target, base_url)
+}
+
+#[cfg(test)]
+mod genai_target_tests {
+    use super::genai_model_target;
+
+    #[test]
+    fn direct_openai_gpt5_uses_responses_adapter() {
+        assert_eq!(
+            genai_model_target("openai", "gpt-5.6-luna", None),
+            "openai_resp::gpt-5.6-luna"
+        );
+    }
+
+    #[test]
+    fn custom_openai_compatible_endpoint_keeps_chat_adapter() {
+        assert_eq!(
+            genai_model_target("openai", "gpt-5.6-luna", Some("http://localhost:4000/v1")),
+            "openai::gpt-5.6-luna"
+        );
+    }
+
+    #[test]
+    fn non_gpt5_openai_models_keep_chat_adapter() {
+        assert_eq!(
+            genai_model_target("openai", "gpt-4o", None),
+            "openai::gpt-4o"
+        );
+    }
 }
 
 pub fn resolve_llm_base_url(
@@ -457,8 +513,8 @@ pub async fn build_runtime_with_identity_store(
     let provider = resolve_llm_provider(explicit_provider);
     let model = resolve_llm_model(explicit_model);
     let base_url = resolve_llm_base_url(Some(&provider), explicit_base_url);
-    let chat_client = Arc::new(GenaiChatClient::from_provider_model_with_base_url(
-        Some(&provider),
+    let chat_client = Arc::new(build_genai_chat_client(
+        &provider,
         &model,
         base_url.as_deref(),
     ));
@@ -504,8 +560,8 @@ pub async fn build_daemon_runtime(
     let provider = resolve_llm_provider(explicit_provider);
     let model = resolve_llm_model(explicit_model);
     let base_url = resolve_llm_base_url(Some(&provider), explicit_base_url);
-    let chat_client = Arc::new(GenaiChatClient::from_provider_model_with_base_url(
-        Some(&provider),
+    let chat_client = Arc::new(build_genai_chat_client(
+        &provider,
         &model,
         base_url.as_deref(),
     ));

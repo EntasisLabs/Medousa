@@ -2,8 +2,9 @@
 
 Code projects keep a goal, its repository, open files, conversations, terminals,
 agents, and review together. The durable center is the **editor**: after you
-start a project, Medousa lands you in a real working set (tree + buffer), not a
-waiting room. Agents, Terminal, run/verify, and Review attach around that host.
+open a project, Medousa lands you on a desk — **tree + buffer**, with Terminal
+under the editor via ``Ctrl/Cmd+` `` — not a waiting room. Agents, run/verify,
+and Review attach around that host.
 
 They live behind **Code** in the side rail. **Work** remains the place to ask
 for, do, and track activity. Code is where software work stays available while
@@ -19,12 +20,16 @@ Intent → Set up → Edit → Verify → Review → Finish
 1. Open **Code**, choose **New project**, select a recent or pinned repository,
    or browse the connected workshop, then describe the outcome you want. The
    project title is that outcome.
-2. **Set up project** creates a safe working copy. Medousa then opens the tree
-   and a landing file (README or first source) so you can edit immediately.
-3. Edit in the buffer. Use the operator strip to see who holds the edit, dirty
-   files, issues, and last verify. Ask Codex or Cursor from **More** or from a
-   selection; **Stop** / **Resume editing** interrupt or reclaim the agent.
-   **Understand** explains relationships without changing anything.
+2. **Set up project** creates a safe working copy. Medousa then opens the file
+   tree (primary in the rail) and a landing file (README or first source) so
+   you can edit immediately. If setup or the tree API fails, the center shows
+   that failure honestly — never an empty “Open a file” as success.
+3. Edit in the buffer. ``Ctrl/Cmd+` `` toggles a Terminal strip under the
+   editor (same Code tab). **Pop out** opens a full Terminal shell tab. Use the
+   operator strip for who edits, dirty count, issues, and last verify. Ask
+   Codex or Cursor from **More** or from a selection; **Stop** / **Resume
+   editing** interrupt or reclaim the agent. **Understand** explains
+   relationships without changing anything.
 4. **Review changes** gathers what changed and how it was made.
 5. **Approve changes**, then **Finish project**. Discard, Terminal in the
    working copy, and Reveal remain under **More**. Technical details stay
@@ -36,7 +41,8 @@ rebuilding context. It shows the current stage and collaborator.
 
 If repository or tree APIs return 404, Medousa reports that the workshop daemon
 is older than the project tools — rebuild and restart `medousa_daemon` from this
-checkout rather than showing a fake-ready empty editor.
+checkout rather than showing a fake-ready empty editor. If the project has no
+working copy yet, **Set up project** is the primary action in the center and rail.
 
 ## Choose a repository
 

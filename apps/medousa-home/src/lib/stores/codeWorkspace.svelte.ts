@@ -461,7 +461,7 @@ class CodeWorkspaceStore {
       throw err;
     }
     const restored = await Promise.all(
-      state.tabs.slice(0, 32).map(async (saved): Promise<CodeDocumentTab | null> => {
+      state.tabs.slice(0, 12).map(async (saved): Promise<CodeDocumentTab | null> => {
         try {
           const source = await getUndertakingSource(workId, saved.path);
           const hasDraft = typeof saved.draft === "string";

@@ -706,21 +706,28 @@
           </div>
         </div>
       {:else}
-        <div class="flex shrink-0 flex-wrap items-center justify-between gap-2 {showBrowser ? 'px-0' : 'border-b border-surface-500/25 px-2 py-1.5'}">
+        <div class="flex shrink-0 flex-wrap items-center justify-between gap-2 {showBrowser ? 'px-0' : 'border-b border-surface-500/25 px-2 py-1'}">
           <div class="min-w-0 flex-1">
             <h3 class="truncate text-sm font-semibold text-surface-50" title={detail.brief || detail.title}>{detail.title}</h3>
-            {#if detail.brief && detail.brief.trim() !== detail.title.trim()}
-              <p class="truncate text-[10px] text-surface-500" title={detail.brief}>{detail.brief}</p>
-            {/if}
-            <p class="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-surface-500">
-              <span class="font-medium text-surface-300">{humanPhaseLabel(detail.human_phase)}</span>
-              <span aria-hidden="true">·</span>
-              <span>{agentRunning ? `${agentLabel} editing` : undertakings.active?.leaseId ? "You editing" : "Ready"}</span>
-              {#if dirtyTabCount > 0}
+            {#if detail.environment}
+              <p class="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-surface-500">
+                <span class="font-medium text-surface-300">{humanPhaseLabel(detail.human_phase)}</span>
                 <span aria-hidden="true">·</span>
-                <span class="text-primary-300/90">{dirtyTabCount} unsaved</span>
+                <span>{agentRunning ? `${agentLabel} editing` : undertakings.active?.leaseId ? "You editing" : "Ready"}</span>
+                {#if dirtyTabCount > 0}
+                  <span aria-hidden="true">·</span>
+                  <span class="text-primary-300/90">{dirtyTabCount} unsaved</span>
+                {/if}
+              </p>
+            {:else}
+              {#if detail.brief && detail.brief.trim() !== detail.title.trim()}
+                <p class="truncate text-[10px] text-surface-500" title={detail.brief}>{detail.brief}</p>
               {/if}
-            </p>
+              <p class="mt-0.5 text-[10px] text-surface-500">
+                <span class="font-medium text-surface-300">{humanPhaseLabel(detail.human_phase)}</span>
+                · {humanPhaseGuidance(detail.human_phase)}
+              </p>
+            {/if}
           </div>
           <div class="flex shrink-0 items-center gap-1.5">
             {#if !detail.environment && actions?.provision.allowed}
@@ -838,9 +845,33 @@
             onToggleWorld={() => void toggleWorldFromEditor()}
             onOpenReview={() => void openReviewFromEditor()}
             onOpenTerminal={() => void openTerminalTracked()}
+            onProvision={async () => {
+              await run(async () => {
+                await undertakings.provision(detail.id);
+                await landCodeWorkingSet(detail.id);
+              });
+            }}
             onHandoffToAgent={handoffToAgent}
             onReclaimHuman={reclaimHuman}
           />
+        {:else if actions?.provision.allowed}
+          <div class="flex min-h-48 flex-1 items-center justify-center p-6 text-center">
+            <div class="max-w-sm">
+              <p class="text-xs font-medium text-surface-300">Set up this project</p>
+              <p class="mt-1 text-[10px] leading-relaxed text-surface-500">
+                Create the working copy so the tree and editor can open.
+              </p>
+              <button
+                type="button"
+                class="mt-3 rounded bg-primary-500/80 px-3 py-1.5 text-[11px] font-medium text-surface-50 disabled:opacity-40"
+                disabled={busy}
+                onclick={() => void run(async () => {
+                  await undertakings.provision(detail.id);
+                  await landCodeWorkingSet(detail.id);
+                })}
+              >Set up project</button>
+            </div>
+          </div>
         {:else if !actions?.provision.allowed}
           <div class="flex min-h-48 flex-1 items-center justify-center p-6 text-center">
             <p class="max-w-sm text-xs text-surface-500">

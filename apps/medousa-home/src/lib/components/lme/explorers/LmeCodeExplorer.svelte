@@ -65,6 +65,25 @@
         item.state === "accepted",
     ),
   );
+  const selectedItem = $derived(
+    undertakings.selectedId
+      ? undertakings.items.find((item) => item.id === undertakings.selectedId) ?? null
+      : null,
+  );
+  const selectedPrepared = $derived(
+    Boolean(
+      selectedItem &&
+        (Boolean(selectedItem.environment) ||
+          (undertakings.detail?.id === selectedItem.id &&
+            Boolean(undertakings.detail.environment))),
+    ),
+  );
+  const otherActiveItems = $derived(
+    activeItems.filter((item) => item.id !== selectedItem?.id),
+  );
+  const otherCompletedItems = $derived(
+    completedItems.filter((item) => item.id !== selectedItem?.id),
+  );
   const recentRepositories = $derived(repositoryCatalog.filter((entry) => entry.available));
   const duplicateNeedsChoice = $derived(
     Boolean(repository?.existing_projects.length && !duplicateAcknowledged),
@@ -461,7 +480,7 @@
     </p>
   {/if}
 
-  <div class="min-h-0 flex-1 overflow-y-auto py-1.5">
+  <div class="flex min-h-0 flex-1 flex-col">
     {#if undertakings.loading && undertakings.items.length === 0}
       <p class="px-3 py-3 text-xs text-surface-500">Loading projects…</p>
     {:else if undertakings.items.length === 0}
@@ -472,44 +491,89 @@
           Start with a repository and the change you want to make. Medousa will keep the work together.
         </p>
       </div>
-    {/if}
-
-    {#if activeItems.length}
-      <p class="px-3 pb-1 pt-1 text-[9px] font-medium uppercase tracking-wider text-surface-500">In progress</p>
-      {#each activeItems as item (item.id)}
-        <button
-          type="button"
-          class="w-full px-3 py-2 text-left transition hover:bg-surface-800/70 {undertakings.selectedId === item.id ? 'bg-surface-800' : ''}"
-          onclick={() => void openItem(item.id, item.title)}
-        >
-          <span class="block truncate text-xs font-medium text-surface-100">{item.title}</span>
-          <span class="mt-0.5 block truncate text-[9px] text-surface-500">
-            {humanPhaseLabel(item.human_phase)}
-          </span>
-        </button>
-        {#if undertakings.selectedId === item.id}
-          <CodeRepositoryTree workId={item.id} prepared={Boolean(item.environment)} />
+    {:else if selectedItem}
+      <div class="flex shrink-0 items-center gap-1 border-b border-surface-500/25 px-2 py-1.5">
+        <div class="min-w-0 flex-1">
+          <p class="truncate text-[11px] font-medium text-surface-100">{selectedItem.title}</p>
+          <p class="truncate text-[9px] text-surface-500">{humanPhaseLabel(selectedItem.human_phase)}</p>
+        </div>
+        {#if !selectedPrepared && selectedItem.allowed_actions.provision.allowed}
+          <button
+            type="button"
+            class="shrink-0 rounded bg-primary-500/80 px-2 py-1 text-[9px] font-medium text-surface-50"
+            onclick={() => void openItem(selectedItem.id, selectedItem.title)}
+          >Open</button>
         {/if}
-      {/each}
-    {/if}
-
-    {#if completedItems.length}
-      <p class="px-3 pb-1 pt-3 text-[9px] font-medium uppercase tracking-wider text-surface-500">Finished</p>
-      {#each completedItems as item (item.id)}
-        <button
-          type="button"
-          class="w-full px-3 py-2 text-left opacity-65 transition hover:bg-surface-800/70 hover:opacity-100 {undertakings.selectedId === item.id ? 'bg-surface-800 opacity-100' : ''}"
-          onclick={() => void openItem(item.id, item.title)}
-        >
-          <span class="block truncate text-xs font-medium text-surface-200">{item.title}</span>
-          <span class="mt-0.5 block truncate text-[9px] text-surface-500">
-            {humanPhaseLabel(item.human_phase)}
-          </span>
-        </button>
-        {#if undertakings.selectedId === item.id}
-          <CodeRepositoryTree workId={item.id} prepared={Boolean(item.environment)} />
+      </div>
+      <div class="min-h-0 flex-1 overflow-hidden">
+        <CodeRepositoryTree
+          workId={selectedItem.id}
+          prepared={selectedPrepared}
+          fill
+        />
+      </div>
+      {#if otherActiveItems.length || otherCompletedItems.length}
+        <details class="shrink-0 border-t border-surface-500/25">
+          <summary class="cursor-pointer select-none px-3 py-1.5 text-[9px] uppercase tracking-wider text-surface-500 hover:text-surface-300">
+            Other projects
+          </summary>
+          <div class="max-h-40 overflow-y-auto pb-1.5">
+            {#each otherActiveItems as item (item.id)}
+              <button
+                type="button"
+                class="w-full px-3 py-1.5 text-left hover:bg-surface-800/70"
+                onclick={() => void openItem(item.id, item.title)}
+              >
+                <span class="block truncate text-[11px] text-surface-200">{item.title}</span>
+                <span class="text-[9px] text-surface-500">{humanPhaseLabel(item.human_phase)}</span>
+              </button>
+            {/each}
+            {#each otherCompletedItems as item (item.id)}
+              <button
+                type="button"
+                class="w-full px-3 py-1.5 text-left opacity-65 hover:bg-surface-800/70 hover:opacity-100"
+                onclick={() => void openItem(item.id, item.title)}
+              >
+                <span class="block truncate text-[11px] text-surface-300">{item.title}</span>
+                <span class="text-[9px] text-surface-500">{humanPhaseLabel(item.human_phase)}</span>
+              </button>
+            {/each}
+          </div>
+        </details>
+      {/if}
+    {:else}
+      <div class="min-h-0 flex-1 overflow-y-auto py-1.5">
+        {#if activeItems.length}
+          <p class="px-3 pb-1 pt-1 text-[9px] font-medium uppercase tracking-wider text-surface-500">In progress</p>
+          {#each activeItems as item (item.id)}
+            <button
+              type="button"
+              class="w-full px-3 py-2 text-left transition hover:bg-surface-800/70"
+              onclick={() => void openItem(item.id, item.title)}
+            >
+              <span class="block truncate text-xs font-medium text-surface-100">{item.title}</span>
+              <span class="mt-0.5 block truncate text-[9px] text-surface-500">
+                {humanPhaseLabel(item.human_phase)}
+              </span>
+            </button>
+          {/each}
         {/if}
-      {/each}
+        {#if completedItems.length}
+          <p class="px-3 pb-1 pt-3 text-[9px] font-medium uppercase tracking-wider text-surface-500">Finished</p>
+          {#each completedItems as item (item.id)}
+            <button
+              type="button"
+              class="w-full px-3 py-2 text-left opacity-65 transition hover:bg-surface-800/70 hover:opacity-100"
+              onclick={() => void openItem(item.id, item.title)}
+            >
+              <span class="block truncate text-xs font-medium text-surface-200">{item.title}</span>
+              <span class="mt-0.5 block truncate text-[9px] text-surface-500">
+                {humanPhaseLabel(item.human_phase)}
+              </span>
+            </button>
+          {/each}
+        {/if}
+      </div>
     {/if}
   </div>
 </aside>

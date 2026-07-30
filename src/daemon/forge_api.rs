@@ -263,20 +263,26 @@ fn normalize_source_relative(raw: &str) -> ApiResult<(PathBuf, String)> {
 }
 
 fn resolve_source_path(root: &FsPath, raw: &str) -> ApiResult<(PathBuf, String)> {
-    let (relative, clean) = normalize_source_relative(raw)?;
     let root = std::fs::canonicalize(root).map_err(|err| {
         request_error(
             StatusCode::CONFLICT,
             format!("governed workspace is unavailable: {err}"),
         )
     })?;
+    resolve_source_path_under(&root, raw)
+}
+
+/// Like [`resolve_source_path`], but `root` must already be canonical.
+/// Used by tree listing so we do not re-canonicalize the workspace root per file.
+fn resolve_source_path_under(root: &FsPath, raw: &str) -> ApiResult<(PathBuf, String)> {
+    let (relative, clean) = normalize_source_relative(raw)?;
     let candidate = std::fs::canonicalize(root.join(&relative)).map_err(|err| {
         request_error(
             StatusCode::NOT_FOUND,
             format!("source file not found: {err}"),
         )
     })?;
-    if !candidate.starts_with(&root) || !candidate.is_file() {
+    if !candidate.starts_with(root) || !candidate.is_file() {
         return Err(request_error(
             StatusCode::BAD_REQUEST,
             "source path must name a file inside the governed workspace",
@@ -1189,7 +1195,8 @@ fn list_source_tree(work_id: &WorkId, root: &FsPath) -> ApiResult<SourceTreeResp
             break;
         }
         let relative = String::from_utf8_lossy(raw).replace('\\', "/");
-        let Ok((path, clean)) = resolve_source_path(&root, &relative) else {
+        // Root is already canonical — avoid re-canonicalizing it per file.
+        let Ok((path, clean)) = resolve_source_path_under(&root, &relative) else {
             continue;
         };
         let byte_size = path.metadata().map(|value| value.len()).unwrap_or(0);
@@ -1356,7 +1363,16 @@ async fn source_tree(
             "prepare the governed workspace before browsing source files",
         )
     })?;
-    Ok(Json(list_source_tree(&id, &environment.worktree)?))
+    let worktree = environment.worktree.clone();
+    let listed = tokio::task::spawn_blocking(move || list_source_tree(&id, &worktree))
+        .await
+        .map_err(|err| {
+            request_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("source tree enumeration failed: {err}"),
+            )
+        })??;
+    Ok(Json(listed))
 }
 
 async fn search_source(

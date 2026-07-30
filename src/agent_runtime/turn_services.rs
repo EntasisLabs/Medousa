@@ -4,7 +4,6 @@ use genai::chat::ChatMessage;
 use stasis::application::orchestration::prompt_pipeline::PromptExecutionPipeline;
 use crate::medousa_tool_loop::MedousaToolLoopPipeline;
 use stasis::application::orchestration::tool_loop_pipeline::ToolCallMode;
-use stasis::infrastructure::llm::genai_chat_client::GenaiChatClient;
 use stasis::ports::outbound::ai_chat_client::AiChatClient;
 
 use crate::session::ConversationTurn;
@@ -418,9 +417,8 @@ pub fn build_prompt_pipeline_for_target(
     model: &str,
     base_url: Option<&str>,
 ) -> PromptExecutionPipeline {
-    let chat_client: Arc<dyn AiChatClient> = Arc::new(
-        GenaiChatClient::from_provider_model_with_base_url(Some(provider), model, base_url),
-    );
+    let chat_client: Arc<dyn AiChatClient> =
+        Arc::new(crate::build_genai_chat_client(provider, model, base_url));
     PromptExecutionPipeline::new(chat_client)
 }
 

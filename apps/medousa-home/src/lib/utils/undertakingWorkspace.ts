@@ -1,6 +1,6 @@
 /** Shared transitions into an undertaking's permanent workspace surfaces. */
 
-import { beginHumanAttempt, getUndertakingSourceTree, type ItemProjection } from "$lib/forge";
+import { beginHumanAttempt, humanizeForgeMessage, type ItemProjection } from "$lib/forge";
 import { terminalCreate } from "$lib/terminal";
 import { undertakings } from "$lib/stores/undertakings.svelte";
 import { shellTabs } from "$lib/stores/shellTabs.svelte";
@@ -17,6 +17,7 @@ import {
   setSessionAgentSessionId,
 } from "$lib/utils/sessionAgentRuntime";
 import { codeWorkspace } from "$lib/stores/codeWorkspace.svelte";
+import { getUndertakingSourceTreeShared } from "$lib/utils/forgeSourceTreeCache";
 
 function terminalSessionId(created: { session_id?: string; id?: string }): string {
   return typeof created.session_id === "string"
@@ -45,30 +46,79 @@ const LANDING_CANDIDATES = [
   "package.json",
 ];
 
+export type LandCodeResult =
+  | { ok: true; path: string }
+  | { ok: false; error: string };
+
 /** Open a real buffer after Start/open so Code never lands on an empty plaza. */
-export async function landCodeWorkingSet(workId: string): Promise<string | null> {
+export async function landCodeWorkingSet(workId: string): Promise<LandCodeResult> {
   const id = workId.trim();
-  if (!id) return null;
+  if (!id) {
+    return { ok: false, error: "No project selected." };
+  }
+
+  const detail = undertakings.detail?.id === id ? undertakings.detail : null;
+  if (detail && !detail.environment) {
+    const message = detail.allowed_actions.provision.allowed
+      ? "Set up this project to open its working copy and files."
+      : detail.allowed_actions.provision.reason ||
+        "This project has no working copy yet.";
+    codeWorkspace.workspaceErrorByWorkId = {
+      ...codeWorkspace.workspaceErrorByWorkId,
+      [id]: message,
+    };
+    return { ok: false, error: message };
+  }
+
   try {
     await codeWorkspace.hydrate(id);
     const existing = codeWorkspace.activeFor(id);
     if (existing && !existing.loading && existing.digest) {
       undertakings.setSelection({ path: existing.path, line: existing.line ?? 1, entityId: null });
-      return existing.path;
+      codeWorkspace.workspaceErrorByWorkId = {
+        ...codeWorkspace.workspaceErrorByWorkId,
+        [id]: null,
+      };
+      return { ok: true, path: existing.path };
     }
-    const tree = await getUndertakingSourceTree(id);
+    const tree = await getUndertakingSourceTreeShared(id);
     const paths = tree.files.map((file) => file.path);
-    if (paths.length === 0) return null;
+    if (paths.length === 0) {
+      const message = "This working copy has no files to open yet.";
+      codeWorkspace.workspaceErrorByWorkId = {
+        ...codeWorkspace.workspaceErrorByWorkId,
+        [id]: message,
+      };
+      return { ok: false, error: message };
+    }
     const preferred =
       LANDING_CANDIDATES.find((candidate) => paths.includes(candidate)) ??
       paths.find((path) => /\.(ts|tsx|js|jsx|rs|go|py|svelte|md)$/i.test(path)) ??
       paths[0];
-    if (!preferred) return null;
+    if (!preferred) {
+      const message = "Could not pick a landing file in this working copy.";
+      codeWorkspace.workspaceErrorByWorkId = {
+        ...codeWorkspace.workspaceErrorByWorkId,
+        [id]: message,
+      };
+      return { ok: false, error: message };
+    }
     await codeWorkspace.open(id, preferred, 1);
     undertakings.setSelection({ path: preferred, line: 1, entityId: null });
-    return preferred;
-  } catch {
-    return null;
+    codeWorkspace.workspaceErrorByWorkId = {
+      ...codeWorkspace.workspaceErrorByWorkId,
+      [id]: null,
+    };
+    return { ok: true, path: preferred };
+  } catch (err) {
+    const message = humanizeForgeMessage(
+      err instanceof Error ? err.message : String(err),
+    );
+    codeWorkspace.workspaceErrorByWorkId = {
+      ...codeWorkspace.workspaceErrorByWorkId,
+      [id]: message,
+    };
+    return { ok: false, error: message };
   }
 }
 
@@ -99,8 +149,24 @@ export function activeCodeContext(sessionId: string): CodeIntentContext | null {
   };
 }
 
-export async function openTrackedTerminal(item: ItemProjection): Promise<string | null> {
+export async function openTrackedTerminal(
+  item: ItemProjection,
+  options?: { activate?: boolean },
+): Promise<string | null> {
   if (undertakings.active?.workId !== item.id) undertakings.setActiveFromItem(item);
+
+  const existing =
+    undertakings.active?.workId === item.id
+      ? undertakings.active.boundTerminalSessionIds[0]
+      : null;
+  if (existing) {
+    shellTabs.openTerminal(existing, {
+      activate: options?.activate !== false,
+      title: `Terminal · ${item.title}`,
+      workId: item.id,
+    });
+    return existing;
+  }
 
   let leaseId = undertakings.active?.leaseId ?? null;
   if (item.allowed_actions.begin_attempt.allowed) {
@@ -119,7 +185,7 @@ export async function openTrackedTerminal(item: ItemProjection): Promise<string 
 
   undertakings.bindTerminal(sessionId);
   shellTabs.openTerminal(sessionId, {
-    activate: true,
+    activate: options?.activate !== false,
     title: `Terminal · ${item.title}`,
     workId: item.id,
   });

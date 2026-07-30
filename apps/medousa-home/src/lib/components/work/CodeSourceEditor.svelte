@@ -24,6 +24,8 @@
     type CodeEditorMenuAction,
   } from "$lib/components/code/CodeEditorContextMenu.svelte";
   import CodeSplitEditorPane from "$lib/components/work/CodeSplitEditorPane.svelte";
+  import CodeTerminalDock from "$lib/components/work/CodeTerminalDock.svelte";
+  import { openTrackedTerminal } from "$lib/utils/undertakingWorkspace";
   import type { LSPClient } from "@codemirror/lsp-client";
   import {
     getCodeWorkspaceLspClient,
@@ -86,6 +88,7 @@
     onToggleWorld?: () => void;
     onOpenReview?: () => void;
     onOpenTerminal?: () => void;
+    onProvision?: () => Promise<void>;
     preferredAgent?: "codex" | "cursor";
     onHandoffToAgent?: (runtime: "codex" | "cursor", draft?: string) => Promise<void>;
     onReclaimHuman?: () => Promise<void>;
@@ -99,6 +102,7 @@
     onToggleWorld,
     onOpenReview,
     onOpenTerminal,
+    onProvision,
     preferredAgent = "codex",
     onHandoffToAgent,
     onReclaimHuman,
@@ -112,6 +116,9 @@
   let showLineNumbers = $state(readCodeEditorLineNumbers());
   let findOpenByTabId = $state<Record<string, boolean>>({});
   let editorChromeKey = $state(0);
+  let terminalDockOpen = $state(false);
+  let dockSessionId = $state<string | null>(null);
+  let dockBusy = $state(false);
   let editor = $state<CodeMirrorHost | undefined>();
   let lspClient = $state<LSPClient | null>(null);
   let lspError = $state<string | null>(null);
@@ -192,6 +199,10 @@
     if (!taskResult) return null;
     return `${taskResult.success ? "Passed" : "Failed"} · ${taskResult.task.label}`;
   });
+  const landError = $derived(workId ? codeWorkspace.workspaceErrorByWorkId[workId] ?? null : null);
+  const needsProvision = $derived(
+    Boolean(detail && !detail.environment && detail.allowed_actions.provision.allowed),
+  );
   const documentUri = $derived.by(() => {
     if (!activeTab || !context?.worktree) return null;
     return pathToFileUri(
@@ -355,6 +366,38 @@
     showLineNumbers = !showLineNumbers;
     writeCodeEditorLineNumbers(showLineNumbers);
     editorChromeKey += 1;
+  }
+
+  async function toggleTerminalDock(forceOpen?: boolean) {
+    const next = forceOpen === true ? true : forceOpen === false ? false : !terminalDockOpen;
+    if (!next) {
+      terminalDockOpen = false;
+      return;
+    }
+    if (!detail || !terminalAvailable) {
+      surfaceError = "Terminal is not available for this project yet.";
+      return;
+    }
+    terminalDockOpen = true;
+    if (dockSessionId) return;
+    dockBusy = true;
+    surfaceError = null;
+    try {
+      const sessionId = await openTrackedTerminal(detail, { activate: false });
+      dockSessionId = sessionId;
+      if (!sessionId) surfaceError = "Could not open a workshop shell for this project.";
+    } catch (err) {
+      surfaceError = err instanceof Error ? err.message : String(err);
+      terminalDockOpen = false;
+    } finally {
+      dockBusy = false;
+    }
+  }
+
+  async function popOutTerminal() {
+    if (!detail) return;
+    terminalDockOpen = false;
+    await openTrackedTerminal(detail, { activate: true });
   }
 
   async function chooseQuickFile(file = quickResults[quickIndex]) {
@@ -1449,9 +1492,14 @@
         <button
           type="button"
           class="flex items-center gap-1 rounded px-1.5 py-0.5 text-[9px] text-surface-500 hover:bg-surface-800 hover:text-surface-200 disabled:opacity-35"
+          class:bg-surface-800={terminalDockOpen}
           disabled={!terminalAvailable && !selectedTask}
-          onclick={() => runningTask ? void stopDetectedTask() : void runDetectedTask()}
-          title={selectedTask ? selectedTask.argv.join(" ") : "Open Terminal"}
+          onclick={() => {
+            if (runningTask) void stopDetectedTask();
+            else if (selectedTask) void runDetectedTask();
+            else void toggleTerminalDock();
+          }}
+          title={selectedTask ? selectedTask.argv.join(" ") : "Toggle Terminal (Ctrl+`)"}
         >{#if runningTask}<X size={10} />Stop {selectedTask?.label}{:else}<SquareTerminal size={10} />{selectedTask?.label ?? "Terminal"}{/if}</button>
         {#if projectTasks.some((task) => task.kind === "test")}
           <button type="button" class="rounded px-1.5 py-0.5 text-[9px] text-surface-500 hover:bg-surface-800 hover:text-surface-200" class:bg-surface-800={testsOpen} onclick={() => void toggleTests()}>Tests</button>
@@ -1463,8 +1511,8 @@
             {/each}
           </select>
         {/if}
-        {#if selectedTask && terminalAvailable}
-          <button type="button" class="flex items-center gap-1 rounded px-1.5 py-0.5 text-[9px] text-surface-500 hover:bg-surface-800 hover:text-surface-200" onclick={onOpenTerminal} title="Open Terminal"><SquareTerminal size={10} />Terminal</button>
+        {#if terminalAvailable}
+          <button type="button" class="flex items-center gap-1 rounded px-1.5 py-0.5 text-[9px] text-surface-500 hover:bg-surface-800 hover:text-surface-200" class:bg-surface-800={terminalDockOpen} onclick={() => void toggleTerminalDock()} title="Toggle Terminal (Ctrl+`)"><SquareTerminal size={10} />Shell</button>
         {/if}
         <button
           type="button"
@@ -1487,6 +1535,8 @@
           <kbd class="vault-kbd">{formatShortcut("S")}</kbd> save
           <span class="text-surface-600" aria-hidden="true">·</span>
           <kbd class="vault-kbd">{formatShortcut("P")}</kbd> open
+          <span class="text-surface-600" aria-hidden="true">·</span>
+          <kbd class="vault-kbd">⌃`</kbd> terminal
         </span>
         <span class="font-mono tabular-nums">Ln {cursorLine}, Col {cursorColumn}</span>
         <span class="text-surface-600" aria-hidden="true">·</span>
@@ -1537,21 +1587,75 @@
       </div>
     {/if}
   {:else}
-    <div class="flex min-h-72 flex-1 items-center justify-center p-8 text-center">
-      <div class="max-w-xs">
-        <FileCode2 size={24} class="mx-auto text-surface-600" />
-        <p class="mt-2 text-xs font-medium text-surface-300">Open a file</p>
-        <p class="mt-1 text-[10px] leading-relaxed text-surface-500">
-          Jump in with Quick Open, or pick a path from the project tree.
-        </p>
-        <button
-          type="button"
-          class="mt-3 rounded bg-primary-500/80 px-3 py-1.5 text-[11px] font-medium text-surface-50"
-          onclick={() => void showQuickOpen()}
-        >Open file <kbd class="vault-kbd ml-1">{formatShortcut("P")}</kbd></button>
+    <div class="flex min-h-0 flex-1 flex-col">
+      <div class="flex min-h-72 flex-1 items-center justify-center p-8 text-center">
+        <div class="max-w-sm">
+          {#if needsProvision}
+            <FileCode2 size={24} class="mx-auto text-surface-600" />
+            <p class="mt-2 text-xs font-medium text-surface-300">Set up this project</p>
+            <p class="mt-1 text-[10px] leading-relaxed text-surface-500">
+              {landError || "Create the working copy so the tree and editor can open."}
+            </p>
+            {#if onProvision}
+              <button
+                type="button"
+                class="mt-3 rounded bg-primary-500/80 px-3 py-1.5 text-[11px] font-medium text-surface-50"
+                onclick={() => void onProvision()}
+              >Set up project</button>
+            {/if}
+          {:else if landError}
+            <FileCode2 size={24} class="mx-auto text-amber-500/70" />
+            <p class="mt-2 text-xs font-medium text-amber-100">Could not open the working set</p>
+            <p class="mt-1 text-[10px] leading-relaxed text-amber-100/80">{humanizeForgeMessage(landError)}</p>
+            <div class="mt-3 flex flex-wrap items-center justify-center gap-2">
+              <button
+                type="button"
+                class="rounded bg-primary-500/80 px-3 py-1.5 text-[11px] font-medium text-surface-50"
+                onclick={() => void showQuickOpen()}
+              >Open file <kbd class="vault-kbd ml-1">{formatShortcut("P")}</kbd></button>
+              {#if terminalAvailable}
+                <button
+                  type="button"
+                  class="rounded border border-surface-500/40 px-3 py-1.5 text-[11px] text-surface-200 hover:bg-surface-800"
+                  disabled={dockBusy}
+                  onclick={() => void toggleTerminalDock(true)}
+                >Terminal <kbd class="vault-kbd ml-1">⌃`</kbd></button>
+              {/if}
+            </div>
+          {:else}
+            <FileCode2 size={24} class="mx-auto text-surface-600" />
+            <p class="mt-2 text-xs font-medium text-surface-300">Open a file</p>
+            <p class="mt-1 text-[10px] leading-relaxed text-surface-500">
+              Jump in with Quick Open, or pick a path from the project tree.
+            </p>
+            <div class="mt-3 flex flex-wrap items-center justify-center gap-2">
+              <button
+                type="button"
+                class="rounded bg-primary-500/80 px-3 py-1.5 text-[11px] font-medium text-surface-50"
+                onclick={() => void showQuickOpen()}
+              >Open file <kbd class="vault-kbd ml-1">{formatShortcut("P")}</kbd></button>
+              {#if terminalAvailable}
+                <button
+                  type="button"
+                  class="rounded border border-surface-500/40 px-3 py-1.5 text-[11px] text-surface-200 hover:bg-surface-800"
+                  disabled={dockBusy}
+                  onclick={() => void toggleTerminalDock(true)}
+                >Terminal <kbd class="vault-kbd ml-1">⌃`</kbd></button>
+              {/if}
+            </div>
+          {/if}
+        </div>
       </div>
     </div>
   {/if}
+  <CodeTerminalDock
+    open={terminalDockOpen}
+    sessionId={dockSessionId}
+    {workId}
+    title="Terminal"
+    onClose={() => (terminalDockOpen = false)}
+    onPopOut={() => void popOutTerminal()}
+  />
 </section>
 
 <style>
@@ -1725,6 +1829,11 @@
     if (command && event.key === "\\") {
       event.preventDefault();
       toggleSplit();
+      return;
+    }
+    if (command && event.key === "`") {
+      event.preventDefault();
+      void toggleTerminalDock();
       return;
     }
     if (

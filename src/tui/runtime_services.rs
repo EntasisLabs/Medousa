@@ -5,7 +5,6 @@ use stasis::application::orchestration::prompt_pipeline::PromptExecutionPipeline
 use stasis::application::use_cases::identity_memory_service::IdentityMemoryService;
 use crate::medousa_tool_loop::MedousaToolLoopPipeline;
 use stasis::application::orchestration::tool_registry::{InMemoryToolRegistry, ToolRegistry};
-use stasis::infrastructure::llm::genai_chat_client::GenaiChatClient;
 use stasis::ports::outbound::ai_chat_client::AiChatClient;
 use crate::identity_store_ext::MedousaIdentityMemoryStore;
 use stasis::prelude::RuntimeBackend;
@@ -70,13 +69,12 @@ pub(crate) fn build_tool_loop_pipeline_for_target(
     let resolved_provider = crate::resolve_llm_provider(Some(provider));
     let resolved_model = crate::resolve_llm_model(Some(model));
     let resolved_base_url = crate::resolve_llm_base_url(Some(&resolved_provider), base_url);
-    let chat_client: Arc<dyn AiChatClient> = Arc::new(
-        GenaiChatClient::from_provider_model_with_base_url(
-            Some(&resolved_provider),
+    let chat_client: Arc<dyn AiChatClient> =
+        Arc::new(crate::build_genai_chat_client(
+            &resolved_provider,
             &resolved_model,
             resolved_base_url.as_deref(),
-        ),
-    );
+        ));
     let prompt_pipeline = PromptExecutionPipeline::new(chat_client);
     MedousaToolLoopPipeline::new(prompt_pipeline, tool_registry)
 }
@@ -147,13 +145,12 @@ pub(crate) async fn assemble_tui_runtime(
     let resolved_model = crate::resolve_llm_model(model);
     let resolved_base_url = crate::resolve_llm_base_url(Some(&resolved_provider), base_url);
 
-    let chat_client: Arc<dyn AiChatClient> = Arc::new(
-        GenaiChatClient::from_provider_model_with_base_url(
-            Some(&resolved_provider),
+    let chat_client: Arc<dyn AiChatClient> =
+        Arc::new(crate::build_genai_chat_client(
+            &resolved_provider,
             &resolved_model,
             resolved_base_url.as_deref(),
-        ),
-    );
+        ));
 
     let workflow_registry = workflow::shared_workflow_registry();
     let mut tool_registry = InMemoryToolRegistry::default();

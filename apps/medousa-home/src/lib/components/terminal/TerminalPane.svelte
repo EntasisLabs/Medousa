@@ -26,9 +26,11 @@
     sessionId: string;
     workId?: string | null;
     title?: string;
+    /** Hide project chip / sessions chrome when docked under Code. */
+    compact?: boolean;
   }
 
-  let { sessionId, workId = null, title = "Terminal" }: Props = $props();
+  let { sessionId, workId = null, title = "Terminal", compact = false }: Props = $props();
 
   let attachId = $state<number | null>(null);
   let boundSessionId = $state("");
@@ -247,10 +249,15 @@
     class="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-white/10 px-3 py-1.5"
   >
     <div class="min-w-0 flex flex-wrap items-center gap-2 text-xs text-white/60">
-      <span class="truncate">{title}</span>
-      <UndertakingContextChip />
+      {#if !compact}
+        <span class="truncate">{title}</span>
+        <UndertakingContextChip />
+      {:else}
+        <span class="truncate text-[10px] text-white/40">Shared with agents in this project</span>
+      {/if}
     </div>
     <div class="flex items-center gap-1">
+      {#if !compact}
       <details class="relative">
         <summary class="cursor-pointer list-none rounded px-2 py-0.5 text-[10px] text-white/55 hover:bg-white/10 hover:text-white [&::-webkit-details-marker]:hidden">Sessions</summary>
         <div class="absolute right-0 top-full z-30 mt-1 w-56 rounded border border-white/15 bg-[#171312] p-1 shadow-xl">
@@ -271,6 +278,7 @@
       >
         New shell
       </button>
+      {/if}
       <button
         type="button"
         class="rounded px-2 py-0.5 text-[11px] text-white/60 hover:bg-white/10 hover:text-white"

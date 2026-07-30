@@ -32,18 +32,29 @@
   import { undertakings } from "$lib/stores/undertakings.svelte";
   import { codeWorkspace } from "$lib/stores/codeWorkspace.svelte";
   import {
-    buildCodeSourceTree,
+    buildCodeSourceTreeAsync,
     flattenCodeSourceTree,
+    CODE_TREE_MAX_VISIBLE_ROWS,
+    type CodeSourceTreeNode,
   } from "$lib/utils/codeSourceTree";
+  import {
+    getUndertakingSourceTreeShared,
+    invalidateUndertakingSourceTree,
+  } from "$lib/utils/forgeSourceTreeCache";
 
   interface Props {
     workId: string;
     prepared: boolean;
+    /** Fill remaining explorer height instead of a capped max-height. */
+    fill?: boolean;
   }
 
-  let { workId, prepared }: Props = $props();
+  let { workId, prepared, fill = false }: Props = $props();
   let tree = $state<ForgeSourceTree | null>(null);
+  /** Nested nodes built off the critical path — never sync-derived from 20k files. */
+  let nodes = $state<CodeSourceTreeNode[]>([]);
   let loading = $state(false);
+  let building = $state(false);
   let error = $state<string | null>(null);
   let query = $state("");
   let searchInput = $state<HTMLInputElement | null>(null);
@@ -58,31 +69,78 @@
   let deletedFile = $state<ForgeSourceFile | null>(null);
   let renameInput = $state<HTMLInputElement | null>(null);
   const expanded = new SvelteSet<string>();
+  /** Monotonic id so only the latest in-flight response may update UI / clear loading. */
   let loadToken = 0;
+  /** Background poll only after a successful first fetch — avoid racing cold open. */
+  let pollReady = $state(false);
 
-  const nodes = $derived(buildCodeSourceTree(tree?.files ?? []));
   const rows = $derived.by(() => {
     const needle = query.trim().toLowerCase();
     if (needle) {
-      return (tree?.files ?? [])
-        .filter((file) => file.path.toLowerCase().includes(needle))
-        .slice(0, 200)
-        .map((file) => ({
-          kind: "file" as const,
+      const matched: Array<{
+        kind: "file";
+        name: string;
+        path: string;
+        byteSize: number;
+        status: string | null | undefined;
+        children: CodeSourceTreeNode[];
+        depth: number;
+      }> = [];
+      for (const file of tree?.files ?? []) {
+        if (!file.path.toLowerCase().includes(needle)) continue;
+        matched.push({
+          kind: "file",
           name: file.path.split("/").pop() ?? file.path,
           path: file.path,
           byteSize: file.byte_size,
           status: file.status,
           children: [],
           depth: 0,
-        }));
+        });
+        if (matched.length >= 200) break;
+      }
+      return matched;
     }
     return flattenCodeSourceTree(nodes, expanded);
   });
+  const visibleRows = $derived(rows.slice(0, CODE_TREE_MAX_VISIBLE_ROWS));
+  const hiddenRowCount = $derived(Math.max(0, rows.length - visibleRows.length));
 
-  async function load(background = false) {
+  async function applyTreePayload(next: ForgeSourceTree, token: number) {
+    // Keep the shell interactive while we index — do not sync-build on assign.
+    building = true;
+    tree = next;
+    nodes = [];
+    await new Promise<void>((resolve) => {
+      if (typeof requestAnimationFrame === "function") requestAnimationFrame(() => resolve());
+      else setTimeout(resolve, 0);
+    });
+    if (token !== loadToken) return;
+    const built = await buildCodeSourceTreeAsync(
+      next.files,
+      () => token !== loadToken,
+    );
+    if (token !== loadToken) return;
+    nodes = built;
+    // Only auto-open the top level when it is small — expanding huge dirs freezes paint.
+    if (built.length > 0 && built.length <= 24) {
+      for (const node of built) {
+        if (node.kind === "directory" && node.children.length <= 40) {
+          expanded.add(node.path);
+        }
+      }
+    }
+    building = false;
+  }
+
+  async function load(background = false, force = false) {
     if (!prepared || !workId) {
       tree = null;
+      nodes = [];
+      loading = false;
+      building = false;
+      pollReady = false;
+      if (!prepared) error = null;
       return;
     }
     const token = ++loadToken;
@@ -91,17 +149,24 @@
       error = null;
     }
     try {
-      const next = await getUndertakingSourceTree(workId);
+      if (force) invalidateUndertakingSourceTree(workId);
+      const next = await getUndertakingSourceTreeShared(workId, { force });
       if (token !== loadToken) return;
-      tree = next;
-      for (const node of buildCodeSourceTree(next.files).slice(0, 8)) {
-        if (node.kind === "directory") expanded.add(node.path);
-      }
+      if (!background) error = null;
+      loading = false;
+      await applyTreePayload(next, token);
+      if (token !== loadToken) return;
+      pollReady = true;
     } catch (err) {
       if (token !== loadToken) return;
-      if (!background) error = humanizeForgeMessage(err instanceof Error ? err.message : String(err));
+      if (!background || !tree) {
+        error = humanizeForgeMessage(err instanceof Error ? err.message : String(err));
+      }
     } finally {
-      if (!background && token === loadToken) loading = false;
+      if (token === loadToken) {
+        loading = false;
+        building = false;
+      }
     }
   }
 
@@ -162,7 +227,7 @@
       newPath = "";
       await codeWorkspace.open(workId, source.path, 1);
       undertakings.setSelection({ path: source.path, line: 1, entityId: null });
-      await load();
+      await load(false, true);
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
     } finally {
@@ -197,7 +262,7 @@
       renamingPath = null;
       renameDestination = "";
       undertakings.setSelection({ path: renamed.path, line: 1, entityId: null });
-      await load();
+      await load(false, true);
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
     } finally {
@@ -229,7 +294,7 @@
       codeWorkspace.removePath(workId, path);
       deletedFile = source;
       undertakings.setSelection({ path: null, line: null, entityId: null });
-      await load();
+      await load(false, true);
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
     } finally {
@@ -254,7 +319,7 @@
       deletedFile = null;
       await codeWorkspace.open(workId, restored.path, 1);
       undertakings.setSelection({ path: restored.path, line: 1, entityId: null });
-      await load();
+      await load(false, true);
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
     } finally {
@@ -278,12 +343,18 @@
   $effect(() => {
     void workId;
     void prepared;
-    void load();
+    pollReady = false;
+    void load(false);
+    return () => {
+      loadToken += 1;
+      loading = false;
+      building = false;
+    };
   });
 
   $effect(() => {
-    if (!prepared || !workId) return;
-    const timer = setInterval(() => void load(true), 5_000);
+    if (!prepared || !workId || !pollReady) return;
+    const timer = setInterval(() => void load(true), 12_000);
     return () => clearInterval(timer);
   });
 
@@ -299,7 +370,7 @@
   });
 </script>
 
-<div class="border-y border-surface-500/20 bg-surface-950/25">
+<div class="flex h-full min-h-0 flex-col border-y border-surface-500/20 bg-surface-950/25 {fill ? 'border-y-0' : ''}">
   {#if !prepared}
     <p class="px-3 py-2 text-[10px] leading-relaxed text-surface-500">
       Set up this project to see and edit its files.
@@ -335,7 +406,7 @@
         class="rounded p-1 text-surface-500 hover:bg-surface-800 hover:text-surface-200"
         aria-label="Refresh project files"
         title="Refresh files"
-        onclick={() => void load()}
+        onclick={() => void load(false, true)}
       ><RefreshCw size={12} class={loading ? "animate-spin" : ""} /></button>
       <button
         type="button"
@@ -391,7 +462,7 @@
     {:else if contentSearching}
       <p class="px-3 py-2 text-[10px] text-surface-500">Searching inside files…</p>
     {:else if contentSearch}
-      <div class="max-h-[min(46vh,32rem)] overflow-y-auto py-1" aria-label="File search results">
+      <div class="min-h-0 flex-1 overflow-y-auto py-1 {fill ? '' : 'max-h-[min(46vh,32rem)]'}" aria-label="File search results">
         {#if contentSearch.hits.length === 0}
           <p class="px-3 py-2 text-[10px] text-surface-500">No content matches.</p>
         {:else}
@@ -410,13 +481,22 @@
           <p class="px-2 py-1 text-[9px] text-amber-200">First 500 matches shown.</p>
         {/if}
       </div>
-    {:else if !loading && rows.length === 0}
+    {:else if loading && visibleRows.length === 0}
+      <p class="px-3 py-2 text-[10px] text-surface-500">Loading project files…</p>
+      <button
+        type="button"
+        class="mx-3 mb-2 rounded px-2 py-1 text-[9px] text-primary-300 hover:bg-surface-800"
+        onclick={() => void load(false, true)}
+      >Retry</button>
+    {:else if building && visibleRows.length === 0}
+      <p class="px-3 py-2 text-[10px] text-surface-500">Indexing files…</p>
+    {:else if !loading && !building && rows.length === 0}
       <p class="px-3 py-2 text-[10px] text-surface-500">
         {query ? "No matching files." : "There are no files to show yet."}
       </p>
     {:else}
-      <div class="max-h-[min(46vh,32rem)] overflow-y-auto py-1" role="tree" aria-label="Project files">
-        {#each rows as row (row.path)}
+      <div class="min-h-0 flex-1 overflow-y-auto py-1 {fill ? '' : 'max-h-[min(46vh,32rem)]'}" role="tree" aria-label="Project files">
+        {#each visibleRows as row (row.path)}
           <button
             type="button"
             role="treeitem"
@@ -455,6 +535,14 @@
             {/if}
           </button>
         {/each}
+        {#if building}
+          <p class="px-3 py-1 text-[9px] text-surface-500">Indexing remaining files…</p>
+        {/if}
+        {#if hiddenRowCount > 0}
+          <p class="px-3 py-1 text-[9px] text-surface-500">
+            Showing {visibleRows.length} of {rows.length}. Narrow with Find a file.
+          </p>
+        {/if}
       </div>
       {#if tree?.truncated}
         <p class="border-t border-surface-500/20 px-2 py-1 text-[9px] text-amber-200">
