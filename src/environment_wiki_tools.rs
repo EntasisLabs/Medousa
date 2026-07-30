@@ -48,7 +48,7 @@ const TOPICS: &[WikiTopic] = &[
         summary: "Why components on home never render and what actually persists.",
         policy: r#"    role(.99): "Environment spec = surfaces (nav destinations) + layout presets (sidebar membership) + components (persistent frames).",
     builtin_surfaces(.99): {
-        ids(.99): "home, chat, work, library, web, context, workshop, automations, messaging, runtime, settings",
+        ids(.99): "home, chat, peers, work, code, library, calendar, web, map, automations, messaging, runtime, settings",
         kind(.99): "builtin — product-shipped; slots usually empty",
         agent_components(.99): "presentation and chrome_action DO NOT render on builtin surfaces — validator rejects targeting them",
         trap(.99): "component_create or ui_present(persist=true) against home may return ok but canvas stays empty"
@@ -137,7 +137,7 @@ const TOPICS: &[WikiTopic] = &[
     },
     preset_edit(.99): {
         rule(.99): "find preset where active:true; append custom surface id to its surfaces string array",
-        example_surfaces(.95): "home, chat, work, library, web, context, workshop, automations, messaging, runtime, settings, writing-studio"
+        example_surfaces(.95): "home, chat, peers, work, code, library, calendar, web, map, automations, messaging, runtime, settings, writing-studio"
     },
     slots(.97): {
         surface_slots(.97): "custom surfaces may use slots:[] — empty is valid Phase 1",
@@ -341,8 +341,8 @@ const TOPICS: &[WikiTopic] = &[
         summary: "default vs focus — preset membership required for nav visibility.",
         policy: r#"    role(.98): "layoutPresets control which surface ids appear in nav and shell chrome.",
     builtin_presets(.97): {
-        default(.97): "full nav — home chat work library web context workshop automations messaging runtime settings — usually active",
-        focus(.96): "reduced — chat work library settings runtime"
+        default(.97): "full nav — home chat peers work code library calendar web map automations messaging runtime settings — usually active",
+        focus(.96): "reduced — chat peers work code library map settings runtime"
     },
     add_surface(.99): {
         rule(.99): "only ACTIVE preset must include your custom surface id",

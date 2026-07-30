@@ -75,6 +75,12 @@
     void loadRepositoryCatalog();
   });
 
+  $effect(() => {
+    if (!lmeWorkspace.codeCreateRequested) return;
+    creating = true;
+    lmeWorkspace.consumeNewCodeProjectRequest();
+  });
+
   async function loadRepositoryCatalog() {
     try {
       repositoryCatalog = await listForgeRepositories();

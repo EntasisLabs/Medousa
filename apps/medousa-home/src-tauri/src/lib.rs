@@ -677,6 +677,7 @@ pub fn run() {
             daemon::grapheme::grapheme_get_lifecycle,
             daemon::grapheme::grapheme_get_lsp_workspace,
             daemon::grapheme::coding_engine_info,
+            daemon::forge::forge_request,
             daemon::runtime::runtime_get_stats,
             daemon::runtime::runtime_get_defaults,
             daemon::runtime::runtime_get_tui_defaults,

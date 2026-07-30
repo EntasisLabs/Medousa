@@ -18,6 +18,11 @@
     Search,
   } from "@lucide/svelte";
   import CodeMirrorHost from "$lib/components/code/CodeMirrorHost.svelte";
+  import CodeBreadcrumbs from "$lib/components/code/CodeBreadcrumbs.svelte";
+  import CodeDocumentTabStrip from "$lib/components/code/CodeDocumentTabStrip.svelte";
+  import CodeEditorContextMenu, {
+    type CodeEditorMenuAction,
+  } from "$lib/components/code/CodeEditorContextMenu.svelte";
   import CodeSplitEditorPane from "$lib/components/work/CodeSplitEditorPane.svelte";
   import type { LSPClient } from "@codemirror/lsp-client";
   import {
@@ -33,6 +38,7 @@
     type CodeWorkspaceDiagnostic,
     type CodeWorkspaceSymbol,
   } from "$lib/code/codingEngineClient";
+  import { containingSymbolTrail } from "$lib/code/codeDocumentSymbols";
   import { languageSupportsLsp } from "$lib/code/codeEditorLanguageRegistry";
   import {
     beginHumanAttempt,
@@ -126,11 +132,19 @@
   let languageActionRunning = $state(false);
   let repairingLanguage = $state(false);
   let lspRetry = $state(0);
+  let cursorLine = $state(1);
+  let cursorColumn = $state(1);
+  let editorMenuOpen = $state(false);
+  let editorMenuX = $state(0);
+  let editorMenuY = $state(0);
+  let renameOpen = $state(false);
+  let renameDraft = $state("");
+  let renameInput = $state<HTMLInputElement | null>(null);
 
   const context = $derived(undertakings.active);
   const detail = $derived(undertakings.detail);
   const workId = $derived(detail?.id ?? context?.workId ?? "");
-  const tabs = $derived(codeWorkspace.tabs.filter((tab) => tab.work_id === workId));
+  const tabs = $derived(workId ? codeWorkspace.orderedTabsFor(workId) : []);
   const activeTab = $derived.by(() => {
     const activeId = codeWorkspace.activeByWorkId[workId];
     return activeId
@@ -203,6 +217,25 @@
   const canRename = $derived(Boolean(languageCapabilities.renameProvider));
   const canFormat = $derived(Boolean(languageCapabilities.documentFormattingProvider));
   const canCodeAction = $derived(Boolean(languageCapabilities.codeActionProvider));
+  const canDefinition = $derived(Boolean(languageCapabilities.definitionProvider ?? lspClient));
+  const symbolTrail = $derived(
+    containingSymbolTrail(
+      symbols,
+      context?.selectionStartLine ?? context?.selectedLine ?? cursorLine,
+    ),
+  );
+  const indentStatusLabel = $derived.by(() => {
+    const size =
+      Number.parseInt(editorConventions.indent_size ?? editorConventions.tab_width ?? "", 10) ||
+      2;
+    return editorConventions.indent_style === "tab"
+      ? `Tab Size: ${size}`
+      : `Spaces: ${size}`;
+  });
+  const absolutePath = $derived.by(() => {
+    if (!activeTab || !context?.worktree) return activeTab?.path ?? "";
+    return `${context.worktree.replace(/[\\/]$/, "")}/${activeTab.path}`;
+  });
 
   async function runDetectedTask(test?: ProjectTest) {
     if (!selectedTask || runningTask) {
@@ -733,12 +766,10 @@
 
   async function runLanguageAction(
     action: "format" | "organize_imports" | "references" | "rename",
+    newName?: string,
   ) {
     if (!activeTab || !documentUri || languageActionRunning) return;
     const cursor = editor?.getCursorPosition() ?? { line: 0, character: 0 };
-    const newName = action === "rename"
-      ? window.prompt("Rename this symbol to")
-      : undefined;
     if (action === "rename" && !newName?.trim()) return;
     languageActionRunning = true;
     surfaceError = null;
@@ -772,6 +803,93 @@
     }
   }
 
+  function beginInlineRename() {
+    if (!canRename || !editable) return;
+    renameDraft = editor?.getSelectedWord() ?? "";
+    renameOpen = true;
+    void tick().then(() => {
+      renameInput?.focus();
+      renameInput?.select();
+    });
+  }
+
+  async function commitInlineRename() {
+    const name = renameDraft.trim();
+    renameOpen = false;
+    if (!name) return;
+    await runLanguageAction("rename", name);
+  }
+
+  function cancelInlineRename() {
+    renameOpen = false;
+    renameDraft = "";
+  }
+
+  async function copyText(value: string) {
+    try {
+      await navigator.clipboard.writeText(value);
+    } catch {
+      surfaceError = "Could not copy to the clipboard.";
+    }
+  }
+
+  function revealInExplorer(path: string) {
+    undertakings.setSelection({ path, line: null, entityId: null });
+  }
+
+  function onBreadcrumbPath(path: string, isFile: boolean) {
+    if (isFile) {
+      undertakings.setSelection({ path, line: activeTab?.line ?? 1, entityId: null });
+      return;
+    }
+    revealInExplorer(path);
+  }
+
+  function onEditorContextMenu(event: MouseEvent) {
+    editorMenuX = event.clientX;
+    editorMenuY = event.clientY;
+    editorMenuOpen = true;
+  }
+
+  function onEditorMenuAction(action: CodeEditorMenuAction) {
+    if (!activeTab) return;
+    switch (action) {
+      case "definition":
+        editor?.goToDefinition();
+        break;
+      case "references":
+        void runLanguageAction("references");
+        break;
+      case "rename":
+        beginInlineRename();
+        break;
+      case "format":
+        void runLanguageAction("format");
+        break;
+      case "organize_imports":
+        void runLanguageAction("organize_imports");
+        break;
+      case "copy_path":
+        void copyText(absolutePath);
+        break;
+      case "copy_relative_path":
+        void copyText(activeTab.path);
+        break;
+      case "reveal":
+        revealInExplorer(activeTab.path);
+        break;
+    }
+  }
+
+  async function reopenClosedTab() {
+    if (!workId || !codeWorkspace.canReopenClosed(workId)) return;
+    const tab = await codeWorkspace.reopenClosed(workId);
+    if (!tab) return;
+    undertakings.setSelection({ path: tab.path, line: tab.line, entityId: null });
+    await tick();
+    if (tab.line) editor?.revealLine(tab.line);
+  }
+
   function symbolLine(symbol: CodeDocumentSymbol): number {
     return (
       symbol.selectionRange?.start?.line ?? symbol.range?.start?.line ?? 0
@@ -779,12 +897,7 @@
   }
 
   function containingSymbol(): string | null {
-    const line = context?.selectionStartLine ?? context?.selectedLine;
-    if (!line) return null;
-    const containing = symbols
-      .filter((symbol) => line >= symbolLine(symbol))
-      .sort((a, b) => symbolLine(b) - symbolLine(a))[0];
-    return containing?.name ?? null;
+    return symbolTrail[symbolTrail.length - 1]?.name ?? null;
   }
 
   $effect(() => {
@@ -958,64 +1071,42 @@
 
 <section class="flex flex-col overflow-hidden rounded-lg border border-surface-500/35 bg-surface-950/45 {fill ? 'min-h-0 flex-1' : 'min-h-[26rem]'}">
   {#if tabs.length > 0}
-    <div class="flex shrink-0 items-end overflow-x-auto border-b border-surface-500/30 bg-surface-950/65 px-1 pt-1" role="tablist" aria-label="Open files">
-      {#each tabs as tab (tab.tabId)}
-        {@const selected = activeTab?.tabId === tab.tabId}
-        <div class="group flex max-w-52 shrink-0 items-center border border-b-0 {selected ? 'border-surface-500/45 bg-surface-900 text-surface-100' : 'border-transparent text-surface-500 hover:bg-surface-900/60 hover:text-surface-300'}">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={selected}
-            class="flex min-w-0 flex-1 items-center gap-1.5 px-2 py-1.5 text-left text-[10px]"
-            title={tab.path}
-            onclick={() => activate(tab)}
-          >
-            <FileCode2 size={11} class="shrink-0 opacity-70" />
-            <span class="truncate">{tabLabel(tab)}</span>
-            {#if codeWorkspace.isDirty(tab)}
-              <span class="size-1.5 shrink-0 rounded-full bg-primary-300" aria-label="Unsaved changes"></span>
-            {/if}
-          </button>
-          <button
-            type="button"
-            class="mr-1 rounded p-0.5 opacity-60 hover:bg-surface-700 focus:opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
-            aria-label={`Close ${tab.title}`}
-            onclick={() => close(tab)}
-          ><X size={10} /></button>
-          {#if !selected}
-            <button
-              type="button"
-              class="mr-1 rounded p-0.5 opacity-60 hover:bg-surface-700 focus:opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
-              aria-label={`Open ${tab.title} to the side`}
-              title="Open to side"
-              onclick={() => codeWorkspace.openToSide(tab.tabId)}
-            ><Columns2 size={10} /></button>
-          {/if}
-        </div>
-      {/each}
-    </div>
+    <CodeDocumentTabStrip
+      {tabs}
+      activeTabId={activeTab?.tabId ?? null}
+      {tabLabel}
+      onActivate={activate}
+      onClose={close}
+      onOpenToSide={(tab) => codeWorkspace.openToSide(tab.tabId)}
+      onCopyPath={(tab) => void copyText(
+        context?.worktree
+          ? `${context.worktree.replace(/[\\/]$/, "")}/${tab.path}`
+          : tab.path,
+      )}
+    />
   {/if}
 
   {#if activeTab}
-    <header class="flex shrink-0 items-center justify-between gap-1.5 border-b border-surface-500/30 px-2 py-1.5 sm:gap-3 sm:px-2.5">
-      <div class="flex min-w-0 items-center gap-2">
+    <header class="flex shrink-0 items-center justify-between gap-1.5 border-b border-surface-500/30 px-2 py-1 sm:gap-3 sm:px-2.5">
+      <div class="flex min-w-0 flex-1 items-center gap-1.5">
         <div class="flex shrink-0 items-center">
           <button type="button" class="rounded p-1 text-surface-500 hover:bg-surface-800 hover:text-surface-200 disabled:opacity-25" aria-label="Go back" title="Go back" disabled={!codeWorkspace.canNavigate(workId, -1)} onclick={() => void navigate(-1)}><ArrowLeft size={11} /></button>
           <button type="button" class="rounded p-1 text-surface-500 hover:bg-surface-800 hover:text-surface-200 disabled:opacity-25" aria-label="Go forward" title="Go forward" disabled={!codeWorkspace.canNavigate(workId, 1)} onclick={() => void navigate(1)}><ArrowRight size={11} /></button>
         </div>
-        <FileCode2 size={14} class="shrink-0 text-primary-300" />
-        <div class="min-w-0">
-          <p class="truncate font-mono text-[11px] text-surface-200">{activeTab.path}</p>
-          <p class="text-[9px] text-surface-500">
-            {activeTab.language}{activeTab.line ? ` · line ${activeTab.line}` : ""}{dirty ? " · unsaved" : ""}
-            {#if lspConnecting} · understanding code…{:else if lspError} · editing only{/if}
-          </p>
-          {#if containingSymbol()}
-            <p class="truncate text-[9px] text-primary-300/65" title={`Inside ${containingSymbol()}`}>
-              Inside {containingSymbol()}
-            </p>
-          {/if}
-        </div>
+        <CodeBreadcrumbs
+          path={activeTab.path}
+          symbols={symbolTrail}
+          onPathSegment={onBreadcrumbPath}
+          onSymbol={(line) => editor?.revealLine(line)}
+        />
+        {#if dirty}
+          <span class="shrink-0 text-[9px] text-primary-300/80">unsaved</span>
+        {/if}
+        {#if lspConnecting}
+          <span class="shrink-0 text-[9px] text-surface-500">understanding…</span>
+        {:else if lspError}
+          <span class="shrink-0 text-[9px] text-surface-500">editing only</span>
+        {/if}
       </div>
       <div class="flex shrink-0 items-center gap-1">
         <button
@@ -1082,7 +1173,7 @@
           <button type="button" class="code-intent-action" disabled={languageActionRunning} onclick={() => void runLanguageAction("references")}>Find uses</button>
         {/if}
         {#if canRename && editable}
-          <button type="button" class="code-intent-action" disabled={languageActionRunning} onclick={() => void runLanguageAction("rename")}>Rename</button>
+          <button type="button" class="code-intent-action" disabled={languageActionRunning} onclick={() => beginInlineRename()}>Rename</button>
         {/if}
       </div>
     {/if}
@@ -1117,9 +1208,11 @@
               conventionIndentStyle={editorConventions.indent_style ?? null}
               conventionTabSize={Number.parseInt(editorConventions.indent_size ?? editorConventions.tab_width ?? "", 10) || null}
               onchange={(value) => codeWorkspace.updateDraft(activeTab.tabId, value)}
-              onCursorChanged={(line) => {
-                codeWorkspace.updateLine(activeTab.tabId, line);
-                undertakings.setSelection({ path: activeTab.path, line });
+              onCursorChanged={(cursor) => {
+                cursorLine = cursor.line;
+                cursorColumn = cursor.column;
+                codeWorkspace.updateLine(activeTab.tabId, cursor.line);
+                undertakings.setSelection({ path: activeTab.path, line: cursor.line });
               }}
               onSelectionChanged={(selection) =>
                 undertakings.setSelection({
@@ -1130,6 +1223,7 @@
                   selectedText: selection.text || null,
                 })}
               onProblemsChanged={syncProblems}
+              onContextMenu={onEditorContextMenu}
             />
           {/key}
         {:else if !activeTab.loading}
@@ -1225,6 +1319,19 @@
 
     <footer class="flex shrink-0 items-center justify-between gap-2 overflow-x-auto border-t border-surface-500/25 bg-surface-950/75 px-1.5 py-0.5">
       <div class="flex shrink-0 items-center gap-0.5">
+        <button
+          type="button"
+          class="flex items-center gap-1 rounded px-1.5 py-0.5 text-[9px] text-surface-500 hover:bg-surface-800 hover:text-surface-200"
+          class:bg-surface-800={contextPanel === "problems"}
+          onclick={() => void showProblems()}
+        ><CircleAlert size={10} />{Math.max(problems.length, workspaceProblemRows.length)}</button>
+        <button
+          type="button"
+          class="flex items-center gap-1 rounded px-1.5 py-0.5 text-[9px] text-surface-500 hover:bg-surface-800 hover:text-surface-200 disabled:opacity-35"
+          class:bg-surface-800={contextPanel === "outline"}
+          disabled={!lspClient}
+          onclick={() => void showOutline()}
+        ><ListTree size={10} />Structure</button>
         {#if lspError}
           <button type="button" class="rounded px-1.5 py-0.5 text-[9px] text-amber-300/80 hover:bg-surface-800 hover:text-amber-200 disabled:opacity-40" disabled={repairingLanguage} title={lspError} onclick={() => void repairLanguageSupport()}>{repairingLanguage ? "Repairing…" : isCoLocatedWorkshop() ? "Repair language support" : "Add language support"}</button>
         {/if}
@@ -1268,8 +1375,14 @@
           ><GitPullRequestArrow size={10} />Review</button>
         {/if}
       </div>
-      <div class="flex shrink-0 items-center gap-0.5">
-        <span class="mr-1 text-[9px] text-surface-500">
+      <div class="flex shrink-0 items-center gap-1.5 text-[9px] text-surface-500">
+        <span class="font-mono tabular-nums">Ln {cursorLine}, Col {cursorColumn}</span>
+        <span class="text-surface-600" aria-hidden="true">·</span>
+        <span>{indentStatusLabel}</span>
+        <span class="text-surface-600" aria-hidden="true">·</span>
+        <span class="font-mono">{activeTab.language}</span>
+        <span class="text-surface-600" aria-hidden="true">·</span>
+        <span>
           {#if agentHasControl}
             {context?.executorKind === "cursor" ? "Cursor" : "Codex"} is working
           {:else if editable && context?.boundTerminalSessionIds.length}
@@ -1280,19 +1393,6 @@
             Ready
           {/if}
         </span>
-        <button
-        type="button"
-        class="flex items-center gap-1 rounded px-1.5 py-0.5 text-[9px] text-surface-500 hover:bg-surface-800 hover:text-surface-200"
-        class:bg-surface-800={contextPanel === "problems"}
-        onclick={() => void showProblems()}
-      ><CircleAlert size={10} />{Math.max(problems.length, workspaceProblemRows.length)}</button>
-      <button
-        type="button"
-        class="flex items-center gap-1 rounded px-1.5 py-0.5 text-[9px] text-surface-500 hover:bg-surface-800 hover:text-surface-200 disabled:opacity-35"
-        class:bg-surface-800={contextPanel === "outline"}
-        disabled={!lspClient}
-        onclick={() => void showOutline()}
-      ><ListTree size={10} />Structure</button>
       </div>
     </footer>
     {#if taskResult}
@@ -1424,11 +1524,66 @@
   {/if}
 {/if}
 
+<CodeEditorContextMenu
+  open={editorMenuOpen}
+  x={editorMenuX}
+  y={editorMenuY}
+  canDefinition={canDefinition}
+  canReference={canReference}
+  canRename={canRename}
+  canFormat={canFormat}
+  canOrganize={canCodeAction}
+  {editable}
+  onAction={onEditorMenuAction}
+  onClose={() => (editorMenuOpen = false)}
+/>
+
+{#if renameOpen}
+  <div class="fixed inset-0 z-[130] flex items-start justify-center px-4 pt-[18vh]">
+    <button type="button" class="absolute inset-0 bg-black/35" aria-label="Cancel rename" onclick={cancelInlineRename}></button>
+    <div class="relative w-full max-w-sm overflow-hidden rounded-lg border border-surface-500/50 bg-surface-950 shadow-2xl" role="dialog" aria-modal="true" aria-label="Rename symbol">
+      <div class="border-b border-surface-500/30 px-3 py-2">
+        <p class="text-xs font-medium text-surface-100">Rename symbol</p>
+        <p class="text-[10px] text-surface-500">Applies across the project when the language server supports it.</p>
+      </div>
+      <div class="px-3 py-2.5">
+        <input
+          bind:this={renameInput}
+          class="w-full rounded border border-surface-500/40 bg-surface-900 px-2.5 py-1.5 text-sm text-surface-100 outline-none focus:border-primary-400/50"
+          bind:value={renameDraft}
+          spellcheck="false"
+          aria-label="New symbol name"
+          onkeydown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              void commitInlineRename();
+            }
+            if (event.key === "Escape") {
+              event.preventDefault();
+              cancelInlineRename();
+            }
+          }}
+        />
+      </div>
+      <footer class="flex justify-end gap-2 border-t border-surface-500/30 px-3 py-2">
+        <button type="button" class="rounded px-2 py-1 text-[10px] text-surface-400 hover:bg-surface-800" onclick={cancelInlineRename}>Cancel</button>
+        <button type="button" class="rounded bg-primary-500/80 px-2 py-1 text-[10px] font-medium text-white disabled:opacity-40" disabled={!renameDraft.trim() || languageActionRunning} onclick={() => void commitInlineRename()}>Rename</button>
+      </footer>
+    </div>
+  </div>
+{/if}
+
 <svelte:window
   onkeydown={(event) => {
     onWindowKeydown(event);
     if (event.defaultPrevented) return;
+    if (renameOpen || quickOpen || editorMenuOpen) return;
     const command = event.metaKey || event.ctrlKey;
+    if (command && event.shiftKey && event.key.toLowerCase() === "t") {
+      event.preventDefault();
+      void reopenClosedTab();
+      return;
+    }
     if (command && event.shiftKey && event.key.toLowerCase() === "s") {
       event.preventDefault();
       void saveAll();
@@ -1463,6 +1618,11 @@
     ) {
       event.preventDefault();
       void showOutline();
+    }
+    if (event.key === "F2" && canRename && editable && activeTab) {
+      event.preventDefault();
+      beginInlineRename();
+      return;
     }
     if (event.key === "Escape" && contextPanel) contextPanel = null;
   }}

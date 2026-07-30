@@ -23,6 +23,8 @@
     interactive?: boolean;
     /** Shell-bound LME tab — when set, resolve content from that tab (not global active). */
     lmeTabId?: string | null;
+    useActiveTabWhenUnbound?: boolean;
+    emptyMessage?: string;
     onOpenChat: () => void;
     onOpenWork: () => void;
     onSelectCard: (id: string) => void | Promise<void>;
@@ -32,6 +34,8 @@
     visible = true,
     interactive = true,
     lmeTabId = null,
+    useActiveTabWhenUnbound = true,
+    emptyMessage = "Open something from the side panel.",
     onOpenChat,
     onOpenWork,
     onSelectCard,
@@ -47,7 +51,7 @@
     if (id) {
       return lmeWorkspace.tabs.find((tab) => tab.tabId === id) ?? null;
     }
-    return lmeWorkspace.activeTab;
+    return useActiveTabWhenUnbound ? lmeWorkspace.activeTab : null;
   });
 
   const notePath = $derived(
@@ -132,7 +136,7 @@
         </div>
       {/if}
       <div class="flex flex-1 items-center justify-center p-8 text-sm text-surface-500">
-        Open something from the side panel.
+        {emptyMessage}
       </div>
     </div>
   {:else}

@@ -4,10 +4,10 @@ Code projects keep a goal, its repository, open files, conversations, terminals,
 agents, and review together. You tell Medousa what you want to change; Medousa
 handles the working copy and recovery details needed to keep that work safe.
 
-They live under **Workspace → Code**. **Work** remains the place to ask for,
-do, and track activity. Code is where software work stays available while you
-move through Medousa. On phones and narrow windows, **Menu → Code** opens the
-same projects with the project list and editor shown one level at a time.
+They live behind **Code** in the side rail. **Work** remains the place to ask
+for, do, and track activity. Code is where software work stays available while
+you move through Medousa. On phones and narrow windows, **Menu → Code** opens
+the same projects with the project list and editor shown one level at a time.
 
 ## Loop
 
@@ -67,6 +67,9 @@ automation surface.
   files over 2 MiB are rejected by the workshop daemon.
 - `Cmd/Ctrl+S` saves the focused editor, `Cmd/Ctrl+Shift+S` saves all modified
   tabs, and `Cmd/Ctrl+W` closes the active tab with a discard guard.
+  `Cmd/Ctrl+Shift+T` reopens the last closed tab. Middle-click a tab to close
+  it; right-click a tab for Close / Close Others / Close to the Right / Open to
+  the Side / Copy Path. Drag tabs to reorder them for the current session.
 - The Code explorer lists tracked and unignored repository files. `Cmd/Ctrl+P`
   opens Quick Open: type a file name, `@` plus a name for project symbols, or
   `:` plus a number to jump to a line.
@@ -74,6 +77,11 @@ automation surface.
   Tabs, cursor targets, a secondary editor group, and protected draft
   draft recovery survive view changes and app restarts. If the file changed
   outside Medousa, the recovered draft remains visible with a conflict warning.
+- The editor header shows clickable path breadcrumbs and, when symbols are
+  known, the containing type/function trail. Folder crumbs focus that path in
+  the explorer; symbol crumbs jump to the definition line. The status bar
+  shows `Ln`/`Col`, indentation, language id, and whether you, an agent, or
+  Terminal currently holds the edit session.
 - Use **Split** or **Open to side** to compare two source files. The editors sit
   side by side when space permits and stack on narrow screens; `Cmd/Ctrl+\\`
   toggles the secondary group and `Ctrl+Tab` cycles source tabs.
@@ -86,9 +94,11 @@ automation surface.
 - When an installed language server is available, Code attaches it to the
   project repository root. Diagnostics, completion, hover, and navigation
   come from the real server; unavailable servers degrade honestly to basic
-  editing. `Cmd/Ctrl+Shift+O` opens **Structure**. The header keeps the
-  containing function or type visible, and Issues places the current file
-  before other project diagnostics.
+  editing. `Cmd/Ctrl+Shift+O` opens **Structure**. Right-click in the editor
+  for Go to Definition, Find Uses, Rename, Format, Organize Imports, copy
+  path, and Reveal in Explorer. `F2` opens inline rename. Issues places the
+  current file before other project diagnostics. `Cmd/Ctrl+F` opens find with
+  the shared editor chrome.
 - Find uses, rename, formatting, and import organization appear only when the
   active language server supports them. Multi-file renames are digest-checked
   and applied as one governed edit; a conflict leaves every file unchanged.

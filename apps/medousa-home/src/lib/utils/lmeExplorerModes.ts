@@ -17,13 +17,16 @@ export type LmeExplorerModeDef = {
   icon: typeof BookOpen;
 };
 
-export type LmeExplorerFamily = "library" | "automations";
+export type LmeExplorerFamily = "library" | "code" | "automations";
 
 export const LME_LIBRARY_MODES: LmeExplorerModeDef[] = [
   { id: "notes", label: "Notes", icon: BookOpen },
   { id: "files", label: "Local Files", icon: Files },
-  { id: "code", label: "Code", icon: Code2 },
   { id: "presentations", label: "Presentations", icon: Presentation },
+];
+
+export const LME_CODE_MODES: LmeExplorerModeDef[] = [
+  { id: "code", label: "Code", icon: Code2 },
 ];
 
 /** Page 0 of the Automations strip. */
@@ -46,6 +49,7 @@ export const LME_AUTOMATIONS_MODES: LmeExplorerModeDef[] = [
 
 export const LME_EXPLORER_MODES: LmeExplorerModeDef[] = [
   ...LME_LIBRARY_MODES,
+  ...LME_CODE_MODES,
   ...LME_AUTOMATIONS_MODES,
 ];
 
@@ -71,6 +75,7 @@ export function isLmeAutomationsMode(mode: LmeExplorerMode): boolean {
 }
 
 export function familyForLmeExplorerMode(mode: LmeExplorerMode): LmeExplorerFamily {
+  if (mode === "code") return "code";
   return isLmeAutomationsMode(mode) ? "automations" : "library";
 }
 
@@ -84,9 +89,10 @@ export function familyForLmeTabKind(kind: string): LmeExplorerFamily | null {
       return "automations";
     case "note":
     case "file":
-    case "code":
     case "deck":
       return "library";
+    case "code":
+      return "code";
     default:
       return null;
   }
@@ -98,6 +104,7 @@ export function automationsStripPageForMode(mode: LmeExplorerMode): 0 | 1 {
 }
 
 export function defaultModeForLmeFamily(family: LmeExplorerFamily): LmeExplorerMode {
+  if (family === "code") return "code";
   return family === "automations" ? "scripts" : "notes";
 }
 

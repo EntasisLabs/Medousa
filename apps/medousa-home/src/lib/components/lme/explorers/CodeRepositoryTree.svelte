@@ -99,7 +99,7 @@
       }
     } catch (err) {
       if (token !== loadToken) return;
-      if (!background) error = err instanceof Error ? err.message : String(err);
+      if (!background) error = humanizeForgeMessage(err instanceof Error ? err.message : String(err));
     } finally {
       if (!background && token === loadToken) loading = false;
     }

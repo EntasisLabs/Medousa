@@ -15,6 +15,9 @@
     interactive?: boolean;
     /** Shell LME tab id — binds this pane to a specific Workspace tab (multi-pane). */
     lmeTabId?: string | null;
+    /** Surface landing pages stay empty until their own explorer opens a tab. */
+    useActiveTabWhenUnbound?: boolean;
+    emptyMessage?: string;
     onOpenChat: () => void;
     onOpenWork: () => void;
     onSelectCard: (id: string) => void | Promise<void>;
@@ -24,6 +27,8 @@
     visible,
     interactive = true,
     lmeTabId = null,
+    useActiveTabWhenUnbound = true,
+    emptyMessage = "Open something from the side panel.",
     onOpenChat,
     onOpenWork,
     onSelectCard,
@@ -66,6 +71,8 @@
     {visible}
     {interactive}
     {lmeTabId}
+    {useActiveTabWhenUnbound}
+    {emptyMessage}
     {onOpenChat}
     {onOpenWork}
     {onSelectCard}

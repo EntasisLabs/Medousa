@@ -29,6 +29,7 @@ export function resolveSummonToolbarSurface(
   // Workspace / LME host — pick Library vs Automations from the open tab when possible.
   if (
     desktopSurface === "library" ||
+    desktopSurface === "code" ||
     desktopSurface === "automations" ||
     desktopSurface === "workshop"
   ) {

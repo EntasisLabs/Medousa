@@ -76,6 +76,8 @@ function surfaceTitle(surfaceId: string): string {
     case "library":
     case "automations":
       return "Workspace";
+    case "code":
+      return "Code";
     case "chat":
       return "Chat";
     case "peers":
@@ -119,6 +121,8 @@ function focusSurfaceHint(tab: ShellTab | null): string | null {
       case "file":
       case "deck":
         return "library";
+      case "code":
+        return "code";
       default:
         return "library";
     }
@@ -520,13 +524,13 @@ export class ShellTabsStore {
         return;
       }
     }
-    if (surface === "library" || surface === "automations") {
+    if (surface === "library" || surface === "automations" || surface === "code") {
       const lme = lmeWorkspace.activeTab;
-      if (lme) {
+      if (lme && (surface !== "code" || lme.kind === "code")) {
         this.openLme(lme.tabId, { activate: true });
         return;
       }
-      this.openSurface("library", { activate: true });
+      this.openSurface(surface === "automations" ? "library" : surface, { activate: true });
       return;
     }
     if (isShellSurfaceTabId(surface) && surface !== "library") {
@@ -628,8 +632,9 @@ export class ShellTabsStore {
       }
     }
 
+    const placeholderSurfaceId = lmeTab?.kind === "code" ? "code" : "library";
     const librarySurface = this.tabs.find(
-      (tab) => tab.kind === "surface" && tab.surfaceId === "library",
+      (tab) => tab.kind === "surface" && tab.surfaceId === placeholderSurfaceId,
     );
     if (librarySurface) {
       this.removeTabFromAllGroups(librarySurface.id);

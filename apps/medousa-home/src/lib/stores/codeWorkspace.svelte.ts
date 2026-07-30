@@ -42,12 +42,78 @@ class CodeWorkspaceStore {
   navigationByWorkId = $state<Record<string, CodeLocation[]>>({});
   navigationIndexByWorkId = $state<Record<string, number>>({});
   recentTabIdsByWorkId = $state<Record<string, string[]>>({});
+  /** Most-recently-closed tabs per work item (path + line) for reopen. */
+  closedByWorkId = $state<Record<string, CodeLocation[]>>({});
+  /** Session tab order overrides keyed by work id. */
+  tabOrderByWorkId = $state<Record<string, string[]>>({});
   private hydrated = new Set<string>();
   private hydrating = new Map<string, Promise<void>>();
   private persistTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   tabsFor(workId: string): CodeDocumentTab[] {
-    return this.tabs.filter((tab) => tab.work_id === workId);
+    const tabs = this.tabs.filter((tab) => tab.work_id === workId);
+    const order = this.tabOrderByWorkId[workId];
+    if (!order?.length) return tabs;
+    const byId = new Map(tabs.map((tab) => [tab.tabId, tab]));
+    const ordered: CodeDocumentTab[] = [];
+    for (const id of order) {
+      const tab = byId.get(id);
+      if (tab) {
+        ordered.push(tab);
+        byId.delete(id);
+      }
+    }
+    for (const tab of byId.values()) ordered.push(tab);
+    return ordered;
+  }
+
+  orderedTabsFor(workId: string): CodeDocumentTab[] {
+    return this.tabsFor(workId);
+  }
+
+  reorderTab(tabIdValue: string, toIndex: number) {
+    const tab = this.tabs.find((entry) => entry.tabId === tabIdValue);
+    if (!tab) return;
+    const current = this.tabsFor(tab.work_id);
+    const from = current.findIndex((entry) => entry.tabId === tabIdValue);
+    if (from < 0 || toIndex < 0 || toIndex >= current.length || from === toIndex) return;
+    const next = [...current];
+    const [moved] = next.splice(from, 1);
+    next.splice(toIndex, 0, moved);
+    this.tabOrderByWorkId = {
+      ...this.tabOrderByWorkId,
+      [tab.work_id]: next.map((entry) => entry.tabId),
+    };
+  }
+
+  canReopenClosed(workId: string): boolean {
+    return (this.closedByWorkId[workId]?.length ?? 0) > 0;
+  }
+
+  async reopenClosed(workId: string) {
+    const stack = this.closedByWorkId[workId] ?? [];
+    const location = stack[0];
+    if (!location) return null;
+    this.closedByWorkId = {
+      ...this.closedByWorkId,
+      [workId]: stack.slice(1),
+    };
+    return this.open(workId, location.path, location.line);
+  }
+
+  private rememberClosed(tab: CodeDocumentTab) {
+    const entry: CodeLocation = {
+      path: tab.path,
+      line: tab.line && tab.line > 0 ? tab.line : null,
+    };
+    const previous = this.closedByWorkId[tab.work_id] ?? [];
+    this.closedByWorkId = {
+      ...this.closedByWorkId,
+      [tab.work_id]: [
+        entry,
+        ...previous.filter((item) => item.path !== entry.path),
+      ].slice(0, 32),
+    };
   }
 
   activeFor(workId: string): CodeDocumentTab | null {
@@ -305,6 +371,7 @@ class CodeWorkspaceStore {
     if (!tab) return;
     const workTabs = this.tabsFor(tab.work_id);
     const index = workTabs.findIndex((entry) => entry.tabId === tabIdValue);
+    this.rememberClosed(tab);
     this.tabs = this.tabs.filter((entry) => entry.tabId !== tabIdValue);
     this.recentTabIdsByWorkId = {
       ...this.recentTabIdsByWorkId,
@@ -312,6 +379,13 @@ class CodeWorkspaceStore {
         (id) => id !== tabIdValue,
       ),
     };
+    const order = this.tabOrderByWorkId[tab.work_id];
+    if (order) {
+      this.tabOrderByWorkId = {
+        ...this.tabOrderByWorkId,
+        [tab.work_id]: order.filter((id) => id !== tabIdValue),
+      };
+    }
     if (this.secondaryByWorkId[tab.work_id] === tabIdValue) {
       this.secondaryByWorkId = {
         ...this.secondaryByWorkId,
@@ -369,7 +443,23 @@ class CodeWorkspaceStore {
   }
 
   private async loadPersisted(workId: string) {
-    const state = await getCodeWorkspaceState(workId);
+    let state: Awaited<ReturnType<typeof getCodeWorkspaceState>>;
+    try {
+      state = await getCodeWorkspaceState(workId);
+    } catch (err) {
+      const status = (err as { status?: number } | null)?.status;
+      const message = err instanceof Error ? err.message : String(err);
+      // Older daemons lack workspace-state; treat as empty rather than blocking Code.
+      if (
+        status === 404 ||
+        status === 405 ||
+        /HTTP\s+404\b/i.test(message) ||
+        /HTTP\s+405\b/i.test(message)
+      ) {
+        return;
+      }
+      throw err;
+    }
     const restored = await Promise.all(
       state.tabs.slice(0, 32).map(async (saved): Promise<CodeDocumentTab | null> => {
         try {

@@ -1,6 +1,8 @@
 /** Forge / Undertakings HTTP client (daemon `/v1/forge` + `/v1/world`). */
 
+import { invoke } from "@tauri-apps/api/core";
 import { getDaemonUrl } from "$lib/daemon";
+import { isTauri } from "$lib/window";
 
 export type ActionAffordance = {
   allowed: boolean;
@@ -296,6 +298,29 @@ async function forgeFetch<T>(
   path: string,
   init?: RequestInit,
 ): Promise<T> {
+  if (isTauri()) {
+    let body: unknown = null;
+    if (typeof init?.body === "string" && init.body.length > 0) {
+      body = JSON.parse(init.body);
+    } else if (init?.body != null) {
+      throw new Error("Forge request body must be JSON");
+    }
+    try {
+      return await invoke<T>("forge_request", {
+        method: init?.method ?? "GET",
+        path,
+        body,
+      });
+    } catch (cause) {
+      const raw = cause instanceof Error ? cause.message : String(cause);
+      const err = new Error(raw) as Error & { status?: number; path?: string };
+      const status = raw.match(/HTTP\s+(\d{3})/i)?.[1];
+      if (status) err.status = Number(status);
+      err.path = path;
+      throw err;
+    }
+  }
+
   const url = await forgeUrl(path);
   const res = await fetch(url, {
     ...init,
@@ -313,12 +338,45 @@ async function forgeFetch<T>(
     } catch {
       /* ignore */
     }
-    const err = new Error(detail) as Error & { status?: number };
+    const err = new Error(detail) as Error & { status?: number; path?: string };
     err.status = res.status;
+    err.path = path;
     throw err;
   }
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
+}
+
+/** True when the workshop binary is older than the Home UI's Forge surface. */
+export function isMissingForgeRoute(err: unknown): boolean {
+  const status = (err as { status?: number } | null)?.status;
+  if (status === 404 || status === 405) return true;
+  const message = err instanceof Error ? err.message : String(err ?? "");
+  return /HTTP\s+404\b/i.test(message) || /HTTP\s+405\b/i.test(message);
+}
+
+function folderNameFromPath(path: string): string {
+  const parts = path.split(/[/\\]/).filter(Boolean);
+  return parts[parts.length - 1] || path;
+}
+
+/** Local fallback when `/v1/forge/repositories/inspect` is missing on older daemons. */
+export function synthesizeRepositoryInspection(path: string): RepositoryInspection {
+  const trimmed = path.trim();
+  return {
+    path: trimmed,
+    display_name: folderNameFromPath(trimmed),
+    current_branch: null,
+    suggested_base_ref: "main",
+    dirty: false,
+    changed_files: 0,
+    remotes: [],
+    existing_projects: [],
+    state_explanation:
+      "This workshop cannot inspect Git yet. Medousa will still start the project from this folder.",
+    trust_explanation:
+      "Update medousa_daemon to get branch, dirty-state, and duplicate-project checks.",
+  };
 }
 
 export async function listUndertakings(): Promise<ItemProjection[]> {
@@ -662,10 +720,17 @@ export async function importProviderComment(
 }
 
 export async function inspectForgeRepository(path: string): Promise<RepositoryInspection> {
-  return forgeFetch("/v1/forge/repositories/inspect", {
-    method: "POST",
-    body: JSON.stringify({ path }),
-  });
+  try {
+    return await forgeFetch("/v1/forge/repositories/inspect", {
+      method: "POST",
+      body: JSON.stringify({ path }),
+    });
+  } catch (err) {
+    if (isMissingForgeRoute(err)) {
+      return synthesizeRepositoryInspection(path);
+    }
+    throw err;
+  }
 }
 
 export async function listForgeRepositories(): Promise<RepositoryCatalogEntry[]> {
@@ -710,15 +775,22 @@ export async function startUndertaking(input: {
   repo_path: string;
   base_ref?: string;
 }): Promise<ItemProjection> {
-  return forgeFetch("/v1/forge/items/start", {
-    method: "POST",
-    body: JSON.stringify({
-      title: input.title,
-      brief: input.brief,
-      repo_path: input.repo_path,
-      base_ref: input.base_ref ?? "main",
-    }),
-  });
+  try {
+    return await forgeFetch("/v1/forge/items/start", {
+      method: "POST",
+      body: JSON.stringify({
+        title: input.title,
+        brief: input.brief,
+        repo_path: input.repo_path,
+        base_ref: input.base_ref ?? "main",
+      }),
+    });
+  } catch (err) {
+    // Older workshops only have register + provision as separate steps.
+    if (!isMissingForgeRoute(err)) throw err;
+    const registered = await createUndertaking(input);
+    return provisionUndertaking(registered.id);
+  }
 }
 
 export async function provisionUndertaking(workId: string): Promise<ItemProjection> {
@@ -987,7 +1059,18 @@ export function humanExecutorLabel(executor: string | null | undefined): string 
 
 /** Keep daemon diagnostics useful without making users learn Forge's machinery. */
 export function humanizeForgeMessage(message: string): string {
-  return message
+  const trimmed = message.trim();
+  if (
+    /^workshop returned HTTP 404(\s+Not Found)?:?\s*$/i.test(trimmed) ||
+    /^workshop returned HTTP 405(\s+Method Not Allowed)?:?\s*$/i.test(trimmed) ||
+    (/HTTP\s+404\b/i.test(trimmed) &&
+      /\/v1\/forge\/(repositories|items\/[^/]+\/(source|tree|workspace-state|tasks))/i.test(
+        trimmed,
+      ))
+  ) {
+    return "This workshop is older than Medousa’s project tools. Rebuild and restart medousa_daemon from this checkout, then try again.";
+  }
+  return trimmed
     .replace(/\bgoverned workspaces\b/gi, "projects")
     .replace(/\bgoverned workspace\b/gi, "project")
     .replace(/\bworktrees\b/gi, "working copies")

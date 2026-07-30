@@ -30,6 +30,7 @@ function defaultSurfaces() {
     { id: "chat", label: "Chat", icon: "message-circle", builtinId: "chat", mobileTab: "chat" },
     { id: "peers", label: "Peers", icon: "users", builtinId: "peers" },
     { id: "work", label: "Work", icon: "layout-grid", builtinId: "work" },
+    { id: "code", label: "Code", icon: "code-2", builtinId: "code" },
     { id: "library", label: "Workspace", icon: "notebook-text", builtinId: "library", mobileTab: "notes" },
     { id: "calendar", label: "Calendar", icon: "calendar-days", builtinId: "calendar" },
     { id: "web", label: "Web", icon: "globe", builtinId: "web", mobileTab: "web" },
@@ -60,6 +61,67 @@ function defaultSurfaces() {
     slots: [],
     mobileTab: entry.mobileTab ?? null,
   }));
+}
+
+function codeSurfaceDef(): SurfaceDef {
+  return (
+    defaultSurfaces().find((surface) => surface.id === "code") ?? {
+      id: "code",
+      label: "Code",
+      icon: "code-2",
+      kind: "builtin",
+      builtinId: "code",
+      layout: "single",
+      slots: [],
+      mobileTab: null,
+    }
+  );
+}
+
+function placeCodeAfterWork(surfaceIds: string[]): string[] {
+  if (surfaceIds.includes("code")) return surfaceIds;
+  const next = [...surfaceIds];
+  const workAt = next.indexOf("work");
+  if (workAt >= 0) {
+    next.splice(workAt + 1, 0, "code");
+    return next;
+  }
+  const libraryAt = next.indexOf("library");
+  if (libraryAt >= 0) {
+    next.splice(libraryAt, 0, "code");
+    return next;
+  }
+  next.push("code");
+  return next;
+}
+
+/** Ensure Code has a first-class destination on older saved layouts. */
+export function ensureCodeSurfaceInSpec(spec: EnvironmentSpec): EnvironmentSpec {
+  let surfaces = [...spec.surfaces];
+  if (!surfaces.some((surface) => surface.id === "code")) {
+    const workAt = surfaces.findIndex((surface) => surface.id === "work");
+    const libraryAt = surfaces.findIndex((surface) => surface.id === "library");
+    const insertAt = workAt >= 0 ? workAt + 1 : libraryAt >= 0 ? libraryAt : surfaces.length;
+    surfaces.splice(insertAt, 0, codeSurfaceDef());
+  }
+
+  const layoutPresets = (spec.layoutPresets ?? []).map((preset) => ({
+    ...preset,
+    surfaces: placeCodeAfterWork(preset.surfaces),
+  }));
+  const surfacesChanged = surfaces.some(
+    (surface, index) => surface.id !== spec.surfaces[index]?.id,
+  );
+  const presetsChanged = (spec.layoutPresets ?? []).some((preset, index) => {
+    const next = layoutPresets[index];
+    return !next || preset.surfaces.join("\0") !== next.surfaces.join("\0");
+  });
+  if (!surfacesChanged && !presetsChanged) return spec;
+  return {
+    ...spec,
+    surfaces,
+    layoutPresets: layoutPresets.length > 0 ? layoutPresets : spec.layoutPresets,
+  };
 }
 
 function peersSurfaceDef(): SurfaceDef {
@@ -298,6 +360,7 @@ export function defaultEnvironmentSpec(
           "chat",
           "peers",
           "work",
+          "code",
           "library",
           "map",
           SAFETY_SURFACE_SETTINGS,

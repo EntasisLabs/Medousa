@@ -95,12 +95,15 @@
 
   const showLme = $derived(
     activeTab?.kind === "lme" ||
-      (activeTab?.kind === "surface" && activeTab.surfaceId === "library"),
+      (activeTab?.kind === "surface" &&
+        (activeTab.surfaceId === "library" || activeTab.surfaceId === "code")),
   );
   const showWeb = $derived(ownsWebHost && activeTab?.kind === "web");
   const showTerminal = $derived(activeTab?.kind === "terminal");
   const showSurface = $derived(
-    activeTab?.kind === "surface" && activeTab.surfaceId !== "library"
+    activeTab?.kind === "surface" &&
+      activeTab.surfaceId !== "library" &&
+      activeTab.surfaceId !== "code"
       ? activeTab.surfaceId
       : null,
   );
@@ -200,6 +203,10 @@
         visible={true}
         interactive={focused}
         lmeTabId={activeTab.kind === "lme" ? activeTab.lmeTabId : null}
+        useActiveTabWhenUnbound={activeTab.kind !== "surface" || activeTab.surfaceId !== "code"}
+        emptyMessage={activeTab.kind === "surface" && activeTab.surfaceId === "code"
+          ? "Choose a project from the side panel, or start a new one."
+          : "Open something from the side panel."}
         {onOpenChat}
         {onOpenWork}
         {onSelectCard}

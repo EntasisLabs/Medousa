@@ -149,9 +149,9 @@
           readOnly={!editable}
           contentSyncKey={tab.syncKey}
           onchange={(value) => codeWorkspace.updateDraft(tab.tabId, value)}
-          onCursorChanged={(line) => {
-            codeWorkspace.updateLine(tab.tabId, line);
-            undertakings.setSelection({ path: tab.path, line, entityId: null });
+          onCursorChanged={(cursor) => {
+            codeWorkspace.updateLine(tab.tabId, cursor.line);
+            undertakings.setSelection({ path: tab.path, line: cursor.line, entityId: null });
           }}
           onSelectionChanged={(selection) =>
             undertakings.setSelection({

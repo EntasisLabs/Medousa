@@ -115,6 +115,7 @@ function mirrorActiveTabToShell(tabId: string | null, title?: string) {
 
 export class LmeWorkspaceStore {
   explorerMode = $state<LmeExplorerMode>(loadExplorerMode());
+  codeCreateRequested = $state(false);
   tabs = $state<LmeTab[]>([]);
   activeTabId = $state<string | null>(null);
 
@@ -137,6 +138,15 @@ export class LmeWorkspaceStore {
     } else if (mode === "presentations") {
       externalDesk.setSidebarMode("presentations");
     }
+  }
+
+  requestNewCodeProject() {
+    this.setExplorerMode("code");
+    this.codeCreateRequested = true;
+  }
+
+  consumeNewCodeProjectRequest() {
+    this.codeCreateRequested = false;
   }
 
   /** Map legacy Automations sections onto LME explorer modes. */

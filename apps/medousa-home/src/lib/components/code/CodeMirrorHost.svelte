@@ -12,7 +12,7 @@
   import { searchKeymap, highlightSelectionMatches } from "@codemirror/search";
   import { forEachDiagnostic } from "@codemirror/lint";
   import { indentUnit } from "@codemirror/language";
-  import type { LSPClient } from "@codemirror/lsp-client";
+  import { jumpToDefinition, type LSPClient } from "@codemirror/lsp-client";
   import {
     buildCodeEditorLanguageExtensions,
     languageSupportsLsp,
@@ -55,8 +55,8 @@
     /** Bumped by parent when body is replaced externally (templates / library). */
     contentSyncKey?: string | number;
     onchange?: (value: string) => void;
-    /** Reports the current 1-based cursor line for workspace restoration. */
-    onCursorChanged?: (line: number) => void;
+    /** Reports 1-based cursor line/column for status bar and workspace restoration. */
+    onCursorChanged?: (cursor: { line: number; column: number }) => void;
     /** Reports a compact selection so another workspace surface can continue here. */
     onSelectionChanged?: (selection: {
       startLine: number;
@@ -65,6 +65,8 @@
     }) => void;
     /** Fired when CM diagnostics / LSP state may have changed. */
     onProblemsChanged?: () => void;
+    /** Editor right-click — parent shows Medousa context menu. */
+    onContextMenu?: (event: MouseEvent) => void;
     /** Baseline-to-reviewed lines shown as quiet source-control markers. */
     changedLines?: Array<{ line: number; kind: string }>;
     conventionIndentStyle?: "space" | "tab" | null;
@@ -83,6 +85,7 @@
     onCursorChanged,
     onSelectionChanged,
     onProblemsChanged,
+    onContextMenu,
     changedLines = [],
     conventionIndentStyle = null,
     conventionTabSize = null,
@@ -94,6 +97,7 @@
   let applyingExternal = false;
   let syncedKey: string | number = 0;
   let onchangeRef: ((value: string) => void) | undefined;
+  let onContextMenuRef: ((event: MouseEvent) => void) | undefined;
 
   const resolvedLanguage = $derived(resolveCodeEditorLanguage(languageId));
   const lspLang = $derived(
@@ -105,6 +109,10 @@
 
   $effect(() => {
     onchangeRef = onchange;
+  });
+
+  $effect(() => {
+    onContextMenuRef = onContextMenu;
   });
 
   function emitChange(next: string) {
@@ -126,6 +134,15 @@
     } finally {
       applyingExternal = false;
     }
+  }
+
+  function reportCursor(state: EditorState) {
+    const selection = state.selection.main;
+    const line = state.doc.lineAt(selection.head);
+    onCursorChanged?.({
+      line: line.number,
+      column: selection.head - line.from + 1,
+    });
   }
 
   function buildExtensions() {
@@ -157,16 +174,22 @@
       indentUnit.of(indent),
       EditorState.tabSize.of(tabSize),
       EditorState.readOnly.of(readOnly),
+      EditorView.domEventHandlers({
+        contextmenu(event) {
+          if (!onContextMenuRef) return false;
+          event.preventDefault();
+          onContextMenuRef(event);
+          return true;
+        },
+      }),
       EditorView.updateListener.of((update) => {
         if (update.docChanged) {
           emitChange(update.state.doc.toString());
         }
         if (update.docChanged || update.selectionSet) {
           codeEditorFind.syncFromView(update.view);
+          reportCursor(update.state);
           const selection = update.state.selection.main;
-          onCursorChanged?.(
-            update.state.doc.lineAt(selection.head).number,
-          );
           onSelectionChanged?.({
             startLine: update.state.doc.lineAt(selection.from).number,
             endLine: update.state.doc.lineAt(selection.to).number,
@@ -212,6 +235,7 @@
       }),
     });
     syncedKey = contentSyncKey;
+    reportCursor(view.state);
     if (resolvedLanguage === "grapheme") {
       stopHoverObserve = observeGraphemeHovers(host);
     }
@@ -248,8 +272,28 @@
     return { line: line.number - 1, character: head - line.from };
   }
 
+  export function getSelectedWord(): string {
+    if (!view) return "";
+    const selection = view.state.selection.main;
+    if (!selection.empty) {
+      return view.state.sliceDoc(selection.from, selection.to).trim();
+    }
+    const head = selection.head;
+    const line = view.state.doc.lineAt(head);
+    const text = line.text;
+    const offset = head - line.from;
+    const left = text.slice(0, offset).match(/[\w$]+$/)?.[0] ?? "";
+    const right = text.slice(offset).match(/^[\w$]+/)?.[0] ?? "";
+    return `${left}${right}`;
+  }
+
   export function getView(): EditorView | undefined {
     return view;
+  }
+
+  export function goToDefinition(): boolean {
+    if (!view) return false;
+    return jumpToDefinition(view);
   }
 
   export function openFind() {
@@ -377,5 +421,62 @@
     min-height: 3px;
     margin-top: 0.55rem;
     background: rgb(251 113 133);
+  }
+
+  /* Medousa-skinned CodeMirror find/replace panel */
+  :global(.code-codemirror-host .cm-panel.cm-search) {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.4rem 0.55rem;
+    border-bottom: 1px solid rgb(var(--color-surface-500) / 0.35);
+    background: rgb(var(--color-surface-950) / 0.94);
+    color: rgb(var(--color-surface-200));
+    font-size: 0.7rem;
+  }
+
+  :global(.code-codemirror-host .cm-panel.cm-search input[type="text"]),
+  :global(.code-codemirror-host .cm-panel.cm-search input:not([type])) {
+    min-width: 8rem;
+    border: 1px solid rgb(var(--color-surface-500) / 0.45);
+    border-radius: 0.3rem;
+    background: rgb(var(--color-surface-900));
+    padding: 0.2rem 0.45rem;
+    color: rgb(var(--color-surface-100));
+    outline: none;
+  }
+
+  :global(.code-codemirror-host .cm-panel.cm-search input[type="text"]:focus),
+  :global(.code-codemirror-host .cm-panel.cm-search input:not([type]):focus) {
+    border-color: rgb(var(--color-primary-400) / 0.55);
+  }
+
+  :global(.code-codemirror-host .cm-panel.cm-search button) {
+    border: 1px solid rgb(var(--color-surface-500) / 0.35);
+    border-radius: 0.3rem;
+    background: rgb(var(--color-surface-800) / 0.8);
+    padding: 0.15rem 0.45rem;
+    color: rgb(var(--color-surface-200));
+    cursor: pointer;
+  }
+
+  :global(.code-codemirror-host .cm-panel.cm-search button:hover) {
+    background: rgb(var(--color-surface-700));
+    color: rgb(var(--color-surface-50));
+  }
+
+  :global(.code-codemirror-host .cm-panel.cm-search label) {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    color: rgb(var(--color-surface-400));
+  }
+
+  :global(.code-codemirror-host .cm-panel.cm-search .cm-button) {
+    border: 1px solid rgb(var(--color-surface-500) / 0.35);
+    border-radius: 0.3rem;
+    background: rgb(var(--color-surface-800) / 0.8);
+    color: rgb(var(--color-surface-200));
   }
 </style>

@@ -126,6 +126,11 @@
       shellTabs.openSurface("library", { activate: true });
       return;
     }
+    if (surface === "code") {
+      lmeWorkspace.setExplorerMode("code");
+      shellTabs.openSurface("code", { activate: true });
+      return;
+    }
     if (surface === "chat") {
       void chat.refreshSessions();
       void chat.ensureSessionHydrated();
@@ -229,7 +234,7 @@
 
       <StatusBar
         minimal={showChatChrome}
-        continuity={activeSurface === "library"}
+        continuity={activeSurface === "library" || activeSurface === "code"}
         health={daemonHealth}
         inMotionCount={workspace.inMotionCount()}
         needsAttentionCount={workspace.needsAttentionCount()}

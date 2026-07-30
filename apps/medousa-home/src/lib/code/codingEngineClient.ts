@@ -171,8 +171,14 @@ async function codeAgentPost<T>(
 export type CodeDocumentSymbol = {
   name: string;
   kind?: number;
-  range?: { start?: { line?: number; character?: number } };
-  selectionRange?: { start?: { line?: number; character?: number } };
+  range?: {
+    start?: { line?: number; character?: number };
+    end?: { line?: number; character?: number };
+  };
+  selectionRange?: {
+    start?: { line?: number; character?: number };
+    end?: { line?: number; character?: number };
+  };
   children?: CodeDocumentSymbol[];
 };
 

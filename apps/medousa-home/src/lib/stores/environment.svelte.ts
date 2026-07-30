@@ -25,6 +25,7 @@ import {
 } from "$lib/types/environment";
 import {
   defaultEnvironmentSpec,
+  ensureCodeSurfaceInSpec,
   ensureCalendarSurfaceInSpec,
   ensureMapSurfaceInSpec,
   ensurePeersSurfaceInSpec,
@@ -39,12 +40,14 @@ import type { PreferredMode } from "$lib/utils/preferredMode";
 import { layout } from "$lib/stores/layout.svelte";
 
 function migrateBuiltinNavSurfaces(spec: EnvironmentSpec): EnvironmentSpec {
-  return ensureMapSurfaceInSpec(
-    ensureCalendarSurfaceInSpec(ensurePeersSurfaceInSpec(spec)),
+  return ensureCodeSurfaceInSpec(
+    ensureMapSurfaceInSpec(
+      ensureCalendarSurfaceInSpec(ensurePeersSurfaceInSpec(spec)),
+    ),
   );
 }
 
-function peersNavMigrationNeeded(
+function builtinNavMigrationNeeded(
   original: EnvironmentSpec,
   migrated: EnvironmentSpec,
 ): boolean {
@@ -74,7 +77,7 @@ export class EnvironmentStore {
   canvasStatus = $state<EnvironmentStatusResponse | null>(null);
   canvasStatusError = $state<string | null>(null);
   canvasStatusLoading = $state(false);
-  private peersMigrationPersisted = false;
+  private builtinNavMigrationPersisted = false;
 
   get loaded(): boolean {
     return this.spec !== null;
@@ -164,7 +167,7 @@ export class EnvironmentStore {
     try {
       const response = await getEnvironmentSpec(profileId);
       this.applySpec(response.spec, response.revision);
-      await this.persistPeersMigrationIfNeeded(response.spec);
+      await this.persistBuiltinNavMigrationIfNeeded(response.spec);
       await this.seedDesktopChromeFromPreferredModeIfNeeded(profileId);
       this.syncDesktopChromeToLayout();
       await this.syncShellThemeFromSpec();
@@ -195,7 +198,7 @@ export class EnvironmentStore {
     this.streamError = null;
     if (event.spec) {
       this.applySpec(event.spec, event.revision);
-      void this.persistPeersMigrationIfNeeded(event.spec);
+      void this.persistBuiltinNavMigrationIfNeeded(event.spec);
     }
     if (event.componentPatches?.length) {
       const next = new Map(this.feedStateByComponentId);
@@ -248,18 +251,18 @@ export class EnvironmentStore {
     }
   }
 
-  /** Persist Peers into the daemon so rail destinations stay in sync after reload. */
-  private async persistPeersMigrationIfNeeded(original: EnvironmentSpec): Promise<void> {
-    if (this.peersMigrationPersisted || !this.spec) return;
-    if (!peersNavMigrationNeeded(original, this.spec)) {
-      this.peersMigrationPersisted = true;
+  /** Persist built-in nav migrations so destinations stay in sync after reload. */
+  private async persistBuiltinNavMigrationIfNeeded(original: EnvironmentSpec): Promise<void> {
+    if (this.builtinNavMigrationPersisted || !this.spec) return;
+    if (!builtinNavMigrationNeeded(original, this.spec)) {
+      this.builtinNavMigrationPersisted = true;
       return;
     }
-    this.peersMigrationPersisted = true;
+    this.builtinNavMigrationPersisted = true;
     try {
       await this.saveSpec(this.spec);
     } catch {
-      this.peersMigrationPersisted = false;
+      this.builtinNavMigrationPersisted = false;
     }
   }
 
@@ -274,6 +277,7 @@ export class EnvironmentStore {
     this.pendingProposal = null;
     this.feedStateByComponentId = new Map();
     this.pendingRuntimeProbes = new Map();
+    this.builtinNavMigrationPersisted = false;
   }
 
   async refreshPending(profileId?: string): Promise<void> {

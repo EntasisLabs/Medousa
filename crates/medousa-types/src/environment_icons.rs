@@ -16,6 +16,7 @@ pub const ALLOWED_SURFACE_ICONS: &[&str] = &[
     "checklist",
     "clipboard",
     "cloud",
+    "code-2",
     "coffee",
     "compass",
     "database",

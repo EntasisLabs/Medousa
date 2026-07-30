@@ -33,4 +33,13 @@ describe("Forge presentation language", () => {
       "The working copy will be released.",
     );
   });
+
+  it("explains empty workshop 404s as a stale daemon", () => {
+    expect(humanizeForgeMessage("workshop returned HTTP 404 Not Found:")).toContain(
+      "Rebuild and restart medousa_daemon",
+    );
+    expect(humanizeForgeMessage("workshop returned HTTP 404 Not Found: ")).toContain(
+      "older than Medousa",
+    );
+  });
 });

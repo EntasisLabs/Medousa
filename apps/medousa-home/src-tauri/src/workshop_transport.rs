@@ -147,6 +147,25 @@ pub async fn workshop_delete_json<T: DeserializeOwned>(
     serde_json::from_str(&response).map_err(|err| err.to_string())
 }
 
+pub async fn workshop_json_request(
+    config: &WorkshopTransportConfig,
+    method: &str,
+    path: &str,
+    body: Option<&serde_json::Value>,
+) -> Result<serde_json::Value, String> {
+    let payload = match body {
+        Some(body) => RequestPayload::Json(
+            serde_json::to_vec(body).map_err(|err| err.to_string())?,
+        ),
+        None => RequestPayload::Empty,
+    };
+    let response = workshop_request(config, method, path, payload, false).await?;
+    if response.trim().is_empty() {
+        return Ok(serde_json::Value::Null);
+    }
+    serde_json::from_str(&response).map_err(|err| err.to_string())
+}
+
 pub async fn workshop_post_multipart<T: DeserializeOwned>(
     config: &WorkshopTransportConfig,
     path: &str,
