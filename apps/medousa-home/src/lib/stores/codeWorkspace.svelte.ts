@@ -318,6 +318,7 @@ class CodeWorkspaceStore {
     const next = Math.max(1, Math.floor(line));
     if (!tab || tab.line === next) return;
     this.patch(tabIdValue, { line: next });
+    this.schedulePersist(tab.work_id, 1_000);
   }
 
   acceptSaved(tabIdValue: string, source: ForgeSourceFile) {

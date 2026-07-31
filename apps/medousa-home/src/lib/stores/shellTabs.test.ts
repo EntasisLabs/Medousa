@@ -43,18 +43,25 @@ vi.mock("$lib/stores/chatStreamPool.svelte", () => ({
 }));
 
 const lmeState = {
-  tabs: [] as Array<{
-    tabId: string;
-    kind: string;
-    path?: string;
-    title: string;
-  }>,
+  tabs: [] as Array<Record<string, any>>,
   activeTabId: null as string | null,
   get activeTab() {
     return this.tabs.find((tab) => tab.tabId === this.activeTabId) ?? null;
   },
   activateTab: vi.fn(async () => {}),
   closeTab: vi.fn(async () => {}),
+  captureSession() {
+    return { tabs: this.tabs, activeTabId: this.activeTabId };
+  },
+  restoreSession(value: unknown) {
+    const session = value as {
+      tabs?: Array<Record<string, any>>;
+      activeTabId?: string | null;
+    };
+    this.tabs = session?.tabs ?? [];
+    this.activeTabId = session?.activeTabId ?? null;
+    return { tabs: this.tabs, activeTabId: this.activeTabId };
+  },
 };
 
 vi.mock("$lib/stores/lmeWorkspace.svelte", () => ({
@@ -307,6 +314,39 @@ describe("shellTabs store", () => {
     expect(restored.activeDesktopName).toBe("Main");
   });
 
+  it("restores shell and code workspace descriptors from one snapshot", async () => {
+    const { shellTabs } = await import("./shellTabs.svelte");
+    const lmeTab = {
+      tabId: "code-file:work-a:src%2Flib.rs",
+      kind: "code",
+      workId: "work-a",
+      title: "lib.rs",
+      resource: { kind: "file", path: "src/lib.rs", line: 42 },
+    };
+    lmeState.tabs = [lmeTab];
+    lmeState.activeTabId = lmeTab.tabId;
+    const shellId = shellTabs.openLme(lmeTab.tabId, {
+      activate: true,
+      title: lmeTab.title,
+    });
+    expect(shellId).toBeTruthy();
+
+    vi.resetModules();
+    lmeState.tabs = [];
+    lmeState.activeTabId = null;
+    const { shellTabs: restored } = await import("./shellTabs.svelte");
+    restored.bootstrap();
+
+    expect(lmeState.tabs).toEqual([lmeTab]);
+    expect(lmeState.activeTabId).toBe(lmeTab.tabId);
+    expect(restored.activeTab).toMatchObject({
+      kind: "lme",
+      lmeTabId: lmeTab.tabId,
+      title: "lib.rs",
+    });
+    expect(lmeState.activateTab).toHaveBeenCalledWith(lmeTab.tabId);
+  });
+
   it("migrates v2 layout into a Main desktop", async () => {
     const v2 = {
       tabs: [
@@ -329,7 +369,40 @@ describe("shellTabs store", () => {
     expect(shellTabs.desktops).toHaveLength(1);
     expect(shellTabs.activeDesktopName).toBe("Main");
     expect(shellTabs.activeTab?.kind).toBe("chat");
-    expect(localStorage.getItem("medousa-home-shell-tabs-v3")).toBeTruthy();
+    expect(localStorage.getItem("medousa-home-workspace-session-v4")).toBeTruthy();
+  });
+
+  it("migrates durable Code descriptors from the v3 shell snapshot", async () => {
+    const layout = {
+      tabs: [{
+        id: "shell-code",
+        kind: "lme",
+        lmeTabId: "code-file:work-a:src%2Flib.rs",
+        title: "lib.rs",
+      }],
+      groups: [{ id: "main", tabIds: ["shell-code"], activeTabId: "shell-code" }],
+      splitRoot: { type: "group", id: "main" },
+      activeGroupId: "main",
+      zoomedGroupId: null,
+    };
+    localStorage.setItem("medousa-home-shell-tabs-v3", JSON.stringify({
+      desktops: [{ id: "desktop-main", name: "Main", layout }],
+      activeDesktopId: "desktop-main",
+    }));
+
+    const { shellTabs } = await import("./shellTabs.svelte");
+    shellTabs.bootstrap();
+    expect(lmeState.tabs).toEqual([expect.objectContaining({
+      tabId: "code-file:work-a:src%2Flib.rs",
+      kind: "code",
+      workId: "work-a",
+      resource: { kind: "file", path: "src/lib.rs", line: null },
+    })]);
+    expect(shellTabs.activeTab).toMatchObject({
+      kind: "lme",
+      lmeTabId: "code-file:work-a:src%2Flib.rs",
+    });
+    expect(localStorage.getItem("medousa-home-workspace-session-v4")).toBeTruthy();
   });
 
   it("switches desktops and keeps layouts independent", async () => {
@@ -374,7 +447,7 @@ describe("shellTabs store", () => {
     shellTabs.syncFromLmeWorkspace();
     shellTabs.patchTitle(shellTabs.tabs[0]!.id, "Alpha renamed");
     expect(shellTabs.desktops).toBe(before);
-    expect(localStorage.getItem("medousa-home-shell-tabs-v3")).toContain("Alpha renamed");
+    expect(localStorage.getItem("medousa-home-workspace-session-v4")).toContain("Alpha renamed");
   });
 
   it("lists chat sessions for live restore with active pane first", async () => {

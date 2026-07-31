@@ -211,6 +211,54 @@ describe("lmeWorkspace", () => {
     expect(store.tabs.some((tab) => tab.kind === "script")).toBe(true);
   });
 
+  it("restores only valid durable workspace descriptors", () => {
+    const restored = store.restoreSession({
+      tabs: [
+        {
+          tabId: "code-file:work-a:src%2Flib.rs",
+          kind: "code",
+          workId: "work-a",
+          title: "lib.rs",
+          resource: { kind: "file", path: "src/lib.rs", line: 17 },
+        },
+        { tabId: "broken", kind: "code" },
+        {
+          tabId: "draft-script",
+          kind: "script",
+          scriptTabId: "runtime-only",
+          scriptId: null,
+          title: "Unsaved",
+        },
+      ],
+      activeTabId: "broken",
+    });
+
+    expect(restored.tabs.map((tab) => tab.tabId)).toEqual([
+      "code-file:work-a:src%2Flib.rs",
+    ]);
+    expect(restored.activeTabId).toBe("code-file:work-a:src%2Flib.rs");
+    expect(store.captureSession().tabs.map((tab) => tab.tabId)).toEqual([
+      "code-file:work-a:src%2Flib.rs",
+    ]);
+  });
+
+  it("checkpoints the latest code cursor line into the workspace descriptor", () => {
+    store.restoreSession({
+      tabs: [{
+        tabId: "code-file:work-a:src%2Flib.rs",
+        kind: "code",
+        workId: "work-a",
+        title: "lib.rs",
+        resource: { kind: "file", path: "src/lib.rs", line: 1 },
+      }],
+      activeTabId: "code-file:work-a:src%2Flib.rs",
+    });
+    store.updateCodeLocation("work-a", "src/lib.rs", 88);
+    expect(store.activeTab).toMatchObject({
+      resource: { kind: "file", path: "src/lib.rs", line: 88 },
+    });
+  });
+
   it("closing the last script tab empties the strip", async () => {
     await store.openScriptById("s1");
     const tabId = store.activeTabId;

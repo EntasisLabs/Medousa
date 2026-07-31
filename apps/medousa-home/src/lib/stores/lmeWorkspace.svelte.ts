@@ -39,6 +39,7 @@ export type LmeTab =
       tabId: string;
       kind: "script";
       scriptTabId: string;
+      scriptId: string | null;
       title: string;
     }
   | {
@@ -82,6 +83,47 @@ export type LmeTab =
 
 const EXPLORER_MODE_KEY = "medousa-lme-explorer-mode";
 const MAX_TABS = 16;
+
+export type LmeWorkspaceSession = {
+  tabs: LmeTab[];
+  activeTabId: string | null;
+};
+
+function isString(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0;
+}
+
+function isRestorableTab(value: unknown): value is LmeTab {
+  if (!value || typeof value !== "object") return false;
+  const tab = value as Record<string, unknown>;
+  if (!isString(tab.tabId) || !isString(tab.title) || !isString(tab.kind)) return false;
+  switch (tab.kind) {
+    case "note":
+    case "file":
+      return isString(tab.path);
+    case "script":
+      return isString(tab.scriptTabId) && isString(tab.scriptId);
+    case "code": {
+      if (!isString(tab.workId) || !tab.resource || typeof tab.resource !== "object") return false;
+      const resource = tab.resource as Record<string, unknown>;
+      return resource.kind === "workspace" || resource.kind === "review" || (
+        resource.kind === "file" &&
+        isString(resource.path) &&
+        (resource.line === null || typeof resource.line === "number")
+      );
+    }
+    case "deck":
+      return isString(tab.artifactId);
+    case "manuscript":
+      return isString(tab.manuscriptId);
+    case "flow":
+      return tab.workflowId === null || isString(tab.workflowId);
+    case "schedule":
+      return isString(tab.recurringId);
+    default:
+      return false;
+  }
+}
 
 function loadExplorerMode(): LmeExplorerMode {
   if (typeof localStorage === "undefined") return "notes";
@@ -139,6 +181,60 @@ export class LmeWorkspaceStore {
       ? (this.tabs.find((tab) => tab.tabId === this.activeTabId) ?? null)
       : null,
   );
+
+  captureSession(): LmeWorkspaceSession {
+    // Unsaved script drafts are editor-runtime state, not durable resources.
+    const tabs = this.tabs
+      .filter((tab) => tab.kind !== "script" || Boolean(tab.scriptId))
+      .slice(-MAX_TABS);
+    const ids = new Set(tabs.map((tab) => tab.tabId));
+    return {
+      tabs,
+      activeTabId: this.activeTabId && ids.has(this.activeTabId)
+        ? this.activeTabId
+        : tabs.at(-1)?.tabId ?? null,
+    };
+  }
+
+  restoreSession(value: unknown): LmeWorkspaceSession {
+    const candidate = value && typeof value === "object"
+      ? value as { tabs?: unknown; activeTabId?: unknown }
+      : {};
+    const seen = new Set<string>();
+    const tabs = (Array.isArray(candidate.tabs) ? candidate.tabs : [])
+      .filter(isRestorableTab)
+      .filter((tab) => {
+        if (seen.has(tab.tabId)) return false;
+        seen.add(tab.tabId);
+        return true;
+      })
+      .slice(-MAX_TABS);
+    const activeTabId = typeof candidate.activeTabId === "string" && seen.has(candidate.activeTabId)
+      ? candidate.activeTabId
+      : tabs.at(-1)?.tabId ?? null;
+    this.tabs = tabs;
+    this.activeTabId = activeTabId;
+    return { tabs, activeTabId };
+  }
+
+  updateCodeLocation(workId: string, path: string, line: number) {
+    const nextLine = Math.max(1, Math.floor(line));
+    let changed = false;
+    const tabs = this.tabs.map((tab) => {
+      if (
+        tab.kind !== "code" ||
+        tab.workId !== workId ||
+        tab.resource.kind !== "file" ||
+        tab.resource.path !== path ||
+        tab.resource.line === nextLine
+      ) {
+        return tab;
+      }
+      changed = true;
+      return { ...tab, resource: { ...tab.resource, line: nextLine } };
+    });
+    if (changed) this.tabs = tabs;
+  }
 
   /** Mode bar only — never steals the active document tab. */
   setExplorerMode(mode: LmeExplorerMode) {
@@ -639,6 +735,7 @@ export class LmeWorkspaceStore {
       tabId: newTabId("script"),
       kind: "script",
       scriptTabId: scriptTab.tabId,
+      scriptId: scriptTab.scriptId,
       title: nextTitle,
     };
     this.tabs = [...this.tabs, tab].slice(-MAX_TABS);
@@ -674,7 +771,19 @@ export class LmeWorkspaceStore {
       return;
     }
     if (tab.kind === "script") {
-      graphemeScriptEditor.selectTab(tab.scriptTabId);
+      if (graphemeScriptEditor.tabs.some((entry) => entry.tabId === tab.scriptTabId)) {
+        graphemeScriptEditor.selectTab(tab.scriptTabId);
+      } else if (tab.scriptId) {
+        await graphemeScriptEditor.openScriptById(tab.scriptId);
+        const restored = graphemeScriptEditor.activeTab;
+        if (restored) {
+          this.tabs = this.tabs.map((entry) =>
+            entry.tabId === tab.tabId && entry.kind === "script"
+              ? { ...entry, scriptTabId: restored.tabId, scriptId: restored.scriptId }
+              : entry,
+          );
+        }
+      }
       return;
     }
     if (tab.kind === "file") {

@@ -388,6 +388,7 @@
     linePersistTimer = setTimeout(() => {
       linePersistTimer = null;
       codeWorkspace.updateLine(tab.tabId, cursor.line);
+      lmeWorkspace.updateCodeLocation(tab.work_id, tab.path, cursor.line);
     }, 500);
   }
 
@@ -496,6 +497,7 @@
     editor?.revealLine(line);
     if (activeTab) {
       codeWorkspace.updateLine(activeTab.tabId, line);
+      lmeWorkspace.updateCodeLocation(activeTab.work_id, activeTab.path, line);
       undertakings.setSelection({ path: activeTab.path, line, entityId: null });
     }
   }

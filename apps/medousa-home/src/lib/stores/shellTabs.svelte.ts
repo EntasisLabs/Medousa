@@ -6,7 +6,11 @@ import { chat } from "$lib/stores/chat.svelte";
 import { chatStreamPool } from "$lib/stores/chatStreamPool.svelte";
 import { humanBrowser } from "$lib/stores/humanBrowser.svelte";
 import { layout } from "$lib/stores/layout.svelte";
-import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
+import {
+  lmeWorkspace,
+  type LmeTab,
+  type LmeWorkspaceSession,
+} from "$lib/stores/lmeWorkspace.svelte";
 import { vault } from "$lib/stores/vault.svelte";
 import {
   isShellSurfaceTabId,
@@ -53,13 +57,20 @@ const MAIN_GROUP_ID = "main";
 const DEFAULT_DESKTOP_NAME = "Main";
 const PERSIST_KEY_V1 = "medousa-home-shell-tabs-v1";
 const PERSIST_KEY_V2 = "medousa-home-shell-tabs-v2";
-const PERSIST_KEY = "medousa-home-shell-tabs-v3";
+const PERSIST_KEY_V3 = "medousa-home-shell-tabs-v3";
+const PERSIST_KEY = "medousa-home-workspace-session-v4";
 
 type PersistedV2 = ShellDesktopLayout;
 
 type PersistedV3 = {
   desktops: ShellDesktop[];
   activeDesktopId: string;
+};
+
+type PersistedV4 = PersistedV3 & {
+  version: 4;
+  savedAt: number;
+  lme: LmeWorkspaceSession;
 };
 
 type PersistedV1 = {
@@ -197,10 +208,110 @@ function layoutFromV1(v1: PersistedV1): ShellDesktopLayout | null {
   };
 }
 
-function loadPersisted(): PersistedV3 | null {
+function migrateCodeLmeSession(desktops: ShellDesktop[]): LmeWorkspaceSession {
+  const tabs = new Map<string, LmeTab>();
+  let activeTabId: string | null = null;
+  for (const desktop of desktops) {
+    const activeShellId = desktop.layout.groups.find(
+      (group) => group.id === desktop.layout.activeGroupId,
+    )?.activeTabId;
+    for (const shellTab of desktop.layout.tabs) {
+      if (shellTab.kind !== "lme") continue;
+      const parts = shellTab.lmeTabId.split(":");
+      let tab: LmeTab | null = null;
+      try {
+        if (parts[0] === "code-file" && parts.length === 3) {
+          const workId = decodeURIComponent(parts[1]!);
+          const path = decodeURIComponent(parts[2]!);
+          tab = {
+            tabId: shellTab.lmeTabId,
+            kind: "code",
+            workId,
+            title: shellTab.title,
+            resource: { kind: "file", path, line: null },
+          };
+        } else if ((parts[0] === "code-workspace" || parts[0] === "code-review") && parts.length === 2) {
+          tab = {
+            tabId: shellTab.lmeTabId,
+            kind: "code",
+            workId: decodeURIComponent(parts[1]!),
+            title: shellTab.title,
+            resource: { kind: parts[0] === "code-review" ? "review" : "workspace" },
+          };
+        }
+      } catch {
+        tab = null;
+      }
+      if (!tab) continue;
+      tabs.set(tab.tabId, tab);
+      if (shellTab.id === activeShellId) activeTabId = tab.tabId;
+    }
+  }
+  const restored = [...tabs.values()];
+  return { tabs: restored, activeTabId: activeTabId ?? restored.at(-1)?.tabId ?? null };
+}
+
+function filterLayoutForLme(
+  layout: ShellDesktopLayout,
+  lmeTabIds: Set<string>,
+): ShellDesktopLayout {
+  const seenTabs = new Set<string>();
+  const tabs = layout.tabs.filter((tab) => {
+    if (seenTabs.has(tab.id) || (tab.kind === "lme" && !lmeTabIds.has(tab.lmeTabId))) {
+      return false;
+    }
+    seenTabs.add(tab.id);
+    return true;
+  });
+  const tabIds = new Set(tabs.map((tab) => tab.id));
+  const groupById = new Map(layout.groups.map((group) => [group.id, group]));
+  const leafIds = collectGroupIds(layout.splitRoot);
+  const groups = leafIds.map((id) => {
+    const group = groupById.get(id) ?? { id, tabIds: [], activeTabId: null };
+    const nextIds = [...new Set(group.tabIds.filter((tabId) => tabIds.has(tabId)))];
+    return {
+      ...group,
+      tabIds: nextIds,
+      activeTabId: group.activeTabId && nextIds.includes(group.activeTabId)
+        ? group.activeTabId
+        : nextIds.at(-1) ?? null,
+    };
+  });
+  const activeGroupId = leafIds.includes(layout.activeGroupId)
+    ? layout.activeGroupId
+    : leafIds[0] ?? MAIN_GROUP_ID;
+  return {
+    ...layout,
+    tabs,
+    groups,
+    activeGroupId,
+    zoomedGroupId: layout.zoomedGroupId && leafIds.includes(layout.zoomedGroupId)
+      ? layout.zoomedGroupId
+      : null,
+  };
+}
+
+function loadPersisted(): PersistedV4 | null {
   if (typeof localStorage === "undefined") return null;
   try {
-    const rawV3 = localStorage.getItem(PERSIST_KEY);
+    const rawV4 = localStorage.getItem(PERSIST_KEY);
+    if (rawV4) {
+      const parsed = JSON.parse(rawV4) as PersistedV4;
+      if (
+        parsed?.version === 4 &&
+        Array.isArray(parsed?.desktops) &&
+        parsed.desktops.length > 0 &&
+        parsed.activeDesktopId &&
+        parsed.lme &&
+        parsed.desktops.every(
+          (desktop) => desktop?.id && desktop?.name && isValidLayout(desktop.layout),
+        )
+      ) {
+        return parsed;
+      }
+    }
+
+    const rawV3 = localStorage.getItem(PERSIST_KEY_V3);
     if (rawV3) {
       const parsed = JSON.parse(rawV3) as PersistedV3;
       if (
@@ -214,7 +325,12 @@ function loadPersisted(): PersistedV3 | null {
             isValidLayout(desktop.layout),
         )
       ) {
-        return parsed;
+        return {
+          ...parsed,
+          version: 4,
+          savedAt: Date.now(),
+          lme: migrateCodeLmeSession(parsed.desktops),
+        };
       }
     }
 
@@ -224,8 +340,11 @@ function loadPersisted(): PersistedV3 | null {
       if (isValidLayout(layout)) {
         const id = newDesktopId();
         return {
+          version: 4,
+          savedAt: Date.now(),
           desktops: [{ id, name: DEFAULT_DESKTOP_NAME, layout }],
           activeDesktopId: id,
+          lme: { tabs: [], activeTabId: null },
         };
       }
     }
@@ -237,8 +356,11 @@ function loadPersisted(): PersistedV3 | null {
     if (!layout) return null;
     const id = newDesktopId();
     return {
+      version: 4,
+      savedAt: Date.now(),
       desktops: [{ id, name: DEFAULT_DESKTOP_NAME, layout }],
       activeDesktopId: id,
+      lme: { tabs: [], activeTabId: null },
     };
   } catch {
     return null;
@@ -362,17 +484,30 @@ export class ShellTabsStore {
     try {
       this.ensureDesktopCatalog();
       const layout = this.captureLayout();
+      const lme = lmeWorkspace.captureSession();
+      const lmeTabIds = new Set(lme.tabs.map((tab) => tab.tabId));
       const desktops = this.desktops.map((desktop) =>
         desktop.id === this.activeDesktopId ? { ...desktop, layout } : desktop,
-      );
-      const payload: PersistedV3 = {
+      ).map((desktop) => ({
+        ...desktop,
+        layout: filterLayoutForLme(desktop.layout, lmeTabIds),
+      }));
+      const payload: PersistedV4 = {
+        version: 4,
+        savedAt: Date.now(),
         desktops,
         activeDesktopId: this.activeDesktopId,
+        lme,
       };
       localStorage.setItem(PERSIST_KEY, JSON.stringify(payload));
     } catch {
       /* ignore */
     }
+  }
+
+  /** Synchronous lifecycle-boundary checkpoint (page hide / native window close). */
+  checkpoint() {
+    this.persist();
   }
 
   private async resyncLiveStreams(previousIds: string[]) {
@@ -498,16 +633,21 @@ export class ShellTabsStore {
 
     const persisted = loadPersisted();
     if (persisted) {
-      this.desktops = persisted.desktops;
+      const lme = lmeWorkspace.restoreSession(persisted.lme);
+      const lmeTabIds = new Set(lme.tabs.map((tab) => tab.tabId));
+      this.desktops = persisted.desktops.map((desktop) => ({
+        ...desktop,
+        layout: filterLayoutForLme(desktop.layout, lmeTabIds),
+      }));
       this.activeDesktopId = persisted.activeDesktopId;
       const activeDesktop =
-        persisted.desktops.find((desktop) => desktop.id === persisted.activeDesktopId) ??
-        persisted.desktops[0]!;
+        this.desktops.find((desktop) => desktop.id === persisted.activeDesktopId) ??
+        this.desktops[0]!;
       this.applyLayout(activeDesktop.layout);
       if (this.tabs.length > 0) {
         const active = this.activeTab;
         if (active) {
-          void this.activate(active.id, { skipOpen: true });
+          void this.activate(active.id, { rehydrate: true });
         }
         this.persist();
         return;
@@ -858,7 +998,7 @@ export class ShellTabsStore {
     }
   }
 
-  async activate(tabId: string, options?: { skipOpen?: boolean }) {
+  async activate(tabId: string, options?: { rehydrate?: boolean }) {
     const tab = this.tabs.find((entry) => entry.id === tabId);
     if (!tab) return;
 
@@ -896,7 +1036,7 @@ export class ShellTabsStore {
         return;
       }
       if (tab.kind === "lme") {
-        if (lmeWorkspace.activeTabId !== tab.lmeTabId) {
+        if (options?.rehydrate || lmeWorkspace.activeTabId !== tab.lmeTabId) {
           await lmeWorkspace.activateTab(tab.lmeTabId);
         } else {
           // Same LME tab (e.g. pane focus) — still promote vault focus if it drifted.
@@ -915,7 +1055,6 @@ export class ShellTabsStore {
     } finally {
       this.endSuppressMirror();
     }
-    void options;
   }
 
   mirrorLmeTab(lmeTabId: string, options?: { activate?: boolean; title?: string }) {
@@ -1403,7 +1542,7 @@ export class ShellTabsStore {
 
     const active = this.activeTab;
     if (active) {
-      await this.activate(active.id, { skipOpen: true });
+      await this.activate(active.id, { rehydrate: true });
     } else {
       this.syncLayoutHint(null);
     }
@@ -1445,7 +1584,7 @@ export class ShellTabsStore {
       this.persist();
       const active = this.activeTab;
       if (active) {
-        await this.activate(active.id, { skipOpen: true });
+        await this.activate(active.id, { rehydrate: true });
       } else {
         this.syncLayoutHint(null);
       }
