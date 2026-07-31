@@ -1,10 +1,20 @@
 <script lang="ts">
   import { onMount, tick } from "svelte";
   import {
+    Check,
+    ChevronRight,
+    CircleAlert,
+    GitCommitHorizontal,
     GitPullRequestArrow,
+    History,
+    Link2,
+    MessageSquarePlus,
     MoreHorizontal,
     Play,
+    Save,
+    ShieldCheck,
     Square,
+    UserRound,
   } from "@lucide/svelte";
   import { undertakings } from "$lib/stores/undertakings.svelte";
   import {
@@ -102,17 +112,23 @@
   let worldSnapshot = $state<"baseline" | "sealed">("sealed");
   let creating = $state(false);
   let reviewRationale = $state("");
+  let reviewNoteOpen = $state(false);
   let acknowledgePolicy = $state(false);
   let exportOpen = $state(false);
   let exportDestination = $state("");
   let exportedDestination = $state<string | null>(null);
-  let reviewEl = $state<HTMLDivElement | null>(null);
   let worldEl = $state<HTMLDivElement | null>(null);
   let preferredCodeAgent = $state<"codex" | "cursor">("codex");
   let providerHandoff = $state<ProviderHandoff | null>(null);
   let providerComments = $state<ProviderComment[]>([]);
   let providerLink = $state("");
   let providerOpen = $state(false);
+  let reviewDetailsFor = $state<string | null>(null);
+  let reviewDetailsLoading = $state(false);
+  let reviewDetailsOpen = $state(false);
+  let reviewTimelineOpen = $state(false);
+  let reviewAuditOpen = $state(false);
+  let providerLinkOpen = $state(false);
 
   const detail = $derived(
     !boundWorkId || undertakings.detail?.id === boundWorkId
@@ -332,27 +348,36 @@
     });
   }
 
-  async function loadReviewExtras() {
-    if (!review?.evidence_id) return;
-    patch = await getEvidencePatch(review.evidence_id, {
-      work_id: review.work_id,
-      limit: 400,
-    });
-    try {
-      commands = await getEvidenceCommands(review.evidence_id, {
-        work_id: review.work_id,
-        limit: 100,
-      });
-    } catch {
-      commands = null;
-    }
-    try {
-      const avec = await getWorldCodeAvec(review.work_id);
-      worldInsight = avec;
+  async function loadReviewDetails() {
+    const current = review;
+    if (!current?.evidence_id || reviewDetailsFor === current.evidence_id) return;
+    const evidenceId = current.evidence_id;
+    reviewDetailsFor = evidenceId;
+    reviewDetailsLoading = true;
+    patch = null;
+    commands = null;
+    worldInsight = null;
+    providerHandoff = null;
+    const [patchResult, commandsResult, worldResult, providerResult] = await Promise.allSettled([
+      getEvidencePatch(evidenceId, { work_id: current.work_id, limit: 400 }),
+      getEvidenceCommands(evidenceId, { work_id: current.work_id, limit: 100 }),
+      getWorldCodeAvec(current.work_id),
+      getProviderHandoff(current.work_id),
+    ]);
+    if (review?.evidence_id !== evidenceId) return;
+    patch = patchResult.status === "fulfilled" ? patchResult.value : null;
+    commands = commandsResult.status === "fulfilled" ? commandsResult.value : null;
+    if (worldResult.status === "fulfilled") {
+      worldInsight = worldResult.value;
       worldError = null;
-    } catch (err) {
-      worldError = err instanceof Error ? err.message : String(err);
+    } else {
+      worldError =
+        worldResult.reason instanceof Error
+          ? worldResult.reason.message
+          : String(worldResult.reason);
     }
+    providerHandoff = providerResult.status === "fulfilled" ? providerResult.value : null;
+    reviewDetailsLoading = false;
   }
 
   async function loadMorePatch() {
@@ -447,6 +472,13 @@
     return `${slug || "project"}-medousa-record-${stamp}`;
   }
 
+  function reviewIssueLabel(issue: string): string {
+    if (issue.toLowerCase().includes("no project check")) {
+      return "Verification is missing";
+    }
+    return humanizeForgeMessage(issue);
+  }
+
   async function beginExport() {
     if (!detail) return;
     exportedDestination = null;
@@ -517,15 +549,6 @@
     });
   }
 
-  async function loadProviderHandoff() {
-    if (!detail) return;
-    try {
-      providerHandoff = await getProviderHandoff(detail.id);
-    } catch {
-      providerHandoff = null;
-    }
-  }
-
   async function shareProject() {
     if (!detail) return;
     await run(async () => {
@@ -579,13 +602,6 @@
       await undertakings.select("");
     });
   }
-
-  $effect(() => {
-    if (review?.evidence_id) {
-      void loadReviewExtras();
-      void loadProviderHandoff();
-    }
-  });
 
   $effect(() => {
     if (worldMode && detail?.id) void loadWorldOverview();
@@ -913,182 +929,327 @@
         {/if}
 
         {#if reviewCanvas && review && (detail.human_phase === "review" || review.evidence_id)}
-          <div bind:this={reviewEl} class="min-h-0 flex-1 overflow-auto bg-surface-950/20 p-4">
-            <div class="flex items-center justify-between gap-2">
-              <div>
-                <h4 class="text-sm font-semibold text-surface-50">Review changes</h4>
-                <p class="text-[10px] text-surface-500">Everything that changed, in one place</p>
-              </div>
-              <button
-                type="button"
-                class="rounded px-2 py-1 text-[10px] text-surface-400 hover:bg-surface-800 hover:text-surface-100"
-                onclick={() => void beginExport()}
-              >Save project record…</button>
-            </div>
-            <details class="mt-1 text-[10px] text-surface-500">
-              <summary class="w-fit cursor-pointer hover:text-surface-300">Technical details</summary>
-              <p class="mt-1 font-mono">
-                Starting revision {review.baseline_oid?.slice(0, 10)}… → reviewed revision
-                {review.sealed_head_oid?.slice(0, 10)}…
-                {#if review.evidence_digest} · record {review.evidence_digest.slice(0, 16)}…{/if}
-                {#if review.truncated} · preview shortened{/if}
-                {#if review.base_advanced} · starting branch changed{/if}
-              </p>
-            </details>
-            <ForgeReviewSurface
-              {review}
-              {busy}
-              onOpenFile={(path, line) => revealLocation({ path, line })}
-              onRestore={restoreReviewedFile}
-            />
-            {#if providerHandoff}
-              <div class="mt-2 rounded-md border border-surface-500/25 bg-surface-950/30 p-2">
-                <div class="flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <p class="text-[11px] font-medium text-surface-200">Share this work</p>
-                    <p class="text-[10px] text-surface-500">
-                      {#if providerHandoff.provider === "github"}GitHub{:else if providerHandoff.provider === "gitlab"}GitLab{:else}Repository provider{/if}
-                      {#if providerHandoff.repository} · {providerHandoff.repository}{/if}
-                    </p>
-                  </div>
-                  <div class="flex items-center gap-1">
-                    {#if providerHandoff.review_url}
-                      <button type="button" class="rounded px-2 py-1 text-[10px] text-primary-300 hover:bg-surface-800" onclick={() => window.open(providerHandoff?.review_url ?? "", "_blank", "noopener,noreferrer")}>Open review</button>
-                    {/if}
-                    {#if providerHandoff.available && (detail.state === "awaiting_review" || detail.state === "accepted")}
-                      <button type="button" class="rounded bg-primary-500/80 px-2 py-1 text-[10px] font-medium text-white disabled:opacity-40" disabled={busy} onclick={() => void shareProject()}>
-                        {providerHandoff.review_url ? "Update review" : "Share branch and open review"}
-                      </button>
-                    {/if}
-                  </div>
-                  {#if !providerHandoff.available}
-                    <p class="max-w-sm text-right text-[9px] text-surface-500">{providerHandoff.message}</p>
-                  {/if}
-                </div>
-                {#if providerHandoff.links.length}
-                  <div class="mt-2 flex flex-wrap gap-1">
-                    {#each providerHandoff.links as link (link)}
-                      <button type="button" class="max-w-full truncate rounded bg-surface-800 px-1.5 py-0.5 text-[9px] text-surface-300 hover:text-white" onclick={() => window.open(link, "_blank", "noopener,noreferrer")}>{link}</button>
-                    {/each}
-                  </div>
-                {/if}
-                <div class="mt-2 flex gap-1">
-                  <input class="min-w-0 flex-1 rounded border border-surface-500/30 bg-surface-950 px-2 py-1 text-[10px] text-surface-200" type="url" placeholder="Link an issue, PR, or ticket" bind:value={providerLink} onkeydown={(event) => { if (event.key === "Enter") { event.preventDefault(); void addProviderLink(); } }} />
-                  <button type="button" class="rounded px-2 py-1 text-[10px] text-surface-400 hover:bg-surface-800 disabled:opacity-40" disabled={!providerLink.trim() || busy} onclick={() => void addProviderLink()}>Link</button>
-                </div>
-                {#if providerHandoff.review_url && providerHandoff.provider === "github"}
-                  <button type="button" class="mt-2 text-[10px] text-surface-400 hover:text-surface-200" onclick={() => void loadProviderComments()}>{providerOpen ? "Hide review feedback" : "Review feedback"}</button>
-                  {#if providerOpen}
-                    <div class="mt-1 divide-y divide-surface-500/15 rounded border border-surface-500/20">
-                      {#if providerComments.length === 0}
-                        <p class="px-2 py-2 text-[10px] text-surface-500">No review feedback yet.</p>
+          <div class="flex min-h-0 flex-1 flex-col bg-surface-950/20">
+            <div class="min-h-0 flex-1 overflow-auto px-4 py-3">
+              <div class="review-canvas">
+                <ForgeReviewSurface
+                  {review}
+                  {busy}
+                  onOpenFile={(path, line) => revealLocation({ path, line })}
+                  onRestore={restoreReviewedFile}
+                />
+
+                {#if review.policy && (review.policy.violations.length || review.policy.capture_risks.length)}
+                  <section class="review-policy" aria-label="Policy exceptions">
+                    <CircleAlert size={15} strokeWidth={1.7} aria-hidden="true" />
+                    <div class="min-w-0 flex-1">
+                      <p>Review exceptions</p>
+                      <ul>
+                        {#each review.policy.violations as violation (violation.id)}
+                          <li><span>{violation.path}</span> — {violation.detail}</li>
+                        {/each}
+                        {#each review.policy.capture_risks as risk}
+                          <li>
+                            {#if risk.kind === "secret_pattern"}
+                              Possible secret in <span>{risk.path}</span>
+                            {:else if risk.kind === "oversize_file"}
+                              Large file <span>{risk.path}</span>
+                            {:else}
+                              These changes exceed the configured size limit
+                            {/if}
+                          </li>
+                        {/each}
+                      </ul>
+                      {#if review.policy.violations.length}
+                        <label>
+                          <input type="checkbox" bind:checked={acknowledgePolicy} />
+                          <span>I reviewed and accept these exceptions.</span>
+                        </label>
                       {/if}
-                      {#each providerComments as comment (comment.id)}
-                        <div class="p-2">
-                          <p class="text-[9px] text-surface-500">{comment.author}</p>
-                          <p class="mt-0.5 whitespace-pre-wrap text-[10px] text-surface-300">{comment.body}</p>
-                          <button type="button" class="mt-1 text-[9px] text-primary-300 hover:underline" disabled={busy} onclick={() => void createFollowUp(comment)}>Make this a follow-up project</button>
+                    </div>
+                  </section>
+                {/if}
+
+                <section class="review-context">
+                  <button
+                    type="button"
+                    class="review-context-disclosure"
+                    aria-expanded={reviewDetailsOpen}
+                    onclick={() => {
+                      reviewDetailsOpen = !reviewDetailsOpen;
+                      if (reviewDetailsOpen) void loadReviewDetails();
+                    }}
+                  >
+                    <ChevronRight
+                      size={13}
+                      strokeWidth={2}
+                      class="review-context-chevron {reviewDetailsOpen ? 'review-context-chevron--open' : ''}"
+                    />
+                    <span>About this review</span>
+                    <small>People, history, sharing, and recovery</small>
+                  </button>
+
+                  {#if reviewDetailsOpen}
+                    <div class="review-context-body">
+                      {#if reviewDetailsLoading}
+                        <div class="review-context-loading">
+                          <span class="review-context-loading-dot"></span>
+                          Preparing context…
                         </div>
-                      {/each}
+                      {/if}
+
+                      <div class="review-context-row">
+                        <span class="review-context-icon"><UserRound size={14} strokeWidth={1.7} /></span>
+                        <div class="review-context-copy">
+                          <p>Contributors</p>
+                          <span>
+                            {#if review.attribution.length}
+                              {review.attribution.map((source) => source.label).join(", ")}
+                            {:else}
+                              No contributor record
+                            {/if}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div class="review-context-row">
+                        <span class="review-context-icon"><GitCommitHorizontal size={14} strokeWidth={1.7} /></span>
+                        <div class="review-context-copy">
+                          <p>Recovery point</p>
+                          <span>
+                            The reviewed state is saved and can be revisited later.
+                            {#if review.base_advanced} The starting branch moved while this work was open.{/if}
+                          </span>
+                        </div>
+                        <button type="button" class="review-context-action" onclick={() => void beginExport()}>
+                          <Save size={12} />Save a copy…
+                        </button>
+                      </div>
+
+                      <div class="review-context-row review-context-row--stack">
+                        <button
+                          type="button"
+                          class="review-context-row-button"
+                          aria-expanded={reviewTimelineOpen}
+                          onclick={() => (reviewTimelineOpen = !reviewTimelineOpen)}
+                        >
+                          <span class="review-context-icon"><History size={14} strokeWidth={1.7} /></span>
+                          <span class="review-context-copy">
+                            <span class="review-context-copy-title">Project history</span>
+                            <span>{review.timeline.length} recorded {review.timeline.length === 1 ? "event" : "events"}</span>
+                          </span>
+                          <ChevronRight
+                            size={13}
+                            class="review-context-row-chevron {reviewTimelineOpen ? 'review-context-row-chevron--open' : ''}"
+                          />
+                        </button>
+                        {#if reviewTimelineOpen}
+                          <ol class="review-timeline">
+                            {#each review.timeline as event (event.id)}
+                              <li>
+                                <span class="review-timeline-dot"></span>
+                                <div>
+                                  <p>{event.label}</p>
+                                  <span>{event.actor_label}{event.detail ? ` · ${event.detail}` : ""}</span>
+                                </div>
+                                <time>{new Date(event.at).toLocaleString()}</time>
+                              </li>
+                            {/each}
+                          </ol>
+                        {/if}
+                      </div>
+
+                      {#if providerHandoff}
+                        <div class="review-context-row review-context-row--stack">
+                          <div class="review-context-row-main">
+                            <span class="review-context-icon"><Link2 size={14} strokeWidth={1.7} /></span>
+                            <div class="review-context-copy">
+                              <p>Repository review</p>
+                              <span>
+                                {#if providerHandoff.available}
+                                  {#if providerHandoff.repository}{providerHandoff.repository}{:else}Ready to share{/if}
+                                {:else}
+                                  Sharing is not configured on this workshop.
+                                {/if}
+                              </span>
+                            </div>
+                            {#if providerHandoff.review_url}
+                              <button type="button" class="review-context-action" onclick={() => window.open(providerHandoff?.review_url ?? "", "_blank", "noopener,noreferrer")}>Open review</button>
+                            {:else if providerHandoff.available && (detail.state === "awaiting_review" || detail.state === "accepted")}
+                              <button type="button" class="review-context-action" disabled={busy} onclick={() => void shareProject()}>Share branch…</button>
+                            {/if}
+                          </div>
+
+                          {#if providerHandoff.available}
+                            {#if providerHandoff.links.length}
+                              <div class="review-linked-items">
+                                {#each providerHandoff.links as link (link)}
+                                  <button type="button" onclick={() => window.open(link, "_blank", "noopener,noreferrer")}>{link}</button>
+                                {/each}
+                              </div>
+                            {/if}
+                            <div class="review-context-subactions">
+                              <button type="button" onclick={() => (providerLinkOpen = !providerLinkOpen)}>
+                                {providerLinkOpen ? "Cancel" : "Add related link"}
+                              </button>
+                              {#if providerHandoff.review_url && providerHandoff.provider === "github"}
+                                <button type="button" onclick={() => void loadProviderComments()}>
+                                  {providerOpen ? "Hide feedback" : "Load feedback"}
+                                </button>
+                              {/if}
+                            </div>
+                            {#if providerLinkOpen}
+                              <div class="review-link-compose">
+                                <Link2 size={13} />
+                                <input
+                                  type="url"
+                                  placeholder="Paste an issue, PR, or ticket URL"
+                                  bind:value={providerLink}
+                                  onkeydown={(event) => {
+                                    if (event.key === "Enter") {
+                                      event.preventDefault();
+                                      void addProviderLink();
+                                    }
+                                  }}
+                                />
+                                <button type="button" disabled={!providerLink.trim() || busy} onclick={() => void addProviderLink()}>Add</button>
+                              </div>
+                            {/if}
+                            {#if providerOpen}
+                              <div class="review-feedback">
+                                {#if providerComments.length === 0}
+                                  <p>No review feedback yet.</p>
+                                {/if}
+                                {#each providerComments as comment (comment.id)}
+                                  <article>
+                                    <span>{comment.author}</span>
+                                    <p>{comment.body}</p>
+                                    <button type="button" disabled={busy} onclick={() => void createFollowUp(comment)}>Create follow-up</button>
+                                  </article>
+                                {/each}
+                              </div>
+                            {/if}
+                          {/if}
+                        </div>
+                      {/if}
+
+                      {#if worldInsight?.code_avec}
+                        <div class="review-context-row">
+                          <span class="review-context-icon"><ShieldCheck size={14} strokeWidth={1.7} /></span>
+                          <div class="review-context-copy">
+                            <p>Code understanding</p>
+                            <span>
+                              {worldInsight.code_avec.fully_scored_entities} of
+                              {worldInsight.code_avec.scoreable_entities} known elements fully understood
+                            </span>
+                          </div>
+                        </div>
+                      {/if}
+
+                      {#if patch || (commands && commands.lines.length)}
+                        <div class="review-context-row review-context-row--stack">
+                          <button
+                            type="button"
+                            class="review-context-row-button"
+                            aria-expanded={reviewAuditOpen}
+                            onclick={() => (reviewAuditOpen = !reviewAuditOpen)}
+                          >
+                            <span class="review-context-icon"><ShieldCheck size={14} strokeWidth={1.7} /></span>
+                            <span class="review-context-copy">
+                              <span class="review-context-copy-title">Audit trail</span>
+                              <span>Exact patch and command record</span>
+                            </span>
+                            <ChevronRight
+                              size={13}
+                              class="review-context-row-chevron {reviewAuditOpen ? 'review-context-row-chevron--open' : ''}"
+                            />
+                          </button>
+                          {#if reviewAuditOpen}
+                            <div class="review-audit">
+                              <p class="review-audit-revision">
+                                {review.baseline_oid?.slice(0, 10)}… → {review.sealed_head_oid?.slice(0, 10)}…
+                                {#if review.evidence_digest} · record {review.evidence_digest.slice(0, 16)}…{/if}
+                              </p>
+                              {#if patch}
+                                <pre>{patch.lines.join("\n")}</pre>
+                                {#if patch.truncated}
+                                  <button type="button" disabled={busy} onclick={() => void loadMorePatch()}>Show more changes · {patch.lines.length} of {patch.total_lines} lines</button>
+                                {/if}
+                              {/if}
+                              {#if commands && commands.lines.length}
+                                <p class="review-audit-label">Commands</p>
+                                <pre>{commands.lines.join("\n")}</pre>
+                                {#if commands.truncated}
+                                  <button type="button" disabled={busy} onclick={() => void loadMoreCommands()}>Show more commands · {commands.lines.length} of {commands.total_lines}</button>
+                                {/if}
+                              {/if}
+                            </div>
+                          {/if}
+                        </div>
+                      {/if}
                     </div>
                   {/if}
-                {/if}
-              </div>
-            {/if}
-            {#if review.policy && (review.policy.violations.length || review.policy.capture_risks.length)}
-              <div class="mt-2 rounded-md border border-amber-500/35 bg-amber-950/25 p-2">
-                <p class="text-[11px] font-medium text-amber-100">Needs your attention</p>
-                <ul class="mt-1 space-y-1 text-[10px] text-amber-100/80">
-                  {#each review.policy.violations as violation (violation.id)}
-                    <li><span class="font-mono">{violation.path}</span> — {violation.detail}</li>
-                  {/each}
-                  {#each review.policy.capture_risks as risk}
-                    <li>
-                      {#if risk.kind === "secret_pattern"}
-                        Possible secret in <span class="font-mono">{risk.path}</span>
-                      {:else if risk.kind === "oversize_file"}
-                        Large file <span class="font-mono">{risk.path}</span>
-                      {:else}
-                        These changes exceed the configured size limit
-                      {/if}
-                    </li>
-                  {/each}
-                </ul>
-                {#if review.policy.violations.length}
-                  <label class="mt-2 flex items-start gap-2 text-[10px] text-amber-50">
-                    <input type="checkbox" class="mt-0.5" bind:checked={acknowledgePolicy} />
-                    I reviewed these exceptions and accept them for this change.
-                  </label>
-                {/if}
-              </div>
-            {/if}
-            {#if patch || (commands && commands.lines.length)}
-              <details class="mt-2 rounded-md border border-surface-500/20 bg-surface-950/20 p-2">
-                <summary class="cursor-pointer text-[10px] text-surface-400 hover:text-surface-200">Raw evidence</summary>
-                {#if patch}
-                  <pre class="mt-2 max-h-48 overflow-auto rounded bg-black/40 p-2 text-[10px] leading-snug text-surface-200">{patch.lines.join("\n")}</pre>
-                  {#if patch.truncated}
-                    <button type="button" class="mt-1 text-[10px] text-primary-300 hover:underline disabled:opacity-40" disabled={busy} onclick={() => void loadMorePatch()}>Show more changes · {patch.lines.length} of {patch.total_lines} lines</button>
-                  {/if}
-                {/if}
-                {#if commands && commands.lines.length}
-                  <p class="mt-2 text-[10px] font-medium text-surface-300">Command record</p>
-                  <pre class="mt-1 max-h-32 overflow-auto rounded bg-black/40 p-2 text-[10px] text-surface-300">{commands.lines.join("\n")}</pre>
-                  {#if commands.truncated}
-                    <button type="button" class="mt-1 text-[10px] text-primary-300 hover:underline disabled:opacity-40" disabled={busy} onclick={() => void loadMoreCommands()}>Show more commands · {commands.lines.length} of {commands.total_lines}</button>
-                  {/if}
-                {/if}
-              </details>
-            {/if}
-            {#if worldInsight}
-              <div class="mt-2 rounded-md bg-surface-950/35 p-2">
-                <p class="text-[11px] font-medium text-surface-300">Code understanding</p>
-                {#if worldInsight.code_avec}
-                  <p class="mt-1 text-[10px] text-surface-400">
-                    {worldInsight.code_avec.fully_scored_entities} of
-                    {worldInsight.code_avec.scoreable_entities} known code elements are fully understood.
+                </section>
+
+                {#if exportedDestination}
+                  <p class="review-exported">
+                    Project record saved at <span>{exportedDestination}</span>
                   </p>
                 {/if}
               </div>
-            {/if}
-            {#if actions?.review.allowed}
-              <label class="mt-3 block text-[10px] text-surface-400" for="review-rationale">
-                Review note <span class="text-surface-600">(optional)</span>
-              </label>
-              <textarea
-                id="review-rationale"
-                rows="2"
-                class="mt-1 w-full resize-none rounded-md border border-surface-500/40 bg-surface-950/50 px-2 py-1.5 text-xs text-surface-100 placeholder:text-surface-600"
-                placeholder="Anything the next person should know?"
-                bind:value={reviewRationale}
-              ></textarea>
-              <button
-                type="button"
-                class="mt-2 rounded bg-primary-500/80 px-2.5 py-1.5 text-xs font-medium disabled:opacity-40"
-                disabled={busy || (!!review.policy?.violations.length && !acknowledgePolicy)}
-                onclick={() => void recordApproval()}
-              >
-                Approve changes
-              </button>
-            {:else if actions?.apply.allowed}
-              <div class="mt-3 flex items-center justify-between gap-3 rounded-md border border-primary-500/25 bg-primary-950/15 p-2">
-                <p class="text-[11px] text-surface-300">
-                  Approved. Finish when you are ready to keep this work.
-                </p>
-                <button
-                  type="button"
-                  class="shrink-0 rounded bg-primary-500/80 px-2.5 py-1.5 text-xs font-medium disabled:opacity-40"
-                  disabled={busy}
-                  onclick={() => void applyApproval()}
-                >
-                  Finish project…
-                </button>
-              </div>
-            {/if}
-            {#if exportedDestination}
-              <p class="mt-2 text-[10px] text-primary-200">
-                Project record saved at <span class="font-mono">{exportedDestination}</span>
-              </p>
+            </div>
+
+            {#if actions?.review.allowed || actions?.apply.allowed}
+              <footer class="review-decision">
+                {#if reviewNoteOpen && actions?.review.allowed}
+                  <label class="sr-only" for="review-rationale">Review note</label>
+                  <textarea
+                    id="review-rationale"
+                    rows="2"
+                    class="review-note"
+                    placeholder="Anything the next person should know?"
+                    bind:value={reviewRationale}
+                  ></textarea>
+                {/if}
+                <div class="review-decision-row">
+                  <div class="review-decision-guidance">
+                    {#if review.synthesis.unresolved_issues.length}
+                      <CircleAlert size={13} strokeWidth={1.7} />
+                      <p title={review.synthesis.unresolved_issues.join(" · ")}>
+                        {reviewIssueLabel(review.synthesis.unresolved_issues[0])}{review.synthesis.unresolved_issues.length > 1 ? ` · ${review.synthesis.unresolved_issues.length - 1} more` : ""}
+                      </p>
+                    {:else if actions?.apply.allowed}
+                      <Check size={13} strokeWidth={1.8} />
+                      <p>Approved and ready to finish</p>
+                    {:else}
+                      <p>Review the changes, then record your decision.</p>
+                    {/if}
+                  </div>
+                  <div class="review-decision-actions">
+                    {#if actions?.review.allowed}
+                      <button
+                        type="button"
+                        class="review-decision-btn"
+                        aria-pressed={reviewNoteOpen}
+                        onclick={() => (reviewNoteOpen = !reviewNoteOpen)}
+                      ><MessageSquarePlus size={13} /><span>{reviewRationale.trim() ? "Edit note" : "Add note"}</span></button>
+                      <button
+                        type="button"
+                        class="review-decision-btn review-decision-btn--primary"
+                        disabled={busy || (!!review.policy?.violations.length && !acknowledgePolicy)}
+                        onclick={() => void recordApproval()}
+                      ><Check size={14} /><span>Approve changes</span></button>
+                    {:else if actions?.apply.allowed}
+                      <button
+                        type="button"
+                        class="review-decision-btn review-decision-btn--primary"
+                        disabled={busy}
+                        onclick={() => void applyApproval()}
+                      ><Check size={14} /><span>Finish project…</span></button>
+                    {/if}
+                  </div>
+                </div>
+              </footer>
             {/if}
           </div>
         {:else if reviewCanvas}
@@ -1103,46 +1264,47 @@
         {/if}
 
         {#if exportOpen}
-          <div
-            class="rounded-lg border border-surface-500/35 bg-surface-900/60 p-3"
-            role="dialog"
-            aria-label="Save project record"
-            tabindex="-1"
-          >
-            <h4 class="text-sm font-medium text-surface-100">Preserve a portable copy</h4>
-            <p class="mt-1 text-[10px] leading-relaxed text-surface-400">
-              This creates a portable folder with what changed, how it was made, and the decisions you recorded.
-            </p>
-            {#if !isCoLocatedWorkshop()}
-              <label class="mt-3 block text-[10px] text-surface-400" for="export-destination">
-                Save on the connected computer
-              </label>
-              <input
-                id="export-destination"
-                class="mt-1 w-full rounded-md border border-surface-500/40 bg-surface-950/60 px-2 py-1.5 font-mono text-xs text-surface-100"
-                placeholder="/path/on/connected-computer/project-record"
-                bind:value={exportDestination}
-              />
-              <p class="mt-1 text-[9px] text-surface-500">
-                Files stay on the connected computer. Nothing is uploaded from this device.
-              </p>
-            {:else}
-              <p class="mt-3 break-all font-mono text-[10px] text-surface-300">
-                {exportDestination}
-              </p>
-            {/if}
-            <div class="mt-3 flex justify-end gap-1.5">
-              <button
-                type="button"
-                class="rounded px-2.5 py-1.5 text-xs text-surface-400 hover:bg-surface-800"
-                onclick={() => (exportOpen = false)}
-              >Cancel</button>
-              <button
-                type="button"
-                class="rounded bg-primary-500/80 px-2.5 py-1.5 text-xs font-medium text-surface-50 disabled:opacity-40"
-                disabled={busy || !exportDestination.trim()}
-                onclick={() => void confirmExport()}
-              >Save copy</button>
+          <div class="review-export-overlay">
+            <button
+              type="button"
+              class="review-export-backdrop"
+              aria-label="Close save project record"
+              onclick={() => (exportOpen = false)}
+            ></button>
+            <div
+              class="review-export-dialog"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="review-export-title"
+              tabindex="-1"
+            >
+              <span class="review-export-icon"><Save size={17} strokeWidth={1.7} /></span>
+              <div>
+                <h4 id="review-export-title">Save a project record</h4>
+                <p>
+                  Keep a portable copy of the changes, activity, and decisions from this project.
+                </p>
+              </div>
+              {#if !isCoLocatedWorkshop()}
+                <label for="export-destination">Folder on the connected computer</label>
+                <input
+                  id="export-destination"
+                  placeholder="/path/to/project-record"
+                  bind:value={exportDestination}
+                />
+                <small>Files stay on the connected computer.</small>
+              {:else}
+                <p class="review-export-path">{exportDestination}</p>
+              {/if}
+              <div class="review-export-actions">
+                <button type="button" onclick={() => (exportOpen = false)}>Cancel</button>
+                <button
+                  type="button"
+                  class="review-export-save"
+                  disabled={busy || !exportDestination.trim()}
+                  onclick={() => void confirmExport()}
+                >Save copy</button>
+              </div>
             </div>
           </div>
         {/if}
@@ -1395,5 +1557,680 @@
 
   .secondary-action:disabled {
     opacity: 0.35;
+  }
+
+  .review-canvas {
+    width: 100%;
+    max-width: 88rem;
+    margin: 0 auto;
+  }
+
+  .review-policy {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.65rem;
+    margin-top: 0.85rem;
+    border: 1px solid rgb(var(--color-warning-500) / 0.26);
+    border-radius: 0.6rem;
+    padding: 0.75rem;
+    background: rgb(var(--color-warning-950) / 0.12);
+    color: rgb(var(--color-warning-300));
+  }
+
+  .review-policy p {
+    font-size: 0.6875rem;
+    font-weight: 600;
+  }
+
+  .review-policy ul {
+    margin-top: 0.3rem;
+    font-size: 0.625rem;
+    line-height: 1.5;
+    color: rgb(var(--color-warning-200) / 0.72);
+  }
+
+  .review-policy li span {
+    font-family: var(--font-mono);
+  }
+
+  .review-policy label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    margin-top: 0.55rem;
+    font-size: 0.625rem;
+    color: rgb(var(--color-warning-100));
+  }
+
+  .review-context {
+    margin-top: 0.85rem;
+    padding: 0.2rem 0 0.8rem;
+  }
+
+  .review-context-disclosure {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    border: 0;
+    border-radius: 0.35rem;
+    background: transparent;
+    padding: 0.3rem 0.4rem 0.3rem 0.1rem;
+    color: rgb(var(--color-surface-500));
+    text-align: left;
+    transition: color 140ms ease, background-color 140ms ease;
+  }
+
+  .review-context-disclosure:hover {
+    background: rgb(var(--color-surface-800) / 0.3);
+    color: rgb(var(--color-surface-200));
+  }
+
+  .review-context-disclosure > span {
+    font-size: 0.75rem;
+    font-weight: 500;
+    letter-spacing: -0.01em;
+  }
+
+  .review-context-disclosure small {
+    margin-left: 0.25rem;
+    font-size: 0.625rem;
+    font-weight: 400;
+    color: rgb(var(--color-surface-600));
+  }
+
+  :global(.review-context-chevron),
+  :global(.review-context-row-chevron) {
+    flex-shrink: 0;
+    transition: transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+
+  :global(.review-context-chevron--open),
+  :global(.review-context-row-chevron--open) {
+    transform: rotate(90deg);
+  }
+
+  .review-context-body {
+    margin-top: 0.35rem;
+    animation: review-context-in 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+
+  @keyframes review-context-in {
+    from {
+      opacity: 0;
+      transform: translateY(-3px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .review-context-loading {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.4rem 0.55rem;
+    font-size: 0.625rem;
+    color: rgb(var(--color-surface-500));
+  }
+
+  .review-context-loading-dot {
+    width: 0.35rem;
+    height: 0.35rem;
+    border-radius: 50%;
+    background: rgb(var(--color-primary-400));
+    animation: review-context-pulse 1.2s ease-in-out infinite;
+  }
+
+  @keyframes review-context-pulse {
+    50% {
+      opacity: 0.35;
+      transform: scale(0.75);
+    }
+  }
+
+  .review-context-row,
+  .review-context-row-main,
+  .review-context-row-button {
+    display: grid;
+    grid-template-columns: 1.75rem minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.55rem;
+    width: 100%;
+  }
+
+  .review-context-row {
+    min-height: 2.8rem;
+    border-radius: 0.5rem;
+    padding: 0.45rem 0.55rem;
+    transition: background-color 140ms ease;
+  }
+
+  .review-context-row:hover {
+    background: rgb(var(--color-surface-800) / 0.2);
+  }
+
+  .review-context-row--stack {
+    display: block;
+  }
+
+  .review-context-row-button {
+    border: 0;
+    background: transparent;
+    padding: 0;
+    color: inherit;
+    text-align: left;
+  }
+
+  .review-context-icon {
+    display: inline-flex;
+    width: 1.75rem;
+    height: 1.75rem;
+    align-items: center;
+    justify-content: center;
+    border-radius: 0.45rem;
+    background: rgb(var(--color-surface-800) / 0.35);
+    color: rgb(var(--color-surface-500));
+  }
+
+  .review-context-copy {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+  }
+
+  .review-context-copy p,
+  .review-context-copy-title {
+    overflow: hidden;
+    font-size: 0.6875rem;
+    font-weight: 500;
+    color: rgb(var(--color-surface-200));
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .review-context-copy > span:not(.review-context-copy-title) {
+    overflow: hidden;
+    margin-top: 0.1rem;
+    font-size: 0.625rem;
+    line-height: 1.4;
+    color: rgb(var(--color-surface-500));
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .review-context-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    border: 0;
+    border-radius: 0.35rem;
+    background: transparent;
+    padding: 0.35rem 0.5rem;
+    font-size: 0.625rem;
+    color: rgb(var(--color-surface-500));
+  }
+
+  .review-context-action:hover:not(:disabled) {
+    background: rgb(var(--color-surface-700) / 0.35);
+    color: rgb(var(--color-surface-100));
+  }
+
+  .review-context-action:disabled {
+    opacity: 0.35;
+  }
+
+  .review-timeline {
+    margin: 0.5rem 0 0.25rem 2.65rem;
+    padding-left: 0.75rem;
+    border-left: 1px solid rgb(var(--color-surface-500) / 0.2);
+  }
+
+  .review-timeline li {
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 1rem;
+    padding: 0.35rem 0;
+  }
+
+  .review-timeline-dot {
+    position: absolute;
+    top: 0.68rem;
+    left: -0.95rem;
+    width: 0.35rem;
+    height: 0.35rem;
+    border: 1px solid rgb(var(--color-surface-500) / 0.45);
+    border-radius: 50%;
+    background: rgb(var(--color-surface-900));
+  }
+
+  .review-timeline p {
+    font-size: 0.625rem;
+    color: rgb(var(--color-surface-300));
+  }
+
+  .review-timeline span,
+  .review-timeline time {
+    font-size: 0.5625rem;
+    color: rgb(var(--color-surface-600));
+  }
+
+  .review-context-subactions,
+  .review-linked-items {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+    margin: 0.35rem 0 0 2.3rem;
+  }
+
+  .review-context-subactions button,
+  .review-linked-items button,
+  .review-audit button {
+    border: 0;
+    background: transparent;
+    padding: 0.15rem 0.3rem;
+    font-size: 0.5625rem;
+    color: rgb(var(--color-surface-500));
+  }
+
+  .review-context-subactions button:hover,
+  .review-linked-items button:hover,
+  .review-audit button:hover {
+    color: rgb(var(--color-primary-300));
+  }
+
+  .review-linked-items button {
+    max-width: 24rem;
+    overflow: hidden;
+    border-radius: 0.3rem;
+    background: rgb(var(--color-surface-800) / 0.35);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .review-link-compose {
+    display: flex;
+    max-width: 34rem;
+    align-items: center;
+    gap: 0.4rem;
+    margin: 0.45rem 0 0 2.3rem;
+    border-radius: 0.45rem;
+    padding: 0.3rem 0.4rem;
+    background: rgb(var(--color-surface-800) / 0.28);
+    color: rgb(var(--color-surface-500));
+  }
+
+  .review-link-compose input {
+    appearance: none;
+    min-width: 0;
+    flex: 1;
+    border: 0;
+    background: transparent;
+    padding: 0.15rem;
+    box-shadow: none;
+    outline: none;
+    font-size: 0.6875rem;
+    color: rgb(var(--color-surface-100));
+  }
+
+  .review-link-compose input::placeholder {
+    color: rgb(var(--color-surface-600));
+  }
+
+  .review-link-compose button {
+    border: 0;
+    border-radius: 0.3rem;
+    background: transparent;
+    padding: 0.25rem 0.4rem;
+    font-size: 0.625rem;
+    color: rgb(var(--color-primary-300));
+  }
+
+  .review-link-compose button:disabled {
+    color: rgb(var(--color-surface-600));
+  }
+
+  .review-feedback {
+    margin: 0.55rem 0 0 2.3rem;
+    overflow: hidden;
+    border: 1px solid rgb(var(--color-surface-500) / 0.18);
+    border-radius: 0.45rem;
+  }
+
+  .review-feedback > p,
+  .review-feedback article {
+    padding: 0.6rem;
+    font-size: 0.625rem;
+    color: rgb(var(--color-surface-500));
+  }
+
+  .review-feedback article + article {
+    border-top: 1px solid rgb(var(--color-surface-500) / 0.15);
+  }
+
+  .review-feedback article span {
+    font-size: 0.5625rem;
+    color: rgb(var(--color-surface-600));
+  }
+
+  .review-feedback article p {
+    margin-top: 0.2rem;
+    white-space: pre-wrap;
+    color: rgb(var(--color-surface-300));
+  }
+
+  .review-feedback article button {
+    margin-top: 0.35rem;
+    border: 0;
+    background: transparent;
+    padding: 0;
+    font-size: 0.5625rem;
+    color: rgb(var(--color-primary-300));
+  }
+
+  .review-audit {
+    margin: 0.55rem 0 0 2.3rem;
+  }
+
+  .review-audit-revision,
+  .review-audit-label {
+    margin-bottom: 0.35rem;
+    font-family: var(--font-mono);
+    font-size: 0.5625rem;
+    color: rgb(var(--color-surface-600));
+  }
+
+  .review-audit-label {
+    margin-top: 0.65rem;
+    font-family: inherit;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  .review-audit pre {
+    max-height: 12rem;
+    overflow: auto;
+    border-radius: 0.45rem;
+    padding: 0.6rem;
+    background: rgb(0 0 0 / 0.24);
+    font-family: var(--font-mono);
+    font-size: 0.5625rem;
+    line-height: 1.4;
+    color: rgb(var(--color-surface-400));
+  }
+
+  .review-exported {
+    margin: 0.4rem 0;
+    font-size: 0.625rem;
+    color: rgb(var(--color-success-300));
+  }
+
+  .review-exported span {
+    font-family: var(--font-mono);
+  }
+
+  .review-decision {
+    flex-shrink: 0;
+    border-top: 1px solid rgb(var(--color-surface-500) / 0.22);
+    padding: 0.6rem 1rem;
+    background: rgb(var(--color-surface-900) / 0.94);
+    box-shadow: 0 -0.5rem 1.5rem rgb(0 0 0 / 0.14);
+    backdrop-filter: blur(12px);
+  }
+
+  .review-note {
+    appearance: none;
+    width: 100%;
+    margin-bottom: 0.55rem;
+    resize: none;
+    border: 0;
+    border-radius: 0.5rem;
+    background: rgb(var(--color-surface-800) / 0.4);
+    padding: 0.55rem 0.65rem;
+    box-shadow: none;
+    outline: none;
+    font-size: 0.75rem;
+    color: rgb(var(--color-surface-100));
+  }
+
+  .review-note::placeholder {
+    color: rgb(var(--color-surface-600));
+  }
+
+  .review-decision-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+
+  .review-decision-guidance {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 0.45rem;
+    color: rgb(var(--color-warning-300));
+  }
+
+  .review-decision-guidance p {
+    overflow: hidden;
+    font-size: 0.625rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .review-decision-actions {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 0.35rem;
+  }
+
+  .review-decision-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    border: 1px solid transparent;
+    border-radius: 0.45rem;
+    background: transparent;
+    padding: 0.4rem 0.6rem;
+    font-size: 0.6875rem;
+    color: rgb(var(--color-surface-400));
+  }
+
+  .review-decision-btn:hover:not(:disabled) {
+    background: rgb(var(--color-surface-700) / 0.35);
+    color: rgb(var(--color-surface-100));
+  }
+
+  .review-decision-btn--primary {
+    border-color: rgb(var(--color-primary-500) / 0.28);
+    background: rgb(var(--color-primary-500) / 0.1);
+    color: rgb(var(--color-primary-200));
+  }
+
+  .review-decision-btn--primary:hover:not(:disabled) {
+    background: rgb(var(--color-primary-500) / 0.18);
+    color: rgb(var(--color-primary-100));
+  }
+
+  .review-decision-btn:disabled {
+    opacity: 0.35;
+  }
+
+  .review-export-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 50;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+  }
+
+  .review-export-backdrop {
+    position: absolute;
+    inset: 0;
+    border: 0;
+    background: rgb(0 0 0 / 0.5);
+    backdrop-filter: blur(3px);
+  }
+
+  .review-export-dialog {
+    position: relative;
+    display: grid;
+    width: min(26rem, 100%);
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 0.7rem 0.8rem;
+    border: 1px solid rgb(var(--color-surface-500) / 0.32);
+    border-radius: 0.8rem;
+    padding: 1rem;
+    background: rgb(var(--color-surface-900) / 0.98);
+    box-shadow: 0 1.5rem 4rem rgb(0 0 0 / 0.4);
+  }
+
+  .review-export-icon {
+    display: inline-flex;
+    width: 2rem;
+    height: 2rem;
+    align-items: center;
+    justify-content: center;
+    border-radius: 0.5rem;
+    background: rgb(var(--color-primary-500) / 0.12);
+    color: rgb(var(--color-primary-300));
+  }
+
+  .review-export-dialog h4 {
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: rgb(var(--color-surface-100));
+  }
+
+  .review-export-dialog p {
+    margin-top: 0.2rem;
+    font-size: 0.6875rem;
+    line-height: 1.45;
+    color: rgb(var(--color-surface-500));
+  }
+
+  .review-export-dialog label,
+  .review-export-dialog input,
+  .review-export-dialog small,
+  .review-export-path,
+  .review-export-actions {
+    grid-column: 1 / -1;
+  }
+
+  .review-export-dialog label {
+    margin-top: 0.35rem;
+    font-size: 0.625rem;
+    color: rgb(var(--color-surface-400));
+  }
+
+  .review-export-dialog input {
+    appearance: none;
+    border: 0;
+    border-radius: 0.45rem;
+    background: rgb(var(--color-surface-800) / 0.5);
+    padding: 0.5rem 0.6rem;
+    box-shadow: none;
+    outline: none;
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    color: rgb(var(--color-surface-100));
+  }
+
+  .review-export-dialog input::placeholder {
+    color: rgb(var(--color-surface-600));
+  }
+
+  .review-export-dialog small {
+    margin-top: -0.45rem;
+    font-size: 0.5625rem;
+    color: rgb(var(--color-surface-600));
+  }
+
+  .review-export-dialog .review-export-path {
+    overflow: hidden;
+    margin-top: 0.35rem;
+    border-radius: 0.45rem;
+    padding: 0.5rem 0.6rem;
+    background: rgb(var(--color-surface-800) / 0.35);
+    font-family: var(--font-mono);
+    font-size: 0.625rem;
+    color: rgb(var(--color-surface-400));
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .review-export-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.35rem;
+    margin-top: 0.35rem;
+  }
+
+  .review-export-actions button {
+    border: 1px solid transparent;
+    border-radius: 0.4rem;
+    background: transparent;
+    padding: 0.4rem 0.6rem;
+    font-size: 0.6875rem;
+    color: rgb(var(--color-surface-400));
+  }
+
+  .review-export-actions button:hover:not(:disabled) {
+    background: rgb(var(--color-surface-700) / 0.35);
+    color: rgb(var(--color-surface-100));
+  }
+
+  .review-export-actions .review-export-save {
+    border-color: rgb(var(--color-primary-500) / 0.3);
+    background: rgb(var(--color-primary-500) / 0.12);
+    color: rgb(var(--color-primary-200));
+  }
+
+  .review-export-actions button:disabled {
+    opacity: 0.35;
+  }
+
+  @media (max-width: 640px) {
+    .review-context-disclosure small {
+      display: none;
+    }
+
+    .review-context-row,
+    .review-context-row-main,
+    .review-context-row-button {
+      grid-template-columns: 1.75rem minmax(0, 1fr);
+    }
+
+    .review-context-action,
+    :global(.review-context-row-chevron) {
+      grid-column: 2;
+      justify-self: flex-start;
+    }
+
+    .review-decision-row {
+      align-items: flex-start;
+      flex-direction: column;
+    }
+
+    .review-decision-actions {
+      align-self: stretch;
+      justify-content: flex-end;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .review-context-body,
+    :global(.review-context-chevron),
+    :global(.review-context-row-chevron),
+    .review-context-loading-dot {
+      animation: none !important;
+      transition: none !important;
+    }
   }
 </style>
