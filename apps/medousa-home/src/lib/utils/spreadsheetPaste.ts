@@ -68,11 +68,11 @@ export function parseDelimitedFile(
 }
 
 /** Parse .xlsx / .xls bytes (file picker or drop). */
-export function parseXlsxFile(
+export async function parseXlsxFile(
   bytes: Uint8Array,
   filename: string,
-): SpreadsheetTableData | null {
-  const preview = parseXlsxBytes(bytes, filename);
+): Promise<SpreadsheetTableData | null> {
+  const preview = await parseXlsxBytes(bytes, filename);
   if (preview.rows.length === 0 && preview.headers.length <= 1) return null;
   return { headers: preview.headers, rows: preview.rows };
 }
@@ -129,7 +129,7 @@ export async function spreadsheetDataFromFile(
 ): Promise<SpreadsheetTableData | null> {
   if (/\.(xlsx|xls|xlsm)$/i.test(file.name) || XLSX_MIMES.has(file.type)) {
     const bytes = new Uint8Array(await file.arrayBuffer());
-    return parseXlsxFile(bytes, file.name);
+    return await parseXlsxFile(bytes, file.name);
   }
   const text = await file.text();
   return parseDelimitedFile(text, file.name);

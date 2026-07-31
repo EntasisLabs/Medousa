@@ -20,7 +20,7 @@ export async function loadSpreadsheetPreview(path: string): Promise<SpreadsheetP
   }
 
   if (payload.kind === "base64") {
-    return parseXlsxSpreadsheet(payload.content, path);
+    return await parseXlsxSpreadsheet(payload.content, path);
   }
 
   throw new Error(`Unsupported spreadsheet format: .${ext || "unknown"}`);
