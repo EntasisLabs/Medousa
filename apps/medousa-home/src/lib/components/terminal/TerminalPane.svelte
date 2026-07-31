@@ -1,18 +1,23 @@
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
   import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+  import { Terminal as XTerm, type IDisposable } from "@xterm/xterm";
+  import { FitAddon } from "@xterm/addon-fit";
+  import { WebLinksAddon } from "@xterm/addon-web-links";
+  import "@xterm/xterm/css/xterm.css";
   import {
     terminalAttach,
     terminalCreate,
     terminalDetach,
     terminalInfo,
     terminalInterrupt,
-    terminalKey,
+    terminalReady,
     terminalResize,
     terminalSessions,
-    terminalSnapshot,
-    type TerminalFrame,
+    terminalWrite,
+    type TerminalOutput,
     type TerminalSessionSummary,
+    type TerminalStatus,
   } from "$lib/terminal";
   import { undertakings } from "$lib/stores/undertakings.svelte";
   import UndertakingContextChip from "$lib/components/work/UndertakingContextChip.svelte";
@@ -34,26 +39,173 @@
 
   let attachId = $state<number | null>(null);
   let boundSessionId = $state("");
-  let lines = $state<string[]>([]);
-  let cursorRow = $state(0);
-  let cursorCol = $state(0);
   let error = $state<string | null>(null);
   let connecting = $state(true);
-  let inputEl = $state<HTMLInputElement | null>(null);
   let sessions = $state<TerminalSessionSummary[]>([]);
   let sessionHostAvailable = $state(true);
   let hostMessage = $state("");
-  let paneEl = $state<HTMLDivElement | null>(null);
+  let terminalHost = $state<HTMLDivElement | null>(null);
+  let connected = $state(false);
+  let terminalCols = $state(0);
+  let terminalRows = $state(0);
 
-  let unlisten: UnlistenFn | null = null;
+  let terminal: XTerm | null = null;
+  let fitAddon: FitAddon | null = null;
+  let outputUnlisten: UnlistenFn | null = null;
+  let statusUnlisten: UnlistenFn | null = null;
   let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
-  let frameTimer: ReturnType<typeof setTimeout> | null = null;
-  let snapshotInFlight = false;
-  let snapshotQueued = false;
   let resizeObserver: ResizeObserver | null = null;
+  let resizeFrame: number | null = null;
+  let connectGeneration = 0;
+  let inputQueue = Promise.resolve();
+  const terminalDisposables: IDisposable[] = [];
 
-  function focusInput() {
-    inputEl?.focus();
+  function bytesToBase64(bytes: Uint8Array): string {
+    let binary = "";
+    const chunkSize = 0x8000;
+    for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+      binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+    }
+    return btoa(binary);
+  }
+
+  function base64ToBytes(data: string): Uint8Array {
+    const binary = atob(data);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) {
+      bytes[index] = binary.charCodeAt(index);
+    }
+    return bytes;
+  }
+
+  function textToBase64(data: string): string {
+    return bytesToBase64(new TextEncoder().encode(data));
+  }
+
+  function binaryStringToBase64(data: string): string {
+    const bytes = new Uint8Array(data.length);
+    for (let index = 0; index < data.length; index += 1) {
+      bytes[index] = data.charCodeAt(index) & 0xff;
+    }
+    return bytesToBase64(bytes);
+  }
+
+  function queueInput(data: string, binary = false) {
+    const currentAttachId = attachId;
+    if (currentAttachId == null) return;
+    const encoded = binary ? binaryStringToBase64(data) : textToBase64(data);
+    inputQueue = inputQueue
+      .then(() => terminalWrite(currentAttachId, encoded))
+      .catch((reason) => {
+        if (attachId === currentAttachId) {
+          error = reason instanceof Error ? reason.message : String(reason);
+        }
+      });
+  }
+
+  function focusTerminal() {
+    terminal?.focus();
+  }
+
+  async function openExternalLink(uri: string) {
+    try {
+      const { openUrl } = await import("@tauri-apps/plugin-opener");
+      await openUrl(uri);
+    } catch {
+      // Link activation should never make the terminal itself unusable.
+    }
+  }
+
+  function initializeTerminal() {
+    if (!terminalHost || terminal) return;
+    terminal = new XTerm({
+      allowTransparency: false,
+      convertEol: false,
+      cursorBlink: true,
+      cursorStyle: "block",
+      fontFamily:
+        '"SFMono-Regular", "SF Mono", "Cascadia Code", "Roboto Mono", Menlo, monospace',
+      fontSize: compact ? 11 : 12,
+      letterSpacing: 0,
+      lineHeight: 1.2,
+      minimumContrastRatio: 4.5,
+      rightClickSelectsWord: true,
+      scrollback: 10_000,
+      smoothScrollDuration: 80,
+      theme: {
+        background: "#0c0a09",
+        foreground: "#e7e5e4",
+        cursor: "#c4b5fd",
+        cursorAccent: "#0c0a09",
+        selectionBackground: "#6d28d966",
+        black: "#1c1917",
+        red: "#f87171",
+        green: "#86efac",
+        yellow: "#fde047",
+        blue: "#93c5fd",
+        magenta: "#c4b5fd",
+        cyan: "#67e8f9",
+        white: "#e7e5e4",
+        brightBlack: "#78716c",
+        brightRed: "#fca5a5",
+        brightGreen: "#bbf7d0",
+        brightYellow: "#fef08a",
+        brightBlue: "#bfdbfe",
+        brightMagenta: "#ddd6fe",
+        brightCyan: "#a5f3fc",
+        brightWhite: "#fafaf9",
+      },
+    });
+    fitAddon = new FitAddon();
+    terminal.loadAddon(fitAddon);
+    terminal.loadAddon(new WebLinksAddon((_event, uri) => void openExternalLink(uri)));
+    terminal.open(terminalHost);
+
+    terminalDisposables.push(
+      terminal.onData((data) => queueInput(data)),
+      terminal.onBinary((data) => queueInput(data, true)),
+      terminal.onResize(({ cols, rows }) => {
+        terminalCols = cols;
+        terminalRows = rows;
+        void sendResize(cols, rows);
+      }),
+    );
+    terminal.attachCustomKeyEventHandler((event) => {
+      const copy =
+        event.type === "keydown" &&
+        (event.metaKey || event.ctrlKey) &&
+        event.key.toLowerCase() === "c" &&
+        terminal?.hasSelection();
+      if (!copy || !terminal) return true;
+      void navigator.clipboard.writeText(terminal.getSelection());
+      return false;
+    });
+  }
+
+  function scheduleFit() {
+    if (resizeFrame != null) return;
+    resizeFrame = requestAnimationFrame(() => {
+      resizeFrame = null;
+      if (!terminalHost || terminalHost.clientWidth === 0 || terminalHost.clientHeight === 0) {
+        return;
+      }
+      try {
+        fitAddon?.fit();
+        if (terminal) void sendResize(terminal.cols, terminal.rows);
+      } catch {
+        // A pane can become hidden between ResizeObserver and this frame.
+      }
+    });
+  }
+
+  async function sendResize(cols: number, rows: number) {
+    const currentAttachId = attachId;
+    if (currentAttachId == null || cols < 2 || rows < 1) return;
+    try {
+      await terminalResize(currentAttachId, cols, rows);
+    } catch {
+      // A resize racing with detach is expected.
+    }
   }
 
   function openPackages() {
@@ -75,21 +227,39 @@
       const info = await terminalInfo();
       sessionHostAvailable = info.available;
       hostMessage = info.message ?? "";
-    } catch (err) {
+    } catch (reason) {
       sessionHostAvailable = false;
-      hostMessage = err instanceof Error ? err.message : String(err);
+      hostMessage = reason instanceof Error ? reason.message : String(reason);
+    }
+  }
+
+  async function detachCurrent() {
+    const currentAttachId = attachId;
+    attachId = null;
+    connected = false;
+    if (currentAttachId != null) {
+      try {
+        await terminalDetach(currentAttachId);
+      } catch {
+        // Detach is idempotent from the pane's perspective.
+      }
     }
   }
 
   async function connect() {
+    const generation = ++connectGeneration;
     connecting = true;
     error = null;
+    await detachCurrent();
+    terminal?.reset();
     await checkHost();
+    if (generation !== connectGeneration) return;
     if (!sessionHostAvailable) {
       connecting = false;
       error = hostMessage || "Workshop session host unavailable";
       return;
     }
+
     try {
       let sid = (boundSessionId || sessionId).trim();
       if (!sid) {
@@ -102,115 +272,47 @@
         sid = created.session_id?.trim() ?? "";
         if (!sid) throw new Error("workshop did not return a session id");
         boundSessionId = sid;
-        if (undertakings.active) {
-          undertakings.bindTerminal(sid);
-        }
+        if (undertakings.active) undertakings.bindTerminal(sid);
       }
-      const attach = await terminalAttach(sid);
-      unlisten?.();
-      attachId = attach.attach_id;
-      await applyResize();
 
-      unlisten = await listen<TerminalFrame>("terminal-frame", (event) => {
-        if (event.payload.attach_id !== attachId) return;
-        if (cursorRow !== event.payload.cursor_row) cursorRow = event.payload.cursor_row;
-        if (cursorCol !== event.payload.cursor_col) cursorCol = event.payload.cursor_col;
-        scheduleSnapshot();
-      });
-      await refreshSnapshot();
+      const attach = await terminalAttach(sid);
+      if (generation !== connectGeneration) {
+        await terminalDetach(attach.attach_id);
+        return;
+      }
+      attachId = attach.attach_id;
+      boundSessionId = attach.session_id;
+      await terminalReady(attach.attach_id);
+      scheduleFit();
       await refreshSessionList();
-    } catch (err) {
-      error = err instanceof Error ? err.message : String(err);
+      focusTerminal();
+    } catch (reason) {
+      error = reason instanceof Error ? reason.message : String(reason);
       if (/session|sidecar|not found|unavailable|404|connection/i.test(error)) {
         sessionHostAvailable = false;
       }
     } finally {
-      connecting = false;
+      if (generation === connectGeneration) connecting = false;
     }
   }
 
-  async function applyResize() {
-    if (attachId == null || !paneEl) return;
-    const cols = Math.max(40, Math.floor(paneEl.clientWidth / 7.2));
-    const rows = Math.max(12, Math.floor(paneEl.clientHeight / 16));
-    try {
-      await terminalResize(attachId, cols, rows);
-    } catch {
-      /* ignore */
-    }
-  }
-
-  async function refreshSnapshot() {
-    if (attachId == null) return;
-    if (snapshotInFlight) {
-      snapshotQueued = true;
+  async function switchSession(nextSessionId: string) {
+    if (nextSessionId === boundSessionId) {
+      focusTerminal();
       return;
     }
-    snapshotInFlight = true;
-    try {
-      const next = await terminalSnapshot(attachId);
-      if (
-        next.length !== lines.length ||
-        next.some((line, index) => line !== lines[index])
-      ) {
-        lines = next;
-      }
-    } catch {
-      // attach may have been dropped
-    } finally {
-      snapshotInFlight = false;
-      if (snapshotQueued) {
-        snapshotQueued = false;
-        scheduleSnapshot();
-      }
-    }
-  }
-
-  function scheduleSnapshot() {
-    if (frameTimer) return;
-    frameTimer = setTimeout(() => {
-      frameTimer = null;
-      void refreshSnapshot();
-    }, 50);
-  }
-
-  async function sendKey(event: KeyboardEvent) {
-    if (attachId == null) return;
-    const key = normalizeKey(event);
-    if (!key) return;
-    event.preventDefault();
-    try {
-      await terminalKey(attachId, key, event.ctrlKey, event.altKey, event.shiftKey);
-    } catch (err) {
-      error = err instanceof Error ? err.message : String(err);
-    }
-  }
-
-  function normalizeKey(event: KeyboardEvent): string | null {
-    const k = event.key;
-    if (k === "Enter") return "enter";
-    if (k === "Backspace") return "backspace";
-    if (k === "Tab") return "tab";
-    if (k === "Escape") return "escape";
-    if (k === "ArrowUp") return "up";
-    if (k === "ArrowDown") return "down";
-    if (k === "ArrowLeft") return "left";
-    if (k === "ArrowRight") return "right";
-    if (k === "Home") return "home";
-    if (k === "End") return "end";
-    if (k === "Delete") return "delete";
-    if (k === "PageUp") return "pageup";
-    if (k === "PageDown") return "pagedown";
-    if (k.length === 1) return k.toLowerCase();
-    return null;
+    boundSessionId = nextSessionId;
+    await connect();
   }
 
   async function interrupt() {
-    if (!boundSessionId) return;
+    const sid = (boundSessionId || sessionId).trim();
+    if (!sid) return;
     try {
-      await terminalInterrupt(boundSessionId);
-    } catch (err) {
-      error = err instanceof Error ? err.message : String(err);
+      await terminalInterrupt(sid);
+      focusTerminal();
+    } catch (reason) {
+      error = reason instanceof Error ? reason.message : String(reason);
     }
   }
 
@@ -242,32 +344,70 @@
       const created = await terminalCreate({ work_id: null, cwd: null, lease_id: null });
       const sid = created.session_id?.trim() ?? "";
       if (sid) shellTabs.openTerminal(sid, { activate: true, title: "Shell" });
-    } catch (err) {
-      error = err instanceof Error ? err.message : String(err);
+    } catch (reason) {
+      error = reason instanceof Error ? reason.message : String(reason);
     }
   }
 
   onMount(() => {
-    void restoreUndertakingContext().then(connect).then(() => focusInput());
+    let disposed = false;
+    initializeTerminal();
+    void (async () => {
+      outputUnlisten = await listen<TerminalOutput>("terminal-output", (event) => {
+        if (event.payload.attach_id !== attachId) return;
+        try {
+          terminal?.write(base64ToBytes(event.payload.data));
+        } catch {
+          error = "The terminal received malformed output from the session host.";
+        }
+      });
+      statusUnlisten = await listen<TerminalStatus>("terminal-status", (event) => {
+        if (event.payload.attach_id !== attachId) return;
+        connected = event.payload.connected;
+        if (!event.payload.connected && event.payload.message) {
+          error = event.payload.message;
+        }
+      });
+      if (disposed) {
+        outputUnlisten?.();
+        statusUnlisten?.();
+        outputUnlisten = null;
+        statusUnlisten = null;
+        return;
+      }
+      await restoreUndertakingContext();
+      await connect();
+    })();
+
     if (!compact) heartbeatTimer = setInterval(() => void sendHeartbeat(), 30_000);
-    if (paneEl && typeof ResizeObserver !== "undefined") {
-      resizeObserver = new ResizeObserver(() => void applyResize());
-      resizeObserver.observe(paneEl);
+    if (terminalHost && typeof ResizeObserver !== "undefined") {
+      resizeObserver = new ResizeObserver(scheduleFit);
+      resizeObserver.observe(terminalHost);
     }
     if (!compact) void sendHeartbeat();
+
+    return () => {
+      disposed = true;
+    };
   });
 
   onDestroy(() => {
-    unlisten?.();
-    if (frameTimer) clearTimeout(frameTimer);
+    connectGeneration += 1;
+    outputUnlisten?.();
+    statusUnlisten?.();
     if (heartbeatTimer) clearInterval(heartbeatTimer);
     resizeObserver?.disconnect();
-    if (attachId != null) void terminalDetach(attachId);
+    if (resizeFrame != null) cancelAnimationFrame(resizeFrame);
+    for (const disposable of terminalDisposables) disposable.dispose();
+    terminalDisposables.length = 0;
+    terminal?.dispose();
+    terminal = null;
+    fitAddon = null;
+    void detachCurrent();
   });
 </script>
 
 <div
-  bind:this={paneEl}
   class="terminal-pane flex h-full min-h-0 flex-col bg-[#0c0a09] text-[#e7e5e4]"
   role="application"
   aria-label={title}
@@ -285,26 +425,33 @@
     </div>
     <div class="flex items-center gap-1">
       {#if !compact}
-      <details class="relative">
-        <summary class="cursor-pointer list-none rounded px-2 py-0.5 text-[10px] text-white/55 hover:bg-white/10 hover:text-white [&::-webkit-details-marker]:hidden">Sessions</summary>
-        <div class="absolute right-0 top-full z-30 mt-1 w-56 rounded border border-white/15 bg-[#171312] p-1 shadow-xl">
-          {#each sessions as session (session.session_id)}
-            <button type="button" class="block w-full truncate rounded px-2 py-1 text-left text-[10px] text-white/60 hover:bg-white/10 hover:text-white" title={session.cwd} onclick={() => { boundSessionId = session.session_id; void connect(); }}>
-              {session.work_id === workId ? "Project shell" : session.work_id ? "Another project" : "Shell"} · {session.cwd.split(/[\\/]/).filter(Boolean).pop() ?? session.cwd}
-            </button>
-          {/each}
-          {#if sessions.length === 0}<p class="px-2 py-1 text-[10px] text-white/35">No other sessions</p>{/if}
-          <p class="mt-1 border-t border-white/10 px-2 pt-1 font-mono text-[8px] text-white/25">Current {boundSessionId.slice(0, 8)}</p>
-        </div>
-      </details>
-      <button
-        type="button"
-        class="rounded px-2 py-0.5 text-[11px] text-white/60 hover:bg-white/10 hover:text-white"
-        onclick={() => void openDiagnosticSession()}
-        title="Open a shell outside the current project"
-      >
-        New shell
-      </button>
+        <details class="relative">
+          <summary class="cursor-pointer list-none rounded px-2 py-0.5 text-[10px] text-white/55 hover:bg-white/10 hover:text-white [&::-webkit-details-marker]:hidden">Sessions</summary>
+          <div class="absolute right-0 top-full z-30 mt-1 w-56 rounded border border-white/15 bg-[#171312] p-1 shadow-xl">
+            {#each sessions as session (session.session_id)}
+              <button
+                type="button"
+                class="block w-full truncate rounded px-2 py-1 text-left text-[10px] text-white/60 hover:bg-white/10 hover:text-white"
+                title={session.cwd}
+                onclick={() => void switchSession(session.session_id)}
+              >
+                {session.work_id === workId ? "Project shell" : session.work_id ? "Another project" : "Shell"} · {session.cwd.split(/[\\/]/).filter(Boolean).pop() ?? session.cwd}
+              </button>
+            {/each}
+            {#if sessions.length === 0}
+              <p class="px-2 py-1 text-[10px] text-white/35">No other sessions</p>
+            {/if}
+            <p class="mt-1 border-t border-white/10 px-2 pt-1 font-mono text-[8px] text-white/25">Current {boundSessionId.slice(0, 8)}</p>
+          </div>
+        </details>
+        <button
+          type="button"
+          class="rounded px-2 py-0.5 text-[11px] text-white/60 hover:bg-white/10 hover:text-white"
+          onclick={() => void openDiagnosticSession()}
+          title="Open a shell outside the current project"
+        >
+          New shell
+        </button>
       {/if}
       <button
         type="button"
@@ -317,57 +464,66 @@
     </div>
   </div>
 
-  {#if !sessionHostAvailable || (error && /session|sidecar|unavailable|404/i.test(error))}
-    <div class="m-3 rounded border border-amber-500/40 bg-amber-950/40 p-3 text-xs text-amber-100">
-      <p class="font-medium">Session host unavailable</p>
-      <p class="mt-1 text-amber-100/80">{error || hostMessage}</p>
+  <div class="relative min-h-0 flex-1 overflow-hidden">
+    <div
+      bind:this={terminalHost}
+      class="terminal-host h-full w-full"
+      role="presentation"
+      onclick={focusTerminal}
+    ></div>
+
+    {#if connecting}
+      <div class="pointer-events-none absolute inset-0 flex items-center justify-center bg-[#0c0a09]/80 text-xs text-white/50">
+        Connecting to workshop session…
+      </div>
+    {:else if !sessionHostAvailable}
+      <div class="absolute inset-x-3 top-3 z-10 rounded border border-amber-500/40 bg-amber-950/95 p-3 text-xs text-amber-100 shadow-xl">
+        <p class="font-medium">Session host unavailable</p>
+        <p class="mt-1 text-amber-100/80">{error || hostMessage}</p>
+        <button
+          type="button"
+          class="mt-2 rounded bg-amber-500/30 px-2 py-1 text-[11px] hover:bg-amber-500/40"
+          onclick={openPackages}
+        >
+          Open Settings → Packages
+        </button>
+      </div>
+    {:else if error}
       <button
         type="button"
-        class="mt-2 rounded bg-amber-500/30 px-2 py-1 text-[11px] hover:bg-amber-500/40"
-        onclick={openPackages}
+        class="absolute inset-x-3 top-3 z-10 rounded border border-red-500/40 bg-red-950/95 p-2 text-left text-xs text-red-100 shadow-xl"
+        title="Click to reconnect"
+        onclick={() => void connect()}
       >
-        Open Settings → Packages
+        {error} <span class="ml-1 text-red-200/60">Click to reconnect.</span>
       </button>
-    </div>
-  {:else if error}
-    <div class="m-3 rounded border border-red-500/40 bg-red-500/10 p-2 text-xs text-red-200">
-      {error}
-    </div>
-  {:else if connecting}
-    <div class="flex flex-1 items-center justify-center text-xs text-white/50">
-      Connecting to workshop session…
-    </div>
-  {:else}
-    <div class="relative min-h-0 flex-1 overflow-hidden" role="presentation" onclick={focusInput}>
-      <pre
-        class="terminal-grid h-full w-full overflow-auto p-3 font-mono text-[12px] leading-[1.35] whitespace-pre"
-        >{#each lines as line, i}{line}
-          {#if i < lines.length - 1}{"\n"}{/if}{/each}</pre
-      >
-      <input
-        bind:this={inputEl}
-        class="absolute inset-0 h-full w-full cursor-text opacity-0"
-        type="text"
-        autocomplete="off"
-        autocorrect="off"
-        autocapitalize="off"
-        spellcheck="false"
-        aria-label="Terminal input"
-        onkeydown={sendKey}
-      />
-    </div>
-    <div
-      class="flex shrink-0 items-center gap-2 border-t border-white/10 px-3 py-1 text-[10px] text-white/40"
-    >
-      <span class="text-white/25">Shared with agents working in this project</span>
-      <details class="ml-auto"><summary class="cursor-pointer">Technical details</summary><span class="ml-2 font-mono">cursor {cursorRow}:{cursorCol} · {boundSessionId.slice(0, 8)}</span></details>
-    </div>
-  {/if}
+    {/if}
+  </div>
+
+  <div
+    class="flex shrink-0 items-center gap-2 border-t border-white/10 px-3 py-1 text-[10px] text-white/40"
+  >
+    <span class={connected ? "text-emerald-300/60" : "text-white/30"}>
+      {connected ? "Connected" : connecting ? "Connecting" : "Disconnected"}
+    </span>
+    <span class="text-white/25">Shared with agents working in this project</span>
+    <details class="ml-auto">
+      <summary class="cursor-pointer">Technical details</summary>
+      <span class="ml-2 font-mono">{terminalCols}×{terminalRows} · {boundSessionId.slice(0, 8)}</span>
+    </details>
+  </div>
 </div>
 
 <style>
-  .terminal-grid {
-    caret-color: transparent;
-    user-select: text;
+  .terminal-host {
+    padding: 8px 10px;
+  }
+
+  .terminal-host :global(.xterm) {
+    height: 100%;
+  }
+
+  .terminal-host :global(.xterm-viewport) {
+    overscroll-behavior: contain;
   }
 </style>

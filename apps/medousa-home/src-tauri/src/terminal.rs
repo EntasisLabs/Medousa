@@ -1,47 +1,38 @@
-//! Home-side Terminal: VT parse on a dedicated thread + workshop WS bridge.
+//! Home-side terminal transport.
 //!
-//! Each Terminal tab owns a parser/grid on its own std::thread. WS bytes from
-//! the workshop session host are fed in via `terminal_feed`; snapshot rows are
-//! pushed back to the webview as `terminal-frame` events. Key input is encoded
-//! and sent to the workshop as session stdin frames.
-//!
-//! libghostty-vt is the target parser (its sys crate builds the Ghostty VT
-//! archive via Zig); until a Zig toolchain is available, `vte` drives the same
-//! dedicated-thread cell-grid model so the UI/WS plumbing is identical.
+//! The session host owns the PTY and xterm.js owns terminal emulation. This
+//! module is deliberately only a message bridge: one async task owns each
+//! websocket, preserving the order of stdin/resize control messages while
+//! forwarding raw PTY output to the matching webview attachment.
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use base64::Engine as _;
+use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, State};
-use tungstenite::{Message, stream::MaybeTlsStream, WebSocket};
-use vte::{Params, Perform};
+use tokio::sync::{mpsc, Notify};
+use tokio_util::sync::CancellationToken;
+use tokio_tungstenite::{connect_async, tungstenite::Message};
 
 use crate::daemon::sdk::client;
 use crate::daemon::DaemonState;
 
-const GRID_COLS: usize = 120;
-const GRID_ROWS: usize = 40;
-
 static NEXT_ATTACH_ID: AtomicU64 = AtomicU64::new(1);
 
-pub type TerminalRegistry = Arc<Mutex<HashMap<u64, Arc<TerminalHandle>>>>;
+pub type TerminalRegistry = Arc<Mutex<HashMap<u64, TerminalHandle>>>;
 
 pub struct TerminalHandle {
-    pub attach_id: u64,
-    pub input: std::sync::mpsc::Sender<TerminalCmd>,
-    /// Shared render buffer so the UI can poll instead of relying only on events.
-    pub lines: Arc<Mutex<Vec<String>>>,
-    /// Stdin writer for the workshop session (blocking ws writer thread).
-    pub stdin: std::sync::mpsc::Sender<Vec<u8>>,
-    /// Session id this attach is bound to (for resize/signal via daemon HTTP).
-    pub session_id: String,
+    outbound: mpsc::UnboundedSender<TerminalClientFrame>,
+    ready: Arc<Notify>,
+    cancel: CancellationToken,
 }
 
-enum TerminalCmd {
-    Feed(Vec<u8>),
+enum TerminalClientFrame {
+    Stdin(Vec<u8>),
+    Resize { cols: u16, rows: u16 },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -67,6 +58,19 @@ pub struct TerminalAttachResponse {
     pub session_id: String,
 }
 
+#[derive(Clone, Debug, Serialize)]
+struct TerminalOutput {
+    attach_id: u64,
+    data: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+struct TerminalStatus {
+    attach_id: u64,
+    connected: bool,
+    message: Option<String>,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct TerminalCreateInput {
     pub work_id: Option<String>,
@@ -74,233 +78,9 @@ pub struct TerminalCreateInput {
     pub lease_id: Option<String>,
 }
 
-// ---------------------------------------------------------------------------
-// Minimal VT grid (vte Perform → cell grid snapshot)
-// ---------------------------------------------------------------------------
-
-#[derive(Debug, Clone, Serialize)]
-struct TerminalCell {
-    g: String,
-    bold: bool,
-}
-
-impl Default for TerminalCell {
-    fn default() -> Self {
-        Self {
-            g: " ".into(),
-            bold: false,
-        }
-    }
-}
-
-#[derive(Debug, Serialize, Clone)]
-struct TerminalFrame {
-    attach_id: u64,
-    rows: Vec<Vec<TerminalCell>>,
-    cursor_row: usize,
-    cursor_col: usize,
-}
-
-struct Grid {
-    cells: Vec<Vec<TerminalCell>>,
-    cursor_row: usize,
-    cursor_col: usize,
-    bold: bool,
-    saved: Option<(usize, usize)>,
-}
-
-impl Grid {
-    fn new() -> Self {
-        Self {
-            cells: vec![vec![TerminalCell::default(); GRID_COLS]; GRID_ROWS],
-            cursor_row: 0,
-            cursor_col: 0,
-            bold: false,
-            saved: None,
-        }
-    }
-
-    fn put(&mut self, ch: char) {
-        if self.cursor_row < GRID_ROWS && self.cursor_col < GRID_COLS {
-            self.cells[self.cursor_row][self.cursor_col] = TerminalCell {
-                g: ch.to_string(),
-                bold: self.bold,
-            };
-        }
-        self.cursor_col += 1;
-        if self.cursor_col >= GRID_COLS {
-            self.cursor_col = 0;
-            self.newline();
-        }
-    }
-
-    fn newline(&mut self) {
-        if self.cursor_row + 1 < GRID_ROWS {
-            self.cursor_row += 1;
-        } else {
-            self.cells.remove(0);
-            self.cells.push(vec![TerminalCell::default(); GRID_COLS]);
-        }
-    }
-
-    fn clear_from_cursor(&mut self) {
-        if self.cursor_row < GRID_ROWS {
-            for c in self.cursor_col..GRID_COLS {
-                self.cells[self.cursor_row][c] = TerminalCell::default();
-            }
-            for r in (self.cursor_row + 1)..GRID_ROWS {
-                self.cells[r] = vec![TerminalCell::default(); GRID_COLS];
-            }
-        }
-    }
-
-    fn snapshot(&self, attach_id: u64) -> TerminalFrame {
-        TerminalFrame {
-            attach_id,
-            rows: self.cells.clone(),
-            cursor_row: self.cursor_row,
-            cursor_col: self.cursor_col,
-        }
-    }
-}
-
-impl Perform for Grid {
-    fn print(&mut self, c: char) {
-        self.put(c);
-    }
-
-    fn execute(&mut self, byte: u8) {
-        match byte {
-            b'\n' => self.newline(),
-            b'\r' => self.cursor_col = 0,
-            0x08 => {
-                self.cursor_col = self.cursor_col.saturating_sub(1);
-            }
-            b'\t' => {
-                self.cursor_col = (self.cursor_col + 8) & !7;
-                if self.cursor_col >= GRID_COLS {
-                    self.cursor_col = GRID_COLS - 1;
-                }
-            }
-            _ => {}
-        }
-    }
-
-    fn csi_dispatch(&mut self, params: &Params, _intermediates: &[u8], _ignore: bool, action: char) {
-        let param = |i: usize, default: usize| -> usize {
-            params
-                .iter()
-                .nth(i)
-                .and_then(|p| p.first().copied())
-                .map(|v| v as usize)
-                .filter(|v| *v > 0)
-                .unwrap_or(default)
-        };
-        match action {
-            'A' => self.cursor_row = self.cursor_row.saturating_sub(param(0, 1)),
-            'B' => self.cursor_row = (self.cursor_row + param(0, 1)).min(GRID_ROWS - 1),
-            'C' => self.cursor_col = (self.cursor_col + param(0, 1)).min(GRID_COLS - 1),
-            'D' => self.cursor_col = self.cursor_col.saturating_sub(param(0, 1)),
-            'E' => {
-                self.cursor_row = (self.cursor_row + param(0, 1)).min(GRID_ROWS - 1);
-                self.cursor_col = 0;
-            }
-            'F' => {
-                self.cursor_row = self.cursor_row.saturating_sub(param(0, 1));
-                self.cursor_col = 0;
-            }
-            'G' => self.cursor_col = param(0, 1).saturating_sub(1).min(GRID_COLS - 1),
-            'H' | 'f' => {
-                self.cursor_row = param(0, 1).saturating_sub(1).min(GRID_ROWS - 1);
-                self.cursor_col = param(1, 1).saturating_sub(1).min(GRID_COLS - 1);
-            }
-            'J' => self.clear_from_cursor(),
-            'K' => {
-                if self.cursor_row < GRID_ROWS {
-                    for c in self.cursor_col..GRID_COLS {
-                        self.cells[self.cursor_row][c] = TerminalCell::default();
-                    }
-                }
-            }
-            'm' => {
-                self.bold = params
-                    .iter()
-                    .any(|p| p.first().copied() == Some(1));
-                if params.iter().any(|p| p.first().copied() == Some(0))
-                    || params.is_empty()
-                {
-                    self.bold = false;
-                }
-            }
-            's' => self.saved = Some((self.cursor_row, self.cursor_col)),
-            'u' => {
-                if let Some((r, c)) = self.saved {
-                    self.cursor_row = r.min(GRID_ROWS - 1);
-                    self.cursor_col = c.min(GRID_COLS - 1);
-                }
-            }
-            _ => {}
-        }
-    }
-}
-
-fn flatten_rows(frame: &TerminalFrame) -> Vec<String> {
-    frame
-        .rows
-        .iter()
-        .map(|row| {
-            row.iter()
-                .map(|c| c.g.as_str())
-                .collect::<String>()
-                .trim_end()
-                .to_string()
-        })
-        .collect()
-}
-
-fn spawn_vt_thread(
-    attach_id: u64,
-    app: AppHandle,
-    lines: Arc<Mutex<Vec<String>>>,
-    rx: std::sync::mpsc::Receiver<TerminalCmd>,
-) {
-    std::thread::spawn(move || {
-        let mut parser = vte::Parser::new();
-        let mut grid = Grid::new();
-        while let Ok(cmd) = rx.recv() {
-            match cmd {
-                TerminalCmd::Feed(bytes) => {
-                    parser.advance(&mut grid, &bytes);
-                    let frame = grid.snapshot(attach_id);
-                    if let Ok(mut guard) = lines.lock() {
-                        *guard = flatten_rows(&frame);
-                    }
-                    let _ = app.emit("terminal-frame", frame);
-                }
-            }
-        }
-    });
-}
-
-// ---------------------------------------------------------------------------
-// Workshop WS bridge
-// ---------------------------------------------------------------------------
-
 fn ws_url_for(daemon_url: &str, path: &str) -> String {
     let base = daemon_url.trim_end_matches('/').replacen("http", "ws", 1);
     format!("{base}{path}")
-}
-
-fn ws_connect(
-    daemon_url: &str,
-    session_id: &str,
-) -> Result<WebSocket<MaybeTlsStream<std::net::TcpStream>>, String> {
-    let url = ws_url_for(
-        daemon_url,
-        &format!("/v1/sessions/shell/{}", urlencoding::encode(session_id)),
-    );
-    let (ws, _) = tungstenite::connect(&url).map_err(|e| e.to_string())?;
-    Ok(ws)
 }
 
 async fn daemon_get<T: serde::de::DeserializeOwned>(
@@ -334,7 +114,7 @@ pub async fn terminal_sessions(
     let value: serde_json::Value = daemon_get(&state, "/v1/sessions/shell").await?;
     Ok(value
         .get("sessions")
-        .and_then(|v| serde_json::from_value(v.clone()).ok())
+        .and_then(|value| serde_json::from_value(value.clone()).ok())
         .unwrap_or_default())
 }
 
@@ -375,88 +155,45 @@ pub async fn terminal_attach(
     registry: State<'_, TerminalRegistry>,
     session_id: String,
 ) -> Result<TerminalAttachResponse, String> {
-    let attach_id = NEXT_ATTACH_ID.fetch_add(1, Ordering::SeqCst);
-    let (tx, rx) = std::sync::mpsc::channel::<TerminalCmd>();
-    let lines: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
-
-    spawn_vt_thread(attach_id, app.clone(), Arc::clone(&lines), rx);
-
     let daemon_url = state
         .daemon_url
         .lock()
         .map_err(|_| "daemon url lock")?
         .clone();
-    let sid = session_id.clone();
-    let ws = tauri::async_runtime::spawn_blocking(move || ws_connect(&daemon_url, &sid))
-        .await
-        .map_err(|e| e.to_string())??;
+    let url = ws_url_for(
+        &daemon_url,
+        &format!(
+            "/v1/sessions/shell/{}",
+            urlencoding::encode(&session_id)
+        ),
+    );
+    let (websocket, _) = connect_async(&url).await.map_err(|error| error.to_string())?;
 
-    let (stdin_tx, stdin_rx) = std::sync::mpsc::channel::<Vec<u8>>();
-    let ws = std::sync::Arc::new(std::sync::Mutex::new(ws));
-    let ws_writer = std::sync::Arc::clone(&ws);
-    std::thread::spawn(move || {
-        while let Ok(bytes) = stdin_rx.recv() {
-            let frame = serde_json::json!({
-                "type": "stdin",
-                "data": base64::engine::general_purpose::STANDARD.encode(&bytes)
-            })
-            .to_string();
-            let Ok(mut guard) = ws_writer.lock() else {
-                break;
-            };
-            if guard.send(Message::Text(frame.into())).is_err() {
-                break;
-            }
-        }
-    });
-
-    let feed_tx = tx.clone();
-    let ws_reader = std::sync::Arc::clone(&ws);
-    std::thread::spawn(move || loop {
-        let msg = {
-            let Ok(mut guard) = ws_reader.lock() else {
-                break;
-            };
-            guard.read()
-        };
-        match msg {
-            Ok(Message::Text(text)) => {
-                let decoded = serde_json::from_str::<serde_json::Value>(&text)
-                    .ok()
-                    .filter(|v| v.get("type").and_then(|t| t.as_str()) == Some("stdout"))
-                    .and_then(|v| {
-                        let data = v.get("data").and_then(|d| d.as_str())?;
-                        base64::engine::general_purpose::STANDARD.decode(data).ok()
-                    });
-                if let Some(bytes) = decoded {
-                    if feed_tx.send(TerminalCmd::Feed(bytes)).is_err() {
-                        break;
-                    }
-                }
-            }
-            Ok(Message::Binary(bytes)) => {
-                if feed_tx.send(TerminalCmd::Feed(bytes.to_vec())).is_err() {
-                    break;
-                }
-            }
-            Ok(Message::Close(_)) | Err(_) => break,
-            _ => {}
-        }
-    });
+    let attach_id = NEXT_ATTACH_ID.fetch_add(1, Ordering::SeqCst);
+    let (outbound, outbound_rx) = mpsc::unbounded_channel();
+    let ready = Arc::new(Notify::new());
+    let cancel = CancellationToken::new();
 
     registry
         .lock()
         .map_err(|_| "terminal registry lock")?
         .insert(
             attach_id,
-            Arc::new(TerminalHandle {
-                attach_id,
-                input: tx,
-                lines,
-                stdin: stdin_tx,
-                session_id: session_id.clone(),
-            }),
+            TerminalHandle {
+                outbound,
+                ready: Arc::clone(&ready),
+                cancel: cancel.clone(),
+            },
         );
+
+    tauri::async_runtime::spawn(run_terminal_transport(
+        attach_id,
+        app,
+        websocket,
+        outbound_rx,
+        ready,
+        cancel,
+    ));
 
     Ok(TerminalAttachResponse {
         attach_id,
@@ -464,54 +201,156 @@ pub async fn terminal_attach(
     })
 }
 
+async fn run_terminal_transport<S>(
+    attach_id: u64,
+    app: AppHandle,
+    websocket: tokio_tungstenite::WebSocketStream<S>,
+    mut outbound: mpsc::UnboundedReceiver<TerminalClientFrame>,
+    ready: Arc<Notify>,
+    cancel: CancellationToken,
+) where
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+{
+    tokio::select! {
+        _ = ready.notified() => {}
+        _ = cancel.cancelled() => return,
+    }
+
+    let (mut ws_tx, mut ws_rx) = websocket.split();
+    let _ = app.emit(
+        "terminal-status",
+        TerminalStatus {
+            attach_id,
+            connected: true,
+            message: None,
+        },
+    );
+
+    let disconnect_message = loop {
+        tokio::select! {
+            _ = cancel.cancelled() => {
+                let _ = ws_tx.close().await;
+                return;
+            }
+            command = outbound.recv() => {
+                let Some(command) = command else {
+                    let _ = ws_tx.close().await;
+                    return;
+                };
+                let frame = match command {
+                    TerminalClientFrame::Stdin(bytes) => serde_json::json!({
+                        "type": "stdin",
+                        "data": base64::engine::general_purpose::STANDARD.encode(bytes),
+                    }),
+                    TerminalClientFrame::Resize { cols, rows } => serde_json::json!({
+                        "type": "resize",
+                        "cols": cols,
+                        "rows": rows,
+                    }),
+                };
+                if let Err(error) = ws_tx.send(Message::Text(frame.to_string().into())).await {
+                    break Some(error.to_string());
+                }
+            }
+            message = ws_rx.next() => {
+                match message {
+                    Some(Ok(Message::Text(text))) => {
+                        if let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) {
+                            if value.get("type").and_then(|value| value.as_str()) == Some("stdout") {
+                                if let Some(data) = value.get("data").and_then(|value| value.as_str()) {
+                                    let _ = app.emit(
+                                        "terminal-output",
+                                        TerminalOutput {
+                                            attach_id,
+                                            data: data.to_string(),
+                                        },
+                                    );
+                                }
+                            }
+                        }
+                    }
+                    Some(Ok(Message::Binary(bytes))) => {
+                        let _ = app.emit(
+                            "terminal-output",
+                            TerminalOutput {
+                                attach_id,
+                                data: base64::engine::general_purpose::STANDARD.encode(bytes),
+                            },
+                        );
+                    }
+                    Some(Ok(Message::Close(frame))) => {
+                        break frame.map(|frame| frame.reason.to_string());
+                    }
+                    Some(Err(error)) => break Some(error.to_string()),
+                    None => break None,
+                    _ => {}
+                }
+            }
+        }
+    };
+
+    let _ = app.emit(
+        "terminal-status",
+        TerminalStatus {
+            attach_id,
+            connected: false,
+            message: disconnect_message,
+        },
+    );
+}
+
 #[tauri::command]
-pub async fn terminal_feed(
+pub async fn terminal_ready(
+    registry: State<'_, TerminalRegistry>,
+    attach_id: u64,
+) -> Result<(), String> {
+    let handles = registry.lock().map_err(|_| "terminal registry lock")?;
+    let handle = handles
+        .get(&attach_id)
+        .ok_or_else(|| "unknown attach_id".to_string())?;
+    handle.ready.notify_one();
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn terminal_write(
     registry: State<'_, TerminalRegistry>,
     attach_id: u64,
     data: String,
 ) -> Result<(), String> {
-    let handles = registry.lock().map_err(|_| "terminal registry lock")?;
-    let Some(handle) = handles.get(&attach_id) else {
-        return Err("unknown attach_id".into());
-    };
     let bytes = base64::engine::general_purpose::STANDARD
-        .decode(&data)
-        .map_err(|e| e.to_string())?;
-    handle
-        .input
-        .send(TerminalCmd::Feed(bytes))
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn terminal_key(
-    registry: State<'_, TerminalRegistry>,
-    attach_id: u64,
-    key: String,
-    ctrl: bool,
-    alt: bool,
-    shift: bool,
-) -> Result<(), String> {
-    let bytes = encode_key(&key, ctrl, alt, shift)
-        .ok_or_else(|| format!("unsupported key: {key}"))?;
-    send_stdin(&registry, attach_id, &bytes).await
+        .decode(data)
+        .map_err(|error| error.to_string())?;
+    send_frame(&registry, attach_id, TerminalClientFrame::Stdin(bytes))
 }
 
 #[tauri::command]
 pub async fn terminal_resize(
     registry: State<'_, TerminalRegistry>,
     attach_id: u64,
-    _cols: u16,
-    _rows: u16,
+    cols: u16,
+    rows: u16,
 ) -> Result<(), String> {
-    // v1: fixed grid. Resize plumbing to the workshop lands when
-    // medousa-session exposes PTY master resize; keep the command so the UI
-    // can call it today without breaking.
+    if cols == 0 || rows == 0 {
+        return Ok(());
+    }
+    send_frame(
+        &registry,
+        attach_id,
+        TerminalClientFrame::Resize { cols, rows },
+    )
+}
+
+fn send_frame(
+    registry: &State<'_, TerminalRegistry>,
+    attach_id: u64,
+    frame: TerminalClientFrame,
+) -> Result<(), String> {
     let handles = registry.lock().map_err(|_| "terminal registry lock")?;
-    let Some(_handle) = handles.get(&attach_id) else {
-        return Err("unknown attach_id".into());
-    };
-    Ok(())
+    let handle = handles
+        .get(&attach_id)
+        .ok_or_else(|| "unknown attach_id".to_string())?;
+    handle.outbound.send(frame).map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -519,78 +358,12 @@ pub async fn terminal_detach(
     registry: State<'_, TerminalRegistry>,
     attach_id: u64,
 ) -> Result<(), String> {
-    registry
+    if let Some(handle) = registry
         .lock()
         .map_err(|_| "terminal registry lock")?
-        .remove(&attach_id);
+        .remove(&attach_id)
+    {
+        handle.cancel.cancel();
+    }
     Ok(())
 }
-
-#[tauri::command]
-pub async fn terminal_snapshot(
-    registry: State<'_, TerminalRegistry>,
-    attach_id: u64,
-) -> Result<Vec<String>, String> {
-    let lines = {
-        let handles = registry.lock().map_err(|_| "terminal registry lock")?;
-        handles
-            .get(&attach_id)
-            .map(|h| Arc::clone(&h.lines))
-            .ok_or_else(|| "unknown attach_id".to_string())?
-    };
-    let guard = lines.lock().map_err(|_| "lines lock")?;
-    Ok(guard.clone())
-}
-
-async fn send_stdin(
-    registry: &State<'_, TerminalRegistry>,
-    attach_id: u64,
-    bytes: &[u8],
-) -> Result<(), String> {
-    let handles = registry.lock().map_err(|_| "terminal registry lock")?;
-    let Some(handle) = handles.get(&attach_id) else {
-        return Err("unknown attach_id".into());
-    };
-    handle.stdin.send(bytes.to_vec()).map_err(|e| e.to_string())
-}
-
-fn encode_key(key: &str, ctrl: bool, alt: bool, shift: bool) -> Option<Vec<u8>> {
-    if key.len() == 1 {
-        let ch = key.chars().next()?;
-        let mut bytes = if ctrl {
-            if ch.is_ascii_alphabetic() {
-                vec![(ch.to_ascii_lowercase() as u8) & 0x1f]
-            } else {
-                return None;
-            }
-        } else {
-            let mut s = String::new();
-            if alt {
-                s.push('\x1b');
-            }
-            s.push(if shift { ch.to_ascii_uppercase() } else { ch });
-            s.into_bytes()
-        };
-        if alt && ctrl {
-            bytes.insert(0, 0x1b);
-        }
-        return Some(bytes);
-    }
-    match key {
-        "enter" => Some(b"\r".to_vec()),
-        "backspace" => Some(b"\x7f".to_vec()),
-        "tab" => Some(b"\t".to_vec()),
-        "escape" => Some(b"\x1b".to_vec()),
-        "up" => Some(b"\x1b[A".to_vec()),
-        "down" => Some(b"\x1b[B".to_vec()),
-        "right" => Some(b"\x1b[C".to_vec()),
-        "left" => Some(b"\x1b[D".to_vec()),
-        "home" => Some(b"\x1b[H".to_vec()),
-        "end" => Some(b"\x1b[F".to_vec()),
-        "delete" => Some(b"\x1b[3~".to_vec()),
-        "pageup" => Some(b"\x1b[5~".to_vec()),
-        "pagedown" => Some(b"\x1b[6~".to_vec()),
-        _ => None,
-    }
-}
-

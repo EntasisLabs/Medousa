@@ -20,11 +20,15 @@ export type TerminalAttachResponse = {
   session_id: string;
 };
 
-export type TerminalFrame = {
+export type TerminalOutput = {
   attach_id: number;
-  rows: { g: string; bold: boolean }[][];
-  cursor_row: number;
-  cursor_col: number;
+  data: string;
+};
+
+export type TerminalStatus = {
+  attach_id: number;
+  connected: boolean;
+  message: string | null;
 };
 
 export async function terminalInfo(): Promise<TerminalInfo> {
@@ -47,14 +51,12 @@ export async function terminalAttach(sessionId: string): Promise<TerminalAttachR
   return invoke<TerminalAttachResponse>("terminal_attach", { sessionId });
 }
 
-export async function terminalKey(
-  attachId: number,
-  key: string,
-  ctrl: boolean,
-  alt: boolean,
-  shift: boolean,
-): Promise<void> {
-  return invoke("terminal_key", { attachId, key, ctrl, alt, shift });
+export async function terminalReady(attachId: number): Promise<void> {
+  return invoke("terminal_ready", { attachId });
+}
+
+export async function terminalWrite(attachId: number, data: string): Promise<void> {
+  return invoke("terminal_write", { attachId, data });
 }
 
 export async function terminalResize(
@@ -71,8 +73,4 @@ export async function terminalInterrupt(sessionId: string): Promise<unknown> {
 
 export async function terminalDetach(attachId: number): Promise<void> {
   return invoke("terminal_detach", { attachId });
-}
-
-export async function terminalSnapshot(attachId: number): Promise<string[]> {
-  return invoke<string[]>("terminal_snapshot", { attachId });
 }

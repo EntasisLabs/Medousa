@@ -206,15 +206,36 @@ async fn handle_ws(socket: WebSocket, session: Option<Arc<crate::session::Sessio
     let mut output_rx = session.output.subscribe();
     let (mut ws_tx, mut ws_rx) = socket.split();
 
+    let replay = session.output_snapshot();
+    let replay_session = Arc::clone(&session);
     let fanout = tokio::spawn(async move {
-        while let Ok(bytes) = output_rx.recv().await {
-            let frame = json!({
-                "type": "stdout",
-                "data": base64::engine::general_purpose::STANDARD.encode(&bytes)
-            })
-            .to_string();
-            if ws_tx.send(Message::Text(frame.into())).await.is_err() {
-                break;
+        let mut last_sequence = 0;
+        for chunk in replay {
+            last_sequence = last_sequence.max(chunk.sequence);
+            if send_output_chunk(&mut ws_tx, &chunk).await.is_err() {
+                return;
+            }
+        }
+        loop {
+            match output_rx.recv().await {
+                Ok(chunk) if chunk.sequence > last_sequence => {
+                    last_sequence = chunk.sequence;
+                    if send_output_chunk(&mut ws_tx, &chunk).await.is_err() {
+                        return;
+                    }
+                }
+                Ok(_) => {}
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                    for chunk in replay_session.output_snapshot() {
+                        if chunk.sequence > last_sequence {
+                            last_sequence = chunk.sequence;
+                            if send_output_chunk(&mut ws_tx, &chunk).await.is_err() {
+                                return;
+                            }
+                        }
+                    }
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => return,
             }
         }
     });
@@ -237,11 +258,26 @@ async fn handle_ws(socket: WebSocket, session: Option<Arc<crate::session::Sessio
                 };
                 let _ = session.write(&bytes);
             }
-            Some(ClientFrame::Resize { cols, rows }) => session.resize(cols, rows),
+            Some(ClientFrame::Resize { cols, rows }) => {
+                let _ = session.resize(cols, rows);
+            }
             None => {}
         }
     }
     fanout.abort();
+}
+
+async fn send_output_chunk(
+    ws_tx: &mut futures_util::stream::SplitSink<WebSocket, Message>,
+    chunk: &crate::session::OutputChunk,
+) -> Result<(), axum::Error> {
+    let frame = json!({
+        "type": "stdout",
+        "sequence": chunk.sequence,
+        "data": base64::engine::general_purpose::STANDARD.encode(&chunk.bytes)
+    })
+    .to_string();
+    ws_tx.send(Message::Text(frame.into())).await
 }
 
 #[derive(Deserialize)]

@@ -1,13 +1,13 @@
 //! Session model + PTY lifecycle (portable-pty).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::io::{Read, Write};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use portable_pty::{CommandBuilder, PtySize, native_pty_system};
+use portable_pty::{CommandBuilder, MasterPty, PtySize, native_pty_system};
 use serde::{Deserialize, Serialize};
 use tokio::sync::{RwLock, broadcast};
 use uuid::Uuid;
@@ -57,15 +57,31 @@ pub struct SessionMeta {
 }
 
 struct PtyHandles {
+    master: Mutex<Box<dyn MasterPty + Send>>,
     writer: Mutex<Box<dyn Write + Send>>,
     kill: Mutex<Box<dyn portable_pty::ChildKiller + Send>>,
     exited: Arc<AtomicBool>,
 }
 
+#[derive(Clone, Debug)]
+pub struct OutputChunk {
+    pub sequence: u64,
+    pub bytes: Vec<u8>,
+}
+
+#[derive(Default)]
+struct OutputHistory {
+    chunks: VecDeque<OutputChunk>,
+    bytes: usize,
+}
+
+const OUTPUT_HISTORY_BYTES: usize = 2 * 1024 * 1024;
+
 pub struct Session {
     pub meta: SessionMeta,
     /// Fan-out of raw PTY output bytes to all attaches + agent readers.
-    pub output: broadcast::Sender<Vec<u8>>,
+    pub output: broadcast::Sender<OutputChunk>,
+    output_history: Arc<Mutex<OutputHistory>>,
     pty: PtyHandles,
 }
 
@@ -113,16 +129,35 @@ impl Session {
 
         let mut reader = pair.master.try_clone_reader()?;
         let writer = pair.master.take_writer()?;
+        let master = pair.master;
 
         let (output, _) = broadcast::channel(4096);
         let output_reader = output.clone();
+        let output_history = Arc::new(Mutex::new(OutputHistory::default()));
+        let history_reader = Arc::clone(&output_history);
+        let next_sequence = Arc::new(AtomicU64::new(1));
+        let sequence_reader = Arc::clone(&next_sequence);
         std::thread::spawn(move || {
             let mut buf = [0u8; 8192];
             loop {
                 match reader.read(&mut buf) {
                     Ok(0) => break,
                     Ok(n) => {
-                        let _ = output_reader.send(buf[..n].to_vec());
+                        let chunk = OutputChunk {
+                            sequence: sequence_reader.fetch_add(1, Ordering::Relaxed),
+                            bytes: buf[..n].to_vec(),
+                        };
+                        if let Ok(mut history) = history_reader.lock() {
+                            history.bytes += chunk.bytes.len();
+                            history.chunks.push_back(chunk.clone());
+                            while history.bytes > OUTPUT_HISTORY_BYTES {
+                                let Some(removed) = history.chunks.pop_front() else {
+                                    break;
+                                };
+                                history.bytes = history.bytes.saturating_sub(removed.bytes.len());
+                            }
+                        }
+                        let _ = output_reader.send(chunk);
                     }
                     Err(_) => break,
                 }
@@ -139,7 +174,9 @@ impl Session {
                 last_activity: Arc::new(RwLock::new(Instant::now())),
             },
             output,
+            output_history,
             pty: PtyHandles {
+                master: Mutex::new(master),
                 writer: Mutex::new(writer),
                 kill: Mutex::new(killer),
                 exited,
@@ -158,9 +195,29 @@ impl Session {
         Ok(())
     }
 
-    pub fn resize(&self, _cols: u16, _rows: u16) {
-        // portable-pty PtyMaster::resize requires keeping the master alive; v1
-        // accepts resize frames without reparenting the slave.
+    pub fn resize(&self, cols: u16, rows: u16) -> anyhow::Result<()> {
+        if cols == 0 || rows == 0 {
+            return Ok(());
+        }
+        let master = self
+            .pty
+            .master
+            .lock()
+            .map_err(|_| anyhow::anyhow!("pty master poisoned"))?;
+        master.resize(PtySize {
+            rows,
+            cols,
+            pixel_width: 0,
+            pixel_height: 0,
+        })?;
+        Ok(())
+    }
+
+    pub fn output_snapshot(&self) -> Vec<OutputChunk> {
+        self.output_history
+            .lock()
+            .map(|history| history.chunks.iter().cloned().collect())
+            .unwrap_or_default()
     }
 
     pub fn signal_interrupt(&self) {
@@ -269,7 +326,7 @@ mod tests {
         for _ in 0..20 {
             match tokio::time::timeout(Duration::from_millis(500), rx.recv()).await {
                 Ok(Ok(chunk)) => {
-                    collected.push_str(&String::from_utf8_lossy(&chunk));
+                    collected.push_str(&String::from_utf8_lossy(&chunk.bytes));
                     if collected.contains("hello") {
                         break;
                     }
@@ -279,5 +336,29 @@ mod tests {
         }
         session.kill();
         assert!(collected.contains("hello"), "got: {collected:?}");
+        assert!(
+            session
+                .output_snapshot()
+                .iter()
+                .any(|chunk| String::from_utf8_lossy(&chunk.bytes).contains("hello")),
+            "output history did not retain the PTY transcript"
+        );
+    }
+
+    #[tokio::test]
+    async fn resizes_the_real_pty_master() {
+        let dir = tempfile::tempdir().unwrap();
+        let mgr = SessionManager::new(dir.path().to_path_buf());
+        let session = mgr
+            .create(SessionRootKind::Scripts, None, None)
+            .await
+            .unwrap();
+
+        session.resize(132, 43).unwrap();
+        let size = session.pty.master.lock().unwrap().get_size().unwrap();
+
+        session.kill();
+        assert_eq!(size.cols, 132);
+        assert_eq!(size.rows, 43);
     }
 }
