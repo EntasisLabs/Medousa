@@ -7,6 +7,13 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.7.1] — 2026-07-31
+
+### Fixed
+
+- **Windows project access** — repository discovery now recognizes mounted Windows drive roots, so projects under paths such as `C:\\...` can be opened outside the user profile without weakening canonical path containment.
+- **Windows console flashing** — captured Git, project-check, and repository-provider subprocesses no longer create visible console windows. Interactive PTY terminals remain unchanged.
+
 ## [0.7.0] — 2026-07-31
 
 ### Added

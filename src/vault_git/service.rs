@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use anyhow::{anyhow, bail, Context, Result};
-use medousa_host::find_command_in_path;
+use medousa_host::{find_command_in_path, hide_subprocess_window};
 use medousa_install_support::shared_bin_dir;
 use serde::{Deserialize, Serialize};
 
@@ -62,7 +62,9 @@ pub fn resolve_git_binary() -> Option<PathBuf> {
 }
 
 fn run_git(git: &Path, cwd: &Path, args: &[&str]) -> Result<String> {
-    let output = Command::new(git)
+    let mut command = Command::new(git);
+    hide_subprocess_window(&mut command);
+    let output = command
         .args(args)
         .current_dir(cwd)
         .output()
