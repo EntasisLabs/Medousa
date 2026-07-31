@@ -14,8 +14,8 @@ use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, State};
 use tokio::sync::{mpsc, Notify};
-use tokio_util::sync::CancellationToken;
 use tokio_tungstenite::{connect_async, tungstenite::Message};
+use tokio_util::sync::CancellationToken;
 
 use crate::daemon::sdk::client;
 use crate::daemon::DaemonState;
@@ -71,11 +71,27 @@ struct TerminalStatus {
     message: Option<String>,
 }
 
+#[derive(Clone, Debug, Serialize)]
+struct TerminalResizeAck {
+    attach_id: u64,
+    cols: u16,
+    rows: u16,
+}
+
+#[derive(Clone, Debug, Serialize)]
+struct TerminalProtocolError {
+    attach_id: u64,
+    code: String,
+    message: String,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct TerminalCreateInput {
     pub work_id: Option<String>,
     pub cwd: Option<String>,
     pub lease_id: Option<String>,
+    pub cols: Option<u16>,
+    pub rows: Option<u16>,
 }
 
 fn ws_url_for(daemon_url: &str, path: &str) -> String {
@@ -87,7 +103,11 @@ async fn daemon_get<T: serde::de::DeserializeOwned>(
     state: &State<'_, DaemonState>,
     path: &str,
 ) -> Result<T, String> {
-    client(state).http().get(path).await.map_err(|e| e.to_string())
+    client(state)
+        .http()
+        .get(path)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 async fn daemon_post<T: serde::de::DeserializeOwned, B: serde::Serialize>(
@@ -143,6 +163,8 @@ pub async fn terminal_create(
             "work_id": input.work_id,
             "cwd": input.cwd,
             "lease_id": input.lease_id,
+            "cols": input.cols.unwrap_or(80),
+            "rows": input.rows.unwrap_or(24),
         }),
     )
     .await
@@ -154,6 +176,8 @@ pub async fn terminal_attach(
     state: State<'_, DaemonState>,
     registry: State<'_, TerminalRegistry>,
     session_id: String,
+    cols: u16,
+    rows: u16,
 ) -> Result<TerminalAttachResponse, String> {
     let daemon_url = state
         .daemon_url
@@ -162,12 +186,11 @@ pub async fn terminal_attach(
         .clone();
     let url = ws_url_for(
         &daemon_url,
-        &format!(
-            "/v1/sessions/shell/{}",
-            urlencoding::encode(&session_id)
-        ),
+        &format!("/v1/sessions/shell/{}", urlencoding::encode(&session_id)),
     );
-    let (websocket, _) = connect_async(&url).await.map_err(|error| error.to_string())?;
+    let (websocket, _) = connect_async(&url)
+        .await
+        .map_err(|error| error.to_string())?;
 
     let attach_id = NEXT_ATTACH_ID.fetch_add(1, Ordering::SeqCst);
     let (outbound, outbound_rx) = mpsc::unbounded_channel();
@@ -193,6 +216,8 @@ pub async fn terminal_attach(
         outbound_rx,
         ready,
         cancel,
+        cols,
+        rows,
     ));
 
     Ok(TerminalAttachResponse {
@@ -208,6 +233,8 @@ async fn run_terminal_transport<S>(
     mut outbound: mpsc::UnboundedReceiver<TerminalClientFrame>,
     ready: Arc<Notify>,
     cancel: CancellationToken,
+    initial_cols: u16,
+    initial_rows: u16,
 ) where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
 {
@@ -217,6 +244,25 @@ async fn run_terminal_transport<S>(
     }
 
     let (mut ws_tx, mut ws_rx) = websocket.split();
+    let initial_resize = serde_json::json!({
+        "type": "resize",
+        "cols": initial_cols.max(2),
+        "rows": initial_rows.max(1),
+    });
+    if let Err(error) = ws_tx
+        .send(Message::Text(initial_resize.to_string().into()))
+        .await
+    {
+        let _ = app.emit(
+            "terminal-status",
+            TerminalStatus {
+                attach_id,
+                connected: false,
+                message: Some(error.to_string()),
+            },
+        );
+        return;
+    }
     let _ = app.emit(
         "terminal-status",
         TerminalStatus {
@@ -256,16 +302,54 @@ async fn run_terminal_transport<S>(
                 match message {
                     Some(Ok(Message::Text(text))) => {
                         if let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) {
-                            if value.get("type").and_then(|value| value.as_str()) == Some("stdout") {
-                                if let Some(data) = value.get("data").and_then(|value| value.as_str()) {
+                            match value.get("type").and_then(|value| value.as_str()) {
+                                Some("stdout") => {
+                                    if let Some(data) =
+                                        value.get("data").and_then(|value| value.as_str())
+                                    {
+                                        let _ = app.emit(
+                                            "terminal-output",
+                                            TerminalOutput {
+                                                attach_id,
+                                                data: data.to_string(),
+                                            },
+                                        );
+                                    }
+                                }
+                                Some("resize") => {
+                                    if let (Some(cols), Some(rows)) = (
+                                        value.get("cols").and_then(|value| value.as_u64()),
+                                        value.get("rows").and_then(|value| value.as_u64()),
+                                    ) {
+                                        let _ = app.emit(
+                                            "terminal-resize",
+                                            TerminalResizeAck {
+                                                attach_id,
+                                                cols: cols.min(u16::MAX as u64) as u16,
+                                                rows: rows.min(u16::MAX as u64) as u16,
+                                            },
+                                        );
+                                    }
+                                }
+                                Some("error") => {
                                     let _ = app.emit(
-                                        "terminal-output",
-                                        TerminalOutput {
+                                        "terminal-error",
+                                        TerminalProtocolError {
                                             attach_id,
-                                            data: data.to_string(),
+                                            code: value
+                                                .get("code")
+                                                .and_then(|value| value.as_str())
+                                                .unwrap_or("terminal_protocol_error")
+                                                .to_string(),
+                                            message: value
+                                                .get("message")
+                                                .and_then(|value| value.as_str())
+                                                .unwrap_or("terminal protocol error")
+                                                .to_string(),
                                         },
                                     );
                                 }
+                                _ => {}
                             }
                         }
                     }
@@ -350,7 +434,10 @@ fn send_frame(
     let handle = handles
         .get(&attach_id)
         .ok_or_else(|| "unknown attach_id".to_string())?;
-    handle.outbound.send(frame).map_err(|error| error.to_string())
+    handle
+        .outbound
+        .send(frame)
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]

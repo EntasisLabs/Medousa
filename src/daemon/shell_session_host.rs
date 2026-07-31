@@ -25,7 +25,7 @@ use crate::grapheme_script::store::GraphemeScriptStore;
 use crate::paths::medousa_data_dir;
 
 const DEFAULT_BIND: &str = "127.0.0.1:7862";
-const EXPECTED_API_REVISION: u32 = 1;
+const EXPECTED_API_REVISION: u32 = 2;
 
 #[derive(Debug, Default)]
 pub struct ShellSessionHost {
@@ -64,10 +64,6 @@ fn resolve_session_binary() -> Option<PathBuf> {
             return Some(p);
         }
     }
-    let data_bin = medousa_data_dir().join("bin").join(binary_name());
-    if data_bin.is_file() {
-        return Some(data_bin);
-    }
     if let Ok(exe) = std::env::current_exe()
         && let Some(dir) = exe.parent()
     {
@@ -75,6 +71,10 @@ fn resolve_session_binary() -> Option<PathBuf> {
         if candidate.is_file() {
             return Some(candidate);
         }
+    }
+    let data_bin = medousa_data_dir().join("bin").join(binary_name());
+    if data_bin.is_file() {
+        return Some(data_bin);
     }
     which_bin(binary_name())
 }
@@ -283,6 +283,18 @@ pub struct CreateSessionBody {
     /// Optional Forge lease id — enables command-log staging for evidence.
     #[serde(default)]
     pub lease_id: Option<String>,
+    #[serde(default = "default_terminal_cols")]
+    pub cols: u16,
+    #[serde(default = "default_terminal_rows")]
+    pub rows: u16,
+}
+
+fn default_terminal_cols() -> u16 {
+    80
+}
+
+fn default_terminal_rows() -> u16 {
+    24
 }
 
 async fn create_session(
@@ -306,7 +318,12 @@ async fn create_session(
         cwd = Some(env.worktree.to_string_lossy().into_owned());
         work_id = Some(wid.to_string());
     }
-    let payload = serde_json::json!({ "work_id": work_id, "cwd": cwd });
+    let payload = serde_json::json!({
+        "work_id": work_id,
+        "cwd": cwd,
+        "cols": body.cols,
+        "rows": body.rows,
+    });
     let mut response = proxy_http(&state, "POST", "/v1/sessions/shell", Some(payload)).await?;
 
     if let (Some(lease_id), Some(wid)) = (

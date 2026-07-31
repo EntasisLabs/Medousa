@@ -78,6 +78,10 @@ pub struct CreateSessionBody {
     pub work_id: Option<String>,
     #[serde(default)]
     pub cwd: Option<String>,
+    #[serde(default = "default_cols")]
+    pub cols: u16,
+    #[serde(default = "default_rows")]
+    pub rows: u16,
 }
 
 #[derive(Serialize)]
@@ -88,7 +92,17 @@ pub struct CreateSessionResponse {
     pub root_kind: String,
     pub work_id: Option<String>,
     pub ws_path: String,
+    pub cols: u16,
+    pub rows: u16,
     pub message: String,
+}
+
+fn default_cols() -> u16 {
+    80
+}
+
+fn default_rows() -> u16 {
+    24
 }
 
 pub fn app(state: SessionHostState) -> Router {
@@ -164,8 +178,17 @@ async fn create_session(
     }
     let session = state
         .manager
-        .create(root_kind, Some(cwd), body.work_id.clone())
+        .create_with_size(
+            root_kind,
+            Some(cwd),
+            body.work_id.clone(),
+            body.cols,
+            body.rows,
+        )
         .await
+        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let size = session
+        .size()
         .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     Ok(Json(CreateSessionResponse {
         ok: true,
@@ -177,6 +200,8 @@ async fn create_session(
         },
         work_id: session.meta.work_id.clone(),
         ws_path: format!("/v1/sessions/shell/{}", session.meta.session_id),
+        cols: size.cols,
+        rows: size.rows,
         message: "session created".into(),
     }))
 }
@@ -207,17 +232,17 @@ async fn handle_ws(socket: WebSocket, session: Option<Arc<crate::session::Sessio
     let (mut ws_tx, mut ws_rx) = socket.split();
 
     let replay = session.output_snapshot();
-    let replay_session = Arc::clone(&session);
-    let fanout = tokio::spawn(async move {
-        let mut last_sequence = 0;
-        for chunk in replay {
-            last_sequence = last_sequence.max(chunk.sequence);
-            if send_output_chunk(&mut ws_tx, &chunk).await.is_err() {
-                return;
-            }
+    let mut last_sequence = 0;
+    for chunk in replay {
+        last_sequence = last_sequence.max(chunk.sequence);
+        if send_output_chunk(&mut ws_tx, &chunk).await.is_err() {
+            return;
         }
-        loop {
-            match output_rx.recv().await {
+    }
+
+    loop {
+        tokio::select! {
+            output = output_rx.recv() => match output {
                 Ok(chunk) if chunk.sequence > last_sequence => {
                     last_sequence = chunk.sequence;
                     if send_output_chunk(&mut ws_tx, &chunk).await.is_err() {
@@ -226,7 +251,7 @@ async fn handle_ws(socket: WebSocket, session: Option<Arc<crate::session::Sessio
                 }
                 Ok(_) => {}
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
-                    for chunk in replay_session.output_snapshot() {
+                    for chunk in session.output_snapshot() {
                         if chunk.sequence > last_sequence {
                             last_sequence = chunk.sequence;
                             if send_output_chunk(&mut ws_tx, &chunk).await.is_err() {
@@ -235,36 +260,51 @@ async fn handle_ws(socket: WebSocket, session: Option<Arc<crate::session::Sessio
                         }
                     }
                 }
-                Err(tokio::sync::broadcast::error::RecvError::Closed) => return,
-            }
-        }
-    });
-
-    while let Some(Ok(msg)) = ws_rx.next().await {
-        session.touch().await;
-        let parsed = match &msg {
-            Message::Text(t) => serde_json::from_str::<ClientFrame>(t).ok(),
-            Message::Binary(b) => {
-                let _ = session.write(b);
-                None
-            }
-            Message::Close(_) => break,
-            _ => None,
-        };
-        match parsed {
-            Some(ClientFrame::Stdin { data }) => {
-                let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(&data) else {
-                    continue;
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+            },
+            message = ws_rx.next() => {
+                let Some(Ok(message)) = message else {
+                    break;
                 };
-                let _ = session.write(&bytes);
+                session.touch().await;
+                let parsed = match &message {
+                    Message::Text(text) => serde_json::from_str::<ClientFrame>(text).ok(),
+                    Message::Binary(bytes) => {
+                        let _ = session.write(bytes);
+                        None
+                    }
+                    Message::Close(_) => break,
+                    _ => None,
+                };
+                match parsed {
+                    Some(ClientFrame::Stdin { data }) => {
+                        let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(&data) else {
+                            continue;
+                        };
+                        let _ = session.write(&bytes);
+                    }
+                    Some(ClientFrame::Resize { cols, rows }) => {
+                        match session.resize(cols, rows) {
+                            Ok(size) => {
+                                if send_resize_ack(&mut ws_tx, size.cols, size.rows).await.is_err() {
+                                    break;
+                                }
+                            }
+                            Err(error) => {
+                                if send_protocol_error(&mut ws_tx, "resize_failed", &error.to_string())
+                                    .await
+                                    .is_err()
+                                {
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    None => {}
+                }
             }
-            Some(ClientFrame::Resize { cols, rows }) => {
-                let _ = session.resize(cols, rows);
-            }
-            None => {}
         }
     }
-    fanout.abort();
 }
 
 async fn send_output_chunk(
@@ -275,6 +315,34 @@ async fn send_output_chunk(
         "type": "stdout",
         "sequence": chunk.sequence,
         "data": base64::engine::general_purpose::STANDARD.encode(&chunk.bytes)
+    })
+    .to_string();
+    ws_tx.send(Message::Text(frame.into())).await
+}
+
+async fn send_resize_ack(
+    ws_tx: &mut futures_util::stream::SplitSink<WebSocket, Message>,
+    cols: u16,
+    rows: u16,
+) -> Result<(), axum::Error> {
+    let frame = json!({
+        "type": "resize",
+        "cols": cols,
+        "rows": rows
+    })
+    .to_string();
+    ws_tx.send(Message::Text(frame.into())).await
+}
+
+async fn send_protocol_error(
+    ws_tx: &mut futures_util::stream::SplitSink<WebSocket, Message>,
+    code: &str,
+    message: &str,
+) -> Result<(), axum::Error> {
+    let frame = json!({
+        "type": "error",
+        "code": code,
+        "message": message
     })
     .to_string();
     ws_tx.send(Message::Text(frame.into())).await

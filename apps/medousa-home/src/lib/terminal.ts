@@ -31,6 +31,18 @@ export type TerminalStatus = {
   message: string | null;
 };
 
+export type TerminalResizeAck = {
+  attach_id: number;
+  cols: number;
+  rows: number;
+};
+
+export type TerminalProtocolError = {
+  attach_id: number;
+  code: string;
+  message: string;
+};
+
 export async function terminalInfo(): Promise<TerminalInfo> {
   return invoke<TerminalInfo>("terminal_info");
 }
@@ -43,12 +55,18 @@ export async function terminalCreate(input: {
   work_id?: string | null;
   cwd?: string | null;
   lease_id?: string | null;
+  cols?: number;
+  rows?: number;
 }): Promise<{ session_id?: string } & Record<string, unknown>> {
   return invoke("terminal_create", { input });
 }
 
-export async function terminalAttach(sessionId: string): Promise<TerminalAttachResponse> {
-  return invoke<TerminalAttachResponse>("terminal_attach", { sessionId });
+export async function terminalAttach(
+  sessionId: string,
+  cols: number,
+  rows: number,
+): Promise<TerminalAttachResponse> {
+  return invoke<TerminalAttachResponse>("terminal_attach", { sessionId, cols, rows });
 }
 
 export async function terminalReady(attachId: number): Promise<void> {

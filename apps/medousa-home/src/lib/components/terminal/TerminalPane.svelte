@@ -16,6 +16,8 @@
     terminalSessions,
     terminalWrite,
     type TerminalOutput,
+    type TerminalProtocolError,
+    type TerminalResizeAck,
     type TerminalSessionSummary,
     type TerminalStatus,
   } from "$lib/terminal";
@@ -48,15 +50,22 @@
   let connected = $state(false);
   let terminalCols = $state(0);
   let terminalRows = $state(0);
+  let ptyCols = $state(0);
+  let ptyRows = $state(0);
 
   let terminal: XTerm | null = null;
   let fitAddon: FitAddon | null = null;
   let outputUnlisten: UnlistenFn | null = null;
   let statusUnlisten: UnlistenFn | null = null;
+  let resizeUnlisten: UnlistenFn | null = null;
+  let errorUnlisten: UnlistenFn | null = null;
   let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  let geometryTimer: ReturnType<typeof setTimeout> | null = null;
   let resizeObserver: ResizeObserver | null = null;
   let resizeFrame: number | null = null;
   let connectGeneration = 0;
+  let requestedCols = 0;
+  let requestedRows = 0;
   let inputQueue = Promise.resolve();
   const terminalDisposables: IDisposable[] = [];
 
@@ -186,25 +195,54 @@
     if (resizeFrame != null) return;
     resizeFrame = requestAnimationFrame(() => {
       resizeFrame = null;
-      if (!terminalHost || terminalHost.clientWidth === 0 || terminalHost.clientHeight === 0) {
-        return;
-      }
-      try {
-        fitAddon?.fit();
-        if (terminal) void sendResize(terminal.cols, terminal.rows);
-      } catch {
-        // A pane can become hidden between ResizeObserver and this frame.
-      }
+      fitTerminalNow();
     });
+  }
+
+  function fitTerminalNow() {
+    if (!terminalHost || terminalHost.clientWidth === 0 || terminalHost.clientHeight === 0) {
+      return;
+    }
+    try {
+      fitAddon?.fit();
+      if (terminal) {
+        terminalCols = terminal.cols;
+        terminalRows = terminal.rows;
+        void sendResize(terminal.cols, terminal.rows);
+      }
+    } catch {
+      // A pane can become hidden between ResizeObserver and this frame.
+    }
+  }
+
+  function expectGeometry(cols: number, rows: number) {
+    requestedCols = cols;
+    requestedRows = rows;
+    if (geometryTimer) clearTimeout(geometryTimer);
+    geometryTimer = setTimeout(() => {
+      geometryTimer = null;
+      if (
+        attachId != null &&
+        (ptyCols !== requestedCols || ptyRows !== requestedRows)
+      ) {
+        error = `Terminal viewport is ${requestedCols}×${requestedRows}, but the PTY did not acknowledge that geometry.`;
+      }
+    }, 1_500);
   }
 
   async function sendResize(cols: number, rows: number) {
     const currentAttachId = attachId;
     if (currentAttachId == null || cols < 2 || rows < 1) return;
+    if (cols === requestedCols && rows === requestedRows) return;
+    expectGeometry(cols, rows);
     try {
       await terminalResize(currentAttachId, cols, rows);
-    } catch {
-      // A resize racing with detach is expected.
+    } catch (reason) {
+      if (attachId === currentAttachId) {
+        requestedCols = 0;
+        requestedRows = 0;
+        error = `Could not resize the terminal PTY: ${reason instanceof Error ? reason.message : String(reason)}`;
+      }
     }
   }
 
@@ -237,6 +275,14 @@
     const currentAttachId = attachId;
     attachId = null;
     connected = false;
+    ptyCols = 0;
+    ptyRows = 0;
+    requestedCols = 0;
+    requestedRows = 0;
+    if (geometryTimer) {
+      clearTimeout(geometryTimer);
+      geometryTimer = null;
+    }
     if (currentAttachId != null) {
       try {
         await terminalDetach(currentAttachId);
@@ -252,6 +298,7 @@
     error = null;
     await detachCurrent();
     terminal?.reset();
+    fitTerminalNow();
     await checkHost();
     if (generation !== connectGeneration) return;
     if (!sessionHostAvailable) {
@@ -268,6 +315,8 @@
           work_id: workId ?? undertakings.active?.workId ?? null,
           cwd: null,
           lease_id: leaseId,
+          cols: terminalCols || 80,
+          rows: terminalRows || 24,
         })) as { session_id?: string };
         sid = created.session_id?.trim() ?? "";
         if (!sid) throw new Error("workshop did not return a session id");
@@ -275,13 +324,18 @@
         if (undertakings.active) undertakings.bindTerminal(sid);
       }
 
-      const attach = await terminalAttach(sid);
+      const attach = await terminalAttach(
+        sid,
+        terminalCols || 80,
+        terminalRows || 24,
+      );
       if (generation !== connectGeneration) {
         await terminalDetach(attach.attach_id);
         return;
       }
       attachId = attach.attach_id;
       boundSessionId = attach.session_id;
+      expectGeometry(terminalCols || 80, terminalRows || 24);
       await terminalReady(attach.attach_id);
       scheduleFit();
       await refreshSessionList();
@@ -341,7 +395,13 @@
 
   async function openDiagnosticSession() {
     try {
-      const created = await terminalCreate({ work_id: null, cwd: null, lease_id: null });
+      const created = await terminalCreate({
+        work_id: null,
+        cwd: null,
+        lease_id: null,
+        cols: terminalCols || 80,
+        rows: terminalRows || 24,
+      });
       const sid = created.session_id?.trim() ?? "";
       if (sid) shellTabs.openTerminal(sid, { activate: true, title: "Shell" });
     } catch (reason) {
@@ -368,11 +428,29 @@
           error = event.payload.message;
         }
       });
+      resizeUnlisten = await listen<TerminalResizeAck>("terminal-resize", (event) => {
+        if (event.payload.attach_id !== attachId) return;
+        ptyCols = event.payload.cols;
+        ptyRows = event.payload.rows;
+        if (ptyCols === requestedCols && ptyRows === requestedRows) {
+          if (geometryTimer) clearTimeout(geometryTimer);
+          geometryTimer = null;
+          if (error?.startsWith("Terminal viewport is ")) error = null;
+        }
+      });
+      errorUnlisten = await listen<TerminalProtocolError>("terminal-error", (event) => {
+        if (event.payload.attach_id !== attachId) return;
+        error = `${event.payload.code}: ${event.payload.message}`;
+      });
       if (disposed) {
         outputUnlisten?.();
         statusUnlisten?.();
+        resizeUnlisten?.();
+        errorUnlisten?.();
         outputUnlisten = null;
         statusUnlisten = null;
+        resizeUnlisten = null;
+        errorUnlisten = null;
         return;
       }
       await restoreUndertakingContext();
@@ -395,7 +473,10 @@
     connectGeneration += 1;
     outputUnlisten?.();
     statusUnlisten?.();
+    resizeUnlisten?.();
+    errorUnlisten?.();
     if (heartbeatTimer) clearInterval(heartbeatTimer);
+    if (geometryTimer) clearTimeout(geometryTimer);
     resizeObserver?.disconnect();
     if (resizeFrame != null) cancelAnimationFrame(resizeFrame);
     for (const disposable of terminalDisposables) disposable.dispose();
@@ -509,7 +590,12 @@
     <span class="text-white/25">Shared with agents working in this project</span>
     <details class="ml-auto">
       <summary class="cursor-pointer">Technical details</summary>
-      <span class="ml-2 font-mono">{terminalCols}×{terminalRows} · {boundSessionId.slice(0, 8)}</span>
+      <span
+        class="ml-2 font-mono"
+        class:text-amber-300={connected && (ptyCols !== terminalCols || ptyRows !== terminalRows)}
+      >
+        view {terminalCols}×{terminalRows} · PTY {ptyCols || "—"}×{ptyRows || "—"} · {boundSessionId.slice(0, 8)}
+      </span>
     </details>
   </div>
 </div>

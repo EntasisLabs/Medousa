@@ -92,16 +92,23 @@ impl Session {
         root_kind: SessionRootKind,
         work_id: Option<String>,
     ) -> anyhow::Result<Arc<Self>> {
+        Self::spawn_with_size(session_id, cwd, root_kind, work_id, 80, 24)
+    }
+
+    pub fn spawn_with_size(
+        session_id: SessionId,
+        cwd: PathBuf,
+        root_kind: SessionRootKind,
+        work_id: Option<String>,
+        cols: u16,
+        rows: u16,
+    ) -> anyhow::Result<Arc<Self>> {
         std::fs::create_dir_all(&cwd)?;
         let cwd = cwd.canonicalize().unwrap_or(cwd);
+        let size = normalized_pty_size(cols, rows);
 
         let pty_system = native_pty_system();
-        let pair = pty_system.openpty(PtySize {
-            rows: 24,
-            cols: 80,
-            pixel_width: 0,
-            pixel_height: 0,
-        })?;
+        let pair = pty_system.openpty(size)?;
 
         let shell = std::env::var("SHELL").unwrap_or_else(|_| {
             if cfg!(windows) {
@@ -195,22 +202,23 @@ impl Session {
         Ok(())
     }
 
-    pub fn resize(&self, cols: u16, rows: u16) -> anyhow::Result<()> {
-        if cols == 0 || rows == 0 {
-            return Ok(());
-        }
+    pub fn resize(&self, cols: u16, rows: u16) -> anyhow::Result<PtySize> {
+        let size = normalized_pty_size(cols, rows);
         let master = self
             .pty
             .master
             .lock()
             .map_err(|_| anyhow::anyhow!("pty master poisoned"))?;
-        master.resize(PtySize {
-            rows,
-            cols,
-            pixel_width: 0,
-            pixel_height: 0,
-        })?;
-        Ok(())
+        master.resize(size)?;
+        master.get_size()
+    }
+
+    pub fn size(&self) -> anyhow::Result<PtySize> {
+        self.pty
+            .master
+            .lock()
+            .map_err(|_| anyhow::anyhow!("pty master poisoned"))?
+            .get_size()
     }
 
     pub fn output_snapshot(&self) -> Vec<OutputChunk> {
@@ -239,6 +247,15 @@ impl Session {
     }
 }
 
+fn normalized_pty_size(cols: u16, rows: u16) -> PtySize {
+    PtySize {
+        cols: cols.clamp(2, 1_000),
+        rows: rows.clamp(1, 500),
+        pixel_width: 0,
+        pixel_height: 0,
+    }
+}
+
 pub struct SessionManager {
     sessions: RwLock<HashMap<SessionId, Arc<Session>>>,
     default_workspace: PathBuf,
@@ -258,9 +275,20 @@ impl SessionManager {
         cwd: Option<PathBuf>,
         work_id: Option<String>,
     ) -> anyhow::Result<Arc<Session>> {
+        self.create_with_size(root_kind, cwd, work_id, 80, 24).await
+    }
+
+    pub async fn create_with_size(
+        &self,
+        root_kind: SessionRootKind,
+        cwd: Option<PathBuf>,
+        work_id: Option<String>,
+        cols: u16,
+        rows: u16,
+    ) -> anyhow::Result<Arc<Session>> {
         let cwd = cwd.unwrap_or_else(|| self.default_workspace.clone());
         let id = SessionId::new();
-        let session = Session::spawn(id.clone(), cwd, root_kind, work_id)?;
+        let session = Session::spawn_with_size(id.clone(), cwd, root_kind, work_id, cols, rows)?;
         self.sessions.write().await.insert(id, Arc::clone(&session));
         Ok(session)
     }
@@ -354,11 +382,29 @@ mod tests {
             .await
             .unwrap();
 
-        session.resize(132, 43).unwrap();
+        let acknowledged = session.resize(132, 43).unwrap();
         let size = session.pty.master.lock().unwrap().get_size().unwrap();
 
         session.kill();
+        assert_eq!(acknowledged.cols, 132);
+        assert_eq!(acknowledged.rows, 43);
         assert_eq!(size.cols, 132);
         assert_eq!(size.rows, 43);
+    }
+
+    #[tokio::test]
+    async fn starts_at_the_requested_geometry() {
+        let dir = tempfile::tempdir().unwrap();
+        let mgr = SessionManager::new(dir.path().to_path_buf());
+        let session = mgr
+            .create_with_size(SessionRootKind::Scripts, None, None, 156, 61)
+            .await
+            .unwrap();
+
+        let size = session.size().unwrap();
+
+        session.kill();
+        assert_eq!(size.cols, 156);
+        assert_eq!(size.rows, 61);
     }
 }
