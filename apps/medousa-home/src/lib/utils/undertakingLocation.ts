@@ -2,6 +2,7 @@
 
 import { undertakings } from "$lib/stores/undertakings.svelte";
 import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
+import { codeWorkspace } from "$lib/stores/codeWorkspace.svelte";
 
 export type UndertakingLocationIntent = {
   workId: string;
@@ -28,6 +29,8 @@ export async function openUndertakingLocation(
 
   const known = undertakings.items.find((item) => item.id === workId);
   await lmeWorkspace.openCodeWorkspace(workId, known?.title);
+  await codeWorkspace.hydrate(workId);
+  await codeWorkspace.open(workId, path, intent.line);
   undertakings.setSelection({
     path,
     line: intent.line && intent.line > 0 ? Math.floor(intent.line) : null,

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount, tick } from "svelte";
   import { undertakings } from "$lib/stores/undertakings.svelte";
+  import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
   import {
     sealLease,
     prepareExecutorHandoff,
@@ -238,10 +239,8 @@
   }
 
   async function selectProject(id: string) {
-    await undertakings.select(id);
-    if (undertakings.detail?.environment) {
-      await landCodeWorkingSet(id);
-    }
+    const item = undertakings.items.find((entry) => entry.id === id);
+    await lmeWorkspace.openCodeWorkspace(id, item?.title);
   }
 
   async function revealWorktree() {

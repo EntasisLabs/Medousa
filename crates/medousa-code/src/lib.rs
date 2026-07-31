@@ -17,3 +17,5 @@ pub use session::SessionPool;
 
 pub const ENGINE_NAME: &str = "medousa-code";
 pub const ENGINE_VERSION: &str = env!("CARGO_PKG_VERSION");
+/// Increment when the daemon-facing HTTP/WS contract changes incompatibly.
+pub const ENGINE_API_REVISION: u32 = 1;

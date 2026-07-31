@@ -15,7 +15,6 @@
     Undo2,
   } from "@lucide/svelte";
   import {
-    getUndertakingSourceTree,
     getUndertakingSource,
     createUndertakingSource,
     renameUndertakingSource,
@@ -38,9 +37,12 @@
     type CodeSourceTreeNode,
   } from "$lib/utils/codeSourceTree";
   import {
-    getUndertakingSourceTreeShared,
-    invalidateUndertakingSourceTree,
-  } from "$lib/utils/forgeSourceTreeCache";
+    ensureCodeWorkspaceTree,
+  } from "$lib/utils/codeWorkspaceController";
+  import {
+    traceCodeWorkspaceEnd,
+    traceCodeWorkspaceStart,
+  } from "$lib/utils/codeWorkspaceTrace";
 
   interface Props {
     workId: string;
@@ -71,8 +73,6 @@
   const expanded = new SvelteSet<string>();
   /** Monotonic id so only the latest in-flight response may update UI / clear loading. */
   let loadToken = 0;
-  /** Background poll only after a successful first fetch — avoid racing cold open. */
-  let pollReady = $state(false);
 
   const rows = $derived.by(() => {
     const needle = query.trim().toLowerCase();
@@ -108,6 +108,7 @@
 
   async function applyTreePayload(next: ForgeSourceTree, token: number) {
     // Keep the shell interactive while we index — do not sync-build on assign.
+    const trace = traceCodeWorkspaceStart("tree-index", next.work_id);
     building = true;
     tree = next;
     nodes = [];
@@ -121,6 +122,7 @@
       () => token !== loadToken,
     );
     if (token !== loadToken) return;
+    traceCodeWorkspaceEnd(trace, `${next.files.length} files`);
     nodes = built;
     // Only auto-open the top level when it is small — expanding huge dirs freezes paint.
     if (built.length > 0 && built.length <= 24) {
@@ -139,7 +141,6 @@
       nodes = [];
       loading = false;
       building = false;
-      pollReady = false;
       if (!prepared) error = null;
       return;
     }
@@ -149,14 +150,12 @@
       error = null;
     }
     try {
-      if (force) invalidateUndertakingSourceTree(workId);
-      const next = await getUndertakingSourceTreeShared(workId, { force });
+      const next = await ensureCodeWorkspaceTree(workId, { force });
       if (token !== loadToken) return;
       if (!background) error = null;
       loading = false;
       await applyTreePayload(next, token);
       if (token !== loadToken) return;
-      pollReady = true;
     } catch (err) {
       if (token !== loadToken) return;
       if (!background || !tree) {
@@ -343,19 +342,12 @@
   $effect(() => {
     void workId;
     void prepared;
-    pollReady = false;
     void load(false);
     return () => {
       loadToken += 1;
       loading = false;
       building = false;
     };
-  });
-
-  $effect(() => {
-    if (!prepared || !workId || !pollReady) return;
-    const timer = setInterval(() => void load(true), 12_000);
-    return () => clearInterval(timer);
   });
 
   $effect(() => {

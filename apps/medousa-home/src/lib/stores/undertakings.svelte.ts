@@ -45,6 +45,7 @@ function createUndertakingsStore() {
   let loading = $state(false);
   let error = $state<string | null>(null);
   let selectedId = $state<string | null>(null);
+  let selectionRequest = 0;
   let detail = $state<ItemProjection | null>(null);
   let review = $state<ReviewProjection | null>(null);
   /** Map shell group id → active context */
@@ -52,8 +53,41 @@ function createUndertakingsStore() {
   let pollTimer: ReturnType<typeof setInterval> | null = null;
   let eventSource: EventSource | null = null;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  let eventStreamConnecting = false;
+  let eventRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+  const pendingEventWorkIds = new Set<string>();
 
   const active = $derived(contexts[groupKey()] ?? null);
+
+  function sameContext(
+    left: ActiveUndertakingContext | null | undefined,
+    right: ActiveUndertakingContext,
+  ): boolean {
+    if (!left) return false;
+    return (
+      left.workId === right.workId &&
+      left.title === right.title &&
+      left.humanPhase === right.humanPhase &&
+      left.forgeState === right.forgeState &&
+      left.worktree === right.worktree &&
+      left.baselineOid === right.baselineOid &&
+      left.sealedOid === right.sealedOid &&
+      left.leaseId === right.leaseId &&
+      left.leaseGeneration === right.leaseGeneration &&
+      left.executorKind === right.executorKind &&
+      left.attemptSeq === right.attemptSeq &&
+      left.selectedEntityId === right.selectedEntityId &&
+      left.selectedPath === right.selectedPath &&
+      left.selectedLine === right.selectedLine &&
+      left.selectionStartLine === right.selectionStartLine &&
+      left.selectionEndLine === right.selectionEndLine &&
+      left.selectedText === right.selectedText &&
+      left.boundChatSessionIds.length === right.boundChatSessionIds.length &&
+      left.boundChatSessionIds.every((id, index) => id === right.boundChatSessionIds[index]) &&
+      left.boundTerminalSessionIds.length === right.boundTerminalSessionIds.length &&
+      left.boundTerminalSessionIds.every((id, index) => id === right.boundTerminalSessionIds[index])
+    );
+  }
 
   function setActiveFromItem(item: ItemProjection, merge?: Partial<ActiveUndertakingContext>) {
     const attempt = item.attempts?.find((a) => a.id === item.active_attempt);
@@ -98,7 +132,9 @@ function createUndertakingsStore() {
         next.executorKind = prev.executorKind;
       }
     }
-    contexts = { ...contexts, [groupKey()]: next };
+    if (!sameContext(prev, next)) {
+      contexts = { ...contexts, [groupKey()]: next };
+    }
     void ensureEventStream();
   }
 
@@ -157,66 +193,87 @@ function createUndertakingsStore() {
     const movedWithoutSelection =
       (selection.path !== undefined && selection.path !== cur.selectedPath) ||
       (selection.line !== undefined && selection.selectedText === undefined);
+    const selectedEntityId =
+      selection.entityId === undefined ? cur.selectedEntityId : selection.entityId;
+    const selectedPath = selection.path === undefined ? cur.selectedPath : selection.path;
+    const selectedLine = selection.line === undefined ? cur.selectedLine : selection.line;
+    const selectionStartLine =
+      selection.selectionStartLine === undefined
+        ? movedWithoutSelection ? null : cur.selectionStartLine
+        : selection.selectionStartLine;
+    const selectionEndLine =
+      selection.selectionEndLine === undefined
+        ? movedWithoutSelection ? null : cur.selectionEndLine
+        : selection.selectionEndLine;
+    const selectedText =
+      selection.selectedText === undefined
+        ? movedWithoutSelection ? null : cur.selectedText
+        : selection.selectedText;
+    if (
+      selectedEntityId === cur.selectedEntityId &&
+      selectedPath === cur.selectedPath &&
+      selectedLine === cur.selectedLine &&
+      selectionStartLine === cur.selectionStartLine &&
+      selectionEndLine === cur.selectionEndLine &&
+      selectedText === cur.selectedText
+    ) return;
     contexts = {
       ...contexts,
       [groupKey()]: {
         ...cur,
-        selectedEntityId:
-          selection.entityId === undefined ? cur.selectedEntityId : selection.entityId,
-        selectedPath: selection.path === undefined ? cur.selectedPath : selection.path,
-        selectedLine: selection.line === undefined ? cur.selectedLine : selection.line,
-        selectionStartLine:
-          selection.selectionStartLine === undefined
-            ? movedWithoutSelection ? null : cur.selectionStartLine
-            : selection.selectionStartLine,
-        selectionEndLine:
-          selection.selectionEndLine === undefined
-            ? movedWithoutSelection ? null : cur.selectionEndLine
-            : selection.selectionEndLine,
-        selectedText:
-          selection.selectedText === undefined
-            ? movedWithoutSelection ? null : cur.selectedText
-            : selection.selectedText,
+        selectedEntityId,
+        selectedPath,
+        selectedLine,
+        selectionStartLine,
+        selectionEndLine,
+        selectedText,
       },
     };
   }
 
-  async function refreshList() {
-    loading = true;
+  async function refreshList(quiet = false) {
+    if (!quiet) loading = true;
     error = null;
     try {
-      items = await listUndertakings();
+      const next = await listUndertakings();
+      if (JSON.stringify(next) !== JSON.stringify(items)) items = next;
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
     } finally {
-      loading = false;
+      if (!quiet) loading = false;
     }
   }
 
   async function select(workId: string) {
     const trimmed = workId.trim();
     if (!trimmed) {
+      selectionRequest += 1;
       selectedId = null;
       detail = null;
       review = null;
       return;
     }
+    const request = ++selectionRequest;
     selectedId = trimmed;
     try {
-      detail = await getUndertaking(trimmed);
-      setActiveFromItem(detail);
+      const nextDetail = await getUndertaking(trimmed);
+      if (request !== selectionRequest) return;
+      if (JSON.stringify(nextDetail) !== JSON.stringify(detail)) detail = nextDetail;
+      setActiveFromItem(nextDetail);
       if (
-        detail.human_phase === "review" ||
-        detail.state === "awaiting_review" ||
-        detail.state === "applying_decision"
+        nextDetail.human_phase === "review" ||
+        nextDetail.state === "awaiting_review" ||
+        nextDetail.state === "applying_decision"
       ) {
-        review = await getReview(trimmed);
-        if (review.sealed_head_oid) {
+        const nextReview = await getReview(trimmed);
+        if (request !== selectionRequest) return;
+        if (JSON.stringify(nextReview) !== JSON.stringify(review)) review = nextReview;
+        if (nextReview.sealed_head_oid) {
           const cur = contexts[groupKey()];
           if (cur) {
             contexts = {
               ...contexts,
-              [groupKey()]: { ...cur, sealedOid: review.sealed_head_oid },
+              [groupKey()]: { ...cur, sealedOid: nextReview.sealed_head_oid },
             };
           }
         }
@@ -224,7 +281,9 @@ function createUndertakingsStore() {
         review = null;
       }
     } catch (err) {
-      error = err instanceof Error ? err.message : String(err);
+      if (request === selectionRequest) {
+        error = err instanceof Error ? err.message : String(err);
+      }
     }
   }
 
@@ -278,11 +337,40 @@ function createUndertakingsStore() {
     await select(selectedId);
   }
 
+  function startFallbackPolling() {
+    if (pollTimer) return;
+    pollTimer = setInterval(() => {
+      if (selectedId) void refreshDetail();
+      else void refreshList(true);
+    }, 10_000);
+  }
+
+  function scheduleEventRefresh(workId: string) {
+    if (workId) pendingEventWorkIds.add(workId);
+    if (eventRefreshTimer) return;
+    eventRefreshTimer = setTimeout(() => {
+      eventRefreshTimer = null;
+      const changed = new Set(pendingEventWorkIds);
+      pendingEventWorkIds.clear();
+      void refreshList(true);
+      const currentActive = contexts[groupKey()];
+      const currentId = selectedId || currentActive?.workId || "";
+      if (currentId && (changed.size === 0 || changed.has(currentId))) {
+        void select(currentId);
+      }
+    }, 100);
+  }
+
   async function ensureEventStream() {
-    if (eventSource || typeof EventSource === "undefined") return;
+    if (eventSource || eventStreamConnecting || typeof EventSource === "undefined") {
+      if (typeof EventSource === "undefined") startFallbackPolling();
+      return;
+    }
+    eventStreamConnecting = true;
     try {
       const source = new EventSource(await forgeStreamUrl());
       eventSource = source;
+      source.onopen = () => stopPolling();
       source.addEventListener("forge", (event) => {
         let workId = "";
         try {
@@ -291,31 +379,26 @@ function createUndertakingsStore() {
         } catch {
           return;
         }
-        void refreshList();
-        const currentActive = contexts[groupKey()];
-        if (workId && (selectedId === workId || currentActive?.workId === workId)) {
-          void select(workId);
-        }
+        scheduleEventRefresh(workId);
       });
       source.onerror = () => {
         source.close();
         if (eventSource === source) eventSource = null;
+        startFallbackPolling();
         if (reconnectTimer) clearTimeout(reconnectTimer);
         reconnectTimer = setTimeout(() => void ensureEventStream(), 5000);
       };
     } catch {
+      startFallbackPolling();
       if (reconnectTimer) clearTimeout(reconnectTimer);
       reconnectTimer = setTimeout(() => void ensureEventStream(), 5000);
+    } finally {
+      eventStreamConnecting = false;
     }
   }
 
   function startPolling() {
-    stopPolling();
     void ensureEventStream();
-    pollTimer = setInterval(() => {
-      if (selectedId) void refreshDetail();
-      else void refreshList();
-    }, 2500);
   }
 
   function stopPolling() {

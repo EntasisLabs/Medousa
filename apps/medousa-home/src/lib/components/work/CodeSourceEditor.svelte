@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { tick, untrack } from "svelte";
+  import { onDestroy, tick, untrack } from "svelte";
   import {
     CircleAlert,
     ArrowLeft,
@@ -69,6 +69,7 @@
   import { shellTabs } from "$lib/stores/shellTabs.svelte";
   import { layout } from "$lib/stores/layout.svelte";
   import { setActiveCodeInsights } from "$lib/utils/undertakingWorkspace";
+  import { deferCodeWorkspaceWork } from "$lib/utils/codeWorkspaceTrace";
   import { fetchPackagesCatalog, installPackage } from "$lib/utils/packagesApi";
   import { isCoLocatedWorkshop } from "$lib/utils/workshopLocality";
   import { formatShortcut } from "$lib/platform";
@@ -115,7 +116,6 @@
   let wordWrap = $state(readCodeEditorWordWrap());
   let showLineNumbers = $state(readCodeEditorLineNumbers());
   let findOpenByTabId = $state<Record<string, boolean>>({});
-  let editorChromeKey = $state(0);
   let terminalDockOpen = $state(false);
   let dockSessionId = $state<string | null>(null);
   let dockBusy = $state(false);
@@ -155,6 +155,12 @@
   let lspRetry = $state(0);
   let cursorLine = $state(1);
   let cursorColumn = $state(1);
+  let editorSelection = $state<{
+    startLine: number;
+    endLine: number;
+    text: string;
+  } | null>(null);
+  let linePersistTimer: ReturnType<typeof setTimeout> | null = null;
   let editorMenuOpen = $state(false);
   let editorMenuX = $state(0);
   let editorMenuY = $state(0);
@@ -172,12 +178,15 @@
       ? (codeWorkspace.tabs.find((tab) => tab.tabId === activeId) ?? null)
       : null;
   });
+  // Effects that start network/language-service work must depend on tab
+  // identity, not the mutable tab snapshot (cursor line, draft, diagnostics).
+  const activeTabId = $derived(activeTab?.tabId ?? "");
+  const activeTabPath = $derived(activeTab?.path ?? "");
+  const activeTabLanguage = $derived(activeTab?.language ?? "");
+  const activeTabLine = $derived(activeTab?.line ?? null);
   const dirty = $derived(Boolean(activeTab && codeWorkspace.isDirty(activeTab)));
   const dirtyCount = $derived(tabs.filter((tab) => codeWorkspace.isDirty(tab)).length);
   const secondaryTab = $derived(codeWorkspace.secondaryFor(workId));
-  const reviewMarkerKey = $derived(
-    reviewChangedLines.map((change) => `${change.line}:${change.kind}`).join(","),
-  );
   const editable = $derived(
     Boolean(
       context?.workId === workId &&
@@ -204,9 +213,9 @@
     Boolean(detail && !detail.environment && detail.allowed_actions.provision.allowed),
   );
   const documentUri = $derived.by(() => {
-    if (!activeTab || !context?.worktree) return null;
+    if (!activeTabPath || !context?.worktree) return null;
     return pathToFileUri(
-      `${context.worktree.replace(/[\\/]$/, "")}/${activeTab.path}`,
+      `${context.worktree.replace(/[\\/]$/, "")}/${activeTabPath}`,
     );
   });
   const quickResults = $derived.by(() => {
@@ -359,13 +368,42 @@
   function toggleWordWrap() {
     wordWrap = !wordWrap;
     writeCodeEditorWordWrap(wordWrap);
-    editorChromeKey += 1;
   }
 
   function toggleLineNumbers() {
     showLineNumbers = !showLineNumbers;
     writeCodeEditorLineNumbers(showLineNumbers);
-    editorChromeKey += 1;
+  }
+
+  function handleCursorChanged(tab: CodeDocumentTab, cursor: { line: number; column: number }) {
+    cursorLine = cursor.line;
+    cursorColumn = cursor.column;
+    if (linePersistTimer) clearTimeout(linePersistTimer);
+    linePersistTimer = setTimeout(() => {
+      linePersistTimer = null;
+      codeWorkspace.updateLine(tab.tabId, cursor.line);
+    }, 500);
+  }
+
+  function captureEditorContext() {
+    if (!activeTab) return;
+    undertakings.setSelection({
+      path: activeTab.path,
+      line: editorSelection?.startLine ?? cursorLine,
+      selectionStartLine: editorSelection?.startLine ?? null,
+      selectionEndLine: editorSelection?.endLine ?? null,
+      selectedText: editorSelection?.text || null,
+      entityId: null,
+    });
+    setActiveCodeInsights(workId, {
+      containing_symbol: containingSymbol(),
+      diagnostics: problems.slice(0, 20).map((problem) =>
+        `${activeTab.path}:${problem.line} ${problem.message}`
+      ),
+      last_verification: taskResult
+        ? `${taskResult.task.label}: ${taskResult.success ? "passed" : "failed"}${taskResult.exit_code != null ? ` (exit ${taskResult.exit_code})` : ""}`
+        : null,
+    });
   }
 
   async function toggleTerminalDock(forceOpen?: boolean) {
@@ -507,15 +545,6 @@
     }
   }
 
-  async function openSelectedLocation() {
-    const selectedPath = context?.workId === workId ? context.selectedPath : null;
-    if (!workId || !selectedPath) return;
-    await codeWorkspace.hydrate(workId);
-    const tab = await codeWorkspace.open(workId, selectedPath, context?.selectedLine);
-    await tick();
-    if (tab?.line) editor?.revealLine(tab.line);
-  }
-
   function activate(tab: CodeDocumentTab) {
     codeWorkspace.activate(tab.tabId);
     undertakings.setSelection({ path: tab.path, line: tab.line, entityId: null });
@@ -568,6 +597,13 @@
     }
   }
 
+  function reconcileOpenFiles() {
+    const primary = activeTab;
+    const secondary = secondaryTab;
+    void reconcileExternal(primary);
+    if (secondary?.tabId !== primary?.tabId) void reconcileExternal(secondary);
+  }
+
   function useProjectVersion(tab: CodeDocumentTab) {
     const source = externalVersions[tab.tabId];
     if (!source) return;
@@ -608,6 +644,14 @@
   }
 
   async function saveTab(tab: CodeDocumentTab | null): Promise<boolean> {
+    if (tab?.tabId === activeTabId && editor) {
+      const liveDraft = editor.getValue();
+      if (liveDraft !== tab.draft) {
+        codeWorkspace.updateDraft(tab.tabId, liveDraft);
+        tab = { ...tab, draft: liveDraft };
+      }
+      editor.flushChanges();
+    }
     const active = context;
     if (
       !tab ||
@@ -667,6 +711,7 @@
     }
     saving = true;
     try {
+      captureEditorContext();
       await onHandoffToAgent(preferredAgent, draft);
     } catch (err) {
       surfaceError = err instanceof Error ? err.message : String(err);
@@ -991,34 +1036,15 @@
   $effect(() => {
     if (!workId) return;
     setActiveCodeInsights(workId, {
-      containing_symbol: containingSymbol(),
+      // Cursor/symbol context is captured only at an explicit handoff boundary.
+      containing_symbol: null,
       diagnostics: problems.slice(0, 20).map((problem) =>
-        `${activeTab?.path ?? "current file"}:${problem.line} ${problem.message}`
+        `${activeTabPath || "current file"}:${problem.line} ${problem.message}`
       ),
       last_verification: taskResult
         ? `${taskResult.task.label}: ${taskResult.success ? "passed" : "failed"}${taskResult.exit_code != null ? ` (exit ${taskResult.exit_code})` : ""}`
         : null,
     });
-  });
-
-  $effect(() => {
-    void context?.workId;
-    void context?.selectedPath;
-    void context?.selectedLine;
-    void workId;
-    untrack(() => void openSelectedLocation());
-  });
-
-  $effect(() => {
-    const primary = activeTab;
-    const secondary = secondaryTab;
-    if (!primary && !secondary) return;
-    const reconcile = () => {
-      void reconcileExternal(primary);
-      if (secondary?.tabId !== primary?.tabId) void reconcileExternal(secondary);
-    };
-    const timer = setInterval(reconcile, 4_000);
-    return () => clearInterval(timer);
   });
 
   $effect(() => {
@@ -1040,18 +1066,20 @@
       return;
     }
     let cancelled = false;
-    void getProjectTasks(id).then((tasks) => {
-      if (cancelled) return;
-      projectTasks = tasks;
-      selectedTaskId = tasks.find((task) => task.kind === "verify")?.id ?? tasks[0]?.id ?? "";
-    }).catch(() => {
-      if (!cancelled) projectTasks = [];
+    const cancelDeferred = deferCodeWorkspaceWork(() => {
+      void getProjectTasks(id).then((tasks) => {
+        if (cancelled) return;
+        projectTasks = tasks;
+        selectedTaskId = tasks.find((task) => task.kind === "verify")?.id ?? tasks[0]?.id ?? "";
+      }).catch(() => {
+        if (!cancelled) projectTasks = [];
+      });
     });
-    return () => { cancelled = true; };
+    return () => { cancelled = true; cancelDeferred(); };
   });
 
   $effect(() => {
-    const path = activeTab?.path;
+    const path = activeTabPath;
     if (!reviewAvailable || !workId || !path) {
       reviewChangedLines = [];
       return;
@@ -1071,9 +1099,8 @@
 
   $effect(() => {
     void lspRetry;
-    const tab = activeTab;
     const root = context?.workId === workId ? context.worktree : null;
-    if (!tab || !root || !languageSupportsLsp(tab.language)) {
+    if (!activeTabId || !root || !languageSupportsLsp(activeTabLanguage)) {
       lspClient = null;
       lspError = null;
       lspConnecting = false;
@@ -1083,75 +1110,84 @@
     lspClient = null;
     lspError = null;
     lspConnecting = true;
-    void getCodeWorkspaceLspClient({
-      workId,
-      workspaceRoot: root,
-      language: tab.language,
-    })
-      .then((client) => {
-        if (!cancelled) lspClient = client;
+    const cancelDeferred = deferCodeWorkspaceWork(() => {
+      void getCodeWorkspaceLspClient({
+        workId,
+        workspaceRoot: root,
+        language: activeTabLanguage,
       })
-      .catch((err) => {
-        if (!cancelled) lspError = err instanceof Error ? err.message : String(err);
-      })
-      .finally(() => {
-        if (!cancelled) lspConnecting = false;
-      });
+        .then((client) => {
+          if (!cancelled) lspClient = client;
+        })
+        .catch((err) => {
+          if (!cancelled) lspError = err instanceof Error ? err.message : String(err);
+        })
+        .finally(() => {
+          if (!cancelled) lspConnecting = false;
+        });
+    });
     return () => {
       cancelled = true;
+      cancelDeferred();
     };
   });
 
   $effect(() => {
-    void activeTab?.tabId;
+    void activeTabId;
     void documentUri;
     void lspClient;
+    let cleanup = () => {};
     untrack(() => {
-      void refreshSymbols();
-      const tab = activeTab;
       const uri = documentUri;
-      if (!tab || !uri || !lspClient) {
+      if (!activeTabId || !uri || !lspClient) {
         languageCapabilities = {};
         editorConventions = {};
         return;
       }
-      void getCodeLanguageCapabilities({
-        workId,
-        uri,
-        language: tab.language,
-      })
-        .then((capabilities) => (languageCapabilities = capabilities))
-        .catch(() => (languageCapabilities = {}));
-      void getCodeEditorConventions({
-        workId,
-        uri,
-        language: tab.language,
-      })
-        .then((conventions) => (editorConventions = conventions))
-        .catch(() => (editorConventions = {}));
+      const cancelDeferred = deferCodeWorkspaceWork(() => {
+        void refreshSymbols();
+        void getCodeLanguageCapabilities({ workId, uri, language: activeTabLanguage })
+          .then((capabilities) => (languageCapabilities = capabilities))
+          .catch(() => (languageCapabilities = {}));
+        void getCodeEditorConventions({ workId, uri, language: activeTabLanguage })
+          .then((conventions) => (editorConventions = conventions))
+          .catch(() => (editorConventions = {}));
+      });
+      cleanup = cancelDeferred;
     });
+    return cleanup;
   });
 
   $effect(() => {
-    const tab = activeTab;
-    if (tab?.line) {
-      void tick().then(() => editor?.revealLine(tab.line!));
-    }
-  });
-
-  $effect(() => {
-    const tabId = activeTab?.tabId;
-    void editorChromeKey;
+    const tabId = activeTabId;
     if (!tabId) return;
-    const shouldOpen = findOpenByTabId[tabId] ?? false;
+    // The cleanup snapshots find state back into this map. Keep both the read
+    // and write outside the effect dependency graph to avoid self-invalidation.
+    const shouldOpen = untrack(() => findOpenByTabId[tabId] ?? false);
     void tick().then(() => {
       if (!editor) return;
       if (shouldOpen) editor.openFind();
       else codeEditorFind.hide(editor.getView());
     });
     return () => {
-      findOpenByTabId = { ...findOpenByTabId, [tabId]: codeEditorFind.open };
+      // Persist the find state without making this effect depend on its own cleanup write.
+      untrack(() => {
+        findOpenByTabId = { ...findOpenByTabId, [tabId]: codeEditorFind.open };
+      });
     };
+  });
+
+  $effect(() => {
+    const tabId = activeTabId;
+    const initialLine = untrack(() => activeTabLine);
+    editorSelection = null;
+    cursorLine = initialLine ?? 1;
+    cursorColumn = 1;
+    if (initialLine) {
+      void tick().then(() => {
+        if (activeTabId === tabId) editor?.revealLine(initialLine);
+      });
+    }
   });
 
   $effect(() => {
@@ -1169,6 +1205,10 @@
     void beat();
     const timer = setInterval(() => void beat(), 30_000);
     return () => clearInterval(timer);
+  });
+
+  onDestroy(() => {
+    if (linePersistTimer) clearTimeout(linePersistTimer);
   });
 </script>
 
@@ -1307,24 +1347,6 @@
         {humanizeForgeMessage(surfaceError || activeTab.error || codeWorkspace.workspaceErrorByWorkId[workId] || "")}
       </p>
     {/if}
-    {#if context?.selectedText && onHandoffToAgent && !agentHasControl}
-      <div class="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-primary-500/20 bg-primary-950/15 px-2 py-1" aria-label="Selected code actions">
-        <span class="mr-1 flex shrink-0 items-center gap-1 text-[9px] text-primary-200/80"><Sparkles size={10} />Selection</span>
-        <button type="button" class="code-intent-action" disabled={saving} onclick={() => void handoffToAgent("Help me understand the selected code and answer my questions about it.")}>Ask</button>
-        <button type="button" class="code-intent-action" disabled={saving} onclick={() => void handoffToAgent("Change the selected code. Ask only if the intended change is ambiguous.")}>Change</button>
-        {#if problems.length > 0}
-          <button type="button" class="code-intent-action" disabled={saving} onclick={() => void handoffToAgent("Fix the relevant issue in the selected code and verify the result.")}>Fix</button>
-        {/if}
-        <button type="button" class="code-intent-action" disabled={saving} onclick={() => void handoffToAgent("Explain the selected code clearly, including its role and important behavior.")}>Explain</button>
-        <button type="button" class="code-intent-action" disabled={saving} onclick={() => void handoffToAgent("Add the most valuable focused test for the selected code and run the relevant check.")}>Add test</button>
-        {#if canReference}
-          <button type="button" class="code-intent-action" disabled={languageActionRunning} onclick={() => void runLanguageAction("references")}>Find uses</button>
-        {/if}
-        {#if canRename && editable}
-          <button type="button" class="code-intent-action" disabled={languageActionRunning} onclick={() => beginInlineRename()}>Rename</button>
-        {/if}
-      </div>
-    {/if}
     {#if externalVersions[activeTab.tabId]}
       <div class="flex shrink-0 flex-wrap items-center gap-2 border-b border-amber-500/30 bg-amber-950/20 px-2.5 py-1.5 text-[10px] text-amber-100">
         <span class="min-w-40 flex-1">This file changed elsewhere. Your draft is safe.</span>
@@ -1334,42 +1356,45 @@
       </div>
     {/if}
 
-    <div class="min-h-0 flex-1 {secondaryTab ? 'grid grid-cols-1 overflow-y-auto md:grid-cols-2 md:overflow-hidden' : ''}">
-      <div class="relative min-h-64 min-w-0 flex-1" onfocusin={() => (focusedSide = false)}>
+    <div class="min-h-0 flex-1 {secondaryTab ? 'grid grid-cols-1 overflow-y-auto md:grid-cols-2 md:overflow-hidden' : 'flex overflow-hidden'}">
+      <div class="relative min-h-0 min-w-0 flex-1" onfocusin={() => (focusedSide = false)}>
+        {#if editorSelection?.text && onHandoffToAgent && !agentHasControl}
+          <div class="absolute right-3 top-2 z-20 flex max-w-[calc(100%-1.5rem)] items-center gap-1 overflow-x-auto rounded-md border border-primary-500/30 bg-surface-950/95 px-1.5 py-1 shadow-xl" aria-label="Selected code actions">
+            <span class="mr-1 flex shrink-0 items-center gap-1 text-[9px] text-primary-200/80"><Sparkles size={10} />Selection</span>
+            <button type="button" class="code-intent-action" disabled={saving} onclick={() => void handoffToAgent("Help me understand the selected code and answer my questions about it.")}>Ask</button>
+            <button type="button" class="code-intent-action" disabled={saving} onclick={() => void handoffToAgent("Change the selected code. Ask only if the intended change is ambiguous.")}>Change</button>
+            {#if problems.length > 0}<button type="button" class="code-intent-action" disabled={saving} onclick={() => void handoffToAgent("Fix the relevant issue in the selected code and verify the result.")}>Fix</button>{/if}
+            <button type="button" class="code-intent-action" disabled={saving} onclick={() => void handoffToAgent("Explain the selected code clearly, including its role and important behavior.")}>Explain</button>
+            <button type="button" class="code-intent-action" disabled={saving} onclick={() => void handoffToAgent("Add the most valuable focused test for the selected code and run the relevant check.")}>Add test</button>
+            {#if canReference}<button type="button" class="code-intent-action" disabled={languageActionRunning} onclick={() => void runLanguageAction("references")}>Find uses</button>{/if}
+            {#if canRename && editable}<button type="button" class="code-intent-action" disabled={languageActionRunning} onclick={() => beginInlineRename()}>Rename</button>{/if}
+          </div>
+        {/if}
         {#if activeTab.loading}
           <div class="absolute inset-0 z-10 flex items-center justify-center bg-surface-950/70 text-xs text-surface-400">
             <LoaderCircle size={14} class="mr-2 animate-spin" />Opening source…
           </div>
         {/if}
         {#if !activeTab.loading && activeTab.digest}
-          {#key `${activeTab.tabId}:${editable}:${lspClient ? "lsp" : "plain"}:${reviewMarkerKey}:${editorConventions.indent_style}:${editorConventions.indent_size}:${editorConventions.tab_width}:${editorChromeKey}`}
+          {@const editorTab = activeTab}
+          {#key editorTab.tabId}
             <CodeMirrorHost
               bind:this={editor}
-              value={activeTab.draft}
-              languageId={activeTab.language}
+              value={editorTab.draft}
+              languageId={editorTab.language}
               {documentUri}
-              lspLanguageId={activeTab.language}
+              lspLanguageId={editorTab.language}
               client={lspClient}
               readOnly={!editable}
-              contentSyncKey={activeTab.syncKey}
+              contentSyncKey={editorTab.syncKey}
               changedLines={reviewChangedLines}
               conventionIndentStyle={editorConventions.indent_style ?? null}
               conventionTabSize={Number.parseInt(editorConventions.indent_size ?? editorConventions.tab_width ?? "", 10) || null}
-              onchange={(value) => codeWorkspace.updateDraft(activeTab.tabId, value)}
-              onCursorChanged={(cursor) => {
-                cursorLine = cursor.line;
-                cursorColumn = cursor.column;
-                codeWorkspace.updateLine(activeTab.tabId, cursor.line);
-                undertakings.setSelection({ path: activeTab.path, line: cursor.line });
-              }}
-              onSelectionChanged={(selection) =>
-                undertakings.setSelection({
-                  path: activeTab.path,
-                  line: selection.startLine,
-                  selectionStartLine: selection.startLine,
-                  selectionEndLine: selection.endLine,
-                  selectedText: selection.text || null,
-                })}
+              {wordWrap}
+              {showLineNumbers}
+              onchange={(value) => codeWorkspace.updateDraft(editorTab.tabId, value)}
+              onCursorChanged={(cursor) => handleCursorChanged(editorTab, cursor)}
+              onSelectionChanged={(selection) => (editorSelection = selection.text ? selection : null)}
               onProblemsChanged={syncProblems}
               onContextMenu={onEditorContextMenu}
             />
@@ -1795,6 +1820,7 @@
 {/if}
 
 <svelte:window
+  onfocus={reconcileOpenFiles}
   onkeydown={(event) => {
     onWindowKeydown(event);
     if (event.defaultPrevented) return;

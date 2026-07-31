@@ -5,14 +5,14 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Duration;
 
-use serde_json::{json, Value};
-use tokio::sync::{broadcast, Mutex, RwLock};
+use serde_json::{Value, json};
+use tokio::sync::{Mutex, RwLock, broadcast};
 
-use crate::backend::{spawn_backend, LanguageServerBackend};
+use crate::backend::{LanguageServerBackend, spawn_backend};
 use crate::registry::{LanguageId, ServerRegistry};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -31,6 +31,7 @@ pub struct LiveSession {
     /// Capabilities advertised by the active language server.
     pub capabilities: RwLock<Value>,
     initialized: AtomicBool,
+    closed: AtomicBool,
     next_id: AtomicU64,
     write_lock: Mutex<()>,
     reader_task: Mutex<Option<tokio::task::JoinHandle<()>>>,
@@ -44,7 +45,14 @@ impl LiveSession {
         }
         let session = Arc::clone(self);
         *guard = Some(tokio::spawn(async move {
-            while let Ok(msg) = session.backend.read_message().await {
+            loop {
+                let msg = match session.backend.read_message().await {
+                    Ok(msg) => msg,
+                    Err(err) => {
+                        tracing::warn!(error = %err, "language server reader stopped");
+                        break;
+                    }
+                };
                 if let Ok(value) = serde_json::from_str::<Value>(&msg)
                     && value.get("method").and_then(|m| m.as_str())
                         == Some("textDocument/publishDiagnostics")
@@ -59,10 +67,32 @@ impl LiveSession {
                 }
                 let _ = session.outbound.send(msg);
             }
+            session.closed.store(true, Ordering::SeqCst);
         }));
     }
 
+    pub fn is_closed(&self) -> bool {
+        self.closed.load(Ordering::SeqCst)
+    }
+
+    fn ensure_open(&self) -> anyhow::Result<()> {
+        if self.is_closed() {
+            anyhow::bail!("language server session closed");
+        }
+        Ok(())
+    }
+
+    async fn write_message(&self, message: &str) -> anyhow::Result<()> {
+        self.ensure_open()?;
+        if let Err(err) = self.backend.write_message(message).await {
+            self.closed.store(true, Ordering::SeqCst);
+            return Err(anyhow::anyhow!(err));
+        }
+        Ok(())
+    }
+
     pub async fn ensure_initialized(&self, root_uri: &str) -> anyhow::Result<()> {
+        self.ensure_open()?;
         if self.initialized.load(Ordering::SeqCst) {
             return Ok(());
         }
@@ -104,49 +134,49 @@ impl LiveSession {
                 "clientInfo": { "name": "medousa-code", "version": env!("CARGO_PKG_VERSION") }
             }
         });
-        self.backend
-            .write_message(&init.to_string())
-            .await
-            .map_err(|e| anyhow::anyhow!(e))?;
-        // Best-effort wait for initialize result (ignore if server is slow).
+        // Subscribe before sending so a fast language server cannot race its
+        // initialize response past this listener.
         let mut rx = self.outbound.subscribe();
+        self.write_message(&init.to_string()).await?;
         let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
-        loop {
+        let capabilities = loop {
+            self.ensure_open()?;
             let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
             if remaining.is_zero() {
-                break;
+                anyhow::bail!("language server initialize timed out");
             }
-            match tokio::time::timeout(remaining, rx.recv()).await {
+            match tokio::time::timeout(remaining.min(Duration::from_millis(100)), rx.recv()).await {
                 Ok(Ok(msg)) => {
                     if let Ok(v) = serde_json::from_str::<Value>(&msg)
                         && v.get("id").and_then(|x| x.as_u64()) == Some(id)
                     {
-                        let capabilities = v
+                        if let Some(error) = v.get("error") {
+                            anyhow::bail!("language server initialize failed: {error}");
+                        }
+                        break v
                             .pointer("/result/capabilities")
                             .cloned()
                             .unwrap_or(Value::Null);
-                        *self.capabilities.write().await = capabilities;
-                        break;
                     }
                 }
-                _ => break,
+                Ok(Err(_)) => anyhow::bail!("language server session closed"),
+                Err(_) => continue,
             }
-        }
+        };
+        *self.capabilities.write().await = capabilities;
         let initialized = json!({
             "jsonrpc": "2.0",
             "method": "initialized",
             "params": {}
         });
-        self.backend
-            .write_message(&initialized.to_string())
-            .await
-            .map_err(|e| anyhow::anyhow!(e))?;
+        self.write_message(&initialized.to_string()).await?;
         self.initialized.store(true, Ordering::SeqCst);
         Ok(())
     }
 
     /// Send a JSON-RPC request and wait for the matching response.
     pub async fn request(&self, method: &str, params: Value) -> anyhow::Result<Value> {
+        self.ensure_open()?;
         let id = self.next_id.fetch_add(1, Ordering::SeqCst) + 1;
         let msg = json!({
             "jsonrpc": "2.0",
@@ -157,18 +187,16 @@ impl LiveSession {
         let mut rx = self.outbound.subscribe();
         {
             let _guard = self.write_lock.lock().await;
-            self.backend
-                .write_message(&msg.to_string())
-                .await
-                .map_err(|e| anyhow::anyhow!(e))?;
+            self.write_message(&msg.to_string()).await?;
         }
         let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
         loop {
             let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+            self.ensure_open()?;
             if remaining.is_zero() {
                 anyhow::bail!("LSP request {method} timed out");
             }
-            match tokio::time::timeout(remaining, rx.recv()).await {
+            match tokio::time::timeout(remaining.min(Duration::from_millis(100)), rx.recv()).await {
                 Ok(Ok(raw)) => {
                     let Ok(v) = serde_json::from_str::<Value>(&raw) else {
                         continue;
@@ -181,7 +209,7 @@ impl LiveSession {
                     }
                 }
                 Ok(Err(_)) => anyhow::bail!("LSP session closed"),
-                Err(_) => anyhow::bail!("LSP request {method} timed out"),
+                Err(_) => continue,
             }
         }
     }
@@ -193,10 +221,7 @@ impl LiveSession {
         {
             self.initialized.store(true, Ordering::SeqCst);
         }
-        self.backend
-            .write_message(json_body)
-            .await
-            .map_err(|e| anyhow::anyhow!(e))
+        self.write_message(json_body).await
     }
 }
 
@@ -228,8 +253,14 @@ impl SessionPool {
         };
         {
             let guard = self.sessions.read().await;
-            if let Some(existing) = guard.get(&key) {
+            if let Some(existing) = guard.get(&key).filter(|session| !session.is_closed()) {
                 return Ok(Arc::clone(existing));
+            }
+        }
+        {
+            let mut guard = self.sessions.write().await;
+            if guard.get(&key).is_some_and(|session| session.is_closed()) {
+                guard.remove(&key);
             }
         }
         let spec = self
@@ -246,17 +277,27 @@ impl SessionPool {
             diagnostics: RwLock::new(HashMap::new()),
             capabilities: RwLock::new(Value::Null),
             initialized: AtomicBool::new(false),
+            closed: AtomicBool::new(false),
             next_id: AtomicU64::new(1),
             write_lock: Mutex::new(()),
             reader_task: Mutex::new(None),
         });
         session.start_reader().await;
-        let mut guard = self.sessions.write().await;
-        if let Some(existing) = guard.get(&key) {
+        let existing = {
+            let mut guard = self.sessions.write().await;
+            let existing = guard
+                .get(&key)
+                .filter(|session| !session.is_closed())
+                .cloned();
+            if existing.is_none() {
+                guard.insert(key, Arc::clone(&session));
+            }
+            existing
+        };
+        if let Some(existing) = existing {
             session.backend.shutdown().await;
-            return Ok(Arc::clone(existing));
+            return Ok(existing);
         }
-        guard.insert(key, Arc::clone(&session));
         Ok(session)
     }
 

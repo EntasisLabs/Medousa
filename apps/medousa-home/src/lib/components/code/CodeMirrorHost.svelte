@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { onDestroy, onMount } from "svelte";
+  import { onDestroy, onMount, untrack } from "svelte";
   import { basicSetup } from "codemirror";
-  import { EditorState } from "@codemirror/state";
+  import { Compartment, EditorState, type Extension } from "@codemirror/state";
   import {
     EditorView,
     GutterMarker,
@@ -136,6 +136,8 @@
     changedLines?: Array<{ line: number; kind: string }>;
     conventionIndentStyle?: "space" | "tab" | null;
     conventionTabSize?: number | null;
+    wordWrap?: boolean;
+    showLineNumbers?: boolean;
   }
 
   let {
@@ -154,6 +156,8 @@
     changedLines = [],
     conventionIndentStyle = null,
     conventionTabSize = null,
+    wordWrap = readCodeEditorWordWrap(),
+    showLineNumbers = readCodeEditorLineNumbers(),
   }: Props = $props();
 
   let host: HTMLDivElement | undefined = $state();
@@ -162,7 +166,21 @@
   let applyingExternal = false;
   let syncedKey: string | number = 0;
   let onchangeRef: ((value: string) => void) | undefined;
+  let onCursorChangedRef: Props["onCursorChanged"];
+  let onSelectionChangedRef: Props["onSelectionChanged"];
+  let onProblemsChangedRef: Props["onProblemsChanged"];
   let onContextMenuRef: ((event: MouseEvent) => void) | undefined;
+  let changeTimer: ReturnType<typeof setTimeout> | undefined;
+  let pendingChangeCallback: ((value: string) => void) | undefined;
+  let telemetryFrame: number | undefined;
+
+  const languageCompartment = new Compartment();
+  const indentationCompartment = new Compartment();
+  const readOnlyCompartment = new Compartment();
+  const lspCompartment = new Compartment();
+  const wrapCompartment = new Compartment();
+  const lineNumbersCompartment = new Compartment();
+  const reviewCompartment = new Compartment();
 
   const resolvedLanguage = $derived(resolveCodeEditorLanguage(languageId));
   const lspLang = $derived(
@@ -174,15 +192,34 @@
 
   $effect(() => {
     onchangeRef = onchange;
+    onCursorChangedRef = onCursorChanged;
+    onSelectionChangedRef = onSelectionChanged;
+    onProblemsChangedRef = onProblemsChanged;
   });
 
   $effect(() => {
     onContextMenuRef = onContextMenu;
   });
 
-  function emitChange(next: string) {
+  function scheduleChange() {
     if (applyingExternal) return;
-    onchangeRef?.(next);
+    if (changeTimer) clearTimeout(changeTimer);
+    pendingChangeCallback = onchangeRef;
+    changeTimer = setTimeout(() => {
+      changeTimer = undefined;
+      const callback = pendingChangeCallback;
+      pendingChangeCallback = undefined;
+      if (view) callback?.(view.state.doc.toString());
+    }, 120);
+  }
+
+  function flushChange() {
+    if (!changeTimer) return;
+    clearTimeout(changeTimer);
+    changeTimer = undefined;
+    const callback = pendingChangeCallback;
+    pendingChangeCallback = undefined;
+    if (view) callback?.(view.state.doc.toString());
   }
 
   function applyExternalValue(next: string) {
@@ -204,16 +241,14 @@
   function reportCursor(state: EditorState) {
     const selection = state.selection.main;
     const line = state.doc.lineAt(selection.head);
-    onCursorChanged?.({
+    onCursorChangedRef?.({
       line: line.number,
       column: selection.head - line.from + 1,
     });
   }
 
-  function buildExtensions() {
-    const wrap = readCodeEditorWordWrap();
-    const showLineNumbers = readCodeEditorLineNumbers();
-    const leading = value.split("\n").slice(0, 400).map((line) => line.match(/^[\t ]+/)?.[0] ?? "").filter(Boolean);
+  function indentationExtensions(content: string): Extension {
+    const leading = content.split("\n").slice(0, 400).map((line) => line.match(/^[\t ]+/)?.[0] ?? "").filter(Boolean);
     const usesTabs = conventionIndentStyle
       ? conventionIndentStyle === "tab"
       : leading.some((indentation) => indentation.startsWith("\t"));
@@ -231,15 +266,44 @@
       ? readCodeEditorTabSize()
       : conventionTabSize ?? inferredSize;
     const indent = usesTabs ? "\t" : " ".repeat(tabSize);
-    const extensions = [
+    return [indentUnit.of(indent), EditorState.tabSize.of(tabSize)];
+  }
+
+  function lspExtensions(): Extension {
+    return lspEnabled && client && documentUri
+      ? client.plugin(documentUri, lspLang)
+      : [];
+  }
+
+  function reviewExtensions(): Extension {
+    if (changedLines.length === 0) return [];
+    const markers = new Map(changedLines.map((change) => [change.line, change.kind]));
+    return gutter({
+      class: "code-review-gutter",
+      lineMarker(editorView, line) {
+        const kind = markers.get(editorView.state.doc.lineAt(line.from).number);
+        return kind ? new ReviewMarker(kind) : null;
+      },
+    });
+  }
+
+  function buildExtensions(): Extension[] {
+    return [
       basicSetup,
       codeEditorChromeTheme,
-      ...buildCodeEditorLanguageExtensions(resolvedLanguage),
+      languageCompartment.of(buildCodeEditorLanguageExtensions(resolvedLanguage)),
       keymap.of([...searchKeymap, indentWithTab]),
       highlightSelectionMatches(),
-      indentUnit.of(indent),
-      EditorState.tabSize.of(tabSize),
-      EditorState.readOnly.of(readOnly),
+      indentationCompartment.of(indentationExtensions(value)),
+      readOnlyCompartment.of(EditorState.readOnly.of(readOnly)),
+      lspCompartment.of(lspExtensions()),
+      wrapCompartment.of(wordWrap ? EditorView.lineWrapping : []),
+      lineNumbersCompartment.of(
+        showLineNumbers
+          ? []
+          : EditorView.theme({ ".cm-lineNumbers": { display: "none" } }),
+      ),
+      reviewCompartment.of(reviewExtensions()),
       EditorView.domEventHandlers({
         contextmenu(event) {
           if (!onContextMenuRef) return false;
@@ -250,45 +314,30 @@
       }),
       EditorView.updateListener.of((update) => {
         if (update.docChanged) {
-          emitChange(update.state.doc.toString());
+          scheduleChange();
         }
         if (update.docChanged || update.selectionSet) {
           codeEditorFind.syncFromView(update.view);
-          reportCursor(update.state);
-          const selection = update.state.selection.main;
-          onSelectionChanged?.({
-            startLine: update.state.doc.lineAt(selection.from).number,
-            endLine: update.state.doc.lineAt(selection.to).number,
-            text: update.state.sliceDoc(selection.from, selection.to).slice(0, 4_000),
+          if (telemetryFrame !== undefined) cancelAnimationFrame(telemetryFrame);
+          telemetryFrame = requestAnimationFrame(() => {
+            telemetryFrame = undefined;
+            reportCursor(update.state);
+            const selection = update.state.selection.main;
+            onSelectionChangedRef?.({
+              startLine: update.state.doc.lineAt(selection.from).number,
+              endLine: update.state.doc.lineAt(selection.to).number,
+              text: update.state.sliceDoc(
+                selection.from,
+                Math.min(selection.to, selection.from + 4_000),
+              ),
+            });
           });
         }
         if (update.transactions.some((tr) => tr.effects.length > 0)) {
-          onProblemsChanged?.();
+          onProblemsChangedRef?.();
         }
       }),
     ];
-    if (changedLines.length > 0) {
-      const markers = new Map(changedLines.map((change) => [change.line, change.kind]));
-      extensions.push(
-        gutter({
-          class: "code-review-gutter",
-          lineMarker(view, line) {
-            const kind = markers.get(view.state.doc.lineAt(line.from).number);
-            return kind ? new ReviewMarker(kind) : null;
-          },
-        }),
-      );
-    }
-    if (wrap) {
-      extensions.push(EditorView.lineWrapping);
-    }
-    if (!showLineNumbers) {
-      extensions.push(EditorView.theme({ ".cm-lineNumbers": { display: "none" } }));
-    }
-    if (lspEnabled && client && documentUri) {
-      extensions.push(client.plugin(documentUri, lspLang));
-    }
-    return extensions;
   }
 
   onMount(() => {
@@ -311,6 +360,8 @@
   });
 
   onDestroy(() => {
+    flushChange();
+    if (telemetryFrame !== undefined) cancelAnimationFrame(telemetryFrame);
     stopHoverObserve?.();
     stopHoverObserve = undefined;
     view?.destroy();
@@ -324,7 +375,14 @@
       changes: { from, to, insert: text },
       selection: { anchor: from + text.length },
     });
-    emitChange(view.state.doc.toString());
+  }
+
+  export function getValue(): string {
+    return view?.state.doc.toString() ?? value;
+  }
+
+  export function flushChanges() {
+    flushChange();
   }
 
   export function focusEditor() {
@@ -451,11 +509,72 @@
       applyExternalValue(next);
     }
   });
+
+  $effect(() => {
+    if (!view) return;
+    view.dispatch({
+      effects: languageCompartment.reconfigure(
+        buildCodeEditorLanguageExtensions(resolvedLanguage),
+      ),
+    });
+    stopHoverObserve?.();
+    stopHoverObserve = resolvedLanguage === "grapheme" && host
+      ? observeGraphemeHovers(host)
+      : undefined;
+  });
+
+  $effect(() => {
+    if (!view) return;
+    void conventionIndentStyle;
+    void conventionTabSize;
+    void resolvedLanguage;
+    view.dispatch({
+      effects: indentationCompartment.reconfigure(
+        indentationExtensions(untrack(() => view?.state.doc.toString() ?? value)),
+      ),
+    });
+  });
+
+  $effect(() => {
+    if (!view) return;
+    view.dispatch({
+      effects: readOnlyCompartment.reconfigure(EditorState.readOnly.of(readOnly)),
+    });
+  });
+
+  $effect(() => {
+    if (!view) return;
+    view.dispatch({ effects: lspCompartment.reconfigure(lspExtensions()) });
+  });
+
+  $effect(() => {
+    if (!view) return;
+    view.dispatch({
+      effects: wrapCompartment.reconfigure(wordWrap ? EditorView.lineWrapping : []),
+    });
+  });
+
+  $effect(() => {
+    if (!view) return;
+    view.dispatch({
+      effects: lineNumbersCompartment.reconfigure(
+        showLineNumbers
+          ? []
+          : EditorView.theme({ ".cm-lineNumbers": { display: "none" } }),
+      ),
+    });
+  });
+
+  $effect(() => {
+    if (!view) return;
+    void changedLines;
+    view.dispatch({ effects: reviewCompartment.reconfigure(reviewExtensions()) });
+  });
 </script>
 
 <div
   bind:this={host}
-  class="grapheme-codemirror-host code-codemirror-host min-h-0 min-w-0 flex-1 overflow-hidden"
+  class="grapheme-codemirror-host code-codemirror-host h-full min-h-0 min-w-0 flex-1 overflow-hidden"
   role="textbox"
   tabindex="0"
   aria-label="Code editor"

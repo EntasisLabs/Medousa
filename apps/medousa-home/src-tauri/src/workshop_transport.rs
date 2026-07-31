@@ -292,14 +292,18 @@ fn lan_client() -> Result<&'static Client, String> {
     if let Some(client) = LAN_CLIENT.get() {
         return Ok(client);
     }
-    let client = Client::builder()
+    let client = build_lan_client()?;
+    let _ = LAN_CLIENT.set(client);
+    Ok(LAN_CLIENT.get().expect("lan client initialized"))
+}
+
+fn build_lan_client() -> Result<Client, String> {
+    Client::builder()
         .connect_timeout(Duration::from_secs(3))
         .timeout(Duration::from_secs(120))
         .pool_max_idle_per_host(8)
         .build()
-        .map_err(|err| err.to_string())?;
-    let _ = LAN_CLIENT.set(client);
-    Ok(LAN_CLIENT.get().expect("lan client initialized"))
+        .map_err(|err| err.to_string())
 }
 
 fn lan_stream_client() -> Result<&'static Client, String> {
@@ -351,40 +355,105 @@ async fn lan_request(
     }
     let client = lan_client()?;
     let url = format!("{}{}", config.lan_base, normalize_path(path));
-    let mut request = match method {
-        "GET" => client.get(url),
-        "POST" => client.post(url),
-        "PUT" => client.put(url),
-        "PATCH" => client.patch(url),
-        "DELETE" => client.delete(url),
-        other => return Err(format!("unsupported HTTP method {other}")),
-    };
-    request = request.headers(headers.clone());
-    request = match payload {
-        RequestPayload::Empty => request,
-        RequestPayload::Json(body) => request
-            .header("Content-Type", "application/json")
-            .body(body.clone()),
-        RequestPayload::Raw {
-            content_type,
-            bytes,
-            extra_headers,
-        } => {
-            let mut req = request.header("Content-Type", content_type).body(bytes.clone());
-            for (name, value) in extra_headers {
-                req = req.header(name, value);
-            }
-            req
-        }
-    };
+    let attempts = lan_body_attempts(method);
+    let mut last_body_error = None;
 
-    let response = request.send().await.map_err(|err| err.to_string())?;
-    if !response.status().is_success() {
+    for attempt in 0..attempts {
+        let retry_client = (attempt > 0).then(build_lan_client).transpose()?;
+        let request_client = retry_client.as_ref().unwrap_or(client);
+        let mut request = match method {
+            "GET" => request_client.get(&url),
+            "POST" => request_client.post(&url),
+            "PUT" => request_client.put(&url),
+            "PATCH" => request_client.patch(&url),
+            "DELETE" => request_client.delete(&url),
+            other => return Err(format!("unsupported HTTP method {other}")),
+        };
+        request = request.headers(headers.clone());
+        if attempt > 0 {
+            // A successful response with an unreadable body generally means a
+            // stale keep-alive connection was closed mid-frame. Do not reuse
+            // that connection for the one safe, idempotent retry.
+            request = request.header(reqwest::header::CONNECTION, "close");
+        }
+        request = match payload {
+            RequestPayload::Empty => request,
+            RequestPayload::Json(body) => request
+                .header("Content-Type", "application/json")
+                .body(body.clone()),
+            RequestPayload::Raw {
+                content_type,
+                bytes,
+                extra_headers,
+            } => {
+                let mut req = request.header("Content-Type", content_type).body(bytes.clone());
+                for (name, value) in extra_headers {
+                    req = req.header(name, value);
+                }
+                req
+            }
+        };
+
+        let response = request.send().await.map_err(|err| err.to_string())?;
         let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        return Err(format!("workshop returned HTTP {status}: {body}"));
+        let expected_length = response.content_length();
+        let response_bytes = match response.bytes().await {
+            Ok(bytes) => bytes,
+            Err(err) if attempt + 1 < attempts => {
+                last_body_error = Some(format_response_body_error(
+                    method,
+                    path,
+                    status,
+                    expected_length,
+                    &err,
+                ));
+                continue;
+            }
+            Err(err) => {
+                return Err(format_response_body_error(
+                    method,
+                    path,
+                    status,
+                    expected_length,
+                    &err,
+                ));
+            }
+        };
+        let response_body = String::from_utf8(response_bytes.to_vec()).map_err(|err| {
+            format!(
+                "workshop returned a non-UTF-8 body for {method} {} (HTTP {status}): {err}",
+                normalize_path(path),
+            )
+        })?;
+        if !status.is_success() {
+            return Err(format!("workshop returned HTTP {status}: {response_body}"));
+        }
+        return Ok(response_body);
     }
-    response.text().await.map_err(|err| err.to_string())
+
+    Err(last_body_error.unwrap_or_else(|| {
+        format!("workshop response body was unavailable for {method} {}", normalize_path(path))
+    }))
+}
+
+fn lan_body_attempts(method: &str) -> usize {
+    if method == "GET" { 2 } else { 1 }
+}
+
+fn format_response_body_error(
+    method: &str,
+    path: &str,
+    status: reqwest::StatusCode,
+    expected_length: Option<u64>,
+    error: &reqwest::Error,
+) -> String {
+    let length = expected_length
+        .map(|value| format!(", expected {value} bytes"))
+        .unwrap_or_default();
+    format!(
+        "could not read workshop response body for {method} {} (HTTP {status}{length}): {error}",
+        normalize_path(path),
+    )
 }
 
 fn auth_headers(config: &WorkshopTransportConfig) -> reqwest::header::HeaderMap {
@@ -530,4 +599,69 @@ fn iroh_header_slice<'a>(pairs: &'a [(String, String)]) -> Vec<(&'a str, &'a str
         .iter()
         .map(|(name, value)| (name.as_str(), value.as_str()))
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+
+    use super::{RequestPayload, lan_body_attempts, lan_request};
+    use crate::pairing_client::WorkshopTransportConfig;
+
+    #[test]
+    fn retries_only_idempotent_get_response_bodies() {
+        assert_eq!(lan_body_attempts("GET"), 2);
+        assert_eq!(lan_body_attempts("POST"), 1);
+        assert_eq!(lan_body_attempts("PUT"), 1);
+        assert_eq!(lan_body_attempts("PATCH"), 1);
+        assert_eq!(lan_body_attempts("DELETE"), 1);
+    }
+
+    #[tokio::test]
+    async fn retries_a_truncated_get_body_on_a_fresh_connection() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind test server");
+        let address = listener.local_addr().expect("test server address");
+        let server = std::thread::spawn(move || {
+            for attempt in 0..2 {
+                let (mut stream, _) = listener.accept().expect("accept test request");
+                let mut request = [0_u8; 2048];
+                let _ = stream.read(&mut request).expect("read test request");
+                if attempt == 0 {
+                    stream
+                        .write_all(
+                            b"HTTP/1.1 200 OK\r\nContent-Length: 20\r\nConnection: close\r\n\r\nshort",
+                        )
+                        .expect("write truncated response");
+                } else {
+                    stream
+                        .write_all(
+                            b"HTTP/1.1 200 OK\r\nContent-Length: 11\r\nConnection: close\r\n\r\n{\"ok\":true}",
+                        )
+                        .expect("write complete response");
+                }
+            }
+        });
+        let config = WorkshopTransportConfig {
+            lan_base: format!("http://{address}"),
+            iroh_ticket: None,
+            session_token: None,
+            phone_id: String::new(),
+            workshop_device_id: String::new(),
+        };
+
+        let body = lan_request(
+            &config,
+            "GET",
+            "/source",
+            &reqwest::header::HeaderMap::new(),
+            &RequestPayload::Empty,
+            false,
+        )
+        .await
+        .expect("retry should recover the complete response");
+
+        server.join().expect("test server completes");
+        assert_eq!(body, "{\"ok\":true}");
+    }
 }

@@ -12,14 +12,15 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tower_http::cors::CorsLayer;
 
+use crate::backend::spawn_backend;
 use crate::detamu::{DetamuDocumentSnapshot, DetamuServerHandle};
 use crate::document::DocumentStore;
 use crate::registry::{LanguageId, ServerRegistry};
 use crate::session::SessionPool;
-use crate::{ENGINE_NAME, ENGINE_VERSION};
+use crate::{ENGINE_API_REVISION, ENGINE_NAME, ENGINE_VERSION};
 
 #[derive(Clone)]
 pub struct OrchestratorConfig {
@@ -102,6 +103,7 @@ fn path_to_file_uri(path: &std::path::Path) -> String {
 pub struct HealthResponse {
     pub name: String,
     pub version: String,
+    pub api_revision: u32,
     pub uptime_secs: u64,
     pub active_sessions: usize,
     pub workspace_root: String,
@@ -154,6 +156,7 @@ async fn health(State(state): State<Arc<OrchestratorState>>) -> Json<HealthRespo
     Json(HealthResponse {
         name: ENGINE_NAME.into(),
         version: ENGINE_VERSION.into(),
+        api_revision: ENGINE_API_REVISION,
         uptime_secs: state.started.elapsed().as_secs(),
         active_sessions: state.pool.active_count().await,
         workspace_root: state.config.workspace_root.display().to_string(),
@@ -177,9 +180,7 @@ async fn lsp_ws(
     State(state): State<Arc<OrchestratorState>>,
     Query(query): Query<LspQuery>,
 ) -> impl IntoResponse {
-    ws.on_upgrade(move |socket| {
-        handle_client(socket, state, query.language, query.workspace_root)
-    })
+    ws.on_upgrade(move |socket| handle_client(socket, state, query.language, query.workspace_root))
 }
 
 fn requested_workspace_root(
@@ -208,28 +209,29 @@ async fn handle_client(
             return;
         }
     };
-    let session = match state
-        .pool
-        .get_or_spawn(workspace_root.clone(), language.clone())
-        .await
-    {
-        Ok(s) => s,
+    let spec = match state.pool.registry().get(&language) {
+        Some(spec) => spec.clone(),
+        None => {
+            tracing::warn!(%language, "no language server registered");
+            return;
+        }
+    };
+    // Editor connections are transparent one-client/one-server channels.
+    // Sharing the agent session here would require JSON-RPC id translation and
+    // initialize virtualization; blindly forwarding multiple clients corrupts
+    // the protocol and lets their request ids collide.
+    let backend = match spawn_backend(&spec, &workspace_root).await {
+        Ok(backend) => backend,
         Err(err) => {
             tracing::warn!(error = %err, %language, "failed to spawn language session");
             return;
         }
     };
-
-    if let Err(err) = session.ensure_initialized(&path_to_file_uri(&workspace_root)).await {
-        tracing::warn!(error = %err, %language, "failed to initialize language session");
-        return;
-    }
-
-    let mut outbound_rx = session.outbound.subscribe();
     let (mut ws_tx, mut ws_rx) = socket.split();
 
+    let reader = Arc::clone(&backend);
     let fanout = tokio::spawn(async move {
-        while let Ok(msg) = outbound_rx.recv().await {
+        while let Ok(msg) = reader.read_message().await {
             if ws_tx.send(Message::Text(msg.into())).await.is_err() {
                 break;
             }
@@ -246,13 +248,14 @@ async fn handle_client(
         if let Ok(value) = serde_json::from_str::<Value>(&text) {
             track_document(&state, &value).await;
         }
-        if let Err(err) = session.write_raw(&text).await {
+        if let Err(err) = backend.write_message(&text).await {
             tracing::warn!(error = %err, "backend write failed");
             break;
         }
     }
 
     fanout.abort();
+    backend.shutdown().await;
 }
 
 async fn track_document(state: &OrchestratorState, value: &Value) {
@@ -458,11 +461,7 @@ async fn agent_diagnostics(
     let language = language_for_uri(&q.uri, q.language.as_deref());
     let workspace_root = requested_workspace_root(&state, q.workspace_root.clone())
         .map_err(|e| (axum::http::StatusCode::BAD_REQUEST, e.to_string()))?;
-    let diagnostics = if let Ok(session) = state
-        .pool
-        .get_or_spawn(workspace_root, language)
-        .await
-    {
+    let diagnostics = if let Ok(session) = state.pool.get_or_spawn(workspace_root, language).await {
         session
             .diagnostics
             .read()

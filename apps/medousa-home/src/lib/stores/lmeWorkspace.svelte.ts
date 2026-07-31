@@ -9,6 +9,7 @@ import { graphemeScriptEditor } from "$lib/stores/graphemeScriptEditor.svelte";
 import { vault } from "$lib/stores/vault.svelte";
 import { externalDesk } from "$lib/stores/externalDesk.svelte";
 import type { FlowComposerDraft } from "$lib/types/workflow";
+import { openCodeWorkspaceSession } from "$lib/utils/codeWorkspaceController";
 
 export type LmeExplorerMode =
   | "notes"
@@ -285,11 +286,7 @@ export class LmeWorkspaceStore {
     if (existing) {
       this.activeTabId = existing.tabId;
       mirrorActiveTabToShell(existing.tabId, existing.title);
-      const { undertakings } = await import("$lib/stores/undertakings.svelte");
-      await undertakings.select(id);
-      const { landCodeWorkingSet } = await import("$lib/utils/undertakingWorkspace");
-      await landCodeWorkingSet(id);
-      return;
+      return openCodeWorkspaceSession(id);
     }
     const label = title?.trim() || "Code workspace";
     const tab: LmeTab = {
@@ -301,10 +298,7 @@ export class LmeWorkspaceStore {
     this.tabs = [...this.tabs, tab].slice(-MAX_TABS);
     this.activeTabId = tab.tabId;
     mirrorActiveTabToShell(tab.tabId, tab.title);
-    const { undertakings } = await import("$lib/stores/undertakings.svelte");
-    await undertakings.select(id);
-    const { landCodeWorkingSet } = await import("$lib/utils/undertakingWorkspace");
-    await landCodeWorkingSet(id);
+    return openCodeWorkspaceSession(id);
   }
 
   openDeck(artifactId: string, title?: string) {

@@ -17,7 +17,8 @@ import {
   setSessionAgentSessionId,
 } from "$lib/utils/sessionAgentRuntime";
 import { codeWorkspace } from "$lib/stores/codeWorkspace.svelte";
-import { getUndertakingSourceTreeShared } from "$lib/utils/forgeSourceTreeCache";
+import { landCodeWorkingSet as landCodeWorkingSetThroughController } from "$lib/utils/codeWorkspaceController";
+import type { LandCodeResult } from "$lib/utils/codeWorkspaceController";
 
 function terminalSessionId(created: { session_id?: string; id?: string }): string {
   return typeof created.session_id === "string"
@@ -31,95 +32,11 @@ type ActiveCodeInsights = Pick<
 >;
 
 const codeInsightsByWorkId = new Map<string, ActiveCodeInsights>();
-
-const LANDING_CANDIDATES = [
-  "README.md",
-  "README",
-  "readme.md",
-  "src/main.ts",
-  "src/main.rs",
-  "src/lib.rs",
-  "src/index.ts",
-  "src/index.js",
-  "main.go",
-  "Cargo.toml",
-  "package.json",
-];
-
-export type LandCodeResult =
-  | { ok: true; path: string }
-  | { ok: false; error: string };
+export type { LandCodeResult } from "$lib/utils/codeWorkspaceController";
 
 /** Open a real buffer after Start/open so Code never lands on an empty plaza. */
 export async function landCodeWorkingSet(workId: string): Promise<LandCodeResult> {
-  const id = workId.trim();
-  if (!id) {
-    return { ok: false, error: "No project selected." };
-  }
-
-  const detail = undertakings.detail?.id === id ? undertakings.detail : null;
-  if (detail && !detail.environment) {
-    const message = detail.allowed_actions.provision.allowed
-      ? "Set up this project to open its working copy and files."
-      : detail.allowed_actions.provision.reason ||
-        "This project has no working copy yet.";
-    codeWorkspace.workspaceErrorByWorkId = {
-      ...codeWorkspace.workspaceErrorByWorkId,
-      [id]: message,
-    };
-    return { ok: false, error: message };
-  }
-
-  try {
-    await codeWorkspace.hydrate(id);
-    const existing = codeWorkspace.activeFor(id);
-    if (existing && !existing.loading && existing.digest) {
-      undertakings.setSelection({ path: existing.path, line: existing.line ?? 1, entityId: null });
-      codeWorkspace.workspaceErrorByWorkId = {
-        ...codeWorkspace.workspaceErrorByWorkId,
-        [id]: null,
-      };
-      return { ok: true, path: existing.path };
-    }
-    const tree = await getUndertakingSourceTreeShared(id);
-    const paths = tree.files.map((file) => file.path);
-    if (paths.length === 0) {
-      const message = "This working copy has no files to open yet.";
-      codeWorkspace.workspaceErrorByWorkId = {
-        ...codeWorkspace.workspaceErrorByWorkId,
-        [id]: message,
-      };
-      return { ok: false, error: message };
-    }
-    const preferred =
-      LANDING_CANDIDATES.find((candidate) => paths.includes(candidate)) ??
-      paths.find((path) => /\.(ts|tsx|js|jsx|rs|go|py|svelte|md)$/i.test(path)) ??
-      paths[0];
-    if (!preferred) {
-      const message = "Could not pick a landing file in this working copy.";
-      codeWorkspace.workspaceErrorByWorkId = {
-        ...codeWorkspace.workspaceErrorByWorkId,
-        [id]: message,
-      };
-      return { ok: false, error: message };
-    }
-    await codeWorkspace.open(id, preferred, 1);
-    undertakings.setSelection({ path: preferred, line: 1, entityId: null });
-    codeWorkspace.workspaceErrorByWorkId = {
-      ...codeWorkspace.workspaceErrorByWorkId,
-      [id]: null,
-    };
-    return { ok: true, path: preferred };
-  } catch (err) {
-    const message = humanizeForgeMessage(
-      err instanceof Error ? err.message : String(err),
-    );
-    codeWorkspace.workspaceErrorByWorkId = {
-      ...codeWorkspace.workspaceErrorByWorkId,
-      [id]: message,
-    };
-    return { ok: false, error: message };
-  }
+  return landCodeWorkingSetThroughController(workId);
 }
 
 export function setActiveCodeInsights(workId: string, insights: ActiveCodeInsights) {

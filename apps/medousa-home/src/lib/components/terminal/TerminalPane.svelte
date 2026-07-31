@@ -46,8 +46,10 @@
   let paneEl = $state<HTMLDivElement | null>(null);
 
   let unlisten: UnlistenFn | null = null;
-  let poll: ReturnType<typeof setInterval> | null = null;
   let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  let frameTimer: ReturnType<typeof setTimeout> | null = null;
+  let snapshotInFlight = false;
+  let snapshotQueued = false;
   let resizeObserver: ResizeObserver | null = null;
 
   function focusInput() {
@@ -105,14 +107,15 @@
         }
       }
       const attach = await terminalAttach(sid);
+      unlisten?.();
       attachId = attach.attach_id;
       await applyResize();
 
       unlisten = await listen<TerminalFrame>("terminal-frame", (event) => {
         if (event.payload.attach_id !== attachId) return;
-        cursorRow = event.payload.cursor_row;
-        cursorCol = event.payload.cursor_col;
-        void refreshSnapshot();
+        if (cursorRow !== event.payload.cursor_row) cursorRow = event.payload.cursor_row;
+        if (cursorCol !== event.payload.cursor_col) cursorCol = event.payload.cursor_col;
+        scheduleSnapshot();
       });
       await refreshSnapshot();
       await refreshSessionList();
@@ -139,11 +142,36 @@
 
   async function refreshSnapshot() {
     if (attachId == null) return;
+    if (snapshotInFlight) {
+      snapshotQueued = true;
+      return;
+    }
+    snapshotInFlight = true;
     try {
-      lines = await terminalSnapshot(attachId);
+      const next = await terminalSnapshot(attachId);
+      if (
+        next.length !== lines.length ||
+        next.some((line, index) => line !== lines[index])
+      ) {
+        lines = next;
+      }
     } catch {
       // attach may have been dropped
+    } finally {
+      snapshotInFlight = false;
+      if (snapshotQueued) {
+        snapshotQueued = false;
+        scheduleSnapshot();
+      }
     }
+  }
+
+  function scheduleSnapshot() {
+    if (frameTimer) return;
+    frameTimer = setTimeout(() => {
+      frameTimer = null;
+      void refreshSnapshot();
+    }, 50);
   }
 
   async function sendKey(event: KeyboardEvent) {
@@ -221,18 +249,17 @@
 
   onMount(() => {
     void restoreUndertakingContext().then(connect).then(() => focusInput());
-    poll = setInterval(() => void refreshSnapshot(), 1500);
-    heartbeatTimer = setInterval(() => void sendHeartbeat(), 30_000);
+    if (!compact) heartbeatTimer = setInterval(() => void sendHeartbeat(), 30_000);
     if (paneEl && typeof ResizeObserver !== "undefined") {
       resizeObserver = new ResizeObserver(() => void applyResize());
       resizeObserver.observe(paneEl);
     }
-    void sendHeartbeat();
+    if (!compact) void sendHeartbeat();
   });
 
   onDestroy(() => {
     unlisten?.();
-    if (poll) clearInterval(poll);
+    if (frameTimer) clearTimeout(frameTimer);
     if (heartbeatTimer) clearInterval(heartbeatTimer);
     resizeObserver?.disconnect();
     if (attachId != null) void terminalDetach(attachId);

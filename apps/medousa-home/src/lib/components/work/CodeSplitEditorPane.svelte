@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { tick } from "svelte";
+  import { onDestroy, tick, untrack } from "svelte";
   import { FileCode2, LoaderCircle, Save, X } from "@lucide/svelte";
   import type { LSPClient } from "@codemirror/lsp-client";
   import CodeMirrorHost from "$lib/components/code/CodeMirrorHost.svelte";
@@ -13,7 +13,6 @@
     codeWorkspace,
     type CodeDocumentTab,
   } from "$lib/stores/codeWorkspace.svelte";
-  import { undertakings } from "$lib/stores/undertakings.svelte";
 
   interface Props {
     tab: CodeDocumentTab;
@@ -30,6 +29,9 @@
   let lspConnecting = $state(false);
   let lspError = $state<string | null>(null);
   let saving = $state(false);
+  let linePersistTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const tabLanguage = $derived(tab.language);
 
   const dirty = $derived(codeWorkspace.isDirty(tab));
   const editable = $derived(Boolean(leaseId && generation != null));
@@ -38,13 +40,16 @@
   );
 
   async function save() {
-    if (!leaseId || generation == null || !dirty || saving) return;
+    const liveDraft = editor?.getValue() ?? tab.draft;
+    if (!leaseId || generation == null || liveDraft === tab.content || saving) return;
+    if (liveDraft !== tab.draft) codeWorkspace.updateDraft(tab.tabId, liveDraft);
+    editor?.flushChanges();
     saving = true;
     codeWorkspace.setError(tab.tabId, null);
     try {
       const source = await saveUndertakingSource(tab.work_id, {
         path: tab.path,
-        content: tab.draft,
+        content: liveDraft,
         lease_id: leaseId,
         generation,
         expected_digest: tab.digest,
@@ -61,7 +66,7 @@
   }
 
   $effect(() => {
-    if (!languageSupportsLsp(tab.language)) {
+    if (!languageSupportsLsp(tabLanguage)) {
       lspClient = null;
       lspError = null;
       lspConnecting = false;
@@ -74,7 +79,7 @@
     void getCodeWorkspaceLspClient({
       workId: tab.work_id,
       workspaceRoot: worktree,
-      language: tab.language,
+      language: tabLanguage,
     })
       .then((client) => {
         if (!cancelled) lspClient = client;
@@ -91,7 +96,17 @@
   });
 
   $effect(() => {
-    if (tab.line) void tick().then(() => editor?.revealLine(tab.line!));
+    const id = tab.tabId;
+    const initialLine = untrack(() => tab.line);
+    if (initialLine) {
+      void tick().then(() => {
+        if (tab.tabId === id) editor?.revealLine(initialLine);
+      });
+    }
+  });
+
+  onDestroy(() => {
+    if (linePersistTimer) clearTimeout(linePersistTimer);
   });
 </script>
 
@@ -138,7 +153,8 @@
         <LoaderCircle size={13} class="mr-2 animate-spin" />Opening file…
       </div>
     {:else if tab.digest}
-      {#key `${tab.tabId}:${editable}:${lspClient ? "lsp" : "plain"}`}
+      {#key tab.tabId}
+        {@const editorTabId = tab.tabId}
         <CodeMirrorHost
           bind:this={editor}
           value={tab.draft}
@@ -148,20 +164,14 @@
           client={lspClient}
           readOnly={!editable}
           contentSyncKey={tab.syncKey}
-          onchange={(value) => codeWorkspace.updateDraft(tab.tabId, value)}
+          onchange={(value) => codeWorkspace.updateDraft(editorTabId, value)}
           onCursorChanged={(cursor) => {
-            codeWorkspace.updateLine(tab.tabId, cursor.line);
-            undertakings.setSelection({ path: tab.path, line: cursor.line, entityId: null });
+            if (linePersistTimer) clearTimeout(linePersistTimer);
+            linePersistTimer = setTimeout(() => {
+              linePersistTimer = null;
+              codeWorkspace.updateLine(editorTabId, cursor.line);
+            }, 500);
           }}
-          onSelectionChanged={(selection) =>
-            undertakings.setSelection({
-              path: tab.path,
-              line: selection.startLine,
-              selectionStartLine: selection.startLine,
-              selectionEndLine: selection.endLine,
-              selectedText: selection.text || null,
-              entityId: null,
-            })}
         />
       {/key}
     {:else}

@@ -48,6 +48,7 @@ class CodeWorkspaceStore {
   tabOrderByWorkId = $state<Record<string, string[]>>({});
   private hydrated = new Set<string>();
   private hydrating = new Map<string, Promise<void>>();
+  private opening = new Map<string, Promise<CodeDocumentTab | null>>();
   private persistTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   tabsFor(workId: string): CodeDocumentTab[] {
@@ -131,6 +132,10 @@ class CodeWorkspaceStore {
   }
 
   patch(tabIdValue: string, patch: Partial<CodeDocumentTab>) {
+    const current = this.tabs.find((tab) => tab.tabId === tabIdValue);
+    if (!current || Object.entries(patch).every(([key, value]) => current[key as keyof CodeDocumentTab] === value)) {
+      return;
+    }
     this.tabs = this.tabs.map((tab) =>
       tab.tabId === tabIdValue ? { ...tab, ...patch } : tab,
     );
@@ -148,13 +153,15 @@ class CodeWorkspaceStore {
     if (this.secondaryByWorkId[workId] === id && current) {
       this.secondaryByWorkId = { ...this.secondaryByWorkId, [workId]: current };
     }
-    this.activeByWorkId = { ...this.activeByWorkId, [workId]: id };
-    this.markRecent(workId, id);
+    if (this.activeByWorkId[workId] !== id) {
+      this.activeByWorkId = { ...this.activeByWorkId, [workId]: id };
+      this.markRecent(workId, id);
+    }
     if (options?.recordNavigation !== false) this.recordNavigation(workId, path, line ?? null);
     if (existing) {
       if (line && line > 0) this.patch(id, { line: Math.floor(line) });
       if (options?.persist !== false) this.schedulePersist(workId);
-      return existing;
+      return this.opening.get(id) ?? existing;
     }
     const placeholder: CodeDocumentTab = {
       tabId: id,
@@ -172,9 +179,15 @@ class CodeWorkspaceStore {
       line: line && line > 0 ? Math.floor(line) : null,
     };
     this.tabs = [...this.tabs, placeholder];
-    const loaded = await this.reload(id, { discardDirty: true });
-    if (options?.persist !== false) this.schedulePersist(workId);
-    return loaded;
+    const pending = (async () => {
+      const loaded = await this.reload(id, { discardDirty: true });
+      if (options?.persist !== false) this.schedulePersist(workId);
+      return loaded;
+    })().finally(() => {
+      if (this.opening.get(id) === pending) this.opening.delete(id);
+    });
+    this.opening.set(id, pending);
+    return pending;
   }
 
   async reload(tabIdValue: string, options?: { discardDirty?: boolean }) {
@@ -296,7 +309,8 @@ class CodeWorkspaceStore {
     const tab = this.tabs.find((entry) => entry.tabId === tabIdValue);
     if (!tab) return;
     this.patch(tabIdValue, { draft });
-    this.schedulePersist(tab.work_id);
+    // Draft durability is an idle checkpoint, never part of the keystroke path.
+    this.schedulePersist(tab.work_id, 3_000);
   }
 
   updateLine(tabIdValue: string, line: number) {
@@ -304,7 +318,6 @@ class CodeWorkspaceStore {
     const next = Math.max(1, Math.floor(line));
     if (!tab || tab.line === next) return;
     this.patch(tabIdValue, { line: next });
-    this.schedulePersist(tab.work_id);
   }
 
   acceptSaved(tabIdValue: string, source: ForgeSourceFile) {
@@ -414,6 +427,8 @@ class CodeWorkspaceStore {
     workId: string,
     lease: { lease_id: string; generation: number } | null,
   ) {
+    const current = this.leaseByWorkId[workId] ?? null;
+    if (current?.lease_id === lease?.lease_id && current?.generation === lease?.generation) return;
     this.leaseByWorkId = { ...this.leaseByWorkId, [workId]: lease };
   }
 
@@ -507,7 +522,7 @@ class CodeWorkspaceStore {
     }
   }
 
-  private schedulePersist(workId: string) {
+  private schedulePersist(workId: string, delay = 700) {
     const previous = this.persistTimers.get(workId);
     if (previous) clearTimeout(previous);
     this.persistTimers.set(
@@ -515,7 +530,7 @@ class CodeWorkspaceStore {
       setTimeout(() => {
         this.persistTimers.delete(workId);
         void this.persist(workId);
-      }, 700),
+      }, delay),
     );
   }
 

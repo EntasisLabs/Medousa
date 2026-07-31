@@ -5,11 +5,14 @@ use std::path::PathBuf;
 
 use clap::Parser;
 use medousa_code::registry::ServerRegistry;
-use medousa_code::server::{serve, OrchestratorConfig, OrchestratorState};
+use medousa_code::server::{OrchestratorConfig, OrchestratorState, serve};
 use tracing_subscriber::EnvFilter;
 
 #[derive(Parser, Debug)]
-#[command(name = "medousa-code", about = "Medousa LSP Interoperability Orchestrator")]
+#[command(
+    name = "medousa-code",
+    about = "Medousa LSP Interoperability Orchestrator"
+)]
 struct Args {
     /// Listen address (default 127.0.0.1:7861).
     #[arg(long, default_value = "127.0.0.1:7861")]
@@ -42,7 +45,7 @@ async fn main() -> anyhow::Result<()> {
         .into_iter()
         .map(|root| root.canonicalize().unwrap_or(root))
         .collect::<Vec<_>>();
-    if allowed.is_empty() {
+    if !allowed.iter().any(|root| root == &workspace) {
         allowed.push(workspace.clone());
     }
 

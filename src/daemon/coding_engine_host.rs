@@ -15,7 +15,7 @@ use axum::response::IntoResponse;
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use futures_util::{SinkExt, StreamExt};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tokio::process::{Child, Command};
 use tokio::sync::Mutex;
 use tokio_tungstenite::{connect_async, tungstenite::Message as TungsteniteMessage};
@@ -25,6 +25,7 @@ use crate::grapheme_script::store::GraphemeScriptStore;
 use crate::paths::medousa_data_dir;
 
 const DEFAULT_BIND: &str = "127.0.0.1:7861";
+const EXPECTED_API_REVISION: u32 = 1;
 
 #[derive(Debug, Default)]
 pub struct CodingEngineHost {
@@ -76,10 +77,6 @@ fn resolve_engine_binary() -> Option<PathBuf> {
             return Some(p);
         }
     }
-    let data_bin = medousa_data_dir().join("bin").join(binary_name());
-    if data_bin.is_file() {
-        return Some(data_bin);
-    }
     if let Ok(exe) = std::env::current_exe()
         && let Some(dir) = exe.parent()
     {
@@ -87,6 +84,10 @@ fn resolve_engine_binary() -> Option<PathBuf> {
         if candidate.is_file() {
             return Some(candidate);
         }
+    }
+    let data_bin = medousa_data_dir().join("bin").join(binary_name());
+    if data_bin.is_file() {
+        return Some(data_bin);
     }
     which_bin(binary_name())
 }
@@ -121,19 +122,56 @@ fn forge_worktree_roots() -> Vec<PathBuf> {
     vec![forge_root]
 }
 
-async fn probe_health(health_url: &str) -> bool {
+#[derive(Debug, Deserialize)]
+struct EngineHealth {
+    name: String,
+    api_revision: Option<u32>,
+    allowed_roots: Vec<PathBuf>,
+}
+
+enum HealthProbe {
+    Compatible,
+    Unreachable,
+    Incompatible(String),
+}
+
+async fn probe_health(health_url: &str, required_roots: &[PathBuf]) -> HealthProbe {
     let Ok(client) = reqwest::Client::builder()
         .timeout(std::time::Duration::from_millis(400))
         .build()
     else {
-        return false;
+        return HealthProbe::Unreachable;
     };
-    client
-        .get(health_url)
-        .send()
-        .await
-        .ok()
-        .is_some_and(|r| r.status().is_success())
+    let Ok(response) = client.get(health_url).send().await else {
+        return HealthProbe::Unreachable;
+    };
+    if !response.status().is_success() {
+        return HealthProbe::Unreachable;
+    }
+    let Ok(health) = response.json::<EngineHealth>().await else {
+        return HealthProbe::Incompatible("health response uses an unknown format".into());
+    };
+    if health.name != "medousa-code" {
+        return HealthProbe::Incompatible(format!("unexpected service {}", health.name));
+    }
+    if health.api_revision != Some(EXPECTED_API_REVISION) {
+        return HealthProbe::Incompatible(format!(
+            "API revision {:?}; expected {EXPECTED_API_REVISION}",
+            health.api_revision
+        ));
+    }
+    if let Some(missing) = required_roots.iter().find(|required| {
+        !health
+            .allowed_roots
+            .iter()
+            .any(|allowed| required.starts_with(allowed))
+    }) {
+        return HealthProbe::Incompatible(format!(
+            "workspace root {} is not allowed",
+            missing.display()
+        ));
+    }
+    HealthProbe::Compatible
 }
 
 /// Ensure the coding engine is running; return connection info.
@@ -145,6 +183,7 @@ pub async fn ensure_coding_engine(host: &CodingEngineHost) -> CodingEngineInfo {
     let workspace_root = GraphemeScriptStore::root_dir();
     let workspace_str = workspace_root.to_string_lossy().into_owned();
     let workspace_root_uri = path_to_file_uri(&workspace_root);
+    let required_roots = forge_worktree_roots();
 
     let info = |available: bool, message: String| CodingEngineInfo {
         available,
@@ -158,8 +197,17 @@ pub async fn ensure_coding_engine(host: &CodingEngineHost) -> CodingEngineInfo {
         message,
     };
 
-    if probe_health(&health_url).await {
-        return info(true, "coding engine reachable".into());
+    match probe_health(&health_url, &required_roots).await {
+        HealthProbe::Compatible => return info(true, "coding engine reachable".into()),
+        HealthProbe::Incompatible(reason) => {
+            return info(
+                false,
+                format!(
+                    "incompatible medousa-code is already listening on {bind}: {reason}; restart it with the current Medousa package"
+                ),
+            );
+        }
+        HealthProbe::Unreachable => {}
     }
 
     let Some(bin) = resolve_engine_binary() else {
@@ -171,6 +219,19 @@ pub async fn ensure_coding_engine(host: &CodingEngineHost) -> CodingEngineInfo {
 
     {
         let mut guard = host.child.lock().await;
+        if let Some(child) = guard.as_mut() {
+            match child.try_wait() {
+                Ok(Some(status)) => {
+                    tracing::warn!(%status, "previous medousa-code process exited");
+                    *guard = None;
+                }
+                Ok(None) => {}
+                Err(err) => {
+                    tracing::warn!(error = %err, "failed to inspect medousa-code process");
+                    *guard = None;
+                }
+            }
+        }
         if guard.is_none() {
             let mut cmd = Command::new(&bin);
             cmd.arg("--bind")
@@ -181,7 +242,7 @@ pub async fn ensure_coding_engine(host: &CodingEngineHost) -> CodingEngineInfo {
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())
                 .kill_on_drop(true);
-            for root in forge_worktree_roots() {
+            for root in &required_roots {
                 cmd.arg("--allow-root").arg(root);
             }
             match cmd.spawn() {
@@ -198,8 +259,15 @@ pub async fn ensure_coding_engine(host: &CodingEngineHost) -> CodingEngineInfo {
 
     for _ in 0..20 {
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-        if probe_health(&health_url).await {
-            return info(true, "coding engine started".into());
+        match probe_health(&health_url, &required_roots).await {
+            HealthProbe::Compatible => return info(true, "coding engine started".into()),
+            HealthProbe::Incompatible(reason) => {
+                return info(
+                    false,
+                    format!("medousa-code started incompatibly: {reason}"),
+                );
+            }
+            HealthProbe::Unreachable => {}
         }
     }
 
@@ -229,10 +297,7 @@ pub fn coding_engine_router(state: AppState) -> Router {
 }
 
 pub async fn coding_engine_info(State(state): State<AppState>) -> Json<CodingEngineInfo> {
-    let host = state
-        .coding_engine
-        .clone()
-        .unwrap_or_default();
+    let host = state.coding_engine.clone().unwrap_or_default();
     Json(ensure_coding_engine(&host).await)
 }
 
@@ -252,8 +317,14 @@ pub async fn code_lsp_ws(
     ws: WebSocketUpgrade,
     State(state): State<AppState>,
     Query(q): Query<CodeLspQuery>,
-) -> impl IntoResponse {
+) -> axum::response::Response {
+    let host = state.coding_engine.clone().unwrap_or_default();
+    let info = ensure_coding_engine(&host).await;
+    if !info.available {
+        return (axum::http::StatusCode::SERVICE_UNAVAILABLE, info.message).into_response();
+    }
     ws.on_upgrade(move |socket| proxy_lsp_socket(socket, state, q.language, q.work_id))
+        .into_response()
 }
 
 async fn proxy_lsp_socket(
@@ -262,10 +333,7 @@ async fn proxy_lsp_socket(
     language: String,
     work_id: Option<String>,
 ) {
-    let host = state
-        .coding_engine
-        .clone()
-        .unwrap_or_default();
+    let host = state.coding_engine.clone().unwrap_or_default();
     let info = ensure_coding_engine(&host).await;
     if !info.available {
         tracing::warn!(message = %info.message, "coding engine unavailable for LSP proxy");
@@ -280,12 +348,20 @@ async fn proxy_lsp_socket(
             .and_then(|item| item.environment.map(|env| env.worktree))
     });
     if work_id.is_some() && workspace_root.is_none() {
-        tracing::warn!(work_id, "rejected LSP request for unknown or unprepared undertaking");
+        tracing::warn!(
+            work_id,
+            "rejected LSP request for unknown or unprepared undertaking"
+        );
         return;
     }
     let root_query = workspace_root
         .as_ref()
-        .map(|root| format!("&workspace_root={}", urlencoding::encode(&root.to_string_lossy())))
+        .map(|root| {
+            format!(
+                "&workspace_root={}",
+                urlencoding::encode(&root.to_string_lossy())
+            )
+        })
         .unwrap_or_default();
     let upstream = format!(
         "{}/v1/lsp?language={}{}",
@@ -442,24 +518,26 @@ async fn proxy_agent_get(
             pairs.append_pair(k, v);
         }
     }
-    let client = reqwest::Client::new();
-    let resp = client
-        .get(url)
-        .send()
-        .await
-        .map_err(|e| (axum::http::StatusCode::BAD_GATEWAY, e.to_string()))?;
-    let status = resp.status();
-    let body = resp
-        .json::<serde_json::Value>()
-        .await
-        .map_err(|e| (axum::http::StatusCode::BAD_GATEWAY, e.to_string()))?;
-    if !status.is_success() {
-        return Err((
-            axum::http::StatusCode::BAD_GATEWAY,
-            format!("coding engine returned {status}"),
-        ));
+    let mut last_error = None;
+    for attempt in 0..2 {
+        let response = reqwest::Client::new().get(url.clone()).send().await;
+        let result = match response {
+            Ok(response) => decode_upstream_response(response).await,
+            Err(err) => Err((axum::http::StatusCode::BAD_GATEWAY, err.to_string())),
+        };
+        match result {
+            Ok(body) => return Ok(body),
+            Err(error) if attempt == 0 => {
+                tracing::warn!(path, error = %error.1, "retrying idempotent coding engine request");
+                last_error = Some(error);
+            }
+            Err(error) => return Err(error),
+        }
     }
-    Ok(Json(body))
+    Err(last_error.unwrap_or((
+        axum::http::StatusCode::BAD_GATEWAY,
+        "coding engine request failed".into(),
+    )))
 }
 
 async fn proxy_agent_post(
@@ -501,18 +579,33 @@ async fn proxy_agent_post(
         .send()
         .await
         .map_err(|e| (axum::http::StatusCode::BAD_GATEWAY, e.to_string()))?;
-    let status = resp.status();
-    let response_body = resp
-        .json::<serde_json::Value>()
-        .await
-        .map_err(|e| (axum::http::StatusCode::BAD_GATEWAY, e.to_string()))?;
+    decode_upstream_response(resp).await
+}
+
+async fn decode_upstream_response(
+    response: reqwest::Response,
+) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, String)> {
+    let status = response.status();
+    let bytes = response.bytes().await.map_err(|e| {
+        (
+            axum::http::StatusCode::BAD_GATEWAY,
+            format!("coding engine response read failed: {e}"),
+        )
+    })?;
     if !status.is_success() {
+        let detail = String::from_utf8_lossy(&bytes);
         return Err((
             axum::http::StatusCode::BAD_GATEWAY,
-            format!("coding engine returned {status}"),
+            format!("coding engine returned {status}: {}", detail.trim()),
         ));
     }
-    Ok(Json(response_body))
+    let body = serde_json::from_slice::<serde_json::Value>(&bytes).map_err(|e| {
+        (
+            axum::http::StatusCode::BAD_GATEWAY,
+            format!("coding engine returned invalid JSON: {e}"),
+        )
+    })?;
+    Ok(Json(body))
 }
 
 #[allow(dead_code)]

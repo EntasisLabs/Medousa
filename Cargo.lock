@@ -7449,6 +7449,7 @@ dependencies = [
  "tokio-tungstenite 0.29.0",
  "toml 0.8.23",
  "tower 0.5.3",
+ "tower-http",
  "tracing",
  "tracing-opentelemetry",
  "tracing-subscriber",

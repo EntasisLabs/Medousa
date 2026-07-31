@@ -3,6 +3,7 @@ use std::sync::Arc;
 use anyhow::{Result, anyhow};
 use axum::Router;
 use stasis::dashboard::{DashboardState, RuntimeDashboardQueryService, router as dashboard_router};
+use tower_http::cors::CorsLayer;
 
 use crate::daemon::state::AppState;
 
@@ -549,5 +550,10 @@ pub fn build_daemon_router(
     state: AppState,
     dashboard_action_auth: &DashboardActionAuthConfig,
 ) -> Router {
-    build_core_router(state.clone()).merge(build_feature_routers(&state, dashboard_action_auth))
+    build_core_router(state.clone())
+        .merge(build_feature_routers(&state, dashboard_action_auth))
+        // Home runs at localhost:1420 in development and consumes Forge/SSE
+        // directly from the daemon. Keep the local daemon surface consistent
+        // with the standalone code/session hosts.
+        .layer(CorsLayer::permissive())
 }
