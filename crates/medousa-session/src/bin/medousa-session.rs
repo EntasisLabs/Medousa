@@ -8,7 +8,10 @@ use medousa_session::server::{SessionHostConfig, SessionHostState, serve};
 use tracing_subscriber::EnvFilter;
 
 #[derive(Parser, Debug)]
-#[command(name = "medousa-session", about = "Medousa workshop shell session host")]
+#[command(
+    name = "medousa-session",
+    about = "Medousa workshop shell session host"
+)]
 struct Args {
     #[arg(long, default_value = "127.0.0.1:7862")]
     bind: SocketAddr,
@@ -35,10 +38,11 @@ async fn main() -> anyhow::Result<()> {
         .unwrap_or(args.workspace.clone());
     std::fs::create_dir_all(&workspace)?;
 
-    let mut allowed = args.allow_roots;
-    if allowed.is_empty() {
-        allowed.push(workspace.clone());
-    }
+    let allowed = args
+        .allow_roots
+        .into_iter()
+        .map(|root| root.canonicalize().unwrap_or(root))
+        .collect();
 
     let config = SessionHostConfig {
         bind: args.bind,

@@ -527,7 +527,7 @@ async fn proxy_agent_get(
         };
         match result {
             Ok(body) => return Ok(body),
-            Err(error) if attempt == 0 => {
+            Err(error) if attempt == 0 && error.0 == axum::http::StatusCode::BAD_GATEWAY => {
                 tracing::warn!(path, error = %error.1, "retrying idempotent coding engine request");
                 last_error = Some(error);
             }
@@ -595,7 +595,7 @@ async fn decode_upstream_response(
     if !status.is_success() {
         let detail = String::from_utf8_lossy(&bytes);
         return Err((
-            axum::http::StatusCode::BAD_GATEWAY,
+            proxy_upstream_status(status),
             format!("coding engine returned {status}: {}", detail.trim()),
         ));
     }
@@ -608,6 +608,14 @@ async fn decode_upstream_response(
     Ok(Json(body))
 }
 
+fn proxy_upstream_status(status: axum::http::StatusCode) -> axum::http::StatusCode {
+    if status.is_client_error() {
+        status
+    } else {
+        axum::http::StatusCode::BAD_GATEWAY
+    }
+}
+
 #[allow(dead_code)]
 pub fn parse_bind(bind: &str) -> Option<SocketAddr> {
     bind.parse().ok()
@@ -616,4 +624,30 @@ pub fn parse_bind(bind: &str) -> Option<SocketAddr> {
 #[allow(dead_code)]
 pub fn workspace_is_under(root: &Path, candidate: &Path) -> bool {
     candidate.starts_with(root)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::proxy_upstream_status;
+    use axum::http::StatusCode;
+
+    #[test]
+    fn coding_engine_client_errors_preserve_their_status() {
+        assert_eq!(
+            proxy_upstream_status(StatusCode::BAD_REQUEST),
+            StatusCode::BAD_REQUEST
+        );
+        assert_eq!(
+            proxy_upstream_status(StatusCode::NOT_FOUND),
+            StatusCode::NOT_FOUND
+        );
+    }
+
+    #[test]
+    fn coding_engine_server_errors_stop_at_the_gateway() {
+        assert_eq!(
+            proxy_upstream_status(StatusCode::INTERNAL_SERVER_ERROR),
+            StatusCode::BAD_GATEWAY
+        );
+    }
 }

@@ -61,10 +61,10 @@ medousa-host = { path = "crates/medousa-host" }
 medousa-sdk = { path = "crates/medousa-sdk" }
 medousa-acp-client = { path = "crates/medousa-acp-client" }
 medousa-forge = { path = "crates/medousa-forge" }
-detamu = { version = "0.1.0", default-features = false, features = ["code", "surreal"] }
-detamu-source-git = "0.1.0"
-detamu-language-rust = "0.1.0"
-detamu-language = "0.1.0"
+detamu = { version = "0.1.1", default-features = false, features = ["code", "surreal"] }
+detamu-source-git = "0.1.1"
+detamu-language-rust = "0.1.1"
+detamu-language = "0.1.1"
 medousa-browser-lite = { path = "crates/medousa-browser-lite" }
 medousa-local-inference = { path = "crates/medousa-local-inference" }
 anyhow = "1"

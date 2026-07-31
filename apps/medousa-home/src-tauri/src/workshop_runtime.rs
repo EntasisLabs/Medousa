@@ -5,7 +5,6 @@ use crate::workshop_registry::{WorkshopRegistry, WorkshopServer, PERSONAL_WORKSH
 use reqwest::Client;
 use std::collections::HashSet;
 use std::fs::{self, OpenOptions};
-use std::io;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
@@ -447,32 +446,14 @@ fn read_daemon_pid(workshop_id: &str) -> Option<u32> {
     None
 }
 
-fn is_process_alive(pid: u32) -> bool {
-    #[cfg(unix)]
-    {
-        Command::new("kill")
-            .args(["-0", &pid.to_string()])
-            .status()
-            .map(|status| status.success())
-            .unwrap_or(false)
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = pid;
-        false
-    }
-}
-
 pub fn stop_local_engine(workshop_id: &str) {
     stop_local_brain(workshop_id);
     if let Some(pid) = read_daemon_pid(workshop_id) {
-        if is_process_alive(pid) {
-            #[cfg(unix)]
-            {
-                let _ = Command::new("kill").arg(pid.to_string()).status();
-            }
-        }
+        let _ = medousa_host::request_process_stop_by_pid(pid);
     }
+    // Lazy workshop sidecars are separate listeners. Stop them with the daemon
+    // so package/API upgrades cannot reuse a stale compatible-looking process.
+    medousa_host::stop_workshop_sidecars();
     clear_daemon_pid(workshop_id);
     if workshop_id == PERSONAL_WORKSHOP_ID {
         let _ = fs::remove_file(legacy_daemon_pid_path());
@@ -566,12 +547,7 @@ fn read_local_brain_pid(workshop_id: &str) -> Option<u32> {
 
 pub fn stop_local_brain(workshop_id: &str) {
     if let Some(pid) = read_local_brain_pid(workshop_id) {
-        if is_process_alive(pid) {
-            #[cfg(unix)]
-            {
-                let _ = Command::new("kill").arg(pid.to_string()).status();
-            }
-        }
+        let _ = medousa_host::request_process_stop_by_pid(pid);
     }
     clear_local_brain_pid(workshop_id);
 }
@@ -882,7 +858,7 @@ pub async fn diagnose_local_engine(workshop: &WorkshopServer) -> EngineDiagnosis
     let lock_display = lock_path.as_ref().map(|path| path.display().to_string());
 
     let pid = read_daemon_pid(&workshop.id);
-    let pid_alive = pid.is_some_and(is_process_alive);
+    let pid_alive = pid.is_some_and(medousa_host::is_process_alive);
     let bind_up = is_bind_reachable(&bind);
 
     if lock_exists && !pid_alive {
@@ -952,7 +928,7 @@ pub fn clear_stale_engine_lock(workshop: &WorkshopServer) -> Result<(), String> 
         return Ok(());
     }
     let pid = read_daemon_pid(&workshop.id);
-    if pid.is_some_and(is_process_alive) {
+    if pid.is_some_and(medousa_host::is_process_alive) {
         return Err("Medousa is still running — stop it before clearing the lock".to_string());
     }
     fs::remove_file(&lock_path).map_err(|err| {

@@ -25,6 +25,7 @@ use crate::grapheme_script::store::GraphemeScriptStore;
 use crate::paths::medousa_data_dir;
 
 const DEFAULT_BIND: &str = "127.0.0.1:7862";
+const EXPECTED_API_REVISION: u32 = 1;
 
 #[derive(Debug, Default)]
 pub struct ShellSessionHost {
@@ -105,23 +106,7 @@ fn which_bin(name: &str) -> Option<PathBuf> {
 
 fn forge_worktree_roots() -> Vec<PathBuf> {
     let forge_root = medousa_data_dir().join("forge").join("worktrees");
-    let mut roots = Vec::new();
-    if let Ok(entries) = std::fs::read_dir(&forge_root) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir()
-                && let Ok(inner) = std::fs::read_dir(&path)
-            {
-                for work in inner.flatten() {
-                    let wp = work.path();
-                    if wp.is_dir() {
-                        roots.push(wp);
-                    }
-                }
-            }
-        }
-    }
-    roots
+    vec![forge_root]
 }
 
 /// Forge worktree roots exposed for the coding tool surface (read/search/patch).
@@ -129,19 +114,56 @@ pub fn forge_worktree_roots_for_tools() -> Vec<PathBuf> {
     forge_worktree_roots()
 }
 
-async fn probe_health(health_url: &str) -> bool {
+#[derive(Debug, Deserialize)]
+struct SessionHealth {
+    name: String,
+    api_revision: Option<u32>,
+    allowed_roots: Vec<PathBuf>,
+}
+
+enum HealthProbe {
+    Compatible,
+    Unreachable,
+    Incompatible(String),
+}
+
+async fn probe_health(health_url: &str, required_roots: &[PathBuf]) -> HealthProbe {
     let Ok(client) = reqwest::Client::builder()
         .timeout(std::time::Duration::from_millis(400))
         .build()
     else {
-        return false;
+        return HealthProbe::Unreachable;
     };
-    client
-        .get(health_url)
-        .send()
-        .await
-        .ok()
-        .is_some_and(|r| r.status().is_success())
+    let Ok(response) = client.get(health_url).send().await else {
+        return HealthProbe::Unreachable;
+    };
+    if !response.status().is_success() {
+        return HealthProbe::Unreachable;
+    }
+    let Ok(health) = response.json::<SessionHealth>().await else {
+        return HealthProbe::Incompatible("health response uses an unknown format".into());
+    };
+    if health.name != "medousa-session" {
+        return HealthProbe::Incompatible(format!("unexpected service {}", health.name));
+    }
+    if health.api_revision != Some(EXPECTED_API_REVISION) {
+        return HealthProbe::Incompatible(format!(
+            "API revision {:?}; expected {EXPECTED_API_REVISION}",
+            health.api_revision
+        ));
+    }
+    if let Some(missing) = required_roots.iter().find(|required| {
+        !health
+            .allowed_roots
+            .iter()
+            .any(|allowed| required.starts_with(allowed))
+    }) {
+        return HealthProbe::Incompatible(format!(
+            "workspace root {} is not allowed",
+            missing.display()
+        ));
+    }
+    HealthProbe::Compatible
 }
 
 pub async fn ensure_shell_session_host(host: &ShellSessionHost) -> ShellSessionInfo {
@@ -150,6 +172,7 @@ pub async fn ensure_shell_session_host(host: &ShellSessionHost) -> ShellSessionI
     let health_url = format!("{base}/health");
     let workspace_root = GraphemeScriptStore::root_dir();
     let workspace_str = workspace_root.to_string_lossy().into_owned();
+    let required_roots = forge_worktree_roots();
 
     let info = |available: bool, message: String| ShellSessionInfo {
         available,
@@ -161,8 +184,17 @@ pub async fn ensure_shell_session_host(host: &ShellSessionHost) -> ShellSessionI
         message,
     };
 
-    if probe_health(&health_url).await {
-        return info(true, "session host reachable".into());
+    match probe_health(&health_url, &required_roots).await {
+        HealthProbe::Compatible => return info(true, "session host reachable".into()),
+        HealthProbe::Incompatible(reason) => {
+            return info(
+                false,
+                format!(
+                    "incompatible medousa-session is already listening on {bind}: {reason}; restart it with the current Medousa package"
+                ),
+            );
+        }
+        HealthProbe::Unreachable => {}
     }
 
     let Some(bin) = resolve_session_binary() else {
@@ -184,7 +216,7 @@ pub async fn ensure_shell_session_host(host: &ShellSessionHost) -> ShellSessionI
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())
                 .kill_on_drop(true);
-            for root in forge_worktree_roots() {
+            for root in &required_roots {
                 cmd.arg("--allow-root").arg(root);
             }
             match cmd.spawn() {
@@ -201,8 +233,15 @@ pub async fn ensure_shell_session_host(host: &ShellSessionHost) -> ShellSessionI
 
     for _ in 0..20 {
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-        if probe_health(&health_url).await {
-            return info(true, "session host started".into());
+        match probe_health(&health_url, &required_roots).await {
+            HealthProbe::Compatible => return info(true, "session host started".into()),
+            HealthProbe::Incompatible(reason) => {
+                return info(
+                    false,
+                    format!("medousa-session started incompatibly: {reason}"),
+                );
+            }
+            HealthProbe::Unreachable => {}
         }
     }
 
@@ -225,14 +264,13 @@ pub fn shell_session_router(state: AppState) -> Router {
 }
 
 pub async fn shell_sessions_info(State(state): State<AppState>) -> Json<ShellSessionInfo> {
-    let host = state
-        .shell_sessions
-        .clone()
-        .unwrap_or_default();
+    let host = state.shell_sessions.clone().unwrap_or_default();
     Json(ensure_shell_session_host(&host).await)
 }
 
-async fn list_sessions(State(state): State<AppState>) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, String)> {
+async fn list_sessions(
+    State(state): State<AppState>,
+) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, String)> {
     proxy_http(&state, "GET", "/v1/sessions/shell", None).await
 }
 
@@ -274,10 +312,7 @@ async fn create_session(
     if let (Some(lease_id), Some(wid)) = (
         body.lease_id.as_deref().filter(|s| !s.trim().is_empty()),
         work_id.as_deref(),
-    ) && let Some(session_id) = response
-        .0
-        .get("session_id")
-        .and_then(|v| v.as_str())
+    ) && let Some(session_id) = response.0.get("session_id").and_then(|v| v.as_str())
     {
         let now = chrono::Utc::now();
         let lease = medousa_forge::model::ExecutionLease {
@@ -338,16 +373,10 @@ async fn proxy_http(
     path: &str,
     body: Option<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, String)> {
-    let host = state
-        .shell_sessions
-        .clone()
-        .unwrap_or_default();
+    let host = state.shell_sessions.clone().unwrap_or_default();
     let info = ensure_shell_session_host(&host).await;
     if !info.available {
-        return Err((
-            axum::http::StatusCode::SERVICE_UNAVAILABLE,
-            info.message,
-        ));
+        return Err((axum::http::StatusCode::SERVICE_UNAVAILABLE, info.message));
     }
     let url = format!("{}{path}", info.url);
     let client = reqwest::Client::new();
@@ -356,23 +385,44 @@ async fn proxy_http(
         "POST" => client.post(&url),
         _ => return Err((axum::http::StatusCode::BAD_REQUEST, "bad method".into())),
     };
-    let req = if let Some(b) = body { req.json(&b) } else { req };
+    let req = if let Some(b) = body {
+        req.json(&b)
+    } else {
+        req
+    };
     let resp = req
         .send()
         .await
         .map_err(|e| (axum::http::StatusCode::BAD_GATEWAY, e.to_string()))?;
     let status = resp.status();
-    let value = resp
-        .json::<serde_json::Value>()
-        .await
-        .map_err(|e| (axum::http::StatusCode::BAD_GATEWAY, e.to_string()))?;
-    if !status.is_success() {
-        return Err((
+    let bytes = resp.bytes().await.map_err(|e| {
+        (
             axum::http::StatusCode::BAD_GATEWAY,
-            format!("session host returned {status}: {value}"),
+            format!("session host response read failed: {e}"),
+        )
+    })?;
+    if !status.is_success() {
+        let detail = String::from_utf8_lossy(&bytes);
+        return Err((
+            proxy_upstream_status(status),
+            format!("session host returned {status}: {}", detail.trim()),
         ));
     }
+    let value = serde_json::from_slice::<serde_json::Value>(&bytes).map_err(|e| {
+        (
+            axum::http::StatusCode::BAD_GATEWAY,
+            format!("session host returned invalid JSON: {e}"),
+        )
+    })?;
     Ok(Json(value))
+}
+
+fn proxy_upstream_status(status: axum::http::StatusCode) -> axum::http::StatusCode {
+    if status.is_client_error() {
+        status
+    } else {
+        axum::http::StatusCode::BAD_GATEWAY
+    }
 }
 
 async fn session_ws(
@@ -384,10 +434,7 @@ async fn session_ws(
 }
 
 async fn proxy_ws(client: WebSocket, state: AppState, id: String) {
-    let host = state
-        .shell_sessions
-        .clone()
-        .unwrap_or_default();
+    let host = state.shell_sessions.clone().unwrap_or_default();
     let info = ensure_shell_session_host(&host).await;
     if !info.available {
         tracing::warn!(message = %info.message, "session host unavailable for WS proxy");
@@ -439,4 +486,26 @@ async fn proxy_ws(client: WebSocket, state: AppState, id: String) {
 #[allow(dead_code)]
 pub fn parse_bind(bind: &str) -> Option<SocketAddr> {
     bind.parse().ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::proxy_upstream_status;
+    use axum::http::StatusCode;
+
+    #[test]
+    fn session_host_client_errors_preserve_their_status() {
+        assert_eq!(
+            proxy_upstream_status(StatusCode::FORBIDDEN),
+            StatusCode::FORBIDDEN
+        );
+    }
+
+    #[test]
+    fn session_host_server_errors_stop_at_the_gateway() {
+        assert_eq!(
+            proxy_upstream_status(StatusCode::INTERNAL_SERVER_ERROR),
+            StatusCode::BAD_GATEWAY
+        );
+    }
 }

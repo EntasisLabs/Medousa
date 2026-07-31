@@ -11,3 +11,4 @@ pub use session::{Session, SessionId, SessionManager};
 
 pub const ENGINE_NAME: &str = "medousa-session";
 pub const ENGINE_VERSION: &str = env!("CARGO_PKG_VERSION");
+pub const ENGINE_API_REVISION: u32 = 1;

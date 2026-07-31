@@ -212,10 +212,20 @@
   const needsProvision = $derived(
     Boolean(detail && !detail.environment && detail.allowed_actions.provision.allowed),
   );
+  // A document identity is only meaningful inside the worktree that owns its
+  // work id. Detail and global active context can briefly diverge while shell
+  // tabs activate or undertaking detail refreshes; never combine the two.
+  const workspaceRoot = $derived.by(() => {
+    if (!workId) return null;
+    if (detail?.id === workId && detail.environment?.worktree) {
+      return detail.environment.worktree;
+    }
+    return context?.workId === workId ? context.worktree : null;
+  });
   const documentUri = $derived.by(() => {
-    if (!activeTabPath || !context?.worktree) return null;
+    if (!activeTabPath || !workspaceRoot) return null;
     return pathToFileUri(
-      `${context.worktree.replace(/[\\/]$/, "")}/${activeTabPath}`,
+      `${workspaceRoot.replace(/[\\/]$/, "")}/${activeTabPath}`,
     );
   });
   const quickResults = $derived.by(() => {
@@ -1099,7 +1109,7 @@
 
   $effect(() => {
     void lspRetry;
-    const root = context?.workId === workId ? context.worktree : null;
+    const root = workspaceRoot;
     if (!activeTabId || !root || !languageSupportsLsp(activeTabLanguage)) {
       lspClient = null;
       lspError = null;

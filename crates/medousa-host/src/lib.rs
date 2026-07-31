@@ -8,14 +8,102 @@ pub use spawn::{
 };
 use std::net::{TcpStream, ToSocketAddrs};
 use std::path::PathBuf;
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::time::Duration;
+
+/// Workshop services spawned lazily by `medousa_daemon` but listening outside
+/// its HTTP process. They must be replaced with the daemon during upgrades so
+/// an old API revision cannot survive an Engine restart.
+pub const WORKSHOP_SIDECAR_PROCESS_NAMES: &[&str] = &["medousa-code", "medousa-session"];
+
+fn run_process_control(command: &mut Command) -> bool {
+    command.stdout(Stdio::null()).stderr(Stdio::null());
+    #[cfg(windows)]
+    detach_new_session(command);
+    command
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false)
+}
+
+pub fn request_process_stop_by_name(name: &str) -> bool {
+    #[cfg(unix)]
+    {
+        return run_process_control(Command::new("pkill").args(["-x", name]));
+    }
+    #[cfg(windows)]
+    {
+        let image = if name.ends_with(".exe") {
+            name.to_string()
+        } else {
+            format!("{name}.exe")
+        };
+        return run_process_control(Command::new("taskkill").args(["/F", "/IM", &image]));
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        let _ = name;
+        false
+    }
+}
+
+pub fn request_process_stop_by_pid(pid: u32) -> bool {
+    #[cfg(unix)]
+    {
+        return run_process_control(Command::new("kill").arg(pid.to_string()));
+    }
+    #[cfg(windows)]
+    {
+        return run_process_control(Command::new("taskkill").args([
+            "/F",
+            "/PID",
+            &pid.to_string(),
+        ]));
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        let _ = pid;
+        false
+    }
+}
+
+pub fn is_process_alive(pid: u32) -> bool {
+    #[cfg(unix)]
+    {
+        return run_process_control(Command::new("kill").args(["-0", &pid.to_string()]));
+    }
+    #[cfg(windows)]
+    {
+        let mut command = Command::new("tasklist");
+        command.args(["/FI", &format!("PID eq {pid}"), "/FO", "CSV", "/NH"]);
+        detach_new_session(&mut command);
+        return command
+            .output()
+            .ok()
+            .filter(|output| output.status.success())
+            .is_some_and(|output| {
+                String::from_utf8_lossy(&output.stdout).contains(&format!("\",\"{pid}\","))
+            });
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        let _ = pid;
+        false
+    }
+}
+
+pub fn stop_workshop_sidecars() {
+    for name in WORKSHOP_SIDECAR_PROCESS_NAMES {
+        let _ = request_process_stop_by_name(name);
+    }
+}
 
 pub fn is_bind_reachable(bind: &str) -> bool {
     if let Ok(mut addrs) = bind.to_socket_addrs()
-        && let Some(addr) = addrs.next() {
-            return TcpStream::connect_timeout(&addr, Duration::from_millis(250)).is_ok();
-        }
+        && let Some(addr) = addrs.next()
+    {
+        return TcpStream::connect_timeout(&addr, Duration::from_millis(250)).is_ok();
+    }
     false
 }
 
@@ -126,3 +214,16 @@ pub fn detach_new_session(command: &mut Command) {
 
 #[cfg(not(any(unix, windows)))]
 pub fn detach_new_session(_command: &mut Command) {}
+
+#[cfg(test)]
+mod tests {
+    use super::WORKSHOP_SIDECAR_PROCESS_NAMES;
+
+    #[test]
+    fn workshop_restart_targets_every_daemon_sidecar() {
+        assert_eq!(
+            WORKSHOP_SIDECAR_PROCESS_NAMES,
+            &["medousa-code", "medousa-session"]
+        );
+    }
+}
