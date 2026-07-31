@@ -121,9 +121,16 @@ root. Forge does not enable Versions for you.
 
 Home normally calls `repositories/inspect` before `items/start`. Inspection is
 read-only and returns the canonical worktree root, display name, current and
-suggested base branch, dirty-file count, and remotes. Paths always refer to the
-daemon/workshop filesystem. A co-located Home may obtain the input path from a
-native folder picker; a remote Home must obtain it from the workshop.
+suggested base branch, `has_commits`, dirty-file count, and remotes. An unborn
+repository returns `has_commits: false` and `suggested_base_ref: null`; clients
+must ask the user to create an initial commit before starting governed work.
+If a previously selected base ref disappears, registration/provisioning returns
+`409 base_ref_missing` instead of silently selecting another branch. New work
+can select an existing branch; a previously saved draft must be recreated
+against one. Paths
+always refer to the daemon/workshop filesystem. A co-located Home may obtain
+the input path from a native folder picker; a remote Home must obtain it from
+the workshop.
 
 Detected tasks are intentionally bounded to commands declared by common
 repository markers (`Cargo.toml`, `package.json`, `go.mod`, Python project

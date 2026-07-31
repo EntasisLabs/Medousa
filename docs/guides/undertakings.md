@@ -264,3 +264,8 @@ See `apps/medousa-home/src/lib/forge.ts` and daemon routes:
 - `POST …/decisions` with **review intent** (server builds the decision)
 - `GET /v1/forge/stream` for freshness
 - `GET /v1/world/bindings/{work_id}` for World status
+
+Repository inspection distinguishes a branch name from a usable commit. Empty
+repositories must receive an initial commit before Code can create its isolated
+working copy; if a saved starting branch was renamed or deleted, choose an
+existing branch and retry.

@@ -368,6 +368,7 @@ export function synthesizeRepositoryInspection(path: string): RepositoryInspecti
     display_name: folderNameFromPath(trimmed),
     current_branch: null,
     suggested_base_ref: "main",
+    has_commits: true,
     dirty: false,
     changed_files: 0,
     remotes: [],
@@ -539,7 +540,9 @@ export type RepositoryInspection = {
   path: string;
   display_name: string;
   current_branch?: string | null;
-  suggested_base_ref: string;
+  suggested_base_ref?: string | null;
+  /** Missing on older workshop daemons; only an explicit false blocks start. */
+  has_commits?: boolean;
   dirty: boolean;
   changed_files: number;
   remotes: string[];

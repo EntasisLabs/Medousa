@@ -7,6 +7,13 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.7.2] — 2026-07-31
+
+### Fixed
+
+- **Empty and renamed Git bases** — repository inspection no longer treats an unborn branch name as a usable commit. Empty repositories receive an explicit initial-commit state, while projects whose selected base disappeared receive an actionable branch-selection error.
+- **Forge persistence on Windows** — snapshot caches now use unique temporary files and atomic write-through replacement on Windows instead of opening directories as regular files, eliminating `Access is denied (os error 5)` during project creation and recovery.
+
 ## [0.7.1] — 2026-07-31
 
 ### Fixed

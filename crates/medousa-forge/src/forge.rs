@@ -135,7 +135,7 @@ impl Forge {
                 repo_path.display()
             )));
         }
-        let base_oid = self.git.resolve_oid(repo_path, &base_ref)?;
+        let base_oid = self.git.resolve_base_oid(repo_path, &base_ref)?;
         let mut item = WorkItem::new(
             title,
             brief,
@@ -257,7 +257,9 @@ impl Forge {
         let repo = self.git.repo_identity(&target.repo_path)?;
         // Baseline binds to the *current* base OID at provision time; the
         // immutable OID is what evidence and integration compare against.
-        let baseline_oid = self.git.resolve_oid(&target.repo_path, &target.base_ref)?;
+        let baseline_oid = self
+            .git
+            .resolve_base_oid(&target.repo_path, &target.base_ref)?;
         let generation = item.environment.as_ref().map(|e| e.generation + 1).unwrap_or(1);
         let worktree = self.worktree_path(&repo.repo_id, &item.id, generation);
         let branch = format!("medousa/work/{}", item.id.as_str());

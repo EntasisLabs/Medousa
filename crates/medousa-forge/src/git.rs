@@ -138,7 +138,10 @@ impl GitEngine {
     /// Best branch for new work: remote default, checked-out branch, then a
     /// conventional local default. This is advisory; callers still resolve it
     /// before creating a governed environment.
-    pub fn suggested_base_ref(&self, path: &Path) -> Result<String> {
+    pub fn suggested_base_ref(&self, path: &Path) -> Result<Option<String>> {
+        if !self.has_commits(path)? {
+            return Ok(None);
+        }
         if let Ok(remote) = self.run(
             path,
             &[
@@ -152,19 +155,26 @@ impl GitEngine {
                 .trim()
                 .strip_prefix("origin/")
                 .unwrap_or(remote.trim());
-            if !branch.is_empty() {
-                return Ok(branch.to_string());
+            for candidate in [branch, remote.trim()] {
+                if !candidate.is_empty() && self.resolve_oid(path, candidate).is_ok() {
+                    return Ok(Some(candidate.to_string()));
+                }
             }
         }
-        if let Some(branch) = self.current_branch(path)? {
-            return Ok(branch);
+        if let Some(branch) = self.current_branch(path)?
+            && self.resolve_oid(path, &branch).is_ok()
+        {
+            return Ok(Some(branch));
         }
         for candidate in ["main", "master"] {
             if self.resolve_oid(path, candidate).is_ok() {
-                return Ok(candidate.to_string());
+                return Ok(Some(candidate.to_string()));
             }
         }
-        Ok("HEAD".to_string())
+        if self.resolve_oid(path, "HEAD").is_ok() {
+            return Ok(Some("HEAD".to_string()));
+        }
+        Ok(None)
     }
 
     /// Canonical repository identity, stable across worktrees of the same
@@ -200,8 +210,39 @@ impl GitEngine {
 
     /// Resolve any revision to a commit OID.
     pub fn resolve_oid(&self, cwd: &Path, rev: &str) -> Result<GitOid> {
-        let out = self.run(cwd, &["rev-parse", &format!("{rev}^{{commit}}")])?;
+        let revision = format!("{rev}^{{commit}}");
+        let out = self.run(
+            cwd,
+            &["rev-parse", "--verify", "--end-of-options", &revision],
+        )?;
         Ok(GitOid::new(out.trim()))
+    }
+
+    /// True when any commit exists in the repository, including on a branch
+    /// other than the currently checked-out (possibly unborn) branch.
+    pub fn has_commits(&self, cwd: &Path) -> Result<bool> {
+        Ok(!self
+            .run(cwd, &["rev-list", "--all", "--max-count=1"])?
+            .trim()
+            .is_empty())
+    }
+
+    /// Resolve a user-selected project base while preserving the distinction
+    /// between an empty repository and a branch that disappeared.
+    pub fn resolve_base_oid(&self, cwd: &Path, rev: &str) -> Result<GitOid> {
+        let revision = rev.trim();
+        if !revision.is_empty()
+            && let Ok(oid) = self.resolve_oid(cwd, revision)
+        {
+            return Ok(oid);
+        }
+        if !self.has_commits(cwd)? {
+            return Err(ForgeError::RepositoryEmpty(cwd.to_path_buf()));
+        }
+        Err(ForgeError::BaseRefMissing {
+            repo_path: cwd.to_path_buf(),
+            reference: revision.to_string(),
+        })
     }
 
     pub fn head_oid(&self, cwd: &Path) -> Result<GitOid> {
@@ -693,7 +734,31 @@ mod tests {
             git.current_branch(&nested).unwrap().as_deref(),
             Some("main")
         );
-        assert_eq!(git.suggested_base_ref(&nested).unwrap(), "main");
+        assert_eq!(git.suggested_base_ref(&nested).unwrap().as_deref(), Some("main"));
+    }
+
+    #[test]
+    fn unborn_repository_has_no_base_commit() {
+        let tmp = TempDir::new().unwrap();
+        let git = GitEngine::detect().unwrap();
+        git.run(tmp.path(), &["init", "-b", "master"]).unwrap();
+
+        assert_eq!(git.current_branch(tmp.path()).unwrap().as_deref(), Some("master"));
+        assert!(!git.has_commits(tmp.path()).unwrap());
+        assert_eq!(git.suggested_base_ref(tmp.path()).unwrap(), None);
+        assert!(matches!(
+            git.resolve_base_oid(tmp.path(), "master"),
+            Err(ForgeError::RepositoryEmpty(_))
+        ));
+    }
+
+    #[test]
+    fn missing_base_is_distinct_from_empty_repository() {
+        let (tmp, git, _) = init_repo();
+        assert!(matches!(
+            git.resolve_base_oid(tmp.path(), "master"),
+            Err(ForgeError::BaseRefMissing { reference, .. }) if reference == "master"
+        ));
     }
 
     #[test]
