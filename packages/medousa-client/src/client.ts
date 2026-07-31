@@ -11,6 +11,7 @@ import type {
   InteractiveTurnStreamEvent,
   SessionSummary,
   RuntimeDefaults,
+  SessionHistoryResponse,
   StreamOptions,
 } from "./types.js";
 
@@ -70,6 +71,16 @@ export class MedousaClient {
     });
   }
 
+  async sessionHistory(
+    sessionId: string,
+    options?: ClientRequestOptions,
+  ): Promise<SessionHistoryResponse> {
+    return this.request<SessionHistoryResponse>(
+      `/v1/sessions/${encodeURIComponent(sessionId)}/history`,
+      { signal: options?.signal },
+    );
+  }
+
   async runtimeDefaults(options?: ClientRequestOptions): Promise<RuntimeDefaults> {
     return this.request<RuntimeDefaults>("/v1/runtime/defaults", {
       signal: options?.signal,
@@ -93,6 +104,28 @@ export class MedousaClient {
       body: JSON.stringify({ cancel: true }),
       signal: options?.signal,
     });
+  }
+
+  async approveBudget(requestId: string, extraRounds?: number): Promise<void> {
+    await this.request<unknown>(
+      `/v1/turns/budget-requests/${encodeURIComponent(requestId)}/approve`,
+      { method: "POST", body: JSON.stringify({ extra_rounds: extraRounds, resolved_by: "vscode" }) },
+    );
+  }
+
+  async denyBudget(requestId: string): Promise<void> {
+    await this.request<unknown>(
+      `/v1/turns/budget-requests/${encodeURIComponent(requestId)}/deny`,
+      { method: "POST", body: JSON.stringify({ resolved_by: "vscode" }) },
+    );
+  }
+
+  async resolvePermission(requestId: string, approve: boolean): Promise<void> {
+    const action = approve ? "approve" : "deny";
+    await this.request<unknown>(
+      `/v1/agents/permission-requests/${encodeURIComponent(requestId)}/${action}`,
+      { method: "POST", body: JSON.stringify({ resolved_by: "vscode" }) },
+    );
   }
 
   async *streamTurn(

@@ -11,6 +11,9 @@ The first host adapter for Medousa Anywhere.
 - bearer token in VS Code SecretStorage
 - streaming assistant messages with cancel
 - persistent session per workspace
+- safe Markdown and code-block actions
+- compact tool progress and approval prompts
+- restored session history, connection state, and removable context chips
 
 This adapter intentionally does not implement inline edits, Forge custody,
 vault actions, or Home-level settings yet. Those land after the core
@@ -26,7 +29,7 @@ npm run build
 npm run package
 ```
 
-The generated `medousa-vscode-0.1.0.vsix` is written to this directory.
+The generated `medousa-vscode-0.2.0.vsix` is written to this directory.
 
 Open this folder in VS Code and press `F5` to launch an Extension Development
 Host.

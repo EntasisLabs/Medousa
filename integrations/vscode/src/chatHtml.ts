@@ -1,0 +1,184 @@
+export function chatHtml(nonce: string): string {
+  return String.raw`<!doctype html>
+<html lang="en"><head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';">
+  <style>
+    :root { color-scheme: light dark; --gap: 10px; }
+    * { box-sizing: border-box; }
+    body { margin: 0; height: 100vh; overflow: hidden; color: var(--vscode-foreground); background: var(--vscode-sideBar-background); font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); }
+    button, textarea { font: inherit; }
+    button { cursor: pointer; }
+    .shell { height: 100vh; display: grid; grid-template-rows: auto minmax(0,1fr) auto; }
+    header { display: flex; align-items: center; gap: 8px; min-height: 42px; padding: 7px 10px; border-bottom: 1px solid var(--vscode-sideBarSectionHeader-border, var(--vscode-panel-border)); }
+    .identity { min-width: 0; flex: 1; display: flex; align-items: center; gap: 8px; }
+    .mark { width: 23px; height: 23px; border-radius: 50%; display: grid; place-items: center; color: var(--vscode-button-foreground); background: var(--vscode-button-background); font-weight: 700; }
+    .identity-copy { min-width: 0; }
+    .title { font-weight: 650; line-height: 1.15; }
+    .connection { display: flex; align-items: center; gap: 5px; color: var(--vscode-descriptionForeground); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--vscode-disabledForeground); }
+    .dot.connected { background: var(--vscode-testing-iconPassed); }
+    .dot.checking, .dot.reconnecting { background: var(--vscode-charts-yellow); animation: pulse 1.2s infinite; }
+    .dot.unavailable, .dot.unauthorized { background: var(--vscode-testing-iconFailed); }
+    .icon-button { flex: 0 0 auto; width: 28px; height: 28px; border: 0; border-radius: 4px; color: var(--vscode-icon-foreground); background: transparent; }
+    .icon-button:hover { background: var(--vscode-toolbar-hoverBackground); }
+    main { position: relative; min-height: 0; overflow-y: auto; padding: 12px 10px 18px; scroll-behavior: smooth; }
+    .empty { min-height: 65%; display: grid; place-content: center; gap: 9px; text-align: center; color: var(--vscode-descriptionForeground); padding: 20px 8px; }
+    .empty-mark { margin: 0 auto; width: 42px; height: 42px; border-radius: 14px; display: grid; place-items: center; color: var(--vscode-button-foreground); background: var(--vscode-button-background); font-size: 20px; }
+    .empty h2 { margin: 0; color: var(--vscode-foreground); font-size: 15px; }
+    .empty p { margin: 0; line-height: 1.45; }
+    .suggestions { display: grid; gap: 6px; margin-top: 6px; }
+    .suggestion { border: 1px solid var(--vscode-widget-border); border-radius: 6px; padding: 7px 8px; color: var(--vscode-foreground); background: var(--vscode-editor-background); text-align: left; }
+    .suggestion:hover { border-color: var(--vscode-focusBorder); }
+    #messages { display: flex; flex-direction: column; gap: 13px; }
+    .turn { display: flex; flex-direction: column; gap: 5px; }
+    .turn.user { align-items: flex-end; }
+    .bubble { max-width: 94%; border-radius: 9px; padding: 8px 10px; overflow-wrap: anywhere; line-height: 1.48; }
+    .user .bubble { color: var(--vscode-input-foreground); background: var(--vscode-input-background); border: 1px solid var(--vscode-input-border, transparent); }
+    .assistant .bubble { max-width: 100%; padding-left: 0; padding-right: 0; background: transparent; }
+    .bubble p { margin: 0 0 8px; }
+    .bubble p:last-child { margin-bottom: 0; }
+    .bubble h1, .bubble h2, .bubble h3 { margin: 12px 0 6px; font-size: 1em; }
+    .bubble ul { margin: 5px 0 8px; padding-left: 19px; }
+    .bubble code.inline { padding: 1px 4px; border-radius: 3px; background: var(--vscode-textCodeBlock-background); font-family: var(--vscode-editor-font-family); }
+    .code-block { margin: 8px 0; border: 1px solid var(--vscode-widget-border); border-radius: 6px; overflow: hidden; background: var(--vscode-textCodeBlock-background); }
+    .code-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 4px 6px; color: var(--vscode-descriptionForeground); background: var(--vscode-editorGroupHeader-tabsBackground); font-size: 11px; }
+    .code-actions { display: flex; gap: 4px; }
+    .code-actions button { border: 0; padding: 2px 5px; color: var(--vscode-foreground); background: transparent; }
+    .code-actions button:hover { background: var(--vscode-toolbar-hoverBackground); }
+    pre { margin: 0; padding: 9px; overflow-x: auto; white-space: pre; font-family: var(--vscode-editor-font-family); font-size: var(--vscode-editor-font-size); }
+    a { color: var(--vscode-textLink-foreground); }
+    .status-line { min-height: 20px; display: flex; align-items: center; gap: 6px; color: var(--vscode-descriptionForeground); font-size: 11px; padding: 3px 0; }
+    .spinner { width: 10px; height: 10px; border: 1px solid var(--vscode-progressBar-background); border-top-color: transparent; border-radius: 50%; animation: spin .8s linear infinite; }
+    .tools { display: grid; gap: 5px; }
+    .tool { border: 1px solid var(--vscode-widget-border); border-radius: 6px; background: var(--vscode-editor-background); }
+    .tool summary { list-style: none; display: flex; align-items: center; gap: 6px; padding: 6px 8px; cursor: pointer; }
+    .tool summary::-webkit-details-marker { display: none; }
+    .tool .tool-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--vscode-charts-yellow); }
+    .tool.succeeded .tool-dot { background: var(--vscode-testing-iconPassed); }
+    .tool.failed .tool-dot { background: var(--vscode-testing-iconFailed); }
+    .tool-detail { padding: 0 8px 7px 21px; color: var(--vscode-descriptionForeground); font-size: 11px; white-space: pre-wrap; }
+    .attention { border: 1px solid var(--vscode-inputValidation-warningBorder); border-radius: 6px; padding: 8px; background: var(--vscode-inputValidation-warningBackground); }
+    .attention-actions { display: flex; gap: 6px; margin-top: 7px; }
+    .attention button { border: 0; padding: 4px 7px; color: var(--vscode-button-foreground); background: var(--vscode-button-background); }
+    .error { border-left: 2px solid var(--vscode-errorForeground); padding: 7px 9px; color: var(--vscode-errorForeground); background: var(--vscode-inputValidation-errorBackground); white-space: pre-wrap; }
+    footer { border-top: 1px solid var(--vscode-panel-border); padding: 8px 9px 9px; background: var(--vscode-sideBar-background); }
+    #context { display: flex; gap: 5px; overflow-x: auto; padding-bottom: 6px; }
+    .chip { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 4px; max-width: 170px; border: 1px solid var(--vscode-widget-border); border-radius: 999px; padding: 2px 6px; color: var(--vscode-descriptionForeground); background: var(--vscode-editor-background); font-size: 10px; }
+    .chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .chip button { border: 0; padding: 0; color: inherit; background: transparent; }
+    .composer { border: 1px solid var(--vscode-input-border, var(--vscode-widget-border)); border-radius: 7px; background: var(--vscode-input-background); overflow: hidden; }
+    textarea { display: block; width: 100%; min-height: 54px; max-height: 180px; resize: none; border: 0; outline: 0; padding: 8px; color: var(--vscode-input-foreground); background: transparent; line-height: 1.4; }
+    .composer-bar { display: flex; justify-content: space-between; align-items: center; gap: 6px; padding: 4px 5px; }
+    .hint { color: var(--vscode-descriptionForeground); font-size: 10px; }
+    .send { min-width: 64px; border: 0; border-radius: 4px; padding: 5px 9px; color: var(--vscode-button-foreground); background: var(--vscode-button-background); }
+    .send:hover { background: var(--vscode-button-hoverBackground); }
+    .send:disabled { opacity: .55; cursor: default; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes pulse { 50% { opacity: .35; } }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .001ms !important; scroll-behavior: auto !important; } }
+  </style>
+</head><body>
+<div class="shell">
+  <header>
+    <div class="identity"><div class="mark">M</div><div class="identity-copy"><div class="title">Medousa</div><div class="connection"><span id="connection-dot" class="dot checking"></span><span id="connection-label">Checking workshop…</span></div></div></div>
+    <button class="icon-button" id="new-session" title="New conversation" aria-label="New conversation">＋</button>
+    <button class="icon-button" id="open-home" title="Open Medousa" aria-label="Open Medousa">↗</button>
+    <button class="icon-button" id="configure" title="Configure connection" aria-label="Configure connection">⋯</button>
+  </header>
+  <main id="scroll">
+    <section id="empty" class="empty"><div class="empty-mark">M</div><h2>What are we working on?</h2><p>Ask about the active file, your selection, diagnostics, or anything in your workshop.</p><div class="suggestions"><button class="suggestion">Explain the active file</button><button class="suggestion">Help me fix these diagnostics</button><button class="suggestion">What should I work on next?</button></div></section>
+    <div id="messages"></div>
+  </main>
+  <footer>
+    <div id="context"></div>
+    <div class="composer"><textarea id="prompt" aria-label="Message Medousa" placeholder="Message Medousa…"></textarea><div class="composer-bar"><span class="hint">Enter to send · Shift+Enter for newline</span><button id="send" class="send">Send</button></div></div>
+  </footer>
+</div>
+<script nonce="${nonce}">
+  const vscode = acquireVsCodeApi();
+  const persisted = vscode.getState() || { messages: [] };
+  const messages = document.getElementById("messages");
+  const empty = document.getElementById("empty");
+  const scroll = document.getElementById("scroll");
+  const prompt = document.getElementById("prompt");
+  const send = document.getElementById("send");
+  const contextRow = document.getElementById("context");
+  let busy = false;
+  let assistant = null;
+  let assistantRaw = "";
+  let statusNode = null;
+  const tools = new Map();
+
+  function persist() { vscode.setState({ messages: Array.from(messages.querySelectorAll(".turn")).map(function(node) { return { role: node.dataset.role, content: node.dataset.raw || "" }; }) }); }
+  function atBottom() { return scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight < 70; }
+  function pin(wasBottom) { if (wasBottom) requestAnimationFrame(function() { scroll.scrollTop = scroll.scrollHeight; }); }
+  function escapeHtml(value) { return String(value).replace(/[&<>"']/g, function(ch) { if (ch === "&") return "&amp;"; if (ch === "<") return "&lt;"; if (ch === ">") return "&gt;"; if (ch === '"') return "&quot;"; return "&#39;"; }); }
+  function safeUrl(value) { try { const url = new URL(value); return ["http:","https:","medousa:"].includes(url.protocol) ? value : ""; } catch { return ""; } }
+  function renderProse(value) {
+    const lines = escapeHtml(value).split(/\n/); let html = ""; let list = false;
+    function closeList() { if (list) { html += "</ul>"; list = false; } }
+    lines.forEach(function(line) {
+      line = line.replace(/\[([^\]]+)\]\(([^)]+)\)/g, function(_, label, href) { const safe = safeUrl(href); return safe ? '<a href="#" data-href="' + escapeHtml(safe) + '">' + label + '</a>' : label; });
+      line = line.replace(/\`([^\`]+)\`/g, '<code class="inline">$1</code>').replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+      const heading = /^(#{1,3})\s+(.+)$/.exec(line); const item = /^[-*]\s+(.+)$/.exec(line);
+      if (heading) { closeList(); html += '<h' + heading[1].length + '>' + heading[2] + '</h' + heading[1].length + '>'; }
+      else if (item) { if (!list) { html += "<ul>"; list = true; } html += "<li>" + item[1] + "</li>"; }
+      else { closeList(); if (line.trim()) html += "<p>" + line + "</p>"; }
+    }); closeList(); return html;
+  }
+  function renderMarkdown(value) {
+    let html = ""; let cursor = 0; const pattern = /\`\`\`([\w+-]*)\n([\s\S]*?)\`\`\`/g; let match;
+    while ((match = pattern.exec(value))) { html += renderProse(value.slice(cursor, match.index)); const language = match[1] || "code"; const encoded = encodeURIComponent(match[2]); html += '<div class="code-block"><div class="code-head"><span>' + escapeHtml(language) + '</span><div class="code-actions"><button data-copy-code="' + encoded + '">Copy</button><button data-insert-code="' + encoded + '">Insert</button></div></div><pre><code>' + escapeHtml(match[2]) + '</code></pre></div>'; cursor = pattern.lastIndex; }
+    html += renderProse(value.slice(cursor)); return html;
+  }
+  function showEmpty() { empty.hidden = messages.children.length > 0; }
+  function addTurn(role, content) { const wasBottom = atBottom(); const turn = document.createElement("section"); turn.className = "turn " + role; turn.dataset.role = role; turn.dataset.raw = content; const bubble = document.createElement("div"); bubble.className = "bubble"; if (role === "assistant") bubble.innerHTML = renderMarkdown(content); else bubble.textContent = content; turn.appendChild(bubble); messages.appendChild(turn); showEmpty(); pin(wasBottom); persist(); return { turn: turn, bubble: bubble }; }
+  function appendAssistant(text) { const wasBottom = atBottom(); if (!assistant) { const created = addTurn("assistant", ""); assistant = created; assistantRaw = ""; } assistantRaw += text; assistant.turn.dataset.raw = assistantRaw; assistant.bubble.innerHTML = renderMarkdown(assistantRaw); pin(wasBottom); persist(); }
+  function replaceAssistant(text) { if (!assistant) assistant = addTurn("assistant", ""); assistantRaw = text; assistant.turn.dataset.raw = text; assistant.bubble.innerHTML = renderMarkdown(text); persist(); pin(true); }
+  function setStatus(text, working) { const wasBottom = atBottom(); if (!statusNode) { statusNode = document.createElement("div"); statusNode.className = "status-line"; messages.appendChild(statusNode); } statusNode.innerHTML = (working ? '<span class="spinner"></span>' : "") + '<span>' + escapeHtml(text) + '</span>'; pin(wasBottom); }
+  function clearStatus() { if (statusNode) statusNode.remove(); statusNode = null; }
+  function setBusy(value) { busy = value; send.textContent = value ? "Cancel" : "Send"; send.classList.toggle("secondary", value); prompt.disabled = value; }
+  function addTool(message) { const wasBottom = atBottom(); let node = tools.get(message.runId); if (!node) { const details = document.createElement("details"); details.className = "tool running"; details.innerHTML = '<summary><span class="tool-dot"></span><span class="tool-name"></span></summary><div class="tool-detail"></div>'; messages.appendChild(details); tools.set(message.runId, details); node = details; } node.querySelector(".tool-name").textContent = message.name; node.querySelector(".tool-detail").textContent = message.summary || ""; node.className = "tool " + (message.status || "running"); pin(wasBottom); }
+  function addAttention(message) { const node = document.createElement("div"); node.className = "attention"; node.textContent = message.text; const actions = document.createElement("div"); actions.className = "attention-actions"; ["Approve", "Deny"].forEach(function(label) { const button = document.createElement("button"); button.textContent = label; button.addEventListener("click", function() { vscode.postMessage({ type: message.kind === "budget" ? "budget" : "permission", requestId: message.requestId, approve: label === "Approve", rounds: message.rounds }); node.remove(); }); actions.appendChild(button); }); node.appendChild(actions); messages.appendChild(node); }
+  function addError(text) { clearStatus(); const node = document.createElement("div"); node.className = "error"; const copy = document.createElement("div"); copy.textContent = text; const retry = document.createElement("button"); retry.textContent = "Retry"; retry.className = "send"; retry.style.marginTop = "7px"; retry.addEventListener("click", function() { node.remove(); setBusy(true); vscode.postMessage({ type: "retry" }); }); node.appendChild(copy); node.appendChild(retry); messages.appendChild(node); setBusy(false); }
+  function restoreHistory(turns) { messages.innerHTML = ""; assistant = null; tools.clear(); (turns || []).forEach(function(turn) { if (["user","assistant"].includes(turn.role) && turn.content) addTurn(turn.role, turn.content); }); showEmpty(); }
+  function submit(text) { const value = (text || prompt.value).trim(); if (!value || busy) return; addTurn("user", value); assistant = null; assistantRaw = ""; prompt.value = ""; resize(); setBusy(true); vscode.postMessage({ type: "send", text: value }); }
+  function resize() { prompt.style.height = "auto"; prompt.style.height = Math.min(prompt.scrollHeight, 180) + "px"; }
+  send.addEventListener("click", function() { if (busy) vscode.postMessage({ type: "cancel" }); else submit(); });
+  prompt.addEventListener("input", resize);
+  prompt.addEventListener("keydown", function(event) { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); submit(); } });
+  document.querySelectorAll(".suggestion").forEach(function(button) { button.addEventListener("click", function() { submit(button.textContent); }); });
+  document.getElementById("configure").addEventListener("click", function() { vscode.postMessage({ type: "configure" }); });
+  document.getElementById("new-session").addEventListener("click", function() { vscode.postMessage({ type: "newSession" }); });
+  document.getElementById("open-home").addEventListener("click", function() { vscode.postMessage({ type: "openHome" }); });
+  contextRow.addEventListener("click", function(event) { const button = event.target.closest("button[data-context-key]"); if (button) vscode.postMessage({ type: "removeContext", key: button.dataset.contextKey }); });
+  messages.addEventListener("click", function(event) { const link = event.target.closest("a[data-href]"); if (link) { event.preventDefault(); vscode.postMessage({ type: "openLink", href: link.dataset.href }); } const copy = event.target.closest("button[data-copy-code]"); if (copy) navigator.clipboard.writeText(decodeURIComponent(copy.dataset.copyCode)); const insert = event.target.closest("button[data-insert-code]"); if (insert) vscode.postMessage({ type: "insertCode", text: decodeURIComponent(insert.dataset.insertCode) }); });
+  window.addEventListener("message", function(event) { const message = event.data;
+    if (message.type === "history") restoreHistory(message.turns);
+    else if (message.type === "user") addTurn("user", message.text);
+    else if (message.type === "assistantDelta") appendAssistant(message.text);
+    else if (message.type === "assistantReplace") replaceAssistant(message.text);
+    else if (message.type === "status") setStatus(message.text, message.working !== false);
+    else if (message.type === "toolStarted") addTool({ ...message, status: "running" });
+    else if (message.type === "toolFinished") addTool(message);
+    else if (message.type === "attention") addAttention(message);
+    else if (message.type === "error") addError(message.text);
+    else if (message.type === "done") { clearStatus(); setBusy(false); assistant = null; }
+    else if (message.type === "busy") setBusy(message.value);
+    else if (message.type === "connection") { const dot = document.getElementById("connection-dot"); dot.className = "dot " + message.state; document.getElementById("connection-label").textContent = message.label; }
+    else if (message.type === "context") { contextRow.innerHTML = ""; message.chips.forEach(function(chip) { const node = document.createElement("div"); node.className = "chip"; node.title = chip.detail || chip.label; node.innerHTML = '<span></span><button data-context-key="' + escapeHtml(chip.key) + '" aria-label="Remove context">×</button>'; node.querySelector("span").textContent = chip.label; contextRow.appendChild(node); }); if (message.canReset) { const reset = document.createElement("button"); reset.className = "chip"; reset.textContent = "Restore context"; reset.addEventListener("click", function() { vscode.postMessage({ type: "resetContext" }); }); contextRow.appendChild(reset); } }
+    else if (message.type === "reset") { messages.innerHTML = ""; assistant = null; tools.clear(); clearStatus(); setBusy(false); showEmpty(); vscode.setState({ messages: [] }); }
+  });
+  if (persisted.messages && persisted.messages.length) persisted.messages.forEach(function(item) { addTurn(item.role, item.content); });
+  showEmpty(); resize(); vscode.postMessage({ type: "ready" });
+</script></body></html>`;
+}
+
+export function createNonce(): string {
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  let value = "";
+  for (let index = 0; index < 32; index += 1) value += alphabet[Math.floor(Math.random() * alphabet.length)];
+  return value;
+}

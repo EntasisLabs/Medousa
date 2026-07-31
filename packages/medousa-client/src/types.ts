@@ -68,6 +68,19 @@ export interface CreateSessionResponse {
   agent_profile_id?: string | null;
 }
 
+export interface SessionTurn {
+  role: string;
+  content: string;
+  timestamp: string;
+  tool_names?: string[];
+  answer_state?: string | null;
+}
+
+export interface SessionHistoryResponse {
+  session_id: string;
+  turns: SessionTurn[];
+}
+
 export interface RuntimeDefaults {
   backend: string;
   provider: string;

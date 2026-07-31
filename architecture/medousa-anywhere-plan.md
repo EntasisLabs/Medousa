@@ -75,6 +75,9 @@ VS Code vertical integration scaffold now lives in
 on runtime dogfooding, richer response/presentation behavior, and the first
 vault/Home handoff actions. The extension now contributes a persistent
 activity-bar chat view; its client runtime is bundled into the VSIX.
+The 0.2 polish sprint adds Home-standard stream projection, a persistent chat
+shell and composer, safe Markdown/code actions, structured tool and approval
+states, session restoration, connection diagnostics, and editor context chips.
 
 ## Target architecture
 
