@@ -247,8 +247,10 @@
       bind:this={menuEl}
       class="new-tab-menu workshop-rail-sheet"
       role="menu"
+      tabindex="-1"
       aria-label="Create new tab"
       onclick={(event) => event.stopPropagation()}
+      onkeydown={(event) => event.stopPropagation()}
     >
       <div class="new-tab-menu-window" data-slide={slideDir}>
         {#key page}

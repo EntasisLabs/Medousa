@@ -4,6 +4,7 @@
 
 import { chat } from "$lib/stores/chat.svelte";
 import { chatStreamPool } from "$lib/stores/chatStreamPool.svelte";
+import { codeWorkspace } from "$lib/stores/codeWorkspace.svelte";
 import { humanBrowser } from "$lib/stores/humanBrowser.svelte";
 import { layout } from "$lib/stores/layout.svelte";
 import {
@@ -59,6 +60,11 @@ const PERSIST_KEY_V1 = "medousa-home-shell-tabs-v1";
 const PERSIST_KEY_V2 = "medousa-home-shell-tabs-v2";
 const PERSIST_KEY_V3 = "medousa-home-shell-tabs-v3";
 const PERSIST_KEY = "medousa-home-workspace-session-v4";
+const PERSONAL_WORKSPACE_SCOPE = "personal";
+
+function persistenceKey(scopeId: string): string {
+  return `${PERSIST_KEY}:${encodeURIComponent(scopeId)}`;
+}
 
 type PersistedV2 = ShellDesktopLayout;
 
@@ -291,12 +297,33 @@ function filterLayoutForLme(
   };
 }
 
-function loadPersisted(): PersistedV4 | null {
+function loadPersisted(scopeId: string): PersistedV4 | null {
   if (typeof localStorage === "undefined") return null;
   try {
-    const rawV4 = localStorage.getItem(PERSIST_KEY);
+    const rawV4 = localStorage.getItem(persistenceKey(scopeId));
     if (rawV4) {
       const parsed = JSON.parse(rawV4) as PersistedV4;
+      if (
+        parsed?.version === 4 &&
+        Array.isArray(parsed?.desktops) &&
+        parsed.desktops.length > 0 &&
+        parsed.activeDesktopId &&
+        parsed.lme &&
+        parsed.desktops.every(
+          (desktop) => desktop?.id && desktop?.name && isValidLayout(desktop.layout),
+        )
+      ) {
+        return parsed;
+      }
+    }
+
+    // The old keys predate workshops. They can only belong to Personal; never
+    // import an unscoped snapshot into a remote workshop.
+    if (scopeId !== PERSONAL_WORKSPACE_SCOPE) return null;
+
+    const legacyV4 = localStorage.getItem(PERSIST_KEY);
+    if (legacyV4) {
+      const parsed = JSON.parse(legacyV4) as PersistedV4;
       if (
         parsed?.version === 4 &&
         Array.isArray(parsed?.desktops) &&
@@ -392,6 +419,7 @@ export class ShellTabsStore {
   navForwardStack = $state<string[]>([]);
 
   private bootstrapped = false;
+  private workspaceScopeId = PERSONAL_WORKSPACE_SCOPE;
   private suppressMirrorDepth = 0;
   private navQuiet = false;
 
@@ -499,7 +527,13 @@ export class ShellTabsStore {
         activeDesktopId: this.activeDesktopId,
         lme,
       };
-      localStorage.setItem(PERSIST_KEY, JSON.stringify(payload));
+      localStorage.setItem(persistenceKey(this.workspaceScopeId), JSON.stringify(payload));
+      if (this.workspaceScopeId === PERSONAL_WORKSPACE_SCOPE) {
+        localStorage.removeItem(PERSIST_KEY);
+        localStorage.removeItem(PERSIST_KEY_V3);
+        localStorage.removeItem(PERSIST_KEY_V2);
+        localStorage.removeItem(PERSIST_KEY_V1);
+      }
     } catch {
       /* ignore */
     }
@@ -627,11 +661,12 @@ export class ShellTabsStore {
     return ids;
   }
 
-  bootstrap() {
+  bootstrap(scopeId = PERSONAL_WORKSPACE_SCOPE) {
     if (this.bootstrapped) return;
     this.bootstrapped = true;
+    this.workspaceScopeId = scopeId.trim() || PERSONAL_WORKSPACE_SCOPE;
 
-    const persisted = loadPersisted();
+    const persisted = loadPersisted(this.workspaceScopeId);
     if (persisted) {
       const lme = lmeWorkspace.restoreSession(persisted.lme);
       const lmeTabIds = new Set(lme.tabs.map((tab) => tab.tabId));
@@ -684,6 +719,60 @@ export class ShellTabsStore {
       return;
     }
     this.openSurface("library", { activate: true });
+  }
+
+  /**
+   * Checkpoint one workshop and restore another only after its daemon is live.
+   * Durable descriptors are workshop-scoped; live editor/Forge state is always
+   * discarded at this boundary and rebuilt from the selected workshop.
+   */
+  async switchWorkspaceScope(scopeId: string) {
+    const nextScope = scopeId.trim() || PERSONAL_WORKSPACE_SCOPE;
+    if (!this.bootstrapped) {
+      this.bootstrap(nextScope);
+      return;
+    }
+    if (nextScope === this.workspaceScopeId) return;
+
+    this.persist();
+    const previousChatIds = this.chatSessionIdsForLiveRestore();
+    this.workspaceScopeId = nextScope;
+    this.navBackStack = [];
+    this.navForwardStack = [];
+    codeWorkspace.resetForWorkshopSwitch();
+    const { undertakings } = await import("$lib/stores/undertakings.svelte");
+    undertakings.resetForWorkshopSwitch();
+
+    const persisted = loadPersisted(nextScope);
+    if (persisted) {
+      const lme = lmeWorkspace.restoreSession(persisted.lme);
+      const lmeTabIds = new Set(lme.tabs.map((tab) => tab.tabId));
+      this.desktops = persisted.desktops.map((desktop) => ({
+        ...desktop,
+        layout: filterLayoutForLme(desktop.layout, lmeTabIds),
+      }));
+      this.activeDesktopId = persisted.activeDesktopId;
+      const activeDesktop =
+        this.desktops.find((desktop) => desktop.id === persisted.activeDesktopId) ??
+        this.desktops[0]!;
+      this.applyLayout(activeDesktop.layout);
+    } else {
+      lmeWorkspace.restoreSession({ tabs: [], activeTabId: null });
+      const layout = emptyLayout();
+      const id = newDesktopId();
+      this.desktops = [{ id, name: DEFAULT_DESKTOP_NAME, layout }];
+      this.activeDesktopId = id;
+      this.applyLayout(layout);
+    }
+
+    const active = this.activeTab;
+    if (active) {
+      await this.activate(active.id, { rehydrate: true });
+    } else {
+      this.openSurface("library", { activate: true });
+    }
+    await this.resyncLiveStreams(previousChatIds);
+    this.persist();
   }
 
   openChat(

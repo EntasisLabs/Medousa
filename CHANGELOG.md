@@ -7,7 +7,32 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.7.0] — 2026-07-31
+
+### Added
+
+- **Forge work lifecycle** — durable undertakings, governed worktrees, lease-fenced executor attempts, sealed evidence, human review, recovery, and explicit dispositions
+- **Coding room** — repository discovery, fast file tree and editor, project intelligence through Detamu, source navigation, checks, tests, review, recovery, and optional provider handoff
+- **Shared terminal** — workshop-owned PTY sessions with full VT rendering, resize, multiline input, TUI support, splits, and reconnectable shell tabs
+- **Replaceable coding agents** — Cursor and Codex ACP executors bind to Forge work while Medousa retains custody, evidence, and session history
+- **Workspace restoration** — desktops, panes, tabs, active documents, code drafts, and terminal sessions return after relaunch; snapshots are isolated per workshop
+
+### Changed
+
+- Code, terminal, and review now open as first-class workspace tabs inside the Medousa shell
+- Code loading is interactive-first: files become usable before optional indexing and language intelligence start
+- Code actions moved into a calm view action bar; line, language, save, and health information moved into the shared status bar
+- Review was redesigned around changed files, evidence, risk, and a focused approval action instead of an infrastructure-heavy form
+- OpenAI tool calls automatically use the Responses API when model reasoning and function tools require it
+
 ### Fixed
+
+- Prevented language-server request storms and made Rust Analyzer opt-in for large workspaces, avoiding multi-gigabyte idle growth and OOM crashes
+- Removed reactive event/effect loops that repeatedly reopened files, refreshed the bottom dock, froze scrolling, and exhausted WebView memory
+- Fixed daemon CORS handling for the Home development origin and stopped retry loops from amplifying recoverable failures
+- Made code-understanding readiness an explicit state instead of surfacing expected indexing delays as repeated 502 errors
+- Fixed duplicate editor decorations, response-body decoding errors, stale service detection, and Home/CLI service restart ownership
+- Deduplicated concurrent loose-file opens so one user action performs one disk read
 
 - **Windows script save** — grapheme script path containment no longer fails on first save when the body file does not exist yet (`\\?\` / case / separator mismatches)
 - **Script rename** — add Rename action in the scripts library and script workbench toolbar (notch tabs no longer host script rename)

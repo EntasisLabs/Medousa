@@ -405,6 +405,7 @@
                         type="button"
                         class="lme-scripts-popover-row"
                         role="option"
+                        aria-selected={false}
                         onclick={() => applyTemplate(recipe)}
                       >
                         <span class="min-w-0 flex-1">

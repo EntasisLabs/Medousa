@@ -21,8 +21,10 @@
   class="shell-tab-notch-drawer"
   class:shell-tab-notch-drawer--single={paneCount <= 1}
   role="dialog"
+  tabindex="-1"
   aria-label="Panes"
   onclick={(event) => event.stopPropagation()}
+  onkeydown={(event) => event.stopPropagation()}
 >
   <div class="shell-tab-notch-drawer-stage">
     <ShellTabNotchMiniLayout node={shellTabs.splitRoot} {onTabSettled} />

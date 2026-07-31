@@ -240,6 +240,7 @@
       bind:this={momentsMenuEl}
       class="vault-dock-popover map-dock-moments-popover"
       role="listbox"
+      tabindex="-1"
       aria-label="Moments"
       style:left="{momentsPlacement.left}px"
       style:top="{momentsPlacement.top}px"
@@ -247,6 +248,7 @@
       style:max-height="{momentsPlacement.maxHeight}px"
       style:transform={momentsPlacement.transform}
       onclick={(event) => event.stopPropagation()}
+      onkeydown={(event) => event.stopPropagation()}
     >
       <div class="map-dock-popover-search">
         <Search size={13} strokeWidth={1.75} class="shrink-0 text-surface-500" aria-hidden="true" />
@@ -270,6 +272,7 @@
             <button
               type="button"
               role="option"
+              aria-selected={false}
               class="map-dock-moment-row"
               onclick={() => pickMoment(entry.syncKey, entry.sessionId)}
             >
@@ -289,6 +292,7 @@
       bind:this={filterMenuEl}
       class="vault-dock-popover map-dock-filter-popover"
       role="dialog"
+      tabindex="-1"
       aria-label="Filter by posture"
       style:left="{filterPlacement.left}px"
       style:top="{filterPlacement.top}px"
@@ -296,6 +300,7 @@
       style:max-height="{filterPlacement.maxHeight}px"
       style:transform={filterPlacement.transform}
       onclick={(event) => event.stopPropagation()}
+      onkeydown={(event) => event.stopPropagation()}
     >
       <div class="flex items-center justify-between gap-2 px-2.5 pb-1 pt-2">
         <p class="workshop-faint text-[11px] uppercase tracking-[0.08em]">AVEC</p>
@@ -410,6 +415,7 @@
     display: -webkit-box;
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 2;
+    line-clamp: 2;
     overflow: hidden;
     max-width: 100%;
     font-size: 0.8125rem;

@@ -159,6 +159,7 @@
     >
       <div
         class="pointer-events-auto w-full min-w-0"
+        role="presentation"
         onpointerenter={() => {
           overStrip = true;
         }}

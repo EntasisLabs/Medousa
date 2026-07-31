@@ -314,6 +314,26 @@ describe("shellTabs store", () => {
     expect(restored.activeDesktopName).toBe("Main");
   });
 
+  it("isolates durable workspace sessions by workshop", async () => {
+    const { shellTabs } = await import("./shellTabs.svelte");
+    shellTabs.bootstrap("personal");
+    shellTabs.openSurface("map", { activate: true });
+    expect(shellTabs.activeTab).toMatchObject({ kind: "surface", surfaceId: "map" });
+
+    await shellTabs.switchWorkspaceScope("portal-team");
+    expect(shellTabs.tabs.some((tab) => tab.kind === "surface" && tab.surfaceId === "map"))
+      .toBe(false);
+    shellTabs.openSurface("settings", { activate: true });
+
+    await shellTabs.switchWorkspaceScope("personal");
+    expect(shellTabs.tabs.some((tab) => tab.kind === "surface" && tab.surfaceId === "map"))
+      .toBe(true);
+    expect(shellTabs.tabs.some((tab) => tab.kind === "surface" && tab.surfaceId === "settings"))
+      .toBe(false);
+    expect(localStorage.getItem("medousa-home-workspace-session-v4:personal")).toBeTruthy();
+    expect(localStorage.getItem("medousa-home-workspace-session-v4:portal-team")).toBeTruthy();
+  });
+
   it("restores shell and code workspace descriptors from one snapshot", async () => {
     const { shellTabs } = await import("./shellTabs.svelte");
     const lmeTab = {
@@ -369,7 +389,7 @@ describe("shellTabs store", () => {
     expect(shellTabs.desktops).toHaveLength(1);
     expect(shellTabs.activeDesktopName).toBe("Main");
     expect(shellTabs.activeTab?.kind).toBe("chat");
-    expect(localStorage.getItem("medousa-home-workspace-session-v4")).toBeTruthy();
+    expect(localStorage.getItem("medousa-home-workspace-session-v4:personal")).toBeTruthy();
   });
 
   it("migrates durable Code descriptors from the v3 shell snapshot", async () => {
@@ -402,7 +422,7 @@ describe("shellTabs store", () => {
       kind: "lme",
       lmeTabId: "code-file:work-a:src%2Flib.rs",
     });
-    expect(localStorage.getItem("medousa-home-workspace-session-v4")).toBeTruthy();
+    expect(localStorage.getItem("medousa-home-workspace-session-v4:personal")).toBeTruthy();
   });
 
   it("switches desktops and keeps layouts independent", async () => {
@@ -447,7 +467,7 @@ describe("shellTabs store", () => {
     shellTabs.syncFromLmeWorkspace();
     shellTabs.patchTitle(shellTabs.tabs[0]!.id, "Alpha renamed");
     expect(shellTabs.desktops).toBe(before);
-    expect(localStorage.getItem("medousa-home-workspace-session-v4")).toContain("Alpha renamed");
+    expect(localStorage.getItem("medousa-home-workspace-session-v4:personal")).toContain("Alpha renamed");
   });
 
   it("lists chat sessions for live restore with active pane first", async () => {

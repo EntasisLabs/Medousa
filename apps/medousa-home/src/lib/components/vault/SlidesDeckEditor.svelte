@@ -23,14 +23,14 @@
 
   let { content, disabled = false, onchange }: Props = $props();
 
-  let deck = $state<SlidesDeck>(slidesDeckFromContent(content));
-  let syncedContent = $state(content);
+  let deck = $state<SlidesDeck>(slidesDeckFromContent(""));
+  let syncedContent = $state("");
   let editing = $state(false);
   let presenting = $state(false);
   let draftBody = $state("");
   let draftTitle = $state("");
   let emitTimer: ReturnType<typeof setTimeout> | null = null;
-  let sourceContent = content;
+  let sourceContent = "";
 
   const fencePreview = $derived(
     "```slides\n" + serializeSlidesDeckBody(deck).trimEnd() + "\n```\n",

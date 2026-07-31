@@ -50,6 +50,26 @@ class CodeWorkspaceStore {
   private hydrating = new Map<string, Promise<void>>();
   private opening = new Map<string, Promise<CodeDocumentTab | null>>();
   private persistTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private workspaceEpoch = 0;
+
+  resetForWorkshopSwitch() {
+    this.workspaceEpoch += 1;
+    for (const timer of this.persistTimers.values()) clearTimeout(timer);
+    this.persistTimers.clear();
+    this.hydrated.clear();
+    this.hydrating.clear();
+    this.opening.clear();
+    this.tabs = [];
+    this.activeByWorkId = {};
+    this.secondaryByWorkId = {};
+    this.workspaceErrorByWorkId = {};
+    this.leaseByWorkId = {};
+    this.navigationByWorkId = {};
+    this.navigationIndexByWorkId = {};
+    this.recentTabIdsByWorkId = {};
+    this.closedByWorkId = {};
+    this.tabOrderByWorkId = {};
+  }
 
   tabsFor(workId: string): CodeDocumentTab[] {
     const tabs = this.tabs.filter((tab) => tab.work_id === workId);
@@ -437,20 +457,24 @@ class CodeWorkspaceStore {
     if (this.hydrated.has(workId)) return Promise.resolve();
     const existing = this.hydrating.get(workId);
     if (existing) return existing;
-    const pending = this.loadPersisted(workId)
+    const epoch = this.workspaceEpoch;
+    const pending = this.loadPersisted(workId, epoch)
       .then(() => {
+        if (epoch !== this.workspaceEpoch) return;
         this.workspaceErrorByWorkId = {
           ...this.workspaceErrorByWorkId,
           [workId]: null,
         };
       })
       .catch((err) => {
+        if (epoch !== this.workspaceEpoch) return;
         this.workspaceErrorByWorkId = {
           ...this.workspaceErrorByWorkId,
           [workId]: `Could not restore Code workspace: ${err instanceof Error ? err.message : String(err)}`,
         };
       })
       .finally(() => {
+        if (epoch !== this.workspaceEpoch) return;
         this.hydrating.delete(workId);
         this.hydrated.add(workId);
       });
@@ -458,7 +482,7 @@ class CodeWorkspaceStore {
     return pending;
   }
 
-  private async loadPersisted(workId: string) {
+  private async loadPersisted(workId: string, epoch: number) {
     let state: Awaited<ReturnType<typeof getCodeWorkspaceState>>;
     try {
       state = await getCodeWorkspaceState(workId);
@@ -500,6 +524,7 @@ class CodeWorkspaceStore {
         }
       }),
     );
+    if (epoch !== this.workspaceEpoch) return;
     const currentIds = new Set(this.tabs.map((tab) => tab.tabId));
     this.tabs = [
       ...this.tabs,

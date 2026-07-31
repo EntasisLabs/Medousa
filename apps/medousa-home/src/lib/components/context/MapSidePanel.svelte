@@ -542,6 +542,7 @@
     display: -webkit-box;
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 5;
+    line-clamp: 5;
     overflow: hidden;
     font-size: 0.8125rem;
     line-height: 1.45;

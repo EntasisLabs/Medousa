@@ -333,8 +333,10 @@
     <div
       class="card w-full max-w-md space-y-4 p-5 shadow-xl"
       role="dialog"
+      tabindex="-1"
       aria-label="New agent"
       onclick={(event) => event.stopPropagation()}
+      onkeydown={(event) => event.stopPropagation()}
     >
       <div>
         <h2 class="text-sm font-semibold text-surface-50">New agent</h2>

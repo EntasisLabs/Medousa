@@ -185,8 +185,10 @@
           ? 'bottom-full mb-1'
           : 'top-full mt-1'}"
         role="listbox"
+        tabindex="-1"
         aria-label="Vault folders"
         onclick={(event) => event.stopPropagation()}
+        onkeydown={(event) => event.stopPropagation()}
       >
         {#each vault.vaultRoots as root (root.id)}
           <button
@@ -246,11 +248,13 @@
         bind:this={menuEl}
         class="vault-dock-popover"
         role="listbox"
+        tabindex="-1"
         aria-label="Vault folders"
         style:left="{placement.left}px"
         style:top="{placement.top}px"
         style:width="{placement.width}px"
         style:max-height="{placement.maxHeight}px"
+        onkeydown={(event) => event.stopPropagation()}
         style:transform={placement.transform}
         onclick={(event) => event.stopPropagation()}
       >
@@ -328,6 +332,7 @@
         <div
           class="absolute left-0 right-0 z-20 mt-1 rounded-lg border border-surface-500/50 bg-surface-900 py-1 shadow-xl"
           role="listbox"
+          tabindex="-1"
         >
           {#each vault.vaultRoots as root (root.id)}
             <button
@@ -374,7 +379,7 @@
       if (event.target === event.currentTarget) vault.closeAddVaultRootDialog();
     }}
   >
-    <div class="card w-full max-w-md space-y-4 p-5 shadow-xl" role="dialog" aria-label="Add vault folder">
+    <div class="card w-full max-w-md space-y-4 p-5 shadow-xl" role="dialog" aria-label="Add vault folder" tabindex="-1">
       <header>
         <h3 class="text-base font-semibold text-surface-50">Add vault folder</h3>
         <p class="workshop-faint mt-1 text-sm">

@@ -7,7 +7,7 @@ First-run UX, Home shell milestones, turn-loop FSM, user profiles (Phases 0–6)
 
 **Next focus:** Undertakings flowstate residual polish (empty states, F3–F5) on ForgeLens / World coverage UX. Coding / Detamu / shared-shell / ACP transcript / Forge Home contracts landed.
 
-Full plans: **[v0.8.0-forge-plan.md](v0.8.0-forge-plan.md)** · **[detamu-medousa-fit.md](detamu-medousa-fit.md)** · **[coding-engine-orchestrator.md](coding-engine-orchestrator.md)** · **[coding-session-terminal.md](coding-session-terminal.md)** · **[v0.6.0-shared-mode-plan.md](v0.6.0-shared-mode-plan.md)** · **[v0.6.0-peer-mesh-plan.md](v0.6.0-peer-mesh-plan.md)** · **[home-messaging-matrix.md](home-messaging-matrix.md)** · [ADR-011](../docs/architecture/decisions/adr-011-shared-mode-portal-and-mesh.md) · **[workshop-and-automations-plan.md](workshop-and-automations-plan.md)** · **[polish-and-package-plan.md](polish-and-package-plan.md)** · **[operators-guide-docs-epic.md](operators-guide-docs-epic.md)**
+Full plans: **[v0.7.0-forge-plan.md](v0.7.0-forge-plan.md)** · **[detamu-medousa-fit.md](detamu-medousa-fit.md)** · **[coding-engine-orchestrator.md](coding-engine-orchestrator.md)** · **[coding-session-terminal.md](coding-session-terminal.md)** · **[v0.6.0-shared-mode-plan.md](v0.6.0-shared-mode-plan.md)** · **[v0.6.0-peer-mesh-plan.md](v0.6.0-peer-mesh-plan.md)** · **[home-messaging-matrix.md](home-messaging-matrix.md)** · [ADR-011](../docs/architecture/decisions/adr-011-shared-mode-portal-and-mesh.md) · **[workshop-and-automations-plan.md](workshop-and-automations-plan.md)** · **[polish-and-package-plan.md](polish-and-package-plan.md)** · **[operators-guide-docs-epic.md](operators-guide-docs-epic.md)**
 
 ---
 
@@ -53,16 +53,16 @@ Full plans: **[v0.8.0-forge-plan.md](v0.8.0-forge-plan.md)** · **[detamu-medous
 | Home `terminal` tab kind + Tauri VT bridge + splits = sessions | ✅ |
 | Packages entry `shell-session` | ✅ |
 
-## 0.8.0 Forge core (in progress)
+## 0.7.0 Forge core (shipped)
 
 **Goal:** the durable work-lifecycle substrate — user-owned work items, governed git environments, lease-fenced executor attempts, sealed evidence, human review, recoverable dispositions. External agents become replaceable executors on top; Medousa owns the work.
 
 | Pillar | Plan | Status |
 |--------|------|--------|
-| Forge core crate | [v0.8.0-plan](v0.8.0-forge-plan.md) | ✅ `crates/medousa-forge` F1–F11 — model/events, FS store + journal, git engine, lifecycle + leases, policy-governed sealing, evidence-bound review, three dispositions, boot reconciliation, script adapter |
-| Daemon integration | [v0.8.0-plan](v0.8.0-forge-plan.md) | ✅ `Forge` in `AppState`, `{dataDir}/forge`, `reconcile_on_boot`, `/v1/forge` HTTP + script executor |
-| ACP executors | [v0.8.0-plan](v0.8.0-forge-plan.md) | ✅ Cursor/Codex bind via `work_id`; wire-id resume + command-log staging; seal stays explicit; **ACP turns persist to session history** |
-| Home review surface | [v0.8.0-plan](v0.8.0-forge-plan.md) | ✅ Undertakings under Work · ActiveUndertakingContext · ForgeLens · Shell bind · World insight/explorer |
+| Forge core crate | [v0.7.0-plan](v0.7.0-forge-plan.md) | ✅ `crates/medousa-forge` F1–F11 — model/events, FS store + journal, git engine, lifecycle + leases, policy-governed sealing, evidence-bound review, three dispositions, boot reconciliation, script adapter |
+| Daemon integration | [v0.7.0-plan](v0.7.0-forge-plan.md) | ✅ `Forge` in `AppState`, `{dataDir}/forge`, `reconcile_on_boot`, `/v1/forge` HTTP + script executor |
+| ACP executors | [v0.7.0-plan](v0.7.0-forge-plan.md) | ✅ Cursor/Codex bind via `work_id`; wire-id resume + command-log staging; seal stays explicit; **ACP turns persist to session history** |
+| Home review surface | [v0.7.0-plan](v0.7.0-forge-plan.md) | ✅ Undertakings under Work · ActiveUndertakingContext · ForgeLens · Shell bind · World insight/explorer |
 | Forge Home contracts (review/evidence, review-intent, allowed_actions, stream, eventual Detamu) | flowstate plan | ✅ |
 
 ---

@@ -333,10 +333,12 @@
       data-phase={phase}
       data-expand={expandDir}
       role="dialog"
+      tabindex="-1"
       aria-label={title}
       data-debug-label="nav-rail-view-popover"
       style:--nav-rail-popover-open-height="{openHeightPx}px"
       onclick={(event) => event.stopPropagation()}
+      onkeydown={(event) => event.stopPropagation()}
       onpointerenter={() => onPointerEnterChrome?.()}
       onpointerleave={() => {
         // Only hover-compact dismisses on leave; summon/open stay until Esc/click-out.
@@ -439,20 +441,20 @@
 
   .nav-rail-view-popover--chrome:not(.nav-rail-view-popover--compact),
   .nav-rail-view-popover--open,
-  .nav-rail-view-popover:has(.lme-dock-search-expand),
-  .nav-rail-view-popover:has(.nav-rail-context-toolbar) {
+  .nav-rail-view-popover:has(:global(.lme-dock-search-expand)),
+  .nav-rail-view-popover:has(:global(.nav-rail-context-toolbar)) {
     width: var(--nav-rail-popover-full-width);
   }
 
-  .nav-rail-view-popover:has(.nav-rail-popover-toolbar-label) {
+  .nav-rail-view-popover:has(:global(.nav-rail-popover-toolbar-label)) {
     width: fit-content;
     min-width: var(--nav-rail-popover-seed-width);
   }
 
   .nav-rail-view-popover--chrome:not(.nav-rail-view-popover--compact):has(
-      .nav-rail-popover-toolbar-label
+      :global(.nav-rail-popover-toolbar-label)
     ),
-  .nav-rail-view-popover--open:has(.nav-rail-popover-toolbar-label) {
+  .nav-rail-view-popover--open:has(:global(.nav-rail-popover-toolbar-label)) {
     width: var(--nav-rail-popover-full-width);
   }
 

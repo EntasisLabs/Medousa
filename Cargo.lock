@@ -7371,7 +7371,7 @@ dependencies = [
 
 [[package]]
 name = "medousa"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "a2",
  "anyhow",
@@ -7533,7 +7533,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-discord"
-version = "0.4.1"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "medousa-adapter-common",
@@ -7643,7 +7643,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-mcp-gateway"
-version = "0.4.1"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "axum 0.8.9",
@@ -7726,7 +7726,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-slack"
-version = "0.4.1"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "dirs 5.0.1",
@@ -7742,7 +7742,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-telegram"
-version = "0.4.1"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "medousa-adapter-common",

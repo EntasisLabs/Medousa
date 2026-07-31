@@ -81,42 +81,51 @@
     return raw.replace(/^RRULE:/i, "").trim() || null;
   }
 
-  const initialStart = event
-    ? event.all_day
-      ? new Date(`${allDayKey(event.dtstart)}T12:00:00`)
-      : new Date(event.dtstart)
-    : defaultCreateStart(defaultDay);
-  const initialEnd = event?.dtend
-    ? event.all_day
-      ? new Date(`${allDayKey(event.dtend)}T12:00:00`)
-      : new Date(event.dtend)
-    : new Date(initialStart.getTime() + 60 * 60 * 1000);
-
-  let summary = $state(event?.summary ?? "");
-  let description = $state(event?.description ?? "");
-  let location = $state(event?.location ?? "");
-  let allDay = $state(event?.all_day ?? false);
-  let date = $state(
-    event?.all_day ? allDayKey(event.dtstart) : toDateInput(initialStart),
-  );
-  let startTime = $state(toTimeInput(initialStart));
-  let endTime = $state(
-    event?.all_day
-      ? toTimeInput(initialStart)
-      : toTimeInput(initialEnd),
-  );
-  let rrule = $state<string | null>(normalizeRrule(event?.rrule));
-  let notePath = $state(event?.note_path ?? "");
-  let alarms = $state<CalendarAlarm[]>(
-    (event?.alarms ?? []).map((alarm) => ({
-      trigger_minutes_before: alarm.trigger_minutes_before,
-      action: alarm.action ?? "display",
-    })),
-  );
+  let summary = $state("");
+  let description = $state("");
+  let location = $state("");
+  let allDay = $state(false);
+  let date = $state("");
+  let startTime = $state("");
+  let endTime = $state("");
+  let rrule = $state<string | null>(null);
+  let notePath = $state("");
+  let alarms = $state<CalendarAlarm[]>([]);
+  let loadedSeed = "";
   let saving = $state(false);
   let linking = $state(false);
   let error = $state<string | null>(null);
   let titleEl: HTMLInputElement | undefined = $state();
+
+  $effect.pre(() => {
+    const source = event;
+    const seed = source?.uid ?? `new:${isoDay(defaultDay)}`;
+    if (seed === loadedSeed) return;
+    loadedSeed = seed;
+    const initialStart = source
+      ? source.all_day
+        ? new Date(`${allDayKey(source.dtstart)}T12:00:00`)
+        : new Date(source.dtstart)
+      : defaultCreateStart(defaultDay);
+    const initialEnd = source?.dtend
+      ? source.all_day
+        ? new Date(`${allDayKey(source.dtend)}T12:00:00`)
+        : new Date(source.dtend)
+      : new Date(initialStart.getTime() + 60 * 60 * 1000);
+    summary = source?.summary ?? "";
+    description = source?.description ?? "";
+    location = source?.location ?? "";
+    allDay = source?.all_day ?? false;
+    date = source?.all_day ? allDayKey(source.dtstart) : toDateInput(initialStart);
+    startTime = toTimeInput(initialStart);
+    endTime = source?.all_day ? toTimeInput(initialStart) : toTimeInput(initialEnd);
+    rrule = normalizeRrule(source?.rrule);
+    notePath = source?.note_path ?? "";
+    alarms = (source?.alarms ?? []).map((alarm) => ({
+      trigger_minutes_before: alarm.trigger_minutes_before,
+      action: alarm.action ?? "display",
+    }));
+  });
 
   $effect(() => {
     queueMicrotask(() => titleEl?.focus());
@@ -269,6 +278,7 @@
     class="cal-pop"
     class:cal-pop-mobile={mobile}
     role="dialog"
+    tabindex="-1"
     aria-modal="true"
     aria-label={event ? "Edit event" : "New event"}
     onclick={(e) => e.stopPropagation()}
@@ -729,7 +739,7 @@
     padding-bottom: 0.5rem;
   }
 
-  .cal-pop-row-icon {
+  :global(.cal-pop-row-icon) {
     flex-shrink: 0;
     color: rgb(var(--shell-muted));
   }

@@ -118,6 +118,7 @@
     <div
       class="mobile-dest-menu"
       role="dialog"
+      tabindex="-1"
       aria-modal="true"
       aria-label="Destinations"
       onclick={(e) => e.stopPropagation()}

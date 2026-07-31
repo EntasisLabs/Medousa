@@ -222,6 +222,7 @@
       class="agent-editor-popover-panel agent-editor-popover-panel-schedule"
       style={panelStyle}
       role="dialog"
+      tabindex="-1"
       aria-label="Add step"
       onpointerdown={(event) => event.stopPropagation()}
     >
@@ -262,6 +263,7 @@
               type="button"
               class="flow-add-kind-row"
               role="option"
+              aria-selected={false}
               onclick={(event) => selectKind("grapheme", event)}
             >
               <FileCode2 size={13} strokeWidth={1.75} class="shrink-0 opacity-65" />
@@ -274,6 +276,7 @@
               type="button"
               class="flow-add-kind-row"
               role="option"
+              aria-selected={false}
               onclick={(event) => selectKind("prompt", event)}
             >
               <MessageSquare size={13} strokeWidth={1.75} class="shrink-0 opacity-65" />
@@ -286,6 +289,7 @@
               type="button"
               class="flow-add-kind-row"
               role="option"
+              aria-selected={false}
               onclick={(event) => selectKind("mcp", event)}
             >
               <Wrench size={13} strokeWidth={1.75} class="shrink-0 opacity-65" />

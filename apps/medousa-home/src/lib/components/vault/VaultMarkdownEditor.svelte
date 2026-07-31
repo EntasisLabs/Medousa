@@ -85,8 +85,8 @@
   const scrollSync = createVaultScrollSync();
   let slashMenuEl = $state<ReturnType<typeof VaultSlashMenu> | null>(null);
   // Seed from content so CM doesn't mount on an empty draft during hydrate.
-  let draft = $state(content);
-  let syncedKey = $state(contentSyncKey);
+  let draft = $state("");
+  let syncedKey = $state("");
   let selectionStart = $state(0);
   let selectionEnd = $state(0);
   let slashOpen = $state(false);

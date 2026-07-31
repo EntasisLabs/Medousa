@@ -110,13 +110,13 @@
   let applyingExternal = false;
   let ready = false;
 
-  const onchangeRef = { current: onchange };
-  const onSlashCheckRef = { current: onSlashCheck };
-  const onSlashKeyRef = { current: onSlashKey };
-  const slashOpenRef = { current: slashOpen };
-  const disabledRef = { current: disabled };
+  const onchangeRef: { current: Props["onchange"] } = { current: () => {} };
+  const onSlashCheckRef: { current: Props["onSlashCheck"] } = { current: undefined };
+  const onSlashKeyRef: { current: Props["onSlashKey"] } = { current: undefined };
+  const slashOpenRef = { current: false };
+  const disabledRef = { current: false };
   const boundKeyRef = { current: "" };
-  const valueRef = { current: value };
+  const valueRef = { current: "" };
 
   $effect(() => {
     onchangeRef.current = onchange;

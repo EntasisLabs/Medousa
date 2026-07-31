@@ -124,6 +124,7 @@
       class="agent-editor-popover-panel agent-editor-popover-panel-schedule"
       style={panelStyle}
       role="dialog"
+      tabindex="-1"
       aria-label="Runs"
       onpointerdown={(event) => event.stopPropagation()}
     >

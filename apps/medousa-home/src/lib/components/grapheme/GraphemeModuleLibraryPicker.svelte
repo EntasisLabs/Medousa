@@ -183,6 +183,7 @@
       class="grapheme-module-library-panel"
       style={panelStyle}
       role="dialog"
+      tabindex="-1"
       aria-label="Modules"
     >
       <div class="grapheme-module-library-head">
@@ -283,6 +284,7 @@
                     type="button"
                     class="grapheme-module-library-op"
                     role="option"
+                    aria-selected={false}
                     onclick={() => insertOp(op.op)}
                   >
                     <span class="min-w-0 flex-1">

@@ -76,6 +76,12 @@ export class NoteEditorRuntimeStore {
     this.bump();
   }
 
+  resetForWorkshopSwitch() {
+    if (this.runtimes.size === 0) return;
+    this.runtimes.clear();
+    this.bump();
+  }
+
   /** Paths ranked newest-focus first (for TipTap keep-alive LRU). */
   rankedPaths(): string[] {
     void this.revision;

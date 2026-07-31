@@ -33,12 +33,19 @@
     class:shell-tab-notch-pane--split-top={split === "top"}
     class:shell-tab-notch-pane--split-bottom={split === "bottom"}
     data-group-id={node.id}
-    role="group"
+    role="button"
+    tabindex="0"
     aria-label={active ? "Active pane" : tabs.length ? "Pane" : "Empty pane"}
     onclick={(event) => {
       const target = event.target as HTMLElement | null;
       if (target?.closest(".shell-tab-notch-rail-row, button")) return;
       shellTabs.focusGroup(node.id);
+    }}
+    onkeydown={(event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        shellTabs.focusGroup(node.id);
+      }
     }}
     oncontextmenu={(event) => {
       const hit = event.target as HTMLElement | null;

@@ -10,7 +10,7 @@
 >
 > Companion plans: [coding-engine-orchestrator.md](coding-engine-orchestrator.md),
 > [coding-session-terminal.md](coding-session-terminal.md),
-> [v0.8.0-forge-plan.md](v0.8.0-forge-plan.md).
+> [v0.7.0-forge-plan.md](v0.7.0-forge-plan.md).
 
 Mental model and seam map for Detamu × Medousa. Detamu remains its own repo
 (publishable crates); Medousa consumes it as an SDK. Medousa stays authoritative

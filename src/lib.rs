@@ -414,35 +414,6 @@ pub fn build_genai_chat_client(
     GenaiChatClient::from_provider_model_with_base_url(None, &target, base_url)
 }
 
-#[cfg(test)]
-mod genai_target_tests {
-    use super::genai_model_target;
-
-    #[test]
-    fn direct_openai_gpt5_uses_responses_adapter() {
-        assert_eq!(
-            genai_model_target("openai", "gpt-5.6-luna", None),
-            "openai_resp::gpt-5.6-luna"
-        );
-    }
-
-    #[test]
-    fn custom_openai_compatible_endpoint_keeps_chat_adapter() {
-        assert_eq!(
-            genai_model_target("openai", "gpt-5.6-luna", Some("http://localhost:4000/v1")),
-            "openai::gpt-5.6-luna"
-        );
-    }
-
-    #[test]
-    fn non_gpt5_openai_models_keep_chat_adapter() {
-        assert_eq!(
-            genai_model_target("openai", "gpt-4o", None),
-            "openai::gpt-4o"
-        );
-    }
-}
-
 pub fn resolve_llm_base_url(
     explicit_provider: Option<&str>,
     explicit_base_url: Option<&str>,
@@ -753,4 +724,33 @@ pub async fn publish_pending(runtime: &RuntimeComposition, limit: usize) -> Resu
     };
 
     Ok(published)
+}
+
+#[cfg(test)]
+mod genai_target_tests {
+    use super::genai_model_target;
+
+    #[test]
+    fn direct_openai_gpt5_uses_responses_adapter() {
+        assert_eq!(
+            genai_model_target("openai", "gpt-5.6-luna", None),
+            "openai_resp::gpt-5.6-luna"
+        );
+    }
+
+    #[test]
+    fn custom_openai_compatible_endpoint_keeps_chat_adapter() {
+        assert_eq!(
+            genai_model_target("openai", "gpt-5.6-luna", Some("http://localhost:4000/v1")),
+            "openai::gpt-5.6-luna"
+        );
+    }
+
+    #[test]
+    fn non_gpt5_openai_models_keep_chat_adapter() {
+        assert_eq!(
+            genai_model_target("openai", "gpt-4o", None),
+            "openai::gpt-4o"
+        );
+    }
 }

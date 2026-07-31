@@ -408,6 +408,25 @@ function createUndertakingsStore() {
     }
   }
 
+  function resetForWorkshopSwitch() {
+    stopPolling();
+    eventSource?.close();
+    eventSource = null;
+    eventStreamConnecting = false;
+    if (reconnectTimer) clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+    if (eventRefreshTimer) clearTimeout(eventRefreshTimer);
+    eventRefreshTimer = null;
+    pendingEventWorkIds.clear();
+    items = [];
+    loading = false;
+    error = null;
+    selectedId = null;
+    detail = null;
+    review = null;
+    contexts = {};
+  }
+
   return {
     get items() {
       return items;
@@ -444,6 +463,7 @@ function createUndertakingsStore() {
     setSelection,
     startPolling,
     stopPolling,
+    resetForWorkshopSwitch,
   };
 }
 

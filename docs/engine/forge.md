@@ -21,7 +21,7 @@ Verbs:
 | Stasis | keep labor alive |
 | Work board | project in-flight activity |
 
-Architecture notes: [v0.8.0-forge-plan.md](../../architecture/v0.8.0-forge-plan.md).
+Architecture notes: [v0.7.0-forge-plan.md](../../architecture/v0.7.0-forge-plan.md).
 
 Storage root: `{MEDOUSA_DATA_DIR}/forge` (events + evidence outside the worktree).
 

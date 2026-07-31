@@ -50,8 +50,8 @@
   }: Props = $props();
 
   let stageEl: HTMLDivElement | undefined = $state();
-  let stageWidth = $state(density === "rail" ? 320 : 960);
-  let stageHeight = $state(density === "rail" ? 480 : 640);
+  let stageWidth = $state(960);
+  let stageHeight = $state(640);
   let expandedSessionIds = $state<Set<string>>(new Set());
   let expandedBootstrapped = $state(false);
 

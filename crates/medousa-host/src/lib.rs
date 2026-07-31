@@ -29,7 +29,7 @@ fn run_process_control(command: &mut Command) -> bool {
 pub fn request_process_stop_by_name(name: &str) -> bool {
     #[cfg(unix)]
     {
-        return run_process_control(Command::new("pkill").args(["-x", name]));
+        run_process_control(Command::new("pkill").args(["-x", name]))
     }
     #[cfg(windows)]
     {
@@ -50,7 +50,7 @@ pub fn request_process_stop_by_name(name: &str) -> bool {
 pub fn request_process_stop_by_pid(pid: u32) -> bool {
     #[cfg(unix)]
     {
-        return run_process_control(Command::new("kill").arg(pid.to_string()));
+        run_process_control(Command::new("kill").arg(pid.to_string()))
     }
     #[cfg(windows)]
     {
@@ -70,7 +70,7 @@ pub fn request_process_stop_by_pid(pid: u32) -> bool {
 pub fn is_process_alive(pid: u32) -> bool {
     #[cfg(unix)]
     {
-        return run_process_control(Command::new("kill").args(["-0", &pid.to_string()]));
+        run_process_control(Command::new("kill").args(["-0", &pid.to_string()]))
     }
     #[cfg(windows)]
     {

@@ -73,6 +73,7 @@
     class="cal-pop"
     class:cal-pop-mobile={mobile}
     role="dialog"
+    tabindex="-1"
     aria-modal="true"
     aria-label="New reminder"
     onclick={(e) => e.stopPropagation()}
@@ -242,7 +243,7 @@
     outline: none;
   }
 
-  .cal-pop-row-icon {
+  :global(.cal-pop-row-icon) {
     color: rgb(var(--shell-muted));
   }
 
