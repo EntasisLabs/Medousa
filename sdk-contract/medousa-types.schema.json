@@ -366,8 +366,104 @@
       "prompt"
     ],
     "properties": {
+      "code_context": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/CodeIntentContext"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
       "prompt": {
         "type": "string"
+      }
+    },
+    "definitions": {
+      "CodeIntentContext": {
+        "description": "Bounded, user-intent-oriented context carried from the permanent Code workspace into an external coding-agent prompt. Paths are relative to the governed Forge worktree; the daemon remains authoritative for the cwd.",
+        "type": "object",
+        "properties": {
+          "active_path": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "containing_symbol": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "cursor_line": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "diagnostics": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "last_verification": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "open_files": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "outcome": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "project_title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "selected_text": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "selection_end_line": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "selection_start_line": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "work_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
       }
     }
   },
@@ -2233,6 +2329,16 @@
           "type": "string"
         }
       },
+      "code_context": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/CodeIntentContext"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
       "command": {
         "type": [
           "string",
@@ -2284,6 +2390,90 @@
       }
     },
     "definitions": {
+      "CodeIntentContext": {
+        "description": "Bounded, user-intent-oriented context carried from the permanent Code workspace into an external coding-agent prompt. Paths are relative to the governed Forge worktree; the daemon remains authoritative for the cwd.",
+        "type": "object",
+        "properties": {
+          "active_path": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "containing_symbol": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "cursor_line": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "diagnostics": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "last_verification": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "open_files": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "outcome": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "project_title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "selected_text": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "selection_end_line": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "selection_start_line": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "work_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
       "TurnSurfaceContext": {
         "type": "object",
         "properties": {
