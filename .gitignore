@@ -20,6 +20,7 @@ apps/**/src-tauri/target/
 apps/**/src-tauri/binaries/
 apps/**/dist/
 apps/**/build/
+packages/**/dist/
 apps/**/.svelte-kit/
 
 package-lock.json
