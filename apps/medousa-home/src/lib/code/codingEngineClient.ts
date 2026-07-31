@@ -17,7 +17,12 @@ import {
 } from "$lib/daemon";
 import type { GraphemeLspWorkspaceResponse } from "$lib/types/grapheme";
 
-export function createWebSocketTransport(uri: string): Promise<Transport> {
+type CloseableTransport = {
+  transport: Transport;
+  close: () => void;
+};
+
+function createCloseableWebSocketTransport(uri: string): Promise<CloseableTransport> {
   const handlers: Array<(value: string) => void> = [];
   const socket = new WebSocket(uri);
   socket.onmessage = (event) => {
@@ -29,7 +34,7 @@ export function createWebSocketTransport(uri: string): Promise<Transport> {
   };
   return new Promise((resolve, reject) => {
     socket.onopen = () => {
-      resolve({
+      const transport: Transport = {
         send(message: string) {
           socket.send(message);
         },
@@ -40,10 +45,24 @@ export function createWebSocketTransport(uri: string): Promise<Transport> {
           const index = handlers.indexOf(handler);
           if (index >= 0) handlers.splice(index, 1);
         },
+      };
+      resolve({
+        transport,
+        close() {
+          handlers.length = 0;
+          socket.onmessage = null;
+          if (socket.readyState === WebSocket.CONNECTING || socket.readyState === WebSocket.OPEN) {
+            socket.close(1000, "workspace released");
+          }
+        },
       });
     };
     socket.onerror = () => reject(new Error("LSP websocket failed"));
   });
+}
+
+export async function createWebSocketTransport(uri: string): Promise<Transport> {
+  return (await createCloseableWebSocketTransport(uri)).transport;
 }
 
 export type CodingEngineInfo = {
@@ -66,6 +85,8 @@ export async function connectOrchestratorLspClient(options?: {
   client: LSPClient;
   workspace: GraphemeLspWorkspaceResponse;
   via: "orchestrator" | "grapheme";
+  close: () => void;
+  ready: Promise<null>;
 }> {
   const language = (options?.language ?? "grapheme").trim() || "grapheme";
   const graphemeWorkspace = await getGraphemeLspWorkspace();
@@ -77,14 +98,20 @@ export async function connectOrchestratorLspClient(options?: {
       if (options?.workId) query.set("work_id", options.workId);
       const path = `${info.daemon_lsp_path || "/v1/code/lsp"}?${query}`;
       const wsUrl = await daemonWebSocketUrl(path);
-      const transport = await createWebSocketTransport(wsUrl);
+      const connection = await createCloseableWebSocketTransport(wsUrl);
       const rootUri = options?.workspaceRoot
         ? pathToFileUri(options.workspaceRoot)
         : info.workspace_root_uri || graphemeWorkspace.root_uri;
       const client = new LSPClient({
         rootUri,
+        timeout: 30_000,
         extensions: languageServerExtensions(),
-      }).connect(transport);
+      }).connect(connection.transport);
+      const ready = client.initializing;
+      void ready.catch(() => {
+        client.disconnect();
+        connection.close();
+      });
       return {
         client,
         workspace: {
@@ -93,6 +120,8 @@ export async function connectOrchestratorLspClient(options?: {
           root_path: info.workspace_root || graphemeWorkspace.root_path,
         },
         via: "orchestrator",
+        close: connection.close,
+        ready,
       };
     }
   } catch {
@@ -103,12 +132,24 @@ export async function connectOrchestratorLspClient(options?: {
   }
 
   const wsUrl = await daemonWebSocketUrl("/v1/grapheme/lsp");
-  const transport = await createWebSocketTransport(wsUrl);
+  const connection = await createCloseableWebSocketTransport(wsUrl);
   const client = new LSPClient({
     rootUri: graphemeWorkspace.root_uri,
+    timeout: 30_000,
     extensions: languageServerExtensions(),
-  }).connect(transport);
-  return { client, workspace: graphemeWorkspace, via: "grapheme" };
+  }).connect(connection.transport);
+  const ready = client.initializing;
+  void ready.catch(() => {
+    client.disconnect();
+    connection.close();
+  });
+  return {
+    client,
+    workspace: graphemeWorkspace,
+    via: "grapheme",
+    close: connection.close,
+    ready,
+  };
 }
 
 export function pathToFileUri(path: string): string {
@@ -117,24 +158,87 @@ export function pathToFileUri(path: string): string {
   return encodeURI(`file://${prefixed}`);
 }
 
-const workspaceClients = new Map<string, Promise<LSPClient>>();
+type WorkspaceClientEntry = {
+  connection: ReturnType<typeof connectOrchestratorLspClient>;
+  client: Promise<LSPClient>;
+  references: number;
+  releaseTimer: ReturnType<typeof setTimeout> | null;
+};
 
-export async function getCodeWorkspaceLspClient(options: {
+export type CodeWorkspaceLspLease = {
+  client: Promise<LSPClient>;
+  release: () => void;
+};
+
+const WORKSPACE_CLIENT_RELEASE_DELAY_MS = 1_000;
+const workspaceClients = new Map<string, WorkspaceClientEntry>();
+
+function closeWorkspaceClient(key: string, entry: WorkspaceClientEntry) {
+  if (workspaceClients.get(key) !== entry || entry.references > 0) return;
+  workspaceClients.delete(key);
+  void entry.connection.then(({ client, close }) => {
+    client.disconnect();
+    close();
+  }).catch(() => {});
+}
+
+export function acquireCodeWorkspaceLspClient(options: {
   workId: string;
   workspaceRoot: string;
   language: string;
-}): Promise<LSPClient> {
-  const key = `${options.workId}:${options.language}`;
-  const existing = workspaceClients.get(key);
-  if (existing) return existing;
-  const pending = connectOrchestratorLspClient(options)
-    .then((result) => result.client)
+}): CodeWorkspaceLspLease {
+  const workspaceRoot = options.workspaceRoot.replace(/[\\/]+$/, "");
+  const key = `${options.workId}:${options.language.toLowerCase()}:${workspaceRoot}`;
+  let entry = workspaceClients.get(key);
+  if (!entry) {
+    const connection = connectOrchestratorLspClient(options)
     .catch((err) => {
-      workspaceClients.delete(key);
+      if (workspaceClients.get(key)?.connection === connection) {
+        workspaceClients.delete(key);
+      }
       throw err;
     });
-  workspaceClients.set(key, pending);
-  return pending;
+    const client = connection
+      .then(async (result) => {
+        await result.ready;
+        return result.client;
+      })
+      .catch((err) => {
+        workspaceClients.delete(key);
+        throw err;
+      });
+    entry = { connection, client, references: 0, releaseTimer: null };
+    workspaceClients.set(key, entry);
+  }
+  if (entry.releaseTimer) {
+    clearTimeout(entry.releaseTimer);
+    entry.releaseTimer = null;
+  }
+  entry.references += 1;
+  let released = false;
+  return {
+    client: entry.client,
+    release() {
+      if (released) return;
+      released = true;
+      entry.references = Math.max(0, entry.references - 1);
+      if (entry.references === 0) {
+        entry.releaseTimer = setTimeout(
+          () => closeWorkspaceClient(key, entry),
+          WORKSPACE_CLIENT_RELEASE_DELAY_MS,
+        );
+      }
+    },
+  };
+}
+
+if (typeof window !== "undefined") {
+  window.addEventListener("beforeunload", () => {
+    for (const [key, entry] of workspaceClients) {
+      entry.references = 0;
+      closeWorkspaceClient(key, entry);
+    }
+  });
 }
 
 async function codeAgentGet<T>(

@@ -4,7 +4,7 @@
   import type { LSPClient } from "@codemirror/lsp-client";
   import CodeMirrorHost from "$lib/components/code/CodeMirrorHost.svelte";
   import {
-    getCodeWorkspaceLspClient,
+    acquireCodeWorkspaceLspClient,
     pathToFileUri,
   } from "$lib/code/codingEngineClient";
   import { languageSupportsLsp } from "$lib/code/codeEditorLanguageRegistry";
@@ -73,16 +73,22 @@
       return;
     }
     let cancelled = false;
+    let release = () => {};
     lspClient = null;
     lspError = null;
     lspConnecting = true;
-    void getCodeWorkspaceLspClient({
+    const lease = acquireCodeWorkspaceLspClient({
       workId: tab.work_id,
       workspaceRoot: worktree,
       language: tabLanguage,
-    })
+    });
+    release = lease.release;
+    void lease.client
       .then((client) => {
-        if (!cancelled) lspClient = client;
+        if (cancelled) {
+          return;
+        }
+        lspClient = client;
       })
       .catch((err) => {
         if (!cancelled) lspError = err instanceof Error ? err.message : String(err);
@@ -92,6 +98,7 @@
       });
     return () => {
       cancelled = true;
+      release();
     };
   });
 

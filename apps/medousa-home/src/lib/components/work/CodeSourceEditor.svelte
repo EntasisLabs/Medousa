@@ -26,16 +26,10 @@
   import { openTrackedTerminal } from "$lib/utils/undertakingWorkspace";
   import type { LSPClient } from "@codemirror/lsp-client";
   import {
-    getCodeWorkspaceLspClient,
-    getCodeDocumentSymbols,
-    getCodeWorkspaceDiagnostics,
-    getCodeWorkspaceSymbols,
-    getCodeLanguageCapabilities,
+    acquireCodeWorkspaceLspClient,
     getCodeEditorConventions,
-    requestCodeLanguageAction,
     pathToFileUri,
     type CodeDocumentSymbol,
-    type CodeWorkspaceDiagnostic,
     type CodeWorkspaceSymbol,
   } from "$lib/code/codingEngineClient";
   import { containingSymbolTrail } from "$lib/code/codeDocumentSymbols";
@@ -151,7 +145,6 @@
   let comparingTabId = $state<string | null>(null);
   let reviewChangedLines = $state<Array<{ line: number; kind: string }>>([]);
   let quickInput = $state<HTMLInputElement | null>(null);
-  let workspaceDiagnostics = $state<CodeWorkspaceDiagnostic[]>([]);
   let languageCapabilities = $state<Record<string, unknown>>({});
   let editorConventions = $state<{ indent_style?: "space" | "tab"; indent_size?: string; tab_width?: string }>({});
   let references = $state<Array<{ uri?: string; range?: { start?: { line?: number } } }>>([]);
@@ -260,25 +253,14 @@
   const selectedTask = $derived(
     projectTasks.find((task) => task.id === selectedTaskId) ?? projectTasks[0] ?? null,
   );
-  const workspaceProblemRows = $derived.by(() => {
-    const rows = workspaceDiagnostics.flatMap((document) => {
-      const path = pathFromUri(document.uri) ?? document.uri ?? "Project";
-      return (document.diagnostics ?? []).map((diagnostic) => ({
-        path,
-        line: (diagnostic.range?.start?.line ?? 0) + 1,
-        message: diagnostic.message ?? "Language issue",
-        severity: diagnostic.severity ?? 2,
-      }));
-    });
-    return rows.length > 0
-      ? rows
-      : problems.map((problem) => ({
-          path: activeTab?.path ?? "Current file",
-          line: problem.line,
-          message: problem.message,
-          severity: problem.severity === "error" ? 1 : 2,
-        }));
-  });
+  const workspaceProblemRows = $derived(
+    problems.map((problem) => ({
+      path: activeTab?.path ?? "Current file",
+      line: problem.line,
+      message: problem.message,
+      severity: problem.severity === "error" ? 1 : 2,
+    })),
+  );
   const canReference = $derived(Boolean(languageCapabilities.referencesProvider));
   const canRename = $derived(Boolean(languageCapabilities.renameProvider));
   const canFormat = $derived(Boolean(languageCapabilities.documentFormattingProvider));
@@ -481,15 +463,16 @@
   async function refreshQuickSymbols() {
     const tab = activeTab;
     const query = quickQuery.startsWith("@") ? quickQuery.slice(1).trim() : "";
-    if (!tab || !workId || quickMode !== "symbol") return;
+    const client = lspClient;
+    if (!tab || !workId || quickMode !== "symbol" || !client) return;
     quickSymbolQuery = query;
     try {
-      const result = await getCodeWorkspaceSymbols({
-        workId,
-        language: tab.language,
-        query,
-      });
-      if (quickSymbolQuery === query) quickSymbols = result;
+      client.sync();
+      const result = await client.request<
+        { query: string },
+        CodeWorkspaceSymbol[] | null
+      >("workspace/symbol", { query });
+      if (quickSymbolQuery === query) quickSymbols = Array.isArray(result) ? result : [];
     } catch {
       if (quickSymbolQuery === query) quickSymbols = [];
     }
@@ -751,11 +734,14 @@
     }
     symbolsLoading = true;
     try {
-      symbols = await getCodeDocumentSymbols({
-        workId,
-        uri: documentUri,
-        language: activeTab.language,
+      lspClient.sync();
+      const result = await lspClient.request<
+        { textDocument: { uri: string } },
+        CodeDocumentSymbol[] | null
+      >("textDocument/documentSymbol", {
+        textDocument: { uri: documentUri },
       });
+      symbols = Array.isArray(result) ? result : [];
     } catch (err) {
       surfaceError = err instanceof Error ? err.message : String(err);
       symbols = [];
@@ -767,17 +753,8 @@
   async function showProblems() {
     contextPanel = contextPanel === "problems" ? null : "problems";
     if (contextPanel !== "problems" || !activeTab || !lspClient) return;
-    try {
-      workspaceDiagnostics = await getCodeWorkspaceDiagnostics({
-        workId,
-        language: activeTab.language,
-      });
-      workspaceDiagnostics.sort((a, b) =>
-        a.uri === documentUri ? -1 : b.uri === documentUri ? 1 : 0
-      );
-    } catch {
-      workspaceDiagnostics = [];
-    }
+    lspClient.sync();
+    syncProblems();
   }
 
   function activeLanguageEdits(result: unknown): Array<{
@@ -878,7 +855,8 @@
     action: "format" | "organize_imports" | "references" | "rename",
     newName?: string,
   ) {
-    if (!activeTab || !documentUri || languageActionRunning) return;
+    const client = lspClient;
+    if (!activeTab || !documentUri || !client || languageActionRunning) return;
     const cursor = editor?.getCursorPosition() ?? { line: 0, character: 0 };
     if (action === "rename" && !newName?.trim()) return;
     languageActionRunning = true;
@@ -887,15 +865,34 @@
       if (action === "rename" && !(await saveAll())) {
         throw new Error("Resolve unsaved files before renaming across the project");
       }
-      const result = await requestCodeLanguageAction({
-        workId,
-        action,
-        uri: documentUri,
-        language: activeTab.language,
-        line: cursor.line,
-        character: cursor.character,
-        newName: newName?.trim(),
-      });
+      client.sync();
+      const position = { line: cursor.line, character: cursor.character };
+      const [method, params] = action === "references"
+        ? ["textDocument/references", {
+            textDocument: { uri: documentUri },
+            position,
+            context: { includeDeclaration: true },
+          }]
+        : action === "rename"
+          ? ["textDocument/rename", {
+              textDocument: { uri: documentUri },
+              position,
+              newName: newName!.trim(),
+            }]
+          : action === "format"
+            ? ["textDocument/formatting", {
+                textDocument: { uri: documentUri },
+                options: {
+                  tabSize: Number(editorConventions.indent_size ?? editorConventions.tab_width) || 2,
+                  insertSpaces: editorConventions.indent_style !== "tab",
+                },
+              }]
+            : ["textDocument/codeAction", {
+                textDocument: { uri: documentUri },
+                range: { start: position, end: position },
+                context: { diagnostics: [], only: ["source.organizeImports"] },
+              }];
+      const result = await client.request(method, params);
       if (action === "references") {
         references = Array.isArray(result) ? result : [];
         contextPanel = "references";
@@ -1090,17 +1087,23 @@
       return;
     }
     let cancelled = false;
+    let release = () => {};
     lspClient = null;
     lspError = null;
     lspConnecting = true;
     const cancelDeferred = deferCodeWorkspaceWork(() => {
-      void getCodeWorkspaceLspClient({
+      const lease = acquireCodeWorkspaceLspClient({
         workId,
         workspaceRoot: root,
         language: activeTabLanguage,
-      })
+      });
+      release = lease.release;
+      void lease.client
         .then((client) => {
-          if (!cancelled) lspClient = client;
+          if (cancelled) {
+            return;
+          }
+          lspClient = client;
         })
         .catch((err) => {
           if (!cancelled) lspError = err instanceof Error ? err.message : String(err);
@@ -1112,6 +1115,7 @@
     return () => {
       cancelled = true;
       cancelDeferred();
+      release();
     };
   });
 
@@ -1122,16 +1126,15 @@
     let cleanup = () => {};
     untrack(() => {
       const uri = documentUri;
-      if (!interactive || !activeTabId || !uri || !lspClient) {
+      const client = lspClient;
+      if (!interactive || !activeTabId || !uri || !client) {
         languageCapabilities = {};
         editorConventions = {};
         return;
       }
       const cancelDeferred = deferCodeWorkspaceWork(() => {
         void refreshSymbols();
-        void getCodeLanguageCapabilities({ workId, uri, language: activeTabLanguage })
-          .then((capabilities) => (languageCapabilities = capabilities))
-          .catch(() => (languageCapabilities = {}));
+        languageCapabilities = (client.serverCapabilities ?? {}) as Record<string, unknown>;
         void getCodeEditorConventions({ workId, uri, language: activeTabLanguage })
           .then((conventions) => (editorConventions = conventions))
           .catch(() => (editorConventions = {}));

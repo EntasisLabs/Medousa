@@ -3,7 +3,8 @@
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Instant;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::{Duration, Instant};
 
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Query, State};
@@ -19,7 +20,7 @@ use crate::backend::spawn_backend;
 use crate::detamu::{DetamuDocumentSnapshot, DetamuServerHandle};
 use crate::document::DocumentStore;
 use crate::registry::{LanguageId, ServerRegistry};
-use crate::session::SessionPool;
+use crate::session::{SessionPool, initialization_options};
 use crate::{ENGINE_API_REVISION, ENGINE_NAME, ENGINE_VERSION};
 
 #[derive(Clone)]
@@ -35,6 +36,7 @@ pub struct OrchestratorState {
     pub config: OrchestratorConfig,
     pub pool: Arc<SessionPool>,
     pub documents: Arc<DocumentStore>,
+    pub editor_sessions: Arc<AtomicUsize>,
     pub started: Instant,
 }
 
@@ -44,6 +46,7 @@ impl OrchestratorState {
             config: config.clone(),
             pool: SessionPool::new(registry),
             documents: DocumentStore::new(),
+            editor_sessions: Arc::new(AtomicUsize::new(0)),
             started: Instant::now(),
         }
     }
@@ -106,6 +109,8 @@ pub struct HealthResponse {
     pub api_revision: u32,
     pub uptime_secs: u64,
     pub active_sessions: usize,
+    pub editor_sessions: usize,
+    pub agent_sessions: usize,
     pub workspace_root: String,
     pub languages: Vec<String>,
     pub allowed_roots: Vec<String>,
@@ -148,17 +153,37 @@ pub async fn serve(state: OrchestratorState) -> anyhow::Result<()> {
     let addr = state.config.bind;
     let listener = tokio::net::TcpListener::bind(addr).await?;
     tracing::info!(%addr, "medousa-code orchestrator listening");
-    axum::serve(listener, app(state)).await?;
+    let pool = Arc::clone(&state.pool);
+    let reaper_pool = Arc::clone(&pool);
+    let reaper = tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(30));
+        interval.tick().await;
+        loop {
+            interval.tick().await;
+            let reaped = reaper_pool.shutdown_idle(Duration::from_secs(90)).await;
+            if reaped > 0 {
+                tracing::info!(reaped, "reclaimed idle language server sessions");
+            }
+        }
+    });
+    let result = axum::serve(listener, app(state)).await;
+    reaper.abort();
+    pool.shutdown_all().await;
+    result?;
     Ok(())
 }
 
 async fn health(State(state): State<Arc<OrchestratorState>>) -> Json<HealthResponse> {
+    let agent_sessions = state.pool.active_count().await;
+    let editor_sessions = state.editor_sessions.load(Ordering::Relaxed);
     Json(HealthResponse {
         name: ENGINE_NAME.into(),
         version: ENGINE_VERSION.into(),
         api_revision: ENGINE_API_REVISION,
         uptime_secs: state.started.elapsed().as_secs(),
-        active_sessions: state.pool.active_count().await,
+        active_sessions: editor_sessions + agent_sessions,
+        editor_sessions,
+        agent_sessions,
         workspace_root: state.config.workspace_root.display().to_string(),
         languages: state
             .pool
@@ -227,6 +252,13 @@ async fn handle_client(
             return;
         }
     };
+    state.editor_sessions.fetch_add(1, Ordering::Relaxed);
+    tracing::info!(
+        %language,
+        workspace_root = %workspace_root.display(),
+        editor_sessions = state.editor_sessions.load(Ordering::Relaxed),
+        "started editor language server"
+    );
     let (mut ws_tx, mut ws_rx) = socket.split();
 
     let reader = Arc::clone(&backend);
@@ -245,10 +277,20 @@ async fn handle_client(
             Message::Close(_) => break,
             _ => continue,
         };
-        if let Ok(value) = serde_json::from_str::<Value>(&text) {
+        let mut outbound = text;
+        if let Ok(mut value) = serde_json::from_str::<Value>(&outbound) {
             track_document(&state, &value).await;
+            if value.get("method").and_then(Value::as_str) == Some("initialize") {
+                if let Some(params) = value.get_mut("params").and_then(Value::as_object_mut) {
+                    params.insert(
+                        "initializationOptions".to_string(),
+                        initialization_options(&language),
+                    );
+                }
+                outbound = value.to_string();
+            }
         }
-        if let Err(err) = backend.write_message(&text).await {
+        if let Err(err) = backend.write_message(&outbound).await {
             tracing::warn!(error = %err, "backend write failed");
             break;
         }
@@ -256,6 +298,13 @@ async fn handle_client(
 
     fanout.abort();
     backend.shutdown().await;
+    state.editor_sessions.fetch_sub(1, Ordering::Relaxed);
+    tracing::info!(
+        %language,
+        workspace_root = %workspace_root.display(),
+        editor_sessions = state.editor_sessions.load(Ordering::Relaxed),
+        "stopped editor language server"
+    );
 }
 
 async fn track_document(state: &OrchestratorState, value: &Value) {
@@ -461,7 +510,8 @@ async fn agent_diagnostics(
     let language = language_for_uri(&q.uri, q.language.as_deref());
     let workspace_root = requested_workspace_root(&state, q.workspace_root.clone())
         .map_err(|e| (axum::http::StatusCode::BAD_REQUEST, e.to_string()))?;
-    let diagnostics = if let Ok(session) = state.pool.get_or_spawn(workspace_root, language).await {
+    let diagnostics = if let Some(session) = state.pool.get_existing(workspace_root, language).await
+    {
         session
             .diagnostics
             .read()
