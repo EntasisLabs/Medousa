@@ -135,18 +135,12 @@ pub async fn vault_git_worktrees_list(
     let git = crate::vault_git::service::resolve_git_binary()
         .ok_or_else(|| map_err(anyhow::anyhow!("Git is not installed")))?;
     let vault_root = crate::vault::roots::active_vault_root();
-    let output = std::process::Command::new(&git)
-        .args(["worktree", "list", "--porcelain"])
-        .current_dir(&vault_root)
-        .output()
-        .map_err(|e| map_err(e.into()))?;
-    if !output.status.success() {
-        return Err(map_err(anyhow::anyhow!(
-            "git worktree list failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        )));
-    }
-    let text = String::from_utf8_lossy(&output.stdout);
+    let text = crate::vault_git::service::run_git(
+        &git,
+        &vault_root,
+        &["worktree", "list", "--porcelain"],
+    )
+    .map_err(map_err)?;
     let mut entries = Vec::new();
     let mut current_path = None::<String>;
     let mut current_head = None::<String>;
@@ -208,15 +202,10 @@ pub async fn vault_git_worktrees_add(
         args.push("-b".to_string());
         args.push(branch.to_string());
     }
+    args.push("--".to_string());
     args.push(path.to_string());
-    let status = std::process::Command::new(&git)
-        .args(&args)
-        .current_dir(&vault_root)
-        .status()
-        .map_err(|e| map_err(e.into()))?;
-    if !status.success() {
-        return Err(map_err(anyhow::anyhow!("git worktree add failed")));
-    }
+    let arg_refs = args.iter().map(String::as_str).collect::<Vec<_>>();
+    crate::vault_git::service::run_git(&git, &vault_root, &arg_refs).map_err(map_err)?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -237,13 +226,11 @@ pub async fn vault_git_worktrees_remove(
     if path.is_empty() {
         return Err(map_err(anyhow::anyhow!("path is required")));
     }
-    let status = std::process::Command::new(&git)
-        .args(["worktree", "remove", "--force", path])
-        .current_dir(&vault_root)
-        .status()
-        .map_err(|e| map_err(e.into()))?;
-    if !status.success() {
-        return Err(map_err(anyhow::anyhow!("git worktree remove failed")));
-    }
+    crate::vault_git::service::run_git(
+        &git,
+        &vault_root,
+        &["worktree", "remove", "--force", "--", path],
+    )
+    .map_err(map_err)?;
     Ok(StatusCode::NO_CONTENT)
 }

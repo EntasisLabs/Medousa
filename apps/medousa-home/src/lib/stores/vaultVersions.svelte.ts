@@ -19,6 +19,30 @@ import {
   isMissingCapabilityError,
 } from "$lib/utils/normieErrors";
 
+const REFRESH_FRESHNESS_MS = 1_000;
+
+function sameDetect(left: VaultGitDetect | null, right: VaultGitDetect): boolean {
+  return (
+    left?.available === right.available &&
+    left?.path === right.path &&
+    left?.version === right.version &&
+    left?.enabled === right.enabled &&
+    left?.platformHint === right.platformHint
+  );
+}
+
+function sameStatus(left: VaultGitStatus | null, right: VaultGitStatus): boolean {
+  return (
+    left?.enabled === right.enabled &&
+    left?.available === right.available &&
+    left?.isRepo === right.isRepo &&
+    left?.branch === right.branch &&
+    left?.dirtyCount === right.dirtyCount &&
+    left?.vaultRoot === right.vaultRoot &&
+    left?.gitPath === right.gitPath
+  );
+}
+
 class VaultVersionsStore {
   status = $state<VaultGitStatus | null>(null);
   detect = $state<VaultGitDetect | null>(null);
@@ -33,6 +57,8 @@ class VaultVersionsStore {
   worktrees = $state<Array<{ path: string; head: string; branch?: string | null }>>(
     [],
   );
+  private refreshInFlight: Promise<void> | null = null;
+  private refreshedAt = 0;
 
   get enabled() {
     return (
@@ -69,9 +95,34 @@ class VaultVersionsStore {
       this.markDisabledLocally();
       return;
     }
+    if (this.refreshInFlight) {
+      await this.refreshInFlight;
+      return;
+    }
+    if (
+      !options?.force &&
+      this.status &&
+      Date.now() - this.refreshedAt < REFRESH_FRESHNESS_MS
+    ) {
+      return;
+    }
+
+    const refresh = this.refreshFromDaemon(enabled);
+    this.refreshInFlight = refresh;
     try {
-      this.detect = await vaultGitDetect();
-      this.status = await vaultGitStatus();
+      await refresh;
+    } finally {
+      this.refreshedAt = Date.now();
+      if (this.refreshInFlight === refresh) this.refreshInFlight = null;
+    }
+  }
+
+  private async refreshFromDaemon(enabled: boolean) {
+    try {
+      const detect = await vaultGitDetect();
+      const status = await vaultGitStatus();
+      if (!sameDetect(this.detect, detect)) this.detect = detect;
+      if (!sameStatus(this.status, status)) this.status = status;
       this.unsupported = false;
       this.error = null;
     } catch (err) {
