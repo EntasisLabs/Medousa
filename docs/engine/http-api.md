@@ -9,7 +9,7 @@ Types: [`medousa-types`](../../crates/medousa-types/) (`daemon_api`, `session`, 
 SDK: [`docs/sdk/api-reference.md`](../sdk/api-reference.md).  
 Component notes: [component-daemon.md](../../architecture/component-daemon.md).
 
-Subsystem guides: [interactive-streaming](interactive-streaming.md) · [artifacts](artifacts.md) · [vault](vault.md) · [calendar](calendar.md) · [workspace](workspace.md) · [agent-tools](agent-tools.md) · [runtime-config](runtime-config.md) · [extensions](extensions.md)
+Subsystem guides: [interactive-streaming](interactive-streaming.md) · [artifacts](artifacts.md) · [vault](vault.md) · [calendar](calendar.md) · [workspace](workspace.md) · [forge](forge.md) · [agent-tools](agent-tools.md) · [runtime-config](runtime-config.md) · [extensions](extensions.md)
 
 ---
 
@@ -189,6 +189,12 @@ External ACP agents (Cursor / Codex). Clients use the Medousa SDK `agents()` acc
 | POST | `/v1/agents/permission-requests/{id}/approve` | Approve |
 | POST | `/v1/agents/permission-requests/{id}/deny` | Deny |
 
+Session creation and prompt requests may include `code_context`, a typed,
+bounded snapshot of the user's active Code workspace (outcome, file,
+cursor/selection, open files, diagnostics, and last verification). The daemon
+formats this for the selected ACP provider; clients should not construct
+provider-specific prompt wrappers.
+
 See [ADR-008](../architecture/decisions/adr-008-hot-swappable-agent-runtime.md) and [acp-external-agents](../cookbook/acp-external-agents.md).
 
 ---
@@ -220,7 +226,55 @@ See [ADR-008](../architecture/decisions/adr-008-hot-swappable-agent-runtime.md) 
 | POST | `/v1/workspace/rebuild` | Rebuild projector |
 | GET | `/v1/workspace/stream` | SSE feed |
 
-See [workspace.md](workspace.md).
+Guide: [workspace.md](workspace.md).
+
+---
+
+## Forge (undertakings)
+
+Custody of intentional work episodes over a git target (vault or any repo). Distinct from workspace cards and vault Versions.
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| POST | `/v1/forge/items` | Register |
+| POST | `/v1/forge/items/start` | Register and provision in one operation |
+| POST | `/v1/forge/repositories/inspect` | Inspect a repository path and infer its starting branch |
+| GET, PUT | `/v1/forge/repositories` | Workshop repository recents and pins |
+| GET | `/v1/forge/repositories/browse?path=…` | Scoped workshop directory/repository browser |
+| GET, POST | `/v1/forge/repositories/provider` | Discover optional provider adapters or clone on the workshop |
+| GET | `/v1/forge/items` | List |
+| GET | `/v1/forge/items/{id}` | Get |
+| POST | `/v1/forge/items/{id}/provision` | Provision env |
+| POST | `/v1/forge/items/{id}/attempts` | Begin attempt → lease |
+| POST | `/v1/forge/items/{id}/handoff` | Release the current executor while preserving its worktree |
+| GET, POST | `/v1/forge/items/{id}/provider` | Discover or perform external repository review handoff |
+| PUT | `/v1/forge/items/{id}/provider/context` | Attach HTTPS issue, PR, or ticket context |
+| GET, POST | `/v1/forge/items/{id}/provider/comments` | Read review feedback or register a follow-up item |
+| POST | `/v1/forge/leases/{lease_id}/heartbeat` | Heartbeat |
+| POST | `/v1/forge/leases/{lease_id}/complete` | Seal |
+| POST | `/v1/forge/leases/{lease_id}/interrupt` | Interrupt |
+| POST | `/v1/forge/leases/{lease_id}/fail` | Fail |
+| POST | `/v1/forge/items/{id}/decisions` | Review decision |
+| POST | `/v1/forge/items/{id}/apply` | Apply disposition |
+| POST | `/v1/forge/items/{id}/discard` | Discard |
+| POST | `/v1/forge/items/{id}/run-script` | Script adapter |
+| POST | `/v1/forge/items/{id}/export` | Export bundle |
+| GET | `/v1/forge/items/{id}/tree` | Browse governed source tree |
+| GET | `/v1/forge/items/{id}/search` | Search governed source contents |
+| GET | `/v1/forge/items/{id}/source?path=…` | Read a governed source file |
+| POST | `/v1/forge/items/{id}/source` | Create a governed source file |
+| PUT | `/v1/forge/items/{id}/source` | Save with digest conflict fencing |
+| PATCH | `/v1/forge/items/{id}/source` | Rename with digest conflict fencing |
+| DELETE | `/v1/forge/items/{id}/source` | Delete with digest conflict fencing |
+| GET | `/v1/forge/items/{id}/workspace-state` | Restore editor tabs, drafts, and groups |
+| PUT | `/v1/forge/items/{id}/workspace-state` | Persist lease-bound editor recovery state |
+| GET | `/v1/forge/items/{id}/review` | Structured review synthesis, attribution, and timeline |
+| GET | `/v1/forge/items/{id}/review/file?path=…` | Compare one file between exact baseline and reviewed revisions |
+| POST | `/v1/forge/items/{id}/review/file` | Reopen and restore one baseline text file while preserving reviewed evidence |
+| GET | `/v1/forge/items/{id}/tasks` | Detect project commands |
+| POST | `/v1/forge/items/{id}/tasks/{task_id}/run` | Run a detected command and record its result |
+
+Guide: [forge.md](forge.md).
 
 ---
 

@@ -62,6 +62,9 @@ export async function runRailRowQuickCreate(
       lmeWorkspace.setExplorerMode("notes");
       vault.openNewNoteDialog();
       return { navigateTo: "library" };
+    case "code":
+      lmeWorkspace.requestNewCodeProject();
+      return { navigateTo: "code" };
     case "automations":
       // Opens a real script editor tab (not an empty automations surface).
       lmeWorkspace.openNewScript();
@@ -85,6 +88,8 @@ export function railRowQuickCreateLabel(surfaceId: string): string {
       return "New ask";
     case "library":
       return "New note";
+    case "code":
+      return "New code project";
     case "automations":
       return "New script";
     default:

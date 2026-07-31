@@ -8,37 +8,34 @@ import {
   getGraphemeLspWorkspace,
 } from "$lib/daemon";
 import type { GraphemeLspWorkspaceResponse } from "$lib/types/grapheme";
+import {
+  connectOrchestratorLspClient,
+  createWebSocketTransport,
+} from "$lib/code/codingEngineClient";
 
-export function createWebSocketTransport(uri: string): Promise<Transport> {
-  const handlers: Array<(value: string) => void> = [];
-  const socket = new WebSocket(uri);
-  socket.onmessage = (event) => {
-    const payload =
-      typeof event.data === "string" ? event.data : event.data.toString();
-    for (const handler of handlers) {
-      handler(payload);
-    }
-  };
-  return new Promise((resolve, reject) => {
-    socket.onopen = () => {
-      resolve({
-        send(message: string) {
-          socket.send(message);
-        },
-        subscribe(handler: (value: string) => void) {
-          handlers.push(handler);
-        },
-        unsubscribe(handler: (value: string) => void) {
-          const index = handlers.indexOf(handler);
-          if (index >= 0) handlers.splice(index, 1);
-        },
-      });
-    };
-    socket.onerror = () => reject(new Error("Grapheme LSP websocket failed"));
-  });
+export { createWebSocketTransport };
+
+/** Connect via Orchestrator when available; otherwise Grapheme daemon LSP. */
+export async function connectGraphemeLspClient(): Promise<{
+  client: LSPClient;
+  workspace: GraphemeLspWorkspaceResponse;
+}> {
+  const result = await connectOrchestratorLspClient({ language: "grapheme" });
+  return { client: result.client, workspace: result.workspace };
 }
 
-export async function connectGraphemeLspClient(): Promise<{
+export async function connectCodeLspClient(
+  language = "grapheme",
+  options?: { workId?: string; workspaceRoot?: string },
+): Promise<{
+  client: LSPClient;
+  workspace: GraphemeLspWorkspaceResponse;
+  via: "orchestrator" | "grapheme";
+}> {
+  return connectOrchestratorLspClient({ language, ...options });
+}
+
+export async function connectLegacyGraphemeOnly(): Promise<{
   client: LSPClient;
   workspace: GraphemeLspWorkspaceResponse;
 }> {
@@ -53,3 +50,5 @@ export async function connectGraphemeLspClient(): Promise<{
   }).connect(transport);
   return { client, workspace };
 }
+
+export type { Transport };

@@ -452,6 +452,7 @@
             <li role="presentation">
               <div
                 role="option"
+                tabindex="-1"
                 data-slash-index={index}
                 aria-selected={index === highlightIndex}
                 class="vault-slash-menu-item"
@@ -471,6 +472,7 @@
             <li role="presentation">
               <div
                 role="option"
+                tabindex="-1"
                 data-slash-index={index}
                 aria-selected={index === highlightIndex}
                 class="vault-slash-menu-item"

@@ -48,6 +48,7 @@ const GO_DESTINATIONS: { surface: Surface; label: string; subtitle: string; keyw
   { surface: "chat", label: "Chat", subtitle: "Talk with Medousa", keywords: "message compose conversation" },
   { surface: "library", label: "Workspace", subtitle: "Notes, files, scripts, agents, and flows", keywords: "vault notes documents library lme scripts automations agents" },
   { surface: "work", label: "Work", subtitle: "Tasks and kanban board", keywords: "kanban cards jobs" },
+  { surface: "code", label: "Code", subtitle: "Projects, editing, understanding, and review", keywords: "code project repository editor forge test review source" },
   { surface: "web", label: "Browser", subtitle: "Built-in web workshop", keywords: "browser web surf" },
   { surface: "automations", label: "Automations", subtitle: "Scripts and schedules", keywords: "cron scripts grapheme" },
   { surface: "workshop", label: "Agents", subtitle: "Specialist agents in Workspace", keywords: "skills manuscripts workshop capabilities specialist agents" },

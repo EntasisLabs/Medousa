@@ -232,6 +232,7 @@
     <div
       class="msg-sheet"
       role="dialog"
+      tabindex="-1"
       aria-modal="true"
       aria-label="{sheetMeta.name} channel"
       onclick={(event) => event.stopPropagation()}

@@ -38,9 +38,9 @@ describe("graphemeScriptEditor", () => {
     expect(store.statusMessage).toContain("highlight only");
   });
 
-  it("opens stub languages with preview status", () => {
+  it("opens supported non-executable languages with highlight status", () => {
     store.openLanguageSnippet({ languageId: "python", body: "print('hi')" });
     expect(store.activeTab?.languageId).toBe("python");
-    expect(store.statusMessage).toContain("not wired yet");
+    expect(store.statusMessage).toContain("highlight only");
   });
 });

@@ -16,13 +16,12 @@
   let { visible, onOpenNote, onOpenChat, onSelectCard }: Props = $props();
 
   const showAsks = $derived(workspace.workView === "asks");
-
   onMount(() => {
     void workspace.prefetchCardDetails();
   });
 </script>
 
-<div class="relative flex h-full min-h-0 min-w-0 flex-1 {visible ? '' : 'hidden'}">
+<div class="relative flex h-full min-h-0 min-w-0 flex-1 flex-col {visible ? '' : 'hidden'}">
   {#if showAsks}
     <WorkAsksPanel {onOpenChat} />
   {:else}

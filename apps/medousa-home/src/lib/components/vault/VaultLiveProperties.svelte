@@ -140,13 +140,6 @@
     tagInputEl?.focus();
   }
 
-  function onTagsRowClick(event: MouseEvent) {
-    if (disabled || addingTag) return;
-    const target = event.target as HTMLElement | null;
-    if (target?.closest("button, input, a, .vault-live-properties__tag")) return;
-    void beginAddTag();
-  }
-
   function commitField(key: string) {
     if (focusedFieldKey === key) focusedFieldKey = null;
     const value = fieldDrafts[key] ?? "";
@@ -274,7 +267,6 @@
         class:vault-live-properties__row--active={addingTag}
         class:vault-live-properties__row--empty={tagsEmpty}
         class:vault-live-properties__row--disabled={disabled}
-        onclick={onTagsRowClick}
         role="group"
       >
         <button

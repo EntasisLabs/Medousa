@@ -31,7 +31,9 @@ describe("buildLifeRailItems", () => {
       ...LME_EXPLORER_MODES.map((mode) => `lme:${mode.id}`),
       "web",
     ]);
-    expect(items.filter((item) => item.kind === "lme-mode")).toHaveLength(8);
+    expect(items.filter((item) => item.kind === "lme-mode")).toHaveLength(
+      LME_EXPLORER_MODES.length,
+    );
   });
 
   it("keeps library out of the rail as its own destination", () => {

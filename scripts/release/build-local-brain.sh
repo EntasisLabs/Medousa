@@ -86,7 +86,9 @@ FEATURE="$(resolve_inference_feature)"
 BIN_DIR="${OUTPUT}/bin"
 mkdir -p "${BIN_DIR}"
 
+export CARGO_TARGET_DIR="$(medousa_cargo_target_root)"
 medousa_log "building medousa_local (${FEATURE}) for ${TARGET}"
+medousa_log "CARGO_TARGET_DIR=${CARGO_TARGET_DIR}"
 cargo build --release -p medousa-local-inference --bin medousa_local --features "${FEATURE}" --target "${TARGET}"
 
 SRC="$(medousa_find_release_binary medousa_local "${TARGET}")"

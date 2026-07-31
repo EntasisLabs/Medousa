@@ -29,6 +29,7 @@ Doc conventions: [CONTRIBUTING-DOCS.md](CONTRIBUTING-DOCS.md)
 | [Peers & Nearby](guides/peers-and-nearby.md) | LAN / tunnel workshops |
 | [Memory & identity](guides/memory-and-identity.md) | Teach who you are |
 | [Channels](guides/channels.md) | Telegram, Discord, Slack, WhatsApp |
+| [Undertakings & ForgeLens](guides/undertakings.md) | Governed work, seal, review, World |
 | Full index | [guides/README.md](guides/README.md) |
 
 ---
@@ -70,6 +71,8 @@ Doc conventions: [CONTRIBUTING-DOCS.md](CONTRIBUTING-DOCS.md)
 | [Vault](engine/vault.md) | Notes API + cognition vault tools |
 | [Calendar](engine/calendar.md) | Personal `.ics` API + cognition calendar tools |
 | [Workspace](engine/workspace.md) | Work board, feed, SSE |
+| [Forge](engine/forge.md) | Undertaking custody (`/v1/forge`), leases, review |
+| [Coding engine](engine/coding-engine.md) | Language servers, project intelligence, safe edits |
 | [Agent tools](engine/agent-tools.md) | Host/worker lanes, discover domains |
 | [Runtime config](engine/runtime-config.md) | Inference profiles, stage routing |
 | [Extensions](engine/extensions.md) | Grapheme, Locus, workflows, media, STT |

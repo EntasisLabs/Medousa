@@ -123,6 +123,16 @@
     }
   }
 
+  function guideLinkRouter(node: HTMLElement) {
+    const handleClick = (event: MouseEvent) => onReaderClick(event);
+    node.addEventListener("click", handleClick);
+    return {
+      destroy() {
+        node.removeEventListener("click", handleClick);
+      },
+    };
+  }
+
   $effect(() => {
     markdown;
     chapterId;
@@ -231,7 +241,7 @@
     <main
       bind:this={readerEl}
       class="guide-reader"
-      onclick={onReaderClick}
+      use:guideLinkRouter
     >
       <div bind:this={markdownHost} class="guide-reader-measure">
         <MarkdownContent
@@ -285,7 +295,7 @@
     gap: 0.55rem;
   }
 
-  .guide-title-mark {
+  :global(.guide-title-mark) {
     flex-shrink: 0;
     opacity: 0.7;
   }

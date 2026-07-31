@@ -176,6 +176,7 @@
       style:left="{pos.left}px"
       style:width="{pos.width}px"
       role="dialog"
+      tabindex="-1"
       aria-label="Edit custom view"
       onpointerdown={(event) => event.stopPropagation()}
     >

@@ -239,8 +239,6 @@ fn build_package_summaries(
 ) -> Vec<PackageSummary> {
     let remote_ids = remote_package_ids(remote);
     let catalog = visible_catalog(&remote_ids);
-    let remote_version = remote.as_ref().map(|m| m.version.clone());
-
     catalog
         .into_iter()
         .map(|entry| {

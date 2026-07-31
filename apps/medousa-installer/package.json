@@ -1,6 +1,6 @@
 {
   "name": "medousa-installer",
-  "version": "0.4.1",
+  "version": "0.7.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -23,5 +23,8 @@
     "svelte": "^5.0.0",
     "typescript": "~5.6.2",
     "vite": "^6.0.3"
+  },
+  "overrides": {
+    "postcss": "^8.5.18"
   }
 }

@@ -194,6 +194,7 @@
           <button
             type="button"
             role="option"
+            aria-selected={false}
             class="desktop-toolbar-view-row"
             onclick={() => void pickView(surface.id)}
           >

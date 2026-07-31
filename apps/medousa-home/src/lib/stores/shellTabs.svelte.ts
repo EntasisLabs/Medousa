@@ -4,9 +4,14 @@
 
 import { chat } from "$lib/stores/chat.svelte";
 import { chatStreamPool } from "$lib/stores/chatStreamPool.svelte";
+import { codeWorkspace } from "$lib/stores/codeWorkspace.svelte";
 import { humanBrowser } from "$lib/stores/humanBrowser.svelte";
 import { layout } from "$lib/stores/layout.svelte";
-import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
+import {
+  lmeWorkspace,
+  type LmeTab,
+  type LmeWorkspaceSession,
+} from "$lib/stores/lmeWorkspace.svelte";
 import { vault } from "$lib/stores/vault.svelte";
 import {
   isShellSurfaceTabId,
@@ -53,13 +58,25 @@ const MAIN_GROUP_ID = "main";
 const DEFAULT_DESKTOP_NAME = "Main";
 const PERSIST_KEY_V1 = "medousa-home-shell-tabs-v1";
 const PERSIST_KEY_V2 = "medousa-home-shell-tabs-v2";
-const PERSIST_KEY = "medousa-home-shell-tabs-v3";
+const PERSIST_KEY_V3 = "medousa-home-shell-tabs-v3";
+const PERSIST_KEY = "medousa-home-workspace-session-v4";
+const PERSONAL_WORKSPACE_SCOPE = "personal";
+
+function persistenceKey(scopeId: string): string {
+  return `${PERSIST_KEY}:${encodeURIComponent(scopeId)}`;
+}
 
 type PersistedV2 = ShellDesktopLayout;
 
 type PersistedV3 = {
   desktops: ShellDesktop[];
   activeDesktopId: string;
+};
+
+type PersistedV4 = PersistedV3 & {
+  version: 4;
+  savedAt: number;
+  lme: LmeWorkspaceSession;
 };
 
 type PersistedV1 = {
@@ -76,6 +93,8 @@ function surfaceTitle(surfaceId: string): string {
     case "library":
     case "automations":
       return "Workspace";
+    case "code":
+      return "Code";
     case "chat":
       return "Chat";
     case "peers":
@@ -119,11 +138,14 @@ function focusSurfaceHint(tab: ShellTab | null): string | null {
       case "file":
       case "deck":
         return "library";
+      case "code":
+        return "code";
       default:
         return "library";
     }
   }
   if (tab.kind === "web") return "web";
+  if (tab.kind === "terminal") return null;
   return tab.surfaceId;
 }
 
@@ -192,10 +214,131 @@ function layoutFromV1(v1: PersistedV1): ShellDesktopLayout | null {
   };
 }
 
-function loadPersisted(): PersistedV3 | null {
+function migrateCodeLmeSession(desktops: ShellDesktop[]): LmeWorkspaceSession {
+  const tabs = new Map<string, LmeTab>();
+  let activeTabId: string | null = null;
+  for (const desktop of desktops) {
+    const activeShellId = desktop.layout.groups.find(
+      (group) => group.id === desktop.layout.activeGroupId,
+    )?.activeTabId;
+    for (const shellTab of desktop.layout.tabs) {
+      if (shellTab.kind !== "lme") continue;
+      const parts = shellTab.lmeTabId.split(":");
+      let tab: LmeTab | null = null;
+      try {
+        if (parts[0] === "code-file" && parts.length === 3) {
+          const workId = decodeURIComponent(parts[1]!);
+          const path = decodeURIComponent(parts[2]!);
+          tab = {
+            tabId: shellTab.lmeTabId,
+            kind: "code",
+            workId,
+            title: shellTab.title,
+            resource: { kind: "file", path, line: null },
+          };
+        } else if ((parts[0] === "code-workspace" || parts[0] === "code-review") && parts.length === 2) {
+          tab = {
+            tabId: shellTab.lmeTabId,
+            kind: "code",
+            workId: decodeURIComponent(parts[1]!),
+            title: shellTab.title,
+            resource: { kind: parts[0] === "code-review" ? "review" : "workspace" },
+          };
+        }
+      } catch {
+        tab = null;
+      }
+      if (!tab) continue;
+      tabs.set(tab.tabId, tab);
+      if (shellTab.id === activeShellId) activeTabId = tab.tabId;
+    }
+  }
+  const restored = [...tabs.values()];
+  return { tabs: restored, activeTabId: activeTabId ?? restored.at(-1)?.tabId ?? null };
+}
+
+function filterLayoutForLme(
+  layout: ShellDesktopLayout,
+  lmeTabIds: Set<string>,
+): ShellDesktopLayout {
+  const seenTabs = new Set<string>();
+  const tabs = layout.tabs.filter((tab) => {
+    if (seenTabs.has(tab.id) || (tab.kind === "lme" && !lmeTabIds.has(tab.lmeTabId))) {
+      return false;
+    }
+    seenTabs.add(tab.id);
+    return true;
+  });
+  const tabIds = new Set(tabs.map((tab) => tab.id));
+  const groupById = new Map(layout.groups.map((group) => [group.id, group]));
+  const leafIds = collectGroupIds(layout.splitRoot);
+  const groups = leafIds.map((id) => {
+    const group = groupById.get(id) ?? { id, tabIds: [], activeTabId: null };
+    const nextIds = [...new Set(group.tabIds.filter((tabId) => tabIds.has(tabId)))];
+    return {
+      ...group,
+      tabIds: nextIds,
+      activeTabId: group.activeTabId && nextIds.includes(group.activeTabId)
+        ? group.activeTabId
+        : nextIds.at(-1) ?? null,
+    };
+  });
+  const activeGroupId = leafIds.includes(layout.activeGroupId)
+    ? layout.activeGroupId
+    : leafIds[0] ?? MAIN_GROUP_ID;
+  return {
+    ...layout,
+    tabs,
+    groups,
+    activeGroupId,
+    zoomedGroupId: layout.zoomedGroupId && leafIds.includes(layout.zoomedGroupId)
+      ? layout.zoomedGroupId
+      : null,
+  };
+}
+
+function loadPersisted(scopeId: string): PersistedV4 | null {
   if (typeof localStorage === "undefined") return null;
   try {
-    const rawV3 = localStorage.getItem(PERSIST_KEY);
+    const rawV4 = localStorage.getItem(persistenceKey(scopeId));
+    if (rawV4) {
+      const parsed = JSON.parse(rawV4) as PersistedV4;
+      if (
+        parsed?.version === 4 &&
+        Array.isArray(parsed?.desktops) &&
+        parsed.desktops.length > 0 &&
+        parsed.activeDesktopId &&
+        parsed.lme &&
+        parsed.desktops.every(
+          (desktop) => desktop?.id && desktop?.name && isValidLayout(desktop.layout),
+        )
+      ) {
+        return parsed;
+      }
+    }
+
+    // The old keys predate workshops. They can only belong to Personal; never
+    // import an unscoped snapshot into a remote workshop.
+    if (scopeId !== PERSONAL_WORKSPACE_SCOPE) return null;
+
+    const legacyV4 = localStorage.getItem(PERSIST_KEY);
+    if (legacyV4) {
+      const parsed = JSON.parse(legacyV4) as PersistedV4;
+      if (
+        parsed?.version === 4 &&
+        Array.isArray(parsed?.desktops) &&
+        parsed.desktops.length > 0 &&
+        parsed.activeDesktopId &&
+        parsed.lme &&
+        parsed.desktops.every(
+          (desktop) => desktop?.id && desktop?.name && isValidLayout(desktop.layout),
+        )
+      ) {
+        return parsed;
+      }
+    }
+
+    const rawV3 = localStorage.getItem(PERSIST_KEY_V3);
     if (rawV3) {
       const parsed = JSON.parse(rawV3) as PersistedV3;
       if (
@@ -209,7 +352,12 @@ function loadPersisted(): PersistedV3 | null {
             isValidLayout(desktop.layout),
         )
       ) {
-        return parsed;
+        return {
+          ...parsed,
+          version: 4,
+          savedAt: Date.now(),
+          lme: migrateCodeLmeSession(parsed.desktops),
+        };
       }
     }
 
@@ -219,8 +367,11 @@ function loadPersisted(): PersistedV3 | null {
       if (isValidLayout(layout)) {
         const id = newDesktopId();
         return {
+          version: 4,
+          savedAt: Date.now(),
           desktops: [{ id, name: DEFAULT_DESKTOP_NAME, layout }],
           activeDesktopId: id,
+          lme: { tabs: [], activeTabId: null },
         };
       }
     }
@@ -232,8 +383,11 @@ function loadPersisted(): PersistedV3 | null {
     if (!layout) return null;
     const id = newDesktopId();
     return {
+      version: 4,
+      savedAt: Date.now(),
       desktops: [{ id, name: DEFAULT_DESKTOP_NAME, layout }],
       activeDesktopId: id,
+      lme: { tabs: [], activeTabId: null },
     };
   } catch {
     return null;
@@ -265,6 +419,7 @@ export class ShellTabsStore {
   navForwardStack = $state<string[]>([]);
 
   private bootstrapped = false;
+  private workspaceScopeId = PERSONAL_WORKSPACE_SCOPE;
   private suppressMirrorDepth = 0;
   private navQuiet = false;
 
@@ -357,17 +512,36 @@ export class ShellTabsStore {
     try {
       this.ensureDesktopCatalog();
       const layout = this.captureLayout();
+      const lme = lmeWorkspace.captureSession();
+      const lmeTabIds = new Set(lme.tabs.map((tab) => tab.tabId));
       const desktops = this.desktops.map((desktop) =>
         desktop.id === this.activeDesktopId ? { ...desktop, layout } : desktop,
-      );
-      const payload: PersistedV3 = {
+      ).map((desktop) => ({
+        ...desktop,
+        layout: filterLayoutForLme(desktop.layout, lmeTabIds),
+      }));
+      const payload: PersistedV4 = {
+        version: 4,
+        savedAt: Date.now(),
         desktops,
         activeDesktopId: this.activeDesktopId,
+        lme,
       };
-      localStorage.setItem(PERSIST_KEY, JSON.stringify(payload));
+      localStorage.setItem(persistenceKey(this.workspaceScopeId), JSON.stringify(payload));
+      if (this.workspaceScopeId === PERSONAL_WORKSPACE_SCOPE) {
+        localStorage.removeItem(PERSIST_KEY);
+        localStorage.removeItem(PERSIST_KEY_V3);
+        localStorage.removeItem(PERSIST_KEY_V2);
+        localStorage.removeItem(PERSIST_KEY_V1);
+      }
     } catch {
       /* ignore */
     }
+  }
+
+  /** Synchronous lifecycle-boundary checkpoint (page hide / native window close). */
+  checkpoint() {
+    this.persist();
   }
 
   private async resyncLiveStreams(previousIds: string[]) {
@@ -487,22 +661,28 @@ export class ShellTabsStore {
     return ids;
   }
 
-  bootstrap() {
+  bootstrap(scopeId = PERSONAL_WORKSPACE_SCOPE) {
     if (this.bootstrapped) return;
     this.bootstrapped = true;
+    this.workspaceScopeId = scopeId.trim() || PERSONAL_WORKSPACE_SCOPE;
 
-    const persisted = loadPersisted();
+    const persisted = loadPersisted(this.workspaceScopeId);
     if (persisted) {
-      this.desktops = persisted.desktops;
+      const lme = lmeWorkspace.restoreSession(persisted.lme);
+      const lmeTabIds = new Set(lme.tabs.map((tab) => tab.tabId));
+      this.desktops = persisted.desktops.map((desktop) => ({
+        ...desktop,
+        layout: filterLayoutForLme(desktop.layout, lmeTabIds),
+      }));
       this.activeDesktopId = persisted.activeDesktopId;
       const activeDesktop =
-        persisted.desktops.find((desktop) => desktop.id === persisted.activeDesktopId) ??
-        persisted.desktops[0]!;
+        this.desktops.find((desktop) => desktop.id === persisted.activeDesktopId) ??
+        this.desktops[0]!;
       this.applyLayout(activeDesktop.layout);
       if (this.tabs.length > 0) {
         const active = this.activeTab;
         if (active) {
-          void this.activate(active.id, { skipOpen: true });
+          void this.activate(active.id, { rehydrate: true });
         }
         this.persist();
         return;
@@ -519,13 +699,13 @@ export class ShellTabsStore {
         return;
       }
     }
-    if (surface === "library" || surface === "automations") {
+    if (surface === "library" || surface === "automations" || surface === "code") {
       const lme = lmeWorkspace.activeTab;
-      if (lme) {
+      if (lme && (surface !== "code" || lme.kind === "code")) {
         this.openLme(lme.tabId, { activate: true });
         return;
       }
-      this.openSurface("library", { activate: true });
+      this.openSurface(surface === "automations" ? "library" : surface, { activate: true });
       return;
     }
     if (isShellSurfaceTabId(surface) && surface !== "library") {
@@ -539,6 +719,60 @@ export class ShellTabsStore {
       return;
     }
     this.openSurface("library", { activate: true });
+  }
+
+  /**
+   * Checkpoint one workshop and restore another only after its daemon is live.
+   * Durable descriptors are workshop-scoped; live editor/Forge state is always
+   * discarded at this boundary and rebuilt from the selected workshop.
+   */
+  async switchWorkspaceScope(scopeId: string) {
+    const nextScope = scopeId.trim() || PERSONAL_WORKSPACE_SCOPE;
+    if (!this.bootstrapped) {
+      this.bootstrap(nextScope);
+      return;
+    }
+    if (nextScope === this.workspaceScopeId) return;
+
+    this.persist();
+    const previousChatIds = this.chatSessionIdsForLiveRestore();
+    this.workspaceScopeId = nextScope;
+    this.navBackStack = [];
+    this.navForwardStack = [];
+    codeWorkspace.resetForWorkshopSwitch();
+    const { undertakings } = await import("$lib/stores/undertakings.svelte");
+    undertakings.resetForWorkshopSwitch();
+
+    const persisted = loadPersisted(nextScope);
+    if (persisted) {
+      const lme = lmeWorkspace.restoreSession(persisted.lme);
+      const lmeTabIds = new Set(lme.tabs.map((tab) => tab.tabId));
+      this.desktops = persisted.desktops.map((desktop) => ({
+        ...desktop,
+        layout: filterLayoutForLme(desktop.layout, lmeTabIds),
+      }));
+      this.activeDesktopId = persisted.activeDesktopId;
+      const activeDesktop =
+        this.desktops.find((desktop) => desktop.id === persisted.activeDesktopId) ??
+        this.desktops[0]!;
+      this.applyLayout(activeDesktop.layout);
+    } else {
+      lmeWorkspace.restoreSession({ tabs: [], activeTabId: null });
+      const layout = emptyLayout();
+      const id = newDesktopId();
+      this.desktops = [{ id, name: DEFAULT_DESKTOP_NAME, layout }];
+      this.activeDesktopId = id;
+      this.applyLayout(layout);
+    }
+
+    const active = this.activeTab;
+    if (active) {
+      await this.activate(active.id, { rehydrate: true });
+    } else {
+      this.openSurface("library", { activate: true });
+    }
+    await this.resyncLiveStreams(previousChatIds);
+    this.persist();
   }
 
   openChat(
@@ -627,8 +861,9 @@ export class ShellTabsStore {
       }
     }
 
+    const placeholderSurfaceId = lmeTab?.kind === "code" ? "code" : "library";
     const librarySurface = this.tabs.find(
-      (tab) => tab.kind === "surface" && tab.surfaceId === "library",
+      (tab) => tab.kind === "surface" && tab.surfaceId === placeholderSurfaceId,
     );
     if (librarySurface) {
       this.removeTabFromAllGroups(librarySurface.id);
@@ -686,6 +921,46 @@ export class ShellTabsStore {
       kind: "web",
       browserTabId: trimmed,
       title,
+    };
+    this.insertTabIntoGroup(tab, groupId, false);
+    if (activate) void this.activate(tab.id);
+    else this.persist();
+    return tab.id;
+  }
+
+  openTerminal(
+    sessionId: string,
+    options?: {
+      activate?: boolean;
+      groupId?: string;
+      title?: string;
+      workId?: string | null;
+    },
+  ): string | null {
+    const trimmed = sessionId.trim();
+    if (!trimmed) return null;
+    const groupId = options?.groupId ?? this.activeGroupId;
+    const activate = options?.activate !== false;
+    const existingInGroup = this.tabs.find(
+      (tab) =>
+        tab.kind === "terminal" &&
+        tab.sessionId === trimmed &&
+        this.groupForTab(tab.id)?.id === groupId,
+    );
+    if (existingInGroup) {
+      if (options?.workId !== undefined && existingInGroup.kind === "terminal") {
+        existingInGroup.workId = options.workId;
+      }
+      if (activate) void this.activate(existingInGroup.id);
+      else this.persist();
+      return existingInGroup.id;
+    }
+    const tab: ShellTab = {
+      id: newTabId("terminal"),
+      kind: "terminal",
+      sessionId: trimmed,
+      workId: options?.workId ?? null,
+      title: options?.title?.trim() || "Terminal",
     };
     this.insertTabIntoGroup(tab, groupId, false);
     if (activate) void this.activate(tab.id);
@@ -812,7 +1087,7 @@ export class ShellTabsStore {
     }
   }
 
-  async activate(tabId: string, options?: { skipOpen?: boolean }) {
+  async activate(tabId: string, options?: { rehydrate?: boolean }) {
     const tab = this.tabs.find((entry) => entry.id === tabId);
     if (!tab) return;
 
@@ -850,7 +1125,7 @@ export class ShellTabsStore {
         return;
       }
       if (tab.kind === "lme") {
-        if (lmeWorkspace.activeTabId !== tab.lmeTabId) {
+        if (options?.rehydrate || lmeWorkspace.activeTabId !== tab.lmeTabId) {
           await lmeWorkspace.activateTab(tab.lmeTabId);
         } else {
           // Same LME tab (e.g. pane focus) — still promote vault focus if it drifted.
@@ -869,7 +1144,6 @@ export class ShellTabsStore {
     } finally {
       this.endSuppressMirror();
     }
-    void options;
   }
 
   mirrorLmeTab(lmeTabId: string, options?: { activate?: boolean; title?: string }) {
@@ -891,6 +1165,9 @@ export class ShellTabsStore {
   close(tabId: string) {
     const tab = this.tabs.find((entry) => entry.id === tabId);
     if (!tab) return;
+    if (tab.kind === "lme" && !lmeWorkspace.confirmCloseTab(tab.lmeTabId)) {
+      return;
+    }
     const host = this.groupForTab(tabId);
     const wasActive = this.activeTabId === tabId && host?.id === this.activeGroupId;
     this.removeTabFromAllGroups(tabId);
@@ -903,7 +1180,10 @@ export class ShellTabsStore {
           (entry) => entry.kind === "lme" && entry.lmeTabId === tab.lmeTabId,
         );
         if (!stillOpen) {
-          void lmeWorkspace.closeTab(tab.lmeTabId, { activateNext: false });
+          void lmeWorkspace.closeTab(tab.lmeTabId, {
+            activateNext: false,
+            confirmed: true,
+          });
         }
       } else if (tab.kind === "web") {
         const stillOpen = this.tabs.some(
@@ -1351,7 +1631,7 @@ export class ShellTabsStore {
 
     const active = this.activeTab;
     if (active) {
-      await this.activate(active.id, { skipOpen: true });
+      await this.activate(active.id, { rehydrate: true });
     } else {
       this.syncLayoutHint(null);
     }
@@ -1393,7 +1673,7 @@ export class ShellTabsStore {
       this.persist();
       const active = this.activeTab;
       if (active) {
-        await this.activate(active.id, { skipOpen: true });
+        await this.activate(active.id, { rehydrate: true });
       } else {
         this.syncLayoutHint(null);
       }

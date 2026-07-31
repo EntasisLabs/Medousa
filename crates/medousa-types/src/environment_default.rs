@@ -38,6 +38,7 @@ pub fn default_environment_spec(profile_id: impl Into<String>) -> EnvironmentSpe
                     "chat".to_string(),
                     "peers".to_string(),
                     "work".to_string(),
+                    "code".to_string(),
                     "library".to_string(),
                     SAFETY_SURFACE_SETTINGS.to_string(),
                     SAFETY_SURFACE_RUNTIME.to_string(),
@@ -71,6 +72,7 @@ pub fn default_surface_ids() -> Vec<String> {
         "chat".to_string(),
         "peers".to_string(),
         "work".to_string(),
+        "code".to_string(),
         "library".to_string(),
         "calendar".to_string(),
         "web".to_string(),
@@ -89,6 +91,7 @@ pub fn default_surfaces() -> Vec<SurfaceDef> {
         ("chat", "Chat", "message-circle", Some("chat"), Some("chat")),
         ("peers", "Peers", "users", Some("peers"), None),
         ("work", "Work", "layout-grid", Some("work"), None),
+        ("code", "Code", "code-2", Some("code"), None),
         ("library", "Library", "book-open", Some("library"), Some("notes")),
         ("calendar", "Calendar", "calendar-days", Some("calendar"), None),
         ("web", "Web", "globe", Some("web"), Some("web")),
@@ -197,6 +200,12 @@ mod tests {
         let ids: Vec<_> = spec.surfaces.iter().map(|s| s.id.as_str()).collect();
         assert!(ids.contains(&SAFETY_SURFACE_SETTINGS));
         assert!(ids.contains(&SAFETY_SURFACE_RUNTIME));
+        assert!(ids.contains(&"code"));
+        let work_at = ids
+            .iter()
+            .position(|id| *id == "work")
+            .expect("work surface");
+        assert_eq!(ids.get(work_at + 1), Some(&"code"));
     }
 
     #[test]

@@ -17,7 +17,15 @@ class AgentPermissionResolveRequest(MedousaModel):
 
 
 class AgentRuntimeInfo(MedousaModel):
+    auth_detail: str | None = None
+    auth_status: str | None = Field(
+        None,
+        description='Vendor account sign-in: `signed_in` | `signed_out` | `unknown`.',
+    )
     available: bool
+    binary_present: bool | None = Field(
+        False, description='Vendor CLI binary present on PATH.'
+    )
     command: str | None = None
     detail: str | None = None
     runtime: str
@@ -25,10 +33,6 @@ class AgentRuntimeInfo(MedousaModel):
         False,
         description='Native Medousa turns use `/v1/turns` — not `/v1/agents/sessions`.',
     )
-
-
-class AgentSessionPromptRequest(MedousaModel):
-    prompt: str
 
 
 class AgentSessionPromptResponse(MedousaModel):
@@ -206,10 +210,15 @@ class CreateAgentSessionResponse(MedousaModel):
     accepted_at_utc: AwareDatetime
     agent_session_id: str
     phase: str
+    resumed: bool | None = Field(
+        None,
+        description='True when the session was attached via ACP `session/resume` (or load).',
+    )
     runtime: str
     session_id: str
     stream_ready: bool
     stream_url: str
+    work_id: str | None = None
 
 
 class DeleteRecurringResponse(MedousaModel):
@@ -570,6 +579,10 @@ class CatalogModelEntry(RootModel[Any]):
     root: Any
 
 
+class CodeIntentContext(RootModel[Any]):
+    root: Any
+
+
 class ComponentDef(RootModel[Any]):
     root: Any
 
@@ -775,6 +788,11 @@ class AgentRuntimeListResponse(MedousaModel):
     runtimes: list[AgentRuntimeInfoModel]
 
 
+class AgentSessionPromptRequest(MedousaModel):
+    code_context: CodeIntentContext | None = None
+    prompt: str
+
+
 class ArtifactCommandRequest(MedousaModel):
     command: ArtifactCommandSpec
     selected_context_pack_query: str | None = None
@@ -864,14 +882,23 @@ class ComponentRuntimeEventsTailResponse(MedousaModel):
 
 class CreateAgentSessionRequest(MedousaModel):
     args: list[str] | None = None
+    code_context: CodeIntentContext | None = None
     command: str | None = None
     cwd: str | None = None
     prompt: str | None = None
+    resume_provider_token: str | None = Field(
+        None,
+        description='Optional ACP wire `sessionId` to resume (from a prior `RecoveryDisposition::ResumeSupported`). When omitted but `work_id` is set, the daemon looks up the latest resume token on that work item.',
+    )
     runtime: str = Field(
         ..., description='External runtime: `cursor` or `codex` (not `medousa`).'
     )
     session_id: str
     surface: TurnSurfaceContext | None = None
+    work_id: str | None = Field(
+        None,
+        description='Optional Forge undertaking binding (`/v1/forge/items/{id}`). When set, the ACP session runs inside the governed worktree and reports leases.',
+    )
 
 
 class EnvironmentPendingResponse(MedousaModel):

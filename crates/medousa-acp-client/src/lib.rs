@@ -800,6 +800,129 @@ impl ExternalAcpClient {
             .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
             .unwrap_or(false)
     }
+
+    /// ACP wire `sessionId` for a live Medousa handle (from `session/new` or
+    /// `session/resume`). Used to stash `ResumeSupported` tokens on interrupt.
+    pub async fn wire_session_id(&self, session: &AcpSessionId) -> Option<String> {
+        let guard = self.processes.lock().await;
+        guard
+            .get(&session.0)
+            .and_then(|proc| proc.acp_session_id.clone())
+            .or_else(|| {
+                // Stub sessions use the Medousa handle as their wire id.
+                if session.0.starts_with("stub-") {
+                    Some(session.0.clone())
+                } else {
+                    None
+                }
+            })
+    }
+
+    /// Create a new ACP session, or resume a prior wire `sessionId` when the
+    /// vendor supports it. Falls back to `session/new` when resume/load fails
+    /// (capability missing, expired token, etc.). Returns
+    /// `(handle, wire_session_id, resumed)`.
+    pub async fn create_or_resume_session(
+        &self,
+        config: &AcpAgentConfig,
+        resume_wire_id: Option<&str>,
+    ) -> Result<(AcpSessionId, Option<String>, bool)> {
+        if matches!(config.kind, AgentRuntimeKind::Medousa) {
+            bail!("use native Medousa turn path for medousa runtime");
+        }
+        ensure_vendor_cli_path();
+        if !Self::prefer_process() {
+            let id = self.stub.create_session(config).await?;
+            // Stub has no real persistence — treat resume token as advisory only.
+            let resumed = resume_wire_id.is_some();
+            return Ok((id.clone(), Some(id.0.clone()), resumed));
+        }
+
+        let mut launch = config.clone();
+        if let Some(resolved) = resolve_command_path(&launch.command) {
+            launch.command = resolved.display().to_string();
+        } else if !PathBuf::from(&launch.command).is_file() {
+            bail!(
+                "{} agent CLI not found (`{}`). Install/sign in from Settings → Connections, then try again.",
+                config.kind.as_str(),
+                launch.command
+            );
+        }
+
+        let mut proc = spawn_acp_process(&launch).await.map_err(|err| {
+            anyhow::anyhow!(
+                "ACP process spawn failed for {} (`{} {}`): {err}",
+                config.kind.as_str(),
+                launch.command,
+                launch.args.join(" ")
+            )
+        })?;
+
+        let resume = resume_wire_id
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string);
+
+        let handshake = match &resume {
+            Some(wire) => handshake_session_resume(&mut proc, wire).await,
+            None => handshake_session(&mut proc).await.map(|_| false),
+        };
+
+        match handshake {
+            Ok(resumed) => {
+                let id = AcpSessionId(format!(
+                    "acp-{}-{}",
+                    config.kind.as_str(),
+                    uuid_v4_lite()
+                ));
+                let wire = proc.acp_session_id.clone();
+                self.processes.lock().await.insert(id.0.clone(), proc);
+                Ok((id, wire, resumed))
+            }
+            Err(err) => {
+                let _ = proc.child.kill().await;
+                // If resume was requested and failed, retry once as a fresh session.
+                if resume.is_some() {
+                    tracing::warn!(
+                        error = %err,
+                        runtime = config.kind.as_str(),
+                        "ACP session/resume failed; falling back to session/new"
+                    );
+                    let mut fresh = spawn_acp_process(&launch).await.map_err(|spawn_err| {
+                        anyhow::anyhow!(
+                            "ACP process spawn failed for {} (`{} {}`): {spawn_err}",
+                            config.kind.as_str(),
+                            launch.command,
+                            launch.args.join(" ")
+                        )
+                    })?;
+                    if let Err(new_err) = handshake_session(&mut fresh).await {
+                        let _ = fresh.child.kill().await;
+                        bail!(
+                            "ACP handshake failed for {} (`{} {}`): {new_err}",
+                            config.kind.as_str(),
+                            launch.command,
+                            launch.args.join(" ")
+                        );
+                    }
+                    let id = AcpSessionId(format!(
+                        "acp-{}-{}",
+                        config.kind.as_str(),
+                        uuid_v4_lite()
+                    ));
+                    let wire = fresh.acp_session_id.clone();
+                    self.processes.lock().await.insert(id.0.clone(), fresh);
+                    return Ok((id, wire, false));
+                }
+                bail!(
+                    "ACP handshake failed for {} (`{} {}`): {err}",
+                    config.kind.as_str(),
+                    launch.command,
+                    launch.args.join(" ")
+                );
+            }
+        }
+    }
 }
 
 #[async_trait]
@@ -973,6 +1096,78 @@ async fn handshake_session(proc: &mut ProcessSession) -> Result<()> {
     send_initialize(proc).await?;
     send_session_new(proc).await?;
     Ok(())
+}
+
+/// Initialize then try `session/resume`, falling back to `session/load`.
+/// Returns `true` when resume/load succeeded.
+async fn handshake_session_resume(proc: &mut ProcessSession, wire_session_id: &str) -> Result<bool> {
+    send_initialize(proc).await?;
+    if send_session_resume(proc, wire_session_id, "session/resume")
+        .await
+        .is_ok()
+    {
+        return Ok(true);
+    }
+    if send_session_resume(proc, wire_session_id, "session/load")
+        .await
+        .is_ok()
+    {
+        return Ok(true);
+    }
+    // Last resort: start fresh (caller may also fall back at a higher level).
+    send_session_new(proc).await?;
+    Ok(false)
+}
+
+async fn send_session_resume(
+    proc: &mut ProcessSession,
+    wire_session_id: &str,
+    method: &str,
+) -> Result<()> {
+    let id = alloc_id(proc);
+    let cwd = proc
+        .cwd
+        .clone()
+        .or_else(|| std::env::current_dir().ok().map(|p| p.display().to_string()))
+        .unwrap_or_else(|| ".".into());
+    let req = json!({
+        "jsonrpc": "2.0",
+        "id": id,
+        "method": method,
+        "params": {
+            "sessionId": wire_session_id,
+            "cwd": cwd,
+            "mcpServers": []
+        }
+    });
+    write_line(proc, &req).await?;
+    for _ in 0..20 {
+        let Some(line) = read_line_timeout(proc, 3).await? else {
+            break;
+        };
+        let Ok(value) = serde_json::from_str::<Value>(&line) else {
+            continue;
+        };
+        if value.get("id").and_then(|v| v.as_u64()) == Some(id) {
+            if let Some(err) = value.get("error") {
+                bail!("{method} rejected: {err}");
+            }
+            let session_id = value
+                .pointer("/result/sessionId")
+                .and_then(|v| v.as_str())
+                .map(str::to_string)
+                .or_else(|| Some(wire_session_id.to_string()));
+            proc.acp_session_id = session_id;
+            if proc.acp_session_id.is_none() {
+                bail!("{method} response missing sessionId");
+            }
+            return Ok(());
+        }
+        if let Some(ev) = map_inbound_line(proc, &value) {
+            proc.queue.push(ev);
+        }
+    }
+    bail!("timed out waiting for {method}")
 }
 
 async fn send_initialize(proc: &mut ProcessSession) -> Result<()> {

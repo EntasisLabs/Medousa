@@ -595,6 +595,7 @@
     <div
       class="pair-sheet"
       role="dialog"
+      tabindex="-1"
       aria-modal="true"
       aria-label={sheetTitle}
       onclick={(event) => event.stopPropagation()}

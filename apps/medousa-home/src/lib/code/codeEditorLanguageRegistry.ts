@@ -6,6 +6,9 @@ import { json } from "@codemirror/lang-json";
 import { html } from "@codemirror/lang-html";
 import { css } from "@codemirror/lang-css";
 import { xml } from "@codemirror/lang-xml";
+import { python } from "@codemirror/lang-python";
+import { rust } from "@codemirror/lang-rust";
+import { yaml } from "@codemirror/lang-yaml";
 import {
   graphemeEditorTheme,
   graphemeLanguageSupport,
@@ -15,7 +18,7 @@ import { medousaSyntaxHighlighting } from "$lib/syntax/codemirrorSyntaxTheme";
 import { vaultMarkdownSyntax } from "$lib/utils/vaultCodeMirror";
 import { shellLanguage } from "$lib/code/shellLanguage";
 
-export type CodeEditorLanguageTier = "full" | "highlight" | "stub";
+export type CodeEditorLanguageTier = "full" | "highlight";
 
 export type CodeEditorLanguageId =
   | "grapheme"
@@ -30,7 +33,17 @@ export type CodeEditorLanguageId =
   | "html"
   | "css"
   | "xml"
-  | "yaml";
+  | "yaml"
+  | "go"
+  | "c"
+  | "cpp"
+  | "csharp"
+  | "java"
+  | "kotlin"
+  | "ruby"
+  | "php"
+  | "swift"
+  | "lua";
 
 export interface CodeEditorLanguageCapabilities {
   lsp: boolean;
@@ -66,8 +79,9 @@ const HIGHLIGHT_ONLY: CodeEditorLanguageCapabilities = {
   addToFlow: false,
 };
 
-const STUB: CodeEditorLanguageCapabilities = {
-  lsp: false,
+/** Highlight + Orchestrator LSP when a server is registered for this language. */
+const HIGHLIGHT_LSP: CodeEditorLanguageCapabilities = {
+  lsp: true,
   compile: false,
   run: false,
   saveToLibrary: false,
@@ -120,24 +134,24 @@ export const CODE_EDITOR_LANGUAGES: Record<
   python: {
     id: "python",
     label: "Python",
-    tier: "stub",
-    capabilities: STUB,
+    tier: "highlight",
+    capabilities: HIGHLIGHT_LSP,
     fileExtension: "py",
     aliases: ["py"],
   },
   typescript: {
     id: "typescript",
     label: "TypeScript",
-    tier: "stub",
-    capabilities: STUB,
+    tier: "highlight",
+    capabilities: HIGHLIGHT_LSP,
     fileExtension: "ts",
-    aliases: ["ts"],
+    aliases: ["ts", "tsx"],
   },
   rust: {
     id: "rust",
     label: "Rust",
-    tier: "stub",
-    capabilities: STUB,
+    tier: "highlight",
+    capabilities: HIGHLIGHT_LSP,
     fileExtension: "rs",
     aliases: ["rs"],
   },
@@ -145,9 +159,85 @@ export const CODE_EDITOR_LANGUAGES: Record<
     id: "javascript",
     label: "JavaScript",
     tier: "highlight",
-    capabilities: HIGHLIGHT_ONLY,
+    capabilities: HIGHLIGHT_LSP,
     fileExtension: "js",
     aliases: ["js", "jsx", "mjs"],
+  },
+  go: {
+    id: "go",
+    label: "Go",
+    tier: "highlight",
+    capabilities: HIGHLIGHT_LSP,
+    fileExtension: "go",
+    aliases: ["golang"],
+  },
+  c: {
+    id: "c",
+    label: "C",
+    tier: "highlight",
+    capabilities: HIGHLIGHT_LSP,
+    fileExtension: "c",
+    aliases: ["h"],
+  },
+  cpp: {
+    id: "cpp",
+    label: "C++",
+    tier: "highlight",
+    capabilities: HIGHLIGHT_LSP,
+    fileExtension: "cpp",
+    aliases: ["cc", "cxx", "hpp", "hh", "hxx"],
+  },
+  csharp: {
+    id: "csharp",
+    label: "C#",
+    tier: "highlight",
+    capabilities: HIGHLIGHT_LSP,
+    fileExtension: "cs",
+    aliases: ["cs", "c#"],
+  },
+  java: {
+    id: "java",
+    label: "Java",
+    tier: "highlight",
+    capabilities: HIGHLIGHT_LSP,
+    fileExtension: "java",
+  },
+  kotlin: {
+    id: "kotlin",
+    label: "Kotlin",
+    tier: "highlight",
+    capabilities: HIGHLIGHT_LSP,
+    fileExtension: "kt",
+    aliases: ["kt", "kts"],
+  },
+  ruby: {
+    id: "ruby",
+    label: "Ruby",
+    tier: "highlight",
+    capabilities: HIGHLIGHT_LSP,
+    fileExtension: "rb",
+    aliases: ["rb"],
+  },
+  php: {
+    id: "php",
+    label: "PHP",
+    tier: "highlight",
+    capabilities: HIGHLIGHT_LSP,
+    fileExtension: "php",
+  },
+  swift: {
+    id: "swift",
+    label: "Swift",
+    tier: "highlight",
+    capabilities: HIGHLIGHT_LSP,
+    fileExtension: "swift",
+  },
+  lua: {
+    id: "lua",
+    label: "Lua",
+    tier: "highlight",
+    capabilities: HIGHLIGHT_LSP,
+    fileExtension: "lua",
   },
   json: {
     id: "json",
@@ -181,8 +271,8 @@ export const CODE_EDITOR_LANGUAGES: Record<
   yaml: {
     id: "yaml",
     label: "YAML",
-    tier: "stub",
-    capabilities: STUB,
+    tier: "highlight",
+    capabilities: HIGHLIGHT_ONLY,
     fileExtension: "yaml",
     aliases: ["yml"],
   },
@@ -246,15 +336,27 @@ export function buildCodeEditorLanguageExtensions(
     case "shell":
       return [graphemeEditorTheme, shellLanguageSupport];
     case "javascript":
-      return [graphemeEditorTheme, javascript()];
+      return [graphemeEditorTheme, javascript(), medousaSyntaxHighlighting];
+    case "typescript":
+      return [
+        graphemeEditorTheme,
+        javascript({ typescript: true }),
+        medousaSyntaxHighlighting,
+      ];
+    case "python":
+      return [graphemeEditorTheme, python(), medousaSyntaxHighlighting];
+    case "rust":
+      return [graphemeEditorTheme, rust(), medousaSyntaxHighlighting];
+    case "yaml":
+      return [graphemeEditorTheme, yaml(), medousaSyntaxHighlighting];
     case "json":
-      return [graphemeEditorTheme, json()];
+      return [graphemeEditorTheme, json(), medousaSyntaxHighlighting];
     case "html":
-      return [graphemeEditorTheme, html()];
+      return [graphemeEditorTheme, html(), medousaSyntaxHighlighting];
     case "css":
-      return [graphemeEditorTheme, css()];
+      return [graphemeEditorTheme, css(), medousaSyntaxHighlighting];
     case "xml":
-      return [graphemeEditorTheme, xml()];
+      return [graphemeEditorTheme, xml(), medousaSyntaxHighlighting];
     case "plaintext":
       return [graphemeEditorTheme, medousaSyntaxHighlighting];
     default:

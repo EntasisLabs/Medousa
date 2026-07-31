@@ -55,7 +55,8 @@
   class="editor-split-sash {direction === 'column'
     ? 'editor-split-sash-col'
     : 'editor-split-sash-row'} {dragging ? 'editor-split-sash-active' : ''}"
-  role="separator"
+  role="slider"
+  aria-label="Resize editor panes"
   aria-orientation={direction === "column" ? "vertical" : "horizontal"}
   aria-valuenow={Math.round(ratio * 100)}
   tabindex="0"

@@ -163,6 +163,8 @@ COMPONENT_DISPLAY_NAMES=(
   "adapter-slack:Slack adapter"
   "adapter-whatsapp:WhatsApp adapter"
   "mcp-gateway:MCP gateway"
+  "coding-engine:Coding engine"
+  "shell-session:Shell session host"
 )
 
 OUT="${DIST_DIR}/release-manifest.json"

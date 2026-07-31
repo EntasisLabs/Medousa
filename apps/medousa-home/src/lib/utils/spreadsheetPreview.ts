@@ -1,6 +1,6 @@
 /** M8e — read-only spreadsheet preview (CSV + XLSX first sheet). */
 
-import * as XLSX from "xlsx";
+import readXlsxFile from "read-excel-file/browser";
 
 export interface SpreadsheetPreviewData {
   headers: string[];
@@ -116,7 +116,16 @@ export function parseCsvSpreadsheet(text: string, sourcePath: string): Spreadshe
   };
 }
 
-export function parseXlsxSpreadsheet(base64: string, sourcePath: string): SpreadsheetPreviewData {
+function cellToString(value: unknown): string {
+  if (value == null) return "";
+  if (value instanceof Date) return value.toISOString();
+  return String(value);
+}
+
+export async function parseXlsxSpreadsheet(
+  base64: string,
+  sourcePath: string,
+): Promise<SpreadsheetPreviewData> {
   const binary = atob(base64);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i += 1) {
@@ -125,27 +134,23 @@ export function parseXlsxSpreadsheet(base64: string, sourcePath: string): Spread
   return parseXlsxBytes(bytes, sourcePath);
 }
 
-export function parseXlsxBytes(bytes: Uint8Array, sourcePath: string): SpreadsheetPreviewData {
-  const workbook = XLSX.read(bytes, { type: "array" });
-  const sheetName = workbook.SheetNames[0] ?? "Sheet1";
-  const sheet = workbook.Sheets[sheetName];
-  if (!sheet) {
-    return {
-      headers: ["Column A"],
-      rows: [],
-      sheetName,
-      sourcePath,
-      truncated: false,
-      totalRows: 0,
-    };
+export async function parseXlsxBytes(
+  bytes: Uint8Array,
+  sourcePath: string,
+): Promise<SpreadsheetPreviewData> {
+  const file = new Blob([bytes]);
+  let sheets;
+  try {
+    sheets = await readXlsxFile(file);
+  } catch (err) {
+    throw new Error(
+      `Could not parse spreadsheet "${sourcePath}": ${err instanceof Error ? err.message : String(err)}`,
+    );
   }
 
-  const matrix = XLSX.utils.sheet_to_json<(string | number | boolean | null)[]>(sheet, {
-    header: 1,
-    defval: "",
-    raw: false,
-  }) as (string | number | boolean | null)[][];
-
+  const first = sheets[0];
+  const sheetName = first?.sheet ?? "Sheet1";
+  const matrix = first?.data ?? [];
   if (matrix.length === 0) {
     return {
       headers: ["Column A"],
@@ -158,10 +163,10 @@ export function parseXlsxBytes(bytes: Uint8Array, sourcePath: string): Spreadshe
   }
 
   const [headerRow, ...bodyRows] = matrix;
-  const headers = (headerRow ?? []).map((value, index) =>
-    String(value ?? "").trim() || `Column ${index + 1}`,
+  const headers = (headerRow ?? []).map(
+    (value, index) => cellToString(value).trim() || `Column ${index + 1}`,
   );
-  const stringRows = bodyRows.map((row) => row.map((value) => String(value ?? "")));
+  const stringRows = bodyRows.map((row) => row.map((value) => cellToString(value)));
   const normalizedRows = normalizeSpreadsheetRows(stringRows);
 
   return {

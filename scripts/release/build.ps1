@@ -24,7 +24,8 @@ Options:
   -h, --help            Show this help
 
 Builds all release binaries into <output>/bin/:
-  medousa, medousa_cli, medousa_daemon, medousa_tui, channel adapters, medousa_mcp_gateway, medousa_whatsapp
+  medousa, medousa_cli, medousa_daemon, medousa_tui, channel adapters,
+  medousa_mcp_gateway, medousa_whatsapp, medousa-code, medousa-session
 
 By default also builds medousa_local (offline brain) into the same <output>/bin/ and packages
 a separate medousa_local-*.tar.gz. Use --without-local-brain to skip the slow mistralrs build.
@@ -73,6 +74,10 @@ Write-MedousaLog "staging -> $binDir"
 Write-MedousaLog "phase 1/2: building CLI + daemon + channels ($($MedousaBinaries.Count) binaries)..."
 Write-MedousaLog "  bins: $($MedousaBinaries -join ' ')"
 
+# Align cargo output with Find-MedousaReleaseBinary (shared ../.cache/cargo-target by default).
+$env:CARGO_TARGET_DIR = Get-MedousaCargoTargetRoot
+Write-MedousaLog "CARGO_TARGET_DIR=$($env:CARGO_TARGET_DIR)"
+
 $cargoBuildArgs = @("build", "--release")
 $cargoFeatures = @()
 if ($WithIroh) {
@@ -102,11 +107,22 @@ $waBuildArgs = @("build", "--release", "--manifest-path", $MEDOUSA_WHATSAPP_MANI
 if ($Target) { $waBuildArgs += @("--target", $Target) }
 Invoke-MedousaCargo @waBuildArgs
 
+Write-MedousaLog "cargo build (medousa-code)..."
+$codeBuildArgs = @("build", "--release", "-p", "medousa-code", "--bin", "medousa-code")
+if ($Target) { $codeBuildArgs += @("--target", $Target) }
+Invoke-MedousaCargo @codeBuildArgs
+
+Write-MedousaLog "cargo build (medousa-session)..."
+$sessionBuildArgs = @("build", "--release", "-p", "medousa-session", "--bin", "medousa-session")
+if ($Target) { $sessionBuildArgs += @("--target", $Target) }
+Invoke-MedousaCargo @sessionBuildArgs
+
 $mainRelease = Get-MedousaCargoReleaseDir $Target
 $waRelease = Get-MedousaWhatsappCargoReleaseDir $Target
 
 Write-MedousaLog "phase 1/2: staging release binaries -> $binDir"
-foreach ($bin in $MedousaBinaries) {
+$stageBins = $MedousaBinaries + @("medousa-code", "medousa-session")
+foreach ($bin in $stageBins) {
     if ($bin -eq "medousa_local") { continue }
     $src = Find-MedousaReleaseBinary -Bin $bin -Target $Target
     if (-not $src) {

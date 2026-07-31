@@ -1,6 +1,7 @@
 <script lang="ts">
   import LmeAgentsExplorer from "$lib/components/lme/explorers/LmeAgentsExplorer.svelte";
   import LmeAutomationsExplorer from "$lib/components/lme/explorers/LmeAutomationsExplorer.svelte";
+  import LmeCodeExplorer from "$lib/components/lme/explorers/LmeCodeExplorer.svelte";
   import LmeFlowsExplorer from "$lib/components/lme/explorers/LmeFlowsExplorer.svelte";
   import LmeDecksExplorer from "$lib/components/lme/explorers/LmeDecksExplorer.svelte";
   import LmeFilesExplorer from "$lib/components/lme/explorers/LmeFilesExplorer.svelte";
@@ -30,9 +31,13 @@
   data-debug-label="lme-side-panel"
   data-family={resolvedFamily}
 >
-  <LmeExplorerModeBar family={resolvedFamily} />
+  {#if resolvedFamily !== "code"}
+    <LmeExplorerModeBar family={resolvedFamily} />
+  {/if}
   <div class="min-h-0 flex-1 overflow-hidden">
-    {#if mode === "notes"}
+    {#if resolvedFamily === "code"}
+      <LmeCodeExplorer />
+    {:else if mode === "notes"}
       <LmeNotesExplorer />
     {:else if mode === "files"}
       <LmeFilesExplorer />

@@ -86,6 +86,8 @@
     shellTabs.bootstrap();
     chat.bootstrapMultiLive(shellTabs.chatSessionIdsForLiveRestore());
     applyContentZoomCss();
+    const checkpoint = () => shellTabs.checkpoint();
+    window.addEventListener("pagehide", checkpoint);
     const detachHotkeys = attachShellPaneHotkeys({
       onCheatSheet: () => {
         cheatSheetOpen = true;
@@ -93,6 +95,8 @@
     });
     const detachShake = attachMouseShakeToolbar();
     return () => {
+      checkpoint();
+      window.removeEventListener("pagehide", checkpoint);
       detachHotkeys();
       detachShake();
     };

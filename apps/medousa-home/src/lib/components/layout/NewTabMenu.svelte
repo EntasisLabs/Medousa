@@ -24,6 +24,7 @@
     CalendarDays,
     ChevronDown,
     ChevronUp,
+    Code2,
     FileCode2,
     GitBranch,
     Globe,
@@ -42,6 +43,7 @@
   type NewTabKind =
     | "chat"
     | "note"
+    | "code"
     | "web"
     | "ask"
     | "calendar"
@@ -60,6 +62,7 @@
   const ITEMS: NewTabItem[] = [
     { id: "chat", label: "Chat", icon: MessageSquare },
     { id: "note", label: "Note", icon: BookOpen },
+    { id: "code", label: "Code project", icon: Code2 },
     { id: "web", label: "Web", icon: Globe },
     { id: "ask", label: "Ask", icon: MessageSquarePlus },
     { id: "calendar", label: "Calendar", icon: CalendarDays },
@@ -72,8 +75,8 @@
 
   /** Fixed pages matching the slide-window pagination sketch. */
   const PAGES: Array<{ ids: NewTabKind[]; showUp: boolean; showDown: boolean }> = [
-    { ids: ["chat", "note", "web", "ask"], showUp: false, showDown: true },
-    { ids: ["calendar", "peer", "script"], showUp: true, showDown: true },
+    { ids: ["chat", "note", "code", "web"], showUp: false, showDown: true },
+    { ids: ["ask", "calendar", "peer", "script"], showUp: true, showDown: true },
     { ids: ["agent", "flow", "schedule"], showUp: true, showDown: false },
   ];
 
@@ -158,6 +161,11 @@
         case "note":
           vault.openNewNoteDialog();
           break;
+        case "code":
+          lmeWorkspace.requestNewCodeProject();
+          layout.openShellSidebarView("code");
+          shellTabs.openSurface("code", { activate: true });
+          break;
         case "web":
           await humanBrowser.openTab("about:blank");
           dispatchBrowserFocusUrl();
@@ -239,8 +247,10 @@
       bind:this={menuEl}
       class="new-tab-menu workshop-rail-sheet"
       role="menu"
+      tabindex="-1"
       aria-label="Create new tab"
       onclick={(event) => event.stopPropagation()}
+      onkeydown={(event) => event.stopPropagation()}
     >
       <div class="new-tab-menu-window" data-slide={slideDir}>
         {#key page}

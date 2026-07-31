@@ -1,7 +1,7 @@
 //! Settings → Packages: install optional Medousa binaries into `{dataDir}/bin`.
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use medousa_install_support::manifest::{
@@ -11,6 +11,7 @@ use medousa_install_support::manifest::{
 use medousa_install_support::packages::{
     catalog_entry, expand_home_package_dependencies, home_packages_catalog,
     is_home_packages_package, package_short_hint, phase_label, sort_for_install,
+    PackageCatalogEntry,
 };
 use medousa_install_support::tarball_install::{
     fetch_release_manifest, install_tarball_package, remove_tarball_package,
@@ -55,7 +56,7 @@ pub struct HomePackagesCatalog {
     pub release_base_url: Option<String>,
 }
 
-#[derive(serde::Serialize, Clone)]
+#[derive(Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PackageProgressEvent {
     pub package_id: String,
@@ -68,6 +69,73 @@ pub struct PackageProgressEvent {
 
 fn data_dir() -> PathBuf {
     crate::paths::medousa_data_dir()
+}
+
+fn platform_bin_name(name: &str) -> String {
+    if cfg!(windows) {
+        format!("{name}.exe")
+    } else {
+        name.to_string()
+    }
+}
+
+/// Resolve a package binary the same places the daemon looks: dataDir/bin,
+/// sibling of PATH-resolved medousa_daemon, /usr/local/bin, Homebrew, PATH.
+fn find_package_binary(name: &str) -> Option<PathBuf> {
+    let file = platform_bin_name(name);
+    let mut candidates: Vec<PathBuf> = Vec::new();
+    candidates.push(data_dir().join("bin").join(&file));
+    if cfg!(target_os = "macos") {
+        candidates.push(PathBuf::from("/usr/local/bin").join(&file));
+        candidates.push(PathBuf::from("/opt/homebrew/bin").join(&file));
+    }
+    if cfg!(target_os = "linux") {
+        candidates.push(PathBuf::from("/usr/local/bin").join(&file));
+    }
+    if let Some(path_var) = std::env::var_os("PATH") {
+        for dir in std::env::split_paths(&path_var) {
+            candidates.push(dir.join(&file));
+        }
+    }
+    // Sibling of medousa_daemon on PATH / common install roots.
+    for daemon_name in ["medousa_daemon", "medousa_daemon.exe"] {
+        if let Some(daemon) = find_named_binary(daemon_name) {
+            if let Some(dir) = daemon.parent() {
+                candidates.push(dir.join(&file));
+            }
+        }
+    }
+    candidates.into_iter().find(|p| p.is_file())
+}
+
+fn find_named_binary(name: &str) -> Option<PathBuf> {
+    let mut candidates = Vec::new();
+    if cfg!(target_os = "macos") {
+        candidates.push(PathBuf::from("/usr/local/bin").join(name));
+        candidates.push(PathBuf::from("/opt/homebrew/bin").join(name));
+    }
+    if let Some(path_var) = std::env::var_os("PATH") {
+        for dir in std::env::split_paths(&path_var) {
+            candidates.push(dir.join(name));
+        }
+    }
+    candidates.into_iter().find(|p| p.is_file())
+}
+
+fn catalog_binaries_present(entry: &PackageCatalogEntry) -> bool {
+    if entry.binaries.is_empty() {
+        return false;
+    }
+    entry
+        .binaries
+        .iter()
+        .any(|bin| find_package_binary(bin).is_some())
+}
+
+fn package_is_present(data: &Path, entry: &PackageCatalogEntry) -> bool {
+    package_installed(data, entry.id)
+        || catalog_binaries_present(entry)
+        || (entry.id == "local-brain" && workshop_runtime::local_brain_installed())
 }
 
 fn default_install_root() -> PathBuf {
@@ -107,11 +175,20 @@ fn local_brain_present() -> bool {
 
 #[tauri::command]
 pub fn packages_status() -> PackageStatusSummary {
+    let data = data_dir();
     let manifest = read_local_manifest();
-    let installed_packages: Vec<String> = manifest
+    let mut installed_packages: Vec<String> = manifest
         .as_ref()
         .map(|m| m.packages.iter().map(|p| p.id.clone()).collect())
         .unwrap_or_default();
+
+    for entry in home_packages_catalog() {
+        if package_is_present(&data, &entry)
+            && !installed_packages.iter().any(|id| id == entry.id)
+        {
+            installed_packages.push(entry.id.to_string());
+        }
+    }
 
     let update_available = installed_packages.iter().any(|id| {
         if !is_home_packages_package(id) {
@@ -141,11 +218,10 @@ pub async fn packages_catalog() -> Result<HomePackagesCatalog, String> {
     let packages = home_packages_catalog()
         .into_iter()
         .map(|entry| {
-            let installed = package_installed(&data, entry.id)
+            let installed = package_is_present(&data, &entry)
                 || local
                     .as_ref()
-                    .is_some_and(|m| m.packages.iter().any(|p| p.id == entry.id))
-                || (entry.id == "local-brain" && workshop_runtime::local_brain_installed());
+                    .is_some_and(|m| m.packages.iter().any(|p| p.id == entry.id));
 
             let installed_version = local.as_ref().and_then(|m| {
                 m.packages
@@ -163,9 +239,10 @@ pub async fn packages_catalog() -> Result<HomePackagesCatalog, String> {
                 .as_ref()
                 .map(|p| p.size_bytes)
                 .unwrap_or(entry.default_size_bytes);
+            // Don't nag "update" when the binary is only present via system PATH
+            // (no local version stamp) — CDN may not have published that package yet.
             let update_available = match (&installed_version, &available_version) {
                 (Some(local_v), Some(remote_v)) => local_v != remote_v && installed,
-                (None, Some(_)) => installed,
                 _ => false,
             };
 

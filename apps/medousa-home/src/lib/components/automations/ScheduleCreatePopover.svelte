@@ -193,6 +193,7 @@
       bind:this={menuEl}
       class="agent-editor-popover-panel agent-editor-popover-panel-create"
       role="dialog"
+      tabindex="-1"
       aria-label="New schedule"
       onpointerdown={(event) => event.stopPropagation()}
     >

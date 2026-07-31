@@ -327,6 +327,31 @@ async fn main() -> Result<()> {
     let default_runtime_config = session_mapping::IngestSessionRuntimeConfig::from_saved_defaults();
     let retention_config = medousa::session_retention::SessionRetentionConfig::from_env();
 
+    let forge = medousa::daemon::forge_host::open_forge()?;
+    {
+        let probe = medousa::daemon::forge_host::DaemonLivenessProbe::new(forge.instance_id());
+        match forge.reconcile_on_boot(&probe) {
+            Ok(report) => {
+                if !report.interrupted_attempts.is_empty()
+                    || !report.rolled_forward.is_empty()
+                    || !report.environment_failures.is_empty()
+                    || !report.orphaned_worktrees.is_empty()
+                {
+                    tracing::info!(
+                        interrupted = report.interrupted_attempts.len(),
+                        rolled_forward = report.rolled_forward.len(),
+                        environment_failures = report.environment_failures.len(),
+                        orphaned_worktrees = report.orphaned_worktrees.len(),
+                        "forge reconcile_on_boot complete"
+                    );
+                }
+            }
+            Err(err) => {
+                tracing::warn!(error = %err, "forge reconcile_on_boot failed");
+            }
+        }
+    }
+
     let state = AppState {
         platform: platform.clone(),
         daemon_base_url: medousa::daemon_api::resolve_daemon_public_base_url(bind),
@@ -374,6 +399,24 @@ async fn main() -> Result<()> {
         last_mem_prune_at: Arc::new(RwLock::new(None)),
         last_context_usage_by_session: Arc::new(RwLock::new(HashMap::new())),
         client_registry: medousa::browser_handlers::ClientRegistry::new(),
+        forge,
+        forge_events: medousa::daemon::forge_events::ForgeEventBus::new(),
+        coding_engine: Some(medousa::daemon::coding_engine_host::CodingEngineHost::new()),
+        shell_sessions: Some(medousa::daemon::shell_session_host::ShellSessionHost::new()),
+        detamu: match medousa::daemon::detamu_host::DetamuHost::open(
+            medousa::daemon::detamu_host::DetamuHost::default_root(),
+        )
+        .await
+        {
+            Ok(host) => {
+                tracing::info!("detamu host opened");
+                Some(host)
+            }
+            Err(err) => {
+                tracing::warn!(%err, "detamu host unavailable — world tools disabled");
+                None
+            }
+        },
     };
 
     medousa::turn_worker_notify::register_ingest_channel_delivery_bridge(

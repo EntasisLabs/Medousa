@@ -92,6 +92,16 @@ pub struct AppState {
     /// Latest turn-start context budget per session (from `context_usage` stream events).
     pub last_context_usage_by_session: Arc<RwLock<HashMap<String, ContextUsageReport>>>,
     pub client_registry: ClientRegistry,
+    /// Forge — durable version-controlled work custody (undertakings).
+    pub forge: Arc<medousa_forge::forge::Forge>,
+    /// Forge freshness bus for Home SSE invalidation.
+    pub forge_events: crate::daemon::forge_events::ForgeEventBus,
+    /// LSP Interoperability Orchestrator host (medousa-code sidecar).
+    pub coding_engine: Option<Arc<crate::daemon::coding_engine_host::CodingEngineHost>>,
+    /// Workshop shell session host (medousa-session sidecar).
+    pub shell_sessions: Option<Arc<crate::daemon::shell_session_host::ShellSessionHost>>,
+    /// Detamu world-model host (published SDK; SurrealKV under `{dataDir}/detamu`).
+    pub detamu: Option<Arc<crate::daemon::detamu_host::DetamuHost>>,
 }
 
 impl AppState {

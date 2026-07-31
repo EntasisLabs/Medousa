@@ -7,6 +7,7 @@ import {
 const LIFE_IDS = new Set([
   "chat",
   "work",
+  "code",
   "library",
   "calendar",
   "web",
@@ -21,6 +22,7 @@ const HIDDEN_IDS = new Set([SAFETY_SURFACE_RUNTIME, "messaging"]);
 export const SHELL_SIDEBAR_VIEW_SURFACES = new Set([
   "chat",
   "library",
+  "code",
   "automations",
   "peers",
   "messaging",
@@ -77,6 +79,8 @@ export function shellSidebarViewTitle(surfaceId: string): string {
       return "Sessions";
     case "library":
       return "Library";
+    case "code":
+      return "Projects";
     case "automations":
       return "Automations";
     case "peers":

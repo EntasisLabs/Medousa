@@ -10,9 +10,27 @@ export type VaultDeepLink = {
   notePath: string;
 };
 
-export type DeepLink = WorkDeepLink | VaultDeepLink;
+export type UndertakingLocationDeepLink = {
+  kind: "undertaking_location";
+  workId: string;
+  path: string;
+  line: number | null;
+  entityId: string | null;
+};
+
+export type DeepLink = WorkDeepLink | VaultDeepLink | UndertakingLocationDeepLink;
 
 const WORK_PATH = /^\/work\/([^/?#]+)\/?$/i;
+
+function isRepositoryRelativePath(path: string): boolean {
+  const normalized = path.replaceAll("\\", "/");
+  return (
+    !!normalized &&
+    !normalized.startsWith("/") &&
+    !/^[a-z]:\//i.test(normalized) &&
+    !normalized.split("/").includes("..")
+  );
+}
 
 export function workDeepLinkUrl(cardId: string): string {
   return `medousa://work/${encodeURIComponent(cardId)}`;
@@ -20,6 +38,19 @@ export function workDeepLinkUrl(cardId: string): string {
 
 export function vaultDeepLinkUrl(notePath: string): string {
   return `medousa://vault/${encodeURIComponent(notePath.replace(/^\/+/, ""))}`;
+}
+
+export function undertakingLocationDeepLinkUrl(input: {
+  workId: string;
+  path: string;
+  line?: number | null;
+  entityId?: string | null;
+}): string {
+  const url = new URL(`medousa://undertaking/${encodeURIComponent(input.workId)}/location`);
+  url.searchParams.set("path", input.path);
+  if (input.line != null) url.searchParams.set("line", String(input.line));
+  if (input.entityId) url.searchParams.set("entity", input.entityId);
+  return url.toString();
 }
 
 export function parseDeepLink(raw: string): DeepLink | null {
@@ -41,6 +72,22 @@ export function parseDeepLink(raw: string): DeepLink | null {
         if (notePath && !notePath.includes("..") && !notePath.startsWith("/")) {
           return { kind: "vault", notePath };
         }
+      }
+      if (host === "undertaking") {
+        const segments = url.pathname.split("/").filter(Boolean);
+        const workId = segments[0] ? decodeURIComponent(segments[0]) : "";
+        const path = url.searchParams.get("path")?.trim() ?? "";
+        const rawLine = Number(url.searchParams.get("line"));
+        if (!workId || segments[1] !== "location" || !isRepositoryRelativePath(path)) {
+          return null;
+        }
+        return {
+          kind: "undertaking_location",
+          workId,
+          path,
+          line: Number.isInteger(rawLine) && rawLine > 0 ? rawLine : null,
+          entityId: url.searchParams.get("entity")?.trim() || null,
+        };
       }
       const match = WORK_PATH.exec(url.pathname);
       if (match?.[1]) {

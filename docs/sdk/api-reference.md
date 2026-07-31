@@ -32,6 +32,11 @@ Generic JSON escape hatch when no typed wrapper exists.
 | `patch<T, B>(path, body)` | PATCH |
 | `delete<T>(path)` | DELETE |
 
+Forge undertaking custody and governed source/workspace operations currently use
+this generic HTTP client rather than a dedicated typed SDK accessor. See the
+[Forge engine guide](../engine/forge.md) and the
+[HTTP route index](../engine/http-api.md#forge-undertakings).
+
 ---
 
 ## `ingest()`
@@ -132,6 +137,10 @@ Hot-swappable external agent runtimes (Cursor / Codex via ACP). Native Medousa t
 | `list_permission_requests(status?, limit?)` | `GET /v1/agents/permission-requests` | `AgentPermissionRequestListResponse` |
 | `approve_permission(id, request)` | `POST …/approve` | `AgentPermissionResolveResponse` |
 | `deny_permission(id, request)` | `POST …/deny` | `AgentPermissionResolveResponse` |
+
+`CreateAgentSessionRequest` and `AgentSessionPromptRequest` accept an optional
+`CodeIntentContext`. Prefer it over embedding workspace paths, selections, or
+diagnostics into provider-specific prompt text.
 
 ---
 

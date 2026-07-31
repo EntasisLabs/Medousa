@@ -8,17 +8,25 @@ import { flows } from "$lib/stores/flows.svelte";
 import { graphemeScriptEditor } from "$lib/stores/graphemeScriptEditor.svelte";
 import { vault } from "$lib/stores/vault.svelte";
 import { externalDesk } from "$lib/stores/externalDesk.svelte";
+import { codeWorkspace } from "$lib/stores/codeWorkspace.svelte";
 import type { FlowComposerDraft } from "$lib/types/workflow";
+import { openCodeWorkspaceSession } from "$lib/utils/codeWorkspaceController";
 
 export type LmeExplorerMode =
   | "notes"
   | "files"
+  | "code"
   | "presentations"
   | "scripts"
   | "agents"
   | "flows"
   | "schedules"
   | "history";
+
+export type CodeWorkspaceResource =
+  | { kind: "workspace" }
+  | { kind: "file"; path: string; line: number | null }
+  | { kind: "review" };
 
 export type LmeTab =
   | {
@@ -31,6 +39,7 @@ export type LmeTab =
       tabId: string;
       kind: "script";
       scriptTabId: string;
+      scriptId: string | null;
       title: string;
     }
   | {
@@ -38,6 +47,13 @@ export type LmeTab =
       kind: "file";
       path: string;
       title: string;
+    }
+  | {
+      tabId: string;
+      kind: "code";
+      workId: string;
+      title: string;
+      resource: CodeWorkspaceResource;
     }
   | {
       tabId: string;
@@ -68,12 +84,54 @@ export type LmeTab =
 const EXPLORER_MODE_KEY = "medousa-lme-explorer-mode";
 const MAX_TABS = 16;
 
+export type LmeWorkspaceSession = {
+  tabs: LmeTab[];
+  activeTabId: string | null;
+};
+
+function isString(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0;
+}
+
+function isRestorableTab(value: unknown): value is LmeTab {
+  if (!value || typeof value !== "object") return false;
+  const tab = value as Record<string, unknown>;
+  if (!isString(tab.tabId) || !isString(tab.title) || !isString(tab.kind)) return false;
+  switch (tab.kind) {
+    case "note":
+    case "file":
+      return isString(tab.path);
+    case "script":
+      return isString(tab.scriptTabId) && isString(tab.scriptId);
+    case "code": {
+      if (!isString(tab.workId) || !tab.resource || typeof tab.resource !== "object") return false;
+      const resource = tab.resource as Record<string, unknown>;
+      return resource.kind === "workspace" || resource.kind === "review" || (
+        resource.kind === "file" &&
+        isString(resource.path) &&
+        (resource.line === null || typeof resource.line === "number")
+      );
+    }
+    case "deck":
+      return isString(tab.artifactId);
+    case "manuscript":
+      return isString(tab.manuscriptId);
+    case "flow":
+      return tab.workflowId === null || isString(tab.workflowId);
+    case "schedule":
+      return isString(tab.recurringId);
+    default:
+      return false;
+  }
+}
+
 function loadExplorerMode(): LmeExplorerMode {
   if (typeof localStorage === "undefined") return "notes";
   const raw = localStorage.getItem(EXPLORER_MODE_KEY);
   if (
     raw === "notes" ||
     raw === "files" ||
+    raw === "code" ||
     raw === "presentations" ||
     raw === "scripts" ||
     raw === "agents" ||
@@ -98,6 +156,13 @@ function newTabId(prefix: string): string {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 }
 
+function codeResourceKey(workId: string, resource: CodeWorkspaceResource): string {
+  if (resource.kind === "file") {
+    return `code-file:${encodeURIComponent(workId)}:${encodeURIComponent(resource.path)}`;
+  }
+  return `code-${resource.kind}:${encodeURIComponent(workId)}`;
+}
+
 function mirrorActiveTabToShell(tabId: string | null, title?: string) {
   if (!tabId) return;
   void import("$lib/stores/shellTabs.svelte").then(({ shellTabs }) => {
@@ -107,6 +172,7 @@ function mirrorActiveTabToShell(tabId: string | null, title?: string) {
 
 export class LmeWorkspaceStore {
   explorerMode = $state<LmeExplorerMode>(loadExplorerMode());
+  codeCreateRequested = $state(false);
   tabs = $state<LmeTab[]>([]);
   activeTabId = $state<string | null>(null);
 
@@ -115,6 +181,60 @@ export class LmeWorkspaceStore {
       ? (this.tabs.find((tab) => tab.tabId === this.activeTabId) ?? null)
       : null,
   );
+
+  captureSession(): LmeWorkspaceSession {
+    // Unsaved script drafts are editor-runtime state, not durable resources.
+    const tabs = this.tabs
+      .filter((tab) => tab.kind !== "script" || Boolean(tab.scriptId))
+      .slice(-MAX_TABS);
+    const ids = new Set(tabs.map((tab) => tab.tabId));
+    return {
+      tabs,
+      activeTabId: this.activeTabId && ids.has(this.activeTabId)
+        ? this.activeTabId
+        : tabs.at(-1)?.tabId ?? null,
+    };
+  }
+
+  restoreSession(value: unknown): LmeWorkspaceSession {
+    const candidate = value && typeof value === "object"
+      ? value as { tabs?: unknown; activeTabId?: unknown }
+      : {};
+    const seen = new Set<string>();
+    const tabs = (Array.isArray(candidate.tabs) ? candidate.tabs : [])
+      .filter(isRestorableTab)
+      .filter((tab) => {
+        if (seen.has(tab.tabId)) return false;
+        seen.add(tab.tabId);
+        return true;
+      })
+      .slice(-MAX_TABS);
+    const activeTabId = typeof candidate.activeTabId === "string" && seen.has(candidate.activeTabId)
+      ? candidate.activeTabId
+      : tabs.at(-1)?.tabId ?? null;
+    this.tabs = tabs;
+    this.activeTabId = activeTabId;
+    return { tabs, activeTabId };
+  }
+
+  updateCodeLocation(workId: string, path: string, line: number) {
+    const nextLine = Math.max(1, Math.floor(line));
+    let changed = false;
+    const tabs = this.tabs.map((tab) => {
+      if (
+        tab.kind !== "code" ||
+        tab.workId !== workId ||
+        tab.resource.kind !== "file" ||
+        tab.resource.path !== path ||
+        tab.resource.line === nextLine
+      ) {
+        return tab;
+      }
+      changed = true;
+      return { ...tab, resource: { ...tab.resource, line: nextLine } };
+    });
+    if (changed) this.tabs = tabs;
+  }
 
   /** Mode bar only — never steals the active document tab. */
   setExplorerMode(mode: LmeExplorerMode) {
@@ -129,6 +249,15 @@ export class LmeWorkspaceStore {
     } else if (mode === "presentations") {
       externalDesk.setSidebarMode("presentations");
     }
+  }
+
+  requestNewCodeProject() {
+    this.setExplorerMode("code");
+    this.codeCreateRequested = true;
+  }
+
+  consumeNewCodeProjectRequest() {
+    this.codeCreateRequested = false;
   }
 
   /** Map legacy Automations sections onto LME explorer modes. */
@@ -254,6 +383,164 @@ export class LmeWorkspaceStore {
     }
     externalDesk.selectExternalPath(path);
     vault.previewAttachment(path, "pane");
+  }
+
+  /** Open governed coding work as a durable workspace tab. */
+  async openCodeWorkspace(workId: string, title?: string) {
+    const id = workId.trim();
+    if (!id) return;
+    this.setExplorerMode("code");
+    const result = await openCodeWorkspaceSession(id);
+    if (result.ok) {
+      return this.openCodeFile(id, result.path, { projectTitle: title });
+    }
+
+    // A project without a working copy still needs a real room so setup and
+    // recovery actions have somewhere to render.
+    const resource: CodeWorkspaceResource = { kind: "workspace" };
+    const resourceId = codeResourceKey(id, resource);
+    const existing = this.tabs.find(
+      (tab) => tab.kind === "code" && tab.tabId === resourceId,
+    );
+    if (existing) {
+      this.activeTabId = existing.tabId;
+      mirrorActiveTabToShell(existing.tabId, existing.title);
+      return result;
+    }
+    const label = title?.trim() || "Code workspace";
+    const tab: LmeTab = {
+      tabId: resourceId,
+      kind: "code",
+      workId: id,
+      title: label,
+      resource,
+    };
+    this.tabs = [...this.tabs, tab].slice(-MAX_TABS);
+    this.activeTabId = tab.tabId;
+    mirrorActiveTabToShell(tab.tabId, tab.title);
+    return result;
+  }
+
+  /** Open a source buffer as a first-class Home workspace tab. */
+  async openCodeFile(
+    workId: string,
+    path: string,
+    options?: {
+      line?: number | null;
+      projectTitle?: string;
+      activate?: boolean;
+    },
+  ) {
+    const id = workId.trim();
+    const normalizedPath = path.trim().replaceAll("\\", "/").replace(/^\.\//, "");
+    if (!id || !normalizedPath) return null;
+    this.setExplorerMode("code");
+    const line =
+      options?.line && options.line > 0 ? Math.floor(options.line) : null;
+    const { codeWorkspace } = await import("$lib/stores/codeWorkspace.svelte");
+    const source = await codeWorkspace.open(id, normalizedPath, line);
+    if (!source) return null;
+
+    const resource: CodeWorkspaceResource = {
+      kind: "file",
+      path: normalizedPath,
+      line,
+    };
+    const resourceId = codeResourceKey(id, resource);
+    const label = source.title || fileTitle(normalizedPath);
+    const existing = this.tabs.find(
+      (tab) => tab.kind === "code" && tab.tabId === resourceId,
+    );
+    if (existing && existing.kind === "code") {
+      if (
+        existing.resource.kind === "file" &&
+        existing.resource.line !== line
+      ) {
+        this.tabs = this.tabs.map((tab) =>
+          tab.kind === "code" &&
+          tab.tabId === resourceId &&
+          tab.resource.kind === "file"
+            ? { ...tab, resource: { ...tab.resource, line } }
+            : tab,
+        );
+      }
+      if (options?.activate !== false) {
+        this.activeTabId = existing.tabId;
+        mirrorActiveTabToShell(existing.tabId, existing.title);
+      }
+      return source;
+    }
+
+    const tab: LmeTab = {
+      tabId: resourceId,
+      kind: "code",
+      workId: id,
+      title: label,
+      resource,
+    };
+    this.tabs = [...this.tabs, tab].slice(-MAX_TABS);
+    if (options?.activate !== false) {
+      this.activeTabId = tab.tabId;
+      mirrorActiveTabToShell(tab.tabId, tab.title);
+    }
+    return source;
+  }
+
+  /** Review is a canvas, not a panel stacked beneath the editor. */
+  async openCodeReview(workId: string, title?: string) {
+    const id = workId.trim();
+    if (!id) return;
+    this.setExplorerMode("code");
+    await openCodeWorkspaceSession(id);
+    const resource: CodeWorkspaceResource = { kind: "review" };
+    const resourceId = codeResourceKey(id, resource);
+    const label = title?.trim() || "Review changes";
+    const existing = this.tabs.find(
+      (tab) => tab.kind === "code" && tab.tabId === resourceId,
+    );
+    if (existing) {
+      this.activeTabId = existing.tabId;
+      mirrorActiveTabToShell(existing.tabId, existing.title);
+      return;
+    }
+    const tab: LmeTab = {
+      tabId: resourceId,
+      kind: "code",
+      workId: id,
+      title: label,
+      resource,
+    };
+    this.tabs = [...this.tabs, tab].slice(-MAX_TABS);
+    this.activeTabId = tab.tabId;
+    mirrorActiveTabToShell(tab.tabId, tab.title);
+  }
+
+  /** Close every shell presentation of a source resource, then release its buffer. */
+  async closeCodeFile(workId: string, path: string) {
+    const resourceId = codeResourceKey(workId, {
+      kind: "file",
+      path,
+      line: null,
+    });
+    const { shellTabs } = await import("$lib/stores/shellTabs.svelte");
+    const shellIds = shellTabs.tabs
+      .filter((tab) => tab.kind === "lme" && tab.lmeTabId === resourceId)
+      .map((tab) => tab.id);
+    if (shellIds.length > 0) {
+      for (const shellId of shellIds) shellTabs.close(shellId);
+      return;
+    }
+    await this.closeTab(resourceId);
+  }
+
+  async replaceCodeFile(
+    workId: string,
+    oldPath: string,
+    newPath: string,
+    line = 1,
+  ) {
+    await this.openCodeFile(workId, newPath, { line });
+    await this.closeCodeFile(workId, oldPath);
   }
 
   openDeck(artifactId: string, title?: string) {
@@ -448,6 +735,7 @@ export class LmeWorkspaceStore {
       tabId: newTabId("script"),
       kind: "script",
       scriptTabId: scriptTab.tabId,
+      scriptId: scriptTab.scriptId,
       title: nextTitle,
     };
     this.tabs = [...this.tabs, tab].slice(-MAX_TABS);
@@ -483,12 +771,45 @@ export class LmeWorkspaceStore {
       return;
     }
     if (tab.kind === "script") {
-      graphemeScriptEditor.selectTab(tab.scriptTabId);
+      if (graphemeScriptEditor.tabs.some((entry) => entry.tabId === tab.scriptTabId)) {
+        graphemeScriptEditor.selectTab(tab.scriptTabId);
+      } else if (tab.scriptId) {
+        await graphemeScriptEditor.openScriptById(tab.scriptId);
+        const restored = graphemeScriptEditor.activeTab;
+        if (restored) {
+          this.tabs = this.tabs.map((entry) =>
+            entry.tabId === tab.tabId && entry.kind === "script"
+              ? { ...entry, scriptTabId: restored.tabId, scriptId: restored.scriptId }
+              : entry,
+          );
+        }
+      }
       return;
     }
     if (tab.kind === "file") {
       externalDesk.selectExternalPath(tab.path);
       vault.previewAttachment(tab.path, "pane");
+      return;
+    }
+    if (tab.kind === "code") {
+      const { undertakings } = await import("$lib/stores/undertakings.svelte");
+      if (undertakings.detail?.id !== tab.workId) {
+        await undertakings.select(tab.workId);
+      }
+      if (tab.resource.kind === "file") {
+        const { codeWorkspace } = await import("$lib/stores/codeWorkspace.svelte");
+        await codeWorkspace.hydrate(tab.workId);
+        await codeWorkspace.open(
+          tab.workId,
+          tab.resource.path,
+          tab.resource.line,
+        );
+        undertakings.setSelection({
+          path: tab.resource.path,
+          line: tab.resource.line,
+          entityId: null,
+        });
+      }
       return;
     }
     if (tab.kind === "manuscript") {
@@ -511,9 +832,42 @@ export class LmeWorkspaceStore {
     artifacts.selectArtifact(tab.artifactId);
   }
 
-  async closeTab(tabId: string, options?: { activateNext?: boolean }) {
+  confirmCloseTab(tabId: string): boolean {
+    const closing = this.tabs.find((tab) => tab.tabId === tabId);
+    if (
+      !closing ||
+      closing.kind !== "code" ||
+      closing.resource.kind !== "file"
+    ) {
+      return true;
+    }
+    const closingPath = closing.resource.path;
+    const buffer = codeWorkspace.tabsFor(closing.workId).find(
+      (tab) => tab.path === closingPath,
+    );
+    return !(
+      buffer &&
+      codeWorkspace.isDirty(buffer) &&
+      typeof window !== "undefined" &&
+      !window.confirm(`Discard unsaved changes to ${buffer.path}?`)
+    );
+  }
+
+  async closeTab(
+    tabId: string,
+    options?: { activateNext?: boolean; confirmed?: boolean },
+  ) {
     const closing = this.tabs.find((tab) => tab.tabId === tabId);
     if (!closing) return;
+    if (!options?.confirmed && !this.confirmCloseTab(tabId)) return;
+    if (closing.kind === "code" && closing.resource.kind === "file") {
+      const { codeWorkspace } = await import("$lib/stores/codeWorkspace.svelte");
+      const closingPath = closing.resource.path;
+      const buffer = codeWorkspace.tabsFor(closing.workId).find(
+        (tab) => tab.path === closingPath,
+      );
+      if (buffer) codeWorkspace.close(buffer.tabId);
+    }
     const wasActive = this.activeTabId === tabId;
     this.tabs = this.tabs.filter((tab) => tab.tabId !== tabId);
 

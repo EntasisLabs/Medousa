@@ -77,6 +77,7 @@ Browser chords (also in Spotlight when Web is focused) include address bar, new/
 | Chat | Talk with Medousa |
 | Workspace | Notes, files, scripts, agents, and flows |
 | Work | Tasks and kanban board |
+| Code | Projects, editing, understanding, and review |
 | Browser | Built-in web workshop |
 | Automations | Scripts and schedules |
 | Agents | Specialist agents in Workspace |

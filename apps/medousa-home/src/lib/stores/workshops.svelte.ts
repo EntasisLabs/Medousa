@@ -75,6 +75,8 @@ export class WorkshopsStore {
       const url = (await getDaemonUrl()).trim();
       if (url) settings.daemonUrl = url;
       this.applyThemeForActiveWorkshop();
+      const { shellTabs } = await import("$lib/stores/shellTabs.svelte");
+      await shellTabs.switchWorkspaceScope(this.activeWorkshopId);
     } catch (err) {
       this.error = err instanceof Error ? err.message : String(err);
     } finally {
@@ -183,6 +185,10 @@ export class WorkshopsStore {
     this.switching = true;
     this.error = null;
     try {
+      const { shellTabs } = await import("$lib/stores/shellTabs.svelte");
+      const flushed = await vault.flushBeforeLeave();
+      if (!flushed) return;
+      shellTabs.checkpoint();
       this.registry = await setActiveWorkshop(workshopId);
       const url = (await getDaemonUrl()).trim();
       if (url) settings.daemonUrl = url;
@@ -193,6 +199,7 @@ export class WorkshopsStore {
       await workshopDefaults.load(true);
       this.applyThemeForActiveWorkshop();
       await this.restoreLastSession();
+      await shellTabs.switchWorkspaceScope(this.activeWorkshopId);
       toast.show(`Connected to ${this.activeLabel}`);
     } catch (err) {
       this.error = err instanceof Error ? err.message : String(err);
@@ -290,6 +297,8 @@ export class WorkshopsStore {
         await reconnectWorkshop((health) => {
           options?.onHealthChange?.(health);
         });
+        const { shellTabs } = await import("$lib/stores/shellTabs.svelte");
+        await shellTabs.switchWorkspaceScope(this.activeWorkshopId);
       }
     } catch (err) {
       this.error = err instanceof Error ? err.message : String(err);

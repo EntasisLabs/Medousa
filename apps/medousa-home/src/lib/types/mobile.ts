@@ -6,6 +6,7 @@ export type MoreDestination =
   | "map"
   | "workshop"
   | "automations"
+  | "code"
   | "calendar"
   | "messaging"
   | "peers"
@@ -33,6 +34,7 @@ export const MORE_DESTINATIONS: {
     label: "Automations",
     hint: "Scripts, flows, schedules & history",
   },
+  { id: "code", label: "Code", hint: "Governed repository workspaces" },
   { id: "calendar", label: "Calendar", hint: "Meetings, reminders & .ics" },
   { id: "messaging", label: "Channels", hint: "Telegram, Discord, Slack & more" },
   { id: "peers", label: "Peers", hint: "Nearby workshops & inbox" },

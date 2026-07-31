@@ -26,6 +26,7 @@ pub mod turn_budget;
 pub mod tool_history;
 pub mod environment;
 pub mod feeds;
+pub mod forge;
 pub mod component_store;
 pub mod component_runtime;
 pub mod workflow;

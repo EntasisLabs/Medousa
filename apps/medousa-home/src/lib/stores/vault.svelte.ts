@@ -622,6 +622,7 @@ export class VaultStore {
   }
 
   private bufferWarmInFlight = new Set<string>();
+  private looseOpenInFlight = new Map<string, Promise<boolean>>();
 
   /** Test helper: seed a background buffer without network. */
   seedBufferForTest(buffer: NoteBuffer) {
@@ -1238,6 +1239,10 @@ export class VaultStore {
 
   resetForWorkshopSwitch() {
     this.clearAutosaveTimer();
+    this.noteBuffers.clear();
+    this.bufferWarmInFlight.clear();
+    this.looseOpenInFlight.clear();
+    noteEditorRuntimes.resetForWorkshopSwitch();
     this.clearProposal();
     this.clearLooseFile();
     this.selectedPath = null;
@@ -1282,6 +1287,21 @@ export class VaultStore {
   ) {
     const trimmed = absolutePath.trim();
     if (!trimmed || !isAbsoluteDiskPath(trimmed)) return false;
+    const existingOpen = this.looseOpenInFlight.get(trimmed);
+    if (existingOpen) return existingOpen;
+    const pending = this.performOpenLooseFile(trimmed, options).finally(() => {
+      if (this.looseOpenInFlight.get(trimmed) === pending) {
+        this.looseOpenInFlight.delete(trimmed);
+      }
+    });
+    this.looseOpenInFlight.set(trimmed, pending);
+    return pending;
+  }
+
+  private async performOpenLooseFile(
+    trimmed: string,
+    options?: { skipLeaveFlush?: boolean },
+  ) {
     if (
       this.looseFilePath === trimmed &&
       this.selectedPath === trimmed &&
@@ -1392,6 +1412,9 @@ export class VaultStore {
 
   /** Bind the LME keep-alive host to the focused note (create/activate tab). */
   private async syncLmeNoteTab(path: string) {
+    // Store instances used for isolated previews/tests must not drive the app's
+    // singleton workspace (which would perform a second open through `vault`).
+    if (this !== vault) return;
     try {
       const { lmeWorkspace } = await import("$lib/stores/lmeWorkspace.svelte");
       lmeWorkspace.ensureAndActivateNoteTab(path);

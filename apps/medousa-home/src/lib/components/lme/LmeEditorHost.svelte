@@ -1,6 +1,7 @@
 <script lang="ts">
   import ArtifactLibraryPreview from "$lib/components/artifacts/ArtifactLibraryPreview.svelte";
   import LmeAgentEditor from "$lib/components/lme/LmeAgentEditor.svelte";
+  import UndertakingsPanel from "$lib/components/work/UndertakingsPanel.svelte";
   import LmeFlowEditor from "$lib/components/lme/LmeFlowEditor.svelte";
   import LmeScheduleEditor from "$lib/components/lme/LmeScheduleEditor.svelte";
   import LmeScriptEditor from "$lib/components/lme/LmeScriptEditor.svelte";
@@ -22,6 +23,8 @@
     interactive?: boolean;
     /** Shell-bound LME tab — when set, resolve content from that tab (not global active). */
     lmeTabId?: string | null;
+    useActiveTabWhenUnbound?: boolean;
+    emptyMessage?: string;
     onOpenChat: () => void;
     onOpenWork: () => void;
     onSelectCard: (id: string) => void | Promise<void>;
@@ -31,6 +34,8 @@
     visible = true,
     interactive = true,
     lmeTabId = null,
+    useActiveTabWhenUnbound = true,
+    emptyMessage = "Open something from the side panel.",
     onOpenChat,
     onOpenWork,
     onSelectCard,
@@ -46,7 +51,7 @@
     if (id) {
       return lmeWorkspace.tabs.find((tab) => tab.tabId === id) ?? null;
     }
-    return lmeWorkspace.activeTab;
+    return useActiveTabWhenUnbound ? lmeWorkspace.activeTab : null;
   });
 
   const notePath = $derived(
@@ -131,7 +136,7 @@
         </div>
       {/if}
       <div class="flex flex-1 items-center justify-center p-8 text-sm text-surface-500">
-        Open something from the side panel.
+        {emptyMessage}
       </div>
     </div>
   {:else}
@@ -189,6 +194,15 @@
             <VaultAttachmentPreviewContent attachment={fileAttachment} fill={true} />
           </div>
         {/if}
+      </div>
+    {:else if active.kind === "code"}
+      <div class="relative z-10 flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        <UndertakingsPanel
+          showBrowser={false}
+          workId={active.workId}
+          resource={active.resource}
+          interactive={interactive}
+        />
       </div>
     {:else if active.kind === "deck"}
       <div class="relative z-10 flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">

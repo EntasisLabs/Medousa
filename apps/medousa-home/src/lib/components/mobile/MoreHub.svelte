@@ -3,6 +3,7 @@
   import ProfilesPanel from "$lib/components/profiles/ProfilesPanel.svelte";
   import AutomationsPanel from "$lib/components/automations/AutomationsPanel.svelte";
   import CalendarPanel from "$lib/components/calendar/CalendarPanel.svelte";
+  import MobileCodePanel from "$lib/components/mobile/MobileCodePanel.svelte";
   import MessagingPanel from "$lib/components/messaging/MessagingPanel.svelte";
   import PeersPanel from "$lib/components/peers/PeersPanel.svelte";
   import RuntimePanel from "$lib/components/runtime/RuntimePanel.svelte";
@@ -95,6 +96,8 @@
         />
       {:else if layout.moreDestination === "automations"}
         <AutomationsPanel visible={true} embedded={true} mobile={true} />
+      {:else if layout.moreDestination === "code"}
+        <MobileCodePanel />
       {:else if layout.moreDestination === "calendar"}
         <CalendarPanel visible={true} embedded={true} mobile={true} />
       {:else if layout.moreDestination === "messaging"}

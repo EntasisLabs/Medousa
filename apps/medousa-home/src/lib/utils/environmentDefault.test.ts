@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   defaultEnvironmentSpec,
+  ensureCodeSurfaceInSpec,
   ensureMapSurfaceInSpec,
   ensurePeersSurfaceInSpec,
 } from "$lib/utils/environmentDefault";
@@ -50,6 +51,35 @@ describe("ensureMapSurfaceInSpec", () => {
     expect(next.surfaces.some((surface) => surface.id === "context")).toBe(false);
     expect(next.layoutPresets?.[0]?.surfaces).not.toContain("context");
     expect(next.surfaces.some((surface) => surface.id === "map")).toBe(true);
+  });
+});
+
+describe("ensureCodeSurfaceInSpec", () => {
+  it("adds Code after Work to older specs and every saved layout", () => {
+    const spec = defaultEnvironmentSpec();
+    spec.surfaces = spec.surfaces.filter((surface) => surface.id !== "code");
+    for (const preset of spec.layoutPresets ?? []) {
+      preset.surfaces = preset.surfaces.filter((id) => id !== "code");
+    }
+
+    const next = ensureCodeSurfaceInSpec(spec);
+    const workAt = next.surfaces.findIndex((surface) => surface.id === "work");
+    expect(next.surfaces[workAt + 1]?.id).toBe("code");
+    expect(next.surfaces[workAt + 1]?.icon).toBe("code-2");
+    for (const preset of next.layoutPresets ?? []) {
+      const presetWorkAt = preset.surfaces.indexOf("work");
+      expect(preset.surfaces[presetWorkAt + 1]).toBe("code");
+    }
+  });
+
+  it("preserves an operator-chosen Code position", () => {
+    const spec = defaultEnvironmentSpec();
+    const preset = spec.layoutPresets![0]!;
+    preset.surfaces = preset.surfaces.filter((id) => id !== "code");
+    preset.surfaces.push("code");
+
+    expect(ensureCodeSurfaceInSpec(spec)).toBe(spec);
+    expect(spec.layoutPresets![0]!.surfaces.at(-1)).toBe("code");
   });
 });
 

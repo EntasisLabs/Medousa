@@ -5,7 +5,6 @@ use serde_json::{Value, json};
 use stasis::application::orchestration::prompt_pipeline::{
     PromptExecutionPipeline, PromptExecutionRequest,
 };
-use stasis::infrastructure::llm::genai_chat_client::GenaiChatClient;
 use stasis::ports::outbound::ai_chat_client::AiChatClient;
 use stasis::prelude::StasisError;
 
@@ -280,12 +279,11 @@ pub async fn maybe_compact_output_to_sttp(
 }
 
 fn build_prompt_pipeline(model_target: &GraphemeCompactionModelTarget) -> PromptExecutionPipeline {
-    let chat_client: Arc<dyn AiChatClient> =
-        Arc::new(GenaiChatClient::from_provider_model_with_base_url(
-            Some(&model_target.provider),
-            &model_target.model,
-            model_target.base_url.as_deref(),
-        ));
+    let chat_client: Arc<dyn AiChatClient> = Arc::new(crate::build_genai_chat_client(
+        &model_target.provider,
+        &model_target.model,
+        model_target.base_url.as_deref(),
+    ));
     PromptExecutionPipeline::new(chat_client)
 }
 

@@ -1,6 +1,6 @@
 [package]
 name = "medousa"
-version = "0.6.0"
+version = "0.7.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/EntasisLabs/Medousa"
@@ -25,6 +25,9 @@ members = [
     "crates/medousa-mcp-server",
     "crates/medousa-acp-client",
     "crates/medousa-adapter-common",
+    "crates/medousa-forge",
+    "crates/medousa-code",
+    "crates/medousa-session",
     "adapters/medousa-telegram",
     "adapters/medousa-discord",
     "adapters/medousa-slack",
@@ -57,6 +60,11 @@ medousa-engine = { path = "crates/medousa-engine" }
 medousa-host = { path = "crates/medousa-host" }
 medousa-sdk = { path = "crates/medousa-sdk" }
 medousa-acp-client = { path = "crates/medousa-acp-client" }
+medousa-forge = { path = "crates/medousa-forge" }
+detamu = { version = "0.1.1", default-features = false, features = ["code", "surreal"] }
+detamu-source-git = "0.1.1"
+detamu-language-rust = "0.1.1"
+detamu-language = "0.1.1"
 medousa-browser-lite = { path = "crates/medousa-browser-lite" }
 medousa-local-inference = { path = "crates/medousa-local-inference" }
 anyhow = "1"
@@ -91,8 +99,8 @@ teloxide = "0.17.0"
 serenity = "0.12.5"
 slack-morphism = { version = "2.22", default-features = false, features = ["hyper"] }
 once_cell = "1"
-surrealdb-types = { version = "3" }
-surrealdb = { version = "3", default-features = false, features = ["kv-surrealkv", "rustls", "kv-mem", "protocol-ws"] }
+surrealdb-types = { version = "3.1.5" }
+surrealdb = { version = "3.1.5", default-features = false, features = ["kv-surrealkv", "rustls", "kv-mem", "protocol-ws"] }
 toml = "0.8"
 serde_yaml = "0.9"
 libc = "0.2"
@@ -105,16 +113,19 @@ qrcode = "0.14"
 a2 = { version = "0.10", default-features = false, features = ["ring"] }
 mdns-sd = "0.11"
 chacha20poly1305 = { version = "0.10", features = ["std"] }
+portable-pty = "0.9"
 urlencoding = "2"
 sysinfo = "0.33"
 fs2 = "0.4"
-calamine = "0.26"
-pdf-extract = "0.7"
+calamine = "0.36"
+pdf-extract = "0.12"
 iroh = { version = "1.0", optional = true }
 iroh-tickets = { version = "1.0", optional = true }
 httparse = { version = "1", optional = true }
 medousa-iroh-http = { path = "crates/medousa-iroh-http", optional = true }
 tower = { version = "0.5", features = ["util", "limit"] }
+tower-http = { version = "0.6", features = ["cors"] }
+tokio-tungstenite = { version = "0.29", default-features = false, features = ["connect", "rustls-tls-webpki-roots"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 tracing-opentelemetry = { version = "0.28", optional = true }
@@ -142,8 +153,9 @@ otel-export = [
 iroh-transport = ["dep:iroh", "dep:iroh-tickets", "dep:httparse", "dep:medousa-iroh-http"]
 
 [dev-dependencies]
-surrealdb-types = { version = "3" }
-surrealdb = { version = "3", default-features = false, features = ["kv-mem"] }
+surrealdb-types = { version = "3.1.5" }
+surrealdb = { version = "3.1.5", default-features = false, features = ["kv-mem"] }
+tempfile = "3"
 
 # --- Local iteration speed -------------------------------------------------
 # Debug info generation + dsymutil + linking dominate build time on a workspace

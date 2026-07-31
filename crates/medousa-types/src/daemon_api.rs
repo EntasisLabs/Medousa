@@ -2797,6 +2797,38 @@ pub struct AgentRuntimeListResponse {
     pub runtimes: Vec<AgentRuntimeInfo>,
 }
 
+/// Bounded, user-intent-oriented context carried from the permanent Code
+/// workspace into an external coding-agent prompt. Paths are relative to the
+/// governed Forge worktree; the daemon remains authoritative for the cwd.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct CodeIntentContext {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub work_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_title: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub outcome: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub active_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cursor_line: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub selection_start_line: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub selection_end_line: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub selected_text: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub containing_symbol: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub open_files: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub diagnostics: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_verification: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct CreateAgentSessionRequest {
@@ -2813,6 +2845,17 @@ pub struct CreateAgentSessionRequest {
     pub args: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub surface: Option<TurnSurfaceContext>,
+    /// Optional Forge undertaking binding (`/v1/forge/items/{id}`). When set,
+    /// the ACP session runs inside the governed worktree and reports leases.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub work_id: Option<String>,
+    /// Optional ACP wire `sessionId` to resume (from a prior
+    /// `RecoveryDisposition::ResumeSupported`). When omitted but `work_id` is
+    /// set, the daemon looks up the latest resume token on that work item.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resume_provider_token: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub code_context: Option<CodeIntentContext>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -2825,12 +2868,19 @@ pub struct CreateAgentSessionResponse {
     pub stream_url: String,
     pub stream_ready: bool,
     pub accepted_at_utc: DateTime<Utc>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub work_id: Option<String>,
+    /// True when the session was attached via ACP `session/resume` (or load).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resumed: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct AgentSessionPromptRequest {
     pub prompt: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub code_context: Option<CodeIntentContext>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

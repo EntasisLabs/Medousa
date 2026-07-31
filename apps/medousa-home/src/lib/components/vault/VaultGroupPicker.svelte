@@ -130,6 +130,7 @@
       bind:this={menuEl}
       class="vault-dock-popover"
       role="listbox"
+      tabindex="-1"
       aria-label="Groups"
       style:left="{placement.left}px"
       style:top="{placement.top}px"
@@ -137,6 +138,7 @@
       style:max-height="{placement.maxHeight}px"
       style:transform={placement.transform}
       onclick={(event) => event.stopPropagation()}
+      onkeydown={(event) => event.stopPropagation()}
     >
       <button
         type="button"
@@ -218,6 +220,7 @@
         <button
           type="button"
           role="option"
+          aria-selected={false}
           class="vault-dock-branch-option vault-dock-branch-option--soft"
           onclick={clearGroup}
         >

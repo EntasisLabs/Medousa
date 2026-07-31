@@ -101,6 +101,8 @@ MEDOUSA_PACKAGE_VERSION_IDS=(
   adapter-slack
   adapter-whatsapp
   mcp-gateway
+  coding-engine
+  shell-session
   local-brain
   desktop
   installer
@@ -237,7 +239,8 @@ medousa_assert_full_train_versions() {
 
 # Emit true/false for each component group whose package stamp(s) equal HEAD.
 # Usage: eval "$(medousa_ship_flags_for_channel_head 0.6.0)"
-# Sets: ship_engine ship_adapters ship_mcp ship_desktop ship_installer ship_local_brain
+# Sets: ship_engine ship_adapters ship_mcp ship_coding_engine ship_shell_session
+#       ship_desktop ship_installer ship_local_brain
 medousa_ship_flags_for_channel_head() {
   local head="${1:-}"
   local v
@@ -260,6 +263,12 @@ medousa_ship_flags_for_channel_head() {
 
   v="$(medousa_package_version mcp-gateway)"
   echo "ship_mcp=$([[ "${v}" == "${head}" ]] && echo true || echo false)"
+
+  v="$(medousa_package_version coding-engine)"
+  echo "ship_coding_engine=$([[ "${v}" == "${head}" ]] && echo true || echo false)"
+
+  v="$(medousa_package_version shell-session)"
+  echo "ship_shell_session=$([[ "${v}" == "${head}" ]] && echo true || echo false)"
 
   v="$(medousa_package_version desktop)"
   echo "ship_desktop=$([[ "${v}" == "${head}" ]] && echo true || echo false)"
@@ -319,6 +328,8 @@ MEDOUSA_COMPONENT_IDS=(
   adapter-slack
   adapter-whatsapp
   mcp-gateway
+  coding-engine
+  shell-session
 )
 
 medousa_component_binaries() {
@@ -331,6 +342,8 @@ medousa_component_binaries() {
     adapter-slack) echo "medousa_slack" ;;
     adapter-whatsapp) echo "medousa_whatsapp" ;;
     mcp-gateway) echo "medousa_mcp_gateway" ;;
+    coding-engine) echo "medousa-code" ;;
+    shell-session) echo "medousa-session" ;;
     *)
       echo "error: unknown component package: $1" >&2
       return 1
@@ -343,6 +356,7 @@ medousa_component_category() {
     engine) echo "core" ;;
     adapter-*) echo "adapter" ;;
     mcp-gateway) echo "core" ;;
+    coding-engine | shell-session) echo "expansion" ;;
     local-brain) echo "core" ;;
     desktop | installer) echo "core" ;;
     model-*) echo "model" ;;
@@ -354,7 +368,7 @@ medousa_component_category() {
 medousa_component_depends() {
   case "$1" in
     engine | desktop | installer) echo "" ;;
-    adapter-* | mcp-gateway | local-brain) echo "engine" ;;
+    adapter-* | mcp-gateway | local-brain | coding-engine | shell-session) echo "engine" ;;
     model-*) echo "local-brain" ;;
     *) echo "" ;;
   esac

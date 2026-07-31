@@ -23,7 +23,6 @@
     anchor = null,
     highlightIndex = 0,
     onSelect,
-    onClose,
     onHighlight,
   }: Props = $props();
 
@@ -38,9 +37,6 @@
     );
     row?.scrollIntoView({ block: "nearest" });
   });
-
-  // Keep onClose referenced for API parity with hosts.
-  void onClose;
 
   /** Cursor-style order: Skills → Commands → Tools. */
   function flatIndexFor(

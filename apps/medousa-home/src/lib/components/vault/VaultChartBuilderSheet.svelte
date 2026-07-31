@@ -327,6 +327,9 @@
       }
     }}
   >
+    <!-- Event delegation commits open field editors; the form controls retain
+         their native keyboard behavior. -->
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
     <form
       class="vault-interact-sheet vault-chart-builder-sheet"
       class:vault-chart-builder-sheet--data={dataSheetOpen}

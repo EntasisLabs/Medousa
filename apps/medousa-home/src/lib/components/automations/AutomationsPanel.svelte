@@ -532,6 +532,7 @@
             class="vault-notes-filter-menu absolute bottom-full right-0 z-30 mb-1 w-[min(17.5rem,calc(100vw-2rem))] rounded-lg border border-surface-500/50 bg-surface-900 py-2 shadow-xl"
             role="menu"
             tabindex="-1"
+            onkeydown={(event) => event.stopPropagation()}
             onclick={(event) => event.stopPropagation()}
           >
             <div class="px-2.5 pb-1">

@@ -28,7 +28,6 @@ use stasis::application::orchestration::prompt_pipeline::{
     PromptExecutionPipeline, PromptExecutionRequest,
 };
 use stasis::application::orchestration::tool_registry::ToolRegistry;
-use stasis::infrastructure::llm::genai_chat_client::GenaiChatClient;
 use stasis::ports::outbound::ai_chat_client::AiChatClient;
 
 use stasis::prelude::RuntimeComposition;
@@ -949,13 +948,12 @@ async fn run_worker_failure_notify(
     let resolved_model = crate::resolve_llm_model(Some(record.model.as_str()));
     let resolved_base_url =
         crate::resolve_llm_base_url(Some(&resolved_provider), ctx.base_url.as_deref());
-    let chat_client: Arc<dyn AiChatClient> = Arc::new(
-        GenaiChatClient::from_provider_model_with_base_url(
-            Some(&resolved_provider),
+    let chat_client: Arc<dyn AiChatClient> =
+        Arc::new(crate::build_genai_chat_client(
+            &resolved_provider,
             &resolved_model,
             resolved_base_url.as_deref(),
-        ),
-    );
+        ));
     let pipeline = PromptExecutionPipeline::new(chat_client);
     let request = PromptExecutionRequest::from_user_prompt(truncate_text_for_budget(
         &prompt,
@@ -1044,13 +1042,12 @@ async fn run_synthesis_turn(
     let resolved_model = crate::resolve_llm_model(Some(record.model.as_str()));
     let resolved_base_url =
         crate::resolve_llm_base_url(Some(&resolved_provider), ctx.base_url.as_deref());
-    let chat_client: Arc<dyn AiChatClient> = Arc::new(
-        GenaiChatClient::from_provider_model_with_base_url(
-            Some(&resolved_provider),
+    let chat_client: Arc<dyn AiChatClient> =
+        Arc::new(crate::build_genai_chat_client(
+            &resolved_provider,
             &resolved_model,
             resolved_base_url.as_deref(),
-        ),
-    );
+        ));
     let pipeline = PromptExecutionPipeline::new(chat_client);
     let mut request =
         PromptExecutionRequest::from_user_prompt(truncate_text_for_budget(

@@ -178,3 +178,10 @@ pub async fn grapheme_get_lsp_workspace(
 ) -> Result<GraphemeLspWorkspaceResponse, String> {
     workshop_http::get_json(&state, "/v1/grapheme/lsp/workspace").await
 }
+
+#[tauri::command]
+pub async fn coding_engine_info(
+    state: State<'_, DaemonState>,
+) -> Result<serde_json::Value, String> {
+    workshop_http::get_json(&state, "/v1/coding-engine").await
+}

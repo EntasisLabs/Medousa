@@ -22,7 +22,6 @@ use stasis::application::runtime::prompt_chat_job_handler::PromptChatJobHandler;
 use stasis::application::runtime::queue_ownership_rebalance_job_handler::QueueOwnershipRebalanceJobHandler;
 use stasis::application::runtime::sequential_pattern_job_handler::SequentialPatternJobHandler;
 use stasis::application::runtime::tool_loop_job_handler::ToolLoopJobHandler;
-use stasis::infrastructure::llm::genai_chat_client::GenaiChatClient;
 use stasis::infrastructure::runtime::http_webhook_event_publisher::HttpWebhookTransportPublisher;
 use stasis::ports::outbound::ai_chat_client::AiChatClient;
 use stasis::ports::outbound::runtime::delivery_endpoint_store::DeliveryEndpointStore;
@@ -137,13 +136,8 @@ async fn build_in_memory_daemon_composition(
     let provider = crate::resolve_llm_provider(config.provider);
     let model = crate::resolve_llm_model(config.model);
     let base_url = crate::resolve_llm_base_url(Some(&provider), config.base_url);
-    let chat_client: Arc<dyn AiChatClient> = Arc::new(
-        GenaiChatClient::from_provider_model_with_base_url(
-            Some(&provider),
-            &model,
-            base_url.as_deref(),
-        ),
-    );
+    let chat_client: Arc<dyn AiChatClient> =
+        Arc::new(crate::build_genai_chat_client(&provider, &model, base_url.as_deref()));
 
     grapheme_medousa_bridge::init_medousa_bridge(MedousaBridgeDeps {
         chat_client: chat_client.clone(),
@@ -237,13 +231,8 @@ async fn build_in_memory_local_composition(
     let provider = crate::resolve_llm_provider(config.provider);
     let model = crate::resolve_llm_model(config.model);
     let base_url = crate::resolve_llm_base_url(Some(&provider), config.base_url);
-    let chat_client: Arc<dyn AiChatClient> = Arc::new(
-        GenaiChatClient::from_provider_model_with_base_url(
-            Some(&provider),
-            &model,
-            base_url.as_deref(),
-        ),
-    );
+    let chat_client: Arc<dyn AiChatClient> =
+        Arc::new(crate::build_genai_chat_client(&provider, &model, base_url.as_deref()));
 
     grapheme_medousa_bridge::init_medousa_bridge(MedousaBridgeDeps {
         chat_client: chat_client.clone(),
@@ -285,13 +274,8 @@ async fn wire_local_stasis_composition(
     let provider = crate::resolve_llm_provider(config.provider);
     let model = crate::resolve_llm_model(config.model);
     let base_url = crate::resolve_llm_base_url(Some(&provider), config.base_url);
-    let chat_client: Arc<dyn AiChatClient> = Arc::new(
-        GenaiChatClient::from_provider_model_with_base_url(
-            Some(&provider),
-            &model,
-            base_url.as_deref(),
-        ),
-    );
+    let chat_client: Arc<dyn AiChatClient> =
+        Arc::new(crate::build_genai_chat_client(&provider, &model, base_url.as_deref()));
 
     let workflow_registry = workflow::shared_workflow_registry();
     let prompt_pipeline = PromptExecutionPipeline::new(chat_client.clone());
@@ -386,13 +370,8 @@ async fn wire_existing_daemon_composition(
     let provider = crate::resolve_llm_provider(config.provider);
     let model = crate::resolve_llm_model(config.model);
     let base_url = crate::resolve_llm_base_url(Some(&provider), config.base_url);
-    let chat_client: Arc<dyn AiChatClient> = Arc::new(
-        GenaiChatClient::from_provider_model_with_base_url(
-            Some(&provider),
-            &model,
-            base_url.as_deref(),
-        ),
-    );
+    let chat_client: Arc<dyn AiChatClient> =
+        Arc::new(crate::build_genai_chat_client(&provider, &model, base_url.as_deref()));
 
     let workflow_registry = workflow::shared_workflow_registry();
     let prompt_pipeline = PromptExecutionPipeline::new(chat_client.clone());

@@ -14,6 +14,7 @@
   import ProfilesPanel from "$lib/components/profiles/ProfilesPanel.svelte";
   import RuntimePanel from "$lib/components/runtime/RuntimePanel.svelte";
   import ShellTabStrip from "$lib/components/shell/ShellTabStrip.svelte";
+  import TerminalPane from "$lib/components/terminal/TerminalPane.svelte";
   import WorkPanel from "$lib/components/work/WorkPanel.svelte";
   import { chat } from "$lib/stores/chat.svelte";
   import { shellTabs } from "$lib/stores/shellTabs.svelte";
@@ -94,11 +95,15 @@
 
   const showLme = $derived(
     activeTab?.kind === "lme" ||
-      (activeTab?.kind === "surface" && activeTab.surfaceId === "library"),
+      (activeTab?.kind === "surface" &&
+        (activeTab.surfaceId === "library" || activeTab.surfaceId === "code")),
   );
   const showWeb = $derived(ownsWebHost && activeTab?.kind === "web");
+  const showTerminal = $derived(activeTab?.kind === "terminal");
   const showSurface = $derived(
-    activeTab?.kind === "surface" && activeTab.surfaceId !== "library"
+    activeTab?.kind === "surface" &&
+      activeTab.surfaceId !== "library" &&
+      activeTab.surfaceId !== "code"
       ? activeTab.surfaceId
       : null,
   );
@@ -154,6 +159,7 @@
     >
       <div
         class="pointer-events-auto w-full min-w-0"
+        role="presentation"
         onpointerenter={() => {
           overStrip = true;
         }}
@@ -185,11 +191,23 @@
           title={activeTab.title}
         />
       {/if}
+    {:else if activeTab?.kind === "terminal"}
+      {#key activeTab.sessionId}
+        <TerminalPane
+          sessionId={activeTab.sessionId}
+          workId={activeTab.workId}
+          title={activeTab.title}
+        />
+      {/key}
     {:else if showLme}
       <LmePanel
         visible={true}
         interactive={focused}
         lmeTabId={activeTab.kind === "lme" ? activeTab.lmeTabId : null}
+        useActiveTabWhenUnbound={activeTab.kind !== "surface" || activeTab.surfaceId !== "code"}
+        emptyMessage={activeTab.kind === "surface" && activeTab.surfaceId === "code"
+          ? "Choose a project from the side panel, or start a new one."
+          : "Open something from the side panel."}
         {onOpenChat}
         {onOpenWork}
         {onSelectCard}

@@ -69,7 +69,7 @@ You only need to set Variables if you change bucket/domain later.
 
 ### macOS signing (Environment: `MEDOUSA`)
 
-The **desktop app** job uses GitHub Environment **`MEDOUSA`** for Apple secrets (Developer ID + notarization). If Mac `.dmg` builds succeed in CI, you’re set.
+The **desktop app and installer** jobs use GitHub Environment **`MEDOUSA`** for Apple secrets (Developer ID + notarization). If their Mac `.dmg` builds succeed in CI, both artifacts are signed and notarized.
 
 | Secret (on `MEDOUSA` environment) | Purpose |
 |-----------------------------------|---------|
@@ -80,7 +80,7 @@ The **desktop app** job uses GitHub Environment **`MEDOUSA`** for Apple secrets 
 
 Optional vars: `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_TEAM_ID`.
 
-**Note:** The **Medousa Installer** `.dmg` is built without notarization in CI today. Desktop app is signed; installer bundle is unsigned on Mac until we add that step.
+Both jobs fail before building when a required signing or notarization value is missing; a full-train tag cannot silently publish an unsigned Mac bundle.
 
 ### Windows signing (Azure Artifact Signing)
 

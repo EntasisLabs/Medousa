@@ -68,7 +68,7 @@
 >
   <div
     class="scripts-workbench-console-resizer"
-    role="separator"
+    role="slider"
     aria-orientation="horizontal"
     aria-label="Resize output panel"
     aria-valuemin={MIN_H}

@@ -5,9 +5,65 @@
 
 First-run UX, Home shell milestones, turn-loop FSM, user profiles (Phases 0–6), **centralized agent runtime**, **0.5.0 Vault / Versions / Liquid**, **0.6.0 Shared / Peer mesh / Dynamic + Home polish**, and **0.7.0 Accounts / Liquid depth / Browser act + Languages** are **shipped**. See [turn-runtime-and-lanes.md](turn-runtime-and-lanes.md), [ADR-002](../docs/architecture/decisions/adr-002-user-profiles.md), [v0.5.0-vault-versions-plan.md](v0.5.0-vault-versions-plan.md), [v0.6.0-shared-mode-plan.md](v0.6.0-shared-mode-plan.md), [v0.6.0-peer-mesh-plan.md](v0.6.0-peer-mesh-plan.md), [v0.7.0-plan.md](v0.7.0-plan.md).
 
-**Next focus:** felt polish residual (empty states, F3–F5), optional mesh `client.relay`, inference profiles — see below.
+**Next focus:** Undertakings flowstate residual polish (empty states, F3–F5) on ForgeLens / World coverage UX. Coding / Detamu / shared-shell / ACP transcript / Forge Home contracts landed.
 
-Full plans: **[v0.6.0-shared-mode-plan.md](v0.6.0-shared-mode-plan.md)** · **[v0.6.0-peer-mesh-plan.md](v0.6.0-peer-mesh-plan.md)** · **[home-messaging-matrix.md](home-messaging-matrix.md)** · [ADR-011](../docs/architecture/decisions/adr-011-shared-mode-portal-and-mesh.md) · **[workshop-and-automations-plan.md](workshop-and-automations-plan.md)** · **[polish-and-package-plan.md](polish-and-package-plan.md)** · **[operators-guide-docs-epic.md](operators-guide-docs-epic.md)**
+Full plans: **[v0.7.0-forge-plan.md](v0.7.0-forge-plan.md)** · **[detamu-medousa-fit.md](detamu-medousa-fit.md)** · **[coding-engine-orchestrator.md](coding-engine-orchestrator.md)** · **[coding-session-terminal.md](coding-session-terminal.md)** · **[v0.6.0-shared-mode-plan.md](v0.6.0-shared-mode-plan.md)** · **[v0.6.0-peer-mesh-plan.md](v0.6.0-peer-mesh-plan.md)** · **[home-messaging-matrix.md](home-messaging-matrix.md)** · [ADR-011](../docs/architecture/decisions/adr-011-shared-mode-portal-and-mesh.md) · **[workshop-and-automations-plan.md](workshop-and-automations-plan.md)** · **[polish-and-package-plan.md](polish-and-package-plan.md)** · **[operators-guide-docs-epic.md](operators-guide-docs-epic.md)**
+
+---
+
+## Coding engine / LSP Orchestrator
+
+| Slice | Status |
+|-------|--------|
+| Home CM feel (find/prefs/outline/problems) | ✅ |
+| Language highlight packs (python/ts/rust/yaml) | ✅ |
+| `medousa-code` MVP + Grapheme backend | ✅ |
+| Home → Orchestrator via `/v1/code/lsp` | ✅ |
+| Daemon cognition tools (`cognition_code_*`) | ✅ |
+| External LSPs + Packages (`coding-engine`, `langservers`) | ✅ |
+| Multi-client fan-out + doc versions | ✅ |
+| Forge worktree `--allow-root` | ✅ |
+| Detamu bridge hooks | ✅ stub (`/v1/detamu/*`) |
+
+## Detamu × Medousa
+
+> Architecture: [detamu-medousa-fit.md](detamu-medousa-fit.md). Detamu = world at commit OID; Forge = work custody. **Code AVEC ≠ Locus AVEC.** Published Detamu crates are hosted by the daemon on boot.
+
+| Slice | Status |
+|-------|--------|
+| Fit map (authority, seams, dual AVEC, route collision) | ✅ [detamu-medousa-fit.md](detamu-medousa-fit.md) |
+| Detamu 0.1.0 release and Medousa registry migration | ✅ |
+| Daemon `DetamuHost` + SurrealKV at `{dataDir}/detamu` | ✅ |
+| `/v1/world/*` (vs orchestrator `/v1/detamu/*` stubs) | ✅ |
+| Forge provision/seal → `index_source` + SnapshotId bindings | ✅ |
+| `cognition_detamu_status` / `files` (domain `detamu`, opt-in) | ✅ |
+| Impact / `code_avec` / `find` depth tools + Rust Tree-sitter pack | ✅ |
+| medousa-code DetamuObserver (live-buffer enrichment) | ⬜ optional / deferred — not blocking Home |
+| ACP chat transcript → session history (`persist_turn`) | ✅ |
+
+## Coding session terminal (Home as WM)
+
+> Architecture: [coding-session-terminal.md](coding-session-terminal.md). Workshop owns one PTY per session; Home is the window manager; agents are peers. VT parse in Tauri via `vte` (libghostty-vt pivot — Zig toolchain constraint).
+
+| Slice | Status |
+|-------|--------|
+| `medousa-session` sidecar + daemon spawn/proxy (`/v1/sessions/shell*`) | ✅ |
+| Coding domain tools (read/search/patch + `shell_session_*`, opt-in) | ✅ |
+| Forge `work_id` → worktree cwd + command-log staging | ✅ |
+| Home `terminal` tab kind + Tauri VT bridge + splits = sessions | ✅ |
+| Packages entry `shell-session` | ✅ |
+
+## 0.7.0 Forge core (shipped)
+
+**Goal:** the durable work-lifecycle substrate — user-owned work items, governed git environments, lease-fenced executor attempts, sealed evidence, human review, recoverable dispositions. External agents become replaceable executors on top; Medousa owns the work.
+
+| Pillar | Plan | Status |
+|--------|------|--------|
+| Forge core crate | [v0.7.0-plan](v0.7.0-forge-plan.md) | ✅ `crates/medousa-forge` F1–F11 — model/events, FS store + journal, git engine, lifecycle + leases, policy-governed sealing, evidence-bound review, three dispositions, boot reconciliation, script adapter |
+| Daemon integration | [v0.7.0-plan](v0.7.0-forge-plan.md) | ✅ `Forge` in `AppState`, `{dataDir}/forge`, `reconcile_on_boot`, `/v1/forge` HTTP + script executor |
+| ACP executors | [v0.7.0-plan](v0.7.0-forge-plan.md) | ✅ Cursor/Codex bind via `work_id`; wire-id resume + command-log staging; seal stays explicit; **ACP turns persist to session history** |
+| Home review surface | [v0.7.0-plan](v0.7.0-forge-plan.md) | ✅ Undertakings under Work · ActiveUndertakingContext · ForgeLens · Shell bind · World insight/explorer |
+| Forge Home contracts (review/evidence, review-intent, allowed_actions, stream, eventual Detamu) | flowstate plan | ✅ |
 
 ---
 

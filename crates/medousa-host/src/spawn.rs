@@ -4,19 +4,15 @@ use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
-use medousa_types::local::{LocalEngineStatus, DEFAULT_LOCAL_ENGINE_BIND};
+use medousa_types::local::{DEFAULT_LOCAL_ENGINE_BIND, LocalEngineStatus};
 
-use crate::{
-    detach_new_session, is_bind_reachable, resolve_medousa_local_binary,
-};
+use crate::{detach_new_session, is_bind_reachable, resolve_medousa_local_binary};
 
 pub fn medousa_local_binary_available() -> bool {
     resolve_medousa_local_binary().is_ok()
 }
 
-pub async fn spawn_and_wait_recommended(
-    bind: Option<String>,
-) -> Result<LocalEngineStatus, String> {
+pub async fn spawn_and_wait_recommended(bind: Option<String>) -> Result<LocalEngineStatus, String> {
     spawn_and_wait(bind, None).await
 }
 
@@ -60,7 +56,9 @@ pub async fn spawn_and_wait(
     })
 }
 
-pub fn spawn_medousa_local_recommended(bind: Option<String>) -> Result<std::process::Child, String> {
+pub fn spawn_medousa_local_recommended(
+    bind: Option<String>,
+) -> Result<std::process::Child, String> {
     let bind = bind.unwrap_or_else(|| DEFAULT_LOCAL_ENGINE_BIND.to_string());
     spawn_medousa_local(bind, None)
 }
@@ -96,9 +94,12 @@ pub fn spawn_medousa_local(
         .stdout(Stdio::from(log_file))
         .stderr(Stdio::from(log_file_err));
     detach_new_session(&mut command);
-    command
-        .spawn()
-        .map_err(|err| format!("failed to spawn medousa_local ({}): {err}", binary.display()))
+    command.spawn().map_err(|err| {
+        format!(
+            "failed to spawn medousa_local ({}): {err}",
+            binary.display()
+        )
+    })
 }
 
 pub async fn wait_local_engine_ready(bind: &str, timeout: Duration) -> bool {

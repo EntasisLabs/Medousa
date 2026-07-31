@@ -104,7 +104,9 @@
     mode === "view" && surfaceHasShellSidebarView(viewSurface),
   );
   const viewTitle = $derived(
-    viewSurface === "library" || viewSurface === "automations"
+    viewSurface === "library" ||
+      viewSurface === "automations" ||
+      viewSurface === "code"
       ? labelForLmeExplorerMode(lmeWorkspace.explorerMode)
       : shellSidebarViewTitle(viewSurface),
   );
@@ -312,7 +314,8 @@
   const railPopoverUsesLmeDock = $derived(
     railPopover?.kind === "lme" ||
       railPopover?.surfaceId === "library" ||
-      railPopover?.surfaceId === "automations",
+      railPopover?.surfaceId === "automations" ||
+      railPopover?.surfaceId === "code",
   );
 
   function activityFor(id: string): number {
@@ -367,7 +370,9 @@
   }
 
   function ensureFamilyForSurface(surfaceId: string) {
-    if (surfaceId === "library" && !isLmeLibraryMode(lmeWorkspace.explorerMode)) {
+    if (surfaceId === "code") {
+      lmeWorkspace.setExplorerMode(defaultModeForLmeFamily("code"));
+    } else if (surfaceId === "library" && !isLmeLibraryMode(lmeWorkspace.explorerMode)) {
       lmeWorkspace.setExplorerMode(defaultModeForLmeFamily("library"));
     } else if (
       surfaceId === "automations" &&
@@ -378,6 +383,7 @@
   }
 
   function lmeFamilyForSurface(surfaceId: string): LmeExplorerFamily {
+    if (surfaceId === "code") return "code";
     return surfaceId === "automations" ? "automations" : "library";
   }
 
@@ -534,7 +540,9 @@
       const mode = railPopover.mode;
       lmeWorkspace.setExplorerMode(mode);
       closeRailPopover();
-      layout.openShellSidebarView(isLmeAutomationsMode(mode) ? "automations" : "library");
+      layout.openShellSidebarView(
+        mode === "code" ? "code" : isLmeAutomationsMode(mode) ? "automations" : "library",
+      );
       return;
     }
     const surfaceId = railPopover.surfaceId;
@@ -586,7 +594,9 @@
             </div>
           {:else if viewSurface === "chat"}
             <SessionSidebar open={true} variant="inline" />
-          {:else if viewSurface === "library" || viewSurface === "automations"}
+          {:else if viewSurface === "library" ||
+            viewSurface === "automations" ||
+            viewSurface === "code"}
             <LmeSidePanel {onOpenChat} family={lmeFamilyForSurface(viewSurface)} />
           {:else if viewSurface === "messaging"}
             <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -960,7 +970,9 @@
     {#snippet toolbar()}
       {#if popover.kind === "lme"}
         <!-- LME dock icons portal into the popover dock slot. -->
-      {:else if popover.surfaceId === "library" || popover.surfaceId === "automations"}
+      {:else if popover.surfaceId === "library" ||
+        popover.surfaceId === "automations" ||
+        popover.surfaceId === "code"}
         <!-- LME dock icons portal into the popover dock slot. -->
       {:else if popover.surfaceId === "chat"}
         <SessionRailToolbar onCreated={closeRailPopover} />
@@ -986,9 +998,15 @@
     {#if popover.kind === "lme"}
       <LmeSidePanel
         {onOpenChat}
-        family={isLmeAutomationsMode(popover.mode) ? "automations" : "library"}
+        family={popover.mode === "code"
+          ? "code"
+          : isLmeAutomationsMode(popover.mode)
+            ? "automations"
+            : "library"}
       />
-    {:else if popover.surfaceId === "library" || popover.surfaceId === "automations"}
+    {:else if popover.surfaceId === "library" ||
+      popover.surfaceId === "automations" ||
+      popover.surfaceId === "code"}
       <LmeSidePanel {onOpenChat} family={lmeFamilyForSurface(popover.surfaceId)} />
     {:else if popover.surfaceId === SAFETY_SURFACE_SETTINGS}
       <div class="min-h-0 flex-1 overflow-y-auto px-1.5 py-1">

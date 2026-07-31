@@ -25,6 +25,15 @@ export type ShellTab =
       kind: "surface";
       surfaceId: Surface;
       title: string;
+    }
+  | {
+      id: string;
+      kind: "terminal";
+      /** Workshop shell session id (one PTY per session; splits = new sessions). */
+      sessionId: string;
+      /** Governed undertaking that owns this session, when tracked by Forge. */
+      workId?: string | null;
+      title: string;
     };
 
 /** Leaf pane — ordered tabs + focused tab. */
@@ -78,6 +87,7 @@ export type ShellDesktop = {
 /** Singleton surfaces that open as at most one tab each. */
 export const SHELL_SURFACE_TAB_IDS = new Set<string>([
   "library",
+  "code",
   "peers",
   "messaging",
   "map",

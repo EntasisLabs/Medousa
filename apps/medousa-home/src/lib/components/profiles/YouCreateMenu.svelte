@@ -122,8 +122,10 @@
       bind:this={menuEl}
       class="you-create-menu workshop-rail-sheet"
       role="menu"
+      tabindex="-1"
       aria-label="You create"
       onclick={(event) => event.stopPropagation()}
+      onkeydown={(event) => event.stopPropagation()}
     >
       {#each ITEMS as item (item.id)}
         {@const Icon = item.icon}

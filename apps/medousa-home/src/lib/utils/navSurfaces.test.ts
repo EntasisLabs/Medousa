@@ -30,6 +30,7 @@ describe("navSurfaces shell sidebar views", () => {
     expect(surfaceHasShellSidebarView("chat")).toBe(true);
     expect(surfaceHasShellSidebarView("messaging")).toBe(true);
     expect(surfaceHasShellSidebarView("library")).toBe(true);
+    expect(surfaceHasShellSidebarView("code")).toBe(true);
     expect(surfaceHasShellSidebarView("map")).toBe(true);
     expect(surfaceHasShellSidebarView("settings")).toBe(true);
     expect(surfaceHasShellSidebarView("work")).toBe(true);
@@ -47,6 +48,7 @@ describe("navSurfaces shell sidebar views", () => {
     expect(shellSidebarViewTitle("chat")).toBe("Sessions");
     expect(shellSidebarViewTitle("messaging")).toBe("Channels");
     expect(shellSidebarViewTitle("library")).toBe("Library");
+    expect(shellSidebarViewTitle("code")).toBe("Projects");
     expect(shellSidebarViewTitle("map")).toBe("Map");
     expect(shellSidebarViewTitle("settings")).toBe("Settings");
     expect(shellSidebarViewTitle("calendar")).toBe("Calendar");

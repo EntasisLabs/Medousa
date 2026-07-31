@@ -13,6 +13,9 @@
   import ShellSidebarExpandButton from "$lib/components/layout/ShellSidebarExpandButton.svelte";
   import VaultChatContextChip from "$lib/components/vault/VaultChatContextChip.svelte";
   import ScriptChatContextChip from "$lib/components/grapheme/ScriptChatContextChip.svelte";
+  import UndertakingContextChip from "$lib/components/work/UndertakingContextChip.svelte";
+  import { undertakings } from "$lib/stores/undertakings.svelte";
+  import { activeCodeContext } from "$lib/utils/undertakingWorkspace";
   import { buildInteractiveTurnOptions } from "$lib/interactiveTurnOptions";
   import { haptic } from "$lib/haptics";
   import { workspace } from "$lib/stores/workspace.svelte";
@@ -629,10 +632,12 @@
       let streamUrl = agentSessionId ? agentSessionStreamUrl(agentSessionId) : "";
       let streamReady = true;
       let acceptedAt = new Date().toISOString();
+      let promptDispatched = false;
 
       if (agentSessionId) {
         try {
-          await promptAgentSession(agentSessionId, prompt);
+          await promptAgentSession(agentSessionId, prompt, activeCodeContext(chat.sessionId));
+          promptDispatched = true;
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
           // Stale local id (daemon restart / cancel) — recreate once.
@@ -645,12 +650,20 @@
       }
 
       if (!agentSessionId) {
+        // Only pass work_id when this chat is already bound to an undertaking
+        // (Start Codex/Cursor from Undertakings, or prior bind).
+        const workIdForSession = undertakings.active?.boundChatSessionIds.includes(
+          chat.sessionId,
+        )
+          ? undertakings.active.workId
+          : null;
         const acceptedAgent = await createAgentSession({
           session_id: chat.sessionId,
           runtime,
           // Prompt is sent separately after we attach the stream, so no ACP
           // events are emitted before Home is listening.
           prompt: undefined,
+          work_id: workIdForSession,
         });
         agentSessionId = acceptedAgent.agent_session_id;
         setSessionAgentSessionId(chat.sessionId, agentSessionId);
@@ -681,7 +694,9 @@
         ticket.session_id,
         ticket.stream_url,
       );
-      await promptAgentSession(agentSessionId, prompt);
+      if (!promptDispatched) {
+        await promptAgentSession(agentSessionId, prompt, activeCodeContext(chat.sessionId));
+      }
       return;
     }
 
@@ -1292,6 +1307,9 @@
       }}
     />
     <AgentPermissionBar />
+    <div class="mx-4 mb-1 flex flex-wrap gap-2">
+      <UndertakingContextChip />
+    </div>
     <AgentBrowserPanel />
     {/if}
     <form

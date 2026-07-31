@@ -1097,22 +1097,18 @@ fn run_status(_args: &[String]) -> Result<()> {
 fn run_stop(args: &[String]) -> Result<()> {
     let include_local = has_flag(args, "--local-engine") || has_flag(args, "--all");
     println!("medousa stop");
-    if is_medousa_daemon_process_running() {
-        stop_medousa_daemon_process();
+    let daemon_running = is_medousa_daemon_process_running();
+    stop_medousa_daemon_process();
+    if daemon_running {
         println!("engine=stopped");
     } else {
         println!("engine=not_running");
     }
+    println!("code_engine=stop_requested");
+    println!("shell_session=stop_requested");
     if include_local {
-        #[cfg(unix)]
-        {
-            let _ = Command::new("pkill")
-                .args(["-x", "medousa_local"])
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .status();
-            println!("local_brain=stop_requested");
-        }
+        let _ = medousa_host::request_process_stop_by_name("medousa_local");
+        println!("local_brain=stop_requested");
     }
     Ok(())
 }
@@ -2547,18 +2543,11 @@ fn wait_for_daemon_healthy(daemon_url: &str, timeout: Duration) -> bool {
     false
 }
 
-#[cfg(unix)]
 fn stop_medousa_daemon_process() {
-    let _ = Command::new("pkill")
-        .args(["-x", "medousa_daemon"])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status();
+    let _ = medousa_host::request_process_stop_by_name("medousa_daemon");
+    medousa_host::stop_workshop_sidecars();
     thread::sleep(Duration::from_millis(400));
 }
-
-#[cfg(not(unix))]
-fn stop_medousa_daemon_process() {}
 
 fn wait_for_bind_closed(bind: &str, timeout: Duration) -> bool {
     let started = Instant::now();

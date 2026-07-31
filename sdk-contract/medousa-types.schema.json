@@ -247,7 +247,25 @@
       "runtime"
     ],
     "properties": {
+      "auth_detail": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "auth_status": {
+        "description": "Vendor account sign-in: `signed_in` | `signed_out` | `unknown`.",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
       "available": {
+        "type": "boolean"
+      },
+      "binary_present": {
+        "description": "Vendor CLI binary present on PATH.",
+        "default": false,
         "type": "boolean"
       },
       "command": {
@@ -295,7 +313,25 @@
           "runtime"
         ],
         "properties": {
+          "auth_detail": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "auth_status": {
+            "description": "Vendor account sign-in: `signed_in` | `signed_out` | `unknown`.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "available": {
+            "type": "boolean"
+          },
+          "binary_present": {
+            "description": "Vendor CLI binary present on PATH.",
+            "default": false,
             "type": "boolean"
           },
           "command": {
@@ -330,8 +366,104 @@
       "prompt"
     ],
     "properties": {
+      "code_context": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/CodeIntentContext"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
       "prompt": {
         "type": "string"
+      }
+    },
+    "definitions": {
+      "CodeIntentContext": {
+        "description": "Bounded, user-intent-oriented context carried from the permanent Code workspace into an external coding-agent prompt. Paths are relative to the governed Forge worktree; the daemon remains authoritative for the cwd.",
+        "type": "object",
+        "properties": {
+          "active_path": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "containing_symbol": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "cursor_line": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "diagnostics": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "last_verification": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "open_files": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "outcome": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "project_title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "selected_text": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "selection_end_line": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "selection_start_line": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "work_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
       }
     }
   },
@@ -2197,6 +2329,16 @@
           "type": "string"
         }
       },
+      "code_context": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/CodeIntentContext"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
       "command": {
         "type": [
           "string",
@@ -2210,6 +2352,13 @@
         ]
       },
       "prompt": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "resume_provider_token": {
+        "description": "Optional ACP wire `sessionId` to resume (from a prior `RecoveryDisposition::ResumeSupported`). When omitted but `work_id` is set, the daemon looks up the latest resume token on that work item.",
         "type": [
           "string",
           "null"
@@ -2231,9 +2380,100 @@
             "type": "null"
           }
         ]
+      },
+      "work_id": {
+        "description": "Optional Forge undertaking binding (`/v1/forge/items/{id}`). When set, the ACP session runs inside the governed worktree and reports leases.",
+        "type": [
+          "string",
+          "null"
+        ]
       }
     },
     "definitions": {
+      "CodeIntentContext": {
+        "description": "Bounded, user-intent-oriented context carried from the permanent Code workspace into an external coding-agent prompt. Paths are relative to the governed Forge worktree; the daemon remains authoritative for the cwd.",
+        "type": "object",
+        "properties": {
+          "active_path": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "containing_symbol": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "cursor_line": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "diagnostics": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "last_verification": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "open_files": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "outcome": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "project_title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "selected_text": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "selection_end_line": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "selection_start_line": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "work_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
       "TurnSurfaceContext": {
         "type": "object",
         "properties": {
@@ -2297,6 +2537,13 @@
       "phase": {
         "type": "string"
       },
+      "resumed": {
+        "description": "True when the session was attached via ACP `session/resume` (or load).",
+        "type": [
+          "boolean",
+          "null"
+        ]
+      },
       "runtime": {
         "type": "string"
       },
@@ -2308,6 +2555,12 @@
       },
       "stream_url": {
         "type": "string"
+      },
+      "work_id": {
+        "type": [
+          "string",
+          "null"
+        ]
       }
     }
   },

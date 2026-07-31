@@ -11,6 +11,7 @@ describe("resolveSummonToolbarSurface", () => {
     expect(resolveSummonToolbarSurface("web", "notes")).toBe("web");
     expect(resolveSummonToolbarSurface("calendar", "scripts")).toBe("calendar");
     expect(resolveSummonToolbarSurface("work", "notes")).toBe("work");
+    expect(resolveSummonToolbarSurface("code", "notes")).toBe("code");
     expect(resolveSummonToolbarSurface("profiles", "notes")).toBe("profiles");
   });
 
@@ -21,6 +22,7 @@ describe("resolveSummonToolbarSurface", () => {
     expect(resolveSummonToolbarSurface("library", "schedules")).toBe("automations");
     expect(resolveSummonToolbarSurface("workshop", "flows")).toBe("automations");
     expect(resolveSummonToolbarSurface("automations", "history")).toBe("automations");
+    expect(resolveSummonToolbarSurface("code", "code")).toBe("code");
   });
 
   it("prefers open LME tab kind over stale explorer mode", () => {
@@ -34,10 +36,10 @@ describe("resolveSummonToolbarSurface", () => {
     expect(resolveSummonToolbarSurface("workshop", "notes", "flow")).toBe(
       "automations",
     );
+    expect(resolveSummonToolbarSurface("library", "notes", "code")).toBe("code");
   });
 
   it("returns null for surfaces without list chrome", () => {
     expect(resolveSummonToolbarSurface("runtime", "notes")).toBeNull();
   });
 });
-

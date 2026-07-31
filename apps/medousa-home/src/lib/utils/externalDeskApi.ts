@@ -20,14 +20,14 @@ export async function readExternalFile(path: string): Promise<ExternalFilePayloa
   return invoke<ExternalFilePayload>("external_desk_read_file", { path });
 }
 
-export async function pickExternalFolder(): Promise<string | null> {
+export async function pickExternalFolder(title = "Choose a folder"): Promise<string | null> {
   if (!isTauri()) return null;
   try {
     const { open } = await import("@tauri-apps/plugin-dialog");
     const selected = await open({
       directory: true,
       multiple: false,
-      title: "Pin a folder to your desk",
+      title,
     });
     if (!selected) return null;
     return Array.isArray(selected) ? selected[0] ?? null : selected;

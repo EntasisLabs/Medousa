@@ -147,7 +147,7 @@
   async function restartWorkshopEngine() {
     if (!isTauri() || mobile) return;
     const ok = window.confirm(
-      "Restart the workshop engine? Active chats and tools will pause until it comes back.",
+      "Restart the workshop engine and its code and shell services? Active chats, terminals, and tools will pause until they come back.",
     );
     if (!ok) return;
     restartingEngine = true;

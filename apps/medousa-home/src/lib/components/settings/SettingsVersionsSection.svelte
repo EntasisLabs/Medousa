@@ -302,13 +302,13 @@
     display: none;
   }
 
-  .versions-more-chevron {
+  :global(.versions-more-chevron) {
     flex-shrink: 0;
     color: rgb(var(--color-surface-500));
     transition: transform 140ms ease;
   }
 
-  .versions-more[open] .versions-more-chevron {
+  .versions-more[open] :global(.versions-more-chevron) {
     transform: rotate(180deg);
   }
 

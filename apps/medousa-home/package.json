@@ -1,6 +1,6 @@
 {
   "name": "medousa-home",
-  "version": "0.6.1",
+  "version": "0.7.0",
   "description": "Medousa — Life Manageable",
   "type": "module",
   "scripts": {
@@ -32,7 +32,12 @@
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.3",
     "@codemirror/commands": "^6.10.3",
+    "@codemirror/lang-json": "^6.0.2",
     "@codemirror/lang-markdown": "^6.5.1",
+    "@codemirror/lang-python": "^6.2.1",
+    "@codemirror/lang-rust": "^6.0.2",
+    "@codemirror/lang-xml": "^6.1.0",
+    "@codemirror/lang-yaml": "^6.1.3",
     "@codemirror/language": "^6.12.3",
     "@codemirror/lint": "^6.9.7",
     "@codemirror/lsp-client": "^6.2.5",
@@ -58,25 +63,28 @@
     "@tiptap/markdown": "^3.28.0",
     "@tiptap/pm": "^3.28.0",
     "@tiptap/starter-kit": "^3.28.0",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/addon-web-links": "^0.12.0",
+    "@xterm/xterm": "^6.0.0",
     "codemirror": "^6.0.2",
     "d3-scale": "^4.0.2",
     "d3-shape": "^3.2.0",
     "docx": "^9.7.1",
-    "dompurify": "^3.4.8",
+    "dompurify": "^3.4.12",
     "highlight.js": "^11.11.1",
-    "html2pdf.js": "^0.10.2",
+    "html2pdf.js": "^0.14.0",
     "hyperformula": "^3.3.0",
     "layercake": "^10.0.3",
     "marked": "^18.0.5",
     "mermaid": "^11.15.0",
-    "tauri-plugin-mobile-push-api": "^0.1.4",
-    "xlsx": "^0.18.5"
+    "read-excel-file": "^9.3.5",
+    "tauri-plugin-mobile-push-api": "^0.1.4"
   },
   "devDependencies": {
     "@skeletonlabs/skeleton": "^2.10.3",
     "@skeletonlabs/tw-plugin": "^0.4.0",
     "@sveltejs/adapter-static": "^3.0.6",
-    "@sveltejs/kit": "^2.9.0",
+    "@sveltejs/kit": "^2.70.1",
     "@sveltejs/vite-plugin-svelte": "^5.0.0",
     "@tailwindcss/forms": "^0.5.10",
     "@tauri-apps/cli": "^2",
@@ -86,12 +94,17 @@
     "@types/node": "^26.1.1",
     "autoprefixer": "^10.4.21",
     "happy-dom": "^20.10.6",
-    "postcss": "^8.5.3",
+    "postcss": "^8.5.18",
     "svelte": "^5.0.0",
     "svelte-check": "^4.0.0",
     "tailwindcss": "^3.4.17",
     "typescript": "~5.6.2",
     "vite": "^6.0.3",
     "vitest": "^3.2.6"
+  },
+  "overrides": {
+    "cookie": "^0.7.2",
+    "jspdf": "^4.2.1",
+    "postcss": "^8.5.18"
   }
 }

@@ -8,12 +8,14 @@
 # engine = medousa + medousa_daemon + medousa_cli + medousa_tui
 
 [packages]
-engine = "0.6.0"
-adapter-telegram = "0.4.1"
-adapter-discord = "0.4.1"
-adapter-slack = "0.4.1"
-adapter-whatsapp = "0.4.1"
-mcp-gateway = "0.4.1"
-local-brain = "0.4.1"
-desktop = "0.6.1"
-installer = "0.4.1"
+engine = "0.7.0"
+adapter-telegram = "0.7.0"
+adapter-discord = "0.7.0"
+adapter-slack = "0.7.0"
+adapter-whatsapp = "0.7.0"
+mcp-gateway = "0.7.0"
+coding-engine = "0.7.0"
+shell-session = "0.7.0"
+local-brain = "0.7.0"
+desktop = "0.7.0"
+installer = "0.7.0"
