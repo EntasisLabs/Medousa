@@ -28,9 +28,14 @@ export async function openUndertakingLocation(
   const path = rawPath.replace(/^\.\//, "");
 
   const known = undertakings.items.find((item) => item.id === workId);
-  await lmeWorkspace.openCodeWorkspace(workId, known?.title);
+  if (undertakings.detail?.id !== workId) {
+    await undertakings.select(workId);
+  }
   await codeWorkspace.hydrate(workId);
-  await codeWorkspace.open(workId, path, intent.line);
+  await lmeWorkspace.openCodeFile(workId, path, {
+    line: intent.line,
+    projectTitle: known?.title,
+  });
   undertakings.setSelection({
     path,
     line: intent.line && intent.line > 0 ? Math.floor(intent.line) : null,

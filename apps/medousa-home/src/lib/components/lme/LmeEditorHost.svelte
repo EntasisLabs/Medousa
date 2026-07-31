@@ -197,7 +197,12 @@
       </div>
     {:else if active.kind === "code"}
       <div class="relative z-10 flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-        <UndertakingsPanel showBrowser={false} />
+        <UndertakingsPanel
+          showBrowser={false}
+          workId={active.workId}
+          resource={active.resource}
+          interactive={interactive}
+        />
       </div>
     {:else if active.kind === "deck"}
       <div class="relative z-10 flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">

@@ -30,6 +30,7 @@
   import { openUndertakingLocation } from "$lib/utils/undertakingLocation";
   import { undertakings } from "$lib/stores/undertakings.svelte";
   import { codeWorkspace } from "$lib/stores/codeWorkspace.svelte";
+  import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
   import {
     buildCodeSourceTreeAsync,
     flattenCodeSourceTree,
@@ -224,8 +225,7 @@
       const source = await createUndertakingSource(workId, { path, ...lease });
       creatingPath = false;
       newPath = "";
-      await codeWorkspace.open(workId, source.path, 1);
-      undertakings.setSelection({ path: source.path, line: 1, entityId: null });
+      await openUndertakingLocation({ workId, path: source.path, line: 1 });
       await load(false, true);
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
@@ -258,6 +258,7 @@
         ...lease,
       });
       codeWorkspace.replacePath(workId, path, renamed);
+      await lmeWorkspace.replaceCodeFile(workId, path, renamed.path);
       renamingPath = null;
       renameDestination = "";
       undertakings.setSelection({ path: renamed.path, line: 1, entityId: null });
@@ -290,6 +291,7 @@
         expected_digest: source.digest,
         ...lease,
       });
+      await lmeWorkspace.closeCodeFile(workId, path);
       codeWorkspace.removePath(workId, path);
       deletedFile = source;
       undertakings.setSelection({ path: null, line: null, entityId: null });
@@ -316,8 +318,7 @@
         ...lease,
       });
       deletedFile = null;
-      await codeWorkspace.open(workId, restored.path, 1);
-      undertakings.setSelection({ path: restored.path, line: 1, entityId: null });
+      await openUndertakingLocation({ workId, path: restored.path, line: 1 });
       await load(false, true);
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);

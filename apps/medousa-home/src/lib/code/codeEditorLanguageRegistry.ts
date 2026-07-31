@@ -336,23 +336,27 @@ export function buildCodeEditorLanguageExtensions(
     case "shell":
       return [graphemeEditorTheme, shellLanguageSupport];
     case "javascript":
-      return [graphemeEditorTheme, javascript()];
+      return [graphemeEditorTheme, javascript(), medousaSyntaxHighlighting];
     case "typescript":
-      return [graphemeEditorTheme, javascript({ typescript: true })];
+      return [
+        graphemeEditorTheme,
+        javascript({ typescript: true }),
+        medousaSyntaxHighlighting,
+      ];
     case "python":
-      return [graphemeEditorTheme, python()];
+      return [graphemeEditorTheme, python(), medousaSyntaxHighlighting];
     case "rust":
-      return [graphemeEditorTheme, rust()];
+      return [graphemeEditorTheme, rust(), medousaSyntaxHighlighting];
     case "yaml":
-      return [graphemeEditorTheme, yaml()];
+      return [graphemeEditorTheme, yaml(), medousaSyntaxHighlighting];
     case "json":
-      return [graphemeEditorTheme, json()];
+      return [graphemeEditorTheme, json(), medousaSyntaxHighlighting];
     case "html":
-      return [graphemeEditorTheme, html()];
+      return [graphemeEditorTheme, html(), medousaSyntaxHighlighting];
     case "css":
-      return [graphemeEditorTheme, css()];
+      return [graphemeEditorTheme, css(), medousaSyntaxHighlighting];
     case "xml":
-      return [graphemeEditorTheme, xml()];
+      return [graphemeEditorTheme, xml(), medousaSyntaxHighlighting];
     case "plaintext":
       return [graphemeEditorTheme, medousaSyntaxHighlighting];
     default:

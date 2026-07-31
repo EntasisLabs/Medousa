@@ -3,6 +3,8 @@
   import { graphemeScriptEditor } from "$lib/stores/graphemeScriptEditor.svelte";
   import { layout } from "$lib/stores/layout.svelte";
   import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
+  import { codeEditorStatus } from "$lib/stores/codeEditorStatus.svelte";
+  import { undertakings } from "$lib/stores/undertakings.svelte";
   import { vault } from "$lib/stores/vault.svelte";
   import { vaultVersions } from "$lib/stores/vaultVersions.svelte";
   import { workshop } from "$lib/stores/workshop.svelte";
@@ -25,6 +27,25 @@
       (activeLme?.kind === "script" ||
         (lmeWorkspace.explorerMode === "scripts" && activeLme?.kind !== "note")),
   );
+
+  const codeStatus = $derived(codeEditorStatus.snapshot);
+  const showCode = $derived(
+    activeLme?.kind === "code" &&
+      activeLme.resource.kind === "file" &&
+      codeStatus?.workId === activeLme.workId &&
+      codeStatus.path === activeLme.resource.path,
+  );
+  const codeReview = $derived(
+    activeLme?.kind === "code" &&
+      activeLme.resource.kind === "review" &&
+      undertakings.review?.work_id === activeLme.workId
+      ? undertakings.review
+      : null,
+  );
+
+  function showCodeProblems() {
+    window.dispatchEvent(new CustomEvent("medousa-code-show-problems"));
+  }
 
   const noteSummary = $derived(formatVaultNoteStats(vaultNoteStats(vault.content)));
   const saveWhisper = $derived(vault.saveWhisper());
@@ -91,7 +112,74 @@
   });
 </script>
 
-{#if showVault}
+{#if codeReview}
+  <div class="status-contextual status-contextual--code" aria-label="Code review status">
+    <span class="status-contextual-item">
+      {codeReview.changed_files.length}
+      {codeReview.changed_files.length === 1 ? "changed file" : "changed files"}
+    </span>
+    <span class="status-contextual-sep" aria-hidden="true">·</span>
+    <span
+      class="status-contextual-item"
+      class:text-warning-400={codeReview.synthesis.risk !== "low"}
+    >
+      {codeReview.synthesis.risk === "low"
+        ? "Low risk"
+        : codeReview.synthesis.risk_summary}
+    </span>
+    {#if codeReview.synthesis.verification}
+      <span class="status-contextual-sep" aria-hidden="true">·</span>
+      <span
+        class="status-contextual-item"
+        class:text-success-400={codeReview.synthesis.verification.success}
+        class:text-error-400={!codeReview.synthesis.verification.success}
+      >
+        {codeReview.synthesis.verification.success ? "Checks passed" : "Checks failed"}
+      </span>
+    {/if}
+  </div>
+{:else if showCode && codeStatus}
+  <div class="status-contextual status-contextual--code" aria-label="Code editor status">
+    <span class="status-contextual-item font-mono tabular-nums">
+      Ln {codeStatus.line}/{codeStatus.totalLines}, Col {codeStatus.column}
+    </span>
+    <span class="status-contextual-sep" aria-hidden="true">·</span>
+    <span class="status-contextual-item">{codeStatus.indentation}</span>
+    <span class="status-contextual-sep" aria-hidden="true">·</span>
+    <span class="status-contextual-item font-mono">{codeStatus.language}</span>
+    <span class="status-contextual-sep" aria-hidden="true">·</span>
+    <button
+      type="button"
+      class="status-contextual-action"
+      class:text-warning-400={codeStatus.issueCount > 0}
+      title="Show issues"
+      onclick={showCodeProblems}
+    >
+      {codeStatus.issueCount} {codeStatus.issueCount === 1 ? "issue" : "issues"}
+    </button>
+    <span class="status-contextual-sep" aria-hidden="true">·</span>
+    <span class="status-contextual-item">{codeStatus.control}</span>
+    {#if codeStatus.saving || codeStatus.saveWhisper || codeStatus.dirty}
+      <span class="status-contextual-sep" aria-hidden="true">·</span>
+      <span class="status-contextual-whisper">
+        {codeStatus.saving
+          ? "Saving…"
+          : codeStatus.saveWhisper || "Unsaved"}
+      </span>
+    {/if}
+    {#if codeStatus.languageState !== "ready"}
+      <span class="status-contextual-sep" aria-hidden="true">·</span>
+      <span
+        class="status-contextual-item"
+        class:text-warning-400={codeStatus.languageState === "editing-only"}
+      >
+        {codeStatus.languageState === "connecting"
+          ? "Language starting…"
+          : "Editing only"}
+      </span>
+    {/if}
+  </div>
+{:else if showVault}
   <div class="status-contextual status-contextual--vault" aria-label="Note status">
     <span class="status-contextual-item truncate">{noteSummary}</span>
     {#if versionsDirtyLabel}
@@ -149,6 +237,10 @@
     color: rgb(var(--color-surface-500));
     overflow: hidden;
     text-align: right;
+  }
+
+  .status-contextual--code {
+    max-width: min(38rem, 55vw);
   }
 
   .status-contextual-item {

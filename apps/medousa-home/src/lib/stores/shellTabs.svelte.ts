@@ -937,6 +937,9 @@ export class ShellTabsStore {
   close(tabId: string) {
     const tab = this.tabs.find((entry) => entry.id === tabId);
     if (!tab) return;
+    if (tab.kind === "lme" && !lmeWorkspace.confirmCloseTab(tab.lmeTabId)) {
+      return;
+    }
     const host = this.groupForTab(tabId);
     const wasActive = this.activeTabId === tabId && host?.id === this.activeGroupId;
     this.removeTabFromAllGroups(tabId);
@@ -949,7 +952,10 @@ export class ShellTabsStore {
           (entry) => entry.kind === "lme" && entry.lmeTabId === tab.lmeTabId,
         );
         if (!stillOpen) {
-          void lmeWorkspace.closeTab(tab.lmeTabId, { activateNext: false });
+          void lmeWorkspace.closeTab(tab.lmeTabId, {
+            activateNext: false,
+            confirmed: true,
+          });
         }
       } else if (tab.kind === "web") {
         const stillOpen = this.tabs.some(

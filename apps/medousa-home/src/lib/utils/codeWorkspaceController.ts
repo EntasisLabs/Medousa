@@ -137,7 +137,9 @@ export function openCodeWorkspaceSession(workId: string): Promise<LandCodeResult
   const trace = traceCodeWorkspaceStart("open", id);
   const pending = (async () => {
     const selectTrace = traceCodeWorkspaceStart("select", id);
-    await undertakings.select(id);
+    if (undertakings.detail?.id !== id) {
+      await undertakings.select(id);
+    }
     traceCodeWorkspaceEnd(selectTrace);
     const result = await landCodeWorkingSet(id);
     traceCodeWorkspaceEnd(trace, result.ok ? `opened ${result.path}` : "failed");

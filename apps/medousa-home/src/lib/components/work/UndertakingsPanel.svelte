@@ -1,7 +1,16 @@
 <script lang="ts">
-  import { onDestroy, onMount, tick } from "svelte";
+  import { onMount, tick } from "svelte";
+  import {
+    GitPullRequestArrow,
+    MoreHorizontal,
+    Play,
+    Square,
+  } from "@lucide/svelte";
   import { undertakings } from "$lib/stores/undertakings.svelte";
-  import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
+  import {
+    lmeWorkspace,
+    type CodeWorkspaceResource,
+  } from "$lib/stores/lmeWorkspace.svelte";
   import {
     sealLease,
     prepareExecutorHandoff,
@@ -59,9 +68,19 @@
   interface Props {
     /** The Workspace Code explorer owns creation and undertaking selection. */
     showBrowser?: boolean;
+    /** Shell-bound Code resource. The shell tab, not this panel, owns navigation. */
+    workId?: string;
+    resource?: CodeWorkspaceResource;
+    /** Background split panes render but must not own global interactions. */
+    interactive?: boolean;
   }
 
-  let { showBrowser = true }: Props = $props();
+  let {
+    showBrowser = true,
+    workId: boundWorkId = "",
+    resource = { kind: "workspace" },
+    interactive = true,
+  }: Props = $props();
 
   let title = $state("");
   let brief = $state("");
@@ -95,8 +114,20 @@
   let providerLink = $state("");
   let providerOpen = $state(false);
 
-  const detail = $derived(undertakings.detail);
-  const review = $derived(undertakings.review);
+  const detail = $derived(
+    !boundWorkId || undertakings.detail?.id === boundWorkId
+      ? undertakings.detail
+      : null,
+  );
+  const review = $derived(
+    !boundWorkId || undertakings.review?.work_id === boundWorkId
+      ? undertakings.review
+      : null,
+  );
+  const reviewCanvas = $derived(resource.kind === "review");
+  const resourcePath = $derived(
+    resource.kind === "file" ? resource.path : null,
+  );
   const actions = $derived(detail?.allowed_actions);
   const activeItems = $derived(
     undertakings.items.filter(
@@ -113,8 +144,6 @@
   }
 
   onMount(() => {
-    void undertakings.refreshList();
-    undertakings.startPolling();
     // Default repo path only when Home shares the workshop disk.
     if (isCoLocatedWorkshop()) {
       const root = vault.activeVaultRoot;
@@ -124,7 +153,12 @@
     if (savedAgent === "cursor" || savedAgent === "codex") preferredCodeAgent = savedAgent;
   });
 
-  onDestroy(() => undertakings.stopPolling());
+  $effect(() => {
+    if (!interactive) return;
+    void undertakings.refreshList();
+    undertakings.startPolling();
+    return () => undertakings.stopPolling();
+  });
 
   async function onCreate() {
     if (!title.trim() || !repoPath.trim()) return;
@@ -173,14 +207,11 @@
 
   async function toggleWorldFromEditor() {
     worldMode = !worldMode;
-    if (!worldMode) return;
-    await tick();
-    worldEl?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }
 
   async function openReviewFromEditor() {
-    await tick();
-    reviewEl?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    if (!detail) return;
+    await lmeWorkspace.openCodeReview(detail.id, `Review · ${detail.title}`);
   }
 
   async function startAgent(runtime: "codex" | "cursor") {
@@ -243,6 +274,14 @@
     await lmeWorkspace.openCodeWorkspace(id, item?.title);
   }
 
+  async function provisionAndOpenProject(workId: string) {
+    await undertakings.provision(workId);
+    const landed = await landCodeWorkingSet(workId);
+    if (landed.ok) {
+      await lmeWorkspace.openCodeFile(workId, landed.path, { line: 1 });
+    }
+  }
+
   async function revealWorktree() {
     const worktree = detail?.environment?.worktree?.trim();
     if (!worktree) return;
@@ -268,12 +307,6 @@
   const agentLabel = $derived(
     undertakings.active?.executorKind === "cursor" ? "Cursor" : "Codex",
   );
-  const dirtyTabCount = $derived(
-    detail
-      ? codeWorkspace.tabsFor(detail.id).filter((tab) => codeWorkspace.isDirty(tab)).length
-      : 0,
-  );
-
   async function doSeal() {
     const leaseId = undertakings.active?.leaseId;
     const generation = undertakings.active?.leaseGeneration;
@@ -467,7 +500,7 @@
       });
       undertakings.setActiveFromItem(result.item);
       await undertakings.refreshDetail();
-      await codeWorkspace.open(detail!.id, result.path, 1);
+      await lmeWorkspace.openCodeFile(detail!.id, result.path, { line: 1 });
       undertakings.setSelection({ path: result.path, line: 1, entityId: null });
     });
   }
@@ -694,7 +727,7 @@
       </ul>
     </aside>{/if}
 
-    <section class="flex min-h-0 flex-col {showBrowser ? 'gap-2 overflow-auto px-1 py-2' : 'overflow-hidden'}">
+    <section class="relative flex min-h-0 flex-col {showBrowser ? 'gap-2 overflow-auto px-1 py-2' : 'overflow-hidden'}">
       {#if !detail}
         <div class="flex min-h-48 flex-1 items-center justify-center px-1 py-2">
           <div class="max-w-sm text-center">
@@ -709,14 +742,8 @@
           <div class="min-w-0 flex-1">
             <h3 class="truncate text-sm font-semibold text-surface-50" title={detail.brief || detail.title}>{detail.title}</h3>
             {#if detail.environment}
-              <p class="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-surface-500">
-                <span class="font-medium text-surface-300">{humanPhaseLabel(detail.human_phase)}</span>
-                <span aria-hidden="true">·</span>
-                <span>{agentRunning ? `${agentLabel} editing` : undertakings.active?.leaseId ? "You editing" : "Ready"}</span>
-                {#if dirtyTabCount > 0}
-                  <span aria-hidden="true">·</span>
-                  <span class="text-primary-300/90">{dirtyTabCount} unsaved</span>
-                {/if}
+              <p class="mt-0.5 text-[10px] text-surface-500">
+                {humanPhaseLabel(detail.human_phase)}
               </p>
             {:else}
               {#if detail.brief && detail.brief.trim() !== detail.title.trim()}
@@ -735,8 +762,7 @@
                 class="rounded-md bg-primary-500/80 px-3 py-1.5 text-xs font-medium text-surface-50 disabled:opacity-40"
                 disabled={busy}
                 onclick={() => void run(async () => {
-                  await undertakings.provision(detail.id);
-                  await landCodeWorkingSet(detail.id);
+                  await provisionAndOpenProject(detail.id);
                 })}
               >
                 Set up project
@@ -744,34 +770,40 @@
             {:else if actions?.seal.allowed}
               <button
                 type="button"
-                class="rounded-md border border-surface-500/40 px-2.5 py-1 text-[10px] text-surface-200 hover:bg-surface-800 disabled:opacity-40"
+                class="scripts-workbench-toolbar-btn flex items-center gap-1 text-amber-300/85"
                 disabled={busy}
                 onclick={() => void doSeal()}
+                title="Review changes"
               >
-                Review changes
+                <GitPullRequestArrow size={14} strokeWidth={1.75} />
+                <span class="hidden sm:inline">Review</span>
               </button>
             {/if}
 
             {#if agentRunning}
               <button
                 type="button"
-                class="rounded-md border border-amber-500/40 px-2.5 py-1 text-[10px] text-amber-100 hover:bg-amber-950/40 disabled:opacity-40"
+                class="scripts-workbench-toolbar-btn flex items-center gap-1 text-amber-300"
                 disabled={busy}
                 onclick={() => void interruptAgent()}
-              >Stop {agentLabel}</button>
+                title={`Stop ${agentLabel}`}
+              ><Square size={13} /><span class="hidden sm:inline">Stop</span></button>
               <button
                 type="button"
-                class="rounded-md bg-primary-500/80 px-2.5 py-1 text-[10px] font-medium text-surface-50 disabled:opacity-40"
+                class="scripts-workbench-toolbar-btn scripts-workbench-toolbar-btn-primary flex items-center gap-1"
                 disabled={busy}
                 onclick={() => void reclaimHuman()}
-              >Resume editing</button>
+                title="Resume editing"
+              ><Play size={14} /><span class="hidden sm:inline">Resume</span></button>
             {/if}
 
             <details class="relative">
               <summary
-                class="cursor-pointer list-none rounded-md border border-surface-500/45 px-2.5 py-1.5 text-xs text-surface-300 [&::-webkit-details-marker]:hidden"
+                class="scripts-workbench-toolbar-btn cursor-pointer list-none [&::-webkit-details-marker]:hidden"
+                title="Project actions"
+                aria-label="Project actions"
               >
-                More ···
+                <MoreHorizontal size={15} strokeWidth={1.75} />
               </summary>
               <div
                 class="absolute right-0 top-full z-30 mt-1 w-52 rounded-lg border border-surface-500/40 bg-surface-900 p-1.5 shadow-xl"
@@ -834,9 +866,12 @@
           </div>
         </div>
 
-        {#if detail.environment}
+        {#if detail.environment && !reviewCanvas}
           <CodeSourceEditor
             fill={!showBrowser}
+            workId={detail.id}
+            {resourcePath}
+            {interactive}
             worldOpen={worldMode}
             reviewAvailable={Boolean(review && (detail.human_phase === "review" || review.evidence_id))}
             terminalAvailable={Boolean(actions?.open_terminal.allowed)}
@@ -846,14 +881,13 @@
             onOpenTerminal={() => void openTerminalTracked()}
             onProvision={async () => {
               await run(async () => {
-                await undertakings.provision(detail.id);
-                await landCodeWorkingSet(detail.id);
+                await provisionAndOpenProject(detail.id);
               });
             }}
             onHandoffToAgent={handoffToAgent}
             onReclaimHuman={reclaimHuman}
           />
-        {:else if actions?.provision.allowed}
+        {:else if !reviewCanvas && actions?.provision.allowed}
           <div class="flex min-h-48 flex-1 items-center justify-center p-6 text-center">
             <div class="max-w-sm">
               <p class="text-xs font-medium text-surface-300">Set up this project</p>
@@ -865,13 +899,12 @@
                 class="mt-3 rounded bg-primary-500/80 px-3 py-1.5 text-[11px] font-medium text-surface-50 disabled:opacity-40"
                 disabled={busy}
                 onclick={() => void run(async () => {
-                  await undertakings.provision(detail.id);
-                  await landCodeWorkingSet(detail.id);
+                  await provisionAndOpenProject(detail.id);
                 })}
               >Set up project</button>
             </div>
           </div>
-        {:else if !actions?.provision.allowed}
+        {:else if !reviewCanvas && !actions?.provision.allowed}
           <div class="flex min-h-48 flex-1 items-center justify-center p-6 text-center">
             <p class="max-w-sm text-xs text-surface-500">
               {humanPhaseGuidance(detail.human_phase)}
@@ -879,8 +912,8 @@
           </div>
         {/if}
 
-        {#if review && (detail.human_phase === "review" || review.evidence_id)}
-          <div bind:this={reviewEl} class="mt-2 rounded-lg border border-primary-500/30 bg-surface-900/50 p-3 {showBrowser ? '' : 'max-h-[45%] shrink-0 overflow-auto'}">
+        {#if reviewCanvas && review && (detail.human_phase === "review" || review.evidence_id)}
+          <div bind:this={reviewEl} class="min-h-0 flex-1 overflow-auto bg-surface-950/20 p-4">
             <div class="flex items-center justify-between gap-2">
               <div>
                 <h4 class="text-sm font-semibold text-surface-50">Review changes</h4>
@@ -1058,6 +1091,15 @@
               </p>
             {/if}
           </div>
+        {:else if reviewCanvas}
+          <div class="flex min-h-0 flex-1 items-center justify-center p-8 text-center">
+            <div class="max-w-sm">
+              <p class="text-sm font-medium text-surface-200">Nothing to review yet</p>
+              <p class="mt-1 text-xs leading-relaxed text-surface-500">
+                Keep working in a source tab. Review will become available when the project has a sealed change set.
+              </p>
+            </div>
+          </div>
         {/if}
 
         {#if exportOpen}
@@ -1106,13 +1148,16 @@
         {/if}
 
         {#if worldMode}
-          <div bind:this={worldEl} class="rounded-lg border border-surface-500/40 p-3 {showBrowser ? '' : 'max-h-[45%] shrink-0 overflow-auto'}">
+          <div
+            bind:this={worldEl}
+            class="absolute inset-y-0 right-0 z-30 w-[min(32rem,100%)] overflow-auto border-l border-surface-500/40 bg-surface-950/98 p-3 shadow-2xl"
+          >
             <div class="flex flex-wrap items-center justify-between gap-2">
               <div>
                 <h4 class="text-sm font-semibold">Understand this code</h4>
                 <p class="text-[10px] text-surface-500">See relationships and possible impact without leaving your work</p>
               </div>
-              <div class="flex gap-1 text-[10px]">
+              <div class="flex items-center gap-1 text-[10px]">
                 <button
                   type="button"
                   class="rounded px-2 py-0.5 {worldSnapshot === 'baseline'
@@ -1137,6 +1182,13 @@
                 >
                   Current
                 </button>
+                <button
+                  type="button"
+                  class="ml-1 rounded p-1 text-surface-500 hover:bg-surface-800 hover:text-surface-200"
+                  aria-label="Close code understanding"
+                  title="Close"
+                  onclick={() => (worldMode = false)}
+                >×</button>
               </div>
             </div>
             <p class="mt-1 text-[10px] text-surface-500">This view only explains the code; it never changes files.</p>

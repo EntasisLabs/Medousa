@@ -4,7 +4,6 @@
     CircleAlert,
     ArrowLeft,
     ArrowRight,
-    Columns2,
     FileCode2,
     ListTree,
     LoaderCircle,
@@ -13,17 +12,16 @@
     SquareTerminal,
     GitPullRequestArrow,
     Orbit,
+    Play,
     Sparkles,
     X,
     Search,
   } from "@lucide/svelte";
   import CodeMirrorHost from "$lib/components/code/CodeMirrorHost.svelte";
   import CodeBreadcrumbs from "$lib/components/code/CodeBreadcrumbs.svelte";
-  import CodeDocumentTabStrip from "$lib/components/code/CodeDocumentTabStrip.svelte";
   import CodeEditorContextMenu, {
     type CodeEditorMenuAction,
   } from "$lib/components/code/CodeEditorContextMenu.svelte";
-  import CodeSplitEditorPane from "$lib/components/work/CodeSplitEditorPane.svelte";
   import CodeTerminalDock from "$lib/components/work/CodeTerminalDock.svelte";
   import { openTrackedTerminal } from "$lib/utils/undertakingWorkspace";
   import type { LSPClient } from "@codemirror/lsp-client";
@@ -64,6 +62,7 @@
     type ForgeSourceFile,
   } from "$lib/forge";
   import { codeWorkspace, type CodeDocumentTab } from "$lib/stores/codeWorkspace.svelte";
+  import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
   import { undertakings } from "$lib/stores/undertakings.svelte";
   import { settingsNav } from "$lib/stores/settingsNav.svelte";
   import { shellTabs } from "$lib/stores/shellTabs.svelte";
@@ -80,9 +79,13 @@
     writeCodeEditorWordWrap,
   } from "$lib/config/codeEditorPreferences";
   import { codeEditorFind } from "$lib/stores/codeEditorFind.svelte";
+  import { codeEditorStatus } from "$lib/stores/codeEditorStatus.svelte";
 
   interface Props {
     fill?: boolean;
+    workId?: string;
+    resourcePath?: string | null;
+    interactive?: boolean;
     worldOpen?: boolean;
     reviewAvailable?: boolean;
     terminalAvailable?: boolean;
@@ -97,6 +100,9 @@
 
   let {
     fill = false,
+    workId: boundWorkId = "",
+    resourcePath = null,
+    interactive = true,
     worldOpen = false,
     reviewAvailable = false,
     terminalAvailable = false,
@@ -127,7 +133,6 @@
   let problems = $state<ReturnType<CodeMirrorHost["getProblems"]>>([]);
   let symbols = $state<CodeDocumentSymbol[]>([]);
   let symbolsLoading = $state(false);
-  let focusedSide = $state(false);
   let quickOpen = $state(false);
   let quickQuery = $state("");
   let quickFiles = $state<ForgeSourceTreeFile[]>([]);
@@ -154,6 +159,7 @@
   let repairingLanguage = $state(false);
   let lspRetry = $state(0);
   let cursorLine = $state(1);
+  let cursorTotalLines = $state(1);
   let cursorColumn = $state(1);
   let editorSelection = $state<{
     startLine: number;
@@ -167,12 +173,20 @@
   let renameOpen = $state(false);
   let renameDraft = $state("");
   let renameInput = $state<HTMLInputElement | null>(null);
+  const statusOwnerId = `code-editor-${Math.random().toString(36).slice(2)}`;
 
   const context = $derived(undertakings.active);
   const detail = $derived(undertakings.detail);
-  const workId = $derived(detail?.id ?? context?.workId ?? "");
+  const workId = $derived(boundWorkId || detail?.id || context?.workId || "");
   const tabs = $derived(workId ? codeWorkspace.orderedTabsFor(workId) : []);
   const activeTab = $derived.by(() => {
+    if (resourcePath) {
+      return (
+        codeWorkspace.tabs.find(
+          (tab) => tab.work_id === workId && tab.path === resourcePath,
+        ) ?? null
+      );
+    }
     const activeId = codeWorkspace.activeByWorkId[workId];
     return activeId
       ? (codeWorkspace.tabs.find((tab) => tab.tabId === activeId) ?? null)
@@ -185,10 +199,9 @@
   const activeTabLanguage = $derived(activeTab?.language ?? "");
   const activeTabLine = $derived(activeTab?.line ?? null);
   const dirty = $derived(Boolean(activeTab && codeWorkspace.isDirty(activeTab)));
-  const dirtyCount = $derived(tabs.filter((tab) => codeWorkspace.isDirty(tab)).length);
-  const secondaryTab = $derived(codeWorkspace.secondaryFor(workId));
   const editable = $derived(
     Boolean(
+      interactive &&
       context?.workId === workId &&
       context.leaseId &&
       context.leaseGeneration != null,
@@ -197,16 +210,13 @@
   const agentHasControl = $derived(
     Boolean(context?.executorKind && context.executorKind !== "human"),
   );
-  const operatorLabel = $derived.by(() => {
+  const statusControlLabel = $derived.by(() => {
     if (agentHasControl) {
-      return context?.executorKind === "cursor" ? "Cursor editing" : "Codex editing";
+      return context?.executorKind === "cursor" ? "Cursor working" : "Codex working";
     }
+    if (editable && context?.boundTerminalSessionIds.length) return "You + Terminal";
     if (editable) return "You editing";
     return "Ready";
-  });
-  const lastVerifyLabel = $derived.by(() => {
-    if (!taskResult) return null;
-    return `${taskResult.success ? "Passed" : "Failed"} · ${taskResult.task.label}`;
   });
   const landError = $derived(workId ? codeWorkspace.workspaceErrorByWorkId[workId] ?? null : null);
   const needsProvision = $derived(
@@ -352,7 +362,7 @@
   }
 
   async function openTaskLocation(path: string, line: number) {
-    await codeWorkspace.open(workId, path, line);
+    await lmeWorkspace.openCodeFile(workId, path, { line });
     undertakings.setSelection({ path, line, entityId: null });
     await tick();
     editor?.revealLine(line);
@@ -385,8 +395,12 @@
     writeCodeEditorLineNumbers(showLineNumbers);
   }
 
-  function handleCursorChanged(tab: CodeDocumentTab, cursor: { line: number; column: number }) {
+  function handleCursorChanged(
+    tab: CodeDocumentTab,
+    cursor: { line: number; totalLines: number; column: number },
+  ) {
     cursorLine = cursor.line;
+    cursorTotalLines = cursor.totalLines;
     cursorColumn = cursor.column;
     if (linePersistTimer) clearTimeout(linePersistTimer);
     linePersistTimer = setTimeout(() => {
@@ -451,7 +465,7 @@
   async function chooseQuickFile(file = quickResults[quickIndex]) {
     if (!file) return;
     quickOpen = false;
-    const tab = await codeWorkspace.open(workId, file.path, 1);
+    const tab = await lmeWorkspace.openCodeFile(workId, file.path, { line: 1 });
     undertakings.setSelection({ path: file.path, line: 1, entityId: null });
     await tick();
     if (tab) editor?.focusEditor();
@@ -486,7 +500,7 @@
     if (!symbol || !path) return;
     const line = (symbol.location?.range?.start?.line ?? 0) + 1;
     quickOpen = false;
-    const tab = await codeWorkspace.open(workId, path, line);
+    const tab = await lmeWorkspace.openCodeFile(workId, path, { line });
     undertakings.setSelection({ path, line, entityId: null });
     await tick();
     if (tab) editor?.revealLine(line);
@@ -555,28 +569,6 @@
     }
   }
 
-  function activate(tab: CodeDocumentTab) {
-    codeWorkspace.activate(tab.tabId);
-    undertakings.setSelection({ path: tab.path, line: tab.line, entityId: null });
-    void tick().then(() => {
-      if (tab.line) editor?.revealLine(tab.line);
-    });
-  }
-
-  function close(tab: CodeDocumentTab) {
-    if (
-      codeWorkspace.isDirty(tab) &&
-      !window.confirm(`Discard unsaved changes to ${tab.path}?`)
-    ) return;
-    codeWorkspace.close(tab.tabId);
-    const next = codeWorkspace.activeFor(tab.work_id);
-    undertakings.setSelection({
-      path: next?.path ?? null,
-      line: next?.line ?? null,
-      entityId: null,
-    });
-  }
-
   async function reload() {
     const tab = activeTab;
     if (!tab || tab.loading) return;
@@ -609,9 +601,7 @@
 
   function reconcileOpenFiles() {
     const primary = activeTab;
-    const secondary = secondaryTab;
     void reconcileExternal(primary);
-    if (secondary?.tabId !== primary?.tabId) void reconcileExternal(secondary);
   }
 
   function useProjectVersion(tab: CodeDocumentTab) {
@@ -741,29 +731,6 @@
     } finally {
       saving = false;
     }
-  }
-
-  function cycleTab(direction: 1 | -1) {
-    if (tabs.length < 2 || !activeTab) return;
-    const recent = codeWorkspace.recentTabsFor(workId);
-    const index = recent.findIndex((tab) => tab.tabId === activeTab.tabId);
-    const next = recent[(index + direction + recent.length) % recent.length];
-    if (next) activate(next);
-  }
-
-  function tabLabel(tab: CodeDocumentTab): string {
-    if (tabs.filter((entry) => entry.title === tab.title).length < 2) return tab.title;
-    const parts = tab.path.split("/");
-    return parts.slice(-2).join("/");
-  }
-
-  function toggleSplit() {
-    if (secondaryTab) {
-      codeWorkspace.closeSide(workId);
-      return;
-    }
-    const candidate = tabs.find((tab) => tab.tabId !== activeTab?.tabId);
-    if (candidate) codeWorkspace.openToSide(candidate.tabId);
   }
 
   function syncProblems() {
@@ -1028,6 +995,7 @@
     if (!workId || !codeWorkspace.canReopenClosed(workId)) return;
     const tab = await codeWorkspace.reopenClosed(workId);
     if (!tab) return;
+    await lmeWorkspace.openCodeFile(workId, tab.path, { line: tab.line });
     undertakings.setSelection({ path: tab.path, line: tab.line, entityId: null });
     await tick();
     if (tab.line) editor?.revealLine(tab.line);
@@ -1044,7 +1012,7 @@
   }
 
   $effect(() => {
-    if (!workId) return;
+    if (!interactive || !workId) return;
     setActiveCodeInsights(workId, {
       // Cursor/symbol context is captured only at an explicit handoff boundary.
       containing_symbol: null,
@@ -1058,7 +1026,7 @@
   });
 
   $effect(() => {
-    if (!workId) return;
+    if (!interactive || !workId) return;
     const lease =
       context?.workId === workId && context.leaseId && context.leaseGeneration != null
         ? { lease_id: context.leaseId, generation: context.leaseGeneration }
@@ -1070,7 +1038,7 @@
   $effect(() => {
     const id = workId;
     const prepared = Boolean(context?.worktree);
-    if (!id || !prepared) {
+    if (!interactive || !id || !prepared) {
       projectTasks = [];
       selectedTaskId = "";
       return;
@@ -1090,7 +1058,7 @@
 
   $effect(() => {
     const path = activeTabPath;
-    if (!reviewAvailable || !workId || !path) {
+    if (!interactive || !reviewAvailable || !workId || !path) {
       reviewChangedLines = [];
       return;
     }
@@ -1110,7 +1078,12 @@
   $effect(() => {
     void lspRetry;
     const root = workspaceRoot;
-    if (!activeTabId || !root || !languageSupportsLsp(activeTabLanguage)) {
+    if (
+      !interactive ||
+      !activeTabId ||
+      !root ||
+      !languageSupportsLsp(activeTabLanguage)
+    ) {
       lspClient = null;
       lspError = null;
       lspConnecting = false;
@@ -1149,7 +1122,7 @@
     let cleanup = () => {};
     untrack(() => {
       const uri = documentUri;
-      if (!activeTabId || !uri || !lspClient) {
+      if (!interactive || !activeTabId || !uri || !lspClient) {
         languageCapabilities = {};
         editorConventions = {};
         return;
@@ -1170,7 +1143,7 @@
 
   $effect(() => {
     const tabId = activeTabId;
-    if (!tabId) return;
+    if (!interactive || !tabId) return;
     // The cleanup snapshots find state back into this map. Keep both the read
     // and write outside the effect dependency graph to avoid self-invalidation.
     const shouldOpen = untrack(() => findOpenByTabId[tabId] ?? false);
@@ -1192,6 +1165,7 @@
     const initialLine = untrack(() => activeTabLine);
     editorSelection = null;
     cursorLine = initialLine ?? 1;
+    cursorTotalLines = 1;
     cursorColumn = 1;
     if (initialLine) {
       void tick().then(() => {
@@ -1203,7 +1177,7 @@
   $effect(() => {
     const leaseId = context?.workId === workId ? context.leaseId : null;
     const generation = context?.workId === workId ? context.leaseGeneration : null;
-    if (!leaseId || generation == null) return;
+    if (!interactive || !leaseId || generation == null) return;
     const beat = async () => {
       try {
         await heartbeatLease(leaseId, generation);
@@ -1217,34 +1191,54 @@
     return () => clearInterval(timer);
   });
 
+  $effect(() => {
+    if (!interactive || !activeTab) {
+      codeEditorStatus.clear(statusOwnerId);
+      return;
+    }
+    codeEditorStatus.publish(statusOwnerId, {
+      workId,
+      path: activeTab.path,
+      line: cursorLine,
+      totalLines: cursorTotalLines,
+      column: cursorColumn,
+      language: activeTab.language,
+      indentation: indentStatusLabel,
+      issueCount: Math.max(problems.length, workspaceProblemRows.length),
+      dirty,
+      saving,
+      saveWhisper,
+      control: statusControlLabel,
+      languageState: lspConnecting
+        ? "connecting"
+        : lspError
+          ? "editing-only"
+          : "ready",
+    });
+  });
+
+  $effect(() => {
+    if (!interactive) return;
+    const onShowProblems = () => void showProblems();
+    window.addEventListener("medousa-code-show-problems", onShowProblems);
+    return () => {
+      window.removeEventListener("medousa-code-show-problems", onShowProblems);
+    };
+  });
+
   onDestroy(() => {
     if (linePersistTimer) clearTimeout(linePersistTimer);
+    codeEditorStatus.clear(statusOwnerId);
   });
 </script>
 
 <section class="flex flex-col overflow-hidden rounded-lg border border-surface-500/35 bg-surface-950/45 {fill ? 'min-h-0 flex-1' : 'min-h-[26rem]'}">
-  {#if tabs.length > 0}
-    <CodeDocumentTabStrip
-      {tabs}
-      activeTabId={activeTab?.tabId ?? null}
-      {tabLabel}
-      onActivate={activate}
-      onClose={close}
-      onOpenToSide={(tab) => codeWorkspace.openToSide(tab.tabId)}
-      onCopyPath={(tab) => void copyText(
-        context?.worktree
-          ? `${context.worktree.replace(/[\\/]$/, "")}/${tab.path}`
-          : tab.path,
-      )}
-    />
-  {/if}
-
   {#if activeTab}
-    <header class="flex shrink-0 items-center justify-between gap-1.5 border-b border-surface-500/30 px-2 py-1 sm:gap-3 sm:px-2.5">
+    <header class="relative z-20 flex shrink-0 items-center justify-between gap-2 border-b border-surface-500/30 bg-surface-950/65 px-1.5 py-0.5">
       <div class="flex min-w-0 flex-1 items-center gap-1.5">
         <div class="flex shrink-0 items-center">
-          <button type="button" class="rounded p-1 text-surface-500 hover:bg-surface-800 hover:text-surface-200 disabled:opacity-25" aria-label="Go back" title="Go back" disabled={!codeWorkspace.canNavigate(workId, -1)} onclick={() => void navigate(-1)}><ArrowLeft size={11} /></button>
-          <button type="button" class="rounded p-1 text-surface-500 hover:bg-surface-800 hover:text-surface-200 disabled:opacity-25" aria-label="Go forward" title="Go forward" disabled={!codeWorkspace.canNavigate(workId, 1)} onclick={() => void navigate(1)}><ArrowRight size={11} /></button>
+          <button type="button" class="scripts-workbench-toolbar-btn" aria-label="Go back" title="Go back" disabled={!codeWorkspace.canNavigate(workId, -1)} onclick={() => void navigate(-1)}><ArrowLeft size={14} strokeWidth={1.75} /></button>
+          <button type="button" class="scripts-workbench-toolbar-btn" aria-label="Go forward" title="Go forward" disabled={!codeWorkspace.canNavigate(workId, 1)} onclick={() => void navigate(1)}><ArrowRight size={14} strokeWidth={1.75} /></button>
         </div>
         <CodeBreadcrumbs
           path={activeTab.path}
@@ -1252,27 +1246,77 @@
           onPathSegment={onBreadcrumbPath}
           onSymbol={(line) => editor?.revealLine(line)}
         />
-        {#if saveWhisper}
-          <span class="shrink-0 text-[9px] text-primary-200/90">{saveWhisper}</span>
-        {:else if dirty}
-          <span class="shrink-0 text-[9px] text-primary-300/80">unsaved</span>
-        {/if}
-        {#if lspConnecting}
-          <span class="shrink-0 text-[9px] text-surface-500">understanding…</span>
-        {:else if lspError}
-          <span class="shrink-0 text-[9px] text-surface-500">editing only</span>
-        {/if}
       </div>
-      <div class="flex shrink-0 items-center gap-1">
+      <div class="flex shrink-0 items-center gap-0.5">
         <button
           type="button"
-          class="rounded px-2 py-1 text-[10px] text-surface-400 hover:bg-surface-800 hover:text-surface-100"
+          class="scripts-workbench-toolbar-btn {contextPanel === 'problems' ? 'scripts-workbench-toolbar-btn-active' : ''}"
+          title="Issues"
+          aria-label="Show issues"
+          aria-pressed={contextPanel === "problems"}
+          onclick={() => void showProblems()}
+        ><CircleAlert size={14} strokeWidth={1.75} /></button>
+        <button
+          type="button"
+          class="scripts-workbench-toolbar-btn {contextPanel === 'outline' ? 'scripts-workbench-toolbar-btn-active' : ''}"
+          title="Structure"
+          aria-label="Show file structure"
+          aria-pressed={contextPanel === "outline"}
+          disabled={!lspClient}
+          onclick={() => void showOutline()}
+        ><ListTree size={14} strokeWidth={1.75} /></button>
+        {#if selectedTask}
+          <button
+            type="button"
+            class="scripts-workbench-toolbar-btn {runningTask ? 'scripts-workbench-toolbar-btn-active' : ''}"
+            title={runningTask ? `Stop ${selectedTask.label}` : `${selectedTask.label}: ${selectedTask.argv.join(" ")}`}
+            aria-label={runningTask ? `Stop ${selectedTask.label}` : `Run ${selectedTask.label}`}
+            onclick={() => {
+              if (runningTask) void stopDetectedTask();
+              else void runDetectedTask();
+            }}
+          >{#if runningTask}<X size={14} />{:else}<Play size={14} strokeWidth={1.75} />{/if}</button>
+        {/if}
+        {#if terminalAvailable}
+          <button
+            type="button"
+            class="scripts-workbench-toolbar-btn {terminalDockOpen ? 'scripts-workbench-toolbar-btn-active' : ''}"
+            title="Toggle terminal"
+            aria-label="Toggle terminal"
+            aria-pressed={terminalDockOpen}
+            onclick={() => void toggleTerminalDock()}
+          ><SquareTerminal size={14} strokeWidth={1.75} /></button>
+        {/if}
+        <button
+          type="button"
+          class="scripts-workbench-toolbar-btn {worldOpen ? 'scripts-workbench-toolbar-btn-active' : ''}"
+          title="Understand this code"
+          aria-label="Understand this code"
+          aria-pressed={worldOpen}
+          onclick={onToggleWorld}
+        ><Orbit size={14} strokeWidth={1.75} /></button>
+        {#if reviewAvailable}
+          <button
+            type="button"
+            class="scripts-workbench-toolbar-btn text-amber-300/80"
+            title="Review changes"
+            aria-label="Review changes"
+            onclick={onOpenReview}
+          ><GitPullRequestArrow size={14} strokeWidth={1.75} /></button>
+        {/if}
+
+        <span class="mx-0.5 h-4 w-px shrink-0 bg-surface-500/35" aria-hidden="true"></span>
+
+        <button
+          type="button"
+          class="scripts-workbench-toolbar-btn"
           title={`Find (${formatShortcut("F")})`}
+          aria-label="Find in file"
           onclick={() => editor?.openFind()}
-        >Find</button>
+        ><Search size={14} strokeWidth={1.75} /></button>
         <details class="relative">
-          <summary class="cursor-pointer list-none rounded px-2 py-1 text-[10px] text-surface-400 hover:bg-surface-800 hover:text-surface-100 [&::-webkit-details-marker]:hidden" title="Editor options">View</summary>
-          <div class="absolute right-0 top-full z-20 mt-1 w-40 rounded-md border border-surface-500/40 bg-surface-900 p-1 shadow-xl">
+          <summary class="scripts-workbench-toolbar-btn cursor-pointer list-none [&::-webkit-details-marker]:hidden" title="Editor options" aria-label="Editor options">•••</summary>
+          <div class="absolute right-0 top-full z-30 mt-1 w-44 rounded-md border border-surface-500/40 bg-surface-900 p-1 shadow-xl">
             <button type="button" class="flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-[10px] text-surface-300 hover:bg-surface-800" onclick={toggleWordWrap}>
               <span>Word wrap</span>
               <span class="text-surface-500">{wordWrap ? "On" : "Off"}</span>
@@ -1281,76 +1325,71 @@
               <span>Line numbers</span>
               <span class="text-surface-500">{showLineNumbers ? "On" : "Off"}</span>
             </button>
+            {#if projectTasks.length > 1}
+              <label class="block border-t border-surface-500/20 px-2 pb-1.5 pt-1">
+                <span class="text-[9px] uppercase tracking-wider text-surface-500">Project command</span>
+                <select class="mt-1 w-full rounded bg-surface-800 px-1.5 py-1 text-[10px] text-surface-300 outline-none" aria-label="Project command" bind:value={selectedTaskId}>
+                  {#each projectTasks as task (task.id)}
+                    <option value={task.id}>{task.label}</option>
+                  {/each}
+                </select>
+              </label>
+            {/if}
+            {#if projectTasks.some((task) => task.kind === "test")}
+              <button type="button" class="flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-[10px] text-surface-300 hover:bg-surface-800" onclick={() => void toggleTests()}>
+                <span>Discovered tests</span>
+                <span class="text-surface-500">{testsOpen ? "Hide" : "Show"}</span>
+              </button>
+            {/if}
+            {#if canFormat && editable}
+              <button type="button" class="flex w-full items-center rounded px-2 py-1.5 text-left text-[10px] text-surface-300 hover:bg-surface-800 disabled:opacity-40" disabled={languageActionRunning} onclick={() => void runLanguageAction("format")}>Format document</button>
+            {/if}
+            {#if canCodeAction && editable}
+              <button type="button" class="flex w-full items-center rounded px-2 py-1.5 text-left text-[10px] text-surface-300 hover:bg-surface-800 disabled:opacity-40" disabled={languageActionRunning} onclick={() => void runLanguageAction("organize_imports")}>Organize imports</button>
+            {/if}
+            {#if lspError}
+              <button type="button" class="flex w-full items-center rounded px-2 py-1.5 text-left text-[10px] text-warning-400 hover:bg-surface-800 disabled:opacity-40" disabled={repairingLanguage} onclick={() => void repairLanguageSupport()}>{repairingLanguage ? "Repairing…" : "Repair language support"}</button>
+            {/if}
           </div>
         </details>
         <button
           type="button"
-          class="rounded px-2 py-1 text-[10px] text-surface-400 hover:bg-surface-800 hover:text-surface-100 disabled:opacity-35"
-          disabled={tabs.length < 2}
-          title={secondaryTab ? "Close editor group" : "Open another file to the side"}
-          onclick={toggleSplit}
-          aria-label={secondaryTab ? "Close editor group" : "Split editor"}
-        ><Columns2 size={11} class="sm:mr-1 sm:inline" /><span class="hidden sm:inline">{secondaryTab ? "Unsplit" : "Split"}</span></button>
-        <button
-          type="button"
-          class="rounded px-2 py-1 text-[10px] text-surface-400 hover:bg-surface-800 hover:text-surface-100 disabled:opacity-40"
+          class="scripts-workbench-toolbar-btn"
           disabled={activeTab.loading || saving}
           onclick={() => void reload()}
           aria-label="Reload file"
-        ><RotateCcw size={11} class="sm:mr-1 sm:inline" /><span class="hidden sm:inline">Reload</span></button>
+          title="Reload file"
+        ><RotateCcw size={14} strokeWidth={1.75} /></button>
         {#if agentHasControl}
-          <span class="hidden text-[9px] text-primary-200 sm:inline">
-            {context?.executorKind === "cursor" ? "Cursor" : "Codex"} has the project
-          </span>
           <button
             type="button"
-            class="rounded bg-primary-500/80 px-2 py-1 text-[10px] font-medium text-surface-50 disabled:opacity-40"
+            class="scripts-workbench-toolbar-btn scripts-workbench-toolbar-btn-primary"
             disabled={saving}
             onclick={() => void reclaimHuman()}
-          >Resume editing</button>
+            aria-label="Resume editing"
+            title="Resume editing"
+          ><Save size={14} strokeWidth={1.75} /></button>
         {:else if !editable && detail?.allowed_actions.begin_attempt.allowed}
           <button
             type="button"
-            class="rounded bg-primary-500/80 px-2 py-1 text-[10px] font-medium text-surface-50 disabled:opacity-40"
+            class="scripts-workbench-toolbar-btn scripts-workbench-toolbar-btn-primary"
             disabled={saving}
             onclick={() => void startEditing()}
             aria-label="Edit file"
-          ><span class="hidden sm:inline">Edit</span><Save size={11} class="sm:hidden" /></button>
+            title="Start editing"
+          ><Save size={14} strokeWidth={1.75} /></button>
         {:else}
           <button
             type="button"
-            class="rounded bg-primary-500/80 px-2 py-1 text-[10px] font-medium text-surface-50 disabled:opacity-40"
+            class="scripts-workbench-toolbar-btn scripts-workbench-toolbar-btn-primary"
             disabled={!editable || !dirty || saving}
             onclick={() => void save()}
             aria-label="Save file"
-          ><Save size={11} class="sm:mr-1 sm:inline" /><span class="hidden sm:inline">Save</span></button>
+            title={saving ? "Saving…" : `Save (${formatShortcut("S")})`}
+          ><Save size={14} strokeWidth={1.75} /></button>
         {/if}
       </div>
     </header>
-
-    <div class="flex shrink-0 items-center gap-2 overflow-x-auto border-b border-surface-500/20 bg-surface-950/50 px-2.5 py-0.5 text-[9px] text-surface-500" aria-label="Operator status">
-      <span class="font-medium text-surface-300">{operatorLabel}</span>
-      {#if dirtyCount > 0}
-        <span aria-hidden="true">·</span>
-        <span class="text-primary-300/90">{dirtyCount} dirty</span>
-      {/if}
-      <span aria-hidden="true">·</span>
-      <button type="button" class="hover:text-surface-200" onclick={() => void showProblems()}>
-        {Math.max(problems.length, workspaceProblemRows.length)} issues
-      </button>
-      {#if lastVerifyLabel}
-        <span aria-hidden="true">·</span>
-        <button
-          type="button"
-          class="{taskResult?.success ? 'text-emerald-300/90' : 'text-rose-300/90'} hover:underline"
-          title="Jump to last verification"
-          onclick={() => {
-            const location = taskResult?.locations[0];
-            if (location) void openTaskLocation(location.path, location.line);
-          }}
-        >{lastVerifyLabel}</button>
-      {/if}
-    </div>
 
     {#if surfaceError || activeTab.error || codeWorkspace.workspaceErrorByWorkId[workId]}
       <p class="shrink-0 border-b border-amber-500/30 bg-amber-950/25 px-2.5 py-1.5 text-[10px] text-amber-100">
@@ -1366,8 +1405,8 @@
       </div>
     {/if}
 
-    <div class="min-h-0 flex-1 {secondaryTab ? 'grid grid-cols-1 overflow-y-auto md:grid-cols-2 md:overflow-hidden' : 'flex overflow-hidden'}">
-      <div class="relative min-h-0 min-w-0 flex-1" onfocusin={() => (focusedSide = false)}>
+    <div class="flex min-h-0 flex-1 overflow-hidden">
+      <div class="relative min-h-0 min-w-0 flex-1">
         {#if editorSelection?.text && onHandoffToAgent && !agentHasControl}
           <div class="absolute right-3 top-2 z-20 flex max-w-[calc(100%-1.5rem)] items-center gap-1 overflow-x-auto rounded-md border border-primary-500/30 bg-surface-950/95 px-1.5 py-1 shadow-xl" aria-label="Selected code actions">
             <span class="mr-1 flex shrink-0 items-center gap-1 text-[9px] text-primary-200/80"><Sparkles size={10} />Selection</span>
@@ -1415,16 +1454,6 @@
           </div>
         {/if}
       </div>
-      {#if secondaryTab && context?.worktree}
-        <CodeSplitEditorPane
-          tab={secondaryTab}
-          worktree={context.worktree}
-          leaseId={context.leaseId}
-          generation={context.leaseGeneration}
-          onFocus={() => (focusedSide = true)}
-          onClose={() => codeWorkspace.closeSide(workId)}
-        />
-      {/if}
     </div>
 
     {#if contextPanel}
@@ -1468,7 +1497,9 @@
                 onclick={async () => {
                   if (!referencePath) return;
                   contextPanel = null;
-                  await codeWorkspace.open(workId, referencePath, referenceLine);
+                  await lmeWorkspace.openCodeFile(workId, referencePath, {
+                    line: referenceLine,
+                  });
                   undertakings.setSelection({ path: referencePath, line: referenceLine, entityId: null });
                   await tick();
                   editor?.revealLine(referenceLine);
@@ -1500,98 +1531,6 @@
       </div>
     {/if}
 
-    <footer class="flex shrink-0 items-center justify-between gap-2 overflow-x-auto border-t border-surface-500/25 bg-surface-950/75 px-1.5 py-0.5">
-      <div class="flex shrink-0 items-center gap-0.5">
-        <button
-          type="button"
-          class="flex items-center gap-1 rounded px-1.5 py-0.5 text-[9px] text-surface-500 hover:bg-surface-800 hover:text-surface-200"
-          class:bg-surface-800={contextPanel === "problems"}
-          onclick={() => void showProblems()}
-        ><CircleAlert size={10} />{Math.max(problems.length, workspaceProblemRows.length)}</button>
-        <button
-          type="button"
-          class="flex items-center gap-1 rounded px-1.5 py-0.5 text-[9px] text-surface-500 hover:bg-surface-800 hover:text-surface-200 disabled:opacity-35"
-          class:bg-surface-800={contextPanel === "outline"}
-          disabled={!lspClient}
-          onclick={() => void showOutline()}
-        ><ListTree size={10} />Structure</button>
-        {#if lspError}
-          <button type="button" class="rounded px-1.5 py-0.5 text-[9px] text-amber-300/80 hover:bg-surface-800 hover:text-amber-200 disabled:opacity-40" disabled={repairingLanguage} title={lspError} onclick={() => void repairLanguageSupport()}>{repairingLanguage ? "Repairing…" : isCoLocatedWorkshop() ? "Repair language support" : "Add language support"}</button>
-        {/if}
-        {#if canFormat && editable}
-          <button type="button" class="rounded px-1.5 py-0.5 text-[9px] text-surface-500 hover:bg-surface-800 hover:text-surface-200 disabled:opacity-35" disabled={languageActionRunning} onclick={() => void runLanguageAction("format")}>Format</button>
-        {/if}
-        {#if canCodeAction && editable}
-          <button type="button" class="rounded px-1.5 py-0.5 text-[9px] text-surface-500 hover:bg-surface-800 hover:text-surface-200 disabled:opacity-35" disabled={languageActionRunning} onclick={() => void runLanguageAction("organize_imports")}>Organize imports</button>
-        {/if}
-        <button
-          type="button"
-          class="flex items-center gap-1 rounded px-1.5 py-0.5 text-[9px] text-surface-500 hover:bg-surface-800 hover:text-surface-200 disabled:opacity-35"
-          class:bg-surface-800={terminalDockOpen}
-          disabled={!terminalAvailable && !selectedTask}
-          onclick={() => {
-            if (runningTask) void stopDetectedTask();
-            else if (selectedTask) void runDetectedTask();
-            else void toggleTerminalDock();
-          }}
-          title={selectedTask ? selectedTask.argv.join(" ") : "Toggle Terminal (Ctrl+`)"}
-        >{#if runningTask}<X size={10} />Stop {selectedTask?.label}{:else}<SquareTerminal size={10} />{selectedTask?.label ?? "Terminal"}{/if}</button>
-        {#if projectTasks.some((task) => task.kind === "test")}
-          <button type="button" class="rounded px-1.5 py-0.5 text-[9px] text-surface-500 hover:bg-surface-800 hover:text-surface-200" class:bg-surface-800={testsOpen} onclick={() => void toggleTests()}>Tests</button>
-        {/if}
-        {#if projectTasks.length > 1}
-          <select class="max-w-24 rounded bg-transparent py-0.5 text-[9px] text-surface-500 outline-none" aria-label="Project command" bind:value={selectedTaskId}>
-            {#each projectTasks as task (task.id)}
-              <option value={task.id}>{task.label}</option>
-            {/each}
-          </select>
-        {/if}
-        {#if terminalAvailable}
-          <button type="button" class="flex items-center gap-1 rounded px-1.5 py-0.5 text-[9px] text-surface-500 hover:bg-surface-800 hover:text-surface-200" class:bg-surface-800={terminalDockOpen} onclick={() => void toggleTerminalDock()} title="Toggle Terminal (Ctrl+`)"><SquareTerminal size={10} />Shell</button>
-        {/if}
-        <button
-          type="button"
-          class="flex items-center gap-1 rounded px-1.5 py-0.5 text-[9px] text-surface-500 hover:bg-surface-800 hover:text-surface-200"
-          class:bg-surface-800={worldOpen}
-          onclick={onToggleWorld}
-        ><Orbit size={10} />Understand</button>
-        {#if reviewAvailable}
-          <button
-            type="button"
-            class="flex items-center gap-1 rounded px-1.5 py-0.5 text-[9px] text-amber-300/80 hover:bg-surface-800 hover:text-amber-200"
-            onclick={onOpenReview}
-          ><GitPullRequestArrow size={10} />Review</button>
-        {/if}
-      </div>
-      <div class="flex shrink-0 items-center gap-1.5 text-[9px] text-surface-500">
-        <span class="hidden items-center gap-1 sm:inline-flex">
-          <kbd class="vault-kbd">{formatShortcut("F")}</kbd> find
-          <span class="text-surface-600" aria-hidden="true">·</span>
-          <kbd class="vault-kbd">{formatShortcut("S")}</kbd> save
-          <span class="text-surface-600" aria-hidden="true">·</span>
-          <kbd class="vault-kbd">{formatShortcut("P")}</kbd> open
-          <span class="text-surface-600" aria-hidden="true">·</span>
-          <kbd class="vault-kbd">⌃`</kbd> terminal
-        </span>
-        <span class="font-mono tabular-nums">Ln {cursorLine}, Col {cursorColumn}</span>
-        <span class="text-surface-600" aria-hidden="true">·</span>
-        <span>{indentStatusLabel}</span>
-        <span class="text-surface-600" aria-hidden="true">·</span>
-        <span class="font-mono">{activeTab.language}</span>
-        <span class="text-surface-600" aria-hidden="true">·</span>
-        <span>
-          {#if agentHasControl}
-            {context?.executorKind === "cursor" ? "Cursor" : "Codex"} is working
-          {:else if editable && context?.boundTerminalSessionIds.length}
-            You + Terminal
-          {:else if editable}
-            You are editing
-          {:else}
-            Ready
-          {/if}
-        </span>
-      </div>
-    </footer>
     {#if taskResult}
       <div class="shrink-0 border-t {taskResult.success ? 'border-emerald-500/25 bg-emerald-950/20 text-emerald-200' : 'border-rose-500/30 bg-rose-950/25 text-rose-200'}">
       <button type="button" class="flex w-full items-center justify-between gap-2 px-2.5 py-1 text-left text-[9px]" title="Run this check again" onclick={() => void runDetectedTask()}>
@@ -1647,14 +1586,14 @@
                 type="button"
                 class="rounded bg-primary-500/80 px-3 py-1.5 text-[11px] font-medium text-surface-50"
                 onclick={() => void showQuickOpen()}
-              >Open file <kbd class="vault-kbd ml-1">{formatShortcut("P")}</kbd></button>
+              >Open file</button>
               {#if terminalAvailable}
                 <button
                   type="button"
                   class="rounded border border-surface-500/40 px-3 py-1.5 text-[11px] text-surface-200 hover:bg-surface-800"
                   disabled={dockBusy}
                   onclick={() => void toggleTerminalDock(true)}
-                >Terminal <kbd class="vault-kbd ml-1">⌃`</kbd></button>
+                >Terminal</button>
               {/if}
             </div>
           {:else}
@@ -1668,14 +1607,14 @@
                 type="button"
                 class="rounded bg-primary-500/80 px-3 py-1.5 text-[11px] font-medium text-surface-50"
                 onclick={() => void showQuickOpen()}
-              >Open file <kbd class="vault-kbd ml-1">{formatShortcut("P")}</kbd></button>
+              >Open file</button>
               {#if terminalAvailable}
                 <button
                   type="button"
                   class="rounded border border-surface-500/40 px-3 py-1.5 text-[11px] text-surface-200 hover:bg-surface-800"
                   disabled={dockBusy}
                   onclick={() => void toggleTerminalDock(true)}
-                >Terminal <kbd class="vault-kbd ml-1">⌃`</kbd></button>
+                >Terminal</button>
               {/if}
             </div>
           {/if}
@@ -1830,8 +1769,11 @@
 {/if}
 
 <svelte:window
-  onfocus={reconcileOpenFiles}
+  onfocus={() => {
+    if (interactive) reconcileOpenFiles();
+  }}
   onkeydown={(event) => {
+    if (!interactive) return;
     onWindowKeydown(event);
     if (event.defaultPrevented) return;
     if (renameOpen || quickOpen || editorMenuOpen) return;
@@ -1848,23 +1790,7 @@
     }
     if (command && event.key.toLowerCase() === "s") {
       event.preventDefault();
-      const target = focusedSide && secondaryTab ? secondaryTab : activeTab;
-      if (target && codeWorkspace.isDirty(target)) void saveTab(target);
-      return;
-    }
-    if (command && event.key.toLowerCase() === "w" && activeTab) {
-      event.preventDefault();
-      close(activeTab);
-      return;
-    }
-    if (event.ctrlKey && event.key === "Tab") {
-      event.preventDefault();
-      cycleTab(event.shiftKey ? -1 : 1);
-      return;
-    }
-    if (command && event.key === "\\") {
-      event.preventDefault();
-      toggleSplit();
+      if (activeTab && codeWorkspace.isDirty(activeTab)) void saveTab(activeTab);
       return;
     }
     if (command && event.key === "`") {

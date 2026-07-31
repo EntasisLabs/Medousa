@@ -121,7 +121,11 @@
     contentSyncKey?: string | number;
     onchange?: (value: string) => void;
     /** Reports 1-based cursor line/column for status bar and workspace restoration. */
-    onCursorChanged?: (cursor: { line: number; column: number }) => void;
+    onCursorChanged?: (cursor: {
+      line: number;
+      totalLines: number;
+      column: number;
+    }) => void;
     /** Reports a compact selection so another workspace surface can continue here. */
     onSelectionChanged?: (selection: {
       startLine: number;
@@ -243,6 +247,7 @@
     const line = state.doc.lineAt(selection.head);
     onCursorChangedRef?.({
       line: line.number,
+      totalLines: state.doc.lines,
       column: selection.head - line.from + 1,
     });
   }
