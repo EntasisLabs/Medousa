@@ -16,10 +16,29 @@
   "categories": ["Other", "Chat"],
   "activationEvents": [
     "onCommand:medousa.ask",
-    "onCommand:medousa.configureConnection"
+    "onCommand:medousa.configureConnection",
+    "onView:medousa.chat"
   ],
   "main": "./dist/extension.js",
   "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "medousa",
+          "title": "Medousa",
+          "icon": "resources/medousa.svg"
+        }
+      ]
+    },
+    "views": {
+      "medousa": [
+        {
+          "type": "webview",
+          "id": "medousa.chat",
+          "name": "Chat"
+        }
+      ]
+    },
     "commands": [
       {
         "command": "medousa.ask",
@@ -43,7 +62,9 @@
   },
   "scripts": {
     "prebuild": "tsc -p ../../packages/medousa-client/tsconfig.json",
-    "build": "tsc -p tsconfig.json",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "bundle": "esbuild src/extension.ts --bundle --platform=node --format=esm --external:vscode --outfile=dist/extension.js --sourcemap",
+    "build": "npm run check && npm run bundle",
     "watch": "tsc -p tsconfig.json --watch",
     "package": "npm run build && vsce package"
   },
@@ -54,6 +75,7 @@
     "@vscode/vsce": "^3.2.2",
     "@types/node": "^22.0.0",
     "@types/vscode": "^1.85.0",
+    "esbuild": "^0.25.0",
     "typescript": "^5.6.0"
   }
 }

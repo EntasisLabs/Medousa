@@ -4,16 +4,17 @@ The first host adapter for Medousa Anywhere.
 
 ## Current slice
 
+- Persistent Medousa chat in the activity-bar sidebar
 - `Medousa: Ask About This` command
 - active editor, selection, language, workspace, and diagnostics context
 - local/remote daemon endpoint setting
 - bearer token in VS Code SecretStorage
-- streaming response panel with cancel
+- streaming assistant messages with cancel
 - persistent session per workspace
 
-This adapter intentionally does not implement inline edits, Forge custody, or
-Home-level settings yet. Those land after the core connection/context/session
-loop is proven.
+This adapter intentionally does not implement inline edits, Forge custody,
+vault actions, or Home-level settings yet. Those land after the core
+connection/context/session loop is proven.
 
 ## Development
 

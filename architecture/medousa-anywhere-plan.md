@@ -72,7 +72,9 @@ types, health/capability/session access, interactive turn start/cancel,
 reconnecting SSE, bounded context helpers, and a dependency-free build. The
 VS Code vertical integration scaffold now lives in
 [`integrations/vscode/`](../integrations/vscode/), with the next work focused
-on runtime dogfooding and richer response/presentation behavior.
+on runtime dogfooding, richer response/presentation behavior, and the first
+vault/Home handoff actions. The extension now contributes a persistent
+activity-bar chat view; its client runtime is bundled into the VSIX.
 
 ## Target architecture
 
