@@ -5,6 +5,9 @@ use std::path::PathBuf;
 use anyhow::{bail, Context, Result};
 use medousa_install_support::shared_bin_dir;
 
+#[cfg(windows)]
+use medousa_host::hide_subprocess_window;
+
 use crate::paths::medousa_data_dir;
 
 use super::service::resolve_git_binary;
@@ -90,7 +93,9 @@ async fn install_mingit_windows(
 
     #[cfg(windows)]
     {
-        let expanded = std::process::Command::new("powershell")
+        let mut command = std::process::Command::new("powershell");
+        hide_subprocess_window(&mut command);
+        let expanded = command
             .args([
                 "-NoProfile",
                 "-Command",

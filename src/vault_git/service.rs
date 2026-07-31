@@ -4,11 +4,12 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use anyhow::{anyhow, bail, Context, Result};
-use medousa_host::find_command_in_path;
+use medousa_host::{find_command_in_path, hide_subprocess_window};
 use medousa_install_support::shared_bin_dir;
 use serde::{Deserialize, Serialize};
 
 use crate::paths::medousa_data_dir;
+use crate::vault::path::normalize_vault_path;
 use crate::vault::roots::active_vault_root;
 
 pub fn vault_git_enabled() -> bool {
@@ -61,8 +62,10 @@ pub fn resolve_git_binary() -> Option<PathBuf> {
     find_command_in_path(platform_git_name())
 }
 
-fn run_git(git: &Path, cwd: &Path, args: &[&str]) -> Result<String> {
-    let output = Command::new(git)
+pub(crate) fn run_git(git: &Path, cwd: &Path, args: &[&str]) -> Result<String> {
+    let mut command = Command::new(git);
+    hide_subprocess_window(&mut command);
+    let output = command
         .args(args)
         .current_dir(cwd)
         .output()
@@ -82,6 +85,21 @@ fn run_git(git: &Path, cwd: &Path, args: &[&str]) -> Result<String> {
         );
     }
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
+fn resolve_commit(git: &Path, vault_root: &Path, raw: &str) -> Result<String> {
+    let commit = raw.trim();
+    if commit.is_empty() {
+        bail!("commit is required");
+    }
+    let revision = format!("{commit}^{{commit}}");
+    Ok(run_git(
+        git,
+        vault_root,
+        &["rev-parse", "--verify", "--end-of-options", &revision],
+    )?
+    .trim()
+    .to_string())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -259,7 +277,7 @@ pub fn git_log(query: &GitLogQuery) -> Result<Vec<GitLogEntry>> {
     ];
     if let Some(path) = query.path.as_deref().map(str::trim).filter(|p| !p.is_empty()) {
         args.push("--".to_string());
-        args.push(path.to_string());
+        args.push(normalize_vault_path(path)?);
     }
     let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
     let out = run_git(&git, &vault_root, &arg_refs)?;
@@ -314,7 +332,7 @@ pub fn commit_version(request: &GitCommitRequest) -> Result<GitCommitResponse> {
         for path in &request.paths {
             let trimmed = path.trim();
             if !trimmed.is_empty() {
-                args.push(trimmed.to_string());
+                args.push(normalize_vault_path(trimmed)?);
             }
         }
         let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
@@ -346,16 +364,9 @@ pub fn restore_note(request: &GitRestoreRequest) -> Result<()> {
     ensure_enabled()?;
     let git = resolve_git_binary().ok_or_else(|| anyhow!("Git is not installed"))?;
     let vault_root = active_vault_root();
-    let commit = request.commit.trim();
-    let path = request.path.trim().trim_start_matches('/');
-    if commit.is_empty() || path.is_empty() {
-        bail!("commit and path are required");
-    }
-    run_git(
-        &git,
-        &vault_root,
-        &["checkout", commit, "--", path],
-    )?;
+    let commit = resolve_commit(&git, &vault_root, &request.commit)?;
+    let path = normalize_vault_path(&request.path)?;
+    run_git(&git, &vault_root, &["checkout", &commit, "--", &path])?;
     Ok(())
 }
 
@@ -377,25 +388,27 @@ pub fn diff_note(query: &GitDiffQuery) -> Result<GitDiffResponse> {
     ensure_enabled()?;
     let git = resolve_git_binary().ok_or_else(|| anyhow!("Git is not installed"))?;
     let vault_root = active_vault_root();
-    let path = query
-        .path
-        .as_deref()
-        .map(str::trim)
-        .filter(|p| !p.is_empty())
-        .ok_or_else(|| anyhow!("path is required"))?;
-    let commit = query
-        .commit
-        .as_deref()
-        .map(str::trim)
-        .filter(|c| !c.is_empty())
-        .unwrap_or("HEAD");
-    let patch = run_git(
+    let path = normalize_vault_path(
+        query
+            .path
+            .as_deref()
+            .map(str::trim)
+            .filter(|p| !p.is_empty())
+            .ok_or_else(|| anyhow!("path is required"))?,
+    )?;
+    let commit = resolve_commit(
         &git,
         &vault_root,
-        &["diff", commit, "--", path],
+        query
+            .commit
+            .as_deref()
+            .map(str::trim)
+            .filter(|c| !c.is_empty())
+            .unwrap_or("HEAD"),
     )?;
+    let patch = run_git(&git, &vault_root, &["diff", &commit, "--", &path])?;
     Ok(GitDiffResponse {
-        path: path.to_string(),
+        path,
         patch,
     })
 }

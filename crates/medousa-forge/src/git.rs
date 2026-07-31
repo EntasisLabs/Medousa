@@ -37,6 +37,12 @@ pub struct GitEngine {
 }
 
 impl GitEngine {
+    fn command(&self) -> Command {
+        let mut command = Command::new(&self.git);
+        medousa_host::hide_subprocess_window(&mut command);
+        command
+    }
+
     /// Resolve the git binary: `GIT_BIN` env override, then PATH.
     pub fn detect() -> Result<Self> {
         if let Ok(explicit) = std::env::var("GIT_BIN") {
@@ -59,7 +65,7 @@ impl GitEngine {
     }
 
     pub(crate) fn run(&self, cwd: &Path, args: &[&str]) -> Result<String> {
-        let output = Command::new(&self.git)
+        let output = self.command()
             .args(args)
             .current_dir(cwd)
             // Defensive hygiene: a Forge subprocess must never inherit a
@@ -87,7 +93,7 @@ impl GitEngine {
     }
 
     fn run_bytes(&self, cwd: &Path, args: &[&str]) -> Result<Vec<u8>> {
-        let output = Command::new(&self.git)
+        let output = self.command()
             .args(args)
             .current_dir(cwd)
             .env_remove("GIT_DIR")
@@ -377,7 +383,7 @@ impl GitEngine {
     }
 
     pub fn is_ancestor(&self, cwd: &Path, ancestor: &GitOid, descendant: &GitOid) -> Result<bool> {
-        let status = Command::new(&self.git)
+        let status = self.command()
             .args([
                 "merge-base",
                 "--is-ancestor",
@@ -453,7 +459,7 @@ impl GitEngine {
             args.extend(exclude.iter().map(String::as_str));
             self.run(cwd, &args)?;
         }
-        let staged = Command::new(&self.git)
+        let staged = self.command()
             .args(["diff", "--cached", "--quiet"])
             .current_dir(cwd)
             .env_remove("GIT_DIR")
@@ -464,7 +470,7 @@ impl GitEngine {
         if staged.status.success() {
             return self.head_oid(cwd);
         }
-        let output = Command::new(&self.git)
+        let output = self.command()
             .args(["commit", "--no-verify", "-m", message])
             .current_dir(cwd)
             .env_remove("GIT_DIR")

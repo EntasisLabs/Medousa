@@ -1,6 +1,6 @@
 [package]
 name = "medousa-forge"
-version = "0.7.0"
+version = "0.7.1"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "Forge — Medousa's version-controlled work lifecycle engine. User-owned work items, governed git environments, lease-fenced executor attempts, sealed evidence, human review, durable dispositions."
@@ -9,6 +9,7 @@ description = "Forge — Medousa's version-controlled work lifecycle engine. Use
 chrono = { version = "0.4", features = ["serde"] }
 fs2 = "0.4"
 globset = "0.4"
+medousa-host = { path = "../medousa-host" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"

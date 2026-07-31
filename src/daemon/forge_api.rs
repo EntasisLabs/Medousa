@@ -3,6 +3,7 @@
 //! Distinct from `/v1/workspace/cards` (activity board) and vault Versions
 //! (material memory). Forge owns custody of intentional work episodes.
 
+use std::ffi::OsStr;
 use std::path::{Component, Path as FsPath, PathBuf};
 use std::process::Command;
 use std::sync::{Arc, LazyLock, Mutex};
@@ -746,6 +747,7 @@ fn repository_browse_roots(state: &AppState) -> Vec<PathBuf> {
             roots.push(path);
         }
     }
+    roots.extend(windows_repository_browse_roots());
     for record in read_repository_catalog().entries {
         if let Some(parent) = record.path.parent().and_then(|path| path.canonicalize().ok()) {
             roots.push(parent);
@@ -766,6 +768,22 @@ fn repository_browse_roots(state: &AppState) -> Vec<PathBuf> {
     roots.sort();
     roots.dedup();
     roots
+}
+
+#[cfg(windows)]
+fn windows_repository_browse_roots() -> Vec<PathBuf> {
+    (b'A'..=b'Z')
+        .filter_map(|letter| {
+            PathBuf::from(format!("{}:\\", char::from(letter)))
+                .canonicalize()
+                .ok()
+        })
+        .collect()
+}
+
+#[cfg(not(windows))]
+fn windows_repository_browse_roots() -> Vec<PathBuf> {
+    Vec::new()
 }
 
 fn browse_path_allowed(path: &FsPath, roots: &[PathBuf]) -> bool {
@@ -940,7 +958,7 @@ async fn clone_provider_repository(
             format!("A folder named {name} already exists here"),
         ));
     }
-    let mut clone = Command::new(command);
+    let mut clone = background_command(command);
     clone.args(["repo", "clone", &repository]);
     let output = clone
         .arg(&destination)
@@ -1160,7 +1178,7 @@ fn list_source_tree(work_id: &WorkId, root: &FsPath) -> ApiResult<SourceTreeResp
             format!("governed workspace is unavailable: {err}"),
         )
     })?;
-    let output = std::process::Command::new("git")
+    let output = background_command("git")
         .args([
             "ls-files",
             "--cached",
@@ -1215,7 +1233,7 @@ fn list_source_tree(work_id: &WorkId, root: &FsPath) -> ApiResult<SourceTreeResp
 }
 
 fn repository_statuses(root: &FsPath) -> std::collections::HashMap<String, String> {
-    let Ok(output) = std::process::Command::new("git")
+    let Ok(output) = background_command("git")
         .args(["status", "--porcelain=v1", "-z", "--untracked-files=all"])
         .current_dir(root)
         .output()
@@ -1398,7 +1416,7 @@ async fn search_source(
             "prepare the governed workspace before searching source files",
         )
     })?;
-    let mut child = std::process::Command::new("git")
+    let mut child = background_command("git")
         .args(["grep", "-n", "-I", "-F", "--", needle])
         .current_dir(&environment.worktree)
         .stdout(Stdio::piped())
@@ -2448,7 +2466,7 @@ async fn start_project_task_run(
     target_project_test(&root, &mut task, body.test_id.as_deref())?;
     let run_id = format!("run-{}", uuid::Uuid::new_v4());
     let run = ProjectTaskRun { run_id: run_id.clone(), work_id: work_id.clone(), state: "running".into(), task: task.clone(), result: None };
-    let mut child = tokio::process::Command::new(&task.argv[0])
+    let mut child = background_tokio_command(&task.argv[0])
         .args(&task.argv[1..]).current_dir(&root)
         .stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped())
         .kill_on_drop(true).spawn()
@@ -2561,7 +2579,7 @@ async fn run_project_task(
     let root_for_command = root.clone();
     let started = std::time::Instant::now();
     let output = tokio::task::spawn_blocking(move || {
-        Command::new(&argv[0])
+        background_command(&argv[0])
             .args(&argv[1..])
             .current_dir(root_for_command)
             .output()
@@ -2683,7 +2701,7 @@ fn store_provider_context(forge: &Forge, id: &WorkId, context: &ProviderContext)
 }
 
 fn command_available(name: &str) -> bool {
-    Command::new(name)
+    background_command(name)
         .arg("--version")
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
@@ -2692,8 +2710,26 @@ fn command_available(name: &str) -> bool {
         .is_ok_and(|status| status.success())
 }
 
+fn background_command(program: impl AsRef<OsStr>) -> Command {
+    let mut command = Command::new(program);
+    medousa_host::hide_subprocess_window(&mut command);
+    command
+}
+
+#[cfg(windows)]
+fn background_tokio_command(program: impl AsRef<OsStr>) -> tokio::process::Command {
+    let mut command = tokio::process::Command::new(program);
+    command.creation_flags(0x0800_0000);
+    command
+}
+
+#[cfg(not(windows))]
+fn background_tokio_command(program: impl AsRef<OsStr>) -> tokio::process::Command {
+    tokio::process::Command::new(program)
+}
+
 fn repository_remote(worktree: &FsPath) -> Option<String> {
-    let output = Command::new("git")
+    let output = background_command("git")
         .args(["remote", "get-url", "origin"])
         .current_dir(worktree)
         .output()
@@ -2760,7 +2796,7 @@ fn provider_handoff(forge: &Forge, item: &WorkItem) -> ProviderHandoff {
     let WorkTarget::Git(target) = &item.target;
     let base_branch = Some(target.base_ref.clone());
     let shared = item.environment.as_ref().is_some_and(|env| {
-        Command::new("git")
+        background_command("git")
             .args(["show-ref", "--verify", &format!("refs/remotes/origin/{}", env.branch)])
             .current_dir(&env.worktree)
             .output()
@@ -2888,12 +2924,12 @@ fn existing_provider_review_url(
     worktree: &FsPath,
 ) -> ApiResult<Option<String>> {
     let output = if provider == "github" {
-        Command::new("gh")
+        background_command("gh")
             .args(["pr", "view", branch, "--repo", repository, "--json", "url", "--jq", ".url"])
             .current_dir(worktree)
             .output()
     } else {
-        Command::new("glab")
+        background_command("glab")
             .args(["mr", "view", branch, "--output", "json"])
             .current_dir(worktree)
             .output()
@@ -2930,7 +2966,7 @@ async fn share_provider_handoff(
         return Err(request_error(StatusCode::SERVICE_UNAVAILABLE, handoff.message));
     }
     let environment = item.environment.as_ref().ok_or_else(|| request_error(StatusCode::CONFLICT, "Project workspace is unavailable"))?;
-    let push = Command::new("git")
+    let push = background_command("git")
         .args(["push", "--set-upstream", "origin", &environment.branch])
         .current_dir(&environment.worktree)
         .output()
@@ -2951,11 +2987,11 @@ async fn share_provider_handoff(
         .collect::<String>();
     let description = provider_review_body(forge.as_ref(), &item, body.body.as_deref());
     let output = if handoff.provider == "github" {
-        Command::new("gh")
+        background_command("gh")
             .args(["pr", "create", "--repo", repository, "--head", &environment.branch, "--base", base, "--title", &title, "--body", &description])
             .current_dir(&environment.worktree).output()
     } else {
-        Command::new("glab")
+        background_command("glab")
             .args(["mr", "create", "--source-branch", &environment.branch, "--target-branch", base, "--title", &title, "--description", &description, "--yes"])
             .current_dir(&environment.worktree).output()
     }
@@ -2983,9 +3019,9 @@ async fn share_provider_handoff(
         }
     } else {
         let update = if handoff.provider == "github" {
-            Command::new("gh").args(["pr", "edit", &environment.branch, "--repo", repository, "--title", &title, "--body", &description]).current_dir(&environment.worktree).output()
+            background_command("gh").args(["pr", "edit", &environment.branch, "--repo", repository, "--title", &title, "--body", &description]).current_dir(&environment.worktree).output()
         } else {
-            Command::new("glab").args(["mr", "update", &environment.branch, "--title", &title, "--description", &description]).current_dir(&environment.worktree).output()
+            background_command("glab").args(["mr", "update", &environment.branch, "--title", &title, "--description", &description]).current_dir(&environment.worktree).output()
         }
         .map_err(|err| request_error(StatusCode::BAD_GATEWAY, err.to_string()))?;
         if !update.status.success() {
@@ -3018,7 +3054,7 @@ async fn list_provider_comments(
     }
     let repository = handoff.repository.ok_or_else(|| request_error(StatusCode::BAD_REQUEST, "Repository identity is unavailable"))?;
     let branch = handoff.branch.ok_or_else(|| request_error(StatusCode::BAD_REQUEST, "Project branch is unavailable"))?;
-    let output = Command::new("gh").args(["pr", "view", &branch, "--repo", &repository, "--json", "comments,reviews"]).output()
+    let output = background_command("gh").args(["pr", "view", &branch, "--repo", &repository, "--json", "comments,reviews"]).output()
         .map_err(|err| request_error(StatusCode::BAD_GATEWAY, err.to_string()))?;
     if !output.status.success() { return Err(provider_command_error("Reading review comments", &output)); }
     let value: serde_json::Value = serde_json::from_slice(&output.stdout)
@@ -3806,6 +3842,14 @@ mod source_tests {
         assert!(browse_path_allowed(FsPath::new("/srv/code/project"), &roots));
         assert!(!browse_path_allowed(FsPath::new("/etc"), &roots));
         assert!(!browse_path_allowed(FsPath::new("/srv/other"), &roots));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn repository_browser_exposes_the_current_windows_drive() {
+        let current = std::env::current_dir().unwrap().canonicalize().unwrap();
+        let roots = windows_repository_browse_roots();
+        assert!(browse_path_allowed(&current, &roots));
     }
 
     #[test]
