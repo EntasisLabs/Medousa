@@ -70,7 +70,9 @@ The Phase 0 scaffold is now underway in
 [`packages/medousa-client/`](../packages/medousa-client/): generated daemon
 types, health/capability/session access, interactive turn start/cancel,
 reconnecting SSE, bounded context helpers, and a dependency-free build. The
-next implementation slice is the VS Code vertical integration.
+VS Code vertical integration scaffold now lives in
+[`integrations/vscode/`](../integrations/vscode/), with the next work focused
+on runtime dogfooding and richer response/presentation behavior.
 
 ## Target architecture
 

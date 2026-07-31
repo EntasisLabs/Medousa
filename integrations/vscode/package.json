@@ -1,0 +1,56 @@
+{
+  "name": "medousa-vscode",
+  "displayName": "Medousa",
+  "description": "A focused Medousa workshop companion for VS Code",
+  "version": "0.1.0",
+  "publisher": "EntasisLabs",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/EntasisLabs/Medousa.git"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["Other", "Chat"],
+  "activationEvents": [
+    "onCommand:medousa.ask",
+    "onCommand:medousa.configureConnection"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "medousa.ask",
+        "title": "Medousa: Ask About This"
+      },
+      {
+        "command": "medousa.configureConnection",
+        "title": "Medousa: Configure Connection"
+      }
+    ],
+    "configuration": {
+      "title": "Medousa",
+      "properties": {
+        "medousa.endpoint": {
+          "type": "string",
+          "default": "http://127.0.0.1:7419",
+          "description": "Medousa workshop daemon URL. Tokens are stored in SecretStorage."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "watch": "tsc -p tsconfig.json --watch"
+  },
+  "dependencies": {
+    "@medousa/client": "file:../../packages/medousa-client"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.6.0"
+  }
+}

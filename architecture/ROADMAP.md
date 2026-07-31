@@ -17,7 +17,7 @@ Home in every host. See [medousa-anywhere-plan.md](medousa-anywhere-plan.md).
 | Slice | Status |
 |-------|--------|
 | Shared TypeScript client and context envelope | 🔄 Phase 0 scaffold landed |
-| VS Code reference integration | ⬜ Phase 2 |
+| VS Code reference integration | 🔄 Phase 2 vertical slice scaffold |
 | Neovim focused adapter | ⬜ Phase 3 |
 | Obsidian vault-native adapter | ⬜ Phase 4 |
 

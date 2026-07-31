@@ -3,11 +3,14 @@ import type {
   CapabilityListResponse,
   ClientOptions,
   ClientRequestOptions,
+  CreateSessionRequest,
+  CreateSessionResponse,
   HealthResponse,
   InteractiveTurnRequest,
   InteractiveTurnResponse,
   InteractiveTurnStreamEvent,
   SessionSummary,
+  RuntimeDefaults,
   StreamOptions,
 } from "./types.js";
 
@@ -54,6 +57,23 @@ export class MedousaClient {
       return Array.isArray(sessions) ? (sessions as SessionSummary[]) : [];
     }
     return [];
+  }
+
+  async createSession(
+    request: CreateSessionRequest = {},
+    options?: ClientRequestOptions,
+  ): Promise<CreateSessionResponse> {
+    return this.request<CreateSessionResponse>("/v1/sessions", {
+      method: "POST",
+      body: JSON.stringify(request),
+      signal: options?.signal,
+    });
+  }
+
+  async runtimeDefaults(options?: ClientRequestOptions): Promise<RuntimeDefaults> {
+    return this.request<RuntimeDefaults>("/v1/runtime/defaults", {
+      signal: options?.signal,
+    });
   }
 
   async startTurn(

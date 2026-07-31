@@ -52,6 +52,33 @@ export interface SessionSummary {
   [key: string]: unknown;
 }
 
+export interface CreateSessionRequest {
+  session_id?: string;
+  catalog?: string;
+  member_profile_ids?: string[];
+  agent_profile_id?: string;
+  display_name?: string;
+}
+
+export interface CreateSessionResponse {
+  session_id: string;
+  catalog: string;
+  display_name?: string | null;
+  member_profile_ids?: string[];
+  agent_profile_id?: string | null;
+}
+
+export interface RuntimeDefaults {
+  backend: string;
+  provider: string;
+  model: string;
+  response_depth_mode: string;
+  reasoning_effort: string;
+  base_url?: string | null;
+  stage_routing: Record<string, unknown>;
+  [key: string]: unknown;
+}
+
 export interface ClientOptions {
   baseUrl: string;
   bearerToken?: string;
