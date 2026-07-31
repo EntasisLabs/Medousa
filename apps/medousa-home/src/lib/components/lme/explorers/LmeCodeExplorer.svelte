@@ -88,6 +88,9 @@
   const duplicateNeedsChoice = $derived(
     Boolean(repository?.existing_projects.length && !duplicateAcknowledged),
   );
+  const repositoryReady = $derived(
+    Boolean(repository && repository.has_commits !== false && baseRef.trim()),
+  );
 
   onMount(() => {
     void undertakings.refreshList();
@@ -131,7 +134,7 @@
     try {
       repository = await inspectForgeRepository(path.trim());
       repoPath = repository.path;
-      baseRef = repository.suggested_base_ref;
+      baseRef = repository.suggested_base_ref ?? "";
       duplicateAcknowledged = repository.existing_projects.length === 0;
       browserOpen = false;
       creating = true;
@@ -203,7 +206,7 @@
       hostedOpen = false;
       repository = cloned;
       repoPath = cloned.path;
-      baseRef = cloned.suggested_base_ref;
+      baseRef = cloned.suggested_base_ref ?? "";
       duplicateAcknowledged = true;
       browserOpen = false;
       await loadRepositoryCatalog();
@@ -384,7 +387,7 @@
               <button type="button" class="flex min-w-0 flex-1 items-center gap-2 px-2 py-1 text-left text-[10px] text-surface-400 hover:text-surface-100" onclick={() => void chooseRepository(recent.path)}>
                 <Code2 size={11} class="shrink-0" />
                 <span class="min-w-0 flex-1 truncate">{recent.display_name}</span>
-                <span class="truncate text-[8px] text-surface-600">{recent.current_branch ?? recent.suggested_base_ref}</span>
+                <span class="truncate text-[8px] text-surface-600">{recent.has_commits === false ? "No commits" : recent.current_branch ?? recent.suggested_base_ref ?? "Repository"}</span>
               </button>
               <button
                 type="button"
@@ -469,7 +472,7 @@
       <button
         type="submit"
         class="rounded bg-primary-500/80 px-2 py-1 text-xs font-medium text-surface-50 disabled:opacity-40"
-        disabled={busy || inspecting || !outcome.trim() || !repository || duplicateNeedsChoice}
+        disabled={busy || inspecting || !outcome.trim() || !repositoryReady || duplicateNeedsChoice}
       >{busy ? "Preparing project…" : inspecting ? "Reading project…" : "Start"}</button>
     </form>
   {/if}

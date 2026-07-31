@@ -15,6 +15,7 @@
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use fs2::FileExt;
 
@@ -23,6 +24,7 @@ use crate::events::{EventPayload, TransitionEvent, EVENT_SCHEMA_VERSION};
 use crate::model::{ActorRef, WorkId, WorkItem};
 
 pub const STORE_SCHEMA_VERSION: u32 = 1;
+static SNAPSHOT_TMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 /// An exclusive cross-process file lock (fs2). Unlocking happens on drop.
 /// Lock ordering is always repo → item, never the reverse.
@@ -207,20 +209,35 @@ impl FsWorkStore {
     /// `applied_seq` records how far the fold had gone when cached.
     pub fn write_snapshot(&self, item: &WorkItem, applied_seq: u64) -> Result<()> {
         let dir = self.item_dir(&item.id);
-        fs::create_dir_all(&dir)?;
-        let tmp = dir.join("manifest.json.tmp");
+        fs::create_dir_all(&dir)
+            .map_err(|err| snapshot_io_error("create snapshot directory", &dir, err))?;
+        let sequence = SNAPSHOT_TMP_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+        let tmp = dir.join(format!(
+            "manifest.json.tmp-{}-{sequence}",
+            std::process::id()
+        ));
         let final_path = self.snapshot_path(&item.id);
         let envelope = SnapshotEnvelope {
             applied_seq,
             item: item.clone(),
         };
         {
-            let mut file = File::create(&tmp)?;
-            file.write_all(serde_json::to_string_pretty(&envelope)?.as_bytes())?;
-            file.sync_all()?;
+            let mut file = OpenOptions::new()
+                .create_new(true)
+                .write(true)
+                .open(&tmp)
+                .map_err(|err| snapshot_io_error("create snapshot temporary file", &tmp, err))?;
+            file.write_all(serde_json::to_string_pretty(&envelope)?.as_bytes())
+                .map_err(|err| snapshot_io_error("write snapshot temporary file", &tmp, err))?;
+            file.sync_all()
+                .map_err(|err| snapshot_io_error("sync snapshot temporary file", &tmp, err))?;
         }
-        fs::rename(&tmp, &final_path)?;
-        sync_dir(&dir)?;
+        if let Err(err) = replace_snapshot(&tmp, &final_path) {
+            let _ = fs::remove_file(&tmp);
+            return Err(snapshot_io_error("replace snapshot", &final_path, err));
+        }
+        sync_dir(&dir)
+            .map_err(|err| snapshot_io_error("sync snapshot directory", &dir, err))?;
         Ok(())
     }
 
@@ -273,8 +290,56 @@ impl FsWorkStore {
     }
 }
 
-fn sync_dir(dir: &Path) -> Result<()> {
-    File::open(dir)?.sync_all()?;
+fn snapshot_io_error(action: &str, path: &Path, error: std::io::Error) -> ForgeError {
+    ForgeError::Store(format!("{action} {}: {error}", path.display()))
+}
+
+#[cfg(not(windows))]
+fn replace_snapshot(from: &Path, to: &Path) -> std::io::Result<()> {
+    fs::rename(from, to)
+}
+
+#[cfg(windows)]
+fn replace_snapshot(from: &Path, to: &Path) -> std::io::Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows::Win32::Storage::FileSystem::{
+        MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH, MoveFileExW,
+    };
+    use windows::core::PCWSTR;
+
+    let from = from
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect::<Vec<_>>();
+    let to = to
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect::<Vec<_>>();
+    if unsafe {
+        MoveFileExW(
+            PCWSTR(from.as_ptr()),
+            PCWSTR(to.as_ptr()),
+            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+        )
+    }
+    .is_err()
+    {
+        return Err(std::io::Error::last_os_error());
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn sync_dir(dir: &Path) -> std::io::Result<()> {
+    File::open(dir)?.sync_all()
+}
+
+#[cfg(not(unix))]
+fn sync_dir(_dir: &Path) -> std::io::Result<()> {
+    // Windows replacement uses MOVEFILE_WRITE_THROUGH. Opening a directory
+    // with std::fs::File is not supported there and returns access denied.
     Ok(())
 }
 
@@ -397,6 +462,27 @@ mod tests {
         fs::remove_file(store.snapshot_path(&item.id)).unwrap();
         assert!(store.read_snapshot(&item.id).unwrap().is_none());
         assert_eq!(store.replay(&item.id).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn snapshot_replacement_preserves_the_latest_complete_cache() {
+        let tmp = TempDir::new().unwrap();
+        let store = FsWorkStore::open(tmp.path()).unwrap();
+        let mut item = WorkItem::new("first", "b", target(), "user-1");
+
+        store.write_snapshot(&item, 1).unwrap();
+        item.title = "second".into();
+        store.write_snapshot(&item, 2).unwrap();
+
+        let back = store.read_snapshot(&item.id).unwrap().unwrap();
+        assert_eq!(back.applied_seq, 2);
+        assert_eq!(back.item.title, "second");
+        assert!(
+            fs::read_dir(store.item_dir(&item.id))
+                .unwrap()
+                .flatten()
+                .all(|entry| !entry.file_name().to_string_lossy().contains(".tmp-"))
+        );
     }
 
     #[test]

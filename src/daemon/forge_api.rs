@@ -160,6 +160,12 @@ fn map_err(err: ForgeError) -> ApiError {
         ForgeError::PolicyViolation(_) | ForgeError::CaptureBlocked(_) => {
             (StatusCode::UNPROCESSABLE_ENTITY, Some("policy"))
         }
+        ForgeError::RepositoryEmpty(_) => {
+            (StatusCode::UNPROCESSABLE_ENTITY, Some("repository_empty"))
+        }
+        ForgeError::BaseRefMissing { .. } => {
+            (StatusCode::CONFLICT, Some("base_ref_missing"))
+        }
         ForgeError::Git(_) => (StatusCode::BAD_REQUEST, Some("git")),
         ForgeError::Store(_) | ForgeError::Io(_) | ForgeError::Json(_) => {
             (StatusCode::INTERNAL_SERVER_ERROR, Some("store"))
@@ -389,7 +395,8 @@ struct RepositoryInspection {
     path: PathBuf,
     display_name: String,
     current_branch: Option<String>,
-    suggested_base_ref: String,
+    suggested_base_ref: Option<String>,
+    has_commits: bool,
     dirty: bool,
     changed_files: usize,
     remotes: Vec<String>,
@@ -586,7 +593,12 @@ fn inspect_repository_path_from_items(
     }
     let path = git.worktree_root(requested).map_err(map_err)?;
     let current_branch = git.current_branch(&path).map_err(map_err)?;
-    let suggested_base_ref = git.suggested_base_ref(&path).map_err(map_err)?;
+    let has_commits = git.has_commits(&path).map_err(map_err)?;
+    let suggested_base_ref = if has_commits {
+        git.suggested_base_ref(&path).map_err(map_err)?
+    } else {
+        None
+    };
     let changed_files = git.status_porcelain(&path).map_err(map_err)?.len();
     let identity = git.repo_identity(&path).map_err(map_err)?;
     let display_name = path
@@ -595,7 +607,9 @@ fn inspect_repository_path_from_items(
         .unwrap_or("Repository")
         .to_string();
     let existing_projects = existing_projects_for_repository(items, &path);
-    let state_explanation = if changed_files > 0 {
+    let state_explanation = if !has_commits {
+        "This repository has no commits yet. Create an initial commit before starting a Medousa project.".into()
+    } else if changed_files > 0 {
         format!(
             "{changed_files} uncommitted {} already exist in the repository. Medousa starts from the committed revision, so those outside changes stay separate.",
             if changed_files == 1 { "change" } else { "changes" }
@@ -608,6 +622,7 @@ fn inspect_repository_path_from_items(
         display_name,
         current_branch,
         suggested_base_ref,
+        has_commits,
         dirty: changed_files > 0,
         changed_files,
         remotes: identity.remotes,
@@ -707,7 +722,8 @@ async fn list_repositories(
                         .to_string(),
                     path: record.path.clone(),
                     current_branch: None,
-                    suggested_base_ref: "main".into(),
+                    suggested_base_ref: None,
+                    has_commits: false,
                     dirty: false,
                     changed_files: 0,
                     remotes: Vec::new(),
@@ -3676,6 +3692,20 @@ async fn forge_stream(
 #[cfg(test)]
 mod source_tests {
     use super::*;
+
+    #[test]
+    fn repository_readiness_errors_keep_domain_specific_statuses() {
+        let (status, Json(empty)) = map_err(ForgeError::RepositoryEmpty(PathBuf::from("repo")));
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(empty.kind, Some("repository_empty"));
+
+        let (status, Json(missing)) = map_err(ForgeError::BaseRefMissing {
+            repo_path: PathBuf::from("repo"),
+            reference: "master".into(),
+        });
+        assert_eq!(status, StatusCode::CONFLICT);
+        assert_eq!(missing.kind, Some("base_ref_missing"));
+    }
 
     #[test]
     fn source_paths_are_repo_relative_and_canonical() {

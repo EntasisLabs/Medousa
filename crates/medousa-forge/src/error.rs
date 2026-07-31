@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use thiserror::Error;
 
 use crate::model::{AttemptId, Digest, GitOid, LeaseId, WorkId, WorkState};
@@ -57,6 +59,15 @@ pub enum ForgeError {
 
     #[error("git error: {0}")]
     Git(String),
+
+    #[error("repository {} has no commits; create an initial commit before starting a project", .0.display())]
+    RepositoryEmpty(PathBuf),
+
+    #[error("starting branch or revision '{reference}' no longer exists in {}; choose an existing branch when starting a new project, or recreate a saved draft against one", repo_path.display())]
+    BaseRefMissing {
+        repo_path: PathBuf,
+        reference: String,
+    },
 
     #[error("store error: {0}")]
     Store(String),
