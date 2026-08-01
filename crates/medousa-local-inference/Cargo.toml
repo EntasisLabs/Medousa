@@ -8,6 +8,11 @@ description = "Local inference catalog/hardware/engine logic and the standalone 
 name = "medousa_local"
 path = "src/bin/medousa_local.rs"
 
+[[bin]]
+name = "medousa_local_bench"
+path = "src/bin/medousa_local_bench.rs"
+required-features = ["embedded-inference"]
+
 [dependencies]
 medousa-types = { path = "../medousa-types" }
 medousa-host = { path = "../medousa-host" }
@@ -22,9 +27,10 @@ chrono = { version = "0.4", features = ["serde"] }
 sysinfo = "0.33"
 fs2 = "0.4"
 dirs = "5"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"], optional = true }
 
 [features]
 default = []
-embedded-inference = ["dep:medousa-local-engine"]
+embedded-inference = ["dep:medousa-local-engine", "dep:reqwest"]
 embedded-inference-metal = ["embedded-inference", "medousa-local-engine/metal"]
 embedded-inference-cuda = ["embedded-inference", "medousa-local-engine/cuda"]

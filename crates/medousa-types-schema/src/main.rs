@@ -85,6 +85,7 @@ fn main() {
     export_type!(schemas, LocalRuntimePhase, "LocalRuntimePhase");
     export_type!(schemas, LocalEngineStatus, "LocalEngineStatus");
     export_type!(schemas, LocalResourceAdmission, "LocalResourceAdmission");
+    export_type!(schemas, LocalBenchmarkManifest, "LocalBenchmarkManifest");
     export_type!(schemas, LocalModelDownloadRequest, "LocalModelDownloadRequest");
     export_type!(schemas, LocalModelDownloadResponse, "LocalModelDownloadResponse");
     export_type!(schemas, ModelDownloadProgress, "ModelDownloadProgress");

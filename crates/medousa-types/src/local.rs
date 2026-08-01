@@ -192,7 +192,7 @@ impl<'de> Deserialize<'de> for LocalEngineStatus {
         }
 
         let wire = WireStatus::deserialize(deserializer)?;
-        let phase = wire.phase.unwrap_or_else(|| {
+        let phase = wire.phase.unwrap_or({
             if wire.loaded {
                 LocalRuntimePhase::Ready
             } else if wire.feature_enabled {
@@ -268,6 +268,128 @@ pub struct LocalResourceAdmission {
     pub max_seq_len: usize,
     pub max_batch_size: usize,
     pub rationale: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase")]
+pub enum LocalBenchmarkOutcome {
+    Running,
+    Completed,
+    Failed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase")]
+pub enum LocalBenchmarkArtifactMode {
+    PrequantizedUqff,
+    InSituQuantization,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase")]
+pub enum LocalBenchmarkPhase {
+    BeforeLoad,
+    AfterLoad,
+    AfterStream,
+    AfterUnload,
+    Reclaimed1s,
+    Reclaimed5s,
+    Reclaimed10s,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct LocalBenchmarkGitState {
+    pub revision: Option<String>,
+    pub dirty: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct LocalBenchmarkEngineIdentity {
+    pub control_plane_version: String,
+    pub runtime_name: String,
+    pub runtime_version: String,
+    pub compiled_backends: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct LocalBenchmarkHostIdentity {
+    pub os_name: Option<String>,
+    pub os_version: Option<String>,
+    pub kernel_version: Option<String>,
+    pub cpu_brand: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct LocalBenchmarkRecipe {
+    pub model_id: String,
+    pub model_repo: String,
+    pub artifact_mode: LocalBenchmarkArtifactMode,
+    pub quantization: Option<String>,
+    pub cpu_only: bool,
+    pub max_seq_len: usize,
+    pub max_batch_size: usize,
+    pub synthetic_prompt_tokens: usize,
+    pub max_output_tokens: usize,
+    pub sampling_seed: u64,
+    pub bind: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct LocalBenchmarkMemorySample {
+    pub phase: LocalBenchmarkPhase,
+    pub elapsed_ms: u64,
+    pub process_rss_mb: u64,
+    pub host_available_mb: u64,
+    pub host_used_swap_mb: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct LocalBenchmarkResult {
+    pub outcome: LocalBenchmarkOutcome,
+    pub error: Option<String>,
+    pub load_ms: Option<u64>,
+    pub ttft_ms: Option<u64>,
+    pub stream_ms: Option<u64>,
+    pub response_chunks: u64,
+    pub response_bytes: u64,
+    pub generated_content_bytes: u64,
+    pub reported_completion_tokens: Option<u64>,
+    pub unload_ms: Option<u64>,
+    pub rss_reclaimed_mb_1s: Option<u64>,
+    pub rss_reclaimed_mb_5s: Option<u64>,
+    pub rss_reclaimed_mb_10s: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct LocalBenchmarkManifest {
+    pub schema_version: u32,
+    pub started_at: DateTime<Utc>,
+    pub finished_at: DateTime<Utc>,
+    pub git: LocalBenchmarkGitState,
+    pub engine: LocalBenchmarkEngineIdentity,
+    pub host: LocalBenchmarkHostIdentity,
+    pub hardware: HardwareProbe,
+    pub admission: LocalResourceAdmission,
+    pub recipe: LocalBenchmarkRecipe,
+    pub samples: Vec<LocalBenchmarkMemorySample>,
+    pub result: LocalBenchmarkResult,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

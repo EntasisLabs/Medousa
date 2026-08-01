@@ -66,6 +66,25 @@ that safe envelope, it stays cold and Medousa explains the refusal instead of
 trying the allocation. Automatic recommendations prefer the strongest smaller
 model that fits right now. An idle local worker exits after five minutes.
 
+### Benchmark an installed local model
+
+Developers can capture a content-free lifecycle manifest for the current engine:
+
+```bash
+cargo run -p medousa-local-inference \
+  --features embedded-inference-metal \
+  --bin medousa_local_bench -- \
+  --model-id gemma-4-e2b-it-qat \
+  --output local-benchmark.json
+```
+
+Use `embedded-inference-cuda` on qualified NVIDIA builds or
+`embedded-inference` for the CPU baseline. The command never downloads a model
+and refuses an uninstalled or unsafe one. It uses a deterministic synthetic
+prompt and records only build/recipe identity, phase timings, response byte
+counts, and host/process memory—including reclaimed RSS at 1, 5, and 10 seconds.
+It never stores the prompt or generated content.
+
 ---
 
 ## Remove
