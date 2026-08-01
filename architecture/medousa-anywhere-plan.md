@@ -1,6 +1,6 @@
 # Medousa Anywhere — external surfaces plan
 
-> **Status:** Proposed / living plan  
+> **Status:** In progress / living plan
 > **Date:** 2026-07-31  
 > **Owner:** Medousa platform  
 > **Related:** [`architecture/ROADMAP.md`](ROADMAP.md), [`docs/sdk/README.md`](../docs/sdk/README.md), [`docs/engine/http-api.md`](../docs/engine/http-api.md), [`docs/cookbook/integrate-without-the-app.md`](../docs/cookbook/integrate-without-the-app.md)
@@ -107,6 +107,12 @@ The 0.3 conversation library adds cross-surface history, naming, deletion, and
 Home's settled-reply actions. The 0.4 interaction pass adds per-session drafts,
 deliberate navigation/loading states, contextual invitations, settled-action
 timing, focus recovery, and long-transcript navigation.
+
+The Neovim first slice now lives in [`integrations/neovim/`](../integrations/neovim/).
+It uses a transient, keyboard-first coding room rather than a persistent chat
+pane: the current buffer, visual selection, and diagnostics are supplied as
+bounded context; replies stream with recovery; and code application is always
+an explicit confirmed action.
 
 ## Target architecture
 
@@ -223,7 +229,11 @@ permission/budget prompts, and richer artifact previews.
 
 The Neovim integration should remain composable: a Lua core, configurable
 keymaps, no mandatory UI framework, and no assumption that users want a
-persistent chat pane.
+persistent chat pane. The first slice is deliberately a transient “coding
+room” opened by a hotkey or command. It restores the active daemon session,
+keeps focus in the prompt after a turn, exposes concise tool/recovery states,
+and lets `MedousaApply` insert or replace a fenced code block only after
+confirmation.
 
 ### Obsidian — vault-native companion
 
@@ -287,18 +297,22 @@ route strings scattered through plugin code.
 contextual question, continue it, and use a vault result without opening TUI
 or reproducing Home.
 
-### Phase 3 — Neovim adapter
+### Phase 3 — Neovim adapter (first slice implemented)
 
 **Goal:** deliver a fast, keyboard-first surface on the same client contract.
 
-- Add Lua host adapter and configurable command/keymap layer.
-- Add floating streaming response and explicit patch/diff application.
-- Add current buffer/visual selection/diagnostic context.
+- Add Lua host adapter and configurable command/keymap layer. **Complete for
+  the first slice.**
+- Add floating streaming response and explicit confirmed fenced-code
+  application. **Complete for the first slice.**
+- Add current buffer/visual selection/diagnostic context. **Complete for the
+  first slice.**
 - Add optional Telescope integration without making it mandatory.
 - Add vault search and Forge status commands.
 
-**Exit:** a Neovim user can complete the common ask/explain/fix/search flows
-without a persistent TUI-like shell.
+**Exit:** a Neovim user can complete the common ask/explain/fix flows without a
+persistent TUI-like shell. Search, vault, Forge, and richer patch/diff review
+remain follow-on work.
 
 ### Phase 4 — Obsidian adapter
 

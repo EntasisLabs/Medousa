@@ -30,6 +30,7 @@ Doc conventions: [CONTRIBUTING-DOCS.md](CONTRIBUTING-DOCS.md)
 | [Memory & identity](guides/memory-and-identity.md) | Teach who you are |
 | [Channels](guides/channels.md) | Telegram, Discord, Slack, WhatsApp |
 | [VS Code](guides/vscode.md) | Medousa chat, editor context, and workshop sessions in VS Code |
+| [Neovim](guides/neovim.md) | Keyboard-first coding room with contextual chat and safe code application |
 | [Undertakings & ForgeLens](guides/undertakings.md) | Governed work, seal, review, World |
 | Full index | [guides/README.md](guides/README.md) |
 
