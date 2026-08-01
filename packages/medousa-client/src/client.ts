@@ -10,6 +10,10 @@ import type {
   InteractiveTurnResponse,
   InteractiveTurnStreamEvent,
   SessionSummary,
+  SessionSetDisplayNameResponse,
+  SessionDeleteResponse,
+  VaultWriteRequest,
+  VaultWriteResponse,
   RuntimeDefaults,
   SessionHistoryResponse,
   StreamOptions,
@@ -79,6 +83,43 @@ export class MedousaClient {
       `/v1/sessions/${encodeURIComponent(sessionId)}/history`,
       { signal: options?.signal },
     );
+  }
+
+  async renameSession(
+    sessionId: string,
+    displayName: string,
+    options?: ClientRequestOptions,
+  ): Promise<SessionSetDisplayNameResponse> {
+    return this.request<SessionSetDisplayNameResponse>(
+      `/v1/sessions/${encodeURIComponent(sessionId)}/name`,
+      {
+        method: "PUT",
+        body: JSON.stringify({ display_name: displayName }),
+        signal: options?.signal,
+      },
+    );
+  }
+
+  async deleteSession(
+    sessionId: string,
+    purgeMemory = true,
+    options?: ClientRequestOptions,
+  ): Promise<SessionDeleteResponse> {
+    return this.request<SessionDeleteResponse>(
+      `/v1/sessions/${encodeURIComponent(sessionId)}?purge_memory=${purgeMemory}`,
+      { method: "DELETE", signal: options?.signal },
+    );
+  }
+
+  async createVaultNote(
+    request: VaultWriteRequest,
+    options?: ClientRequestOptions,
+  ): Promise<VaultWriteResponse> {
+    return this.request<VaultWriteResponse>("/v1/vault/notes", {
+      method: "POST",
+      body: JSON.stringify(request),
+      signal: options?.signal,
+    });
   }
 
   async runtimeDefaults(options?: ClientRequestOptions): Promise<RuntimeDefaults> {

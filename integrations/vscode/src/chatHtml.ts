@@ -8,7 +8,7 @@ export function chatHtml(nonce: string): string {
     :root { color-scheme: light dark; --gap: 10px; }
     * { box-sizing: border-box; }
     body { margin: 0; height: 100vh; overflow: hidden; color: var(--vscode-foreground); background: var(--vscode-sideBar-background); font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); }
-    button, textarea { font: inherit; }
+    button, textarea, input { font: inherit; }
     button { cursor: pointer; }
     .shell { height: 100vh; display: grid; grid-template-rows: auto minmax(0,1fr) auto; }
     header { display: flex; align-items: center; gap: 8px; min-height: 42px; padding: 7px 10px; border-bottom: 1px solid var(--vscode-sideBarSectionHeader-border, var(--vscode-panel-border)); }
@@ -16,6 +16,8 @@ export function chatHtml(nonce: string): string {
     .mark { width: 23px; height: 23px; border-radius: 50%; display: grid; place-items: center; color: var(--vscode-button-foreground); background: var(--vscode-button-background); font-weight: 700; }
     .identity-copy { min-width: 0; }
     .title { font-weight: 650; line-height: 1.15; }
+    .title-button { min-width: 0; border: 0; padding: 0; color: inherit; background: transparent; text-align: left; }
+    .title-button:hover .title { text-decoration: underline; text-underline-offset: 2px; }
     .connection { display: flex; align-items: center; gap: 5px; color: var(--vscode-descriptionForeground); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--vscode-disabledForeground); }
     .dot.connected { background: var(--vscode-testing-iconPassed); }
@@ -37,6 +39,10 @@ export function chatHtml(nonce: string): string {
     .bubble { max-width: 94%; border-radius: 9px; padding: 8px 10px; overflow-wrap: anywhere; line-height: 1.48; }
     .user .bubble { color: var(--vscode-input-foreground); background: var(--vscode-input-background); border: 1px solid var(--vscode-input-border, transparent); }
     .assistant .bubble { max-width: 100%; padding-left: 0; padding-right: 0; background: transparent; }
+    .turn-actions { min-height: 23px; display: flex; gap: 2px; opacity: 0; transition: opacity .12s ease; }
+    .turn:hover .turn-actions, .turn:focus-within .turn-actions { opacity: 1; }
+    .turn-action { border: 0; border-radius: 4px; padding: 3px 6px; color: var(--vscode-descriptionForeground); background: transparent; font-size: 11px; }
+    .turn-action:hover { color: var(--vscode-foreground); background: var(--vscode-toolbar-hoverBackground); }
     .bubble p { margin: 0 0 8px; }
     .bubble p:last-child { margin-bottom: 0; }
     .bubble h1, .bubble h2, .bubble h3 { margin: 12px 0 6px; font-size: 1em; }
@@ -75,6 +81,30 @@ export function chatHtml(nonce: string): string {
     .send { min-width: 64px; border: 0; border-radius: 4px; padding: 5px 9px; color: var(--vscode-button-foreground); background: var(--vscode-button-background); }
     .send:hover { background: var(--vscode-button-hoverBackground); }
     .send:disabled { opacity: .55; cursor: default; }
+    .sessions-backdrop { position: fixed; z-index: 20; inset: 0; display: grid; grid-template-columns: minmax(0, 1fr) 42px; background: color-mix(in srgb, var(--vscode-editor-background) 45%, transparent); }
+    .sessions-backdrop[hidden] { display: none; }
+    .sessions-panel { min-width: 0; display: grid; grid-template-rows: auto auto minmax(0,1fr); background: var(--vscode-sideBar-background); border-right: 1px solid var(--vscode-panel-border); box-shadow: 3px 0 12px var(--vscode-widget-shadow); }
+    .sessions-head { display: flex; align-items: center; justify-content: space-between; min-height: 42px; padding: 7px 10px; border-bottom: 1px solid var(--vscode-panel-border); }
+    .sessions-head strong { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+    .session-search { margin: 8px; width: calc(100% - 16px); border: 1px solid var(--vscode-input-border, transparent); border-radius: 4px; outline: 0; padding: 6px 8px; color: var(--vscode-input-foreground); background: var(--vscode-input-background); }
+    .session-search:focus { border-color: var(--vscode-focusBorder); }
+    .session-list { min-height: 0; overflow-y: auto; padding: 0 5px 10px; }
+    .session-row { position: relative; display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 6px; align-items: center; border-radius: 5px; padding: 7px 5px 7px 8px; }
+    .session-row:hover, .session-row.active { background: var(--vscode-list-hoverBackground); }
+    .session-row.active { color: var(--vscode-list-activeSelectionForeground); background: var(--vscode-list-activeSelectionBackground); }
+    .session-select { min-width: 0; border: 0; padding: 0; color: inherit; background: transparent; text-align: left; }
+    .session-name, .session-preview { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .session-name { font-weight: 600; }
+    .session-preview { margin-top: 2px; color: var(--vscode-descriptionForeground); font-size: 11px; }
+    .session-actions { display: flex; opacity: 0; }
+    .session-row:hover .session-actions, .session-row:focus-within .session-actions, .session-row.active .session-actions { opacity: 1; }
+    .session-action { width: 23px; height: 23px; border: 0; border-radius: 4px; padding: 0; color: inherit; background: transparent; }
+    .session-action:hover { background: var(--vscode-toolbar-hoverBackground); }
+    .session-empty { padding: 20px 10px; color: var(--vscode-descriptionForeground); text-align: center; }
+    .rename-row { grid-column: 1 / -1; display: flex; gap: 5px; }
+    .rename-input { min-width: 0; flex: 1; border: 1px solid var(--vscode-focusBorder); outline: 0; padding: 4px 6px; color: var(--vscode-input-foreground); background: var(--vscode-input-background); }
+    .toast { position: fixed; z-index: 30; left: 50%; bottom: 84px; transform: translateX(-50%); border: 1px solid var(--vscode-widget-border); border-radius: 5px; padding: 5px 9px; color: var(--vscode-notifications-foreground); background: var(--vscode-notifications-background); box-shadow: 0 2px 8px var(--vscode-widget-shadow); font-size: 11px; }
+    .toast[hidden] { display: none; }
     @keyframes spin { to { transform: rotate(360deg); } }
     @keyframes pulse { 50% { opacity: .35; } }
     @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .001ms !important; scroll-behavior: auto !important; } }
@@ -82,7 +112,7 @@ export function chatHtml(nonce: string): string {
 </head><body>
 <div class="shell">
   <header>
-    <div class="identity"><div class="mark">M</div><div class="identity-copy"><div class="title">Medousa</div><div class="connection"><span id="connection-dot" class="dot checking"></span><span id="connection-label">Checking workshop…</span></div></div></div>
+    <div class="identity"><div class="mark">M</div><button class="title-button identity-copy" id="open-sessions" title="Conversation history"><div class="title" id="conversation-title">Medousa</div><div class="connection"><span id="connection-dot" class="dot checking"></span><span id="connection-label">Checking workshop…</span></div></button></div>
     <button class="icon-button" id="new-session" title="New conversation" aria-label="New conversation">＋</button>
     <button class="icon-button" id="open-home" title="Open Medousa" aria-label="Open Medousa">↗</button>
     <button class="icon-button" id="configure" title="Configure connection" aria-label="Configure connection">⋯</button>
@@ -96,6 +126,14 @@ export function chatHtml(nonce: string): string {
     <div class="composer"><textarea id="prompt" aria-label="Message Medousa" placeholder="Message Medousa…"></textarea><div class="composer-bar"><span class="hint">Enter to send · Shift+Enter for newline</span><button id="send" class="send">Send</button></div></div>
   </footer>
 </div>
+<div id="sessions-backdrop" class="sessions-backdrop" hidden>
+  <aside class="sessions-panel" aria-label="Conversation history">
+    <div class="sessions-head"><strong>Conversations</strong><div><button class="icon-button" id="sessions-new" title="New conversation" aria-label="New conversation">＋</button><button class="icon-button" id="sessions-close" title="Close history" aria-label="Close history">×</button></div></div>
+    <input id="session-search" class="session-search" type="search" placeholder="Search conversations…" aria-label="Search conversations">
+    <div id="session-list" class="session-list"></div>
+  </aside>
+</div>
+<div id="toast" class="toast" role="status" hidden></div>
 <script nonce="${nonce}">
   const vscode = acquireVsCodeApi();
   const persisted = vscode.getState() || { messages: [] };
@@ -105,11 +143,18 @@ export function chatHtml(nonce: string): string {
   const prompt = document.getElementById("prompt");
   const send = document.getElementById("send");
   const contextRow = document.getElementById("context");
+  const sessionsBackdrop = document.getElementById("sessions-backdrop");
+  const sessionList = document.getElementById("session-list");
+  const sessionSearch = document.getElementById("session-search");
+  const conversationTitle = document.getElementById("conversation-title");
   let busy = false;
   let assistant = null;
   let assistantRaw = "";
   let statusNode = null;
   const tools = new Map();
+  let sessions = [];
+  let activeSessionId = null;
+  let toastTimer = null;
 
   function persist() { vscode.setState({ messages: Array.from(messages.querySelectorAll(".turn")).map(function(node) { return { role: node.dataset.role, content: node.dataset.raw || "" }; }) }); }
   function atBottom() { return scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight < 70; }
@@ -134,7 +179,7 @@ export function chatHtml(nonce: string): string {
     html += renderProse(value.slice(cursor)); return html;
   }
   function showEmpty() { empty.hidden = messages.children.length > 0; }
-  function addTurn(role, content) { const wasBottom = atBottom(); const turn = document.createElement("section"); turn.className = "turn " + role; turn.dataset.role = role; turn.dataset.raw = content; const bubble = document.createElement("div"); bubble.className = "bubble"; if (role === "assistant") bubble.innerHTML = renderMarkdown(content); else bubble.textContent = content; turn.appendChild(bubble); messages.appendChild(turn); showEmpty(); pin(wasBottom); persist(); return { turn: turn, bubble: bubble }; }
+  function addTurn(role, content) { const wasBottom = atBottom(); const turn = document.createElement("section"); turn.className = "turn " + role; turn.dataset.role = role; turn.dataset.raw = content; const bubble = document.createElement("div"); bubble.className = "bubble"; if (role === "assistant") bubble.innerHTML = renderMarkdown(content); else bubble.textContent = content; turn.appendChild(bubble); if (role === "assistant") { const actions = document.createElement("div"); actions.className = "turn-actions"; actions.innerHTML = '<button class="turn-action" data-turn-action="copy" title="Copy reply">Copy</button><button class="turn-action" data-turn-action="share" title="Share reply">Share</button><button class="turn-action" data-turn-action="library" title="Save to Library">Library</button>'; turn.appendChild(actions); } messages.appendChild(turn); showEmpty(); pin(wasBottom); persist(); return { turn: turn, bubble: bubble }; }
   function appendAssistant(text) { const wasBottom = atBottom(); if (!assistant) { const created = addTurn("assistant", ""); assistant = created; assistantRaw = ""; } assistantRaw += text; assistant.turn.dataset.raw = assistantRaw; assistant.bubble.innerHTML = renderMarkdown(assistantRaw); pin(wasBottom); persist(); }
   function replaceAssistant(text) { if (!assistant) assistant = addTurn("assistant", ""); assistantRaw = text; assistant.turn.dataset.raw = text; assistant.bubble.innerHTML = renderMarkdown(text); persist(); pin(true); }
   function setStatus(text, working) { const wasBottom = atBottom(); if (!statusNode) { statusNode = document.createElement("div"); statusNode.className = "status-line"; messages.appendChild(statusNode); } statusNode.innerHTML = (working ? '<span class="spinner"></span>' : "") + '<span>' + escapeHtml(text) + '</span>'; pin(wasBottom); }
@@ -144,6 +189,11 @@ export function chatHtml(nonce: string): string {
   function addAttention(message) { const node = document.createElement("div"); node.className = "attention"; node.textContent = message.text; const actions = document.createElement("div"); actions.className = "attention-actions"; ["Approve", "Deny"].forEach(function(label) { const button = document.createElement("button"); button.textContent = label; button.addEventListener("click", function() { vscode.postMessage({ type: message.kind === "budget" ? "budget" : "permission", requestId: message.requestId, approve: label === "Approve", rounds: message.rounds }); node.remove(); }); actions.appendChild(button); }); node.appendChild(actions); messages.appendChild(node); }
   function addError(text) { clearStatus(); const node = document.createElement("div"); node.className = "error"; const copy = document.createElement("div"); copy.textContent = text; const retry = document.createElement("button"); retry.textContent = "Retry"; retry.className = "send"; retry.style.marginTop = "7px"; retry.addEventListener("click", function() { node.remove(); setBusy(true); vscode.postMessage({ type: "retry" }); }); node.appendChild(copy); node.appendChild(retry); messages.appendChild(node); setBusy(false); }
   function restoreHistory(turns) { messages.innerHTML = ""; assistant = null; tools.clear(); (turns || []).forEach(function(turn) { if (["user","assistant"].includes(turn.role) && turn.content) addTurn(turn.role, turn.content); }); showEmpty(); }
+  function showToast(text) { const node = document.getElementById("toast"); node.textContent = text; node.hidden = false; if (toastTimer) clearTimeout(toastTimer); toastTimer = setTimeout(function() { node.hidden = true; }, 1500); }
+  function formatSessionTime(value) { if (!value) return ""; const date = new Date(value); if (Number.isNaN(date.getTime())) return ""; const today = new Date(); return date.toDateString() === today.toDateString() ? date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : date.toLocaleDateString([], { month: "short", day: "numeric" }); }
+  function renderSessions() { const query = sessionSearch.value.trim().toLowerCase(); const visible = sessions.filter(function(item) { return !query || item.displayName.toLowerCase().includes(query) || item.preview.toLowerCase().includes(query); }); sessionList.innerHTML = ""; if (!visible.length) { const emptyNode = document.createElement("div"); emptyNode.className = "session-empty"; emptyNode.textContent = query ? "No matching conversations." : "No conversations yet."; sessionList.appendChild(emptyNode); return; } visible.forEach(function(item) { const row = document.createElement("div"); row.className = "session-row" + (item.sessionId === activeSessionId ? " active" : ""); row.dataset.sessionId = item.sessionId; const select = document.createElement("button"); select.className = "session-select"; select.dataset.sessionAction = "select"; const name = document.createElement("div"); name.className = "session-name"; name.textContent = item.displayName; const preview = document.createElement("div"); preview.className = "session-preview"; preview.textContent = [item.preview, formatSessionTime(item.lastTimestamp)].filter(Boolean).join(" · "); select.appendChild(name); select.appendChild(preview); const actions = document.createElement("div"); actions.className = "session-actions"; actions.innerHTML = '<button class="session-action" data-session-action="rename" title="Rename" aria-label="Rename">✎</button><button class="session-action" data-session-action="delete" title="Delete" aria-label="Delete">×</button>'; row.appendChild(select); row.appendChild(actions); sessionList.appendChild(row); }); const active = sessions.find(function(item) { return item.sessionId === activeSessionId; }); conversationTitle.textContent = active ? active.displayName : "Medousa"; }
+  function startRename(row) { const item = sessions.find(function(entry) { return entry.sessionId === row.dataset.sessionId; }); if (!item) return; row.innerHTML = '<form class="rename-row"><input class="rename-input" maxlength="80" aria-label="Conversation name"><button class="session-action" type="submit" title="Save">✓</button><button class="session-action" type="button" data-session-action="cancelRename" title="Cancel">×</button></form>'; const input = row.querySelector("input"); input.value = item.displayName; input.focus(); input.select(); }
+  function pairedUserTurn(turn) { let previous = turn.previousElementSibling; while (previous) { if (previous.classList.contains("turn")) { if (previous.dataset.role === "user") return previous; if (previous.dataset.role === "assistant") return null; } previous = previous.previousElementSibling; } return null; }
   function submit(text) { const value = (text || prompt.value).trim(); if (!value || busy) return; addTurn("user", value); assistant = null; assistantRaw = ""; prompt.value = ""; resize(); setBusy(true); vscode.postMessage({ type: "send", text: value }); }
   function resize() { prompt.style.height = "auto"; prompt.style.height = Math.min(prompt.scrollHeight, 180) + "px"; }
   send.addEventListener("click", function() { if (busy) vscode.postMessage({ type: "cancel" }); else submit(); });
@@ -152,11 +202,22 @@ export function chatHtml(nonce: string): string {
   document.querySelectorAll(".suggestion").forEach(function(button) { button.addEventListener("click", function() { submit(button.textContent); }); });
   document.getElementById("configure").addEventListener("click", function() { vscode.postMessage({ type: "configure" }); });
   document.getElementById("new-session").addEventListener("click", function() { vscode.postMessage({ type: "newSession" }); });
+  document.getElementById("open-sessions").addEventListener("click", function() { vscode.postMessage({ type: "openSessions" }); });
+  document.getElementById("sessions-close").addEventListener("click", function() { sessionsBackdrop.hidden = true; });
+  document.getElementById("sessions-new").addEventListener("click", function() { sessionsBackdrop.hidden = true; vscode.postMessage({ type: "newSession" }); });
+  sessionsBackdrop.addEventListener("click", function(event) { if (event.target === sessionsBackdrop) sessionsBackdrop.hidden = true; });
+  sessionSearch.addEventListener("input", renderSessions);
+  document.addEventListener("keydown", function(event) { if (event.key === "Escape" && !sessionsBackdrop.hidden) { sessionsBackdrop.hidden = true; prompt.focus(); } });
+  sessionList.addEventListener("click", function(event) { const action = event.target.closest("[data-session-action]"); if (!action) return; const row = action.closest(".session-row"); const sessionId = row && row.dataset.sessionId; if (action.dataset.sessionAction === "select" && sessionId) { sessionsBackdrop.hidden = true; vscode.postMessage({ type: "switchSession", sessionId: sessionId }); } else if (action.dataset.sessionAction === "rename" && row) startRename(row); else if (action.dataset.sessionAction === "delete" && sessionId) vscode.postMessage({ type: "deleteSession", sessionId: sessionId }); else if (action.dataset.sessionAction === "cancelRename") renderSessions(); });
+  sessionList.addEventListener("submit", function(event) { event.preventDefault(); const row = event.target.closest(".session-row"); const input = event.target.querySelector("input"); if (row && input && input.value.trim()) vscode.postMessage({ type: "renameSession", sessionId: row.dataset.sessionId, text: input.value.trim() }); });
   document.getElementById("open-home").addEventListener("click", function() { vscode.postMessage({ type: "openHome" }); });
   contextRow.addEventListener("click", function(event) { const button = event.target.closest("button[data-context-key]"); if (button) vscode.postMessage({ type: "removeContext", key: button.dataset.contextKey }); });
-  messages.addEventListener("click", function(event) { const link = event.target.closest("a[data-href]"); if (link) { event.preventDefault(); vscode.postMessage({ type: "openLink", href: link.dataset.href }); } const copy = event.target.closest("button[data-copy-code]"); if (copy) navigator.clipboard.writeText(decodeURIComponent(copy.dataset.copyCode)); const insert = event.target.closest("button[data-insert-code]"); if (insert) vscode.postMessage({ type: "insertCode", text: decodeURIComponent(insert.dataset.insertCode) }); });
+  messages.addEventListener("click", function(event) { const link = event.target.closest("a[data-href]"); if (link) { event.preventDefault(); vscode.postMessage({ type: "openLink", href: link.dataset.href }); } const copy = event.target.closest("button[data-copy-code]"); if (copy) vscode.postMessage({ type: "copyText", text: decodeURIComponent(copy.dataset.copyCode) }); const insert = event.target.closest("button[data-insert-code]"); if (insert) vscode.postMessage({ type: "insertCode", text: decodeURIComponent(insert.dataset.insertCode) }); const turnAction = event.target.closest("button[data-turn-action]"); if (turnAction) { const turn = turnAction.closest(".turn"); if (turn) { let type = "copyText"; if (turnAction.dataset.turnAction === "share") type = "shareText"; if (turnAction.dataset.turnAction === "library") type = "saveToLibrary"; const previous = pairedUserTurn(turn); vscode.postMessage({ type: type, text: turn.dataset.raw || "", userText: previous ? previous.dataset.raw || "" : "" }); } } });
   window.addEventListener("message", function(event) { const message = event.data;
     if (message.type === "history") restoreHistory(message.turns);
+    else if (message.type === "sessions") { sessions = message.sessions || []; activeSessionId = message.activeSessionId; renderSessions(); }
+    else if (message.type === "sessionsOpen") { sessionsBackdrop.hidden = false; sessionSearch.focus(); }
+    else if (message.type === "toast") showToast(message.text);
     else if (message.type === "user") addTurn("user", message.text);
     else if (message.type === "assistantDelta") appendAssistant(message.text);
     else if (message.type === "assistantReplace") replaceAssistant(message.text);

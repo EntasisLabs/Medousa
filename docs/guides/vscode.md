@@ -12,7 +12,7 @@ From the Medousa repository:
 cd integrations/vscode
 npm install
 npm run package
-code --install-extension medousa-vscode-0.2.0.vsix --force
+code --install-extension medousa-vscode-0.3.0.vsix --force
 ```
 
 Reload VS Code after installing, then select the Medousa icon in the activity
@@ -44,11 +44,21 @@ Answers support Markdown and fenced code. Code blocks can be copied or inserted
 at the active selection after confirmation. Tool activity stays collapsed and
 approval requests appear only when Medousa needs attention.
 
+Settled replies include **Copy**, **Share**, and **Library** actions. In VS Code,
+Share copies the reply to the system clipboard so it can be pasted into any
+destination. Library saves the user/assistant turn into the active workshop
+vault's inbox with the same `chat-turn` metadata used by Medousa.
+
 ## Session continuity
 
-Each VS Code workspace keeps one Medousa session and restores its transcript
-when the sidebar opens. Starting a new conversation creates a new daemon-owned
-session; it does not delete the earlier session or its memory.
+Each VS Code workspace remembers its active Medousa session and restores its
+transcript when the sidebar opens. Select the conversation title in the chat
+header to open searchable workshop history. From there you can switch sessions,
+rename them, or delete a session and its associated memory after confirmation.
+
+Starting a new conversation creates a new daemon-owned session; it does not
+delete earlier sessions or their memory. Untitled conversations receive the
+daemon's transcript-derived title and can be renamed at any time.
 
 ## Troubleshooting
 

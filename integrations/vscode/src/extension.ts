@@ -9,6 +9,7 @@ import {
   type InteractiveTurnRequest,
   type MedousaContext,
   type SessionHistoryResponse,
+  type SessionSummary,
 } from "@medousa/client";
 import { chatHtml, createNonce } from "./chatHtml.js";
 import {
@@ -93,6 +94,7 @@ class MedousaChatView implements vscode.WebviewViewProvider {
           content: stripContextSupplement(turn.content),
         })),
       });
+      await this.refreshSessions();
       this.post({ type: "connection", state: "connected", label: endpointLabel() });
       this.refreshContext();
     } catch (error) {
@@ -155,6 +157,7 @@ class MedousaChatView implements vscode.WebviewViewProvider {
         for (const projected of projectStreamEvent(event, projection)) this.postProjected(projected);
       }
       this.post({ type: "done" });
+      await this.refreshSessions();
       this.post({ type: "connection", state: "connected", label: endpointLabel() });
     } catch (error) {
       if (this.abortController.signal.aborted) {
@@ -177,16 +180,61 @@ class MedousaChatView implements vscode.WebviewViewProvider {
       if (!this.client) this.client = await createClient(this.context);
       const created = await this.client.createSession({
         catalog: "single",
-        display_name: sessionDisplayName(),
       });
       this.sessionId = created.session_id;
       await this.context.workspaceState.update(SESSION_KEY, created.session_id);
       this.disabledContext.clear();
       this.post({ type: "reset" });
+      await this.refreshSessions();
       this.refreshContext();
     } catch (error) {
       this.post({ type: "error", text: errorMessage(error) });
     }
+  }
+
+  private async refreshSessions(): Promise<void> {
+    if (!this.client) return;
+    const sessions = await this.client.sessions(100);
+    this.post({
+      type: "sessions",
+      activeSessionId: this.sessionId,
+      sessions: sessions.map(normalizeSessionSummary).filter((session): session is ChatSessionSummary => session !== null),
+    });
+  }
+
+  private async switchSession(sessionId: string): Promise<void> {
+    if (this.abortController || !this.client || sessionId === this.sessionId) return;
+    const history = await this.client.sessionHistory(sessionId);
+    this.sessionId = sessionId;
+    this.lastPrompt = lastUserPrompt(history);
+    await this.context.workspaceState.update(SESSION_KEY, sessionId);
+    this.post({
+      type: "history",
+      turns: history.turns.map((turn) => ({ ...turn, content: stripContextSupplement(turn.content) })),
+    });
+    await this.refreshSessions();
+  }
+
+  private async renameSession(sessionId: string, displayName: string): Promise<void> {
+    if (!this.client) return;
+    const trimmed = displayName.trim();
+    if (!trimmed) throw new Error("Conversation name must not be empty");
+    await this.client.renameSession(sessionId, trimmed);
+    await this.refreshSessions();
+  }
+
+  private async deleteSession(sessionId: string): Promise<void> {
+    if (!this.client) return;
+    const answer = await vscode.window.showWarningMessage(
+      "Delete this conversation and its Medousa memory? This cannot be undone.",
+      { modal: true },
+      "Delete",
+    );
+    if (answer !== "Delete") return;
+    if (sessionId === this.sessionId) await this.cancel();
+    await this.client.deleteSession(sessionId, true);
+    if (sessionId === this.sessionId) await this.newSession();
+    else await this.refreshSessions();
   }
 
   private async cancel(): Promise<void> {
@@ -211,7 +259,7 @@ class MedousaChatView implements vscode.WebviewViewProvider {
         await this.context.workspaceState.update(SESSION_KEY, undefined);
       }
     }
-    const created = await client.createSession({ catalog: "single", display_name: sessionDisplayName() });
+    const created = await client.createSession({ catalog: "single" });
     await this.context.workspaceState.update(SESSION_KEY, created.session_id);
     return { session_id: created.session_id, turns: [] };
   }
@@ -235,6 +283,55 @@ class MedousaChatView implements vscode.WebviewViewProvider {
         break;
       case "newSession":
         await this.newSession();
+        break;
+      case "openSessions":
+        try {
+          await this.refreshSessions();
+          this.post({ type: "sessionsOpen" });
+        } catch (error) {
+          this.post({ type: "error", text: errorMessage(error) });
+        }
+        break;
+      case "switchSession":
+        if (message.sessionId) {
+          try { await this.switchSession(message.sessionId); }
+          catch (error) { this.post({ type: "error", text: errorMessage(error) }); }
+        }
+        break;
+      case "renameSession":
+        if (message.sessionId && message.text) {
+          try { await this.renameSession(message.sessionId, message.text); }
+          catch (error) { this.post({ type: "error", text: errorMessage(error) }); }
+        }
+        break;
+      case "deleteSession":
+        if (message.sessionId) {
+          try { await this.deleteSession(message.sessionId); }
+          catch (error) { this.post({ type: "error", text: errorMessage(error) }); }
+        }
+        break;
+      case "copyText":
+        if (message.text) {
+          await vscode.env.clipboard.writeText(message.text);
+          this.post({ type: "toast", text: "Copied" });
+        }
+        break;
+      case "shareText":
+        if (message.text) {
+          await vscode.env.clipboard.writeText(message.text);
+          void vscode.window.showInformationMessage("Medousa reply copied—ready to share.");
+          this.post({ type: "toast", text: "Copied for sharing" });
+        }
+        break;
+      case "saveToLibrary":
+        if (this.client && this.sessionId && message.text) {
+          try {
+            const saved = await saveReplyToLibrary(this.client, this.sessionId, message.text, message.userText);
+            this.post({ type: "toast", text: `Saved to Library · ${saved}` });
+          } catch (error) {
+            this.post({ type: "error", text: `Could not save to Library: ${errorMessage(error)}` });
+          }
+        }
         break;
       case "retry":
         if (this.lastPrompt) await this.sendPrompt(this.lastPrompt);
@@ -379,10 +476,6 @@ async function openSafeLink(href: string): Promise<void> {
   await vscode.env.openExternal(uri);
 }
 
-function sessionDisplayName(): string {
-  return vscode.workspace.name ? `VS Code — ${vscode.workspace.name}` : "VS Code";
-}
-
 function endpointLabel(): string {
   const endpoint = vscode.workspace.getConfiguration("medousa").get<string>("endpoint", "http://127.0.0.1:7419");
   try {
@@ -422,6 +515,7 @@ function stripContextSupplement(content: string): string {
 
 type ContextChip = { key: string; label: string; detail?: string };
 type ConnectionState = "checking" | "connected" | "reconnecting" | "unavailable" | "unauthorized";
+type ChatSessionSummary = { sessionId: string; displayName: string; preview: string; turns: number; lastTimestamp: string | null };
 
 type OutboundMessage =
   | { type: "user"; text: string }
@@ -435,13 +529,18 @@ type OutboundMessage =
   | { type: "done" }
   | { type: "busy"; value: boolean }
   | { type: "history"; turns: SessionHistoryResponse["turns"] }
+  | { type: "sessions"; sessions: ChatSessionSummary[]; activeSessionId: string | null }
+  | { type: "sessionsOpen" }
+  | { type: "toast"; text: string }
   | { type: "connection"; state: ConnectionState; label: string }
   | { type: "context"; chips: ContextChip[]; canReset: boolean }
   | { type: "reset" };
 
 type InboundMessage = {
-  type: "ready" | "send" | "cancel" | "configure" | "newSession" | "retry" | "openHome" | "removeContext" | "resetContext" | "insertCode" | "openLink" | "budget" | "permission";
+  type: "ready" | "send" | "cancel" | "configure" | "newSession" | "openSessions" | "switchSession" | "renameSession" | "deleteSession" | "copyText" | "shareText" | "saveToLibrary" | "retry" | "openHome" | "removeContext" | "resetContext" | "insertCode" | "openLink" | "budget" | "permission";
   text?: string;
+  userText?: string;
+  sessionId?: string;
   key?: string;
   href?: string;
   requestId?: string;
@@ -451,6 +550,57 @@ type InboundMessage = {
 
 function isInboundMessage(value: unknown): value is InboundMessage {
   return Boolean(value && typeof value === "object" && "type" in value && [
-    "ready", "send", "cancel", "configure", "newSession", "retry", "openHome", "removeContext", "resetContext", "insertCode", "openLink", "budget", "permission",
+    "ready", "send", "cancel", "configure", "newSession", "openSessions", "switchSession", "renameSession", "deleteSession", "copyText", "shareText", "saveToLibrary", "retry", "openHome", "removeContext", "resetContext", "insertCode", "openLink", "budget", "permission",
   ].includes(String(value.type)));
+}
+
+function normalizeSessionSummary(session: SessionSummary): ChatSessionSummary | null {
+  const sessionId = String(session.session_id ?? session.id ?? "").trim();
+  if (!sessionId) return null;
+  const preview = typeof session.preview === "string" ? stripContextSupplement(session.preview).trim() : "";
+  const displayName = session.display_name?.trim() || firstLine(preview) || "New conversation";
+  return {
+    sessionId,
+    displayName,
+    preview,
+    turns: typeof session.turns === "number" ? session.turns : 0,
+    lastTimestamp: typeof session.last_timestamp === "string" ? session.last_timestamp : null,
+  };
+}
+
+function firstLine(value: string): string {
+  const line = value.split("\n")[0]?.trim() ?? "";
+  return line.length > 52 ? `${line.slice(0, 51)}…` : line;
+}
+
+function lastUserPrompt(history: SessionHistoryResponse): string | null {
+  for (let index = history.turns.length - 1; index >= 0; index -= 1) {
+    const turn = history.turns[index];
+    if (turn?.role === "user") return stripContextSupplement(turn.content);
+  }
+  return null;
+}
+
+async function saveReplyToLibrary(client: MedousaClient, sessionId: string, reply: string, userPrompt?: string): Promise<string> {
+  const title = chatReplyTitle(reply);
+  const prompt = userPrompt?.trim();
+  const quotedPrompt = prompt ? `> **You**\n${prompt.split("\n").map((line) => `> ${line}`).join("\n")}\n\n` : "";
+  const content = `---\nkind: inbox\ntags: [chat-turn]\n---\n\n# ${title}\n\n${quotedPrompt}${reply.trim()}\n`;
+  const slug = title.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 64) || "chat-turn";
+  try {
+    const response = await client.createVaultNote({ path: `inbox/${slug}.md`, content, session_id: sessionId, semantic_tags: ["chat-turn"] });
+    return response.note.path;
+  } catch (error) {
+    if (!(error instanceof MedousaHttpError)) throw error;
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const response = await client.createVaultNote({ path: `inbox/${slug}-${stamp}.md`, content, session_id: sessionId, semantic_tags: ["chat-turn"] });
+    return response.note.path;
+  }
+}
+
+function chatReplyTitle(markdown: string): string {
+  const heading = markdown.match(/^#{1,6}\s+(.+)$/m)?.[1]?.trim();
+  const first = heading ?? markdown.split("\n").map((line) => line.trim()).find((line) => line && !line.startsWith("```")) ?? "Chat turn";
+  const clean = first.replace(/^[*_]+|[*_]+$/g, "").trim();
+  return clean.length > 72 ? `${clean.slice(0, 71)}…` : clean;
 }

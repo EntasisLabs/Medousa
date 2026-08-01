@@ -10,7 +10,8 @@ JavaScript runtimes.
 ## Current slice
 
 - `health()` and `capabilities()` probes
-- session listing
+- session listing, history, naming, and deletion
+- workshop vault note creation
 - interactive turn start and cancellation
 - streaming SSE with sequence deduplication and bounded reconnect
 - bounded host context helpers
@@ -19,6 +20,20 @@ JavaScript runtimes.
 
 The client does not store credentials. Host adapters provide a bearer token at
 construction time and own secure persistence.
+
+Conversation surfaces can manage the shared catalog and promote settled replies
+without reaching around the daemon:
+
+```ts
+await client.renameSession(sessionId, "Compiler investigation");
+await client.createVaultNote({
+  path: "inbox/compiler-investigation.md",
+  content: "# Compiler investigation\n\n…",
+  session_id: sessionId,
+  semantic_tags: ["chat-turn"],
+});
+await client.deleteSession(sessionId, true);
+```
 
 ## Local development
 

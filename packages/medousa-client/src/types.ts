@@ -49,7 +49,38 @@ export interface SessionSummary {
   id?: string;
   session_id?: string;
   display_name?: string | null;
+  turns?: number;
+  last_timestamp?: string | null;
+  preview?: string;
+  catalog?: string | null;
   [key: string]: unknown;
+}
+
+export interface SessionSetDisplayNameResponse {
+  session_id: string;
+  display_name: string;
+}
+
+export interface SessionDeleteResponse {
+  session_id: string;
+  deleted: boolean;
+  locus_purged?: boolean;
+  locus_nodes_deleted?: number;
+  cancelled_active_turn?: boolean;
+}
+
+export interface VaultWriteRequest {
+  path?: string;
+  content: string;
+  session_id?: string;
+  semantic_tags?: string[];
+  auto_workshop_tags?: boolean;
+}
+
+export interface VaultWriteResponse {
+  note: { path: string; [key: string]: unknown };
+  created: boolean;
+  content?: string;
 }
 
 export interface CreateSessionRequest {

@@ -24,6 +24,16 @@ describe("VS Code chat webview", () => {
     expect(html).toContain('id="send"');
   });
 
+  it("contains conversation history, naming, and reply actions", () => {
+    expect(html).toContain('id="sessions-backdrop"');
+    expect(html).toContain('id="session-search"');
+    expect(html).toContain('data-session-action="rename"');
+    expect(html).toContain('data-session-action="delete"');
+    expect(html).toContain('data-turn-action="copy"');
+    expect(html).toContain('data-turn-action="share"');
+    expect(html).toContain('data-turn-action="library"');
+  });
+
   it("escapes authored content before markdown rendering", () => {
     expect(html).toContain("escapeHtml(value)");
     expect(html).toContain("safeUrl(href)");

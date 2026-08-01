@@ -1,6 +1,6 @@
 # VS Code Chat Polish — Home-standard companion surface
 
-> **Status:** Implementation complete · packaged dogfood pending  
+> **Status:** Implementation complete · dogfood validated
 > **Date:** 2026-07-31  
 > **Scope:** `integrations/vscode/` chat surface  
 > **Related:** [Medousa Anywhere plan](medousa-anywhere-plan.md), [Home chat panel](../apps/medousa-home/src/lib/components/chat/ChatPanel.svelte), [stream display policy](../apps/medousa-home/src/lib/utils/chatStreamDisplay.ts)
@@ -76,7 +76,17 @@ lower-level events that Home deliberately hides.
 | P4 Status, tools, and attention states | ✅ Implemented |
 | P5 Session and connection UX | ✅ Implemented |
 | P6 Context and Medousa-native actions | ✅ Implemented; Forge editing remains deferred |
-| P7 Quality gate and distribution | ✅ Tests + VSIX package; live daemon dogfood pending |
+| P7 Quality gate and distribution | ✅ Tests + VSIX package + live daemon dogfood |
+
+### Follow-up parity slice — conversation library
+
+Shipped after the initial dogfood pass:
+
+- searchable daemon-owned conversation history in the sidebar;
+- session switching with transcript restoration;
+- transcript-derived default titles plus inline rename;
+- confirmed session and memory deletion;
+- settled-reply Copy, Share, and Save to Library actions matching Home's common interaction row.
 
 ### No full Home clone
 

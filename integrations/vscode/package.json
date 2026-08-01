@@ -2,7 +2,7 @@
   "name": "medousa-vscode",
   "displayName": "Medousa",
   "description": "A focused Medousa workshop companion for VS Code",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "publisher": "EntasisLabs",
   "type": "module",
   "license": "Apache-2.0 OR MIT",

@@ -14,9 +14,10 @@ The first host adapter for Medousa Anywhere.
 - safe Markdown and code-block actions
 - compact tool progress and approval prompts
 - restored session history, connection state, and removable context chips
+- searchable conversations with rename/delete and Copy/Share/Library reply actions
 
 This adapter intentionally does not implement inline edits, Forge custody,
-vault actions, or Home-level settings yet. Those land after the core
+vault browsing, or Home-level settings yet. Those land after the core
 connection/context/session loop is proven.
 
 ## Development
@@ -29,7 +30,7 @@ npm run build
 npm run package
 ```
 
-The generated `medousa-vscode-0.2.0.vsix` is written to this directory.
+The generated `medousa-vscode-0.3.0.vsix` is written to this directory.
 
 Open this folder in VS Code and press `F5` to launch an Extension Development
 Host.
