@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import WorkshopShell from "$lib/components/layout/WorkshopShell.svelte";
   import MobileShell from "$lib/components/mobile/MobileShell.svelte";
+  import HomeSplash from "$lib/components/layout/HomeSplash.svelte";
   import CommandSpotlight from "$lib/components/layout/CommandSpotlight.svelte";
   import WorkAskDockPopover from "$lib/components/work/WorkAskDockPopover.svelte";
   import WizardContainer from "$lib/components/wizard/WizardContainer.svelte";
@@ -163,9 +164,7 @@
 </script>
 
 {#if wizard.loading}
-  <div class="flex h-screen items-center justify-center bg-surface-950 text-surface-400">
-    <p class="text-sm">Opening your workshop…</p>
-  </div>
+  <HomeSplash />
 {:else if wizard.visible && isTauriMobilePlatform()}
   <WizardContainer />
 {:else if layout.isMobile}

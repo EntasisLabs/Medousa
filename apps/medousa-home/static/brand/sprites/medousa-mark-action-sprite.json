@@ -1,0 +1,19 @@
+{
+  "name": "medousa-mark-actions",
+  "source": "detail mark",
+  "accessibilityOnly": false,
+  "frameCount": 6,
+  "frameWidth": 352,
+  "frameHeight": 560,
+  "columns": 6,
+  "rows": 5,
+  "fps": 8,
+  "actions": {
+    "idle": { "row": 0, "frames": ["idle-00", "idle-01", "idle-02", "idle-03", "idle-04", "idle-05"] },
+    "jump": { "row": 1, "frames": ["jump-00", "jump-01", "jump-02", "jump-03", "jump-04", "jump-05"] },
+    "hit": { "row": 2, "frames": ["hit-00", "hit-01", "hit-02", "hit-03", "hit-04", "hit-05"] },
+    "power-up": { "row": 3, "frames": ["power-up-00", "power-up-01", "power-up-02", "power-up-03", "power-up-04", "power-up-05"] },
+    "float": { "row": 4, "frames": ["float-00", "float-01", "float-02", "float-03", "float-04", "float-05"] }
+  },
+  "parts": ["bell", "tentacle-left", "tentacle-mid-left", "tentacle-center-left", "tentacle-center-right", "tentacle-right", "tentacle-center"]
+}

@@ -367,13 +367,13 @@ medousa://work/<paste-card-id>
 
 ## 11. App icons
 
-Source art lives in the repo at `Medousa/assets/`:
+Source art lives in the app brand pack at `apps/medousa-home/static/brand/app-icons/`:
 
 | File | Use |
 |------|-----|
-| `medousa-blk.png` | **Default app icon** (1024×1024, dark background — matches Black Lily) |
-| `medousa-cream.png` | Light-background variant |
-| `medousa-transparent.png` | Logo only (avoid for iOS home screen — Apple rejects transparency) |
+| `png/medousa-icon-1024.png` | **Default app icon** (1024×1024, dark background) |
+| `png/apple-touch-icon.png` | Apple touch icon / web home-screen icon |
+| `medousa-app-icon.svg` | Vector app-icon source |
 
 Regenerate every platform size (desktop, iOS `AppIcon.appiconset`, Android, favicon):
 
@@ -382,16 +382,16 @@ cd apps/medousa-home
 npm run icons:generate
 ```
 
-This reads `app-icon.json` → `medousa-blk.png` and writes:
+This reads `app-icon.json` → `static/brand/app-icons/png/medousa-icon-1024.png` and writes:
 
 - `src-tauri/icons/` — bundle icons referenced in `tauri.conf.json`
 - `src-tauri/gen/apple/Assets.xcassets/AppIcon.appiconset/` — iOS home-screen sizes
-- `static/favicon.png` — web favicon
+- `static/favicon.png` — generated PNG fallback (the web shell also serves the SVG, ICO, and Apple touch icon from `static/brand/favicon/`)
 
 To swap art temporarily, edit `app-icon.json` or pass another PNG:
 
 ```bash
-npx tauri icon ../../assets/medousa-cream.png -o src-tauri/icons --ios-color "#f5f0e8"
+npx tauri icon static/brand/app-icons/png/medousa-icon-1024.png -o src-tauri/icons --ios-color "#0a0a0b"
 ```
 
 After changing icons, rebuild iOS (`npm run tauri:ios:build:testflight`) — `tauri ios dev` hot-reload does **not** refresh the home-screen icon.

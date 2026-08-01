@@ -1,0 +1,18 @@
+{
+  "name": "medousa-mark-companion",
+  "source": "/brand/sprites/medousa-mark-action-sprite.svg",
+  "viewBox": [0, 0, 352, 560],
+  "states": {
+    "idle": { "intent": "resting", "action": "idle", "row": 0, "motion": "settle" },
+    "float": { "intent": "ambient", "action": "float", "row": 4, "motion": "buoy" },
+    "squash": { "intent": "anticipation", "action": "hit", "row": 2, "motion": "compress" },
+    "launch": { "intent": "start", "action": "jump", "row": 1, "motion": "lift" },
+    "recoil": { "intent": "interrupted", "action": "hit", "row": 2, "motion": "recoil" },
+    "surge": { "intent": "energized", "action": "power-up", "row": 3, "motion": "expand" },
+    "success": { "intent": "complete", "action": "power-up", "row": 3, "motion": "expand" },
+    "attention": { "intent": "needs-attention", "action": "jump", "row": 1, "motion": "lift" },
+    "error": { "intent": "blocked", "action": "hit", "row": 2, "motion": "recoil" },
+    "loading": { "intent": "waiting", "action": "float", "row": 4, "motion": "buoy" }
+  },
+  "parts": ["bell", "tentacle-left", "tentacle-mid-left", "tentacle-center-left", "tentacle-center-right", "tentacle-right", "tentacle-center"]
+}

@@ -1,0 +1,31 @@
+/* Medousa brand tokens */
+:root {
+  /* Core */
+  --medousa-ink: #000000;
+  --medousa-ink-soft: #0a0a0a;
+  --medousa-bone: #f2efe6;
+  --medousa-white: #ffffff;
+
+  /* Accent */
+  --medousa-nebula: #a855f7;
+  --medousa-violet: #7c3aed;
+  --medousa-ocean: #38bdf8;
+  --medousa-deep-blue: #1d4ed8;
+  --medousa-abyss: #2dd4bf;
+  --medousa-jade: #0f9b7c;
+  --medousa-amber: #f5b841;
+
+  /* Neutrals */
+  --medousa-grey-700: #55555f;
+  --medousa-grey-500: #7a7a88;
+  --medousa-hairline: rgba(242, 239, 230, 0.14);
+
+  /* Signature gradient */
+  --medousa-aurora: linear-gradient(135deg, #f472b6 0%, #a855f7 38%, #38bdf8 72%, #34d399 100%);
+  --medousa-glow: radial-gradient(circle at 50% 38%, rgba(168, 85, 247, 0.28) 0%, rgba(5, 5, 7, 0) 62%);
+
+  /* Type */
+  --medousa-font-display: "Jura", "Eurostile", "Avenir Next", system-ui, sans-serif;
+  --medousa-tracking-wordmark: 0.28em;
+  --medousa-tracking-tagline: 0.36em;
+}
