@@ -22,6 +22,7 @@ describe("VS Code chat webview", () => {
     expect(html).toContain('id="context"');
     expect(html).toContain('id="prompt"');
     expect(html).toContain('id="send"');
+    expect(html).toContain(".empty[hidden] { display: none; }");
   });
 
   it("contains conversation history, naming, and reply actions", () => {
@@ -32,6 +33,17 @@ describe("VS Code chat webview", () => {
     expect(html).toContain('data-turn-action="copy"');
     expect(html).toContain('data-turn-action="share"');
     expect(html).toContain('data-turn-action="library"');
+  });
+
+  it("preserves intent through navigation and only settles completed replies", () => {
+    expect(html).toContain("drafts: drafts");
+    expect(html).toContain("function saveDraft()");
+    expect(html).toContain("function restoreDraft()");
+    expect(html).toContain("scrollPositions: scrollPositions");
+    expect(html).toContain("function saveConversationState()");
+    expect(html).toContain('id="scroll-latest"');
+    expect(html).toContain('classList.remove("streaming")');
+    expect(html).toContain('textContent = "Opening…"');
   });
 
   it("escapes authored content before markdown rendering", () => {

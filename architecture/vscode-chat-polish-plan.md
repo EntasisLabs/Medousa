@@ -88,6 +88,21 @@ Shipped after the initial dogfood pass:
 - confirmed session and memory deletion;
 - settled-reply Copy, Share, and Save to Library actions matching Home's common interaction row.
 
+### Interaction-craft pass
+
+The next dogfood pass tightened the intention chain around those features:
+
+- drafts persist per conversation instead of belonging to the sidebar globally;
+- switching acknowledges the selected row and only replaces the transcript once
+  its daemon history is ready;
+- active responses guard switching and confirm before a new chat cancels work;
+- reply actions remain hidden until streamed content settles;
+- rename and Library saves expose pending and completion feedback;
+- the empty invitation follows selection, diagnostics, and active-file context;
+- long transcripts expose a return-to-latest affordance without stealing scroll;
+- keyboard fallback, focus restoration, touch action visibility, and semantic
+  status labels are first-class interaction paths.
+
 ### No full Home clone
 
 The sidebar does not need Home’s canvas, multi-pane shell, Liquid scene player,

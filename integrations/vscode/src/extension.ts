@@ -89,6 +89,7 @@ class MedousaChatView implements vscode.WebviewViewProvider {
       this.sessionId = restored.session_id;
       this.post({
         type: "history",
+        sessionId: restored.session_id,
         turns: restored.turns.map((turn) => ({
           ...turn,
           content: stripContextSupplement(turn.content),
@@ -106,9 +107,11 @@ class MedousaChatView implements vscode.WebviewViewProvider {
 
   refreshContext(): void {
     if (!this.view) return;
+    const editor = vscode.window.activeTextEditor;
     this.post({
       type: "context",
-      chips: contextChips(vscode.window.activeTextEditor, this.disabledContext),
+      chips: contextChips(editor, this.disabledContext),
+      suggestions: contextSuggestions(editor, this.disabledContext),
       canReset: this.disabledContext.size > 0,
     });
   }
@@ -175,6 +178,14 @@ class MedousaChatView implements vscode.WebviewViewProvider {
   }
 
   async newSession(): Promise<void> {
+    if (this.abortController) {
+      const answer = await vscode.window.showWarningMessage(
+        "Start a new conversation? The response in progress will be cancelled.",
+        { modal: true },
+        "Start new conversation",
+      );
+      if (answer !== "Start new conversation") return;
+    }
     await this.cancel();
     try {
       if (!this.client) this.client = await createClient(this.context);
@@ -184,7 +195,7 @@ class MedousaChatView implements vscode.WebviewViewProvider {
       this.sessionId = created.session_id;
       await this.context.workspaceState.update(SESSION_KEY, created.session_id);
       this.disabledContext.clear();
-      this.post({ type: "reset" });
+      this.post({ type: "reset", sessionId: created.session_id });
       await this.refreshSessions();
       this.refreshContext();
     } catch (error) {
@@ -194,6 +205,7 @@ class MedousaChatView implements vscode.WebviewViewProvider {
 
   private async refreshSessions(): Promise<void> {
     if (!this.client) return;
+    this.post({ type: "sessionsLoading" });
     const sessions = await this.client.sessions(100);
     this.post({
       type: "sessions",
@@ -210,6 +222,7 @@ class MedousaChatView implements vscode.WebviewViewProvider {
     await this.context.workspaceState.update(SESSION_KEY, sessionId);
     this.post({
       type: "history",
+      sessionId,
       turns: history.turns.map((turn) => ({ ...turn, content: stripContextSupplement(turn.content) })),
     });
     await this.refreshSessions();
@@ -223,10 +236,10 @@ class MedousaChatView implements vscode.WebviewViewProvider {
     await this.refreshSessions();
   }
 
-  private async deleteSession(sessionId: string): Promise<void> {
+  private async deleteSession(sessionId: string, displayName?: string): Promise<void> {
     if (!this.client) return;
     const answer = await vscode.window.showWarningMessage(
-      "Delete this conversation and its Medousa memory? This cannot be undone.",
+      `Delete “${displayName?.trim() || "this conversation"}” and its Medousa memory? This cannot be undone.`,
       { modal: true },
       "Delete",
     );
@@ -276,6 +289,7 @@ class MedousaChatView implements vscode.WebviewViewProvider {
       case "cancel":
         await this.cancel();
         this.post({ type: "done" });
+        this.post({ type: "toast", text: "Response stopped" });
         break;
       case "configure":
         await configureConnection(this.context);
@@ -285,29 +299,29 @@ class MedousaChatView implements vscode.WebviewViewProvider {
         await this.newSession();
         break;
       case "openSessions":
+        this.post({ type: "sessionsOpen" });
         try {
           await this.refreshSessions();
-          this.post({ type: "sessionsOpen" });
         } catch (error) {
-          this.post({ type: "error", text: errorMessage(error) });
+          this.post({ type: "sessionsError", text: errorMessage(error) });
         }
         break;
       case "switchSession":
         if (message.sessionId) {
           try { await this.switchSession(message.sessionId); }
-          catch (error) { this.post({ type: "error", text: errorMessage(error) }); }
+          catch (error) { this.post({ type: "sessionsError", text: errorMessage(error) }); }
         }
         break;
       case "renameSession":
         if (message.sessionId && message.text) {
           try { await this.renameSession(message.sessionId, message.text); }
-          catch (error) { this.post({ type: "error", text: errorMessage(error) }); }
+          catch (error) { this.post({ type: "sessionsError", text: errorMessage(error) }); }
         }
         break;
       case "deleteSession":
         if (message.sessionId) {
-          try { await this.deleteSession(message.sessionId); }
-          catch (error) { this.post({ type: "error", text: errorMessage(error) }); }
+          try { await this.deleteSession(message.sessionId, message.text); }
+          catch (error) { this.post({ type: "sessionsError", text: errorMessage(error) }); }
         }
         break;
       case "copyText":
@@ -458,6 +472,18 @@ function contextChips(editor: vscode.TextEditor | undefined, disabled: Set<strin
   return chips;
 }
 
+function contextSuggestions(editor: vscode.TextEditor | undefined, disabled: Set<string>): string[] {
+  const suggestions: string[] = [];
+  if (editor && !editor.selection.isEmpty && !disabled.has("selection")) {
+    suggestions.push("Explain this selection", "Find risks in this selection");
+  } else if (editor && vscode.languages.getDiagnostics(editor.document.uri).length > 0 && !disabled.has("diagnostics")) {
+    suggestions.push("Help me fix these diagnostics");
+  }
+  if (editor && !disabled.has("file")) suggestions.push("Explain the active file");
+  suggestions.push("What should I work on next?");
+  return suggestions.slice(0, 3);
+}
+
 async function insertAtSelection(text: string): Promise<void> {
   const editor = vscode.window.activeTextEditor;
   if (!editor) return;
@@ -528,13 +554,15 @@ type OutboundMessage =
   | { type: "error"; text: string }
   | { type: "done" }
   | { type: "busy"; value: boolean }
-  | { type: "history"; turns: SessionHistoryResponse["turns"] }
+  | { type: "history"; sessionId: string; turns: SessionHistoryResponse["turns"] }
   | { type: "sessions"; sessions: ChatSessionSummary[]; activeSessionId: string | null }
   | { type: "sessionsOpen" }
+  | { type: "sessionsLoading" }
+  | { type: "sessionsError"; text: string }
   | { type: "toast"; text: string }
   | { type: "connection"; state: ConnectionState; label: string }
-  | { type: "context"; chips: ContextChip[]; canReset: boolean }
-  | { type: "reset" };
+  | { type: "context"; chips: ContextChip[]; suggestions: string[]; canReset: boolean }
+  | { type: "reset"; sessionId: string };
 
 type InboundMessage = {
   type: "ready" | "send" | "cancel" | "configure" | "newSession" | "openSessions" | "switchSession" | "renameSession" | "deleteSession" | "copyText" | "shareText" | "saveToLibrary" | "retry" | "openHome" | "removeContext" | "resetContext" | "insertCode" | "openLink" | "budget" | "permission";

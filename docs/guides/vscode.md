@@ -12,7 +12,7 @@ From the Medousa repository:
 cd integrations/vscode
 npm install
 npm run package
-code --install-extension medousa-vscode-0.3.0.vsix --force
+code --install-extension medousa-vscode-0.4.0.vsix --force
 ```
 
 Reload VS Code after installing, then select the Medousa icon in the activity
@@ -36,7 +36,8 @@ with the next turn.
 
 - **Enter** sends.
 - **Shift+Enter** adds a line.
-- **Cancel** stops the active turn.
+- **Ctrl/Cmd+Enter** also sends.
+- **Stop** stops the active turn without discarding the conversation.
 - **+** starts a new conversation.
 - **↗** hands advanced work to Medousa.
 
@@ -59,6 +60,11 @@ rename them, or delete a session and its associated memory after confirmation.
 Starting a new conversation creates a new daemon-owned session; it does not
 delete earlier sessions or their memory. Untitled conversations receive the
 daemon's transcript-derived title and can be renamed at any time.
+
+Composer drafts are kept separately for each conversation. Switching away and
+back restores the unfinished thought where you left it. When a response is in
+progress, switching is held until you stop or finish it; starting a fresh chat
+asks before cancelling active work.
 
 ## Troubleshooting
 

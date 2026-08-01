@@ -7,9 +7,9 @@
 
 ## Product promise
 
-**Medousa is available wherever the work is happening.** Home remains the
-richest, most complete Medousa surface. External integrations are focused
-windows into the active workshop, not smaller attempts to reproduce Home.
+**Wherever Medousa is, it feels like Home.** Home remains the richest, most
+complete Medousa surface. External integrations are focused windows into the
+active workshop, not smaller attempts to reproduce Home.
 
 The first external surfaces are:
 
@@ -20,6 +20,31 @@ The first external surfaces are:
 Each integration should feel native to its host while preserving the same
 daemon, identity, sessions, vault authority, capabilities, and streaming
 semantics as Home.
+
+### Interaction standard: Home is a behavior, not a skin
+
+Plugins should adopt their host's visual language while preserving Home's
+interaction character:
+
+- **Intent survives navigation.** Drafts, context, session choice, and scroll
+  position belong to the work the user was doing, not to a disposable panel.
+- **State is honest and proportionate.** Show the current useful state—opening,
+  thinking, using a tool, waiting, recovering, done—without leaking engine logs.
+- **Actions appear when they are valid.** A streaming reply is not yet a settled
+  artifact; destructive and irreversible actions name their consequence.
+- **Every wait acknowledges the gesture.** Switching, renaming, saving, and
+  reconnecting respond immediately and finish with clear feedback.
+- **Recovery preserves momentum.** Cancellation, transient failure, stale
+  sessions, and reconnection keep drafts and provide the most relevant next step.
+- **Context changes the invitation.** Empty states and suggested actions reflect
+  the selected code, note, diagnostics, or workspace instead of generic prompts.
+- **Keyboard, pointer, touch, narrow widths, and assistive technology are equal
+  paths.** Host-native shortcuts and focus restoration are product behavior.
+- **Advanced work hands off without becoming a dead end.** Opening Medousa keeps
+  the same workshop and session mental model.
+
+Visual resemblance to Home is welcome where it fits the host, but it is never a
+substitute for these behavioral guarantees.
 
 ## Goals
 
@@ -78,6 +103,10 @@ activity-bar chat view; its client runtime is bundled into the VSIX.
 The 0.2 polish sprint adds Home-standard stream projection, a persistent chat
 shell and composer, safe Markdown/code actions, structured tool and approval
 states, session restoration, connection diagnostics, and editor context chips.
+The 0.3 conversation library adds cross-surface history, naming, deletion, and
+Home's settled-reply actions. The 0.4 interaction pass adds per-session drafts,
+deliberate navigation/loading states, contextual invitations, settled-action
+timing, focus recovery, and long-transcript navigation.
 
 ## Target architecture
 
