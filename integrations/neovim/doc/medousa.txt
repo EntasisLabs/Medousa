@@ -1,0 +1,93 @@
+*medousa.txt*               Medousa coding room for Neovim
+
+==============================================================================
+CONTENTS                                                        *medousa*
+
+1. Setup .................................................. |medousa-setup|
+2. Commands ............................................ |medousa-commands|
+3. Default mappings .................................... |medousa-mappings|
+4. Coding room .............................................. |medousa-room|
+5. Applying edits .......................................... |medousa-edits|
+6. Statusline ......................................... |medousa-statusline|
+
+==============================================================================
+SETUP                                                    *medousa-setup*
+
+Medousa requires Neovim 0.10+, curl, and a reachable Medousa workshop.
+
+>lua
+  require("medousa").setup({
+    endpoint = "http://127.0.0.1:7419",
+    token = vim.env.MEDOUSA_TOKEN,
+  })
+<
+
+The token is never logged. Telescope is detected when present but is not a
+dependency. Set an entry under `keymaps` to false to leave it unbound.
+
+==============================================================================
+COMMANDS                                              *medousa-commands*
+
+:MedousaToggle                 Toggle the transient coding room.
+:[range]MedousaAsk [prompt]    Ask with the current buffer or range.
+:[range]MedousaExplain         Explain the current buffer or range.
+:MedousaFix                    Ask about current diagnostics.
+:MedousaApply                  Preview code from the last settled answer.
+:MedousaNew                    Start a new daemon conversation.
+:MedousaCancel                 Stop the active response.
+:MedousaSessions               Select a daemon conversation.
+:MedousaRename                 Rename the active conversation.
+:MedousaDelete                 Delete it and its Medousa memory after warning.
+:MedousaDiagnostics            Put captured diagnostics in quickfix.
+:MedousaAttention              Resolve a pending budget/permission request.
+:MedousaStatus                 Check the workshop connection.
+
+==============================================================================
+DEFAULT MAPPINGS                                      *medousa-mappings*
+
+<leader>mc                     Toggle the coding room.
+<leader>ma                     Open the composer.
+Visual <leader>ma              Compose with the selected lines.
+<leader>me                     Explain the current code.
+<leader>mf                     Fix current diagnostics.
+<leader>mo{motion}             Compose with the motion as context.
+<leader>ms                     Select a conversation.
+
+==============================================================================
+CODING ROOM                                                *medousa-room*
+
+The composer is an ordinary multiline buffer. Ctrl-S sends from insert or
+normal mode; normal-mode Enter also sends. Drafts survive closing the room and
+are kept separately per conversation.
+
+Transcript mappings:
+
+a        Focus the composer.           A        Preview a code edit.
+c        Cancel an active response.    r        Retry the last prompt.
+s        Select a conversation.        n        New conversation.
+R        Rename the conversation.      D        Delete the conversation.
+y        Copy the settled answer.      Y        Copy code under the cursor.
+Tab      Toggle tool activity.
+[c / ]c  Previous/next code fence.     q        Return to code.
+
+==============================================================================
+APPLYING EDITS                                            *medousa-edits*
+
+Medousa never applies generated code silently. |:MedousaApply| selects a
+fenced code block and opens a unified diff. Selection requests replace the
+captured range; other requests offer insertion or whole-buffer replacement.
+
+Preview mappings: `a` applies one undoable edit, `y` copies the proposed code,
+and `q` cancels. Application is refused if the source buffer revision changed.
+
+==============================================================================
+STATUSLINE                                           *medousa-statusline*
+
+>lua
+  require("medousa").statusline()
+<
+
+Returns a compact state without changing 'statusline' automatically:
+Medousa:on, Medousa:think, Medousa:recover, Medousa:auth, or Medousa:off.
+
+vim:tw=78:ts=8:noet:ft=help:norl:

@@ -13,6 +13,7 @@ Shared client libraries for talking to **medousa_daemon** without duplicating HT
 | [`medousa-sdk`](../../python/medousa-sdk/) (Python) | Async `MedousaClient`, SSE streaming, reconnecting SSE, `MedousaClientSync` |
 | [`medousa-sdk-iroh`](../../crates/medousa-sdk-iroh/) | `WorkshopTransport` — pooled LAN + route cache + optional Iroh hook |
 | [`medousa-host`](../../crates/medousa-host/) | Spawn `medousa_local`, binary resolution, bind probes |
+| [`@medousa/client`](../../packages/medousa-client/) | Dependency-free TypeScript client for external surfaces (VS Code, Neovim, Obsidian) |
 
 ## Quick start (async)
 

@@ -1,0 +1,103 @@
+{
+  "name": "medousa-vscode",
+  "displayName": "Medousa",
+  "description": "A focused Medousa workshop companion for VS Code",
+  "version": "0.1.0",
+  "publisher": "EntasisLabs",
+  "type": "module",
+  "license": "Apache-2.0 OR MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/EntasisLabs/Medousa.git"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["Other", "Chat"],
+  "activationEvents": [
+    "onCommand:medousa.ask",
+    "onCommand:medousa.configureConnection",
+    "onCommand:medousa.newConversation",
+    "onView:medousa.chat"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "medousa",
+          "title": "Medousa",
+          "icon": "resources/medousa.svg"
+        }
+      ]
+    },
+    "views": {
+      "medousa": [
+        {
+          "type": "webview",
+          "id": "medousa.chat",
+          "name": "Chat"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "medousa.ask",
+        "title": "Medousa: Ask About This"
+      },
+      {
+        "command": "medousa.configureConnection",
+        "title": "Medousa: Configure Connection"
+      },
+      {
+        "command": "medousa.newConversation",
+        "title": "Medousa: New Conversation",
+        "icon": "$(add)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "medousa.newConversation",
+          "when": "view == medousa.chat",
+          "group": "navigation"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Medousa",
+      "properties": {
+        "medousa.endpoint": {
+          "type": "string",
+          "default": "http://127.0.0.1:7419",
+          "description": "Medousa workshop daemon URL. Tokens are stored in SecretStorage."
+        },
+        "medousa.showEngineDetails": {
+          "type": "boolean",
+          "default": false,
+          "description": "Show low-level engine status details in Medousa chat."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "prebuild": "tsc -p ../../packages/medousa-client/tsconfig.json",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "bundle": "esbuild src/extension.ts --bundle --platform=node --format=esm --external:vscode --outfile=dist/extension.js --sourcemap",
+    "build": "npm run check && npm run bundle",
+    "watch": "tsc -p tsconfig.json --watch",
+    "package": "npm run build && vsce package"
+  },
+  "dependencies": {
+    "@medousa/client": "file:../../packages/medousa-client"
+  },
+  "devDependencies": {
+    "@vscode/vsce": "^3.2.2",
+    "@types/node": "^22.0.0",
+    "@types/vscode": "^1.85.0",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.6.0",
+    "vitest": "^3.2.6"
+  }
+}
