@@ -16,6 +16,10 @@ pub struct LocalEngineConfig {
     pub from_uqff: Option<String>,
     pub in_situ_quant: Option<String>,
     pub cpu_only: bool,
+    pub max_seq_len: usize,
+    pub max_batch_size: usize,
+    pub idle_timeout_secs: u64,
+    pub critical_available_mb: u64,
 }
 
 impl Default for LocalEngineConfig {
@@ -27,6 +31,10 @@ impl Default for LocalEngineConfig {
             from_uqff: None,
             in_situ_quant: Some("4".to_string()),
             cpu_only: false,
+            max_seq_len: super::governor::SAFE_MAX_SEQ_LEN,
+            max_batch_size: super::governor::SAFE_MAX_BATCH_SIZE,
+            idle_timeout_secs: super::governor::DEFAULT_IDLE_TIMEOUT_SECS,
+            critical_available_mb: 1024,
         }
     }
 }
@@ -77,15 +85,10 @@ pub async fn probe_local_engine_status() -> LocalEngineStatus {
 }
 
 pub fn recommended_engine_config(bind: Option<String>) -> Result<LocalEngineConfig, String> {
-    let profile = super::hardware::read_hardware_profile()
-        .unwrap_or_else(|| super::hardware::build_hardware_profile(super::hardware::probe_hardware()));
-    let _catalog = super::catalog::builtin_catalog();
-    let entry = super::catalog::recommended_model_for_tier(profile.tier).ok_or_else(|| {
-        format!(
-            "no recommended model for hardware tier {}",
-            profile.tier.as_str()
-        )
-    })?;
+    let probe = super::hardware::probe_hardware();
+    let tier = super::hardware::score_tier(&probe);
+    let entry = super::governor::recommended_admitted_model(&probe)
+        .ok_or_else(|| format!("no local model fits the safe envelope for hardware tier {}", tier.as_str()))?;
     Ok(config_from_catalog_entry(&entry, bind))
 }
 
@@ -115,6 +118,7 @@ pub fn config_from_catalog_entry_with_probe(
         .and_then(|value| value.as_u64())
         .map(|level| level.to_string());
     let use_uqff = uqff_file.is_some();
+    let admission = super::governor::evaluate_model_admission(entry, probe);
     LocalEngineConfig {
         bind: bind.unwrap_or_else(|| DEFAULT_LOCAL_ENGINE_BIND.to_string()),
         model_repo,
@@ -126,5 +130,9 @@ pub fn config_from_catalog_entry_with_probe(
             in_situ_quant.or_else(|| Some("4".to_string()))
         },
         cpu_only: super::backends::resolve_cpu_only(probe),
+        max_seq_len: super::governor::SAFE_MAX_SEQ_LEN,
+        max_batch_size: super::governor::SAFE_MAX_BATCH_SIZE,
+        idle_timeout_secs: super::governor::DEFAULT_IDLE_TIMEOUT_SECS,
+        critical_available_mb: admission.critical_available_mb,
     }
 }

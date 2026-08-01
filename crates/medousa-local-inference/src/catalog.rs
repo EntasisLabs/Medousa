@@ -16,8 +16,9 @@ fn parse_tier(value: &str) -> Option<HardwareTier> {
 
 fn tier_in_range(entry: &CatalogModelEntry, tier: HardwareTier) -> bool {
     let min = parse_tier(&entry.tier_min).unwrap_or(HardwareTier::A);
-    let max = parse_tier(&entry.tier_max).unwrap_or(HardwareTier::E);
-    tier >= min && tier <= max
+    // A larger machine can always choose a smaller recipe. `tier_max` describes
+    // the model's intended sweet spot, not a compatibility ceiling.
+    tier >= min
 }
 
 pub fn filter_catalog_for_tier(catalog: &CatalogFile, tier: HardwareTier) -> Vec<CatalogModelEntry> {
@@ -60,5 +61,12 @@ mod tests {
     fn tier_a_only_small_models() {
         let models = filter_catalog_for_tier(&builtin_catalog(), HardwareTier::A);
         assert!(models.iter().all(|entry| entry.id.contains("e2b")));
+    }
+
+    #[test]
+    fn higher_tiers_keep_smaller_safe_fallbacks_visible() {
+        let models = filter_catalog_for_tier(&builtin_catalog(), HardwareTier::C);
+        assert!(models.iter().any(|entry| entry.id == "gemma-4-e2b-it-qat"));
+        assert!(models.iter().any(|entry| entry.id == "gemma-4-12b-it"));
     }
 }

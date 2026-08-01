@@ -90,9 +90,19 @@ For the user this means:
 
 ---
 
-## Why the present runtime is not lazy
+## Why the baseline runtime was not lazy
 
-The current code has a useful process boundary but collapses too many states:
+> Implementation checkpoint (2026-08-01): MIR-1's first lifecycle slice is
+> shipped on `medousa-brain`: onboarding/core startup remain cold, first local
+> turns activate a single-flight worker, lifecycle phases and explicit unload
+> are shared contracts, and PID cleanup is worker-owned. The first governor
+> slice also performs host-memory admission before process allocation, makes the
+> 4K/batch-1 mistral.rs recipe explicit, selects a smaller safe recommendation,
+> exits after five request-body-idle minutes, and terminates on critical host
+> pressure. Device-native Metal/NVML/AMD-SMI/WDDM budgets and measured peak
+> calibration remain MIR-2 work.
+
+The pre-MIR baseline had a useful process boundary but collapsed too many states:
 
 1. `WizardWelcomeScreen.svelte` confirms Local Brain and starts model prep.
 2. `wizard.svelte.ts::runBrainModelPrep` downloads and immediately invokes

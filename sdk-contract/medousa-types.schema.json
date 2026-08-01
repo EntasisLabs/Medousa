@@ -10408,6 +10408,109 @@
       }
     }
   },
+  "LocalResourceAdmission": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "LocalResourceAdmission",
+    "type": "object",
+    "required": [
+      "admissibleMb",
+      "admitted",
+      "availableRamMb",
+      "criticalAvailableMb",
+      "estimatedConversionMb",
+      "estimatedPeakMb",
+      "estimatedSteadyMb",
+      "hardwareTier",
+      "maxBatchSize",
+      "maxSeqLen",
+      "modelId",
+      "rationale",
+      "systemReserveMb",
+      "tierCapMb",
+      "totalRamMb"
+    ],
+    "properties": {
+      "admissibleMb": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "admitted": {
+        "type": "boolean"
+      },
+      "availableRamMb": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "criticalAvailableMb": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "estimatedConversionMb": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "estimatedPeakMb": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "estimatedSteadyMb": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "hardwareTier": {
+        "$ref": "#/definitions/HardwareTier"
+      },
+      "maxBatchSize": {
+        "type": "integer",
+        "format": "uint",
+        "minimum": 0.0
+      },
+      "maxSeqLen": {
+        "type": "integer",
+        "format": "uint",
+        "minimum": 0.0
+      },
+      "modelId": {
+        "type": "string"
+      },
+      "rationale": {
+        "type": "string"
+      },
+      "systemReserveMb": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "tierCapMb": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "totalRamMb": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      }
+    },
+    "definitions": {
+      "HardwareTier": {
+        "type": "string",
+        "enum": [
+          "A",
+          "B",
+          "C",
+          "D",
+          "E"
+        ]
+      }
+    }
+  },
   "LocalRuntimePhase": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "LocalRuntimePhase",

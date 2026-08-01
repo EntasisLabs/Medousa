@@ -555,7 +555,15 @@ pub fn stop_local_brain(workshop_id: &str) {
 }
 
 pub fn local_brain_process_alive(workshop_id: &str) -> bool {
-    read_local_brain_pid(workshop_id).is_some_and(medousa_host::is_process_alive)
+    let Some(pid) = read_local_brain_pid(workshop_id) else {
+        return false;
+    };
+    if medousa_host::is_process_alive(pid) {
+        true
+    } else {
+        clear_local_brain_pid(workshop_id);
+        false
+    }
 }
 
 pub fn spawn_local_brain(
@@ -588,7 +596,8 @@ pub fn spawn_local_brain(
     command
         .arg("--bind")
         .arg(DEFAULT_LOCAL_BRAIN_BIND)
-        .env("MEDOUSA_DATA_DIR", data_dir.to_string_lossy().to_string());
+        .env("MEDOUSA_DATA_DIR", data_dir.to_string_lossy().to_string())
+        .env("MEDOUSA_LOCAL_PID_FILE", local_brain_pid_path(workshop_id));
     match model_id.map(str::trim).filter(|value| !value.is_empty()) {
         Some(model_id) => {
             command.arg("--model-id").arg(model_id);

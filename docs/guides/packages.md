@@ -60,6 +60,12 @@ the local inference worker when the first chat turn targets **Medousa Local**.
 To release the model memory immediately, open **Settings → Connection → Private
 brain** and choose the power button. The next local turn loads it again.
 
+Before loading, Medousa keeps at least 4 GiB or 25% of system memory—whichever
+is larger—available for the OS and other apps. If the chosen model cannot fit
+that safe envelope, it stays cold and Medousa explains the refusal instead of
+trying the allocation. Automatic recommendations prefer the strongest smaller
+model that fits right now. An idle local worker exits after five minutes.
+
 ---
 
 ## Remove

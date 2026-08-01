@@ -320,6 +320,12 @@ The daemon **probes** `medousa_local` on `:7421`. Loading models uses `medousa m
 Older status payloads without `phase` are inferred as unavailable, cold, or
 ready by current clients.
 
+`LocalResourceAdmission` is the shared pre-load decision record: current and
+total host memory, system reserve, hardware-tier cap, steady/conversion/peak
+estimates, critical-pressure threshold, and the explicit context/batch recipe.
+The current safe baseline is 4K context, batch/concurrency 1. The worker exits
+after five idle minutes and terminates under critical host-memory pressure.
+
 Provider id: `medousa-local` → `http://127.0.0.1:7421/v1`
 
 ---

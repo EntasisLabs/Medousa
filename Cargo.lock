@@ -7605,6 +7605,7 @@ dependencies = [
  "dirs 6.0.0",
  "flate2",
  "futures-util",
+ "medousa-types",
  "once_cell",
  "reqwest 0.12.28",
  "serde",
@@ -7632,9 +7633,11 @@ version = "0.6.0"
 dependencies = [
  "anyhow",
  "axum 0.8.9",
+ "http-body 1.0.1",
  "medousa-types",
  "mistralrs-core",
  "mistralrs-server-core",
+ "sysinfo 0.33.1",
  "tokio",
 ]
 

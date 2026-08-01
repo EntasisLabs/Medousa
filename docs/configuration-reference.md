@@ -52,6 +52,7 @@ Medousa resolves LLM settings in order: **saved defaults → env → built-in de
 | `MEDOUSA_LOCAL_ENGINE_BIND` | Inference engine listen | `127.0.0.1:7421` |
 | `MEDOUSA_LOCAL_ENGINE_BASE_URL` | Client URL for `medousa-local` | `http://127.0.0.1:7421/v1` |
 | `MEDOUSA_LOCAL_ENGINE_CPU` | Force CPU-only inference | unset |
+| `MEDOUSA_LOCAL_ALLOW_UNESTIMATED` | Developer-only escape hatch for direct-repo benchmarks without catalog resource metadata; bypasses pre-load estimation, not critical-pressure termination | unset / off |
 | `HF_TOKEN` | Hugging Face downloads (Gemma catalog) | unset |
 
 25+ providers are supported via [rust-genai](https://github.com/jeremychone/rust-genai). The Home wizard currently surfaces OpenAI, Anthropic, Google, and Ollama only — see [ROADMAP.md](../architecture/ROADMAP.md).

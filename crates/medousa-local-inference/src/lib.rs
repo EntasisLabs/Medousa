@@ -10,6 +10,7 @@
 mod backends;
 mod catalog;
 mod engine;
+mod governor;
 mod hardware;
 mod paths;
 mod process;
@@ -35,6 +36,11 @@ pub use backends::{
 pub use hardware::{
     build_hardware_profile, hardware_profile_path, probe_hardware, read_hardware_profile,
     score_tier, write_hardware_profile, GpuBackend, HardwareProfile, HardwareProbe, HardwareTier,
+};
+pub use governor::{
+    admission_for_model_id, critical_available_mb, evaluate_model_admission,
+    recommended_admitted_model, system_reserve_mb, tier_recipe_cap_mb,
+    DEFAULT_IDLE_TIMEOUT_SECS, SAFE_MAX_BATCH_SIZE, SAFE_MAX_SEQ_LEN,
 };
 pub use process::{
     external_engine_status, is_bind_reachable, load_external_engine, medousa_local_binary_available,

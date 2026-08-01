@@ -5,7 +5,7 @@ use serde_json::Value;
 pub const DEFAULT_LOCAL_ENGINE_BIND: &str = "127.0.0.1:7421";
 pub const DEFAULT_LOCAL_ENGINE_BASE_URL: &str = "http://127.0.0.1:7421/v1";
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "UPPERCASE")]
 pub enum HardwareTier {
@@ -247,6 +247,27 @@ pub struct LocalHardwareResponse {
     pub engine_available: bool,
     pub compiled_backends: Vec<String>,
     pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct LocalResourceAdmission {
+    pub admitted: bool,
+    pub model_id: String,
+    pub hardware_tier: HardwareTier,
+    pub total_ram_mb: u64,
+    pub available_ram_mb: u64,
+    pub system_reserve_mb: u64,
+    pub tier_cap_mb: u64,
+    pub admissible_mb: u64,
+    pub estimated_steady_mb: u64,
+    pub estimated_conversion_mb: u64,
+    pub estimated_peak_mb: u64,
+    pub critical_available_mb: u64,
+    pub max_seq_len: usize,
+    pub max_batch_size: usize,
+    pub rationale: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

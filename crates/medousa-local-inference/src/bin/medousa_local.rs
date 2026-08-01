@@ -17,8 +17,9 @@ use once_cell::sync::Lazy;
 
 #[cfg(feature = "embedded-inference")]
 use medousa_local_inference::{
-    builtin_catalog, compiled_backends, config_from_catalog_entry, recommended_engine_config,
-    LocalEngineConfig, DEFAULT_LOCAL_ENGINE_BIND,
+    admission_for_model_id, builtin_catalog, compiled_backends, config_from_catalog_entry,
+    recommended_engine_config, LocalEngineConfig, DEFAULT_IDLE_TIMEOUT_SECS,
+    DEFAULT_LOCAL_ENGINE_BIND, SAFE_MAX_BATCH_SIZE, SAFE_MAX_SEQ_LEN,
 };
 #[cfg(feature = "embedded-inference")]
 use medousa_local_engine::{LocalEngineConfig as EngineConfig, LocalEngineRuntime};
@@ -39,6 +40,7 @@ fn main() {
 #[cfg(feature = "embedded-inference")]
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    let _pid_file_guard = PidFileGuard;
     let args: Vec<String> = env::args().collect();
     if args.iter().any(|arg| arg == "--help" || arg == "-h") {
         print_help();
@@ -73,6 +75,10 @@ async fn main() -> anyhow::Result<()> {
             cpu_only: env::var("MEDOUSA_LOCAL_ENGINE_CPU")
                 .ok()
                 .is_some_and(|value| matches!(value.trim(), "1" | "true" | "yes")),
+            max_seq_len: SAFE_MAX_SEQ_LEN,
+            max_batch_size: SAFE_MAX_BATCH_SIZE,
+            idle_timeout_secs: DEFAULT_IDLE_TIMEOUT_SECS,
+            critical_available_mb: 1024,
         }
     } else if let Some(model_id) = model_id {
         let catalog = builtin_catalog();
@@ -86,6 +92,26 @@ async fn main() -> anyhow::Result<()> {
     } else {
         anyhow::bail!("provide --load-recommended, --model-id, or --model-repo + --model-alias");
     };
+
+    match admission_for_model_id(&medousa_config.model_alias) {
+        Ok(admission) if admission.admitted => {
+            eprintln!(
+                "medousa_local resource admission: {}",
+                serde_json::to_string(&admission)?
+            );
+        }
+        Ok(admission) => anyhow::bail!(admission.rationale),
+        Err(err)
+            if env::var("MEDOUSA_LOCAL_ALLOW_UNESTIMATED")
+                .ok()
+                .is_some_and(|value| matches!(value.trim(), "1" | "true" | "yes")) =>
+        {
+            eprintln!("medousa_local warning: {err}; unestimated load explicitly allowed");
+        }
+        Err(err) => anyhow::bail!(
+            "{err}. Refusing an unestimated model load; set MEDOUSA_LOCAL_ALLOW_UNESTIMATED=1 only for controlled benchmarking"
+        ),
+    }
 
     let status = RUNTIME
         .load(to_engine_config(medousa_config))
@@ -101,10 +127,35 @@ async fn main() -> anyhow::Result<()> {
             .unwrap_or("gemma")
     );
 
-    tokio::signal::ctrl_c().await?;
+    tokio::select! {
+        result = tokio::signal::ctrl_c() => result?,
+        _ = RUNTIME.wait_until_stopped() => {
+            println!("medousa_local worker stopped; releasing model memory");
+        }
+    }
     RUNTIME.unload().await.map_err(anyhow::Error::msg)?;
     println!("medousa_local stopped");
     Ok(())
+}
+
+#[cfg(feature = "embedded-inference")]
+struct PidFileGuard;
+
+#[cfg(feature = "embedded-inference")]
+impl Drop for PidFileGuard {
+    fn drop(&mut self) {
+        let Ok(path) = env::var("MEDOUSA_LOCAL_PID_FILE") else {
+            return;
+        };
+        let path = std::path::PathBuf::from(path);
+        let belongs_to_this_process = std::fs::read_to_string(&path)
+            .ok()
+            .and_then(|raw| raw.trim().parse::<u32>().ok())
+            .is_some_and(|pid| pid == std::process::id());
+        if belongs_to_this_process {
+            let _ = std::fs::remove_file(path);
+        }
+    }
 }
 
 #[cfg(feature = "embedded-inference")]
@@ -116,6 +167,10 @@ fn to_engine_config(config: LocalEngineConfig) -> EngineConfig {
         from_uqff: config.from_uqff,
         in_situ_quant: config.in_situ_quant,
         cpu_only: config.cpu_only,
+        max_seq_len: config.max_seq_len,
+        max_batch_size: config.max_batch_size,
+        idle_timeout_secs: config.idle_timeout_secs,
+        critical_available_mb: config.critical_available_mb,
     }
 }
 
@@ -150,6 +205,9 @@ options:
 environment:
   MEDOUSA_DATA_DIR           Model weights directory
   MEDOUSA_LOCAL_ENGINE_CPU=1 Force CPU inference
+  MEDOUSA_LOCAL_PID_FILE     Supervisor PID file removed on clean worker exit
+  MEDOUSA_LOCAL_ALLOW_UNESTIMATED=1
+                              Allow direct-repo loads without a catalog estimate (unsafe)
 "#
     );
 }

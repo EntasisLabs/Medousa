@@ -1,6 +1,16 @@
+use std::future::IntoFuture;
 use std::net::SocketAddr;
+use std::pin::Pin;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::task::{Context, Poll};
+use std::time::{Duration, Instant};
 
+use axum::body::{Body, Bytes};
+use axum::extract::{Request, State};
+use axum::middleware::{self, Next};
+use axum::response::Response;
+use http_body::{Body as HttpBody, Frame};
 use medousa_types::local::{LocalEngineStatus, LocalRuntimePhase};
 use tokio::sync::{oneshot, RwLock};
 use tokio::task::JoinHandle;
@@ -15,6 +25,10 @@ pub struct LocalEngineConfig {
     pub from_uqff: Option<String>,
     pub in_situ_quant: Option<String>,
     pub cpu_only: bool,
+    pub max_seq_len: usize,
+    pub max_batch_size: usize,
+    pub idle_timeout_secs: u64,
+    pub critical_available_mb: u64,
 }
 
 pub struct LoadedEngineHandle {
@@ -81,6 +95,21 @@ impl LocalEngineRuntime {
         *self.status.write().await = LocalEngineStatus::idle(true);
         Ok(())
     }
+
+    pub async fn wait_until_stopped(&self) {
+        loop {
+            if self
+                .server_task
+                .read()
+                .await
+                .as_ref()
+                .is_none_or(tokio::task::JoinHandle::is_finished)
+            {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(250)).await;
+        }
+    }
 }
 
 impl Default for LocalEngineRuntime {
@@ -91,8 +120,9 @@ impl Default for LocalEngineRuntime {
 
 #[cfg(test)]
 mod tests {
-    use super::LocalEngineRuntime;
+    use super::{LocalEngineRuntime, RequestActivity};
     use medousa_types::local::LocalRuntimePhase;
+    use std::time::Duration;
 
     #[tokio::test]
     async fn unload_always_returns_runtime_to_cold() {
@@ -101,6 +131,15 @@ mod tests {
         let status = runtime.status().await;
         assert!(!status.loaded);
         assert_eq!(status.phase, LocalRuntimePhase::Cold);
+    }
+
+    #[test]
+    fn active_response_body_blocks_idle_eviction() {
+        let activity = RequestActivity::new();
+        activity.begin();
+        assert!(!activity.is_idle_for(Duration::ZERO));
+        activity.finish();
+        assert!(activity.is_idle_for(Duration::ZERO));
     }
 }
 
@@ -126,11 +165,16 @@ pub async fn load_embedded_engine(config: LocalEngineConfig) -> Result<LoadedEng
     }
 
     let mistralrs = builder.build().await.map_err(|err| err.to_string())?;
+    let activity = Arc::new(RequestActivity::new());
     let app = MistralRsServerRouterBuilder::new()
         .with_mistralrs(mistralrs)
         .build()
         .await
-        .map_err(|err| err.to_string())?;
+        .map_err(|err| err.to_string())?
+        .layer(middleware::from_fn_with_state(
+            activity.clone(),
+            track_request_activity,
+        ));
 
     let addr: SocketAddr = config
         .bind
@@ -141,15 +185,37 @@ pub async fn load_embedded_engine(config: LocalEngineConfig) -> Result<LoadedEng
         .map_err(|err| format!("failed to bind local engine on {addr}: {err}"))?;
 
     let (shutdown_tx, mut shutdown_rx) = oneshot::channel();
+    let idle_timeout = Duration::from_secs(config.idle_timeout_secs);
+    let critical_available_mb = config.critical_available_mb;
     let server_task = tokio::spawn(async move {
-        let serve = axum::serve(listener, app);
-        tokio::select! {
-            result = serve => {
-                if let Err(err) = result {
-                    eprintln!("medousa_local engine error: {err}");
+        let serve = axum::serve(listener, app).into_future();
+        tokio::pin!(serve);
+        let mut idle_check = tokio::time::interval(Duration::from_secs(1));
+        let mut system = sysinfo::System::new();
+        loop {
+            tokio::select! {
+                result = &mut serve => {
+                    if let Err(err) = result {
+                        eprintln!("medousa_local engine error: {err}");
+                    }
+                    break;
+                }
+                _ = &mut shutdown_rx => break,
+                _ = idle_check.tick() => {
+                    system.refresh_memory();
+                    let available_mb = system.available_memory() / 1024 / 1024;
+                    if available_mb < critical_available_mb {
+                        eprintln!(
+                            "medousa_local critical memory pressure: {available_mb} MiB available; terminating worker"
+                        );
+                        break;
+                    }
+                    if !idle_timeout.is_zero() && activity.is_idle_for(idle_timeout) {
+                        eprintln!("medousa_local idle timeout reached");
+                        break;
+                    }
                 }
             }
-            _ = &mut shutdown_rx => {}
         }
     });
 
@@ -157,6 +223,97 @@ pub async fn load_embedded_engine(config: LocalEngineConfig) -> Result<LoadedEng
         server_task,
         shutdown_tx,
     })
+}
+
+struct RequestActivity {
+    active_requests: AtomicUsize,
+    idle_since: std::sync::Mutex<Instant>,
+}
+
+impl RequestActivity {
+    fn new() -> Self {
+        Self {
+            active_requests: AtomicUsize::new(0),
+            idle_since: std::sync::Mutex::new(Instant::now()),
+        }
+    }
+
+    fn begin(&self) {
+        self.active_requests.fetch_add(1, Ordering::AcqRel);
+    }
+
+    fn finish(&self) {
+        let previous = self.active_requests.fetch_sub(1, Ordering::AcqRel);
+        debug_assert!(previous > 0, "request activity underflow");
+        if previous == 1 {
+            *self.idle_since.lock().expect("idle activity lock") = Instant::now();
+        }
+    }
+
+    fn is_idle_for(&self, timeout: Duration) -> bool {
+        self.active_requests.load(Ordering::Acquire) == 0
+            && self
+                .idle_since
+                .lock()
+                .expect("idle activity lock")
+                .elapsed()
+                >= timeout
+    }
+}
+
+struct TrackedBody {
+    inner: Body,
+    activity: Arc<RequestActivity>,
+    finished: bool,
+}
+
+impl TrackedBody {
+    fn finish(&mut self) {
+        if !self.finished {
+            self.finished = true;
+            self.activity.finish();
+        }
+    }
+}
+
+impl Drop for TrackedBody {
+    fn drop(&mut self) {
+        self.finish();
+    }
+}
+
+impl HttpBody for TrackedBody {
+    type Data = Bytes;
+    type Error = axum::Error;
+
+    fn poll_frame(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
+        let poll = Pin::new(&mut self.inner).poll_frame(cx);
+        if matches!(poll, Poll::Ready(None) | Poll::Ready(Some(Err(_)))) {
+            self.finish();
+        }
+        poll
+    }
+}
+
+async fn track_request_activity(
+    State(activity): State<Arc<RequestActivity>>,
+    request: Request,
+    next: Next,
+) -> Response {
+    activity.begin();
+    let response = next.run(request).await;
+    let (parts, body) = response.into_parts();
+    Response::from_parts(
+        parts,
+        Body::new(TrackedBody {
+            inner: body,
+            activity,
+            finished: false,
+        }),
+    )
 }
 
 fn build_model_selected(config: &LocalEngineConfig) -> Result<mistralrs_core::ModelSelected, String> {
@@ -174,8 +331,8 @@ fn build_model_selected(config: &LocalEngineConfig) -> Result<mistralrs_core::Mo
         max_edge: None,
         calibration_file: None,
         imatrix: None,
-        max_seq_len: AutoDeviceMapParams::DEFAULT_MAX_SEQ_LEN,
-        max_batch_size: AutoDeviceMapParams::DEFAULT_MAX_BATCH_SIZE,
+        max_seq_len: config.max_seq_len,
+        max_batch_size: config.max_batch_size,
         max_num_images: AutoDeviceMapParams::DEFAULT_MAX_NUM_IMAGES,
         max_image_length: AutoDeviceMapParams::DEFAULT_MAX_IMAGE_LENGTH,
         hf_cache_path: None,

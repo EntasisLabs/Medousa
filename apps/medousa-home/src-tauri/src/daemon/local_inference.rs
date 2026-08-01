@@ -8,12 +8,36 @@ use medousa_types::{
     LocalCatalogResponse, LocalEngineStatus, LocalHardwareResponse, LocalModelsResponse,
     LocalRuntimePhase, ModelDownloadProgress,
 };
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
+use medousa_types::LocalResourceAdmission;
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, State};
 use tokio::sync::watch;
 
 pub struct LocalInferenceStreamState {
     cancel: Mutex<Option<watch::Sender<bool>>>,
+}
+
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
+fn require_local_resource_admission(
+    model_id: Option<&str>,
+) -> Result<LocalResourceAdmission, String> {
+    let selected_model = match model_id.map(str::trim).filter(|value| !value.is_empty()) {
+        Some(model_id) => model_id.to_string(),
+        None => {
+            let probe = medousa_local_inference::probe_hardware();
+            let tier = medousa_local_inference::score_tier(&probe);
+            medousa_local_inference::recommended_admitted_model(&probe)
+                .map(|entry| entry.id)
+                .ok_or_else(|| format!("no local model fits the safe envelope for hardware tier {}", tier.as_str()))?
+        }
+    };
+    let admission = medousa_local_inference::admission_for_model_id(&selected_model)?;
+    if admission.admitted {
+        Ok(admission)
+    } else {
+        Err(admission.rationale)
+    }
 }
 
 impl LocalInferenceStreamState {
@@ -99,6 +123,9 @@ pub async fn local_inference_spawn_engine(
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty());
 
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
+    let _admission = require_local_resource_admission(model.as_deref())?;
+
     workshop_runtime::ensure_local_brain(&workshop.id, &data_dir, model.as_deref()).await?;
 
     sdk::client(&state)
@@ -109,6 +136,8 @@ pub async fn local_inference_spawn_engine(
 }
 
 pub(crate) async fn ensure_local_engine_for_turn(model_id: Option<&str>) -> Result<(), String> {
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
+    let _admission = require_local_resource_admission(model_id)?;
     let registry = load_registry()?;
     let workshop = registry
         .workshops
