@@ -1,20 +1,15 @@
 
 <div align="center">
 
-<img src="assets/medousa-blk.png" alt="Medousa Logo" width="300">
+<img src="assets/brand/medousa-mark-bone.svg" alt="Medousa" width="420">
 
 </div>
 
 <h1 style="text-align: center;">Medousa</h1>
 
-<p align="center"><strong>Turn chaotic life into stone.</strong></p>
+<p align="center"><strong>Your continuum - Carry less of yourself from place to place, while more of your life remains available to you.</strong></p>
 
-Medousa is a permanent AI workspace that lives on your devices. It remembers what you tell it, verifies what it tells you, and keeps working even when you close the window.
-
-Talk from the app, Discord, Telegram, Slack, or WhatsApp. Send the big job to the background. Wake up to finished guides in your vault — not chat that disappears.
-
-<p align="center"><em>One brain, your PC, your phone, your scheduled work, your memory — always here, always yours.</em></p>
-<p align="center"><strong>Local-first. No Medousa subscription. Answers you can trace.</strong></p>
+Medousa keeps your conversations, memory, projects, tools, and ongoing work available wherever you use it. Open it on another device, in VS Code, or from Slack and continue where you left off. The point is not to begin again. It is to arrive as yourself.
 
 <p align="center">
   <a href="https://releases.entasislabs.com/medousa/stable/installer-bootstrap.json"><strong>Download Medousa</strong></a>
@@ -25,146 +20,78 @@ Talk from the app, Discord, Telegram, Slack, or WhatsApp. Send the big job to th
 
 ---
 
-## What you can do with it
+## The place changes. You don't.
 
-| You need to… | So you… |
-|---|---|
-| Remember where you left off | Ask Medousa. It keeps your history — and who you are — across days. |
-| Stop re-introducing yourself | Tell it once. Your preferences, your people, your rhythms. It builds a picture of you that gets sharper over time. |
-| Switch context on one engine | **Profiles** are hats on one brain (`work`, `home`, …) — not separate accounts. |
-| Wear a different voice on command | Switch to a **specialty** — morning brief, research deep-dive, or a skill you imported from Cursor, Hermes, or OpenClaw. |
-| Get answers you can trust | For live facts it goes out, gathers sources, and shows you the trail — including a thinking trace when the model provides one. |
-| Keep finished work as artifacts | **Presentations** and HTML guides land in **Library** — readable, exportable, not buried in scrollback. |
-| Browse and save the web | Built-in **Web** surface: tabs, bookmarks, save a page to your vault, hand off to the agent when needed. |
-| Automate what actually matters | Schedule a check-in, a report, or a full working session. Medousa runs it while you sleep. The answer finds you. |
-| Hand off the heavy lifting | Send the big job to the background. One clear answer comes back — not a pile of half-finished threads. |
-| Connect nearby workshops | **Peers** — discover trusted engines on your LAN (or over the tunnel), share turns, inbox between your machines. |
-| Plug in what you already use | Connect the tools and services you rely on. Medousa learns what they can do — and asks before it acts. |
-| Reach it from anywhere | Discord, Telegram, Slack, WhatsApp. Text `/brief` on Telegram and your morning summary starts. |
-| Use your phone as a portal | iOS and Android pair to a desktop running the engine (QR). Your phone is the window — not a second brain host. |
-| Pin your own pages | Ask Medousa to build **custom views** — braindumps, studios, live dashboards — in the sidebar (**Settings → Canvas**). |
-| Get checked in on | Turn on proactive nudges. Medousa reaches out on a rhythm you choose — with reasoning, not noise. |
-| Run it fully offline | **Private brain** on your device — Gemma, local. Your hardware. Your rules. (Cloud models are optional — bring your own keys.) |
-| Start fresh on a new device | Download **Medousa**, open the welcome flow, land in chat. About a minute. No terminal. Add more later from **Settings → Packages**. |
+### Pick up where you left off
 
-### Chat — thinking trace, memory, identity
-<img width="1440" height="900" alt="Chat with thinking trace expanded" src="assets/screenshots/chat-thinking.png" />
-
-<img width="1440" height="900" alt="Chat pulling identity memory — who you are" src="assets/screenshots/chat-identity.png" />
+Medousa keeps the thread close so you can return to it days later without reconstructing your own life from fragments.
 
 <img width="1440" height="900" alt="Chat with deep memory recall across projects" src="assets/screenshots/chat-memory.png" />
 
-### Vault — notes you keep
-<img width="1440" height="900" alt="Vault note editor with split preview" src="assets/screenshots/vault.png" />
+### Turn the thread into something real
 
-### Presentations — sandbox artifacts in Library
+A conversation can become a note, a guide, a presentation, a dashboard, or anything else worth keeping. The result does not vanish when the chat scrolls away. It becomes part of your workspace.
+
 <img width="1440" height="900" alt="HTML presentation sandbox with Voidsurge arcade" src="assets/screenshots/presentation.png" />
 
-### Custom canvas — dashboards you pin
-<img width="1440" height="900" alt="Vibe Studio canvas with widgets" src="assets/screenshots/canvas.png" />
+### Let the work continue without you
 
-### Automations — flows and schedules
+Hand Medousa something that needs time. A report, a research pass, a scheduled check-in, a morning brief. Close the window. Go to sleep. The work waits, retries, and finds you when it is ready.
+
 <img width="1440" height="900" alt="Automation flows with AI planning" src="assets/screenshots/automations.png" />
 
-### Peers — workshop LAN invite
-Discover trusted engines on your LAN — tap **+** in Peers for a same-Wi-Fi QR (or paste a link off-LAN).
+### Bring the whole thing with you
+
+The app, your phone, messaging channels, editors, and connected workspaces are not separate products to keep in sync. They are different ways into the same world.
 
 <img width="1440" height="900" alt="Peers Add peer QR for workshop LAN pairing" src="assets/screenshots/pairing.png" />
 
-### Phone — pair your pocket portal
-**Settings → Phone** — scan from iOS or Android on the same Wi-Fi. Your phone is the window, not a second brain host.
-
-<img width="1440" height="900" alt="Settings Phone QR pairing for iOS and Android" src="assets/screenshots/phone-pairing.png" />
-
-### Messaging — Telegram, Discord, Slack, WhatsApp
-<img width="1440" height="900" alt="Messaging channel setup" src="assets/screenshots/channels.png" />
-
-### Identity — who she knows you as
-<img width="1440" height="900" alt="Identity canvas with personal context" src="assets/screenshots/identity.png" />
-
-### Settings — room, memory, models, reach
-<img width="1440" height="900" alt="Room color themes and palettes" src="assets/screenshots/themes.png" />
-
-<img width="1440" height="900" alt="Memory charter and long-chat rules" src="assets/screenshots/settings-memory.png" />
-
-<img width="1440" height="900" alt="Model providers and favorites" src="assets/screenshots/settings-models.png" />
-
-<img width="1440" height="900" alt="Reach — tools, web search, specialists" src="assets/screenshots/settings-reach.png" />
-
 ---
 
-## What makes it reliable
+## One continuum, many surfaces
 
-You are not watching Medousa when it works. That is the point.
+Presentations, code, workflows, the vault, canvas, messaging, and integrations all remain useful even with chat closed.
 
-When you send a message or schedule a check-in, Medousa turns it into work that cannot be lost. If your laptop goes to sleep, if the network drops, if the engine restarts — that work waits. It retries. It picks up where it left off.
+The surface changes to fit the moment; your context does not.
 
-You never have to wonder whether something finished. If Medousa accepted it, it ran.
+Use the same workshop from the [Medousa app](docs/guides/getting-started.md), [VS Code](docs/guides/vscode.md), [Neovim](docs/guides/neovim.md), your [phone](docs/guides/phone-pairing.md), or the [channels where people already reach you](docs/guides/channels.md).
 
----
+Connect trusted workspaces across your LAN or through a tunnel. Your home machine, your laptop, and the devices around you can become part of one peer mesh without turning each doorway into a new account or a new beginning.
 
-## What makes it safe
+## Less to carry. More available.
 
-When Medousa runs a script — processing a spreadsheet, fetching a page, transforming a file — it runs inside a sealed environment. That script cannot touch your documents, your passwords, or your other applications unless you explicitly say it can.
+Medousa is built around the user, not around a particular model, application, or device. 
 
-When it reaches outside — sending a message, calling an external service — it can ask you first.
+The goal is simple: reduce the amount of context you have to hold in your head, and make more of your own world available when you need it.
 
-You do not have to trust the script. You only have to trust the seal.
+## Bring your agents
 
----
+Import `SKILL.md` skills from **Hermes**, **OpenClaw**, or **Cursor** as specialties and run them in the same workspace. Details: **[skills and specialties](docs/cookbook/skills-and-specialties.md)**.
 
-## What makes it remember
+A specialty (manuscript) gives an imported skill its own tone, boundaries, and optional schedule—a morning briefer, deep-dive researcher, or memory manager.
 
-Most assistants amnesia every time you open them. Medousa doesn't.
-
-It remembers **what happened** — the texture of your weeks, compressed and searchable.
-
-It remembers **who you are** — how you take your coffee, who Mario is, what you care about this quarter. The essentials surface at the start of every turn. Ask for more when you need it.
-
-You can export that picture as markdown. Edit it. Hand it back. Or teach Medousa one fact at a time when you want to.
-
----
-
-## Specialties
-
-Some jobs deserve their own voice. A **specialty** (manuscript) is a pack with its own tone, boundaries, and optional schedule — morning brief, research deep-dive, memory ritual. Run it in chat, delegate it to the background, or schedule it to land in Telegram.
-
-Shipped example: **morning-brief** — one command on Telegram, your day summarized.
-
-Coming from **Hermes**, **OpenClaw**, or **Cursor**? Import `SKILL.md` skills as specialties — same format, one runtime. Details: **[skills and specialties](docs/cookbook/skills-and-specialties.md)**.
-
----
-
-## Medousa Engine (developers)
-
-The app is a client. The engine is the product underneath — durable jobs, HTTP API, local inference, MCP, channel ingest. Run it headless. Call it from your stack. Same runtime the app uses on every platform.
-
-<img width="1440" height="900" alt="Medousa TUI setup and diagnostics" src="assets/screenshots/tui.png" />
-
-<img width="1440" height="900" alt="MCP gateway and capability connections" src="assets/screenshots/capabilities.png" />
-
-**[Developer docs →](docs/README.md)** · CLI and TUI for power users — not required for the welcome flow.
-
----
-
-## Get Medousa
+## Download from the terminal
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/EntasisLabs/Medousa/main/scripts/install-app.sh | bash
 ```
 
-1. That script reads our release CDN bootstrap and opens the right installer for your OS.
-   Or **[download via bootstrap JSON](https://releases.entasislabs.com/medousa/stable/installer-bootstrap.json)**.
-2. Open the app → welcome flow → chat. About a minute. Guide: **[Getting started](docs/guides/getting-started.md)**.
-3. Need offline brain, adapters, CLI, or MCP? **Settings → Packages** — **[Packages guide](docs/guides/packages.md)**.
+That script reads our release CDN bootstrap and opens the right installer for your OS. Or **[download via bootstrap JSON](https://releases.entasislabs.com/medousa/stable/installer-bootstrap.json)**.
 
-**Using Medousa:** [guides index](docs/guides/README.md) — phone, peers, memory, channels, workshop & automations.
 
-**Medousa Installer** remains available for full workloads / repair when you need it; most day-to-day extras land in **Settings → Packages** after the app is installed.
+For the rest of the platform:
 
-**iOS / Android** — companion apps pair to a desktop engine via QR ([phone pairing](docs/guides/phone-pairing.md)).
+- **[Using Medousa](docs/guides/README.md)** — phone, peers, memory, channels, workspaces, and automations.
+- **[Engine and self-hosting](docs/cookbook/install-and-self-host.md)** — run the durable runtime yourself.
+- **[Developer docs](docs/README.md)** — HTTP, SDKs, MCP, artifacts, vault, canvas, and integrations.
 
-Engine / CLI self-host: [install & self-host](docs/cookbook/install-and-self-host.md) · [Developer docs](docs/README.md) · release CDN notes: [release-to-r2](docs/cookbook/release-to-r2.md)
+## For builders
+
+The app is one surface of Medousa. The engine underneath provides durable jobs, HTTP APIs, local inference, MCP, channel ingest, memory, and the shared session model used by the app, VS Code, Neovim, and other clients.
+
+Run it headless. Call it from your stack. Integrate it into your existing context.
+
+**[Developer docs →](docs/README.md)**
 
 ---
 
@@ -178,8 +105,7 @@ Security reports: [SECURITY.md](SECURITY.md) · Contributing: [CONTRIBUTING.md](
 
 ## Built on Stasis, Locus, and Resonantia
 
-Medousa is not a chat wrapper pretending to be durable. **[Stasis](https://github.com/EntasisLabs/stasis)** makes work finish and survive restarts. **[Locus](https://github.com/EntasisLabs/locus)** makes memory structured and retrievable. **[Resonantia](https://resonantia.me)** is the sibling surface — same foundation, memory made visible as terrain.
-
+Medousa treats your entire workspace as one durable place.ß **[Stasis](https://github.com/EntasisLabs/stasis)** makes work finish and survive restarts. **[Locus](https://github.com/EntasisLabs/locus)** makes memory structured and retrievable. **[Resonantia](https://resonantia.me)** is the sibling surface — same foundation, memory made visible as terrain.
 
 ## Built with
 
@@ -188,7 +114,7 @@ Medousa and its stack stand on a few heavyweight open-source crates and apps:
 | Stack | Role in Medousa |
 |-------|-----------------|
 | **[Tauri](https://tauri.app)** | Desktop + mobile shell — Home and Installer |
-| **[Iroh](https://www.iroh.computer)** | Encrypted P2P transport for phone pairing and peer workshops |
+| **[Iroh](https://www.iroh.computer)** | Encrypted P2P transport for phone pairing and peer workspaces |
 | **[genai](https://github.com/jeremychone/rust-genai)** | Multi-provider model client (cloud + local backends) |
 | **[SurrealDB](https://surrealdb.com)** | Embedded store for durable runtime state |
 | **[Axum](https://github.com/tokio-rs/axum)** + **[Tokio](https://tokio.rs)** | Local HTTP engine and async runtime |
