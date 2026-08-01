@@ -235,6 +235,12 @@ keeps focus in the prompt after a turn, exposes concise tool/recovery states,
 and lets `MedousaApply` insert or replace a fenced code block only after
 confirmation.
 
+The first polish pass adds a multiline per-session composer, motion/range
+context, cursor-centered buffer excerpts, a shared conversation picker with
+rename/delete, optional Telescope discovery, compact tool states, a statusline
+API, and unified-diff previews guarded by buffer revision before one-step
+undoable application.
+
 ### Obsidian — vault-native companion
 
 **Initial commands and UI:**
@@ -307,7 +313,7 @@ or reproducing Home.
   application. **Complete for the first slice.**
 - Add current buffer/visual selection/diagnostic context. **Complete for the
   first slice.**
-- Add optional Telescope integration without making it mandatory.
+- Add optional Telescope integration without making it mandatory. **Complete.**
 - Add vault search and Forge status commands.
 
 **Exit:** a Neovim user can complete the common ask/explain/fix flows without a

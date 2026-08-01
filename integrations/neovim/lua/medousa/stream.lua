@@ -1,7 +1,8 @@
 local M = {}
 
 local function trim(value)
-  return (value or ""):gsub("^%s+", ""):gsub("%s+$", "")
+  local trimmed = (value or ""):gsub("^%s+", ""):gsub("%s+$", "")
+  return trimmed
 end
 
 function M.new_parser(on_event)
@@ -50,19 +51,24 @@ end
 
 function M.extract_code_blocks(markdown)
   local blocks = {}
-  local language, body = nil, nil
+  local language, body, fence_start = nil, nil, nil
+  local line_number = 0
   for line in ((markdown or "") .. "\n"):gmatch("([^\n]*)\n") do
-    local opening = line:match("^```([%w_+%-]+)$")
-    if line == "```" then
+    line_number = line_number + 1
+    local fence = line:match("^%s*```([%w_+%-]*)%s*$")
+    if fence ~= nil then
       if body then
-        table.insert(blocks, { language = language, text = table.concat(body, "\n") })
-        language, body = nil, nil
+        table.insert(blocks, {
+          language = language,
+          text = table.concat(body, "\n"),
+          start_line = fence_start,
+          end_line = line_number,
+        })
+        language, body, fence_start = nil, nil, nil
       else
-        language, body = "text", {}
+        language, body = fence ~= "" and fence or "text", {}
+        fence_start = line_number
       end
-    elseif opening then
-      language = opening
-      body = {}
     elseif body then
       table.insert(body, line)
     end

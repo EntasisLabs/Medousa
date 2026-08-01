@@ -1,7 +1,8 @@
 local M = {}
 
 function M.trim(value)
-  return (value or ""):gsub("^%s+", ""):gsub("%s+$", "")
+  local trimmed = (value or ""):gsub("^%s+", ""):gsub("%s+$", "")
+  return trimmed
 end
 
 function M.first_line(value)
@@ -40,8 +41,14 @@ function M.write_session(session_id)
   file:close()
 end
 
-function M.shell_escape(value)
-  return vim.fn.shellescape(value or "")
+function M.clear_session()
+  local path = M.session_path()
+  if vim.fn.filereadable(path) == 1 then vim.fn.delete(path) end
+end
+
+function M.copy(value)
+  vim.fn.setreg('"', value or "")
+  return pcall(vim.fn.setreg, "+", value or "")
 end
 
 return M

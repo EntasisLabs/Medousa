@@ -5,9 +5,10 @@ local M = {}
 M.__index = M
 
 local function url_encode(value)
-  return tostring(value):gsub("([^%w%-_%.~])", function(char)
+  local encoded = tostring(value):gsub("([^%w%-_%.~])", function(char)
     return string.format("%%%02X", string.byte(char))
   end)
+  return encoded
 end
 
 local function resolve_url(endpoint, path)
@@ -71,6 +72,10 @@ function M:request(method, path, body, callback)
         callback(nil, "Medousa request failed (HTTP " .. status .. ")")
         return
       end
+      if status == 204 or response == "" then
+        callback({}, nil)
+        return
+      end
       local value, err = decode_body(response)
       callback(value, err)
     end)
@@ -83,6 +88,28 @@ end
 
 function M:history(session_id, callback)
   self:request("GET", "/v1/sessions/" .. url_encode(session_id) .. "/history", nil, callback)
+end
+
+function M:sessions(limit, callback)
+  self:request("GET", "/v1/sessions?limit=" .. tostring(limit or 50), nil, function(value, err)
+    if not value then
+      callback(nil, err)
+    elseif vim.islist(value) then
+      callback(value, nil)
+    else
+      callback(value.sessions or {}, nil)
+    end
+  end)
+end
+
+function M:rename_session(session_id, display_name, callback)
+  self:request("PUT", "/v1/sessions/" .. url_encode(session_id) .. "/name", {
+    display_name = display_name,
+  }, callback)
+end
+
+function M:delete_session(session_id, callback)
+  self:request("DELETE", "/v1/sessions/" .. url_encode(session_id) .. "?purge_memory=true", nil, callback)
 end
 
 function M:create_session(callback)
@@ -131,8 +158,29 @@ function M:cancel(session_id, callback)
   end)
 end
 
+function M:approve_budget(request_id, extra_rounds, callback)
+  self:request("POST", "/v1/turns/budget-requests/" .. url_encode(request_id) .. "/approve", {
+    extra_rounds = extra_rounds,
+    resolved_by = "neovim",
+  }, callback)
+end
+
+function M:deny_budget(request_id, callback)
+  self:request("POST", "/v1/turns/budget-requests/" .. url_encode(request_id) .. "/deny", {
+    resolved_by = "neovim",
+  }, callback)
+end
+
+function M:resolve_permission(request_id, approve, callback)
+  local action = approve and "approve" or "deny"
+  self:request("POST", "/v1/agents/permission-requests/" .. url_encode(request_id) .. "/" .. action, {
+    resolved_by = "neovim",
+  }, callback)
+end
+
 function M:turn(session_id, prompt, context, callbacks)
   self.stream_cancelled = false
+  self.stream_terminal = false
   self:request("GET", "/v1/runtime/defaults", nil, function(defaults, defaults_err)
     if not defaults then
       callbacks.on_error(defaults_err)
@@ -166,12 +214,19 @@ end
 
 function M:_stream(stream_url, since, attempt, callbacks)
   if self.stream_cancelled then return end
+  local terminal_seen = false
   local parser = stream.new_parser(function(event)
-    if event.seq and event.seq > since then since = event.seq end
-    callbacks.on_event(event)
-    if event.terminal then
-      callbacks.on_done(event)
+    local sequence = tonumber(event.seq)
+    if sequence and sequence > since then since = sequence end
+    local is_terminal = event.terminal and not self.stream_terminal
+    if is_terminal then
+      terminal_seen = true
+      self.stream_terminal = true
     end
+    vim.schedule(function()
+      callbacks.on_event(event)
+      if is_terminal then callbacks.on_done(event) end
+    end)
   end)
   local args = { "curl", "-sS", "-N", "--no-buffer" }
   vim.list_extend(args, self:headers())
@@ -186,12 +241,13 @@ function M:_stream(stream_url, since, attempt, callbacks)
     vim.schedule(function()
       self.stream_job = nil
       if self.stream_cancelled then return end
-      if result.code ~= 0 and attempt < 4 then
+      if self.stream_terminal or terminal_seen then return end
+      if attempt < 4 then
         callbacks.on_status("Connection interrupted — recovering…")
         vim.defer_fn(function()
           self:_stream(stream_url, since, attempt + 1, callbacks)
         end, math.min(30000, 500 * (2 ^ attempt)))
-      elseif result.code ~= 0 then
+      else
         callbacks.on_error((result.stderr and result.stderr ~= "" and result.stderr) or "Medousa stream ended unexpectedly")
       end
     end)
