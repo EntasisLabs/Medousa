@@ -1,5 +1,9 @@
 import type { CustomThemeConfig } from "@skeletonlabs/tw-plugin";
 import { accentRampProperties } from "./accent-ramps";
+import {
+  completeThemeConfig,
+  type ThemePersonality,
+} from "./theme-contract";
 
 type ThemeProps = CustomThemeConfig["properties"];
 
@@ -34,8 +38,9 @@ export function buildTheme(
     fontBase: string;
   },
   extras: ThemeProps = {},
+  personality: ThemePersonality = {},
 ): CustomThemeConfig {
-  return {
+  return completeThemeConfig({
     name,
     properties: {
       ...surfaces,
@@ -52,7 +57,7 @@ export function buildTheme(
       ...sharedMeta,
       ...extras,
     },
-  };
+  }, personality);
 }
 
 export function buildDarkTheme(
@@ -60,6 +65,13 @@ export function buildDarkTheme(
   surfaces: Record<string, string>,
   accents: Parameters<typeof buildTheme>[2],
   extras?: ThemeProps,
+  personality?: ThemePersonality,
 ): CustomThemeConfig {
-  return buildTheme(name, surfaces, accents, { ...statusDark, ...extras });
+  return buildTheme(
+    name,
+    surfaces,
+    accents,
+    { ...statusDark, ...extras },
+    personality,
+  );
 }

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { Check, LoaderCircle, Search } from "@lucide/svelte";
+  import { Check, ChevronDown, ChevronRight, LoaderCircle, Search } from "@lucide/svelte";
   import type { ProviderCatalogEntry, ProvidersListResult } from "$lib/types/providers";
   import { filterProviders, groupProvidersByCategory } from "$lib/types/providers";
   import {
@@ -28,6 +28,7 @@
     baseUrl?: string;
     disabled?: boolean;
     compact?: boolean;
+    progressive?: boolean;
     excludeProviderIds?: string[];
     showValidate?: boolean;
     onProviderChange: (id: string, entry: ProviderCatalogEntry) => void;
@@ -44,6 +45,7 @@
     baseUrl = "",
     disabled = false,
     compact = false,
+    progressive = false,
     excludeProviderIds = [],
     showValidate = true,
     onProviderChange,
@@ -66,6 +68,8 @@
   let capabilityMap = $state<Map<string, ModelCapabilityRecord>>(new Map());
   let loadSeq = 0;
   let showManualModel = $state(false);
+  let providerBrowserOpen = $state(false);
+  let connectionDetailsOpen = $state(false);
 
   const selected = $derived(
     catalog ? findCatalogProvider(catalog, providerId) : undefined,
@@ -93,6 +97,10 @@
 
   const selectedModelBadges = $derived(
     selected ? badgesForModel(capabilityMap, selected.id, model) : [],
+  );
+
+  const credentialsReady = $derived(
+    Boolean(selected && (!selected.needsApiKey || apiKey.trim() || selected.id === "ollama")),
   );
 
   onMount(() => {
@@ -186,6 +194,7 @@
       onBaseUrlChange?.("");
     }
     onStatus?.(null);
+    if (progressive) providerBrowserOpen = false;
     void loadModelsForEntry(entry, { preferSuggested: true });
   }
 
@@ -224,60 +233,78 @@
       Loading providers…
     </p>
   {:else}
-    <label class="block">
-      <span class="block text-sm font-medium text-surface-100">Find a provider</span>
-      <div class="relative mt-2">
-        <Search
-          class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-surface-500"
-          aria-hidden="true"
-        />
-        <input
-          class="input w-full pl-9"
-          type="search"
-          placeholder="Search OpenAI, DeepSeek, Groq…"
-          bind:value={search}
+    {#if progressive && selected && !providerBrowserOpen}
+      <div class="provider-choice-summary">
+        <span class="provider-choice-check" aria-hidden="true"><Check class="h-4 w-4" /></span>
+        <span class="min-w-0 flex-1">
+          <strong>{selected.label}</strong>
+          <small>{selected.blurb}</small>
+        </span>
+        <button
+          type="button"
+          class="provider-choice-change"
           disabled={disabled}
-        />
+          onclick={() => (providerBrowserOpen = true)}
+        >Change</button>
       </div>
-    </label>
-
-    <div class="max-h-56 space-y-3 overflow-y-auto pr-1">
-      {#each grouped as group (group.category.id)}
-        <div>
-          <p class="workshop-label mb-1.5">{group.category.label}</p>
-          <div class="grid gap-2 {compact ? '' : 'sm:grid-cols-2'}">
-            {#each group.providers as entry (entry.id)}
-              <button
-                type="button"
-                class="settings-depth-card text-left {providerId === entry.id
-                  ? 'settings-depth-card-active'
-                  : ''}"
-                disabled={disabled}
-                onclick={() => selectProvider(entry)}
-              >
-                <span class="block text-sm font-medium text-surface-100">{entry.label}</span>
-                <span class="workshop-faint mt-1 block text-xs leading-snug">{entry.blurb}</span>
-                {#if entry.id === "ollama" && probe}
-                  <span class="workshop-faint mt-1 block text-xs">
-                    {probe.ollamaDetected ? "Ollama is running" : "Install ollama.com and start it"}
-                  </span>
-                {/if}
-              </button>
-            {/each}
+    {:else}
+      <div class="provider-browser">
+        <label class="block">
+          <span class="block text-sm font-medium text-surface-100">Choose a provider</span>
+          <div class="relative mt-2">
+            <Search
+              class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-surface-500"
+              aria-hidden="true"
+            />
+            <input
+              class="input w-full pl-9"
+              type="search"
+              placeholder="Search providers…"
+              bind:value={search}
+              disabled={disabled}
+            />
           </div>
-        </div>
-      {/each}
-      {#if grouped.length === 0}
-        <p class="workshop-faint text-sm">No providers match “{search}”.</p>
-      {/if}
-    </div>
+        </label>
 
-    {#if selected}
+        <div class="mt-3 max-h-56 space-y-3 overflow-y-auto pr-1">
+          {#each grouped as group (group.category.id)}
+            <div>
+              <p class="workshop-label mb-1.5">{group.category.label}</p>
+              <div class="grid gap-2 {compact ? '' : 'sm:grid-cols-2'}">
+                {#each group.providers as entry (entry.id)}
+                  <button
+                    type="button"
+                    class="settings-depth-card text-left {providerId === entry.id
+                      ? 'settings-depth-card-active'
+                      : ''}"
+                    disabled={disabled}
+                    onclick={() => selectProvider(entry)}
+                  >
+                    <span class="block text-sm font-medium text-surface-100">{entry.label}</span>
+                    <span class="workshop-faint mt-1 block text-xs leading-snug">{entry.blurb}</span>
+                    {#if entry.id === "ollama" && probe}
+                      <span class="workshop-faint mt-1 block text-xs">
+                        {probe.ollamaDetected ? "Ollama is running" : "Install ollama.com and start it"}
+                      </span>
+                    {/if}
+                  </button>
+                {/each}
+              </div>
+            </div>
+          {/each}
+          {#if grouped.length === 0}
+            <p class="workshop-faint text-sm">No providers match “{search}”.</p>
+          {/if}
+        </div>
+      </div>
+    {/if}
+
+    {#if selected && (!progressive || !providerBrowserOpen)}
       {#if selected.needsApiKey && onApiKeyChange}
         <label class="block">
           <span class="block text-sm font-medium text-surface-100">API key</span>
           <span class="workshop-faint mt-0.5 block text-xs">
-            Stored securely on this device — never sent to Medousa cloud
+            Stored securely on this device.
           </span>
           <input
             class="input mt-2 w-full font-mono text-sm"
@@ -295,24 +322,59 @@
       {/if}
 
       {#if selected.supportsCustomBaseUrl && onBaseUrlChange}
-        <label class="block">
-          <span class="block text-sm font-medium text-surface-100">API base URL</span>
-          <span class="workshop-faint mt-0.5 block text-xs">
-            Optional — only change for self-hosted or enterprise endpoints
-          </span>
-          <input
-            class="input mt-2 w-full font-mono text-sm"
-            placeholder={selected.defaultBaseUrl ?? "https://…"}
-            value={baseUrl}
-            disabled={disabled || validating}
-            oninput={(event) => {
-              validatedOk = null;
-              onBaseUrlChange((event.currentTarget as HTMLInputElement).value);
-            }}
-          />
-        </label>
+        {#if progressive}
+          <div class="provider-connection-details">
+            <button
+              type="button"
+              class="provider-disclosure"
+              disabled={disabled}
+              aria-expanded={connectionDetailsOpen}
+              onclick={() => (connectionDetailsOpen = !connectionDetailsOpen)}
+            >
+              {#if connectionDetailsOpen}
+                <ChevronDown class="h-3.5 w-3.5" aria-hidden="true" />
+              {:else}
+                <ChevronRight class="h-3.5 w-3.5" aria-hidden="true" />
+              {/if}
+              Custom endpoint
+            </button>
+            {#if connectionDetailsOpen}
+              <label class="mt-2 block">
+                <span class="workshop-faint block text-xs">For self-hosted or enterprise endpoints</span>
+                <input
+                  class="input mt-2 w-full font-mono text-sm"
+                  placeholder={selected.defaultBaseUrl ?? "https://…"}
+                  value={baseUrl}
+                  disabled={disabled || validating}
+                  oninput={(event) => {
+                    validatedOk = null;
+                    onBaseUrlChange((event.currentTarget as HTMLInputElement).value);
+                  }}
+                />
+              </label>
+            {/if}
+          </div>
+        {:else}
+          <label class="block">
+            <span class="block text-sm font-medium text-surface-100">API base URL</span>
+            <span class="workshop-faint mt-0.5 block text-xs">
+              Optional — only change for self-hosted or enterprise endpoints
+            </span>
+            <input
+              class="input mt-2 w-full font-mono text-sm"
+              placeholder={selected.defaultBaseUrl ?? "https://…"}
+              value={baseUrl}
+              disabled={disabled || validating}
+              oninput={(event) => {
+                validatedOk = null;
+                onBaseUrlChange((event.currentTarget as HTMLInputElement).value);
+              }}
+            />
+          </label>
+        {/if}
       {/if}
 
+      {#if credentialsReady}
       <div class="block">
         <div class="flex items-center justify-between gap-2">
           <span class="block text-sm font-medium text-surface-100">Model</span>
@@ -394,8 +456,11 @@
           </button>
         {/if}
       </div>
+      {:else if progressive}
+        <p class="provider-next-hint">Enter your API key to choose a model.</p>
+      {/if}
 
-      {#if selected.needsApiKey && onApiKeyChange}
+      {#if !progressive && credentialsReady && selected.needsApiKey && onApiKeyChange}
         <button
           type="button"
           class="btn variant-ghost-surface min-h-9 text-sm"
@@ -439,6 +504,74 @@
 </div>
 
 <style>
+  .provider-choice-summary {
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    padding: 0.75rem;
+    border: 1px solid rgb(var(--theme-border, var(--color-surface-500)) / 0.34);
+    border-radius: var(--theme-control-radius, 0.65rem);
+    background: rgb(var(--theme-card, var(--color-surface-900)) / 0.46);
+  }
+
+  .provider-choice-summary strong,
+  .provider-choice-summary small {
+    display: block;
+  }
+
+  .provider-choice-summary strong {
+    color: rgb(var(--theme-text, var(--color-surface-100)));
+    font-size: 0.86rem;
+    font-weight: 600;
+  }
+
+  .provider-choice-summary small {
+    margin-top: 0.15rem;
+    overflow: hidden;
+    color: rgb(var(--theme-text-muted, var(--color-surface-400)));
+    font-size: 0.72rem;
+    line-height: 1.35;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .provider-choice-check {
+    display: grid;
+    width: 1.8rem;
+    height: 1.8rem;
+    flex: none;
+    place-items: center;
+    border-radius: 999px;
+    color: rgb(var(--theme-action-hover, var(--color-primary-300)));
+    background: rgb(var(--theme-selection, var(--color-primary-500)) / 0.13);
+  }
+
+  .provider-choice-change,
+  .provider-disclosure {
+    color: rgb(var(--theme-link, var(--color-primary-300)));
+    font-size: 0.75rem;
+  }
+
+  .provider-choice-change:hover:not(:disabled),
+  .provider-disclosure:hover:not(:disabled) {
+    color: rgb(var(--theme-action-hover, var(--color-primary-200)));
+  }
+
+  .provider-disclosure {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+
+  .provider-next-hint {
+    margin: 0;
+    padding: 0.65rem 0.75rem;
+    border-radius: var(--theme-control-radius, 0.6rem);
+    color: rgb(var(--theme-text-muted, var(--color-surface-400)));
+    background: rgb(var(--theme-pane-muted, var(--color-surface-800)) / 0.35);
+    font-size: 0.75rem;
+  }
+
   :global(.provider-model-list-item) {
     display: flex;
     width: 100%;

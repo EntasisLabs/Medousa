@@ -1,7 +1,8 @@
 import type { CustomThemeConfig } from "@skeletonlabs/tw-plugin";
+import { completeThemeConfig } from "./themes/theme-contract";
 
 /** Black Lily — void black base, lily pink primary, hex purple secondary (Perky Goth palette). */
-export const blackLilyTheme: CustomThemeConfig = {
+export const blackLilyTheme: CustomThemeConfig = completeThemeConfig({
   name: "black-lily",
   properties: {
     "--color-error-50": "255 220 232",
@@ -76,7 +77,7 @@ export const blackLilyTheme: CustomThemeConfig = {
     "--color-warning-800": "140 105 22",
     "--color-warning-900": "115 85 18",
     "--on-error": "255 255 255",
-    "--on-primary": "255 255 255",
+    "--on-primary": "13 10 15",
     "--on-secondary": "255 255 255",
     "--on-success": "13 10 15",
     "--on-surface": "255 255 255",
@@ -90,4 +91,18 @@ export const blackLilyTheme: CustomThemeConfig = {
     "--theme-rounded-base": "9999px",
     "--theme-rounded-container": "10px",
   },
-};
+}, {
+  roles: {
+    focus: "195 155 250",
+    decorative: "212 170 255",
+  },
+  effects: {
+    shadow: "13 10 15",
+    glow: "238 92 162",
+    gradientA: "238 92 162",
+    gradientB: "155 93 229",
+    gradientC: "212 170 255",
+    glowStrength: "0.22",
+  },
+  shape: { controlRadius: "0.7rem", containerRadius: "0.85rem" },
+});

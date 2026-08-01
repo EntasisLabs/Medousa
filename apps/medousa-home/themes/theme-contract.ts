@@ -1,0 +1,316 @@
+import type { CustomThemeConfig } from "@skeletonlabs/tw-plugin";
+import { expandAccentRamp } from "./accent-ramps";
+
+type ThemeProperties = CustomThemeConfig["properties"];
+
+export type ThemeRgb = string;
+
+export interface ThemePersonality {
+  roles?: Partial<{
+    canvas: ThemeRgb;
+    chrome: ThemeRgb;
+    header: ThemeRgb;
+    pane: ThemeRgb;
+    paneMuted: ThemeRgb;
+    card: ThemeRgb;
+    cardHover: ThemeRgb;
+    border: ThemeRgb;
+    text: ThemeRgb;
+    textMuted: ThemeRgb;
+    action: ThemeRgb;
+    actionHover: ThemeRgb;
+    focus: ThemeRgb;
+    selection: ThemeRgb;
+    selectionText: ThemeRgb;
+    decorative: ThemeRgb;
+    link: ThemeRgb;
+  }>;
+  syntax?: Partial<{
+    background: ThemeRgb;
+    border: ThemeRgb;
+    foreground: ThemeRgb;
+    comment: ThemeRgb;
+    keyword: ThemeRgb;
+    string: ThemeRgb;
+    number: ThemeRgb;
+    function: ThemeRgb;
+    type: ThemeRgb;
+    attribute: ThemeRgb;
+    operator: ThemeRgb;
+  }>;
+  charts?: Partial<{
+    one: ThemeRgb;
+    two: ThemeRgb;
+    three: ThemeRgb;
+    four: ThemeRgb;
+    five: ThemeRgb;
+  }>;
+  effects?: Partial<{
+    shadow: ThemeRgb;
+    glow: ThemeRgb;
+    gradientA: ThemeRgb;
+    gradientB: ThemeRgb;
+    gradientC: ThemeRgb;
+    glowStrength: string;
+    chromeAlpha: string;
+    paneAlpha: string;
+  }>;
+  shape?: Partial<{
+    controlRadius: string;
+    containerRadius: string;
+  }>;
+}
+
+const STEPS = ["50", "100", "200", "300", "400", "500", "600", "700", "800", "900"] as const;
+
+function value(properties: ThemeProperties, key: string, fallback: ThemeRgb): ThemeRgb {
+  return String((properties as Record<string, string>)[key] ?? fallback);
+}
+
+function missingRamp(family: "error" | "success" | "warning", base: ThemeRgb) {
+  const ramp = expandAccentRamp(base);
+  return Object.fromEntries(
+    STEPS.map((step) => [`--color-${family}-${step}`, ramp[step]]),
+  ) as Record<string, string>;
+}
+
+function colorRamp(family: string, base: ThemeRgb) {
+  const ramp = expandAccentRamp(base);
+  return Object.fromEntries(
+    STEPS.map((step) => [`--color-${family}-${step}`, ramp[step]]),
+  ) as Record<string, string>;
+}
+
+function relativeLuminance(color: ThemeRgb): number {
+  const channels = color.split(/\s+/).map(Number);
+  if (channels.length !== 3 || channels.some((channel) => !Number.isFinite(channel))) return 0;
+  const linear = channels.map((channel) => {
+    const normalized = channel / 255;
+    return normalized <= 0.04045
+      ? normalized / 12.92
+      : ((normalized + 0.055) / 1.055) ** 2.4;
+  });
+  return linear[0]! * 0.2126 + linear[1]! * 0.7152 + linear[2]! * 0.0722;
+}
+
+function contrastRatio(a: ThemeRgb, b: ThemeRgb): number {
+  const lighter = Math.max(relativeLuminance(a), relativeLuminance(b));
+  const darker = Math.min(relativeLuminance(a), relativeLuminance(b));
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
+function accessibleForeground(background: ThemeRgb, preferred: ThemeRgb): ThemeRgb {
+  if (contrastRatio(background, preferred) >= 4.5) return preferred;
+  const ink = "0 0 0";
+  const paper = "255 255 255";
+  return contrastRatio(background, ink) >= contrastRatio(background, paper) ? ink : paper;
+}
+
+/**
+ * Complete a Skeleton theme with Medousa's semantic contract.
+ *
+ * Skeleton's color ramps remain the compatibility layer. Product components
+ * consume the `--theme-*`, `--syn-*`, and `--chart-*` roles emitted here so a
+ * theme can grow without component-specific selectors.
+ */
+export function completeThemeConfig(
+  theme: CustomThemeConfig,
+  personality: ThemePersonality = {},
+): CustomThemeConfig {
+  const original = theme.properties;
+  const accentDefaults = {
+    ...colorRamp("primary", value(original, "--color-primary-500", "124 58 237")),
+    ...colorRamp("secondary", value(original, "--color-secondary-500", "99 102 241")),
+    ...colorRamp("tertiary", value(original, "--color-tertiary-500", "167 139 250")),
+    ...original,
+  } as ThemeProperties;
+  const primary = (step: string) =>
+    value(accentDefaults, `--color-primary-${step}`, "124 58 237");
+  const secondary = (step: string) =>
+    value(accentDefaults, `--color-secondary-${step}`, primary(step));
+  const tertiary = (step: string) =>
+    value(accentDefaults, `--color-tertiary-${step}`, secondary(step));
+  const surface = (step: string) => value(accentDefaults, `--color-surface-${step}`, "0 0 0");
+  const roles = personality.roles ?? {};
+  const syntax = personality.syntax ?? {};
+  const charts = personality.charts ?? {};
+  const effects = personality.effects ?? {};
+  const shape = personality.shape ?? {};
+
+  const errorRamp = missingRamp(
+    "error",
+    value(accentDefaults, "--color-error-500", "255 59 48"),
+  );
+  const successRamp = missingRamp(
+    "success",
+    value(accentDefaults, "--color-success-500", "52 199 89"),
+  );
+  const warningRamp = missingRamp(
+    "warning",
+    value(accentDefaults, "--color-warning-500", "255 149 0"),
+  );
+  const completed = {
+    ...errorRamp,
+    ...successRamp,
+    ...warningRamp,
+    ...accentDefaults,
+  } as ThemeProperties;
+  const status = (family: "error" | "success" | "warning", step: string) =>
+    value(completed, `--color-${family}-${step}`, "255 255 255");
+  const action = roles.action ?? primary("500");
+
+  const semantic = {
+    "--theme-canvas": roles.canvas ?? surface("950"),
+    "--theme-chrome": roles.chrome ?? surface("900"),
+    "--theme-header": roles.header ?? surface("800"),
+    "--theme-pane": roles.pane ?? surface("900"),
+    "--theme-pane-muted": roles.paneMuted ?? surface("800"),
+    "--theme-card": roles.card ?? surface("900"),
+    "--theme-card-hover": roles.cardHover ?? surface("800"),
+    "--theme-border": roles.border ?? surface("500"),
+    "--theme-text": roles.text ?? surface("50"),
+    "--theme-text-muted": roles.textMuted ?? surface("300"),
+    "--theme-action": action,
+    "--theme-action-hover": roles.actionHover ?? primary("400"),
+    "--theme-focus": roles.focus ?? secondary("400"),
+    "--theme-selection": roles.selection ?? primary("500"),
+    "--theme-selection-text": roles.selectionText ?? surface("50"),
+    "--theme-decorative": roles.decorative ?? tertiary("400"),
+    "--theme-link": roles.link ?? primary("300"),
+    "--on-primary": accessibleForeground(
+      action,
+      value(completed, "--on-primary", "255 255 255"),
+    ),
+    "--on-secondary": accessibleForeground(
+      secondary("500"),
+      value(completed, "--on-secondary", "255 255 255"),
+    ),
+    "--on-tertiary": accessibleForeground(
+      tertiary("500"),
+      value(completed, "--on-tertiary", surface("950")),
+    ),
+    "--on-error": accessibleForeground(
+      status("error", "500"),
+      value(completed, "--on-error", "255 255 255"),
+    ),
+    "--on-success": accessibleForeground(
+      status("success", "500"),
+      value(completed, "--on-success", "255 255 255"),
+    ),
+    "--on-warning": accessibleForeground(
+      status("warning", "500"),
+      value(completed, "--on-warning", "0 0 0"),
+    ),
+    "--theme-shadow": effects.shadow ?? surface("950"),
+    "--theme-glow": effects.glow ?? primary("500"),
+    "--theme-gradient-a": effects.gradientA ?? primary("500"),
+    "--theme-gradient-b": effects.gradientB ?? secondary("600"),
+    "--theme-gradient-c": effects.gradientC ?? tertiary("500"),
+    "--theme-glow-strength": effects.glowStrength ?? "0.14",
+    "--theme-chrome-alpha": effects.chromeAlpha ?? "0.96",
+    "--theme-pane-alpha": effects.paneAlpha ?? "0.82",
+    "--theme-control-radius": shape.controlRadius ?? "0.6rem",
+    "--theme-container-radius": shape.containerRadius ?? "0.75rem",
+
+    "--syn-bg": syntax.background ?? surface("900"),
+    "--syn-border": syntax.border ?? surface("600"),
+    "--syn-header-bg": syntax.background ?? surface("800"),
+    "--syn-fg": syntax.foreground ?? surface("100"),
+    "--syn-comment": syntax.comment ?? surface("400"),
+    "--syn-keyword": syntax.keyword ?? secondary("300"),
+    "--syn-string": syntax.string ?? tertiary("300"),
+    "--syn-number": syntax.number ?? status("warning", "300"),
+    "--syn-function": syntax.function ?? primary("300"),
+    "--syn-type": syntax.type ?? tertiary("200"),
+    "--syn-attr": syntax.attribute ?? secondary("200"),
+    "--syn-operator": syntax.operator ?? surface("300"),
+    "--syn-meta": syntax.comment ?? surface("400"),
+    "--syn-punctuation": syntax.operator ?? surface("300"),
+    "--syn-title": syntax.type ?? tertiary("200"),
+    "--syn-addition-fg": status("success", "300"),
+    "--syn-addition-bg": status("success", "500"),
+    "--syn-deletion-fg": status("error", "300"),
+    "--syn-deletion-bg": status("error", "500"),
+    "--md-code-bg": "var(--syn-bg)",
+    "--md-code-border": "var(--syn-border)",
+    "--md-code-header-bg": "var(--syn-header-bg)",
+    "--md-code-fg": "var(--syn-fg)",
+    "--md-code-comment": "var(--syn-comment)",
+    "--md-code-keyword": "var(--syn-keyword)",
+    "--md-code-string": "var(--syn-string)",
+    "--md-code-number": "var(--syn-number)",
+    "--md-code-title": "var(--syn-title)",
+    "--md-code-attr": "var(--syn-attr)",
+    "--md-code-function": "var(--syn-function)",
+    "--md-code-meta": "var(--syn-meta)",
+    "--md-code-addition-fg": "var(--syn-addition-fg)",
+    "--md-code-addition-bg": "var(--syn-addition-bg)",
+    "--md-code-deletion-fg": "var(--syn-deletion-fg)",
+    "--md-code-deletion-bg": "var(--syn-deletion-bg)",
+
+    "--chart-1": charts.one ?? primary("400"),
+    "--chart-2": charts.two ?? secondary("400"),
+    "--chart-3": charts.three ?? tertiary("400"),
+    "--chart-4": charts.four ?? status("warning", "400"),
+    "--chart-5": charts.five ?? status("error", "400"),
+    "--chart-fg": surface("50"),
+    "--chart-fg-secondary": surface("200"),
+    "--chart-fg-muted": surface("400"),
+    "--chart-fg-subtle": surface("500"),
+    "--chart-plot-ink": surface("50"),
+    "--chart-grid-rgb": surface("500"),
+    "--chart-plot": `color-mix(in srgb, rgb(${surface("50")}) 7%, transparent)`,
+    "--chart-plot-muted": `color-mix(in srgb, rgb(${surface("50")}) 14%, transparent)`,
+    "--chart-grid": `color-mix(in srgb, rgb(${surface("500")}) 28%, transparent)`,
+    "--markdown-chart-red": status("error", "400"),
+    "--markdown-chart-orange": status("warning", "400"),
+    "--markdown-chart-yellow": status("warning", "300"),
+    "--markdown-chart-green": charts.three ?? tertiary("400"),
+    "--markdown-chart-blue": charts.one ?? primary("400"),
+    "--markdown-chart-purple": charts.two ?? secondary("400"),
+    "--markdown-chart-pink": charts.five ?? status("error", "400"),
+    "--markdown-chart-gray": surface("400"),
+  } as Record<string, string>;
+
+  return {
+    ...theme,
+    properties: {
+      ...completed,
+      ...semantic,
+    } as ThemeProperties,
+  };
+}
+
+export const REQUIRED_THEME_PROPERTIES = [
+  ...["primary", "secondary", "tertiary"].flatMap((family) =>
+    STEPS.map((step) => `--color-${family}-${step}`),
+  ),
+  ...["error", "success", "warning"].flatMap((family) =>
+    STEPS.map((step) => `--color-${family}-${step}`),
+  ),
+  ...["50", "100", "200", "300", "400", "500", "600", "700", "800", "900", "950"].map(
+    (step) => `--color-surface-${step}`,
+  ),
+  "--theme-canvas",
+  "--theme-chrome",
+  "--theme-pane",
+  "--theme-card",
+  "--theme-border",
+  "--theme-action",
+  "--theme-focus",
+  "--theme-selection",
+  "--theme-decorative",
+  "--theme-gradient-a",
+  "--theme-gradient-b",
+  "--theme-gradient-c",
+  "--syn-bg",
+  "--syn-keyword",
+  "--syn-string",
+  "--chart-1",
+  "--chart-5",
+] as const;
+
+export function validateThemeConfig(theme: CustomThemeConfig): string[] {
+  const properties = theme.properties as Record<string, string>;
+  return REQUIRED_THEME_PROPERTIES.filter((key) => !properties[key]);
+}

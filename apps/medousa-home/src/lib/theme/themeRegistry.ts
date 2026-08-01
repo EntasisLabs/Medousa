@@ -1,6 +1,6 @@
 /** Single source of truth for color palettes, Skeleton names, and FOUC boot script. */
 
-export type ColorThemeGroup = "workshop" | "apple" | "familiar";
+export type ColorThemeGroup = "workshop" | "medousa-marks" | "apple" | "familiar";
 
 export type ColorThemeId =
   | "medousa"
@@ -17,7 +17,17 @@ export type ColorThemeId =
   | "github"
   | "dracula"
   | "nord"
-  | "solarized";
+  | "solarized"
+  | "mark-monochrome"
+  | "mark-ink-black"
+  | "mark-nebula-purple"
+  | "mark-ocean-blue"
+  | "mark-abyss-teal"
+  | "mark-amber-gold"
+  | "mark-violet"
+  | "mark-deep-blue"
+  | "mark-jade"
+  | "mark-aurora";
 
 export interface ColorThemeOption {
   id: ColorThemeId;
@@ -47,6 +57,16 @@ export const SKELETON_THEME_NAMES: Record<
   dracula: { dark: "dracula", light: "dracula-light" },
   nord: { dark: "nord", light: "nord-light" },
   solarized: { dark: "solarized-dark", light: "solarized-light" },
+  "mark-monochrome": { dark: "mark-monochrome-dark", light: "mark-monochrome-light" },
+  "mark-ink-black": { dark: "mark-ink-black-dark", light: "mark-ink-black-light" },
+  "mark-nebula-purple": { dark: "mark-nebula-purple-dark", light: "mark-nebula-purple-light" },
+  "mark-ocean-blue": { dark: "mark-ocean-blue-dark", light: "mark-ocean-blue-light" },
+  "mark-abyss-teal": { dark: "mark-abyss-teal-dark", light: "mark-abyss-teal-light" },
+  "mark-amber-gold": { dark: "mark-amber-gold-dark", light: "mark-amber-gold-light" },
+  "mark-violet": { dark: "mark-violet-dark", light: "mark-violet-light" },
+  "mark-deep-blue": { dark: "mark-deep-blue-dark", light: "mark-deep-blue-light" },
+  "mark-jade": { dark: "mark-jade-dark", light: "mark-jade-light" },
+  "mark-aurora": { dark: "mark-aurora-dark", light: "mark-aurora-light" },
 };
 
 export const COLOR_THEME_IDS = Object.keys(SKELETON_THEME_NAMES) as ColorThemeId[];
@@ -86,6 +106,76 @@ export const COLOR_THEME_OPTIONS: ColorThemeOption[] = [
     tagline: "Evening cocoa, dusty rose — soft reading nook",
     swatches: ["#0E0C0A", "#BA7A6C", "#F6F2EC"],
     group: "workshop",
+  },
+  {
+    id: "mark-monochrome",
+    label: "Monochrome",
+    tagline: "Bone on ink — the primary Medousa identity",
+    swatches: ["#000000", "#F2EFE6", "#0A0A0A"],
+    group: "medousa-marks",
+  },
+  {
+    id: "mark-ink-black",
+    label: "Ink Black",
+    tagline: "Pure black, bone paper — bold and minimal",
+    swatches: ["#F2EFE6", "#000000", "#55555F"],
+    group: "medousa-marks",
+  },
+  {
+    id: "mark-nebula-purple",
+    label: "Nebula Purple",
+    tagline: "Electric purple over the Medousa ink canvas",
+    swatches: ["#12091C", "#A855F7", "#F472B6"],
+    group: "medousa-marks",
+  },
+  {
+    id: "mark-ocean-blue",
+    label: "Ocean Blue",
+    tagline: "Bright sky-blue focus over deep ink",
+    swatches: ["#03131F", "#38BDF8", "#1D4ED8"],
+    group: "medousa-marks",
+  },
+  {
+    id: "mark-abyss-teal",
+    label: "Abyss Teal",
+    tagline: "Luminous teal with an organic deep-water calm",
+    swatches: ["#031716", "#2DD4BF", "#38BDF8"],
+    group: "medousa-marks",
+  },
+  {
+    id: "mark-amber-gold",
+    label: "Amber Gold",
+    tagline: "Warm gold energy against a black workshop",
+    swatches: ["#1D0E03", "#F5B841", "#FB923C"],
+    group: "medousa-marks",
+  },
+  {
+    id: "mark-violet",
+    label: "Violet",
+    tagline: "The original Medousa violet, sharpened and direct",
+    swatches: ["#10081E", "#7C3AED", "#38BDF8"],
+    group: "medousa-marks",
+  },
+  {
+    id: "mark-deep-blue",
+    label: "Deep Blue",
+    tagline: "Trust, depth, and stable midnight contrast",
+    swatches: ["#080E24", "#1D4ED8", "#6366F1"],
+    group: "medousa-marks",
+  },
+  {
+    id: "mark-jade",
+    label: "Jade",
+    tagline: "Natural green clarity with balanced contrast",
+    swatches: ["#03170B", "#0F9B7C", "#A3BE8C"],
+    group: "medousa-marks",
+  },
+  {
+    id: "mark-aurora",
+    label: "Aurora",
+    tagline: "The signature pink, violet, ocean, and jade spectrum",
+    swatches: ["#F472B6", "#A855F7", "#38BDF8"],
+    group: "medousa-marks",
   },
   {
     id: "cupertino",
@@ -163,11 +253,17 @@ export const DEFAULT_COLOR_THEME: ColorThemeId = "medousa";
 
 export const COLOR_THEME_GROUP_LABELS: Record<ColorThemeGroup, string> = {
   workshop: "Workshop",
+  "medousa-marks": "Medousa colors",
   apple: "Apple",
   familiar: "Editor familiars",
 };
 
-export const COLOR_THEME_GROUPS: ColorThemeGroup[] = ["workshop", "familiar", "apple"];
+export const COLOR_THEME_GROUPS: ColorThemeGroup[] = [
+  "workshop",
+  "medousa-marks",
+  "familiar",
+  "apple",
+];
 
 export function isColorThemeId(value: string | null | undefined): value is ColorThemeId {
   return COLOR_THEME_IDS.includes(value as ColorThemeId);

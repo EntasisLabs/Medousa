@@ -112,6 +112,26 @@ describe("shellTabs store", () => {
     lmeState.closeTab.mockClear();
   });
 
+  it("applies onboarding pane shapes without seeding tabs", async () => {
+    const { shellTabs } = await import("./shellTabs.svelte");
+
+    for (const [choice, panes] of [
+      ["focused", 1],
+      ["split", 2],
+      ["dashboard", 3],
+    ] as const) {
+      shellTabs.openChat("session-a", { activate: true });
+      shellTabs.applyHomeOnboardingLayout(choice);
+
+      expect(shellTabs.paneCount).toBe(panes);
+      expect(shellTabs.tabs).toHaveLength(0);
+      expect(shellTabs.groups).toHaveLength(panes);
+      expect(shellTabs.groups.every((group) =>
+        group.tabIds.length === 0 && group.activeTabId === null
+      )).toBe(true);
+    }
+  });
+
   it("opens chat tabs uniquely per group and activates", async () => {
     const { shellTabs } = await import("./shellTabs.svelte");
     const a = shellTabs.openChat("session-a", { activate: true });

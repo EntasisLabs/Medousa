@@ -45,6 +45,7 @@ import {
   withIdentityUserId,
 } from "$lib/utils/identityTeach";
 import type { WizardBootstrap, WizardMode, WizardScreen } from "$lib/types/wizard";
+import { resetHomeOnboardingDraft } from "$lib/utils/homeOnboarding";
 
 /** FE relationship phases layered on top of Rust wizard screens. */
 export type WizardUiPhase =
@@ -98,6 +99,7 @@ class WizardStore {
     this.error = null;
     try {
       resetWizardRelationshipFlags();
+      resetHomeOnboardingDraft();
       clearPreferredMode();
       clearOnboardingIdentity();
       resetConnectionsInvite();

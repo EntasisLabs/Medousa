@@ -5,6 +5,10 @@
   import { settings, COLOR_THEME_OPTIONS } from "$lib/stores/settings.svelte";
   import { workshops } from "$lib/stores/workshops.svelte";
   import type { ColorThemeId } from "$lib/types/colorThemes";
+  import {
+    COLOR_THEME_GROUP_LABELS,
+    COLOR_THEME_GROUPS,
+  } from "$lib/types/colorThemes";
   import { presetDisplayLabel } from "$lib/utils/customViewStatus";
   import { openGuide } from "$lib/guide/openGuide";
   import { isTauri } from "$lib/window";
@@ -19,6 +23,8 @@
     workshopRetentionReadHint,
   } from "$lib/platformCopy";
   import { Check, ChevronDown, Moon, Sun } from "@lucide/svelte";
+  import MedousaMark from "$lib/components/brand/MedousaMark.svelte";
+  import { MEDOUSA_MARK_OPTIONS } from "$lib/theme/medousaMarks";
   import {
     readGrammarSettings,
     writeGrammarSettings,
@@ -171,38 +177,79 @@
 
         {#if themePickerOpen}
           <div class="prefs-theme-popover" role="listbox" aria-label="Choose theme">
-            {#each COLOR_THEME_OPTIONS as option (option.id)}
-              {@const active = settings.colorTheme === option.id}
-              <button
-                type="button"
-                role="option"
-                aria-selected={active}
-                class="prefs-theme-card"
-                class:prefs-theme-card-active={active}
-                disabled={themeBusy}
-                onclick={() => void pickTheme(option.id)}
-              >
-                <span class="prefs-theme-card-swatches" aria-hidden="true">
-                  {#each option.swatches as swatch, index (index)}
-                    <span style:background-color={swatch}></span>
+            {#each COLOR_THEME_GROUPS as group (group)}
+              <div class="prefs-theme-group" role="presentation">
+                <p class="prefs-theme-group-label">{COLOR_THEME_GROUP_LABELS[group]}</p>
+                <div class="prefs-theme-group-grid">
+                  {#each COLOR_THEME_OPTIONS.filter((option) => option.group === group) as option (option.id)}
+                    {@const active = settings.colorTheme === option.id}
+                    <button
+                      type="button"
+                      role="option"
+                      aria-selected={active}
+                      class="prefs-theme-card"
+                      class:prefs-theme-card-active={active}
+                      style:--preview-canvas={option.swatches[0]}
+                      style:--preview-action={option.swatches[1]}
+                      style:--preview-raised={option.swatches[2]}
+                      disabled={themeBusy}
+                      onclick={() => void pickTheme(option.id)}
+                    >
+                      <span class="prefs-theme-mini" aria-hidden="true">
+                        <i class="prefs-theme-mini-rail"></i>
+                        <i class="prefs-theme-mini-card"></i>
+                        <i class="prefs-theme-mini-line"></i>
+                        <i class="prefs-theme-mini-action"></i>
+                      </span>
+                      <span class="prefs-theme-card-copy">
+                        <span class="prefs-theme-card-name">{option.label}</span>
+                        <span class="prefs-theme-card-meta">{option.tagline}</span>
+                      </span>
+                      {#if active}
+                        <Check
+                          size={14}
+                          strokeWidth={2.5}
+                          class="prefs-theme-card-check"
+                          aria-hidden="true"
+                        />
+                      {/if}
+                    </button>
                   {/each}
-                </span>
-                <span class="prefs-theme-card-copy">
-                  <span class="prefs-theme-card-name">{option.label}</span>
-                  <span class="prefs-theme-card-meta">{option.tagline}</span>
-                </span>
-                {#if active}
-                  <Check
-                    size={14}
-                    strokeWidth={2.5}
-                    class="prefs-theme-card-check"
-                    aria-hidden="true"
-                  />
-                {/if}
-              </button>
+                </div>
+              </div>
             {/each}
           </div>
         {/if}
+      </div>
+
+      <div class="prefs-mark-picker">
+        <div class="prefs-mark-head">
+          <span class="prefs-tile-title">Your Medousa</span>
+          <span class="prefs-tile-meta">Paired automatically during onboarding; editable anytime.</span>
+        </div>
+        <div class="prefs-mark-grid" role="listbox" aria-label="Choose Medousa mark">
+          {#each MEDOUSA_MARK_OPTIONS as option (option.id)}
+            {@const active = settings.medousaMark === option.id}
+            <button
+              type="button"
+              role="option"
+              aria-selected={active}
+              class="prefs-mark-option"
+              class:prefs-mark-option-active={active}
+              style:--mark-preview-bg={option.previewBackground}
+              onclick={() => settings.setMedousaMark(option.id)}
+            >
+              <span class="prefs-mark-preview" aria-hidden="true">
+                <MedousaMark
+                  markId={option.id}
+                  darkMode={settings.darkMode}
+                  decorative
+                />
+              </span>
+              <span class="prefs-mark-label">{option.label}</span>
+            </button>
+          {/each}
+        </div>
       </div>
 
       <RoomShellOptions compact />
@@ -531,11 +578,11 @@
 
   .prefs {
     --prefs-gap: 0.5rem;
-    --prefs-tile-radius: 0.65rem;
+    --prefs-tile-radius: var(--theme-container-radius, 0.65rem);
     --prefs-tile-pad: 0.55rem 0.75rem;
     --prefs-tile-min-h: 3.25rem;
-    --prefs-tile-border: rgb(var(--color-surface-500) / 0.32);
-    --prefs-tile-bg: rgb(var(--color-surface-900) / 0.28);
+    --prefs-tile-border: rgb(var(--theme-border, var(--color-surface-500)) / 0.36);
+    --prefs-tile-bg: rgb(var(--theme-card, var(--color-surface-900)) / 0.52);
   }
 
   .prefs-band {
@@ -593,8 +640,8 @@
   }
 
   .prefs-theme-trigger-open {
-    border-color: rgb(var(--color-primary-500) / 0.4);
-    background: rgb(var(--color-primary-500) / 0.08);
+    border-color: rgb(var(--theme-focus) / 0.5);
+    background: rgb(var(--theme-selection) / 0.09);
   }
 
   .prefs-theme-swatches {
@@ -639,10 +686,9 @@
   }
 
   .prefs-theme-popover {
-    display: flex;
-    flex-direction: column;
-    gap: 0.15rem;
-    max-height: min(16rem, 42vh);
+    display: grid;
+    gap: 0.75rem;
+    max-height: min(28rem, 62vh);
     margin-top: 0.4rem;
     padding: 0.3rem;
     overflow-y: auto;
@@ -651,12 +697,34 @@
     background: rgb(var(--color-surface-900) / 0.6);
   }
 
+  .prefs-theme-group {
+    display: grid;
+    gap: 0.35rem;
+  }
+
+  .prefs-theme-group-label {
+    margin: 0;
+    padding: 0.05rem 0.2rem;
+    color: rgb(var(--theme-decorative));
+    font-size: 0.62rem;
+    font-weight: 650;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  .prefs-theme-group-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.3rem;
+  }
+
   .prefs-theme-card {
-    display: flex;
+    display: grid;
+    grid-template-columns: 4.8rem minmax(0, 1fr) auto;
     align-items: center;
     gap: 0.5rem;
     width: 100%;
-    padding: 0.35rem 0.4rem;
+    padding: 0.4rem;
     border: 1px solid transparent;
     border-radius: 0.45rem;
     background: transparent;
@@ -670,8 +738,8 @@
   }
 
   .prefs-theme-card-active {
-    border-color: rgb(var(--color-primary-500) / 0.4);
-    background: rgb(var(--color-primary-500) / 0.08);
+    border-color: rgb(var(--theme-focus) / 0.52);
+    background: rgb(var(--theme-selection) / 0.09);
   }
 
   .prefs-theme-card:disabled {
@@ -679,20 +747,53 @@
     cursor: not-allowed;
   }
 
-  .prefs-theme-card-swatches {
-    display: flex;
-    width: 2.2rem;
-    height: 1.35rem;
+  .prefs-theme-mini {
+    position: relative;
+    display: block;
+    width: 4.8rem;
+    height: 2.85rem;
     flex-shrink: 0;
     overflow: hidden;
-    border-radius: 0.28rem;
-    border: 1px solid rgb(var(--color-surface-500) / 0.35);
+    border-radius: 0.38rem;
+    border: 1px solid color-mix(in srgb, var(--preview-action) 34%, transparent);
+    background: var(--preview-canvas);
   }
 
-  .prefs-theme-card-swatches span {
+  .prefs-theme-mini i {
+    position: absolute;
     display: block;
-    height: 100%;
-    flex: 1;
+  }
+
+  .prefs-theme-mini-rail {
+    inset: 0 auto 0 0;
+    width: 0.8rem;
+    background: var(--preview-raised);
+    border-right: 1px solid color-mix(in srgb, var(--preview-action) 26%, transparent);
+  }
+
+  .prefs-theme-mini-card {
+    inset: 0.45rem 0.4rem 0.45rem 1.2rem;
+    border-radius: 0.25rem;
+    background: color-mix(in srgb, var(--preview-raised) 88%, var(--preview-canvas));
+    border: 1px solid color-mix(in srgb, var(--preview-action) 25%, transparent);
+  }
+
+  .prefs-theme-mini-line {
+    top: 0.85rem;
+    left: 1.55rem;
+    width: 1.9rem;
+    height: 0.16rem;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--preview-action) 48%, white);
+  }
+
+  .prefs-theme-mini-action {
+    right: 0.75rem;
+    bottom: 0.75rem;
+    width: 0.9rem;
+    height: 0.35rem;
+    border-radius: 999px;
+    background: var(--preview-action);
   }
 
   .prefs-theme-card-copy {
@@ -731,9 +832,71 @@
     gap: var(--prefs-gap);
   }
 
+  .prefs-mark-picker {
+    display: grid;
+    gap: 0.55rem;
+  }
+
+  .prefs-mark-head {
+    display: grid;
+    gap: 0.08rem;
+  }
+
+  .prefs-mark-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(5.25rem, 1fr));
+    gap: 0.45rem;
+  }
+
+  .prefs-mark-option {
+    display: grid;
+    justify-items: center;
+    gap: 0.35rem;
+    min-width: 0;
+    padding: 0.55rem 0.35rem 0.45rem;
+    border-radius: var(--prefs-tile-radius);
+    border: 1px solid var(--prefs-tile-border);
+    background: var(--prefs-tile-bg);
+    color: rgb(var(--color-surface-300));
+  }
+
+  .prefs-mark-option:hover,
+  .prefs-mark-option-active {
+    border-color: rgb(var(--theme-focus) / 0.58);
+    background: rgb(var(--theme-selection) / 0.09);
+  }
+
+  .prefs-mark-option-active {
+    box-shadow: inset 0 0 0 1px rgb(var(--theme-focus) / 0.22);
+  }
+
+  .prefs-mark-preview {
+    display: grid;
+    place-items: center;
+    width: 3.4rem;
+    height: 4.25rem;
+    padding: 0.35rem;
+    border-radius: 0.5rem;
+    background: var(--mark-preview-bg);
+  }
+
+  .prefs-mark-label {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.67rem;
+  }
+
   @media (min-width: 720px) {
     .prefs-grid {
       grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  @media (max-width: 719px) {
+    .prefs-theme-group-grid {
+      grid-template-columns: 1fr;
     }
   }
 
@@ -849,7 +1012,7 @@
   }
 
   .prefs-switch:checked {
-    background: rgb(var(--color-primary-500) / 0.85);
+    background: rgb(var(--theme-action) / 0.9);
   }
 
   .prefs-switch:checked::after {
@@ -857,7 +1020,7 @@
   }
 
   .prefs-switch:focus-visible {
-    outline: 2px solid rgb(var(--color-primary-400) / 0.7);
+    outline: 2px solid rgb(var(--theme-focus) / 0.72);
     outline-offset: 2px;
   }
 

@@ -1,8 +1,9 @@
 import type { CustomThemeConfig } from "@skeletonlabs/tw-plugin";
 import { lightSurfacesBlackLily, lightSurfacesObsidian } from "./surface-scales";
+import { completeThemeConfig } from "./theme-contract";
 
 /** Obsidian light — soft workshop gray with violet accent. */
-export const medousaLightTheme: CustomThemeConfig = {
+export const medousaLightTheme: CustomThemeConfig = completeThemeConfig({
   name: "medousa-light",
   properties: {
     ...lightSurfacesObsidian,
@@ -39,10 +40,18 @@ export const medousaLightTheme: CustomThemeConfig = {
     "--theme-rounded-base": "9999px",
     "--theme-rounded-container": "8px",
   },
-};
+}, {
+  effects: {
+    glow: "109 40 217",
+    gradientA: "109 40 217",
+    gradientB: "99 102 241",
+    gradientC: "167 139 250",
+  },
+  shape: { controlRadius: "0.55rem", containerRadius: "0.7rem" },
+});
 
 /** Black Lily light — blush paper, rose accent, soft purple secondary. */
-export const blackLilyLightTheme: CustomThemeConfig = {
+export const blackLilyLightTheme: CustomThemeConfig = completeThemeConfig({
   name: "black-lily-light",
   properties: {
     ...lightSurfacesBlackLily,
@@ -79,4 +88,15 @@ export const blackLilyLightTheme: CustomThemeConfig = {
     "--theme-rounded-base": "9999px",
     "--theme-rounded-container": "10px",
   },
-};
+}, {
+  roles: { focus: "155 93 229", decorative: "212 170 255" },
+  effects: {
+    shadow: "85 24 52",
+    glow: "200 60 115",
+    gradientA: "200 60 115",
+    gradientB: "155 93 229",
+    gradientC: "212 170 255",
+    glowStrength: "0.18",
+  },
+  shape: { controlRadius: "0.7rem", containerRadius: "0.85rem" },
+});

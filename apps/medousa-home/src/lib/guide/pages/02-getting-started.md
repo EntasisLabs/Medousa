@@ -12,35 +12,35 @@ No account is required. Your notes stay on your workshop.
 
 ## First time on a computer
 
-The welcome wizard walks you through naming your space, choosing whether to add a brain (AI models), and optionally pairing a phone.
+On desktop, onboarding happens inside Home itself. You choose what you want nearby, shape the first desktop, choose a Medousa mark and matching theme, then optionally add a brain. Home can open while optional tools continue downloading.
 
 ```steps
 title: Welcome wizard
 subtitle: What each step is for
 
 ---
-label: Arrive / Space
-body: Name your workspace and yourself; pick a look
+label: Focus
+body: Choose code, messages, notes, planning, or Medousa assistance
 status: done
 ---
-label: Mode
-body: **With a brain** (recommended) or just the workspace for now
+label: Layout
+body: Start focused, side by side, or with a small dashboard
 status: done
 ---
-label: Brain
-body: Offline (on this computer) or your own provider key
+label: Style
+body: Name Home and pair one of the approved Medousa marks with its color theme
 status: current
 ---
-label: Phone
-body: Optional — pair later anytime
+label: Brain
+body: Optional — offline on this computer or your own provider key
 status: pending
 ---
 label: Ready
-body: You land in Home; wait for **Connected** in the status bar
+body: Enter Home; selected coding and channel packages can finish in the background
 status: pending
 ```
 
-You can skip the Offline download and add models later under Settings.
+Messaging adapters download only for the channels you selected. You can skip the Offline download and add models later under Settings.
 
 ### Already set up?
 

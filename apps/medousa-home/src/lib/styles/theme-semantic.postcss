@@ -1,0 +1,92 @@
+/**
+ * Semantic theme consumption layer.
+ *
+ * Components depend on roles, not palette names. Theme authors extend the
+ * contract in data; they never need a selector for a specific component.
+ */
+@layer base {
+  html[data-theme] body {
+    background-color: rgb(var(--theme-canvas));
+    background-image: none;
+    accent-color: rgb(var(--theme-action));
+  }
+}
+
+@layer components {
+  html[data-theme] :is(.card, .theme-option, .workshop-inset, .workshop-drawer) {
+    border-color: rgb(var(--theme-border) / 0.44);
+    border-radius: var(--theme-container-radius);
+  }
+
+  html[data-theme] .card {
+    background-color: rgb(var(--theme-card) / var(--theme-pane-alpha));
+  }
+
+  html[data-theme] .card:hover {
+    border-color: rgb(var(--theme-focus) / 0.36);
+  }
+
+  html[data-theme] :is(.input, .textarea, .select) {
+    border-color: rgb(var(--theme-border) / 0.48);
+    border-radius: var(--theme-control-radius);
+  }
+
+  html[data-theme] :is(.input, .textarea, .select):focus {
+    border-color: rgb(var(--theme-focus) / 0.72);
+    --tw-ring-color: rgb(var(--theme-focus) / 0.26);
+    box-shadow: 0 0 0 3px rgb(var(--theme-focus) / 0.14);
+  }
+
+  html[data-theme] .variant-filled-primary {
+    border: 1px solid rgb(var(--theme-focus) / 0.42);
+    border-radius: var(--theme-control-radius);
+    color: rgb(var(--on-primary));
+    background-color: rgb(var(--theme-action));
+    background-image: linear-gradient(
+      135deg,
+      rgb(var(--theme-gradient-a)),
+      rgb(var(--theme-gradient-b))
+    );
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.1),
+      0 7px 22px rgb(var(--theme-glow) / calc(var(--theme-glow-strength) * 0.72));
+  }
+
+  html[data-theme] .variant-filled-primary:hover:not(:disabled) {
+    filter: brightness(1.08) saturate(1.04);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.13),
+      0 9px 26px rgb(var(--theme-glow) / var(--theme-glow-strength));
+  }
+
+  html[data-theme] .checkbox:checked {
+    border-color: rgb(var(--theme-focus));
+    background-color: rgb(var(--theme-action));
+  }
+
+  html[data-theme] .theme-option-active {
+    border-color: rgb(var(--theme-focus) / 0.62);
+    background-color: rgb(var(--theme-selection) / 0.11);
+    box-shadow:
+      inset 0 0 0 1px rgb(var(--theme-focus) / 0.18),
+      0 8px 24px rgb(var(--theme-glow) / calc(var(--theme-glow-strength) * 0.55));
+  }
+
+  html[data-theme] .markdown-content a {
+    color: rgb(var(--theme-link));
+  }
+
+  html[data-theme] .markdown-content :not(pre) > code {
+    border-color: rgb(var(--theme-focus) / 0.24);
+    background-color: rgb(var(--theme-selection) / 0.11);
+    color: rgb(var(--theme-action-hover));
+  }
+
+  html[data-theme] :is(.composer-bar, .chat-composer-bar):focus-within {
+    border-color: rgb(var(--theme-focus) / 0.48);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.06),
+      0 0 0 3px rgb(var(--theme-focus) / 0.12),
+      0 8px 26px rgb(var(--theme-glow) / calc(var(--theme-glow-strength) * 0.45));
+  }
+}

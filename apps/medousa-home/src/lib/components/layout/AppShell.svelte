@@ -166,7 +166,7 @@
   <div class="flex h-screen items-center justify-center bg-surface-950 text-surface-400">
     <p class="text-sm">Opening your workshop…</p>
   </div>
-{:else if wizard.visible}
+{:else if wizard.visible && isTauriMobilePlatform()}
   <WizardContainer />
 {:else if layout.isMobile}
   <MobileShell />

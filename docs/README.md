@@ -11,7 +11,7 @@ Doc conventions: [CONTRIBUTING-DOCS.md](CONTRIBUTING-DOCS.md)
 
 | Layer | Audience | What you get |
 |-------|----------|--------------|
-| **Medousa** (app) | Everyone | Welcome wizard, chat, vault, pairing — zero terminal |
+| **Medousa** (app) | Everyone | Home-first onboarding, chat, vault, pairing — zero terminal |
 | **Medousa Engine** (`medousa_daemon`) | Devs, corps, power users | Durable agent runtime, HTTP API, channels, MCP; offline brain via `medousa_local` |
 
 **Same engine.** Your company doesn’t re-introduce a foreign stack — employees may already run Medousa at home; your product can speak the same protocol.

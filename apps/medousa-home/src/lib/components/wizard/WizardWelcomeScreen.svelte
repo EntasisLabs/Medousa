@@ -104,26 +104,15 @@
     }
   }
 
-  async function refreshLocalInference(options?: { startDownload?: boolean }) {
+  async function refreshLocalInference() {
     localLoading = true;
     statusMessage = null;
     try {
-      await startEngine({ privateBrain: true });
-      const health = await waitForEngine(30);
-      if (!health.ok) {
-        statusMessage = health.message;
-        return;
-      }
-      localHardware = await fetchLocalHardware();
-      localCatalog = await fetchLocalCatalog();
+      [localHardware, localCatalog] = await Promise.all([
+        fetchLocalHardware(),
+        fetchLocalCatalog(),
+      ]);
       offlineModelId = localCatalog.recommendedModelId;
-      if (
-        options?.startDownload !== false &&
-        localHardware.engineAvailable &&
-        offlineModelId
-      ) {
-        wizard.beginBrainModelPrep(offlineModelId);
-      }
     } catch (err) {
       statusMessage = err instanceof Error ? err.message : String(err);
     } finally {
@@ -145,11 +134,18 @@
     }
   }
 
+  function toggleProviderSetup() {
+    if (showAdvanced) {
+      showAdvanced = false;
+      if (selectedPath === "byok") selectPath("offline");
+      return;
+    }
+    showAdvanced = true;
+    selectPath("byok");
+  }
+
   function selectOfflineModel(entry: LocalCatalogModel) {
     offlineModelId = entry.id;
-    if (localHardware?.engineAvailable) {
-      wizard.beginBrainModelPrep(entry.id);
-    }
   }
 
   async function installOfflineBrain() {
@@ -166,7 +162,7 @@
     };
     try {
       await installPackage(LOCAL_BRAIN_PACKAGE);
-      await refreshLocalInference({ startDownload: true });
+      await refreshLocalInference();
       if (localHardware?.engineAvailable) {
         statusMessage = null;
       } else {
@@ -468,14 +464,14 @@
   <button
     type="button"
     class="workshop-text-action mt-4 inline-flex items-center gap-1 text-sm"
-    onclick={() => (showAdvanced = !showAdvanced)}
+    onclick={toggleProviderSetup}
   >
     {#if showAdvanced}
       <ChevronDown class="h-4 w-4" aria-hidden="true" />
     {:else}
       <ChevronRight class="h-4 w-4" aria-hidden="true" />
     {/if}
-    Advanced — use your own API key
+    Use a model provider instead
   </button>
 
   {#if showAdvanced}
@@ -493,9 +489,9 @@
         <div class="flex items-start gap-3">
           <Brain class="mt-0.5 h-5 w-5 shrink-0 text-primary-300" aria-hidden="true" />
           <div class="min-w-0">
-            <p class="font-semibold text-surface-50">Your API key or Ollama</p>
+            <p class="font-semibold text-surface-50">Connect a model provider</p>
             <p class="mt-1 text-sm text-surface-300">
-              OpenAI, Anthropic, DeepSeek, Groq, and 20+ more — or Ollama. Keys stay on this device.
+              OpenAI, Anthropic, Ollama, or another provider. Credentials stay on this device.
             </p>
           </div>
         </div>
@@ -511,6 +507,7 @@
             disabled={wizard.busy || validating}
             excludeProviderIds={["medousa-local"]}
             showValidate={false}
+            progressive
             onProviderChange={onByokProviderChange}
             onModelChange={(value) => (model = value)}
             onApiKeyChange={(value) => (apiKey = value)}

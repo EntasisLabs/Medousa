@@ -52,6 +52,7 @@ import {
   titleOfTab,
   type ShellTabSearchHit,
 } from "$lib/utils/shellTabSearch";
+import type { HomeOnboardingLayout } from "$lib/utils/homeOnboarding";
 
 const MAX_TABS = 16;
 const MAIN_GROUP_ID = "main";
@@ -1239,6 +1240,50 @@ export class ShellTabsStore {
 
   requestCheatSheet() {
     this.cheatSheetOpenRequest += 1;
+  }
+
+  /** Replace the initial desktop with the chosen pane tree and no seeded tabs. */
+  applyHomeOnboardingLayout(choice: HomeOnboardingLayout): void {
+    const paneCount = choice === "focused" ? 1 : choice === "dashboard" ? 3 : 2;
+    const groupIds = Array.from({ length: paneCount }, (_, index) =>
+      index === 0 ? MAIN_GROUP_ID : newSplitId("group"),
+    );
+    const groups: EditorGroup[] = groupIds.map((id) => ({
+      id,
+      tabIds: [],
+      activeTabId: null,
+    }));
+
+    let splitRoot: SplitNode = { type: "group", id: groupIds[0]! };
+    if (paneCount >= 2) {
+      splitRoot = {
+        type: "branch",
+        id: newSplitId("branch"),
+        direction: "column",
+        ratio: choice === "dashboard" ? 0.58 : 0.5,
+        a: { type: "group", id: groupIds[0]! },
+        b:
+          paneCount === 3
+            ? {
+                type: "branch",
+                id: newSplitId("branch"),
+                direction: "row",
+                ratio: 0.5,
+                a: { type: "group", id: groupIds[1]! },
+                b: { type: "group", id: groupIds[2]! },
+              }
+            : { type: "group", id: groupIds[1]! },
+      };
+    }
+
+    this.applyLayout({
+      tabs: [],
+      groups,
+      splitRoot,
+      activeGroupId: groupIds[0]!,
+      zoomedGroupId: null,
+    });
+    this.persist();
   }
 
   splitActive(direction: SplitDirection): boolean {

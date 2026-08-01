@@ -3,7 +3,7 @@
  * stays valid — nested `var(--color-surface-*)` can fall back to black SVG fill and
  * wash out on dark canvases. */
 @layer base {
-  html {
+  html:not([data-theme]) {
     --chart-1: var(--markdown-chart-blue);
     --chart-2: var(--markdown-chart-purple);
     --chart-3: var(--markdown-chart-green);
@@ -35,7 +35,7 @@
   }
 
   /* True light paper surfaces only (not the hybrid dark-canvas light shell). */
-  html:not(.dark) {
+  html:not(.dark):not([data-theme]) {
     --chart-fg: 24 24 32;
     --chart-fg-secondary: 71 85 105;
     --chart-fg-muted: 100 116 139;

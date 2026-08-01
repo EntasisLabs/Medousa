@@ -1,5 +1,59 @@
 /** Shared surface ramps — apps use bg-surface-950 + text-surface-50 in both modes. */
 
+function mixRgb(base: string, tint: string, amount: number): string {
+  const from = base.split(/\s+/).map(Number);
+  const to = tint.split(/\s+/).map(Number);
+  return from
+    .map((channel, index) => Math.round(channel + (to[index]! - channel) * amount))
+    .join(" ");
+}
+
+/**
+ * Give a neutral ramp a palette identity while preserving its contrast order.
+ * Theme authors may still provide a fully hand-tuned ramp; this is the safe
+ * extension path for a colorway created from a small set of brand anchors.
+ */
+export function tintSurfaceScale(
+  base: Record<string, string>,
+  tint: string,
+  mode: "dark" | "light",
+  strength = 1,
+): Record<string, string> {
+  const darkWeights: Record<string, number> = {
+    "50": 0.015,
+    "100": 0.02,
+    "200": 0.025,
+    "300": 0.03,
+    "400": 0.04,
+    "500": 0.06,
+    "600": 0.08,
+    "700": 0.1,
+    "800": 0.12,
+    "900": 0.15,
+    "950": 0.18,
+  };
+  const lightWeights: Record<string, number> = {
+    "50": 0.02,
+    "100": 0.025,
+    "200": 0.03,
+    "300": 0.035,
+    "400": 0.04,
+    "500": 0.05,
+    "600": 0.06,
+    "700": 0.075,
+    "800": 0.09,
+    "900": 0.045,
+    "950": 0.075,
+  };
+  const weights = mode === "dark" ? darkWeights : lightWeights;
+  return Object.fromEntries(
+    Object.entries(base).map(([key, color]) => {
+      const step = key.replace("--color-surface-", "");
+      return [key, mixRgb(color, tint, (weights[step] ?? 0.05) * strength)];
+    }),
+  );
+}
+
 export const darkSurfacesObsidian = {
   "--color-surface-50": "248 248 252",
   "--color-surface-100": "232 232 242",
@@ -28,6 +82,35 @@ export const lightSurfacesObsidian = {
   /* Paper / panes */
   "--color-surface-900": "255 255 255",
   "--color-surface-950": "244 244 248",
+} as const;
+
+/** Logo-derived themes share the brand pack's ink / bone foundation. */
+export const darkSurfacesMedousaBrand = {
+  "--color-surface-50": "242 239 230",
+  "--color-surface-100": "226 223 216",
+  "--color-surface-200": "194 192 188",
+  "--color-surface-300": "160 159 158",
+  "--color-surface-400": "122 122 136",
+  "--color-surface-500": "85 85 95",
+  "--color-surface-600": "58 58 66",
+  "--color-surface-700": "36 36 42",
+  "--color-surface-800": "22 22 27",
+  "--color-surface-900": "10 10 10",
+  "--color-surface-950": "0 0 0",
+} as const;
+
+export const lightSurfacesMedousaBrand = {
+  "--color-surface-50": "0 0 0",
+  "--color-surface-100": "24 24 26",
+  "--color-surface-200": "58 58 64",
+  "--color-surface-300": "85 85 95",
+  "--color-surface-400": "122 122 136",
+  "--color-surface-500": "158 157 154",
+  "--color-surface-600": "194 192 188",
+  "--color-surface-700": "218 215 208",
+  "--color-surface-800": "234 231 223",
+  "--color-surface-900": "255 255 255",
+  "--color-surface-950": "242 239 230",
 } as const;
 
 export const darkSurfacesApple = {
