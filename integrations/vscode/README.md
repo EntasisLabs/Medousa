@@ -32,7 +32,7 @@ npm run build
 npm run package
 ```
 
-The generated `medousa-vscode-0.4.0.vsix` is written to this directory.
+The generated `medousa-vscode-0.1.0.vsix` is written to this directory.
 
 Open this folder in VS Code and press `F5` to launch an Extension Development
 Host.

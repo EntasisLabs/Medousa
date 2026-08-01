@@ -12,7 +12,7 @@ From the Medousa repository:
 cd integrations/vscode
 npm install
 npm run package
-code --install-extension medousa-vscode-0.4.0.vsix --force
+code --install-extension medousa-vscode-0.1.0.vsix --force
 ```
 
 Reload VS Code after installing, then select the Medousa icon in the activity
