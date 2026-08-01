@@ -4,7 +4,7 @@
 
 **Working name:** MIR (Medousa Inference Runtime)
 
-**Last updated:** 2026-07-31
+**Last updated:** 2026-08-01
 
 **Research ledger:** [inference-research-index.md](inference-research-index.md)
 
@@ -33,10 +33,25 @@ Medousa will own its **inference control plane**:
 - optional adaptation and distillation pipelines.
 
 Medousa will initially use replaceable execution backends rather than writing a
-complete tensor engine first. `mistral.rs`, `llama.cpp`, MLX/MLX Swift, and
-Core ML/ExecuTorch are candidates, not architectural authorities. A backend
-earns a default through Medousa measurements for a specific hardware/model
-recipe.
+complete tensor engine first. `mistral.rs`, `llama.cpp`, MLX/MLX Swift,
+TensorRT-LLM, qualified ROCm/HIP engines, and Core ML/ExecuTorch are candidates,
+not architectural authorities. A backend earns a default through Medousa
+measurements for a specific OS, accelerator, driver/runtime, model, and recipe.
+
+Metal, CUDA, and ROCm/HIP are first-class execution lanes. CPU is the universal
+safety baseline; Vulkan, DirectML, SYCL/OpenVINO, and other delegates are
+qualified portability lanes where a vendor-native path is absent or loses.
+Medousa will not collapse these into a lowest-common-denominator engine, nor let
+an Apple-, NVIDIA-, or AMD-specific optimization leak into the control-plane
+contract.
+
+MIR also does not assume that autoregressive next-token transformers are the
+final form of local intelligence. Diffusion/canvas generation, speculative and
+multi-token prediction, recurrent models, activation steering, learned latent
+routing, vector-symbolic control/memory, and new quantized geometries remain
+valid research lanes. They earn product status through the same safety, quality,
+latency, memory, energy, lifecycle, and portability evidence as conventional
+engines.
 
 We will write or upstream kernels only after profiling identifies a stable,
 material gap that engine configuration, format choice, or an upstream backend
@@ -67,6 +82,7 @@ For the user this means:
 - Optimizing for datacenter multi-tenant throughput before interactive desktop
   behavior is excellent.
 - Maintaining a fork of every inference engine.
+- Treating today's autoregressive engine APIs as a permanent generation model.
 - Advertising a model's maximum context as a safe default context.
 - Keeping a model resident merely because it is installed or selected.
 - Downloading or executing unpinned remote model code.
@@ -171,20 +187,33 @@ GQA/MQA reduce `kv_heads`; sliding/rotating windows cap cached tokens at a
 quality cost. Paged storage reduces fragmentation, not logical KV size. For MoE,
 total resident weights and active parameters per token are separate numbers.
 
-On Apple Silicon, CPU and GPU allocations share unified memory. MIR tracks
-process physical footprint, available memory, compression/swap, Metal's
-recommended working set, and backend-reported allocations because any one
-counter can under-report pressure.
+Memory topology is part of the recipe:
+
+- Apple silicon uses unified memory. MIR tracks process physical footprint,
+  available memory, compression/swap, Metal's recommended working set, and
+  backend-reported allocations because any one counter can under-report pressure.
+- NVIDIA CUDA and discrete AMD ROCm devices use separate VRAM plus host RAM.
+  MIR tracks free/used/total VRAM, per-process allocations, allocator reserve,
+  workspace peaks, pinned host buffers, PCIe transfers, host pressure, and
+  fragmentation. A model fitting in VRAM does not prove the host is safe.
+- AMD APUs and other unified/shared-memory GPUs require topology-aware accounting
+  rather than treating an advertised VRAM carve-out as independent capacity.
+- Windows WDDM can budget and evict GPU memory. Native Windows recipes include
+  the current process/device budget and are not admitted from physical VRAM
+  alone.
 
 ### Initial admission envelope
 
 ```text
 estimated_peak <= min(
-  backend_working_set_limit,
-  currently_available_memory - system_reserve,
+  backend_device_budget - device_reserve,
+  currently_available_host_memory - system_reserve,
   tier_recipe_cap
 )
 ```
+
+For CPU and fully unified-memory paths, `backend_device_budget` resolves to the
+host/unified-memory envelope rather than inventing a separate VRAM pool.
 
 Until calibrated, `system_reserve` is the greater of 4 GiB or 25% of physical
 RAM. Activation is also rejected when swap is already stressed or pressure is
@@ -214,11 +243,12 @@ LocalWorkerSupervisor
     |- process generation and identity
     |- spawn / ready / cancel / drain / terminate
     |
-    +--> mistral.rs worker
-    +--> llama.cpp worker
-    +--> MLX worker (Mac)
-    +--> native Metal worker (BaseRT/Uzu candidate)
+    +--> portable llama.cpp worker (CPU/Metal/CUDA/HIP/Vulkan)
+    +--> CUDA worker (NVIDIA-specialized candidate)
+    +--> ROCm/HIP worker (AMD-specialized candidate)
+    +--> MLX / native Metal worker (Apple candidate)
     +--> Core ML worker (curated Apple lane)
+    +--> mistral.rs worker (qualified device classes)
     +--> future native MIR worker
 ```
 
@@ -270,6 +300,47 @@ shutdown
 
 Backend knobs stay inside recipes and do not leak into normal chat/provider APIs.
 
+### Open research, hard promotion gates
+
+MIR deliberately separates exploration from product promotion. An experiment
+may begin on one model, engine, or accelerator when that is the fastest way to
+learn. It does not need premature cross-platform implementation. Promotion to a
+catalog default requires:
+
+1. a falsifiable mechanism and smallest useful ablation;
+2. a quality-equivalent conventional baseline;
+3. full steady and peak resource accounting;
+4. interactive latency, cancellation, and lifecycle measurements;
+5. explicit supported platform/device recipes and safe fallbacks;
+6. stable request/output semantics through the worker protocol; and
+7. a reversible recipe flag with the negative result preserved if it loses.
+
+“Industry standard” is evidence of maturity, not proof of optimality. Likewise,
+novelty is permission to test, not permission to ship.
+
+### Platform and package contract
+
+The coordinator, worker protocol, lifecycle states, request semantics, cache
+identity, and metrics schema are shared. Execution packages are optional and
+platform-specific:
+
+```text
+os + architecture + accelerator vendor + device architecture
++ driver/runtime compatibility + engine build + artifact/format
+-> versioned InferenceRecipe
+```
+
+The capability probe records Apple GPU family, NVIDIA compute capability, AMD
+`gfx` target, memory topology, driver/runtime versions, and supported kernel
+features. The resolver selects only catalog recipes that match those facts.
+CUDA and HIP libraries are never bundled into the core daemon or loaded on a
+machine that did not select the corresponding optional package.
+
+Linux and Windows are separate compatibility targets even when both expose CUDA
+or HIP. WSL/container serving is an explicit advanced recipe, not a hidden
+dependency of the native desktop app. Every specialized package has a tested
+CPU or portable-GPU fallback and uses the same unload-by-process-exit guarantee.
+
 ---
 
 ## Lifecycle contract
@@ -305,26 +376,31 @@ does not auto-reload on wake. The timeout is policy, not a backend constant.
 
 | Backend | Strength | Risk | Initial role |
 |---|---|---|---|
-| mistral.rs | Rust, broad models/formats, modern Metal/cache/scheduler upstream | Our pinned wrapper is old and unsafe; broad surface | Upgrade as a measured candidate, not assumed winner |
-| llama.cpp | Mature GGUF, portability, explicit controls, strong Metal/CPU | Fast-moving C/C++ API; model support differs | Required cross-platform and Metal baseline |
+| mistral.rs | Rust, broad models/formats, modern Metal/CUDA/cache/scheduler upstream | Our pinned wrapper is old and unsafe; broad surface; no complete AMD lane | Upgrade as a measured candidate on qualified Metal/CUDA devices, not assumed winner |
+| llama.cpp | Mature GGUF, explicit controls, CPU/Metal/CUDA/HIP/Vulkan/SYCL support, and hybrid offload | Fast-moving C/C++ API; backend kernel/model support differs | Required cross-platform baseline and first native Windows/Linux package |
+| TensorRT-LLM | NVIDIA-specialized kernels, quantization, paged KV, and speculative features | NVIDIA-only; plan/build/package complexity; Linux/server bias; rapid compatibility movement | CUDA performance-ceiling laboratory, initially Linux; native Windows only if upstream support and product measurements qualify it |
+| vLLM / SGLang | Mature CUDA and ROCm serving techniques, paged/prefix caches, structured and speculative execution | Linux/server and throughput orientation; Python/container footprint; unload and batch-one cost | Research oracle and performance-ceiling lab, not an assumed desktop dependency |
+| DiffusionGemma / diffusion worker | Parallel bidirectional canvas refinement targets low-batch accelerator utilization and non-linear generation | Different preview/commit UX, lower documented quality than autoregressive Gemma 4, 26B resident footprint, immature backend coverage | Alternative-generation laboratory for code infill, editing, structured blocks, and other lanes that benefit from whole-span revision |
 | MLX / MLX Swift | Apple-native unified memory, compilation, quant ecosystem | Apple-only and packaging/conversion work | Mac performance-ceiling candidate; productize via Swift/C++ worker |
 | BaseRT / Uzu | Native Metal/MPSGraph designs aimed directly at Apple inference; recent results suggest framework/dispatch overhead matters most for small models | Very new; BaseRT's engine binary is proprietary even though its tooling/bindings are Apache-2.0; Uzu is MIT; both need lifecycle and independent reproduction | Benchmark both; treat BaseRT as optional/proprietary evidence and Uzu as the open integration/source-study candidate |
 | Core ML | OS compilation, stateful KV, GPU/Neural Engine low-bit paths | Curated fixed graphs and OS fragmentation | Focused 1–4B reflex/worker and mobile research lane |
 | ExecuTorch | Portable edge delegation across accelerators | Export and operator gaps | Later mobile/NPU distribution lane |
-| Candle/custom Metal | Maximum control and Rust compatibility | Highest correctness and maintenance cost | Profiling-driven experiments only |
+| ONNX Runtime / DirectML / OpenVINO | Broad provider/delegate model across Windows and Intel hardware | LLM operator, cache, quantization, and model-conversion gaps | Curated-model portability and fallback research lane |
+| Candle/custom kernels | Maximum control and Rust compatibility | Highest correctness and maintenance cost across three accelerator ecosystems | Profiling-driven experiments only |
 
 There is no global best engine. Recipes are keyed by platform, OS, chip family,
-memory tier, artifact, and workload. A Mac may use different engines for a 3B
-text worker and multimodal model. Provider settings remain unchanged.
+driver/runtime, memory topology/tier, artifact, and workload. The same PC may
+use different engines for a 3B text worker and a multimodal model. Provider
+settings remain unchanged.
 
 ### Custom kernel gate
 
-A Medousa kernel requires a reproducible top-three hotspot, exhausted engine/
-format options, no acceptable upstream implementation, a stable correctness
-oracle, at least two testable device generations, material p50/p95 product gain,
-and a maintained fallback. Likely narrow targets are fused dequantize-matmul,
-decode sampling, KV quantization, or grammar-mask application—not “rewrite
-attention” as the first task.
+A Medousa Metal, CUDA, or HIP kernel requires a reproducible top-three hotspot,
+exhausted engine/format options, no acceptable upstream implementation, a stable
+correctness oracle, at least two testable device generations, material p50/p95
+product gain, and a maintained fallback. Likely narrow targets are fused
+dequantize-matmul, decode sampling, KV quantization, or grammar-mask
+application—not “rewrite attention” as the first task.
 
 ---
 
@@ -400,6 +476,11 @@ Quantization is a recipe with a quality record, not a filename suffix.
 6. Quantize KV independently and validate long-context tasks.
 7. Record effective bits including scales/metadata.
 8. Never quantize a generic model in foreground onboarding.
+9. Bind a format to a proven kernel/device pair: NVIDIA FP8/FP4/INT4 features,
+   AMD FP8/INT4/MFMA/WMMA paths, and Apple block-scaled/low-bit paths vary by
+   accelerator generation and engine build.
+10. Do not infer cross-vendor quality or speed from a shared format name; record
+    the converter, packing layout, accumulation precision, and fallback kernel.
 
 Artifacts include immutable digest, source/revision/license, converter commit,
 format/topology, tokenizer/template digests, backend/version compatibility,
@@ -432,19 +513,80 @@ pressure regardless of expected duration.
 
 ## Decode acceleration order
 
+This order optimizes an autoregressive lane; it is not the only generation
+family MIR can select.
+
 1. Correct safe recipe and pre-quantized weights.
 2. Stable-prefix reuse.
 3. Chunked prefill for responsiveness/cancellation.
 4. Compiled/fused sampling and grammar masks.
 5. N-gram/prompt-lookup speculation, especially code.
 6. Draft model only if acceptance repays memory/load/energy.
-7. Speculative cascades combining lane deferral with target verification.
-8. LayerSkip/Medusa/MTP/EAGLE-style checkpoint-coupled work after a stable model
+7. DSpark-style semi-autoregressive drafting, with confidence scheduling tested
+   separately against fixed/adaptive block lengths at batch one and burst load.
+8. Speculative cascades combining lane deferral with target verification.
+9. LayerSkip/Medusa/MTP/EAGLE-style checkpoint-coupled work after a stable model
    and training pipeline exist.
-9. Custom kernels through the profiling gate.
+10. Custom kernels through the profiling gate.
 
-Every layer is recipe-disableable. Metal, quantization, and batch-one behavior
-can reverse paper/datacenter results.
+Every layer is recipe-disableable. Metal, CUDA, HIP, quantization, and batch-one
+behavior can reverse paper/datacenter results.
+
+### DSpark integration gate
+
+DSpark is a checkpoint-coupled technique, not a universal runtime toggle. Its
+semi-autoregressive drafter, sequential head, confidence calibration, target
+model, tokenizer/template, thinking mode, and maximum proposal length form one
+immutable artifact/recipe identity. The worker contract therefore exposes
+proposal confidences and variable verification lengths without making DSpark a
+provider-level concept.
+
+The first MIR experiment uses a released DeepSpec Qwen3 or Gemma target/drafter
+pair and reproduces DeepSpec acceptance results before any native integration.
+It then compares:
+
+- target-only decoding;
+- n-gram speculation;
+- a conventional autoregressive draft model;
+- DSpark with fixed verification length; and
+- DSpark with calibrated confidence scheduling.
+
+Tests run at concurrency one, foreground-plus-reflex bursts, and bounded desktop
+queues. Metrics include accepted tokens per round, verification waste, draft and
+target latency, confidence calibration, TTFT, token latency, combined resident
+and peak memory, energy, load/unload time, and cancellation. CUDA results do not
+promote Metal or HIP recipes; each backend needs equivalent kernels, semantics,
+and a measured throughput curve. If confidence scheduling does not beat a
+simpler adaptive length for Medousa's load shape, keep the drafter architecture
+and discard the production-server scheduler.
+
+### Diffusion and revisable generation
+
+DiffusionGemma demonstrates a materially different local-inference shape: cache
+the prompt, iteratively denoise a bidirectional token canvas, commit the finished
+span, and continue block-autoregressively. MIR models that as generation events,
+not fake autoregressive deltas:
+
+```text
+CanvasOpened(id, range, revision)
+CanvasPatch(id, positions, provisional_tokens, confidence)
+CanvasCommitted(id, text, token_range)
+CanvasDiscarded(id, reason)
+```
+
+Only committed spans enter conversation history, tool parsing, prefix caches, or
+external consumers. Home may show a provisional canvas only through an explicit
+revisable-preview UI; the normal stream remains stable. Tool calls and structured
+output require commit-time grammar/schema validation and deterministic failure
+behavior.
+
+The first experiment compares DiffusionGemma with quality- and footprint-aware
+autoregressive Gemma on batch-one code infill, document editing, structured
+blocks, chat, and tool calls. Measure preview latency, first-commit latency,
+revisions, completion time, quality, resident/peak memory, energy, cancellation,
+and load/unload—not only raw generated tokens per second. CUDA, ROCm, and Metal
+are independent results; dedicated-GPU arithmetic-intensity gains are not
+assumed on Apple unified memory.
 
 ---
 
@@ -497,18 +639,26 @@ struct LocalRuntimeStatus {
 ```
 
 Normalized events cover admission/downgrade/rejection, worker start, load/warm,
-response start, deltas, validated tool calls, metrics, cancellation, failure, and
-release/unload. Types live in `medousa-types` and generate TS/SDK contracts.
+response start, stable deltas, provisional canvas revisions and committed spans,
+validated tool calls, metrics, cancellation, failure, and release/unload. Types
+live in `medousa-types` and generate TS/SDK contracts.
 
 ---
 
 ## Observability and privacy
 
-Record locally: identities, activation counts, RSS/physical footprint, backend/
-Metal bytes, available memory/pressure/swap, predicted/observed peak, cache/KV/
-workspace estimates, load/unload/reclaimed memory, token counts, prefill/decode,
-TTFT and token latency, speculation acceptance, cache reuse, cancellation, exit,
-recovery, and available energy/thermal signals.
+Record locally: identities, activation counts, RSS/physical footprint, available
+host memory/pressure/swap, backend/device allocations, predicted/observed peak,
+cache/KV/workspace estimates, load/unload/reclaimed memory, token counts,
+prefill/decode, TTFT and token latency, speculation acceptance, cache reuse,
+cancellation, exit, recovery, and available energy/thermal signals.
+
+Platform collectors normalize but retain their source: Metal allocated bytes and
+recommended working set; CUDA NVML VRAM/process use, utilization, power,
+temperature, clocks, and throttling; AMD SMI VRAM/GTT/process use, utilization,
+power, temperature, clocks, and RAS state; and Vulkan/DirectML/OS memory budgets
+where vendor-native telemetry is unavailable. Missing counters are explicit,
+never silently zero.
 
 Never include prompts, model output, files, tool results, or credentials in
 performance telemetry. Content capture is separate explicit developer mode with
@@ -548,9 +698,20 @@ Quality has three layers: pinned public tasks (LM Eval, IFEval, BFCL, long
 context), a versioned Medousa product suite, and small deterministic regression
 probes. Comparisons control templates, prompts, sampling, context, and output.
 
-Hardware coverage begins with M1 8 GB; M1/M2 16 GB; Pro/Max 16–32 GB; recent
-M-series 24–64 GB; representative x86 CPU; CUDA tier when packaged; and mobile
-only later. Missing physical hardware remains an explicit gap.
+Hardware coverage begins with a deliberate cross-platform matrix:
+
+| Lane | Initial physical tiers |
+|---|---|
+| Apple Metal | M1 8 GB; M1/M2 16 GB; Pro/Max 16–32 GB; recent M-series 24–64 GB |
+| NVIDIA CUDA on Linux | Consumer GPUs at approximately 8 GB, 12–16 GB, and 24 GB VRAM across at least two compute-capability generations |
+| NVIDIA CUDA on Windows | At least one matching consumer GPU from the Linux matrix, tested natively under WDDM |
+| AMD ROCm/HIP on Linux | Supported Radeon at approximately 8–12 GB and 16–24 GB plus one qualified Instinct-class reference when accessible; at least two `gfx` targets |
+| AMD on Windows | One GPU/release pair explicitly listed for native HIP plus the same GPU's Vulkan fallback |
+| CPU | x86-64 AVX2 baseline, a newer x86 vector/matrix tier, and Arm64 |
+
+Every result names the exact GPU, device architecture, driver, runtime, OS build,
+memory topology, power state, and engine package. Missing physical hardware is a
+release gap for that recipe, not permission to infer from another vendor or OS.
 
 Initial safety gates (calibrated by MIR-0):
 
@@ -604,21 +765,27 @@ cancel/unload/shutdown, and evict on idle/sleep/switch/pressure.
 **Exit:** zero worker cold, single-flight activation, reliable unload, and state
 transition integration tests.
 
-### MIR-2 — Resource Governor
+### MIR-2 — Cross-platform Resource Governor
 
-Implement estimates, leases, macOS/Metal probes, pressure response, explicit
-context/output/concurrency limits, learned observed peaks, and smaller/remote
-fallbacks with visible rationale.
+Implement estimates, leases, macOS/Metal, CUDA/NVML, ROCm/AMD-SMI, Windows GPU-
+budget, and host-memory probes; add pressure response, explicit context/output/
+concurrency limits, learned observed peaks, and smaller/remote fallbacks with
+visible rationale.
 
-**Exit:** recommended recipes stay inside calibrated envelopes on initial Macs.
+**Exit:** recommended recipes stay inside calibrated host and device envelopes
+on the initial Metal, CUDA, and HIP machines.
 
 ### MIR-3 — Backend laboratory and resolver
 
-Upgrade mistral.rs in isolation, package pinned llama.cpp, prototype MLX Swift/
-C++, reproduce BaseRT/Uzu on our machines, test one stateful Core ML small model,
-normalize capabilities/metrics, and produce per-machine Pareto reports.
+Package pinned, optional llama.cpp CPU/Metal/CUDA/HIP/Vulkan backends first.
+Upgrade mistral.rs in isolation; prototype MLX Swift/C++; reproduce BaseRT/Uzu;
+test one stateful Core ML small model; benchmark TensorRT-LLM on NVIDIA Linux;
+benchmark qualified vLLM/SGLang CUDA and ROCm lanes; and test native CUDA plus
+HIP/Vulkan fallbacks on Windows. Normalize capabilities/metrics and produce
+per-OS/device Pareto reports.
 
-**Exit:** automatic selection across at least two backends with stable fallback.
+**Exit:** automatic selection across Metal, CUDA, and ROCm/HIP device classes,
+with a stable CPU or Vulkan fallback and no platform-specific semantic drift.
 
 ### MIR-4 — Context compiler, cache, scheduler
 
@@ -638,8 +805,12 @@ while meeting quality floors.
 
 ### MIR-6 — Decode acceleration
 
-Tune baseline, test n-grams, draft pairs, acceptance/memory/energy, then prototype
-self-speculation/trained heads only for a stable winner.
+Tune baseline; test n-grams and conventional draft pairs; reproduce one DeepSpec
+DSpark checkpoint; isolate semi-autoregressive drafting from confidence
+scheduling; measure acceptance/memory/energy across Metal, CUDA, and HIP; then
+prototype self-speculation or other trained heads only for a stable winner. In a
+separate alternative-generation track, reproduce DiffusionGemma against its
+autoregressive family baseline and validate provisional-canvas/commit semantics.
 
 **Exit:** every enabled technique wins end to end inside a declared envelope.
 
@@ -660,8 +831,9 @@ energy/thermal/background behavior, and keep remote workshop authority.
 
 ### MIR-9 — Native kernel investment
 
-Select hotspots through the kernel gate, create correctness/precision/device
-harnesses, ship behind recipes, upstream when practical, keep portable fallback.
+Select hotspots through the kernel gate, create shared correctness plus Metal,
+CUDA, and HIP precision/device harnesses, ship behind recipes, upstream when
+practical, and keep a portable fallback.
 
 **Exit:** sustained material product gain; otherwise archive the negative result.
 
@@ -671,7 +843,8 @@ harnesses, ship behind recipes, upstream when practical, keep portable fallback.
 
 The next branch does MIR-0 plus the MIR-1 skeleton only:
 
-1. Add probes and a reproducible current-runtime benchmark.
+1. Add host-memory probes and a reproducible current-runtime benchmark; define
+   the normalized Metal/CUDA/HIP telemetry schema without loading GPU runtimes.
 2. Add lifecycle/status types without changing provider behavior.
 3. Add explicit unload backed by process termination.
 4. Remove every remaining `private_brain` side effect from core startup.
@@ -690,6 +863,11 @@ Do not upgrade engines in the same change; preserve a clean lifecycle baseline.
 - Every allocation belongs to an explainable recipe/budget.
 - Every machine has a safe fallback.
 - Backend selection is replaceable and measured.
+- Metal, CUDA, and ROCm/HIP are first-class, independently tested lanes on their
+  native operating systems; CPU and qualified portable GPU paths remain safe
+  fallbacks.
+- Vendor execution packages extend one worker/control protocol and never become
+  core-daemon startup dependencies.
 - Small models receive routing/context/constraints/retrieval/evaluation designed
   for them rather than being treated as weak generic chat models.
 - Cancellation, sleep, switching, pressure, crash, and unload are tested product
