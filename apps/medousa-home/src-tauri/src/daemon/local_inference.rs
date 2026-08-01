@@ -6,7 +6,7 @@ use crate::workshop_runtime;
 use crate::workshop_registry::{load_registry, PERSONAL_WORKSHOP_ID};
 use medousa_types::{
     LocalCatalogResponse, LocalEngineStatus, LocalHardwareResponse, LocalModelsResponse,
-    ModelDownloadProgress,
+    LocalRuntimePhase, ModelDownloadProgress,
 };
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, State};
@@ -108,15 +108,59 @@ pub async fn local_inference_spawn_engine(
         .map_err(|err| err.to_string())
 }
 
+pub(crate) async fn ensure_local_engine_for_turn(model_id: Option<&str>) -> Result<(), String> {
+    let registry = load_registry()?;
+    let workshop = registry
+        .workshops
+        .iter()
+        .find(|entry| entry.id == PERSONAL_WORKSHOP_ID)
+        .ok_or_else(|| "personal workshop not found in registry".to_string())?;
+    let data_dir = workshop_runtime::resolve_workshop_data_dir(workshop);
+    let ready = workshop_runtime::ensure_local_brain(
+        &workshop.id,
+        &data_dir,
+        model_id.map(str::trim).filter(|value| !value.is_empty()),
+    )
+    .await?;
+    if ready {
+        Ok(())
+    } else {
+        Err("Offline brain package is not installed".to_string())
+    }
+}
+
 #[tauri::command]
-pub async fn local_inference_engine_status(
+pub async fn local_inference_unload_engine(
     state: State<'_, DaemonState>,
 ) -> Result<LocalEngineStatus, String> {
+    workshop_runtime::stop_local_brain(PERSONAL_WORKSHOP_ID);
+    let started = std::time::Instant::now();
+    while workshop_runtime::is_bind_reachable(workshop_runtime::DEFAULT_LOCAL_BRAIN_BIND)
+        && started.elapsed() < std::time::Duration::from_secs(10)
+    {
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
     sdk::client(&state)
         .local_models()
         .engine_status()
         .await
         .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+pub async fn local_inference_engine_status(
+    state: State<'_, DaemonState>,
+) -> Result<LocalEngineStatus, String> {
+    let mut status = sdk::client(&state)
+        .local_models()
+        .engine_status()
+        .await
+        .map_err(|err| err.to_string())?;
+    if !status.loaded && workshop_runtime::local_brain_process_alive(PERSONAL_WORKSHOP_ID) {
+        status.phase = LocalRuntimePhase::Loading;
+        status.message = "Local model is loading".to_string();
+    }
+    Ok(status)
 }
 
 #[tauri::command]

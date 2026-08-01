@@ -139,12 +139,28 @@ pub struct ModelDownloadProgress {
     pub error: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase")]
+pub enum LocalRuntimePhase {
+    Unavailable,
+    Cold,
+    StartingWorker,
+    Loading,
+    Ready,
+    Busy,
+    Draining,
+    Unloading,
+    Failed,
+}
+
+#[derive(Debug, Clone, Serialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct LocalEngineStatus {
     pub feature_enabled: bool,
     pub loaded: bool,
+    pub phase: LocalRuntimePhase,
     pub base_url: String,
     pub bind: Option<String>,
     pub model_repo: Option<String>,
@@ -154,11 +170,61 @@ pub struct LocalEngineStatus {
     pub message: String,
 }
 
+impl<'de> Deserialize<'de> for LocalEngineStatus {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct WireStatus {
+            feature_enabled: bool,
+            loaded: bool,
+            #[serde(default)]
+            phase: Option<LocalRuntimePhase>,
+            base_url: String,
+            bind: Option<String>,
+            model_repo: Option<String>,
+            model_alias: Option<String>,
+            #[serde(default)]
+            inference_backend: Option<String>,
+            message: String,
+        }
+
+        let wire = WireStatus::deserialize(deserializer)?;
+        let phase = wire.phase.unwrap_or_else(|| {
+            if wire.loaded {
+                LocalRuntimePhase::Ready
+            } else if wire.feature_enabled {
+                LocalRuntimePhase::Cold
+            } else {
+                LocalRuntimePhase::Unavailable
+            }
+        });
+        Ok(Self {
+            feature_enabled: wire.feature_enabled,
+            loaded: wire.loaded,
+            phase,
+            base_url: wire.base_url,
+            bind: wire.bind,
+            model_repo: wire.model_repo,
+            model_alias: wire.model_alias,
+            inference_backend: wire.inference_backend,
+            message: wire.message,
+        })
+    }
+}
+
 impl LocalEngineStatus {
     pub fn idle(feature_enabled: bool) -> Self {
         Self {
             feature_enabled,
             loaded: false,
+            phase: if feature_enabled {
+                LocalRuntimePhase::Cold
+            } else {
+                LocalRuntimePhase::Unavailable
+            },
             base_url: DEFAULT_LOCAL_ENGINE_BASE_URL.to_string(),
             bind: None,
             model_repo: None,
@@ -223,4 +289,35 @@ pub struct LocalModelDownloadRequest {
 #[serde(rename_all = "camelCase")]
 pub struct LocalModelDownloadResponse {
     pub job: ModelDownloadProgress,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{LocalEngineStatus, LocalRuntimePhase};
+
+    #[test]
+    fn idle_status_distinguishes_cold_from_unavailable() {
+        assert_eq!(LocalEngineStatus::idle(true).phase, LocalRuntimePhase::Cold);
+        assert_eq!(
+            LocalEngineStatus::idle(false).phase,
+            LocalRuntimePhase::Unavailable
+        );
+    }
+
+    #[test]
+    fn lifecycle_phase_serializes_for_desktop_clients() {
+        assert_eq!(
+            serde_json::to_string(&LocalRuntimePhase::StartingWorker).unwrap(),
+            "\"startingWorker\""
+        );
+    }
+
+    #[test]
+    fn status_infers_phase_from_legacy_payloads() {
+        let status: LocalEngineStatus = serde_json::from_str(
+            r#"{"featureEnabled":true,"loaded":true,"baseUrl":"http://127.0.0.1:7421/v1","bind":null,"modelRepo":null,"modelAlias":null,"message":"ready"}"#,
+        )
+        .unwrap();
+        assert_eq!(status.phase, LocalRuntimePhase::Ready);
+    }
 }

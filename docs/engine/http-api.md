@@ -314,6 +314,12 @@ The daemon **probes** `medousa_local` on `:7421`. Loading models uses `medousa m
 | DELETE | `/v1/local/models/{model_id}` | `local_models().remove_model` |
 | GET | `/v1/local/engine/status` | `local_models().engine_status` |
 
+`LocalEngineStatus.phase` is the lifecycle signal. It is one of
+`unavailable`, `cold`, `startingWorker`, `loading`, `ready`, `busy`,
+`draining`, `unloading`, or `failed`; `loaded` remains for compatibility.
+Older status payloads without `phase` are inferred as unavailable, cold, or
+ready by current clients.
+
 Provider id: `medousa-local` → `http://127.0.0.1:7421/v1`
 
 ---

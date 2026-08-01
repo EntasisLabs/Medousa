@@ -55,6 +55,11 @@ or **Installed**.
 Need model weights next? Use the link to **Connection → Extras** (private brain
 panel) or **Settings → Models**, then download Gemma.
 
+Downloading prepares the model but does not load it into memory. Medousa starts
+the local inference worker when the first chat turn targets **Medousa Local**.
+To release the model memory immediately, open **Settings → Connection → Private
+brain** and choose the power button. The next local turn loads it again.
+
 ---
 
 ## Remove

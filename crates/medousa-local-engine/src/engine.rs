@@ -1,7 +1,7 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use medousa_types::local::LocalEngineStatus;
+use medousa_types::local::{LocalEngineStatus, LocalRuntimePhase};
 use tokio::sync::{oneshot, RwLock};
 use tokio::task::JoinHandle;
 
@@ -36,6 +36,7 @@ impl LocalEngineRuntime {
             status: Arc::new(RwLock::new(LocalEngineStatus {
                 feature_enabled: true,
                 loaded: false,
+                phase: LocalRuntimePhase::Cold,
                 base_url: format!("http://{DEFAULT_LOCAL_ENGINE_BIND}/v1"),
                 bind: None,
                 model_repo: None,
@@ -58,6 +59,7 @@ impl LocalEngineRuntime {
         let status = LocalEngineStatus {
             feature_enabled: true,
             loaded: true,
+            phase: LocalRuntimePhase::Ready,
             base_url: format!("http://{}/v1", config.bind.trim()),
             bind: Some(config.bind),
             model_repo: Some(config.model_repo),
@@ -76,6 +78,7 @@ impl LocalEngineRuntime {
         if let Some(task) = self.server_task.write().await.take() {
             task.abort();
         }
+        *self.status.write().await = LocalEngineStatus::idle(true);
         Ok(())
     }
 }
@@ -83,6 +86,21 @@ impl LocalEngineRuntime {
 impl Default for LocalEngineRuntime {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::LocalEngineRuntime;
+    use medousa_types::local::LocalRuntimePhase;
+
+    #[tokio::test]
+    async fn unload_always_returns_runtime_to_cold() {
+        let runtime = LocalEngineRuntime::new();
+        runtime.unload().await.unwrap();
+        let status = runtime.status().await;
+        assert!(!status.loaded);
+        assert_eq!(status.phase, LocalRuntimePhase::Cold);
     }
 }
 

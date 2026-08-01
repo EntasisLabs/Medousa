@@ -338,6 +338,20 @@ pub async fn turn_create(
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
         .unwrap_or_default();
+    let defaults = crate::medousa_paths::load_tui_defaults_summary();
+    let selected_provider = if provider.is_empty() {
+        defaults.provider.as_deref().unwrap_or_default()
+    } else {
+        provider.as_str()
+    };
+    let selected_model = if model.is_empty() {
+        defaults.model.as_deref()
+    } else {
+        Some(model.as_str())
+    };
+    if selected_provider.eq_ignore_ascii_case("medousa-local") {
+        super::local_inference::ensure_local_engine_for_turn(selected_model).await?;
+    }
     let response_depth_mode = response_depth_mode
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())

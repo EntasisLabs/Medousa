@@ -4,7 +4,9 @@ use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
-use medousa_types::local::{DEFAULT_LOCAL_ENGINE_BIND, LocalEngineStatus};
+use medousa_types::local::{
+    LocalEngineStatus, LocalRuntimePhase, DEFAULT_LOCAL_ENGINE_BIND,
+};
 
 use crate::{detach_new_session, is_bind_reachable, resolve_medousa_local_binary};
 
@@ -28,6 +30,7 @@ pub async fn spawn_and_wait(
         return Ok(LocalEngineStatus {
             feature_enabled: true,
             loaded: true,
+            phase: LocalRuntimePhase::Ready,
             base_url: format!("http://{bind}/v1"),
             bind: Some(bind),
             model_repo: None,
@@ -47,6 +50,7 @@ pub async fn spawn_and_wait(
     Ok(LocalEngineStatus {
         feature_enabled: true,
         loaded: true,
+        phase: LocalRuntimePhase::Ready,
         base_url: format!("http://{bind}/v1"),
         bind: Some(bind),
         model_repo: None,

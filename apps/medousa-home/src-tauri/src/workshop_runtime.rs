@@ -7,6 +7,7 @@ use std::collections::HashSet;
 use std::fs::{self, OpenOptions};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 pub const DEFAULT_LOCAL_BIND: &str = "127.0.0.1:7419";
@@ -14,6 +15,7 @@ const PUBLIC_LOCAL_BIND: &str = "0.0.0.0:7419";
 const DEFAULT_BACKEND: &str = "surreal-mem";
 const LOCAL_PORT_START: u16 = 7419;
 const LOCAL_PORT_END: u16 = 7499;
+static LOCAL_BRAIN_START_LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
 
 pub(crate) struct ComponentCommand {
     pub program: String,
@@ -552,6 +554,10 @@ pub fn stop_local_brain(workshop_id: &str) {
     clear_local_brain_pid(workshop_id);
 }
 
+pub fn local_brain_process_alive(workshop_id: &str) -> bool {
+    read_local_brain_pid(workshop_id).is_some_and(medousa_host::is_process_alive)
+}
+
 pub fn spawn_local_brain(
     workshop_id: &str,
     data_dir: &Path,
@@ -619,6 +625,10 @@ pub async fn ensure_local_brain(
     if !local_brain_installed() {
         return Ok(false);
     }
+    let _start_guard = LOCAL_BRAIN_START_LOCK
+        .get_or_init(|| tokio::sync::Mutex::new(()))
+        .lock()
+        .await;
     if local_brain_http_ready().await {
         return Ok(true);
     }
@@ -627,6 +637,12 @@ pub async fn ensure_local_brain(
     while started.elapsed() < Duration::from_secs(600) {
         if local_brain_http_ready().await {
             return Ok(true);
+        }
+        if !local_brain_process_alive(workshop_id) {
+            return Err(format!(
+                "Offline brain stopped before it became ready — check {}",
+                local_brain_log_path(workshop_id).display()
+            ));
         }
         tokio::time::sleep(Duration::from_millis(500)).await;
     }
@@ -676,7 +692,7 @@ pub async fn wait_engine_healthy(
 
 pub async fn ensure_local_engine(
     workshop: &WorkshopServer,
-    private_brain: bool,
+    _private_brain: bool,
 ) -> Result<LocalEngineEnsureResult, String> {
     if workshop.kind != "local" {
         return Ok(LocalEngineEnsureResult {
@@ -698,9 +714,6 @@ pub async fn ensure_local_engine(
     let log_path = daemon_log_path(&workshop.id);
 
     if daemon_http_healthy(&url).await {
-        if private_brain && local_brain_installed() {
-            let _ = ensure_local_brain(&workshop.id, &data_dir, None).await;
-        }
         let message = format!("Engine already running at {bind}");
         return Ok(LocalEngineEnsureResult {
             ok: true,
@@ -735,11 +748,10 @@ pub async fn ensure_local_engine(
         tokio::time::sleep(Duration::from_millis(750)).await;
     }
 
-    let (pid, log_path) = spawn_local_engine(&workshop.id, &bind, &data_dir, private_brain)?;
+    // The daemon and the inference worker have independent lifecycles. Starting
+    // Home/core never makes model weights resident.
+    let (pid, log_path) = spawn_local_engine(&workshop.id, &bind, &data_dir, false)?;
     let (ok, _) = wait_engine_healthy(&url, 45, 500).await?;
-    if ok && private_brain && local_brain_installed() {
-        let _ = ensure_local_brain(&workshop.id, &data_dir, None).await;
-    }
     Ok(LocalEngineEnsureResult {
         ok,
         already_running: false,
@@ -1003,7 +1015,7 @@ pub async fn set_lan_pairing_enabled(
         .iter()
         .find(|entry| entry.id == PERSONAL_WORKSHOP_ID)
         .ok_or_else(|| "Personal workshop not found".to_string())?;
-    let result = ensure_local_engine(workshop, true).await?;
+    let result = ensure_local_engine(workshop, false).await?;
     if !result.ok {
         return Err(result.message);
     }

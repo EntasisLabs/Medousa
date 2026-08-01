@@ -82,6 +82,7 @@ fn main() {
     export_type!(schemas, LocalHardwareResponse, "LocalHardwareResponse");
     export_type!(schemas, LocalCatalogResponse, "LocalCatalogResponse");
     export_type!(schemas, LocalModelsResponse, "LocalModelsResponse");
+    export_type!(schemas, LocalRuntimePhase, "LocalRuntimePhase");
     export_type!(schemas, LocalEngineStatus, "LocalEngineStatus");
     export_type!(schemas, LocalModelDownloadRequest, "LocalModelDownloadRequest");
     export_type!(schemas, LocalModelDownloadResponse, "LocalModelDownloadResponse");

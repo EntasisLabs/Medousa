@@ -10008,7 +10008,8 @@
       "baseUrl",
       "featureEnabled",
       "loaded",
-      "message"
+      "message",
+      "phase"
     ],
     "properties": {
       "baseUrl": {
@@ -10045,6 +10046,25 @@
         "type": [
           "string",
           "null"
+        ]
+      },
+      "phase": {
+        "$ref": "#/definitions/LocalRuntimePhase"
+      }
+    },
+    "definitions": {
+      "LocalRuntimePhase": {
+        "type": "string",
+        "enum": [
+          "unavailable",
+          "cold",
+          "startingWorker",
+          "loading",
+          "ready",
+          "busy",
+          "draining",
+          "unloading",
+          "failed"
         ]
       }
     }
@@ -10387,6 +10407,22 @@
         }
       }
     }
+  },
+  "LocalRuntimePhase": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "LocalRuntimePhase",
+    "type": "string",
+    "enum": [
+      "unavailable",
+      "cold",
+      "startingWorker",
+      "loading",
+      "ready",
+      "busy",
+      "draining",
+      "unloading",
+      "failed"
+    ]
   },
   "McpGatewayStatusResponse": {
     "$schema": "http://json-schema.org/draft-07/schema#",

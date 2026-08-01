@@ -12,7 +12,6 @@ import {
 } from "$lib/utils/providersApi";
 import {
   ensureLocalModelReady,
-  loadLocalEngine,
   type ModelDownloadProgress,
 } from "$lib/utils/localInferenceApi";
 import { isTauriMobilePlatform } from "$lib/platform";
@@ -248,7 +247,8 @@ class WizardStore {
   }
 
   /**
-   * Start (or switch) offline model download + engine load without blocking Continue.
+   * Start (or switch) the offline model download without blocking Continue.
+   * The engine remains cold until the first local inference turn.
    * Safe to call repeatedly when the operator changes model size.
    */
   beginBrainModelPrep(modelId: string) {
@@ -303,31 +303,7 @@ class WizardStore {
       });
       if (generation !== this.brainPrepGeneration) return;
 
-      this.brainDownloadProgress = {
-        jobId: "loading",
-        modelId,
-        phase: "loading",
-        bytesDone: 0,
-        bytesTotal: 0,
-        percent: 100,
-        message: "Loading local engine…",
-      };
-      const engine = await loadLocalEngine(modelId);
-      if (generation !== this.brainPrepGeneration) return;
-      if (!engine.loaded) {
-        this.brainDownloadError = engine.message;
-        this.brainDownloadProgress = {
-          jobId: "failed",
-          modelId,
-          phase: "failed",
-          bytesDone: 0,
-          bytesTotal: 0,
-          percent: 0,
-          message: engine.message,
-          error: engine.message,
-        };
-        return;
-      }
+      // Downloading prepares the choice; residency begins on the first local turn.
       this.brainEngineReady = true;
       this.brainDownloadProgress = {
         jobId: "ready",
@@ -336,7 +312,7 @@ class WizardStore {
         bytesDone: 0,
         bytesTotal: 0,
         percent: 100,
-        message: "Offline brain ready",
+        message: "Offline brain downloaded",
       };
     } catch (err) {
       if (generation !== this.brainPrepGeneration) return;

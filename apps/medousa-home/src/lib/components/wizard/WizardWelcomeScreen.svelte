@@ -229,7 +229,9 @@
     wizard.error = null;
 
     try {
-      await startEngine({ privateBrain: true });
+      // Core must be reachable to save the choice, but the model stays cold
+      // until the first turn that actually targets Medousa Local.
+      await startEngine({ privateBrain: false });
       const health = await waitForEngine(60);
       if (!health.ok) {
         statusMessage = health.message;

@@ -3,7 +3,10 @@ use std::sync::Arc;
 
 use medousa_host::is_bind_reachable;
 
-pub use medousa_types::local::{LocalEngineStatus, DEFAULT_LOCAL_ENGINE_BASE_URL, DEFAULT_LOCAL_ENGINE_BIND};
+pub use medousa_types::local::{
+    LocalEngineStatus, LocalRuntimePhase, DEFAULT_LOCAL_ENGINE_BASE_URL,
+    DEFAULT_LOCAL_ENGINE_BIND,
+};
 
 #[derive(Debug, Clone)]
 pub struct LocalEngineConfig {
@@ -60,6 +63,7 @@ pub async fn probe_local_engine_status() -> LocalEngineStatus {
         return LocalEngineStatus {
             feature_enabled,
             loaded: true,
+            phase: LocalRuntimePhase::Ready,
             base_url: format!("http://{bind}/v1"),
             bind: Some(bind),
             model_repo: None,

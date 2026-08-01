@@ -102,6 +102,9 @@ Guide: [Packages](packages.md).
 
 Model **weights** for offline Gemma download from the private-brain / models UI
 after the binary is installed — not from Packages itself.
+The download stays cold: model memory is allocated only when a chat turn uses
+**Medousa Local**, and can be released from **Settings → Connection → Private
+brain**.
 
 ---
 
