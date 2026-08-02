@@ -10504,6 +10504,80 @@
             "format": "uint64",
             "minimum": 0.0
           },
+          "deviceAdmissibleMb": {
+            "default": null,
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "deviceAvailableMb": {
+            "default": null,
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "deviceEnforced": {
+            "default": false,
+            "type": "boolean"
+          },
+          "deviceEstimatedPeakMb": {
+            "default": null,
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "deviceName": {
+            "default": null,
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "deviceRationale": {
+            "default": null,
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "deviceReserveMb": {
+            "default": null,
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "deviceSource": {
+            "default": null,
+            "anyOf": [
+              {
+                "$ref": "#/definitions/LocalDeviceTelemetrySource"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "deviceTotalMb": {
+            "default": null,
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
           "estimatedConversionMb": {
             "type": "integer",
             "format": "uint64",
@@ -10521,6 +10595,12 @@
           },
           "hardwareTier": {
             "$ref": "#/definitions/HardwareTier"
+          },
+          "hostAdmissibleMb": {
+            "default": 0,
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
           },
           "maxBatchSize": {
             "type": "integer",
@@ -11340,6 +11420,80 @@
         "format": "uint64",
         "minimum": 0.0
       },
+      "deviceAdmissibleMb": {
+        "default": null,
+        "type": [
+          "integer",
+          "null"
+        ],
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "deviceAvailableMb": {
+        "default": null,
+        "type": [
+          "integer",
+          "null"
+        ],
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "deviceEnforced": {
+        "default": false,
+        "type": "boolean"
+      },
+      "deviceEstimatedPeakMb": {
+        "default": null,
+        "type": [
+          "integer",
+          "null"
+        ],
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "deviceName": {
+        "default": null,
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "deviceRationale": {
+        "default": null,
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "deviceReserveMb": {
+        "default": null,
+        "type": [
+          "integer",
+          "null"
+        ],
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "deviceSource": {
+        "default": null,
+        "anyOf": [
+          {
+            "$ref": "#/definitions/LocalDeviceTelemetrySource"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "deviceTotalMb": {
+        "default": null,
+        "type": [
+          "integer",
+          "null"
+        ],
+        "format": "uint64",
+        "minimum": 0.0
+      },
       "estimatedConversionMb": {
         "type": "integer",
         "format": "uint64",
@@ -11357,6 +11511,12 @@
       },
       "hardwareTier": {
         "$ref": "#/definitions/HardwareTier"
+      },
+      "hostAdmissibleMb": {
+        "default": 0,
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
       },
       "maxBatchSize": {
         "type": "integer",
@@ -11399,6 +11559,16 @@
           "C",
           "D",
           "E"
+        ]
+      },
+      "LocalDeviceTelemetrySource": {
+        "type": "string",
+        "enum": [
+          "metalApi",
+          "nvidiaSmi",
+          "amdSmi",
+          "wddm",
+          "vulkanBudget"
         ]
       }
     }

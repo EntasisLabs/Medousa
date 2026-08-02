@@ -323,8 +323,14 @@ ready by current clients.
 `LocalResourceAdmission` is the shared pre-load decision record: current and
 total host memory, system reserve, hardware-tier cap, steady/conversion/peak
 estimates, critical-pressure threshold, and the explicit context/batch recipe.
-The current safe baseline is 4K context, batch/concurrency 1. The worker exits
-after five idle minutes and terminates under critical host-memory pressure.
+It also records the selected accelerator, telemetry source, total/available
+device memory, device reserve, admissible device memory, estimated device peak,
+and whether the device envelope was enforced. The final `admissibleMb` is the
+smaller of the host and enforced device envelopes. Missing device counters stay
+nullable and produce an explicit host-only decision rather than a fabricated
+device capacity. The current safe baseline is 4K context, batch/concurrency 1.
+The worker exits after five idle minutes and terminates under critical
+host-memory pressure.
 
 Provider id: `medousa-local` → `http://127.0.0.1:7421/v1`
 

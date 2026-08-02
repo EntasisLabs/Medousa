@@ -50,7 +50,7 @@ tokio-tungstenite = { version = "0.29", default-features = false, features = ["c
 
 [target.'cfg(not(any(target_os = "ios", target_os = "android")))'.dependencies]
 medousa-host = { path = "../../../crates/medousa-host" }
-medousa-local-inference = { path = "../../../crates/medousa-local-inference" }
+medousa-local-inference = { path = "../../../crates/medousa-local-inference", features = ["telemetry-metal"] }
 axum = "0.8"
 medousa-browser-bridge = { path = "../../../crates/medousa-browser-bridge" }
 tauri-plugin-window-state = "2"

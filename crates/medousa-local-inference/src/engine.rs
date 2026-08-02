@@ -4,8 +4,7 @@ use std::sync::Arc;
 use medousa_host::is_bind_reachable;
 
 pub use medousa_types::local::{
-    LocalEngineStatus, LocalRuntimePhase, DEFAULT_LOCAL_ENGINE_BASE_URL,
-    DEFAULT_LOCAL_ENGINE_BIND,
+    DEFAULT_LOCAL_ENGINE_BASE_URL, DEFAULT_LOCAL_ENGINE_BIND, LocalEngineStatus, LocalRuntimePhase,
 };
 
 #[derive(Debug, Clone)]
@@ -87,8 +86,14 @@ pub async fn probe_local_engine_status() -> LocalEngineStatus {
 pub fn recommended_engine_config(bind: Option<String>) -> Result<LocalEngineConfig, String> {
     let probe = super::hardware::probe_hardware();
     let tier = super::hardware::score_tier(&probe);
-    let entry = super::governor::recommended_admitted_model(&probe)
-        .ok_or_else(|| format!("no local model fits the safe envelope for hardware tier {}", tier.as_str()))?;
+    let devices = super::telemetry::collect_device_telemetry();
+    let entry = super::governor::recommended_admitted_model_with_devices(&probe, &devices)
+        .ok_or_else(|| {
+            format!(
+                "no local model fits the safe envelope for hardware tier {}",
+                tier.as_str()
+            )
+        })?;
     Ok(config_from_catalog_entry(&entry, bind))
 }
 

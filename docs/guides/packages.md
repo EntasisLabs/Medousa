@@ -61,10 +61,14 @@ To release the model memory immediately, open **Settings → Connection → Priv
 brain** and choose the power button. The next local turn loads it again.
 
 Before loading, Medousa keeps at least 4 GiB or 25% of system memory—whichever
-is larger—available for the OS and other apps. If the chosen model cannot fit
-that safe envelope, it stays cold and Medousa explains the refusal instead of
-trying the allocation. Automatic recommendations prefer the strongest smaller
-model that fits right now. An idle local worker exits after five minutes.
+is larger—available for the OS and other apps. When accelerator memory counters
+are available, it also reserves at least 512 MiB or 10% of that device's
+capacity and requires the model to fit both envelopes. If the chosen model
+cannot fit, it stays cold and Medousa explains which envelope refused it instead
+of trying the allocation. Missing device counters are reported explicitly and
+fall back to host-only admission. Automatic recommendations prefer the
+strongest smaller model that fits right now. An idle local worker exits after
+five minutes.
 
 ### Benchmark an installed local model
 

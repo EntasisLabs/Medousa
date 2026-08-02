@@ -263,6 +263,8 @@ pub struct LocalResourceAdmission {
     pub available_ram_mb: u64,
     pub system_reserve_mb: u64,
     pub tier_cap_mb: u64,
+    #[serde(default)]
+    pub host_admissible_mb: u64,
     pub admissible_mb: u64,
     pub estimated_steady_mb: u64,
     pub estimated_conversion_mb: u64,
@@ -270,6 +272,24 @@ pub struct LocalResourceAdmission {
     pub critical_available_mb: u64,
     pub max_seq_len: usize,
     pub max_batch_size: usize,
+    #[serde(default)]
+    pub device_enforced: bool,
+    #[serde(default)]
+    pub device_source: Option<LocalDeviceTelemetrySource>,
+    #[serde(default)]
+    pub device_name: Option<String>,
+    #[serde(default)]
+    pub device_total_mb: Option<u64>,
+    #[serde(default)]
+    pub device_available_mb: Option<u64>,
+    #[serde(default)]
+    pub device_reserve_mb: Option<u64>,
+    #[serde(default)]
+    pub device_admissible_mb: Option<u64>,
+    #[serde(default)]
+    pub device_estimated_peak_mb: Option<u64>,
+    #[serde(default)]
+    pub device_rationale: Option<String>,
     pub rationale: String,
 }
 

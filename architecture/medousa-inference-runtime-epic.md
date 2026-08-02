@@ -102,8 +102,11 @@ For the user this means:
 > pressure. MIR-2's telemetry seam now normalizes Metal working-set/process
 > allocation, NVIDIA `nvidia-smi`, and AMD SMI JSON into one shared, nullable
 > device snapshot attached to every benchmark phase. Unsupported counters are
-> named rather than zero-filled. WDDM/Vulkan budgets, enforcement from device
-> envelopes, and measured peak calibration remain MIR-2 work.
+> named rather than zero-filled. Pre-load admission now selects device zero
+> deterministically, reserves accelerator headroom, and intersects the device
+> envelope with the host envelope when capacity counters exist. WDDM/Vulkan
+> budgets, production-native NVML/AMD SMI collectors, and measured peak
+> calibration remain MIR-2 work.
 >
 > MIR-0 now has a content-free `medousa_local_bench` spine for installed models.
 > It captures the recipe and admission decision, load/stream/unload timing, TTFT,

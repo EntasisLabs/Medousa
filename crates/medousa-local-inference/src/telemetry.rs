@@ -33,7 +33,7 @@ const DEVICE_FIELDS: [&str; 14] = [
 pub fn collect_device_telemetry() -> Vec<LocalDeviceTelemetrySnapshot> {
     let mut snapshots = Vec::new();
 
-    #[cfg(all(target_os = "macos", feature = "embedded-inference-metal"))]
+    #[cfg(all(target_os = "macos", feature = "telemetry-metal"))]
     snapshots.push(collect_metal());
 
     if let Some(result) = run_optional(
@@ -99,7 +99,7 @@ pub fn collect_device_telemetry() -> Vec<LocalDeviceTelemetrySnapshot> {
     snapshots
 }
 
-#[cfg(all(target_os = "macos", feature = "embedded-inference-metal"))]
+#[cfg(all(target_os = "macos", feature = "telemetry-metal"))]
 fn collect_metal() -> LocalDeviceTelemetrySnapshot {
     let Some(device) = metal::Device::system_default() else {
         return unavailable_snapshot(
@@ -584,7 +584,7 @@ fn value_mb(value: &Value) -> Option<u64> {
     }
 }
 
-#[cfg(all(target_os = "macos", feature = "embedded-inference-metal"))]
+#[cfg(all(target_os = "macos", feature = "telemetry-metal"))]
 fn bytes_to_mb(bytes: u64) -> u64 {
     bytes / 1024 / 1024
 }
@@ -658,7 +658,7 @@ mod tests {
         assert_eq!(amd_process_memory_mb(&value, pid), Some(2 * 1024 + 512));
     }
 
-    #[cfg(all(target_os = "macos", feature = "embedded-inference-metal"))]
+    #[cfg(all(target_os = "macos", feature = "telemetry-metal"))]
     #[test]
     fn metal_reports_process_allocation_and_working_set_without_loading_a_model() {
         let snapshot = super::collect_metal();
