@@ -96,7 +96,10 @@ device identity, driver version, physical and current-process VRAM,
 utilization, power, temperature, clocks, and throttle reasons; this does not
 require the CUDA toolkit. `nvidia-smi` runs only as a compatibility fallback
 when the native collector is absent or unhealthy. AMD systems normalize the
-available fields from AMD SMI JSON.
+same physical and current-process memory, utilization, power, temperature, and
+clock evidence through the native AMD SMI library on Linux. AMD SMI's ABI major
+is checked before versioned structures are used; incompatible or unhealthy
+libraries fall back to `amd-smi` JSON.
 Unsupported counters remain `null` and are
 named in `unavailableFields`; they are never reported as a measured zero. The
 shared contract also distinguishes physical memory from a dynamic per-process

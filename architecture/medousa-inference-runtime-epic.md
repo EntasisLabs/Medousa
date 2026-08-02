@@ -121,9 +121,15 @@ For the user this means:
 > utilization, power, thermals, clocks, and throttle reasons without requiring
 > the CUDA toolkit. It retries process-list races, preserves WDDM's unavailable-
 > memory sentinel as unknown, preserves future throttle bits, and invokes
-> `nvidia-smi` only as a compatibility fallback. Actual WDDM/Vulkan collection,
-> production-native AMD SMI bindings, broader hardware samples, and percentile
-> calibration after sufficient runs remain MIR-2 work.
+> `nvidia-smi` only as a compatibility fallback. Linux AMD now dynamically loads
+> AMD SMI for identity, driver, physical VRAM, current-process VRAM/GTT,
+> utilization, power, thermals, and clocks, invoking `amd-smi` JSON only when the
+> native path is absent or unhealthy. Because AMD uses its ABI major to signal
+> breaking structure changes, Medousa validates major 26 before reading
+> versioned structures and deliberately falls back for other majors. Actual
+> WDDM/Vulkan collection, additional qualified AMD SMI ABI majors, broader
+> hardware samples, and percentile calibration after sufficient runs remain
+> MIR-2 work.
 >
 > MIR-0 now has a content-free `medousa_local_bench` spine for installed models.
 > It captures the recipe and admission decision, load/stream/unload timing, TTFT,

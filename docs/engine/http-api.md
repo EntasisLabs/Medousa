@@ -338,7 +338,10 @@ dynamically loads the driver-provided NVML library—without a
 CUDA toolkit dependency—to identify the device and read physical and
 current-process memory. `nvidia-smi` remains a lower-priority fallback. Under
 Windows WDDM, NVML's unavailable process-memory sentinel remains `null`; it is
-never converted into capacity. Before allocating,
+never converted into capacity. Linux AMD admission follows the same native-first
+rule with AMD SMI. Its ABI major is validated before any versioned structure is
+read, and incompatible libraries fall back to `amd-smi` JSON rather than risking
+misinterpreted telemetry. Before allocating,
 the worker converts an admitted decision into a short-lived cross-process
 activation lease; concurrent loads cannot spend the same host or device
 headroom, and dead-process leases are reclaimed. The current safe baseline is

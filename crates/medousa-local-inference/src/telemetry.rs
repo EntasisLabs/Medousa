@@ -10,6 +10,7 @@ use medousa_types::{
 };
 use serde_json::Value;
 
+mod amd_smi;
 mod nvml;
 
 const DEVICE_FIELDS: [&str; 15] = [
@@ -98,7 +99,27 @@ pub fn collect_device_telemetry() -> Vec<LocalDeviceTelemetrySnapshot> {
         }
     }
 
-    if let Some(result) = run_optional("amd-smi", &["--json"]) {
+    let amd_smi_healthy = if let Some(result) = amd_smi::try_collect() {
+        match result {
+            Ok(native) if !native.is_empty() => {
+                snapshots.extend(native);
+                true
+            }
+            Ok(_) => false,
+            Err(error) => {
+                snapshots.push(unavailable_snapshot(
+                    LocalDeviceTelemetrySource::AmdSmiLibrary,
+                    GpuBackend::Rocm,
+                    &error,
+                ));
+                false
+            }
+        }
+    } else {
+        false
+    };
+
+    if !amd_smi_healthy && let Some(result) = run_optional("amd-smi", &["--json"]) {
         match result {
             Ok(output) if output.status.success() => match parse_amd_json(&output.stdout) {
                 Ok(parsed) => snapshots.extend(parsed),
