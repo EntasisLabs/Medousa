@@ -10,8 +10,13 @@ Related: [Settings reference](guide:settings-reference) · [Keyboard and flow](g
 |---------|--------|
 | **Light / dark** | Settings → Preferences (top toggle) |
 | **Color theme** | Preferences → **Look** |
+| **Medousa mark** | Preferences → **Look** → **Your Medousa** |
 
 Themes follow your **active layout**. Switching layouts can change colors.
+
+The original themes remain available. **Medousa colors** adds ten complete visual environments paired with the approved brand marks: Monochrome, Ink Black, Nebula Purple, Ocean Blue, Abyss Teal, Amber Gold, Violet, Deep Blue, Jade, and Aurora. Onboarding pairs a mark and theme for you; afterward you can change either one independently.
+
+A theme changes more than switches and links. It coordinates the canvas, raised panes, cards, borders, focus and selection, code colors, charts, gradients, shadows, and shape. The theme chooser previews a miniature workspace and groups related families so you can compare their overall character.
 
 ## What to show or hide
 

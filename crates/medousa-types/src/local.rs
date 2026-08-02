@@ -4,8 +4,10 @@ use serde_json::Value;
 
 pub const DEFAULT_LOCAL_ENGINE_BIND: &str = "127.0.0.1:7421";
 pub const DEFAULT_LOCAL_ENGINE_BASE_URL: &str = "http://127.0.0.1:7421/v1";
+pub const LOCAL_WORKER_PROTOCOL_VERSION: u32 = 1;
+pub const LOCAL_WORKER_STATUS_PATH: &str = "/_medousa/status";
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "UPPERCASE")]
 pub enum HardwareTier {
@@ -45,7 +47,24 @@ pub enum GpuBackend {
     None,
     Metal,
     Cuda,
+    Rocm,
+    Vulkan,
+    DirectMl,
     Other,
+}
+
+impl GpuBackend {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::Metal => "metal",
+            Self::Cuda => "cuda",
+            Self::Rocm => "rocm",
+            Self::Vulkan => "vulkan",
+            Self::DirectMl => "directml",
+            Self::Other => "other",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -139,19 +158,127 @@ pub struct ModelDownloadProgress {
     pub error: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase")]
+pub enum LocalRuntimePhase {
+    Unavailable,
+    Cold,
+    StartingWorker,
+    Loading,
+    Ready,
+    Busy,
+    Draining,
+    Unloading,
+    Failed,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct LocalWorkerStatus {
+    pub protocol_version: u32,
+    pub generation_id: String,
+    pub pid: u32,
+    pub started_at: DateTime<Utc>,
+    pub phase: LocalRuntimePhase,
+    pub model_repo: String,
+    pub model_alias: String,
+    pub artifact_digest: Option<String>,
+    pub recipe_revision: String,
+    pub binary_digest: Option<String>,
+    pub runtime_name: String,
+    pub runtime_version: String,
+    #[serde(default)]
+    pub compiled_backends: Vec<String>,
+}
+
+impl LocalWorkerStatus {
+    pub fn is_compatible_ready(&self) -> bool {
+        self.protocol_version == LOCAL_WORKER_PROTOCOL_VERSION
+            && matches!(
+                self.phase,
+                LocalRuntimePhase::Ready | LocalRuntimePhase::Busy
+            )
+            && !self.generation_id.trim().is_empty()
+            && self.pid != 0
+            && !self.model_alias.trim().is_empty()
+            && !self.recipe_revision.trim().is_empty()
+            && self
+                .artifact_digest
+                .as_deref()
+                .is_some_and(|digest| digest.starts_with("sha256:"))
+            && self
+                .binary_digest
+                .as_deref()
+                .is_some_and(|digest| digest.starts_with("sha256:"))
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct LocalEngineStatus {
     pub feature_enabled: bool,
     pub loaded: bool,
+    pub phase: LocalRuntimePhase,
     pub base_url: String,
     pub bind: Option<String>,
     pub model_repo: Option<String>,
     pub model_alias: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub inference_backend: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub worker: Option<LocalWorkerStatus>,
     pub message: String,
+}
+
+impl<'de> Deserialize<'de> for LocalEngineStatus {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct WireStatus {
+            feature_enabled: bool,
+            loaded: bool,
+            #[serde(default)]
+            phase: Option<LocalRuntimePhase>,
+            base_url: String,
+            bind: Option<String>,
+            model_repo: Option<String>,
+            model_alias: Option<String>,
+            #[serde(default)]
+            inference_backend: Option<String>,
+            #[serde(default)]
+            worker: Option<LocalWorkerStatus>,
+            message: String,
+        }
+
+        let wire = WireStatus::deserialize(deserializer)?;
+        let phase = wire.phase.unwrap_or({
+            if wire.loaded {
+                LocalRuntimePhase::Ready
+            } else if wire.feature_enabled {
+                LocalRuntimePhase::Cold
+            } else {
+                LocalRuntimePhase::Unavailable
+            }
+        });
+        Ok(Self {
+            feature_enabled: wire.feature_enabled,
+            loaded: wire.loaded,
+            phase,
+            base_url: wire.base_url,
+            bind: wire.bind,
+            model_repo: wire.model_repo,
+            model_alias: wire.model_alias,
+            inference_backend: wire.inference_backend,
+            worker: wire.worker,
+            message: wire.message,
+        })
+    }
 }
 
 impl LocalEngineStatus {
@@ -159,11 +286,17 @@ impl LocalEngineStatus {
         Self {
             feature_enabled,
             loaded: false,
+            phase: if feature_enabled {
+                LocalRuntimePhase::Cold
+            } else {
+                LocalRuntimePhase::Unavailable
+            },
             base_url: DEFAULT_LOCAL_ENGINE_BASE_URL.to_string(),
             bind: None,
             model_repo: None,
             model_alias: None,
             inference_backend: None,
+            worker: None,
             message: if feature_enabled {
                 "Local engine not loaded".to_string()
             } else {
@@ -181,6 +314,251 @@ pub struct LocalHardwareResponse {
     pub engine_available: bool,
     pub compiled_backends: Vec<String>,
     pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct LocalResourceAdmission {
+    pub admitted: bool,
+    pub model_id: String,
+    pub hardware_tier: HardwareTier,
+    pub total_ram_mb: u64,
+    pub available_ram_mb: u64,
+    pub system_reserve_mb: u64,
+    pub tier_cap_mb: u64,
+    #[serde(default)]
+    pub host_admissible_mb: u64,
+    pub admissible_mb: u64,
+    pub estimated_steady_mb: u64,
+    pub estimated_conversion_mb: u64,
+    #[serde(default)]
+    pub static_estimated_peak_mb: u64,
+    pub estimated_peak_mb: u64,
+    #[serde(default)]
+    pub calibration_applied: bool,
+    #[serde(default)]
+    pub calibration_sample_count: u32,
+    #[serde(default)]
+    pub calibration_observed_host_peak_mb: Option<u64>,
+    #[serde(default)]
+    pub calibration_observed_device_peak_mb: Option<u64>,
+    #[serde(default)]
+    pub calibration_margin_percent: Option<u8>,
+    pub critical_available_mb: u64,
+    pub max_seq_len: usize,
+    pub max_batch_size: usize,
+    #[serde(default)]
+    pub device_enforced: bool,
+    #[serde(default)]
+    pub device_source: Option<LocalDeviceTelemetrySource>,
+    #[serde(default)]
+    pub device_backend: Option<GpuBackend>,
+    #[serde(default)]
+    pub device_index: Option<u32>,
+    #[serde(default)]
+    pub device_uuid: Option<String>,
+    #[serde(default)]
+    pub device_name: Option<String>,
+    #[serde(default)]
+    pub device_total_mb: Option<u64>,
+    #[serde(default)]
+    pub device_budget_mb: Option<u64>,
+    #[serde(default)]
+    pub device_available_mb: Option<u64>,
+    #[serde(default)]
+    pub device_reserve_mb: Option<u64>,
+    #[serde(default)]
+    pub device_admissible_mb: Option<u64>,
+    #[serde(default)]
+    pub device_estimated_peak_mb: Option<u64>,
+    #[serde(default)]
+    pub device_rationale: Option<String>,
+    pub rationale: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase")]
+pub enum LocalBenchmarkOutcome {
+    Running,
+    Completed,
+    Failed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase")]
+pub enum LocalBenchmarkArtifactMode {
+    PrequantizedUqff,
+    InSituQuantization,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase")]
+pub enum LocalBenchmarkPhase {
+    BeforeLoad,
+    AfterLoad,
+    AfterStream,
+    AfterUnload,
+    Reclaimed1s,
+    Reclaimed5s,
+    Reclaimed10s,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct LocalBenchmarkGitState {
+    pub revision: Option<String>,
+    pub dirty: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct LocalBenchmarkEngineIdentity {
+    pub control_plane_version: String,
+    pub runtime_name: String,
+    pub runtime_version: String,
+    pub compiled_backends: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub artifact_digest: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub binary_digest: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recipe_revision: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct LocalBenchmarkHostIdentity {
+    pub os_name: Option<String>,
+    pub os_version: Option<String>,
+    pub kernel_version: Option<String>,
+    pub cpu_brand: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct LocalBenchmarkRecipe {
+    pub model_id: String,
+    pub model_repo: String,
+    pub artifact_mode: LocalBenchmarkArtifactMode,
+    pub quantization: Option<String>,
+    pub cpu_only: bool,
+    pub max_seq_len: usize,
+    pub max_batch_size: usize,
+    pub synthetic_prompt_tokens: usize,
+    pub max_output_tokens: usize,
+    pub sampling_seed: u64,
+    pub bind: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct LocalBenchmarkMemorySample {
+    pub phase: LocalBenchmarkPhase,
+    pub elapsed_ms: u64,
+    pub process_rss_mb: u64,
+    pub host_available_mb: u64,
+    pub host_used_swap_mb: u64,
+    #[serde(default)]
+    pub devices: Vec<LocalDeviceTelemetrySnapshot>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase")]
+pub enum LocalDeviceTelemetrySource {
+    MetalApi,
+    Nvml,
+    NvidiaSmi,
+    AmdSmiLibrary,
+    AmdSmi,
+    Wddm,
+    VulkanBudget,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase")]
+pub enum LocalDeviceTelemetryAvailability {
+    Available,
+    Partial,
+    Unavailable,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct LocalDeviceTelemetrySnapshot {
+    pub captured_at: DateTime<Utc>,
+    pub source: LocalDeviceTelemetrySource,
+    pub availability: LocalDeviceTelemetryAvailability,
+    pub backend: GpuBackend,
+    pub device_index: Option<u32>,
+    pub device_uuid: Option<String>,
+    pub device_name: Option<String>,
+    pub driver_version: Option<String>,
+    pub runtime_version: Option<String>,
+    pub unified_memory: Option<bool>,
+    pub memory_total_mb: Option<u64>,
+    #[serde(default)]
+    pub memory_budget_mb: Option<u64>,
+    pub memory_used_mb: Option<u64>,
+    pub memory_free_mb: Option<u64>,
+    pub process_memory_used_mb: Option<u64>,
+    pub recommended_working_set_mb: Option<u64>,
+    pub utilization_percent: Option<f64>,
+    pub power_watts: Option<f64>,
+    pub temperature_c: Option<f64>,
+    pub graphics_clock_mhz: Option<u64>,
+    pub memory_clock_mhz: Option<u64>,
+    pub throttle_reasons: Option<Vec<String>>,
+    #[serde(default)]
+    pub unavailable_fields: Vec<String>,
+    pub collector_error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct LocalBenchmarkResult {
+    pub outcome: LocalBenchmarkOutcome,
+    pub error: Option<String>,
+    pub load_ms: Option<u64>,
+    pub ttft_ms: Option<u64>,
+    pub stream_ms: Option<u64>,
+    pub response_chunks: u64,
+    pub response_bytes: u64,
+    pub generated_content_bytes: u64,
+    pub reported_completion_tokens: Option<u64>,
+    pub unload_ms: Option<u64>,
+    pub rss_reclaimed_mb_1s: Option<u64>,
+    pub rss_reclaimed_mb_5s: Option<u64>,
+    pub rss_reclaimed_mb_10s: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct LocalBenchmarkManifest {
+    pub schema_version: u32,
+    pub started_at: DateTime<Utc>,
+    pub finished_at: DateTime<Utc>,
+    pub git: LocalBenchmarkGitState,
+    pub engine: LocalBenchmarkEngineIdentity,
+    pub host: LocalBenchmarkHostIdentity,
+    pub hardware: HardwareProbe,
+    pub admission: LocalResourceAdmission,
+    pub recipe: LocalBenchmarkRecipe,
+    pub samples: Vec<LocalBenchmarkMemorySample>,
+    pub result: LocalBenchmarkResult,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -223,4 +601,59 @@ pub struct LocalModelDownloadRequest {
 #[serde(rename_all = "camelCase")]
 pub struct LocalModelDownloadResponse {
     pub job: ModelDownloadProgress,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        LOCAL_WORKER_PROTOCOL_VERSION, LocalEngineStatus, LocalRuntimePhase, LocalWorkerStatus,
+    };
+
+    #[test]
+    fn idle_status_distinguishes_cold_from_unavailable() {
+        assert_eq!(LocalEngineStatus::idle(true).phase, LocalRuntimePhase::Cold);
+        assert_eq!(
+            LocalEngineStatus::idle(false).phase,
+            LocalRuntimePhase::Unavailable
+        );
+    }
+
+    #[test]
+    fn lifecycle_phase_serializes_for_desktop_clients() {
+        assert_eq!(
+            serde_json::to_string(&LocalRuntimePhase::StartingWorker).unwrap(),
+            "\"startingWorker\""
+        );
+    }
+
+    #[test]
+    fn status_infers_phase_from_legacy_payloads() {
+        let status: LocalEngineStatus = serde_json::from_str(
+            r#"{"featureEnabled":true,"loaded":true,"baseUrl":"http://127.0.0.1:7421/v1","bind":null,"modelRepo":null,"modelAlias":null,"message":"ready"}"#,
+        )
+        .unwrap();
+        assert_eq!(status.phase, LocalRuntimePhase::Ready);
+    }
+
+    #[test]
+    fn worker_compatibility_requires_identity_and_ready_phase() {
+        let mut status = LocalWorkerStatus {
+            protocol_version: LOCAL_WORKER_PROTOCOL_VERSION,
+            generation_id: "generation-1".to_string(),
+            pid: 42,
+            started_at: chrono::Utc::now(),
+            phase: LocalRuntimePhase::Ready,
+            model_repo: "google/model".to_string(),
+            model_alias: "model".to_string(),
+            artifact_digest: Some("sha256:artifact".to_string()),
+            recipe_revision: "mir-recipe-v1:recipe".to_string(),
+            binary_digest: Some("sha256:binary".to_string()),
+            runtime_name: "mistral.rs".to_string(),
+            runtime_version: "0.8.1".to_string(),
+            compiled_backends: vec!["cpu".to_string()],
+        };
+        assert!(status.is_compatible_ready());
+        status.phase = LocalRuntimePhase::Loading;
+        assert!(!status.is_compatible_ready());
+    }
 }

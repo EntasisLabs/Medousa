@@ -1,0 +1,114 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 160" width="1024" height="160" role="img" aria-labelledby="title desc">
+  <title id="title">Medousa mark idle animation sprite</title>
+  <desc id="desc">Eight animation frames of the simplified Medousa jellyfish mark.</desc>
+  <defs>
+    <symbol id="bell" viewBox="0 0 100 128">
+      <path d="M50 8 C74 8 90 27 90 47 L90 50 L10 50 L10 47 C10 27 26 8 50 8 Z" />
+    </symbol>
+    <symbol id="tentacle-left" viewBox="0 0 100 128">
+      <path d="M23 52 C23 72 14 82 14 98 C14 108 19 113 24 116 C18 110 20 100 26 90 C32 79 33 64 31 52 Z" />
+    </symbol>
+    <symbol id="tentacle-mid-left" viewBox="0 0 100 128">
+      <path d="M38 52 C36 74 30 86 30 102 C30 112 34 118 39 121 C34 113 36 103 41 92 C46 80 47 65 46 52 Z" />
+    </symbol>
+    <symbol id="tentacle-center" viewBox="0 0 100 128">
+      <path d="M50 52 L54 74 L51 122 L49 122 L46 74 Z" />
+    </symbol>
+    <symbol id="tentacle-mid-right" viewBox="0 0 100 128">
+      <path d="M54 52 C55 65 54 80 59 92 C64 103 66 113 61 121 C66 118 70 112 70 102 C70 86 64 74 62 52 Z" />
+    </symbol>
+    <symbol id="tentacle-right" viewBox="0 0 100 128">
+      <path d="M69 52 C67 64 68 79 74 90 C80 100 82 110 76 116 C81 113 86 108 86 98 C86 82 77 72 77 52 Z" />
+    </symbol>
+
+    <symbol id="frame-00" viewBox="0 0 128 160">
+      <g fill="#F2EFE6">
+        <use href="#bell" x="14" y="16" width="100" height="128" />
+        <use href="#tentacle-left" x="14" y="16" width="100" height="128" />
+        <use href="#tentacle-mid-left" x="14" y="16" width="100" height="128" />
+        <use href="#tentacle-center" x="14" y="16" width="100" height="128" />
+        <use href="#tentacle-mid-right" x="14" y="16" width="100" height="128" />
+        <use href="#tentacle-right" x="14" y="16" width="100" height="128" />
+      </g>
+    </symbol>
+    <symbol id="frame-01" viewBox="0 0 128 160">
+      <g fill="#F2EFE6">
+        <use href="#bell" x="14" y="16" width="100" height="128" transform="translate(-1 0) scale(1.01 0.995)" />
+        <use href="#tentacle-left" x="14" y="16" width="100" height="128" transform="translate(-1 0) rotate(-1 38 68)" />
+        <use href="#tentacle-mid-left" x="14" y="16" width="100" height="128" transform="translate(-1 0) rotate(-1 55 68)" />
+        <use href="#tentacle-center" x="14" y="16" width="100" height="128" transform="rotate(-1 64 68)" />
+        <use href="#tentacle-mid-right" x="14" y="16" width="100" height="128" transform="translate(1 0) rotate(1 76 68)" />
+        <use href="#tentacle-right" x="14" y="16" width="100" height="128" transform="translate(1 0) rotate(1 90 68)" />
+      </g>
+    </symbol>
+    <symbol id="frame-02" viewBox="0 0 128 160">
+      <g fill="#F2EFE6">
+        <use href="#bell" x="14" y="16" width="100" height="128" transform="translate(-2 1) scale(1.02 0.985)" />
+        <use href="#tentacle-left" x="14" y="16" width="100" height="128" transform="translate(-2 0) rotate(-2 38 68)" />
+        <use href="#tentacle-mid-left" x="14" y="16" width="100" height="128" transform="translate(-2 0) rotate(-2 55 68)" />
+        <use href="#tentacle-center" x="14" y="16" width="100" height="128" transform="translate(-1 0) rotate(-1 64 68) scale(1 1.01)" />
+        <use href="#tentacle-mid-right" x="14" y="16" width="100" height="128" transform="rotate(2 76 68)" />
+        <use href="#tentacle-right" x="14" y="16" width="100" height="128" transform="translate(2 0) rotate(2 90 68)" />
+      </g>
+    </symbol>
+    <symbol id="frame-03" viewBox="0 0 128 160">
+      <g fill="#F2EFE6">
+        <use href="#bell" x="14" y="16" width="100" height="128" transform="translate(-1 0) scale(1.01 0.99)" />
+        <use href="#tentacle-left" x="14" y="16" width="100" height="128" transform="translate(-1 0) rotate(1 38 68)" />
+        <use href="#tentacle-mid-left" x="14" y="16" width="100" height="128" transform="translate(-1 0) rotate(0 55 68)" />
+        <use href="#tentacle-center" x="14" y="16" width="100" height="128" transform="translate(0 -1) scale(1 1.02)" />
+        <use href="#tentacle-mid-right" x="14" y="16" width="100" height="128" transform="translate(1 0) rotate(1 76 68)" />
+        <use href="#tentacle-right" x="14" y="16" width="100" height="128" transform="translate(1 0) rotate(2 90 68)" />
+      </g>
+    </symbol>
+    <symbol id="frame-04" viewBox="0 0 128 160">
+      <g fill="#F2EFE6">
+        <use href="#bell" x="14" y="16" width="100" height="128" transform="translate(0 -1) scale(0.99 1.01)" />
+        <use href="#tentacle-left" x="14" y="16" width="100" height="128" transform="translate(1 0) rotate(2 38 68)" />
+        <use href="#tentacle-mid-left" x="14" y="16" width="100" height="128" transform="translate(1 0) rotate(1 55 68)" />
+        <use href="#tentacle-center" x="14" y="16" width="100" height="128" transform="translate(0 -1) scale(1 1.03)" />
+        <use href="#tentacle-mid-right" x="14" y="16" width="100" height="128" transform="translate(-1 0) rotate(-1 76 68)" />
+        <use href="#tentacle-right" x="14" y="16" width="100" height="128" transform="translate(-1 0) rotate(-2 90 68)" />
+      </g>
+    </symbol>
+    <symbol id="frame-05" viewBox="0 0 128 160">
+      <g fill="#F2EFE6">
+        <use href="#bell" x="14" y="16" width="100" height="128" transform="translate(1 0) scale(1.01 0.995)" />
+        <use href="#tentacle-left" x="14" y="16" width="100" height="128" transform="translate(-1 0) rotate(-1 38 68)" />
+        <use href="#tentacle-mid-left" x="14" y="16" width="100" height="128" transform="translate(-1 0) rotate(-1 55 68)" />
+        <use href="#tentacle-center" x="14" y="16" width="100" height="128" transform="rotate(1 64 68)" />
+        <use href="#tentacle-mid-right" x="14" y="16" width="100" height="128" transform="translate(1 0) rotate(1 76 68)" />
+        <use href="#tentacle-right" x="14" y="16" width="100" height="128" transform="translate(1 0) rotate(1 90 68)" />
+      </g>
+    </symbol>
+    <symbol id="frame-06" viewBox="0 0 128 160">
+      <g fill="#F2EFE6">
+        <use href="#bell" x="14" y="16" width="100" height="128" transform="translate(2 1) scale(1.02 0.985)" />
+        <use href="#tentacle-left" x="14" y="16" width="100" height="128" transform="translate(-2 0) rotate(-2 38 68)" />
+        <use href="#tentacle-mid-left" x="14" y="16" width="100" height="128" transform="rotate(-2 55 68)" />
+        <use href="#tentacle-center" x="14" y="16" width="100" height="128" transform="translate(1 0) rotate(1 64 68) scale(1 1.01)" />
+        <use href="#tentacle-mid-right" x="14" y="16" width="100" height="128" transform="translate(2 0) rotate(2 76 68)" />
+        <use href="#tentacle-right" x="14" y="16" width="100" height="128" transform="translate(2 0) rotate(2 90 68)" />
+      </g>
+    </symbol>
+    <symbol id="frame-07" viewBox="0 0 128 160">
+      <g fill="#F2EFE6">
+        <use href="#bell" x="14" y="16" width="100" height="128" transform="translate(1 0) scale(1.01 0.99)" />
+        <use href="#tentacle-left" x="14" y="16" width="100" height="128" transform="translate(-1 0) rotate(1 38 68)" />
+        <use href="#tentacle-mid-left" x="14" y="16" width="100" height="128" transform="translate(-1 0) rotate(0 55 68)" />
+        <use href="#tentacle-center" x="14" y="16" width="100" height="128" transform="translate(0 -1) scale(1 1.02)" />
+        <use href="#tentacle-mid-right" x="14" y="16" width="100" height="128" transform="translate(1 0) rotate(1 76 68)" />
+        <use href="#tentacle-right" x="14" y="16" width="100" height="128" transform="translate(1 0) rotate(2 90 68)" />
+      </g>
+    </symbol>
+  </defs>
+
+  <use href="#frame-00" x="0" y="0" width="128" height="160" />
+  <use href="#frame-01" x="128" y="0" width="128" height="160" />
+  <use href="#frame-02" x="256" y="0" width="128" height="160" />
+  <use href="#frame-03" x="384" y="0" width="128" height="160" />
+  <use href="#frame-04" x="512" y="0" width="128" height="160" />
+  <use href="#frame-05" x="640" y="0" width="128" height="160" />
+  <use href="#frame-06" x="768" y="0" width="128" height="160" />
+  <use href="#frame-07" x="896" y="0" width="128" height="160" />
+</svg>

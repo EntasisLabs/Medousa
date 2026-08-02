@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { Download, LoaderCircle, RefreshCw, Trash2 } from "@lucide/svelte";
+  import { Download, LoaderCircle, Power, RefreshCw, Trash2 } from "@lucide/svelte";
   import {
     ensureLocalModelReady,
     fetchLocalCatalog,
@@ -10,6 +10,7 @@
     formatBytes,
     loadLocalEngine,
     removeLocalModel,
+    unloadLocalEngine,
     type InstalledLocalModel,
     type LocalCatalogResponse,
     type LocalEngineStatus,
@@ -105,6 +106,19 @@
     }
   }
 
+  async function unloadEngine() {
+    localBusy = true;
+    localMessage = "Releasing local model memory…";
+    try {
+      engineStatus = await unloadLocalEngine();
+      localMessage = "Local brain is cold. Model memory has been released.";
+    } catch (err) {
+      localMessage = err instanceof Error ? err.message : String(err);
+    } finally {
+      localBusy = false;
+    }
+  }
+
   async function removeModel(modelId: string) {
     localBusy = true;
     localMessage = null;
@@ -136,6 +150,18 @@
         {engineReady ? "Ready" : "Idle"}
       </span>
       <span class="brain-actions">
+        {#if engineReady}
+          <button
+            type="button"
+            class="brain-icon-btn"
+            disabled={disabled || localBusy}
+            title="Unload and release model memory"
+            aria-label="Unload local brain and release model memory"
+            onclick={() => void unloadEngine()}
+          >
+            <Power size={15} strokeWidth={1.75} />
+          </button>
+        {/if}
         <button
           type="button"
           class="brain-icon-btn"
@@ -193,7 +219,7 @@
           disabled={disabled || localBusy}
           onclick={() => void loadEngine(entry.modelId)}
         >
-          Load
+          Load now
         </button>
         <button
           type="button"

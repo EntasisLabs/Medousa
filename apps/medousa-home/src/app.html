@@ -2,19 +2,185 @@
 <html lang="en" class="dark">
   <head>
     <meta charset="utf-8" />
-    <link rel="icon" href="%sveltekit.assets%/favicon.png" />
+    <link rel="icon" type="image/svg+xml" href="%sveltekit.assets%/brand/favicon/favicon.svg" />
+    <link rel="icon" href="%sveltekit.assets%/brand/favicon/favicon.ico" sizes="any" />
+    <link rel="icon" type="image/png" sizes="32x32" href="%sveltekit.assets%/brand/favicon/favicon-32.png" />
+    <link rel="apple-touch-icon" href="%sveltekit.assets%/brand/favicon/apple-touch-icon.png" />
     <meta
       name="viewport"
       content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-visual"
     />
     <title>Medousa</title>
     <!-- MEDOUSA_THEME_BOOT -->
+    <style>
+      #medousa-bootstrap-splash {
+        position: fixed;
+        z-index: 2147483647;
+        inset: 0;
+        display: grid;
+        min-height: 100dvh;
+        overflow: hidden;
+        place-items: center;
+        padding: max(2rem, env(safe-area-inset-top)) max(1.5rem, env(safe-area-inset-right))
+          max(2rem, env(safe-area-inset-bottom)) max(1.5rem, env(safe-area-inset-left));
+        background: #000;
+        color: #f2efe6;
+        opacity: 1;
+        transition: opacity 180ms ease-out;
+      }
+
+      #medousa-bootstrap-splash[data-exiting="true"] {
+        opacity: 0;
+        pointer-events: none;
+      }
+
+      #medousa-bootstrap-splash::before {
+        position: absolute;
+        inset: -20%;
+        background: radial-gradient(circle at center, rgb(168 85 247 / 0.12), transparent 34%);
+        content: "";
+        animation: medousa-bootstrap-breathe 4.8s ease-in-out infinite;
+      }
+
+      #medousa-bootstrap-splash-content {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 1.35rem;
+        padding-bottom: 4vh;
+        text-align: center;
+      }
+
+      #medousa-bootstrap-splash-mark {
+        width: clamp(11.6875rem, 30.25vw, 19.25rem);
+        aspect-ratio: 352 / 560;
+        background: linear-gradient(135deg, #f472b6 0%, #a855f7 38%, #38bdf8 72%, #34d399 100%);
+        -webkit-mask-image: url("/brand/sprites/medousa-mark-action-sprite.svg");
+        mask-image: url("/brand/sprites/medousa-mark-action-sprite.svg");
+        -webkit-mask-position: 0 100%;
+        mask-position: 0 100%;
+        -webkit-mask-repeat: no-repeat;
+        mask-repeat: no-repeat;
+        -webkit-mask-size: 600% 500%;
+        mask-size: 600% 500%;
+        animation: medousa-bootstrap-float 0.75s steps(5, end) infinite;
+      }
+
+      #medousa-bootstrap-splash-status {
+        display: flex;
+        align-items: baseline;
+        gap: 0.18rem;
+        color: rgb(242 239 230 / 0.7);
+        font-size: clamp(0.68rem, 1.2vw, 0.8rem);
+        font-weight: 500;
+        letter-spacing: 0.28em;
+        line-height: 1.4;
+        text-transform: uppercase;
+      }
+
+      #medousa-bootstrap-splash-dots {
+        display: inline-flex;
+        gap: 0.16rem;
+        width: 1.15rem;
+      }
+
+      #medousa-bootstrap-splash-dots i {
+        display: block;
+        width: 0.18rem;
+        height: 0.18rem;
+        border-radius: 50%;
+        background: currentColor;
+        animation: medousa-bootstrap-dot 1.2s ease-in-out infinite;
+      }
+
+      #medousa-bootstrap-splash-dots i:nth-child(2) {
+        animation-delay: 0.16s;
+      }
+
+      #medousa-bootstrap-splash-dots i:nth-child(3) {
+        animation-delay: 0.32s;
+      }
+
+      @keyframes medousa-bootstrap-float {
+        from {
+          -webkit-mask-position: 0 100%;
+          mask-position: 0 100%;
+        }
+
+        to {
+          -webkit-mask-position: 100% 100%;
+          mask-position: 100% 100%;
+        }
+      }
+
+      @keyframes medousa-bootstrap-breathe {
+        0%,
+        100% {
+          opacity: 0.55;
+          transform: scale(0.96);
+        }
+
+        50% {
+          opacity: 1;
+          transform: scale(1.04);
+        }
+      }
+
+      @keyframes medousa-bootstrap-dot {
+        0%,
+        60%,
+        100% {
+          opacity: 0.25;
+          transform: translateY(0);
+        }
+
+        30% {
+          opacity: 1;
+          transform: translateY(-0.14rem);
+        }
+      }
+
+      @media (max-width: 768px) {
+        #medousa-bootstrap-splash {
+          padding-right: max(1.25rem, env(safe-area-inset-right));
+          padding-left: max(1.25rem, env(safe-area-inset-left));
+        }
+
+        #medousa-bootstrap-splash-content {
+          gap: 1.1rem;
+          padding-bottom: 7vh;
+        }
+
+        #medousa-bootstrap-splash-status {
+          font-size: 0.62rem;
+          letter-spacing: 0.2em;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        #medousa-bootstrap-splash::before,
+        #medousa-bootstrap-splash-mark,
+        #medousa-bootstrap-splash-dots i {
+          animation: none;
+        }
+      }
+    </style>
     %sveltekit.head%
   </head>
   <body
     data-sveltekit-preload-data="hover"
     class="h-full overflow-hidden"
   >
+    <div id="medousa-bootstrap-splash" aria-hidden="true">
+      <div id="medousa-bootstrap-splash-content">
+        <div id="medousa-bootstrap-splash-mark"></div>
+        <div id="medousa-bootstrap-splash-status">
+          Opening your workshop
+          <span id="medousa-bootstrap-splash-dots"><i></i><i></i><i></i></span>
+        </div>
+      </div>
+    </div>
     <div style="display: contents">%sveltekit.body%</div>
     <script>
       // iOS mid loads as tauri://localhost and proxies Vite. SvelteKit's

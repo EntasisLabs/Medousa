@@ -16,16 +16,17 @@ use std::sync::Arc;
 use once_cell::sync::Lazy;
 
 #[cfg(feature = "embedded-inference")]
-use medousa_local_inference::{
-    builtin_catalog, compiled_backends, config_from_catalog_entry, recommended_engine_config,
-    LocalEngineConfig, DEFAULT_LOCAL_ENGINE_BIND,
-};
-#[cfg(feature = "embedded-inference")]
 use medousa_local_engine::{LocalEngineConfig as EngineConfig, LocalEngineRuntime};
+#[cfg(feature = "embedded-inference")]
+use medousa_local_inference::{
+    DEFAULT_IDLE_TIMEOUT_SECS, DEFAULT_LOCAL_ENGINE_BIND, GpuBackend, LocalEngineConfig,
+    SAFE_MAX_BATCH_SIZE, SAFE_MAX_SEQ_LEN, acquire_activation_lease, admission_for_model_id,
+    builtin_catalog, collect_device_telemetry, compiled_backends, config_from_catalog_entry,
+    device_pressure_requires_eviction, recommended_engine_config, worker_status_for_config,
+};
 
 #[cfg(feature = "embedded-inference")]
-static RUNTIME: Lazy<Arc<LocalEngineRuntime>> =
-    Lazy::new(|| Arc::new(LocalEngineRuntime::new()));
+static RUNTIME: Lazy<Arc<LocalEngineRuntime>> = Lazy::new(|| Arc::new(LocalEngineRuntime::new()));
 
 #[cfg(not(feature = "embedded-inference"))]
 fn main() {
@@ -39,6 +40,7 @@ fn main() {
 #[cfg(feature = "embedded-inference")]
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    let _pid_file_guard = PidFileGuard;
     let args: Vec<String> = env::args().collect();
     if args.iter().any(|arg| arg == "--help" || arg == "-h") {
         print_help();
@@ -51,8 +53,7 @@ async fn main() -> anyhow::Result<()> {
         return Ok(());
     }
 
-    let bind = flag_value(&args, "--bind")
-        .unwrap_or_else(|| DEFAULT_LOCAL_ENGINE_BIND.to_string());
+    let bind = flag_value(&args, "--bind").unwrap_or_else(|| DEFAULT_LOCAL_ENGINE_BIND.to_string());
     let load_recommended = args.iter().any(|arg| arg == "--load-recommended");
     let model_id = flag_value(&args, "--model-id");
     let model_repo = flag_value(&args, "--model-repo");
@@ -73,6 +74,10 @@ async fn main() -> anyhow::Result<()> {
             cpu_only: env::var("MEDOUSA_LOCAL_ENGINE_CPU")
                 .ok()
                 .is_some_and(|value| matches!(value.trim(), "1" | "true" | "yes")),
+            max_seq_len: SAFE_MAX_SEQ_LEN,
+            max_batch_size: SAFE_MAX_BATCH_SIZE,
+            idle_timeout_secs: DEFAULT_IDLE_TIMEOUT_SECS,
+            critical_available_mb: 1024,
         }
     } else if let Some(model_id) = model_id {
         let catalog = builtin_catalog();
@@ -87,28 +92,135 @@ async fn main() -> anyhow::Result<()> {
         anyhow::bail!("provide --load-recommended, --model-id, or --model-repo + --model-alias");
     };
 
+    let (activation_lease, device_pressure_guard) = match admission_for_model_id(
+        &medousa_config.model_alias,
+    ) {
+        Ok(admission) if admission.admitted => {
+            eprintln!(
+                "medousa_local resource admission: {}",
+                serde_json::to_string(&admission)?
+            );
+            let pressure_guard = admission.device_backend.zip(admission.device_reserve_mb);
+            (
+                Some(acquire_activation_lease(&admission).map_err(anyhow::Error::msg)?),
+                pressure_guard,
+            )
+        }
+        Ok(admission) => anyhow::bail!(admission.rationale),
+        Err(err)
+            if env::var("MEDOUSA_LOCAL_ALLOW_UNESTIMATED")
+                .ok()
+                .is_some_and(|value| matches!(value.trim(), "1" | "true" | "yes")) =>
+        {
+            eprintln!("medousa_local warning: {err}; unestimated load explicitly allowed");
+            (None, None)
+        }
+        Err(err) => anyhow::bail!(
+            "{err}. Refusing an unestimated model load; set MEDOUSA_LOCAL_ALLOW_UNESTIMATED=1 only for controlled benchmarking"
+        ),
+    };
+
+    let worker = worker_status_for_config(&medousa_config).await;
+    anyhow::ensure!(
+        worker.artifact_digest.is_some(),
+        "refusing to load an unverified or uninstalled model artifact; install it from Settings -> Packages first"
+    );
+    anyhow::ensure!(
+        worker.binary_digest.is_some(),
+        "refusing to start a worker whose executable digest could not be read"
+    );
     let status = RUNTIME
-        .load(to_engine_config(medousa_config))
+        .load(to_engine_config(medousa_config, worker))
         .await
         .map_err(anyhow::Error::msg)?;
+    drop(activation_lease);
 
     println!(
         "medousa_local ready at {} ({})",
         status.base_url,
-        status
-            .model_alias
-            .as_deref()
-            .unwrap_or("gemma")
+        status.model_alias.as_deref().unwrap_or("gemma")
     );
 
-    tokio::signal::ctrl_c().await?;
+    tokio::select! {
+        result = tokio::signal::ctrl_c() => result?,
+        _ = RUNTIME.wait_until_stopped() => {
+            println!("medousa_local worker stopped; releasing model memory");
+        }
+        _ = wait_for_critical_device_pressure(device_pressure_guard) => {
+            eprintln!("medousa_local critical device-memory pressure persisted; terminating worker");
+        }
+    }
     RUNTIME.unload().await.map_err(anyhow::Error::msg)?;
     println!("medousa_local stopped");
     Ok(())
 }
 
 #[cfg(feature = "embedded-inference")]
-fn to_engine_config(config: LocalEngineConfig) -> EngineConfig {
+async fn wait_for_critical_device_pressure(guard: Option<(GpuBackend, u64)>) {
+    let Some((backend, reserve_mb)) = guard else {
+        std::future::pending::<()>().await;
+        return;
+    };
+    let mut interval = tokio::time::interval(std::time::Duration::from_secs(5));
+    let mut consecutive_critical_samples = 0_u8;
+    loop {
+        interval.tick().await;
+        consecutive_critical_samples = next_pressure_streak(
+            consecutive_critical_samples,
+            device_pressure_requires_eviction(backend, &collect_device_telemetry(), reserve_mb),
+        );
+        if consecutive_critical_samples >= 2 {
+            return;
+        }
+    }
+}
+
+#[cfg(feature = "embedded-inference")]
+fn next_pressure_streak(current: u8, critical: bool) -> u8 {
+    if critical {
+        current.saturating_add(1)
+    } else {
+        0
+    }
+}
+
+#[cfg(all(test, feature = "embedded-inference"))]
+mod tests {
+    use super::next_pressure_streak;
+
+    #[test]
+    fn pressure_streak_requires_consecutive_samples() {
+        assert_eq!(next_pressure_streak(0, true), 1);
+        assert_eq!(next_pressure_streak(1, false), 0);
+        assert_eq!(next_pressure_streak(1, true), 2);
+    }
+}
+
+#[cfg(feature = "embedded-inference")]
+struct PidFileGuard;
+
+#[cfg(feature = "embedded-inference")]
+impl Drop for PidFileGuard {
+    fn drop(&mut self) {
+        let Ok(path) = env::var("MEDOUSA_LOCAL_PID_FILE") else {
+            return;
+        };
+        let path = std::path::PathBuf::from(path);
+        let belongs_to_this_process = std::fs::read_to_string(&path)
+            .ok()
+            .and_then(|raw| raw.trim().parse::<u32>().ok())
+            .is_some_and(|pid| pid == std::process::id());
+        if belongs_to_this_process {
+            let _ = std::fs::remove_file(path);
+        }
+    }
+}
+
+#[cfg(feature = "embedded-inference")]
+fn to_engine_config(
+    config: LocalEngineConfig,
+    worker: medousa_types::local::LocalWorkerStatus,
+) -> EngineConfig {
     EngineConfig {
         bind: config.bind,
         model_repo: config.model_repo,
@@ -116,6 +228,11 @@ fn to_engine_config(config: LocalEngineConfig) -> EngineConfig {
         from_uqff: config.from_uqff,
         in_situ_quant: config.in_situ_quant,
         cpu_only: config.cpu_only,
+        max_seq_len: config.max_seq_len,
+        max_batch_size: config.max_batch_size,
+        idle_timeout_secs: config.idle_timeout_secs,
+        critical_available_mb: config.critical_available_mb,
+        worker,
     }
 }
 
@@ -150,6 +267,9 @@ options:
 environment:
   MEDOUSA_DATA_DIR           Model weights directory
   MEDOUSA_LOCAL_ENGINE_CPU=1 Force CPU inference
+  MEDOUSA_LOCAL_PID_FILE     Supervisor PID file removed on clean worker exit
+  MEDOUSA_LOCAL_ALLOW_UNESTIMATED=1
+                              Allow direct-repo loads without a catalog estimate (unsafe)
 "#
     );
 }

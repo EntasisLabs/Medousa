@@ -1,0 +1,16 @@
+{
+  "name": "medousa-mark-idle",
+  "source": "simplified mark",
+  "accessibilityOnly": true,
+  "frameCount": 8,
+  "frameWidth": 128,
+  "frameHeight": 160,
+  "columns": 8,
+  "rows": 1,
+  "fps": 8,
+  "animations": {
+    "idle": [0, 1, 2, 3, 4, 5, 6, 7],
+    "idle-ping-pong": [0, 1, 2, 3, 4, 5, 6, 7, 6, 5, 4, 3, 2, 1]
+  },
+  "parts": ["bell", "tentacle-left", "tentacle-mid-left", "tentacle-center", "tentacle-mid-right", "tentacle-right"]
+}

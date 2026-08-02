@@ -3,8 +3,9 @@
 mod spawn;
 
 pub use spawn::{
-    medousa_local_binary_available, spawn_and_wait, spawn_and_wait_recommended,
-    spawn_medousa_local, spawn_medousa_local_recommended, wait_local_engine_ready,
+    medousa_local_binary_available, probe_local_worker, spawn_and_wait, spawn_and_wait_recommended,
+    spawn_medousa_local, spawn_medousa_local_recommended, stop_local_worker,
+    wait_local_engine_ready, wait_local_worker_ready,
 };
 use std::net::{TcpStream, ToSocketAddrs};
 use std::path::PathBuf;
@@ -51,6 +52,26 @@ pub fn request_process_stop_by_pid(pid: u32) -> bool {
     #[cfg(unix)]
     {
         run_process_control(Command::new("kill").arg(pid.to_string()))
+    }
+    #[cfg(windows)]
+    {
+        return run_process_control(Command::new("taskkill").args([
+            "/F",
+            "/PID",
+            &pid.to_string(),
+        ]));
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        let _ = pid;
+        false
+    }
+}
+
+pub fn force_process_stop_by_pid(pid: u32) -> bool {
+    #[cfg(unix)]
+    {
+        run_process_control(Command::new("kill").args(["-KILL", &pid.to_string()]))
     }
     #[cfg(windows)]
     {

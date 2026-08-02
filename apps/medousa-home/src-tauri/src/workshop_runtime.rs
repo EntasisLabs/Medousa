@@ -7,6 +7,7 @@ use std::collections::HashSet;
 use std::fs::{self, OpenOptions};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 pub const DEFAULT_LOCAL_BIND: &str = "127.0.0.1:7419";
@@ -14,6 +15,7 @@ const PUBLIC_LOCAL_BIND: &str = "0.0.0.0:7419";
 const DEFAULT_BACKEND: &str = "surreal-mem";
 const LOCAL_PORT_START: u16 = 7419;
 const LOCAL_PORT_END: u16 = 7499;
+static LOCAL_BRAIN_START_LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
 
 pub(crate) struct ComponentCommand {
     pub program: String,
@@ -546,10 +548,72 @@ fn read_local_brain_pid(workshop_id: &str) -> Option<u32> {
 }
 
 pub fn stop_local_brain(workshop_id: &str) {
-    if let Some(pid) = read_local_brain_pid(workshop_id) {
-        let _ = medousa_host::request_process_stop_by_pid(pid);
+    request_local_brain_stop(workshop_id);
+    clear_local_brain_pid(workshop_id);
+}
+
+/// Ask the local worker to terminate without discarding its identity record.
+/// App shutdown cannot wait for confirmation; retaining the PID prevents a
+/// surviving worker from becoming an untracked orphan on the next launch.
+pub fn request_local_brain_stop(workshop_id: &str) -> bool {
+    read_local_brain_pid(workshop_id)
+        .is_some_and(medousa_host::request_process_stop_by_pid)
+}
+
+pub async fn stop_local_brain_bounded(workshop_id: &str) -> Result<bool, String> {
+    let tracked_pid = read_local_brain_pid(workshop_id);
+    if let Ok(worker) = medousa_host::probe_local_worker(DEFAULT_LOCAL_BRAIN_BIND) {
+        if tracked_pid != Some(worker.pid) {
+            return Err("Refusing to stop an untracked local worker generation".to_string());
+        }
+        let stopped = medousa_host::stop_local_worker(
+            DEFAULT_LOCAL_BRAIN_BIND,
+            Duration::from_secs(10),
+        )
+        .await?;
+        clear_local_brain_pid(workshop_id);
+        return Ok(stopped);
+    }
+    if is_bind_reachable(DEFAULT_LOCAL_BRAIN_BIND) {
+        return Err(format!(
+            "Refusing to stop incompatible service on {DEFAULT_LOCAL_BRAIN_BIND}"
+        ));
+    }
+    let Some(pid) = tracked_pid else {
+        return Ok(false);
+    };
+    if !medousa_host::is_process_alive(pid) {
+        clear_local_brain_pid(workshop_id);
+        return Ok(false);
+    }
+    let _ = medousa_host::request_process_stop_by_pid(pid);
+    let started = Instant::now();
+    while started.elapsed() < Duration::from_secs(10) {
+        if !medousa_host::is_process_alive(pid) {
+            clear_local_brain_pid(workshop_id);
+            return Ok(true);
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    let _ = medousa_host::force_process_stop_by_pid(pid);
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    if medousa_host::is_process_alive(pid) {
+        return Err(format!("Local worker pid {pid} survived forced termination"));
     }
     clear_local_brain_pid(workshop_id);
+    Ok(true)
+}
+
+pub fn local_brain_process_alive(workshop_id: &str) -> bool {
+    let Some(pid) = read_local_brain_pid(workshop_id) else {
+        return false;
+    };
+    if medousa_host::is_process_alive(pid) {
+        true
+    } else {
+        clear_local_brain_pid(workshop_id);
+        false
+    }
 }
 
 pub fn spawn_local_brain(
@@ -557,10 +621,22 @@ pub fn spawn_local_brain(
     data_dir: &Path,
     model_id: Option<&str>,
 ) -> Result<(u32, PathBuf), String> {
+    if let Ok(worker) = medousa_host::probe_local_worker(DEFAULT_LOCAL_BRAIN_BIND) {
+        let tracked_pid = read_local_brain_pid(workshop_id);
+        let requested_matches = model_id
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .is_none_or(|model_id| worker.model_alias == model_id);
+        if tracked_pid == Some(worker.pid) && requested_matches {
+            return Ok((worker.pid, local_brain_log_path(workshop_id)));
+        }
+        return Err(format!(
+            "A different Medousa local worker generation is already using {DEFAULT_LOCAL_BRAIN_BIND}"
+        ));
+    }
     if is_bind_reachable(DEFAULT_LOCAL_BRAIN_BIND) {
-        return Ok((
-            read_local_brain_pid(workshop_id).unwrap_or(0),
-            local_brain_log_path(workshop_id),
+        return Err(format!(
+            "{DEFAULT_LOCAL_BRAIN_BIND} is occupied by an incompatible service"
         ));
     }
 
@@ -582,7 +658,8 @@ pub fn spawn_local_brain(
     command
         .arg("--bind")
         .arg(DEFAULT_LOCAL_BRAIN_BIND)
-        .env("MEDOUSA_DATA_DIR", data_dir.to_string_lossy().to_string());
+        .env("MEDOUSA_DATA_DIR", data_dir.to_string_lossy().to_string())
+        .env("MEDOUSA_LOCAL_PID_FILE", local_brain_pid_path(workshop_id));
     match model_id.map(str::trim).filter(|value| !value.is_empty()) {
         Some(model_id) => {
             command.arg("--model-id").arg(model_id);
@@ -607,8 +684,20 @@ pub fn spawn_local_brain(
     Ok((pid, log_path))
 }
 
-async fn local_brain_http_ready() -> bool {
-    is_bind_reachable(DEFAULT_LOCAL_BRAIN_BIND)
+fn local_brain_http_ready(
+    workshop_id: &str,
+    model_id: Option<&str>,
+) -> Option<medousa_types::local::LocalWorkerStatus> {
+    let worker = medousa_host::probe_local_worker(DEFAULT_LOCAL_BRAIN_BIND).ok()?;
+    if read_local_brain_pid(workshop_id) != Some(worker.pid) {
+        return None;
+    }
+    if let Some(model_id) = model_id.map(str::trim).filter(|value| !value.is_empty()) {
+        if worker.model_alias != model_id {
+            return None;
+        }
+    }
+    Some(worker)
 }
 
 pub async fn ensure_local_brain(
@@ -619,14 +708,24 @@ pub async fn ensure_local_brain(
     if !local_brain_installed() {
         return Ok(false);
     }
-    if local_brain_http_ready().await {
+    let _start_guard = LOCAL_BRAIN_START_LOCK
+        .get_or_init(|| tokio::sync::Mutex::new(()))
+        .lock()
+        .await;
+    if local_brain_http_ready(workshop_id, model_id).is_some() {
         return Ok(true);
     }
     spawn_local_brain(workshop_id, data_dir, model_id)?;
     let started = Instant::now();
     while started.elapsed() < Duration::from_secs(600) {
-        if local_brain_http_ready().await {
+        if local_brain_http_ready(workshop_id, model_id).is_some() {
             return Ok(true);
+        }
+        if !local_brain_process_alive(workshop_id) {
+            return Err(format!(
+                "Offline brain stopped before it became ready — check {}",
+                local_brain_log_path(workshop_id).display()
+            ));
         }
         tokio::time::sleep(Duration::from_millis(500)).await;
     }
@@ -676,7 +775,7 @@ pub async fn wait_engine_healthy(
 
 pub async fn ensure_local_engine(
     workshop: &WorkshopServer,
-    private_brain: bool,
+    _private_brain: bool,
 ) -> Result<LocalEngineEnsureResult, String> {
     if workshop.kind != "local" {
         return Ok(LocalEngineEnsureResult {
@@ -698,9 +797,6 @@ pub async fn ensure_local_engine(
     let log_path = daemon_log_path(&workshop.id);
 
     if daemon_http_healthy(&url).await {
-        if private_brain && local_brain_installed() {
-            let _ = ensure_local_brain(&workshop.id, &data_dir, None).await;
-        }
         let message = format!("Engine already running at {bind}");
         return Ok(LocalEngineEnsureResult {
             ok: true,
@@ -735,11 +831,10 @@ pub async fn ensure_local_engine(
         tokio::time::sleep(Duration::from_millis(750)).await;
     }
 
-    let (pid, log_path) = spawn_local_engine(&workshop.id, &bind, &data_dir, private_brain)?;
+    // The daemon and the inference worker have independent lifecycles. Starting
+    // Home/core never makes model weights resident.
+    let (pid, log_path) = spawn_local_engine(&workshop.id, &bind, &data_dir, false)?;
     let (ok, _) = wait_engine_healthy(&url, 45, 500).await?;
-    if ok && private_brain && local_brain_installed() {
-        let _ = ensure_local_brain(&workshop.id, &data_dir, None).await;
-    }
     Ok(LocalEngineEnsureResult {
         ok,
         already_running: false,
@@ -1003,7 +1098,7 @@ pub async fn set_lan_pairing_enabled(
         .iter()
         .find(|entry| entry.id == PERSONAL_WORKSHOP_ID)
         .ok_or_else(|| "Personal workshop not found".to_string())?;
-    let result = ensure_local_engine(workshop, true).await?;
+    let result = ensure_local_engine(workshop, false).await?;
     if !result.ok {
         return Err(result.message);
     }

@@ -1,6 +1,7 @@
 import type { CustomThemeConfig } from '@skeletonlabs/tw-plugin';
+import { completeThemeConfig } from './themes/theme-contract';
 
-export const medousaTheme: CustomThemeConfig = {
+export const medousaTheme: CustomThemeConfig = completeThemeConfig({
   name: 'medousa',
   properties: {
     '--color-error-100': '246 209 228',
@@ -89,4 +90,13 @@ export const medousaTheme: CustomThemeConfig = {
     '--theme-rounded-base': '9999px',
     '--theme-rounded-container': '8px',
   },
-};
+}, {
+  effects: {
+    glow: '131 68 245',
+    gradientA: '131 68 245',
+    gradientB: '99 102 241',
+    gradientC: '167 139 250',
+    glowStrength: '0.16',
+  },
+  shape: { controlRadius: '0.55rem', containerRadius: '0.7rem' },
+});

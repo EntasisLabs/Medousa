@@ -314,6 +314,57 @@ The daemon **probes** `medousa_local` on `:7421`. Loading models uses `medousa m
 | DELETE | `/v1/local/models/{model_id}` | `local_models().remove_model` |
 | GET | `/v1/local/engine/status` | `local_models().engine_status` |
 
+`LocalEngineStatus.phase` is the lifecycle signal. It is one of
+`unavailable`, `cold`, `startingWorker`, `loading`, `ready`, `busy`,
+`draining`, `unloading`, or `failed`; `loaded` remains for compatibility.
+Older status payloads without `phase` are inferred as unavailable, cold, or
+ready by current clients.
+
+Current workers expose a private loopback handshake at `/_medousa/status`.
+`LocalEngineStatus.worker` records the protocol version, generation ID, PID,
+start time, exact model, aggregate verified-artifact digest, recipe revision,
+worker-binary digest, runtime identity, and compiled backends. A listening port
+is not readiness: supervisors accept only a compatible `ready` or `busy`
+handshake, verify the spawned/tracked PID and requested model, and report an
+occupied or incompatible listener as `failed`. Normal workers refuse model
+allocation when the installed artifact or worker binary cannot be identified by
+SHA-256. Unload targets the confirmed generation, waits up to ten seconds, and
+uses forced process termination as the final memory-reclamation fallback.
+
+`LocalResourceAdmission` is the shared pre-load decision record: current and
+total host memory, system reserve, hardware-tier cap, steady/conversion/peak
+estimates, critical-pressure threshold, and the explicit context/batch recipe.
+It also records the selected accelerator backend, device index/UUID/name,
+telemetry source, total/available device memory, device reserve, admissible
+device memory, dynamic device budget, estimated device peak, and whether the
+device envelope was enforced. Dynamic WDDM/Vulkan/working-set budgets include
+current process usage, so their remaining headroom is `budget - processUsage`;
+they outrank physical free-memory counters. Medousa reads WDDM budget and usage
+from DXGI on Windows and Vulkan heap budget and estimated usage from
+`VK_EXT_memory_budget`. Vulkan evidence remains scoped to Vulkan allocations
+and is not substituted for CUDA or HIP process memory. Native vendor APIs then
+outrank CLI fallbacks for the same device. An authoritative budget with missing
+process usage fails closed while keeping the missing value nullable. The final
+`admissibleMb` is the smaller of the host and enforced
+device envelopes. Missing device counters stay nullable and produce an explicit
+host-only decision rather than a fabricated device capacity. NVIDIA admission
+dynamically loads the driver-provided NVML library—without a
+CUDA toolkit dependency—to identify the device and read physical and
+current-process memory. `nvidia-smi` remains a lower-priority fallback. Under
+Windows WDDM, NVML's unavailable process-memory sentinel remains `null`; it is
+never converted into capacity. Linux AMD admission follows the same native-first
+rule with AMD SMI. Its ABI major is validated before any versioned structure is
+read, and incompatible libraries fall back to `amd-smi` JSON rather than risking
+misinterpreted telemetry. Before allocating,
+the worker converts an admitted decision into a short-lived cross-process
+activation lease; concurrent loads cannot spend the same host or device
+headroom, and dead-process leases are reclaimed. The current safe baseline is
+4K context, batch/concurrency 1. When a matching content-free benchmark
+calibration exists, the record also exposes its sample count, observed host and
+device peaks, static estimate, and margin. Calibrated high-water marks may raise
+the enforced peak but never lower the static estimate. The worker exits after
+five idle minutes and terminates under critical host-memory pressure.
+
 Provider id: `medousa-local` → `http://127.0.0.1:7421/v1`
 
 ---

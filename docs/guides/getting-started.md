@@ -21,15 +21,27 @@ curl -fsSL https://raw.githubusercontent.com/EntasisLabs/Medousa/main/scripts/in
    — the bootstrap picks the right build for your platform.
 2. Install and open **Medousa**.
 
-On first launch the app starts a local **engine** for you. You should land in
-the welcome flow, then chat.
+On first launch the app starts a local **engine** for you. Desktop onboarding
+happens inside Home: choose what you want nearby, shape the first layout, and
+pick a Medousa mark and matching color theme.
 
 > Prefer a terminal / headless engine? See
 > [Install & self-host](../cookbook/install-and-self-host.md).
 > Release CDN / R2 layout: [release-to-r2](../cookbook/release-to-r2.md).
 ---
 
-## 2. Welcome flow — choose how she thinks
+## 2. Shape Home, then choose how she thinks
+
+Choose one or more focus areas. Code prepares the coding engine, language
+servers, and shell session. Messages installs only the channel adapters you
+explicitly select. Notes and planning need no optional download. Pick a focused,
+side-by-side, or dashboard layout; it becomes your actual first desktop.
+
+Choose one of the ten approved Medousa marks. Its matching theme previews on the
+real app chrome immediately, and the mark and theme stay independently editable
+under **Settings → Preferences → Look**.
+
+If you selected Medousa assistance, pick one model path:
 
 Pick one path:
 
@@ -42,7 +54,8 @@ Pick one path:
 If offline brain isn’t installed yet, the wizard points you to
 **Settings → Packages** to add it. Cloud keys work without Packages.
 
-Finish the wizard. You should be in **Chat**.
+Enter Home whenever you are ready. Optional package downloads continue in the
+background and do not block the workspace.
 
 ---
 
@@ -89,6 +102,9 @@ Guide: [Packages](packages.md).
 
 Model **weights** for offline Gemma download from the private-brain / models UI
 after the binary is installed — not from Packages itself.
+The download stays cold: model memory is allocated only when a chat turn uses
+**Medousa Local**, and can be released from **Settings → Connection → Private
+brain**.
 
 ---
 

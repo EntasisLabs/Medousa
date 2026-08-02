@@ -50,6 +50,7 @@ tokio-tungstenite = { version = "0.29", default-features = false, features = ["c
 
 [target.'cfg(not(any(target_os = "ios", target_os = "android")))'.dependencies]
 medousa-host = { path = "../../../crates/medousa-host" }
+medousa-local-inference = { path = "../../../crates/medousa-local-inference", features = ["telemetry-metal"] }
 axum = "0.8"
 medousa-browser-bridge = { path = "../../../crates/medousa-browser-bridge" }
 tauri-plugin-window-state = "2"
@@ -81,17 +82,32 @@ tauri-plugin-ios-webview-insets = "0.1"
 
 [target.'cfg(windows)'.dependencies]
 webview2-com = "0.38"
-windows = { version = "0.61", features = ["Win32_UI_Input_KeyboardAndMouse"] }
+windows = { version = "0.61", features = [
+  "Win32_System_Power",
+  "Win32_UI_Input_KeyboardAndMouse",
+  "Win32_UI_WindowsAndMessaging",
+] }
 
 [target.'cfg(any(target_os = "linux", target_os = "dragonfly", target_os = "freebsd", target_os = "netbsd", target_os = "openbsd"))'.dependencies]
 gdk = "0.18"
 gtk = "0.18"
 webkit2gtk = "2.0"
 
+[target.'cfg(target_os = "linux")'.dependencies]
+zbus = { version = "3.15.2", default-features = false, features = ["tokio"] }
+
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
 block2 = "0.6"
-objc2-foundation = { version = "0.3", features = ["NSGeometry", "NSObjCRuntime", "NSString"] }
+objc2-foundation = { version = "0.3", features = [
+  "NSGeometry",
+  "NSNotification",
+  "NSObject",
+  "NSOperation",
+  "NSObjCRuntime",
+  "NSString",
+  "block2",
+] }
 objc2-app-kit = { version = "0.3", features = [
   "NSView",
   "NSWindow",
@@ -102,6 +118,7 @@ objc2-app-kit = { version = "0.3", features = [
   "NSEvent",
   "NSApplication",
   "NSResponder",
+  "NSWorkspace",
   "block2",
 ] }
 

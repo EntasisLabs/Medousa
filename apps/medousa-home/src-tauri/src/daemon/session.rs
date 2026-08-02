@@ -159,11 +159,19 @@ pub async fn session_get_active_turn(
 #[tauri::command]
 pub async fn session_cancel_active_turn(
     state: State<'_, DaemonState>,
+    activation_state: State<'_, super::local_inference::LocalInferenceActivationState>,
     session_id: String,
 ) -> Result<CancelActiveSessionTurnResponse, String> {
     let trimmed = session_id.trim();
     if trimmed.is_empty() {
         return Err("session_id is required".to_string());
+    }
+    if activation_state.cancel(trimmed) {
+        return Ok(CancelActiveSessionTurnResponse {
+            cancelled: true,
+            turn_id: None,
+            message: "Cancelled local model loading".to_string(),
+        });
     }
     client(&state)
         .sessions()
@@ -302,6 +310,7 @@ fn default_response_depth_mode() -> String {
 #[tauri::command]
 pub async fn turn_create(
     state: State<'_, DaemonState>,
+    activation_state: State<'_, super::local_inference::LocalInferenceActivationState>,
     session_id: String,
     prompt: String,
     mode: Option<String>,
@@ -338,6 +347,25 @@ pub async fn turn_create(
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
         .unwrap_or_default();
+    let defaults = crate::medousa_paths::load_tui_defaults_summary();
+    let selected_provider = if provider.is_empty() {
+        defaults.provider.as_deref().unwrap_or_default()
+    } else {
+        provider.as_str()
+    };
+    let selected_model = if model.is_empty() {
+        defaults.model.as_deref()
+    } else {
+        Some(model.as_str())
+    };
+    if selected_provider.eq_ignore_ascii_case("medousa-local") {
+        super::local_inference::ensure_local_engine_for_turn(
+            &activation_state,
+            trimmed_session,
+            selected_model,
+        )
+        .await?;
+    }
     let response_depth_mode = response_depth_mode
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())

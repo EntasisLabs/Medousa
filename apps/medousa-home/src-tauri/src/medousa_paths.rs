@@ -493,6 +493,51 @@ pub fn medousa_config_paths() -> MedousaConfigPaths {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::should_unload_local_worker;
+
+    #[test]
+    fn switching_away_from_local_unloads_worker() {
+        assert!(should_unload_local_worker(
+            Some("medousa-local"),
+            Some("gemma-local"),
+            "openai",
+            "gpt-5",
+        ));
+    }
+
+    #[test]
+    fn changing_local_model_unloads_worker() {
+        assert!(should_unload_local_worker(
+            Some("medousa-local"),
+            Some("gemma-local"),
+            "medousa-local",
+            "qwen-local",
+        ));
+    }
+
+    #[test]
+    fn retaining_local_model_keeps_worker_warm() {
+        assert!(!should_unload_local_worker(
+            Some("medousa-local"),
+            Some("gemma-local"),
+            "medousa-local",
+            "gemma-local",
+        ));
+    }
+
+    #[test]
+    fn remote_provider_changes_do_not_touch_local_worker() {
+        assert!(!should_unload_local_worker(
+            Some("anthropic"),
+            Some("claude"),
+            "openai",
+            "gpt-5",
+        ));
+    }
+}
+
 #[tauri::command]
 pub fn load_tui_defaults_summary() -> TuiDefaultsSummary {
     let file = read_tui_defaults_file();
@@ -560,7 +605,7 @@ pub fn persist_tui_defaults(dto: TuiDefaultsDto) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn persist_tui_runtime_prefs(
+pub async fn persist_tui_runtime_prefs(
     provider: String,
     model: String,
     response_depth_mode: String,
@@ -568,6 +613,12 @@ pub fn persist_tui_runtime_prefs(
     stage_routing: Option<serde_json::Value>,
 ) -> Result<(), String> {
     let mut file = read_tui_defaults_file();
+    let unload_local_worker = should_unload_local_worker(
+        file.provider.as_deref(),
+        file.model.as_deref(),
+        &provider,
+        &model,
+    );
     file.provider = Some(provider);
     file.model = Some(model);
     file.response_depth_mode = Some(response_depth_mode);
@@ -577,7 +628,28 @@ pub fn persist_tui_runtime_prefs(
     if let Some(matrix) = stage_routing {
         file.stage_routing = Some(matrix);
     }
-    write_tui_defaults_file(&file)
+    write_tui_defaults_file(&file)?;
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
+    if unload_local_worker {
+        crate::workshop_runtime::stop_local_brain_bounded(
+            crate::workshop_registry::PERSONAL_WORKSHOP_ID,
+        )
+        .await?;
+    }
+    #[cfg(any(target_os = "ios", target_os = "android"))]
+    let _ = unload_local_worker;
+    Ok(())
+}
+
+fn should_unload_local_worker(
+    previous_provider: Option<&str>,
+    previous_model: Option<&str>,
+    next_provider: &str,
+    next_model: &str,
+) -> bool {
+    previous_provider.is_some_and(|provider| provider.trim() == "medousa-local")
+        && (next_provider.trim() != "medousa-local"
+            || previous_model.map(str::trim) != Some(next_model.trim()))
 }
 
 #[tauri::command]

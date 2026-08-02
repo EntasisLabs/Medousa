@@ -75,12 +75,39 @@ export interface LocalModelsResponse {
 export interface LocalEngineStatus {
   featureEnabled: boolean;
   loaded: boolean;
+  phase:
+    | "unavailable"
+    | "cold"
+    | "startingWorker"
+    | "loading"
+    | "ready"
+    | "busy"
+    | "draining"
+    | "unloading"
+    | "failed";
   baseUrl: string;
   bind?: string | null;
   modelRepo?: string | null;
   modelAlias?: string | null;
   inferenceBackend?: string | null;
+  worker?: LocalWorkerStatus | null;
   message: string;
+}
+
+export interface LocalWorkerStatus {
+  protocolVersion: number;
+  generationId: string;
+  pid: number;
+  startedAt: string;
+  phase: LocalEngineStatus["phase"];
+  modelRepo: string;
+  modelAlias: string;
+  artifactDigest?: string | null;
+  recipeRevision: string;
+  binaryDigest?: string | null;
+  runtimeName: string;
+  runtimeVersion: string;
+  compiledBackends: string[];
 }
 
 export function formatBytes(bytes: number): string {
@@ -119,6 +146,11 @@ export async function loadLocalEngine(modelId?: string | null): Promise<LocalEng
 export async function fetchLocalEngineStatus(): Promise<LocalEngineStatus> {
   if (!isTauri()) throw new Error("Local inference requires the desktop app");
   return invoke<LocalEngineStatus>("local_inference_engine_status");
+}
+
+export async function unloadLocalEngine(): Promise<LocalEngineStatus> {
+  if (!isTauri()) throw new Error("Local inference requires the desktop app");
+  return invoke<LocalEngineStatus>("local_inference_unload_engine");
 }
 
 export async function removeLocalModel(modelId: string): Promise<void> {

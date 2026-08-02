@@ -68,6 +68,8 @@ Shipped product features: [artifacts](../docs/engine/artifacts.md), [mobile shel
 | [iroh-p2p-pairing-plan.md](iroh-p2p-pairing-plan.md) | Encrypted phone ↔ desktop transport |
 | [media-and-attachments-plan.md](media-and-attachments-plan.md) | Local chat attachments (P5) |
 | [inference-profiles-and-model-catalog-plan.md](inference-profiles-and-model-catalog-plan.md) | **Inference profiles**, live model catalog, fallbacks, turn failure UX |
+| [medousa-inference-runtime-epic.md](medousa-inference-runtime-epic.md) | **Medousa Inference Runtime** — cold lifecycle, resource governor, backend lab, small-model system |
+| [inference-research-index.md](inference-research-index.md) | Living inference engine, optimization, model, and evaluation research ledger |
 | [embedded-local-inference-plan.md](embedded-local-inference-plan.md) | Embedded Gemma engine |
 | [desktop-distribution-plan.md](desktop-distribution-plan.md) | Signed app bundles |
 

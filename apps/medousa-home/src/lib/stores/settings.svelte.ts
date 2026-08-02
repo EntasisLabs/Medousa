@@ -9,9 +9,15 @@ import { loadTuiDefaults, persistTuiDefaults } from "$lib/config";
 import { getRuntimeDefaults } from "$lib/daemon";
 import { workshopDefaults } from "$lib/stores/workshopDefaults.svelte";
 import { isTauri, isTauriMobilePlatform } from "$lib/platform";
+import {
+  DEFAULT_MEDOUSA_MARK,
+  isMedousaMarkId,
+  type MedousaMarkId,
+} from "$lib/theme/medousaMarks";
 
 const DARK_MODE_KEY = "medousa-home-dark-mode";
 const COLOR_THEME_KEY = "medousa-home-color-theme";
+const MEDOUSA_MARK_KEY = "medousa-home-mark";
 const NOTIFICATIONS_KEY = "medousa-home-notifications";
 const LIVE_ACTIVITY_KEY = "medousa-home-live-activity";
 const REMOTE_PUSH_KEY = "medousa-home-remote-push";
@@ -30,6 +36,7 @@ const DEFAULT_WORK_WIPE_DAYS = 7;
 export class SettingsStore {
   darkMode = $state(loadDarkMode());
   colorTheme = $state(loadColorTheme());
+  medousaMark = $state(loadMedousaMark());
   notificationsEnabled = $state(loadNotifications());
   liveActivityEnabled = $state(loadLiveActivity());
   remotePushEnabled = $state(loadRemotePush());
@@ -75,6 +82,11 @@ export class SettingsStore {
         workshops.saveColorTheme(theme),
       );
     }
+  }
+
+  setMedousaMark(mark: MedousaMarkId) {
+    this.medousaMark = mark;
+    localStorage.setItem(MEDOUSA_MARK_KEY, mark);
   }
 
   setNotificationsEnabled(enabled: boolean) {
@@ -202,6 +214,12 @@ function loadColorTheme(): ColorThemeId {
   if (typeof localStorage === "undefined") return DEFAULT_COLOR_THEME;
   const stored = localStorage.getItem(COLOR_THEME_KEY);
   return isColorThemeId(stored) ? stored : DEFAULT_COLOR_THEME;
+}
+
+function loadMedousaMark(): MedousaMarkId {
+  if (typeof localStorage === "undefined") return DEFAULT_MEDOUSA_MARK;
+  const stored = localStorage.getItem(MEDOUSA_MARK_KEY);
+  return isMedousaMarkId(stored) ? stored : DEFAULT_MEDOUSA_MARK;
 }
 
 function loadTechnicalActivity(): boolean {

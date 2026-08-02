@@ -9,6 +9,8 @@ medousa-types = { path = "../medousa-types" }
 anyhow = "1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "sync", "signal"] }
 axum = "0.8"
+http-body = "1"
+sysinfo = "0.33"
 mistralrs-core = "0.8.1"
 mistralrs-server-core = { version = "0.8.1", default-features = false }
 

@@ -8,6 +8,11 @@ description = "Local inference catalog/hardware/engine logic and the standalone 
 name = "medousa_local"
 path = "src/bin/medousa_local.rs"
 
+[[bin]]
+name = "medousa_local_bench"
+path = "src/bin/medousa_local_bench.rs"
+required-features = ["embedded-inference"]
+
 [dependencies]
 medousa-types = { path = "../medousa-types" }
 medousa-host = { path = "../medousa-host" }
@@ -22,9 +27,21 @@ chrono = { version = "0.4", features = ["serde"] }
 sysinfo = "0.33"
 fs2 = "0.4"
 dirs = "5"
+libloading = "0.8"
+sha2 = "0.10"
+uuid = { version = "1", features = ["v4"] }
+ash = { version = "0.38", default-features = false, features = ["loaded"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"], optional = true }
 
 [features]
 default = []
-embedded-inference = ["dep:medousa-local-engine"]
-embedded-inference-metal = ["embedded-inference", "medousa-local-engine/metal"]
+embedded-inference = ["dep:medousa-local-engine", "dep:reqwest"]
+telemetry-metal = ["dep:metal"]
+embedded-inference-metal = ["embedded-inference", "medousa-local-engine/metal", "telemetry-metal"]
 embedded-inference-cuda = ["embedded-inference", "medousa-local-engine/cuda"]
+
+[target.'cfg(target_os = "macos")'.dependencies]
+metal = { version = "0.29", optional = true }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { version = "0.61", features = ["Win32_Foundation", "Win32_Graphics_Dxgi", "Win32_Graphics_Dxgi_Common"] }

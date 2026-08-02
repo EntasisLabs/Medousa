@@ -18,7 +18,12 @@ pub async fn load_external_engine(
     medousa_host::spawn_and_wait_recommended(bind).await
 }
 
-/// No-op: `medousa_local` is managed by the desktop app or CLI, not the daemon.
 pub async fn stop_external_local_engine() -> Result<(), String> {
-    Ok(())
+    let bind = std::env::var("MEDOUSA_LOCAL_ENGINE_BIND")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| medousa_types::local::DEFAULT_LOCAL_ENGINE_BIND.to_string());
+    medousa_host::stop_local_worker(&bind, std::time::Duration::from_secs(10))
+        .await
+        .map(|_| ())
 }

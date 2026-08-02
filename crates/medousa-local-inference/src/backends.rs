@@ -78,14 +78,23 @@ pub fn cuda_device_present() -> bool {
 }
 
 pub fn detect_gpu_backend() -> GpuBackend {
-    #[cfg(all(target_os = "macos", feature = "embedded-inference-metal"))]
+    #[cfg(all(
+        target_os = "macos",
+        any(feature = "embedded-inference-metal", feature = "telemetry-metal")
+    ))]
     return GpuBackend::Metal;
 
-    #[cfg(not(all(target_os = "macos", feature = "embedded-inference-metal")))]
+    #[cfg(not(all(
+        target_os = "macos",
+        any(feature = "embedded-inference-metal", feature = "telemetry-metal")
+    )))]
     return detect_non_metal_gpu_backend();
 }
 
-#[cfg(not(all(target_os = "macos", feature = "embedded-inference-metal")))]
+#[cfg(not(all(
+    target_os = "macos",
+    any(feature = "embedded-inference-metal", feature = "telemetry-metal")
+)))]
 fn detect_non_metal_gpu_backend() -> GpuBackend {
     #[cfg(feature = "embedded-inference-cuda")]
     if cuda_device_present() || force_cuda_from_env() {

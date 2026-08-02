@@ -2,7 +2,7 @@
  * Calm chroma with clear role separation (keyword ≠ function ≠ string ≠ type). */
 
 @layer base {
-  html.dark {
+  html.dark:not([data-theme]) {
     --syn-bg: 30 32 42;
     --syn-border: 78 84 104;
     --syn-header-bg: 36 39 50;
@@ -42,7 +42,7 @@
     --md-code-deletion-bg: var(--syn-deletion-bg);
   }
 
-  html:not(.dark) {
+  html:not(.dark):not([data-theme]) {
     --syn-bg: 246 247 249;
     --syn-border: 196 202 214;
     --syn-header-bg: 236 238 244;

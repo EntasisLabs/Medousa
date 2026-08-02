@@ -1,70 +1,7 @@
-use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
+use chrono::Utc;
+pub use medousa_types::local::{GpuBackend, HardwareProfile, HardwareProbe, HardwareTier};
 use std::fs;
 use std::path::PathBuf;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "UPPERCASE")]
-pub enum HardwareTier {
-    A,
-    B,
-    C,
-    D,
-    E,
-}
-
-impl HardwareTier {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::A => "A",
-            Self::B => "B",
-            Self::C => "C",
-            Self::D => "D",
-            Self::E => "E",
-        }
-    }
-
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::A => "Minimal",
-            Self::B => "Everyday",
-            Self::C => "Comfortable",
-            Self::D => "Enthusiast",
-            Self::E => "Workstation",
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum GpuBackend {
-    None,
-    Metal,
-    Cuda,
-    Other,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct HardwareProbe {
-    pub total_ram_mb: u64,
-    pub available_ram_mb: u64,
-    pub cpu_cores: usize,
-    pub cpu_arch: String,
-    pub gpu_backend: GpuBackend,
-    pub free_disk_gb: u64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct HardwareProfile {
-    pub probed_at: DateTime<Utc>,
-    pub tier: HardwareTier,
-    pub tier_label: String,
-    pub probe: HardwareProbe,
-    pub recommended_model_id: String,
-    pub recommended_display_name: String,
-}
 
 pub fn medousa_data_dir() -> PathBuf {
     crate::paths::medousa_data_dir()
@@ -111,7 +48,14 @@ fn free_disk_gb_on_data_volume() -> u64 {
 pub fn score_tier(probe: &HardwareProbe) -> HardwareTier {
     let ram_gb = probe.total_ram_mb / 1024;
     let available_gb = probe.available_ram_mb / 1024;
-    let has_accel = matches!(probe.gpu_backend, GpuBackend::Metal | GpuBackend::Cuda);
+    let has_accel = matches!(
+        probe.gpu_backend,
+        GpuBackend::Metal
+            | GpuBackend::Cuda
+            | GpuBackend::Rocm
+            | GpuBackend::Vulkan
+            | GpuBackend::DirectMl
+    );
 
     let mut tier = HardwareTier::A;
     if ram_gb >= 8 && probe.free_disk_gb >= 4 {
@@ -140,24 +84,17 @@ pub fn score_tier(probe: &HardwareProbe) -> HardwareTier {
     tier
 }
 
-impl PartialOrd for HardwareTier {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for HardwareTier {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        (*self as u8).cmp(&(*other as u8))
-    }
-}
-
 pub fn build_hardware_profile(probe: HardwareProbe) -> HardwareProfile {
     let tier = score_tier(&probe);
     let (recommended_model_id, recommended_display_name) =
-        super::catalog::recommended_model_for_tier(tier)
+        super::governor::recommended_admitted_model(&probe)
             .map(|entry| (entry.id.clone(), entry.display_name.clone()))
-            .unwrap_or_else(|| ("gemma-4-e4b-it".to_string(), "Gemma 4 E4B — balanced".to_string()));
+            .unwrap_or_else(|| {
+                (
+                    "gemma-4-e2b-it-qat".to_string(),
+                    "Gemma 4 E2B — light".to_string(),
+                )
+            });
 
     HardwareProfile {
         probed_at: Utc::now(),
@@ -207,8 +144,13 @@ mod tests {
 
     #[test]
     fn tier_c_on_16gb_with_headroom() {
-        let tier = score_tier(&probe_with_ram(16, 13, 40));
+        let probe = probe_with_ram(16, 13, 40);
+        let tier = score_tier(&probe);
         assert_eq!(tier, HardwareTier::C);
+        assert_eq!(
+            build_hardware_profile(probe).recommended_model_id,
+            "gemma-4-e2b-it-qat"
+        );
     }
 
     #[test]

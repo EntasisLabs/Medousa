@@ -1,5 +1,11 @@
 # Embedded local inference (Medousa Engine)
 
+> **Runtime update (2026-07-31):** The product/catalog work in this document
+> remains relevant. Lifecycle, memory governance, backend selection, caching,
+> scheduling, and small-model optimization are superseded by the
+> [Medousa Inference Runtime epic](medousa-inference-runtime-epic.md) and its
+> [research index](inference-research-index.md).
+
 > **Status:** Phase 2 landed — Phase 3 next (full Gemma matrix + routing)  
 > **Date:** 2026-06-07 (Gemma 4 catalog lock — June 2026 releases)  
 > **Default brain:** **Gemma 4** family — hero model **Gemma 4 12B Unified** (June 3, 2026) on 16 GB+ Macs  

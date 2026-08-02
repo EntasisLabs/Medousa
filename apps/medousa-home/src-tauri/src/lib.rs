@@ -12,6 +12,8 @@ mod messaging;
 mod medousa_paths;
 mod packages;
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
+mod power_events;
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 mod app_update;
 mod pairing;
 mod pairing_client;
@@ -61,6 +63,12 @@ use tauri::{
     Emitter,
 };
 
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
+fn exit_after_requesting_local_brain_stop(app: &tauri::AppHandle) {
+    workshop_runtime::request_local_brain_stop(workshop_registry::PERSONAL_WORKSHOP_ID);
+    app.exit(0);
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // rustls 0.23+ requires an explicit crypto provider before any reqwest client is built.
@@ -90,7 +98,8 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_mobile_push::init())
         .manage(DaemonState::new())
-        .manage(daemon::local_inference::LocalInferenceStreamState::new());
+        .manage(daemon::local_inference::LocalInferenceStreamState::new())
+        .manage(daemon::local_inference::LocalInferenceActivationState::new());
 
     // Desktop only: restore main window size / position / maximized across restarts.
     #[cfg(not(any(target_os = "ios", target_os = "android")))]
@@ -160,6 +169,7 @@ pub fn run() {
             {
                 human_browser::init_app_handle(app.handle().clone());
                 browser_host::start_browser_host_background();
+                power_events::install(app.handle());
             }
             #[cfg(target_os = "android")]
             {
@@ -202,7 +212,7 @@ pub fn run() {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 match window.label() {
                     "main" => {
-                        window.app_handle().exit(0);
+                        exit_after_requesting_local_brain_stop(window.app_handle());
                     }
                     "browser" => {
                         // Hide instead of destroy so Web nav can reopen the window.
@@ -806,6 +816,7 @@ pub fn run() {
             daemon::local_inference::local_inference_download_status,
             daemon::local_inference::local_inference_spawn_engine,
             daemon::local_inference::local_inference_engine_status,
+            daemon::local_inference::local_inference_unload_engine,
             daemon::local_inference::local_inference_remove_model,
             daemon::local_inference::local_inference_stream_download,
             daemon::local_inference::local_inference_stream_download_stop,
@@ -862,7 +873,7 @@ fn setup_desktop_tray(app: &tauri::App) -> tauri::Result<()> {
                     });
                 }
                 "hide" => hide_main_window(app),
-                "quit" => app.exit(0),
+                "quit" => exit_after_requesting_local_brain_stop(app),
                 _ => {}
             })
             .on_tray_icon_event(|tray, event| {

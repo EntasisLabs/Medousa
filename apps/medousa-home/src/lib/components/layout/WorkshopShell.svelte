@@ -25,6 +25,8 @@
   import EnvPendingProposalBanner from "$lib/components/environment/EnvPendingProposalBanner.svelte";
   import { workshops } from "$lib/stores/workshops.svelte";
   import type { DaemonHealth } from "$lib/daemon";
+  import HomeOnboarding from "$lib/components/onboarding/HomeOnboarding.svelte";
+  import { wizard } from "$lib/stores/wizard.svelte";
 
   interface Props {
     onOpenSpotlight?: () => void;
@@ -86,11 +88,13 @@
       });
     }
     const detachViewport = layout.attachViewportTracking();
-    const detachWorkshop = connectWorkshop({
-      onHealthChange: (health) => {
-        daemonHealth = health;
-      },
-    });
+    const detachWorkshop = isTauri()
+      ? connectWorkshop({
+          onHealthChange: (health) => {
+            daemonHealth = health;
+          },
+        })
+      : () => {};
     const detachBrowserContext = browserContext.attachListeners();
     return () => {
       if (peersUnreadTimer) clearInterval(peersUnreadTimer);
@@ -212,6 +216,9 @@
               daemonHealth = health;
             }}
           />
+          {#if wizard.visible}
+            <HomeOnboarding />
+          {/if}
         </div>
       </div>
 
