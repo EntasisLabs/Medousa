@@ -15,6 +15,8 @@
     items: OutlineItem[];
     activeId?: string | null;
     mode?: "panel" | "rail";
+    /** Suppress hover chrome while the host content is actively scrolling. */
+    scrolling?: boolean;
     /** Show minimize control on panel (vault). Rail expands via double-click. */
     showModeToggle?: boolean;
     onSelect: (id: string) => void;
@@ -26,6 +28,7 @@
     items,
     activeId = null,
     mode = "panel",
+    scrolling = false,
     showModeToggle = false,
     onSelect,
     onToggleMode,
@@ -45,6 +48,10 @@
       items.length - RAIL_WINDOW_SIZE,
     );
     return items.slice(start, start + RAIL_WINDOW_SIZE);
+  });
+  const railActiveOffset = $derived.by(() => {
+    const index = railItems.findIndex((item) => item.id === activeId);
+    return index < 0 ? null : `${index * 0.6 + 0.24}rem`;
   });
 
   function onRailTickClick(id: string, event: MouseEvent) {
@@ -98,9 +105,17 @@
   {:else}
     <nav
       class="md-outline md-outline-rail"
+      class:md-outline-rail-scrolling={scrolling}
       aria-label={onToggleMode ? `${label}. Double-click a mark to expand.` : label}
     >
       <div class="md-outline-rail-track">
+        {#if railActiveOffset}
+          <span
+            class="md-outline-active-indicator"
+            style={`--md-outline-active-offset: ${railActiveOffset};`}
+            aria-hidden="true"
+          ></span>
+        {/if}
         <ul class="md-outline-rail-list">
           {#each railItems as item (item.id)}
             <li class="md-outline-rail-row">
@@ -290,6 +305,21 @@
     gap: 0.12rem;
   }
 
+  .md-outline-active-indicator {
+    position: absolute;
+    top: calc(0.15rem + var(--md-outline-active-offset));
+    left: 50%;
+    z-index: 2;
+    width: 1.3rem;
+    height: 2px;
+    border-radius: 999px;
+    background: rgb(var(--color-surface-50));
+    box-shadow: 0 0 0.45rem color-mix(in srgb, var(--color-surface-50) 22%, transparent);
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    transition: top 150ms ease-out;
+  }
+
   .md-outline-rail-row {
     display: flex;
     justify-content: center;
@@ -345,7 +375,7 @@
   .md-outline-tick-active:hover .md-outline-tick-bar {
     width: 1.3rem;
     height: 2px;
-    background: rgb(var(--color-surface-50));
+    background: rgb(var(--color-surface-300));
   }
 
   .md-outline-tick-h3:hover .md-outline-tick-bar {
@@ -401,6 +431,12 @@
     opacity: 1;
     transform: translateY(-50%) scale(1);
     pointer-events: auto;
+  }
+
+  .md-outline-rail-scrolling .md-outline-tick-label {
+    opacity: 0;
+    transform: translateY(-50%) scale(0.98);
+    pointer-events: none;
   }
 
   @media (max-width: 640px) {

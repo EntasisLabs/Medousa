@@ -137,6 +137,7 @@
   let markdownEditorEl = $state<ReturnType<typeof VaultMarkdownEditor> | null>(null);
   let slidesDeckEl = $state<ReturnType<typeof SlidesDeckEditor> | null>(null);
   let outlineActiveId = $state<string | null>(null);
+  let outlineScrolling = $state(false);
   let outlineMode = $state<"panel" | "rail">(readVaultOutlineMode());
 
   function setOutlineMode(mode: "panel" | "rail") {
@@ -321,6 +322,7 @@
   $effect(() => {
     if (!showHeadingOutline) {
       outlineActiveId = null;
+      outlineScrolling = false;
       return;
     }
     // Bind once per surface/host — do NOT rebind on every draft keystroke.
@@ -355,13 +357,29 @@
           scrollRoot)
         : scrollRoot;
       cleanup?.();
-      cleanup = observeActiveMarkdownHeading(
+      const stopObservingActiveHeading = observeActiveMarkdownHeading(
         scrollRoot,
         (id) => {
           outlineActiveId = id;
         },
         contentRoot,
       );
+      let scrollEndTimer: ReturnType<typeof setTimeout> | undefined;
+      const onOutlineScroll = () => {
+        outlineScrolling = true;
+        if (scrollEndTimer) clearTimeout(scrollEndTimer);
+        scrollEndTimer = setTimeout(() => {
+          outlineScrolling = false;
+          scrollEndTimer = undefined;
+        }, 160);
+      };
+      scrollRoot.addEventListener("scroll", onOutlineScroll, { passive: true });
+      cleanup = () => {
+        stopObservingActiveHeading();
+        scrollRoot.removeEventListener("scroll", onOutlineScroll);
+        if (scrollEndTimer) clearTimeout(scrollEndTimer);
+        outlineScrolling = false;
+      };
     };
 
     void tick().then(bind);
@@ -1146,6 +1164,7 @@
           <MarkdownHeadingOutline
             items={outlineItems}
             activeId={outlineActiveId}
+            scrolling={outlineScrolling}
             mode="rail"
             showModeToggle
             onSelect={jumpToOutlineHeading}
