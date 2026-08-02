@@ -40,6 +40,18 @@ Stasis dashboard mounted at `/dashboard` (HTML UI).
 
 See [interactive-streaming.md](interactive-streaming.md). **Do not** expect SSE on the POST itself.
 
+### Registered client tools
+
+Host integrations can register tools that execute in the host process while
+the daemon owns the model turn. See [agent-tools.md](agent-tools.md#registered-client-tools)
+for the protocol and surface-scoping rules.
+
+| Method | Path | Types |
+|--------|------|-------|
+| POST | `/v1/clients/register` | `RegisterClientRequest` → `RegisterClientResponse` |
+| GET | `/v1/clients/{client_id}/tools/next?wait_ms=…` | `ClientToolRequest` or `null` |
+| POST | `/v1/clients/{client_id}/tools/{request_id}/result` | `ClientToolResultRequest` → `ClientToolResultResponse` |
+
 ### Sessions & turns
 
 | Method | Path | Types | SDK |

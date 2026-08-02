@@ -107,6 +107,7 @@ pub struct ActiveWorkerBusSession {
 #[derive(Clone)]
 pub struct WorkerRuntimeContext {
     pub tool_registry: Arc<dyn ToolRegistry>,
+    pub client_registry: crate::client_tools::ClientRegistry,
     pub identity_memory_store: Option<Arc<dyn stasis::ports::outbound::memory::identity_memory_store::IdentityMemoryStore>>,
     pub provider: String,
     pub model: String,
@@ -121,6 +122,7 @@ impl WorkerRuntimeContext {
         let base_url = crate::resolve_llm_base_url(Some(&provider), None);
         Self {
             tool_registry: rt.tool_registry.clone(),
+            client_registry: rt.client_registry.clone(),
             identity_memory_store: Some(rt.identity_memory_store.clone()),
             provider,
             model,
@@ -693,6 +695,8 @@ pub async fn run_worker_turn(
             allowlist,
             true,
             record.supports_browser_host || is_bound_workshop,
+            Some("workshop-canvas".to_string()),
+            ctx.client_registry.clone(),
         ))
     } else {
         Arc::new(SessionBootstrapToolRegistry::worker(
@@ -1153,6 +1157,8 @@ pub fn pipeline_for_turn_profile(
     session_id: Option<&str>,
     supports_ui_artifacts: bool,
     supports_browser_host: bool,
+    channel_surface: Option<&str>,
+    client_registry: crate::client_tools::ClientRegistry,
 ) -> crate::medousa_tool_loop::MedousaToolLoopPipeline {
     if host_bus {
         let allowlist = super::policy::host_bus_tool_names();
@@ -1163,6 +1169,8 @@ pub fn pipeline_for_turn_profile(
                 allowlist,
                 supports_ui_artifacts,
                 supports_browser_host,
+                channel_surface.map(str::to_string),
+                client_registry,
             ))
         } else {
             Arc::new(AllowlistToolRegistry::new(tool_registry, allowlist))

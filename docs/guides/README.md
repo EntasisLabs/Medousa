@@ -16,6 +16,7 @@ Integrator / self-host cookbooks: [../cookbook/README.md](../cookbook/README.md)
 | [VS Code](vscode.md) | Use Medousa chat beside your editor |
 | [Neovim](neovim.md) | Use the keyboard-first Medousa coding room |
 | [Obsidian](obsidian.md) | Use the vault-native Medousa companion |
+| [Browser](browser.md) | Use the page-aware Medousa companion in Chrome or Edge |
 | [Undertakings & ForgeLens](undertakings.md) | Governed work, seal, review, World observe |
 
 Also useful from the cookbook (app-user tagged):

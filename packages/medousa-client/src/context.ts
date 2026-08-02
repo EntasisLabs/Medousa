@@ -1,6 +1,7 @@
 import type { MedousaContext } from "./types.js";
 
 const MAX_SELECTION_CHARS = 12_000;
+const MAX_PAGE_TEXT_CHARS = 24_000;
 const MAX_DIAGNOSTICS = 100;
 
 /**
@@ -16,6 +17,7 @@ export function boundContext(context: MedousaContext): MedousaContext {
           text: context.selection.text.slice(0, MAX_SELECTION_CHARS),
         }
       : undefined,
+    pageText: context.pageText?.slice(0, MAX_PAGE_TEXT_CHARS),
     diagnostics: context.diagnostics?.slice(0, MAX_DIAGNOSTICS),
   };
 }
@@ -30,7 +32,12 @@ export function contextSupplement(context: MedousaContext): string {
   if (bounded.workspace) lines.push(`workspace: ${bounded.workspace}`);
   if (bounded.file) lines.push(`file: ${bounded.file}`);
   if (bounded.language) lines.push(`language: ${bounded.language}`);
+  if (bounded.title) lines.push(`page-title: ${bounded.title}`);
+  if (bounded.url) lines.push(`page-url: ${bounded.url}`);
   if (bounded.notePath) lines.push(`note: ${bounded.notePath}`);
+  if (bounded.pageText) {
+    lines.push("page-text:", "```", bounded.pageText, "```");
+  }
   if (bounded.selection?.text) {
     lines.push("selection:", "```", bounded.selection.text, "```");
   }

@@ -10,7 +10,7 @@ export type {
   InteractiveTurnStreamEvent,
 };
 
-export type MedousaSurface = "vscode" | "neovim" | "obsidian";
+export type MedousaSurface = "vscode" | "neovim" | "obsidian" | "browser";
 
 export interface Position {
   line: number;
@@ -29,6 +29,9 @@ export interface MedousaContext {
   workspace?: string;
   file?: string;
   language?: string;
+  title?: string;
+  url?: string;
+  pageText?: string;
   selection?: { text: string; start?: Position; end?: Position };
   diagnostics?: Diagnostic[];
   vaultRootId?: string;
@@ -174,4 +177,45 @@ export interface StreamOptions {
 
 export interface ClientRequestOptions {
   signal?: AbortSignal;
+}
+
+export interface ClientToolDefinition {
+  name: string;
+  description?: string;
+  input_schema?: Record<string, unknown>;
+  output_schema?: Record<string, unknown>;
+  effect_class?: "external_read" | "external_write" | "external_side_effect" | string;
+}
+
+export interface ClientRegistrationRequest {
+  client_id: string;
+  channel_surface: string;
+  supports_browser_host: boolean;
+  browser_host_url?: string | null;
+  tools?: ClientToolDefinition[];
+}
+
+export interface ClientRegistrationResponse {
+  ok: boolean;
+  browser_host_reachable: boolean;
+  registered_tools: string[];
+}
+
+export interface ClientToolRequest {
+  request_id: string;
+  client_id: string;
+  tool_name: string;
+  input: Record<string, unknown>;
+  turn_id: string;
+  created_at_utc: string;
+}
+
+export interface ClientToolResultRequest {
+  output?: unknown;
+  error?: string;
+}
+
+export interface ClientToolResultResponse {
+  ok: boolean;
+  accepted: boolean;
 }

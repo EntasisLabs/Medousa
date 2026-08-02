@@ -32,6 +32,7 @@ Doc conventions: [CONTRIBUTING-DOCS.md](CONTRIBUTING-DOCS.md)
 | [VS Code](guides/vscode.md) | Medousa chat, editor context, and workshop sessions in VS Code |
 | [Neovim](guides/neovim.md) | Keyboard-first coding room with contextual chat and safe code application |
 | [Obsidian](guides/obsidian.md) | Vault-native Medousa chat and bounded note context |
+| [Browser](guides/browser.md) | Page-aware Medousa side panel for Chrome and Edge |
 | [Undertakings & ForgeLens](guides/undertakings.md) | Governed work, seal, review, World |
 | Full index | [guides/README.md](guides/README.md) |
 

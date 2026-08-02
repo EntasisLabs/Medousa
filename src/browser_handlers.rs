@@ -1,15 +1,22 @@
-//! Daemon HTTP handlers for Agent Browser sessions and client registration.
+//! Daemon HTTP handlers for Agent Browser sessions and registered client tools.
 
-use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
+use axum::http::StatusCode;
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use medousa_browser_lite::SearchResponse;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
 use crate::browser_host_client::browser_host_healthy;
 use medousa_browser_lite::search_ddg_html_cached_async;
+
+pub use crate::client_tools::{
+    ClientRegistration, ClientRegistry, ClientToolDefinition, ClientToolRequest,
+    ClientToolResultRequest, ClientToolResultResponse, RegisterClientRequest,
+    RegisterClientResponse,
+};
 
 use crate::browser_sessions::{
     complete_browser_act_session, complete_browser_session, get_browser_session,
@@ -17,86 +24,82 @@ use crate::browser_sessions::{
 };
 use crate::daemon::state::AppState;
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct ClientRegistration {
-    pub client_id: String,
-    pub channel_surface: String,
-    pub supports_browser_host: bool,
-    #[serde(default)]
-    pub browser_host_url: Option<String>,
-    pub registered_at_utc: chrono::DateTime<chrono::Utc>,
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct ClientRegistry {
-    inner: Arc<Mutex<Vec<ClientRegistration>>>,
-}
-
-impl ClientRegistry {
-    pub fn new() -> Self {
-        Self {
-            inner: Arc::new(Mutex::new(Vec::new())),
-        }
-    }
-
-    pub fn register(&self, registration: ClientRegistration) {
-        let mut guard = self.inner.lock().expect("client registry");
-        guard.retain(|entry| entry.client_id != registration.client_id);
-        guard.push(registration);
-    }
-
-    pub fn list(&self) -> Vec<ClientRegistration> {
-        self.inner.lock().expect("client registry").clone()
-    }
-
-    pub fn browser_host_available(&self) -> bool {
-        self.inner
-            .lock()
-            .expect("client registry")
-            .iter()
-            .any(|entry| entry.supports_browser_host)
-    }
-}
-
-#[derive(Debug, Deserialize)]
-pub struct RegisterClientRequest {
-    pub client_id: String,
-    pub channel_surface: String,
-    pub supports_browser_host: bool,
-    #[serde(default)]
-    pub browser_host_url: Option<String>,
-}
-
-#[derive(Debug, Serialize)]
-pub struct RegisterClientResponse {
-    pub ok: bool,
-    pub browser_host_reachable: bool,
-}
-
 pub async fn register_client(
     State(state): State<AppState>,
     Json(request): Json<RegisterClientRequest>,
-) -> Json<RegisterClientResponse> {
-    state.client_registry.register(ClientRegistration {
-        client_id: request.client_id,
-        channel_surface: request.channel_surface,
-        supports_browser_host: request.supports_browser_host,
-        browser_host_url: request.browser_host_url,
-        registered_at_utc: chrono::Utc::now(),
-    });
-    let reachable = if request.supports_browser_host {
+) -> Result<Json<RegisterClientResponse>, (StatusCode, String)> {
+    let supports_browser_host = request.supports_browser_host;
+    let registered_tools = state
+        .client_registry
+        .register(ClientRegistration {
+            client_id: request.client_id,
+            channel_surface: request.channel_surface,
+            supports_browser_host,
+            browser_host_url: request.browser_host_url,
+            tools: request.tools,
+            registered_at_utc: chrono::Utc::now(),
+            last_seen_at_utc: chrono::Utc::now(),
+        })
+        .map_err(|error| (StatusCode::BAD_REQUEST, error))?;
+    let reachable = if supports_browser_host {
         browser_host_healthy().await
     } else {
         false
     };
-    Json(RegisterClientResponse {
+    Ok(Json(RegisterClientResponse {
         ok: true,
         browser_host_reachable: reachable,
-    })
+        registered_tools,
+    }))
 }
 
 pub async fn list_clients(State(state): State<AppState>) -> Json<Vec<ClientRegistration>> {
     Json(state.client_registry.list())
+}
+
+const DEFAULT_CLIENT_TOOL_WAIT_MS: u64 = 25_000;
+
+#[derive(Debug, Deserialize)]
+pub struct ClientToolPollQuery {
+    #[serde(default = "default_client_tool_wait_ms")]
+    pub wait_ms: u64,
+}
+
+fn default_client_tool_wait_ms() -> u64 {
+    DEFAULT_CLIENT_TOOL_WAIT_MS
+}
+
+pub async fn next_client_tool_request(
+    Path(client_id): Path<String>,
+    Query(query): Query<ClientToolPollQuery>,
+    State(state): State<AppState>,
+) -> Result<Json<Option<ClientToolRequest>>, (StatusCode, String)> {
+    let wait = Duration::from_millis(query.wait_ms.min(30_000));
+    state
+        .client_registry
+        .next_tool_request(&client_id, wait)
+        .await
+        .map(Json)
+        .map_err(|error| (StatusCode::NOT_FOUND, error))
+}
+
+pub async fn complete_client_tool_request(
+    Path((client_id, request_id)): Path<(String, String)>,
+    State(state): State<AppState>,
+    Json(request): Json<ClientToolResultRequest>,
+) -> Json<ClientToolResultResponse> {
+    let result = match (request.error, request.output) {
+        (Some(error), _) => Err(error),
+        (None, Some(output)) => Ok(output),
+        (None, None) => Err("client tool response must include output or error".to_string()),
+    };
+    let accepted = state
+        .client_registry
+        .complete_tool_request(&client_id, &request_id, result);
+    Json(ClientToolResultResponse {
+        ok: accepted,
+        accepted,
+    })
 }
 
 #[derive(Debug, Deserialize)]
@@ -227,6 +230,14 @@ fn browser_routes() -> Router<AppState> {
     Router::new()
         .route("/clients/register", post(register_client))
         .route("/clients", get(list_clients))
+        .route(
+            "/clients/{client_id}/tools/next",
+            get(next_client_tool_request),
+        )
+        .route(
+            "/clients/{client_id}/tools/{request_id}/result",
+            post(complete_client_tool_request),
+        )
         .route(
             "/browser/sessions/{session_id}",
             get(get_browser_session_handler),

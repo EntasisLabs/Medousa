@@ -1,8 +1,13 @@
 import { isBackgroundHandoffEvent, readSse, streamPathWithSince } from "./stream.js";
 import type {
   CapabilityListResponse,
-  ClientOptions,
+  ClientRegistrationRequest,
+  ClientRegistrationResponse,
   ClientRequestOptions,
+  ClientToolRequest,
+  ClientToolResultRequest,
+  ClientToolResultResponse,
+  ClientOptions,
   CreateSessionRequest,
   CreateSessionResponse,
   HealthResponse,
@@ -49,6 +54,47 @@ export class MedousaClient {
 
   async health(options?: ClientRequestOptions): Promise<HealthResponse> {
     return this.request<HealthResponse>("/health", { signal: options?.signal });
+  }
+
+  async registerClient(
+    request: ClientRegistrationRequest,
+    options?: ClientRequestOptions,
+  ): Promise<ClientRegistrationResponse> {
+    return this.request<ClientRegistrationResponse>("/v1/clients/register", {
+      method: "POST",
+      body: JSON.stringify(request),
+      signal: options?.signal,
+    });
+  }
+
+  async nextClientToolRequest(
+    clientId: string,
+    waitMs = 25_000,
+    options?: ClientRequestOptions,
+  ): Promise<ClientToolRequest | null> {
+    const params = new URLSearchParams({
+      wait_ms: String(Math.max(0, Math.min(waitMs, 30_000))),
+    });
+    return this.request<ClientToolRequest | null>(
+      `/v1/clients/${encodeURIComponent(clientId)}/tools/next?${params.toString()}`,
+      { signal: options?.signal },
+    );
+  }
+
+  async completeClientToolRequest(
+    clientId: string,
+    requestId: string,
+    request: ClientToolResultRequest,
+    options?: ClientRequestOptions,
+  ): Promise<ClientToolResultResponse> {
+    return this.request<ClientToolResultResponse>(
+      `/v1/clients/${encodeURIComponent(clientId)}/tools/${encodeURIComponent(requestId)}/result`,
+      {
+        method: "POST",
+        body: JSON.stringify(request),
+        signal: options?.signal,
+      },
+    );
   }
 
   async capabilities(options?: ClientRequestOptions): Promise<CapabilityListResponse> {

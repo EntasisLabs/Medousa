@@ -9,6 +9,7 @@ use crate::events::TuiEvent;
 use crate::runtime::stasis_surreal_schema::ensure_stasis_runtime_schema;
 use crate::runtime::vault_surreal_schema::ensure_vault_surreal_schema;
 use crate::runtime::stasis_wire::{DaemonStasisWireConfig, build_daemon_stasis_composition};
+use crate::client_tools::ClientRegistry;
 use crate::artifact_store;
 use crate::channel_session_store;
 use crate::turn_continuation;
@@ -25,6 +26,7 @@ use crate::tui::runtime_services::assemble_tui_runtime;
 /// Single root handle for daemon and offline runtimes: Stasis composition + agent tooling.
 pub struct MedousaPlatformRuntime {
     agent: Arc<TuiRuntime>,
+    client_registry: ClientRegistry,
 }
 
 impl MedousaPlatformRuntime {
@@ -34,6 +36,10 @@ impl MedousaPlatformRuntime {
 
     pub fn agent_handle(&self) -> Arc<TuiRuntime> {
         self.agent.clone()
+    }
+
+    pub fn client_registry(&self) -> ClientRegistry {
+        self.client_registry.clone()
     }
 
     pub fn composition(&self) -> &stasis::prelude::RuntimeComposition {
@@ -145,6 +151,7 @@ async fn build_platform_inner(
     recurring_feed::init_recurring_feed_store_with_runtime(&composition).await;
 
     eprintln!("medousa-daemon: assembling agent runtime…");
+    let client_registry = ClientRegistry::new();
     let agent = assemble_tui_runtime(
         Arc::new(composition),
         memory.identity_store.clone(),
@@ -159,6 +166,7 @@ async fn build_platform_inner(
         config.allowed_grapheme_modules,
         &config.session_id,
         true,
+        client_registry.clone(),
         event_tx,
     )
     .await
@@ -201,7 +209,10 @@ async fn build_platform_inner(
     )
     .await;
 
-    Ok(Arc::new(MedousaPlatformRuntime { agent }))
+    Ok(Arc::new(MedousaPlatformRuntime {
+        agent,
+        client_registry,
+    }))
 }
 
 async fn sync_mcp_catalog(agent: &TuiRuntime) {

@@ -122,6 +122,25 @@ Both Rust (`sse` feature) and Python ship built-in SSE clients — [interactive-
 
 ---
 
+## External-surface client tools
+
+Browser, editor, and vault hosts can register tools that remain implemented in
+their native runtime while the daemon owns the agent turn. The dependency-free
+TypeScript adapter exposes these helpers directly; other SDKs can use the HTTP
+routes below.
+
+| Method | HTTP | Purpose |
+|--------|------|---------|
+| `registerClient(request)` | `POST /v1/clients/register` | Advertise surface-scoped tool definitions |
+| `nextClientToolRequest(client_id, wait_ms)` | `GET /v1/clients/{client_id}/tools/next` | Long-poll an invocation |
+| `completeClientToolRequest(client_id, request_id, result)` | `POST /v1/clients/{client_id}/tools/{request_id}/result` | Return output or an error |
+
+The client-pull bridge is designed for hosts that cannot accept inbound
+connections. Registrations and pending calls are bounded; only read-only
+browser snapshot support is currently shipped.
+
+---
+
 ## `agents()`
 
 Hot-swappable external agent runtimes (Cursor / Codex via ACP). Native Medousa turns stay on `interactive()` / turn tickets. See [ADR-008](../architecture/decisions/adr-008-hot-swappable-agent-runtime.md).

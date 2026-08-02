@@ -12,6 +12,7 @@ use crate::runtime_session::runtime_bootstrap_session_id;
 use tokio::sync::mpsc;
 
 use crate::runtime::memory_bundle::MemoryAdapterBundle;
+use crate::client_tools::ClientRegistry;
 use crate::tools::TuiRuntime;
 use crate::tui::runtime_services::assemble_tui_runtime;
 
@@ -50,6 +51,7 @@ pub async fn build_daemon_agent_runtime_from_composition(
         allowed_grapheme_modules,
         runtime_bootstrap_session_id(),
         true,
+        ClientRegistry::new(),
         event_tx,
     )
     .await?;

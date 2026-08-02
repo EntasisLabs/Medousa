@@ -398,7 +398,7 @@ async fn main() -> Result<()> {
         last_retention_at: Arc::new(RwLock::new(None)),
         last_mem_prune_at: Arc::new(RwLock::new(None)),
         last_context_usage_by_session: Arc::new(RwLock::new(HashMap::new())),
-        client_registry: medousa::browser_handlers::ClientRegistry::new(),
+        client_registry: platform.client_registry(),
         forge,
         forge_events: medousa::daemon::forge_events::ForgeEventBus::new(),
         coding_engine: Some(medousa::daemon::coding_engine_host::CodingEngineHost::new()),

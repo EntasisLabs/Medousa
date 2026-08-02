@@ -6,6 +6,7 @@ use stasis::prelude::RuntimeBackend;
 use tokio::sync::mpsc;
 
 use crate::artifact_store;
+use crate::client_tools::ClientRegistry;
 use crate::events::TuiEvent;
 use crate::runtime::stasis_surreal_schema::ensure_stasis_runtime_schema;
 use crate::runtime::vault_surreal_schema::ensure_vault_surreal_schema;
@@ -178,6 +179,7 @@ async fn assemble_tui_agent(
         config.allowed_grapheme_modules.clone(),
         &config.session_id,
         false,
+        ClientRegistry::new(),
         event_tx,
     )
     .await?;

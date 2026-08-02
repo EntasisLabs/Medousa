@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Medousa</title>
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <div class="shell">
+      <header class="topbar">
+        <div class="identity">
+          <div class="mark" aria-hidden="true">M</div>
+          <button id="history-button" class="identity-button" type="button" title="Conversation history">
+            <span id="session-title" class="session-title">Medousa</span>
+            <span class="connection"><span id="connection-dot" class="status-dot checking"></span><span id="connection-label">Checking workshop…</span></span>
+          </button>
+        </div>
+        <div class="top-actions">
+          <button id="new-button" class="icon-button" type="button" title="New conversation" aria-label="New conversation">＋</button>
+          <button id="settings-button" class="icon-button" type="button" title="Connection settings" aria-label="Connection settings">⚙</button>
+          <button id="open-home-button" class="icon-button" type="button" title="Open Medousa Home" aria-label="Open Medousa Home">↗</button>
+        </div>
+      </header>
+
+      <section id="connection-banner" class="connection-banner" hidden>
+        <div class="banner-icon">!</div>
+        <div class="banner-copy"><strong id="banner-title">Connection needs attention</strong><span id="banner-message">Medousa is unavailable.</span></div>
+        <button id="retry-button" class="secondary-button" type="button">Retry</button>
+      </section>
+
+      <section class="context-bar" aria-label="Current page context">
+        <div class="context-heading"><span class="eyebrow">IN THIS TAB</span><button id="refresh-context" class="quiet-button" type="button" title="Refresh page context">↻</button></div>
+        <div id="context-title" class="context-title">Current page</div>
+        <div id="context-detail" class="context-detail">Page context is captured when you ask.</div>
+        <label class="context-toggle"><input id="include-page" type="checkbox" checked><span>Include page content</span></label>
+      </section>
+
+      <main id="transcript" class="transcript" aria-live="polite">
+        <section id="empty-state" class="empty-state">
+          <div class="empty-mark">M</div>
+          <h1>What are we looking at?</h1>
+          <p>Ask about this page, a selection, or the next thing you want to get done.</p>
+          <div id="suggestions" class="suggestions"></div>
+        </section>
+        <div id="messages" class="messages"></div>
+        <div id="stream-status" class="stream-status" hidden><span class="spinner"></span><span id="stream-status-text">Medousa is thinking…</span></div>
+      </main>
+
+      <footer class="composer-area">
+        <div class="composer-toolbar">
+          <span id="composer-context" class="composer-context">Current tab</span>
+          <button id="stop-button" class="stop-button" type="button" hidden>Stop</button>
+        </div>
+        <div class="composer">
+          <textarea id="prompt" rows="3" aria-label="Message Medousa" placeholder="Ask Medousa about this page…"></textarea>
+          <div class="composer-footer"><span class="hint">Enter to send · Shift+Enter for newline</span><button id="send-button" class="send-button" type="button">Send</button></div>
+        </div>
+      </footer>
+    </div>
+
+    <dialog id="history-dialog" class="modal">
+      <div class="modal-header"><div><span class="eyebrow">WORKSHOP</span><h2>Conversations</h2></div><button id="history-close" class="icon-button" type="button" aria-label="Close conversation history">×</button></div>
+      <div class="modal-toolbar"><input id="session-search" type="search" placeholder="Search conversations…" aria-label="Search conversations"><button id="history-new" class="secondary-button" type="button">New</button></div>
+      <div id="session-list" class="session-list"></div>
+    </dialog>
+
+    <dialog id="settings-dialog" class="modal settings-modal">
+      <form id="settings-form" method="dialog">
+        <div class="modal-header"><div><span class="eyebrow">CONNECTION</span><h2>Medousa workshop</h2></div><button id="settings-close" class="icon-button" type="button" aria-label="Close connection settings">×</button></div>
+        <label class="field-label" for="endpoint">Workshop URL</label>
+        <input id="endpoint" class="field" name="endpoint" type="url" spellcheck="false" required>
+        <label class="field-label" for="token">Bearer token <span>optional</span></label>
+        <input id="token" class="field" name="token" type="password" autocomplete="off" placeholder="Only needed for a paired workshop">
+        <p class="settings-note">The extension talks directly to the Medousa daemon. Page content is only captured after you open or refresh context, and the token stays in browser extension storage.</p>
+        <div class="modal-actions"><button id="settings-cancel" class="secondary-button" type="button">Cancel</button><button class="primary-button" type="submit">Save &amp; connect</button></div>
+      </form>
+    </dialog>
+
+    <div id="toast" class="toast" role="status" hidden></div>
+    <script type="module" src="./sidepanel.js"></script>
+  </body>
+</html>
