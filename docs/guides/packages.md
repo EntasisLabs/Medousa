@@ -131,6 +131,31 @@ device identity. Admission uses the recorded high-water mark with 15% plus 256
 MiB of slack, but never lowers the catalog's static estimate. Failed or
 incomplete benchmarks do not change admission.
 
+For repeated context/batch cells and lifecycle soak, preview the matrix first;
+model loading only begins when `--execute` is present:
+
+```bash
+scripts/benchmark-local-inference-matrix.sh \
+  --model-id gemma-4-e2b-it-qat \
+  --contexts 1024,2048,4096 \
+  --iterations 100 \
+  --output-dir local-benchmarks
+
+# Repeat with the same arguments plus --execute after reviewing the run count.
+```
+
+Generate the fail-closed release report after the matrix finishes:
+
+```bash
+scripts/analyze-local-inference-benchmarks.py local-benchmarks \
+  --output local-inference-report.md
+```
+
+The report groups exact artifact, executable, recipe, context, and batch
+identities. It checks completed cycles, peak-prediction error, swap growth,
+10-second RSS reclamation, 100-cycle coverage, and settled-RSS trend. Missing
+evidence stays unknown or failed rather than being treated as a pass.
+
 ---
 
 ## Remove
