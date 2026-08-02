@@ -18,6 +18,15 @@ local function resolve_url(endpoint, path)
   return endpoint .. path
 end
 
+local function is_handoff_event(event)
+  local event_type = tostring(event.event_type or ""):lower()
+  local phase = tostring(event.phase or ""):lower()
+  return event_type == "worker_ack"
+    or event_type == "workshop_ack"
+    or phase == "worker_ack"
+    or phase == "workshop_ack"
+end
+
 local function response_body(result)
   local output = result.stdout or ""
   local body, status = output:match("^(.*)\n(%d%d%d)\n?$")
@@ -39,6 +48,7 @@ function M.new(options)
     token = options.token or vim.env.MEDOUSA_TOKEN,
     stream_job = nil,
     stream_cancelled = false,
+    stream_generation = 0,
   }, M)
 end
 
@@ -149,6 +159,7 @@ end
 
 function M:cancel(session_id, callback)
   self.stream_cancelled = true
+  self.stream_generation = self.stream_generation + 1
   if self.stream_job then
     self.stream_job:kill(15)
     self.stream_job = nil
@@ -181,7 +192,10 @@ end
 function M:turn(session_id, prompt, context, callbacks)
   self.stream_cancelled = false
   self.stream_terminal = false
+  self.stream_generation = self.stream_generation + 1
+  local generation = self.stream_generation
   self:request("GET", "/v1/runtime/defaults", nil, function(defaults, defaults_err)
+    if generation ~= self.stream_generation or self.stream_cancelled then return end
     if not defaults then
       callbacks.on_error(defaults_err)
       return
@@ -203,28 +217,41 @@ function M:turn(session_id, prompt, context, callbacks)
       },
     }
     self:request("POST", "/v1/interactive/turn", request, function(turn, turn_err)
+      if generation ~= self.stream_generation or self.stream_cancelled then return end
       if not turn then
         callbacks.on_error(turn_err)
         return
       end
-      self:_stream(turn.stream_url, 0, 0, callbacks)
+      self:_stream(turn.stream_url, 0, 0, callbacks, generation)
     end)
   end)
 end
 
-function M:_stream(stream_url, since, attempt, callbacks)
-  if self.stream_cancelled then return end
+function M:_stream(stream_url, since, attempt, callbacks, generation)
+  if self.stream_cancelled or generation ~= self.stream_generation then return end
   local terminal_seen = false
+  local handoff_seen = false
   local parser = stream.new_parser(function(event)
+    if self.stream_cancelled or generation ~= self.stream_generation then return end
     local sequence = tonumber(event.seq)
     if sequence and sequence > since then since = sequence end
+    local is_handoff = is_handoff_event(event) and not handoff_seen
+    if is_handoff then
+      handoff_seen = true
+      if self.stream_job then
+        self.stream_job:kill(15)
+        self.stream_job = nil
+      end
+    end
     local is_terminal = event.terminal and not self.stream_terminal
     if is_terminal then
       terminal_seen = true
       self.stream_terminal = true
     end
     vim.schedule(function()
+      if generation ~= self.stream_generation and not is_handoff then return end
       callbacks.on_event(event)
+      if is_handoff and callbacks.on_handoff then callbacks.on_handoff(event) end
       if is_terminal then callbacks.on_done(event) end
     end)
   end)
@@ -239,13 +266,15 @@ function M:_stream(stream_url, since, attempt, callbacks)
     end,
   }, function(result)
     vim.schedule(function()
+      if generation ~= self.stream_generation then return end
       self.stream_job = nil
       if self.stream_cancelled then return end
+      if handoff_seen then return end
       if self.stream_terminal or terminal_seen then return end
       if attempt < 4 then
         callbacks.on_status("Connection interrupted — recovering…")
         vim.defer_fn(function()
-          self:_stream(stream_url, since, attempt + 1, callbacks)
+          self:_stream(stream_url, since, attempt + 1, callbacks, generation)
         end, math.min(30000, 500 * (2 ^ attempt)))
       else
         callbacks.on_error((result.stderr and result.stderr ~= "" and result.stderr) or "Medousa stream ended unexpectedly")

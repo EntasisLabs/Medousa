@@ -82,4 +82,23 @@ describe("VS Code stream projection", () => {
     );
     expect(projected).toContainEqual({ kind: "answer_replace", text: "Here is the result." });
   });
+
+  it("releases the host turn when work enters the workshop", () => {
+    const projected = projectStreamEvent(
+      event({
+        event_type: "workshop_ack",
+        phase: "workshop_ack",
+        operator_message: "Medousa is in the workshop",
+        final_text: "I’m taking this into the workshop.",
+        work_id: "work-1",
+      }),
+      createProjectionState(),
+    );
+    expect(projected).toContainEqual({
+      kind: "handoff",
+      text: "Medousa is in the workshop",
+      workId: "work-1",
+    });
+    expect(projected).not.toContainEqual({ kind: "terminal", error: false });
+  });
 });

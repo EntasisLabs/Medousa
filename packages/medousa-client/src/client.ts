@@ -1,4 +1,4 @@
-import { readSse, streamPathWithSince } from "./stream.js";
+import { isBackgroundHandoffEvent, readSse, streamPathWithSince } from "./stream.js";
 import type {
   CapabilityListResponse,
   ClientOptions,
@@ -12,6 +12,9 @@ import type {
   SessionSummary,
   SessionSetDisplayNameResponse,
   SessionDeleteResponse,
+  VaultBacklinksResponse,
+  VaultNoteContentResponse,
+  VaultSearchResponse,
   VaultWriteRequest,
   VaultWriteResponse,
   RuntimeDefaults,
@@ -38,8 +41,10 @@ export class MedousaClient {
   constructor(options: ClientOptions) {
     this.baseUrl = options.baseUrl.replace(/\/$/, "");
     this.bearerToken = options.bearerToken;
-    this.fetchImpl = options.fetch ?? globalThis.fetch;
-    if (!this.fetchImpl) throw new Error("A fetch implementation is required");
+    const fetchImpl = options.fetch ?? globalThis.fetch;
+    if (!fetchImpl) throw new Error("A fetch implementation is required");
+    // Browser fetch is an IDL method and must retain its Window/globalThis receiver.
+    this.fetchImpl = fetchImpl.bind(globalThis);
   }
 
   async health(options?: ClientRequestOptions): Promise<HealthResponse> {
@@ -122,6 +127,53 @@ export class MedousaClient {
     });
   }
 
+  async getVaultNote(
+    path: string,
+    options?: ClientRequestOptions,
+  ): Promise<VaultNoteContentResponse> {
+    return this.request<VaultNoteContentResponse>(`/v1/vault/notes/${encodeVaultPath(path)}`, {
+      signal: options?.signal,
+    });
+  }
+
+  async updateVaultNote(
+    path: string,
+    content: string,
+    ifMatch?: string,
+    options?: ClientRequestOptions,
+  ): Promise<VaultWriteResponse> {
+    return this.request<VaultWriteResponse>(`/v1/vault/notes/${encodeVaultPath(path)}`, {
+      method: "PUT",
+      body: content,
+      headers: {
+        "Content-Type": "text/markdown; charset=utf-8",
+        ...(ifMatch ? { "If-Match": ifMatch } : {}),
+      },
+      signal: options?.signal,
+    });
+  }
+
+  async searchVault(
+    query: string,
+    limit = 20,
+    options?: ClientRequestOptions,
+  ): Promise<VaultSearchResponse> {
+    const params = new URLSearchParams({ q: query, limit: String(limit) });
+    return this.request<VaultSearchResponse>(`/v1/vault/search?${params.toString()}`, {
+      signal: options?.signal,
+    });
+  }
+
+  async vaultBacklinks(
+    path: string,
+    options?: ClientRequestOptions,
+  ): Promise<VaultBacklinksResponse> {
+    const params = new URLSearchParams({ path });
+    return this.request<VaultBacklinksResponse>(`/v1/vault/backlinks?${params.toString()}`, {
+      signal: options?.signal,
+    });
+  }
+
   async runtimeDefaults(options?: ClientRequestOptions): Promise<RuntimeDefaults> {
     return this.request<RuntimeDefaults>("/v1/runtime/defaults", {
       signal: options?.signal,
@@ -147,25 +199,25 @@ export class MedousaClient {
     });
   }
 
-  async approveBudget(requestId: string, extraRounds?: number): Promise<void> {
+  async approveBudget(requestId: string, extraRounds?: number, resolvedBy = "vscode"): Promise<void> {
     await this.request<unknown>(
       `/v1/turns/budget-requests/${encodeURIComponent(requestId)}/approve`,
-      { method: "POST", body: JSON.stringify({ extra_rounds: extraRounds, resolved_by: "vscode" }) },
+      { method: "POST", body: JSON.stringify({ extra_rounds: extraRounds, resolved_by: resolvedBy }) },
     );
   }
 
-  async denyBudget(requestId: string): Promise<void> {
+  async denyBudget(requestId: string, resolvedBy = "vscode"): Promise<void> {
     await this.request<unknown>(
       `/v1/turns/budget-requests/${encodeURIComponent(requestId)}/deny`,
-      { method: "POST", body: JSON.stringify({ resolved_by: "vscode" }) },
+      { method: "POST", body: JSON.stringify({ resolved_by: resolvedBy }) },
     );
   }
 
-  async resolvePermission(requestId: string, approve: boolean): Promise<void> {
+  async resolvePermission(requestId: string, approve: boolean, resolvedBy = "vscode"): Promise<void> {
     const action = approve ? "approve" : "deny";
     await this.request<unknown>(
       `/v1/agents/permission-requests/${encodeURIComponent(requestId)}/${action}`,
-      { method: "POST", body: JSON.stringify({ resolved_by: "vscode" }) },
+      { method: "POST", body: JSON.stringify({ resolved_by: resolvedBy }) },
     );
   }
 
@@ -200,7 +252,7 @@ export class MedousaClient {
           if (event.seq) lastSeq = event.seq;
           attempt = 0;
           yield event;
-          if (event.terminal) return;
+          if (event.terminal || (options.stopOnHandoff && isBackgroundHandoffEvent(event))) return;
         }
       } catch (error) {
         if (options.signal?.aborted) return;
@@ -248,4 +300,12 @@ export class MedousaClient {
       }, { once: true });
     });
   }
+}
+
+function encodeVaultPath(path: string): string {
+  return path
+    .split("/")
+    .filter(Boolean)
+    .map((segment) => encodeURIComponent(segment))
+    .join("/");
 }

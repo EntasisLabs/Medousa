@@ -32,6 +32,10 @@ sequenceDiagram
 2. Response `InteractiveTurnResponse` includes `turn_id` and **`stream_url`** (typically `/v1/interactive/turn/{turn_id}/stream`).
 3. **GET** `stream_url` with `Accept: text/event-stream`.
 4. Parse each SSE data line as `InteractiveTurnStreamEvent` until `terminal: true`. Track **`seq`** on every event.
+   `worker_ack` and `workshop_ack` are non-terminal host handoff boundaries:
+   release the host composer there, then follow the background result through
+   the stream or session history rather than holding the composer until the
+   workshop synthesis arrives.
 
 SDK: [`docs/sdk/interactive-streaming.md`](../sdk/interactive-streaming.md)
 

@@ -3,7 +3,7 @@
 > **Status:** In progress / living plan
 > **Date:** 2026-07-31  
 > **Owner:** Medousa platform  
-> **Related:** [`architecture/ROADMAP.md`](ROADMAP.md), [`docs/sdk/README.md`](../docs/sdk/README.md), [`docs/engine/http-api.md`](../docs/engine/http-api.md), [`docs/cookbook/integrate-without-the-app.md`](../docs/cookbook/integrate-without-the-app.md)
+> **Related:** [`architecture/ROADMAP.md`](ROADMAP.md), [`ADR-012 — surface taxonomy`](../docs/architecture/decisions/adr-012-medousa-anywhere-surfaces.md), [`docs/sdk/README.md`](../docs/sdk/README.md), [`docs/engine/http-api.md`](../docs/engine/http-api.md), [`docs/cookbook/integrate-without-the-app.md`](../docs/cookbook/integrate-without-the-app.md)
 
 ## Product promise
 
@@ -20,6 +20,22 @@ The first external surfaces are:
 Each integration should feel native to its host while preserving the same
 daemon, identity, sessions, vault authority, capabilities, and streaming
 semantics as Home.
+
+### Surface taxonomy
+
+The Anywhere family has two different host relationships:
+
+- **Native host surfaces:** VS Code, Neovim, and Obsidian run as plugins inside
+  an editor or vault host. They capture host-native context and offer
+  host-native, explicit editing actions.
+- **External-agent adapters:** Notion, Slack, and future channel hosts invoke
+  Medousa as a participant. They translate host messages, assignments,
+  context, approvals, progress, and results into daemon sessions and back.
+
+Notion is therefore not a second embedded Medousa chat client. It is a rich
+external-agent adapter using Notion's External Agents API. The Notion Agent SDK
+is the opposite direction—bringing Notion agents into another app—and is not
+the primary boundary for Medousa-in-Notion.
 
 ### Interaction standard: Home is a behavior, not a skin
 
@@ -124,6 +140,11 @@ flowchart TB
     OB[Obsidian plugin]
   end
 
+  subgraph adapters [External-agent adapters]
+    NO[Notion external agent]
+    SL[Future Slack-like adapters]
+  end
+
   subgraph shared [Shared integration layer]
     TS[@medousa/client TypeScript client]
     CTX[Context envelope]
@@ -139,6 +160,8 @@ flowchart TB
   VS --> TS
   NV --> TS
   OB --> TS
+  NO --> HTTP
+  SL --> HTTP
   TS --> CTX
   TS --> CONN
   CONN --> HTTP
@@ -241,6 +264,14 @@ rename/delete, optional Telescope discovery, compact tool states, a statusline
 API, and unified-diff previews guarded by buffer revision before one-step
 undoable application.
 
+The Obsidian native surface now lives in
+[`integrations/obsidian/`](../integrations/obsidian/). It opens a native
+Obsidian view, restores and manages daemon-owned conversations, captures bounded
+current note/selection/link context, streams a turn with reconnect semantics,
+and exposes daemon-backed search, backlinks, synthesis prompts, and explicit
+answer-to-note workflows. Note creation is create-only; append uses a fresh
+read plus `If-Match`; link insertion stays a deliberate Obsidian editor action.
+
 ### Obsidian — vault-native companion
 
 **Initial commands and UI:**
@@ -254,6 +285,26 @@ undoable application.
 
 The first version should avoid pretending that every Obsidian plugin API event
 is a Medousa event. Synchronization and conflict behavior must be explicit.
+
+### Notion — external-agent adapter
+
+Notion is a hosted Medousa agent, not a native editor plugin. The adapter is
+responsible for:
+
+- registering or connecting Medousa through the External Agents API;
+- mapping mentions, assignments, pages, comments, and tasks to daemon
+  sessions and turns;
+- translating progress, questions, approvals, and terminal results back into
+  Notion events;
+- representing page/block changes as reviewable proposals before applying them;
+- persisting idempotency keys, event cursors, and the Notion-session to
+  Medousa-session mapping.
+
+The first action is a private-beta contract/access spike. We must verify the
+real authentication, callback/webhook, session, message, event, and approval
+semantics before adding a production adapter. Notion Workers may later expose
+selected Medousa tools to Notion Custom Agents, but Workers are not a
+substitute for the External Agents API.
 
 ## Phased delivery
 
@@ -324,16 +375,36 @@ remain follow-on work.
 
 **Goal:** make Medousa feel native to the vault.
 
-- Add current-note/selection/link-neighborhood context.
+- Add current-note/selection/link-neighborhood context. **Complete.**
 - Add search, backlinks, note creation, append, and link insertion previews.
+  **Complete.**
 - Define conflict handling for notes changed by both Obsidian and Medousa.
+  **Complete for previewed append writes via `If-Match`.**
 - Add daily/weekly synthesis as an explicit note-generation workflow.
-- Add Home handoff for advanced workflows.
+  **Complete for the first workflow.**
+- Add Home handoff for advanced workflows. **Complete for the first handoff.**
 
-**Exit:** an Obsidian user can ask about their knowledge base and create or
-update notes with visible, reversible intent.
+**Exit:** an Obsidian user can ask about their knowledge base, explore linked
+notes, create or update notes with visible, reversible intent, and hand advanced
+work to Home. Rich Markdown rendering and broader vault actions remain
+hardening/follow-on work.
 
-### Phase 5 — hardening and distribution
+### Phase 5 — Notion external-agent adapter
+
+**Goal:** make Medousa a first-class agent inside Notion without moving the
+Medousa runtime into Notion.
+
+- Verify External Agents API beta access and capture the exact contract.
+- Implement durable Notion-session ↔ Medousa-session and task ↔ turn mapping.
+- Ship mention/assignment → context → streaming progress → terminal result.
+- Add page/block context reads and approval-aware write proposals.
+- Add retries, idempotency, event cursors, connection diagnostics, and a Home
+  handoff for work that exceeds the Notion surface.
+
+**Exit:** a Notion user can assign work to Medousa, follow honest progress,
+answer a question or approval request, and review an explicit page/block change.
+
+### Phase 6 — hardening and distribution
 
 - Publish install/update guidance for each platform.
 - Add compatibility matrix: plugin version, daemon version, capabilities,
@@ -368,6 +439,7 @@ update notes with visible, reversible intent.
 | VS Code | command activation, editor context, panel lifecycle, diff preview |
 | Neovim | Lua API, headless command tests, streaming window cleanup, patch approval |
 | Obsidian | note context, link insertion, conflict handling, previewed writes |
+| Notion | external-agent contract, session mapping, event replay, approvals, block proposals |
 | End to end | daemon + one adapter against local and paired workshop fixtures |
 | Docs | SDK contract checks, docs verification, install and troubleshooting paths |
 
@@ -397,6 +469,8 @@ No adapter is considered first-class until it has:
    conflict semantics are proven?
 6. What Obsidian vault mutation policy best preserves the daemon authority
    without fighting normal Obsidian editing?
+7. Which Notion External Agents API beta contract and distribution path are
+   available to Medousa?
 
 ## Initial implementation order
 
@@ -406,5 +480,6 @@ No adapter is considered first-class until it has:
 3. Ship the VS Code vertical slice.
 4. Reuse the client for Neovim’s focused command surface.
 5. Reuse the client for Obsidian’s vault-native workflows.
-6. Add Forge, artifacts, richer code actions, and workspace activity only
+6. Spike and then implement Notion as an external-agent adapter.
+7. Add Forge, artifacts, richer code actions, and workspace activity only
    after the core connection/context/session loop is reliable.

@@ -3,6 +3,7 @@ import * as vscode from "vscode";
 import {
   boundContext,
   contextSupplement,
+  isBackgroundHandoffEvent,
   MedousaClient,
   MedousaHttpError,
   type Diagnostic,
@@ -56,6 +57,8 @@ class MedousaChatView implements vscode.WebviewViewProvider {
   private client: MedousaClient | null = null;
   private sessionId: string | null = null;
   private abortController: AbortController | null = null;
+  private readonly workshopWatchers = new Map<string, AbortController>();
+  private pendingWorkshopRefreshSession: string | null = null;
   private disabledContext = new Set<string>();
   private lastPrompt: string | null = null;
 
@@ -78,6 +81,8 @@ class MedousaChatView implements vscode.WebviewViewProvider {
 
   dispose(): void {
     this.abortController?.abort();
+    for (const watcher of this.workshopWatchers.values()) watcher.abort();
+    this.workshopWatchers.clear();
   }
 
   async refresh(): Promise<void> {
@@ -87,14 +92,7 @@ class MedousaChatView implements vscode.WebviewViewProvider {
       this.client = await createClient(this.context);
       const restored = await this.restoreOrCreateSession(this.client);
       this.sessionId = restored.session_id;
-      this.post({
-        type: "history",
-        sessionId: restored.session_id,
-        turns: restored.turns.map((turn) => ({
-          ...turn,
-          content: stripContextSupplement(turn.content),
-        })),
-      });
+      this.postHistory(restored);
       await this.refreshSessions();
       this.post({ type: "connection", state: "connected", label: endpointLabel() });
       this.refreshContext();
@@ -156,10 +154,28 @@ class MedousaChatView implements vscode.WebviewViewProvider {
       this.post({ type: "status", text: "Medousa is thinking…", working: true });
       const turn = await client.startTurn(request, { signal: this.abortController.signal });
       const projection = createProjectionState(showEngineDetails());
-      for await (const event of client.streamTurn(turn, { signal: this.abortController.signal })) {
-        for (const projected of projectStreamEvent(event, projection)) this.postProjected(projected);
+      let handedOff = false;
+      for await (const event of client.streamTurn(turn, {
+        signal: this.abortController.signal,
+        stopOnHandoff: true,
+      })) {
+        for (const projected of projectStreamEvent(event, projection)) {
+          this.postProjected(projected);
+          if (projected.kind === "handoff") handedOff = true;
+        }
+        if (handedOff) {
+          void this.followWorkshop(turn, sessionId);
+          break;
+        }
       }
       this.post({ type: "done" });
+      if (handedOff) {
+        this.post({
+          type: "status",
+          text: "Workshop is running · you can keep typing",
+          working: false,
+        });
+      }
       await this.refreshSessions();
       this.post({ type: "connection", state: "connected", label: endpointLabel() });
     } catch (error) {
@@ -174,7 +190,106 @@ class MedousaChatView implements vscode.WebviewViewProvider {
       }
     } finally {
       this.abortController = null;
+      if (this.pendingWorkshopRefreshSession) {
+        const refreshSession = this.pendingWorkshopRefreshSession;
+        this.pendingWorkshopRefreshSession = null;
+        void this.refreshHistoryWhenIdle(refreshSession);
+      }
     }
+  }
+
+  /** The host stream ends at handoff; follow the durable workshop result separately. */
+  private async followWorkshop(
+    response: Awaited<ReturnType<MedousaClient["startTurn"]>>,
+    sessionId: string,
+  ): Promise<void> {
+    if (this.workshopWatchers.has(response.turn_id)) return;
+    const watcher = new AbortController();
+    this.workshopWatchers.set(response.turn_id, watcher);
+    const client = this.client;
+    if (!client) {
+      this.workshopWatchers.delete(response.turn_id);
+      return;
+    }
+
+    try {
+      for await (const event of client.streamTurn(response, {
+        signal: watcher.signal,
+        maxReconnectAttempts: 8,
+      })) {
+        if (isBackgroundHandoffEvent(event)) continue;
+        if (event.terminal) {
+          await this.pollWorkshopHistory(sessionId, watcher.signal, 8);
+          if (!this.abortController && this.sessionId === sessionId) {
+            this.post({ type: "status", text: "Connected", working: false });
+          }
+          return;
+        }
+      }
+    } catch {
+      if (!watcher.signal.aborted) await this.pollWorkshopHistory(sessionId, watcher.signal, 30);
+    } finally {
+      this.workshopWatchers.delete(response.turn_id);
+    }
+  }
+
+  private async pollWorkshopHistory(
+    sessionId: string,
+    signal: AbortSignal,
+    attempts: number,
+  ): Promise<void> {
+    const client = this.client;
+    if (!client) return;
+    let previousSignature = "";
+    for (let attempt = 0; attempt < attempts && !signal.aborted; attempt += 1) {
+      try {
+        const history = await client.sessionHistory(sessionId, { signal });
+        const signature = historySignature(history);
+        if (signature !== previousSignature) {
+          previousSignature = signature;
+          this.deliverWorkshopHistory(history);
+        }
+      } catch {
+        if (signal.aborted) return;
+      }
+      if (attempt + 1 < attempts) {
+        try {
+          await delay(500, signal);
+        } catch {
+          return;
+        }
+      }
+    }
+  }
+
+  private deliverWorkshopHistory(history: SessionHistoryResponse): void {
+    if (history.session_id !== this.sessionId) return;
+    if (this.abortController) {
+      this.pendingWorkshopRefreshSession = history.session_id;
+      return;
+    }
+    this.postHistory(history);
+  }
+
+  private async refreshHistoryWhenIdle(sessionId: string): Promise<void> {
+    if (this.sessionId !== sessionId || !this.client) return;
+    try {
+      const history = await this.client.sessionHistory(sessionId);
+      this.deliverWorkshopHistory(history);
+    } catch {
+      // The next workshop stream event or a normal refresh can reconcile history.
+    }
+  }
+
+  private postHistory(history: SessionHistoryResponse): void {
+    this.post({
+      type: "history",
+      sessionId: history.session_id,
+      turns: history.turns.map((turn) => ({
+        ...turn,
+        content: stripContextSupplement(turn.content),
+      })),
+    });
   }
 
   async newSession(): Promise<void> {
@@ -407,6 +522,13 @@ class MedousaChatView implements vscode.WebviewViewProvider {
       case "terminal":
         if (event.error && event.text) this.post({ type: "error", text: event.text });
         break;
+      case "handoff":
+        this.post({
+          type: "status",
+          text: `${event.text} · you can keep typing`,
+          working: false,
+        });
+        break;
       case "budget_request":
         this.post({ type: "attention", kind: "budget", requestId: event.requestId, rounds: event.rounds, text: `Medousa needs ${event.rounds} more tool round${event.rounds === 1 ? "" : "s"} to finish.` });
         break;
@@ -537,6 +659,26 @@ function errorMessage(error: unknown): string {
 
 function stripContextSupplement(content: string): string {
   return content.replace(/\n*<medousa-context>[\s\S]*?<\/medousa-context>\s*$/i, "").trimEnd();
+}
+
+function historySignature(history: SessionHistoryResponse): string {
+  return history.turns
+    .map((turn) => `${turn.role}\u0000${turn.timestamp}\u0000${turn.content}`)
+    .join("\u0001");
+}
+
+function delay(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal.aborted) {
+      reject(signal.reason ?? new Error("Aborted"));
+      return;
+    }
+    const timer = setTimeout(resolve, ms);
+    signal.addEventListener("abort", () => {
+      clearTimeout(timer);
+      reject(signal.reason ?? new Error("Aborted"));
+    }, { once: true });
+  });
 }
 
 type ContextChip = { key: string; label: string; detail?: string };

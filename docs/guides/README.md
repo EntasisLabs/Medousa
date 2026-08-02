@@ -15,6 +15,7 @@ Integrator / self-host cookbooks: [../cookbook/README.md](../cookbook/README.md)
 | [Channels](channels.md) | Telegram, Discord, Slack, WhatsApp from the app |
 | [VS Code](vscode.md) | Use Medousa chat beside your editor |
 | [Neovim](neovim.md) | Use the keyboard-first Medousa coding room |
+| [Obsidian](obsidian.md) | Use the vault-native Medousa companion |
 | [Undertakings & ForgeLens](undertakings.md) | Governed work, seal, review, World observe |
 
 Also useful from the cookbook (app-user tagged):

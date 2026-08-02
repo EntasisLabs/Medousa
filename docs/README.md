@@ -31,6 +31,7 @@ Doc conventions: [CONTRIBUTING-DOCS.md](CONTRIBUTING-DOCS.md)
 | [Channels](guides/channels.md) | Telegram, Discord, Slack, WhatsApp |
 | [VS Code](guides/vscode.md) | Medousa chat, editor context, and workshop sessions in VS Code |
 | [Neovim](guides/neovim.md) | Keyboard-first coding room with contextual chat and safe code application |
+| [Obsidian](guides/obsidian.md) | Vault-native Medousa chat and bounded note context |
 | [Undertakings & ForgeLens](guides/undertakings.md) | Governed work, seal, review, World |
 | Full index | [guides/README.md](guides/README.md) |
 

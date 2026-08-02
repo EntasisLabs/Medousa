@@ -4,8 +4,8 @@ export type ProjectedEvent =
   | { kind: "answer_delta"; text: string }
   | { kind: "answer_replace"; text: string }
   | { kind: "status"; text: string }
-  | { kind: "tool_started"; runId: string; name: string; summary?: string }
-  | { kind: "tool_finished"; runId: string; name: string; status: string; summary?: string }
+  | { kind: "tool_started"; name: string }
+  | { kind: "tool_finished"; name: string; status: string }
   | { kind: "budget_request"; requestId: string; rounds: number }
   | { kind: "permission_request"; requestId: string; message: string }
   | { kind: "handoff"; text: string; workId?: string }
@@ -14,11 +14,10 @@ export type ProjectedEvent =
 export interface ProjectionState {
   answerText: string;
   toolRuns: Set<string>;
-  showEngineDetails: boolean;
 }
 
-export function createProjectionState(showEngineDetails = false): ProjectionState {
-  return { answerText: "", toolRuns: new Set(), showEngineDetails };
+export function createProjectionState(): ProjectionState {
+  return { answerText: "", toolRuns: new Set() };
 }
 
 export function projectStreamEvent(
@@ -46,12 +45,7 @@ export function projectStreamEvent(
   if (eventType === "tool_started" || (event.tool_name && event.tool_status === "running")) {
     const runId = event.tool_run_id ?? `${event.tool_name ?? "tool"}-${event.tool_round ?? 1}`;
     state.toolRuns.add(runId);
-    projected.push({
-      kind: "tool_started",
-      runId,
-      name: formatToolName(event.tool_name ?? "tool"),
-      summary: event.tool_input_summary ?? undefined,
-    });
+    projected.push({ kind: "tool_started", name: formatToolName(event.tool_name ?? "tool") });
   }
 
   if (eventType === "tool_finished" || (event.tool_name && event.tool_status && event.tool_status !== "running")) {
@@ -59,16 +53,14 @@ export function projectStreamEvent(
     state.toolRuns.add(runId);
     projected.push({
       kind: "tool_finished",
-      runId,
       name: formatToolName(event.tool_name ?? "tool"),
       status: event.tool_status ?? (eventType === "tool_finished" ? "succeeded" : "finished"),
-      summary: event.tool_output_summary ?? undefined,
     });
   }
 
   if (event.content_delta && state.toolRuns.size === 0) {
-    const delta = appendWithoutDuplication(state, event.content_delta);
-    if (delta) projected.push({ kind: "answer_delta", text: delta });
+    state.answerText += event.content_delta;
+    projected.push({ kind: "answer_delta", text: event.content_delta });
   }
 
   if (event.operator_message && !isTelemetry(event.operator_message)) {
@@ -90,18 +82,12 @@ export function projectStreamEvent(
 
   if (event.terminal) {
     const finalText = event.final_text?.trim() ?? "";
-    if (finalText) {
-      if (state.toolRuns.size > 0 || (state.answerText && !finalText.startsWith(state.answerText))) {
-        state.answerText = finalText;
-        projected.push({ kind: "answer_replace", text: finalText });
-      } else if (state.answerText.length === 0) {
-        state.answerText = finalText;
-        projected.push({ kind: "answer_delta", text: finalText });
-      } else if (finalText.length > state.answerText.length) {
-        const suffix = finalText.slice(state.answerText.length);
-        state.answerText = finalText;
-        projected.push({ kind: "answer_delta", text: suffix });
-      }
+    if (finalText && (state.toolRuns.size > 0 || state.answerText !== finalText)) {
+      state.answerText = finalText;
+      projected.push({ kind: "answer_replace", text: finalText });
+    } else if (finalText && state.answerText.length === 0) {
+      state.answerText = finalText;
+      projected.push({ kind: "answer_delta", text: finalText });
     }
     const failed = eventType === "error" || event.phase.toLowerCase().includes("error") || event.tool_status === "failed";
     projected.push({
@@ -112,17 +98,7 @@ export function projectStreamEvent(
     return projected;
   }
 
-  if (event.debug_message && state.showEngineDetails) {
-    projected.push({ kind: "status", text: event.debug_message });
-  }
-
   return projected;
-}
-
-function appendWithoutDuplication(state: ProjectionState, text: string): string {
-  if (!text) return "";
-  state.answerText += text;
-  return text;
 }
 
 function isTelemetry(text: string): boolean {
