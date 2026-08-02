@@ -38,8 +38,10 @@ vim.api.nvim_buf_set_lines(buffer, 0, -1, false, { "one", "two", "three" })
 vim.bo[buffer].filetype = "lua"
 local captured = context.from_range(buffer, 2, 2)
 assert(captured.selection.text == "two")
-assert(context.supplement(captured):find("selection%-lines: 2%-2"))
-assert(context.strip_supplement("hello\n\n" .. context.supplement(captured)) == "hello")
+local host_context = context.host_context(captured)
+assert(host_context.source == "neovim")
+assert(host_context.resource_path == nil)
+assert(host_context.selection.text == "two")
 
 local prepared = assert(edit.prepare({ language = "lua", text = "replaced" }, captured, "selection"))
 assert(prepared.diff:find("%-two"))

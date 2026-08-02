@@ -33,6 +33,9 @@ Click the Medousa toolbar icon to open the side panel. The default workshop is
 - Use **Stop** to release an active response, or **Copy** beneath a settled
   answer to move it elsewhere.
 
+Captured page context is attached as structured turn metadata; conversation
+history displays only what you typed.
+
 When Medousa needs fresh page state, the browser companion serves the
 read-only `browser_page_snapshot` client tool from the active tab. The page
 never becomes a passive background feed: the daemon requests a snapshot during

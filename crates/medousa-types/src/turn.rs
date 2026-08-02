@@ -3,6 +3,67 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct HostContextPosition {
+    pub line: u32,
+    pub character: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct HostContextSelection {
+    pub text: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start: Option<HostContextPosition>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub end: Option<HostContextPosition>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct HostContextDiagnostic {
+    pub message: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub severity: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start: Option<HostContextPosition>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub end: Option<HostContextPosition>,
+}
+
+/// Bounded, advisory context captured by an editor, notes app, or browser.
+/// This never grants filesystem or vault authority to the sending client.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct HostTurnContext {
+    pub source: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resource_kind: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resource_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resource_title: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resource_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cursor: Option<HostContextPosition>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub selection: Option<HostContextSelection>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub document_excerpt: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub diagnostics: Vec<HostContextDiagnostic>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub related_resources: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct TurnArtifactRef {
     pub role: String,
     pub content_type: String,
@@ -56,6 +117,9 @@ pub enum TurnPart {
         label: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         byte_size: Option<u64>,
+    },
+    HostContext {
+        context: HostTurnContext,
     },
     AttachmentRef {
         artifact_id: String,

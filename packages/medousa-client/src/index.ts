@@ -1,5 +1,5 @@
 export { MedousaClient, MedousaHttpError } from "./client.js";
-export { boundContext, contextSupplement } from "./context.js";
+export { boundContext, hostContext } from "./context.js";
 export {
   isBackgroundHandoffEvent,
   parseSseBlock,

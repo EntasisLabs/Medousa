@@ -208,6 +208,7 @@ impl JobHandler for RecurringAgentTurnJobHandler {
             model,
             stage_routing,
             surface: None,
+            host_context: None,
             max_tool_rounds: payload.max_tool_rounds,
             retry_runtime_max_rounds: None,
             manuscript_id: manuscript_id.clone(),

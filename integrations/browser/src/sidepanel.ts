@@ -1,6 +1,6 @@
 import {
   boundContext,
-  contextSupplement,
+  hostContext,
   isBackgroundHandoffEvent,
   MedousaClient,
   MedousaHttpError,
@@ -173,16 +173,12 @@ function sessionIdOf(session: SessionSummary): string | null {
 function sessionDisplayName(session: SessionSummary): string {
   const display = typeof session.display_name === "string" ? session.display_name.trim() : "";
   if (display) return display;
-  const preview = typeof session.preview === "string" ? stripContextSupplement(session.preview).trim() : "";
+  const preview = typeof session.preview === "string" ? session.preview.trim() : "";
   return firstLine(preview) || "New conversation";
 }
 
 function firstLine(value: string): string {
   return value.split("\n").map((line) => line.trim()).find(Boolean) ?? "";
-}
-
-function stripContextSupplement(value: string): string {
-  return value.replace(/\n*<medousa-context>[\s\S]*?<\/medousa-context>\s*$/i, "").trim();
 }
 
 function historySignature(history: SessionHistoryResponse): string {
@@ -194,7 +190,7 @@ function historyMessages(history: SessionHistoryResponse): BrowserChatMessage[] 
     .filter((turn) => turn.role === "user" || turn.role === "assistant")
     .map((turn) => ({
       role: turn.role as "user" | "assistant",
-      content: stripContextSupplement(turn.content),
+      content: turn.content,
       contextLabel: turn.role === "user" ? "Current tab" : undefined,
     }));
 }
@@ -552,7 +548,8 @@ async function sendPrompt(value?: string): Promise<void> {
     const request: InteractiveTurnRequest = {
       model: defaults.model,
       persist_user_turn: true,
-      prompt: `${text}\n\n${contextSupplement(context)}`,
+      prompt: text,
+      host_context: hostContext(context),
       provider: defaults.provider,
       response_depth_mode: defaults.response_depth_mode,
       reasoning_effort: defaults.reasoning_effort,
@@ -815,7 +812,7 @@ function renderSessions(): void {
     name.textContent = sessionDisplayName(session);
     const preview = document.createElement("span");
     preview.className = "session-preview";
-    preview.textContent = firstLine(stripContextSupplement(typeof session.preview === "string" ? session.preview : "")) || "No messages yet";
+    preview.textContent = firstLine(typeof session.preview === "string" ? session.preview : "") || "No messages yet";
     select.append(name, preview);
     const actions = document.createElement("div");
     actions.className = "session-actions";

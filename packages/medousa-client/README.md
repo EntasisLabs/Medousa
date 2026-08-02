@@ -16,7 +16,8 @@ JavaScript runtimes.
 - streaming SSE with sequence deduplication and bounded reconnect
 - explicit worker/workshop handoff detection so host composers can release while
   the durable workshop result is followed separately
-- bounded host context helpers
+- bounded host-context helpers that produce typed `host_context` request data;
+  visible prompts are never rewritten with context wrappers
 - bounded browser page title, URL, selection, and page-text context helpers
 - registered client-tool helpers for host-owned capabilities: advertise tool
   definitions, long-poll daemon requests, and return tool results

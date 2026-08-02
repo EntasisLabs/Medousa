@@ -13,6 +13,7 @@ import {
   setIcon,
 } from "obsidian";
 import {
+  hostContext,
   MedousaClient,
   MedousaHttpError,
   isBackgroundHandoffEvent,
@@ -23,7 +24,7 @@ import {
   type VaultNoteContentResponse,
   type VaultSearchResponse,
 } from "@medousa/client";
-import { captureObsidianContext, stripContextSupplement, type ObsidianContextSnapshot } from "./context";
+import { captureObsidianContext, type ObsidianContextSnapshot } from "./context";
 import {
   createProjectionState,
   projectStreamEvent,
@@ -326,7 +327,8 @@ export default class MedousaPlugin extends Plugin {
     const request: InteractiveTurnRequest = {
       model: defaults.model,
       persist_user_turn: true,
-      prompt: `${prompt.trim()}\n\n${snapshot.supplement}`,
+      prompt: prompt.trim(),
+      host_context: hostContext(snapshot.context),
       provider: defaults.provider,
       response_depth_mode: defaults.response_depth_mode,
       reasoning_effort: defaults.reasoning_effort,
@@ -639,7 +641,7 @@ class MedousaChatView extends ItemView {
     this.lastAnswerText = "";
     let renderedTurns = 0;
     for (const turn of history.turns) {
-      const content = stripContextSupplement(turn.content);
+      const content = turn.content;
       if (!content) continue;
       if (turn.role === "user" || turn.role === "assistant") {
         this.appendMessage(turn.role, content);

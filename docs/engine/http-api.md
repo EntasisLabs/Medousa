@@ -40,6 +40,12 @@ Stasis dashboard mounted at `/dashboard` (HTML UI).
 
 See [interactive-streaming.md](interactive-streaming.md). **Do not** expect SSE on the POST itself.
 
+`InteractiveTurnRequest.host_context` carries a typed, bounded editor, note, or
+page snapshot separately from `prompt`. The daemon persists the human prompt as
+written, stores host context as structured turn metadata, and projects that
+metadata into model context. Clients must not append prompt wrappers. Host
+context is advisory and never grants filesystem or vault authority.
+
 ### Registered client tools
 
 Host integrations can register tools that execute in the host process while

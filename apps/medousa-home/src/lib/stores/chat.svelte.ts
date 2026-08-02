@@ -28,7 +28,7 @@ import type {
 } from "$lib/types/session";
 import type { WorkCard } from "$lib/types/workspace";
 import { isAskJobId, askJobIdFromSession, askSessionId } from "$lib/types/askJob";
-import { reasoningFromParts, progressFromParts, toolRunsFromParts, userMediaFromParts, uiArtifactsFromParts } from "$lib/types/turnParts";
+import { hostContextFromParts, reasoningFromParts, progressFromParts, toolRunsFromParts, userMediaFromParts, uiArtifactsFromParts } from "$lib/types/turnParts";
 import { mapStreamUiArtifact, replaceUiArtifactEntry } from "$lib/types/artifact";
 import { chatScenes } from "$lib/liquid/surfaces/chat/chatScenes.svelte";
 import { chatInteractions } from "$lib/liquid/surfaces/chat/chatInteractions";
@@ -3515,6 +3515,7 @@ function mapTurns(
     statusLine:
       turn.role === "assistant" ? progressFromParts(turn.parts ?? null) : null,
     mediaAttachments: userMediaFromParts(turn.parts ?? null),
+    hostContext: hostContextFromParts(turn.parts ?? null),
     speakerProfileId: turn.speaker_profile_id?.trim() || null,
   }));
 }

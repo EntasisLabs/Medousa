@@ -1,5 +1,6 @@
 import type { ToolArtifactRef, ToolRunState, UiArtifact } from "$lib/types/chat";
 import type { ChatMediaAttachment } from "$lib/types/media";
+import type { HostTurnContext } from "$lib/types/generated/daemon_api";
 
 export interface TurnArtifactRef {
   role: string;
@@ -39,6 +40,10 @@ export type TurnPart =
       mime: string;
       label?: string | null;
       byte_size?: number | null;
+    }
+  | {
+      kind: "host_context";
+      context: HostTurnContext;
     }
   | {
       kind: "attachment_ref";
@@ -112,6 +117,38 @@ export function userMediaFromParts(parts?: TurnPart[] | null): ChatMediaAttachme
   return attachments.length > 0 ? attachments : undefined;
 }
 
+export function hostContextFromParts(parts?: TurnPart[] | null): HostTurnContext | null {
+  if (!parts?.length) return null;
+  return parts.find(
+    (part): part is Extract<TurnPart, { kind: "host_context" }> => part.kind === "host_context",
+  )?.context ?? null;
+}
+
+export function hostContextLabel(context?: HostTurnContext | null): string | null {
+  if (!context) return null;
+  const source = ({
+    vscode: "VS Code",
+    neovim: "Neovim",
+    obsidian: "Obsidian",
+    browser: "Browser",
+  } as Record<string, string>)[context.source.toLowerCase()] ?? context.source;
+  const resource = context.resource_path?.split(/[\\/]/).filter(Boolean).at(-1)
+    ?? context.resource_title
+    ?? (context.resource_url ? (() => {
+      try { return new URL(context.resource_url).hostname; } catch { return context.resource_url; }
+    })() : null);
+  const selection = context.selection?.start
+    ? context.selection.end && context.selection.end.line !== context.selection.start.line
+      ? `lines ${context.selection.start.line + 1}–${context.selection.end.line + 1}`
+      : `line ${context.selection.start.line + 1}`
+    : null;
+  const diagnosticCount = context.diagnostics?.length ?? 0;
+  const diagnostics = diagnosticCount > 0
+    ? `${diagnosticCount} diagnostic${diagnosticCount === 1 ? "" : "s"}`
+    : null;
+  return [source, resource, selection, diagnostics].filter(Boolean).join(" · ");
+}
+
 function normalizePresentation(value?: string | null): UiArtifact["presentation"] {
   const normalized = value?.trim().toLowerCase();
   if (normalized === "panel" || normalized === "fullscreen") {
@@ -172,6 +209,8 @@ export function composeTurnMarkdown(
         sections.push(
           `> [!note] Handoff (${part.handoff_kind})\n> ${part.text.replace(/\n/g, "\n> ")}`,
         );
+        break;
+      case "host_context":
         break;
       case "user_media":
         sections.push(

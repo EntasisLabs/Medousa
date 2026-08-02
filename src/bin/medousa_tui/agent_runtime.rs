@@ -672,6 +672,7 @@ async fn attempt_daemon_interactive_turn(
         model: state.settings.model.clone(),
         stage_routing: state.stage_routing.clone(),
         surface: Some(medousa::TurnSurfaceContext::tui()),
+        host_context: None,
         max_tool_rounds: Some(medousa::tui::settings::parse_usize_with_bounds(
             &state.settings.max_tool_rounds,
             10,

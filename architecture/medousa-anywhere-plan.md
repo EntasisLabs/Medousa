@@ -194,16 +194,18 @@ envelope. The initial shape should remain small and explicit:
 ```ts
 type MedousaSurface = "vscode" | "neovim" | "obsidian";
 
-interface MedousaContext {
-  surface: MedousaSurface;
+interface HostTurnContext {
+  source: MedousaSurface;
   workspace?: string;
-  file?: string;
+  resource_kind?: "file" | "note" | "page";
+  resource_path?: string;
+  resource_title?: string;
+  resource_url?: string;
   language?: string;
   selection?: { text: string; start?: Position; end?: Position };
+  document_excerpt?: string;
   diagnostics?: Diagnostic[];
-  vaultRootId?: string;
-  notePath?: string;
-  sessionId?: string;
+  related_resources?: string[];
 }
 ```
 

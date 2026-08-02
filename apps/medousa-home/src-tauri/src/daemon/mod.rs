@@ -450,6 +450,7 @@ pub async fn interactive_turn_send(
             supports_ui_artifacts: true,
             supports_browser_host,
         }),
+        host_context: None,
         max_tool_rounds: None,
         retry_runtime_max_rounds: None,
         manuscript_id: None,

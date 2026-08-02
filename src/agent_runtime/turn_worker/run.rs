@@ -1126,6 +1126,7 @@ fn worker_settings_from_record(record: &TurnWorkRecord) -> RuntimeSettings {
         model: record.model.clone(),
         stage_routing: StageRoutingMatrix::default_for(&record.provider, &record.model),
         surface: None,
+        host_context: None,
         max_tool_rounds: None,
         retry_runtime_max_rounds: None,
         manuscript_id: None,

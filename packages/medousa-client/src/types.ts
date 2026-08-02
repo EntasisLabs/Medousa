@@ -2,12 +2,14 @@ import type {
   InteractiveTurnRequest,
   InteractiveTurnResponse,
   InteractiveTurnStreamEvent,
+  HostTurnContext,
 } from "./generated/daemon_api.js";
 
 export type {
   InteractiveTurnRequest,
   InteractiveTurnResponse,
   InteractiveTurnStreamEvent,
+  HostTurnContext,
 };
 
 export type MedousaSurface = "vscode" | "neovim" | "obsidian" | "browser";
@@ -32,11 +34,14 @@ export interface MedousaContext {
   title?: string;
   url?: string;
   pageText?: string;
+  documentExcerpt?: string;
+  cursor?: Position;
   selection?: { text: string; start?: Position; end?: Position };
   diagnostics?: Diagnostic[];
   vaultRootId?: string;
   notePath?: string;
   sessionId?: string;
+  relatedResources?: string[];
 }
 
 export interface HealthResponse {

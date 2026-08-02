@@ -316,6 +316,25 @@ pub fn user_conversation_turn_with_media_and_speaker(
     turn
 }
 
+pub fn user_conversation_turn_with_context_media_and_speaker(
+    content: impl Into<String>,
+    host_context: Option<medousa_types::HostTurnContext>,
+    media_refs: &[crate::daemon_api::MediaRef],
+    speaker_profile_id: Option<&str>,
+) -> ConversationTurn {
+    let mut turn = user_conversation_turn_with_media_and_speaker(
+        content,
+        media_refs,
+        speaker_profile_id,
+    );
+    if let Some(context) = host_context {
+        turn.parts
+            .get_or_insert_with(Vec::new)
+            .push(TurnPart::HostContext { context });
+    }
+    turn
+}
+
 pub fn artifact_refs_from_stream(refs: &[StreamToolArtifactRef]) -> Vec<TurnArtifactRef> {
     refs.iter()
         .map(|item| TurnArtifactRef {
@@ -403,6 +422,7 @@ pub fn compose_parts_markdown(parts: &[TurnPart]) -> String {
                     "\n\n> [!note] Attachment: {label} ({mime})\n> `artifact:{artifact_id}`"
                 ));
             }
+            TurnPart::HostContext { .. } => {}
             TurnPart::Unknown => {}
         }
     }
@@ -496,5 +516,33 @@ mod tests {
         assert!(raw.contains("\"kind\":\"progress\""));
         let decoded: Vec<TurnPart> = serde_json::from_str(&raw).expect("deserialize");
         assert!(matches!(&decoded[0], TurnPart::Progress { .. }));
+    }
+
+    #[test]
+    fn host_context_is_structured_without_changing_user_content() {
+        let context = medousa_types::HostTurnContext {
+            source: "vscode".to_string(),
+            workspace: Some("Medousa".to_string()),
+            resource_kind: Some("file".to_string()),
+            resource_path: Some("src/main.rs".to_string()),
+            resource_title: None,
+            resource_url: None,
+            language: Some("rust".to_string()),
+            cursor: None,
+            selection: None,
+            document_excerpt: None,
+            diagnostics: Vec::new(),
+            related_resources: Vec::new(),
+        };
+        let turn = user_conversation_turn_with_context_media_and_speaker(
+            "Explain this",
+            Some(context),
+            &[],
+            None,
+        );
+        assert_eq!(turn.content, "Explain this");
+        assert!(turn.parts.as_deref().is_some_and(|parts| {
+            parts.iter().any(|part| matches!(part, TurnPart::HostContext { .. }))
+        }));
     }
 }

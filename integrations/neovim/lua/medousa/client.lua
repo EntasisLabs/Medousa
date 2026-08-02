@@ -203,7 +203,8 @@ function M:turn(session_id, prompt, context, callbacks)
     local request = {
       model = defaults.model,
       persist_user_turn = true,
-      prompt = prompt .. "\n\n" .. context,
+      prompt = prompt,
+      host_context = context,
       provider = defaults.provider,
       response_depth_mode = defaults.response_depth_mode,
       reasoning_effort = defaults.reasoning_effort,

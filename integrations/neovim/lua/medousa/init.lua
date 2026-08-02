@@ -451,7 +451,7 @@ local function load_history_into_state(history)
   state.last_answer = ""
   for _, turn in ipairs(history.turns or {}) do
     if turn.role == "user" or turn.role == "assistant" then
-      local content_value = context.strip_supplement(turn.content)
+      local content_value = turn.content
       table.insert(state.messages, { role = turn.role, content = content_value })
       if turn.role == "assistant" then state.last_answer = content_value end
     end
@@ -608,7 +608,7 @@ end
 normalize_session = function(item)
   local id = util.trim(tostring(item.session_id or item.id or ""))
   if id == "" then return nil end
-  local preview = context.strip_supplement(type(item.preview) == "string" and item.preview or "")
+  local preview = type(item.preview) == "string" and item.preview or ""
   local name = type(item.display_name) == "string" and util.trim(item.display_name) or ""
   return {
     session_id = id,
@@ -669,7 +669,7 @@ function M.send(prompt, explicit_context)
     state.current_status = "thinking"
     table.insert(state.messages, { role = "user", content = prompt, context_label = context.describe(value) })
     render()
-    state.client:turn(session_id, prompt, context.supplement(value), {
+    state.client:turn(session_id, prompt, context.host_context(value), {
       on_status = function(text)
         state.connection = "recovering"
         state.current_status = text
@@ -857,7 +857,7 @@ function M.switch_session(item)
     state.history_signature = history_signature(history)
     for _, turn in ipairs(history.turns or {}) do
       if turn.role == "user" or turn.role == "assistant" then
-        local content_value = context.strip_supplement(turn.content)
+        local content_value = turn.content
         table.insert(state.messages, { role = turn.role, content = content_value })
         if turn.role == "assistant" then state.last_answer = content_value end
         if turn.role == "user" then state.last_prompt = content_value end

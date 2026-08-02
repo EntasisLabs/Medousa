@@ -1,4 +1,4 @@
-import type { MedousaContext } from "./types.js";
+import type { HostTurnContext, MedousaContext } from "./types.js";
 
 const MAX_SELECTION_CHARS = 12_000;
 const MAX_PAGE_TEXT_CHARS = 24_000;
@@ -18,31 +18,34 @@ export function boundContext(context: MedousaContext): MedousaContext {
         }
       : undefined,
     pageText: context.pageText?.slice(0, MAX_PAGE_TEXT_CHARS),
+    documentExcerpt: context.documentExcerpt?.slice(0, MAX_PAGE_TEXT_CHARS),
     diagnostics: context.diagnostics?.slice(0, MAX_DIAGNOSTICS),
   };
 }
 
 /**
- * Temporary host-neutral context rendering for the current daemon contract.
- * A future typed context field can replace this without changing host APIs.
+ * Convert adapter-friendly context into the canonical daemon contract.
  */
-export function contextSupplement(context: MedousaContext): string {
+export function hostContext(context: MedousaContext): HostTurnContext {
   const bounded = boundContext(context);
-  const lines = [`surface: ${bounded.surface}`];
-  if (bounded.workspace) lines.push(`workspace: ${bounded.workspace}`);
-  if (bounded.file) lines.push(`file: ${bounded.file}`);
-  if (bounded.language) lines.push(`language: ${bounded.language}`);
-  if (bounded.title) lines.push(`page-title: ${bounded.title}`);
-  if (bounded.url) lines.push(`page-url: ${bounded.url}`);
-  if (bounded.notePath) lines.push(`note: ${bounded.notePath}`);
-  if (bounded.pageText) {
-    lines.push("page-text:", "```", bounded.pageText, "```");
-  }
-  if (bounded.selection?.text) {
-    lines.push("selection:", "```", bounded.selection.text, "```");
-  }
-  if (bounded.diagnostics?.length) {
-    lines.push("diagnostics:", ...bounded.diagnostics.map((item) => `- ${item.message}`));
-  }
-  return `<medousa-context>\n${lines.join("\n")}\n</medousa-context>`;
+  return {
+    source: bounded.surface,
+    workspace: bounded.workspace,
+    resource_kind: bounded.url ? "page" : bounded.notePath ? "note" : bounded.file ? "file" : undefined,
+    resource_path: bounded.notePath ?? bounded.file,
+    resource_title: bounded.title,
+    resource_url: bounded.url,
+    language: bounded.language,
+    cursor: bounded.cursor,
+    selection: bounded.selection,
+    document_excerpt: bounded.documentExcerpt ?? bounded.pageText,
+    diagnostics: bounded.diagnostics?.map((item) => ({
+      message: item.message,
+      severity: item.severity,
+      source: item.source,
+      start: item.range?.start,
+      end: item.range?.end,
+    })) ?? [],
+    related_resources: bounded.relatedResources ?? [],
+  };
 }

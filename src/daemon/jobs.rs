@@ -268,6 +268,7 @@ pub async fn enqueue_ask(
         model: model.clone(),
         stage_routing: Some(stage_routing.clone()),
         surface: None,
+        host_context: None,
         model_hint: request.model_hint.clone(),
         manuscript_id,
         additional_manuscript_ids,
