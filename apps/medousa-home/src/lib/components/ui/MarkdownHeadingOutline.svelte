@@ -32,6 +32,21 @@
     label = "On this page",
   }: Props = $props();
 
+  /** Keep the rail bounded while retaining a useful neighborhood around the active heading. */
+  const RAIL_WINDOW_SIZE = 21;
+  const railItems = $derived.by(() => {
+    if (items.length <= RAIL_WINDOW_SIZE) return items;
+    const activeIndex = Math.max(
+      0,
+      activeId ? items.findIndex((item) => item.id === activeId) : 0,
+    );
+    const start = Math.min(
+      Math.max(0, activeIndex - Math.floor(RAIL_WINDOW_SIZE / 2)),
+      items.length - RAIL_WINDOW_SIZE,
+    );
+    return items.slice(start, start + RAIL_WINDOW_SIZE);
+  });
+
   function onRailTickClick(id: string, event: MouseEvent) {
     // Ignore the synthetic follow-up click from a double-click pair.
     if (event.detail > 1) return;
@@ -87,7 +102,7 @@
     >
       <div class="md-outline-rail-track">
         <ul class="md-outline-rail-list">
-          {#each items as item (item.id)}
+          {#each railItems as item (item.id)}
             <li class="md-outline-rail-row">
               <button
                 type="button"
@@ -107,9 +122,6 @@
                 <span class="md-outline-tick-bar" aria-hidden="true"></span>
                 <span class="md-outline-tick-label">
                   <span class="md-outline-tick-label-text">{item.text}</span>
-                  {#if onToggleMode}
-                    <span class="md-outline-tick-label-hint">Double-click to expand</span>
-                  {/if}
                 </span>
               </button>
             </li>
@@ -244,24 +256,23 @@
   .md-outline-rail {
     position: absolute;
     top: 50%;
-    right: 0.4rem;
+    right: 0.25rem;
     z-index: 5;
     display: flex;
     flex-direction: column;
     align-items: center;
-    width: 1.65rem;
+    width: 1.45rem;
     max-height: min(58vh, 22rem);
+    box-sizing: border-box;
     transform: translateY(-50%);
     pointer-events: none;
   }
 
   .md-outline-rail-track {
     position: relative;
-    flex: 1 1 auto;
-    min-height: 7rem;
     width: 100%;
     pointer-events: auto;
-    padding: 0.2rem 0;
+    padding: 0.15rem 0.1rem;
     background: transparent;
     border: 0;
     box-shadow: none;
@@ -273,19 +284,17 @@
     margin: 0;
     padding: 0;
     list-style: none;
-    height: 100%;
-    min-height: inherit;
     display: flex;
     flex-direction: column;
-    justify-content: space-between;
     align-items: center;
+    gap: 0.12rem;
   }
 
   .md-outline-rail-row {
-    position: relative;
     display: flex;
     justify-content: center;
     width: 100%;
+    height: 0.48rem;
   }
 
   .md-outline-tick {
@@ -294,7 +303,7 @@
     align-items: center;
     justify-content: center;
     width: 100%;
-    height: 0.95rem;
+    height: 0.48rem;
     margin: 0;
     padding: 0;
     border: 0;
@@ -304,10 +313,10 @@
 
   .md-outline-tick-bar {
     display: block;
-    width: 0.85rem;
-    height: 3px;
+    width: 0.62rem;
+    height: 1.5px;
     border-radius: 999px;
-    background: rgb(var(--color-surface-500));
+    background: rgb(var(--color-surface-600));
     transition:
       width 120ms ease,
       height 120ms ease,
@@ -315,76 +324,74 @@
   }
 
   .md-outline-tick-h1 .md-outline-tick-bar {
-    width: 1.05rem;
-    height: 3.5px;
-    background: rgb(var(--color-surface-400));
+    width: 0.88rem;
+    height: 2px;
+    background: rgb(var(--color-surface-500));
   }
 
   .md-outline-tick-h3 .md-outline-tick-bar {
-    width: 0.55rem;
-    height: 2.5px;
-    background: rgb(var(--color-surface-600));
+    width: 0.4rem;
+    height: 1.5px;
+    background: rgb(var(--color-surface-700));
   }
 
   .md-outline-tick:hover .md-outline-tick-bar {
-    width: 1.15rem;
-    height: 3.5px;
+    width: 1rem;
+    height: 2px;
     background: rgb(var(--color-surface-200));
   }
 
   .md-outline-tick-active .md-outline-tick-bar,
   .md-outline-tick-active:hover .md-outline-tick-bar {
-    width: 1.2rem;
-    height: 4px;
+    width: 1.3rem;
+    height: 2px;
     background: rgb(var(--color-surface-50));
   }
 
   .md-outline-tick-h3:hover .md-outline-tick-bar {
-    width: 0.8rem;
-    height: 3px;
+    width: 0.72rem;
+    height: 2px;
   }
 
   .md-outline-tick-h3.md-outline-tick-active .md-outline-tick-bar,
   .md-outline-tick-h3.md-outline-tick-active:hover .md-outline-tick-bar {
-    width: 0.9rem;
-    height: 3.5px;
+    width: 1.3rem;
+    height: 2px;
   }
 
   .md-outline-tick-label {
     position: absolute;
     right: 100%;
     top: 50%;
-    transform: translateY(-50%);
+    transform: translateY(-50%) scale(0.98);
     display: flex;
     flex-direction: column;
-    gap: 0.12rem;
-    max-width: 16rem;
-    margin-right: 0.35rem;
-    padding: 0.3rem 0.55rem;
-    border-radius: 0.4rem;
-    border: 1px solid color-mix(in srgb, var(--color-surface-400) 32%, transparent);
-    background: color-mix(in srgb, var(--color-surface-900) 96%, transparent);
-    box-shadow: 0 8px 22px rgb(0 0 0 / 0.4);
+    width: min(20rem, calc(100vw - 3rem));
+    margin-right: 0.55rem;
+    padding: 0.55rem 0.62rem;
+    border: 1px solid color-mix(in srgb, var(--color-surface-400) 18%, transparent);
+    border-radius: 0.75rem;
+    background: color-mix(in srgb, var(--color-surface-900) 97%, transparent);
+    box-shadow: 0 10px 28px rgb(0 0 0 / 0.42);
     color: rgb(var(--color-surface-50));
-    font-size: 0.72rem;
+    font-size: 0.78rem;
     font-weight: 550;
     line-height: 1.3;
     opacity: 0;
     pointer-events: none;
-    transition: opacity 100ms ease;
+    transition:
+      opacity 100ms ease,
+      transform 100ms ease;
   }
 
   .md-outline-tick-label-text {
     overflow: hidden;
     text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .md-outline-tick-label-hint {
-    font-size: 0.62rem;
-    font-weight: 500;
-    color: rgb(var(--color-surface-400));
-    white-space: nowrap;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    white-space: normal;
   }
 
   /* Label is the natural click target on hover — keep it on the button. */
@@ -392,6 +399,7 @@
   .md-outline-tick:focus-visible .md-outline-tick-label,
   .md-outline-tick:focus-within .md-outline-tick-label {
     opacity: 1;
+    transform: translateY(-50%) scale(1);
     pointer-events: auto;
   }
 
