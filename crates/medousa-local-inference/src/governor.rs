@@ -272,6 +272,22 @@ fn select_device_snapshot(
         })
 }
 
+/// Returns true only when the selected backend has a trustworthy live budget
+/// and its remaining capacity has crossed the admission reserve. Missing or
+/// failed telemetry never masquerades as zero available memory.
+pub fn device_pressure_requires_eviction(
+    backend: GpuBackend,
+    devices: &[LocalDeviceTelemetrySnapshot],
+    reserve_mb: u64,
+) -> bool {
+    if backend == GpuBackend::None {
+        return false;
+    }
+    select_device_snapshot(backend, devices)
+        .and_then(|device| device.memory_free_mb)
+        .is_some_and(|available_mb| available_mb < reserve_mb)
+}
+
 fn telemetry_source_rank(source: medousa_types::local::LocalDeviceTelemetrySource) -> u8 {
     use medousa_types::local::LocalDeviceTelemetrySource;
     match source {
@@ -501,6 +517,31 @@ mod tests {
         );
         assert!(!admission.admitted);
         assert_eq!(admission.device_available_mb, None);
+    }
+
+    #[test]
+    fn live_device_pressure_crossing_reserve_requires_eviction() {
+        let devices = [device(GpuBackend::Cuda, 0, 8 * 1024, Some(400))];
+        assert!(device_pressure_requires_eviction(
+            GpuBackend::Cuda,
+            &devices,
+            512,
+        ));
+        assert!(!device_pressure_requires_eviction(
+            GpuBackend::Cuda,
+            &devices,
+            256,
+        ));
+    }
+
+    #[test]
+    fn missing_device_pressure_counter_does_not_look_critical() {
+        let devices = [device(GpuBackend::Cuda, 0, 8 * 1024, None)];
+        assert!(!device_pressure_requires_eviction(
+            GpuBackend::Cuda,
+            &devices,
+            512,
+        ));
     }
 
     #[test]

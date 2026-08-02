@@ -19,10 +19,10 @@ use once_cell::sync::Lazy;
 use medousa_local_engine::{LocalEngineConfig as EngineConfig, LocalEngineRuntime};
 #[cfg(feature = "embedded-inference")]
 use medousa_local_inference::{
-    DEFAULT_IDLE_TIMEOUT_SECS, DEFAULT_LOCAL_ENGINE_BIND, LocalEngineConfig, SAFE_MAX_BATCH_SIZE,
-    SAFE_MAX_SEQ_LEN, acquire_activation_lease, admission_for_model_id, builtin_catalog,
-    compiled_backends, config_from_catalog_entry, recommended_engine_config,
-    worker_status_for_config,
+    DEFAULT_IDLE_TIMEOUT_SECS, DEFAULT_LOCAL_ENGINE_BIND, GpuBackend, LocalEngineConfig,
+    SAFE_MAX_BATCH_SIZE, SAFE_MAX_SEQ_LEN, acquire_activation_lease, admission_for_model_id,
+    builtin_catalog, collect_device_telemetry, compiled_backends, config_from_catalog_entry,
+    device_pressure_requires_eviction, recommended_engine_config, worker_status_for_config,
 };
 
 #[cfg(feature = "embedded-inference")]
@@ -92,13 +92,19 @@ async fn main() -> anyhow::Result<()> {
         anyhow::bail!("provide --load-recommended, --model-id, or --model-repo + --model-alias");
     };
 
-    let activation_lease = match admission_for_model_id(&medousa_config.model_alias) {
+    let (activation_lease, device_pressure_guard) = match admission_for_model_id(
+        &medousa_config.model_alias,
+    ) {
         Ok(admission) if admission.admitted => {
             eprintln!(
                 "medousa_local resource admission: {}",
                 serde_json::to_string(&admission)?
             );
-            Some(acquire_activation_lease(&admission).map_err(anyhow::Error::msg)?)
+            let pressure_guard = admission.device_backend.zip(admission.device_reserve_mb);
+            (
+                Some(acquire_activation_lease(&admission).map_err(anyhow::Error::msg)?),
+                pressure_guard,
+            )
         }
         Ok(admission) => anyhow::bail!(admission.rationale),
         Err(err)
@@ -107,7 +113,7 @@ async fn main() -> anyhow::Result<()> {
                 .is_some_and(|value| matches!(value.trim(), "1" | "true" | "yes")) =>
         {
             eprintln!("medousa_local warning: {err}; unestimated load explicitly allowed");
-            None
+            (None, None)
         }
         Err(err) => anyhow::bail!(
             "{err}. Refusing an unestimated model load; set MEDOUSA_LOCAL_ALLOW_UNESTIMATED=1 only for controlled benchmarking"
@@ -140,10 +146,54 @@ async fn main() -> anyhow::Result<()> {
         _ = RUNTIME.wait_until_stopped() => {
             println!("medousa_local worker stopped; releasing model memory");
         }
+        _ = wait_for_critical_device_pressure(device_pressure_guard) => {
+            eprintln!("medousa_local critical device-memory pressure persisted; terminating worker");
+        }
     }
     RUNTIME.unload().await.map_err(anyhow::Error::msg)?;
     println!("medousa_local stopped");
     Ok(())
+}
+
+#[cfg(feature = "embedded-inference")]
+async fn wait_for_critical_device_pressure(guard: Option<(GpuBackend, u64)>) {
+    let Some((backend, reserve_mb)) = guard else {
+        std::future::pending::<()>().await;
+        return;
+    };
+    let mut interval = tokio::time::interval(std::time::Duration::from_secs(5));
+    let mut consecutive_critical_samples = 0_u8;
+    loop {
+        interval.tick().await;
+        consecutive_critical_samples = next_pressure_streak(
+            consecutive_critical_samples,
+            device_pressure_requires_eviction(backend, &collect_device_telemetry(), reserve_mb),
+        );
+        if consecutive_critical_samples >= 2 {
+            return;
+        }
+    }
+}
+
+#[cfg(feature = "embedded-inference")]
+fn next_pressure_streak(current: u8, critical: bool) -> u8 {
+    if critical {
+        current.saturating_add(1)
+    } else {
+        0
+    }
+}
+
+#[cfg(all(test, feature = "embedded-inference"))]
+mod tests {
+    use super::next_pressure_streak;
+
+    #[test]
+    fn pressure_streak_requires_consecutive_samples() {
+        assert_eq!(next_pressure_streak(0, true), 1);
+        assert_eq!(next_pressure_streak(1, false), 0);
+        assert_eq!(next_pressure_streak(1, true), 2);
+    }
 }
 
 #[cfg(feature = "embedded-inference")]

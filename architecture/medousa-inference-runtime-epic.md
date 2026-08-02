@@ -133,7 +133,9 @@ For the user this means:
 > Windows backend, while Vulkan evidence remains Vulkan-only so it cannot hide
 > CUDA/HIP allocations. Additional qualified AMD SMI ABI majors, broader
 > hardware samples, and percentile calibration after sufficient runs remain
-> MIR-2 work.
+> MIR-2 work. The worker now also polls the selected live device budget after
+> load and evicts after two consecutive critical samples below the admission
+> reserve; missing telemetry stays unknown instead of triggering a false stop.
 >
 > MIR-1's release-hardening handshake now makes readiness generation-aware.
 > The worker reports protocol version, generation/PID/start time, exact model,

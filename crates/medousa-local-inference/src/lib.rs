@@ -43,7 +43,8 @@ pub use hardware::{
 };
 pub use lease::{LocalResourceActivationLease, acquire_activation_lease};
 pub use governor::{
-    admission_for_model_id, critical_available_mb, evaluate_model_admission,
+    admission_for_model_id, critical_available_mb, device_pressure_requires_eviction,
+    evaluate_model_admission,
     evaluate_model_admission_with_calibration, evaluate_model_admission_with_devices,
     recommended_admitted_model,
     recommended_admitted_model_with_devices, recommended_model_admission, system_reserve_mb,
