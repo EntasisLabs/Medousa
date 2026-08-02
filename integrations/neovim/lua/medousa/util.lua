@@ -1,12 +1,12 @@
 local M = {}
 
 function M.trim(value)
-  local trimmed = (value or ""):gsub("^%s+", ""):gsub("%s+$", "")
+  local trimmed = (type(value) == "string" and value or ""):gsub("^%s+", ""):gsub("%s+$", "")
   return trimmed
 end
 
 function M.first_line(value)
-  local line = (value or ""):match("([^\n]+)") or ""
+  local line = (type(value) == "string" and value or ""):match("([^\n]+)") or ""
   line = M.trim(line)
   if #line > 72 then
     return line:sub(1, 71) .. "…"

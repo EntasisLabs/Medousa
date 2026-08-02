@@ -7,6 +7,15 @@ local fake = {
   end,
   turn = function(_, _, _, _, callbacks)
     local answer = "Hello from Medousa.\n```lua\nlocal polished = true\n```"
+    callbacks.on_event({
+      content_delta = vim.NIL,
+      final_text = vim.NIL,
+      operator_message = vim.NIL,
+      tool_name = vim.NIL,
+      tool_status = vim.NIL,
+      budget_request_id = vim.NIL,
+      permission_request_id = vim.NIL,
+    })
     callbacks.on_event({ budget_request_id = "budget-one", requested_rounds = 2 })
     callbacks.on_event({ content_delta = "Hello from " })
     callbacks.on_event({ final_text = answer })

@@ -141,7 +141,7 @@ function M.describe(value)
 end
 
 function M.strip_supplement(content)
-  local stripped = (content or ""):gsub("\n*<medousa%-context>.-</medousa%-context>%s*$", "")
+  local stripped = (type(content) == "string" and content or ""):gsub("\n*<medousa%-context>.-</medousa%-context>%s*$", "")
   return stripped
 end
 

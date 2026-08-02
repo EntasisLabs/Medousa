@@ -95,6 +95,15 @@ local function prompt_text()
   return util.trim(table.concat(vim.api.nvim_buf_get_lines(state.prompt_buf, 0, -1, false), "\n"))
 end
 
+local function text_value(value)
+  return type(value) == "string" and value or ""
+end
+
+local function nonempty_text(value)
+  local text = text_value(value)
+  return text ~= "" and text or nil
+end
+
 local function save_draft()
   if not valid_buffer(state.prompt_buf) then return end
   local key = session_key()
@@ -106,7 +115,7 @@ end
 
 local function set_prompt(value)
   if not valid_buffer(state.prompt_buf) then return end
-  local lines = vim.split(value or "", "\n", { plain = true })
+  local lines = vim.split(text_value(value), "\n", { plain = true })
   if #lines == 0 then lines = { "" } end
   vim.bo[state.prompt_buf].modifiable = true
   vim.api.nvim_buf_set_lines(state.prompt_buf, 0, -1, false, lines)
@@ -175,33 +184,34 @@ local function message_lines()
 
   for _, message in ipairs(state.messages) do
     if message.role == "user" then
-      table.insert(lines, "You · " .. (message.context_label or "current code"))
+      table.insert(lines, "You · " .. (nonempty_text(message.context_label) or "current code"))
       table.insert(marks, { line = #lines - 1, group = "Title" })
-      vim.list_extend(lines, vim.split(message.content, "\n", { plain = true }))
+      vim.list_extend(lines, vim.split(text_value(message.content), "\n", { plain = true }))
       table.insert(lines, "")
     elseif message.role == "assistant" then
       table.insert(lines, "Medousa")
       table.insert(marks, { line = #lines - 1, group = "Title" })
-      vim.list_extend(lines, vim.split(message.content, "\n", { plain = true }))
+      vim.list_extend(lines, vim.split(text_value(message.content), "\n", { plain = true }))
       table.insert(lines, "")
     elseif message.role == "error" then
-      table.insert(lines, "Error · " .. message.content)
+      table.insert(lines, "Error · " .. text_value(message.content))
       table.insert(marks, { line = #lines - 1, group = "DiagnosticError" })
       table.insert(lines, "")
     elseif message.role == "attention" then
-      table.insert(lines, "Attention · " .. message.content)
+      table.insert(lines, "Attention · " .. text_value(message.content))
       table.insert(marks, { line = #lines - 1, group = "DiagnosticWarn" })
       table.insert(lines, "")
     end
   end
 
-  if state.answer ~= nil then
-    table.insert(lines, "Medousa · " .. (state.current_status or "thinking"))
+  if state.answer ~= nil and state.answer ~= vim.NIL then
+    table.insert(lines, "Medousa · " .. (nonempty_text(state.current_status) or "thinking"))
     table.insert(marks, { line = #lines - 1, group = "Title" })
-    if state.answer ~= "" then vim.list_extend(lines, vim.split(state.answer, "\n", { plain = true })) end
+    local answer = text_value(state.answer)
+    if answer ~= "" then vim.list_extend(lines, vim.split(answer, "\n", { plain = true })) end
     table.insert(lines, "")
-  elseif state.current_status then
-    table.insert(lines, "· " .. state.current_status)
+  elseif nonempty_text(state.current_status) then
+    table.insert(lines, "· " .. text_value(state.current_status))
     table.insert(marks, { line = #lines - 1, group = "Comment" })
   end
 
@@ -513,28 +523,36 @@ local function ensure_session(callback)
 end
 
 local function event_text(event)
-  if event.content_delta and event.content_delta ~= "" then return event.content_delta end
-  if event.final_text and event.final_text ~= "" then return event.final_text end
+  local content_delta = nonempty_text(event.content_delta)
+  if content_delta then return content_delta end
+  local final_text = nonempty_text(event.final_text)
+  if final_text then return final_text end
   return nil
 end
 
 local function update_tool(event)
-  local key = tostring(event.run_id or event.tool_run_id or event.tool_name)
+  local name = nonempty_text(event.tool_name) or "tool"
+  local key = nonempty_text(event.run_id) or nonempty_text(event.tool_run_id) or name
   if not state.tools[key] then table.insert(state.tool_order, key) end
   state.tools[key] = {
-    name = event.tool_name,
-    status = event.tool_status or "running",
+    name = name,
+    status = nonempty_text(event.tool_status) or "running",
   }
 end
 
 local function handle_attention(event, force)
-  local request_id = event.budget_request_id or event.permission_request_id
+  local budget_request_id = nonempty_text(event.budget_request_id)
+  local permission_request_id = nonempty_text(event.permission_request_id)
+  local request_id = budget_request_id or permission_request_id
   if not request_id or (state.handled_requests[request_id] and not force) then return end
   state.handled_requests[request_id] = true
   state.pending_attention = event
 
-  if event.budget_request_id then
-    local rounds = tonumber(event.requested_rounds) or 1
+  if budget_request_id then
+    local requested_rounds = event.requested_rounds
+    local rounds = type(requested_rounds) == "number" and requested_rounds
+      or tonumber(nonempty_text(requested_rounds))
+      or 1
     local message = "Medousa needs " .. rounds .. " more tool round" .. (rounds == 1 and "" or "s") .. " to finish."
     state.current_status = "waiting for your budget decision"
     if not force then table.insert(state.messages, { role = "attention", content = message }) end
@@ -561,8 +579,10 @@ local function handle_attention(event, force)
         state.client:deny_budget(request_id, callback)
       end
     end)
-  elseif event.permission_request_id then
-    local message = event.operator_message or event.message or "Medousa needs permission to continue."
+  elseif permission_request_id then
+    local message = nonempty_text(event.operator_message)
+      or nonempty_text(event.message)
+      or "Medousa needs permission to continue."
     state.current_status = "waiting for your permission decision"
     if not force then table.insert(state.messages, { role = "attention", content = message }) end
     render()
@@ -659,12 +679,13 @@ function M.send(prompt, explicit_context)
         state.connection = "connected"
         handle_attention(event)
         local text = event_text(event)
-        if event.operator_message and event.operator_message ~= "" then
-          state.current_status = event.operator_message
+        local operator_message = nonempty_text(event.operator_message)
+        if operator_message then
+          state.current_status = operator_message
         end
-        if event.tool_name and event.tool_name ~= "" then update_tool(event) end
+        if nonempty_text(event.tool_name) then update_tool(event) end
         if text then
-          if event.final_text then state.answer = text else state.answer = (state.answer or "") .. text end
+          if nonempty_text(event.final_text) then state.answer = text else state.answer = text_value(state.answer) .. text end
         end
         render()
       end,
@@ -681,7 +702,8 @@ function M.send(prompt, explicit_context)
         end, 500)
       end,
       on_done = function(event)
-        state.last_answer = state.answer ~= "" and state.answer or event.final_text or ""
+        local answer = text_value(state.answer)
+        state.last_answer = answer ~= "" and answer or (nonempty_text(event.final_text) or "")
         if state.last_answer ~= "" then
           table.insert(state.messages, { role = "assistant", content = state.last_answer })
         end
@@ -699,7 +721,7 @@ function M.send(prompt, explicit_context)
         state.pending_attention = nil
         state.current_status = nil
         state.connection = failed_connection(err_value)
-        table.insert(state.messages, { role = "error", content = err_value or "Unknown failure" })
+        table.insert(state.messages, { role = "error", content = nonempty_text(err_value) or "Unknown failure" })
         render()
       end,
     })
