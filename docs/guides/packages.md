@@ -91,9 +91,13 @@ and refuses an uninstalled or unsafe one. It uses a deterministic synthetic
 prompt and records only build/recipe identity, phase timings, response byte
 counts, and host/process memory—including reclaimed RSS at 1, 5, and 10 seconds.
 Metal builds also record current process allocation and Apple's recommended
-working set. NVIDIA systems record VRAM, process VRAM, utilization, power,
-temperature, and clocks through `nvidia-smi`; AMD systems normalize the same
-available fields from AMD SMI JSON. Unsupported counters remain `null` and are
+working set. NVIDIA systems load the driver-provided NVML library directly for
+device identity, driver version, physical and current-process VRAM,
+utilization, power, temperature, clocks, and throttle reasons; this does not
+require the CUDA toolkit. `nvidia-smi` runs only as a compatibility fallback
+when the native collector is absent or unhealthy. AMD systems normalize the
+available fields from AMD SMI JSON.
+Unsupported counters remain `null` and are
 named in `unavailableFields`; they are never reported as a measured zero. The
 shared contract also distinguishes physical memory from a dynamic per-process
 budget. Metal working-set, Windows WDDM, and Vulkan budget sources subtract the

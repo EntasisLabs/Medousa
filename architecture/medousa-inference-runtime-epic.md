@@ -116,9 +116,14 @@ For the user this means:
 > working-set guidance, and physical VRAM are now distinct normalized concepts:
 > dynamic budgets subtract process usage and override looser physical-free
 > counters, while native sources deterministically outrank CLI fallbacks for the
-> same device. Actual WDDM/Vulkan collection, production-native NVML/AMD SMI
-> bindings, broader hardware samples, and percentile calibration after
-> sufficient runs remain MIR-2 work.
+> same device. NVIDIA now uses a dynamically loaded, driver-provided NVML
+> collector for identity, driver version, physical and current-process memory,
+> utilization, power, thermals, clocks, and throttle reasons without requiring
+> the CUDA toolkit. It retries process-list races, preserves WDDM's unavailable-
+> memory sentinel as unknown, preserves future throttle bits, and invokes
+> `nvidia-smi` only as a compatibility fallback. Actual WDDM/Vulkan collection,
+> production-native AMD SMI bindings, broader hardware samples, and percentile
+> calibration after sufficient runs remain MIR-2 work.
 >
 > MIR-0 now has a content-free `medousa_local_bench` spine for installed models.
 > It captures the recipe and admission decision, load/stream/unload timing, TTFT,

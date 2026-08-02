@@ -333,7 +333,12 @@ fallbacks for the same device. An authoritative budget with missing process
 usage fails closed while keeping the missing value nullable. The final
 `admissibleMb` is the smaller of the host and enforced
 device envelopes. Missing device counters stay nullable and produce an explicit
-host-only decision rather than a fabricated device capacity. Before allocating,
+host-only decision rather than a fabricated device capacity. NVIDIA admission
+dynamically loads the driver-provided NVML library—without a
+CUDA toolkit dependency—to identify the device and read physical and
+current-process memory. `nvidia-smi` remains a lower-priority fallback. Under
+Windows WDDM, NVML's unavailable process-memory sentinel remains `null`; it is
+never converted into capacity. Before allocating,
 the worker converts an admitted decision into a short-lived cross-process
 activation lease; concurrent loads cannot spend the same host or device
 headroom, and dead-process leases are reclaimed. The current safe baseline is

@@ -10,6 +10,8 @@ use medousa_types::{
 };
 use serde_json::Value;
 
+mod nvml;
+
 const DEVICE_FIELDS: [&str; 15] = [
     "unifiedMemory",
     "memoryTotalMb",
@@ -37,13 +39,35 @@ pub fn collect_device_telemetry() -> Vec<LocalDeviceTelemetrySnapshot> {
     #[cfg(all(target_os = "macos", feature = "telemetry-metal"))]
     snapshots.push(collect_metal());
 
-    if let Some(result) = run_optional(
-        "nvidia-smi",
-        &[
-            "--query-gpu=index,uuid,name,driver_version,memory.total,memory.used,memory.free,utilization.gpu,power.draw,temperature.gpu,clocks.sm,clocks.mem",
-            "--format=csv,noheader,nounits",
-        ],
-    ) {
+    let nvml_healthy = if let Some(result) = nvml::try_collect() {
+        match result {
+            Ok(native) if !native.is_empty() => {
+                snapshots.extend(native);
+                true
+            }
+            Ok(_) => false,
+            Err(error) => {
+                snapshots.push(unavailable_snapshot(
+                    LocalDeviceTelemetrySource::Nvml,
+                    GpuBackend::Cuda,
+                    &error,
+                ));
+                false
+            }
+        }
+    } else {
+        false
+    };
+
+    if !nvml_healthy
+        && let Some(result) = run_optional(
+            "nvidia-smi",
+            &[
+                "--query-gpu=index,uuid,name,driver_version,memory.total,memory.used,memory.free,utilization.gpu,power.draw,temperature.gpu,clocks.sm,clocks.mem",
+                "--format=csv,noheader,nounits",
+            ],
+        )
+    {
         match result {
             Ok(output) if output.status.success() => {
                 let process_memory = collect_nvidia_process_memory();

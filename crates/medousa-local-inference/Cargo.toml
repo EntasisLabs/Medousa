@@ -27,6 +27,7 @@ chrono = { version = "0.4", features = ["serde"] }
 sysinfo = "0.33"
 fs2 = "0.4"
 dirs = "5"
+libloading = "0.8"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"], optional = true }
 
 [features]
