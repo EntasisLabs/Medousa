@@ -18,7 +18,10 @@ export interface MedousaMarkOption {
   tagline: string;
   darkColor: string;
   lightColor: string;
-  previewBackground: string;
+  lightPreviewBackground: string;
+  darkPreviewBackground: string;
+  lightPreviewForeground: string;
+  darkPreviewForeground: string;
   pairedThemeId: ColorThemeId;
 }
 
@@ -29,7 +32,10 @@ export const MEDOUSA_MARK_OPTIONS: MedousaMarkOption[] = [
     tagline: "Timeless · clean · iconic",
     darkColor: "#F2EFE6",
     lightColor: "#000000",
-    previewBackground: "#000000",
+    lightPreviewBackground: "#E8E7E1",
+    darkPreviewBackground: "#2E2E2A",
+    lightPreviewForeground: "#1C1B1A",
+    darkPreviewForeground: "#F2EFE6",
     pairedThemeId: "mark-monochrome",
   },
   {
@@ -38,7 +44,10 @@ export const MEDOUSA_MARK_OPTIONS: MedousaMarkOption[] = [
     tagline: "Bold · minimal · strong",
     darkColor: "#000000",
     lightColor: "#000000",
-    previewBackground: "#F2EFE6",
+    lightPreviewBackground: "#E6DED1",
+    darkPreviewBackground: "#EEEAE0",
+    lightPreviewForeground: "#1C1B1A",
+    darkPreviewForeground: "#1C1B1A",
     pairedThemeId: "mark-ink-black",
   },
   {
@@ -47,7 +56,10 @@ export const MEDOUSA_MARK_OPTIONS: MedousaMarkOption[] = [
     tagline: "Intelligent · mysterious · deep",
     darkColor: "#A855F7",
     lightColor: "#A855F7",
-    previewBackground: "#000000",
+    lightPreviewBackground: "#E9E0F3",
+    darkPreviewBackground: "#30233A",
+    lightPreviewForeground: "#1C1B1A",
+    darkPreviewForeground: "#F2EFE6",
     pairedThemeId: "mark-nebula-purple",
   },
   {
@@ -56,7 +68,10 @@ export const MEDOUSA_MARK_OPTIONS: MedousaMarkOption[] = [
     tagline: "Calm · focused · infinite",
     darkColor: "#38BDF8",
     lightColor: "#38BDF8",
-    previewBackground: "#000000",
+    lightPreviewBackground: "#DDEDF4",
+    darkPreviewBackground: "#20333A",
+    lightPreviewForeground: "#1C1B1A",
+    darkPreviewForeground: "#F2EFE6",
     pairedThemeId: "mark-ocean-blue",
   },
   {
@@ -65,7 +80,10 @@ export const MEDOUSA_MARK_OPTIONS: MedousaMarkOption[] = [
     tagline: "Organic · balanced · flowing",
     darkColor: "#2DD4BF",
     lightColor: "#2DD4BF",
-    previewBackground: "#000000",
+    lightPreviewBackground: "#DCEBE5",
+    darkPreviewBackground: "#1D3934",
+    lightPreviewForeground: "#1C1B1A",
+    darkPreviewForeground: "#F2EFE6",
     pairedThemeId: "mark-abyss-teal",
   },
   {
@@ -74,7 +92,10 @@ export const MEDOUSA_MARK_OPTIONS: MedousaMarkOption[] = [
     tagline: "Energetic · warm · inventive",
     darkColor: "#F5B841",
     lightColor: "#F5B841",
-    previewBackground: "#000000",
+    lightPreviewBackground: "#F3E5C8",
+    darkPreviewBackground: "#3A2D1B",
+    lightPreviewForeground: "#1C1B1A",
+    darkPreviewForeground: "#F2EFE6",
     pairedThemeId: "mark-amber-gold",
   },
   {
@@ -83,7 +104,10 @@ export const MEDOUSA_MARK_OPTIONS: MedousaMarkOption[] = [
     tagline: "Creative · intelligent · modern",
     darkColor: "#7C3AED",
     lightColor: "#7C3AED",
-    previewBackground: "#000000",
+    lightPreviewBackground: "#E6DDF5",
+    darkPreviewBackground: "#2C2340",
+    lightPreviewForeground: "#1C1B1A",
+    darkPreviewForeground: "#F2EFE6",
     pairedThemeId: "mark-violet",
   },
   {
@@ -92,7 +116,10 @@ export const MEDOUSA_MARK_OPTIONS: MedousaMarkOption[] = [
     tagline: "Trust · depth · stability",
     darkColor: "#1D4ED8",
     lightColor: "#1D4ED8",
-    previewBackground: "#000000",
+    lightPreviewBackground: "#DDE5F5",
+    darkPreviewBackground: "#202B43",
+    lightPreviewForeground: "#1C1B1A",
+    darkPreviewForeground: "#F2EFE6",
     pairedThemeId: "mark-deep-blue",
   },
   {
@@ -101,7 +128,10 @@ export const MEDOUSA_MARK_OPTIONS: MedousaMarkOption[] = [
     tagline: "Natural · harmonic · clear",
     darkColor: "#0F9B7C",
     lightColor: "#0F9B7C",
-    previewBackground: "#000000",
+    lightPreviewBackground: "#D7EAE2",
+    darkPreviewBackground: "#1B3830",
+    lightPreviewForeground: "#1C1B1A",
+    darkPreviewForeground: "#F2EFE6",
     pairedThemeId: "mark-jade",
   },
   {
@@ -110,7 +140,10 @@ export const MEDOUSA_MARK_OPTIONS: MedousaMarkOption[] = [
     tagline: "Dynamic · ethereal · limitless",
     darkColor: "#A855F7",
     lightColor: "#A855F7",
-    previewBackground: "#000000",
+    lightPreviewBackground: "#EFE2EC",
+    darkPreviewBackground: "#302535",
+    lightPreviewForeground: "#1C1B1A",
+    darkPreviewForeground: "#F2EFE6",
     pairedThemeId: "mark-aurora",
   },
 ];

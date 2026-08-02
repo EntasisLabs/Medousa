@@ -6,6 +6,7 @@
     ExternalLink,
     PanelLeft,
     PanelLeftClose,
+    PanelLeftOpen,
     Plus,
     Rows2,
     SquareX,
@@ -91,21 +92,6 @@
       class:app-titlebar-rail-slot--expanded={railExpanded}
       style={railExpanded ? `width: ${railWidth}px` : undefined}
     >
-      <button
-        type="button"
-        class="app-titlebar-btn"
-        title={railExpanded ? "Hide sidebar" : "Show sidebar"}
-        aria-label={railExpanded ? "Hide sidebar" : "Show sidebar"}
-        aria-pressed={railExpanded}
-        onclick={toggleRail}
-      >
-        {#if railExpanded}
-          <PanelLeftClose size={14} strokeWidth={1.75} />
-        {:else}
-          <PanelLeft size={14} strokeWidth={1.75} />
-        {/if}
-      </button>
-
       {#if railExpanded}
         <div class="app-titlebar-rail-nav" role="group" aria-label="Side rail history">
           <button
@@ -130,6 +116,21 @@
           </button>
         </div>
       {/if}
+
+      <button
+        type="button"
+        class="app-titlebar-btn"
+        title={railExpanded ? "Collapse navigation rail" : "Expand navigation rail"}
+        aria-label={railExpanded ? "Collapse navigation rail" : "Expand navigation rail"}
+        aria-pressed={railExpanded}
+        onclick={toggleRail}
+      >
+        {#if railExpanded}
+          <PanelLeft size={14} strokeWidth={1.75} />
+        {:else}
+          <PanelLeftOpen size={14} strokeWidth={1.75} />
+        {/if}
+      </button>
     </div>
 
     <div class="app-titlebar-tabs min-w-0 flex-1">
@@ -269,7 +270,7 @@
     display: inline-flex;
     align-items: center;
     gap: 0;
-    margin-left: auto;
+    margin: 0;
   }
 
   .app-titlebar-tabs {
