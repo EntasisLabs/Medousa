@@ -1,11 +1,12 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, untrack } from "svelte";
   import { Plus, Search, Users, X } from "@lucide/svelte";
   import SessionRow from "$lib/components/chat/SessionRow.svelte";
   import { haptic } from "$lib/haptics";
   import { registerMobileBackHandler } from "$lib/mobileNavigation";
   import { chat } from "$lib/stores/chat.svelte";
   import { layout } from "$lib/stores/layout.svelte";
+  import { shellTabs } from "$lib/stores/shellTabs.svelte";
   import { sharedMode } from "$lib/stores/sharedMode.svelte";
   import { userProfiles } from "$lib/stores/userProfiles.svelte";
   import type { SessionSummary } from "$lib/types/session";
@@ -27,7 +28,6 @@
   const showBuiltInToolbar = $derived(chrome !== "rail-list");
 
   let query = $state("");
-  let searchTimer: ReturnType<typeof setTimeout> | null = null;
   let searchInputEl = $state<HTMLInputElement | null>(null);
   let renamingSession = $state<SessionSummary | null>(null);
   let renameDraft = $state("");
@@ -43,14 +43,16 @@
   const touchActions = $derived(variant === "sheet");
 
   $effect(() => {
-    if (open) {
-      query = chat.sessionListQuery;
-      void chat.refreshSessions({ force: true, q: query });
+    if (!open) return;
+    untrack(() => {
+      query = "";
+      chat.sessionListQuery = "";
+      void chat.refreshSessions({ force: true, q: "" });
       // Autofocus so the drawer feels interactive immediately.
       if (showBuiltInToolbar) {
         queueMicrotask(() => searchInputEl?.focus());
       }
-    }
+    });
   });
 
   // Keep list filter in sync when rail toolbar owns the search field.
@@ -61,19 +63,8 @@
 
   $effect(() => {
     const needle = query;
-    if (!open) return;
-    if (chrome === "rail-list") {
-      // Rail toolbar drives refreshSessions; only mirror query for filtering.
-      return;
-    }
-    if (searchTimer) clearTimeout(searchTimer);
-    searchTimer = setTimeout(() => {
-      searchTimer = null;
-      void chat.refreshSessions({ force: true, q: needle });
-    }, 300);
-    return () => {
-      if (searchTimer) clearTimeout(searchTimer);
-    };
+    if (!open || chrome === "rail-list") return;
+    chat.sessionListQuery = needle;
   });
 
   function closeSheet() {
@@ -108,13 +99,8 @@
   function matchesQuery(session: SessionSummary): boolean {
     if (!query.trim()) return true;
     const needle = query.trim().toLowerCase();
-    const label =
-      session.display_name?.toLowerCase() ??
-      session.preview.toLowerCase() ??
-      session.session_id.toLowerCase();
-    return (
-      label.includes(needle) || session.session_id.toLowerCase().includes(needle)
-    );
+    return [session.display_name ?? "", session.preview, session.session_id]
+      .some((value) => value.toLowerCase().includes(needle));
   }
 
   const pinned = $derived(
@@ -132,7 +118,10 @@
   const listEmpty = $derived(pinned.length === 0 && recent.length === 0);
 
   async function selectSession(sessionId: string) {
-    await chat.switchSession(sessionId);
+    // Shell tabs own visible chat selection. Activating through the shell also
+    // switches/hydrates the chat store, without relying on its async mirror.
+    const tabId = shellTabs.openChat(sessionId, { activate: true });
+    if (!tabId) await chat.switchSession(sessionId);
     onPick?.();
     if (variant === "drawer" || variant === "sheet") {
       layout.setSessionDrawerOpen(false);

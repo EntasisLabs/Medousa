@@ -149,6 +149,21 @@ describe("shellTabs store", () => {
     }
   });
 
+  it("returns to the focused chat session instead of the first chat tab", async () => {
+    const { shellTabs } = await import("./shellTabs.svelte");
+    const { chat } = await import("$lib/stores/chat.svelte");
+    shellTabs.openChat("session-a", { activate: true });
+    const latest = shellTabs.openChat("session-b", { activate: true });
+    await vi.waitFor(() => expect(chat.sessionId).toBe("session-b"));
+    shellTabs.openSurface("map", { activate: true });
+
+    expect(shellTabs.openSurface("chat", { activate: true })).toBe(latest);
+    expect(shellTabs.activeTab).toMatchObject({
+      kind: "chat",
+      sessionId: "session-b",
+    });
+  });
+
   it("keeps governed terminal ownership on the shell tab", async () => {
     const { shellTabs } = await import("./shellTabs.svelte");
     const tabId = shellTabs.openTerminal("pty-a", {
@@ -338,6 +353,25 @@ describe("shellTabs store", () => {
     }
     expect(restored.chatSessionIdsForLiveRestore()).toContain("session-a");
     expect(restored.activeDesktopName).toBe("Main");
+  });
+
+  it("keeps the restored chat tab authoritative over a stale session key", async () => {
+    const { shellTabs } = await import("./shellTabs.svelte");
+    shellTabs.openChat("session-a", { activate: true });
+
+    vi.resetModules();
+    const { chat } = await import("$lib/stores/chat.svelte");
+    chat.sessionId = "session-new";
+    const { shellTabs: restored } = await import("./shellTabs.svelte");
+    restored.bootstrap();
+
+    expect(restored.activeTab).toMatchObject({
+      kind: "chat",
+      sessionId: "session-a",
+    });
+    await vi.waitFor(() => {
+      expect(chat.switchSession).toHaveBeenCalledWith("session-a");
+    });
   });
 
   it("isolates durable workspace sessions by workshop", async () => {

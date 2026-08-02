@@ -501,6 +501,12 @@ export function connectWorkshop(options: {
         if (mode === "full") {
           await startWorkshopStreams();
           await workshops.restoreLastSession();
+          // Shell tabs may mount before the daemon finishes starting. Re-read
+          // the selected conversation once the engine is actually ready; only
+          // explicit New Chat sessions are allowed to remain pristine/blank.
+          if (!chat.sessionPristine) {
+            await chat.reloadCurrentSession({ notice: false });
+          }
           void registerBrowserHostClient(health);
         } else {
           await bootstrapWorkshopObserver();

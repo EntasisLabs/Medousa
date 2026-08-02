@@ -20,29 +20,21 @@
 
   let searchOpen = $state(false);
   let searchInputEl = $state<HTMLInputElement | null>(null);
-  let searchTimer: ReturnType<typeof setTimeout> | null = null;
 
   let query = $state(chat.sessionListQuery);
 
   $effect(() => {
-    query = chat.sessionListQuery;
+    if (!searchOpen) query = chat.sessionListQuery;
   });
 
   $effect(() => {
     const needle = query;
     chat.sessionListQuery = needle;
-    if (searchTimer) clearTimeout(searchTimer);
-    searchTimer = setTimeout(() => {
-      searchTimer = null;
-      void chat.refreshSessions({ force: true, q: needle });
-    }, 300);
-    return () => {
-      if (searchTimer) clearTimeout(searchTimer);
-    };
   });
 
   async function openSearch() {
     await ensureRailPopoverOpen();
+    query = chat.sessionListQuery;
     searchOpen = true;
     await tick();
     searchInputEl?.focus();
@@ -51,7 +43,6 @@
   function closeSearch() {
     searchOpen = false;
     query = "";
-    void chat.refreshSessions({ force: true, q: "" });
   }
 
   async function createSession() {

@@ -681,6 +681,9 @@ export class ShellTabsStore {
         this.desktops[0]!;
       this.applyLayout(activeDesktop.layout);
       if (this.tabs.length > 0) {
+        // The restored shell tab is the startup source of truth. Activating it
+        // rehydrates its transcript and updates the chat store; never synthesize
+        // a blank tab from the standalone session key during bootstrap.
         const active = this.activeTab;
         if (active) {
           void this.activate(active.id, { rehydrate: true });
@@ -987,7 +990,11 @@ export class ShellTabsStore {
     if (next === "automations" || next === "workshop") next = "library";
     const groupId = options?.groupId ?? this.activeGroupId;
     if (next === "chat") {
-      const currentDesktopChat = this.tabs.find((tab) => tab.kind === "chat");
+      const focusedSessionChat = this.tabs.find(
+        (tab) => tab.kind === "chat" && tab.sessionId === chat.sessionId,
+      );
+      const currentDesktopChat = focusedSessionChat ??
+        [...this.tabs].reverse().find((tab) => tab.kind === "chat");
       if (currentDesktopChat?.kind === "chat") {
         const openOptions: { activate: boolean; groupId?: string } = {
           activate: options?.activate !== false,

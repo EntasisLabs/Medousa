@@ -157,9 +157,11 @@
   const workerThreads = $derived(groupWorkerThreads(panelMessages));
   const showInlineComposer = $derived(!mobile || (embedded && scriptWorkbench));
   const useMobileChatLayout = $derived(mobile);
-  /** Asks live under Work — they no longer block Chat empty / Presence. */
+  /** The centered new-chat state exists only after an explicit New action. */
   const showChatEmptyState = $derived(
-    chatMessages.length === 0 && workerThreads.length === 0,
+    chat.sessionPristine &&
+      chatMessages.length === 0 &&
+      workerThreads.length === 0,
   );
 
   /** Don't treat "history still loading" as empty Presence — that centers the dock on cold start. */
