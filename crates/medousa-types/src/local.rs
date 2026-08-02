@@ -423,6 +423,12 @@ pub struct LocalBenchmarkEngineIdentity {
     pub runtime_name: String,
     pub runtime_version: String,
     pub compiled_backends: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub artifact_digest: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub binary_digest: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recipe_revision: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

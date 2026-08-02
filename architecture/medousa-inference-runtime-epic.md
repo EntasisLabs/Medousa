@@ -149,10 +149,12 @@ For the user this means:
 > and Linux sleep hooks plus lifecycle soak remain before MIR-1 closes.
 >
 > MIR-0 now has a content-free `medousa_local_bench` spine for installed models.
-> It captures the recipe and admission decision, load/stream/unload timing, TTFT,
-> process RSS, available host memory, swap, and reclaimed RSS at 1/5/10 seconds
-> without retaining prompts or output. Context/batch sweeps, artifact digests,
-> and lifecycle soak orchestration remain.
+> It captures the recipe and admission decision, exact artifact/binary/recipe
+> identity, load/stream/unload timing, TTFT, process RSS, available host memory,
+> swap, and reclaimed RSS at 1/5/10 seconds without retaining prompts or output.
+> Bounded context/batch overrides and an opt-in dry-run-first matrix/soak runner
+> make repeated cold lifecycle evidence reproducible. Representative UQFF versus
+> ISQ runs and ranked findings on qualified hardware remain before MIR-0 closes.
 
 The pre-MIR baseline had a useful process boundary but collapsed too many states:
 

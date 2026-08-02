@@ -34,6 +34,8 @@ struct Args {
     bind: String,
     prompt_tokens: usize,
     output_tokens: usize,
+    max_seq_len: Option<usize>,
+    max_batch_size: Option<usize>,
     output: Option<PathBuf>,
 }
 
@@ -59,6 +61,22 @@ async fn main() -> anyhow::Result<()> {
     );
 
     let mut config = config_from_catalog_entry(&entry, Some(args.bind.clone()));
+    if let Some(max_seq_len) = args.max_seq_len {
+        anyhow::ensure!(
+            max_seq_len <= config.max_seq_len,
+            "--context {max_seq_len} exceeds the catalog recipe cap ({})",
+            config.max_seq_len
+        );
+        config.max_seq_len = max_seq_len;
+    }
+    if let Some(max_batch_size) = args.max_batch_size {
+        anyhow::ensure!(
+            max_batch_size <= config.max_batch_size,
+            "--batch {max_batch_size} exceeds the catalog recipe cap ({})",
+            config.max_batch_size
+        );
+        config.max_batch_size = max_batch_size;
+    }
     let requested_tokens = args
         .prompt_tokens
         .checked_add(args.output_tokens)
@@ -87,6 +105,9 @@ async fn main() -> anyhow::Result<()> {
         worker.binary_digest.is_some(),
         "benchmark executable digest could not be read"
     );
+    let artifact_digest = worker.artifact_digest.clone();
+    let binary_digest = worker.binary_digest.clone();
+    let recipe_revision = Some(worker.recipe_revision.clone());
     let run = async {
         runtime
             .load(to_runtime_config(config.clone(), worker))
@@ -129,6 +150,9 @@ async fn main() -> anyhow::Result<()> {
                 .into_iter()
                 .map(str::to_string)
                 .collect(),
+            artifact_digest,
+            binary_digest,
+            recipe_revision,
         },
         host: host_identity(),
         hardware,
@@ -457,6 +481,8 @@ fn parse_args(values: Vec<String>) -> anyhow::Result<Args> {
     let bind = flag_value(&values, "--bind").unwrap_or_else(|| DEFAULT_BIND.to_string());
     let prompt_tokens = numeric_flag(&values, "--prompt-tokens", DEFAULT_PROMPT_TOKENS)?;
     let output_tokens = numeric_flag(&values, "--output-tokens", DEFAULT_OUTPUT_TOKENS)?;
+    let max_seq_len = optional_numeric_flag(&values, "--context")?;
+    let max_batch_size = optional_numeric_flag(&values, "--batch")?;
     anyhow::ensure!(
         prompt_tokens > 0,
         "--prompt-tokens must be greater than zero"
@@ -465,13 +491,33 @@ fn parse_args(values: Vec<String>) -> anyhow::Result<Args> {
         output_tokens > 0,
         "--output-tokens must be greater than zero"
     );
+    anyhow::ensure!(
+        max_seq_len.is_none_or(|value| value > 0),
+        "--context must be greater than zero"
+    );
+    anyhow::ensure!(
+        max_batch_size.is_none_or(|value| value > 0),
+        "--batch must be greater than zero"
+    );
     Ok(Args {
         model_id,
         bind,
         prompt_tokens,
         output_tokens,
+        max_seq_len,
+        max_batch_size,
         output: flag_value(&values, "--output").map(PathBuf::from),
     })
+}
+
+fn optional_numeric_flag(values: &[String], key: &str) -> anyhow::Result<Option<usize>> {
+    flag_value(values, key)
+        .map(|value| {
+            value
+                .parse::<usize>()
+                .with_context(|| format!("{key} must be a positive integer"))
+        })
+        .transpose()
 }
 
 fn numeric_flag(values: &[String], key: &str, default: usize) -> anyhow::Result<usize> {
@@ -506,6 +552,8 @@ options:
   --bind <host:port>       Private benchmark bind (default: 127.0.0.1:7422)
   --prompt-tokens <count>  Approximate synthetic prompt size (default: 64)
   --output-tokens <count>  Maximum generated tokens (default: 64)
+  --context <count>        Context cap, bounded by the catalog recipe
+  --batch <count>          Batch cap, bounded by the catalog recipe
   --output <path>          Write JSON manifest instead of stdout
   -h, --help               Show this help
 
@@ -540,10 +588,27 @@ mod tests {
             "128".into(),
             "--output-tokens".into(),
             "32".into(),
+            "--context".into(),
+            "2048".into(),
+            "--batch".into(),
+            "1".into(),
         ])
         .unwrap();
         assert_eq!(args.prompt_tokens, 128);
         assert_eq!(args.output_tokens, 32);
+        assert_eq!(args.max_seq_len, Some(2048));
+        assert_eq!(args.max_batch_size, Some(1));
+    }
+
+    #[test]
+    fn rejects_zero_sweep_bounds() {
+        assert!(parse_args(vec![
+            "--model-id".into(),
+            "gemma-4-e2b-it-qat".into(),
+            "--context".into(),
+            "0".into(),
+        ])
+        .is_err());
     }
 
     #[test]
