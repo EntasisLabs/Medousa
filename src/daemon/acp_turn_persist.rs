@@ -10,7 +10,7 @@ use serde_json::Value;
 
 use crate::session_writer;
 use crate::turn_parts::{
-    conversation_turn_from_parts, user_conversation_turn, TurnPart, TurnPartsAccumulator,
+    TurnPart, TurnPartsAccumulator, conversation_turn_from_parts, user_conversation_turn,
 };
 
 /// Accumulates one ACP prompt into a durable assistant turn.
@@ -46,12 +46,9 @@ impl AcpPromptPersistState {
                 }
                 let summary = input_summary(input);
                 self.tool_round = self.tool_round.saturating_add(1);
-                self.parts
-                    .tool_started(id, name, &summary, self.tool_round);
+                self.parts.tool_started(id, name, &summary, self.tool_round);
             }
-            AcpEvent::PermissionRequest { .. }
-            | AcpEvent::Error { .. }
-            | AcpEvent::Done => {}
+            AcpEvent::PermissionRequest { .. } | AcpEvent::Error { .. } | AcpEvent::Done => {}
         }
     }
 
@@ -71,11 +68,9 @@ impl AcpPromptPersistState {
         self.finalized = true;
         let body = self.canonical_body();
         let tool_names = std::mem::take(&mut self.tool_names);
-        let turn = self.parts.finalize_assistant_turn(
-            body,
-            tool_names,
-            answer_state.map(str::to_owned),
-        );
+        let turn =
+            self.parts
+                .finalize_assistant_turn(body, tool_names, answer_state.map(str::to_owned));
         Some(turn)
     }
 
@@ -123,7 +118,10 @@ pub fn persist_assistant_if_needed(
 }
 
 /// Fold a sequence of ACP events into user + assistant turns (for tests).
-pub fn fold_prompt_to_turns(prompt: &str, events: &[AcpEvent]) -> (ConversationTurn, ConversationTurn) {
+pub fn fold_prompt_to_turns(
+    prompt: &str,
+    events: &[AcpEvent],
+) -> (ConversationTurn, ConversationTurn) {
     let user = user_conversation_turn(prompt);
     let mut state = AcpPromptPersistState::new();
     let mut answer_state: Option<&str> = None;
@@ -133,19 +131,17 @@ pub fn fold_prompt_to_turns(prompt: &str, events: &[AcpEvent]) -> (ConversationT
             answer_state = Some("error");
         }
     }
-    let assistant = state
-        .take_assistant_turn(answer_state)
-        .unwrap_or_else(|| {
-            conversation_turn_from_parts(
-                "assistant",
-                String::new(),
-                Vec::new(),
-                answer_state.map(str::to_owned),
-                vec![TurnPart::Text {
-                    markdown: String::new(),
-                }],
-            )
-        });
+    let assistant = state.take_assistant_turn(answer_state).unwrap_or_else(|| {
+        conversation_turn_from_parts(
+            "assistant",
+            String::new(),
+            Vec::new(),
+            answer_state.map(str::to_owned),
+            vec![TurnPart::Text {
+                markdown: String::new(),
+            }],
+        )
+    });
     (user, assistant)
 }
 
@@ -245,9 +241,7 @@ mod tests {
     #[test]
     fn take_assistant_turn_is_idempotent() {
         let mut state = AcpPromptPersistState::new();
-        state.observe(&AcpEvent::MessageDelta {
-            text: "x".into(),
-        });
+        state.observe(&AcpEvent::MessageDelta { text: "x".into() });
         assert!(state.take_assistant_turn(None).is_some());
         assert!(state.take_assistant_turn(None).is_none());
         assert!(state.is_finalized());

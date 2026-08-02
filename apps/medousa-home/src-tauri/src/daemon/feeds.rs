@@ -1,8 +1,10 @@
-use medousa_types::feed::{FeedLatestGoodQuery, FeedLatestGoodResponse, FeedTailQuery, FeedTailResponse};
+use medousa_types::feed::{
+    FeedLatestGoodQuery, FeedLatestGoodResponse, FeedTailQuery, FeedTailResponse,
+};
 use tauri::State;
 
-use super::sdk::{client, sdk_error};
 use super::DaemonState;
+use super::sdk::{client, sdk_error};
 
 #[tauri::command]
 pub async fn feed_tail(

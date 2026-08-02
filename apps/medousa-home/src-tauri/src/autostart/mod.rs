@@ -7,14 +7,14 @@
 
 mod spec;
 
-#[cfg(target_os = "macos")]
-mod macos;
 #[cfg(target_os = "linux")]
 mod linux;
-#[cfg(windows)]
-mod windows;
+#[cfg(target_os = "macos")]
+mod macos;
 #[cfg(not(any(target_os = "macos", target_os = "linux", windows)))]
 mod stub;
+#[cfg(windows)]
+mod windows;
 
 pub fn autostart_supported() -> bool {
     cfg!(any(target_os = "macos", target_os = "linux", windows))

@@ -15,7 +15,10 @@ use serde::Serialize;
 use tauri::State;
 use tauri_plugin_opener::open_url;
 
-use crate::daemon::{sdk::{client, sdk_error}, DaemonState};
+use crate::daemon::{
+    DaemonState,
+    sdk::{client, sdk_error},
+};
 
 fn codex_command() -> String {
     std::env::var("MEDOUSA_ACP_CODEX_COMMAND").unwrap_or_else(|_| "codex".into())
@@ -94,11 +97,7 @@ fn cursor_auth_argv(action: &str) -> Result<(String, Vec<String>, String), Strin
     } else {
         resolve_command_abs("cursor-agent")
     };
-    Ok((
-        program,
-        vec![action.to_string()],
-        format!("agent {action}"),
-    ))
+    Ok((program, vec![action.to_string()], format!("agent {action}")))
 }
 
 fn home_dir() -> Option<PathBuf> {
@@ -116,7 +115,12 @@ fn common_vendor_bin_dirs() -> Vec<PathBuf> {
         dirs.push(home.join("bin"));
         #[cfg(windows)]
         {
-            dirs.push(home.join("AppData").join("Local").join("Programs").join("codex"));
+            dirs.push(
+                home.join("AppData")
+                    .join("Local")
+                    .join("Programs")
+                    .join("codex"),
+            );
             dirs.push(home.join("AppData").join("Roaming").join("npm"));
         }
     }
@@ -236,7 +240,11 @@ pub struct AccountCliInstallResult {
     pub detail: String,
 }
 
-fn connection_from_runtime(id: &str, label: &str, info: Option<&AgentRuntimeInfo>) -> AccountConnectionInfo {
+fn connection_from_runtime(
+    id: &str,
+    label: &str,
+    info: Option<&AgentRuntimeInfo>,
+) -> AccountConnectionInfo {
     let command = match id {
         "chatgpt" => Some(codex_command()),
         "cursor" => Some(cursor_command()),
@@ -247,10 +255,7 @@ fn connection_from_runtime(id: &str, label: &str, info: Option<&AgentRuntimeInfo
         .unwrap_or_else(|| command.as_deref().map(command_on_path).unwrap_or(false));
     // Prefer local discovery when the daemon hasn't picked up a just-installed CLI yet.
     let binary_present = binary_present
-        || command
-            .as_deref()
-            .map(command_on_path)
-            .unwrap_or(false)
+        || command.as_deref().map(command_on_path).unwrap_or(false)
         || (id == "cursor" && (command_on_path("agent") || command_on_path("cursor-agent")));
 
     let mut auth_status = info
@@ -568,7 +573,10 @@ fn ensure_codex_acp_adapter() -> Result<String, String> {
     if command_on_path("codex-acp") {
         Ok("Codex ACP adapter installed.".into())
     } else {
-        Ok("npm installed the adapter; restart Medousa if runtime still can't find `codex-acp`.".into())
+        Ok(
+            "npm installed the adapter; restart Medousa if runtime still can't find `codex-acp`."
+                .into(),
+        )
     }
 }
 
@@ -584,9 +592,7 @@ pub async fn account_chatgpt_begin_device_login() -> Result<DeviceAuthStart, Str
         ));
     }
 
-    let output = Command::new(&command)
-        .args(["login", "status"])
-        .output();
+    let output = Command::new(&command).args(["login", "status"]).output();
     if let Ok(status) = output {
         let text = String::from_utf8_lossy(&status.stdout);
         if text.to_lowercase().contains("logged in") && !text.to_lowercase().contains("not") {
@@ -628,7 +634,13 @@ pub async fn account_chatgpt_begin_device_login() -> Result<DeviceAuthStart, Str
                 }
                 if let Some(idx) = trimmed.find("http") {
                     if url.is_none() {
-                        url = Some(trimmed[idx..].split_whitespace().next().unwrap_or("").to_string());
+                        url = Some(
+                            trimmed[idx..]
+                                .split_whitespace()
+                                .next()
+                                .unwrap_or("")
+                                .to_string(),
+                        );
                     }
                 }
                 // Device codes look like XXXX-XXXX or 8+ alnum groups.
@@ -669,7 +681,9 @@ pub async fn account_chatgpt_begin_device_login() -> Result<DeviceAuthStart, Str
     Ok(DeviceAuthStart {
         url,
         code,
-        detail: Some("Approve in the browser that just opened — codex finishes sign-in on its own.".into()),
+        detail: Some(
+            "Approve in the browser that just opened — codex finishes sign-in on its own.".into(),
+        ),
     })
 }
 
@@ -711,10 +725,7 @@ fn open_terminal_with_login(command: &str, args: &[String]) -> Result<(), String
     #[cfg(all(unix, not(target_os = "macos")))]
     {
         for term in ["x-terminal-emulator", "gnome-terminal", "konsole", "xterm"] {
-            let result = Command::new(term)
-                .arg("-e")
-                .arg(&shell_line)
-                .spawn();
+            let result = Command::new(term).arg("-e").arg(&shell_line).spawn();
             if result.is_ok() {
                 return Ok(());
             }

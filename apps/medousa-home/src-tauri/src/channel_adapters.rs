@@ -26,7 +26,9 @@ fn adapter_pid_path(channel: &str) -> PathBuf {
 }
 
 fn adapter_log_path(channel: &str) -> PathBuf {
-    medousa_data_dir().join("logs").join(format!("{channel}.log"))
+    medousa_data_dir()
+        .join("logs")
+        .join(format!("{channel}.log"))
 }
 
 fn find_command_in_path(command: &str) -> Option<PathBuf> {

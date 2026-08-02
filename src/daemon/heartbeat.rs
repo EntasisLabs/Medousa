@@ -46,13 +46,11 @@ pub struct HeartbeatNotifyConfig {
     pub jsonl_path: Option<PathBuf>,
 }
 
-#[derive(Clone, Copy, Debug)]
-#[derive(Default)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct HeartbeatDeliveryPolicy {
     pub min_notify_interval_secs: u64,
     pub quiet_hours: Option<QuietHoursWindow>,
 }
-
 
 #[derive(Clone, Copy, Debug)]
 pub struct QuietHoursWindow {
@@ -146,16 +144,15 @@ pub trait SchedulerTickSideEffects: Send + Sync {
 
 pub async fn run_scheduler_loop(
     ctx: SchedulerHeartbeatContext,
-    worker_id: String,
+    _worker_id: String,
     interval_ms: u64,
     mut shutdown_rx: watch::Receiver<bool>,
     side_effects: Arc<dyn SchedulerTickSideEffects>,
 ) {
     loop {
         let prior_dead_letter = ctx.heartbeat_metrics.read().await.last_dead_letter_jobs;
-        match tick_runtime(
+        match observe_runtime(
             ctx.platform.composition(),
-            &worker_id,
             ctx.heartbeat_policy,
             Some(prior_dead_letter),
         )
@@ -168,15 +165,16 @@ pub async fn run_scheduler_loop(
 
                 if let Ok(cap_report) =
                     crate::observability::enforce_dead_letter_cap(ctx.platform.composition()).await
-                    && cap_report.pruned > 0 {
-                        tracing::warn!(
-                            dead_letter_before = cap_report.before,
-                            dead_letter_after = cap_report.after,
-                            pruned = cap_report.pruned,
-                            cap = cap_report.cap,
-                            "dead-letter cap enforced"
-                        );
-                    }
+                    && cap_report.pruned > 0
+                {
+                    tracing::warn!(
+                        dead_letter_before = cap_report.before,
+                        dead_letter_after = cap_report.after,
+                        pruned = cap_report.pruned,
+                        cap = cap_report.cap,
+                        "dead-letter cap enforced"
+                    );
+                }
 
                 if report.materialized > 0
                     || report.processed_job.is_some()
@@ -185,9 +183,10 @@ pub async fn run_scheduler_loop(
                 {
                     tracing::info!("{}", format_tick_report("medousa-daemon tick", &report));
                 } else if report.heartbeat_reason.starts_with("dead_letter_static") {
-                    crate::observability::rate_limited_debug("heartbeat.dead_letter_static", || {
-                        format_tick_report("medousa-daemon tick", &report)
-                    });
+                    crate::observability::rate_limited_debug(
+                        "heartbeat.dead_letter_static",
+                        || format_tick_report("medousa-daemon tick", &report),
+                    );
                 }
 
                 if let Some(ref job_id) = report.processed_job {
@@ -209,18 +208,13 @@ pub async fn run_scheduler_loop(
                 };
 
                 if dispatch_decision == HeartbeatDispatchDecision::Dispatch {
-                    let (provider, model) = (ctx.resolve_agent_routing)(
-                        None,
-                        &ctx.default_runtime_config,
-                    );
+                    let (provider, model) =
+                        (ctx.resolve_agent_routing)(None, &ctx.default_runtime_config);
                     let agent = HeartbeatAgentDispatchContext {
                         backend: ctx.backend.clone(),
                         provider,
                         model,
-                        response_depth_mode: ctx
-                            .default_runtime_config
-                            .response_depth_mode
-                            .clone(),
+                        response_depth_mode: ctx.default_runtime_config.response_depth_mode.clone(),
                         agent_runtime: ctx.platform.agent_handle(),
                     };
                     dispatch_heartbeat_notifications(
@@ -234,17 +228,14 @@ pub async fn run_scheduler_loop(
                     )
                     .await;
                 } else if report.heartbeat_action == HeartbeatAction::Notify {
-                    crate::observability::rate_limited_debug(
-                        "heartbeat.notify_suppressed",
-                        || {
-                            format!(
-                                "medousa-daemon heartbeat notify suppressed decision={} significance={:.2} reason={}",
-                                heartbeat_dispatch_decision_label(dispatch_decision),
-                                report.heartbeat_significance,
-                                report.heartbeat_reason,
-                            )
-                        },
-                    );
+                    crate::observability::rate_limited_debug("heartbeat.notify_suppressed", || {
+                        format!(
+                            "medousa-daemon heartbeat notify suppressed decision={} significance={:.2} reason={}",
+                            heartbeat_dispatch_decision_label(dispatch_decision),
+                            report.heartbeat_significance,
+                            report.heartbeat_reason,
+                        )
+                    });
                 }
 
                 side_effects.run_retention_if_due(now_utc).await;
@@ -265,6 +256,44 @@ pub async fn run_scheduler_loop(
             _ = tokio::time::sleep(Duration::from_millis(interval_ms)) => {}
         }
     }
+}
+
+/// Observe runtime health without owning queue consumption, recurring materialization,
+/// or outbox delivery. Those responsibilities have independent supervised loops.
+pub async fn observe_runtime(
+    runtime: &RuntimeComposition,
+    heartbeat_policy: HeartbeatLanePolicy,
+    prior_dead_letter_jobs: Option<usize>,
+) -> Result<TickReport> {
+    let sdk = RuntimeSdk::new(runtime.clone());
+    let lane = EngineExecutionLane::Scheduled;
+    let snapshot = safe_stats_snapshot(&sdk, 200).await?;
+    let heartbeat_decision = evaluate_heartbeat_significance(
+        &HeartbeatSignals {
+            materialized_jobs: 0,
+            processed_job: false,
+            published_events: 0,
+            failed_jobs: snapshot.failed_jobs,
+            dead_letter_jobs: snapshot.dead_letter_jobs,
+            pending_outbox_events: snapshot.pending_outbox_events,
+        },
+        heartbeat_policy,
+        prior_dead_letter_jobs,
+    );
+
+    Ok(TickReport {
+        materialized: 0,
+        processed_job: None,
+        published: 0,
+        lane,
+        lane_policy_profile: default_policy_profile_for_lane(lane),
+        heartbeat_action: heartbeat_decision.action,
+        heartbeat_significance: heartbeat_decision.significance,
+        heartbeat_reason: heartbeat_decision.reason,
+        failed_jobs: snapshot.failed_jobs,
+        dead_letter_jobs: snapshot.dead_letter_jobs,
+        pending_outbox_events: snapshot.pending_outbox_events,
+    })
 }
 
 pub async fn tick_runtime(
@@ -445,21 +474,23 @@ pub fn decide_heartbeat_dispatch(
     metrics.last_dead_letter_jobs = report.dead_letter_jobs;
 
     if let Some(window) = delivery_policy.quiet_hours
-        && window.contains_utc_hour(now_utc.hour() as u8) {
-            metrics.suppressed_quiet_hours = metrics.suppressed_quiet_hours.saturating_add(1);
-            return HeartbeatDispatchDecision::SuppressedQuietHours;
-        }
+        && window.contains_utc_hour(now_utc.hour() as u8)
+    {
+        metrics.suppressed_quiet_hours = metrics.suppressed_quiet_hours.saturating_add(1);
+        return HeartbeatDispatchDecision::SuppressedQuietHours;
+    }
 
     if delivery_policy.min_notify_interval_secs > 0
-        && let Some(last_dispatched) = metrics.last_dispatched_at_utc {
-            let elapsed_seconds = now_utc.signed_duration_since(last_dispatched).num_seconds();
-            if elapsed_seconds >= 0
-                && (elapsed_seconds as u64) < delivery_policy.min_notify_interval_secs
-            {
-                metrics.suppressed_min_interval = metrics.suppressed_min_interval.saturating_add(1);
-                return HeartbeatDispatchDecision::SuppressedMinInterval;
-            }
+        && let Some(last_dispatched) = metrics.last_dispatched_at_utc
+    {
+        let elapsed_seconds = now_utc.signed_duration_since(last_dispatched).num_seconds();
+        if elapsed_seconds >= 0
+            && (elapsed_seconds as u64) < delivery_policy.min_notify_interval_secs
+        {
+            metrics.suppressed_min_interval = metrics.suppressed_min_interval.saturating_add(1);
+            return HeartbeatDispatchDecision::SuppressedMinInterval;
         }
+    }
 
     metrics.dispatched_notifications = metrics.dispatched_notifications.saturating_add(1);
     metrics.last_dispatched_at_utc = Some(now_utc);
@@ -529,8 +560,7 @@ pub fn parse_heartbeat_policy(args: &[String]) -> Result<HeartbeatLanePolicy> {
         "--heartbeat-activity-weight",
         "MEDOUSA_HEARTBEAT_ACTIVITY_WEIGHT",
     ) {
-        policy.activity_weight =
-            parse_non_negative_f32_value(&raw, "heartbeat activity weight")?;
+        policy.activity_weight = parse_non_negative_f32_value(&raw, "heartbeat activity weight")?;
     }
 
     normalize_heartbeat_weights(&mut policy)?;
@@ -577,9 +607,7 @@ fn parse_quiet_hours_window(
         (None, None) => Ok(None),
         (Some(start_hour_utc), Some(end_hour_utc)) => {
             if start_hour_utc == end_hour_utc {
-                return Err(anyhow!(
-                    "heartbeat quiet-hours start and end must differ"
-                ));
+                return Err(anyhow!("heartbeat quiet-hours start and end must differ"));
             }
             Ok(Some(QuietHoursWindow {
                 start_hour_utc,
@@ -670,7 +698,9 @@ pub fn normalize_heartbeat_weights(policy: &mut HeartbeatLanePolicy) -> Result<(
     Ok(())
 }
 
-fn heartbeat_snapshot_from_report(report: &TickReport) -> crate::agent_runtime::HeartbeatRuntimeSnapshot {
+fn heartbeat_snapshot_from_report(
+    report: &TickReport,
+) -> crate::agent_runtime::HeartbeatRuntimeSnapshot {
     crate::agent_runtime::HeartbeatRuntimeSnapshot {
         significance: report.heartbeat_significance,
         reason: report.heartbeat_reason.clone(),
@@ -688,21 +718,22 @@ async fn compose_heartbeat_summary(
     agent: Option<&HeartbeatAgentDispatchContext>,
 ) -> String {
     if let Some(ctx) = agent
-        && crate::agent_runtime::heartbeat_agent_turn_enabled() {
-            let snapshot = heartbeat_snapshot_from_report(report);
-            if let Some(text) = crate::agent_runtime::run_heartbeat_agent_turn(
-                &snapshot,
-                &ctx.backend,
-                &ctx.provider,
-                &ctx.model,
-                &ctx.response_depth_mode,
-                ctx.agent_runtime.as_ref(),
-            )
-            .await
-            {
-                return text;
-            }
+        && crate::agent_runtime::heartbeat_agent_turn_enabled()
+    {
+        let snapshot = heartbeat_snapshot_from_report(report);
+        if let Some(text) = crate::agent_runtime::run_heartbeat_agent_turn(
+            &snapshot,
+            &ctx.backend,
+            &ctx.provider,
+            &ctx.model,
+            &ctx.response_depth_mode,
+            ctx.agent_runtime.as_ref(),
+        )
+        .await
+        {
+            return text;
         }
+    }
 
     format!(
         "heartbeat action={} significance={:.2} reason={}\nfailed={} dead_letter={} outbox_pending={}",
@@ -750,18 +781,20 @@ pub async fn dispatch_heartbeat_notifications(
     };
 
     if let Some(path) = notify.jsonl_path.as_deref()
-        && let Err(err) = append_heartbeat_jsonl(path, &notification).await {
-            tracing::warn!(
-                path = %path.display(),
-                error = %err,
-                "heartbeat jsonl sink error"
-            );
-        }
+        && let Err(err) = append_heartbeat_jsonl(path, &notification).await
+    {
+        tracing::warn!(
+            path = %path.display(),
+            error = %err,
+            "heartbeat jsonl sink error"
+        );
+    }
 
     if let (Some(url), Some(client)) = (notify.webhook_url.as_deref(), webhook_client)
-        && let Err(err) = post_heartbeat_webhook(client, url, &notification).await {
-            tracing::warn!(url = %url, error = %err, "heartbeat webhook sink error");
-        }
+        && let Err(err) = post_heartbeat_webhook(client, url, &notification).await
+    {
+        tracing::warn!(url = %url, error = %err, "heartbeat webhook sink error");
+    }
 
     let summary = compose_heartbeat_summary(report, agent).await;
     let product_config = crate::load_product_config();
@@ -774,7 +807,10 @@ pub async fn dispatch_heartbeat_notifications(
 }
 
 async fn append_heartbeat_jsonl(path: &Path, notification: &HeartbeatNotification) -> Result<()> {
-    let _ = crate::observability::rotate_if_oversized(path, crate::observability::RotateConfig::from_env());
+    let _ = crate::observability::rotate_if_oversized(
+        path,
+        crate::observability::RotateConfig::from_env(),
+    );
 
     if let Some(parent) = path.parent() {
         tokio::fs::create_dir_all(parent).await.with_context(|| {
@@ -819,11 +855,7 @@ async fn post_heartbeat_webhook(
             .text()
             .await
             .unwrap_or_else(|_| "(failed reading webhook response body)".to_string());
-        anyhow::bail!(
-            "status={} body={}",
-            status,
-            truncate_for_log(&body, 400)
-        );
+        anyhow::bail!("status={} body={}", status, truncate_for_log(&body, 400));
     }
 
     Ok(())
@@ -890,10 +922,7 @@ pub fn is_missing_runtime_table_error(message: &str) -> bool {
     lowered.contains("the table '") && lowered.contains("does not exist")
 }
 
-pub async fn safe_materialize_recurring_now(
-    sdk: &RuntimeSdk,
-    scheduler_id: &str,
-) -> Result<usize> {
+pub async fn safe_materialize_recurring_now(sdk: &RuntimeSdk, scheduler_id: &str) -> Result<usize> {
     match sdk.materialize_recurring_now(scheduler_id).await {
         Ok(materialized) => Ok(materialized),
         Err(err) => {

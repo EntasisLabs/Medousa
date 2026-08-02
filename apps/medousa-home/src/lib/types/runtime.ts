@@ -79,6 +79,14 @@ export interface RuntimeDefaultsResponse {
   inference_profiles?: import("$lib/types/inferenceProfiles").InferenceProfiles | null;
 }
 
+export interface RuntimeWorkerConfig {
+  maxInFlight: number;
+  agents: number;
+  scheduled: number;
+  delivery: number;
+  maintenance: number;
+}
+
 export interface StageRouteCommandResponse {
   stage_routing: StageRoutingMatrix;
   rendered_output: string;

@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
-use super::workshop_http;
 use super::DaemonState;
+use super::workshop_http;
 
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -29,7 +29,11 @@ pub async fn model_catalog_list(
     if let Some(value) = provider.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
         query.push(("provider", value.to_string()));
     }
-    if let Some(value) = capability.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
+    if let Some(value) = capability
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+    {
         query.push(("capability", value.to_string()));
     }
     if let Some(value) = q.as_deref().map(str::trim).filter(|v| !v.is_empty()) {

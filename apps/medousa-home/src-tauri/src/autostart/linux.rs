@@ -2,7 +2,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 
-use super::spec::{build_autostart_spec, SERVICE_NAME, AutostartSpec};
+use super::spec::{AutostartSpec, SERVICE_NAME, build_autostart_spec};
 
 fn systemd_user_dir() -> PathBuf {
     dirs::config_dir()
@@ -62,10 +62,7 @@ fn run_systemctl(args: &[&str]) -> Result<(), String> {
 fn render_systemd_unit(spec: &AutostartSpec, log_path: &PathBuf) -> String {
     let exec_start = systemd_exec_start(
         "/bin/sh",
-        &[
-            "-c".to_string(),
-            super::spec::shell_start_command(spec),
-        ],
+        &["-c".to_string(), super::spec::shell_start_command(spec)],
     );
     let log = log_path.display();
 
@@ -101,10 +98,7 @@ fn systemd_escape(value: &str) -> String {
         .chars()
         .any(|ch| ch.is_whitespace() || matches!(ch, '\\' | '"' | '$'))
     {
-        format!(
-            "\"{}\"",
-            value.replace('\\', "\\\\").replace('"', "\\\"")
-        )
+        format!("\"{}\"", value.replace('\\', "\\\\").replace('"', "\\\""))
     } else {
         value.to_string()
     }

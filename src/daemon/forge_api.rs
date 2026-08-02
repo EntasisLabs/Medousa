@@ -163,9 +163,7 @@ fn map_err(err: ForgeError) -> ApiError {
         ForgeError::RepositoryEmpty(_) => {
             (StatusCode::UNPROCESSABLE_ENTITY, Some("repository_empty"))
         }
-        ForgeError::BaseRefMissing { .. } => {
-            (StatusCode::CONFLICT, Some("base_ref_missing"))
-        }
+        ForgeError::BaseRefMissing { .. } => (StatusCode::CONFLICT, Some("base_ref_missing")),
         ForgeError::Git(_) => (StatusCode::BAD_REQUEST, Some("git")),
         ForgeError::Store(_) | ForgeError::Io(_) | ForgeError::Json(_) => {
             (StatusCode::INTERNAL_SERVER_ERROR, Some("store"))
@@ -526,11 +524,18 @@ fn write_repository_catalog_unlocked(store: &RepositoryCatalogStore) -> ApiResul
 
 fn touch_repository(path: &FsPath, pinned: Option<bool>) -> ApiResult<()> {
     let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
-    let _guard = REPOSITORY_CATALOG_LOCK
-        .lock()
-        .map_err(|_| request_error(StatusCode::INTERNAL_SERVER_ERROR, "repository catalog lock failed"))?;
+    let _guard = REPOSITORY_CATALOG_LOCK.lock().map_err(|_| {
+        request_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "repository catalog lock failed",
+        )
+    })?;
     let mut store = read_repository_catalog_unlocked();
-    if let Some(entry) = store.entries.iter_mut().find(|entry| entry.path == canonical) {
+    if let Some(entry) = store
+        .entries
+        .iter_mut()
+        .find(|entry| entry.path == canonical)
+    {
         entry.last_used_at = chrono::Utc::now();
         if let Some(pinned) = pinned {
             entry.pinned = pinned;
@@ -561,11 +566,13 @@ fn existing_projects_for_repository(
         .iter()
         .filter(|item| !matches!(item.state, WorkState::Discarded | WorkState::Accepted))
         .filter(|item| match &item.target {
-            WorkTarget::Git(target) => target
-                .repo_path
-                .canonicalize()
-                .unwrap_or_else(|_| target.repo_path.clone())
-                == canonical,
+            WorkTarget::Git(target) => {
+                target
+                    .repo_path
+                    .canonicalize()
+                    .unwrap_or_else(|_| target.repo_path.clone())
+                    == canonical
+            }
         })
         .cloned()
         .map(|item| {
@@ -612,7 +619,11 @@ fn inspect_repository_path_from_items(
     } else if changed_files > 0 {
         format!(
             "{changed_files} uncommitted {} already exist in the repository. Medousa starts from the committed revision, so those outside changes stay separate.",
-            if changed_files == 1 { "change" } else { "changes" }
+            if changed_files == 1 {
+                "change"
+            } else {
+                "changes"
+            }
         )
     } else {
         "The repository is clean. Medousa will create an isolated working copy from the selected branch.".into()
@@ -632,7 +643,10 @@ fn inspect_repository_path_from_items(
     })
 }
 
-fn inspect_repository_path(state: &AppState, requested: &FsPath) -> ApiResult<RepositoryInspection> {
+fn inspect_repository_path(
+    state: &AppState,
+    requested: &FsPath,
+) -> ApiResult<RepositoryInspection> {
     let items = forge(state).list().map_err(map_err)?;
     inspect_repository_path_from_items(requested, &items)
 }
@@ -765,7 +779,11 @@ fn repository_browse_roots(state: &AppState) -> Vec<PathBuf> {
     }
     roots.extend(windows_repository_browse_roots());
     for record in read_repository_catalog().entries {
-        if let Some(parent) = record.path.parent().and_then(|path| path.canonicalize().ok()) {
+        if let Some(parent) = record
+            .path
+            .parent()
+            .and_then(|path| path.canonicalize().ok())
+        {
             roots.push(parent);
         }
     }
@@ -823,10 +841,9 @@ async fn browse_repositories(
     Query(query): Query<BrowseRepositoriesQuery>,
 ) -> ApiResult<Json<RepositoryBrowseResponse>> {
     let roots = repository_browse_roots(&state);
-    let requested = query
-        .path
-        .or_else(dirs::home_dir)
-        .ok_or_else(|| request_error(StatusCode::NOT_FOUND, "workshop home folder is unavailable"))?;
+    let requested = query.path.or_else(dirs::home_dir).ok_or_else(|| {
+        request_error(StatusCode::NOT_FOUND, "workshop home folder is unavailable")
+    })?;
     let path = requested.canonicalize().map_err(|err| {
         request_error(
             StatusCode::NOT_FOUND,
@@ -857,7 +874,9 @@ async fn browse_repositories(
         if name.to_string_lossy().starts_with('.') || !entry.path().is_dir() {
             continue;
         }
-        let Ok(candidate) = entry.path().canonicalize() else { continue };
+        let Ok(candidate) = entry.path().canonicalize() else {
+            continue;
+        };
         if !browse_path_allowed(&candidate, &roots) {
             continue;
         }
@@ -868,10 +887,11 @@ async fn browse_repositories(
         entries.push(browse_entry(candidate));
     }
     entries.sort_by(|left, right| {
-        right
-            .repository
-            .cmp(&left.repository)
-            .then_with(|| left.name.to_ascii_lowercase().cmp(&right.name.to_ascii_lowercase()))
+        right.repository.cmp(&left.repository).then_with(|| {
+            left.name
+                .to_ascii_lowercase()
+                .cmp(&right.name.to_ascii_lowercase())
+        })
     });
     let places = roots.into_iter().map(browse_entry).collect();
     Ok(Json(RepositoryBrowseResponse {
@@ -884,7 +904,11 @@ async fn browse_repositories(
     }))
 }
 
-fn provider_adapter(provider: &'static str, label: &'static str, command: &str) -> ProviderRepositoryAdapter {
+fn provider_adapter(
+    provider: &'static str,
+    label: &'static str,
+    command: &str,
+) -> ProviderRepositoryAdapter {
     let available = command_available(command);
     ProviderRepositoryAdapter {
         provider,
@@ -1904,15 +1928,14 @@ fn review_file_diff(state: &AppState, id: &WorkId, raw_path: &str) -> ApiResult<
         .iter()
         .find(|file| file.path == path)
         .ok_or_else(|| request_error(StatusCode::NOT_FOUND, "file is not part of this review"))?;
-    let environment = item.environment.as_ref().ok_or_else(|| {
-        request_error(StatusCode::CONFLICT, "governed workspace is not prepared")
-    })?;
-    let baseline_oid = GitOid::new(
-        review
-            .baseline_oid
-            .clone()
-            .ok_or_else(|| request_error(StatusCode::CONFLICT, "review has no starting revision"))?,
-    );
+    let environment = item
+        .environment
+        .as_ref()
+        .ok_or_else(|| request_error(StatusCode::CONFLICT, "governed workspace is not prepared"))?;
+    let baseline_oid =
+        GitOid::new(review.baseline_oid.clone().ok_or_else(|| {
+            request_error(StatusCode::CONFLICT, "review has no starting revision")
+        })?);
     let reviewed_oid = GitOid::new(
         review
             .sealed_head_oid
@@ -1929,8 +1952,12 @@ fn review_file_diff(state: &AppState, id: &WorkId, raw_path: &str) -> ApiResult<
         .show_bytes(&environment.worktree, &reviewed_oid, &changed.path)
         .ok();
     let binary = changed.is_binary
-        || baseline_bytes.as_ref().is_some_and(|bytes| std::str::from_utf8(bytes).is_err())
-        || reviewed_bytes.as_ref().is_some_and(|bytes| std::str::from_utf8(bytes).is_err());
+        || baseline_bytes
+            .as_ref()
+            .is_some_and(|bytes| std::str::from_utf8(bytes).is_err())
+        || reviewed_bytes
+            .as_ref()
+            .is_some_and(|bytes| std::str::from_utf8(bytes).is_err());
     let truncated = baseline_bytes
         .as_ref()
         .is_some_and(|bytes| bytes.len() > MAX_REVIEW_FILE_BYTES)
@@ -2132,9 +2159,10 @@ async fn restore_review_file(
             &actor,
         )
         .map_err(map_err)?;
-    let environment = item.environment.as_ref().ok_or_else(|| {
-        request_error(StatusCode::CONFLICT, "governed workspace is not prepared")
-    })?;
+    let environment = item
+        .environment
+        .as_ref()
+        .ok_or_else(|| request_error(StatusCode::CONFLICT, "governed workspace is not prepared"))?;
     let restored_path = comparison
         .old_path
         .as_deref()
@@ -2143,7 +2171,10 @@ async fn restore_review_file(
     if comparison.path != restored_path {
         let (renamed, _) = resolve_source_path(&environment.worktree, &comparison.path)?;
         std::fs::remove_file(renamed).map_err(|err| {
-            request_error(StatusCode::INTERNAL_SERVER_ERROR, format!("could not restore file: {err}"))
+            request_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("could not restore file: {err}"),
+            )
         })?;
     }
     let action = if let Some(content) = comparison.baseline.content {
@@ -2155,17 +2186,26 @@ async fn restore_review_file(
         };
         if let Some(parent) = destination.parent() {
             std::fs::create_dir_all(parent).map_err(|err| {
-                request_error(StatusCode::INTERNAL_SERVER_ERROR, format!("could not restore folder: {err}"))
+                request_error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("could not restore folder: {err}"),
+                )
             })?;
         }
         std::fs::write(destination, content.as_bytes()).map_err(|err| {
-            request_error(StatusCode::INTERNAL_SERVER_ERROR, format!("could not restore file: {err}"))
+            request_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("could not restore file: {err}"),
+            )
         })?;
         "restored"
     } else {
         let (destination, _) = resolve_source_path(&environment.worktree, &comparison.path)?;
         std::fs::remove_file(destination).map_err(|err| {
-            request_error(StatusCode::INTERNAL_SERVER_ERROR, format!("could not restore file: {err}"))
+            request_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("could not restore file: {err}"),
+            )
         })?;
         "removed"
     };
@@ -2231,8 +2271,9 @@ struct ProjectTaskRun {
     result: Option<ProjectTaskResult>,
 }
 
-static PROJECT_TASK_RUNS: LazyLock<tokio::sync::RwLock<std::collections::HashMap<String, ProjectTaskRun>>> =
-    LazyLock::new(|| tokio::sync::RwLock::new(std::collections::HashMap::new()));
+static PROJECT_TASK_RUNS: LazyLock<
+    tokio::sync::RwLock<std::collections::HashMap<String, ProjectTaskRun>>,
+> = LazyLock::new(|| tokio::sync::RwLock::new(std::collections::HashMap::new()));
 static PROJECT_TASK_CHILDREN: LazyLock<
     tokio::sync::RwLock<
         std::collections::HashMap<String, Arc<tokio::sync::Mutex<tokio::process::Child>>>,
@@ -2247,10 +2288,17 @@ struct RunProjectTaskRequest {
     test_id: Option<String>,
 }
 
-fn target_project_test(root: &FsPath, task: &mut ProjectTask, test_id: Option<&str>) -> ApiResult<()> {
-    let Some(test_id) = test_id else { return Ok(()) };
+fn target_project_test(
+    root: &FsPath,
+    task: &mut ProjectTask,
+    test_id: Option<&str>,
+) -> ApiResult<()> {
+    let Some(test_id) = test_id else {
+        return Ok(());
+    };
     let test = discover_project_tests(root, std::slice::from_ref(task))
-        .into_iter().find(|test| test.id == test_id && test.task_id == task.id)
+        .into_iter()
+        .find(|test| test.id == test_id && test.task_id == task.id)
         .ok_or_else(|| request_error(StatusCode::NOT_FOUND, "Test is no longer available"))?;
     if task.id == "cargo-test" {
         task.argv.push(test.label.clone());
@@ -2259,8 +2307,12 @@ fn target_project_test(root: &FsPath, task: &mut ProjectTask, test_id: Option<&s
     } else if task.id == "npm-test" {
         task.argv.extend(["--".into(), test.path]);
     } else if task.id == "go-test" {
-        let package = std::path::Path::new(&test.path).parent().map(|path| format!("./{}", path.display())).unwrap_or_else(|| ".".into());
-        task.argv.extend([package, "-run".into(), format!("^{}$", test.label)]);
+        let package = std::path::Path::new(&test.path)
+            .parent()
+            .map(|path| format!("./{}", path.display()))
+            .unwrap_or_else(|| ".".into());
+        task.argv
+            .extend([package, "-run".into(), format!("^{}$", test.label)]);
     }
     task.label = format!("Test {}", test.label);
     Ok(())
@@ -2306,7 +2358,12 @@ fn detected_project_tasks(root: &FsPath) -> Vec<ProjectTask> {
             add("npm-build", "Build", "build", &["npm", "run", "build"]);
         }
         if scripts.contains_key("dev") {
-            add("npm-dev", "Development server", "run", &["npm", "run", "dev"]);
+            add(
+                "npm-dev",
+                "Development server",
+                "run",
+                &["npm", "run", "dev"],
+            );
         } else if scripts.contains_key("start") {
             add("npm-start", "Run project", "run", &["npm", "start"]);
         }
@@ -2355,7 +2412,9 @@ fn parse_output_locations(root: &FsPath, output: &str) -> Vec<ProjectOutputLocat
             .find(|token| {
                 let mut parts = token.rsplitn(3, ':');
                 parts.next().is_some_and(|part| part.parse::<u32>().is_ok())
-                    && parts.next().is_some_and(|part| part.parse::<u32>().is_ok() || part.contains('.'))
+                    && parts
+                        .next()
+                        .is_some_and(|part| part.parse::<u32>().is_ok() || part.contains('.'))
             })
         else {
             continue;
@@ -2366,7 +2425,9 @@ fn parse_output_locations(root: &FsPath, output: &str) -> Vec<ProjectOutputLocat
         let (raw, line, column) = if let Some(path) = parts.next() {
             (path, middle.parse().unwrap_or(1), last.parse().ok())
         } else {
-            let Some((path, line)) = token.rsplit_once(':') else { continue };
+            let Some((path, line)) = token.rsplit_once(':') else {
+                continue;
+            };
             (path, line.parse().unwrap_or(1), None)
         };
         let raw = raw.trim_start_matches("-->");
@@ -2377,7 +2438,10 @@ fn parse_output_locations(root: &FsPath, output: &str) -> Vec<ProjectOutputLocat
             Some(path)
         };
         let Some(relative) = relative else { continue };
-        if relative.components().any(|part| matches!(part, std::path::Component::ParentDir)) {
+        if relative
+            .components()
+            .any(|part| matches!(part, std::path::Component::ParentDir))
+        {
             continue;
         }
         let message = line_text.trim().chars().take(300).collect();
@@ -2387,7 +2451,9 @@ fn parse_output_locations(root: &FsPath, output: &str) -> Vec<ProjectOutputLocat
             column,
             message,
         });
-        if locations.len() >= 100 { break; }
+        if locations.len() >= 100 {
+            break;
+        }
     }
     locations
 }
@@ -2413,34 +2479,61 @@ async fn list_project_tasks(
 }
 
 fn discover_project_tests(root: &FsPath, tasks: &[ProjectTask]) -> Vec<ProjectTest> {
-    let Some(task) = tasks.iter().find(|task| task.kind == "test" || task.id.ends_with("-test")) else {
+    let Some(task) = tasks
+        .iter()
+        .find(|task| task.kind == "test" || task.id.ends_with("-test"))
+    else {
         return Vec::new();
     };
     let mut tests = Vec::new();
     let tree = list_source_tree(&WorkId::from("test-discovery".to_string()), root).ok();
     for file in tree.into_iter().flat_map(|tree| tree.files).take(20_000) {
         let path = root.join(&file.path);
-        let extension = path.extension().and_then(|value| value.to_str()).unwrap_or("").to_string();
-        if !matches!(extension.as_str(), "rs" | "py" | "js" | "jsx" | "ts" | "tsx" | "go") {
+        let extension = path
+            .extension()
+            .and_then(|value| value.to_str())
+            .unwrap_or("")
+            .to_string();
+        if !matches!(
+            extension.as_str(),
+            "rs" | "py" | "js" | "jsx" | "ts" | "tsx" | "go"
+        ) {
             continue;
         }
-        let Ok(content) = std::fs::read_to_string(&path) else { continue };
+        let Ok(content) = std::fs::read_to_string(&path) else {
+            continue;
+        };
         let mut previous_test_attribute = false;
         for (index, line) in content.lines().enumerate() {
             let trimmed = line.trim();
             let name = if extension == "rs" && previous_test_attribute {
-                trimmed.strip_prefix("fn ").and_then(|rest| rest.split(|ch: char| !ch.is_alphanumeric() && ch != '_').next())
+                trimmed.strip_prefix("fn ").and_then(|rest| {
+                    rest.split(|ch: char| !ch.is_alphanumeric() && ch != '_')
+                        .next()
+                })
             } else if extension == "py" {
-                trimmed.strip_prefix("def test_").and_then(|rest| rest.split('(').next()).map(|name| &trimmed[4..4 + 5 + name.len()])
-            } else if matches!(extension.as_str(), "js" | "jsx" | "ts" | "tsx") && (trimmed.starts_with("test(") || trimmed.starts_with("it(")) {
+                trimmed
+                    .strip_prefix("def test_")
+                    .and_then(|rest| rest.split('(').next())
+                    .map(|name| &trimmed[4..4 + 5 + name.len()])
+            } else if matches!(extension.as_str(), "js" | "jsx" | "ts" | "tsx")
+                && (trimmed.starts_with("test(") || trimmed.starts_with("it("))
+            {
                 trimmed.split(['\'', '"']).nth(1)
             } else if extension == "go" {
-                trimmed.strip_prefix("func Test").and_then(|rest| rest.split('(').next()).map(|name| &trimmed[5..5 + 4 + name.len()])
+                trimmed
+                    .strip_prefix("func Test")
+                    .and_then(|rest| rest.split('(').next())
+                    .map(|name| &trimmed[5..5 + 4 + name.len()])
             } else {
                 None
             };
             if let Some(name) = name.filter(|name| !name.is_empty()) {
-                let relative = path.strip_prefix(root).unwrap_or(&path).to_string_lossy().replace('\\', "/");
+                let relative = path
+                    .strip_prefix(root)
+                    .unwrap_or(&path)
+                    .to_string_lossy()
+                    .replace('\\', "/");
                 tests.push(ProjectTest {
                     id: format!("{}::{name}", relative),
                     label: name.to_string(),
@@ -2448,7 +2541,9 @@ fn discover_project_tests(root: &FsPath, tasks: &[ProjectTask]) -> Vec<ProjectTe
                     line: (index + 1) as u32,
                     task_id: task.id.clone(),
                 });
-                if tests.len() >= 2_000 { return tests; }
+                if tests.len() >= 2_000 {
+                    return tests;
+                }
             }
             previous_test_attribute = extension == "rs" && trimmed == "#[test]";
         }
@@ -2462,7 +2557,17 @@ async fn list_project_tests(
 ) -> ApiResult<Json<Vec<ProjectTest>>> {
     let id = parse_work_id(&work_id)?;
     let item = forge(&state).load(&id).map_err(map_err)?;
-    let root = item.environment.as_ref().ok_or_else(|| request_error(StatusCode::CONFLICT, "Set up this project before finding tests"))?.worktree.clone();
+    let root = item
+        .environment
+        .as_ref()
+        .ok_or_else(|| {
+            request_error(
+                StatusCode::CONFLICT,
+                "Set up this project before finding tests",
+            )
+        })?
+        .worktree
+        .clone();
     let tasks = detected_project_tasks(&root);
     Ok(Json(discover_project_tests(&root, &tasks)))
 }
@@ -2476,34 +2581,75 @@ async fn start_project_task_run(
     let forge = forge(&state);
     let item = require_work_lease(&state, &id, &body.lease_id, body.generation)?;
     let lease = resolve_lease(forge.as_ref(), &body.lease_id, body.generation)?;
-    let root = item.environment.as_ref().ok_or_else(|| request_error(StatusCode::CONFLICT, "Set up this project before running it"))?.worktree.clone();
-    let mut task = detected_project_tasks(&root).into_iter().find(|task| task.id == task_id)
-        .ok_or_else(|| request_error(StatusCode::NOT_FOUND, "Project command is no longer available"))?;
+    let root = item
+        .environment
+        .as_ref()
+        .ok_or_else(|| {
+            request_error(
+                StatusCode::CONFLICT,
+                "Set up this project before running it",
+            )
+        })?
+        .worktree
+        .clone();
+    let mut task = detected_project_tasks(&root)
+        .into_iter()
+        .find(|task| task.id == task_id)
+        .ok_or_else(|| {
+            request_error(
+                StatusCode::NOT_FOUND,
+                "Project command is no longer available",
+            )
+        })?;
     target_project_test(&root, &mut task, body.test_id.as_deref())?;
     let run_id = format!("run-{}", uuid::Uuid::new_v4());
-    let run = ProjectTaskRun { run_id: run_id.clone(), work_id: work_id.clone(), state: "running".into(), task: task.clone(), result: None };
+    let run = ProjectTaskRun {
+        run_id: run_id.clone(),
+        work_id: work_id.clone(),
+        state: "running".into(),
+        task: task.clone(),
+        result: None,
+    };
     let mut child = background_tokio_command(&task.argv[0])
-        .args(&task.argv[1..]).current_dir(&root)
-        .stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped())
-        .kill_on_drop(true).spawn()
-        .map_err(|err| request_error(StatusCode::BAD_REQUEST, format!("Could not run {}: {err}", task.label)))?;
-    PROJECT_TASK_RUNS.write().await.insert(run_id.clone(), run.clone());
+        .args(&task.argv[1..])
+        .current_dir(&root)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
+        .map_err(|err| {
+            request_error(
+                StatusCode::BAD_REQUEST,
+                format!("Could not run {}: {err}", task.label),
+            )
+        })?;
+    PROJECT_TASK_RUNS
+        .write()
+        .await
+        .insert(run_id.clone(), run.clone());
     let mut stdout_stream = child.stdout.take();
     let mut stderr_stream = child.stderr.take();
     let stdout_reader = tokio::spawn(async move {
         use tokio::io::AsyncReadExt;
         let mut bytes = Vec::new();
-        if let Some(ref mut stream) = stdout_stream { let _ = stream.read_to_end(&mut bytes).await; }
+        if let Some(ref mut stream) = stdout_stream {
+            let _ = stream.read_to_end(&mut bytes).await;
+        }
         bytes
     });
     let stderr_reader = tokio::spawn(async move {
         use tokio::io::AsyncReadExt;
         let mut bytes = Vec::new();
-        if let Some(ref mut stream) = stderr_stream { let _ = stream.read_to_end(&mut bytes).await; }
+        if let Some(ref mut stream) = stderr_stream {
+            let _ = stream.read_to_end(&mut bytes).await;
+        }
         bytes
     });
     let child = Arc::new(tokio::sync::Mutex::new(child));
-    PROJECT_TASK_CHILDREN.write().await.insert(run_id.clone(), Arc::clone(&child));
+    PROJECT_TASK_CHILDREN
+        .write()
+        .await
+        .insert(run_id.clone(), Arc::clone(&child));
     let state_for_run = state.clone();
     let run_id_for_task = run_id.clone();
     tokio::spawn(async move {
@@ -2515,11 +2661,26 @@ async fn start_project_task_run(
                 let stderr_bytes = stderr_reader.await.unwrap_or_default();
                 const CAP: usize = 64 * 1024;
                 let truncated = stdout_bytes.len() > CAP || stderr_bytes.len() > CAP;
-                let stdout = String::from_utf8_lossy(&stdout_bytes[..stdout_bytes.len().min(CAP)]).into_owned();
-                let stderr = String::from_utf8_lossy(&stderr_bytes[..stderr_bytes.len().min(CAP)]).into_owned();
+                let stdout = String::from_utf8_lossy(&stdout_bytes[..stdout_bytes.len().min(CAP)])
+                    .into_owned();
+                let stderr = String::from_utf8_lossy(&stderr_bytes[..stderr_bytes.len().min(CAP)])
+                    .into_owned();
                 let locations = parse_output_locations(&root, &format!("{stdout}\n{stderr}"));
-                let result = ProjectTaskResult { task: task.clone(), success: status.success(), exit_code: status.code(), stdout, stderr, truncated, duration_ms: started.elapsed().as_millis(), locations };
-                let cancelled = PROJECT_TASK_RUNS.read().await.get(&run_id_for_task).is_some_and(|run| run.state == "cancelled");
+                let result = ProjectTaskResult {
+                    task: task.clone(),
+                    success: status.success(),
+                    exit_code: status.code(),
+                    stdout,
+                    stderr,
+                    truncated,
+                    duration_ms: started.elapsed().as_millis(),
+                    locations,
+                };
+                let cancelled = PROJECT_TASK_RUNS
+                    .read()
+                    .await
+                    .get(&run_id_for_task)
+                    .is_some_and(|run| run.state == "cancelled");
                 let _ = forge.append_command_log(&lease, &serde_json::json!({"kind":if cancelled {"project_task_cancelled"} else {"project_task"},"run_id":run_id_for_task,"task":result.task,"success":result.success,"exit_code":result.exit_code,"duration_ms":result.duration_ms,"stdout":result.stdout,"stderr":result.stderr,"truncated":result.truncated,"locations":result.locations}));
                 if let Some(stored) = PROJECT_TASK_RUNS.write().await.get_mut(&run_id_for_task) {
                     if !cancelled {
@@ -2540,7 +2701,11 @@ async fn start_project_task_run(
 async fn get_project_task_run(
     Path((work_id, run_id)): Path<(String, String)>,
 ) -> ApiResult<Json<ProjectTaskRun>> {
-    let run = PROJECT_TASK_RUNS.read().await.get(&run_id).cloned()
+    let run = PROJECT_TASK_RUNS
+        .read()
+        .await
+        .get(&run_id)
+        .cloned()
         .filter(|run| run.work_id == work_id)
         .ok_or_else(|| request_error(StatusCode::NOT_FOUND, "Project run was not found"))?;
     Ok(Json(run))
@@ -2549,14 +2714,33 @@ async fn get_project_task_run(
 async fn cancel_project_task_run(
     Path((work_id, run_id)): Path<(String, String)>,
 ) -> ApiResult<Json<ProjectTaskRun>> {
-    if PROJECT_TASK_RUNS.read().await.get(&run_id).is_none_or(|run| run.work_id != work_id) {
-        return Err(request_error(StatusCode::NOT_FOUND, "Project run was not found"));
+    if PROJECT_TASK_RUNS
+        .read()
+        .await
+        .get(&run_id)
+        .is_none_or(|run| run.work_id != work_id)
+    {
+        return Err(request_error(
+            StatusCode::NOT_FOUND,
+            "Project run was not found",
+        ));
     }
-    let child = PROJECT_TASK_CHILDREN.read().await.get(&run_id).cloned()
+    let child = PROJECT_TASK_CHILDREN
+        .read()
+        .await
+        .get(&run_id)
+        .cloned()
         .ok_or_else(|| request_error(StatusCode::NOT_FOUND, "Project run is no longer active"))?;
-    child.lock().await.start_kill().map_err(|err| request_error(StatusCode::INTERNAL_SERVER_ERROR, format!("Could not stop project run: {err}")))?;
+    child.lock().await.start_kill().map_err(|err| {
+        request_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Could not stop project run: {err}"),
+        )
+    })?;
     let mut runs = PROJECT_TASK_RUNS.write().await;
-    let run = runs.get_mut(&run_id).filter(|run| run.work_id == work_id)
+    let run = runs
+        .get_mut(&run_id)
+        .filter(|run| run.work_id == work_id)
         .ok_or_else(|| request_error(StatusCode::NOT_FOUND, "Project run was not found"))?;
     run.state = "cancelled".into();
     Ok(Json(run.clone()))
@@ -2750,7 +2934,10 @@ fn repository_remote(worktree: &FsPath) -> Option<String> {
         .current_dir(worktree)
         .output()
         .ok()?;
-    output.status.success().then(|| String::from_utf8_lossy(&output.stdout).trim().to_string())
+    output
+        .status
+        .success()
+        .then(|| String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
 fn provider_repository(remote: &str) -> Option<(&'static str, String)> {
@@ -2774,7 +2961,10 @@ fn provider_repository(remote: &str) -> Option<(&'static str, String)> {
             ],
         ),
     ] {
-        if let Some(repository) = prefixes.iter().find_map(|prefix| remote.strip_prefix(prefix)) {
+        if let Some(repository) = prefixes
+            .iter()
+            .find_map(|prefix| remote.strip_prefix(prefix))
+        {
             let repository = repository.trim_end_matches('/').trim_end_matches(".git");
             if normalize_provider_repository_name(repository) {
                 return Some((provider, repository.to_string()));
@@ -2792,17 +2982,23 @@ fn normalize_provider_repository_name(repository: &str) -> bool {
                 && *segment != "."
                 && *segment != ".."
                 && !segment.starts_with('-')
-                && segment
-                    .chars()
-                    .all(|character| character.is_ascii_alphanumeric() || matches!(character, '.' | '-' | '_'))
+                && segment.chars().all(|character| {
+                    character.is_ascii_alphanumeric() || matches!(character, '.' | '-' | '_')
+                })
         })
 }
 
 fn provider_handoff(forge: &Forge, item: &WorkItem) -> ProviderHandoff {
     let context = load_provider_context(forge, &item.id);
-    let remote_url = item.environment.as_ref().and_then(|env| repository_remote(&env.worktree));
+    let remote_url = item
+        .environment
+        .as_ref()
+        .and_then(|env| repository_remote(&env.worktree));
     let parsed = remote_url.as_deref().and_then(provider_repository);
-    let provider = parsed.as_ref().map(|(provider, _)| *provider).unwrap_or("none");
+    let provider = parsed
+        .as_ref()
+        .map(|(provider, _)| *provider)
+        .unwrap_or("none");
     let available = match provider {
         "github" => command_available("gh"),
         "gitlab" => command_available("glab"),
@@ -2813,7 +3009,11 @@ fn provider_handoff(forge: &Forge, item: &WorkItem) -> ProviderHandoff {
     let base_branch = Some(target.base_ref.clone());
     let shared = item.environment.as_ref().is_some_and(|env| {
         background_command("git")
-            .args(["show-ref", "--verify", &format!("refs/remotes/origin/{}", env.branch)])
+            .args([
+                "show-ref",
+                "--verify",
+                &format!("refs/remotes/origin/{}", env.branch),
+            ])
             .current_dir(&env.worktree)
             .output()
             .is_ok_and(|output| output.status.success())
@@ -2830,7 +3030,9 @@ fn provider_handoff(forge: &Forge, item: &WorkItem) -> ProviderHandoff {
         links: context.links,
         message: match (provider, available) {
             ("none", _) => "No supported repository provider was found for origin.".into(),
-            (_, false) => format!("Install and sign in to the {provider} CLI on the workshop machine."),
+            (_, false) => {
+                format!("Install and sign in to the {provider} CLI on the workshop machine.")
+            }
             _ => "Ready to share from the connected workshop.".into(),
         },
     }
@@ -2855,7 +3057,10 @@ async fn save_provider_context(
     let forge = forge(&state);
     let item = forge.load(&id).map_err(map_err)?;
     if body.links.len() > 20 {
-        return Err(request_error(StatusCode::BAD_REQUEST, "Too many linked items"));
+        return Err(request_error(
+            StatusCode::BAD_REQUEST,
+            "Too many linked items",
+        ));
     }
     let mut context = load_provider_context(forge.as_ref(), &id);
     let mut links = body
@@ -2879,8 +3084,22 @@ async fn save_provider_context(
 }
 
 fn provider_command_error(label: &str, output: &std::process::Output) -> ApiError {
-    let detail = String::from_utf8_lossy(&output.stderr).trim().chars().take(500).collect::<String>();
-    request_error(StatusCode::BAD_GATEWAY, format!("{label} failed{}", if detail.is_empty() { String::new() } else { format!(": {detail}") }))
+    let detail = String::from_utf8_lossy(&output.stderr)
+        .trim()
+        .chars()
+        .take(500)
+        .collect::<String>();
+    request_error(
+        StatusCode::BAD_GATEWAY,
+        format!(
+            "{label} failed{}",
+            if detail.is_empty() {
+                String::new()
+            } else {
+                format!(": {detail}")
+            }
+        ),
+    )
 }
 
 fn provider_review_body(forge: &Forge, item: &WorkItem, requested: Option<&str>) -> String {
@@ -2897,7 +3116,11 @@ fn provider_review_body(forge: &Forge, item: &WorkItem, requested: Option<&str>)
             format!(
                 "- {}: {} (`{}`)",
                 verification.label,
-                if verification.success { "passed" } else { "failed" },
+                if verification.success {
+                    "passed"
+                } else {
+                    "failed"
+                },
                 verification.command.join(" ")
             )
         })
@@ -2941,7 +3164,9 @@ fn existing_provider_review_url(
 ) -> ApiResult<Option<String>> {
     let output = if provider == "github" {
         background_command("gh")
-            .args(["pr", "view", branch, "--repo", repository, "--json", "url", "--jq", ".url"])
+            .args([
+                "pr", "view", branch, "--repo", repository, "--json", "url", "--jq", ".url",
+            ])
             .current_dir(worktree)
             .output()
     } else {
@@ -2961,7 +3186,12 @@ fn existing_provider_review_url(
     } else {
         serde_json::from_str::<serde_json::Value>(&stdout)
             .ok()
-            .and_then(|value| value.get("web_url").and_then(|url| url.as_str()).map(str::to_string))
+            .and_then(|value| {
+                value
+                    .get("web_url")
+                    .and_then(|url| url.as_str())
+                    .map(str::to_string)
+            })
     };
     Ok(url)
 }
@@ -2975,13 +3205,22 @@ async fn share_provider_handoff(
     let forge = forge(&state);
     let item = forge.load(&id).map_err(map_err)?;
     if !matches!(item.state, WorkState::AwaitingReview | WorkState::Accepted) {
-        return Err(request_error(StatusCode::CONFLICT, "Finish and review the project before sharing it"));
+        return Err(request_error(
+            StatusCode::CONFLICT,
+            "Finish and review the project before sharing it",
+        ));
     }
     let handoff = provider_handoff(forge.as_ref(), &item);
     if !handoff.available {
-        return Err(request_error(StatusCode::SERVICE_UNAVAILABLE, handoff.message));
+        return Err(request_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            handoff.message,
+        ));
     }
-    let environment = item.environment.as_ref().ok_or_else(|| request_error(StatusCode::CONFLICT, "Project workspace is unavailable"))?;
+    let environment = item
+        .environment
+        .as_ref()
+        .ok_or_else(|| request_error(StatusCode::CONFLICT, "Project workspace is unavailable"))?;
     let push = background_command("git")
         .args(["push", "--set-upstream", "origin", &environment.branch])
         .current_dir(&environment.worktree)
@@ -2990,7 +3229,12 @@ async fn share_provider_handoff(
     if !push.status.success() {
         return Err(provider_command_error("Sharing the branch", &push));
     }
-    let repository = handoff.repository.as_deref().ok_or_else(|| request_error(StatusCode::BAD_REQUEST, "Repository identity is unavailable"))?;
+    let repository = handoff.repository.as_deref().ok_or_else(|| {
+        request_error(
+            StatusCode::BAD_REQUEST,
+            "Repository identity is unavailable",
+        )
+    })?;
     let base = handoff.base_branch.as_deref().unwrap_or("main");
     let title = body
         .title
@@ -3004,12 +3248,39 @@ async fn share_provider_handoff(
     let description = provider_review_body(forge.as_ref(), &item, body.body.as_deref());
     let output = if handoff.provider == "github" {
         background_command("gh")
-            .args(["pr", "create", "--repo", repository, "--head", &environment.branch, "--base", base, "--title", &title, "--body", &description])
-            .current_dir(&environment.worktree).output()
+            .args([
+                "pr",
+                "create",
+                "--repo",
+                repository,
+                "--head",
+                &environment.branch,
+                "--base",
+                base,
+                "--title",
+                &title,
+                "--body",
+                &description,
+            ])
+            .current_dir(&environment.worktree)
+            .output()
     } else {
         background_command("glab")
-            .args(["mr", "create", "--source-branch", &environment.branch, "--target-branch", base, "--title", &title, "--description", &description, "--yes"])
-            .current_dir(&environment.worktree).output()
+            .args([
+                "mr",
+                "create",
+                "--source-branch",
+                &environment.branch,
+                "--target-branch",
+                base,
+                "--title",
+                &title,
+                "--description",
+                &description,
+                "--yes",
+            ])
+            .current_dir(&environment.worktree)
+            .output()
     }
     .map_err(|err| request_error(StatusCode::BAD_GATEWAY, err.to_string()))?;
     let created_url = output
@@ -3017,9 +3288,9 @@ async fn share_provider_handoff(
         .success()
         .then(|| {
             String::from_utf8_lossy(&output.stdout)
-            .split_whitespace()
-            .find(|value| value.starts_with("http"))
-            .map(|value| value.trim().to_string())
+                .split_whitespace()
+                .find(|value| value.starts_with("http"))
+                .map(|value| value.trim().to_string())
         })
         .flatten();
     let review_url = if output.status.success() {
@@ -3035,9 +3306,33 @@ async fn share_provider_handoff(
         }
     } else {
         let update = if handoff.provider == "github" {
-            background_command("gh").args(["pr", "edit", &environment.branch, "--repo", repository, "--title", &title, "--body", &description]).current_dir(&environment.worktree).output()
+            background_command("gh")
+                .args([
+                    "pr",
+                    "edit",
+                    &environment.branch,
+                    "--repo",
+                    repository,
+                    "--title",
+                    &title,
+                    "--body",
+                    &description,
+                ])
+                .current_dir(&environment.worktree)
+                .output()
         } else {
-            background_command("glab").args(["mr", "update", &environment.branch, "--title", &title, "--description", &description]).current_dir(&environment.worktree).output()
+            background_command("glab")
+                .args([
+                    "mr",
+                    "update",
+                    &environment.branch,
+                    "--title",
+                    &title,
+                    "--description",
+                    &description,
+                ])
+                .current_dir(&environment.worktree)
+                .output()
         }
         .map_err(|err| request_error(StatusCode::BAD_GATEWAY, err.to_string()))?;
         if !update.status.success() {
@@ -3068,23 +3363,63 @@ async fn list_provider_comments(
     if handoff.provider != "github" || handoff.review_url.is_none() {
         return Ok(Json(Vec::new()));
     }
-    let repository = handoff.repository.ok_or_else(|| request_error(StatusCode::BAD_REQUEST, "Repository identity is unavailable"))?;
-    let branch = handoff.branch.ok_or_else(|| request_error(StatusCode::BAD_REQUEST, "Project branch is unavailable"))?;
-    let output = background_command("gh").args(["pr", "view", &branch, "--repo", &repository, "--json", "comments,reviews"]).output()
+    let repository = handoff.repository.ok_or_else(|| {
+        request_error(
+            StatusCode::BAD_REQUEST,
+            "Repository identity is unavailable",
+        )
+    })?;
+    let branch = handoff
+        .branch
+        .ok_or_else(|| request_error(StatusCode::BAD_REQUEST, "Project branch is unavailable"))?;
+    let output = background_command("gh")
+        .args([
+            "pr",
+            "view",
+            &branch,
+            "--repo",
+            &repository,
+            "--json",
+            "comments,reviews",
+        ])
+        .output()
         .map_err(|err| request_error(StatusCode::BAD_GATEWAY, err.to_string()))?;
-    if !output.status.success() { return Err(provider_command_error("Reading review comments", &output)); }
+    if !output.status.success() {
+        return Err(provider_command_error("Reading review comments", &output));
+    }
     let value: serde_json::Value = serde_json::from_slice(&output.stdout)
         .map_err(|err| request_error(StatusCode::BAD_GATEWAY, err.to_string()))?;
     let mut comments = Vec::new();
-    for (kind, entries) in [("comment", value.get("comments")), ("review", value.get("reviews"))] {
-        for (index, entry) in entries.and_then(|entries| entries.as_array()).into_iter().flatten().enumerate() {
-            let body = entry.get("body").and_then(|body| body.as_str()).unwrap_or("").trim();
-            if body.is_empty() { continue; }
+    for (kind, entries) in [
+        ("comment", value.get("comments")),
+        ("review", value.get("reviews")),
+    ] {
+        for (index, entry) in entries
+            .and_then(|entries| entries.as_array())
+            .into_iter()
+            .flatten()
+            .enumerate()
+        {
+            let body = entry
+                .get("body")
+                .and_then(|body| body.as_str())
+                .unwrap_or("")
+                .trim();
+            if body.is_empty() {
+                continue;
+            }
             comments.push(ProviderComment {
                 id: format!("{kind}-{index}"),
-                author: entry.pointer("/author/login").and_then(|author| author.as_str()).unwrap_or("Reviewer").into(),
+                author: entry
+                    .pointer("/author/login")
+                    .and_then(|author| author.as_str())
+                    .unwrap_or("Reviewer")
+                    .into(),
                 body: body.chars().take(8_000).collect(),
-                url: entry.get("url").and_then(|url| url.as_str()).map(str::to_string),
+                url: entry
+                    .get("url")
+                    .and_then(|url| url.as_str())
+                    .map(str::to_string),
             });
         }
     }
@@ -3102,13 +3437,19 @@ async fn import_provider_comment(
     let WorkTarget::Git(target) = &source.target;
     let body_text = body.body.trim();
     if body.id.trim().is_empty() || body_text.is_empty() || body_text.len() > 8_000 {
-        return Err(request_error(StatusCode::BAD_REQUEST, "Review comment is invalid"));
+        return Err(request_error(
+            StatusCode::BAD_REQUEST,
+            "Review comment is invalid",
+        ));
     }
     let brief = format!(
         "Follow up on review feedback for {}:\n\n{}{}",
         source.title,
         body_text,
-        body.url.as_deref().map(|url| format!("\n\nSource: {url}")).unwrap_or_default()
+        body.url
+            .as_deref()
+            .map(|url| format!("\n\nSource: {url}"))
+            .unwrap_or_default()
     );
     let actor = actor_from_state(&state);
     let item = forge
@@ -3825,7 +4166,11 @@ mod source_tests {
         let tasks = detected_project_tasks(root.path());
         assert!(tasks.iter().any(|task| task.id == "npm-check"));
         assert!(tasks.iter().any(|task| task.id == "npm-build"));
-        assert!(tasks.iter().any(|task| task.id == "npm-dev" && task.long_running));
+        assert!(
+            tasks
+                .iter()
+                .any(|task| task.id == "npm-dev" && task.long_running)
+        );
         assert!(!tasks.iter().any(|task| task.id == "custom"));
     }
 
@@ -3844,9 +4189,24 @@ mod source_tests {
     #[test]
     fn discovers_rust_tests_without_executing_project_code() {
         let root = tempfile::tempdir().unwrap();
-        assert!(Command::new("git").args(["init", "-q"]).current_dir(root.path()).status().unwrap().success());
-        std::fs::write(root.path().join("Cargo.toml"), "[package]\nname='demo'\nversion='0.1.0'\n").unwrap();
-        std::fs::write(root.path().join("lib.rs"), "#[test]\nfn intent_stays_clear() {}\n").unwrap();
+        assert!(
+            Command::new("git")
+                .args(["init", "-q"])
+                .current_dir(root.path())
+                .status()
+                .unwrap()
+                .success()
+        );
+        std::fs::write(
+            root.path().join("Cargo.toml"),
+            "[package]\nname='demo'\nversion='0.1.0'\n",
+        )
+        .unwrap();
+        std::fs::write(
+            root.path().join("lib.rs"),
+            "#[test]\nfn intent_stays_clear() {}\n",
+        )
+        .unwrap();
         let tasks = detected_project_tasks(root.path());
         let tests = discover_project_tests(root.path(), &tasks);
         assert!(tests.iter().any(|test| test.label == "intent_stays_clear"));
@@ -3868,8 +4228,14 @@ mod source_tests {
     #[test]
     fn repository_browser_stays_inside_workshop_places() {
         let roots = vec![PathBuf::from("/workspaces"), PathBuf::from("/srv/code")];
-        assert!(browse_path_allowed(FsPath::new("/workspaces/team/repo"), &roots));
-        assert!(browse_path_allowed(FsPath::new("/srv/code/project"), &roots));
+        assert!(browse_path_allowed(
+            FsPath::new("/workspaces/team/repo"),
+            &roots
+        ));
+        assert!(browse_path_allowed(
+            FsPath::new("/srv/code/project"),
+            &roots
+        ));
         assert!(!browse_path_allowed(FsPath::new("/etc"), &roots));
         assert!(!browse_path_allowed(FsPath::new("/srv/other"), &roots));
     }

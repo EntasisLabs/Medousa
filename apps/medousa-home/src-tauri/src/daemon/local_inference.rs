@@ -11,8 +11,8 @@ use medousa_types::{
     LocalRuntimePhase, ModelDownloadProgress,
 };
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
 use tauri::{AppHandle, Emitter, State};
 use tokio::sync::watch;
 
@@ -72,7 +72,10 @@ impl LocalInferenceActivationState {
 
     fn finish(&self, session_id: &str, id: u64) {
         let mut pending = self.pending.lock().expect("local activation lock");
-        if pending.get(session_id).is_some_and(|(active_id, _)| *active_id == id) {
+        if pending
+            .get(session_id)
+            .is_some_and(|(active_id, _)| *active_id == id)
+        {
             pending.remove(session_id);
         }
     }

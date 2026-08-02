@@ -100,11 +100,10 @@ pub fn build_feature_routers(
             agent_runtime: state.platform.agent_handle(),
         });
 
-    let grapheme_router = crate::grapheme_handlers::grapheme_router(
-        crate::grapheme_handlers::GraphemeApiState {
+    let grapheme_router =
+        crate::grapheme_handlers::grapheme_router(crate::grapheme_handlers::GraphemeApiState {
             composition: Arc::new(state.composition().clone()),
-        },
-    );
+        });
 
     let workflow_state = crate::workflow_handlers::WorkflowApiState {
         composition: Arc::new(state.composition().clone()),
@@ -293,8 +292,10 @@ pub fn build_feature_routers(
     let dashboard_service = Arc::new(RuntimeDashboardQueryService::from_runtime_composition(
         state.composition().clone(),
     ));
-    let dashboard_state =
-        apply_dashboard_action_auth(DashboardState::new(dashboard_service), dashboard_action_auth);
+    let dashboard_state = apply_dashboard_action_auth(
+        DashboardState::new(dashboard_service),
+        dashboard_action_auth,
+    );
     let dashboard = dashboard_router(dashboard_state);
 
     let environment_router = crate::environment_handlers::environment_router(
@@ -364,21 +365,19 @@ fn find_arg_value<'a>(args: &'a [String], key: &str) -> Option<&'a str> {
 pub fn build_core_router(state: AppState) -> Router {
     use axum::routing::{delete, get, patch, post, put};
 
-    use crate::maintenance_handlers::{
-        get_artifact_retention_status, update_artifact_retention,
-    };
     use crate::daemon::continuations::{
         continuation_lineage, continuation_status, replay_and_resume_job,
     };
     use crate::daemon::core::{
-        artifact_command, artifact_delete, artifact_fetch, artifact_list_ui, artifact_write, health,
-        heartbeat_status, runtime_config_command, runtime_defaults, stats, stage_route_command,
+        artifact_command, artifact_delete, artifact_fetch, artifact_list_ui, artifact_write,
+        health, heartbeat_status, runtime_config_command, runtime_defaults, stage_route_command,
+        stats,
     };
     use crate::daemon::identity::{
         create_user_profile, export_user_profile, identity_commit_update, identity_digest_preview,
-        identity_export_markdown, identity_get_context, identity_list_history, identity_propose_update,
-        identity_remember, identity_rollback_version, import_user_profile, list_user_profiles,
-        set_active_user_profile,
+        identity_export_markdown, identity_get_context, identity_list_history,
+        identity_propose_update, identity_remember, identity_rollback_version, import_user_profile,
+        list_user_profiles, set_active_user_profile,
     };
     use crate::daemon::ingest::{
         deliver_outbox_webhook, deliver_poll, delivery_status, ingest_handler, ingest_stream,
@@ -390,10 +389,11 @@ pub fn build_core_router(state: AppState) -> Router {
     };
     use crate::daemon::jobs::{
         archive_ask_job, complete_ask_job_actions, delete_recurring_definition, enqueue_ask,
-        enqueue_prompt, enqueue_report, get_job_report, get_job_result, get_recurring_delivery_handler,
-        list_recurring_definitions, list_recurring_runs_handler, register_recurring_prompt,
-        retry_workspace_card, update_recurring_definition,
+        enqueue_prompt, enqueue_report, get_job_report, get_job_result,
+        get_recurring_delivery_handler, list_recurring_definitions, list_recurring_runs_handler,
+        register_recurring_prompt, retry_workspace_card, update_recurring_definition,
     };
+    use crate::maintenance_handlers::{get_artifact_retention_status, update_artifact_retention};
 
     Router::new()
         .route("/health", get(health))
@@ -504,7 +504,10 @@ pub fn build_core_router(state: AppState) -> Router {
         .route("/v1/identity/context", post(identity_get_context))
         .route("/v1/identity/remember", post(identity_remember))
         .route("/v1/identity/digest-preview", post(identity_digest_preview))
-        .route("/v1/identity/export-markdown", post(identity_export_markdown))
+        .route(
+            "/v1/identity/export-markdown",
+            post(identity_export_markdown),
+        )
         .route(
             "/v1/identity/profiles",
             get(list_user_profiles).post(create_user_profile),
@@ -523,8 +526,14 @@ pub fn build_core_router(state: AppState) -> Router {
         .route("/v1/identity/rollback", post(identity_rollback_version))
         .route("/v1/ingest", post(ingest_handler))
         .route("/v1/ingest/{stream_id}/stream", get(ingest_stream))
-        .route("/v1/media/upload", post(crate::media_handlers::upload_media))
-        .route("/v1/media/{media_id}", get(crate::media_handlers::get_media))
+        .route(
+            "/v1/media/upload",
+            post(crate::media_handlers::upload_media),
+        )
+        .route(
+            "/v1/media/{media_id}",
+            get(crate::media_handlers::get_media),
+        )
         .route("/v1/deliver/outbox", post(deliver_outbox_webhook))
         .route("/v1/deliver/poll/{job_id}", get(deliver_poll))
         .route("/v1/delivery/status", get(delivery_status))

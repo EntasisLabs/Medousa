@@ -2,14 +2,15 @@ use crate::daemon::types::{
     GraphemeAllowlistResponse, GraphemeAllowlistUpdateRequest, GraphemeCompileRequest,
     GraphemeCompileResponse, GraphemeLifecycleResponse, GraphemeLspWorkspaceResponse,
     GraphemeModuleDetailResponse, GraphemeModuleLoadRequest, GraphemeModuleLoadResponse,
-    GraphemeModuleOpsResponse, GraphemeModulesListResponse, GraphemeRunRequest, GraphemeRunResponse,
-    GraphemeScriptDeleteResponse, GraphemeScriptDetailResponse, GraphemeScriptRenameRequest,
-    GraphemeScriptSaveRequest, GraphemeScriptSaveResponse, GraphemeScriptsListResponse,
+    GraphemeModuleOpsResponse, GraphemeModulesListResponse, GraphemeRunRequest,
+    GraphemeRunResponse, GraphemeScriptDeleteResponse, GraphemeScriptDetailResponse,
+    GraphemeScriptRenameRequest, GraphemeScriptSaveRequest, GraphemeScriptSaveResponse,
+    GraphemeScriptsListResponse,
 };
 use tauri::State;
 
-use super::workshop_http;
 use super::DaemonState;
+use super::workshop_http;
 
 #[tauri::command]
 pub async fn grapheme_list_modules(
@@ -83,12 +84,7 @@ pub async fn grapheme_run_source(
     state: State<'_, DaemonState>,
     source: String,
 ) -> Result<GraphemeRunResponse, String> {
-    workshop_http::post_json(
-        &state,
-        "/v1/grapheme/run",
-        &GraphemeRunRequest { source },
-    )
-    .await
+    workshop_http::post_json(&state, "/v1/grapheme/run", &GraphemeRunRequest { source }).await
 }
 
 #[tauri::command]

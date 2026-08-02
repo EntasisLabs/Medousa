@@ -32,9 +32,12 @@ fn modified_at(metadata: &std::fs::Metadata) -> DateTime<Utc> {
         .modified()
         .ok()
         .and_then(|stamp| {
-            stamp.duration_since(std::time::UNIX_EPOCH).ok().and_then(
-                |duration| DateTime::from_timestamp(duration.as_secs() as i64, duration.subsec_nanos()),
-            )
+            stamp
+                .duration_since(std::time::UNIX_EPOCH)
+                .ok()
+                .and_then(|duration| {
+                    DateTime::from_timestamp(duration.as_secs() as i64, duration.subsec_nanos())
+                })
         })
         .unwrap_or_else(Utc::now)
 }
@@ -150,7 +153,7 @@ pub fn external_desk_read_file(path: String) -> Result<ExternalFilePayload, Stri
             ));
         }
         let bytes = std::fs::read(&file_path).map_err(|err| err.to_string())?;
-        use base64::{engine::general_purpose::STANDARD, Engine as _};
+        use base64::{Engine as _, engine::general_purpose::STANDARD};
         Ok(ExternalFilePayload {
             kind: "base64".to_string(),
             content: STANDARD.encode(bytes),

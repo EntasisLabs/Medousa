@@ -309,6 +309,7 @@ See [python.md](python.md).
 
 ## Remaining gaps (use `http()`)
 
+- Runtime worker capacity (`GET/PUT /v1/runtime/workers`)
 - Identity, grapheme, workflows (full surface)
 - Ingest SSE stream
 - Environment patch semantics (`cognition_environment_patch` ops — no HTTP patch route; use `environment().put_spec`)

@@ -5,13 +5,12 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use medousa_install_support::manifest::{
-    package_installed, read_install_manifest, resolve_release_package, write_install_manifest,
-    InstallManifest, PackageInstallRecord,
+    InstallManifest, PackageInstallRecord, package_installed, read_install_manifest,
+    resolve_release_package, write_install_manifest,
 };
 use medousa_install_support::packages::{
-    catalog_entry, expand_home_package_dependencies, home_packages_catalog,
+    PackageCatalogEntry, catalog_entry, expand_home_package_dependencies, home_packages_catalog,
     is_home_packages_package, package_short_hint, phase_label, sort_for_install,
-    PackageCatalogEntry,
 };
 use medousa_install_support::tarball_install::{
     fetch_release_manifest, install_tarball_package, remove_tarball_package,
@@ -183,8 +182,7 @@ pub fn packages_status() -> PackageStatusSummary {
         .unwrap_or_default();
 
     for entry in home_packages_catalog() {
-        if package_is_present(&data, &entry)
-            && !installed_packages.iter().any(|id| id == entry.id)
+        if package_is_present(&data, &entry) && !installed_packages.iter().any(|id| id == entry.id)
         {
             installed_packages.push(entry.id.to_string());
         }
@@ -269,13 +267,7 @@ pub async fn packages_catalog() -> Result<HomePackagesCatalog, String> {
     })
 }
 
-fn emit_progress(
-    app: &AppHandle,
-    package_id: &str,
-    phase: &str,
-    percent: f32,
-    message: &str,
-) {
+fn emit_progress(app: &AppHandle, package_id: &str, phase: &str, percent: f32, message: &str) {
     let display_name = catalog_entry(package_id)
         .map(|entry| entry.display_name.to_string())
         .unwrap_or_else(|| package_id.to_string());
@@ -306,9 +298,7 @@ fn upsert_manifest_record(
         InstallManifest {
             schema_version: 2,
             product: "medousa".to_string(),
-            version: remote_version
-                .unwrap_or(version)
-                .to_string(),
+            version: remote_version.unwrap_or(version).to_string(),
             target: host_target(),
             built_at: chrono::Utc::now().to_rfc3339(),
             binaries: Vec::new(),

@@ -1,8 +1,8 @@
 use serde_json::Value;
 use tauri::State;
 
-use super::workshop_http;
 use super::DaemonState;
+use super::workshop_http;
 
 #[tauri::command]
 pub async fn locus_list_nodes(

@@ -1,6 +1,7 @@
 <script lang="ts">
   import SettingsCharterSaveBar from "$lib/components/settings/SettingsCharterSaveBar.svelte";
   import SettingsVersionsSection from "$lib/components/settings/SettingsVersionsSection.svelte";
+  import SettingsWorkerCapacity from "$lib/components/settings/SettingsWorkerCapacity.svelte";
   import { workshop } from "$lib/stores/workshop.svelte";
   import { workshopDefaults } from "$lib/stores/workshopDefaults.svelte";
   import { isTauriMobilePlatform } from "$lib/platform";
@@ -866,6 +867,7 @@
   </div>
 
   <SettingsVersionsSection {mobile} embedded />
+  <SettingsWorkerCapacity {mobile} />
 
   <div class="rt-save mt-6 border-t border-surface-500/35 pt-5">
     <SettingsCharterSaveBar {mobile} beforeSave={beforeSave} />

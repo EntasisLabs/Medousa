@@ -4,8 +4,8 @@ use medousa_types::component_runtime::{
 };
 use tauri::State;
 
-use super::sdk::{client, sdk_error};
 use super::DaemonState;
+use super::sdk::{client, sdk_error};
 
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct ProbeCompleteOk {

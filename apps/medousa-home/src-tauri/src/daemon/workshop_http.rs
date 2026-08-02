@@ -8,8 +8,8 @@
 use serde::de::DeserializeOwned;
 use tauri::State;
 
-use crate::daemon::sdk::{client, sdk_error};
 use crate::daemon::DaemonState;
+use crate::daemon::sdk::{client, sdk_error};
 use crate::pairing_client::WorkshopTransportConfig;
 use crate::workshop_transport::{self, MultipartField, WorkshopByteStream};
 
@@ -109,11 +109,7 @@ pub async fn delete_json<T: DeserializeOwned>(
     state: &State<'_, DaemonState>,
     path: &str,
 ) -> Result<T, String> {
-    client(state)
-        .http()
-        .delete(path)
-        .await
-        .map_err(sdk_error)
+    client(state).http().delete(path).await.map_err(sdk_error)
 }
 
 pub async fn post_multipart<T: DeserializeOwned>(

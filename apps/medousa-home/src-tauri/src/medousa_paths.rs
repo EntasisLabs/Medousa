@@ -299,8 +299,7 @@ fn file_to_dto(file: &TuiDefaultsFile) -> TuiDefaultsDto {
         thinking_capture: file.thinking_capture,
         stasis_otel_enabled: file.stasis_otel_enabled,
         thinking_max_lines: file.thinking_max_lines,
-        activation_direct_answer_max_prompt_chars: file
-            .activation_direct_answer_max_prompt_chars,
+        activation_direct_answer_max_prompt_chars: file.activation_direct_answer_max_prompt_chars,
         activation_long_session_turn_threshold: file.activation_long_session_turn_threshold,
         activation_long_session_max_prompt_chars: file.activation_long_session_max_prompt_chars,
         slice_hot_window_turns: file.slice_hot_window_turns,
@@ -355,8 +354,7 @@ fn apply_dto_to_file(file: &mut TuiDefaultsFile, dto: &TuiDefaultsDto) {
     file.thinking_capture = dto.thinking_capture;
     file.stasis_otel_enabled = dto.stasis_otel_enabled;
     file.thinking_max_lines = dto.thinking_max_lines;
-    file.activation_direct_answer_max_prompt_chars =
-        dto.activation_direct_answer_max_prompt_chars;
+    file.activation_direct_answer_max_prompt_chars = dto.activation_direct_answer_max_prompt_chars;
     file.activation_long_session_turn_threshold = dto.activation_long_session_turn_threshold;
     file.activation_long_session_max_prompt_chars = dto.activation_long_session_max_prompt_chars;
     file.slice_hot_window_turns = dto.slice_hot_window_turns;
@@ -399,9 +397,7 @@ fn apply_dto_to_file(file: &mut TuiDefaultsFile, dto: &TuiDefaultsDto) {
     file.favorite_models = dto.favorite_models.clone().and_then(|entries| {
         let filtered: Vec<FavoriteModelDto> = entries
             .into_iter()
-            .filter(|entry| {
-                !entry.provider.trim().is_empty() && !entry.model.trim().is_empty()
-            })
+            .filter(|entry| !entry.provider.trim().is_empty() && !entry.model.trim().is_empty())
             .take(8)
             .collect();
         if filtered.is_empty() {
@@ -665,9 +661,7 @@ pub fn persist_tui_favorite_models(models: Vec<FavoriteModelDto>) -> Result<(), 
     write_tui_defaults_file(&file)
 }
 
-fn normalize_voice_presets(
-    presets: Option<Vec<VoicePresetDto>>,
-) -> Option<Vec<VoicePresetDto>> {
+fn normalize_voice_presets(presets: Option<Vec<VoicePresetDto>>) -> Option<Vec<VoicePresetDto>> {
     let presets = presets?;
     let filtered: Vec<VoicePresetDto> = presets
         .into_iter()

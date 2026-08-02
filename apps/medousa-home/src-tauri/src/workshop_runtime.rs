@@ -1,7 +1,7 @@
 //! Per-workshop process management: slim `medousa_daemon` (:7419) and optional `medousa_local` brain (:7421).
 
 use crate::medousa_paths::{load_tui_defaults_summary, tui_defaults_path};
-use crate::workshop_registry::{WorkshopRegistry, WorkshopServer, PERSONAL_WORKSHOP_ID};
+use crate::workshop_registry::{PERSONAL_WORKSHOP_ID, WorkshopRegistry, WorkshopServer};
 use reqwest::Client;
 use std::collections::HashSet;
 use std::fs::{self, OpenOptions};
@@ -316,7 +316,9 @@ fn legacy_daemon_pid_path() -> PathBuf {
 }
 
 fn legacy_daemon_log_path() -> PathBuf {
-    crate::paths::medousa_data_dir().join("logs").join("daemon.log")
+    crate::paths::medousa_data_dir()
+        .join("logs")
+        .join("daemon.log")
 }
 
 pub fn url_from_bind(bind: &str) -> String {
@@ -351,7 +353,12 @@ pub fn resolve_workshop_bind(workshop: &WorkshopServer) -> String {
 }
 
 pub fn resolve_workshop_data_dir(workshop: &WorkshopServer) -> PathBuf {
-    if let Some(raw) = workshop.data_dir.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
+    if let Some(raw) = workshop
+        .data_dir
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+    {
         return PathBuf::from(raw);
     }
     crate::paths::medousa_data_dir()
@@ -410,7 +417,13 @@ pub fn backfill_local_workshop_fields(registry: &mut WorkshopRegistry) {
         if workshop.kind != "local" {
             continue;
         }
-        if workshop.bind.as_deref().map(str::trim).filter(|v| !v.is_empty()).is_none() {
+        if workshop
+            .bind
+            .as_deref()
+            .map(str::trim)
+            .filter(|v| !v.is_empty())
+            .is_none()
+        {
             workshop.bind = Some(DEFAULT_LOCAL_BIND.to_string());
         }
         if workshop.id == PERSONAL_WORKSHOP_ID {
@@ -471,12 +484,12 @@ pub fn spawn_local_engine(
     fs::create_dir_all(data_dir).map_err(|err| err.to_string())?;
 
     let daemon = resolve_daemon_binary()?;
-    let log_path = if workshop_id == PERSONAL_WORKSHOP_ID && !engine_runtime_dir(workshop_id).exists()
-    {
-        legacy_daemon_log_path()
-    } else {
-        daemon_log_path(workshop_id)
-    };
+    let log_path =
+        if workshop_id == PERSONAL_WORKSHOP_ID && !engine_runtime_dir(workshop_id).exists() {
+            legacy_daemon_log_path()
+        } else {
+            daemon_log_path(workshop_id)
+        };
     if let Some(parent) = log_path.parent() {
         fs::create_dir_all(parent).map_err(|err| err.to_string())?;
     }
@@ -493,22 +506,26 @@ pub fn spawn_local_engine(
     command.args(&daemon.pre_args);
     command.arg("--backend").arg(resolve_backend());
     command.arg("--bind").arg(bind);
-    if let Some(provider) = summary.provider.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
+    if let Some(provider) = summary
+        .provider
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+    {
         command.arg("--provider").arg(provider);
     }
-    if let Some(model) = summary.model.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
+    if let Some(model) = summary
+        .model
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+    {
         command.arg("--model").arg(model);
     }
     if private_brain {
-        command.env(
-            "MEDOUSA_LOCAL_ENGINE_BIND",
-            DEFAULT_LOCAL_BRAIN_BIND,
-        );
+        command.env("MEDOUSA_LOCAL_ENGINE_BIND", DEFAULT_LOCAL_BRAIN_BIND);
     }
-    command.env(
-        "MEDOUSA_DATA_DIR",
-        data_dir.to_string_lossy().to_string(),
-    );
+    command.env("MEDOUSA_DATA_DIR", data_dir.to_string_lossy().to_string());
     // So ACP can find `agent` / `codex` / `npx` even when the GUI PATH is thin.
     enrich_daemon_path(&mut command);
     apply_daemon_messaging_env(&mut command);
@@ -518,12 +535,9 @@ pub fn spawn_local_engine(
     command.stderr(Stdio::from(log_file_err));
     detach_new_session(&mut command);
 
-    let child = command.spawn().map_err(|err| {
-        format!(
-            "Failed to spawn medousa_daemon ({}): {err}",
-            daemon.program
-        )
-    })?;
+    let child = command
+        .spawn()
+        .map_err(|err| format!("Failed to spawn medousa_daemon ({}): {err}", daemon.program))?;
     let pid = child.id();
     write_daemon_pid(workshop_id, pid)?;
     Ok((pid, log_path))
@@ -556,8 +570,7 @@ pub fn stop_local_brain(workshop_id: &str) {
 /// App shutdown cannot wait for confirmation; retaining the PID prevents a
 /// surviving worker from becoming an untracked orphan on the next launch.
 pub fn request_local_brain_stop(workshop_id: &str) -> bool {
-    read_local_brain_pid(workshop_id)
-        .is_some_and(medousa_host::request_process_stop_by_pid)
+    read_local_brain_pid(workshop_id).is_some_and(medousa_host::request_process_stop_by_pid)
 }
 
 pub async fn stop_local_brain_bounded(workshop_id: &str) -> Result<bool, String> {
@@ -566,11 +579,9 @@ pub async fn stop_local_brain_bounded(workshop_id: &str) -> Result<bool, String>
         if tracked_pid != Some(worker.pid) {
             return Err("Refusing to stop an untracked local worker generation".to_string());
         }
-        let stopped = medousa_host::stop_local_worker(
-            DEFAULT_LOCAL_BRAIN_BIND,
-            Duration::from_secs(10),
-        )
-        .await?;
+        let stopped =
+            medousa_host::stop_local_worker(DEFAULT_LOCAL_BRAIN_BIND, Duration::from_secs(10))
+                .await?;
         clear_local_brain_pid(workshop_id);
         return Ok(stopped);
     }
@@ -598,7 +609,9 @@ pub async fn stop_local_brain_bounded(workshop_id: &str) -> Result<bool, String>
     let _ = medousa_host::force_process_stop_by_pid(pid);
     tokio::time::sleep(Duration::from_millis(100)).await;
     if medousa_host::is_process_alive(pid) {
-        return Err(format!("Local worker pid {pid} survived forced termination"));
+        return Err(format!(
+            "Local worker pid {pid} survived forced termination"
+        ));
     }
     clear_local_brain_pid(workshop_id);
     Ok(true)
@@ -673,12 +686,9 @@ pub fn spawn_local_brain(
     command.stderr(Stdio::from(log_file_err));
     detach_new_session(&mut command);
 
-    let child = command.spawn().map_err(|err| {
-        format!(
-            "Failed to spawn medousa_local ({}): {err}",
-            local.program
-        )
-    })?;
+    let child = command
+        .spawn()
+        .map_err(|err| format!("Failed to spawn medousa_local ({}): {err}", local.program))?;
     let pid = child.id();
     write_local_brain_pid(workshop_id, pid)?;
     Ok((pid, log_path))
@@ -847,10 +857,7 @@ pub async fn ensure_local_engine(
         message: if ok {
             format!("Started local engine (pid {pid})")
         } else {
-            format!(
-                "Engine did not become ready — check {}",
-                log_path.display()
-            )
+            format!("Engine did not become ready — check {}", log_path.display())
         },
     })
 }
@@ -921,7 +928,8 @@ pub async fn diagnose_local_engine(workshop: &WorkshopServer) -> EngineDiagnosis
         return EngineDiagnosis {
             issue: "binary_missing".to_string(),
             title: "Medousa engine missing".to_string(),
-            message: "The app couldn't find its engine files. Try reinstalling Medousa.".to_string(),
+            message: "The app couldn't find its engine files. Try reinstalling Medousa."
+                .to_string(),
             log_path: Some(log_path_display),
             lock_path: None,
             bind: Some(bind_display),
@@ -947,9 +955,7 @@ pub async fn diagnose_local_engine(workshop: &WorkshopServer) -> EngineDiagnosis
     let data_dir = resolve_workshop_data_dir(workshop);
     let backend = resolve_backend();
     let lock_path = surreal_kv_lock_path(&backend, &data_dir);
-    let lock_exists = lock_path
-        .as_ref()
-        .is_some_and(|path| path.exists());
+    let lock_exists = lock_path.as_ref().is_some_and(|path| path.exists());
     let lock_display = lock_path.as_ref().map(|path| path.display().to_string());
 
     let pid = read_daemon_pid(&workshop.id);
@@ -989,7 +995,8 @@ pub async fn diagnose_local_engine(workshop: &WorkshopServer) -> EngineDiagnosis
         return EngineDiagnosis {
             issue: "wedged".to_string(),
             title: "Medousa is stuck starting up".to_string(),
-            message: "The engine process is running but not responding. Try restarting Medousa.".to_string(),
+            message: "The engine process is running but not responding. Try restarting Medousa."
+                .to_string(),
             log_path: Some(log_path_display),
             lock_path: lock_display,
             bind: Some(bind_display),
@@ -1001,7 +1008,9 @@ pub async fn diagnose_local_engine(workshop: &WorkshopServer) -> EngineDiagnosis
     EngineDiagnosis {
         issue: "not_running".to_string(),
         title: "Medousa isn't running".to_string(),
-        message: "Start Medousa on this computer to chat. Your notes and settings stay on this machine.".to_string(),
+        message:
+            "Start Medousa on this computer to chat. Your notes and settings stay on this machine."
+                .to_string(),
         log_path: Some(log_path_display),
         lock_path: lock_display,
         bind: Some(bind_display),
@@ -1078,8 +1087,8 @@ pub async fn set_lan_pairing_enabled(
         .find(|entry| entry.id == PERSONAL_WORKSHOP_ID)
         .ok_or_else(|| "Personal workshop not found".to_string())?;
 
-    let port = parse_bind_port(workshop.bind.as_deref().unwrap_or(DEFAULT_LOCAL_BIND))
-        .unwrap_or(7419);
+    let port =
+        parse_bind_port(workshop.bind.as_deref().unwrap_or(DEFAULT_LOCAL_BIND)).unwrap_or(7419);
     let bind = if enabled {
         format!("0.0.0.0:{port}")
     } else {
@@ -1115,8 +1124,7 @@ pub async fn set_lan_pairing_enabled(
             "Engine restarted with LAN pairing on. Pair phones and peers, then turn this off."
                 .to_string()
         } else {
-            "Engine restarted on loopback only. Remote clients use the private tunnel."
-                .to_string()
+            "Engine restarted on loopback only. Remote clients use the private tunnel.".to_string()
         },
     })
 }

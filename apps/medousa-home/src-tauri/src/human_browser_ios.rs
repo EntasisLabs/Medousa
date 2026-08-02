@@ -9,11 +9,11 @@ use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use block2::{ManualBlockEncoding, RcBlock};
-use medousa_browser_lite::{markdown_from_html, search_response_from_ddg_html, SearchResponse};
+use medousa_browser_lite::{SearchResponse, markdown_from_html, search_response_from_ddg_html};
 use objc2::rc::Retained;
 use objc2::runtime::{AnyClass, AnyObject, Bool};
-use objc2::{class, msg_send, MainThreadMarker};
-use objc2_core_foundation::{CGFloat, CGRect, CGPoint, CGSize};
+use objc2::{MainThreadMarker, class, msg_send};
+use objc2_core_foundation::{CGFloat, CGPoint, CGRect, CGSize};
 use objc2_foundation::{NSString, NSURL, NSURLRequest};
 use objc2_ui_kit::{UIApplication, UIView, UIViewController, UIWindow};
 use serde::{Deserialize, Serialize};
@@ -21,8 +21,7 @@ use tauri::{AppHandle, Emitter};
 
 const OVERLAY_TAG: isize = 0x4d_45_44_00;
 const MOBILE_BROWSER_CHROME_FALLBACK: f64 = 52.0;
-const MOBILE_SAFARI_UA: &str =
-    "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1";
+const MOBILE_SAFARI_UA: &str = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1";
 
 const NEW_WINDOW_INSTALL_JS: &str = r#"(function(){if(window.__medousaNewWindowInstalled)return;window.__medousaNewWindowInstalled=true;function q(u){if(!u||u==='about:blank')return;document.documentElement.setAttribute('data-medousa-new-window',u)}var o=window.open;window.open=function(u){q(u);return null};document.addEventListener('click',function(e){var a=e.target.closest&&e.target.closest('a[target="_blank"]');if(a&&a.href){e.preventDefault();q(a.href)}},true)})();"#;
 
@@ -113,7 +112,8 @@ pub async fn browser_act_embed(
     let raw = tauri::async_runtime::spawn_blocking(move || eval_js_blocking(&js))
         .await
         .map_err(|err| err.to_string())??;
-    let parsed: serde_json::Value = serde_json::from_str(raw.trim()).map_err(|err| err.to_string())?;
+    let parsed: serde_json::Value =
+        serde_json::from_str(raw.trim()).map_err(|err| err.to_string())?;
     let _ = app;
     Ok(BrowserActReportDto {
         ok: parsed
@@ -309,22 +309,16 @@ where
 
 fn root_view(mtm: MainThreadMarker) -> Result<Retained<UIView>, String> {
     let app = UIApplication::sharedApplication(mtm);
-    let window: Retained<UIWindow> = app
-        .keyWindow()
-        .ok_or_else(|| "no key window".to_string())?;
+    let window: Retained<UIWindow> = app.keyWindow().ok_or_else(|| "no key window".to_string())?;
     let controller: Retained<UIViewController> = window
         .rootViewController()
         .ok_or_else(|| "no root view controller".to_string())?;
-    controller
-        .view()
-        .ok_or_else(|| "no root view".to_string())
+    controller.view().ok_or_else(|| "no root view".to_string())
 }
 
 fn window_size(mtm: MainThreadMarker) -> Result<(f64, f64), String> {
     let app = UIApplication::sharedApplication(mtm);
-    let window = app
-        .keyWindow()
-        .ok_or_else(|| "no key window".to_string())?;
+    let window = app.keyWindow().ok_or_else(|| "no key window".to_string())?;
     let bounds = window.bounds();
     Ok((bounds.size.width as f64, bounds.size.height as f64))
 }
@@ -458,11 +452,7 @@ fn overlay_webview(parent: &UIView) -> Option<Retained<AnyObject>> {
     })
 }
 
-fn compute_mobile_bounds(
-    params: EmbedMobileLayoutParams,
-    win_w: f64,
-    win_h: f64,
-) -> EmbedBounds {
+fn compute_mobile_bounds(params: EmbedMobileLayoutParams, win_w: f64, win_h: f64) -> EmbedBounds {
     if let Some(measured) = params.content_bounds {
         return EmbedBounds {
             x: measured.x,
@@ -553,12 +543,7 @@ fn emit_nav_state(app: &AppHandle, can_go_back: bool, can_go_forward: bool) {
     );
 }
 
-fn emit_navigated(
-    app: &AppHandle,
-    url: &str,
-    title: Option<String>,
-    favicon: Option<String>,
-) {
+fn emit_navigated(app: &AppHandle, url: &str, title: Option<String>, favicon: Option<String>) {
     if let Ok(mut guard) = active_url_lock().lock() {
         *guard = url.to_string();
     }
@@ -639,9 +624,7 @@ fn load_url(mtm: MainThreadMarker, url: &str) -> Result<(), String> {
     if trimmed.is_empty() || trimmed == "about:blank" {
         return Ok(());
     }
-    let parsed = trimmed
-        .parse::<url::Url>()
-        .map_err(|err| err.to_string())?;
+    let parsed = trimmed.parse::<url::Url>().map_err(|err| err.to_string())?;
     let webview = ensure_overlay_webview(mtm)?;
     let ns_url = NSURL::URLWithString(&NSString::from_str(parsed.as_str()))
         .ok_or_else(|| format!("invalid url: {trimmed}"))?;
@@ -659,7 +642,8 @@ async fn capture_html_async(app: &AppHandle) -> Result<SnapshotReport, String> {
         if raw.is_empty() {
             return Err("empty snapshot".to_string());
         }
-        let parsed: serde_json::Value = serde_json::from_str(&raw).map_err(|err| err.to_string())?;
+        let parsed: serde_json::Value =
+            serde_json::from_str(&raw).map_err(|err| err.to_string())?;
         Ok(SnapshotReport {
             url: parsed
                 .get("url")
@@ -770,7 +754,10 @@ pub fn human_browser_embed_apply_mobile_layout(
 }
 
 #[tauri::command]
-pub fn human_browser_embed_set_bounds(_app: AppHandle, bounds: EmbedBoundsDto) -> Result<(), String> {
+pub fn human_browser_embed_set_bounds(
+    _app: AppHandle,
+    bounds: EmbedBoundsDto,
+) -> Result<(), String> {
     run_on_main(move |mtm| apply_bounds(mtm, bounds.into()))
 }
 
@@ -833,7 +820,11 @@ pub fn human_browser_set_mobile_shell_active(active: bool) {
 }
 
 #[tauri::command]
-pub fn human_browser_report_title(app: AppHandle, url: String, title: String) -> Result<(), String> {
+pub fn human_browser_report_title(
+    app: AppHandle,
+    url: String,
+    title: String,
+) -> Result<(), String> {
     emit_navigated(&app, url.trim(), Some(title.trim().to_string()), None);
     Ok(())
 }
@@ -872,7 +863,9 @@ pub async fn human_browser_stop(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn human_browser_query_nav_state(_app: AppHandle) -> Result<HumanBrowserNavStatePayload, String> {
+pub async fn human_browser_query_nav_state(
+    _app: AppHandle,
+) -> Result<HumanBrowserNavStatePayload, String> {
     run_on_main(|mtm| {
         let webview = ensure_overlay_webview(mtm)?;
         let (can_go_back, can_go_forward) = read_nav_state(&webview);

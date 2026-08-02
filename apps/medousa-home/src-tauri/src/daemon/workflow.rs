@@ -5,8 +5,8 @@ use crate::daemon::types::{
 };
 use tauri::State;
 
-use super::workshop_http;
 use super::DaemonState;
+use super::workshop_http;
 
 #[tauri::command]
 pub async fn workflow_list(

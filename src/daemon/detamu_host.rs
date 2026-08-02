@@ -20,7 +20,7 @@ use detamu_language::LanguagePack;
 use detamu_language_rust::RustLanguagePack;
 use detamu_source_git::{GitRepositoryAnalyzer, GitRepositorySource};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tokio::sync::RwLock;
 
 use crate::daemon::state::AppState;
@@ -176,10 +176,12 @@ impl DetamuHost {
                 return Err(err);
             }
         };
-        let mut binding = self.load_binding(work_id).unwrap_or_else(|| WorkDetamuBinding {
-            work_id: work_id.to_owned(),
-            ..Default::default()
-        });
+        let mut binding = self
+            .load_binding(work_id)
+            .unwrap_or_else(|| WorkDetamuBinding {
+                work_id: work_id.to_owned(),
+                ..Default::default()
+            });
         let snap = SnapshotRef::from(&report.snapshot);
         let slot = SnapshotSlot {
             state: "ready".into(),
@@ -205,10 +207,12 @@ impl DetamuHost {
         version: Option<&str>,
         error: Option<&str>,
     ) -> Result<(), String> {
-        let mut binding = self.load_binding(work_id).unwrap_or_else(|| WorkDetamuBinding {
-            work_id: work_id.to_owned(),
-            ..Default::default()
-        });
+        let mut binding = self
+            .load_binding(work_id)
+            .unwrap_or_else(|| WorkDetamuBinding {
+                work_id: work_id.to_owned(),
+                ..Default::default()
+            });
         let slot = SnapshotSlot {
             state: state.to_owned(),
             world: None,
@@ -226,10 +230,12 @@ impl DetamuHost {
     }
 
     pub async fn binding_status_json(&self, work_id: &str) -> Value {
-        let binding = self.load_binding(work_id).unwrap_or_else(|| WorkDetamuBinding {
-            work_id: work_id.to_owned(),
-            ..Default::default()
-        });
+        let binding = self
+            .load_binding(work_id)
+            .unwrap_or_else(|| WorkDetamuBinding {
+                work_id: work_id.to_owned(),
+                ..Default::default()
+            });
         json!({
             "work_id": binding.work_id,
             "baseline": binding.baseline,
@@ -391,7 +397,10 @@ impl DetamuHost {
             .map(|gap| {
                 let mut v = entity_summary_value(&gap.entity);
                 if let Some(obj) = v.as_object_mut() {
-                    obj.insert("missing_measurements".into(), json!(gap.missing_measurements));
+                    obj.insert(
+                        "missing_measurements".into(),
+                        json!(gap.missing_measurements),
+                    );
                     obj.insert("missing_scores".into(), json!(gap.missing_scores));
                 }
                 v
@@ -528,9 +537,10 @@ async fn world_status(State(state): State<AppState>) -> Json<Value> {
     };
     let mut body = host.status_json();
     if let Some(last) = host.last_global_summary().await {
-        body.as_object_mut()
-            .expect("object")
-            .insert("last_index".into(), serde_json::to_value(last).unwrap_or(Value::Null));
+        body.as_object_mut().expect("object").insert(
+            "last_index".into(),
+            serde_json::to_value(last).unwrap_or(Value::Null),
+        );
     }
     Json(body)
 }

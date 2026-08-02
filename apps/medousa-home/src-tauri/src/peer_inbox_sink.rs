@@ -123,10 +123,9 @@ fn active_portal_sink(
     if !crate::workshop_registry::is_portal_kind(&workshop.kind) {
         return Ok(None);
     }
-    let Some(config) = crate::pairing_client::load_workshop_transport_config_for_id(
-        &workshop.id,
-        &workshop.url,
-    ) else {
+    let Some(config) =
+        crate::pairing_client::load_workshop_transport_config_for_id(&workshop.id, &workshop.url)
+    else {
         return Ok(None);
     };
     if config.session_token.is_none() {
@@ -227,12 +226,11 @@ pub async fn list_messages(
             } else {
                 "/v1/peer/messages"
             };
-            if let Ok(payload) =
-                crate::workshop_transport::workshop_get_json::<serde_json::Value>(
-                    &portal.config,
-                    path,
-                )
-                .await
+            if let Ok(payload) = crate::workshop_transport::workshop_get_json::<serde_json::Value>(
+                &portal.config,
+                path,
+            )
+            .await
             {
                 if let Some(messages) = payload.get("messages").and_then(|v| v.as_array()) {
                     for message in messages {
@@ -317,7 +315,11 @@ async fn fetch_outbound_peer_conversations(
                 .and_then(|value| value.as_str())
                 .unwrap_or("in");
             if direction == "out" {
-                if unread_only && message.get("readAt").and_then(|value| value.as_str()).is_some()
+                if unread_only
+                    && message
+                        .get("readAt")
+                        .and_then(|value| value.as_str())
+                        .is_some()
                 {
                     continue;
                 }
@@ -388,15 +390,13 @@ pub async fn mark_read(
     if sink == SINK_PORTAL || (sink.is_empty() && ctx.portal.is_some()) {
         if let Some(portal) = &ctx.portal {
             if workshop.is_empty() || workshop == portal.workshop_id {
-                if let Ok(value) = crate::workshop_transport::workshop_post_json::<
-                    serde_json::Value,
-                    _,
-                >(
-                    &portal.config,
-                    &format!("/v1/peer/messages/{message_id}/read"),
-                    &serde_json::json!({}),
-                )
-                .await
+                if let Ok(value) =
+                    crate::workshop_transport::workshop_post_json::<serde_json::Value, _>(
+                        &portal.config,
+                        &format!("/v1/peer/messages/{message_id}/read"),
+                        &serde_json::json!({}),
+                    )
+                    .await
                 {
                     return Ok(value);
                 }
@@ -415,21 +415,18 @@ pub async fn mark_read(
             if !workshop.is_empty() && entry.id != workshop {
                 continue;
             }
-            let Some(config) = crate::pairing_client::load_workshop_transport_config_for_id(
-                &entry.id,
-                &entry.url,
-            ) else {
+            let Some(config) =
+                crate::pairing_client::load_workshop_transport_config_for_id(&entry.id, &entry.url)
+            else {
                 continue;
             };
-            if let Ok(value) = crate::workshop_transport::workshop_post_json::<
-                serde_json::Value,
-                _,
-            >(
-                &config,
-                &format!("/v1/peer/messages/{message_id}/read"),
-                &serde_json::json!({}),
-            )
-            .await
+            if let Ok(value) =
+                crate::workshop_transport::workshop_post_json::<serde_json::Value, _>(
+                    &config,
+                    &format!("/v1/peer/messages/{message_id}/read"),
+                    &serde_json::json!({}),
+                )
+                .await
             {
                 return Ok(value);
             }
@@ -472,7 +469,9 @@ pub async fn mark_thread_read(
     Ok(marked)
 }
 
-async fn fetch_pair_status_local(state: &State<'_, DaemonState>) -> Result<serde_json::Value, String> {
+async fn fetch_pair_status_local(
+    state: &State<'_, DaemonState>,
+) -> Result<serde_json::Value, String> {
     let base = daemon_base(state)?;
     let client = daemon_http_client()?;
     let response = client
@@ -530,7 +529,10 @@ pub async fn append_inbound_peers(
             if phone_id.is_empty() {
                 continue;
             }
-            if known_device_ids.iter().any(|id| device_ids_match(id, &phone_id)) {
+            if known_device_ids
+                .iter()
+                .any(|id| device_ids_match(id, &phone_id))
+            {
                 continue;
             }
             let label = device
@@ -589,7 +591,9 @@ pub async fn send_message(
                 if !response.status().is_success() {
                     let status = response.status();
                     let text = response.text().await.unwrap_or_default();
-                    return Err(format!("failed to record sent message HTTP {status}: {text}"));
+                    return Err(format!(
+                        "failed to record sent message HTTP {status}: {text}"
+                    ));
                 }
                 return response.json().await.map_err(|err| err.to_string());
             }
@@ -655,7 +659,9 @@ pub async fn send_message(
             if !response.status().is_success() {
                 let status = response.status();
                 let text = response.text().await.unwrap_or_default();
-                return Err(format!("failed to record sent message HTTP {status}: {text}"));
+                return Err(format!(
+                    "failed to record sent message HTTP {status}: {text}"
+                ));
             }
             return response.json().await.map_err(|err| err.to_string());
         }
@@ -682,15 +688,7 @@ async fn resolve_send_target(
     state: &State<'_, DaemonState>,
     ctx: &PeerInboxContext,
     workshop_id: &str,
-) -> Result<
-    (
-        String,
-        String,
-        Option<WorkshopTransportConfig>,
-        bool,
-    ),
-    String,
-> {
+) -> Result<(String, String, Option<WorkshopTransportConfig>, bool), String> {
     if let Some(phone_id) = workshop_id.strip_prefix("inbound-") {
         let status = fetch_pair_status_for_context(state, ctx).await?;
         let device = status
@@ -700,7 +698,11 @@ async fn resolve_send_target(
             .flatten()
             .find(|entry| {
                 entry.get("phoneId").and_then(|v| v.as_str()) == Some(phone_id)
-                    && entry.get("role").and_then(|v| v.as_str()).unwrap_or("portal") == "peer"
+                    && entry
+                        .get("role")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("portal")
+                        == "peer"
             })
             .ok_or_else(|| format!("Inbound peer '{phone_id}' not found"))?;
         let label = device
@@ -724,11 +726,9 @@ async fn resolve_send_target(
         .pairing
         .as_ref()
         .ok_or_else(|| "Peer credentials are missing".to_string())?;
-    let config = crate::pairing_client::load_workshop_transport_config_for_id(
-        workshop_id,
-        &workshop.url,
-    )
-    .ok_or_else(|| "Trusted workshop credentials are missing or expired".to_string())?;
+    let config =
+        crate::pairing_client::load_workshop_transport_config_for_id(workshop_id, &workshop.url)
+            .ok_or_else(|| "Trusted workshop credentials are missing or expired".to_string())?;
     Ok((
         pairing.workshop_device_id.clone(),
         workshop.label.clone(),

@@ -1,8 +1,8 @@
 //! Client-side registry of Medousa Engine connections (ADR-003).
 
-use crate::daemon::{apply_daemon_url, resolve_daemon_url, DaemonState};
-use crate::workshop_runtime::resolve_workshop_url;
 use crate::daemon::types::DEFAULT_DAEMON_URL;
+use crate::daemon::{DaemonState, apply_daemon_url, resolve_daemon_url};
+use crate::workshop_runtime::resolve_workshop_url;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -177,7 +177,8 @@ pub fn default_registry() -> WorkshopRegistry {
 pub fn load_registry() -> Result<WorkshopRegistry, String> {
     let path = workshops_registry_path();
     let raw = fs::read_to_string(&path).map_err(|err| err.to_string())?;
-    let mut registry: WorkshopRegistry = serde_json::from_str(&raw).map_err(|err| err.to_string())?;
+    let mut registry: WorkshopRegistry =
+        serde_json::from_str(&raw).map_err(|err| err.to_string())?;
     let mut migrated = false;
     for workshop in &mut registry.workshops {
         let next_kind = migrate_kind(&workshop.kind);
@@ -207,7 +208,10 @@ pub fn load_registry() -> Result<WorkshopRegistry, String> {
 
 fn validate_registry(registry: &WorkshopRegistry) -> Result<(), String> {
     if registry.version != REGISTRY_VERSION {
-        return Err(format!("Unsupported workshop registry version {}", registry.version));
+        return Err(format!(
+            "Unsupported workshop registry version {}",
+            registry.version
+        ));
     }
     if registry.workshops.is_empty() {
         return Err("Workshop registry must contain at least one workshop".to_string());
@@ -281,9 +285,11 @@ fn move_legacy_pairing_file(dest: &Path) -> Result<(), String> {
 fn is_loopback_url(url: &str) -> bool {
     reqwest::Url::parse(url)
         .ok()
-        .and_then(|parsed| parsed.host_str().map(|host| {
-            host == "127.0.0.1" || host == "localhost" || host == "::1"
-        }))
+        .and_then(|parsed| {
+            parsed
+                .host_str()
+                .map(|host| host == "127.0.0.1" || host == "localhost" || host == "::1")
+        })
         .unwrap_or(false)
 }
 
@@ -501,7 +507,11 @@ pub async fn workshops_set_active(
 
     registry.active_workshop_id = trimmed.to_string();
     let now = now_iso();
-    if let Some(workshop) = registry.workshops.iter_mut().find(|entry| entry.id == trimmed) {
+    if let Some(workshop) = registry
+        .workshops
+        .iter_mut()
+        .find(|entry| entry.id == trimmed)
+    {
         workshop.last_connected_at = Some(now.clone());
         workshop.updated_at = now;
     }
@@ -523,7 +533,11 @@ pub fn workshops_rename(workshop_id: String, label: String) -> Result<WorkshopRe
     }
 
     let mut registry = ensure_migrated()?;
-    let Some(workshop) = registry.workshops.iter_mut().find(|entry| entry.id == trimmed_id) else {
+    let Some(workshop) = registry
+        .workshops
+        .iter_mut()
+        .find(|entry| entry.id == trimmed_id)
+    else {
         return Err("Workshop not found".to_string());
     };
     workshop.label = trimmed_label.to_string();
@@ -602,10 +616,13 @@ pub fn workshops_update_client_state(
         return Err("Workshop not found".to_string());
     };
 
-    let mut client_state = workshop.client_state.clone().unwrap_or(WorkshopClientState {
-        last_session_id: None,
-        color_theme_id: None,
-    });
+    let mut client_state = workshop
+        .client_state
+        .clone()
+        .unwrap_or(WorkshopClientState {
+            last_session_id: None,
+            color_theme_id: None,
+        });
     if let Some(session_id) = last_session_id {
         let trimmed = session_id.trim().to_string();
         client_state.last_session_id = if trimmed.is_empty() {

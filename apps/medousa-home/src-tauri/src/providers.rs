@@ -66,9 +66,7 @@ fn resolve_base_url(
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(str::to_string)
-        .or_else(|| {
-            spec.and_then(|entry| entry.default_base_url.map(str::to_string))
-        })
+        .or_else(|| spec.and_then(|entry| entry.default_base_url.map(str::to_string)))
 }
 
 fn models_url(base: &str) -> String {
@@ -315,7 +313,8 @@ pub async fn providers_validate_key(
     if provider_id == "bedrock" {
         return Ok(ProvidersValidateKeyResult {
             ok: true,
-            message: "Configure AWS credentials in your environment — no API key stored here".to_string(),
+            message: "Configure AWS credentials in your environment — no API key stored here"
+                .to_string(),
             suggested_model: Some(suggested_model),
         });
     }
@@ -333,7 +332,9 @@ pub async fn providers_validate_key(
     let label = spec.map(|entry| entry.label).unwrap_or(&provider_id);
 
     let result = match spec.map(|entry| entry.validation) {
-        Some(ProviderValidation::Ollama) => validate_ollama(&client, request.base_url.as_deref()).await,
+        Some(ProviderValidation::Ollama) => {
+            validate_ollama(&client, request.base_url.as_deref()).await
+        }
         Some(ProviderValidation::Anthropic) => {
             validate_anthropic_key(&client, api_key, &suggested_model).await
         }
@@ -352,9 +353,7 @@ pub async fn providers_validate_key(
         }
         Some(ProviderValidation::AcceptKey) | None => ProvidersValidateKeyResult {
             ok: true,
-            message: format!(
-                "{label} key saved — verify on your first chat turn"
-            ),
+            message: format!("{label} key saved — verify on your first chat turn"),
             suggested_model: Some(suggested_model),
         },
     };
@@ -464,11 +463,16 @@ pub async fn providers_list_models(
                 "https://generativelanguage.googleapis.com/v1beta/models?key={}",
                 urlencoding::encode(api_key.trim())
             );
-            let response = client.get(url).send().await.map_err(|err| err.to_string())?;
+            let response = client
+                .get(url)
+                .send()
+                .await
+                .map_err(|err| err.to_string())?;
             if !response.status().is_success() {
                 return Err(format!("Google returned HTTP {}", response.status()));
             }
-            let payload: serde_json::Value = response.json().await.map_err(|err| err.to_string())?;
+            let payload: serde_json::Value =
+                response.json().await.map_err(|err| err.to_string())?;
             let models = payload
                 .get("models")
                 .and_then(|models| models.as_array())

@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
+use tauri::{
+    AppHandle, Emitter, Manager, PhysicalPosition, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
+};
 
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 use crate::human_browser;
@@ -452,9 +454,10 @@ async fn create_popout_window(app: &AppHandle, spec: PopoutSpec) -> Result<Webvi
 
     let url = match spec.url {
         PopoutUrl::App(path) => WebviewUrl::App(path.into()),
-        PopoutUrl::External(raw) => {
-            WebviewUrl::External(raw.parse().map_err(|err| format!("invalid url {raw}: {err}"))?)
-        }
+        PopoutUrl::External(raw) => WebviewUrl::External(
+            raw.parse()
+                .map_err(|err| format!("invalid url {raw}: {err}"))?,
+        ),
     };
 
     let mut builder = WebviewWindowBuilder::new(app, spec.label, url)

@@ -94,6 +94,7 @@ See [interactive-streaming.md](interactive-streaming.md). **Do not** expect SSE 
 |--------|------|-------|-----|
 | GET | `/v1/runtime/defaults` | runtime defaults | `http().get` |
 | GET/PUT | `/v1/runtime/tui-defaults` | JSON defaults blob | `http().get/put` |
+| GET/PUT | `/v1/runtime/workers` | Worker capacity and preferred lane shares | `http().get/put` |
 | PUT | `/v1/runtime/inference-profiles` | inference profiles | `http().put` |
 | POST | `/v1/runtime/config/command` | `RuntimeConfigCommandRequest` | `runtime().config_command` |
 | POST | `/v1/runtime/stage-route/command` | `StageRouteCommandRequest` | `runtime().stage_route_command` |

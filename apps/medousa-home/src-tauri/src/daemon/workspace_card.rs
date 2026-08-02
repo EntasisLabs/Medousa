@@ -2,8 +2,8 @@ use crate::daemon::types::{ArchiveAskJobRequest, WorkCardDetail, WorkspaceCardAc
 use medousa_types::WorkspaceSnapshotQuery;
 use tauri::State;
 
-use super::sdk::{client, sdk_error};
 use super::DaemonState;
+use super::sdk::{client, sdk_error};
 
 #[tauri::command]
 pub async fn workspace_get_card(

@@ -1,7 +1,7 @@
 //! Mobile stubs for desktop-only BrowserHost HTTP + in-process bridge.
 //! Client registration uses daemon HTTP directly; local :7422 host is unavailable.
 
-use medousa_browser_lite::{search_ddg_html_cached, SearchResponse};
+use medousa_browser_lite::{SearchResponse, search_ddg_html_cached};
 use serde::Serialize;
 
 #[derive(Debug, Clone, Serialize)]
@@ -77,11 +77,7 @@ pub async fn browser_host_resume_session(
         .map(|value| value.trim().trim_end_matches('/').to_string())
         .filter(|value| !value.is_empty())
         .ok_or_else(|| "daemon URL required on mobile".to_string())?;
-    let url = format!(
-        "{}/v1/browser/sessions/{}/resume",
-        base,
-        session_id.trim()
-    );
+    let url = format!("{}/v1/browser/sessions/{}/resume", base, session_id.trim());
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(15))
         .build()

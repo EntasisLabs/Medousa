@@ -2,25 +2,31 @@
 
 use std::sync::Arc;
 
-use medousa_engine::{Principal, TurnEnvelope, TurnLifecyclePorts, TurnStreamRegistryPort, run_turn};
+use medousa_engine::{
+    Principal, TurnEnvelope, TurnLifecyclePorts, TurnStreamRegistryPort, run_turn,
+};
 
+use axum::Json;
 use axum::extract::{Path as AxumPath, Query, State};
 use axum::http::{HeaderMap, StatusCode};
-use axum::Json;
 use chrono::Utc;
 use serde::Deserialize;
 use uuid::Uuid;
 
 use std::convert::Infallible;
 
-use axum::response::sse::{Event, Sse};
-use futures_util::stream::Stream;
 use crate::channel_delivery;
-use crate::daemon::ingest::{publish_interactive_turn_event, record_job_delivery_pending, resolve_api_model_routing, resolve_session_runtime_config, stream_events_from_registry};
+use crate::daemon::ingest::{
+    publish_interactive_turn_event, record_job_delivery_pending, resolve_api_model_routing,
+    resolve_session_runtime_config, stream_events_from_registry,
+};
 use crate::daemon_api::{
     CreateTurnTicketRequest, InteractiveTurnRequest, InteractiveTurnResponse,
-    SessionActiveTurnsResponse, SessionDeleteQuery, SessionDeleteResponse, TurnTicketRecord, TurnTicketResponse,
+    SessionActiveTurnsResponse, SessionDeleteQuery, SessionDeleteResponse, TurnTicketRecord,
+    TurnTicketResponse,
 };
+use axum::response::sse::{Event, Sse};
+use futures_util::stream::Stream;
 
 use crate::daemon::state::AppState;
 
@@ -77,7 +83,10 @@ pub async fn spawn_turn_ticket(
 ) -> Result<TurnTicketResponse, (StatusCode, String)> {
     let session_id = interactive_request.session_id.trim().to_string();
     if session_id.is_empty() {
-        return Err((StatusCode::BAD_REQUEST, "session_id is required".to_string()));
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "session_id is required".to_string(),
+        ));
     }
 
     let stream_port = crate::engine_adapters::turn_stream_registry_adapter(
@@ -122,39 +131,39 @@ pub async fn spawn_turn_ticket(
     }
 
     if mode == crate::turn_ticket::TurnTicketMode::Background
-        && let Some(job_id) = workspace_card_id.as_deref() {
-            crate::workspace::ask_job_store::ask_job_store().register_pending(
-                crate::workspace::ask_job_store::AskJobRecord {
-                    job_id: job_id.to_string(),
-                    prompt: interactive_request.prompt.clone(),
-                    status: crate::workspace::ask_job_store::AskJobStatus::Pending,
-                    output_text: None,
-                    interim_text: None,
-                    error: None,
-                    session_id: session_id.clone(),
-                    manuscript_id: interactive_request.manuscript_id.clone(),
-                    additional_manuscript_ids: interactive_request.additional_manuscript_ids.clone(),
-                    suggested_capability_ids: interactive_request
-                        .suggested_capability_ids
-                        .clone(),
-                    model_hint: None,
-                    created_at_utc: now,
-                    updated_at_utc: now,
-                    finished_at_utc: None,
-                    archived: false,
-                    journal_path: None,
-                    notified_channel: None,
-                },
-            );
-            crate::workspace::ask_job_store::ask_job_store().mark_running(job_id);
-        }
+        && let Some(job_id) = workspace_card_id.as_deref()
+    {
+        crate::workspace::ask_job_store::ask_job_store().register_pending(
+            crate::workspace::ask_job_store::AskJobRecord {
+                job_id: job_id.to_string(),
+                prompt: interactive_request.prompt.clone(),
+                status: crate::workspace::ask_job_store::AskJobStatus::Pending,
+                output_text: None,
+                interim_text: None,
+                error: None,
+                session_id: session_id.clone(),
+                manuscript_id: interactive_request.manuscript_id.clone(),
+                additional_manuscript_ids: interactive_request.additional_manuscript_ids.clone(),
+                suggested_capability_ids: interactive_request.suggested_capability_ids.clone(),
+                model_hint: None,
+                created_at_utc: now,
+                updated_at_utc: now,
+                finished_at_utc: None,
+                archived: false,
+                journal_path: None,
+                notified_channel: None,
+            },
+        );
+        crate::workspace::ask_job_store::ask_job_store().mark_running(job_id);
+    }
 
     let delivery_target =
         channel_delivery::delivery_target_from_interactive_turn(&interactive_request, &turn_id);
-    state.channel_deliveries.write().await.insert(
-        turn_id.clone(),
-        delivery_target.clone(),
-    );
+    state
+        .channel_deliveries
+        .write()
+        .await
+        .insert(turn_id.clone(), delivery_target.clone());
     record_job_delivery_pending(state, &turn_id).await;
 
     let stream_registry = state.interactive_turn_streams.clone();
@@ -206,11 +215,12 @@ pub async fn spawn_turn_ticket(
     };
 
     let turn_id_for_task = turn_id.clone();
-    let envelope =
-        TurnEnvelope::new(turn_id_for_task.clone(), Principal::operator())
-            .with_correlation_id(turn_id_for_task.clone());
+    let envelope = TurnEnvelope::new(turn_id_for_task.clone(), Principal::operator())
+        .with_correlation_id(turn_id_for_task.clone());
     let lifecycle_ports = TurnLifecyclePorts {
-        tickets: Arc::new(crate::engine_adapters::TurnTicketPortAdapter(turn_tickets.clone())),
+        tickets: Arc::new(crate::engine_adapters::TurnTicketPortAdapter(
+            turn_tickets.clone(),
+        )),
         streams: Arc::new(stream_port_for_task),
     };
     tokio::spawn(async move {
@@ -269,10 +279,7 @@ pub async fn spawn_turn_ticket(
     })
 }
 
-fn apply_bearer_identity(
-    headers: &HeaderMap,
-    request_identity: &mut Option<String>,
-) {
+fn apply_bearer_identity(headers: &HeaderMap, request_identity: &mut Option<String>) {
     // Portal/shared seats: bound pairing profile wins over client-supplied identity.
     if let Some(bound) = crate::pairing::resolve_request_profile_id(headers) {
         *request_identity = Some(bound);
@@ -286,7 +293,10 @@ pub async fn create_turn_ticket(
 ) -> Result<Json<TurnTicketResponse>, (StatusCode, String)> {
     let session_id = request.session_id.trim().to_string();
     if session_id.is_empty() {
-        return Err((StatusCode::BAD_REQUEST, "session_id is required".to_string()));
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "session_id is required".to_string(),
+        ));
     }
     if request.prompt.trim().is_empty() && request.media_refs.is_empty() {
         return Err((StatusCode::BAD_REQUEST, "prompt is required".to_string()));
@@ -334,10 +344,11 @@ pub async fn create_turn_ticket(
     };
 
     if request.mode == crate::turn_ticket::TurnTicketMode::Background
-        && let Some(job_id) = workspace_card_id.as_deref() {
-            interactive_request.session_id =
-                crate::workspace::ask_job_store::ask_job_session_id(job_id);
-        }
+        && let Some(job_id) = workspace_card_id.as_deref()
+    {
+        interactive_request.session_id =
+            crate::workspace::ask_job_store::ask_job_session_id(job_id);
+    }
 
     spawn_turn_ticket(
         &state,
@@ -356,7 +367,12 @@ pub async fn get_turn_ticket(
 ) -> Result<Json<TurnTicketRecord>, (StatusCode, String)> {
     let ticket = crate::turn_ticket::get_turn(&state.turn_tickets, &turn_id)
         .await
-        .ok_or_else(|| (StatusCode::NOT_FOUND, format!("unknown turn id '{turn_id}'")))?;
+        .ok_or_else(|| {
+            (
+                StatusCode::NOT_FOUND,
+                format!("unknown turn id '{turn_id}'"),
+            )
+        })?;
     Ok(Json(ticket_record_from_ticket(&ticket)))
 }
 
@@ -372,8 +388,7 @@ pub async fn list_session_turns(
     AxumPath(session_id): AxumPath<String>,
     Query(_query): Query<ListSessionTurnsQuery>,
 ) -> Json<SessionActiveTurnsResponse> {
-    let turns =
-        crate::turn_ticket::list_active_for_session(&state.turn_tickets, &session_id).await;
+    let turns = crate::turn_ticket::list_active_for_session(&state.turn_tickets, &session_id).await;
 
     Json(SessionActiveTurnsResponse {
         session_id,
@@ -409,7 +424,10 @@ pub async fn start_interactive_turn(
         identity_user_id,
     };
 
-    let (provider, model) = (ticket_request.provider.clone(), ticket_request.model.clone());
+    let (provider, model) = (
+        ticket_request.provider.clone(),
+        ticket_request.model.clone(),
+    );
     let stage_routing = ticket_request
         .stage_routing
         .clone()
@@ -458,20 +476,15 @@ pub async fn get_active_session_turn(
     State(state): State<AppState>,
     AxumPath(session_id): AxumPath<String>,
 ) -> Json<crate::turn_ticket::ActiveSessionTurnResponse> {
-    Json(
-        crate::turn_ticket::get_active_interactive_turn(&state.turn_tickets, &session_id).await,
-    )
+    Json(crate::turn_ticket::get_active_interactive_turn(&state.turn_tickets, &session_id).await)
 }
 
 pub async fn cancel_active_session_turn(
     State(state): State<AppState>,
     AxumPath(session_id): AxumPath<String>,
 ) -> Json<crate::turn_ticket::CancelActiveSessionTurnResponse> {
-    let active = crate::turn_ticket::cancel_interactive_for_session(
-        &state.turn_tickets,
-        &session_id,
-    )
-    .await;
+    let active =
+        crate::turn_ticket::cancel_interactive_for_session(&state.turn_tickets, &session_id).await;
 
     let Some(active) = active else {
         return Json(crate::turn_ticket::CancelActiveSessionTurnResponse {
@@ -526,8 +539,10 @@ pub async fn interactive_turn_stream(
     State(state): State<AppState>,
     AxumPath(turn_id): AxumPath<String>,
     Query(query): Query<crate::daemon::ingest::StreamSinceQuery>,
-) -> Result<Sse<impl Stream<Item = std::result::Result<Event, Infallible>> + use<>>, (StatusCode, String)>
-{
+) -> Result<
+    Sse<impl Stream<Item = std::result::Result<Event, Infallible>> + use<>>,
+    (StatusCode, String),
+> {
     let registry = state.interactive_turn_streams.clone();
     stream_events_from_registry(&registry, &turn_id, "interactive turn", query.since).await
 }

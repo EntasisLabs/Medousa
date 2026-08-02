@@ -23,4 +23,5 @@ pub mod shared_mode;
 pub mod state;
 pub mod turn_event_channel;
 pub mod turn_stream_registry;
+pub mod worker_host;
 pub mod workshop_steer;

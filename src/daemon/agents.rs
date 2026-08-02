@@ -4,10 +4,10 @@ use std::collections::HashMap;
 use std::convert::Infallible;
 use std::sync::Arc;
 
+use axum::Json;
 use axum::extract::{Path as AxumPath, Query, State};
 use axum::http::StatusCode;
 use axum::response::sse::Sse;
-use axum::Json;
 use chrono::Utc;
 use futures_util::Stream;
 use medousa_acp_client::{
@@ -20,20 +20,19 @@ use medousa_types::{
     AgentPermissionResolveRequest, AgentPermissionResolveResponse, AgentRuntimeInfo,
     AgentRuntimeListResponse, AgentSessionPromptRequest, AgentSessionPromptResponse,
     CancelAgentSessionResponse, CodeIntentContext, CreateAgentSessionRequest,
-    CreateAgentSessionResponse,
-    InteractiveTurnStreamEvent,
+    CreateAgentSessionResponse, InteractiveTurnStreamEvent,
 };
 use tokio::sync::{Mutex, RwLock};
 use uuid::Uuid;
 
-use crate::daemon::acp_forge_adapter;
 use crate::agent_permission_request::{
-    agent_permission_request_store, CreateAgentPermissionRequest, PermissionResolution,
+    CreateAgentPermissionRequest, PermissionResolution, agent_permission_request_store,
 };
+use crate::daemon::acp_forge_adapter;
 use crate::daemon::ingest::{publish_interactive_turn_event, stream_events_from_registry};
 use crate::daemon::state::AppState;
 use crate::daemon::turn_stream_registry::{TurnStreamEntry, TurnStreamRegistryPortAdapter};
-use crate::runtime::agent_platform::{publish_acp_terminal, AcpTerminalKind};
+use crate::runtime::agent_platform::{AcpTerminalKind, publish_acp_terminal};
 use medousa_engine::TurnStreamRegistryPort;
 use serde_json::json;
 
@@ -127,9 +126,8 @@ pub async fn create_agent_session(
         }
     }
 
-    let mut config = external_runtime_config(kind).map_err(|e| {
-        (StatusCode::BAD_REQUEST, e.to_string())
-    })?;
+    let mut config =
+        external_runtime_config(kind).map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
     if let Some(cwd) = body.cwd.clone().filter(|s| !s.trim().is_empty()) {
         config.cwd = Some(cwd);
     }
@@ -278,7 +276,12 @@ pub async fn create_agent_session(
     let stream_url = format!("/v1/agents/sessions/{agent_session_id}/stream");
 
     // Opening status on the stream
-    if let Some(entry) = state.interactive_turn_streams.read().await.get(&agent_session_id) {
+    if let Some(entry) = state
+        .interactive_turn_streams
+        .read()
+        .await
+        .get(&agent_session_id)
+    {
         publish_agent_event(
             entry,
             &agent_session_id,
@@ -390,7 +393,12 @@ pub async fn cancel_agent_session(
         }
     }
 
-    if let Some(entry) = state.interactive_turn_streams.read().await.get(&agent_session_id) {
+    if let Some(entry) = state
+        .interactive_turn_streams
+        .read()
+        .await
+        .get(&agent_session_id)
+    {
         publish_agent_event(
             entry,
             &agent_session_id,
@@ -428,8 +436,10 @@ pub async fn agent_session_stream(
     State(state): State<AppState>,
     AxumPath(agent_session_id): AxumPath<String>,
     Query(query): Query<crate::daemon::ingest::StreamSinceQuery>,
-) -> Result<Sse<impl Stream<Item = std::result::Result<axum::response::sse::Event, Infallible>> + use<>>, (StatusCode, String)>
-{
+) -> Result<
+    Sse<impl Stream<Item = std::result::Result<axum::response::sse::Event, Infallible>> + use<>>,
+    (StatusCode, String),
+> {
     let registry = state.interactive_turn_streams.clone();
     stream_events_from_registry(&registry, &agent_session_id, "agent session", query.since).await
 }
@@ -495,15 +505,28 @@ fn spawn_prompt_pump(state: AppState, live: LiveAgentSession, prompt: String) {
 }
 
 fn prompt_with_code_context(prompt: String, context: Option<&CodeIntentContext>) -> String {
-    let Some(context) = context else { return prompt };
+    let Some(context) = context else {
+        return prompt;
+    };
     let mut lines = Vec::new();
-    if let Some(value) = context.project_title.as_deref().filter(|v| !v.trim().is_empty()) {
+    if let Some(value) = context
+        .project_title
+        .as_deref()
+        .filter(|v| !v.trim().is_empty())
+    {
         lines.push(format!("Project: {}", bounded_trimmed(value, 500)));
     }
     if let Some(value) = context.outcome.as_deref().filter(|v| !v.trim().is_empty()) {
-        lines.push(format!("Intended outcome: {}", bounded_trimmed(value, 4_000)));
+        lines.push(format!(
+            "Intended outcome: {}",
+            bounded_trimmed(value, 4_000)
+        ));
     }
-    if let Some(path) = context.active_path.as_deref().filter(|v| !v.trim().is_empty()) {
+    if let Some(path) = context
+        .active_path
+        .as_deref()
+        .filter(|v| !v.trim().is_empty())
+    {
         let path = bounded_trimmed(path, 1_000);
         let line = context.selection_start_line.or(context.cursor_line);
         let end = context.selection_end_line.filter(|end| Some(*end) != line);
@@ -514,28 +537,57 @@ fn prompt_with_code_context(prompt: String, context: Option<&CodeIntentContext>)
         };
         lines.push(format!("Current location: {location}"));
     }
-    if let Some(value) = context.containing_symbol.as_deref().filter(|v| !v.trim().is_empty()) {
-        lines.push(format!("Containing symbol: {}", bounded_trimmed(value, 500)));
+    if let Some(value) = context
+        .containing_symbol
+        .as_deref()
+        .filter(|v| !v.trim().is_empty())
+    {
+        lines.push(format!(
+            "Containing symbol: {}",
+            bounded_trimmed(value, 500)
+        ));
     }
-    let open_files = context.open_files.iter().filter(|v| !v.trim().is_empty()).take(12)
-        .map(|v| bounded_trimmed(v, 1_000)).collect::<Vec<_>>();
+    let open_files = context
+        .open_files
+        .iter()
+        .filter(|v| !v.trim().is_empty())
+        .take(12)
+        .map(|v| bounded_trimmed(v, 1_000))
+        .collect::<Vec<_>>();
     if !open_files.is_empty() {
         lines.push(format!("Open files: {}", open_files.join(", ")));
     }
-    let diagnostics = context.diagnostics.iter().filter(|v| !v.trim().is_empty()).take(20)
-        .map(|v| bounded_trimmed(v, 1_000)).collect::<Vec<_>>();
+    let diagnostics = context
+        .diagnostics
+        .iter()
+        .filter(|v| !v.trim().is_empty())
+        .take(20)
+        .map(|v| bounded_trimmed(v, 1_000))
+        .collect::<Vec<_>>();
     if !diagnostics.is_empty() {
         lines.push(format!("Relevant issues:\n- {}", diagnostics.join("\n- ")));
     }
-    if let Some(value) = context.last_verification.as_deref().filter(|v| !v.trim().is_empty()) {
-        lines.push(format!("Last project check: {}", bounded_trimmed(value, 2_000)));
+    if let Some(value) = context
+        .last_verification
+        .as_deref()
+        .filter(|v| !v.trim().is_empty())
+    {
+        lines.push(format!(
+            "Last project check: {}",
+            bounded_trimmed(value, 2_000)
+        ));
     }
     if let Some(value) = context.selected_text.as_deref().filter(|v| !v.is_empty()) {
         let bounded: String = value.chars().take(16_000).collect();
         lines.push(format!("Selected code:\n```\n{bounded}\n```"));
     }
-    if lines.is_empty() { return prompt; }
-    format!("{prompt}\n\n<medousa_code_context>\n{}\n</medousa_code_context>", lines.join("\n"))
+    if lines.is_empty() {
+        return prompt;
+    }
+    format!(
+        "{prompt}\n\n<medousa_code_context>\n{}\n</medousa_code_context>",
+        lines.join("\n")
+    )
 }
 
 fn bounded_trimmed(value: &str, max_chars: usize) -> String {
@@ -745,12 +797,7 @@ async fn run_prompt_pump(
                 );
             }
             AcpEvent::ReasoningDelta { text } => {
-                publish_agent_reasoning_event(
-                    &entry,
-                    &live.agent_session_id,
-                    &live.runtime,
-                    text,
-                );
+                publish_agent_reasoning_event(&entry, &live.agent_session_id, &live.runtime, text);
             }
             AcpEvent::MessageDone { text } => {
                 publish_agent_event(
@@ -787,12 +834,13 @@ async fn run_prompt_pump(
                 let _ = input;
             }
             AcpEvent::PermissionRequest { id, summary } => {
-                let record = agent_permission_request_store().create(CreateAgentPermissionRequest {
-                    agent_session_id: live.agent_session_id.clone(),
-                    session_id: live.session_id.clone(),
-                    runtime: live.runtime.clone(),
-                    summary: summary.clone(),
-                });
+                let record =
+                    agent_permission_request_store().create(CreateAgentPermissionRequest {
+                        agent_session_id: live.agent_session_id.clone(),
+                        session_id: live.session_id.clone(),
+                        runtime: live.runtime.clone(),
+                        summary: summary.clone(),
+                    });
                 publish_permission_event(&entry, &live, &record.request_id, &summary);
                 let resolution = agent_permission_request_store()
                     .wait_for_resolution(&record.request_id)

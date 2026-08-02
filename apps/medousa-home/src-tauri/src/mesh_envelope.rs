@@ -7,7 +7,7 @@ use serde::Serialize;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
-use crate::pairing_client::{load_phone_signing_key, WorkshopTransportConfig};
+use crate::pairing_client::{WorkshopTransportConfig, load_phone_signing_key};
 
 const MESH_ENVELOPE_VERSION: u32 = 1;
 const DEFAULT_TTL_SECS: i64 = 15 * 60;

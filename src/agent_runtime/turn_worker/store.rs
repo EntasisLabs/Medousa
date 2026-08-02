@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use chrono::{DateTime, Utc};
@@ -14,6 +14,7 @@ use crate::session;
 use crate::turn_continuation::StoredDeliveryTarget;
 
 const TURN_WORKERS_FILE: &str = "workspace/turn_workers.json";
+const LEGACY_TURN_WORKERS_FILE: &str = "turn_workers.json";
 const MAX_ACTIVE_TURN_WORKERS: usize = 500;
 use crate::workspace::retention::WorkspaceRetentionConfig;
 
@@ -134,22 +135,49 @@ impl TurnWorkerStore {
     }
 
     fn path() -> PathBuf {
-        session::medousa_data_dir().join(
-            TURN_WORKERS_FILE
-                .strip_prefix("workspace/")
-                .unwrap_or(TURN_WORKERS_FILE),
-        )
+        Self::path_in(&session::medousa_data_dir())
+    }
+
+    fn legacy_path() -> PathBuf {
+        Self::legacy_path_in(&session::medousa_data_dir())
+    }
+
+    fn path_in(data_dir: &Path) -> PathBuf {
+        data_dir.join(TURN_WORKERS_FILE)
+    }
+
+    fn legacy_path_in(data_dir: &Path) -> PathBuf {
+        data_dir.join(LEGACY_TURN_WORKERS_FILE)
     }
 
     fn reload_from_disk(&self) {
         let _ = fs::create_dir_all(session::medousa_data_dir().join("workspace"));
-        let Ok(raw) = fs::read_to_string(Self::path()) else {
-            return;
+        self.reload_from_paths(&Self::path(), &Self::legacy_path());
+    }
+
+    fn reload_from_paths(&self, canonical_path: &Path, legacy_path: &Path) {
+        let (raw, migrated_legacy) = match fs::read_to_string(canonical_path) {
+            Ok(raw) => (raw, false),
+            Err(_) => match fs::read_to_string(legacy_path) {
+                Ok(raw) => (raw, true),
+                Err(_) => return,
+            },
         };
         let Ok(map) = serde_json::from_str::<HashMap<String, TurnWorkRecord>>(&raw) else {
             return;
         };
         *self.records.lock().expect("turn worker records") = map;
+        if migrated_legacy {
+            if let Some(parent) = canonical_path.parent() {
+                let _ = fs::create_dir_all(parent);
+            }
+            if let Err(err) = fs::write(canonical_path, raw) {
+                eprintln!(
+                    "turn_worker_store: legacy snapshot migration failed path={} error={err}",
+                    canonical_path.display()
+                );
+            }
+        }
     }
 
     fn persist(&self, work_id: &str, stasis_job_id: Option<&str>) {
@@ -285,7 +313,8 @@ impl TurnWorkerStore {
                     && (matches!(
                         record.status,
                         TurnWorkStatus::Pending | TurnWorkStatus::Running
-                    ) || (record.status == TurnWorkStatus::Completed && !record.synthesis_delivered))
+                    ) || (record.status == TurnWorkStatus::Completed
+                        && !record.synthesis_delivered))
             })
             .cloned()
             .collect()
@@ -301,10 +330,7 @@ impl TurnWorkerStore {
         record.updated_at = Utc::now();
         let cloned = record.clone();
         drop(guard);
-        self.persist(
-            &cloned.work_id,
-            cloned.stasis_job_id.as_deref(),
-        );
+        self.persist(&cloned.work_id, cloned.stasis_job_id.as_deref());
         Some(cloned)
     }
 
@@ -375,5 +401,39 @@ impl TurnWorkerStore {
     pub fn is_work_cancelled(&self, work_id: &str) -> bool {
         self.get(work_id)
             .is_some_and(|record| record.status == TurnWorkStatus::Cancelled)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn canonical_snapshot_lives_in_workspace_directory() {
+        let root = Path::new("/tmp/medousa-test-data");
+        assert_eq!(
+            TurnWorkerStore::path_in(root),
+            root.join("workspace/turn_workers.json")
+        );
+        assert_eq!(
+            TurnWorkerStore::legacy_path_in(root),
+            root.join("turn_workers.json")
+        );
+    }
+
+    #[test]
+    fn legacy_snapshot_is_migrated_without_deleting_source() {
+        let temp = tempfile::tempdir().expect("temp data directory");
+        let canonical = TurnWorkerStore::path_in(temp.path());
+        let legacy = TurnWorkerStore::legacy_path_in(temp.path());
+        fs::write(&legacy, "{}").expect("write legacy snapshot");
+        let store = TurnWorkerStore {
+            records: Mutex::new(HashMap::new()),
+        };
+
+        store.reload_from_paths(&canonical, &legacy);
+
+        assert_eq!(fs::read_to_string(&canonical).unwrap(), "{}");
+        assert!(legacy.exists());
     }
 }

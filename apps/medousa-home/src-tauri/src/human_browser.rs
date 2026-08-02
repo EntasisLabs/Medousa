@@ -6,11 +6,13 @@
 //! **Pop-out (secondary):** `browser-content` + `browser-chrome` on the dedicated
 //! browser window — kept for a future "Pop out" action.
 
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use medousa_browser_lite::{markdown_from_html, search_response_from_ddg_html, FetchResult, SearchResponse};
+use medousa_browser_lite::{
+    FetchResult, SearchResponse, markdown_from_html, search_response_from_ddg_html,
+};
 use serde::{Deserialize, Serialize};
 use tauri::webview::{Color, NewWindowResponse, WebviewBuilder};
 use tauri::{AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, Rect, WebviewUrl};
@@ -71,12 +73,8 @@ impl BrowserSurface {
 
 fn surface_url_lock(surface: BrowserSurface) -> &'static Mutex<String> {
     match surface {
-        BrowserSurface::Embed => {
-            LAST_EMBED_ACTIVE_URL.get_or_init(|| Mutex::new(String::new()))
-        }
-        BrowserSurface::Popout => {
-            LAST_POPOUT_ACTIVE_URL.get_or_init(|| Mutex::new(String::new()))
-        }
+        BrowserSurface::Embed => LAST_EMBED_ACTIVE_URL.get_or_init(|| Mutex::new(String::new())),
+        BrowserSurface::Popout => LAST_POPOUT_ACTIVE_URL.get_or_init(|| Mutex::new(String::new())),
     }
 }
 
@@ -469,12 +467,12 @@ fn attach_windows_webview_hotkeys(
     require_embed_visible: bool,
 ) {
     let _ = webview.with_webview(move |platform| {
-        use webview2_com::Microsoft::Web::WebView2::Win32::{
-            ICoreWebView2AcceleratorKeyPressedEventArgs, ICoreWebView2Controller,
-            COREWEBVIEW2_KEY_EVENT_KIND_KEY_DOWN, COREWEBVIEW2_KEY_EVENT_KIND_SYSTEM_KEY_DOWN,
-            COREWEBVIEW2_PHYSICAL_KEY_STATUS,
-        };
         use webview2_com::AcceleratorKeyPressedEventHandler;
+        use webview2_com::Microsoft::Web::WebView2::Win32::{
+            COREWEBVIEW2_KEY_EVENT_KIND_KEY_DOWN, COREWEBVIEW2_KEY_EVENT_KIND_SYSTEM_KEY_DOWN,
+            COREWEBVIEW2_PHYSICAL_KEY_STATUS, ICoreWebView2AcceleratorKeyPressedEventArgs,
+            ICoreWebView2Controller,
+        };
         use windows::Win32::UI::Input::KeyboardAndMouse::{
             GetKeyState, VK_CONTROL, VK_MENU, VK_OEM_4, VK_OEM_6, VK_SHIFT,
         };
@@ -614,17 +612,11 @@ fn attach_webview_chrome_hotkeys(
         target_os = "openbsd"
     ))]
     {
-        attach_linux_webview_hotkeys(
-            webview,
-            app.clone(),
-            surface_static,
-            require_embed_visible,
-        );
+        attach_linux_webview_hotkeys(webview, app.clone(), surface_static, require_embed_visible);
     }
     #[cfg(target_os = "macos")]
     let _ = (webview, app, surface_static, require_embed_visible);
 }
-
 
 pub fn human_browser_active_url() -> String {
     surface_url_lock(BrowserSurface::Embed)
@@ -676,8 +668,7 @@ fn workshop_window(app: &AppHandle) -> Result<tauri::Window, String> {
 }
 
 fn embedded_content_webview(app: &AppHandle) -> Option<tauri::Webview> {
-    active_tab_webview(app, BrowserSurface::Embed)
-        .or_else(|| app.get_webview(EMBED_CONTENT_LABEL))
+    active_tab_webview(app, BrowserSurface::Embed).or_else(|| app.get_webview(EMBED_CONTENT_LABEL))
 }
 
 pub fn on_browser_popout_opened(app: &AppHandle) -> Result<(), String> {
@@ -726,7 +717,12 @@ fn emit_loading(app: &AppHandle, surface: BrowserSurface, loading: bool) {
     );
 }
 
-fn emit_nav_state(app: &AppHandle, surface: BrowserSurface, can_go_back: bool, can_go_forward: bool) {
+fn emit_nav_state(
+    app: &AppHandle,
+    surface: BrowserSurface,
+    can_go_back: bool,
+    can_go_forward: bool,
+) {
     let _ = app.emit(
         "human-browser-nav-state",
         HumanBrowserNavStatePayload {
@@ -870,57 +866,61 @@ fn content_builder(
     let new_window_js = desktop_new_window_install_js(surface);
     let hotkey_js = desktop_hotkey_install_js(surface);
     let location_sync_js = desktop_location_sync_install_js(surface);
-    let mut builder = WebviewBuilder::new(label, WebviewUrl::External("about:blank".parse().unwrap()))
-        .initialization_script(hotkey_js.clone())
-        .initialization_script(location_sync_js.clone())
-        .on_new_window(move |url, _features| {
-            let href = url.as_str();
-            if !(href.starts_with("http://") || href.starts_with("https://")) {
-                return NewWindowResponse::Deny;
-            }
-            if href == "about:blank" || href.contains("doubleclick") || href.contains("googlesyndication") {
-                return NewWindowResponse::Deny;
-            }
-            emit_new_window(&app_new_window, surface_new_window, href);
-            NewWindowResponse::Deny
-        })
-        .on_navigation(move |nav_url| {
-            let href = nav_url.as_str();
-            if href.starts_with("http://") || href.starts_with("https://") {
-                emit_loading(&app_nav, surface_nav, true);
-            }
-            true
-        })
-        .on_page_load(move |webview, payload| {
-            use tauri::webview::PageLoadEvent;
-            match payload.event() {
-                PageLoadEvent::Started => emit_loading(&app_load, surface_load, true),
-                PageLoadEvent::Finished => {
-                    emit_loading(&app_load, surface_load, false);
-                    let href = payload.url().as_str().to_string();
-                    emit_navigated(
-                        &app_load,
-                        surface_load,
-                        &href,
-                        None,
-                        None,
-                        tab_id_load.clone(),
-                    );
-                    probe_page_metadata(&webview, &app_load, &href, surface_load);
-                    if mobile_ua {
-                        let _ = webview.eval(MOBILE_EMBED_FIX_JS);
-                        let _ = webview.eval(&new_window_js);
-                        let _ = webview.eval(&hotkey_js);
-                        let _ = webview.eval(&location_sync_js);
-                    } else {
-                        let _ = webview.eval(DESKTOP_EMBED_FILL_JS);
-                        let _ = webview.eval(&new_window_js);
-                        let _ = webview.eval(&hotkey_js);
-                        let _ = webview.eval(&location_sync_js);
+    let mut builder =
+        WebviewBuilder::new(label, WebviewUrl::External("about:blank".parse().unwrap()))
+            .initialization_script(hotkey_js.clone())
+            .initialization_script(location_sync_js.clone())
+            .on_new_window(move |url, _features| {
+                let href = url.as_str();
+                if !(href.starts_with("http://") || href.starts_with("https://")) {
+                    return NewWindowResponse::Deny;
+                }
+                if href == "about:blank"
+                    || href.contains("doubleclick")
+                    || href.contains("googlesyndication")
+                {
+                    return NewWindowResponse::Deny;
+                }
+                emit_new_window(&app_new_window, surface_new_window, href);
+                NewWindowResponse::Deny
+            })
+            .on_navigation(move |nav_url| {
+                let href = nav_url.as_str();
+                if href.starts_with("http://") || href.starts_with("https://") {
+                    emit_loading(&app_nav, surface_nav, true);
+                }
+                true
+            })
+            .on_page_load(move |webview, payload| {
+                use tauri::webview::PageLoadEvent;
+                match payload.event() {
+                    PageLoadEvent::Started => emit_loading(&app_load, surface_load, true),
+                    PageLoadEvent::Finished => {
+                        emit_loading(&app_load, surface_load, false);
+                        let href = payload.url().as_str().to_string();
+                        emit_navigated(
+                            &app_load,
+                            surface_load,
+                            &href,
+                            None,
+                            None,
+                            tab_id_load.clone(),
+                        );
+                        probe_page_metadata(&webview, &app_load, &href, surface_load);
+                        if mobile_ua {
+                            let _ = webview.eval(MOBILE_EMBED_FIX_JS);
+                            let _ = webview.eval(&new_window_js);
+                            let _ = webview.eval(&hotkey_js);
+                            let _ = webview.eval(&location_sync_js);
+                        } else {
+                            let _ = webview.eval(DESKTOP_EMBED_FILL_JS);
+                            let _ = webview.eval(&new_window_js);
+                            let _ = webview.eval(&hotkey_js);
+                            let _ = webview.eval(&location_sync_js);
+                        }
                     }
                 }
-            }
-        });
+            });
     if mobile_ua {
         builder = builder.user_agent(MOBILE_SAFARI_UA);
     } else {
@@ -930,10 +930,7 @@ fn content_builder(
 }
 
 fn chrome_builder(label: &'static str) -> WebviewBuilder<tauri::Wry> {
-    WebviewBuilder::new(
-        label,
-        WebviewUrl::App("/popout/browser-chrome".into()),
-    )
+    WebviewBuilder::new(label, WebviewUrl::App("/popout/browser-chrome".into()))
 }
 
 fn default_embed_layout() -> EmbedLayoutParams {
@@ -956,8 +953,12 @@ fn compute_embedded_bounds(
     } else {
         params.activity_width.max(ACTIVITY_STRIP_WIDTH)
     };
-    let bottom_chrome =
-        STATUS_BAR_HEIGHT + if params.work_rail_visible { WORK_RAIL_HEIGHT } else { 0.0 };
+    let bottom_chrome = STATUS_BAR_HEIGHT
+        + if params.work_rail_visible {
+            WORK_RAIL_HEIGHT
+        } else {
+            0.0
+        };
     let chrome_top = params
         .content_top
         .filter(|value| *value > 0.0)
@@ -1049,7 +1050,10 @@ fn macos_dom_to_content_view_adjust(app: &AppHandle, shell_x: f64, shell_y: f64)
     (viewport_inset_x, viewport_inset_y)
 }
 
-fn dom_bounds_to_window_child_bounds(app: &AppHandle, dom: EmbedBounds) -> Result<EmbedBounds, String> {
+fn dom_bounds_to_window_child_bounds(
+    app: &AppHandle,
+    dom: EmbedBounds,
+) -> Result<EmbedBounds, String> {
     let (shell_x, shell_y) = shell_webview_origin(app)?;
     let (adj_x, adj_y) = macos_dom_to_content_view_adjust(app, shell_x, shell_y);
     Ok(EmbedBounds {
@@ -1136,7 +1140,10 @@ fn webview_tauri_bounds_logical(
 
 /// AppKit `CGRect.origin` is bottom-left on non-flipped views; Tauri/wry use top-left.
 #[cfg(target_os = "macos")]
-unsafe fn macos_rect_top_left_in_view(rect: objc2_foundation::NSRect, view: &objc2_app_kit::NSView) -> f64 {
+unsafe fn macos_rect_top_left_in_view(
+    rect: objc2_foundation::NSRect,
+    view: &objc2_app_kit::NSView,
+) -> f64 {
     if view.isFlipped() {
         rect.origin.y
     } else {
@@ -1145,33 +1152,29 @@ unsafe fn macos_rect_top_left_in_view(rect: objc2_foundation::NSRect, view: &obj
 }
 
 #[cfg(target_os = "macos")]
-fn macos_webview_frame_in_window_content(
-    webview: &tauri::Webview,
-) -> Option<(f64, f64, f64, f64)> {
+fn macos_webview_frame_in_window_content(webview: &tauri::Webview) -> Option<(f64, f64, f64, f64)> {
     use std::sync::{Arc, Mutex};
     let out = Arc::new(Mutex::new(None));
     let capture = Arc::clone(&out);
-    let _ = webview.with_webview(move |w| {
-        unsafe {
-            use objc2_app_kit::{NSView, NSWindow};
-            let view: &NSView = &*w.inner().cast();
-            let bounds = view.bounds();
-            let Some(window) = view.window() else {
-                return;
-            };
-            let Some(content_view) = window.contentView() else {
-                return;
-            };
-            let converted = view.convertRect_toView(bounds, Some(&*content_view));
-            let y_top = macos_rect_top_left_in_view(converted, &*content_view);
-            if let Ok(mut guard) = capture.lock() {
-                *guard = Some((
-                    converted.origin.x,
-                    y_top,
-                    converted.size.width,
-                    converted.size.height,
-                ));
-            }
+    let _ = webview.with_webview(move |w| unsafe {
+        use objc2_app_kit::{NSView, NSWindow};
+        let view: &NSView = &*w.inner().cast();
+        let bounds = view.bounds();
+        let Some(window) = view.window() else {
+            return;
+        };
+        let Some(content_view) = window.contentView() else {
+            return;
+        };
+        let converted = view.convertRect_toView(bounds, Some(&*content_view));
+        let y_top = macos_rect_top_left_in_view(converted, &*content_view);
+        if let Ok(mut guard) = capture.lock() {
+            *guard = Some((
+                converted.origin.x,
+                y_top,
+                converted.size.width,
+                converted.size.height,
+            ));
         }
     });
     Arc::try_unwrap(out).ok()?.into_inner().ok().flatten()
@@ -1183,22 +1186,20 @@ fn macos_webview_layout_diagnostics(webview: &tauri::Webview) -> Option<serde_js
     use std::sync::{Arc, Mutex};
     let out = Arc::new(Mutex::new(None));
     let capture = Arc::clone(&out);
-    let _ = webview.with_webview(move |w| {
-        unsafe {
-            use objc2_app_kit::NSView;
-            let view: &NSView = &*w.inner().cast();
-            let superview = view.superview();
-            let super_flipped = superview.as_ref().map(|v| v.isFlipped());
-            let content_flipped = view
-                .window()
-                .and_then(|window| window.contentView())
-                .map(|cv| cv.isFlipped());
-            if let Ok(mut guard) = capture.lock() {
-                *guard = Some(serde_json::json!({
-                    "superviewIsFlipped": super_flipped,
-                    "contentViewIsFlipped": content_flipped,
-                }));
-            }
+    let _ = webview.with_webview(move |w| unsafe {
+        use objc2_app_kit::NSView;
+        let view: &NSView = &*w.inner().cast();
+        let superview = view.superview();
+        let super_flipped = superview.as_ref().map(|v| v.isFlipped());
+        let content_flipped = view
+            .window()
+            .and_then(|window| window.contentView())
+            .map(|cv| cv.isFlipped());
+        if let Ok(mut guard) = capture.lock() {
+            *guard = Some(serde_json::json!({
+                "superviewIsFlipped": super_flipped,
+                "contentViewIsFlipped": content_flipped,
+            }));
         }
     });
     Arc::try_unwrap(out).ok()?.into_inner().ok().flatten()
@@ -1405,7 +1406,9 @@ fn macos_webview_layout_diagnostics(_webview: &tauri::Webview) -> Option<serde_j
 }
 
 #[cfg(not(target_os = "macos"))]
-fn macos_webview_frame_in_window_content(_webview: &tauri::Webview) -> Option<(f64, f64, f64, f64)> {
+fn macos_webview_frame_in_window_content(
+    _webview: &tauri::Webview,
+) -> Option<(f64, f64, f64, f64)> {
     None
 }
 
@@ -1413,7 +1416,10 @@ fn bounds_json(x: f64, y: f64, w: f64, h: f64) -> serde_json::Value {
     serde_json::json!({ "x": x, "y": y, "width": w, "height": h, "bottom": y + h, "right": x + w })
 }
 
-fn coordinate_frame_snapshot(app: &AppHandle, dom: Option<EmbedBounds>) -> Result<serde_json::Value, String> {
+fn coordinate_frame_snapshot(
+    app: &AppHandle,
+    dom: Option<EmbedBounds>,
+) -> Result<serde_json::Value, String> {
     let window = workshop_window(app)?;
     let (win_w, win_h) = window_inner_logical(&window)?;
     let scale = window.scale_factor().map_err(|err| err.to_string())?;
@@ -1421,14 +1427,16 @@ fn coordinate_frame_snapshot(app: &AppHandle, dom: Option<EmbedBounds>) -> Resul
     let (main_x, main_y, main_w, main_h) = webview_tauri_bounds_logical(app, MAIN_WINDOW_LABEL)?;
     let workshop = compute_embedded_bounds(&window, default_embed_layout())?;
 
-    let content_tauri = embedded_content_webview(app).map(|content| {
-        let rect = content.bounds().ok();
-        rect.map(|rect| {
-            let pos = rect.position.to_logical::<f64>(scale);
-            let size = rect.size.to_logical::<f64>(scale);
-            bounds_json(pos.x, pos.y, size.width, size.height)
+    let content_tauri = embedded_content_webview(app)
+        .map(|content| {
+            let rect = content.bounds().ok();
+            rect.map(|rect| {
+                let pos = rect.position.to_logical::<f64>(scale);
+                let size = rect.size.to_logical::<f64>(scale);
+                bounds_json(pos.x, pos.y, size.width, size.height)
+            })
         })
-    }).flatten();
+        .flatten();
 
     let main_native = app
         .get_webview(MAIN_WINDOW_LABEL)
@@ -1439,7 +1447,9 @@ fn coordinate_frame_snapshot(app: &AppHandle, dom: Option<EmbedBounds>) -> Resul
         .and_then(|wv| macos_webview_frame_in_window_content(&wv))
         .map(|(x, y, w, h)| bounds_json(x, y, w, h));
 
-    let dom_target = dom.map(|d| dom_bounds_to_window_child_bounds(app, d).ok()).flatten();
+    let dom_target = dom
+        .map(|d| dom_bounds_to_window_child_bounds(app, d).ok())
+        .flatten();
 
     let dom_vs_content_native = match (dom_target, content_native.as_ref()) {
         (Some(target), Some(native)) => Some(serde_json::json!({
@@ -1451,8 +1461,8 @@ fn coordinate_frame_snapshot(app: &AppHandle, dom: Option<EmbedBounds>) -> Resul
         _ => None,
     };
 
-    let macos_diagnostics = embedded_content_webview(app)
-        .and_then(|wv| macos_webview_layout_diagnostics(&wv));
+    let macos_diagnostics =
+        embedded_content_webview(app).and_then(|wv| macos_webview_layout_diagnostics(&wv));
 
     Ok(serde_json::json!({
         "frames": {
@@ -1558,9 +1568,7 @@ fn apply_embedded_bounds(app: &AppHandle, bounds: EmbedBounds) -> Result<(), Str
             let Some(content) = tab_webview(app, BrowserSurface::Embed, &tab_id) else {
                 continue;
             };
-            content
-                .set_bounds(rect)
-                .map_err(|err| err.to_string())?;
+            content.set_bounds(rect).map_err(|err| err.to_string())?;
             if embed_visible && active.as_deref() == Some(tab_id.as_str()) {
                 content.show().map_err(|err| err.to_string())?;
             } else {
@@ -1609,10 +1617,7 @@ fn apply_embedded_dom_bounds(app: &AppHandle, dom: EmbedBounds) -> Result<(), St
             let gap_w = target.width - actual_w;
             let gap_h = target.height - actual_h;
 
-            if gap_x.abs() <= 2.0
-                && gap_y.abs() <= 2.0
-                && gap_w.abs() <= 2.0
-                && gap_h.abs() <= 2.0
+            if gap_x.abs() <= 2.0 && gap_y.abs() <= 2.0 && gap_w.abs() <= 2.0 && gap_h.abs() <= 2.0
             {
                 break;
             }
@@ -1710,7 +1715,10 @@ fn current_embed_bounds(app: &AppHandle) -> Result<EmbedBounds, String> {
 }
 
 /// DOM-measured embed bounds (compositor / mobile) → window contentView coords (title-bar inset).
-fn embed_stored_bounds_to_window(app: &AppHandle, bounds: EmbedBounds) -> Result<EmbedBounds, String> {
+fn embed_stored_bounds_to_window(
+    app: &AppHandle,
+    bounds: EmbedBounds,
+) -> Result<EmbedBounds, String> {
     let needs_dom_convert = LAST_EMBED_PLACEMENT
         .lock()
         .ok()
@@ -1872,11 +1880,7 @@ fn hide_embed_surface(app: &AppHandle) {
     }
 }
 
-fn activate_embed_tab(
-    app: &AppHandle,
-    tab_id: &str,
-    initial_url: &str,
-) -> Result<(), String> {
+fn activate_embed_tab(app: &AppHandle, tab_id: &str, initial_url: &str) -> Result<(), String> {
     close_legacy_content_webview(app, EMBED_CONTENT_LABEL);
 
     {
@@ -1935,11 +1939,7 @@ fn activate_embed_tab(
     Ok(())
 }
 
-fn activate_popout_tab(
-    app: &AppHandle,
-    tab_id: &str,
-    initial_url: &str,
-) -> Result<(), String> {
+fn activate_popout_tab(app: &AppHandle, tab_id: &str, initial_url: &str) -> Result<(), String> {
     ensure_popout_shell(app)?;
 
     {
@@ -2747,8 +2747,8 @@ pub fn human_browser_report_snapshot(payload: SnapshotReport) -> Result<(), Stri
 }
 
 async fn capture_html(app: &AppHandle) -> Result<SnapshotReport, String> {
-    let content =
-        embedded_content_webview(app).ok_or_else(|| "browser content webview not ready".to_string())?;
+    let content = embedded_content_webview(app)
+        .ok_or_else(|| "browser content webview not ready".to_string())?;
     let (tx, rx) = oneshot::channel();
     *SNAPSHOT_TX.lock().expect("snapshot") = Some(tx);
     content
@@ -2881,7 +2881,9 @@ pub async fn human_browser_popout_stop(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn human_browser_query_nav_state(app: AppHandle) -> Result<HumanBrowserNavStatePayload, String> {
+pub async fn human_browser_query_nav_state(
+    app: AppHandle,
+) -> Result<HumanBrowserNavStatePayload, String> {
     let content = embedded_content_webview(&app)
         .ok_or_else(|| "browser content webview not ready".to_string())?;
     let (tx, rx) = oneshot::channel();
@@ -2930,7 +2932,11 @@ pub async fn human_browser_find_in_page(
         .ok_or_else(|| "browser content webview not ready".to_string())?;
     let (tx, rx) = oneshot::channel();
     *FIND_TX.lock().expect("find") = Some(tx);
-    let forward_lit = if forward.unwrap_or(true) { "true" } else { "false" };
+    let forward_lit = if forward.unwrap_or(true) {
+        "true"
+    } else {
+        "false"
+    };
     let query_json = serde_json::to_string(trimmed).map_err(|err| err.to_string())?;
     let script = format!(
         r#"(function(){{try{{var q={query_json};var i=window.__TAURI_INTERNALS__||window.__TAURI__;if(!i||!i.invoke)return;var found=window.find(q,false,{forward_lit},true,false,true,false);i.invoke('human_browser_report_find_result',{{found:!!found}});}}catch(e){{}}}})();"#
@@ -2956,7 +2962,11 @@ pub async fn human_browser_popout_find_in_page(
         .ok_or_else(|| "pop-out browser content not ready".to_string())?;
     let (tx, rx) = oneshot::channel();
     *FIND_TX.lock().expect("find") = Some(tx);
-    let forward_lit = if forward.unwrap_or(true) { "true" } else { "false" };
+    let forward_lit = if forward.unwrap_or(true) {
+        "true"
+    } else {
+        "false"
+    };
     let query_json = serde_json::to_string(trimmed).map_err(|err| err.to_string())?;
     let script = format!(
         r#"(function(){{try{{var q={query_json};var i=window.__TAURI_INTERNALS__||window.__TAURI__;if(!i||!i.invoke)return;var found=window.find(q,false,{forward_lit},true,false,true,false);i.invoke('human_browser_report_find_result',{{found:!!found}});}}catch(e){{}}}})();"#

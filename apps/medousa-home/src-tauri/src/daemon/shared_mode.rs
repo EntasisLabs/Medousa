@@ -3,8 +3,8 @@
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
-use super::workshop_http;
 use super::DaemonState;
+use super::workshop_http;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SharedModeStatusResponse {

@@ -13,12 +13,12 @@ use base64::Engine as _;
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, State};
-use tokio::sync::{mpsc, Notify};
+use tokio::sync::{Notify, mpsc};
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 use tokio_util::sync::CancellationToken;
 
-use crate::daemon::sdk::client;
 use crate::daemon::DaemonState;
+use crate::daemon::sdk::client;
 
 static NEXT_ATTACH_ID: AtomicU64 = AtomicU64::new(1);
 
