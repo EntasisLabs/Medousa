@@ -15,6 +15,7 @@ mod hardware;
 mod paths;
 mod process;
 mod store;
+mod telemetry;
 
 pub use catalog::{
     builtin_catalog, filter_catalog_for_tier, recommended_model_for_tier, CatalogFile,
@@ -47,3 +48,4 @@ pub use process::{
     resolve_medousa_local_binary, spawn_external_local_engine, spawn_external_recommended,
     stop_external_local_engine,
 };
+pub use telemetry::collect_device_telemetry;

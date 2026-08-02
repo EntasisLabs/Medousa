@@ -45,6 +45,9 @@ pub enum GpuBackend {
     None,
     Metal,
     Cuda,
+    Rocm,
+    Vulkan,
+    DirectMl,
     Other,
 }
 
@@ -354,6 +357,58 @@ pub struct LocalBenchmarkMemorySample {
     pub process_rss_mb: u64,
     pub host_available_mb: u64,
     pub host_used_swap_mb: u64,
+    #[serde(default)]
+    pub devices: Vec<LocalDeviceTelemetrySnapshot>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase")]
+pub enum LocalDeviceTelemetrySource {
+    MetalApi,
+    NvidiaSmi,
+    AmdSmi,
+    Wddm,
+    VulkanBudget,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase")]
+pub enum LocalDeviceTelemetryAvailability {
+    Available,
+    Partial,
+    Unavailable,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct LocalDeviceTelemetrySnapshot {
+    pub captured_at: DateTime<Utc>,
+    pub source: LocalDeviceTelemetrySource,
+    pub availability: LocalDeviceTelemetryAvailability,
+    pub backend: GpuBackend,
+    pub device_index: Option<u32>,
+    pub device_uuid: Option<String>,
+    pub device_name: Option<String>,
+    pub driver_version: Option<String>,
+    pub runtime_version: Option<String>,
+    pub unified_memory: Option<bool>,
+    pub memory_total_mb: Option<u64>,
+    pub memory_used_mb: Option<u64>,
+    pub memory_free_mb: Option<u64>,
+    pub process_memory_used_mb: Option<u64>,
+    pub recommended_working_set_mb: Option<u64>,
+    pub utilization_percent: Option<f64>,
+    pub power_watts: Option<f64>,
+    pub temperature_c: Option<f64>,
+    pub graphics_clock_mhz: Option<u64>,
+    pub memory_clock_mhz: Option<u64>,
+    pub throttle_reasons: Option<Vec<String>>,
+    #[serde(default)]
+    pub unavailable_fields: Vec<String>,
+    pub collector_error: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -9929,6 +9929,9 @@
           "none",
           "metal",
           "cuda",
+          "rocm",
+          "vulkan",
+          "directml",
           "other"
         ]
       },
@@ -10070,6 +10073,13 @@
           "processRssMb"
         ],
         "properties": {
+          "devices": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/LocalDeviceTelemetrySnapshot"
+            }
+          },
           "elapsedMs": {
             "type": "integer",
             "format": "uint64",
@@ -10276,6 +10286,185 @@
             "minimum": 0.0
           }
         }
+      },
+      "LocalDeviceTelemetryAvailability": {
+        "type": "string",
+        "enum": [
+          "available",
+          "partial",
+          "unavailable"
+        ]
+      },
+      "LocalDeviceTelemetrySnapshot": {
+        "type": "object",
+        "required": [
+          "availability",
+          "backend",
+          "capturedAt",
+          "source"
+        ],
+        "properties": {
+          "availability": {
+            "$ref": "#/definitions/LocalDeviceTelemetryAvailability"
+          },
+          "backend": {
+            "$ref": "#/definitions/GpuBackend"
+          },
+          "capturedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "collectorError": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "deviceIndex": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "deviceName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "deviceUuid": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "driverVersion": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "graphicsClockMhz": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "memoryClockMhz": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "memoryFreeMb": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "memoryTotalMb": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "memoryUsedMb": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "powerWatts": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "processMemoryUsedMb": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "recommendedWorkingSetMb": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "runtimeVersion": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source": {
+            "$ref": "#/definitions/LocalDeviceTelemetrySource"
+          },
+          "temperatureC": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "throttleReasons": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "unavailableFields": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "unifiedMemory": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "utilizationPercent": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          }
+        }
+      },
+      "LocalDeviceTelemetrySource": {
+        "type": "string",
+        "enum": [
+          "metalApi",
+          "nvidiaSmi",
+          "amdSmi",
+          "wddm",
+          "vulkanBudget"
+        ]
       },
       "LocalResourceAdmission": {
         "type": "object",
@@ -10505,6 +10694,201 @@
       }
     }
   },
+  "LocalDeviceTelemetrySnapshot": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "LocalDeviceTelemetrySnapshot",
+    "type": "object",
+    "required": [
+      "availability",
+      "backend",
+      "capturedAt",
+      "source"
+    ],
+    "properties": {
+      "availability": {
+        "$ref": "#/definitions/LocalDeviceTelemetryAvailability"
+      },
+      "backend": {
+        "$ref": "#/definitions/GpuBackend"
+      },
+      "capturedAt": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "collectorError": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "deviceIndex": {
+        "type": [
+          "integer",
+          "null"
+        ],
+        "format": "uint32",
+        "minimum": 0.0
+      },
+      "deviceName": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "deviceUuid": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "driverVersion": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "graphicsClockMhz": {
+        "type": [
+          "integer",
+          "null"
+        ],
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "memoryClockMhz": {
+        "type": [
+          "integer",
+          "null"
+        ],
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "memoryFreeMb": {
+        "type": [
+          "integer",
+          "null"
+        ],
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "memoryTotalMb": {
+        "type": [
+          "integer",
+          "null"
+        ],
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "memoryUsedMb": {
+        "type": [
+          "integer",
+          "null"
+        ],
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "powerWatts": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "format": "double"
+      },
+      "processMemoryUsedMb": {
+        "type": [
+          "integer",
+          "null"
+        ],
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "recommendedWorkingSetMb": {
+        "type": [
+          "integer",
+          "null"
+        ],
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "runtimeVersion": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "source": {
+        "$ref": "#/definitions/LocalDeviceTelemetrySource"
+      },
+      "temperatureC": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "format": "double"
+      },
+      "throttleReasons": {
+        "type": [
+          "array",
+          "null"
+        ],
+        "items": {
+          "type": "string"
+        }
+      },
+      "unavailableFields": {
+        "default": [],
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "unifiedMemory": {
+        "type": [
+          "boolean",
+          "null"
+        ]
+      },
+      "utilizationPercent": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "format": "double"
+      }
+    },
+    "definitions": {
+      "GpuBackend": {
+        "type": "string",
+        "enum": [
+          "none",
+          "metal",
+          "cuda",
+          "rocm",
+          "vulkan",
+          "directml",
+          "other"
+        ]
+      },
+      "LocalDeviceTelemetryAvailability": {
+        "type": "string",
+        "enum": [
+          "available",
+          "partial",
+          "unavailable"
+        ]
+      },
+      "LocalDeviceTelemetrySource": {
+        "type": "string",
+        "enum": [
+          "metalApi",
+          "nvidiaSmi",
+          "amdSmi",
+          "wddm",
+          "vulkanBudget"
+        ]
+      }
+    }
+  },
   "LocalEngineStatus": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "LocalEngineStatus",
@@ -10608,6 +10992,9 @@
           "none",
           "metal",
           "cuda",
+          "rocm",
+          "vulkan",
+          "directml",
           "other"
         ]
       },

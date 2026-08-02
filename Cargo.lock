@@ -7653,6 +7653,7 @@ dependencies = [
  "medousa-install-support",
  "medousa-local-engine",
  "medousa-types",
+ "metal",
  "once_cell",
  "reqwest 0.12.28",
  "serde",

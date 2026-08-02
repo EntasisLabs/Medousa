@@ -99,14 +99,17 @@ For the user this means:
 > slice also performs host-memory admission before process allocation, makes the
 > 4K/batch-1 mistral.rs recipe explicit, selects a smaller safe recommendation,
 > exits after five request-body-idle minutes, and terminates on critical host
-> pressure. Device-native Metal/NVML/AMD-SMI/WDDM budgets and measured peak
-> calibration remain MIR-2 work.
+> pressure. MIR-2's telemetry seam now normalizes Metal working-set/process
+> allocation, NVIDIA `nvidia-smi`, and AMD SMI JSON into one shared, nullable
+> device snapshot attached to every benchmark phase. Unsupported counters are
+> named rather than zero-filled. WDDM/Vulkan budgets, enforcement from device
+> envelopes, and measured peak calibration remain MIR-2 work.
 >
 > MIR-0 now has a content-free `medousa_local_bench` spine for installed models.
 > It captures the recipe and admission decision, load/stream/unload timing, TTFT,
 > process RSS, available host memory, swap, and reclaimed RSS at 1/5/10 seconds
-> without retaining prompts or output. Context/batch sweeps, device-native
-> counters, artifact digests, and lifecycle soak orchestration remain.
+> without retaining prompts or output. Context/batch sweeps, artifact digests,
+> and lifecycle soak orchestration remain.
 
 The pre-MIR baseline had a useful process boundary but collapsed too many states:
 

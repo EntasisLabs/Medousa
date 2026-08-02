@@ -9,8 +9,8 @@ use anyhow::Context;
 use chrono::Utc;
 use medousa_local_engine::{LocalEngineConfig as RuntimeConfig, LocalEngineRuntime};
 use medousa_local_inference::{
-    LocalEngineConfig, admission_for_model_id, builtin_catalog, compiled_backends,
-    config_from_catalog_entry, local_repo_if_installed, probe_hardware,
+    LocalEngineConfig, admission_for_model_id, builtin_catalog, collect_device_telemetry,
+    compiled_backends, config_from_catalog_entry, local_repo_if_installed, probe_hardware,
 };
 use medousa_types::{
     LocalBenchmarkArtifactMode, LocalBenchmarkEngineIdentity, LocalBenchmarkGitState,
@@ -285,6 +285,7 @@ impl Sampler {
             process_rss_mb,
             host_available_mb: self.system.available_memory() / 1024 / 1024,
             host_used_swap_mb: self.system.used_swap() / 1024 / 1024,
+            devices: collect_device_telemetry(),
         });
     }
 }

@@ -83,7 +83,12 @@ Use `embedded-inference-cuda` on qualified NVIDIA builds or
 and refuses an uninstalled or unsafe one. It uses a deterministic synthetic
 prompt and records only build/recipe identity, phase timings, response byte
 counts, and host/process memory—including reclaimed RSS at 1, 5, and 10 seconds.
-It never stores the prompt or generated content.
+Metal builds also record current process allocation and Apple's recommended
+working set. NVIDIA systems record VRAM, process VRAM, utilization, power,
+temperature, and clocks through `nvidia-smi`; AMD systems normalize the same
+available fields from AMD SMI JSON. Unsupported counters remain `null` and are
+named in `unavailableFields`; they are never reported as a measured zero. The
+manifest never stores the prompt or generated content.
 
 ---
 

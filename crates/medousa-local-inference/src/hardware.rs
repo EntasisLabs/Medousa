@@ -48,7 +48,14 @@ fn free_disk_gb_on_data_volume() -> u64 {
 pub fn score_tier(probe: &HardwareProbe) -> HardwareTier {
     let ram_gb = probe.total_ram_mb / 1024;
     let available_gb = probe.available_ram_mb / 1024;
-    let has_accel = matches!(probe.gpu_backend, GpuBackend::Metal | GpuBackend::Cuda);
+    let has_accel = matches!(
+        probe.gpu_backend,
+        GpuBackend::Metal
+            | GpuBackend::Cuda
+            | GpuBackend::Rocm
+            | GpuBackend::Vulkan
+            | GpuBackend::DirectMl
+    );
 
     let mut tier = HardwareTier::A;
     if ram_gb >= 8 && probe.free_disk_gb >= 4 {
