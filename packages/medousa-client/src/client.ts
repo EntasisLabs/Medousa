@@ -147,25 +147,25 @@ export class MedousaClient {
     });
   }
 
-  async approveBudget(requestId: string, extraRounds?: number): Promise<void> {
+  async approveBudget(requestId: string, extraRounds?: number, resolvedBy = "vscode"): Promise<void> {
     await this.request<unknown>(
       `/v1/turns/budget-requests/${encodeURIComponent(requestId)}/approve`,
-      { method: "POST", body: JSON.stringify({ extra_rounds: extraRounds, resolved_by: "vscode" }) },
+      { method: "POST", body: JSON.stringify({ extra_rounds: extraRounds, resolved_by: resolvedBy }) },
     );
   }
 
-  async denyBudget(requestId: string): Promise<void> {
+  async denyBudget(requestId: string, resolvedBy = "vscode"): Promise<void> {
     await this.request<unknown>(
       `/v1/turns/budget-requests/${encodeURIComponent(requestId)}/deny`,
-      { method: "POST", body: JSON.stringify({ resolved_by: "vscode" }) },
+      { method: "POST", body: JSON.stringify({ resolved_by: resolvedBy }) },
     );
   }
 
-  async resolvePermission(requestId: string, approve: boolean): Promise<void> {
+  async resolvePermission(requestId: string, approve: boolean, resolvedBy = "vscode"): Promise<void> {
     const action = approve ? "approve" : "deny";
     await this.request<unknown>(
       `/v1/agents/permission-requests/${encodeURIComponent(requestId)}/${action}`,
-      { method: "POST", body: JSON.stringify({ resolved_by: "vscode" }) },
+      { method: "POST", body: JSON.stringify({ resolved_by: resolvedBy }) },
     );
   }
 

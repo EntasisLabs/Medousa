@@ -1,0 +1,30 @@
+{
+  "name": "medousa-obsidian",
+  "version": "0.1.0",
+  "description": "A vault-native Medousa companion for Obsidian",
+  "main": "main.js",
+  "type": "module",
+  "private": true,
+  "license": "Apache-2.0 OR MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/EntasisLabs/Medousa.git"
+  },
+  "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "prebuild": "tsc -p ../../packages/medousa-client/tsconfig.json",
+    "build": "tsc --noEmit --skipLibCheck && node esbuild.config.mjs production",
+    "check": "tsc --noEmit --skipLibCheck",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@medousa/client": "file:../../packages/medousa-client"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.17",
+    "esbuild": "0.25.5",
+    "obsidian": "^1.13.1",
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.6"
+  }
+}

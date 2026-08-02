@@ -1,0 +1,10 @@
+{
+  "id": "medousa",
+  "name": "Medousa",
+  "version": "0.1.0",
+  "minAppVersion": "1.8.0",
+  "description": "A vault-native Medousa companion with context-aware chat.",
+  "author": "EntasisLabs",
+  "authorUrl": "https://github.com/EntasisLabs",
+  "isDesktopOnly": false
+}

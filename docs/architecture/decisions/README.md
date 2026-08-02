@@ -13,6 +13,7 @@ Short, durable decisions — not sprint plans. For build history see [../../../a
 | [adr-008-hot-swappable-agent-runtime.md](adr-008-hot-swappable-agent-runtime.md) | Hot-swappable agentic runtime (MCP + ACP bones) | Accepted |
 | [adr-009-vault-workbooks.md](adr-009-vault-workbooks.md) | Vault workbooks + overlay formulas | Accepted |
 | [adr-010-slides-player-and-layers.md](adr-010-slides-player-and-layers.md) | Slides player + declarative CSS layers | Accepted |
+| [adr-012-medousa-anywhere-surfaces.md](adr-012-medousa-anywhere-surfaces.md) | Native host surfaces vs external-agent adapters | Accepted |
 
 ## Template
 

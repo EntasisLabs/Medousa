@@ -1,0 +1,114 @@
+.medousa-chat-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  color: var(--text-normal);
+  background: var(--background-primary);
+}
+
+.medousa-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.medousa-identity {
+  min-width: 0;
+  flex: 1;
+}
+
+.medousa-title {
+  font-weight: 650;
+  line-height: 1.2;
+}
+
+.medousa-status {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.medousa-context {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.medousa-transcript {
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+  padding: 16px 12px 20px;
+}
+
+.medousa-empty {
+  display: grid;
+  min-height: 55%;
+  place-content: center;
+  gap: 8px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.medousa-empty strong {
+  color: var(--text-normal);
+}
+
+.medousa-message {
+  margin: 0 0 14px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+}
+
+.medousa-message-label {
+  margin-bottom: 4px;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  font-weight: 650;
+}
+
+.medousa-message-user {
+  padding: 9px 10px;
+  border-radius: var(--radius-m);
+  background: var(--background-secondary);
+}
+
+.medousa-message-error {
+  padding: 9px 10px;
+  border: 1px solid var(--background-modifier-error);
+  border-radius: var(--radius-m);
+  color: var(--text-error);
+}
+
+.medousa-composer {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 10px 12px 12px;
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.medousa-input {
+  min-height: 40px;
+  max-height: 180px;
+  resize: vertical;
+  flex: 1;
+}
+
+.medousa-send {
+  min-width: 58px;
+}
+
+.medousa-tool-status {
+  margin: -4px 0 12px;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  font-style: italic;
+}
