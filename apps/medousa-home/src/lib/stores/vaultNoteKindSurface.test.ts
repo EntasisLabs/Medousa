@@ -29,7 +29,7 @@ function noteResponse(path: string, content: string, title = "Note", kind = "not
   };
 }
 
-describe("vault note kind surfaces (sheet / workbook / slides)", () => {
+describe("vault note kind surfaces (sheet / workbook / slides / draw)", () => {
   vi.setConfig({ testTimeout: 20_000 });
 
   beforeEach(() => {
@@ -100,6 +100,19 @@ describe("vault note kind surfaces (sheet / workbook / slides)", () => {
     expect(store.selectedKind).toBe("slides");
     expect(store.deckEditMode).toBe("deck");
     expect(store.content).toMatch(/kind:\s*slides/);
+  });
+
+  it("setNoteKind(draw) seeds a durable drawing fence", async () => {
+    const { store, getVaultNote } = await loadStore();
+    getVaultNote.mockResolvedValue(
+      noteResponse("drawings/idea.md", "# Idea\n", "Idea", "note") as never,
+    );
+
+    await store.openNote("drawings/idea.md");
+    store.setNoteKind("draw");
+    expect(store.selectedKind).toBe("draw");
+    expect(store.content).toMatch(/kind:\s*draw/);
+    expect(store.content).toContain("```draw\nversion: 1");
   });
 
   it("does not wipe an existing sheet table when re-applying kind", async () => {

@@ -81,6 +81,10 @@ import {
 } from "./liveBlockSurface";
 import { resolveMedousaViews } from "$lib/utils/resolveMedousaViews";
 import type { VaultNote } from "$lib/types/vault";
+import {
+  mountDrawSurface,
+  type DrawSurfaceHandles,
+} from "$lib/draw/liveDrawSurface";
 
 export type FenceBlockAttrs = {
   raw: string;
@@ -206,6 +210,7 @@ export const FenceBlock = Node.create<FenceBlockOptions>({
       let compare: CompareSurfaceHandles | null = null;
       let kanban: KanbanSurfaceHandles | null = null;
       let styledBlock: BlockSurfaceHandles | null = null;
+      let draw: DrawSurfaceHandles | null = null;
       let rawEdit: FenceRawEditHandles | null = null;
       let mountGen = 0;
 
@@ -250,6 +255,8 @@ export const FenceBlock = Node.create<FenceBlockOptions>({
         kanban = null;
         styledBlock?.destroy();
         styledBlock = null;
+        draw?.destroy();
+        draw = null;
         unmountLiquidFence(dom);
       };
 
@@ -296,6 +303,17 @@ export const FenceBlock = Node.create<FenceBlockOptions>({
 
         const lang = (nextAttrs.lang || "").toLowerCase();
         const opts = this.options as FenceBlockOptions;
+
+        if (lang === "draw") {
+          try {
+            draw = mountDrawSurface(dom, nextAttrs.raw, (updatedRaw) => {
+              applyRawUpdate(updatedRaw);
+            });
+          } catch {
+            mountPlainFence(dom, lang, fenceBody(nextAttrs.raw), enterRawEdit);
+          }
+          return;
+        }
 
         if (lang === "callout") {
           const model = parseCalloutRaw(nextAttrs.raw);
@@ -511,6 +529,15 @@ export const FenceBlock = Node.create<FenceBlockOptions>({
           ) {
             attrs = next;
             slides.applyRaw(next.raw);
+            return true;
+          }
+          if (
+            attrs.lang === "draw" &&
+            next.lang === "draw" &&
+            draw
+          ) {
+            attrs = next;
+            draw.applyRaw(next.raw);
             return true;
           }
           // Styled block: remount destroy/recreates the contenteditable and

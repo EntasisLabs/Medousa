@@ -1,5 +1,6 @@
 import {
   SLASH_BOARD_TEMPLATE,
+  SLASH_DRAW_TEMPLATE,
   SLASH_TABLE_TEMPLATE,
   SLASH_TOC_TEMPLATE,
 } from "$lib/utils/vaultTemplates";
@@ -99,6 +100,7 @@ export type SlashBlockId =
   | "embed"
   | "view"
   | "board"
+  | "draw"
   | "table"
   | "toc";
 
@@ -498,6 +500,7 @@ export function insertSlashBlock(
     embed: "",
     view: "",
     board: SLASH_BOARD_TEMPLATE,
+    draw: SLASH_DRAW_TEMPLATE,
     table: SLASH_TABLE_TEMPLATE,
     toc: SLASH_TOC_TEMPLATE,
   };
@@ -852,5 +855,6 @@ export const SLASH_BLOCK_IDS: SlashBlockId[] = [
   "toc",
   "view",
   "board",
+  "draw",
   "table",
 ];

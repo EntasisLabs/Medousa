@@ -21,6 +21,7 @@
   import { findLedgerTable } from "$lib/utils/markdownTable";
   import { findKanbanBoard, noteHasKanbanBoard } from "$lib/utils/markdownKanban";
   import { noteHasSlidesDeck } from "$lib/utils/markdownSlides";
+  import { noteHasDraw } from "$lib/draw/drawDocument";
   import { kindFromNoteContent } from "$lib/utils/dataFirstSurface";
   import { parseWorkbookManifest } from "$lib/utils/workbook";
   import VaultEmptyState from "./VaultEmptyState.svelte";
@@ -28,6 +29,7 @@
   import LedgerTableEditor from "./LedgerTableEditor.svelte";
   import KanbanBoardEditor from "./KanbanBoardEditor.svelte";
   import SlidesDeckEditor from "./SlidesDeckEditor.svelte";
+  import DrawNoteEditor from "./DrawNoteEditor.svelte";
   import WorkbookManifestEditor from "./WorkbookManifestEditor.svelte";
   import VaultMarkdownPreview from "./VaultMarkdownPreview.svelte";
   import VaultNoteLinksPanel from "./VaultNoteLinksPanel.svelte";
@@ -194,6 +196,10 @@
   const hasKanbanBoard = $derived(noteHasKanbanBoard(displayContent));
   const kanbanBoard = $derived(hasKanbanBoard ? findKanbanBoard(displayContent) : null);
   const hasSlidesDeck = $derived(noteHasSlidesDeck(displayContent));
+  const drawKind = $derived(
+    contentKind === "draw" || vault.selectedKind === "draw",
+  );
+  const hasDraw = $derived(noteHasDraw(displayContent));
 
   const showLedgerTable = $derived(
     !mobile &&
@@ -224,6 +230,8 @@
         (vault.editorMode === "edit" && vault.deckEditMode === "deck")),
   );
 
+  const showDrawSurface = $derived(drawKind && hasDraw);
+
   const showMarkdownEditor = $derived(
     // Keep-alive hosts retain TipTap even while unfocused (global mode is for the focused note).
     (keepAlive && !bound) ||
@@ -231,7 +239,8 @@
         !showLedgerTable &&
         !showWorkbookManifest &&
         !showKanbanBoard &&
-        !showSlidesDeck),
+        !showSlidesDeck &&
+        !showDrawSurface),
   );
 
   const notePlane = $derived(vault.notePlane);
@@ -256,7 +265,8 @@
       !showKanbanBoard &&
       !showLedgerTable &&
       !showWorkbookManifest &&
-      !showSlidesDeck,
+      !showSlidesDeck &&
+      !showDrawSurface,
   );
 
   /** Preview surface is mounted (preview-only or Build split). */
@@ -426,7 +436,8 @@
       !showLedgerTable &&
       !showWorkbookManifest &&
       !showKanbanBoard &&
-      !showSlidesDeck,
+      !showSlidesDeck &&
+      !showDrawSurface,
   );
 
   $effect(() => {
@@ -480,7 +491,8 @@
           !showLedgerTable &&
           !showWorkbookManifest &&
           !showKanbanBoard &&
-          !showSlidesDeck)),
+          !showSlidesDeck &&
+          !showDrawSurface)),
   );
 
   const findSourceText = $derived(
@@ -1113,6 +1125,12 @@
             bind:this={slidesDeckEl}
             content={displayContent}
             disabled={!interactive || vault.saving || vault.editorMode === "preview"}
+            onchange={(next) => vault.markDirty(next, { path: notePath })}
+          />
+        {:else if showDrawSurface}
+          <DrawNoteEditor
+            content={displayContent}
+            disabled={!interactive || vault.saving || mobile}
             onchange={(next) => vault.markDirty(next, { path: notePath })}
           />
         {:else if showMarkdownEditor}

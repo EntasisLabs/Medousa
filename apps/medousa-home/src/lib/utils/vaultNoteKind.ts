@@ -1,13 +1,14 @@
 import type { VaultNoteKind } from "$lib/utils/vaultFrontmatter";
 
-/** Ledger, sheet, board, slides — object-first layouts; wiki chrome stays secondary. */
+/** Structured object-first layouts; wiki chrome stays secondary. */
 export function isDataFirstKind(kind: VaultNoteKind): boolean {
   return (
     kind === "ledger" ||
     kind === "sheet" ||
     kind === "workbook" ||
     kind === "board" ||
-    kind === "slides"
+    kind === "slides" ||
+    kind === "draw"
   );
 }
 
@@ -16,5 +17,5 @@ export function supportsLinksPanel(kind: VaultNoteKind): boolean {
 }
 
 export function supportsPreviewSplit(kind: VaultNoteKind): boolean {
-  return kind !== "ledger" && kind !== "sheet" && kind !== "workbook";
+  return kind !== "ledger" && kind !== "sheet" && kind !== "workbook" && kind !== "draw";
 }

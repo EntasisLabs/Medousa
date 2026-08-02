@@ -1,5 +1,5 @@
 /**
- * Object-first vault surfaces (sheet / workbook / slides / board / ledger):
+ * Object-first vault surfaces (sheet / workbook / slides / board / ledger / draw):
  * ensure body + frontmatter so Live TipTap is not left empty or kind-less.
  */
 
@@ -18,6 +18,12 @@ import {
 } from "$lib/utils/workbook";
 import { noteHasKanbanBoard } from "$lib/utils/markdownKanban";
 import { noteHasSlidesDeck } from "$lib/utils/markdownSlides";
+import {
+  createEmptyDrawDocument,
+  noteHasDraw,
+  noteHasDrawFence,
+  replaceDrawFence,
+} from "$lib/draw/drawDocument";
 
 const DEFAULT_SHEET_HEADERS = ["A", "B", "C", "D"];
 const DEFAULT_LEDGER_HEADERS = ["Date", "Payee", "Amount", "Category"];
@@ -80,6 +86,12 @@ export function ensureDataFirstSurface(
       // Board editor defaults columns when body has no ## sections.
       return withKind;
     }
+    case "draw": {
+      const withKind = setFrontmatterKind(content, "draw");
+      return noteHasDrawFence(withKind)
+        ? withKind
+        : replaceDrawFence(withKind, createEmptyDrawDocument());
+    }
     default:
       return setFrontmatterKind(content, nextKind);
   }
@@ -100,6 +112,8 @@ export function dataFirstSurfaceReady(
       return noteHasSlidesDeck(content);
     case "board":
       return noteHasKanbanBoard(content);
+    case "draw":
+      return noteHasDraw(content);
     default:
       return true;
   }

@@ -6,6 +6,7 @@ export type VaultNoteKind =
   | "ledger"
   | "board"
   | "slides"
+  | "draw"
   | "resume"
   | "inbox"
   | "bug"
@@ -19,6 +20,7 @@ const KNOWN_KINDS = new Set<VaultNoteKind>([
   "ledger",
   "board",
   "slides",
+  "draw",
   "resume",
   "inbox",
   "bug",
@@ -52,6 +54,10 @@ export function normalizeKind(value: string | null | undefined): VaultNoteKind {
     case "deck":
     case "presentation":
       return "slides";
+    case "draw":
+    case "drawing":
+    case "sketch":
+      return "draw";
     case "resume":
     case "cv":
     case "curriculum":
@@ -83,6 +89,7 @@ export function resolveKindFromPath(path: string): VaultNoteKind {
   }
   if (path.startsWith("boards/")) return "board";
   if (path.startsWith("slides/") || path.startsWith("decks/")) return "slides";
+  if (path.startsWith("drawings/") || path.startsWith("draw/")) return "draw";
   if (path.startsWith("resumes/") || path.startsWith("cv/")) return "resume";
   if (path.startsWith("inbox/")) return "inbox";
   if (path.startsWith("bugs/")) return "bug";
@@ -112,6 +119,9 @@ export function kindForSpace(spaceId: string): VaultNoteKind {
     case "slides":
     case "decks":
       return "slides";
+    case "drawings":
+    case "draw":
+      return "draw";
     case "resumes":
     case "cv":
       return "resume";
@@ -140,6 +150,8 @@ export function kindLabel(kind: VaultNoteKind): string {
       return "Board";
     case "slides":
       return "Slides";
+    case "draw":
+      return "Drawing";
     case "resume":
       return "Resume";
     case "inbox":
@@ -186,6 +198,7 @@ export const VAULT_KIND_OPTIONS: VaultNoteKind[] = [
   "sheet",
   "board",
   "slides",
+  "draw",
   "resume",
   "inbox",
   "bug",

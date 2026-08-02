@@ -190,6 +190,7 @@ const KIND_BROWSE_ORDER: VaultNoteKind[] = [
   "sheet",
   "board",
   "slides",
+  "draw",
   "resume",
   "inbox",
   "bug",

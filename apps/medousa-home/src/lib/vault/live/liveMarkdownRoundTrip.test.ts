@@ -11,6 +11,7 @@ import {
   serializeLiveMarkdown,
 } from "./liveMarkdownCodec";
 import { LIQUID_REPORT_TEMPLATE } from "$lib/utils/liquidFenceTemplates";
+import { createEmptyDrawDocument, serializeDrawFence } from "$lib/draw/drawDocument";
 
 const DAILY_FIXTURE = `---
 kind: daily
@@ -92,6 +93,15 @@ describe("splitMarkdownSegments", () => {
 });
 
 describe("liveDoc markdown round-trip", () => {
+  it("preserves drawing payloads as atomic fences", () => {
+    const raw = serializeDrawFence(createEmptyDrawDocument());
+    const doc = markdownToLiveDoc(`# Sketch\n\n${raw}\n`);
+    const fence = (doc.content ?? []).find((node) => node.type === "fenceBlock");
+    expect(fence?.attrs?.lang).toBe("draw");
+    expect(fence?.attrs?.raw).toBe(raw);
+    expect(liveDocToMarkdown(doc)).toContain(raw);
+  });
+
   it("preserves fence raw bytes through TipTap JSON", () => {
     const { content: body } = (() => {
       const m = DAILY_FIXTURE.match(/^---\n[\s\S]*?\n---\n\n([\s\S]*)$/);

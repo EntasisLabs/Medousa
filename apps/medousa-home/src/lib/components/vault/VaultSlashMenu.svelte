@@ -307,6 +307,13 @@
       group: "blocks",
     },
     {
+      id: "draw",
+      label: "Drawing",
+      hint: "Sketch on a canvas",
+      keywords: "draw drawing sketch canvas pen",
+      group: "blocks",
+    },
+    {
       id: "table",
       label: "Data table",
       hint: "Rows and columns",

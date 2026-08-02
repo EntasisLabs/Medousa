@@ -2,6 +2,7 @@
   import { renderMarkdown } from "$lib/markdown";
   import { hydrateMarkdownContainer } from "$lib/markdown/hydrateMarkdownContainer";
   import { destroyLiquidEmbeds } from "$lib/markdown/hydrateLiquidEmbeds";
+  import { destroyDrawEmbeds } from "$lib/draw/hydrateDrawEmbeds";
   import {
     getLiquidContext,
     type LiquidRenderContext,
@@ -80,7 +81,10 @@
   });
 
   onDestroy(() => {
-    if (container) destroyLiquidEmbeds(container);
+    if (container) {
+      destroyLiquidEmbeds(container);
+      destroyDrawEmbeds(container);
+    }
   });
 </script>
 
