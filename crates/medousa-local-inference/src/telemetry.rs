@@ -10,9 +10,10 @@ use medousa_types::{
 };
 use serde_json::Value;
 
-const DEVICE_FIELDS: [&str; 14] = [
+const DEVICE_FIELDS: [&str; 15] = [
     "unifiedMemory",
     "memoryTotalMb",
+    "memoryBudgetMb",
     "memoryUsedMb",
     "memoryFreeMb",
     "processMemoryUsedMb",
@@ -367,6 +368,7 @@ fn empty_snapshot(
         runtime_version: None,
         unified_memory: None,
         memory_total_mb: None,
+        memory_budget_mb: None,
         memory_used_mb: None,
         memory_free_mb: None,
         process_memory_used_mb: None,
@@ -396,6 +398,7 @@ fn unavailable_snapshot(
 fn populate_missing_fields(snapshot: &mut LocalDeviceTelemetrySnapshot) {
     let fields = [
         ("memoryTotalMb", snapshot.memory_total_mb.is_some()),
+        ("memoryBudgetMb", snapshot.memory_budget_mb.is_some()),
         ("memoryUsedMb", snapshot.memory_used_mb.is_some()),
         ("memoryFreeMb", snapshot.memory_free_mb.is_some()),
         (

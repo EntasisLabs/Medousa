@@ -313,6 +313,8 @@ pub struct LocalResourceAdmission {
     #[serde(default)]
     pub device_total_mb: Option<u64>,
     #[serde(default)]
+    pub device_budget_mb: Option<u64>,
+    #[serde(default)]
     pub device_available_mb: Option<u64>,
     #[serde(default)]
     pub device_reserve_mb: Option<u64>,
@@ -418,7 +420,9 @@ pub struct LocalBenchmarkMemorySample {
 #[serde(rename_all = "camelCase")]
 pub enum LocalDeviceTelemetrySource {
     MetalApi,
+    Nvml,
     NvidiaSmi,
+    AmdSmiLibrary,
     AmdSmi,
     Wddm,
     VulkanBudget,
@@ -448,6 +452,8 @@ pub struct LocalDeviceTelemetrySnapshot {
     pub runtime_version: Option<String>,
     pub unified_memory: Option<bool>,
     pub memory_total_mb: Option<u64>,
+    #[serde(default)]
+    pub memory_budget_mb: Option<u64>,
     pub memory_used_mb: Option<u64>,
     pub memory_free_mb: Option<u64>,
     pub process_memory_used_mb: Option<u64>,

@@ -10354,6 +10354,15 @@
             "format": "uint64",
             "minimum": 0.0
           },
+          "memoryBudgetMb": {
+            "default": null,
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
           "memoryClockMhz": {
             "type": [
               "integer",
@@ -10460,7 +10469,9 @@
         "type": "string",
         "enum": [
           "metalApi",
+          "nvml",
           "nvidiaSmi",
+          "amdSmiLibrary",
           "amdSmi",
           "wddm",
           "vulkanBudget"
@@ -10569,6 +10580,15 @@
                 "type": "null"
               }
             ]
+          },
+          "deviceBudgetMb": {
+            "default": null,
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
           },
           "deviceEnforced": {
             "default": false,
@@ -10905,6 +10925,15 @@
         "format": "uint64",
         "minimum": 0.0
       },
+      "memoryBudgetMb": {
+        "default": null,
+        "type": [
+          "integer",
+          "null"
+        ],
+        "format": "uint64",
+        "minimum": 0.0
+      },
       "memoryClockMhz": {
         "type": [
           "integer",
@@ -11031,7 +11060,9 @@
         "type": "string",
         "enum": [
           "metalApi",
+          "nvml",
           "nvidiaSmi",
+          "amdSmiLibrary",
           "amdSmi",
           "wddm",
           "vulkanBudget"
@@ -11556,6 +11587,15 @@
           }
         ]
       },
+      "deviceBudgetMb": {
+        "default": null,
+        "type": [
+          "integer",
+          "null"
+        ],
+        "format": "uint64",
+        "minimum": 0.0
+      },
       "deviceEnforced": {
         "default": false,
         "type": "boolean"
@@ -11717,7 +11757,9 @@
         "type": "string",
         "enum": [
           "metalApi",
+          "nvml",
           "nvidiaSmi",
+          "amdSmiLibrary",
           "amdSmi",
           "wddm",
           "vulkanBudget"

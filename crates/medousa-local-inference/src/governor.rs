@@ -173,7 +173,8 @@ pub fn evaluate_model_admission_with_calibration(
         device_uuid: device.as_ref().and_then(|device| device.uuid.clone()),
         device_name: device.as_ref().and_then(|device| device.name.clone()),
         device_total_mb: device.as_ref().and_then(|device| device.total_mb),
-        device_available_mb: device.as_ref().map(|device| device.available_mb),
+        device_budget_mb: device.as_ref().and_then(|device| device.budget_mb),
+        device_available_mb: device.as_ref().and_then(|device| device.available_mb),
         device_reserve_mb: device.as_ref().map(|device| device.reserve_mb),
         device_admissible_mb: device.as_ref().map(|device| device.admissible_mb),
         device_estimated_peak_mb: device.as_ref().map(|device| device.estimated_peak_mb),
@@ -189,7 +190,8 @@ struct DeviceEnvelope {
     uuid: Option<String>,
     name: Option<String>,
     total_mb: Option<u64>,
-    available_mb: u64,
+    budget_mb: Option<u64>,
+    available_mb: Option<u64>,
     reserve_mb: u64,
     admissible_mb: u64,
     estimated_peak_mb: u64,
@@ -198,9 +200,12 @@ struct DeviceEnvelope {
 impl DeviceEnvelope {
     fn rationale(&self) -> String {
         format!(
-            "{} reports {} MiB available; reserving {} MiB leaves {} MiB for an estimated {} MiB peak",
+            "{} via {:?} reports {} available; reserving {} MiB leaves {} MiB for an estimated {} MiB peak",
             self.name.as_deref().unwrap_or("Selected device"),
-            self.available_mb,
+            self.source,
+            self.available_mb
+                .map(|value| format!("{value} MiB"))
+                .unwrap_or_else(|| "no trustworthy remaining budget".to_string()),
             self.reserve_mb,
             self.admissible_mb,
             self.estimated_peak_mb
@@ -216,15 +221,25 @@ fn device_envelope(
     if backend == GpuBackend::None {
         return None;
     }
-    let device = devices
-        .iter()
-        .filter(|device| device.backend == backend && device.collector_error.is_none())
-        .min_by_key(|device| device.device_index.unwrap_or(u32::MAX))?;
-    let total_mb = device.recommended_working_set_mb.or(device.memory_total_mb);
-    let available_mb = device.memory_free_mb.or_else(|| {
-        Some(total_mb?.saturating_sub(device.memory_used_mb.or(device.process_memory_used_mb)?))
-    })?;
-    let reserve_mb = total_mb
+    let device = select_device_snapshot(backend, devices)?;
+    let total_mb = device.memory_total_mb;
+    let budget_mb = device
+        .recommended_working_set_mb
+        .or(device.memory_budget_mb);
+    let capacity_mb = budget_mb.or(total_mb);
+    let available_mb = if let Some(budget_mb) = budget_mb {
+        device
+            .process_memory_used_mb
+            .map(|used_mb| budget_mb.saturating_sub(used_mb))
+    } else {
+        device.memory_free_mb.or_else(|| {
+            Some(total_mb?.saturating_sub(device.memory_used_mb.or(device.process_memory_used_mb)?))
+        })
+    };
+    if budget_mb.is_none() && available_mb.is_none() {
+        return None;
+    }
+    let reserve_mb = capacity_mb
         .map(|total| MIN_DEVICE_RESERVE_MB.max(total / 10))
         .unwrap_or(MIN_DEVICE_RESERVE_MB);
     Some(DeviceEnvelope {
@@ -234,11 +249,39 @@ fn device_envelope(
         uuid: device.device_uuid.clone(),
         name: device.device_name.clone(),
         total_mb,
+        budget_mb,
         available_mb,
         reserve_mb,
-        admissible_mb: available_mb.saturating_sub(reserve_mb),
+        admissible_mb: available_mb.unwrap_or_default().saturating_sub(reserve_mb),
         estimated_peak_mb,
     })
+}
+
+fn select_device_snapshot(
+    backend: GpuBackend,
+    devices: &[LocalDeviceTelemetrySnapshot],
+) -> Option<&LocalDeviceTelemetrySnapshot> {
+    devices
+        .iter()
+        .filter(|device| device.backend == backend && device.collector_error.is_none())
+        .min_by_key(|device| {
+            (
+                device.device_index.unwrap_or(u32::MAX),
+                telemetry_source_rank(device.source),
+            )
+        })
+}
+
+fn telemetry_source_rank(source: medousa_types::local::LocalDeviceTelemetrySource) -> u8 {
+    use medousa_types::local::LocalDeviceTelemetrySource;
+    match source {
+        LocalDeviceTelemetrySource::MetalApi
+        | LocalDeviceTelemetrySource::Nvml
+        | LocalDeviceTelemetrySource::AmdSmiLibrary
+        | LocalDeviceTelemetrySource::Wddm
+        | LocalDeviceTelemetrySource::VulkanBudget => 0,
+        LocalDeviceTelemetrySource::NvidiaSmi | LocalDeviceTelemetrySource::AmdSmi => 1,
+    }
 }
 
 pub fn admission_for_model_id(model_id: &str) -> Result<LocalResourceAdmission, String> {
@@ -370,9 +413,12 @@ mod tests {
             runtime_version: None,
             unified_memory: Some(backend == GpuBackend::Metal),
             memory_total_mb: Some(total_mb),
+            memory_budget_mb: None,
             memory_used_mb: free_mb.map(|free| total_mb.saturating_sub(free)),
             memory_free_mb: free_mb,
-            process_memory_used_mb: None,
+            process_memory_used_mb: (backend == GpuBackend::Metal)
+                .then(|| free_mb.map(|free| total_mb.saturating_sub(free)))
+                .flatten(),
             recommended_working_set_mb: (backend == GpuBackend::Metal).then_some(total_mb),
             utilization_percent: None,
             power_watts: None,
@@ -429,14 +475,33 @@ mod tests {
 
     #[test]
     fn missing_device_memory_keeps_admission_explicitly_host_only() {
+        let mut incomplete = device(GpuBackend::Metal, 0, 8 * 1024, None);
+        incomplete.recommended_working_set_mb = None;
         let admission = evaluate_model_admission_with_devices(
             &entry("small", 1, 2, true),
             &probe(16, 13),
-            &[device(GpuBackend::Metal, 0, 8 * 1024, None)],
+            &[incomplete],
         );
         assert!(admission.admitted);
         assert!(!admission.device_enforced);
         assert!(admission.rationale.contains("host-only"));
+    }
+
+    #[test]
+    fn dynamic_budget_without_process_usage_fails_closed() {
+        let mut directml_probe = probe(32, 24);
+        directml_probe.gpu_backend = GpuBackend::DirectMl;
+        let mut incomplete = device(GpuBackend::DirectMl, 0, 24 * 1024, Some(20 * 1024));
+        incomplete.source = LocalDeviceTelemetrySource::Wddm;
+        incomplete.memory_budget_mb = Some(8 * 1024);
+        incomplete.process_memory_used_mb = None;
+        let admission = evaluate_model_admission_with_devices(
+            &entry("small", 1, 2, true),
+            &directml_probe,
+            &[incomplete],
+        );
+        assert!(!admission.admitted);
+        assert_eq!(admission.device_available_mb, None);
     }
 
     #[test]
@@ -492,6 +557,47 @@ mod tests {
         assert!(!admission.admitted);
         assert!(admission.estimated_peak_mb > admission.static_estimated_peak_mb);
         assert_eq!(admission.calibration_margin_percent, Some(15));
+    }
+
+    #[test]
+    fn dynamic_process_budget_wins_over_physical_vram_free() {
+        let mut directml_probe = probe(32, 24);
+        directml_probe.gpu_backend = GpuBackend::DirectMl;
+        let mut budget = device(GpuBackend::DirectMl, 0, 24 * 1024, Some(20 * 1024));
+        budget.source = LocalDeviceTelemetrySource::Wddm;
+        budget.memory_budget_mb = Some(4 * 1024);
+        budget.process_memory_used_mb = Some(1024);
+        let admission = evaluate_model_admission_with_devices(
+            &entry("small", 1, 2, true),
+            &directml_probe,
+            &[budget],
+        );
+        assert!(!admission.admitted);
+        assert_eq!(admission.device_budget_mb, Some(4 * 1024));
+        assert_eq!(admission.device_available_mb, Some(3 * 1024));
+        assert_eq!(
+            admission.device_source,
+            Some(LocalDeviceTelemetrySource::Wddm)
+        );
+    }
+
+    #[test]
+    fn native_collector_precedes_cli_for_the_same_device() {
+        let mut cuda_probe = probe(32, 24);
+        cuda_probe.gpu_backend = GpuBackend::Cuda;
+        let cli = device(GpuBackend::Cuda, 0, 24 * 1024, Some(20 * 1024));
+        let mut native = device(GpuBackend::Cuda, 0, 24 * 1024, Some(2 * 1024));
+        native.source = LocalDeviceTelemetrySource::Nvml;
+        let admission = evaluate_model_admission_with_devices(
+            &entry("small", 1, 2, true),
+            &cuda_probe,
+            &[cli, native],
+        );
+        assert!(!admission.admitted);
+        assert_eq!(
+            admission.device_source,
+            Some(LocalDeviceTelemetrySource::Nvml)
+        );
     }
 
     #[cfg(all(target_os = "macos", feature = "telemetry-metal"))]

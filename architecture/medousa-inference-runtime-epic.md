@@ -113,8 +113,12 @@ For the user this means:
 > versioned calibration store. Admission adds 15% plus 256 MiB slack and never
 > lowers the static estimate; failed, incomplete, mismatched, corrupt, or newer-
 > schema evidence cannot silently weaken admission. WDDM/Vulkan budgets,
-> production-native NVML/AMD SMI collectors, broader hardware samples, and
-> percentile calibration after sufficient runs remain MIR-2 work.
+> working-set guidance, and physical VRAM are now distinct normalized concepts:
+> dynamic budgets subtract process usage and override looser physical-free
+> counters, while native sources deterministically outrank CLI fallbacks for the
+> same device. Actual WDDM/Vulkan collection, production-native NVML/AMD SMI
+> bindings, broader hardware samples, and percentile calibration after
+> sufficient runs remain MIR-2 work.
 >
 > MIR-0 now has a content-free `medousa_local_bench` spine for installed models.
 > It captures the recipe and admission decision, load/stream/unload timing, TTFT,

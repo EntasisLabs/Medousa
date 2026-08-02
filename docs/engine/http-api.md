@@ -325,8 +325,13 @@ total host memory, system reserve, hardware-tier cap, steady/conversion/peak
 estimates, critical-pressure threshold, and the explicit context/batch recipe.
 It also records the selected accelerator backend, device index/UUID/name,
 telemetry source, total/available device memory, device reserve, admissible
-device memory, estimated device peak, and whether the device envelope was
-enforced. The final `admissibleMb` is the smaller of the host and enforced
+device memory, dynamic device budget, estimated device peak, and whether the
+device envelope was enforced. Dynamic WDDM/Vulkan/working-set budgets include
+current process usage, so their remaining headroom is `budget - processUsage`;
+they outrank physical free-memory counters. Native API collectors outrank CLI
+fallbacks for the same device. An authoritative budget with missing process
+usage fails closed while keeping the missing value nullable. The final
+`admissibleMb` is the smaller of the host and enforced
 device envelopes. Missing device counters stay nullable and produce an explicit
 host-only decision rather than a fabricated device capacity. Before allocating,
 the worker converts an admitted decision into a short-lived cross-process

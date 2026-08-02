@@ -268,6 +268,7 @@ mod tests {
             device_uuid: None,
             device_name: None,
             device_total_mb: None,
+            device_budget_mb: None,
             device_available_mb: None,
             device_reserve_mb: None,
             device_admissible_mb: None,
