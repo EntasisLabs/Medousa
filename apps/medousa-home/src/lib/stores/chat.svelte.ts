@@ -902,7 +902,7 @@ export class ChatStore {
     }
   }
 
-  async newSession() {
+  async newSession(options?: { shellContext?: { desktopId: string; groupId: string } }) {
     this.flushDraftPersist();
     this.stashFocusedRuntime();
     const id = `medousa-home-${crypto.randomUUID()}`;
@@ -921,7 +921,17 @@ export class ChatStore {
     // Shell tab host mounts ChatSessionView by shell tab sessionId — without
     // opening a tab here the previous chat (often full of worker history) stays on screen.
     const { shellTabs } = await import("$lib/stores/shellTabs.svelte");
-    shellTabs.openChat(id, { activate: true });
+    const shellContext = options?.shellContext;
+    if (
+      !shellContext ||
+      (shellTabs.activeDesktopId === shellContext.desktopId &&
+        shellTabs.activeGroupId === shellContext.groupId)
+    ) {
+      shellTabs.openChat(id, {
+        activate: true,
+        groupId: shellContext?.groupId,
+      });
+    }
     const { workshops } = await import("$lib/stores/workshops.svelte");
     void workshops.saveActiveSession(id);
   }
@@ -1079,12 +1089,21 @@ export class ChatStore {
   }
 
   async switchSession(sessionId: string) {
+    const sourceSessionId = this.sessionId.trim();
     const mirrorShellChat = () => {
       chatStreamPool.acquire(sessionId);
       void import("$lib/stores/shellTabs.svelte").then(({ shellTabs }) => {
+        // A session switch belongs to the chat tab that initiated it. If the
+        // user changed desktop/pane while history was loading, never mirror the
+        // old request into the newly active layout.
+        if (this.sessionId.trim() !== sessionId) return;
         const active = shellTabs.activeTab;
-        if (active?.kind === "chat" && active.sessionId === sessionId) return;
-        shellTabs.openChat(sessionId, { activate: true });
+        if (active?.kind !== "chat" || active.sessionId !== sourceSessionId) return;
+        if (active.sessionId === sessionId) return;
+        shellTabs.openChat(sessionId, {
+          activate: true,
+          groupId: shellTabs.activeGroupId,
+        });
       });
     };
 

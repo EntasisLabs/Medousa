@@ -12,6 +12,7 @@
   import ProfileSwitcherCompact from "$lib/components/mobile/ProfileSwitcherCompact.svelte";
   import WorkshopSwitcherCompact from "$lib/components/workshops/WorkshopSwitcherCompact.svelte";
   import { chat } from "$lib/stores/chat.svelte";
+  import { runtime } from "$lib/stores/runtime.svelte";
   import { settings } from "$lib/stores/settings.svelte";
   import { isTauriMobilePlatform } from "$lib/platform";
   import { haptic } from "$lib/haptics";
@@ -37,6 +38,8 @@
     composerBlocked?: boolean;
     /** Hide attachment hint + model picker (Presence empty landing). */
     quietChrome?: boolean;
+    /** Model selection only applies to native Medousa turns. */
+    modelPickerEnabled?: boolean;
     onkeydown?: (event: KeyboardEvent) => void;
     onfocus?: () => void;
     onblur?: () => void;
@@ -50,6 +53,7 @@
     disabled = false,
     composerBlocked = false,
     quietChrome = false,
+    modelPickerEnabled = true,
     onkeydown,
     onfocus,
     onblur,
@@ -57,7 +61,9 @@
     element = $bindable<HTMLTextAreaElement | null>(null),
   }: Props = $props();
 
-  const showModelPicker = $derived(settings.showChatModelPicker && !quietChrome);
+  const showModelPicker = $derived(
+    settings.showChatModelPicker && !quietChrome && modelPickerEnabled,
+  );
   const placeholder = $derived(
     chat.hasWorkshopHandoff()
       ? "Steer the handoff…"
@@ -98,7 +104,7 @@
       ? "Microphone capture unavailable"
       : sttReason ?? "Voice input unavailable",
   );
-  const blocked = $derived(disabled || composerBlocked);
+  const blocked = $derived(disabled || composerBlocked || runtime.savingControls);
   const canSend = $derived(
     !blocked && (chat.draft.trim().length > 0 || chat.pendingMediaRefs.length > 0),
   );
@@ -265,7 +271,7 @@
         bind:element
         placeholder="Message… / for skills"
         disabled={blocked}
-        maxHeight={144}
+        maxHeight={360}
         minHeight={34}
         class="mobile-composer-dock-input"
         {onkeydown}
@@ -373,7 +379,7 @@
       bind:element
       placeholder={placeholder}
       disabled={blocked}
-      maxHeight={128}
+      maxHeight={400}
       minHeight={36}
       class="composer-bar-stacked-input"
       {onkeydown}
@@ -409,7 +415,7 @@
       <ComposerAgentChip showChip bind:open={agentOpen} anchorEl={plusAnchorEl} />
 
       {#if showModelPicker}
-        <ChatModelPicker {disabled} quiet />
+        <ChatModelPicker disabled={blocked} quiet />
       {/if}
 
       <span class="composer-bar-footer-spacer" aria-hidden="true"></span>

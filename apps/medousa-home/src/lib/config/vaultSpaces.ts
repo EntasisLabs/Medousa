@@ -6,7 +6,8 @@ import {
 } from "$lib/utils/vaultCustomSpaces";
 
 export const SHOW_SYSTEM_NOTES_KEY = "medousa-home-vault-show-system";
-export const LAST_SPACE_KEY = "medousa-home-last-space";
+/** Persisted explicit sidebar filter; versioned so old note-derived values are ignored. */
+export const LAST_SPACE_KEY = "medousa-home-last-space-filter-v2";
 
 export type VaultSpaceIcon =
   | "book"

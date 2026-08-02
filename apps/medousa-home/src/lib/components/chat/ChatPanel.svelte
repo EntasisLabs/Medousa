@@ -1,8 +1,9 @@
 <script lang="ts">
-  import { tick } from "svelte";
+  import { onDestroy, tick } from "svelte";
   import { ArrowDown, LoaderCircle } from "@lucide/svelte";
   import ChatAsyncToolsHint from "$lib/components/chat/ChatAsyncToolsHint.svelte";
   import ChatMessageList from "$lib/components/chat/ChatMessageList.svelte";
+  import MarkdownHeadingOutline from "$lib/components/ui/MarkdownHeadingOutline.svelte";
   import ChatComposerBar from "$lib/components/chat/ChatComposerBar.svelte";
   import ComposerSkillPills from "$lib/components/chat/ComposerSkillPills.svelte";
   import ComposerSkillSlashMenu from "$lib/components/chat/ComposerSkillSlashMenu.svelte";
@@ -121,6 +122,11 @@
 
   let scrollEl: HTMLDivElement | undefined = $state();
   let atBottom = $state(true);
+  let activeChatTurnId = $state<string | null>(null);
+  let chatScrolling = $state(false);
+  let pinLatestUserTurn = $state(false);
+  let chatNavigationFrame = 0;
+  let chatScrollEndTimer: ReturnType<typeof setTimeout> | undefined;
   let cardDetailOpen = $state(false);
   let cardDetail = $state<CardDetailPayload | null>(null);
 
@@ -371,14 +377,45 @@
   });
 
   const showScrollFab = $derived(
-    mobile &&
-      !atBottom &&
+    !atBottom &&
       (chatMessages.length > 0 || workerThreads.length > 0),
+  );
+
+  const latestUserTurn = $derived.by(() => {
+    for (let index = chatMessages.length - 1; index >= 0; index -= 1) {
+      const message = chatMessages[index];
+      if (message?.role === "user" && message.content.trim()) return message;
+    }
+    return null;
+  });
+  const latestUserPreview = $derived.by(() => {
+    const firstLine = latestUserTurn?.content.trim().split("\n")[0] ?? "";
+    return firstLine.length > 120 ? `${firstLine.slice(0, 119)}…` : firstLine;
+  });
+  const chatTurnItems = $derived(
+    chatMessages
+      .filter((message) => message.role === "user" && message.content.trim())
+      .map((message) => {
+        const firstLine = message.content.trim().split("\n")[0];
+        return {
+          id: message.id,
+          text: firstLine.length > 120 ? `${firstLine.slice(0, 119)}…` : firstLine,
+          depth: 2,
+        };
+      }),
+  );
+  const showChatTurnRail = $derived(
+    !embedded && !useMobileChatLayout && chatTurnItems.length > 1,
+  );
+  const showCurrentTurnAnchor = $derived(
+    Boolean(latestUserTurn && latestUserPreview && pinLatestUserTurn),
   );
 
   $effect(() => {
     void panelSessionId;
     atBottom = true;
+    activeChatTurnId = null;
+    pinLatestUserTurn = false;
   });
 
   $effect(() => {
@@ -389,6 +426,7 @@
       .join("\0");
     void chat.hasTurnActivity;
     scrollToLatest(false);
+    void tick().then(scheduleChatNavigationMeasure);
   });
 
   $effect(() => {
@@ -780,7 +818,7 @@
 
   async function submit(event: Event) {
     event.preventDefault();
-    if (connection.offline) return;
+    if (connection.offline || runtime.savingControls) return;
     const scopeForSend = chat.vaultNoteContext;
     const prompt = applyActiveAgentPrompt(
       ensureVaultSelectionInPrompt(chat.draft.trim(), scopeForSend),
@@ -890,11 +928,67 @@
     }
   }
 
+  function measureChatNavigation() {
+    chatNavigationFrame = 0;
+    if (!scrollEl) {
+      activeChatTurnId = null;
+      pinLatestUserTurn = false;
+      return;
+    }
+
+    const rootRect = scrollEl.getBoundingClientRect();
+    const turns = [
+      ...scrollEl.querySelectorAll<HTMLElement>("[data-chat-turn-user-id]"),
+    ];
+    if (turns.length === 0) {
+      activeChatTurnId = null;
+      pinLatestUserTurn = false;
+      return;
+    }
+
+    const threshold = rootRect.top + 64;
+    let activeId = turns[0]?.dataset.chatTurnUserId ?? null;
+    for (const turn of turns) {
+      if (turn.getBoundingClientRect().top <= threshold) {
+        activeId = turn.dataset.chatTurnUserId ?? activeId;
+      } else {
+        break;
+      }
+    }
+    activeChatTurnId = activeId;
+
+    const latestId = latestUserTurn?.id;
+    const latestTurn = latestId
+      ? turns.find((turn) => turn.dataset.chatTurnUserId === latestId)
+      : undefined;
+    if (!latestTurn) {
+      pinLatestUserTurn = false;
+      return;
+    }
+    const latestRect = latestTurn.getBoundingClientRect();
+    const responseIsLong = latestRect.height >= Math.max(280, scrollEl.clientHeight * 0.8);
+    const promptHasLeftTop = latestRect.top < rootRect.top + 8;
+    const responseStillVisible = latestRect.bottom > rootRect.top + 96;
+    pinLatestUserTurn = responseIsLong && promptHasLeftTop && responseStillVisible;
+  }
+
+  function scheduleChatNavigationMeasure() {
+    if (chatNavigationFrame) return;
+    chatNavigationFrame = requestAnimationFrame(measureChatNavigation);
+  }
+
   function onScroll() {
     if (!scrollEl) return;
     const distanceFromBottom =
       scrollEl.scrollHeight - scrollEl.scrollTop - scrollEl.clientHeight;
     atBottom = distanceFromBottom <= scrollPinThresholdPx;
+    chatScrolling = true;
+    if (chatScrollEndTimer) clearTimeout(chatScrollEndTimer);
+    chatScrollEndTimer = setTimeout(() => {
+      chatScrolling = false;
+      chatScrollEndTimer = undefined;
+    }, 160);
+    scheduleChatNavigationMeasure();
   }
 
   function scrollToLatest(force = false, behavior: ScrollBehavior = "auto") {
@@ -912,6 +1006,29 @@
     if (mobile) haptic("light");
     scrollToLatest(true, "smooth");
   }
+
+  function scrollToCurrentTurn() {
+    const id = latestUserTurn?.id;
+    if (id) scrollToChatTurn(id);
+  }
+
+  function scrollToChatTurn(id: string) {
+    if (!scrollEl) return;
+    const target = [...scrollEl.querySelectorAll<HTMLElement>("[data-chat-turn-user-id]")]
+      .find((element) => element.dataset.chatTurnUserId === id);
+    if (!target) return;
+    const rootRect = scrollEl.getBoundingClientRect();
+    const targetRect = target.getBoundingClientRect();
+    scrollEl.scrollTo({
+      top: Math.max(0, scrollEl.scrollTop + targetRect.top - rootRect.top - 12),
+      behavior: "smooth",
+    });
+  }
+
+  onDestroy(() => {
+    if (chatNavigationFrame) cancelAnimationFrame(chatNavigationFrame);
+    if (chatScrollEndTimer) clearTimeout(chatScrollEndTimer);
+  });
 
   async function resumeSession(sessionId: string) {
     await chat.switchSession(sessionId);
@@ -1104,6 +1221,17 @@
   {/if}
 
   <div class="chat-panel-main">
+    {#if showCurrentTurnAnchor}
+      <button
+        type="button"
+        class="chat-current-turn-anchor"
+        aria-label="Show your latest message"
+        onclick={scrollToCurrentTurn}
+      >
+        <span class="chat-current-turn-anchor-label">You</span>
+        <span class="chat-current-turn-anchor-preview">{latestUserPreview}</span>
+      </button>
+    {/if}
   <div
     class="{embedded && !useMobileChatLayout
       ? 'vault-workshop-chat-body'
@@ -1198,6 +1326,7 @@
           messages={chatMessages}
           sessionId={panelSessionId}
           {mobile}
+          navigation
           scrollRoot={scrollEl}
           onPromoteToFlow={handlePromoteToFlow}
           onSubmitIntent={submitChatIntent}
@@ -1264,6 +1393,16 @@
     </div>
     {#if !useMobileChatLayout && !presenceComposerCentered}
       <div class="chat-scroll-fade" aria-hidden="true"></div>
+    {/if}
+    {#if showChatTurnRail}
+      <MarkdownHeadingOutline
+        items={chatTurnItems}
+        activeId={activeChatTurnId}
+        scrolling={chatScrolling}
+        mode="rail"
+        label="Conversation turns"
+        onSelect={scrollToChatTurn}
+      />
     {/if}
   </div>
 
@@ -1348,6 +1487,7 @@
         mobile={workshop || useMobileChatLayout}
         disabled={connection.offline}
         composerBlocked={chat.composerBlocked}
+        modelPickerEnabled={sessionRuntime === "medousa"}
         bind:element={composerTextareaEl}
         onkeydown={handleKeydown}
         onCursorChange={(cursor) => (draftCursor = cursor)}
@@ -1392,7 +1532,7 @@
   {#if showScrollFab && visible}
     <button
       type="button"
-      class="mobile-chat-scroll-fab"
+      class="chat-scroll-fab"
       aria-label="Scroll to latest message"
       onclick={scrollToBottomFromFab}
     >
@@ -1408,6 +1548,61 @@
     flex-direction: column;
     min-height: 0;
     flex: 1;
+  }
+
+  .chat-current-turn-anchor {
+    position: absolute;
+    top: 0.5rem;
+    right: 2.4rem;
+    z-index: 4;
+    display: flex;
+    min-width: 0;
+    width: min(32rem, calc(100% - 4.8rem));
+    align-items: center;
+    gap: 0.55rem;
+    padding: 0.5rem 0.7rem;
+    border: 1px solid rgb(var(--color-surface-400) / 0.18);
+    border-radius: 0.75rem;
+    background: rgb(var(--color-surface-900) / 0.94);
+    color: rgb(var(--color-surface-200));
+    text-align: left;
+    box-shadow: 0 8px 24px rgb(0 0 0 / 0.3);
+    backdrop-filter: blur(12px);
+    cursor: pointer;
+  }
+
+  .chat-current-turn-anchor:hover,
+  .chat-current-turn-anchor:focus-visible {
+    border-color: rgb(var(--color-surface-300) / 0.32);
+    background: rgb(var(--color-surface-800) / 0.95);
+    outline: none;
+  }
+
+  .chat-current-turn-anchor-label {
+    flex-shrink: 0;
+    color: rgb(var(--color-surface-300));
+    font-size: 0.68rem;
+    font-weight: 650;
+    white-space: nowrap;
+  }
+
+  .chat-current-turn-anchor-preview {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    font-size: 0.75rem;
+    line-height: 1.35;
+  }
+
+  @media (max-width: 640px) {
+    .chat-current-turn-anchor {
+      right: 0.75rem;
+      width: calc(100% - 1.5rem);
+    }
   }
 
   .chat-stream-error-action {

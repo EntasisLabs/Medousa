@@ -45,14 +45,21 @@
     element.dataset.expanded = scroll > minHeight + 6 ? "true" : "false";
   }
 
+  function scheduleResize() {
+    // Let bind:value finish before measuring scrollHeight. This matters for
+    // the fresh-chat presence composer, where the draft is a shared store
+    // value and the input event can otherwise measure the previous value.
+    queueMicrotask(resize);
+  }
+
   function handleInput(event: Event) {
-    resize();
+    scheduleResize();
     oninput?.(event);
   }
 
   $effect(() => {
     value;
-    queueMicrotask(resize);
+    scheduleResize();
   });
 </script>
 
@@ -70,5 +77,6 @@
   aria-label={ariaLabel}
   rows="1"
   class="composer-bar-input {className}"
+  style={`max-height: ${maxHeight}px`}
   oninput={handleInput}
 ></textarea>

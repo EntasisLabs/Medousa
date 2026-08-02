@@ -770,9 +770,13 @@
     const onScrollOrResize = () => syncFormatBubble();
     scrollParent?.addEventListener("scroll", onScrollOrResize, { passive: true });
     window.addEventListener("resize", onScrollOrResize);
+    window.visualViewport?.addEventListener("resize", onScrollOrResize);
+    window.visualViewport?.addEventListener("scroll", onScrollOrResize);
     removeFormatBubbleListeners = () => {
       scrollParent?.removeEventListener("scroll", onScrollOrResize);
       window.removeEventListener("resize", onScrollOrResize);
+      window.visualViewport?.removeEventListener("resize", onScrollOrResize);
+      window.visualViewport?.removeEventListener("scroll", onScrollOrResize);
     };
 
     // Defer accepting emits until after mount + node-view setup settles.

@@ -709,6 +709,15 @@ export class ShellTabsStore {
       this.openSurface(surface === "automations" ? "library" : surface, { activate: true });
       return;
     }
+    if (surface === "chat") {
+      const sessionId = chat.sessionId?.trim();
+      if (sessionId) {
+        this.openChat(sessionId, { activate: true });
+      } else {
+        this.openSurface("chat", { activate: true });
+      }
+      return;
+    }
     if (isShellSurfaceTabId(surface) && surface !== "library") {
       this.openSurface(surface as Surface, { activate: true });
       return;
@@ -978,13 +987,18 @@ export class ShellTabsStore {
     if (next === "automations" || next === "workshop") next = "library";
     const groupId = options?.groupId ?? this.activeGroupId;
     if (next === "chat") {
-      const sessionId = chat.sessionId?.trim();
-      if (sessionId) {
-        return this.openChat(sessionId, {
+      const currentDesktopChat = this.tabs.find((tab) => tab.kind === "chat");
+      if (currentDesktopChat?.kind === "chat") {
+        const openOptions: { activate: boolean; groupId?: string } = {
           activate: options?.activate !== false,
-          groupId,
-        });
+        };
+        if (options?.groupId !== undefined) openOptions.groupId = groupId;
+        return this.openChat(currentDesktopChat.sessionId, openOptions);
       }
+      const desktopId = this.activeDesktopId;
+      const targetGroupId = groupId;
+      void chat.newSession({ shellContext: { desktopId, groupId: targetGroupId } });
+      return null;
     }
     if (next === "web") {
       const browserTab = humanBrowser.activeTab;
@@ -1120,7 +1134,9 @@ export class ShellTabsStore {
     try {
       if (tab.kind === "chat") {
         chatStreamPool.acquire(tab.sessionId);
-        if (chat.sessionId !== tab.sessionId) {
+        // On cold restore the persisted ids already match, but the in-memory
+        // transcript is still empty. Rehydrate must fetch that session anyway.
+        if (options?.rehydrate || chat.sessionId !== tab.sessionId) {
           await chat.switchSession(tab.sessionId);
         }
         return;
@@ -1500,12 +1516,28 @@ export class ShellTabsStore {
 
   syncFromLmeWorkspace() {
     const lmeIds = new Set(lmeWorkspace.tabs.map((tab) => tab.tabId));
+    // LME's document catalog is global, but shell presentations belong to a
+    // desktop. Do not mirror a document into the active desktop merely because
+    // the global LME active tab changed; it may already be presented elsewhere.
+    const presentedLmeIds = new Set<string>();
+    const collectPresented = (tabs: ShellTab[]) => {
+      for (const tab of tabs) {
+        if (tab.kind === "lme") presentedLmeIds.add(tab.lmeTabId);
+      }
+    };
+    collectPresented(this.tabs);
+    for (const desktop of this.desktops) {
+      collectPresented(desktop.layout.tabs);
+    }
     for (const lme of lmeWorkspace.tabs) {
       const existing = this.tabs.find(
         (tab) => tab.kind === "lme" && tab.lmeTabId === lme.tabId,
       );
       if (!existing) {
-        this.openLme(lme.tabId, { activate: false, title: lme.title });
+        if (!presentedLmeIds.has(lme.tabId)) {
+          this.openLme(lme.tabId, { activate: false, title: lme.title });
+          presentedLmeIds.add(lme.tabId);
+        }
       } else if (existing.title !== (lme.title?.trim() || existing.title)) {
         this.patchTitle(existing.id, lme.title);
       }

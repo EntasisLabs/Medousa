@@ -6959,10 +6959,16 @@
     bottom: calc(var(--mobile-bottom-chrome-height, 5.5rem) + 0.75rem);
   }
 
-  .mobile-chat-scroll-fab {
+  .chat-scroll-fab {
     @apply fixed z-20 flex h-11 w-11 items-center justify-center rounded-full border border-surface-500/50 bg-surface-800/95 text-surface-100 shadow-lg backdrop-blur-sm transition active:scale-95;
     right: 1rem;
-    bottom: calc(var(--mobile-bottom-chrome-height, 5.5rem) + 0.75rem);
+    bottom: 1.25rem;
+  }
+
+  @media (max-width: 640px) {
+    .chat-scroll-fab {
+      bottom: calc(var(--mobile-bottom-chrome-height, 5.5rem) + 0.75rem);
+    }
   }
 
   .mobile-notes-header {
@@ -7467,8 +7473,11 @@
     @apply flex-col items-stretch gap-0.5 px-2 py-1.5;
   }
 
-  .composer-bar-stacked-input {
-    @apply w-full min-w-0 px-1.5 pt-0.5;
+  .composer-bar.composer-bar-stacked .composer-bar-stacked-input {
+    /* The stacked desktop composer must honor GrowingTextarea's measured
+       height. Its shared base class is flex-1, which makes a column flex
+       parent shrink the textarea back to its one-line flex basis. */
+    @apply w-full min-w-0 flex-none px-1.5 pt-0.5;
   }
 
   /* Quiet under-composer runtime row (Cursor-style meta). */
@@ -7622,7 +7631,7 @@
   }
 
   .composer-bar-input {
-    @apply min-h-[36px] max-h-32 flex-1 resize-none border-0 bg-transparent py-2 pl-2.5 pr-1 text-sm leading-[1.35] text-surface-50 shadow-none placeholder:text-surface-400 focus:border-0 focus:outline-none focus:ring-0;
+    @apply min-h-[36px] max-h-[25rem] flex-1 resize-none border-0 bg-transparent py-2 pl-2.5 pr-1 text-sm leading-[1.35] text-surface-50 shadow-none placeholder:text-surface-400 focus:border-0 focus:outline-none focus:ring-0;
     -webkit-font-smoothing: antialiased;
   }
 
@@ -7693,7 +7702,7 @@
   }
 
   .mobile-composer-dock-input.composer-bar-input {
-    @apply w-full max-h-36 min-h-[34px] flex-none resize-none border-0 bg-transparent py-1.5 pl-1 pr-1 text-base leading-snug text-surface-50 shadow-none placeholder:text-surface-400 focus:border-0 focus:outline-none focus:ring-0;
+    @apply w-full max-h-[22.5rem] min-h-[34px] flex-none resize-none border-0 bg-transparent py-1.5 pl-1 pr-1 text-base leading-snug text-surface-50 shadow-none placeholder:text-surface-400 focus:border-0 focus:outline-none focus:ring-0;
     flex: 0 0 auto;
     letter-spacing: -0.01em;
   }
@@ -11964,6 +11973,7 @@
       0 0 0 1px rgb(0 0 0 / 0.1);
     backdrop-filter: blur(18px) saturate(1.15);
     -webkit-backdrop-filter: blur(18px) saturate(1.15);
+    box-sizing: border-box;
     max-width: calc(100vw - 1rem);
     animation: vault-format-bubble-in 140ms ease-out;
   }
@@ -12020,6 +12030,18 @@
     gap: 0.12rem;
     min-height: 1.85rem;
     padding: 0 0.05rem;
+  }
+
+  @media (max-width: 640px) {
+    .vault-selection-format-bubble {
+      max-width: calc(100dvw - 1rem);
+    }
+
+    .vault-selection-format-bubble__row {
+      flex-wrap: wrap;
+      justify-content: center;
+      row-gap: 0.1rem;
+    }
   }
 
   .vault-selection-format-bubble__sep {

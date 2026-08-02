@@ -31,6 +31,7 @@ vi.mock("$lib/stores/chat.svelte", () => ({
     switchSession: vi.fn(async function (this: { sessionId: string }, id: string) {
       this.sessionId = id;
     }),
+    newSession: vi.fn(async () => {}),
   },
 }));
 
@@ -322,7 +323,12 @@ describe("shellTabs store", () => {
 
     vi.resetModules();
     const { shellTabs: restored } = await import("./shellTabs.svelte");
+    const { chat } = await import("$lib/stores/chat.svelte");
+    vi.mocked(chat.switchSession).mockClear();
     restored.bootstrap();
+    await vi.waitFor(() => {
+      expect(chat.switchSession).toHaveBeenCalledWith("session-a");
+    });
     expect(restored.paneCount).toBe(2);
     expect(restored.activeGroupId).toBe(activeGroup);
     expect(restored.zoomedGroupId).toBe(zoomed);
@@ -467,6 +473,40 @@ describe("shellTabs store", () => {
     }
     expect(chatStreamPool.release).toHaveBeenCalled();
     expect(chatStreamPool.acquire).toHaveBeenCalled();
+  });
+
+  it("does not seed a new desktop with the focused chat from another desktop", async () => {
+    const { shellTabs } = await import("./shellTabs.svelte");
+    const { chat } = await import("$lib/stores/chat.svelte");
+    shellTabs.openChat("session-a", { activate: true });
+    const researchId = shellTabs.createDesktop("Research");
+    await vi.waitFor(() => expect(shellTabs.activeDesktopId).toBe(researchId));
+
+    expect(shellTabs.tabs).toHaveLength(0);
+    expect(shellTabs.openSurface("chat", { activate: true })).toBeNull();
+    expect(chat.newSession).toHaveBeenCalled();
+    expect(shellTabs.tabs).toHaveLength(0);
+  });
+
+  it("does not mirror notes from another desktop when the global LME tab changes", async () => {
+    const { shellTabs } = await import("./shellTabs.svelte");
+    lmeState.tabs = [
+      { tabId: "note-a", kind: "note", path: "notes/a.md", title: "A" },
+      { tabId: "note-b", kind: "note", path: "notes/b.md", title: "B" },
+    ];
+    lmeState.activeTabId = "note-a";
+    shellTabs.openLme("note-a", { activate: true, title: "A" });
+    shellTabs.openLme("note-b", { activate: true, title: "B" });
+
+    const researchId = shellTabs.createDesktop("Research");
+    await vi.waitFor(() => expect(shellTabs.activeDesktopId).toBe(researchId));
+    lmeState.activeTabId = "note-a";
+    shellTabs.syncFromLmeWorkspace();
+
+    expect(shellTabs.tabs).toHaveLength(0);
+    expect(
+      shellTabs.desktops.find((desktop) => desktop.name === "Main")?.layout.tabs,
+    ).toHaveLength(2);
   });
 
   it("allows the same chat session on two desktops without stealing", async () => {

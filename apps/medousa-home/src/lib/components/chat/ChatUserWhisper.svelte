@@ -113,6 +113,7 @@
     class:chat-user-whisper-compact={compact}
     class:chat-user-whisper-mobile={mobile}
     data-chat-user-prompt
+    data-chat-user-message-id={message.id}
   >
     <button
       type="button"
@@ -207,10 +208,10 @@
   }
 
   .chat-user-whisper-expanded .chat-user-whisper-body {
-    max-height: 24rem;
+    max-height: none;
     opacity: 1;
     transform: translateY(0);
-    overflow-y: auto;
+    overflow: visible;
   }
 
   .chat-user-whisper-compact .chat-user-whisper-body {

@@ -256,6 +256,10 @@ export class RuntimeStore {
       this.depthMode = normalizeDepth(response.next_response_depth_mode);
       this.reasoningEffort = normalizeReasoningEffort(response.next_reasoning_effort);
       this.stageRouting = defaultStageRouting(this.provider, this.model);
+      // A successful picker action is an explicit runtime selection. This is
+      // especially important on mobile, where turn options stay implicit until
+      // the host defaults have hydrated.
+      this.defaultsLoaded = true;
       await this.persistSharedDefaults(
         response.should_apply_settings,
         response.should_persist_depth_defaults,
