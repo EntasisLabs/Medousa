@@ -328,9 +328,12 @@ telemetry source, total/available device memory, device reserve, admissible
 device memory, dynamic device budget, estimated device peak, and whether the
 device envelope was enforced. Dynamic WDDM/Vulkan/working-set budgets include
 current process usage, so their remaining headroom is `budget - processUsage`;
-they outrank physical free-memory counters. Native API collectors outrank CLI
-fallbacks for the same device. An authoritative budget with missing process
-usage fails closed while keeping the missing value nullable. The final
+they outrank physical free-memory counters. Medousa reads WDDM budget and usage
+from DXGI on Windows and Vulkan heap budget and estimated usage from
+`VK_EXT_memory_budget`. Vulkan evidence remains scoped to Vulkan allocations
+and is not substituted for CUDA or HIP process memory. Native vendor APIs then
+outrank CLI fallbacks for the same device. An authoritative budget with missing
+process usage fails closed while keeping the missing value nullable. The final
 `admissibleMb` is the smaller of the host and enforced
 device envelopes. Missing device counters stay nullable and produce an explicit
 host-only decision rather than a fabricated device capacity. NVIDIA admission

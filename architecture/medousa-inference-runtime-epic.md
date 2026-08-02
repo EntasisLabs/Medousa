@@ -126,8 +126,12 @@ For the user this means:
 > utilization, power, thermals, and clocks, invoking `amd-smi` JSON only when the
 > native path is absent or unhealthy. Because AMD uses its ABI major to signal
 > breaking structure changes, Medousa validates major 26 before reading
-> versioned structures and deliberately falls back for other majors. Actual
-> WDDM/Vulkan collection, additional qualified AMD SMI ABI majors, broader
+> versioned structures and deliberately falls back for other majors. Windows
+> now reads the current process's local-segment budget and usage directly from
+> DXGI/WDDM, and the portable lane reads device-local heap size, budget, and
+> estimated process usage from `VK_EXT_memory_budget`. WDDM governs the matching
+> Windows backend, while Vulkan evidence remains Vulkan-only so it cannot hide
+> CUDA/HIP allocations. Additional qualified AMD SMI ABI majors, broader
 > hardware samples, and percentile calibration after sufficient runs remain
 > MIR-2 work.
 >

@@ -11,7 +11,9 @@ use medousa_types::{
 use serde_json::Value;
 
 mod amd_smi;
+mod dxgi;
 mod nvml;
+mod vulkan;
 
 const DEVICE_FIELDS: [&str; 15] = [
     "unifiedMemory",
@@ -39,6 +41,17 @@ pub fn collect_device_telemetry() -> Vec<LocalDeviceTelemetrySnapshot> {
 
     #[cfg(all(target_os = "macos", feature = "telemetry-metal"))]
     snapshots.push(collect_metal());
+
+    if let Some(result) = dxgi::try_collect() {
+        match result {
+            Ok(native) => snapshots.extend(native),
+            Err(error) => snapshots.push(unavailable_snapshot(
+                LocalDeviceTelemetrySource::Wddm,
+                GpuBackend::Vulkan,
+                &error,
+            )),
+        }
+    }
 
     let nvml_healthy = if let Some(result) = nvml::try_collect() {
         match result {
@@ -137,6 +150,17 @@ pub fn collect_device_telemetry() -> Vec<LocalDeviceTelemetrySnapshot> {
             Err(error) => snapshots.push(unavailable_snapshot(
                 LocalDeviceTelemetrySource::AmdSmi,
                 GpuBackend::Rocm,
+                &error,
+            )),
+        }
+    }
+
+    if let Some(result) = vulkan::try_collect() {
+        match result {
+            Ok(native) => snapshots.extend(native),
+            Err(error) => snapshots.push(unavailable_snapshot(
+                LocalDeviceTelemetrySource::VulkanBudget,
+                GpuBackend::Vulkan,
                 &error,
             )),
         }

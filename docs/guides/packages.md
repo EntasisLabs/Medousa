@@ -100,13 +100,20 @@ same physical and current-process memory, utilization, power, temperature, and
 clock evidence through the native AMD SMI library on Linux. AMD SMI's ABI major
 is checked before versioned structures are used; incompatible or unhealthy
 libraries fall back to `amd-smi` JSON.
+On Windows, Medousa also queries DXGI/WDDM directly for each hardware adapter's
+current process budget and usage. When a Vulkan loader and
+`VK_EXT_memory_budget` are available, it reads device-local heap size, budget,
+and this process's estimated Vulkan usage without creating a logical device.
+Vulkan evidence is scoped to the Vulkan backend; it is never used as a proxy
+for CUDA or HIP allocations.
 Unsupported counters remain `null` and are
 named in `unavailableFields`; they are never reported as a measured zero. The
 shared contract also distinguishes physical memory from a dynamic per-process
 budget. Metal working-set, Windows WDDM, and Vulkan budget sources subtract the
 current process usage from that budget before admission; physical free VRAM is
-not substituted when a stricter budget exists. Native collectors take
-precedence over command-line fallbacks for the same device. A reported dynamic
+not substituted when a stricter budget exists. Dynamic OS/API budgets take
+precedence over vendor physical-memory counters, which take precedence over
+command-line fallbacks for the same device. A reported dynamic
 budget without trustworthy process usage fails closed and remains `null` in the
 evidence instead of becoming a fabricated zero. The
 manifest never stores the prompt or generated content. A successful, complete

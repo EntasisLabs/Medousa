@@ -276,11 +276,10 @@ fn telemetry_source_rank(source: medousa_types::local::LocalDeviceTelemetrySourc
     use medousa_types::local::LocalDeviceTelemetrySource;
     match source {
         LocalDeviceTelemetrySource::MetalApi
-        | LocalDeviceTelemetrySource::Nvml
-        | LocalDeviceTelemetrySource::AmdSmiLibrary
         | LocalDeviceTelemetrySource::Wddm
         | LocalDeviceTelemetrySource::VulkanBudget => 0,
-        LocalDeviceTelemetrySource::NvidiaSmi | LocalDeviceTelemetrySource::AmdSmi => 1,
+        LocalDeviceTelemetrySource::Nvml | LocalDeviceTelemetrySource::AmdSmiLibrary => 1,
+        LocalDeviceTelemetrySource::NvidiaSmi | LocalDeviceTelemetrySource::AmdSmi => 2,
     }
 }
 
@@ -598,6 +597,29 @@ mod tests {
             admission.device_source,
             Some(LocalDeviceTelemetrySource::Nvml)
         );
+    }
+
+    #[test]
+    fn dynamic_os_budget_precedes_vendor_physical_memory() {
+        let mut cuda_probe = probe(32, 24);
+        cuda_probe.gpu_backend = GpuBackend::Cuda;
+        let mut nvml = device(GpuBackend::Cuda, 0, 24 * 1024, Some(20 * 1024));
+        nvml.source = LocalDeviceTelemetrySource::Nvml;
+        let mut wddm = device(GpuBackend::Cuda, 0, 24 * 1024, Some(2 * 1024));
+        wddm.source = LocalDeviceTelemetrySource::Wddm;
+        wddm.memory_budget_mb = Some(3 * 1024);
+        wddm.process_memory_used_mb = Some(1024);
+        let admission = evaluate_model_admission_with_devices(
+            &entry("small", 1, 2, true),
+            &cuda_probe,
+            &[nvml, wddm],
+        );
+        assert!(!admission.admitted);
+        assert_eq!(
+            admission.device_source,
+            Some(LocalDeviceTelemetrySource::Wddm)
+        );
+        assert_eq!(admission.device_available_mb, Some(2 * 1024));
     }
 
     #[cfg(all(target_os = "macos", feature = "telemetry-metal"))]
