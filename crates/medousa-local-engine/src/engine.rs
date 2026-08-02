@@ -161,31 +161,6 @@ impl Default for LocalEngineRuntime {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::{LocalEngineRuntime, RequestActivity};
-    use medousa_types::local::LocalRuntimePhase;
-    use std::time::Duration;
-
-    #[tokio::test]
-    async fn unload_always_returns_runtime_to_cold() {
-        let runtime = LocalEngineRuntime::new();
-        runtime.unload().await.unwrap();
-        let status = runtime.status().await;
-        assert!(!status.loaded);
-        assert_eq!(status.phase, LocalRuntimePhase::Cold);
-    }
-
-    #[test]
-    fn active_response_body_blocks_idle_eviction() {
-        let activity = RequestActivity::new();
-        activity.begin();
-        assert!(!activity.is_idle_for(Duration::ZERO));
-        activity.finish();
-        assert!(activity.is_idle_for(Duration::ZERO));
-    }
-}
-
 pub async fn load_embedded_engine(config: LocalEngineConfig) -> Result<LoadedEngineHandle, String> {
     use mistralrs_core::{TokenSource, initialize_logging};
     use mistralrs_server_core::mistralrs_for_server_builder::{
@@ -410,4 +385,29 @@ fn build_model_selected(
         matformer_config_path: None,
         matformer_slice_name: None,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{LocalEngineRuntime, RequestActivity};
+    use medousa_types::local::LocalRuntimePhase;
+    use std::time::Duration;
+
+    #[tokio::test]
+    async fn unload_always_returns_runtime_to_cold() {
+        let runtime = LocalEngineRuntime::new();
+        runtime.unload().await.unwrap();
+        let status = runtime.status().await;
+        assert!(!status.loaded);
+        assert_eq!(status.phase, LocalRuntimePhase::Cold);
+    }
+
+    #[test]
+    fn active_response_body_blocks_idle_eviction() {
+        let activity = RequestActivity::new();
+        activity.begin();
+        assert!(!activity.is_idle_for(Duration::ZERO));
+        activity.finish();
+        assert!(activity.is_idle_for(Duration::ZERO));
+    }
 }
