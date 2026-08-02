@@ -15,6 +15,13 @@ fn default_medousa_data_dir() -> PathBuf {
         .join("medousa")
 }
 
+/// Per-user host coordination remains at the stable platform location even
+/// when a workshop redirects its own model/data directory. Concurrent workers
+/// that target the same machine resources must see the same activation ledger.
+pub fn local_inference_coordination_dir() -> PathBuf {
+    default_medousa_data_dir().join("runtime")
+}
+
 fn data_dir_redirect_path() -> PathBuf {
     default_medousa_data_dir().join(DATA_DIR_REDIRECT_FILENAME)
 }

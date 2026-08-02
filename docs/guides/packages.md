@@ -68,7 +68,10 @@ cannot fit, it stays cold and Medousa explains which envelope refused it instead
 of trying the allocation. Missing device counters are reported explicitly and
 fall back to host-only admission. Automatic recommendations prefer the
 strongest smaller model that fits right now. An idle local worker exits after
-five minutes.
+five minutes. During model loading, Medousa also holds a short-lived per-user
+activation reservation. This prevents two workers or workshops from both
+claiming the same not-yet-allocated headroom at once; crashed-process
+reservations are reclaimed automatically.
 
 ### Benchmark an installed local model
 

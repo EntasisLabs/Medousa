@@ -104,9 +104,12 @@ For the user this means:
 > device snapshot attached to every benchmark phase. Unsupported counters are
 > named rather than zero-filled. Pre-load admission now selects device zero
 > deterministically, reserves accelerator headroom, and intersects the device
-> envelope with the host envelope when capacity counters exist. WDDM/Vulkan
-> budgets, production-native NVML/AMD SMI collectors, and measured peak
-> calibration remain MIR-2 work.
+> envelope with the host envelope when capacity counters exist. Automatic model
+> selection uses the same combined evidence. A per-user, cross-process
+> activation ledger prevents concurrent workers from spending the same pending
+> host/device budget, releases after allocation, reclaims dead processes, and
+> fails closed on corrupt state. WDDM/Vulkan budgets, production-native
+> NVML/AMD SMI collectors, and measured peak calibration remain MIR-2 work.
 >
 > MIR-0 now has a content-free `medousa_local_bench` spine for installed models.
 > It captures the recipe and admission decision, load/stream/unload timing, TTFT,

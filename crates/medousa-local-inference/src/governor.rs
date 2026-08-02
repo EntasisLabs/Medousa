@@ -123,6 +123,9 @@ pub fn evaluate_model_admission_with_devices(
         max_batch_size: SAFE_MAX_BATCH_SIZE,
         device_enforced: device.is_some(),
         device_source: device.as_ref().map(|device| device.source),
+        device_backend: device.as_ref().map(|device| device.backend),
+        device_index: device.as_ref().and_then(|device| device.index),
+        device_uuid: device.as_ref().and_then(|device| device.uuid.clone()),
         device_name: device.as_ref().and_then(|device| device.name.clone()),
         device_total_mb: device.as_ref().and_then(|device| device.total_mb),
         device_available_mb: device.as_ref().map(|device| device.available_mb),
@@ -136,6 +139,9 @@ pub fn evaluate_model_admission_with_devices(
 
 struct DeviceEnvelope {
     source: medousa_types::local::LocalDeviceTelemetrySource,
+    backend: GpuBackend,
+    index: Option<u32>,
+    uuid: Option<String>,
     name: Option<String>,
     total_mb: Option<u64>,
     available_mb: u64,
@@ -178,6 +184,9 @@ fn device_envelope(
         .unwrap_or(MIN_DEVICE_RESERVE_MB);
     Some(DeviceEnvelope {
         source: device.source,
+        backend: device.backend,
+        index: device.device_index,
+        uuid: device.device_uuid.clone(),
         name: device.device_name.clone(),
         total_mb,
         available_mb,
@@ -198,6 +207,21 @@ pub fn admission_for_model_id(model_id: &str) -> Result<LocalResourceAdmission, 
     let devices = super::telemetry::collect_device_telemetry();
     Ok(evaluate_model_admission_with_devices(
         entry, &probe, &devices,
+    ))
+}
+
+pub fn recommended_model_admission() -> Result<LocalResourceAdmission, String> {
+    let probe = super::hardware::probe_hardware();
+    let devices = super::telemetry::collect_device_telemetry();
+    let tier = super::hardware::score_tier(&probe);
+    let entry = recommended_admitted_model_with_devices(&probe, &devices).ok_or_else(|| {
+        format!(
+            "no local model fits the safe envelope for hardware tier {}",
+            tier.as_str()
+        )
+    })?;
+    Ok(evaluate_model_admission_with_devices(
+        &entry, &probe, &devices,
     ))
 }
 

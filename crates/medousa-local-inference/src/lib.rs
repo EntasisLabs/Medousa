@@ -12,6 +12,7 @@ mod catalog;
 mod engine;
 mod governor;
 mod hardware;
+mod lease;
 mod paths;
 mod process;
 mod store;
@@ -38,10 +39,12 @@ pub use hardware::{
     build_hardware_profile, hardware_profile_path, probe_hardware, read_hardware_profile,
     score_tier, write_hardware_profile, GpuBackend, HardwareProfile, HardwareProbe, HardwareTier,
 };
+pub use lease::{LocalResourceActivationLease, acquire_activation_lease};
 pub use governor::{
     admission_for_model_id, critical_available_mb, evaluate_model_admission,
     evaluate_model_admission_with_devices, recommended_admitted_model,
-    recommended_admitted_model_with_devices, system_reserve_mb, tier_recipe_cap_mb,
+    recommended_admitted_model_with_devices, recommended_model_admission, system_reserve_mb,
+    tier_recipe_cap_mb,
     DEFAULT_IDLE_TIMEOUT_SECS, SAFE_MAX_BATCH_SIZE, SAFE_MAX_SEQ_LEN,
 };
 pub use process::{

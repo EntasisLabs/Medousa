@@ -10522,6 +10522,17 @@
             "format": "uint64",
             "minimum": 0.0
           },
+          "deviceBackend": {
+            "default": null,
+            "anyOf": [
+              {
+                "$ref": "#/definitions/GpuBackend"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "deviceEnforced": {
             "default": false,
             "type": "boolean"
@@ -10533,6 +10544,15 @@
               "null"
             ],
             "format": "uint64",
+            "minimum": 0.0
+          },
+          "deviceIndex": {
+            "default": null,
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
             "minimum": 0.0
           },
           "deviceName": {
@@ -10577,6 +10597,13 @@
             ],
             "format": "uint64",
             "minimum": 0.0
+          },
+          "deviceUuid": {
+            "default": null,
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "estimatedConversionMb": {
             "type": "integer",
@@ -11438,6 +11465,17 @@
         "format": "uint64",
         "minimum": 0.0
       },
+      "deviceBackend": {
+        "default": null,
+        "anyOf": [
+          {
+            "$ref": "#/definitions/GpuBackend"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
       "deviceEnforced": {
         "default": false,
         "type": "boolean"
@@ -11449,6 +11487,15 @@
           "null"
         ],
         "format": "uint64",
+        "minimum": 0.0
+      },
+      "deviceIndex": {
+        "default": null,
+        "type": [
+          "integer",
+          "null"
+        ],
+        "format": "uint32",
         "minimum": 0.0
       },
       "deviceName": {
@@ -11493,6 +11540,13 @@
         ],
         "format": "uint64",
         "minimum": 0.0
+      },
+      "deviceUuid": {
+        "default": null,
+        "type": [
+          "string",
+          "null"
+        ]
       },
       "estimatedConversionMb": {
         "type": "integer",
@@ -11551,6 +11605,18 @@
       }
     },
     "definitions": {
+      "GpuBackend": {
+        "type": "string",
+        "enum": [
+          "none",
+          "metal",
+          "cuda",
+          "rocm",
+          "vulkan",
+          "directml",
+          "other"
+        ]
+      },
       "HardwareTier": {
         "type": "string",
         "enum": [

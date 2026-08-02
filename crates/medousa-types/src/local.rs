@@ -51,6 +51,20 @@ pub enum GpuBackend {
     Other,
 }
 
+impl GpuBackend {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::Metal => "metal",
+            Self::Cuda => "cuda",
+            Self::Rocm => "rocm",
+            Self::Vulkan => "vulkan",
+            Self::DirectMl => "directml",
+            Self::Other => "other",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
@@ -276,6 +290,12 @@ pub struct LocalResourceAdmission {
     pub device_enforced: bool,
     #[serde(default)]
     pub device_source: Option<LocalDeviceTelemetrySource>,
+    #[serde(default)]
+    pub device_backend: Option<GpuBackend>,
+    #[serde(default)]
+    pub device_index: Option<u32>,
+    #[serde(default)]
+    pub device_uuid: Option<String>,
     #[serde(default)]
     pub device_name: Option<String>,
     #[serde(default)]

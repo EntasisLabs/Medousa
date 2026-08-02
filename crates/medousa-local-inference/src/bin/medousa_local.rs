@@ -16,17 +16,16 @@ use std::sync::Arc;
 use once_cell::sync::Lazy;
 
 #[cfg(feature = "embedded-inference")]
-use medousa_local_inference::{
-    admission_for_model_id, builtin_catalog, compiled_backends, config_from_catalog_entry,
-    recommended_engine_config, LocalEngineConfig, DEFAULT_IDLE_TIMEOUT_SECS,
-    DEFAULT_LOCAL_ENGINE_BIND, SAFE_MAX_BATCH_SIZE, SAFE_MAX_SEQ_LEN,
-};
-#[cfg(feature = "embedded-inference")]
 use medousa_local_engine::{LocalEngineConfig as EngineConfig, LocalEngineRuntime};
+#[cfg(feature = "embedded-inference")]
+use medousa_local_inference::{
+    DEFAULT_IDLE_TIMEOUT_SECS, DEFAULT_LOCAL_ENGINE_BIND, LocalEngineConfig, SAFE_MAX_BATCH_SIZE,
+    SAFE_MAX_SEQ_LEN, acquire_activation_lease, admission_for_model_id, builtin_catalog,
+    compiled_backends, config_from_catalog_entry, recommended_engine_config,
+};
 
 #[cfg(feature = "embedded-inference")]
-static RUNTIME: Lazy<Arc<LocalEngineRuntime>> =
-    Lazy::new(|| Arc::new(LocalEngineRuntime::new()));
+static RUNTIME: Lazy<Arc<LocalEngineRuntime>> = Lazy::new(|| Arc::new(LocalEngineRuntime::new()));
 
 #[cfg(not(feature = "embedded-inference"))]
 fn main() {
@@ -53,8 +52,7 @@ async fn main() -> anyhow::Result<()> {
         return Ok(());
     }
 
-    let bind = flag_value(&args, "--bind")
-        .unwrap_or_else(|| DEFAULT_LOCAL_ENGINE_BIND.to_string());
+    let bind = flag_value(&args, "--bind").unwrap_or_else(|| DEFAULT_LOCAL_ENGINE_BIND.to_string());
     let load_recommended = args.iter().any(|arg| arg == "--load-recommended");
     let model_id = flag_value(&args, "--model-id");
     let model_repo = flag_value(&args, "--model-repo");
@@ -93,12 +91,13 @@ async fn main() -> anyhow::Result<()> {
         anyhow::bail!("provide --load-recommended, --model-id, or --model-repo + --model-alias");
     };
 
-    match admission_for_model_id(&medousa_config.model_alias) {
+    let activation_lease = match admission_for_model_id(&medousa_config.model_alias) {
         Ok(admission) if admission.admitted => {
             eprintln!(
                 "medousa_local resource admission: {}",
                 serde_json::to_string(&admission)?
             );
+            Some(acquire_activation_lease(&admission).map_err(anyhow::Error::msg)?)
         }
         Ok(admission) => anyhow::bail!(admission.rationale),
         Err(err)
@@ -107,24 +106,23 @@ async fn main() -> anyhow::Result<()> {
                 .is_some_and(|value| matches!(value.trim(), "1" | "true" | "yes")) =>
         {
             eprintln!("medousa_local warning: {err}; unestimated load explicitly allowed");
+            None
         }
         Err(err) => anyhow::bail!(
             "{err}. Refusing an unestimated model load; set MEDOUSA_LOCAL_ALLOW_UNESTIMATED=1 only for controlled benchmarking"
         ),
-    }
+    };
 
     let status = RUNTIME
         .load(to_engine_config(medousa_config))
         .await
         .map_err(anyhow::Error::msg)?;
+    drop(activation_lease);
 
     println!(
         "medousa_local ready at {} ({})",
         status.base_url,
-        status
-            .model_alias
-            .as_deref()
-            .unwrap_or("gemma")
+        status.model_alias.as_deref().unwrap_or("gemma")
     );
 
     tokio::select! {

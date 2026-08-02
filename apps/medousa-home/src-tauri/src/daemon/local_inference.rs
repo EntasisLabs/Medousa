@@ -1,15 +1,15 @@
+use crate::daemon::DaemonState;
 use crate::daemon::sdk;
 use crate::daemon::sse::stream_sse_json_workshop;
 use crate::daemon::workshop_http;
-use crate::daemon::DaemonState;
+use crate::workshop_registry::{PERSONAL_WORKSHOP_ID, load_registry};
 use crate::workshop_runtime;
-use crate::workshop_registry::{load_registry, PERSONAL_WORKSHOP_ID};
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
+use medousa_types::LocalResourceAdmission;
 use medousa_types::{
     LocalCatalogResponse, LocalEngineStatus, LocalHardwareResponse, LocalModelsResponse,
     LocalRuntimePhase, ModelDownloadProgress,
 };
-#[cfg(not(any(target_os = "ios", target_os = "android")))]
-use medousa_types::LocalResourceAdmission;
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, State};
 use tokio::sync::watch;
@@ -22,17 +22,10 @@ pub struct LocalInferenceStreamState {
 fn require_local_resource_admission(
     model_id: Option<&str>,
 ) -> Result<LocalResourceAdmission, String> {
-    let selected_model = match model_id.map(str::trim).filter(|value| !value.is_empty()) {
-        Some(model_id) => model_id.to_string(),
-        None => {
-            let probe = medousa_local_inference::probe_hardware();
-            let tier = medousa_local_inference::score_tier(&probe);
-            medousa_local_inference::recommended_admitted_model(&probe)
-                .map(|entry| entry.id)
-                .ok_or_else(|| format!("no local model fits the safe envelope for hardware tier {}", tier.as_str()))?
-        }
+    let admission = match model_id.map(str::trim).filter(|value| !value.is_empty()) {
+        Some(model_id) => medousa_local_inference::admission_for_model_id(model_id)?,
+        None => medousa_local_inference::recommended_model_admission()?,
     };
-    let admission = medousa_local_inference::admission_for_model_id(&selected_model)?;
     if admission.admitted {
         Ok(admission)
     } else {
