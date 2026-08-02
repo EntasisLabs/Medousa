@@ -80,6 +80,7 @@ else
   shopt -s nullglob
   for pattern in \
     "*.tar.gz" \
+    "*.zip" "*.vsix" \
     "*.dmg" "*.msi" "*.exe" \
     "*.AppImage" "*.deb" \
     "model-*.manifest.json" \
@@ -112,6 +113,8 @@ fi
 
 GEN_ARGS=(--dist "${FINAL_DIR}" --version "${VERSION}" --channel "${CHANNEL}")
 [[ -n "${BASE_URL_OVERRIDE}" ]] && GEN_ARGS+=(--base-url "${BASE_URL_OVERRIDE}")
+MANIFEST_ARGS=("${GEN_ARGS[@]}")
+[[ "${FULL_TRAIN}" -eq 0 && -n "${MERGE_BASE_DIR}" ]] && MANIFEST_ARGS+=(--allow-empty)
 
 MEDOUSA_RELEASE_CHANNEL="${CHANNEL}"
 [[ -n "${BASE_URL_OVERRIDE}" ]] && MEDOUSA_RELEASE_BASE_URL="${BASE_URL_OVERRIDE}"
@@ -119,7 +122,7 @@ MEDOUSA_RELEASE_CHANNEL="${CHANNEL}"
 DELTA_MANIFEST="${FINAL_DIR}/release-manifest.delta.json"
 DELTA_BOOTSTRAP="${FINAL_DIR}/installer-bootstrap.delta.json"
 
-"${SCRIPT_DIR}/generate-release-manifest.sh" "${GEN_ARGS[@]}"
+"${SCRIPT_DIR}/generate-release-manifest.sh" "${MANIFEST_ARGS[@]}"
 mv -f "${FINAL_DIR}/release-manifest.json" "${DELTA_MANIFEST}"
 "${SCRIPT_DIR}/generate-installer-bootstrap.sh" "${GEN_ARGS[@]}"
 # Bootstrap generator may no-op / fail assert when no desktop/installer in staging.

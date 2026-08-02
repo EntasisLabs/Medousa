@@ -47,6 +47,44 @@ jobs:
       - run: npm ci
       - run: npm run check
 
+  integrations:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            integrations/vscode/package-lock.json
+            integrations/obsidian/package-lock.json
+            integrations/browser/package-lock.json
+      - uses: rhysd/action-setup-vim@v1
+        with:
+          version: v0.10.4
+          neovim: true
+      - name: Install integration dependencies
+        run: |
+          npm ci --prefix integrations/vscode
+          npm ci --prefix integrations/obsidian
+          npm ci --prefix integrations/browser
+      - name: Build and test Node integrations
+        run: |
+          npm run build --prefix integrations/vscode
+          npm test --prefix integrations/vscode
+          npm run build --prefix integrations/obsidian
+          npm test --prefix integrations/obsidian
+          npm run build --prefix integrations/browser
+          npm test --prefix integrations/browser
+      - name: Test Neovim integration
+        env:
+          NVIM_LOG_FILE: /tmp/medousa-nvim.log
+        run: |
+          nvim --headless -n -i NONE -u NONE --cmd 'set rtp+=integrations/neovim' -l integrations/neovim/tests/smoke.lua
+          nvim --headless -n -i NONE -u NONE --cmd 'set rtp+=integrations/neovim' -l integrations/neovim/tests/ui_smoke.lua
+      - name: Verify release bundles
+        run: ./scripts/release/package-integrations.sh --output dist/integrations
+
   docs:
     runs-on: ubuntu-latest
     steps:

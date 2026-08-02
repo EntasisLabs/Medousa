@@ -16,6 +16,8 @@ Per-package stamps live in [`scripts/release/package-versions.toml`](../../scrip
 | `local-brain` | `medousa_local` | Offline inference |
 | `desktop` / `installer` | app bundles | Tauri |
 
+Companion integrations are independently stamped in [`scripts/release/integration-versions.toml`](../../scripts/release/integration-versions.toml). `ship_integrations` builds VS Code (`.vsix`), Neovim (`.tar.gz`), Browser (`.zip`), and Obsidian (`.zip`) bundles without changing their versions to the Medousa train version.
+
 There is **no** `medousa-v*` / `engine-suite` archive. Operators install extras with `medousa pull <name>`.
 
 After dropping the suite, the **next** publish that should clean the channel index is a **full train** (`ship_all` or `v*` tag). Targeted merges keep untouched keys (including any leftover `cli-*` / suite entries from older channels).
@@ -177,7 +179,8 @@ CI asserts all package stamps equal the tag, builds the full matrix, and **repla
 | Engine / CLI / TUI | `ship_engine` | `engine` |
 | MCP only | `ship_mcp` | `mcp-gateway` |
 | Offline brain | `ship_local_brain` | `local-brain` |
-| Everything at one version | bump **all** ids, then `ship_all` **or** push a `v*` tag | all ids equal |
+| Companion integrations | `ship_integrations` | `integration-versions.toml`; app versions remain independent |
+| Everything at one version | bump **all** package ids, then `ship_all` **or** push a `v*` tag | all package ids equal; integrations ship at their own stamps |
 | Channel-head packages only (mixed stamps) | `ship_all` with mixed `package-versions.toml` | auto-ships packages already at the channel head (e.g. 0.6.0 engine+desktop while adapters stay 0.4.1) |
 
 ### Desktop-only without rebuilding the daemon

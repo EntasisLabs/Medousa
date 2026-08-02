@@ -43,6 +43,10 @@ medousa/stable/
   engine-v0.1.0-….tar.gz               # launcher + daemon + CLI + TUI
   adapter-telegram-v0.1.0-….tar.gz
   mcp-gateway-v0.1.0-….tar.gz
+  medousa-vscode-v0.1.0.vsix
+  medousa-neovim-v0.1.0.tar.gz
+  medousa-browser-v0.1.0.zip
+  medousa-obsidian-v0.1.0.zip
   …
 ```
 
@@ -107,6 +111,7 @@ Run on each platform, then merge artifacts into one `dist/` folder on the machin
 | Bump stamps | Edit `scripts/release/package-versions.toml` (only packages you ship) |
 | Build selected bins | `./scripts/release/build.sh --components engine,adapters,mcp,coding-engine,shell-session` |
 | Package selected | `./scripts/release/package-all-components.sh --packages engine,…` |
+| Package companions | `./scripts/release/package-integrations.sh` (independent versions) |
 | Build desktop | `cd apps/medousa-home && npm run tauri build` |
 | Sign Windows desktop | `.\scripts\release\sign-windows.ps1 dist\final\Medousa_*_x64-setup.exe` (required before publish) |
 | Copy all artifacts into | `dist/` |

@@ -55,6 +55,11 @@ on:
         required: true
         type: boolean
         default: false
+      ship_integrations:
+        description: Ship VS Code, Neovim, Browser, and Obsidian companions (independent versions)
+        required: true
+        type: boolean
+        default: false
       reuse_r2_daemon:
         description: "Desktop-only — reuse medousa_daemon from published R2 engine (skip daemon rebuild). Ignored when ship_engine is on."
         required: true
@@ -139,6 +144,7 @@ jobs:
       ship_desktop: ${{ steps.sel.outputs.ship_desktop }}
       ship_installer: ${{ steps.sel.outputs.ship_installer }}
       ship_local_brain: ${{ steps.sel.outputs.ship_local_brain }}
+      ship_integrations: ${{ steps.sel.outputs.ship_integrations }}
       reuse_r2_daemon: ${{ steps.sel.outputs.reuse_r2_daemon }}
       daemon_engine_version: ${{ steps.sel.outputs.daemon_engine_version }}
       full_train: ${{ steps.sel.outputs.full_train }}
@@ -161,7 +167,7 @@ jobs:
             VERSION="${GITHUB_REF_NAME#v}"
             TAG="${GITHUB_REF_NAME}"
             medousa_assert_full_train_versions "${VERSION}"
-            E=true; A=true; M=true; C=true; S=true; D=true; I=true; L=true
+            E=true; A=true; M=true; C=true; S=true; D=true; I=true; L=true; X=true
           else
             FULL=0
             if [[ -n "${{ github.event.inputs.version }}" ]]; then
@@ -183,7 +189,7 @@ jobs:
               if medousa_package_versions_lockstep "${VERSION}"; then
                 medousa_assert_full_train_versions "${VERSION}"
                 FULL=1
-                E=true; A=true; M=true; C=true; S=true; D=true; I=true; L=true
+                E=true; A=true; M=true; C=true; S=true; D=true; I=true; L=true; X=true
                 echo "ship_all: package stamps lockstep at ${VERSION} — full train"
               else
                 # Mixed stamps (e.g. 0.6.0 engine/desktop + 0.4.1 adapters): ship only
@@ -197,6 +203,7 @@ jobs:
                 D="${ship_desktop}"
                 I="${ship_installer}"
                 L="${ship_local_brain}"
+                X=true
                 echo "::warning::ship_all with mixed package-versions.toml stamps — shipping channel-head ${VERSION} packages only (engine=${E} adapters=${A} mcp=${M} coding-engine=${C} shell-session=${S} desktop=${D} installer=${I} local-brain=${L}). Push a v${VERSION} tag after bumping every stamp for a true full train."
               fi
             else
@@ -208,9 +215,10 @@ jobs:
               D="${{ github.event.inputs.ship_desktop }}"
               I="${{ github.event.inputs.ship_installer }}"
               L="${{ github.event.inputs.ship_local_brain }}"
+              X="${{ github.event.inputs.ship_integrations }}"
             fi
 
-            if [[ "${E}" != "true" && "${A}" != "true" && "${M}" != "true" && "${C}" != "true" && "${S}" != "true" && "${D}" != "true" && "${I}" != "true" && "${L}" != "true" ]]; then
+            if [[ "${E}" != "true" && "${A}" != "true" && "${M}" != "true" && "${C}" != "true" && "${S}" != "true" && "${D}" != "true" && "${I}" != "true" && "${L}" != "true" && "${X}" != "true" ]]; then
               echo "::error::Select at least one ship_* component (or ship_all). For ship_all, bump package-versions.toml so at least one package matches the channel head."
               exit 1
             fi
@@ -230,13 +238,14 @@ jobs:
             echo "ship_desktop=${D}"
             echo "ship_installer=${I}"
             echo "ship_local_brain=${L}"
+            echo "ship_integrations=${X}"
             echo "reuse_r2_daemon=${REUSE_R2}"
             echo "daemon_engine_version=${DAEMON_ENGINE_V}"
             echo "full_train=${FULL}"
             echo "version=${VERSION}"
             echo "tag=${TAG}"
           } >> "${GITHUB_OUTPUT}"
-          echo "Release selection: engine=${E} adapters=${A} mcp=${M} coding-engine=${C} shell-session=${S} desktop=${D} installer=${I} local-brain=${L} full=${FULL} reuse_r2_daemon=${REUSE_R2} daemon_engine=${DAEMON_ENGINE_V} v=${VERSION}"
+          echo "Release selection: engine=${E} adapters=${A} mcp=${M} coding-engine=${C} shell-session=${S} desktop=${D} installer=${I} local-brain=${L} integrations=${X} full=${FULL} reuse_r2_daemon=${REUSE_R2} daemon_engine=${DAEMON_ENGINE_V} v=${VERSION}"
 
   # Daemon (+ launcher) build. Feeds desktop sidecar and engine packaging so
   # other jobs do not recompile medousa_daemon.
@@ -1168,6 +1177,48 @@ jobs:
           path: dist/medousa_local-*.tar.gz
           if-no-files-found: error
 
+  build-integrations:
+    name: companion integrations
+    needs: prepare
+    if: needs.prepare.outputs.ship_integrations == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            integrations/vscode/package-lock.json
+            integrations/obsidian/package-lock.json
+            integrations/browser/package-lock.json
+      - uses: rhysd/action-setup-vim@v1
+        with:
+          version: v0.10.4
+          neovim: true
+      - name: Install integration dependencies
+        run: |
+          npm ci --prefix integrations/vscode
+          npm ci --prefix integrations/obsidian
+          npm ci --prefix integrations/browser
+      - name: Test integration clients
+        env:
+          NVIM_LOG_FILE: /tmp/medousa-nvim.log
+        run: |
+          npm test --prefix integrations/vscode
+          npm test --prefix integrations/obsidian
+          npm test --prefix integrations/browser
+          nvim --headless -n -i NONE -u NONE --cmd 'set rtp+=integrations/neovim' -l integrations/neovim/tests/smoke.lua
+          nvim --headless -n -i NONE -u NONE --cmd 'set rtp+=integrations/neovim' -l integrations/neovim/tests/ui_smoke.lua
+      - name: Build release bundles
+        run: ./scripts/release/package-integrations.sh --output dist/integrations
+      - name: Upload integration artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: medousa-integrations
+          path: dist/integrations/*
+          if-no-files-found: error
+
   release:
     name: publish (GitHub + R2)
     needs:
@@ -1180,6 +1231,7 @@ jobs:
         build-desktop,
         build-installer,
         build-local-brain,
+        build-integrations,
       ]
     # Skipped legs are OK — only fail if a selected job failed.
     if: |
@@ -1192,6 +1244,7 @@ jobs:
       (needs.build-desktop.result == 'success' || needs.build-desktop.result == 'skipped') &&
       (needs.build-installer.result == 'success' || needs.build-installer.result == 'skipped') &&
       (needs.build-local-brain.result == 'success' || needs.build-local-brain.result == 'skipped') &&
+      (needs.build-integrations.result == 'success' || needs.build-integrations.result == 'skipped') &&
       (
         needs.build-engine.result == 'success' ||
         needs.build-adapters.result == 'success' ||
@@ -1199,7 +1252,8 @@ jobs:
         needs.build-coder.result == 'success' ||
         needs.build-desktop.result == 'success' ||
         needs.build-installer.result == 'success' ||
-        needs.build-local-brain.result == 'success'
+        needs.build-local-brain.result == 'success' ||
+        needs.build-integrations.result == 'success'
       )
     runs-on: ${{ vars.MEDOUSA_SELF_HOSTED == 'true' && fromJSON('["self-hosted","Linux","X64","medousa-publish"]') || 'ubuntu-latest' }}
     environment: MEDOUSA
@@ -1227,6 +1281,10 @@ jobs:
           find dist/artifacts -name 'coding-engine-*.tar.gz' -exec cp {} dist/final/ \;
           find dist/artifacts -name 'shell-session-*.tar.gz' -exec cp {} dist/final/ \;
           find dist/artifacts -name 'medousa_local-*.tar.gz' -exec cp {} dist/final/ \;
+          find dist/artifacts -name 'medousa-vscode-v*.vsix' -exec cp {} dist/final/ \;
+          find dist/artifacts -name 'medousa-neovim-v*.tar.gz' -exec cp {} dist/final/ \;
+          find dist/artifacts -name 'medousa-browser-v*.zip' -exec cp {} dist/final/ \;
+          find dist/artifacts -name 'medousa-obsidian-v*.zip' -exec cp {} dist/final/ \;
           find dist/artifacts -type f \( \
             -name 'MedousaInstaller*' -o \
             -name 'Medousa Installer*' -o \
@@ -1239,7 +1297,7 @@ jobs:
             \) -exec cp {} dist/final/ \;
           : > dist/final/SHA256SUMS
           shopt -s nullglob
-          for archive in dist/final/*.tar.gz dist/final/*.dmg dist/final/*.AppImage dist/final/*.deb dist/final/*.msi dist/final/*.exe; do
+          for archive in dist/final/*.tar.gz dist/final/*.zip dist/final/*.vsix dist/final/*.dmg dist/final/*.AppImage dist/final/*.deb dist/final/*.msi dist/final/*.exe; do
             [[ -f "$archive" ]] || continue
             (cd dist/final && sha256sum "$(basename "$archive")") >> dist/final/SHA256SUMS
           done
@@ -1304,6 +1362,10 @@ jobs:
             dist/final/adapter-*.tar.gz
             dist/final/mcp-gateway-*.tar.gz
             dist/final/medousa_local-*.tar.gz
+            dist/final/medousa-vscode-v*.vsix
+            dist/final/medousa-neovim-v*.tar.gz
+            dist/final/medousa-browser-v*.zip
+            dist/final/medousa-obsidian-v*.zip
             dist/final/release-manifest.json
             dist/final/installer-bootstrap.json
             dist/final/MedousaInstaller*
