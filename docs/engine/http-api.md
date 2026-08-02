@@ -332,8 +332,11 @@ host-only decision rather than a fabricated device capacity. Before allocating,
 the worker converts an admitted decision into a short-lived cross-process
 activation lease; concurrent loads cannot spend the same host or device
 headroom, and dead-process leases are reclaimed. The current safe baseline is
-4K context, batch/concurrency 1. The worker exits after five idle minutes and
-terminates under critical host-memory pressure.
+4K context, batch/concurrency 1. When a matching content-free benchmark
+calibration exists, the record also exposes its sample count, observed host and
+device peaks, static estimate, and margin. Calibrated high-water marks may raise
+the enforced peak but never lower the static estimate. The worker exits after
+five idle minutes and terminates under critical host-memory pressure.
 
 Provider id: `medousa-local` → `http://127.0.0.1:7421/v1`
 

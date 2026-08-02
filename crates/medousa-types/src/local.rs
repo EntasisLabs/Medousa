@@ -282,7 +282,19 @@ pub struct LocalResourceAdmission {
     pub admissible_mb: u64,
     pub estimated_steady_mb: u64,
     pub estimated_conversion_mb: u64,
+    #[serde(default)]
+    pub static_estimated_peak_mb: u64,
     pub estimated_peak_mb: u64,
+    #[serde(default)]
+    pub calibration_applied: bool,
+    #[serde(default)]
+    pub calibration_sample_count: u32,
+    #[serde(default)]
+    pub calibration_observed_host_peak_mb: Option<u64>,
+    #[serde(default)]
+    pub calibration_observed_device_peak_mb: Option<u64>,
+    #[serde(default)]
+    pub calibration_margin_percent: Option<u8>,
     pub critical_available_mb: u64,
     pub max_seq_len: usize,
     pub max_batch_size: usize,

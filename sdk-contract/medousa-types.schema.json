@@ -10499,6 +10499,43 @@
             "format": "uint64",
             "minimum": 0.0
           },
+          "calibrationApplied": {
+            "default": false,
+            "type": "boolean"
+          },
+          "calibrationMarginPercent": {
+            "default": null,
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint8",
+            "minimum": 0.0
+          },
+          "calibrationObservedDevicePeakMb": {
+            "default": null,
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "calibrationObservedHostPeakMb": {
+            "default": null,
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "calibrationSampleCount": {
+            "default": 0,
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
           "criticalAvailableMb": {
             "type": "integer",
             "format": "uint64",
@@ -10644,6 +10681,12 @@
           },
           "rationale": {
             "type": "string"
+          },
+          "staticEstimatedPeakMb": {
+            "default": 0,
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
           },
           "systemReserveMb": {
             "type": "integer",
@@ -11442,6 +11485,43 @@
         "format": "uint64",
         "minimum": 0.0
       },
+      "calibrationApplied": {
+        "default": false,
+        "type": "boolean"
+      },
+      "calibrationMarginPercent": {
+        "default": null,
+        "type": [
+          "integer",
+          "null"
+        ],
+        "format": "uint8",
+        "minimum": 0.0
+      },
+      "calibrationObservedDevicePeakMb": {
+        "default": null,
+        "type": [
+          "integer",
+          "null"
+        ],
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "calibrationObservedHostPeakMb": {
+        "default": null,
+        "type": [
+          "integer",
+          "null"
+        ],
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "calibrationSampleCount": {
+        "default": 0,
+        "type": "integer",
+        "format": "uint32",
+        "minimum": 0.0
+      },
       "criticalAvailableMb": {
         "type": "integer",
         "format": "uint64",
@@ -11587,6 +11667,12 @@
       },
       "rationale": {
         "type": "string"
+      },
+      "staticEstimatedPeakMb": {
+        "default": 0,
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
       },
       "systemReserveMb": {
         "type": "integer",

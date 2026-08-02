@@ -95,7 +95,12 @@ working set. NVIDIA systems record VRAM, process VRAM, utilization, power,
 temperature, and clocks through `nvidia-smi`; AMD systems normalize the same
 available fields from AMD SMI JSON. Unsupported counters remain `null` and are
 named in `unavailableFields`; they are never reported as a measured zero. The
-manifest never stores the prompt or generated content.
+manifest never stores the prompt or generated content. A successful, complete
+run also updates a local peak-calibration record keyed by model, runtime,
+quantization, context/batch recipe, CPU architecture, accelerator backend, and
+device identity. Admission uses the recorded high-water mark with 15% plus 256
+MiB of slack, but never lowers the catalog's static estimate. Failed or
+incomplete benchmarks do not change admission.
 
 ---
 

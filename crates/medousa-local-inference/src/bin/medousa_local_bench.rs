@@ -9,8 +9,9 @@ use anyhow::Context;
 use chrono::Utc;
 use medousa_local_engine::{LocalEngineConfig as RuntimeConfig, LocalEngineRuntime};
 use medousa_local_inference::{
-    LocalEngineConfig, admission_for_model_id, builtin_catalog, collect_device_telemetry,
-    compiled_backends, config_from_catalog_entry, local_repo_if_installed, probe_hardware,
+    LocalEngineConfig, acquire_activation_lease, admission_for_model_id, builtin_catalog,
+    collect_device_telemetry, compiled_backends, config_from_catalog_entry,
+    local_repo_if_installed, probe_hardware, record_benchmark_calibration,
 };
 use medousa_types::{
     LocalBenchmarkArtifactMode, LocalBenchmarkEngineIdentity, LocalBenchmarkGitState,
@@ -44,6 +45,7 @@ async fn main() -> anyhow::Result<()> {
     let hardware = probe_hardware();
     let admission = admission_for_model_id(&args.model_id).map_err(anyhow::Error::msg)?;
     anyhow::ensure!(admission.admitted, admission.rationale.clone());
+    let activation_lease = acquire_activation_lease(&admission).map_err(anyhow::Error::msg)?;
 
     let entry = builtin_catalog()
         .models
@@ -81,6 +83,7 @@ async fn main() -> anyhow::Result<()> {
             .load(to_runtime_config(config.clone()))
             .await
             .map_err(anyhow::Error::msg)?;
+        drop(activation_lease);
         result.load_ms = Some(elapsed_ms(load_started));
         sampler.capture(LocalBenchmarkPhase::AfterLoad);
 
@@ -126,6 +129,7 @@ async fn main() -> anyhow::Result<()> {
         result,
     };
     write_manifest(&manifest, args.output.as_ref())?;
+    record_benchmark_calibration(&manifest).map_err(anyhow::Error::msg)?;
 
     if let Some(error) = final_error {
         anyhow::bail!(error);

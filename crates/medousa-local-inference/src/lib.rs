@@ -8,6 +8,7 @@
 //! brain no longer compiles the entire runtime dependency tree.
 
 mod backends;
+mod calibration;
 mod catalog;
 mod engine;
 mod governor;
@@ -22,6 +23,7 @@ pub use catalog::{
     builtin_catalog, filter_catalog_for_tier, recommended_model_for_tier, CatalogFile,
     CatalogModelEntry,
 };
+pub use calibration::{record_benchmark_calibration, PeakCalibration};
 pub use engine::{
     config_from_catalog_entry, config_from_catalog_entry_with_probe, probe_local_engine_status,
     recommended_engine_config, LocalEngineConfig, LocalEngineManager, LocalEngineStatus,
@@ -42,7 +44,8 @@ pub use hardware::{
 pub use lease::{LocalResourceActivationLease, acquire_activation_lease};
 pub use governor::{
     admission_for_model_id, critical_available_mb, evaluate_model_admission,
-    evaluate_model_admission_with_devices, recommended_admitted_model,
+    evaluate_model_admission_with_calibration, evaluate_model_admission_with_devices,
+    recommended_admitted_model,
     recommended_admitted_model_with_devices, recommended_model_admission, system_reserve_mb,
     tier_recipe_cap_mb,
     DEFAULT_IDLE_TIMEOUT_SECS, SAFE_MAX_BATCH_SIZE, SAFE_MAX_SEQ_LEN,

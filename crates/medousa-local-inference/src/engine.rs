@@ -84,16 +84,12 @@ pub async fn probe_local_engine_status() -> LocalEngineStatus {
 }
 
 pub fn recommended_engine_config(bind: Option<String>) -> Result<LocalEngineConfig, String> {
-    let probe = super::hardware::probe_hardware();
-    let tier = super::hardware::score_tier(&probe);
-    let devices = super::telemetry::collect_device_telemetry();
-    let entry = super::governor::recommended_admitted_model_with_devices(&probe, &devices)
-        .ok_or_else(|| {
-            format!(
-                "no local model fits the safe envelope for hardware tier {}",
-                tier.as_str()
-            )
-        })?;
+    let admission = super::governor::recommended_model_admission()?;
+    let entry = super::catalog::builtin_catalog()
+        .models
+        .into_iter()
+        .find(|entry| entry.id == admission.model_id)
+        .ok_or_else(|| format!("recommended model {} left the catalog", admission.model_id))?;
     Ok(config_from_catalog_entry(&entry, bind))
 }
 

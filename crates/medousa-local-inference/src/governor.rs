@@ -48,6 +48,15 @@ pub fn evaluate_model_admission_with_devices(
     probe: &HardwareProbe,
     devices: &[LocalDeviceTelemetrySnapshot],
 ) -> LocalResourceAdmission {
+    evaluate_model_admission_with_calibration(entry, probe, devices, None)
+}
+
+pub fn evaluate_model_admission_with_calibration(
+    entry: &CatalogModelEntry,
+    probe: &HardwareProbe,
+    devices: &[LocalDeviceTelemetrySnapshot],
+    calibration: Option<&super::calibration::PeakCalibration>,
+) -> LocalResourceAdmission {
     let tier = super::hardware::score_tier(probe);
     let reserve_mb = system_reserve_mb(probe.total_ram_mb);
     let host_headroom_mb = probe.available_ram_mb.saturating_sub(reserve_mb);
@@ -61,10 +70,18 @@ pub fn evaluate_model_admission_with_devices(
         0
     };
     let allocator_slack_mb = estimated_steady_mb / 8 + 512;
-    let estimated_peak_mb = estimated_steady_mb
+    let static_estimated_peak_mb = estimated_steady_mb
         .saturating_add(estimated_conversion_mb)
         .saturating_add(allocator_slack_mb);
-    let device = device_envelope(probe.gpu_backend, devices, estimated_peak_mb);
+    let estimated_peak_mb = calibration
+        .map(super::calibration::PeakCalibration::padded_host_peak_mb)
+        .unwrap_or_default()
+        .max(static_estimated_peak_mb);
+    let device_estimated_peak_mb = calibration
+        .and_then(super::calibration::PeakCalibration::padded_device_peak_mb)
+        .unwrap_or(static_estimated_peak_mb)
+        .max(static_estimated_peak_mb);
+    let device = device_envelope(probe.gpu_backend, devices, device_estimated_peak_mb);
     let admissible_mb = device
         .as_ref()
         .map(|device| host_admissible_mb.min(device.admissible_mb))
@@ -78,7 +95,8 @@ pub fn evaluate_model_admission_with_devices(
     let rationale = if admitted {
         if let Some(device) = device.as_ref() {
             format!(
-                "Estimated peak {estimated_peak_mb} MiB fits both the {host_admissible_mb} MiB host envelope and {} MiB {} device envelope",
+                "Estimated host peak {estimated_peak_mb} MiB fits the {host_admissible_mb} MiB host envelope, and estimated device peak {} MiB fits the {} MiB {} device envelope",
+                device.estimated_peak_mb,
                 device.admissible_mb,
                 device.name.as_deref().unwrap_or("selected")
             )
@@ -88,21 +106,40 @@ pub fn evaluate_model_admission_with_devices(
             )
         }
     } else {
-        let limiting_envelope = if estimated_peak_mb > host_admissible_mb {
-            format!("{host_admissible_mb} MiB host envelope")
+        let (limiting_envelope, refused_peak_mb) = if estimated_peak_mb > host_admissible_mb {
+            (
+                format!("{host_admissible_mb} MiB host envelope"),
+                estimated_peak_mb,
+            )
         } else if let Some(device) = device.as_ref() {
-            format!(
-                "{} MiB {} device envelope",
-                device.admissible_mb,
-                device.name.as_deref().unwrap_or("selected")
+            (
+                format!(
+                    "{} MiB {} device envelope",
+                    device.admissible_mb,
+                    device.name.as_deref().unwrap_or("selected")
+                ),
+                device.estimated_peak_mb,
             )
         } else {
-            format!("{admissible_mb} MiB safe envelope")
+            (
+                format!("{admissible_mb} MiB safe envelope"),
+                estimated_peak_mb,
+            )
         };
         format!(
             "Refusing to load {}: estimated peak {} MiB exceeds the {}; {} MiB remains reserved for the OS and other apps",
-            entry.id, estimated_peak_mb, limiting_envelope, reserve_mb
+            entry.id, refused_peak_mb, limiting_envelope, reserve_mb
         )
+    };
+    let rationale = if let Some(calibration) = calibration {
+        format!(
+            "{rationale}; calibration uses {} content-free sample(s), a {}% margin, and fixed allocator slack without lowering the static {} MiB estimate",
+            calibration.sample_count,
+            super::calibration::CALIBRATION_MARGIN_PERCENT,
+            static_estimated_peak_mb
+        )
+    } else {
+        rationale
     };
 
     LocalResourceAdmission {
@@ -117,7 +154,15 @@ pub fn evaluate_model_admission_with_devices(
         admissible_mb,
         estimated_steady_mb,
         estimated_conversion_mb,
+        static_estimated_peak_mb,
         estimated_peak_mb,
+        calibration_applied: calibration.is_some(),
+        calibration_sample_count: calibration.map(|value| value.sample_count).unwrap_or(0),
+        calibration_observed_host_peak_mb: calibration.map(|value| value.observed_host_peak_mb),
+        calibration_observed_device_peak_mb: calibration
+            .and_then(|value| value.observed_device_peak_mb),
+        calibration_margin_percent: calibration
+            .map(|_| super::calibration::CALIBRATION_MARGIN_PERCENT),
         critical_available_mb,
         max_seq_len: SAFE_MAX_SEQ_LEN,
         max_batch_size: SAFE_MAX_BATCH_SIZE,
@@ -205,8 +250,12 @@ pub fn admission_for_model_id(model_id: &str) -> Result<LocalResourceAdmission, 
         .ok_or_else(|| format!("unknown catalog model id: {}", model_id.trim()))?;
     let probe = super::hardware::probe_hardware();
     let devices = super::telemetry::collect_device_telemetry();
-    Ok(evaluate_model_admission_with_devices(
-        entry, &probe, &devices,
+    let calibration = super::calibration::calibration_for(entry, &probe, &devices)?;
+    Ok(evaluate_model_admission_with_calibration(
+        entry,
+        &probe,
+        &devices,
+        calibration.as_ref(),
     ))
 }
 
@@ -214,15 +263,29 @@ pub fn recommended_model_admission() -> Result<LocalResourceAdmission, String> {
     let probe = super::hardware::probe_hardware();
     let devices = super::telemetry::collect_device_telemetry();
     let tier = super::hardware::score_tier(&probe);
-    let entry = recommended_admitted_model_with_devices(&probe, &devices).ok_or_else(|| {
+    let mut candidates =
+        super::catalog::filter_catalog_for_tier(&super::catalog::builtin_catalog(), tier);
+    candidates.sort_by_key(|entry| std::cmp::Reverse(entry.ram_estimate_mb));
+    let mut selected = None;
+    for entry in candidates {
+        let calibration = super::calibration::calibration_for(&entry, &probe, &devices)?;
+        let admission = evaluate_model_admission_with_calibration(
+            &entry,
+            &probe,
+            &devices,
+            calibration.as_ref(),
+        );
+        if admission.admitted {
+            selected = Some(admission);
+            break;
+        }
+    }
+    selected.ok_or_else(|| {
         format!(
             "no local model fits the safe envelope for hardware tier {}",
             tier.as_str()
         )
-    })?;
-    Ok(evaluate_model_admission_with_devices(
-        &entry, &probe, &devices,
-    ))
+    })
 }
 
 pub fn recommended_admitted_model(probe: &HardwareProbe) -> Option<CatalogModelEntry> {
@@ -390,6 +453,45 @@ mod tests {
         );
         assert!(!admission.admitted);
         assert_eq!(admission.device_name.as_deref(), Some("test-0"));
+    }
+
+    #[test]
+    fn calibration_never_lowers_the_static_safety_estimate() {
+        let model = entry("small", 1, 2, true);
+        let baseline = evaluate_model_admission(&model, &probe(16, 13));
+        let calibration = super::super::calibration::PeakCalibration {
+            sample_count: 3,
+            observed_host_peak_mb: 128,
+            observed_device_peak_mb: None,
+        };
+        let calibrated = evaluate_model_admission_with_calibration(
+            &model,
+            &probe(16, 13),
+            &[],
+            Some(&calibration),
+        );
+        assert_eq!(calibrated.estimated_peak_mb, baseline.estimated_peak_mb);
+        assert!(calibrated.calibration_applied);
+        assert_eq!(calibrated.calibration_sample_count, 3);
+    }
+
+    #[test]
+    fn observed_high_water_can_reject_a_static_fit() {
+        let model = entry("small", 1, 2, true);
+        let calibration = super::super::calibration::PeakCalibration {
+            sample_count: 2,
+            observed_host_peak_mb: 9 * 1024,
+            observed_device_peak_mb: None,
+        };
+        let admission = evaluate_model_admission_with_calibration(
+            &model,
+            &probe(16, 13),
+            &[],
+            Some(&calibration),
+        );
+        assert!(!admission.admitted);
+        assert!(admission.estimated_peak_mb > admission.static_estimated_peak_mb);
+        assert_eq!(admission.calibration_margin_percent, Some(15));
     }
 
     #[cfg(all(target_os = "macos", feature = "telemetry-metal"))]

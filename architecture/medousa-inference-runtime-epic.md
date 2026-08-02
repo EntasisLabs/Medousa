@@ -108,8 +108,13 @@ For the user this means:
 > selection uses the same combined evidence. A per-user, cross-process
 > activation ledger prevents concurrent workers from spending the same pending
 > host/device budget, releases after allocation, reclaims dead processes, and
-> fails closed on corrupt state. WDDM/Vulkan budgets, production-native
-> NVML/AMD SMI collectors, and measured peak calibration remain MIR-2 work.
+> fails closed on corrupt state. Successful content-free benchmarks now promote
+> recipe/device-specific host and process-device high-water marks into a locked,
+> versioned calibration store. Admission adds 15% plus 256 MiB slack and never
+> lowers the static estimate; failed, incomplete, mismatched, corrupt, or newer-
+> schema evidence cannot silently weaken admission. WDDM/Vulkan budgets,
+> production-native NVML/AMD SMI collectors, broader hardware samples, and
+> percentile calibration after sufficient runs remain MIR-2 work.
 >
 > MIR-0 now has a content-free `medousa_local_bench` spine for installed models.
 > It captures the recipe and admission decision, load/stream/unload timing, TTFT,
