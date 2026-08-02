@@ -142,9 +142,11 @@ For the user this means:
 > model and spawned/tracked PID instead of accepting an arbitrary listener.
 > Missing artifact/binary identity fails before model allocation, incompatible
 > listeners surface as failed, and explicit unload waits ten seconds before a
-> forced-termination memory-reclamation fallback. Cancellation during load,
-> provider-switch and sleep/wake integration, and lifecycle soak remain before
-> MIR-1 closes.
+> forced-termination memory-reclamation fallback. Home can cancel a session's
+> in-flight activation before the daemon turn exists, changing providers or
+> local models unloads the old generation, app exit requests termination without
+> erasing unconfirmed worker identity, and macOS sleep evicts the worker. Windows
+> and Linux sleep hooks plus lifecycle soak remain before MIR-1 closes.
 >
 > MIR-0 now has a content-free `medousa_local_bench` spine for installed models.
 > It captures the recipe and admission decision, load/stream/unload timing, TTFT,

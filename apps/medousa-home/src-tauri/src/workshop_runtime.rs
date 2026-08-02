@@ -548,10 +548,16 @@ fn read_local_brain_pid(workshop_id: &str) -> Option<u32> {
 }
 
 pub fn stop_local_brain(workshop_id: &str) {
-    if let Some(pid) = read_local_brain_pid(workshop_id) {
-        let _ = medousa_host::request_process_stop_by_pid(pid);
-    }
+    request_local_brain_stop(workshop_id);
     clear_local_brain_pid(workshop_id);
+}
+
+/// Ask the local worker to terminate without discarding its identity record.
+/// App shutdown cannot wait for confirmation; retaining the PID prevents a
+/// surviving worker from becoming an untracked orphan on the next launch.
+pub fn request_local_brain_stop(workshop_id: &str) -> bool {
+    read_local_brain_pid(workshop_id)
+        .is_some_and(medousa_host::request_process_stop_by_pid)
 }
 
 pub async fn stop_local_brain_bounded(workshop_id: &str) -> Result<bool, String> {
