@@ -27,11 +27,36 @@ not persisted in vault plugin data by this development slice.
 ## Current slice
 
 - native Obsidian chat view;
-- daemon session restoration and new conversations;
+- daemon session restoration, conversation history, switching, naming, deletion,
+  and new conversations;
 - bounded active-note, selection, and outgoing-link context;
 - streaming responses with sequence-aware reconnects;
 - visible tool/recovery status and explicit budget/permission prompts;
-- no silent note mutations.
+- settled-answer actions for copy, save-as-note, and append-to-note;
+- daemon-backed vault search and backlinks with open-note and insert-link
+  actions;
+- daily and weekly synthesis prompts that can be saved through the same preview;
+- explicit note previews, create-only writes, append writes guarded by
+  `If-Match`, and no silent note mutations.
 
-Search, backlinks, synthesis, note creation, append/link previews, and
-conflict-aware writes are follow-on phases.
+All Medousa-managed reads and writes go through the workshop daemon. Obsidian's
+editor remains the host-native place for inserting a wikilink, while note
+creation and append operations show their target and content before applying.
+An `If-Match` conflict leaves the note untouched and asks the user to refresh
+the preview.
+
+## Commands and interactions
+
+- **Open chat** opens the native chat view. Click the conversation title to
+  search, switch, rename, delete, or start a conversation.
+- **Open in Medousa Home** hands advanced workshop, automation, and artifact
+  work to the richest Medousa surface.
+- **Ask about current note** and **Ask about selection** seed a turn with the
+  bounded note context shown in the context line.
+- **Search Medousa vault** searches note titles and content through the daemon.
+  Open a result or insert a wikilink into the current Markdown editor.
+- **Show backlinks for current note** lists notes that link to the active note.
+- A settled answer exposes **Copy**, **Save as note**, and **Append to note**.
+  Save and append both require a visible path/content preview.
+- **Generate daily synthesis** and **Generate weekly synthesis** start focused
+  vault synthesis turns; the settled answer can then use the same save flow.

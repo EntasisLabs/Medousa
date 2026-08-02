@@ -12,6 +12,9 @@ import type {
   SessionSummary,
   SessionSetDisplayNameResponse,
   SessionDeleteResponse,
+  VaultBacklinksResponse,
+  VaultNoteContentResponse,
+  VaultSearchResponse,
   VaultWriteRequest,
   VaultWriteResponse,
   RuntimeDefaults,
@@ -118,6 +121,53 @@ export class MedousaClient {
     return this.request<VaultWriteResponse>("/v1/vault/notes", {
       method: "POST",
       body: JSON.stringify(request),
+      signal: options?.signal,
+    });
+  }
+
+  async getVaultNote(
+    path: string,
+    options?: ClientRequestOptions,
+  ): Promise<VaultNoteContentResponse> {
+    return this.request<VaultNoteContentResponse>(`/v1/vault/notes/${encodeVaultPath(path)}`, {
+      signal: options?.signal,
+    });
+  }
+
+  async updateVaultNote(
+    path: string,
+    content: string,
+    ifMatch?: string,
+    options?: ClientRequestOptions,
+  ): Promise<VaultWriteResponse> {
+    return this.request<VaultWriteResponse>(`/v1/vault/notes/${encodeVaultPath(path)}`, {
+      method: "PUT",
+      body: content,
+      headers: {
+        "Content-Type": "text/markdown; charset=utf-8",
+        ...(ifMatch ? { "If-Match": ifMatch } : {}),
+      },
+      signal: options?.signal,
+    });
+  }
+
+  async searchVault(
+    query: string,
+    limit = 20,
+    options?: ClientRequestOptions,
+  ): Promise<VaultSearchResponse> {
+    const params = new URLSearchParams({ q: query, limit: String(limit) });
+    return this.request<VaultSearchResponse>(`/v1/vault/search?${params.toString()}`, {
+      signal: options?.signal,
+    });
+  }
+
+  async vaultBacklinks(
+    path: string,
+    options?: ClientRequestOptions,
+  ): Promise<VaultBacklinksResponse> {
+    const params = new URLSearchParams({ path });
+    return this.request<VaultBacklinksResponse>(`/v1/vault/backlinks?${params.toString()}`, {
       signal: options?.signal,
     });
   }
@@ -248,4 +298,12 @@ export class MedousaClient {
       }, { once: true });
     });
   }
+}
+
+function encodeVaultPath(path: string): string {
+  return path
+    .split("/")
+    .filter(Boolean)
+    .map((segment) => encodeURIComponent(segment))
+    .join("/");
 }

@@ -11,7 +11,7 @@ JavaScript runtimes.
 
 - `health()` and `capabilities()` probes
 - session listing, history, naming, and deletion
-- workshop vault note creation
+- workshop vault search, read, create, update, and backlinks
 - interactive turn start and cancellation
 - streaming SSE with sequence deduplication and bounded reconnect
 - bounded host context helpers
@@ -26,6 +26,13 @@ without reaching around the daemon:
 
 ```ts
 await client.renameSession(sessionId, "Compiler investigation");
+await client.searchVault("compiler investigation");
+const current = await client.getVaultNote("inbox/compiler-investigation.md");
+await client.updateVaultNote(
+  "inbox/compiler-investigation.md",
+  `${current.content}\n\nNew finding\n`,
+  current.note.content_hash,
+);
 await client.createVaultNote({
   path: "inbox/compiler-investigation.md",
   content: "# Compiler investigation\n\n…",
@@ -34,6 +41,11 @@ await client.createVaultNote({
 });
 await client.deleteSession(sessionId, true);
 ```
+
+`updateVaultNote` sends raw Markdown and an optional `If-Match` content hash;
+the daemon returns `412 Precondition Failed` when the note changed since it was
+read. Hosts should surface that as a refresh/review action rather than retrying
+over the user's edit.
 
 ## Local development
 

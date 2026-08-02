@@ -264,12 +264,13 @@ rename/delete, optional Telescope discovery, compact tool states, a statusline
 API, and unified-diff previews guarded by buffer revision before one-step
 undoable application.
 
-The Obsidian native-surface scaffold now lives in
+The Obsidian native surface now lives in
 [`integrations/obsidian/`](../integrations/obsidian/). It opens a native
-Obsidian view, restores a daemon-owned conversation, captures bounded current
-note/selection/link context, streams a turn with reconnect semantics, and keeps
-note mutation out of the first slice until preview and conflict rules are in
-place.
+Obsidian view, restores and manages daemon-owned conversations, captures bounded
+current note/selection/link context, streams a turn with reconnect semantics,
+and exposes daemon-backed search, backlinks, synthesis prompts, and explicit
+answer-to-note workflows. Note creation is create-only; append uses a fresh
+read plus `If-Match`; link insertion stays a deliberate Obsidian editor action.
 
 ### Obsidian — vault-native companion
 
@@ -374,14 +375,19 @@ remain follow-on work.
 
 **Goal:** make Medousa feel native to the vault.
 
-- Add current-note/selection/link-neighborhood context.
+- Add current-note/selection/link-neighborhood context. **Complete.**
 - Add search, backlinks, note creation, append, and link insertion previews.
+  **Complete.**
 - Define conflict handling for notes changed by both Obsidian and Medousa.
+  **Complete for previewed append writes via `If-Match`.**
 - Add daily/weekly synthesis as an explicit note-generation workflow.
-- Add Home handoff for advanced workflows.
+  **Complete for the first workflow.**
+- Add Home handoff for advanced workflows. **Complete for the first handoff.**
 
-**Exit:** an Obsidian user can ask about their knowledge base and create or
-update notes with visible, reversible intent.
+**Exit:** an Obsidian user can ask about their knowledge base, explore linked
+notes, create or update notes with visible, reversible intent, and hand advanced
+work to Home. Rich Markdown rendering and broader vault actions remain
+hardening/follow-on work.
 
 ### Phase 5 — Notion external-agent adapter
 

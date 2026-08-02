@@ -1,9 +1,9 @@
 # Medousa for Obsidian
 
-Medousa for Obsidian is a vault-native companion. The first development slice
-opens a native chat view, restores a daemon-owned conversation, and includes a
-bounded snapshot of the active Markdown note, selection, and outgoing links.
-It does not silently modify notes.
+Medousa for Obsidian is a vault-native companion. It brings the Medousa session
+and interaction model into Obsidian without recreating Home's entire shell.
+Obsidian supplies the active note and editor context; the workshop daemon
+remains authoritative for Medousa sessions, vault search, reads, and writes.
 
 ## Install a development checkout
 
@@ -30,6 +30,8 @@ remote bearer token in memory only; it is not written into vault plugin data.
 ## Use the companion
 
 - **Medousa: Open chat** opens the native view.
+- **Medousa: Open in Medousa Home** hands advanced workshop, automation, and
+  artifact work to the full Medousa surface.
 - **Medousa: Ask about current note** opens the view and sends a note-aware
   prompt.
 - **Medousa: Ask about selection** sends the active editor selection with the
@@ -37,7 +39,23 @@ remote bearer token in memory only; it is not written into vault plugin data.
 - **Medousa: New conversation** creates a new daemon-owned session.
 - **Medousa: Configure connection** changes the endpoint and supplies an
   in-memory token for the current Obsidian session.
+- **Medousa: Search Medousa vault** searches daemon-managed notes and lets you
+  open a result or insert a wikilink into the current Markdown editor.
+- **Medousa: Show backlinks for current note** explores the notes that link to
+  the active note.
+- **Medousa: Save last answer as note** and **Medousa: Append last answer to
+  current note** open an explicit preview before writing.
+- **Medousa: Generate daily synthesis** and **Medousa: Generate weekly
+  synthesis** start focused vault synthesis prompts.
 
-The first slice is deliberately read-and-chat focused. Search, backlinks,
-note creation, append, link insertion previews, synthesis, and conflict-aware
-mutation are the next Obsidian phases.
+Click the conversation title in the chat header to search, switch, rename,
+delete, or start conversations. Once a reply settles, its **Copy**, **Save as
+note**, and **Append to note** actions appear beneath the answer.
+
+## Note safety
+
+The plugin never silently mutates a note. New notes use create-only daemon
+writes. Appends re-read the target and send its `content_hash` as `If-Match`, so
+a note changed in the meantime fails safely with a refresh message. Wikilink
+insertion is a deliberate editor action in Obsidian and is separate from
+daemon-authoritative note writes.
