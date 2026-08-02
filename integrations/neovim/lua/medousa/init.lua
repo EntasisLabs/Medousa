@@ -34,6 +34,7 @@ local state = {
   last_context = nil,
   last_answer = "",
   last_prompt = nil,
+  history_signature = "",
   drafts = {},
   draft_contexts = {},
   connecting = false,
@@ -427,6 +428,50 @@ local function create_room(value)
   render()
 end
 
+local function history_signature(history)
+  local parts = {}
+  for _, turn in ipairs(history.turns or {}) do
+    table.insert(parts, tostring(turn.role or "") .. "\0" .. tostring(turn.timestamp or "") .. "\0" .. tostring(turn.content or ""))
+  end
+  return table.concat(parts, "\1")
+end
+
+local function load_history_into_state(history)
+  state.messages = {}
+  state.last_answer = ""
+  for _, turn in ipairs(history.turns or {}) do
+    if turn.role == "user" or turn.role == "assistant" then
+      local content_value = context.strip_supplement(turn.content)
+      table.insert(state.messages, { role = turn.role, content = content_value })
+      if turn.role == "assistant" then state.last_answer = content_value end
+    end
+  end
+end
+
+local function poll_workshop_history(session_id, attempts)
+  if state.session_id ~= session_id or not state.client then return end
+  state.client:history(session_id, function(history)
+    if state.session_id ~= session_id then return end
+    if history and not state.busy then
+      local signature = history_signature(history)
+      if signature ~= state.history_signature then
+        load_history_into_state(history)
+        state.history_signature = signature
+        state.answer = nil
+        state.pending_attention = nil
+        state.current_status = nil
+        state.connection = "connected"
+        render()
+      end
+    end
+    if attempts > 1 then
+      vim.defer_fn(function()
+        poll_workshop_history(session_id, attempts - 1)
+      end, 700)
+    end
+  end)
+end
+
 local function ensure_session(callback)
   if state.session_id then
     callback(state.session_id, nil)
@@ -442,14 +487,8 @@ local function ensure_session(callback)
     if session_id then
       state.session_id = session_id
       state.connection = "connected"
-      state.messages = {}
-      for _, turn in ipairs(history.turns or {}) do
-        if turn.role == "user" or turn.role == "assistant" then
-          local content_value = context.strip_supplement(turn.content)
-          table.insert(state.messages, { role = turn.role, content = content_value })
-          if turn.role == "assistant" then state.last_answer = content_value end
-        end
-      end
+      load_history_into_state(history)
+      state.history_signature = history_signature(history)
     else
       state.connection = failed_connection(err)
     end
@@ -629,6 +668,18 @@ function M.send(prompt, explicit_context)
         end
         render()
       end,
+      on_handoff = function(event)
+        state.answer = nil
+        state.busy = false
+        state.pending_attention = nil
+        state.current_status = "workshop is running · you can keep typing"
+        state.connection = "connected"
+        render()
+        focus_prompt()
+        vim.defer_fn(function()
+          poll_workshop_history(session_id, 90)
+        end, 500)
+      end,
       on_done = function(event)
         state.last_answer = state.answer ~= "" and state.answer or event.final_text or ""
         if state.last_answer ~= "" then
@@ -743,6 +794,7 @@ function M.new_session()
     state.last_prompt = nil
     state.last_context = nil
     state.answer = nil
+    state.history_signature = ""
     state.current_status = nil
     state.connection = "connected"
     set_prompt(state.drafts[session_key()] or "")
@@ -780,6 +832,7 @@ function M.switch_session(item)
     state.last_answer = ""
     state.last_prompt = nil
     state.last_context = nil
+    state.history_signature = history_signature(history)
     for _, turn in ipairs(history.turns or {}) do
       if turn.role == "user" or turn.role == "assistant" then
         local content_value = context.strip_supplement(turn.content)

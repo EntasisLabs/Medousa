@@ -134,6 +134,11 @@ Deserialize each SSE payload to `InteractiveTurnStreamEvent`. Key fields:
 | `ui_artifact` | Show artifact embed |
 | `terminal` | Turn finished — stop reading |
 
+`worker_ack` and `workshop_ack` are non-terminal host handoff events. A surface
+should release its composer at that boundary while the background lane
+continues. Follow the stream for the later synthesis when possible, or reload
+the session history after the workshop result is committed.
+
 See [custom-chat-ui.md](../cookbook/custom-chat-ui.md).
 
 ---

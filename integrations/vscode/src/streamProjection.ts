@@ -1,4 +1,4 @@
-import type { InteractiveTurnStreamEvent } from "@medousa/client";
+import { isBackgroundHandoffEvent, type InteractiveTurnStreamEvent } from "@medousa/client";
 
 export type ProjectedEvent =
   | { kind: "answer_delta"; text: string }
@@ -8,6 +8,7 @@ export type ProjectedEvent =
   | { kind: "tool_finished"; runId: string; name: string; status: string; summary?: string }
   | { kind: "budget_request"; requestId: string; rounds: number }
   | { kind: "permission_request"; requestId: string; message: string }
+  | { kind: "handoff"; text: string; workId?: string }
   | { kind: "terminal"; text?: string; error?: boolean };
 
 export interface ProjectionState {
@@ -72,6 +73,19 @@ export function projectStreamEvent(
 
   if (event.operator_message && !isTelemetry(event.operator_message)) {
     projected.push({ kind: "status", text: event.operator_message });
+  }
+
+  if (isBackgroundHandoffEvent(event)) {
+    projected.push({
+      kind: "handoff",
+      text:
+        event.operator_message?.trim() ||
+        (eventType === "worker_ack"
+          ? "Background work started"
+          : "Medousa is in the workshop"),
+      workId: event.work_id ?? undefined,
+    });
+    return projected;
   }
 
   if (event.terminal) {

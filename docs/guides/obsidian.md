@@ -27,6 +27,11 @@ The default workshop is `http://127.0.0.1:7419`. Change the endpoint under
 **Settings → Community plugins → Medousa**. The local development slice keeps a
 remote bearer token in memory only; it is not written into vault plugin data.
 
+The plugin needs the Medousa daemon endpoint, not the MCP gateway (`:7420`) or
+the local inference endpoint (`:7421`). In Medousa Home, use the active
+workshop's **Connection** details when the workshop is remote or uses a custom
+port. The connection dialog includes **Test connection** before saving.
+
 ## Use the companion
 
 - **Medousa: Open chat** opens the native view.
@@ -59,3 +64,18 @@ writes. Appends re-read the target and send its `content_hash` as `If-Match`, so
 a note changed in the meantime fails safely with a refresh message. Wikilink
 insertion is a deliberate editor action in Obsidian and is separate from
 daemon-authoritative note writes.
+
+## Troubleshooting connection
+
+The chat view shows the endpoint it is trying to reach. Use **Retry** after
+starting the daemon, or **Configure** to correct the endpoint/token. From a
+terminal, the local default can be checked with:
+
+```bash
+curl -i http://127.0.0.1:7419/health
+```
+
+An HTTP `401` or `403` means the endpoint is reachable but needs the current
+bearer token. A connection refusal or fetch failure means the daemon is not
+listening at that address, so copy the active workshop address from Medousa
+Home or start the local daemon.

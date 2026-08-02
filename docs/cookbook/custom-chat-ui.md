@@ -21,7 +21,8 @@ Create implicit sessions by sending interactive turns with a stable `session_id`
 
 1. `client.interactive().start_turn(&InteractiveTurnRequest { ... })`
 2. Open `response.stream_url` as SSE
-3. Handle `InteractiveTurnStreamEvent` until `terminal`
+3. Handle `InteractiveTurnStreamEvent` until `terminal` (or a background
+   handoff boundary; see below)
 
 Details: [interactive-streaming.md](../engine/interactive-streaming.md) · [SDK guide](../sdk/interactive-streaming.md)
 
@@ -39,6 +40,23 @@ async with client.interactive().stream_turn(
 ```
 
 See [python.md](../sdk/python.md).
+
+### Background workshop handoff
+
+`worker_ack` and `workshop_ack` are deliberately non-terminal events. They mean
+the host turn has handed the work to a background lane, so a chat composer can
+be released immediately even though the workshop is still running. Continue
+observing the turn stream for the later `worker_synthesis`/terminal event when
+the surface can keep that listener in the background, or reconcile
+`GET /v1/sessions/{session_id}/history` when the synthesis is ready.
+
+The shared TypeScript client exposes this host boundary explicitly:
+
+```ts
+for await (const event of client.streamTurn(accepted, { stopOnHandoff: true })) {
+  // Render the handoff, release the composer, and follow history separately.
+}
+```
 
 ---
 

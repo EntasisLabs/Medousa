@@ -14,12 +14,20 @@ JavaScript runtimes.
 - workshop vault search, read, create, update, and backlinks
 - interactive turn start and cancellation
 - streaming SSE with sequence deduplication and bounded reconnect
+- explicit worker/workshop handoff detection so host composers can release while
+  the durable workshop result is followed separately
 - bounded host context helpers
 - generated daemon request/response types from
   `sdk-contract/medousa-types.schema.json`
 
 The client does not store credentials. Host adapters provide a bearer token at
 construction time and own secure persistence.
+
+When a turn emits `worker_ack` or `workshop_ack`, the event is intentionally
+non-terminal: the host turn has handed work to a background lane. Surfaces that
+need to release their composer immediately can pass
+`{ stopOnHandoff: true }` to `streamTurn`, then follow the same stream or poll
+session history for the later synthesis.
 
 Conversation surfaces can manage the shared catalog and promote settled replies
 without reaching around the daemon:

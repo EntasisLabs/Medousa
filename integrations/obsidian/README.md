@@ -24,6 +24,10 @@ The default workshop is `http://127.0.0.1:7419`. Configure another endpoint or
 an in-memory bearer token with **Medousa: Configure connection**. The token is
 not persisted in vault plugin data by this development slice.
 
+Use the Medousa daemon endpoint, not the MCP gateway (`:7420`) or local
+inference endpoint (`:7421`). The connection modal's **Test connection** action
+checks the exact endpoint and token before saving.
+
 ## Current slice
 
 - native Obsidian chat view;

@@ -10,10 +10,12 @@ import {
   PluginSettingTab,
   Setting,
   WorkspaceLeaf,
+  setIcon,
 } from "obsidian";
 import {
   MedousaClient,
   MedousaHttpError,
+  isBackgroundHandoffEvent,
   type InteractiveTurnRequest,
   type SessionHistoryResponse,
   type SessionSummary,
@@ -48,7 +50,10 @@ type AttentionEvent = Extract<ProjectedEvent, { kind: "budget_request" | "permis
 interface TurnCallbacks {
   onProjected: (event: ProjectedEvent) => void;
   onAttention: (event: AttentionEvent) => Promise<void>;
+  onHistory?: (history: SessionHistoryResponse) => void;
 }
+
+type StatusTone = "connected" | "checking" | "working" | "error" | "idle";
 
 export default class MedousaPlugin extends Plugin {
   settings!: MedousaSettings;
@@ -57,6 +62,7 @@ export default class MedousaPlugin extends Plugin {
   private activeSessionId: string | null = null;
   private activeSessionName: string | null = null;
   private activeAbort: AbortController | null = null;
+  private readonly workshopWatchers = new Map<string, AbortController>();
   private lastContext: ObsidianContextSnapshot | null = null;
 
   async onload(): Promise<void> {
@@ -140,6 +146,8 @@ export default class MedousaPlugin extends Plugin {
 
   onunload(): void {
     this.activeAbort?.abort();
+    for (const watcher of this.workshopWatchers.values()) watcher.abort();
+    this.workshopWatchers.clear();
   }
 
   async openChat(prompt?: string, snapshot?: ObsidianContextSnapshot): Promise<MedousaChatView | null> {
@@ -335,17 +343,91 @@ export default class MedousaPlugin extends Plugin {
     try {
       const accepted = await client.startTurn(request, { signal: controller.signal });
       const projection = createProjectionState();
-      for await (const event of client.streamTurn(accepted, { signal: controller.signal })) {
+      let handedOff = false;
+      for await (const event of client.streamTurn(accepted, {
+        signal: controller.signal,
+        stopOnHandoff: true,
+      })) {
         for (const projected of projectStreamEvent(event, projection)) {
           if (projected.kind === "budget_request" || projected.kind === "permission_request") {
             await callbacks.onAttention(projected);
           } else {
             callbacks.onProjected(projected);
+            if (projected.kind === "handoff") handedOff = true;
           }
+        }
+        if (handedOff) {
+          void this.followWorkshop(accepted, history.session_id, callbacks);
+          break;
         }
       }
     } finally {
       this.activeAbort = null;
+    }
+  }
+
+  /** The host stream ends at handoff; follow the durable workshop result separately. */
+  private async followWorkshop(
+    response: Awaited<ReturnType<MedousaClient["startTurn"]>>,
+    sessionId: string,
+    callbacks: TurnCallbacks,
+  ): Promise<void> {
+    if (this.workshopWatchers.has(response.turn_id)) return;
+    const watcher = new AbortController();
+    this.workshopWatchers.set(response.turn_id, watcher);
+    const client = this.client;
+    if (!client) {
+      this.workshopWatchers.delete(response.turn_id);
+      return;
+    }
+
+    try {
+      for await (const event of client.streamTurn(response, {
+        signal: watcher.signal,
+        maxReconnectAttempts: 8,
+      })) {
+        if (isBackgroundHandoffEvent(event)) continue;
+        if (event.terminal) {
+          await this.pollWorkshopHistory(sessionId, watcher.signal, callbacks, 8);
+          return;
+        }
+      }
+    } catch {
+      if (!watcher.signal.aborted) {
+        await this.pollWorkshopHistory(sessionId, watcher.signal, callbacks, 30);
+      }
+    } finally {
+      this.workshopWatchers.delete(response.turn_id);
+    }
+  }
+
+  private async pollWorkshopHistory(
+    sessionId: string,
+    signal: AbortSignal,
+    callbacks: TurnCallbacks,
+    attempts: number,
+  ): Promise<void> {
+    const client = this.client;
+    if (!client) return;
+    let previousSignature = "";
+    for (let attempt = 0; attempt < attempts && !signal.aborted; attempt += 1) {
+      try {
+        const history = await client.sessionHistory(sessionId, { signal });
+        const signature = historySignature(history);
+        if (signature !== previousSignature && this.activeSessionId === sessionId) {
+          previousSignature = signature;
+          callbacks.onHistory?.(history);
+        }
+      } catch {
+        if (signal.aborted) return;
+      }
+      if (attempt + 1 < attempts) {
+        try {
+          await delay(500, signal);
+        } catch {
+          return;
+        }
+      }
     }
   }
 
@@ -376,7 +458,19 @@ export default class MedousaPlugin extends Plugin {
     this.settings.endpoint = trimmed;
     this.client = null;
     this.activeSessionId = null;
+    this.activeSessionName = null;
     await this.saveState();
+  }
+
+  async testConnection(endpoint: string, token: string): Promise<void> {
+    const trimmed = endpoint.trim();
+    if (!trimmed) throw new Error("Workshop endpoint must not be empty.");
+    new URL(trimmed);
+    const client = new MedousaClient({
+      baseUrl: trimmed,
+      bearerToken: token.trim() || undefined,
+    });
+    await client.health();
   }
 
   setBearerToken(token: string): void {
@@ -445,7 +539,8 @@ class MedousaChatView extends ItemView {
   private root: HTMLElement | null = null;
   private sessionTitleEl!: HTMLButtonElement;
   private contextEl!: HTMLElement;
-  private statusEl!: HTMLElement;
+  private statusTextEl!: HTMLElement;
+  private statusDotEl!: HTMLElement;
   private transcriptEl!: HTMLElement;
   private inputEl!: HTMLTextAreaElement;
   private sendButton!: HTMLButtonElement;
@@ -455,7 +550,10 @@ class MedousaChatView extends ItemView {
   private lastAnswerText = "";
   private busy = false;
   private cancelRequested = false;
+  private workshopInBackground = false;
+  private pendingWorkshopHistory: SessionHistoryResponse | null = null;
   private currentContext: ObsidianContextSnapshot | null = null;
+  private refreshPromise: Promise<void> | null = null;
 
   constructor(leaf: WorkspaceLeaf, private readonly plugin: MedousaPlugin) {
     super(leaf);
@@ -487,20 +585,38 @@ class MedousaChatView extends ItemView {
 
   setContext(snapshot: ObsidianContextSnapshot): void {
     this.currentContext = snapshot;
-    if (this.contextEl) this.contextEl.setText(`Context · ${snapshot.label}`);
+    if (this.contextEl) {
+      this.contextEl.replaceChildren();
+      const kicker = this.el("span", "medousa-context-kicker");
+      kicker.setText("Context");
+      const label = this.el("span", "medousa-context-label");
+      label.setText(snapshot.label);
+      this.contextEl.append(kicker, label);
+    }
+    if (this.transcriptEl?.querySelector(".medousa-empty")) this.renderEmptyState();
   }
 
   async refresh(): Promise<void> {
     if (!this.root) return;
-    this.setStatus("Connecting to Medousa…");
+    if (this.refreshPromise) return this.refreshPromise;
+    this.refreshPromise = this.performRefresh();
+    try {
+      await this.refreshPromise;
+    } finally {
+      this.refreshPromise = null;
+    }
+  }
+
+  private async performRefresh(): Promise<void> {
+    this.setStatus("Connecting to Medousa…", "checking");
+    this.transcriptEl.querySelector(".medousa-connection-error")?.remove();
     try {
       const history = await this.plugin.ensureSession();
       this.showHistory(history);
       await this.refreshContext();
-      this.setStatus("Connected");
+      this.setStatus("Connected", "connected");
     } catch (error) {
-      this.setStatus(friendlyError(error));
-      this.showError("Medousa is unavailable. Check the workshop connection and try again.");
+      this.showConnectionError(error);
     }
   }
 
@@ -545,6 +661,8 @@ class MedousaChatView extends ItemView {
 
     this.busy = true;
     this.cancelRequested = false;
+    this.workshopInBackground = false;
+    this.pendingWorkshopHistory = null;
     this.inputEl.value = "";
     this.inputEl.disabled = true;
     this.sendButton.setText("Stop");
@@ -556,6 +674,7 @@ class MedousaChatView extends ItemView {
       await this.plugin.sendTurn(text, context, {
         onProjected: (event) => this.handleProjected(event),
         onAttention: (event) => this.handleAttention(event),
+        onHistory: (history) => this.handleWorkshopHistory(history),
       });
     } catch (error) {
       if (!this.cancelRequested) this.showError(friendlyError(error));
@@ -563,7 +682,18 @@ class MedousaChatView extends ItemView {
       this.busy = false;
       this.inputEl.disabled = false;
       this.sendButton.setText("Send");
-      if (!this.cancelRequested) this.setStatus("Connected");
+      if (this.pendingWorkshopHistory) {
+        const history = this.pendingWorkshopHistory;
+        this.pendingWorkshopHistory = null;
+        this.workshopInBackground = false;
+        this.showHistory(history);
+      }
+      if (!this.cancelRequested) {
+        this.setStatus(
+          this.workshopInBackground ? "Workshop is running · you can keep typing" : "Connected",
+          "connected",
+        );
+      }
       this.inputEl.focus();
       this.scrollToLatest();
     }
@@ -579,36 +709,49 @@ class MedousaChatView extends ItemView {
     this.sessionTitleEl = this.button(this.plugin.sessionTitle(), "Open conversation history", "medousa-title-button");
     this.sessionTitleEl.addEventListener("click", () => new ConversationModal(this.app, this.plugin, this).open());
     identity.appendChild(this.sessionTitleEl);
-    this.statusEl = identity.createEl("div", { text: "Checking workshop…", cls: "medousa-status" });
+    const status = this.el("div", "medousa-status");
+    this.statusDotEl = this.el("span", "medousa-status-dot checking");
+    this.statusTextEl = this.el("span", "medousa-status-text");
+    this.statusTextEl.setText("Checking workshop…");
+    status.append(this.statusDotEl, this.statusTextEl);
+    identity.appendChild(status);
     header.appendChild(identity);
-    const newButton = this.button("+", "New conversation");
+    const actions = this.el("div", "medousa-header-actions");
+    const newButton = this.button("", "New conversation", "medousa-icon-button", "plus");
     newButton.addEventListener("click", () => void this.startNewConversation());
-    header.appendChild(newButton);
-    const configureButton = this.button("⚙", "Configure connection");
+    actions.appendChild(newButton);
+    const configureButton = this.button("", "Configure connection", "medousa-icon-button", "settings");
     configureButton.addEventListener("click", () => new ConnectionModal(this.app, this.plugin).open());
-    header.appendChild(configureButton);
-    const homeButton = this.button("⌂", "Open in Medousa Home");
+    actions.appendChild(configureButton);
+    const homeButton = this.button("", "Open in Medousa Home", "medousa-icon-button", "home");
     homeButton.addEventListener("click", () => this.plugin.openHome());
-    header.appendChild(homeButton);
-    const searchButton = this.button("⌕", "Search vault");
+    actions.appendChild(homeButton);
+    const searchButton = this.button("", "Search vault", "medousa-icon-button", "search");
     searchButton.addEventListener("click", () => new VaultSearchModal(this.app, this.plugin).open());
-    header.appendChild(searchButton);
-    const backlinksButton = this.button("↗", "Show backlinks");
+    actions.appendChild(searchButton);
+    const backlinksButton = this.button("", "Show backlinks", "medousa-icon-button", "link");
     backlinksButton.addEventListener("click", () => void this.plugin.openBacklinks());
-    header.appendChild(backlinksButton);
+    actions.appendChild(backlinksButton);
+    header.appendChild(actions);
     this.root.appendChild(header);
 
     this.contextEl = this.el("div", "medousa-context");
-    this.contextEl.setText("Context · current vault");
+    const contextKicker = this.el("span", "medousa-context-kicker");
+    contextKicker.setText("Context");
+    const contextLabel = this.el("span", "medousa-context-label");
+    contextLabel.setText("current vault");
+    this.contextEl.append(contextKicker, contextLabel);
     this.root.appendChild(this.contextEl);
 
     this.transcriptEl = this.el("main", "medousa-transcript");
     this.root.appendChild(this.transcriptEl);
+    if (this.currentContext) this.setContext(this.currentContext);
 
-    const composer = this.el("div", "medousa-composer");
+    const composer = this.el("footer", "medousa-composer");
+    const composerBox = this.el("div", "medousa-composer-box");
     this.inputEl = document.createElement("textarea");
     this.inputEl.className = "medousa-input";
-    this.inputEl.placeholder = "Ask about this note…";
+    this.inputEl.placeholder = "Ask about this note or vault…";
     this.inputEl.rows = 2;
     this.inputEl.addEventListener("keydown", (event) => {
       if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
@@ -616,13 +759,19 @@ class MedousaChatView extends ItemView {
         void this.submitComposer();
       }
     });
-    composer.appendChild(this.inputEl);
+    composerBox.appendChild(this.inputEl);
+    const composerBar = this.el("div", "medousa-composer-bar");
+    const hint = this.el("span", "medousa-composer-hint");
+    hint.setText("Enter to send · Shift+Enter for newline");
+    composerBar.appendChild(hint);
     this.sendButton = this.button("Send", "Send message", "medousa-send");
     this.sendButton.addEventListener("click", () => {
       if (this.busy) void this.stopResponse();
       else void this.submitComposer();
     });
-    composer.appendChild(this.sendButton);
+    composerBar.appendChild(this.sendButton);
+    composerBox.appendChild(composerBar);
+    composer.appendChild(composerBox);
     this.root.appendChild(composer);
   }
 
@@ -652,7 +801,10 @@ class MedousaChatView extends ItemView {
     const approved = await new ApprovalModal(this.app, event).waitForDecision();
     try {
       await this.plugin.respondToAttention(event, approved);
-      this.setStatus(approved ? "Approved · Medousa is continuing…" : "Denied · Medousa is continuing…");
+      this.setStatus(
+        approved ? "Approved · Medousa is continuing…" : "Denied · Medousa is continuing…",
+        approved ? "working" : "idle",
+      );
     } catch (error) {
       this.showError(friendlyError(error));
     }
@@ -678,15 +830,29 @@ class MedousaChatView extends ItemView {
       case "terminal":
         if (event.error && event.text) this.showError(event.text);
         else {
-          this.setStatus("Connected");
+          this.setStatus("Connected", "connected");
           this.renderAssistantActions();
         }
+        break;
+      case "handoff":
+        this.workshopInBackground = true;
+        this.setStatus(`${event.text} · you can keep typing`, "connected");
         break;
       case "budget_request":
       case "permission_request":
         break;
     }
     this.scrollToLatest();
+  }
+
+  private handleWorkshopHistory(history: SessionHistoryResponse): void {
+    if (this.busy) {
+      this.pendingWorkshopHistory = history;
+      return;
+    }
+    this.workshopInBackground = false;
+    this.showHistory(history);
+    this.setStatus("Connected", "connected");
   }
 
   private appendMessage(role: "user" | "assistant", content: string): void {
@@ -728,6 +894,30 @@ class MedousaChatView extends ItemView {
     error.setText(message);
     this.transcriptEl.appendChild(error);
     this.setStatus("Needs attention");
+  }
+
+  private showConnectionError(error: unknown): void {
+    this.transcriptEl.replaceChildren();
+    this.assistantBody = null;
+    this.assistantActionsEl = null;
+    this.assistantText = "";
+    this.lastAnswerText = "";
+
+    const card = this.el("section", "medousa-connection-error");
+    setIcon(card.createDiv("medousa-connection-icon"), "plug");
+    card.createEl("h2", { text: "Connection needs attention" });
+    card.createEl("p", { text: connectionErrorMessage(error, this.plugin.settings.endpoint) });
+    const endpoint = card.createEl("code", { cls: "medousa-connection-endpoint" });
+    endpoint.setText(safeEndpoint(this.plugin.settings.endpoint));
+    const actions = card.createDiv("medousa-connection-actions");
+    const retry = this.button("Retry", "Retry the workshop connection", "medousa-primary-button");
+    retry.addEventListener("click", () => void this.refresh());
+    actions.appendChild(retry);
+    const configure = this.button("Configure", "Configure the workshop connection");
+    configure.addEventListener("click", () => new ConnectionModal(this.app, this.plugin).open());
+    actions.appendChild(configure);
+    this.transcriptEl.appendChild(card);
+    this.setStatus("Needs attention", "error");
   }
 
   openAnswerAction(mode: "create" | "append"): void {
@@ -773,14 +963,25 @@ class MedousaChatView extends ItemView {
   }
 
   private renderEmptyState(): void {
+    this.transcriptEl.querySelector(".medousa-empty")?.remove();
     const empty = this.el("div", "medousa-empty");
-    empty.createEl("strong", { text: "What are we working on?" });
+    const icon = empty.createDiv("medousa-empty-icon");
+    setIcon(icon, "sparkles");
+    const heading = this.currentContext?.file ? "What should we do with this note?" : "What are we working on?";
+    empty.createEl("strong", { text: heading });
     empty.createEl("span", { text: "Ask about this note, a selection, or the links around it." });
+    const suggestions = empty.createDiv("medousa-suggestions");
+    for (const prompt of ["Summarize this note", "Find related notes", "Help me improve this note"]) {
+      const button = this.button(prompt, prompt, "medousa-suggestion-button");
+      button.addEventListener("click", () => void this.sendPrompt(prompt));
+      suggestions.appendChild(button);
+    }
     this.transcriptEl.appendChild(empty);
   }
 
-  private setStatus(text: string): void {
-    this.statusEl?.setText(text);
+  private setStatus(text: string, tone?: StatusTone): void {
+    this.statusTextEl?.setText(text);
+    if (this.statusDotEl) this.statusDotEl.className = `medousa-status-dot ${tone ?? statusTone(text)}`;
   }
 
   setSessionTitle(text: string): void {
@@ -799,12 +1000,16 @@ class MedousaChatView extends ItemView {
     return element;
   }
 
-  private button(text: string, ariaLabel: string, className?: string): HTMLButtonElement {
+  private button(text: string, ariaLabel: string, className?: string, icon?: string): HTMLButtonElement {
     const button = document.createElement("button");
     button.type = "button";
     button.textContent = text;
     button.ariaLabel = ariaLabel;
     if (className) button.className = className;
+    if (icon) {
+      button.replaceChildren();
+      setIcon(button, icon);
+    }
     return button;
   }
 }
@@ -861,21 +1066,34 @@ class ConnectionModal extends Modal {
         text.inputEl.type = "password";
         text.setValue(this.token).onChange((value) => { this.token = value; });
       });
-    new Setting(contentEl).addButton((button) => button
-      .setButtonText("Save")
-      .setCta()
-      .onClick(() => void this.save()));
+    new Setting(contentEl)
+      .addButton((button) => button
+        .setButtonText("Test connection")
+        .onClick(() => void this.test()))
+      .addButton((button) => button
+        .setButtonText("Save")
+        .setCta()
+        .onClick(() => void this.save()));
   }
 
   onClose(): void {
     this.contentEl.replaceChildren();
   }
 
+  private async test(): Promise<void> {
+    try {
+      await this.plugin.testConnection(this.endpoint, this.token);
+      new Notice("Workshop connection is healthy.");
+    } catch (error) {
+      new Notice(connectionErrorMessage(error, this.endpoint));
+    }
+  }
+
   private async save(): Promise<void> {
     try {
       await this.plugin.setEndpoint(this.endpoint);
       this.plugin.setBearerToken(this.token);
-      this.plugin.chatView()?.refresh();
+      await this.plugin.chatView()?.refresh();
       new Notice("Medousa connection updated.");
       this.close();
     } catch (error) {
@@ -1422,6 +1640,61 @@ function slugifyNoteTitle(content: string): string {
 
 function sessionDisplayName(session: SessionSummary): string {
   return session.display_name?.trim() || "Untitled conversation";
+}
+
+function historySignature(history: SessionHistoryResponse): string {
+  return history.turns
+    .map((turn) => `${turn.role}\u0000${turn.timestamp}\u0000${turn.content}`)
+    .join("\u0001");
+}
+
+function delay(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal.aborted) {
+      reject(signal.reason ?? new Error("Aborted"));
+      return;
+    }
+    const timer = window.setTimeout(resolve, ms);
+    signal.addEventListener("abort", () => {
+      window.clearTimeout(timer);
+      reject(signal.reason ?? new Error("Aborted"));
+    }, { once: true });
+  });
+}
+
+function statusTone(text: string): StatusTone {
+  const normalized = text.toLowerCase();
+  if (normalized === "connected") return "connected";
+  if (normalized.includes("needs attention") || normalized.includes("unavailable") || normalized.includes("failed")) return "error";
+  if (normalized.includes("connecting") || normalized.includes("thinking") || normalized.includes("using ") || normalized.includes("stopping") || normalized.includes("continuing")) return "working";
+  return "idle";
+}
+
+function safeEndpoint(endpoint: string): string {
+  try {
+    const url = new URL(endpoint);
+    url.username = "";
+    url.password = "";
+    return url.toString().replace(/\/$/, "");
+  } catch {
+    return endpoint;
+  }
+}
+
+function connectionErrorMessage(error: unknown, endpoint: string): string {
+  if (error instanceof MedousaHttpError) {
+    if (error.status === 401 || error.status === 403) return "The workshop rejected this connection. Check the bearer token.";
+    if (error.status === 404) return "The endpoint responded, but it is not a Medousa workshop route. Check the endpoint.";
+    return `The workshop returned HTTP ${error.status}. Check its logs or try again.`;
+  }
+  if (error instanceof Error) {
+    const normalized = error.message.toLowerCase();
+    if (normalized.includes("failed to fetch") || normalized.includes("network") || normalized.includes("refused") || normalized.includes("load failed")) {
+      return `Obsidian could not reach this workshop. Start the daemon or choose the active workshop endpoint.`;
+    }
+    if (error.message.trim()) return error.message;
+  }
+  return `Obsidian could not reach this workshop. Check ${safeEndpoint(endpoint)}.`;
 }
 
 function friendlyError(error: unknown): string {

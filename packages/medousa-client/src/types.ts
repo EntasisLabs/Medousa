@@ -168,6 +168,8 @@ export interface StreamOptions {
   signal?: AbortSignal;
   maxReconnectAttempts?: number;
   reconnectDelayMs?: (attempt: number) => number;
+  /** Return after a worker/workshop handoff instead of holding the composer. */
+  stopOnHandoff?: boolean;
 }
 
 export interface ClientRequestOptions {

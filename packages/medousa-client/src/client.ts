@@ -1,4 +1,4 @@
-import { readSse, streamPathWithSince } from "./stream.js";
+import { isBackgroundHandoffEvent, readSse, streamPathWithSince } from "./stream.js";
 import type {
   CapabilityListResponse,
   ClientOptions,
@@ -41,8 +41,10 @@ export class MedousaClient {
   constructor(options: ClientOptions) {
     this.baseUrl = options.baseUrl.replace(/\/$/, "");
     this.bearerToken = options.bearerToken;
-    this.fetchImpl = options.fetch ?? globalThis.fetch;
-    if (!this.fetchImpl) throw new Error("A fetch implementation is required");
+    const fetchImpl = options.fetch ?? globalThis.fetch;
+    if (!fetchImpl) throw new Error("A fetch implementation is required");
+    // Browser fetch is an IDL method and must retain its Window/globalThis receiver.
+    this.fetchImpl = fetchImpl.bind(globalThis);
   }
 
   async health(options?: ClientRequestOptions): Promise<HealthResponse> {
@@ -250,7 +252,7 @@ export class MedousaClient {
           if (event.seq) lastSeq = event.seq;
           attempt = 0;
           yield event;
-          if (event.terminal) return;
+          if (event.terminal || (options.stopOnHandoff && isBackgroundHandoffEvent(event))) return;
         }
       } catch (error) {
         if (options.signal?.aborted) return;
