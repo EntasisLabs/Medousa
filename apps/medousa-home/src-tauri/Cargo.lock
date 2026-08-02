@@ -3589,6 +3589,7 @@ dependencies = [
  "dirs 5.0.1",
  "libc",
  "medousa-types",
+ "serde_json",
  "tokio",
 ]
 
@@ -3639,8 +3640,10 @@ dependencies = [
  "once_cell",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "sysinfo",
  "tokio",
+ "uuid",
  "windows 0.61.3",
 ]
 

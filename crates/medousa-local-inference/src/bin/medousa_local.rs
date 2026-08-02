@@ -22,6 +22,7 @@ use medousa_local_inference::{
     DEFAULT_IDLE_TIMEOUT_SECS, DEFAULT_LOCAL_ENGINE_BIND, LocalEngineConfig, SAFE_MAX_BATCH_SIZE,
     SAFE_MAX_SEQ_LEN, acquire_activation_lease, admission_for_model_id, builtin_catalog,
     compiled_backends, config_from_catalog_entry, recommended_engine_config,
+    worker_status_for_config,
 };
 
 #[cfg(feature = "embedded-inference")]
@@ -113,8 +114,17 @@ async fn main() -> anyhow::Result<()> {
         ),
     };
 
+    let worker = worker_status_for_config(&medousa_config).await;
+    anyhow::ensure!(
+        worker.artifact_digest.is_some(),
+        "refusing to load an unverified or uninstalled model artifact; install it from Settings -> Packages first"
+    );
+    anyhow::ensure!(
+        worker.binary_digest.is_some(),
+        "refusing to start a worker whose executable digest could not be read"
+    );
     let status = RUNTIME
-        .load(to_engine_config(medousa_config))
+        .load(to_engine_config(medousa_config, worker))
         .await
         .map_err(anyhow::Error::msg)?;
     drop(activation_lease);
@@ -157,7 +167,10 @@ impl Drop for PidFileGuard {
 }
 
 #[cfg(feature = "embedded-inference")]
-fn to_engine_config(config: LocalEngineConfig) -> EngineConfig {
+fn to_engine_config(
+    config: LocalEngineConfig,
+    worker: medousa_types::local::LocalWorkerStatus,
+) -> EngineConfig {
     EngineConfig {
         bind: config.bind,
         model_repo: config.model_repo,
@@ -169,6 +182,7 @@ fn to_engine_config(config: LocalEngineConfig) -> EngineConfig {
         max_batch_size: config.max_batch_size,
         idle_timeout_secs: config.idle_timeout_secs,
         critical_available_mb: config.critical_available_mb,
+        worker,
     }
 }
 

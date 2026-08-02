@@ -60,6 +60,14 @@ the local inference worker when the first chat turn targets **Medousa Local**.
 To release the model memory immediately, open **Settings → Connection → Private
 brain** and choose the power button. The next local turn loads it again.
 
+Before allocating model memory, Medousa verifies that the installed model index
+contains file-level SHA-256 evidence and fingerprints the worker binary. It then
+waits for a versioned handshake identifying the exact worker generation, PID,
+model, artifact, and resource recipe. A different program—or an old worker with
+an incompatible protocol—on the local inference port is never treated as a
+ready Local Brain. If verification evidence is missing, remove and reinstall
+the model package rather than loading it from the network at request time.
+
 Before loading, Medousa keeps at least 4 GiB or 25% of system memory—whichever
 is larger—available for the OS and other apps. When accelerator memory counters
 are available, it also reserves at least 512 MiB or 10% of that device's

@@ -6,13 +6,17 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
 
+use axum::Json;
 use axum::body::{Body, Bytes};
 use axum::extract::{Request, State};
 use axum::middleware::{self, Next};
 use axum::response::Response;
+use axum::routing::get;
 use http_body::{Body as HttpBody, Frame};
-use medousa_types::local::{LocalEngineStatus, LocalRuntimePhase};
-use tokio::sync::{oneshot, RwLock};
+use medousa_types::local::{
+    LOCAL_WORKER_STATUS_PATH, LocalEngineStatus, LocalRuntimePhase, LocalWorkerStatus,
+};
+use tokio::sync::{RwLock, oneshot};
 use tokio::task::JoinHandle;
 
 pub const DEFAULT_LOCAL_ENGINE_BIND: &str = "127.0.0.1:7421";
@@ -29,6 +33,7 @@ pub struct LocalEngineConfig {
     pub max_batch_size: usize,
     pub idle_timeout_secs: u64,
     pub critical_available_mb: u64,
+    pub worker: LocalWorkerStatus,
 }
 
 pub struct LoadedEngineHandle {
@@ -56,6 +61,7 @@ impl LocalEngineRuntime {
                 model_repo: None,
                 model_alias: None,
                 inference_backend: None,
+                worker: None,
                 message: "Local engine not loaded".to_string(),
             })),
         }
@@ -67,7 +73,27 @@ impl LocalEngineRuntime {
 
     pub async fn load(&self, config: LocalEngineConfig) -> Result<LocalEngineStatus, String> {
         self.unload().await?;
-        let loaded = load_embedded_engine(config.clone()).await?;
+        *self.status.write().await = LocalEngineStatus {
+            feature_enabled: true,
+            loaded: false,
+            phase: LocalRuntimePhase::Loading,
+            base_url: format!("http://{}/v1", config.bind.trim()),
+            bind: Some(config.bind.clone()),
+            model_repo: Some(config.model_repo.clone()),
+            model_alias: Some(config.model_alias.clone()),
+            inference_backend: None,
+            worker: Some(config.worker.clone()),
+            message: "Loading local model".to_string(),
+        };
+        let loaded = match load_embedded_engine(config.clone()).await {
+            Ok(loaded) => loaded,
+            Err(error) => {
+                let mut status = self.status.write().await;
+                status.phase = LocalRuntimePhase::Failed;
+                status.message = format!("Local model failed to load: {error}");
+                return Err(error);
+            }
+        };
         *self.shutdown_tx.write().await = Some(loaded.shutdown_tx);
         *self.server_task.write().await = Some(loaded.server_task);
         let status = LocalEngineStatus {
@@ -79,6 +105,7 @@ impl LocalEngineRuntime {
             model_repo: Some(config.model_repo),
             model_alias: Some(config.model_alias),
             inference_backend: None,
+            worker: Some(config.worker),
             message: "Local Gemma engine ready".to_string(),
         };
         *self.status.write().await = status.clone();
@@ -86,12 +113,15 @@ impl LocalEngineRuntime {
     }
 
     pub async fn unload(&self) -> Result<(), String> {
+        if self.status.read().await.loaded {
+            let mut status = self.status.write().await;
+            status.phase = LocalRuntimePhase::Unloading;
+            status.message = "Unloading local model".to_string();
+        }
         if let Some(tx) = self.shutdown_tx.write().await.take() {
             let _ = tx.send(());
         }
-        if let Some(task) = self.server_task.write().await.take() {
-            task.abort();
-        }
+        await_server_stop(self.server_task.write().await.take()).await;
         *self.status.write().await = LocalEngineStatus::idle(true);
         Ok(())
     }
@@ -109,6 +139,19 @@ impl LocalEngineRuntime {
             }
             tokio::time::sleep(Duration::from_millis(250)).await;
         }
+    }
+}
+
+async fn await_server_stop(task: Option<JoinHandle<()>>) {
+    let Some(mut task) = task else {
+        return;
+    };
+    if tokio::time::timeout(Duration::from_secs(10), &mut task)
+        .await
+        .is_err()
+    {
+        task.abort();
+        let _ = task.await;
     }
 }
 
@@ -144,16 +187,17 @@ mod tests {
 }
 
 pub async fn load_embedded_engine(config: LocalEngineConfig) -> Result<LoadedEngineHandle, String> {
-    use mistralrs_core::{initialize_logging, TokenSource};
+    use mistralrs_core::{TokenSource, initialize_logging};
     use mistralrs_server_core::mistralrs_for_server_builder::{
-        configure_paged_attn_from_flags, MistralRsForServerBuilder,
+        MistralRsForServerBuilder, configure_paged_attn_from_flags,
     };
     use mistralrs_server_core::mistralrs_server_router_builder::MistralRsServerRouterBuilder;
 
     initialize_logging();
 
     let model = build_model_selected(&config)?;
-    let paged_attn = configure_paged_attn_from_flags(false, false).map_err(|err| err.to_string())?;
+    let paged_attn =
+        configure_paged_attn_from_flags(false, false).map_err(|err| err.to_string())?;
     let mut builder = MistralRsForServerBuilder::new()
         .with_model(model)
         .with_token_source(TokenSource::CacheToken)
@@ -166,11 +210,29 @@ pub async fn load_embedded_engine(config: LocalEngineConfig) -> Result<LoadedEng
 
     let mistralrs = builder.build().await.map_err(|err| err.to_string())?;
     let activity = Arc::new(RequestActivity::new());
+    let worker = Arc::new(config.worker.clone());
+    let status_activity = activity.clone();
     let app = MistralRsServerRouterBuilder::new()
         .with_mistralrs(mistralrs)
         .build()
         .await
         .map_err(|err| err.to_string())?
+        .route(
+            LOCAL_WORKER_STATUS_PATH,
+            get(move || {
+                let worker = worker.clone();
+                let activity = status_activity.clone();
+                async move {
+                    let mut status = (*worker).clone();
+                    status.phase = if activity.has_active_requests() {
+                        LocalRuntimePhase::Busy
+                    } else {
+                        LocalRuntimePhase::Ready
+                    };
+                    Json(status)
+                }
+            }),
+        )
         .layer(middleware::from_fn_with_state(
             activity.clone(),
             track_request_activity,
@@ -259,6 +321,10 @@ impl RequestActivity {
                 .elapsed()
                 >= timeout
     }
+
+    fn has_active_requests(&self) -> bool {
+        self.active_requests.load(Ordering::Acquire) > 0
+    }
 }
 
 struct TrackedBody {
@@ -303,6 +369,9 @@ async fn track_request_activity(
     request: Request,
     next: Next,
 ) -> Response {
+    if request.uri().path().starts_with("/_medousa/") {
+        return next.run(request).await;
+    }
     activity.begin();
     let response = next.run(request).await;
     let (parts, body) = response.into_parts();
@@ -316,7 +385,9 @@ async fn track_request_activity(
     )
 }
 
-fn build_model_selected(config: &LocalEngineConfig) -> Result<mistralrs_core::ModelSelected, String> {
+fn build_model_selected(
+    config: &LocalEngineConfig,
+) -> Result<mistralrs_core::ModelSelected, String> {
     use mistralrs_core::{AutoDeviceMapParams, ModelDType, ModelSelected, MultimodalLoaderType};
 
     Ok(ModelSelected::MultimodalPlain {

@@ -4,6 +4,8 @@ use serde_json::Value;
 
 pub const DEFAULT_LOCAL_ENGINE_BIND: &str = "127.0.0.1:7421";
 pub const DEFAULT_LOCAL_ENGINE_BASE_URL: &str = "http://127.0.0.1:7421/v1";
+pub const LOCAL_WORKER_PROTOCOL_VERSION: u32 = 1;
+pub const LOCAL_WORKER_STATUS_PATH: &str = "/_medousa/status";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
@@ -171,6 +173,48 @@ pub enum LocalRuntimePhase {
     Failed,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct LocalWorkerStatus {
+    pub protocol_version: u32,
+    pub generation_id: String,
+    pub pid: u32,
+    pub started_at: DateTime<Utc>,
+    pub phase: LocalRuntimePhase,
+    pub model_repo: String,
+    pub model_alias: String,
+    pub artifact_digest: Option<String>,
+    pub recipe_revision: String,
+    pub binary_digest: Option<String>,
+    pub runtime_name: String,
+    pub runtime_version: String,
+    #[serde(default)]
+    pub compiled_backends: Vec<String>,
+}
+
+impl LocalWorkerStatus {
+    pub fn is_compatible_ready(&self) -> bool {
+        self.protocol_version == LOCAL_WORKER_PROTOCOL_VERSION
+            && matches!(
+                self.phase,
+                LocalRuntimePhase::Ready | LocalRuntimePhase::Busy
+            )
+            && !self.generation_id.trim().is_empty()
+            && self.pid != 0
+            && !self.model_alias.trim().is_empty()
+            && !self.recipe_revision.trim().is_empty()
+            && self
+                .artifact_digest
+                .as_deref()
+                .is_some_and(|digest| digest.starts_with("sha256:"))
+            && self
+                .binary_digest
+                .as_deref()
+                .is_some_and(|digest| digest.starts_with("sha256:"))
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
@@ -184,6 +228,8 @@ pub struct LocalEngineStatus {
     pub model_alias: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub inference_backend: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub worker: Option<LocalWorkerStatus>,
     pub message: String,
 }
 
@@ -205,6 +251,8 @@ impl<'de> Deserialize<'de> for LocalEngineStatus {
             model_alias: Option<String>,
             #[serde(default)]
             inference_backend: Option<String>,
+            #[serde(default)]
+            worker: Option<LocalWorkerStatus>,
             message: String,
         }
 
@@ -227,6 +275,7 @@ impl<'de> Deserialize<'de> for LocalEngineStatus {
             model_repo: wire.model_repo,
             model_alias: wire.model_alias,
             inference_backend: wire.inference_backend,
+            worker: wire.worker,
             message: wire.message,
         })
     }
@@ -247,6 +296,7 @@ impl LocalEngineStatus {
             model_repo: None,
             model_alias: None,
             inference_backend: None,
+            worker: None,
             message: if feature_enabled {
                 "Local engine not loaded".to_string()
             } else {
@@ -549,7 +599,9 @@ pub struct LocalModelDownloadResponse {
 
 #[cfg(test)]
 mod tests {
-    use super::{LocalEngineStatus, LocalRuntimePhase};
+    use super::{
+        LOCAL_WORKER_PROTOCOL_VERSION, LocalEngineStatus, LocalRuntimePhase, LocalWorkerStatus,
+    };
 
     #[test]
     fn idle_status_distinguishes_cold_from_unavailable() {
@@ -575,5 +627,27 @@ mod tests {
         )
         .unwrap();
         assert_eq!(status.phase, LocalRuntimePhase::Ready);
+    }
+
+    #[test]
+    fn worker_compatibility_requires_identity_and_ready_phase() {
+        let mut status = LocalWorkerStatus {
+            protocol_version: LOCAL_WORKER_PROTOCOL_VERSION,
+            generation_id: "generation-1".to_string(),
+            pid: 42,
+            started_at: chrono::Utc::now(),
+            phase: LocalRuntimePhase::Ready,
+            model_repo: "google/model".to_string(),
+            model_alias: "model".to_string(),
+            artifact_digest: Some("sha256:artifact".to_string()),
+            recipe_revision: "mir-recipe-v1:recipe".to_string(),
+            binary_digest: Some("sha256:binary".to_string()),
+            runtime_name: "mistral.rs".to_string(),
+            runtime_version: "0.8.1".to_string(),
+            compiled_backends: vec!["cpu".to_string()],
+        };
+        assert!(status.is_compatible_ready());
+        status.phase = LocalRuntimePhase::Loading;
+        assert!(!status.is_compatible_ready());
     }
 }

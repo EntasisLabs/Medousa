@@ -90,7 +90,24 @@ export interface LocalEngineStatus {
   modelRepo?: string | null;
   modelAlias?: string | null;
   inferenceBackend?: string | null;
+  worker?: LocalWorkerStatus | null;
   message: string;
+}
+
+export interface LocalWorkerStatus {
+  protocolVersion: number;
+  generationId: string;
+  pid: number;
+  startedAt: string;
+  phase: LocalEngineStatus["phase"];
+  modelRepo: string;
+  modelAlias: string;
+  artifactDigest?: string | null;
+  recipeRevision: string;
+  binaryDigest?: string | null;
+  runtimeName: string;
+  runtimeVersion: string;
+  compiledBackends: string[];
 }
 
 export function formatBytes(bytes: number): string {

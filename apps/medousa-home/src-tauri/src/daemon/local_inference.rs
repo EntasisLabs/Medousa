@@ -155,13 +155,7 @@ pub(crate) async fn ensure_local_engine_for_turn(model_id: Option<&str>) -> Resu
 pub async fn local_inference_unload_engine(
     state: State<'_, DaemonState>,
 ) -> Result<LocalEngineStatus, String> {
-    workshop_runtime::stop_local_brain(PERSONAL_WORKSHOP_ID);
-    let started = std::time::Instant::now();
-    while workshop_runtime::is_bind_reachable(workshop_runtime::DEFAULT_LOCAL_BRAIN_BIND)
-        && started.elapsed() < std::time::Duration::from_secs(10)
-    {
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-    }
+    workshop_runtime::stop_local_brain_bounded(PERSONAL_WORKSHOP_ID).await?;
     sdk::client(&state)
         .local_models()
         .engine_status()
@@ -178,7 +172,13 @@ pub async fn local_inference_engine_status(
         .engine_status()
         .await
         .map_err(|err| err.to_string())?;
-    if !status.loaded && workshop_runtime::local_brain_process_alive(PERSONAL_WORKSHOP_ID) {
+    if !status.loaded
+        && matches!(
+            status.phase,
+            LocalRuntimePhase::Cold | LocalRuntimePhase::Unavailable
+        )
+        && workshop_runtime::local_brain_process_alive(PERSONAL_WORKSHOP_ID)
+    {
         status.phase = LocalRuntimePhase::Loading;
         status.message = "Local model is loading".to_string();
     }

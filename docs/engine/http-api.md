@@ -320,6 +320,17 @@ The daemon **probes** `medousa_local` on `:7421`. Loading models uses `medousa m
 Older status payloads without `phase` are inferred as unavailable, cold, or
 ready by current clients.
 
+Current workers expose a private loopback handshake at `/_medousa/status`.
+`LocalEngineStatus.worker` records the protocol version, generation ID, PID,
+start time, exact model, aggregate verified-artifact digest, recipe revision,
+worker-binary digest, runtime identity, and compiled backends. A listening port
+is not readiness: supervisors accept only a compatible `ready` or `busy`
+handshake, verify the spawned/tracked PID and requested model, and report an
+occupied or incompatible listener as `failed`. Normal workers refuse model
+allocation when the installed artifact or worker binary cannot be identified by
+SHA-256. Unload targets the confirmed generation, waits up to ten seconds, and
+uses forced process termination as the final memory-reclamation fallback.
+
 `LocalResourceAdmission` is the shared pre-load decision record: current and
 total host memory, system reserve, hardware-tier cap, steady/conversion/peak
 estimates, critical-pressure threshold, and the explicit context/batch recipe.

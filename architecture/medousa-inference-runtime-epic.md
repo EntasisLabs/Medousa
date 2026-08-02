@@ -4,7 +4,7 @@
 
 **Working name:** MIR (Medousa Inference Runtime)
 
-**Last updated:** 2026-08-01
+**Last updated:** 2026-08-02
 
 **Research ledger:** [inference-research-index.md](inference-research-index.md)
 
@@ -134,6 +134,17 @@ For the user this means:
 > CUDA/HIP allocations. Additional qualified AMD SMI ABI majors, broader
 > hardware samples, and percentile calibration after sufficient runs remain
 > MIR-2 work.
+>
+> MIR-1's release-hardening handshake now makes readiness generation-aware.
+> The worker reports protocol version, generation/PID/start time, exact model,
+> aggregate verified-artifact digest, recipe revision, executable digest,
+> runtime, and compiled backends. Home and CLI supervisors verify the requested
+> model and spawned/tracked PID instead of accepting an arbitrary listener.
+> Missing artifact/binary identity fails before model allocation, incompatible
+> listeners surface as failed, and explicit unload waits ten seconds before a
+> forced-termination memory-reclamation fallback. Cancellation during load,
+> provider-switch and sleep/wake integration, and lifecycle soak remain before
+> MIR-1 closes.
 >
 > MIR-0 now has a content-free `medousa_local_bench` spine for installed models.
 > It captures the recipe and admission decision, load/stream/unload timing, TTFT,

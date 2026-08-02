@@ -78,9 +78,18 @@ async fn main() -> anyhow::Result<()> {
     sampler.capture(LocalBenchmarkPhase::BeforeLoad);
 
     let load_started = Instant::now();
+    let worker = medousa_local_inference::worker_status_for_config(&config).await;
+    anyhow::ensure!(
+        worker.artifact_digest.is_some(),
+        "benchmark requires a verified installed artifact with file digests"
+    );
+    anyhow::ensure!(
+        worker.binary_digest.is_some(),
+        "benchmark executable digest could not be read"
+    );
     let run = async {
         runtime
-            .load(to_runtime_config(config.clone()))
+            .load(to_runtime_config(config.clone(), worker))
             .await
             .map_err(anyhow::Error::msg)?;
         drop(activation_lease);
@@ -319,7 +328,10 @@ fn recipe(config: &LocalEngineConfig, catalog_repo: &str, args: &Args) -> LocalB
     }
 }
 
-fn to_runtime_config(config: LocalEngineConfig) -> RuntimeConfig {
+fn to_runtime_config(
+    config: LocalEngineConfig,
+    worker: medousa_types::local::LocalWorkerStatus,
+) -> RuntimeConfig {
     RuntimeConfig {
         bind: config.bind,
         model_repo: config.model_repo,
@@ -331,6 +343,7 @@ fn to_runtime_config(config: LocalEngineConfig) -> RuntimeConfig {
         max_batch_size: config.max_batch_size,
         idle_timeout_secs: config.idle_timeout_secs,
         critical_available_mb: config.critical_available_mb,
+        worker,
     }
 }
 

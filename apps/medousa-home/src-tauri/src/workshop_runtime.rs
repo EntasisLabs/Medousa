@@ -554,6 +554,50 @@ pub fn stop_local_brain(workshop_id: &str) {
     clear_local_brain_pid(workshop_id);
 }
 
+pub async fn stop_local_brain_bounded(workshop_id: &str) -> Result<bool, String> {
+    let tracked_pid = read_local_brain_pid(workshop_id);
+    if let Ok(worker) = medousa_host::probe_local_worker(DEFAULT_LOCAL_BRAIN_BIND) {
+        if tracked_pid != Some(worker.pid) {
+            return Err("Refusing to stop an untracked local worker generation".to_string());
+        }
+        let stopped = medousa_host::stop_local_worker(
+            DEFAULT_LOCAL_BRAIN_BIND,
+            Duration::from_secs(10),
+        )
+        .await?;
+        clear_local_brain_pid(workshop_id);
+        return Ok(stopped);
+    }
+    if is_bind_reachable(DEFAULT_LOCAL_BRAIN_BIND) {
+        return Err(format!(
+            "Refusing to stop incompatible service on {DEFAULT_LOCAL_BRAIN_BIND}"
+        ));
+    }
+    let Some(pid) = tracked_pid else {
+        return Ok(false);
+    };
+    if !medousa_host::is_process_alive(pid) {
+        clear_local_brain_pid(workshop_id);
+        return Ok(false);
+    }
+    let _ = medousa_host::request_process_stop_by_pid(pid);
+    let started = Instant::now();
+    while started.elapsed() < Duration::from_secs(10) {
+        if !medousa_host::is_process_alive(pid) {
+            clear_local_brain_pid(workshop_id);
+            return Ok(true);
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    let _ = medousa_host::force_process_stop_by_pid(pid);
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    if medousa_host::is_process_alive(pid) {
+        return Err(format!("Local worker pid {pid} survived forced termination"));
+    }
+    clear_local_brain_pid(workshop_id);
+    Ok(true)
+}
+
 pub fn local_brain_process_alive(workshop_id: &str) -> bool {
     let Some(pid) = read_local_brain_pid(workshop_id) else {
         return false;
@@ -571,10 +615,22 @@ pub fn spawn_local_brain(
     data_dir: &Path,
     model_id: Option<&str>,
 ) -> Result<(u32, PathBuf), String> {
+    if let Ok(worker) = medousa_host::probe_local_worker(DEFAULT_LOCAL_BRAIN_BIND) {
+        let tracked_pid = read_local_brain_pid(workshop_id);
+        let requested_matches = model_id
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .is_none_or(|model_id| worker.model_alias == model_id);
+        if tracked_pid == Some(worker.pid) && requested_matches {
+            return Ok((worker.pid, local_brain_log_path(workshop_id)));
+        }
+        return Err(format!(
+            "A different Medousa local worker generation is already using {DEFAULT_LOCAL_BRAIN_BIND}"
+        ));
+    }
     if is_bind_reachable(DEFAULT_LOCAL_BRAIN_BIND) {
-        return Ok((
-            read_local_brain_pid(workshop_id).unwrap_or(0),
-            local_brain_log_path(workshop_id),
+        return Err(format!(
+            "{DEFAULT_LOCAL_BRAIN_BIND} is occupied by an incompatible service"
         ));
     }
 
@@ -622,8 +678,20 @@ pub fn spawn_local_brain(
     Ok((pid, log_path))
 }
 
-async fn local_brain_http_ready() -> bool {
-    is_bind_reachable(DEFAULT_LOCAL_BRAIN_BIND)
+fn local_brain_http_ready(
+    workshop_id: &str,
+    model_id: Option<&str>,
+) -> Option<medousa_types::local::LocalWorkerStatus> {
+    let worker = medousa_host::probe_local_worker(DEFAULT_LOCAL_BRAIN_BIND).ok()?;
+    if read_local_brain_pid(workshop_id) != Some(worker.pid) {
+        return None;
+    }
+    if let Some(model_id) = model_id.map(str::trim).filter(|value| !value.is_empty()) {
+        if worker.model_alias != model_id {
+            return None;
+        }
+    }
+    Some(worker)
 }
 
 pub async fn ensure_local_brain(
@@ -638,13 +706,13 @@ pub async fn ensure_local_brain(
         .get_or_init(|| tokio::sync::Mutex::new(()))
         .lock()
         .await;
-    if local_brain_http_ready().await {
+    if local_brain_http_ready(workshop_id, model_id).is_some() {
         return Ok(true);
     }
     spawn_local_brain(workshop_id, data_dir, model_id)?;
     let started = Instant::now();
     while started.elapsed() < Duration::from_secs(600) {
-        if local_brain_http_ready().await {
+        if local_brain_http_ready(workshop_id, model_id).is_some() {
             return Ok(true);
         }
         if !local_brain_process_alive(workshop_id) {
