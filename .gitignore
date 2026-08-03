@@ -28,6 +28,9 @@ apps/**/.svelte-kit/
 package-lock.json
 !apps/medousa-home/package-lock.json
 !apps/medousa-installer/package-lock.json
+!integrations/vscode/package-lock.json
+!integrations/obsidian/package-lock.json
+!integrations/browser/package-lock.json
 .grapheme-examples/
 /data%
 /docs/internal/

@@ -119,6 +119,7 @@ jobs:
   # (GitHub-hosted label); runs-on picks between them from the variable.
   #
   # Self-hosted runner labels (assign when registering runners on your fleet):
+  #   Actions Runner v2.327.1+ is required by checkout/setup-node v5 (Node 24 runtime).
   #   Apple Silicon Mac : [self-hosted, macOS, ARM64]
   #   Intel Mac         : [self-hosted, macOS, X64]
   #   Windows           : [self-hosted, Windows, X64]   (git-bash must be on PATH)
@@ -151,7 +152,7 @@ jobs:
       version: ${{ steps.sel.outputs.version }}
       tag: ${{ steps.sel.outputs.tag }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - id: sel
         shell: bash
         run: |
@@ -284,7 +285,7 @@ jobs:
             os: ubuntu-24.04-arm
             runner: [self-hosted, Linux, X64]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -348,7 +349,7 @@ jobs:
           - name: linux-x64
             target: x86_64-unknown-linux-gnu
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Fetch daemon from published engine
         env:
@@ -413,7 +414,7 @@ jobs:
             runner: [self-hosted, Windows, X64]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -497,7 +498,7 @@ jobs:
             os: windows-latest
             runner: [self-hosted, Windows, X64]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -559,7 +560,7 @@ jobs:
             os: windows-latest
             runner: [self-hosted, Windows, X64]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -623,7 +624,7 @@ jobs:
             os: windows-latest
             runner: [self-hosted, Windows, X64]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -713,7 +714,7 @@ jobs:
         working-directory: apps/medousa-home
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Prepare CI scripts
         working-directory: .
@@ -732,7 +733,7 @@ jobs:
             libfuse2
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 20
           cache: npm
@@ -946,7 +947,7 @@ jobs:
         working-directory: apps/medousa-installer
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Prepare CI scripts
         working-directory: .
@@ -960,7 +961,7 @@ jobs:
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libfuse2
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 20
           cache: npm
@@ -1147,7 +1148,7 @@ jobs:
             os: windows-latest
             runner: [self-hosted, Windows, X64]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -1183,8 +1184,8 @@ jobs:
     if: needs.prepare.outputs.ship_integrations == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: "22"
           cache: npm
@@ -1261,7 +1262,7 @@ jobs:
       run:
         shell: bash
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install jq
         run: sudo apt-get update && sudo apt-get install -y jq
