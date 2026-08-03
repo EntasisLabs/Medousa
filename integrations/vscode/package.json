@@ -82,6 +82,7 @@
   },
   "scripts": {
     "prebuild": "tsc -p ../../packages/medousa-client/tsconfig.json",
+    "pretest": "tsc -p ../../packages/medousa-client/tsconfig.json",
     "check": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "bundle": "esbuild src/extension.ts --bundle --platform=node --format=esm --external:vscode --outfile=dist/extension.js --sourcemap",

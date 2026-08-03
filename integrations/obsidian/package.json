@@ -13,6 +13,7 @@
   "scripts": {
     "dev": "node esbuild.config.mjs",
     "prebuild": "tsc -p ../../packages/medousa-client/tsconfig.json",
+    "pretest": "tsc -p ../../packages/medousa-client/tsconfig.json",
     "build": "tsc --noEmit --skipLibCheck && node esbuild.config.mjs production",
     "check": "tsc --noEmit --skipLibCheck",
     "test": "vitest run"
