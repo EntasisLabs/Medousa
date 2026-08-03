@@ -1,11 +1,12 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, tick } from "svelte";
   import {
     ChevronDown,
     ClipboardPaste,
     Globe,
     House,
     LayoutGrid,
+    ListTodo,
     MessageSquare,
     MessageSquarePlus,
     Send,
@@ -34,13 +35,17 @@
   } from "$lib/daemon";
   import { environment } from "$lib/stores/environment.svelte";
   import { chat } from "$lib/stores/chat.svelte";
+  import { runtime } from "$lib/stores/runtime.svelte";
   import { settings } from "$lib/stores/settings.svelte";
+  import { workspace } from "$lib/stores/workspace.svelte";
   import { listenForMedousaMark } from "$lib/settings/companionAppearanceSync";
   import { medousaMarkOption } from "$lib/theme/medousaMarks";
   import { environmentIcon } from "$lib/utils/environmentIcons";
   import { readLastViewPopoutSurface } from "$lib/utils/viewPopout";
   import { homeChannelSurface } from "$lib/platform";
   import type { InteractiveTurnStreamEvent } from "$lib/types/chat";
+  import { isAskJobId } from "$lib/types/askJob";
+  import { buildAskJobRequest } from "$lib/utils/askPrompt";
   import {
     hideDesktopToolbar,
     isTauri,
@@ -54,6 +59,7 @@
   import { whenDocumentVisible } from "$lib/utils/whenDocumentVisible";
 
   type WindowMode = "pet" | "bubble" | "toolbelt";
+  type ComposerMode = "chat" | "ask";
 
   const WINDOW_SIZES: Record<WindowMode, { width: number; height: number }> = {
     pet: { width: 112, height: 170 },
@@ -62,16 +68,22 @@
   };
 
   let expanded = $state(false);
+  let renderMode = $state<WindowMode>("pet");
+  let geometrySettling = $state(false);
   let viewsOpen = $state(false);
   let sending = $state(false);
   let approvalBusy = $state(false);
-  let prompt = $state("");
+  let composerMode = $state<ComposerMode>("chat");
+  let chatPrompt = $state("");
+  let askPrompt = $state("");
   let health = $state<DaemonHealth | null>(null);
   let pendingApprovals = $state<TurnBudgetRequestRecord[]>([]);
   let activity = $state(initialCompanionActivity());
   let feedbackTimer: ReturnType<typeof setTimeout> | null = null;
   let resizeToken = 0;
+  let renderedModeValue: WindowMode = "pet";
   let suppressPetClick = false;
+  let petRestorePosition: { x: number; y: number } | null = null;
 
   const connected = $derived(health?.ok === true);
   const pendingApproval = $derived(pendingApprovals[0] ?? null);
@@ -107,6 +119,24 @@
     environment.navSurfaces().filter((surface) => surface.kind === "custom"),
   );
   const companionMark = $derived(medousaMarkOption(settings.medousaMark));
+  const activePrompt = $derived(composerMode === "chat" ? chatPrompt : askPrompt);
+  const activeAskCard = $derived.by(() => {
+    const selected = workspace.cards.find(
+      (card) => card.id === workspace.selectedCardId && isAskJobId(card.id),
+    );
+    return selected ?? workspace.railCards().find((card) => isAskJobId(card.id)) ?? null;
+  });
+  const toolbeltSubtitle = $derived(
+    composerMode === "chat"
+      ? connected
+        ? sessionLabel
+        : health?.message || "Connecting…"
+      : activeAskCard
+        ? `${activeAskCard.status_label} · ${activeAskCard.title}`
+        : connected
+          ? "Delegate background work"
+          : health?.message || "Connecting…",
+  );
   const latestAssistantReply = $derived.by(() => {
     for (let index = chat.messages.length - 1; index >= 0; index -= 1) {
       const message = chat.messages[index];
@@ -203,8 +233,19 @@
   }
 
   async function syncWindowSize(nextMode: WindowMode) {
-    if (!isTauri()) return;
     const token = ++resizeToken;
+    const transitioning = renderedModeValue !== nextMode;
+    if (!isTauri()) {
+      renderedModeValue = nextMode;
+      renderMode = nextMode;
+      return;
+    }
+    if (transitioning) {
+      geometrySettling = true;
+      await tick();
+      await new Promise<void>((resolve) => setTimeout(resolve, 65));
+      if (token !== resizeToken) return;
+    }
     try {
       const {
         getCurrentWindow,
@@ -223,17 +264,37 @@
       if (token !== resizeToken) return;
       const physicalWidth = Math.round(target.width * scaleFactor);
       const physicalHeight = Math.round(target.height * scaleFactor);
+      const petSize = {
+        width: Math.round(WINDOW_SIZES.pet.width * scaleFactor),
+        height: Math.round(WINDOW_SIZES.pet.height * scaleFactor),
+      };
       const workArea = companionWorkAreaForWindow({
         position,
         size: previousSize,
         workAreas: monitors.map((monitor) => monitor.workArea),
       });
-      const nextPosition = anchoredCompanionPosition({
-        position,
-        previousSize,
-        targetSize: { width: physicalWidth, height: physicalHeight },
-        workArea,
-      });
+      if (nextMode === "toolbelt" && !petRestorePosition) {
+        petRestorePosition = anchoredCompanionPosition({
+          position,
+          previousSize,
+          targetSize: petSize,
+          workArea,
+        });
+      }
+      const restoreFromPet = nextMode !== "toolbelt" && petRestorePosition;
+      const nextPosition = restoreFromPet
+        ? anchoredCompanionPosition({
+            position: restoreFromPet,
+            previousSize: petSize,
+            targetSize: { width: physicalWidth, height: physicalHeight },
+            workArea,
+          })
+        : anchoredCompanionPosition({
+            position,
+            previousSize,
+            targetSize: { width: physicalWidth, height: physicalHeight },
+            workArea,
+          });
       await current.setSize(new LogicalSize(target.width, target.height));
       if (token !== resizeToken) return;
       const actualSize = await current.outerSize();
@@ -246,8 +307,21 @@
       await current.setPosition(
         new PhysicalPosition(clampedPosition.x, clampedPosition.y),
       );
+      if (nextMode === "pet") petRestorePosition = null;
+      if (token !== resizeToken) return;
+      renderedModeValue = nextMode;
+      renderMode = nextMode;
+      await tick();
+      requestAnimationFrame(() => {
+        if (token === resizeToken) geometrySettling = false;
+      });
     } catch {
       // Window resizing is best-effort in browser development mode.
+      if (token === resizeToken) {
+        renderedModeValue = nextMode;
+        renderMode = nextMode;
+        geometrySettling = false;
+      }
     }
   }
 
@@ -290,13 +364,26 @@
 
   async function submitPrompt(event: SubmitEvent) {
     event.preventDefault();
-    const message = prompt.trim();
+    const submitMode = composerMode;
+    const message = activePrompt.trim();
     if (!message || sending || !connected) return;
     sending = true;
     setFeedback(null, false);
     try {
+      if (submitMode === "ask") {
+        await workspace.submitAsk({
+          ...buildAskJobRequest(message, [], []),
+          modelHint: runtime.model,
+        });
+        askPrompt = "";
+        setFeedback({
+          tone: "success",
+          message: "Ask queued. Medousa will keep working in the background.",
+        });
+        return;
+      }
       const ticket = await sendCompanionPrompt(message);
-      prompt = "";
+      chatPrompt = "";
       activity = {
         activeTurnIds: new Set([...activity.activeTurnIds, ticket.turn_id]),
         feedback: null,
@@ -347,7 +434,7 @@
   async function startNewConversation() {
     try {
       await chat.newSession();
-      prompt = "";
+      chatPrompt = "";
       setFeedback({ tone: "success", message: "New conversation ready." });
     } catch (error) {
       setFeedback({
@@ -364,7 +451,9 @@
         setFeedback({ tone: "attention", message: "The clipboard is empty." });
         return;
       }
-      prompt = `Use this clipboard context:\n\n${clipboard}`;
+      const nextPrompt = `Use this clipboard context:\n\n${clipboard}`;
+      if (composerMode === "chat") chatPrompt = nextPrompt;
+      else askPrompt = nextPrompt;
       setFeedback({
         tone: "success",
         message: "Clipboard added. Review it before sending.",
@@ -375,6 +464,12 @@
         message: "Medousa could not read the clipboard. Check clipboard permission.",
       });
     }
+  }
+
+  function updateActivePrompt(event: Event) {
+    const value = (event.currentTarget as HTMLTextAreaElement).value;
+    if (composerMode === "chat") chatPrompt = value;
+    else askPrompt = value;
   }
 
   async function openChat() {
@@ -430,12 +525,13 @@
 </script>
 
 <main
-  class="companion-window companion-window--{mode}"
-  data-mode={mode}
+  class="companion-window companion-window--{renderMode}"
+  class:companion-window--settling={geometrySettling}
+  data-mode={renderMode}
   style:--companion-accent={settings.darkMode ? companionMark.darkColor : companionMark.lightColor}
   style:--companion-stage={settings.darkMode ? companionMark.darkPreviewBackground : companionMark.lightPreviewBackground}
 >
-  {#if mode === "toolbelt"}
+  {#if renderMode === "toolbelt"}
     <section class="companion-toolbelt" aria-label="Medousa companion toolbelt">
       <header class="companion-header" data-tauri-drag-region>
         <div class="companion-header-mark" data-tauri-drag-region>
@@ -449,7 +545,7 @@
         </div>
         <div class="companion-heading" data-tauri-drag-region>
           <strong>Medousa</strong>
-          <span>{connected ? sessionLabel : health?.message || "Connecting…"}</span>
+          <span>{toolbeltSubtitle}</span>
         </div>
         <button
           type="button"
@@ -510,20 +606,58 @@
         </section>
       {/if}
 
-      {#if latestAssistantReply}
+      <div class="companion-mode-switch" role="tablist" aria-label="Companion mode">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={composerMode === "chat"}
+          class:companion-mode-active={composerMode === "chat"}
+          disabled={sending}
+          onclick={() => (composerMode = "chat")}
+        >
+          <MessageSquare size={14} strokeWidth={1.8} />
+          Chat
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={composerMode === "ask"}
+          class:companion-mode-active={composerMode === "ask"}
+          disabled={sending}
+          onclick={() => (composerMode = "ask")}
+        >
+          <ListTodo size={14} strokeWidth={1.8} />
+          Ask
+        </button>
+      </div>
+
+      {#if composerMode === "chat" && latestAssistantReply && !companionFeedback && !pendingApproval}
         <section class="companion-recent" aria-label="Latest Medousa reply">
           <strong>Latest reply</strong>
           <p>{latestAssistantReply}</p>
         </section>
+      {:else if composerMode === "ask" && !companionFeedback && !pendingApproval}
+        <section class="companion-recent" aria-label="Background ask status">
+          <strong>{activeAskCard ? "Current ask" : "Ask runs in Work"}</strong>
+          <p>
+            {activeAskCard
+              ? `${activeAskCard.title} · ${activeAskCard.status_label}`
+              : "Hand off something substantial, then switch back to Chat while Medousa keeps going."}
+          </p>
+        </section>
       {/if}
 
       <form class="companion-composer" onsubmit={submitPrompt}>
-        <label for="companion-prompt">Ask Medousa</label>
+        <label for="companion-prompt">
+          {composerMode === "chat" ? "Quick chat" : "Delegate to Medousa"}
+        </label>
         <div class="companion-quick-actions" aria-label="Conversation actions">
-          <button type="button" onclick={() => void startNewConversation()}>
-            <MessageSquarePlus size={14} strokeWidth={1.8} />
-            New conversation
-          </button>
+          {#if composerMode === "chat"}
+            <button type="button" onclick={() => void startNewConversation()}>
+              <MessageSquarePlus size={14} strokeWidth={1.8} />
+              New conversation
+            </button>
+          {/if}
           <button type="button" onclick={() => void useClipboard()}>
             <ClipboardPaste size={14} strokeWidth={1.8} />
             Use clipboard
@@ -531,10 +665,15 @@
         </div>
         <textarea
           id="companion-prompt"
-          bind:value={prompt}
+          value={activePrompt}
           rows="4"
-          placeholder={connected ? "What should we work on?" : "Waiting for the workshop…"}
+          placeholder={connected
+            ? composerMode === "chat"
+              ? "Talk something through without leaving your flow…"
+              : "What should Medousa go do in the background?"
+            : "Waiting for the workshop…"}
           disabled={!connected || sending}
+          oninput={updateActivePrompt}
           onkeydown={(event) => {
             if (event.key === "Enter" && !event.shiftKey) {
               event.preventDefault();
@@ -543,32 +682,36 @@
           }}
         ></textarea>
         <div class="companion-composer-footer">
-          {#if chat.sessions.length > 0}
-            <select
-              aria-label="Conversation"
-              value={chat.sessionId}
-              onchange={(event) => void switchSession(event)}
-            >
-              {#if !chat.sessions.some((session) => session.session_id === chat.sessionId)}
-                <option value={chat.sessionId}>New conversation</option>
-              {/if}
-              {#each chat.sessions.slice(0, 12) as session (session.session_id)}
-                <option value={session.session_id}>
-                  {session.display_name?.trim() || session.preview?.trim() || "Conversation"}
-                </option>
-              {/each}
-            </select>
+          {#if composerMode === "chat"}
+            {#if chat.sessions.length > 0}
+              <select
+                aria-label="Conversation"
+                value={chat.sessionId}
+                onchange={(event) => void switchSession(event)}
+              >
+                {#if !chat.sessions.some((session) => session.session_id === chat.sessionId)}
+                  <option value={chat.sessionId}>New conversation</option>
+                {/if}
+                {#each chat.sessions.slice(0, 12) as session (session.session_id)}
+                  <option value={session.session_id}>
+                    {session.display_name?.trim() || session.preview?.trim() || "Conversation"}
+                  </option>
+                {/each}
+              </select>
+            {:else}
+              <span class="companion-session-label">{sessionLabel}</span>
+            {/if}
           {:else}
-            <span class="companion-session-label">{sessionLabel}</span>
+            <span class="companion-session-label">Background · visible in Work</span>
           {/if}
           <button
             type="submit"
             class="companion-send-btn"
-            disabled={!connected || sending || !prompt.trim()}
-            aria-label="Send to Medousa"
+            disabled={!connected || sending || !activePrompt.trim()}
+            aria-label={composerMode === "chat" ? "Send chat message" : "Queue background ask"}
           >
             <Send size={15} strokeWidth={1.9} />
-            <span>{sending ? "Sending" : "Send"}</span>
+            <span>{sending ? (composerMode === "chat" ? "Sending" : "Queuing") : (composerMode === "chat" ? "Send" : "Queue")}</span>
           </button>
         </div>
       </form>
@@ -623,7 +766,7 @@
       {/if}
     </section>
   {:else}
-    {#if companionFeedback}
+    {#if renderMode === "bubble" && companionFeedback}
       <button
         type="button"
         class="companion-bubble companion-bubble--{companionFeedback.tone}"
@@ -685,8 +828,15 @@
     padding: 0.45rem;
     color: rgb(var(--color-surface-50));
     background: transparent;
+    opacity: 1;
+    transition: opacity 65ms ease-out;
     -webkit-user-select: none;
     user-select: none;
+  }
+
+  .companion-window--settling {
+    opacity: 0;
+    pointer-events: none;
   }
 
   .companion-window--toolbelt {
@@ -987,6 +1137,47 @@
     opacity: 0.55;
   }
 
+  .companion-mode-switch {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.25rem;
+    border: 1px solid rgb(var(--color-surface-500) / 0.25);
+    border-radius: 0.72rem;
+    background: rgb(var(--color-surface-900) / 0.58);
+    padding: 0.22rem;
+  }
+
+  .companion-mode-switch button {
+    display: inline-flex;
+    height: 1.95rem;
+    align-items: center;
+    justify-content: center;
+    gap: 0.38rem;
+    border: 1px solid transparent;
+    border-radius: 0.52rem;
+    background: transparent;
+    color: rgb(var(--color-surface-400));
+    font-size: 0.68rem;
+    font-weight: 650;
+    cursor: pointer;
+  }
+
+  .companion-mode-switch button:hover {
+    color: rgb(var(--color-surface-100));
+  }
+
+  .companion-mode-switch button:disabled {
+    cursor: wait;
+    opacity: 0.65;
+  }
+
+  .companion-mode-switch .companion-mode-active {
+    border-color: color-mix(in srgb, var(--companion-accent) 28%, transparent);
+    background: color-mix(in srgb, var(--companion-accent) 13%, rgb(var(--color-surface-800)));
+    color: rgb(var(--color-surface-50));
+    box-shadow: 0 2px 8px rgb(0 0 0 / 0.16);
+  }
+
   .companion-recent {
     display: grid;
     gap: 0.2rem;
@@ -1205,6 +1396,7 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
+    .companion-window,
     .companion-pet,
     .companion-bubble,
     .companion-toolbelt {

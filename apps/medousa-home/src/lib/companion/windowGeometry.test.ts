@@ -53,6 +53,23 @@ describe("anchoredCompanionPosition", () => {
       }),
     ).toEqual({ x: -1920, y: 0 });
   });
+
+  it("round-trips to the original pet position after toolbelt expansion", () => {
+    const petPosition = { x: 1440, y: 720 };
+    const petSize = { width: 112, height: 170 };
+    const toolbeltPosition = anchoredCompanionPosition({
+      position: petPosition,
+      previousSize: petSize,
+      targetSize,
+    });
+    expect(
+      anchoredCompanionPosition({
+        position: toolbeltPosition,
+        previousSize: targetSize,
+        targetSize: petSize,
+      }),
+    ).toEqual(petPosition);
+  });
 });
 
 describe("companionWorkAreaForWindow", () => {

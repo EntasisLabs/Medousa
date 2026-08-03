@@ -12,7 +12,9 @@ Click the pet to open its toolbelt. Drag the pet to move it; Medousa keeps the e
 
 ## What it can do
 
-- Ask Medousa in the current conversation and switch among recent conversations.
+- Switch between **Chat** for a quick conversational turn and **Ask** for delegated background work.
+- Chat in the current conversation and switch among recent conversations without opening the full chat window.
+- Keep separate Chat and Ask drafts while switching modes.
 - Start a new conversation or explicitly place clipboard text into a draft for review before sending.
 - Show the latest reply, active-work status, and approval requests.
 - Open Chat, a sticky note, Web, custom views, or the main Medousa window.
