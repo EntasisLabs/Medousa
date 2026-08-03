@@ -35,6 +35,12 @@ Every registered mode resolves to an immutable per-turn snapshot containing:
 - loop and completion policy;
 - entry, exit, and transition policy.
 
+Mode policy overlays and compiled mode world-state context use canonical
+`sttp-1.0` nodes: provenance (`⊕`) → envelope (`⦿`) → confidence-weighted
+content (`◈`) → metrics (`⍉`). Markdown or ad-hoc XML prompt overlays are not
+valid mode contracts. Structural validation is required alongside semantic
+prompt tests.
+
 Mode resolution is deterministic and does not require a model call:
 
 1. explicit turn override;

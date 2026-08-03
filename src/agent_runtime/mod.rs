@@ -40,6 +40,7 @@ pub mod presentation;
 pub mod prompt_prep;
 pub mod runtime;
 pub mod settings;
+pub mod sttp;
 pub mod system_prompt;
 pub mod tool_stream;
 pub mod turn_budget;
@@ -97,6 +98,7 @@ pub use modes::{
     system_prompt_for_mode,
 };
 pub use coder_mode::{CoderEntryContext, CoderEntryError, compile_coder_entry};
+pub use sttp::{SttpValidationError, validate_canonical_sttp_node};
 pub use daemon_interactive_turn::{
     InteractiveTurnDeliveryContext, InteractiveTurnSessionHooks, run_agent_turn,
     run_daemon_interactive_turn,
