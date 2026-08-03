@@ -79,6 +79,12 @@ Domain `coding` in `tool_bootstrap` (worker lane) — unlocked via
 `cognition_shell_session_status`, `cognition_shell_session_run`,
 `cognition_shell_session_interrupt`.
 
+`cognition_code_read` returns a SHA-256 content digest. Every
+`cognition_code_apply_patch` call must present that digest as
+`expected_sha256` (or `missing` when creating a file), so stale observations
+fail before mutation. Reads, writes, recursive search, and shell output have
+hard payload limits; symlinks cannot be used to escape an allowed root.
+
 One-shot `cognition_shell_run` remains for non-coding probes; coding mode
 prefers the shared session. Default interactive palette is unchanged.
 

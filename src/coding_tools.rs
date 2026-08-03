@@ -9,7 +9,8 @@
 use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
+use sha2::{Digest as _, Sha256};
 use stasis::application::orchestration::tool_registry::StasisTool;
 use stasis::prelude::{Result as StasisResult, StasisError};
 
@@ -28,6 +29,10 @@ pub const CODING_COGNITION_TOOLS: &[&str] = &[
     COGNITION_SHELL_SESSION_RUN,
     COGNITION_SHELL_SESSION_INTERRUPT,
 ];
+
+const MAX_CODE_READ_BYTES: u64 = 1024 * 1024;
+const MAX_CODE_WRITE_BYTES: usize = 4 * 1024 * 1024;
+const MAX_SHELL_OUTPUT_BYTES: usize = 1024 * 1024;
 
 pub fn is_coding_cognition_tool(name: &str) -> bool {
     CODING_COGNITION_TOOLS.contains(&name)
@@ -48,9 +53,17 @@ fn resolve_root(root: Option<&str>) -> StasisResult<PathBuf> {
         Some(raw) => PathBuf::from(raw),
         None => crate::grapheme_script::store::GraphemeScriptStore::root_dir(),
     };
-    let canon = base.canonicalize().unwrap_or(base);
-    let allowed = allowed_roots();
-    if !allowed.iter().any(|r| canon.starts_with(r)) {
+    let canon = base.canonicalize().map_err(|err| {
+        StasisError::PortFailure(format!(
+            "cannot resolve coding root {}: {err}",
+            base.display()
+        ))
+    })?;
+    let allowed: Vec<PathBuf> = allowed_roots()
+        .into_iter()
+        .filter_map(|root| root.canonicalize().ok())
+        .collect();
+    if !allowed.iter().any(|root| canon.starts_with(root)) {
         return Err(StasisError::PortFailure(format!(
             "root not under allowed workshop roots: {}",
             canon.display()
@@ -60,27 +73,90 @@ fn resolve_root(root: Option<&str>) -> StasisResult<PathBuf> {
 }
 
 fn resolve_path(root: &Path, rel: &str) -> StasisResult<PathBuf> {
+    if rel.trim().is_empty() {
+        return Err(StasisError::PortFailure("path is required".into()));
+    }
     let path = if Path::new(rel).is_absolute() {
         PathBuf::from(rel)
     } else {
         root.join(rel)
     };
-    let canon = path.canonicalize().unwrap_or(path);
-    if !canon.starts_with(root) {
+    let authority_path = if path.exists() {
+        path.canonicalize().map_err(|err| {
+            StasisError::PortFailure(format!("cannot resolve {}: {err}", path.display()))
+        })?
+    } else {
+        let mut ancestor = path.parent();
+        let mut resolved_parent = None;
+        while let Some(candidate) = ancestor {
+            if candidate.exists() {
+                resolved_parent = Some(candidate.canonicalize().map_err(|err| {
+                    StasisError::PortFailure(format!(
+                        "cannot resolve parent {}: {err}",
+                        candidate.display()
+                    ))
+                })?);
+                break;
+            }
+            ancestor = candidate.parent();
+        }
+        resolved_parent.ok_or_else(|| {
+            StasisError::PortFailure(format!("path has no existing parent: {}", path.display()))
+        })?
+    };
+    if !authority_path.starts_with(root) {
         return Err(StasisError::PortFailure(format!(
             "path escapes root: {}",
-            canon.display()
+            path.display()
         )));
     }
-    Ok(canon)
+    Ok(path)
+}
+
+fn content_digest(bytes: &[u8]) -> String {
+    format!("sha256:{:x}", Sha256::digest(bytes))
+}
+
+fn truncate_utf8_bytes(value: &mut String, max_bytes: usize) {
+    if value.len() <= max_bytes {
+        return;
+    }
+    let mut boundary = max_bytes;
+    while boundary > 0 && !value.is_char_boundary(boundary) {
+        boundary -= 1;
+    }
+    value.truncate(boundary);
+}
+
+fn verify_expected_digest(path: &Path, expected: &str) -> StasisResult<Option<Vec<u8>>> {
+    match std::fs::read(path) {
+        Ok(bytes) => {
+            let actual = content_digest(&bytes);
+            if expected != actual {
+                return Err(StasisError::PortFailure(format!(
+                    "stale file digest for {}: expected {expected}, found {actual}",
+                    path.display()
+                )));
+            }
+            Ok(Some(bytes))
+        }
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound && expected == "missing" => Ok(None),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+            Err(StasisError::PortFailure(format!(
+                "stale file digest for {}: expected {expected}, found missing",
+                path.display()
+            )))
+        }
+        Err(err) => Err(StasisError::PortFailure(format!(
+            "read {}: {err}",
+            path.display()
+        ))),
+    }
 }
 
 async fn daemon_post(path: &str, body: Value) -> StasisResult<Value> {
     let client = reqwest::Client::new();
-    let url = format!(
-        "{}{path}",
-        daemon_base().trim_end_matches('/')
-    );
+    let url = format!("{}{path}", daemon_base().trim_end_matches('/'));
     let resp = client
         .post(&url)
         .json(&body)
@@ -93,17 +169,16 @@ async fn daemon_post(path: &str, body: Value) -> StasisResult<Value> {
         .await
         .map_err(|e| StasisError::PortFailure(e.to_string()))?;
     if !status.is_success() {
-        return Err(StasisError::PortFailure(format!("daemon {status}: {value}")));
+        return Err(StasisError::PortFailure(format!(
+            "daemon {status}: {value}"
+        )));
     }
     Ok(value)
 }
 
 async fn daemon_get(path: &str) -> StasisResult<Value> {
     let client = reqwest::Client::new();
-    let url = format!(
-        "{}{path}",
-        daemon_base().trim_end_matches('/')
-    );
+    let url = format!("{}{path}", daemon_base().trim_end_matches('/'));
     let resp = client
         .get(&url)
         .send()
@@ -115,7 +190,9 @@ async fn daemon_get(path: &str) -> StasisResult<Value> {
         .await
         .map_err(|e| StasisError::PortFailure(e.to_string()))?;
     if !status.is_success() {
-        return Err(StasisError::PortFailure(format!("daemon {status}: {value}")));
+        return Err(StasisError::PortFailure(format!(
+            "daemon {status}: {value}"
+        )));
     }
     Ok(value)
 }
@@ -163,6 +240,14 @@ impl StasisTool for CognitionCodeReadTool {
     }
     async fn invoke(&self, input: Value) -> StasisResult<Value> {
         let (root, path) = root_and_path(&input)?;
+        let metadata = tokio::fs::metadata(&path)
+            .await
+            .map_err(|e| StasisError::PortFailure(format!("read {}: {e}", path.display())))?;
+        if metadata.len() > MAX_CODE_READ_BYTES {
+            return Err(StasisError::PortFailure(format!(
+                "file exceeds code_read limit of {MAX_CODE_READ_BYTES} bytes"
+            )));
+        }
         let content = tokio::fs::read_to_string(&path)
             .await
             .map_err(|e| StasisError::PortFailure(format!("read {}: {e}", path.display())))?;
@@ -171,6 +256,7 @@ impl StasisTool for CognitionCodeReadTool {
             "path": path.display().to_string(),
             "root": root.display().to_string(),
             "bytes": content.len(),
+            "digest": content_digest(content.as_bytes()),
             "content": content,
         }))
     }
@@ -202,6 +288,11 @@ impl StasisTool for CognitionCodeSearchTool {
             .get("query")
             .and_then(|v| v.as_str())
             .ok_or_else(|| StasisError::PortFailure("query is required".into()))?;
+        if query.chars().count() > 512 {
+            return Err(StasisError::PortFailure(
+                "query exceeds 512 characters".into(),
+            ));
+        }
         let root = resolve_root(input.get("root").and_then(|v| v.as_str()))?;
         let max = input
             .get("max_results")
@@ -210,9 +301,12 @@ impl StasisTool for CognitionCodeSearchTool {
             .clamp(1, 500) as usize;
 
         let mut results = Vec::new();
-        search_dir(&root, &root, query, max, &mut results)
+        let mut scanned = 0usize;
+        search_dir(&root, &root, query, max, &mut scanned, &mut results)
             .map_err(|e| StasisError::PortFailure(e.to_string()))?;
-        Ok(json!({ "ok": true, "root": root.display().to_string(), "query": query, "results": results }))
+        Ok(
+            json!({ "ok": true, "root": root.display().to_string(), "query": query, "results": results }),
+        )
     }
 }
 
@@ -221,9 +315,12 @@ fn search_dir(
     root: &Path,
     query: &str,
     max: usize,
+    scanned: &mut usize,
     out: &mut Vec<Value>,
 ) -> std::io::Result<()> {
-    if out.len() >= max {
+    const MAX_SCANNED_FILES: usize = 20_000;
+    const MAX_SEARCH_FILE_BYTES: u64 = 2 * 1024 * 1024;
+    if out.len() >= max || *scanned >= MAX_SCANNED_FILES {
         return Ok(());
     }
     for entry in std::fs::read_dir(dir)? {
@@ -233,9 +330,17 @@ fn search_dir(
         if name.to_string_lossy().starts_with('.') {
             continue;
         }
-        if path.is_dir() {
-            search_dir(&path, root, query, max, out)?;
+        let file_type = entry.file_type()?;
+        if file_type.is_symlink() {
+            continue;
+        }
+        if file_type.is_dir() {
+            search_dir(&path, root, query, max, scanned, out)?;
         } else if path.is_file() {
+            *scanned += 1;
+            if entry.metadata()?.len() > MAX_SEARCH_FILE_BYTES {
+                continue;
+            }
             let Ok(content) = std::fs::read_to_string(&path) else {
                 continue;
             };
@@ -252,7 +357,7 @@ fn search_dir(
                     "path": rel.display().to_string(),
                     "lines": lines,
                 }));
-                if out.len() >= max {
+                if out.len() >= max || *scanned >= MAX_SCANNED_FILES {
                     return Ok(());
                 }
             }
@@ -280,13 +385,25 @@ impl StasisTool for CognitionCodeApplyPatchTool {
                 "content": { "type": "string", "description": "Full file content (write)" },
                 "find": { "type": "string", "description": "Exact snippet to replace" },
                 "replace": { "type": "string", "description": "Replacement for `find`" }
+                ,"expected_sha256": { "type": "string", "description": "Required current digest from code_read, or `missing` for a new file" }
             },
-            "required": ["path"]
+            "required": ["path", "expected_sha256"]
         }))
     }
     async fn invoke(&self, input: Value) -> StasisResult<Value> {
         let (root, path) = root_and_path(&input)?;
+        let expected_digest = input
+            .get("expected_sha256")
+            .and_then(Value::as_str)
+            .filter(|value| !value.trim().is_empty())
+            .ok_or_else(|| StasisError::PortFailure("expected_sha256 is required".into()))?;
+        let existing = verify_expected_digest(&path, expected_digest)?;
         if let Some(content) = input.get("content").and_then(|v| v.as_str()) {
+            if content.len() > MAX_CODE_WRITE_BYTES {
+                return Err(StasisError::PortFailure(format!(
+                    "content exceeds code_apply_patch limit of {MAX_CODE_WRITE_BYTES} bytes"
+                )));
+            }
             if let Some(parent) = path.parent() {
                 tokio::fs::create_dir_all(parent)
                     .await
@@ -301,6 +418,7 @@ impl StasisTool for CognitionCodeApplyPatchTool {
                 "path": path.display().to_string(),
                 "root": root.display().to_string(),
                 "bytes": content.len(),
+                "digest": content_digest(content.as_bytes()),
             }));
         }
         let find = input.get("find").and_then(|v| v.as_str());
@@ -313,15 +431,22 @@ impl StasisTool for CognitionCodeApplyPatchTool {
                 ));
             }
         };
-        let existing = tokio::fs::read_to_string(&path)
-            .await
-            .map_err(|e| StasisError::PortFailure(format!("read {}: {e}", path.display())))?;
+        let existing = existing.ok_or_else(|| {
+            StasisError::PortFailure("cannot replace a snippet in a missing file".into())
+        })?;
+        let existing = String::from_utf8(existing)
+            .map_err(|_| StasisError::PortFailure("patch target is not UTF-8 text".into()))?;
         if !existing.contains(find) {
             return Err(StasisError::PortFailure(
                 "find snippet not present in file".into(),
             ));
         }
         let next = existing.replacen(find, replace, 1);
+        if next.len() > MAX_CODE_WRITE_BYTES {
+            return Err(StasisError::PortFailure(format!(
+                "patched content exceeds code_apply_patch limit of {MAX_CODE_WRITE_BYTES} bytes"
+            )));
+        }
         tokio::fs::write(&path, &next)
             .await
             .map_err(|e| StasisError::PortFailure(format!("write {}: {e}", path.display())))?;
@@ -331,6 +456,7 @@ impl StasisTool for CognitionCodeApplyPatchTool {
             "path": path.display().to_string(),
             "root": root.display().to_string(),
             "bytes": next.len(),
+            "digest": content_digest(next.as_bytes()),
         }))
     }
 }
@@ -491,10 +617,18 @@ async fn stream_session_input(
                     )
                 {
                     output.push_str(&String::from_utf8_lossy(&bytes));
+                    if output.len() >= MAX_SHELL_OUTPUT_BYTES {
+                        truncate_utf8_bytes(&mut output, MAX_SHELL_OUTPUT_BYTES);
+                        break;
+                    }
                 }
             }
             Ok(Some(Ok(Message::Binary(bytes)))) => {
                 output.push_str(&String::from_utf8_lossy(&bytes));
+                if output.len() >= MAX_SHELL_OUTPUT_BYTES {
+                    truncate_utf8_bytes(&mut output, MAX_SHELL_OUTPUT_BYTES);
+                    break;
+                }
             }
             Ok(Some(Ok(Message::Close(_)))) | Ok(None) => break,
             Ok(Some(Err(_))) => break,
@@ -547,4 +681,40 @@ pub fn register_coding_tools(
     registry.register_tool(CognitionShellSessionRunTool)?;
     registry.register_tool(CognitionShellSessionInterruptTool)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn digest_fence_rejects_stale_content_and_allows_missing_sentinel() {
+        let temp = tempfile::TempDir::new().expect("tempdir");
+        let path = temp.path().join("file.txt");
+        std::fs::write(&path, "current").expect("write fixture");
+        let digest = content_digest(b"current");
+        assert_eq!(
+            verify_expected_digest(&path, &digest).expect("matching digest"),
+            Some(b"current".to_vec())
+        );
+        assert!(verify_expected_digest(&path, "sha256:stale").is_err());
+        assert_eq!(
+            verify_expected_digest(&temp.path().join("new.txt"), "missing")
+                .expect("missing sentinel"),
+            None
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn new_file_cannot_escape_through_a_symlinked_parent() {
+        use std::os::unix::fs::symlink;
+
+        let root = tempfile::TempDir::new().expect("root");
+        let outside = tempfile::TempDir::new().expect("outside");
+        symlink(outside.path(), root.path().join("escape")).expect("symlink");
+        let canonical_root = root.path().canonicalize().expect("canonical root");
+        let error = resolve_path(&canonical_root, "escape/new.txt").expect_err("escape rejected");
+        assert!(error.to_string().contains("escapes root"));
+    }
 }
