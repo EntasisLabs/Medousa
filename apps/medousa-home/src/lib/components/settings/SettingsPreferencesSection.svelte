@@ -23,7 +23,7 @@
     workshopRetentionReadHint,
   } from "$lib/platformCopy";
   import { Check, ChevronDown, Moon, Sun } from "@lucide/svelte";
-  import MedousaMark from "$lib/components/brand/MedousaMark.svelte";
+  import MedousaCompanion from "$lib/components/brand/MedousaCompanion.svelte";
   import { MEDOUSA_MARK_OPTIONS } from "$lib/theme/medousaMarks";
   import {
     readGrammarSettings,
@@ -224,10 +224,10 @@
 
       <div class="prefs-mark-picker">
         <div class="prefs-mark-head">
-          <span class="prefs-tile-title">Your Medousa</span>
-          <span class="prefs-tile-meta">Paired automatically during onboarding; editable anytime.</span>
+          <span class="prefs-tile-title">Desktop companion</span>
+          <span class="prefs-tile-meta">Choose the Medousa who floats on your desktop.</span>
         </div>
-        <div class="prefs-mark-grid" role="listbox" aria-label="Choose Medousa mark">
+        <div class="prefs-mark-grid" role="listbox" aria-label="Choose desktop companion">
           {#each MEDOUSA_MARK_OPTIONS as option (option.id)}
             {@const active = settings.medousaMark === option.id}
             <button
@@ -241,10 +241,13 @@
               onclick={() => settings.setMedousaMark(option.id)}
             >
               <span class="prefs-mark-preview" aria-hidden="true">
-                <MedousaMark
+                <MedousaCompanion
+                  state="float"
                   markId={option.id}
                   darkMode={settings.darkMode}
-                  decorative
+                  size="1.9rem"
+                  fps={3}
+                  label={null}
                 />
               </span>
               <span class="prefs-mark-label">{option.label}</span>
@@ -890,6 +893,7 @@
     place-items: center;
     width: 3.4rem;
     height: 4.25rem;
+    overflow: hidden;
     padding: 0.35rem;
     border-radius: 0.5rem;
     border: 1px solid color-mix(in srgb, var(--mark-accent) 22%, transparent);

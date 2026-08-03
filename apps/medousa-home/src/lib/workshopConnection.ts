@@ -280,7 +280,9 @@ async function loadWorkshopDefaults(connected: boolean): Promise<void> {
 async function bootstrapWorkshopObserver(): Promise<void> {
   await Promise.all([
     chat.refreshSessions({ force: true }),
-    chat.ensureSessionHydrated({ notice: false }),
+    chat.sessionPristine
+      ? Promise.resolve()
+      : chat.reloadCurrentSession({ notice: false }),
   ]);
   await workspace.reconcileCardsFromSnapshot();
   await workspace.recoverPendingWorkerResults();

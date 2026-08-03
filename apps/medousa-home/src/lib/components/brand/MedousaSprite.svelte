@@ -1,9 +1,16 @@
 <script lang="ts">
+  import {
+    medousaMarkSpriteFill,
+    type MedousaMarkId,
+  } from "$lib/theme/medousaMarks";
+
   type Variant = "abyss" | "amber" | "aurora" | "bone" | "jade" | "nebula" | "ocean" | "violet" | "white";
   type Action = "float" | "hit" | "idle" | "jump" | "power-up";
 
   interface Props {
     variant?: Variant;
+    markId?: MedousaMarkId;
+    darkMode?: boolean;
     size?: string;
     fps?: number;
     paused?: boolean;
@@ -16,6 +23,8 @@
 
   let {
     variant = "aurora",
+    markId,
+    darkMode = true,
     size = "7rem",
     fps = 8,
     paused = false,
@@ -44,6 +53,18 @@
         }[action],
   );
   const maskSize = $derived(simplified ? "800% 100%" : "600% 500%");
+  const variantFill: Record<Variant, string> = {
+    abyss: "linear-gradient(135deg, #5eead4, #0f766e)",
+    amber: "linear-gradient(135deg, #fcd34d, #b45309)",
+    aurora: "linear-gradient(135deg, #f472b6 0%, #a855f7 38%, #38bdf8 72%, #34d399 100%)",
+    bone: "#f2efe6",
+    jade: "linear-gradient(135deg, #34d399, #065f46)",
+    nebula: "linear-gradient(135deg, #c084fc, #6d28d9)",
+    ocean: "linear-gradient(135deg, #7dd3fc, #0369a1)",
+    violet: "linear-gradient(135deg, #a78bfa, #4c1d95)",
+    white: "#fff",
+  };
+  const fill = $derived(markId ? medousaMarkSpriteFill(markId, darkMode) : variantFill[variant]);
 </script>
 
 <span
@@ -54,7 +75,7 @@
   role={label ? "img" : undefined}
   aria-label={label || undefined}
   aria-hidden={label ? undefined : "true"}
-  style={`--medousa-sprite-size: ${size}; --medousa-sprite-duration: ${duration}; --medousa-sprite-play-state: ${paused ? "paused" : "running"}; --medousa-sprite-iteration: ${loop ? "infinite" : "1"}; --medousa-sprite-mask: url('${mask}'); --medousa-sprite-mask-size: ${maskSize}; --medousa-sprite-row: ${actionRow}; --medousa-sprite-aspect-ratio: ${aspectRatio}`}
+  style={`--medousa-sprite-size: ${size}; --medousa-sprite-duration: ${duration}; --medousa-sprite-play-state: ${paused ? "paused" : "running"}; --medousa-sprite-iteration: ${loop ? "infinite" : "1"}; --medousa-sprite-mask: url('${mask}'); --medousa-sprite-mask-size: ${maskSize}; --medousa-sprite-row: ${actionRow}; --medousa-sprite-aspect-ratio: ${aspectRatio}; --medousa-sprite-fill: ${fill}`}
 >
   <span class="medousa-sprite-frame" aria-hidden="true"></span>
 </span>
@@ -78,7 +99,7 @@
     display: block;
     width: 100%;
     height: 100%;
-    background: #f2efe6;
+    background: var(--medousa-sprite-fill);
     -webkit-mask-image: var(--medousa-sprite-mask);
     mask-image: var(--medousa-sprite-mask);
     -webkit-mask-position: 0 var(--medousa-sprite-row);
@@ -103,38 +124,6 @@
   [data-simplified="true"] .medousa-sprite-frame {
     animation-name: medousa-mark-simplified;
     animation-timing-function: steps(7, end);
-  }
-
-  [data-variant="white"] .medousa-sprite-frame {
-    background: #fff;
-  }
-
-  [data-variant="aurora"] .medousa-sprite-frame {
-    background: linear-gradient(135deg, #f472b6 0%, #a855f7 38%, #38bdf8 72%, #34d399 100%);
-  }
-
-  [data-variant="nebula"] .medousa-sprite-frame {
-    background: linear-gradient(135deg, #c084fc, #6d28d9);
-  }
-
-  [data-variant="violet"] .medousa-sprite-frame {
-    background: linear-gradient(135deg, #a78bfa, #4c1d95);
-  }
-
-  [data-variant="ocean"] .medousa-sprite-frame {
-    background: linear-gradient(135deg, #7dd3fc, #0369a1);
-  }
-
-  [data-variant="abyss"] .medousa-sprite-frame {
-    background: linear-gradient(135deg, #5eead4, #0f766e);
-  }
-
-  [data-variant="jade"] .medousa-sprite-frame {
-    background: linear-gradient(135deg, #34d399, #065f46);
-  }
-
-  [data-variant="amber"] .medousa-sprite-frame {
-    background: linear-gradient(135deg, #fcd34d, #b45309);
   }
 
   @keyframes medousa-mark-action {

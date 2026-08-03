@@ -1,5 +1,6 @@
 <script lang="ts">
   import MedousaSprite from "$lib/components/brand/MedousaSprite.svelte";
+  import type { MedousaMarkId } from "$lib/theme/medousaMarks";
 
   type Action = "float" | "hit" | "idle" | "jump" | "power-up";
   type Variant = "abyss" | "amber" | "aurora" | "bone" | "jade" | "nebula" | "ocean" | "violet" | "white";
@@ -17,6 +18,8 @@
   interface Props {
     state?: CompanionState;
     variant?: Variant;
+    markId?: MedousaMarkId;
+    darkMode?: boolean;
     size?: string;
     fps?: number;
     paused?: boolean;
@@ -28,8 +31,10 @@
   let {
     state = "float",
     variant = "aurora",
+    markId,
+    darkMode = true,
     size = "2rem",
-    fps = 8,
+    fps = 3,
     paused = false,
     loop = true,
     label = "Medousa companion",
@@ -67,6 +72,8 @@
 >
   <MedousaSprite
     variant={variant}
+    {markId}
+    {darkMode}
     size={size}
     fps={fps}
     paused={paused}
@@ -95,29 +102,29 @@
   [data-state="idle"] :global(.medousa-companion-mark),
   [data-state="float"] :global(.medousa-companion-mark),
   [data-state="loading"] :global(.medousa-companion-mark) {
-    animation: medousa-companion-buoy 3.4s ease-in-out infinite;
+    animation: medousa-companion-buoy 4.8s ease-in-out infinite;
   }
 
   [data-state="squash"] :global(.medousa-companion-mark) {
-    animation: medousa-companion-compress 1.15s ease-in-out infinite;
+    animation: medousa-companion-compress 2.2s ease-in-out infinite;
   }
 
   [data-state="launch"] :global(.medousa-companion-mark),
   [data-state="jump"] :global(.medousa-companion-mark),
   [data-state="attention"] :global(.medousa-companion-mark) {
-    animation: medousa-companion-lift 1.4s ease-in-out infinite;
+    animation: medousa-companion-lift 2.4s ease-in-out infinite;
   }
 
   [data-state="recoil"] :global(.medousa-companion-mark),
   [data-state="hit"] :global(.medousa-companion-mark),
   [data-state="error"] :global(.medousa-companion-mark) {
-    animation: medousa-companion-recoil 0.9s ease-in-out infinite;
+    animation: medousa-companion-recoil 1.6s ease-in-out infinite;
   }
 
   [data-state="surge"] :global(.medousa-companion-mark),
   [data-state="success"] :global(.medousa-companion-mark),
   [data-state="power-up"] :global(.medousa-companion-mark) {
-    animation: medousa-companion-expand 1.2s ease-in-out infinite;
+    animation: medousa-companion-expand 2.1s ease-in-out infinite;
   }
 
   [data-paused="true"] :global(.medousa-companion-mark) {

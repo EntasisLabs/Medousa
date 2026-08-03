@@ -2,10 +2,12 @@
   import { onMount } from "svelte";
   import {
     ChevronDown,
+    ClipboardPaste,
     Globe,
     House,
     LayoutGrid,
     MessageSquare,
+    MessageSquarePlus,
     Send,
     StickyNote,
     X,
@@ -18,7 +20,10 @@
     type CompanionFeedback,
   } from "$lib/companion/companionState";
   import { sendCompanionPrompt } from "$lib/companion/companionTurn";
-  import { anchoredCompanionPosition } from "$lib/companion/windowGeometry";
+  import {
+    anchoredCompanionPosition,
+    companionWorkAreaForWindow,
+  } from "$lib/companion/windowGeometry";
   import {
     approveTurnBudgetRequest,
     denyTurnBudgetRequest,
@@ -29,6 +34,9 @@
   } from "$lib/daemon";
   import { environment } from "$lib/stores/environment.svelte";
   import { chat } from "$lib/stores/chat.svelte";
+  import { settings } from "$lib/stores/settings.svelte";
+  import { listenForMedousaMark } from "$lib/settings/companionAppearanceSync";
+  import { medousaMarkOption } from "$lib/theme/medousaMarks";
   import { environmentIcon } from "$lib/utils/environmentIcons";
   import { readLastViewPopoutSurface } from "$lib/utils/viewPopout";
   import { homeChannelSurface } from "$lib/platform";
@@ -98,6 +106,16 @@
   const customViews = $derived(
     environment.navSurfaces().filter((surface) => surface.kind === "custom"),
   );
+  const companionMark = $derived(medousaMarkOption(settings.medousaMark));
+  const latestAssistantReply = $derived.by(() => {
+    for (let index = chat.messages.length - 1; index >= 0; index -= 1) {
+      const message = chat.messages[index];
+      if (message?.role === "assistant" && message.content.trim()) {
+        return message.content.trim();
+      }
+    }
+    return null;
+  });
 
   $effect(() => {
     const nextMode = mode;
@@ -109,6 +127,8 @@
     document.body.classList.add("desktop-toolbar-shell");
 
     let detachInteractive: (() => void) | null = null;
+    let detachAppearance: (() => void) | null = null;
+    let mounted = true;
     const detachWorkshop = isTauri()
       ? whenDocumentVisible(() =>
           connectWorkshop({
@@ -127,6 +147,12 @@
         },
       );
     }
+    void listenForMedousaMark((mark) =>
+      settings.setMedousaMark(mark, { broadcast: false }),
+    ).then((detach) => {
+      if (mounted) detachAppearance = detach;
+      else detach();
+    });
     const approvalPoll = setInterval(() => {
       if (document.visibilityState === "visible" && health?.ok) {
         void refreshApprovals();
@@ -134,10 +160,12 @@
     }, 6_000);
 
     return () => {
+      mounted = false;
       document.documentElement.classList.remove("desktop-toolbar-shell");
       document.body.classList.remove("desktop-toolbar-shell");
       detachWorkshop();
       detachInteractive?.();
+      detachAppearance?.();
       clearInterval(approvalPoll);
       if (feedbackTimer) clearTimeout(feedbackTimer);
     };
@@ -182,29 +210,41 @@
         getCurrentWindow,
         LogicalSize,
         PhysicalPosition,
-        currentMonitor,
+        availableMonitors,
       } = await import("@tauri-apps/api/window");
       const current = getCurrentWindow();
       const target = WINDOW_SIZES[nextMode];
-      const [position, previousSize, scaleFactor, monitor] = await Promise.all([
+      const [position, previousSize, scaleFactor, monitors] = await Promise.all([
         current.outerPosition(),
         current.outerSize(),
         current.scaleFactor(),
-        currentMonitor(),
+        availableMonitors(),
       ]);
       if (token !== resizeToken) return;
       const physicalWidth = Math.round(target.width * scaleFactor);
       const physicalHeight = Math.round(target.height * scaleFactor);
+      const workArea = companionWorkAreaForWindow({
+        position,
+        size: previousSize,
+        workAreas: monitors.map((monitor) => monitor.workArea),
+      });
       const nextPosition = anchoredCompanionPosition({
         position,
         previousSize,
         targetSize: { width: physicalWidth, height: physicalHeight },
-        workArea: monitor?.workArea,
+        workArea,
       });
       await current.setSize(new LogicalSize(target.width, target.height));
       if (token !== resizeToken) return;
+      const actualSize = await current.outerSize();
+      const clampedPosition = anchoredCompanionPosition({
+        position: nextPosition,
+        previousSize: actualSize,
+        targetSize: actualSize,
+        workArea,
+      });
       await current.setPosition(
-        new PhysicalPosition(nextPosition.x, nextPosition.y),
+        new PhysicalPosition(clampedPosition.x, clampedPosition.y),
       );
     } catch {
       // Window resizing is best-effort in browser development mode.
@@ -304,6 +344,39 @@
     await chat.switchSession(sessionId);
   }
 
+  async function startNewConversation() {
+    try {
+      await chat.newSession();
+      prompt = "";
+      setFeedback({ tone: "success", message: "New conversation ready." });
+    } catch (error) {
+      setFeedback({
+        tone: "error",
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  async function useClipboard() {
+    try {
+      const clipboard = (await navigator.clipboard.readText()).trim();
+      if (!clipboard) {
+        setFeedback({ tone: "attention", message: "The clipboard is empty." });
+        return;
+      }
+      prompt = `Use this clipboard context:\n\n${clipboard}`;
+      setFeedback({
+        tone: "success",
+        message: "Clipboard added. Review it before sending.",
+      });
+    } catch {
+      setFeedback({
+        tone: "error",
+        message: "Medousa could not read the clipboard. Check clipboard permission.",
+      });
+    }
+  }
+
   async function openChat() {
     expanded = false;
     if (isTauri()) await showChatPopout();
@@ -356,12 +429,23 @@
   }
 </script>
 
-<main class="companion-window companion-window--{mode}" data-mode={mode}>
+<main
+  class="companion-window companion-window--{mode}"
+  data-mode={mode}
+  style:--companion-accent={settings.darkMode ? companionMark.darkColor : companionMark.lightColor}
+  style:--companion-stage={settings.darkMode ? companionMark.darkPreviewBackground : companionMark.lightPreviewBackground}
+>
   {#if mode === "toolbelt"}
     <section class="companion-toolbelt" aria-label="Medousa companion toolbelt">
       <header class="companion-header" data-tauri-drag-region>
         <div class="companion-header-mark" data-tauri-drag-region>
-          <MedousaCompanion state={spriteState} size="2.1rem" label={null} />
+          <MedousaCompanion
+            state={spriteState}
+            markId={settings.medousaMark}
+            darkMode={settings.darkMode}
+            size="2.1rem"
+            label={null}
+          />
         </div>
         <div class="companion-heading" data-tauri-drag-region>
           <strong>Medousa</strong>
@@ -426,8 +510,25 @@
         </section>
       {/if}
 
+      {#if latestAssistantReply}
+        <section class="companion-recent" aria-label="Latest Medousa reply">
+          <strong>Latest reply</strong>
+          <p>{latestAssistantReply}</p>
+        </section>
+      {/if}
+
       <form class="companion-composer" onsubmit={submitPrompt}>
         <label for="companion-prompt">Ask Medousa</label>
+        <div class="companion-quick-actions" aria-label="Conversation actions">
+          <button type="button" onclick={() => void startNewConversation()}>
+            <MessageSquarePlus size={14} strokeWidth={1.8} />
+            New conversation
+          </button>
+          <button type="button" onclick={() => void useClipboard()}>
+            <ClipboardPaste size={14} strokeWidth={1.8} />
+            Use clipboard
+          </button>
+        </div>
         <textarea
           id="companion-prompt"
           bind:value={prompt}
@@ -448,6 +549,9 @@
               value={chat.sessionId}
               onchange={(event) => void switchSession(event)}
             >
+              {#if !chat.sessions.some((session) => session.session_id === chat.sessionId)}
+                <option value={chat.sessionId}>New conversation</option>
+              {/if}
               {#each chat.sessions.slice(0, 12) as session (session.session_id)}
                 <option value={session.session_id}>
                   {session.display_name?.trim() || session.preview?.trim() || "Conversation"}
@@ -545,7 +649,12 @@
       aria-label="Open Medousa companion"
       title="Medousa companion"
     >
-      <MedousaCompanion state={spriteState} size="4.35rem" />
+      <MedousaCompanion
+        state={spriteState}
+        markId={settings.medousaMark}
+        darkMode={settings.darkMode}
+        size="4.35rem"
+      />
       {#if activity.activeTurnIds.size > 0 || pendingApproval}
         <span class="companion-pet-badge" aria-hidden="true">
           {pendingApproval ? "!" : activity.activeTurnIds.size}
@@ -595,7 +704,11 @@
     justify-content: center;
     border: 0;
     border-radius: 2rem;
-    background: radial-gradient(circle at 50% 45%, rgb(76 29 149 / 0.22), transparent 68%);
+    background: radial-gradient(
+      circle at 50% 45%,
+      color-mix(in srgb, var(--companion-accent) 25%, var(--companion-stage) 15%),
+      transparent 68%
+    );
     filter: drop-shadow(0 13px 14px rgb(0 0 0 / 0.34));
     cursor: grab;
   }
@@ -605,7 +718,7 @@
   }
 
   .companion-pet:focus-visible {
-    outline: 2px solid rgb(168 85 247 / 0.9);
+    outline: 2px solid color-mix(in srgb, var(--companion-accent) 90%, white 10%);
     outline-offset: -0.2rem;
   }
 
@@ -688,7 +801,11 @@
     border: 1px solid rgb(var(--color-surface-500) / 0.34);
     border-radius: 1.3rem;
     background:
-      radial-gradient(circle at 8% 0%, rgb(168 85 247 / 0.13), transparent 34%),
+      radial-gradient(
+        circle at 8% 0%,
+        color-mix(in srgb, var(--companion-accent) 13%, transparent),
+        transparent 34%
+      ),
       rgb(var(--color-surface-950) / 0.95);
     box-shadow: 0 20px 52px rgb(0 0 0 / 0.44);
     padding: 0.75rem;
@@ -708,6 +825,9 @@
     height: 2.7rem;
     align-items: center;
     justify-content: center;
+    border: 1px solid color-mix(in srgb, var(--companion-accent) 18%, transparent);
+    border-radius: 0.65rem;
+    background: color-mix(in srgb, var(--companion-stage) 78%, transparent);
   }
 
   .companion-heading {
@@ -867,6 +987,32 @@
     opacity: 0.55;
   }
 
+  .companion-recent {
+    display: grid;
+    gap: 0.2rem;
+    max-height: 5.1rem;
+    overflow: hidden;
+    border-left: 2px solid color-mix(in srgb, var(--companion-accent) 58%, transparent);
+    padding: 0.15rem 0.15rem 0.15rem 0.62rem;
+  }
+
+  .companion-recent strong {
+    color: color-mix(in srgb, var(--companion-accent) 64%, rgb(var(--color-surface-100)));
+    font-size: 0.65rem;
+  }
+
+  .companion-recent p {
+    display: -webkit-box;
+    margin: 0;
+    overflow: hidden;
+    color: rgb(var(--color-surface-300));
+    font-size: 0.69rem;
+    line-height: 1.4;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+  }
+
   .companion-composer {
     display: flex;
     min-height: 0;
@@ -879,6 +1025,29 @@
     color: rgb(var(--color-surface-300));
     font-size: 0.7rem;
     font-weight: 650;
+  }
+
+  .companion-quick-actions {
+    display: flex;
+    gap: 0.38rem;
+  }
+
+  .companion-quick-actions button {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.32rem;
+    border: 1px solid rgb(var(--color-surface-500) / 0.28);
+    border-radius: 0.55rem;
+    background: rgb(var(--color-surface-900) / 0.54);
+    padding: 0.34rem 0.5rem;
+    color: rgb(var(--color-surface-300));
+    font-size: 0.64rem;
+    cursor: pointer;
+  }
+
+  .companion-quick-actions button:hover {
+    border-color: color-mix(in srgb, var(--companion-accent) 38%, transparent);
+    color: rgb(var(--color-surface-100));
   }
 
   .companion-composer textarea {
@@ -897,8 +1066,8 @@
   }
 
   .companion-composer textarea:focus {
-    border-color: rgb(168 85 247 / 0.6);
-    box-shadow: 0 0 0 2px rgb(168 85 247 / 0.1);
+    border-color: color-mix(in srgb, var(--companion-accent) 60%, transparent);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--companion-accent) 10%, transparent);
   }
 
   .companion-composer textarea::placeholder {
@@ -938,9 +1107,13 @@
     height: 2.05rem;
     align-items: center;
     gap: 0.38rem;
-    border: 1px solid rgb(168 85 247 / 0.5);
+    border: 1px solid color-mix(in srgb, var(--companion-accent) 52%, transparent);
     border-radius: 0.65rem;
-    background: linear-gradient(135deg, rgb(126 34 206 / 0.85), rgb(3 105 161 / 0.82));
+    background: linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--companion-accent) 84%, #4c1d95),
+      color-mix(in srgb, var(--companion-accent) 58%, #0369a1)
+    );
     padding: 0 0.72rem;
     color: white;
     font-size: 0.7rem;

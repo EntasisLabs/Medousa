@@ -188,10 +188,8 @@ pub fn run() {
 
     #[cfg(not(any(target_os = "ios", target_os = "android")))]
     {
-        // Quit when the main window closes. Previously we hid to tray (prevent_close),
-        // which left medousa-home running invisibly — including when launched from Cursor.
-        // The hidden chat-popout window would also keep the process alive if we only
-        // destroyed main; exit(0) tears down the whole app. Use tray → Hide to background.
+        // Closing Home hides its webview while the tray, daemon connection, and companion
+        // remain available. Tray → Quit is the explicit full-process shutdown path.
         builder = builder.on_window_event(|window, event| {
             if window.label() == "browser" {
                 if let tauri::WindowEvent::Resized { .. } = event {
@@ -206,7 +204,8 @@ pub fn run() {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 match window.label() {
                     "main" => {
-                        exit_after_requesting_local_brain_stop(window.app_handle());
+                        api.prevent_close();
+                        hide_main_window(window.app_handle());
                     }
                     "browser" => {
                         // Hide instead of destroy so Web nav can reopen the window.

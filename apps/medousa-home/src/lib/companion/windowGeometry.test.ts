@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { anchoredCompanionPosition } from "./windowGeometry";
+import {
+  anchoredCompanionPosition,
+  companionWorkAreaForWindow,
+} from "./windowGeometry";
 
 const targetSize = { width: 390, height: 580 };
 
@@ -49,5 +52,36 @@ describe("anchoredCompanionPosition", () => {
         },
       }),
     ).toEqual({ x: -1920, y: 0 });
+  });
+});
+
+describe("companionWorkAreaForWindow", () => {
+  const left = {
+    position: { x: -1920, y: 0 },
+    size: { width: 1920, height: 1080 },
+  };
+  const right = {
+    position: { x: 0, y: 24 },
+    size: { width: 1920, height: 1056 },
+  };
+
+  it("uses the display containing most of a pet that straddles an edge", () => {
+    expect(
+      companionWorkAreaForWindow({
+        position: { x: -40, y: 700 },
+        size: { width: 112, height: 170 },
+        workAreas: [left, right],
+      }),
+    ).toEqual(right);
+  });
+
+  it("falls back to the nearest display for a fully offscreen pet", () => {
+    expect(
+      companionWorkAreaForWindow({
+        position: { x: 1980, y: 700 },
+        size: { width: 112, height: 170 },
+        workAreas: [left, right],
+      }),
+    ).toEqual(right);
   });
 });
