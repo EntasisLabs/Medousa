@@ -1,16 +1,38 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import {
+    ChevronDown,
     Globe,
     House,
     LayoutGrid,
     MessageSquare,
+    Send,
     StickyNote,
     X,
   } from "@lucide/svelte";
+  import MedousaCompanion from "$lib/components/brand/MedousaCompanion.svelte";
+  import {
+    applyCompanionStreamEvent,
+    companionSpriteState,
+    initialCompanionActivity,
+    type CompanionFeedback,
+  } from "$lib/companion/companionState";
+  import { sendCompanionPrompt } from "$lib/companion/companionTurn";
+  import { anchoredCompanionPosition } from "$lib/companion/windowGeometry";
+  import {
+    approveTurnBudgetRequest,
+    denyTurnBudgetRequest,
+    listTurnBudgetRequests,
+    onInteractiveEvent,
+    type DaemonHealth,
+    type TurnBudgetRequestRecord,
+  } from "$lib/daemon";
   import { environment } from "$lib/stores/environment.svelte";
+  import { chat } from "$lib/stores/chat.svelte";
   import { environmentIcon } from "$lib/utils/environmentIcons";
   import { readLastViewPopoutSurface } from "$lib/utils/viewPopout";
+  import { homeChannelSurface } from "$lib/platform";
+  import type { InteractiveTurnStreamEvent } from "$lib/types/chat";
   import {
     hideDesktopToolbar,
     isTauri,
@@ -23,189 +45,515 @@
   import { connectWorkshop } from "$lib/workshopConnection";
   import { whenDocumentVisible } from "$lib/utils/whenDocumentVisible";
 
-  const RAIL_SIZE = { width: 64, height: 340 };
-  const PICKER_SIZE = { width: 260, height: 340 };
+  type WindowMode = "pet" | "bubble" | "toolbelt";
 
+  const WINDOW_SIZES: Record<WindowMode, { width: number; height: number }> = {
+    pet: { width: 112, height: 170 },
+    bubble: { width: 350, height: 194 },
+    toolbelt: { width: 390, height: 580 },
+  };
+
+  let expanded = $state(false);
   let viewsOpen = $state(false);
+  let sending = $state(false);
+  let approvalBusy = $state(false);
+  let prompt = $state("");
+  let health = $state<DaemonHealth | null>(null);
+  let pendingApprovals = $state<TurnBudgetRequestRecord[]>([]);
+  let activity = $state(initialCompanionActivity());
+  let feedbackTimer: ReturnType<typeof setTimeout> | null = null;
+  let resizeToken = 0;
+  let suppressPetClick = false;
 
+  const connected = $derived(health?.ok === true);
+  const pendingApproval = $derived(pendingApprovals[0] ?? null);
+  const companionFeedback = $derived(
+    pendingApproval
+      ? ({
+          tone: "attention",
+          message:
+            pendingApproval.progress_summary?.trim() ||
+            pendingApproval.reason?.trim() ||
+            "Medousa needs approval to continue.",
+        } satisfies CompanionFeedback)
+      : activity.feedback,
+  );
+  const mode = $derived<WindowMode>(
+    expanded ? "toolbelt" : companionFeedback ? "bubble" : "pet",
+  );
+  const spriteState = $derived(
+    companionSpriteState({
+      connected,
+      expanded,
+      sending,
+      activeTurnCount: activity.activeTurnIds.size,
+      pendingApproval: pendingApproval != null,
+      feedbackTone: companionFeedback?.tone ?? null,
+    }),
+  );
+  const sessionLabel = $derived(
+    chat.sessions.find((session) => session.session_id === chat.sessionId)
+      ?.display_name?.trim() || chat.currentSessionLabel() || "Current conversation",
+  );
   const customViews = $derived(
     environment.navSurfaces().filter((surface) => surface.kind === "custom"),
   );
 
+  $effect(() => {
+    const nextMode = mode;
+    void syncWindowSize(nextMode);
+  });
+
   onMount(() => {
     document.documentElement.classList.add("desktop-toolbar-shell");
     document.body.classList.add("desktop-toolbar-shell");
-    void syncToolbarWindowSize(false);
 
-    const detachWorkshop = whenDocumentVisible(() =>
-      connectWorkshop({
-        onHealthChange: () => {},
-        mode: "observer",
-      }),
-    );
+    let detachInteractive: (() => void) | null = null;
+    const detachWorkshop = isTauri()
+      ? whenDocumentVisible(() =>
+          connectWorkshop({
+            onHealthChange: (nextHealth) => {
+              health = nextHealth;
+              if (nextHealth?.ok) void refreshApprovals();
+            },
+            mode: "observer",
+          }),
+        )
+      : () => {};
+    if (isTauri()) {
+      void onInteractiveEvent<InteractiveTurnStreamEvent>(handleInteractiveEvent).then(
+        (detach) => {
+          detachInteractive = detach;
+        },
+      );
+    }
+    const approvalPoll = setInterval(() => {
+      if (document.visibilityState === "visible" && health?.ok) {
+        void refreshApprovals();
+      }
+    }, 6_000);
+
     return () => {
       document.documentElement.classList.remove("desktop-toolbar-shell");
       document.body.classList.remove("desktop-toolbar-shell");
       detachWorkshop();
+      detachInteractive?.();
+      clearInterval(approvalPoll);
+      if (feedbackTimer) clearTimeout(feedbackTimer);
     };
   });
 
-  async function syncToolbarWindowSize(expanded: boolean) {
-    if (!isTauri()) return;
+  function handleInteractiveEvent(event: InteractiveTurnStreamEvent) {
+    const result = applyCompanionStreamEvent(activity, event);
+    activity = {
+      activeTurnIds: result.activeTurnIds,
+      feedback: result.feedback,
+    };
+    if (result.approvalChanged) void refreshApprovals();
+    if (result.feedback?.tone !== "attention") scheduleFeedbackClear();
+  }
+
+  function setFeedback(next: CompanionFeedback | null, autoClear = true) {
+    activity = { ...activity, feedback: next };
+    if (autoClear && next) scheduleFeedbackClear();
+  }
+
+  function scheduleFeedbackClear() {
+    if (feedbackTimer) clearTimeout(feedbackTimer);
+    feedbackTimer = setTimeout(() => {
+      feedbackTimer = null;
+      activity = { ...activity, feedback: null };
+    }, 6_000);
+  }
+
+  async function refreshApprovals() {
     try {
-      const { getCurrentWindow, LogicalSize } = await import("@tauri-apps/api/window");
-      const size = expanded ? PICKER_SIZE : RAIL_SIZE;
-      await getCurrentWindow().setSize(new LogicalSize(size.width, size.height));
+      pendingApprovals = await listTurnBudgetRequests(true);
     } catch {
-      /* ignore */
+      // Health state already communicates connection trouble.
     }
   }
 
-  async function setViewsOpen(next: boolean) {
-    viewsOpen = next;
-    await syncToolbarWindowSize(next);
+  async function syncWindowSize(nextMode: WindowMode) {
+    if (!isTauri()) return;
+    const token = ++resizeToken;
+    try {
+      const {
+        getCurrentWindow,
+        LogicalSize,
+        PhysicalPosition,
+        currentMonitor,
+      } = await import("@tauri-apps/api/window");
+      const current = getCurrentWindow();
+      const target = WINDOW_SIZES[nextMode];
+      const [position, previousSize, scaleFactor, monitor] = await Promise.all([
+        current.outerPosition(),
+        current.outerSize(),
+        current.scaleFactor(),
+        currentMonitor(),
+      ]);
+      if (token !== resizeToken) return;
+      const physicalWidth = Math.round(target.width * scaleFactor);
+      const physicalHeight = Math.round(target.height * scaleFactor);
+      const nextPosition = anchoredCompanionPosition({
+        position,
+        previousSize,
+        targetSize: { width: physicalWidth, height: physicalHeight },
+        workArea: monitor?.workArea,
+      });
+      await current.setSize(new LogicalSize(target.width, target.height));
+      if (token !== resizeToken) return;
+      await current.setPosition(
+        new PhysicalPosition(nextPosition.x, nextPosition.y),
+      );
+    } catch {
+      // Window resizing is best-effort in browser development mode.
+    }
+  }
+
+  function toggleExpanded() {
+    expanded = !expanded;
+    if (!expanded) viewsOpen = false;
+  }
+
+  function beginPetGesture(event: PointerEvent) {
+    if (!isTauri() || event.button !== 0) return;
+    const startX = event.clientX;
+    const startY = event.clientY;
+
+    const cleanup = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", cleanup);
+      window.removeEventListener("pointercancel", cleanup);
+    };
+    const move = (next: PointerEvent) => {
+      if (Math.hypot(next.clientX - startX, next.clientY - startY) < 5) return;
+      suppressPetClick = true;
+      cleanup();
+      void import("@tauri-apps/api/window").then(({ getCurrentWindow }) =>
+        getCurrentWindow().startDragging(),
+      );
+    };
+
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", cleanup, { once: true });
+    window.addEventListener("pointercancel", cleanup, { once: true });
+  }
+
+  function handlePetClick() {
+    if (suppressPetClick) {
+      suppressPetClick = false;
+      return;
+    }
+    toggleExpanded();
+  }
+
+  async function submitPrompt(event: SubmitEvent) {
+    event.preventDefault();
+    const message = prompt.trim();
+    if (!message || sending || !connected) return;
+    sending = true;
+    setFeedback(null, false);
+    try {
+      const ticket = await sendCompanionPrompt(message);
+      prompt = "";
+      activity = {
+        activeTurnIds: new Set([...activity.activeTurnIds, ticket.turn_id]),
+        feedback: null,
+      };
+    } catch (error) {
+      setFeedback({
+        tone: "error",
+        message: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      sending = false;
+    }
+  }
+
+  async function resolveApproval(approved: boolean) {
+    const pending = pendingApproval;
+    if (!pending || approvalBusy) return;
+    approvalBusy = true;
+    try {
+      const response = approved
+        ? await approveTurnBudgetRequest(
+            pending.request_id,
+            pending.requested_rounds,
+            homeChannelSurface(),
+          )
+        : await denyTurnBudgetRequest(pending.request_id, homeChannelSurface());
+      setFeedback({
+        tone: approved ? "success" : "attention",
+        message: response.message || (approved ? "Approved." : "Denied."),
+      });
+      await refreshApprovals();
+    } catch (error) {
+      setFeedback({
+        tone: "error",
+        message: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      approvalBusy = false;
+    }
+  }
+
+  async function switchSession(event: Event) {
+    const sessionId = (event.currentTarget as HTMLSelectElement).value;
+    if (!sessionId || sessionId === chat.sessionId) return;
+    await chat.switchSession(sessionId);
   }
 
   async function openChat() {
-    await setViewsOpen(false);
+    expanded = false;
     if (isTauri()) await showChatPopout();
   }
 
   async function openNote() {
-    await setViewsOpen(false);
+    expanded = false;
     if (isTauri()) await showVaultSticky();
   }
 
   async function openWeb() {
-    await setViewsOpen(false);
+    expanded = false;
     if (isTauri()) await showBrowser();
   }
 
   async function openMain() {
-    await setViewsOpen(false);
+    expanded = false;
     if (isTauri()) await showMainWindow();
   }
 
   async function openViews(event?: MouseEvent) {
-    // Shift/Alt = always show the picker; plain click reopens the last view.
     if (event?.shiftKey || event?.altKey) {
-      await setViewsOpen(!viewsOpen);
-      return;
-    }
-    if (viewsOpen) {
-      await setViewsOpen(false);
+      viewsOpen = !viewsOpen;
       return;
     }
     const last = readLastViewPopoutSurface();
     if (last && customViews.some((view) => view.id === last)) {
       await showViewPopout(last);
+      expanded = false;
       return;
     }
     if (customViews.length === 1) {
       await showViewPopout(customViews[0].id);
+      expanded = false;
       return;
     }
-    await setViewsOpen(true);
+    viewsOpen = !viewsOpen;
   }
 
   async function pickView(surfaceId: string) {
-    await setViewsOpen(false);
     await showViewPopout(surfaceId);
+    expanded = false;
+    viewsOpen = false;
   }
 
-  async function dismissToolbar() {
-    await setViewsOpen(false);
+  async function dismissCompanion() {
+    expanded = false;
+    viewsOpen = false;
     if (isTauri()) await hideDesktopToolbar();
   }
 </script>
 
-<div class="desktop-toolbar-root">
-  <div class="desktop-toolbar-rail" data-tauri-drag-region>
-    <button
-      type="button"
-      class="desktop-toolbar-btn"
-      title="Chat"
-      aria-label="Open chat window"
-      onclick={() => void openChat()}
-    >
-      <MessageSquare size={18} strokeWidth={1.75} />
-    </button>
-    <button
-      type="button"
-      class="desktop-toolbar-btn"
-      title="Note"
-      aria-label="Open note window"
-      onclick={() => void openNote()}
-    >
-      <StickyNote size={18} strokeWidth={1.75} />
-    </button>
-    <button
-      type="button"
-      class="desktop-toolbar-btn"
-      title="Web"
-      aria-label="Open web window"
-      onclick={() => void openWeb()}
-    >
-      <Globe size={18} strokeWidth={1.75} />
-    </button>
-    <button
-      type="button"
-      class="desktop-toolbar-btn"
-      class:desktop-toolbar-btn-active={viewsOpen}
-      title="Views — click last, Shift-click list"
-      aria-label="Open custom views"
-      aria-expanded={viewsOpen}
-      onclick={(event) => void openViews(event)}
-    >
-      <LayoutGrid size={18} strokeWidth={1.75} />
-    </button>
+<main class="companion-window companion-window--{mode}" data-mode={mode}>
+  {#if mode === "toolbelt"}
+    <section class="companion-toolbelt" aria-label="Medousa companion toolbelt">
+      <header class="companion-header" data-tauri-drag-region>
+        <div class="companion-header-mark" data-tauri-drag-region>
+          <MedousaCompanion state={spriteState} size="2.1rem" label={null} />
+        </div>
+        <div class="companion-heading" data-tauri-drag-region>
+          <strong>Medousa</strong>
+          <span>{connected ? sessionLabel : health?.message || "Connecting…"}</span>
+        </div>
+        <button
+          type="button"
+          class="companion-icon-btn"
+          title="Collapse companion"
+          aria-label="Collapse companion"
+          onclick={toggleExpanded}
+        >
+          <ChevronDown size={17} strokeWidth={1.8} />
+        </button>
+        <button
+          type="button"
+          class="companion-icon-btn companion-icon-btn--quiet"
+          title="Hide companion"
+          aria-label="Hide companion"
+          onclick={() => void dismissCompanion()}
+        >
+          <X size={16} strokeWidth={1.8} />
+        </button>
+      </header>
 
-    <span class="desktop-toolbar-spacer" aria-hidden="true"></span>
+      {#if companionFeedback || activity.activeTurnIds.size > 0}
+        <div
+          class="companion-status companion-status--{companionFeedback?.tone ?? 'working'}"
+          role="status"
+          aria-live="polite"
+        >
+          <span class="companion-status-dot" aria-hidden="true"></span>
+          <p>
+            {companionFeedback?.message ??
+              `Medousa is working on ${activity.activeTurnIds.size === 1 ? "a turn" : `${activity.activeTurnIds.size} turns`}…`}
+          </p>
+        </div>
+      {/if}
 
-    <button
-      type="button"
-      class="desktop-toolbar-btn"
-      title="Main window"
-      aria-label="Show main Medousa window"
-      onclick={() => void openMain()}
-    >
-      <House size={18} strokeWidth={1.75} />
-    </button>
-    {#if isTauri()}
+      {#if pendingApproval}
+        <section class="companion-approval" aria-label="Pending approval">
+          <div>
+            <strong>More tool rounds?</strong>
+            <p>
+              {pendingApproval.progress_summary || pendingApproval.reason}
+            </p>
+          </div>
+          <div class="companion-approval-actions">
+            <button
+              type="button"
+              class="companion-small-btn companion-small-btn--primary"
+              disabled={approvalBusy}
+              onclick={() => void resolveApproval(true)}
+            >Approve</button>
+            <button
+              type="button"
+              class="companion-small-btn"
+              disabled={approvalBusy}
+              onclick={() => void resolveApproval(false)}
+            >Deny</button>
+          </div>
+        </section>
+      {/if}
+
+      <form class="companion-composer" onsubmit={submitPrompt}>
+        <label for="companion-prompt">Ask Medousa</label>
+        <textarea
+          id="companion-prompt"
+          bind:value={prompt}
+          rows="4"
+          placeholder={connected ? "What should we work on?" : "Waiting for the workshop…"}
+          disabled={!connected || sending}
+          onkeydown={(event) => {
+            if (event.key === "Enter" && !event.shiftKey) {
+              event.preventDefault();
+              event.currentTarget.form?.requestSubmit();
+            }
+          }}
+        ></textarea>
+        <div class="companion-composer-footer">
+          {#if chat.sessions.length > 0}
+            <select
+              aria-label="Conversation"
+              value={chat.sessionId}
+              onchange={(event) => void switchSession(event)}
+            >
+              {#each chat.sessions.slice(0, 12) as session (session.session_id)}
+                <option value={session.session_id}>
+                  {session.display_name?.trim() || session.preview?.trim() || "Conversation"}
+                </option>
+              {/each}
+            </select>
+          {:else}
+            <span class="companion-session-label">{sessionLabel}</span>
+          {/if}
+          <button
+            type="submit"
+            class="companion-send-btn"
+            disabled={!connected || sending || !prompt.trim()}
+            aria-label="Send to Medousa"
+          >
+            <Send size={15} strokeWidth={1.9} />
+            <span>{sending ? "Sending" : "Send"}</span>
+          </button>
+        </div>
+      </form>
+
+      <nav class="companion-launchers" aria-label="Open Medousa tools">
+        <button type="button" onclick={() => void openChat()}>
+          <MessageSquare size={17} strokeWidth={1.75} />
+          <span>Chat</span>
+        </button>
+        <button type="button" onclick={() => void openNote()}>
+          <StickyNote size={17} strokeWidth={1.75} />
+          <span>Note</span>
+        </button>
+        <button type="button" onclick={() => void openWeb()}>
+          <Globe size={17} strokeWidth={1.75} />
+          <span>Web</span>
+        </button>
+        <button
+          type="button"
+          class:companion-launcher-active={viewsOpen}
+          title="Click last view; Shift-click the list"
+          onclick={(event) => void openViews(event)}
+        >
+          <LayoutGrid size={17} strokeWidth={1.75} />
+          <span>Views</span>
+        </button>
+        <button type="button" onclick={() => void openMain()}>
+          <House size={17} strokeWidth={1.75} />
+          <span>Main</span>
+        </button>
+      </nav>
+
+      {#if viewsOpen}
+        <div class="companion-views" role="listbox" aria-label="Custom views">
+          {#if customViews.length === 0}
+            <p>No custom views yet.</p>
+          {:else}
+            {#each customViews as surface (surface.id)}
+              {@const SurfaceIcon = environmentIcon(surface.icon)}
+              <button
+                type="button"
+                role="option"
+                aria-selected={false}
+                onclick={() => void pickView(surface.id)}
+              >
+                <SurfaceIcon size={14} strokeWidth={1.75} />
+                <span>{surface.label}</span>
+              </button>
+            {/each}
+          {/if}
+        </div>
+      {/if}
+    </section>
+  {:else}
+    {#if companionFeedback}
       <button
         type="button"
-        class="desktop-toolbar-btn desktop-toolbar-btn-quiet"
-        title="Hide toolbar"
-        aria-label="Hide desktop toolbar"
-        onclick={() => void dismissToolbar()}
+        class="companion-bubble companion-bubble--{companionFeedback.tone}"
+        onclick={toggleExpanded}
+        aria-label="Open companion: {companionFeedback.message}"
       >
-        <X size={16} strokeWidth={1.75} />
+        <strong>
+          {companionFeedback.tone === "success"
+            ? "Done"
+            : companionFeedback.tone === "error"
+              ? "Something went wrong"
+              : "Needs you"}
+        </strong>
+        <span>{companionFeedback.message}</span>
       </button>
     {/if}
-  </div>
-
-  {#if viewsOpen}
-    <div class="desktop-toolbar-views" role="listbox" aria-label="Custom views">
-      {#if customViews.length === 0}
-        <p class="desktop-toolbar-empty">No custom views yet.</p>
-      {:else}
-        {#each customViews as surface (surface.id)}
-          {@const SurfaceIcon = environmentIcon(surface.icon)}
-          <button
-            type="button"
-            role="option"
-            aria-selected={false}
-            class="desktop-toolbar-view-row"
-            onclick={() => void pickView(surface.id)}
-          >
-            <SurfaceIcon size={14} strokeWidth={1.75} />
-            <span class="truncate">{surface.label}</span>
-          </button>
-        {/each}
+    <button
+      type="button"
+      class="companion-pet"
+      class:companion-pet--busy={activity.activeTurnIds.size > 0}
+      onpointerdown={beginPetGesture}
+      onclick={handlePetClick}
+      aria-label="Open Medousa companion"
+      title="Medousa companion"
+    >
+      <MedousaCompanion state={spriteState} size="4.35rem" />
+      {#if activity.activeTurnIds.size > 0 || pendingApproval}
+        <span class="companion-pet-badge" aria-hidden="true">
+          {pendingApproval ? "!" : activity.activeTurnIds.size}
+        </span>
       {/if}
-    </div>
+    </button>
   {/if}
-</div>
+</main>
 
 <style>
   :global(html.desktop-toolbar-shell),
@@ -217,39 +565,177 @@
     overflow: hidden !important;
   }
 
-  .desktop-toolbar-root {
+  .companion-window {
     display: flex;
-    height: 100vh;
     width: 100vw;
-    align-items: stretch;
-    gap: 0.45rem;
-    padding: 0.4rem;
+    height: 100vh;
     box-sizing: border-box;
+    align-items: flex-end;
+    justify-content: flex-end;
+    gap: 0.45rem;
+    padding: 0.45rem;
+    color: rgb(var(--color-surface-50));
     background: transparent;
     -webkit-user-select: none;
     user-select: none;
   }
 
-  .desktop-toolbar-rail {
-    display: flex;
-    width: 3.1rem;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.2rem;
-    border-radius: 1rem;
-    border: 1px solid rgb(var(--color-surface-500) / 0.35);
-    background: rgb(var(--color-surface-950) / 0.92);
-    backdrop-filter: blur(16px) saturate(1.1);
-    box-shadow: 0 12px 32px rgb(0 0 0 / 0.35);
-    padding: 0.45rem 0.3rem;
+  .companion-window--toolbelt {
+    align-items: stretch;
+    padding: 0.55rem;
   }
 
-  .desktop-toolbar-btn {
-    display: inline-flex;
-    width: 2.35rem;
-    height: 2.35rem;
+  .companion-pet {
+    position: relative;
+    display: flex;
+    width: 6rem;
+    height: 9.2rem;
+    flex: 0 0 auto;
     align-items: center;
     justify-content: center;
+    border: 0;
+    border-radius: 2rem;
+    background: radial-gradient(circle at 50% 45%, rgb(76 29 149 / 0.22), transparent 68%);
+    filter: drop-shadow(0 13px 14px rgb(0 0 0 / 0.34));
+    cursor: grab;
+  }
+
+  .companion-pet:active {
+    cursor: grabbing;
+  }
+
+  .companion-pet:focus-visible {
+    outline: 2px solid rgb(168 85 247 / 0.9);
+    outline-offset: -0.2rem;
+  }
+
+  .companion-pet--busy {
+    filter: drop-shadow(0 13px 15px rgb(56 189 248 / 0.26));
+  }
+
+  .companion-pet-badge {
+    position: absolute;
+    top: 1.05rem;
+    right: 0.45rem;
+    display: grid;
+    min-width: 1.35rem;
+    height: 1.35rem;
+    place-items: center;
+    border: 2px solid rgb(var(--color-surface-950));
+    border-radius: 999px;
+    background: rgb(245 158 11);
+    color: rgb(30 20 8);
+    font-size: 0.68rem;
+    font-weight: 800;
+  }
+
+  .companion-bubble {
+    display: flex;
+    min-width: 0;
+    flex: 1;
+    flex-direction: column;
+    gap: 0.2rem;
+    align-self: center;
+    margin-bottom: 1rem;
+    padding: 0.75rem 0.85rem;
+    overflow: hidden;
+    border: 1px solid rgb(var(--color-surface-500) / 0.35);
+    border-radius: 1rem 1rem 0.35rem 1rem;
+    background: rgb(var(--color-surface-950) / 0.94);
+    box-shadow: 0 14px 34px rgb(0 0 0 / 0.38);
+    backdrop-filter: blur(18px) saturate(1.15);
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .companion-bubble strong {
+    color: rgb(var(--color-surface-100));
+    font-size: 0.72rem;
+  }
+
+  .companion-bubble span {
+    display: -webkit-box;
+    overflow: hidden;
+    color: rgb(var(--color-surface-300));
+    font-size: 0.72rem;
+    line-height: 1.35;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+  }
+
+  .companion-bubble--success {
+    border-color: rgb(52 211 153 / 0.36);
+  }
+
+  .companion-bubble--error {
+    border-color: rgb(248 113 113 / 0.42);
+  }
+
+  .companion-bubble--attention {
+    border-color: rgb(251 191 36 / 0.44);
+  }
+
+  .companion-toolbelt {
+    position: relative;
+    display: flex;
+    min-width: 0;
+    flex: 1;
+    flex-direction: column;
+    gap: 0.65rem;
+    overflow: hidden;
+    border: 1px solid rgb(var(--color-surface-500) / 0.34);
+    border-radius: 1.3rem;
+    background:
+      radial-gradient(circle at 8% 0%, rgb(168 85 247 / 0.13), transparent 34%),
+      rgb(var(--color-surface-950) / 0.95);
+    box-shadow: 0 20px 52px rgb(0 0 0 / 0.44);
+    padding: 0.75rem;
+    backdrop-filter: blur(20px) saturate(1.12);
+  }
+
+  .companion-header {
+    display: flex;
+    min-height: 2.8rem;
+    align-items: center;
+    gap: 0.55rem;
+  }
+
+  .companion-header-mark {
+    display: flex;
+    width: 2.4rem;
+    height: 2.7rem;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .companion-heading {
+    display: flex;
+    min-width: 0;
+    flex: 1;
+    flex-direction: column;
+  }
+
+  .companion-heading strong {
+    font-size: 0.83rem;
+    letter-spacing: 0.01em;
+  }
+
+  .companion-heading span {
+    overflow: hidden;
+    color: rgb(var(--color-surface-400));
+    font-size: 0.68rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .companion-icon-btn {
+    display: grid;
+    width: 2rem;
+    height: 2rem;
+    flex: 0 0 auto;
+    place-items: center;
     border: 0;
     border-radius: 0.65rem;
     background: transparent;
@@ -257,42 +743,275 @@
     cursor: pointer;
   }
 
-  .desktop-toolbar-btn:hover,
-  .desktop-toolbar-btn-active {
-    background: rgb(var(--color-surface-800) / 0.9);
+  .companion-icon-btn:hover {
+    background: rgb(var(--color-surface-800) / 0.85);
     color: rgb(var(--color-surface-50));
   }
 
-  .desktop-toolbar-btn-quiet {
+  .companion-icon-btn--quiet {
     color: rgb(var(--color-surface-500));
   }
 
-  .desktop-toolbar-spacer {
-    flex: 1 1 auto;
-    min-height: 0.5rem;
+  .companion-status {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    border: 1px solid rgb(56 189 248 / 0.24);
+    border-radius: 0.75rem;
+    background: rgb(8 47 73 / 0.22);
+    padding: 0.55rem 0.65rem;
   }
 
-  .desktop-toolbar-views {
+  .companion-status p {
     min-width: 0;
-    flex: 1 1 auto;
-    overflow: auto;
-    border-radius: 0.9rem;
+    margin: 0;
+    color: rgb(var(--color-surface-200));
+    font-size: 0.7rem;
+    line-height: 1.4;
+  }
+
+  .companion-status-dot {
+    width: 0.45rem;
+    height: 0.45rem;
+    flex: 0 0 auto;
+    margin-top: 0.22rem;
+    border-radius: 999px;
+    background: rgb(56 189 248);
+    box-shadow: 0 0 0 0.2rem rgb(56 189 248 / 0.12);
+  }
+
+  .companion-status--success {
+    border-color: rgb(52 211 153 / 0.25);
+    background: rgb(6 78 59 / 0.2);
+  }
+
+  .companion-status--success .companion-status-dot {
+    background: rgb(52 211 153);
+  }
+
+  .companion-status--error {
+    border-color: rgb(248 113 113 / 0.3);
+    background: rgb(127 29 29 / 0.18);
+  }
+
+  .companion-status--error .companion-status-dot {
+    background: rgb(248 113 113);
+  }
+
+  .companion-status--attention {
+    border-color: rgb(251 191 36 / 0.32);
+    background: rgb(120 53 15 / 0.2);
+  }
+
+  .companion-status--attention .companion-status-dot {
+    background: rgb(251 191 36);
+  }
+
+  .companion-approval {
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    border: 1px solid rgb(251 191 36 / 0.28);
+    border-radius: 0.8rem;
+    background: rgb(120 53 15 / 0.18);
+    padding: 0.65rem;
+  }
+
+  .companion-approval > div:first-child {
+    min-width: 0;
+    flex: 1;
+  }
+
+  .companion-approval strong {
+    color: rgb(254 243 199);
+    font-size: 0.72rem;
+  }
+
+  .companion-approval p {
+    display: -webkit-box;
+    margin: 0.15rem 0 0;
+    overflow: hidden;
+    color: rgb(var(--color-surface-300));
+    font-size: 0.66rem;
+    line-height: 1.35;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+  }
+
+  .companion-approval-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+  }
+
+  .companion-small-btn {
+    min-width: 4.3rem;
     border: 1px solid rgb(var(--color-surface-500) / 0.35);
-    background: rgb(var(--color-surface-950) / 0.92);
-    backdrop-filter: blur(16px) saturate(1.1);
-    box-shadow: 0 12px 32px rgb(0 0 0 / 0.35);
+    border-radius: 0.5rem;
+    background: rgb(var(--color-surface-900) / 0.72);
+    padding: 0.3rem 0.55rem;
+    color: rgb(var(--color-surface-200));
+    font-size: 0.65rem;
+    cursor: pointer;
+  }
+
+  .companion-small-btn--primary {
+    border-color: rgb(251 191 36 / 0.42);
+    background: rgb(245 158 11 / 0.2);
+    color: rgb(254 243 199);
+  }
+
+  .companion-small-btn:disabled {
+    cursor: wait;
+    opacity: 0.55;
+  }
+
+  .companion-composer {
+    display: flex;
+    min-height: 0;
+    flex: 1;
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+
+  .companion-composer label {
+    color: rgb(var(--color-surface-300));
+    font-size: 0.7rem;
+    font-weight: 650;
+  }
+
+  .companion-composer textarea {
+    min-height: 5.2rem;
+    flex: 1;
+    resize: none;
+    border: 1px solid rgb(var(--color-surface-500) / 0.34);
+    border-radius: 0.85rem;
+    outline: none;
+    background: rgb(var(--color-surface-900) / 0.76);
+    padding: 0.7rem 0.75rem;
+    color: rgb(var(--color-surface-100));
+    font: inherit;
+    font-size: 0.78rem;
+    line-height: 1.45;
+  }
+
+  .companion-composer textarea:focus {
+    border-color: rgb(168 85 247 / 0.6);
+    box-shadow: 0 0 0 2px rgb(168 85 247 / 0.1);
+  }
+
+  .companion-composer textarea::placeholder {
+    color: rgb(var(--color-surface-500));
+  }
+
+  .companion-composer-footer {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .companion-composer select {
+    min-width: 0;
+    flex: 1;
+    overflow: hidden;
+    border: 0;
+    outline: 0;
+    background: transparent;
+    color: rgb(var(--color-surface-400));
+    font-size: 0.66rem;
+    text-overflow: ellipsis;
+  }
+
+  .companion-session-label {
+    min-width: 0;
+    flex: 1;
+    overflow: hidden;
+    color: rgb(var(--color-surface-400));
+    font-size: 0.66rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .companion-send-btn {
+    display: inline-flex;
+    height: 2.05rem;
+    align-items: center;
+    gap: 0.38rem;
+    border: 1px solid rgb(168 85 247 / 0.5);
+    border-radius: 0.65rem;
+    background: linear-gradient(135deg, rgb(126 34 206 / 0.85), rgb(3 105 161 / 0.82));
+    padding: 0 0.72rem;
+    color: white;
+    font-size: 0.7rem;
+    font-weight: 650;
+    cursor: pointer;
+  }
+
+  .companion-send-btn:disabled {
+    cursor: default;
+    filter: saturate(0.4);
+    opacity: 0.48;
+  }
+
+  .companion-launchers {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 0.35rem;
+  }
+
+  .companion-launchers button {
+    display: flex;
+    min-width: 0;
+    height: 3.15rem;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.25rem;
+    border: 1px solid transparent;
+    border-radius: 0.75rem;
+    background: transparent;
+    color: rgb(var(--color-surface-400));
+    cursor: pointer;
+  }
+
+  .companion-launchers button:hover,
+  .companion-launchers .companion-launcher-active {
+    border-color: rgb(var(--color-surface-500) / 0.25);
+    background: rgb(var(--color-surface-800) / 0.66);
+    color: rgb(var(--color-surface-100));
+  }
+
+  .companion-launchers span {
+    font-size: 0.6rem;
+  }
+
+  .companion-views {
+    position: absolute;
+    right: 0.75rem;
+    bottom: 4.45rem;
+    left: 0.75rem;
+    display: flex;
+    max-height: 10rem;
+    flex-direction: column;
+    gap: 0.2rem;
+    overflow-y: auto;
+    border: 1px solid rgb(var(--color-surface-500) / 0.34);
+    border-radius: 0.8rem;
+    background: rgb(var(--color-surface-950) / 0.98);
+    box-shadow: 0 14px 30px rgb(0 0 0 / 0.4);
     padding: 0.4rem;
   }
 
-  .desktop-toolbar-empty {
+  .companion-views p {
     margin: 0;
-    padding: 0.65rem 0.55rem;
-    font-size: 11px;
-    line-height: 1.4;
+    padding: 0.55rem;
     color: rgb(var(--color-surface-500));
+    font-size: 0.68rem;
+    text-align: center;
   }
 
-  .desktop-toolbar-view-row {
+  .companion-views button {
     display: flex;
     width: 100%;
     align-items: center;
@@ -300,14 +1019,23 @@
     border: 0;
     border-radius: 0.55rem;
     background: transparent;
-    padding: 0.45rem 0.5rem;
-    color: rgb(var(--color-surface-100));
-    font-size: 12px;
+    padding: 0.48rem 0.55rem;
+    color: rgb(var(--color-surface-300));
+    font-size: 0.7rem;
     text-align: left;
     cursor: pointer;
   }
 
-  .desktop-toolbar-view-row:hover {
-    background: rgb(var(--color-surface-800) / 0.85);
+  .companion-views button:hover {
+    background: rgb(var(--color-surface-800) / 0.78);
+    color: rgb(var(--color-surface-50));
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .companion-pet,
+    .companion-bubble,
+    .companion-toolbelt {
+      transition: none;
+    }
   }
 </style>

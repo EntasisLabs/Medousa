@@ -830,7 +830,7 @@ pub fn run() {
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 fn setup_desktop_tray(app: &tauri::App) -> tauri::Result<()> {
     let show = MenuItem::with_id(app, "show", "Show Medousa", true, None::<&str>)?;
-    let toolbar = MenuItem::with_id(app, "toolbar", "Desktop toolbar", true, None::<&str>)?;
+    let toolbar = MenuItem::with_id(app, "toolbar", "Companion", true, None::<&str>)?;
     let chat = MenuItem::with_id(app, "chat", "Open Chat", true, None::<&str>)?;
     let note = MenuItem::with_id(app, "note", "Open Note", true, None::<&str>)?;
     let web = MenuItem::with_id(app, "web", "Open Web", true, None::<&str>)?;
