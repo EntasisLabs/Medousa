@@ -31,6 +31,7 @@ export interface ToolRunState {
 }
 
 import type { ChatMediaAttachment } from "$lib/types/media";
+import type { HostTurnContext } from "$lib/types/generated/daemon_api";
 
 export interface ChatMessage {
   id: string;
@@ -39,6 +40,8 @@ export interface ChatMessage {
   streaming?: boolean;
   /** Media attachments rendered with the turn (images, files). */
   mediaAttachments?: ChatMediaAttachment[];
+  /** Structured editor, note, or page context attached to this user turn. */
+  hostContext?: HostTurnContext | null;
   /** Latest daemon turn phase whisper (e.g. tool_loop, synthesis). */
   phase?: string | null;
   /** Human status line from stream event.message. */

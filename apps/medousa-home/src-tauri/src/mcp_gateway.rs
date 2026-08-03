@@ -89,7 +89,11 @@ pub struct McpServerConfigDto {
     pub args: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub url: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none", rename = "bearer_token")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        rename = "bearer_token"
+    )]
     pub bearer_token: Option<String>,
     #[serde(default = "default_allowed_lanes")]
     pub allowed_lanes: Vec<String>,
@@ -276,9 +280,8 @@ fn install_starter_if_missing() -> Result<PathBuf, String> {
 fn load_file_config() -> Result<(McpGatewayFileConfig, PathBuf, bool), String> {
     let path = install_starter_if_missing()?;
     let raw = fs::read_to_string(&path).map_err(|err| err.to_string())?;
-    let config = toml::from_str::<McpGatewayFileConfig>(&raw).map_err(|err| {
-        format!("failed to parse {}: {err}", path.display())
-    })?;
+    let config = toml::from_str::<McpGatewayFileConfig>(&raw)
+        .map_err(|err| format!("failed to parse {}: {err}", path.display()))?;
     Ok((config, path, true))
 }
 
@@ -298,7 +301,9 @@ fn normalize_server_id(raw: &str) -> Result<String, String> {
         .chars()
         .all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_')
     {
-        return Err("Server id may only use letters, numbers, hyphens, and underscores".to_string());
+        return Err(
+            "Server id may only use letters, numbers, hyphens, and underscores".to_string(),
+        );
     }
     Ok(id)
 }
@@ -338,7 +343,11 @@ fn validate_server(request: &McpServerUpsertRequest) -> Result<McpServerConfigDt
         });
     }
 
-    if transport == "http" || transport == "streamable" || transport == "streamable-http" || transport == "sse" {
+    if transport == "http"
+        || transport == "streamable"
+        || transport == "streamable-http"
+        || transport == "sse"
+    {
         let url = request
             .url
             .as_deref()
@@ -379,7 +388,9 @@ fn validate_server(request: &McpServerUpsertRequest) -> Result<McpServerConfigDt
         .as_deref()
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        .ok_or_else(|| "Command is required for stdio MCP servers (or enable mock mode)".to_string())?;
+        .ok_or_else(|| {
+            "Command is required for stdio MCP servers (or enable mock mode)".to_string()
+        })?;
     Ok(McpServerConfigDto {
         id,
         title: title.to_string(),
@@ -440,10 +451,7 @@ async fn gateway_http_healthy(base_url: &str) -> bool {
 async fn fetch_runtime_servers(base_url: &str) -> Result<Vec<McpServerRuntimeDto>, String> {
     let client = http_client()?;
     let response = apply_gateway_auth(
-        client.get(format!(
-            "{}/v1/mcp/servers",
-            base_url.trim_end_matches('/')
-        )),
+        client.get(format!("{}/v1/mcp/servers", base_url.trim_end_matches('/'))),
     )
     .send()
     .await
@@ -484,22 +492,25 @@ async fn fetch_runtime_servers(base_url: &str) -> Result<Vec<McpServerRuntimeDto
 
 async fn admin_refresh_catalog(base_url: &str) -> Result<(), String> {
     let client = http_client()?;
-    let response = apply_admin_auth(
-        client.post(format!(
-            "{}/v1/admin/catalog/refresh",
-            base_url.trim_end_matches('/')
-        )),
-    )
+    let response = apply_admin_auth(client.post(format!(
+        "{}/v1/admin/catalog/refresh",
+        base_url.trim_end_matches('/')
+    )))
     .send()
     .await
     .map_err(|err| format!("cannot reach MCP gateway at {base_url}: {err}"))?;
     if response.status().is_success() {
         return Ok(());
     }
-    Err(format!("catalog refresh returned HTTP {}", response.status()))
+    Err(format!(
+        "catalog refresh returned HTTP {}",
+        response.status()
+    ))
 }
 
-async fn reindex_daemon_capabilities(state: &tauri::State<'_, crate::daemon::DaemonState>) -> Result<(), String> {
+async fn reindex_daemon_capabilities(
+    state: &tauri::State<'_, crate::daemon::DaemonState>,
+) -> Result<(), String> {
     crate::daemon::sdk::client(state)
         .capabilities()
         .reindex()
@@ -551,7 +562,9 @@ fn resolve_gateway_binary() -> Result<crate::workshop_runtime::ComponentCommand,
         }
     }
     if let Ok(current_exe) = std::env::current_exe() {
-        let sibling = current_exe.with_file_name(crate::workshop_runtime::platform_binary_name("medousa_mcp_gateway"));
+        let sibling = current_exe.with_file_name(crate::workshop_runtime::platform_binary_name(
+            "medousa_mcp_gateway",
+        ));
         if sibling.exists() {
             return Ok(crate::workshop_runtime::ComponentCommand {
                 program: sibling.to_string_lossy().to_string(),
@@ -660,13 +673,15 @@ pub async fn mcp_gateway_status(
         .status()
         .await
     {
-        Ok(daemon_status) => Ok(merge_daemon_gateway_status(daemon_status, &config, config_path)),
+        Ok(daemon_status) => Ok(merge_daemon_gateway_status(
+            daemon_status,
+            &config,
+            config_path,
+        )),
         Err(err) => Ok(McpGatewayStatusResult {
             gateway_url: resolve_gateway_url(),
             reachable: false,
-            message: format!(
-                "Workshop unavailable — cannot check MCP gateway status ({err})"
-            ),
+            message: format!("Workshop unavailable — cannot check MCP gateway status ({err})"),
             health: None,
             servers: servers_from_local_config(&config, false),
             config_path,
@@ -825,11 +840,15 @@ pub async fn mcp_gateway_upsert_server(
 }
 
 #[tauri::command]
-pub async fn mcp_gateway_remove_server(server_id: String) -> Result<McpServerMutationResult, String> {
+pub async fn mcp_gateway_remove_server(
+    server_id: String,
+) -> Result<McpServerMutationResult, String> {
     let id = normalize_server_id(&server_id)?;
     let (mut config, _, _) = load_file_config()?;
     let before = config.servers.len();
-    config.servers.retain(|entry| !entry.id.eq_ignore_ascii_case(&id));
+    config
+        .servers
+        .retain(|entry| !entry.id.eq_ignore_ascii_case(&id));
     if config.servers.len() == before {
         return Err(format!("unknown MCP server '{id}'"));
     }
@@ -881,7 +900,9 @@ pub async fn mcp_gateway_apply_server(
     tokio::time::sleep(Duration::from_millis(750)).await;
 
     let id = normalize_server_id(&request.id)?;
-    let servers = fetch_runtime_servers(&gateway_url).await.unwrap_or_default();
+    let servers = fetch_runtime_servers(&gateway_url)
+        .await
+        .unwrap_or_default();
     let runtime = servers
         .iter()
         .find(|server| server.server_id.eq_ignore_ascii_case(&id));
@@ -912,6 +933,7 @@ pub async fn mcp_gateway_apply_server(
         ok: false,
         connected: false,
         tool_count: 0,
-        message: "Server saved and gateway restarted, but runtime status is unavailable".to_string(),
+        message: "Server saved and gateway restarted, but runtime status is unavailable"
+            .to_string(),
     })
 }

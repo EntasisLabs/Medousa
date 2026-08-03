@@ -3,7 +3,7 @@
 The shared TypeScript client for Medousa external surfaces.
 
 This package is the Phase 0/1 integration boundary for the VS Code, Neovim,
-and Obsidian adapters. It is intentionally dependency-free and uses the host's
+Obsidian, and browser adapters. It is intentionally dependency-free and uses the host's
 `fetch` implementation so it can run in Node, extension hosts, and embedded
 JavaScript runtimes.
 
@@ -16,12 +16,51 @@ JavaScript runtimes.
 - streaming SSE with sequence deduplication and bounded reconnect
 - explicit worker/workshop handoff detection so host composers can release while
   the durable workshop result is followed separately
-- bounded host context helpers
+- bounded host-context helpers that produce typed `host_context` request data;
+  visible prompts are never rewritten with context wrappers
+- bounded browser page title, URL, selection, and page-text context helpers
+- registered client-tool helpers for host-owned capabilities: advertise tool
+  definitions, long-poll daemon requests, and return tool results
 - generated daemon request/response types from
   `sdk-contract/medousa-types.schema.json`
 
 The client does not store credentials. Host adapters provide a bearer token at
 construction time and own secure persistence.
+
+## Registered client tools
+
+An integration can register tools that execute in its native runtime while the
+daemon remains the owner of the agent turn. The daemon exposes the definitions
+only to turns whose `surface.channel_surface` matches the registration, then
+queues each model invocation for the client to pull:
+
+```ts
+await client.registerClient({
+  client_id: "browser-…",
+  channel_surface: "browser",
+  supports_browser_host: false,
+  tools: [{
+    name: "browser_page_snapshot",
+    description: "Read the active tab",
+    input_schema: { type: "object" },
+    effect_class: "external_read",
+  }],
+});
+
+const request = await client.nextClientToolRequest("browser-…");
+if (request) {
+  await client.completeClientToolRequest("browser-…", request.request_id, {
+    output: { title: "Example", text: "…" },
+  });
+}
+```
+
+Hosts should keep polling while their surface is available and return either
+`output` or `error` for every request. The daemon applies a bounded request
+timeout; client tool names must be unique within a registration and are
+validated before they become model-visible. The current bridge requires every
+registered tool to declare `effect_class: "external_read"`; write and
+side-effecting classes will be enabled only with an approval flow.
 
 When a turn emits `worker_ack` or `workshop_ack`, the event is intentionally
 non-terminal: the host turn has handed work to a background lane. Surfaces that

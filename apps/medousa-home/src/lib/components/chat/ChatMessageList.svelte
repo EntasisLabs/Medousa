@@ -28,6 +28,8 @@
     compact?: boolean;
     /** When true, collapse worker handoff+synthesis into one visual turn. */
     workerThread?: boolean;
+    /** Stamp main-thread turn wrappers for the conversation navigator. */
+    navigation?: boolean;
     /** Scroll container for user-whisper IntersectionObserver. */
     scrollRoot?: HTMLElement | null;
     onPromoteToFlow?: (
@@ -47,6 +49,7 @@
     mobile = false,
     compact = false,
     workerThread = false,
+    navigation = false,
     scrollRoot = null,
     onPromoteToFlow,
     onSubmitIntent,
@@ -154,7 +157,10 @@
     (beat.kind === "pair" || beat.message.role === "user")}
 
   {#if beat.kind === "pair"}
-    <section class="chat-turn-beat {turnBreak ? 'chat-turn-break' : ''}">
+    <section
+      class="chat-turn-beat {turnBreak ? 'chat-turn-break' : ''}"
+      data-chat-turn-user-id={navigation ? beat.user.id : undefined}
+    >
       <ChatUserWhisper
         message={beat.user}
         {sessionId}
@@ -179,7 +185,10 @@
       </article>
     </section>
   {:else if beat.message.role === "user"}
-    <div class="{turnBreak ? 'chat-turn-break' : ''} chat-turn-beat">
+    <div
+      class="{turnBreak ? 'chat-turn-break' : ''} chat-turn-beat"
+      data-chat-turn-user-id={navigation ? beat.message.id : undefined}
+    >
       <ChatUserWhisper
         message={beat.message}
         {sessionId}

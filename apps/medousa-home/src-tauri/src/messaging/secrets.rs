@@ -79,9 +79,11 @@ pub fn load_secret_value(secret_id: &str) -> Result<Option<String>, String> {
             let provider = other.trim_start_matches("api_key_");
             read_secret_value("medousa.providers", provider, other)
         }
-        "custom_provider_id" => {
-            read_secret_value("medousa.providers", "custom_provider_id", "custom_provider_id")
-        }
+        "custom_provider_id" => read_secret_value(
+            "medousa.providers",
+            "custom_provider_id",
+            "custom_provider_id",
+        ),
         other if other.starts_with("base_url_") => {
             read_secret_value("medousa.providers", other, other)
         }
@@ -152,9 +154,7 @@ pub fn secret_is_set(secret_id: &str) -> Result<bool, String> {
             "custom_provider_id",
             "custom_provider_id",
         ),
-        other if other.starts_with("base_url_") => {
-            load_secret("medousa.providers", other, other)
-        }
+        other if other.starts_with("base_url_") => load_secret("medousa.providers", other, other),
         other => return Err(format!("unknown secret_id '{other}'")),
     })
 }

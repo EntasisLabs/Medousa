@@ -4,6 +4,8 @@ Medousa for Obsidian is a vault-native companion. It brings the Medousa session
 and interaction model into Obsidian without recreating Home's entire shell.
 Obsidian supplies the active note and editor context; the workshop daemon
 remains authoritative for Medousa sessions, vault search, reads, and writes.
+That note context is attached as structured turn metadata rather than inserted
+into the visible chat message.
 
 ## Install a development checkout
 

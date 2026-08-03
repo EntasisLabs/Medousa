@@ -203,7 +203,8 @@ function M:turn(session_id, prompt, context, callbacks)
     local request = {
       model = defaults.model,
       persist_user_turn = true,
-      prompt = prompt .. "\n\n" .. context,
+      prompt = prompt,
+      host_context = context,
       provider = defaults.provider,
       response_depth_mode = defaults.response_depth_mode,
       reasoning_effort = defaults.reasoning_effort,
@@ -222,6 +223,10 @@ function M:turn(session_id, prompt, context, callbacks)
         callbacks.on_error(turn_err)
         return
       end
+      if type(turn.stream_url) ~= "string" or turn.stream_url == "" then
+        callbacks.on_error("Medousa did not return a stream URL")
+        return
+      end
       self:_stream(turn.stream_url, 0, 0, callbacks, generation)
     end)
   end)
@@ -233,7 +238,12 @@ function M:_stream(stream_url, since, attempt, callbacks, generation)
   local handoff_seen = false
   local parser = stream.new_parser(function(event)
     if self.stream_cancelled or generation ~= self.stream_generation then return end
-    local sequence = tonumber(event.seq)
+    local sequence
+    if type(event.seq) == "number" then
+      sequence = event.seq
+    elseif type(event.seq) == "string" then
+      sequence = tonumber(event.seq)
+    end
     if sequence and sequence > since then since = sequence end
     local is_handoff = is_handoff_event(event) and not handoff_seen
     if is_handoff then
@@ -243,7 +253,7 @@ function M:_stream(stream_url, since, attempt, callbacks, generation)
         self.stream_job = nil
       end
     end
-    local is_terminal = event.terminal and not self.stream_terminal
+    local is_terminal = event.terminal == true and not self.stream_terminal
     if is_terminal then
       terminal_seen = true
       self.stream_terminal = true

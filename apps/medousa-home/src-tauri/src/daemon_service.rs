@@ -1,8 +1,8 @@
+use crate::workshop_registry::{
+    PERSONAL_WORKSHOP_ID, WorkshopServer, active_workshop, ensure_migrated,
+};
 use crate::workshop_runtime::{
     ensure_local_engine, resolve_workshop_url, stop_local_engine, wait_engine_healthy,
-};
-use crate::workshop_registry::{
-    active_workshop, ensure_migrated, WorkshopServer, PERSONAL_WORKSHOP_ID,
 };
 use serde::{Deserialize, Serialize};
 
@@ -91,7 +91,9 @@ pub fn stop_daemon_process() {
 }
 
 #[tauri::command]
-pub async fn daemon_start(request: Option<DaemonStartRequest>) -> Result<DaemonStartResult, String> {
+pub async fn daemon_start(
+    request: Option<DaemonStartRequest>,
+) -> Result<DaemonStartResult, String> {
     let request = request.unwrap_or(DaemonStartRequest {
         private_brain: false,
         public_bind: None,
@@ -106,7 +108,9 @@ pub async fn daemon_start(request: Option<DaemonStartRequest>) -> Result<DaemonS
 }
 
 #[tauri::command]
-pub async fn daemon_restart(request: Option<DaemonStartRequest>) -> Result<DaemonStartResult, String> {
+pub async fn daemon_restart(
+    request: Option<DaemonStartRequest>,
+) -> Result<DaemonStartResult, String> {
     stop_daemon_process();
     tokio::time::sleep(std::time::Duration::from_millis(750)).await;
     daemon_start(request).await
@@ -125,12 +129,8 @@ pub async fn daemon_wait_healthy(
         .cloned()
         .ok_or_else(|| "No active workshop".to_string())?;
     let base_url = resolve_workshop_url(&workshop);
-    let (ok, attempts) = wait_engine_healthy(
-        &base_url,
-        request.timeout_seconds,
-        request.poll_ms,
-    )
-    .await?;
+    let (ok, attempts) =
+        wait_engine_healthy(&base_url, request.timeout_seconds, request.poll_ms).await?;
     Ok(DaemonWaitHealthResult {
         ok,
         message: if ok {
@@ -151,7 +151,11 @@ pub async fn workshop_ensure_engine(
     private_brain: Option<bool>,
 ) -> Result<crate::workshop_runtime::LocalEngineEnsureResult, String> {
     let registry = ensure_migrated()?;
-    let workshop = if let Some(id) = workshop_id.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
+    let workshop = if let Some(id) = workshop_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+    {
         registry
             .workshops
             .iter()

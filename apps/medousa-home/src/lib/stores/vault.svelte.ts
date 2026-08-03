@@ -190,6 +190,7 @@ const KIND_BROWSE_ORDER: VaultNoteKind[] = [
   "sheet",
   "board",
   "slides",
+  "draw",
   "resume",
   "inbox",
   "bug",
@@ -1210,12 +1211,6 @@ export class VaultStore {
     }
   }
 
-  rememberSpaceForPath(path: string, title: string) {
-    const space = resolveSpaceForPath(path, title);
-    if (space.id === "system_bucket" || space.id === "other") return;
-    saveLastSpace(space.id);
-  }
-
   /** After a move, show the destination space in the sidebar filter. */
   focusSpaceForPath(path: string, title: string) {
     const space = resolveSpaceForPath(path, title);
@@ -1672,7 +1667,6 @@ export class VaultStore {
       localStorage.setItem(LAST_NOTE_KEY, nextPath);
       rememberVaultRecent(nextPath);
       this.recentPaths = loadVaultRecent();
-      this.rememberSpaceForPath(nextPath, buffered.title);
       await this.refreshBacklinks(nextPath);
       return;
     }
@@ -1703,7 +1697,6 @@ export class VaultStore {
       localStorage.setItem(LAST_NOTE_KEY, nextPath);
       rememberVaultRecent(nextPath);
       this.recentPaths = loadVaultRecent();
-      this.rememberSpaceForPath(nextPath, response.note.title);
       await this.refreshBacklinks(nextPath);
     } catch (err) {
       if (openGen === this.openGeneration && this.selectedPath === nextPath) {

@@ -6,10 +6,10 @@ use std::sync::{Arc, Mutex};
 use axum::extract::{Path, State};
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use medousa_browser_lite::{fetch_url_markdown, search_ddg_html_cached, SearchResponse};
 use medousa_browser_bridge::{
     BrowserControl, BrowserSnapshot, TabGroup, TabGroupManager, TabOpenedBy,
 };
+use medousa_browser_lite::{SearchResponse, fetch_url_markdown, search_ddg_html_cached};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
 use tokio::sync::oneshot;
@@ -387,10 +387,7 @@ async fn link_work_card_handler(
     Path(tab_group_id): Path<String>,
     Json(request): Json<LinkWorkCardRequest>,
 ) -> Json<serde_json::Value> {
-    match TabGroupManager::link_work_card(
-        &tab_group_id,
-        request.work_card_id.as_deref(),
-    ) {
+    match TabGroupManager::link_work_card(&tab_group_id, request.work_card_id.as_deref()) {
         Some(group) => Json(serde_json::json!({ "ok": true, "tab_group": group })),
         None => Json(serde_json::json!({ "ok": false, "error": "tab group not found" })),
     }
@@ -426,8 +423,7 @@ async fn snapshot_tab_group(
             }
         }
     }
-    let snapshot =
-        TabGroupManager::snapshot_active_tab(&tab_group_id, request.max_chars)?;
+    let snapshot = TabGroupManager::snapshot_active_tab(&tab_group_id, request.max_chars)?;
     Ok(Json(snapshot))
 }
 
@@ -449,12 +445,18 @@ fn build_router(state: BrowserHostState) -> Router {
             "/v1/tab-groups/{tab_group_id}/tabs/{tab_id}",
             axum::routing::delete(close_tab),
         )
-        .route("/v1/tab-groups/{tab_group_id}/control", post(set_tab_group_control))
+        .route(
+            "/v1/tab-groups/{tab_group_id}/control",
+            post(set_tab_group_control),
+        )
         .route(
             "/v1/tab-groups/{tab_group_id}/link-work",
             post(link_work_card_handler),
         )
-        .route("/v1/tab-groups/{tab_group_id}/snapshot", post(snapshot_tab_group))
+        .route(
+            "/v1/tab-groups/{tab_group_id}/snapshot",
+            post(snapshot_tab_group),
+        )
         .route("/v1/tab-groups/{tab_group_id}/act", post(act_tab_group))
         .with_state(state)
 }
@@ -674,13 +676,12 @@ fn resolve_daemon_url(daemon_url: Option<&str>) -> Result<String, String> {
 }
 
 pub async fn register_browser_client_with_daemon(daemon_url: &str, channel_surface: &str) {
-    let supports = if channel_surface.starts_with("home-ios")
-        || channel_surface.starts_with("home-android")
-    {
-        true
-    } else {
-        browser_host_http_healthy().await
-    };
+    let supports =
+        if channel_surface.starts_with("home-ios") || channel_surface.starts_with("home-android") {
+            true
+        } else {
+            browser_host_http_healthy().await
+        };
     let client_id = format!("home-{channel_surface}");
     let body = serde_json::json!({
         "client_id": client_id,
@@ -853,7 +854,9 @@ pub async fn browser_bridge_snapshot(
             }
         }
     }
-    tokio::task::spawn_blocking(move || TabGroupManager::snapshot_active_tab(&tab_group_id, max_chars))
-        .await
-        .map_err(|err| err.to_string())?
+    tokio::task::spawn_blocking(move || {
+        TabGroupManager::snapshot_active_tab(&tab_group_id, max_chars)
+    })
+    .await
+    .map_err(|err| err.to_string())?
 }

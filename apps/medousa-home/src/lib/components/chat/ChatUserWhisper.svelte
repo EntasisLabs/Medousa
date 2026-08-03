@@ -8,6 +8,7 @@
   import LiquidChatMessage from "$lib/components/chat/LiquidChatMessage.svelte";
   import { userProfiles } from "$lib/stores/userProfiles.svelte";
   import type { ChatMessage } from "$lib/types/chat";
+  import { hostContextLabel } from "$lib/types/turnParts";
 
   interface Props {
     message: ChatMessage;
@@ -37,6 +38,7 @@
 
   const trimmed = $derived(message.content?.trim() ?? "");
   const hook = $derived(userWhisperHook(trimmed));
+  const contextLabel = $derived(hostContextLabel(message.hostContext));
   const expanded = $derived(forceExpand || stickyOpen || nearViewport);
   const speakerLabel = $derived.by(() => {
     const speaker = message.speakerProfileId?.trim();
@@ -113,6 +115,7 @@
     class:chat-user-whisper-compact={compact}
     class:chat-user-whisper-mobile={mobile}
     data-chat-user-prompt
+    data-chat-user-message-id={message.id}
   >
     <button
       type="button"
@@ -130,6 +133,11 @@
 
     <div class="chat-user-whisper-body" inert={!expanded}>
       <LiquidChatMessage {message} {sessionId} {mobile} {compact} {onSubmitIntent} />
+      {#if contextLabel}
+        <div class="chat-user-whisper-context" title="Context supplied with this turn">
+          {contextLabel}
+        </div>
+      {/if}
     </div>
   </div>
 {/if}
@@ -207,10 +215,10 @@
   }
 
   .chat-user-whisper-expanded .chat-user-whisper-body {
-    max-height: 24rem;
+    max-height: none;
     opacity: 1;
     transform: translateY(0);
-    overflow-y: auto;
+    overflow: visible;
   }
 
   .chat-user-whisper-compact .chat-user-whisper-body {
@@ -230,6 +238,21 @@
     margin: 0;
     text-align: right;
     color: rgb(var(--color-surface-200));
+  }
+
+  .chat-user-whisper-context {
+    width: fit-content;
+    max-width: 100%;
+    margin: 0.35rem 0 0 auto;
+    padding: 0.18rem 0.48rem;
+    overflow: hidden;
+    border: 1px solid rgb(var(--color-surface-600) / 0.42);
+    border-radius: 999px;
+    color: rgb(var(--color-surface-400));
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.625rem;
+    line-height: 1.35;
   }
 
   @media (prefers-reduced-motion: reduce) {

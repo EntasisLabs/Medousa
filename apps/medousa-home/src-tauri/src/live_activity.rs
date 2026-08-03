@@ -121,8 +121,8 @@ fn sync_impl(payload: LiveActivityPayload) -> Result<LiveActivityStatus, String>
 #[cfg(target_os = "ios")]
 mod ios {
     use super::{
-        set_push_token, LiveActivityDiagnostics, LiveActivityPayload, LiveActivityStatus,
-        BRIDGE_MISSING,
+        BRIDGE_MISSING, LiveActivityDiagnostics, LiveActivityPayload, LiveActivityStatus,
+        set_push_token,
     };
     use std::ffi::{CStr, CString};
     use std::os::raw::c_char;
@@ -204,18 +204,14 @@ mod ios {
 
     fn explain_unavailable(diag: &LiveActivityDiagnostics) -> String {
         if !diag.bridge_linked {
-            return diag
-                .error
-                .clone()
-                .unwrap_or_else(|| BRIDGE_MISSING.into());
+            return diag.error.clone().unwrap_or_else(|| BRIDGE_MISSING.into());
         }
         if !diag.supports_live_activities {
             return "App Info.plist missing NSSupportsLiveActivities — reinstall after rebuild"
                 .into();
         }
         if !diag.widget_extension_installed {
-            return "Widget extension not embedded — run npm run ios:prepare and reinstall"
-                .into();
+            return "Widget extension not embedded — run npm run ios:prepare and reinstall".into();
         }
         if !diag.activities_enabled {
             return "Live Activities disabled — iOS Settings → Medousa → Live Activities".into();
@@ -265,8 +261,8 @@ mod ios {
                 });
             };
 
-            let mut status: LiveActivityStatus =
-                serde_json::from_str(&text).map_err(|err| format!("decode live activity status: {err}"))?;
+            let mut status: LiveActivityStatus = serde_json::from_str(&text)
+                .map_err(|err| format!("decode live activity status: {err}"))?;
             if let Some(token) = status.push_token.clone().or_else(fetch_push_token) {
                 set_push_token(Some(token.clone()));
                 status.push_token = Some(token);

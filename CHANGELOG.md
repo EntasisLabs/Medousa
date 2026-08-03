@@ -7,6 +7,26 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.8.0] — 2026-08-02
+
+### Added
+
+- **Medousa Draw** — vault-native freehand drawing blocks in ordinary notes and full `kind: draw` canvas notes, stored as versioned vector scenes in Markdown.
+- **Companion integrations** — initial 0.1.0 release bundles for VS Code, Neovim, Chromium browsers, and Obsidian, all connected to the same workshop sessions and context model.
+- **Request-driven local inference** — device telemetry, benchmark calibration, admission envelopes, resource leases, GPU budgeting, and lifecycle eviction under sleep or memory pressure.
+- **True multi-agent concurrency** — workshop turns can hand work to multiple agents without serializing unrelated execution.
+
+### Changed
+
+- Notes gained active-heading tracking, calmer outline navigation, improved scrolling, and richer chat handoff context.
+- Settings now exposes the companion surfaces as first-class ways into Medousa.
+- Release CI builds, tests, checksums, and publishes independently versioned integration bundles alongside the 0.8.0 full train.
+
+### Fixed
+
+- Companion clients release stale workshop connections during handoff and preserve session navigation and restored chat state.
+- Neovim streaming handles daemon event payloads without deserialization failures.
+
 ## [0.7.2] — 2026-07-31
 
 ### Fixed
@@ -294,6 +314,7 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 - Product path is **Home-first**: download the app, chat, then add packages from Settings; Installer remains an advanced/repair escape hatch
 - Connection → Extras and welcome-wizard offline CTAs open Settings → Packages instead of launching the Installer by default
 
+[0.8.0]: https://github.com/EntasisLabs/Medousa/releases/tag/v0.8.0
 [0.6.0]: https://github.com/EntasisLabs/Medousa/releases/tag/v0.6.0
 [0.5.0]: https://github.com/EntasisLabs/Medousa/releases/tag/v0.5.0
 [0.4.1]: https://github.com/EntasisLabs/Medousa/releases/tag/v0.4.1

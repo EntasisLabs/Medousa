@@ -138,8 +138,8 @@ pub async fn mesh_list_intros(
         Some(status) => format!("/v1/mesh/intros?status={status}"),
         None => "/v1/mesh/intros".to_string(),
     };
-    let response = crate::workshop_transport::workshop_get_json::<serde_json::Value>(&config, &path)
-        .await?;
+    let response =
+        crate::workshop_transport::workshop_get_json::<serde_json::Value>(&config, &path).await?;
     Ok(response
         .get("intros")
         .and_then(|value| serde_json::from_value(value.clone()).ok())
@@ -311,10 +311,7 @@ pub async fn mesh_set_peer_rendezvous(
         grants.push("client.rendezvous".to_string());
     }
     if grants.is_empty() {
-        grants = vec![
-            "mesh.message".to_string(),
-            "mesh.bundle.push".to_string(),
-        ];
+        grants = vec!["mesh.message".to_string(), "mesh.bundle.push".to_string()];
     }
 
     let client = reqwest::Client::builder()

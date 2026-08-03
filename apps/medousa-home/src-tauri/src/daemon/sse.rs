@@ -19,7 +19,10 @@ pub async fn stream_sse_json<T, F>(
     let response = match client.get(url).send().await {
         Ok(response) => response,
         Err(err) => {
-            let _ = app.emit(error_event, serde_json::json!({ "message": err.to_string() }));
+            let _ = app.emit(
+                error_event,
+                serde_json::json!({ "message": err.to_string() }),
+            );
             return;
         }
     };
@@ -35,7 +38,15 @@ pub async fn stream_sse_json<T, F>(
     }
 
     let mut stream = response.bytes_stream();
-    pump_sse_stream(app, &mut stream, event_name, error_event, &mut on_payload, cancel).await;
+    pump_sse_stream(
+        app,
+        &mut stream,
+        event_name,
+        error_event,
+        &mut on_payload,
+        cancel,
+    )
+    .await;
 }
 
 pub async fn stream_sse_json_workshop<T, F>(
@@ -130,7 +141,10 @@ async fn pump_sse_stream<S, T, F>(
         let chunk = match chunk {
             Ok(bytes) => bytes,
             Err(err) => {
-                let _ = app.emit(error_event, serde_json::json!({ "message": err.to_string() }));
+                let _ = app.emit(
+                    error_event,
+                    serde_json::json!({ "message": err.to_string() }),
+                );
                 break;
             }
         };

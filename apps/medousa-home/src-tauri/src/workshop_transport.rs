@@ -1,7 +1,7 @@
 use std::sync::OnceLock;
 use std::time::Duration;
 
-use medousa_sdk_iroh::{is_connect_error, WorkshopRoute};
+use medousa_sdk_iroh::{WorkshopRoute, is_connect_error};
 use reqwest::Client;
 use serde::de::DeserializeOwned;
 use uuid::Uuid;
@@ -154,9 +154,9 @@ pub async fn workshop_json_request(
     body: Option<&serde_json::Value>,
 ) -> Result<serde_json::Value, String> {
     let payload = match body {
-        Some(body) => RequestPayload::Json(
-            serde_json::to_vec(body).map_err(|err| err.to_string())?,
-        ),
+        Some(body) => {
+            RequestPayload::Json(serde_json::to_vec(body).map_err(|err| err.to_string())?)
+        }
         None => RequestPayload::Empty,
     };
     let response = workshop_request(config, method, path, payload, false).await?;
@@ -220,10 +220,9 @@ impl WorkshopByteStream {
                 .map_err(|err| err.to_string())
                 .map(|chunk| chunk.map(|bytes| bytes.to_vec())),
             #[cfg(any(target_os = "ios", target_os = "android"))]
-            WorkshopByteStream::Iroh(body) => body
-                .read_chunk()
-                .await
-                .map_err(|err| err.to_string()),
+            WorkshopByteStream::Iroh(body) => {
+                body.read_chunk().await.map_err(|err| err.to_string())
+            }
         }
     }
 }
@@ -386,7 +385,9 @@ async fn lan_request(
                 bytes,
                 extra_headers,
             } => {
-                let mut req = request.header("Content-Type", content_type).body(bytes.clone());
+                let mut req = request
+                    .header("Content-Type", content_type)
+                    .body(bytes.clone());
                 for (name, value) in extra_headers {
                     req = req.header(name, value);
                 }
@@ -432,7 +433,10 @@ async fn lan_request(
     }
 
     Err(last_body_error.unwrap_or_else(|| {
-        format!("workshop response body was unavailable for {method} {}", normalize_path(path))
+        format!(
+            "workshop response body was unavailable for {method} {}",
+            normalize_path(path)
+        )
     }))
 }
 
@@ -492,7 +496,11 @@ fn build_multipart_body(fields: &[MultipartField]) -> (Vec<u8>, String) {
             }
         } else {
             body.extend_from_slice(
-                format!("Content-Disposition: form-data; name=\"{}\"\r\n", field.name).as_bytes(),
+                format!(
+                    "Content-Disposition: form-data; name=\"{}\"\r\n",
+                    field.name
+                )
+                .as_bytes(),
             );
         }
         body.extend_from_slice(b"\r\n");
@@ -500,10 +508,7 @@ fn build_multipart_body(fields: &[MultipartField]) -> (Vec<u8>, String) {
         body.extend_from_slice(b"\r\n");
     }
     body.extend_from_slice(format!("--{boundary}--\r\n").as_bytes());
-    (
-        body,
-        format!("multipart/form-data; boundary={boundary}"),
-    )
+    (body, format!("multipart/form-data; boundary={boundary}"))
 }
 
 #[cfg(any(target_os = "ios", target_os = "android"))]
@@ -518,17 +523,14 @@ async fn iroh_open_stream(
         .ok_or_else(|| "missing iroh ticket".to_string())?;
     let header_pairs = iroh_header_refs(headers);
     let header_slice = iroh_header_slice(&header_pairs);
-    let response = medousa_iroh_http::iroh_http_request(
-        ticket,
-        "GET",
-        path,
-        &header_slice,
-        None,
-    )
-    .await
-    .map_err(|err| err.to_string())?;
+    let response = medousa_iroh_http::iroh_http_request(ticket, "GET", path, &header_slice, None)
+        .await
+        .map_err(|err| err.to_string())?;
     if !(200..300).contains(&response.status) {
-        return Err(format!("workshop returned HTTP {} over iroh", response.status));
+        return Err(format!(
+            "workshop returned HTTP {} over iroh",
+            response.status
+        ));
     }
     Ok(response.body)
 }
@@ -563,20 +565,23 @@ async fn iroh_request(
         header_pairs.push(("Content-Type".to_string(), content_type.to_string()));
     }
     let header_slice = iroh_header_slice(&header_pairs);
-    let mut response = medousa_iroh_http::iroh_http_request(
-        ticket,
-        method,
-        path,
-        &header_slice,
-        body,
-    )
-    .await
-    .map_err(|err| err.to_string())?;
+    let mut response =
+        medousa_iroh_http::iroh_http_request(ticket, method, path, &header_slice, body)
+            .await
+            .map_err(|err| err.to_string())?;
     if !(200..300).contains(&response.status) {
-        return Err(format!("workshop returned HTTP {} over iroh", response.status));
+        return Err(format!(
+            "workshop returned HTTP {} over iroh",
+            response.status
+        ));
     }
     let mut out = Vec::new();
-    while let Some(chunk) = response.body.read_chunk().await.map_err(|err| err.to_string())? {
+    while let Some(chunk) = response
+        .body
+        .read_chunk()
+        .await
+        .map_err(|err| err.to_string())?
+    {
         out.extend_from_slice(&chunk);
     }
     Ok(String::from_utf8_lossy(&out).to_string())

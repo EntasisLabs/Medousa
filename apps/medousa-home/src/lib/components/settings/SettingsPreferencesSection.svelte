@@ -236,7 +236,8 @@
               aria-selected={active}
               class="prefs-mark-option"
               class:prefs-mark-option-active={active}
-              style:--mark-preview-bg={option.previewBackground}
+              style:--mark-preview-bg={settings.darkMode ? option.darkPreviewBackground : option.lightPreviewBackground}
+              style:--mark-accent={settings.darkMode ? option.darkColor : option.lightColor}
               onclick={() => settings.setMedousaMark(option.id)}
             >
               <span class="prefs-mark-preview" aria-hidden="true">
@@ -858,16 +859,30 @@
     border: 1px solid var(--prefs-tile-border);
     background: var(--prefs-tile-bg);
     color: rgb(var(--color-surface-300));
+    transition:
+      transform 160ms ease,
+      border-color 160ms ease,
+      background-color 160ms ease,
+      box-shadow 160ms ease;
   }
 
-  .prefs-mark-option:hover,
-  .prefs-mark-option-active {
-    border-color: rgb(var(--theme-focus) / 0.58);
-    background: rgb(var(--theme-selection) / 0.09);
+  .prefs-mark-option:hover:not(:disabled) {
+    transform: translateY(-1px);
+    border-color: color-mix(in srgb, var(--mark-accent) 42%, rgb(var(--theme-focus) / 0.58));
+    background: color-mix(in srgb, var(--mark-accent) 6%, var(--prefs-tile-bg));
   }
 
   .prefs-mark-option-active {
-    box-shadow: inset 0 0 0 1px rgb(var(--theme-focus) / 0.22);
+    border-color: color-mix(in srgb, var(--mark-accent) 48%, rgb(var(--theme-focus) / 0.82));
+    background: color-mix(in srgb, var(--mark-accent) 7%, rgb(var(--theme-selection) / 0.09));
+    box-shadow:
+      inset 0 0 0 1px color-mix(in srgb, var(--mark-accent) 22%, rgb(var(--theme-focus) / 0.38)),
+      0 5px 14px rgb(0 0 0 / 0.08);
+  }
+
+  .prefs-mark-option:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--mark-accent) 70%, transparent);
+    outline-offset: 2px;
   }
 
   .prefs-mark-preview {
@@ -877,7 +892,20 @@
     height: 4.25rem;
     padding: 0.35rem;
     border-radius: 0.5rem;
+    border: 1px solid color-mix(in srgb, var(--mark-accent) 22%, transparent);
     background: var(--mark-preview-bg);
+    box-shadow: 0 2px 6px rgb(0 0 0 / 0.06);
+    transition:
+      transform 160ms ease,
+      box-shadow 160ms ease;
+  }
+
+  .prefs-mark-option:hover:not(:disabled) .prefs-mark-preview,
+  .prefs-mark-option-active .prefs-mark-preview {
+    transform: translateY(-1px) scale(1.02);
+    box-shadow:
+      0 8px 16px rgb(0 0 0 / 0.1),
+      0 0 0 1px color-mix(in srgb, var(--mark-accent) 18%, transparent);
   }
 
   .prefs-mark-label {
@@ -886,6 +914,13 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     font-size: 0.67rem;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .prefs-mark-option,
+    .prefs-mark-preview {
+      transition: none;
+    }
   }
 
   @media (min-width: 720px) {

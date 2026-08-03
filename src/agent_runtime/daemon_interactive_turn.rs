@@ -23,7 +23,7 @@ use crate::media_store::{merge_media_refs_into_prompt, validate_media_refs};
 use crate::media_vision;
 use crate::turn_parts::{
     artifact_refs_from_stream, user_conversation_turn,
-    user_conversation_turn_with_media_and_speaker, TurnPartsAccumulator,
+    user_conversation_turn_with_context_media_and_speaker, TurnPartsAccumulator,
 };
 use crate::workspace::ask_job_store::{self, AskJobStore};
 
@@ -988,6 +988,10 @@ async fn run_agent_turn_inner(
 
     let session_id = request.session_id.trim().to_string();
     let prompt = request.prompt.trim().to_string();
+    let host_context = request
+        .host_context
+        .as_ref()
+        .map(crate::agent_runtime::host_context::bound_host_context);
     let has_media = !request.media_refs.is_empty();
     let has_vision_media = media_vision::has_vision_media(&request.media_refs);
     if session_id.is_empty() || (prompt.is_empty() && !has_media) {
@@ -1044,6 +1048,10 @@ async fn run_agent_turn_inner(
         &request.media_refs,
         &vision_plan.merge_options,
     );
+    let effective_prompt = crate::agent_runtime::host_context::append_host_context(
+        &effective_prompt,
+        host_context.as_ref(),
+    );
 
     if has_vision_media
         && let Some(notice) =
@@ -1074,8 +1082,9 @@ async fn run_agent_turn_inner(
 
     let mut conversation = load_history(&session_id);
     if request.persist_user_turn {
-        let user_turn = user_conversation_turn_with_media_and_speaker(
+        let user_turn = user_conversation_turn_with_context_media_and_speaker(
             prompt.clone(),
+            host_context.clone(),
             &request.media_refs,
             Some(speaker_profile_id.as_str()),
         );

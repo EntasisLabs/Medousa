@@ -425,9 +425,13 @@ mod tests {
             semantic_tags: Some(vec!["smoke-test".to_string()]),
             auto_workshop_tags: true,
         };
+        let skips_auto_tags = crate::vault::roots::active_root_skips_auto_workshop_tags();
         let written = VaultService::write_note(Some(&path), &request, None).expect("write");
         assert!(written.created);
-        assert!(written.note.tags.iter().any(|tag| tag == "vault"));
+        assert_eq!(
+            written.note.tags.iter().any(|tag| tag == "vault"),
+            !skips_auto_tags
+        );
         assert!(written.note.tags.iter().any(|tag| tag == "smoke-test"));
         let read = VaultService::get_note(&path).expect("read");
         assert!(read.content.contains("tags:"));

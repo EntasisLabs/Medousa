@@ -22,6 +22,28 @@ EVENT_JSON = (
 )
 
 
+def stage_routing():
+    roles = (
+        "orchestrator",
+        "chunker",
+        "extractor",
+        "summarizer",
+        "verifier",
+        "packer",
+        "final_response",
+    )
+    return {
+        role: {
+            "role": role,
+            "provider": "openai",
+            "model": "gpt-4",
+            "policy_profile": "balanced",
+            "fallback_chain": ["safe-default"],
+        }
+        for role in roles
+    }
+
+
 async def test_interactive_stream_turn(monkeypatch):
     async def fake_iter(_response):
         yield EVENT_JSON
@@ -44,7 +66,7 @@ async def test_interactive_stream_turn(monkeypatch):
             provider="openai",
             persist_user_turn=True,
             response_depth_mode="standard",
-            stage_routing={},
+            stage_routing=stage_routing(),
         ),
     ) as events:
         collected = [event async for event in events]

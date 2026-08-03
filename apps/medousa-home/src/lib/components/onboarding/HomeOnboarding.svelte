@@ -399,7 +399,11 @@
         </div>
       {:else if draft.stage === "style"}
         <div class="home-onboarding-page home-onboarding-style-page wizard-stagger">
-          <div class="wizard-beat home-style-hero" style:--mark-stage-bg={selectedMark.previewBackground}>
+          <div
+            class="wizard-beat home-style-hero"
+            style:--mark-stage-bg={settings.darkMode ? selectedMark.darkPreviewBackground : selectedMark.lightPreviewBackground}
+            style:--mark-stage-fg={settings.darkMode ? selectedMark.darkPreviewForeground : selectedMark.lightPreviewForeground}
+          >
             <div class="home-style-mark">
               <MedousaMark markId={settings.medousaMark} darkMode={settings.darkMode} />
             </div>
@@ -423,7 +427,8 @@
                   role="option"
                   aria-selected={settings.medousaMark === option.id}
                   class:home-style-option-active={settings.medousaMark === option.id}
-                  style:--mark-option-bg={option.previewBackground}
+                  style:--mark-option-bg={settings.darkMode ? option.darkPreviewBackground : option.lightPreviewBackground}
+                  style:--mark-option-accent={settings.darkMode ? option.darkColor : option.lightColor}
                   onclick={() => void selectMark(option.id)}
                 >
                   <span><MedousaMark markId={option.id} darkMode={settings.darkMode} decorative /></span>
@@ -451,7 +456,10 @@
         </div>
       {:else}
         <div class="home-onboarding-page home-ready-page wizard-stagger">
-          <div class="wizard-beat home-ready-mark" style:--mark-stage-bg={selectedMark.previewBackground}>
+          <div
+            class="wizard-beat home-ready-mark"
+            style:--mark-stage-bg={settings.darkMode ? selectedMark.darkPreviewBackground : selectedMark.lightPreviewBackground}
+          >
             <MedousaMark markId={settings.medousaMark} darkMode={settings.darkMode} />
           </div>
           <div class="wizard-beat home-onboarding-copy home-ready-copy">
@@ -586,17 +594,18 @@
   .home-layout-options button[aria-pressed="true"] { border-color: rgb(var(--color-primary-500) / 0.58); background: rgb(var(--color-primary-500) / 0.1); color: rgb(var(--color-primary-200)); }
 
   .home-onboarding-style-page { display: grid; grid-template-columns: minmax(15rem, 0.7fr) minmax(0, 1.3fr); gap: clamp(1.5rem, 4vw, 3.5rem); align-items: center; }
-  .home-style-hero { display: grid; min-height: 27rem; place-items: center; align-content: center; padding: 1.5rem; border-radius: 1rem; background: var(--mark-stage-bg); text-align: center; }
+  .home-style-hero { display: grid; min-height: 27rem; place-items: center; align-content: center; padding: 1.5rem; border-radius: 1rem; background: var(--mark-stage-bg); color: var(--mark-stage-fg); box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.08), 0 10px 24px rgb(0 0 0 / 0.08); text-align: center; }
   .home-style-mark { width: 8.5rem; height: 16rem; }
-  .home-style-hero p { margin: 1rem 0 0; color: #F2EFE6; font-size: 0.85rem; letter-spacing: 0.14em; text-transform: uppercase; }
-  .home-style-hero small { margin-top: 0.3rem; color: rgb(242 239 230 / 0.62); }
+  .home-style-hero p { margin: 1rem 0 0; color: var(--mark-stage-fg); font-size: 0.85rem; letter-spacing: 0.14em; text-transform: uppercase; }
+  .home-style-hero small { margin-top: 0.3rem; color: color-mix(in srgb, var(--mark-stage-fg) 62%, transparent); }
   .home-style-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 0.65rem; margin-top: 1rem; }
   .home-style-fields label { display: grid; gap: 0.35rem; font-size: 0.68rem; color: rgb(var(--color-surface-400)); }
   .home-style-fields label small { opacity: 0.7; }
   .home-style-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0.45rem; margin-top: 1rem; }
-  .home-style-grid button { display: grid; min-width: 0; justify-items: center; gap: 0.3rem; padding: 0.38rem; border: 1px solid transparent; border-radius: 0.6rem; color: rgb(var(--color-surface-400)); }
-  .home-style-grid button:hover, .home-style-grid .home-style-option-active { border-color: rgb(var(--color-primary-500) / 0.55); background: rgb(var(--color-primary-500) / 0.08); }
-  .home-style-grid button > span { display: grid; width: 100%; height: 4.5rem; place-items: center; padding: 0.45rem; border-radius: 0.42rem; background: var(--mark-option-bg); }
+  .home-style-grid button { display: grid; min-width: 0; justify-items: center; gap: 0.3rem; padding: 0.38rem; border: 1px solid transparent; border-radius: 0.6rem; color: rgb(var(--color-surface-400)); transition: transform 160ms ease, border-color 160ms ease, background-color 160ms ease; }
+  .home-style-grid button:hover, .home-style-grid .home-style-option-active { transform: translateY(-1px); border-color: color-mix(in srgb, var(--mark-option-accent) 56%, transparent); background: color-mix(in srgb, var(--mark-option-accent) 8%, transparent); }
+  .home-style-grid button > span { display: grid; width: 100%; height: 4.5rem; place-items: center; padding: 0.45rem; border: 1px solid color-mix(in srgb, var(--mark-option-accent) 22%, transparent); border-radius: 0.42rem; background: var(--mark-option-bg); box-shadow: 0 2px 6px rgb(0 0 0 / 0.06); transition: transform 160ms ease, box-shadow 160ms ease; }
+  .home-style-grid button:hover > span, .home-style-grid .home-style-option-active > span { transform: translateY(-1px) scale(1.02); box-shadow: 0 8px 16px rgb(0 0 0 / 0.1), 0 0 0 1px color-mix(in srgb, var(--mark-option-accent) 18%, transparent); }
   .home-style-grid button small { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.58rem; }
 
   .home-ready-page { align-items: center; padding-block: 0.75rem; text-align: center; }
@@ -612,6 +621,13 @@
   .home-package-row small { color: rgb(var(--color-surface-400)); }
   .home-package-progress { width: 7rem; height: 4px; overflow: hidden; border-radius: 999px; background: rgb(var(--color-surface-600) / 0.5); }
   .home-package-progress i { display: block; height: 100%; background: rgb(var(--color-primary-500)); transition: width 180ms ease; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .home-style-grid button,
+    .home-style-grid button > span {
+      transition: none;
+    }
+  }
 
   @media (max-width: 780px) {
     .home-onboarding-focus-grid, .home-style-fields { grid-template-columns: 1fr; }

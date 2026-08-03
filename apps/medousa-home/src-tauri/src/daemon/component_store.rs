@@ -5,8 +5,8 @@ use medousa_types::component_store::{
 use serde_json::Value;
 use tauri::State;
 
-use super::sdk::{client, sdk_error};
 use super::DaemonState;
+use super::sdk::{client, sdk_error};
 
 #[tauri::command]
 pub async fn component_store_get(

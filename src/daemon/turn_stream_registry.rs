@@ -19,8 +19,7 @@ pub struct TurnStreamEntry {
     pub log: Arc<TurnEventLog>,
 }
 
-pub type TurnStreamRegistry =
-    Arc<RwLock<HashMap<String, TurnStreamEntry>>>;
+pub type TurnStreamRegistry = Arc<RwLock<HashMap<String, TurnStreamEntry>>>;
 
 pub fn new_turn_stream_registry() -> TurnStreamRegistry {
     Arc::new(RwLock::new(HashMap::new()))

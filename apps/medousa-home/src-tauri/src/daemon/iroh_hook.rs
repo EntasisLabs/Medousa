@@ -40,15 +40,10 @@ impl IrohHttpHook for TauriIrohHook {
                 .iter()
                 .map(|(k, v)| (k.as_str(), v.as_str()))
                 .collect();
-            let mut response = medousa_iroh_http::iroh_http_request(
-                &ticket,
-                &method,
-                &path,
-                &header_refs,
-                body,
-            )
-            .await
-            .map_err(|err| SdkError::Http(err.to_string()))?;
+            let mut response =
+                medousa_iroh_http::iroh_http_request(&ticket, &method, &path, &header_refs, body)
+                    .await
+                    .map_err(|err| SdkError::Http(err.to_string()))?;
             let mut out = Vec::new();
             while let Some(chunk) = response
                 .body
@@ -85,15 +80,10 @@ impl IrohHttpHook for TauriIrohHook {
                     .iter()
                     .map(|(k, v)| (k.as_str(), v.as_str()))
                     .collect();
-                let response = medousa_iroh_http::iroh_http_request(
-                    &ticket,
-                    "GET",
-                    &path,
-                    &header_refs,
-                    None,
-                )
-                .await
-                .map_err(|err| SdkError::Http(err.to_string()))?;
+                let response =
+                    medousa_iroh_http::iroh_http_request(&ticket, "GET", &path, &header_refs, None)
+                        .await
+                        .map_err(|err| SdkError::Http(err.to_string()))?;
                 if !(200..300).contains(&response.status) {
                     return Err(SdkError::Http(format!(
                         "workshop returned HTTP {} over iroh",

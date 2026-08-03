@@ -2,21 +2,10 @@
 
 use std::path::PathBuf;
 
+use axum::Json;
 use axum::extract::State;
 use axum::http::StatusCode;
-use axum::Json;
 
-use stasis::ports::outbound::memory::identity_memory_models::{
-    CommitEntityUpdateRequest, CommitEntityUpdateResponse, GetIdentityContextResponse,
-    ListEntityHistoryRequest, ListEntityHistoryResponse, ProposeEntityUpdateRequest,
-    ProposeEntityUpdateResponse, RollbackEntityVersionRequest, RollbackEntityVersionResponse,
-};
-use stasis::ports::outbound::memory::identity_memory_store::IdentityMemoryStore;
-use crate::identity_memory::{
-    build_identity_context_request, full_identity_context_request, parse_identity_context_mode_label,
-    resolve_identity_channel_id, resolve_identity_persona_id,
-};
-use crate::user_profiles::ProfileRecord;
 use crate::daemon_api::{
     CreateUserProfileRequest, CreateUserProfileResponse, ExportUserProfileRequest,
     ExportUserProfileResponse, IdentityContextRequest, IdentityDigestPreviewResponse,
@@ -25,6 +14,17 @@ use crate::daemon_api::{
     ListUserProfilesResponse, SetActiveUserProfileRequest, SetActiveUserProfileResponse,
     UserProfileRecordDto,
 };
+use crate::identity_memory::{
+    build_identity_context_request, full_identity_context_request,
+    parse_identity_context_mode_label, resolve_identity_channel_id, resolve_identity_persona_id,
+};
+use crate::user_profiles::ProfileRecord;
+use stasis::ports::outbound::memory::identity_memory_models::{
+    CommitEntityUpdateRequest, CommitEntityUpdateResponse, GetIdentityContextResponse,
+    ListEntityHistoryRequest, ListEntityHistoryResponse, ProposeEntityUpdateRequest,
+    ProposeEntityUpdateResponse, RollbackEntityVersionRequest, RollbackEntityVersionResponse,
+};
+use stasis::ports::outbound::memory::identity_memory_store::IdentityMemoryStore;
 
 use crate::daemon::http::internal_error;
 use crate::daemon::state::AppState;
@@ -43,8 +43,8 @@ pub(crate) async fn resolve_identity_context_for_request(
 ) -> Result<ResolvedIdentityContext, (StatusCode, String)> {
     let user_id = normalize_optional_text(user_id_override)
         .unwrap_or_else(|| state.workshop_identity_user_id());
-    let persona_id = normalize_optional_text(persona_id_override)
-        .unwrap_or_else(resolve_identity_persona_id);
+    let persona_id =
+        normalize_optional_text(persona_id_override).unwrap_or_else(resolve_identity_persona_id);
     let channel_id = normalize_optional_text(channel_id_override)
         .unwrap_or_else(|| resolve_identity_channel_id(policy_profile));
 
@@ -145,9 +145,12 @@ pub async fn create_user_profile(
         registry.create_profile(&request.slug, &request.display_name)
     }
     .map_err(|err| (StatusCode::BAD_REQUEST, err.to_string()))?;
-    crate::identity_memory::seed_workshop_profile_user(identity_store.as_ref(), &profile.profile_id)
-        .await
-        .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
+    crate::identity_memory::seed_workshop_profile_user(
+        identity_store.as_ref(),
+        &profile.profile_id,
+    )
+    .await
+    .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
     let registry = state
         .profile_registry
         .read()
@@ -173,9 +176,7 @@ pub async fn set_active_user_profile(
         .set_active_profile(&request.profile_id)
         .map_err(|err| (StatusCode::BAD_REQUEST, err.to_string()))?;
     let active_profile_id = registry.active_profile_id().to_string();
-    eprintln!(
-        "[medousa] active profile set to {active_profile_id} ({resolved_user_id})"
-    );
+    eprintln!("[medousa] active profile set to {active_profile_id} ({resolved_user_id})");
     Ok(Json(SetActiveUserProfileResponse {
         active_profile_id,
         resolved_user_id,
@@ -490,4 +491,3 @@ pub async fn identity_rollback_version(
         .map_err(internal_error)?;
     Ok(Json(response))
 }
-

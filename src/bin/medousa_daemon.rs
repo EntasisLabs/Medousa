@@ -8,21 +8,22 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
+use async_trait::async_trait;
 use chrono::{DateTime, Utc};
+use medousa::daemon::bounded_set::BoundedDedupSet;
 use medousa::daemon::heartbeat::{
-    HeartbeatDeliveryMetrics, HeartbeatDispatchDecision, SchedulerHeartbeatContext, SchedulerTickSideEffects,
-    build_operator_first_run_guide, decide_heartbeat_dispatch, dispatch_heartbeat_notifications,
-    format_tick_report, heartbeat_dispatch_decision_label, parse_heartbeat_delivery_policy,
-    parse_heartbeat_notify_config, parse_heartbeat_policy, run_scheduler_loop, tick_runtime,
+    HeartbeatDeliveryMetrics, HeartbeatDispatchDecision, SchedulerHeartbeatContext,
+    SchedulerTickSideEffects, build_operator_first_run_guide, decide_heartbeat_dispatch,
+    dispatch_heartbeat_notifications, format_tick_report, heartbeat_dispatch_decision_label,
+    parse_heartbeat_delivery_policy, parse_heartbeat_notify_config, parse_heartbeat_policy,
+    run_scheduler_loop, tick_runtime,
 };
 use medousa::daemon::ingest::{
     job_succeeded, maybe_resume_agent_turn_from_child_job, resolve_api_model_routing,
 };
-use medousa::daemon::router::{
-    build_daemon_router, parse_dashboard_action_auth,
-};
-use medousa::daemon::bounded_set::BoundedDedupSet;
+use medousa::daemon::router::{build_daemon_router, parse_dashboard_action_auth};
 use medousa::daemon::state::AppState;
+use medousa::daemon::worker_host::{run_materializer_loop, run_worker_host};
 use medousa::daemon_api::DEFAULT_DAEMON_BIND;
 use medousa::session_mapping;
 use medousa::user_profiles::UserProfileRegistry;
@@ -30,9 +31,7 @@ use medousa::{
     PlatformBuildConfig, apply_daemon_env, build_daemon_platform, channel_delivery,
     load_product_config, parse_backend, remove_surrealkv_lock,
 };
-use async_trait::async_trait;
 use tokio::sync::{RwLock, watch};
-
 
 /// How often the bounded in-memory state caps are swept. Independent of the
 /// (env-gated, 6h) durable retention pass so memory stays bounded on every
@@ -107,7 +106,8 @@ impl SchedulerTickSideEffects for DaemonSchedulerSideEffects {
                 job_id: job_id.to_string(),
             },
         );
-        medousa::feed_sink::maybe_publish_recurring_job_feed(self.state.composition(), job_id).await;
+        medousa::feed_sink::maybe_publish_recurring_job_feed(self.state.composition(), job_id)
+            .await;
         if job_succeeded(self.state.composition(), job_id).await {
             let _ = maybe_resume_agent_turn_from_child_job(&self.state, job_id).await;
         }
@@ -219,7 +219,10 @@ async fn main() -> Result<()> {
             tracing::info!("SurrealKV sync mode defaulted to 200ms (grouped fsync)");
         }
     }
-    apply_daemon_env(&load_product_config());
+    let product_config = load_product_config();
+    apply_daemon_env(&product_config);
+    let worker_config = product_config.runtime.workers.clone();
+    worker_config.validate().map_err(anyhow::Error::msg)?;
     medousa::runtime::stasis_otel::prepare_stasis_otel_from_tui_defaults();
     medousa::apply_workshop_llm_env();
     let backend = parse_backend(Some(&backend_name));
@@ -242,13 +245,9 @@ async fn main() -> Result<()> {
     let addr: SocketAddr = bind
         .parse()
         .with_context(|| format!("invalid --bind address: {bind}"))?;
-    let listener = tokio::net::TcpListener::bind(addr)
-        .await
-        .with_context(|| {
-            format!(
-                "failed to bind medousa daemon on {addr} — another daemon may already be running"
-            )
-        })?;
+    let listener = tokio::net::TcpListener::bind(addr).await.with_context(|| {
+        format!("failed to bind medousa daemon on {addr} — another daemon may already be running")
+    })?;
     tracing::info!(%addr, "acquired bind address, initializing runtime");
 
     let webhook_client = heartbeat_notify
@@ -278,12 +277,15 @@ async fn main() -> Result<()> {
         .context("failed to build medousa platform runtime")?;
 
     let identity_service = platform.identity_service();
-    let profile_registry = Arc::new(std::sync::RwLock::new(UserProfileRegistry::load_or_bootstrap()));
+    let profile_registry = Arc::new(std::sync::RwLock::new(
+        UserProfileRegistry::load_or_bootstrap(),
+    ));
     medousa::user_profiles::init_workshop_profile_registry(profile_registry.clone());
     medousa::shared_mode::init_shared_mode();
 
     if once {
-        let report = tick_runtime(platform.composition(), &worker_id, heartbeat_policy, None).await?;
+        let report =
+            tick_runtime(platform.composition(), &worker_id, heartbeat_policy, None).await?;
         tracing::info!("{}", format_tick_report("medousa-daemon once", &report));
         let mut heartbeat_metrics = HeartbeatDeliveryMetrics::default();
         let dispatch_decision = decide_heartbeat_dispatch(
@@ -359,9 +361,7 @@ async fn main() -> Result<()> {
         active_ingest_jobs: Arc::new(RwLock::new(HashMap::new())),
         channel_deliveries: Arc::new(RwLock::new(HashMap::new())),
         job_delivery_records: Arc::new(RwLock::new(HashMap::new())),
-        delivered_outbox_events: Arc::new(RwLock::new(BoundedDedupSet::new(
-            OUTBOX_DEDUP_CAPACITY,
-        ))),
+        delivered_outbox_events: Arc::new(RwLock::new(BoundedDedupSet::new(OUTBOX_DEDUP_CAPACITY))),
         channel_dispatch_client: reqwest::Client::builder()
             .timeout(Duration::from_secs(15))
             .build()
@@ -398,7 +398,7 @@ async fn main() -> Result<()> {
         last_retention_at: Arc::new(RwLock::new(None)),
         last_mem_prune_at: Arc::new(RwLock::new(None)),
         last_context_usage_by_session: Arc::new(RwLock::new(HashMap::new())),
-        client_registry: medousa::browser_handlers::ClientRegistry::new(),
+        client_registry: platform.client_registry(),
         forge,
         forge_events: medousa::daemon::forge_events::ForgeEventBus::new(),
         coding_engine: Some(medousa::daemon::coding_engine_host::CodingEngineHost::new()),
@@ -453,9 +453,8 @@ async fn main() -> Result<()> {
         #[cfg(feature = "iroh-transport")]
         let iroh_info = if medousa::iroh_transport::iroh_enabled_from_env() {
             let upstream = format!("http://{addr}");
-            let secret = medousa::iroh_transport::secret_key_from_pairing_identity(
-                identity.signing_key(),
-            );
+            let secret =
+                medousa::iroh_transport::secret_key_from_pairing_identity(identity.signing_key());
             match medousa::iroh_transport::spawn_workshop_gateway_with_secret(&upstream, secret)
                 .await
             {
@@ -483,9 +482,7 @@ async fn main() -> Result<()> {
         #[cfg(not(feature = "iroh-transport"))]
         let iroh_info: Option<medousa::pairing::IrohWorkshopInfo> =
             if medousa::iroh_transport::iroh_enabled_from_env() {
-                tracing::warn!(
-                    "MEDOUSA_IROH=1 requires rebuild with --features iroh-transport"
-                );
+                tracing::warn!("MEDOUSA_IROH=1 requires rebuild with --features iroh-transport");
                 None
             } else {
                 None
@@ -556,11 +553,11 @@ async fn main() -> Result<()> {
             local_device_id: pairing_service.device_id().to_string(),
             local_peer_name: pairing_service.peer_name().to_string(),
         };
-        Some(
-            medousa::pairing_handlers::routes().with_state(medousa::pairing_handlers::PairingApiState {
+        Some(medousa::pairing_handlers::routes().with_state(
+            medousa::pairing_handlers::PairingApiState {
                 service: pairing_service,
-            }),
-        )
+            },
+        ))
     } else {
         None
     };
@@ -581,7 +578,9 @@ async fn main() -> Result<()> {
     };
     app = app
         .merge(medousa::share_handlers::share_router(share_api_state))
-        .merge(medousa::peer_message_handlers::peer_message_router(peer_message_state))
+        .merge(medousa::peer_message_handlers::peer_message_router(
+            peer_message_state,
+        ))
         .merge(medousa::mesh::mesh_router(mesh_api_state));
     if let Some(pairing) = peer_scope_pairing {
         app = app.layer(axum::middleware::from_fn_with_state(
@@ -610,13 +609,43 @@ async fn main() -> Result<()> {
     let scheduler_side_effects = Arc::new(DaemonSchedulerSideEffects {
         state: state.clone(),
     });
+    let worker_side_effects = scheduler_side_effects.clone();
+    let scheduler_shutdown_rx = shutdown_rx.clone();
+    let scheduler_worker_id = worker_id.clone();
     tokio::spawn(async move {
         run_scheduler_loop(
             scheduler_ctx,
-            worker_id,
+            scheduler_worker_id,
             interval_ms,
-            shutdown_rx,
+            scheduler_shutdown_rx,
             scheduler_side_effects,
+        )
+        .await;
+    });
+
+    let worker_runtime = state.platform.composition().clone();
+    let worker_host_id = worker_id.clone();
+    let worker_shutdown_rx = shutdown_rx.clone();
+    tokio::spawn(async move {
+        run_worker_host(
+            worker_runtime,
+            worker_host_id,
+            worker_config,
+            worker_shutdown_rx,
+            worker_side_effects,
+        )
+        .await;
+    });
+
+    let materializer_runtime = state.platform.composition().clone();
+    let materializer_id = format!("{worker_id}:materializer");
+    let materializer_shutdown_rx = shutdown_rx.clone();
+    tokio::spawn(async move {
+        run_materializer_loop(
+            materializer_runtime,
+            materializer_id,
+            Duration::from_millis(interval_ms),
+            materializer_shutdown_rx,
         )
         .await;
     });
@@ -678,7 +707,9 @@ async fn main() -> Result<()> {
     // daemon sheds load instead of being FD-exhausted under a request/reconnect
     // storm. The semaphore is shared across all cloned per-connection services.
     let max_concurrency = resolve_max_concurrency();
-    let app = app.layer(tower::limit::GlobalConcurrencyLimitLayer::new(max_concurrency));
+    let app = app.layer(tower::limit::GlobalConcurrencyLimitLayer::new(
+        max_concurrency,
+    ));
     tracing::info!(max_concurrency, "max in-flight request concurrency");
 
     axum::serve(
@@ -732,18 +763,17 @@ mod tests {
         DashboardState, RuntimeDashboardQueryService, router as dashboard_router,
     };
 
-    use medousa::engine_context::{
-        EngineExecutionLane, HeartbeatAction, LaneSafetyActionClass,
-        default_heartbeat_lane_policy,
-    };
     use super::parse_backend;
     use medousa::engine_context::compile_default_lane_prompt;
+    use medousa::engine_context::{
+        EngineExecutionLane, HeartbeatAction, LaneSafetyActionClass, default_heartbeat_lane_policy,
+    };
 
     fn compile_lane_prompt(lane: EngineExecutionLane, prompt: &str) -> String {
         compile_default_lane_prompt(lane, prompt)
     }
-    use axum::http::StatusCode;
     use axum::Router;
+    use axum::http::StatusCode;
     use medousa::channel_delivery::extract_output_text_from_diagnostics;
     use serde_json::json;
 
@@ -770,13 +800,11 @@ mod tests {
         let runtime = medousa::build_runtime(backend, None, None, None)
             .await
             .expect("runtime should build");
-        let dashboard_service = Arc::new(
-            RuntimeDashboardQueryService::from_runtime_composition(runtime),
-        );
-        let dashboard_state = apply_dashboard_action_auth(
-            DashboardState::new(dashboard_service),
-            &auth_config,
-        );
+        let dashboard_service = Arc::new(RuntimeDashboardQueryService::from_runtime_composition(
+            runtime,
+        ));
+        let dashboard_state =
+            apply_dashboard_action_auth(DashboardState::new(dashboard_service), &auth_config);
         let dashboard = dashboard_router(dashboard_state);
         let app = Router::new().merge(dashboard);
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
@@ -871,9 +899,14 @@ mod tests {
             .await
             .expect("runtime should build");
 
-        let report = tick_runtime(&runtime, "test-worker", default_heartbeat_lane_policy(), None)
-            .await
-            .expect("tick should succeed");
+        let report = tick_runtime(
+            &runtime,
+            "test-worker",
+            default_heartbeat_lane_policy(),
+            None,
+        )
+        .await
+        .expect("tick should succeed");
 
         assert_eq!(report.lane, EngineExecutionLane::Scheduled);
         assert_eq!(report.lane_policy_profile, "scheduled");
@@ -915,9 +948,10 @@ mod tests {
         ];
 
         let err = parse_heartbeat_policy(&args).expect_err("zero weights should fail");
-        assert!(err
-            .to_string()
-            .contains("heartbeat weights must sum to greater than zero"));
+        assert!(
+            err.to_string()
+                .contains("heartbeat weights must sum to greater than zero")
+        );
     }
 
     #[test]
@@ -929,9 +963,10 @@ mod tests {
 
         let err = parse_heartbeat_delivery_policy(&args)
             .expect_err("partial quiet-window settings should fail");
-        assert!(err
-            .to_string()
-            .contains("heartbeat quiet-hours requires both start and end hour values"));
+        assert!(
+            err.to_string()
+                .contains("heartbeat quiet-hours requires both start and end hour values")
+        );
     }
 
     #[test]
@@ -945,8 +980,8 @@ mod tests {
             "x-medousa-role".to_string(),
         ];
 
-        let config = parse_dashboard_action_auth(&args)
-            .expect("dashboard action auth config should parse");
+        let config =
+            parse_dashboard_action_auth(&args).expect("dashboard action auth config should parse");
         assert_eq!(config.bearer_token.as_deref(), Some("token-1"));
         assert_eq!(config.required_role.as_deref(), Some("scheduler.admin"));
         assert_eq!(config.role_claim_header.as_deref(), Some("x-medousa-role"));
@@ -961,9 +996,10 @@ mod tests {
 
         let err = parse_dashboard_action_auth(&args)
             .expect_err("role claim header without required role should fail");
-        assert!(err
-            .to_string()
-            .contains("requires --dashboard-action-required-role"));
+        assert!(
+            err.to_string()
+                .contains("requires --dashboard-action-required-role")
+        );
     }
 
     #[test]
@@ -975,11 +1011,9 @@ mod tests {
             "x medousa role".to_string(),
         ];
 
-        let err = parse_dashboard_action_auth(&args)
-            .expect_err("whitespace header names should fail");
-        assert!(err
-            .to_string()
-            .contains("must not contain whitespace"));
+        let err =
+            parse_dashboard_action_auth(&args).expect_err("whitespace header names should fail");
+        assert!(err.to_string().contains("must not contain whitespace"));
     }
 
     #[tokio::test]
@@ -1093,7 +1127,10 @@ mod tests {
         let second_decision = decide_heartbeat_dispatch(&report, second, policy, &mut metrics);
 
         assert_eq!(first_decision, HeartbeatDispatchDecision::Dispatch);
-        assert_eq!(second_decision, HeartbeatDispatchDecision::SuppressedMinInterval);
+        assert_eq!(
+            second_decision,
+            HeartbeatDispatchDecision::SuppressedMinInterval
+        );
         assert_eq!(metrics.notify_decisions, 2);
         assert_eq!(metrics.dispatched_notifications, 1);
         assert_eq!(metrics.suppressed_min_interval, 1);
@@ -1169,7 +1206,10 @@ mod tests {
         assert!(sources.contains(&"https://example.test/two"));
         assert!(sources.contains(&"mock://meta"));
         assert_eq!(
-            sources.iter().filter(|source| **source == "mock://one").count(),
+            sources
+                .iter()
+                .filter(|source| **source == "mock://one")
+                .count(),
             1
         );
     }

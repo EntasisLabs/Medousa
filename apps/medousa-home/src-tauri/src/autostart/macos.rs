@@ -2,7 +2,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 
-use super::spec::{build_autostart_spec, SERVICE_NAME, AutostartSpec};
+use super::spec::{AutostartSpec, SERVICE_NAME, build_autostart_spec};
 
 fn launch_agents_dir() -> PathBuf {
     dirs::home_dir()

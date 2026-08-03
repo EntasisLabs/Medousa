@@ -74,7 +74,7 @@
 
   async function submit(event: Event) {
     event.preventDefault();
-    if (connection.offline) return;
+    if (connection.offline || runtime.savingControls) return;
     const prompt = applyActiveAgentPrompt(
       ensureVaultSelectionInPrompt(chat.draft.trim(), chat.vaultNoteContext),
     );
@@ -179,7 +179,7 @@
   <ChatComposerBar
     mobile
     disabled={connection.offline}
-    composerBlocked={chat.composerBlocked}
+    composerBlocked={chat.composerBlocked || runtime.savingControls}
     onkeydown={handleKeydown}
     onfocus={handleComposerFocus}
     onblur={handleComposerBlur}

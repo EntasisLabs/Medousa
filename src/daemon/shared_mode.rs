@@ -1,8 +1,8 @@
 //! Shared mode status / enable HTTP handlers.
 
+use axum::Json;
 use axum::extract::State;
 use axum::http::StatusCode;
-use axum::Json;
 
 use crate::daemon::http::internal_error;
 use crate::daemon::state::AppState;

@@ -1,16 +1,15 @@
 //! Turn continuation status, lineage, and replay-and-resume handlers.
 
-
+use axum::Json;
 use axum::extract::{Path as AxumPath, State};
 use axum::http::StatusCode;
-use axum::Json;
 
 use crate::daemon::heartbeat::{safe_process_once, safe_publish_pending_events};
 use crate::daemon::ingest::{job_succeeded, maybe_resume_agent_turn_from_child_job};
-use stasis::prelude::RuntimeSdk;
 use crate::daemon_api::{
     ContinuationStatusResponse, ReplayAndResumeResponse, TurnContinuationLineageResponse,
 };
+use stasis::prelude::RuntimeSdk;
 
 use crate::daemon::http::internal_error;
 use crate::daemon::state::AppState;
@@ -43,8 +42,8 @@ pub async fn continuation_lineage(
         ));
     }
 
-    let records = crate::turn_continuation::continuation_lineage_for_turn(&turn_correlation_id, 50)
-        .await;
+    let records =
+        crate::turn_continuation::continuation_lineage_for_turn(&turn_correlation_id, 50).await;
     Ok(Json(TurnContinuationLineageResponse {
         turn_correlation_id,
         records: records
@@ -79,12 +78,16 @@ pub async fn replay_and_resume_job(
     let sdk = RuntimeSdk::new(state.composition().clone());
     let worker_id = format!("{}:replay-resume", state.worker_id);
     for _ in 0..8 {
-        let _ = safe_process_once(&sdk, "default", &worker_id).await.map_err(internal_error)?;
+        let _ = safe_process_once(&sdk, "default", &worker_id)
+            .await
+            .map_err(internal_error)?;
         if job_succeeded(state.composition(), &job_id).await {
             break;
         }
     }
-    let _ = safe_publish_pending_events(&sdk, 50).await.map_err(internal_error)?;
+    let _ = safe_publish_pending_events(&sdk, 50)
+        .await
+        .map_err(internal_error)?;
 
     let succeeded = job_succeeded(state.composition(), &job_id).await;
     let agent_turn_resumed = if succeeded {

@@ -1,0 +1,41 @@
+{
+  "manifest_version": 3,
+  "name": "Medousa",
+  "version": "0.1.0",
+  "description": "A page-aware Medousa companion for your browser.",
+  "minimum_chrome_version": "114",
+  "permissions": [
+    "activeTab",
+    "contextMenus",
+    "scripting",
+    "sidePanel",
+    "storage"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1:7419/*",
+    "http://localhost:7419/*"
+  ],
+  "optional_host_permissions": [
+    "http://*/*",
+    "https://*/*"
+  ],
+  "action": {
+    "default_title": "Open Medousa"
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "commands": {
+    "open-medousa": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+M",
+        "mac": "MacCtrl+Shift+M"
+      },
+      "description": "Open Medousa"
+    }
+  }
+}

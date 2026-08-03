@@ -15,7 +15,7 @@ non-devs configure Medousa through the **app wizard and Settings**. This documen
 | File | Purpose |
 |------|---------|
 | `~/.local/share/medousa/tui_defaults.json` | Provider, model, routing, tool policy, **work card retention** (shared with TUI + Home) |
-| `~/.local/share/medousa/product_config.json` | Channels (Telegram, Slack, …) |
+| `~/.local/share/medousa/product_config.json` | Channels, runtime worker capacity, and product policy |
 | `~/.config/medousa/capabilities.toml` | Capability bindings, web search prefs |
 | `~/.config/medousa/mcp-gateway.toml` | MCP server launch config |
 | `~/.config/medousa/manuscripts/` | Specialty YAML |
@@ -123,6 +123,29 @@ File: `~/.config/medousa/capabilities.toml` — bindings for grapheme ops and MC
 ---
 
 ## Turn loop & execution
+
+The daemon worker pool is configured in `product_config.json`. Shares are preferred,
+work-conserving lanes: an idle lane may consume another queue, then returns to its
+preferred queue after the borrowed job completes.
+
+```json
+{
+  "runtime": {
+    "workers": {
+      "max_in_flight": 25,
+      "agents": 8,
+      "scheduled": 8,
+      "delivery": 5,
+      "maintenance": 4
+    }
+  }
+}
+```
+
+The four shares may total less than `max_in_flight` (the remainder is flexible),
+but may not exceed it. Existing `default` queue jobs are consumed by the scheduled
+lane; new delegated agent work uses the `agents` queue. These values are available
+in **Settings → Runtime Controls → Worker capacity**; restart the engine after saving.
 
 | Variable | Purpose | Default |
 |----------|---------|---------|

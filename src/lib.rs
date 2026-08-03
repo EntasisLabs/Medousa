@@ -187,6 +187,7 @@ pub mod bridge_tools;
 pub mod browser_act_tools;
 pub mod browser_fetch_tools;
 pub mod browser_handlers;
+pub mod client_tools;
 pub mod browser_host_client;
 pub mod browser_search;
 pub mod browser_sessions;

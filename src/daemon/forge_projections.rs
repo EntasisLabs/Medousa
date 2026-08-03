@@ -49,10 +49,7 @@ pub struct AllowedActions {
 
 pub fn allowed_actions(item: &WorkItem) -> AllowedActions {
     let has_env = item.environment.is_some();
-    let active = item
-        .active_attempt
-        .as_ref()
-        .and_then(|id| item.attempt(id));
+    let active = item.active_attempt.as_ref().and_then(|id| item.attempt(id));
     let has_running = active.is_some_and(|a| a.state == AttemptState::Running && a.lease.is_some());
     let has_sealed_evidence = item.attempts.iter().any(|a| a.evidence_id.is_some());
     let has_decision = !item.review_decisions.is_empty();
@@ -242,11 +239,7 @@ pub fn load_manifest(dir: &std::path::Path) -> Option<EvidenceManifest> {
 
 pub fn build_review(forge: &Forge, item: &WorkItem) -> ReviewProjection {
     let env = item.environment.as_ref();
-    let sealed_attempt = item
-        .attempts
-        .iter()
-        .rev()
-        .find(|a| a.evidence_id.is_some());
+    let sealed_attempt = item.attempts.iter().rev().find(|a| a.evidence_id.is_some());
     let evidence_id = sealed_attempt.and_then(|a| a.evidence_id.clone());
     let mut changed_files = Vec::new();
     let mut truncated = false;
@@ -326,10 +319,12 @@ pub fn build_review(forge: &Forge, item: &WorkItem) -> ReviewProjection {
         .unwrap_or(0);
     let mut unresolved_issues = Vec::new();
     if base_advanced {
-        unresolved_issues.push("The starting branch changed while this work was in progress.".into());
+        unresolved_issues
+            .push("The starting branch changed while this work was in progress.".into());
     }
     if truncated {
-        unresolved_issues.push("Some evidence was shortened by the configured capture limits.".into());
+        unresolved_issues
+            .push("Some evidence was shortened by the configured capture limits.".into());
     }
     if policy_issues > 0 {
         unresolved_issues.push(format!(
@@ -376,7 +371,9 @@ pub fn build_review(forge: &Forge, item: &WorkItem) -> ReviewProjection {
         unresolved_issues,
         recommended_next_action: match status {
             "ready" => "Approve the revision or inspect any file that matters to you.",
-            "needs_attention" => "Open the highlighted evidence, then revise or approve explicitly.",
+            "needs_attention" => {
+                "Open the highlighted evidence, then revise or approve explicitly."
+            }
             _ => "Inspect the changed files and decide whether to finish or revise.",
         }
         .into(),
@@ -427,7 +424,11 @@ pub fn build_review(forge: &Forge, item: &WorkItem) -> ReviewProjection {
             id: "verification".into(),
             kind: "verification".into(),
             label: "Project check".into(),
-            state: if synthesis.verification.as_ref().is_some_and(|result| result.success) {
+            state: if synthesis
+                .verification
+                .as_ref()
+                .is_some_and(|result| result.success)
+            {
                 "passed"
             } else {
                 "failed"
@@ -467,7 +468,9 @@ pub fn build_review(forge: &Forge, item: &WorkItem) -> ReviewProjection {
             .review_decisions
             .last()
             .and_then(|d| serde_json::to_value(d).ok()),
-        disposition: item.disposition.map(|d| format!("{d:?}").to_ascii_lowercase()),
+        disposition: item
+            .disposition
+            .map(|d| format!("{d:?}").to_ascii_lowercase()),
         worktree: env.map(|e| e.worktree.display().to_string()),
         active_lease_id: active.map(|l| l.lease_id.as_str().to_owned()),
         active_lease_generation: active.map(|l| l.generation),
@@ -494,7 +497,10 @@ fn parse_verification(line: &str) -> Option<ReviewVerification> {
                     .collect()
             })
             .unwrap_or_default(),
-        success: value.get("success").and_then(serde_json::Value::as_bool).unwrap_or(false),
+        success: value
+            .get("success")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false),
         exit_code: value.get("exit_code").and_then(serde_json::Value::as_i64),
         duration_ms: value.get("duration_ms").and_then(serde_json::Value::as_u64),
     })
@@ -541,9 +547,7 @@ fn build_timeline(forge: &Forge, item: &WorkItem) -> Vec<ReviewTimelineEntry> {
                 EventPayload::DecisionInvalidated { reason, .. } => {
                     ("decision", "Approval set aside", Some(reason))
                 }
-                EventPayload::DispositionApplied { .. } => {
-                    ("outcome", "Project finished", None)
-                }
+                EventPayload::DispositionApplied { .. } => ("outcome", "Project finished", None),
                 _ => return None,
             };
             Some(ReviewTimelineEntry {

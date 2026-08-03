@@ -1,25 +1,17 @@
 use serde_json::Value;
 use tauri::State;
 
-use super::sdk::{client, sdk_error};
 use super::DaemonState;
+use super::sdk::{client, sdk_error};
 
 #[tauri::command]
 pub async fn vault_git_detect(state: State<'_, DaemonState>) -> Result<Value, String> {
-    client(&state)
-        .vault()
-        .git_detect()
-        .await
-        .map_err(sdk_error)
+    client(&state).vault().git_detect().await.map_err(sdk_error)
 }
 
 #[tauri::command]
 pub async fn vault_git_status(state: State<'_, DaemonState>) -> Result<Value, String> {
-    client(&state)
-        .vault()
-        .git_status()
-        .await
-        .map_err(sdk_error)
+    client(&state).vault().git_status().await.map_err(sdk_error)
 }
 
 #[tauri::command]

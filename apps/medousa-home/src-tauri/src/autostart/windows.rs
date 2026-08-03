@@ -2,7 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use super::spec::{build_autostart_spec, AutostartSpec};
+use super::spec::{AutostartSpec, build_autostart_spec};
 
 const TASK_FOLDER: &str = "Medousa";
 const TASK_NAME: &str = "medousa-engine";
@@ -150,6 +150,9 @@ mod tests {
 
         let script = render_start_script(&spec, &spec.log_path);
         assert!(script.contains(r#"cd /d "C:\Program Files\Medousa""#));
-        assert!(script.contains(r#"medousa_daemon.exe" --backend surreal-mem --bind 127.0.0.1:7419 >>"#));
+        assert!(
+            script
+                .contains(r#"medousa_daemon.exe" --backend surreal-mem --bind 127.0.0.1:7419 >>"#)
+        );
     }
 }

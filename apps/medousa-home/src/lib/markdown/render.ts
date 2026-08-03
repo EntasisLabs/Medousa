@@ -126,6 +126,9 @@ function configureMarked(): void {
           const safe = text.replace(/<\/pre/gi, "");
           return `<pre class="mermaid">${safe}</pre>`;
         }
+        if (language.toLowerCase() === "draw") {
+          return `<div class="medousa-draw-embed liquid-md-embed" data-draw-embed=""><pre class="medousa-draw-source">${escapeHtml(text)}</pre></div>`;
+        }
         const langLabel = language
           ? `<span class="markdown-code-lang">${escapeHtml(language)}</span>`
           : `<span class="markdown-code-lang markdown-code-lang-muted">code</span>`;
@@ -205,6 +208,7 @@ function sanitizeHtml(html: string): string {
       "data-liquid-embed",
       "data-liquid-props",
       "data-liquid-icon",
+      "data-draw-embed",
       "data-footnote-ref",
       "data-block-id",
       "data-md-font",

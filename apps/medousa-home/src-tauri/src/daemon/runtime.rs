@@ -6,9 +6,52 @@ use crate::daemon::types::{
 use crate::medousa_paths::TuiDefaultsDto;
 use tauri::State;
 
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeWorkerConfigDto {
+    pub max_in_flight: usize,
+    pub agents: usize,
+    pub scheduled: usize,
+    pub delivery: usize,
+    pub maintenance: usize,
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+struct RuntimeWorkerConfigWire {
+    max_in_flight: usize,
+    agents: usize,
+    scheduled: usize,
+    delivery: usize,
+    maintenance: usize,
+}
+
+impl From<RuntimeWorkerConfigWire> for RuntimeWorkerConfigDto {
+    fn from(value: RuntimeWorkerConfigWire) -> Self {
+        Self {
+            max_in_flight: value.max_in_flight,
+            agents: value.agents,
+            scheduled: value.scheduled,
+            delivery: value.delivery,
+            maintenance: value.maintenance,
+        }
+    }
+}
+
+impl From<RuntimeWorkerConfigDto> for RuntimeWorkerConfigWire {
+    fn from(value: RuntimeWorkerConfigDto) -> Self {
+        Self {
+            max_in_flight: value.max_in_flight,
+            agents: value.agents,
+            scheduled: value.scheduled,
+            delivery: value.delivery,
+            maintenance: value.maintenance,
+        }
+    }
+}
+
+use super::DaemonState;
 use super::sdk::{client, sdk_error};
 use super::workshop_http;
-use super::DaemonState;
 
 #[tauri::command]
 pub async fn runtime_get_stats(
@@ -72,6 +115,26 @@ pub async fn runtime_get_defaults(
     state: State<'_, DaemonState>,
 ) -> Result<RuntimeDefaultsResponse, String> {
     workshop_http::get_json(&state, "/v1/runtime/defaults").await
+}
+
+#[tauri::command]
+pub async fn runtime_get_worker_config(
+    state: State<'_, DaemonState>,
+) -> Result<RuntimeWorkerConfigDto, String> {
+    let config: RuntimeWorkerConfigWire =
+        workshop_http::get_json(&state, "/v1/runtime/workers").await?;
+    Ok(config.into())
+}
+
+#[tauri::command]
+pub async fn runtime_put_worker_config(
+    state: State<'_, DaemonState>,
+    config: RuntimeWorkerConfigDto,
+) -> Result<RuntimeWorkerConfigDto, String> {
+    let body: RuntimeWorkerConfigWire = config.into();
+    let saved: RuntimeWorkerConfigWire =
+        workshop_http::put_json(&state, "/v1/runtime/workers", &body).await?;
+    Ok(saved.into())
 }
 
 #[tauri::command]

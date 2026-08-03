@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use crate::connection_prefs::load_connection_prefs;
-use crate::workshop_runtime::{resolve_backend, resolve_daemon_binary, DEFAULT_LOCAL_BIND};
+use crate::workshop_runtime::{DEFAULT_LOCAL_BIND, resolve_backend, resolve_daemon_binary};
 
 pub const SERVICE_NAME: &str = "medousa-engine";
 
@@ -54,8 +54,7 @@ pub fn daemon_log_path() -> PathBuf {
 }
 
 pub fn local_brain_log_path() -> PathBuf {
-    daemon_log_path()
-        .with_file_name("local.log")
+    daemon_log_path().with_file_name("local.log")
 }
 
 pub fn shell_start_command(spec: &AutostartSpec) -> String {
@@ -72,9 +71,7 @@ pub fn shell_start_command(spec: &AutostartSpec) -> String {
         script.push_str(" & ");
         script.push_str(&local_parts.join(" "));
         script.push_str(" >> ");
-        script.push_str(&shell_quote(
-            &local_brain_log_path().display().to_string(),
-        ));
+        script.push_str(&shell_quote(&local_brain_log_path().display().to_string()));
         script.push_str(" 2>&1");
     }
     script.push_str(" & wait");

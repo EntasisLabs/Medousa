@@ -12,6 +12,7 @@ DIST_DIR=""
 VERSION=""
 CHANNEL="${MEDOUSA_RELEASE_CHANNEL:-stable}"
 BASE_URL_OVERRIDE=""
+ALLOW_EMPTY=0
 
 usage() {
   cat <<'EOF'
@@ -22,6 +23,7 @@ Options:
   --version <version>   Channel-head version (default: max package-versions)
   --channel <name>      Release channel (default: stable)
   --base-url <url>      Artifact base URL (or set MEDOUSA_RELEASE_BASE_URL)
+  --allow-empty         Permit an empty delta for auxiliary-only merged publishes
   -h, --help            Show this help
 
 Writes dist/release-manifest.json indexing package id → url, sha256, size, depends.
@@ -35,6 +37,7 @@ while [[ $# -gt 0 ]]; do
     --version) VERSION="$2"; shift 2 ;;
     --channel) CHANNEL="$2"; shift 2 ;;
     --base-url) BASE_URL_OVERRIDE="$2"; shift 2 ;;
+    --allow-empty) ALLOW_EMPTY=1; shift ;;
     -h | --help) usage; exit 0 ;;
     *) echo "error: unknown argument: $1" >&2; exit 1 ;;
   esac
@@ -247,6 +250,8 @@ PUBLISHED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
   echo "}"
 } >"${OUT}"
 
-medousa_assert_release_manifest_nonempty "${OUT}"
+if [[ "${ALLOW_EMPTY}" -ne 1 ]]; then
+  medousa_assert_release_manifest_nonempty "${OUT}"
+fi
 
 medousa_log "wrote ${OUT} (channel head ${VERSION})"

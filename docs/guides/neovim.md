@@ -99,6 +99,8 @@ while the preview was open.
 The plugin sends a bounded selection or cursor-centered buffer excerpt plus
 diagnostics to the daemon. The daemon remains authoritative for sessions,
 identity, tools, and remote workshops.
+The captured context is attached as turn metadata, so room history shows only
+the prompt you wrote.
 
 ## Optional statusline
 

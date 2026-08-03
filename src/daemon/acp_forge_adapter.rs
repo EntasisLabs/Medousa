@@ -64,7 +64,11 @@ impl<'a> AcpForgeAdapter<'a> {
     }
 
     /// Report a pump failure; Forge returns the work to Ready.
-    pub fn fail_attempt(&self, lease: &ExecutionLease, message: &str) -> Result<WorkItem, ForgeError> {
+    pub fn fail_attempt(
+        &self,
+        lease: &ExecutionLease,
+        message: &str,
+    ) -> Result<WorkItem, ForgeError> {
         self.forge
             .fail_attempt(lease, message, &self.daemon_actor())
     }
@@ -88,7 +92,11 @@ impl<'a> AcpForgeAdapter<'a> {
     }
 
     /// Stage a prompt-accepted line into the attempt's command log (lease-fenced).
-    pub fn record_prompt(&self, lease: &ExecutionLease, prompt_chars: usize) -> Result<(), ForgeError> {
+    pub fn record_prompt(
+        &self,
+        lease: &ExecutionLease,
+        prompt_chars: usize,
+    ) -> Result<(), ForgeError> {
         let line = serde_json::json!({
             "kind": "prompt",
             "chars": prompt_chars,
@@ -238,7 +246,9 @@ mod tests {
         let adapter = AcpForgeAdapter::new(&forge);
 
         let (_, lease_one) = adapter.begin_attempt(&work_id, &ctx()).unwrap();
-        adapter.interrupt_attempt(&lease_one, "cancel", None).unwrap();
+        adapter
+            .interrupt_attempt(&lease_one, "cancel", None)
+            .unwrap();
         let (item, lease_two) = adapter.begin_attempt(&work_id, &ctx()).unwrap();
         assert_eq!(item.attempts.len(), 2);
         assert_ne!(lease_one.lease_id, lease_two.lease_id);
@@ -251,9 +261,7 @@ mod tests {
         let adapter = AcpForgeAdapter::new(&forge);
 
         let (_, lease) = adapter.begin_attempt(&work_id, &ctx()).unwrap();
-        let item = adapter
-            .interrupt_attempt(&lease, "cancel", None)
-            .unwrap();
+        let item = adapter.interrupt_attempt(&lease, "cancel", None).unwrap();
         let attempt = item.attempts.last().unwrap();
         assert_eq!(attempt.recovery, Some(RecoveryDisposition::RestartAllowed));
     }

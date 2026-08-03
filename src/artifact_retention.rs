@@ -10,8 +10,8 @@ use crate::artifact_maintenance_job::{
     DEFAULT_MAX_PER_SESSION,
 };
 use crate::daemon_api::{
-    ArtifactRetentionSettingsResponse, ArtifactRetentionStatusResponse, UpdateArtifactRetentionRequest,
-    UpdateArtifactRetentionResponse,
+    ArtifactRetentionSettingsResponse, ArtifactRetentionStatusResponse,
+    UpdateArtifactRetentionRequest, UpdateArtifactRetentionResponse,
 };
 use crate::recurring_handlers;
 
@@ -86,16 +86,18 @@ pub async fn sync_recurring_schedule(
     runtime: &RuntimeComposition,
     settings: &ArtifactRetentionSettings,
 ) -> StasisResult<RecurringDefinition> {
-    let payload = ArtifactMaintenanceJobPayload::new(settings.max_age_days, settings.max_per_session);
+    let payload =
+        ArtifactMaintenanceJobPayload::new(settings.max_age_days, settings.max_per_session);
     let payload_template_ref = payload.to_payload_ref()?;
 
     let now = Utc::now();
-    let existing = recurring_handlers::get_recurring_definition(runtime, ARTIFACT_MAINTENANCE_RECURRING_ID)
-        .await?;
+    let existing =
+        recurring_handlers::get_recurring_definition(runtime, ARTIFACT_MAINTENANCE_RECURRING_ID)
+            .await?;
 
     let mut definition = existing.unwrap_or_else(|| RecurringDefinition {
         id: ARTIFACT_MAINTENANCE_RECURRING_ID.to_string(),
-        queue: "default".to_string(),
+        queue: crate::daemon::worker_host::MAINTENANCE_QUEUE.to_string(),
         job_type: ARTIFACT_MAINTENANCE_JOB_TYPE.to_string(),
         payload_template_ref: payload_template_ref.clone(),
         cron_expr: DEFAULT_MAINTENANCE_CRON.to_string(),
@@ -110,6 +112,7 @@ pub async fn sync_recurring_schedule(
     });
 
     definition.job_type = ARTIFACT_MAINTENANCE_JOB_TYPE.to_string();
+    definition.queue = crate::daemon::worker_host::MAINTENANCE_QUEUE.to_string();
     definition.payload_template_ref = payload_template_ref;
     definition.enabled = settings.enabled;
     if definition.cron_expr.trim().is_empty() {
@@ -130,10 +133,13 @@ pub async fn ensure_schedule_on_startup(runtime: &RuntimeComposition) -> StasisR
     Ok(())
 }
 
-pub async fn get_status(runtime: &RuntimeComposition) -> StasisResult<ArtifactRetentionStatusResponse> {
+pub async fn get_status(
+    runtime: &RuntimeComposition,
+) -> StasisResult<ArtifactRetentionStatusResponse> {
     let settings = load_settings();
     let definition =
-        recurring_handlers::get_recurring_definition(runtime, ARTIFACT_MAINTENANCE_RECURRING_ID).await?;
+        recurring_handlers::get_recurring_definition(runtime, ARTIFACT_MAINTENANCE_RECURRING_ID)
+            .await?;
 
     let mut last_run_summary = None;
     let mut last_run_at_utc = None;

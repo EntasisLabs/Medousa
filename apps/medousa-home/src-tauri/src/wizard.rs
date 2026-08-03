@@ -3,8 +3,10 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 
-use crate::daemon_service::{daemon_start, daemon_wait_healthy, DaemonWaitHealthRequest};
-use crate::medousa_paths::{load_tui_defaults_summary, persist_tui_defaults, tui_defaults_path, TuiDefaultsDto};
+use crate::daemon_service::{DaemonWaitHealthRequest, daemon_start, daemon_wait_healthy};
+use crate::medousa_paths::{
+    TuiDefaultsDto, load_tui_defaults_summary, persist_tui_defaults, tui_defaults_path,
+};
 use crate::messaging::messaging_save_secret;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -368,10 +370,12 @@ pub async fn wizard_apply_screen1(
                 host_bus_max_tool_rounds: existing.host_bus_max_tool_rounds,
                 host_turn_bus_mode: existing.host_turn_bus_mode,
                 activation_tool_intent_max_rounds: existing.activation_tool_intent_max_rounds,
-                activation_short_turn_max_tool_rounds: existing.activation_short_turn_max_tool_rounds,
+                activation_short_turn_max_tool_rounds: existing
+                    .activation_short_turn_max_tool_rounds,
                 continuation_max_tool_rounds: existing.continuation_max_tool_rounds,
                 max_text_only_stuck_continues: existing.max_text_only_stuck_continues,
-                classifier_restricted_max_tool_rounds: existing.classifier_restricted_max_tool_rounds,
+                classifier_restricted_max_tool_rounds: existing
+                    .classifier_restricted_max_tool_rounds,
                 thinking_capture: existing.thinking_capture,
                 stasis_otel_enabled: existing.stasis_otel_enabled,
                 thinking_max_lines: existing.thinking_max_lines,

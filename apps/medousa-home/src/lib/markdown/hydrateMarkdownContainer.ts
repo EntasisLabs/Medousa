@@ -14,6 +14,7 @@ import {
   type HydrateLiquidOptions,
 } from "./hydrateLiquidEmbeds";
 import { hydrateMermaid } from "./mermaid";
+import { destroyDrawEmbeds, hydrateDrawEmbeds } from "$lib/draw/hydrateDrawEmbeds";
 
 export interface HydrateMarkdownContainerOptions {
   liquidContext?: LiquidRenderContext;
@@ -23,6 +24,7 @@ export interface HydrateMarkdownContainerOptions {
   mermaid?: boolean;
   liquid?: boolean;
   localImages?: boolean;
+  draw?: boolean;
   /** Forwarded to liquid mounts (default true). */
   animate?: boolean;
 }
@@ -57,16 +59,20 @@ export async function hydrateMarkdownContainer(
     mermaid = true,
     liquid = true,
     localImages = false,
+    draw = true,
     animate,
   } = options;
 
   if (liquid) destroyLiquidEmbeds(root);
+  if (draw) destroyDrawEmbeds(root);
 
   const tasks: Promise<unknown>[] = [];
   if (code) tasks.push(hydrateCodeBlocks(root));
   if (mermaid) tasks.push(hydrateMermaid(root));
   if (localImages) tasks.push(hydrateLocalImages(root, localImagePath));
   if (tasks.length) await Promise.all(tasks);
+
+  if (draw) hydrateDrawEmbeds(root);
 
   if (liquid) {
     const fingerprint = liquidPlaceholderFingerprint(root);

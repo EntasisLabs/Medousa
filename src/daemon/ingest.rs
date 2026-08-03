@@ -7,41 +7,38 @@ use std::time::Duration;
 
 use anyhow::Result as AnyhowResult;
 use async_trait::async_trait;
+use axum::Json;
 use axum::extract::{Path as AxumPath, Query as AxumQuery, State};
 use axum::http::{HeaderMap, StatusCode, header::AUTHORIZATION};
 use axum::response::sse::{Event, KeepAlive, Sse};
-use axum::Json;
 use chrono::{DateTime, Utc};
 use futures_util::stream::{self, Stream};
 use serde_json::Value;
 use stasis::ports::outbound::runtime::job_attempt_store::JobAttemptStore;
 use stasis::ports::outbound::runtime::job_store::JobStore;
 use stasis::prelude::{JobState, RuntimeComposition};
-use tokio::sync::{broadcast, RwLock};
+use tokio::sync::{RwLock, broadcast};
 use uuid::Uuid;
 
 use crate::agent_runtime::stream_sink::AgentStreamSink;
 use crate::channel_delivery;
-use crate::daemon::heartbeat::is_missing_runtime_table_error;
 use crate::daemon::bounded_set::BoundedDedupSet;
+use crate::daemon::heartbeat::is_missing_runtime_table_error;
 use crate::daemon::state::{AgentTurnJobRecord, AppState};
 use medousa_engine::TurnStreamRegistryPort;
 
 use crate::daemon::turn_event_channel::TurnEventChannel;
 use crate::daemon::turn_stream_registry::{TurnStreamEntry, TurnStreamRegistry};
-use medousa_engine::TurnEventLog;
 use crate::daemon_api::{
     DeliverPollResponse, DeliveryHealthResponse, IngestRequest, IngestResponse,
     InteractiveTurnStreamEvent, RuntimeConfigCommandRequest, RuntimeConfigCommandResponse,
     RuntimeConfigCommandSpec,
 };
 use crate::session_mapping;
+use medousa_engine::TurnEventLog;
 
 fn internal_error(err: impl std::fmt::Display) -> (StatusCode, String) {
-    (
-        StatusCode::INTERNAL_SERVER_ERROR,
-        err.to_string(),
-    )
+    (StatusCode::INTERNAL_SERVER_ERROR, err.to_string())
 }
 
 /// `?since=<seq>` query param shared by the interactive-turn and ingest SSE
@@ -57,8 +54,10 @@ pub async fn ingest_stream(
     State(state): State<AppState>,
     AxumPath(stream_id): AxumPath<String>,
     AxumQuery(query): AxumQuery<StreamSinceQuery>,
-) -> Result<Sse<impl Stream<Item = std::result::Result<Event, Infallible>> + use<>>, (StatusCode, String)>
-{
+) -> Result<
+    Sse<impl Stream<Item = std::result::Result<Event, Infallible>> + use<>>,
+    (StatusCode, String),
+> {
     let registry = state.interactive_turn_streams.clone();
     stream_events_from_registry(&registry, &stream_id, "ingest stream", query.since).await
 }
@@ -75,7 +74,10 @@ struct SseUnfoldState {
     drained: bool,
 }
 
-fn replay_from_log(log: &TurnEventLog, since: u64) -> std::collections::VecDeque<InteractiveTurnStreamEvent> {
+fn replay_from_log(
+    log: &TurnEventLog,
+    since: u64,
+) -> std::collections::VecDeque<InteractiveTurnStreamEvent> {
     log.snapshot_since(since)
         .iter()
         .map(crate::sse_turn_projection::sequenced_to_stream_event)
@@ -97,8 +99,10 @@ pub async fn stream_events_from_registry(
     stream_id: &str,
     label: &str,
     since: Option<u64>,
-) -> Result<Sse<impl Stream<Item = std::result::Result<Event, Infallible>> + use<>>, (StatusCode, String)>
-{
+) -> Result<
+    Sse<impl Stream<Item = std::result::Result<Event, Infallible>> + use<>>,
+    (StatusCode, String),
+> {
     let (channel, log) = {
         let guard = registry.read().await;
         guard
@@ -135,7 +139,10 @@ pub async fn stream_events_from_registry(
                     continue;
                 }
                 state.last_seq = state.last_seq.max(payload.seq);
-                return Some((Ok::<Event, Infallible>(sse_event_from_payload(payload)), state));
+                return Some((
+                    Ok::<Event, Infallible>(sse_event_from_payload(payload)),
+                    state,
+                ));
             }
             if state.drained {
                 return None;
@@ -149,12 +156,17 @@ pub async fn stream_events_from_registry(
                         continue;
                     }
                     state.last_seq = state.last_seq.max(payload.seq);
-                    return Some((Ok::<Event, Infallible>(sse_event_from_payload(payload)), state));
+                    return Some((
+                        Ok::<Event, Infallible>(sse_event_from_payload(payload)),
+                        state,
+                    ));
                 }
                 Err(broadcast::error::RecvError::Lagged(_)) => {
                     // We fell behind the live ring; recover the gap from the
                     // durable spine rather than dropping events outright.
-                    state.pending.extend(replay_from_log(&state.log, state.last_seq));
+                    state
+                        .pending
+                        .extend(replay_from_log(&state.log, state.last_seq));
                     continue;
                 }
                 Err(broadcast::error::RecvError::Closed) => {
@@ -170,10 +182,11 @@ pub async fn stream_events_from_registry(
         }
     });
 
-    Ok(
-        Sse::new(stream)
-            .keep_alive(KeepAlive::new().interval(Duration::from_secs(15)).text("keep-alive")),
-    )
+    Ok(Sse::new(stream).keep_alive(
+        KeepAlive::new()
+            .interval(Duration::from_secs(15))
+            .text("keep-alive"),
+    ))
 }
 
 pub fn publish_interactive_turn_event(
@@ -181,8 +194,7 @@ pub fn publish_interactive_turn_event(
     event: AnyhowResult<InteractiveTurnStreamEvent>,
 ) {
     if let Ok(mut payload) = event {
-        let journal =
-            crate::sse_turn_projection::journal_turn_event_for_stream(&payload, None);
+        let journal = crate::sse_turn_projection::journal_turn_event_for_stream(&payload, None);
         let sequenced = entry.log.append(journal);
         payload.seq = sequenced.seq();
         entry.channel.publish(payload);
@@ -234,15 +246,19 @@ pub async fn ingest_handler(
         ));
     }
 
-    let mapping_key = format!("{}:{}:{}", request.channel, request.channel_id, request.user_id);
+    let mapping_key = format!(
+        "{}:{}:{}",
+        request.channel, request.channel_id, request.user_id
+    );
     let existing_session_id = crate::channel_session_store::channel_session_store()
         .get_session_id(&mapping_key)
         .await;
 
     if request.text.trim().eq_ignore_ascii_case("/new")
-        && let Some(old_session_id) = existing_session_id.clone() {
-            push_channel_session_history(&mapping_key, old_session_id).await;
-        }
+        && let Some(old_session_id) = existing_session_id.clone()
+    {
+        push_channel_session_history(&mapping_key, old_session_id).await;
+    }
 
     let outcome =
         session_mapping::process_ingest(&request, &mapping_key, existing_session_id.clone());
@@ -397,10 +413,7 @@ async fn push_channel_session_history(mapping_key: &str, session_id: String) {
         .await;
 }
 
-async fn format_channel_session_history(
-    mapping_key: &str,
-    active_session_id: &str,
-) -> String {
+async fn format_channel_session_history(mapping_key: &str, active_session_id: &str) -> String {
     let entries = crate::channel_session_store::channel_session_store()
         .list_session_history(mapping_key, 20)
         .await;
@@ -465,9 +478,12 @@ async fn apply_session_model_config(
     let response = crate::runtime_config_command_runtime::execute_runtime_config_command(request)
         .map_err(internal_error)?;
     persist_session_runtime_config(state, session_id, &current, &response).await;
-    Ok(response
-        .rendered_output
-        .unwrap_or_else(|| format!("model {}:{}", response.next_draft_provider, response.next_draft_model)))
+    Ok(response.rendered_output.unwrap_or_else(|| {
+        format!(
+            "model {}:{}",
+            response.next_draft_provider, response.next_draft_model
+        )
+    }))
 }
 
 async fn apply_session_depth_config(
@@ -528,7 +544,11 @@ async fn cancel_active_ingest_job(state: &AppState, mapping_key: &str) -> String
         .write()
         .await
         .remove(&active.job_id);
-    state.job_delivery_records.write().await.remove(&active.job_id);
+    state
+        .job_delivery_records
+        .write()
+        .await
+        .remove(&active.job_id);
 
     format!("stopped active job {}", active.job_id)
 }
@@ -614,9 +634,10 @@ pub async fn deliver_outbox_webhook(
                 return Ok(StatusCode::OK);
             }
 
-            let job_title = resolve_job_title_for_vault_footer(state.composition(), &payload.job_id)
-                .await
-                .unwrap_or_else(|| payload.job_id.clone());
+            let job_title =
+                resolve_job_title_for_vault_footer(state.composition(), &payload.job_id)
+                    .await
+                    .unwrap_or_else(|| payload.job_id.clone());
             let appended = crate::vault::job_footer::maybe_append_job_success_footers(
                 &payload.job_id,
                 &job_title,
@@ -669,15 +690,12 @@ pub async fn deliver_outbox_webhook(
                     .await
                     .get(stream_id)
                     .cloned()
-                {
-                    publish_interactive_turn_event(
-                        &entry,
-                        crate::interactive_turn_runtime::final_stream_event(
-                            stream_id,
-                            &output,
-                        ),
-                    );
-                }
+            {
+                publish_interactive_turn_event(
+                    &entry,
+                    crate::interactive_turn_runtime::final_stream_event(stream_id, &output),
+                );
+            }
 
             record_job_delivery_success(
                 &state,
@@ -1151,10 +1169,11 @@ pub async fn spawn_daemon_api_agent_turn_with_scope(
     additional_manuscript_ids: Option<Vec<String>>,
     suggested_capability_ids: Option<Vec<String>>,
 ) {
-    state.agent_turn_jobs.write().await.insert(
-        job_id.clone(),
-        AgentTurnJobRecord::pending(),
-    );
+    state
+        .agent_turn_jobs
+        .write()
+        .await
+        .insert(job_id.clone(), AgentTurnJobRecord::pending());
 
     if crate::workspace::ask_job_store::AskJobStore::is_ask_job_id(&job_id) {
         crate::workspace::ask_job_store::ask_job_store().mark_running(&job_id);
@@ -1240,8 +1259,7 @@ impl AgentStreamSink for ApiAgentStreamSink {
         );
 
         if crate::workspace::ask_job_store::AskJobStore::is_ask_job_id(&self.job_id) {
-            crate::workspace::ask_job_store::ask_job_store()
-                .set_interim_text(&self.job_id, text);
+            crate::workspace::ask_job_store::ask_job_store().set_interim_text(&self.job_id, text);
             return;
         }
 
@@ -1350,7 +1368,13 @@ impl IngestAgentStreamSink {
         let turn = self
             .parts
             .lock()
-            .map(|mut parts| parts.finalize_assistant_turn(content.clone(), tool_names.clone(), answer_state.clone()))
+            .map(|mut parts| {
+                parts.finalize_assistant_turn(
+                    content.clone(),
+                    tool_names.clone(),
+                    answer_state.clone(),
+                )
+            })
             .unwrap_or_else(|_| {
                 crate::turn_parts::conversation_turn_from_parts(
                     "assistant",
@@ -1379,10 +1403,7 @@ impl AgentStreamSink for IngestAgentStreamSink {
         }
         publish_interactive_turn_event(
             &self.stream,
-            crate::interactive_turn_runtime::reasoning_delta_stream_event(
-                &self.stream_id,
-                &delta,
-            ),
+            crate::interactive_turn_runtime::reasoning_delta_stream_event(&self.stream_id, &delta),
         );
     }
 
@@ -1393,7 +1414,12 @@ impl AgentStreamSink for IngestAgentStreamSink {
         tool_names: Vec<String>,
         work_id: Option<String>,
     ) {
-        if self.cancelled_streams.read().await.contains(&self.stream_id) {
+        if self
+            .cancelled_streams
+            .read()
+            .await
+            .contains(&self.stream_id)
+        {
             return;
         }
 
@@ -1447,7 +1473,12 @@ impl AgentStreamSink for IngestAgentStreamSink {
     }
 
     async fn agent_final_pending(&self, _turn_id: u64, text: String, tool_names: Vec<String>) {
-        if self.cancelled_streams.read().await.contains(&self.stream_id) {
+        if self
+            .cancelled_streams
+            .read()
+            .await
+            .contains(&self.stream_id)
+        {
             return;
         }
 
@@ -1462,7 +1493,12 @@ impl AgentStreamSink for IngestAgentStreamSink {
     }
 
     async fn agent_turn_progress(&self, _turn_id: u64, message: String, tool_names: Vec<String>) {
-        if self.cancelled_streams.read().await.contains(&self.stream_id) {
+        if self
+            .cancelled_streams
+            .read()
+            .await
+            .contains(&self.stream_id)
+        {
             return;
         }
 
@@ -1477,7 +1513,12 @@ impl AgentStreamSink for IngestAgentStreamSink {
     }
 
     async fn agent_needs_input(&self, _turn_id: u64, text: String, tool_names: Vec<String>) {
-        if self.cancelled_streams.read().await.contains(&self.stream_id) {
+        if self
+            .cancelled_streams
+            .read()
+            .await
+            .contains(&self.stream_id)
+        {
             publish_interactive_turn_event(
                 &self.stream,
                 crate::interactive_turn_runtime::error_stream_event(
@@ -1545,7 +1586,12 @@ impl AgentStreamSink for IngestAgentStreamSink {
     }
 
     async fn agent_response(&self, _turn_id: u64, text: String, tool_names: Vec<String>) {
-        if self.cancelled_streams.read().await.contains(&self.stream_id) {
+        if self
+            .cancelled_streams
+            .read()
+            .await
+            .contains(&self.stream_id)
+        {
             publish_interactive_turn_event(
                 &self.stream,
                 crate::interactive_turn_runtime::error_stream_event(
@@ -1915,10 +1961,7 @@ async fn start_ingest_ask_stream(
         )
         .await;
 
-        active_jobs
-            .write()
-            .await
-            .remove(&mapping_key_for_cleanup);
+        active_jobs.write().await.remove(&mapping_key_for_cleanup);
 
         // The cancellation tombstone is only meaningful while this stream runs;
         // drop it now that the turn is finalized (the bounded set also caps it).
@@ -1946,7 +1989,8 @@ async fn start_ingest_ask_stream(
 pub async fn get_job_attempts_graceful(
     runtime: &RuntimeComposition,
     job_id: &str,
-) -> std::result::Result<Vec<stasis::domain::runtime::job_attempt::JobAttempt>, (StatusCode, String)> {
+) -> std::result::Result<Vec<stasis::domain::runtime::job_attempt::JobAttempt>, (StatusCode, String)>
+{
     match runtime {
         RuntimeComposition::InMemory(rt) => rt
             .job_attempt_store

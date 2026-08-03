@@ -40,6 +40,24 @@ Stasis dashboard mounted at `/dashboard` (HTML UI).
 
 See [interactive-streaming.md](interactive-streaming.md). **Do not** expect SSE on the POST itself.
 
+`InteractiveTurnRequest.host_context` carries a typed, bounded editor, note, or
+page snapshot separately from `prompt`. The daemon persists the human prompt as
+written, stores host context as structured turn metadata, and projects that
+metadata into model context. Clients must not append prompt wrappers. Host
+context is advisory and never grants filesystem or vault authority.
+
+### Registered client tools
+
+Host integrations can register tools that execute in the host process while
+the daemon owns the model turn. See [agent-tools.md](agent-tools.md#registered-client-tools)
+for the protocol and surface-scoping rules.
+
+| Method | Path | Types |
+|--------|------|-------|
+| POST | `/v1/clients/register` | `RegisterClientRequest` → `RegisterClientResponse` |
+| GET | `/v1/clients/{client_id}/tools/next?wait_ms=…` | `ClientToolRequest` or `null` |
+| POST | `/v1/clients/{client_id}/tools/{request_id}/result` | `ClientToolResultRequest` → `ClientToolResultResponse` |
+
 ### Sessions & turns
 
 | Method | Path | Types | SDK |
@@ -94,6 +112,7 @@ See [interactive-streaming.md](interactive-streaming.md). **Do not** expect SSE 
 |--------|------|-------|-----|
 | GET | `/v1/runtime/defaults` | runtime defaults | `http().get` |
 | GET/PUT | `/v1/runtime/tui-defaults` | JSON defaults blob | `http().get/put` |
+| GET/PUT | `/v1/runtime/workers` | Worker capacity and preferred lane shares | `http().get/put` |
 | PUT | `/v1/runtime/inference-profiles` | inference profiles | `http().put` |
 | POST | `/v1/runtime/config/command` | `RuntimeConfigCommandRequest` | `runtime().config_command` |
 | POST | `/v1/runtime/stage-route/command` | `StageRouteCommandRequest` | `runtime().stage_route_command` |

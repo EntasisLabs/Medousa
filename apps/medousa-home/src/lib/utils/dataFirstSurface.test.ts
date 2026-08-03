@@ -6,6 +6,7 @@ import {
 } from "./dataFirstSurface";
 import { findLedgerTable } from "./markdownTable";
 import { parseWorkbookManifest } from "./workbook";
+import { noteHasDraw } from "$lib/draw/drawDocument";
 
 describe("kindFromNoteContent", () => {
   it("prefers frontmatter kind over path", () => {
@@ -44,5 +45,12 @@ describe("ensureDataFirstSurface", () => {
     const next = ensureDataFirstSurface("slides", "# Deck\n", "Deck");
     expect(kindFromNoteContent("decks/a.md", next)).toBe("slides");
     expect(dataFirstSurfaceReady("slides", next)).toBe(true);
+  });
+
+  it("seeds a drawing fence for draw notes", () => {
+    const next = ensureDataFirstSurface("draw", "# Sketch\n", "Sketch");
+    expect(kindFromNoteContent("drawings/sketch.md", next)).toBe("draw");
+    expect(noteHasDraw(next)).toBe(true);
+    expect(dataFirstSurfaceReady("draw", next)).toBe(true);
   });
 });

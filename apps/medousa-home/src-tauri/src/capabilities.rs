@@ -81,9 +81,8 @@ fn load_overlay_file() -> Result<(CapabilitiesOverlayFile, PathBuf, bool), Strin
         return Ok((CapabilitiesOverlayFile::default(), path, false));
     }
     let raw = fs::read_to_string(&path).map_err(|err| err.to_string())?;
-    let overlay = toml::from_str::<CapabilitiesOverlayFile>(&raw).map_err(|err| {
-        format!("failed to parse {}: {err}", path.display())
-    })?;
+    let overlay = toml::from_str::<CapabilitiesOverlayFile>(&raw)
+        .map_err(|err| format!("failed to parse {}: {err}", path.display()))?;
     Ok((overlay, path, true))
 }
 

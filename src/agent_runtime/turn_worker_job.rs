@@ -59,7 +59,7 @@ pub async fn enqueue_turn_worker_job(
     let now = Utc::now();
     let job = NewJob {
         id: work_id.to_string(),
-        queue: "default".to_string(),
+        queue: crate::daemon::worker_host::AGENT_QUEUE.to_string(),
         job_type: TURN_WORKER_JOB_TYPE.to_string(),
         payload_ref,
         priority: 100,
@@ -283,12 +283,12 @@ impl crate::agent_runtime::stream_sink::AgentStreamSink for DurableWorkerStreamS
                 &tool_names,
             )
             .await
-            {
-                eprintln!(
-                    "turn worker channel synthesis delivery failed work_id={}: {err:#}",
-                    self.work_id
-                );
-            }
+        {
+            eprintln!(
+                "turn worker channel synthesis delivery failed work_id={}: {err:#}",
+                self.work_id
+            );
+        }
     }
 
     async fn agent_error(&self, _turn_id: u64, message: String) {

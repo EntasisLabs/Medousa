@@ -96,40 +96,33 @@ function M.from_operator(buffer)
   return M.from_range(buffer, first, last)
 end
 
-function M.supplement(value)
-  local lines = { "<medousa-context>", "surface: neovim" }
-  if value.workspace then table.insert(lines, "workspace: " .. value.workspace) end
-  if value.file then table.insert(lines, "file: " .. value.file) end
-  if value.language then table.insert(lines, "language: " .. value.language) end
-  if value.cursor then table.insert(lines, "cursor: " .. value.cursor.line .. ":" .. (value.cursor.character + 1)) end
-  if value.selection then
-    table.insert(lines, "selection-lines: " .. value.selection_start .. "-" .. value.selection_end)
-    table.insert(lines, "selection:")
-    table.insert(lines, "```")
-    table.insert(lines, value.selection.text)
-    table.insert(lines, "```")
-  elseif value.excerpt then
-    table.insert(lines, "buffer-excerpt-lines: " .. value.excerpt.start_line .. "-" .. value.excerpt.end_line)
-    table.insert(lines, "buffer-excerpt:")
-    table.insert(lines, "```")
-    table.insert(lines, value.excerpt.text)
-    table.insert(lines, "```")
+function M.host_context(value)
+  local diagnostics = {}
+  for index, item in ipairs(value.diagnostics or {}) do
+    if index > 100 then break end
+    table.insert(diagnostics, {
+      message = item.message,
+      severity = item.severity,
+      source = item.source,
+      start = item.range and item.range.start or nil,
+      ["end"] = item.range and item.range["end"] or nil,
+    })
   end
-  if #value.diagnostics > 0 then
-    table.insert(lines, "diagnostics:")
-    for index, item in ipairs(value.diagnostics) do
-      if index > 100 then break end
-      table.insert(lines, string.format(
-        "- %s at %d:%d: %s",
-        item.severity,
-        item.range.start.line + 1,
-        item.range.start.character + 1,
-        item.message
-      ))
-    end
-  end
-  table.insert(lines, "</medousa-context>")
-  return table.concat(lines, "\n")
+  return {
+    source = "neovim",
+    workspace = value.workspace,
+    resource_kind = value.file and "file" or nil,
+    resource_path = value.file,
+    language = value.language,
+    cursor = value.cursor and {
+      line = math.max(0, value.cursor.line - 1),
+      character = value.cursor.character,
+    } or nil,
+    selection = value.selection,
+    document_excerpt = value.excerpt and value.excerpt.text or nil,
+    diagnostics = diagnostics,
+    related_resources = {},
+  }
 end
 
 function M.describe(value)
@@ -138,11 +131,6 @@ function M.describe(value)
   if value.selection then table.insert(parts, "lines " .. value.selection_start .. "–" .. value.selection_end) end
   if #value.diagnostics > 0 then table.insert(parts, #value.diagnostics .. " diagnostics") end
   return #parts > 0 and table.concat(parts, " · ") or "current workspace"
-end
-
-function M.strip_supplement(content)
-  local stripped = (content or ""):gsub("\n*<medousa%-context>.-</medousa%-context>%s*$", "")
-  return stripped
 end
 
 return M

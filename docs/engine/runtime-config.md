@@ -12,6 +12,7 @@ Runtime settings control inference profiles, stage routing, TUI defaults, and ve
 |--------|------|---------|
 | GET | `/v1/runtime/defaults` | Engine default config snapshot |
 | GET/PUT | `/v1/runtime/tui-defaults` | Full `tui_defaults.json` blob |
+| GET/PUT | `/v1/runtime/workers` | Worker capacity and preferred lane shares; restart required after PUT |
 | PUT | `/v1/runtime/inference-profiles` | Inference profile matrix |
 | POST | `/v1/runtime/config/command` | `RuntimeConfigCommandSpec` mutations |
 | POST | `/v1/runtime/stage-route/command` | Stage routing matrix |

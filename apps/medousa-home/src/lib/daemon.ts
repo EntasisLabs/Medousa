@@ -43,6 +43,7 @@ import type {
   DeliveryHealthResponse,
   RuntimeConfigCommandResponse,
   RuntimeDefaultsResponse,
+  RuntimeWorkerConfig,
   StageRouteCommandResponse,
   StageRoutingMatrix,
 } from "$lib/types/runtime";
@@ -744,6 +745,16 @@ export async function getRuntimeStats(): Promise<DaemonStatsResponse> {
 
 export async function getRuntimeDefaults(): Promise<RuntimeDefaultsResponse> {
   return invoke<RuntimeDefaultsResponse>("runtime_get_defaults");
+}
+
+export async function getRuntimeWorkerConfig(): Promise<RuntimeWorkerConfig> {
+  return invoke<RuntimeWorkerConfig>("runtime_get_worker_config");
+}
+
+export async function putRuntimeWorkerConfig(
+  config: RuntimeWorkerConfig,
+): Promise<RuntimeWorkerConfig> {
+  return invoke<RuntimeWorkerConfig>("runtime_put_worker_config", { config });
 }
 
 export async function getEngineTuiDefaults(): Promise<TuiDefaults> {

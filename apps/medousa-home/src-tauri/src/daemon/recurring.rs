@@ -6,8 +6,8 @@ use crate::daemon::types::{
 use medousa_types::{RecurringListQuery, RecurringRunsQuery};
 use tauri::State;
 
-use super::sdk::{client, sdk_error};
 use super::DaemonState;
+use super::sdk::{client, sdk_error};
 
 #[tauri::command]
 pub async fn recurring_list(
@@ -66,10 +66,7 @@ pub async fn recurring_list_runs(
 ) -> Result<RecurringRunsResponse, String> {
     client(&state)
         .recurring()
-        .runs(
-            recurring_id.trim(),
-            &RecurringRunsQuery { limit },
-        )
+        .runs(recurring_id.trim(), &RecurringRunsQuery { limit })
         .await
         .map_err(sdk_error)
 }

@@ -1,18 +1,17 @@
 //! Health, stats, runtime defaults, and runtime command handlers.
 
-
+use axum::Json;
 use axum::extract::State;
 use axum::http::StatusCode;
-use axum::Json;
 use chrono::Utc;
 
 use crate::daemon::heartbeat::{build_heartbeat_status_response, safe_stats_snapshot};
-use stasis::prelude::RuntimeSdk;
 use crate::daemon_api::{
     ArtifactCommandRequest, ArtifactCommandResponse, DaemonStatsResponse, HealthResponse,
     HeartbeatStatusResponse, RuntimeConfigCommandRequest, RuntimeConfigCommandResponse,
     RuntimeDefaultsResponse, StageRouteCommandRequest, StageRouteCommandResponse,
 };
+use stasis::prelude::RuntimeSdk;
 
 use crate::daemon::http::internal_error;
 use crate::daemon::state::AppState;
@@ -112,7 +111,8 @@ pub async fn runtime_defaults(state: State<AppState>) -> Json<RuntimeDefaultsRes
     let stage_routing = saved.stage_routing.clone().unwrap_or_else(|| {
         crate::stage_routing::StageRoutingMatrix::default_for(&provider, &model)
     });
-    let retention = crate::workspace::retention::WorkspaceRetentionConfig::from_tui_defaults(&saved);
+    let retention =
+        crate::workspace::retention::WorkspaceRetentionConfig::from_tui_defaults(&saved);
     let (active_profile_id, active_profile_display_name) = state
         .profile_registry
         .read()
@@ -134,8 +134,6 @@ pub async fn runtime_defaults(state: State<AppState>) -> Json<RuntimeDefaultsRes
         inference_profiles: saved.inference_profiles.clone(),
     })
 }
-
-
 
 pub async fn heartbeat_status(
     State(state): State<AppState>,
@@ -161,7 +159,10 @@ pub async fn artifact_command(
     Json(request): Json<ArtifactCommandRequest>,
 ) -> Result<Json<ArtifactCommandResponse>, (StatusCode, String)> {
     if request.session_id.trim().is_empty() {
-        return Err((StatusCode::BAD_REQUEST, "session_id is required".to_string()));
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "session_id is required".to_string(),
+        ));
     }
 
     let response = crate::artifact_command_runtime::execute_artifact_command(request)
@@ -173,14 +174,20 @@ pub async fn artifact_fetch(
     Json(request): Json<crate::daemon_api::ArtifactFetchRequest>,
 ) -> Result<Json<crate::daemon_api::ArtifactFetchResponse>, (StatusCode, String)> {
     if request.session_id.trim().is_empty() {
-        return Err((StatusCode::BAD_REQUEST, "session_id is required".to_string()));
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "session_id is required".to_string(),
+        ));
     }
     if request.artifact_id.trim().is_empty() {
-        return Err((StatusCode::BAD_REQUEST, "artifact_id is required".to_string()));
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "artifact_id is required".to_string(),
+        ));
     }
 
-    let response = crate::artifact_command_runtime::execute_artifact_fetch(request)
-        .map_err(internal_error)?;
+    let response =
+        crate::artifact_command_runtime::execute_artifact_fetch(request).map_err(internal_error)?;
     Ok(Json(response))
 }
 
@@ -196,13 +203,19 @@ pub async fn artifact_write(
     Json(request): Json<crate::daemon_api::ArtifactWriteRequest>,
 ) -> Result<Json<crate::daemon_api::ArtifactWriteResponse>, (StatusCode, String)> {
     if request.session_id.trim().is_empty() {
-        return Err((StatusCode::BAD_REQUEST, "session_id is required".to_string()));
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "session_id is required".to_string(),
+        ));
     }
     if request.artifact_id.trim().is_empty() {
-        return Err((StatusCode::BAD_REQUEST, "artifact_id is required".to_string()));
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "artifact_id is required".to_string(),
+        ));
     }
-    let response = crate::artifact_command_runtime::execute_artifact_write(request)
-        .map_err(internal_error)?;
+    let response =
+        crate::artifact_command_runtime::execute_artifact_write(request).map_err(internal_error)?;
     Ok(Json(response))
 }
 
@@ -210,10 +223,16 @@ pub async fn artifact_delete(
     Json(request): Json<crate::daemon_api::ArtifactDeleteRequest>,
 ) -> Result<Json<crate::daemon_api::ArtifactDeleteResponse>, (StatusCode, String)> {
     if request.session_id.trim().is_empty() {
-        return Err((StatusCode::BAD_REQUEST, "session_id is required".to_string()));
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "session_id is required".to_string(),
+        ));
     }
     if request.artifact_id.trim().is_empty() {
-        return Err((StatusCode::BAD_REQUEST, "artifact_id is required".to_string()));
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "artifact_id is required".to_string(),
+        ));
     }
     let response = crate::artifact_command_runtime::execute_artifact_delete(request)
         .map_err(internal_error)?;

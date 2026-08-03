@@ -461,8 +461,12 @@ pub async fn share_item_to_peer(
 
     // M4 Share / Ask / Bring-home: peer-message + attachment → inbox card + auto-import.
     let export_request = ShareExportInvokeRequest {
-        artifact_ids: artifact_id.map(|id| vec![id.to_string()]).unwrap_or_default(),
-        vault_paths: vault_path.map(|path| vec![path.to_string()]).unwrap_or_default(),
+        artifact_ids: artifact_id
+            .map(|id| vec![id.to_string()])
+            .unwrap_or_default(),
+        vault_paths: vault_path
+            .map(|path| vec![path.to_string()])
+            .unwrap_or_default(),
         ..Default::default()
     };
     let bundle = share_export_bundle(state.clone(), export_request).await?;
@@ -519,7 +523,6 @@ pub async fn peer_send_message(
 ) -> Result<serde_json::Value, String> {
     peer_inbox_sink::send_message(&state, request).await
 }
-
 
 #[tauri::command]
 pub async fn peer_list_messages(

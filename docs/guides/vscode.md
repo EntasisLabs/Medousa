@@ -34,6 +34,9 @@ The composer includes removable chips for the current workspace, active file,
 selection, and diagnostics. Remove a chip when that context should not be sent
 with the next turn.
 
+Editor context is attached to the turn as structured metadata. It remains
+available for follow-up questions without appearing as text in the transcript.
+
 - **Enter** sends.
 - **Shift+Enter** adds a line.
 - **Ctrl/Cmd+Enter** also sends.

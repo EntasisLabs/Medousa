@@ -517,7 +517,10 @@ pub fn enrich_handoff_tool_history(capsule: &mut crate::agent_runtime::turn_cont
 
 pub fn prior_turn_content(turn: &ConversationTurn, max_chars: usize) -> String {
     let raw = if turn.role == "user" {
-        turn.content.clone()
+        crate::agent_runtime::host_context::append_host_context(
+            &turn.content,
+            crate::agent_runtime::host_context::host_context_from_turn(turn),
+        )
     } else if turn.parts.as_ref().is_some_and(|parts| !parts.is_empty()) {
         compose_turn_markdown(turn)
     } else {

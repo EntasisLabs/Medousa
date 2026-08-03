@@ -1,66 +1,66 @@
-mod workshop_runtime;
-mod paths;
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
+mod account_connections;
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
+mod app_update;
 mod autostart;
 mod badge;
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
+mod browser_host;
+#[cfg(any(target_os = "ios", target_os = "android"))]
+mod browser_host_mobile;
+mod capabilities;
 mod channel_adapters;
 mod connection_prefs;
+mod daemon;
 mod daemon_service;
 mod external_desk;
 mod files;
-mod daemon;
-mod messaging;
-mod medousa_paths;
-mod packages;
-#[cfg(not(any(target_os = "ios", target_os = "android")))]
-mod power_events;
-#[cfg(not(any(target_os = "ios", target_os = "android")))]
-mod app_update;
-mod pairing;
-mod pairing_client;
-mod mesh_envelope;
-mod lan_share;
-mod mesh_intros;
-mod peer_inbox_sink;
-mod push;
-mod workshop_registry;
-mod terminal;
-mod workshop_transport;
-mod capabilities;
-mod mcp_gateway;
-#[cfg(not(any(target_os = "ios", target_os = "android")))]
-mod browser_host;
+#[cfg(target_os = "ios")]
+mod home_widget;
 #[cfg(not(target_os = "ios"))]
 mod human_browser;
-#[cfg(any(target_os = "ios", target_os = "android"))]
-mod browser_host_mobile;
 #[cfg(target_os = "android")]
 mod human_browser_android;
 #[cfg(target_os = "ios")]
 mod human_browser_ios;
+#[cfg(target_os = "ios")]
+mod ios_push_setup;
+mod lan_share;
+#[cfg(target_os = "ios")]
+mod live_activity;
+mod mcp_gateway;
+mod medousa_paths;
+mod mesh_envelope;
+mod mesh_intros;
+mod messaging;
+mod packages;
+mod pairing;
+mod pairing_client;
+mod paths;
+mod peer_inbox_sink;
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
+mod power_events;
 mod provider_catalog;
 mod providers;
-#[cfg(not(any(target_os = "ios", target_os = "android")))]
-mod account_connections;
+mod push;
+mod terminal;
 mod tray;
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 mod window;
 mod wizard;
-#[cfg(target_os = "ios")]
-mod live_activity;
-#[cfg(target_os = "ios")]
-mod home_widget;
-#[cfg(target_os = "ios")]
-mod ios_push_setup;
+mod workshop_registry;
+mod workshop_runtime;
+mod workshop_transport;
 
 use daemon::DaemonState;
-use terminal::TerminalRegistry;
 use tauri::Manager;
+use terminal::TerminalRegistry;
 
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 use tauri::{
+    Emitter,
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    Emitter,
 };
 
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
@@ -76,10 +76,7 @@ pub fn run() {
     let _ = rustls::crypto::ring::default_provider().install_default();
 
     if let Some(path) = crate::paths::load_env_overlay() {
-        eprintln!(
-            "[medousa-home] loaded env overlay from {}",
-            path.display()
-        );
+        eprintln!("[medousa-home] loaded env overlay from {}", path.display());
     }
 
     let mut builder = tauri::Builder::default();
@@ -107,90 +104,87 @@ pub fn run() {
         use tauri_plugin_window_state::{Builder as WindowStateBuilder, StateFlags};
         builder = builder.plugin(
             WindowStateBuilder::default()
-                .with_state_flags(
-                    StateFlags::SIZE | StateFlags::POSITION | StateFlags::MAXIMIZED,
-                )
+                .with_state_flags(StateFlags::SIZE | StateFlags::POSITION | StateFlags::MAXIMIZED)
                 .with_filter(|label| label == "main")
                 .build(),
         );
     }
 
-    builder = builder
-        .setup(|app| {
-            eprintln!("[medousa-home] setup start");
-            if let Err(err) = workshop_registry::sync_daemon_state_from_registry(
-                &app.state::<DaemonState>(),
-            ) {
-                eprintln!("workshop registry sync: {err}");
-            }
-            #[cfg(not(any(target_os = "ios", target_os = "android")))]
-            connection_prefs::refresh_autostart_if_enabled();
-            // macOS/Linux still pre-create hidden popouts; suspend their WebView
-            // controllers so they do not composite while invisible. Windows creates
-            // popouts lazily (see tauri.windows.conf.json + window.rs).
-            #[cfg(not(any(target_os = "ios", target_os = "android")))]
-            window::suspend_hidden_popouts(app.handle());
-            eprintln!("[medousa-home] setup complete");
+    builder = builder.setup(|app| {
+        eprintln!("[medousa-home] setup start");
+        if let Err(err) =
+            workshop_registry::sync_daemon_state_from_registry(&app.state::<DaemonState>())
+        {
+            eprintln!("workshop registry sync: {err}");
+        }
+        #[cfg(not(any(target_os = "ios", target_os = "android")))]
+        connection_prefs::refresh_autostart_if_enabled();
+        // macOS/Linux still pre-create hidden popouts; suspend their WebView
+        // controllers so they do not composite while invisible. Windows creates
+        // popouts lazily (see tauri.windows.conf.json + window.rs).
+        #[cfg(not(any(target_os = "ios", target_os = "android")))]
+        window::suspend_hidden_popouts(app.handle());
+        eprintln!("[medousa-home] setup complete");
 
-            #[cfg(any(windows, target_os = "linux"))]
-            {
-                use tauri_plugin_deep_link::DeepLinkExt;
-                let _ = app.deep_link().register_all();
-            }
+        #[cfg(any(windows, target_os = "linux"))]
+        {
+            use tauri_plugin_deep_link::DeepLinkExt;
+            let _ = app.deep_link().register_all();
+        }
 
-            #[cfg(not(any(target_os = "ios", target_os = "android")))]
-            setup_desktop_tray(app)?;
+        #[cfg(not(any(target_os = "ios", target_os = "android")))]
+        setup_desktop_tray(app)?;
 
-            // Unified title bar: macOS Overlay traffic lights over content; Win/Linux
-            // frameless so HTML window controls own the chrome (see AppTitlebar).
-            // Platform tauri.*.conf.json must also set these — those files replace the
-            // windows[] list and previously dropped Overlay/hiddenTitle (double chrome).
-            #[cfg(target_os = "macos")]
-            {
-                if let Some(main) = app.get_webview_window("main") {
-                    if let Err(err) = main.set_title_bar_style(tauri::TitleBarStyle::Overlay) {
-                        eprintln!("[medousa-home] set_title_bar_style(Overlay): {err}");
-                    }
+        // Unified title bar: macOS Overlay traffic lights over content; Win/Linux
+        // frameless so HTML window controls own the chrome (see AppTitlebar).
+        // Platform tauri.*.conf.json must also set these — those files replace the
+        // windows[] list and previously dropped Overlay/hiddenTitle (double chrome).
+        #[cfg(target_os = "macos")]
+        {
+            if let Some(main) = app.get_webview_window("main") {
+                if let Err(err) = main.set_title_bar_style(tauri::TitleBarStyle::Overlay) {
+                    eprintln!("[medousa-home] set_title_bar_style(Overlay): {err}");
                 }
             }
-            #[cfg(all(
-                not(any(target_os = "ios", target_os = "android")),
-                not(target_os = "macos")
-            ))]
-            {
-                if let Some(main) = app.get_webview_window("main") {
-                    if let Err(err) = main.set_decorations(false) {
-                        eprintln!("[medousa-home] set_decorations(false): {err}");
-                    }
+        }
+        #[cfg(all(
+            not(any(target_os = "ios", target_os = "android")),
+            not(target_os = "macos")
+        ))]
+        {
+            if let Some(main) = app.get_webview_window("main") {
+                if let Err(err) = main.set_decorations(false) {
+                    eprintln!("[medousa-home] set_decorations(false): {err}");
                 }
             }
+        }
 
-            #[cfg(not(any(target_os = "ios", target_os = "android")))]
-            {
-                human_browser::init_app_handle(app.handle().clone());
-                browser_host::start_browser_host_background();
-                power_events::install(app.handle());
-            }
-            #[cfg(target_os = "android")]
-            {
-                human_browser_android::init_app_handle(app.handle().clone());
-            }
-            #[cfg(target_os = "ios")]
-            {
-                human_browser_ios::init_app_handle(app.handle().clone());
-                ios_push_setup::install_ios_push_background_handler();
-                // Match medousa-theme surface-950 so the status-bar / Dynamic Island
-                // backdrop is not pure black against the charcoal shell.
-                if let Some(main) = app.get_webview_window("main") {
-                    let canvas = tauri::webview::Color(16, 16, 24, 255);
-                    if let Err(err) = main.set_background_color(Some(canvas)) {
-                        eprintln!("[medousa-home] set_background_color(ios canvas): {err}");
-                    }
+        #[cfg(not(any(target_os = "ios", target_os = "android")))]
+        {
+            human_browser::init_app_handle(app.handle().clone());
+            browser_host::start_browser_host_background();
+            power_events::install(app.handle());
+        }
+        #[cfg(target_os = "android")]
+        {
+            human_browser_android::init_app_handle(app.handle().clone());
+        }
+        #[cfg(target_os = "ios")]
+        {
+            human_browser_ios::init_app_handle(app.handle().clone());
+            ios_push_setup::install_ios_push_background_handler();
+            // Match medousa-theme surface-950 so the status-bar / Dynamic Island
+            // backdrop is not pure black against the charcoal shell.
+            if let Some(main) = app.get_webview_window("main") {
+                let canvas = tauri::webview::Color(16, 16, 24, 255);
+                if let Err(err) = main.set_background_color(Some(canvas)) {
+                    eprintln!("[medousa-home] set_background_color(ios canvas): {err}");
                 }
             }
+        }
 
-            Ok(())
-        });
+        Ok(())
+    });
 
     #[cfg(not(any(target_os = "ios", target_os = "android")))]
     {
@@ -233,7 +227,8 @@ pub fn run() {
                     }
                     "vault-sticky" => {
                         api.prevent_close();
-                        if let Some(webview) = window.app_handle().get_webview_window("vault-sticky")
+                        if let Some(webview) =
+                            window.app_handle().get_webview_window("vault-sticky")
                         {
                             let _ = webview.set_always_on_top(false);
                             let _ = window::hide_and_suspend(&webview);
@@ -689,6 +684,8 @@ pub fn run() {
             daemon::forge::forge_request,
             daemon::runtime::runtime_get_stats,
             daemon::runtime::runtime_get_defaults,
+            daemon::runtime::runtime_get_worker_config,
+            daemon::runtime::runtime_put_worker_config,
             daemon::runtime::runtime_get_tui_defaults,
             daemon::runtime::runtime_put_tui_defaults,
             daemon::runtime::migrate_global_tui_defaults_to_engine,

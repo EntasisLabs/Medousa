@@ -179,17 +179,12 @@ pub async fn pair_complete_from_qr(
         return Err(verify_failure_message(verify.reason.as_deref()));
     }
 
-    let server_signed_nonce = verify
-        .server_signed_nonce
-        .as_deref()
-        .ok_or_else(|| "Pairing verify succeeded but workshop did not return a signature".to_string())?;
+    let server_signed_nonce = verify.server_signed_nonce.as_deref().ok_or_else(|| {
+        "Pairing verify succeeded but workshop did not return a signature".to_string()
+    })?;
     let daemon_public_key = parse_verifying_key(&status.daemon_public_key)?;
-    verify_message(
-        &daemon_public_key,
-        &phone_nonce_b64,
-        server_signed_nonce,
-    )
-    .map_err(|err| format!("Workshop signature check failed: {err}"))?;
+    verify_message(&daemon_public_key, &phone_nonce_b64, server_signed_nonce)
+        .map_err(|err| format!("Workshop signature check failed: {err}"))?;
 
     let pairing_id = verify
         .pairing_id
@@ -250,7 +245,10 @@ pub fn load_pairing_credentials_summary() -> Option<PairingCredentialsSummary> {
         daemon_url: file.daemon_url,
         paired_at: file.paired_at,
         has_session_token,
-        iroh_available: file.iroh_ticket.as_ref().is_some_and(|t| !t.trim().is_empty()),
+        iroh_available: file
+            .iroh_ticket
+            .as_ref()
+            .is_some_and(|t| !t.trim().is_empty()),
     })
 }
 
@@ -275,7 +273,10 @@ pub fn workshop_has_session_token(workshop_id: &str, workshop_device_id: &str) -
             .is_some_and(|file| read_session_token(&file.workshop_device_id).is_some())
 }
 
-fn build_transport_config(file: &PairingCredentialsFile, lan_base: &str) -> Option<WorkshopTransportConfig> {
+fn build_transport_config(
+    file: &PairingCredentialsFile,
+    lan_base: &str,
+) -> Option<WorkshopTransportConfig> {
     let lan = lan_base.trim().trim_end_matches('/').to_string();
     Some(WorkshopTransportConfig {
         lan_base: if lan.is_empty() {
@@ -353,7 +354,9 @@ pub async fn send_pair_heartbeat(
         .map(str::to_string);
 
     let has_push = apns_token.is_some()
-        || body.and_then(|body| body.push_platform.as_deref()).is_some()
+        || body
+            .and_then(|body| body.push_platform.as_deref())
+            .is_some()
         || live_activity_token.is_some();
     let has_mesh = mesh_lan.is_some() || mesh_ticket.is_some() || mesh_endpoint.is_some();
 
@@ -446,7 +449,10 @@ async fn fetch_iroh_ticket(client: &Client, daemon_url: &str) -> Result<String, 
         .await
         .map_err(|err| err.to_string())?;
     if !response.status().is_success() {
-        return Err(format!("iroh ticket unavailable (HTTP {})", response.status()));
+        return Err(format!(
+            "iroh ticket unavailable (HTTP {})",
+            response.status()
+        ));
     }
     let payload = response
         .json::<TicketPayload>()
@@ -533,17 +539,26 @@ async fn post_pair_verify(
 
 fn parse_pair_qr_url(raw: &str) -> Result<ParsedQr, String> {
     let trimmed = raw.trim();
-    let url = Url::parse(trimmed).map_err(|_| "Pairing link must start with medousa://".to_string())?;
+    let url =
+        Url::parse(trimmed).map_err(|_| "Pairing link must start with medousa://".to_string())?;
     if url.scheme() != "medousa" || url.host_str().unwrap_or_default() != "pair" {
         return Err("Not a Medousa pairing link".to_string());
     }
 
-    let advertise_address = query_param(&url, "a").ok_or_else(|| "Pairing link is missing address".to_string())?;
-    let device_id = query_param(&url, "d").ok_or_else(|| "Pairing link is missing device id".to_string())?;
-    let qr_token = query_param(&url, "t").ok_or_else(|| "Pairing link is missing token".to_string())?;
-    let signature = query_param(&url, "s").ok_or_else(|| "Pairing link is missing signature".to_string())?;
+    let advertise_address =
+        query_param(&url, "a").ok_or_else(|| "Pairing link is missing address".to_string())?;
+    let device_id =
+        query_param(&url, "d").ok_or_else(|| "Pairing link is missing device id".to_string())?;
+    let qr_token =
+        query_param(&url, "t").ok_or_else(|| "Pairing link is missing token".to_string())?;
+    let signature =
+        query_param(&url, "s").ok_or_else(|| "Pairing link is missing signature".to_string())?;
     let peer_name = query_param(&url, "n")
-        .map(|value| urlencoding::decode(&value).map(|decoded| decoded.into_owned()).unwrap_or(value))
+        .map(|value| {
+            urlencoding::decode(&value)
+                .map(|decoded| decoded.into_owned())
+                .unwrap_or(value)
+        })
         .unwrap_or_else(|| "Medousa".to_string());
     let iroh_ticket = query_param(&url, "k");
 
@@ -715,14 +730,12 @@ pub fn remove_workshop_credentials(
     workshop_device_id: Option<&str>,
 ) -> Result<(), String> {
     let path = crate::workshop_registry::pairing_credentials_abs_path(workshop_id);
-    let device_id = workshop_device_id
-        .map(str::to_string)
-        .or_else(|| {
-            fs::read_to_string(&path)
-                .ok()
-                .and_then(|raw| serde_json::from_str::<PairingCredentialsFile>(&raw).ok())
-                .map(|file| file.workshop_device_id)
-        });
+    let device_id = workshop_device_id.map(str::to_string).or_else(|| {
+        fs::read_to_string(&path)
+            .ok()
+            .and_then(|raw| serde_json::from_str::<PairingCredentialsFile>(&raw).ok())
+            .map(|file| file.workshop_device_id)
+    });
     if path.exists() {
         fs::remove_file(&path).map_err(|err| err.to_string())?;
     }
@@ -763,7 +776,9 @@ fn read_legacy_session_token() -> Option<String> {
             }
         }
     }
-    let legacy_path = medousa_data_dir().join("secrets").join("pairing_session_token");
+    let legacy_path = medousa_data_dir()
+        .join("secrets")
+        .join("pairing_session_token");
     let value = fs::read_to_string(legacy_path).ok()?;
     let trimmed = value.trim();
     if trimmed.is_empty() {
@@ -803,10 +818,14 @@ fn init_failure_message(reason: Option<&str>) -> String {
     match reason.unwrap_or("unknown") {
         "rate_limited" => "Too many pairing attempts — wait a minute and try again.".to_string(),
         "missing_token" => "Pairing link is missing a token — scan a fresh QR.".to_string(),
-        "no_active_qr" => "No active QR on your computer — open Pair phone and scan again.".to_string(),
+        "no_active_qr" => {
+            "No active QR on your computer — open Pair phone and scan again.".to_string()
+        }
         "token_already_used" => "This pairing link was already used — scan a fresh QR.".to_string(),
         "token_expired" => "This pairing link expired — scan a fresh QR.".to_string(),
-        "invalid_token" => "This pairing link no longer matches your computer — scan a fresh QR.".to_string(),
+        "invalid_token" => {
+            "This pairing link no longer matches your computer — scan a fresh QR.".to_string()
+        }
         other => format!("Pairing was rejected ({other})"),
     }
 }

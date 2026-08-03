@@ -2,7 +2,7 @@ import * as path from "node:path";
 import * as vscode from "vscode";
 import {
   boundContext,
-  contextSupplement,
+  hostContext,
   isBackgroundHandoffEvent,
   MedousaClient,
   MedousaHttpError,
@@ -137,7 +137,8 @@ class MedousaChatView implements vscode.WebviewViewProvider {
       const request: InteractiveTurnRequest = {
         model: defaults.model,
         persist_user_turn: true,
-        prompt: `${prompt}\n\n${contextSupplement(editorContext)}`,
+        prompt,
+        host_context: hostContext(editorContext),
         provider: defaults.provider,
         response_depth_mode: defaults.response_depth_mode,
         reasoning_effort: defaults.reasoning_effort,
@@ -287,7 +288,7 @@ class MedousaChatView implements vscode.WebviewViewProvider {
       sessionId: history.session_id,
       turns: history.turns.map((turn) => ({
         ...turn,
-        content: stripContextSupplement(turn.content),
+        content: turn.content,
       })),
     });
   }
@@ -338,7 +339,7 @@ class MedousaChatView implements vscode.WebviewViewProvider {
     this.post({
       type: "history",
       sessionId,
-      turns: history.turns.map((turn) => ({ ...turn, content: stripContextSupplement(turn.content) })),
+      turns: history.turns,
     });
     await this.refreshSessions();
   }
@@ -657,10 +658,6 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function stripContextSupplement(content: string): string {
-  return content.replace(/\n*<medousa-context>[\s\S]*?<\/medousa-context>\s*$/i, "").trimEnd();
-}
-
 function historySignature(history: SessionHistoryResponse): string {
   return history.turns
     .map((turn) => `${turn.role}\u0000${turn.timestamp}\u0000${turn.content}`)
@@ -727,7 +724,7 @@ function isInboundMessage(value: unknown): value is InboundMessage {
 function normalizeSessionSummary(session: SessionSummary): ChatSessionSummary | null {
   const sessionId = String(session.session_id ?? session.id ?? "").trim();
   if (!sessionId) return null;
-  const preview = typeof session.preview === "string" ? stripContextSupplement(session.preview).trim() : "";
+  const preview = typeof session.preview === "string" ? session.preview.trim() : "";
   const displayName = session.display_name?.trim() || firstLine(preview) || "New conversation";
   return {
     sessionId,
@@ -746,7 +743,7 @@ function firstLine(value: string): string {
 function lastUserPrompt(history: SessionHistoryResponse): string | null {
   for (let index = history.turns.length - 1; index >= 0; index -= 1) {
     const turn = history.turns[index];
-    if (turn?.role === "user") return stripContextSupplement(turn.content);
+    if (turn?.role === "user") return turn.content;
   }
   return null;
 }

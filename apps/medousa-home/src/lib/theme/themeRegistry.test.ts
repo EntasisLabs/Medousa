@@ -19,4 +19,13 @@ describe("logo-derived themes", () => {
     expect(COLOR_THEME_OPTIONS.some((option) => option.id === "medousa")).toBe(true);
     expect(COLOR_THEME_OPTIONS.some((option) => option.id === "black-lily")).toBe(true);
   });
+
+  it("gives every mark a theme-aware companion preview", () => {
+    for (const mark of MEDOUSA_MARK_OPTIONS) {
+      expect(mark.lightPreviewBackground).not.toBe("#000000");
+      expect(mark.darkPreviewBackground).toBeTruthy();
+      expect(mark.lightPreviewForeground).toBeTruthy();
+      expect(mark.darkPreviewForeground).toBeTruthy();
+    }
+  });
 });

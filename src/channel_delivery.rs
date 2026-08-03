@@ -770,6 +770,7 @@ mod tests {
                 supports_ui_artifacts: true,
                 supports_browser_host: true,
             }),
+            host_context: None,
             max_tool_rounds: None,
             retry_runtime_max_rounds: None,
             manuscript_id: None,

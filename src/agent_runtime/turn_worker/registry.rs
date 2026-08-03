@@ -10,6 +10,7 @@ use stasis::application::orchestration::tool_registry::ToolRegistry;
 use stasis::domain::errors::StasisError;
 use stasis::prelude::Result;
 
+use crate::client_tools::ClientRegistry;
 use super::policy::tool_allowed;
 use crate::tool_bootstrap::{
     ToolSurfaceLane, effective_tool_names, ensure_bound_workshop_session_tool_defaults,
@@ -100,6 +101,8 @@ pub struct SessionBootstrapToolRegistry {
     full_allowlist: HashSet<String>,
     supports_ui_artifacts: bool,
     supports_browser_host: bool,
+    channel_surface: Option<String>,
+    client_registry: ClientRegistry,
 }
 
 impl SessionBootstrapToolRegistry {
@@ -109,6 +112,8 @@ impl SessionBootstrapToolRegistry {
         full_allowlist: HashSet<String>,
         supports_ui_artifacts: bool,
         supports_browser_host: bool,
+        channel_surface: Option<String>,
+        client_registry: ClientRegistry,
     ) -> Self {
         let session_id = session_id.into();
         ensure_host_session_tool_defaults(&session_id);
@@ -121,6 +126,8 @@ impl SessionBootstrapToolRegistry {
             full_allowlist,
             supports_ui_artifacts,
             supports_browser_host,
+            channel_surface,
+            client_registry,
         }
     }
 
@@ -136,6 +143,8 @@ impl SessionBootstrapToolRegistry {
             full_allowlist,
             supports_ui_artifacts: false,
             supports_browser_host: false,
+            channel_surface: None,
+            client_registry: ClientRegistry::new(),
         }
     }
 
@@ -146,6 +155,8 @@ impl SessionBootstrapToolRegistry {
         full_allowlist: HashSet<String>,
         supports_ui_artifacts: bool,
         supports_browser_host: bool,
+        channel_surface: Option<String>,
+        client_registry: ClientRegistry,
     ) -> Self {
         let session_id = session_id.into();
         ensure_bound_workshop_session_tool_defaults(&session_id);
@@ -158,12 +169,18 @@ impl SessionBootstrapToolRegistry {
             full_allowlist,
             supports_ui_artifacts,
             supports_browser_host,
+            channel_surface,
+            client_registry,
         }
     }
 
     fn effective_allowlist(&self) -> HashSet<String> {
         let mut allowed =
             effective_tool_names(&self.session_id, self.lane, &self.full_allowlist);
+        allowed.extend(
+            self.client_registry
+                .tool_names_for_surface(self.channel_surface.as_deref()),
+        );
         if !self.supports_ui_artifacts {
             allowed.remove(crate::ui_present_tools::COGNITION_UI_PRESENT);
             allowed.remove(crate::ui_scene_tools::COGNITION_UI_SCENE);
@@ -277,6 +294,8 @@ mod tests {
             ]),
             false,
             false,
+            None,
+            ClientRegistry::new(),
         );
         let allowed = registry.effective_allowlist();
         assert!(allowed.contains("cognition_web_search"));

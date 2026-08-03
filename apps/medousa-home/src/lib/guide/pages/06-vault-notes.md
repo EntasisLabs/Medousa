@@ -27,7 +27,7 @@ Autosave runs on a short debounce (about 4.5s) when enabled; header shows **Savi
 ## Slash menu (`/`)
 
 **Writing:** Link to note, headings, lists, to-do, web link, quote, divider.  
-**Blocks:** Callout, Card, charts, Query view, Kanban, Data table, Embed note, Feed, Report, Slides, and more — full fence list in [Liquid reference](guide:liquid-reference).
+**Blocks:** Drawing, Callout, Card, charts, Query view, Kanban, Data table, Embed note, Feed, Report, Slides, and more — full fence list in [Liquid reference](guide:liquid-reference).
 
 ## Links and embeds
 
@@ -47,6 +47,7 @@ Toolbar toggles when the note kind supports them:
 | Sheet / ledger | **Table view** ↔ raw |
 | Workbook | **Workbook view** ↔ raw |
 | Slides | **Deck view** ↔ raw |
+| Drawing | Full canvas; `/draw` embeds the same canvas in any note |
 | Query view | Live table from other notes — slash **Query view** |
 
 ## Export and chat bridges

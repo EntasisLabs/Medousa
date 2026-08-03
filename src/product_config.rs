@@ -6,8 +6,7 @@ const DEFAULT_DAEMON_BIND: &str = "127.0.0.1:7419";
 const DEFAULT_DISCORD_PREFIX: &str = "!";
 const DEFAULT_WHATSAPP_DELIVER_BIND: &str = "127.0.0.1:7422";
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub struct ProductConfig {
     #[serde(default)]
     pub daemon: DaemonProductConfig,
@@ -102,11 +101,78 @@ pub struct WhatsAppProductConfig {
     pub heartbeat_chat_jids: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub struct RuntimeProductConfig {
     #[serde(default)]
     pub workflow: RuntimeWorkflowConfig,
+    #[serde(default)]
+    pub workers: RuntimeWorkerConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct RuntimeWorkerConfig {
+    #[serde(default = "default_worker_max_in_flight")]
+    pub max_in_flight: usize,
+    #[serde(default = "default_agent_workers")]
+    pub agents: usize,
+    #[serde(default = "default_scheduled_workers")]
+    pub scheduled: usize,
+    #[serde(default = "default_delivery_workers")]
+    pub delivery: usize,
+    #[serde(default = "default_maintenance_workers")]
+    pub maintenance: usize,
+}
+
+impl Default for RuntimeWorkerConfig {
+    fn default() -> Self {
+        Self {
+            max_in_flight: default_worker_max_in_flight(),
+            agents: default_agent_workers(),
+            scheduled: default_scheduled_workers(),
+            delivery: default_delivery_workers(),
+            maintenance: default_maintenance_workers(),
+        }
+    }
+}
+
+impl RuntimeWorkerConfig {
+    pub fn validate(&self) -> Result<(), String> {
+        let reserved = self
+            .agents
+            .saturating_add(self.scheduled)
+            .saturating_add(self.delivery)
+            .saturating_add(self.maintenance);
+        if self.max_in_flight == 0 {
+            return Err("runtime.workers.max_in_flight must be greater than zero".to_string());
+        }
+        if reserved > self.max_in_flight {
+            return Err(format!(
+                "runtime worker shares total {reserved}, exceeding max_in_flight {}",
+                self.max_in_flight
+            ));
+        }
+        Ok(())
+    }
+}
+
+fn default_worker_max_in_flight() -> usize {
+    25
+}
+
+fn default_agent_workers() -> usize {
+    8
+}
+
+fn default_scheduled_workers() -> usize {
+    8
+}
+
+fn default_delivery_workers() -> usize {
+    5
+}
+
+fn default_maintenance_workers() -> usize {
+    4
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -122,7 +188,6 @@ pub struct RuntimeWorkflowConfig {
     #[serde(default)]
     pub allow_mutating_parallel: bool,
 }
-
 
 impl Default for RuntimeWorkflowConfig {
     fn default() -> Self {
@@ -261,7 +326,6 @@ pub struct TuiProductConfig {
     pub response_depth_mode: String,
 }
 
-
 impl Default for DaemonProductConfig {
     fn default() -> Self {
         Self {
@@ -364,11 +428,7 @@ pub fn parse_u64_csv(raw: &str) -> Option<Vec<u64>> {
         .split(',')
         .filter_map(|token| token.trim().parse::<u64>().ok())
         .collect::<Vec<_>>();
-    if ids.is_empty() {
-        None
-    } else {
-        Some(ids)
-    }
+    if ids.is_empty() { None } else { Some(ids) }
 }
 
 pub fn parse_i64_csv(raw: &str) -> Vec<i64> {
@@ -642,5 +702,25 @@ mod tests {
             "telegram:user:999",
             &config
         ));
+    }
+
+    #[test]
+    fn runtime_worker_defaults_are_the_capacity_contract() {
+        let workers = RuntimeWorkerConfig::default();
+        assert_eq!(workers.max_in_flight, 25);
+        assert_eq!(workers.agents, 8);
+        assert_eq!(workers.scheduled, 8);
+        assert_eq!(workers.delivery, 5);
+        assert_eq!(workers.maintenance, 4);
+        assert!(workers.validate().is_ok());
+    }
+
+    #[test]
+    fn runtime_worker_shares_cannot_exceed_global_capacity() {
+        let workers = RuntimeWorkerConfig {
+            max_in_flight: 24,
+            ..Default::default()
+        };
+        assert!(workers.validate().is_err());
     }
 }

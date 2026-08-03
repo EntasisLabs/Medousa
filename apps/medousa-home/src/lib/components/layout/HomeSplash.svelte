@@ -15,7 +15,7 @@
     <MedousaSprite
       variant="aurora"
       size="clamp(8.5rem, 22vw, 14rem)"
-      fps={8}
+      fps={7}
       action="float"
       label="Medousa is starting"
     />

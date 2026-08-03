@@ -3,8 +3,8 @@ use crate::daemon::types::{
 };
 use tauri::State;
 
-use super::workshop_http;
 use super::DaemonState;
+use super::workshop_http;
 
 #[tauri::command]
 pub async fn tool_history_list_slices(
@@ -22,10 +22,18 @@ pub async fn tool_history_list_slices(
     if let Some(value) = session_limit {
         params.push(("session_limit", value.to_string()));
     }
-    if let Some(value) = session_id.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
+    if let Some(value) = session_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+    {
         params.push(("session_id", value.to_string()));
     }
-    if let Some(value) = tool_filter.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
+    if let Some(value) = tool_filter
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+    {
         params.push(("tool_filter", value.to_string()));
     }
     if let Some(value) = keyword.as_deref().map(str::trim).filter(|v| !v.is_empty()) {

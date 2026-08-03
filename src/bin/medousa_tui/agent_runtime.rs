@@ -581,6 +581,7 @@ pub(crate) async fn start_prompt_run(
     let turn_scope = tui_rt.turn_scope.clone();
     let worker_scheduler = tui_rt.worker_scheduler.clone();
     let tool_registry = tui_rt.tool_registry.clone();
+    let client_registry = tui_rt.client_registry.clone();
     let identity_memory_store = Some(
         tui_rt.identity_memory_store.clone()
             as std::sync::Arc<dyn stasis::ports::outbound::memory::identity_memory_store::IdentityMemoryStore>,
@@ -621,6 +622,7 @@ pub(crate) async fn start_prompt_run(
                 reasoning_effort,
                 worker_scheduler,
                 tool_registry,
+                client_registry,
                 identity_memory_store,
                 turn_scope: turn_scope.clone(),
                 activation,
@@ -670,6 +672,7 @@ async fn attempt_daemon_interactive_turn(
         model: state.settings.model.clone(),
         stage_routing: state.stage_routing.clone(),
         surface: Some(medousa::TurnSurfaceContext::tui()),
+        host_context: None,
         max_tool_rounds: Some(medousa::tui::settings::parse_usize_with_bounds(
             &state.settings.max_tool_rounds,
             10,

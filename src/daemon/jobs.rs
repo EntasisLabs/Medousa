@@ -3,9 +3,9 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
+use axum::Json;
 use axum::extract::{Path as AxumPath, Query, State};
 use axum::http::StatusCode;
-use axum::Json;
 use chrono::Utc;
 use serde_json::Value;
 use uuid::Uuid;
@@ -14,30 +14,33 @@ use anyhow::Result as AnyhowResult;
 
 use crate::artifact_chunking::chunk_json_payload;
 use crate::artifact_extraction::{extract_claims_from_chunks, persist_extraction_run};
+use crate::channel_delivery;
 use crate::context_pack::{
     BuildContextPackInput, ContextPackBudgetProfile, build_context_pack, persist_context_pack,
 };
-use crate::channel_delivery;
 use crate::daemon::identity::resolve_identity_context_for_request;
+use crate::daemon::ingest::{
+    get_job_attempts_graceful, resolve_api_model_routing, spawn_daemon_api_agent_turn,
+};
 use crate::daemon::interactive::{build_interactive_request_from_ticket, spawn_turn_ticket};
-use crate::daemon::ingest::{get_job_attempts_graceful, resolve_api_model_routing, spawn_daemon_api_agent_turn};
+use crate::daemon_api::{
+    CreateTurnTicketRequest, DeleteRecurringResponse, EnqueueAskRequest, EnqueuePromptRequest,
+    EnqueueReportRequest, EnqueueResponse, JobCitationResponse, JobEvidenceReportResponse,
+    JobReportResponse, JobResultResponse, RecurringDeliveryResponse, RecurringListQuery,
+    RecurringListResponse, RecurringRunsQuery, RecurringRunsResponse,
+    RegisterRecurringPromptRequest, RegisterRecurringResponse, UpdateRecurringRequest,
+    UpdateRecurringResponse,
+};
 use crate::engine_context::{
     EngineExecutionLane, LaneSafetyActionClass, compile_default_lane_prompt,
     default_policy_profile_for_lane, validate_lane_action, validate_lane_policy_profile,
 };
-use crate::verifier::{VerificationPolicy, verify_context_pack};
 use crate::verification_store::persist_verification;
+use crate::verifier::{VerificationPolicy, verify_context_pack};
 use stasis::application::orchestration::runtime_job_payloads::PromptJobPayload;
-use stasis::application::runtime::identity_context_compiler::prepend_identity_snapshot;
 use stasis::application::orchestration::runtime_workflow_job_builder::RuntimeWorkflowJobBuilder;
+use stasis::application::runtime::identity_context_compiler::prepend_identity_snapshot;
 use stasis::prelude::{RecurringDefinition, RuntimeComposition, RuntimeSdk};
-use crate::daemon_api::{
-    CreateTurnTicketRequest, DeleteRecurringResponse, EnqueueAskRequest, EnqueuePromptRequest, EnqueueReportRequest,
-    EnqueueResponse, JobCitationResponse, JobEvidenceReportResponse, JobReportResponse,
-    JobResultResponse, RecurringDeliveryResponse, RecurringListQuery, RecurringListResponse,
-    RecurringRunsQuery, RecurringRunsResponse, RegisterRecurringPromptRequest,
-    RegisterRecurringResponse, UpdateRecurringRequest, UpdateRecurringResponse,
-};
 
 use crate::daemon::http::internal_error;
 use crate::daemon::state::{AgentTurnJobRecord, AppState};
@@ -69,10 +72,9 @@ pub async fn get_job_result(
     let latest = attempts.last();
     let latest_outcome = latest.map(|attempt| format!("{:?}", attempt.outcome));
     let latest_execution_id = latest.and_then(|attempt| attempt.execution_id.clone());
-    let output_text = latest
-        .and_then(|attempt| {
-            channel_delivery::extract_output_text_from_diagnostics(attempt.diagnostics.as_deref())
-        });
+    let output_text = latest.and_then(|attempt| {
+        channel_delivery::extract_output_text_from_diagnostics(attempt.diagnostics.as_deref())
+    });
 
     let (status, is_terminal) = derive_job_result_status(latest_outcome.as_deref(), attempts.len());
 
@@ -120,10 +122,9 @@ pub async fn get_job_report(
     let latest = attempts.last();
     let latest_outcome = latest.map(|attempt| format!("{:?}", attempt.outcome));
     let latest_execution_id = latest.and_then(|attempt| attempt.execution_id.clone());
-    let output_text = latest
-        .and_then(|attempt| {
-            channel_delivery::extract_output_text_from_diagnostics(attempt.diagnostics.as_deref())
-        });
+    let output_text = latest.and_then(|attempt| {
+        channel_delivery::extract_output_text_from_diagnostics(attempt.diagnostics.as_deref())
+    });
     let diagnostics = latest
         .and_then(|attempt| attempt.diagnostics.as_deref())
         .and_then(parse_diagnostics_json);
@@ -267,6 +268,7 @@ pub async fn enqueue_ask(
         model: model.clone(),
         stage_routing: Some(stage_routing.clone()),
         surface: None,
+        host_context: None,
         model_hint: request.model_hint.clone(),
         manuscript_id,
         additional_manuscript_ids,
@@ -321,13 +323,10 @@ pub async fn retry_workspace_card(
     }
 
     let composition = Arc::new(state.composition().clone());
-    let detail = crate::workspace::WorkspaceService::get_card_detail(
-        composition.clone(),
-        card_id,
-    )
-    .await
-    .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?
-    .ok_or_else(|| (StatusCode::NOT_FOUND, format!("card not found: {card_id}")))?;
+    let detail = crate::workspace::WorkspaceService::get_card_detail(composition.clone(), card_id)
+        .await
+        .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?
+        .ok_or_else(|| (StatusCode::NOT_FOUND, format!("card not found: {card_id}")))?;
 
     if detail.kind == crate::daemon_api::WorkCardKind::AskJob {
         return retry_ask_workspace_card(&state, card_id, &detail)
@@ -387,9 +386,11 @@ async fn retry_ask_workspace_card(
     )
     .await;
 
-    crate::workspace::notify_workspace_event(crate::workspace::WorkspaceDomainEvent::AskJobChanged {
-        job_id: job_id.clone(),
-    });
+    crate::workspace::notify_workspace_event(
+        crate::workspace::WorkspaceDomainEvent::AskJobChanged {
+            job_id: job_id.clone(),
+        },
+    );
 
     Ok(crate::daemon_api::WorkspaceCardActionResponse {
         workspace_revision: crate::workspace::store::workspace_store().revision(),
@@ -489,7 +490,8 @@ pub async fn enqueue_prompt(
 
     let now = Utc::now();
     let job_id = format!("medousa-daemon-prompt-{}", now.timestamp_millis());
-    let prompt_with_identity = prepend_identity_snapshot(&request.prompt, Some(&identity_context.summary));
+    let prompt_with_identity =
+        prepend_identity_snapshot(&request.prompt, Some(&identity_context.summary));
     let compiled_prompt =
         compile_default_lane_prompt(EngineExecutionLane::Interactive, &prompt_with_identity);
 
@@ -538,21 +540,17 @@ pub async fn update_recurring_definition(
     AxumPath(recurring_id): AxumPath<String>,
     Json(request): Json<UpdateRecurringRequest>,
 ) -> Result<Json<UpdateRecurringResponse>, (StatusCode, String)> {
-    crate::recurring_handlers::update_recurring(
-        state.composition(),
-        recurring_id.trim(),
-        request,
-    )
-    .await
-    .map(Json)
-    .map_err(|err| {
-        let message = err.to_string();
-        if message.contains("not found") {
-            (StatusCode::NOT_FOUND, message)
-        } else {
-            (StatusCode::BAD_REQUEST, message)
-        }
-    })
+    crate::recurring_handlers::update_recurring(state.composition(), recurring_id.trim(), request)
+        .await
+        .map(Json)
+        .map_err(|err| {
+            let message = err.to_string();
+            if message.contains("not found") {
+                (StatusCode::NOT_FOUND, message)
+            } else {
+                (StatusCode::BAD_REQUEST, message)
+            }
+        })
 }
 
 pub async fn delete_recurring_definition(
@@ -577,21 +575,17 @@ pub async fn list_recurring_runs_handler(
     AxumPath(recurring_id): AxumPath<String>,
     Query(query): Query<RecurringRunsQuery>,
 ) -> Result<Json<RecurringRunsResponse>, (StatusCode, String)> {
-    crate::recurring_handlers::list_recurring_runs(
-        state.composition(),
-        recurring_id.trim(),
-        query,
-    )
-    .await
-    .map(Json)
-    .map_err(|err| {
-        let message = err.to_string();
-        if message.contains("not found") {
-            (StatusCode::NOT_FOUND, message)
-        } else {
-            (StatusCode::INTERNAL_SERVER_ERROR, message)
-        }
-    })
+    crate::recurring_handlers::list_recurring_runs(state.composition(), recurring_id.trim(), query)
+        .await
+        .map(Json)
+        .map_err(|err| {
+            let message = err.to_string();
+            if message.contains("not found") {
+                (StatusCode::NOT_FOUND, message)
+            } else {
+                (StatusCode::INTERNAL_SERVER_ERROR, message)
+            }
+        })
 }
 
 pub async fn get_recurring_delivery_handler(
@@ -615,17 +609,15 @@ pub async fn register_recurring_prompt(
         .map(str::to_string);
     let manuscript_ctx = if let Some(id) = manuscript_id.as_deref() {
         Some(
-            crate::identity_manuscript::build_manuscript_context(id).map_err(|err| {
-                (StatusCode::BAD_REQUEST, err.to_string())
-            })?,
+            crate::identity_manuscript::build_manuscript_context(id)
+                .map_err(|err| (StatusCode::BAD_REQUEST, err.to_string()))?,
         )
     } else {
         None
     };
     if let Some(ctx) = manuscript_ctx.as_ref() {
-        crate::identity_manuscript::validate_manuscript_for_scheduled_lane(ctx).map_err(
-            |err| (StatusCode::BAD_REQUEST, err.to_string()),
-        )?;
+        crate::identity_manuscript::validate_manuscript_for_scheduled_lane(ctx)
+            .map_err(|err| (StatusCode::BAD_REQUEST, err.to_string()))?;
     }
 
     let prompt = if let Some(ctx) = manuscript_ctx.as_ref() {
@@ -693,9 +685,7 @@ pub async fn register_recurring_prompt(
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
-    let max_tool_rounds = manuscript_ctx
-        .as_ref()
-        .and_then(|ctx| ctx.max_tool_rounds);
+    let max_tool_rounds = manuscript_ctx.as_ref().and_then(|ctx| ctx.max_tool_rounds);
 
     let (job_type, payload_template_ref) = match execution_mode.as_str() {
         "prompt" => {
@@ -706,8 +696,7 @@ pub async fn register_recurring_prompt(
                 system_prompt: request.system_prompt.clone(),
                 policy_profile: request.policy_profile.or_else(|| {
                     Some(
-                        default_policy_profile_for_lane(EngineExecutionLane::Scheduled)
-                            .to_string(),
+                        default_policy_profile_for_lane(EngineExecutionLane::Scheduled).to_string(),
                     )
                 }),
                 model_hint: request.model_hint.clone(),
@@ -742,17 +731,15 @@ pub async fn register_recurring_prompt(
             );
             (
                 crate::recurring_agent_turn::RECURRING_AGENT_TURN_JOB_TYPE.to_string(),
-                agent_payload.to_payload_ref().map_err(|err| {
-                    (StatusCode::BAD_REQUEST, err.to_string())
-                })?,
+                agent_payload
+                    .to_payload_ref()
+                    .map_err(|err| (StatusCode::BAD_REQUEST, err.to_string()))?,
             )
         }
         other => {
             return Err((
                 StatusCode::BAD_REQUEST,
-                format!(
-                    "execution_mode={other} is invalid; use agent_turn or prompt"
-                ),
+                format!("execution_mode={other} is invalid; use agent_turn or prompt"),
             ));
         }
     };
@@ -914,7 +901,12 @@ pub async fn archive_ask_job(
 
     crate::workspace::ask_job_store::ask_job_store()
         .archive(&job_id, request.purge_output)
-        .ok_or_else(|| (StatusCode::NOT_FOUND, format!("ask job not found: {job_id}")))?;
+        .ok_or_else(|| {
+            (
+                StatusCode::NOT_FOUND,
+                format!("ask job not found: {job_id}"),
+            )
+        })?;
 
     Ok(Json(crate::ArchiveAskJobResponse {
         job_id: job_id.clone(),
@@ -1082,7 +1074,10 @@ fn build_job_evidence_report(job_id: &str, payload: &Value) -> Option<JobEvidenc
 
 /// Fetches job attempts, gracefully handling the case where the backend table
 /// does not exist yet (fresh database without auto-migration).
-pub fn derive_job_result_status(latest_outcome: Option<&str>, attempt_count: usize) -> (String, bool) {
+pub fn derive_job_result_status(
+    latest_outcome: Option<&str>,
+    attempt_count: usize,
+) -> (String, bool) {
     if attempt_count == 0 {
         return ("queued".to_string(), false);
     }

@@ -6,9 +6,9 @@ use crate::daemon::types::{
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
+use super::DaemonState;
 use super::sdk::{client, sdk_error};
 use super::workshop_http;
-use super::DaemonState;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateSessionRequest {
@@ -73,10 +73,18 @@ pub async fn session_list(
         ("limit", capped.to_string()),
         ("include_verification", include_verification.to_string()),
     ];
-    if let Some(search) = q.as_deref().map(str::trim).filter(|value| !value.is_empty()) {
+    if let Some(search) = q
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
         query.push(("q", search.to_string()));
     }
-    if let Some(page_cursor) = cursor.as_deref().map(str::trim).filter(|value| !value.is_empty()) {
+    if let Some(page_cursor) = cursor
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
         query.push(("cursor", page_cursor.to_string()));
     }
     workshop_http::get_json_query(&state, "/v1/sessions", &query).await
@@ -376,8 +384,16 @@ pub async fn turn_create(
         .unwrap_or_else(|| "default".to_string());
     let stage_routing = stage_routing.unwrap_or_else(|| {
         StageRoutingMatrix::default_for(
-            if provider.is_empty() { "openai" } else { provider.as_str() },
-            if model.is_empty() { "gpt-5.4-mini" } else { model.as_str() },
+            if provider.is_empty() {
+                "openai"
+            } else {
+                provider.as_str()
+            },
+            if model.is_empty() {
+                "gpt-5.4-mini"
+            } else {
+                model.as_str()
+            },
         )
     });
     let channel_surface = channel_surface

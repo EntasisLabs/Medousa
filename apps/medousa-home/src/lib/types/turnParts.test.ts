@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   composeTurnMarkdown,
+  hostContextFromParts,
+  hostContextLabel,
   progressFromParts,
   toolRunsFromParts,
   uiArtifactsFromParts,
@@ -52,5 +54,30 @@ describe("turnParts", () => {
         heightPx: 480,
       },
     ]);
+  });
+
+  it("projects host context into a concise label without journal text", () => {
+    const parts: TurnPart[] = [
+      { kind: "text", markdown: "Explain this" },
+      {
+        kind: "host_context",
+        context: {
+          source: "vscode",
+          resource_kind: "file",
+          resource_path: "/work/src/main.ts",
+          selection: {
+            text: "const answer = 42;",
+            start: { line: 9, character: 0 },
+            end: { line: 11, character: 1 },
+          },
+          diagnostics: [{ message: "Example warning" }],
+          related_resources: [],
+        },
+      },
+    ];
+
+    const context = hostContextFromParts(parts);
+    expect(hostContextLabel(context)).toBe("VS Code · main.ts · lines 10–12 · 1 diagnostic");
+    expect(composeTurnMarkdown("Explain this", parts)).toBe("Explain this");
   });
 });

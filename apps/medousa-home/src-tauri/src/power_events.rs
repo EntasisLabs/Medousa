@@ -42,7 +42,7 @@ pub fn install(_app: &tauri::AppHandle) {
 
     use windows::Win32::Foundation::HANDLE;
     use windows::Win32::System::Power::{
-        PowerRegisterSuspendResumeNotification, DEVICE_NOTIFY_SUBSCRIBE_PARAMETERS,
+        DEVICE_NOTIFY_SUBSCRIBE_PARAMETERS, PowerRegisterSuspendResumeNotification,
     };
     use windows::Win32::UI::WindowsAndMessaging::{DEVICE_NOTIFY_CALLBACK, PBT_APMSUSPEND};
 

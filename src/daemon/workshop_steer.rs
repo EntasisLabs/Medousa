@@ -1,6 +1,6 @@
+use axum::Json;
 use axum::extract::{ConnectInfo, Path, State};
 use axum::http::{HeaderMap, StatusCode};
-use axum::Json;
 use serde::Deserialize;
 use serde_json::json;
 use std::net::SocketAddr;
@@ -39,10 +39,7 @@ pub async fn steer_bound_workshop_handler(
     }
 }
 
-fn resolve_steer_speaker(
-    ip: std::net::IpAddr,
-    headers: &HeaderMap,
-) -> Option<String> {
+fn resolve_steer_speaker(ip: std::net::IpAddr, headers: &HeaderMap) -> Option<String> {
     if let Some(bound) = crate::pairing::resolve_request_profile_id(headers) {
         return Some(bound);
     }

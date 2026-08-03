@@ -2,6 +2,7 @@ import type { Editor } from "@tiptap/core";
 import type { SlashBlockId } from "$lib/utils/vaultMarkdownEdit";
 import {
   SLASH_BOARD_TEMPLATE,
+  SLASH_DRAW_TEMPLATE,
   SLASH_TOC_TEMPLATE,
 } from "$lib/utils/vaultTemplates";
 import {
@@ -133,6 +134,8 @@ export function applyLiveSlashBlock(editor: Editor, block: SlashBlockId): boolea
         .run();
     case "board":
       return focusChain(editor).insertContent(SLASH_BOARD_TEMPLATE).run();
+    case "draw":
+      return focusChain(editor).insertFenceBlock(SLASH_DRAW_TEMPLATE).run();
     case "toc":
       return focusChain(editor).insertFenceBlock(SLASH_TOC_TEMPLATE).run();
     case "callout":

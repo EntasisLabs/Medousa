@@ -1,10 +1,11 @@
 use medousa_types::{
-    ArtifactRetentionStatusResponse, UpdateArtifactRetentionRequest, UpdateArtifactRetentionResponse,
+    ArtifactRetentionStatusResponse, UpdateArtifactRetentionRequest,
+    UpdateArtifactRetentionResponse,
 };
 use tauri::State;
 
-use super::workshop_http;
 use super::DaemonState;
+use super::workshop_http;
 
 #[tauri::command]
 pub async fn artifact_retention_status(

@@ -21,6 +21,7 @@
   import { findLedgerTable } from "$lib/utils/markdownTable";
   import { findKanbanBoard, noteHasKanbanBoard } from "$lib/utils/markdownKanban";
   import { noteHasSlidesDeck } from "$lib/utils/markdownSlides";
+  import { noteHasDraw } from "$lib/draw/drawDocument";
   import { kindFromNoteContent } from "$lib/utils/dataFirstSurface";
   import { parseWorkbookManifest } from "$lib/utils/workbook";
   import VaultEmptyState from "./VaultEmptyState.svelte";
@@ -28,6 +29,7 @@
   import LedgerTableEditor from "./LedgerTableEditor.svelte";
   import KanbanBoardEditor from "./KanbanBoardEditor.svelte";
   import SlidesDeckEditor from "./SlidesDeckEditor.svelte";
+  import DrawNoteEditor from "./DrawNoteEditor.svelte";
   import WorkbookManifestEditor from "./WorkbookManifestEditor.svelte";
   import VaultMarkdownPreview from "./VaultMarkdownPreview.svelte";
   import VaultNoteLinksPanel from "./VaultNoteLinksPanel.svelte";
@@ -137,6 +139,7 @@
   let markdownEditorEl = $state<ReturnType<typeof VaultMarkdownEditor> | null>(null);
   let slidesDeckEl = $state<ReturnType<typeof SlidesDeckEditor> | null>(null);
   let outlineActiveId = $state<string | null>(null);
+  let outlineScrolling = $state(false);
   let outlineMode = $state<"panel" | "rail">(readVaultOutlineMode());
 
   function setOutlineMode(mode: "panel" | "rail") {
@@ -193,6 +196,10 @@
   const hasKanbanBoard = $derived(noteHasKanbanBoard(displayContent));
   const kanbanBoard = $derived(hasKanbanBoard ? findKanbanBoard(displayContent) : null);
   const hasSlidesDeck = $derived(noteHasSlidesDeck(displayContent));
+  const drawKind = $derived(
+    contentKind === "draw" || vault.selectedKind === "draw",
+  );
+  const hasDraw = $derived(noteHasDraw(displayContent));
 
   const showLedgerTable = $derived(
     !mobile &&
@@ -223,6 +230,8 @@
         (vault.editorMode === "edit" && vault.deckEditMode === "deck")),
   );
 
+  const showDrawSurface = $derived(drawKind && hasDraw);
+
   const showMarkdownEditor = $derived(
     // Keep-alive hosts retain TipTap even while unfocused (global mode is for the focused note).
     (keepAlive && !bound) ||
@@ -230,7 +239,8 @@
         !showLedgerTable &&
         !showWorkbookManifest &&
         !showKanbanBoard &&
-        !showSlidesDeck),
+        !showSlidesDeck &&
+        !showDrawSurface),
   );
 
   const notePlane = $derived(vault.notePlane);
@@ -255,7 +265,8 @@
       !showKanbanBoard &&
       !showLedgerTable &&
       !showWorkbookManifest &&
-      !showSlidesDeck,
+      !showSlidesDeck &&
+      !showDrawSurface,
   );
 
   /** Preview surface is mounted (preview-only or Build split). */
@@ -321,6 +332,7 @@
   $effect(() => {
     if (!showHeadingOutline) {
       outlineActiveId = null;
+      outlineScrolling = false;
       return;
     }
     // Bind once per surface/host — do NOT rebind on every draft keystroke.
@@ -355,13 +367,29 @@
           scrollRoot)
         : scrollRoot;
       cleanup?.();
-      cleanup = observeActiveMarkdownHeading(
+      const stopObservingActiveHeading = observeActiveMarkdownHeading(
         scrollRoot,
         (id) => {
           outlineActiveId = id;
         },
         contentRoot,
       );
+      let scrollEndTimer: ReturnType<typeof setTimeout> | undefined;
+      const onOutlineScroll = () => {
+        outlineScrolling = true;
+        if (scrollEndTimer) clearTimeout(scrollEndTimer);
+        scrollEndTimer = setTimeout(() => {
+          outlineScrolling = false;
+          scrollEndTimer = undefined;
+        }, 160);
+      };
+      scrollRoot.addEventListener("scroll", onOutlineScroll, { passive: true });
+      cleanup = () => {
+        stopObservingActiveHeading();
+        scrollRoot.removeEventListener("scroll", onOutlineScroll);
+        if (scrollEndTimer) clearTimeout(scrollEndTimer);
+        outlineScrolling = false;
+      };
     };
 
     void tick().then(bind);
@@ -408,7 +436,8 @@
       !showLedgerTable &&
       !showWorkbookManifest &&
       !showKanbanBoard &&
-      !showSlidesDeck,
+      !showSlidesDeck &&
+      !showDrawSurface,
   );
 
   $effect(() => {
@@ -462,7 +491,8 @@
           !showLedgerTable &&
           !showWorkbookManifest &&
           !showKanbanBoard &&
-          !showSlidesDeck)),
+          !showSlidesDeck &&
+          !showDrawSurface)),
   );
 
   const findSourceText = $derived(
@@ -1097,6 +1127,12 @@
             disabled={!interactive || vault.saving || vault.editorMode === "preview"}
             onchange={(next) => vault.markDirty(next, { path: notePath })}
           />
+        {:else if showDrawSurface}
+          <DrawNoteEditor
+            content={displayContent}
+            disabled={!interactive || vault.saving || mobile}
+            onchange={(next) => vault.markDirty(next, { path: notePath })}
+          />
         {:else if showMarkdownEditor}
           <VaultMarkdownEditor
             bind:this={markdownEditorEl}
@@ -1146,6 +1182,7 @@
           <MarkdownHeadingOutline
             items={outlineItems}
             activeId={outlineActiveId}
+            scrolling={outlineScrolling}
             mode="rail"
             showModeToggle
             onSelect={jumpToOutlineHeading}

@@ -28,7 +28,7 @@ import type {
 } from "$lib/types/session";
 import type { WorkCard } from "$lib/types/workspace";
 import { isAskJobId, askJobIdFromSession, askSessionId } from "$lib/types/askJob";
-import { reasoningFromParts, progressFromParts, toolRunsFromParts, userMediaFromParts, uiArtifactsFromParts } from "$lib/types/turnParts";
+import { hostContextFromParts, reasoningFromParts, progressFromParts, toolRunsFromParts, userMediaFromParts, uiArtifactsFromParts } from "$lib/types/turnParts";
 import { mapStreamUiArtifact, replaceUiArtifactEntry } from "$lib/types/artifact";
 import { chatScenes } from "$lib/liquid/surfaces/chat/chatScenes.svelte";
 import { chatInteractions } from "$lib/liquid/surfaces/chat/chatInteractions";
@@ -755,7 +755,9 @@ export class ChatStore {
 
   async refreshSessions(options?: { force?: boolean; q?: string }) {
     const force = options?.force ?? false;
-    const query = (options?.q ?? this.sessionListQuery).trim();
+    // Session-list search is a local UI filter. Background lifecycle refreshes
+    // must always repopulate the full cache rather than inheriting typed text.
+    const query = (options?.q ?? "").trim();
     if (options?.q !== undefined) {
       this.sessionListQuery = query;
     }
@@ -902,7 +904,7 @@ export class ChatStore {
     }
   }
 
-  async newSession() {
+  async newSession(options?: { shellContext?: { desktopId: string; groupId: string } }) {
     this.flushDraftPersist();
     this.stashFocusedRuntime();
     const id = `medousa-home-${crypto.randomUUID()}`;
@@ -917,11 +919,23 @@ export class ChatStore {
     this.contextUsagePanelOpen = false;
     chatStreamPool.acquire(id);
     this.stashFocusedRuntime();
-    await this.refreshSessions({ force: true });
     // Shell tab host mounts ChatSessionView by shell tab sessionId — without
     // opening a tab here the previous chat (often full of worker history) stays on screen.
     const { shellTabs } = await import("$lib/stores/shellTabs.svelte");
-    shellTabs.openChat(id, { activate: true });
+    const shellContext = options?.shellContext;
+    if (
+      !shellContext ||
+      (shellTabs.activeDesktopId === shellContext.desktopId &&
+        shellTabs.activeGroupId === shellContext.groupId)
+    ) {
+      shellTabs.openChat(id, {
+        activate: true,
+        groupId: shellContext?.groupId,
+      });
+    }
+    // A pristine local session is absent from daemon history until its first
+    // turn. Do not make tab creation wait behind a session-list search/refresh.
+    void this.refreshSessions({ force: true, q: "" });
     const { workshops } = await import("$lib/stores/workshops.svelte");
     void workshops.saveActiveSession(id);
   }
@@ -1079,12 +1093,21 @@ export class ChatStore {
   }
 
   async switchSession(sessionId: string) {
+    const sourceSessionId = this.sessionId.trim();
     const mirrorShellChat = () => {
       chatStreamPool.acquire(sessionId);
       void import("$lib/stores/shellTabs.svelte").then(({ shellTabs }) => {
+        // A session switch belongs to the chat tab that initiated it. If the
+        // user changed desktop/pane while history was loading, never mirror the
+        // old request into the newly active layout.
+        if (this.sessionId.trim() !== sessionId) return;
         const active = shellTabs.activeTab;
-        if (active?.kind === "chat" && active.sessionId === sessionId) return;
-        shellTabs.openChat(sessionId, { activate: true });
+        if (active?.kind !== "chat" || active.sessionId !== sourceSessionId) return;
+        if (active.sessionId === sessionId) return;
+        shellTabs.openChat(sessionId, {
+          activate: true,
+          groupId: shellTabs.activeGroupId,
+        });
       });
     };
 
@@ -3492,6 +3515,7 @@ function mapTurns(
     statusLine:
       turn.role === "assistant" ? progressFromParts(turn.parts ?? null) : null,
     mediaAttachments: userMediaFromParts(turn.parts ?? null),
+    hostContext: hostContextFromParts(turn.parts ?? null),
     speakerProfileId: turn.speaker_profile_id?.trim() || null,
   }));
 }

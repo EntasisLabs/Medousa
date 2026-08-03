@@ -1,9 +1,9 @@
-use crate::daemon::types::{MediaUploadResponse, MediaRef};
+use crate::daemon::types::{MediaRef, MediaUploadResponse};
 use crate::workshop_transport::MultipartField;
 use tauri::State;
 
-use super::workshop_http;
 use super::DaemonState;
+use super::workshop_http;
 
 #[tauri::command]
 pub async fn media_upload(

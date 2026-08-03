@@ -126,10 +126,7 @@ fn apply_env_file(path: &Path) -> std::io::Result<()> {
         if key.is_empty() || std::env::var_os(key).is_some() {
             continue;
         }
-        let value = value
-            .trim()
-            .trim_matches('"')
-            .trim_matches('\'');
+        let value = value.trim().trim_matches('"').trim_matches('\'');
         // SAFETY: called once at process startup before spawning children.
         unsafe { std::env::set_var(key, value) };
     }

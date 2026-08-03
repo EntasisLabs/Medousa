@@ -63,3 +63,31 @@ Capabilities catalog: `GET /v1/capabilities` — SDK `capabilities().list()`.
 
 - **HTTP-only clients** do not invoke tools directly; they send prompts via interactive turn or jobs API.
 - **Custom UIs** should handle stream events (`tool_*`, `ui_artifact`, `artifact_updated`, `browser_challenge`) — [custom-chat-ui.md](../cookbook/custom-chat-ui.md).
+
+---
+
+## Registered client tools
+
+Native integrations can keep a capability in their own runtime while allowing
+the daemon's model turn to call it. A client registers definitions with
+`POST /v1/clients/register`, including a `channel_surface` such as `browser`,
+`vscode`, or `obsidian`. The daemon adds those definitions only to matching
+turns and routes model invocations through a pull queue:
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| POST | `/v1/clients/register` | Register/refresh a client and its tool definitions |
+| GET | `/v1/clients/{client_id}/tools/next?wait_ms=…` | Long-poll the next invocation; returns `null` when the wait expires |
+| POST | `/v1/clients/{client_id}/tools/{request_id}/result` | Return `{ "output": … }` or `{ "error": "…" }` |
+
+This is intentionally a client-pull protocol: browser and editor hosts do not
+need to expose an inbound HTTP server. Registrations expire after a short idle
+TTL, and individual calls have a bounded wait. Tool names are validated and
+must not collide with daemon-local tools. Hosts should keep the `next` poll
+running while their surface is available and complete every request they
+receive.
+
+The browser companion currently registers only the read-only
+`browser_page_snapshot` tool. The current bridge requires
+`effect_class="external_read"`; write and side-effecting tools need an
+explicit approval model before they are exposed.

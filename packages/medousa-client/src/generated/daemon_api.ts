@@ -88,6 +88,40 @@ export interface InteractiveTurnResponse {
   turn_id: string;
 }
 
+export interface HostContextPosition {
+  character: number;
+  line: number;
+}
+
+export interface HostContextDiagnostic {
+  end?: HostContextPosition | null;
+  message: string;
+  severity?: string | null;
+  source?: string | null;
+  start?: HostContextPosition | null;
+}
+
+export interface HostContextSelection {
+  end?: HostContextPosition | null;
+  start?: HostContextPosition | null;
+  text: string;
+}
+
+export interface HostTurnContext {
+  cursor?: HostContextPosition | null;
+  diagnostics?: HostContextDiagnostic[];
+  document_excerpt?: string | null;
+  language?: string | null;
+  related_resources?: string[];
+  resource_kind?: string | null;
+  resource_path?: string | null;
+  resource_title?: string | null;
+  resource_url?: string | null;
+  selection?: HostContextSelection | null;
+  source: string;
+  workspace?: string | null;
+}
+
 export interface MediaRef {
   kind: string;
   label?: string | null;
@@ -123,6 +157,7 @@ export interface TurnSurfaceContext {
 
 export interface InteractiveTurnRequest {
   additional_manuscript_ids?: string[] | null;
+  host_context?: HostTurnContext | null;
   identity_user_id?: string | null;
   manuscript_id?: string | null;
   max_tool_rounds?: number | null;

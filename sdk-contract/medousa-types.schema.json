@@ -8955,6 +8955,17 @@
           "type": "string"
         }
       },
+      "host_context": {
+        "description": "Advisory editor, note, or page snapshot. The daemon bounds and formats it.",
+        "anyOf": [
+          {
+            "$ref": "#/definitions/HostTurnContext"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
       "identity_user_id": {
         "description": "Optional identity principal override (debug/internal). Default: active workshop profile.",
         "type": [
@@ -9071,6 +9082,185 @@
       }
     },
     "definitions": {
+      "HostContextDiagnostic": {
+        "type": "object",
+        "required": [
+          "message"
+        ],
+        "properties": {
+          "end": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/HostContextPosition"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "severity": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "start": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/HostContextPosition"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "HostContextPosition": {
+        "type": "object",
+        "required": [
+          "character",
+          "line"
+        ],
+        "properties": {
+          "character": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "line": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          }
+        }
+      },
+      "HostContextSelection": {
+        "type": "object",
+        "required": [
+          "text"
+        ],
+        "properties": {
+          "end": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/HostContextPosition"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "start": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/HostContextPosition"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "text": {
+            "type": "string"
+          }
+        }
+      },
+      "HostTurnContext": {
+        "description": "Bounded, advisory context captured by an editor, notes app, or browser. This never grants filesystem or vault authority to the sending client.",
+        "type": "object",
+        "required": [
+          "source"
+        ],
+        "properties": {
+          "cursor": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/HostContextPosition"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "diagnostics": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/HostContextDiagnostic"
+            }
+          },
+          "document_excerpt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "language": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "related_resources": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "resource_kind": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "resource_path": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "resource_title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "resource_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "selection": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/HostContextSelection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source": {
+            "type": "string"
+          },
+          "workspace": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
       "MediaRef": {
         "description": "Reference to a user file stored locally under medousa/media/ (not inline bytes).",
         "type": "object",
@@ -10000,6 +10190,18 @@
           "runtimeVersion"
         ],
         "properties": {
+          "artifactDigest": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "binaryDigest": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "compiledBackends": {
             "type": "array",
             "items": {
@@ -10008,6 +10210,12 @@
           },
           "controlPlaneVersion": {
             "type": "string"
+          },
+          "recipeRevision": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "runtimeName": {
             "type": "string"
@@ -11120,6 +11328,16 @@
       },
       "phase": {
         "$ref": "#/definitions/LocalRuntimePhase"
+      },
+      "worker": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/LocalWorkerStatus"
+          },
+          {
+            "type": "null"
+          }
+        ]
       }
     },
     "definitions": {
@@ -11136,6 +11354,77 @@
           "unloading",
           "failed"
         ]
+      },
+      "LocalWorkerStatus": {
+        "type": "object",
+        "required": [
+          "generationId",
+          "modelAlias",
+          "modelRepo",
+          "phase",
+          "pid",
+          "protocolVersion",
+          "recipeRevision",
+          "runtimeName",
+          "runtimeVersion",
+          "startedAt"
+        ],
+        "properties": {
+          "artifactDigest": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "binaryDigest": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "compiledBackends": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "generationId": {
+            "type": "string"
+          },
+          "modelAlias": {
+            "type": "string"
+          },
+          "modelRepo": {
+            "type": "string"
+          },
+          "phase": {
+            "$ref": "#/definitions/LocalRuntimePhase"
+          },
+          "pid": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "protocolVersion": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "recipeRevision": {
+            "type": "string"
+          },
+          "runtimeName": {
+            "type": "string"
+          },
+          "runtimeVersion": {
+            "type": "string"
+          },
+          "startedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
       }
     }
   },
@@ -12585,6 +12874,185 @@
           }
         }
       },
+      "HostContextDiagnostic": {
+        "type": "object",
+        "required": [
+          "message"
+        ],
+        "properties": {
+          "end": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/HostContextPosition"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "severity": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "start": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/HostContextPosition"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "HostContextPosition": {
+        "type": "object",
+        "required": [
+          "character",
+          "line"
+        ],
+        "properties": {
+          "character": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "line": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          }
+        }
+      },
+      "HostContextSelection": {
+        "type": "object",
+        "required": [
+          "text"
+        ],
+        "properties": {
+          "end": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/HostContextPosition"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "start": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/HostContextPosition"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "text": {
+            "type": "string"
+          }
+        }
+      },
+      "HostTurnContext": {
+        "description": "Bounded, advisory context captured by an editor, notes app, or browser. This never grants filesystem or vault authority to the sending client.",
+        "type": "object",
+        "required": [
+          "source"
+        ],
+        "properties": {
+          "cursor": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/HostContextPosition"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "diagnostics": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/HostContextDiagnostic"
+            }
+          },
+          "document_excerpt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "language": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "related_resources": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "resource_kind": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "resource_path": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "resource_title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "resource_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "selection": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/HostContextSelection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source": {
+            "type": "string"
+          },
+          "workspace": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
       "TurnArtifactRef": {
         "type": "object",
         "required": [
@@ -12802,6 +13270,24 @@
               },
               "mime": {
                 "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "context",
+              "kind"
+            ],
+            "properties": {
+              "context": {
+                "$ref": "#/definitions/HostTurnContext"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "host_context"
+                ]
               }
             }
           },
@@ -13171,6 +13657,185 @@
           }
         }
       },
+      "HostContextDiagnostic": {
+        "type": "object",
+        "required": [
+          "message"
+        ],
+        "properties": {
+          "end": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/HostContextPosition"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "severity": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "start": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/HostContextPosition"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "HostContextPosition": {
+        "type": "object",
+        "required": [
+          "character",
+          "line"
+        ],
+        "properties": {
+          "character": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "line": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          }
+        }
+      },
+      "HostContextSelection": {
+        "type": "object",
+        "required": [
+          "text"
+        ],
+        "properties": {
+          "end": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/HostContextPosition"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "start": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/HostContextPosition"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "text": {
+            "type": "string"
+          }
+        }
+      },
+      "HostTurnContext": {
+        "description": "Bounded, advisory context captured by an editor, notes app, or browser. This never grants filesystem or vault authority to the sending client.",
+        "type": "object",
+        "required": [
+          "source"
+        ],
+        "properties": {
+          "cursor": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/HostContextPosition"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "diagnostics": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/HostContextDiagnostic"
+            }
+          },
+          "document_excerpt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "language": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "related_resources": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "resource_kind": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "resource_path": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "resource_title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "resource_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "selection": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/HostContextSelection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source": {
+            "type": "string"
+          },
+          "workspace": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
       "TurnArtifactRef": {
         "type": "object",
         "required": [
@@ -13388,6 +14053,24 @@
               },
               "mime": {
                 "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "context",
+              "kind"
+            ],
+            "properties": {
+              "context": {
+                "$ref": "#/definitions/HostTurnContext"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "host_context"
+                ]
               }
             }
           },

@@ -1,0 +1,28 @@
+{
+  "name": "medousa-browser",
+  "version": "0.1.0",
+  "description": "A page-aware Medousa companion for Chromium browsers",
+  "private": true,
+  "type": "module",
+  "license": "Apache-2.0 OR MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/EntasisLabs/Medousa.git"
+  },
+  "scripts": {
+    "prebuild": "tsc -p ../../packages/medousa-client/tsconfig.json",
+    "check": "tsc --noEmit",
+    "dev": "node esbuild.config.mjs",
+    "build": "npm run prebuild && npm run check && node esbuild.config.mjs production",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@medousa/client": "file:../../packages/medousa-client"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.0.270",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.6"
+  }
+}

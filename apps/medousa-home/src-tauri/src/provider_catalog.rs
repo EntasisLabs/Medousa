@@ -343,7 +343,9 @@ const PROVIDERS: &[ProviderSpec] = &[
 
 pub fn find_provider(id: &str) -> Option<&'static ProviderSpec> {
     let normalized = id.trim().to_ascii_lowercase();
-    PROVIDERS.iter().find(|entry| entry.id.eq_ignore_ascii_case(&normalized))
+    PROVIDERS
+        .iter()
+        .find(|entry| entry.id.eq_ignore_ascii_case(&normalized))
 }
 
 #[derive(Debug, Clone, Serialize)]

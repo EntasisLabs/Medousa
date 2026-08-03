@@ -31,6 +31,7 @@ pub mod engine {
 }
 pub mod turn_delivery;
 pub mod heartbeat_turn;
+pub mod host_context;
 pub mod context_usage;
 pub mod continuation;
 pub mod presentation;

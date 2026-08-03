@@ -79,4 +79,9 @@ describe("vaultFrontmatter", () => {
     expect(resolveKindFromPath("resumes/elle.md")).toBe("resume");
     expect(resolveKindFromPath("cv/elle.md")).toBe("resume");
   });
+
+  it("normalizes drawing aliases and path inference", () => {
+    expect(normalizeKind("sketch")).toBe("draw");
+    expect(resolveKindFromPath("drawings/idea.md")).toBe("draw");
+  });
 });

@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::session::{ConversationTurn, SessionHistorySummary};
 use crate::stage_routing::StageRoutingMatrix;
+use crate::turn::HostTurnContext;
 
 pub const DEFAULT_DAEMON_BIND: &str = "127.0.0.1:7419";
 pub const DEFAULT_DAEMON_URL: &str = "http://127.0.0.1:7419";
@@ -1206,6 +1207,9 @@ pub struct InteractiveTurnRequest {
     /// Channel adapter context for ambient prompting (ingest/TUI surfaces).
     #[serde(default)]
     pub surface: Option<TurnSurfaceContext>,
+    /// Advisory editor, note, or page snapshot. The daemon bounds and formats it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host_context: Option<HostTurnContext>,
     /// When set, overrides `tui_defaults.json` for this turn (TUI live settings).
     #[serde(default)]
     pub max_tool_rounds: Option<usize>,
@@ -1292,6 +1296,8 @@ pub struct CreateTurnTicketRequest {
     pub stage_routing: Option<StageRoutingMatrix>,
     #[serde(default)]
     pub surface: Option<TurnSurfaceContext>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host_context: Option<HostTurnContext>,
     #[serde(default)]
     pub model_hint: Option<String>,
     #[serde(default)]

@@ -2,8 +2,8 @@ pub mod product_config;
 pub mod secrets;
 
 use product_config::{
-    load_product_config_summary, save_channel_product_config, ChannelConfigSave,
-    ProductConfigSummary,
+    ChannelConfigSave, ProductConfigSummary, load_product_config_summary,
+    save_channel_product_config,
 };
 
 #[tauri::command]

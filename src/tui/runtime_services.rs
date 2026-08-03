@@ -12,6 +12,7 @@ use stasis::prelude_ext::{MemoryContextReader, MemoryContextWriter};
 use tokio::sync::mpsc;
 
 use crate::engine_context::EngineExecutionLane;
+use crate::client_tools::{ClientRegistry, ClientToolRegistry};
 use crate::identity_memory::{
     resolve_identity_channel_id, resolve_identity_persona_id, resolve_tool_identity_user_id,
 };
@@ -118,6 +119,7 @@ pub(crate) async fn build_tui_runtime_services(
         allowed_grapheme_modules,
         session_id,
         workshop_operator_identity,
+        ClientRegistry::new(),
         event_tx,
     )
     .await
@@ -139,6 +141,7 @@ pub(crate) async fn assemble_tui_runtime(
     allowed_grapheme_modules: Vec<String>,
     session_id: &str,
     workshop_operator_identity: bool,
+    client_registry: ClientRegistry,
     event_tx: mpsc::Sender<TuiEvent>,
 ) -> anyhow::Result<TuiRuntime> {
     let resolved_provider = crate::resolve_llm_provider(provider);
@@ -489,8 +492,13 @@ pub(crate) async fn assemble_tui_runtime(
 
     let prompt_pipeline = PromptExecutionPipeline::new(chat_client);
     let base_registry: Arc<dyn ToolRegistry> = Arc::new(tool_registry);
-    let guarded_registry: Arc<dyn ToolRegistry> = Arc::new(PolicyAwareToolRegistry::new(
+    let client_tool_registry: Arc<dyn ToolRegistry> = Arc::new(ClientToolRegistry::new(
         base_registry,
+        client_registry.clone(),
+        turn_scope.clone(),
+    ));
+    let guarded_registry: Arc<dyn ToolRegistry> = Arc::new(PolicyAwareToolRegistry::new(
+        client_tool_registry,
         allowed_grapheme_modules,
         EngineExecutionLane::Interactive,
     ));
@@ -511,6 +519,7 @@ pub(crate) async fn assemble_tui_runtime(
         memory_reader,
         memory_writer,
         memory_operations,
+        client_registry,
         turn_scope,
         worker_scheduler,
     })

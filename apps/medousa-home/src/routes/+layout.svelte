@@ -11,7 +11,7 @@
     const bootstrapSplash = document.getElementById("medousa-bootstrap-splash");
     if (!bootstrapSplash) return;
     bootstrapSplash.setAttribute("data-exiting", "true");
-    window.setTimeout(() => bootstrapSplash.remove(), 220);
+    window.setTimeout(() => bootstrapSplash.remove(), 300);
   });
 
   let { children } = $props();

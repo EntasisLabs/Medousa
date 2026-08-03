@@ -36,7 +36,7 @@ fn sync_impl(payload: LiveActivityPayload) -> Result<HomeWidgetSyncResult, Strin
 
 #[cfg(target_os = "ios")]
 mod ios {
-    use super::{HomeWidgetSyncResult, BRIDGE_MISSING};
+    use super::{BRIDGE_MISSING, HomeWidgetSyncResult};
     use crate::live_activity::LiveActivityPayload;
     use std::ffi::{CStr, CString};
     use std::os::raw::c_char;

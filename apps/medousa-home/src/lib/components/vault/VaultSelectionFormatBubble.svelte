@@ -90,19 +90,45 @@
     return row + 120;
   }
 
+  function viewportBox(): { left: number; top: number; width: number; height: number } {
+    const viewport = window.visualViewport;
+    if (viewport) {
+      return {
+        left: viewport.offsetLeft,
+        top: viewport.offsetTop,
+        width: viewport.width,
+        height: viewport.height,
+      };
+    }
+    return {
+      left: 0,
+      top: 0,
+      width: window.innerWidth,
+      height: window.innerHeight,
+    };
+  }
+
   const style = $derived.by(() => {
     if (!anchor) return "";
     const pad = 8;
-    const bubbleW = Math.max(bubbleEl?.offsetWidth ?? 280, 200);
+    const view = viewportBox();
+    const bubbleW = Math.min(
+      Math.max(bubbleEl?.offsetWidth ?? 280, 200),
+      Math.max(0, view.width - pad * 2),
+    );
     const bubbleH = Math.max(measuredH, estimateClearance());
     let left = anchor.left + anchor.width / 2 - bubbleW / 2;
-    left = Math.max(pad, Math.min(left, window.innerWidth - bubbleW - pad));
+    const minLeft = view.left + pad;
+    const maxLeft = Math.max(minLeft, view.left + view.width - bubbleW - pad);
+    left = Math.max(minLeft, Math.min(left, maxLeft));
     let top = anchor.top - bubbleH - SELECTION_GAP_PX;
-    if (top < pad) {
+    const minTop = view.top + pad;
+    const maxTop = Math.max(minTop, view.top + view.height - bubbleH - pad);
+    if (top < minTop) {
       // Not enough room above — sit below the highlight instead of covering it.
       top = anchor.top + anchor.height + SELECTION_GAP_PX;
     }
-    top = Math.max(pad, Math.min(top, window.innerHeight - bubbleH - pad));
+    top = Math.max(minTop, Math.min(top, maxTop));
     return `left:${Math.round(left)}px;top:${Math.round(top)}px;`;
   });
 

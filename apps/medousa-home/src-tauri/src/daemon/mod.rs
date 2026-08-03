@@ -1,9 +1,15 @@
-pub mod artifact;
 pub mod agents;
+pub mod artifact;
 pub mod calendar;
 pub mod catalog;
+pub mod component_runtime;
+pub mod component_store;
+pub mod environment;
+pub mod feeds;
+pub mod forge;
 pub mod grapheme;
 pub mod identity;
+pub mod iroh_hook;
 pub mod jobs;
 pub mod local_inference;
 pub mod locus;
@@ -13,30 +19,24 @@ pub mod model_catalog;
 pub mod recurring;
 pub mod runtime;
 pub mod sdk;
-pub mod iroh_hook;
 pub mod session;
 pub mod shared_mode;
 pub mod sse;
 pub mod stt;
+pub mod tool_history;
+pub mod turn_budget;
 pub mod types;
 pub mod vault;
 pub mod vault_git;
-pub mod workspace_card;
-pub mod turn_budget;
-pub mod tool_history;
-pub mod environment;
-pub mod feeds;
-pub mod forge;
-pub mod component_store;
-pub mod component_runtime;
 pub mod workflow;
 pub mod workshop_http;
+pub mod workspace_card;
 
 use crate::daemon::sse::stream_sse_json_workshop;
 use crate::daemon::types::{
-    DaemonHealth, EnvironmentStreamEvent, InteractiveTurnAccepted, InteractiveTurnRequest,
-    InteractiveTurnStreamEvent, StageRoutingMatrix, TurnSurfaceContext, WorkspaceStreamEvent,
-    DEFAULT_DAEMON_URL,
+    DEFAULT_DAEMON_URL, DaemonHealth, EnvironmentStreamEvent, InteractiveTurnAccepted,
+    InteractiveTurnRequest, InteractiveTurnStreamEvent, StageRoutingMatrix, TurnSurfaceContext,
+    WorkspaceStreamEvent,
 };
 use crate::workshop_transport;
 use reqwest::Client;
@@ -170,11 +170,7 @@ fn add_interactive_stream_slot(
 
 #[tauri::command]
 pub fn daemon_url(state: State<'_, DaemonState>) -> String {
-    state
-        .daemon_url
-        .lock()
-        .expect("daemon url lock")
-        .clone()
+    state.daemon_url.lock().expect("daemon url lock").clone()
 }
 
 #[tauri::command]
@@ -282,10 +278,7 @@ pub async fn workspace_stream_start(
                 .await;
             }
             Err(err) => {
-                let _ = app.emit(
-                    "workspace://error",
-                    serde_json::json!({ "message": err }),
-                );
+                let _ = app.emit("workspace://error", serde_json::json!({ "message": err }));
             }
         }
     });
@@ -343,10 +336,7 @@ pub async fn environment_stream_start(
                 .await;
             }
             Err(err) => {
-                let _ = app.emit(
-                    "environment://error",
-                    serde_json::json!({ "message": err }),
-                );
+                let _ = app.emit("environment://error", serde_json::json!({ "message": err }));
             }
         }
     });
@@ -424,8 +414,16 @@ pub async fn interactive_turn_send(
         .unwrap_or_else(|| "default".to_string());
     let stage_routing = stage_routing.unwrap_or_else(|| {
         StageRoutingMatrix::default_for(
-            if provider.is_empty() { "openai" } else { provider.as_str() },
-            if model.is_empty() { "gpt-5.4-mini" } else { model.as_str() },
+            if provider.is_empty() {
+                "openai"
+            } else {
+                provider.as_str()
+            },
+            if model.is_empty() {
+                "gpt-5.4-mini"
+            } else {
+                model.as_str()
+            },
         )
     });
 
@@ -452,6 +450,7 @@ pub async fn interactive_turn_send(
             supports_ui_artifacts: true,
             supports_browser_host,
         }),
+        host_context: None,
         max_tool_rounds: None,
         retry_runtime_max_rounds: None,
         manuscript_id: None,
@@ -515,10 +514,7 @@ pub async fn interactive_stream_start(
                 .await;
             }
             Err(err) => {
-                let _ = app.emit(
-                    "interactive://error",
-                    serde_json::json!({ "message": err }),
-                );
+                let _ = app.emit("interactive://error", serde_json::json!({ "message": err }));
             }
         }
     });

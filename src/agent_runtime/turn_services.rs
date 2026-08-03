@@ -149,7 +149,7 @@ pub fn build_prior_messages(
 
     if current_user_persisted
         && let Some(last) = selected.last()
-            && last.role == "user" && last.content.trim() == current_prompt.trim() {
+            && last.role == "user" {
                 selected.pop();
             }
 
@@ -424,7 +424,7 @@ pub fn build_prompt_pipeline_for_target(
 
 pub fn build_intent_classifier_recent_context(
     turns: &[ConversationTurn],
-    current_prompt: &str,
+    _current_prompt: &str,
     current_user_persisted: bool,
     max_turns: usize,
     max_chars: usize,
@@ -437,7 +437,7 @@ pub fn build_intent_classifier_recent_context(
 
     if current_user_persisted
         && let Some(last) = selected.last()
-            && last.role == "user" && last.content.trim() == current_prompt.trim() {
+            && last.role == "user" {
                 selected.pop();
             }
 

@@ -9,6 +9,7 @@ import {
   serializeKanbanColumns,
   wrapWithKanbanFrontmatter,
 } from "$lib/utils/markdownKanban";
+import { createEmptyDrawDocument, serializeDrawFence } from "$lib/draw/drawDocument";
 
 export const SLASH_VIEW_TEMPLATE = `\`\`\`medousa-view
 from: projects/data.md
@@ -29,6 +30,7 @@ export const SLASH_TABLE_TEMPLATE = `| name | status | due |
 export const SLASH_TOC_TEMPLATE = "```medousa-toc\n```\n\n";
 
 export const SLASH_BOARD_TEMPLATE = `${serializeKanbanColumns(DEFAULT_KANBAN_COLUMNS)}\n\n`;
+export const SLASH_DRAW_TEMPLATE = `${serializeDrawFence(createEmptyDrawDocument())}\n\n`;
 
 export function slugifyTitle(title: string): string {
   const slug = title
@@ -81,6 +83,7 @@ export type VaultTemplateId =
   | "database"
   | "view"
   | "ledger"
+  | "draw"
   | "inbox"
   | "bug"
   | "resume"
@@ -101,6 +104,7 @@ export const VAULT_ALL_TEMPLATES: VaultTemplateOption[] = [
   { id: "database", label: "Database table" },
   { id: "view", label: "Query view" },
   { id: "ledger", label: "Ledger" },
+  { id: "draw", label: "Drawing" },
   { id: "inbox", label: "Quick capture" },
   { id: "bug", label: "Bug report" },
   { id: "resume", label: "Resume" },
@@ -319,6 +323,14 @@ export function financeLedgerTemplate(title: string): string {
   );
 }
 
+export function drawNoteTemplate(title: string): string {
+  const trimmed = title.trim() || "Drawing";
+  return withKind(
+    "draw",
+    `# ${trimmed}\n\n${serializeDrawFence(createEmptyDrawDocument())}\n`,
+  );
+}
+
 export function bugNoteTemplate(title: string): string {
   const trimmed = title.trim() || "Bug";
   return withKind(
@@ -401,6 +413,8 @@ export function contentForTemplate(
       return projectViewTemplate(title);
     case "ledger":
       return financeLedgerTemplate(title);
+    case "draw":
+      return drawNoteTemplate(title);
     case "bug":
       return bugNoteTemplate(title);
     case "inbox":
