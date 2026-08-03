@@ -260,6 +260,7 @@ pub async fn enqueue_ask(
     let ticket_request = CreateTurnTicketRequest {
         session_id: session_id.clone(),
         prompt,
+        agent_mode: crate::daemon_api::AgentModeId::General,
         mode: crate::turn_ticket::TurnTicketMode::Background,
         persist_user_turn: true,
         response_depth_mode: state.default_runtime_config.response_depth_mode.clone(),

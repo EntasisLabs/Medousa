@@ -46,6 +46,13 @@ written, stores host context as structured turn metadata, and projects that
 metadata into model context. Clients must not append prompt wrappers. Host
 context is advisory and never grants filesystem or vault authority.
 
+`InteractiveTurnRequest.agent_mode` selects the behavioral runtime contract,
+independently of interactive/background ticket delivery. It defaults to
+`general`. The protocol also reserves `coder`, but the daemon rejects that mode
+until its repository authority and entry contract are available; it never
+silently falls back or expands tool access. Mode resolution itself is
+deterministic and does not require an additional model call.
+
 ### Registered client tools
 
 Host integrations can register tools that execute in the host process while

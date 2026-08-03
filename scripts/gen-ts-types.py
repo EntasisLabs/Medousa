@@ -57,6 +57,13 @@ def ts_type(schema: dict, defs: dict) -> str:
         ref = schema["$ref"].split("/")[-1]
         return ref
 
+    if "allOf" in schema:
+        parts = schema.get("allOf") or []
+        if len(parts) == 1:
+            return ts_type(parts[0], defs)
+        mapped = [ts_type(part, defs) for part in parts]
+        return " & ".join(mapped) if mapped else "unknown"
+
     t = schema.get("type")
     if isinstance(t, list):
         parts = [ts_type({**schema, "type": item}, defs) for item in t if item != "null"]
@@ -68,6 +75,8 @@ def ts_type(schema: dict, defs: dict) -> str:
         return " | ".join(parts) if parts else "unknown"
 
     if t == "string":
+        if schema.get("enum"):
+            return " | ".join(json.dumps(value) for value in schema["enum"])
         if schema.get("format") == "date-time":
             return "string"
         return "string"
@@ -122,6 +131,14 @@ def emit_interface(name: str, schema_root: dict, defs: dict) -> list[str]:
     return lines
 
 
+def emit_definition(name: str, schema_root: dict, defs: dict) -> list[str]:
+    schema = schema_root.get("schema", schema_root)
+    if schema.get("enum"):
+        variants = " | ".join(json.dumps(value) for value in schema["enum"])
+        return [f"export type {name} = {variants};"]
+    return emit_interface(name, schema_root, defs)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -171,7 +188,7 @@ def main() -> int:
         schema = find_schema(name, schemas)
         if schema is None:
             continue
-        body.extend(emit_interface(name, schema, defs))
+        body.extend(emit_definition(name, schema, defs))
         body.append("")
 
     output.write_text("\n".join(body).rstrip() + "\n")

@@ -92,6 +92,7 @@ pub struct IntentClassification {
 
 #[derive(Debug, Clone)]
 pub struct PreparedTurnPrompt {
+    pub agent_mode: super::modes::ResolvedAgentMode,
     pub resolved_prompt: String,
     pub pack_note: Option<String>,
     pub verification_state: Option<bool>,
@@ -105,6 +106,7 @@ pub struct PreparedTurnPrompt {
 }
 
 pub struct PrepareTurnPromptParams<'a> {
+    pub agent_mode: super::modes::ResolvedAgentMode,
     pub session_id: &'a str,
     pub prompt: &'a str,
     pub selected_context_pack_query: Option<&'a str>,
@@ -222,6 +224,7 @@ pub async fn prepare_turn_prompt(params: PrepareTurnPromptParams<'_>) -> Prepare
     );
 
     PreparedTurnPrompt {
+        agent_mode: params.agent_mode,
         resolved_prompt,
         pack_note,
         verification_state,
@@ -236,6 +239,7 @@ pub async fn prepare_turn_prompt(params: PrepareTurnPromptParams<'_>) -> Prepare
 }
 
 pub struct LocalTurnExecutionParams {
+    pub agent_mode: super::modes::ResolvedAgentMode,
     pub turn_id: u64,
     pub session_id: String,
     pub backend: String,
@@ -386,6 +390,7 @@ pub fn assemble_local_turn(params: AssembleLocalTurnParams<'_>) -> AssembledLoca
 
     AssembledLocalTurn {
         execution: LocalTurnExecutionParams {
+            agent_mode: params.prepared.agent_mode,
             turn_id: params.turn_id,
             session_id: params.session_id.to_string(),
             backend: params.settings.backend.clone(),
@@ -681,6 +686,7 @@ fn require_operator_budget_gate() -> bool {
 
 pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnExecutionParams) {
     let LocalTurnExecutionParams {
+        agent_mode,
         turn_id,
         session_id,
         backend,
@@ -892,7 +898,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
     if activation.enforce_no_tools {
         let mut messages = Vec::with_capacity(prior_messages.len() + 2);
         messages.push(ChatMessage::system(system_prompt_for_host_profile(
-            DEFAULT_SYSTEM_PROMPT,
+            super::modes::system_prompt_for_mode(DEFAULT_SYSTEM_PROMPT, &agent_mode),
             host_bus,
             params.supports_ui_artifacts,
             suggested_intent,
@@ -958,7 +964,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
     let request = ToolLoopExecutionRequest {
         user_prompt: prompt_for_request,
         system_prompt: Some(system_prompt_for_host_profile(
-            DEFAULT_SYSTEM_PROMPT,
+            super::modes::system_prompt_for_mode(DEFAULT_SYSTEM_PROMPT, &agent_mode),
             host_bus,
             params.supports_ui_artifacts,
             suggested_intent,

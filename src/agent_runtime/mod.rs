@@ -32,6 +32,7 @@ pub mod engine {
 pub mod turn_delivery;
 pub mod heartbeat_turn;
 pub mod host_context;
+pub mod modes;
 pub mod context_usage;
 pub mod continuation;
 pub mod presentation;
@@ -89,6 +90,9 @@ pub use prompt_prep::{
 pub use heartbeat_turn::{
     HeartbeatRuntimeSnapshot, build_heartbeat_turn_prompt, heartbeat_agent_turn_enabled,
     heartbeat_policy_doc_path, load_heartbeat_policy_doc, run_heartbeat_agent_turn,
+};
+pub use modes::{
+    AgentModeUnavailable, ResolvedAgentMode, resolve_agent_mode, system_prompt_for_mode,
 };
 pub use daemon_interactive_turn::{
     InteractiveTurnDeliveryContext, InteractiveTurnSessionHooks, run_agent_turn,

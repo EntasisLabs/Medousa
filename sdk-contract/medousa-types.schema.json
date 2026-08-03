@@ -8955,6 +8955,15 @@
           "type": "string"
         }
       },
+      "agent_mode": {
+        "description": "Requested behavioral mode. Omitted requests retain General behavior.",
+        "default": "general",
+        "allOf": [
+          {
+            "$ref": "#/definitions/AgentModeId"
+          }
+        ]
+      },
       "host_context": {
         "description": "Advisory editor, note, or page snapshot. The daemon bounds and formats it.",
         "anyOf": [
@@ -9082,6 +9091,14 @@
       }
     },
     "definitions": {
+      "AgentModeId": {
+        "description": "Behavioral runtime profile for an agent turn.\n\nThis is distinct from [`TurnTicketMode`], which selects interactive versus background delivery. Agent modes preserve one Medousa identity while changing context, tools, lane policy, and completion behavior.",
+        "type": "string",
+        "enum": [
+          "general",
+          "coder"
+        ]
+      },
       "HostContextDiagnostic": {
         "type": "object",
         "required": [

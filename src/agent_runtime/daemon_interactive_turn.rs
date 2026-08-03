@@ -1000,6 +1000,20 @@ async fn run_agent_turn_inner(
         return;
     }
 
+    let agent_mode = match super::modes::resolve_agent_mode(request.agent_mode) {
+        Ok(mode) => mode,
+        Err(err) => {
+            sink.agent_error(1, err.to_string()).await;
+            return;
+        }
+    };
+    sink.notice(format!(
+        "◈ agent_mode id={} contract={}",
+        agent_mode.id.as_str(),
+        agent_mode.contract_revision,
+    ))
+    .await;
+
     if has_media
         && let Err(err) = validate_media_refs(&session_id, &request.media_refs) {
             sink.agent_error(1, err).await;
@@ -1143,6 +1157,7 @@ async fn run_agent_turn_inner(
     let identity_user_id = speaker_profile_id.clone();
 
     let prepared = turn_orchestrator::prepare_turn_prompt(PrepareTurnPromptParams {
+        agent_mode,
         session_id: &session_id,
         prompt: &effective_prompt,
         selected_context_pack_query: None,

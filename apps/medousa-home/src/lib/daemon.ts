@@ -278,6 +278,7 @@ export async function createTurnTicket(
   return invoke<import("$lib/types/session").TurnTicketResponse>("turn_create", {
     sessionId: request.sessionId,
     prompt: request.prompt,
+    agentMode: request.agentMode ?? "general",
     mode: request.mode ?? "interactive",
     provider: request.provider ?? null,
     model: request.model ?? null,
@@ -679,6 +680,7 @@ export function onEnvironmentError(
 }
 
 export interface InteractiveTurnOptions {
+  agentMode?: import("$lib/types/session").AgentModeId;
   provider?: string;
   model?: string;
   responseDepthMode?: string;
@@ -696,6 +698,7 @@ export async function sendInteractiveTurn(
   return invoke<InteractiveTurnAccepted>("interactive_turn_send", {
     sessionId,
     prompt,
+    agentMode: options?.agentMode ?? "general",
     provider: options?.provider,
     model: options?.model,
     responseDepthMode: options?.responseDepthMode,

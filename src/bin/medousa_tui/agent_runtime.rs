@@ -361,7 +361,12 @@ pub(crate) async fn start_prompt_run(
     let tui_surface = medousa::TurnSurfaceContext::tui();
     let identity_user_id =
         medousa::identity_memory::resolve_tool_identity_user_id(&state.session_id, false);
+    let agent_mode = medousa::agent_runtime::resolve_agent_mode(
+        medousa::daemon_api::AgentModeId::General,
+    )
+    .expect("General agent mode is always available");
     let prepared = turn_orchestrator::prepare_turn_prompt(PrepareTurnPromptParams {
+        agent_mode,
         session_id: &state.session_id,
         prompt: &prompt,
         selected_context_pack_query: state.selected_context_pack_query.as_deref(),
@@ -612,6 +617,7 @@ pub(crate) async fn start_prompt_run(
         turn_orchestrator::execute_local_turn(
             sink,
             LocalTurnExecutionParams {
+                agent_mode,
                 turn_id,
                 session_id,
                 backend,
@@ -665,6 +671,7 @@ async fn attempt_daemon_interactive_turn(
     let request = InteractiveTurnRequest {
         session_id: state.session_id.clone(),
         prompt: prompt.to_string(),
+        agent_mode: medousa::daemon_api::AgentModeId::General,
         persist_user_turn,
         response_depth_mode: state.response_depth_mode.clone(),
         reasoning_effort: state.reasoning_effort.clone(),

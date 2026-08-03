@@ -54,6 +54,7 @@ pub fn build_interactive_request_from_ticket(
     InteractiveTurnRequest {
         session_id: request.session_id.clone(),
         prompt: request.prompt.clone(),
+        agent_mode: request.agent_mode,
         persist_user_turn: request.persist_user_turn,
         response_depth_mode: request.response_depth_mode.clone(),
         reasoning_effort: request.reasoning_effort.clone(),
@@ -407,6 +408,7 @@ pub async fn start_interactive_turn(
     let ticket_request = CreateTurnTicketRequest {
         session_id: request.session_id.clone(),
         prompt: request.prompt.clone(),
+        agent_mode: request.agent_mode,
         mode: crate::turn_ticket::TurnTicketMode::Interactive,
         persist_user_turn: request.persist_user_turn,
         response_depth_mode: request.response_depth_mode.clone(),

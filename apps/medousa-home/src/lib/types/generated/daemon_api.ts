@@ -88,6 +88,8 @@ export interface InteractiveTurnResponse {
   turn_id: string;
 }
 
+export type AgentModeId = "general" | "coder";
+
 export interface HostContextPosition {
   character: number;
   line: number;
@@ -157,6 +159,7 @@ export interface TurnSurfaceContext {
 
 export interface InteractiveTurnRequest {
   additional_manuscript_ids?: string[] | null;
+  agent_mode?: AgentModeId;
   host_context?: HostTurnContext | null;
   identity_user_id?: string | null;
   manuscript_id?: string | null;
