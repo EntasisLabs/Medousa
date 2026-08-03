@@ -1,6 +1,6 @@
 # Agent runtime modes
 
-> Status: mode kernel and persisted state complete; Home picker next
+> Status: mode kernel, persisted state, and Home picker complete; Coder entry next
 > First modes: **General** and **Coder**
 
 ## Product decision
@@ -123,7 +123,7 @@ continues in the current mode rather than abandoning the request.
    immutable resolved snapshot, telemetry, and tests. No behavior change.
 2. **Session and task state (complete)** — persisted mode selection, transition records,
    and task-scoped leases.
-3. **Home picker** — General selection plus unavailable/readiness states for
+3. **Home picker (complete)** — General selection plus unavailable/readiness states for
    Coder.
 4. **Coder entry/context** — Forge binding, repository ambient context, Coder
    STTP overlay, and direct foreground execution lane.

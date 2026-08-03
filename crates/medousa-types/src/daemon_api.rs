@@ -1264,6 +1264,24 @@ pub struct SessionAgentModeResponse {
     pub updated_at_utc: Option<DateTime<Utc>>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct AgentModeAvailability {
+    pub mode: AgentModeId,
+    pub label: String,
+    pub available: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub contract_revision: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unavailable_reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct AgentModeListResponse {
+    pub modes: Vec<AgentModeAvailability>,
+}
+
 impl AgentModeId {
     pub const fn as_str(self) -> &'static str {
         match self {

@@ -1,7 +1,9 @@
 use crate::daemon::types::{
-    ActiveSessionTurnResponse, AgentModeId, CancelActiveSessionTurnResponse, MediaRef, SessionDeleteQuery,
+    ActiveSessionTurnResponse, AgentModeId, AgentModeListResponse, AgentModeScope,
+    CancelActiveSessionTurnResponse, MediaRef, SessionAgentModeResponse, SessionDeleteQuery,
     SessionDeleteResponse, SessionHistoryListResponse, SessionHistoryResponse,
-    SessionSetDisplayNameResponse, StageRoutingMatrix, TurnSurfaceContext,
+    SessionSetDisplayNameResponse, SetSessionAgentModeRequest, StageRoutingMatrix,
+    TurnSurfaceContext,
 };
 use serde::{Deserialize, Serialize};
 use tauri::State;
@@ -108,6 +110,58 @@ pub async fn session_set_display_name(
     client(&state)
         .sessions()
         .set_display_name(trimmed_id, trimmed_name)
+        .await
+        .map_err(sdk_error)
+}
+
+#[tauri::command]
+pub async fn agent_mode_list(
+    state: State<'_, DaemonState>,
+) -> Result<AgentModeListResponse, String> {
+    client(&state)
+        .runtime()
+        .agent_modes()
+        .await
+        .map_err(sdk_error)
+}
+
+#[tauri::command]
+pub async fn session_get_agent_mode(
+    state: State<'_, DaemonState>,
+    session_id: String,
+) -> Result<SessionAgentModeResponse, String> {
+    let trimmed = session_id.trim();
+    if trimmed.is_empty() {
+        return Err("session_id is required".to_string());
+    }
+    client(&state)
+        .sessions()
+        .agent_mode(trimmed)
+        .await
+        .map_err(sdk_error)
+}
+
+#[tauri::command]
+pub async fn session_set_agent_mode(
+    state: State<'_, DaemonState>,
+    session_id: String,
+    mode: AgentModeId,
+) -> Result<SessionAgentModeResponse, String> {
+    let trimmed = session_id.trim();
+    if trimmed.is_empty() {
+        return Err("session_id is required".to_string());
+    }
+    client(&state)
+        .sessions()
+        .set_agent_mode(
+            trimmed,
+            &SetSessionAgentModeRequest {
+                mode,
+                scope: AgentModeScope::Session,
+                task_id: None,
+                expires_at_utc: None,
+            },
+        )
         .await
         .map_err(sdk_error)
 }

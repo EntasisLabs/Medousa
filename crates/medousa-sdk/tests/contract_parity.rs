@@ -48,6 +48,7 @@ pub const PARITY_ROUTES: &[(&str, &str, &str, &str)] = &[
     ("agents", "approve_permission", "POST", "/v1/agents/permission-requests/{id}/approve"),
     ("agents", "deny_permission", "POST", "/v1/agents/permission-requests/{id}/deny"),
     ("runtime", "artifact_command", "POST", "/v1/runtime/artifact/command"),
+    ("runtime", "agent_modes", "GET", "/v1/agent-modes"),
     ("runtime", "artifact_fetch", "POST", "/v1/runtime/artifact/fetch"),
     ("runtime", "artifact_write", "POST", "/v1/runtime/artifact/write"),
     ("runtime", "artifact_delete", "POST", "/v1/runtime/artifact/delete"),

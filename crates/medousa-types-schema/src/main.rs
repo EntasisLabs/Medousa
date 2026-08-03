@@ -42,6 +42,7 @@ fn main() {
     export_type!(schemas, AgentModeSource, "AgentModeSource");
     export_type!(schemas, SetSessionAgentModeRequest, "SetSessionAgentModeRequest");
     export_type!(schemas, SessionAgentModeResponse, "SessionAgentModeResponse");
+    export_type!(schemas, AgentModeListResponse, "AgentModeListResponse");
     export_type!(schemas, SessionDeleteResponse, "SessionDeleteResponse");
 
     // Ingest & interactive

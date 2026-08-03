@@ -1,6 +1,9 @@
 //! First-class behavioral modes above lanes, specialists, and model routing.
 
-use crate::daemon_api::AgentModeId;
+use crate::daemon_api::{AgentModeAvailability, AgentModeId, AgentModeListResponse};
+
+const CODER_UNAVAILABLE_REASON: &str =
+    "repository authority and Coder entry are not installed yet";
 
 /// Versioned, immutable mode contract resolved at the beginning of a turn.
 ///
@@ -46,8 +49,29 @@ pub fn resolve_agent_mode(
         }),
         AgentModeId::Coder => Err(AgentModeUnavailable {
             requested,
-            reason: "Coder entry and repository authority are not installed yet",
+            reason: CODER_UNAVAILABLE_REASON,
         }),
+    }
+}
+
+pub fn list_agent_modes() -> AgentModeListResponse {
+    AgentModeListResponse {
+        modes: vec![
+            AgentModeAvailability {
+                mode: AgentModeId::General,
+                label: "General".to_string(),
+                available: true,
+                contract_revision: Some("general-v1".to_string()),
+                unavailable_reason: None,
+            },
+            AgentModeAvailability {
+                mode: AgentModeId::Coder,
+                label: "Coder".to_string(),
+                available: false,
+                contract_revision: None,
+                unavailable_reason: Some(CODER_UNAVAILABLE_REASON.to_string()),
+            },
+        ],
     }
 }
 
@@ -95,6 +119,15 @@ mod tests {
         let err = resolve_agent_mode(AgentModeId::Coder).expect_err("coder unavailable");
         assert_eq!(err.requested, AgentModeId::Coder);
         assert!(err.to_string().contains("repository authority"));
+    }
+
+    #[test]
+    fn registry_reports_coder_readiness_without_enabling_it() {
+        let registry = list_agent_modes();
+        assert_eq!(registry.modes.len(), 2);
+        assert!(registry.modes[0].available);
+        assert!(!registry.modes[1].available);
+        assert_eq!(registry.modes[1].mode, AgentModeId::Coder);
     }
 
     #[test]

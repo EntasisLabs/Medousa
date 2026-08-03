@@ -92,7 +92,8 @@ pub use heartbeat_turn::{
     heartbeat_policy_doc_path, load_heartbeat_policy_doc, run_heartbeat_agent_turn,
 };
 pub use modes::{
-    AgentModeUnavailable, ResolvedAgentMode, resolve_agent_mode, system_prompt_for_mode,
+    AgentModeUnavailable, ResolvedAgentMode, list_agent_modes, resolve_agent_mode,
+    system_prompt_for_mode,
 };
 pub use daemon_interactive_turn::{
     InteractiveTurnDeliveryContext, InteractiveTurnSessionHooks, run_agent_turn,

@@ -210,6 +210,18 @@ export interface SessionAgentModeResponse {
   updated_at_utc?: string | null;
 }
 
+export interface AgentModeAvailability {
+  available: boolean;
+  contract_revision?: string | null;
+  label: string;
+  mode: AgentModeId;
+  unavailable_reason?: string | null;
+}
+
+export interface AgentModeListResponse {
+  modes: AgentModeAvailability[];
+}
+
 export type TurnTicketMode = "interactive" | "background";
 
 export type TurnTicketPhase = "accepted" | "streaming" | "worker_handoff" | "workshop_handoff" | "budget_blocked" | "done" | "error" | "cancelled";

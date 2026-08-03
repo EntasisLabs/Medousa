@@ -170,6 +170,7 @@ diagnostics into provider-specific prompt text.
 
 | Method | HTTP | Types |
 |--------|------|-------|
+| `agent_modes()` | `GET /v1/agent-modes` | `AgentModeListResponse` |
 | `artifact_command(request)` | `POST /v1/runtime/artifact/command` | `ArtifactCommandRequest` |
 | `artifact_fetch(request)` | `POST /v1/runtime/artifact/fetch` | `ArtifactFetchRequest` |
 | `artifact_write(request)` | `POST /v1/runtime/artifact/write` | `ArtifactWriteRequest` |

@@ -87,6 +87,7 @@
   import OfflineChatGate from "$lib/components/chat/OfflineChatGate.svelte";
   import LiquidCardDetailSheet from "$lib/components/chat/LiquidCardDetailSheet.svelte";
   import ChatRuntimePicker from "$lib/components/chat/ChatRuntimePicker.svelte";
+  import ChatAgentModePicker from "$lib/components/chat/ChatAgentModePicker.svelte";
   import { pendingMediaLabels } from "$lib/utils/chatMediaUpload";
   import { hasVisionMediaRefs } from "$lib/types/media";
   import { visionProfileReady } from "$lib/types/inferenceProfiles";
@@ -1501,6 +1502,12 @@
             disabled={connection.offline || chat.composerBlocked}
             onChange={onRuntimeChange}
           />
+          {#if sessionRuntime === "medousa"}
+            <ChatAgentModePicker
+              sessionId={panelSessionId}
+              disabled={connection.offline || chat.composerBlocked}
+            />
+          {/if}
           <ComposerTurnControls
             disabled={connection.offline || chat.composerBlocked}
           />

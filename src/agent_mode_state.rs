@@ -111,6 +111,7 @@ fn selection_from_state(
     }
 }
 
+#[cfg(test)]
 fn select_mode(
     turn_override: Option<AgentModeId>,
     state: Option<&SessionModeState>,

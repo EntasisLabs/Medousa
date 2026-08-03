@@ -399,6 +399,7 @@ pub fn build_core_router(state: AppState) -> Router {
         .route("/health", get(health))
         .route("/v1/stats", get(stats))
         .route("/v1/runtime/defaults", get(runtime_defaults))
+        .route("/v1/agent-modes", get(crate::daemon_handlers::list_agent_modes))
         .route(
             "/v1/sessions",
             get(crate::daemon_handlers::list_session_history)

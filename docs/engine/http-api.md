@@ -31,6 +31,10 @@ Stasis dashboard mounted at `/dashboard` (HTML UI).
 
 ## Interactive chat (two-step)
 
+`GET /v1/agent-modes` returns the registered modes and their runtime-derived
+availability. Clients should disable unavailable modes and show the returned
+reason instead of assuming that a protocol enum is ready to enter.
+
 | Method | Path | Types | SDK |
 |--------|------|-------|-----|
 | POST | `/v1/interactive/turn` | `InteractiveTurnRequest` → `InteractiveTurnResponse` (includes `stream_url`) | `interactive().start_turn` |

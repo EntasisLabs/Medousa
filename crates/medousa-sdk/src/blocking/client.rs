@@ -1,6 +1,7 @@
 #[cfg(feature = "blocking")]
 use medousa_types::{
-    ActiveSessionTurnResponse, AgentModeScope, ArchiveAskJobRequest, ArchiveAskJobResponse,
+    ActiveSessionTurnResponse, AgentModeListResponse, AgentModeScope, ArchiveAskJobRequest,
+    ArchiveAskJobResponse,
     ArtifactCommandRequest, ArtifactCommandResponse, ArtifactDeleteRequest, ArtifactDeleteResponse,
     ArtifactFetchRequest, ArtifactFetchResponse, ArtifactListUiRequest, ArtifactListUiResponse,
     ArtifactWriteRequest, ArtifactWriteResponse, AskJobCompleteActionsRequest,
@@ -537,6 +538,10 @@ impl BlockingInteractiveApi<'_> {
 
 #[cfg(feature = "blocking")]
 impl BlockingRuntimeApi<'_> {
+    pub fn agent_modes(&self) -> Result<AgentModeListResponse, SdkError> {
+        self.http.get("/v1/agent-modes")
+    }
+
     pub fn artifact_command(
         &self,
         request: &ArtifactCommandRequest,

@@ -9,6 +9,63 @@
       "coder"
     ]
   },
+  "AgentModeListResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "AgentModeListResponse",
+    "type": "object",
+    "required": [
+      "modes"
+    ],
+    "properties": {
+      "modes": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/AgentModeAvailability"
+        }
+      }
+    },
+    "definitions": {
+      "AgentModeAvailability": {
+        "type": "object",
+        "required": [
+          "available",
+          "label",
+          "mode"
+        ],
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "contract_revision": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "label": {
+            "type": "string"
+          },
+          "mode": {
+            "$ref": "#/definitions/AgentModeId"
+          },
+          "unavailable_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "AgentModeId": {
+        "description": "Behavioral runtime profile for an agent turn.\n\nThis is distinct from [`TurnTicketMode`], which selects interactive versus background delivery. Agent modes preserve one Medousa identity while changing context, tools, lane policy, and completion behavior.",
+        "type": "string",
+        "enum": [
+          "general",
+          "coder"
+        ]
+      }
+    }
+  },
   "AgentModeScope": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "AgentModeScope",

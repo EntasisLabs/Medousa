@@ -64,6 +64,12 @@ background and do not block the workspace.
 Send a normal message. Medousa keeps work durable on the engine — closing the
 window does not throw away an accepted job.
 
+The mode control beside the composer shows how Medousa will approach this
+conversation. **General** is the everyday life, planning, and research mode.
+**Coder** may appear as unavailable while its repository tools and authority
+are still being prepared; Medousa will not silently enter it or gain extra
+access. Your available selection follows the conversation across restarts.
+
 Useful early asks:
 
 - *“Remember that I prefer concise answers.”*

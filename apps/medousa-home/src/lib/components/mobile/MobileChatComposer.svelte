@@ -3,6 +3,7 @@
   import AgentPermissionBar from "$lib/components/chat/AgentPermissionBar.svelte";
   import AgentBrowserPanel from "$lib/components/chat/AgentBrowserPanel.svelte";
   import ChatComposerBar from "$lib/components/chat/ChatComposerBar.svelte";
+  import ChatAgentModePicker from "$lib/components/chat/ChatAgentModePicker.svelte";
   import VaultChatContextChip from "$lib/components/vault/VaultChatContextChip.svelte";
   import { applyActiveAgentPrompt } from "$lib/utils/activeAgentPrompt";
   import { buildInteractiveTurnOptions } from "$lib/interactiveTurnOptions";
@@ -176,6 +177,12 @@
   />
   <AgentPermissionBar mobile />
   <AgentBrowserPanel mobile />
+  <div class="mb-1 flex items-center px-1">
+    <ChatAgentModePicker
+      sessionId={chat.focusedSessionId}
+      disabled={connection.offline || chat.composerBlocked || runtime.savingControls}
+    />
+  </div>
   <ChatComposerBar
     mobile
     disabled={connection.offline}

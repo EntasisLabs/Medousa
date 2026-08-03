@@ -7,7 +7,8 @@ use uuid::Uuid;
 use stasis::ports::outbound::memory::memory_operations::MemoryOperations;
 
 use crate::daemon_api::{
-    AgentModeScope, CreateSessionRequest, CreateSessionResponse, SessionAgentModeResponse,
+    AgentModeListResponse, AgentModeScope, CreateSessionRequest, CreateSessionResponse,
+    SessionAgentModeResponse,
     SetSessionAgentModeRequest, SessionAppendTurnRequest,
     SessionAppendTurnResponse, SessionDeleteQuery, SessionDeleteResponse, SessionHistoryListRequest,
     SessionHistoryListResponse, SessionHistoryResponse, SessionSetDisplayNameRequest,
@@ -179,6 +180,10 @@ pub async fn get_session_agent_mode(
     crate::agent_mode_state::get_session_mode(&session_id)
         .map(Json)
         .map_err(|err| (StatusCode::BAD_REQUEST, err))
+}
+
+pub async fn list_agent_modes() -> Json<AgentModeListResponse> {
+    Json(crate::agent_runtime::list_agent_modes())
 }
 
 pub async fn set_session_agent_mode(

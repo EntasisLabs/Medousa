@@ -1,6 +1,7 @@
 #[cfg(feature = "async")]
 use medousa_types::{
-    ArtifactCommandRequest, ArtifactCommandResponse, ArtifactDeleteRequest, ArtifactDeleteResponse,
+    AgentModeListResponse, ArtifactCommandRequest, ArtifactCommandResponse, ArtifactDeleteRequest,
+    ArtifactDeleteResponse,
     ArtifactFetchRequest, ArtifactFetchResponse, ArtifactListUiRequest, ArtifactListUiResponse,
     ArtifactWriteRequest, ArtifactWriteResponse, RuntimeConfigCommandRequest,
     RuntimeConfigCommandResponse, StageRouteCommandRequest, StageRouteCommandResponse,
@@ -16,6 +17,10 @@ pub struct RuntimeApi<'a> {
 
 #[cfg(feature = "async")]
 impl RuntimeApi<'_> {
+    pub async fn agent_modes(&self) -> Result<AgentModeListResponse, crate::SdkError> {
+        self.client.http().get("/v1/agent-modes").await
+    }
+
     pub async fn artifact_command(
         &self,
         request: &ArtifactCommandRequest,

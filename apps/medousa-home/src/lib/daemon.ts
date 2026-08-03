@@ -16,6 +16,10 @@ import type {
   SessionDeleteResponse,
   SessionSummary,
 } from "$lib/types/session";
+import type {
+  AgentModeListResponse,
+  SessionAgentModeResponse,
+} from "$lib/types/generated/daemon_api";
 import type { ArtifactCommandResponse } from "$lib/types/artifact";
 import type {
   IdentityContextResponse,
@@ -233,6 +237,28 @@ export async function setSessionDisplayName(
   });
 }
 
+export async function listAgentModes(): Promise<AgentModeListResponse> {
+  return invoke<AgentModeListResponse>("agent_mode_list");
+}
+
+export async function getSessionAgentMode(
+  sessionId: string,
+): Promise<SessionAgentModeResponse> {
+  return invoke<SessionAgentModeResponse>("session_get_agent_mode", {
+    sessionId,
+  });
+}
+
+export async function setSessionAgentMode(
+  sessionId: string,
+  mode: import("$lib/types/session").AgentModeId,
+): Promise<SessionAgentModeResponse> {
+  return invoke<SessionAgentModeResponse>("session_set_agent_mode", {
+    sessionId,
+    mode,
+  });
+}
+
 export async function deleteSession(
   sessionId: string,
   options?: { purgeMemory?: boolean },
@@ -278,7 +304,7 @@ export async function createTurnTicket(
   return invoke<import("$lib/types/session").TurnTicketResponse>("turn_create", {
     sessionId: request.sessionId,
     prompt: request.prompt,
-    agentMode: request.agentMode ?? "general",
+    agentMode: request.agentMode ?? null,
     mode: request.mode ?? "interactive",
     provider: request.provider ?? null,
     model: request.model ?? null,
@@ -698,7 +724,7 @@ export async function sendInteractiveTurn(
   return invoke<InteractiveTurnAccepted>("interactive_turn_send", {
     sessionId,
     prompt,
-    agentMode: options?.agentMode ?? "general",
+    agentMode: options?.agentMode ?? null,
     provider: options?.provider,
     model: options?.model,
     responseDepthMode: options?.responseDepthMode,
