@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from enum import Enum
 from typing import Any
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, RootModel
@@ -12,27 +13,1242 @@ class MedousaModel(BaseModel):
     model_config = ConfigDict(extra="ignore", populate_by_name=True)
 
 
-class AgentPermissionResolveRequest(MedousaModel):
-    resolved_by: str | None = None
+class AgentPermissionRequestStatus(Enum):
+    pending = 'pending'
+    approved = 'approved'
+    denied = 'denied'
+    expired = 'expired'
 
 
 class AgentRuntimeInfo(MedousaModel):
     auth_detail: str | None = None
     auth_status: str | None = Field(
-        None,
-        description='Vendor account sign-in: `signed_in` | `signed_out` | `unknown`.',
+        None, description='Vendor account sign-in: `signed_in` | `signed_out` | `unknown`.'
     )
     available: bool
-    binary_present: bool | None = Field(
-        False, description='Vendor CLI binary present on PATH.'
-    )
+    binary_present: bool | None = Field(False, description='Vendor CLI binary present on PATH.')
     command: str | None = None
     detail: str | None = None
     runtime: str
     uses_native_turns: bool | None = Field(
-        False,
-        description='Native Medousa turns use `/v1/turns` — not `/v1/agents/sessions`.',
+        False, description='Native Medousa turns use `/v1/turns` — not `/v1/agents/sessions`.'
     )
+
+
+class CodeIntentContext(MedousaModel):
+    active_path: str | None = None
+    containing_symbol: str | None = None
+    cursor_line: int | None = Field(None, ge=0)
+    diagnostics: list[str] | None = None
+    last_verification: str | None = None
+    open_files: list[str] | None = None
+    outcome: str | None = None
+    project_title: str | None = None
+    selected_text: str | None = None
+    selection_end_line: int | None = Field(None, ge=0)
+    selection_start_line: int | None = Field(None, ge=0)
+    work_id: str | None = None
+
+
+class Command(Enum):
+    lookup = 'lookup'
+
+
+class ArtifactCommandSpec1(MedousaModel):
+    command: Command
+    query: str | None = None
+
+
+class Command1(Enum):
+    chunks = 'chunks'
+
+
+class ArtifactCommandSpec2(MedousaModel):
+    command: Command1
+    query: str | None = None
+
+
+class Command2(Enum):
+    list = 'list'
+
+
+class ArtifactCommandSpec3(MedousaModel):
+    command: Command2
+    limit: int = Field(..., ge=0)
+
+
+class Command3(Enum):
+    maintain = 'maintain'
+
+
+class ArtifactCommandSpec4(MedousaModel):
+    command: Command3
+    max_age_days: int
+    max_per_session: int = Field(..., ge=0)
+
+
+class Command4(Enum):
+    extract = 'extract'
+
+
+class ArtifactCommandSpec5(MedousaModel):
+    command: Command4
+    query: str | None = None
+
+
+class Command5(Enum):
+    extractions = 'extractions'
+
+
+class ArtifactCommandSpec6(MedousaModel):
+    command: Command5
+    limit: int = Field(..., ge=0)
+
+
+class Command6(Enum):
+    pack = 'pack'
+
+
+class ArtifactCommandSpec7(MedousaModel):
+    artifact_query: str
+    command: Command6
+    max_chunks: int = Field(..., ge=0)
+    max_claims: int = Field(..., ge=0)
+    max_tokens: int = Field(..., ge=0)
+
+
+class Command7(Enum):
+    packs = 'packs'
+
+
+class ArtifactCommandSpec8(MedousaModel):
+    command: Command7
+    limit: int = Field(..., ge=0)
+
+
+class Command8(Enum):
+    pack_use = 'pack_use'
+
+
+class ArtifactCommandSpec9(MedousaModel):
+    command: Command8
+    query: str | None = None
+
+
+class Command9(Enum):
+    pack_auto = 'pack_auto'
+
+
+class ArtifactCommandSpec10(MedousaModel):
+    command: Command9
+
+
+class Command10(Enum):
+    verify = 'verify'
+
+
+class ArtifactCommandSpec11(MedousaModel):
+    command: Command10
+    query: str | None = None
+
+
+class Command11(Enum):
+    verifications = 'verifications'
+
+
+class ArtifactCommandSpec12(MedousaModel):
+    command: Command11
+    limit: int = Field(..., ge=0)
+
+
+class Command12(Enum):
+    verification = 'verification'
+
+
+class ArtifactCommandSpec13(MedousaModel):
+    command: Command12
+    query: str | None = None
+
+
+class ArtifactCommandSpec(
+    RootModel[
+        ArtifactCommandSpec1
+        | ArtifactCommandSpec2
+        | ArtifactCommandSpec3
+        | ArtifactCommandSpec4
+        | ArtifactCommandSpec5
+        | ArtifactCommandSpec6
+        | ArtifactCommandSpec7
+        | ArtifactCommandSpec8
+        | ArtifactCommandSpec9
+        | ArtifactCommandSpec10
+        | ArtifactCommandSpec11
+        | ArtifactCommandSpec12
+        | ArtifactCommandSpec13
+    ]
+):
+    root: ArtifactCommandSpec1 | ArtifactCommandSpec2 | ArtifactCommandSpec3 | ArtifactCommandSpec4 | ArtifactCommandSpec5 | ArtifactCommandSpec6 | ArtifactCommandSpec7 | ArtifactCommandSpec8 | ArtifactCommandSpec9 | ArtifactCommandSpec10 | ArtifactCommandSpec11 | ArtifactCommandSpec12 | ArtifactCommandSpec13
+
+
+class ArtifactVerificationPolicyInput(MedousaModel):
+    min_avg_support_strength: float
+    min_citation_coverage: float
+    min_claim_support_strength: float
+    min_supported_claim_ratio: float
+
+
+class ArtifactSummary(MedousaModel):
+    artifact_id: str
+    byte_size: int = Field(..., ge=0)
+    label: str
+    presentation: str | None = None
+    root_artifact_id: str | None = None
+    session_id: str
+    stored_at_utc: AwareDatetime
+    supersedes_artifact_id: str | None = None
+
+
+class CalendarAlarm(MedousaModel):
+    action: str | None = Field(
+        'display', description='RFC 5545 ACTION — currently always `display`.'
+    )
+    trigger_minutes_before: int = Field(
+        ..., description='Minutes before `dtstart` when the alert should fire (e.g. 30, 1440).'
+    )
+
+
+class CalendarEvent(MedousaModel):
+    alarms: list[CalendarAlarm] | None = Field(
+        None, description='VALARM display triggers before start.'
+    )
+    all_day: bool | None = False
+    calendar_path: str
+    description: str | None = None
+    dtend: AwareDatetime | None = None
+    dtstart: AwareDatetime
+    location: str | None = None
+    note_path: str | None = Field(
+        None,
+        description='Optional vault-relative markdown note linked to this event (`X-MEDOUSA-NOTE`).',
+    )
+    recurrence_id: AwareDatetime | None = Field(
+        None,
+        description='For expanded recurrence instances: original master UID (same as uid when not expanded).',
+    )
+    rrule: str | None = None
+    summary: str
+    uid: str
+
+
+class CapabilityBindingSummary(MedousaModel):
+    available: bool
+    effect_class: str | None = None
+    invoke_via: str | None = None
+    reference: str
+    source: str
+
+
+class CapabilityListEntry(MedousaModel):
+    binding_count: int = Field(..., ge=0)
+    bindings_summary: list[CapabilityBindingSummary] | None = Field([], validate_default=True)
+    description: str | None = None
+    domain: str
+    has_grapheme: bool
+    has_mcp: bool
+    id: str
+    title: str
+
+
+class CapabilityBinding(MedousaModel):
+    available: bool
+    effect_class: str | None = None
+    invoke_via: str | None = None
+    priority: int = Field(..., ge=0)
+    reference: str
+    source: str
+    unavailable_reason: str | None = None
+
+
+class CapabilityImplementations(MedousaModel):
+    grapheme: list[CapabilityBinding] | None = Field([], validate_default=True)
+    mcp: list[CapabilityBinding] | None = Field([], validate_default=True)
+
+
+class CapabilityRecommendation(MedousaModel):
+    reason: str
+    reference: str
+    source: str
+
+
+class ComponentRuntimeEventInput(MedousaModel):
+    emittedAtUtc: AwareDatetime | None = None
+    level: str
+    message: str
+    sessionId: str | None = None
+    source: str | None = None
+    stack: str | None = None
+
+
+class ComponentRuntimeEvent(MedousaModel):
+    componentId: str
+    emittedAtUtc: AwareDatetime
+    id: str
+    level: str
+    message: str
+    profileId: str
+    sessionId: str | None = None
+    source: str | None = None
+    stack: str | None = None
+
+
+class TurnSurfaceContext(MedousaModel):
+    channel_id: str | None = None
+    channel_surface: str | None = Field(
+        None,
+        description='Adapter surface: telegram, discord, slack, home-desktop, home-ios, tui, api, …',
+    )
+    supports_browser_host: bool | None = Field(
+        False,
+        description='When true, the connected client can run Agent Browser (local BrowserHost or client WebView). Telegram/TUI/ingest leave this false; Home desktop/iOS set true when browser is available.',
+    )
+    supports_ui_artifacts: bool | None = Field(
+        False,
+        description='When true, the connected client can render sandboxed HTML UI artifacts (`cognition_ui_present`). Channel adapters and clients set this — the daemon does not infer it from channel name.',
+    )
+    user_id: str | None = None
+
+
+class ActivityRailMode(Enum):
+    visible = 'visible'
+    collapsed = 'collapsed'
+    hidden = 'hidden'
+
+
+class ComponentType1(Enum):
+    artifact = 'artifact'
+    medousa_view = 'medousa_view'
+    builtin_panel = 'builtin_panel'
+    presentation = 'presentation'
+    media_embed = 'media_embed'
+    chrome_action = 'chrome_action'
+
+
+class ComponentType2(Enum):
+    scene = 'scene'
+
+
+class ComponentType(RootModel[ComponentType1 | ComponentType2]):
+    root: ComponentType1 | ComponentType2
+
+
+class DesktopNavStyle(Enum):
+    rail = 'rail'
+    compact = 'compact'
+
+
+class EnvironmentTheme(MedousaModel):
+    brandColor: str | None = None
+    colorThemeId: str | None = None
+    tagline: str | None = None
+
+
+class Type(Enum):
+    vstack = 'vstack'
+
+
+class Type1(Enum):
+    hstack = 'hstack'
+
+
+class Type2(Enum):
+    grid = 'grid'
+
+
+class Type3(Enum):
+    component = 'component'
+
+
+class LayoutNode4(MedousaModel):
+    flex: int | None = Field(None, ge=0)
+    id: str
+    type: Type3
+
+
+class Type4(Enum):
+    slot = 'slot'
+
+
+class LayoutNode5(MedousaModel):
+    flex: int | None = Field(None, ge=0)
+    id: str
+    type: Type4
+
+
+class MobileAskEntry(Enum):
+    inline = 'inline'
+    fab = 'fab'
+    tab_only = 'tab_only'
+
+
+class MobileTabBar(Enum):
+    full = 'full'
+    minimal = 'minimal'
+
+
+class ShellChromeMobile(MedousaModel):
+    askEntry: MobileAskEntry | None = None
+    defaultHome: str | None = None
+    tabBar: MobileTabBar | None = None
+
+
+class SlotDef(MedousaModel):
+    id: str
+    zone: str
+
+
+class StackAlign(Enum):
+    start = 'start'
+    center = 'center'
+    end = 'end'
+    stretch = 'stretch'
+
+
+class StackDistribution(Enum):
+    start = 'start'
+    center = 'center'
+    end = 'end'
+    space_between = 'space_between'
+    fill_equally = 'fill_equally'
+
+
+class StackSpacing(Enum):
+    none = 'none'
+    sm = 'sm'
+    md = 'md'
+    lg = 'lg'
+
+
+class SurfaceKind(Enum):
+    builtin = 'builtin'
+    custom = 'custom'
+
+
+class SurfaceLayout(Enum):
+    single = 'single'
+    split = 'split'
+    dashboard = 'dashboard'
+
+
+class UiPresentation(Enum):
+    inline = 'inline'
+    panel = 'panel'
+    fullscreen = 'fullscreen'
+
+
+class VaultSidebarMode(Enum):
+    visible = 'visible'
+    hidden = 'hidden'
+
+
+class ComponentRuntimeEmbedStatus(MedousaModel):
+    metricsInjected: bool
+    runtimeBridgeInjected: bool
+    storeBootstrapInjected: bool
+    storeClientInjected: bool
+
+
+class ComponentRuntimeIssue(MedousaModel):
+    code: str
+    fixHint: str
+    message: str
+    severity: str
+
+
+class ComponentRuntimeProbeResult(MedousaModel):
+    componentId: str
+    errors: list[str] | None = []
+    probeId: str
+    profileId: str | None = None
+    storeReady: bool
+    storeRoundTripOk: bool
+
+
+class ComponentStaticLintFinding(MedousaModel):
+    code: str
+    lineHint: int | None = Field(None, ge=0)
+    message: str
+    severity: str
+
+
+class ComponentStoreKeyStatus(MedousaModel):
+    issues: list[str] | None = []
+    key: str
+    valueType: str
+
+
+class ComponentSuggestedAction(MedousaModel):
+    reason: str
+    tool: str
+
+
+class CustomViewFeedStatus(MedousaModel):
+    feedId: str
+    lastEmittedAtUtc: str | None = None
+    lastSummary: str | None = None
+
+
+class CustomViewRecurringBindingStatus(MedousaModel):
+    cronExpr: str | None = None
+    enabled: bool | None = None
+    feedIds: list[str] | None = []
+    recurringId: str
+
+
+class ComponentFeedPatch(MedousaModel):
+    componentId: str
+    feedId: str
+    patch: Any
+    seq: int = Field(..., ge=0)
+
+
+class ComponentRuntimeProbeRequest(MedousaModel):
+    componentId: str
+    probeId: str
+    profileId: str | None = None
+
+
+class FeedRef(MedousaModel):
+    ref_id: str
+    ref_type: str
+
+
+class FeedListEntry(MedousaModel):
+    eventCount: int = Field(..., ge=0)
+    feedId: str
+    subscriberComponentIds: list[str]
+
+
+class IngestAttachment(MedousaModel):
+    content: str
+    kind: str
+
+
+class HostContextPosition(MedousaModel):
+    character: int = Field(..., ge=0)
+    line: int = Field(..., ge=0)
+
+
+class HostContextSelection(MedousaModel):
+    end: HostContextPosition | None = None
+    start: HostContextPosition | None = None
+    text: str
+
+
+class MediaRef(MedousaModel):
+    kind: str = Field(..., description='image | document | spreadsheet | audio')
+    label: str | None = None
+    media_id: str
+    mime: str
+
+
+class StageRoute(MedousaModel):
+    fallback_chain: list[str]
+    model: str
+    policy_profile: str
+    provider: str
+    role: str
+
+
+class StageRoutingMatrix(MedousaModel):
+    chunker: StageRoute
+    extractor: StageRoute
+    final_response: StageRoute
+    orchestrator: StageRoute
+    packer: StageRoute
+    summarizer: StageRoute
+    verifier: StageRoute
+
+
+class ContextUsageLayer(MedousaModel):
+    chars: int = Field(..., ge=0)
+    id: str = Field(..., description='Stable machine id, e.g. `system_prompt`, `tool_definitions`.')
+    label: str = Field(..., description='Human label for UI.')
+    tokens_estimate: int = Field(..., ge=0)
+
+
+class ContextUsageReport(MedousaModel):
+    context_limit_tokens: int | None = Field(
+        None, description='Model context window when known from capability registry / route.', ge=0
+    )
+    estimator: str = Field(
+        ..., description='`chars / 4` — documented estimator; not tokenizer-exact.'
+    )
+    layers: list[ContextUsageLayer]
+    tool_count: int = Field(..., ge=0)
+    total_chars: int = Field(..., ge=0)
+    total_tokens_estimate: int = Field(..., ge=0)
+
+
+class StreamToolArtifactRef(MedousaModel):
+    artifact_id: str | None = None
+    byte_size: int = Field(..., ge=0)
+    content_type: str
+    hash64: str
+    label: str | None = None
+    role: str
+
+
+class StreamUiArtifact(MedousaModel):
+    artifact_id: str
+    byte_size: int | None = Field(None, ge=0)
+    height_px: int | None = Field(None, ge=0)
+    label: str
+    mime: str
+    presentation: str
+
+
+class StreamUiScene(MedousaModel):
+    ops: list[Any] = Field(
+        ..., description='Ordered scene operations, opaque JSON validated client-side.'
+    )
+    rev: int | None = Field(
+        None, description='Owning `plan_layout` revision for ordering (informational).'
+    )
+    surface_id: str | None = Field(
+        None, description='Scene surface id; the client defaults to `chat:{turn_id}` when absent.'
+    )
+    turn_id: str | None = Field(
+        None, description='Owning turn id (stamped by the stream event builder).'
+    )
+
+
+class JobCitationResponse(MedousaModel):
+    source: str
+    title: str | None = None
+
+
+class JobEvidenceReportResponse(MedousaModel):
+    artifact_id: str
+    citation_coverage: float
+    confidence_score: float
+    extraction_id: str | None = None
+    pack_id: str
+    session_id: str
+    supported_claim_ratio: float
+    supported_claims: int = Field(..., ge=0)
+    total_claims: int = Field(..., ge=0)
+    verification_id: str | None = None
+    verification_state: str
+
+
+class GpuBackend(Enum):
+    none = 'none'
+    metal = 'metal'
+    cuda = 'cuda'
+    rocm = 'rocm'
+    vulkan = 'vulkan'
+    directml = 'directml'
+    other = 'other'
+
+
+class HardwareProbe(MedousaModel):
+    availableRamMb: int = Field(..., ge=0)
+    cpuArch: str
+    cpuCores: int = Field(..., ge=0)
+    freeDiskGb: int = Field(..., ge=0)
+    gpuBackend: GpuBackend
+    totalRamMb: int = Field(..., ge=0)
+
+
+class HardwareTier(Enum):
+    A = 'A'
+    B = 'B'
+    C = 'C'
+    D = 'D'
+    E = 'E'
+
+
+class LocalBenchmarkArtifactMode(Enum):
+    prequantizedUqff = 'prequantizedUqff'
+    inSituQuantization = 'inSituQuantization'
+
+
+class LocalBenchmarkEngineIdentity(MedousaModel):
+    artifactDigest: str | None = None
+    binaryDigest: str | None = None
+    compiledBackends: list[str]
+    controlPlaneVersion: str
+    recipeRevision: str | None = None
+    runtimeName: str
+    runtimeVersion: str
+
+
+class LocalBenchmarkGitState(MedousaModel):
+    dirty: bool | None = None
+    revision: str | None = None
+
+
+class LocalBenchmarkHostIdentity(MedousaModel):
+    cpuBrand: str | None = None
+    kernelVersion: str | None = None
+    osName: str | None = None
+    osVersion: str | None = None
+
+
+class LocalBenchmarkOutcome(Enum):
+    running = 'running'
+    completed = 'completed'
+    failed = 'failed'
+
+
+class LocalBenchmarkPhase(Enum):
+    beforeLoad = 'beforeLoad'
+    afterLoad = 'afterLoad'
+    afterStream = 'afterStream'
+    afterUnload = 'afterUnload'
+    reclaimed1s = 'reclaimed1s'
+    reclaimed5s = 'reclaimed5s'
+    reclaimed10s = 'reclaimed10s'
+
+
+class LocalBenchmarkRecipe(MedousaModel):
+    artifactMode: LocalBenchmarkArtifactMode
+    bind: str
+    cpuOnly: bool
+    maxBatchSize: int = Field(..., ge=0)
+    maxOutputTokens: int = Field(..., ge=0)
+    maxSeqLen: int = Field(..., ge=0)
+    modelId: str
+    modelRepo: str
+    quantization: str | None = None
+    samplingSeed: int = Field(..., ge=0)
+    syntheticPromptTokens: int = Field(..., ge=0)
+
+
+class LocalBenchmarkResult(MedousaModel):
+    error: str | None = None
+    generatedContentBytes: int = Field(..., ge=0)
+    loadMs: int | None = Field(None, ge=0)
+    outcome: LocalBenchmarkOutcome
+    reportedCompletionTokens: int | None = Field(None, ge=0)
+    responseBytes: int = Field(..., ge=0)
+    responseChunks: int = Field(..., ge=0)
+    rssReclaimedMb10s: int | None = Field(None, ge=0)
+    rssReclaimedMb1s: int | None = Field(None, ge=0)
+    rssReclaimedMb5s: int | None = Field(None, ge=0)
+    streamMs: int | None = Field(None, ge=0)
+    ttftMs: int | None = Field(None, ge=0)
+    unloadMs: int | None = Field(None, ge=0)
+
+
+class LocalDeviceTelemetryAvailability(Enum):
+    available = 'available'
+    partial = 'partial'
+    unavailable = 'unavailable'
+
+
+class LocalDeviceTelemetrySource(Enum):
+    metalApi = 'metalApi'
+    nvml = 'nvml'
+    nvidiaSmi = 'nvidiaSmi'
+    amdSmiLibrary = 'amdSmiLibrary'
+    amdSmi = 'amdSmi'
+    wddm = 'wddm'
+    vulkanBudget = 'vulkanBudget'
+
+
+class LocalResourceAdmission(MedousaModel):
+    admissibleMb: int = Field(..., ge=0)
+    admitted: bool
+    availableRamMb: int = Field(..., ge=0)
+    calibrationApplied: bool | None = False
+    calibrationMarginPercent: int | None = Field(None, ge=0)
+    calibrationObservedDevicePeakMb: int | None = Field(None, ge=0)
+    calibrationObservedHostPeakMb: int | None = Field(None, ge=0)
+    calibrationSampleCount: int | None = Field(0, ge=0)
+    criticalAvailableMb: int = Field(..., ge=0)
+    deviceAdmissibleMb: int | None = Field(None, ge=0)
+    deviceAvailableMb: int | None = Field(None, ge=0)
+    deviceBackend: GpuBackend | None = None
+    deviceBudgetMb: int | None = Field(None, ge=0)
+    deviceEnforced: bool | None = False
+    deviceEstimatedPeakMb: int | None = Field(None, ge=0)
+    deviceIndex: int | None = Field(None, ge=0)
+    deviceName: str | None = None
+    deviceRationale: str | None = None
+    deviceReserveMb: int | None = Field(None, ge=0)
+    deviceSource: LocalDeviceTelemetrySource | None = None
+    deviceTotalMb: int | None = Field(None, ge=0)
+    deviceUuid: str | None = None
+    estimatedConversionMb: int = Field(..., ge=0)
+    estimatedPeakMb: int = Field(..., ge=0)
+    estimatedSteadyMb: int = Field(..., ge=0)
+    hardwareTier: HardwareTier
+    hostAdmissibleMb: int | None = Field(0, ge=0)
+    maxBatchSize: int = Field(..., ge=0)
+    maxSeqLen: int = Field(..., ge=0)
+    modelId: str
+    rationale: str
+    staticEstimatedPeakMb: int | None = Field(0, ge=0)
+    systemReserveMb: int = Field(..., ge=0)
+    tierCapMb: int = Field(..., ge=0)
+    totalRamMb: int = Field(..., ge=0)
+
+
+class CatalogModelEntry(MedousaModel):
+    contextLength: int = Field(..., ge=0)
+    displayName: str
+    engine: str
+    engineArgs: Any | None = None
+    fallback: Any | None = None
+    family: str
+    format: str
+    id: str
+    license: str
+    modalities: list[str]
+    ramEstimateMb: int = Field(..., ge=0)
+    repo: str
+    sizeBytes: int = Field(..., ge=0)
+    source: str
+    tags: list[str] | None = []
+    tierMax: str
+    tierMin: str
+    tierRecommended: bool | None = False
+    variant: str
+
+
+class LocalRuntimePhase(Enum):
+    unavailable = 'unavailable'
+    cold = 'cold'
+    startingWorker = 'startingWorker'
+    loading = 'loading'
+    ready = 'ready'
+    busy = 'busy'
+    draining = 'draining'
+    unloading = 'unloading'
+    failed = 'failed'
+
+
+class LocalWorkerStatus(MedousaModel):
+    artifactDigest: str | None = None
+    binaryDigest: str | None = None
+    compiledBackends: list[str] | None = []
+    generationId: str
+    modelAlias: str
+    modelRepo: str
+    phase: LocalRuntimePhase
+    pid: int = Field(..., ge=0)
+    protocolVersion: int = Field(..., ge=0)
+    recipeRevision: str
+    runtimeName: str
+    runtimeVersion: str
+    startedAt: AwareDatetime
+
+
+class HardwareProfile(MedousaModel):
+    probe: HardwareProbe
+    probedAt: AwareDatetime
+    recommendedDisplayName: str
+    recommendedModelId: str
+    tier: HardwareTier
+    tierLabel: str
+
+
+class ModelDownloadProgress(MedousaModel):
+    bytesDone: int = Field(..., ge=0)
+    bytesTotal: int = Field(..., ge=0)
+    currentFile: str | None = None
+    error: str | None = None
+    jobId: str
+    message: str
+    modelId: str
+    percent: float
+    phase: str
+
+
+class DownloadFileRecord(MedousaModel):
+    bytes: int = Field(..., ge=0)
+    path: str
+    sha256: str
+
+
+class InstalledModelRecord(MedousaModel):
+    bytesOnDisk: int = Field(..., ge=0)
+    files: list[DownloadFileRecord] | None = Field([], validate_default=True)
+    installedAt: AwareDatetime
+    localPath: str
+    modelId: str
+    repo: str
+    verified: bool
+
+
+class McpGatewayHealthSnapshot(MedousaModel):
+    catalogEntries: int = Field(..., ge=0)
+    connectedServers: int = Field(..., ge=0)
+    invokesEnabled: bool
+    registeredServers: int = Field(..., ge=0)
+    status: str
+
+
+class McpGatewayServerRuntime(MedousaModel):
+    allowedLanes: list[str]
+    connected: bool
+    enabled: bool
+    serverId: str
+    title: str
+    toolCount: int = Field(..., ge=0)
+
+
+class RecurringDefinitionEntry(MedousaModel):
+    cron_expr: str
+    delivery_label: str | None = None
+    display_name: str | None = None
+    enabled: bool
+    execution_mode: str | None = None
+    job_type: str
+    last_run_at_utc: AwareDatetime | None = None
+    last_run_status: str | None = None
+    manuscript_id: str | None = None
+    next_run_at_utc: AwareDatetime
+    prompt_excerpt: str | None = None
+    queue: str
+    recurring_id: str
+    timezone: str
+
+
+class RecurringRunEntry(MedousaModel):
+    attempt_count: int = Field(..., ge=0)
+    is_terminal: bool
+    job_id: str
+    latest_outcome: str | None = None
+    output_text: str | None = None
+    scheduled_at_utc: AwareDatetime
+    status: str
+    updated_at_utc: AwareDatetime
+
+
+class Command13(Enum):
+    model = 'model'
+
+
+class RuntimeConfigCommandSpec1(MedousaModel):
+    args: list[str]
+    command: Command13
+
+
+class Command14(Enum):
+    depth = 'depth'
+
+
+class RuntimeConfigCommandSpec2(MedousaModel):
+    command: Command14
+    mode: str | None = None
+
+
+class Command15(Enum):
+    reasoning = 'reasoning'
+
+
+class RuntimeConfigCommandSpec3(MedousaModel):
+    command: Command15
+    mode: str | None = None
+
+
+class Command16(Enum):
+    verify_policy = 'verify_policy'
+
+
+class RuntimeVerifyPolicyState(MedousaModel):
+    min_avg_support_strength: str
+    min_citation_coverage: str
+    min_claim_support_strength: str
+    min_supported_claim_ratio: str
+
+
+class TurnArtifactRef(MedousaModel):
+    artifact_id: str | None = None
+    byte_size: int = Field(..., ge=0)
+    content_type: str
+    hash64: str
+    label: str | None = None
+    role: str
+
+
+class Kind(Enum):
+    text = 'text'
+
+
+class TurnPart1(MedousaModel):
+    kind: Kind
+    markdown: str
+
+
+class Kind1(Enum):
+    progress = 'progress'
+
+
+class TurnPart2(MedousaModel):
+    kind: Kind1
+    markdown: str
+
+
+class Kind2(Enum):
+    reasoning = 'reasoning'
+
+
+class TurnPart3(MedousaModel):
+    kind: Kind2
+    markdown: str
+
+
+class Kind3(Enum):
+    tool_run = 'tool_run'
+
+
+class TurnPart4(MedousaModel):
+    artifact_refs: list[TurnArtifactRef] | None = None
+    finished_at: AwareDatetime | None = None
+    input_summary: str
+    kind: Kind3
+    output_summary: str | None = None
+    run_id: str
+    started_at: AwareDatetime
+    status: str
+    tool_name: str
+    tool_round: int | None = Field(None, ge=0)
+
+
+class Kind4(Enum):
+    handoff = 'handoff'
+
+
+class TurnPart5(MedousaModel):
+    handoff_kind: str
+    kind: Kind4
+    text: str
+    work_id: str | None = None
+
+
+class Kind5(Enum):
+    user_media = 'user_media'
+
+
+class TurnPart6(MedousaModel):
+    byte_size: int | None = Field(None, ge=0)
+    kind: Kind5
+    label: str | None = None
+    media_id: str
+    mime: str
+
+
+class Kind6(Enum):
+    host_context = 'host_context'
+
+
+class Kind7(Enum):
+    attachment_ref = 'attachment_ref'
+
+
+class TurnPart8(MedousaModel):
+    artifact_id: str
+    byte_size: int | None = Field(None, ge=0)
+    height_px: int | None = Field(None, ge=0)
+    kind: Kind7
+    label: str
+    mime: str
+    presentation: str | None = None
+
+
+class Kind8(Enum):
+    unknown = 'unknown'
+
+
+class TurnPart9(MedousaModel):
+    kind: Kind8
+
+
+class TurnSliceSummary(MedousaModel):
+    delegate_intent: str | None = None
+    delegate_work_id: str | None = None
+    failures: list[str]
+    goal: str
+    open_gaps: list[str] | None = None
+    outcomes: list[str]
+    recent_digests: list[str] | None = None
+    scratch_phase: str | None = None
+    tool_rounds: int = Field(..., ge=0)
+    tools: list[str]
+    working_notes: list[str] | None = None
+
+
+class SessionHistorySummary(MedousaModel):
+    catalog: str | None = Field(
+        None,
+        description='`shared` when indexed in the multi-member catalog; omitted for single-seat chats.',
+    )
+    display_name: str | None = None
+    last_timestamp: AwareDatetime | None = None
+    last_verification_confidence: float | None = None
+    last_verification_coverage: float | None = None
+    last_verification_timestamp: AwareDatetime | None = None
+    last_verification_verified: bool | None = None
+    preview: str
+    session_id: str
+    turns: int = Field(..., ge=0)
+    verification_runs: int = Field(..., ge=0)
+
+
+class Command17(Enum):
+    routes = 'routes'
+
+
+class StageRouteCommandSpec1(MedousaModel):
+    command: Command17
+    role: str | None = None
+
+
+class Command18(Enum):
+    set = 'set'
+
+
+class StageRouteCommandSpec2(MedousaModel):
+    command: Command18
+    fallback_chain: list[str] | None = None
+    policy_profile: str | None = None
+    role: str
+    target: str
+
+
+class Command19(Enum):
+    reset = 'reset'
+
+
+class StageRouteCommandSpec3(MedousaModel):
+    command: Command19
+
+
+class StageRouteCommandSpec(
+    RootModel[StageRouteCommandSpec1 | StageRouteCommandSpec2 | StageRouteCommandSpec3]
+):
+    root: StageRouteCommandSpec1 | StageRouteCommandSpec2 | StageRouteCommandSpec3
+
+
+class TurnBudgetRequestRecord(MedousaModel):
+    channel: str | None = None
+    created_at_utc: AwareDatetime
+    granted_rounds: int | None = Field(None, ge=0)
+    max_tool_rounds: int = Field(..., ge=0)
+    progress_summary: str | None = None
+    reason: str
+    request_id: str
+    requested_rounds: int = Field(..., ge=0)
+    resolved_at_utc: AwareDatetime | None = None
+    resolved_by: str | None = None
+    rounds_executed: int = Field(..., ge=0)
+    session_id: str
+    status: str
+    stream_turn_id: int = Field(..., ge=0)
+    turn_correlation_id: str | None = None
+    updated_at_utc: AwareDatetime
+
+
+class VaultNote(MedousaModel):
+    backlinks: list[str]
+    byte_size: int = Field(..., ge=0)
+    content_hash: str
+    created_at_utc: AwareDatetime
+    kind: str | None = ''
+    modified_at_utc: AwareDatetime
+    path: str
+    tags: list[str]
+    title: str
+    wikilinks_out: list[str]
+
+
+class VaultRootView(MedousaModel):
+    active: bool
+    id: str
+    isDefault: bool
+    isObsidian: bool | None = Field(
+        False, description='True when `{path}/.obsidian` exists (co-located Obsidian vault).'
+    )
+    label: str
+    path: str
+
+
+class VaultNoteSummary(MedousaModel):
+    kind: str | None = ''
+    modified_at_utc: AwareDatetime
+    path: str
+    title: str
+
+
+class VaultSearchHit(MedousaModel):
+    matched_terms: list[str]
+    note: VaultNoteSummary
+    score: float
+    snippet: str | None = None
+
+
+class WorkCardAssociations(MedousaModel):
+    artifact_ids: list[str] | None = []
+    locus_node_ids: list[str] | None = []
+    vault_paths: list[str] | None = []
+
+
+class WorkBoardColumn(Enum):
+    backlog = 'backlog'
+    in_flight = 'in_flight'
+    wrapping_up = 'wrapping_up'
+    done = 'done'
+    blocked = 'blocked'
+
+
+class WorkCardId(RootModel[str]):
+    root: str
+
+
+class WorkspaceEventActor(Enum):
+    system = 'system'
+    agent = 'agent'
+    operator = 'operator'
+    scheduler = 'scheduler'
+
+
+class WorkspaceEventKind(Enum):
+    job_enqueued = 'job_enqueued'
+    job_started = 'job_started'
+    job_succeeded = 'job_succeeded'
+    job_failed = 'job_failed'
+    work_delegated = 'work_delegated'
+    work_completed = 'work_completed'
+    work_wrapping_up = 'work_wrapping_up'
+    work_unblocked = 'work_unblocked'
+    turn_accepted = 'turn_accepted'
+    turn_completed = 'turn_completed'
+    agent_replied = 'agent_replied'
+    vault_note_created = 'vault_note_created'
+    vault_note_updated = 'vault_note_updated'
+    identity_remembered = 'identity_remembered'
+    locus_bridge_written = 'locus_bridge_written'
+
+
+class WorkspaceEventRef(MedousaModel):
+    ref_id: str
+    ref_type: str
+
+
+class AgentPermissionResolveRequest(MedousaModel):
+    resolved_by: str | None = None
+
+
+class AgentRuntimeListResponse(MedousaModel):
+    runtimes: list[AgentRuntimeInfo]
+
+
+class AgentSessionPromptRequest(MedousaModel):
+    code_context: CodeIntentContext | None = None
+    prompt: str
 
 
 class AgentSessionPromptResponse(MedousaModel):
@@ -48,6 +1264,14 @@ class ArchiveAskJobResponse(MedousaModel):
     archived: bool
     job_id: str
     message: str
+
+
+class ArtifactCommandRequest(MedousaModel):
+    command: ArtifactCommandSpec
+    selected_context_pack_query: str | None = None
+    session_id: str
+    verification_policy: ArtifactVerificationPolicyInput | None = None
+    verifier_route_label: str | None = None
 
 
 class ArtifactCommandResponse(MedousaModel):
@@ -84,6 +1308,10 @@ class ArtifactListUiRequest(MedousaModel):
     limit: int | None = Field(50, ge=0)
     query: str | None = None
     session_id: str | None = None
+
+
+class ArtifactListUiResponse(MedousaModel):
+    artifacts: list[ArtifactSummary]
 
 
 class ArtifactWriteRequest(MedousaModel):
@@ -147,10 +1375,51 @@ class CalendarImportResponse(MedousaModel):
     )
 
 
+class CalendarListResponse(MedousaModel):
+    calendar_path: str
+    events: list[CalendarEvent]
+
+
+class CalendarWriteRequest(MedousaModel):
+    alarms: list[CalendarAlarm] | None = Field(
+        None, description='Replace VALARM set on write (omit/empty clears).'
+    )
+    all_day: bool | None = False
+    calendar_path: str | None = None
+    description: str | None = None
+    dtend: AwareDatetime | None = None
+    dtstart: AwareDatetime
+    location: str | None = None
+    note_path: str | None = Field(
+        None, description='Optional vault-relative markdown note (`X-MEDOUSA-NOTE`).'
+    )
+    rrule: str | None = None
+    summary: str
+    uid: str | None = None
+
+
+class CalendarWriteResponse(MedousaModel):
+    created: bool
+    event: CalendarEvent
+
+
 class CancelAgentSessionResponse(MedousaModel):
     agent_session_id: str
     cancelled: bool
     message: str
+
+
+class CapabilityListResponse(MedousaModel):
+    capabilities: list[CapabilityListEntry]
+
+
+class CapabilityResolveResponse(MedousaModel):
+    capability: str
+    description: str | None = None
+    gateway_unreachable: bool | None = None
+    implementations: CapabilityImplementations
+    recommended: CapabilityRecommendation | None = None
+    title: str
 
 
 class ComponentRuntimeEventsQuery(MedousaModel):
@@ -158,18 +1427,20 @@ class ComponentRuntimeEventsQuery(MedousaModel):
     profileId: str | None = None
 
 
+class ComponentRuntimeEventsRequest(MedousaModel):
+    events: list[ComponentRuntimeEventInput] | None = Field([], validate_default=True)
+    profileId: str | None = None
+    sessionId: str | None = None
+
+
 class ComponentRuntimeEventsResponse(MedousaModel):
     accepted: int = Field(..., ge=0)
     ok: bool
 
 
-class ComponentRuntimeProbeResult(MedousaModel):
+class ComponentRuntimeEventsTailResponse(MedousaModel):
     componentId: str
-    errors: list[str] | None = []
-    probeId: str
-    profileId: str | None = None
-    storeReady: bool
-    storeRoundTripOk: bool
+    events: list[ComponentRuntimeEvent]
 
 
 class ComponentStoreDeleteResponse(MedousaModel):
@@ -206,13 +1477,31 @@ class ComponentStoreSetResponse(MedousaModel):
     updatedAtUtc: AwareDatetime
 
 
+class CreateAgentSessionRequest(MedousaModel):
+    args: list[str] | None = None
+    code_context: CodeIntentContext | None = None
+    command: str | None = None
+    cwd: str | None = None
+    prompt: str | None = None
+    resume_provider_token: str | None = Field(
+        None,
+        description='Optional ACP wire `sessionId` to resume (from a prior `RecoveryDisposition::ResumeSupported`). When omitted but `work_id` is set, the daemon looks up the latest resume token on that work item.',
+    )
+    runtime: str = Field(..., description='External runtime: `cursor` or `codex` (not `medousa`).')
+    session_id: str
+    surface: TurnSurfaceContext | None = None
+    work_id: str | None = Field(
+        None,
+        description='Optional Forge undertaking binding (`/v1/forge/items/{id}`). When set, the ACP session runs inside the governed worktree and reports leases.',
+    )
+
+
 class CreateAgentSessionResponse(MedousaModel):
     accepted_at_utc: AwareDatetime
     agent_session_id: str
     phase: str
     resumed: bool | None = Field(
-        None,
-        description='True when the session was attached via ACP `session/resume` (or load).',
+        None, description='True when the session was attached via ACP `session/resume` (or load).'
     )
     runtime: str
     session_id: str
@@ -281,6 +1570,10 @@ class EnvironmentValidateResponse(MedousaModel):
     valid: bool
 
 
+class FeedListResponse(MedousaModel):
+    feeds: list[FeedListEntry]
+
+
 class FeedReadRequest(MedousaModel):
     profileId: str | None = None
     seq: int | None = Field(None, ge=0)
@@ -296,9 +1589,9 @@ class FeedTailQuery(MedousaModel):
 
 
 class HealthResponse(MedousaModel):
-    active_profile_display_name: str | None = Field(
-        None, description='Human label for `active_profile_id`.'
-    )
+    active_profile_display_name: (
+        str | None
+    ) = Field(None, description='Human label for `active_profile_id`.')
     active_profile_id: str | None = Field(
         None, description='Active workshop identity profile (`user:{slug}`).'
     )
@@ -312,10 +1605,27 @@ class HealthResponse(MedousaModel):
     worker_id: str
 
 
+class IngestRequest(MedousaModel):
+    attachments: list[IngestAttachment] | None = Field(
+        [],
+        description='Optional attachment payloads merged into ask prompts',
+        validate_default=True,
+    )
+    channel: str = Field(
+        ..., description='Channel type identifier, e.g. "telegram", "discord", "cli"'
+    )
+    channel_id: str = Field(
+        ..., description='Channel/chat/conversation identifier, e.g. "telegram:chat:67890"'
+    )
+    text: str = Field(..., description='The text content of the message (command or prompt)')
+    user_id: str = Field(
+        ..., description='User identifier within the channel, e.g. "telegram:user:12345"'
+    )
+
+
 class IngestResponse(MedousaModel):
     is_new_session: bool = Field(
-        ...,
-        description='Whether this is a brand-new session (first message or after /new)',
+        ..., description='Whether this is a brand-new session (first message or after /new)'
     )
     job_id: str | None = Field(
         None, description='If a job was enqueued, its id (for polling/streaming)'
@@ -347,6 +1657,95 @@ class InteractiveTurnResponse(MedousaModel):
     turn_id: str
 
 
+class InteractiveTurnStreamEvent(MedousaModel):
+    agent_runtime: str | None = Field(
+        None,
+        description='External runtime kind when streaming an ACP session (`cursor` / `codex`).',
+    )
+    agent_session_id: str | None = Field(
+        None,
+        description='Bound Medousa chat session for agent-runtime streams (`turn_id` holds agent_session_id).',
+    )
+    browser_challenge_url: str | None = Field(
+        None, description='URL the client should load in Agent Browser WebView.'
+    )
+    browser_session_id: str | None = Field(
+        None, description='Agent Browser CAPTCHA / verification handoff session id.'
+    )
+    budget_request_id: str | None = Field(
+        None, description='Turn budget approval pause — card id for Home deep link / notifications.'
+    )
+    content_delta: str | None = None
+    context_usage: ContextUsageReport | None = Field(
+        None,
+        description='Per-layer context budget estimate (chars/4 heuristic) for operator telemetry.',
+    )
+    debug_message: str | None = Field(
+        None,
+        description='Engine/TUI telemetry — shown only when the operator opts into engine details.',
+    )
+    emitted_at_utc: AwareDatetime
+    event_type: str
+    final_text: str | None = None
+    message: str
+    operator_message: str | None = Field(
+        None, description='Human-facing status whisper for rich surfaces (Home default).'
+    )
+    permission_request_id: str | None = Field(
+        None,
+        description='External ACP agent permission pause — resolve via `/v1/agents/permission-requests/{id}/approve|deny`.',
+    )
+    phase: str
+    previous_artifact_id: str | None = Field(
+        None,
+        description='Previous artifact id when cognition_artifact_write supersedes a revision.',
+    )
+    reasoning_delta: str | None = None
+    requested_rounds: int | None = Field(None, ge=0)
+    root_artifact_id: str | None = Field(
+        None, description='Root artifact lineage id for revision chains.'
+    )
+    seq: int | None = Field(
+        0,
+        description='Monotonic per-turn sequence number, stamped server-side by `TurnEventChannel::publish`. Enables exactly-once replay/dedup on reconnect. `#[serde(default)]` keeps the Python SDK and any older payloads (which never carried `seq`) wire-compatible.',
+        ge=0,
+    )
+    terminal: bool
+    tool_artifact_refs: list[StreamToolArtifactRef] | None = None
+    tool_input_summary: str | None = None
+    tool_name: str | None = None
+    tool_names: list[str] | None = None
+    tool_output_summary: str | None = None
+    tool_round: int | None = Field(None, ge=0)
+    tool_run_id: str | None = Field(
+        None, description='Structured tool bus (P1) — correlates started/finished pair.'
+    )
+    tool_status: str | None = None
+    turn_id: str
+    ui_artifact: StreamUiArtifact | None = Field(
+        None, description='Rich UI artifact presented inline in chat (cognition_ui_present).'
+    )
+    ui_scene: StreamUiScene | None = Field(
+        None,
+        description='Liquid UI scene operations (cognition_ui_scene) — model-authored structure-then-fill turns. Ops are opaque JSON validated client-side.',
+    )
+    work_id: str | None = Field(
+        None, description='Turn worker handoff — workspace card id (`work-…`).'
+    )
+
+
+class JobReportResponse(MedousaModel):
+    attempt_count: int = Field(..., ge=0)
+    citations: list[JobCitationResponse]
+    evidence_report: JobEvidenceReportResponse | None = None
+    is_terminal: bool
+    job_id: str
+    latest_execution_id: str | None = None
+    latest_outcome: str | None = None
+    output_text: str | None = None
+    status: str
+
+
 class JobResultResponse(MedousaModel):
     attempt_count: int = Field(..., ge=0)
     interim_text: str | None = None
@@ -358,6 +1757,14 @@ class JobResultResponse(MedousaModel):
     status: str
 
 
+class LocalCatalogResponse(MedousaModel):
+    familyDefault: str
+    models: list[CatalogModelEntry]
+    recommendedModelId: str
+    tier: HardwareTier
+    tierLabel: str
+
+
 class LocalEngineStatus(MedousaModel):
     baseUrl: str
     bind: str | None = None
@@ -367,22 +1774,36 @@ class LocalEngineStatus(MedousaModel):
     message: str
     modelAlias: str | None = None
     modelRepo: str | None = None
+    phase: LocalRuntimePhase
+    worker: LocalWorkerStatus | None = None
+
+
+class LocalHardwareResponse(MedousaModel):
+    compiledBackends: list[str]
+    engineAvailable: bool
+    message: str
+    profile: HardwareProfile
 
 
 class LocalModelDownloadRequest(MedousaModel):
     modelId: str
 
 
-class ModelDownloadProgress1(MedousaModel):
-    bytesDone: int = Field(..., ge=0)
-    bytesTotal: int = Field(..., ge=0)
-    currentFile: str | None = None
-    error: str | None = None
-    jobId: str
+class LocalModelDownloadResponse(MedousaModel):
+    job: ModelDownloadProgress
+
+
+class LocalModelsResponse(MedousaModel):
+    activeDownloads: list[ModelDownloadProgress]
+    installed: list[InstalledModelRecord]
+
+
+class McpGatewayStatusResponse(MedousaModel):
+    gatewayUrl: str
+    health: McpGatewayHealthSnapshot | None = None
     message: str
-    modelId: str
-    percent: float
-    phase: str
+    reachable: bool
+    servers: list[McpGatewayServerRuntime]
 
 
 class RecurringDeliveryResponse(MedousaModel):
@@ -391,11 +1812,21 @@ class RecurringDeliveryResponse(MedousaModel):
     recurring_id: str
 
 
+class RecurringListResponse(MedousaModel):
+    count: int = Field(..., ge=0)
+    recurring: list[RecurringDefinitionEntry]
+
+
+class RecurringRunsResponse(MedousaModel):
+    count: int = Field(..., ge=0)
+    recurring_id: str
+    runs: list[RecurringRunEntry]
+
+
 class RegisterRecurringPromptRequest(MedousaModel):
     cron_expr: str
     delivery: Any | None = Field(
-        None,
-        description='Optional channel push target for each successful materialized run.',
+        None, description='Optional channel push target for each successful materialized run.'
     )
     display_name: str | None = Field(
         None, description='Human-readable title for Automations list rows.'
@@ -435,6 +1866,18 @@ class RegisterRecurringResponse(MedousaModel):
     timezone: str
 
 
+class RuntimeConfigCommandResponse(MedousaModel):
+    next_draft_model: str
+    next_draft_provider: str
+    next_reasoning_effort: str
+    next_response_depth_mode: str
+    next_verify_policy_draft: RuntimeVerifyPolicyState | None = None
+    rendered_output: str | None = None
+    should_apply_settings: bool
+    should_persist_depth_defaults: bool
+    should_persist_reasoning_defaults: bool
+
+
 class SessionAppendTurnResponse(MedousaModel):
     session_id: str
     stored: bool
@@ -448,6 +1891,11 @@ class SessionDeleteResponse(MedousaModel):
     session_id: str
 
 
+class SessionHistoryListResponse(MedousaModel):
+    next_cursor: str | None = None
+    sessions: list[SessionHistorySummary]
+
+
 class SessionSetDisplayNameRequest(MedousaModel):
     display_name: str
 
@@ -455,6 +1903,18 @@ class SessionSetDisplayNameRequest(MedousaModel):
 class SessionSetDisplayNameResponse(MedousaModel):
     display_name: str
     session_id: str
+
+
+class StageRouteCommandRequest(MedousaModel):
+    command: StageRouteCommandSpec
+    model: str
+    provider: str
+    stage_routing: StageRoutingMatrix
+
+
+class StageRouteCommandResponse(MedousaModel):
+    rendered_output: str
+    stage_routing: StageRoutingMatrix
 
 
 class TurnBudgetApproveRequest(MedousaModel):
@@ -466,6 +1926,15 @@ class TurnBudgetDenyRequest(MedousaModel):
     resolved_by: str | None = None
 
 
+class TurnBudgetRequestListResponse(MedousaModel):
+    requests: list[TurnBudgetRequestRecord]
+
+
+class TurnBudgetRequestResponse(MedousaModel):
+    message: str
+    request: TurnBudgetRequestRecord
+
+
 class UpdateRecurringRequest(MedousaModel):
     cron_expr: str | None = None
     delivery: Any | None = Field(
@@ -475,8 +1944,7 @@ class UpdateRecurringRequest(MedousaModel):
     display_name: str | None = None
     enabled: bool | None = None
     feeds: Any | None = Field(
-        None,
-        description='Replace feed binding; pass `{ "feeds": null }` to clear feed publish.',
+        None, description='Replace feed binding; pass `{ "feeds": null }` to clear feed publish.'
     )
     timezone: str | None = None
 
@@ -505,6 +1973,25 @@ class VaultDeleteResponse(MedousaModel):
     path: str
 
 
+class VaultNoteContentResponse(MedousaModel):
+    content: str
+    note: VaultNote
+
+
+class VaultNotesListResponse(MedousaModel):
+    notes: list[VaultNote]
+
+
+class VaultRootsResponse(MedousaModel):
+    activeRootId: str
+    roots: list[VaultRootView]
+
+
+class VaultSearchResponse(MedousaModel):
+    hits: list[VaultSearchHit]
+    query: str
+
+
 class VaultSetActiveRootRequest(MedousaModel):
     rootId: str
 
@@ -525,732 +2012,6 @@ class VaultWriteRequest(MedousaModel):
         None,
         description='Chat session id for workshop linking tags (`chat:…`, `session`, `profile:…`).',
     )
-
-
-class WorkspaceLinkVaultRequest(MedousaModel):
-    vault_path: str
-
-
-class AgentPermissionRequestRecord(RootModel[Any]):
-    root: Any
-
-
-class AgentPermissionRequestStatus(RootModel[Any]):
-    root: Any
-
-
-class AgentRuntimeInfoModel(RootModel[Any]):
-    root: Any
-
-
-class ArtifactCommandSpec(RootModel[Any]):
-    root: Any
-
-
-class ArtifactSummary(RootModel[Any]):
-    root: Any
-
-
-class ArtifactVerificationPolicyInput(RootModel[Any]):
-    root: Any
-
-
-class CalendarAlarm(RootModel[Any]):
-    root: Any
-
-
-class CalendarEvent(RootModel[Any]):
-    root: Any
-
-
-class CapabilityImplementations(RootModel[Any]):
-    root: Any
-
-
-class CapabilityListEntry(RootModel[Any]):
-    root: Any
-
-
-class CapabilityRecommendation(RootModel[Any]):
-    root: Any
-
-
-class CatalogModelEntry(RootModel[Any]):
-    root: Any
-
-
-class CodeIntentContext(RootModel[Any]):
-    root: Any
-
-
-class ComponentDef(RootModel[Any]):
-    root: Any
-
-
-class ComponentFeedPatch(RootModel[Any]):
-    root: Any
-
-
-class ComponentRuntimeEvent(RootModel[Any]):
-    root: Any
-
-
-class ComponentRuntimeEventInput(RootModel[Any]):
-    root: Any
-
-
-class ComponentRuntimeProbeRequest(RootModel[Any]):
-    root: Any
-
-
-class ContextUsageReport(RootModel[Any]):
-    root: Any
-
-
-class ConversationTurn(RootModel[Any]):
-    root: Any
-
-
-class CustomViewSurfaceStatus(RootModel[Any]):
-    root: Any
-
-
-class EnvironmentPendingProposal(RootModel[Any]):
-    root: Any
-
-
-class EnvironmentSpec(RootModel[Any]):
-    root: Any
-
-
-class EnvironmentTheme(RootModel[Any]):
-    root: Any
-
-
-class FeedEvent(RootModel[Any]):
-    root: Any
-
-
-class FeedListEntry(RootModel[Any]):
-    root: Any
-
-
-class HardwareProfile(RootModel[Any]):
-    root: Any
-
-
-class HardwareTier(RootModel[Any]):
-    root: Any
-
-
-class IngestAttachment(RootModel[Any]):
-    root: Any
-
-
-class InstalledModelRecord(RootModel[Any]):
-    root: Any
-
-
-class JobCitationResponse(RootModel[Any]):
-    root: Any
-
-
-class JobEvidenceReportResponse(RootModel[Any]):
-    root: Any
-
-
-class LayoutPreset(RootModel[Any]):
-    root: Any
-
-
-class McpGatewayHealthSnapshot(RootModel[Any]):
-    root: Any
-
-
-class McpGatewayServerRuntime(RootModel[Any]):
-    root: Any
-
-
-class MediaRef(RootModel[Any]):
-    root: Any
-
-
-class ModelDownloadProgress(RootModel[Any]):
-    root: Any
-
-
-class RecurringDefinitionEntry(RootModel[Any]):
-    root: Any
-
-
-class RecurringRunEntry(RootModel[Any]):
-    root: Any
-
-
-class RuntimeConfigCommandSpec(RootModel[Any]):
-    root: Any
-
-
-class RuntimeVerifyPolicyState(RootModel[Any]):
-    root: Any
-
-
-class SessionHistorySummary(RootModel[Any]):
-    root: Any
-
-
-class ShellChromeDef(RootModel[Any]):
-    root: Any
-
-
-class StageRouteCommandSpec(RootModel[Any]):
-    root: Any
-
-
-class StageRoutingMatrix(RootModel[Any]):
-    root: Any
-
-
-class StreamToolArtifactRef(RootModel[Any]):
-    root: Any
-
-
-class StreamUiArtifact(RootModel[Any]):
-    root: Any
-
-
-class StreamUiScene(RootModel[Any]):
-    root: Any
-
-
-class SurfaceDef(RootModel[Any]):
-    root: Any
-
-
-class TurnBudgetRequestRecord(RootModel[Any]):
-    root: Any
-
-
-class TurnSurfaceContext(RootModel[Any]):
-    root: Any
-
-
-class VaultNote(RootModel[Any]):
-    root: Any
-
-
-class VaultRootView(RootModel[Any]):
-    root: Any
-
-
-class VaultSearchHit(RootModel[Any]):
-    root: Any
-
-
-class WorkCard(RootModel[Any]):
-    root: Any
-
-
-class WorkCardAssociations(RootModel[Any]):
-    root: Any
-
-
-class WorkspaceEvent(RootModel[Any]):
-    root: Any
-
-
-class WorkspaceSnapshot(RootModel[Any]):
-    root: Any
-
-
-class AgentPermissionRequestListResponse(MedousaModel):
-    requests: list[AgentPermissionRequestRecord]
-
-
-class AgentPermissionRequestRecord1(MedousaModel):
-    agent_session_id: str
-    created_at_utc: AwareDatetime
-    request_id: str
-    resolved_at_utc: AwareDatetime | None = None
-    resolved_by: str | None = None
-    runtime: str
-    session_id: str
-    status: AgentPermissionRequestStatus
-    summary: str
-    updated_at_utc: AwareDatetime
-
-
-class AgentPermissionResolveResponse(MedousaModel):
-    request: AgentPermissionRequestRecord
-
-
-class AgentRuntimeListResponse(MedousaModel):
-    runtimes: list[AgentRuntimeInfoModel]
-
-
-class AgentSessionPromptRequest(MedousaModel):
-    code_context: CodeIntentContext | None = None
-    prompt: str
-
-
-class ArtifactCommandRequest(MedousaModel):
-    command: ArtifactCommandSpec
-    selected_context_pack_query: str | None = None
-    session_id: str
-    verification_policy: ArtifactVerificationPolicyInput | None = None
-    verifier_route_label: str | None = None
-
-
-class ArtifactListUiResponse(MedousaModel):
-    artifacts: list[ArtifactSummary]
-
-
-class CalendarEventModel(MedousaModel):
-    alarms: list[CalendarAlarm] | None = Field(
-        None, description='VALARM display triggers before start.'
-    )
-    all_day: bool | None = False
-    calendar_path: str
-    description: str | None = None
-    dtend: AwareDatetime | None = None
-    dtstart: AwareDatetime
-    location: str | None = None
-    note_path: str | None = Field(
-        None,
-        description='Optional vault-relative markdown note linked to this event (`X-MEDOUSA-NOTE`).',
-    )
-    recurrence_id: AwareDatetime | None = Field(
-        None,
-        description='For expanded recurrence instances: original master UID (same as uid when not expanded).',
-    )
-    rrule: str | None = None
-    summary: str
-    uid: str
-
-
-class CalendarListResponse(MedousaModel):
-    calendar_path: str
-    events: list[CalendarEvent]
-
-
-class CalendarWriteRequest(MedousaModel):
-    alarms: list[CalendarAlarm] | None = Field(
-        None, description='Replace VALARM set on write (omit/empty clears).'
-    )
-    all_day: bool | None = False
-    calendar_path: str | None = None
-    description: str | None = None
-    dtend: AwareDatetime | None = None
-    dtstart: AwareDatetime
-    location: str | None = None
-    note_path: str | None = Field(
-        None, description='Optional vault-relative markdown note (`X-MEDOUSA-NOTE`).'
-    )
-    rrule: str | None = None
-    summary: str
-    uid: str | None = None
-
-
-class CalendarWriteResponse(MedousaModel):
-    created: bool
-    event: CalendarEvent
-
-
-class CapabilityListResponse(MedousaModel):
-    capabilities: list[CapabilityListEntry]
-
-
-class CapabilityResolveResponse(MedousaModel):
-    capability: str
-    description: str | None = None
-    gateway_unreachable: bool | None = None
-    implementations: CapabilityImplementations
-    recommended: CapabilityRecommendation | None = None
-    title: str
-
-
-class ComponentRuntimeEventsRequest(MedousaModel):
-    events: list[ComponentRuntimeEventInput] | None = Field([], validate_default=True)
-    profileId: str | None = None
-    sessionId: str | None = None
-
-
-class ComponentRuntimeEventsTailResponse(MedousaModel):
-    componentId: str
-    events: list[ComponentRuntimeEvent]
-
-
-class CreateAgentSessionRequest(MedousaModel):
-    args: list[str] | None = None
-    code_context: CodeIntentContext | None = None
-    command: str | None = None
-    cwd: str | None = None
-    prompt: str | None = None
-    resume_provider_token: str | None = Field(
-        None,
-        description='Optional ACP wire `sessionId` to resume (from a prior `RecoveryDisposition::ResumeSupported`). When omitted but `work_id` is set, the daemon looks up the latest resume token on that work item.',
-    )
-    runtime: str = Field(
-        ..., description='External runtime: `cursor` or `codex` (not `medousa`).'
-    )
-    session_id: str
-    surface: TurnSurfaceContext | None = None
-    work_id: str | None = Field(
-        None,
-        description='Optional Forge undertaking binding (`/v1/forge/items/{id}`). When set, the ACP session runs inside the governed worktree and reports leases.',
-    )
-
-
-class EnvironmentPendingResponse(MedousaModel):
-    pending: EnvironmentPendingProposal | None = None
-
-
-class EnvironmentProposeResponse(MedousaModel):
-    diffSummary: str
-    errors: list[str]
-    proposedSpec: EnvironmentSpec
-    valid: bool
-
-
-class EnvironmentSpec1(MedousaModel):
-    activePresetId: str | None = None
-    components: list[ComponentDef]
-    layoutPresets: list[LayoutPreset] | None = None
-    profileId: str
-    shellChrome: ShellChromeDef | None = None
-    surfaces: list[SurfaceDef]
-    theme: EnvironmentTheme | None = None
-    updatedAt: AwareDatetime
-    updatedBy: str
-    version: int = Field(..., ge=0)
-
-
-class EnvironmentSpecPutRequest(MedousaModel):
-    spec: EnvironmentSpec
-
-
-class EnvironmentSpecResponse(MedousaModel):
-    revision: int = Field(..., ge=0)
-    spec: EnvironmentSpec
-
-
-class EnvironmentStatusResponse(MedousaModel):
-    activePresetId: str | None = None
-    customSurfaces: list[CustomViewSurfaceStatus] | None = Field(
-        [], validate_default=True
-    )
-    feedMismatchCount: int = Field(..., ge=0)
-    hints: list[str] | None = []
-    navOrphanCount: int = Field(..., ge=0)
-    pendingProposal: bool
-    profileId: str
-    revision: int = Field(..., ge=0)
-
-
-class EnvironmentStreamEvent(MedousaModel):
-    componentPatches: list[ComponentFeedPatch] | None = None
-    emittedAtUtc: AwareDatetime
-    eventType: str
-    feedEvent: FeedEvent | None = None
-    revision: int = Field(..., ge=0)
-    runtimeProbe: ComponentRuntimeProbeRequest | None = None
-    spec: EnvironmentSpec | None = None
-
-
-class EnvironmentValidateRequest(MedousaModel):
-    spec: EnvironmentSpec
-
-
-class FeedListResponse(MedousaModel):
-    feeds: list[FeedListEntry]
-
-
-class FeedStreamEvent(MedousaModel):
-    componentPatches: list[ComponentFeedPatch] | None = None
-    emittedAtUtc: AwareDatetime
-    eventType: str
-    feedEvent: FeedEvent | None = None
-    seq: int = Field(..., ge=0)
-
-
-class FeedTailResponse(MedousaModel):
-    events: list[FeedEvent]
-    feedId: str
-
-
-class IngestRequest(MedousaModel):
-    attachments: list[IngestAttachment] | None = Field(
-        [],
-        description='Optional attachment payloads merged into ask prompts',
-        validate_default=True,
-    )
-    channel: str = Field(
-        ..., description='Channel type identifier, e.g. "telegram", "discord", "cli"'
-    )
-    channel_id: str = Field(
-        ...,
-        description='Channel/chat/conversation identifier, e.g. "telegram:chat:67890"',
-    )
-    text: str = Field(
-        ..., description='The text content of the message (command or prompt)'
-    )
-    user_id: str = Field(
-        ...,
-        description='User identifier within the channel, e.g. "telegram:user:12345"',
-    )
-
-
-class InteractiveTurnRequest(MedousaModel):
-    additional_manuscript_ids: list[str] | None = None
-    identity_user_id: str | None = Field(
-        None,
-        description='Optional identity principal override (debug/internal). Default: active workshop profile.',
-    )
-    manuscript_id: str | None = Field(
-        None,
-        description='YAML manuscript specialty for ranked digest + scheduled tool allowlist.',
-    )
-    max_tool_rounds: int | None = Field(
-        None,
-        description='When set, overrides `tui_defaults.json` for this turn (TUI live settings).',
-        ge=0,
-    )
-    media_refs: list[MediaRef] | None = Field(
-        [],
-        description='User media uploaded to local medousa/media/ before this turn (P5a).',
-        validate_default=True,
-    )
-    model: str
-    persist_user_turn: bool
-    prompt: str
-    provider: str
-    reasoning_effort: str | None = ''
-    response_depth_mode: str
-    retry_runtime_max_rounds: int | None = Field(None, ge=0)
-    scheduled_tool_allowlist: list[str] | None = None
-    session_id: str
-    stage_routing: StageRoutingMatrix
-    suggested_capability_ids: list[str] | None = None
-    surface: TurnSurfaceContext | None = Field(
-        None,
-        description='Channel adapter context for ambient prompting (ingest/TUI surfaces).',
-    )
-    voice_appendix: str | None = None
-    voice_preset_id: str | None = Field(
-        None,
-        description='Composer voice stance — short appendix block (not a manuscript specialty).',
-    )
-
-
-class InteractiveTurnStreamEvent(MedousaModel):
-    agent_runtime: str | None = Field(
-        None,
-        description='External runtime kind when streaming an ACP session (`cursor` / `codex`).',
-    )
-    agent_session_id: str | None = Field(
-        None,
-        description='Bound Medousa chat session for agent-runtime streams (`turn_id` holds agent_session_id).',
-    )
-    browser_challenge_url: str | None = Field(
-        None, description='URL the client should load in Agent Browser WebView.'
-    )
-    browser_session_id: str | None = Field(
-        None, description='Agent Browser CAPTCHA / verification handoff session id.'
-    )
-    budget_request_id: str | None = Field(
-        None,
-        description='Turn budget approval pause — card id for Home deep link / notifications.',
-    )
-    content_delta: str | None = None
-    context_usage: ContextUsageReport | None = Field(
-        None,
-        description='Per-layer context budget estimate (chars/4 heuristic) for operator telemetry.',
-    )
-    debug_message: str | None = Field(
-        None,
-        description='Engine/TUI telemetry — shown only when the operator opts into engine details.',
-    )
-    emitted_at_utc: AwareDatetime
-    event_type: str
-    final_text: str | None = None
-    message: str
-    operator_message: str | None = Field(
-        None,
-        description='Human-facing status whisper for rich surfaces (Home default).',
-    )
-    permission_request_id: str | None = Field(
-        None,
-        description='External ACP agent permission pause — resolve via `/v1/agents/permission-requests/{id}/approve|deny`.',
-    )
-    phase: str
-    previous_artifact_id: str | None = Field(
-        None,
-        description='Previous artifact id when cognition_artifact_write supersedes a revision.',
-    )
-    reasoning_delta: str | None = None
-    requested_rounds: int | None = Field(None, ge=0)
-    root_artifact_id: str | None = Field(
-        None, description='Root artifact lineage id for revision chains.'
-    )
-    seq: int | None = Field(
-        0,
-        description='Monotonic per-turn sequence number, stamped server-side by `TurnEventChannel::publish`. Enables exactly-once replay/dedup on reconnect. `#[serde(default)]` keeps the Python SDK and any older payloads (which never carried `seq`) wire-compatible.',
-        ge=0,
-    )
-    terminal: bool
-    tool_artifact_refs: list[StreamToolArtifactRef] | None = None
-    tool_input_summary: str | None = None
-    tool_name: str | None = None
-    tool_names: list[str] | None = None
-    tool_output_summary: str | None = None
-    tool_round: int | None = Field(None, ge=0)
-    tool_run_id: str | None = Field(
-        None, description='Structured tool bus (P1) — correlates started/finished pair.'
-    )
-    tool_status: str | None = None
-    turn_id: str
-    ui_artifact: StreamUiArtifact | None = Field(
-        None,
-        description='Rich UI artifact presented inline in chat (cognition_ui_present).',
-    )
-    ui_scene: StreamUiScene | None = Field(
-        None,
-        description='Liquid UI scene operations (cognition_ui_scene) — model-authored structure-then-fill turns. Ops are opaque JSON validated client-side.',
-    )
-    work_id: str | None = Field(
-        None, description='Turn worker handoff — workspace card id (`work-…`).'
-    )
-
-
-class JobReportResponse(MedousaModel):
-    attempt_count: int = Field(..., ge=0)
-    citations: list[JobCitationResponse]
-    evidence_report: JobEvidenceReportResponse | None = None
-    is_terminal: bool
-    job_id: str
-    latest_execution_id: str | None = None
-    latest_outcome: str | None = None
-    output_text: str | None = None
-    status: str
-
-
-class LocalCatalogResponse(MedousaModel):
-    familyDefault: str
-    models: list[CatalogModelEntry]
-    recommendedModelId: str
-    tier: HardwareTier
-    tierLabel: str
-
-
-class LocalHardwareResponse(MedousaModel):
-    compiledBackends: list[str]
-    engineAvailable: bool
-    message: str
-    profile: HardwareProfile
-
-
-class LocalModelDownloadResponse(MedousaModel):
-    job: ModelDownloadProgress
-
-
-class LocalModelsResponse(MedousaModel):
-    activeDownloads: list[ModelDownloadProgress]
-    installed: list[InstalledModelRecord]
-
-
-class McpGatewayStatusResponse(MedousaModel):
-    gatewayUrl: str
-    health: McpGatewayHealthSnapshot | None = None
-    message: str
-    reachable: bool
-    servers: list[McpGatewayServerRuntime]
-
-
-class RecurringListResponse(MedousaModel):
-    count: int = Field(..., ge=0)
-    recurring: list[RecurringDefinitionEntry]
-
-
-class RecurringRunsResponse(MedousaModel):
-    count: int = Field(..., ge=0)
-    recurring_id: str
-    runs: list[RecurringRunEntry]
-
-
-class RuntimeConfigCommandRequest(MedousaModel):
-    command: RuntimeConfigCommandSpec
-    current_model: str
-    current_provider: str
-    current_reasoning_effort: str | None = ''
-    current_response_depth_mode: str
-    draft_model: str
-    draft_provider: str
-
-
-class RuntimeConfigCommandResponse(MedousaModel):
-    next_draft_model: str
-    next_draft_provider: str
-    next_reasoning_effort: str
-    next_response_depth_mode: str
-    next_verify_policy_draft: RuntimeVerifyPolicyState | None = None
-    rendered_output: str | None = None
-    should_apply_settings: bool
-    should_persist_depth_defaults: bool
-    should_persist_reasoning_defaults: bool
-
-
-class SessionAppendTurnRequest(MedousaModel):
-    turn: ConversationTurn
-
-
-class SessionHistoryListResponse(MedousaModel):
-    next_cursor: str | None = None
-    sessions: list[SessionHistorySummary]
-
-
-class SessionHistoryResponse(MedousaModel):
-    session_id: str
-    turns: list[ConversationTurn]
-
-
-class StageRouteCommandRequest(MedousaModel):
-    command: StageRouteCommandSpec
-    model: str
-    provider: str
-    stage_routing: StageRoutingMatrix
-
-
-class StageRouteCommandResponse(MedousaModel):
-    rendered_output: str
-    stage_routing: StageRoutingMatrix
-
-
-class TurnBudgetRequestListResponse(MedousaModel):
-    requests: list[TurnBudgetRequestRecord]
-
-
-class TurnBudgetRequestResponse(MedousaModel):
-    message: str
-    request: TurnBudgetRequestRecord
-
-
-class VaultNoteContentResponse(MedousaModel):
-    content: str
-    note: VaultNote
-
-
-class VaultNotesListResponse(MedousaModel):
-    notes: list[VaultNote]
-
-
-class VaultRootsResponse(MedousaModel):
-    activeRootId: str
-    roots: list[VaultRootView]
-
-
-class VaultSearchResponse(MedousaModel):
-    hits: list[VaultSearchHit]
-    query: str
 
 
 class VaultWriteResponse(MedousaModel):
@@ -1274,6 +2035,260 @@ class WorkspaceCardActionResponse(MedousaModel):
     workspace_revision: int = Field(..., ge=0)
 
 
+class WorkspaceLinkVaultRequest(MedousaModel):
+    vault_path: str
+
+
+class AgentPermissionRequestRecord(MedousaModel):
+    agent_session_id: str
+    created_at_utc: AwareDatetime
+    request_id: str
+    resolved_at_utc: AwareDatetime | None = None
+    resolved_by: str | None = None
+    runtime: str
+    session_id: str
+    status: AgentPermissionRequestStatus
+    summary: str
+    updated_at_utc: AwareDatetime
+
+
+class ComponentDef(MedousaModel):
+    config: Any | None = None
+    feeds: list[str] | None = []
+    id: str
+    label: str | None = None
+    presentation: UiPresentation | None = None
+    slot: str
+    surfaceId: str
+    type: ComponentType
+    updatedAt: AwareDatetime | None = None
+
+
+class ShellChromeDesktop(MedousaModel):
+    activityRail: ActivityRailMode | None = None
+    navStyle: DesktopNavStyle | None = None
+    vaultChatFab: bool | None = Field(
+        None, description='Vault note chat FAB on desktop. Default true when unset.'
+    )
+    vaultSidebar: VaultSidebarMode | None = Field(
+        None, description='LME vault sidebar. Default visible when unset.'
+    )
+
+
+class ComponentRuntimeProbeBlock(MedousaModel):
+    result: ComponentRuntimeProbeResult | None = None
+    status: str
+
+
+class FeedEvent(MedousaModel):
+    emittedAtUtc: AwareDatetime
+    feedId: str
+    id: str
+    payload: Any | None = None
+    refs: list[FeedRef] | None = Field([], validate_default=True)
+    source: str
+    summary: str
+
+
+class HostContextDiagnostic(MedousaModel):
+    end: HostContextPosition | None = None
+    message: str
+    severity: str | None = None
+    source: str | None = None
+    start: HostContextPosition | None = None
+
+
+class HostTurnContext(MedousaModel):
+    cursor: HostContextPosition | None = None
+    diagnostics: list[HostContextDiagnostic] | None = None
+    document_excerpt: str | None = None
+    language: str | None = None
+    related_resources: list[str] | None = None
+    resource_kind: str | None = None
+    resource_path: str | None = None
+    resource_title: str | None = None
+    resource_url: str | None = None
+    selection: HostContextSelection | None = None
+    source: str
+    workspace: str | None = None
+
+
+class LocalDeviceTelemetrySnapshot(MedousaModel):
+    availability: LocalDeviceTelemetryAvailability
+    backend: GpuBackend
+    capturedAt: AwareDatetime
+    collectorError: str | None = None
+    deviceIndex: int | None = Field(None, ge=0)
+    deviceName: str | None = None
+    deviceUuid: str | None = None
+    driverVersion: str | None = None
+    graphicsClockMhz: int | None = Field(None, ge=0)
+    memoryBudgetMb: int | None = Field(None, ge=0)
+    memoryClockMhz: int | None = Field(None, ge=0)
+    memoryFreeMb: int | None = Field(None, ge=0)
+    memoryTotalMb: int | None = Field(None, ge=0)
+    memoryUsedMb: int | None = Field(None, ge=0)
+    powerWatts: float | None = None
+    processMemoryUsedMb: int | None = Field(None, ge=0)
+    recommendedWorkingSetMb: int | None = Field(None, ge=0)
+    runtimeVersion: str | None = None
+    source: LocalDeviceTelemetrySource
+    temperatureC: float | None = None
+    throttleReasons: list[str] | None = None
+    unavailableFields: list[str] | None = []
+    unifiedMemory: bool | None = None
+    utilizationPercent: float | None = None
+
+
+class RuntimeConfigCommandSpec4(MedousaModel):
+    args: list[str]
+    command: Command16
+    current: RuntimeVerifyPolicyState
+
+
+class RuntimeConfigCommandSpec(
+    RootModel[
+        RuntimeConfigCommandSpec1
+        | RuntimeConfigCommandSpec2
+        | RuntimeConfigCommandSpec3
+        | RuntimeConfigCommandSpec4
+    ]
+):
+    root: RuntimeConfigCommandSpec1 | RuntimeConfigCommandSpec2 | RuntimeConfigCommandSpec3 | RuntimeConfigCommandSpec4
+
+
+class TurnPart7(MedousaModel):
+    context: HostTurnContext
+    kind: Kind6
+
+
+class TurnPart(
+    RootModel[
+        TurnPart1
+        | TurnPart2
+        | TurnPart3
+        | TurnPart4
+        | TurnPart5
+        | TurnPart6
+        | TurnPart7
+        | TurnPart8
+        | TurnPart9
+    ]
+):
+    root: TurnPart1 | TurnPart2 | TurnPart3 | TurnPart4 | TurnPart5 | TurnPart6 | TurnPart7 | TurnPart8 | TurnPart9
+
+
+class WorkCard(MedousaModel):
+    column: WorkBoardColumn
+    created_at_utc: AwareDatetime
+    id: WorkCardId
+    status_label: str
+    title: str
+    updated_at_utc: AwareDatetime
+
+
+class WorkspaceEvent(MedousaModel):
+    actor: WorkspaceEventActor
+    context_line: str | None = Field(
+        None, description='Secondary context: intent, tools, wrapping-up reasons.'
+    )
+    detail_line: str | None = Field(
+        None, description='Operator-facing task label (full prompt when user_ack is a slug).'
+    )
+    id: str
+    intent: str | None = Field(None, description='Worker intent or job family at emit time.')
+    kind: WorkspaceEventKind
+    refs: list[WorkspaceEventRef] | None = Field([], validate_default=True)
+    summary: str
+    timestamp_utc: AwareDatetime
+    tool_names: list[str] | None = Field(
+        None, description='Tools invoked on the work card when the event was emitted.'
+    )
+
+
+class WorkspaceSnapshot(MedousaModel):
+    cards: list[WorkCard]
+    counts_by_column: dict[str, int]
+    feed_tail: list[WorkspaceEvent]
+    server_time_utc: AwareDatetime
+    workspace_revision: int = Field(..., ge=0)
+
+
+class AgentPermissionRequestListResponse(MedousaModel):
+    requests: list[AgentPermissionRequestRecord]
+
+
+class AgentPermissionResolveResponse(MedousaModel):
+    request: AgentPermissionRequestRecord
+
+
+class FeedStreamEvent(MedousaModel):
+    componentPatches: list[ComponentFeedPatch] | None = None
+    emittedAtUtc: AwareDatetime
+    eventType: str
+    feedEvent: FeedEvent | None = None
+    seq: int = Field(..., ge=0)
+
+
+class FeedTailResponse(MedousaModel):
+    events: list[FeedEvent]
+    feedId: str
+
+
+class InteractiveTurnRequest(MedousaModel):
+    additional_manuscript_ids: list[str] | None = None
+    host_context: HostTurnContext | None = Field(
+        None,
+        description='Advisory editor, note, or page snapshot. The daemon bounds and formats it.',
+    )
+    identity_user_id: str | None = Field(
+        None,
+        description='Optional identity principal override (debug/internal). Default: active workshop profile.',
+    )
+    manuscript_id: str | None = Field(
+        None, description='YAML manuscript specialty for ranked digest + scheduled tool allowlist.'
+    )
+    max_tool_rounds: int | None = Field(
+        None,
+        description='When set, overrides `tui_defaults.json` for this turn (TUI live settings).',
+        ge=0,
+    )
+    media_refs: list[MediaRef] | None = Field(
+        [],
+        description='User media uploaded to local medousa/media/ before this turn (P5a).',
+        validate_default=True,
+    )
+    model: str
+    persist_user_turn: bool
+    prompt: str
+    provider: str
+    reasoning_effort: str | None = ''
+    response_depth_mode: str
+    retry_runtime_max_rounds: int | None = Field(None, ge=0)
+    scheduled_tool_allowlist: list[str] | None = None
+    session_id: str
+    stage_routing: StageRoutingMatrix
+    suggested_capability_ids: list[str] | None = None
+    surface: TurnSurfaceContext | None = Field(
+        None, description='Channel adapter context for ambient prompting (ingest/TUI surfaces).'
+    )
+    voice_appendix: str | None = None
+    voice_preset_id: str | None = Field(
+        None,
+        description='Composer voice stance — short appendix block (not a manuscript specialty).',
+    )
+
+
+class RuntimeConfigCommandRequest(MedousaModel):
+    command: RuntimeConfigCommandSpec
+    current_model: str
+    current_provider: str
+    current_reasoning_effort: str | None = ''
+    current_response_depth_mode: str
+    draft_model: str
+    draft_provider: str
+
+
 class WorkspaceStreamEvent(MedousaModel):
     card: WorkCard | None = None
     counts: dict[str, Any] | None = None
@@ -1282,3 +2297,215 @@ class WorkspaceStreamEvent(MedousaModel):
     snapshot: WorkspaceSnapshot | None = None
     stream_event_type: str
     workspace_revision: int = Field(..., ge=0)
+
+
+class ShellChromeDef(MedousaModel):
+    desktop: ShellChromeDesktop | None = None
+    mobile: ShellChromeMobile | None = None
+
+
+class ComponentRuntimeDiagnostic(MedousaModel):
+    artifactId: str | None = None
+    componentId: str
+    embed: ComponentRuntimeEmbedStatus | None = None
+    issues: list[ComponentRuntimeIssue] | None = Field([], validate_default=True)
+    lastError: str | None = None
+    logs: list[ComponentRuntimeEvent] | None = Field([], validate_default=True)
+    probe: ComponentRuntimeProbeBlock | None = None
+    staticLint: list[ComponentStaticLintFinding] | None = Field([], validate_default=True)
+    storeKeyCount: int = Field(..., ge=0)
+    storeKeys: list[ComponentStoreKeyStatus] | None = Field([], validate_default=True)
+    suggestedActions: list[ComponentSuggestedAction] | None = Field([], validate_default=True)
+
+
+class CustomViewComponentStatus(MedousaModel):
+    artifactId: str | None = None
+    componentId: str
+    feeds: list[str] | None = []
+    runtime: ComponentRuntimeDiagnostic | None = None
+
+
+class LocalBenchmarkMemorySample(MedousaModel):
+    devices: list[LocalDeviceTelemetrySnapshot] | None = Field([], validate_default=True)
+    elapsedMs: int = Field(..., ge=0)
+    hostAvailableMb: int = Field(..., ge=0)
+    hostUsedSwapMb: int = Field(..., ge=0)
+    phase: LocalBenchmarkPhase
+    processRssMb: int = Field(..., ge=0)
+
+
+class ConversationTurn(MedousaModel):
+    answer_state: str | None = None
+    content: str
+    parts: list[TurnPart] | None = None
+    role: str
+    slice_summary: TurnSliceSummary | None = None
+    speaker_profile_id: str | None = Field(
+        None,
+        description='Shared-room human speaker (`user:alice`). Absent on assistant turns / personal chats.',
+    )
+    timestamp: AwareDatetime
+    tool_names: list[str]
+
+
+class LocalBenchmarkManifest(MedousaModel):
+    admission: LocalResourceAdmission
+    engine: LocalBenchmarkEngineIdentity
+    finishedAt: AwareDatetime
+    git: LocalBenchmarkGitState
+    hardware: HardwareProbe
+    host: LocalBenchmarkHostIdentity
+    recipe: LocalBenchmarkRecipe
+    result: LocalBenchmarkResult
+    samples: list[LocalBenchmarkMemorySample]
+    schemaVersion: int = Field(..., ge=0)
+    startedAt: AwareDatetime
+
+
+class SessionAppendTurnRequest(MedousaModel):
+    turn: ConversationTurn
+
+
+class SessionHistoryResponse(MedousaModel):
+    session_id: str
+    turns: list[ConversationTurn]
+
+
+class LayoutPreset(MedousaModel):
+    active: bool | None = False
+    id: str
+    label: str
+    shellChrome: ShellChromeDef | None = None
+    surfaces: list[str]
+    theme: EnvironmentTheme | None = Field(
+        None,
+        description='Color theme for this layout — copied onto `EnvironmentSpec.theme` on activate.',
+    )
+
+
+class EnvironmentPendingProposal(MedousaModel):
+    diffSummary: str
+    errors: list[str]
+    proposedAt: AwareDatetime
+    proposedBy: str
+    proposedSpec: EnvironmentSpec
+
+
+class EnvironmentSpec(MedousaModel):
+    activePresetId: str | None = None
+    components: list[ComponentDef]
+    layoutPresets: list[LayoutPreset] | None = None
+    profileId: str
+    shellChrome: ShellChromeDef | None = None
+    surfaces: list[SurfaceDef]
+    theme: EnvironmentTheme | None = None
+    updatedAt: AwareDatetime
+    updatedBy: str
+    version: int = Field(..., ge=0)
+
+
+class LayoutNode1(MedousaModel):
+    align: StackAlign | None = 'start'
+    children: list[LayoutNode]
+    distribution: StackDistribution | None = 'start'
+    spacing: StackSpacing | None = 'none'
+    type: Type
+
+
+class LayoutNode2(MedousaModel):
+    align: StackAlign | None = 'start'
+    children: list[LayoutNode]
+    distribution: StackDistribution | None = 'start'
+    spacing: StackSpacing | None = 'none'
+    type: Type1
+
+
+class LayoutNode3(MedousaModel):
+    children: list[LayoutNode]
+    columns: int = Field(..., ge=0)
+    spacing: StackSpacing | None = 'none'
+    type: Type2
+
+
+class SurfaceDef(MedousaModel):
+    builtinId: str | None = None
+    icon: str
+    id: str
+    kind: SurfaceKind
+    label: str
+    layout: SurfaceLayout
+    layoutRoot: LayoutNode | None = None
+    mobileTab: str | None = None
+    slots: list[SlotDef] | None = Field([], validate_default=True)
+
+
+class CustomViewSurfaceStatus(MedousaModel):
+    components: list[CustomViewComponentStatus] | None = Field([], validate_default=True)
+    feedMismatches: list[str] | None = []
+    feedStatus: list[CustomViewFeedStatus] | None = Field([], validate_default=True)
+    label: str
+    layoutRoot: LayoutNode | None = None
+    navVisible: bool
+    recurringBindings: list[CustomViewRecurringBindingStatus] | None = Field(
+        [], validate_default=True
+    )
+    subscribedFeedIds: list[str] | None = []
+    surfaceId: str
+
+
+class EnvironmentPendingResponse(MedousaModel):
+    pending: EnvironmentPendingProposal | None = None
+
+
+class EnvironmentProposeResponse(MedousaModel):
+    diffSummary: str
+    errors: list[str]
+    proposedSpec: EnvironmentSpec
+    valid: bool
+
+
+class EnvironmentSpecPutRequest(MedousaModel):
+    spec: EnvironmentSpec
+
+
+class EnvironmentSpecResponse(MedousaModel):
+    revision: int = Field(..., ge=0)
+    spec: EnvironmentSpec
+
+
+class EnvironmentStatusResponse(MedousaModel):
+    activePresetId: str | None = None
+    customSurfaces: list[CustomViewSurfaceStatus] | None = Field([], validate_default=True)
+    feedMismatchCount: int = Field(..., ge=0)
+    hints: list[str] | None = []
+    navOrphanCount: int = Field(..., ge=0)
+    pendingProposal: bool
+    profileId: str
+    revision: int = Field(..., ge=0)
+
+
+class EnvironmentStreamEvent(MedousaModel):
+    componentPatches: list[ComponentFeedPatch] | None = None
+    emittedAtUtc: AwareDatetime
+    eventType: str
+    feedEvent: FeedEvent | None = None
+    revision: int = Field(..., ge=0)
+    runtimeProbe: ComponentRuntimeProbeRequest | None = None
+    spec: EnvironmentSpec | None = None
+
+
+class EnvironmentValidateRequest(MedousaModel):
+    spec: EnvironmentSpec
+
+
+class LayoutNode(RootModel[LayoutNode1 | LayoutNode2 | LayoutNode3 | LayoutNode4 | LayoutNode5]):
+    root: LayoutNode1 | LayoutNode2 | LayoutNode3 | LayoutNode4 | LayoutNode5
+
+
+EnvironmentPendingProposal.model_rebuild()
+EnvironmentSpec.model_rebuild()
+LayoutNode1.model_rebuild()
+LayoutNode2.model_rebuild()
+LayoutNode3.model_rebuild()
+SurfaceDef.model_rebuild()
+CustomViewSurfaceStatus.model_rebuild()
