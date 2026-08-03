@@ -3,7 +3,11 @@ import {
   COLOR_THEME_OPTIONS,
   SKELETON_THEME_NAMES,
 } from "$lib/theme/themeRegistry";
-import { MEDOUSA_MARK_OPTIONS } from "$lib/theme/medousaMarks";
+import {
+  MEDOUSA_AURORA_FILL,
+  MEDOUSA_MARK_OPTIONS,
+  medousaMarkSpriteFill,
+} from "$lib/theme/medousaMarks";
 
 describe("logo-derived themes", () => {
   it("keeps one paired color theme for every approved mark", () => {
@@ -27,5 +31,13 @@ describe("logo-derived themes", () => {
       expect(mark.lightPreviewForeground).toBeTruthy();
       expect(mark.darkPreviewForeground).toBeTruthy();
     }
+  });
+
+  it("renders the animated companion with the exact selected mark fill", () => {
+    expect(medousaMarkSpriteFill("monochrome", true)).toBe("#F2EFE6");
+    expect(medousaMarkSpriteFill("monochrome", false)).toBe("#000000");
+    expect(medousaMarkSpriteFill("ink-black", true)).toBe("#000000");
+    expect(medousaMarkSpriteFill("deep-blue", false)).toBe("#1D4ED8");
+    expect(medousaMarkSpriteFill("aurora", true)).toBe(MEDOUSA_AURORA_FILL);
   });
 });

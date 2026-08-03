@@ -33,6 +33,7 @@ Doc conventions: [CONTRIBUTING-DOCS.md](CONTRIBUTING-DOCS.md)
 | [Neovim](guides/neovim.md) | Keyboard-first coding room with contextual chat and safe code application |
 | [Obsidian](guides/obsidian.md) | Vault-native Medousa chat and bounded note context |
 | [Browser](guides/browser.md) | Page-aware Medousa side panel for Chrome and Edge |
+| [Desktop companion](guides/desktop-companion.md) | Floating pet for chat, approvals, notes, Web, and views |
 | [Drawing](guides/drawing.md) | Sketch inside notes or use a full drawing note |
 | [Undertakings & ForgeLens](guides/undertakings.md) | Governed work, seal, review, World |
 | Full index | [guides/README.md](guides/README.md) |

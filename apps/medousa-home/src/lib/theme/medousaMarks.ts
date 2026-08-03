@@ -150,6 +150,9 @@ export const MEDOUSA_MARK_OPTIONS: MedousaMarkOption[] = [
 
 export const DEFAULT_MEDOUSA_MARK: MedousaMarkId = "violet";
 
+export const MEDOUSA_AURORA_FILL =
+  "linear-gradient(135deg, #F472B6 0%, #A855F7 38%, #38BDF8 72%, #34D399 100%)";
+
 export function isMedousaMarkId(value: string | null | undefined): value is MedousaMarkId {
   return MEDOUSA_MARK_OPTIONS.some((option) => option.id === value);
 }
@@ -159,6 +162,13 @@ export function medousaMarkOption(id: MedousaMarkId): MedousaMarkOption {
     MEDOUSA_MARK_OPTIONS.find((option) => option.id === id) ??
     MEDOUSA_MARK_OPTIONS.find((option) => option.id === DEFAULT_MEDOUSA_MARK)!
   );
+}
+
+/** Exact fill used by the animated companion for the selected Settings mark. */
+export function medousaMarkSpriteFill(id: MedousaMarkId, darkMode: boolean): string {
+  if (id === "aurora") return MEDOUSA_AURORA_FILL;
+  const option = medousaMarkOption(id);
+  return darkMode ? option.darkColor : option.lightColor;
 }
 
 export function markForTheme(themeId: ColorThemeId): MedousaMarkId {

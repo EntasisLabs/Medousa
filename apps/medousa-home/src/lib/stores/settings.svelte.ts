@@ -14,10 +14,13 @@ import {
   isMedousaMarkId,
   type MedousaMarkId,
 } from "$lib/theme/medousaMarks";
+import {
+  broadcastMedousaMark,
+  MEDOUSA_MARK_STORAGE_KEY,
+} from "$lib/settings/companionAppearanceSync";
 
 const DARK_MODE_KEY = "medousa-home-dark-mode";
 const COLOR_THEME_KEY = "medousa-home-color-theme";
-const MEDOUSA_MARK_KEY = "medousa-home-mark";
 const NOTIFICATIONS_KEY = "medousa-home-notifications";
 const LIVE_ACTIVITY_KEY = "medousa-home-live-activity";
 const REMOTE_PUSH_KEY = "medousa-home-remote-push";
@@ -84,9 +87,10 @@ export class SettingsStore {
     }
   }
 
-  setMedousaMark(mark: MedousaMarkId) {
+  setMedousaMark(mark: MedousaMarkId, options?: { broadcast?: boolean }) {
     this.medousaMark = mark;
-    localStorage.setItem(MEDOUSA_MARK_KEY, mark);
+    localStorage.setItem(MEDOUSA_MARK_STORAGE_KEY, mark);
+    if (options?.broadcast !== false) broadcastMedousaMark(mark);
   }
 
   setNotificationsEnabled(enabled: boolean) {
@@ -218,7 +222,7 @@ function loadColorTheme(): ColorThemeId {
 
 function loadMedousaMark(): MedousaMarkId {
   if (typeof localStorage === "undefined") return DEFAULT_MEDOUSA_MARK;
-  const stored = localStorage.getItem(MEDOUSA_MARK_KEY);
+  const stored = localStorage.getItem(MEDOUSA_MARK_STORAGE_KEY);
   return isMedousaMarkId(stored) ? stored : DEFAULT_MEDOUSA_MARK;
 }
 
