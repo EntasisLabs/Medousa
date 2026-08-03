@@ -393,6 +393,7 @@ pub async fn interactive_turn_send(
     response_depth_mode: Option<String>,
     reasoning_effort: Option<String>,
     agent_mode: Option<AgentModeId>,
+    code_context: Option<crate::daemon::types::CodeIntentContext>,
     stage_routing: Option<StageRoutingMatrix>,
     channel_surface: Option<String>,
 ) -> Result<InteractiveTurnAccepted, String> {
@@ -439,6 +440,7 @@ pub async fn interactive_turn_send(
         session_id: session_id.clone(),
         prompt,
         agent_mode,
+        code_context,
         persist_user_turn: true,
         response_depth_mode,
         reasoning_effort,

@@ -1009,10 +1009,11 @@ async fn run_agent_turn_inner(
         }
     };
     sink.notice(format!(
-        "◈ agent_mode id={} source={:?} contract={}",
+        "◈ agent_mode id={} source={:?} contract={} lane={:?}",
         agent_mode.id.as_str(),
         mode_selection.source,
         agent_mode.contract_revision,
+        agent_mode.execution_lane,
     ))
     .await;
 
@@ -1160,6 +1161,7 @@ async fn run_agent_turn_inner(
 
     let prepared = turn_orchestrator::prepare_turn_prompt(PrepareTurnPromptParams {
         agent_mode,
+        mode_context_appendix: None,
         session_id: &session_id,
         prompt: &effective_prompt,
         selected_context_pack_query: None,

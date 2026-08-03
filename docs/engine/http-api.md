@@ -229,6 +229,13 @@ cursor/selection, open files, diagnostics, and last verification). The daemon
 formats this for the selected ACP provider; clients should not construct
 provider-specific prompt wrappers.
 
+Native interactive turn and turn-ticket requests also accept `code_context`.
+For Coder mode it is advisory editor state only: the daemon re-resolves the
+undertaking, worktree, branch, baseline, dirty paths, and repository
+instructions from Forge. UI-provided paths cannot select or escape the
+governed worktree. Coder remains advertised as unavailable until its
+mode-scoped tool authority is installed.
+
 See [ADR-008](../architecture/decisions/adr-008-hot-swappable-agent-runtime.md) and [acp-external-agents](../cookbook/acp-external-agents.md).
 
 ---

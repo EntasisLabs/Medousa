@@ -106,6 +106,7 @@ export interface CreateTurnTicketRequest {
   sessionId: string;
   prompt: string;
   agentMode?: AgentModeId;
+  codeContext?: import("$lib/daemon").CodeIntentContext | null;
   mode?: TurnTicketMode;
   provider?: string;
   model?: string;

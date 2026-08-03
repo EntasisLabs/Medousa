@@ -90,6 +90,21 @@ export interface InteractiveTurnResponse {
 
 export type AgentModeId = "general" | "coder";
 
+export interface CodeIntentContext {
+  active_path?: string | null;
+  containing_symbol?: string | null;
+  cursor_line?: number | null;
+  diagnostics?: string[];
+  last_verification?: string | null;
+  open_files?: string[];
+  outcome?: string | null;
+  project_title?: string | null;
+  selected_text?: string | null;
+  selection_end_line?: number | null;
+  selection_start_line?: number | null;
+  work_id?: string | null;
+}
+
 export interface HostContextPosition {
   character: number;
   line: number;
@@ -160,6 +175,7 @@ export interface TurnSurfaceContext {
 export interface InteractiveTurnRequest {
   additional_manuscript_ids?: string[] | null;
   agent_mode?: AgentModeId | null;
+  code_context?: CodeIntentContext | null;
   host_context?: HostTurnContext | null;
   identity_user_id?: string | null;
   manuscript_id?: string | null;

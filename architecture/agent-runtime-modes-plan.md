@@ -1,6 +1,6 @@
 # Agent runtime modes
 
-> Status: mode kernel, persisted state, and Home picker complete; Coder entry next
+> Status: Coder entry/context complete; mode-scoped tool authority next
 > First modes: **General** and **Coder**
 
 ## Product decision
@@ -125,8 +125,10 @@ continues in the current mode rather than abandoning the request.
    and task-scoped leases.
 3. **Home picker (complete)** — General selection plus unavailable/readiness states for
    Coder.
-4. **Coder entry/context** — Forge binding, repository ambient context, Coder
-   STTP overlay, and direct foreground execution lane.
+4. **Coder entry/context (complete)** — Forge binding, bounded repository/editor
+   ambient context, Coder STTP overlay, and foreground workshop lane contract.
+   Coder remains unavailable until slice 5 can compile a constrained tool
+   surface and hold its Forge mutation lease.
 5. **Coder tools** — bounded inspection, safe mutation, command/test receipts,
    LSP, and diff verification.
 6. **Agent proposals** — accept/deny/expiry flow and false-positive evaluation.

@@ -1,6 +1,7 @@
 use crate::daemon::types::{
     ActiveSessionTurnResponse, AgentModeId, AgentModeListResponse, AgentModeScope,
-    CancelActiveSessionTurnResponse, MediaRef, SessionAgentModeResponse, SessionDeleteQuery,
+    CancelActiveSessionTurnResponse, CodeIntentContext, MediaRef, SessionAgentModeResponse,
+    SessionDeleteQuery,
     SessionDeleteResponse, SessionHistoryListResponse, SessionHistoryResponse,
     SessionSetDisplayNameResponse, SetSessionAgentModeRequest, StageRoutingMatrix,
     TurnSurfaceContext,
@@ -337,6 +338,8 @@ struct CreateTurnTicketBody {
     prompt: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     agent_mode: Option<AgentModeId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    code_context: Option<CodeIntentContext>,
     #[serde(default)]
     mode: TurnTicketMode,
     #[serde(default = "default_persist_user_turn")]
@@ -378,6 +381,7 @@ pub async fn turn_create(
     session_id: String,
     prompt: String,
     agent_mode: Option<AgentModeId>,
+    code_context: Option<CodeIntentContext>,
     mode: Option<String>,
     provider: Option<String>,
     model: Option<String>,
@@ -471,6 +475,7 @@ pub async fn turn_create(
         session_id: trimmed_session.to_string(),
         prompt,
         agent_mode,
+        code_context,
         mode: ticket_mode,
         persist_user_turn: true,
         response_depth_mode,

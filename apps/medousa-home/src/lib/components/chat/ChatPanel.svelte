@@ -744,10 +744,12 @@
     const opts = buildInteractiveTurnOptions();
     const mediaRefs = [...chat.pendingMediaRefs];
     const voice = voicePresets.turnVoiceFields();
+    const codeContext = activeCodeContext(chat.sessionId);
     const accepted = await createTurnTicket({
       sessionId: chat.sessionId,
       prompt,
       mode,
+      codeContext,
       provider: opts.provider,
       model: opts.model,
         responseDepthMode: opts.responseDepthMode,

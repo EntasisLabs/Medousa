@@ -1299,6 +1299,9 @@ pub struct InteractiveTurnRequest {
     /// Per-turn behavioral mode override. Omitted requests inherit task/session state.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent_mode: Option<AgentModeId>,
+    /// Advisory editor/undertaking intent. Coder entry re-resolves Forge authority.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub code_context: Option<CodeIntentContext>,
     pub persist_user_turn: bool,
     pub response_depth_mode: String,
     #[serde(default)]
@@ -1385,6 +1388,8 @@ pub struct CreateTurnTicketRequest {
     /// Per-turn behavioral mode override; independent of delivery mode.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent_mode: Option<AgentModeId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub code_context: Option<CodeIntentContext>,
     #[serde(default)]
     pub mode: TurnTicketMode,
     #[serde(default = "default_persist_user_turn")]

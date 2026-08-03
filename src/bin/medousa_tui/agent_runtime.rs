@@ -367,6 +367,7 @@ pub(crate) async fn start_prompt_run(
     .expect("General agent mode is always available");
     let prepared = turn_orchestrator::prepare_turn_prompt(PrepareTurnPromptParams {
         agent_mode,
+        mode_context_appendix: None,
         session_id: &state.session_id,
         prompt: &prompt,
         selected_context_pack_query: state.selected_context_pack_query.as_deref(),
@@ -672,6 +673,7 @@ async fn attempt_daemon_interactive_turn(
         session_id: state.session_id.clone(),
         prompt: prompt.to_string(),
         agent_mode: None,
+        code_context: None,
         persist_user_turn,
         response_depth_mode: state.response_depth_mode.clone(),
         reasoning_effort: state.reasoning_effort.clone(),

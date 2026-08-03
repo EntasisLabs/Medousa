@@ -107,6 +107,8 @@ pub struct PreparedTurnPrompt {
 
 pub struct PrepareTurnPromptParams<'a> {
     pub agent_mode: super::modes::ResolvedAgentMode,
+    /// Immutable, daemon-compiled context for the selected mode.
+    pub mode_context_appendix: Option<&'a str>,
     pub session_id: &'a str,
     pub prompt: &'a str,
     pub selected_context_pack_query: Option<&'a str>,
@@ -214,6 +216,9 @@ pub async fn prepare_turn_prompt(params: PrepareTurnPromptParams<'_>) -> Prepare
         format!("{}\n\n{environment_extras}", ambient_block.appendix)
     };
     resolved_prompt = format!("{resolved_prompt}\n\n{ambient_appendix}");
+    if let Some(mode_context_appendix) = params.mode_context_appendix {
+        resolved_prompt = format!("{resolved_prompt}\n\n{mode_context_appendix}");
+    }
 
     let handoff_model_avec = super::vibe_signature::default_handoff_model_avec();
     let handoff_vibe_signature = super::vibe_signature::derive_vibe_signature(
@@ -898,7 +903,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
     if activation.enforce_no_tools {
         let mut messages = Vec::with_capacity(prior_messages.len() + 2);
         messages.push(ChatMessage::system(system_prompt_for_host_profile(
-            super::modes::system_prompt_for_mode(DEFAULT_SYSTEM_PROMPT, &agent_mode),
+            &super::modes::system_prompt_for_mode(DEFAULT_SYSTEM_PROMPT, &agent_mode),
             host_bus,
             params.supports_ui_artifacts,
             suggested_intent,
@@ -964,7 +969,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
     let request = ToolLoopExecutionRequest {
         user_prompt: prompt_for_request,
         system_prompt: Some(system_prompt_for_host_profile(
-            super::modes::system_prompt_for_mode(DEFAULT_SYSTEM_PROMPT, &agent_mode),
+            &super::modes::system_prompt_for_mode(DEFAULT_SYSTEM_PROMPT, &agent_mode),
             host_bus,
             params.supports_ui_artifacts,
             suggested_intent,
