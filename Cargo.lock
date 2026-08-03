@@ -7483,7 +7483,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-acp-client"
-version = "0.6.0"
+version = "0.8.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -7495,7 +7495,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-adapter-common"
-version = "0.6.0"
+version = "0.8.0"
 dependencies = [
  "anyhow",
  "futures-util",
@@ -7508,7 +7508,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-browser-bridge"
-version = "0.6.0"
+version = "0.8.0"
 dependencies = [
  "medousa-browser-lite",
  "once_cell",
@@ -7519,7 +7519,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-browser-lite"
-version = "0.6.0"
+version = "0.8.0"
 dependencies = [
  "chrono",
  "once_cell",
@@ -7534,7 +7534,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-code"
-version = "0.1.0"
+version = "0.8.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -7569,7 +7569,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-engine"
-version = "0.6.0"
+version = "0.8.0"
 dependencies = [
  "async-trait",
  "chrono",
@@ -7598,7 +7598,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-host"
-version = "0.6.0"
+version = "0.8.0"
 dependencies = [
  "dirs 5.0.1",
  "libc",
@@ -7609,7 +7609,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-install-support"
-version = "0.6.0"
+version = "0.8.0"
 dependencies = [
  "chrono",
  "dirs 6.0.0",
@@ -7628,7 +7628,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-iroh-http"
-version = "0.6.0"
+version = "0.8.0"
 dependencies = [
  "anyhow",
  "httparse",
@@ -7639,7 +7639,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-local-engine"
-version = "0.6.0"
+version = "0.8.0"
 dependencies = [
  "anyhow",
  "axum 0.8.9",
@@ -7653,7 +7653,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-local-inference"
-version = "0.6.0"
+version = "0.8.0"
 dependencies = [
  "anyhow",
  "ash",
@@ -7697,7 +7697,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-mcp-server"
-version = "0.6.0"
+version = "0.8.0"
 dependencies = [
  "anyhow",
  "reqwest 0.12.28",
@@ -7710,7 +7710,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-sdk"
-version = "0.6.0"
+version = "0.8.0"
 dependencies = [
  "bytes",
  "eventsource-stream",
@@ -7726,7 +7726,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-sdk-iroh"
-version = "0.6.0"
+version = "0.8.0"
 dependencies = [
  "bytes",
  "futures-util",
@@ -7740,7 +7740,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-session"
-version = "0.1.0"
+version = "0.8.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -7792,7 +7792,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-types"
-version = "0.6.0"
+version = "0.8.0"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -7806,7 +7806,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-types-schema"
-version = "0.6.0"
+version = "0.8.0"
 dependencies = [
  "medousa-types",
  "schemars 0.8.22",

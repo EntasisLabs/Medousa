@@ -109,7 +109,10 @@ mod platform {
 }
 
 #[cfg(target_os = "windows")]
-pub(super) use platform::try_collect;
+pub(super) fn try_collect()
+-> Option<Result<Vec<medousa_types::LocalDeviceTelemetrySnapshot>, String>> {
+    platform::try_collect()
+}
 
 #[cfg(not(target_os = "windows"))]
 pub(super) fn try_collect()
