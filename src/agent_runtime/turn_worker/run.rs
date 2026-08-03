@@ -1119,7 +1119,7 @@ fn worker_settings_from_record(record: &TurnWorkRecord) -> RuntimeSettings {
     let request = InteractiveTurnRequest {
         session_id: record.session_id.clone(),
         prompt: record.task_prompt.clone(),
-        agent_mode: crate::daemon_api::AgentModeId::General,
+        agent_mode: None,
         persist_user_turn: false,
         response_depth_mode: record.response_depth_mode.clone(),
         reasoning_effort: crate::reasoning_effort::REASONING_EFFORT_DEFAULT.to_string(),

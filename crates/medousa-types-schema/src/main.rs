@@ -37,12 +37,18 @@ fn main() {
     export_type!(schemas, SessionAppendTurnResponse, "SessionAppendTurnResponse");
     export_type!(schemas, SessionSetDisplayNameRequest, "SessionSetDisplayNameRequest");
     export_type!(schemas, SessionSetDisplayNameResponse, "SessionSetDisplayNameResponse");
+    export_type!(schemas, AgentModeId, "AgentModeId");
+    export_type!(schemas, AgentModeScope, "AgentModeScope");
+    export_type!(schemas, AgentModeSource, "AgentModeSource");
+    export_type!(schemas, SetSessionAgentModeRequest, "SetSessionAgentModeRequest");
+    export_type!(schemas, SessionAgentModeResponse, "SessionAgentModeResponse");
     export_type!(schemas, SessionDeleteResponse, "SessionDeleteResponse");
 
     // Ingest & interactive
     export_type!(schemas, IngestRequest, "IngestRequest");
     export_type!(schemas, IngestResponse, "IngestResponse");
     export_type!(schemas, InteractiveTurnRequest, "InteractiveTurnRequest");
+    export_type!(schemas, TurnTicketRecord, "TurnTicketRecord");
     export_type!(schemas, InteractiveTurnResponse, "InteractiveTurnResponse");
     export_type!(schemas, InteractiveTurnStreamEvent, "InteractiveTurnStreamEvent");
 

@@ -671,7 +671,7 @@ async fn attempt_daemon_interactive_turn(
     let request = InteractiveTurnRequest {
         session_id: state.session_id.clone(),
         prompt: prompt.to_string(),
-        agent_mode: medousa::daemon_api::AgentModeId::General,
+        agent_mode: None,
         persist_user_turn,
         response_depth_mode: state.response_depth_mode.clone(),
         reasoning_effort: state.reasoning_effort.clone(),

@@ -1000,7 +1000,8 @@ async fn run_agent_turn_inner(
         return;
     }
 
-    let agent_mode = match super::modes::resolve_agent_mode(request.agent_mode) {
+    let mode_selection = crate::agent_mode_state::resolve_for_turn(&session_id, request.agent_mode);
+    let agent_mode = match super::modes::resolve_agent_mode(mode_selection.mode) {
         Ok(mode) => mode,
         Err(err) => {
             sink.agent_error(1, err.to_string()).await;
@@ -1008,8 +1009,9 @@ async fn run_agent_turn_inner(
         }
     };
     sink.notice(format!(
-        "◈ agent_mode id={} contract={}",
+        "◈ agent_mode id={} source={:?} contract={}",
         agent_mode.id.as_str(),
+        mode_selection.source,
         agent_mode.contract_revision,
     ))
     .await;

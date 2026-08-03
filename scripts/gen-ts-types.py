@@ -19,6 +19,8 @@ HOME_TYPES = [
     "InteractiveTurnStreamEvent",
     "InteractiveTurnResponse",
     "InteractiveTurnRequest",
+    "SetSessionAgentModeRequest",
+    "SessionAgentModeResponse",
     "TurnTicketRecord",
 ]
 

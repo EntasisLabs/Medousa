@@ -70,13 +70,13 @@ mod tests {
     #[derive(Deserialize)]
     struct RequestModeFixture {
         #[serde(default)]
-        agent_mode: AgentModeId,
+        agent_mode: Option<AgentModeId>,
     }
 
     #[test]
-    fn omitted_request_mode_defaults_to_general() {
+    fn omitted_request_mode_is_not_a_turn_override() {
         let request: RequestModeFixture = serde_json::from_str("{}").expect("request fixture");
-        assert_eq!(request.agent_mode, AgentModeId::General);
+        assert_eq!(request.agent_mode, None);
         assert_eq!(
             serde_json::to_string(&AgentModeId::Coder).expect("serialize coder"),
             "\"coder\""

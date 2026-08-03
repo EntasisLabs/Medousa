@@ -1,6 +1,6 @@
 #[cfg(feature = "blocking")]
 use medousa_types::{
-    ActiveSessionTurnResponse, ArchiveAskJobRequest, ArchiveAskJobResponse,
+    ActiveSessionTurnResponse, AgentModeScope, ArchiveAskJobRequest, ArchiveAskJobResponse,
     ArtifactCommandRequest, ArtifactCommandResponse, ArtifactDeleteRequest, ArtifactDeleteResponse,
     ArtifactFetchRequest, ArtifactFetchResponse, ArtifactListUiRequest, ArtifactListUiResponse,
     ArtifactWriteRequest, ArtifactWriteResponse, AskJobCompleteActionsRequest,
@@ -14,8 +14,9 @@ use medousa_types::{
     RecurringRunsQuery, RecurringRunsResponse, RegisterRecurringPromptRequest,
     RegisterRecurringResponse, RuntimeConfigCommandRequest, RuntimeConfigCommandResponse,
     SessionActiveTurnsResponse, SessionAppendTurnRequest, SessionAppendTurnResponse,
-    SessionDeleteQuery, SessionDeleteResponse, SessionHistoryListResponse, SessionHistoryResponse,
-    SessionSetDisplayNameRequest, SessionSetDisplayNameResponse, StageRouteCommandRequest,
+    SessionAgentModeResponse, SessionDeleteQuery, SessionDeleteResponse, SessionHistoryListResponse,
+    SessionHistoryResponse, SessionSetDisplayNameRequest, SessionSetDisplayNameResponse,
+    SetSessionAgentModeRequest, StageRouteCommandRequest,
     StageRouteCommandResponse, TurnBudgetApproveRequest, TurnBudgetDenyRequest,
     TurnBudgetRequestListResponse, TurnBudgetRequestRecord, TurnBudgetRequestResponse,
     UpdateRecurringRequest, UpdateRecurringResponse, VaultAddRootRequest, VaultBacklinksQuery,
@@ -442,6 +443,37 @@ impl BlockingSessionsApi<'_> {
                 display_name: display_name.to_string(),
             },
         )
+    }
+
+    pub fn agent_mode(&self, session_id: &str) -> Result<SessionAgentModeResponse, SdkError> {
+        self.http
+            .get(&format!("/v1/sessions/{session_id}/agent-mode"))
+    }
+
+    pub fn set_agent_mode(
+        &self,
+        session_id: &str,
+        request: &SetSessionAgentModeRequest,
+    ) -> Result<SessionAgentModeResponse, SdkError> {
+        self.http.put(
+            &format!("/v1/sessions/{session_id}/agent-mode"),
+            request,
+        )
+    }
+
+    pub fn clear_agent_mode(
+        &self,
+        session_id: &str,
+        scope: AgentModeScope,
+    ) -> Result<SessionAgentModeResponse, SdkError> {
+        let scope = match scope {
+            AgentModeScope::Session => "session",
+            AgentModeScope::Task => "task",
+        };
+        self.http.delete(&path_with_query(
+            &format!("/v1/sessions/{session_id}/agent-mode"),
+            &[("scope", scope.to_string())],
+        ))
     }
 
     pub fn append_turn(

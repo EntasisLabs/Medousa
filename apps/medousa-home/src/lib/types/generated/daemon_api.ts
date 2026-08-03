@@ -159,7 +159,7 @@ export interface TurnSurfaceContext {
 
 export interface InteractiveTurnRequest {
   additional_manuscript_ids?: string[] | null;
-  agent_mode?: AgentModeId;
+  agent_mode?: AgentModeId | null;
   host_context?: HostTurnContext | null;
   identity_user_id?: string | null;
   manuscript_id?: string | null;
@@ -179,4 +179,50 @@ export interface InteractiveTurnRequest {
   surface?: TurnSurfaceContext | null;
   voice_appendix?: string | null;
   voice_preset_id?: string | null;
+}
+
+export type AgentModeScope = "session" | "task";
+
+export interface SetSessionAgentModeRequest {
+  expires_at_utc?: string | null;
+  mode: AgentModeId;
+  scope?: AgentModeScope;
+  task_id?: string | null;
+}
+
+export interface AgentModeLeaseResponse {
+  acquired_at_utc: string;
+  expires_at_utc?: string | null;
+  lease_id: string;
+  mode: AgentModeId;
+  task_id: string;
+}
+
+export type AgentModeSource = "default" | "session" | "task" | "turn";
+
+export interface SessionAgentModeResponse {
+  effective_mode: AgentModeId;
+  effective_source: AgentModeSource;
+  revision: number;
+  selected_mode?: AgentModeId | null;
+  session_id: string;
+  task_lease?: AgentModeLeaseResponse | null;
+  updated_at_utc?: string | null;
+}
+
+export type TurnTicketMode = "interactive" | "background";
+
+export type TurnTicketPhase = "accepted" | "streaming" | "worker_handoff" | "workshop_handoff" | "budget_blocked" | "done" | "error" | "cancelled";
+
+export interface TurnTicketRecord {
+  composer_handoff: boolean;
+  mode: TurnTicketMode;
+  phase: TurnTicketPhase;
+  prompt_preview: string;
+  session_id: string;
+  started_at: string;
+  stream_url: string;
+  turn_id: string;
+  updated_at: string;
+  workspace_card_id?: string | null;
 }

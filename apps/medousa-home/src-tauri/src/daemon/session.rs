@@ -281,8 +281,8 @@ pub struct SessionTurnsResponse {
 struct CreateTurnTicketBody {
     session_id: String,
     prompt: String,
-    #[serde(default)]
-    agent_mode: AgentModeId,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    agent_mode: Option<AgentModeId>,
     #[serde(default)]
     mode: TurnTicketMode,
     #[serde(default = "default_persist_user_turn")]
@@ -416,7 +416,7 @@ pub async fn turn_create(
     let body = CreateTurnTicketBody {
         session_id: trimmed_session.to_string(),
         prompt,
-        agent_mode: agent_mode.unwrap_or_default(),
+        agent_mode,
         mode: ticket_mode,
         persist_user_turn: true,
         response_depth_mode,

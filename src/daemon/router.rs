@@ -416,6 +416,12 @@ pub fn build_core_router(state: AppState) -> Router {
             "/v1/sessions/{session_id}/name",
             put(crate::daemon_handlers::set_session_display_name),
         )
+        .route(
+            "/v1/sessions/{session_id}/agent-mode",
+            get(crate::daemon_handlers::get_session_agent_mode)
+                .put(crate::daemon_handlers::set_session_agent_mode)
+                .delete(crate::daemon_handlers::clear_session_agent_mode),
+        )
         .route("/v1/sessions/{session_id}", delete(delete_session_handler))
         .route(
             "/v1/sessions/{session_id}/active-turn",

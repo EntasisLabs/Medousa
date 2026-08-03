@@ -46,12 +46,13 @@ written, stores host context as structured turn metadata, and projects that
 metadata into model context. Clients must not append prompt wrappers. Host
 context is advisory and never grants filesystem or vault authority.
 
-`InteractiveTurnRequest.agent_mode` selects the behavioral runtime contract,
-independently of interactive/background ticket delivery. It defaults to
-`general`. The protocol also reserves `coder`, but the daemon rejects that mode
-until its repository authority and entry contract are available; it never
-silently falls back or expands tool access. Mode resolution itself is
-deterministic and does not require an additional model call.
+`InteractiveTurnRequest.agent_mode` is a per-turn behavioral override,
+independent of interactive/background ticket delivery. When omitted, the
+daemon checks the active task lease, then the session selection, then defaults
+to `general`. The protocol also reserves `coder`, but the daemon rejects that
+mode until its repository authority and entry contract are available; it never
+silently falls back or expands tool access. Resolution is deterministic and
+does not require an additional model call.
 
 ### Registered client tools
 
@@ -72,6 +73,9 @@ for the protocol and surface-scoping rules.
 | GET | `/v1/sessions` | `SessionHistoryListResponse` | `sessions().list` |
 | GET | `/v1/sessions/{session_id}/history` | `SessionHistoryResponse` | `sessions().history` |
 | PUT | `/v1/sessions/{session_id}/name` | `SessionSetDisplayNameRequest` | `sessions().set_display_name` |
+| GET | `/v1/sessions/{session_id}/agent-mode` | Effective selection and source | `sessions().agent_mode` |
+| PUT | `/v1/sessions/{session_id}/agent-mode` | `SetSessionAgentModeRequest` | `sessions().set_agent_mode` |
+| DELETE | `/v1/sessions/{session_id}/agent-mode?scope=session\|task` | Clear selection or lease | `sessions().clear_agent_mode` |
 | DELETE | `/v1/sessions/{session_id}` | — | `http().delete` |
 | POST | `/v1/sessions/{session_id}/turns` | `SessionAppendTurnRequest` | `sessions().append_turn` |
 | GET | `/v1/sessions/{session_id}/turns` | turn list | `http().get` |

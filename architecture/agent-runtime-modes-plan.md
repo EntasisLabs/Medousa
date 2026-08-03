@@ -1,6 +1,6 @@
 # Agent runtime modes
 
-> Status: accepted direction; implementation in progress  
+> Status: mode kernel and persisted state complete; Home picker next
 > First modes: **General** and **Coder**
 
 ## Product decision
@@ -119,9 +119,9 @@ continues in the current mode rather than abandoning the request.
 
 ## Delivery slices
 
-1. **Mode kernel / General parity** — shared type, request plumbing, registry,
+1. **Mode kernel / General parity (complete)** — shared type, request plumbing, registry,
    immutable resolved snapshot, telemetry, and tests. No behavior change.
-2. **Session and task state** — persisted mode selection, transition records,
+2. **Session and task state (complete)** — persisted mode selection, transition records,
    and task-scoped leases.
 3. **Home picker** — General selection plus unavailable/readiness states for
    Coder.

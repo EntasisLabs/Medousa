@@ -96,6 +96,9 @@ this generic HTTP client rather than a dedicated typed SDK accessor. See the
 | `list(limit)` | `GET /v1/sessions?limit=` | `SessionHistoryListResponse` |
 | `history(session_id)` | `GET /v1/sessions/{id}/history` | `SessionHistoryResponse` |
 | `set_display_name(session_id, name)` | `PUT /v1/sessions/{id}/name` | `SessionSetDisplayNameRequest` |
+| `agent_mode(session_id)` | `GET /v1/sessions/{id}/agent-mode` | `SessionAgentModeResponse` |
+| `set_agent_mode(session_id, request)` | `PUT /v1/sessions/{id}/agent-mode` | Persist a session selection or task lease |
+| `clear_agent_mode(session_id, scope)` | `DELETE /v1/sessions/{id}/agent-mode` | Clear a session selection or task lease |
 | `append_turn(session_id, request)` | `POST /v1/sessions/{id}/turns` | `SessionAppendTurnRequest` |
 | `delete(session_id)` | `DELETE /v1/sessions/{id}` | `SessionDeleteResponse` |
 | `list_turns(session_id)` | `GET /v1/sessions/{id}/turns` | `SessionHistoryResponse` |

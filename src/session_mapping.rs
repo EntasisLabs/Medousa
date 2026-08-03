@@ -550,7 +550,7 @@ pub fn build_interactive_turn_request_for_ingest(
     InteractiveTurnRequest {
         session_id: session_id.to_string(),
         prompt,
-        agent_mode: crate::daemon_api::AgentModeId::General,
+        agent_mode: None,
         persist_user_turn: true,
         response_depth_mode: response_depth_mode.to_string(),
         reasoning_effort: reasoning_effort.to_string(),

@@ -198,7 +198,7 @@ impl JobHandler for RecurringAgentTurnJobHandler {
         let request = InteractiveTurnRequest {
             session_id: payload.session_id.clone(),
             prompt: payload.user_prompt.clone(),
-            agent_mode: crate::daemon_api::AgentModeId::General,
+            agent_mode: None,
             persist_user_turn: false,
             response_depth_mode: payload
                 .response_depth_mode

@@ -1,6 +1,7 @@
 #[cfg(feature = "async")]
 use medousa_types::{
-    ActiveSessionTurnResponse, CancelActiveSessionTurnResponse, SessionAppendTurnRequest,
+    ActiveSessionTurnResponse, AgentModeScope, CancelActiveSessionTurnResponse,
+    SessionAgentModeResponse, SetSessionAgentModeRequest, SessionAppendTurnRequest,
     SessionAppendTurnResponse, SessionDeleteQuery, SessionDeleteResponse, SessionHistoryListResponse,
     SessionHistoryResponse, SessionSetDisplayNameRequest, SessionSetDisplayNameResponse,
     SessionActiveTurnsResponse,
@@ -52,6 +53,56 @@ impl SessionsApi<'_> {
             .client
             .transport()
             .put_json(self.client.base_url(), &path, body)
+            .await?;
+        decode(value).await
+    }
+
+    pub async fn agent_mode(
+        &self,
+        session_id: &str,
+    ) -> Result<SessionAgentModeResponse, crate::SdkError> {
+        let path = format!("/v1/sessions/{session_id}/agent-mode");
+        let value = self
+            .client
+            .transport()
+            .get_json(self.client.base_url(), &path)
+            .await?;
+        decode(value).await
+    }
+
+    pub async fn set_agent_mode(
+        &self,
+        session_id: &str,
+        request: &SetSessionAgentModeRequest,
+    ) -> Result<SessionAgentModeResponse, crate::SdkError> {
+        let body =
+            serde_json::to_value(request).map_err(|e| crate::SdkError::Serde(e.to_string()))?;
+        let path = format!("/v1/sessions/{session_id}/agent-mode");
+        let value = self
+            .client
+            .transport()
+            .put_json(self.client.base_url(), &path, body)
+            .await?;
+        decode(value).await
+    }
+
+    pub async fn clear_agent_mode(
+        &self,
+        session_id: &str,
+        scope: AgentModeScope,
+    ) -> Result<SessionAgentModeResponse, crate::SdkError> {
+        let scope = match scope {
+            AgentModeScope::Session => "session",
+            AgentModeScope::Task => "task",
+        };
+        let path = path_with_query(
+            &format!("/v1/sessions/{session_id}/agent-mode"),
+            &[("scope", scope.to_string())],
+        );
+        let value = self
+            .client
+            .transport()
+            .delete_json(self.client.base_url(), &path)
             .await?;
         decode(value).await
     }

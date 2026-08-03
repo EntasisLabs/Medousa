@@ -438,7 +438,7 @@ pub async fn interactive_turn_send(
     let request = InteractiveTurnRequest {
         session_id: session_id.clone(),
         prompt,
-        agent_mode: agent_mode.unwrap_or_default(),
+        agent_mode,
         persist_user_turn: true,
         response_depth_mode,
         reasoning_effort,

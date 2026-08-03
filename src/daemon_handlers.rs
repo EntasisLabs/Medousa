@@ -7,7 +7,8 @@ use uuid::Uuid;
 use stasis::ports::outbound::memory::memory_operations::MemoryOperations;
 
 use crate::daemon_api::{
-    CreateSessionRequest, CreateSessionResponse, SessionAppendTurnRequest,
+    AgentModeScope, CreateSessionRequest, CreateSessionResponse, SessionAgentModeResponse,
+    SetSessionAgentModeRequest, SessionAppendTurnRequest,
     SessionAppendTurnResponse, SessionDeleteQuery, SessionDeleteResponse, SessionHistoryListRequest,
     SessionHistoryListResponse, SessionHistoryResponse, SessionSetDisplayNameRequest,
     SessionSetDisplayNameResponse,
@@ -170,6 +171,38 @@ pub async fn set_session_display_name(
         session_id,
         display_name,
     }))
+}
+
+pub async fn get_session_agent_mode(
+    AxumPath(session_id): AxumPath<String>,
+) -> Result<Json<SessionAgentModeResponse>, (StatusCode, String)> {
+    crate::agent_mode_state::get_session_mode(&session_id)
+        .map(Json)
+        .map_err(|err| (StatusCode::BAD_REQUEST, err))
+}
+
+pub async fn set_session_agent_mode(
+    AxumPath(session_id): AxumPath<String>,
+    Json(request): Json<SetSessionAgentModeRequest>,
+) -> Result<Json<SessionAgentModeResponse>, (StatusCode, String)> {
+    crate::agent_mode_state::set_session_mode(&session_id, request)
+        .map(Json)
+        .map_err(|err| (StatusCode::BAD_REQUEST, err))
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct ClearSessionAgentModeQuery {
+    #[serde(default)]
+    scope: AgentModeScope,
+}
+
+pub async fn clear_session_agent_mode(
+    AxumPath(session_id): AxumPath<String>,
+    Query(query): Query<ClearSessionAgentModeQuery>,
+) -> Result<Json<SessionAgentModeResponse>, (StatusCode, String)> {
+    crate::agent_mode_state::clear_session_mode(&session_id, query.scope)
+        .map(Json)
+        .map_err(|err| (StatusCode::BAD_REQUEST, err))
 }
 
 pub async fn delete_session(

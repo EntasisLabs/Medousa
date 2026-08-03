@@ -1206,6 +1206,64 @@ pub enum AgentModeId {
     Coder,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum AgentModeScope {
+    #[default]
+    Session,
+    Task,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum AgentModeSource {
+    #[default]
+    Default,
+    Session,
+    Task,
+    Turn,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct SetSessionAgentModeRequest {
+    pub mode: AgentModeId,
+    #[serde(default)]
+    pub scope: AgentModeScope,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expires_at_utc: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct AgentModeLeaseResponse {
+    pub lease_id: String,
+    pub task_id: String,
+    pub mode: AgentModeId,
+    pub acquired_at_utc: DateTime<Utc>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expires_at_utc: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct SessionAgentModeResponse {
+    pub session_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub selected_mode: Option<AgentModeId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task_lease: Option<AgentModeLeaseResponse>,
+    pub effective_mode: AgentModeId,
+    pub effective_source: AgentModeSource,
+    pub revision: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub updated_at_utc: Option<DateTime<Utc>>,
+}
+
 impl AgentModeId {
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -1220,9 +1278,9 @@ impl AgentModeId {
 pub struct InteractiveTurnRequest {
     pub session_id: String,
     pub prompt: String,
-    /// Requested behavioral mode. Omitted requests retain General behavior.
-    #[serde(default)]
-    pub agent_mode: AgentModeId,
+    /// Per-turn behavioral mode override. Omitted requests inherit task/session state.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_mode: Option<AgentModeId>,
     pub persist_user_turn: bool,
     pub response_depth_mode: String,
     #[serde(default)]
@@ -1306,9 +1364,9 @@ pub struct InteractiveTurnResponse {
 pub struct CreateTurnTicketRequest {
     pub session_id: String,
     pub prompt: String,
-    /// Requested behavioral mode; independent of interactive/background delivery mode.
-    #[serde(default)]
-    pub agent_mode: AgentModeId,
+    /// Per-turn behavioral mode override; independent of delivery mode.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_mode: Option<AgentModeId>,
     #[serde(default)]
     pub mode: TurnTicketMode,
     #[serde(default = "default_persist_user_turn")]
