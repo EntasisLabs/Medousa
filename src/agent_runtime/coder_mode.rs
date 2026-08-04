@@ -5,7 +5,7 @@ use std::path::{Component, Path, PathBuf};
 
 use chrono::{SecondsFormat, Utc};
 use medousa_forge::forge::Forge;
-use medousa_forge::model::{WorkId, WorkState};
+use medousa_forge::model::{AttemptId, WorkId, WorkState};
 use serde_json::json;
 
 use crate::daemon_api::CodeIntentContext;
@@ -74,6 +74,22 @@ pub fn compile_coder_entry(
     forge: &Forge,
     advisory: &CodeIntentContext,
 ) -> Result<CoderEntryContext, CoderEntryError> {
+    compile_coder_entry_inner(forge, advisory, None)
+}
+
+pub fn compile_coder_entry_for_attempt(
+    forge: &Forge,
+    advisory: &CodeIntentContext,
+    attempt_id: &AttemptId,
+) -> Result<CoderEntryContext, CoderEntryError> {
+    compile_coder_entry_inner(forge, advisory, Some(attempt_id))
+}
+
+fn compile_coder_entry_inner(
+    forge: &Forge,
+    advisory: &CodeIntentContext,
+    attempt_id: Option<&AttemptId>,
+) -> Result<CoderEntryContext, CoderEntryError> {
     let work_id = advisory
         .work_id
         .as_deref()
@@ -84,18 +100,34 @@ pub fn compile_coder_entry(
     let item = forge
         .load(&work_id)
         .map_err(|err| CoderEntryError(format!("cannot enter Coder mode: {err}")))?;
-    if item.state != WorkState::Ready {
+    let expected_state = if attempt_id.is_some() {
+        WorkState::Executing
+    } else {
+        WorkState::Ready
+    };
+    if item.state != expected_state {
         return Err(CoderEntryError(format!(
-            "Coder undertaking '{}' must be ready (currently {})",
-            item.id, item.state
+            "Coder undertaking '{}' must be {expected_state} (currently {})",
+            item.id, item.state,
         )));
     }
-    let environment = item.environment.as_ref().ok_or_else(|| {
-        CoderEntryError(format!(
-            "Coder undertaking '{}' has no governed environment",
+    if let Some(attempt_id) = attempt_id
+        && !item.active_attempt_ids().contains(&attempt_id)
+    {
+        return Err(CoderEntryError(format!(
+            "Coder attempt '{attempt_id}' is not active for undertaking '{}'",
             item.id
-        ))
-    })?;
+        )));
+    }
+    let environment = attempt_id
+        .and_then(|attempt_id| item.environment_for_attempt(attempt_id))
+        .or_else(|| item.workspace_environment())
+        .ok_or_else(|| {
+            CoderEntryError(format!(
+                "Coder undertaking '{}' has no governed environment",
+                item.id
+            ))
+        })?;
     let worktree = std::fs::canonicalize(&environment.worktree).map_err(|err| {
         CoderEntryError(format!(
             "cannot resolve governed worktree '{}': {err}",
@@ -459,6 +491,53 @@ mod tests {
             .expect("canonical Coder context STTP");
         assert!(appendix.contains("forge_authority(.99)"));
         assert!(appendix.contains("parent_node: ref:⏣0"));
+    }
+
+    #[test]
+    fn active_attempt_entry_uses_the_private_worktree() {
+        let (_repo, _forge_root, forge, work_id) = ready_work();
+        let work_id = WorkId::from(work_id);
+        let staging = forge
+            .load(&work_id)
+            .expect("load work")
+            .environment
+            .expect("staging environment");
+        let (item, lease) = forge
+            .begin_isolated_attempt(
+                &work_id,
+                medousa_forge::model::ExecutorDescriptor {
+                    kind: "medousa-coder".into(),
+                    detail: serde_json::json!({}),
+                },
+                None,
+                &Forge::system_actor(),
+            )
+            .expect("begin isolated attempt");
+        let private = item
+            .environment_for_attempt(&lease.attempt_id)
+            .expect("attempt environment");
+
+        let entry = compile_coder_entry_for_attempt(
+            &forge,
+            &CodeIntentContext {
+                work_id: Some(work_id.to_string()),
+                active_path: Some("src/lib.rs".into()),
+                ..CodeIntentContext::default()
+            },
+            &lease.attempt_id,
+        )
+        .expect("compile attempt-bound entry");
+
+        assert_eq!(
+            entry.worktree,
+            std::fs::canonicalize(&private.worktree).expect("canonical private worktree")
+        );
+        assert_eq!(entry.branch, private.branch);
+        assert_ne!(
+            entry.worktree,
+            std::fs::canonicalize(&staging.worktree).expect("canonical staging worktree")
+        );
+        assert_eq!(entry.editor.active_path.as_deref(), Some("src/lib.rs"));
     }
 
     #[test]

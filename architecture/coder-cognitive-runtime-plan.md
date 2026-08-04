@@ -1,6 +1,6 @@
 # Coder cognitive runtime
 
-> Status: Approved direction; slices 1–5B complete
+> Status: Approved direction; slices 1–5C complete
 > Parent: [Agent runtime modes](agent-runtime-modes-plan.md)
 
 ## Product decision
@@ -367,12 +367,29 @@ Implemented:
   Interrupt/failure preserves it for recovery, whole-item discard reclaims all
   attempt worktrees and branches, and reconciliation treats them as owned.
 
-#### Slice 5C — integration binding
+#### Slice 5C — integration binding (complete)
 
 - Bind native Coder tools, ACP providers, Home, VS Code, and Neovim to the
   worktree carried by their execution lease.
 - Return attempt/worktree identity through APIs and ambient context so a client
   cannot silently fall back to the undertaking's shared staging worktree.
+
+Implemented:
+
+- Native Coder acquires an isolated lease before compiling its ambient context
+  and tool registry. Every path and shell action is therefore rooted in the
+  attempt environment named by that lease.
+- Interrupted native turns reuse their preserved attempt workspace, including
+  unfinished edits, instead of copying another worktree or allocating a new
+  directory each turn. Reuse verifies the Git root and branch first.
+- ACP sessions acquire custody before provider creation and force the provider
+  process `cwd` to the leased worktree. Provider-start failures release custody.
+- Forge source APIs, Detamu bindings, review projections, and script execution
+  resolve the effective attempt workspace. Item projections expose that same
+  workspace through the existing `environment` field, so Home, VS Code, and
+  Neovim follow it without treating client paths as filesystem authority.
+- `POST /attempts` additionally returns the exact `attempt_id`, `worktree`, and
+  `branch`; the serialized lease carries its own `work_id` and `attempt_id`.
 
 #### Slice 5D — concurrent seal, review, and recovery
 

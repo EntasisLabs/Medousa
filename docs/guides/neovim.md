@@ -103,6 +103,10 @@ full coding tools activate on the following bound turn.
 Detaching leaves Coder active in its restricted setup phase. When the governed
 worktree is visible on the Neovim host, the plugin offers to change directory;
 remote workshop paths remain daemon-owned and are never treated as local paths.
+Coder executes in a private attempt worktree. Runtime refreshes expose that same
+path through the existing project binding, and interrupted turns preserve it—
+including unfinished edits—for the next turn without mutating the staging
+worktree.
 
 Mode changes proposed by Medousa appear as a Switch/Not now picker after the
 turn. The workshop's configured expiry and auto-accept policy remains

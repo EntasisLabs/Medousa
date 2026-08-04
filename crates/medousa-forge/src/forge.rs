@@ -461,12 +461,7 @@ impl Forge {
         let attempt_id = crate::model::AttemptId::new();
         let attempt_seq = item.next_attempt_seq();
         let attempt_environment = if isolated {
-            Some(self.create_attempt_environment(
-                &item,
-                &target,
-                &attempt_id,
-                attempt_seq,
-            )?)
+            Some(self.create_attempt_environment(&item, &target, &attempt_id, attempt_seq)?)
         } else {
             None
         };
@@ -526,6 +521,33 @@ impl Forge {
         attempt_id: &crate::model::AttemptId,
         attempt_seq: u32,
     ) -> Result<GovernedEnv> {
+        if let Some(environment) = item.latest_attempt_environment() {
+            if !environment.worktree.exists() {
+                return Err(ForgeError::EnvironmentDrift(format!(
+                    "preserved attempt worktree is missing: {}",
+                    environment.worktree.display()
+                )));
+            }
+            let expected_root = std::fs::canonicalize(&environment.worktree)?;
+            let actual_root =
+                std::fs::canonicalize(self.git.worktree_root(&environment.worktree)?)?;
+            if actual_root != expected_root {
+                return Err(ForgeError::EnvironmentDrift(format!(
+                    "preserved attempt worktree root changed: expected {}, found {}",
+                    expected_root.display(),
+                    actual_root.display()
+                )));
+            }
+            let branch = self.git.current_branch(&environment.worktree)?;
+            if branch.as_deref() != Some(environment.branch.as_str()) {
+                return Err(ForgeError::EnvironmentDrift(format!(
+                    "preserved attempt branch changed: expected {}, found {}",
+                    environment.branch,
+                    branch.as_deref().unwrap_or("detached HEAD")
+                )));
+            }
+            return Ok(environment.clone());
+        }
         let staging = item
             .environment
             .as_ref()
@@ -1500,10 +1522,7 @@ impl Forge {
     /// Fencing: the presented lease must be the active lease of its addressed
     /// attempt. A stale adapter cannot write into a newer lease or a peer.
     fn fence(&self, item: &WorkItem, presented: &ExecutionLease) -> Result<()> {
-        if !item
-            .active_attempt_ids()
-            .contains(&&presented.attempt_id)
-        {
+        if !item.active_attempt_ids().contains(&&presented.attempt_id) {
             return Err(ForgeError::AttemptNotFound(presented.attempt_id.clone()));
         }
         let attempt = item
@@ -2020,7 +2039,12 @@ mod tests {
             .unwrap();
         let sealed = fx.git.head_oid(&attempt_environment.worktree).unwrap();
         assert_ne!(sealed, fx.git.head_oid(&staging.worktree).unwrap());
-        assert!(item.attempt(&lease.attempt_id).unwrap().evidence_id.is_some());
+        assert!(
+            item.attempt(&lease.attempt_id)
+                .unwrap()
+                .evidence_id
+                .is_some()
+        );
 
         let attempt_branch = attempt_environment.branch.clone();
         let staging_branch = staging.branch.clone();
@@ -2029,6 +2053,52 @@ mod tests {
         assert!(!staging.worktree.exists());
         assert!(!fx.git.branch_exists(&fx.repo, &attempt_branch));
         assert!(!fx.git.branch_exists(&fx.repo, &staging_branch));
+    }
+
+    #[test]
+    fn interrupted_isolated_attempt_reuses_its_workspace_with_edits_intact() {
+        let fx = fixture();
+        let forge = Forge::open(&fx.forge_root).unwrap();
+        let item = forge
+            .register("t", "b", &fx.repo, "main", "user-1", &actor())
+            .unwrap();
+        let item = forge.provision(&item.id, &actor()).unwrap();
+        let staging = item.environment.clone().unwrap();
+        let staging_contents = fs::read_to_string(staging.worktree.join("app.txt")).unwrap();
+        let (item, first_lease) = forge
+            .begin_isolated_attempt(&item.id, script_executor(), None, &actor())
+            .unwrap();
+        let first_environment = item
+            .environment_for_attempt(&first_lease.attempt_id)
+            .unwrap()
+            .clone();
+        fs::write(
+            first_environment.worktree.join("app.txt"),
+            "unfinished agent edit\n",
+        )
+        .unwrap();
+
+        let item = forge
+            .interrupt_attempt(&first_lease, RecoveryDisposition::RestartAllowed, &actor())
+            .unwrap();
+        assert_eq!(item.state, WorkState::Ready);
+        let (item, second_lease) = forge
+            .begin_isolated_attempt(&item.id, script_executor(), None, &actor())
+            .unwrap();
+        let second_environment = item
+            .environment_for_attempt(&second_lease.attempt_id)
+            .unwrap();
+
+        assert_eq!(second_environment.worktree, first_environment.worktree);
+        assert_eq!(second_environment.branch, first_environment.branch);
+        assert_eq!(
+            fs::read_to_string(second_environment.worktree.join("app.txt")).unwrap(),
+            "unfinished agent edit\n"
+        );
+        assert_eq!(
+            fs::read_to_string(staging.worktree.join("app.txt")).unwrap(),
+            staging_contents
+        );
     }
 
     #[test]

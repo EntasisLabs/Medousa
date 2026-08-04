@@ -1062,7 +1062,7 @@ fn start_item_from_request(state: &AppState, body: RegisterRequest) -> ApiResult
     touch_repository(&repository_path, None)?;
     publish_item(state, &registered, "registered");
     let item = forge.provision(&registered.id, &actor).map_err(map_err)?;
-    if let Some(env) = item.environment.as_ref() {
+    if let Some(env) = item.workspace_environment() {
         crate::daemon::detamu_host::spawn_index_forge_item(
             state.detamu.clone(),
             item.id.as_str().to_owned(),
@@ -1150,7 +1150,7 @@ fn start_code_project_for_session_inner(
             return Err(err);
         }
     };
-    let worktree = match item.environment.as_ref() {
+    let worktree = match item.workspace_environment() {
         Some(environment) => environment.worktree.to_string_lossy().into_owned(),
         None => {
             let _ = state.forge.discard(&item.id, &actor_from_state(state));
@@ -1577,7 +1577,7 @@ async fn read_source(
 ) -> ApiResult<Json<SourceResponse>> {
     let id = parse_work_id(&work_id)?;
     let item = forge(&state).load(&id).map_err(map_err)?;
-    let environment = item.environment.ok_or_else(|| {
+    let environment = item.workspace_environment().cloned().ok_or_else(|| {
         request_error(
             StatusCode::CONFLICT,
             "prepare the governed workspace before opening source files",
@@ -1595,7 +1595,7 @@ fn require_work_lease(
     work_id: &WorkId,
     lease_id: &str,
     generation: u64,
-) -> ApiResult<WorkItem> {
+) -> ApiResult<(WorkItem, ExecutionLease)> {
     let lease = resolve_lease(forge(state).as_ref(), lease_id.trim(), generation)?;
     if &lease.work_id != work_id {
         return Err(request_error(
@@ -1603,7 +1603,8 @@ fn require_work_lease(
             "the presented lease belongs to a different undertaking",
         ));
     }
-    forge(state).load(work_id).map_err(map_err)
+    let item = forge(state).load(work_id).map_err(map_err)?;
+    Ok((item, lease))
 }
 
 async fn create_source(
@@ -1618,10 +1619,9 @@ async fn create_source(
             format!("source file exceeds the {MAX_SOURCE_BYTES} byte editor limit"),
         ));
     }
-    let item = require_work_lease(&state, &id, &body.lease_id, body.generation)?;
+    let (item, lease) = require_work_lease(&state, &id, &body.lease_id, body.generation)?;
     let environment = item
-        .environment
-        .as_ref()
+        .environment_for_attempt(&lease.attempt_id)
         .ok_or_else(|| request_error(StatusCode::CONFLICT, "governed workspace is not prepared"))?;
     let (path, _) = resolve_new_source_path(&environment.worktree, &body.path)?;
     use std::io::Write;
@@ -1657,7 +1657,7 @@ async fn source_tree(
 ) -> ApiResult<Json<SourceTreeResponse>> {
     let id = parse_work_id(&work_id)?;
     let item = forge(&state).load(&id).map_err(map_err)?;
-    let environment = item.environment.ok_or_else(|| {
+    let environment = item.workspace_environment().cloned().ok_or_else(|| {
         request_error(
             StatusCode::CONFLICT,
             "prepare the governed workspace before browsing source files",
@@ -1692,7 +1692,7 @@ async fn search_source(
         ));
     }
     let item = forge(&state).load(&id).map_err(map_err)?;
-    let environment = item.environment.ok_or_else(|| {
+    let environment = item.workspace_environment().cloned().ok_or_else(|| {
         request_error(
             StatusCode::CONFLICT,
             "prepare the governed workspace before searching source files",
@@ -1789,10 +1789,6 @@ async fn save_workspace_state(
 ) -> ApiResult<Json<CodeWorkspaceState>> {
     let id = parse_work_id(&work_id)?;
     let item = forge(&state).load(&id).map_err(map_err)?;
-    let environment = item
-        .environment
-        .as_ref()
-        .ok_or_else(|| request_error(StatusCode::CONFLICT, "governed workspace is not prepared"))?;
     if body.state.tabs.len() > 32 {
         return Err(request_error(
             StatusCode::PAYLOAD_TOO_LARGE,
@@ -1812,7 +1808,7 @@ async fn save_workspace_state(
             "Code workspace drafts exceed the 8 MiB recovery limit",
         ));
     }
-    if body.state.tabs.iter().any(|tab| tab.draft.is_some()) {
+    let draft_lease = if body.state.tabs.iter().any(|tab| tab.draft.is_some()) {
         let lease_id = body.lease_id.as_deref().ok_or_else(|| {
             request_error(
                 StatusCode::CONFLICT,
@@ -1829,7 +1825,15 @@ async fn save_workspace_state(
                 "the presented lease belongs to a different undertaking",
             ));
         }
-    }
+        Some(lease)
+    } else {
+        None
+    };
+    let environment = draft_lease
+        .as_ref()
+        .and_then(|lease| item.environment_for_attempt(&lease.attempt_id))
+        .or_else(|| item.workspace_environment())
+        .ok_or_else(|| request_error(StatusCode::CONFLICT, "governed workspace is not prepared"))?;
     for tab in &mut body.state.tabs {
         let (_, clean) = resolve_source_path(&environment.worktree, &tab.path)?;
         tab.path = clean;
@@ -1910,10 +1914,9 @@ async fn save_source(
             format!("source file exceeds the {MAX_SOURCE_BYTES} byte editor limit"),
         ));
     }
-    let item = require_work_lease(&state, &id, &body.lease_id, body.generation)?;
+    let (item, lease) = require_work_lease(&state, &id, &body.lease_id, body.generation)?;
     let environment = item
-        .environment
-        .as_ref()
+        .environment_for_attempt(&lease.attempt_id)
         .ok_or_else(|| request_error(StatusCode::CONFLICT, "governed workspace is not prepared"))?;
     let (path, _) = resolve_source_path(&environment.worktree, &body.path)?;
     let current = std::fs::read(&path).map_err(|err| {
@@ -1954,10 +1957,9 @@ async fn save_source_batch(
             "no source edits supplied",
         ));
     }
-    let item = require_work_lease(&state, &id, &body.lease_id, body.generation)?;
+    let (item, lease) = require_work_lease(&state, &id, &body.lease_id, body.generation)?;
     let environment = item
-        .environment
-        .as_ref()
+        .environment_for_attempt(&lease.attempt_id)
         .ok_or_else(|| request_error(StatusCode::CONFLICT, "governed workspace is not prepared"))?;
     let mut prepared = Vec::with_capacity(body.files.len());
     let mut seen = std::collections::HashSet::new();
@@ -2017,10 +2019,9 @@ async fn rename_source(
     Json(body): Json<RenameSourceRequest>,
 ) -> ApiResult<Json<SourceResponse>> {
     let id = parse_work_id(&work_id)?;
-    let item = require_work_lease(&state, &id, &body.lease_id, body.generation)?;
+    let (item, lease) = require_work_lease(&state, &id, &body.lease_id, body.generation)?;
     let environment = item
-        .environment
-        .as_ref()
+        .environment_for_attempt(&lease.attempt_id)
         .ok_or_else(|| request_error(StatusCode::CONFLICT, "governed workspace is not prepared"))?;
     let (source, _) = resolve_source_path(&environment.worktree, &body.path)?;
     let current = std::fs::read(&source).map_err(|err| {
@@ -2056,10 +2057,9 @@ async fn delete_source(
     Json(body): Json<DeleteSourceRequest>,
 ) -> ApiResult<Json<DeleteSourceResponse>> {
     let id = parse_work_id(&work_id)?;
-    let item = require_work_lease(&state, &id, &body.lease_id, body.generation)?;
+    let (item, lease) = require_work_lease(&state, &id, &body.lease_id, body.generation)?;
     let environment = item
-        .environment
-        .as_ref()
+        .environment_for_attempt(&lease.attempt_id)
         .ok_or_else(|| request_error(StatusCode::CONFLICT, "governed workspace is not prepared"))?;
     let (path, relative) = resolve_source_path(&environment.worktree, &body.path)?;
     let current = std::fs::read(&path).map_err(|err| {
@@ -2171,8 +2171,12 @@ fn review_file_diff(state: &AppState, id: &WorkId, raw_path: &str) -> ApiResult<
         .find(|file| file.path == path)
         .ok_or_else(|| request_error(StatusCode::NOT_FOUND, "file is not part of this review"))?;
     let environment = item
-        .environment
-        .as_ref()
+        .attempts
+        .iter()
+        .rev()
+        .find(|attempt| attempt.evidence_id.is_some())
+        .and_then(|attempt| attempt.environment.as_ref())
+        .or_else(|| item.workspace_environment())
         .ok_or_else(|| request_error(StatusCode::CONFLICT, "governed workspace is not prepared"))?;
     let baseline_oid =
         GitOid::new(review.baseline_oid.clone().ok_or_else(|| {
@@ -2391,7 +2395,7 @@ async fn restore_review_file(
         .reopen_for_changes(&id, "A reviewed file was restored for another pass", &actor)
         .map_err(map_err)?;
     let (mut item, lease) = forge
-        .begin_attempt(
+        .begin_isolated_attempt(
             &id,
             ExecutorDescriptor {
                 kind: "human".into(),
@@ -2402,8 +2406,7 @@ async fn restore_review_file(
         )
         .map_err(map_err)?;
     let environment = item
-        .environment
-        .as_ref()
+        .environment_for_attempt(&lease.attempt_id)
         .ok_or_else(|| request_error(StatusCode::CONFLICT, "governed workspace is not prepared"))?;
     let restored_path = comparison
         .old_path
@@ -2707,8 +2710,7 @@ async fn list_project_tasks(
     let id = parse_work_id(&work_id)?;
     let item = forge(&state).load(&id).map_err(map_err)?;
     let root = item
-        .environment
-        .as_ref()
+        .workspace_environment()
         .ok_or_else(|| {
             request_error(
                 StatusCode::CONFLICT,
@@ -2800,8 +2802,7 @@ async fn list_project_tests(
     let id = parse_work_id(&work_id)?;
     let item = forge(&state).load(&id).map_err(map_err)?;
     let root = item
-        .environment
-        .as_ref()
+        .workspace_environment()
         .ok_or_else(|| {
             request_error(
                 StatusCode::CONFLICT,
@@ -2821,11 +2822,9 @@ async fn start_project_task_run(
 ) -> ApiResult<Json<ProjectTaskRun>> {
     let id = parse_work_id(&work_id)?;
     let forge = forge(&state);
-    let item = require_work_lease(&state, &id, &body.lease_id, body.generation)?;
-    let lease = resolve_lease(forge.as_ref(), &body.lease_id, body.generation)?;
+    let (item, lease) = require_work_lease(&state, &id, &body.lease_id, body.generation)?;
     let root = item
-        .environment
-        .as_ref()
+        .environment_for_attempt(&lease.attempt_id)
         .ok_or_else(|| {
             request_error(
                 StatusCode::CONFLICT,
@@ -2995,11 +2994,9 @@ async fn run_project_task(
 ) -> ApiResult<Json<ProjectTaskResult>> {
     let id = parse_work_id(&work_id)?;
     let forge = forge(&state);
-    let item = require_work_lease(&state, &id, &body.lease_id, body.generation)?;
-    let lease = resolve_lease(forge.as_ref(), &body.lease_id, body.generation)?;
+    let (item, lease) = require_work_lease(&state, &id, &body.lease_id, body.generation)?;
     let root = item
-        .environment
-        .as_ref()
+        .environment_for_attempt(&lease.attempt_id)
         .ok_or_else(|| {
             request_error(
                 StatusCode::CONFLICT,
@@ -3233,8 +3230,7 @@ fn normalize_provider_repository_name(repository: &str) -> bool {
 fn provider_handoff(forge: &Forge, item: &WorkItem) -> ProviderHandoff {
     let context = load_provider_context(forge, &item.id);
     let remote_url = item
-        .environment
-        .as_ref()
+        .workspace_environment()
         .and_then(|env| repository_remote(&env.worktree));
     let parsed = remote_url.as_deref().and_then(provider_repository);
     let provider = parsed
@@ -3246,10 +3242,10 @@ fn provider_handoff(forge: &Forge, item: &WorkItem) -> ProviderHandoff {
         "gitlab" => command_available("glab"),
         _ => false,
     };
-    let branch = item.environment.as_ref().map(|env| env.branch.clone());
+    let branch = item.workspace_environment().map(|env| env.branch.clone());
     let WorkTarget::Git(target) = &item.target;
     let base_branch = Some(target.base_ref.clone());
-    let shared = item.environment.as_ref().is_some_and(|env| {
+    let shared = item.workspace_environment().is_some_and(|env| {
         background_command("git")
             .args([
                 "show-ref",
@@ -3460,8 +3456,7 @@ async fn share_provider_handoff(
         ));
     }
     let environment = item
-        .environment
-        .as_ref()
+        .workspace_environment()
         .ok_or_else(|| request_error(StatusCode::CONFLICT, "Project workspace is unavailable"))?;
     let push = background_command("git")
         .args(["push", "--set-upstream", "origin", &environment.branch])
@@ -3715,7 +3710,7 @@ async fn provision_item(
     let id = parse_work_id(&work_id)?;
     let actor = actor_from_state(&state);
     let item = forge(&state).provision(&id, &actor).map_err(map_err)?;
-    if let Some(env) = item.environment.as_ref() {
+    if let Some(env) = item.workspace_environment() {
         crate::daemon::detamu_host::spawn_index_forge_item(
             state.detamu.clone(),
             item.id.as_str().to_owned(),
@@ -3739,6 +3734,9 @@ struct BeginAttemptRequest {
 struct BeginAttemptResponse {
     item: ItemProjection,
     lease: ExecutionLease,
+    attempt_id: String,
+    worktree: String,
+    branch: String,
 }
 
 async fn begin_attempt(
@@ -3753,12 +3751,26 @@ async fn begin_attempt(
         detail: serde_json::json!({}),
     });
     let (item, lease) = forge(&state)
-        .begin_attempt(&id, executor, body.pid, &actor)
+        .begin_isolated_attempt(&id, executor, body.pid, &actor)
         .map_err(map_err)?;
+    let environment = item
+        .environment_for_attempt(&lease.attempt_id)
+        .ok_or_else(|| {
+            request_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "isolated attempt has no governed environment",
+            )
+        })?;
+    let attempt_id = lease.attempt_id.as_str().to_owned();
+    let worktree = environment.worktree.display().to_string();
+    let branch = environment.branch.clone();
     publish_item(&state, &item, "attempt_begun");
     Ok(Json(BeginAttemptResponse {
         item: project_item(item),
         lease,
+        attempt_id,
+        worktree,
+        branch,
     }))
 }
 
@@ -3859,7 +3871,7 @@ async fn complete_lease(
     let item = forge(&state)
         .complete_attempt(&lease, &options, &actor)
         .map_err(map_err)?;
-    if let Some(env) = item.environment.as_ref() {
+    if let Some(env) = item.workspace_environment() {
         let sealed_oid = forge(&state)
             .git()
             .head_oid(&env.worktree)
@@ -3974,7 +3986,7 @@ async fn record_decision(
                 }),
             )
         })?;
-    let env = item.environment.as_ref().ok_or_else(|| {
+    let env = item.workspace_environment().ok_or_else(|| {
         (
             StatusCode::CONFLICT,
             Json(ErrorBody {

@@ -52,10 +52,10 @@ impl<'a> ScriptAdapter<'a> {
         };
         let (item, lease) = self
             .forge
-            .begin_attempt(work_id, executor, None, &actor)?;
+            .begin_isolated_attempt(work_id, executor, None, &actor)?;
         let env = item
-            .environment
-            .clone()
+            .environment_for_attempt(&lease.attempt_id)
+            .cloned()
             .ok_or_else(|| ForgeError::EnvironmentDrift("no environment".into()))?;
 
         let started = chrono::Utc::now();
@@ -69,7 +69,10 @@ impl<'a> ScriptAdapter<'a> {
             .spawn()
             .map_err(|e| ForgeError::Git(format!("failed to spawn {}: {e}", argv[0])))?;
         let pid = child.id();
-        let lease = crate::model::ExecutionLease { pid: Some(pid), ..lease };
+        let lease = crate::model::ExecutionLease {
+            pid: Some(pid),
+            ..lease
+        };
         self.forge.heartbeat(&lease)?;
 
         let mut stdout = child.stdout.take().expect("piped");
@@ -226,9 +229,18 @@ mod tests {
         .unwrap();
         assert!(commands.contains("hello-from-script"));
         assert!(commands.contains("\"exit_code\":0"));
-        // The script's work was checkpointed.
-        let env = item.environment.unwrap();
+        // The script's work was checkpointed in its private attempt workspace.
+        let env = attempt.environment.as_ref().unwrap();
         assert!(env.worktree.join("script-output.txt").exists());
+        assert!(
+            !item
+                .environment
+                .as_ref()
+                .unwrap()
+                .worktree
+                .join("script-output.txt")
+                .exists()
+        );
     }
 
     #[test]

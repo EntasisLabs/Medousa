@@ -654,6 +654,32 @@ impl WorkItem {
             .or(self.environment.as_ref())
     }
 
+    pub fn latest_attempt_environment(&self) -> Option<&GovernedEnv> {
+        self.attempts
+            .iter()
+            .filter_map(|attempt| {
+                attempt
+                    .environment
+                    .as_ref()
+                    .map(|environment| (attempt.seq, environment))
+            })
+            .max_by_key(|(seq, _)| *seq)
+            .map(|(_, environment)| environment)
+    }
+
+    /// The worktree users and tools should see between attempts. Once an
+    /// isolated attempt exists, its preserved environment carries continuity;
+    /// the original undertaking environment remains the staging anchor.
+    pub fn workspace_environment(&self) -> Option<&GovernedEnv> {
+        if self.state == WorkState::Discarded {
+            return None;
+        }
+        self.latest_active_attempt()
+            .and_then(|attempt| attempt.environment.as_ref())
+            .or_else(|| self.latest_attempt_environment())
+            .or(self.environment.as_ref())
+    }
+
     pub fn activate_attempt(&mut self, id: AttemptId) {
         if !self.active_attempts.contains(&id) {
             self.active_attempts.push(id.clone());

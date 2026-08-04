@@ -83,14 +83,21 @@ Slice 5 migration. Admission intentionally remains limited to one running
 attempt until attempt-scoped worktrees are available; this prevents a second
 lease from sharing the first executor's mutation directory.
 
-Forge core also supports isolated attempts. An isolated attempt forks a unique
-branch and worktree from the undertaking staging worktree, reproducing its
+Forge uses isolated attempts. The first isolated attempt forks a private branch
+and worktree from the undertaking staging worktree, reproducing its
 tracked, staged, deleted, binary, and regular untracked dirty state without
 mutating the staging directory. Unsafe paths and untracked symlinks fail the
 fork and remove its partial branch/worktree. The attempt owns that environment;
 seal captures it, interruption preserves it, reconciliation recognizes it, and
-discard reclaims it. Runtime and editor entry points remain on singular
-admission until their Slice 5C lease-to-worktree binding is complete.
+discard reclaims it. A restarted turn reuses that preserved workspace after
+verifying its Git root and branch, so unfinished edits survive without creating
+one worktree per turn. Admission remains singular until concurrent seal and
+review semantics land.
+
+`POST /v1/forge/items/{id}/attempts` returns the full fenced lease plus top-level
+`attempt_id`, `worktree`, and `branch` fields. Forge item projections expose the
+current lease-owned workspace through `environment`; the durable item still
+retains its original staging anchor internally.
 
 Export writes on the daemon/workshop filesystem. `destination` must be absent
 or an empty directory; a non-empty destination returns `409` and is never
@@ -219,12 +226,12 @@ An external agent chat session can opt in to Forge custody by setting
 
 - The work item must exist, be `Ready`, have no active attempt, and have a
   provisioned environment with a live worktree. Violations return `409`.
-- The ACP session's `cwd` is forced to the item's governed worktree,
+- The ACP session's `cwd` is forced to the attempt's private governed worktree,
   overriding any client-supplied `cwd`.
-- The lease begins on the session's first prompt (not at create), so empty
-  sessions never leave a work item `Executing`. Executor kind is
-  `acp-cursor` / `acp-codex` with `agent_session_id`, `acp_session_id` (ACP
-  wire id), and `chat_session_id` recorded in the executor detail.
+- The lease begins before provider session creation so the provider process can
+  never start in the staging anchor. Provider creation and stream-registration
+  failures release custody. Executor kind is `acp-cursor` / `acp-codex` with
+  `agent_session_id` and `chat_session_id` recorded in the executor detail.
 - During the prompt pump the daemon heartbeats the lease every ~15s and
   stages prompt/tool lines into `attempts/{seq}/evidence/commands.jsonl`
   via lease-fenced `append_command_log` (so seal digests real executor

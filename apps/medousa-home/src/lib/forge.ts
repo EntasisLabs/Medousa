@@ -37,6 +37,7 @@ export type ForgeWorkItem = {
   updated_at?: string;
   environment?: {
     worktree: string;
+    branch: string;
     baseline_oid: string;
     generation: number;
   } | null;
@@ -45,6 +46,12 @@ export type ForgeWorkItem = {
     seq: number;
     state: string;
     executor?: { kind?: string; detail?: Record<string, unknown> } | null;
+    environment?: {
+      worktree: string;
+      branch: string;
+      baseline_oid: string;
+      generation: number;
+    } | null;
     evidence_id?: string | null;
     lease?: {
       lease_id: string;
@@ -52,6 +59,7 @@ export type ForgeWorkItem = {
     } | null;
   }>;
   active_attempt?: string | null;
+  active_attempts?: string[];
   review_decisions?: Array<{ id: string; strategy: string }>;
   disposition?: string | null;
   target?: { Git?: { repo_path: string; base_ref: string } };
@@ -248,7 +256,15 @@ export type EvidencePage = {
 
 export type BeginAttemptResponse = {
   item: ItemProjection;
-  lease: { lease_id: string; generation: number };
+  lease: {
+    lease_id: string;
+    generation: number;
+    work_id: string;
+    attempt_id: string;
+  };
+  attempt_id: string;
+  worktree: string;
+  branch: string;
 };
 
 export type ForgeSourceFile = {

@@ -48,6 +48,12 @@ open the governed worktree locally. On a remote workshop, the daemon remains
 filesystem authority and VS Code sends editor context only as a bounded
 observation.
 
+When Coder starts working, Medousa moves execution into a private attempt
+worktree and refreshes the bound undertaking after the turn. If that path is
+local, opening the refreshed governed worktree shows the exact files Coder is
+editing. Interrupted turns keep that workspace and its unfinished edits for the
+next turn; the original staging worktree is not silently mutated.
+
 Mode suggestions appear inline with **Switch** and **Not now** actions. Their
 expiry and auto-accept behavior use the policy configured in Medousa.
 

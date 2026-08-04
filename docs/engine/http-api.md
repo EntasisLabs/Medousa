@@ -305,7 +305,7 @@ Custody of intentional work episodes over a git target (vault or any repo). Dist
 | GET | `/v1/forge/items` | List |
 | GET | `/v1/forge/items/{id}` | Get |
 | POST | `/v1/forge/items/{id}/provision` | Provision env |
-| POST | `/v1/forge/items/{id}/attempts` | Begin attempt → lease |
+| POST | `/v1/forge/items/{id}/attempts` | Begin isolated attempt → lease plus exact `attempt_id`, `worktree`, and `branch` |
 | POST | `/v1/forge/items/{id}/handoff` | Release the current executor while preserving its worktree |
 | GET, POST | `/v1/forge/items/{id}/provider` | Discover or perform external repository review handoff |
 | PUT | `/v1/forge/items/{id}/provider/context` | Attach HTTPS issue, PR, or ticket context |

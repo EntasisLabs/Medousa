@@ -48,10 +48,11 @@ pub struct AllowedActions {
 }
 
 pub fn allowed_actions(item: &WorkItem) -> AllowedActions {
-    let has_env = item.environment.is_some();
+    let has_env = item.workspace_environment().is_some();
     let has_running = item.active_attempt_ids().into_iter().any(|id| {
-        item.attempt(id)
-            .is_some_and(|attempt| attempt.state == AttemptState::Running && attempt.lease.is_some())
+        item.attempt(id).is_some_and(|attempt| {
+            attempt.state == AttemptState::Running && attempt.lease.is_some()
+        })
     });
     let has_sealed_evidence = item.attempts.iter().any(|a| a.evidence_id.is_some());
     let has_decision = !item.review_decisions.is_empty();
@@ -244,7 +245,7 @@ pub fn load_manifest(dir: &std::path::Path) -> Option<EvidenceManifest> {
 }
 
 pub fn build_review(forge: &Forge, item: &WorkItem) -> ReviewProjection {
-    let env = item.environment.as_ref();
+    let env = item.workspace_environment();
     let sealed_attempt = item.attempts.iter().rev().find(|a| a.evidence_id.is_some());
     let evidence_id = sealed_attempt.and_then(|a| a.evidence_id.clone());
     let mut changed_files = Vec::new();
@@ -310,9 +311,7 @@ pub fn build_review(forge: &Forge, item: &WorkItem) -> ReviewProjection {
         }
     }
 
-    let active = item
-        .latest_active_attempt()
-        .and_then(|a| a.lease.as_ref());
+    let active = item.latest_active_attempt().and_then(|a| a.lease.as_ref());
 
     let policy_issues = policy
         .as_ref()
@@ -613,9 +612,15 @@ pub struct ItemProjection {
     pub allowed_actions: AllowedActions,
 }
 
-pub fn project_item(item: WorkItem) -> ItemProjection {
+pub fn project_item(mut item: WorkItem) -> ItemProjection {
     let human = human_phase(item.state).to_owned();
     let actions = allowed_actions(&item);
+    // `environment` is the long-lived staging anchor in durable Forge state.
+    // Existing clients already understand that field, so project the current
+    // lease-owned workspace through it without mutating the stored item.
+    if let Some(environment) = item.workspace_environment().cloned() {
+        item.environment = Some(environment);
+    }
     ItemProjection {
         item,
         human_phase: human,

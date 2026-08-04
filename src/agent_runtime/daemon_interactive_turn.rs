@@ -1076,25 +1076,14 @@ async fn run_agent_turn_inner(
                 (None, None, None, Some(registry_override))
             } else {
                 agent_mode.coder_phase = Some(super::modes::CoderRuntimePhase::Work);
-                let entry =
-                    match super::coder_mode::compile_coder_entry(&forge, &resolved_code_context) {
-                        Ok(entry) => Arc::new(entry),
-                        Err(err) => {
-                            sink.agent_error(1, err.to_string()).await;
-                            return;
-                        }
-                    };
-                if let Err(err) =
-                    crate::agent_mode_state::set_session_code_binding(&session_id, &entry.work_id)
-                {
-                    sink.agent_error(
-                        1,
-                        format!("cannot preserve Coder undertaking binding: {err}"),
-                    )
-                    .await;
-                    return;
-                }
-                let work_id = medousa_forge::model::WorkId::from(entry.work_id.clone());
+                let work_id = medousa_forge::model::WorkId::from(
+                    resolved_code_context
+                        .work_id
+                        .as_deref()
+                        .unwrap_or_default()
+                        .trim()
+                        .to_string(),
+                );
                 let executor = medousa_forge::model::ExecutorDescriptor {
                     kind: "medousa-coder".into(),
                     detail: serde_json::json!({
@@ -1103,7 +1092,7 @@ async fn run_agent_turn_inner(
                         "contract_revision": agent_mode.contract_revision,
                     }),
                 };
-                let (item, lease) = match forge.begin_attempt(
+                let (item, lease) = match forge.begin_isolated_attempt(
                     &work_id,
                     executor,
                     Some(std::process::id()),
@@ -1116,6 +1105,37 @@ async fn run_agent_turn_inner(
                         return;
                     }
                 };
+                let entry = match super::coder_mode::compile_coder_entry_for_attempt(
+                    &forge,
+                    &resolved_code_context,
+                    &lease.attempt_id,
+                ) {
+                    Ok(entry) => Arc::new(entry),
+                    Err(err) => {
+                        let _ = forge.interrupt_attempt(
+                            &lease,
+                            medousa_forge::model::RecoveryDisposition::RestartAllowed,
+                            &medousa_forge::forge::Forge::system_actor(),
+                        );
+                        sink.agent_error(1, err.to_string()).await;
+                        return;
+                    }
+                };
+                if let Err(err) =
+                    crate::agent_mode_state::set_session_code_binding(&session_id, &entry.work_id)
+                {
+                    let _ = forge.interrupt_attempt(
+                        &lease,
+                        medousa_forge::model::RecoveryDisposition::RestartAllowed,
+                        &medousa_forge::forge::Forge::system_actor(),
+                    );
+                    sink.agent_error(
+                        1,
+                        format!("cannot preserve Coder undertaking binding: {err}"),
+                    )
+                    .await;
+                    return;
+                }
                 let identity = super::coder_activity::CoderAgentIdentity::for_turn(
                     &session_id,
                     turn_id,

@@ -185,9 +185,23 @@ export interface ForgeUndertaking {
   human_phase: string;
   environment?: {
     worktree: string;
+    branch: string;
     baseline_oid: string;
     generation: number;
   } | null;
+  attempts?: Array<{
+    id: string;
+    seq: number;
+    state: string;
+    environment?: {
+      worktree: string;
+      branch: string;
+      baseline_oid: string;
+      generation: number;
+    } | null;
+  }>;
+  active_attempt?: string | null;
+  active_attempts?: string[];
   allowed_actions?: Record<string, { allowed: boolean; reason?: string | null }>;
 }
 
