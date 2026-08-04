@@ -1,6 +1,6 @@
 # Coder cognitive runtime
 
-> Status: Approved direction; slices 1–4D complete
+> Status: Approved direction; slices 1–5A complete
 > Parent: [Agent runtime modes](agent-runtime-modes-plan.md)
 
 ## Product decision
@@ -337,6 +337,36 @@ Acceptance for 4A:
 - Share ledger, pointers, notebook, and Detamu world while keeping mutation
   environments isolated.
 - Preserve recovery, review, evidence, and integration invariants per attempt.
+
+#### Slice 5A — active-attempt set and lease addressing (complete)
+
+- Make the active attempt set canonical while retaining a read-compatible
+  projection for older Forge snapshots and clients.
+- Resolve, fence, heartbeat, hand off, and recover an attempt by its own lease
+  rather than whichever attempt happened to be marked singularly active.
+- Keep admission at one running attempt until attempt worktrees are isolated;
+  state-model concurrency must not expose shared-directory mutation.
+
+#### Slice 5B — attempt-scoped worktrees
+
+- Fork one governed Git worktree and branch per admitted attempt.
+- Preserve the undertaking baseline and user-owned dirty starting state without
+  allowing one executor to mutate another executor's directory.
+- Reclaim or preserve attempt worktrees according to explicit lifecycle state.
+
+#### Slice 5C — integration binding
+
+- Bind native Coder tools, ACP providers, Home, VS Code, and Neovim to the
+  worktree carried by their execution lease.
+- Return attempt/worktree identity through APIs and ambient context so a client
+  cannot silently fall back to the undertaking's shared staging worktree.
+
+#### Slice 5D — concurrent seal, review, and recovery
+
+- Seal each attempt independently while other attempts continue running.
+- Project multiple review candidates and bind every decision to one exact
+  attempt, evidence bundle, branch, and baseline.
+- Reconcile every stale lease after restart without interrupting healthy peers.
 
 ### Slice 6 — claims and collision handling
 

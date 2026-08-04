@@ -159,7 +159,7 @@ pub async fn create_agent_session(
                 ),
             ));
         }
-        if item.active_attempt.is_some() {
+        if item.has_active_attempts() {
             return Err((
                 StatusCode::CONFLICT,
                 format!("forge work '{work_id_raw}' already has an active attempt"),

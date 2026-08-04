@@ -426,7 +426,7 @@ impl Forge {
         let _item_lock = self.store.lock_item(work_id)?;
         let mut item = self.load(work_id)?;
         expect_state(&item, WorkState::Ready, "begin attempt")?;
-        if item.active_attempt.is_some() {
+        if item.has_active_attempts() {
             return Err(ForgeError::AttemptAlreadyRunning(work_id.clone()));
         }
         let attempt_id = crate::model::AttemptId::new();
@@ -455,7 +455,7 @@ impl Forge {
             started_at: Utc::now(),
             ended_at: None,
         };
-        item.active_attempt = Some(attempt_id.clone());
+        item.activate_attempt(attempt_id.clone());
         item.attempts.push(attempt.clone());
         self.store.append(
             work_id,
@@ -1286,7 +1286,7 @@ impl Forge {
     /// Evidence-bound re-verification — the authorization boundary. Approval
     /// authorizes exactly one sealed state, never "whatever is there now".
     fn verify_decision(&self, item: &WorkItem, decision: &ReviewDecision) -> Result<()> {
-        if item.active_attempt.is_some() {
+        if item.has_active_attempts() {
             return Err(ForgeError::DecisionInvalid {
                 reason: "an attempt is still active".into(),
             });
@@ -1396,23 +1396,18 @@ impl Forge {
         Ok(acquired + 1)
     }
 
-    /// Fencing: the presented lease must be the active lease of the active
-    /// attempt. A stale adapter cannot write into a newer attempt.
+    /// Fencing: the presented lease must be the active lease of its addressed
+    /// attempt. A stale adapter cannot write into a newer lease or a peer.
     fn fence(&self, item: &WorkItem, presented: &ExecutionLease) -> Result<()> {
-        let active_id = item
-            .active_attempt
-            .as_ref()
-            .ok_or_else(|| ForgeError::InvalidState {
-                work_id: item.id.clone(),
-                state: item.state,
-                action: "mutate attempt (none active)",
-            })?;
-        if active_id != &presented.attempt_id {
+        if !item
+            .active_attempt_ids()
+            .contains(&&presented.attempt_id)
+        {
             return Err(ForgeError::AttemptNotFound(presented.attempt_id.clone()));
         }
         let attempt = item
-            .attempt(active_id)
-            .ok_or_else(|| ForgeError::AttemptNotFound(active_id.clone()))?;
+            .attempt(&presented.attempt_id)
+            .ok_or_else(|| ForgeError::AttemptNotFound(presented.attempt_id.clone()))?;
         let active = attempt
             .lease
             .as_ref()
@@ -1449,7 +1444,7 @@ impl Forge {
             attempt.ended_at = Some(Utc::now());
             attempt.lease = None;
         }
-        item.active_attempt = None;
+        item.deactivate_attempt(attempt_id);
         self.store.append(
             &item.id,
             actor,
@@ -1546,7 +1541,7 @@ pub fn fold(events: &[TransitionEvent]) -> Result<WorkItem> {
                 item.updated_at = event.at;
             }
             EventPayload::AttemptStarted { attempt } => {
-                item.active_attempt = Some(attempt.id.clone());
+                item.activate_attempt(attempt.id.clone());
                 item.attempts.push((**attempt).clone());
             }
             EventPayload::AttemptEnded {
@@ -1560,9 +1555,7 @@ pub fn fold(events: &[TransitionEvent]) -> Result<WorkItem> {
                     att.ended_at = Some(event.at);
                     att.lease = None;
                 }
-                if item.active_attempt.as_ref() == Some(attempt_id) {
-                    item.active_attempt = None;
-                }
+                item.deactivate_attempt(attempt_id);
             }
             EventPayload::LeaseAcquired {
                 attempt_id,

@@ -76,6 +76,13 @@ Base path: `/v1/forge`. Types are `medousa-forge` serde models (`WorkItem`,
 | POST | `/v1/forge/items/{id}/run-script` | Reference script executor (`argv`) |
 | POST | `/v1/forge/items/{id}/export` | Portable bundle to `destination` |
 
+Forge now records a canonical `active_attempts` set and resolves every lease
+mutation against its addressed attempt. The legacy singular `active_attempt`
+projection remains serialized for snapshot/client compatibility during the
+Slice 5 migration. Admission intentionally remains limited to one running
+attempt until attempt-scoped worktrees are available; this prevents a second
+lease from sharing the first executor's mutation directory.
+
 Export writes on the daemon/workshop filesystem. `destination` must be absent
 or an empty directory; a non-empty destination returns `409` and is never
 overwritten.

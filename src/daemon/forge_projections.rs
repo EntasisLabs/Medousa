@@ -49,8 +49,10 @@ pub struct AllowedActions {
 
 pub fn allowed_actions(item: &WorkItem) -> AllowedActions {
     let has_env = item.environment.is_some();
-    let active = item.active_attempt.as_ref().and_then(|id| item.attempt(id));
-    let has_running = active.is_some_and(|a| a.state == AttemptState::Running && a.lease.is_some());
+    let has_running = item.active_attempt_ids().into_iter().any(|id| {
+        item.attempt(id)
+            .is_some_and(|attempt| attempt.state == AttemptState::Running && attempt.lease.is_some())
+    });
     let has_sealed_evidence = item.attempts.iter().any(|a| a.evidence_id.is_some());
     let has_decision = !item.review_decisions.is_empty();
 
@@ -309,9 +311,7 @@ pub fn build_review(forge: &Forge, item: &WorkItem) -> ReviewProjection {
     }
 
     let active = item
-        .active_attempt
-        .as_ref()
-        .and_then(|id| item.attempt(id))
+        .latest_active_attempt()
         .and_then(|a| a.lease.as_ref());
 
     let policy_issues = policy

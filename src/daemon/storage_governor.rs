@@ -401,7 +401,7 @@ fn repository_protections(forge: &Forge) -> Result<HashMap<String, String>, Stri
         else {
             continue;
         };
-        let reason = if item.active_attempt.is_some() || item.state == WorkState::Executing {
+        let reason = if item.has_active_attempts() || item.state == WorkState::Executing {
             format!("active_attempt:{}", item.id)
         } else {
             format!("non_terminal_work:{}:{}", item.id, item.state)

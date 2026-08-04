@@ -564,6 +564,11 @@ pub struct WorkItem {
     pub environment: Option<GovernedEnv>,
     #[serde(default)]
     pub attempts: Vec<Attempt>,
+    /// Canonical set of running attempts. Admission remains singular until
+    /// attempt-scoped worktrees are enabled by Slice 5B.
+    #[serde(default)]
+    pub active_attempts: Vec<AttemptId>,
+    /// Legacy projection retained while existing snapshots and clients migrate.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub active_attempt: Option<AttemptId>,
     pub state: WorkState,
@@ -596,6 +601,7 @@ impl WorkItem {
             policy: WorkPolicy::default(),
             environment: None,
             attempts: Vec::new(),
+            active_attempts: Vec::new(),
             active_attempt: None,
             state: WorkState::Draft,
             disposition: None,
@@ -616,6 +622,46 @@ impl WorkItem {
 
     pub fn next_attempt_seq(&self) -> u32 {
         self.attempts.iter().map(|a| a.seq).max().unwrap_or(0) + 1
+    }
+
+    /// Active ids from the canonical set, with a legacy snapshot fallback.
+    pub fn active_attempt_ids(&self) -> Vec<&AttemptId> {
+        if self.active_attempts.is_empty() {
+            self.active_attempt.iter().collect()
+        } else {
+            self.active_attempts.iter().collect()
+        }
+    }
+
+    pub fn has_active_attempts(&self) -> bool {
+        !self.active_attempts.is_empty() || self.active_attempt.is_some()
+    }
+
+    pub fn latest_active_attempt(&self) -> Option<&Attempt> {
+        self.active_attempt_ids()
+            .into_iter()
+            .filter_map(|id| self.attempt(id))
+            .max_by_key(|attempt| attempt.seq)
+    }
+
+    pub fn activate_attempt(&mut self, id: AttemptId) {
+        if !self.active_attempts.contains(&id) {
+            self.active_attempts.push(id.clone());
+        }
+        self.active_attempt = Some(id);
+    }
+
+    pub fn deactivate_attempt(&mut self, id: &AttemptId) {
+        self.active_attempts.retain(|active| active != id);
+        self.active_attempt = self
+            .active_attempts
+            .iter()
+            .filter_map(|active| self.attempt(active).map(|attempt| (attempt.seq, active)))
+            .max_by_key(|(seq, _)| *seq)
+            .map(|(_, active)| active.clone());
+        if self.active_attempts.is_empty() && self.active_attempt.as_ref() == Some(id) {
+            self.active_attempt = None;
+        }
     }
 }
 
@@ -639,6 +685,19 @@ mod tests {
         let back: WorkItem = serde_json::from_str(&json).unwrap();
         assert_eq!(item, back);
         assert_eq!(back.schema_version, MODEL_SCHEMA_VERSION);
+    }
+
+    #[test]
+    fn legacy_active_attempt_snapshot_projects_into_canonical_set() {
+        let mut item = WorkItem::new("t", "b", sample_target(), "user-1");
+        let active = AttemptId::new();
+        item.active_attempt = Some(active.clone());
+        let mut value = serde_json::to_value(&item).unwrap();
+        value.as_object_mut().unwrap().remove("active_attempts");
+
+        let restored: WorkItem = serde_json::from_value(value).unwrap();
+        assert!(restored.has_active_attempts());
+        assert_eq!(restored.active_attempt_ids(), vec![&active]);
     }
 
     #[test]
@@ -684,14 +743,15 @@ mod tests {
             started_at: Utc::now(),
             ended_at: None,
         };
-        item.active_attempt = Some(attempt.id.clone());
+        item.activate_attempt(attempt.id.clone());
         item.attempts.push(attempt);
         item.state = WorkState::Executing;
 
         let json = serde_json::to_string(&item).unwrap();
         let back: WorkItem = serde_json::from_str(&json).unwrap();
         assert_eq!(item, back);
-        let att = back.attempt(&back.active_attempt.clone().unwrap()).unwrap();
+        assert_eq!(back.active_attempts.len(), 1);
+        let att = back.latest_active_attempt().unwrap();
         assert_eq!(att.lease.as_ref().unwrap().generation, 1);
     }
 

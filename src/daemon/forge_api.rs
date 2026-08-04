@@ -352,25 +352,24 @@ fn resolve_lease(forge: &Forge, lease_id: &str, generation: u64) -> ApiResult<Ex
     let want = LeaseId::from(lease_id.to_string());
     let items = forge.list().map_err(map_err)?;
     for item in items {
-        let Some(active_id) = &item.active_attempt else {
-            continue;
-        };
-        let Some(attempt) = item.attempt(active_id) else {
-            continue;
-        };
-        let Some(lease) = &attempt.lease else {
-            continue;
-        };
-        if lease.lease_id == want {
-            if lease.generation != generation {
-                return Err(map_err(ForgeError::StaleLease {
-                    presented: want,
-                    presented_generation: generation,
-                    active: lease.lease_id.clone(),
-                    active_generation: lease.generation,
-                }));
+        for active_id in item.active_attempt_ids() {
+            let Some(attempt) = item.attempt(active_id) else {
+                continue;
+            };
+            let Some(lease) = &attempt.lease else {
+                continue;
+            };
+            if lease.lease_id == want {
+                if lease.generation != generation {
+                    return Err(map_err(ForgeError::StaleLease {
+                        presented: want,
+                        presented_generation: generation,
+                        active: lease.lease_id.clone(),
+                        active_generation: lease.generation,
+                    }));
+                }
+                return Ok(lease.clone());
             }
-            return Ok(lease.clone());
         }
     }
     Err((
@@ -3795,9 +3794,7 @@ async fn prepare_handoff(
     }
     let item = forge(&state).load(&id).map_err(map_err)?;
     let from = item
-        .active_attempt
-        .as_ref()
-        .and_then(|attempt_id| item.attempt(attempt_id))
+        .attempt(&lease.attempt_id)
         .map(|attempt| attempt.executor.kind.as_str())
         .unwrap_or("unknown");
     forge(&state)

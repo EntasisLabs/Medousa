@@ -128,47 +128,52 @@ impl Forge {
         }
 
         // 2. Executing attempt from a previous boot → interrupt, preserve work.
-        if item.state == WorkState::Executing
-            && let Some(attempt) = item
-                .active_attempt
-                .as_ref()
-                .and_then(|id| item.attempt(id))
-            && attempt.state == AttemptState::Running
-        {
-            let lease = attempt.lease.clone();
-            let stale = match &lease {
-                Some(l) => {
-                    l.owner_instance_id != probe.current_instance_id()
-                        || !l
-                            .pid
-                            .map(|pid| {
-                                probe.is_process_alive(pid, l.process_start_marker.as_deref())
-                            })
-                            .unwrap_or(false)
+        if item.state == WorkState::Executing {
+            let running: Vec<_> = item
+                .active_attempt_ids()
+                .into_iter()
+                .filter_map(|id| item.attempt(id))
+                .filter(|attempt| attempt.state == AttemptState::Running)
+                .cloned()
+                .collect();
+            for attempt in running {
+                let lease = attempt.lease.clone();
+                let stale = match &lease {
+                    Some(l) => {
+                        l.owner_instance_id != probe.current_instance_id()
+                            || !l
+                                .pid
+                                .map(|pid| {
+                                    probe.is_process_alive(pid, l.process_start_marker.as_deref())
+                                })
+                                .unwrap_or(false)
+                    }
+                    None => true,
+                };
+                if stale {
+                    let mut item = self.load(work_id)?;
+                    let attempt_id = attempt.id.clone();
+                    self.end_attempt(
+                        &mut item,
+                        &attempt_id,
+                        AttemptState::Interrupted,
+                        RecoveryDisposition::RestartAllowed,
+                        &actor,
+                    )?;
+                    if !item.has_active_attempts() {
+                        self.transition(
+                            &mut item,
+                            WorkState::Ready,
+                            Some("executor lost across restart; work preserved".into()),
+                            &actor,
+                        )?;
+                    }
+                    report.interrupted_attempts.push(InterruptedAttempt {
+                        work_id: work_id.clone(),
+                        attempt_id,
+                        reason: "lease owned by a prior boot or dead process".into(),
+                    });
                 }
-                None => true,
-            };
-            if stale {
-                let mut item = self.load(work_id)?;
-                let attempt_id = attempt.id.clone();
-                self.end_attempt(
-                    &mut item,
-                    &attempt_id,
-                    AttemptState::Interrupted,
-                    RecoveryDisposition::RestartAllowed,
-                    &actor,
-                )?;
-                self.transition(
-                    &mut item,
-                    WorkState::Ready,
-                    Some("executor lost across restart; work preserved".into()),
-                    &actor,
-                )?;
-                report.interrupted_attempts.push(InterruptedAttempt {
-                    work_id: work_id.clone(),
-                    attempt_id,
-                    reason: "lease owned by a prior boot or dead process".into(),
-                });
             }
         }
 
@@ -298,8 +303,8 @@ impl Forge {
                     .clone()
                     .ok_or_else(|| ForgeError::EnvironmentDrift("no environment".into()))?;
                 let attempt_id = item
-                    .active_attempt
-                    .clone()
+                    .latest_active_attempt()
+                    .map(|attempt| attempt.id.clone())
                     .ok_or_else(|| ForgeError::EnvironmentDrift("no active attempt".into()))?;
                 let attempt = item
                     .attempt(&attempt_id)
@@ -364,9 +369,12 @@ impl Forge {
                         reason: "crashed before checkpoint commit".into(),
                     },
                 )?;
-                let attempt_id = item.active_attempt.clone().ok_or_else(|| {
-                    ForgeError::EnvironmentDrift("seal op open but no active attempt".into())
-                })?;
+                let attempt_id = item
+                    .latest_active_attempt()
+                    .map(|attempt| attempt.id.clone())
+                    .ok_or_else(|| {
+                        ForgeError::EnvironmentDrift("seal op open but no active attempt".into())
+                    })?;
                 self.end_attempt(
                     &mut item,
                     &attempt_id,
@@ -993,4 +1001,3 @@ mod tests {
         assert_eq!(forge.load(&item.id).unwrap().state, WorkState::Executing);
     }
 }
-
