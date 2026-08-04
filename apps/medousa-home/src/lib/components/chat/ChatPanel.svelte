@@ -9,6 +9,7 @@
   import ComposerSkillSlashMenu from "$lib/components/chat/ComposerSkillSlashMenu.svelte";
   import ComposerTurnControls from "$lib/components/chat/ComposerTurnControls.svelte";
   import BudgetApprovalBar from "$lib/components/chat/BudgetApprovalBar.svelte";
+  import ModeProposalBar from "$lib/components/chat/ModeProposalBar.svelte";
   import AgentPermissionBar from "$lib/components/chat/AgentPermissionBar.svelte";
   import AgentBrowserPanel from "$lib/components/chat/AgentBrowserPanel.svelte";
   import ShellSidebarExpandButton from "$lib/components/layout/ShellSidebarExpandButton.svelte";
@@ -1450,6 +1451,10 @@
         const pending = chat.budgetAlert ?? chat.pendingBudgetApprovals[0];
         if (pending) void workspace.selectCard(pending.workCardId);
       }}
+    />
+    <ModeProposalBar
+      sessionId={panelSessionId}
+      {coderContextAvailable}
     />
     <AgentPermissionBar />
     <div class="mx-4 mb-1 flex flex-wrap gap-2">

@@ -22,6 +22,14 @@
   import { listProviders, type ProvidersListResult } from "$lib/utils/providersApi";
   import { composerSttStatus } from "$lib/utils/composerStt";
   import { openGuide } from "$lib/guide/openGuide";
+  import {
+    getAgentModeTransitionPolicy,
+    setAgentModeTransitionPolicy,
+  } from "$lib/daemon";
+  import type {
+    AgentModeAutoAccept,
+    AgentModeTransitionPolicy,
+  } from "$lib/types/generated/daemon_api";
   import { ChevronDown } from "@lucide/svelte";
 
   interface Props {
@@ -95,6 +103,13 @@
   let memoryBudgetsOpen = $state(false);
   let voicesOpen = $state(false);
   let presentationsOpen = $state(false);
+  let modeTransitionsOpen = $state(false);
+  let modePolicy = $state<AgentModeTransitionPolicy>({
+    proposal_ttl_seconds: 30,
+    auto_accept: "never",
+  });
+  let modePolicySaving = $state(false);
+  let modePolicyFeedback = $state<string | null>(null);
 
   let editorOpen = $state(false);
   let editingId = $state<string | null>(null);
@@ -144,6 +159,25 @@
       sttReady = stt.available;
     } catch {
       sttReady = false;
+    }
+    try {
+      modePolicy = await getAgentModeTransitionPolicy();
+    } catch {
+      modePolicyFeedback = "Mode policy is unavailable on this workshop.";
+    }
+  }
+
+  async function saveModePolicy(next: AgentModeTransitionPolicy) {
+    if (readOnly || modePolicySaving) return;
+    modePolicySaving = true;
+    modePolicyFeedback = null;
+    try {
+      modePolicy = await setAgentModeTransitionPolicy(next);
+      modePolicyFeedback = "Saved";
+    } catch (err) {
+      modePolicyFeedback = err instanceof Error ? err.message : String(err);
+    } finally {
+      modePolicySaving = false;
     }
   }
 
@@ -453,6 +487,86 @@
       </div>
     </details>
   </div>
+
+  <details class="prefs-more" bind:open={modeTransitionsOpen}>
+    <summary class="prefs-more-summary">
+      <span class="prefs-more-summary-copy">
+        <span>Mode suggestions</span>
+        <span class="prefs-more-summary-meta">
+          {modePolicy.auto_accept === "never" ? "Ask first" : "Auto-accept enabled"}
+        </span>
+      </span>
+      <ChevronDown size={14} strokeWidth={2} class="prefs-more-chevron" aria-hidden="true" />
+    </summary>
+    <div class="prefs-more-body">
+      <p class="prefs-footnote mb-3">
+        Medousa may suggest a better mode at a turn boundary. These controls decide how long the
+        suggestion waits and whether it can apply automatically for the next turn.
+      </p>
+      <div class="prefs-grid">
+        <label class="prefs-tile">
+          <span class="prefs-tile-copy">
+            <span class="prefs-tile-title">Auto-accept</span>
+            <span class="prefs-tile-meta">How much transition authority Medousa has</span>
+          </span>
+          <select
+            class="prefs-endpoint-input"
+            value={modePolicy.auto_accept}
+            disabled={readOnly || modePolicySaving}
+            aria-label="Mode suggestion auto-accept policy"
+            onchange={(event) =>
+              void saveModePolicy({
+                ...modePolicy,
+                auto_accept: (event.currentTarget as HTMLSelectElement)
+                  .value as AgentModeAutoAccept,
+              })}
+          >
+            <option value="never">Never — ask me</option>
+            <option value="task">Task-scoped only</option>
+            <option value="all">All mode suggestions</option>
+          </select>
+        </label>
+
+        <label class="prefs-tile prefs-tile-metric">
+          <span class="prefs-tile-copy">
+            <span class="prefs-tile-title">Suggestion expiry</span>
+            <span class="prefs-tile-meta">5 seconds to 24 hours</span>
+          </span>
+          <span class="prefs-metric">
+            <input
+              type="number"
+              class="prefs-metric-input prefs-metric-input-wide"
+              min={5}
+              max={86400}
+              step={5}
+              inputmode="numeric"
+              value={modePolicy.proposal_ttl_seconds}
+              readonly={readOnly}
+              disabled={readOnly || modePolicySaving}
+              aria-label="Mode suggestion expiry in seconds"
+              onchange={(event) => {
+                const value = Number((event.currentTarget as HTMLInputElement).value);
+                if (Number.isFinite(value)) {
+                  void saveModePolicy({
+                    ...modePolicy,
+                    proposal_ttl_seconds: Math.round(value),
+                  });
+                }
+              }}
+            />
+            <span class="prefs-metric-unit">sec</span>
+          </span>
+        </label>
+      </div>
+      <p class="prefs-footnote mt-3">
+        Coder still requires a chat bound to a Forge undertaking. Auto-accept changes mode state;
+        it does not bypass Coder's worktree or tool fences.
+      </p>
+      {#if modePolicyFeedback}
+        <p class="mt-2 text-xs text-surface-400" role="status">{modePolicyFeedback}</p>
+      {/if}
+    </div>
+  </details>
 
   <details class="prefs-more" bind:open={memoryOpen}>
     <summary class="prefs-more-summary">

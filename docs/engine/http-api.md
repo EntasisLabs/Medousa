@@ -35,6 +35,10 @@ Stasis dashboard mounted at `/dashboard` (HTML UI).
 availability. Clients should disable unavailable modes and show the returned
 reason instead of assuming that a protocol enum is ready to enter.
 
+`GET`/`PUT /v1/agent-modes/policy` reads or updates the user's proposal policy.
+`proposal_ttl_seconds` accepts 5–86,400 seconds. `auto_accept` is `never`,
+`task`, or `all`; the default is `never` with a 30-second timeout.
+
 | Method | Path | Types | SDK |
 |--------|------|-------|-----|
 | POST | `/v1/interactive/turn` | `InteractiveTurnRequest` → `InteractiveTurnResponse` (includes `stream_url`) | `interactive().start_turn` |
@@ -53,10 +57,9 @@ context is advisory and never grants filesystem or vault authority.
 `InteractiveTurnRequest.agent_mode` is a per-turn behavioral override,
 independent of interactive/background ticket delivery. When omitted, the
 daemon checks the active task lease, then the session selection, then defaults
-to `general`. The protocol also reserves `coder`, but the daemon rejects that
-mode until its repository authority and entry contract are available; it never
-silently falls back or expands tool access. Resolution is deterministic and
-does not require an additional model call.
+to `general`. `coder` additionally requires an active Forge undertaking and
+its turn-scoped authority. Resolution is deterministic and does not require an
+additional model call.
 
 ### Registered client tools
 
@@ -80,6 +83,8 @@ for the protocol and surface-scoping rules.
 | GET | `/v1/sessions/{session_id}/agent-mode` | Effective selection and source | `sessions().agent_mode` |
 | PUT | `/v1/sessions/{session_id}/agent-mode` | `SetSessionAgentModeRequest` | `sessions().set_agent_mode` |
 | DELETE | `/v1/sessions/{session_id}/agent-mode?scope=session\|task` | Clear selection or lease | `sessions().clear_agent_mode` |
+| GET | `/v1/sessions/{session_id}/agent-mode/proposals` | `AgentModeProposalListResponse` | `sessions().agent_mode_proposals` |
+| PUT | `/v1/sessions/{session_id}/agent-mode/proposals/{proposal_id}` | `DecideAgentModeProposalRequest` | `sessions().decide_agent_mode_proposal` |
 | DELETE | `/v1/sessions/{session_id}` | — | `http().delete` |
 | POST | `/v1/sessions/{session_id}/turns` | `SessionAppendTurnRequest` | `sessions().append_turn` |
 | GET | `/v1/sessions/{session_id}/turns` | turn list | `http().get` |

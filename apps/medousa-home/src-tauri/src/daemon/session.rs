@@ -1,5 +1,6 @@
 use crate::daemon::types::{
-    ActiveSessionTurnResponse, AgentModeId, AgentModeListResponse, AgentModeScope,
+    ActiveSessionTurnResponse, AgentModeId, AgentModeListResponse, AgentModeProposalListResponse,
+    AgentModeProposalResponse, AgentModeScope, AgentModeTransitionPolicy,
     CancelActiveSessionTurnResponse, CodeIntentContext, MediaRef, SessionAgentModeResponse,
     SessionDeleteQuery,
     SessionDeleteResponse, SessionHistoryListResponse, SessionHistoryResponse,
@@ -127,6 +128,29 @@ pub async fn agent_mode_list(
 }
 
 #[tauri::command]
+pub async fn agent_mode_transition_policy_get(
+    state: State<'_, DaemonState>,
+) -> Result<AgentModeTransitionPolicy, String> {
+    client(&state)
+        .runtime()
+        .agent_mode_transition_policy()
+        .await
+        .map_err(sdk_error)
+}
+
+#[tauri::command]
+pub async fn agent_mode_transition_policy_set(
+    state: State<'_, DaemonState>,
+    policy: AgentModeTransitionPolicy,
+) -> Result<AgentModeTransitionPolicy, String> {
+    client(&state)
+        .runtime()
+        .set_agent_mode_transition_policy(&policy)
+        .await
+        .map_err(sdk_error)
+}
+
+#[tauri::command]
 pub async fn session_get_agent_mode(
     state: State<'_, DaemonState>,
     session_id: String,
@@ -163,6 +187,36 @@ pub async fn session_set_agent_mode(
                 expires_at_utc: None,
             },
         )
+        .await
+        .map_err(sdk_error)
+}
+
+#[tauri::command]
+pub async fn session_list_agent_mode_proposals(
+    state: State<'_, DaemonState>,
+    session_id: String,
+) -> Result<AgentModeProposalListResponse, String> {
+    let trimmed = session_id.trim();
+    if trimmed.is_empty() {
+        return Err("session_id is required".to_string());
+    }
+    client(&state)
+        .sessions()
+        .agent_mode_proposals(trimmed)
+        .await
+        .map_err(sdk_error)
+}
+
+#[tauri::command]
+pub async fn session_decide_agent_mode_proposal(
+    state: State<'_, DaemonState>,
+    session_id: String,
+    proposal_id: String,
+    accept: bool,
+) -> Result<AgentModeProposalResponse, String> {
+    client(&state)
+        .sessions()
+        .decide_agent_mode_proposal(session_id.trim(), proposal_id.trim(), accept)
         .await
         .map_err(sdk_error)
 }

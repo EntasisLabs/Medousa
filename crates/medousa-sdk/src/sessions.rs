@@ -1,6 +1,7 @@
 #[cfg(feature = "async")]
 use medousa_types::{
-    ActiveSessionTurnResponse, AgentModeScope, CancelActiveSessionTurnResponse,
+    ActiveSessionTurnResponse, AgentModeProposalListResponse, AgentModeProposalResponse,
+    AgentModeScope, CancelActiveSessionTurnResponse, DecideAgentModeProposalRequest,
     SessionAgentModeResponse, SetSessionAgentModeRequest, SessionAppendTurnRequest,
     SessionAppendTurnResponse, SessionDeleteQuery, SessionDeleteResponse, SessionHistoryListResponse,
     SessionHistoryResponse, SessionSetDisplayNameRequest, SessionSetDisplayNameResponse,
@@ -103,6 +104,37 @@ impl SessionsApi<'_> {
             .client
             .transport()
             .delete_json(self.client.base_url(), &path)
+            .await?;
+        decode(value).await
+    }
+
+    pub async fn agent_mode_proposals(
+        &self,
+        session_id: &str,
+    ) -> Result<AgentModeProposalListResponse, crate::SdkError> {
+        let path = format!("/v1/sessions/{session_id}/agent-mode/proposals");
+        let value = self
+            .client
+            .transport()
+            .get_json(self.client.base_url(), &path)
+            .await?;
+        decode(value).await
+    }
+
+    pub async fn decide_agent_mode_proposal(
+        &self,
+        session_id: &str,
+        proposal_id: &str,
+        accept: bool,
+    ) -> Result<AgentModeProposalResponse, crate::SdkError> {
+        let body = serde_json::to_value(DecideAgentModeProposalRequest { accept })
+            .map_err(|e| crate::SdkError::Serde(e.to_string()))?;
+        let path =
+            format!("/v1/sessions/{session_id}/agent-mode/proposals/{proposal_id}");
+        let value = self
+            .client
+            .transport()
+            .put_json(self.client.base_url(), &path, body)
             .await?;
         decode(value).await
     }

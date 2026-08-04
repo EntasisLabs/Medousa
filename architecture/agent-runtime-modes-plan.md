@@ -138,7 +138,10 @@ continues in the current mode rather than abandoning the request.
    Detamu binding, command receipts, and foreground-loop activation. Shell
    sessions are exposed only for unrestricted path policies and are interrupted
    before the lease is released.
-6. **Agent proposals** — accept/deny/expiry flow and false-positive evaluation.
+6. **Agent proposals (complete)** — boundary-safe `propose_mode` control tool,
+   durable accept/deny/expiry state, inline Home controls, and user-configurable
+   proposal TTL plus `never`/`task`/`all` auto-accept policy. Applied changes
+   begin on the next turn and never mutate a live turn contract.
 
 ## First-slice acceptance criteria
 

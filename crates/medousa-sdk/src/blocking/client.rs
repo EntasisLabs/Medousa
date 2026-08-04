@@ -1,6 +1,7 @@
 #[cfg(feature = "blocking")]
 use medousa_types::{
-    ActiveSessionTurnResponse, AgentModeListResponse, AgentModeScope, ArchiveAskJobRequest,
+    ActiveSessionTurnResponse, AgentModeListResponse, AgentModeProposalListResponse,
+    AgentModeProposalResponse, AgentModeScope, AgentModeTransitionPolicy, ArchiveAskJobRequest,
     ArchiveAskJobResponse,
     ArtifactCommandRequest, ArtifactCommandResponse, ArtifactDeleteRequest, ArtifactDeleteResponse,
     ArtifactFetchRequest, ArtifactFetchResponse, ArtifactListUiRequest, ArtifactListUiResponse,
@@ -17,7 +18,7 @@ use medousa_types::{
     SessionActiveTurnsResponse, SessionAppendTurnRequest, SessionAppendTurnResponse,
     SessionAgentModeResponse, SessionDeleteQuery, SessionDeleteResponse, SessionHistoryListResponse,
     SessionHistoryResponse, SessionSetDisplayNameRequest, SessionSetDisplayNameResponse,
-    SetSessionAgentModeRequest, StageRouteCommandRequest,
+    DecideAgentModeProposalRequest, SetSessionAgentModeRequest, StageRouteCommandRequest,
     StageRouteCommandResponse, TurnBudgetApproveRequest, TurnBudgetDenyRequest,
     TurnBudgetRequestListResponse, TurnBudgetRequestRecord, TurnBudgetRequestResponse,
     UpdateRecurringRequest, UpdateRecurringResponse, VaultAddRootRequest, VaultBacklinksQuery,
@@ -477,6 +478,29 @@ impl BlockingSessionsApi<'_> {
         ))
     }
 
+    pub fn agent_mode_proposals(
+        &self,
+        session_id: &str,
+    ) -> Result<AgentModeProposalListResponse, SdkError> {
+        self.http.get(&format!(
+            "/v1/sessions/{session_id}/agent-mode/proposals"
+        ))
+    }
+
+    pub fn decide_agent_mode_proposal(
+        &self,
+        session_id: &str,
+        proposal_id: &str,
+        accept: bool,
+    ) -> Result<AgentModeProposalResponse, SdkError> {
+        self.http.put(
+            &format!(
+                "/v1/sessions/{session_id}/agent-mode/proposals/{proposal_id}"
+            ),
+            &DecideAgentModeProposalRequest { accept },
+        )
+    }
+
     pub fn append_turn(
         &self,
         session_id: &str,
@@ -540,6 +564,17 @@ impl BlockingInteractiveApi<'_> {
 impl BlockingRuntimeApi<'_> {
     pub fn agent_modes(&self) -> Result<AgentModeListResponse, SdkError> {
         self.http.get("/v1/agent-modes")
+    }
+
+    pub fn agent_mode_transition_policy(&self) -> Result<AgentModeTransitionPolicy, SdkError> {
+        self.http.get("/v1/agent-modes/policy")
+    }
+
+    pub fn set_agent_mode_transition_policy(
+        &self,
+        policy: &AgentModeTransitionPolicy,
+    ) -> Result<AgentModeTransitionPolicy, SdkError> {
+        self.http.put("/v1/agent-modes/policy", policy)
     }
 
     pub fn artifact_command(

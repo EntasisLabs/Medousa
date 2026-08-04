@@ -22,6 +22,9 @@ HOME_TYPES = [
     "SetSessionAgentModeRequest",
     "SessionAgentModeResponse",
     "AgentModeListResponse",
+    "AgentModeTransitionPolicy",
+    "AgentModeProposalListResponse",
+    "AgentModeProposalResponse",
     "TurnTicketRecord",
 ]
 

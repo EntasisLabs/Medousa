@@ -25,6 +25,7 @@ const TURN_CONTROL_TOOLS: &[&str] = &[
     "cognition_turn_checkpoint",
     "cognition_turn_finish",
     "cognition_turn_request_more_rounds",
+    "cognition_turn_propose_mode",
 ];
 
 pub struct CoderTurnLease {

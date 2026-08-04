@@ -1226,6 +1226,86 @@ pub enum AgentModeSource {
     Turn,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum AgentModeAutoAccept {
+    #[default]
+    Never,
+    Task,
+    All,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct AgentModeTransitionPolicy {
+    pub proposal_ttl_seconds: u64,
+    #[serde(default)]
+    pub auto_accept: AgentModeAutoAccept,
+}
+
+impl Default for AgentModeTransitionPolicy {
+    fn default() -> Self {
+        Self {
+            proposal_ttl_seconds: 30,
+            auto_accept: AgentModeAutoAccept::Never,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum AgentModeProposalStatus {
+    #[default]
+    Pending,
+    Accepted,
+    Denied,
+    Expired,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum AgentModeProposalResolution {
+    UserAccepted,
+    UserDenied,
+    AutoAccepted,
+    Expired,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct AgentModeProposalResponse {
+    pub proposal_id: String,
+    pub session_id: String,
+    pub from_mode: AgentModeId,
+    pub to_mode: AgentModeId,
+    pub scope: AgentModeScope,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task_id: Option<String>,
+    pub reason: String,
+    pub status: AgentModeProposalStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolution: Option<AgentModeProposalResolution>,
+    pub created_at_utc: DateTime<Utc>,
+    pub expires_at_utc: DateTime<Utc>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolved_at_utc: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct AgentModeProposalListResponse {
+    pub proposals: Vec<AgentModeProposalResponse>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct DecideAgentModeProposalRequest {
+    pub accept: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct SetSessionAgentModeRequest {

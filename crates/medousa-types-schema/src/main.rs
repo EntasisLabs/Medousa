@@ -40,6 +40,13 @@ fn main() {
     export_type!(schemas, AgentModeId, "AgentModeId");
     export_type!(schemas, AgentModeScope, "AgentModeScope");
     export_type!(schemas, AgentModeSource, "AgentModeSource");
+    export_type!(schemas, AgentModeAutoAccept, "AgentModeAutoAccept");
+    export_type!(schemas, AgentModeTransitionPolicy, "AgentModeTransitionPolicy");
+    export_type!(schemas, AgentModeProposalStatus, "AgentModeProposalStatus");
+    export_type!(schemas, AgentModeProposalResolution, "AgentModeProposalResolution");
+    export_type!(schemas, AgentModeProposalResponse, "AgentModeProposalResponse");
+    export_type!(schemas, AgentModeProposalListResponse, "AgentModeProposalListResponse");
+    export_type!(schemas, DecideAgentModeProposalRequest, "DecideAgentModeProposalRequest");
     export_type!(schemas, SetSessionAgentModeRequest, "SetSessionAgentModeRequest");
     export_type!(schemas, SessionAgentModeResponse, "SessionAgentModeResponse");
     export_type!(schemas, AgentModeListResponse, "AgentModeListResponse");

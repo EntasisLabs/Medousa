@@ -238,6 +238,36 @@ export interface AgentModeListResponse {
   modes: AgentModeAvailability[];
 }
 
+export type AgentModeAutoAccept = "never" | "task" | "all";
+
+export interface AgentModeTransitionPolicy {
+  auto_accept?: AgentModeAutoAccept;
+  proposal_ttl_seconds: number;
+}
+
+export type AgentModeProposalResolution = "user_accepted" | "user_denied" | "auto_accepted" | "expired";
+
+export type AgentModeProposalStatus = "pending" | "accepted" | "denied" | "expired";
+
+export interface AgentModeProposalResponse {
+  created_at_utc: string;
+  expires_at_utc: string;
+  from_mode: AgentModeId;
+  proposal_id: string;
+  reason: string;
+  resolution?: AgentModeProposalResolution | null;
+  resolved_at_utc?: string | null;
+  scope: AgentModeScope;
+  session_id: string;
+  status: AgentModeProposalStatus;
+  task_id?: string | null;
+  to_mode: AgentModeId;
+}
+
+export interface AgentModeProposalListResponse {
+  proposals: AgentModeProposalResponse[];
+}
+
 export type TurnTicketMode = "interactive" | "background";
 
 export type TurnTicketPhase = "accepted" | "streaming" | "worker_handoff" | "workshop_handoff" | "budget_blocked" | "done" | "error" | "cancelled";

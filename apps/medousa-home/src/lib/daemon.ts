@@ -18,6 +18,9 @@ import type {
 } from "$lib/types/session";
 import type {
   AgentModeListResponse,
+  AgentModeProposalListResponse,
+  AgentModeProposalResponse,
+  AgentModeTransitionPolicy,
   SessionAgentModeResponse,
 } from "$lib/types/generated/daemon_api";
 import type { ArtifactCommandResponse } from "$lib/types/artifact";
@@ -241,6 +244,18 @@ export async function listAgentModes(): Promise<AgentModeListResponse> {
   return invoke<AgentModeListResponse>("agent_mode_list");
 }
 
+export async function getAgentModeTransitionPolicy(): Promise<AgentModeTransitionPolicy> {
+  return invoke<AgentModeTransitionPolicy>("agent_mode_transition_policy_get");
+}
+
+export async function setAgentModeTransitionPolicy(
+  policy: AgentModeTransitionPolicy,
+): Promise<AgentModeTransitionPolicy> {
+  return invoke<AgentModeTransitionPolicy>("agent_mode_transition_policy_set", {
+    policy,
+  });
+}
+
 export async function getSessionAgentMode(
   sessionId: string,
 ): Promise<SessionAgentModeResponse> {
@@ -256,6 +271,26 @@ export async function setSessionAgentMode(
   return invoke<SessionAgentModeResponse>("session_set_agent_mode", {
     sessionId,
     mode,
+  });
+}
+
+export async function listSessionAgentModeProposals(
+  sessionId: string,
+): Promise<AgentModeProposalListResponse> {
+  return invoke<AgentModeProposalListResponse>("session_list_agent_mode_proposals", {
+    sessionId,
+  });
+}
+
+export async function decideSessionAgentModeProposal(
+  sessionId: string,
+  proposalId: string,
+  accept: boolean,
+): Promise<AgentModeProposalResponse> {
+  return invoke<AgentModeProposalResponse>("session_decide_agent_mode_proposal", {
+    sessionId,
+    proposalId,
+    accept,
   });
 }
 

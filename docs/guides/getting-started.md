@@ -71,6 +71,11 @@ inside that undertaking's governed worktree with a turn-scoped lease and a
 restricted coding tool surface; it cannot use Coder authority against an
 unbound chat. Your selection follows the conversation across restarts.
 
+Medousa can also suggest a mode when another approach would materially help.
+The suggestion appears above the composer and expires without changing the
+current mode. In **Settings → Medousa Agent → Mode suggestions**, choose the
+expiry window and whether task-scoped or all suggestions may auto-accept.
+
 Useful early asks:
 
 - *“Remember that I prefer concise answers.”*

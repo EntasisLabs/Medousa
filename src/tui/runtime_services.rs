@@ -54,7 +54,7 @@ use crate::capability_catalog::CapabilityRegistry;
 use crate::mcp_gateway_client::McpGatewayClient;
 use crate::turn_control_tools::{
     CognitionTurnBeginWorkTool, CognitionTurnCheckpointTool, CognitionTurnFinishTool,
-    CognitionTurnPrepareFinalTool,
+    CognitionTurnPrepareFinalTool, CognitionTurnProposeModeTool,
     CognitionTurnRequestMoreRoundsTool,
 };
 use crate::turn_continuation::TurnContinuationScope;
@@ -371,6 +371,10 @@ pub(crate) async fn assemble_tui_runtime(
     tool_registry.register_tool(CognitionTurnPrepareFinalTool)?;
     tool_registry.register_tool(CognitionTurnFinishTool)?;
     tool_registry.register_tool(CognitionTurnRequestMoreRoundsTool)?;
+    tool_registry.register_tool(CognitionTurnProposeModeTool::new(
+        session_id.to_string(),
+        turn_scope.clone(),
+    ))?;
     crate::turn_control_stasis::register_turn_control_stasis_tools(&mut tool_registry)?;
     tool_registry.register_tool(CognitionRuntimeRecurringPreviewTool::new(event_tx.clone()))?;
     tool_registry.register_tool(CognitionRuntimeJobStatusTool::new(runtime.clone()))?;

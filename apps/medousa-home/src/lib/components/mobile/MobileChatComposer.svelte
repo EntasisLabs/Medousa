@@ -1,5 +1,6 @@
 <script lang="ts">
   import BudgetApprovalBar from "$lib/components/chat/BudgetApprovalBar.svelte";
+  import ModeProposalBar from "$lib/components/chat/ModeProposalBar.svelte";
   import AgentPermissionBar from "$lib/components/chat/AgentPermissionBar.svelte";
   import AgentBrowserPanel from "$lib/components/chat/AgentBrowserPanel.svelte";
   import ChatComposerBar from "$lib/components/chat/ChatComposerBar.svelte";
@@ -177,6 +178,11 @@
       const pending = chat.budgetAlert ?? chat.pendingBudgetApprovals[0];
       if (pending) void workspace.selectCard(pending.workCardId);
     }}
+  />
+  <ModeProposalBar
+    mobile
+    sessionId={chat.focusedSessionId}
+    coderContextAvailable={activeCodeContext(chat.focusedSessionId) !== null}
   />
   <AgentPermissionBar mobile />
   <AgentBrowserPanel mobile />

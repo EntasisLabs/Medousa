@@ -99,6 +99,8 @@ this generic HTTP client rather than a dedicated typed SDK accessor. See the
 | `agent_mode(session_id)` | `GET /v1/sessions/{id}/agent-mode` | `SessionAgentModeResponse` |
 | `set_agent_mode(session_id, request)` | `PUT /v1/sessions/{id}/agent-mode` | Persist a session selection or task lease |
 | `clear_agent_mode(session_id, scope)` | `DELETE /v1/sessions/{id}/agent-mode` | Clear a session selection or task lease |
+| `agent_mode_proposals(session_id)` | `GET /v1/sessions/{id}/agent-mode/proposals` | List pending and resolved mode suggestions |
+| `decide_agent_mode_proposal(session_id, proposal_id, accept)` | `PUT /v1/sessions/{id}/agent-mode/proposals/{proposal_id}` | Accept or deny a pending suggestion |
 | `append_turn(session_id, request)` | `POST /v1/sessions/{id}/turns` | `SessionAppendTurnRequest` |
 | `delete(session_id)` | `DELETE /v1/sessions/{id}` | `SessionDeleteResponse` |
 | `list_turns(session_id)` | `GET /v1/sessions/{id}/turns` | `SessionHistoryResponse` |
@@ -171,6 +173,8 @@ diagnostics into provider-specific prompt text.
 | Method | HTTP | Types |
 |--------|------|-------|
 | `agent_modes()` | `GET /v1/agent-modes` | `AgentModeListResponse` |
+| `agent_mode_transition_policy()` | `GET /v1/agent-modes/policy` | Read proposal timeout and auto-accept policy |
+| `set_agent_mode_transition_policy(policy)` | `PUT /v1/agent-modes/policy` | Update proposal timeout and auto-accept policy |
 | `artifact_command(request)` | `POST /v1/runtime/artifact/command` | `ArtifactCommandRequest` |
 | `artifact_fetch(request)` | `POST /v1/runtime/artifact/fetch` | `ArtifactFetchRequest` |
 | `artifact_write(request)` | `POST /v1/runtime/artifact/write` | `ArtifactWriteRequest` |

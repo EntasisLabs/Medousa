@@ -1,4 +1,14 @@
 {
+  "AgentModeAutoAccept": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "AgentModeAutoAccept",
+    "type": "string",
+    "enum": [
+      "never",
+      "task",
+      "all"
+    ]
+  },
   "AgentModeId": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "AgentModeId",
@@ -66,6 +76,252 @@
       }
     }
   },
+  "AgentModeProposalListResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "AgentModeProposalListResponse",
+    "type": "object",
+    "required": [
+      "proposals"
+    ],
+    "properties": {
+      "proposals": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/AgentModeProposalResponse"
+        }
+      }
+    },
+    "definitions": {
+      "AgentModeId": {
+        "description": "Behavioral runtime profile for an agent turn.\n\nThis is distinct from [`TurnTicketMode`], which selects interactive versus background delivery. Agent modes preserve one Medousa identity while changing context, tools, lane policy, and completion behavior.",
+        "type": "string",
+        "enum": [
+          "general",
+          "coder"
+        ]
+      },
+      "AgentModeProposalResolution": {
+        "type": "string",
+        "enum": [
+          "user_accepted",
+          "user_denied",
+          "auto_accepted",
+          "expired"
+        ]
+      },
+      "AgentModeProposalResponse": {
+        "type": "object",
+        "required": [
+          "created_at_utc",
+          "expires_at_utc",
+          "from_mode",
+          "proposal_id",
+          "reason",
+          "scope",
+          "session_id",
+          "status",
+          "to_mode"
+        ],
+        "properties": {
+          "created_at_utc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expires_at_utc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "from_mode": {
+            "$ref": "#/definitions/AgentModeId"
+          },
+          "proposal_id": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "resolution": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/AgentModeProposalResolution"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "resolved_at_utc": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "scope": {
+            "$ref": "#/definitions/AgentModeScope"
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/definitions/AgentModeProposalStatus"
+          },
+          "task_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "to_mode": {
+            "$ref": "#/definitions/AgentModeId"
+          }
+        }
+      },
+      "AgentModeProposalStatus": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "accepted",
+          "denied",
+          "expired"
+        ]
+      },
+      "AgentModeScope": {
+        "type": "string",
+        "enum": [
+          "session",
+          "task"
+        ]
+      }
+    }
+  },
+  "AgentModeProposalResolution": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "AgentModeProposalResolution",
+    "type": "string",
+    "enum": [
+      "user_accepted",
+      "user_denied",
+      "auto_accepted",
+      "expired"
+    ]
+  },
+  "AgentModeProposalResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "AgentModeProposalResponse",
+    "type": "object",
+    "required": [
+      "created_at_utc",
+      "expires_at_utc",
+      "from_mode",
+      "proposal_id",
+      "reason",
+      "scope",
+      "session_id",
+      "status",
+      "to_mode"
+    ],
+    "properties": {
+      "created_at_utc": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "expires_at_utc": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "from_mode": {
+        "$ref": "#/definitions/AgentModeId"
+      },
+      "proposal_id": {
+        "type": "string"
+      },
+      "reason": {
+        "type": "string"
+      },
+      "resolution": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/AgentModeProposalResolution"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "resolved_at_utc": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "format": "date-time"
+      },
+      "scope": {
+        "$ref": "#/definitions/AgentModeScope"
+      },
+      "session_id": {
+        "type": "string"
+      },
+      "status": {
+        "$ref": "#/definitions/AgentModeProposalStatus"
+      },
+      "task_id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "to_mode": {
+        "$ref": "#/definitions/AgentModeId"
+      }
+    },
+    "definitions": {
+      "AgentModeId": {
+        "description": "Behavioral runtime profile for an agent turn.\n\nThis is distinct from [`TurnTicketMode`], which selects interactive versus background delivery. Agent modes preserve one Medousa identity while changing context, tools, lane policy, and completion behavior.",
+        "type": "string",
+        "enum": [
+          "general",
+          "coder"
+        ]
+      },
+      "AgentModeProposalResolution": {
+        "type": "string",
+        "enum": [
+          "user_accepted",
+          "user_denied",
+          "auto_accepted",
+          "expired"
+        ]
+      },
+      "AgentModeProposalStatus": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "accepted",
+          "denied",
+          "expired"
+        ]
+      },
+      "AgentModeScope": {
+        "type": "string",
+        "enum": [
+          "session",
+          "task"
+        ]
+      }
+    }
+  },
+  "AgentModeProposalStatus": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "AgentModeProposalStatus",
+    "type": "string",
+    "enum": [
+      "pending",
+      "accepted",
+      "denied",
+      "expired"
+    ]
+  },
   "AgentModeScope": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "AgentModeScope",
@@ -85,6 +341,39 @@
       "task",
       "turn"
     ]
+  },
+  "AgentModeTransitionPolicy": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "AgentModeTransitionPolicy",
+    "type": "object",
+    "required": [
+      "proposal_ttl_seconds"
+    ],
+    "properties": {
+      "auto_accept": {
+        "default": "never",
+        "allOf": [
+          {
+            "$ref": "#/definitions/AgentModeAutoAccept"
+          }
+        ]
+      },
+      "proposal_ttl_seconds": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      }
+    },
+    "definitions": {
+      "AgentModeAutoAccept": {
+        "type": "string",
+        "enum": [
+          "never",
+          "task",
+          "all"
+        ]
+      }
+    }
   },
   "AgentPermissionRequestListResponse": {
     "$schema": "http://json-schema.org/draft-07/schema#",
@@ -2648,6 +2937,19 @@
           "string",
           "null"
         ]
+      }
+    }
+  },
+  "DecideAgentModeProposalRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "DecideAgentModeProposalRequest",
+    "type": "object",
+    "required": [
+      "accept"
+    ],
+    "properties": {
+      "accept": {
+        "type": "boolean"
       }
     }
   },

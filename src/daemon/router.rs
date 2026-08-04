@@ -401,6 +401,11 @@ pub fn build_core_router(state: AppState) -> Router {
         .route("/v1/runtime/defaults", get(runtime_defaults))
         .route("/v1/agent-modes", get(crate::daemon_handlers::list_agent_modes))
         .route(
+            "/v1/agent-modes/policy",
+            get(crate::daemon_handlers::get_agent_mode_transition_policy)
+                .put(crate::daemon_handlers::set_agent_mode_transition_policy),
+        )
+        .route(
             "/v1/sessions",
             get(crate::daemon_handlers::list_session_history)
                 .post(crate::daemon_handlers::create_session),
@@ -422,6 +427,14 @@ pub fn build_core_router(state: AppState) -> Router {
             get(crate::daemon_handlers::get_session_agent_mode)
                 .put(crate::daemon_handlers::set_session_agent_mode)
                 .delete(crate::daemon_handlers::clear_session_agent_mode),
+        )
+        .route(
+            "/v1/sessions/{session_id}/agent-mode/proposals",
+            get(crate::daemon_handlers::list_session_agent_mode_proposals),
+        )
+        .route(
+            "/v1/sessions/{session_id}/agent-mode/proposals/{proposal_id}",
+            put(crate::daemon_handlers::decide_session_agent_mode_proposal),
         )
         .route("/v1/sessions/{session_id}", delete(delete_session_handler))
         .route(

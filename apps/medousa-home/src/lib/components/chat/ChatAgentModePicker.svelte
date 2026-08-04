@@ -56,6 +56,17 @@
     void refresh(nextSessionId, revision);
   });
 
+  $effect(() => {
+    const onModeChanged = (event: Event) => {
+      const changedSessionId = (event as CustomEvent<{ sessionId?: string }>).detail?.sessionId;
+      const nextSessionId = sessionId.trim();
+      if (changedSessionId && changedSessionId !== nextSessionId) return;
+      void refresh(nextSessionId, ++loadRevision);
+    };
+    window.addEventListener("medousa-agent-mode-changed", onModeChanged);
+    return () => window.removeEventListener("medousa-agent-mode-changed", onModeChanged);
+  });
+
   async function refresh(nextSessionId: string, revision: number) {
     try {
       const [registry, state] = await Promise.all([

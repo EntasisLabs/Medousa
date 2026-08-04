@@ -9,11 +9,16 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::daemon_api::{
-    AgentModeId, AgentModeLeaseResponse, AgentModeScope, AgentModeSource, SessionAgentModeResponse,
+    AgentModeAutoAccept, AgentModeId, AgentModeLeaseResponse, AgentModeProposalListResponse,
+    AgentModeProposalResolution, AgentModeProposalResponse, AgentModeProposalStatus,
+    AgentModeScope, AgentModeSource, AgentModeTransitionPolicy, SessionAgentModeResponse,
     SetSessionAgentModeRequest,
 };
 
 const MAX_TRANSITIONS_PER_SESSION: usize = 100;
+const MAX_PROPOSALS_PER_SESSION: usize = 100;
+pub const MIN_PROPOSAL_TTL_SECONDS: u64 = 5;
+pub const MAX_PROPOSAL_TTL_SECONDS: u64 = 86_400;
 static MODE_STATE_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -38,6 +43,27 @@ struct SessionModeState {
     updated_at_utc: Option<DateTime<Utc>>,
     #[serde(default)]
     transitions: Vec<ModeTransition>,
+    #[serde(default)]
+    proposals: Vec<ModeProposal>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ModeProposal {
+    proposal_id: String,
+    session_id: String,
+    from_mode: AgentModeId,
+    to_mode: AgentModeId,
+    scope: AgentModeScope,
+    #[serde(default)]
+    task_id: Option<String>,
+    reason: String,
+    status: AgentModeProposalStatus,
+    #[serde(default)]
+    resolution: Option<AgentModeProposalResolution>,
+    created_at_utc: DateTime<Utc>,
+    expires_at_utc: DateTime<Utc>,
+    #[serde(default)]
+    resolved_at_utc: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -53,6 +79,8 @@ struct ModeTransition {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 struct ModeStateIndex {
+    #[serde(default)]
+    transition_policy: AgentModeTransitionPolicy,
     sessions: HashMap<String, SessionModeState>,
 }
 
@@ -184,32 +212,246 @@ pub fn set_session_mode(
     let mut index = read_index();
     let state = index.sessions.entry(session_id.to_string()).or_default();
     let now = Utc::now();
-    let from_mode = match request.scope {
-        AgentModeScope::Session => state.selected_mode,
-        AgentModeScope::Task => state.task_lease.as_ref().map(|lease| lease.mode),
-    };
-    match request.scope {
-        AgentModeScope::Session => state.selected_mode = Some(request.mode),
-        AgentModeScope::Task => {
-            let task_id = request
-                .task_id
-                .as_deref()
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .ok_or_else(|| "task_id is required for task-scoped mode".to_string())?;
-            state.task_lease = Some(TaskModeLease {
-                lease_id: Uuid::new_v4().to_string(),
-                task_id: task_id.to_string(),
-                mode: request.mode,
-                acquired_at_utc: now,
-                expires_at_utc: request.expires_at_utc,
-            });
-        }
-    }
-    record_transition(state, request.scope, from_mode, Some(request.mode), now);
+    apply_mode(
+        state,
+        request.mode,
+        request.scope,
+        request.task_id.as_deref(),
+        request.expires_at_utc,
+        now,
+    )?;
     write_index(&index)?;
     drop(_guard);
     get_session_mode(session_id)
+}
+
+pub fn get_transition_policy() -> AgentModeTransitionPolicy {
+    let _guard = MODE_STATE_LOCK.lock().unwrap();
+    read_index().transition_policy
+}
+
+pub fn set_transition_policy(
+    policy: AgentModeTransitionPolicy,
+) -> Result<AgentModeTransitionPolicy, String> {
+    if !(MIN_PROPOSAL_TTL_SECONDS..=MAX_PROPOSAL_TTL_SECONDS).contains(&policy.proposal_ttl_seconds)
+    {
+        return Err(format!(
+            "proposal_ttl_seconds must be between {MIN_PROPOSAL_TTL_SECONDS} and {MAX_PROPOSAL_TTL_SECONDS}"
+        ));
+    }
+    let _guard = MODE_STATE_LOCK.lock().unwrap();
+    let mut index = read_index();
+    index.transition_policy = policy.clone();
+    write_index(&index)?;
+    Ok(policy)
+}
+
+pub fn propose_mode_transition(
+    session_id: &str,
+    to_mode: AgentModeId,
+    scope: AgentModeScope,
+    task_id: Option<&str>,
+    reason: &str,
+) -> Result<AgentModeProposalResponse, String> {
+    let session_id = session_id.trim();
+    let reason = reason.trim();
+    if session_id.is_empty() {
+        return Err("session_id is required".to_string());
+    }
+    if reason.is_empty() {
+        return Err("reason is required".to_string());
+    }
+    crate::agent_runtime::resolve_agent_mode(to_mode).map_err(|err| err.to_string())?;
+    let task_id = normalize_task_id(scope, task_id)?;
+
+    let _guard = MODE_STATE_LOCK.lock().unwrap();
+    let mut index = read_index();
+    let policy = index.transition_policy.clone();
+    let state = index.sessions.entry(session_id.to_string()).or_default();
+    let now = Utc::now();
+    expire_proposals(state, now);
+    let from_mode = selection_from_state(Some(state), now).mode;
+    if from_mode == to_mode {
+        return Err(format!("{to_mode:?} mode is already active"));
+    }
+    let auto_accept = policy_auto_accepts(policy.auto_accept, scope);
+    let mut proposal = ModeProposal {
+        proposal_id: Uuid::new_v4().to_string(),
+        session_id: session_id.to_string(),
+        from_mode,
+        to_mode,
+        scope,
+        task_id: task_id.clone(),
+        reason: reason.chars().take(500).collect(),
+        status: AgentModeProposalStatus::Pending,
+        resolution: None,
+        created_at_utc: now,
+        expires_at_utc: now + chrono::Duration::seconds(policy.proposal_ttl_seconds as i64),
+        resolved_at_utc: None,
+    };
+    if auto_accept {
+        apply_mode(state, to_mode, scope, task_id.as_deref(), None, now)?;
+        proposal.status = AgentModeProposalStatus::Accepted;
+        proposal.resolution = Some(AgentModeProposalResolution::AutoAccepted);
+        proposal.resolved_at_utc = Some(now);
+    }
+    state.proposals.push(proposal.clone());
+    trim_proposals(state);
+    write_index(&index)?;
+    Ok(proposal.to_response())
+}
+
+pub fn list_mode_proposals(session_id: &str) -> Result<AgentModeProposalListResponse, String> {
+    let session_id = session_id.trim();
+    if session_id.is_empty() {
+        return Err("session_id is required".to_string());
+    }
+    let _guard = MODE_STATE_LOCK.lock().unwrap();
+    let mut index = read_index();
+    let now = Utc::now();
+    let changed = index
+        .sessions
+        .get_mut(session_id)
+        .is_some_and(|state| expire_proposals(state, now));
+    if changed {
+        write_index(&index)?;
+    }
+    let proposals = index
+        .sessions
+        .get(session_id)
+        .map(|state| {
+            state
+                .proposals
+                .iter()
+                .rev()
+                .map(ModeProposal::to_response)
+                .collect()
+        })
+        .unwrap_or_default();
+    Ok(AgentModeProposalListResponse { proposals })
+}
+
+pub fn decide_mode_proposal(
+    session_id: &str,
+    proposal_id: &str,
+    accept: bool,
+) -> Result<AgentModeProposalResponse, String> {
+    let session_id = session_id.trim();
+    let proposal_id = proposal_id.trim();
+    if session_id.is_empty() || proposal_id.is_empty() {
+        return Err("session_id and proposal_id are required".to_string());
+    }
+    let _guard = MODE_STATE_LOCK.lock().unwrap();
+    let mut index = read_index();
+    let state = index
+        .sessions
+        .get_mut(session_id)
+        .ok_or_else(|| "mode proposal not found".to_string())?;
+    let now = Utc::now();
+    expire_proposals(state, now);
+    let position = state
+        .proposals
+        .iter()
+        .position(|proposal| proposal.proposal_id == proposal_id)
+        .ok_or_else(|| "mode proposal not found".to_string())?;
+    if state.proposals[position].status != AgentModeProposalStatus::Pending {
+        let response = state.proposals[position].to_response();
+        write_index(&index)?;
+        return Ok(response);
+    }
+    if accept {
+        let proposal = state.proposals[position].clone();
+        apply_mode(
+            state,
+            proposal.to_mode,
+            proposal.scope,
+            proposal.task_id.as_deref(),
+            None,
+            now,
+        )?;
+        state.proposals[position].status = AgentModeProposalStatus::Accepted;
+        state.proposals[position].resolution = Some(AgentModeProposalResolution::UserAccepted);
+    } else {
+        state.proposals[position].status = AgentModeProposalStatus::Denied;
+        state.proposals[position].resolution = Some(AgentModeProposalResolution::UserDenied);
+    }
+    state.proposals[position].resolved_at_utc = Some(now);
+    let response = state.proposals[position].to_response();
+    write_index(&index)?;
+    Ok(response)
+}
+
+fn apply_mode(
+    state: &mut SessionModeState,
+    mode: AgentModeId,
+    scope: AgentModeScope,
+    task_id: Option<&str>,
+    expires_at_utc: Option<DateTime<Utc>>,
+    now: DateTime<Utc>,
+) -> Result<(), String> {
+    let from_mode = match scope {
+        AgentModeScope::Session => state.selected_mode,
+        AgentModeScope::Task => state.task_lease.as_ref().map(|lease| lease.mode),
+    };
+    match scope {
+        AgentModeScope::Session => state.selected_mode = Some(mode),
+        AgentModeScope::Task => {
+            let task_id =
+                normalize_task_id(scope, task_id)?.expect("task scope normalization returns an id");
+            state.task_lease = Some(TaskModeLease {
+                lease_id: Uuid::new_v4().to_string(),
+                task_id,
+                mode,
+                acquired_at_utc: now,
+                expires_at_utc,
+            });
+        }
+    }
+    record_transition(state, scope, from_mode, Some(mode), now);
+    Ok(())
+}
+
+fn normalize_task_id(
+    scope: AgentModeScope,
+    task_id: Option<&str>,
+) -> Result<Option<String>, String> {
+    let task_id = task_id
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+    if scope == AgentModeScope::Task && task_id.is_none() {
+        return Err("task_id is required for task-scoped mode".to_string());
+    }
+    Ok(task_id)
+}
+
+fn policy_auto_accepts(policy: AgentModeAutoAccept, scope: AgentModeScope) -> bool {
+    match policy {
+        AgentModeAutoAccept::Never => false,
+        AgentModeAutoAccept::Task => scope == AgentModeScope::Task,
+        AgentModeAutoAccept::All => true,
+    }
+}
+
+fn expire_proposals(state: &mut SessionModeState, now: DateTime<Utc>) -> bool {
+    let mut changed = false;
+    for proposal in &mut state.proposals {
+        if proposal.status == AgentModeProposalStatus::Pending && proposal.expires_at_utc <= now {
+            proposal.status = AgentModeProposalStatus::Expired;
+            proposal.resolution = Some(AgentModeProposalResolution::Expired);
+            proposal.resolved_at_utc = Some(now);
+            changed = true;
+        }
+    }
+    changed
+}
+
+fn trim_proposals(state: &mut SessionModeState) {
+    if state.proposals.len() > MAX_PROPOSALS_PER_SESSION {
+        state
+            .proposals
+            .drain(..state.proposals.len() - MAX_PROPOSALS_PER_SESSION);
+    }
 }
 
 pub fn clear_session_mode(
@@ -280,6 +522,25 @@ impl TaskModeLease {
     }
 }
 
+impl ModeProposal {
+    fn to_response(&self) -> AgentModeProposalResponse {
+        AgentModeProposalResponse {
+            proposal_id: self.proposal_id.clone(),
+            session_id: self.session_id.clone(),
+            from_mode: self.from_mode,
+            to_mode: self.to_mode,
+            scope: self.scope,
+            task_id: self.task_id.clone(),
+            reason: self.reason.clone(),
+            status: self.status,
+            resolution: self.resolution,
+            created_at_utc: self.created_at_utc,
+            expires_at_utc: self.expires_at_utc,
+            resolved_at_utc: self.resolved_at_utc,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -337,5 +598,65 @@ mod tests {
         let selection = selection_from_state(Some(&value), now);
         assert_eq!(selection.mode, AgentModeId::General);
         assert_eq!(selection.source, AgentModeSource::Session);
+    }
+
+    #[test]
+    fn proposal_expiry_is_a_denial_without_changing_mode() {
+        let now = Utc::now();
+        let mut value = state(Some(AgentModeId::General), None);
+        value.proposals.push(ModeProposal {
+            proposal_id: "proposal".into(),
+            session_id: "session".into(),
+            from_mode: AgentModeId::General,
+            to_mode: AgentModeId::Coder,
+            scope: AgentModeScope::Session,
+            task_id: None,
+            reason: "Repository work".into(),
+            status: AgentModeProposalStatus::Pending,
+            resolution: None,
+            created_at_utc: now - chrono::Duration::seconds(31),
+            expires_at_utc: now - chrono::Duration::seconds(1),
+            resolved_at_utc: None,
+        });
+
+        assert!(expire_proposals(&mut value, now));
+        assert_eq!(value.proposals[0].status, AgentModeProposalStatus::Expired);
+        assert_eq!(
+            value.proposals[0].resolution,
+            Some(AgentModeProposalResolution::Expired)
+        );
+        assert_eq!(
+            selection_from_state(Some(&value), now).mode,
+            AgentModeId::General
+        );
+    }
+
+    #[test]
+    fn task_scope_requires_a_task_id() {
+        assert!(normalize_task_id(AgentModeScope::Task, None).is_err());
+        assert_eq!(
+            normalize_task_id(AgentModeScope::Session, None).expect("session scope"),
+            None
+        );
+    }
+
+    #[test]
+    fn auto_accept_policy_only_matches_its_configured_scope() {
+        assert!(!policy_auto_accepts(
+            AgentModeAutoAccept::Never,
+            AgentModeScope::Task
+        ));
+        assert!(!policy_auto_accepts(
+            AgentModeAutoAccept::Task,
+            AgentModeScope::Session
+        ));
+        assert!(policy_auto_accepts(
+            AgentModeAutoAccept::Task,
+            AgentModeScope::Task
+        ));
+        assert!(policy_auto_accepts(
+            AgentModeAutoAccept::All,
+            AgentModeScope::Session
+        ));
     }
 }
