@@ -1,6 +1,6 @@
 # Coder cognitive runtime
 
-> Status: Approved direction; slices 1–3 complete
+> Status: Approved direction; slices 1–3 complete; slice 4A in progress
 > Parent: [Agent runtime modes](agent-runtime-modes-plan.md)
 
 ## Product decision
@@ -43,10 +43,11 @@ The loop is:
 6. compile changed state, peripheral state, and anomalies;
 7. repeat, checkpoint, or finish with verification evidence.
 
-Raw files, logs, diagnostics, traces, and test output remain durable evidence
-objects. Large payload transport may use chunks internally, but the cognitive
-interface is a focused observation plus stable pointers, not an arbitrary text
-page.
+Raw files, logs, diagnostics, traces, and test output remain at their
+authoritative source whenever they are cheaply re-queryable. Only bounded,
+non-replayable observations become governed evidence objects. Large payload
+transport may use chunks internally, but the cognitive interface is a focused
+observation plus stable pointers, not an arbitrary text page.
 
 ## Stable engineering objects
 
@@ -215,13 +216,65 @@ Acceptance:
 - A successful discovery call changes the tool definitions on the next model
   inference without expanding turn authority.
 
-### Slice 4 — evidence objects and perception governor
+### Slice 4 — reference-first perception and bounded evidence
 
-- Persist oversized files, logs, diagnostics, and traces as governed evidence
-  objects outside the worktree.
-- Add ranged read/search operations with content hashes and TTL/retention.
+This slice must not turn every large observation into another durable copy.
+Committed source and semantic structure remain in Git + Detamu; dirty source
+remains in the Forge worktree; live diagnostics remain queryable from
+medousa-code. The runtime stores pointers and compact receipts by default.
+
+Limits are orientation boundaries, not dead ends. A tool that cannot return a
+complete payload must return a successful structured observation explaining
+why it was bounded, what was observed, which dimensions remain unknown, and
+the exact next ranged/search call shapes available to the model.
+
+#### Slice 4A — perception governor, zero new persistence
+
+- Keep whole-file reads as the default when the file fits the response budget.
+- For oversized files, return size, available digest/line metadata, bounded
+  head/tail or focused orientation, and suggested line/byte range calls rather
+  than a generic failure.
+- Add bounded line/byte reads that report returned and remaining coverage.
+- Classify observations as replayable, re-queryable, or non-replayable.
+- Query Git/Forge, Detamu, and medousa-code in place instead of copying their
+  source data.
 - Compile head/tail, failure clusters, summaries, anomalies, and pointers under
-  a global per-result and per-round model-context budget.
+  deterministic per-result and per-round model-context budgets.
+- Measure payloads that would require spooling before adding a disk store.
+
+#### Slice 4B — storage accounting and execution-cache governance
+
+- Report physical bytes by Forge worktrees, build caches, Detamu, artifacts,
+  and Coder evidence.
+- Give regenerable build caches separate configurable repository/global caps
+  and a free-disk floor; do not confuse them with cognitive evidence.
+- Evict inactive regenerable caches by pressure-aware LRU.
+
+#### Slice 4C — ephemeral content-addressed evidence
+
+- Store only non-replayable oversized logs, diagnostics, and traces that cannot
+  be reconstructed cheaply.
+- Deduplicate globally by SHA-256, compress, redact before persistence, and
+  enforce per-object, per-undertaking, and global physical-byte budgets.
+- Expire successful/reproducible output before failed/non-reproducible output;
+  active references refresh TTL but never override the global cap.
+- Use one shared blob backing layer for transient tool payloads rather than
+  creating a second competing artifact cache.
+
+#### Slice 4D — durable promotion
+
+- Promote compact receipts into Forge at seal.
+- Retain raw evidence durably only through explicit user pinning or a narrow
+  review policy; never promote raw output merely because a tool returned it.
+
+Acceptance for 4A:
+
+- A fitting UTF-8 file can still be read completely in one call.
+- An oversized whole-file request returns actionable range orientation and is
+  not represented as an opaque tool failure.
+- A ranged request returns bounded content plus exact coverage and continuation
+  metadata.
+- No source, diagnostic, log, or trace payload is newly persisted by 4A.
 
 ### Slice 5 — isolated concurrent attempts
 

@@ -462,6 +462,8 @@ pub(crate) async fn handle_tui_event(event: TuiEvent, state: &mut TuiState) {
         } => {
             let mut formatter_input = tool_input.clone();
             let mut formatter_output = tool_output.clone();
+            let requeryable =
+                medousa::agent_runtime::tool_stream::tool_payload_is_requeryable(&tool_name);
 
             if input_receipt.is_some() || output_receipt.is_some() {
                 let input_summary = match input_receipt.as_ref() {
@@ -486,7 +488,34 @@ pub(crate) async fn handle_tui_event(event: TuiEvent, state: &mut TuiState) {
                 );
             }
 
-            if let Some(meta) = input_receipt {
+            if requeryable {
+                if let Some(meta) = input_receipt.as_ref() {
+                    formatter_input = json!({
+                        "requeryable_receipt": {
+                            "tool": tool_name.clone(),
+                            "direction": "input",
+                            "byte_size": meta.byte_size,
+                            "hash64": meta.hash64.clone(),
+                            "persisted": false,
+                        }
+                    });
+                }
+                if let Some(meta) = output_receipt.as_ref() {
+                    formatter_output = json!({
+                        "requeryable_receipt": {
+                            "tool": tool_name.clone(),
+                            "direction": "output",
+                            "byte_size": meta.byte_size,
+                            "hash64": meta.hash64.clone(),
+                            "persisted": false,
+                        }
+                    });
+                }
+            }
+
+            if let Some(meta) = input_receipt
+                && !requeryable
+            {
                 let safe_input = medousa::settings_guard::redact_json_value(&tool_input);
                 match medousa::artifact_store::persist_tool_artifact(
                     &state.session_id,
@@ -517,7 +546,9 @@ pub(crate) async fn handle_tui_event(event: TuiEvent, state: &mut TuiState) {
                 }
             }
 
-            if let Some(meta) = output_receipt {
+            if let Some(meta) = output_receipt
+                && !requeryable
+            {
                 let safe_output = medousa::settings_guard::redact_json_value(&tool_output);
                 match medousa::artifact_store::persist_tool_artifact(
                     &state.session_id,
