@@ -1,6 +1,6 @@
 # Coder cognitive runtime
 
-> Status: Approved direction; slices 1–5C complete
+> Status: Approved direction; slices 1–5 complete
 > Parent: [Agent runtime modes](agent-runtime-modes-plan.md)
 
 ## Product decision
@@ -102,10 +102,11 @@ Passive awareness is not a concurrency primitive. Safety is layered:
    databases, ports, deployments, and other hazardous shared resources; and
 5. explicit governed integration of completed change sets.
 
-Forge currently permits one active attempt per work item. That remains the
-safety boundary until the isolated-attempt slice replaces the singular active
-attempt model. We will not enable multiple agents by sharing one mutable
-worktree without claims and fencing.
+Forge permits multiple active attempts per undertaking only because every agent
+receives an isolated, fenced attempt worktree. Agents share awareness through
+the ledger, pointers, and world model; they never gain concurrency by sharing
+one mutable worktree. Claims and hazardous-resource serialization remain the
+next safety layer for coordinated integration and external side effects.
 
 ## Attention and pointers
 
@@ -391,12 +392,30 @@ Implemented:
 - `POST /attempts` additionally returns the exact `attempt_id`, `worktree`, and
   `branch`; the serialized lease carries its own `work_id` and `attempt_id`.
 
-#### Slice 5D — concurrent seal, review, and recovery
+#### Slice 5D — concurrent seal, review, and recovery (complete)
 
 - Seal each attempt independently while other attempts continue running.
 - Project multiple review candidates and bind every decision to one exact
   attempt, evidence bundle, branch, and baseline.
 - Reconcile every stale lease after restart without interrupting healthy peers.
+
+Implemented:
+
+- `Ready` and `Executing` undertakings admit additional isolated attempts. Each
+  receives a unique lease, worktree, branch, evidence directory, and journaled
+  seal identity.
+- Ending, failing, or sealing one attempt recomputes aggregate undertaking state:
+  healthy peers keep it `Executing`; the last release yields `AwaitingReview`
+  when any sealed evidence exists, otherwise `Ready`.
+- Review responses project every sealed candidate and accept `attempt_id` to
+  select one exact manifest, diff, worktree, branch, and decision. Home exposes
+  the candidates in its review surface.
+- Review decisions and provider handoff resolve the selected attempt rather than
+  the latest workspace. Revising a candidate resumes from that candidate's
+  preserved environment.
+- Seal operations journal their addressed attempt for deterministic crash
+  recovery. Boot reconciliation interrupts or fails only stale/missing peers and
+  leaves healthy leases fenced and heartbeat-capable.
 
 ### Slice 6 — claims and collision handling
 

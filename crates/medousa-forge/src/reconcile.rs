@@ -10,13 +10,11 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+use crate::ForgeError;
 use crate::error::Result;
 use crate::events::{EventPayload, OperationKind, SideEffect, TransitionEvent};
 use crate::forge::Forge;
-use crate::model::{
-    AttemptId, AttemptState, OperationId, RecoveryDisposition, WorkId, WorkState,
-};
-use crate::ForgeError;
+use crate::model::{AttemptId, AttemptState, OperationId, RecoveryDisposition, WorkId, WorkState};
 
 /// Caller-provided liveness knowledge. Forge cannot know whether a provider's
 /// subprocesses or sessions outlived a daemon restart — the host answers.
@@ -64,6 +62,7 @@ pub struct InterruptedAttempt {
 struct OpenOperation {
     operation_id: OperationId,
     kind: OperationKind,
+    attempt_id: Option<AttemptId>,
     effects: Vec<SideEffect>,
 }
 
@@ -160,14 +159,11 @@ impl Forge {
                         RecoveryDisposition::RestartAllowed,
                         &actor,
                     )?;
-                    if !item.has_active_attempts() {
-                        self.transition(
-                            &mut item,
-                            WorkState::Ready,
-                            Some("executor lost across restart; work preserved".into()),
-                            &actor,
-                        )?;
-                    }
+                    self.transition_to_attempt_state(
+                        &mut item,
+                        Some("executor lost across restart; work preserved".into()),
+                        &actor,
+                    )?;
                     report.interrupted_attempts.push(InterruptedAttempt {
                         work_id: work_id.clone(),
                         attempt_id,
@@ -177,7 +173,42 @@ impl Forge {
             }
         }
 
-        // 3. Environment must exist on disk for non-terminal items past
+        // 3. A missing private environment fails only its addressed attempt;
+        //    healthy peers retain custody of their own worktrees.
+        let item = self.load(work_id)?;
+        let missing_attempts: Vec<_> = item
+            .active_attempt_ids()
+            .into_iter()
+            .filter_map(|id| item.attempt(id))
+            .filter(|attempt| {
+                attempt.state == AttemptState::Running
+                    && attempt
+                        .environment
+                        .as_ref()
+                        .is_some_and(|env| !env.worktree.exists())
+            })
+            .map(|attempt| attempt.id.clone())
+            .collect();
+        for attempt_id in missing_attempts {
+            let mut item = self.load(work_id)?;
+            self.end_attempt(
+                &mut item,
+                &attempt_id,
+                AttemptState::Failed,
+                RecoveryDisposition::RestartAllowed,
+                &actor,
+            )?;
+            self.transition_to_attempt_state(
+                &mut item,
+                Some(format!(
+                    "attempt {attempt_id} environment missing; healthy peers preserved"
+                )),
+                &actor,
+            )?;
+            report.environment_failures.push(work_id.clone());
+        }
+
+        // 4. The staging anchor must exist on disk for non-terminal items past
         //    provisioning. Missing worktree = environment failure.
         let item = self.load(work_id)?;
         let missing_env = item
@@ -240,9 +271,7 @@ impl Forge {
                 self.store.append(
                     work_id,
                     actor,
-                    EventPayload::EnvironmentProvisioned {
-                        env: Box::new(env),
-                    },
+                    EventPayload::EnvironmentProvisioned { env: Box::new(env) },
                 )?;
                 self.store.append(
                     work_id,
@@ -295,17 +324,36 @@ impl Forge {
             _ => None,
         });
         let mut item = self.load(work_id)?;
+        let attempt_id = open
+            .attempt_id
+            .clone()
+            .or_else(|| {
+                open.effects.iter().find_map(|effect| match effect {
+                    SideEffect::CheckpointCommitCreated { branch, .. } => item
+                        .attempts
+                        .iter()
+                        .find(|attempt| {
+                            attempt.environment.as_ref().map(|env| env.branch.as_str())
+                                == Some(branch.as_str())
+                        })
+                        .map(|attempt| attempt.id.clone()),
+                    _ => None,
+                })
+            })
+            .or_else(|| {
+                item.latest_active_attempt()
+                    .map(|attempt| attempt.id.clone())
+            })
+            .ok_or_else(|| {
+                ForgeError::EnvironmentDrift("seal op has no addressed attempt".into())
+            })?;
         match checkpoint {
             Some(sealed_head) => {
                 // Commit exists: complete evidence + close the attempt.
                 let env = item
-                    .environment
-                    .clone()
+                    .environment_for_attempt(&attempt_id)
+                    .cloned()
                     .ok_or_else(|| ForgeError::EnvironmentDrift("no environment".into()))?;
-                let attempt_id = item
-                    .latest_active_attempt()
-                    .map(|attempt| attempt.id.clone())
-                    .ok_or_else(|| ForgeError::EnvironmentDrift("no active attempt".into()))?;
                 let attempt = item
                     .attempt(&attempt_id)
                     .ok_or_else(|| ForgeError::AttemptNotFound(attempt_id.clone()))?
@@ -334,14 +382,6 @@ impl Forge {
                         evidence_digest: evidence.bundle_digest.unwrap(),
                     },
                 )?;
-                self.store.append(
-                    work_id,
-                    actor,
-                    EventPayload::OperationCommitted {
-                        operation_id: open.operation_id.clone(),
-                        resulting_state: WorkState::AwaitingReview,
-                    },
-                )?;
                 self.end_attempt(
                     &mut item,
                     &attempt_id,
@@ -349,7 +389,16 @@ impl Forge {
                     RecoveryDisposition::NotResumable,
                     actor,
                 )?;
-                self.transition(&mut item, WorkState::AwaitingReview, None, actor)?;
+                let resulting_state = item.state_after_attempts();
+                self.store.append(
+                    work_id,
+                    actor,
+                    EventPayload::OperationCommitted {
+                        operation_id: open.operation_id.clone(),
+                        resulting_state,
+                    },
+                )?;
+                self.transition_to_attempt_state(&mut item, None, actor)?;
                 report.rolled_forward.push(RolledForward {
                     work_id: work_id.clone(),
                     operation_id: open.operation_id.clone(),
@@ -369,12 +418,6 @@ impl Forge {
                         reason: "crashed before checkpoint commit".into(),
                     },
                 )?;
-                let attempt_id = item
-                    .latest_active_attempt()
-                    .map(|attempt| attempt.id.clone())
-                    .ok_or_else(|| {
-                        ForgeError::EnvironmentDrift("seal op open but no active attempt".into())
-                    })?;
                 self.end_attempt(
                     &mut item,
                     &attempt_id,
@@ -382,9 +425,8 @@ impl Forge {
                     RecoveryDisposition::RestartAllowed,
                     actor,
                 )?;
-                self.transition(
+                self.transition_to_attempt_state(
                     &mut item,
-                    WorkState::Ready,
                     Some("seal interrupted by crash; work preserved".into()),
                     actor,
                 )?;
@@ -589,14 +631,22 @@ fn open_operation(events: &[TransitionEvent]) -> Option<OpenOperation> {
     let mut open: Option<OpenOperation> = None;
     for event in events {
         match &event.payload {
-            EventPayload::OperationStarted { operation_id, kind } => {
+            EventPayload::OperationStarted {
+                operation_id,
+                kind,
+                attempt_id,
+            } => {
                 open = Some(OpenOperation {
                     operation_id: operation_id.clone(),
                     kind: *kind,
+                    attempt_id: attempt_id.clone(),
                     effects: Vec::new(),
                 });
             }
-            EventPayload::OperationSideEffect { operation_id, effect } => {
+            EventPayload::OperationSideEffect {
+                operation_id,
+                effect,
+            } => {
                 if let Some(o) = open.as_mut()
                     && o.operation_id == *operation_id
                 {
@@ -782,6 +832,7 @@ mod tests {
                 EventPayload::OperationStarted {
                     operation_id: op.clone(),
                     kind: OperationKind::Provision,
+                    attempt_id: None,
                 },
             )
             .unwrap();
@@ -840,6 +891,7 @@ mod tests {
                 EventPayload::OperationStarted {
                     operation_id: op.clone(),
                     kind: OperationKind::Provision,
+                    attempt_id: None,
                 },
             )
             .unwrap();
@@ -902,6 +954,7 @@ mod tests {
                 EventPayload::OperationStarted {
                     operation_id: op.clone(),
                     kind: OperationKind::Integrate,
+                    attempt_id: None,
                 },
             )
             .unwrap();
@@ -955,6 +1008,7 @@ mod tests {
                 EventPayload::OperationStarted {
                     operation_id: op.clone(),
                     kind: OperationKind::Discard,
+                    attempt_id: None,
                 },
             )
             .unwrap();
@@ -1000,7 +1054,9 @@ mod tests {
         forge.provision(&item.id, &actor()).unwrap();
         // A live pid (init) stands in for the executor; the lease belongs to
         // the *current* boot instance.
-        let (_item, lease) = forge.begin_attempt(&item.id, executor(), Some(1), &actor()).unwrap();
+        let (_item, lease) = forge
+            .begin_attempt(&item.id, executor(), Some(1), &actor())
+            .unwrap();
         let probe = Probe {
             instance: lease.owner_instance_id.clone(),
             alive_pids: vec![1],
@@ -1008,5 +1064,44 @@ mod tests {
         let report = forge.reconcile_on_boot(&probe).unwrap();
         assert!(report.interrupted_attempts.is_empty());
         assert_eq!(forge.load(&item.id).unwrap().state, WorkState::Executing);
+    }
+
+    #[test]
+    fn stale_peer_is_interrupted_without_disturbing_a_live_attempt() {
+        let fx = fixture();
+        let forge = Forge::open(&fx.forge_root).unwrap();
+        let item = forge
+            .register(
+                "parallel",
+                "recover one peer",
+                &fx.repo,
+                "main",
+                "user-1",
+                &actor(),
+            )
+            .unwrap();
+        let item = forge.provision(&item.id, &actor()).unwrap();
+        let (_, live) = forge
+            .begin_isolated_attempt(&item.id, executor(), Some(1), &actor())
+            .unwrap();
+        let (_, stale) = forge
+            .begin_isolated_attempt(&item.id, executor(), Some(2), &actor())
+            .unwrap();
+        let probe = Probe {
+            instance: live.owner_instance_id.clone(),
+            alive_pids: vec![1],
+        };
+
+        let report = forge.reconcile_on_boot(&probe).unwrap();
+        assert_eq!(report.interrupted_attempts.len(), 1);
+        assert_eq!(report.interrupted_attempts[0].attempt_id, stale.attempt_id);
+        let item = forge.load(&item.id).unwrap();
+        assert_eq!(item.state, WorkState::Executing);
+        assert_eq!(item.active_attempt_ids(), vec![&live.attempt_id]);
+        assert_eq!(
+            item.attempt(&stale.attempt_id).unwrap().state,
+            AttemptState::Interrupted
+        );
+        assert!(forge.heartbeat(&live).is_ok());
     }
 }

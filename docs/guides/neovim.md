@@ -107,6 +107,8 @@ Coder executes in a private attempt worktree. Runtime refreshes expose that same
 path through the existing project binding, and interrupted turns preserve it—
 including unfinished edits—for the next turn without mutating the staging
 worktree.
+Separate conversations may run agents against the same project concurrently;
+each lease owns a different worktree and branch.
 
 Mode changes proposed by Medousa appear as a Switch/Not now picker after the
 turn. The workshop's configured expiry and auto-accept policy remains

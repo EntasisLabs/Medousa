@@ -166,19 +166,16 @@ pub async fn create_agent_session(
                 format!("forge work '{work_id_raw}' not found: {e}"),
             )
         })?;
-        if !matches!(item.state, medousa_forge::model::WorkState::Ready) {
+        if !matches!(
+            item.state,
+            medousa_forge::model::WorkState::Ready | medousa_forge::model::WorkState::Executing
+        ) {
             return Err((
                 StatusCode::CONFLICT,
                 format!(
-                    "forge work '{work_id_raw}' is {} — provision and wait for Ready",
+                    "forge work '{work_id_raw}' is {} — provision it before starting an agent",
                     item.state
                 ),
-            ));
-        }
-        if item.has_active_attempts() {
-            return Err((
-                StatusCode::CONFLICT,
-                format!("forge work '{work_id_raw}' already has an active attempt"),
             ));
         }
         let executor = medousa_forge::model::ExecutorDescriptor {

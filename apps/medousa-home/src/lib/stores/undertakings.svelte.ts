@@ -48,6 +48,7 @@ function createUndertakingsStore() {
   let selectionRequest = 0;
   let detail = $state<ItemProjection | null>(null);
   let review = $state<ReviewProjection | null>(null);
+  let selectedReviewAttemptId = $state<string | null>(null);
   /** Map shell group id → active context */
   let contexts = $state<Record<string, ActiveUndertakingContext | null>>({});
   let pollTimer: ReturnType<typeof setInterval> | null = null;
@@ -251,9 +252,11 @@ function createUndertakingsStore() {
       selectedId = null;
       detail = null;
       review = null;
+      selectedReviewAttemptId = null;
       return;
     }
     const request = ++selectionRequest;
+    if (selectedId !== trimmed) selectedReviewAttemptId = null;
     selectedId = trimmed;
     try {
       const nextDetail = await getUndertaking(trimmed);
@@ -265,7 +268,7 @@ function createUndertakingsStore() {
         nextDetail.state === "awaiting_review" ||
         nextDetail.state === "applying_decision"
       ) {
-        const nextReview = await getReview(trimmed);
+        const nextReview = await getReview(trimmed, selectedReviewAttemptId ?? undefined);
         if (request !== selectionRequest) return;
         if (JSON.stringify(nextReview) !== JSON.stringify(review)) review = nextReview;
         if (nextReview.sealed_head_oid) {
@@ -285,6 +288,14 @@ function createUndertakingsStore() {
         error = err instanceof Error ? err.message : String(err);
       }
     }
+  }
+
+  async function selectReviewAttempt(attemptId: string) {
+    if (!selectedId) return;
+    selectedReviewAttemptId = attemptId;
+    const request = ++selectionRequest;
+    const nextReview = await getReview(selectedId, attemptId);
+    if (request === selectionRequest) review = nextReview;
   }
 
   async function create(input: {
@@ -424,6 +435,7 @@ function createUndertakingsStore() {
     selectedId = null;
     detail = null;
     review = null;
+    selectedReviewAttemptId = null;
     contexts = {};
   }
 
@@ -455,6 +467,7 @@ function createUndertakingsStore() {
     start,
     provision,
     refreshDetail,
+    selectReviewAttempt,
     clearActive,
     setActiveFromItem,
     bindChat,

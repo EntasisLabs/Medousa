@@ -790,7 +790,7 @@ local function choose_project(options, callback)
     local choices = {}
     for _, item in ipairs(items) do
       local project = normalize_project(item)
-      if project and project.state:lower() == "ready" and project.worktree then
+      if project and (project.state:lower() == "ready" or project.state:lower() == "executing") and project.worktree then
         table.insert(choices, {
           label = project.title .. (project.id == state.binding_work_id and " · bound" or " · ready"),
           action = "bind",

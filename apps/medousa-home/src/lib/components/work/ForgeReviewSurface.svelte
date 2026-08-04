@@ -14,9 +14,10 @@
     busy?: boolean;
     onOpenFile: (path: string, line?: number) => void | Promise<void>;
     onRestore: (comparison: ReviewFileDiff) => Promise<void>;
+    onSelectCandidate?: (attemptId: string) => void | Promise<void>;
   }
 
-  let { review, busy = false, onOpenFile, onRestore }: Props = $props();
+  let { review, busy = false, onOpenFile, onRestore, onSelectCandidate }: Props = $props();
   let selectedPath = $state("");
   let comparison = $state<ReviewFileDiff | null>(null);
   let loading = $state(false);
@@ -138,7 +139,7 @@
     let cancelled = false;
     loading = true;
     error = null;
-    void getReviewFile(review.work_id, path)
+    void getReviewFile(review.work_id, path, review.attempt_id ?? undefined)
       .then((result) => {
         if (!cancelled) comparison = result;
       })
@@ -158,6 +159,22 @@
 </script>
 
 <section class="review-surface" aria-label="Change review">
+  {#if review.candidates.length > 1}
+    <label class="review-candidate-picker">
+      <span>Review candidate</span>
+      <select
+        value={review.attempt_id ?? ""}
+        disabled={busy}
+        onchange={(event) => void onSelectCandidate?.(event.currentTarget.value)}
+      >
+        {#each review.candidates as candidate (candidate.attempt_id)}
+          <option value={candidate.attempt_id}>
+            Attempt {candidate.attempt_seq} · {candidate.executor} · {candidate.changed_file_count} files
+          </option>
+        {/each}
+      </select>
+    </label>
+  {/if}
   <div class="review-summary">
     <div class="review-summary-copy">
       <p class="review-summary-kicker">Ready for review</p>
@@ -347,6 +364,25 @@
 </section>
 
 <style>
+  .review-candidate-picker {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-bottom: 0.65rem;
+    color: rgb(var(--color-surface-500));
+    font-size: 0.6875rem;
+  }
+
+  .review-candidate-picker select {
+    min-width: min(22rem, 70%);
+    border: 1px solid rgb(var(--color-surface-500) / 0.3);
+    border-radius: 0.45rem;
+    background: rgb(var(--color-surface-900));
+    padding: 0.35rem 0.5rem;
+    color: rgb(var(--color-surface-200));
+  }
+
   .review-surface {
     color: rgb(var(--color-surface-100));
   }

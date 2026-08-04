@@ -568,8 +568,8 @@ pub struct WorkItem {
     pub environment: Option<GovernedEnv>,
     #[serde(default)]
     pub attempts: Vec<Attempt>,
-    /// Canonical set of running attempts. Admission remains singular until
-    /// attempt-scoped worktrees are enabled by Slice 5B.
+    /// Canonical set of running attempts. Every active attempt owns a fenced,
+    /// attempt-scoped mutation environment.
     #[serde(default)]
     pub active_attempts: Vec<AttemptId>,
     /// Legacy projection retained while existing snapshots and clients migrate.
@@ -678,6 +678,23 @@ impl WorkItem {
             .and_then(|attempt| attempt.environment.as_ref())
             .or_else(|| self.latest_attempt_environment())
             .or(self.environment.as_ref())
+    }
+
+    /// Aggregate state after one attempt changes lifecycle. A healthy peer
+    /// keeps the undertaking executing; sealed evidence becomes reviewable
+    /// only after the last active attempt releases custody.
+    pub fn state_after_attempts(&self) -> WorkState {
+        if self.has_active_attempts() {
+            WorkState::Executing
+        } else if self
+            .attempts
+            .iter()
+            .any(|attempt| attempt.evidence_id.is_some())
+        {
+            WorkState::AwaitingReview
+        } else {
+            WorkState::Ready
+        }
     }
 
     pub fn activate_attempt(&mut self, id: AttemptId) {

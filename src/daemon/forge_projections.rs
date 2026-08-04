@@ -8,7 +8,7 @@ use chrono::{DateTime, Utc};
 use medousa_forge::events::{EventPayload, SideEffect};
 use medousa_forge::forge::Forge;
 use medousa_forge::model::{
-    ActorKind, AttemptState, EvidenceId, EvidenceManifest, WorkItem, WorkState,
+    ActorKind, AttemptId, AttemptState, EvidenceId, EvidenceManifest, WorkItem, WorkState,
 };
 use serde::Serialize;
 
@@ -76,9 +76,7 @@ pub fn allowed_actions(item: &WorkItem) -> AllowedActions {
             ActionAffordance::no("No governed worktree yet")
         },
         begin_attempt: match item.state {
-            WorkState::Ready if !has_running => ActionAffordance::yes(),
-            WorkState::Ready if has_running => ActionAffordance::no("Attempt already running"),
-            WorkState::Executing => ActionAffordance::no("Attempt already running"),
+            WorkState::Ready | WorkState::Executing => ActionAffordance::yes(),
             _ => ActionAffordance::no(format!("Cannot begin attempt in state {}", item.state)),
         },
         seal: if has_running {
@@ -183,6 +181,7 @@ pub struct ReviewProjection {
     pub state: String,
     pub human_phase: String,
     pub allowed_actions: AllowedActions,
+    pub candidates: Vec<ReviewCandidateProjection>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub baseline_oid: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -223,6 +222,23 @@ pub struct ReviewProjection {
     pub world: Option<serde_json::Value>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct ReviewCandidateProjection {
+    pub attempt_id: String,
+    pub attempt_seq: u32,
+    pub executor: String,
+    pub evidence_id: String,
+    pub evidence_digest: String,
+    pub baseline_oid: String,
+    pub sealed_head_oid: String,
+    pub branch: String,
+    pub worktree: String,
+    pub changed_file_count: usize,
+    pub sealed_at: DateTime<Utc>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub decision_id: Option<String>,
+}
+
 pub fn evidence_dir(forge: &Forge, item: &WorkItem, evidence_id: &EvidenceId) -> Option<PathBuf> {
     for attempt in &item.attempts {
         if attempt.evidence_id.as_ref() == Some(evidence_id) {
@@ -245,8 +261,24 @@ pub fn load_manifest(dir: &std::path::Path) -> Option<EvidenceManifest> {
 }
 
 pub fn build_review(forge: &Forge, item: &WorkItem) -> ReviewProjection {
-    let env = item.workspace_environment();
-    let sealed_attempt = item.attempts.iter().rev().find(|a| a.evidence_id.is_some());
+    build_review_for_attempt(forge, item, None)
+}
+
+pub fn build_review_for_attempt(
+    forge: &Forge,
+    item: &WorkItem,
+    selected_attempt_id: Option<&AttemptId>,
+) -> ReviewProjection {
+    let candidates = review_candidates(forge, item);
+    let sealed_attempt = selected_attempt_id
+        .and_then(|attempt_id| {
+            item.attempt(attempt_id)
+                .filter(|attempt| attempt.evidence_id.is_some())
+        })
+        .or_else(|| item.attempts.iter().rev().find(|a| a.evidence_id.is_some()));
+    let env = sealed_attempt
+        .and_then(|attempt| attempt.environment.as_ref())
+        .or_else(|| item.workspace_environment());
     let evidence_id = sealed_attempt.and_then(|a| a.evidence_id.clone());
     let mut changed_files = Vec::new();
     let mut truncated = false;
@@ -467,6 +499,7 @@ pub fn build_review(forge: &Forge, item: &WorkItem) -> ReviewProjection {
         state: item.state.to_string(),
         human_phase: human_phase(item.state).to_owned(),
         allowed_actions: allowed_actions(item),
+        candidates,
         baseline_oid: env.map(|e| e.baseline_oid.as_str().to_owned()),
         sealed_head_oid: sealed_head,
         evidence_id: evidence_id.map(|e| e.as_str().to_owned()),
@@ -487,7 +520,11 @@ pub fn build_review(forge: &Forge, item: &WorkItem) -> ReviewProjection {
         patch_byte_size,
         decision: item
             .review_decisions
-            .last()
+            .iter()
+            .rev()
+            .find(|decision| {
+                sealed_attempt.is_some_and(|attempt| decision.attempt_id == attempt.id)
+            })
             .and_then(|d| serde_json::to_value(d).ok()),
         disposition: item
             .disposition
@@ -497,6 +534,37 @@ pub fn build_review(forge: &Forge, item: &WorkItem) -> ReviewProjection {
         active_lease_generation: active.map(|l| l.generation),
         world: None,
     }
+}
+
+fn review_candidates(forge: &Forge, item: &WorkItem) -> Vec<ReviewCandidateProjection> {
+    item.attempts
+        .iter()
+        .filter_map(|attempt| {
+            let evidence_id = attempt.evidence_id.as_ref()?;
+            let environment = attempt.environment.as_ref().or(item.environment.as_ref())?;
+            let manifest = load_manifest(&evidence_dir(forge, item, evidence_id)?)?;
+            let evidence_digest = manifest.bundle_digest.as_ref()?;
+            Some(ReviewCandidateProjection {
+                attempt_id: attempt.id.as_str().to_owned(),
+                attempt_seq: attempt.seq,
+                executor: attempt.executor.kind.clone(),
+                evidence_id: evidence_id.as_str().to_owned(),
+                evidence_digest: evidence_digest.as_str().to_owned(),
+                baseline_oid: manifest.baseline_oid.as_str().to_owned(),
+                sealed_head_oid: manifest.sealed_head_oid.as_str().to_owned(),
+                branch: environment.branch.clone(),
+                worktree: environment.worktree.display().to_string(),
+                changed_file_count: manifest.changed_files.len(),
+                sealed_at: manifest.sealed_at,
+                decision_id: item
+                    .review_decisions
+                    .iter()
+                    .rev()
+                    .find(|decision| decision.attempt_id == attempt.id)
+                    .map(|decision| decision.id.as_str().to_owned()),
+            })
+        })
+        .collect()
 }
 
 fn parse_verification(line: &str) -> Option<ReviewVerification> {
@@ -646,4 +714,108 @@ pub fn read_lines_page(
     let lines = all[start..end].iter().map(|s| (*s).to_owned()).collect();
     let truncated = end < total;
     Ok((lines, total, truncated))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use medousa_forge::forge::SealOptions;
+    use medousa_forge::git::{CheckpointAuthor, GitEngine};
+    use medousa_forge::model::ExecutorDescriptor;
+
+    #[test]
+    fn review_candidates_select_exact_attempt_evidence() {
+        let repo = tempfile::tempdir().unwrap();
+        let forge_root = tempfile::tempdir().unwrap();
+        let git = GitEngine::detect().unwrap();
+        assert!(
+            std::process::Command::new("git")
+                .args(["init", "-b", "main", "--template="])
+                .current_dir(repo.path())
+                .status()
+                .unwrap()
+                .success()
+        );
+        std::fs::write(repo.path().join("base.txt"), "base\n").unwrap();
+        assert!(
+            std::process::Command::new("git")
+                .args(["add", "-A"])
+                .current_dir(repo.path())
+                .status()
+                .unwrap()
+                .success()
+        );
+        git.commit_checkpoint(repo.path(), "initial", &CheckpointAuthor::default())
+            .unwrap();
+        let forge = Forge::open(forge_root.path()).unwrap();
+        let item = forge
+            .register(
+                "parallel",
+                "review candidates",
+                repo.path(),
+                "main",
+                "user-1",
+                &Forge::system_actor(),
+            )
+            .unwrap();
+        let item = forge.provision(&item.id, &Forge::system_actor()).unwrap();
+        let executor = || ExecutorDescriptor {
+            kind: "agent".into(),
+            detail: serde_json::json!({}),
+        };
+        let (_, first) = forge
+            .begin_isolated_attempt(&item.id, executor(), None, &Forge::system_actor())
+            .unwrap();
+        let (item, second) = forge
+            .begin_isolated_attempt(&item.id, executor(), None, &Forge::system_actor())
+            .unwrap();
+        let first_env = item.environment_for_attempt(&first.attempt_id).unwrap();
+        let second_env = item.environment_for_attempt(&second.attempt_id).unwrap();
+        std::fs::write(first_env.worktree.join("first.txt"), "first\n").unwrap();
+        std::fs::write(second_env.worktree.join("second.txt"), "second\n").unwrap();
+        forge
+            .complete_attempt(&first, &SealOptions::default(), &Forge::system_actor())
+            .unwrap();
+        let item = forge
+            .complete_attempt(&second, &SealOptions::default(), &Forge::system_actor())
+            .unwrap();
+
+        let latest = build_review(&forge, &item);
+        assert_eq!(latest.candidates.len(), 2);
+        assert_eq!(
+            latest.attempt_id.as_deref(),
+            Some(second.attempt_id.as_str())
+        );
+        assert!(
+            latest
+                .changed_files
+                .iter()
+                .any(|file| file.path == "second.txt")
+        );
+        assert!(
+            !latest
+                .changed_files
+                .iter()
+                .any(|file| file.path == "first.txt")
+        );
+
+        let selected = build_review_for_attempt(&forge, &item, Some(&first.attempt_id));
+        assert_eq!(
+            selected.attempt_id.as_deref(),
+            Some(first.attempt_id.as_str())
+        );
+        assert!(
+            selected
+                .changed_files
+                .iter()
+                .any(|file| file.path == "first.txt")
+        );
+        assert!(
+            !selected
+                .changed_files
+                .iter()
+                .any(|file| file.path == "second.txt")
+        );
+        assert_ne!(selected.worktree, latest.worktree);
+    }
 }

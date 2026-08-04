@@ -29,8 +29,8 @@ use crate::daemon_api::{
 };
 
 use crate::daemon::forge_projections::{
-    ItemProjection, ReviewProjection, build_review, evidence_dir, project_item, project_items,
-    read_lines_page,
+    ItemProjection, ReviewProjection, build_review_for_attempt, evidence_dir, project_item,
+    project_items, read_lines_page,
 };
 use crate::daemon::state::AppState;
 
@@ -2091,10 +2091,27 @@ async fn delete_source(
 async fn get_review(
     State(state): State<AppState>,
     Path(work_id): Path<String>,
+    Query(query): Query<ReviewSelectionQuery>,
 ) -> ApiResult<Json<ReviewProjection>> {
     let id = parse_work_id(&work_id)?;
     let item = forge(&state).load(&id).map_err(map_err)?;
-    let mut review = build_review(forge(&state).as_ref(), &item);
+    let attempt_id = query
+        .attempt_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| medousa_forge::model::AttemptId::from(value.to_string()));
+    if let Some(attempt_id) = attempt_id.as_ref()
+        && item
+            .attempt(attempt_id)
+            .is_none_or(|attempt| attempt.evidence_id.is_none())
+    {
+        return Err(request_error(
+            StatusCode::NOT_FOUND,
+            "review attempt was not found or has no sealed evidence",
+        ));
+    }
+    let mut review = build_review_for_attempt(forge(&state).as_ref(), &item, attempt_id.as_ref());
     if let Some(host) = state.detamu.as_ref() {
         review.world = Some(host.binding_status_json(item.id.as_str()).await);
     }
@@ -2102,8 +2119,16 @@ async fn get_review(
 }
 
 #[derive(Debug, Deserialize)]
+struct ReviewSelectionQuery {
+    #[serde(default)]
+    attempt_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
 struct ReviewFileQuery {
     path: String,
+    #[serde(default)]
+    attempt_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -2139,6 +2164,7 @@ struct ReviewDiffHunk {
 #[derive(Debug, Clone, Serialize)]
 struct ReviewFileDiff {
     work_id: String,
+    attempt_id: String,
     path: String,
     status: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -2159,22 +2185,42 @@ struct ReviewChangedLine {
     kind: String,
 }
 
-fn review_file_diff(state: &AppState, id: &WorkId, raw_path: &str) -> ApiResult<ReviewFileDiff> {
+fn review_file_diff(
+    state: &AppState,
+    id: &WorkId,
+    raw_path: &str,
+    selected_attempt_id: Option<&str>,
+) -> ApiResult<ReviewFileDiff> {
     const MAX_REVIEW_FILE_BYTES: usize = 1024 * 1024;
     let (_, path) = normalize_source_relative(raw_path)?;
     let forge = forge(state);
     let item = forge.load(id).map_err(map_err)?;
-    let review = build_review(forge.as_ref(), &item);
+    let attempt_id = selected_attempt_id
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| medousa_forge::model::AttemptId::from(value.to_string()));
+    if let Some(attempt_id) = attempt_id.as_ref()
+        && item
+            .attempt(attempt_id)
+            .is_none_or(|attempt| attempt.evidence_id.is_none())
+    {
+        return Err(request_error(
+            StatusCode::NOT_FOUND,
+            "review attempt was not found or has no sealed evidence",
+        ));
+    }
+    let review = build_review_for_attempt(forge.as_ref(), &item, attempt_id.as_ref());
     let changed = review
         .changed_files
         .iter()
         .find(|file| file.path == path)
         .ok_or_else(|| request_error(StatusCode::NOT_FOUND, "file is not part of this review"))?;
-    let environment = item
-        .attempts
-        .iter()
-        .rev()
-        .find(|attempt| attempt.evidence_id.is_some())
+    let environment = review
+        .attempt_id
+        .as_deref()
+        .map(|value| medousa_forge::model::AttemptId::from(value.to_string()))
+        .as_ref()
+        .and_then(|attempt_id| item.attempt(attempt_id))
         .and_then(|attempt| attempt.environment.as_ref())
         .or_else(|| item.workspace_environment())
         .ok_or_else(|| request_error(StatusCode::CONFLICT, "governed workspace is not prepared"))?;
@@ -2259,6 +2305,7 @@ fn review_file_diff(state: &AppState, id: &WorkId, raw_path: &str) -> ApiResult<
     changed_lines.dedup_by(|left, right| left.line == right.line && left.kind == right.kind);
     Ok(ReviewFileDiff {
         work_id: id.as_str().to_owned(),
+        attempt_id: review.attempt_id.clone().unwrap_or_default(),
         path: changed.path.clone(),
         status: changed.status.clone(),
         old_path: changed.old_path.clone(),
@@ -2352,13 +2399,20 @@ async fn get_review_file(
     Query(query): Query<ReviewFileQuery>,
 ) -> ApiResult<Json<ReviewFileDiff>> {
     let id = parse_work_id(&work_id)?;
-    Ok(Json(review_file_diff(&state, &id, &query.path)?))
+    Ok(Json(review_file_diff(
+        &state,
+        &id,
+        &query.path,
+        query.attempt_id.as_deref(),
+    )?))
 }
 
 #[derive(Debug, Deserialize)]
 struct RestoreReviewFileRequest {
     path: String,
     expected_reviewed_oid: String,
+    #[serde(default)]
+    attempt_id: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -2376,7 +2430,7 @@ async fn restore_review_file(
     Json(body): Json<RestoreReviewFileRequest>,
 ) -> ApiResult<Json<RestoreReviewFileResponse>> {
     let id = parse_work_id(&work_id)?;
-    let comparison = review_file_diff(&state, &id, &body.path)?;
+    let comparison = review_file_diff(&state, &id, &body.path, body.attempt_id.as_deref())?;
     if comparison.reviewed_oid != body.expected_reviewed_oid {
         return Err(request_error(
             StatusCode::CONFLICT,
@@ -2391,12 +2445,14 @@ async fn restore_review_file(
     }
     let forge = forge(&state);
     let actor = actor_from_state(&state);
+    let source_attempt_id = medousa_forge::model::AttemptId::from(comparison.attempt_id.clone());
     forge
         .reopen_for_changes(&id, "A reviewed file was restored for another pass", &actor)
         .map_err(map_err)?;
     let (mut item, lease) = forge
-        .begin_isolated_attempt(
+        .begin_isolated_attempt_from(
             &id,
+            &source_attempt_id,
             ExecutorDescriptor {
                 kind: "human".into(),
                 detail: serde_json::json!({"reason": "restore_review_file"}),
@@ -3103,6 +3159,8 @@ struct ShareProviderRequest {
     title: Option<String>,
     #[serde(default)]
     body: Option<String>,
+    #[serde(default)]
+    attempt_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -3340,8 +3398,13 @@ fn provider_command_error(label: &str, output: &std::process::Output) -> ApiErro
     )
 }
 
-fn provider_review_body(forge: &Forge, item: &WorkItem, requested: Option<&str>) -> String {
-    let review = build_review(forge, item);
+fn provider_review_body(
+    forge: &Forge,
+    item: &WorkItem,
+    requested: Option<&str>,
+    attempt_id: Option<&medousa_forge::model::AttemptId>,
+) -> String {
+    let review = build_review_for_attempt(forge, item, attempt_id);
     let introduction = requested
         .map(str::trim)
         .filter(|value| !value.is_empty())
@@ -3455,8 +3518,16 @@ async fn share_provider_handoff(
             handoff.message,
         ));
     }
-    let environment = item
-        .workspace_environment()
+    let attempt_id = body
+        .attempt_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| medousa_forge::model::AttemptId::from(value.to_string()));
+    let environment = attempt_id
+        .as_ref()
+        .and_then(|attempt_id| item.environment_for_attempt(attempt_id))
+        .or_else(|| item.workspace_environment())
         .ok_or_else(|| request_error(StatusCode::CONFLICT, "Project workspace is unavailable"))?;
     let push = background_command("git")
         .args(["push", "--set-upstream", "origin", &environment.branch])
@@ -3482,7 +3553,12 @@ async fn share_provider_handoff(
         .chars()
         .take(256)
         .collect::<String>();
-    let description = provider_review_body(forge.as_ref(), &item, body.body.as_deref());
+    let description = provider_review_body(
+        forge.as_ref(),
+        &item,
+        body.body.as_deref(),
+        attempt_id.as_ref(),
+    );
     let output = if handoff.provider == "github" {
         background_command("gh")
             .args([
@@ -3871,7 +3947,7 @@ async fn complete_lease(
     let item = forge(&state)
         .complete_attempt(&lease, &options, &actor)
         .map_err(map_err)?;
-    if let Some(env) = item.workspace_environment() {
+    if let Some(env) = item.environment_for_attempt(&lease.attempt_id) {
         let sealed_oid = forge(&state)
             .git()
             .head_oid(&env.worktree)
@@ -3986,7 +4062,7 @@ async fn record_decision(
                 }),
             )
         })?;
-    let env = item.workspace_environment().ok_or_else(|| {
+    let env = item.environment_for_attempt(&attempt.id).ok_or_else(|| {
         (
             StatusCode::CONFLICT,
             Json(ErrorBody {
@@ -3995,8 +4071,25 @@ async fn record_decision(
             }),
         )
     })?;
-    let review = build_review(forge(&state).as_ref(), &item);
-    let digest = review.evidence_digest.clone().unwrap_or_default();
+    let manifest = evidence_dir(forge(&state).as_ref(), &item, &evidence_id)
+        .and_then(|dir| crate::daemon::forge_projections::load_manifest(&dir))
+        .ok_or_else(|| {
+            request_error(
+                StatusCode::CONFLICT,
+                "sealed evidence manifest is unavailable",
+            )
+        })?;
+    if manifest.attempt_id != attempt.id || manifest.evidence_id != evidence_id {
+        return Err(request_error(
+            StatusCode::CONFLICT,
+            "sealed evidence identity does not match the selected attempt",
+        ));
+    }
+    let digest = manifest
+        .bundle_digest
+        .as_ref()
+        .map(|value| value.as_str().to_owned())
+        .ok_or_else(|| request_error(StatusCode::CONFLICT, "sealed evidence has no digest"))?;
     if !body.evidence_digest.is_empty() && digest != body.evidence_digest {
         return Err((
             StatusCode::CONFLICT,
@@ -4006,10 +4099,7 @@ async fn record_decision(
             }),
         ));
     }
-    let sealed_head = review
-        .sealed_head_oid
-        .clone()
-        .unwrap_or_else(|| env.baseline_oid.as_str().to_owned());
+    let sealed_head = manifest.sealed_head_oid.as_str().to_owned();
     let evidence_digest: medousa_forge::model::Digest =
         serde_json::from_value(serde_json::Value::String(digest)).map_err(|e| {
             (
@@ -4020,6 +4110,11 @@ async fn record_decision(
                 }),
             )
         })?;
+    let WorkTarget::Git(target) = &item.target;
+    let expected_base_oid = forge(&state)
+        .git()
+        .ref_oid(&target.repo_path, &target.base_ref)
+        .map_err(map_err)?;
     let decision = ReviewDecision {
         id: ReviewDecisionId::new(),
         actor: actor.clone(),
@@ -4027,9 +4122,9 @@ async fn record_decision(
         environment_generation: env.generation,
         evidence_id,
         evidence_digest,
-        baseline_oid: env.baseline_oid.clone(),
+        baseline_oid: manifest.baseline_oid.clone(),
         reviewed_head_oid: medousa_forge::model::GitOid::new(sealed_head),
-        expected_base_oid: env.baseline_oid.clone(),
+        expected_base_oid,
         acknowledged_violations: body
             .acknowledged_violations
             .into_iter()

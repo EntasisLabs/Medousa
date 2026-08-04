@@ -308,6 +308,7 @@ impl Forge {
             EventPayload::OperationStarted {
                 operation_id: operation_id.clone(),
                 kind: OperationKind::Provision,
+                attempt_id: None,
             },
         )?;
 
@@ -423,7 +424,7 @@ impl Forge {
         pid: Option<u32>,
         actor: &ActorRef,
     ) -> Result<(WorkItem, ExecutionLease)> {
-        self.begin_attempt_inner(work_id, executor, pid, actor, false)
+        self.begin_attempt_inner(work_id, executor, pid, actor, false, None)
     }
 
     /// Begin an attempt with a private worktree that preserves the staging
@@ -436,7 +437,20 @@ impl Forge {
         pid: Option<u32>,
         actor: &ActorRef,
     ) -> Result<(WorkItem, ExecutionLease)> {
-        self.begin_attempt_inner(work_id, executor, pid, actor, true)
+        self.begin_attempt_inner(work_id, executor, pid, actor, true, None)
+    }
+
+    /// Resume work from one exact preserved attempt environment. Used when a
+    /// reviewer selects an older concurrent candidate for another pass.
+    pub fn begin_isolated_attempt_from(
+        &self,
+        work_id: &WorkId,
+        source_attempt_id: &crate::model::AttemptId,
+        executor: ExecutorDescriptor,
+        pid: Option<u32>,
+        actor: &ActorRef,
+    ) -> Result<(WorkItem, ExecutionLease)> {
+        self.begin_attempt_inner(work_id, executor, pid, actor, true, Some(source_attempt_id))
     }
 
     fn begin_attempt_inner(
@@ -446,6 +460,7 @@ impl Forge {
         pid: Option<u32>,
         actor: &ActorRef,
         isolated: bool,
+        source_attempt_id: Option<&crate::model::AttemptId>,
     ) -> Result<(WorkItem, ExecutionLease)> {
         let probe = self.load(work_id)?;
         let target = git_target(&probe)?;
@@ -454,14 +469,23 @@ impl Forge {
             .lock_repo(&self.repo_lock_key(&target.repo_path)?)?;
         let _item_lock = self.store.lock_item(work_id)?;
         let mut item = self.load(work_id)?;
-        expect_state(&item, WorkState::Ready, "begin attempt")?;
-        if item.has_active_attempts() {
-            return Err(ForgeError::AttemptAlreadyRunning(work_id.clone()));
+        if !matches!(item.state, WorkState::Ready | WorkState::Executing) {
+            return Err(ForgeError::InvalidState {
+                work_id: work_id.clone(),
+                state: item.state,
+                action: "begin attempt",
+            });
         }
         let attempt_id = crate::model::AttemptId::new();
         let attempt_seq = item.next_attempt_seq();
         let attempt_environment = if isolated {
-            Some(self.create_attempt_environment(&item, &target, &attempt_id, attempt_seq)?)
+            Some(self.create_attempt_environment(
+                &item,
+                &target,
+                &attempt_id,
+                attempt_seq,
+                source_attempt_id,
+            )?)
         } else {
             None
         };
@@ -510,7 +534,11 @@ impl Forge {
                 owner_instance_id: lease.owner_instance_id.clone(),
             },
         )?;
-        self.transition(&mut item, WorkState::Executing, None, actor)?;
+        if item.state == WorkState::Executing {
+            self.persist_fresh(&mut item)?;
+        } else {
+            self.transition(&mut item, WorkState::Executing, None, actor)?;
+        }
         Ok((item, lease))
     }
 
@@ -520,8 +548,26 @@ impl Forge {
         target: &GitWorkTarget,
         attempt_id: &crate::model::AttemptId,
         attempt_seq: u32,
+        source_attempt_id: Option<&crate::model::AttemptId>,
     ) -> Result<GovernedEnv> {
-        if let Some(environment) = item.latest_attempt_environment() {
+        let preserved = if item.has_active_attempts() {
+            None
+        } else if let Some(source_attempt_id) = source_attempt_id {
+            Some(
+                item.attempt(source_attempt_id)
+                    .ok_or_else(|| ForgeError::AttemptNotFound(source_attempt_id.clone()))?
+                    .environment
+                    .as_ref()
+                    .ok_or_else(|| {
+                        ForgeError::EnvironmentDrift(format!(
+                            "attempt {source_attempt_id} has no preserved environment"
+                        ))
+                    })?,
+            )
+        } else {
+            item.latest_attempt_environment()
+        };
+        if let Some(environment) = preserved {
             if !environment.worktree.exists() {
                 return Err(ForgeError::EnvironmentDrift(format!(
                     "preserved attempt worktree is missing: {}",
@@ -669,7 +715,6 @@ impl Forge {
     ) -> Result<WorkItem> {
         let _item_lock = self.store.lock_item(&lease.work_id)?;
         let mut item = self.load(&lease.work_id)?;
-        expect_state(&item, WorkState::Executing, "interrupt attempt")?;
         self.fence(&item, lease)?;
         let attempt_id = lease.attempt_id.clone();
         self.end_attempt(
@@ -679,7 +724,7 @@ impl Forge {
             recovery,
             actor,
         )?;
-        self.transition(&mut item, WorkState::Ready, None, actor)?;
+        self.transition_to_attempt_state(&mut item, None, actor)?;
         Ok(item)
     }
 
@@ -692,7 +737,6 @@ impl Forge {
     ) -> Result<WorkItem> {
         let _item_lock = self.store.lock_item(&lease.work_id)?;
         let mut item = self.load(&lease.work_id)?;
-        expect_state(&item, WorkState::Executing, "fail attempt")?;
         self.fence(&item, lease)?;
         let attempt_id = lease.attempt_id.clone();
         self.end_attempt(
@@ -702,9 +746,8 @@ impl Forge {
             RecoveryDisposition::RestartAllowed,
             actor,
         )?;
-        self.transition(
+        self.transition_to_attempt_state(
             &mut item,
-            WorkState::Ready,
             Some(format!("attempt failed: {error}")),
             actor,
         )?;
@@ -722,30 +765,21 @@ impl Forge {
     ) -> Result<WorkItem> {
         let _item_lock = self.store.lock_item(&lease.work_id)?;
         let mut item = self.load(&lease.work_id)?;
-        expect_state(&item, WorkState::Executing, "complete attempt")?;
         self.fence(&item, lease)?;
 
         let operation_id = OperationId::new();
-        self.transition(&mut item, WorkState::Sealing, None, actor)?;
         self.store.append(
             &lease.work_id,
             actor,
             EventPayload::OperationStarted {
                 operation_id: operation_id.clone(),
                 kind: OperationKind::Seal,
+                attempt_id: Some(lease.attempt_id.clone()),
             },
         )?;
 
         match self.seal_inner(&mut item, lease, options, &operation_id, actor) {
             Ok(()) => {
-                self.store.append(
-                    &lease.work_id,
-                    actor,
-                    EventPayload::OperationCommitted {
-                        operation_id,
-                        resulting_state: WorkState::AwaitingReview,
-                    },
-                )?;
                 self.end_attempt(
                     &mut item,
                     &lease.attempt_id,
@@ -753,7 +787,16 @@ impl Forge {
                     RecoveryDisposition::NotResumable,
                     actor,
                 )?;
-                self.transition(&mut item, WorkState::AwaitingReview, None, actor)?;
+                let resulting_state = item.state_after_attempts();
+                self.store.append(
+                    &lease.work_id,
+                    actor,
+                    EventPayload::OperationCommitted {
+                        operation_id,
+                        resulting_state,
+                    },
+                )?;
+                self.transition_to_attempt_state(&mut item, None, actor)?;
                 Ok(item)
             }
             Err(err) => {
@@ -765,12 +808,7 @@ impl Forge {
                         reason: err.to_string(),
                     },
                 );
-                let _ = self.transition(
-                    &mut item,
-                    WorkState::Executing,
-                    Some(format!("seal failed: {err}")),
-                    actor,
-                );
+                let _ = self.persist_fresh(&mut item);
                 Err(err)
             }
         }
@@ -1079,6 +1117,7 @@ impl Forge {
             EventPayload::OperationStarted {
                 operation_id: operation_id.clone(),
                 kind: OperationKind::Integrate,
+                attempt_id: None,
             },
         )?;
 
@@ -1156,8 +1195,7 @@ impl Forge {
     ) -> Result<String> {
         let target = git_target(item)?;
         let env = item
-            .environment
-            .as_ref()
+            .environment_for_attempt(&decision.attempt_id)
             .ok_or_else(|| ForgeError::EnvironmentDrift("no environment".into()))?;
 
         // Expected base OID: the approval authorizes integration against
@@ -1247,8 +1285,7 @@ impl Forge {
         actor: &ActorRef,
     ) -> Result<String> {
         let env = item
-            .environment
-            .as_ref()
+            .environment_for_attempt(&decision.attempt_id)
             .ok_or_else(|| ForgeError::EnvironmentDrift("no environment".into()))?;
         let patch = self.git.diff_binary(
             &env.worktree,
@@ -1303,6 +1340,7 @@ impl Forge {
             EventPayload::OperationStarted {
                 operation_id: operation_id.clone(),
                 kind: OperationKind::Discard,
+                attempt_id: None,
             },
         )?;
         let target = git_target(&item)?;
@@ -1415,8 +1453,7 @@ impl Forge {
             });
         }
         let env = item
-            .environment
-            .as_ref()
+            .environment_for_attempt(&decision.attempt_id)
             .ok_or_else(|| ForgeError::DecisionInvalid {
                 reason: "no environment".into(),
             })?;
@@ -1600,6 +1637,20 @@ impl Forge {
             .unwrap_or(0);
         self.persist(item, seq)?;
         Ok(())
+    }
+
+    pub(crate) fn transition_to_attempt_state(
+        &self,
+        item: &mut WorkItem,
+        reason: Option<String>,
+        actor: &ActorRef,
+    ) -> Result<()> {
+        let next = item.state_after_attempts();
+        if item.state == next {
+            self.persist_fresh(item)
+        } else {
+            self.transition(item, next, reason, actor)
+        }
     }
 
     fn persist_fresh(&self, item: &mut WorkItem) -> Result<()> {
@@ -2099,6 +2150,102 @@ mod tests {
             fs::read_to_string(staging.worktree.join("app.txt")).unwrap(),
             staging_contents
         );
+    }
+
+    #[test]
+    fn concurrent_attempts_seal_independently_without_interrupting_peers() {
+        let fx = fixture();
+        let forge = Forge::open(&fx.forge_root).unwrap();
+        let item = forge
+            .register(
+                "parallel",
+                "two agents",
+                &fx.repo,
+                "main",
+                "user-1",
+                &actor(),
+            )
+            .unwrap();
+        let item = forge.provision(&item.id, &actor()).unwrap();
+        let (item, first) = forge
+            .begin_isolated_attempt(&item.id, script_executor(), None, &actor())
+            .unwrap();
+        let (item, second) = forge
+            .begin_isolated_attempt(&item.id, script_executor(), None, &actor())
+            .unwrap();
+        assert_eq!(item.active_attempt_ids().len(), 2);
+        let first_env = item
+            .environment_for_attempt(&first.attempt_id)
+            .unwrap()
+            .clone();
+        let second_env = item
+            .environment_for_attempt(&second.attempt_id)
+            .unwrap()
+            .clone();
+        assert_ne!(first_env.worktree, second_env.worktree);
+        assert_ne!(first_env.branch, second_env.branch);
+
+        fs::write(first_env.worktree.join("first.txt"), "first agent\n").unwrap();
+        fs::write(second_env.worktree.join("second.txt"), "second agent\n").unwrap();
+        let item = forge
+            .complete_attempt(&first, &SealOptions::default(), &actor())
+            .unwrap();
+        assert_eq!(item.state, WorkState::Executing);
+        assert_eq!(item.active_attempt_ids(), vec![&second.attempt_id]);
+        assert!(
+            item.attempt(&first.attempt_id)
+                .unwrap()
+                .evidence_id
+                .is_some()
+        );
+        assert!(forge.heartbeat(&second).is_ok());
+        assert!(second_env.worktree.join("second.txt").exists());
+
+        let item = forge
+            .complete_attempt(&second, &SealOptions::default(), &actor())
+            .unwrap();
+        assert_eq!(item.state, WorkState::AwaitingReview);
+        assert!(item.active_attempt_ids().is_empty());
+        assert_eq!(
+            item.attempts
+                .iter()
+                .filter(|attempt| attempt.evidence_id.is_some())
+                .count(),
+            2
+        );
+
+        let first_manifest: EvidenceManifest = serde_json::from_slice(
+            &fs::read(
+                forge
+                    .store()
+                    .item_dir(&item.id)
+                    .join("attempts/1/evidence/manifest.json"),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let decision = ReviewDecision {
+            id: ReviewDecisionId::new(),
+            actor: actor(),
+            attempt_id: first.attempt_id.clone(),
+            environment_generation: first_env.generation,
+            evidence_id: first_manifest.evidence_id.clone(),
+            evidence_digest: first_manifest.bundle_digest.clone().unwrap(),
+            baseline_oid: first_manifest.baseline_oid.clone(),
+            reviewed_head_oid: first_manifest.sealed_head_oid.clone(),
+            expected_base_oid: fx.baseline.clone(),
+            acknowledged_violations: Vec::new(),
+            strategy: IntegrationStrategy::PreserveBranch,
+            rationale: Some("select the first candidate".into()),
+            decided_at: Utc::now(),
+        };
+        let decision_id = decision.id.clone();
+        forge.decide(&item.id, decision, &actor()).unwrap();
+        let item = forge
+            .apply_decision(&item.id, &decision_id, &actor())
+            .unwrap();
+        assert_eq!(item.state, WorkState::Accepted);
+        assert_eq!(item.disposition, Some(AcceptedDisposition::BranchPreserved));
     }
 
     #[test]

@@ -76,6 +76,20 @@ export type ReviewProjection = {
   state: string;
   human_phase: string;
   allowed_actions: AllowedActions;
+  candidates: Array<{
+    attempt_id: string;
+    attempt_seq: number;
+    executor: string;
+    evidence_id: string;
+    evidence_digest: string;
+    baseline_oid: string;
+    sealed_head_oid: string;
+    branch: string;
+    worktree: string;
+    changed_file_count: number;
+    sealed_at: string;
+    decision_id?: string | null;
+  }>;
   baseline_oid?: string | null;
   sealed_head_oid?: string | null;
   evidence_id?: string | null;
@@ -138,6 +152,7 @@ export type ReviewProjection = {
 
 export type ReviewFileDiff = {
   work_id: string;
+  attempt_id: string;
   path: string;
   status: string;
   old_path?: string | null;
@@ -706,7 +721,7 @@ export async function getProviderHandoff(workId: string): Promise<ProviderHandof
 
 export async function shareProviderHandoff(
   workId: string,
-  input: { title?: string; body?: string },
+  input: { title?: string; body?: string; attempt_id?: string },
 ): Promise<ProviderHandoff> {
   return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/provider`, {
     method: "POST",
@@ -859,12 +874,20 @@ export async function heartbeatLease(leaseId: string, generation: number): Promi
   });
 }
 
-export async function getReview(workId: string): Promise<ReviewProjection> {
-  return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/review`);
+export async function getReview(workId: string, attemptId?: string): Promise<ReviewProjection> {
+  const query = new URLSearchParams();
+  if (attemptId) query.set("attempt_id", attemptId);
+  const suffix = query.size ? `?${query.toString()}` : "";
+  return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/review${suffix}`);
 }
 
-export async function getReviewFile(workId: string, path: string): Promise<ReviewFileDiff> {
+export async function getReviewFile(
+  workId: string,
+  path: string,
+  attemptId?: string,
+): Promise<ReviewFileDiff> {
   const query = new URLSearchParams({ path });
+  if (attemptId) query.set("attempt_id", attemptId);
   return forgeFetch(
     `/v1/forge/items/${encodeURIComponent(workId)}/review/file?${query.toString()}`,
   );
@@ -872,7 +895,7 @@ export async function getReviewFile(workId: string, path: string): Promise<Revie
 
 export async function restoreReviewFile(
   workId: string,
-  input: { path: string; expected_reviewed_oid: string },
+  input: { path: string; expected_reviewed_oid: string; attempt_id?: string },
 ): Promise<RestoreReviewFileResponse> {
   return forgeFetch(`/v1/forge/items/${encodeURIComponent(workId)}/review/file`, {
     method: "POST",

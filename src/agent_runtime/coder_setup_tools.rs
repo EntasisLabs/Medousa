@@ -114,7 +114,10 @@ impl StasisTool for CognitionProjectListTool {
             .map_err(|err| StasisError::PortFailure(err.to_string()))?;
         let projects = items
             .into_iter()
-            .filter(|item| item.state == WorkState::Ready && item.environment.is_some())
+            .filter(|item| {
+                matches!(item.state, WorkState::Ready | WorkState::Executing)
+                    && item.workspace_environment().is_some()
+            })
             .take(20)
             .map(|item| {
                 let WorkTarget::Git(target) = item.target;
@@ -170,9 +173,11 @@ impl StasisTool for CognitionProjectBindTool {
             .forge
             .load(&medousa_forge::model::WorkId::from(work_id.to_string()))
             .map_err(|err| StasisError::PortFailure(err.to_string()))?;
-        if item.state != WorkState::Ready || item.environment.is_none() {
+        if !matches!(item.state, WorkState::Ready | WorkState::Executing)
+            || item.workspace_environment().is_none()
+        {
             return Err(StasisError::PortFailure(
-                "project must be ready with a governed worktree".into(),
+                "project must be available with a governed worktree".into(),
             ));
         }
         crate::agent_mode_state::set_session_code_binding(&self.session_id, work_id)

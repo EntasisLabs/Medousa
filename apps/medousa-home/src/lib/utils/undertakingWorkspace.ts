@@ -119,7 +119,8 @@ export async function startTrackedAgent(
   const canReuseCurrentChat =
     undertakings.active?.workId === item.id &&
     !!currentSession &&
-    undertakings.active.boundChatSessionIds.includes(currentSession);
+    undertakings.active.boundChatSessionIds.includes(currentSession) &&
+    !getSessionAgentSessionId(currentSession);
   if (!canReuseCurrentChat) await chat.newSession();
   const sessionId = chat.sessionId;
   if (!sessionId) throw new Error("Could not create a Chat workspace for this undertaking");

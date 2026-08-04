@@ -43,16 +43,22 @@ impl TransitionEvent {
 pub enum EventPayload {
     /// First event in every log; carries the initial item so replay alone can
     /// rebuild full state.
-    ItemRegistered { item: Box<crate::model::WorkItem> },
+    ItemRegistered {
+        item: Box<crate::model::WorkItem>,
+    },
     /// A governed environment was provisioned (or re-provisioned) and is now
     /// the item's environment.
-    EnvironmentProvisioned { env: Box<crate::model::GovernedEnv> },
+    EnvironmentProvisioned {
+        env: Box<crate::model::GovernedEnv>,
+    },
     /// A mutating operation with Git/filesystem side effects has begun. If the
     /// process crashes before `operation_committed`, reconciliation rolls this
     /// operation forward (or classifies it) from its recorded side effects.
     OperationStarted {
         operation_id: OperationId,
         kind: OperationKind,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        attempt_id: Option<AttemptId>,
     },
     /// One completed irreversible-ish side effect within an operation.
     OperationSideEffect {
@@ -177,6 +183,7 @@ mod tests {
             EventPayload::OperationStarted {
                 operation_id: OperationId::new(),
                 kind: OperationKind::Seal,
+                attempt_id: Some(AttemptId::new()),
             },
             EventPayload::OperationSideEffect {
                 operation_id: OperationId::new(),

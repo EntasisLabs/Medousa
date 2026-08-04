@@ -76,12 +76,11 @@ Base path: `/v1/forge`. Types are `medousa-forge` serde models (`WorkItem`,
 | POST | `/v1/forge/items/{id}/run-script` | Reference script executor (`argv`) |
 | POST | `/v1/forge/items/{id}/export` | Portable bundle to `destination` |
 
-Forge now records a canonical `active_attempts` set and resolves every lease
+Forge records a canonical `active_attempts` set and resolves every lease
 mutation against its addressed attempt. The legacy singular `active_attempt`
 projection remains serialized for snapshot/client compatibility during the
-Slice 5 migration. Admission intentionally remains limited to one running
-attempt until attempt-scoped worktrees are available; this prevents a second
-lease from sharing the first executor's mutation directory.
+Slice 5 migration. `Ready` and `Executing` work can admit another executor;
+every active attempt has a distinct private worktree and branch.
 
 Forge uses isolated attempts. The first isolated attempt forks a private branch
 and worktree from the undertaking staging worktree, reproducing its
@@ -91,13 +90,24 @@ fork and remove its partial branch/worktree. The attempt owns that environment;
 seal captures it, interruption preserves it, reconciliation recognizes it, and
 discard reclaims it. A restarted turn reuses that preserved workspace after
 verifying its Git root and branch, so unfinished edits survive without creating
-one worktree per turn. Admission remains singular until concurrent seal and
-review semantics land.
+one worktree per turn. When peers run concurrently, each new peer receives a
+fresh isolated worktree rather than reusing an active environment.
 
 `POST /v1/forge/items/{id}/attempts` returns the full fenced lease plus top-level
 `attempt_id`, `worktree`, and `branch` fields. Forge item projections expose the
 current lease-owned workspace through `environment`; the durable item still
 retains its original staging anchor internally.
+
+Sealing, interruption, and failure are peer-safe. Ending one attempt leaves the
+item `Executing` while any healthy lease remains. After the last active attempt
+ends, sealed evidence yields `AwaitingReview`; otherwise the item returns to
+`Ready`. Seal journal entries carry `attempt_id`, allowing restart recovery to
+complete or interrupt exactly the affected attempt.
+
+`GET /v1/forge/items/{id}/review` returns `candidates` for every sealed attempt.
+Pass `attempt_id` to that endpoint and to `/review/file` to select the exact
+manifest, branch, worktree, and diff. Decisions already bind to the selected
+attempt, evidence digest, baseline, and reviewed head.
 
 Export writes on the daemon/workshop filesystem. `destination` must be absent
 or an empty directory; a non-empty destination returns `409` and is never

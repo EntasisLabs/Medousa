@@ -283,7 +283,7 @@
     {#if chooserOpen}
       <div class="absolute left-0 top-full z-50 mt-1.5 w-72 rounded-xl border border-surface-500/40 bg-surface-900/95 p-2 text-xs shadow-2xl backdrop-blur">
         <p class="px-1.5 pb-1.5 text-[10px] font-medium uppercase tracking-wide text-surface-500">Continue a project</p>
-        {#each undertakings.items.filter((item) => item.state === "ready" && item.environment?.worktree).slice(0, 6) as item (item.id)}
+        {#each undertakings.items.filter((item) => ["ready", "executing"].includes(item.state) && item.environment?.worktree).slice(0, 6) as item (item.id)}
           <button type="button" class="context-action" disabled={busy} onclick={() => void bindProject(item)}>
             <CircleDot size={13} />
             <span class="truncate">{item.title}</span>

@@ -188,8 +188,8 @@ class MedousaChatView implements vscode.WebviewViewProvider {
         ?? (this.activeMode === "coder" ? "Coder" : "General"),
       workId: this.boundWorkId,
       workTitle: this.boundUndertaking?.title ?? this.boundWorkId,
-      coderReady: this.boundUndertaking?.state.toLowerCase() === "ready"
-        && Boolean(this.boundUndertaking.environment?.worktree),
+      coderReady: ["ready", "executing"].includes(this.boundUndertaking?.state.toLowerCase() ?? "")
+        && Boolean(this.boundUndertaking?.environment?.worktree),
     });
   }
 
@@ -254,7 +254,7 @@ class MedousaChatView implements vscode.WebviewViewProvider {
     if (!client || !sessionId) return false;
     this.undertakings = await client.forgeUndertakings();
     const ready = this.undertakings.filter(
-      (item) => item.state.toLowerCase() === "ready" && Boolean(item.environment?.worktree),
+      (item) => ["ready", "executing"].includes(item.state.toLowerCase()) && Boolean(item.environment?.worktree),
     );
     const choices: Array<{
       label: string;
@@ -352,8 +352,8 @@ class MedousaChatView implements vscode.WebviewViewProvider {
 
   private async ensureCoderBinding(): Promise<boolean> {
     if (
-      this.boundUndertaking?.state.toLowerCase() === "ready"
-      && this.boundUndertaking.environment?.worktree
+      ["ready", "executing"].includes(this.boundUndertaking?.state.toLowerCase() ?? "")
+      && this.boundUndertaking?.environment?.worktree
     ) return true;
     return this.selectUndertaking(true);
   }

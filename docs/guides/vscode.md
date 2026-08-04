@@ -53,6 +53,9 @@ worktree and refreshes the bound undertaking after the turn. If that path is
 local, opening the refreshed governed worktree shows the exact files Coder is
 editing. Interrupted turns keep that workspace and its unfinished edits for the
 next turn; the original staging worktree is not silently mutated.
+Multiple conversations can work on the same undertaking at once. Each agent
+receives its own branch and worktree, so starting a second agent does not share
+the first agent's mutation directory.
 
 Mode suggestions appear inline with **Switch** and **Not now** actions. Their
 expiry and auto-accept behavior use the policy configured in Medousa.
