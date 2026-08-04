@@ -11,9 +11,10 @@
   interface Props {
     sessionId: string;
     disabled?: boolean;
+    coderContextAvailable?: boolean;
   }
 
-  let { sessionId, disabled = false }: Props = $props();
+  let { sessionId, disabled = false, coderContextAvailable = false }: Props = $props();
 
   const FALLBACK_MODES: AgentModeAvailability[] = [
     {
@@ -42,6 +43,10 @@
   const active = $derived(modes.find((mode) => mode.mode === value) ?? modes[0]);
   const label = $derived(active?.label ?? "General");
 
+  function isAvailable(mode: AgentModeAvailability): boolean {
+    return mode.available && (mode.mode !== "coder" || coderContextAvailable);
+  }
+
   $effect(() => {
     const nextSessionId = sessionId.trim();
     const revision = ++loadRevision;
@@ -68,7 +73,7 @@
   }
 
   async function pick(mode: AgentModeAvailability) {
-    if (!mode.available || mode.mode === value || loading) {
+    if (!isAvailable(mode) || mode.mode === value || loading) {
       if (mode.mode === value) open = false;
       return;
     }
@@ -158,33 +163,36 @@
         </header>
         <div class="composer-anchored-menu-body space-y-0.5">
           {#each modes as mode (mode.mode)}
+            {@const available = isAvailable(mode)}
             <button
               type="button"
               class="chat-runtime-option"
               class:chat-runtime-option-active={value === mode.mode}
-              class:chat-runtime-option-locked={!mode.available}
+              class:chat-runtime-option-locked={!available}
               role="option"
               aria-selected={value === mode.mode}
-              aria-disabled={!mode.available}
-              disabled={!mode.available || loading}
+              aria-disabled={!available}
+              disabled={!available || loading}
               onclick={() => void pick(mode)}
             >
               {@render modeIcon(mode.mode, 14)}
               <span class="min-w-0 flex-1 text-left">
                 <span class="block text-[13px] font-medium text-surface-100">{mode.label}</span>
                 <span class="workshop-faint mt-0.5 block text-[11px]">
-                  {mode.available
+                  {available
                     ? mode.mode === "general"
                       ? "Life, planning, research, and everyday work"
                       : "Repository-aware engineering"
-                    : mode.unavailable_reason ?? "Not ready on this workshop"}
+                    : mode.mode === "coder" && mode.available
+                      ? "Open or bind a Forge undertaking first"
+                      : mode.unavailable_reason ?? "Not ready on this workshop"}
                 </span>
               </span>
               {#if value === mode.mode}
                 <Check size={14} strokeWidth={2} class="shrink-0 text-primary-300" />
-              {:else if !mode.available}
+              {:else if !available}
                 <span class="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-surface-400">
-                  Soon
+                  {mode.mode === "coder" && mode.available ? "Needs work" : "Soon"}
                 </span>
               {/if}
             </button>

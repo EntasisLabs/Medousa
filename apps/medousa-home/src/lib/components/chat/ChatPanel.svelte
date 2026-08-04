@@ -152,6 +152,7 @@
 
   /** Stable principal — ignores temporary session swaps during background SSE. */
   const panelSessionId = $derived(chat.focusedSessionId);
+  const coderContextAvailable = $derived(activeCodeContext(panelSessionId) !== null);
   const panelMessages = $derived(chat.messagesFor(panelSessionId));
   const chatMessages = $derived(panelMessages.filter((message) => isChatLaneMessage(message)));
   const askThreads = $derived(groupAskThreads(panelMessages));
@@ -1507,6 +1508,7 @@
           {#if sessionRuntime === "medousa"}
             <ChatAgentModePicker
               sessionId={panelSessionId}
+              {coderContextAvailable}
               disabled={connection.offline || chat.composerBlocked}
             />
           {/if}

@@ -233,8 +233,10 @@ Native interactive turn and turn-ticket requests also accept `code_context`.
 For Coder mode it is advisory editor state only: the daemon re-resolves the
 undertaking, worktree, branch, baseline, dirty paths, and repository
 instructions from Forge. UI-provided paths cannot select or escape the
-governed worktree. Coder remains advertised as unavailable until its
-mode-scoped tool authority is installed.
+governed worktree. Coder requires an active Forge undertaking. Each Coder turn
+acquires a fenced Forge attempt, exposes only its mode-scoped coding tools,
+records compact command receipts, interrupts turn-owned shell work on exit,
+and releases the attempt without discarding worktree changes.
 
 See [ADR-008](../architecture/decisions/adr-008-hot-swappable-agent-runtime.md) and [acp-external-agents](../cookbook/acp-external-agents.md).
 

@@ -240,6 +240,7 @@ impl JobHandler for RecurringAgentTurnJobHandler {
             sink,
             None,
             None,
+            None,
         )
         .await;
 

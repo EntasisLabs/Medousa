@@ -33,6 +33,7 @@ pub mod turn_delivery;
 pub mod heartbeat_turn;
 pub mod host_context;
 pub mod coder_mode;
+pub mod coder_tools;
 pub mod modes;
 pub mod context_usage;
 pub mod continuation;
@@ -98,6 +99,7 @@ pub use modes::{
     system_prompt_for_mode,
 };
 pub use coder_mode::{CoderEntryContext, CoderEntryError, compile_coder_entry};
+pub use coder_tools::{CoderBoundToolRegistry, CoderTurnLease};
 pub use sttp::{SttpValidationError, validate_canonical_sttp_node};
 pub use daemon_interactive_turn::{
     InteractiveTurnDeliveryContext, InteractiveTurnSessionHooks, run_agent_turn,

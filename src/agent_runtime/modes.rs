@@ -4,8 +4,6 @@ use std::borrow::Cow;
 
 use crate::daemon_api::{AgentModeAvailability, AgentModeId, AgentModeListResponse};
 
-const CODER_UNAVAILABLE_REASON: &str = "Coder tool authority is not installed yet";
-
 const CODER_SYSTEM_OVERLAY: &str = r#"
 ⊕⟨ ⏣0{ trigger: seed, response_format: temporal_node, origin_session: "medousa-coder-mode-policy", compression_depth: 1, parent_node: ref:⏣0, prime: { attractor_config: { stability: 0.92, friction: 0.18, logic: 0.98, autonomy: 0.86 }, context_summary: "Coder mode policy: Forge-governed senior engineering world model, direct foreground execution, evidence-led changes and validation.", relevant_tier: raw, retrieval_budget: 16 } } ⟩
 ⦿⟨ ⏣0{ timestamp: "2026-08-03T00:00:00Z", tier: raw, session_id: "medousa-coder-mode", schema_version: "sttp-1.0", user_avec: { stability: 0.90, friction: 0.20, logic: 0.96, autonomy: 0.84, psi: 2.90 }, model_avec: { stability: 0.92, friction: 0.18, logic: 0.98, autonomy: 0.86, psi: 2.94 } } ⟩
@@ -71,8 +69,8 @@ impl std::error::Error for AgentModeUnavailable {}
 
 /// Resolve a request to the contract used for the complete turn.
 ///
-/// Coder is represented in the shared protocol now, but remains explicitly
-/// unavailable until its authority, entry context, and tool surface ship.
+/// Entry-specific requirements are validated separately when the immutable
+/// turn contract is compiled.
 pub fn resolve_agent_mode(
     requested: AgentModeId,
 ) -> Result<ResolvedAgentMode, AgentModeUnavailable> {
@@ -82,9 +80,10 @@ pub fn resolve_agent_mode(
             contract_revision: "general-v1",
             execution_lane: ModeExecutionLane::HostOrchestrated,
         }),
-        AgentModeId::Coder => Err(AgentModeUnavailable {
-            requested,
-            reason: CODER_UNAVAILABLE_REASON,
+        AgentModeId::Coder => Ok(ResolvedAgentMode {
+            id: AgentModeId::Coder,
+            contract_revision: "coder-v1",
+            execution_lane: ModeExecutionLane::ForegroundWorkshop,
         }),
     }
 }
@@ -102,9 +101,9 @@ pub fn list_agent_modes() -> AgentModeListResponse {
             AgentModeAvailability {
                 mode: AgentModeId::Coder,
                 label: "Coder".to_string(),
-                available: false,
-                contract_revision: None,
-                unavailable_reason: Some(CODER_UNAVAILABLE_REASON.to_string()),
+                available: true,
+                contract_revision: Some("coder-v1".to_string()),
+                unavailable_reason: None,
             },
         ],
     }
@@ -151,18 +150,18 @@ mod tests {
     }
 
     #[test]
-    fn coder_fails_explicitly_until_tool_authority_ships() {
-        let err = resolve_agent_mode(AgentModeId::Coder).expect_err("coder unavailable");
-        assert_eq!(err.requested, AgentModeId::Coder);
-        assert!(err.to_string().contains("tool authority"));
+    fn coder_resolves_to_foreground_contract() {
+        let mode = resolve_agent_mode(AgentModeId::Coder).expect("coder mode");
+        assert_eq!(mode.contract_revision, "coder-v1");
+        assert_eq!(mode.execution_lane, ModeExecutionLane::ForegroundWorkshop);
     }
 
     #[test]
-    fn registry_reports_coder_readiness_without_enabling_it() {
+    fn registry_reports_coder_available() {
         let registry = list_agent_modes();
         assert_eq!(registry.modes.len(), 2);
         assert!(registry.modes[0].available);
-        assert!(!registry.modes[1].available);
+        assert!(registry.modes[1].available);
         assert_eq!(registry.modes[1].mode, AgentModeId::Coder);
     }
 

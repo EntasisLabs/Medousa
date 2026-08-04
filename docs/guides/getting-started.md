@@ -66,9 +66,10 @@ window does not throw away an accepted job.
 
 The mode control beside the composer shows how Medousa will approach this
 conversation. **General** is the everyday life, planning, and research mode.
-**Coder** may appear as unavailable while its repository tools and authority
-are still being prepared; Medousa will not silently enter it or gain extra
-access. Your available selection follows the conversation across restarts.
+**Coder** is available for chats bound to an active Forge undertaking. It works
+inside that undertaking's governed worktree with a turn-scoped lease and a
+restricted coding tool surface; it cannot use Coder authority against an
+unbound chat. Your selection follows the conversation across restarts.
 
 Useful early asks:
 

@@ -845,6 +845,7 @@ pub async fn run_daemon_interactive_turn(
     request: InteractiveTurnRequest,
     backend: &str,
     agent_rt: &super::runtime::MedousaAgentRuntime,
+    forge: Arc<medousa_forge::forge::Forge>,
     stream: crate::daemon::turn_stream_registry::TurnStreamEntry,
     delivery: Option<InteractiveTurnDeliveryContext>,
     continuation_scope: Option<TurnContinuationScope>,
@@ -891,6 +892,7 @@ pub async fn run_daemon_interactive_turn(
             sink,
             continuation_scope,
             Some(interactive_sink),
+            Some(forge),
         )
         .await;
     }
@@ -899,6 +901,7 @@ pub async fn run_daemon_interactive_turn(
 }
 
 /// Run a full agent turn, streaming events through the provided sink.
+#[allow(clippy::too_many_arguments)]
 pub async fn run_agent_turn(
     turn_id: &str,
     request: InteractiveTurnRequest,
@@ -907,6 +910,7 @@ pub async fn run_agent_turn(
     sink: SharedAgentStreamSink,
     continuation_scope: Option<TurnContinuationScope>,
     context_telemetry: Option<Arc<InteractiveTurnStreamSink>>,
+    forge: Option<Arc<medousa_forge::forge::Forge>>,
 ) {
     let previous_scope = agent_rt.turn_scope.read().await.clone();
     let turn_correlation_id = continuation_scope
@@ -953,6 +957,7 @@ pub async fn run_agent_turn(
         agent_rt,
         tracking_sink,
         context_telemetry,
+        forge,
     )
     .await;
 
@@ -984,6 +989,7 @@ async fn run_agent_turn_inner(
     agent_rt: &super::runtime::MedousaAgentRuntime,
     sink: SharedAgentStreamSink,
     context_telemetry: Option<Arc<InteractiveTurnStreamSink>>,
+    forge: Option<Arc<medousa_forge::forge::Forge>>,
 ) {
 
     let session_id = request.session_id.trim().to_string();
@@ -1008,6 +1014,72 @@ async fn run_agent_turn_inner(
             return;
         }
     };
+    let (coder_authority, coder_registry, mode_context_appendix, tool_registry_override) =
+        if agent_mode.id == crate::daemon_api::AgentModeId::Coder {
+            let Some(forge) = forge else {
+                sink.agent_error(
+                    1,
+                    "Coder mode requires daemon-hosted Forge authority".to_string(),
+                )
+                .await;
+                return;
+            };
+            let Some(code_context) = request.code_context.as_ref() else {
+                sink.agent_error(
+                    1,
+                    "Coder mode requires an active Forge undertaking".to_string(),
+                )
+                .await;
+                return;
+            };
+            let entry = match super::coder_mode::compile_coder_entry(&forge, code_context) {
+                Ok(entry) => Arc::new(entry),
+                Err(err) => {
+                    sink.agent_error(1, err.to_string()).await;
+                    return;
+                }
+            };
+            let work_id = medousa_forge::model::WorkId::from(entry.work_id.clone());
+            let executor = medousa_forge::model::ExecutorDescriptor {
+                kind: "medousa-coder".into(),
+                detail: serde_json::json!({
+                    "session_id": session_id.clone(),
+                    "turn_id": turn_id,
+                    "contract_revision": agent_mode.contract_revision,
+                }),
+            };
+            let (item, lease) = match forge.begin_attempt(
+                &work_id,
+                executor,
+                Some(std::process::id()),
+                &medousa_forge::forge::Forge::system_actor(),
+            ) {
+                Ok(value) => value,
+                Err(err) => {
+                    sink.agent_error(1, format!("cannot acquire Coder authority: {err}"))
+                        .await;
+                    return;
+                }
+            };
+            let authority = Arc::new(super::coder_tools::CoderTurnLease::new(forge, lease));
+            let registry = Arc::new(super::coder_tools::CoderBoundToolRegistry::new(
+                agent_rt.tool_registry.clone(),
+                &authority,
+                entry.clone(),
+                item.policy,
+            ));
+            let registry_override: Arc<
+                dyn stasis::application::orchestration::tool_registry::ToolRegistry,
+            > = registry.clone();
+            (
+                Some(authority),
+                Some(registry),
+                Some(entry.prompt_appendix()),
+                Some(registry_override),
+            )
+        } else {
+            (None, None, None, None)
+        };
     sink.notice(format!(
         "◈ agent_mode id={} source={:?} contract={} lane={:?}",
         agent_mode.id.as_str(),
@@ -1161,7 +1233,7 @@ async fn run_agent_turn_inner(
 
     let prepared = turn_orchestrator::prepare_turn_prompt(PrepareTurnPromptParams {
         agent_mode,
-        mode_context_appendix: None,
+        mode_context_appendix: mode_context_appendix.as_deref(),
         session_id: &session_id,
         prompt: &effective_prompt,
         selected_context_pack_query: None,
@@ -1230,6 +1302,7 @@ async fn run_agent_turn_inner(
         prepared: &prepared,
         resolved_prompt,
         tui_rt: agent_rt,
+        tool_registry_override,
         final_route: final_route.as_ref(),
         response_depth_mode: &request.response_depth_mode,
         reasoning_effort: &request.reasoning_effort,
@@ -1280,8 +1353,10 @@ async fn run_agent_turn_inner(
         None,
     );
     let (tool_count, tool_schema_chars) =
-        crate::agent_runtime::context_usage::estimate_tool_schema_chars(&agent_rt.tool_registry)
-            .await;
+        crate::agent_runtime::context_usage::estimate_tool_schema_chars(
+            &assembled.execution.tool_registry,
+        )
+        .await;
     let context_limit_tokens = final_route.as_ref().and_then(|route| {
         crate::model_capability_registry::registry()
             .resolve(&route.provider, &route.model)
@@ -1328,6 +1403,10 @@ async fn run_agent_turn_inner(
         }
 
     turn_orchestrator::execute_local_turn(sink, assembled.execution).await;
+    if let Some(registry) = coder_registry {
+        registry.interrupt_shell_sessions().await;
+    }
+    drop(coder_authority);
 }
 
 struct TurnOutcomeTrackingSink {

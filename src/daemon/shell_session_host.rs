@@ -283,6 +283,10 @@ pub struct CreateSessionBody {
     /// Optional Forge lease id — enables command-log staging for evidence.
     #[serde(default)]
     pub lease_id: Option<String>,
+    #[serde(default)]
+    pub lease_generation: Option<u64>,
+    #[serde(default)]
+    pub attempt_id: Option<String>,
     #[serde(default = "default_terminal_cols")]
     pub cols: u16,
     #[serde(default = "default_terminal_rows")]
@@ -326,44 +330,35 @@ async fn create_session(
     });
     let mut response = proxy_http(&state, "POST", "/v1/sessions/shell", Some(payload)).await?;
 
-    if let (Some(lease_id), Some(wid)) = (
+    if let (Some(lease_id), Some(generation), Some(attempt_id), Some(wid)) = (
         body.lease_id.as_deref().filter(|s| !s.trim().is_empty()),
+        body.lease_generation,
+        body.attempt_id.as_deref().filter(|s| !s.trim().is_empty()),
         work_id.as_deref(),
     ) && let Some(session_id) = response.0.get("session_id").and_then(|v| v.as_str())
     {
         let now = chrono::Utc::now();
         let lease = medousa_forge::model::ExecutionLease {
             lease_id: medousa_forge::model::LeaseId::from(lease_id.to_string()),
-            generation: response
-                .0
-                .get("generation")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(0),
+            generation,
             work_id: medousa_forge::model::WorkId::from(wid.to_string()),
-            attempt_id: medousa_forge::model::AttemptId::from(
-                response
-                    .0
-                    .get("attempt_id")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("shell-session")
-                    .to_string(),
-            ),
+            attempt_id: medousa_forge::model::AttemptId::from(attempt_id.to_string()),
             owner_instance_id: "medousa-session".into(),
             acquired_at: now,
             heartbeat_at: now,
             pid: None,
             process_start_marker: None,
         };
-        let _ = state.forge.append_command_log(
+        let staged = state.forge.append_command_log(
             &lease,
             &serde_json::json!({
                 "kind": "shell_session_open",
                 "session_id": session_id,
                 "cwd": cwd,
             }),
-        );
+        ).is_ok();
         if let Some(obj) = response.0.as_object_mut() {
-            obj.insert("forge_log_staged".into(), serde_json::Value::Bool(true));
+            obj.insert("forge_log_staged".into(), serde_json::Value::Bool(staged));
         }
     }
 

@@ -183,6 +183,7 @@
   <div class="mb-1 flex items-center px-1">
     <ChatAgentModePicker
       sessionId={chat.focusedSessionId}
+      coderContextAvailable={activeCodeContext(chat.focusedSessionId) !== null}
       disabled={connection.offline || chat.composerBlocked || runtime.savingControls}
     />
   </div>

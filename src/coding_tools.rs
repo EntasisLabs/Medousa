@@ -476,6 +476,9 @@ impl StasisTool for CognitionShellSessionStatusTool {
             "type": "object",
             "properties": {
                 "work_id": { "type": "string", "description": "Optional Forge work id — session cwd binds to the worktree" },
+                "lease_id": { "type": "string", "description": "Forge lease fencing token supplied by the runtime" },
+                "lease_generation": { "type": "integer", "description": "Forge lease generation supplied by the runtime" },
+                "attempt_id": { "type": "string", "description": "Forge attempt id supplied by the runtime" },
                 "create": { "type": "boolean", "description": "Create a session (default: list only)" }
             }
         }))
@@ -489,10 +492,16 @@ impl StasisTool for CognitionShellSessionStatusTool {
             .get("work_id")
             .and_then(|v| v.as_str())
             .filter(|s| !s.trim().is_empty());
+        let lease_id = input
+            .get("lease_id")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.trim().is_empty());
+        let lease_generation = input.get("lease_generation").and_then(Value::as_u64);
+        let attempt_id = input.get("attempt_id").and_then(Value::as_str);
         if create {
             daemon_post(
                 "/v1/sessions/shell",
-                json!({ "work_id": work_id, "cwd": Value::Null }),
+                json!({ "work_id": work_id, "lease_id": lease_id, "lease_generation": lease_generation, "attempt_id": attempt_id, "cwd": Value::Null }),
             )
             .await
         } else {
@@ -517,6 +526,9 @@ impl StasisTool for CognitionShellSessionRunTool {
             "properties": {
                 "session_id": { "type": "string", "description": "Existing session id" },
                 "work_id": { "type": "string", "description": "Create/bind a session for this Forge work id" },
+                "lease_id": { "type": "string", "description": "Forge lease fencing token supplied by the runtime" },
+                "lease_generation": { "type": "integer", "description": "Forge lease generation supplied by the runtime" },
+                "attempt_id": { "type": "string", "description": "Forge attempt id supplied by the runtime" },
                 "command": { "type": "string", "description": "Command line to run (newline appended)" },
                 "input": { "type": "string", "description": "Raw bytes to write (base64 not required)" },
                 "wait_ms": { "type": "integer", "description": "How long to stream output (default 1500, max 15000)" }
@@ -535,9 +547,15 @@ impl StasisTool for CognitionShellSessionRunTool {
                     .get("work_id")
                     .and_then(|v| v.as_str())
                     .filter(|s| !s.trim().is_empty());
+                let lease_id = input
+                    .get("lease_id")
+                    .and_then(|v| v.as_str())
+                    .filter(|s| !s.trim().is_empty());
+                let lease_generation = input.get("lease_generation").and_then(Value::as_u64);
+                let attempt_id = input.get("attempt_id").and_then(Value::as_str);
                 let created = daemon_post(
                     "/v1/sessions/shell",
-                    json!({ "work_id": work_id, "cwd": Value::Null }),
+                    json!({ "work_id": work_id, "lease_id": lease_id, "lease_generation": lease_generation, "attempt_id": attempt_id, "cwd": Value::Null }),
                 )
                 .await?;
                 created

@@ -1,6 +1,6 @@
 # Agent runtime modes
 
-> Status: Coder entry/context complete; mode-scoped tool authority next
+> Status: Coder tools complete; agent-proposed transitions next
 > First modes: **General** and **Coder**
 
 ## Product decision
@@ -133,10 +133,11 @@ continues in the current mode rather than abandoning the request.
    Coder.
 4. **Coder entry/context (complete)** — Forge binding, bounded repository/editor
    ambient context, Coder STTP overlay, and foreground workshop lane contract.
-   Coder remains unavailable until slice 5 can compile a constrained tool
-   surface and hold its Forge mutation lease.
-5. **Coder tools** — bounded inspection, safe mutation, command/test receipts,
-   LSP, and diff verification.
+5. **Coder tools (complete)** — per-turn Forge lease, immutable allowlisted tool
+   registry, worktree and mutation-policy fencing, digest-safe edits, shell/LSP/
+   Detamu binding, command receipts, and foreground-loop activation. Shell
+   sessions are exposed only for unrestricted path policies and are interrupted
+   before the lease is released.
 6. **Agent proposals** — accept/deny/expiry flow and false-positive evaluation.
 
 ## First-slice acceptance criteria

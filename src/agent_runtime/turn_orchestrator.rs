@@ -292,6 +292,9 @@ pub struct AssembleLocalTurnParams<'a> {
     pub prepared: &'a PreparedTurnPrompt,
     pub resolved_prompt: String,
     pub tui_rt: &'a TuiRuntime,
+    pub tool_registry_override: Option<
+        Arc<dyn stasis::application::orchestration::tool_registry::ToolRegistry>,
+    >,
     pub final_route: Option<&'a StageRoute>,
     pub response_depth_mode: &'a str,
     pub reasoning_effort: &'a str,
@@ -339,10 +342,16 @@ pub fn assemble_local_turn(params: AssembleLocalTurnParams<'_>) -> AssembledLoca
             4000,
         ),
     );
-    let activation = turn_services::apply_context_compiler_activation_gate(
+    let mut activation = turn_services::apply_context_compiler_activation_gate(
         activation,
         params.prepared.compiler_output.allow_no_tools_fallback,
     );
+    if params.prepared.agent_mode.id == crate::daemon_api::AgentModeId::Coder {
+        activation.turn_class = "coder_foreground";
+        activation.enforce_no_tools = false;
+        activation.max_tool_rounds = activation.max_tool_rounds.max(12);
+        activation.reason = "coder_mode_requires_tool_capable_foreground_loop";
+    }
 
     let hot_window_turns = parse_usize_with_bounds(
         &params.settings.slice_hot_window_turns,
@@ -386,8 +395,12 @@ pub fn assemble_local_turn(params: AssembleLocalTurnParams<'_>) -> AssembledLoca
         .vision_plan
         .build_user_message(&prompt_for_request);
 
-    let pipeline_selection = turn_services::select_pipeline_for_turn_with_allowlist(
-        params.tui_rt,
+    let effective_tool_registry = params
+        .tool_registry_override
+        .clone()
+        .unwrap_or_else(|| params.tui_rt.tool_registry.clone());
+    let pipeline_selection = turn_services::select_pipeline_for_turn_with_registry_and_allowlist(
+        effective_tool_registry.clone(),
         params.final_route,
         params.settings,
         params.scheduled_tool_allowlist.clone(),
@@ -406,7 +419,7 @@ pub fn assemble_local_turn(params: AssembleLocalTurnParams<'_>) -> AssembledLoca
             response_depth_mode: params.response_depth_mode.to_string(),
             reasoning_effort: params.reasoning_effort.to_string(),
             worker_scheduler: params.tui_rt.worker_scheduler.clone(),
-            tool_registry: params.tui_rt.tool_registry.clone(),
+            tool_registry: effective_tool_registry,
             client_registry: params.tui_rt.client_registry.clone(),
             identity_memory_store: Some(
                 params.tui_rt.identity_memory_store.clone()
@@ -758,7 +771,11 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
         activation.max_tool_rounds, turn_loop_settings.configured_max_tool_rounds
     ))
     .await;
-    let host_bus = host_profile.host_bus_active;
+    let host_bus = if agent_mode.id == crate::daemon_api::AgentModeId::Coder {
+        false
+    } else {
+        host_profile.host_bus_active
+    };
     let suggested_intent = host_profile
         .route
         .suggested_worker_intent()
