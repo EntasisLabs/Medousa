@@ -36,6 +36,8 @@ COMMANDS                                              *medousa-commands*
 :MedousaNew                    Start a new daemon conversation.
 :MedousaCancel                 Stop the active response.
 :MedousaSessions               Select a daemon conversation.
+:MedousaMode                   Select General or Coder for the conversation.
+:MedousaProject                Choose, create, or detach a Forge project.
 :MedousaRename                 Rename the active conversation.
 :MedousaDelete                 Delete it and its Medousa memory after warning.
 :MedousaDiagnostics            Put captured diagnostics in quickfix.
@@ -52,6 +54,8 @@ Visual <leader>ma              Compose with the selected lines.
 <leader>mf                     Fix current diagnostics.
 <leader>mo{motion}             Compose with the motion as context.
 <leader>ms                     Select a conversation.
+<leader>mm                     Select General or Coder mode.
+<leader>mp                     Select the governed Coder project.
 
 ==============================================================================
 CODING ROOM                                                *medousa-room*
@@ -65,10 +69,16 @@ Transcript mappings:
 a        Focus the composer.           A        Preview a code edit.
 c        Cancel an active response.    r        Retry the last prompt.
 s        Select a conversation.        n        New conversation.
+m        Select General/Coder mode.     p        Select a Coder project.
 R        Rename the conversation.      D        Delete the conversation.
 y        Copy the settled answer.      Y        Copy code under the cursor.
 Tab      Toggle tool activity.
 [c / ]c  Previous/next code fence.     q        Return to code.
+
+Coder may be selected without a project. The first send opens a project picker
+without consuming the draft. Choose a ready project, create a blank project,
+or explicitly authorize Medousa to choose/create from that message. Until a
+Forge worktree is bound, Coder has no file or shell authority.
 
 ==============================================================================
 APPLYING EDITS                                            *medousa-edits*

@@ -445,6 +445,8 @@ struct CreateTurnTicketBody {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     code_context: Option<CodeIntentContext>,
     #[serde(default)]
+    code_project_setup_authorized: bool,
+    #[serde(default)]
     mode: TurnTicketMode,
     #[serde(default = "default_persist_user_turn")]
     persist_user_turn: bool,
@@ -486,6 +488,7 @@ pub async fn turn_create(
     prompt: String,
     agent_mode: Option<AgentModeId>,
     code_context: Option<CodeIntentContext>,
+    code_project_setup_authorized: Option<bool>,
     mode: Option<String>,
     provider: Option<String>,
     model: Option<String>,
@@ -580,6 +583,7 @@ pub async fn turn_create(
         prompt,
         agent_mode,
         code_context,
+        code_project_setup_authorized: code_project_setup_authorized.unwrap_or(false),
         mode: ticket_mode,
         persist_user_turn: true,
         response_depth_mode,

@@ -1435,6 +1435,10 @@ pub struct InteractiveTurnRequest {
     /// Advisory editor/undertaking intent. Coder entry re-resolves Forge authority.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub code_context: Option<CodeIntentContext>,
+    /// The principal explicitly selected the surface action allowing unbound Coder
+    /// to choose, bind, or create a project for this turn.
+    #[serde(default)]
+    pub code_project_setup_authorized: bool,
     pub persist_user_turn: bool,
     pub response_depth_mode: String,
     #[serde(default)]
@@ -1523,6 +1527,9 @@ pub struct CreateTurnTicketRequest {
     pub agent_mode: Option<AgentModeId>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub code_context: Option<CodeIntentContext>,
+    /// Structured principal authorization from a project-setup surface action.
+    #[serde(default)]
+    pub code_project_setup_authorized: bool,
     #[serde(default)]
     pub mode: TurnTicketMode,
     #[serde(default = "default_persist_user_turn")]

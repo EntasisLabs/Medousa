@@ -680,7 +680,12 @@
     return null;
   }
 
-  async function submitTurn(userContent: string, prompt: string, mode: "interactive" | "background") {
+  async function submitTurn(
+    userContent: string,
+    prompt: string,
+    mode: "interactive" | "background",
+    codeProjectSetupAuthorized = false,
+  ) {
     const runtime = getSessionAgentRuntime(chat.sessionId);
     if (runtime !== "medousa" && mode === "interactive") {
       let agentSessionId = getSessionAgentSessionId(chat.sessionId);
@@ -764,6 +769,7 @@
       prompt,
       mode,
       codeContext,
+      codeProjectSetupAuthorized,
       provider: opts.provider,
       model: opts.model,
         responseDepthMode: opts.responseDepthMode,
@@ -813,6 +819,7 @@
     display: string;
     prompt: string;
     mode: "interactive" | "background";
+    codeProjectSetupAuthorized: boolean;
   };
   /** Last turn that threw — kept so the error banner can offer Retry. */
   let lastFailedSend = $state<FailedSend | null>(null);
@@ -823,7 +830,12 @@
     lastFailedSend = null;
     chat.clearStreamError(panelSessionId);
     try {
-      await submitTurn(payload.display, payload.prompt, payload.mode);
+      await submitTurn(
+        payload.display,
+        payload.prompt,
+        payload.mode,
+        payload.codeProjectSetupAuthorized,
+      );
     } catch (err) {
       lastFailedSend = payload;
       chat.setError(err instanceof Error ? err.message : String(err));
@@ -865,6 +877,7 @@
         return;
       }
     }
+    const codeProjectSetupAuthorized = allowUnboundCoderSend;
     allowUnboundCoderSend = false;
     if (mobile) haptic("medium");
 
@@ -917,8 +930,8 @@
       const display =
         prompt ||
         (hasAttachments ? `[${pendingMediaLabels(chat.pendingMediaRefs)}]` : "");
-      pendingSend = { display, prompt, mode };
-      await submitTurn(display, prompt, mode);
+      pendingSend = { display, prompt, mode, codeProjectSetupAuthorized };
+      await submitTurn(display, prompt, mode, codeProjectSetupAuthorized);
     } catch (err) {
       lastFailedSend = pendingSend;
       chat.setError(err instanceof Error ? err.message : String(err));
@@ -1078,7 +1091,12 @@
       lastFailedSend = null;
       await submitTurn(fullPrompt, fullPrompt, mode);
     } catch (err) {
-      lastFailedSend = { display: fullPrompt, prompt: fullPrompt, mode };
+      lastFailedSend = {
+        display: fullPrompt,
+        prompt: fullPrompt,
+        mode,
+        codeProjectSetupAuthorized: false,
+      };
       chat.setError(err instanceof Error ? err.message : String(err));
     }
   }

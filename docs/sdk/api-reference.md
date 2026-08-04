@@ -125,6 +125,11 @@ this generic HTTP client rather than a dedicated typed SDK accessor. See the
 | `stream_turn_reconnecting(request)` | start + reconnecting SSE | combined helper (recommended) |
 | `cancel(session_id)` | `POST /v1/sessions/{id}/active-turn` | cancel active turn |
 
+Set `InteractiveTurnRequest.code_project_setup_authorized` only after the
+principal explicitly chooses a client action that allows unbound Coder to
+choose, bind, or create a project. It does not expand authority on bound or
+non-Coder turns, and it is stored separately from the human prompt.
+
 **Client helpers** (`stream_reconnecting*`, `stream_turn_reconnecting`) are not separate HTTP routes — they track `event.seq`, reconnect with `?since=<last_seq>`, and apply bounded backoff + overlap guard. See `medousa_sdk::ReconnectPolicy` and `medousa_sdk::stream_path_with_since`.
 
 Both Rust (`sse` feature) and Python ship built-in SSE clients — [interactive-streaming.md](interactive-streaming.md).

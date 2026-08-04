@@ -1,11 +1,15 @@
 local Client = require("medousa.client")
 local approved_budget = false
+local bound_project = false
+local setup_authorized = false
+local prefer_agent_setup = false
 
 local fake = {
   ensure_session = function(_, callback)
     callback("session-one", { session_id = "session-one", turns = {} }, nil)
   end,
-  turn = function(_, _, _, _, callbacks)
+  turn = function(_, _, _, _, callbacks, options)
+    setup_authorized = options and options.code_project_setup_authorized == true
     local answer = "Hello from Medousa.\n```lua\nlocal polished = true\n```"
     callbacks.on_event({
       content_delta = vim.NIL,
@@ -24,6 +28,26 @@ local fake = {
   sessions = function(_, _, callback)
     callback({ { session_id = "session-one", display_name = "Compiler work" } }, nil)
   end,
+  agent_mode = function(_, session_id, callback)
+    callback({ session_id = session_id, effective_mode = "coder" }, nil)
+  end,
+  code_binding = function(_, session_id, callback)
+    callback({ session_id = session_id }, nil)
+  end,
+  mode_proposals = function(_, _, callback) callback({ proposals = {} }, nil) end,
+  forge_items = function(_, callback)
+    callback({ {
+      id = "work-one",
+      title = "Compiler",
+      brief = "Improve the compiler",
+      state = "ready",
+      environment = { worktree = "/not-mounted-in-smoke" },
+    } }, nil)
+  end,
+  set_code_binding = function(_, session_id, work_id, callback)
+    bound_project = session_id == "session-one" and work_id == "work-one"
+    callback({ session_id = session_id, work_id = work_id }, nil)
+  end,
   approve_budget = function(_, request_id, rounds, callback)
     approved_budget = request_id == "budget-one" and rounds == 2
     callback({}, nil)
@@ -36,7 +60,17 @@ package.loaded["medousa"] = nil
 local medousa = require("medousa")
 medousa.setup({ keymaps = {} })
 local original_select = vim.ui.select
-vim.ui.select = function(items, _, callback) callback(items[1]) end
+vim.ui.select = function(items, _, callback)
+  if prefer_agent_setup then
+    for _, item in ipairs(items) do
+      if type(item) == "table" and item.action == "agent" then
+        callback(item)
+        return
+      end
+    end
+  end
+  callback(items[1])
+end
 
 local source = vim.api.nvim_get_current_buf()
 vim.api.nvim_buf_set_lines(source, 0, -1, false, { "local answer = 42" })
@@ -57,6 +91,11 @@ end
 assert(transcript and transcript:find("You ·", 1, true), vim.inspect(inspected))
 assert(medousa.statusline() == "Medousa:on")
 assert(approved_budget)
+assert(bound_project)
+assert(not setup_authorized)
+prefer_agent_setup = true
+medousa.send("Create the right project for this compiler work")
+assert(setup_authorized)
 medousa.toggle()
 
 medousa.ask("unfinished\nthought")

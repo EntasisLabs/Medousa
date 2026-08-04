@@ -51,6 +51,7 @@
     userContent: string,
     prompt: string,
     mode: "interactive" | "background",
+    codeProjectSetupAuthorized = false,
   ) {
     const opts = buildInteractiveTurnOptions();
     const mediaRefs = [...chat.pendingMediaRefs];
@@ -61,6 +62,7 @@
       prompt,
       mode,
       codeContext,
+      codeProjectSetupAuthorized,
       provider: opts.provider,
       model: opts.model,
       responseDepthMode: opts.responseDepthMode,
@@ -116,6 +118,7 @@
         return;
       }
     }
+    const codeProjectSetupAuthorized = allowUnboundCoderSend;
     allowUnboundCoderSend = false;
     haptic("medium");
 
@@ -151,7 +154,7 @@
       const display =
         prompt ||
         (hasAttachments ? `[${pendingMediaLabels(chat.pendingMediaRefs)}]` : "");
-      await submitTurn(display, prompt, mode);
+      await submitTurn(display, prompt, mode, codeProjectSetupAuthorized);
     } catch (err) {
       chat.setError(err instanceof Error ? err.message : String(err));
     }

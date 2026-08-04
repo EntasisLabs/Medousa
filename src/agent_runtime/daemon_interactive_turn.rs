@@ -1196,6 +1196,16 @@ async fn run_agent_turn_inner(
         &effective_prompt,
         host_context.as_ref(),
     );
+    let effective_prompt = if request.code_project_setup_authorized
+        && agent_mode.id == crate::daemon_api::AgentModeId::Coder
+        && agent_mode.coder_phase == Some(super::modes::CoderRuntimePhase::Setup)
+    {
+        format!(
+            "{effective_prompt}\n\n[MEDOUSA_CODE_PROJECT_SETUP_AUTHORITY]\nprincipal_authorized=true\nscope=choose_bind_or_create_project\nsource=explicit_surface_action"
+        )
+    } else {
+        effective_prompt
+    };
 
     if has_vision_media
         && let Some(notice) =

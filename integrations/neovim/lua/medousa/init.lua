@@ -8,12 +8,18 @@ local util = require("medousa.util")
 local M = {}
 local namespace = vim.api.nvim_create_namespace("medousa-neovim")
 local normalize_session
+local refresh_runtime_state
+local check_mode_proposals
 
 local state = {
   client = nil,
   configured = false,
   session_id = nil,
   session_name = nil,
+  agent_mode = "general",
+  mode_label = "General",
+  binding_work_id = nil,
+  project = nil,
   connection = "idle",
   chat_buf = nil,
   chat_win = nil,
@@ -30,6 +36,7 @@ local state = {
   tool_order = {},
   show_tools = false,
   handled_requests = {},
+  handled_mode_proposals = {},
   pending_attention = nil,
   last_context = nil,
   last_answer = "",
@@ -58,6 +65,8 @@ local defaults = {
     fix = "<leader>mf",
     operator = "<leader>mo",
     sessions = "<leader>ms",
+    mode = "<leader>mm",
+    project = "<leader>mp",
   },
 }
 
@@ -162,8 +171,12 @@ end
 local function update_window_titles()
   if valid_window(state.chat_win) then
     local name = state.session_name or "Coding room"
+    local mode = state.mode_label
+    if state.agent_mode == "coder" then
+      mode = state.project and ("Coder · " .. state.project.title) or "Coder setup"
+    end
     vim.api.nvim_win_set_config(state.chat_win, {
-      title = " Medousa · " .. name .. " · " .. connection_label() .. " ",
+      title = " Medousa · " .. name .. " · " .. mode .. " · " .. connection_label() .. " ",
       title_pos = "center",
     })
   end
@@ -178,8 +191,8 @@ local function message_lines()
     table.insert(lines, "")
     table.insert(lines, "Ask about the code, explain a range, fix diagnostics, or describe the change you want.")
     table.insert(lines, "")
-    table.insert(lines, "  a  focus composer    s  conversations    n  new conversation")
-    table.insert(lines, "  A  preview last edit c  stop response    q  return to code")
+    table.insert(lines, "  a  focus composer    s  conversations    m  mode    p  project")
+    table.insert(lines, "  A  preview last edit c  stop response    n  new      q  return to code")
   end
 
   for _, message in ipairs(state.messages) do
@@ -364,7 +377,7 @@ local function create_room(value)
     border = defaults.border,
     title = " Medousa ",
     title_pos = "center",
-    footer = " a ask · A edit · Y copy code · s sessions · Tab tools · q close ",
+    footer = " a ask · m mode · p project · A edit · s sessions · Tab tools · q close ",
     footer_pos = "center",
   })
   vim.bo[state.chat_buf].filetype = "markdown"
@@ -408,6 +421,8 @@ local function create_room(value)
   map(state.chat_buf, "n", "r", M.retry, "Retry last Medousa prompt")
   map(state.chat_buf, "n", "n", M.new_session, "New Medousa conversation")
   map(state.chat_buf, "n", "s", M.sessions, "Medousa conversations")
+  map(state.chat_buf, "n", "m", M.select_mode, "Select Medousa mode")
+  map(state.chat_buf, "n", "p", M.projects, "Select Medousa project")
   map(state.chat_buf, "n", "R", M.rename_session, "Rename Medousa conversation")
   map(state.chat_buf, "n", "D", M.delete_session, "Delete Medousa conversation")
   map(state.chat_buf, "n", "y", M.copy_last, "Copy last Medousa answer")
@@ -619,6 +634,237 @@ normalize_session = function(item)
   }
 end
 
+local function normalize_project(item)
+  local id = util.trim(tostring(item.id or item.work_id or ""))
+  if id == "" then return nil end
+  local environment = type(item.environment) == "table" and item.environment or {}
+  local title = util.trim(tostring(item.title or ""))
+  return {
+    id = id,
+    title = title ~= "" and title or id,
+    brief = type(item.brief) == "string" and item.brief or "",
+    state = tostring(item.state or ""),
+    human_phase = type(item.human_phase) == "string" and item.human_phase or "",
+    worktree = type(item.worktree) == "string" and item.worktree or environment.worktree,
+  }
+end
+
+local function reset_runtime_state()
+  state.agent_mode = "general"
+  state.mode_label = "General"
+  state.binding_work_id = nil
+  state.project = nil
+end
+
+refresh_runtime_state = function(session_id, callback)
+  if not state.client or not session_id then
+    if callback then callback("No active Medousa conversation") end
+    return
+  end
+  state.client:agent_mode(session_id, function(mode, mode_err)
+    if state.session_id ~= session_id then return end
+    if not mode then
+      if callback then callback(mode_err) end
+      return
+    end
+    state.agent_mode = mode.effective_mode or "general"
+    state.mode_label = state.agent_mode == "coder" and "Coder" or "General"
+    state.client:code_binding(session_id, function(binding, binding_err)
+      if state.session_id ~= session_id then return end
+      if not binding then
+        if callback then callback(binding_err) end
+        return
+      end
+      state.binding_work_id = binding.work_id ~= vim.NIL and binding.work_id or nil
+      state.project = nil
+      if not state.binding_work_id then
+        render()
+        if callback then callback(nil) end
+        return
+      end
+      state.client:forge_item(state.binding_work_id, function(item)
+        if state.session_id ~= session_id then return end
+        state.project = item and normalize_project(item) or {
+          id = state.binding_work_id,
+          title = state.binding_work_id,
+          brief = "",
+          state = "ready",
+        }
+        render()
+        if callback then callback(nil) end
+      end)
+    end)
+  end)
+end
+
+local function offer_open_worktree(project, callback)
+  local worktree = project and project.worktree
+  local stat = type(worktree) == "string" and vim.uv.fs_stat(worktree) or nil
+  if not stat or stat.type ~= "directory" then
+    if callback then callback() end
+    return
+  end
+  vim.ui.select({ "Open governed worktree", "Keep current editor directory" }, {
+    prompt = "“" .. project.title .. "” is bound. Open its Forge worktree?",
+  }, function(choice)
+    if choice == "Open governed worktree" then
+      vim.cmd("cd " .. vim.fn.fnameescape(worktree))
+      notify("Opened " .. project.title .. " at " .. worktree)
+    end
+    if callback then callback() end
+  end)
+end
+
+local function bind_project(project, callback)
+  local session_id = state.session_id
+  state.client:set_code_binding(session_id, project.id, function(response, err)
+    if not response then
+      notify(err or "Could not bind that project", vim.log.levels.ERROR)
+      if callback then callback(false) end
+      return
+    end
+    state.binding_work_id = project.id
+    state.project = project
+    render()
+    offer_open_worktree(project, function()
+      if callback then callback(true) end
+    end)
+  end)
+end
+
+local function create_project(callback)
+  local session_id = state.session_id
+  vim.ui.input({ prompt = "Project name: " }, function(title)
+    title = util.trim(title)
+    if title == "" then
+      if callback then callback(false) end
+      return
+    end
+    vim.ui.input({ prompt = "What should Medousa build? (optional): " }, function(brief)
+      if brief == nil then
+        if callback then callback(false) end
+        return
+      end
+      state.current_status = "creating “" .. title .. "”"
+      render()
+      state.client:start_code_project(session_id, {
+        title = title,
+        brief = util.trim(brief) ~= "" and util.trim(brief) or title,
+        source = "blank",
+      }, function(created, err)
+        state.current_status = nil
+        if state.session_id ~= session_id then return end
+        if not created then
+          notify(err or "Could not create the project", vim.log.levels.ERROR)
+          render()
+          if callback then callback(false) end
+          return
+        end
+        local project = normalize_project(created)
+        state.binding_work_id = created.work_id
+        state.project = project
+        render()
+        notify("Created and bound “" .. project.title .. "”.")
+        offer_open_worktree(project, function()
+          if callback then callback(true) end
+        end)
+      end)
+    end)
+  end)
+end
+
+local function choose_project(options, callback)
+  options = options or {}
+  local session_id = state.session_id
+  state.current_status = "loading projects"
+  render()
+  state.client:forge_items(function(items, err)
+    if state.session_id ~= session_id then return end
+    state.current_status = nil
+    if not items then
+      notify(err or "Could not load projects", vim.log.levels.ERROR)
+      render()
+      if callback then callback(false) end
+      return
+    end
+    local choices = {}
+    for _, item in ipairs(items) do
+      local project = normalize_project(item)
+      if project and project.state:lower() == "ready" and project.worktree then
+        table.insert(choices, {
+          label = project.title .. (project.id == state.binding_work_id and " · bound" or " · ready"),
+          action = "bind",
+          project = project,
+        })
+      end
+    end
+    table.insert(choices, { label = "+ Create a new project", action = "create" })
+    if options.allow_agent_setup then
+      table.insert(choices, {
+        label = "✦ Let Medousa choose or create it from this message",
+        action = "agent",
+      })
+    end
+    if state.binding_work_id then
+      table.insert(choices, { label = "× Stop following this project", action = "detach" })
+    end
+    render()
+    picker.projects(choices, function(choice)
+      if not choice then
+        if callback then callback(false) end
+      elseif choice.action == "bind" then
+        bind_project(choice.project, callback)
+      elseif choice.action == "create" then
+        create_project(callback)
+      elseif choice.action == "agent" then
+        if callback then callback(true, true) end
+      elseif choice.action == "detach" then
+        state.client:clear_code_binding(session_id, function(response, detach_err)
+          if not response then
+            notify(detach_err or "Could not detach the project", vim.log.levels.ERROR)
+            if callback then callback(false) end
+            return
+          end
+          state.binding_work_id, state.project = nil, nil
+          render()
+          if callback then callback(false) end
+        end)
+      end
+    end)
+  end)
+end
+
+check_mode_proposals = function(session_id)
+  if not state.client or state.session_id ~= session_id then return end
+  state.client:mode_proposals(session_id, function(response)
+    if state.session_id ~= session_id or not response then return end
+    local pending
+    for _, proposal in ipairs(response.proposals or {}) do
+      if proposal.status == "pending" and not state.handled_mode_proposals[proposal.proposal_id] then
+        pending = proposal
+      end
+    end
+    if not pending then return end
+    state.handled_mode_proposals[pending.proposal_id] = true
+    local target = pending.to_mode == "coder" and "Coder" or "General"
+    vim.ui.select({ "Switch to " .. target, "Not now" }, {
+      prompt = "Medousa suggests " .. target .. ": " .. tostring(pending.reason or "better fit"),
+    }, function(choice)
+      if not choice then return end
+      local accept = choice == "Switch to " .. target
+      state.client:decide_mode_proposal(session_id, pending.proposal_id, accept, function(decision, err)
+        if not decision then
+          notify(err or "That mode suggestion expired", vim.log.levels.WARN)
+          return
+        end
+        refresh_runtime_state(session_id, function()
+          if accept and pending.to_mode == "coder" and not state.binding_work_id then M.projects() end
+        end)
+      end)
+    end)
+  end)
+end
+
 function M.toggle()
   if valid_window(state.chat_win) then
     close_room()
@@ -631,8 +877,96 @@ function M.toggle()
       notify(err or "Workshop unavailable", vim.log.levels.ERROR)
       return
     end
-    focus_prompt()
+    refresh_runtime_state(session_id, function()
+      check_mode_proposals(session_id)
+      focus_prompt()
+    end)
   end)
+end
+
+local function run_turn(session_id, prompt, value, setup_authorized)
+  state.last_context = value
+  state.last_prompt = prompt
+  state.answer = ""
+  state.last_answer = ""
+  state.current_status = "thinking"
+  state.tools, state.tool_order = {}, {}
+  state.handled_requests = {}
+  state.pending_attention = nil
+  state.connection = "connected"
+  table.insert(state.messages, { role = "user", content = prompt, context_label = context.describe(value) })
+  render()
+  state.client:turn(session_id, prompt, context.host_context(value), {
+    on_status = function(text)
+      state.connection = "recovering"
+      state.current_status = text
+      render()
+    end,
+    on_event = function(event)
+      state.connection = "connected"
+      handle_attention(event)
+      local text = event_text(event)
+      local operator_message = nonempty_text(event.operator_message)
+      if operator_message then
+        state.current_status = operator_message
+      end
+      if nonempty_text(event.tool_name) then update_tool(event) end
+      if text then
+        if nonempty_text(event.final_text) then state.answer = text else state.answer = text_value(state.answer) .. text end
+      end
+      render()
+    end,
+    on_handoff = function(event)
+      state.answer = nil
+      state.busy = false
+      state.pending_attention = nil
+      state.current_status = "workshop is running · you can keep typing"
+      state.connection = "connected"
+      render()
+      focus_prompt()
+      refresh_runtime_state(session_id, function() check_mode_proposals(session_id) end)
+      vim.defer_fn(function()
+        poll_workshop_history(session_id, 90)
+      end, 500)
+    end,
+    on_done = function(event)
+      local answer = text_value(state.answer)
+      state.last_answer = answer ~= "" and answer or (nonempty_text(event.final_text) or "")
+      if state.last_answer ~= "" then
+        table.insert(state.messages, { role = "assistant", content = state.last_answer })
+      end
+      state.answer = nil
+      state.busy = false
+      state.pending_attention = nil
+      state.current_status = nil
+      state.connection = "connected"
+      render()
+      focus_prompt()
+      refresh_runtime_state(session_id, function() check_mode_proposals(session_id) end)
+    end,
+    on_error = function(err_value)
+      state.answer = nil
+      state.busy = false
+      state.pending_attention = nil
+      state.current_status = nil
+      state.connection = failed_connection(err_value)
+      table.insert(state.messages, { role = "error", content = nonempty_text(err_value) or "Unknown failure" })
+      render()
+      refresh_runtime_state(session_id)
+    end,
+  }, { code_project_setup_authorized = setup_authorized == true })
+end
+
+local function restore_unsent_prompt(prompt, value)
+  state.busy = false
+  state.current_status = nil
+  state.connection = "connected"
+  state.drafts[session_key()] = prompt
+  state.draft_contexts[session_key()] = value
+  state.pending_context = value
+  set_prompt(prompt)
+  render()
+  focus_prompt()
 end
 
 function M.send(prompt, explicit_context)
@@ -646,85 +980,38 @@ function M.send(prompt, explicit_context)
   create_room(value)
   state.busy = true
   state.connection = "connecting"
-  state.last_context = value
-  state.last_prompt = prompt
-  state.answer = ""
-  state.last_answer = ""
   state.current_status = "opening the workshop"
-  state.tools, state.tool_order = {}, {}
-  state.handled_requests = {}
-  state.pending_attention = nil
   render()
   ensure_session(function(session_id, err)
     if not session_id then
-      state.busy = false
-      state.current_status = nil
-      table.insert(state.messages, { role = "user", content = prompt, context_label = context.describe(value) })
+      restore_unsent_prompt(prompt, value)
+      state.connection = failed_connection(err)
       table.insert(state.messages, { role = "error", content = err or "Workshop unavailable" })
       render()
       return
     end
     state.session_id = session_id
-    state.connection = "connected"
-    state.current_status = "thinking"
-    table.insert(state.messages, { role = "user", content = prompt, context_label = context.describe(value) })
-    render()
-    state.client:turn(session_id, prompt, context.host_context(value), {
-      on_status = function(text)
-        state.connection = "recovering"
-        state.current_status = text
+    refresh_runtime_state(session_id, function(runtime_err)
+      if runtime_err then
+        restore_unsent_prompt(prompt, value)
+        table.insert(state.messages, { role = "error", content = runtime_err })
         render()
-      end,
-      on_event = function(event)
-        state.connection = "connected"
-        handle_attention(event)
-        local text = event_text(event)
-        local operator_message = nonempty_text(event.operator_message)
-        if operator_message then
-          state.current_status = operator_message
+        return
+      end
+      if state.agent_mode ~= "coder" or state.binding_work_id then
+        run_turn(session_id, prompt, value)
+        return
+      end
+      state.current_status = "choose or create a Coder project"
+      render()
+      choose_project({ allow_agent_setup = true }, function(ready, setup_authorized)
+        if ready then
+          run_turn(session_id, prompt, value, setup_authorized)
+        else
+          restore_unsent_prompt(prompt, value)
         end
-        if nonempty_text(event.tool_name) then update_tool(event) end
-        if text then
-          if nonempty_text(event.final_text) then state.answer = text else state.answer = text_value(state.answer) .. text end
-        end
-        render()
-      end,
-      on_handoff = function(event)
-        state.answer = nil
-        state.busy = false
-        state.pending_attention = nil
-        state.current_status = "workshop is running · you can keep typing"
-        state.connection = "connected"
-        render()
-        focus_prompt()
-        vim.defer_fn(function()
-          poll_workshop_history(session_id, 90)
-        end, 500)
-      end,
-      on_done = function(event)
-        local answer = text_value(state.answer)
-        state.last_answer = answer ~= "" and answer or (nonempty_text(event.final_text) or "")
-        if state.last_answer ~= "" then
-          table.insert(state.messages, { role = "assistant", content = state.last_answer })
-        end
-        state.answer = nil
-        state.busy = false
-        state.pending_attention = nil
-        state.current_status = nil
-        state.connection = "connected"
-        render()
-        focus_prompt()
-      end,
-      on_error = function(err_value)
-        state.answer = nil
-        state.busy = false
-        state.pending_attention = nil
-        state.current_status = nil
-        state.connection = failed_connection(err_value)
-        table.insert(state.messages, { role = "error", content = nonempty_text(err_value) or "Unknown failure" })
-        render()
-      end,
-    })
+      end)
+    end)
   end)
 end
 
@@ -810,6 +1097,7 @@ function M.new_session()
     end
     state.session_id = created.session_id
     state.session_name = created.display_name or "New conversation"
+    reset_runtime_state()
     util.write_session(state.session_id)
     state.messages = {}
     state.last_answer = ""
@@ -822,7 +1110,7 @@ function M.new_session()
     set_prompt(state.drafts[session_key()] or "")
     state.pending_context = state.draft_contexts[session_key()]
     render()
-    focus_prompt()
+    refresh_runtime_state(state.session_id, function() focus_prompt() end)
   end)
 end
 
@@ -849,6 +1137,7 @@ function M.switch_session(item)
     end
     state.session_id = item.session_id
     state.session_name = item.display_name
+    reset_runtime_state()
     util.write_session(state.session_id)
     state.messages = {}
     state.last_answer = ""
@@ -868,7 +1157,10 @@ function M.switch_session(item)
     set_prompt(state.drafts[session_key()] or "")
     state.pending_context = state.draft_contexts[session_key()]
     render()
-    focus_prompt()
+    refresh_runtime_state(state.session_id, function()
+      check_mode_proposals(state.session_id)
+      focus_prompt()
+    end)
   end)
 end
 
@@ -901,6 +1193,83 @@ function M.sessions()
       return
     end
     picker.sessions(normalized, M.switch_session)
+  end)
+end
+
+function M.select_mode()
+  if state.busy then
+    notify("Stop the active response before changing modes.", vim.log.levels.WARN)
+    return
+  end
+  create_room(state.room_context or capture_current())
+  ensure_session(function(session_id, err)
+    if not session_id then
+      notify(err or "Workshop unavailable", vim.log.levels.ERROR)
+      return
+    end
+    state.current_status = "loading modes"
+    render()
+    state.client:agent_modes(function(response, modes_err)
+      state.current_status = nil
+      if not response then
+        notify(modes_err or "Could not load Medousa modes", vim.log.levels.ERROR)
+        render()
+        return
+      end
+      local choices = {}
+      for _, mode in ipairs(response.modes or response) do
+        if mode.available then
+          local selected = mode.mode == state.agent_mode and " · active" or ""
+          table.insert(choices, {
+            label = tostring(mode.label or mode.mode) .. selected,
+            mode = mode.mode,
+          })
+        end
+      end
+      render()
+      picker.modes(choices, function(choice)
+        if not choice then return end
+        if choice.mode == state.agent_mode then
+          focus_prompt()
+          return
+        end
+        state.client:set_agent_mode(session_id, choice.mode, function(updated, update_err)
+          if not updated then
+            notify(update_err or "Could not change Medousa mode", vim.log.levels.ERROR)
+            return
+          end
+          refresh_runtime_state(session_id, function()
+            notify("Switched to " .. state.mode_label .. ".")
+            if state.agent_mode == "coder" and not state.binding_work_id then
+              M.projects()
+            else
+              focus_prompt()
+            end
+          end)
+        end)
+      end)
+    end)
+  end)
+end
+
+function M.projects()
+  if state.busy then
+    notify("Stop the active response before changing projects.", vim.log.levels.WARN)
+    return
+  end
+  create_room(state.room_context or capture_current())
+  ensure_session(function(session_id, err)
+    if not session_id then
+      notify(err or "Workshop unavailable", vim.log.levels.ERROR)
+      return
+    end
+    refresh_runtime_state(session_id, function(runtime_err)
+      if runtime_err then
+        notify(runtime_err, vim.log.levels.ERROR)
+        return
+      end
+      choose_project({}, function() focus_prompt() end)
+    end)
   end)
 end
 
@@ -941,6 +1310,7 @@ function M.delete_session()
       return
     end
     state.session_id, state.session_name = nil, nil
+    reset_runtime_state()
     state.messages, state.last_answer, state.last_prompt = {}, "", nil
     util.clear_session()
     render()
@@ -1108,6 +1478,8 @@ function M.setup(options)
   command("MedousaNew", M.new_session, { desc = "Start a new Medousa conversation" })
   command("MedousaCancel", M.cancel, { desc = "Stop the active Medousa response" })
   command("MedousaSessions", M.sessions, { desc = "Open Medousa conversation history" })
+  command("MedousaMode", M.select_mode, { desc = "Select the active Medousa mode" })
+  command("MedousaProject", M.projects, { desc = "Choose, create, or detach a Coder project" })
   command("MedousaRename", M.rename_session, { desc = "Rename the active Medousa conversation" })
   command("MedousaDelete", M.delete_session, { desc = "Delete the active Medousa conversation" })
   command("MedousaDiagnostics", M.diagnostics, { desc = "Open captured diagnostics in the quickfix list" })
@@ -1135,6 +1507,10 @@ function M.setup(options)
         vim.keymap.set("n", mapping, M.operator, { expr = true, silent = true, desc = "Ask Medousa about motion" })
       elseif name == "sessions" then
         vim.keymap.set("n", mapping, M.sessions, { silent = true, desc = "Medousa conversations" })
+      elseif name == "mode" then
+        vim.keymap.set("n", mapping, M.select_mode, { silent = true, desc = "Select Medousa mode" })
+      elseif name == "project" then
+        vim.keymap.set("n", mapping, M.projects, { silent = true, desc = "Select Medousa project" })
       end
     end
   end

@@ -176,6 +176,7 @@ export interface InteractiveTurnRequest {
   additional_manuscript_ids?: string[] | null;
   agent_mode?: AgentModeId | null;
   code_context?: CodeIntentContext | null;
+  code_project_setup_authorized?: boolean;
   host_context?: HostTurnContext | null;
   identity_user_id?: string | null;
   manuscript_id?: string | null;

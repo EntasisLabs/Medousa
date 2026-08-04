@@ -77,6 +77,7 @@ class MedousaChatView implements vscode.WebviewViewProvider {
   private runtimeRefreshInFlight = false;
   private lastProposalId: string | null = null;
   private pendingProposal: AgentModeProposalResponse | null = null;
+  private nextCodeProjectSetupAuthorized = false;
 
   constructor(private readonly context: vscode.ExtensionContext) {}
 
@@ -293,7 +294,10 @@ class MedousaChatView implements vscode.WebviewViewProvider {
     });
     if (!picked) return false;
     if (picked.action === "create") return this.createProject();
-    if (picked.action === "agent") return true;
+    if (picked.action === "agent") {
+      this.nextCodeProjectSetupAuthorized = true;
+      return true;
+    }
     if (picked.action === "detach") {
       await client.clearSessionCodeBinding(sessionId);
       this.boundWorkId = null;
@@ -389,6 +393,8 @@ class MedousaChatView implements vscode.WebviewViewProvider {
       this.post({ type: "busy", value: false });
       return;
     }
+    const codeProjectSetupAuthorized = this.nextCodeProjectSetupAuthorized;
+    this.nextCodeProjectSetupAuthorized = false;
 
     this.abortController = new AbortController();
     try {
@@ -407,6 +413,7 @@ class MedousaChatView implements vscode.WebviewViewProvider {
         prompt,
         host_context: hostContext(editorContext),
         code_context: codeContext,
+        code_project_setup_authorized: codeProjectSetupAuthorized,
         provider: defaults.provider,
         response_depth_mode: defaults.response_depth_mode,
         reasoning_effort: defaults.reasoning_effort,

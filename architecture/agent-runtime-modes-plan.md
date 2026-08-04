@@ -1,6 +1,6 @@
 # Agent runtime modes
 
-> Status: Core modes, unbound Coder setup, and VS Code continuity complete; Neovim next
+> Status: Core modes, unbound Coder setup, and Home/VS Code/Neovim continuity complete
 > First modes: **General** and **Coder**
 
 ## Product decision
@@ -142,14 +142,17 @@ continues in the current mode rather than abandoning the request.
    durable accept/deny/expiry state, inline Home controls, and user-configurable
    proposal TTL plus `never`/`task`/`all` auto-accept policy. Applied changes
    begin on the next turn and never mutate a live turn contract.
-7. **Integration continuity** — preserve the daemon-owned conversation, mode,
+7. **Integration continuity (complete)** — preserve the daemon-owned conversation, mode,
    and Forge undertaking binding while moving between Home and native editor
-   surfaces. VS Code is the reference implementation; Neovim follows the same
-   contract without duplicating the runtime or filesystem authority.
-8. **Unbound Coder entry** — mode selection is independent from project
+   surfaces. VS Code and Neovim follow the same contract without duplicating
+   the runtime or filesystem authority. Neovim offers local worktree opening
+   only when the daemon path is actually mounted on the editor host.
+8. **Unbound Coder entry (complete)** — mode selection is independent from project
    authority. Chat can bind ready work, atomically initialize/provision/bind a
    blank project, or enter a restricted project-setup turn. Full coding tools
-   remain unavailable until the next immutable turn has Forge authority.
+   remain unavailable until the next immutable turn has Forge authority. A
+   choose/create surface action is carried as structured per-turn principal
+   authorization, separate from the persisted human prompt.
 
 ## First-slice acceptance criteria
 

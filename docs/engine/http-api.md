@@ -58,8 +58,16 @@ context is advisory and never grants filesystem or vault authority.
 independent of interactive/background ticket delivery. When omitted, the
 daemon checks the active task lease, then the session selection, then defaults
 to `general`. `coder` additionally requires an active Forge undertaking and
-its turn-scoped authority. Resolution is deterministic and does not require an
-additional model call.
+its turn-scoped authority for file, shell, and engineering tools; without a
+binding it enters the restricted project-setup phase. Resolution is
+deterministic and does not require an additional model call.
+
+`InteractiveTurnRequest.code_project_setup_authorized` (also accepted by
+`POST /v1/turns`) records that the principal explicitly selected a surface
+action allowing unbound Coder to choose, bind, or create a project. The daemon
+honors it only during Coder setup, projects it separately into runtime context,
+and keeps the persisted human prompt unchanged. Omit it or send `false` for
+ordinary turns.
 
 ### Registered client tools
 

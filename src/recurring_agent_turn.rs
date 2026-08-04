@@ -200,6 +200,7 @@ impl JobHandler for RecurringAgentTurnJobHandler {
             prompt: payload.user_prompt.clone(),
             agent_mode: None,
             code_context: None,
+            code_project_setup_authorized: false,
             persist_user_turn: false,
             response_depth_mode: payload
                 .response_depth_mode
