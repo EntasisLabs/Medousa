@@ -9,6 +9,11 @@
     SquareTerminal,
   } from "@lucide/svelte";
   import {
+    clearSessionCodeBinding,
+    getSessionCodeBinding,
+    setSessionAgentMode,
+  } from "$lib/daemon";
+  import {
     getUndertaking,
     humanExecutorLabel,
     humanPhaseGuidance,
@@ -26,6 +31,35 @@
   const active = $derived(undertakings.active);
   let busy = $state(false);
   let error = $state<string | null>(null);
+
+  async function hydrateSharedBinding(sessionId: string) {
+    if (!sessionId) return;
+    try {
+      const binding = await getSessionCodeBinding(sessionId);
+      if (chat.sessionId !== sessionId) return;
+      if (!binding.work_id) {
+        undertakings.detachChat(sessionId);
+        return;
+      }
+      if (undertakings.active?.workId === binding.work_id) {
+        undertakings.bindChat(sessionId);
+        return;
+      }
+      const item = await getUndertaking(binding.work_id);
+      if (chat.sessionId !== sessionId) return;
+      undertakings.setActiveFromItem(item);
+      undertakings.bindChat(sessionId);
+    } catch {
+      // The chat connection UI owns transport errors; hydrate opportunistically.
+    }
+  }
+
+  $effect(() => {
+    const sessionId = chat.sessionId;
+    void hydrateSharedBinding(sessionId);
+    const interval = window.setInterval(() => void hydrateSharedBinding(sessionId), 2_000);
+    return () => window.clearInterval(interval);
+  });
 
   function goDetail() {
     if (!active) return;
@@ -48,8 +82,20 @@
     }
   }
 
-  function detach() {
-    if (chat.sessionId) undertakings.detachChat(chat.sessionId);
+  async function detach() {
+    if (chat.sessionId) {
+      undertakings.detachChat(chat.sessionId);
+      try {
+        await setSessionAgentMode(chat.sessionId, "general");
+      } catch {
+        // Local detachment remains available while a workshop reconnects.
+      }
+      try {
+        await clearSessionCodeBinding(chat.sessionId);
+      } catch {
+        // Clearing the binding is independent from changing the active mode.
+      }
+    }
     undertakings.clearActive();
   }
 </script>
@@ -130,7 +176,7 @@
       {/if}
 
       <div class="my-1 border-t border-surface-500/25"></div>
-      <button type="button" class="context-action text-surface-400" onclick={detach}>
+      <button type="button" class="context-action text-surface-400" onclick={() => void detach()}>
         <Link2Off size={14} />
         Stop following this project
       </button>

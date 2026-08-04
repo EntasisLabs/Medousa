@@ -2,6 +2,7 @@
   import { haptic } from "$lib/haptics";
   import {
     decideSessionAgentModeProposal,
+    getSessionCodeBinding,
     listSessionAgentModeProposals,
   } from "$lib/daemon";
   import type { AgentModeProposalResponse } from "$lib/types/generated/daemon_api";
@@ -18,6 +19,7 @@
   let feedback = $state<string | null>(null);
   let now = $state(Date.now());
   let initialized = false;
+  let daemonCodeBindingAvailable = $state(false);
   const seenResolved = new Set<string>();
 
   const pending = $derived(
@@ -29,7 +31,7 @@
       : 0,
   );
   const acceptBlocked = $derived(
-    pending?.to_mode === "coder" && !coderContextAvailable,
+    pending?.to_mode === "coder" && !coderContextAvailable && !daemonCodeBindingAvailable,
   );
 
   async function refresh(expectedSessionId: string) {
@@ -38,9 +40,13 @@
       return;
     }
     try {
-      const response = await listSessionAgentModeProposals(expectedSessionId);
+      const [response, binding] = await Promise.all([
+        listSessionAgentModeProposals(expectedSessionId),
+        getSessionCodeBinding(expectedSessionId),
+      ]);
       if (expectedSessionId !== sessionId.trim()) return;
       proposals = response.proposals;
+      daemonCodeBindingAvailable = Boolean(binding.work_id);
       if (initialized) {
         const newlyApplied = response.proposals.some(
           (proposal) =>

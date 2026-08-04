@@ -12,7 +12,7 @@ use crate::daemon_api::{
     AgentModeAutoAccept, AgentModeId, AgentModeLeaseResponse, AgentModeProposalListResponse,
     AgentModeProposalResolution, AgentModeProposalResponse, AgentModeProposalStatus,
     AgentModeScope, AgentModeSource, AgentModeTransitionPolicy, SessionAgentModeResponse,
-    SetSessionAgentModeRequest,
+    SessionCodeBindingResponse, SetSessionAgentModeRequest,
 };
 
 const MAX_TRANSITIONS_PER_SESSION: usize = 100;
@@ -45,6 +45,10 @@ struct SessionModeState {
     transitions: Vec<ModeTransition>,
     #[serde(default)]
     proposals: Vec<ModeProposal>,
+    #[serde(default)]
+    bound_work_id: Option<String>,
+    #[serde(default)]
+    code_binding_updated_at_utc: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -228,6 +232,81 @@ pub fn set_session_mode(
 pub fn get_transition_policy() -> AgentModeTransitionPolicy {
     let _guard = MODE_STATE_LOCK.lock().unwrap();
     read_index().transition_policy
+}
+
+pub fn get_session_code_binding(session_id: &str) -> Result<SessionCodeBindingResponse, String> {
+    let session_id = session_id.trim();
+    if session_id.is_empty() {
+        return Err("session_id is required".to_string());
+    }
+    let _guard = MODE_STATE_LOCK.lock().unwrap();
+    let index = read_index();
+    let state = index.sessions.get(session_id);
+    Ok(SessionCodeBindingResponse {
+        session_id: session_id.to_string(),
+        work_id: state.and_then(|value| value.bound_work_id.clone()),
+        updated_at_utc: state.and_then(|value| value.code_binding_updated_at_utc),
+    })
+}
+
+pub fn set_session_code_binding(
+    session_id: &str,
+    work_id: &str,
+) -> Result<SessionCodeBindingResponse, String> {
+    let session_id = session_id.trim();
+    let work_id = work_id.trim();
+    if session_id.is_empty() || work_id.is_empty() {
+        return Err("session_id and work_id are required".to_string());
+    }
+    let _guard = MODE_STATE_LOCK.lock().unwrap();
+    let mut index = read_index();
+    let state = index.sessions.entry(session_id.to_string()).or_default();
+    if state.bound_work_id.as_deref() == Some(work_id) {
+        return Ok(SessionCodeBindingResponse {
+            session_id: session_id.to_string(),
+            work_id: state.bound_work_id.clone(),
+            updated_at_utc: state.code_binding_updated_at_utc,
+        });
+    }
+    let now = Utc::now();
+    state.bound_work_id = Some(work_id.to_string());
+    state.code_binding_updated_at_utc = Some(now);
+    state.revision = state.revision.saturating_add(1);
+    state.updated_at_utc = Some(now);
+    write_index(&index)?;
+    Ok(SessionCodeBindingResponse {
+        session_id: session_id.to_string(),
+        work_id: Some(work_id.to_string()),
+        updated_at_utc: Some(now),
+    })
+}
+
+pub fn clear_session_code_binding(session_id: &str) -> Result<SessionCodeBindingResponse, String> {
+    let session_id = session_id.trim();
+    if session_id.is_empty() {
+        return Err("session_id is required".to_string());
+    }
+    let _guard = MODE_STATE_LOCK.lock().unwrap();
+    let mut index = read_index();
+    let state = index.sessions.entry(session_id.to_string()).or_default();
+    if state.bound_work_id.is_none() {
+        return Ok(SessionCodeBindingResponse {
+            session_id: session_id.to_string(),
+            work_id: None,
+            updated_at_utc: state.code_binding_updated_at_utc,
+        });
+    }
+    let now = Utc::now();
+    state.bound_work_id = None;
+    state.code_binding_updated_at_utc = Some(now);
+    state.revision = state.revision.saturating_add(1);
+    state.updated_at_utc = Some(now);
+    write_index(&index)?;
+    Ok(SessionCodeBindingResponse {
+        session_id: session_id.to_string(),
+        work_id: None,
+        updated_at_utc: Some(now),
+    })
 }
 
 pub fn set_transition_policy(

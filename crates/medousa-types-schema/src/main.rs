@@ -47,6 +47,8 @@ fn main() {
     export_type!(schemas, AgentModeProposalResponse, "AgentModeProposalResponse");
     export_type!(schemas, AgentModeProposalListResponse, "AgentModeProposalListResponse");
     export_type!(schemas, DecideAgentModeProposalRequest, "DecideAgentModeProposalRequest");
+    export_type!(schemas, SessionCodeBindingResponse, "SessionCodeBindingResponse");
+    export_type!(schemas, SetSessionCodeBindingRequest, "SetSessionCodeBindingRequest");
     export_type!(schemas, SetSessionAgentModeRequest, "SetSessionAgentModeRequest");
     export_type!(schemas, SessionAgentModeResponse, "SessionAgentModeResponse");
     export_type!(schemas, AgentModeListResponse, "AgentModeListResponse");

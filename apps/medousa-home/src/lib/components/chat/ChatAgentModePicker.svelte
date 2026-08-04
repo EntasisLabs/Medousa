@@ -2,7 +2,12 @@
   import { tick } from "svelte";
   import { Check, ChevronDown, Code2, Sparkles } from "@lucide/svelte";
   import BodyPortal from "$lib/components/ui/BodyPortal.svelte";
-  import { getSessionAgentMode, listAgentModes, setSessionAgentMode } from "$lib/daemon";
+  import {
+    getSessionAgentMode,
+    getSessionCodeBinding,
+    listAgentModes,
+    setSessionAgentMode,
+  } from "$lib/daemon";
   import type { AgentModeId } from "$lib/types/session";
   import type { AgentModeAvailability } from "$lib/types/generated/daemon_api";
   import { attachComposerMenuDismiss } from "$lib/utils/composerMenuDismiss";
@@ -37,6 +42,7 @@
   let loading = $state(false);
   let error = $state<string | null>(null);
   let loadRevision = 0;
+  let daemonCodeBindingAvailable = $state(false);
   let triggerEl = $state<HTMLButtonElement | null>(null);
   let menuEl = $state<HTMLDivElement | null>(null);
 
@@ -44,13 +50,16 @@
   const label = $derived(active?.label ?? "General");
 
   function isAvailable(mode: AgentModeAvailability): boolean {
-    return mode.available && (mode.mode !== "coder" || coderContextAvailable);
+    return mode.available && (
+      mode.mode !== "coder" || coderContextAvailable || daemonCodeBindingAvailable
+    );
   }
 
   $effect(() => {
     const nextSessionId = sessionId.trim();
     const revision = ++loadRevision;
     value = "general";
+    daemonCodeBindingAvailable = false;
     error = null;
     if (!nextSessionId) return;
     void refresh(nextSessionId, revision);
@@ -69,13 +78,15 @@
 
   async function refresh(nextSessionId: string, revision: number) {
     try {
-      const [registry, state] = await Promise.all([
+      const [registry, state, binding] = await Promise.all([
         listAgentModes(),
         getSessionAgentMode(nextSessionId),
+        getSessionCodeBinding(nextSessionId),
       ]);
       if (revision !== loadRevision) return;
       modes = registry.modes.length > 0 ? registry.modes : FALLBACK_MODES;
       value = state.effective_mode;
+      daemonCodeBindingAvailable = Boolean(binding.work_id);
     } catch (err) {
       if (revision !== loadRevision) return;
       modes = FALLBACK_MODES;

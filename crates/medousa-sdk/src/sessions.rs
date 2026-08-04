@@ -2,6 +2,7 @@
 use medousa_types::{
     ActiveSessionTurnResponse, AgentModeProposalListResponse, AgentModeProposalResponse,
     AgentModeScope, CancelActiveSessionTurnResponse, DecideAgentModeProposalRequest,
+    SessionCodeBindingResponse, SetSessionCodeBindingRequest,
     SessionAgentModeResponse, SetSessionAgentModeRequest, SessionAppendTurnRequest,
     SessionAppendTurnResponse, SessionDeleteQuery, SessionDeleteResponse, SessionHistoryListResponse,
     SessionHistoryResponse, SessionSetDisplayNameRequest, SessionSetDisplayNameResponse,
@@ -135,6 +136,50 @@ impl SessionsApi<'_> {
             .client
             .transport()
             .put_json(self.client.base_url(), &path, body)
+            .await?;
+        decode(value).await
+    }
+
+    pub async fn code_binding(
+        &self,
+        session_id: &str,
+    ) -> Result<SessionCodeBindingResponse, crate::SdkError> {
+        let path = format!("/v1/sessions/{session_id}/code-binding");
+        let value = self
+            .client
+            .transport()
+            .get_json(self.client.base_url(), &path)
+            .await?;
+        decode(value).await
+    }
+
+    pub async fn set_code_binding(
+        &self,
+        session_id: &str,
+        work_id: &str,
+    ) -> Result<SessionCodeBindingResponse, crate::SdkError> {
+        let body = serde_json::to_value(SetSessionCodeBindingRequest {
+            work_id: work_id.to_string(),
+        })
+        .map_err(|e| crate::SdkError::Serde(e.to_string()))?;
+        let path = format!("/v1/sessions/{session_id}/code-binding");
+        let value = self
+            .client
+            .transport()
+            .put_json(self.client.base_url(), &path, body)
+            .await?;
+        decode(value).await
+    }
+
+    pub async fn clear_code_binding(
+        &self,
+        session_id: &str,
+    ) -> Result<SessionCodeBindingResponse, crate::SdkError> {
+        let path = format!("/v1/sessions/{session_id}/code-binding");
+        let value = self
+            .client
+            .transport()
+            .delete_json(self.client.base_url(), &path)
             .await?;
         decode(value).await
     }

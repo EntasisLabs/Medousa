@@ -2,10 +2,9 @@ use crate::daemon::types::{
     ActiveSessionTurnResponse, AgentModeId, AgentModeListResponse, AgentModeProposalListResponse,
     AgentModeProposalResponse, AgentModeScope, AgentModeTransitionPolicy,
     CancelActiveSessionTurnResponse, CodeIntentContext, MediaRef, SessionAgentModeResponse,
-    SessionDeleteQuery,
-    SessionDeleteResponse, SessionHistoryListResponse, SessionHistoryResponse,
-    SessionSetDisplayNameResponse, SetSessionAgentModeRequest, StageRoutingMatrix,
-    TurnSurfaceContext,
+    SessionCodeBindingResponse, SessionDeleteQuery, SessionDeleteResponse,
+    SessionHistoryListResponse, SessionHistoryResponse, SessionSetDisplayNameResponse,
+    SetSessionAgentModeRequest, StageRoutingMatrix, TurnSurfaceContext,
 };
 use serde::{Deserialize, Serialize};
 use tauri::State;
@@ -217,6 +216,43 @@ pub async fn session_decide_agent_mode_proposal(
     client(&state)
         .sessions()
         .decide_agent_mode_proposal(session_id.trim(), proposal_id.trim(), accept)
+        .await
+        .map_err(sdk_error)
+}
+
+#[tauri::command]
+pub async fn session_get_code_binding(
+    state: State<'_, DaemonState>,
+    session_id: String,
+) -> Result<SessionCodeBindingResponse, String> {
+    client(&state)
+        .sessions()
+        .code_binding(session_id.trim())
+        .await
+        .map_err(sdk_error)
+}
+
+#[tauri::command]
+pub async fn session_set_code_binding(
+    state: State<'_, DaemonState>,
+    session_id: String,
+    work_id: String,
+) -> Result<SessionCodeBindingResponse, String> {
+    client(&state)
+        .sessions()
+        .set_code_binding(session_id.trim(), work_id.trim())
+        .await
+        .map_err(sdk_error)
+}
+
+#[tauri::command]
+pub async fn session_clear_code_binding(
+    state: State<'_, DaemonState>,
+    session_id: String,
+) -> Result<SessionCodeBindingResponse, String> {
+    client(&state)
+        .sessions()
+        .clear_code_binding(session_id.trim())
         .await
         .map_err(sdk_error)
 }

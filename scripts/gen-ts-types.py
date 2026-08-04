@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate TypeScript interfaces from sdk-contract/medousa-types.schema.json for Medousa Home."""
+"""Generate the TypeScript daemon contract used by Medousa surfaces."""
 
 from __future__ import annotations
 
@@ -13,9 +13,9 @@ ROOT = Path(__file__).resolve().parent.parent
 SCHEMA = ROOT / "sdk-contract" / "medousa-types.schema.json"
 OUT = ROOT / "apps" / "medousa-home" / "src" / "lib" / "types" / "generated" / "daemon_api.ts"
 
-# Stream + session types Home relies on for SSE replay contract parity.
+# Stream + session types TypeScript surfaces rely on for contract parity.
 # Nested $ref targets (MediaRef, ContextUsageReport, …) are resolved automatically.
-HOME_TYPES = [
+EXPORTED_TYPES = [
     "InteractiveTurnStreamEvent",
     "InteractiveTurnResponse",
     "InteractiveTurnRequest",
@@ -25,6 +25,7 @@ HOME_TYPES = [
     "AgentModeTransitionPolicy",
     "AgentModeProposalListResponse",
     "AgentModeProposalResponse",
+    "SessionCodeBindingResponse",
     "TurnTicketRecord",
 ]
 
@@ -179,7 +180,7 @@ def main() -> int:
             enqueue(ref)
         needed.append(name)
 
-    for name in HOME_TYPES:
+    for name in EXPORTED_TYPES:
         enqueue(name)
 
     output = args.output if args.output.is_absolute() else ROOT / args.output

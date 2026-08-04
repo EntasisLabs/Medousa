@@ -2,7 +2,7 @@
 use medousa_types::{
     ActiveSessionTurnResponse, AgentModeListResponse, AgentModeProposalListResponse,
     AgentModeProposalResponse, AgentModeScope, AgentModeTransitionPolicy, ArchiveAskJobRequest,
-    ArchiveAskJobResponse,
+    ArchiveAskJobResponse, SessionCodeBindingResponse, SetSessionCodeBindingRequest,
     ArtifactCommandRequest, ArtifactCommandResponse, ArtifactDeleteRequest, ArtifactDeleteResponse,
     ArtifactFetchRequest, ArtifactFetchResponse, ArtifactListUiRequest, ArtifactListUiResponse,
     ArtifactWriteRequest, ArtifactWriteResponse, AskJobCompleteActionsRequest,
@@ -499,6 +499,32 @@ impl BlockingSessionsApi<'_> {
             ),
             &DecideAgentModeProposalRequest { accept },
         )
+    }
+
+    pub fn code_binding(&self, session_id: &str) -> Result<SessionCodeBindingResponse, SdkError> {
+        self.http
+            .get(&format!("/v1/sessions/{session_id}/code-binding"))
+    }
+
+    pub fn set_code_binding(
+        &self,
+        session_id: &str,
+        work_id: &str,
+    ) -> Result<SessionCodeBindingResponse, SdkError> {
+        self.http.put(
+            &format!("/v1/sessions/{session_id}/code-binding"),
+            &SetSessionCodeBindingRequest {
+                work_id: work_id.to_string(),
+            },
+        )
+    }
+
+    pub fn clear_code_binding(
+        &self,
+        session_id: &str,
+    ) -> Result<SessionCodeBindingResponse, SdkError> {
+        self.http
+            .delete(&format!("/v1/sessions/{session_id}/code-binding"))
     }
 
     pub fn append_turn(

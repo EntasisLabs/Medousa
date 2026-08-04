@@ -23,6 +23,17 @@ describe("VS Code chat webview", () => {
     expect(html).toContain('id="prompt"');
     expect(html).toContain('id="send"');
     expect(html).toContain(".empty[hidden] { display: none; }");
+    expect(html).toContain('id="mode-button"');
+    expect(html).toContain('id="work-button"');
+  });
+
+  it("supports shared runtime state and mode proposals", () => {
+    expect(html).toContain('message.type === "runtimeState"');
+    expect(html).toContain('message.type === "modeProposal"');
+    expect(html).toContain('type: "selectUndertaking"');
+    expect(html).toContain('["Switch", "Not now"]');
+    expect(html).toContain("function clearModeProposal()");
+    expect(html).toContain("setInterval(updateCopy, 1_000)");
   });
 
   it("contains conversation history, naming, and reply actions", () => {

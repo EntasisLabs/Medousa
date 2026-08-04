@@ -101,6 +101,9 @@ this generic HTTP client rather than a dedicated typed SDK accessor. See the
 | `clear_agent_mode(session_id, scope)` | `DELETE /v1/sessions/{id}/agent-mode` | Clear a session selection or task lease |
 | `agent_mode_proposals(session_id)` | `GET /v1/sessions/{id}/agent-mode/proposals` | List pending and resolved mode suggestions |
 | `decide_agent_mode_proposal(session_id, proposal_id, accept)` | `PUT /v1/sessions/{id}/agent-mode/proposals/{proposal_id}` | Accept or deny a pending suggestion |
+| `code_binding(session_id)` | `GET /v1/sessions/{id}/code-binding` | Read the conversation's shared Forge undertaking |
+| `set_code_binding(session_id, work_id)` | `PUT /v1/sessions/{id}/code-binding` | Bind Home and editor surfaces to the same undertaking |
+| `clear_code_binding(session_id)` | `DELETE /v1/sessions/{id}/code-binding` | Remove the shared undertaking binding |
 | `append_turn(session_id, request)` | `POST /v1/sessions/{id}/turns` | `SessionAppendTurnRequest` |
 | `delete(session_id)` | `DELETE /v1/sessions/{id}` | `SessionDeleteResponse` |
 | `list_turns(session_id)` | `GET /v1/sessions/{id}/turns` | `SessionHistoryResponse` |

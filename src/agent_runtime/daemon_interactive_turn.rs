@@ -1014,6 +1014,15 @@ async fn run_agent_turn_inner(
             return;
         }
     };
+    let mut resolved_code_context = request.code_context.clone().unwrap_or_default();
+    if resolved_code_context
+        .work_id
+        .as_deref()
+        .is_none_or(|value| value.trim().is_empty())
+        && let Ok(binding) = crate::agent_mode_state::get_session_code_binding(&session_id)
+    {
+        resolved_code_context.work_id = binding.work_id;
+    }
     let (coder_authority, coder_registry, mode_context_appendix, tool_registry_override) =
         if agent_mode.id == crate::daemon_api::AgentModeId::Coder {
             let Some(forge) = forge else {
@@ -1024,21 +1033,32 @@ async fn run_agent_turn_inner(
                 .await;
                 return;
             };
-            let Some(code_context) = request.code_context.as_ref() else {
+            if resolved_code_context.work_id.is_none() {
                 sink.agent_error(
                     1,
                     "Coder mode requires an active Forge undertaking".to_string(),
                 )
                 .await;
                 return;
-            };
-            let entry = match super::coder_mode::compile_coder_entry(&forge, code_context) {
+            }
+            let entry = match super::coder_mode::compile_coder_entry(&forge, &resolved_code_context)
+            {
                 Ok(entry) => Arc::new(entry),
                 Err(err) => {
                     sink.agent_error(1, err.to_string()).await;
                     return;
                 }
             };
+            if let Err(err) =
+                crate::agent_mode_state::set_session_code_binding(&session_id, &entry.work_id)
+            {
+                sink.agent_error(
+                    1,
+                    format!("cannot preserve Coder undertaking binding: {err}"),
+                )
+                .await;
+                return;
+            }
             let work_id = medousa_forge::model::WorkId::from(entry.work_id.clone());
             let executor = medousa_forge::model::ExecutorDescriptor {
                 kind: "medousa-coder".into(),

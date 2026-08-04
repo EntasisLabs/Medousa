@@ -7,6 +7,7 @@ import { shellTabs } from "$lib/stores/shellTabs.svelte";
 import { chat } from "$lib/stores/chat.svelte";
 import {
   cancelAgentSession,
+  setSessionCodeBinding,
   createAgentSession,
   type CodeIntentContext,
 } from "$lib/daemon";
@@ -132,6 +133,7 @@ export async function startTrackedAgent(
   setSessionAgentSessionId(sessionId, accepted.agent_session_id);
   undertakings.setActiveFromItem(item, { executorKind: runtime });
   undertakings.bindChat(sessionId);
+  await setSessionCodeBinding(sessionId, item.id);
   shellTabs.openChat(sessionId, { activate: true });
   if (options?.draft?.trim()) {
     chat.prefillDraft(options.draft.trim());

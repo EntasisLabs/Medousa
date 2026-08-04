@@ -7,12 +7,17 @@ import {
   MedousaClient,
   MedousaHttpError,
   type Diagnostic,
+  type AgentModeAvailability,
+  type AgentModeId,
+  type AgentModeProposalResponse,
+  type ForgeUndertaking,
   type InteractiveTurnRequest,
   type MedousaContext,
   type SessionHistoryResponse,
   type SessionSummary,
 } from "@medousa/client";
 import { chatHtml, createNonce } from "./chatHtml.js";
+import { buildCodeIntentContext } from "./coderContext.js";
 import {
   createProjectionState,
   projectStreamEvent,
@@ -43,6 +48,8 @@ export function activate(context: vscode.ExtensionContext): void {
       await chat.refresh();
     }),
     vscode.commands.registerCommand("medousa.newConversation", () => chat.newSession()),
+    vscode.commands.registerCommand("medousa.selectMode", () => chat.selectMode()),
+    vscode.commands.registerCommand("medousa.bindUndertaking", () => chat.selectUndertaking()),
     vscode.window.onDidChangeActiveTextEditor(() => chat.refreshContext()),
     vscode.window.onDidChangeTextEditorSelection(() => chat.refreshContext()),
     vscode.languages.onDidChangeDiagnostics(() => chat.refreshContext()),
@@ -61,6 +68,15 @@ class MedousaChatView implements vscode.WebviewViewProvider {
   private pendingWorkshopRefreshSession: string | null = null;
   private disabledContext = new Set<string>();
   private lastPrompt: string | null = null;
+  private modes: AgentModeAvailability[] = [];
+  private activeMode: AgentModeId = "general";
+  private undertakings: ForgeUndertaking[] = [];
+  private boundWorkId: string | null = null;
+  private boundUndertaking: ForgeUndertaking | null = null;
+  private modePoll: ReturnType<typeof setInterval> | null = null;
+  private runtimeRefreshInFlight = false;
+  private lastProposalId: string | null = null;
+  private pendingProposal: AgentModeProposalResponse | null = null;
 
   constructor(private readonly context: vscode.ExtensionContext) {}
 
@@ -83,10 +99,22 @@ class MedousaChatView implements vscode.WebviewViewProvider {
     this.abortController?.abort();
     for (const watcher of this.workshopWatchers.values()) watcher.abort();
     this.workshopWatchers.clear();
+    if (this.modePoll) clearInterval(this.modePoll);
   }
 
   async refresh(): Promise<void> {
     if (!this.view) return;
+    if (this.modePoll) {
+      clearInterval(this.modePoll);
+      this.modePoll = null;
+    }
+    this.modes = [];
+    this.undertakings = [];
+    this.boundWorkId = null;
+    this.boundUndertaking = null;
+    this.activeMode = "general";
+    this.lastProposalId = null;
+    this.pendingProposal = null;
     this.post({ type: "connection", state: "checking", label: "Checking workshop…" });
     try {
       this.client = await createClient(this.context);
@@ -96,11 +124,91 @@ class MedousaChatView implements vscode.WebviewViewProvider {
       await this.refreshSessions();
       this.post({ type: "connection", state: "connected", label: endpointLabel() });
       this.refreshContext();
+      await this.refreshRuntimeState();
+      this.startRuntimePolling();
     } catch (error) {
       this.client = null;
       this.sessionId = null;
+      this.boundWorkId = null;
+      this.boundUndertaking = null;
       this.post({ type: "connection", state: connectionState(error), label: friendlyConnectionError(error) });
     }
+  }
+
+  private startRuntimePolling(): void {
+    if (this.modePoll) clearInterval(this.modePoll);
+    this.modePoll = setInterval(() => {
+      if (!this.abortController) void this.refreshRuntimeState();
+    }, 2_000);
+  }
+
+  private async refreshRuntimeState(): Promise<void> {
+    if (this.runtimeRefreshInFlight) return;
+    const client = this.client;
+    const sessionId = this.sessionId;
+    if (!client || !sessionId) return;
+    this.runtimeRefreshInFlight = true;
+    try {
+      const [mode, binding, proposals, registry] = await Promise.all([
+        client.sessionAgentMode(sessionId),
+        client.sessionCodeBinding(sessionId),
+        client.agentModeProposals(sessionId),
+        this.modes.length ? Promise.resolve(null) : client.agentModes(),
+      ]);
+      if (client !== this.client || sessionId !== this.sessionId) return;
+      let undertaking: ForgeUndertaking | null = null;
+      if (binding.work_id) {
+        try {
+          undertaking = await client.forgeUndertaking(binding.work_id);
+        } catch {
+          // Preserve the binding in the UI, but require a valid ready item for Coder.
+        }
+      }
+      if (client !== this.client || sessionId !== this.sessionId) return;
+      if (registry) this.modes = registry.modes;
+      this.activeMode = mode.effective_mode;
+      this.boundWorkId = binding.work_id ?? null;
+      this.boundUndertaking = undertaking;
+      this.postRuntimeState();
+      const pending = proposals.proposals.find((proposal) => proposal.status === "pending") ?? null;
+      this.postProposal(pending);
+    } catch {
+      // Conversation and stream connectivity own the primary error state.
+    } finally {
+      this.runtimeRefreshInFlight = false;
+    }
+  }
+
+  private postRuntimeState(): void {
+    this.post({
+      type: "runtimeState",
+      mode: this.activeMode,
+      modeLabel: this.modes.find((mode) => mode.mode === this.activeMode)?.label
+        ?? (this.activeMode === "coder" ? "Coder" : "General"),
+      workId: this.boundWorkId,
+      workTitle: this.boundUndertaking?.title ?? this.boundWorkId,
+      coderReady: this.boundUndertaking?.state.toLowerCase() === "ready"
+        && Boolean(this.boundUndertaking.environment?.worktree),
+    });
+  }
+
+  private postProposal(proposal: AgentModeProposalResponse | null): void {
+    if (!proposal) {
+      if (this.lastProposalId) this.post({ type: "proposalClear" });
+      this.lastProposalId = null;
+      this.pendingProposal = null;
+      return;
+    }
+    this.pendingProposal = proposal;
+    if (proposal.proposal_id === this.lastProposalId) return;
+    this.lastProposalId = proposal.proposal_id;
+    this.post({
+      type: "modeProposal",
+      proposalId: proposal.proposal_id,
+      toMode: proposal.to_mode,
+      reason: proposal.reason,
+      expiresAt: proposal.expires_at_utc,
+    });
   }
 
   refreshContext(): void {
@@ -112,6 +220,104 @@ class MedousaChatView implements vscode.WebviewViewProvider {
       suggestions: contextSuggestions(editor, this.disabledContext),
       canReset: this.disabledContext.size > 0,
     });
+  }
+
+  async selectMode(): Promise<void> {
+    if (!this.client || !this.sessionId) await this.refresh();
+    const client = this.client;
+    const sessionId = this.sessionId;
+    if (!client || !sessionId) return;
+    if (!this.modes.length) await this.refreshRuntimeState();
+    const picked = await vscode.window.showQuickPick(
+      this.modes.map((mode) => ({
+        label: mode.mode === "coder" ? "$(code) Coder" : "$(sparkle) General",
+        description: mode.mode === this.activeMode ? "Active" : undefined,
+        detail: mode.available
+          ? mode.mode === "coder"
+            ? "Repository-aware engineering in a governed Forge worktree"
+            : "Life, planning, research, and everyday work"
+          : mode.unavailable_reason ?? "Unavailable",
+        mode,
+      })),
+      { placeHolder: "How should Medousa work in this conversation?" },
+    );
+    if (!picked || !picked.mode.available) return;
+    if (picked.mode.mode === "coder" && !(await this.ensureCoderBinding())) return;
+    await client.setSessionAgentMode(sessionId, picked.mode.mode);
+    await this.refreshRuntimeState();
+  }
+
+  async selectUndertaking(): Promise<boolean> {
+    if (!this.client || !this.sessionId) await this.refresh();
+    const client = this.client;
+    const sessionId = this.sessionId;
+    if (!client || !sessionId) return false;
+    this.undertakings = await client.forgeUndertakings();
+    const ready = this.undertakings.filter(
+      (item) => item.state.toLowerCase() === "ready" && Boolean(item.environment?.worktree),
+    );
+    const choices = [
+      ...ready.map((item) => ({
+        label: `$(repo) ${item.title}`,
+        description: item.id === this.boundUndertaking?.id ? "Bound" : item.human_phase,
+        detail: item.brief,
+        item,
+      })),
+      ...(this.boundUndertaking ? [{
+        label: "$(close) Stop following this undertaking",
+        description: "Return this conversation to an unbound state",
+        detail: "Coder mode will be changed to General first.",
+        item: null,
+      }] : []),
+    ];
+    if (!choices.length) {
+      const action = await vscode.window.showInformationMessage(
+        "No ready Forge undertakings are available on this workshop.",
+        "Open Medousa",
+      );
+      if (action === "Open Medousa") await vscode.env.openExternal(vscode.Uri.parse("medousa://work"));
+      return false;
+    }
+    const picked = await vscode.window.showQuickPick(choices, {
+      placeHolder: "Choose the governed project for this conversation",
+    });
+    if (!picked) return false;
+    if (!picked.item) {
+      if (this.activeMode === "coder") await client.setSessionAgentMode(sessionId, "general");
+      await client.clearSessionCodeBinding(sessionId);
+      this.boundWorkId = null;
+      this.boundUndertaking = null;
+      await this.refreshRuntimeState();
+      return false;
+    }
+    await client.setSessionCodeBinding(sessionId, picked.item.id);
+    this.boundWorkId = picked.item.id;
+    this.boundUndertaking = picked.item;
+    this.postRuntimeState();
+    await this.offerOpenWorktree(picked.item);
+    return true;
+  }
+
+  private async ensureCoderBinding(): Promise<boolean> {
+    if (
+      this.boundUndertaking?.state.toLowerCase() === "ready"
+      && this.boundUndertaking.environment?.worktree
+    ) return true;
+    return this.selectUndertaking();
+  }
+
+  private async offerOpenWorktree(undertaking: ForgeUndertaking): Promise<void> {
+    const worktree = undertaking.environment?.worktree;
+    if (!worktree || !isLocalEndpoint()) return;
+    const folders = vscode.workspace.workspaceFolders ?? [];
+    if (folders.some((folder) => path.resolve(folder.uri.fsPath) === path.resolve(worktree))) return;
+    const action = await vscode.window.showInformationMessage(
+      `“${undertaking.title}” is bound. Open its governed worktree so Coder edits appear directly in VS Code?`,
+      "Open Worktree",
+    );
+    if (action === "Open Worktree") {
+      await vscode.commands.executeCommand("vscode.openFolder", vscode.Uri.file(worktree), false);
+    }
   }
 
   async sendPrompt(prompt: string, echoUser = false): Promise<void> {
@@ -130,15 +336,29 @@ class MedousaChatView implements vscode.WebviewViewProvider {
       return;
     }
 
+    if (this.activeMode === "coder" && !(await this.ensureCoderBinding())) {
+      this.post({ type: "error", text: "Coder needs a ready Forge undertaking. Bind one and try again." });
+      this.post({ type: "busy", value: false });
+      return;
+    }
+
     this.abortController = new AbortController();
     try {
       const defaults = await client.runtimeDefaults({ signal: this.abortController.signal });
       const editorContext = currentContext(vscode.window.activeTextEditor, this.disabledContext);
+      const codeContext = this.boundUndertaking
+        ? buildCodeIntentContext(
+            editorContext,
+            this.boundUndertaking,
+            vscode.window.visibleTextEditors.map((editor) => editor.document.uri.fsPath),
+          )
+        : undefined;
       const request: InteractiveTurnRequest = {
         model: defaults.model,
         persist_user_turn: true,
         prompt,
         host_context: hostContext(editorContext),
+        code_context: codeContext,
         provider: defaults.provider,
         response_depth_mode: defaults.response_depth_mode,
         reasoning_effort: defaults.reasoning_effort,
@@ -178,6 +398,7 @@ class MedousaChatView implements vscode.WebviewViewProvider {
         });
       }
       await this.refreshSessions();
+      await this.refreshRuntimeState();
       this.post({ type: "connection", state: "connected", label: endpointLabel() });
     } catch (error) {
       if (this.abortController.signal.aborted) {
@@ -314,6 +535,7 @@ class MedousaChatView implements vscode.WebviewViewProvider {
       this.post({ type: "reset", sessionId: created.session_id });
       await this.refreshSessions();
       this.refreshContext();
+      await this.refreshRuntimeState();
     } catch (error) {
       this.post({ type: "error", text: errorMessage(error) });
     }
@@ -342,6 +564,7 @@ class MedousaChatView implements vscode.WebviewViewProvider {
       turns: history.turns,
     });
     await this.refreshSessions();
+    await this.refreshRuntimeState();
   }
 
   private async renameSession(sessionId: string, displayName: string): Promise<void> {
@@ -469,6 +692,33 @@ class MedousaChatView implements vscode.WebviewViewProvider {
       case "openHome":
         await vscode.env.openExternal(vscode.Uri.parse("medousa://chat"));
         break;
+      case "selectMode":
+        await this.selectMode();
+        break;
+      case "selectUndertaking":
+        await this.selectUndertaking();
+        break;
+      case "modeProposal":
+        if (this.client && this.sessionId && message.requestId) {
+          const proposal = this.pendingProposal?.proposal_id === message.requestId
+            ? this.pendingProposal
+            : null;
+          if (!proposal) break;
+          if (message.approve && proposal.to_mode === "coder" && !(await this.ensureCoderBinding())) {
+            this.post({ type: "toast", text: "Choose an undertaking before entering Coder" });
+            break;
+          }
+          await this.client.decideAgentModeProposal(
+            this.sessionId,
+            message.requestId,
+            Boolean(message.approve),
+          );
+          this.lastProposalId = null;
+          this.pendingProposal = null;
+          this.post({ type: "proposalClear" });
+          await this.refreshRuntimeState();
+        }
+        break;
       case "removeContext":
         if (message.key) this.disabledContext.add(message.key);
         this.refreshContext();
@@ -574,6 +824,10 @@ function currentContext(editor: vscode.TextEditor | undefined, disabled: Set<str
     workspace: disabled.has("workspace") ? undefined : vscode.workspace.workspaceFile?.fsPath ?? vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
     file: disabled.has("file") ? undefined : document.uri.fsPath,
     language: disabled.has("file") ? undefined : document.languageId,
+    cursor: disabled.has("file") ? undefined : {
+      line: selection.active.line,
+      character: selection.active.character,
+    },
     selection: disabled.has("selection") || selection.isEmpty ? undefined : {
       text: document.getText(selection),
       start: { line: selection.start.line, character: selection.start.character },
@@ -638,6 +892,16 @@ function showEngineDetails(): boolean {
   return vscode.workspace.getConfiguration("medousa").get<boolean>("showEngineDetails", false);
 }
 
+function isLocalEndpoint(): boolean {
+  const endpoint = vscode.workspace.getConfiguration("medousa").get<string>("endpoint", "http://127.0.0.1:7419");
+  try {
+    const host = new URL(endpoint).hostname.toLowerCase();
+    return host === "127.0.0.1" || host === "localhost" || host === "::1";
+  } catch {
+    return false;
+  }
+}
+
 function connectionState(error: unknown): "unauthorized" | "unavailable" {
   return error instanceof MedousaHttpError && (error.status === 401 || error.status === 403) ? "unauthorized" : "unavailable";
 }
@@ -690,6 +954,9 @@ type OutboundMessage =
   | { type: "toolStarted"; runId: string; name: string; summary?: string }
   | { type: "toolFinished"; runId: string; name: string; status: string; summary?: string }
   | { type: "attention"; kind: "budget" | "permission"; requestId: string; text: string; rounds?: number }
+  | { type: "runtimeState"; mode: AgentModeId; modeLabel: string; workId: string | null; workTitle: string | null; coderReady: boolean }
+  | { type: "modeProposal"; proposalId: string; toMode: AgentModeId; reason: string; expiresAt: string }
+  | { type: "proposalClear" }
   | { type: "error"; text: string }
   | { type: "done" }
   | { type: "busy"; value: boolean }
@@ -704,7 +971,7 @@ type OutboundMessage =
   | { type: "reset"; sessionId: string };
 
 type InboundMessage = {
-  type: "ready" | "send" | "cancel" | "configure" | "newSession" | "openSessions" | "switchSession" | "renameSession" | "deleteSession" | "copyText" | "shareText" | "saveToLibrary" | "retry" | "openHome" | "removeContext" | "resetContext" | "insertCode" | "openLink" | "budget" | "permission";
+  type: "ready" | "send" | "cancel" | "configure" | "newSession" | "openSessions" | "switchSession" | "renameSession" | "deleteSession" | "copyText" | "shareText" | "saveToLibrary" | "retry" | "openHome" | "selectMode" | "selectUndertaking" | "modeProposal" | "removeContext" | "resetContext" | "insertCode" | "openLink" | "budget" | "permission";
   text?: string;
   userText?: string;
   sessionId?: string;
@@ -713,11 +980,12 @@ type InboundMessage = {
   requestId?: string;
   approve?: boolean;
   rounds?: number;
+  toMode?: AgentModeId;
 };
 
 function isInboundMessage(value: unknown): value is InboundMessage {
   return Boolean(value && typeof value === "object" && "type" in value && [
-    "ready", "send", "cancel", "configure", "newSession", "openSessions", "switchSession", "renameSession", "deleteSession", "copyText", "shareText", "saveToLibrary", "retry", "openHome", "removeContext", "resetContext", "insertCode", "openLink", "budget", "permission",
+    "ready", "send", "cancel", "configure", "newSession", "openSessions", "switchSession", "renameSession", "deleteSession", "copyText", "shareText", "saveToLibrary", "retry", "openHome", "selectMode", "selectUndertaking", "modeProposal", "removeContext", "resetContext", "insertCode", "openLink", "budget", "permission",
   ].includes(String(value.type)));
 }
 

@@ -130,6 +130,12 @@ pane: the current buffer, visual selection, and diagnostics are supplied as
 bounded context; replies stream with recovery; and code application is always
 an explicit confirmed action.
 
+Mode continuity is daemon-owned. A conversation carries the same General or
+Coder selection and Forge undertaking binding in Home, VS Code, and future
+Neovim support. Host adapters contribute bounded editor observations; they do
+not create a parallel agent, infer filesystem authority from an editor path,
+or fork the conversation when the user changes surfaces.
+
 ## Target architecture
 
 ```mermaid

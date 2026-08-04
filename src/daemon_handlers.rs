@@ -10,7 +10,8 @@ use crate::daemon_api::{
     AgentModeListResponse, AgentModeProposalListResponse, AgentModeProposalResponse, AgentModeScope,
     AgentModeTransitionPolicy, CreateSessionRequest, CreateSessionResponse,
     DecideAgentModeProposalRequest, SessionAgentModeResponse,
-    SetSessionAgentModeRequest, SessionAppendTurnRequest,
+    SessionCodeBindingResponse, SetSessionAgentModeRequest, SetSessionCodeBindingRequest,
+    SessionAppendTurnRequest,
     SessionAppendTurnResponse, SessionDeleteQuery, SessionDeleteResponse, SessionHistoryListRequest,
     SessionHistoryListResponse, SessionHistoryResponse, SessionSetDisplayNameRequest,
     SessionSetDisplayNameResponse,
@@ -219,6 +220,40 @@ pub async fn clear_session_agent_mode(
     Query(query): Query<ClearSessionAgentModeQuery>,
 ) -> Result<Json<SessionAgentModeResponse>, (StatusCode, String)> {
     crate::agent_mode_state::clear_session_mode(&session_id, query.scope)
+        .map(Json)
+        .map_err(|err| (StatusCode::BAD_REQUEST, err))
+}
+
+pub async fn get_session_code_binding(
+    AxumPath(session_id): AxumPath<String>,
+) -> Result<Json<SessionCodeBindingResponse>, (StatusCode, String)> {
+    crate::agent_mode_state::get_session_code_binding(&session_id)
+        .map(Json)
+        .map_err(|err| (StatusCode::BAD_REQUEST, err))
+}
+
+pub async fn set_session_code_binding(
+    State(state): State<crate::daemon::state::AppState>,
+    AxumPath(session_id): AxumPath<String>,
+    Json(request): Json<SetSessionCodeBindingRequest>,
+) -> Result<Json<SessionCodeBindingResponse>, (StatusCode, String)> {
+    let work_id = request.work_id.trim();
+    if work_id.is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "work_id is required".to_string()));
+    }
+    state
+        .forge
+        .load(&medousa_forge::model::WorkId::from(work_id.to_string()))
+        .map_err(|err| (StatusCode::BAD_REQUEST, format!("cannot bind undertaking: {err}")))?;
+    crate::agent_mode_state::set_session_code_binding(&session_id, work_id)
+        .map(Json)
+        .map_err(|err| (StatusCode::BAD_REQUEST, err))
+}
+
+pub async fn clear_session_code_binding(
+    AxumPath(session_id): AxumPath<String>,
+) -> Result<Json<SessionCodeBindingResponse>, (StatusCode, String)> {
+    crate::agent_mode_state::clear_session_code_binding(&session_id)
         .map(Json)
         .map_err(|err| (StatusCode::BAD_REQUEST, err))
 }

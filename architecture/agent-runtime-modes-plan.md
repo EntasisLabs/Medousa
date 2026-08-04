@@ -1,6 +1,6 @@
 # Agent runtime modes
 
-> Status: Coder tools complete; agent-proposed transitions next
+> Status: Core mode roadmap and VS Code continuity bridge complete; Neovim next
 > First modes: **General** and **Coder**
 
 ## Product decision
@@ -142,6 +142,10 @@ continues in the current mode rather than abandoning the request.
    durable accept/deny/expiry state, inline Home controls, and user-configurable
    proposal TTL plus `never`/`task`/`all` auto-accept policy. Applied changes
    begin on the next turn and never mutate a live turn contract.
+7. **Integration continuity** — preserve the daemon-owned conversation, mode,
+   and Forge undertaking binding while moving between Home and native editor
+   surfaces. VS Code is the reference implementation; Neovim follows the same
+   contract without duplicating the runtime or filesystem authority.
 
 ## First-slice acceptance criteria
 

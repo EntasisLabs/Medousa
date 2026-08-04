@@ -268,6 +268,12 @@ export interface AgentModeProposalListResponse {
   proposals: AgentModeProposalResponse[];
 }
 
+export interface SessionCodeBindingResponse {
+  session_id: string;
+  updated_at_utc?: string | null;
+  work_id?: string | null;
+}
+
 export type TurnTicketMode = "interactive" | "background";
 
 export type TurnTicketPhase = "accepted" | "streaming" | "worker_handoff" | "workshop_handoff" | "budget_blocked" | "done" | "error" | "cancelled";

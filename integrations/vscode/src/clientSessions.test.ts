@@ -56,4 +56,37 @@ describe("Medousa session client", () => {
     expect(request?.init?.method).toBe("POST");
     expect(request?.init?.body).toContain('"semantic_tags":["chat-turn"]');
   });
+
+  it("shares mode and Forge binding through daemon-owned session endpoints", async () => {
+    const requests: Array<{ url: string; init?: RequestInit }> = [];
+    const client = new MedousaClient({
+      baseUrl: "http://127.0.0.1:7419",
+      fetch: async (input, init) => {
+        requests.push({ url: String(input), init });
+        return Response.json({
+          session_id: "session/one",
+          effective_mode: "coder",
+          effective_source: "session",
+          revision: 2,
+          work_id: "work-1",
+        });
+      },
+    });
+
+    await client.setSessionCodeBinding("session/one", "work-1");
+    await client.setSessionAgentMode("session/one", "coder");
+    await client.decideAgentModeProposal("session/one", "proposal/one", true);
+
+    expect(requests.map((request) => request.url)).toEqual([
+      "http://127.0.0.1:7419/v1/sessions/session%2Fone/code-binding",
+      "http://127.0.0.1:7419/v1/sessions/session%2Fone/agent-mode",
+      "http://127.0.0.1:7419/v1/sessions/session%2Fone/agent-mode/proposals/proposal%2Fone",
+    ]);
+    expect(requests[0]?.init?.body).toBe(JSON.stringify({ work_id: "work-1" }));
+    expect(requests[1]?.init?.body).toBe(JSON.stringify({
+      mode: "coder",
+      scope: "session",
+    }));
+    expect(requests[2]?.init?.body).toBe(JSON.stringify({ accept: true }));
+  });
 });

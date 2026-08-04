@@ -85,6 +85,9 @@ for the protocol and surface-scoping rules.
 | DELETE | `/v1/sessions/{session_id}/agent-mode?scope=session\|task` | Clear selection or lease | `sessions().clear_agent_mode` |
 | GET | `/v1/sessions/{session_id}/agent-mode/proposals` | `AgentModeProposalListResponse` | `sessions().agent_mode_proposals` |
 | PUT | `/v1/sessions/{session_id}/agent-mode/proposals/{proposal_id}` | `DecideAgentModeProposalRequest` | `sessions().decide_agent_mode_proposal` |
+| GET | `/v1/sessions/{session_id}/code-binding` | Shared Forge undertaking binding | `sessions().code_binding` |
+| PUT | `/v1/sessions/{session_id}/code-binding` | `SetSessionCodeBindingRequest` | `sessions().set_code_binding` |
+| DELETE | `/v1/sessions/{session_id}/code-binding` | Clear shared undertaking binding | `sessions().clear_code_binding` |
 | DELETE | `/v1/sessions/{session_id}` | — | `http().delete` |
 | POST | `/v1/sessions/{session_id}/turns` | `SessionAppendTurnRequest` | `sessions().append_turn` |
 | GET | `/v1/sessions/{session_id}/turns` | turn list | `http().get` |

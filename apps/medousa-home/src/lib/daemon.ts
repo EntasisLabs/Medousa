@@ -22,6 +22,7 @@ import type {
   AgentModeProposalResponse,
   AgentModeTransitionPolicy,
   SessionAgentModeResponse,
+  SessionCodeBindingResponse,
 } from "$lib/types/generated/daemon_api";
 import type { ArtifactCommandResponse } from "$lib/types/artifact";
 import type {
@@ -292,6 +293,25 @@ export async function decideSessionAgentModeProposal(
     proposalId,
     accept,
   });
+}
+
+export async function getSessionCodeBinding(
+  sessionId: string,
+): Promise<SessionCodeBindingResponse> {
+  return invoke<SessionCodeBindingResponse>("session_get_code_binding", { sessionId });
+}
+
+export async function setSessionCodeBinding(
+  sessionId: string,
+  workId: string,
+): Promise<SessionCodeBindingResponse> {
+  return invoke<SessionCodeBindingResponse>("session_set_code_binding", { sessionId, workId });
+}
+
+export async function clearSessionCodeBinding(
+  sessionId: string,
+): Promise<SessionCodeBindingResponse> {
+  return invoke<SessionCodeBindingResponse>("session_clear_code_binding", { sessionId });
 }
 
 export async function deleteSession(
