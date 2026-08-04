@@ -112,13 +112,37 @@ impl DaemonSchedulerSideEffects {
         if !should_run {
             return;
         }
+        *self.state.last_storage_maintenance_at.write().await = Some(now_utc);
         let forge = self.state.forge.clone();
         let data_root = medousa::paths::medousa_data_dir();
         let settings = medousa::daemon::storage_governor::load_settings(&data_root);
+        let evidence_root = data_root.clone();
+        match tokio::task::spawn_blocking(move || {
+            medousa::agent_runtime::coder_evidence::maintain_default_store(&evidence_root)
+        })
+        .await
+        {
+            Ok(Ok(report))
+                if report.expired_objects > 0
+                    || report.pressure_evicted_objects > 0
+                    || report.orphan_objects > 0 =>
+            {
+                tracing::info!(
+                    expired_objects = report.expired_objects,
+                    pressure_evicted_objects = report.pressure_evicted_objects,
+                    orphan_objects = report.orphan_objects,
+                    reclaimed_bytes = report.reclaimed_physical_bytes,
+                    remaining_bytes = report.remaining_physical_bytes,
+                    "ephemeral Coder evidence maintenance completed"
+                );
+            }
+            Ok(Ok(_)) => {}
+            Ok(Err(err)) => tracing::warn!(error = %err, "Coder evidence maintenance failed"),
+            Err(err) => tracing::warn!(error = %err, "Coder evidence maintenance task failed"),
+        }
         if !settings.enabled {
             return;
         }
-        *self.state.last_storage_maintenance_at.write().await = Some(now_utc);
         let report = tokio::task::spawn_blocking(move || {
             medousa::daemon::storage_governor::maintain_storage(&data_root, &forge, settings, false)
         })

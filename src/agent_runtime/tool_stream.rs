@@ -301,6 +301,7 @@ pub fn tool_payload_is_requeryable(tool_name: &str) -> bool {
     crate::code_intelligence_tools::is_code_cognition_tool(tool_name)
         || crate::detamu_tools::is_detamu_cognition_tool(tool_name)
         || tool_name == crate::coding_tools::COGNITION_SHELL_SESSION_STATUS
+        || tool_name == super::coder_tools::COGNITION_CODER_EVIDENCE_READ
 }
 
 pub fn ui_artifact_from_tool_output(
@@ -506,6 +507,9 @@ mod tests {
         assert!(tool_payload_is_requeryable("cognition_detamu_impact"));
         assert!(tool_payload_is_requeryable(
             "cognition_shell_session_status"
+        ));
+        assert!(tool_payload_is_requeryable(
+            super::super::coder_tools::COGNITION_CODER_EVIDENCE_READ
         ));
         assert!(!tool_payload_is_requeryable("cognition_shell_session_run"));
     }

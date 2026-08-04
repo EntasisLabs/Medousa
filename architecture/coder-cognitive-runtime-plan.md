@@ -1,6 +1,6 @@
 # Coder cognitive runtime
 
-> Status: Approved direction; slices 1–4B complete
+> Status: Approved direction; slices 1–4C complete
 > Parent: [Agent runtime modes](agent-runtime-modes-plan.md)
 
 ## Product decision
@@ -276,16 +276,26 @@ Implemented:
   evidence/events, Detamu, artifacts, and Coder evidence are never eviction
   candidates.
 
-#### Slice 4C — ephemeral content-addressed evidence
+#### Slice 4C — ephemeral content-addressed evidence (complete)
 
-- Store only non-replayable oversized logs, diagnostics, and traces that cannot
-  be reconstructed cheaply.
-- Deduplicate globally by SHA-256, compress, redact before persistence, and
-  enforce per-object, per-undertaking, and global physical-byte budgets.
-- Expire successful/reproducible output before failed/non-reproducible output;
-  active references refresh TTL but never override the global cap.
-- Use one shared blob backing layer for transient tool payloads rather than
-  creating a second competing artifact cache.
+Implemented:
+
+- Only oversized, non-requeryable log, diagnostic, trace, or event payloads
+  from a Forge-bound Coder turn enter the shared ephemeral evidence store.
+- Payloads are structurally and textually redacted before canonical JSON
+  serialization, global SHA-256 identity, and gzip compression.
+- Receipts expose no filesystem path. They carry an undertaking-scoped
+  `coder-evidence:sha256:` reference and point to a bounded range-read tool.
+- Physical limits are enforced per object, per undertaking, and globally.
+  Global accounting includes blob allocation and index size.
+- Successful/reproducible observations use a six-hour TTL; failed or
+  non-reproducible evidence uses 72 hours. Reads refresh TTL, while hard global
+  pressure can still evict any object.
+- Pressure removes successful/reproducible evidence before failed evidence,
+  then uses oldest access time. Six-hour daemon maintenance also removes
+  expired and orphaned objects.
+- Requeryable Code/Detamu observations and already-referenced artifacts remain
+  at their existing authorities and are never copied into this store.
 
 #### Slice 4D — durable promotion
 

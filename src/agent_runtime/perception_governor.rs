@@ -43,6 +43,8 @@ const PRIORITY_FIELDS: &[&str] = &[
 pub struct ToolPerceptionGovernor {
     failure_occurrences: HashMap<String, usize>,
     round_metrics: PerceptionMetricsSnapshot,
+    evidence_undertaking_id: Option<String>,
+    evidence_store: Option<super::coder_evidence::CoderEvidenceStore>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -55,6 +57,9 @@ pub struct PerceptionMetricsSnapshot {
     pub bounded_replayable_results: u64,
     pub would_spool_results: u64,
     pub would_spool_bytes: u64,
+    pub stored_evidence_results: u64,
+    pub stored_evidence_logical_bytes: u64,
+    pub evidence_store_failures: u64,
     pub failure_clusters: u64,
     pub bounded_round_contexts: u64,
     pub omitted_context_chars: u64,
@@ -67,7 +72,7 @@ impl PerceptionMetricsSnapshot {
 
     pub fn telemetry_line(&self, round: usize) -> String {
         format!(
-            "◈ perception_governor round={round} observed={} raw_chars={} model_chars={} bounded={} requeryable={} replayable={} would_spool={} would_spool_bytes={} failure_clusters={} bounded_contexts={} omitted_context_chars={}",
+            "◈ perception_governor round={round} observed={} raw_chars={} model_chars={} bounded={} requeryable={} replayable={} would_spool={} would_spool_bytes={} stored_evidence={} stored_evidence_bytes={} evidence_store_failures={} failure_clusters={} bounded_contexts={} omitted_context_chars={}",
             self.observed_results,
             self.raw_result_chars,
             self.model_result_chars,
@@ -76,6 +81,9 @@ impl PerceptionMetricsSnapshot {
             self.bounded_replayable_results,
             self.would_spool_results,
             self.would_spool_bytes,
+            self.stored_evidence_results,
+            self.stored_evidence_logical_bytes,
+            self.evidence_store_failures,
             self.failure_clusters,
             self.bounded_round_contexts,
             self.omitted_context_chars,
@@ -93,6 +101,9 @@ struct PerceptionMetrics {
     bounded_replayable_results: AtomicU64,
     would_spool_results: AtomicU64,
     would_spool_bytes: AtomicU64,
+    stored_evidence_results: AtomicU64,
+    stored_evidence_logical_bytes: AtomicU64,
+    evidence_store_failures: AtomicU64,
     failure_clusters: AtomicU64,
     bounded_round_contexts: AtomicU64,
     omitted_context_chars: AtomicU64,
@@ -118,6 +129,15 @@ pub fn perception_metrics_snapshot() -> PerceptionMetricsSnapshot {
             .would_spool_results
             .load(Ordering::Relaxed),
         would_spool_bytes: PERCEPTION_METRICS.would_spool_bytes.load(Ordering::Relaxed),
+        stored_evidence_results: PERCEPTION_METRICS
+            .stored_evidence_results
+            .load(Ordering::Relaxed),
+        stored_evidence_logical_bytes: PERCEPTION_METRICS
+            .stored_evidence_logical_bytes
+            .load(Ordering::Relaxed),
+        evidence_store_failures: PERCEPTION_METRICS
+            .evidence_store_failures
+            .load(Ordering::Relaxed),
         failure_clusters: PERCEPTION_METRICS.failure_clusters.load(Ordering::Relaxed),
         bounded_round_contexts: PERCEPTION_METRICS
             .bounded_round_contexts
@@ -144,6 +164,19 @@ enum ObservationKind {
 }
 
 impl ToolPerceptionGovernor {
+    pub fn for_coder_undertaking(undertaking_id: Option<String>) -> Self {
+        let evidence_store = undertaking_id.as_ref().map(|_| {
+            super::coder_evidence::CoderEvidenceStore::for_data_root(
+                &crate::paths::medousa_data_dir(),
+            )
+        });
+        Self {
+            evidence_undertaking_id: undertaking_id,
+            evidence_store,
+            ..Default::default()
+        }
+    }
+
     /// Allocate one deterministic result ceiling from the fixed round pool.
     /// Equal allocation means parallel completion order cannot change budgets.
     pub fn result_budget_for_batch(&self, result_count: usize) -> usize {
@@ -203,7 +236,9 @@ impl ToolPerceptionGovernor {
             return observed;
         }
         let raw_bytes = rendered.len();
-        let observed = fit_bounded_observation(tool_name, output, rendered, max_chars);
+        let evidence = self.persist_evidence(tool_name, output);
+        let observed =
+            fit_bounded_observation(tool_name, output, rendered, max_chars, evidence.as_ref());
         self.record_result(
             tool_name,
             output,
@@ -213,6 +248,58 @@ impl ToolPerceptionGovernor {
             ObservationKind::BoundedPayload,
         );
         observed
+    }
+
+    fn persist_evidence(&mut self, tool_name: &str, output: &Value) -> Option<Value> {
+        if evidence_class(tool_name, output) != EvidenceClass::NonReplayable
+            || !is_evidence_payload(output)
+        {
+            return None;
+        }
+        let undertaking_id = self.evidence_undertaking_id.as_deref()?;
+        let retention = if is_failure(output) {
+            super::coder_evidence::EvidenceRetention::FailedOrNonReproducible
+        } else {
+            super::coder_evidence::EvidenceRetention::SuccessfulOrReproducible
+        };
+        let store = self.evidence_store.as_ref()?;
+        match store.put(
+            undertaking_id,
+            output,
+            retention,
+            super::coder_tools::COGNITION_CODER_EVIDENCE_READ,
+        ) {
+            Ok(receipt) => {
+                add_metric(
+                    &mut self.round_metrics.stored_evidence_results,
+                    &PERCEPTION_METRICS.stored_evidence_results,
+                    1,
+                );
+                add_metric(
+                    &mut self.round_metrics.stored_evidence_logical_bytes,
+                    &PERCEPTION_METRICS.stored_evidence_logical_bytes,
+                    receipt.logical_bytes,
+                );
+                Some(json!({
+                    "status": "stored",
+                    "receipt": receipt,
+                    "next_decision": "Read only the byte range needed with the receipt's read_tool and reference; this evidence is redacted, scoped, and ephemeral.",
+                }))
+            }
+            Err(err) => {
+                add_metric(
+                    &mut self.round_metrics.evidence_store_failures,
+                    &PERCEPTION_METRICS.evidence_store_failures,
+                    1,
+                );
+                tracing::warn!(tool = tool_name, error = %err, "Coder evidence was not persisted");
+                Some(json!({
+                    "status": "unavailable",
+                    "reason": "evidence_store_boundary_rejected_or_unavailable",
+                    "next_decision": "Use the bounded head/tail orientation now; narrow or rerun the command if more evidence is required.",
+                }))
+            }
+        }
     }
 
     /// Hard backstop for mode-owned world refreshes. Providers are expected to
@@ -341,6 +428,23 @@ fn evidence_class(tool_name: &str, output: &Value) -> EvidenceClass {
     }
 }
 
+fn is_evidence_payload(output: &Value) -> bool {
+    const EVIDENCE_FIELDS: &[&str] = &[
+        "stdout",
+        "stderr",
+        "log",
+        "logs",
+        "trace",
+        "diagnostics",
+        "events",
+    ];
+    output.as_object().is_some_and(|object| {
+        EVIDENCE_FIELDS
+            .iter()
+            .any(|field| object.get(*field).is_some_and(|value| !value.is_null()))
+    })
+}
+
 fn add_metric(round: &mut u64, global: &AtomicU64, value: u64) {
     *round = round.saturating_add(value);
     global.fetch_add(value, Ordering::Relaxed);
@@ -427,6 +531,7 @@ fn fit_bounded_observation(
     output: &Value,
     rendered: String,
     max_chars: usize,
+    evidence: Option<&Value>,
 ) -> Value {
     let original_chars = rendered.chars().count();
     let available_fields = output
@@ -451,6 +556,7 @@ fn fit_bounded_observation(
                 "head": take_chars(&rendered, preview_chars),
                 "tail": take_last_chars(&rendered, preview_chars),
             },
+            "ephemeral_evidence": evidence,
             "next_decision": next_decision(output),
         });
         if value.to_string().chars().count() <= max_chars {
@@ -468,6 +574,7 @@ fn fit_bounded_observation(
                 "reason": "tool_result_exceeds_model_context_budget",
                 "original_chars": original_chars,
                 "result_limit_chars": max_chars,
+                "ephemeral_evidence": evidence,
                 "next_decision": next_decision(output),
             });
         }
@@ -684,5 +791,56 @@ mod tests {
         assert!(line.starts_with("◈ perception_governor round=4"));
         assert!(line.contains("would_spool=1"));
         assert!(!line.contains(&"x".repeat(100)));
+    }
+
+    #[test]
+    fn coder_non_replayable_observation_gets_followable_ephemeral_receipt() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let mut governor = ToolPerceptionGovernor {
+            evidence_undertaking_id: Some("work-test".into()),
+            evidence_store: Some(super::super::coder_evidence::CoderEvidenceStore::new(
+                temp.path().join("coder-evidence"),
+                super::super::coder_evidence::EvidencePolicy::default(),
+            )),
+            ..Default::default()
+        };
+        let observed = governor.observe(
+            "cognition_shell_session_run",
+            &json!({
+                "ok": false,
+                "headers": {"authorization": "Bearer secret"},
+                "stderr": "compile failure\n".repeat(4_000),
+            }),
+            4_096,
+        );
+        let receipt = &observed["ephemeral_evidence"]["receipt"];
+        assert_eq!(observed["perception_status"], "bounded");
+        assert_eq!(observed["ephemeral_evidence"]["status"], "stored");
+        assert_eq!(receipt["redacted"], true);
+        assert_eq!(
+            receipt["read_tool"],
+            super::super::coder_tools::COGNITION_CODER_EVIDENCE_READ
+        );
+        assert!(
+            receipt["reference"]
+                .as_str()
+                .is_some_and(|value| value.starts_with("coder-evidence:sha256:"))
+        );
+        let stored = governor
+            .evidence_store
+            .as_ref()
+            .unwrap()
+            .read_range(
+                "work-test",
+                receipt["reference"].as_str().unwrap(),
+                0,
+                32 * 1024,
+            )
+            .unwrap();
+        assert!(stored.content.contains("[REDACTED]"));
+        assert!(!stored.content.contains("Bearer secret"));
+        let metrics = governor.take_round_metrics();
+        assert_eq!(metrics.stored_evidence_results, 1);
+        assert!(metrics.stored_evidence_logical_bytes > 20_000);
     }
 }

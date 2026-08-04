@@ -233,7 +233,11 @@ impl MedousaToolLoopPipeline {
         let mut interim_continues_used = 0usize;
         let mut empty_after_tools_continues_used = 0usize;
         let mut pack_hold: Option<AssistantPackHold> = None;
-        let mut perception_governor = ToolPerceptionGovernor::default();
+        let mut perception_governor = ToolPerceptionGovernor::for_coder_undertaking(
+            completion_gate
+                .as_ref()
+                .and_then(|gate| gate.evidence_undertaking_id.clone()),
+        );
 
         if !tools.is_empty() {
             while rounds_executed < effective_max_tool_rounds {

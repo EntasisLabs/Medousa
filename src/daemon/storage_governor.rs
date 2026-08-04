@@ -580,6 +580,7 @@ pub async fn put_storage_settings(
     .await
     .map_err(|err| api_error(StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?
     .map_err(|err| api_error(StatusCode::BAD_REQUEST, err))?;
+    *state.last_storage_maintenance_at.write().await = None;
     Ok(Json(report))
 }
 
@@ -690,7 +691,6 @@ mod tests {
             global_cache_max_bytes: 1,
             free_disk_floor_bytes: 0,
             min_inactive_age_hours: 0,
-            ..StorageGovernorSettings::default()
         };
 
         let report = maintain_storage(data, &forge, settings, true).expect("dry run");

@@ -58,6 +58,8 @@ pub struct ToolLoopCompletionGate<'a> {
     pub steer_poll_work_id: Option<String>,
     /// Mode-owned ambient/delta compiler invoked after each tool batch.
     pub round_context_provider: Option<Arc<dyn ToolRoundContextProvider>>,
+    /// Forge undertaking allowed to own ephemeral non-replayable evidence.
+    pub evidence_undertaking_id: Option<String>,
 }
 
 impl ToolLoopCompletionGate<'_> {
@@ -96,6 +98,7 @@ impl ToolLoopCompletionGate<'_> {
             cancel_poll_work_id: None,
             steer_poll_work_id: None,
             round_context_provider: None,
+            evidence_undertaking_id: None,
         }
     }
 }

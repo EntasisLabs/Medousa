@@ -282,6 +282,7 @@ pub struct LocalTurnExecutionParams {
     pub supports_ui_artifacts: bool,
     pub supports_browser_host: bool,
     pub round_context_provider: Option<Arc<dyn super::turn_context::ToolRoundContextProvider>>,
+    pub evidence_undertaking_id: Option<String>,
 }
 
 pub struct AssembleLocalTurnParams<'a> {
@@ -306,6 +307,7 @@ pub struct AssembleLocalTurnParams<'a> {
     pub inference_profile_kind: crate::inference_profiles::InferenceProfileKind,
     pub surface: Option<crate::daemon_api::TurnSurfaceContext>,
     pub round_context_provider: Option<Arc<dyn super::turn_context::ToolRoundContextProvider>>,
+    pub evidence_undertaking_id: Option<String>,
 }
 
 pub struct AssembledLocalTurn {
@@ -484,6 +486,7 @@ pub fn assemble_local_turn(params: AssembleLocalTurnParams<'_>) -> AssembledLoca
                 params.surface.as_ref(),
             ),
             round_context_provider: params.round_context_provider.clone(),
+            evidence_undertaking_id: params.evidence_undertaking_id.clone(),
         },
         pipeline_selection,
         activation: activation.clone(),
@@ -744,6 +747,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
         supports_ui_artifacts: _,
         supports_browser_host: _,
         round_context_provider,
+        evidence_undertaking_id,
     } = params;
 
     let capability_required = if inference_profile_kind
@@ -1114,6 +1118,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                 cancel_poll_work_id: None,
                 steer_poll_work_id: None,
                 round_context_provider: round_context_provider.clone(),
+                evidence_undertaking_id: evidence_undertaking_id.clone(),
             };
 
             match attempt_pipeline
@@ -1310,6 +1315,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                                 cancel_poll_work_id: None,
                                 steer_poll_work_id: None,
                                 round_context_provider: round_context_provider.clone(),
+                                evidence_undertaking_id: evidence_undertaking_id.clone(),
                             };
                             pipeline
                                 .execute_with_stream_prior_messages_max_rounds(
@@ -1439,6 +1445,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                             cancel_poll_work_id: None,
                             steer_poll_work_id: None,
                             round_context_provider: round_context_provider.clone(),
+                            evidence_undertaking_id: evidence_undertaking_id.clone(),
                         };
                         pipeline
                             .execute_with_stream_prior_messages_max_rounds(

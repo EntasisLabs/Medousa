@@ -1416,6 +1416,9 @@ async fn run_agent_turn_inner(
         round_context_provider: coder_registry.clone().map(|registry| {
             registry as Arc<dyn super::turn_context::ToolRoundContextProvider>
         }),
+        evidence_undertaking_id: coder_registry
+            .as_ref()
+            .map(|registry| registry.undertaking_id().to_string()),
     });
 
     if let Some(route_notice) = assembled.pipeline_selection.route_dispatch_notice {

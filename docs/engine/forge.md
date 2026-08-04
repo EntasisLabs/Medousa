@@ -263,6 +263,38 @@ governor rechecks protection immediately before deletion, selects eligible
 caches oldest-first, and never deletes worktrees, Forge event/evidence custody,
 Detamu, artifacts, or Coder evidence. Deleted build caches are regenerable.
 
+### Ephemeral Coder evidence
+
+When a Forge-bound Coder tool produces an oversized log, diagnostic, trace, or
+event payload that has no cheaper authoritative query or existing artifact
+reference, the model-facing bounded observation may include an ephemeral
+evidence receipt. Source reads, Detamu results, and other requeryable payloads
+are not copied.
+
+Before persistence, Medousa redacts sensitive JSON fields and common textual
+credential forms, serializes canonical JSON, identifies it globally by
+SHA-256, and gzip-compresses the object. Identical redacted payloads share one
+blob even across undertakings. Receipts expose a
+`coder-evidence:sha256:<digest>` reference, never a daemon filesystem path.
+`cognition_coder_evidence_read` can read at most 32 KiB at a time and rejects a
+reference that is not attached to the active Forge undertaking.
+
+The initial policy is deliberately hard-bounded:
+
+| Boundary | Limit |
+|----------|-------|
+| Logical or physical bytes per object | 8 MiB |
+| Referenced physical bytes per undertaking | 64 MiB |
+| Global physical bytes, including index size | 512 MiB |
+| Successful/reproducible TTL | 6 hours |
+| Failed/non-reproducible TTL | 72 hours |
+
+Reading an object refreshes its class TTL, but never overrides the global cap.
+Under pressure, successful/reproducible objects leave before failed evidence,
+then oldest access wins. The daemon's six-hour storage pass removes expired
+objects and safe orphan blobs. This store remains ephemeral: durable Forge
+promotion is a separate explicit policy boundary.
+
 Home uses `/v1/forge/items/{id}/handoff` before moving from a human editing
 lease to Codex or Cursor. The request includes `lease_id`, `generation`, and
 `to_executor`. Forge records the transition, interrupts the current attempt,

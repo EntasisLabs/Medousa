@@ -33,6 +33,7 @@ pub mod turn_delivery;
 pub mod heartbeat_turn;
 pub mod host_context;
 pub mod coder_activity;
+pub mod coder_evidence;
 pub mod coder_mode;
 pub mod coder_pointers;
 pub mod coder_setup_tools;

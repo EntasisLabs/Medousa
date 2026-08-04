@@ -130,6 +130,7 @@
         <span>Worktrees <strong>{formatBytes(status.forge_worktrees.physical_bytes)}</strong></span>
         <span>Detamu <strong>{formatBytes(status.detamu.physical_bytes)}</strong></span>
         <span>Artifacts <strong>{formatBytes(status.artifacts.physical_bytes)}</strong></span>
+        <span>Coder evidence <strong>{formatBytes(status.coder_evidence.physical_bytes)}</strong></span>
         <span>Free disk <strong>{formatBytes(status.available_disk_bytes)}</strong></span>
       </div>
     {/if}

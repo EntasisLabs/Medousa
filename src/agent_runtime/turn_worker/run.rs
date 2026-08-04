@@ -805,6 +805,7 @@ pub async fn run_worker_turn(
         cancel_poll_work_id: Some(work_id.clone()),
         steer_poll_work_id: is_bound_workshop.then_some(work_id.clone()),
         round_context_provider: None,
+        evidence_undertaking_id: None,
     };
 
     if store.is_work_cancelled(&work_id) {

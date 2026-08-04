@@ -33,12 +33,14 @@ pub const COGNITION_CODER_TOOLS_DISCOVER: &str = "cognition_coder_tools_discover
 pub const COGNITION_ENGINEERING_POINTERS: &str = "cognition_engineering_pointers";
 pub const COGNITION_ENGINEERING_POINTER_FOLLOW: &str = "cognition_engineering_pointer_follow";
 pub const COGNITION_ENGINEERING_HISTORY: &str = "cognition_engineering_history";
+pub const COGNITION_CODER_EVIDENCE_READ: &str = "cognition_coder_evidence_read";
 
 const CODER_RUNTIME_TOOLS: &[&str] = &[
     COGNITION_CODER_TOOLS_DISCOVER,
     COGNITION_ENGINEERING_POINTERS,
     COGNITION_ENGINEERING_POINTER_FOLLOW,
     COGNITION_ENGINEERING_HISTORY,
+    COGNITION_CODER_EVIDENCE_READ,
 ];
 
 pub struct CoderTurnLease {
@@ -269,6 +271,7 @@ impl CoderBoundToolRegistry {
                     COGNITION_CODER_TOOLS_DISCOVER,
                     COGNITION_ENGINEERING_POINTERS,
                     COGNITION_ENGINEERING_POINTER_FOLLOW,
+                    COGNITION_CODER_EVIDENCE_READ,
                 ]
                 .iter(),
             )
@@ -307,6 +310,10 @@ impl CoderBoundToolRegistry {
             "{shared}\n\n{}",
             super::coder_pointers::engineering_pointer_prompt_appendix(&pointers)
         ))
+    }
+
+    pub fn undertaking_id(&self) -> &str {
+        &self.entry.work_id
     }
 
     fn engineering_events(&self) -> Result<Vec<super::coder_activity::CoderActivityEvent>> {
@@ -451,6 +458,36 @@ impl CoderBoundToolRegistry {
                     "count": events.len(),
                     "events": events,
                     "next_before_revision": next_before_revision,
+                }))
+            }
+            COGNITION_CODER_EVIDENCE_READ => {
+                let reference = input
+                    .get("reference")
+                    .and_then(Value::as_str)
+                    .ok_or_else(|| StasisError::PortFailure("reference is required".into()))?;
+                let offset = input
+                    .get("offset")
+                    .and_then(Value::as_u64)
+                    .and_then(|value| usize::try_from(value).ok())
+                    .unwrap_or(0);
+                let max_bytes = input
+                    .get("max_bytes")
+                    .and_then(Value::as_u64)
+                    .and_then(|value| usize::try_from(value).ok())
+                    .unwrap_or(32 * 1024);
+                let read = super::coder_evidence::CoderEvidenceStore::for_data_root(
+                    &crate::paths::medousa_data_dir(),
+                )
+                .read_range(&self.entry.work_id, reference, offset, max_bytes)
+                .map_err(StasisError::PortFailure)?;
+                Ok(json!({
+                    "ok": true,
+                    "evidence": read,
+                    "next_decision": if read.next_offset.is_some() {
+                        "Use evidence.next_offset only if the remaining payload is necessary."
+                    } else {
+                        "This evidence object has been read through its end."
+                    },
                 }))
             }
             _ => Err(StasisError::PortFailure(format!(
@@ -785,6 +822,22 @@ fn coder_runtime_tool_definitions() -> Vec<Tool> {
                     "limit": { "type": "integer", "minimum": 1, "maximum": 50 }
                 }
             })),
+        Tool::new(COGNITION_CODER_EVIDENCE_READ)
+            .with_description(
+                "Read one bounded byte range from a redacted ephemeral evidence receipt scoped to this undertaking.",
+            )
+            .with_schema(json!({
+                "type": "object",
+                "properties": {
+                    "reference": {
+                        "type": "string",
+                        "description": "coder-evidence reference returned by a bounded tool observation"
+                    },
+                    "offset": { "type": "integer", "minimum": 0 },
+                    "max_bytes": { "type": "integer", "minimum": 1, "maximum": 32768 }
+                },
+                "required": ["reference"]
+            })),
     ]
 }
 
@@ -866,6 +919,9 @@ fn tool_targets(tool_name: &str, input: &Value, lease: &ExecutionLease) -> Vec<S
     }
     if let Some(pointer_id) = input.get("pointer_id").and_then(Value::as_str) {
         targets.push(pointer_id.trim().to_string());
+    }
+    if let Some(reference) = input.get("reference").and_then(Value::as_str) {
+        targets.push(reference.trim().to_string());
     }
     if tool_name == COGNITION_ENGINEERING_HISTORY {
         targets.push(format!("work://{}/history", lease.work_id));
@@ -1097,7 +1153,7 @@ mod tests {
             fixture.policy.clone(),
         );
         let tools = registry.list_tools().await.expect("list");
-        assert_eq!(tools.len(), 5);
+        assert_eq!(tools.len(), 6);
         assert!(
             tools
                 .iter()
@@ -1110,6 +1166,11 @@ mod tests {
             tools
                 .iter()
                 .any(|tool| tool.name.as_str() == COGNITION_ENGINEERING_POINTER_FOLLOW)
+        );
+        assert!(
+            tools
+                .iter()
+                .any(|tool| tool.name.as_str() == COGNITION_CODER_EVIDENCE_READ)
         );
         assert!(
             tools
