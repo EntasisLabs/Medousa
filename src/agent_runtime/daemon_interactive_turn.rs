@@ -1413,6 +1413,9 @@ async fn run_agent_turn_inner(
             crate::inference_profiles::InferenceProfileKind::Main
         },
         surface: request.surface.clone(),
+        round_context_provider: coder_registry.clone().map(|registry| {
+            registry as Arc<dyn super::turn_context::ToolRoundContextProvider>
+        }),
     });
 
     if let Some(route_notice) = assembled.pipeline_selection.route_dispatch_notice {

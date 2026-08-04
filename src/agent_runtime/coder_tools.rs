@@ -83,13 +83,21 @@ impl CoderTurnLease {
     pub fn shared_space_prompt_appendix(&self) -> Result<String> {
         let snapshot = self
             .activity
-            .snapshot(&self.lease.work_id.to_string(), &self.identity.agent_id)
+            .observe_initial(&self.lease.work_id.to_string(), &self.identity.agent_id)
             .map_err(|err| {
                 StasisError::PortFailure(format!("cannot compile Coder shared space: {err}"))
             })?;
         Ok(super::coder_activity::shared_space_prompt_appendix(
             &snapshot,
         ))
+    }
+
+    fn engineering_delta(&self) -> Result<Option<super::coder_activity::CoderEngineeringDelta>> {
+        self.activity
+            .observe_delta(&self.lease.work_id.to_string(), &self.identity.agent_id)
+            .map_err(|err| {
+                StasisError::PortFailure(format!("cannot observe Coder engineering delta: {err}"))
+            })
     }
 
     fn begin_tool_activity(
@@ -135,6 +143,52 @@ impl CoderTurnLease {
         ) {
             tracing::warn!(error = %err, tool = tool_name, "failed to finish Coder activity");
         }
+    }
+}
+
+impl super::turn_context::ToolRoundContextProvider for CoderBoundToolRegistry {
+    fn context_for_next_round(&self) -> Result<Option<String>> {
+        let authority = self.authority()?;
+        let Some(delta) = authority.engineering_delta()? else {
+            return Ok(None);
+        };
+        let changed_paths = authority
+            .forge
+            .git()
+            .status_porcelain(&self.entry.worktree)
+            .map_err(|err| {
+                StasisError::PortFailure(format!(
+                    "cannot refresh Coder repository observation: {err}"
+                ))
+            })?
+            .into_iter()
+            .map(|entry| entry.path)
+            .take(80)
+            .collect::<Vec<_>>();
+        let head_oid = authority
+            .forge
+            .git()
+            .head_oid(&self.entry.worktree)
+            .map_err(|err| StasisError::PortFailure(format!("cannot refresh Coder HEAD: {err}")))?;
+        let repository_observation = json!({
+            "head_oid": head_oid.to_string(),
+            "baseline_oid": self.entry.baseline_oid,
+            "branch": self.entry.branch,
+            "dirty": !changed_paths.is_empty(),
+            "changed_path_count": changed_paths.len(),
+            "changed_paths": changed_paths,
+            "editor_focus": {
+                "active_path": self.entry.editor.active_path,
+                "containing_symbol": self.entry.editor.containing_symbol,
+            },
+            "trust": "forge_and_worktree_observation",
+        });
+        Ok(Some(
+            super::coder_activity::engineering_delta_prompt_appendix(
+                &delta,
+                repository_observation,
+            ),
+        ))
     }
 }
 
@@ -917,5 +971,52 @@ mod tests {
             .expect_err("missing intent");
         assert!(error.to_string().contains("intent is required"));
         assert!(inner.invoked_tools.lock().expect("tools lock").is_empty());
+    }
+
+    #[tokio::test]
+    async fn round_context_reports_unseen_activity_and_fresh_repository_state_once() {
+        let fixture = fixture();
+        let authority = authority(&fixture);
+        authority
+            .shared_space_prompt_appendix()
+            .expect("initial observation");
+        let registry = CoderBoundToolRegistry::new(
+            Arc::new(RecordingRegistry::default()),
+            &authority,
+            fixture.entry.clone(),
+            fixture.policy.clone(),
+        );
+
+        registry
+            .invoke_tool(
+                crate::coding_tools::COGNITION_CODE_READ,
+                json!({
+                    "intent": "Inspect the implementation before changing it",
+                    "path": "src/lib.rs"
+                }),
+            )
+            .await
+            .expect("read");
+        std::fs::write(
+            fixture.entry.worktree.join("src/lib.rs"),
+            "pub fn demo() { println!(\"changed\"); }\n",
+        )
+        .expect("external worktree change");
+
+        let context =
+            super::super::turn_context::ToolRoundContextProvider::context_for_next_round(&registry)
+                .expect("round context")
+                .expect("new delta");
+        assert!(context.contains("engineering_delta(.99)"));
+        assert!(context.contains("Inspect the implementation before changing it"));
+        assert!(context.contains("\"dirty\":true"));
+        assert!(context.contains("src/lib.rs"));
+        super::super::sttp::validate_canonical_sttp_node(&context).expect("canonical delta STTP");
+
+        assert!(
+            super::super::turn_context::ToolRoundContextProvider::context_for_next_round(&registry)
+                .expect("second context")
+                .is_none()
+        );
     }
 }

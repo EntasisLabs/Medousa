@@ -101,8 +101,8 @@ pub use modes::{
     system_prompt_for_mode,
 };
 pub use coder_activity::{
-    CoderActivityStore, CoderAgentIdentity, CoderSharedSpaceSnapshot, coder_activity_store,
-    shared_space_prompt_appendix,
+    CoderActivityStore, CoderAgentIdentity, CoderEngineeringDelta, CoderSharedSpaceSnapshot,
+    coder_activity_store, engineering_delta_prompt_appendix, shared_space_prompt_appendix,
 };
 pub use coder_mode::{CoderEntryContext, CoderEntryError, compile_coder_entry};
 pub use coder_tools::{CoderBoundToolRegistry, CoderTurnLease};
@@ -143,7 +143,8 @@ pub use turn_loop_settings::{
     ROUND_LIMIT_MIN,
 };
 pub use turn_context::{
-    HostTurnContext, ToolLaneState, TurnScratchPhase, TurnScratchpad, WorkerHandoffCapsule,
+    HostTurnContext, ToolLaneState, ToolRoundContextProvider, TurnScratchPhase, TurnScratchpad,
+    WorkerHandoffCapsule,
     publish_host_handoff_snapshot, push_turn_scratch_message,
     push_turn_scratch_message_with_budget,
     scratch_digest_hash, tool_output_ok, tool_results_from_invocations, SCRATCH_PREFIX,

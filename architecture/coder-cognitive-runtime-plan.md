@@ -1,6 +1,6 @@
 # Coder cognitive runtime
 
-> Status: Approved direction; slice 1 complete
+> Status: Approved direction; slices 1–2 complete
 > Parent: [Agent runtime modes](agent-runtime-modes-plan.md)
 
 ## Product decision
@@ -154,13 +154,34 @@ Acceptance:
 - Dropped or expired presence is not reported as active.
 - The ambient node follows canonical `sttp-1.0` structure.
 
-### Slice 2 — per-round ambient deltas
+### Slice 2 — per-round ambient deltas (complete)
 
 - Add per-agent observation cursors.
 - Recompile ambient/delta frames after every tool round.
-- Ingest editor focus/edit and Forge transition events.
-- Surface changed files/symbols, dirty state, elapsed time, and latest command
-  or verification state without replaying full tool payloads.
+- Record tool lifecycle events and operational intent in the shared ledger.
+- Refresh Forge HEAD, dirty state, changed paths, and entry editor focus after
+  each tool round.
+- Surface elapsed time and bounded command/tool evidence without replaying full
+  tool payloads.
+- Inject the canonical STTP delta into the next model inference while advancing
+  only the observing agent's cursor.
+
+Live editor focus/edit events, structured Forge transition sensors, changed
+symbols, and semantic build/test state remain incremental sensor work for the
+pointer and evidence slices. The round-context path introduced here is their
+runtime ingestion boundary.
+
+Acceptance:
+
+- Initial Coder context advances that agent's cursor to the represented
+  revision.
+- A tool round produces a bounded causal delta in the following model request.
+- Re-observing without new activity produces no repeated context.
+- Two agents observe the same shared events independently.
+- Repository changes made during a tool round are reflected in the next
+  inference's trusted Forge observation.
+- Provider or Forge observation failures stop the loop instead of allowing
+  Coder to continue with falsely fresh context.
 
 ### Slice 3 — engineering pointers and history
 

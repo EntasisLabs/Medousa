@@ -654,6 +654,7 @@ pub(crate) async fn start_prompt_run(
                 inference_profile_kind: medousa::inference_profiles::InferenceProfileKind::Main,
                 supports_ui_artifacts: false,
                 supports_browser_host: false,
+                round_context_provider: None,
             },
         )
         .await;

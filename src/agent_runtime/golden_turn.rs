@@ -20,6 +20,7 @@
 //! `InteractiveTurnStreamSink`.
 
 use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use async_trait::async_trait;
 use genai::adapter::AdapterKind;
@@ -94,6 +95,7 @@ fn tool_response(calls: Vec<ToolCall>) -> ChatResponse {
 struct ScriptedClient {
     steps: Vec<ChatResponse>,
     idx: Mutex<usize>,
+    requests: Mutex<Vec<ChatRequest>>,
 }
 
 impl ScriptedClient {
@@ -102,6 +104,7 @@ impl ScriptedClient {
         Self {
             steps,
             idx: Mutex::new(0),
+            requests: Mutex::new(Vec::new()),
         }
     }
 
@@ -111,24 +114,30 @@ impl ScriptedClient {
         *idx += 1;
         self.steps[pick].clone()
     }
+
+    fn requests(&self) -> Vec<ChatRequest> {
+        self.requests.lock().unwrap().clone()
+    }
 }
 
 #[async_trait]
 impl AiChatClient for ScriptedClient {
     async fn complete(
         &self,
-        _request: ChatRequest,
+        request: ChatRequest,
         _options: Option<&ChatOptions>,
     ) -> StasisResult<ChatResponse> {
+        self.requests.lock().unwrap().push(request);
         Ok(self.next())
     }
 
     async fn complete_stream(
         &self,
-        _request: ChatRequest,
+        request: ChatRequest,
         _options: Option<&ChatOptions>,
         chunk_tx: Option<&mpsc::UnboundedSender<StreamDelta>>,
     ) -> StasisResult<ChatResponse> {
+        self.requests.lock().unwrap().push(request);
         let response = self.next();
         if let (Some(tx), Some(text)) = (chunk_tx, response.first_text()) {
             let _ = tx.send(StreamDelta::Content(text.to_string()));
@@ -149,6 +158,25 @@ impl StasisTool for DataProbeTool {
 
     async fn invoke(&self, input: Value) -> StasisResult<Value> {
         Ok(json!({ "ok": true, "echo": input }))
+    }
+}
+
+struct OneShotRoundContext {
+    emitted: AtomicBool,
+}
+
+impl OneShotRoundContext {
+    fn new() -> Self {
+        Self {
+            emitted: AtomicBool::new(false),
+        }
+    }
+}
+
+impl super::turn_context::ToolRoundContextProvider for OneShotRoundContext {
+    fn context_for_next_round(&self) -> StasisResult<Option<String>> {
+        Ok((!self.emitted.swap(true, Ordering::SeqCst))
+            .then(|| "[TEST_ENGINEERING_DELTA] revision=2".to_string()))
     }
 }
 
@@ -360,6 +388,55 @@ async fn run_golden(
 }
 
 // ── Golden cases ─────────────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn golden_round_context_is_injected_before_the_next_inference() {
+    let registry = InMemoryToolRegistry::default();
+    registry.register_tool(DataProbeTool).unwrap();
+    registry.register_tool(CognitionTurnFinishTool).unwrap();
+    let client = Arc::new(ScriptedClient::new(vec![
+        tool_response(vec![tool_call("data_probe", json!({ "q": "state" }))]),
+        tool_response(vec![tool_call(
+            "cognition_turn_finish",
+            json!({ "message": "Done after observing the delta." }),
+        )]),
+    ]));
+    let pipeline = MedousaToolLoopPipeline::new(
+        PromptExecutionPipeline::new(client.clone()),
+        Arc::new(registry),
+    );
+    let mut gate = ToolLoopCompletionGate::new_for_execution(1, None, None, 4);
+    gate.round_context_provider = Some(Arc::new(OneShotRoundContext::new()));
+    let request = ToolLoopExecutionRequest {
+        user_prompt: "probe then finish".to_string(),
+        system_prompt: None,
+        context: PromptExecutionContext::default(),
+        tool_name: String::new(),
+        tool_input: Value::Null,
+        tool_call_mode: ToolCallMode::Auto,
+    };
+
+    let response = pipeline
+        .execute_with_stream_prior_messages_max_rounds(
+            request,
+            Vec::new(),
+            None,
+            4,
+            Some(&mut gate),
+            None,
+        )
+        .await
+        .expect("tool loop");
+    assert_eq!(response.termination_reason, "cognition_turn_finish");
+    let requests = client.requests();
+    assert!(requests.len() >= 2);
+    assert!(requests[1].messages.iter().any(|message| {
+        message
+            .content
+            .first_text()
+            .is_some_and(|text| text.contains("[TEST_ENGINEERING_DELTA]"))
+    }));
+}
 
 #[tokio::test]
 async fn golden_plain_reply_terminates_on_prose() {

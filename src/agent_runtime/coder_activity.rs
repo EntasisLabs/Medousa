@@ -16,6 +16,7 @@ const MAX_AGENTS_PER_WORK: usize = 32;
 const MAX_EVENTS_PER_WORK: usize = 400;
 const MAX_AMBIENT_OTHER_AGENTS: usize = 6;
 const MAX_AMBIENT_EVENTS: usize = 8;
+const MAX_DELTA_EVENTS: usize = 16;
 const MAX_INTENT_CHARS: usize = 320;
 const MAX_DETAIL_CHARS: usize = 500;
 
@@ -58,6 +59,8 @@ pub enum CoderActivityKind {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CoderActivityEvent {
     pub event_id: String,
+    #[serde(default)]
+    pub revision: u64,
     pub call_id: Option<String>,
     pub work_id: String,
     pub agent_id: String,
@@ -88,6 +91,8 @@ pub struct CoderAgentPresence {
     pub current_targets: Vec<String>,
     pub last_tool: Option<String>,
     pub last_intent: Option<String>,
+    #[serde(default)]
+    pub observed_revision: u64,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -115,6 +120,20 @@ pub struct CoderSharedSpaceSnapshot {
     pub other_agents: Vec<CoderAgentPresence>,
     pub recent_events: Vec<CoderActivityEvent>,
     pub revision: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct CoderEngineeringDelta {
+    pub work_id: String,
+    pub self_agent_id: String,
+    pub from_revision: u64,
+    pub to_revision: u64,
+    pub omitted_event_count: usize,
+    pub events: Vec<CoderActivityEvent>,
+    pub active_agent_count: usize,
+    pub concurrent_agent_count: usize,
+    pub other_agents: Vec<CoderAgentPresence>,
+    pub latest_activity_age: Option<String>,
 }
 
 pub struct CoderActivityStore {
@@ -152,6 +171,7 @@ impl CoderActivityStore {
                     current_targets: Vec::new(),
                     last_tool: None,
                     last_intent: None,
+                    observed_revision: 0,
                 },
             );
             append_event(
@@ -272,6 +292,92 @@ impl CoderActivityStore {
         ))
     }
 
+    /// Compile the full bounded entry frame and advance only this agent's
+    /// observation cursor to the revision represented by that frame.
+    pub fn observe_initial(
+        &self,
+        work_id: &str,
+        self_agent_id: &str,
+    ) -> Result<CoderSharedSpaceSnapshot, String> {
+        let _guard = self.lock.lock().map_err(|err| err.to_string())?;
+        let mut index = self.read_index();
+        let now = Utc::now();
+        if let Some(work) = index.work.get_mut(work_id) {
+            prune_work(work, now);
+        }
+        let snapshot = snapshot_from_index(&index, work_id, self_agent_id, now);
+        if let Some(presence) = index
+            .work
+            .get_mut(work_id)
+            .and_then(|work| work.agents.get_mut(self_agent_id))
+        {
+            presence.observed_revision = snapshot.revision;
+        }
+        self.write_index(&index)?;
+        Ok(snapshot)
+    }
+
+    /// Return unseen engineering events for one agent and atomically advance
+    /// its cursor. A bounded newest-event window is paired with an omitted
+    /// count so overload cannot silently masquerade as complete perception.
+    pub fn observe_delta(
+        &self,
+        work_id: &str,
+        self_agent_id: &str,
+    ) -> Result<Option<CoderEngineeringDelta>, String> {
+        let _guard = self.lock.lock().map_err(|err| err.to_string())?;
+        let mut index = self.read_index();
+        let now = Utc::now();
+        let Some(work) = index.work.get_mut(work_id) else {
+            return Ok(None);
+        };
+        prune_work(work, now);
+        let from_revision = work
+            .agents
+            .get(self_agent_id)
+            .map(|presence| presence.observed_revision)
+            .unwrap_or(0);
+        let to_revision = work.revision;
+        if from_revision >= to_revision {
+            return Ok(None);
+        }
+
+        let unseen: Vec<_> = work
+            .events
+            .iter()
+            .filter(|event| event.revision > from_revision)
+            .cloned()
+            .collect();
+        let omitted_event_count = unseen.len().saturating_sub(MAX_DELTA_EVENTS);
+        let events = unseen
+            .into_iter()
+            .skip(omitted_event_count)
+            .collect::<Vec<_>>();
+        let latest_activity_age = events
+            .last()
+            .map(|event| human_age(event.occurred_at_utc, now));
+        let (active_agent_count, concurrent_agent_count, other_agents) =
+            active_agents(work, self_agent_id, now);
+        if let Some(presence) = work.agents.get_mut(self_agent_id) {
+            presence.observed_revision = to_revision;
+            presence.heartbeat_at_utc = now;
+        }
+        let delta = CoderEngineeringDelta {
+            work_id: work_id.to_string(),
+            self_agent_id: self_agent_id.to_string(),
+            from_revision,
+            to_revision,
+            omitted_event_count,
+            events,
+            active_agent_count,
+            concurrent_agent_count,
+            other_agents,
+            latest_activity_age,
+        };
+        self.write_index(&index)?;
+        Ok(Some(delta))
+    }
+
     fn mutate(
         &self,
         apply: impl FnOnce(&mut CoderActivityIndex, DateTime<Utc>),
@@ -345,6 +451,43 @@ pub fn shared_space_prompt_appendix(snapshot: &CoderSharedSpaceSnapshot) -> Stri
     out
 }
 
+pub fn engineering_delta_prompt_appendix(
+    delta: &CoderEngineeringDelta,
+    repository_observation: Value,
+) -> String {
+    let timestamp = Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true);
+    let activity = serde_json::to_value(delta).unwrap_or_else(|_| json!({}));
+    let mut out = String::new();
+    let _ = writeln!(
+        out,
+        "⊕⟨ ⏣0{{ trigger: threshold, response_format: temporal_node, origin_session: \"medousa-coder-engineering-delta\", compression_depth: 1, parent_node: ref:⏣0, prime: {{ attractor_config: {{ stability: 0.96, friction: 0.12, logic: 0.99, autonomy: 0.84 }}, context_summary: \"Unseen causal engineering activity and freshly observed repository state since this agent's previous inference.\", relevant_tier: raw, retrieval_budget: 12 }} }} ⟩"
+    );
+    let _ = writeln!(
+        out,
+        "⦿⟨ ⏣0{{ timestamp: \"{timestamp}\", tier: raw, session_id: \"medousa-coder-engineering-delta\", schema_version: \"sttp-1.0\", user_avec: {{ stability: 0.90, friction: 0.20, logic: 0.96, autonomy: 0.84, psi: 2.90 }}, model_avec: {{ stability: 0.96, friction: 0.12, logic: 0.99, autonomy: 0.84, psi: 2.95 }} }} ⟩"
+    );
+    let _ = writeln!(out, "◈⟨ ⏣0{{");
+    let _ = writeln!(out, "    engineering_delta(.99): {activity},");
+    let _ = writeln!(
+        out,
+        "    repository_observation(.98): {repository_observation},"
+    );
+    let _ = writeln!(
+        out,
+        "    attention_contract(.99): \"Treat this as the current world delta, reconcile it with the preceding tool receipts, and investigate unresolved failures or concurrent changes before the next mutation.\""
+    );
+    let _ = writeln!(out, "}} ⟩");
+    let _ = write!(
+        out,
+        "⍉⟨ ⏣0{{ rho: 0.99, kappa: 0.99, psi: 2.95, compression_avec: {{ stability: 0.96, friction: 0.12, logic: 0.99, autonomy: 0.84, psi: 2.95 }} }} ⟩"
+    );
+    debug_assert!(
+        super::sttp::validate_canonical_sttp_node(&out).is_ok(),
+        "Coder engineering delta compiler emitted invalid STTP"
+    );
+    out
+}
+
 fn presence_from_identity(identity: &CoderAgentIdentity, now: DateTime<Utc>) -> CoderAgentPresence {
     CoderAgentPresence {
         agent_id: identity.agent_id.clone(),
@@ -359,6 +502,7 @@ fn presence_from_identity(identity: &CoderAgentIdentity, now: DateTime<Utc>) -> 
         current_targets: Vec::new(),
         last_tool: None,
         last_intent: None,
+        observed_revision: 0,
     }
 }
 
@@ -369,6 +513,7 @@ fn event(
 ) -> CoderActivityEvent {
     CoderActivityEvent {
         event_id: format!("evt-{}", Uuid::new_v4()),
+        revision: 0,
         call_id: None,
         work_id: work_id.to_string(),
         agent_id: identity.agent_id.clone(),
@@ -384,8 +529,9 @@ fn event(
     }
 }
 
-fn append_event(work: &mut CoderWorkActivity, event: CoderActivityEvent) {
+fn append_event(work: &mut CoderWorkActivity, mut event: CoderActivityEvent) {
     work.revision = work.revision.saturating_add(1);
+    event.revision = work.revision;
     work.events.push(event);
     if work.events.len() > MAX_EVENTS_PER_WORK {
         let drain = work.events.len() - MAX_EVENTS_PER_WORK;
@@ -435,6 +581,32 @@ fn snapshot_from_index(
             revision: 0,
         };
     };
+    let (active_agent_count, concurrent_agent_count, other_agents) =
+        active_agents(work, self_agent_id, now);
+    let recent_events = work
+        .events
+        .iter()
+        .rev()
+        .filter(|event| event.agent_id != self_agent_id)
+        .take(MAX_AMBIENT_EVENTS)
+        .cloned()
+        .collect();
+    CoderSharedSpaceSnapshot {
+        work_id: work_id.to_string(),
+        self_agent_id: self_agent_id.to_string(),
+        active_agent_count,
+        concurrent_agent_count,
+        other_agents,
+        recent_events,
+        revision: work.revision,
+    }
+}
+
+fn active_agents(
+    work: &CoderWorkActivity,
+    self_agent_id: &str,
+    now: DateTime<Utc>,
+) -> (usize, usize, Vec<CoderAgentPresence>) {
     let is_active = |presence: &&CoderAgentPresence| {
         presence.active && now - presence.heartbeat_at_utc <= ACTIVE_AGENT_TTL
     };
@@ -449,26 +621,36 @@ fn snapshot_from_index(
         .filter(|presence| presence.agent_id != self_agent_id)
         .take(MAX_AMBIENT_OTHER_AGENTS)
         .collect();
-    let recent_events = work
-        .events
-        .iter()
-        .rev()
-        .filter(|event| event.agent_id != self_agent_id)
-        .take(MAX_AMBIENT_EVENTS)
-        .cloned()
-        .collect();
-    CoderSharedSpaceSnapshot {
-        work_id: work_id.to_string(),
-        self_agent_id: self_agent_id.to_string(),
+    (
         active_agent_count,
-        concurrent_agent_count: active_agent_count.saturating_sub(usize::from(self_is_active)),
+        active_agent_count.saturating_sub(usize::from(self_is_active)),
         other_agents,
-        recent_events,
-        revision: work.revision,
+    )
+}
+
+fn human_age(then: DateTime<Utc>, now: DateTime<Utc>) -> String {
+    let seconds = (now - then).num_seconds().max(0);
+    match seconds {
+        0..=59 => format!("{seconds}s"),
+        60..=3_599 => format!("{}m", seconds / 60),
+        3_600..=86_399 => format!("{}h", seconds / 3_600),
+        _ => format!("{}d", seconds / 86_400),
     }
 }
 
 fn effect_summary(output: &Value) -> String {
+    let output_text = output.get("output").and_then(Value::as_str).map(|value| {
+        let tail = value
+            .lines()
+            .rev()
+            .take(4)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect::<Vec<_>>()
+            .join("\n");
+        truncate(&tail, 240)
+    });
     let summary = json!({
         "ok": output.get("ok"),
         "path": output.get("path"),
@@ -476,6 +658,7 @@ fn effect_summary(output: &Value) -> String {
         "session_id": output.get("session_id"),
         "work_id": output.get("work_id"),
         "message": output.get("message"),
+        "output_tail": output_text,
     });
     truncate(&summary.to_string(), MAX_DETAIL_CHARS)
 }
@@ -606,5 +789,78 @@ mod tests {
         assert_eq!(snapshot.active_agent_count, 1);
         assert_eq!(snapshot.concurrent_agent_count, 0);
         assert!(snapshot.other_agents.is_empty());
+    }
+
+    #[test]
+    fn observation_cursor_returns_each_event_once_per_agent() {
+        let temp = TempDir::new().expect("temp");
+        let store = store(&temp);
+        let a = identity("session-a", 1);
+        let b = identity("session-b", 2);
+        store.register_agent("work-1", &a).expect("register a");
+        store.register_agent("work-1", &b).expect("register b");
+        store
+            .observe_initial("work-1", &a.agent_id)
+            .expect("initial a");
+        store
+            .observe_initial("work-1", &b.agent_id)
+            .expect("initial b");
+
+        let call_id = store
+            .begin_tool(
+                "work-1",
+                &a,
+                "cognition_code_apply_patch",
+                "Update the focused implementation without changing its contract",
+                vec!["file://src/lib.rs".into()],
+            )
+            .expect("begin");
+        store
+            .finish_tool(
+                "work-1",
+                &a,
+                &call_id,
+                "cognition_code_apply_patch",
+                "Update the focused implementation without changing its contract",
+                vec!["file://src/lib.rs".into()],
+                Ok(&json!({ "ok": true, "path": "src/lib.rs", "digest": "sha256:new" })),
+            )
+            .expect("finish");
+
+        let delta_a = store
+            .observe_delta("work-1", &a.agent_id)
+            .expect("delta a")
+            .expect("new events a");
+        let delta_b = store
+            .observe_delta("work-1", &b.agent_id)
+            .expect("delta b")
+            .expect("new events b");
+        assert_eq!(delta_a.events.len(), 2);
+        assert_eq!(delta_b.events.len(), 2);
+        assert!(
+            delta_a
+                .events
+                .iter()
+                .all(|event| event.call_id.as_deref() == Some(&call_id))
+        );
+        assert!(
+            store
+                .observe_delta("work-1", &a.agent_id)
+                .expect("second delta a")
+                .is_none()
+        );
+        assert!(
+            store
+                .observe_delta("work-1", &b.agent_id)
+                .expect("second delta b")
+                .is_none()
+        );
+
+        let appendix = engineering_delta_prompt_appendix(
+            &delta_b,
+            json!({ "changed_paths": ["src/lib.rs"], "dirty": true }),
+        );
+        super::super::sttp::validate_canonical_sttp_node(&appendix).expect("canonical STTP");
+        assert!(appendix.contains("sha256:new"));
     }
 }

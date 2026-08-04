@@ -422,6 +422,12 @@ pub struct ToolLaneState {
     pub messages: Vec<ChatMessage>,
 }
 
+/// Optional mode-owned context refresh compiled after a completed tool batch
+/// and injected as a system observation before the next model inference.
+pub trait ToolRoundContextProvider: Send + Sync {
+    fn context_for_next_round(&self) -> stasis::prelude::Result<Option<String>>;
+}
+
 /// Host turn: fixed user-visible prefix + growing tool lane.
 #[derive(Debug, Clone)]
 pub struct HostTurnContext {

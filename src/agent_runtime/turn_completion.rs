@@ -12,7 +12,7 @@ use super::stream_sink::SharedAgentStreamSink;
 use super::turn_budget::{TurnBudget, TurnOrchestrationState, try_consume_gatekeeper_budget};
 use std::sync::Arc;
 
-use super::turn_context::{TurnScratchpad, WorkerHandoffCapsule};
+use super::turn_context::{ToolRoundContextProvider, TurnScratchpad, WorkerHandoffCapsule};
 use super::worker_continuity::HostContinuityBundle;
 use stasis::ports::outbound::memory::memory_models::MemoryAvecState;
 use crate::turn_text_heuristics::looks_like_interim_status;
@@ -56,6 +56,8 @@ pub struct ToolLoopCompletionGate<'a> {
     pub cancel_poll_work_id: Option<String>,
     /// Drain steer inbox each round and inject `[MEDOUSA_WORKSHOP_STEER]`.
     pub steer_poll_work_id: Option<String>,
+    /// Mode-owned ambient/delta compiler invoked after each tool batch.
+    pub round_context_provider: Option<Arc<dyn ToolRoundContextProvider>>,
 }
 
 impl ToolLoopCompletionGate<'_> {
@@ -93,6 +95,7 @@ impl ToolLoopCompletionGate<'_> {
             host_scheduler_lane: false,
             cancel_poll_work_id: None,
             steer_poll_work_id: None,
+            round_context_provider: None,
         }
     }
 }

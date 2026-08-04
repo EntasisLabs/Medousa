@@ -721,6 +721,16 @@ impl MedousaToolLoopPipeline {
                     .scratchpad
                     .record_round_digest_from_invocations(round_invocations);
                 sync_scratch_snapshot(completion_gate.as_deref_mut(), &turn_ctx.scratchpad);
+                if let Some(provider) = completion_gate
+                    .as_ref()
+                    .and_then(|gate| gate.round_context_provider.as_ref())
+                    && let Some(context) = provider.context_for_next_round()?
+                {
+                    turn_ctx
+                        .tool_lane
+                        .messages
+                        .push(ChatMessage::system(context));
+                }
                 if let Some(gate) = completion_gate.as_ref() {
                     let parent_for_handoff = gate
                         .handoff_parent_user_prompt
