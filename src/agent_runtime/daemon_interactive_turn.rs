@@ -1134,19 +1134,19 @@ async fn run_agent_turn_inner(
                         return;
                     }
                 };
-                let shared_space_appendix = match authority.shared_space_prompt_appendix() {
-                    Ok(appendix) => appendix,
-                    Err(err) => {
-                        sink.agent_error(1, err.to_string()).await;
-                        return;
-                    }
-                };
                 let registry = Arc::new(super::coder_tools::CoderBoundToolRegistry::new(
                     agent_rt.tool_registry.clone(),
                     &authority,
                     entry.clone(),
                     item.policy,
                 ));
+                let shared_space_appendix = match registry.initial_prompt_appendix() {
+                    Ok(appendix) => appendix,
+                    Err(err) => {
+                        sink.agent_error(1, err.to_string()).await;
+                        return;
+                    }
+                };
                 let registry_override: Arc<
                     dyn stasis::application::orchestration::tool_registry::ToolRegistry,
                 > = registry.clone();

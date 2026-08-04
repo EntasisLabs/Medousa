@@ -24,7 +24,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use async_trait::async_trait;
 use genai::adapter::AdapterKind;
-use genai::chat::{ChatOptions, ChatRequest, ChatResponse, MessageContent, ToolCall};
+use genai::chat::{ChatOptions, ChatRequest, ChatResponse, MessageContent, Tool, ToolCall};
 use genai::ModelIden;
 use serde_json::{json, Value};
 use tokio::sync::mpsc;
@@ -35,7 +35,9 @@ use stasis::application::orchestration::prompt_pipeline::{
 use stasis::application::orchestration::tool_loop_pipeline::{
     ToolCallMode, ToolLoopExecutionRequest,
 };
-use stasis::application::orchestration::tool_registry::{InMemoryToolRegistry, StasisTool};
+use stasis::application::orchestration::tool_registry::{
+    InMemoryToolRegistry, StasisTool, ToolRegistry,
+};
 use stasis::domain::errors::Result as StasisResult;
 use stasis::ports::outbound::ai_chat_client::{AiChatClient, StreamDelta};
 
@@ -177,6 +179,28 @@ impl super::turn_context::ToolRoundContextProvider for OneShotRoundContext {
     fn context_for_next_round(&self) -> StasisResult<Option<String>> {
         Ok((!self.emitted.swap(true, Ordering::SeqCst))
             .then(|| "[TEST_ENGINEERING_DELTA] revision=2".to_string()))
+    }
+}
+
+struct RevealingRegistry {
+    revealed: AtomicBool,
+}
+
+#[async_trait]
+impl ToolRegistry for RevealingRegistry {
+    async fn list_tools(&self) -> StasisResult<Vec<Tool>> {
+        let mut tools = vec![Tool::new("discover")];
+        if self.revealed.load(Ordering::SeqCst) {
+            tools.push(Tool::new("revealed_tool"));
+        }
+        Ok(tools)
+    }
+
+    async fn invoke_tool(&self, tool_name: &str, _input: Value) -> StasisResult<Value> {
+        if tool_name == "discover" {
+            self.revealed.store(true, Ordering::SeqCst);
+        }
+        Ok(json!({ "ok": true, "tool": tool_name }))
     }
 }
 
@@ -436,6 +460,51 @@ async fn golden_round_context_is_injected_before_the_next_inference() {
             .first_text()
             .is_some_and(|text| text.contains("[TEST_ENGINEERING_DELTA]"))
     }));
+}
+
+#[tokio::test]
+async fn golden_model_visible_tools_refresh_after_a_tool_round() {
+    let client = Arc::new(ScriptedClient::new(vec![
+        tool_response(vec![tool_call("discover", json!({}))]),
+        tool_response(vec![tool_call("revealed_tool", json!({}))]),
+        text_response("done"),
+    ]));
+    let pipeline = MedousaToolLoopPipeline::new(
+        PromptExecutionPipeline::new(client.clone()),
+        Arc::new(RevealingRegistry {
+            revealed: AtomicBool::new(false),
+        }),
+    );
+    let request = ToolLoopExecutionRequest {
+        user_prompt: "discover then use the revealed tool".to_string(),
+        system_prompt: None,
+        context: PromptExecutionContext::default(),
+        tool_name: String::new(),
+        tool_input: Value::Null,
+        tool_call_mode: ToolCallMode::Auto,
+    };
+    pipeline
+        .execute_with_stream_prior_messages_max_rounds(request, Vec::new(), None, 4, None, None)
+        .await
+        .expect("tool loop");
+    let requests = client.requests();
+    assert!(requests.len() >= 2);
+    assert!(
+        requests[0]
+            .tools
+            .as_ref()
+            .expect("first tools")
+            .iter()
+            .all(|tool| tool.name.as_str() != "revealed_tool")
+    );
+    assert!(
+        requests[1]
+            .tools
+            .as_ref()
+            .expect("second tools")
+            .iter()
+            .any(|tool| tool.name.as_str() == "revealed_tool")
+    );
 }
 
 #[tokio::test]

@@ -25,6 +25,8 @@ const CODER_SYSTEM_OVERLAY: &str = r#"
     execution_policy(.99): {
         foreground_default(.99): "Perform the coding loop directly; do not substitute delegation unless the principal explicitly requests it.",
         operational_intent(.99): "For every tool call, provide one short outcome-oriented intent describing what the action is trying to accomplish; do not provide private chain-of-thought.",
+        engineering_pointers(.99): "Use ranked engineering pointers as present-tense attention cues; follow a pointer for causal detail and unlock bounded history only when the ranked view is insufficient.",
+        progressive_tools(.99): "The visible palette is a subset of fixed turn authority. Use cognition_coder_tools_discover to reveal intelligence, world_model, or history tools when evidence makes that domain relevant.",
         evidence_integrity(.99): "Never claim a check passed, a file changed, or a command succeeded without a receipt from this turn.",
         minimal_change(.98): "Prefer the smallest complete change that resolves the causal model; avoid drive-by refactors."
     }
@@ -110,7 +112,7 @@ pub fn resolve_agent_mode(
         }),
         AgentModeId::Coder => Ok(ResolvedAgentMode {
             id: AgentModeId::Coder,
-            contract_revision: "coder-v2",
+            contract_revision: "coder-v3",
             execution_lane: ModeExecutionLane::ForegroundWorkshop,
             coder_phase: Some(CoderRuntimePhase::Setup),
         }),
@@ -131,7 +133,7 @@ pub fn list_agent_modes() -> AgentModeListResponse {
                 mode: AgentModeId::Coder,
                 label: "Coder".to_string(),
                 available: true,
-                contract_revision: Some("coder-v2".to_string()),
+                contract_revision: Some("coder-v3".to_string()),
                 unavailable_reason: None,
             },
         ],
@@ -187,7 +189,7 @@ mod tests {
     #[test]
     fn coder_resolves_to_foreground_contract() {
         let mode = resolve_agent_mode(AgentModeId::Coder).expect("coder mode");
-        assert_eq!(mode.contract_revision, "coder-v2");
+        assert_eq!(mode.contract_revision, "coder-v3");
         assert_eq!(mode.execution_lane, ModeExecutionLane::ForegroundWorkshop);
         assert_eq!(mode.coder_phase, Some(CoderRuntimePhase::Setup));
     }
@@ -216,7 +218,7 @@ mod tests {
     fn coder_overlay_encodes_the_engineering_world_model() {
         let mode = ResolvedAgentMode {
             id: AgentModeId::Coder,
-            contract_revision: "coder-v2",
+            contract_revision: "coder-v3",
             execution_lane: ModeExecutionLane::ForegroundWorkshop,
             coder_phase: Some(CoderRuntimePhase::Work),
         };
@@ -224,6 +226,7 @@ mod tests {
         assert!(prompt.contains("engineering_world_model(.99)"));
         assert!(prompt.contains("evidence-backed causal hypothesis"));
         assert!(prompt.contains("short outcome-oriented intent"));
+        assert!(prompt.contains("cognition_coder_tools_discover"));
         assert!(prompt.contains("direct foreground workshop lane"));
     }
 

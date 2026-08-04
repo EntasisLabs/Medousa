@@ -292,6 +292,16 @@ impl CoderActivityStore {
         ))
     }
 
+    pub(crate) fn events_for_work(&self, work_id: &str) -> Result<Vec<CoderActivityEvent>, String> {
+        let _guard = self.lock.lock().map_err(|err| err.to_string())?;
+        let index = self.read_index();
+        Ok(index
+            .work
+            .get(work_id)
+            .map(|work| work.events.clone())
+            .unwrap_or_default())
+    }
+
     /// Compile the full bounded entry frame and advance only this agent's
     /// observation cursor to the revision represented by that frame.
     pub fn observe_initial(

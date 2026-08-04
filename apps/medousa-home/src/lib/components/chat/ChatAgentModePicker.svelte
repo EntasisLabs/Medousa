@@ -30,7 +30,7 @@
       mode: "coder",
       label: "Coder",
       available: true,
-      contract_revision: "coder-v2",
+      contract_revision: "coder-v3",
     },
   ];
 

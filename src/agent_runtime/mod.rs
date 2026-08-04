@@ -34,6 +34,7 @@ pub mod heartbeat_turn;
 pub mod host_context;
 pub mod coder_activity;
 pub mod coder_mode;
+pub mod coder_pointers;
 pub mod coder_setup_tools;
 pub mod coder_tools;
 pub mod modes;
@@ -105,6 +106,7 @@ pub use coder_activity::{
     coder_activity_store, engineering_delta_prompt_appendix, shared_space_prompt_appendix,
 };
 pub use coder_mode::{CoderEntryContext, CoderEntryError, compile_coder_entry};
+pub use coder_pointers::{CoderEngineeringPointer, CoderPointerDetail, CoderPointerKind};
 pub use coder_tools::{CoderBoundToolRegistry, CoderTurnLease};
 pub use sttp::{SttpValidationError, validate_canonical_sttp_node};
 pub use daemon_interactive_turn::{

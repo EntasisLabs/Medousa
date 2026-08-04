@@ -1,6 +1,6 @@
 # Coder cognitive runtime
 
-> Status: Approved direction; slices 1–2 complete
+> Status: Approved direction; slices 1–3 complete
 > Parent: [Agent runtime modes](agent-runtime-modes-plan.md)
 
 ## Product decision
@@ -183,13 +183,37 @@ Acceptance:
 - Provider or Forge observation failures stop the loop instead of allowing
   Coder to continue with falsely fresh context.
 
-### Slice 3 — engineering pointers and history
+### Slice 3 — engineering pointers and history (complete)
 
-- Rank activity, symbol, diagnostic, process, test-run, and change-set pointers.
-- Add Coder pointer-follow plus engineering-history summary/detail tools.
-- Feed pointer relevance into tool-domain hints and progressive discovery.
+- Rank activity-derived file, symbol, diagnostic-set, process, verification,
+  and change-set pointers by failure/unresolved state, recency, focus, and
+  concurrent-agent relevance.
+- Add bounded pointer-list, pointer-follow, and filterable/paginated
+  engineering-history tools.
+- Feed pointer relevance into every ambient delta and automatically reveal
+  code-intelligence tools when symbol or diagnostic pointers become salient.
+- Add Coder-scoped discovery for intelligence, world-model, and history
+  domains that can reveal only tools in the immutable authority superset.
 - Refresh the visible tool subset between model rounds while preserving the
   immutable authority superset.
+
+The current semantic pointer kind is inferred from governed tool identity,
+intent, targets, and lifecycle status. Durable diagnostic, process, test-run,
+symbol, and change-set evidence objects replace that inference progressively in
+slices 4 and 8.
+
+Acceptance:
+
+- Planned/completed/failed lifecycle events for one call resolve through one
+  stable `engineering:call:*` pointer.
+- Ranked pointers are bounded and present at entry and after tool rounds.
+- Pointer follow returns causal lifecycle detail without replaying the chat.
+- History supports bounded filters and revision pagination and is hidden until
+  its domain is discovered.
+- Hidden tools cannot be invoked before discovery, and non-Coder tools remain
+  outside the surface.
+- A successful discovery call changes the tool definitions on the next model
+  inference without expanding turn authority.
 
 ### Slice 4 — evidence objects and perception governor
 

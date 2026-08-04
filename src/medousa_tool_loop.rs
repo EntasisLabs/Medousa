@@ -731,6 +731,11 @@ impl MedousaToolLoopPipeline {
                         .messages
                         .push(ChatMessage::system(context));
                 }
+                // A mode-owned registry may reveal a narrower or wider model-visible
+                // subset between rounds, but it cannot change its authority superset.
+                if !has_selected_tool {
+                    tools = self.tool_registry.list_tools().await?;
+                }
                 if let Some(gate) = completion_gate.as_ref() {
                     let parent_for_handoff = gate
                         .handoff_parent_user_prompt
